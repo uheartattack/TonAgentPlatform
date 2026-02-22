@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TON Agent Platform — Control Center</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="dashboard.css">
+  <!-- Telegram widget loaded in body where button should appear -->
+</head>
+<body>
+  <!-- Auth Screen -->
+  <div id="auth-screen" class="auth-screen">
+    <div class="auth-container">
+      <div class="auth-logo">
+        <div class="logo-icon pulse">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          </svg>
+        </div>
+        <h1 data-en="TON Agent Platform" data-ru="TON Agent Platform">TON Agent Platform</h1>
+        <p data-en="Control Center" data-ru="Панель управления">Control Center</p>
+      </div>
+      <div class="auth-box">
+        <h2 data-en="Welcome Back" data-ru="С возвращением">Welcome Back</h2>
+        <p class="auth-desc" data-en="Sign in with Telegram to access your agents" data-ru="Войдите через Telegram для доступа к агентам">Sign in with Telegram to access your agents</p>
+        <div class="telegram-login-container" id="tg-widget-container">
+          <!-- Real Telegram Login Widget renders here -->
+          <script async src="https://telegram.org/js/telegram-widget.js?22"
+            data-telegram-login="TonAgentPlatformBot"
+            data-size="large"
+            data-radius="8"
+            data-onauth="onTelegramAuth(user)"
+            data-request-access="write"></script>
+          <!-- Fallback button while widget loads -->
+          <a href="https://t.me/TonAgentPlatformBot?start=web" target="_blank" class="telegram-login-placeholder" id="tg-fallback" style="display:none">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
+            </svg>
+            <span data-en="Open Bot in Telegram" data-ru="Открыть бота в Telegram">Open Bot in Telegram</span>
+          </a>
+        </div>
+        <p class="auth-note" data-en="Secure auth via Telegram Login Widget" data-ru="Безопасная авторизация через Telegram Login Widget">Secure auth via Telegram Login Widget</p>
+        <p id="auth-session-expired" style="color:#f59e0b;font-size:0.8rem;font-weight:500;display:none;margin-top:8px;">
+          🔄 Сессия истекла после перезапуска сервера — войдите снова
+        </p>
+        <p class="auth-note" id="auth-domain-note" style="color:#f59e0b;font-size:0.75rem;display:none">
+          ⚠️ Widget requires HTTPS domain
+        </p>
+      </div>
+    </div>
+    <div class="auth-bg"></div>
+  </div>
+
+  <!-- Main App -->
+  <div id="app" class="app hidden">
+    <!-- Animated Background -->
+    <div class="bg-mesh">
+      <div class="bg-orb orb-1"></div>
+      <div class="bg-orb orb-2"></div>
+      <div class="bg-orb orb-3"></div>
+    </div>
+    
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <a href="index.html" class="logo">
+          <div class="logo-icon">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            </svg>
+          </div>
+          <div class="logo-text">
+            <span class="logo-title">TON Agent</span>
+            <span class="logo-subtitle" data-en="Control Center" data-ru="Панель управления">Control Center</span>
+          </div>
+        </a>
+      </div>
+      
+      <nav class="sidebar-nav">
+        <div class="nav-section">
+          <span class="nav-label" data-en="Overview" data-ru="Обзор">Overview</span>
+          <a href="#" class="nav-item active" data-page="overview">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/>
+              <rect x="14" y="14" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/>
+            </svg>
+            <span data-en="Overview" data-ru="Обзор">Overview</span>
+          </a>
+          <a href="#" class="nav-item" data-page="analytics">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
+            </svg>
+            <span data-en="Analytics" data-ru="Аналитика">Analytics</span>
+          </a>
+        </div>
+        
+        <div class="nav-section">
+          <span class="nav-label" data-en="Agent Core" data-ru="Ядро агента">Agent Core</span>
+          <a href="#" class="nav-item" data-page="capabilities">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+            </svg>
+            <span data-en="Capabilities" data-ru="Возможности">Capabilities</span>
+            <span class="nav-badge">127</span>
+          </a>
+          <a href="#" class="nav-item" data-page="extensions">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2l9 4.9V17L12 22l-9-4.9V7z"/>
+            </svg>
+            <span data-en="Extensions" data-ru="Расширения">Extensions</span>
+          </a>
+          <a href="#" class="nav-item" data-page="persona">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+            </svg>
+            <span data-en="Persona" data-ru="Персона">Persona</span>
+          </a>
+          <a href="#" class="nav-item" data-page="knowledge">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+            </svg>
+            <span data-en="Knowledge Base" data-ru="База знаний">Knowledge Base</span>
+          </a>
+        </div>
+        
+        <div class="nav-section">
+          <span class="nav-label" data-en="Operations" data-ru="Операции">Operations</span>
+          <a href="#" class="nav-item" data-page="activity">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/>
+            </svg>
+            <span data-en="Activity Stream" data-ru="Поток активности">Activity Stream</span>
+            <span class="status-pulse"></span>
+          </a>
+          <a href="#" class="nav-item" data-page="operations">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+            </svg>
+            <span data-en="Operations" data-ru="Операции">Operations</span>
+            <span class="nav-badge alert">3</span>
+          </a>
+          <a href="#" class="nav-item" data-page="connectors">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>
+            </svg>
+            <span data-en="Connectors" data-ru="Коннекторы">Connectors</span>
+          </a>
+        </div>
+        
+        <div class="nav-section">
+          <span class="nav-label" data-en="System" data-ru="Система">System</span>
+          <a href="#" class="nav-item" data-page="settings">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+            <span data-en="Settings" data-ru="Настройки">Settings</span>
+          </a>
+        </div>
+      </nav>
+      
+      <div class="sidebar-footer">
+        <div class="user-card">
+          <img id="user-avatar" src="" alt="" class="user-avatar-img hidden">
+          <div class="user-avatar-fallback" id="user-avatar-fallback">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+            </svg>
+          </div>
+          <div class="user-details">
+            <span class="user-name" id="user-name">User</span>
+            <span class="user-tier" data-en="Pro Tier" data-ru="Pro тариф">Pro Tier</span>
+          </div>
+        </div>
+        <div class="lang-switcher-sidebar">
+          <button class="lang-btn active" data-lang="en" onclick="switchLang('en')">EN</button>
+          <button class="lang-btn" data-lang="ru" onclick="switchLang('ru')">RU</button>
+        </div>
+        <button class="logout-btn" onclick="logout()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/>
+            <line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+          <span data-en="Sign Out" data-ru="Выйти">Sign Out</span>
+        </button>
+      </div>
+    </aside>
+    
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- Overview Page -->
+      <div id="overview-page" class="page active">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title" data-en="Overview" data-ru="Обзор">Overview</h1>
+            <p class="page-subtitle" data-en="Real-time system status and performance metrics" data-ru="Статус системы и метрики в реальном времени">Real-time system status and performance metrics</p>
+          </div>
+          <div class="header-actions">
+            <button class="btn btn-ghost" id="refresh-btn" onclick="refreshData()">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="refresh-icon">
+                <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+              </svg>
+              <span data-en="Refresh" data-ru="Обновить">Refresh</span>
+            </button>
+            <button class="btn btn-primary">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              <span data-en="Deploy Agent" data-ru="Запустить агента">Deploy Agent</span>
+            </button>
+          </div>
+        </div>
+        
+        <div class="page-content">
+          <!-- Metrics Grid -->
+          <div class="metrics-grid">
+            <div class="metric-card primary" data-metric="uptime">
+              <div class="metric-glow"></div>
+              <div class="metric-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                </svg>
+              </div>
+              <div class="metric-content">
+                <span class="metric-label" data-en="System Uptime" data-ru="Время работы">System Uptime</span>
+                <span class="metric-value" id="uptime-value">14h 32m</span>
+                <span class="metric-change positive">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
+                  </svg>
+                  99.9%
+                </span>
+              </div>
+            </div>
+            
+            <div class="metric-card secondary" data-metric="model">
+              <div class="metric-glow"></div>
+              <div class="metric-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"/>
+                </svg>
+              </div>
+              <div class="metric-content">
+                <span class="metric-label" data-en="AI Model" data-ru="AI Модель">AI Model</span>
+                <span class="metric-value model-name">Claude 3.5 Sonnet</span>
+                <span class="metric-change neutral">v2024-06</span>
+              </div>
+            </div>
+            
+            <div class="metric-card accent" data-metric="sessions">
+              <div class="metric-glow"></div>
+              <div class="metric-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                </svg>
+              </div>
+              <div class="metric-content">
+                <span class="metric-label" data-en="Active Sessions" data-ru="Активные сессии">Active Sessions</span>
+                <span class="metric-value" id="sessions-value">3</span>
+                <span class="metric-change positive">+1 today</span>
+              </div>
+            </div>
+            
+            <div class="metric-card success" data-metric="tools">
+              <div class="metric-glow"></div>
+              <div class="metric-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+                </svg>
+              </div>
+              <div class="metric-content">
+                <span class="metric-label" data-en="Capabilities" data-ru="Возможности">Capabilities</span>
+                <span class="metric-value" id="tools-value">127</span>
+                <span class="metric-change positive">+5 new</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- My Agents (real data from API) -->
+          <div class="panel" id="agents-panel">
+            <div class="panel-header">
+              <h3 class="panel-title" data-en="My Agents" data-ru="Мои агенты">My Agents</h3>
+              <a href="https://t.me/TonAgentPlatformBot" target="_blank" class="btn btn-primary btn-sm">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                <span data-en="Create in Bot" data-ru="Создать в боте">Create in Bot</span>
+              </a>
+            </div>
+            <div id="agents-list" class="agents-list">
+              <div class="loading-placeholder" data-en="Loading agents..." data-ru="Загрузка агентов...">Loading agents...</div>
+            </div>
+          </div>
+
+          <!-- Dashboard Grid -->
+          <div class="dashboard-grid">
+            <!-- Memory Status -->
+            <div class="panel memory-panel">
+              <div class="panel-header">
+                <h3 class="panel-title" data-en="Memory Status" data-ru="Статус памяти">Memory Status</h3>
+                <span class="panel-status active" data-en="Active" data-ru="Активно">Active</span>
+              </div>
+              <div class="memory-items">
+                <div class="memory-item">
+                  <div class="memory-icon blue">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+                    </svg>
+                  </div>
+                  <div class="memory-info">
+                    <span class="memory-label" data-en="Knowledge Documents" data-ru="Документы знаний">Knowledge Documents</span>
+                    <span class="memory-value">4</span>
+                  </div>
+                  <div class="memory-bar">
+                    <div class="memory-progress" style="width: 40%"></div>
+                  </div>
+                </div>
+                <div class="memory-item">
+                  <div class="memory-icon cyan">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                  </div>
+                  <div class="memory-info">
+                    <span class="memory-label" data-en="Message History" data-ru="История сообщений">Message History</span>
+                    <span class="memory-value">156</span>
+                  </div>
+                  <div class="memory-bar">
+                    <div class="memory-progress" style="width: 78%"></div>
+                  </div>
+                </div>
+                <div class="memory-item">
+                  <div class="memory-icon purple">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+                    </svg>
+                  </div>
+                  <div class="memory-info">
+                    <span class="memory-label" data-en="Active Chats" data-ru="Активные чаты">Active Chats</span>
+                    <span class="memory-value">7</span>
+                  </div>
+                  <div class="memory-bar">
+                    <div class="memory-progress" style="width: 35%"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Agent Configuration -->
+            <div class="panel config-panel">
+              <div class="panel-header">
+                <h3 class="panel-title" data-en="Agent Configuration" data-ru="Конфигурация агента">Agent Configuration</h3>
+                <button class="btn btn-ghost btn-sm">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                  </svg>
+                </button>
+              </div>
+              <div class="config-form">
+                <div class="form-row">
+                  <div class="form-group">
+                    <label data-en="AI Provider" data-ru="AI Провайдер">AI Provider</label>
+                    <select class="form-select">
+                      <option>Anthropic (Claude)</option>
+                      <option>OpenAI (GPT)</option>
+                      <option>Google (Gemini)</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label data-en="Model Version" data-ru="Версия модели">Model Version</label>
+                    <select class="form-select">
+                      <option>Claude 3.5 Sonnet</option>
+                      <option>Claude 3 Opus</option>
+                      <option>Claude 3 Haiku</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="form-row three">
+                  <div class="form-group">
+                    <label data-en="Creativity" data-ru="Креативность">Creativity</label>
+                    <div class="slider-group">
+                      <input type="range" class="form-slider" min="0" max="2" step="0.1" value="0.7">
+                      <span class="slider-value">0.7</span>
+                    </div>
+                  </div>
+                  <div class="form-group">
+                    <label data-en="Max Tokens" data-ru="Макс. токенов">Max Tokens</label>
+                    <input type="number" class="form-input" value="4096">
+                  </div>
+                  <div class="form-group">
+                    <label data-en="Iterations" data-ru="Итерации">Iterations</label>
+                    <input type="number" class="form-input" value="5" min="1" max="20">
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Smart Tools Selection -->
+          <div class="panel">
+            <div class="panel-header">
+              <div>
+                <h3 class="panel-title" data-en="Smart Tools Selection" data-ru="Умный выбор инструментов">Smart Tools Selection</h3>
+                <p class="panel-desc" data-en="AI automatically selects the most relevant capabilities for each request" data-ru="AI автоматически выбирает наиболее релевантные возможности для каждого запроса">AI automatically selects the most relevant capabilities for each request</p>
+              </div>
+              <label class="toggle-switch large">
+                <input type="checkbox" checked>
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div class="smart-tools-info">
+              <div class="smart-item">
+                <span class="smart-label" data-en="Vector Index" data-ru="Векторный индекс">Vector Index</span>
+                <span class="smart-value status-ok" data-en="Ready" data-ru="Готов">Ready</span>
+              </div>
+              <div class="smart-item">
+                <span class="smart-label" data-en="Top-K Results" data-ru="Top-K результатов">Top-K Results</span>
+                <select class="form-select mini">
+                  <option>25</option>
+                  <option>50</option>
+                  <option>100</option>
+                </select>
+              </div>
+              <div class="smart-item">
+                <span class="smart-label" data-en="Indexed Capabilities" data-ru="Индексировано">Indexed Capabilities</span>
+                <span class="smart-value">127</span>
+              </div>
+              <div class="smart-item">
+                <span class="smart-label" data-en="Last Update" data-ru="Последнее обновление">Last Update</span>
+                <span class="smart-value">2m ago</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Telegram Integration -->
+          <div class="panel">
+            <div class="panel-header">
+              <h3 class="panel-title" data-en="Telegram Integration" data-ru="Интеграция Telegram">Telegram Integration</h3>
+              <span class="connection-badge connected">
+                <span class="pulse-dot"></span>
+                <span data-en="Connected" data-ru="Подключено">Connected</span>
+              </span>
+            </div>
+            <div class="telegram-config">
+              <div class="config-row">
+                <div class="form-group">
+                  <label data-en="Direct Messages" data-ru="Личные сообщения">Direct Messages</label>
+                  <select class="form-select">
+                    <option data-en="Open to all" data-ru="Открыты для всех">Open to all</option>
+                    <option data-en="Whitelist only" data-ru="Только из белого списка">Whitelist only</option>
+                    <option data-en="Blacklist mode" data-ru="Режим чёрного списка">Blacklist mode</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label data-en="Group Chats" data-ru="Групповые чаты">Group Chats</label>
+                  <select class="form-select">
+                    <option data-en="Allowlist only" data-ru="Только из списка">Allowlist only</option>
+                    <option data-en="Open" data-ru="Открыты">Open</option>
+                    <option data-en="Disabled" data-ru="Отключены">Disabled</option>
+                  </select>
+                </div>
+              </div>
+              <div class="toggle-grid">
+                <label class="toggle-card">
+                  <div class="toggle-info">
+                    <span class="toggle-title" data-en="Require Mention" data-ru="Требовать упоминание">Require Mention</span>
+                    <span class="toggle-desc" data-en="Only respond when mentioned in groups" data-ru="Отвечать только при упоминании в группах">Only respond when mentioned in groups</span>
+                  </div>
+                  <input type="checkbox" class="toggle-checkbox" checked>
+                  <span class="toggle-slider"></span>
+                </label>
+                <label class="toggle-card">
+                  <div class="toggle-info">
+                    <span class="toggle-title" data-en="Typing Indicator" data-ru="Индикатор печати">Typing Indicator</span>
+                    <span class="toggle-desc" data-en="Show 'typing...' while processing" data-ru="Показывать 'печатает...' при обработке">Show 'typing...' while processing</span>
+                  </div>
+                  <input type="checkbox" class="toggle-checkbox" checked>
+                  <span class="toggle-slider"></span>
+                </label>
+                <label class="toggle-card">
+                  <div class="toggle-info">
+                    <span class="toggle-title" data-en="Auto-reply" data-ru="Автоответ">Auto-reply</span>
+                    <span class="toggle-desc" data-en="Respond without manual trigger" data-ru="Отвечать без ручного триггера">Respond without manual trigger</span>
+                  </div>
+                  <input type="checkbox" class="toggle-checkbox">
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+              <div class="form-group debounce-group">
+                <label data-en="Response Delay (ms)" data-ru="Задержка ответа (мс)">Response Delay (ms)</label>
+                <div class="slider-group">
+                  <input type="range" class="form-slider" min="0" max="5000" step="100" value="1500">
+                  <span class="slider-value">1500ms</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Capabilities Page -->
+      <div id="capabilities-page" class="page">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title" data-en="Capabilities" data-ru="Возможности">Capabilities</h1>
+            <p class="page-subtitle" data-en="127 built-in tools across 16 capability groups" data-ru="127 встроенных инструментов в 16 группах">127 built-in tools across 16 capability groups</p>
+          </div>
+          <div class="search-box">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+            </svg>
+            <input type="text" id="capabilities-search" placeholder="Search capabilities..." oninput="searchCapabilities(this.value)">
+          </div>
+        </div>
+        <div class="page-content">
+          <div class="capabilities-filters">
+            <button class="filter-chip active" data-filter="all" onclick="filterCapabilities('all')">
+              <span data-en="All" data-ru="Все">All</span>
+              <span class="chip-count">16</span>
+            </button>
+            <button class="filter-chip" data-filter="active" onclick="filterCapabilities('active')">
+              <span data-en="Active" data-ru="Активные">Active</span>
+              <span class="chip-count">14</span>
+            </button>
+            <button class="filter-chip" data-filter="inactive" onclick="filterCapabilities('inactive')">
+              <span data-en="Inactive" data-ru="Неактивные">Inactive</span>
+              <span class="chip-count">2</span>
+            </button>
+          </div>
+          <div class="capabilities-list" id="capabilities-list"></div>
+        </div>
+      </div>
+      
+      <!-- Extensions Page -->
+      <div id="extensions-page" class="page">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title" data-en="Extensions" data-ru="Расширения">Extensions</h1>
+            <p class="page-subtitle" data-en="Enhance your agent with community plugins" data-ru="Улучшите агента с помощью плагинов сообщества">Enhance your agent with community plugins</p>
+          </div>
+          <div class="search-box">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+            </svg>
+            <input type="text" id="extensions-search" placeholder="Search extensions..." oninput="searchExtensions(this.value)">
+          </div>
+        </div>
+        <div class="page-content">
+          <div class="extensions-tabs">
+            <button class="tab-btn active" data-tab="installed" onclick="switchExtensionsTab('installed')">
+              <span data-en="Installed" data-ru="Установлено">Installed</span>
+              <span class="tab-count" id="installed-count">2</span>
+            </button>
+            <button class="tab-btn" data-tab="marketplace" onclick="switchExtensionsTab('marketplace')">
+              <span data-en="Marketplace" data-ru="Маркетплейс">Marketplace</span>
+              <span class="tab-count new">12</span>
+            </button>
+            <button class="tab-btn" data-tab="updates" onclick="switchExtensionsTab('updates')">
+              <span data-en="Updates" data-ru="Обновления">Updates</span>
+              <span class="tab-count alert">1</span>
+            </button>
+          </div>
+          <div id="extensions-content"></div>
+        </div>
+      </div>
+      
+      <!-- Activity Stream Page -->
+      <div id="activity-page" class="page">
+        <div class="page-header">
+          <div class="header-left">
+            <h1 class="page-title" data-en="Activity Stream" data-ru="Поток активности">Activity Stream</h1>
+            <div class="live-indicator">
+              <span class="pulse-ring"></span>
+              <span class="pulse-dot"></span>
+              <span data-en="Live" data-ru="В прямом эфире">Live</span>
+            </div>
+          </div>
+          <div class="header-actions">
+            <button class="btn btn-ghost" onclick="clearActivity()">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+              </svg>
+              <span data-en="Clear" data-ru="Очистить">Clear</span>
+            </button>
+            <div class="filter-dropdown">
+              <button class="btn btn-ghost">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+                </svg>
+                <span data-en="Filter" data-ru="Фильтр">Filter</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="page-content">
+          <div class="activity-stream" id="activity-stream"></div>
+        </div>
+      </div>
+      
+      <!-- Operations Page -->
+      <div id="operations-page" class="page">
+        <div class="page-header">
+          <div class="header-left">
+            <h1 class="page-title" data-en="Operations" data-ru="Операции">Operations</h1>
+            <div class="queue-indicator">
+              <span data-en="Queue:" data-ru="Очередь:">Queue:</span>
+              <span class="queue-count">3</span>
+            </div>
+          </div>
+          <button class="btn btn-primary">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            <span data-en="New Operation" data-ru="Новая операция">New Operation</span>
+          </button>
+        </div>
+        <div class="page-content">
+          <div class="operations-filters">
+            <button class="op-filter active" data-status="all" onclick="filterOperations('all')">
+              <span data-en="All" data-ru="Все">All</span>
+              <span class="filter-badge">5</span>
+            </button>
+            <button class="op-filter" data-status="queued" onclick="filterOperations('queued')">
+              <span data-en="Queued" data-ru="В очереди">Queued</span>
+              <span class="filter-badge">1</span>
+            </button>
+            <button class="op-filter" data-status="running" onclick="filterOperations('running')">
+              <span data-en="Running" data-ru="Выполняется">Running</span>
+              <span class="filter-badge">1</span>
+            </button>
+            <button class="op-filter" data-status="completed" onclick="filterOperations('completed')">
+              <span data-en="Completed" data-ru="Завершено">Completed</span>
+              <span class="filter-badge">2</span>
+            </button>
+            <button class="op-filter" data-status="failed" onclick="filterOperations('failed')">
+              <span data-en="Failed" data-ru="Ошибка">Failed</span>
+              <span class="filter-badge">1</span>
+            </button>
+          </div>
+          <div class="operations-list" id="operations-list"></div>
+        </div>
+      </div>
+      
+      <!-- Settings Page -->
+      <div id="settings-page" class="page">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title" data-en="Settings" data-ru="Настройки">Settings</h1>
+            <p class="page-subtitle" data-en="Configure your agent and platform preferences" data-ru="Настройте агента и предпочтения платформы">Configure your agent and platform preferences</p>
+          </div>
+          <button class="btn btn-primary" onclick="saveSettings()">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+              <polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+            </svg>
+            <span data-en="Save Changes" data-ru="Сохранить">Save Changes</span>
+          </button>
+        </div>
+        <div class="page-content">
+          <div class="settings-grid">
+            <div class="settings-section">
+              <h3 class="section-title" data-en="API Credentials" data-ru="API Ключи">API Credentials</h3>
+              <div class="settings-card">
+                <div class="credential-item">
+                  <div class="credential-info">
+                    <span class="credential-name">Anthropic API</span>
+                    <span class="credential-status active" data-en="Active" data-ru="Активен">Active</span>
+                  </div>
+                  <div class="input-group">
+                    <input type="password" class="form-input" value="sk-ant-api03-xxxxxxxx" readonly>
+                    <button class="btn btn-ghost btn-sm" onclick="togglePassword(this)">Show</button>
+                    <button class="btn btn-ghost btn-sm">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+                <div class="credential-item">
+                  <div class="credential-info">
+                    <span class="credential-name">Telegram Bot Token</span>
+                    <span class="credential-status active" data-en="Active" data-ru="Активен">Active</span>
+                  </div>
+                  <div class="input-group">
+                    <input type="password" class="form-input" value="7xxxxxxxx:xxxxxxxx" readonly>
+                    <button class="btn btn-ghost btn-sm" onclick="togglePassword(this)">Show</button>
+                    <button class="btn btn-ghost btn-sm">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div class="settings-section">
+              <h3 class="section-title" data-en="Security" data-ru="Безопасность">Security</h3>
+              <div class="settings-card">
+                <label class="setting-item">
+                  <div class="setting-info">
+                    <span class="setting-name" data-en="Audit Logging" data-ru="Логирование">Audit Logging</span>
+                    <span class="setting-desc" data-en="Record all agent actions for review" data-ru="Записывать все действия агента">Record all agent actions for review</span>
+                  </div>
+                  <input type="checkbox" class="toggle-checkbox" checked>
+                  <span class="toggle-slider"></span>
+                </label>
+                <label class="setting-item">
+                  <div class="setting-info">
+                    <span class="setting-name" data-en="Confirm Sensitive Actions" data-ru="Подтверждать действия">Confirm Sensitive Actions</span>
+                    <span class="setting-desc" data-en="Ask before executing critical operations" data-ru="Спрашивать перед критическими операциями">Ask before executing critical operations</span>
+                  </div>
+                  <input type="checkbox" class="toggle-checkbox" checked>
+                  <span class="toggle-slider"></span>
+                </label>
+                <label class="setting-item">
+                  <div class="setting-info">
+                    <span class="setting-name" data-en="Rate Limiting" data-ru="Ограничение запросов">Rate Limiting</span>
+                    <span class="setting-desc" data-en="Limit requests per minute" data-ru="Ограничить запросы в минуту">Limit requests per minute</span>
+                  </div>
+                  <input type="checkbox" class="toggle-checkbox" checked>
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+  
+  <script src="dashboard.js"></script>
+</body>
+</html>
