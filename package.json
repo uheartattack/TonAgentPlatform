@@ -1,0 +1,30 @@
+{
+  "name": "ton-agent-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "No-code platform for AI agents on TON",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "db:up": "docker-compose -f infrastructure/docker-compose.yml up -d",
+    "db:down": "docker-compose -f infrastructure/docker-compose.yml down",
+    "db:logs": "docker-compose -f infrastructure/docker-compose.yml logs -f",
+    "db:migrate": "docker cp infrastructure/init.sql ton-agent-postgres:/tmp/init.sql && docker exec -it ton-agent-postgres psql -U ton_agent -d ton_agent_platform -f /tmp/init.sql",
+    "db:connect": "docker exec -it ton-agent-postgres psql -U ton_agent -d ton_agent_platform",
+    "clean": "turbo run clean && rm -rf node_modules",
+    "format": "prettier --write \"**/*.{ts,tsx,json,md}\""
+  },
+  "devDependencies": {
+    "turbo": "^1.12.0",
+    "eslint": "^8.56.0",
+    "prettier": "^3.2.0",
+    "typescript": "^5.3.0",
+    "@types/node": "^20.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=8.0.0"
+  }
+}
