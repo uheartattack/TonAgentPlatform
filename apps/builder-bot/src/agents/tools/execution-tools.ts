@@ -264,10 +264,20 @@ export class ExecutionTools {
         wasm: false,
       });
 
-      // Оборачиваем код агента в async функцию
+      // Оборачиваем код агента в async функцию.
+      // Если код определяет функцию agent/main/run — вызываем её автоматически.
+      // Если код написан напрямую (без функции) — он выполняется как есть и должен вернуть результат.
       const wrappedCode = `
 module.exports = async function agentMain() {
 ${code}
+
+  // ── Авто-вызов именованной функции агента ──
+  // AI может написать: async function agent(ctx){...} или async function main(){...}
+  // Мы вызываем её автоматически, передавая sandbox-контекст.
+  if (typeof agent === 'function') return await agent(context);
+  if (typeof main === 'function')  return await main(context);
+  if (typeof run === 'function')   return await run(context);
+  // Если функции нет — код выполнился напрямую (IIFE-стиль), возвращаем undefined
 };
 `;
 
