@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.jpg" alt="TON Agent Platform" width="120" height="120"/>
+  <img src="logo.gif" alt="TON Agent Platform" width="400"/>
 </p>
 
 <h1 align="center">TON Agent Platform</h1>
@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  <a href="https://t.me/ТВОЙ_БОТ"><img src="https://img.shields.io/badge/Telegram-Bot-0088cc?logo=telegram" alt="Telegram Bot"></a>
-  <a href="https://github.com/spendollars/TonAgentPlatform/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License"></a>
+  <img src="https://img.shields.io/badge/Telegram-Bot-0088cc?logo=telegram" alt="Telegram Bot">
+  <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License">
   <img src="https://img.shields.io/badge/Status-Alpha-orange" alt="Status">
 </p>
 
