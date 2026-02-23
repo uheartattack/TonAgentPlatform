@@ -11,6 +11,8 @@ import { getPluginManager } from './plugins-system';
 
 const PORT = parseInt(process.env.API_PORT || '3001', 10);
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
+const BOT_USERNAME = process.env.BOT_USERNAME || 'TonAgentPlatformBot';
+const LANDING_URL = process.env.LANDING_URL || `http://localhost:${PORT}`;
 
 // ── In-memory session store: token → userId ──────────────────
 const sessions = new Map<string, { userId: number; username: string; firstName: string; expiresAt: number }>();
@@ -100,13 +102,33 @@ export function startApiServer() {
   const landingPath = path.resolve(__dirname, '../../../apps/landing');
   app.use(express.static(landingPath));
 
+  // ── GET /api/config — публичная конфигурация для лендинга ──
+  app.get('/api/config', (_req: Request, res: Response) => {
+    res.json({
+      ok: true,
+      botUsername: BOT_USERNAME,
+      botLink: `https://t.me/${BOT_USERNAME}`,
+      landingUrl: LANDING_URL,
+      manifestUrl: `${LANDING_URL}/tonconnect-manifest.json`,
+    });
+  });
+
+  // ── GET /tonconnect-manifest.json — самохостируемый манифест TON Connect ──
+  app.get('/tonconnect-manifest.json', (_req: Request, res: Response) => {
+    res.json({
+      url: LANDING_URL,
+      name: 'TON Agent Platform',
+      iconUrl: `${LANDING_URL}/icon.png`,
+    });
+  });
+
   // ── GET /api/auth/request — получить deeplink + токен для auth через бота ──
   app.get('/api/auth/request', (_req: Request, res: Response) => {
     const authToken = generateToken().slice(0, 16); // короткий — идёт в deeplink
     pendingBotAuth.set(authToken, { pending: true, createdAt: Date.now() });
     // Удаляем через 5 минут
     setTimeout(() => pendingBotAuth.delete(authToken), 5 * 60 * 1000);
-    const botLink = `https://t.me/TonAgentPlatformBot?start=webauth_${authToken}`;
+    const botLink = `https://t.me/${BOT_USERNAME}?start=webauth_${authToken}`;
     res.json({ ok: true, authToken, botLink });
   });
 

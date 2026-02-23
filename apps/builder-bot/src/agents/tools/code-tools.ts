@@ -225,7 +225,7 @@ export class CodeTools {
 
 ━━━ EXECUTION ENVIRONMENT ━━━
 • Node.js 18+ in vm2 sandbox. global fetch() available. Async/await fully supported.
-• NO: require(), import, fs, process.env, setTimeout, setInterval (platform handles scheduling)
+• NO: require(), import, fs, process.env, setTimeout, setInterval
 • context = { userId, agentId, config: {}, soul } — passed automatically at runtime
 
 ━━━ BUILT-IN FUNCTIONS (always available, no import needed) ━━━
@@ -233,53 +233,50 @@ export class CodeTools {
   notify(text)                    — send Telegram message to user. THE ONLY WAY to message user.
   getTonBalance(address)          — returns TON balance as float (e.g. 5.2341). Handles nanotons.
   getPrice("TON")                 — returns USD price from CoinGecko (e.g. 3.21)
-  getState("key")                 — get persistent value from previous run (null if first run)
-  setState("key", value)          — save value for next run (survives between scheduled runs)
+  getState("key")                 — get persistent value (null if first run)
+  setState("key", value)          — save value (survives between loop iterations)
+  sleep(ms)                       — pause for N milliseconds (use inside while loop)
+  isStopped()                     — returns true when user clicks Stop (use as while condition)
   agent_send(agentId, data)       — send data to another agent
   agent_receive()                 — receive messages from other agents
   console.log(...)                — write to execution logs (NOT to Telegram)
 
 ━━━ GOLDEN RULE: HOW TO NOTIFY USER ━━━
 ALWAYS use notify(). NEVER call Telegram API directly. notify() is the ONLY correct way.
+  notify('💰 Balance: 5.23 TON');   // ✅ CORRECT
+  fetch('https://api.telegram.org/...', ...)  // ❌ WRONG — will fail
 
-  // ✅ CORRECT:
-  notify("💰 Balance: 5.23 TON");
+━━━ ARCHITECTURE: PERSISTENT AGENTS (24/7) ━━━
+Agents run CONTINUOUSLY. Use while(!isStopped()) with await sleep(ms) to control frequency.
+This is the DEFAULT pattern for any monitoring/tracking/repeating task.
 
-  // ❌ WRONG (will fail — no require/fetch to Telegram possible):
-  fetch("https://api.telegram.org/bot.../sendMessage", ...)
-
-━━━ PATTERN: CHANGE DETECTION (notify only when something changes) ━━━
-  const prev = getState('val');
-  const cur = await getTonBalance(WALLET);
-  if (prev === null) {
-    notify('✅ Monitoring started. Balance: ' + cur.toFixed(4) + ' TON');
-  } else if (Math.abs(cur - prev) > 0.001) {
-    notify('📊 Changed: ' + prev.toFixed(4) + ' → ' + cur.toFixed(4) + ' TON');
+  while (!isStopped()) {
+    // ... do work ...
+    await sleep(60000); // wait 1 minute between checks
   }
-  setState('val', cur);
 
-━━━ CODE STYLE ━━━
-Write the agent as "async function agent(context)". It will be called automatically.
-Keep code simple and readable. Use try/catch. Return { success, result, summary }.
+For one-shot tasks (run once, stop): just do the work and return — no while loop needed.
 
-━━━ EXAMPLE ━━━
+━━━ EXAMPLE: Persistent balance monitor ━━━
 async function agent(context) {
   const WALLET = context.config.WALLET_ADDRESS || '{{WALLET_ADDRESS}}';
-  try {
-    const prev = getState('balance');
-    const balance = await getTonBalance(WALLET);
-    if (prev === null) {
-      notify('✅ Мониторинг запущен\\n💰 Баланс: ' + balance.toFixed(4) + ' TON');
-    } else if (Math.abs(balance - prev) > 0.001) {
-      const diff = balance - prev;
-      notify((diff > 0 ? '📈 Пришло ' : '📉 Ушло ') + Math.abs(diff).toFixed(4) + ' TON\\n💰 Баланс: ' + balance.toFixed(4) + ' TON');
+  const CHECK_INTERVAL = parseInt(context.config.INTERVAL_MS || '60000');
+  notify('✅ Мониторинг запущен для ' + WALLET);
+  while (!isStopped()) {
+    try {
+      const prev = getState('balance');
+      const balance = await getTonBalance(WALLET);
+      if (prev !== null && Math.abs(balance - prev) > 0.001) {
+        const diff = balance - prev;
+        notify((diff > 0 ? '📈 Пришло ' : '📉 Ушло ') + Math.abs(diff).toFixed(4) + ' TON\n💰 Баланс: ' + balance.toFixed(4) + ' TON');
+      }
+      setState('balance', balance);
+    } catch (e) {
+      console.error('Ошибка: ' + e.message);
     }
-    setState('balance', balance);
-    return { success: true, result: { balance }, summary: 'Баланс: ' + balance.toFixed(4) + ' TON' };
-  } catch (e) {
-    notify('❌ Ошибка: ' + e.message);
-    return { success: false, error: e.message };
+    await sleep(CHECK_INTERVAL);
   }
+  notify('⏹ Мониторинг остановлен');
 }
 
 ━━━ AVAILABLE APIs (public, no auth needed) ━━━
@@ -290,7 +287,7 @@ Any other public REST API — just use fetch()
 ━━━ PLACEHOLDERS ━━━
 Use {{NAME}} for values user must configure. Read from context.config:
   const ADDR = context.config.WALLET_ADDRESS || '{{WALLET_ADDRESS}}';
-  const THRESHOLD = parseFloat(context.config.THRESHOLD || '1');
+  const THRESHOLD = parseFloat(context.config.THRESHOLD || '5');
 
 ━━━ OUTPUT FORMAT ━━━
 Return ONLY the raw code starting with "async function agent(context) {".
