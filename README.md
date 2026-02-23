@@ -1,3 +1,9 @@
+<p align="center">
+  <img src="logo.jpg" alt="TON Agent Platform Logo" width="200"/>
+</p>
+
+<h1 align="center">TON Agent Platform</h1>
+
 # TON Agent Platform
 
 No-code платформа для создания AI-агентов в Telegram с интеграцией TON.
