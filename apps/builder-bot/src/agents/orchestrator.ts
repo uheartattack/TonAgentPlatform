@@ -386,7 +386,14 @@ export class Orchestrator {
     let content = `✅ *Агент создан!*\n\n`;
     content += `📛 Имя: ${data.name}\n`;
     content += `🆔 ID: #${data.agentId}\n`;
-    content += `🔐 Безопасность: ${data.securityScore}/100\n\n`;
+    content += `🔐 Безопасность: ${data.securityScore}/100\n`;
+
+    if (data.triggerType === 'scheduled' && data.triggerConfig?.intervalMs) {
+      const ms = data.triggerConfig.intervalMs as number;
+      const label = ms >= 3_600_000 ? `${ms / 3_600_000} ч` : ms >= 60_000 ? `${ms / 60_000} мин` : `${ms / 1000} сек`;
+      content += `⏰ Расписание: каждые ${label}\n`;
+    }
+    content += `\n`;
 
     // Краткое объяснение (не код!) — только первые 2 предложения
     const shortExplanation = data.explanation
@@ -396,31 +403,58 @@ export class Orchestrator {
       content += `📝 ${shortExplanation}\n\n`;
     }
 
-    if (data.placeholders && data.placeholders.length > 0) {
+    const hasPlaceholders = data.placeholders && data.placeholders.length > 0;
+
+    if (hasPlaceholders) {
       content += `⚙️ *Настройте параметры перед запуском:*\n`;
-      data.placeholders.forEach((p) => {
+      data.placeholders!.forEach((p) => {
         content += `• \`${p.name}\` — ${p.description}\n`;
       });
-      content += `\nНапишите: _"Измени агента #${data.agentId}, укажи ${data.placeholders[0].name}=значение"_\n\n`;
+      content += `\nНапишите: _"Измени агента #${data.agentId}, укажи ${data.placeholders![0].name}=значение"_\n\n`;
     }
 
-    content += `Агент запускается на нашем сервере — никакой установки не нужно. Нажмите *Запустить* или посмотрите список агентов 👇`;
+    // ── Авто-старт для scheduled агентов без плейсхолдеров ──
+    let autoStarted = false;
+    if (data.autoStart && !hasPlaceholders && data.agentId) {
+      try {
+        const runResult = await getRunnerAgent().runAgent({ agentId: data.agentId!, userId });
+        if (runResult.success && runResult.data?.isScheduled) {
+          autoStarted = true;
+          const ms = runResult.data.intervalMs || 0;
+          const label = ms >= 3_600_000 ? `${ms / 3_600_000} ч` : ms >= 60_000 ? `${ms / 60_000} мин` : `${ms / 1000} сек`;
+          content += `🟢 *Агент уже запущен* — работает каждые ${label}\nПервый результат придёт в Telegram через несколько секунд\\.`;
+        } else {
+          content += `Нажмите *Запустить* чтобы активировать агента 👇`;
+        }
+      } catch {
+        content += `Нажмите *Запустить* чтобы активировать агента 👇`;
+      }
+    } else {
+      content += `Агент готов\\. Нажмите *Запустить* — он будет работать на нашем сервере\\.`;
+    }
 
     await getMemoryManager().addMessage(userId, 'assistant', content, {
       type: 'agent_created',
       agentId: data.agentId,
     });
 
+    const buttons = autoStarted
+      ? [
+          { text: '📋 Логи', callbackData: `show_logs:${data.agentId}` },
+          { text: '⏸ Остановить', callbackData: `run_agent:${data.agentId}` },
+          { text: '📋 Мои агенты', callbackData: 'list_agents' },
+        ]
+      : [
+          { text: '🚀 Запустить сейчас', callbackData: `run_agent:${data.agentId}` },
+          { text: '📋 Мои агенты', callbackData: 'list_agents' },
+          { text: '👁 Показать код', callbackData: `show_code:${data.agentId}` },
+        ];
+
     return {
       type: 'agent_created',
       content,
       agentId: data.agentId,
-      buttons: [
-        { text: '🚀 Запустить сейчас', callbackData: `run_agent:${data.agentId}` },
-        { text: '📋 Мои агенты', callbackData: 'list_agents' },
-        { text: '👁 Показать код', callbackData: `show_code:${data.agentId}` },
-        { text: '🔍 Аудит', callbackData: `audit_agent:${data.agentId}` },
-      ],
+      buttons,
     };
   }
 
