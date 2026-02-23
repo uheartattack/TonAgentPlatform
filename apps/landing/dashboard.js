@@ -218,9 +218,10 @@ function logout() {
   document.getElementById('app').classList.add('hidden');
 }
 
-// ── Load Telegram Login Widget dynamically with correct bot username ────────
-// Telegram widget only works on a registered domain (not localhost).
-// On localhost it will silently fail → we fall back to bot-deeplink auth.
+// ── Auth initialization ──────────────────────────────────────────────────────
+// Strategy:
+//   HTTP (localhost/dev) → bot-deeplink auth immediately (widget needs HTTPS)
+//   HTTPS (production)   → Telegram Login Widget first, bot-auth as fallback
 async function initAuth() {
   // 1. Fetch platform config
   try {
@@ -228,11 +229,19 @@ async function initAuth() {
     if (cfg && cfg.ok) window._appConfig = cfg;
   } catch (_) {}
 
+  const isHttps = window.location.protocol === 'https:';
+
+  if (!isHttps) {
+    // Localhost / HTTP: widget won't work → go straight to bot-auth button
+    showBotAuthButton();
+    return;
+  }
+
+  // HTTPS: try Telegram Login Widget
   const botUsername = (window._appConfig && window._appConfig.botUsername) || 'TonAgentPlatformBot';
   const container = document.getElementById('tg-widget-container');
   if (!container) return;
 
-  // 2. Inject Telegram Login Widget script
   container.innerHTML = ''; // clear "Loading..." placeholder
   const script = document.createElement('script');
   script.async = true;
@@ -244,12 +253,12 @@ async function initAuth() {
   script.setAttribute('data-request-access', 'write');
   container.appendChild(script);
 
-  // 3. After 2.5s: if widget iframe didn't appear (localhost / no domain config),
-  //    fall back to bot-deeplink auth button
+  // After 3s: if widget iframe didn't load (domain not registered in BotFather)
+  // fall back to bot-auth button
   setTimeout(() => {
     const iframe = document.querySelector('#tg-widget-container iframe');
     if (!iframe) showBotAuthButton();
-  }, 2500);
+  }, 3000);
 }
 
 // Check if already logged in (token in localStorage)
@@ -284,16 +293,18 @@ function showBotAuthButton() {
     container.innerHTML = `
       <button
         onclick="startBotAuth()"
-        style="display:flex;align-items:center;gap:10px;padding:12px 24px;background:#2196F3;color:#fff;border:none;border-radius:8px;font-size:1rem;font-weight:500;cursor:pointer;width:100%;justify-content:center;transition:opacity .2s">
+        style="display:flex;align-items:center;gap:10px;padding:12px 24px;background:#2196F3;color:#fff;border:none;border-radius:8px;font-size:1rem;font-weight:500;cursor:pointer;width:100%;justify-content:center;transition:opacity .2s"
+        onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
           <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
         </svg>
-        Войти через Telegram-бота
+        Войти через Telegram
       </button>
     `;
   }
+  // Hide the "Widget requires HTTPS" note — it's confusing for end users
   const note = document.getElementById('auth-domain-note');
-  if (note) note.style.display = 'block';
+  if (note) note.style.display = 'none';
 }
 
 async function startBotAuth() {
@@ -304,7 +315,15 @@ async function startBotAuth() {
 
   const data = await apiRequest('GET', '/api/auth/request');
   if (!data.ok) {
-    if (container) container.innerHTML = `<p style="color:#ef4444;text-align:center;font-size:.875rem;">⚠️ Сервер недоступен. Убедитесь, что бот запущен.</p>`;
+    if (container) container.innerHTML = `
+      <div style="text-align:center;padding:12px 0">
+        <p style="color:#f59e0b;font-size:.9rem;margin:0 0 8px;font-weight:500;">⚠️ Не удалось подключиться</p>
+        <p style="color:var(--text-muted);font-size:.75rem;margin:0 0 14px;">Убедитесь, что бот-сервер запущен</p>
+        <button onclick="showBotAuthButton()"
+          style="padding:8px 20px;background:#2196F3;color:#fff;border:none;border-radius:6px;font-size:.875rem;font-weight:500;cursor:pointer;">
+          🔄 Повторить
+        </button>
+      </div>`;
     return;
   }
 
