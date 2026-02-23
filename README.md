@@ -4,8 +4,6 @@
 
 <h1 align="center">TON Agent Platform</h1>
 
-# TON Agent Platform
-
 No-code платформа для создания AI-агентов в Telegram с интеграцией TON.
 
 ## Быстрый старт
