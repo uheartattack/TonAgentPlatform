@@ -26,6 +26,63 @@ export interface CreateAgentResult {
   message: string;
   needsClarification?: boolean;
   clarificationQuestion?: string;
+  triggerType?: string;
+  triggerConfig?: Record<string, any>;
+  autoStart?: boolean; // true — агент определён как scheduled и нужно сразу запустить
+}
+
+// ===== Авто-определение триггера из описания =====
+// Если пользователь пишет "каждую минуту", "каждый час" и т.д. — auto-trigger = scheduled
+
+export function detectTriggerFromDescription(description: string): {
+  triggerType: 'manual' | 'scheduled';
+  triggerConfig: Record<string, any>;
+} {
+  const d = description.toLowerCase();
+
+  const patterns: Array<{ re: RegExp; ms: number }> = [
+    // секунды
+    { re: /каждые?\s+(\d+)\s+секунд/,            ms: 0 },
+    { re: /каждую\s+секунду/,                     ms: 1_000 },
+    // минуты
+    { re: /каждую\s+минуту|раз\s+в\s+минуту|every\s+minute/, ms: 60_000 },
+    { re: /каждые?\s+(\d+)\s+минут/,             ms: 0 },
+    { re: /every\s+(\d+)\s+minute/,              ms: 0 },
+    // часы
+    { re: /каждый\s+час|раз\s+в\s+час|every\s+hour/, ms: 3_600_000 },
+    { re: /каждые?\s+(\d+)\s+час/,               ms: 0 },
+    { re: /every\s+(\d+)\s+hour/,                ms: 0 },
+    // день
+    { re: /каждый\s+день|ежедневно|раз\s+в\s+день|every\s+day/, ms: 86_400_000 },
+    // 30 минут
+    { re: /каждые?\s+30\s*мин|every\s+30\s*min/, ms: 30 * 60_000 },
+    // 5 минут
+    { re: /каждые?\s+5\s*мин|every\s+5\s*min/,  ms: 5 * 60_000 },
+    // 10 минут
+    { re: /каждые?\s+10\s*мин|every\s+10\s*min/, ms: 10 * 60_000 },
+  ];
+
+  for (const { re, ms } of patterns) {
+    const m = d.match(re);
+    if (m) {
+      let intervalMs = ms;
+      if (ms === 0 && m[1]) intervalMs = parseInt(m[1]) * (re.source.includes('секунд') ? 1_000 : re.source.includes('час') ? 3_600_000 : 60_000);
+      if (intervalMs > 0) {
+        return {
+          triggerType: 'scheduled',
+          triggerConfig: { intervalMs },
+        };
+      }
+    }
+  }
+
+  // Ключевые слова без числа
+  if (/мониторинг|слежу|отслеживай|следи|периодически|автоматически|monitor|watch|track|alert/.test(d)) {
+    // По умолчанию — каждые 5 минут для мониторинга
+    return { triggerType: 'scheduled', triggerConfig: { intervalMs: 5 * 60_000 } };
+  }
+
+  return { triggerType: 'manual', triggerConfig: {} };
 }
 
 // ===== Sub-Agent: Creator =====
@@ -107,15 +164,27 @@ export class CreatorAgent {
         };
       }
 
-      // Шаг 5: Сохраняем в БД
+      // Шаг 5: Авто-определяем trigger если не задан явно
+      let finalTriggerType = params.triggerType;
+      let finalTriggerConfig = params.triggerConfig || {};
+
+      if (!finalTriggerType) {
+        const detected = detectTriggerFromDescription(params.description);
+        finalTriggerType = detected.triggerType;
+        if (detected.triggerType === 'scheduled' && !finalTriggerConfig.intervalMs) {
+          finalTriggerConfig = { ...finalTriggerConfig, ...detected.triggerConfig };
+        }
+      }
+
+      // Шаг 6: Сохраняем в БД
       const dbResult = await this.dbTools.createAgent({
         userId: params.userId,
         name: agentName,
         description: params.description,
         code,
-        triggerType: params.triggerType || 'manual',
-        triggerConfig: params.triggerConfig || {},
-        isActive: false, // По умолчанию неактивен
+        triggerType: finalTriggerType || 'manual',
+        triggerConfig: finalTriggerConfig,
+        isActive: false,
       });
 
       if (!dbResult.success) {
@@ -127,7 +196,7 @@ export class CreatorAgent {
 
       const agent = dbResult.data!;
 
-      // Шаг 6: Логируем в память
+      // Шаг 7: Логируем в память
       await getMemoryManager().addMessage(
         params.userId,
         'system',
@@ -151,6 +220,9 @@ export class CreatorAgent {
           securityPassed: true,
           securityScore,
           message: `Агент "${agentName}" успешно создан!`,
+          triggerType: finalTriggerType || 'manual',
+          triggerConfig: finalTriggerConfig,
+          autoStart: (finalTriggerType === 'scheduled'),
         },
       };
     } catch (error) {
