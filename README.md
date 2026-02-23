@@ -26,9 +26,6 @@
 ## Quick Start
 
 ```bash
-git clone https://github.com/spendollars/TonAgentPlatform.git
-cd TonAgentPlatform
-docker-compose up
 
 No-code платформа для создания AI-агентов в Telegram с интеграцией TON.
 
