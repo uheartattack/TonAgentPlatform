@@ -180,8 +180,19 @@ bot.command('start', async (ctx) => {
   const userId = ctx.from.id;
   const name = ctx.from.first_name || ctx.from.username || 'друг';
 
-  // ── Web dashboard auth via deeplink: /start webauth_TOKEN ──
+  // ── Parse deeplink payload ──
   const startPayload = ctx.message.text.split(' ')[1] || '';
+
+  // Реферал с лендинга: /start ref_XXXX
+  if (startPayload.startsWith('ref_')) {
+    const refSource = startPayload.replace('ref_', '');
+    await getMemoryManager().addMessage(userId, 'system', `Пришёл с лендинга: ${refSource}`, {
+      type: 'referral', source: refSource,
+    }).catch(() => {});
+    // Не return — показываем обычное приветствие
+  }
+
+  // ── Web dashboard auth via deeplink: /start webauth_TOKEN ──
   if (startPayload.startsWith('webauth_')) {
     const authToken = startPayload.replace('webauth_', '');
     const pending = pendingBotAuth.get(authToken);
@@ -194,10 +205,11 @@ bot.command('start', async (ctx) => {
         firstName: ctx.from.first_name || '',
         createdAt: pending.createdAt,
       });
+      const landingUrl = process.env.LANDING_URL || 'http://localhost:3001';
       await ctx.reply(
         `✅ *Авторизация успешна!*\n\n` +
         `Привет, ${esc(name)}! Вернитесь в браузер — дашборд загружается автоматически.\n\n` +
-        `🌐 http://localhost:3001/dashboard.html`,
+        `🌐 ${landingUrl}/dashboard.html`,
         { parse_mode: 'MarkdownV2' }
       );
     } else {

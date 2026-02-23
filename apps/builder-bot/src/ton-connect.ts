@@ -15,11 +15,13 @@ import {
 import { Pool } from 'pg';
 
 // ── Manifest URL ────────────────────────────────────────────
-// Для Telegram-бота используем публичный manifest
-// В продакшне задайте TON_CONNECT_MANIFEST_URL в .env
+// По умолчанию — самохостируемый endpoint (api-server.ts).
+// Переопределить через TON_CONNECT_MANIFEST_URL в .env.
+const _apiPort = process.env.API_PORT || '3001';
+const _landingUrl = process.env.LANDING_URL || `http://localhost:${_apiPort}`;
 const TON_CONNECT_MANIFEST_URL =
   process.env.TON_CONNECT_MANIFEST_URL ||
-  'https://raw.githubusercontent.com/ton-community/tutorials/main/03-client/test/public/tonconnect-manifest.json';
+  `${_landingUrl}/tonconnect-manifest.json`;
 
 const TONCENTER_API = 'https://toncenter.com/api/v2';
 const TONCENTER_KEY = process.env.TONCENTER_API_KEY || '';

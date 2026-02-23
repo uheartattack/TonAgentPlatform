@@ -42,6 +42,16 @@ const agentState: Map<number, Map<string, any>> = new Map();
 // Последняя ошибка для auto-repair
 export const agentLastErrors: Map<number, { error: string; code: string; timestamp: Date }> = new Map();
 
+// ===== Persistent runner registry =====
+// Хранит stopFlag и promise для живых агентов (persistent mode)
+interface PersistentRunner {
+  stopFlag: { stopped: boolean };
+  promise: Promise<void>;
+  agentId: number;
+  userId: number;
+}
+const persistentRunners: Map<number, PersistentRunner> = new Map();
+
 // ===== Инструменты для выполнения агентов =====
 
 export class ExecutionTools {
@@ -152,7 +162,8 @@ export class ExecutionTools {
     code: string,
     params: { agentId: number; userId: number; context?: any; triggerConfig?: any },
     logs: ExecutionLog[],
-    addLog: (level: ExecutionLog['level'], message: string, details?: any) => void
+    addLog: (level: ExecutionLog['level'], message: string, details?: any) => void,
+    stopFlag?: { stopped: boolean }  // передаётся для persistent mode
   ): Promise<{ success: boolean; result?: any; error?: string }> {
     try {
       // NodeVM с доступом к fetch через sandbox
@@ -241,6 +252,15 @@ export class ExecutionTools {
             if (msgs.length) addLog('info', `[agent_receive] ${msgs.length} сообщений`);
             return msgs.map(m => ({ from: m.fromAgentId, data: m.data, time: m.timestamp.toISOString() }));
           },
+
+          // ── Persistent execution helpers ──
+          // sleep(ms) — приостанавливает агента на N мс (используй в while-цикле)
+          // await sleep(60000)  → пауза 1 минута
+          sleep: (ms: number) => new Promise<void>(resolve => setTimeout(resolve, Math.max(0, Math.min(ms, 86_400_000)))),
+
+          // isStopped() — вернёт true когда пользователь нажал "Стоп"
+          // Используй в while-цикле: while (!isStopped()) { ... }
+          isStopped: stopFlag ? () => stopFlag.stopped : () => false,
 
           // ── Стандартные глобалы ──
           JSON,
@@ -350,8 +370,83 @@ ${code}
     }
   }
 
-  // Деактивировать агента (остановить интервал)
+  // ═══════════════════════════════════════════════════════════
+  // PERSISTENT AGENT — живёт 24/7, управляет своим расписанием
+  // Агент использует while(!isStopped()) { ... await sleep(X) }
+  // ═══════════════════════════════════════════════════════════
+  async runPersistentAgent(params: {
+    agentId: number;
+    userId: number;
+    code: string;
+    triggerConfig?: Record<string, any>;
+    onCrash?: (error: string) => void;
+  }): Promise<ToolResult<void>> {
+    // Останавливаем предыдущий если был
+    await this.deactivateAgent(params.agentId);
+
+    const stopFlag = { stopped: false };
+    const logs: ExecutionLog[] = [];
+
+    const addLog = (level: ExecutionLog['level'], message: string, details?: any) => {
+      logs.push({ timestamp: new Date(), level, message, details });
+      getMemoryManager().addMessage(
+        params.userId, 'system', `[${level.toUpperCase()}] ${message}`,
+        { agentId: params.agentId, level, details }
+      ).catch(() => {});
+    };
+
+    // Регистрируем как running
+    this.runningAgents.set(params.agentId, {
+      status: 'running',
+      startTime: new Date(),
+      logs,
+      agentId: params.agentId,
+      userId: params.userId,
+    });
+
+    // Запускаем агента в фоне — НЕ await-им, он живёт самостоятельно
+    const promise = this._executeCode(
+      params.code,
+      { agentId: params.agentId, userId: params.userId, triggerConfig: params.triggerConfig },
+      logs,
+      addLog,
+      stopFlag  // ← cooperative stop
+    ).then(result => {
+      const runner = this.runningAgents.get(params.agentId);
+      if (runner && !stopFlag.stopped) {
+        runner.status = 'paused';
+        this.runningAgents.set(params.agentId, runner);
+      }
+      if (result.error && !stopFlag.stopped) {
+        agentLastErrors.set(params.agentId, { error: result.error, code: params.code, timestamp: new Date() });
+        params.onCrash?.(result.error);
+      }
+    }).catch(err => {
+      const msg = err?.message || String(err);
+      addLog('error', `Агент упал: ${msg}`);
+      agentLastErrors.set(params.agentId, { error: msg, code: params.code, timestamp: new Date() });
+      params.onCrash?.(msg);
+    });
+
+    persistentRunners.set(params.agentId, {
+      stopFlag,
+      promise: promise as Promise<void>,
+      agentId: params.agentId,
+      userId: params.userId,
+    });
+
+    return { success: true, message: `Persistent агент #${params.agentId} запущен` };
+  }
+
+  // Деактивировать агента (остановить интервал ИЛИ persistent loop)
   async deactivateAgent(agentId: number): Promise<ToolResult<void>> {
+    // Persistent mode — сигнализируем стоп
+    const persistent = persistentRunners.get(agentId);
+    if (persistent) {
+      persistent.stopFlag.stopped = true;
+      persistentRunners.delete(agentId);
+    }
+    // Interval mode — очищаем setInterval
     const current = this.runningAgents.get(agentId);
     if (current?.intervalHandle) {
       clearInterval(current.intervalHandle);
@@ -362,6 +457,13 @@ ${code}
 
   // Приостановить агента
   async pauseAgent(agentId: number, userId: number): Promise<ToolResult<void>> {
+    // Persistent — ставим флаг остановки
+    const persistent = persistentRunners.get(agentId);
+    if (persistent) {
+      persistent.stopFlag.stopped = true;
+      persistentRunners.delete(agentId);
+    }
+
     const agent = this.runningAgents.get(agentId);
 
     // Если есть интервал — останавливаем его
@@ -419,7 +521,23 @@ ${code}
     logCount: number;
     hasScheduler: boolean;
   }> {
+    const persistent = persistentRunners.get(agentId);
     const agent = this.runningAgents.get(agentId);
+
+    // Persistent агент — живой до явной остановки
+    if (persistent && !persistent.stopFlag.stopped) {
+      const uptime = agent?.startTime ? Date.now() - agent.startTime.getTime() : undefined;
+      return {
+        success: true,
+        data: {
+          status: 'running',
+          uptime,
+          logCount: agent?.logs.length || 0,
+          hasScheduler: true, // persistent = has scheduler (самостоятельный)
+        },
+      };
+    }
+
     if (!agent) {
       return {
         success: true,
@@ -442,18 +560,39 @@ ${code}
 
   // Получить всех запущенных агентов
   getRunningAgents(): Array<{ agentId: number; status: AgentStatus; startTime?: Date }> {
-    return Array.from(this.runningAgents.entries())
-      .filter(([, data]) => data.status === 'running' || data.intervalHandle)
+    // Собираем persistent агентов
+    const persistentList = Array.from(persistentRunners.entries())
+      .filter(([, runner]) => !runner.stopFlag.stopped)
+      .map(([agentId, runner]) => ({
+        agentId,
+        status: 'running' as AgentStatus,
+        startTime: this.runningAgents.get(agentId)?.startTime,
+      }));
+
+    // Добавляем interval-based агентов (не дублируем persistent)
+    const persistentIds = new Set(persistentList.map(p => p.agentId));
+    const intervalList = Array.from(this.runningAgents.entries())
+      .filter(([agentId, data]) => !persistentIds.has(agentId) && (data.status === 'running' || data.intervalHandle))
       .map(([agentId, data]) => ({
         agentId,
         status: data.status,
         startTime: data.startTime,
       }));
+
+    return [...persistentList, ...intervalList];
   }
 
   // Остановить всех агентов пользователя
   async stopUserAgents(userId: number): Promise<ToolResult<void>> {
     try {
+      // Stop persistent runners for this user
+      for (const [agentId, runner] of persistentRunners.entries()) {
+        if (runner.userId === userId) {
+          runner.stopFlag.stopped = true;
+          persistentRunners.delete(agentId);
+        }
+      }
+      // Stop interval-based agents
       for (const [agentId, data] of this.runningAgents.entries()) {
         if (data.userId === userId) {
           if (data.intervalHandle) clearInterval(data.intervalHandle);
@@ -513,10 +652,12 @@ ${code}
     }
   }
 
-  // Проверить, активен ли агент (есть ли интервал)
+  // Проверить, активен ли агент (persistent или interval-based)
   isAgentActive(agentId: number): boolean {
+    const persistent = persistentRunners.get(agentId);
+    if (persistent && !persistent.stopFlag.stopped) return true;
     const agent = this.runningAgents.get(agentId);
-    return !!(agent?.intervalHandle);
+    return !!(agent?.intervalHandle) || agent?.status === 'running';
   }
 }
 

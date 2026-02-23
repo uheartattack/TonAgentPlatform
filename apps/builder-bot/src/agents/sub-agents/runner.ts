@@ -105,63 +105,46 @@ export class RunnerAgent {
         };
       }
 
-      // Шаг 3: Определяем нужен ли scheduler
+      // Шаг 3: Определяем нужен ли persistent режим
       const triggerConfig = (agent.triggerConfig as Record<string, any>) || {};
       const isScheduled = agent.triggerType === 'scheduled';
-      const intervalMs = isScheduled
-        ? parseIntervalMs(agent.description || '', triggerConfig)
-        : null;
+      const intervalMs = parseIntervalMs(agent.description || '', triggerConfig);
 
-      if (isScheduled && intervalMs) {
-        // === SCHEDULER MODE: запускаем с интервалом ===
-        const onResult = async (execResult: ExecutionResult) => {
-          // 1. Сохраняем в память
-          await getMemoryManager().addMessage(
-            params.userId,
-            'system',
-            `Scheduled agent "${agent.name}" executed`,
-            {
-              type: 'scheduled_agent_result',
-              agentId: params.agentId,
-              success: execResult.success,
-              result: execResult.result,
-            }
-          ).catch(() => {});
+      if (isScheduled) {
+        // === PERSISTENT MODE: агент живёт 24/7, управляет своим расписанием ===
+        // Код агента содержит while(!isStopped()) { ... await sleep(X) }
+        // Платформа не делает setInterval — агент сам решает когда и что делать.
 
-          // 2. Отправляем Telegram уведомление пользователю
-          await notifyAgentResult({
-            userId: params.userId,
-            agentId: params.agentId,
-            agentName: agent.name,
-            success: execResult.success,
-            result: execResult.result,
-            error: execResult.error,
-            logs: execResult.logs,
-            scheduled: true,
-          }).catch(e => console.error('[Runner] notify failed:', e));
-        };
-
-        const activateResult = await this.executionTools.activateScheduledAgent({
+        const activateResult = await this.executionTools.runPersistentAgent({
           agentId: params.agentId,
           userId: params.userId,
           code: agent.code,
-          intervalMs,
-          triggerConfig,
-          onResult,
+          triggerConfig: { ...triggerConfig, intervalMs: intervalMs || 60_000 },
+          onCrash: (error: string) => {
+            notifyAgentResult({
+              userId: params.userId,
+              agentId: params.agentId,
+              agentName: agent.name,
+              success: false,
+              error: `Агент упал с ошибкой: ${error}`,
+              scheduled: true,
+            }).catch(() => {});
+          },
         });
 
         if (!activateResult.success) {
           return { success: false, error: activateResult.error };
         }
 
-        // Активируем в БД только для scheduled агентов
+        // Активируем в БД
         await this.dbTools.updateAgent(params.agentId, params.userId, { isActive: true });
 
-        const intervalLabel = intervalMs >= 3_600_000
-          ? `${intervalMs / 3_600_000} ч`
-          : intervalMs >= 60_000
-            ? `${intervalMs / 60_000} мин`
-            : `${intervalMs / 1000} сек`;
+        const ms = intervalMs || 60_000;
+        const intervalLabel = ms >= 3_600_000
+          ? `${ms / 3_600_000} ч`
+          : ms >= 60_000
+            ? `${ms / 60_000} мин`
+            : `${ms / 1000} сек`;
 
         return {
           success: true,
@@ -171,8 +154,8 @@ export class RunnerAgent {
             action: 'schedule',
             status: 'active',
             isScheduled: true,
-            intervalMs,
-            message: `Агент "${agent.name}" активирован!\n\n⏰ Запускается каждые ${intervalLabel}\nПервый результат уже готов — смотрите логи.`,
+            intervalMs: ms,
+            message: `Агент "${agent.name}" запущен!\n\n🔄 Работает 24/7, проверяет каждые ${intervalLabel}\nУведомления придут автоматически при изменениях.`,
           },
         };
       }
