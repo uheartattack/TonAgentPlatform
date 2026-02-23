@@ -1162,10 +1162,16 @@ async function sendResult(ctx: Context, result: {
     );
   }
 
-  // После создания агента — автоматически показываем список
-  if (result.type === 'agent_created') {
+  // После создания агента — показываем список только если нет auto-start
+  // (если auto-start произошёл в orchestrator — кнопки уже содержат "Логи" и "Остановить")
+  if (result.type === 'agent_created' && result.agentId) {
     const uid = (ctx.from as any)?.id;
-    if (uid) await showAgentsList(ctx, uid);
+    // Показываем список только если в кнопках нет кнопки логов (значит авто-старта не было)
+    const hasLogs = result.buttons?.some(b => b.callbackData?.startsWith('show_logs:'));
+    if (uid && !hasLogs) {
+      // небольшая задержка чтобы пользователь успел прочитать сообщение
+      setTimeout(() => showAgentsList(ctx, uid).catch(() => {}), 1500);
+    }
   }
 }
 
