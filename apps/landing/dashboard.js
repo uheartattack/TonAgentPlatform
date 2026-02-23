@@ -30,6 +30,9 @@ const API_BASE = (window.location.hostname === 'localhost' || window.location.ho
   ? 'http://localhost:3001'
   : window.location.origin;  // on production same origin
 
+// Cached platform config from /api/config
+window._appConfig = null;
+
 let authToken = localStorage.getItem('tg_token') || null;
 
 async function apiRequest(method, path, body) {
@@ -125,10 +128,11 @@ async function loadAgents() {
   }
   const agents = data.agents || [];
   if (!agents.length) {
+    const botLink = (window._appConfig && window._appConfig.botLink) || 'https://t.me/TonAgentPlatformBot';
     agentsEl.innerHTML = `
       <div class="empty-state">
         <p>No agents yet.</p>
-        <a href="https://t.me/TonAgentPlatformBot" target="_blank" class="btn btn-primary btn-sm">
+        <a href="${escHtml(botLink)}" target="_blank" class="btn btn-primary btn-sm">
           Create your first agent →
         </a>
       </div>`;
@@ -214,9 +218,47 @@ function logout() {
   document.getElementById('app').classList.add('hidden');
 }
 
+// ── Load Telegram Login Widget dynamically with correct bot username ────────
+// Telegram widget only works on a registered domain (not localhost).
+// On localhost it will silently fail → we fall back to bot-deeplink auth.
+async function initAuth() {
+  // 1. Fetch platform config
+  try {
+    const cfg = await fetch(API_BASE + '/api/config').then(r => r.json());
+    if (cfg && cfg.ok) window._appConfig = cfg;
+  } catch (_) {}
+
+  const botUsername = (window._appConfig && window._appConfig.botUsername) || 'TonAgentPlatformBot';
+  const container = document.getElementById('tg-widget-container');
+  if (!container) return;
+
+  // 2. Inject Telegram Login Widget script
+  container.innerHTML = ''; // clear "Loading..." placeholder
+  const script = document.createElement('script');
+  script.async = true;
+  script.src = 'https://telegram.org/js/telegram-widget.js?22';
+  script.setAttribute('data-telegram-login', botUsername);
+  script.setAttribute('data-size', 'large');
+  script.setAttribute('data-radius', '8');
+  script.setAttribute('data-onauth', 'onTelegramAuth(user)');
+  script.setAttribute('data-request-access', 'write');
+  container.appendChild(script);
+
+  // 3. After 2.5s: if widget iframe didn't appear (localhost / no domain config),
+  //    fall back to bot-deeplink auth button
+  setTimeout(() => {
+    const iframe = document.querySelector('#tg-widget-container iframe');
+    if (!iframe) showBotAuthButton();
+  }, 2500);
+}
+
 // Check if already logged in (token in localStorage)
 async function checkExistingSession() {
-  if (!authToken) return;
+  if (!authToken) {
+    // No stored session — init widget and let user log in
+    await initAuth();
+    return;
+  }
   const data = await apiRequest('GET', '/api/me');
   if (data.ok) {
     currentUser = { userId: data.userId, username: data.username, first_name: data.firstName };
@@ -228,6 +270,7 @@ async function checkExistingSession() {
     // Show friendly "session expired" hint in auth screen
     const hint = document.getElementById('auth-session-expired');
     if (hint) hint.style.display = 'block';
+    await initAuth();
   }
 }
 
@@ -315,15 +358,7 @@ function cancelBotAuth() {
   showBotAuthButton();
 }
 
-// Show bot-auth button after 2s if Telegram Widget didn't load (localhost/no-domain env)
-setTimeout(() => {
-  const iframe = document.querySelector('#tg-widget-container iframe');
-  if (!iframe) {
-    showBotAuthButton();
-  }
-}, 2000);
-
-// Auto-check session on load
+// Auto-check session on load (also inits widget if no session)
 checkExistingSession();
 
 // ===== NAVIGATION =====
