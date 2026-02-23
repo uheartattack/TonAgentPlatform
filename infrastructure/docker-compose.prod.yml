@@ -1,0 +1,36 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: ton-agent-postgres
+    environment:
+      POSTGRES_USER: ton_agent
+      POSTGRES_PASSWORD: changeme
+      POSTGRES_DB: ton_agent_platform
+    ports:
+      - '127.0.0.1:5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: ton-agent-redis
+    ports:
+      - '127.0.0.1:6379:6379'
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  cli-proxy:
+    image: eceasy/cli-proxy-api-plus:latest
+    container_name: cli-proxy-api-plus
+    ports:
+      - '127.0.0.1:8317:8317'
+    volumes:
+      - cli_proxy_data:/CLIProxyAPI
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  cli_proxy_data:

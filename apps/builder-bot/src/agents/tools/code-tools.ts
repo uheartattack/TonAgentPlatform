@@ -7,7 +7,7 @@ import { getSkillDocsForCodeGeneration } from '../../plugins-system';
 // CLIProxyAPIPlus — OpenAI-совместимый прокси (всегда локальный 127.0.0.1)
 // НЕ используем OPENAI_BASE_URL — он может указывать на другой хост (192.168.0.x)
 const PROXY_API_KEY = process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY || 'ton-agent-key-123';
-const PROXY_BASE_URL = `${process.env.CLAUDE_BASE_URL || 'http://127.0.0.1:8317'}/v1`;
+const PROXY_BASE_URL = process.env.CLAUDE_BASE_URL || 'http://127.0.0.1:8317/v1';
 
 // OpenAI-совместимый клиент для прокси
 const openai = new OpenAI({
@@ -46,15 +46,10 @@ async function sleep(ms: number) {
 // ── Fallback chain: сначала kiro, потом antigravity (разные rate limit пулы!) ──
 // Если kiro-aws в cooldown — antigravity модели работают независимо
 const MODEL_FALLBACK_CHAIN = [
-  'kiro-qwen3-coder-next',       // Qwen специально для кода (kiro-aws)
-  CLAUDE_MODEL,                   // основная из .env (aws)
-  'claude-sonnet-4-5-20250929',   // kiro-aws
-  'claude-opus-4-6',              // kiro-aws
-  // ── Antigravity: независимый rate limit, не зависят от kiro cooldown ──
-  'claude-sonnet-4-6',            // antigravity Claude
-  'gemini-2.5-flash',             // antigravity Gemini
-  'gemini-2.5-flash-lite',        // antigravity Gemini lite
-  'gemini-3-flash',               // antigravity Gemini 3
+  CLAUDE_MODEL,
+  'gemini-2.5-flash',
+  'gemini-2.5-pro',
+  'gemini-2.5-flash-lite',
 ].filter((m, i, a) => a.indexOf(m) === i); // убрать дубли
 
 async function callClaudeWithRetry(

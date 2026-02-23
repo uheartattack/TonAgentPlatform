@@ -1,0 +1,69 @@
+# TON Agent Platform — Production Docker Compose
+# Usage: docker compose up -d
+
+services:
+  # ─── Database ───────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: ton-agent-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-ton_agent}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+      POSTGRES_DB: ${DB_NAME:-ton_agent_platform}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - '127.0.0.1:5432:5432'
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-ton_agent}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options: { max-size: '10m', max-file: '3' }
+
+  # ─── Cache ──────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: ton-agent-redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - '127.0.0.1:6379:6379'
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: json-file
+      options: { max-size: '10m', max-file: '3' }
+
+  # ─── AI Proxy ───────────────────────────────────────────
+  cli-proxy:
+    image: eceasy/cli-proxy-api-plus:latest
+    container_name: cli-proxy-api-plus
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:8317:8317'
+    volumes:
+      - cli_proxy_data:/CLIProxyAPI
+    logging:
+      driver: json-file
+      options: { max-size: '10m', max-file: '3' }
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  cli_proxy_data:
+    driver: local
+
+networks:
+  default:
+    name: ton-agent-network

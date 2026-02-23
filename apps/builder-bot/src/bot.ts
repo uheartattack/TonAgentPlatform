@@ -183,6 +183,30 @@ bot.command('start', async (ctx) => {
   // ── Parse deeplink payload ──
   const startPayload = ctx.message.text.split(' ')[1] || '';
 
+  // ── Demo deeplink: /start demo_price / demo_nft / demo_wallet ──
+  const demoMap: Record<string, { id: string; desc: string; emoji: string }> = {
+    demo_price:  { id: 'ton-price-monitor',  emoji: '📊', desc: 'Notify me when TON price reaches $8 — check every 5 minutes' },
+    demo_nft:    { id: 'nft-floor-monitor',  emoji: '🎨', desc: 'Monitor NFT collection floor price every hour, alert on 20% drop' },
+    demo_wallet: { id: 'low-balance-alert',  emoji: '💎', desc: 'Alert me when TON wallet balance drops below 5 TON, check every 15 min' },
+  };
+  if (startPayload && demoMap[startPayload]) {
+    const demo = demoMap[startPayload];
+    await safeReply(ctx,
+      `${demo.emoji} *Demo Mode — ${esc(startPayload.replace('demo_','').replace('_',' ').toUpperCase())}*\n\n` +
+      `I\'ll create this agent for you instantly\:\n` +
+      `_${esc(demo.desc)}_\n\n` +
+      `Just tap *Create Agent* below or send me the description\!`
+    , {
+      reply_markup: {
+        inline_keyboard: [[
+          { text: `${demo.emoji} Create Agent Now`, callback_data: `template_${demo.id}` },
+          { text: '✏️ Customize', callback_data: 'create_custom' },
+        ]]
+      }
+    });
+    return;
+  }
+
   // Реферал с лендинга: /start ref_XXXX
   if (startPayload.startsWith('ref_')) {
     const refSource = startPayload.replace('ref_', '');
@@ -206,11 +230,10 @@ bot.command('start', async (ctx) => {
         createdAt: pending.createdAt,
       });
       const landingUrl = process.env.LANDING_URL || 'http://localhost:3001';
-      await ctx.reply(
-        `✅ *Авторизация успешна!*\n\n` +
-        `Привет, ${esc(name)}! Вернитесь в браузер — дашборд загружается автоматически.\n\n` +
-        `🌐 ${landingUrl}/dashboard.html`,
-        { parse_mode: 'MarkdownV2' }
+      await safeReply(ctx,
+        `✅ *Авторизация успешна\\!*\n\n` +
+        `Привет, ${esc(name)}\\! Вернитесь в браузер — дашборд загружается автоматически\.\n\n` +
+        `🌐 ${esc(landingUrl)}/dashboard\.html`
       );
     } else {
       await ctx.reply('❌ Токен авторизации не найден или истёк. Обновите страницу дашборда.');
