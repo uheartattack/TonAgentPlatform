@@ -1,83 +1,212 @@
-<p align="center">
-  <img src="logo.gif" alt="TON Agent Platform" width="400"/>
-</p>
+<div align="center">
 
-<h1 align="center">TON Agent Platform</h1>
+# 🤖 TON Agent Platform
 
-<p align="center">
-  No-code toolkit for building AI agents on <strong>TON blockchain</strong>
-</p>
+**Autonomous AI agents for the TON blockchain — built in Telegram, no code required**
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Telegram-Bot-0088cc?logo=telegram" alt="Telegram Bot">
-  <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License">
-  <img src="https://img.shields.io/badge/Status-Alpha-orange" alt="Status">
-</p>
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node.js](https://img.shields.io/badge/Node.js-20+-green.svg)](https://nodejs.org)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)](https://www.typescriptlang.org)
+[![Telegram Bot](https://img.shields.io/badge/Telegram-@TonAgentPlatformBot-2CA5E0.svg)](https://t.me/TonAgentPlatformBot)
+[![Live Demo](https://img.shields.io/badge/Demo-tonagentplatform.online-brightgreen.svg)](https://tonagentplatform.online)
 
-<p align="center">
-  <a href="#quick-start">Quick Start</a> •
-  <a href="#features">Features</a> •
-  <a href="#architecture">Architecture</a> •
-  <a href="#contributing">Contributing</a>
-</p>
+*Create, deploy and manage AI-powered agents that trade, monitor, and automate on TON — entirely through a Telegram conversation.*
+
+[**Live Demo**](https://tonagentplatform.online) · [**Try the Bot**](https://t.me/TonAgentPlatformBot) · [**Docs**](#api) · [**Contributing**](#contributing)
+
+</div>
+
+---
+
+## What is this?
+
+TON Agent Platform lets anyone create autonomous AI agents that run 24/7 on the TON blockchain — price monitors, DEX traders, wallet watchers, NFT snipers — without writing a single line of code. Users describe what they want in plain language; the platform generates, sandboxes, and deploys the agent instantly.
+
+> "The Zapier for TON blockchain" — point, click, automate.
 
 ---
 
 ## Quick Start
 
-```bash
-git clone https://github.com/spendollars/TonAgentPlatform.git
-cd TonAgentPlatform
-docker-compose up
+\`\`\`bash
+# 1. Clone and install
+git clone https://github.com/your-org/ton-agent-platform
+cd ton-agent-platform && pnpm install
 
-No-code платформа для создания AI-агентов в Telegram с интеграцией TON.
+# 2. Configure
+cp apps/builder-bot/.env.example apps/builder-bot/.env
+# Edit .env: add BOT_TOKEN, ANTHROPIC_API_KEY
 
-## Быстрый старт
-```bash
-# 1. Установить зависимости
-pnpm install
+# 3. Launch (Docker required)
+docker compose -f infrastructure/docker-compose.yml up -d
+pnpm --filter builder-bot dev
+\`\`\`
 
-# 2. Запустить базу данных
-pnpm db:up
+Open Telegram → [@TonAgentPlatformBot](https://t.me/TonAgentPlatformBot) → \`/start\`
 
-# 3. Применить миграции
-pnpm db:migrate
+---
 
-# 4. Настроить переменные окружения
-cp .env.example .env
-# Отредактировать .env
+## Features
 
-# 5. Запустить разработку
-pnpm dev
-```
+| | Feature | Description |
+|---|---|---|
+| 🧠 | **AI Code Generation** | Claude generates agent code from natural language descriptions |
+| 🔒 | **Sandboxed Execution** | Every agent runs in an isolated VM2 sandbox with resource limits |
+| 📊 | **18 Agent Templates** | Ready-to-use templates for common TON automation tasks |
+| 🔌 | **Plugin Marketplace** | 12 plugins: DeDust, STON.fi, TonAPI, CoinGecko, and more |
+| ⏱️ | **Persistent Scheduling** | Agents run 24/7 with configurable intervals |
+| 💎 | **TON Connect** | Native wallet integration — sign transactions without leaving Telegram |
+| 📈 | **Real-time Alerts** | Push notifications for price movements, wallet events, trade fills |
+| 🌐 | **Web Dashboard** | Monitor all agents, view P&L at tonagentplatform.online |
 
-## Структура проекта
+---
 
-- `apps/builder-bot` — Telegram бот для создания агентов
-- `apps/runner` — Исполнитель агентов (фоновый процесс)
-- `apps/plugin-registry` — API каталога плагинов
-- `packages/shared-types` — Общие TypeScript типы
-- `packages/plugin-sdk` — SDK для разработки плагинов
+## Architecture
 
-## Встроенные плагины
+\`\`\`mermaid
+graph TB
+    User((User)) -->|Telegram| Bot[Telegraf Bot]
+    User -->|Browser| Dashboard[Web Dashboard]
+    Bot --> Orchestrator[AI Orchestrator]
+    Bot --> APIServer[REST API :3001]
+    Orchestrator --> Creator[Agent Creator - Claude AI]
+    Orchestrator --> Runner[Agent Runner - VM2 Sandbox]
+    Runner --> Plugins[Plugin System]
+    Plugins --> DeDust[DeDust DEX]
+    Plugins --> STON[STON.fi DEX]
+    Plugins --> TonAPI[TonAPI]
+    Creator --> DB[(PostgreSQL)]
+    Runner --> Redis[(Redis Cache)]
+    APIServer --> Dashboard
+    Bot --> TonConnect[TON Connect]
+\`\`\`
 
-- **GiftIndex** — Арбитраж подарков Telegram
-- **Strategy Builder** — Визуальные торговые стратегии
-- **Social Signals** — Анализ соцсетей и сентимент
-- **OnChain Analytics** — Анализ блокчейна TON
-- **Oracle** — Агрегированные цены и внешние данные
-- **NFT Tools** — NFT снайпинг и торговля
+---
 
-## Технологии
+## Plugin Library
 
-- TypeScript
-- Grammy (Telegram Bot)
-- Claude API (генерация кода)
-- PostgreSQL + Redis
-- TON SDK
-- Turborepo (monorepo)
+| Plugin | Type | Description | Status |
+|--------|------|-------------|--------|
+| 💧 DeDust DEX Connector | DeFi | Swaps, liquidity pools, price feeds | ✅ Ready |
+| 🌊 STON.fi Connector | DeFi | AMM swaps, pool analytics | ✅ Ready |
+| 🔍 TonAPI Connector | Data | Wallet data, NFTs, transactions | ✅ Ready |
+| 📊 CoinGecko Price Feed | Data | Real-time & historical prices | ✅ Ready |
+| 📡 DexScreener Analytics | Analytics | DEX pair analytics, volume | ✅ Ready |
+| 🔔 Telegram Notifier | Notification | Push alerts to Telegram | ✅ Ready |
+| 📧 Email Notifier | Notification | SMTP email alerts | ✅ Ready |
+| 📱 Discord Webhook | Notification | Discord channel notifications | ✅ Ready |
+| 🛡️ Security Scanner | Security | AI-powered malicious code detection | ✅ Ready |
+| 🗄️ IPFS Storage | Storage | Decentralized data storage | ✅ Ready |
+| 🐦 Twitter/X Monitor | Social | Sentiment, keyword tracking | 🔧 Beta |
+| ⛽ Gas Optimizer | Utility | Optimal gas fee selection | 🔧 Beta |
 
-## Лицензия
+---
 
-MIT
-'@
+## Agent Templates
+
+**DeFi & Trading**
+- \`ton-price-monitor\` — Alert when TON price crosses a threshold
+- \`dex-arbitrage-detector\` — Find price gaps across DeDust / STON.fi
+- \`wallet-balance-tracker\` — Monitor wallet balance changes 24/7
+- \`token-price-alert\` — Track any Jetton price with custom conditions
+
+**NFT & Drops**
+- \`nft-floor-monitor\` — Watch NFT collection floor prices
+- \`nft-sales-tracker\` — Get notified on every sale in a collection
+
+**Automation**
+- \`scheduled-report\` — Daily P&L reports for your portfolio
+- \`webhook-trigger\` — React to external events via HTTP webhooks
+
+---
+
+## API
+
+\`\`\`
+GET  /api/config              → bot username, landing URL, manifest URL
+POST /api/auth/request        → initiate Telegram bot auth flow
+GET  /api/auth/check/:token   → poll authentication status
+GET  /tonconnect-manifest.json → TON Connect manifest
+\`\`\`
+
+---
+
+## Security
+
+- **Sandboxed execution** — VM2 with restricted globals; no \`fs\`, \`child_process\`, \`net\` access
+- **Resource limits** — 30s max execution time, memory cap per agent
+- **AI security scanner** — Static analysis before every agent deployment
+- **Rate limiting** — Per-user API rate limits on all endpoints
+- **Auth** — Telegram OAuth + deeplink auth; no passwords ever
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Bot framework | Telegraf v4 |
+| Language | TypeScript 5.x |
+| AI backend | Claude (Anthropic API) |
+| Database | PostgreSQL 15 + Drizzle ORM |
+| Cache | Redis 7 |
+| Sandbox | VM2 (isolated Node.js) |
+| TON | @ton/core, @tonconnect/sdk |
+| Infrastructure | Docker Compose + nginx + PM2 |
+| SSL | Let's Encrypt |
+
+---
+
+## Contributing
+
+### Adding a Plugin
+
+1. Open \`apps/builder-bot/src/plugins-system.ts\`
+2. Implement the \`Plugin\` interface with a \`skillDoc\` (AI uses this to generate agent code)
+3. Add your \`configSchema\` (shown to users in Telegram)
+4. Submit a PR
+
+\`\`\`typescript
+interface Plugin {
+  id: string;
+  name: string;
+  type: PluginType;
+  skillDoc: string;        // Markdown docs for AI code generation
+  configSchema: Schema[];  // Config fields in Telegram UI
+  execute: (params) => Promise<any>;
+}
+\`\`\`
+
+---
+
+## Roadmap
+
+- [x] AI agent code generation (Claude)
+- [x] VM2 sandboxed execution
+- [x] PostgreSQL persistence + Drizzle ORM
+- [x] TON Connect wallet integration
+- [x] Plugin marketplace (12 plugins)
+- [x] 18 agent templates
+- [x] Web dashboard with Telegram auth
+- [x] Persistent 24/7 agent scheduling
+- [x] Production deployment (tonagentplatform.online)
+- [ ] Prometheus + Grafana monitoring
+- [ ] Agent marketplace (community-published agents)
+- [ ] Telegram Mini App (mobile-optimized)
+- [ ] On-chain agent registry (TON smart contract)
+- [ ] Agent-to-agent collaboration
+- [ ] Multi-chain support (ETH, SOL)
+
+---
+
+## License
+
+MIT © 2026 TON Agent Platform
+
+---
+
+<div align="center">
+
+Built for the TON ecosystem · [tonagentplatform.online](https://tonagentplatform.online) · [@TonAgentPlatformBot](https://t.me/TonAgentPlatformBot)
+
+</div>

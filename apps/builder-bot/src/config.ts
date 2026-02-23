@@ -68,15 +68,17 @@ export function validateConfig(): { valid: boolean; errors: string[] } {
     errors.push('BOT_TOKEN is required');
   }
 
-  // Если не прокси и не реальный ключ — предупреждаем
+  // Если не прокси и не задан ключ — предупреждаем
   const isProxy = config.claude.baseURL.includes('127.0.0.1') ||
                   config.claude.baseURL.includes('localhost');
-  const hasRealKey = config.claude.apiKey.startsWith('sk-ant-');
+  const hasKey = config.claude.apiKey &&
+                 config.claude.apiKey !== 'free-via-proxy' &&
+                 config.claude.apiKey.length > 10;
 
-  if (!isProxy && !hasRealKey) {
+  if (!isProxy && !hasKey) {
     errors.push(
       'Either set CLAUDE_BASE_URL to your CLIProxyAPIPlus instance ' +
-      'or set ANTHROPIC_API_KEY to a real Anthropic API key'
+      'or set ANTHROPIC_API_KEY to a real API key (Anthropic, Gemini, etc.)'
     );
   }
 

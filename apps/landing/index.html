@@ -49,7 +49,8 @@
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
           <span data-en="Web Dashboard" data-ru="Веб-дашборд">Web Dashboard</span>
         </a>
-        <a href="#how-it-works" class="btn-outline" data-en="How it works" data-ru="Как это работает">How it works</a>
+        <a href="#demo" data-en="Demo" data-ru="Демо">Demo</a>
+            <a href="#how-it-works" class="btn-outline" data-en="How it works" data-ru="Как это работает">How it works</a>
       </div>
       <div class="hero-stats">
         <div class="stat">
@@ -203,6 +204,79 @@
       </div>
     </div>
   </section>
+
+  <!-- Fast Demo -->
+  <!-- ═══════════════ FAST DEMO ═══════════════ -->
+  <section id="demo" class="section demo-section">
+    <div class="container">
+      <div class="demo-badge" data-en="🚀 Live Demo" data-ru="🚀 Живое демо">🚀 Live Demo</div>
+      <h2 class="section-title" data-en="See it in <span class='gradient-text'>action</span>" data-ru="Смотри как это <span class='gradient-text'>работает</span>">See it in <span class="gradient-text">action</span></h2>
+      <p class="section-subtitle" data-en="Pick a template — agent is created in under 30 seconds" data-ru="Выбери шаблон — агент создаётся за 30 секунд">Pick a template — agent is created in under 30 seconds</p>
+
+      <div class="demo-layout">
+        <!-- Left: chat animation -->
+        <div class="demo-chat-wrap">
+          <div class="demo-chat">
+            <div class="demo-chat-header">
+              <div class="demo-chat-avatar">🤖</div>
+              <div>
+                <div class="demo-chat-name">TON Agent Platform</div>
+                <div class="demo-chat-status" data-en="bot · online" data-ru="бот · онлайн">bot · online</div>
+              </div>
+            </div>
+            <div class="demo-messages" id="demoMessages">
+              <!-- messages injected by JS -->
+            </div>
+            <div class="demo-typing" id="demoTyping" style="display:none">
+              <span></span><span></span><span></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: quick-start cards -->
+        <div class="demo-cards">
+          <div class="demo-card active" data-demo="price" onclick="selectDemo('price')">
+            <div class="demo-card-icon">📊</div>
+            <div class="demo-card-body">
+              <div class="demo-card-title" data-en="TON Price Alert" data-ru="Алерт цены TON">TON Price Alert</div>
+              <div class="demo-card-desc" data-en="Notify when TON hits $8" data-ru="Уведомить когда TON достигнет $8">Notify when TON hits $8</div>
+            </div>
+            <div class="demo-card-time" data-en="~20 sec" data-ru="~20 сек">~20 sec</div>
+          </div>
+          <div class="demo-card" data-demo="nft" onclick="selectDemo('nft')">
+            <div class="demo-card-icon">🎨</div>
+            <div class="demo-card-body">
+              <div class="demo-card-title" data-en="NFT Floor Monitor" data-ru="Монитор NFT цены">NFT Floor Monitor</div>
+              <div class="demo-card-desc" data-en="Track floor price every hour" data-ru="Отслеживать цену каждый час">Track floor price every hour</div>
+            </div>
+            <div class="demo-card-time" data-en="~25 sec" data-ru="~25 сек">~25 sec</div>
+          </div>
+          <div class="demo-card" data-demo="wallet" onclick="selectDemo('wallet')">
+            <div class="demo-card-icon">💎</div>
+            <div class="demo-card-body">
+              <div class="demo-card-title" data-en="Wallet Balance Alert" data-ru="Алерт баланса кошелька">Wallet Balance Alert</div>
+              <div class="demo-card-desc" data-en="Alert on low TON balance" data-ru="Алерт при низком балансе TON">Alert on low TON balance</div>
+            </div>
+            <div class="demo-card-time" data-en="~20 sec" data-ru="~20 сек">~20 sec</div>
+          </div>
+          <div class="demo-card" data-demo="custom" onclick="selectDemo('custom')">
+            <div class="demo-card-icon">✨</div>
+            <div class="demo-card-body">
+              <div class="demo-card-title" data-en="Custom Agent" data-ru="Свой агент">Custom Agent</div>
+              <div class="demo-card-desc" data-en="Describe anything you want" data-ru="Опиши всё что угодно">Describe anything you want</div>
+            </div>
+            <div class="demo-card-time" data-en="~30 sec" data-ru="~30 сек">~30 sec</div>
+          </div>
+
+          <a href="https://t.me/TonAgentPlatformBot?start=demo_price" target="_blank" class="demo-try-btn" id="demoTryBtn">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            <span data-en="Try this in Telegram →" data-ru="Попробовать в Telegram →">Try this in Telegram →</span>
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
 
   <!-- Plugins -->
   <section id="plugins" class="section">
@@ -1047,5 +1121,114 @@
   })();
   </script>
   <script src="script.js"></script>
+
+  <script>
+
+// ═══════════════ FAST DEMO ANIMATION ═══════════════
+const DEMO_SCRIPTS = {
+  price: {
+    start: 'demo_price',
+    steps: [
+      { role: 'bot', delay: 0, html: '👋 Welcome to <b>TON Agent Platform</b>!\n\nSend /start to begin or choose a template.' },
+      { role: 'user', delay: 600, html: '📊 I want to monitor TON price and alert me when it hits $8' },
+      { role: 'bot', delay: 1800, html: '🔍 <b>Analyzing your request...</b>\n\nI\'ll create a TON Price Monitor agent for you!', typing: 1200 },
+      { role: 'bot', delay: 0, html: '⚡ <b>Agent code generated</b>\n<div class="msg-code">✓ DeDust price feed connected\n✓ Alert threshold: $8.00\n✓ Check interval: 5 min</div><div class="msg-btn">✅ Activate Agent</div>' },
+      { role: 'bot', delay: 1500, html: '🚀 <b>Agent activated!</b> Monitoring TON price every 5 minutes.\n\n📬 You\'ll get a Telegram notification when TON hits $8.' },
+    ]
+  },
+  nft: {
+    start: 'demo_nft',
+    steps: [
+      { role: 'bot', delay: 0, html: '👋 Welcome to <b>TON Agent Platform</b>!\n\nChoose a template or describe your task.' },
+      { role: 'user', delay: 600, html: '🎨 Monitor NFT collection floor price every hour and alert if drops 20%' },
+      { role: 'bot', delay: 1800, html: '🔍 <b>Processing your NFT monitor request...</b>', typing: 1200 },
+      { role: 'bot', delay: 0, html: '⚡ <b>Agent code generated</b>\n<div class="msg-code">✓ TonAPI connected\n✓ Alert: -20% floor drop\n✓ Check interval: 1 hour</div><div class="msg-btn">✅ Activate Agent</div>' },
+      { role: 'bot', delay: 1500, html: '🎨 <b>NFT monitor active!</b> Checking floor price hourly.\n\n📬 Alert if floor drops by 20% or more.' },
+    ]
+  },
+  wallet: {
+    start: 'demo_wallet',
+    steps: [
+      { role: 'bot', delay: 0, html: '👋 Welcome to <b>TON Agent Platform</b>!\n\nDescribe what your agent should do.' },
+      { role: 'user', delay: 600, html: '💎 Alert me when my TON wallet balance drops below 5 TON' },
+      { role: 'bot', delay: 1800, html: '🔍 <b>Building your wallet monitor...</b>', typing: 1200 },
+      { role: 'bot', delay: 0, html: '⚡ <b>Agent code generated</b>\n<div class="msg-code">✓ TonCenter API ready\n✓ Threshold: 5 TON\n✓ Check interval: 15 min</div><div class="msg-btn">✅ Activate Agent</div>' },
+      { role: 'bot', delay: 1500, html: '💎 <b>Wallet monitor active!</b> Checking every 15 minutes.\n\n📬 You\'ll be alerted when balance drops below 5 TON.' },
+    ]
+  },
+  custom: {
+    start: 'start',
+    steps: [
+      { role: 'bot', delay: 0, html: '👋 Welcome to <b>TON Agent Platform</b>!\n\nDescribe your task in plain text — I\'ll build the agent!' },
+      { role: 'user', delay: 600, html: '✨ <i>Your idea here...</i>' },
+      { role: 'bot', delay: 1600, html: '🔍 <b>Analyzing your request...</b>\n\nAI will generate custom code for your use case.', typing: 1000 },
+      { role: 'bot', delay: 0, html: '⚡ <b>Agent ready in ~30 seconds!</b>\n<div class="msg-btn">✅ Activate Agent</div>' },
+      { role: 'bot', delay: 1200, html: '🚀 Your custom agent is running 24/7 on our servers.' },
+    ]
+  }
+};
+
+let currentDemo = 'price';
+let demoTimer = null;
+
+function selectDemo(key) {
+  currentDemo = key;
+  document.querySelectorAll('.demo-card').forEach(c => c.classList.remove('active'));
+  document.querySelector(`.demo-card[data-demo="${key}"]`).classList.add('active');
+  const btn = document.getElementById('demoTryBtn');
+  const script = DEMO_SCRIPTS[key];
+  btn.href = `https://t.me/TonAgentPlatformBot?start=${script.start}`;
+  runDemoAnimation(key);
+}
+
+function runDemoAnimation(key) {
+  if (demoTimer) clearTimeout(demoTimer);
+  const msgs = document.getElementById('demoMessages');
+  const typing = document.getElementById('demoTyping');
+  msgs.innerHTML = '';
+  typing.style.display = 'none';
+
+  const steps = DEMO_SCRIPTS[key].steps;
+  let totalDelay = 0;
+
+  steps.forEach((step, idx) => {
+    totalDelay += step.delay || 0;
+    const d = totalDelay;
+
+    if (step.typing) {
+      demoTimer = setTimeout(() => {
+        typing.style.display = 'flex';
+        msgs.scrollTop = msgs.scrollHeight;
+      }, d);
+      totalDelay += step.typing;
+    }
+
+    const d2 = totalDelay;
+    demoTimer = setTimeout(() => {
+      typing.style.display = 'none';
+      const el = document.createElement('div');
+      el.className = `demo-msg ${step.role}`;
+      el.innerHTML = step.html.replace(/\n/g, '<br>');
+      msgs.appendChild(el);
+      msgs.scrollTop = msgs.scrollHeight;
+    }, d2);
+
+    totalDelay += 200;
+  });
+
+  // Loop
+  demoTimer = setTimeout(() => runDemoAnimation(key), totalDelay + 3000);
+}
+
+// Auto-start on page load
+document.addEventListener('DOMContentLoaded', () => {
+  setTimeout(() => {
+    // Only start if demo section visible
+    const demoSection = document.getElementById('demo');
+    if (demoSection) runDemoAnimation('price');
+  }, 800);
+});
+
+  </script>
 </body>
 </html>
