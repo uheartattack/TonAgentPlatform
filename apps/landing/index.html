@@ -1027,82 +1027,23 @@
     </div>
   </footer>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <script>
-  // ── Dynamic bot link + QR code + mobile/desktop detection ──────────────
+  // ── Dynamic bot link from /api/config ──────────────────────────────────
   (function() {
-    var DEFAULT_BOT = 'https://t.me/TonAgentPlatformBot';
-    var isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
-
-    function updateBotLinks(botLink) {
-      // Update all <a> elements pointing to the bot
-      document.querySelectorAll('a[href*="t.me/"]').forEach(function(el) {
-        var href = el.getAttribute('href');
-        if (href && href.includes('t.me/') && !href.includes('tonagentplatform')) {
-          // Preserve any query params (?start=...) if present
-          var qIdx = href.indexOf('?');
-          el.setAttribute('href', qIdx >= 0 ? botLink + href.slice(qIdx) : botLink);
-        }
-      });
-    }
-
-    function buildQR(botLink) {
-      // Only show QR on desktop
-      if (isMobile) return;
-      var wrapper = document.createElement('div');
-      wrapper.id = 'bot-qr-wrapper';
-      wrapper.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:8px;margin-top:16px;';
-      var qrEl = document.createElement('div');
-      qrEl.id = 'bot-qr-canvas';
-      var label = document.createElement('p');
-      label.style.cssText = 'font-size:12px;color:rgba(255,255,255,0.5);margin:0;';
-      label.setAttribute('data-en', 'Scan to open in Telegram');
-      label.setAttribute('data-ru', 'Сканируй для открытия в Telegram');
-      label.textContent = document.documentElement.lang === 'ru'
-        ? 'Сканируй для открытия в Telegram'
-        : 'Scan to open in Telegram';
-      wrapper.appendChild(qrEl);
-      wrapper.appendChild(label);
-
-      // Insert after hero-buttons
-      var heroButtons = document.querySelector('.hero-buttons');
-      if (heroButtons) heroButtons.after(wrapper);
-
-      // Render QR
-      new QRCode(qrEl, {
-        text: botLink,
-        width: 120,
-        height: 120,
-        colorDark: '#FFFFFF',
-        colorLight: 'rgba(0,0,0,0)',
-        correctLevel: QRCode.CorrectLevel.M,
-      });
-    }
-
-    // On mobile: change primary button text to "Open in Telegram"
-    function adaptHeroForMobile() {
-      if (!isMobile) return;
-      var btn = document.querySelector('.hero-buttons .btn-primary');
-      if (btn) {
-        var span = btn.querySelector('[data-en]');
-        if (span) { span.textContent = span.getAttribute('data-ru') === 'Запустить бота' && document.documentElement.lang === 'ru' ? 'Открыть в Telegram' : 'Open in Telegram'; }
-      }
-    }
-
-    // Fetch config from API
     fetch('/api/config')
       .then(function(r) { return r.json(); })
       .then(function(cfg) {
         if (!cfg.ok || !cfg.botLink) return;
-        updateBotLinks(cfg.botLink);
-        buildQR(cfg.botLink);
-        adaptHeroForMobile();
+        // Update all <a> tags pointing to the bot (skip community channel links)
+        document.querySelectorAll('a[href*="t.me/"]').forEach(function(el) {
+          var href = el.getAttribute('href') || '';
+          if (!href.includes('tonagentplatform')) {
+            var q = href.indexOf('?');
+            el.setAttribute('href', q >= 0 ? cfg.botLink + href.slice(q) : cfg.botLink);
+          }
+        });
       })
-      .catch(function() {
-        // Fallback: still build QR with default link
-        buildQR(DEFAULT_BOT);
-        adaptHeroForMobile();
-      });
+      .catch(function() {}); // silently fall back to hardcoded hrefs
   })();
   </script>
   <script src="script.js"></script>
