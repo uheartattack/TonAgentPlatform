@@ -1062,6 +1062,19 @@ body {
   font-size: 0.8125rem;
 }
 
+/* Fix white-on-white text in select option dropdowns */
+.form-input option,
+.form-select option,
+select.form-input option {
+  background-color: #1a2332;
+  color: #f8fafc;
+}
+
+/* Ensure select itself always has visible text */
+.form-input[type=""], select.form-input, select.form-select, select.form-select.mini {
+  color-scheme: dark;
+}
+
 .slider-group {
   display: flex;
   align-items: center;

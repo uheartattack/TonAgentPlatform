@@ -2,6 +2,25 @@ import { getCodeTools } from '../tools/code-tools';
 import { getDBTools, type ToolResult } from '../tools/db-tools';
 import { getSecurityScanner } from '../tools/security-scanner';
 import { getMemoryManager } from '../../db/memory';
+import { getUserSettingsRepository } from '../../db/schema-extensions';
+
+// Загрузить базу знаний пользователя и сформировать дополнение к описанию
+async function buildKnowledgeContext(userId: number): Promise<string> {
+  try {
+    const repo = getUserSettingsRepository();
+    const all = await repo.getAll(userId);
+    const entries: Array<{ title: string; content: string }> = (all.knowledge_base as any[]) || [];
+    if (!entries.length) return '';
+
+    const parts = entries
+      .filter(e => e.title && e.content)
+      .map(e => `[${e.title}]\n${e.content}`)
+      .join('\n\n');
+    return parts ? `\n\n━━━ USER KNOWLEDGE BASE ━━━\n${parts}\n━━━ END KNOWLEDGE BASE ━━━` : '';
+  } catch {
+    return '';
+  }
+}
 
 // Параметры для создания агента
 export interface CreateAgentParams {
@@ -121,8 +140,14 @@ export class CreatorAgent {
       const agentName = params.name || this.generateAgentName(params.description);
 
       // Шаг 3: Генерируем код (без жёстких шаблонов — AI сам решает как достичь цели)
+      // Инжектируем базу знаний пользователя в описание (если есть)
+      const knowledgeCtx = params.userId ? await buildKnowledgeContext(params.userId) : '';
+      const descWithKnowledge = knowledgeCtx
+        ? params.description + knowledgeCtx
+        : params.description;
+
       const generationResult = await this.codeTools.generateAgentCode({
-        description: params.description,
+        description: descWithKnowledge,
         knownParams: { ...params.knownParams, ...analysis.extractedParams },
         language: 'javascript',
       });
