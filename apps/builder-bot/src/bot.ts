@@ -10,6 +10,7 @@ import { getCodeTools } from './agents/tools/code-tools';
 import { pendingBotAuth } from './api-server';
 import { getTonConnectManager } from './ton-connect';
 import { getPluginManager } from './plugins-system';
+import { getUserSettingsRepository, getMarketplaceRepository } from './db/schema-extensions';
 import { getWorkflowEngine } from './agent-cooperation';
 import { allAgentTemplates, type AgentTemplate } from './agent-templates';
 import {
@@ -71,10 +72,14 @@ async function safeReply(ctx: Context, text: string, extra?: object): Promise<vo
     // При ошибке парсинга — убираем разметку и отправляем plain
     if (err?.response?.error_code === 400) {
       const plain = text.replace(/\\([_*[\]()~`>#+\-=|{}.!\\])/g, '$1').replace(/[*_`]/g, '');
+      // Убираем parse_mode из extra чтобы plain text не парсился
+      const plainExtra: any = { ...(extra || {}) };
+      delete plainExtra.parse_mode;
       try {
-        await ctx.reply(plain, extra || {});
+        await ctx.reply(plain, plainExtra);
       } catch {
-        await ctx.reply('❌ Ошибка отображения сообщения').catch(() => {});
+        // Последний шанс — без extra совсем
+        await ctx.reply(plain).catch(() => {});
       }
     } else {
       throw err;
@@ -96,10 +101,12 @@ async function editOrReply(ctx: Context, text: string, extra?: object): Promise<
     } catch (editErr: any) {
       // Если текст не изменился (400) — не страшно
       if (editErr?.response?.error_code === 400 && editErr?.description?.includes('message is not modified')) return;
-      // Иначе пробуем plain text редактирование
+      // Иначе пробуем plain text редактирование (без parse_mode)
       try {
         const plain = text.replace(/\\([_*[\]()~`>#+\-=|{}.!\\])/g, '$1').replace(/[*_`]/g, '');
-        await ctx.telegram.editMessageText(chatId, msgId, undefined, plain, extra as any);
+        const plainExtra: any = { ...(extra || {}) };
+        delete plainExtra.parse_mode;
+        await ctx.telegram.editMessageText(chatId, msgId, undefined, plain, plainExtra as any);
         return;
       } catch {
         // Fallback — отправляем новым сообщением
@@ -130,7 +137,7 @@ const MAIN_MENU = Markup.keyboard([
   ['🤖 Мои агенты', '➕ Создать агента'],
   ['🏪 Маркетплейс', '🔌 Плагины', '⚡ Workflow'],
   ['💎 TON Connect', '💳 Подписка', '📊 Статистика'],
-  ['❓ Помощь'],
+  ['❓ Помощь', '🌐 EN/RU'],
 ]).resize();
 
 // ============================================================
@@ -162,6 +169,98 @@ const SCHEDULE_LABELS: Record<string, string> = {
   '1hour':  'каждый час',
   '24hours':'каждые 24 часа',
 };
+
+// ============================================================
+// State machine для переименования агента
+// ============================================================
+const pendingRenames = new Map<number, number>(); // userId → agentId
+
+// ============================================================
+// Язык пользователя (EN/RU, по умолчанию auto по первому сообщению)
+// ============================================================
+const userLanguages = new Map<number, 'ru' | 'en'>(); // userId → lang
+
+function detectLang(text: string): 'ru' | 'en' {
+  const ruChars = (text.match(/[а-яёА-ЯЁ]/g) || []).length;
+  const enChars = (text.match(/[a-zA-Z]/g) || []).length;
+  return ruChars >= enChars ? 'ru' : 'en';
+}
+
+function getUserLang(userId: number, text?: string): 'ru' | 'en' {
+  if (userLanguages.has(userId)) return userLanguages.get(userId)!;
+  if (text) {
+    const detected = detectLang(text);
+    userLanguages.set(userId, detected);
+    return detected;
+  }
+  return 'ru';
+}
+
+// ============================================================
+// State machine для настройки переменных шаблона (wizard)
+// ============================================================
+interface PendingTemplateSetup {
+  templateId: string;
+  collected: Record<string, string>;   // key → value, already filled
+  remaining: string[];                  // placeholder names still to fill
+}
+const pendingTemplateSetup = new Map<number, PendingTemplateSetup>(); // userId → state
+
+// ============================================================
+// State machine для публикации агента в маркетплейс
+// ============================================================
+interface PendingPublish {
+  step: 'name';
+  agentId: number;
+  price: number; // nanotokens
+}
+const pendingPublish = new Map<number, PendingPublish>();
+
+// ============================================================
+// Определение «мусорного» ввода (ываыва, aaaa, qwerty и т.п.)
+// ============================================================
+function isGarbageInput(text: string): boolean {
+  const t = text.trim();
+  if (t.length < 3) return true;
+
+  // Нет ни одной буквы — только цифры/символы
+  if (!/[a-zA-Zа-яёА-ЯЁ]/.test(t)) return true;
+
+  const lower = t.toLowerCase().replace(/\s+/g, '');
+  if (lower.length === 0) return true;
+
+  // Одна буква занимает >65% текста (аааа, zzzz)
+  if (lower.length >= 4) {
+    const counts: Record<string, number> = {};
+    for (const c of lower) counts[c] = (counts[c] || 0) + 1;
+    const maxCount = Math.max(...Object.values(counts));
+    if (maxCount / lower.length > 0.65) return true;
+  }
+
+  // Ряды клавиатуры: 5+ подряд символов из одного ряда
+  const kbRows = [
+    'qwertyuiop', 'asdfghjkl', 'zxcvbnm',
+    'йцукенгшщзхъ', 'фывапролджэ', 'ячсмитьбю',
+  ];
+  for (const row of kbRows) {
+    let run = 0;
+    for (const c of lower) {
+      if (row.includes(c)) { run++; if (run >= 5) return true; }
+      else run = 0;
+    }
+  }
+
+  // Повторяющийся паттерн из 1–3 символов: ываыва, xoxoxo, абаб
+  if (lower.length >= 6 && /^(.{1,3})\1{2,}/.test(lower)) return true;
+
+  // Одно слово без пробелов (>8 символов) с долей гласных < 5%
+  if (!t.includes(' ') && t.length > 8) {
+    const vowels = (lower.match(/[aeiouаеёиоуыэюя]/g) || []).length;
+    if (vowels / lower.length < 0.05) return true;
+  }
+
+  return false;
+}
 
 // ============================================================
 // Middleware — логирование
@@ -199,7 +298,7 @@ bot.command('start', async (ctx) => {
     , {
       reply_markup: {
         inline_keyboard: [[
-          { text: `${demo.emoji} Create Agent Now`, callback_data: `template_${demo.id}` },
+          { text: `${demo.emoji} Create Agent Now`, callback_data: `create_from_template:${demo.id}` },
           { text: '✏️ Customize', callback_data: 'create_custom' },
         ]]
       }
@@ -289,6 +388,137 @@ bot.command('stats', (ctx) => showStats(ctx, ctx.from.id));
 bot.command('sub', (ctx) => showSubscription(ctx));
 bot.command('plans', (ctx) => showPlans(ctx));
 bot.command('model', (ctx) => showModelSelector(ctx));
+
+// /config — управление пользовательскими переменными
+// /config set KEY value
+// /config get KEY
+// /config list
+// /config del KEY
+bot.command('config', async (ctx) => {
+  const userId = ctx.from.id;
+  const args = ctx.message.text.split(/\s+/).slice(1); // убираем /config
+  const sub = args[0]?.toLowerCase();
+
+  const repo = getUserSettingsRepository();
+
+  const getVars = async (): Promise<Record<string, string>> => {
+    try {
+      const all = await repo.getAll(userId);
+      return (all.user_variables as Record<string, string>) || {};
+    } catch { return {}; }
+  };
+
+  const saveVars = async (vars: Record<string, string>) => {
+    await repo.set(userId, 'user_variables', vars);
+  };
+
+  if (!sub || sub === 'list') {
+    const vars = await getVars();
+    const keys = Object.keys(vars);
+    if (!keys.length) {
+      return safeReply(ctx, '📋 *Ваши переменные пусты*\n\nДобавьте: `/config set WALLET\\_ADDR EQ...`', { parse_mode: 'MarkdownV2' });
+    }
+    const lines = keys.map(k => `• \`${esc(k)}\` \\= \`${esc(String(vars[k]))}\``).join('\n');
+    return safeReply(ctx, `📋 *Ваши переменные:*\n\n${lines}\n\nДля агентов доступны как \`context\\.config\\.KEY\``, { parse_mode: 'MarkdownV2' });
+  }
+
+  if (sub === 'set') {
+    const key = args[1]?.toUpperCase().replace(/[^A-Z0-9_]/g, '_');
+    const value = args.slice(2).join(' ').trim();
+    if (!key || !value) {
+      return safeReply(ctx, '❌ Использование: `/config set KEY значение`', { parse_mode: 'MarkdownV2' });
+    }
+    const vars = await getVars();
+    vars[key] = value;
+    await saveVars(vars);
+    return safeReply(ctx, `✅ Переменная \`${esc(key)}\` сохранена`, { parse_mode: 'MarkdownV2' });
+  }
+
+  if (sub === 'get') {
+    const key = args[1]?.toUpperCase().replace(/[^A-Z0-9_]/g, '_');
+    if (!key) return safeReply(ctx, '❌ Укажите имя переменной', {});
+    const vars = await getVars();
+    if (!(key in vars)) return safeReply(ctx, `❌ Переменная \`${esc(key)}\` не найдена`, { parse_mode: 'MarkdownV2' });
+    return safeReply(ctx, `\`${esc(key)}\` \\= \`${esc(vars[key])}\``, { parse_mode: 'MarkdownV2' });
+  }
+
+  if (sub === 'del' || sub === 'delete' || sub === 'rm') {
+    const key = args[1]?.toUpperCase().replace(/[^A-Z0-9_]/g, '_');
+    if (!key) return safeReply(ctx, '❌ Укажите имя переменной', {});
+    const vars = await getVars();
+    if (!(key in vars)) return safeReply(ctx, `❌ Переменная \`${esc(key)}\` не найдена`, { parse_mode: 'MarkdownV2' });
+    delete vars[key];
+    await saveVars(vars);
+    return safeReply(ctx, `🗑️ Переменная \`${esc(key)}\` удалена`, { parse_mode: 'MarkdownV2' });
+  }
+
+  return safeReply(ctx,
+    '📋 *Команды /config:*\n\n' +
+    '`/config list` — список всех переменных\n' +
+    '`/config set KEY значение` — сохранить переменную\n' +
+    '`/config get KEY` — получить значение\n' +
+    '`/config del KEY` — удалить переменную\n\n' +
+    'Переменные автоматически доступны в агентах как `context\\.config\\.KEY`',
+    { parse_mode: 'MarkdownV2' }
+  );
+});
+
+// /publish — запустить кнопочный флоу публикации
+bot.command('publish', async (ctx) => {
+  const userId = ctx.from.id;
+  await startPublishFlow(ctx, userId);
+});
+
+// /mypurchases — мои покупки
+bot.command('mypurchases', async (ctx) => {
+  const userId = ctx.from.id;
+  try {
+    const purchases = await getMarketplaceRepository().getMyPurchases(userId);
+    if (!purchases.length) {
+      return safeReply(ctx,
+        '🛒 *Мои покупки*\n\nПокупок пока нет\\.\n\nНайдите агентов в /marketplace',
+        { parse_mode: 'MarkdownV2' }
+      );
+    }
+    let text = `🛒 *Мои покупки \\(${esc(purchases.length)}\\):*\n\n`;
+    purchases.slice(0, 10).forEach(p => {
+      const type = p.type === 'free' ? '🆓' : p.type === 'rent' ? '📅' : '💰';
+      text += `${type} Листинг #${esc(p.listingId)} → агент #${esc(p.agentId)}\n`;
+    });
+    const btns = purchases.slice(0, 8).map((p: any) => [
+      { text: `#${p.agentId} → запустить`, callback_data: `run_agent:${p.agentId}` }
+    ]);
+    await safeReply(ctx, text, {
+      parse_mode: 'MarkdownV2',
+      reply_markup: { inline_keyboard: btns },
+    });
+  } catch (e: any) {
+    await safeReply(ctx, `❌ Ошибка: ${esc(e.message)}`, { parse_mode: 'MarkdownV2' });
+  }
+});
+
+// /mylistings — мои листинги (что я продаю)
+bot.command('mylistings', async (ctx) => {
+  const userId = ctx.from.id;
+  try {
+    const listings = await getMarketplaceRepository().getMyListings(userId);
+    if (!listings.length) {
+      return safeReply(ctx,
+        '📤 *Мои листинги*\n\nВы ещё ничего не публиковали\\.\n\nНажмите кнопку ниже чтобы опубликовать агента:',
+        { parse_mode: 'MarkdownV2', reply_markup: { inline_keyboard: [[{ text: '📤 Опубликовать агента', callback_data: 'mkt_publish_help' }]] } }
+      );
+    }
+    let text = `📤 *Мои листинги \\(${esc(listings.length)}\\):*\n\n`;
+    listings.forEach((l: any) => {
+      const status = l.isActive ? '✅' : '❌';
+      const price = l.isFree ? 'Бесплатно' : (l.price / 1e9).toFixed(2) + ' TON';
+      text += `${status} #${esc(l.id)} *${esc(l.name)}* — ${esc(price)} — ${esc(l.totalSales)} продаж\n`;
+    });
+    await safeReply(ctx, text, { parse_mode: 'MarkdownV2' });
+  } catch (e: any) {
+    await safeReply(ctx, `❌ Ошибка: ${esc(e.message)}`, { parse_mode: 'MarkdownV2' });
+  }
+});
 
 bot.command('wallet', async (ctx) => {
   const userId = ctx.from.id;
@@ -446,6 +676,16 @@ bot.hears('💎 TON Connect', (ctx) => showTonConnect(ctx));
 bot.hears('💳 Подписка', (ctx) => showSubscription(ctx));
 bot.hears('📊 Статистика', (ctx) => showStats(ctx, ctx.from.id));
 bot.hears('❓ Помощь', (ctx) => showHelp(ctx));
+bot.hears('🌐 EN/RU', async (ctx) => {
+  const userId = ctx.from.id;
+  const current = getUserLang(userId);
+  const newLang: 'ru' | 'en' = current === 'ru' ? 'en' : 'ru';
+  userLanguages.set(userId, newLang);
+  const msg = newLang === 'en'
+    ? `🌐 Language switched to *English*\n\nThe bot will now respond in English.`
+    : `🌐 Язык переключён на *Русский*\n\nБот теперь отвечает по-русски.`;
+  await ctx.reply(msg, { parse_mode: 'Markdown' });
+});
 
 // ============================================================
 // Меню агента (regex)
@@ -529,6 +769,189 @@ bot.on('callback_query', async (ctx) => {
   if (data.startsWith('create_from_template:')) {
     await ctx.answerCbQuery('Создаю агента...');
     await createAgentFromTemplate(ctx, data.split(':')[1], userId);
+    return;
+  }
+
+  // ── Пользовательский маркетплейс ──
+  if (data === 'mkt_community') {
+    await ctx.answerCbQuery('Загружаю...');
+    await showCommunityListings(ctx);
+    return;
+  }
+  if (data === 'mkt_publish_help') {
+    await ctx.answerCbQuery('Загружаю агентов...');
+    await startPublishFlow(ctx, userId);
+    return;
+  }
+
+  // ── Кнопочный флоу публикации ──
+  if (data === 'publish_cancel') {
+    await ctx.answerCbQuery('Отменено');
+    pendingPublish.delete(userId);
+    await showMarketplace(ctx);
+    return;
+  }
+  if (data.startsWith('publish_agent:')) {
+    await ctx.answerCbQuery();
+    const agentId = parseInt(data.split(':')[1]);
+    const agentResult = await getDBTools().getAgent(agentId, userId);
+    if (!agentResult.success || !agentResult.data) {
+      await ctx.reply('❌ Агент не найден или не принадлежит вам');
+      return;
+    }
+    const aName = esc(agentResult.data.name || `Агент #${agentId}`);
+    await editOrReply(ctx,
+      `📤 *Публикация: ${aName}*\n\nВыберите цену:`,
+      {
+        parse_mode: 'MarkdownV2',
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: '🆓 Бесплатно', callback_data: `publish_price:${agentId}:0` },
+              { text: '0.5 TON', callback_data: `publish_price:${agentId}:500000000` },
+            ],
+            [
+              { text: '1 TON', callback_data: `publish_price:${agentId}:1000000000` },
+              { text: '2 TON', callback_data: `publish_price:${agentId}:2000000000` },
+            ],
+            [
+              { text: '5 TON', callback_data: `publish_price:${agentId}:5000000000` },
+              { text: '10 TON', callback_data: `publish_price:${agentId}:10000000000` },
+            ],
+            [
+              { text: '◀️ Назад', callback_data: 'mkt_publish_help' },
+              { text: '❌ Отмена', callback_data: 'publish_cancel' },
+            ],
+          ],
+        },
+      }
+    );
+    return;
+  }
+  if (data.startsWith('publish_price:')) {
+    await ctx.answerCbQuery();
+    const parts = data.split(':');
+    const agentId = parseInt(parts[1]);
+    const priceNano = parseInt(parts[2]);
+    const agentResult = await getDBTools().getAgent(agentId, userId);
+    if (!agentResult.success || !agentResult.data) {
+      await ctx.reply('❌ Агент не найден или не принадлежит вам');
+      return;
+    }
+    const aName = agentResult.data.name || `Агент #${agentId}`;
+    const priceStr = priceNano === 0 ? 'Бесплатно' : (priceNano / 1e9).toFixed(2) + ' TON';
+    await editOrReply(ctx,
+      `📤 *Подтверждение публикации*\n\n` +
+      `🤖 Агент: *${esc(aName)}*\n` +
+      `💰 Цена: *${esc(priceStr)}*\n` +
+      `📋 Название листинга: _${esc(aName)}_\n\n` +
+      `Покупатели смогут *запускать* агента, но не увидят ваш код\\.`,
+      {
+        parse_mode: 'MarkdownV2',
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: `✅ Опубликовать`, callback_data: `publish_confirm:${agentId}:${priceNano}` }],
+            [{ text: `✏️ Изменить название`, callback_data: `publish_setname:${agentId}:${priceNano}` }],
+            [
+              { text: '◀️ Назад', callback_data: `publish_agent:${agentId}` },
+              { text: '❌ Отмена', callback_data: 'publish_cancel' },
+            ],
+          ],
+        },
+      }
+    );
+    return;
+  }
+  if (data.startsWith('publish_confirm:')) {
+    await ctx.answerCbQuery('Публикую...');
+    const parts = data.split(':');
+    const agentId = parseInt(parts[1]);
+    const priceNano = parseInt(parts[2]);
+    const agentResult = await getDBTools().getAgent(agentId, userId);
+    if (!agentResult.success || !agentResult.data) {
+      await ctx.reply('❌ Агент не найден');
+      return;
+    }
+    const name = agentResult.data.name || `Агент #${agentId}`;
+    await doPublishAgent(ctx, userId, agentId, priceNano, name);
+    return;
+  }
+  if (data.startsWith('publish_setname:')) {
+    await ctx.answerCbQuery();
+    const parts = data.split(':');
+    const agentId = parseInt(parts[1]);
+    const priceNano = parseInt(parts[2]);
+    pendingPublish.set(userId, { step: 'name', agentId, price: priceNano });
+    await editOrReply(ctx,
+      `✏️ *Введите название листинга*\n\n` +
+      `Напишите название агента для маркетплейса \\(до 60 символов\\):`,
+      {
+        parse_mode: 'MarkdownV2',
+        reply_markup: { inline_keyboard: [[{ text: '❌ Отмена', callback_data: 'publish_cancel' }]] },
+      }
+    );
+    return;
+  }
+
+  // ── Мои листинги / мои покупки (callback-версии) ──
+  if (data === 'mkt_mylistings') {
+    await ctx.answerCbQuery();
+    const listings = await getMarketplaceRepository().getMyListings(userId).catch(() => []);
+    if (!listings.length) {
+      await editOrReply(ctx,
+        '📤 *Мои листинги*\n\nВы ещё ничего не публиковали\\.',
+        { parse_mode: 'MarkdownV2', reply_markup: { inline_keyboard: [[{ text: '📤 Опубликовать', callback_data: 'mkt_publish_help' }, { text: '◀️ Маркетплейс', callback_data: 'marketplace' }]] } }
+      );
+      return;
+    }
+    let text = `📤 *Мои листинги \\(${esc(listings.length)}\\):*\n\n`;
+    listings.forEach((l: any) => {
+      const status = l.isActive ? '✅' : '❌';
+      const price = l.isFree ? 'Бесплатно' : (l.price / 1e9).toFixed(2) + ' TON';
+      text += `${status} \\#${esc(l.id)} *${esc(l.name)}* — ${esc(price)} — ${esc(l.totalSales)} продаж\n`;
+    });
+    await editOrReply(ctx, text, {
+      parse_mode: 'MarkdownV2',
+      reply_markup: { inline_keyboard: [
+        [{ text: '📤 Опубликовать ещё', callback_data: 'mkt_publish_help' }],
+        [{ text: '◀️ Маркетплейс', callback_data: 'marketplace' }],
+      ]},
+    });
+    return;
+  }
+  if (data === 'mkt_mypurchases') {
+    await ctx.answerCbQuery();
+    const purchases = await getMarketplaceRepository().getMyPurchases(userId).catch(() => []);
+    if (!purchases.length) {
+      await editOrReply(ctx,
+        '🛒 *Мои покупки*\n\nПокупок пока нет\\.',
+        { parse_mode: 'MarkdownV2', reply_markup: { inline_keyboard: [[{ text: '👥 Сообщество', callback_data: 'mkt_community' }, { text: '◀️ Маркетплейс', callback_data: 'marketplace' }]] } }
+      );
+      return;
+    }
+    let text = `🛒 *Мои покупки \\(${esc(purchases.length)}\\):*\n\n`;
+    purchases.slice(0, 10).forEach((p: any) => {
+      const type = p.type === 'free' ? '🆓' : p.type === 'rent' ? '📅' : '💰';
+      text += `${type} Листинг \\#${esc(p.listingId)} → агент \\#${esc(p.agentId)}\n`;
+    });
+    const btns = purchases.slice(0, 8).map((p: any) => [
+      { text: `▶️ Агент #${p.agentId}`, callback_data: `run_agent:${p.agentId}` }
+    ]);
+    btns.push([{ text: '◀️ Маркетплейс', callback_data: 'marketplace' }]);
+    await editOrReply(ctx, text, { parse_mode: 'MarkdownV2', reply_markup: { inline_keyboard: btns } });
+    return;
+  }
+
+  if (data.startsWith('mkt_buy:')) {
+    await ctx.answerCbQuery('Оформляю покупку...');
+    const listingId = parseInt(data.split(':')[1]);
+    await buyMarketplaceListing(ctx, listingId, userId);
+    return;
+  }
+  if (data.startsWith('mkt_view:')) {
+    await ctx.answerCbQuery();
+    const listingId = parseInt(data.split(':')[1]);
+    await showListingDetail(ctx, listingId, userId);
     return;
   }
 
@@ -872,6 +1295,51 @@ bot.on('callback_query', async (ctx) => {
     return;
   }
 
+  // ── Переименовать агента ──
+  if (data.startsWith('rename_agent:')) {
+    await ctx.answerCbQuery();
+    const agentId = parseInt(data.split(':')[1]);
+    pendingRenames.set(userId, agentId);
+    await editOrReply(ctx,
+      `🏷 *Переименование агента \\#${esc(agentId)}*\n\nВведите новое название \\(до 60 символов\\):`,
+      {
+        parse_mode: 'MarkdownV2',
+        reply_markup: { inline_keyboard: [[{ text: '❌ Отмена', callback_data: `agent_menu:${agentId}` }]] },
+      }
+    );
+    return;
+  }
+
+  // ── Template variable wizard: skip optional var ──
+  if (data.startsWith('tmpl_skip_var:')) {
+    await ctx.answerCbQuery();
+    const templateId = data.split(':').slice(1).join(':');
+    const state = pendingTemplateSetup.get(userId);
+    if (!state) { await editOrReply(ctx, '❌ Сессия настройки истекла\\. Начните заново\\.', { parse_mode: 'MarkdownV2' }); return; }
+    // Advance to next variable
+    state.remaining.shift();
+    await promptNextTemplateVar(ctx, userId, state);
+    return;
+  }
+
+  // ── Template variable wizard: cancel ──
+  if (data === 'tmpl_cancel') {
+    await ctx.answerCbQuery('Отменено');
+    pendingTemplateSetup.delete(userId);
+    await showMarketplace(ctx);
+    return;
+  }
+
+  // ── Кастомное создание агента (из демо) ──
+  if (data === 'create_custom') {
+    await ctx.answerCbQuery();
+    await editOrReply(ctx,
+      `✏️ *Создание агента*\n\nОпишите своими словами что должен делать агент\\.\n\n_Например:_\n_"Следи за ценой TON и уведоми меня если выше \\$6"_\n_"Проверяй баланс кошелька UQ\\.\\.\\. каждый час"_`,
+      { parse_mode: 'MarkdownV2' }
+    );
+    return;
+  }
+
   // ── Удалить агента: шаг 1 — диалог подтверждения ──
   if (data.startsWith('delete_agent:')) {
     await ctx.answerCbQuery();
@@ -1059,7 +1527,7 @@ bot.on('callback_query', async (ctx) => {
 // ============================================================
 const MENU_TEXTS = new Set([
   '🤖 Мои агенты', '➕ Создать агента', '🏪 Маркетплейс',
-  '🔌 Плагины', '⚡ Workflow', '💎 TON Connect', '💳 Подписка', '📊 Статистика', '❓ Помощь',
+  '🔌 Плагины', '⚡ Workflow', '💎 TON Connect', '💳 Подписка', '📊 Статистика', '❓ Помощь', '🌐 EN/RU',
 ]);
 
 bot.on(message('text'), async (ctx) => {
@@ -1067,35 +1535,85 @@ bot.on(message('text'), async (ctx) => {
   if (text.startsWith('/') || MENU_TEXTS.has(text)) return;
 
   const userId = ctx.from.id;
+  const trimmed = text.trim();
 
-  // ── Если есть pending — пользователь не нажал кнопки ──────
-  if (pendingCreations.has(userId)) {
-    // Новое сообщение отменяет предыдущий pending
-    pendingCreations.delete(userId);
-    // Продолжаем обрабатывать новый текст как обычно
+  // ── Сохраняем язык пользователя (авто-определение) ───────
+  if (!userLanguages.has(userId)) {
+    userLanguages.set(userId, detectLang(trimmed));
   }
 
-  // ── Валидация ввода ─────────────────────────────────────────
-  const trimmed = text.trim();
-  if (trimmed.length < 3) {
-    await ctx.reply(
-      `❓ Слишком короткое сообщение.\n\n` +
-      `Напишите задачу подробнее, например:\n` +
-      `_"Проверяй баланс кошелька UQB5... каждый час и уведоми меня"_\n` +
-      `_"Следи за ценой TON и напиши если выше $6"_`,
-      { parse_mode: 'Markdown' }
-    );
+  // ── Ожидаем переименование агента ─────────────────────────
+  if (pendingRenames.has(userId)) {
+    const agentId = pendingRenames.get(userId)!;
+    pendingRenames.delete(userId);
+    if (trimmed.length < 1 || trimmed.length > 60) {
+      await ctx.reply('❌ Название должно быть от 1 до 60 символов. Попробуйте снова.');
+      pendingRenames.set(userId, agentId);
+      return;
+    }
+    try {
+      const result = await getDBTools().updateAgent(agentId, userId, { name: trimmed });
+      if (result.success) {
+        await ctx.reply(`✅ Агент #${agentId} переименован: *${trimmed}*`, { parse_mode: 'Markdown' });
+        await showAgentMenu(ctx, agentId, userId);
+      } else {
+        await ctx.reply(`❌ Ошибка переименования: ${result.error || 'Неизвестная ошибка'}`);
+      }
+    } catch (e: any) {
+      await ctx.reply(`❌ Ошибка: ${e.message}`);
+    }
     return;
   }
 
-  // Только цифры/символы без слов
-  if (/^[\d\s!@#$%^&*()+=\[\]{}<>?.,;:'"\\|\/`~\-_]+$/.test(trimmed)) {
+  // ── Template variable wizard: collect user input ─────────
+  if (pendingTemplateSetup.has(userId)) {
+    const state = pendingTemplateSetup.get(userId)!;
+    const t = allAgentTemplates.find(x => x.id === state.templateId);
+    if (t && state.remaining.length > 0) {
+      const currentKey = state.remaining[0];
+      const placeholder = t.placeholders.find(p => p.name === currentKey);
+      const lang = getUserLang(userId);
+      // Allow "skip"/"пропустить" to skip optional vars
+      const isSkip = /^(skip|пропустить|пропуск)$/i.test(trimmed);
+      if (isSkip && !placeholder?.required) {
+        state.remaining.shift();
+      } else if (trimmed.length > 0) {
+        state.collected[currentKey] = trimmed;
+        state.remaining.shift();
+      } else {
+        await ctx.reply(lang === 'ru' ? '❌ Введите значение или нажмите «Пропустить»' : '❌ Enter a value or tap Skip');
+        return;
+      }
+      await promptNextTemplateVar(ctx, userId, state);
+      return;
+    }
+    pendingTemplateSetup.delete(userId);
+  }
+
+  // ── Ожидаем название листинга от пользователя ─────────────
+  if (pendingPublish.has(userId)) {
+    const pp = pendingPublish.get(userId)!;
+    if (pp.step === 'name') {
+      pendingPublish.delete(userId);
+      await doPublishAgent(ctx, userId, pp.agentId, pp.price, trimmed.slice(0, 60));
+      return;
+    }
+    pendingPublish.delete(userId);
+  }
+
+  // ── Если есть pending создания — сбрасываем ────────────────
+  if (pendingCreations.has(userId)) {
+    pendingCreations.delete(userId);
+  }
+
+  // ── Валидация: мусорный ввод ───────────────────────────────
+  if (isGarbageInput(trimmed)) {
     await ctx.reply(
       `❓ Не понимаю запрос.\n\n` +
-      `Пожалуйста, опишите задачу словами:\n` +
-      `_"Создай агента который проверяет..."_\n` +
-      `_"Запусти агента #3"_\n` +
-      `_"Покажи мои агенты"_`,
+      `Опишите задачу словами, например:\n` +
+      `_"Следи за ценой TON и уведоми если выше $6"_\n` +
+      `_"Создай агента который проверяет баланс кошелька каждый час"_\n` +
+      `_"Запусти агента #3"_`,
       { parse_mode: 'Markdown' }
     );
     return;
@@ -1187,14 +1705,11 @@ async function sendResult(ctx: Context, result: {
 
   const MAX = 4000;
   if (content.length > MAX) {
-    await ctx.reply(content.slice(0, MAX), { parse_mode: 'Markdown', ...extra }).catch(() =>
-      ctx.reply(content.slice(0, MAX).replace(/[*_`]/g, ''), extra)
-    );
+    // Первую часть редактируем (или отправляем), остаток — всегда новое сообщение
+    await editOrReply(ctx, content.slice(0, MAX), { parse_mode: 'Markdown', ...extra });
     if (content.slice(MAX).trim()) await ctx.reply(content.slice(MAX)).catch(() => {});
   } else {
-    await ctx.reply(content, { parse_mode: 'Markdown', ...extra }).catch(() =>
-      ctx.reply(content.replace(/[*_`]/g, ''), extra).catch(() => {})
-    );
+    await editOrReply(ctx, content, { parse_mode: 'Markdown', ...extra });
   }
 
   // После создания агента — показываем список только если нет auto-start
@@ -1228,9 +1743,9 @@ async function runAgentDirect(ctx: Context, agentId: number, userId: number) {
     await ctx.sendChatAction('typing');
     const pauseResult = await getRunnerAgent().pauseAgent(agentId, userId);
     if (pauseResult.success) {
-      await ctx.reply(
+      await editOrReply(ctx,
         `⏸ *Агент остановлен*\n\n` +
-        `*${agent.name}* #${agentId}\n` +
+        `*${esc(agent.name)}* #${agentId}\n` +
         `Scheduler деактивирован\\.`,
         {
           parse_mode: 'MarkdownV2',
@@ -1243,18 +1758,33 @@ async function runAgentDirect(ctx: Context, agentId: number, userId: number) {
         }
       );
     } else {
-      await ctx.reply(`❌ Ошибка остановки: ${pauseResult.error}`);
+      await editOrReply(ctx, `❌ Ошибка остановки: ${esc(pauseResult.error || '')}`, { parse_mode: 'MarkdownV2' });
     }
     return;
   }
 
-  // Запускаем агента
-  const statusMsg = await ctx.reply(
-    `🚀 *Запускаю агента...*\n\n` +
+  // Запускаем агента — используем editOrReply для статус-сообщения (редактируем кнопку вместо нового)
+  const cbMsgId = (ctx.callbackQuery as any)?.message?.message_id;
+  const chatId = ctx.chat!.id;
+
+  await editOrReply(ctx,
+    `🚀 *Запускаю агента\\.\\.\\.*\n\n` +
     `*${esc(agent.name)}* #${agentId}\n` +
     `⏳ Выполняется\\.\\.\\. подождите`,
     { parse_mode: 'MarkdownV2' }
-  ).catch(() => null);
+  );
+
+  // Вспомогательная функция редактирования статус-сообщения
+  const editStatus = async (text: string, extra?: object) => {
+    if (cbMsgId) {
+      await ctx.telegram.editMessageText(chatId, cbMsgId, undefined, text, { parse_mode: 'MarkdownV2', ...extra }).catch(() => {});
+    } else {
+      await safeReply(ctx, text, { parse_mode: 'MarkdownV2', ...extra });
+    }
+  };
+
+  // legacy statusMsg совместимость (нужен для дальнейшего кода)
+  const statusMsg: any = cbMsgId ? { message_id: cbMsgId } : null;
 
   await ctx.sendChatAction('typing');
 
@@ -1481,9 +2011,12 @@ async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
     ]);
     keyboard.push([
       { text: '✏️ Изменить', callback_data: `edit_agent:${agentId}` },
-      { text: '🗑 Удалить', callback_data: `delete_agent:${agentId}` },
+      { text: '🏷 Переименовать', callback_data: `rename_agent:${agentId}` },
     ]);
-    keyboard.push([{ text: '◀️ Все агенты', callback_data: 'list_agents' }]);
+    keyboard.push([
+      { text: '🗑 Удалить', callback_data: `delete_agent:${agentId}` },
+      { text: '◀️ Все агенты', callback_data: 'list_agents' },
+    ]);
 
     await editOrReply(ctx, text, { reply_markup: { inline_keyboard: keyboard } });
   } catch (err) {
@@ -1602,7 +2135,20 @@ async function showMarketplace(ctx: Context) {
     { id: 'social', icon: '📣', name: 'Социальные' },
   ] as const;
 
-  let text = `🏪 *Маркетплейс агентов*\n\n${esc(allAgentTemplates.length)}+ готовых агентов\\. Выберите категорию:\n\n`;
+  // Загружаем пользовательские листинги из БД
+  let userListingsCount = 0;
+  try {
+    const listings = await getMarketplaceRepository().getListings();
+    userListingsCount = listings.length;
+  } catch { /* репозиторий может ещё не быть готов */ }
+
+  let text = `🏪 *Маркетплейс агентов*\n\n`;
+  text += `📦 Готовые шаблоны: *${esc(allAgentTemplates.length)}*\n`;
+  if (userListingsCount > 0) {
+    text += `👥 От сообщества: *${esc(userListingsCount)}*\n`;
+  }
+  text += `\nВыберите раздел:\n\n`;
+
   CATS.forEach(c => {
     const count = allAgentTemplates.filter(t => t.category === c.id).length;
     if (count > 0) text += `${c.icon} *${esc(c.name)}* — ${esc(count)} агентов\n`;
@@ -1610,7 +2156,11 @@ async function showMarketplace(ctx: Context) {
 
   const btns = CATS.filter(c => allAgentTemplates.filter(t => t.category === c.id).length > 0)
     .map(c => [{ text: `${c.icon} ${c.name}`, callback_data: `marketplace_cat:${c.id}` }]);
-  btns.push([{ text: '📋 Все агенты', callback_data: 'marketplace_all' }]);
+  btns.push([{ text: '📋 Все шаблоны', callback_data: 'marketplace_all' }]);
+  if (userListingsCount > 0) {
+    btns.push([{ text: '👥 От сообщества', callback_data: 'mkt_community' }]);
+  }
+  btns.push([{ text: '📤 Опубликовать своего агента', callback_data: 'mkt_publish_help' }]);
 
   await editOrReply(ctx, text, { reply_markup: { inline_keyboard: btns } });
 }
@@ -1674,30 +2224,75 @@ async function createAgentFromTemplate(ctx: Context, templateId: string, userId:
   const t = allAgentTemplates.find(x => x.id === templateId);
   if (!t) { await ctx.reply('❌ Шаблон не найден'); return; }
 
+  // If template has configurable placeholders → run variable wizard first
+  if (t.placeholders.length > 0) {
+    const remaining = t.placeholders.map(p => p.name);
+    pendingTemplateSetup.set(userId, { templateId, collected: {}, remaining });
+    const first = t.placeholders[0];
+    const lang = getUserLang(userId);
+    await editOrReply(ctx,
+      `${t.icon} *${esc(t.name)}*\n\n` +
+      `⚙️ ${lang === 'ru' ? 'Настройка переменных' : 'Configure variables'} \\(${esc('1/' + t.placeholders.length)}\\)\n\n` +
+      `📝 *${esc(first.name)}*\n${esc(first.description)}\n` +
+      (first.example ? `\n_${lang === 'ru' ? 'Пример' : 'Example'}: \`${esc(first.example)}\`_` : '') +
+      (first.required ? `\n\n${lang === 'ru' ? '❗ Обязательно' : '❗ Required'}` : `\n\n${lang === 'ru' ? '_(необязательно — отправьте пропустить)_' : '_(optional — send skip)_'}`),
+      {
+        parse_mode: 'MarkdownV2',
+        reply_markup: { inline_keyboard: [
+          first.required ? [] : [{ text: lang === 'ru' ? '⏭ Пропустить' : '⏭ Skip', callback_data: `tmpl_skip_var:${templateId}` }],
+          [{ text: lang === 'ru' ? '❌ Отмена' : '❌ Cancel', callback_data: 'tmpl_cancel' }],
+        ].filter(row => row.length > 0) }
+      }
+    );
+    return;
+  }
+
+  // No placeholders → create immediately
+  await doCreateAgentFromTemplate(ctx, templateId, userId, {});
+}
+
+async function doCreateAgentFromTemplate(ctx: Context, templateId: string, userId: number, vars: Record<string, string>) {
+  const t = allAgentTemplates.find(x => x.id === templateId);
+  if (!t) { await ctx.reply('❌ Шаблон не найден'); return; }
+
   await ctx.sendChatAction('typing');
   const name = t.id + '_' + Date.now().toString(36).slice(-4);
+
+  // Merge collected vars into triggerConfig.config
+  const triggerConfig = { ...t.triggerConfig, config: { ...(t.triggerConfig.config || {}), ...vars } };
+
   const result = await getDBTools().createAgent({
     userId,
     name,
     description: t.description,
     code: t.code,
     triggerType: t.triggerType,
-    triggerConfig: t.triggerConfig,
+    triggerConfig,
     isActive: false,
   });
 
   if (!result.success) { await ctx.reply(`❌ Ошибка: ${result.error}`); return; }
   const agent = result.data!;
 
-  let text = `✅ *Агент создан из шаблона!*\n\n${t.icon} *${esc(t.name)}*\nID: #${esc(agent.id)}\n`;
-  if (t.placeholders.length) {
-    text += `\n⚙️ *Настройте параметры:*\n`;
-    t.placeholders.forEach(p => { text += `• \`${esc(p.name)}\` — ${esc(p.description)}${p.required ? ' *(обяз.)*' : ''}\n`; });
-    text += `\nНапишите: _"Измени агента #${agent.id}, укажи ${t.placeholders[0].name}=значение"_\n`;
+  const lang = getUserLang(userId);
+  let text = `✅ *${lang === 'ru' ? 'Агент создан из шаблона' : 'Agent created from template'}\\!*\n\n` +
+    `${t.icon} *${esc(t.name)}*\nID: \\#${esc(agent.id)}\n`;
+
+  if (Object.keys(vars).length > 0) {
+    text += `\n✅ *${lang === 'ru' ? 'Переменные сохранены' : 'Variables saved'}:*\n`;
+    Object.entries(vars).forEach(([k, v]) => { text += `• \`${esc(k)}\` \\= \`${esc(v)}\`\n`; });
   }
-  text += `\nАгент запускается на нашем сервере — установка не нужна ✅`;
+
+  const unset = t.placeholders.filter(p => !vars[p.name]);
+  if (unset.length) {
+    text += `\n⚙️ *${lang === 'ru' ? 'Можно настроить позже' : 'Can configure later'}:*\n`;
+    unset.forEach(p => { text += `• \`${esc(p.name)}\`${p.required ? ' *(обяз\\.)* ' : ''} — ${esc(p.description)}\n`; });
+  }
+
+  text += `\n${lang === 'ru' ? 'Агент запускается на нашем сервере — установка не нужна ✅' : 'Agent runs on our server — no installation needed ✅'}`;
 
   await safeReply(ctx, text, {
+    parse_mode: 'MarkdownV2',
     reply_markup: {
       inline_keyboard: [
         [{ text: '🚀 Запустить', callback_data: `run_agent:${agent.id}` }, { text: '👁 Код', callback_data: `show_code:${agent.id}` }],
@@ -1706,6 +2301,263 @@ async function createAgentFromTemplate(ctx: Context, templateId: string, userId:
     },
   });
   await showAgentsList(ctx, userId);
+}
+
+// Helper: show next placeholder prompt or finalize template wizard
+async function promptNextTemplateVar(ctx: Context, userId: number, state: PendingTemplateSetup) {
+  const t = allAgentTemplates.find(x => x.id === state.templateId);
+  if (!t) { pendingTemplateSetup.delete(userId); return; }
+
+  if (state.remaining.length === 0) {
+    // All vars collected — create the agent
+    pendingTemplateSetup.delete(userId);
+    await doCreateAgentFromTemplate(ctx, state.templateId, userId, state.collected);
+    return;
+  }
+
+  const lang = getUserLang(userId);
+  const nextName = state.remaining[0];
+  const placeholder = t.placeholders.find(p => p.name === nextName)!;
+  const stepNum = t.placeholders.findIndex(p => p.name === nextName) + 1;
+
+  await editOrReply(ctx,
+    `${t.icon} *${esc(t.name)}*\n\n` +
+    `⚙️ ${lang === 'ru' ? 'Настройка переменных' : 'Configure variables'} \\(${esc(stepNum + '/' + t.placeholders.length)}\\)\n\n` +
+    `📝 *${esc(nextName)}*\n${esc(placeholder.description)}\n` +
+    (placeholder.example ? `\n_${lang === 'ru' ? 'Пример' : 'Example'}: \`${esc(placeholder.example)}\`_` : '') +
+    (placeholder.required ? `\n\n${lang === 'ru' ? '❗ Обязательно' : '❗ Required'}` : `\n\n${lang === 'ru' ? '_(необязательно — отправьте «пропустить»)_' : '_(optional — send «skip»)_'}`),
+    {
+      parse_mode: 'MarkdownV2',
+      reply_markup: { inline_keyboard: [
+        ...(placeholder.required ? [] : [[{ text: lang === 'ru' ? '⏭ Пропустить' : '⏭ Skip', callback_data: `tmpl_skip_var:${t.id}` }]]),
+        [{ text: lang === 'ru' ? '❌ Отмена' : '❌ Cancel', callback_data: 'tmpl_cancel' }],
+      ] }
+    }
+  );
+}
+
+// ============================================================
+// Пользовательский маркетплейс (покупка/продажа между юзерами)
+// ============================================================
+async function showCommunityListings(ctx: Context) {
+  try {
+    const listings = await getMarketplaceRepository().getListings();
+    if (!listings.length) {
+      return editOrReply(ctx,
+        '👥 *Листинги от сообщества*\n\nПока пусто\\. Будьте первым\\!',
+        { parse_mode: 'MarkdownV2', reply_markup: { inline_keyboard: [[{ text: '📤 Опубликовать агента', callback_data: 'mkt_publish_help' }], [{ text: '◀️ Маркетплейс', callback_data: 'marketplace' }]] } }
+      );
+    }
+
+    let text = `👥 *Агенты от сообщества \\(${esc(listings.length)}\\):*\n\n`;
+    listings.slice(0, 15).forEach((l: any) => {
+      const price = l.isFree ? '🆓 Бесплатно' : `💰 ${(l.price / 1e9).toFixed(2)} TON`;
+      text += `*${esc(l.name)}* — ${esc(price)} · ${esc(l.totalSales)} продаж\n`;
+    });
+
+    const btns = listings.slice(0, 8).map((l: any) => [
+      { text: `${l.isFree ? '🆓' : '💰'} ${l.name.slice(0, 30)}`, callback_data: `mkt_view:${l.id}` }
+    ]);
+    btns.push([{ text: '◀️ Маркетплейс', callback_data: 'marketplace' }]);
+
+    await editOrReply(ctx, text, { parse_mode: 'MarkdownV2', reply_markup: { inline_keyboard: btns } });
+  } catch (e: any) {
+    await editOrReply(ctx, `❌ Ошибка: ${esc(e.message)}`, { parse_mode: 'MarkdownV2' });
+  }
+}
+
+async function showListingDetail(ctx: Context, listingId: number, userId: number) {
+  try {
+    const listing = await getMarketplaceRepository().getListing(listingId);
+    if (!listing) return editOrReply(ctx, '❌ Листинг не найден', {});
+
+    const alreadyBought = await getMarketplaceRepository().hasPurchased(listingId, userId);
+    const isOwner = listing.sellerId === userId;
+
+    const price = listing.isFree ? '🆓 Бесплатно' : `💰 ${(listing.price / 1e9).toFixed(2)} TON`;
+    let text = `🤖 *${esc(listing.name)}*\n\n`;
+    text += `${esc(listing.description || 'Описание отсутствует')}\n\n`;
+    text += `💵 Цена: ${esc(price)}\n`;
+    text += `📊 Продано: ${esc(listing.totalSales)} раз\n`;
+    if (isOwner) text += `\n✏️ _Вы — автор этого листинга_`;
+    if (alreadyBought) text += `\n✅ _Вы уже приобрели этого агента_`;
+
+    const btns: any[] = [];
+    if (!isOwner && !alreadyBought) {
+      btns.push([{ text: listing.isFree ? '🆓 Получить бесплатно' : `💰 Купить ${(listing.price / 1e9).toFixed(2)} TON`, callback_data: `mkt_buy:${listingId}` }]);
+    }
+    if (alreadyBought) {
+      btns.push([{ text: '▶️ Запустить', callback_data: `run_agent:${listing.agentId}` }]);
+    }
+    btns.push([{ text: '◀️ Назад', callback_data: 'mkt_community' }, { text: '🏪 Маркетплейс', callback_data: 'marketplace' }]);
+
+    await editOrReply(ctx, text, { parse_mode: 'MarkdownV2', reply_markup: { inline_keyboard: btns } });
+  } catch (e: any) {
+    await editOrReply(ctx, `❌ Ошибка: ${esc(e.message)}`, { parse_mode: 'MarkdownV2' });
+  }
+}
+
+async function buyMarketplaceListing(ctx: Context, listingId: number, userId: number) {
+  try {
+    const listing = await getMarketplaceRepository().getListing(listingId);
+    if (!listing) return editOrReply(ctx, '❌ Листинг не найден', {});
+
+    if (listing.sellerId === userId) {
+      return editOrReply(ctx, '❌ Нельзя купить собственный листинг', {});
+    }
+
+    const already = await getMarketplaceRepository().hasPurchased(listingId, userId);
+    if (already) {
+      return editOrReply(ctx, '✅ Вы уже приобрели этого агента', {});
+    }
+
+    // Получаем исходный код агента
+    const agentResult = await getDBTools().getAgent(listing.agentId, listing.sellerId);
+    if (!agentResult.success || !agentResult.data) {
+      return editOrReply(ctx, '❌ Агент продавца не найден', {});
+    }
+    const sourceAgent = agentResult.data;
+
+    if (!listing.isFree && listing.price > 0) {
+      // Платный агент — генерируем TON Connect ссылку и ждём транзакцию
+      const platformWallet = process.env.PLATFORM_WALLET || 'EQD5LrKFnzKCYzaKk1-kQeVj3BxaOTsXPFNEoJF-zF5SNTQ';
+      const payloadStr = Buffer.from(`buy:${listingId}:${userId}`).toString('base64');
+      const tonLink = `https://ton.org/transfer/${platformWallet}?amount=${listing.price}&text=${payloadStr}`;
+
+      await editOrReply(ctx,
+        `💰 *Оплата покупки*\n\n` +
+        `*${esc(listing.name)}*\n` +
+        `Цена: ${esc((listing.price / 1e9).toFixed(2))} TON\n\n` +
+        `Переведите сумму и нажмите *Проверить оплату* через 30–60 секунд\n\n` +
+        `_Адрес: \`${esc(platformWallet)}\`_\n` +
+        `_Сумма: \`${esc((listing.price / 1e9).toFixed(9))} TON\`_`,
+        {
+          parse_mode: 'MarkdownV2',
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '💎 Открыть в Tonkeeper', url: tonLink }],
+              [{ text: '✅ Я оплатил — проверить', callback_data: `mkt_check_pay:${listingId}` }],
+              [{ text: '◀️ Отмена', callback_data: `mkt_view:${listingId}` }],
+            ],
+          },
+        }
+      );
+      return;
+    }
+
+    // Бесплатный агент — создаём копию для покупателя
+    const newAgentResult = await getDBTools().createAgent({
+      userId,
+      name: listing.name,
+      description: `[Маркетплейс #${listingId}] ${sourceAgent.description || ''}`,
+      code: sourceAgent.code,
+      triggerType: sourceAgent.triggerType as any,
+      triggerConfig: (sourceAgent.triggerConfig as any) || {},
+      isActive: false,
+    });
+
+    if (!newAgentResult.success || !newAgentResult.data) {
+      return editOrReply(ctx, `❌ Ошибка создания агента: ${esc(newAgentResult.error || '')}`, { parse_mode: 'MarkdownV2' });
+    }
+    const newAgent = newAgentResult.data;
+
+    // Записываем покупку
+    await getMarketplaceRepository().createPurchase({
+      listingId, buyerId: userId, sellerId: listing.sellerId,
+      agentId: newAgent.id, type: 'free', pricePaid: 0,
+    });
+
+    await editOrReply(ctx,
+      `✅ *Агент получен\\!*\n\n` +
+      `🤖 *${esc(listing.name)}*\n` +
+      `ID: #${esc(newAgent.id)}\n\n` +
+      `Агент добавлен в ваш список\\. Настройте параметры и запустите\\!`,
+      {
+        parse_mode: 'MarkdownV2',
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '🚀 Запустить', callback_data: `run_agent:${newAgent.id}` }, { text: '👁 Просмотр', callback_data: `agent_menu:${newAgent.id}` }],
+            [{ text: '🤖 Мои агенты', callback_data: 'list_agents' }],
+          ],
+        },
+      }
+    );
+  } catch (e: any) {
+    await editOrReply(ctx, `❌ Ошибка: ${esc(e.message || 'Неизвестная ошибка')}`, { parse_mode: 'MarkdownV2' });
+  }
+}
+
+// ============================================================
+// Публикация агента: вспомогательные функции
+// ============================================================
+async function startPublishFlow(ctx: Context, userId: number) {
+  try {
+    const agents = await getDBTools().getUserAgents(userId);
+    const agentList = (agents.data || []) as any[];
+
+    if (!agentList.length) {
+      await editOrReply(ctx,
+        `📤 *Публикация в маркетплейс*\n\nУ вас ещё нет агентов\\.\n\nСначала создайте агента, а затем опубликуйте его\\!`,
+        {
+          parse_mode: 'MarkdownV2',
+          reply_markup: { inline_keyboard: [[{ text: '◀️ Маркетплейс', callback_data: 'marketplace' }]] },
+        }
+      );
+      return;
+    }
+
+    const rows = agentList.slice(0, 8).map((a: any) => [
+      { text: `🤖 ${(a.name || `Агент #${a.id}`).slice(0, 32)}`, callback_data: `publish_agent:${a.id}` },
+    ]);
+    rows.push([{ text: '❌ Отмена', callback_data: 'publish_cancel' }]);
+
+    await editOrReply(ctx,
+      `📤 *Публикация агента в маркетплейс*\n\nВыберите агента для публикации:\n\n_Покупатели смогут запускать агента, но не увидят ваш код_`,
+      { parse_mode: 'Markdown', reply_markup: { inline_keyboard: rows } }
+    );
+  } catch (e: any) {
+    await ctx.reply(`❌ Ошибка: ${e.message}`);
+  }
+}
+
+async function doPublishAgent(ctx: Context, userId: number, agentId: number, priceNano: number, name: string) {
+  try {
+    const agentResult = await getDBTools().getAgent(agentId, userId);
+    if (!agentResult.success || !agentResult.data) {
+      await ctx.reply('❌ Агент не найден или не принадлежит вам');
+      return;
+    }
+    const agent = agentResult.data;
+    const listing = await getMarketplaceRepository().createListing({
+      agentId,
+      sellerId: userId,
+      name: name.slice(0, 60),
+      description: (agent as any).description || '',
+      category: 'other',
+      price: priceNano,
+      isFree: priceNano === 0,
+    });
+
+    const priceStr = priceNano === 0 ? 'Бесплатно' : (priceNano / 1e9).toFixed(2) + ' TON';
+    await safeReply(ctx,
+      `✅ *Агент опубликован\\!*\n\n` +
+      `📋 Листинг \\#${esc(String(listing.id))}\n` +
+      `🤖 *${esc(name)}*\n` +
+      `💰 Цена: ${esc(priceStr)}\n\n` +
+      `Другие пользователи найдут его в маркетплейсе\\.\nОни смогут *запускать* агента, но *не видеть код*`,
+      {
+        parse_mode: 'MarkdownV2',
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '🏪 Маркетплейс', callback_data: 'marketplace' }],
+            [{ text: '📦 Мои листинги', callback_data: 'mkt_mylistings' }],
+          ],
+        },
+      }
+    );
+  } catch (e: any) {
+    await safeReply(ctx, `❌ Ошибка публикации: ${esc(e.message || 'Неизвестная ошибка')}`, { parse_mode: 'MarkdownV2' });
+  }
 }
 
 // ============================================================

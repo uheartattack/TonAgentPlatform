@@ -3,6 +3,11 @@ import { NodeVM } from 'vm2';
 import { ToolResult } from './db-tools';
 import { getMemoryManager } from '../../db/memory';
 import { notifyUser } from '../../notifier';
+import {
+  getAgentStateRepository,
+  getAgentLogsRepository,
+  getExecutionHistoryRepository,
+} from '../../db/schema-extensions';
 
 // Лог выполнения
 interface ExecutionLog {
@@ -36,8 +41,9 @@ interface AgentRunData {
 }
 
 // ===== Персистентное состояние агентов (между запусками) =====
-// agentState[agentId][key] = value — хранится в памяти процесса, сбрасывается при рестарте
-const agentState: Map<number, Map<string, any>> = new Map();
+// Write-through cache: быстрые чтения из памяти, асинхронная запись в DB.
+// При рестарте бота state восстанавливается из DB (см. runner.ts restoreActiveAgents).
+export const agentState: Map<number, Map<string, any>> = new Map();
 
 // Последняя ошибка для auto-repair
 export const agentLastErrors: Map<number, { error: string; code: string; timestamp: Date }> = new Map();
@@ -83,7 +89,28 @@ export class ExecutionTools {
         `[${level.toUpperCase()}] ${message}`,
         { agentId: params.agentId, level, details }
       ).catch(() => {});
+
+      // Персистируем лог в DB (fire-and-forget — не блокирует выполнение)
+      try {
+        getAgentLogsRepository().insert({
+          agentId: params.agentId,
+          userId:  params.userId,
+          level,
+          message,
+          details,
+        }).catch(() => {});
+      } catch { /* repository не инициализирован — игнорируем */ }
     };
+
+    // Запись в execution_history
+    let runHistoryId: number | null = null;
+    try {
+      runHistoryId = await getExecutionHistoryRepository().start({
+        agentId: params.agentId,
+        userId:  params.userId,
+        triggerType: params.triggerType || 'manual',
+      });
+    } catch { /* not initialized */ }
 
     try {
       // Проверяем, не запущен ли уже
@@ -111,6 +138,17 @@ export class ExecutionTools {
 
       const executionTime = Date.now() - startTime;
 
+      // Завершаем запись в execution_history
+      if (runHistoryId !== null) {
+        try {
+          const status = result.success ? 'success' : 'error';
+          await getExecutionHistoryRepository().finish(
+            runHistoryId, status, executionTime, result.error,
+            result.result ? { preview: String(result.result).slice(0, 200) } : undefined
+          );
+        } catch { /* ignore */ }
+      }
+
       // Обновляем статус
       const existing = this.runningAgents.get(params.agentId);
       if (existing) {
@@ -136,13 +174,18 @@ export class ExecutionTools {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       addLog('error', `Ошибка выполнения: ${errorMessage}`);
 
+      const executionTime = Date.now() - startTime;
+      if (runHistoryId !== null) {
+        try {
+          await getExecutionHistoryRepository().finish(runHistoryId, 'error', executionTime, errorMessage);
+        } catch { /* ignore */ }
+      }
+
       const existing = this.runningAgents.get(params.agentId);
       if (existing) {
         existing.status = 'error';
         this.runningAgents.set(params.agentId, existing);
       }
-
-      const executionTime = Date.now() - startTime;
 
       return {
         success: false,
@@ -172,8 +215,16 @@ export class ExecutionTools {
 
       const agentId = params.agentId;
 
-      // Persistent state helpers for this agent
-      if (!agentState.has(agentId)) agentState.set(agentId, new Map());
+      // Persistent state helpers for this agent.
+      // Если агент новый в этом процессе — загружаем state из DB (write-through cache).
+      if (!agentState.has(agentId)) {
+        agentState.set(agentId, new Map());
+        try {
+          const rows = await getAgentStateRepository().getAll(agentId);
+          const map = agentState.get(agentId)!;
+          rows.forEach(r => map.set(r.key, r.value));
+        } catch { /* repository не инициализирован или DB недоступна */ }
+      }
       const stateMap = agentState.get(agentId)!;
 
       const vm = new NodeVM({
@@ -210,22 +261,46 @@ export class ExecutionTools {
           },
 
           // ── getState(key) / setState(key, val) — персистентное состояние между запусками ──
-          // Живёт пока бот работает (in-memory). Используй для change-detection.
-          // Пример: const prevBalance = getState('balance'); setState('balance', newBalance);
+          // Write-through cache: in-memory для быстрых чтений, запись в DB в фоне.
+          // State выживает рестарты сервера (восстанавливается из DB при startup).
           getState: (key: string) => {
             const val = stateMap.get(String(key));
             return val !== undefined ? val : null;
           },
           setState: (key: string, value: any) => {
             stateMap.set(String(key), value);
+            // Фоновая запись в DB — не блокирует VM
+            try {
+              getAgentStateRepository().set(agentId, params.userId, String(key), value).catch(() => {});
+            } catch { /* repository не инициализирован (тест) — игнорируем */ }
           },
 
           // ── getTonBalance(address) — helper: баланс TON в TON (не нанотонах) ──
           getTonBalance: async (address: string): Promise<number> => {
+            // Валидация формата TON-адреса перед запросом
+            if (!address || typeof address !== 'string') {
+              throw new Error('getTonBalance: адрес не передан');
+            }
+            const cleaned = address.trim();
+            if (!/^[EUk][Qq][0-9A-Za-z_-]{46}$/.test(cleaned)) {
+              throw new Error(
+                `getTonBalance: некорректный адрес "${cleaned}" ` +
+                `(длина ${cleaned.length}, ожидается 48 символов EQ.../UQ... в base64url). ` +
+                `Проверьте: в адресе могут пропускаться символы _ или -`
+              );
+            }
             const res = await nativeFetch(
-              `https://toncenter.com/api/v2/getAddressBalance?address=${encodeURIComponent(address)}`
+              `https://toncenter.com/api/v2/getAddressBalance?address=${encodeURIComponent(cleaned)}`
             );
-            if (!res.ok) throw new Error(`TonCenter ${res.status}`);
+            if (!res.ok) {
+              if (res.status === 422) {
+                throw new Error(
+                  `TonCenter 422: адрес "${cleaned}" не прошёл валидацию сервера. ` +
+                  `Убедитесь что адрес скопирован полностью (включая _ и -)`
+                );
+              }
+              throw new Error(`TonCenter ${res.status}`);
+            }
             const data = await res.json() as any;
             if (!data.ok) throw new Error(`TonCenter error: ${data.error}`);
             return parseInt(data.result || '0', 10) / 1e9;
@@ -256,7 +331,24 @@ export class ExecutionTools {
           // ── Persistent execution helpers ──
           // sleep(ms) — приостанавливает агента на N мс (используй в while-цикле)
           // await sleep(60000)  → пауза 1 минута
-          sleep: (ms: number) => new Promise<void>(resolve => setTimeout(resolve, Math.max(0, Math.min(ms, 86_400_000)))),
+          // Досрочно завершается если isStopped() стал true (каждые 200мс проверяет флаг)
+          sleep: (ms: number) => {
+            const capped = Math.max(0, Math.min(ms, 86_400_000));
+            return new Promise<void>((resolve) => {
+              let timer: NodeJS.Timeout;
+              let checker: NodeJS.Timeout | undefined;
+              const done = () => {
+                clearTimeout(timer);
+                if (checker) clearInterval(checker);
+                resolve();
+              };
+              timer = setTimeout(done, capped);
+              // Check stopFlag every 200ms so we can wake up early when stopped
+              if (stopFlag) {
+                checker = setInterval(() => { if (stopFlag!.stopped) done(); }, 200);
+              }
+            });
+          },
 
           // isStopped() — вернёт true когда пользователь нажал "Стоп"
           // Используй в while-цикле: while (!isStopped()) { ... }
@@ -273,6 +365,10 @@ export class ExecutionTools {
           Buffer,
           URL,
           URLSearchParams,
+          // AbortController / AbortSignal — необходимы для fetch timeout
+          // VM2 не инжектирует Node 18+ глобалы автоматически
+          AbortController,
+          AbortSignal,
           setTimeout: undefined,
           setInterval: undefined,
         },
@@ -393,6 +489,16 @@ ${code}
         params.userId, 'system', `[${level.toUpperCase()}] ${message}`,
         { agentId: params.agentId, level, details }
       ).catch(() => {});
+      // Персистируем лог в DB
+      try {
+        getAgentLogsRepository().insert({
+          agentId: params.agentId,
+          userId:  params.userId,
+          level,
+          message,
+          details,
+        }).catch(() => {});
+      } catch { /* not initialized */ }
     };
 
     // Регистрируем как running
