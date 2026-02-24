@@ -8,6 +8,14 @@ import path from 'path';
 import { getDBTools } from './agents/tools/db-tools';
 import { getRunnerAgent } from './agents/sub-agents/runner';
 import { getPluginManager } from './plugins-system';
+import { pool } from './db/index';
+import {
+  getAgentLogsRepository,
+  getExecutionHistoryRepository,
+  getUserPluginsRepository,
+  getUserSettingsRepository,
+  getMarketplaceRepository,
+} from './db/schema-extensions';
 
 const PORT = parseInt(process.env.API_PORT || '3001', 10);
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
@@ -223,21 +231,102 @@ export function startApiServer() {
   });
 
   // ── GET /api/agents/:id/logs ──────────────────────────────
+  // DB-backed: возвращает персистентные логи из agent_logs таблицы
   app.get('/api/agents/:id/logs', requireAuth, async (req: Request, res: Response) => {
     try {
-      const userId = (req as any).userId as number;
       const agentId = parseInt(req.params.id as string, 10);
       const limit = parseInt(req.query.limit as string || '30', 10);
-      const r = await getRunnerAgent().getLogs(agentId, userId, limit);
-      res.json({ ok: r.success, logs: r.data?.logs || [], error: r.error });
+      const offset = parseInt(req.query.offset as string || '0', 10);
+
+      let logs: any[] = [];
+      try {
+        const rows = await getAgentLogsRepository().getByAgent(agentId, limit, offset);
+        // Map createdAt → timestamp for dashboard compatibility
+        logs = rows.map(r => ({
+          id: r.id,
+          level: r.level,
+          message: r.message,
+          details: r.details,
+          timestamp: r.createdAt.toISOString(),
+          createdAt: r.createdAt.toISOString(),
+        }));
+      } catch {
+        // Fallback to in-memory runner logs if DB not ready
+        const r = await getRunnerAgent().getLogs(agentId, (req as any).userId, limit);
+        logs = r.data?.logs || [];
+      }
+      res.json({ ok: true, logs });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
   });
 
-  // ── GET /api/plugins ──────────────────────────────────────
-  app.get('/api/plugins', (_req: Request, res: Response) => {
+  // ── GET /api/agents/:id/history — история запусков агента ──
+  app.get('/api/agents/:id/history', requireAuth, async (req: Request, res: Response) => {
     try {
+      const agentId = parseInt(req.params.id as string, 10);
+      const limit = parseInt(req.query.limit as string || '20', 10);
+      const offset = parseInt(req.query.offset as string || '0', 10);
+      const rows = await getExecutionHistoryRepository().getByAgent(agentId, limit, offset);
+      res.json({ ok: true, history: rows });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── GET /api/activity — все логи пользователя (для Activity Stream) ──
+  app.get('/api/activity', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const limit = parseInt(req.query.limit as string || '50', 10);
+      const offset = parseInt(req.query.offset as string || '0', 10);
+      const rows = await getAgentLogsRepository().getByUser(userId, limit, offset);
+      const activity = rows.map(r => ({
+        id: r.id,
+        agentId: r.agentId,
+        level: r.level,
+        message: r.message,
+        details: r.details,
+        timestamp: (r.createdAt as any).toISOString
+          ? (r.createdAt as any).toISOString()
+          : new Date(r.createdAt as any).toISOString(),
+      }));
+      res.json({ ok: true, activity });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── GET /api/executions — история выполнений (для Operations page) ──
+  app.get('/api/executions', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const status = req.query.status as string || 'all';
+      const limit = parseInt(req.query.limit as string || '20', 10);
+      const offset = parseInt(req.query.offset as string || '0', 10);
+      const rows = await getExecutionHistoryRepository().getByUser(userId, status, limit, offset);
+      res.json({ ok: true, executions: rows });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── GET /api/plugins — список плагинов (user-aware если авторизован) ──
+  app.get('/api/plugins', async (req: Request, res: Response) => {
+    try {
+      const token = req.headers['x-auth-token'] as string || req.query.token as string;
+      let installedPluginIds = new Set<string>();
+
+      if (token) {
+        const session = getSession(token);
+        if (session) {
+          try {
+            const userPlugins = await getUserPluginsRepository().getInstalled(session.userId);
+            userPlugins.forEach(p => installedPluginIds.add(p.pluginId));
+          } catch { /* repo not ready */ }
+        }
+      }
+
       const plugins = getPluginManager().getAllPlugins().map(p => ({
         id: p.id,
         name: p.name,
@@ -248,7 +337,10 @@ export function startApiServer() {
         rating: p.rating,
         downloads: p.downloads,
         price: p.price,
-        isInstalled: p.isInstalled,
+        // isInstalled reflects per-user state if auth token present
+        isInstalled: installedPluginIds.size > 0
+          ? installedPluginIds.has(p.id) || p.id === 'drain-detector'
+          : p.isInstalled,
       }));
       res.json({ ok: true, plugins });
     } catch (e: any) {
@@ -256,19 +348,165 @@ export function startApiServer() {
     }
   });
 
+  // ── POST /api/plugins/:id/install — установить плагин для пользователя ──
+  app.post('/api/plugins/:id/install', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const pluginId = req.params.id as string;
+      const config = (req.body && req.body.config) || {};
+
+      const plugin = getPluginManager().getPlugin(pluginId);
+      if (!plugin) { res.status(404).json({ error: 'Plugin not found' }); return; }
+
+      await getUserPluginsRepository().install(userId, pluginId, config);
+      res.json({ ok: true, pluginId, installed: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── DELETE /api/plugins/:id — удалить плагин пользователя ──
+  app.delete('/api/plugins/:id', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const pluginId = req.params.id as string;
+
+      // drain-detector нельзя удалить
+      if (pluginId === 'drain-detector') {
+        res.status(403).json({ error: 'Built-in security plugin cannot be removed' });
+        return;
+      }
+
+      await getUserPluginsRepository().uninstall(userId, pluginId);
+      res.json({ ok: true, pluginId, installed: false });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── GET /api/settings — настройки пользователя ──
+  app.get('/api/settings', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const settings = await getUserSettingsRepository().getAll(userId);
+      res.json({ ok: true, settings });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── POST /api/settings — обновить настройки (deep-merge per key) ──
+  // Body: { key: string, value: any } или { settings: Record<string, any> }
+  app.post('/api/settings', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const body = req.body as any;
+
+      if (body.key && body.value !== undefined) {
+        // Single key update
+        await getUserSettingsRepository().set(userId, body.key, body.value);
+      } else if (body.settings && typeof body.settings === 'object') {
+        // Batch update: multiple keys
+        await Promise.all(
+          Object.entries(body.settings).map(([k, v]) =>
+            getUserSettingsRepository().set(userId, k, v)
+          )
+        );
+      } else {
+        res.status(400).json({ error: 'Body must have {key, value} or {settings: {...}}' });
+        return;
+      }
+
+      const updated = await getUserSettingsRepository().getAll(userId);
+      res.json({ ok: true, settings: updated });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── GET /api/connectors — список подключённых сервисов ──
+  app.get('/api/connectors', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const connectors = (await getUserSettingsRepository().get(userId, 'connectors')) || {};
+      res.json({ ok: true, connectors });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── POST /api/connectors/:service — добавить/обновить коннектор ──
+  // Body: { config: { webhookUrl?, apiKey?, ... } }
+  app.post('/api/connectors/:service', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const service = req.params.service as string;
+      const config = (req.body && req.body.config) || {};
+
+      // deep-merge: сохраняем другие коннекторы нетронутыми
+      await getUserSettingsRepository().setMerge(userId, 'connectors', {
+        [service]: { ...config, connectedAt: new Date().toISOString() }
+      });
+
+      const connectors = (await getUserSettingsRepository().get(userId, 'connectors')) || {};
+      res.json({ ok: true, service, connectors });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── DELETE /api/connectors/:service — отключить коннектор ──
+  app.delete('/api/connectors/:service', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const service = req.params.service as string;
+
+      const connectors = (await getUserSettingsRepository().get(userId, 'connectors')) || {} as Record<string, any>;
+      delete connectors[service];
+      await getUserSettingsRepository().set(userId, 'connectors', connectors);
+
+      res.json({ ok: true, service, connectors });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // ── GET /api/stats ────────────────────────────────────────
-  app.get('/api/stats', async (req: Request, res: Response) => {
+  // Реальная глобальная статистика из БД
+  app.get('/api/stats', async (_req: Request, res: Response) => {
     try {
       const pluginStats = getPluginManager().getStats();
-      // Глобальная статистика (без userId — для главной страницы)
+      let activeAgents = 0;
+      let totalUsers = 0;
+      let agentsCreated = 0;
+
+      try {
+        const result = await pool.query<{
+          active_agents: string;
+          total_users: string;
+          total_agents: string;
+        }>(`
+          SELECT
+            COUNT(*) FILTER (WHERE is_active = true)  AS active_agents,
+            COUNT(DISTINCT user_id)                    AS total_users,
+            COUNT(*)                                   AS total_agents
+          FROM builder_bot.agents
+        `);
+        const row = result.rows[0];
+        if (row) {
+          activeAgents  = parseInt(row.active_agents, 10) || 0;
+          totalUsers    = parseInt(row.total_users, 10) || 0;
+          agentsCreated = parseInt(row.total_agents, 10) || 0;
+        }
+      } catch { /* DB not ready — return zeros */ }
+
       res.json({
         ok: true,
-        plugins: pluginStats.total,
+        plugins:          pluginStats.total,
         pluginsInstalled: pluginStats.installed,
-        // Заглушки для публичной статистики
-        activeAgents: 42,
-        totalUsers: 128,
-        agentsCreated: 315,
+        activeAgents,
+        totalUsers,
+        agentsCreated,
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -276,6 +514,7 @@ export function startApiServer() {
   });
 
   // ── GET /api/stats/me ─────────────────────────────────────
+  // Персональная статистика с execution history
   app.get('/api/stats/me', requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = (req as any).userId as number;
@@ -283,15 +522,130 @@ export function startApiServer() {
       const agents = r.data || [];
       const active = agents.filter((a: any) => a.isActive).length;
       const pluginStats = getPluginManager().getStats();
+
+      // Execution stats from history table
+      let totalRuns = 0;
+      let successRate = 0;
+      let last24hRuns = 0;
+      let uptimeSeconds = Math.floor(process.uptime());
+      try {
+        const stats = await getExecutionHistoryRepository().getStats(userId);
+        totalRuns = stats.totalRuns;
+        successRate = stats.totalRuns > 0
+          ? Math.round((stats.successRuns / stats.totalRuns) * 100)
+          : 100;
+        last24hRuns = stats.last24hRuns;
+      } catch { /* repo not ready */ }
+
+      // Per-user installed plugin count
+      let userPluginsInstalled = pluginStats.installed;
+      try {
+        const userPlugins = await getUserPluginsRepository().getInstalled(userId);
+        userPluginsInstalled = userPlugins.length;
+      } catch { /* repo not ready */ }
+
       res.json({
         ok: true,
-        agentsTotal: agents.length,
-        agentsActive: active,
-        pluginsTotal: pluginStats.total,
-        pluginsInstalled: pluginStats.installed,
+        agentsTotal:       agents.length,
+        agentsActive:      active,
+        pluginsTotal:      pluginStats.total,
+        pluginsInstalled:  userPluginsInstalled,
+        totalRuns,
+        successRate,
+        last24hRuns,
+        uptimeSeconds,
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── GET /api/marketplace — все активные листинги ──
+  app.get('/api/marketplace', async (req: Request, res: Response) => {
+    try {
+      const category = req.query.category as string | undefined;
+      const listings = await getMarketplaceRepository().getListings(category);
+      res.json({ ok: true, listings });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  // ── GET /api/marketplace/my — мои листинги ──
+  app.get('/api/marketplace/my', requireAuth, async (req: Request, res: Response) => {
+    const userId = (req as any).userId;
+    try {
+      const listings = await getMarketplaceRepository().getMyListings(userId);
+      res.json({ ok: true, listings });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  // ── GET /api/marketplace/purchases — мои покупки ──
+  app.get('/api/marketplace/purchases', requireAuth, async (req: Request, res: Response) => {
+    const userId = (req as any).userId;
+    try {
+      const purchases = await getMarketplaceRepository().getMyPurchases(userId);
+      res.json({ ok: true, purchases });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  // ── GET /api/marketplace/:id — листинг по id ──
+  app.get('/api/marketplace/:id', async (req: Request, res: Response) => {
+    try {
+      const listing = await getMarketplaceRepository().getListing(parseInt(req.params["id"] as string));
+      if (!listing) return res.status(404).json({ ok: false, error: 'Not found' });
+      res.json({ ok: true, listing });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  // ── POST /api/marketplace — создать листинг ──
+  app.post('/api/marketplace', requireAuth, async (req: Request, res: Response) => {
+    const userId = (req as any).userId;
+    const { agentId, name, description, category, price, isFree } = req.body;
+    if (!agentId || !name) return res.status(400).json({ ok: false, error: 'agentId and name required' });
+    try {
+      // Проверяем что агент принадлежит пользователю
+      const agentResult = await getDBTools().getAgent(agentId, userId);
+      if (!agentResult.success || !agentResult.data) {
+        return res.status(403).json({ ok: false, error: 'Agent not found or not yours' });
+      }
+      const listing = await getMarketplaceRepository().createListing({
+        agentId, sellerId: userId, name, description: description || '',
+        category: category || 'other',
+        price: isFree ? 0 : Math.round((price || 0) * 1e9),
+        isFree: !!isFree,
+      });
+      res.json({ ok: true, listing });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  // ── DELETE /api/marketplace/:id — деактивировать листинг ──
+  app.delete('/api/marketplace/:id', requireAuth, async (req: Request, res: Response) => {
+    const userId = (req as any).userId;
+    try {
+      await getMarketplaceRepository().deactivateListing(parseInt(req.params["id"] as string), userId);
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  // ── GET /api/marketplace/:id/canViewCode — может ли пользователь видеть код ──
+  app.get('/api/marketplace/:id/canViewCode', requireAuth, async (req: Request, res: Response) => {
+    const userId = (req as any).userId;
+    try {
+      const canView = await getMarketplaceRepository().canViewCode(userId, parseInt(req.params["id"] as string));
+      res.json({ ok: true, canView });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e.message });
     }
   });
 

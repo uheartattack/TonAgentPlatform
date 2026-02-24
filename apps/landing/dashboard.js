@@ -92,11 +92,14 @@ function showApp() {
   // Load real data from API
   loadDashboard();
 
-  // Initialize static components
+  // Load persisted slider/config values
+  loadAgentConfig().catch(console.error);
+
+  // Initialize static/async components
   initCapabilities();
   initExtensions();
-  initActivityStream();
-  initOperations();
+  initActivityStream().catch(console.error);   // async — DB-backed
+  initOperations().catch(console.error);        // async — DB-backed
 
   // Start live updates
   startLiveUpdates();
@@ -110,11 +113,25 @@ async function loadDashboard() {
 async function loadMyStats() {
   const data = await apiRequest('GET', '/api/stats/me');
   if (!data.ok) return;
-  // Update metric cards
+  // Active agents
   const sessEl = document.getElementById('sessions-value');
   if (sessEl) sessEl.textContent = data.agentsActive || 0;
+  // Installed plugins
   const toolsEl = document.getElementById('tools-value');
-  if (toolsEl) toolsEl.textContent = data.pluginsTotal || 12;
+  if (toolsEl) toolsEl.textContent = data.pluginsInstalled || data.pluginsTotal || 12;
+  // Total runs
+  const runsEl = document.getElementById('runs-value');
+  if (runsEl) runsEl.textContent = data.totalRuns || 0;
+  // Success rate
+  const rateEl = document.getElementById('success-rate-value');
+  if (rateEl) rateEl.textContent = (data.successRate != null ? data.successRate : 100) + '%';
+  // Last 24h
+  const h24El = document.getElementById('last24h-value');
+  if (h24El) h24El.textContent = data.last24hRuns || 0;
+  // Init uptime counter from server
+  if (data.uptimeSeconds != null) {
+    window._serverUptimeBase = data.uptimeSeconds;
+  }
 }
 
 async function loadAgents() {
@@ -177,7 +194,11 @@ async function loadAgentLogs(agentId) {
   if (!data.ok) { alert('Failed to load logs'); return; }
   const logs = data.logs || [];
   const text = logs.length
-    ? logs.map(l => `[${new Date(l.timestamp).toLocaleTimeString()}] ${l.level.toUpperCase()}: ${l.message}`).join('\n')
+    ? logs.map(l => {
+        const ts = l.timestamp || l.createdAt;
+        const time = ts ? new Date(ts).toLocaleTimeString() : '--:--:--';
+        return `[${time}] ${(l.level || 'info').toUpperCase()}: ${l.message}`;
+      }).join('\n')
     : 'No logs yet.';
   alert(`Logs for agent #${agentId}:\n\n${text}`);
 }
@@ -381,18 +402,33 @@ function cancelBotAuth() {
 checkExistingSession();
 
 // ===== NAVIGATION =====
+// Map page names to their lazy-load functions
+const pageLoadFns = {
+  analytics: () => loadAnalytics(),
+  persona:   () => loadPersona(),
+  knowledge: () => loadKnowledge(),
+  connectors:() => loadConnectors(),
+  profile:   () => loadProfile(),
+};
+
 document.querySelectorAll('.nav-item').forEach(item => {
   item.addEventListener('click', (e) => {
     e.preventDefault();
-    
+
     // Update active nav
     document.querySelectorAll('.nav-item').forEach(nav => nav.classList.remove('active'));
     item.classList.add('active');
-    
+
     // Show corresponding page
     const pageName = item.dataset.page;
     document.querySelectorAll('.page').forEach(page => page.classList.remove('active'));
-    document.getElementById(`${pageName}-page`).classList.add('active');
+    const pageEl = document.getElementById(`${pageName}-page`);
+    if (pageEl) pageEl.classList.add('active');
+
+    // Lazy-load page data if authenticated
+    if (authToken && pageLoadFns[pageName]) {
+      pageLoadFns[pageName]().catch(console.error);
+    }
   });
 });
 
@@ -960,23 +996,43 @@ function switchExtensionsTab(tab) {
   renderExtensions();
 }
 
-function installExtension(id) {
-  const ext = extensionsData.find(e => e.id === id);
-  if (ext) {
-    ext.installed = true;
-    renderExtensions();
-    showNotification(currentLang === 'ru' ? `${ext.nameRu} установлен` : `${ext.name} installed`, 'success');
+async function installExtension(id) {
+  const ext = (window._realPlugins || extensionsData).find(e => e.id === id) || extensionsData.find(e => e.id === id);
+  if (!ext) return;
+
+  if (authToken) {
+    const data = await apiRequest('POST', `/api/plugins/${id}/install`, { config: {} });
+    if (!data.ok) {
+      showNotification(data.error || 'Install failed', 'error');
+      return;
+    }
   }
+  // Update local data (both arrays to stay in sync)
+  [extensionsData, window._realPlugins || []].forEach(arr => {
+    const item = arr.find(e => e.id === id);
+    if (item) item.installed = true;
+  });
+  renderExtensions();
+  showNotification(currentLang === 'ru' ? `${ext.nameRu || ext.name} установлен` : `${ext.name} installed`, 'success');
 }
 
-function uninstallExtension(id) {
-  const ext = extensionsData.find(e => e.id === id);
-  if (ext) {
-    ext.installed = false;
-    ext.hasUpdate = false;
-    renderExtensions();
-    showNotification(currentLang === 'ru' ? `${ext.nameRu} удалён` : `${ext.name} uninstalled`, 'info');
+async function uninstallExtension(id) {
+  const ext = (window._realPlugins || extensionsData).find(e => e.id === id) || extensionsData.find(e => e.id === id);
+  if (!ext) return;
+
+  if (authToken) {
+    const data = await apiRequest('DELETE', `/api/plugins/${id}`);
+    if (!data.ok) {
+      showNotification(data.error || 'Uninstall failed', 'error');
+      return;
+    }
   }
+  [extensionsData, window._realPlugins || []].forEach(arr => {
+    const item = arr.find(e => e.id === id);
+    if (item) { item.installed = false; item.hasUpdate = false; }
+  });
+  renderExtensions();
+  showNotification(currentLang === 'ru' ? `${ext.nameRu || ext.name} удалён` : `${ext.name} uninstalled`, 'info');
 }
 
 function updateExtension(id) {
@@ -995,33 +1051,44 @@ function searchExtensions(query) {
 }
 
 // ===== ACTIVITY STREAM =====
-const activityLog = [
-  { time: '14:32:18', message: 'Agent initialized successfully', messageRu: 'Агент успешно инициализирован', type: 'success' },
-  { time: '14:32:25', message: 'Connected to Telegram API', messageRu: 'Подключено к API Telegram', type: 'info' },
-  { time: '14:33:01', message: 'Loaded 127 capabilities from registry', messageRu: 'Загружено 127 возможностей из реестра', type: 'info' },
-  { time: '14:33:45', message: 'Smart Tools Selection index built successfully', messageRu: 'Индекс умного выбора инструментов построен', type: 'success' },
-  { time: '14:34:12', message: 'Memory context loaded: 156 messages, 4 documents', messageRu: 'Контекст памяти загружен: 156 сообщений, 4 документа', type: 'info' },
-  { time: '14:35:00', message: 'Extension "GiftStat Analytics" loaded', messageRu: 'Расширение "GiftStat Analytics" загружено', type: 'info' },
-  { time: '14:35:30', message: 'Extension "Gas111 Launcher" loaded', messageRu: 'Расширение "Gas111 Launcher" загружено', type: 'info' },
-  { time: '14:36:15', message: 'Webhook server started on port 3000', messageRu: 'Вебхук-сервер запущен на порту 3000', type: 'info' },
-];
+// DB-backed: populated from /api/activity, live updates appended in memory
+const activityLog = [];
 
-function initActivityStream() {
+async function initActivityStream() {
+  // Load recent activity from DB
+  const data = await apiRequest('GET', '/api/activity?limit=30');
+  if (data.ok && data.activity && data.activity.length) {
+    activityLog.length = 0;
+    data.activity.reverse().forEach(entry => {
+      const ts = entry.timestamp ? new Date(entry.timestamp) : new Date();
+      activityLog.push({
+        time: `${String(ts.getHours()).padStart(2,'0')}:${String(ts.getMinutes()).padStart(2,'0')}:${String(ts.getSeconds()).padStart(2,'0')}`,
+        message: `[Agent #${entry.agentId}] ${entry.message}`,
+        messageRu: `[Агент #${entry.agentId}] ${entry.message}`,
+        type: entry.level === 'error' ? 'error' : entry.level === 'success' ? 'success' : 'info',
+      });
+    });
+  } else if (!activityLog.length) {
+    // Fallback starter entries if no DB data yet
+    activityLog.push(
+      { time: '--:--:--', message: 'Platform started — no activity yet', messageRu: 'Платформа запущена — активность отсутствует', type: 'info' }
+    );
+  }
   renderActivityStream();
 }
 
 function renderActivityStream() {
   const container = document.getElementById('activity-stream');
   if (!container) return;
-  
+
   container.innerHTML = activityLog.map(log => `
     <div class="activity-item ${log.type}">
       <span class="activity-type">${log.type.toUpperCase()}</span>
       <span class="activity-time">${log.time}</span>
       <span class="activity-message">${currentLang === 'ru' ? log.messageRu : log.message}</span>
     </div>
-  `).join('');
-  
+  `).join('') || '<div class="activity-item info"><span class="activity-message" style="color:var(--text-muted)">No activity yet.</span></div>';
+
   container.scrollTop = container.scrollHeight;
 }
 
@@ -1034,89 +1101,127 @@ function addActivity(message, messageRu, type = 'info') {
   const now = new Date();
   const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
   activityLog.push({ time, message, messageRu, type });
-  
+
   if (activityLog.length > 100) {
     activityLog.shift();
   }
-  
+
   renderActivityStream();
 }
 
-// ===== OPERATIONS =====
-const operationsData = [
-  {
-    id: 1,
-    name: 'Initialize Agent Core',
-    nameRu: 'Инициализация ядра агента',
-    description: 'Setting up agent environment and loading core modules',
-    descriptionRu: 'Настройка окружения агента и загрузка модулей ядра',
-    status: 'completed',
-    createdAt: '2 min ago',
-    createdAtRu: '2 мин назад',
-    duration: '15s',
-  },
-  {
-    id: 2,
-    name: 'Sync Market Data',
-    nameRu: 'Синхронизация рыночных данных',
-    description: 'Fetching latest prices from multiple DEX sources',
-    descriptionRu: 'Получение последних цен из нескольких источников DEX',
-    status: 'running',
-    createdAt: '1 min ago',
-    createdAtRu: '1 мин назад',
-    progress: 65,
-  },
-  {
-    id: 3,
-    name: 'Update Extension Index',
-    nameRu: 'Обновление индекса расширений',
-    description: 'Rebuilding capability registry after extension update',
-    descriptionRu: 'Перестройка реестра возможностей после обновления расширения',
-    status: 'queued',
-    createdAt: 'Just now',
-    createdAtRu: 'Только что',
-  },
-  {
-    id: 4,
-    name: 'Backup Knowledge Base',
-    nameRu: 'Резервное копирование базы знаний',
-    description: 'Creating incremental backup of agent memory',
-    descriptionRu: 'Создание инкрементальной резервной копии памяти агента',
-    status: 'completed',
-    createdAt: '15 min ago',
-    createdAtRu: '15 мин назад',
-    duration: '42s',
-  },
-  {
-    id: 5,
-    name: 'Validate TON Connection',
-    nameRu: 'Валидация подключения TON',
-    description: 'Testing connection to TON blockchain nodes',
-    descriptionRu: 'Тестирование подключения к нодам блокчейна TON',
-    status: 'failed',
-    createdAt: '20 min ago',
-    createdAtRu: '20 мин назад',
-    error: 'Connection timeout after 30s',
-    errorRu: 'Таймаут подключения после 30с',
-  },
-];
+// ===== AGENT CONFIG SLIDERS =====
+function updateSliderDisplay(el) {
+  const span = el.parentElement.querySelector('.slider-value');
+  if (!span) return;
+  const val = parseFloat(el.value);
+  span.textContent = (parseInt(el.max) > 100) ? val + 'ms' : val;
+}
 
+async function saveAgentConfig() {
+  if (!authToken) {
+    showNotification(currentLang === 'ru' ? 'Войдите для сохранения' : 'Log in first', 'error');
+    return;
+  }
+  const creativityEl  = document.getElementById('slider-creativity');
+  const delayEl       = document.getElementById('slider-response-delay');
+  const config = {
+    creativity:    creativityEl  ? parseFloat(creativityEl.value)  : 0.7,
+    responseDelay: delayEl       ? parseInt(delayEl.value)          : 1500,
+  };
+  const data = await apiRequest('POST', '/api/settings', { settings: { agent_config: config } });
+  if (data.ok) {
+    showNotification(currentLang === 'ru' ? 'Конфигурация сохранена' : 'Configuration saved', 'success');
+  } else {
+    showNotification(data.error || 'Error saving config', 'error');
+  }
+}
+
+async function loadAgentConfig() {
+  const data = await apiRequest('GET', '/api/settings');
+  if (!data.ok) return;
+  const config = (data.settings && data.settings.agent_config) || {};
+
+  const creativityEl = document.getElementById('slider-creativity');
+  if (creativityEl && config.creativity != null) {
+    creativityEl.value = config.creativity;
+    updateSliderDisplay(creativityEl);
+  }
+  const delayEl = document.getElementById('slider-response-delay');
+  if (delayEl && config.responseDelay != null) {
+    delayEl.value = config.responseDelay;
+    updateSliderDisplay(delayEl);
+  }
+}
+
+// ===== OPERATIONS =====
+// DB-backed: populated from /api/executions (execution_history table)
+let operationsData = [];
 let currentOperationFilter = 'all';
 
-function initOperations() {
+async function initOperations() {
+  await loadOperations();
+}
+
+async function loadOperations() {
+  const statusParam = currentOperationFilter !== 'all' ? `?status=${currentOperationFilter}` : '';
+  const data = await apiRequest('GET', '/api/executions' + statusParam + (statusParam ? '&limit=20' : '?limit=20'));
+
+  if (data.ok && data.executions) {
+    operationsData = data.executions.map(ex => {
+      const startedAt = ex.startedAt ? new Date(ex.startedAt) : new Date();
+      const ageMs = Date.now() - startedAt.getTime();
+      const ageStr = ageMs < 60000
+        ? 'Just now'
+        : ageMs < 3600000
+          ? Math.floor(ageMs / 60000) + ' min ago'
+          : Math.floor(ageMs / 3600000) + 'h ago';
+      // Treat "running" entries older than 30 min as stale (crashed without cleanup)
+      const STALE_MS = 30 * 60 * 1000;
+      const isStaleRunning = ex.status === 'running' && ageMs > STALE_MS;
+      return {
+        id: ex.id,
+        name: `Agent #${ex.agentId} run`,
+        nameRu: `Запуск агента #${ex.agentId}`,
+        description: `Trigger: ${ex.triggerType || 'manual'}`,
+        descriptionRu: `Триггер: ${ex.triggerType || 'manual'}`,
+        status: isStaleRunning      ? 'failed'
+          : ex.status === 'running' ? 'running'
+          : ex.status === 'success'  ? 'completed'
+          : ex.status === 'error'    ? 'failed'
+          : 'queued',
+        createdAt: ageStr,
+        createdAtRu: ageStr,
+        duration: ex.durationMs ? (ex.durationMs / 1000).toFixed(1) + 's' : null,
+        error: ex.errorMessage || null,
+        errorRu: ex.errorMessage || null,
+        progress: ex.status === 'running' ? 50 : null,
+      };
+    });
+  }
+
   renderOperations();
 }
 
 function renderOperations() {
   const container = document.getElementById('operations-list');
   if (!container) return;
-  
+
   let filtered = operationsData;
-  
+
   if (currentOperationFilter !== 'all') {
-    filtered = operationsData.filter(o => o.status === currentOperationFilter);
+    // Map UI filter name to DB status
+    const statusMap = { completed: 'completed', running: 'running', failed: 'failed', queued: 'queued' };
+    filtered = operationsData.filter(o => o.status === (statusMap[currentOperationFilter] || currentOperationFilter));
   }
-  
+
+  if (!filtered.length) {
+    container.innerHTML = `
+      <div class="empty-state" style="padding:32px;text-align:center;color:var(--text-muted)">
+        ${currentLang === 'ru' ? 'Нет выполнений. Запустите агента чтобы увидеть историю.' : 'No executions yet. Run an agent to see history here.'}
+      </div>`;
+    return;
+  }
+
   container.innerHTML = filtered.map(op => `
     <div class="operation-item">
       <div class="operation-header">
@@ -1131,7 +1236,7 @@ function renderOperations() {
         <span>${currentLang === 'ru' ? 'Создано: ' : 'Created: '}${currentLang === 'ru' ? op.createdAtRu : op.createdAt}</span>
         ${op.duration ? `<span>${currentLang === 'ru' ? 'Длительность: ' : 'Duration: '}${op.duration}</span>` : ''}
       </div>
-      ${op.status === 'running' ? `
+      ${op.status === 'running' && op.progress != null ? `
         <div class="operation-progress">
           <div class="progress-bar">
             <div class="progress-fill" style="width: ${op.progress}%"></div>
@@ -1152,22 +1257,22 @@ function filterOperations(status) {
   document.querySelectorAll('.op-filter').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.status === status);
   });
-  renderOperations();
+  loadOperations();  // reload from API with new filter
 }
 
 // ===== LIVE UPDATES =====
 function startLiveUpdates() {
-  // Simulate uptime counter
-  let uptimeSeconds = 14 * 3600 + 32 * 60;
+  // Uptime counter — initialised from server (process.uptime()) via loadMyStats
+  // Falls back to 0 if stats not loaded yet
+  window._serverUptimeBase = window._serverUptimeBase || 0;
+  const uptimeStart = Date.now();
   setInterval(() => {
-    uptimeSeconds++;
+    const elapsed = Math.floor((Date.now() - uptimeStart) / 1000);
+    const uptimeSeconds = (window._serverUptimeBase || 0) + elapsed;
     const hours = Math.floor(uptimeSeconds / 3600);
     const mins = Math.floor((uptimeSeconds % 3600) / 60);
-    const secs = uptimeSeconds % 60;
     const el = document.getElementById('uptime-value');
-    if (el) {
-      el.textContent = `${hours}h ${mins}m`;
-    }
+    if (el) el.textContent = `${hours}h ${mins}m`;
   }, 60000);
   
   // Simulate random activity
@@ -1244,8 +1349,27 @@ function togglePassword(btn) {
   }
 }
 
-function saveSettings() {
-  showNotification(currentLang === 'ru' ? 'Настройки сохранены' : 'Settings saved', 'success');
+async function saveSettings() {
+  if (!authToken) {
+    showNotification(currentLang === 'ru' ? 'Войдите чтобы сохранить настройки' : 'Log in to save settings', 'error');
+    return;
+  }
+
+  // Collect settings form values if present
+  const settingsObj = {};
+  const aiPersona = document.getElementById('ai-persona');
+  if (aiPersona && aiPersona.value) settingsObj.aiPersona = aiPersona.value;
+  const aiModel = document.getElementById('ai-model');
+  if (aiModel && aiModel.value) settingsObj.aiModel = aiModel.value;
+  const notifyEl = document.getElementById('notify-enabled');
+  if (notifyEl) settingsObj.notificationsEnabled = notifyEl.checked;
+
+  const data = await apiRequest('POST', '/api/settings', { settings: settingsObj });
+  if (data.ok) {
+    showNotification(currentLang === 'ru' ? 'Настройки сохранены' : 'Settings saved', 'success');
+  } else {
+    showNotification(data.error || 'Failed to save settings', 'error');
+  }
 }
 
 // ===== MODALS =====
@@ -1269,5 +1393,334 @@ document.addEventListener('DOMContentLoaded', () => {
   // Check if already logged in (for demo)
   // simulateLogin();
 });
+
+// ===== NAVIGATION HELPER =====
+function navigateTo(pageName) {
+  document.querySelectorAll('.nav-item').forEach(nav => nav.classList.remove('active'));
+  const navEl = document.querySelector(`.nav-item[data-page="${pageName}"]`);
+  if (navEl) navEl.classList.add('active');
+
+  document.querySelectorAll('.page').forEach(page => page.classList.remove('active'));
+  const pageEl = document.getElementById(`${pageName}-page`);
+  if (pageEl) pageEl.classList.add('active');
+
+  if (authToken && pageLoadFns[pageName]) {
+    pageLoadFns[pageName]().catch(console.error);
+  }
+}
+
+// ===== ANALYTICS PAGE =====
+async function loadAnalytics() {
+  const [statsData, exData] = await Promise.all([
+    apiRequest('GET', '/api/stats/me'),
+    apiRequest('GET', '/api/executions'),
+  ]);
+
+  // Fill stat cards
+  const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  if (statsData.ok) {
+    setEl('an-total-runs', statsData.totalRuns ?? '—');
+    setEl('an-success-rate', (statsData.successRate != null ? statsData.successRate + '%' : '—'));
+    setEl('an-last24h', statsData.last24hRuns ?? '—');
+    setEl('an-active-agents', statsData.agentsActive ?? '—');
+  }
+
+  // Execution history table
+  const tableEl = document.getElementById('analytics-executions-table');
+  if (!tableEl) return;
+  const execs = (exData.ok && exData.executions) || [];
+  if (!execs.length) {
+    tableEl.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-muted)">No executions yet</div>';
+    return;
+  }
+
+  const statusIcon = s => s === 'success' ? '✅' : s === 'running' ? '🔄' : s === 'failed' ? '❌' : '⏳';
+  tableEl.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+      <thead>
+        <tr style="border-bottom:1px solid var(--border);color:var(--text-muted)">
+          <th style="text-align:left;padding:.6rem 1rem">Agent</th>
+          <th style="text-align:left;padding:.6rem .5rem">Status</th>
+          <th style="text-align:left;padding:.6rem .5rem">Duration</th>
+          <th style="text-align:left;padding:.6rem .5rem">Time</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${execs.slice(0, 50).map(ex => `
+          <tr style="border-bottom:1px solid var(--border-subtle)">
+            <td style="padding:.5rem 1rem;font-weight:500">#${ex.agentId}</td>
+            <td style="padding:.5rem .5rem">${statusIcon(ex.status)} ${ex.status}</td>
+            <td style="padding:.5rem .5rem">${ex.durationMs ? (ex.durationMs / 1000).toFixed(1) + 's' : '—'}</td>
+            <td style="padding:.5rem .5rem;color:var(--text-muted)">${new Date(ex.startedAt || ex.createdAt).toLocaleString()}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+// ===== PERSONA PAGE =====
+async function loadPersona() {
+  const data = await apiRequest('GET', '/api/settings');
+  if (!data.ok) return;
+  const s = data.settings || {};
+  const persona = s.persona || {};
+
+  const setVal = (id, val) => { const el = document.getElementById(id); if (el && val != null) el.value = val; };
+  setVal('persona-model', persona.model);
+  setVal('persona-language', persona.language);
+  setVal('persona-tone', persona.tone);
+  setVal('persona-name', persona.name);
+  setVal('persona-instructions', persona.instructions);
+}
+
+async function savePersona() {
+  if (!authToken) {
+    showNotification(currentLang === 'ru' ? 'Войдите для сохранения' : 'Log in first', 'error');
+    return;
+  }
+  const getVal = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  const persona = {
+    model: getVal('persona-model'),
+    language: getVal('persona-language'),
+    tone: getVal('persona-tone'),
+    name: getVal('persona-name'),
+    instructions: getVal('persona-instructions'),
+  };
+  const data = await apiRequest('POST', '/api/settings', { settings: { persona } });
+  if (data.ok) {
+    showNotification(currentLang === 'ru' ? 'Персона сохранена' : 'Persona saved', 'success');
+  } else {
+    showNotification(data.error || 'Error', 'error');
+  }
+}
+
+// ===== KNOWLEDGE BASE PAGE =====
+let _knowledgeEntries = [];
+
+async function loadKnowledge() {
+  const data = await apiRequest('GET', '/api/settings');
+  _knowledgeEntries = (data.ok && data.settings && data.settings.knowledge_base) || [];
+  renderKnowledge();
+}
+
+function renderKnowledge() {
+  const el = document.getElementById('knowledge-entries');
+  if (!el) return;
+  if (!_knowledgeEntries.length) {
+    el.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-muted)">No entries yet. Click "Add Entry" to begin.</div>';
+    return;
+  }
+  el.innerHTML = _knowledgeEntries.map((entry, i) => `
+    <div style="padding:.75rem 1rem;border-bottom:1px solid var(--border-subtle);display:flex;gap:.75rem;align-items:flex-start">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;margin-bottom:.25rem">${escHtml(entry.title || 'Entry ' + (i+1))}</div>
+        <div style="color:var(--text-muted);font-size:.83rem;white-space:pre-wrap;max-height:60px;overflow:hidden">${escHtml((entry.content || '').slice(0, 200))}</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" style="flex-shrink:0;color:#dc3545" onclick="deleteKnowledgeEntry(${i})">✕</button>
+    </div>`).join('');
+}
+
+function showAddKnowledge() {
+  const form = document.getElementById('knowledge-add-form');
+  if (form) {
+    form.style.display = 'block';
+    const titleEl = document.getElementById('kb-title');
+    if (titleEl) titleEl.focus();
+  }
+}
+
+async function saveKnowledgeEntry() {
+  if (!authToken) { showNotification('Log in first', 'error'); return; }
+  const title = (document.getElementById('kb-title') || {}).value?.trim();
+  const content = (document.getElementById('kb-content') || {}).value?.trim();
+  if (!title || !content) {
+    showNotification(currentLang === 'ru' ? 'Заполните название и содержимое' : 'Fill title and content', 'error');
+    return;
+  }
+
+  _knowledgeEntries.push({ title, content, createdAt: new Date().toISOString() });
+  const data = await apiRequest('POST', '/api/settings', { settings: { knowledge_base: _knowledgeEntries } });
+  if (data.ok) {
+    document.getElementById('kb-title').value = '';
+    document.getElementById('kb-content').value = '';
+    document.getElementById('knowledge-add-form').style.display = 'none';
+    renderKnowledge();
+    showNotification(currentLang === 'ru' ? 'Запись добавлена' : 'Entry added', 'success');
+  } else {
+    _knowledgeEntries.pop();
+    showNotification(data.error || 'Error', 'error');
+  }
+}
+
+async function deleteKnowledgeEntry(idx) {
+  if (!authToken) return;
+  _knowledgeEntries.splice(idx, 1);
+  const data = await apiRequest('POST', '/api/settings', { settings: { knowledge_base: _knowledgeEntries } });
+  if (data.ok) {
+    renderKnowledge();
+    showNotification(currentLang === 'ru' ? 'Запись удалена' : 'Entry deleted', 'success');
+  } else {
+    showNotification(data.error || 'Error', 'error');
+  }
+}
+
+// ===== CONNECTORS PAGE =====
+let _connectors = {};
+let _userVars = {};
+
+async function loadConnectors() {
+  const data = await apiRequest('GET', '/api/settings');
+  if (!data.ok) return;
+  const s = data.settings || {};
+  _connectors = s.connectors || {};
+  _userVars = s.user_variables || {};
+
+  // Fill connector inputs
+  const setConn = (service, field, elId) => {
+    const val = (_connectors[service] || {})[field];
+    const el = document.getElementById(elId);
+    if (el && val) el.value = val;
+  };
+  setConn('discord', 'webhookUrl', 'discord-webhook');
+  setConn('slack', 'webhookUrl', 'slack-webhook');
+  setConn('custom_webhook', 'url', 'custom-webhook-url');
+
+  // Update status badges
+  const setStatus = (id, connected) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = connected ? 'Connected' : 'Disconnected';
+    el.className = 'credential-status ' + (connected ? 'active' : '');
+  };
+  setStatus('discord-status', !!(_connectors.discord && _connectors.discord.webhookUrl));
+  setStatus('slack-status', !!(_connectors.slack && _connectors.slack.webhookUrl));
+  setStatus('custom-webhook-status', !!(_connectors.custom_webhook && _connectors.custom_webhook.url));
+
+  renderVariables();
+}
+
+async function saveConnector(service, config) {
+  if (!authToken) { showNotification('Log in first', 'error'); return; }
+  const data = await apiRequest('POST', `/api/connectors/${service}`, { config });
+  if (data.ok) {
+    _connectors[service] = config;
+    showNotification(currentLang === 'ru' ? 'Коннектор сохранён' : 'Connector saved', 'success');
+    loadConnectors(); // refresh statuses
+  } else {
+    showNotification(data.error || 'Error', 'error');
+  }
+}
+
+async function removeConnector(service) {
+  if (!authToken) return;
+  const data = await apiRequest('DELETE', `/api/connectors/${service}`);
+  if (data.ok) {
+    delete _connectors[service];
+    showNotification(currentLang === 'ru' ? 'Коннектор удалён' : 'Connector removed', 'success');
+    loadConnectors();
+  } else {
+    showNotification(data.error || 'Error', 'error');
+  }
+}
+
+async function testConnector(service) {
+  if (!authToken) { showNotification('Log in first', 'error'); return; }
+  const cfg = _connectors[service] || {};
+  const url = cfg.webhookUrl || cfg.url;
+  if (!url) { showNotification('Save the connector first', 'error'); return; }
+  try {
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: '✅ TON Agent Platform: test connection', username: 'TonAgent' }) });
+    if (res.ok) {
+      showNotification(currentLang === 'ru' ? 'Тест успешен!' : 'Test succeeded!', 'success');
+    } else {
+      showNotification(`HTTP ${res.status}`, 'error');
+    }
+  } catch(e) {
+    showNotification(e.message, 'error');
+  }
+}
+
+// ===== MY VARIABLES =====
+function renderVariables() {
+  const el = document.getElementById('variables-list');
+  if (!el) return;
+  const entries = Object.entries(_userVars);
+  if (!entries.length) {
+    el.innerHTML = '<div style="color:var(--text-muted);font-size:.85rem;padding:.5rem 0">No variables yet.</div>';
+    return;
+  }
+  el.innerHTML = entries.map(([k, v]) => `
+    <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;flex-wrap:wrap">
+      <code style="background:var(--bg-tertiary);padding:.2rem .5rem;border-radius:4px;font-size:.83rem;flex-shrink:0">${escHtml(k)}</code>
+      <span style="color:var(--text-muted);font-size:.83rem">=</span>
+      <span style="flex:1;font-size:.83rem;word-break:break-all">${escHtml(String(v))}</span>
+      <button class="btn btn-ghost btn-sm" style="color:#dc3545;flex-shrink:0" onclick="deleteVariable('${escHtml(k)}')">✕</button>
+    </div>`).join('');
+}
+
+function showAddVariable() {
+  const form = document.getElementById('add-variable-form');
+  if (form) { form.style.display = 'flex'; document.getElementById('var-key')?.focus(); }
+}
+
+async function saveVariable() {
+  if (!authToken) { showNotification('Log in first', 'error'); return; }
+  const key = (document.getElementById('var-key')?.value || '').trim().toUpperCase().replace(/[^A-Z0-9_]/g, '_');
+  const val = (document.getElementById('var-value')?.value || '').trim();
+  if (!key) { showNotification('Variable name required', 'error'); return; }
+
+  _userVars[key] = val;
+  const data = await apiRequest('POST', '/api/settings', { settings: { user_variables: _userVars } });
+  if (data.ok) {
+    document.getElementById('var-key').value = '';
+    document.getElementById('var-value').value = '';
+    document.getElementById('add-variable-form').style.display = 'none';
+    renderVariables();
+    showNotification(currentLang === 'ru' ? 'Переменная сохранена' : 'Variable saved', 'success');
+  } else {
+    delete _userVars[key];
+    showNotification(data.error || 'Error', 'error');
+  }
+}
+
+async function deleteVariable(key) {
+  if (!authToken) return;
+  delete _userVars[key];
+  const data = await apiRequest('POST', '/api/settings', { settings: { user_variables: _userVars } });
+  if (data.ok) {
+    renderVariables();
+    showNotification(currentLang === 'ru' ? 'Переменная удалена' : 'Variable deleted', 'success');
+  } else {
+    showNotification(data.error || 'Error', 'error');
+  }
+}
+
+// ===== PROFILE PAGE =====
+async function loadProfile() {
+  if (!currentUser) return;
+  const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+
+  // User info from auth
+  setEl('profile-name', [currentUser.first_name, currentUser.last_name].filter(Boolean).join(' ') || currentUser.first_name || '—');
+  setEl('profile-username', currentUser.username ? '@' + currentUser.username : '—');
+  setEl('profile-id', currentUser.userId || currentUser.id || '—');
+
+  // Avatar
+  if (currentUser.photo_url) {
+    const img = document.getElementById('profile-avatar');
+    if (img) { img.src = currentUser.photo_url; img.style.display = 'block'; }
+    const fb = document.getElementById('profile-avatar-fallback');
+    if (fb) fb.style.display = 'none';
+  }
+
+  // Stats from API
+  const stats = await apiRequest('GET', '/api/stats/me');
+  if (stats.ok) {
+    setEl('profile-total-agents', stats.agentsTotal ?? '—');
+    setEl('profile-active-agents', stats.agentsActive ?? '—');
+    setEl('profile-total-runs', stats.totalRuns ?? '—');
+    setEl('profile-success-rate', stats.successRate != null ? stats.successRate + '%' : '—');
+  }
+}
 
 console.log('TON Agent Platform Dashboard v2.0 loaded successfully!');

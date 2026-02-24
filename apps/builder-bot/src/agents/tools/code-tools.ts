@@ -304,6 +304,9 @@ Return ONLY the executable async function — no markdown, no preamble.`;
       // Очищаем от markdown-блоков если вернулись
       generatedCode = this.cleanCodeBlocks(generatedCode);
 
+      // ── Валидация TON-адресов в коде (ловим неполные адреса типа отсутствующий _) ──
+      generatedCode = this.fixTonAddresses(generatedCode, params.description);
+
       // Извлекаем плейсхолдеры
       const placeholders = this.extractPlaceholders(generatedCode);
 
@@ -569,6 +572,38 @@ Does this code match its intended purpose? Return JSON only.`;
   }
 
   // ===== Вспомогательные методы =====
+
+  /**
+   * Находит хардкоженные TON-адреса в коде, проверяет их длину (48 символов).
+   * Если адрес короткий (< 48 символов), сравнивает с адресами из description —
+   * возможно, пользователь ввёл правильный адрес, но AI его укоротил.
+   * Если исправить не получается — заменяет на {{WALLET_ADDRESS}}.
+   */
+  private fixTonAddresses(code: string, description: string): string {
+    // Ищем все TON-адреса в коде: EQ... или UQ... (base64url, 48 символов)
+    const addressInCode = /(['"`])([EUk][Qq][0-9A-Za-z_-]{40,50})\1/g;
+    // Ищем адреса в описании пользователя (могут быть правильными)
+    const addressInDesc = /[EUk][Qq][0-9A-Za-z_-]{40,50}/g;
+    const descAddresses = [...description.matchAll(addressInDesc)].map(m => m[0]);
+
+    return code.replace(addressInCode, (full, quote, addr) => {
+      // Адрес правильной длины (48) — не трогаем
+      if (addr.length === 48) return full;
+
+      // Попробуем найти похожий правильный адрес в описании пользователя
+      const candidate = descAddresses.find(
+        (d) => d.length === 48 && d.replace(/[_-]/g, '') === addr.replace(/[_-]/g, '')
+      );
+      if (candidate) {
+        console.warn(`[CodeTools] Исправлен TON-адрес: "${addr}" → "${candidate}" (длина ${addr.length} → 48)`);
+        return `${quote}${candidate}${quote}`;
+      }
+
+      // Не можем исправить — заменяем на placeholder чтобы пользователь задал вручную
+      console.warn(`[CodeTools] Подозрительный TON-адрес длиной ${addr.length}: "${addr}" → заменён на {{WALLET_ADDRESS}}`);
+      return `${quote}{{WALLET_ADDRESS}}${quote}`;
+    });
+  }
 
   private cleanCodeBlocks(code: string): string {
     // Убираем markdown-блоки если модель вернула их

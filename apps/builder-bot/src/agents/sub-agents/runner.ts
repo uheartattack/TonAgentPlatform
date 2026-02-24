@@ -3,6 +3,18 @@ import { getDBTools, type ToolResult } from '../tools/db-tools';
 import { getSecurityScanner } from '../tools/security-scanner';
 import { getMemoryManager } from '../../db/memory';
 import { notifyAgentResult } from '../../notifier';
+import { getUserSettingsRepository } from '../../db/schema-extensions';
+
+// Загрузить пользовательские переменные из user_settings (безопасно, без ошибок)
+async function loadUserVariables(userId: number): Promise<Record<string, any>> {
+  try {
+    const repo = getUserSettingsRepository();
+    const all = await repo.getAll(userId);
+    return (all.user_variables as Record<string, any>) || {};
+  } catch {
+    return {};
+  }
+}
 
 // Параметры для запуска
 export interface RunAgentParams {
@@ -115,11 +127,15 @@ export class RunnerAgent {
         // Код агента содержит while(!isStopped()) { ... await sleep(X) }
         // Платформа не делает setInterval — агент сам решает когда и что делать.
 
+        // Инжектируем пользовательские переменные в triggerConfig (для доступа через context.config)
+        const userVarsForScheduled = await loadUserVariables(params.userId);
+        const mergedTriggerConfig = { ...userVarsForScheduled, ...triggerConfig, intervalMs: intervalMs || 60_000 };
+
         const activateResult = await this.executionTools.runPersistentAgent({
           agentId: params.agentId,
           userId: params.userId,
           code: agent.code,
-          triggerConfig: { ...triggerConfig, intervalMs: intervalMs || 60_000 },
+          triggerConfig: mergedTriggerConfig,
           onCrash: (error: string) => {
             notifyAgentResult({
               userId: params.userId,
@@ -161,13 +177,20 @@ export class RunnerAgent {
       }
 
       // === MANUAL MODE: однократный запуск ===
+      // Инжектируем пользовательские переменные в config (user_variables имеют низший приоритет)
+      const userVars = await loadUserVariables(params.userId);
+      const mergedContext = {
+        ...params.context,
+        config: { ...userVars, ...(params.context?.config || {}) },
+      };
+
       const executionResult = await this.executionTools.runAgent({
         agentId: params.agentId,
         userId: params.userId,
         code: agent.code,
         triggerType: agent.triggerType,
         triggerConfig,
-        context: params.context,
+        context: mergedContext,
       });
 
       // Для manual агентов НЕ меняем isActive - они остаются "paused" после однократного выполнения
@@ -403,6 +426,18 @@ export async function restoreActiveAgents(): Promise<void> {
       }
 
       try {
+        // Pre-warm in-memory state из DB перед запуском — агент продолжит с того места где остановился
+        try {
+          const { agentState } = await import('../tools/execution-tools');
+          const { getAgentStateRepository } = await import('../../db/schema-extensions');
+          const rows = await getAgentStateRepository().getAll(agent.id);
+          if (rows.length > 0) {
+            if (!agentState.has(agent.id)) agentState.set(agent.id, new Map());
+            rows.forEach(r => agentState.get(agent.id)!.set(r.key, r.value));
+            console.log(`[Runner] Pre-warmed state for agent #${agent.id}: ${rows.length} key(s)`);
+          }
+        } catch { /* schema-extensions not yet initialized — will load on first setState */ }
+
         await runner.runAgent({ agentId: agent.id, userId: agent.userId });
         console.log(`[Runner] ✅ Restored agent #${agent.id} "${agent.name}" (user ${agent.userId})`);
       } catch (e) {

@@ -100,17 +100,35 @@ export const defiPlugins: Plugin[] = [
 API base: https://api.dedust.io/v2  (no auth required)
 
 GET /pools — all liquidity pools
-  Response: [{address, type, assets:[{address,decimals,symbol,metadata:{symbol}}], tradeFee, stats:{tvl,volume24h,fees24h,apy}}]
+  Response: [{address, type, assets:[{type,address,decimals,metadata:{symbol}}], reserves:["nanoTON","nanoUSDT"], stats:{tvl,volume24h}}]
 
-GET /assets — all listed assets with prices
-  Response: [{address, type, symbol, decimals, price, priceTon}]
+GET /assets — all listed assets with prices in USD
+  Response: [{address, type, symbol, decimals, price}]  ← price is USD string
 
-GET /jettons/{address}/price — price of specific jetton in TON and USD
+USDT jetton address: EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs
+TON native type: "native"
 
-Usage example:
+CORRECT usage to get TON price in USD:
+  // Method 1: fastest — assets endpoint
+  const assets = await fetch('https://api.dedust.io/v2/assets').then(r=>r.json());
+  const tonAsset = assets.find(a => a.type === 'native');
+  const tonPriceUsd = parseFloat(tonAsset?.price || '0');
+
+  // Method 2: from pool reserves (more real-time)
   const pools = await fetch('https://api.dedust.io/v2/pools').then(r=>r.json());
-  const tonUsdtPool = pools.find(p => p.assets?.some(a => a.metadata?.symbol === 'USDT'));
-  const tonPrice = tonUsdtPool?.stats?.price; // TON price in USDT`,
+  const USDT = 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs';
+  const pool = pools.find(p =>
+    (p.assets?.[0]?.type === 'native' && p.assets?.[1]?.address === USDT) ||
+    (p.assets?.[1]?.type === 'native' && p.assets?.[0]?.address === USDT)
+  );
+  if (pool && pool.reserves) {
+    const tonFirst = pool.assets[0].type === 'native';
+    const tonReserve  = Number(tonFirst ? pool.reserves[0] : pool.reserves[1]) / 1e9;
+    const usdtReserve = Number(tonFirst ? pool.reserves[1] : pool.reserves[0]) / 1e6;
+    const tonPriceUsd = usdtReserve / tonReserve;
+  }
+
+NOTE: Do NOT use pool.stats.price — this field does not exist. Use the methods above.`,
     configSchema: [
       {
         name: 'apiEndpoint',
@@ -132,8 +150,14 @@ Usage example:
     },
     install: async () => true,
     uninstall: async () => true,
-    execute: async (params) => {
-      const response = await fetch(`https://api.dedust.io/v2/${params.method}`);
+    execute: async (params: any) => {
+      const method = params.method || 'pools';
+      const url = `https://api.dedust.io/v2/${method}`;
+      const response = await fetch(url, {
+        headers: { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!response.ok) throw new Error(`DeDust API ${response.status}: ${await response.text()}`);
       return response.json();
     }
   },
@@ -155,26 +179,52 @@ Usage example:
     skillDoc: `## 🗿 STON.fi DEX — Swap Rates & Pools
 API base: https://api.ston.fi/v1  (no auth required)
 
-GET /assets — all assets with prices
+GET /assets — all assets with prices (RECOMMENDED for price checks)
   Response: {asset_list: [{contract_address,display_name,symbol,decimals,dex_price_usd,third_party_price_usd,kind}]}
 
 GET /pools — all liquidity pools
   Response: {pool_list: [{address,token0_address,token1_address,lp_total_supply,tvl_usd,apy_1d,apy_7d,apy_30d}]}
 
-GET /swap/simulate?offer_address=...&ask_address=...&units=...&slippage_tolerance=0.01 — simulate swap
-  Response: {offer_units,ask_units,slippage_tolerance,min_ask_units,swap_rate,price_impact,fee_units}
+POST /swap/simulate — simulate swap (MUST be POST, not GET — GET returns 405 Method Not Allowed)
+  Body: {offer_address, ask_address, units, slippage_tolerance}
+  Response: {offer_units,ask_units,swap_rate,price_impact,fee_units}
 
-Usage example:
-  const {asset_list} = await fetch('https://api.ston.fi/v1/assets').then(r=>r.json());
-  const ton = asset_list.find(a => a.symbol === 'TON');
-  const usdt = asset_list.find(a => a.symbol === 'USD₮');
-  const tonPriceUsd = parseFloat(ton?.dex_price_usd || '0');`,
+TON native address: EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c
+USDT address: EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs
+
+CORRECT usage to get TON price from STON.fi:
+  // Method 1: from assets (simplest, no swap needed)
+  const resp = await fetch('https://api.ston.fi/v1/assets').then(r=>r.json());
+  const ton = (resp.asset_list || []).find(a => a.symbol === 'TON');
+  const tonPriceUsd = parseFloat(ton?.dex_price_usd || ton?.third_party_price_usd || '0');
+
+  // Method 2: swap simulate (POST!)
+  const sim = await fetch('https://api.ston.fi/v1/swap/simulate', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      offer_address: 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c',
+      ask_address:   'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs',
+      units: '1000000000',
+      slippage_tolerance: '0.01'
+    })
+  }).then(r=>r.json());
+  const usdtPerTon = parseFloat(sim.swap_rate || '0');
+
+NOTE: /swap/simulate is POST-only. Always use Method 1 (assets) for simple price checks.`,
     configSchema: [],
     hooks: {},
     install: async () => true,
     uninstall: async () => true,
-    execute: async (params) => {
-      const response = await fetch(`https://api.ston.fi/v1/${params.method}`);
+    execute: async (params: any) => {
+      const method = params.method || 'assets';
+      const isPost = method.includes('simulate') || params.post;
+      const url = `https://api.ston.fi/v1/${method}`;
+      const opts: RequestInit = isPost
+        ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(params.body || {}) }
+        : { headers: { 'Accept': 'application/json' } };
+      const response = await fetch(url, { ...opts, signal: AbortSignal.timeout(10000) });
+      if (!response.ok) throw new Error(`STON.fi API ${response.status}: ${await response.text()}`);
       return response.json();
     }
   },
@@ -218,7 +268,37 @@ Note: EVAA doesn't have a public REST API — use TonAPI events for monitoring`,
     hooks: {},
     install: async () => true,
     uninstall: async () => true,
-    execute: async (params) => params
+    execute: async (params: any) => {
+      // Track whale transactions via TonCenter public API
+      const address = params.address || params.watchAddress;
+      if (!address) throw new Error('whale-tracker: address is required');
+      const minTon = parseFloat(params.minAmount || params.minTon || '1000');
+      const limit  = Math.min(parseInt(params.limit || '50', 10), 100);
+
+      const url = `https://toncenter.com/api/v2/getTransactions?address=${encodeURIComponent(address)}&limit=${limit}&to_lt=0`;
+      const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`TonCenter ${res.status}: ${text.slice(0, 200)}`);
+      }
+      const data = await res.json() as any;
+      const txs = (data.result || []) as any[];
+      const whales = txs.filter(tx => {
+        const inVal  = parseInt(tx.in_msg?.value  || '0', 10) / 1e9;
+        const outVal = (tx.out_msgs || []).reduce((s: number, m: any) => s + parseInt(m.value || '0', 10) / 1e9, 0);
+        return Math.max(inVal, outVal) >= minTon;
+      }).map(tx => ({
+        hash:      tx.transaction_id?.hash,
+        lt:        tx.transaction_id?.lt,
+        utime:     tx.utime,
+        inTon:     (parseInt(tx.in_msg?.value  || '0', 10) / 1e9).toFixed(2),
+        outTon:    ((tx.out_msgs || []).reduce((s: number, m: any) => s + parseInt(m.value || '0', 10) / 1e9, 0)).toFixed(2),
+        from:      tx.in_msg?.source,
+        message:   tx.in_msg?.message,
+      }));
+
+      return { address, minTon, totalChecked: txs.length, whalesFound: whales.length, whales };
+    }
   }
 ];
 
@@ -281,10 +361,21 @@ Usage example:
     },
     install: async () => true,
     uninstall: async () => true,
-    execute: async (params) => {
+    execute: async (params: any) => {
+      // Fetch TON price and top jettons from TonAPI (no auth required)
+      const [ratesRes, jettonsRes] = await Promise.all([
+        fetch('https://tonapi.io/v2/rates?tokens=TON&currencies=USD,RUB,EUR', { signal: AbortSignal.timeout(8000) }),
+        fetch('https://tonapi.io/v2/jettons?limit=10', { signal: AbortSignal.timeout(8000) }),
+      ]);
+      const rates: any   = ratesRes.ok   ? await ratesRes.json()   : {};
+      const jettons: any = jettonsRes.ok ? await jettonsRes.json() : {};
       return {
-        report: 'Analytics report generated',
-        timestamp: Date.now()
+        tonPrice: rates.rates?.TON?.prices?.USD || null,
+        tonChange24h: rates.rates?.TON?.diff_24h?.USD || null,
+        topJettons: (jettons.jettons || []).slice(0, 5).map((j: any) => ({
+          name: j.name, symbol: j.symbol, holders: j.holders_count,
+        })),
+        timestamp: Date.now(),
       };
     }
   },
@@ -395,14 +486,40 @@ Rich embed message:
     },
     install: async () => true,
     uninstall: async () => true,
-    execute: async (params) => {
-      const { webhookUrl, message } = params;
+    execute: async (params: any) => {
+      const webhookUrl = params.webhookUrl || params.webhook_url;
+      if (!webhookUrl || !webhookUrl.startsWith('https://discord.com/api/webhooks/')) {
+        throw new Error('discord-notifier: invalid or missing webhookUrl (must start with https://discord.com/api/webhooks/)');
+      }
+
+      // Build payload — supports plain text or rich embed
+      let payload: any;
+      if (params.embed) {
+        payload = {
+          embeds: [{
+            title:       params.embed.title || params.title || '🔔 TON Agent Alert',
+            description: params.embed.description || params.message || '',
+            color:       params.embed.color || 0x3498db,
+            fields:      params.embed.fields || [],
+            timestamp:   new Date().toISOString(),
+          }],
+        };
+      } else {
+        payload = { content: params.message || params.content || '' };
+      }
+
       const response = await fetch(webhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: message })
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(10000),
       });
-      return { success: response.ok };
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Discord webhook ${response.status}: ${text.slice(0, 200)}`);
+      }
+      return { success: true, statusCode: response.status };
     }
   },
   
@@ -633,12 +750,44 @@ Note: Free tier has rate limit ~50 calls/min. For higher limits add ?x_cg_api_ke
     hooks: {},
     install: async () => true,
     uninstall: async () => true,
-    execute: async (params) => {
-      const { coinId = 'the-open-network' } = params;
-      const response = await fetch(
-        `https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd&include_24hr_change=true`
-      );
-      return response.json();
+    execute: async (params: any) => {
+      const coinId      = params.coinId || params.coin_id || 'the-open-network';
+      const currencies  = params.currencies || 'usd,rub,eur';
+      const apiKey      = params.apiKey || params.api_key || '';
+
+      const qs = new URLSearchParams({
+        ids:                    coinId,
+        vs_currencies:          currencies,
+        include_24hr_change:    'true',
+        include_market_cap:     'true',
+        include_24hr_vol:       'true',
+      });
+      if (apiKey) qs.set('x_cg_api_key', apiKey);
+
+      const url = `https://api.coingecko.com/api/v3/simple/price?${qs}`;
+      const response = await fetch(url, {
+        headers: { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`CoinGecko ${response.status}: ${text.slice(0, 200)}`);
+      }
+
+      const data = await response.json() as any;
+      const coin = data[coinId];
+      if (!coin) throw new Error(`CoinGecko: coin "${coinId}" not found`);
+
+      return {
+        coinId,
+        usd:           coin.usd,
+        rub:           coin.rub,
+        eur:           coin.eur,
+        usd_24h_change: coin.usd_24h_change,
+        usd_market_cap: coin.usd_market_cap,
+        usd_24h_vol:    coin.usd_24h_vol,
+      };
     }
   }
 ];

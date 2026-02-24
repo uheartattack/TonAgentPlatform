@@ -6,6 +6,16 @@ import { initAgentsRepository } from './agents';
 import { initDBTools } from '../agents/tools/db-tools';
 import { initPayments } from '../payments';
 import { initTonConnectStorage } from './ton-connect-storage';
+import {
+  runMigrations,
+  runMarketplaceMigrations,
+  initAgentStateRepository,
+  initAgentLogsRepository,
+  initExecutionHistoryRepository,
+  initUserPluginsRepository,
+  initUserSettingsRepository,
+  initMarketplaceRepository,
+} from './schema-extensions';
 
 // Конфигурация PostgreSQL
 const pool = new Pool({
@@ -29,12 +39,24 @@ export async function initDatabase() {
     await pool.query('SELECT NOW()');
     console.log('✅ PostgreSQL connected');
 
+    // Запускаем миграции (CREATE TABLE IF NOT EXISTS — идемпотентно)
+    await runMigrations(pool);
+    await runMarketplaceMigrations(pool); // marketplace tables
+
     // Инициализируем менеджеры
     initMemoryManager(pool);
     initAgentsRepository(pool);
     initDBTools(pool);
     initPayments(pool);
     initTonConnectStorage(pool); // PostgreSQL storage для TON Connect сессий
+
+    // Новые репозитории для production-ready MVP
+    initAgentStateRepository(pool);
+    initAgentLogsRepository(pool);
+    initExecutionHistoryRepository(pool);
+    initUserPluginsRepository(pool);
+    initUserSettingsRepository(pool);
+    initMarketplaceRepository(pool); // маркетплейс
 
     console.log('✅ Database repositories initialized');
 
