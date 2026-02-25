@@ -243,6 +243,11 @@ const SCHEDULE_LABELS: Record<string, string> = {
 const pendingRenames = new Map<number, number>(); // userId → agentId
 
 // ============================================================
+// State machine для редактирования агента (userId → agentId)
+// ============================================================
+const pendingEdits = new Map<number, number>();
+
+// ============================================================
 // Язык пользователя (EN/RU, по умолчанию auto по первому сообщению)
 // ============================================================
 const userLanguages = new Map<number, 'ru' | 'en'>(); // userId → lang
@@ -1431,6 +1436,7 @@ bot.on('callback_query', async (ctx) => {
   if (data.startsWith('edit_agent:')) {
     await ctx.answerCbQuery();
     const agentId = parseInt(data.split(':')[1]);
+    pendingEdits.set(userId, agentId); // Запоминаем агента для модификации
     const agentData = await getDBTools().getAgent(agentId, userId);
     const agentName = agentData.data?.name || `#${agentId}`;
     await editOrReply(ctx,
@@ -1719,6 +1725,53 @@ bot.on(message('text'), async (ctx) => {
     return;
   }
 
+  // ── Ожидаем запрос на редактирование агента ───────────────
+  if (pendingEdits.has(userId)) {
+    const agentId = pendingEdits.get(userId)!;
+    pendingEdits.delete(userId);
+    const agentResult = await getDBTools().getAgent(agentId, userId);
+    if (!agentResult.success || !agentResult.data) {
+      await ctx.reply('❌ Агент не найден'); return;
+    }
+    const anim = await startCreationAnimation(ctx, 'редактирование', true);
+    try {
+      const fixResult = await getCodeTools().modifyCode({
+        currentCode: agentResult.data.code,
+        modificationRequest: trimmed,
+        preserveLogic: true,
+      });
+      anim.stop();
+      if (!fixResult.success || !fixResult.data) {
+        await safeReply(ctx, `❌ AI не смог изменить код: ${esc(fixResult.error || 'Unknown')}`);
+        return;
+      }
+      const saveResult = await getDBTools().updateAgentCode(agentId, userId, fixResult.data.code);
+      if (saveResult.success) {
+        await safeReply(ctx,
+          `✅ *Агент обновлён\\!*\n` +
+          `━━━━━━━━━━━━━━━━━━━━\n` +
+          `*${esc(agentResult.data.name)}*  \\#${esc(String(agentId))}\n` +
+          `🔧 ${esc(fixResult.data.changes.slice(0, 180))}\n\n` +
+          `_Запустите агента чтобы проверить изменения_`,
+          {
+            reply_markup: {
+              inline_keyboard: [[
+                { text: '🚀 Запустить', callback_data: `run_agent:${agentId}` },
+                { text: '◀️ К агенту', callback_data: `agent_menu:${agentId}` },
+              ]],
+            },
+          }
+        );
+      } else {
+        await safeReply(ctx, `❌ Не удалось сохранить: ${esc(saveResult.error || 'Unknown')}`);
+      }
+    } catch (err: any) {
+      anim.stop();
+      await safeReply(ctx, `❌ Ошибка: ${esc(err?.message || 'Unknown')}`);
+    }
+    return;
+  }
+
   // ── Template variable wizard: collect user input ─────────
   if (pendingTemplateSetup.has(userId)) {
     const state = pendingTemplateSetup.get(userId)!;
@@ -1909,9 +1962,10 @@ async function runAgentDirect(ctx: Context, agentId: number, userId: number) {
     const pauseResult = await getRunnerAgent().pauseAgent(agentId, userId);
     if (pauseResult.success) {
       await editOrReply(ctx,
-        `⏸ *Агент остановлен*\n\n` +
-        `*${esc(agent.name)}* #${agentId}\n` +
-        `Scheduler деактивирован\\.`,
+        `⏸ *Агент остановлен*\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n` +
+        `*${esc(agent.name)}*  \\#${agentId}\n` +
+        `_Scheduler деактивирован_`,
         {
           parse_mode: 'MarkdownV2',
           reply_markup: {
