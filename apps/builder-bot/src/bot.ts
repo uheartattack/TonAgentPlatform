@@ -2337,25 +2337,32 @@ async function showTemplateDetails(ctx: Context, templateId: string) {
   const t = allAgentTemplates.find(x => x.id === templateId);
   if (!t) { await ctx.reply('❌ Шаблон не найден'); return; }
 
-  let text = `${t.icon} *${esc(t.name)}*\n\n${esc(t.description)}\n\n`;
-  text += `🏷 Теги: ${t.tags.map(x => `\`${esc(x)}\``).join(', ')}\n`;
-  text += `⚡ Триггер: ${t.triggerType === 'scheduled' ? '⏰ По расписанию' : t.triggerType === 'webhook' ? '🔗 Webhook' : '▶️ Вручную'}\n`;
-
+  const triggerLine = t.triggerType === 'scheduled' ? '⏰ По расписанию' : t.triggerType === 'webhook' ? '🔗 Webhook' : '▶️ Вручную';
+  let intervalLine = '';
   if (t.triggerType === 'scheduled' && t.triggerConfig.intervalMs) {
     const ms = t.triggerConfig.intervalMs;
     const label = ms >= 86400000 ? `${ms / 86400000} дн` : ms >= 3600000 ? `${ms / 3600000} ч` : `${ms / 60000} мин`;
-    text += `⏱ Интервал: каждые ${esc(label)}\n`;
+    intervalLine = ` · каждые ${label}`;
   }
 
+  let text =
+    `${t.icon} *${esc(t.name)}*\n` +
+    `━━━━━━━━━━━━━━━━━━━━\n` +
+    `_${esc(t.description)}_\n\n` +
+    `${triggerLine}${esc(intervalLine)}\n` +
+    `🏷 ${t.tags.slice(0, 5).map(x => `\`${esc(x)}\``).join(' ')}\n`;
+
   if (t.placeholders.length) {
-    text += `\n⚙️ *Параметры:*\n`;
-    t.placeholders.forEach(p => { text += `• \`${esc(p.name)}\` — ${esc(p.description)}${p.required ? ' *(обяз.)*' : ''}\n`; });
+    text += `\n⚙️ *Настраиваемые параметры:*\n`;
+    t.placeholders.forEach(p => { text += `• \`${esc(p.name)}\`${p.required ? ' ✳️' : ''} — ${esc(p.description)}\n`; });
+  } else {
+    text += `\n✅ _Готов к запуску — параметры не нужны_\n`;
   }
 
   await editOrReply(ctx, text, {
     reply_markup: {
       inline_keyboard: [
-        [{ text: `✅ Создать этого агента`, callback_data: `create_from_template:${t.id}` }],
+        [{ text: `🚀 Создать и запустить`, callback_data: `create_from_template:${t.id}` }],
         [{ text: '◀️ Назад', callback_data: `marketplace_cat:${t.category}` }, { text: '🏪 Маркетплейс', callback_data: 'marketplace' }],
       ],
     },
@@ -2417,21 +2424,26 @@ async function doCreateAgentFromTemplate(ctx: Context, templateId: string, userI
   const agent = result.data!;
 
   const lang = getUserLang(userId);
-  let text = `✅ *${lang === 'ru' ? 'Агент создан из шаблона' : 'Agent created from template'}\\!*\n\n` +
-    `${t.icon} *${esc(t.name)}*\nID: \\#${esc(agent.id)}\n`;
+  let text =
+    `🎉 *${lang === 'ru' ? 'Агент создан\\!' : 'Agent created\\!'}*\n` +
+    `━━━━━━━━━━━━━━━━━━━━\n` +
+    `${t.icon} *${esc(t.name)}*  \\#${esc(String(agent.id))}\n` +
+    `🖥 _На сервере · работает 24/7_\n`;
 
   if (Object.keys(vars).length > 0) {
-    text += `\n✅ *${lang === 'ru' ? 'Переменные сохранены' : 'Variables saved'}:*\n`;
-    Object.entries(vars).forEach(([k, v]) => { text += `• \`${esc(k)}\` \\= \`${esc(v)}\`\n`; });
+    text += `\n✅ *${lang === 'ru' ? 'Переменные:' : 'Variables:'}*\n`;
+    Object.entries(vars).forEach(([k, v]) => { text += `\`${esc(k)}\` \\= \`${esc(v.slice(0, 40))}\`\n`; });
   }
 
-  const unset = t.placeholders.filter(p => !vars[p.name]);
+  const unset = t.placeholders.filter(p => !vars[p.name] && p.required);
   if (unset.length) {
-    text += `\n⚙️ *${lang === 'ru' ? 'Можно настроить позже' : 'Can configure later'}:*\n`;
-    unset.forEach(p => { text += `• \`${esc(p.name)}\`${p.required ? ' *(обяз\\.)* ' : ''} — ${esc(p.description)}\n`; });
+    text += `\n⚠️ *${lang === 'ru' ? 'Нужно настроить:' : 'Setup required:'}*\n`;
+    unset.forEach(p => { text += `• \`${esc(p.name)}\` — ${esc(p.description)}\n`; });
   }
 
-  text += `\n${lang === 'ru' ? 'Агент запускается на нашем сервере — установка не нужна ✅' : 'Agent runs on our server — no installation needed ✅'}`;
+  if (!unset.length) {
+    text += `\n⚡ _${lang === 'ru' ? 'Нажмите Запустить — первый результат через секунды' : 'Tap Run — first result in seconds'}_`;
+  }
 
   await safeReply(ctx, text, {
     parse_mode: 'MarkdownV2',
