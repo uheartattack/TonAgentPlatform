@@ -502,10 +502,24 @@ bot.command('config', async (ctx) => {
     const vars = await getVars();
     const keys = Object.keys(vars);
     if (!keys.length) {
-      return safeReply(ctx, '📋 *Ваши переменные пусты*\n\nДобавьте: `/config set WALLET\\_ADDR EQ...`', { parse_mode: 'MarkdownV2' });
+      return safeReply(ctx,
+        `📋 *Ваши переменные*\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n` +
+        `_Пока ничего нет\\._\n\n` +
+        `Добавьте ключи API, адреса кошельков:\n` +
+        `\`/config set WALLET\\_ADDR EQ\\.\\.\\.\`\n\n` +
+        `_Переменные доступны в коде агента как \`context\\.config\\.KEY\`_`,
+        { parse_mode: 'MarkdownV2' }
+      );
     }
-    const lines = keys.map(k => `• \`${esc(k)}\` \\= \`${esc(String(vars[k]))}\``).join('\n');
-    return safeReply(ctx, `📋 *Ваши переменные:*\n\n${lines}\n\nДля агентов доступны как \`context\\.config\\.KEY\``, { parse_mode: 'MarkdownV2' });
+    const lines = keys.map(k => `\`${esc(k)}\` \\= \`${esc(String(vars[k]).slice(0, 40))}${vars[k].length > 40 ? '\\.\\.\\.' : ''}\``).join('\n');
+    return safeReply(ctx,
+      `📋 *Ваши переменные* \\(${esc(String(keys.length))}\\)\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `${lines}\n\n` +
+      `_Доступны в агентах как \`context\\.config\\.KEY\`_`,
+      { parse_mode: 'MarkdownV2' }
+    );
   }
 
   if (sub === 'set') {
@@ -2645,10 +2659,11 @@ async function showCommunityListings(ctx: Context) {
       );
     }
 
-    let text = `👥 *Агенты от сообщества \\(${esc(listings.length)}\\):*\n\n`;
-    listings.slice(0, 15).forEach((l: any) => {
-      const price = l.isFree ? '🆓 Бесплатно' : `💰 ${(l.price / 1e9).toFixed(2)} TON`;
-      text += `*${esc(l.name)}* — ${esc(price)} · ${esc(l.totalSales)} продаж\n`;
+    let text = `👥 *Маркетплейс сообщества*\n━━━━━━━━━━━━━━━━━━━━\n_${esc(String(listings.length))} агентов от пользователей_\n\n`;
+    listings.slice(0, 10).forEach((l: any) => {
+      const price = l.isFree ? '🆓' : `💎 ${(l.price / 1e9).toFixed(1)}`;
+      const sales = l.totalSales > 0 ? ` · ⬇️${esc(String(l.totalSales))}` : '';
+      text += `${price} *${esc(l.name.slice(0, 35))}*${sales}\n`;
     });
 
     const btns = listings.slice(0, 8).map((l: any) => [
@@ -2670,13 +2685,14 @@ async function showListingDetail(ctx: Context, listingId: number, userId: number
     const alreadyBought = await getMarketplaceRepository().hasPurchased(listingId, userId);
     const isOwner = listing.sellerId === userId;
 
-    const price = listing.isFree ? '🆓 Бесплатно' : `💰 ${(listing.price / 1e9).toFixed(2)} TON`;
-    let text = `🤖 *${esc(listing.name)}*\n\n`;
-    text += `${esc(listing.description || 'Описание отсутствует')}\n\n`;
-    text += `💵 Цена: ${esc(price)}\n`;
-    text += `📊 Продано: ${esc(listing.totalSales)} раз\n`;
-    if (isOwner) text += `\n✏️ _Вы — автор этого листинга_`;
-    if (alreadyBought) text += `\n✅ _Вы уже приобрели этого агента_`;
+    const price = listing.isFree ? '🆓 Бесплатно' : `💎 ${(listing.price / 1e9).toFixed(2)} TON`;
+    let text =
+      `🤖 *${esc(listing.name)}*\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `_${esc(listing.description || 'Описание отсутствует')}_\n\n` +
+      `${price}  ·  📊 ${esc(String(listing.totalSales))} продаж\n`;
+    if (isOwner) text += `\n_✏️ Вы — автор этого листинга_`;
+    if (alreadyBought) text += `\n_✅ Уже приобретено_`;
 
     const btns: any[] = [];
     if (!isOwner && !alreadyBought) {
@@ -2764,10 +2780,11 @@ async function buyMarketplaceListing(ctx: Context, listingId: number, userId: nu
     });
 
     await editOrReply(ctx,
-      `✅ *Агент получен\\!*\n\n` +
-      `🤖 *${esc(listing.name)}*\n` +
-      `ID: #${esc(newAgent.id)}\n\n` +
-      `Агент добавлен в ваш список\\. Настройте параметры и запустите\\!`,
+      `✅ *Агент получен\\!*\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `🤖 *${esc(listing.name)}*  \\#${esc(String(newAgent.id))}\n` +
+      `🆓 Бесплатно из маркетплейса\n\n` +
+      `_Запустите агента — всё готово к работе_`,
       {
         parse_mode: 'MarkdownV2',
         reply_markup: {
