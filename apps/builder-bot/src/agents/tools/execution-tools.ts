@@ -9,6 +9,39 @@ import {
   getExecutionHistoryRepository,
 } from '../../db/schema-extensions';
 
+// ── Sanitizer: fix literal newlines inside string literals ──────────────────
+// AI code generators sometimes emit actual \n characters inside quoted strings
+// instead of the escape sequence \\n, causing SyntaxError "Unterminated string".
+function fixLiteralNewlinesInStrings(code: string): string {
+  let result = '';
+  let i = 0;
+  while (i < code.length) {
+    const ch = code[i];
+    if (ch === "'" || ch === '"') {
+      const quote = ch;
+      result += ch; i++;
+      while (i < code.length) {
+        const c = code[i];
+        if (c === '\\') { result += c + (code[i + 1] || ''); i += 2; }
+        else if (c === quote) { result += c; i++; break; }
+        else if (c === '\n') { result += '\\n'; i++; }
+        else if (c === '\r') { i++; }
+        else { result += c; i++; }
+      }
+    } else if (ch === '`') {
+      // Template literals — copy verbatim
+      result += ch; i++;
+      while (i < code.length) {
+        const c = code[i];
+        if (c === '\\') { result += c + (code[i + 1] || ''); i += 2; }
+        else if (c === '`') { result += c; i++; break; }
+        else { result += c; i++; }
+      }
+    } else { result += ch; i++; }
+  }
+  return result;
+}
+
 // Лог выполнения
 interface ExecutionLog {
   timestamp: Date;
@@ -379,6 +412,10 @@ export class ExecutionTools {
         eval: false,
         wasm: false,
       });
+
+      // Sanitize: fix literal newlines inside string literals (common AI codegen mistake)
+      // e.g. 'text\nmore' with real \n → 'text\\nmore' → prevents SyntaxError
+      code = fixLiteralNewlinesInStrings(code);
 
       // Оборачиваем код агента в async функцию.
       // Если код определяет функцию agent/main/run — вызываем её автоматически.
