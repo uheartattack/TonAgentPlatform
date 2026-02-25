@@ -298,6 +298,11 @@ function isGarbageInput(text: string): boolean {
   // Нет ни одной буквы — только цифры/символы
   if (!/[a-zA-Zа-яёА-ЯЁ]/.test(t)) return true;
 
+  // Длинные фразы с несколькими словами никогда не мусор
+  // (защита от false-positive на технические термины типа "floor price")
+  const wordCount = t.trim().split(/\s+/).length;
+  if (wordCount >= 4) return false;
+
   const lower = t.toLowerCase().replace(/\s+/g, '');
   if (lower.length === 0) return true;
 
@@ -309,7 +314,8 @@ function isGarbageInput(text: string): boolean {
     if (maxCount / lower.length > 0.65) return true;
   }
 
-  // Ряды клавиатуры: 5+ подряд символов из одного ряда
+  // Ряды клавиатуры: 7+ подряд символов из одного ряда
+  // (порог увеличен с 5 до 7 чтобы не ложно срабатывать на английские слова)
   const kbRows = [
     'qwertyuiop', 'asdfghjkl', 'zxcvbnm',
     'йцукенгшщзхъ', 'фывапролджэ', 'ячсмитьбю',
@@ -317,7 +323,7 @@ function isGarbageInput(text: string): boolean {
   for (const row of kbRows) {
     let run = 0;
     for (const c of lower) {
-      if (row.includes(c)) { run++; if (run >= 5) return true; }
+      if (row.includes(c)) { run++; if (run >= 7) return true; }
       else run = 0;
     }
   }
