@@ -459,38 +459,33 @@ async function agent(context) {
     clearTimeout(timeoutId);
     
     const isUp = response.status === expectedStatus;
-    const responseTime = Date.now();
-    
+    const icon = isUp ? '✅' : '⚠️';
+    const timeUTC = new Date().toUTCString().slice(17, 22);
+
     if (isUp) {
       console.log('✅ Сайт доступен:', response.status);
     } else {
-      console.warn('⚠️ Статус отличается:', response.status);
+      console.warn('⚠️ Статус отличается:', response.status, '(ожидалось', expectedStatus + ')');
+      await notify(
+        '🌐 *Website Monitor*\\n\\n' +
+        '⚠️ Статус изменился!\\n' +
+        '🔗 `' + url + '`\\n' +
+        '📊 Статус: `' + response.status + '` (ожидался ' + expectedStatus + ')\\n' +
+        '⏰ ' + timeUTC + ' UTC'
+      );
     }
-    
-    return {
-      success: true,
-      result: {
-        url: url,
-        status: response.status,
-        expectedStatus: expectedStatus,
-        isUp: isUp,
-        responseTime: responseTime,
-        timestamp: new Date().toISOString()
-      }
-    };
+
+    return { url: url, status: response.status, isUp: isUp ? 'online' : 'degraded', checked: timeUTC + ' UTC' };
   } catch (error) {
     console.error('❌ Сайт недоступен:', error.message);
-    return {
-      success: true,
-      result: {
-        url: url,
-        status: 0,
-        expectedStatus: expectedStatus,
-        isUp: false,
-        error: error.message,
-        timestamp: new Date().toISOString()
-      }
-    };
+    const timeUTC = new Date().toUTCString().slice(17, 22);
+    await notify(
+      '🌐 *Website Monitor*\\n\\n' +
+      '❌ Сайт недоступен!\\n' +
+      '🔗 `' + url + '`\\n' +
+      '💥 ' + error.message
+    );
+    return { url: url, status: 0, isUp: 'down', error: error.message };
   }
 }
 `,
