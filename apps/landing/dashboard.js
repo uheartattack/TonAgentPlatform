@@ -24,6 +24,25 @@ function switchLang(lang) {
 // Initialize language
 switchLang(currentLang);
 
+// ===== ANIMATED COUNTER =====
+// Плавно считает число от 0 до target за duration мс (WOW-эффект для метрик)
+function animateCount(el, target, duration = 800, suffix = '') {
+  if (!el) return;
+  const start = performance.now();
+  const from = parseInt(el.textContent) || 0;
+  const to = typeof target === 'number' ? target : parseInt(target) || 0;
+  if (from === to) { el.textContent = to + suffix; return; }
+  const update = (now) => {
+    const elapsed = now - start;
+    const progress = Math.min(elapsed / duration, 1);
+    // easeOutQuart
+    const eased = 1 - Math.pow(1 - progress, 4);
+    el.textContent = Math.round(from + (to - from) * eased) + suffix;
+    if (progress < 1) requestAnimationFrame(update);
+  };
+  requestAnimationFrame(update);
+}
+
 // ===== API CONFIG =====
 // API server runs alongside the bot on port 3001
 const API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
@@ -113,21 +132,16 @@ async function loadDashboard() {
 async function loadMyStats() {
   const data = await apiRequest('GET', '/api/stats/me');
   if (!data.ok) return;
-  // Active agents
-  const sessEl = document.getElementById('sessions-value');
-  if (sessEl) sessEl.textContent = data.agentsActive || 0;
+  // Active agents — animated counter
+  animateCount(document.getElementById('sessions-value'), data.agentsActive || 0);
   // Installed plugins
-  const toolsEl = document.getElementById('tools-value');
-  if (toolsEl) toolsEl.textContent = data.pluginsInstalled || data.pluginsTotal || 12;
+  animateCount(document.getElementById('tools-value'), data.pluginsInstalled || data.pluginsTotal || 12);
   // Total runs
-  const runsEl = document.getElementById('runs-value');
-  if (runsEl) runsEl.textContent = data.totalRuns || 0;
+  animateCount(document.getElementById('runs-value'), data.totalRuns || 0);
   // Success rate
-  const rateEl = document.getElementById('success-rate-value');
-  if (rateEl) rateEl.textContent = (data.successRate != null ? data.successRate : 100) + '%';
+  animateCount(document.getElementById('success-rate-value'), data.successRate != null ? data.successRate : 100, 800, '%');
   // Last 24h
-  const h24El = document.getElementById('last24h-value');
-  if (h24El) h24El.textContent = data.last24hRuns || 0;
+  animateCount(document.getElementById('last24h-value'), data.last24hRuns || 0);
   // Init uptime counter from server
   if (data.uptimeSeconds != null) {
     window._serverUptimeBase = data.uptimeSeconds;
