@@ -103,43 +103,54 @@ const tonPriceMonitor: AgentTemplate = {
 async function agent(context) {
   const targetPrice = parseFloat(context.config.TARGET_PRICE) || 0;
   const condition = context.config.CONDITION || 'above';
-  
+
   try {
-    console.log('📊 Получаю текущую цену TON...');
-    
+    console.log('📊 Получаю цену TON с CoinGecko...');
+
     const response = await fetch(
-      'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd&include_24hr_change=true'
+      'https://api.coingecko.com/api/v3/simple/price' +
+      '?ids=the-open-network&vs_currencies=usd' +
+      '&include_24hr_change=true&include_24hr_vol=true'
     );
-    
-    if (!response.ok) {
-      throw new Error('API error: ' + response.status);
-    }
-    
+    if (!response.ok) throw new Error('CoinGecko ' + response.status);
+
     const data = await response.json();
-    const price = data['the-open-network'].usd;
-    const change24h = data['the-open-network'].usd_24h_change;
-    
-    console.log('💰 Цена TON: $' + price.toFixed(4));
-    
-    let alert = null;
+    const ton  = data['the-open-network'];
+    const price    = ton.usd;
+    const change   = ton.usd_24h_change;
+    const vol      = ton.usd_24h_vol;
+
+    const arrow    = change >= 0 ? '📈' : '📉';
+    const sign     = change >= 0 ? '+' : '';
+    const volM     = (vol / 1_000_000).toFixed(1);
+    const timeUTC  = new Date().toUTCString().slice(17, 22);
+
+    // Красивое уведомление — всегда отправляем
+    const msg =
+      '💎 *TON/USD — Price Update*\\n\\n' +
+      '💰 Цена:  \`$' + price.toFixed(3) + '\`\\n' +
+      arrow + ' 24ч:    \`' + sign + change.toFixed(2) + '%\`\\n' +
+      '📊 Объём: \`$' + volM + 'M\`\\n' +
+      '⏰ ' + timeUTC + ' UTC';
+
+    await notify(msg);
+    console.log('✅ Уведомление отправлено: $' + price.toFixed(3));
+
+    // Алерт при достижении цели
     if (targetPrice > 0) {
-      if (condition === 'above' && price >= targetPrice) {
-        alert = '🚨 Цена TON достигла $' + targetPrice + '! Текущая: $' + price.toFixed(4);
-      } else if (condition === 'below' && price <= targetPrice) {
-        alert = '🚨 Цена TON упала до $' + targetPrice + '! Текущая: $' + price.toFixed(4);
+      const hit = (condition === 'above' && price >= targetPrice)
+               || (condition === 'below' && price <= targetPrice);
+      if (hit) {
+        const dir = condition === 'above' ? '≥' : '≤';
+        await notify(
+          '🚨 *Целевая цена достигнута\\!*\\n\\n' +
+          'TON ' + dir + ' $' + targetPrice + '\\n' +
+          'Сейчас: \`$' + price.toFixed(3) + '\`'
+        );
       }
     }
-    
-    return {
-      success: true,
-      result: {
-        price: price.toFixed(4),
-        change24h: change24h.toFixed(2),
-        currency: 'USD',
-        alert: alert,
-        timestamp: new Date().toISOString()
-      }
-    };
+
+    return { success: true, price: price.toFixed(3), change24h: sign + change.toFixed(2) + '%' };
   } catch (error) {
     console.error('❌ Ошибка:', error.message);
     return { success: false, error: error.message };
