@@ -449,7 +449,7 @@ bot.command('start', async (ctx) => {
       reply_markup: {
         inline_keyboard: [
           [{ text: '📈 Следить за ценой TON', callback_data: 'create_from_template:ton-price-monitor' }],
-          [{ text: '💎 Проверить баланс кошелька', callback_data: 'create_from_template:ton-wallet-checker' }],
+          [{ text: '💎 Проверить баланс кошелька', callback_data: 'create_from_template:ton-balance-checker' }],
           [{ text: '🌐 Мониторинг доступности сайта', callback_data: 'create_from_template:website-monitor' }],
           [
             { text: '🏪 Все шаблоны', callback_data: 'marketplace' },
@@ -2058,11 +2058,21 @@ async function runAgentDirect(ctx: Context, agentId: number, userId: number) {
           if (rawResult !== undefined && rawResult !== null) {
             resultText += `\n📊 *Результат:*\n━━━━━━━━━━━━━━━━━━━━\n`;
             if (typeof rawResult === 'object' && !Array.isArray(rawResult)) {
-              const entries = Object.entries(rawResult as Record<string, any>);
-              if (entries.length > 0) {
-                entries.slice(0, 12).forEach(([k, v]) => {
-                  const val = typeof v === 'object' ? JSON.stringify(v) : String(v);
-                  resultText += `\`${esc(k)}\` → ${esc(val.slice(0, 100))}\n`;
+              // Flatten: if value is an object, expand its entries too
+              const flat: Array<[string, string]> = [];
+              Object.entries(rawResult as Record<string, any>).forEach(([k, v]) => {
+                if (k === 'success' && v === true) return; // skip success:true noise
+                if (typeof v === 'object' && v !== null && !Array.isArray(v)) {
+                  Object.entries(v).forEach(([k2, v2]) => {
+                    flat.push([k2, typeof v2 === 'object' ? JSON.stringify(v2) : String(v2)]);
+                  });
+                } else {
+                  flat.push([k, String(v)]);
+                }
+              });
+              if (flat.length > 0) {
+                flat.slice(0, 12).forEach(([k, v]) => {
+                  resultText += `\`${esc(k)}\` → ${esc(v.slice(0, 100))}\n`;
                 });
               } else {
                 resultText += `_\\(пустой объект\\)_\n`;
