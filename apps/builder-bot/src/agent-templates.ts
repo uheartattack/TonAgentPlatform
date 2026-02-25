@@ -68,8 +68,8 @@ async function agent(context) {
 
     await notify(
       '💎 *TON Balance Check*\\n\\n' +
-      '👛 Кошелёк: `' + shortAddr + '`\\n' +
-      '💰 Баланс:  `' + balanceTon.toFixed(4) + ' TON`'
+      '👛 Кошелёк: \`' + shortAddr + '\`\\n' +
+      '💰 Баланс:  \`' + balanceTon.toFixed(4) + ' TON\`'
     );
 
     return {
@@ -469,8 +469,8 @@ async function agent(context) {
       await notify(
         '🌐 *Website Monitor*\\n\\n' +
         '⚠️ Статус изменился!\\n' +
-        '🔗 `' + url + '`\\n' +
-        '📊 Статус: `' + response.status + '` (ожидался ' + expectedStatus + ')\\n' +
+        '🔗 \`' + url + '\`\\n' +
+        '📊 Статус: \`' + response.status + '\` (ожидался ' + expectedStatus + ')\\n' +
         '⏰ ' + timeUTC + ' UTC'
       );
     }
@@ -482,7 +482,7 @@ async function agent(context) {
     await notify(
       '🌐 *Website Monitor*\\n\\n' +
       '❌ Сайт недоступен!\\n' +
-      '🔗 `' + url + '`\\n' +
+      '🔗 \`' + url + '\`\\n' +
       '💥 ' + error.message
     );
     return { url: url, status: 0, isUp: 'down', error: error.message };
