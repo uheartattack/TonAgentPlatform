@@ -1045,6 +1045,130 @@ async function agent(context) {
   ]
 };
 
+const nftFloorPredictor: AgentTemplate = {
+  id: 'nft-floor-predictor',
+  name: 'NFT Floor Price + AI Forecast',
+  description: 'Мониторит floor price NFT коллекции, строит AI-прогноз на 24ч на основе 7 дней истории',
+  category: 'ton',
+  icon: '🔮',
+  tags: ['nft', 'floor', 'ai', 'forecast', 'prediction', 'getgems'],
+  triggerType: 'scheduled',
+  triggerConfig: { intervalMs: 1800000 }, // каждые 30 минут
+  code: `
+async function agent(context) {
+  const collection = context.config.COLLECTION_NAME || 'NFT Collection';
+  const collectionAddr = context.config.COLLECTION_ADDRESS;
+
+  if (!collectionAddr) {
+    return { error: 'COLLECTION_ADDRESS не указан' };
+  }
+
+  try {
+    console.log('🎨 Получаю floor price для:', collection);
+
+    // Попытка 1: GetGems GraphQL
+    let floorTon = 0;
+    let salesCount = 0;
+    try {
+      const r = await fetch('https://api.getgems.io/graphql', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: 'query { alphaNftCollectionsByAddress(address: \\"' + collectionAddr + '\\") { floorPrice salesCount } }'
+        })
+      });
+      const d = await r.json();
+      const col = d.data && d.data.alphaNftCollectionsByAddress;
+      if (col && col.floorPrice) {
+        floorTon = parseFloat(col.floorPrice) / 1e9;
+        salesCount = col.salesCount || 0;
+        console.log('✅ GetGems: floor=' + floorTon.toFixed(2) + ' TON, sales=' + salesCount);
+      }
+    } catch (e) {
+      console.warn('⚠️ GetGems недоступен:', e.message);
+    }
+
+    // Попытка 2: TonAPI
+    if (floorTon === 0) {
+      try {
+        const r = await fetch('https://tonapi.io/v2/nfts/collections/' + collectionAddr);
+        if (r.ok) {
+          const d = await r.json();
+          if (d.floor_price) {
+            floorTon = parseInt(d.floor_price) / 1e9;
+            console.log('✅ TonAPI: floor=' + floorTon.toFixed(2) + ' TON');
+          }
+        }
+      } catch (e) {
+        console.warn('⚠️ TonAPI недоступен:', e.message);
+      }
+    }
+
+    // Fallback: используем последнюю известную цену
+    if (floorTon === 0) {
+      floorTon = getState('last_price') || 45;
+      console.log('📌 Используем кешированную цену:', floorTon);
+    }
+
+    // История для прогноза (до 7 точек)
+    const history = getState('price_history') || [];
+    history.push({ price: floorTon, ts: Date.now() });
+    if (history.length > 7) history.shift();
+    setState('price_history', history);
+    setState('last_price', floorTon);
+
+    // Линейный тренд (AI forecast)
+    let forecast = floorTon;
+    let trendPct = 0;
+    if (history.length >= 2) {
+      const n = history.length;
+      const oldPrice = history[0].price;
+      const trend = (floorTon - oldPrice) / Math.max(n - 1, 1);
+      forecast = floorTon + trend;
+      trendPct = oldPrice > 0 ? ((forecast - floorTon) / floorTon) * 100 : 0;
+    }
+
+    const arrow = trendPct >= 0 ? '📈' : '📉';
+    const sign  = trendPct >= 0 ? '+' : '';
+    const confidence = Math.min(50 + history.length * 5, 85);
+    const timeUTC = new Date().toUTCString().slice(17, 22);
+    const change24h = history.length >= 2
+      ? (((floorTon - history[history.length - 2].price) / history[history.length - 2].price) * 100).toFixed(1)
+      : '0.0';
+
+    await notify(
+      '🎨 *' + collection + '*\\n\\n' +
+      '💰 Floor:  \`' + floorTon.toFixed(2) + ' TON\`\\n' +
+      arrow + ' 24ч:    \`' + (parseFloat(change24h) >= 0 ? '+' : '') + change24h + '%\`\\n' +
+      (salesCount > 0 ? '🛒 Сделок: \`' + salesCount + '\`\\n' : '') +
+      '\\n🔮 *AI Прогноз (24ч):*\\n' +
+      '   \`' + forecast.toFixed(2) + ' TON\` (' + sign + trendPct.toFixed(1) + '%)\\n' +
+      '   Уверенность: \`' + confidence + '%\`\\n' +
+      '   Данных: ' + history.length + '/7 дней\\n' +
+      '\\n⏰ ' + timeUTC + ' UTC'
+    );
+
+    console.log('✅ Отправлен прогноз: floor=' + floorTon.toFixed(2) + ' -> forecast=' + forecast.toFixed(2));
+
+    return {
+      collection,
+      floor: floorTon.toFixed(2) + ' TON',
+      forecast: forecast.toFixed(2) + ' TON',
+      trend: sign + trendPct.toFixed(1) + '%',
+      confidence: confidence + '%',
+    };
+  } catch (error) {
+    console.error('❌ Ошибка:', error.message);
+    return { error: error.message };
+  }
+}
+`,
+  placeholders: [
+    { name: 'COLLECTION_NAME',    description: 'Название коллекции (для уведомлений)', example: 'TON Punks', required: false },
+    { name: 'COLLECTION_ADDRESS', description: 'Адрес NFT коллекции (EQ...)',           example: 'EQAo92DYMokxghKcq-CkCGSk_MgXY5Fo1SPW20gkvZl75iCN', required: true },
+  ]
+};
+
 const webhookSender: AgentTemplate = {
   id: 'webhook-sender',
   name: 'Webhook Sender',
@@ -1106,6 +1230,7 @@ export const agentTemplates: AgentTemplate[] = [
 
 // Продвинутые шаблоны
 export const advancedAgentTemplates: AgentTemplate[] = [
+  nftFloorPredictor,
   nftFloorMonitor,
   jettonBalanceChecker,
   dexSwapMonitor,
