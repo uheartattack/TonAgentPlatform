@@ -62,17 +62,19 @@ async function agent(context) {
     
     const balanceNano = data.result;
     const balanceTon = parseInt(balanceNano) / 1e9;
-    
+    const shortAddr = walletAddress.slice(0, 8) + '...' + walletAddress.slice(-6);
+
     console.log('✅ Баланс получен:', balanceTon.toFixed(4), 'TON');
-    
+
+    await notify(
+      '💎 *TON Balance Check*\\n\\n' +
+      '👛 Кошелёк: `' + shortAddr + '`\\n' +
+      '💰 Баланс:  `' + balanceTon.toFixed(4) + ' TON`'
+    );
+
     return {
-      success: true,
-      result: {
-        wallet: walletAddress,
-        balanceNano: balanceNano,
-        balanceTon: balanceTon.toFixed(4),
-        timestamp: new Date().toISOString()
-      }
+      wallet: shortAddr,
+      balance: balanceTon.toFixed(4) + ' TON',
     };
   } catch (error) {
     console.error('❌ Ошибка:', error.message);
