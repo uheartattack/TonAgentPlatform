@@ -1430,10 +1430,21 @@ bot.on('callback_query', async (ctx) => {
   // ── Редактировать агента ──
   if (data.startsWith('edit_agent:')) {
     await ctx.answerCbQuery();
-    const agentId = data.split(':')[1];
-    await ctx.reply(
-      `✏️ Что изменить в агенте #${agentId}?\n\nПример:\n_"Добавь проверку каждые 30 минут"_\n_"Измени адрес кошелька на EQ..."_`,
-      { parse_mode: 'Markdown' }
+    const agentId = parseInt(data.split(':')[1]);
+    const agentData = await getDBTools().getAgent(agentId, userId);
+    const agentName = agentData.data?.name || `#${agentId}`;
+    await editOrReply(ctx,
+      `✏️ *Изменить агента*\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `*${esc(agentName)}*  \\#${esc(String(agentId))}\n\n` +
+      `Опишите что нужно изменить:\n` +
+      `_"Измени интервал на каждые 30 минут"_\n` +
+      `_"Добавь отправку уведомления при ошибке"_\n` +
+      `_"Смени адрес кошелька на EQ\\.\\.\\."_`,
+      {
+        parse_mode: 'MarkdownV2',
+        reply_markup: { inline_keyboard: [[{ text: '❌ Отмена', callback_data: `agent_menu:${agentId}` }]] },
+      }
     );
     return;
   }
@@ -1516,7 +1527,7 @@ bot.on('callback_query', async (ctx) => {
     // Останавливаем агента если он запущен
     await getRunnerAgent().pauseAgent(agentId, userId).catch(() => {});
     const result = await getDBTools().deleteAgent(agentId, userId);
-    await ctx.reply(result.success ? `✅ Агент #${agentId} удалён` : `❌ Ошибка: ${result.error}`);
+    await ctx.reply(result.success ? `🗑 Агент #${agentId} удалён` : `❌ Ошибка: ${result.error}`);
     if (result.success) await showAgentsList(ctx, userId);
     return;
   }
@@ -1697,7 +1708,7 @@ bot.on(message('text'), async (ctx) => {
     try {
       const result = await getDBTools().updateAgent(agentId, userId, { name: trimmed });
       if (result.success) {
-        await ctx.reply(`✅ Агент #${agentId} переименован: *${trimmed}*`, { parse_mode: 'Markdown' });
+        await safeReply(ctx, `✅ *${esc(trimmed)}*  \\#${esc(String(agentId))}\n_Название обновлено_`);
         await showAgentMenu(ctx, agentId, userId);
       } else {
         await ctx.reply(`❌ Ошибка переименования: ${result.error || 'Неизвестная ошибка'}`);
