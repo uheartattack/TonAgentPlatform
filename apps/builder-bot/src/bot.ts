@@ -2026,13 +2026,26 @@ async function showAgentsList(ctx: Context, userId: number) {
     const active = agents.filter(a => a.isActive).length;
 
     let text = `🤖 *Ваши агенты*\n`;
-    text += `Всего: *${esc(agents.length)}* · Активных: *${esc(active)}*\n\n`;
+    text += `━━━━━━━━━━━━━━━━━━━━\n`;
+    text += `Всего: *${esc(String(agents.length))}*  🟢 Активных: *${esc(String(active))}*\n`;
+    text += `━━━━━━━━━━━━━━━━━━━━\n\n`;
 
     agents.forEach((a) => {
       const st = a.isActive ? '🟢' : '⏸';
-      const tr = a.triggerType === 'scheduled' ? ' ⏰' : a.triggerType === 'webhook' ? ' 🔗' : '';
-      const name = (a.name || '').replace(/[*_`[\]]/g, '').slice(0, 30);
-      text += `${st} *#${esc(a.id)}* ${esc(name)}${esc(tr)}\n`;
+      const trIcon = a.triggerType === 'scheduled' ? '⏰' : a.triggerType === 'webhook' ? '🔗' : '▶️';
+      const name = (a.name || '').replace(/[*_`[\]]/g, '').slice(0, 28);
+      // Интервал для scheduled
+      let schedLabel = '';
+      if (a.triggerType === 'scheduled') {
+        const ms = (a.triggerConfig as any)?.intervalMs || 0;
+        schedLabel = ms >= 3_600_000 ? ` · ${ms / 3_600_000}ч` : ms >= 60_000 ? ` · ${ms / 60_000}мин` : '';
+      }
+      // Дата создания (давность)
+      const ageMs = Date.now() - new Date(a.createdAt).getTime();
+      const ageDays = Math.floor(ageMs / 86_400_000);
+      const ageLabel = ageDays === 0 ? 'сегодня' : ageDays === 1 ? 'вчера' : `${ageDays}д назад`;
+      text += `${st} *#${esc(String(a.id))}* ${esc(name)}\n`;
+      text += `   ${trIcon}${esc(schedLabel)}  _${esc(ageLabel)}_\n\n`;
     });
 
     const btns = agents.slice(0, 8).map((a) => [{
@@ -2211,11 +2224,11 @@ async function showTonConnect(ctx: Context) {
 // ============================================================
 async function showMarketplace(ctx: Context) {
   const CATS = [
-    { id: 'ton', icon: '💎', name: 'TON блокчейн' },
-    { id: 'finance', icon: '💰', name: 'Финансы' },
-    { id: 'monitoring', icon: '📊', name: 'Мониторинг' },
-    { id: 'utility', icon: '🔧', name: 'Утилиты' },
-    { id: 'social', icon: '📣', name: 'Социальные' },
+    { id: 'ton',        icon: '💎', name: 'TON блокчейн', hint: 'кошельки, переводы, DeFi' },
+    { id: 'finance',    icon: '💰', name: 'Финансы',      hint: 'цены, DEX, алерты' },
+    { id: 'monitoring', icon: '📊', name: 'Мониторинг',   hint: 'uptime, API, уведомления' },
+    { id: 'utility',    icon: '🔧', name: 'Утилиты',      hint: 'парсинг, расписания, задачи' },
+    { id: 'social',     icon: '📣', name: 'Социальные',   hint: 'новости, посты, каналы' },
   ] as const;
 
   // Загружаем пользовательские листинги из БД
@@ -2225,20 +2238,23 @@ async function showMarketplace(ctx: Context) {
     userListingsCount = listings.length;
   } catch { /* репозиторий может ещё не быть готов */ }
 
-  let text = `🏪 *Маркетплейс агентов*\n\n`;
-  text += `📦 Готовые шаблоны: *${esc(allAgentTemplates.length)}*\n`;
-  if (userListingsCount > 0) {
-    text += `👥 От сообщества: *${esc(userListingsCount)}*\n`;
-  }
-  text += `\nВыберите раздел:\n\n`;
+  let text = `🏪 *Маркетплейс агентов*\n`;
+  text += `_Готовые агенты — установка в 1 клик_\n\n`;
+  text += `━━━━━━━━━━━━━━━━━━━━\n`;
+  text += `📦 Шаблонов: *${esc(String(allAgentTemplates.length))}*`;
+  if (userListingsCount > 0) text += `  👥 Сообщество: *${esc(String(userListingsCount))}*`;
+  text += `\n━━━━━━━━━━━━━━━━━━━━\n\n`;
 
   CATS.forEach(c => {
     const count = allAgentTemplates.filter(t => t.category === c.id).length;
-    if (count > 0) text += `${c.icon} *${esc(c.name)}* — ${esc(count)} агентов\n`;
+    if (count > 0) text += `${c.icon} *${esc(c.name)}* — ${esc(String(count))} · _${esc(c.hint)}_\n`;
   });
 
   const btns = CATS.filter(c => allAgentTemplates.filter(t => t.category === c.id).length > 0)
-    .map(c => [{ text: `${c.icon} ${c.name}`, callback_data: `marketplace_cat:${c.id}` }]);
+    .map(c => {
+      const count = allAgentTemplates.filter(t => t.category === c.id).length;
+      return [{ text: `${c.icon} ${c.name} (${count})`, callback_data: `marketplace_cat:${c.id}` }];
+    });
   btns.push([{ text: '📋 Все шаблоны', callback_data: 'marketplace_all' }]);
   if (userListingsCount > 0) {
     btns.push([{ text: '👥 От сообщества', callback_data: 'mkt_community' }]);
