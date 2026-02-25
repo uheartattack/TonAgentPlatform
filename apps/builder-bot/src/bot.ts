@@ -1707,25 +1707,28 @@ bot.on(message('text'), async (ctx) => {
   if (isCreateIntent && !hasScheduleInText && trimmed.length > 15) {
     // Сохраняем описание и показываем выбор расписания
     pendingCreations.set(userId, { description: text, step: 'schedule' });
+    const previewTask = text.replace(/[_*`[\]]/g, '').slice(0, 60) + (text.length > 60 ? '…' : '');
     await ctx.reply(
-      '⏰ *Как запускать агента?*\n\nВыберите расписание:',
+      '⏰ *Как часто запускать агента?*\n\n' +
+      `📝 _"${previewTask}"_\n\n` +
+      '👇 Выберите расписание — агент будет работать автоматически на сервере:',
       {
         parse_mode: 'Markdown',
         reply_markup: {
           inline_keyboard: [
             [
-              { text: '▶️ Вручную', callback_data: 'agent_schedule:manual' },
-              { text: '⏰ Каждую минуту', callback_data: 'agent_schedule:1min' },
+              { text: '▶️ Вручную (по кнопке)', callback_data: 'agent_schedule:manual' },
             ],
             [
-              { text: '⏰ Каждые 5 мин', callback_data: 'agent_schedule:5min' },
-              { text: '⏰ Каждые 15 мин', callback_data: 'agent_schedule:15min' },
+              { text: '🔁 Каждую минуту', callback_data: 'agent_schedule:1min' },
+              { text: '⚡ Каждые 5 мин', callback_data: 'agent_schedule:5min' },
             ],
             [
-              { text: '⏰ Каждый час', callback_data: 'agent_schedule:1hour' },
-              { text: '⏰ Каждые 24 ч', callback_data: 'agent_schedule:24hours' },
+              { text: '⏱ Каждые 15 мин', callback_data: 'agent_schedule:15min' },
+              { text: '🕐 Каждый час', callback_data: 'agent_schedule:1hour' },
             ],
             [
+              { text: '📅 Раз в сутки', callback_data: 'agent_schedule:24hours' },
               { text: '❌ Отмена', callback_data: 'agent_schedule:cancel' },
             ],
           ],
@@ -1912,20 +1915,40 @@ async function runAgentDirect(ctx: Context, agentId: number, userId: number) {
     } else {
       // Однократный запуск — показываем результат
       const exec = data.executionResult;
-      let resultText = `✅ *Агент выполнен\\!*\n\n*${esc(agent.name)}* #${agentId}\n`;
+      let resultText = `✅ *Агент выполнен\\!*\n━━━━━━━━━━━━━━━━━━━━\n*${esc(agent.name)}*  \\#${agentId}\n`;
 
       if (exec) {
         resultText += `⏱ Время: ${exec.executionTime}ms\n`;
         if (exec.success) {
-          resultText += `\n📊 *Результат:*\n`;
-          const rawResult = exec.result !== undefined ? JSON.stringify(exec.result, null, 2) : '(нет данных)';
-          const resultStr = rawResult || '(нет данных)';
-          resultText += `\`\`\`\n${esc(resultStr.slice(0, 600))}${resultStr.length > 600 ? '...' : ''}\n\`\`\``;
+          const rawResult = exec.result;
+          if (rawResult !== undefined && rawResult !== null) {
+            resultText += `\n📊 *Результат:*\n━━━━━━━━━━━━━━━━━━━━\n`;
+            if (typeof rawResult === 'object' && !Array.isArray(rawResult)) {
+              const entries = Object.entries(rawResult as Record<string, any>);
+              if (entries.length > 0) {
+                entries.slice(0, 12).forEach(([k, v]) => {
+                  const val = typeof v === 'object' ? JSON.stringify(v) : String(v);
+                  resultText += `\`${esc(k)}\` → ${esc(val.slice(0, 100))}\n`;
+                });
+              } else {
+                resultText += `_\\(пустой объект\\)_\n`;
+              }
+            } else if (Array.isArray(rawResult)) {
+              resultText += `_Массив: ${esc(String((rawResult as any[]).length))} элементов_\n`;
+              (rawResult as any[]).slice(0, 5).forEach((item, i) => {
+                resultText += `  ${i + 1}\\. ${esc(String(item).slice(0, 80))}\n`;
+              });
+            } else {
+              resultText += `${esc(String(rawResult).slice(0, 400))}\n`;
+            }
+          } else {
+            resultText += `\n_✅ Агент выполнен успешно_\n`;
+          }
         } else {
           resultText += `\n❌ *Ошибка:* ${esc(exec.error || 'Unknown')}`;
         }
         if (exec.logs?.length > 0) {
-          resultText += `\n\n📝 *Логи (${exec.logs.length}):*\n`;
+          resultText += `\n📝 *Логи \\(${exec.logs.length}\\):*\n`;
           exec.logs.slice(-5).forEach(log => {
             const icon = log.level === 'error' ? '❌' : log.level === 'warn' ? '⚠️' : '✅';
             resultText += `${icon} ${esc(String(log.message).slice(0, 100))}\n`;
@@ -2083,10 +2106,28 @@ async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
     const lastErr = agentLastErrors.get(agentId);
     const hasError = !!lastErr;
 
+    // Интервал запуска
+    const triggerCfg = typeof a.triggerConfig === 'object' ? a.triggerConfig as Record<string, any> : {};
+    const intervalMs = triggerCfg?.intervalMs ? Number(triggerCfg.intervalMs) : 0;
+    let intervalLabel = '';
+    if (a.triggerType === 'scheduled' && intervalMs > 0) {
+      if (intervalMs < 60000) intervalLabel = ' · каждую минуту';
+      else if (intervalMs < 3600000) intervalLabel = ` · каждые ${Math.round(intervalMs / 60000)} мин`;
+      else if (intervalMs < 86400000) intervalLabel = ' · каждый час';
+      else intervalLabel = ` · раз в ${Math.round(intervalMs / 86400000)} д`;
+    }
+
+    // Дата создания
+    const createdAt = a.createdAt ? new Date(a.createdAt) : null;
+    const daysAgo = createdAt ? Math.floor((Date.now() - createdAt.getTime()) / 86400000) : -1;
+    const dateLabel = daysAgo < 0 ? '' : daysAgo === 0 ? 'сегодня' : daysAgo === 1 ? 'вчера' : `${daysAgo}д назад`;
+
     const text =
-      `${statusIcon} *Агент #${esc(a.id)} — ${esc(name)}*\n\n` +
+      `${statusIcon} *${esc(name)}*  \\#${esc(String(a.id))}\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
       `Статус: *${esc(statusText)}*\n` +
-      `Тип запуска: ${esc(triggerIcon)} ${esc(triggerText)}\n` +
+      `${triggerIcon} ${esc(triggerText + intervalLabel)}\n` +
+      (dateLabel ? `📅 Создан: _${esc(dateLabel)}_\n` : '') +
       (hasError ? `\n⚠️ *Последняя ошибка:*\n\`${esc(lastErr!.error.slice(0, 120))}\`` : '') +
       (desc ? `\n_${esc(desc)}_` : '');
 
