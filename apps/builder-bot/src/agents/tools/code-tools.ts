@@ -284,9 +284,18 @@ Use {{NAME}} for values user must configure. Read from context.config:
   const ADDR = context.config.WALLET_ADDRESS || '{{WALLET_ADDRESS}}';
   const THRESHOLD = parseFloat(context.config.THRESHOLD || '5');
 
+━━━ STRING FORMATTING ━━━
+• Use ONLY single-quoted strings: 'text here'
+• Newlines in strings: write \\n — NEVER put actual line breaks inside a string literal
+• Correct:  notify('Line 1\\nLine 2\\nLine 3');
+• Correct:  'Value: ' + x.toFixed(2) + ' TON'
+• Wrong:    \`template \${x}\`  ← causes sandbox errors, do NOT use template literals
+• Wrong:    'text             ← actual newline inside string = SyntaxError
+              more text'
+
 ━━━ OUTPUT FORMAT ━━━
 Return ONLY the raw code starting with "async function agent(context) {".
-NO markdown blocks, NO backticks, NO explanations, NO imports.${skillDocs}`;
+NO markdown code blocks (no \`\`\`js fences), NO explanations, NO imports.${skillDocs}`;
 
       const userPrompt = `Build a fully functional agent for this goal: ${params.description}
 
@@ -607,10 +616,72 @@ Does this code match its intended purpose? Return JSON only.`;
 
   private cleanCodeBlocks(code: string): string {
     // Убираем markdown-блоки если модель вернула их
-    return code
+    let cleaned = code
       .replace(/^```[\w]*\n?/gm, '')
       .replace(/```$/gm, '')
       .trim();
+
+    // Чиним буквальные переносы строк внутри строковых литералов.
+    // AI иногда пишет 'text\nmore' с реальным \n → SyntaxError "Unterminated string constant".
+    cleaned = this.fixLiteralNewlinesInStrings(cleaned);
+    return cleaned;
+  }
+
+  /** Заменяет буквальные \n внутри одно/двухсимвольных строк на \\n */
+  private fixLiteralNewlinesInStrings(code: string): string {
+    let result = '';
+    let i = 0;
+    while (i < code.length) {
+      const ch = code[i];
+      if (ch === "'" || ch === '"') {
+        const quote = ch;
+        result += ch;
+        i++;
+        while (i < code.length) {
+          const c = code[i];
+          if (c === '\\') {
+            // Экранированный символ — копируем как есть
+            result += c + (code[i + 1] || '');
+            i += 2;
+          } else if (c === quote) {
+            result += c;
+            i++;
+            break;
+          } else if (c === '\n') {
+            // Буквальный перенос строки внутри строкового литерала → \n
+            result += '\\n';
+            i++;
+          } else if (c === '\r') {
+            i++; // пропускаем CR
+          } else {
+            result += c;
+            i++;
+          }
+        }
+      } else if (ch === '`') {
+        // Template literals — копируем как есть (не трогаем)
+        result += ch;
+        i++;
+        while (i < code.length) {
+          const c = code[i];
+          if (c === '\\') {
+            result += c + (code[i + 1] || '');
+            i += 2;
+          } else if (c === '`') {
+            result += c;
+            i++;
+            break;
+          } else {
+            result += c;
+            i++;
+          }
+        }
+      } else {
+        result += ch;
+        i++;
+      }
+    }
+    return result;
   }
 
   private extractPlaceholders(code: string): Array<{ name: string; description: string; example?: string }> {
