@@ -7,6 +7,7 @@ import { getAnalystAgent } from './sub-agents/analyst';
 import { getDBTools } from './tools/db-tools';
 import { getMemoryManager } from '../db/memory';
 import { canCreateAgent, canGenerateForFree, trackGeneration, getUserSubscription, PLANS, getGenerationsUsed } from '../payments';
+import { allAgentTemplates, AgentTemplate } from '../agent-templates';
 
 // CLIProxyAPIPlus — OpenAI-совместимый прокси
 const PROXY_API_KEY = process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY || 'ton-agent-key-123';
@@ -343,6 +344,16 @@ export class Orchestrator {
         type: 'text',
         content: '❓ Опишите задачу подробнее.\n\nНапример: _"проверяй баланс кошелька UQ... каждый час и уведоми если меньше 5 TON"_',
       };
+    }
+
+    // ── Быстрый match на существующие шаблоны (надёжнее AI-генерации) ──
+    const matchedTemplate = this.matchTemplate(description);
+    if (matchedTemplate) {
+      console.log(`[Orchestrator] Template match: "${matchedTemplate.id}" for: "${description.slice(0, 60)}"`);
+      // Используем код шаблона напрямую — сразу создаём агент минуя генерацию
+      const templateResult = await this.createAgentFromTemplateCode(userId, description, matchedTemplate);
+      if (templateResult) return templateResult;
+      // Если по каким-то причинам не получилось — fallback на AI-генерацию
     }
 
     // Создаем агента
@@ -978,6 +989,105 @@ ${isOwner ? '\nТЫ ОБЩАЕШЬСЯ С ВЛАДЕЛЬЦЕМ ПЛАТФОРМ�
           type: 'text',
           content: 'Понял! Чем еще могу помочь?',
         };
+    }
+  }
+
+  // ===== Template matching (надёжная альтернатива AI-генерации) =====
+
+  /** Возвращает шаблон если запрос пользователя явно его описывает */
+  private matchTemplate(description: string): AgentTemplate | null {
+    const d = description.toLowerCase();
+
+    // NFT / floor price / getgems / коллекция
+    if (/nft|floor\s*price|floor price|коллекц|getgems|punks|fragment\.com|nft.*прогноз|предскажи.*цену|прогноз.*nft/.test(d)) {
+      return allAgentTemplates.find(t => t.id === 'nft-floor-predictor') || null;
+    }
+    // Цена TON / мониторинг цены
+    if (/цена\s+ton|курс\s+ton|ton.*price|price.*ton|следи.*цен|monitor.*price|price.*monitor/.test(d) &&
+        !/баланс|wallet|кошел/.test(d)) {
+      return allAgentTemplates.find(t => t.id === 'ton-price-monitor') || null;
+    }
+    // Баланс кошелька + алерт низкого баланса
+    if (/низк.*баланс|баланс.*низк|low.*balance|balance.*low|упал.*ниже|ниже.*ton|меньше.*ton|alert.*balance/.test(d)) {
+      return allAgentTemplates.find(t => t.id === 'low-balance-alert') || null;
+    }
+    // Проверить баланс кошелька (одноразовый)
+    if (/проверь.*баланс|баланс.*кошел|check.*balance|balance.*wallet|wallet.*balance/.test(d) &&
+        !/каждый|каждые|schedule|monitor|следи|alert|низк/.test(d)) {
+      return allAgentTemplates.find(t => t.id === 'ton-balance-checker') || null;
+    }
+    // Доступность сайта / uptime
+    if (/сайт.*досту|досту.*сайт|uptime|website.*monitor|monitor.*website|пинг.*сайт|сайт.*пинг|проверяй.*сайт/.test(d)) {
+      return allAgentTemplates.find(t => t.id === 'website-monitor') || null;
+    }
+    // Погода
+    if (/погод|weather/.test(d)) {
+      return allAgentTemplates.find(t => t.id === 'weather-notifier') || null;
+    }
+    // Ежедневный отчёт
+    if (/(каждый\s+день|ежедневн|daily).*(?:отчёт|отчет|report|ton|крипт)/.test(d)) {
+      return allAgentTemplates.find(t => t.id === 'daily-ton-report') || null;
+    }
+
+    return null;
+  }
+
+  /** Создаёт агента на основе кода шаблона (без AI-генерации) */
+  private async createAgentFromTemplateCode(
+    userId: number,
+    description: string,
+    template: AgentTemplate
+  ): Promise<OrchestratorResult | null> {
+    try {
+      const name = template.id + '_' + Date.now().toString(36).slice(-4);
+      const createResult = await this.dbTools.createAgent({
+        userId,
+        name,
+        description,
+        code: template.code,
+        triggerType: template.triggerType,
+        triggerConfig: template.triggerConfig,
+        isActive: false,
+      });
+
+      if (!createResult.success || !createResult.data) return null;
+      const agent = createResult.data;
+
+      // Считаем как генерацию
+      trackGeneration(userId);
+
+      let schedLine = '';
+      if (template.triggerType === 'scheduled' && template.triggerConfig?.intervalMs) {
+        const ms = template.triggerConfig.intervalMs as number;
+        const label = ms >= 3_600_000 ? `${ms / 3_600_000} ч` : ms >= 60_000 ? `${ms / 60_000} мин` : `${ms / 1000} сек`;
+        schedLine = `⏰ каждые ${label}  `;
+      }
+
+      const content =
+        `🎉 *Агент создан!*\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n` +
+        `${template.icon} *${template.name}*  \\#${agent.id}\n` +
+        `${schedLine}🖥 сервер 24\\/7\n\n` +
+        `_${template.description}_\n\n` +
+        (template.placeholders.length > 0
+          ? `⚙️ *Настройте переменные:*\n` + template.placeholders.map(p =>
+              `• \`${p.name}\` — ${p.description}`).join('\n') + '\n\n'
+          : '') +
+        `⚡ _Нажмите Запустить — готов к работе_`;
+
+      return {
+        type: 'agent_created',
+        content,
+        agentId: agent.id,
+        buttons: [
+          { text: '🚀 Запустить', callbackData: `run_agent:${agent.id}` },
+          { text: '⚙️ Настроить', callbackData: `agent_menu:${agent.id}` },
+          { text: '👁 Код', callbackData: `show_code:${agent.id}` },
+        ],
+      };
+    } catch (e) {
+      console.error('[Orchestrator] Template create failed:', e);
+      return null;
     }
   }
 
