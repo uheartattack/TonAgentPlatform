@@ -1269,7 +1269,10 @@ bot.on('callback_query', async (ctx) => {
     const agentResult = await getDBTools().getAgent(agentId, userId);
     if (!agentResult.success || !agentResult.data) { await ctx.reply('❌ Агент не найден'); return; }
 
-    const statusMsg = await ctx.reply('🤖 AI анализирует ошибку и исправляет код...\n\n_Это займёт 10-30 секунд_', { parse_mode: 'Markdown' });
+    const statusMsg = await ctx.reply(
+      '🔧 *AI Автопочинка*\n\n🔍 Анализирую ошибку\\.\\.\\.\n`▓▓░░░` 40%',
+      { parse_mode: 'MarkdownV2' }
+    );
 
     try {
       const fixResult = await getCodeTools().modifyCode({
@@ -1288,11 +1291,12 @@ bot.on('callback_query', async (ctx) => {
       const { code: fixedCode, changes } = fixResult.data;
 
       // Показываем предложенный фикс
-      const preview = fixedCode.slice(0, 600);
       await ctx.telegram.editMessageText(ctx.chat!.id, statusMsg.message_id, undefined,
-        `🔧 *AI нашёл исправление*\n\n*Ошибка:* \`${esc(lastErr.error.slice(0, 80))}\`\n\n` +
-        `*Изменения:* ${esc(changes.slice(0, 200))}\n\n` +
-        `*Новый код (preview):*\n\`\`\`\n${esc(preview)}\n\`\`\``,
+        `🔧 *AI нашёл исправление\\!*\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n` +
+        `❌ _${esc(lastErr.error.slice(0, 80))}_\n\n` +
+        `✅ *${esc(changes.slice(0, 180))}*\n\n` +
+        `🚀 Применить исправление?`,
         {
           parse_mode: 'MarkdownV2',
           reply_markup: {
@@ -1332,10 +1336,12 @@ bot.on('callback_query', async (ctx) => {
     pendingRepairs.delete(`${userId}:${agentId}`);
     agentLastErrors.delete(agentId); // Сбрасываем ошибку
 
-    await ctx.reply(
-      `✅ *Код исправлен\\!*\n\n🚀 Нажмите Запустить чтобы проверить работу\\.`,
+    await safeReply(ctx,
+      `✅ *Автопочинка завершена\\!*\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `🔧 Ошибка исправлена AI\n` +
+      `⚡ _Запустите агента чтобы проверить_`,
       {
-        parse_mode: 'MarkdownV2',
         reply_markup: { inline_keyboard: [[{ text: '🚀 Запустить', callback_data: `run_agent:${agentId}` }, { text: '◀️ К агенту', callback_data: `agent_menu:${agentId}` }]] },
       }
     );
@@ -1358,6 +1364,66 @@ bot.on('callback_query', async (ctx) => {
       const lbl = chunks.length > 1 ? ` (${i + 1}/${chunks.length})` : '';
       await ctx.reply(`📄 Код агента #${agentId}${lbl}:\n\`\`\`javascript\n${chunks[i]}\n\`\`\``, { parse_mode: 'Markdown' });
     }
+    return;
+  }
+
+  // ── 🔍 Аудит безопасности ──
+  if (data.startsWith('audit_agent:')) {
+    await ctx.answerCbQuery('🔍 Аудит...');
+    const agentId = parseInt(data.split(':')[1]);
+    const codeResult = await getDBTools().getAgentCode(agentId, userId);
+    if (!codeResult.success || !codeResult.data) {
+      await ctx.reply('❌ Код агента не найден'); return;
+    }
+    const code = codeResult.data;
+
+    // Статический анализ безопасности
+    const issues: string[] = [];
+    const features: string[] = [];
+
+    if (/\beval\s*\(/.test(code))             issues.push('eval\\(\\) — произвольный код');
+    if (/\brequire\s*\(/.test(code))          issues.push('require\\(\\) — Node модули');
+    if (/process\.(env|exit|kill)/.test(code)) issues.push('process — среда выполнения');
+    if (/__dirname|__filename/.test(code))    issues.push('__dirname — файловая система');
+    if (/new\s+Function\s*\(/.test(code))     issues.push('new Function\\(\\) — динамический код');
+
+    if (/\bfetch\s*\(/.test(code))           features.push('🌐 HTTP\\-запросы');
+    if (/\bnotify\s*\(/.test(code))          features.push('📲 Telegram уведомления');
+    if (/getTonBalance|tonBalance/.test(code)) features.push('💎 TON блокчейн');
+    if (/getState\s*\(|setState\s*\(/.test(code)) features.push('💾 Постоянное хранилище');
+    if (/getSecret\s*\(/.test(code))         features.push('🔑 Секреты');
+
+    const lines = code.split('\n').length;
+    const hasTryCatch = /try\s*\{/.test(code);
+    const hasAsync = /async\s+function/.test(code);
+    const score = Math.max(10, 100 - issues.length * 15);
+    const scoreIcon = score >= 90 ? '🟢' : score >= 70 ? '🟡' : '🔴';
+
+    let text =
+      `🔍 *Аудит — Агент \\#${esc(String(agentId))}*\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `${scoreIcon} *Безопасность: ${esc(String(score))}/100*\n` +
+      `📄 ${esc(String(lines))} строк · ${hasAsync ? '✅ async' : '▶️ sync'} · ${hasTryCatch ? '✅ try/catch' : '⚠️ без try/catch'}\n`;
+
+    if (features.length > 0) {
+      text += `\n*Использует:*\n`;
+      features.forEach(f => { text += `  ${f}\n`; });
+    }
+    if (issues.length > 0) {
+      text += `\n⚠️ *Обнаружено:*\n`;
+      issues.forEach(i => { text += `  ⚠️ ${esc(i)}\n`; });
+    } else {
+      text += `\n✅ _Опасных паттернов не обнаружено_\n`;
+    }
+    text += `\n_Статический анализ — мгновенно, без AI_`;
+
+    await safeReply(ctx, text, {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '👁 Код', callback_data: `show_code:${agentId}` }, { text: '◀️ К агенту', callback_data: `agent_menu:${agentId}` }],
+        ],
+      },
+    });
     return;
   }
 
