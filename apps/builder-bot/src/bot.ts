@@ -438,16 +438,18 @@ bot.command('start', async (ctx) => {
 
   await safeReply(ctx, text, MAIN_MENU);
   await ctx.reply(
-    '⚡ Быстрый старт:',
+    '⚡ *Запустите первого агента за 30 секунд:*',
     {
+      parse_mode: 'Markdown',
       reply_markup: {
         inline_keyboard: [
+          [{ text: '📈 Следить за ценой TON', callback_data: 'create_from_template:ton-price-monitor' }],
+          [{ text: '💎 Проверить баланс кошелька', callback_data: 'create_from_template:ton-wallet-checker' }],
+          [{ text: '🌐 Мониторинг доступности сайта', callback_data: 'create_from_template:website-monitor' }],
           [
-            { text: '🏪 Маркетплейс', callback_data: 'marketplace' },
-            { text: '➕ Создать агента', callback_data: 'create_agent_prompt' },
+            { text: '🏪 Все шаблоны', callback_data: 'marketplace' },
+            { text: '✏️ Своя задача', callback_data: 'create_agent_prompt' },
           ],
-          [{ text: '💎 Подключить TON кошелёк', callback_data: 'ton_connect' }],
-          [{ text: '❓ Как это работает?', callback_data: 'help' }],
         ],
       },
     }
@@ -2882,6 +2884,7 @@ async function showStats(ctx: Context, userId: number) {
   } else {
     keyboard.push([{ text: '💎 Подключить TON', callback_data: 'ton_connect' }]);
   }
+  keyboard.push([{ text: '🌐 Открыть дашборд', url: 'https://tonagentplatform.ru/dashboard.html' }]);
   if (isOwner) {
     keyboard.push([{ text: '⚙️ Настройки платформы', callback_data: 'platform_settings' }]);
   }
@@ -3112,6 +3115,7 @@ async function showHelp(ctx: Context) {
     `/start — главное меню\n` +
     `/list — мои агенты\n` +
     `/run ID — запустить агента \\(пример: /run 3\\)\n` +
+    `/config — мои переменные \\(ключи, адреса\\)\n` +
     `/model — выбрать AI модель\n` +
     `/sub — моя подписка\n` +
     `/plans — тарифы и оплата\n` +
@@ -3136,6 +3140,7 @@ async function showHelp(ctx: Context) {
           { text: '🧠 AI модель', callback_data: 'model_selector' },
           { text: '💎 TON кошелёк', callback_data: 'ton_connect' },
         ],
+        [{ text: '🌐 Открыть дашборд', url: 'https://tonagentplatform.ru/dashboard.html' }],
       ],
     },
   });
