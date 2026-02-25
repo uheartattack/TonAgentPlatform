@@ -216,27 +216,28 @@ async function agent(context) {
     
     const balanceNano = data.result;
     const balanceTon = parseInt(balanceNano) / 1e9;
-    
-    console.log('💰 Текущий баланс:', balanceTon.toFixed(4), 'TON');
-    
-    let alert = null;
-    if (balanceTon < minBalance) {
-      alert = '🚨 ВНИМАНИЕ! Баланс кошелька ниже ' + minBalance + ' TON! Текущий баланс: ' + balanceTon.toFixed(4) + ' TON';
-      console.warn('⚠️', alert);
+    const shortAddr = walletAddress.slice(0, 8) + '...' + walletAddress.slice(-6);
+    const isLow = balanceTon < minBalance;
+
+    console.log('💰 Текущий баланс:', balanceTon.toFixed(4), 'TON', isLow ? '⚠️ НИЗКИЙ!' : '✅ OK');
+
+    if (isLow) {
+      await notify(
+        '🔔 *Low Balance Alert*\\n\\n' +
+        '🚨 Баланс ниже порога!\\n' +
+        '👛 Кошелёк: \`' + shortAddr + '\`\\n' +
+        '💰 Баланс:  \`' + balanceTon.toFixed(4) + ' TON\`\\n' +
+        '⚠️ Порог:   \`' + minBalance + ' TON\`'
+      );
     } else {
       console.log('✅ Баланс в норме');
     }
-    
+
     return {
-      success: true,
-      result: {
-        wallet: walletAddress,
-        balanceTon: balanceTon.toFixed(4),
-        minBalance: minBalance,
-        isLow: balanceTon < minBalance,
-        alert: alert,
-        timestamp: new Date().toISOString()
-      }
+      wallet: shortAddr,
+      balance: balanceTon.toFixed(4) + ' TON',
+      threshold: minBalance + ' TON',
+      status: isLow ? '⚠️ низкий' : '✅ норма',
     };
   } catch (error) {
     console.error('❌ Ошибка:', error.message);
@@ -301,26 +302,29 @@ async function agent(context) {
     
     const portfolioUsd = balanceTon * priceUsd;
     const portfolioRub = balanceTon * priceRub;
-    
-    console.log('✅ Отчёт сформирован');
-    
+    const arrow = change24h >= 0 ? '📈' : '📉';
+    const sign  = change24h >= 0 ? '+' : '';
+    const date  = new Date().toISOString().split('T')[0];
+    const shortAddr = walletAddress.slice(0, 8) + '...' + walletAddress.slice(-6);
+
+    console.log('✅ Отчёт сформирован:', balanceTon.toFixed(4), 'TON = $' + portfolioUsd.toFixed(2));
+
+    await notify(
+      '📅 *Daily TON Report — ' + date + '*\\n\\n' +
+      '👛 \`' + shortAddr + '\`\\n\\n' +
+      '💎 *Баланс:*\\n' +
+      '   \`' + balanceTon.toFixed(4) + ' TON\`\\n' +
+      '   \`$' + portfolioUsd.toFixed(2) + '\` · \`₽' + portfolioRub.toFixed(0) + '\`\\n\\n' +
+      arrow + ' *Цена TON:* \`$' + priceUsd.toFixed(3) + '\` \\(' + sign + change24h.toFixed(2) + '%\\)'
+    );
+
     return {
-      success: true,
-      result: {
-        date: new Date().toISOString().split('T')[0],
-        wallet: walletAddress,
-        balance: {
-          ton: balanceTon.toFixed(4),
-          usd: portfolioUsd.toFixed(2),
-          rub: portfolioRub.toFixed(2)
-        },
-        price: {
-          usd: priceUsd.toFixed(4),
-          rub: priceRub.toFixed(2),
-          change24h: change24h.toFixed(2) + '%'
-        },
-        timestamp: new Date().toISOString()
-      }
+      date,
+      wallet: shortAddr,
+      balance: balanceTon.toFixed(4) + ' TON',
+      value_usd: '$' + portfolioUsd.toFixed(2),
+      ton_price: '$' + priceUsd.toFixed(3),
+      change_24h: sign + change24h.toFixed(2) + '%',
     };
   } catch (error) {
     console.error('❌ Ошибка:', error.message);
@@ -390,16 +394,23 @@ async function agent(context) {
       }
     }
     
-    console.log('✅ Портфель:', portfolio.length, 'монет');
-    console.log('💵 Общая стоимость: $' + totalUsd.toFixed(2));
-    
+    console.log('✅ Портфель:', portfolio.length, 'монет, $' + totalUsd.toFixed(2));
+
+    // Формируем красивую таблицу
+    let lines = '💰 *Crypto Portfolio*\\n\\n';
+    portfolio.forEach(function(p) {
+      var arrow = parseFloat(p.change24h) >= 0 ? '🟢' : '🔴';
+      var name = p.coin.replace('the-open-network', 'TON').replace('bitcoin', 'BTC').replace('ethereum', 'ETH');
+      lines += arrow + ' \`' + name.toUpperCase() + '\`  \`$' + p.price + '\`  ' + p.change24h + '\\n';
+      if (p.amount > 0) lines += '   кол-во: ' + p.amount + ' · стоимость: \`$' + p.value + '\`\\n';
+    });
+    lines += '\\n💵 Итого: \`$' + totalUsd.toFixed(2) + '\`';
+    await notify(lines);
+
     return {
-      success: true,
-      result: {
-        portfolio: portfolio,
-        totalUsd: totalUsd.toFixed(2),
-        timestamp: new Date().toISOString()
-      }
+      coins: portfolio.length + ' шт',
+      total_usd: '$' + totalUsd.toFixed(2),
+      top: portfolio[0] ? portfolio[0].coin.replace('the-open-network','TON') + ' $' + portfolio[0].price : '—',
     };
   } catch (error) {
     console.error('❌ Ошибка:', error.message);
@@ -571,21 +582,26 @@ async function agent(context) {
     };
     
     const description = weatherCodes[current.weather_code] || '🌡';
-    
-    console.log('🌡 Температура:', current.temperature_2m + '°C');
-    console.log('💧 Влажность:', current.relative_humidity_2m + '%');
-    
+    const timeUTC = new Date().toUTCString().slice(17, 22);
+
+    console.log('🌡 Температура:', current.temperature_2m + '°C', '|', description);
+
+    await notify(
+      '🌤 *Weather Update*\\n\\n' +
+      '📍 \`' + location.name + ', ' + location.country + '\`\\n\\n' +
+      description + '\\n' +
+      '🌡 \`' + current.temperature_2m + '°C\`\\n' +
+      '💧 Влажность: \`' + current.relative_humidity_2m + '%\`\\n' +
+      '💨 Ветер: \`' + current.wind_speed_10m + ' km/h\`\\n' +
+      '⏰ ' + timeUTC + ' UTC'
+    );
+
     return {
-      success: true,
-      result: {
-        city: location.name,
-        country: location.country,
-        temperature: current.temperature_2m + '°C',
-        humidity: current.relative_humidity_2m + '%',
-        windSpeed: current.wind_speed_10m + ' km/h',
-        description: description,
-        timestamp: new Date().toISOString()
-      }
+      city: location.name + ', ' + location.country,
+      weather: description,
+      temperature: current.temperature_2m + '°C',
+      humidity: current.relative_humidity_2m + '%',
+      wind: current.wind_speed_10m + ' km/h',
     };
   } catch (error) {
     console.error('❌ Ошибка:', error.message);
