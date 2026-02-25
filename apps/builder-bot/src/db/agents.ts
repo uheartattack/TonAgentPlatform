@@ -189,6 +189,18 @@ export class AgentsRepository {
       .where(eq(agents.isActive, true));
   }
 
+  // Глобальная статистика платформы (для /start и лендинга)
+  async getGlobalStats(): Promise<{
+    totalAgents: number;
+    activeAgents: number;
+    totalUsers: number;
+  }> {
+    const all = await this.db.select().from(agents);
+    const active = all.filter((a) => a.isActive).length;
+    const users = new Set(all.map((a) => a.userId)).size;
+    return { totalAgents: all.length, activeAgents: active, totalUsers: users };
+  }
+
   // Проверить существование имени
   async isNameExists(userId: number, name: string, excludeId?: number): Promise<boolean> {
     const conditions = [
@@ -221,8 +233,6 @@ export function initAgentsRepository(pool: Pool): AgentsRepository {
 }
 
 export function getAgentsRepository(): AgentsRepository {
-  if (!agentsRepo) {
-    throw new Error('AgentsRepository not initialized. Call initAgentsRepository first.');
-  }
+  if (!agentsRepo) throw new Error('AgentsRepository not initialized. Call initAgentsRepository first.');
   return agentsRepo;
 }
