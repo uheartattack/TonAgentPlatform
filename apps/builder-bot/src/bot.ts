@@ -1898,10 +1898,11 @@ async function runAgentDirect(ctx: Context, agentId: number, userId: number) {
         : `${intervalMs / 1000} сек`;
 
       const successText =
-        `✅ *Агент активирован\\!*\n\n` +
-        `*${esc(agent.name)}* #${agentId}\n` +
-        `⏰ Запускается каждые *${esc(intervalLabel)}*\n` +
-        `🟢 Первый запуск выполнен — проверьте логи`;
+        `✅ *Агент запущен\\!*\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n` +
+        `*${esc(agent.name)}*  \\#${agentId}\n` +
+        `⏰ Каждые *${esc(intervalLabel)}* · 🖥 сервер 24\\/7\n` +
+        `⚡ _Первое уведомление придёт через несколько секунд_`;
 
       if (statusMsg) {
         await ctx.telegram.editMessageText(ctx.chat!.id, statusMsg.message_id, undefined, successText, {
@@ -2989,21 +2990,23 @@ async function showPlans(ctx: Context) {
   const currentSub = await getUserSubscription(userId);
 
   let text =
-    `🚀 *Планы TON Agent Platform*\n\n` +
-    `Оплата в TON прямо из Telegram через Tonkeeper\\.\n` +
-    `Владелец получает мгновенно \\— без посредников\\.\n\n`;
+    `💎 *Планы TON Agent Platform*\n` +
+    `━━━━━━━━━━━━━━━━━━━━\n` +
+    `_Оплата в TON · напрямую · без посредников_\n\n`;
 
   const planOrder = ['free', 'starter', 'pro', 'unlimited'];
   for (const pid of planOrder) {
     const p = PLANS[pid];
     const isCurrent = currentSub.planId === pid;
-    text += `${isCurrent ? '▶️' : '  '} ${p.icon} *${esc(p.name)}*`;
+    const isPopular = pid === 'pro';
+    const marker = isCurrent ? '✅ ' : isPopular ? '🔥 ' : '   ';
+    text += `${marker}${p.icon} *${esc(p.name)}*`;
     if (p.priceMonthTon === 0) {
       text += ' — _бесплатно_\n';
     } else {
-      text += ` — ${esc(p.priceMonthTon)} TON/мес _или_ ${esc(p.priceYearTon)} TON/год\n`;
+      text += ` — *${esc(p.priceMonthTon)} TON*/мес\n`;
     }
-    text += `   ${esc(p.features.slice(0, 2).join(' · '))}\n\n`;
+    text += `    ${esc(p.features.slice(0, 3).join(' · '))}\n\n`;
   }
 
   const btns: any[][] = [];
