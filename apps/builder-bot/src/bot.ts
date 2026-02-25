@@ -4,6 +4,7 @@ import { getOrchestrator, MODEL_LIST, getUserModel, setUserModel, type ModelId }
 import { initNotifier } from './notifier';
 import { getMemoryManager } from './db/memory';
 import { getDBTools } from './agents/tools/db-tools';
+import { getAgentsRepository } from './db/index';
 import { getRunnerAgent } from './agents/sub-agents/runner';
 import { agentLastErrors } from './agents/tools/execution-tools';
 import { getCodeTools } from './agents/tools/code-tools';
@@ -85,6 +86,72 @@ async function safeReply(ctx: Context, text: string, extra?: object): Promise<vo
       throw err;
     }
   }
+}
+
+// ============================================================
+// Анимированный прогресс создания агента
+// Обновляет сообщение каждые 7 секунд с новым этапом
+// ============================================================
+const CREATION_STEPS = [
+  { icon: '🔍', label: 'Анализирую задачу' },
+  { icon: '🧠', label: 'Разрабатываю алгоритм' },
+  { icon: '⚙️', label: 'Пишу код агента' },
+  { icon: '🔒', label: 'Проверяю безопасность' },
+  { icon: '📡', label: 'Финальная настройка' },
+];
+
+function renderCreationStep(stepIdx: number, scheduleLabel: string): string {
+  const step = CREATION_STEPS[Math.min(stepIdx, CREATION_STEPS.length - 1)];
+  const bar = ['▓', '▓', '▓', '▓', '▓'].map((_, i) => i <= stepIdx ? '▓' : '░').join('');
+  const pct = Math.round((Math.min(stepIdx, CREATION_STEPS.length - 1) / (CREATION_STEPS.length - 1)) * 90);
+  return (
+    `${step.icon} *${step.label}\\.\\.\\.*\n\n` +
+    `\`${bar}\` ${pct}%\n\n` +
+    `_Расписание: ${esc(scheduleLabel)}_`
+  );
+}
+
+async function startCreationAnimation(
+  ctx: Context,
+  scheduleLabel: string,
+  sendNew = false,
+): Promise<{ stop: () => void; deleteMsg: () => void }> {
+  let stepIdx = 0;
+  let msgId: number | undefined;
+  const chatId = ctx.chat?.id;
+
+  const text = renderCreationStep(0, scheduleLabel);
+
+  if (sendNew) {
+    const sent = await ctx.reply(text, { parse_mode: 'MarkdownV2' }).catch(() => null);
+    msgId = sent?.message_id;
+  } else {
+    // Редактируем уже существующее сообщение колбэка
+    await ctx.editMessageText(text, { parse_mode: 'MarkdownV2' }).catch(() => {});
+    msgId = ctx.callbackQuery && 'message' in ctx.callbackQuery
+      ? ctx.callbackQuery.message?.message_id
+      : undefined;
+  }
+
+  const stepTimer = setInterval(async () => {
+    stepIdx = Math.min(stepIdx + 1, CREATION_STEPS.length - 1);
+    if (chatId && msgId) {
+      await ctx.telegram.editMessageText(
+        chatId, msgId, undefined,
+        renderCreationStep(stepIdx, scheduleLabel),
+        { parse_mode: 'MarkdownV2' },
+      ).catch(() => {});
+    }
+  }, 7000);
+
+  const typingTimer = setInterval(() => ctx.sendChatAction('typing').catch(() => {}), 4000);
+
+  return {
+    stop: () => { clearInterval(stepTimer); clearInterval(typingTimer); },
+    deleteMsg: () => {
+      if (chatId && msgId && sendNew) ctx.telegram.deleteMessage(chatId, msgId).catch(() => {});
+    },
+  };
 }
 
 // Редактировать текущее сообщение (если callback) или отправить новое (если команда)
@@ -342,10 +409,22 @@ bot.command('start', async (ctx) => {
 
   await getMemoryManager().clearHistory(userId);
 
+  // Живая статистика платформы
+  let statsLine = '';
+  try {
+    const stats = await getAgentsRepository().getGlobalStats();
+    statsLine =
+      `\n🌍 *Уже на платформе:* ` +
+      `${esc(String(stats.totalAgents))} агентов \\| ` +
+      `${esc(String(stats.activeAgents))} активны \\| ` +
+      `${esc(String(stats.totalUsers))} пользователей\n`;
+  } catch { /* тихо, если БД ещё не прогрелась */ }
+
   const text =
     `✨ *Добро пожаловать, ${esc(name)}\\!*\n\n` +
     `Я — *TON Agent Platform* \\— платформа для создания\n` +
-    `AI\\-агентов, которые работают на нашем сервере 24/7\\.\n\n` +
+    `AI\\-агентов, которые работают на нашем сервере 24/7\\.` +
+    statsLine + `\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
     `🧠 *Что умеют агенты:*\n\n` +
     `💎 Мониторить TON кошельки и уведомлять\n` +
@@ -722,19 +801,15 @@ bot.action(/^agent_schedule:(.+)$/, async (ctx) => {
   }
   pendingCreations.delete(userId);
 
-  // Показываем статус и запускаем генерацию
-  await ctx.editMessageText(`⏳ Генерирую агента (${SCHEDULE_LABELS[choice] || choice})...\n\n_Это займёт 10–30 секунд_`, { parse_mode: 'Markdown' }).catch(() => {});
-
-  const typingTimer = setInterval(() => {
-    ctx.sendChatAction('typing').catch(() => {});
-  }, 4000);
+  // Показываем анимированный прогресс
+  const anim = await startCreationAnimation(ctx, SCHEDULE_LABELS[choice] || choice);
 
   try {
     const result = await getOrchestrator().processMessage(userId, desc, ctx.from.username);
-    clearInterval(typingTimer);
+    anim.stop();
     await sendResult(ctx, result);
   } catch (err) {
-    clearInterval(typingTimer);
+    anim.stop();
     console.error('[bot] agent_schedule create error:', err);
     await ctx.reply('❌ Ошибка создания агента. Попробуйте ещё раз.').catch(() => {});
   }
@@ -1662,25 +1737,33 @@ bot.on(message('text'), async (ctx) => {
 
   await ctx.sendChatAction('typing');
 
-  // Держим "typing..." живым каждые 4с (генерация кода может занять до 60с при cooldown)
-  const typingTimer = setInterval(() => {
-    ctx.sendChatAction('typing').catch(() => {});
-  }, 4000);
-
-  // Если создаём агента — показываем прогресс
-  let progressMsg: any = null;
+  // Если создаём агента — показываем анимированный прогресс, иначе просто typing
+  let anim: Awaited<ReturnType<typeof startCreationAnimation>> | null = null;
   if (isCreateIntent && text.length > 10) {
-    progressMsg = await ctx.reply('⏳ Генерирую агента, подождите...\n\n_Если AI перегружен — автоматически жду и повторяю_', { parse_mode: 'Markdown' }).catch(() => null);
+    anim = await startCreationAnimation(ctx, 'вручную', true);
+  } else {
+    // Держим "typing..." живым каждые 4с
+    const typingTimer = setInterval(() => ctx.sendChatAction('typing').catch(() => {}), 4000);
+    try {
+      const result = await getOrchestrator().processMessage(userId, text, ctx.from.username);
+      clearInterval(typingTimer);
+      await sendResult(ctx, result);
+    } catch (err) {
+      clearInterval(typingTimer);
+      console.error('Text handler error:', err);
+      await ctx.reply('❌ Ошибка. Попробуйте ещё раз или /start');
+    }
+    return;
   }
 
   try {
     const result = await getOrchestrator().processMessage(userId, text, ctx.from.username);
-    clearInterval(typingTimer);
-    if (progressMsg) ctx.deleteMessage(progressMsg.message_id).catch(() => {});
+    anim!.stop();
+    anim!.deleteMsg();
     await sendResult(ctx, result);
   } catch (err) {
-    clearInterval(typingTimer);
-    if (progressMsg) ctx.deleteMessage(progressMsg.message_id).catch(() => {});
+    anim!.stop();
+    anim!.deleteMsg();
     console.error('Text handler error:', err);
     await ctx.reply('❌ Ошибка. Попробуйте ещё раз или /start');
   }
