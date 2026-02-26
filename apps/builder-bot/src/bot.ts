@@ -450,29 +450,14 @@ async function fetchLiveTonPrice(): Promise<{ usd: number; change24h: number; vo
 }
 
 async function showWelcome(ctx: Context, userId: number, name: string, lang: 'ru' | 'en') {
-  // Параллельно: статистика + цена TON
-  const [statsResult, priceResult] = await Promise.allSettled([
-    getAgentsRepository().getGlobalStats(),
-    fetchLiveTonPrice(),
-  ]);
-
-  const stats = statsResult.status === 'fulfilled' ? statsResult.value : null;
-  const price = priceResult.status === 'fulfilled' ? priceResult.value : null;
+  const statsResult = await getAgentsRepository().getGlobalStats().catch(() => null);
+  const stats = statsResult;
 
   const statsLine = stats
     ? (lang === 'ru'
         ? `\n🌍 *Платформа:* ${esc(String(stats.totalAgents))} агентов \\| ${esc(String(stats.activeAgents))} активны\n`
         : `\n🌍 *Platform:* ${esc(String(stats.totalAgents))} agents \\| ${esc(String(stats.activeAgents))} active\n`)
     : '\n';
-
-  // Живая цена TON в приветствии — вау-момент
-  let priceLine = '';
-  if (price) {
-    const arrow = price.change24h >= 0 ? '📈' : '📉';
-    const sign = price.change24h >= 0 ? '\\+' : '';
-    priceLine =
-      `\n💎 *TON сейчас:* $${esc(price.usd.toFixed(2))} ${arrow} ${sign}${esc(price.change24h.toFixed(1))}% за 24ч\n`;
-  }
 
   const examples = lang === 'ru'
     ? [
@@ -490,7 +475,7 @@ async function showWelcome(ctx: Context, userId: number, name: string, lang: 'ru
     ? `✨ *Добро пожаловать, ${esc(name)}\\!*\n\n` +
       `*TON Agent Platform* \\— пишешь задачу словами,\n` +
       `AI создаёт агента, который работает 24/7\\.` +
-      statsLine + priceLine +
+      statsLine +
       `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
       `💬 *Просто напиши задачу\\. Примеры:*\n\n` +
       examples.map(e => `• ${e}`).join('\n') + '\n\n' +
@@ -499,7 +484,7 @@ async function showWelcome(ctx: Context, userId: number, name: string, lang: 'ru
     : `✨ *Welcome, ${esc(name)}\\!*\n\n` +
       `*TON Agent Platform* \\— describe a task in plain text,\n` +
       `AI creates an agent that runs 24/7\\.` +
-      statsLine + priceLine +
+      statsLine +
       `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
       `💬 *Just type your task\\. Examples:*\n\n` +
       examples.map(e => `• ${e}`).join('\n') + '\n\n' +
@@ -514,11 +499,11 @@ async function showWelcome(ctx: Context, userId: number, name: string, lang: 'ru
         inline_keyboard: [
           [
             { text: lang === 'ru' ? '✍️ Написать задачу' : '✍️ Describe task', callback_data: 'create_agent_prompt' },
-            { text: '💎 /price', callback_data: 'live_price' },
+            { text: '🏪 Marketplace', callback_data: 'marketplace' },
           ],
           [
-            { text: '🏪 Marketplace', callback_data: 'marketplace' },
             { text: lang === 'ru' ? '👤 Профиль' : '👤 Profile', callback_data: 'show_profile' },
+            { text: lang === 'ru' ? '🤖 Мои агенты' : '🤖 My agents', callback_data: 'list_agents' },
           ],
         ],
       },
@@ -1178,7 +1163,6 @@ async function showProfile(ctx: Context, userId: number) {
     `👤 *${lang === 'ru' ? 'Профиль' : 'Profile'} — ${esc(ctx.from?.first_name || 'User')}*\n` +
     `━━━━━━━━━━━━━━━━━━━━\n` +
     `💰 *${lang === 'ru' ? 'Баланс' : 'Balance'}:* ${esc(profile.balance_ton.toFixed(2))} TON\n` +
-    `📈 *${lang === 'ru' ? 'Заработано' : 'Earned'}:* ${esc(profile.total_earned.toFixed(2))} TON\n` +
     `🤖 *${lang === 'ru' ? 'Агентов' : 'Agents'}:* ${esc(String(totalCount))} \\(${esc(String(activeCount))} ${lang === 'ru' ? 'активных' : 'active'}\\)` +
     statsLine +
     walletLine +
