@@ -129,7 +129,7 @@ interface ConversationContext {
 
 // Результат обработки
 export interface OrchestratorResult {
-  type: 'text' | 'buttons' | 'confirm' | 'agent_created';
+  type: 'text' | 'buttons' | 'confirm' | 'agent_created' | 'wizard_required';
   content: string;
   buttons?: Array<{
     text: string;
@@ -140,6 +140,9 @@ export interface OrchestratorResult {
     data: any;
   };
   agentId?: number;
+  /** Для type='wizard_required': запустить wizard этого шаблона с pre-filled переменными */
+  wizardTemplateId?: string;
+  wizardPrefilled?: Record<string, string>;
 }
 
 // ===== Orchestrator - Главный мозг =====
@@ -377,6 +380,32 @@ export class Orchestrator {
     const matchedTemplate = this.matchTemplate(description);
     if (matchedTemplate) {
       console.log(`[Orchestrator] Template match: "${matchedTemplate.id}" for: "${description.slice(0, 60)}"`);
+
+      // ── NFT-шаблоны с required COLLECTION_NAME → запускаем wizard в bot.ts ──
+      const hasRequiredPlaceholders = matchedTemplate.placeholders.some(p => p.required);
+      if (hasRequiredPlaceholders) {
+        // Пытаемся извлечь название коллекции из описания для pre-fill
+        const prefilled: Record<string, string> = {};
+        const nameMatch =
+          description.match(/(?:коллекц\w*|collection)\s+([A-Za-zА-Яа-яёЁ0-9 _\-]+?)(?:\s+и\s|\s+каждый|\s+и$|,|$)/i) ||
+          description.match(/(?:за|for|of|floor|нфт|nft)\s+([A-Za-zА-Яа-яёЁ0-9 _\-]{3,40}?)(?:\s+и\s|\s+каждый|,|$)/i) ||
+          description.match(/(?:следи|следить|monitor|track|watch)\s+(?:за\s+)?([A-Za-zА-Яа-яёЁ0-9 _\-]{3,40}?)(?:\s+и\s|\s+каждый|,|$)/i);
+        const rawName = nameMatch?.[1]?.trim() || '';
+        const extractedName = rawName.replace(/\b(floor|price|нфт|nft|коллекц\w*|collection)\b/gi, '').replace(/\s+/g, ' ').trim();
+        if (extractedName.length >= 2) {
+          prefilled['COLLECTION_NAME'] = extractedName;
+        }
+        const lang = detectLang(description);
+        return {
+          type: 'wizard_required',
+          content: lang === 'en'
+            ? `🎨 Let me ask a couple of questions to set up the agent correctly.`
+            : `🎨 Задам пару вопросов, чтобы правильно настроить агента.`,
+          wizardTemplateId: matchedTemplate.id,
+          wizardPrefilled: prefilled,
+        };
+      }
+
       // Используем код шаблона напрямую — сразу создаём агент минуя генерацию
       const templateResult = await this.createAgentFromTemplateCode(userId, description, matchedTemplate, agentName);
       if (templateResult) return templateResult;
@@ -1867,6 +1896,11 @@ If message asks about NFT market, prices, collections → classify as nft_analys
   }
 
   // ===== Публичные методы =====
+
+  /** Публичный враппер resolveNFTCollectionAddress для вызова из bot.ts */
+  async resolveCollection(name: string): Promise<{ address: string; resolvedName: string } | null> {
+    return this.resolveNFTCollectionAddress(name);
+  }
 
   // Получить статистику для owner
   async getPlatformStats(): Promise<{

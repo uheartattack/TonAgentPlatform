@@ -18,6 +18,7 @@ export interface AgentTemplate {
     description: string;
     example: string;
     required: boolean;
+    question?: string;   // Текст вопроса для wizard (если нужно спросить у пользователя)
   }>;
 }
 
@@ -762,7 +763,20 @@ async function agent(context) {
 }
 `,
   placeholders: [
-    { name: 'COLLECTION_ADDRESS', description: 'Адрес NFT коллекции (EQ...)', example: 'EQA...', required: true },
+    {
+      name: 'COLLECTION_NAME',
+      description: 'Название NFT коллекции',
+      example: 'Plush Pepes',
+      required: true,
+      question: '🎨 Какую NFT коллекцию отслеживать?\n\n_(например: TON Punks, Plush Pepes, TON Diamonds)_',
+    },
+    {
+      name: 'COLLECTION_ADDRESS',
+      description: 'Адрес коллекции EQ... (необязательно — найдём по названию)',
+      example: 'EQA...',
+      required: false,
+      question: '📫 Адрес коллекции EQ\\.\\.\\. \\(необязательно — найдём автоматически\\)',
+    },
     { name: 'TARGET_PRICE', description: 'Целевая цена для уведомления (TON)', example: '10', required: false },
     { name: 'TONAPI_KEY', description: 'API ключ TonAPI (опционально)', example: 'your_api_key', required: false }
   ]
@@ -1267,8 +1281,20 @@ async function agent(context) {
 }
 `,
   placeholders: [
-    { name: 'COLLECTION_NAME',    description: 'Название коллекции: TON Punks, TON Diamonds, TON Whales, Anonymous, TONXPUNKS', example: 'TON Punks', required: false },
-    { name: 'COLLECTION_ADDRESS', description: 'Адрес коллекции EQ... (автоматически для известных коллекций)',                   example: 'EQAo92DYMokxghKcq-CkCGSk_MgXY5Fo1SPW20gkvZl75iCN', required: false },
+    {
+      name: 'COLLECTION_NAME',
+      description: 'Название NFT коллекции для мониторинга',
+      example: 'Plush Pepes',
+      required: true,
+      question: '🎨 Какую NFT коллекцию отслеживать?\n\n_(например: TON Punks, Plush Pepes, TON Diamonds)_',
+    },
+    {
+      name: 'COLLECTION_ADDRESS',
+      description: 'Адрес коллекции EQ... (оставь \'-\' или пропусти — адрес найдём автоматически по названию)',
+      example: 'EQAo92DYMokxghKcq-CkCGSk_MgXY5Fo1SPW20gkvZl75iCN',
+      required: false,
+      question: '📫 Адрес коллекции EQ\\.\\.\\. \\(необязательно — найдём по названию автоматически\\)',
+    },
   ]
 };
 
