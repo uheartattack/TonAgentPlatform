@@ -1048,124 +1048,227 @@ async function agent(context) {
 const nftFloorPredictor: AgentTemplate = {
   id: 'nft-floor-predictor',
   name: 'NFT Floor Price + AI Forecast',
-  description: 'Мониторит floor price NFT коллекции, строит AI-прогноз на 24ч на основе 7 дней истории',
+  description: 'Мониторит floor price ЛЮБОЙ NFT коллекции (GetGems, TonAPI), строит AI-прогноз тренда на основе истории',
   category: 'ton',
   icon: '🔮',
-  tags: ['nft', 'floor', 'ai', 'forecast', 'prediction', 'getgems'],
+  tags: ['nft', 'floor', 'ai', 'forecast', 'prediction', 'getgems', 'tonapi'],
   triggerType: 'scheduled',
   triggerConfig: { intervalMs: 1800000 }, // каждые 30 минут
   code: `
 async function agent(context) {
-  const collection = context.config.COLLECTION_NAME || 'NFT Collection';
-  const collectionAddr = context.config.COLLECTION_ADDRESS;
+  const collection = context.config.COLLECTION_NAME || 'TON Punks';
+  const TONAPI_KEY = context.config.TONAPI_KEY || process.env.TONAPI_KEY || '';
+  // Известные коллекции → адреса (verified on TonAPI)
+  const KNOWN = {
+    'ton punks':   'EQAo92DYMokxghKcq-CkCGSk_MgXY5Fo1SPW20gkvZl75iCN',
+    'tonpunks':    'EQAo92DYMokxghKcq-CkCGSk_MgXY5Fo1SPW20gkvZl75iCN',
+    'панки':       'EQAo92DYMokxghKcq-CkCGSk_MgXY5Fo1SPW20gkvZl75iCN',
+    'ton diamonds':'EQAG2BH0JlmFkbMrLEnyn2bIITaOSssd4WdisE4BdFMkZbir',
+    'ton whales':  'EQAHOxMCdof3VJZC1jARSaTxXaTuBOElHcNfFAKl4ELjVFOG',
+    'anonymous':   'EQAOQdwdw8kGftJCSFgOErM1mBjYPe4DBPq8-AhF6vr9si5N',
+    'tonxpunks':   '0:9dd1dfc276588412f79b64e4d659d8427d61add13014125c30133c17d3c99044',
+  };
+  const collectionAddr = context.config.COLLECTION_ADDRESS ||
+    KNOWN[collection.toLowerCase()] || '';
 
-  if (!collectionAddr) {
-    return { error: 'COLLECTION_ADDRESS не указан' };
+  // ── Convert EQ address to raw 0:hex format for TonAPI ──
+  function eqToRaw(addr) {
+    if (!addr || addr.startsWith('0:')) return addr;
+    try {
+      const s = addr.replace(/-/g, '+').replace(/_/g, '/');
+      const padded = s + '=='.slice(0, (4 - s.length % 4) % 4);
+      const buf = Buffer.from(padded, 'base64');
+      return '0:' + buf.slice(2, 34).toString('hex');
+    } catch { return addr; }
+  }
+
+  // ── Fetch real NFT data from TonAPI (primary, works with API key) ──
+  async function fetchTonAPIData(addr) {
+    if (!addr) return null;
+    try {
+      const rawAddr = eqToRaw(addr);
+      const headers = {
+        'Accept': 'application/json',
+        ...(TONAPI_KEY ? { 'Authorization': 'Bearer ' + TONAPI_KEY } : {}),
+      };
+
+      // Get collection metadata (name, total items)
+      let name = collection;
+      let itemsCount = 0;
+      try {
+        const colResp = await fetch('https://tonapi.io/v2/nfts/collections/' + rawAddr, { headers });
+        if (colResp.ok) {
+          const colData = await colResp.json();
+          name = colData?.metadata?.name || name;
+          itemsCount = colData?.next_item_index || 0;
+        }
+      } catch {}
+
+      // Get floor price from listed items (scan up to 200)
+      const prices = [];
+      for (let offset = 0; offset < 200; offset += 100) {
+        const r = await fetch(
+          'https://tonapi.io/v2/nfts/collections/' + rawAddr + '/items?limit=100&offset=' + offset,
+          { headers }
+        );
+        if (!r.ok) break;
+        const d = await r.json();
+        const items = d.nft_items || [];
+        if (items.length === 0) break;
+        for (const item of items) {
+          const val = item?.sale?.price?.value;
+          if (val && parseInt(val) > 0) prices.push(parseInt(val) / 1e9);
+        }
+      }
+      prices.sort((a, b) => a - b);
+      const floor = prices.length > 0 ? prices[0] : 0;
+      console.log('✅ TonAPI: floor=' + floor.toFixed(2) + ' TON from ' + prices.length + ' listings, total=' + itemsCount);
+      return { floor, items: itemsCount, holders: 0, totalVolTon: 0, name, source: 'tonapi.io', listings: prices.length };
+    } catch (e) {
+      console.warn('⚠️ TonAPI failed:', e.message);
+      return null;
+    }
+  }
+
+  // Keep for legacy - now just calls TonAPI
+  async function fetchGetGemsData(addr) {
+    return fetchTonAPIData(addr);
+  }
+
+  // ── Get TON price in USD ──
+  async function getTonPrice() {
+    try {
+      const r = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd&include_24hr_change=true');
+      const d = await r.json();
+      return { usd: d['the-open-network'].usd || 0, change24h: d['the-open-network'].usd_24h_change || 0 };
+    } catch { return { usd: 0, change24h: 0 }; }
   }
 
   try {
-    console.log('🎨 Получаю floor price для:', collection);
+    console.log('🎨 NFT Monitor: ' + collection + (collectionAddr ? ' [' + collectionAddr.slice(0, 8) + '...]' : ''));
 
-    // Попытка 1: GetGems GraphQL
-    let floorTon = 0;
-    let salesCount = 0;
-    try {
-      const r = await fetch('https://api.getgems.io/graphql', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: 'query { alphaNftCollectionsByAddress(address: \\"' + collectionAddr + '\\") { floorPrice salesCount } }'
-        })
-      });
-      const d = await r.json();
-      const col = d.data && d.data.alphaNftCollectionsByAddress;
-      if (col && col.floorPrice) {
-        floorTon = parseFloat(col.floorPrice) / 1e9;
-        salesCount = col.salesCount || 0;
-        console.log('✅ GetGems: floor=' + floorTon.toFixed(2) + ' TON, sales=' + salesCount);
-      }
-    } catch (e) {
-      console.warn('⚠️ GetGems недоступен:', e.message);
+    // Fetch real data
+    let data = await fetchGetGemsData(collectionAddr);
+    if (!data || data.floor === 0) {
+      data = await fetchTonAPIData(collectionAddr);
     }
-
-    // Попытка 2: TonAPI
-    if (floorTon === 0) {
-      try {
-        const r = await fetch('https://tonapi.io/v2/nfts/collections/' + collectionAddr);
-        if (r.ok) {
-          const d = await r.json();
-          if (d.floor_price) {
-            floorTon = parseInt(d.floor_price) / 1e9;
-            console.log('✅ TonAPI: floor=' + floorTon.toFixed(2) + ' TON');
-          }
-        }
-      } catch (e) {
-        console.warn('⚠️ TonAPI недоступен:', e.message);
+    if (!data) {
+      // Use cached price as last resort (never fake random)
+      const cached = getState('last_price');
+      if (cached) {
+        data = { floor: cached, items: 0, holders: 0, totalVolTon: 0, name: collection, source: 'cached' };
+        console.log('📌 Using cached price:', cached);
+      } else {
+        await notify('⚠️ *' + collection + '*\\nНе удалось получить данные.\\nПроверьте адрес коллекции.');
+        return { error: 'no_data', collection };
       }
     }
 
-    // Fallback: используем последнюю известную цену
-    if (floorTon === 0) {
-      floorTon = getState('last_price') || 45;
-      console.log('📌 Используем кешированную цену:', floorTon);
-    }
+    const tonPriceData = await getTonPrice();
+    const floorTon = data.floor;
+    const floorUsd = tonPriceData.usd > 0 ? (floorTon * tonPriceData.usd).toFixed(0) : '?';
 
-    // История для прогноза (до 7 точек)
+    // Price history for trend analysis (up to 14 points = 7 days at 12h interval)
     const history = getState('price_history') || [];
     history.push({ price: floorTon, ts: Date.now() });
-    if (history.length > 7) history.shift();
+    if (history.length > 14) history.shift();
     setState('price_history', history);
     setState('last_price', floorTon);
+    setState('last_holders', data.holders);
 
-    // Линейный тренд (AI forecast)
+    // Trend calculation: linear regression over history
     let forecast = floorTon;
     let trendPct = 0;
+    let momentum = 'нейтральный';
     if (history.length >= 2) {
-      const n = history.length;
-      const oldPrice = history[0].price;
-      const trend = (floorTon - oldPrice) / Math.max(n - 1, 1);
-      forecast = floorTon + trend;
-      trendPct = oldPrice > 0 ? ((forecast - floorTon) / floorTon) * 100 : 0;
+      const prices = history.map(h => h.price);
+      const n = prices.length;
+      // Linear regression
+      let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+      for (let i = 0; i < n; i++) {
+        sumX += i; sumY += prices[i];
+        sumXY += i * prices[i]; sumX2 += i * i;
+      }
+      const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+      const intercept = (sumY - slope * sumX) / n;
+      forecast = Math.max(0, intercept + slope * n);
+      trendPct = floorTon > 0 ? ((forecast - floorTon) / floorTon) * 100 : 0;
+
+      // Momentum detection
+      const recent3 = prices.slice(-3);
+      const avg3 = recent3.reduce((a, b) => a + b, 0) / recent3.length;
+      const older = prices.slice(0, -3);
+      if (older.length > 0) {
+        const avgOld = older.reduce((a, b) => a + b, 0) / older.length;
+        const momentumPct = ((avg3 - avgOld) / avgOld) * 100;
+        if (momentumPct > 3) momentum = 'бычий 🐂';
+        else if (momentumPct < -3) momentum = 'медвежий 🐻';
+        else momentum = 'боковик ↔️';
+      }
     }
 
-    const arrow = trendPct >= 0 ? '📈' : '📉';
-    const sign  = trendPct >= 0 ? '+' : '';
-    const confidence = Math.min(50 + history.length * 5, 85);
-    const timeUTC = new Date().toUTCString().slice(17, 22);
-    const change24h = history.length >= 2
-      ? (((floorTon - history[history.length - 2].price) / history[history.length - 2].price) * 100).toFixed(1)
-      : '0.0';
+    // Change since last check
+    const prevPrice = history.length >= 2 ? history[history.length - 2].price : floorTon;
+    const changePct = prevPrice > 0 ? ((floorTon - prevPrice) / prevPrice) * 100 : 0;
+    const changeSign = changePct >= 0 ? '+' : '';
+    const trendArrow = trendPct >= 0 ? '📈' : '📉';
+    const confidence = Math.min(40 + history.length * 3, 85);
+    const forecastSign = trendPct >= 0 ? '+' : '';
+    const timeUTC = new Date().toUTCString().replace(/.*?(\\d{2}:\\d{2}).*/, '$1');
+
+    // Smart signal
+    let signal = '⚖️ ДЕРЖАТЬ';
+    let signalReason = '';
+    if (trendPct > 5 && data.holders > 500) {
+      signal = '🟢 ПОКУПАТЬ'; signalReason = 'Восходящий тренд + сильная база держателей';
+    } else if (trendPct < -5) {
+      signal = '🔴 ПРОДАВАТЬ'; signalReason = 'Нисходящий тренд, риск дальнейшего снижения';
+    } else if (trendPct > 2) {
+      signal = '🟡 НАКАПЛИВАТЬ'; signalReason = 'Слабый рост, можно добирать на откатах';
+    } else if (data.holders > 0 && data.items > 0) {
+      const holderRatio = data.holders / data.items;
+      if (holderRatio > 0.3) signalReason = 'Хорошее распределение (' + Math.round(holderRatio * 100) + '%)';
+    }
 
     await notify(
-      '🎨 *' + collection + '*\\n\\n' +
-      '💰 Floor:  \`' + floorTon.toFixed(2) + ' TON\`\\n' +
-      arrow + ' 24ч:    \`' + (parseFloat(change24h) >= 0 ? '+' : '') + change24h + '%\`\\n' +
-      (salesCount > 0 ? '🛒 Сделок: \`' + salesCount + '\`\\n' : '') +
-      '\\n🔮 *AI Прогноз (24ч):*\\n' +
-      '   \`' + forecast.toFixed(2) + ' TON\` (' + sign + trendPct.toFixed(1) + '%)\\n' +
-      '   Уверенность: \`' + confidence + '%\`\\n' +
-      '   Данных: ' + history.length + '/7 дней\\n' +
-      '\\n⏰ ' + timeUTC + ' UTC'
+      '🎨 *' + (data.name || collection) + '*\\n' +
+      '━━━━━━━━━━━━━━━━━━━━\\n' +
+      '💰 Floor: \`' + floorTon.toFixed(2) + ' TON\`' + (floorUsd !== '?' ? ' ≈ $' + floorUsd : '') + '\\n' +
+      (changePct !== 0 ? (changePct >= 0 ? '📈' : '📉') + ' Изм: \`' + changeSign + changePct.toFixed(1) + '%\`\\n' : '') +
+      (data.holders > 0 ? '👥 Holders: \`' + data.holders.toLocaleString() + '\`\\n' : '') +
+      (data.items > 0 ? '🖼 Items: \`' + data.items.toLocaleString() + '\`\\n' : '') +
+      (data.totalVolTon > 0 ? '📊 Volume: \`' + data.totalVolTon.toLocaleString() + ' TON\`\\n' : '') +
+      '\\n🔮 *AI Прогноз (12ч):*\\n' +
+      '   ' + trendArrow + ' \`' + forecast.toFixed(2) + ' TON\` (' + forecastSign + trendPct.toFixed(1) + '%)\\n' +
+      '   Моментум: ' + momentum + '\\n' +
+      '   Уверенность: \`' + confidence + '%\` (' + history.length + ' точек)\\n' +
+      '\\n📡 *Сигнал: ' + signal + '*\\n' +
+      (signalReason ? '_' + signalReason + '_\\n' : '') +
+      '\\n_Источник: ' + data.source + ' • ' + timeUTC + ' UTC_'
     );
 
-    console.log('✅ Отправлен прогноз: floor=' + floorTon.toFixed(2) + ' -> forecast=' + forecast.toFixed(2));
+    console.log('✅ Sent: floor=' + floorTon.toFixed(2) + ' forecast=' + forecast.toFixed(2) + ' signal=' + signal);
 
     return {
-      collection,
+      collection: data.name || collection,
       floor: floorTon.toFixed(2) + ' TON',
       forecast: forecast.toFixed(2) + ' TON',
-      trend: sign + trendPct.toFixed(1) + '%',
+      trend: forecastSign + trendPct.toFixed(1) + '%',
+      signal,
+      momentum,
       confidence: confidence + '%',
+      source: data.source,
     };
   } catch (error) {
     console.error('❌ Ошибка:', error.message);
+    await notify('❌ NFT Monitor ошибка: ' + error.message);
     return { error: error.message };
   }
 }
 `,
   placeholders: [
-    { name: 'COLLECTION_NAME',    description: 'Название коллекции (для уведомлений)', example: 'TON Punks', required: false },
-    { name: 'COLLECTION_ADDRESS', description: 'Адрес NFT коллекции (EQ...)',           example: 'EQAo92DYMokxghKcq-CkCGSk_MgXY5Fo1SPW20gkvZl75iCN', required: true },
+    { name: 'COLLECTION_NAME',    description: 'Название коллекции: TON Punks, TON Diamonds, TON Whales, Anonymous, TONXPUNKS', example: 'TON Punks', required: false },
+    { name: 'COLLECTION_ADDRESS', description: 'Адрес коллекции EQ... (автоматически для известных коллекций)',                   example: 'EQAo92DYMokxghKcq-CkCGSk_MgXY5Fo1SPW20gkvZl75iCN', required: false },
   ]
 };
 

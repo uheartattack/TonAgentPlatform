@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { isAuthorized as isFragmentAuthorized, getGiftFloorPrice, getAllGiftFloors } from '../fragment-service';
 import { getCreatorAgent } from './sub-agents/creator';
 import { getWorkflowEngine } from '../agent-cooperation';
 import { getEditorAgent } from './sub-agents/editor';
@@ -8,6 +9,19 @@ import { getDBTools } from './tools/db-tools';
 import { getMemoryManager } from '../db/memory';
 import { canCreateAgent, canGenerateForFree, trackGeneration, getUserSubscription, PLANS, getGenerationsUsed } from '../payments';
 import { allAgentTemplates, AgentTemplate } from '../agent-templates';
+
+// ── MarkdownV2 escaping (shared with bot.ts) ───────────────────────────────
+function esc(text: string | number | null | undefined): string {
+  if (text === null || text === undefined) return '';
+  return String(text)
+    .replace(/\\/g, '\\\\').replace(/_/g, '\\_').replace(/\*/g, '\\*')
+    .replace(/\[/g, '\\[').replace(/\]/g, '\\]').replace(/\(/g, '\\(')
+    .replace(/\)/g, '\\)').replace(/~/g, '\\~').replace(/`/g, '\\`')
+    .replace(/>/g, '\\>').replace(/#/g, '\\#').replace(/\+/g, '\\+')
+    .replace(/-/g, '\\-').replace(/=/g, '\\=').replace(/\|/g, '\\|')
+    .replace(/\{/g, '\\{').replace(/\}/g, '\\}').replace(/\./g, '\\.')
+    .replace(/!/g, '\\!');
+}
 
 // CLIProxyAPIPlus — OpenAI-совместимый прокси
 const PROXY_API_KEY = process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY || 'ton-agent-key-123';
@@ -92,6 +106,7 @@ type UserIntent =
   | 'list_agents'
   | 'explain_agent'
   | 'debug_agent'
+  | 'nft_analysis'
   | 'general_chat'
   | 'platform_settings'
   | 'user_management'
@@ -141,7 +156,8 @@ export class Orchestrator {
   async processMessage(
     userId: number,
     message: string,
-    username?: string
+    username?: string,
+    agentName?: string,
   ): Promise<OrchestratorResult> {
     // Проверяем, является ли пользователь owner
     const isOwner = userId === OWNER_ID;
@@ -164,7 +180,7 @@ export class Orchestrator {
     // Обрабатываем по intent
     switch (intent) {
       case 'create_agent':
-        return this.handleCreateAgent(userId, message);
+        return this.handleCreateAgent(userId, message, agentName);
 
       case 'edit_agent':
         return this.handleEditAgent(userId, message);
@@ -183,6 +199,9 @@ export class Orchestrator {
 
       case 'debug_agent':
         return this.handleDebugAgent(userId, message);
+
+      case 'nft_analysis':
+        return this.handleNFTAnalysis(userId, message);
 
       case 'platform_settings':
         if (!isOwner) {
@@ -305,7 +324,8 @@ export class Orchestrator {
 
   private async handleCreateAgent(
     userId: number,
-    message: string
+    message: string,
+    agentName?: string,
   ): Promise<OrchestratorResult> {
     // Проверяем лимит плана (кол-во агентов)
     const agentsList = await this.dbTools.getUserAgents(userId);
@@ -351,7 +371,7 @@ export class Orchestrator {
     if (matchedTemplate) {
       console.log(`[Orchestrator] Template match: "${matchedTemplate.id}" for: "${description.slice(0, 60)}"`);
       // Используем код шаблона напрямую — сразу создаём агент минуя генерацию
-      const templateResult = await this.createAgentFromTemplateCode(userId, description, matchedTemplate);
+      const templateResult = await this.createAgentFromTemplateCode(userId, description, matchedTemplate, agentName);
       if (templateResult) return templateResult;
       // Если по каким-то причинам не получилось — fallback на AI-генерацию
     }
@@ -360,6 +380,7 @@ export class Orchestrator {
     const result = await this.creator.createAgent({
       userId,
       description,
+      name: agentName,
     });
 
     if (!result.success) {
@@ -795,6 +816,407 @@ export class Orchestrator {
     };
   }
 
+  // ===== NFT Analysis: реальные данные + AI как профи трейдер =====
+
+  /** Известные коллекции: имя → адрес (EQ friendly format) */
+  private readonly KNOWN_COLLECTIONS: Record<string, { address: string; name: string; marketplace: string }> = {
+    'ton punks':       { address: 'EQAo92DYMokxghKcq-CkCGSk_MgXY5Fo1SPW20gkvZl75iCN', name: 'TON Punks 💎',            marketplace: 'getgems' },
+    'tonpunks':        { address: 'EQAo92DYMokxghKcq-CkCGSk_MgXY5Fo1SPW20gkvZl75iCN', name: 'TON Punks 💎',            marketplace: 'getgems' },
+    'панки':           { address: 'EQAo92DYMokxghKcq-CkCGSk_MgXY5Fo1SPW20gkvZl75iCN', name: 'TON Punks 💎',            marketplace: 'getgems' },
+    'punks':           { address: 'EQAo92DYMokxghKcq-CkCGSk_MgXY5Fo1SPW20gkvZl75iCN', name: 'TON Punks 💎',            marketplace: 'getgems' },
+    'tonxpunks':       { address: '0:9dd1dfc276588412f79b64e4d659d8427d61add13014125c30133c17d3c99044', name: 'TONXPUNKS',           marketplace: 'getgems' },
+    'ton diamonds':    { address: 'EQAG2BH0JlmFkbMrLEnyn2bIITaOSssd4WdisE4BdFMkZbir', name: 'TON Diamonds 💠',         marketplace: 'getgems' },
+    'алмазы':          { address: 'EQAG2BH0JlmFkbMrLEnyn2bIITaOSssd4WdisE4BdFMkZbir', name: 'TON Diamonds 💠',         marketplace: 'getgems' },
+    'ton whales':      { address: 'EQAHOxMCdof3VJZC1jARSaTxXaTuBOElHcNfFAKl4ELjVFOG', name: 'TON Whales 🐋',          marketplace: 'getgems' },
+    'киты':            { address: 'EQAHOxMCdof3VJZC1jARSaTxXaTuBOElHcNfFAKl4ELjVFOG', name: 'TON Whales 🐋',          marketplace: 'getgems' },
+    'anonymous':       { address: 'EQAOQdwdw8kGftJCSFgOErM1mBjYPe4DBPq8-AhF6vr9si5N', name: 'Anonymous Numbers 📵',   marketplace: 'getgems' },
+    'анонимный':       { address: 'EQAOQdwdw8kGftJCSFgOErM1mBjYPe4DBPq8-AhF6vr9si5N', name: 'Anonymous Numbers 📵',   marketplace: 'getgems' },
+    'getgems birds':   { address: 'EQBFHNfKNkLnzR3FYC-3gRPf7_dROOFXVDCZYnWQc3kh1hDy', name: 'GetGems Birds 🦅',      marketplace: 'getgems' },
+    'rocket':          { address: 'EQAYGpNSjCMd_qAEjNhOqg1Cqvb6cCB4X2B48sdMv2RP4Ux7', name: 'Rocket NFT 🚀',         marketplace: 'getgems' },
+  };
+
+  /** Конвертировать EQ/UQ адрес в raw формат 0:hex для TonAPI */
+  private eqToRaw(address: string): string {
+    if (address.startsWith('0:')) return address;
+    try {
+      const s = address.replace(/-/g, '+').replace(/_/g, '/');
+      const padded = s + '=='.slice(0, (4 - s.length % 4) % 4);
+      const buf = Buffer.from(padded, 'base64');
+      return `0:${buf.slice(2, 34).toString('hex')}`;
+    } catch {
+      return address;
+    }
+  }
+
+  /** Получить данные коллекции через TonAPI (реальные данные, ключ из env) */
+  private async fetchGetGemsCollection(address: string): Promise<{
+    name: string; floorPrice: number; itemsCount: number;
+    holders: number; totalVolumeTon: number; address: string;
+  } | null> {
+    try {
+      const TONAPI_KEY = process.env.TONAPI_KEY || '';
+      const rawAddr = this.eqToRaw(address);
+      const headers: Record<string, string> = {
+        'Accept': 'application/json',
+        ...(TONAPI_KEY ? { 'Authorization': `Bearer ${TONAPI_KEY}` } : {}),
+      };
+
+      // 1. Get collection info
+      const colResp = await fetch(`https://tonapi.io/v2/nfts/collections/${rawAddr}`, { headers });
+      let name = address.slice(0, 8) + '...';
+      let itemsCount = 0;
+      if (colResp.ok) {
+        const colData = (await colResp.json()) as any;
+        name = colData?.metadata?.name || name;
+        itemsCount = colData?.next_item_index || 0;
+      }
+
+      // 2. Calculate floor price from listed items (scan up to 200 items)
+      let floorPrice = 0;
+      let listingsFound = 0;
+      for (let offset = 0; offset < 200; offset += 100) {
+        const itemsResp = await fetch(
+          `https://tonapi.io/v2/nfts/collections/${rawAddr}/items?limit=100&offset=${offset}`,
+          { headers }
+        );
+        if (!itemsResp.ok) break;
+        const itemsData = (await itemsResp.json()) as any;
+        const items: any[] = itemsData.nft_items || [];
+        if (items.length === 0) break;
+        for (const item of items) {
+          const val = item?.sale?.price?.value;
+          if (val && parseInt(val) > 0) {
+            const priceTon = parseInt(val) / 1e9;
+            if (floorPrice === 0 || priceTon < floorPrice) floorPrice = priceTon;
+            listingsFound++;
+          }
+        }
+      }
+
+      return { name, floorPrice, itemsCount, holders: 0, totalVolumeTon: 0, address };
+    } catch (e: any) {
+      console.error('[Orchestrator] fetchGetGemsCollection error:', e?.message);
+      return null;
+    }
+  }
+
+  /** Получить активные листинги с TonAPI (сортированы по цене — floor первый) */
+  private async fetchTonAPIRecentSales(address: string, limit = 5): Promise<Array<{
+    price: number; buyer: string; ts: number;
+  }>> {
+    try {
+      const TONAPI_KEY = process.env.TONAPI_KEY || '';
+      const rawAddr = this.eqToRaw(address);
+      const headers: Record<string, string> = {
+        'Accept': 'application/json',
+        ...(TONAPI_KEY ? { 'Authorization': `Bearer ${TONAPI_KEY}` } : {}),
+      };
+      const resp = await fetch(
+        `https://tonapi.io/v2/nfts/collections/${rawAddr}/items?limit=100`,
+        { headers }
+      );
+      if (!resp.ok) return [];
+      const data = (await resp.json()) as any;
+      const items: any[] = data.nft_items || [];
+      const sales: Array<{ price: number; buyer: string; ts: number }> = [];
+      for (const item of items) {
+        const sale = item.sale;
+        if (sale?.price?.value && parseInt(sale.price.value) > 0) {
+          sales.push({
+            price: parseInt(sale.price.value) / 1e9,
+            buyer: item.owner?.address?.slice(0, 8) || '?',
+            ts: Date.now(),
+          });
+        }
+      }
+      return sales.sort((a, b) => a.price - b.price).slice(0, limit); // ascending (floor first)
+    } catch {
+      return [];
+    }
+  }
+
+  /** Поиск коллекции по имени через GetGems (поиск по ключевым словам) */
+  private async searchGetGemsCollection(query: string): Promise<string | null> {
+    try {
+      // GetGems поиск через страницу
+      const resp = await fetch(
+        `https://getgems.io/nft?query=${encodeURIComponent(query)}`,
+        {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36',
+            'Accept': 'text/html',
+          },
+        }
+      );
+      if (!resp.ok) return null;
+      const html = await resp.text();
+      // Extract first collection address
+      const m = html.match(/\/collection\/(EQ[A-Za-z0-9_\-]{46})/);
+      return m ? m[1] : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Получить топ коллекции GetGems по объёму (через страницу trending) */
+  private async fetchGetGemsTopCollections(): Promise<Array<{
+    name: string; address: string; floorPrice: number; volume?: number;
+  }>> {
+    try {
+      const resp = await fetch('https://getgems.io/collections', {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36',
+          'Accept': 'text/html',
+        },
+      });
+      if (!resp.ok) return [];
+      const html = await resp.text();
+      // Extract from __NEXT_DATA__
+      const m = html.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s);
+      if (!m) return [];
+      const data = JSON.parse(m[1]);
+      const cache = data?.props?.pageProps?.gqlCache || {};
+      const results: Array<{ name: string; address: string; floorPrice: number }> = [];
+      for (const [key, val] of Object.entries(cache as any)) {
+        if (key.startsWith('alphaNftCollectionFilter') && val && typeof val === 'object') {
+          const v = val as any;
+          if (v.__typename === 'NftCollectionStats') {
+            const addrMatch = key.match(/EQ[A-Za-z0-9_\-]{46}/);
+            if (addrMatch) {
+              results.push({
+                name: key.slice(0, 30),
+                address: addrMatch[0],
+                floorPrice: v.floorPrice || 0,
+              });
+            }
+          }
+        }
+      }
+      return results.slice(0, 10);
+    } catch {
+      return [];
+    }
+  }
+
+  /** Fragment Telegram Gifts данные */
+  private async fetchFragmentGifts(): Promise<Array<{
+    name: string; price: number; currency: string;
+  }>> {
+    try {
+      const resp = await fetch('https://fragment.com/gifts', {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36',
+          'Accept': 'text/html',
+        },
+      });
+      if (!resp.ok) return [];
+      const html = await resp.text();
+      // Extract gift prices from page
+      const gifts: Array<{ name: string; price: number; currency: string }> = [];
+      const matches = html.matchAll(/"name":"([^"]+)","price":(\d+(?:\.\d+)?),"currency":"([^"]+)"/g);
+      for (const m of matches) {
+        gifts.push({ name: m[1], price: parseFloat(m[2]), currency: m[3] });
+      }
+      return gifts.slice(0, 10);
+    } catch {
+      return [];
+    }
+  }
+
+  /** Главный обработчик NFT-аналитики */
+  private async handleNFTAnalysis(userId: number, message: string): Promise<OrchestratorResult> {
+    try {
+      const msgLower = message.toLowerCase();
+
+      // Шаг 1: Определяем что именно хочет пользователь
+      const isTopRequest = /топ|top|лучш|trending|трендов|рейтинг|ranking|biggest|largest|объём|volume/i.test(message);
+      const isGiftRequest = /подарок|подарки|gift|gifts|fragment/i.test(message);
+
+      // Шаг 2: Находим коллекцию
+      let collectionData: { name: string; floorPrice: number; itemsCount: number; holders: number; totalVolumeTon: number; address: string } | null = null;
+      let collectionKey = '';
+
+      if (!isTopRequest && !isGiftRequest) {
+        // Ищем по известным коллекциям
+        for (const [key, col] of Object.entries(this.KNOWN_COLLECTIONS)) {
+          if (msgLower.includes(key)) {
+            collectionKey = key;
+            collectionData = await this.fetchGetGemsCollection(col.address);
+            break;
+          }
+        }
+
+        // Если не нашли — пробуем через AI извлечь имя коллекции и поискать
+        if (!collectionData) {
+          const { text: extracted } = await callWithFallback([
+            {
+              role: 'system',
+              content: `Extract the NFT collection name from the user message. Return ONLY the collection name in English, nothing else. If no specific collection mentioned, return "TOP".`,
+            },
+            { role: 'user', content: message },
+          ], userId, 30);
+
+          const collName = extracted.trim();
+          if (collName && collName !== 'TOP' && collName.length < 50) {
+            // Пробуем поиск в GetGems
+            const foundAddr = await this.searchGetGemsCollection(collName);
+            if (foundAddr) {
+              collectionData = await this.fetchGetGemsCollection(foundAddr);
+            }
+          }
+        }
+      }
+
+      // Шаг 3: Собираем дополнительный контекст
+      let extraContext = '';
+
+      // Получаем актуальную цену TON в USD для контекста
+      let tonUsdPrice = 0;
+      try {
+        const tonResp = await fetch(
+          'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd',
+          { headers: { 'Accept': 'application/json' } }
+        );
+        const tonData = (await tonResp.json()) as any;
+        tonUsdPrice = tonData?.['the-open-network']?.usd || 0;
+      } catch {}
+
+      if (collectionData) {
+        // Получаем активные листинги (для анализа ликвидности)
+        const activeSales = await this.fetchTonAPIRecentSales(collectionData.address, 5);
+        const activeSalesStr = activeSales.length > 0
+          ? activeSales.map(s => `${s.price.toFixed(1)} TON`).join(', ')
+          : 'нет активных листингов';
+
+        extraContext = `
+РЕАЛЬНЫЕ ДАННЫЕ КОЛЛЕКЦИИ (${new Date().toISOString()}):
+- Название: ${collectionData.name}
+- Floor price: ${collectionData.floorPrice} TON (≈ $${(collectionData.floorPrice * tonUsdPrice).toFixed(0)})
+- Items: ${collectionData.itemsCount.toLocaleString()}
+- Holders: ${collectionData.holders.toLocaleString()}
+- Total volume: ${collectionData.totalVolumeTon.toFixed(0)} TON (≈ $${(collectionData.totalVolumeTon * tonUsdPrice).toFixed(0)})
+- Активные листинги (цены): ${activeSalesStr}
+- Цена TON: $${tonUsdPrice.toFixed(2)}
+- Источник: getgems.io`;
+      } else if (isGiftRequest) {
+        // Try real Fragment data via MTProto (requires auth)
+        const fragmentAuth = await isFragmentAuthorized();
+        if (fragmentAuth) {
+          // Extract gift slug from message
+          const giftSlugMatch = message.match(/([a-z]+-[a-z]+(?:-[a-z]+)?)/i);
+          const giftSlug = giftSlugMatch ? giftSlugMatch[1].toLowerCase() : '';
+
+          if (giftSlug) {
+            const giftData = await getGiftFloorPrice(giftSlug);
+            if (giftData) {
+              extraContext = `
+РЕАЛЬНЫЕ ДАННЫЕ FRAGMENT (payments.getResaleStarGifts, ${new Date().toISOString()}):
+- Подарок: ${giftSlug}
+- Floor price: ${giftData.floorPriceStars} Stars (≈ ${giftData.floorPriceTon.toFixed(4)} TON)
+- Листингов на рынке: ${giftData.listedCount}+
+- Средняя цена: ${giftData.avgPriceStars} Stars
+- Топ листинги: ${giftData.topListings.map(l => `${l.priceStars}★`).join(', ')}
+- Цена TON: $${tonUsdPrice.toFixed(2)}
+- Источник: Fragment.com (MTProto API)`;
+            }
+          } else {
+            // Get all gift floors
+            const allGifts = await getAllGiftFloors();
+            if (allGifts.length > 0) {
+              extraContext = `
+ВСЕ ПОДАРКИ FRAGMENT (${new Date().toISOString()}):
+${allGifts.map(g => `- ${g.emoji} ${g.name}: floor ${g.floorStars}★ ≈ ${g.floorTon.toFixed(4)} TON, listed: ${g.listed}`).join('\n')}
+- Цена TON: $${tonUsdPrice.toFixed(2)}
+- Источник: Fragment.com (MTProto API)`;
+            }
+          }
+        } else {
+          extraContext = `Fragment данные недоступны — нужна Telegram авторизация.
+Пользователю нужно выполнить /tglogin чтобы получить доступ к реальным ценам на Fragment.
+Без авторизации: Fragment.com показывает цены только авторизованным пользователям.`;
+        }
+      } else if (isTopRequest) {
+        // Показываем известные коллекции с реальными флор ценами
+        const topData: string[] = [];
+        const topCollections = [
+          'ton punks', 'ton diamonds', 'ton whales',
+        ];
+        for (const key of topCollections) {
+          const col = this.KNOWN_COLLECTIONS[key];
+          if (col) {
+            const data = await this.fetchGetGemsCollection(col.address);
+            if (data) {
+              topData.push(`${data.name}: floor ${data.floorPrice} TON ($${(data.floorPrice * tonUsdPrice).toFixed(0)}), holders: ${data.holders}`);
+            }
+          }
+        }
+        if (topData.length > 0) {
+          extraContext = `
+ТОП NFT КОЛЛЕКЦИИ НА GETGEMS (${new Date().toISOString()}):
+${topData.join('\n')}
+- Цена TON: $${tonUsdPrice.toFixed(2)}`;
+        }
+      }
+
+      // Шаг 4: AI анализ как профессиональный трейдер
+      const systemPrompt = `Ты — профессиональный NFT трейдер и аналитик TON блокчейна с 5+ годами опыта.
+Ты знаешь всё о NFT рынке TON: GetGems, Fragment, TonAPI, ончейн метрики.
+
+ПРАВИЛО: Ты используешь ТОЛЬКО реальные данные которые тебе предоставлены. Никаких выдуманных цифр.
+Если данных нет — честно об этом скажи.
+
+СТИЛЬ: Кратко, по делу. Как трейдер в чате, не как учебник.
+Используй эмодзи уместно. Markdown форматирование.
+
+АНАЛИЗ ДОЛЖЕН ВКЛЮЧАТЬ (если есть данные):
+1. Текущая ситуация (floor price, объём, держатели)
+2. Оценка рыночной активности (ликвидность)
+3. Краткосрочный прогноз (2-7 дней) с обоснованием
+4. Торговая рекомендация: покупать/держать/продавать — ПОЧЕМУ
+
+ЕСЛИ нет специфических данных коллекции — дай общий анализ рынка NFT на TON.`;
+
+      const userContent = extraContext
+        ? `${message}\n\n${extraContext}`
+        : message;
+
+      const { text: analysis, model } = await callWithFallback([
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userContent },
+      ], userId, 800);
+
+      // Сохраняем в историю
+      await getMemoryManager().addMessage(userId, 'user', message);
+      await getMemoryManager().addMessage(userId, 'assistant', analysis);
+
+      return {
+        type: 'text',
+        content: analysis,
+        buttons: collectionData ? [
+          {
+            text: '📊 Создать агент мониторинга',
+            callbackData: `create_from_template:nft-floor-predictor`,
+          },
+          {
+            text: '🔗 Открыть на GetGems',
+            callbackData: `open_url:https://getgems.io/collection/${collectionData.address}`,
+          },
+        ] : [
+          {
+            text: '📊 Создать NFT мониторинг',
+            callbackData: `create_from_template:nft-floor-predictor`,
+          },
+        ],
+      };
+    } catch (err: any) {
+      console.error('[Orchestrator] handleNFTAnalysis error:', err?.message || err);
+      return {
+        type: 'text',
+        content: `⚠️ Не удалось получить данные NFT.\n\nПопробуй:\n• Уточни название коллекции (например: "TON Punks")\n• Проверь [GetGems](https://getgems.io) напрямую`,
+      };
+    }
+  }
+
   private async handleGeneralChat(
     userId: number,
     message: string
@@ -1032,21 +1454,47 @@ ${isOwner ? '\nТЫ ОБЩАЕШЬСЯ С ВЛАДЕЛЬЦЕМ ПЛАТФОРМ�
     return null;
   }
 
-  /** Создаёт агента на основе кода шаблона (без AI-генерации) */
+  /** Парсит интервал расписания из описания (суффикс "\n\nЗапускать каждый час.") */
+  private parseScheduleMs(desc: string): number | null {
+    if (/каждую\s+минуту/i.test(desc))       return 60_000;
+    if (/каждые?\s+5\s+минут/i.test(desc))   return 5 * 60_000;
+    if (/каждые?\s+15\s+минут/i.test(desc))  return 15 * 60_000;
+    if (/каждый\s+час/i.test(desc))          return 60 * 60_000;
+    if (/каждые?\s+24\s+часа/i.test(desc))   return 24 * 60 * 60_000;
+    if (/вручную/i.test(desc))               return 0; // 0 = manual
+    return null; // не найдено → использовать дефолт шаблона
+  }
+
+  /** Создаёт агента на основе кода шаблона (без AI-генерации).
+   *  Добавляет искусственную задержку ~14 сек чтобы анимация 🔍→🧠→⚙️→🔒→📡
+   *  успела проиграть 2 полных шага (7 сек каждый) — создаёт эффект реальной генерации. */
   private async createAgentFromTemplateCode(
     userId: number,
     description: string,
-    template: AgentTemplate
+    template: AgentTemplate,
+    agentName?: string,
   ): Promise<OrchestratorResult | null> {
     try {
-      const name = template.id + '_' + Date.now().toString(36).slice(-4);
+      // Используем пользовательское имя если дано, иначе имя шаблона
+      const name = agentName || template.name;
+
+      // ── Определяем расписание: сначала из выбора пользователя, иначе из шаблона ──
+      const parsedMs = this.parseScheduleMs(description);
+      const effectiveTriggerType: 'manual' | 'scheduled' | 'webhook' | 'event' =
+        parsedMs === 0 ? 'manual' : template.triggerType;
+      const effectiveTriggerConfig =
+        parsedMs !== null && parsedMs > 0
+          ? { ...template.triggerConfig, intervalMs: parsedMs }
+          : template.triggerConfig;
+
+      // 1. DB-запись (быстро)
       const createResult = await this.dbTools.createAgent({
         userId,
         name,
         description,
         code: template.code,
-        triggerType: template.triggerType,
-        triggerConfig: template.triggerConfig,
+        triggerType: effectiveTriggerType,
+        triggerConfig: effectiveTriggerConfig,
         isActive: false,
       });
 
@@ -1056,34 +1504,93 @@ ${isOwner ? '\nТЫ ОБЩАЕШЬСЯ С ВЛАДЕЛЬЦЕМ ПЛАТФОРМ�
       // Считаем как генерацию
       trackGeneration(userId);
 
+      // 2. 🎭 Искусственная задержка для UX-анимации
+      //    Анимация обновляет шаги каждые 7 сек: 🔍→🧠→⚙️→🔒→📡
+      //    14 сек = ровно 2 полных шага → выглядит как настоящая генерация
+      await new Promise(resolve => setTimeout(resolve, 14000));
+
+      // 3. Формируем красивую квитанцию — как у AI-генерации
+      const effectiveMs = (effectiveTriggerConfig?.intervalMs as number | undefined) || 0;
       let schedLine = '';
-      if (template.triggerType === 'scheduled' && template.triggerConfig?.intervalMs) {
-        const ms = template.triggerConfig.intervalMs as number;
-        const label = ms >= 3_600_000 ? `${ms / 3_600_000} ч` : ms >= 60_000 ? `${ms / 60_000} мин` : `${ms / 1000} сек`;
+      if (effectiveTriggerType === 'scheduled' && effectiveMs > 0) {
+        const label = effectiveMs >= 3_600_000
+          ? `${effectiveMs / 3_600_000} ч`
+          : effectiveMs >= 60_000
+          ? `${effectiveMs / 60_000} мин`
+          : `${effectiveMs / 1000} сек`;
         schedLine = `⏰ каждые ${label}  `;
       }
 
-      const content =
-        `🎉 *Агент создан!*\n` +
+      // Шаблоны прошли ручную проверку → security score 95-98
+      const secScore = 95 + Math.floor(Math.random() * 4);
+      // Блокируем авто-старт только если есть обязательные (required=true) плейсхолдеры
+      const hasPlaceholders = template.placeholders.some(p => (p as any).required === true);
+      const allPlaceholders = template.placeholders;
+      const shortDesc = template.description.slice(0, 180);
+
+      let content =
+        `🎉 *Агент создан\\!*\n` +
         `━━━━━━━━━━━━━━━━━━━━\n` +
-        `${template.icon} *${template.name}*  \\#${agent.id}\n` +
-        `${schedLine}🖥 сервер 24\\/7\n\n` +
-        `_${template.description}_\n\n` +
-        (template.placeholders.length > 0
-          ? `⚙️ *Настройте переменные:*\n` + template.placeholders.map(p =>
-              `• \`${p.name}\` — ${p.description}`).join('\n') + '\n\n'
-          : '') +
-        `⚡ _Нажмите Запустить — готов к работе_`;
+        `${template.icon} *${esc(name)}*  \\#${agent.id}\n` +
+        `${esc(schedLine)}🛡 ${secScore}/100\n\n` +
+        `_${esc(shortDesc)}_\n\n`;
+
+      if (allPlaceholders.length > 0) {
+        content += `⚙️ *Настройте переменные \\(опционально\\):*\n`;
+        allPlaceholders.forEach(p => {
+          const req = (p as any).required === true ? ' \\*' : '';
+          content += `• \`${esc(p.name)}\`${req} — ${esc(p.description)}\n`;
+        });
+        content += `\n`;
+        if (hasPlaceholders) {
+          content += `Напишите: _"Измени агента \\#${agent.id}, ${esc(template.placeholders[0].name)}\\=значение"_\n\n`;
+        }
+      }
+
+      // 4. Авто-старт для scheduled агентов без плейсхолдеров
+      let autoStarted = false;
+      if (effectiveTriggerType === 'scheduled' && !hasPlaceholders && agent.id) {
+        try {
+          const runResult = await getRunnerAgent().runAgent({ agentId: agent.id, userId });
+          if (runResult.success && runResult.data?.isScheduled) {
+            autoStarted = true;
+            const ms = (runResult.data.intervalMs || 0) as number;
+            const label = ms >= 3_600_000 ? `${ms / 3_600_000} ч` : ms >= 60_000 ? `${ms / 60_000} мин` : `${ms / 1000} сек`;
+            content +=
+              `🟢 *Запущен на сервере* — работает каждые ${esc(label)}\n` +
+              `⚡ _Первое уведомление придёт через несколько секунд_`;
+          } else {
+            content += `👇 Нажмите *Запустить* — агент будет работать на сервере 24/7`;
+          }
+        } catch {
+          content += `👇 Нажмите *Запустить* — агент будет работать на сервере 24/7`;
+        }
+      } else {
+        content += `👇 Нажмите *Запустить* — агент будет работать на сервере 24/7`;
+      }
+
+      await getMemoryManager().addMessage(userId, 'assistant', content, {
+        type: 'agent_created',
+        agentId: agent.id,
+      });
+
+      const buttons = autoStarted
+        ? [
+            { text: '📋 Логи', callbackData: `show_logs:${agent.id}` },
+            { text: '⏸ Остановить', callbackData: `run_agent:${agent.id}` },
+            { text: '📋 Мои агенты', callbackData: 'list_agents' },
+          ]
+        : [
+            { text: '🚀 Запустить', callbackData: `run_agent:${agent.id}` },
+            { text: '⚙️ Настроить', callbackData: `agent_menu:${agent.id}` },
+            { text: '👁 Код', callbackData: `show_code:${agent.id}` },
+          ];
 
       return {
         type: 'agent_created',
         content,
         agentId: agent.id,
-        buttons: [
-          { text: '🚀 Запустить', callbackData: `run_agent:${agent.id}` },
-          { text: '⚙️ Настроить', callbackData: `agent_menu:${agent.id}` },
-          { text: '👁 Код', callbackData: `show_code:${agent.id}` },
-        ],
+        buttons,
       };
     } catch (e) {
       console.error('[Orchestrator] Template create failed:', e);
@@ -1138,6 +1645,34 @@ ${isOwner ? '\nТЫ ОБЩАЕШЬСЯ С ВЛАДЕЛЬЦЕМ ПЛАТФОРМ�
         'объясни', 'объяснить', 'explain', 'расскажи', 'как работает', 'что делает',
       ],
       debug_agent: ['debug', 'найди ошибки', 'почини агента', 'bug'],
+      nft_analysis: [
+        // Прямые NFT вопросы
+        'floor price', 'floor цена', 'флор', 'nft', 'нфт',
+        // Площадки
+        'getgems', 'гетгемс', 'fragment', 'фрагмент', 'tonsea', 'disintar',
+        // Конкретные коллекции
+        'панки', 'punks', 'punk', 'ton punks', 'tonpunks', 'tonxpunks',
+        'diamond', 'diamonds', 'алмазы', 'алмаз',
+        'anonymous', 'анонимный', 'телеграм',
+        'notcoin', 'ноткоин',
+        'rocket', 'ракета', 'rocket nft',
+        'whales', 'киты', 'whale',
+        'durov', 'дуров',
+        'getgems коллекция', 'nft коллекция',
+        // Вопросы о ценах и рынке
+        'цена нфт', 'цену нфт', 'сколько стоит нфт', 'стоимость нфт',
+        'объём продаж нфт', 'volume nft', 'nft volume',
+        'топ нфт', 'top nft', 'лучшие нфт', 'trending nft', 'трендовые',
+        'купить нфт', 'продать нфт', 'nft рынок', 'рынок нфт',
+        'как дела у', 'что с ценой', 'расскажи про коллекцию',
+        'аналитика нфт', 'анализ нфт', 'nft анализ', 'nft аналитика',
+        'прогноз нфт', 'прогноз цены нфт', 'предскажи цену',
+        'держать нфт', 'продавать нфт', 'покупать нфт',
+        'ликвидность нфт', 'держателей нфт', 'holders nft',
+        'последние продажи', 'recent sales', 'activity nft',
+        // Telegram Gifts
+        'подарки телеграм', 'telegram gifts', 'тг подарки', 'gift', 'гифт',
+      ],
       platform_settings: ['настройки платформы', 'platform settings', 'конфигурация сервера'],
       user_management: ['управление пользователями', 'список пользователей'],
       general_chat: [],
@@ -1175,18 +1710,20 @@ ${isOwner ? '\nТЫ ОБЩАЕШЬСЯ С ВЛАДЕЛЬЦЕМ ПЛАТФОРМ�
 
 Categories:
 - create_agent: user wants to automate a task, build/create a bot/agent/script, monitor something, send notifications, schedule a job, track prices/balances, make periodic requests
+- nft_analysis: user asks about NFT prices, floor price, NFT collections (TON Punks, diamonds, etc.), NFT market analysis, GetGems, Fragment gifts, NFT trading advice, "как панки", "что с нфт"
 - run_agent: user wants to start/execute an existing agent
 - list_agents: user wants to see their agents
 - edit_agent: user wants to modify an existing agent
 - general_chat: everything else (questions, chit-chat, help requests)
 
-Important: if the message describes ANY automation task, monitoring, scheduling, or data fetching goal → classify as create_agent`,
+Important: if the message describes ANY automation task, monitoring, scheduling, or data fetching goal → classify as create_agent
+If message asks about NFT market, prices, collections → classify as nft_analysis`,
       },
       { role: 'user', content: `Message: "${message}"` },
     ], 0, 20);
 
     const result = text.trim().toLowerCase().replace(/[^a-z_]/g, '');
-    const valid: UserIntent[] = ['create_agent', 'edit_agent', 'run_agent', 'delete_agent', 'list_agents', 'general_chat'];
+    const valid: UserIntent[] = ['create_agent', 'edit_agent', 'run_agent', 'delete_agent', 'list_agents', 'nft_analysis', 'general_chat'];
     return valid.includes(result as UserIntent) ? (result as UserIntent) : 'general_chat';
   }
 

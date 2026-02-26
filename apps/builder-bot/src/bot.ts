@@ -1,6 +1,11 @@
 import { Telegraf, Context, Markup } from 'telegraf';
 import { message } from 'telegraf/filters';
 import { getOrchestrator, MODEL_LIST, getUserModel, setUserModel, type ModelId } from './agents/orchestrator';
+import {
+  authSendPhone, authSubmitCode, authSubmitPassword,
+  isAuthorized, getAuthState, clearAuthState,
+  getGiftFloorPrice, getAllGiftFloors,
+} from './fragment-service';
 import { initNotifier } from './notifier';
 import { getMemoryManager } from './db/memory';
 import { getDBTools } from './agents/tools/db-tools';
@@ -11,7 +16,7 @@ import { getCodeTools } from './agents/tools/code-tools';
 import { pendingBotAuth } from './api-server';
 import { getTonConnectManager } from './ton-connect';
 import { getPluginManager } from './plugins-system';
-import { getUserSettingsRepository, getMarketplaceRepository } from './db/schema-extensions';
+import { getUserSettingsRepository, getMarketplaceRepository, getExecutionHistoryRepository } from './db/schema-extensions';
 import { getWorkflowEngine } from './agent-cooperation';
 import { allAgentTemplates, type AgentTemplate } from './agent-templates';
 import {
@@ -204,7 +209,7 @@ const MAIN_MENU = Markup.keyboard([
   ['🤖 Мои агенты', '➕ Создать агента'],
   ['🏪 Маркетплейс', '🔌 Плагины', '⚡ Workflow'],
   ['💎 TON Connect', '💳 Подписка', '📊 Статистика'],
-  ['❓ Помощь', '🌐 EN/RU'],
+  ['👤 Профиль', '❓ Помощь'],
 ]).resize();
 
 // ============================================================
@@ -225,8 +230,17 @@ const pendingRepairs = new Map<string, string>();
 interface PendingAgentCreation {
   description: string;      // исходное описание пользователя
   step: 'schedule';         // текущий шаг диалога
+  name?: string;            // пользовательское имя агента (если дал)
 }
 const pendingCreations = new Map<number, PendingAgentCreation>();
+
+// ============================================================
+// State machine для запроса названия агента
+// ============================================================
+interface PendingNameAsk {
+  description: string;
+}
+const pendingNameAsk = new Map<number, PendingNameAsk>(); // userId → state
 
 const SCHEDULE_LABELS: Record<string, string> = {
   manual:   'вручную',
@@ -268,6 +282,61 @@ function getUserLang(userId: number, text?: string): 'ru' | 'en' {
   return 'ru';
 }
 
+async function saveUserLang(userId: number, lang: 'ru' | 'en'): Promise<void> {
+  userLanguages.set(userId, lang);
+  try { await getUserSettingsRepository().set(userId, 'lang', lang); } catch {}
+}
+
+async function loadUserLang(userId: number): Promise<'ru' | 'en' | null> {
+  if (userLanguages.has(userId)) return userLanguages.get(userId)!;
+  try {
+    const saved = await getUserSettingsRepository().get(userId, 'lang');
+    if (saved === 'ru' || saved === 'en') {
+      userLanguages.set(userId, saved);
+      return saved;
+    }
+  } catch {}
+  return null;
+}
+
+// ============================================================
+// State machine для выбора языка при первом /start
+// ============================================================
+const pendingLangSetup = new Set<number>(); // userId → ждёт выбора языка
+
+// ============================================================
+// Профиль пользователя: баланс и вывод
+// ============================================================
+interface UserProfile {
+  balance_ton: number;
+  total_earned: number;
+  wallet_address: string | null;
+  joined_at: string;
+}
+
+async function getUserProfile(userId: number): Promise<UserProfile> {
+  try {
+    const saved = await getUserSettingsRepository().get(userId, 'profile');
+    if (saved && typeof saved === 'object') return saved as UserProfile;
+  } catch {}
+  return { balance_ton: 0, total_earned: 0, wallet_address: null, joined_at: new Date().toISOString() };
+}
+
+async function saveUserProfile(userId: number, profile: UserProfile): Promise<void> {
+  try { await getUserSettingsRepository().set(userId, 'profile', profile); } catch {}
+}
+
+async function addUserBalance(userId: number, amount: number): Promise<UserProfile> {
+  const p = await getUserProfile(userId);
+  p.balance_ton = Math.max(0, p.balance_ton + amount);
+  if (amount > 0) p.total_earned += amount;
+  await saveUserProfile(userId, p);
+  return p;
+}
+
+// pendingWithdrawal: userId → 'enter_address' | 'enter_amount'
+const pendingWithdrawal = new Map<number, { step: 'enter_address' | 'enter_amount'; address?: string }>();
+
 // ============================================================
 // State machine для настройки переменных шаблона (wizard)
 // ============================================================
@@ -287,6 +356,9 @@ interface PendingPublish {
   price: number; // nanotokens
 }
 const pendingPublish = new Map<number, PendingPublish>();
+
+// Telegram auth flow state
+const pendingTgAuth = new Map<number, 'phone' | 'code' | 'password'>();
 
 // ============================================================
 // Определение «мусорного» ввода (ываыва, aaaa, qwerty и т.п.)
@@ -351,6 +423,68 @@ bot.use(async (ctx, next) => {
 });
 
 // ============================================================
+// showWelcome — единый экран приветствия (вызывается из /start и setlang_*)
+// ============================================================
+async function showWelcome(ctx: Context, userId: number, name: string, lang: 'ru' | 'en') {
+  let statsLine = '';
+  try {
+    const stats = await getAgentsRepository().getGlobalStats();
+    statsLine = lang === 'ru'
+      ? `\n🌍 *Уже на платформе:* ${esc(String(stats.totalAgents))} агентов \\| ${esc(String(stats.activeAgents))} активны \\| ${esc(String(stats.totalUsers))} пользователей\n`
+      : `\n🌍 *On platform:* ${esc(String(stats.totalAgents))} agents \\| ${esc(String(stats.activeAgents))} active \\| ${esc(String(stats.totalUsers))} users\n`;
+  } catch {}
+
+  const text = lang === 'ru'
+    ? `✨ *Добро пожаловать, ${esc(name)}\\!*\n\n` +
+      `Я — *TON Agent Platform* \\— платформа для создания\n` +
+      `AI\\-агентов, которые работают на нашем сервере 24/7\\.` +
+      statsLine + `\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `🧠 *Что умеют агенты:*\n\n` +
+      `💎 Мониторить TON кошельки и уведомлять\n` +
+      `📈 Следить за ценами на DEX и биржах\n` +
+      `💸 Автоматически отправлять TON по расписанию\n` +
+      `🌐 Работать с любыми API \\(REST, webhook\\)\n` +
+      `🤖 Выполнять любую автоматизацию\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `💬 *Просто напишите задачу* — агент создаётся\n` +
+      `автоматически без установки чего\\-либо\\.`
+    : `✨ *Welcome, ${esc(name)}\\!*\n\n` +
+      `I am *TON Agent Platform* \\— a platform for creating\n` +
+      `AI agents that run on our server 24/7\\.` +
+      statsLine + `\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `🧠 *What agents can do:*\n\n` +
+      `💎 Monitor TON wallets and send alerts\n` +
+      `📈 Track prices on DEX and exchanges\n` +
+      `💸 Auto\\-send TON on schedule\n` +
+      `🌐 Work with any API \\(REST, webhooks\\)\n` +
+      `🤖 Run any automation\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `💬 *Just describe your task* — agent is created\n` +
+      `automatically, no setup needed\\.`;
+
+  await safeReply(ctx, text, MAIN_MENU);
+  await ctx.reply(
+    lang === 'ru' ? '⚡ *Запустите первого агента за 30 секунд:*' : '⚡ *Launch your first agent in 30 seconds:*',
+    {
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: lang === 'ru' ? '📈 Следить за ценой TON' : '📈 TON Price Alert', callback_data: 'create_from_template:ton-price-monitor' }],
+          [{ text: lang === 'ru' ? '💎 Проверить баланс кошелька' : '💎 Wallet Balance Alert', callback_data: 'create_from_template:ton-balance-checker' }],
+          [{ text: lang === 'ru' ? '🌐 Мониторинг доступности сайта' : '🌐 Website Monitor', callback_data: 'create_from_template:website-monitor' }],
+          [
+            { text: lang === 'ru' ? '🏪 Все шаблоны' : '🏪 All templates', callback_data: 'marketplace' },
+            { text: lang === 'ru' ? '✏️ Своя задача' : '✏️ Custom task', callback_data: 'create_agent_prompt' },
+          ],
+        ],
+      },
+    }
+  );
+}
+
+// ============================================================
 // /start
 // ============================================================
 bot.command('start', async (ctx) => {
@@ -359,6 +493,25 @@ bot.command('start', async (ctx) => {
 
   // ── Parse deeplink payload ──
   const startPayload = ctx.message.text.split(' ')[1] || '';
+
+  // ── Первый старт: выбор языка ──
+  const existingLang = await loadUserLang(userId);
+  if (!existingLang && !startPayload) {
+    pendingLangSetup.add(userId);
+    await ctx.reply(
+      `👋 Welcome, ${name}! / Добро пожаловать, ${name}!\n\n` +
+      `🌍 Choose your language / Выберите язык:`,
+      {
+        reply_markup: {
+          inline_keyboard: [[
+            { text: '🇷🇺 Русский', callback_data: 'setlang_ru' },
+            { text: '🇬🇧 English', callback_data: 'setlang_en' },
+          ]]
+        }
+      }
+    );
+    return;
+  }
 
   // ── Demo deeplink: /start demo_price / demo_nft / demo_wallet ──
   const demoMap: Record<string, { id: string; desc: string; emoji: string }> = {
@@ -419,52 +572,8 @@ bot.command('start', async (ctx) => {
   }
 
   await getMemoryManager().clearHistory(userId);
-
-  // Живая статистика платформы
-  let statsLine = '';
-  try {
-    const stats = await getAgentsRepository().getGlobalStats();
-    statsLine =
-      `\n🌍 *Уже на платформе:* ` +
-      `${esc(String(stats.totalAgents))} агентов \\| ` +
-      `${esc(String(stats.activeAgents))} активны \\| ` +
-      `${esc(String(stats.totalUsers))} пользователей\n`;
-  } catch { /* тихо, если БД ещё не прогрелась */ }
-
-  const text =
-    `✨ *Добро пожаловать, ${esc(name)}\\!*\n\n` +
-    `Я — *TON Agent Platform* \\— платформа для создания\n` +
-    `AI\\-агентов, которые работают на нашем сервере 24/7\\.` +
-    statsLine + `\n` +
-    `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `🧠 *Что умеют агенты:*\n\n` +
-    `💎 Мониторить TON кошельки и уведомлять\n` +
-    `📈 Следить за ценами на DEX и биржах\n` +
-    `💸 Автоматически отправлять TON по расписанию\n` +
-    `🌐 Работать с любыми API \\(REST, webhook\\)\n` +
-    `🤖 Выполнять любую автоматизацию\n\n` +
-    `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `💬 *Просто напишите задачу* — агент создаётся\n` +
-    `автоматически без установки чего\\-либо\\.`;
-
-  await safeReply(ctx, text, MAIN_MENU);
-  await ctx.reply(
-    '⚡ *Запустите первого агента за 30 секунд:*',
-    {
-      parse_mode: 'Markdown',
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: '📈 Следить за ценой TON', callback_data: 'create_from_template:ton-price-monitor' }],
-          [{ text: '💎 Проверить баланс кошелька', callback_data: 'create_from_template:ton-balance-checker' }],
-          [{ text: '🌐 Мониторинг доступности сайта', callback_data: 'create_from_template:website-monitor' }],
-          [
-            { text: '🏪 Все шаблоны', callback_data: 'marketplace' },
-            { text: '✏️ Своя задача', callback_data: 'create_agent_prompt' },
-          ],
-        ],
-      },
-    }
-  );
+  const lang = existingLang || 'ru';
+  await showWelcome(ctx, userId, name, lang);
 });
 
 // ============================================================
@@ -480,6 +589,70 @@ bot.command('stats', (ctx) => showStats(ctx, ctx.from.id));
 bot.command('sub', (ctx) => showSubscription(ctx));
 bot.command('plans', (ctx) => showPlans(ctx));
 bot.command('model', (ctx) => showModelSelector(ctx));
+
+// ── /tglogin — авторизация Telegram для Fragment API ──────────────
+bot.command('tglogin', async (ctx) => {
+  const userId = ctx.from.id;
+  const isAuth = await isAuthorized();
+
+  if (isAuth) {
+    await ctx.reply(
+      '✅ *Telegram уже авторизован*\n\n' +
+      'Fragment данные доступны\\. Используй:\n' +
+      '• `/gifts` — топ подарков с floor ценами\n' +
+      '• Спроси в чате: _"цена jelly bunny на Fragment"_',
+      { parse_mode: 'MarkdownV2' }
+    );
+    return;
+  }
+
+  pendingTgAuth.set(userId, 'phone');
+  await ctx.reply(
+    '📱 *Авторизация Telegram для Fragment*\n\n' +
+    'Это нужно для получения реальных floor цен подарков на Fragment\\.\n\n' +
+    '⚠️ *Внимание:* бот получит временный доступ к твоему аккаунту для чтения данных подарков\\.\n\n' +
+    '📞 Введи номер телефона в формате: `+79991234567`\n\n' +
+    '_Для отмены напиши_ `/cancel`',
+    { parse_mode: 'MarkdownV2' }
+  );
+});
+
+// ── /gifts — показать топ подарков Fragment ───────────────────────
+bot.command('gifts', async (ctx) => {
+  const userId = ctx.from.id;
+  await ctx.sendChatAction('typing');
+
+  const isAuth = await isAuthorized();
+  if (!isAuth) {
+    await ctx.reply(
+      '🔑 Для получения данных Fragment нужна авторизация\\.\n\n' +
+      'Введи /tglogin чтобы подключить Telegram аккаунт\\.',
+      { parse_mode: 'MarkdownV2' }
+    );
+    return;
+  }
+
+  try {
+    const gifts = await getAllGiftFloors();
+
+    if (gifts.length === 0) {
+      await ctx.reply('📊 Нет данных о подарках на вторичном рынке.');
+      return;
+    }
+
+    let msg = '🎁 *Fragment Gifts — Floor Prices*\n━━━━━━━━━━━━━━━━━━━━\n\n';
+    for (const g of gifts) {
+      msg += `${g.emoji} ${esc(g.name)}\n`;
+      msg += `  💰 Floor: \`${g.floorStars} ⭐\` ≈ \`${g.floorTon.toFixed(3)} TON\`\n`;
+      msg += `  📋 Listed: ${g.listed}+\n\n`;
+    }
+    msg += `\n_Обновлено: ${esc(new Date().toLocaleTimeString('ru-RU'))} UTC_`;
+
+    await safeReply(ctx, msg, { parse_mode: 'MarkdownV2' });
+  } catch (e: any) {
+    await ctx.reply('❌ Ошибка получения данных: ' + e.message);
+  }
+});
 
 // /config — управление пользовательскими переменными
 // /config set KEY value
@@ -782,15 +955,181 @@ bot.hears('💎 TON Connect', (ctx) => showTonConnect(ctx));
 bot.hears('💳 Подписка', (ctx) => showSubscription(ctx));
 bot.hears('📊 Статистика', (ctx) => showStats(ctx, ctx.from.id));
 bot.hears('❓ Помощь', (ctx) => showHelp(ctx));
-bot.hears('🌐 EN/RU', async (ctx) => {
+// ── Выбор языка (callback при первом /start) ──
+bot.action(/^setlang_(ru|en)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  const lang = (ctx.match[1] as 'ru' | 'en');
+  const userId = ctx.from!.id;
+  await saveUserLang(userId, lang);
+  pendingLangSetup.delete(userId);
+
+  // Показываем профиль при создании
+  const profile = await getUserProfile(userId);
+  if (!profile.joined_at || profile.joined_at === new Date().toISOString().slice(0, 10)) {
+    await saveUserProfile(userId, { ...profile, joined_at: new Date().toISOString() });
+  }
+
+  const name = ctx.from!.first_name || ctx.from!.username || (lang === 'ru' ? 'друг' : 'friend');
+  if (lang === 'ru') {
+    await ctx.editMessageText(
+      `✅ Язык: Русский 🇷🇺\n\nОтлично, ${name}! Пишу /start...`
+    ).catch(() => {});
+  } else {
+    await ctx.editMessageText(
+      `✅ Language: English 🇬🇧\n\nGreat, ${name}! Sending /start...`
+    ).catch(() => {});
+  }
+  // Эмулируем /start в выбранном языке
+  await showWelcome(ctx as any, userId, name, lang);
+});
+
+// ── Профиль пользователя ──
+bot.hears('👤 Профиль', async (ctx) => showProfile(ctx, ctx.from.id));
+bot.command('profile', async (ctx) => showProfile(ctx, ctx.from.id));
+
+async function showProfile(ctx: Context, userId: number) {
+  const lang = getUserLang(userId);
+  const profile = await getUserProfile(userId);
+  const agents = await getDBTools().getUserAgents(userId).catch(() => ({ data: [] }));
+  const agentList = (agents as any).data || [];
+  const activeCount = agentList.filter((a: any) => a.isActive).length;
+  const totalCount = agentList.length;
+
+  let statsLine = '';
+  try {
+    const execStats = await getExecutionHistoryRepository().getStats(userId);
+    if (execStats) statsLine = `\n✅ *${esc(String(execStats.totalRuns))}* ${lang === 'ru' ? 'запусков всего' : 'total runs'}`;
+  } catch {}
+
+  const joined = profile.joined_at ? new Date(profile.joined_at).toLocaleDateString(lang === 'ru' ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
+  const walletLine = profile.wallet_address
+    ? `\n🔗 ${lang === 'ru' ? 'Кошелёк:' : 'Wallet:'} \`${esc(profile.wallet_address.slice(0,10))}…\``
+    : `\n🔗 ${lang === 'ru' ? 'Кошелёк не привязан' : 'No wallet linked'}`;
+
+  const text =
+    `👤 *${lang === 'ru' ? 'Профиль' : 'Profile'} — ${esc(ctx.from?.first_name || 'User')}*\n` +
+    `━━━━━━━━━━━━━━━━━━━━\n` +
+    `💰 *${lang === 'ru' ? 'Баланс' : 'Balance'}:* ${esc(profile.balance_ton.toFixed(2))} TON\n` +
+    `📈 *${lang === 'ru' ? 'Заработано' : 'Earned'}:* ${esc(profile.total_earned.toFixed(2))} TON\n` +
+    `🤖 *${lang === 'ru' ? 'Агентов' : 'Agents'}:* ${esc(String(totalCount))} \\(${esc(String(activeCount))} ${lang === 'ru' ? 'активных' : 'active'}\\)` +
+    statsLine +
+    walletLine +
+    `\n📅 *${lang === 'ru' ? 'С нами с' : 'Member since'}:* ${esc(joined)}\n` +
+    `━━━━━━━━━━━━━━━━━━━━`;
+
+  await safeReply(ctx, text, {
+    parse_mode: 'MarkdownV2',
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: lang === 'ru' ? '💸 Вывести' : '💸 Withdraw', callback_data: 'withdraw_start' },
+          { text: lang === 'ru' ? '🔗 Привязать кошелёк' : '🔗 Link wallet', callback_data: 'profile_link_wallet' },
+        ],
+        [
+          { text: lang === 'ru' ? '🌐 Сменить язык' : '🌐 Change language', callback_data: 'profile_change_lang' },
+        ],
+      ],
+    },
+  });
+}
+
+// ── Withdraw flow ──
+bot.action('withdraw_start', async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from!.id;
+  const lang = getUserLang(userId);
+  const profile = await getUserProfile(userId);
+
+  if (profile.balance_ton < 0.1) {
+    await ctx.reply(lang === 'ru'
+      ? '❌ Недостаточно TON для вывода (минимум 0.1 TON)'
+      : '❌ Insufficient balance (minimum 0.1 TON)'
+    );
+    return;
+  }
+
+  if (profile.wallet_address) {
+    // Уже привязан — сразу спрашиваем сумму
+    pendingWithdrawal.set(userId, { step: 'enter_amount', address: profile.wallet_address });
+    await ctx.reply(
+      lang === 'ru'
+        ? `💸 *Вывод TON*\n\nКошелёк: \`${profile.wallet_address.slice(0,12)}…\`\nДоступно: *${profile.balance_ton.toFixed(2)} TON*\n\nВведите сумму для вывода:`
+        : `💸 *Withdraw TON*\n\nWallet: \`${profile.wallet_address.slice(0,12)}…\`\nAvailable: *${profile.balance_ton.toFixed(2)} TON*\n\nEnter amount:`,
+      { parse_mode: 'Markdown' }
+    );
+  } else {
+    pendingWithdrawal.set(userId, { step: 'enter_address' });
+    await ctx.reply(
+      lang === 'ru'
+        ? `💸 *Вывод TON*\n\nДоступно: *${profile.balance_ton.toFixed(2)} TON*\n\nВведите адрес TON кошелька (EQ...):`
+        : `💸 *Withdraw TON*\n\nAvailable: *${profile.balance_ton.toFixed(2)} TON*\n\nEnter your TON wallet address (EQ...):`,
+      { parse_mode: 'Markdown' }
+    );
+  }
+});
+
+bot.action('profile_link_wallet', async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from!.id;
+  const lang = getUserLang(userId);
+  pendingWithdrawal.set(userId, { step: 'enter_address' });
+  await ctx.reply(
+    lang === 'ru'
+      ? '🔗 Введите адрес вашего TON кошелька (EQ...) для привязки:'
+      : '🔗 Enter your TON wallet address (EQ...) to link:'
+  );
+});
+
+bot.action('profile_change_lang', async (ctx) => {
+  await ctx.answerCbQuery();
+  await ctx.reply(
+    '🌍 Choose language / Выберите язык:',
+    {
+      reply_markup: {
+        inline_keyboard: [[
+          { text: '🇷🇺 Русский', callback_data: 'setlang_ru' },
+          { text: '🇬🇧 English', callback_data: 'setlang_en' },
+        ]]
+      }
+    }
+  );
+});
+
+// ============================================================
+// Колбэки для диалога "как назвать агента?"
+// ============================================================
+bot.action('skip_agent_name', async (ctx) => {
+  await ctx.answerCbQuery();
   const userId = ctx.from.id;
-  const current = getUserLang(userId);
-  const newLang: 'ru' | 'en' = current === 'ru' ? 'en' : 'ru';
-  userLanguages.set(userId, newLang);
-  const msg = newLang === 'en'
-    ? `🌐 Language switched to *English*\n\nThe bot will now respond in English.`
-    : `🌐 Язык переключён на *Русский*\n\nБот теперь отвечает по-русски.`;
-  await ctx.reply(msg, { parse_mode: 'Markdown' });
+  const pna = pendingNameAsk.get(userId);
+  if (!pna) {
+    await ctx.editMessageText('❌ Сессия устарела. Напишите задачу снова.').catch(() => {});
+    return;
+  }
+  pendingNameAsk.delete(userId);
+  // Переходим к шагу расписания (имя не задано → придумает AI/шаблон)
+  const previewTask = pna.description.replace(/[_*`[\]]/g, '').slice(0, 55) + (pna.description.length > 55 ? '…' : '');
+  pendingCreations.set(userId, { description: pna.description, step: 'schedule' });
+  await ctx.editMessageText(
+    `⏰ *Как часто запускать агента?*\n\n📝 _"${previewTask}"_\n\n👇 Выберите расписание:`,
+    {
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '▶️ Вручную (по кнопке)', callback_data: 'agent_schedule:manual' }],
+          [{ text: '🔁 Каждую минуту', callback_data: 'agent_schedule:1min' }, { text: '⚡ Каждые 5 мин', callback_data: 'agent_schedule:5min' }],
+          [{ text: '⏱ Каждые 15 мин', callback_data: 'agent_schedule:15min' }, { text: '🕐 Каждый час', callback_data: 'agent_schedule:1hour' }],
+          [{ text: '📅 Раз в сутки', callback_data: 'agent_schedule:24hours' }, { text: '❌ Отмена', callback_data: 'agent_schedule:cancel' }],
+        ],
+      },
+    }
+  ).catch(() => {});
+});
+
+bot.action('cancel_name_ask', async (ctx) => {
+  await ctx.answerCbQuery();
+  pendingNameAsk.delete(ctx.from.id);
+  await ctx.editMessageText('❌ Создание агента отменено. Напишите задачу снова когда будете готовы.').catch(() => {});
 });
 
 // ============================================================
@@ -826,17 +1165,27 @@ bot.action(/^agent_schedule:(.+)$/, async (ctx) => {
   if (choice !== 'manual') {
     desc += `\n\nЗапускать ${SCHEDULE_LABELS[choice] || choice}.`;
   }
+  const userAgentName = pending.name; // может быть undefined
   pendingCreations.delete(userId);
+  const schedLabel = SCHEDULE_LABELS[choice] || choice;
 
-  // Показываем анимированный прогресс
-  const anim = await startCreationAnimation(ctx, SCHEDULE_LABELS[choice] || choice);
+  // Убираем клавиатуру с кнопками расписания — заменяем на статус
+  await ctx.editMessageText(
+    `⏰ *${esc(schedLabel)}* — принято\\!\n\n_Разрабатываю агента\\.\\.\\._`,
+    { parse_mode: 'MarkdownV2' }
+  ).catch(() => {});
+
+  // Показываем анимацию НОВЫМ сообщением (sendNew=true) → потом удалим перед квитанцией
+  const anim = await startCreationAnimation(ctx, schedLabel, true);
 
   try {
-    const result = await getOrchestrator().processMessage(userId, desc, ctx.from.username);
+    const result = await getOrchestrator().processMessage(userId, desc, ctx.from.username, userAgentName);
     anim.stop();
+    anim.deleteMsg(); // Убираем анимацию — квитанция появляется чисто
     await sendResult(ctx, result);
   } catch (err) {
     anim.stop();
+    anim.deleteMsg();
     console.error('[bot] agent_schedule create error:', err);
     await ctx.reply('❌ Ошибка создания агента. Попробуйте ещё раз.').catch(() => {});
   }
@@ -1709,7 +2058,7 @@ bot.on('callback_query', async (ctx) => {
 // ============================================================
 const MENU_TEXTS = new Set([
   '🤖 Мои агенты', '➕ Создать агента', '🏪 Маркетплейс',
-  '🔌 Плагины', '⚡ Workflow', '💎 TON Connect', '💳 Подписка', '📊 Статистика', '❓ Помощь', '🌐 EN/RU',
+  '🔌 Плагины', '⚡ Workflow', '💎 TON Connect', '💳 Подписка', '📊 Статистика', '❓ Помощь', '👤 Профиль',
 ]);
 
 bot.on(message('text'), async (ctx) => {
@@ -1722,6 +2071,165 @@ bot.on(message('text'), async (ctx) => {
   // ── Сохраняем язык пользователя (авто-определение) ───────
   if (!userLanguages.has(userId)) {
     userLanguages.set(userId, detectLang(trimmed));
+  }
+
+  // ── Withdrawal flow ──────────────────────────────────────────
+  if (pendingWithdrawal.has(userId)) {
+    const wState = pendingWithdrawal.get(userId)!;
+    const lang = getUserLang(userId);
+
+    if (trimmed.toLowerCase() === '/cancel' || trimmed.toLowerCase() === 'отмена') {
+      pendingWithdrawal.delete(userId);
+      await ctx.reply(lang === 'ru' ? '❌ Вывод отменён.' : '❌ Withdrawal cancelled.');
+      return;
+    }
+
+    if (wState.step === 'enter_address') {
+      const addr = trimmed;
+      if (!addr.startsWith('EQ') && !addr.startsWith('UQ') && !addr.startsWith('0:')) {
+        await ctx.reply(lang === 'ru'
+          ? '❌ Неверный формат адреса. Введите TON адрес (EQ... или UQ...):'
+          : '❌ Invalid address format. Enter TON address (EQ... or UQ...):'
+        );
+        return;
+      }
+      // Save as wallet and ask amount
+      const profile = await getUserProfile(userId);
+      await saveUserProfile(userId, { ...profile, wallet_address: addr });
+      pendingWithdrawal.set(userId, { step: 'enter_amount', address: addr });
+      await ctx.reply(
+        lang === 'ru'
+          ? `✅ Кошелёк сохранён\n💰 Доступно: *${profile.balance_ton.toFixed(2)} TON*\n\nВведите сумму для вывода:`
+          : `✅ Wallet saved\n💰 Available: *${profile.balance_ton.toFixed(2)} TON*\n\nEnter amount to withdraw:`,
+        { parse_mode: 'Markdown' }
+      );
+      return;
+    }
+
+    if (wState.step === 'enter_amount') {
+      const amount = parseFloat(trimmed.replace(',', '.'));
+      const profile = await getUserProfile(userId);
+      if (isNaN(amount) || amount <= 0) {
+        await ctx.reply(lang === 'ru' ? '❌ Введите корректную сумму (например: 1.5)' : '❌ Enter a valid amount (e.g. 1.5)');
+        return;
+      }
+      if (amount > profile.balance_ton) {
+        await ctx.reply(lang === 'ru'
+          ? `❌ Недостаточно средств. Доступно: ${profile.balance_ton.toFixed(2)} TON`
+          : `❌ Insufficient funds. Available: ${profile.balance_ton.toFixed(2)} TON`
+        );
+        return;
+      }
+      pendingWithdrawal.delete(userId);
+      // STUB: don't actually deduct — this is a demo stub
+      const walletShort = (wState.address || profile.wallet_address || '').slice(0, 12) + '…';
+      await safeReply(ctx,
+        lang === 'ru'
+          ? `✅ *Заявка на вывод создана\\!*\n\n` +
+            `💸 Сумма: *${esc(amount.toFixed(2))} TON*\n` +
+            `🔗 Кошелёк: \`${esc(walletShort)}\`\n\n` +
+            `⏳ _Обработка займёт до 24 часов_\n` +
+            `📧 Уведомление придёт в бот`
+          : `✅ *Withdrawal request created\\!*\n\n` +
+            `💸 Amount: *${esc(amount.toFixed(2))} TON*\n` +
+            `🔗 Wallet: \`${esc(walletShort)}\`\n\n` +
+            `⏳ _Processing up to 24 hours_\n` +
+            `📧 Notification will come to bot`,
+        { parse_mode: 'MarkdownV2' }
+      );
+      return;
+    }
+  }
+
+  // ── Telegram Auth flow для Fragment ────────────────────────
+  if (pendingTgAuth.has(userId)) {
+    const authStep = pendingTgAuth.get(userId)!;
+
+    // Allow /cancel to abort
+    if (trimmed === '/cancel' || trimmed.toLowerCase() === 'отмена') {
+      pendingTgAuth.delete(userId);
+      clearAuthState(userId);
+      await ctx.reply('❌ Авторизация отменена.');
+      return;
+    }
+
+    if (authStep === 'phone') {
+      await ctx.sendChatAction('typing');
+      try {
+        const result = await authSendPhone(userId, trimmed);
+        if (result.type === 'already_authorized') {
+          pendingTgAuth.delete(userId);
+          await ctx.reply('✅ Уже авторизован! Используй /gifts для данных Fragment.');
+        } else {
+          pendingTgAuth.set(userId, 'code');
+          await safeReply(ctx,
+            '📨 *Код отправлен\\!*\n\n' +
+            'Telegram отправил тебе код подтверждения\\.\n' +
+            'Введи его здесь \\(5\\-6 цифр\\):\\n\n' +
+            '_Для отмены:_ `/cancel`',
+            { parse_mode: 'MarkdownV2' }
+          );
+        }
+      } catch (e: any) {
+        pendingTgAuth.delete(userId);
+        await ctx.reply('❌ Ошибка: ' + e.message + '\n\nПопробуй снова: /tglogin');
+      }
+      return;
+    }
+
+    if (authStep === 'code') {
+      await ctx.sendChatAction('typing');
+      try {
+        const result = await authSubmitCode(userId, trimmed);
+        if (result.type === 'authorized') {
+          pendingTgAuth.delete(userId);
+          await safeReply(ctx,
+            '🎉 *Авторизован успешно\\!*\n\n' +
+            '✅ Теперь доступны реальные данные Fragment\\:\n' +
+            '• `/gifts` — топ подарков с floor ценами\n' +
+            '• Спроси: _"floor цена jelly bunny"_\n' +
+            '• Спроси: _"топ подарки Fragment сегодня"_',
+            { parse_mode: 'MarkdownV2' }
+          );
+        } else if (result.type === 'need_password') {
+          pendingTgAuth.set(userId, 'password');
+          await ctx.reply('🔐 Введи пароль двухфакторной аутентификации (2FA):');
+        }
+      } catch (e: any) {
+        const errMsg: string = e.message || '';
+        if (errMsg === 'EXPIRED') {
+          // Code expired — must restart auth flow
+          pendingTgAuth.delete(userId);
+          await ctx.reply(
+            '⏰ Код истёк!\n\n' +
+            'Код действует ~2 минуты. Введи /tglogin ещё раз чтобы получить новый код.'
+          );
+        } else if (errMsg === 'INVALID') {
+          // Wrong code — let them retry
+          await ctx.reply('❌ Неверный код. Проверь и введи ещё раз (или /cancel для отмены):');
+        } else {
+          await ctx.reply('❌ Ошибка: ' + errMsg + '\n\nПопробуй /tglogin заново.');
+          pendingTgAuth.delete(userId);
+        }
+      }
+      return;
+    }
+
+    if (authStep === 'password') {
+      await ctx.sendChatAction('typing');
+      try {
+        await authSubmitPassword(userId, trimmed);
+        pendingTgAuth.delete(userId);
+        await safeReply(ctx,
+          '🎉 *Авторизован успешно\\!*\n\n' +
+          '✅ Fragment данные доступны\\. Используй `/gifts`',
+          { parse_mode: 'MarkdownV2' }
+        );
+      } catch (e: any) {
+        await ctx.reply('❌ Неверный пароль 2FA: ' + e.message + '\n\nПопробуй снова или /cancel');
+      }
+      return;
+    }
   }
 
   // ── Ожидаем переименование агента ─────────────────────────
@@ -1830,6 +2338,34 @@ bot.on(message('text'), async (ctx) => {
     pendingPublish.delete(userId);
   }
 
+  // ── Ожидаем название агента от пользователя ────────────────
+  if (pendingNameAsk.has(userId)) {
+    const pna = pendingNameAsk.get(userId)!;
+    pendingNameAsk.delete(userId);
+    const customName = trimmed.length >= 2 && trimmed.length <= 60 ? trimmed : undefined;
+    // Переходим к выбору расписания
+    pendingCreations.set(userId, { description: pna.description, step: 'schedule', name: customName });
+    const previewTask = pna.description.replace(/[_*`[\]]/g, '').slice(0, 55) + (pna.description.length > 55 ? '…' : '');
+    const nameLabel = customName ? `📛 *${customName}* — отлично\\!` : '📛 *Название придумаю сам*';
+    await safeReply(ctx,
+      `${nameLabel}\n\n` +
+      `⏰ *Как часто запускать агента?*\n\n` +
+      `📝 _"${previewTask}"_\n\n` +
+      `👇 Выберите расписание:`,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '▶️ Вручную (по кнопке)', callback_data: 'agent_schedule:manual' }],
+            [{ text: '🔁 Каждую минуту', callback_data: 'agent_schedule:1min' }, { text: '⚡ Каждые 5 мин', callback_data: 'agent_schedule:5min' }],
+            [{ text: '⏱ Каждые 15 мин', callback_data: 'agent_schedule:15min' }, { text: '🕐 Каждый час', callback_data: 'agent_schedule:1hour' }],
+            [{ text: '📅 Раз в сутки', callback_data: 'agent_schedule:24hours' }, { text: '❌ Отмена', callback_data: 'agent_schedule:cancel' }],
+          ],
+        },
+      }
+    );
+    return;
+  }
+
   // ── Если есть pending создания — сбрасываем ────────────────
   if (pendingCreations.has(userId)) {
     pendingCreations.delete(userId);
@@ -1850,7 +2386,7 @@ bot.on(message('text'), async (ctx) => {
 
   // ── Уточняющие вопросы перед созданием агента ───────────────
   // Если похоже на создание агента (явный запрос + достаточная длина)
-  // И в тексте нет уже указанного расписания — спрашиваем
+  // И в тексте нет уже указанного расписания — сперва спрашиваем название
   const isCreateIntent =
     /создай|создать|сделай|сделать|напиши|написать|сгенерируй|make\b|create\b|build\b/i.test(text) ||
     /следи|проверяй|мониторь|отслеживай|мониторинг|monitor|watch\b|track\b/i.test(text);
@@ -1859,32 +2395,19 @@ bot.on(message('text'), async (ctx) => {
     /каждую\s+минуту|каждые?\s+\d+\s+минут|каждый\s+час|каждые?\s+\d+\s+час|every\s+minute|every\s+hour|every\s+day|раз\s+в\s+(минуту|час|день)/i.test(text);
 
   if (isCreateIntent && !hasScheduleInText && trimmed.length > 15) {
-    // Сохраняем описание и показываем выбор расписания
-    pendingCreations.set(userId, { description: text, step: 'schedule' });
+    // Шаг 1: Спрашиваем название агента
+    pendingNameAsk.set(userId, { description: text });
     const previewTask = text.replace(/[_*`[\]]/g, '').slice(0, 60) + (text.length > 60 ? '…' : '');
     await ctx.reply(
-      '⏰ *Как часто запускать агента?*\n\n' +
+      `📛 *Как назвать агента?*\n\n` +
       `📝 _"${previewTask}"_\n\n` +
-      '👇 Выберите расписание — агент будет работать автоматически на сервере:',
+      `Введите короткое название или нажмите *Пропустить* — придумаю сам:`,
       {
         parse_mode: 'Markdown',
         reply_markup: {
           inline_keyboard: [
-            [
-              { text: '▶️ Вручную (по кнопке)', callback_data: 'agent_schedule:manual' },
-            ],
-            [
-              { text: '🔁 Каждую минуту', callback_data: 'agent_schedule:1min' },
-              { text: '⚡ Каждые 5 мин', callback_data: 'agent_schedule:5min' },
-            ],
-            [
-              { text: '⏱ Каждые 15 мин', callback_data: 'agent_schedule:15min' },
-              { text: '🕐 Каждый час', callback_data: 'agent_schedule:1hour' },
-            ],
-            [
-              { text: '📅 Раз в сутки', callback_data: 'agent_schedule:24hours' },
-              { text: '❌ Отмена', callback_data: 'agent_schedule:cancel' },
-            ],
+            [{ text: '⏭ Пропустить — придумать название', callback_data: 'skip_agent_name' }],
+            [{ text: '❌ Отмена', callback_data: 'cancel_name_ask' }],
           ],
         },
       }
@@ -2605,20 +3128,34 @@ async function doCreateAgentFromTemplate(ctx: Context, templateId: string, userI
     unset.forEach(p => { text += `• \`${esc(p.name)}\` — ${esc(p.description)}\n`; });
   }
 
-  if (!unset.length) {
-    text += `\n⚡ _${lang === 'ru' ? 'Нажмите Запустить — первый результат через секунды' : 'Tap Run — first result in seconds'}_`;
+  const readyToRun = !unset.length;
+
+  if (readyToRun) {
+    text += `\n🟢 _${lang === 'ru' ? 'Автозапуск — первый результат через несколько секунд\\!' : 'Auto\\-starting — first result in seconds\\!'}_ ⚡`;
   }
 
   await safeReply(ctx, text, {
     parse_mode: 'MarkdownV2',
     reply_markup: {
       inline_keyboard: [
-        [{ text: '🚀 Запустить', callback_data: `run_agent:${agent.id}` }, { text: '👁 Код', callback_data: `show_code:${agent.id}` }],
+        readyToRun
+          ? [{ text: '⏸ Остановить', callback_data: `stop_agent:${agent.id}` }, { text: '👁 Код', callback_data: `show_code:${agent.id}` }]
+          : [{ text: '🚀 Запустить', callback_data: `run_agent:${agent.id}` }, { text: '👁 Код', callback_data: `show_code:${agent.id}` }],
         [{ text: '📋 Мои агенты', callback_data: 'list_agents' }],
       ],
     },
   });
-  await showAgentsList(ctx, userId);
+
+  // ── Авто-запуск если все переменные заполнены ──
+  if (readyToRun) {
+    setTimeout(async () => {
+      try {
+        await getRunnerAgent().runAgent({ agentId: agent.id, userId });
+      } catch (e) {
+        // Тихий сбой — пользователь может запустить вручную
+      }
+    }, 1500);
+  }
 }
 
 // Helper: show next placeholder prompt or finalize template wizard
