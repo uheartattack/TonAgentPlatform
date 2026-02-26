@@ -97,22 +97,33 @@ async function safeReply(ctx: Context, text: string, extra?: object): Promise<vo
 // Анимированный прогресс создания агента
 // Обновляет сообщение каждые 7 секунд с новым этапом
 // ============================================================
-const CREATION_STEPS = [
+const CREATION_STEPS_RU = [
   { icon: '🔍', label: 'Анализирую задачу' },
   { icon: '🧠', label: 'Разрабатываю алгоритм' },
   { icon: '⚙️', label: 'Пишу код агента' },
   { icon: '🔒', label: 'Проверяю безопасность' },
   { icon: '📡', label: 'Финальная настройка' },
 ];
+const CREATION_STEPS_EN = [
+  { icon: '🔍', label: 'Analyzing task' },
+  { icon: '🧠', label: 'Designing algorithm' },
+  { icon: '⚙️', label: 'Writing agent code' },
+  { icon: '🔒', label: 'Security check' },
+  { icon: '📡', label: 'Final setup' },
+];
+// Keep alias for legacy code
+const CREATION_STEPS = CREATION_STEPS_RU;
 
-function renderCreationStep(stepIdx: number, scheduleLabel: string): string {
-  const step = CREATION_STEPS[Math.min(stepIdx, CREATION_STEPS.length - 1)];
+function renderCreationStep(stepIdx: number, scheduleLabel: string, lang: 'ru' | 'en' = 'ru'): string {
+  const steps = lang === 'en' ? CREATION_STEPS_EN : CREATION_STEPS_RU;
+  const step = steps[Math.min(stepIdx, steps.length - 1)];
   const bar = ['▓', '▓', '▓', '▓', '▓'].map((_, i) => i <= stepIdx ? '▓' : '░').join('');
-  const pct = Math.round((Math.min(stepIdx, CREATION_STEPS.length - 1) / (CREATION_STEPS.length - 1)) * 90);
+  const pct = Math.round((Math.min(stepIdx, steps.length - 1) / (steps.length - 1)) * 90);
+  const schedPrefix = lang === 'en' ? 'Schedule' : 'Расписание';
   return (
-    `${step.icon} *${step.label}\\.\\.\\.*\n\n` +
-    `\`${bar}\` ${pct}%\n\n` +
-    `_Расписание: ${esc(scheduleLabel)}_`
+    `${step.icon} *${esc(step.label)}\\.\\.\\.*\n\n` +
+    `\`${bar}\`  ${pct}%\n\n` +
+    `_${schedPrefix}: ${esc(scheduleLabel)}_`
   );
 }
 
@@ -138,16 +149,17 @@ async function startCreationAnimation(
       : undefined;
   }
 
+  const lang = getUserLang(chatId as number);
   const stepTimer = setInterval(async () => {
     stepIdx = Math.min(stepIdx + 1, CREATION_STEPS.length - 1);
     if (chatId && msgId) {
       await ctx.telegram.editMessageText(
         chatId, msgId, undefined,
-        renderCreationStep(stepIdx, scheduleLabel),
+        renderCreationStep(stepIdx, scheduleLabel, lang),
         { parse_mode: 'MarkdownV2' },
       ).catch(() => {});
     }
-  }, 7000);
+  }, 3000);
 
   const typingTimer = setInterval(() => ctx.sendChatAction('typing').catch(() => {}), 4000);
 
@@ -425,58 +437,88 @@ bot.use(async (ctx, next) => {
 // ============================================================
 // showWelcome — единый экран приветствия (вызывается из /start и setlang_*)
 // ============================================================
-async function showWelcome(ctx: Context, userId: number, name: string, lang: 'ru' | 'en') {
-  let statsLine = '';
+async function fetchLiveTonPrice(): Promise<{ usd: number; change24h: number; vol24h: number } | null> {
   try {
-    const stats = await getAgentsRepository().getGlobalStats();
-    statsLine = lang === 'ru'
-      ? `\n🌍 *Уже на платформе:* ${esc(String(stats.totalAgents))} агентов \\| ${esc(String(stats.activeAgents))} активны \\| ${esc(String(stats.totalUsers))} пользователей\n`
-      : `\n🌍 *On platform:* ${esc(String(stats.totalAgents))} agents \\| ${esc(String(stats.activeAgents))} active \\| ${esc(String(stats.totalUsers))} users\n`;
-  } catch {}
+    const r = await fetch(
+      'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true',
+      { signal: AbortSignal.timeout(4000) }
+    ) as any;
+    const d = await r.json() as any;
+    const ton = d['the-open-network'];
+    return { usd: ton.usd, change24h: ton.usd_24h_change ?? 0, vol24h: ton.usd_24h_vol ?? 0 };
+  } catch { return null; }
+}
+
+async function showWelcome(ctx: Context, userId: number, name: string, lang: 'ru' | 'en') {
+  // Параллельно: статистика + цена TON
+  const [statsResult, priceResult] = await Promise.allSettled([
+    getAgentsRepository().getGlobalStats(),
+    fetchLiveTonPrice(),
+  ]);
+
+  const stats = statsResult.status === 'fulfilled' ? statsResult.value : null;
+  const price = priceResult.status === 'fulfilled' ? priceResult.value : null;
+
+  const statsLine = stats
+    ? (lang === 'ru'
+        ? `\n🌍 *Платформа:* ${esc(String(stats.totalAgents))} агентов \\| ${esc(String(stats.activeAgents))} активны\n`
+        : `\n🌍 *Platform:* ${esc(String(stats.totalAgents))} agents \\| ${esc(String(stats.activeAgents))} active\n`)
+    : '\n';
+
+  // Живая цена TON в приветствии — вау-момент
+  let priceLine = '';
+  if (price) {
+    const arrow = price.change24h >= 0 ? '📈' : '📉';
+    const sign = price.change24h >= 0 ? '\\+' : '';
+    priceLine =
+      `\n💎 *TON сейчас:* $${esc(price.usd.toFixed(2))} ${arrow} ${sign}${esc(price.change24h.toFixed(1))}% за 24ч\n`;
+  }
+
+  const examples = lang === 'ru'
+    ? [
+        '_"Следи за floor price TON Punks и пришли AI\\-прогноз"_',
+        '_"Уведоми когда мой кошелёк опустится ниже 5 TON"_',
+        '_"Алерт когда цена TON упадёт ниже \\$4"_',
+      ]
+    : [
+        '_"Track TON Punks floor price and send AI forecast"_',
+        '_"Alert me when my wallet drops below 5 TON"_',
+        '_"Notify me when TON price falls below \\$4"_',
+      ];
 
   const text = lang === 'ru'
     ? `✨ *Добро пожаловать, ${esc(name)}\\!*\n\n` +
-      `Я — *TON Agent Platform* \\— платформа для создания\n` +
-      `AI\\-агентов, которые работают на нашем сервере 24/7\\.` +
-      statsLine + `\n` +
+      `*TON Agent Platform* \\— пишешь задачу словами,\n` +
+      `AI создаёт агента, который работает 24/7\\.` +
+      statsLine + priceLine +
       `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-      `🧠 *Что умеют агенты:*\n\n` +
-      `💎 Мониторить TON кошельки и уведомлять\n` +
-      `📈 Следить за ценами на DEX и биржах\n` +
-      `💸 Автоматически отправлять TON по расписанию\n` +
-      `🌐 Работать с любыми API \\(REST, webhook\\)\n` +
-      `🤖 Выполнять любую автоматизацию\n\n` +
+      `💬 *Просто напиши задачу\\. Примеры:*\n\n` +
+      examples.map(e => `• ${e}`).join('\n') + '\n\n' +
       `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-      `💬 *Просто напишите задачу* — агент создаётся\n` +
-      `автоматически без установки чего\\-либо\\.`
+      `⚡ Агент запустится автоматически через 30 сек`
     : `✨ *Welcome, ${esc(name)}\\!*\n\n` +
-      `I am *TON Agent Platform* \\— a platform for creating\n` +
-      `AI agents that run on our server 24/7\\.` +
-      statsLine + `\n` +
+      `*TON Agent Platform* \\— describe a task in plain text,\n` +
+      `AI creates an agent that runs 24/7\\.` +
+      statsLine + priceLine +
       `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-      `🧠 *What agents can do:*\n\n` +
-      `💎 Monitor TON wallets and send alerts\n` +
-      `📈 Track prices on DEX and exchanges\n` +
-      `💸 Auto\\-send TON on schedule\n` +
-      `🌐 Work with any API \\(REST, webhooks\\)\n` +
-      `🤖 Run any automation\n\n` +
+      `💬 *Just type your task\\. Examples:*\n\n` +
+      examples.map(e => `• ${e}`).join('\n') + '\n\n' +
       `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-      `💬 *Just describe your task* — agent is created\n` +
-      `automatically, no setup needed\\.`;
+      `⚡ Agent auto\\-starts within 30 seconds`;
 
   await safeReply(ctx, text, MAIN_MENU);
   await ctx.reply(
-    lang === 'ru' ? '⚡ *Запустите первого агента за 30 секунд:*' : '⚡ *Launch your first agent in 30 seconds:*',
+    lang === 'ru' ? '👇 Или выберите действие:' : '👇 Or choose an action:',
     {
-      parse_mode: 'Markdown',
       reply_markup: {
         inline_keyboard: [
-          [{ text: lang === 'ru' ? '📈 Следить за ценой TON' : '📈 TON Price Alert', callback_data: 'create_from_template:ton-price-monitor' }],
-          [{ text: lang === 'ru' ? '💎 Проверить баланс кошелька' : '💎 Wallet Balance Alert', callback_data: 'create_from_template:ton-balance-checker' }],
-          [{ text: lang === 'ru' ? '🌐 Мониторинг доступности сайта' : '🌐 Website Monitor', callback_data: 'create_from_template:website-monitor' }],
           [
-            { text: lang === 'ru' ? '🏪 Все шаблоны' : '🏪 All templates', callback_data: 'marketplace' },
-            { text: lang === 'ru' ? '✏️ Своя задача' : '✏️ Custom task', callback_data: 'create_agent_prompt' },
+            { text: lang === 'ru' ? '✍️ Написать задачу' : '✍️ Describe task', callback_data: 'create_agent_prompt' },
+            { text: '💎 /price', callback_data: 'live_price' },
+          ],
+          [
+            { text: '🏪 Marketplace', callback_data: 'marketplace' },
+            { text: lang === 'ru' ? '👤 Профиль' : '👤 Profile', callback_data: 'show_profile' },
           ],
         ],
       },
@@ -583,6 +625,132 @@ bot.command('help', (ctx) => showHelp(ctx));
 bot.command('list', (ctx) => showAgentsList(ctx, ctx.from.id));
 bot.command('marketplace', (ctx) => showMarketplace(ctx));
 bot.command('connect', (ctx) => showTonConnect(ctx));
+
+// ── /price — живая цена TON ──────────────────────────────────
+async function sendPriceCard(ctx: Context) {
+  const lang = getUserLang(ctx.from?.id || 0);
+  await ctx.sendChatAction('typing');
+  try {
+    const r = await fetch(
+      'https://api.coingecko.com/api/v3/coins/the-open-network?localization=false&tickers=false&community_data=false&developer_data=false',
+      { signal: AbortSignal.timeout(5000) }
+    ) as any;
+    const d = await r.json() as any;
+    const usd   = d.market_data.current_price.usd as number;
+    const chg24 = d.market_data.price_change_percentage_24h as number;
+    const vol   = d.market_data.total_volume.usd as number;
+    const mcap  = d.market_data.market_cap.usd as number;
+    const ath   = d.market_data.ath.usd as number;
+    const arrow = chg24 >= 0 ? '📈' : '📉';
+    const sign  = chg24 >= 0 ? '\\+' : '';
+    const fmtB  = (n: number) => n >= 1e9 ? `$${(n/1e9).toFixed(2)}B` : `$${(n/1e6).toFixed(0)}M`;
+    const now   = new Date().toUTCString().slice(17, 22);
+
+    const text =
+      `💎 *TON / USD*\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `💰 *$${esc(usd.toFixed(4))}*\n` +
+      `${arrow} ${sign}${esc(chg24.toFixed(2))}% ${lang === 'ru' ? 'за 24ч' : '24h change'}\n\n` +
+      `📊 ${lang === 'ru' ? 'Объём' : 'Volume'} 24h: *${esc(fmtB(vol))}*\n` +
+      `🏦 ${lang === 'ru' ? 'Капитализация' : 'Market cap'}: *${esc(fmtB(mcap))}*\n` +
+      `🏆 ATH: *$${esc(ath.toFixed(2))}*\n\n` +
+      `⏰ ${now} UTC`;
+
+    await safeReply(ctx, text, {
+      parse_mode: 'MarkdownV2',
+      reply_markup: {
+        inline_keyboard: [[
+          { text: lang === 'ru' ? '🔄 Обновить' : '🔄 Refresh', callback_data: 'live_price' },
+          { text: lang === 'ru' ? '🤖 Создать алерт' : '🤖 Create alert', callback_data: 'create_agent_prompt' },
+        ]],
+      },
+    });
+  } catch {
+    await ctx.reply(lang === 'ru' ? '❌ Не удалось получить цену TON' : '❌ Failed to fetch TON price');
+  }
+}
+bot.command('price', (ctx) => sendPriceCard(ctx));
+bot.action('live_price', async (ctx) => { await ctx.answerCbQuery(); await sendPriceCard(ctx); });
+
+// ── /portfolio <address> — снапшот кошелька ──────────────────
+bot.command('portfolio', async (ctx) => {
+  const lang = getUserLang(ctx.from.id);
+  const parts = ctx.message.text.trim().split(/\s+/);
+  const addr  = parts[1] || '';
+
+  if (!addr || (!addr.startsWith('EQ') && !addr.startsWith('UQ') && !addr.startsWith('0:'))) {
+    await ctx.reply(
+      lang === 'ru'
+        ? '💼 Использование: `/portfolio EQD4...`\n_Введите адрес TON кошелька_'
+        : '💼 Usage: `/portfolio EQD4...`\n_Enter a TON wallet address_',
+      { parse_mode: 'Markdown' }
+    );
+    return;
+  }
+
+  await ctx.sendChatAction('typing');
+  try {
+    const [infoRes, txRes] = await Promise.allSettled([
+      fetch(`https://toncenter.com/api/v2/getAddressInformation?address=${addr}`, { signal: AbortSignal.timeout(5000) }),
+      fetch(`https://toncenter.com/api/v2/getTransactions?address=${addr}&limit=1`, { signal: AbortSignal.timeout(5000) }),
+    ]);
+
+    let balTON = 0, txCount = '?', lastTx = '—';
+    if (infoRes.status === 'fulfilled') {
+      const info = await (infoRes.value as any).json() as any;
+      if (info.ok) balTON = parseInt(info.result.balance || '0') / 1e9;
+    }
+    if (txRes.status === 'fulfilled') {
+      const txData = await (txRes.value as any).json() as any;
+      if (txData.ok && txData.result?.length) {
+        const lt = txData.result[0];
+        const tsMs = parseInt(lt.utime || '0') * 1000;
+        if (tsMs) {
+          const diffMin = Math.round((Date.now() - tsMs) / 60000);
+          lastTx = diffMin < 60
+            ? (lang === 'ru' ? `${diffMin} мин назад` : `${diffMin} min ago`)
+            : diffMin < 1440
+            ? (lang === 'ru' ? `${Math.round(diffMin/60)} ч назад` : `${Math.round(diffMin/60)}h ago`)
+            : (lang === 'ru' ? `${Math.round(diffMin/1440)} дн назад` : `${Math.round(diffMin/1440)}d ago`);
+        }
+      }
+    }
+
+    // Цена TON для USD конвертации
+    let usdRate = 0;
+    try {
+      const pr = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd', { signal: AbortSignal.timeout(3000) }) as any;
+      usdRate = ((await pr.json()) as any)['the-open-network']?.usd ?? 0;
+    } catch {}
+
+    const usdVal = usdRate ? ` ≈ $${esc((balTON * usdRate).toFixed(2))}` : '';
+    const short  = addr.slice(0, 6) + '…' + addr.slice(-4);
+
+    const text =
+      `👛 *${lang === 'ru' ? 'Кошелёк' : 'Wallet'} ${esc(short)}*\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `💰 *${esc(balTON.toFixed(4))} TON*${usdVal}\n` +
+      `🕐 ${lang === 'ru' ? 'Последняя транзакция' : 'Last transaction'}: ${esc(lastTx)}\n` +
+      `🔗 \`${esc(addr)}\``;
+
+    await safeReply(ctx, text, {
+      parse_mode: 'MarkdownV2',
+      reply_markup: {
+        inline_keyboard: [[
+          { text: lang === 'ru' ? '🤖 Следить за балансом' : '🤖 Monitor balance', callback_data: 'create_agent_prompt' },
+        ]],
+      },
+    });
+  } catch {
+    await ctx.reply(lang === 'ru' ? '❌ Ошибка запроса к TonCenter' : '❌ TonCenter request failed');
+  }
+});
+
+// ── show_profile callback ─────────────────────────────────────
+bot.action('show_profile', async (ctx) => {
+  await ctx.answerCbQuery();
+  await showProfile(ctx, ctx.from!.id);
+});
 bot.command('plugins', (ctx) => showPlugins(ctx));
 bot.command('workflow', (ctx) => showWorkflows(ctx, ctx.from.id));
 bot.command('stats', (ctx) => showStats(ctx, ctx.from.id));
