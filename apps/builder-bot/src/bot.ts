@@ -461,14 +461,14 @@ async function showWelcome(ctx: Context, userId: number, name: string, lang: 'ru
 
   const examples = lang === 'ru'
     ? [
-        '_"Следи за floor price TON Punks и пришли AI\\-прогноз"_',
-        '_"Уведоми когда мой кошелёк опустится ниже 5 TON"_',
-        '_"Алерт когда цена TON упадёт ниже \\$4"_',
+        '🎨 _"Следи за floor price моей NFT коллекции"_',
+        '💎 _"Алерт когда кошелёк упадёт ниже 5 TON"_',
+        '📊 _"Ежедневный отчёт по цене TON в 9:00"_',
       ]
     : [
-        '_"Track TON Punks floor price and send AI forecast"_',
-        '_"Alert me when my wallet drops below 5 TON"_',
-        '_"Notify me when TON price falls below \\$4"_',
+        '🎨 _"Track floor price of my NFT collection"_',
+        '💎 _"Alert me when wallet drops below 5 TON"_',
+        '📊 _"Daily TON price report at 9 AM"_',
       ];
 
   const text = lang === 'ru'
@@ -2609,7 +2609,23 @@ async function sendResult(ctx: Context, result: {
   content: string;
   buttons?: Array<{ text: string; callbackData: string }>;
   agentId?: number;
+  wizardTemplateId?: string;
+  wizardPrefilled?: Record<string, string>;
 }) {
+  // ── Wizard required (NFT и другие шаблоны с required vars) ──
+  if (result.type === 'wizard_required' && result.wizardTemplateId) {
+    const userId = (ctx.from as any)?.id as number;
+    const t = allAgentTemplates.find(x => x.id === result.wizardTemplateId)!;
+    if (!t) return;
+    const prefilled = result.wizardPrefilled || {};
+    // Остаются только те переменные, которые ещё не prefilled
+    const remaining = t.placeholders.map(p => p.name).filter(n => !prefilled[n]);
+    pendingTemplateSetup.set(userId, { templateId: t.id, collected: prefilled, remaining });
+    await safeReply(ctx, sanitize(result.content));
+    await promptNextTemplateVar(ctx, userId, pendingTemplateSetup.get(userId)!);
+    return;
+  }
+
   const content = sanitize(result.content);
   if (!content) return;
 
@@ -3216,22 +3232,7 @@ async function createAgentFromTemplate(ctx: Context, templateId: string, userId:
   if (t.placeholders.length > 0) {
     const remaining = t.placeholders.map(p => p.name);
     pendingTemplateSetup.set(userId, { templateId, collected: {}, remaining });
-    const first = t.placeholders[0];
-    const lang = getUserLang(userId);
-    await editOrReply(ctx,
-      `${t.icon} *${esc(t.name)}*\n\n` +
-      `⚙️ ${lang === 'ru' ? 'Настройка переменных' : 'Configure variables'} \\(${esc('1/' + t.placeholders.length)}\\)\n\n` +
-      `📝 *${esc(first.name)}*\n${esc(first.description)}\n` +
-      (first.example ? `\n_${lang === 'ru' ? 'Пример' : 'Example'}: \`${esc(first.example)}\`_` : '') +
-      (first.required ? `\n\n${lang === 'ru' ? '❗ Обязательно' : '❗ Required'}` : `\n\n${lang === 'ru' ? '_(необязательно — отправьте пропустить)_' : '_(optional — send skip)_'}`),
-      {
-        parse_mode: 'MarkdownV2',
-        reply_markup: { inline_keyboard: [
-          first.required ? [] : [{ text: lang === 'ru' ? '⏭ Пропустить' : '⏭ Skip', callback_data: `tmpl_skip_var:${templateId}` }],
-          [{ text: lang === 'ru' ? '❌ Отмена' : '❌ Cancel', callback_data: 'tmpl_cancel' }],
-        ].filter(row => row.length > 0) }
-      }
-    );
+    await promptNextTemplateVar(ctx, userId, pendingTemplateSetup.get(userId)!);
     return;
   }
 
@@ -3244,10 +3245,43 @@ async function doCreateAgentFromTemplate(ctx: Context, templateId: string, userI
   if (!t) { await ctx.reply('❌ Шаблон не найден'); return; }
 
   await ctx.sendChatAction('typing');
+  const lang = getUserLang(userId);
   const name = t.id + '_' + Date.now().toString(36).slice(-4);
 
+  // ── NFT шаблоны: автоматически резолвим адрес по COLLECTION_NAME ──
+  const finalVars = { ...vars };
+  const isNFTTemplate = templateId === 'nft-floor-predictor' || templateId === 'nft-floor-monitor';
+  if (isNFTTemplate && finalVars.COLLECTION_NAME && !finalVars.COLLECTION_ADDRESS) {
+    await ctx.reply(
+      lang === 'ru'
+        ? `🔍 Ищу коллекцию "${finalVars.COLLECTION_NAME}"...`
+        : `🔍 Looking up "${finalVars.COLLECTION_NAME}"...`
+    );
+    try {
+      const resolved = await getOrchestrator().resolveCollection(finalVars.COLLECTION_NAME);
+      if (resolved) {
+        finalVars.COLLECTION_ADDRESS = resolved.address;
+        finalVars.COLLECTION_NAME = resolved.resolvedName;
+        await ctx.reply(
+          lang === 'ru'
+            ? `✅ Найдена: *${resolved.resolvedName}*\n\`${resolved.address.slice(0, 20)}…\``
+            : `✅ Found: *${resolved.resolvedName}*\n\`${resolved.address.slice(0, 20)}…\``,
+          { parse_mode: 'Markdown' }
+        );
+      } else {
+        await ctx.reply(
+          lang === 'ru'
+            ? `⚠️ Коллекция не найдена в базе — создаю агента с названием "${finalVars.COLLECTION_NAME}". Проверьте адрес позже.`
+            : `⚠️ Collection not found — creating agent with name "${finalVars.COLLECTION_NAME}". You can set address later.`
+        );
+      }
+    } catch { /* тихий фейл */ }
+  }
+  // Если пользователь ввёл '-' как адрес — убираем его
+  if (finalVars.COLLECTION_ADDRESS === '-') delete finalVars.COLLECTION_ADDRESS;
+
   // Merge collected vars into triggerConfig.config
-  const triggerConfig = { ...t.triggerConfig, config: { ...(t.triggerConfig.config || {}), ...vars } };
+  const triggerConfig = { ...t.triggerConfig, config: { ...(t.triggerConfig.config || {}), ...finalVars } };
 
   const result = await getDBTools().createAgent({
     userId,
@@ -3262,7 +3296,6 @@ async function doCreateAgentFromTemplate(ctx: Context, templateId: string, userI
   if (!result.success) { await ctx.reply(`❌ Ошибка: ${result.error}`); return; }
   const agent = result.data!;
 
-  const lang = getUserLang(userId);
   let text =
     `🎉 *${lang === 'ru' ? 'Агент создан\\!' : 'Agent created\\!'}*\n` +
     `━━━━━━━━━━━━━━━━━━━━\n` +
@@ -3327,12 +3360,14 @@ async function promptNextTemplateVar(ctx: Context, userId: number, state: Pendin
   const placeholder = t.placeholders.find(p => p.name === nextName)!;
   const stepNum = t.placeholders.findIndex(p => p.name === nextName) + 1;
 
-  await editOrReply(ctx,
+  // Используем question если есть, иначе description
+  const promptText = placeholder.question || placeholder.description;
+  await safeReply(ctx,
     `${t.icon} *${esc(t.name)}*\n\n` +
-    `⚙️ ${lang === 'ru' ? 'Настройка переменных' : 'Configure variables'} \\(${esc(stepNum + '/' + t.placeholders.length)}\\)\n\n` +
-    `📝 *${esc(nextName)}*\n${esc(placeholder.description)}\n` +
-    (placeholder.example ? `\n_${lang === 'ru' ? 'Пример' : 'Example'}: \`${esc(placeholder.example)}\`_` : '') +
-    (placeholder.required ? `\n\n${lang === 'ru' ? '❗ Обязательно' : '❗ Required'}` : `\n\n${lang === 'ru' ? '_(необязательно — отправьте «пропустить»)_' : '_(optional — send «skip»)_'}`),
+    `⚙️ ${lang === 'ru' ? 'Настройка' : 'Setup'} ${esc(stepNum + '/' + t.placeholders.length)}\n\n` +
+    `${promptText}\n` +
+    (placeholder.example && !placeholder.question ? `\n_${lang === 'ru' ? 'Пример' : 'Example'}: \`${esc(placeholder.example)}\`_\n` : '') +
+    (placeholder.required ? `` : `\n${lang === 'ru' ? '_(необязательно — отправьте «пропустить»)_' : '_(optional — send «skip»)_'}`),
     {
       parse_mode: 'MarkdownV2',
       reply_markup: { inline_keyboard: [
