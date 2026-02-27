@@ -391,7 +391,11 @@ export class Orchestrator {
           description.match(/(?:за|for|of|floor|нфт|nft)\s+([A-Za-zА-Яа-яёЁ0-9 _\-]{3,40}?)(?:\s+и\s|\s+каждый|,|$)/i) ||
           description.match(/(?:следи|следить|monitor|track|watch)\s+(?:за\s+)?([A-Za-zА-Яа-яёЁ0-9 _\-]{3,40}?)(?:\s+и\s|\s+каждый|,|$)/i);
         const rawName = nameMatch?.[1]?.trim() || '';
-        const extractedName = rawName.replace(/\b(floor|price|нфт|nft|коллекц\w*|collection)\b/gi, '').replace(/\s+/g, ' ').trim();
+        // \b не работает с кириллицей — используем replace без word boundaries
+        const extractedName = rawName
+          .replace(/(?:floor|price|нфт|nft|коллекц\w*|collection)\s*/gi, '')
+          .replace(/\s+/g, ' ')
+          .trim();
         if (extractedName.length >= 2) {
           prefilled['COLLECTION_NAME'] = extractedName;
         }
@@ -1625,7 +1629,7 @@ ${isOwner ? '\nТЫ ОБЩАЕШЬСЯ С ВЛАДЕЛЬЦЕМ ПЛАТФОРМ�
           description.match(/(?:следи|следить|monitor|track|watch)\s+(?:за\s+)?([A-Za-zА-Яа-яёЁ0-9 _\-]{3,40}?)(?:\s+и\s|\s+каждый|,|$)/i);
         const rawName = nameMatch?.[1]?.trim() || '';
         // Убираем шумовые слова
-        const collectionName = rawName.replace(/\b(floor|price|нфт|nft|коллекц\w*|collection)\b/gi, '').trim();
+        const collectionName = rawName.replace(/(?:floor|price|нфт|nft|коллекц\w*|collection)\s*/gi, '').replace(/\s+/g, ' ').trim();
 
         console.log(`[Orchestrator] NFT template: resolving collection "${collectionName}"`);
         const resolved = collectionName ? await this.resolveNFTCollectionAddress(collectionName) : null;
