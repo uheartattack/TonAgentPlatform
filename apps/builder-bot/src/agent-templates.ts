@@ -1535,11 +1535,113 @@ export const multiAgentTemplates: AgentTemplate[] = [
   priceAlertAgent,
 ];
 
+// ── Telegram Star Gift Monitor ────────────────────────────────
+const telegramGiftMonitor: AgentTemplate = {
+  id: 'telegram-gift-monitor',
+  name: 'Telegram Gift Floor Monitor',
+  description: 'Мониторит floor price Telegram Star Gift на Fragment.com. Работает с любыми подарками: Love Potion, Jelly Bunny, Plush Pepe и другими. Требует /tglogin авторизацию.',
+  category: 'ton',
+  icon: '🎁',
+  tags: ['gift', 'fragment', 'stars', 'telegram', 'floor', 'monitor'],
+  triggerType: 'scheduled',
+  triggerConfig: { intervalMs: 1800000 }, // каждые 30 минут
+  placeholders: [
+    {
+      name: 'GIFT_NAME',
+      description: 'Название подарка (например: Love Potion, Jelly Bunny, Plush Pepe)',
+      example: 'Love Potion',
+      required: true,
+      question: '🎁 Какой подарок отслеживать?\n\nВведите название (например: _Love Potion_, _Jelly Bunny_, _Plush Pepe_)',
+    },
+  ],
+  code: `
+async function agent(context) {
+  const giftName = context.config.GIFT_NAME;
+  if (!giftName) {
+    await notify('⚠️ Агент не настроен: укажите GIFT_NAME (название Telegram подарка).');
+    return { error: 'no_gift_configured' };
+  }
+
+  // Конвертируем название в slug: "Love Potion" → "love-potion"
+  const slug = giftName.toLowerCase().replace(/\\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+
+  // Получаем данные через локальный Fragment API (fragment-service.ts + MTProto)
+  let data;
+  try {
+    const resp = await fetch('http://localhost:3001/api/fragment/gift/' + slug);
+    data = await resp.json();
+  } catch(e) {
+    await notify('❌ Не удалось подключиться к Fragment API. Бот недоступен?');
+    return { error: 'api_unavailable' };
+  }
+
+  if (!data.ok) {
+    if (data.error === 'not_authenticated') {
+      await notify(
+        '🔐 *' + giftName + '*\\n' +
+        '━━━━━━━━━━━━━━━━━━━━\\n' +
+        '❌ Нужна авторизация Telegram для Fragment\\n' +
+        '_Отправьте /tglogin в боте и пройдите авторизацию_'
+      );
+      return { error: 'not_authenticated' };
+    }
+    if (data.error === 'not_found') {
+      await notify(
+        '⚠️ *' + giftName + '*\\n' +
+        '━━━━━━━━━━━━━━━━━━━━\\n' +
+        '❌ Подарок не найден на Fragment\\n' +
+        '_Проверьте название: оно должно совпадать с именем на fragment.com_'
+      );
+      return { error: 'not_found' };
+    }
+    await notify('⚠️ Fragment API: ' + (data.error || 'Unknown error'));
+    return { error: data.error };
+  }
+
+  const floorStars = data.floorStars || 0;
+  const floorTon = data.floorTon || 0;
+  const listed = data.listed || 0;
+
+  if (floorStars === 0) {
+    await notify(
+      '📭 *' + giftName + '*\\n' +
+      '━━━━━━━━━━━━━━━━━━━━\\n' +
+      '⚠️ Нет активных листингов на Fragment\\n' +
+      '_Буду проверять каждые 30 минут_'
+    );
+    return { status: 'no_listings', giftName };
+  }
+
+  // Считаем изменение цены
+  const lastFloor = getState('last_floor') || 0;
+  const change = lastFloor ? floorStars - lastFloor : 0;
+  setState('last_floor', floorStars);
+  setState('last_check', Date.now());
+
+  const changeStr = change !== 0 ? ' (' + (change > 0 ? '+' : '') + change + '★)' : '';
+  const tonStr = floorTon > 0 ? ' ≈ ' + floorTon.toFixed(4) + ' TON' : '';
+
+  await notify(
+    '🎁 *' + giftName + '*\\n' +
+    '━━━━━━━━━━━━━━━━━━━━\\n' +
+    '⭐ Floor: *' + floorStars + ' Stars*' + changeStr + '\\n' +
+    (tonStr ? '_' + tonStr + '_\\n' : '') +
+    '📋 Listed: ' + listed + '\\n' +
+    (data.avgStars ? '📊 Avg: ' + data.avgStars + '★\\n' : '') +
+    '_Источник: Fragment.com_'
+  );
+
+  return { giftName, floorStars, listed, change };
+}
+`,
+};
+
 // ВСЕ шаблоны (для маркетплейса)
 export const allAgentTemplates: AgentTemplate[] = [
   ...agentTemplates,
   ...advancedAgentTemplates,
   ...multiAgentTemplates,
+  telegramGiftMonitor,
 ];
 
 // Функции для работы с шаблонами

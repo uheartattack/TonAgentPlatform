@@ -273,15 +273,32 @@ export async function getGiftFloorPrice(giftSlug: string, giftId?: string): Prom
         'jelly-bunny': '🐰', 'homemade-cake': '🎂', 'plush-pepe': '🐸',
         'lol-pop': '🍭', 'cookie-heart': '❤️', 'berrybox': '🎁',
         'bdaycandle': '🕯️', 'candy-cane': '🍬',
+        'love-potion': '🧪', 'witch-hat': '🎃', 'crystal-ball': '🔮',
+        'star-notepad': '📓', 'astro': '🔭', 'signet-ring': '💍',
+        'evil-eye': '🧿', 'loot-bag': '💰', 'eternal-rose': '🌹',
+        'jack-o-lantern': '🎃', 'haunted-candy': '🍬', 'skeleton': '💀',
       };
       const targetEmoji = SLUG_TO_EMOJI[giftSlug];
       if (targetEmoji) {
         const found = catalog.find((g: any) => g.sticker?.emoji === targetEmoji);
         if (found) resolvedGiftId = String(found.id);
       }
-      // If still not found, use first available
-      if (!resolvedGiftId && catalog.length > 0) {
-        resolvedGiftId = String(catalog[0].id);
+      // Если по emoji не нашли — ищем по имени подарка (slug → name)
+      if (!resolvedGiftId) {
+        const slugWords = giftSlug.replace(/-/g, ' ').toLowerCase();
+        const found = catalog.find((g: any) => {
+          const gName = (g.title || g.name || g.sticker?.emoticon || '').toLowerCase();
+          return gName.includes(slugWords) || slugWords.includes(gName);
+        });
+        if (found) {
+          resolvedGiftId = String(found.id);
+          console.log(`[Fragment] Gift resolved by name: "${giftSlug}" → id ${found.id}`);
+        }
+      }
+      // Крайний фолбэк — НЕ используем первый попавшийся (это было неправильно)
+      if (!resolvedGiftId) {
+        console.warn('[Fragment] Gift not found in catalog:', giftSlug);
+        return null;
       }
     }
 
