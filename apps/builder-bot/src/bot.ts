@@ -2005,6 +2005,30 @@ bot.on('callback_query', async (ctx) => {
     return;
   }
 
+  // ── Template variable wizard: confirm and create ──
+  if (data.startsWith('tmpl_confirm_create:')) {
+    await ctx.answerCbQuery();
+    const templateId = data.split(':').slice(1).join(':');
+    const state = pendingTemplateSetup.get(userId);
+    if (!state) { await editOrReply(ctx, '❌ Сессия настройки истекла\\. Начните заново\\.', { parse_mode: 'MarkdownV2' }); return; }
+    pendingTemplateSetup.delete(userId);
+    await doCreateAgentFromTemplate(ctx, state.templateId, userId, state.collected);
+    return;
+  }
+
+  // ── Template variable wizard: change COLLECTION_NAME ──
+  if (data.startsWith('tmpl_change_name:')) {
+    await ctx.answerCbQuery();
+    const templateId = data.split(':').slice(1).join(':');
+    const state = pendingTemplateSetup.get(userId);
+    if (!state) { await editOrReply(ctx, '❌ Сессия настройки истекла\\. Начните заново\\.', { parse_mode: 'MarkdownV2' }); return; }
+    // Re-add COLLECTION_NAME to remaining to re-ask
+    delete state.collected['COLLECTION_NAME'];
+    state.remaining = ['COLLECTION_NAME'];
+    await promptNextTemplateVar(ctx, userId, state);
+    return;
+  }
+
   // ── Template variable wizard: cancel ──
   if (data === 'tmpl_cancel') {
     await ctx.answerCbQuery('Отменено');
@@ -3246,7 +3270,7 @@ async function doCreateAgentFromTemplate(ctx: Context, templateId: string, userI
 
   await ctx.sendChatAction('typing');
   const lang = getUserLang(userId);
-  const name = t.id + '_' + Date.now().toString(36).slice(-4);
+  const name = t.name + '_' + Date.now().toString(36).slice(-4);
 
   // ── NFT шаблоны: автоматически резолвим адрес по COLLECTION_NAME ──
   const finalVars = { ...vars };
@@ -3349,18 +3373,43 @@ async function promptNextTemplateVar(ctx: Context, userId: number, state: Pendin
   if (!t) { pendingTemplateSetup.delete(userId); return; }
 
   if (state.remaining.length === 0) {
-    // All vars collected — create the agent
+    // All vars collected — show confirmation for NFT templates or create immediately
+    const lang = getUserLang(userId);
+    const isNFT = t.id === 'nft-floor-predictor' || t.id === 'nft-floor-monitor';
+    const collectionName = state.collected['COLLECTION_NAME'];
+
+    if (isNFT && collectionName) {
+      // Show confirmation step with collection name
+      const confirmText =
+        `${t.icon} *${esc(t.name)}*\n\n` +
+        `✅ ${lang === 'ru' ? 'Коллекция' : 'Collection'}: *${esc(collectionName)}*\n` +
+        `🔍 ${lang === 'ru' ? 'Адрес найдём автоматически' : 'Address will be resolved automatically'}\n\n` +
+        `${lang === 'ru' ? '_Всё верно? Создать агента?_' : '_Looks good? Create the agent?_'}`;
+      await safeReply(ctx, confirmText, {
+        parse_mode: 'MarkdownV2',
+        reply_markup: { inline_keyboard: [
+          [
+            { text: lang === 'ru' ? '✅ Создать агента' : '✅ Create agent', callback_data: `tmpl_confirm_create:${t.id}` },
+            { text: lang === 'ru' ? '✏️ Изменить название' : '✏️ Change name', callback_data: `tmpl_change_name:${t.id}` },
+          ],
+          [{ text: lang === 'ru' ? '❌ Отмена' : '❌ Cancel', callback_data: 'tmpl_cancel' }],
+        ] },
+      });
+      return;
+    }
+
+    // Non-NFT template — create immediately
     pendingTemplateSetup.delete(userId);
     await doCreateAgentFromTemplate(ctx, state.templateId, userId, state.collected);
     return;
   }
 
+  // Ещё есть переменные — показываем следующий вопрос
   const lang = getUserLang(userId);
   const nextName = state.remaining[0];
   const placeholder = t.placeholders.find(p => p.name === nextName)!;
   const stepNum = t.placeholders.findIndex(p => p.name === nextName) + 1;
 
-  // Используем question если есть, иначе description
   const promptText = placeholder.question || placeholder.description;
   await safeReply(ctx,
     `${t.icon} *${esc(t.name)}*\n\n` +
