@@ -356,6 +356,25 @@ interface PendingTemplateSetup {
   templateId: string;
   collected: Record<string, string>;   // key → value, already filled
   remaining: string[];                  // placeholder names still to fill
+  originalDescription?: string;         // оригинальное описание для парсинга расписания
+}
+
+/** Парсит интервал расписания из пользовательского описания.
+ *  Возвращает мс или null если не нашёл (→ использовать дефолт шаблона). */
+function parseDescriptionSchedule(desc: string): number | null {
+  const d = desc.toLowerCase();
+  if (/каждую\s+минуту|every\s+minute/i.test(d))                    return 60_000;
+  if (/каждые?\s+5\s+минут|every\s+5\s+min/i.test(d))              return 5 * 60_000;
+  if (/каждые?\s+10\s+минут|every\s+10\s+min/i.test(d))            return 10 * 60_000;
+  if (/каждые?\s+15\s+минут|every\s+15\s+min/i.test(d))            return 15 * 60_000;
+  if (/каждые?\s+30\s+минут|every\s+30\s+min/i.test(d))            return 30 * 60_000;
+  if (/каждый\s+час|каждые?\s+1\s+час|every\s+hour|hourly/i.test(d)) return 60 * 60_000;
+  // каждые N часов
+  const nHours = d.match(/каждые?\s+(\d+)\s+час/i) || d.match(/every\s+(\d+)\s+hour/i);
+  if (nHours) return parseInt(nHours[1]) * 60 * 60_000;
+  if (/каждый\s+день|ежедневн|daily|раз\s+в\s+день|every\s+day|в\s+\d{1,2}:\d{2}/i.test(d)) return 24 * 60 * 60_000;
+  if (/каждую\s+неделю|еженедельн|weekly|раз\s+в\s+неделю/i.test(d)) return 7 * 24 * 60 * 60_000;
+  return null;
 }
 const pendingTemplateSetup = new Map<number, PendingTemplateSetup>(); // userId → state
 
@@ -2011,8 +2030,9 @@ bot.on('callback_query', async (ctx) => {
     const templateId = data.split(':').slice(1).join(':');
     const state = pendingTemplateSetup.get(userId);
     if (!state) { await editOrReply(ctx, '❌ Сессия настройки истекла\\. Начните заново\\.', { parse_mode: 'MarkdownV2' }); return; }
+    const origDesc = state.originalDescription;
     pendingTemplateSetup.delete(userId);
-    await doCreateAgentFromTemplate(ctx, state.templateId, userId, state.collected);
+    await doCreateAgentFromTemplate(ctx, state.templateId, userId, state.collected, origDesc);
     return;
   }
 
@@ -2644,7 +2664,10 @@ async function sendResult(ctx: Context, result: {
     const prefilled = result.wizardPrefilled || {};
     // Остаются только те переменные, которые ещё не prefilled
     const remaining = t.placeholders.map(p => p.name).filter(n => !prefilled[n]);
-    pendingTemplateSetup.set(userId, { templateId: t.id, collected: prefilled, remaining });
+    // Сохраняем оригинальное описание для парсинга расписания
+    const rawText: string = (ctx.message as any)?.text || '';
+    const originalDescription = rawText.replace(/^\/create\s*/i, '').trim() || rawText;
+    pendingTemplateSetup.set(userId, { templateId: t.id, collected: prefilled, remaining, originalDescription });
     await safeReply(ctx, sanitize(result.content));
     await promptNextTemplateVar(ctx, userId, pendingTemplateSetup.get(userId)!);
     return;
@@ -3264,7 +3287,7 @@ async function createAgentFromTemplate(ctx: Context, templateId: string, userId:
   await doCreateAgentFromTemplate(ctx, templateId, userId, {});
 }
 
-async function doCreateAgentFromTemplate(ctx: Context, templateId: string, userId: number, vars: Record<string, string>) {
+async function doCreateAgentFromTemplate(ctx: Context, templateId: string, userId: number, vars: Record<string, string>, originalDescription?: string) {
   const t = allAgentTemplates.find(x => x.id === templateId);
   if (!t) { await ctx.reply('❌ Шаблон не найден'); return; }
 
@@ -3304,10 +3327,23 @@ async function doCreateAgentFromTemplate(ctx: Context, templateId: string, userI
   // Если пользователь ввёл '-' как адрес — убираем его
   if (finalVars.COLLECTION_ADDRESS === '-') delete finalVars.COLLECTION_ADDRESS;
 
+  // ── Парсим расписание из оригинального описания пользователя ──
+  // (по умолчанию шаблон может давать 30 мин, но пользователь мог попросить "каждый день")
+  const scheduleMs = originalDescription ? parseDescriptionSchedule(originalDescription) : null;
+  const baseTriggerConfig = scheduleMs !== null && t.triggerType === 'scheduled'
+    ? { ...t.triggerConfig, intervalMs: scheduleMs }
+    : t.triggerConfig;
+
   // Merge collected vars at TOP LEVEL of triggerConfig
   // Scheduled агенты читают: context.config = mergedTriggerConfig (весь объект),
   // поэтому переменные должны быть на верхнем уровне, не в config: { ... }
-  const triggerConfig = { ...t.triggerConfig, ...finalVars };
+  const triggerConfig = { ...baseTriggerConfig, ...finalVars };
+
+  // Логируем расписание для отладки
+  if (scheduleMs !== null) {
+    const label = scheduleMs >= 3_600_000 ? `${scheduleMs / 3_600_000} ч` : scheduleMs >= 60_000 ? `${scheduleMs / 60_000} мин` : `${scheduleMs / 1000} сек`;
+    console.log(`[Wizard] Schedule from description: ${label} (${scheduleMs}ms) — "${originalDescription?.slice(0, 60)}"`);
+  }
 
   const result = await getDBTools().createAgent({
     userId,
@@ -3322,11 +3358,23 @@ async function doCreateAgentFromTemplate(ctx: Context, templateId: string, userI
   if (!result.success) { await ctx.reply(`❌ Ошибка: ${result.error}`); return; }
   const agent = result.data!;
 
+  // Строка расписания для квитанции
+  const effectiveMs: number = (baseTriggerConfig as any)?.intervalMs || 0;
+  let schedLine = '';
+  if (t.triggerType === 'scheduled' && effectiveMs > 0) {
+    const lbl = effectiveMs >= 3_600_000
+      ? (lang === 'en' ? `${effectiveMs / 3_600_000}h` : `${effectiveMs / 3_600_000} ч`)
+      : effectiveMs >= 60_000
+      ? (lang === 'en' ? `${effectiveMs / 60_000}min` : `${effectiveMs / 60_000} мин`)
+      : (lang === 'en' ? `${effectiveMs / 1000}s` : `${effectiveMs / 1000} сек`);
+    schedLine = `⏰ ${lang === 'ru' ? 'каждые' : 'every'} ${lbl}  `;
+  }
+
   let text =
     `🎉 *${lang === 'ru' ? 'Агент создан\\!' : 'Agent created\\!'}*\n` +
     `━━━━━━━━━━━━━━━━━━━━\n` +
     `${t.icon} *${esc(t.name)}*  \\#${esc(String(agent.id))}\n` +
-    `🖥 _На сервере · работает 24/7_\n`;
+    `${esc(schedLine)}🖥 _На сервере · работает 24/7_\n`;
 
   if (Object.keys(finalVars).length > 0) {
     text += `\n✅ *${lang === 'ru' ? 'Переменные:' : 'Variables:'}*\n`;
@@ -3401,8 +3449,9 @@ async function promptNextTemplateVar(ctx: Context, userId: number, state: Pendin
     }
 
     // Non-NFT template — create immediately
+    const origDesc2 = state.originalDescription;
     pendingTemplateSetup.delete(userId);
-    await doCreateAgentFromTemplate(ctx, state.templateId, userId, state.collected);
+    await doCreateAgentFromTemplate(ctx, state.templateId, userId, state.collected, origDesc2);
     return;
   }
 
