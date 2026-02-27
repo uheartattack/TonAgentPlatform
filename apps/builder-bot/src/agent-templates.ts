@@ -768,17 +768,9 @@ async function agent(context) {
       description: 'Название NFT коллекции',
       example: 'Plush Pepes',
       required: true,
-      question: '🎨 Какую NFT коллекцию отслеживать?\n\n_(например: TON Punks, Plush Pepes, TON Diamonds)_',
-    },
-    {
-      name: 'COLLECTION_ADDRESS',
-      description: 'Адрес коллекции EQ... (необязательно — найдём по названию)',
-      example: 'EQA...',
-      required: false,
-      question: '📫 Адрес коллекции EQ\\.\\.\\. \\(необязательно — найдём автоматически\\)',
+      question: '🎨 Какую NFT коллекцию отслеживать?\n\n_Например: TON Punks, Plush Pepes, TON Diamonds_\n\n_Адрес найдём автоматически по названию_ 🔍',
     },
     { name: 'TARGET_PRICE', description: 'Целевая цена для уведомления (TON)', example: '10', required: false },
-    { name: 'TONAPI_KEY', description: 'API ключ TonAPI (опционально)', example: 'your_api_key', required: false }
   ]
 };
 
@@ -1070,17 +1062,24 @@ const nftFloorPredictor: AgentTemplate = {
   triggerConfig: { intervalMs: 1800000 }, // каждые 30 минут
   code: `
 async function agent(context) {
-  const collection = context.config.COLLECTION_NAME || 'TON Punks';
+  const collection = context.config.COLLECTION_NAME;
+  if (!collection) {
+    await notify('⚠️ Агент не настроен: укажите COLLECTION_NAME (название NFT коллекции).');
+    return { error: 'no_collection_configured' };
+  }
   const TONAPI_KEY = context.config.TONAPI_KEY || process.env.TONAPI_KEY || '';
   // Известные коллекции → адреса (verified on TonAPI)
   const KNOWN = {
-    'ton punks':   'EQAo92DYMokxghKcq-CkCGSk_MgXY5Fo1SPW20gkvZl75iCN',
-    'tonpunks':    'EQAo92DYMokxghKcq-CkCGSk_MgXY5Fo1SPW20gkvZl75iCN',
-    'панки':       'EQAo92DYMokxghKcq-CkCGSk_MgXY5Fo1SPW20gkvZl75iCN',
-    'ton diamonds':'EQAG2BH0JlmFkbMrLEnyn2bIITaOSssd4WdisE4BdFMkZbir',
-    'ton whales':  'EQAHOxMCdof3VJZC1jARSaTxXaTuBOElHcNfFAKl4ELjVFOG',
-    'anonymous':   'EQAOQdwdw8kGftJCSFgOErM1mBjYPe4DBPq8-AhF6vr9si5N',
-    'tonxpunks':   '0:9dd1dfc276588412f79b64e4d659d8427d61add13014125c30133c17d3c99044',
+    'ton punks':    'EQAo92DYMokxghKcq-CkCGSk_MgXY5Fo1SPW20gkvZl75iCN',
+    'tonpunks':     'EQAo92DYMokxghKcq-CkCGSk_MgXY5Fo1SPW20gkvZl75iCN',
+    'панки':        'EQAo92DYMokxghKcq-CkCGSk_MgXY5Fo1SPW20gkvZl75iCN',
+    'ton diamonds': 'EQAG2BH0JlmFkbMrLEnyn2bIITaOSssd4WdisE4BdFMkZbir',
+    'ton whales':   'EQAHOxMCdof3VJZC1jARSaTxXaTuBOElHcNfFAKl4ELjVFOG',
+    'anonymous':    'EQAOQdwdw8kGftJCSFgOErM1mBjYPe4DBPq8-AhF6vr9si5N',
+    'tonxpunks':    '0:9dd1dfc276588412f79b64e4d659d8427d61add13014125c30133c17d3c99044',
+    'plush pepes':  'EQBG-g6ahkAUGWpefWbx-D_9sQ8oWbvy6puuq78U2c4NUDFS',
+    'plush pepe':   'EQBG-g6ahkAUGWpefWbx-D_9sQ8oWbvy6puuq78U2c4NUDFS',
+    'пепе':         'EQBG-g6ahkAUGWpefWbx-D_9sQ8oWbvy6puuq78U2c4NUDFS',
   };
   const collectionAddr = context.config.COLLECTION_ADDRESS ||
     KNOWN[collection.toLowerCase()] || '';
@@ -1106,14 +1105,14 @@ async function agent(context) {
         ...(TONAPI_KEY ? { 'Authorization': 'Bearer ' + TONAPI_KEY } : {}),
       };
 
-      // Get collection metadata (name, total items)
-      let name = collection;
+      // Get collection metadata (total items only — keep user-configured name as display name)
+      let name = collection; // always use the configured name, never override
       let itemsCount = 0;
       try {
         const colResp = await fetch('https://tonapi.io/v2/nfts/collections/' + rawAddr, { headers });
         if (colResp.ok) {
           const colData = await colResp.json();
-          name = colData?.metadata?.name || name;
+          // Do NOT override name with TonAPI metadata — use the name the user configured
           itemsCount = colData?.next_item_index || 0;
         }
       } catch {}
@@ -1245,7 +1244,7 @@ async function agent(context) {
     }
 
     await notify(
-      '🎨 *' + (data.name || collection) + '*\\n' +
+      '🎨 *' + collection + '*\\n' +
       '━━━━━━━━━━━━━━━━━━━━\\n' +
       '💰 Floor: \`' + floorTon.toFixed(2) + ' TON\`' + (floorUsd !== '?' ? ' ≈ $' + floorUsd : '') + '\\n' +
       (changePct !== 0 ? (changePct >= 0 ? '📈' : '📉') + ' Изм: \`' + changeSign + changePct.toFixed(1) + '%\`\\n' : '') +
@@ -1264,7 +1263,7 @@ async function agent(context) {
     console.log('✅ Sent: floor=' + floorTon.toFixed(2) + ' forecast=' + forecast.toFixed(2) + ' signal=' + signal);
 
     return {
-      collection: data.name || collection,
+      collection: collection,
       floor: floorTon.toFixed(2) + ' TON',
       forecast: forecast.toFixed(2) + ' TON',
       trend: forecastSign + trendPct.toFixed(1) + '%',
@@ -1286,14 +1285,7 @@ async function agent(context) {
       description: 'Название NFT коллекции для мониторинга',
       example: 'Plush Pepes',
       required: true,
-      question: '🎨 Какую NFT коллекцию отслеживать?\n\n_(например: TON Punks, Plush Pepes, TON Diamonds)_',
-    },
-    {
-      name: 'COLLECTION_ADDRESS',
-      description: 'Адрес коллекции EQ... (оставь \'-\' или пропусти — адрес найдём автоматически по названию)',
-      example: 'EQAo92DYMokxghKcq-CkCGSk_MgXY5Fo1SPW20gkvZl75iCN',
-      required: false,
-      question: '📫 Адрес коллекции EQ\\.\\.\\. \\(необязательно — найдём по названию автоматически\\)',
+      question: '🎨 Какую NFT коллекцию отслеживать?\n\n_Например: TON Punks, Plush Pepes, TON Diamonds_\n\n_Адрес найдём автоматически по названию_ 🔍',
     },
   ]
 };
