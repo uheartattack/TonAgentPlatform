@@ -3304,8 +3304,10 @@ async function doCreateAgentFromTemplate(ctx: Context, templateId: string, userI
   // Если пользователь ввёл '-' как адрес — убираем его
   if (finalVars.COLLECTION_ADDRESS === '-') delete finalVars.COLLECTION_ADDRESS;
 
-  // Merge collected vars into triggerConfig.config
-  const triggerConfig = { ...t.triggerConfig, config: { ...(t.triggerConfig.config || {}), ...finalVars } };
+  // Merge collected vars at TOP LEVEL of triggerConfig
+  // Scheduled агенты читают: context.config = mergedTriggerConfig (весь объект),
+  // поэтому переменные должны быть на верхнем уровне, не в config: { ... }
+  const triggerConfig = { ...t.triggerConfig, ...finalVars };
 
   const result = await getDBTools().createAgent({
     userId,
@@ -3326,12 +3328,12 @@ async function doCreateAgentFromTemplate(ctx: Context, templateId: string, userI
     `${t.icon} *${esc(t.name)}*  \\#${esc(String(agent.id))}\n` +
     `🖥 _На сервере · работает 24/7_\n`;
 
-  if (Object.keys(vars).length > 0) {
+  if (Object.keys(finalVars).length > 0) {
     text += `\n✅ *${lang === 'ru' ? 'Переменные:' : 'Variables:'}*\n`;
-    Object.entries(vars).forEach(([k, v]) => { text += `\`${esc(k)}\` \\= \`${esc(v.slice(0, 40))}\`\n`; });
+    Object.entries(finalVars).forEach(([k, v]) => { text += `\`${esc(k)}\` \\= \`${esc(String(v).slice(0, 40))}\`\n`; });
   }
 
-  const unset = t.placeholders.filter(p => !vars[p.name] && p.required);
+  const unset = t.placeholders.filter(p => !finalVars[p.name] && p.required);
   if (unset.length) {
     text += `\n⚠️ *${lang === 'ru' ? 'Нужно настроить:' : 'Setup required:'}*\n`;
     unset.forEach(p => { text += `• \`${esc(p.name)}\` — ${esc(p.description)}\n`; });
