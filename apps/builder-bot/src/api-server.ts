@@ -649,6 +649,33 @@ export function startApiServer() {
     }
   });
 
+  // ── GET /api/fragment/gift/:slug — floor price для Telegram Star Gift ──
+  // Вызывается агентом telegram-gift-monitor через localhost (без JWT-авторизации)
+  app.get('/api/fragment/gift/:slug', async (req: Request, res: Response) => {
+    const { slug } = req.params;
+    try {
+      const { isAuthorized, getGiftFloorPrice } = await import('./fragment-service');
+      const auth = await isAuthorized();
+      if (!auth) {
+        return res.json({ ok: false, error: 'not_authenticated', hint: 'Use /tglogin in the bot first' });
+      }
+      const data = await getGiftFloorPrice(String(slug));
+      if (!data) {
+        return res.json({ ok: false, error: 'not_found', slug });
+      }
+      res.json({
+        ok: true,
+        slug,
+        floorStars: data.floorPriceStars,
+        floorTon: data.floorPriceTon,
+        listed: data.listedCount,
+        avgStars: data.avgPriceStars,
+      });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
   // Fallback — index.html
   app.get('/{*path}', (_req: Request, res: Response) => {
     res.sendFile(path.join(landingPath, 'index.html'));
