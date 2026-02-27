@@ -1177,6 +1177,19 @@ async function agent(context) {
       }
     }
 
+    // Нет активных листингов — сообщаем пользователю и выходим до следующей проверки
+    if (data.floor === 0 && data.listings === 0) {
+      const addr = collectionAddr ? collectionAddr.slice(0, 14) + '…' : '';
+      await notify(
+        '📭 *' + collection + '*\\n' +
+        '━━━━━━━━━━━━━━━━━━━━\\n' +
+        '⚠️ Нет активных листингов на продажу\\n' +
+        '_Буду проверять каждые 30 минут_' +
+        (addr ? '\\n_Адрес: ' + addr + '_' : '')
+      );
+      return { status: 'no_listings', collection };
+    }
+
     const tonPriceData = await getTonPrice();
     const floorTon = data.floor;
     const floorUsd = tonPriceData.usd > 0 ? (floorTon * tonPriceData.usd).toFixed(0) : '?';
