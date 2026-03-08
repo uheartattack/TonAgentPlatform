@@ -27,12 +27,13 @@ export class DBTools {
     name: string;
     description?: string;
     code: string;
-    triggerType: 'manual' | 'scheduled' | 'webhook' | 'event';
+    triggerType: 'manual' | 'scheduled' | 'webhook' | 'event' | 'ai_agent';
     triggerConfig?: Record<string, any>;
     isActive?: boolean;
   }): Promise<ToolResult<Agent>> {
     try {
-      // Проверка на дубликат имени
+      // Проверка на дубликат имени — если есть, добавляем суффикс
+      let finalName = params.name;
       const existing = await this.db
         .select()
         .from(agents)
@@ -43,17 +44,15 @@ export class DBTools {
         .limit(1);
 
       if (existing.length > 0) {
-        return {
-          success: false,
-          error: `Агент с именем "${params.name}" уже существует`,
-        };
+        // Авто-суффикс вместо ошибки
+        finalName = params.name + '_' + Date.now().toString(36).slice(-4);
       }
 
       const [agent] = await this.db
         .insert(agents)
         .values({
           userId: params.userId,
-          name: params.name,
+          name: finalName,
           description: params.description || '',
           code: params.code,
           triggerType: params.triggerType,
@@ -68,14 +67,14 @@ export class DBTools {
       await getMemoryManager().addMessage(
         params.userId,
         'system',
-        `Создан агент "${params.name}" (ID: ${agent.id})`,
+        `Создан агент "${finalName}" (ID: ${agent.id})`,
         { type: 'agent_created', agentId: agent.id }
       );
 
       return {
         success: true,
         data: agent,
-        message: `Агент "${params.name}" успешно создан!`,
+        message: `Агент "${finalName}" успешно создан!`,
       };
     } catch (error) {
       return {
@@ -147,7 +146,7 @@ export class DBTools {
       name: string;
       description: string;
       code: string;
-      triggerType: 'manual' | 'scheduled' | 'webhook' | 'event';
+      triggerType: 'manual' | 'scheduled' | 'webhook' | 'event' | 'ai_agent';
       triggerConfig: Record<string, any>;
       isActive: boolean;
     }>
@@ -306,7 +305,7 @@ export class DBTools {
   async updateAgentTrigger(
     agentId: number,
     userId: number,
-    triggerType: 'manual' | 'scheduled' | 'webhook' | 'event',
+    triggerType: 'manual' | 'scheduled' | 'webhook' | 'event' | 'ai_agent',
     triggerConfig: Record<string, any>
   ): Promise<ToolResult<Agent>> {
     return this.updateAgent(agentId, userId, { triggerType, triggerConfig });

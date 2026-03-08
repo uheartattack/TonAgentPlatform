@@ -18,11 +18,17 @@ console.warn  = (...args: any[]) => { if (!_filterTc(String(args[0]))) _origWarn
 console.error = (...args: any[]) => { if (!_filterTc(String(args[0]))) _origError(...args); };
 
 import { initDatabase, pool } from './db';
-import { startBot } from './bot';
+import { startBot, getBotInstance } from './bot';
 import { validateConfig, config } from './config';
 import { initTonConnect } from './ton-connect';
 import { startApiServer } from './api-server';
 import { restoreActiveAgents } from './agents/sub-agents/runner';
+import { initSelfImprovementSystem } from './self-improvement';
+import {
+  initAIProposalsRepository,
+  initAgentDailySpendRepository,
+  runAIProposalsMigrations,
+} from './db/schema-extensions';
 
 // Главная функция запуска
 async function main() {
@@ -68,8 +74,20 @@ async function main() {
   // Запуск REST API сервера (лендинг + Telegram auth)
   startApiServer();
 
+  // Инициализация AI-репозиториев (proposals + daily spend)
+  initAIProposalsRepository(pool);
+  initAgentDailySpendRepository(pool);
+  await runAIProposalsMigrations(pool);
+
   // Восстановить schedulers для агентов которые были активны до перезапуска
   await restoreActiveAgents();
+
+  // Запуск системы самоулучшения
+  const bot = getBotInstance();
+  if (bot) {
+    initSelfImprovementSystem(bot);
+    console.log('🤖 Self-improvement system active');
+  }
 
   console.log();
   console.log('🎯 Platform ready!');

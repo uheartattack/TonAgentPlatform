@@ -2,8 +2,9 @@ import { getExecutionTools, type ExecutionResult } from '../tools/execution-tool
 import { getDBTools, type ToolResult } from '../tools/db-tools';
 import { getSecurityScanner } from '../tools/security-scanner';
 import { getMemoryManager } from '../../db/memory';
-import { notifyAgentResult } from '../../notifier';
+import { notifyAgentResult, notifyUser } from '../../notifier';
 import { getUserSettingsRepository } from '../../db/schema-extensions';
+import { getAIAgentRuntime, addMessageToAIAgent } from '../ai-agent-runtime';
 
 // Загрузить пользовательские переменные из user_settings (безопасно, без ошибок)
 async function loadUserVariables(userId: number): Promise<Record<string, any>> {
@@ -120,31 +121,79 @@ export class RunnerAgent {
       // Шаг 3: Определяем нужен ли persistent режим
       const triggerConfig = (agent.triggerConfig as Record<string, any>) || {};
       const isScheduled = agent.triggerType === 'scheduled';
-      const intervalMs = parseIntervalMs(agent.description || '', triggerConfig);
+      const isAIAgent   = agent.triggerType === 'ai_agent';
+      const intervalMs  = parseIntervalMs(agent.description || '', triggerConfig);
+
+      if (isAIAgent) {
+        // === AI AGENT MODE: agent.code = system prompt, AI decides tools ===
+        const userVarsAI    = await loadUserVariables(params.userId);
+        const nestedConfigAI = (triggerConfig.config && typeof triggerConfig.config === 'object') ? triggerConfig.config : {};
+        const mergedConfigAI = { ...userVarsAI, ...nestedConfigAI };
+        const ms             = intervalMs || 5 * 60_000; // default 5 min
+
+        const aiRuntime = getAIAgentRuntime();
+        await aiRuntime.activate({
+          agentId:      params.agentId,
+          userId:       params.userId,
+          systemPrompt: agent.code,
+          config:       mergedConfigAI,
+          intervalMs:   ms,
+          onNotify:     (msg) => notifyUser(params.userId, msg),
+        });
+
+        // Activate in DB
+        await this.dbTools.updateAgent(params.agentId, params.userId, { isActive: true });
+
+        const intervalLabel = ms >= 3_600_000
+          ? `${ms / 3_600_000} ч`
+          : ms >= 60_000
+            ? `${ms / 60_000} мин`
+            : `${ms / 1000} сек`;
+
+        return {
+          success: true,
+          data: {
+            success: true,
+            agentId: params.agentId,
+            action: 'schedule',
+            status: 'active',
+            isScheduled: true,
+            intervalMs: ms,
+            message: `🤖 AI-агент "${agent.name}" запущен!\n\n🟢 Работает постоянно (24/7)\n🔄 Мониторинг каждые ${intervalLabel}\n💬 Мгновенные ответы через "Чат с агентом"\n\n📌 Агент сам решает когда отправлять уведомления`,
+          },
+        };
+      }
 
       if (isScheduled) {
-        // === PERSISTENT MODE: агент живёт 24/7, управляет своим расписанием ===
-        // Код агента содержит while(!isStopped()) { ... await sleep(X) }
-        // Платформа не делает setInterval — агент сам решает когда и что делать.
+        // === SCHEDULED MODE: платформа запускает агента по интервалу через setInterval ===
+        // Код агента — обычная async function agent(context), не требует while-loop.
+        // Платформа сама вызывает её каждые intervalMs миллисекунд.
 
         // Инжектируем пользовательские переменные в triggerConfig (для доступа через context.config)
         const userVarsForScheduled = await loadUserVariables(params.userId);
-        const mergedTriggerConfig = { ...userVarsForScheduled, ...triggerConfig, intervalMs: intervalMs || 60_000 };
+        // triggerConfig из DB имеет вид {config:{...user settings...}, intervalMs:...}
+        // Разворачиваем вложенный config на верхний уровень, чтобы context.config.KEY работало напрямую
+        const nestedConfig = (triggerConfig.config && typeof triggerConfig.config === 'object') ? triggerConfig.config : {};
+        const mergedTriggerConfig = { ...userVarsForScheduled, ...nestedConfig, intervalMs: intervalMs || 60_000 };
+        const ms = intervalMs || 60_000;
 
-        const activateResult = await this.executionTools.runPersistentAgent({
+        const activateResult = await this.executionTools.activateScheduledAgent({
           agentId: params.agentId,
           userId: params.userId,
           code: agent.code,
+          intervalMs: ms,
           triggerConfig: mergedTriggerConfig,
-          onCrash: (error: string) => {
-            notifyAgentResult({
-              userId: params.userId,
-              agentId: params.agentId,
-              agentName: agent.name,
-              success: false,
-              error: `Агент упал с ошибкой: ${error}`,
-              scheduled: true,
-            }).catch(() => {});
+          onResult: (result) => {
+            if (!result.success && result.error) {
+              notifyAgentResult({
+                userId: params.userId,
+                agentId: params.agentId,
+                agentName: agent.name,
+                success: false,
+                error: `Агент упал с ошибкой: ${result.error}`,
+                scheduled: true,
+              }).catch(() => {});
+            }
           },
         });
 
@@ -155,7 +204,6 @@ export class RunnerAgent {
         // Активируем в БД
         await this.dbTools.updateAgent(params.agentId, params.userId, { isActive: true });
 
-        const ms = intervalMs || 60_000;
         const intervalLabel = ms >= 3_600_000
           ? `${ms / 3_600_000} ч`
           : ms >= 60_000
@@ -273,8 +321,15 @@ export class RunnerAgent {
     }
   }
 
+  // Отправить сообщение AI-агенту (chat feature)
+  sendMessageToAgent(agentId: number, text: string): void {
+    addMessageToAIAgent(agentId, text);
+  }
+
   // Приостановить агента (остановить scheduler + деактивировать в БД)
   async pauseAgent(agentId: number, userId: number): Promise<ToolResult<ControlResult>> {
+    // Останавливаем AI runtime если есть
+    getAIAgentRuntime().deactivate(agentId);
     // Останавливаем scheduler если есть
     await this.executionTools.deactivateAgent(agentId);
 
@@ -419,7 +474,7 @@ export async function restoreActiveAgents(): Promise<void> {
     const runner = getRunnerAgent();
 
     for (const agent of activeAgents) {
-      if (agent.triggerType !== 'scheduled') {
+      if (agent.triggerType !== 'scheduled' && agent.triggerType !== 'ai_agent') {
         // Не-scheduled агенты не должны быть постоянно активны — сбрасываем флаг
         await getDBTools().updateAgent(agent.id, agent.userId, { isActive: false }).catch(() => {});
         continue;
@@ -438,8 +493,10 @@ export async function restoreActiveAgents(): Promise<void> {
           }
         } catch { /* schema-extensions not yet initialized — will load on first setState */ }
 
-        await runner.runAgent({ agentId: agent.id, userId: agent.userId });
-        console.log(`[Runner] ✅ Restored agent #${agent.id} "${agent.name}" (user ${agent.userId})`);
+        // Запускаем асинхронно — не блокируем цикл (первый прогон занимает время)
+        runner.runAgent({ agentId: agent.id, userId: agent.userId })
+          .then(() => console.log(`[Runner] ✅ Restored agent #${agent.id} "${agent.name}" (user ${agent.userId})`))
+          .catch(e => console.error(`[Runner] ❌ Failed agent #${agent.id}:`, e));
       } catch (e) {
         console.error(`[Runner] ❌ Failed to restore agent #${agent.id} "${agent.name}":`, e);
         // Один сломавшийся агент не должен блокировать остальные

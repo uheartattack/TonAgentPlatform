@@ -142,6 +142,15 @@
         </div>
         
         <div class="nav-section">
+          <span class="nav-label" data-en="Account" data-ru="Аккаунт">Account</span>
+          <a href="#" class="nav-item" data-page="wallet">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/>
+            </svg>
+            <span data-en="Wallet" data-ru="Кошелёк">Wallet</span>
+          </a>
+        </div>
+        <div class="nav-section">
           <span class="nav-label" data-en="System" data-ru="Система">System</span>
           <a href="#" class="nav-item" data-page="settings">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -180,6 +189,14 @@
       </div>
     </aside>
     
+    <!-- Mobile Hamburger -->
+    <button class="sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/>
+      </svg>
+    </button>
+    <div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleSidebar()"></div>
+
     <!-- Main Content -->
     <main class="main-content">
       <!-- Overview Page -->
@@ -1038,6 +1055,202 @@
             </div>
             <div id="variables-list" style="padding:0 1rem 1rem">
               <div class="loading-placeholder" data-en="Loading..." data-ru="Загрузка...">Loading...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Wallet Page -->
+      <div id="wallet-page" class="page">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title" data-en="Wallet" data-ru="Кошелёк">Wallet</h1>
+            <p class="page-subtitle" data-en="Manage your TON balance, top up and withdraw" data-ru="Управляйте балансом TON, пополняйте и выводите">Manage your TON balance, top up and withdraw</p>
+          </div>
+        </div>
+        <div class="page-content">
+          <!-- Balance Cards -->
+          <div class="wallet-cards">
+            <div class="wallet-balance-card">
+              <div class="wallet-card-icon">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                  <line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+                </svg>
+              </div>
+              <div class="wallet-card-label" data-en="Balance" data-ru="Баланс">Balance</div>
+              <div class="wallet-card-value" id="wallet-balance">0.00 <span class="wallet-currency">TON</span></div>
+              <div class="wallet-card-sub" id="wallet-balance-usd"></div>
+            </div>
+            <div class="wallet-balance-card earned">
+              <div class="wallet-card-icon">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>
+                </svg>
+              </div>
+              <div class="wallet-card-label" data-en="Total Earned" data-ru="Всего заработано">Total Earned</div>
+              <div class="wallet-card-value" id="wallet-earned">0.00 <span class="wallet-currency">TON</span></div>
+            </div>
+            <div class="wallet-balance-card address">
+              <div class="wallet-card-icon">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/>
+                </svg>
+              </div>
+              <div class="wallet-card-label" data-en="Platform Wallet" data-ru="Кошелёк платформы">Platform Wallet</div>
+              <div class="wallet-card-value wallet-address-val" id="wallet-platform-addr" title="Click to copy" onclick="copyWalletAddress()" style="cursor:pointer;font-size:.85rem;word-break:break-all">—</div>
+              <div class="wallet-card-sub" style="color:var(--success);font-size:.7rem" id="wallet-copy-hint" data-en="Click to copy" data-ru="Нажмите для копирования">Click to copy</div>
+            </div>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="wallet-actions">
+            <button class="btn-wallet-action topup" onclick="openTopupModal()">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              <span data-en="Top Up" data-ru="Пополнить">Top Up</span>
+            </button>
+            <button class="btn-wallet-action withdraw" onclick="openWithdrawModal()">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
+              </svg>
+              <span data-en="Withdraw" data-ru="Вывести">Withdraw</span>
+            </button>
+          </div>
+
+          <!-- Transaction History -->
+          <div class="panel wallet-history-panel">
+            <div class="panel-header">
+              <h3 class="panel-title" data-en="Transaction History" data-ru="История транзакций">Transaction History</h3>
+              <div class="wallet-history-filters">
+                <button class="wallet-filter-btn active" data-type="all" onclick="filterTransactions('all')" data-en="All" data-ru="Все">All</button>
+                <button class="wallet-filter-btn" data-type="topup" onclick="filterTransactions('topup')" data-en="Top Up" data-ru="Пополнения">Top Up</button>
+                <button class="wallet-filter-btn" data-type="withdraw" onclick="filterTransactions('withdraw')" data-en="Withdraw" data-ru="Выводы">Withdraw</button>
+                <button class="wallet-filter-btn" data-type="spend" onclick="filterTransactions('spend')" data-en="Spend" data-ru="Расходы">Spend</button>
+              </div>
+            </div>
+            <div id="wallet-transactions-list" class="wallet-transactions">
+              <div class="loading-placeholder" data-en="Loading transactions..." data-ru="Загрузка транзакций...">Loading transactions...</div>
+            </div>
+            <div class="wallet-pagination" id="wallet-pagination" style="display:none">
+              <button class="btn-pagination" id="wallet-prev-btn" onclick="walletPrevPage()" disabled data-en="Previous" data-ru="Назад">Previous</button>
+              <span class="wallet-page-info" id="wallet-page-info">1 / 1</span>
+              <button class="btn-pagination" id="wallet-next-btn" onclick="walletNextPage()" data-en="Next" data-ru="Далее">Next</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Top Up Modal -->
+      <div class="modal-overlay" id="topup-modal" style="display:none" onclick="if(event.target===this)closeTopupModal()">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2 data-en="Top Up Balance" data-ru="Пополнение баланса">Top Up Balance</h2>
+            <button class="modal-close" onclick="closeTopupModal()">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div class="topup-steps">
+              <div class="topup-step">
+                <div class="step-number">1</div>
+                <div class="step-content">
+                  <p data-en="Send TON to the platform wallet:" data-ru="Отправьте TON на кошелёк платформы:">Send TON to the platform wallet:</p>
+                  <div class="topup-address-box" id="topup-address" onclick="copyTopupAddress()" title="Click to copy">—</div>
+                </div>
+              </div>
+              <div class="topup-step">
+                <div class="step-number">2</div>
+                <div class="step-content">
+                  <p data-en="Use this comment in your transaction:" data-ru="Укажите этот комментарий в транзакции:">Use this comment in your transaction:</p>
+                  <div class="topup-comment-box" id="topup-comment" onclick="copyTopupComment()" title="Click to copy">—</div>
+                </div>
+              </div>
+              <div class="topup-step">
+                <div class="step-number">3</div>
+                <div class="step-content">
+                  <p data-en="Or use a deep link to open your wallet app:" data-ru="Или используйте ссылку для открытия кошелька:">Or use a deep link to open your wallet app:</p>
+                  <div class="topup-deeplinks">
+                    <a class="btn-deeplink" id="topup-deeplink-1" href="#" target="_blank">
+                      <span>1 TON</span>
+                    </a>
+                    <a class="btn-deeplink" id="topup-deeplink-5" href="#" target="_blank">
+                      <span>5 TON</span>
+                    </a>
+                    <a class="btn-deeplink" id="topup-deeplink-10" href="#" target="_blank">
+                      <span>10 TON</span>
+                    </a>
+                  </div>
+                </div>
+              </div>
+              <div class="topup-step">
+                <div class="step-number">4</div>
+                <div class="step-content">
+                  <p data-en="After sending, click to verify:" data-ru="После отправки нажмите для проверки:">After sending, click to verify:</p>
+                  <button class="btn-check-topup" id="btn-check-topup" onclick="checkTopup()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                      <polyline points="22 4 12 14.01 9 11.01"/>
+                    </svg>
+                    <span data-en="I sent it — verify" data-ru="Я отправил — проверить">I sent it — verify</span>
+                  </button>
+                  <div id="topup-result" class="topup-result" style="display:none"></div>
+                </div>
+              </div>
+            </div>
+            <div class="topup-qr-section">
+              <p class="topup-qr-label" data-en="Scan QR to pay" data-ru="Сканируйте QR для оплаты">Scan QR to pay</p>
+              <div class="topup-qr" id="topup-qr">
+                <img id="topup-qr-img" src="" alt="QR Code" style="width:180px;height:180px;border-radius:12px;background:#fff;display:none">
+              </div>
+              <p class="topup-note" data-en="Min: 0.1 TON | Fee: 0 TON" data-ru="Мин: 0.1 TON | Комиссия: 0 TON">Min: 0.1 TON | Fee: 0 TON</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Withdraw Modal -->
+      <div class="modal-overlay" id="withdraw-modal" style="display:none" onclick="if(event.target===this)closeWithdrawModal()">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2 data-en="Withdraw TON" data-ru="Вывод TON">Withdraw TON</h2>
+            <button class="modal-close" onclick="closeWithdrawModal()">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div class="withdraw-form">
+              <div class="form-group">
+                <label data-en="Recipient Address" data-ru="Адрес получателя">Recipient Address</label>
+                <input type="text" id="withdraw-address" class="form-input" placeholder="EQ... or UQ..." data-placeholder-en="EQ... or UQ..." data-placeholder-ru="EQ... или UQ...">
+              </div>
+              <div class="form-group">
+                <label data-en="Amount (TON)" data-ru="Сумма (TON)">Amount (TON)</label>
+                <div class="withdraw-amount-row">
+                  <input type="number" id="withdraw-amount" class="form-input" step="0.01" min="0.1" placeholder="0.00">
+                  <button class="btn-max" onclick="setMaxWithdraw()" data-en="MAX" data-ru="МАКС">MAX</button>
+                </div>
+              </div>
+              <div class="withdraw-info">
+                <div class="withdraw-info-row">
+                  <span data-en="Available balance:" data-ru="Доступный баланс:">Available balance:</span>
+                  <span id="withdraw-available">0.00 TON</span>
+                </div>
+                <div class="withdraw-info-row">
+                  <span data-en="Network fee:" data-ru="Комиссия сети:">Network fee:</span>
+                  <span>0.05 TON</span>
+                </div>
+                <div class="withdraw-info-row total">
+                  <span data-en="You will receive:" data-ru="Вы получите:">You will receive:</span>
+                  <span id="withdraw-receive">0.00 TON</span>
+                </div>
+              </div>
+              <div id="withdraw-error" class="withdraw-error" style="display:none"></div>
+              <button class="btn-withdraw-submit" id="btn-withdraw-submit" onclick="submitWithdraw()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
+                </svg>
+                <span data-en="Withdraw" data-ru="Вывести">Withdraw</span>
+              </button>
+              <div id="withdraw-result" class="withdraw-result" style="display:none"></div>
             </div>
           </div>
         </div>

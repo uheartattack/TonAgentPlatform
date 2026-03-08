@@ -15,7 +15,12 @@ import {
   getUserPluginsRepository,
   getUserSettingsRepository,
   getMarketplaceRepository,
+  getAIProposalsRepository,
+  getBalanceTxRepository,
 } from './db/schema-extensions';
+import { verifyTopupTransaction, PLATFORM_WALLET } from './payments';
+import { sendPlatformTransaction } from './services/TonConnect';
+import { config as platformConfig } from './config';
 
 const PORT = parseInt(process.env.API_PORT || '3001', 10);
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
@@ -97,9 +102,15 @@ export function startApiServer() {
   const app = express();
   app.use(express.json());
 
-  // CORS для лендинга (открытый — лендинг статичный)
+  // CORS — allow platform domain + localhost for dev
+  const ALLOWED_ORIGINS = ['https://tonagentplatform.ru', 'http://tonagentplatform.ru', 'http://localhost:3001', 'http://localhost:3000'];
   app.use((req: Request, res: Response, next: NextFunction) => {
-    res.header('Access-Control-Allow-Origin', '*');
+    const origin = req.headers.origin || '';
+    if (ALLOWED_ORIGINS.includes(origin) || !origin) {
+      res.header('Access-Control-Allow-Origin', origin || '*');
+    } else {
+      res.header('Access-Control-Allow-Origin', 'https://tonagentplatform.ru');
+    }
     res.header('Access-Control-Allow-Headers', 'Content-Type, X-Auth-Token');
     res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
     if (req.method === 'OPTIONS') { res.sendStatus(200); return; }
@@ -649,6 +660,139 @@ export function startApiServer() {
     }
   });
 
+  // ── Owner-only middleware ──────────────────────────────────────────
+  function requireOwner(req: Request, res: Response, next: NextFunction): void {
+    const token = req.headers['x-auth-token'] as string || req.query.token as string;
+    if (!token) { res.status(401).json({ error: 'No token' }); return; }
+    const session = getSession(token);
+    if (!session) { res.status(401).json({ error: 'Invalid or expired token' }); return; }
+    if (session.userId !== platformConfig.owner.id) {
+      res.status(403).json({ error: 'Owner only' }); return;
+    }
+    (req as any).userId = session.userId;
+    (req as any).session = session;
+    next();
+  }
+
+  // ── GET /api/proposals — список AI proposals ──────────────────────
+  app.get('/api/proposals', requireOwner, async (req: Request, res: Response) => {
+    try {
+      const filter = (req.query.status as any) || 'pending';
+      const limit  = parseInt(req.query.limit as string || '20', 10);
+      const repo   = getAIProposalsRepository();
+      const proposals = await repo.list(filter, limit);
+      const statusMap = await repo.countByStatus();
+      const counts = {
+        pending:  statusMap['pending']  || 0,
+        approved: statusMap['approved'] || 0,
+        rejected: statusMap['rejected'] || 0,
+      };
+      res.json({ ok: true, proposals, counts });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── GET /api/proposals/:id ────────────────────────────────────────
+  app.get('/api/proposals/:id', requireOwner, async (req: Request, res: Response) => {
+    try {
+      const proposal = await getAIProposalsRepository().getById(req.params['id'] as string);
+      if (!proposal) { res.status(404).json({ error: 'Not found' }); return; }
+      res.json({ ok: true, proposal });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── POST /api/proposals/:id/approve ──────────────────────────────
+  app.post('/api/proposals/:id/approve', requireOwner, async (req: Request, res: Response) => {
+    try {
+      const id = req.params['id'] as string;
+      // Lazy import to avoid circular deps
+      const { getSelfImprovementSystem } = await import('./self-improvement');
+      const sis = getSelfImprovementSystem();
+      if (!sis) { res.status(503).json({ error: 'Self-improvement system not running' }); return; }
+      await sis.approveProposal(id);
+      res.json({ ok: true, id, action: 'approved' });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── POST /api/proposals/:id/reject ───────────────────────────────
+  app.post('/api/proposals/:id/reject', requireOwner, async (req: Request, res: Response) => {
+    try {
+      const id     = req.params['id'] as string;
+      const reason = (req.body && req.body.reason) || 'Rejected via API';
+      const { getSelfImprovementSystem } = await import('./self-improvement');
+      const sis = getSelfImprovementSystem();
+      if (!sis) { res.status(503).json({ error: 'Self-improvement system not running' }); return; }
+      await sis.rejectProposal(id, reason);
+      res.json({ ok: true, id, action: 'rejected', reason });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── POST /api/proposals/:id/rollback ─────────────────────────────
+  app.post('/api/proposals/:id/rollback', requireOwner, async (req: Request, res: Response) => {
+    try {
+      const id = req.params['id'] as string;
+      const { getSelfImprovementSystem } = await import('./self-improvement');
+      const sis = getSelfImprovementSystem();
+      if (!sis) { res.status(503).json({ error: 'Self-improvement system not running' }); return; }
+      await sis.rollbackProposal(id);
+      res.json({ ok: true, id, action: 'rolled_back' });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── GET /api/platform/health — общее состояние платформы ─────────
+  app.get('/api/platform/health', requireOwner, async (_req: Request, res: Response) => {
+    try {
+      const repo = getAIProposalsRepository();
+      const [statusMap, recent] = await Promise.all([
+        repo.countByStatus(),
+        repo.getRecentApplied(5),
+      ]);
+      const pending  = statusMap['pending']  || 0;
+      const approved = statusMap['approved'] || 0;
+      const rejected = statusMap['rejected'] || 0;
+
+      let dbOk = false;
+      let agentStats = { total: 0, active: 0 };
+      try {
+        const r = await pool.query<{ total: string; active: string }>(
+          `SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE is_active=true) AS active FROM builder_bot.agents`
+        );
+        dbOk = true;
+        agentStats = { total: parseInt(r.rows[0]?.total || '0'), active: parseInt(r.rows[0]?.active || '0') };
+      } catch { /* db not ready */ }
+
+      res.json({
+        ok: true,
+        uptime: Math.floor(process.uptime()),
+        memory: process.memoryUsage(),
+        db: dbOk,
+        agents: agentStats,
+        proposals: { pending, approved, rejected },
+        recentApplied: recent,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── POST /api/emergency-stop — экстренная остановка бота ─────────
+  app.post('/api/emergency-stop', requireOwner, async (_req: Request, res: Response) => {
+    res.json({ ok: true, message: 'Emergency stop initiated. Bot will restart via PM2.' });
+    setTimeout(() => {
+      console.error('🚨 EMERGENCY STOP requested via API');
+      process.exit(1); // PM2 auto-restarts
+    }, 500);
+  });
+
   // ── GET /api/fragment/gift/:slug — floor price для Telegram Star Gift ──
   // Вызывается агентом telegram-gift-monitor через localhost (без JWT-авторизации)
   app.get('/api/fragment/gift/:slug', async (req: Request, res: Response) => {
@@ -673,6 +817,142 @@ export function startApiServer() {
       });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  // ── GET /api/balance — баланс пользователя ───────────────────
+  app.get('/api/balance', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const settingsRepo = getUserSettingsRepository();
+      const profile = (await settingsRepo.get(userId, 'profile')) || { balance_ton: 0, total_earned: 0, wallet_address: null };
+      res.json({
+        ok: true,
+        balance_ton: profile.balance_ton || 0,
+        total_earned: profile.total_earned || 0,
+        wallet_address: profile.wallet_address || null,
+        platform_wallet: PLATFORM_WALLET,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── GET /api/transactions — история транзакций ──────────────
+  app.get('/api/transactions', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const limit = parseInt(req.query.limit as string || '20', 10);
+      const offset = parseInt(req.query.offset as string || '0', 10);
+      const type = req.query.type as string || 'all';
+      const result = await getBalanceTxRepository().getHistory(userId, limit, offset, type);
+      res.json({ ok: true, ...result });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── POST /api/topup/check — проверить пополнение ────────────
+  app.post('/api/topup/check', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const afterTs = req.body?.afterTimestamp || Math.floor(Date.now() / 1000) - 900; // 15 min window
+      const result = await verifyTopupTransaction(userId, afterTs);
+
+      if (!result.found || !result.txHash) {
+        res.json({ ok: false, error: 'Transaction not found' });
+        return;
+      }
+
+      // DB dedup
+      const existing = await getBalanceTxRepository().getByTxHash(result.txHash);
+      if (existing) {
+        res.json({ ok: false, error: 'Already credited' });
+        return;
+      }
+
+      // Credit balance
+      const settingsRepo = getUserSettingsRepository();
+      const profile = (await settingsRepo.get(userId, 'profile')) || { balance_ton: 0, total_earned: 0, wallet_address: null, joined_at: new Date().toISOString() };
+      profile.balance_ton = (profile.balance_ton || 0) + result.amountTon;
+      profile.total_earned = (profile.total_earned || 0) + result.amountTon;
+      await settingsRepo.set(userId, 'profile', profile);
+
+      // Record in ledger
+      await getBalanceTxRepository().record(userId, 'topup', result.amountTon, profile.balance_ton, 'Dashboard topup', result.txHash);
+
+      res.json({ ok: true, credited: result.amountTon, balance: profile.balance_ton, txHash: result.txHash });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── POST /api/withdraw — вывод средств ──────────────────────
+  app.post('/api/withdraw', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { address, amount } = req.body || {};
+
+      // Input validation
+      if (!address || typeof address !== 'string') {
+        res.status(400).json({ error: 'Address required' });
+        return;
+      }
+      if (!address.startsWith('EQ') && !address.startsWith('UQ') && !address.startsWith('0:')) {
+        res.status(400).json({ error: 'Invalid TON address format' });
+        return;
+      }
+      const amountTon = parseFloat(amount);
+      if (isNaN(amountTon) || amountTon <= 0) {
+        res.status(400).json({ error: 'Invalid amount' });
+        return;
+      }
+
+      // Rate limits
+      const recentCount = await getBalanceTxRepository().getRecentWithdraws(userId, 24);
+      if (recentCount >= 3) {
+        res.status(429).json({ error: 'Withdrawal limit exceeded (3/day)' });
+        return;
+      }
+      const lastTime = await getBalanceTxRepository().getLastWithdrawTime(userId);
+      if (lastTime && (Date.now() - lastTime.getTime()) < 5 * 60 * 1000) {
+        res.status(429).json({ error: 'Cooldown: wait 5 minutes between withdrawals' });
+        return;
+      }
+
+      // Balance check
+      const settingsRepo = getUserSettingsRepository();
+      const profile = (await settingsRepo.get(userId, 'profile')) || { balance_ton: 0, total_earned: 0, wallet_address: null, joined_at: new Date().toISOString() };
+      const networkFee = 0.05;
+      if (amountTon + networkFee > profile.balance_ton) {
+        res.status(400).json({ error: 'Insufficient balance' });
+        return;
+      }
+      // Max 80% of balance
+      if (amountTon > profile.balance_ton * 0.8) {
+        res.status(400).json({ error: `Max withdrawal is 80% of balance (${(profile.balance_ton * 0.8).toFixed(2)} TON)` });
+        return;
+      }
+
+      // Deduct balance
+      profile.balance_ton = Math.max(0, profile.balance_ton - amountTon - networkFee);
+      await settingsRepo.set(userId, 'profile', profile);
+      await getBalanceTxRepository().record(userId, 'withdraw', -(amountTon + networkFee), profile.balance_ton, `Withdraw to ${address.slice(0,12)}...`);
+
+      // Send TON
+      const result = await sendPlatformTransaction(address, amountTon, `withdraw:${userId}`);
+      if (result.ok) {
+        try { await getBalanceTxRepository().record(userId, 'withdraw_confirmed', 0, profile.balance_ton, `txHash: ${result.txHash}`, result.txHash); } catch {}
+        res.json({ ok: true, txHash: result.txHash, balance: profile.balance_ton });
+      } else {
+        // Rollback
+        profile.balance_ton += amountTon + networkFee;
+        await settingsRepo.set(userId, 'profile', profile);
+        await getBalanceTxRepository().record(userId, 'refund', amountTon + networkFee, profile.balance_ton, 'Withdraw failed, refunded');
+        res.status(500).json({ error: result.error || 'Transaction failed' });
+      }
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
     }
   });
 
