@@ -239,18 +239,18 @@ const bot = new Telegraf(process.env.BOT_TOKEN || '');
 // Структура: главные функции сверху, дополнительные снизу
 const MAIN_MENU = Markup.keyboard([
   ['🤖 Мои агенты',  '✏️ Создать агента'],
-  ['🎁 Гифты & NFT', '🏪 Маркетплейс'],
+  ['🏪 Маркетплейс', '🔌 Плагины'],
   ['💰 Кошелёк',     '👤 Профиль'],
-  ['🔌 Плагины',     '❓ Помощь'],
+  ['⚡ Workflow',     '❓ Помощь'],
 ]).resize();
 
 function getMainMenu(lang: 'ru' | 'en') {
   if (lang === 'en') {
     return Markup.keyboard([
       ['🤖 My Agents',    '✏️ Create Agent'],
-      ['🎁 Gifts & NFT',  '🏪 Marketplace'],
+      ['🏪 Marketplace',  '🔌 Plugins'],
       ['💰 Wallet',       '👤 Profile'],
-      ['🔌 Plugins',      '❓ Help'],
+      ['⚡ Workflow',      '❓ Help'],
     ]).resize();
   }
   return MAIN_MENU;
@@ -566,23 +566,23 @@ async function showWelcome(ctx: Context, userId: number, name: string, lang: 'ru
   // Быстрый старт — только ключевые действия
   await ctx.reply(
     lang === 'ru'
-      ? `${peb('finger')} <b>Быстрый старт:</b>`
-      : `${peb('finger')} <b>Quick start:</b>`,
+      ? `${pe('finger')} <b>Быстрый старт:</b>`
+      : `${pe('finger')} <b>Quick start:</b>`,
     {
       parse_mode: 'HTML',
       reply_markup: {
         inline_keyboard: [
           [
-            { text: `✏️ ${lang === 'ru' ? 'Написать задачу' : 'Describe task'}`,       callback_data: 'create_agent_prompt' },
-            { text: `📚 ${lang === 'ru' ? 'Шаблоны' : 'Templates'}`,                   callback_data: 'marketplace' },
+            { text: `✏️ ${lang === 'ru' ? 'Написать задачу' : 'Describe task'}`, callback_data: 'create_agent_prompt' },
+            { text: `${peb('store')} ${lang === 'ru' ? 'Шаблоны' : 'Templates'}`, callback_data: 'marketplace' },
           ],
           [
-            { text: `🎁 ${lang === 'ru' ? 'Гифт-арбитраж' : 'Gift arbitrage'}`,        callback_data: 'quick_gift_agent' },
-            { text: `${peb('diamond')} ${lang === 'ru' ? 'Цена TON' : 'TON Price'}`,   callback_data: 'live_price' },
+            { text: `${peb('plugin')} ${lang === 'ru' ? 'Плагины' : 'Plugins'}`, callback_data: 'plugins' },
+            { text: `${peb('bolt')} Workflow`, callback_data: 'workflow' },
           ],
           [
             { text: `👤 ${lang === 'ru' ? 'Профиль & Баланс' : 'Profile & Balance'}`, callback_data: 'show_profile' },
-            { text: `💰 ${lang === 'ru' ? 'Пополнить' : 'Top Up'}`,                    callback_data: 'topup_start' },
+            { text: `${peb('coin')} ${lang === 'ru' ? 'Пополнить' : 'Top Up'}`, callback_data: 'topup_start' },
           ],
         ],
       },
@@ -1181,29 +1181,30 @@ bot.command('create', async (ctx) => {
 // ── Обработчики клавиатуры (RU) ────────────────────────────────────────────
 bot.hears('🤖 Мои агенты',    (ctx) => showAgentsList(ctx, ctx.from.id));
 bot.hears('✏️ Создать агента', (ctx) => showCreatePrompt(ctx));
-bot.hears('🎁 Гифты & NFT',   (ctx) => showGiftsMenu(ctx));
 bot.hears('🏪 Маркетплейс',   (ctx) => showMarketplace(ctx));
 bot.hears('💰 Кошелёк',       (ctx) => showWalletMenu(ctx));
 bot.hears('👤 Профиль',       async (ctx) => showProfile(ctx, ctx.from.id));
 bot.hears('🔌 Плагины',       (ctx) => showPlugins(ctx));
+bot.hears('⚡ Workflow',      (ctx) => showWorkflows(ctx, ctx.from.id));
 bot.hears('❓ Помощь',        (ctx) => showHelp(ctx));
-// Старые кнопки для совместимости (если у юзера осталась старая клавиатура)
+// Совместимость со старыми клавиатурами
+bot.hears('🎁 Гифты & NFT',   (ctx) => showGiftsMenu(ctx));
 bot.hears('➕ Создать агента', (ctx) => showCreatePrompt(ctx));
 bot.hears('💎 TON Connect',   (ctx) => showTonConnect(ctx));
 bot.hears('💳 Подписка',      (ctx) => showSubscription(ctx));
 bot.hears('📊 Статистика',    (ctx) => showStats(ctx, ctx.from.id));
-bot.hears('⚡ Workflow',      (ctx) => showWorkflows(ctx, ctx.from.id));
 
 // ── Обработчики клавиатуры (EN) ────────────────────────────────────────────
 bot.hears('🤖 My Agents',    (ctx) => showAgentsList(ctx, ctx.from.id));
 bot.hears('✏️ Create Agent', (ctx) => showCreatePrompt(ctx));
-bot.hears('🎁 Gifts & NFT',  (ctx) => showGiftsMenu(ctx));
 bot.hears('🏪 Marketplace',  (ctx) => showMarketplace(ctx));
 bot.hears('💰 Wallet',       (ctx) => showWalletMenu(ctx));
 bot.hears('👤 Profile',      async (ctx) => showProfile(ctx, ctx.from.id));
 bot.hears('🔌 Plugins',      (ctx) => showPlugins(ctx));
+bot.hears('⚡ Workflow',     (ctx) => showWorkflows(ctx, ctx.from.id));
 bot.hears('❓ Help',         (ctx) => showHelp(ctx));
-// Старые EN для совместимости
+// EN compat
+bot.hears('🎁 Gifts & NFT',  (ctx) => showGiftsMenu(ctx));
 bot.hears('➕ Create Agent', (ctx) => showCreatePrompt(ctx));
 bot.hears('💎 TON Connect',  (ctx) => showTonConnect(ctx));
 bot.hears('💳 Subscription', (ctx) => showSubscription(ctx));
@@ -1241,25 +1242,27 @@ function showCreatePrompt(ctx: Context) {
   const lang = getUserLang(ctx.from!.id);
   const ru = lang === 'ru';
   return safeReply(ctx,
-    `${pe('sparkles')} <b>${ru ? 'Создание AI-агента' : 'Create AI Agent'}</b>\n\n` +
-    `${ru
-      ? 'Опишите задачу — AI создаст автономного агента с 20+ инструментами:\nTON, NFT, подарки, веб-поиск, аналитика.'
-      : 'Describe your task — AI creates an autonomous agent with 20+ tools:\nTON, NFT, gifts, web search, analytics.'
+    `${pe('sparkles')} <b>${ru ? 'Создание AI-агента' : 'Create AI Agent'}</b>\n` +
+    `${div()}\n` +
+    `${pe('brain')} ${ru
+      ? 'Опишите задачу своими словами — AI создаст автономного агента.\n20+ инструментов: TON, DeFi, веб, уведомления, аналитика.'
+      : 'Describe your task — AI creates an autonomous agent.\n20+ tools: TON, DeFi, web, notifications, analytics.'
     }\n\n` +
-    `<b>${ru ? '💡 Примеры:' : '💡 Examples:'}</b>\n` +
-    `🎁 <i>"${ru ? 'Скан арбитраж подарков каждые 5 мин, профит > 15% — уведоми' : 'Scan gift arbitrage every 5 min, profit > 15% — alert'}"</i>\n` +
-    `📊 <i>"${ru ? 'Мониторь floor TON Diamonds, сводка раз в час' : 'Monitor TON Diamonds floor price, hourly summary'}"</i>\n` +
-    `🌐 <i>"${ru ? 'Парси новости coindesk, дайджест каждые 30 мин' : 'Parse coindesk news, digest every 30 min'}"</i>\n` +
-    `💰 <i>"${ru ? 'Слежу за кошельком UQ..., изменение 1000+ TON — уведоми' : 'Track wallet UQ..., balance change 1000+ TON — alert'}"</i>\n` +
-    `🎤 <i>${ru ? '(можно голосовым сообщением!)' : '(voice messages supported!)'}</i>\n\n` +
+    `${pe('bolt')} <b>${ru ? 'Примеры задач:' : 'Task examples:'}</b>\n` +
+    `${pe('coin')} <i>"${ru ? 'Следи за кошельком UQ..., изменение > 100 TON — уведоми' : 'Watch wallet UQ..., change > 100 TON — notify me'}"</i>\n` +
+    `${pe('chart')} <i>"${ru ? 'Мониторь цену TON каждый час, пришли сводку' : 'Monitor TON price hourly, send summary'}"</i>\n` +
+    `${pe('globe')} <i>"${ru ? 'Парси coindesk, дайджест важных новостей каждые 30 мин' : 'Parse coindesk, digest of important news every 30 min'}"</i>\n` +
+    `${pe('trending')} <i>"${ru ? 'Алерт если floor TON Punks упадёт ниже 80 TON' : 'Alert if TON Punks floor drops below 80 TON'}"</i>\n` +
+    `${pe('bell')} <i>"${ru ? 'Каждое утро: курс TON, топ DeFi APY, сводка портфеля' : 'Every morning: TON rate, top DeFi APY, portfolio summary'}"</i>\n` +
+    `🎤 <i>${ru ? '(принимаем голосовые сообщения!)' : '(voice messages supported!)'}</i>\n\n` +
     `${pe('finger')} <b>${ru ? 'Напишите или скажите задачу:' : 'Type or say your task:'}</b>`,
     {
       parse_mode: 'HTML',
       reply_markup: {
         inline_keyboard: [
           [
-            { text: `📚 ${ru ? 'Шаблоны' : 'Templates'}`, callback_data: 'marketplace' },
-            { text: `🎁 ${ru ? 'Гифт-арбитраж' : 'Gift arbitrage'}`, callback_data: 'quick_gift_agent' },
+            { text: `${peb('store')} ${ru ? 'Шаблоны' : 'Templates'}`, callback_data: 'marketplace' },
+            { text: `${peb('plugin')} ${ru ? 'Плагины' : 'Plugins'}`, callback_data: 'plugins' },
           ],
         ],
       },
@@ -2388,16 +2391,46 @@ bot.on('callback_query', async (ctx) => {
   }
   if (data.startsWith('plugin_install:')) {
     const pid = data.split(':')[1];
-    const ok = await getPluginManager().installPlugin(pid);
-    await ctx.answerCbQuery(ok ? '✅ Установлен' : '❌ Ошибка');
-    await ctx.reply(ok ? `✅ Плагин установлен!` : `❌ Ошибка установки`);
+    await ctx.answerCbQuery('⏳');
+    try {
+      const settingsRepo = getUserSettingsRepository();
+      const current = await settingsRepo.get(userId, 'installed_plugins').catch(() => null);
+      const list: string[] = current ? JSON.parse(String(current)) : [];
+      if (!list.includes(pid)) list.push(pid);
+      await settingsRepo.set(userId, 'installed_plugins', JSON.stringify(list));
+      getPluginManager().installPlugin(pid);
+      const plugin = getPluginManager().getPlugin(pid);
+      const ru = getUserLang(userId) === 'ru';
+      await safeReply(ctx,
+        `${pe('check')} <b>${escHtml(plugin?.name || pid)}</b> — ${ru ? 'активирован!' : 'activated!'}\n\n` +
+        `${pe('brain')} ${ru ? '<b>Что даёт этот плагин агентам:</b>' : '<b>What this gives agents:</b>'}\n` +
+        `• ${ru ? 'AI-агенты получают точный синтаксис API' : 'AI agents get exact API syntax'}\n` +
+        `• ${ru ? 'Форматы ответов и примеры вызовов инжектируются в контекст' : 'Response formats and call examples injected into context'}\n` +
+        `• ${ru ? 'Все агенты, созданные после этого, будут использовать плагин' : 'All agents created after this will use the plugin'}\n\n` +
+        `${pe('rocket')} <i>${ru ? 'Создай агента — он автоматически получит эти возможности' : 'Create an agent — it will have these capabilities automatically'}</i>`,
+        { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
+          [{ text: `✏️ ${ru ? 'Создать агента' : 'Create agent'}`, callback_data: 'create_agent_prompt' }],
+          [{ text: `◀️ ${ru ? 'К плагинам' : 'Plugins'}`, callback_data: 'plugins' }],
+        ]}}
+      );
+    } catch (e: any) { await ctx.reply(`❌ ${e.message}`); }
     return;
   }
   if (data.startsWith('plugin_uninstall:')) {
     const pid = data.split(':')[1];
-    const ok = await getPluginManager().uninstallPlugin(pid);
-    await ctx.answerCbQuery(ok ? '✅ Удалён' : '❌ Ошибка');
-    await ctx.reply(ok ? `✅ Плагин удалён` : `❌ Ошибка удаления`);
+    await ctx.answerCbQuery();
+    try {
+      const settingsRepo = getUserSettingsRepository();
+      const current = await settingsRepo.get(userId, 'installed_plugins').catch(() => null);
+      const list: string[] = current ? JSON.parse(String(current)) : [];
+      const updated = list.filter(id => id !== pid);
+      await settingsRepo.set(userId, 'installed_plugins', JSON.stringify(updated));
+      getPluginManager().uninstallPlugin(pid);
+      const ru = getUserLang(userId) === 'ru';
+      await ctx.reply(ru ? `✅ Плагин удалён` : `✅ Plugin removed`, {
+        reply_markup: { inline_keyboard: [[{ text: `◀️ ${ru ? 'К плагинам' : 'Plugins'}`, callback_data: 'plugins' }]] }
+      });
+    } catch (e: any) { await ctx.reply(`❌ ${e.message}`); }
     return;
   }
 
@@ -5429,27 +5462,54 @@ async function doPublishAgent(ctx: Context, userId: number, agentId: number, pri
 // Плагины
 // ============================================================
 async function showPlugins(ctx: Context) {
-  const lang = getUserLang(ctx.from?.id || 0);
+  const userId = ctx.from?.id || 0;
+  const ru = getUserLang(userId) === 'ru';
   const mgr = getPluginManager();
   const plugins = mgr.getAllPlugins();
-  const stats = mgr.getStats();
 
-  let text = `${pe('plugin')} <b>${lang === 'ru' ? 'Маркетплейс плагинов' : 'Plugin Marketplace'}</b>\n\n`;
-  text += `${lang === 'ru' ? 'Всего' : 'Total'}: <b>${stats.total}</b> | ${lang === 'ru' ? 'Установлено' : 'Installed'}: <b>${stats.installed}</b>\n`;
-  text += `${lang === 'ru' ? 'Рейтинг' : 'Rating'}: <b>${stats.averageRating.toFixed(1)}</b> ⭐\n\n`;
-  text += `<b>${lang === 'ru' ? 'Категории:' : 'Categories:'}</b>\n`;
-  text += `${pe('coin')} DeFi: ${stats.byType.defi || 0}\n`;
-  text += `${pe('chart')} ${lang === 'ru' ? 'Аналитика' : 'Analytics'}: ${stats.byType.analytics || 0}\n`;
-  text += `${pe('bell')} ${lang === 'ru' ? 'Уведомления' : 'Notifications'}: ${stats.byType.notification || 0}\n`;
-  text += `${pe('globe')} ${lang === 'ru' ? 'Данные' : 'Data'}: ${stats.byType['data-source'] || 0}\n`;
-  text += `🔒 ${lang === 'ru' ? 'Безопасность' : 'Security'}: ${stats.byType.security || 0}\n\n`;
-  text += `${lang === 'ru' ? 'Выберите плагин:' : 'Choose a plugin:'}`;
+  // Загружаем установленные плагины из DB
+  let installedIds: string[] = [];
+  try {
+    const raw = await getUserSettingsRepository().get(userId, 'installed_plugins').catch(() => null);
+    installedIds = raw ? JSON.parse(String(raw)) : [];
+  } catch (_) {}
 
-  const btns = plugins.slice(0, 6).map(p => [{
-    text: `${p.isInstalled ? peb('check') : peb('square')} ${p.name} ${p.price > 0 ? `(${p.price} TON)` : lang === 'ru' ? '(бесплатно)' : '(free)'}`,
-    callback_data: `plugin:${p.id}`,
-  }]);
-  btns.push([{ text: `${peb('clipboard')} ${lang === 'ru' ? 'Все плагины' : 'All plugins'}`, callback_data: 'plugins_all' }]);
+  const installedCount = installedIds.length;
+
+  let text =
+    `${pe('plugin')} <b>${ru ? 'Плагины' : 'Plugins'}</b>\n` +
+    `${div()}\n` +
+    `${pe('brain')} <b>${ru ? 'Что такое плагины?' : 'What are plugins?'}</b>\n` +
+    `${ru
+      ? 'Плагины расширяют возможности AI-агентов.\nПосле установки — все новые агенты автоматически получают доступ к API плагина: точный синтаксис вызовов, форматы ответов, примеры.'
+      : 'Plugins extend AI agent capabilities.\nAfter install — all new agents automatically get plugin API access: exact call syntax, response formats, examples.'
+    }\n\n` +
+    `${pe('check')} ${ru ? 'Установлено:' : 'Installed:'} <b>${installedCount}</b>/${plugins.length}`;
+
+  if (installedCount > 0) {
+    const names = installedIds.map(id => mgr.getPlugin(id)?.name || id).join(', ');
+    text += `\n${pe('bolt')} ${ru ? 'Активные:' : 'Active:'} <i>${escHtml(names)}</i>`;
+  }
+
+  // Категории с иконками
+  const byType: Record<string, { icon: string; label: string }> = {
+    defi:          { icon: `${pe('coin')}`,     label: 'DeFi' },
+    analytics:     { icon: `${pe('chart')}`,    label: ru ? 'Аналитика' : 'Analytics' },
+    notification:  { icon: `${pe('bell')}`,     label: ru ? 'Уведомления' : 'Notifications' },
+    'data-source': { icon: `${pe('globe')}`,    label: ru ? 'Данные' : 'Data' },
+    security:      { icon: `${pe('wrench')}`,   label: ru ? 'Безопасность' : 'Security' },
+  };
+
+  text += `\n\n<b>${ru ? 'Все плагины:' : 'All plugins:'}</b>`;
+
+  const btns = plugins.map(p => {
+    const isInst = installedIds.includes(p.id);
+    const catInfo = byType[p.type] || { icon: '🔌', label: p.type };
+    return [{
+      text: `${isInst ? peb('check') : peb('square')} ${catInfo.icon.replace(/<[^>]+>/g, '').trim()} ${p.name}${isInst ? (ru ? ' ✓' : ' ✓') : ''}`,
+      callback_data: `plugin:${p.id}`,
+    }];
+  });
 
   await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: btns } });
 }
@@ -5467,23 +5527,49 @@ async function showAllPlugins(ctx: Context) {
 }
 
 async function showPluginDetails(ctx: Context, pluginId: string) {
+  const userId = ctx.from?.id || 0;
+  const ru = getUserLang(userId) === 'ru';
   const plugin = getPluginManager().getPlugin(pluginId);
   if (!plugin) { await ctx.reply('❌ Плагин не найден'); return; }
 
+  // Проверяем установку из DB
+  let isInstalled = false;
+  try {
+    const raw = await getUserSettingsRepository().get(userId, 'installed_plugins').catch(() => null);
+    const list: string[] = raw ? JSON.parse(String(raw)) : [];
+    isInstalled = list.includes(pluginId);
+  } catch (_) {}
+
+  // Парсим из skillDoc первые несколько строк как "что умеет"
+  const skillLines = (plugin.skillDoc || '').split('\n')
+    .filter(l => l.startsWith('GET ') || l.startsWith('POST ') || l.startsWith('  Response:') || l.includes('CORRECT usage'))
+    .slice(0, 3)
+    .map(l => `<code>${escHtml(l.trim().slice(0, 80))}</code>`)
+    .join('\n');
+
   let text =
-    `🔌 <b>${escHtml(plugin.name)}</b>\n\n` +
+    `${pe('plugin')} <b>${escHtml(plugin.name)}</b>  <i>v${escHtml(plugin.version)}</i>\n` +
+    `${div()}\n` +
     `${escHtml(plugin.description)}\n\n` +
-    `👤 Автор: ${escHtml(plugin.author)}\n` +
-    `⭐ Рейтинг: ${escHtml(plugin.rating)}/5\n` +
-    `📥 Скачиваний: ${escHtml(plugin.downloads)}\n` +
-    `💰 Цена: ${plugin.price > 0 ? `${escHtml(plugin.price)} TON` : 'Бесплатно'}\n` +
-    `🏷 Теги: ${escHtml(plugin.tags.join(', '))}`;
+    `${pe('star')} ${plugin.rating}/5  ${pe('trending')} ${plugin.downloads.toLocaleString()} ${ru ? 'устан.' : 'installs'}\n` +
+    `${pe('coin')} ${ru ? 'Цена:' : 'Price:'} ${plugin.price > 0 ? `${plugin.price} TON` : (ru ? 'Бесплатно' : 'Free')}\n` +
+    `${pe('wrench')} ${ru ? 'Теги:' : 'Tags:'} ${escHtml(plugin.tags.join(', '))}\n\n`;
+
+  if (isInstalled) {
+    text += `${pe('check')} <b>${ru ? 'Установлен' : 'Installed'}</b> — ${ru ? 'агенты используют этот API' : 'agents use this API'}\n\n`;
+  } else {
+    text += `${pe('brain')} <b>${ru ? 'После установки AI-агенты получат:' : 'After install agents get:'}</b>\n`;
+    text += `${ru ? '• Точный синтаксис всех API-вызовов' : '• Exact API call syntax'}\n`;
+    text += `${ru ? '• Форматы ответов и готовые примеры' : '• Response formats and ready examples'}\n`;
+    text += `${ru ? '• Автоматическое использование в новых агентах' : '• Auto-use in new agents'}\n`;
+    if (skillLines) text += `\n<b>API:</b>\n${skillLines}\n`;
+  }
 
   await editOrReply(ctx, text, { parse_mode: 'HTML',
     reply_markup: {
       inline_keyboard: [
-        [{ text: plugin.isInstalled ? '🗑 Удалить' : '📥 Установить', callback_data: `plugin_${plugin.isInstalled ? 'uninstall' : 'install'}:${pluginId}` }],
-        [{ text: '◀️ Назад', callback_data: 'plugins' }],
+        [{ text: isInstalled ? `🗑 ${ru ? 'Удалить' : 'Remove'}` : `${peb('check')} ${ru ? 'Установить' : 'Install'}${plugin.price > 0 ? ` (${plugin.price} TON)` : ''}`, callback_data: `plugin_${isInstalled ? 'uninstall' : 'install'}:${pluginId}` }],
+        [{ text: `◀️ ${ru ? 'Назад' : 'Back'}`, callback_data: 'plugins' }],
       ],
     },
   });
