@@ -832,10 +832,15 @@ body {
 /* Pricing */
 .pricing-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
   gap: 24px;
   max-width: 1000px;
   margin: 0 auto 32px;
+}
+
+.pricing-grid.four-cols {
+  grid-template-columns: repeat(4, 1fr);
+  max-width: 1200px;
 }
 
 .pricing-card {
@@ -1090,6 +1095,16 @@ body {
 
 .dev-stage:hover {
   border-color: rgba(0, 136, 204, 0.4);
+}
+
+.dev-stage.completed {
+  border-color: rgba(74, 222, 128, 0.4);
+  box-shadow: 0 0 30px rgba(74, 222, 128, 0.1);
+}
+
+.dev-stage.completed .dev-status {
+  background: rgba(74, 222, 128, 0.2);
+  color: #4ade80;
 }
 
 .dev-stage.in-progress {
@@ -1516,6 +1531,24 @@ body {
   font-style: italic;
 }
 
+.partner-badge {
+  display: inline-block;
+  padding: 6px 16px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: all 0.3s ease;
+}
+.partner-badge:hover {
+  background: rgba(0, 136, 204, 0.15);
+  border-color: rgba(0, 136, 204, 0.4);
+  color: var(--primary);
+}
+
 .footer-bottom {
   border-top: 1px solid rgba(255, 255, 255, 0.05);
   padding-top: 32px;
@@ -1557,35 +1590,41 @@ body {
 }
 
 /* Responsive */
+@media (max-width: 1100px) {
+  .pricing-grid.four-cols {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
 @media (max-width: 968px) {
   .section-title {
     font-size: 2rem;
   }
-  
+
   .hero-title {
     font-size: 2.5rem;
   }
-  
+
   .example-panel {
     grid-template-columns: 1fr;
   }
-  
+
   .team-grid {
     grid-template-columns: 1fr;
   }
-  
+
   .footer-grid {
     grid-template-columns: 1fr;
   }
-  
+
   .dev-stages {
     grid-template-columns: 1fr;
   }
-  
+
   .team-stats {
     grid-template-columns: repeat(2, 1fr);
   }
-  
+
   .security-warning {
     flex-direction: column;
     text-align: center;
@@ -1610,6 +1649,10 @@ body {
   
   .pricing-card.popular {
     transform: none;
+  }
+
+  .pricing-grid.four-cols {
+    grid-template-columns: 1fr;
   }
   
   .examples-tabs {

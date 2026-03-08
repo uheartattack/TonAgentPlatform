@@ -36,6 +36,9 @@
   <section class="hero">
     <canvas id="particle-canvas"></canvas>
     <div class="hero-content">
+      <div class="hero-logo">
+        <img src="logo.svg" alt="TON Agent Platform" width="80" height="80" style="filter: drop-shadow(0 0 20px rgba(0,136,204,0.4));">
+      </div>
       <div class="hero-badge">
         <span class="pulse-dot"></span>
         <span data-en="Powered by TON" data-ru="Powered by TON">Powered by TON</span>
@@ -44,8 +47,8 @@
         <span data-en="Create" data-ru="Создай">Create</span> <span class="gradient-text" data-en="AI Agent" data-ru="AI-агента">AI Agent</span><br>
         <span data-en="for TON in" data-ru="для TON за">for TON in</span> <span class="accent-text">2 <span data-en="minutes" data-ru="минуты">minutes</span></span>
       </h1>
-      <p class="hero-subtitle" data-en="Describe your task in text — get a working bot. No code. No servers. Inside Telegram." data-ru="Опиши задачу текстом — получи готового бота. Без кода. Без серверов. Внутри Telegram.">
-        Describe your task in text — get a working bot. No code. No servers. Inside Telegram.
+      <p class="hero-subtitle" data-en="Describe your task in text or voice — get an always-on AI agent. No code. No servers. Works 24/7 inside Telegram." data-ru="Опиши задачу текстом или голосом — получи AI-агента 24/7. Без кода. Без серверов. Работает постоянно внутри Telegram.">
+        Describe your task in text or voice — get an always-on AI agent. No code. No servers. Works 24/7 inside Telegram.
       </p>
       <div class="hero-buttons">
         <a href="https://t.me/TonAgentPlatformBot" target="_blank" class="btn-primary">
@@ -62,8 +65,12 @@
       </div>
       <div class="hero-stats">
         <div class="stat">
-          <div class="stat-value">1,247</div>
-          <div class="stat-label" data-en="Agents created" data-ru="Агентов создано">Agents created</div>
+          <div class="stat-value">7</div>
+          <div class="stat-label" data-en="AI Providers" data-ru="AI-провайдеров">AI Providers</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">22</div>
+          <div class="stat-label" data-en="Templates" data-ru="Шаблонов">Templates</div>
         </div>
         <div class="stat">
           <div class="stat-value">12</div>
@@ -168,11 +175,11 @@
             </div>
             <span class="step-number">02</span>
           </div>
-          <h3 class="step-title" data-en="AI generates code" data-ru="AI генерирует код">AI generates code</h3>
-          <p class="step-desc" data-en="Claude API analyzes the task and creates secure code" data-ru="Claude API анализирует задачу и создаёт безопасный код">Claude API analyzes the task and creates secure code</p>
+          <h3 class="step-title" data-en="AI generates agent" data-ru="AI генерирует агента">AI generates agent</h3>
+          <p class="step-desc" data-en="AI analyzes the task and creates a system prompt for your agent" data-ru="AI анализирует задачу и создаёт системный промпт для агента">AI analyzes the task and creates a system prompt for your agent</p>
           <div class="step-example">
             <span class="example-label" data-en="Example:" data-ru="Пример:">Example:</span>
-            <code>Claude 3.5 Sonnet</code>
+            <code data-en="7 AI providers available" data-ru="7 AI-провайдеров доступно">7 AI providers available</code>
           </div>
         </div>
         <div class="step">
@@ -182,11 +189,11 @@
             </div>
             <span class="step-number">03</span>
           </div>
-          <h3 class="step-title" data-en="Pay 5 TON" data-ru="Оплати 5 TON">Pay 5 TON</h3>
-          <p class="step-desc" data-en="Payment via TON Connect — one-time fee for creation" data-ru="Оплата через TON Connect — разовая плата за создание">Payment via TON Connect — one-time fee for creation</p>
+          <h3 class="step-title" data-en="Choose AI provider" data-ru="Выбери AI провайдера">Choose AI provider</h3>
+          <p class="step-desc" data-en="Pick from 7 providers or use the free built-in AI" data-ru="Выбери из 7 провайдеров или используй бесплатный встроенный AI">Pick from 7 providers or use the free built-in AI</p>
           <div class="step-example">
             <span class="example-label" data-en="Example:" data-ru="Пример:">Example:</span>
-            <code data-en="5 TON via TON Connect" data-ru="5 TON через TON Connect">5 TON via TON Connect</code>
+            <code data-en="Gemini, OpenAI, Anthropic, Groq..." data-ru="Gemini, OpenAI, Anthropic, Groq...">Gemini, OpenAI, Anthropic, Groq...</code>
           </div>
         </div>
         <div class="step">
@@ -642,7 +649,8 @@
     <div class="container">
       <h2 class="section-title" data-en="Choose your <span class='gradient-text'>plan</span>" data-ru="Выбери свой <span class='gradient-text'>тариф</span>">Choose your <span class="gradient-text">plan</span></h2>
       <p class="section-subtitle" data-en="Start free and scale as you grow" data-ru="Начни бесплатно и масштабируйся по мере роста">Start free and scale as you grow</p>
-      <div class="pricing-grid">
+      <div class="pricing-grid four-cols">
+        <!-- Free -->
         <div class="pricing-card">
           <div class="pricing-header">
             <div class="pricing-icon" style="background: rgba(160, 174, 192, 0.2);">
@@ -656,63 +664,82 @@
           </div>
           <p class="pricing-desc" data-en="Perfect for exploring the platform" data-ru="Идеально для знакомства с платформой">Perfect for exploring the platform</p>
           <ul class="pricing-features">
-            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="1 active agent" data-ru="1 активный агент">1 active agent</span></li>
-            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Basic plugins" data-ru="Базовые плагины">Basic plugins</span></li>
-            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Standard support" data-ru="Стандартная поддержка">Standard support</span></li>
-            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> TON Connect</li>
-            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Basic analytics" data-ru="Базовая аналитика">Basic analytics</span></li>
-            <li class="disabled"><span data-en="Priority generation" data-ru="Приоритетная генерация">Priority generation</span></li>
-            <li class="disabled"><span data-en="Custom plugins" data-ru="Кастомные плагины">Custom plugins</span></li>
-            <li class="disabled"><span>API <span data-en="access" data-ru="доступ">access</span></span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="3 agents, 1 active" data-ru="3 агента, 1 активный">3 agents, 1 active</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="All 12 plugins" data-ru="Все 12 плагинов">All 12 plugins</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Manual launch only" data-ru="Только ручной запуск">Manual launch only</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Marketplace templates" data-ru="Шаблоны маркетплейса">Marketplace templates</span></li>
+            <li class="disabled"><span data-en="Scheduled agents" data-ru="Запуск по расписанию">Scheduled agents</span></li>
+            <li class="disabled"><span data-en="AI generations included" data-ru="Бесплатные AI генерации">AI generations included</span></li>
           </ul>
           <a href="https://t.me/TonAgentPlatformBot" target="_blank" class="btn-outline" data-en="Start for free" data-ru="Начать бесплатно">Start for free</a>
         </div>
+        <!-- Starter -->
+        <div class="pricing-card">
+          <div class="pricing-header">
+            <div class="pricing-icon" style="background: rgba(0, 168, 232, 0.2);">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00A8E8" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            </div>
+            <h3>Starter</h3>
+          </div>
+          <div class="pricing-price">
+            <span class="price">5</span>
+            <span class="period">TON/<span data-en="month" data-ru="мес">month</span></span>
+          </div>
+          <p class="pricing-desc" data-en="For active traders and automators" data-ru="Для активных трейдеров и автоматизаторов">For active traders and automators</p>
+          <ul class="pricing-features">
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="15 agents, 3 active" data-ru="15 агентов, 3 активных">15 agents, 3 active</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Scheduled execution" data-ru="Запуск по расписанию">Scheduled execution</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="30 AI generations/mo" data-ru="30 AI генераций/мес">30 AI generations/mo</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="All marketplace templates" data-ru="Все шаблоны маркетплейса">All marketplace templates</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Priority AI queue" data-ru="Приоритетная очередь AI">Priority AI queue</span></li>
+          </ul>
+          <a href="https://t.me/TonAgentPlatformBot" target="_blank" class="btn-outline" data-en="Get Starter" data-ru="Выбрать Starter">Get Starter</a>
+        </div>
+        <!-- Pro -->
         <div class="pricing-card popular">
           <div class="popular-badge" data-en="Popular" data-ru="Популярный">Popular</div>
           <div class="pricing-header">
             <div class="pricing-icon" style="background: rgba(0, 136, 204, 0.2);">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0088CC" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0088CC" stroke-width="2"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
             </div>
             <h3>Pro</h3>
           </div>
           <div class="pricing-price">
-            <span class="price">10</span>
+            <span class="price">15</span>
             <span class="period">TON/<span data-en="month" data-ru="мес">month</span></span>
           </div>
-          <p class="pricing-desc" data-en="For active users and traders" data-ru="Для активных пользователей и трейдеров">For active users and traders</p>
+          <p class="pricing-desc" data-en="For power users and teams" data-ru="Для опытных пользователей и команд">For power users and teams</p>
           <ul class="pricing-features">
-            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="10 active agents" data-ru="10 активных агентов">10 active agents</span></li>
-            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="All plugins" data-ru="Все плагины">All plugins</span></li>
-            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Priority support" data-ru="Приоритетная поддержка">Priority support</span></li>
-            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> TON Connect</li>
-            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Advanced analytics" data-ru="Расширенная аналитика">Advanced analytics</span></li>
-            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Priority generation" data-ru="Приоритетная генерация">Priority generation</span></li>
-            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> API <span data-en="access" data-ru="доступ">access</span></li>
-            <li class="disabled"><span data-en="Custom plugins" data-ru="Кастомные плагины">Custom plugins</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="100 agents, 20 active" data-ru="100 агентов, 20 активных">100 agents, 20 active</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Webhook triggers" data-ru="Webhook триггеры">Webhook triggers</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Workflow chains" data-ru="Workflow цепочки">Workflow chains</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="150 AI generations/mo" data-ru="150 AI генераций/мес">150 AI generations/mo</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="API access" data-ru="API доступ">API access</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="24/7 support" data-ru="Поддержка 24/7">24/7 support</span></li>
           </ul>
           <a href="https://t.me/TonAgentPlatformBot" target="_blank" class="btn-primary" data-en="Upgrade to Pro" data-ru="Апгрейд до Pro">Upgrade to Pro</a>
         </div>
+        <!-- Unlimited -->
         <div class="pricing-card">
           <div class="pricing-header">
             <div class="pricing-icon" style="background: rgba(0, 212, 255, 0.2);">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00D4FF" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00D4FF" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
             </div>
-            <h3>Enterprise</h3>
+            <h3>Unlimited</h3>
           </div>
           <div class="pricing-price">
-            <span class="price">Custom</span>
+            <span class="price">30</span>
+            <span class="period">TON/<span data-en="month" data-ru="мес">month</span></span>
           </div>
-          <p class="pricing-desc" data-en="For teams and large projects" data-ru="Для команд и крупных проектов">For teams and large projects</p>
+          <p class="pricing-desc" data-en="Everything unlimited, no limits" data-ru="Всё безлимитно, без ограничений">Everything unlimited, no limits</p>
           <ul class="pricing-features">
-            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Unlimited agents" data-ru="Неограниченные агенты">Unlimited agents</span></li>
-            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="All plugins + custom" data-ru="Все плагины + кастомные">All plugins + custom</span></li>
-            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Dedicated infrastructure" data-ru="Выделенная инфраструктура">Dedicated infrastructure</span></li>
-            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> SLA</li>
-            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Personal manager" data-ru="Персональный менеджер">Personal manager</span></li>
-            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="White label" data-ru="Белая маркировка">White label</span></li>
-            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="On-premise option" data-ru="On-premise опция">On-premise option</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Unlimited agents" data-ru="Безлимит агентов">Unlimited agents</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Unlimited AI generations" data-ru="Безлимит AI генераций">Unlimited AI generations</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Everything included" data-ru="Всё включено">Everything included</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Webhook + Workflow + API" data-ru="Webhook + Workflow + API">Webhook + Workflow + API</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="SLA 99.9% + dedicated support" data-ru="SLA 99.9% + выделенная поддержка">SLA 99.9% + dedicated support</span></li>
           </ul>
-          <a href="https://t.me/despensive" target="_blank" class="btn-outline" data-en="Contact us" data-ru="Связаться с нами">Contact us</a>
+          <a href="https://t.me/TonAgentPlatformBot" target="_blank" class="btn-outline" data-en="Go Unlimited" data-ru="Безлимит">Go Unlimited</a>
         </div>
       </div>
       <p class="pricing-note" data-en="All plans include basic security and TON Connect integration" data-ru="Все тарифы включают базовую безопасность и TON Connect интеграцию">All plans include basic security and TON Connect integration</p>
@@ -800,48 +827,63 @@
       <h2 class="section-title" data-en="Development <span class='gradient-text'>stage</span>" data-ru="Стадия <span class='gradient-text'>разработки</span>">Development <span class="gradient-text">stage</span></h2>
       <p class="section-subtitle" data-en="What we're working on right now" data-ru="Что мы делаем прямо сейчас">What we're working on right now</p>
       <div class="dev-stages">
+        <div class="dev-stage completed">
+          <div class="dev-icon" style="background: rgba(74, 222, 128, 0.2);">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          </div>
+          <div class="dev-content">
+            <span class="dev-status" style="color:#4ade80" data-en="Completed" data-ru="Готово">Completed</span>
+            <h3 data-en="Platform Core" data-ru="Ядро платформы">Platform Core</h3>
+            <ul>
+              <li data-en="AI-first agent creation" data-ru="AI-генерация агентов">AI-first agent creation</li>
+              <li data-en="12 plugins, 22 templates" data-ru="12 плагинов, 22 шаблона">12 plugins, 22 templates</li>
+              <li data-en="TON Connect + balance system" data-ru="TON Connect + баланс">TON Connect + balance system</li>
+              <li data-en="7 AI providers supported" data-ru="7 AI-провайдеров">7 AI providers supported</li>
+            </ul>
+          </div>
+        </div>
+        <div class="dev-stage completed">
+          <div class="dev-icon" style="background: rgba(74, 222, 128, 0.2);">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          </div>
+          <div class="dev-content">
+            <span class="dev-status" style="color:#4ade80" data-en="Completed" data-ru="Готово">Completed</span>
+            <h3 data-en="AI Agent Runtime" data-ru="AI Agent Runtime">AI Agent Runtime</h3>
+            <ul>
+              <li data-en="Always-on 24/7 agents" data-ru="Агенты 24/7 онлайн">Always-on 24/7 agents</li>
+              <li data-en="Real-time chat with agents" data-ru="Чат с агентами в реальном времени">Real-time chat with agents</li>
+              <li data-en="Voice commands support" data-ru="Голосовые команды">Voice commands support</li>
+              <li data-en="Gift & NFT arbitrage tools" data-ru="Gift & NFT арбитраж">Gift & NFT arbitrage tools</li>
+            </ul>
+          </div>
+        </div>
+        <div class="dev-stage completed">
+          <div class="dev-icon" style="background: rgba(74, 222, 128, 0.2);">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          </div>
+          <div class="dev-content">
+            <span class="dev-status" style="color:#4ade80" data-en="Completed" data-ru="Готово">Completed</span>
+            <h3 data-en="Marketplace & Wallet" data-ru="Marketplace & Кошелёк">Marketplace & Wallet</h3>
+            <ul>
+              <li data-en="Agent marketplace (buy/sell)" data-ru="Marketplace агентов (покупка/продажа)">Agent marketplace (buy/sell)</li>
+              <li data-en="Web Dashboard + Wallet" data-ru="Веб-дашборд + Кошелёк">Web Dashboard + Wallet</li>
+              <li data-en="TON balance top-up & withdrawals" data-ru="Пополнение и вывод TON">TON balance top-up & withdrawals</li>
+              <li data-en="Gift & NFT arbitrage marketplace" data-ru="Gift & NFT арбитраж маркет">Gift & NFT arbitrage marketplace</li>
+            </ul>
+          </div>
+        </div>
         <div class="dev-stage in-progress">
           <div class="dev-icon" style="background: rgba(0, 136, 204, 0.2);">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0088CC" stroke-width="2"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
           </div>
           <div class="dev-content">
             <span class="dev-status" data-en="In progress" data-ru="В работе">In progress</span>
-            <h3 data-en="MVP Launch" data-ru="MVP Launch">MVP Launch</h3>
+            <h3 data-en="Scale & Governance" data-ru="Масштабирование">Scale & Governance</h3>
             <ul>
-              <li data-en="Core platform" data-ru="Базовая платформа">Core platform</li>
-              <li data-en="12 plugins" data-ru="12 плагинов">12 plugins</li>
-              <li data-en="100 users" data-ru="100 пользователей">100 users</li>
-              <li>TON Connect <span data-en="integration" data-ru="интеграция">integration</span></li>
-            </ul>
-          </div>
-        </div>
-        <div class="dev-stage upcoming">
-          <div class="dev-icon" style="background: rgba(0, 168, 232, 0.2);">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00A8E8" stroke-width="2"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
-          </div>
-          <div class="dev-content">
-            <span class="dev-status" data-en="Coming soon" data-ru="Скоро">Coming soon</span>
-            <h3 data-en="Marketplace" data-ru="Marketplace">Marketplace</h3>
-            <ul>
-              <li data-en="Plugin marketplace" data-ru="Marketplace плагинов">Plugin marketplace</li>
-              <li data-en="Custom plugins" data-ru="Кастомные плагины">Custom plugins</li>
-              <li data-en="1,000 users" data-ru="1,000 пользователей">1,000 users</li>
-              <li data-en="Developer API" data-ru="API для разработчиков">Developer API</li>
-            </ul>
-          </div>
-        </div>
-        <div class="dev-stage upcoming">
-          <div class="dev-icon" style="background: rgba(0, 212, 255, 0.2);">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00D4FF" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-          </div>
-          <div class="dev-content">
-            <span class="dev-status" data-en="Coming soon" data-ru="Скоро">Coming soon</span>
-            <h3>DAO & Token</h3>
-            <ul>
-              <li data-en="DAO platform governance" data-ru="DAO управление платформой">DAO platform governance</li>
-              <li data-en="Native token" data-ru="Нативный токен">Native token</li>
-              <li data-en="50,000 users" data-ru="50,000 пользователей">50,000 users</li>
-              <li data-en="Global expansion" data-ru="Глобальное расширение">Global expansion</li>
+              <li data-en="Per-agent TON wallets" data-ru="Персональные кошельки агентов">Per-agent TON wallets</li>
+              <li data-en="Multi-chain support" data-ru="Поддержка нескольких блокчейнов">Multi-chain support</li>
+              <li data-en="DAO governance & token" data-ru="DAO управление и токен">DAO governance & token</li>
+              <li data-en="TON AppKit integration" data-ru="Интеграция TON AppKit">TON AppKit integration</li>
             </ul>
           </div>
         </div>
@@ -967,7 +1009,7 @@
             <svg class="faq-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
           <div class="faq-answer">
-            <p data-en="Creating an agent costs 5 TON (one-time fee). This covers AI code generation and agent hosting on our servers. If you sell plugins in the marketplace, we take 30% commission." data-ru="Создание агента стоит 5 TON (разовая плата). Это покрывает стоимость генерации кода AI и размещения агента на наших серверах. Если ты продаёшь плагины в marketplace, мы берём 30% комиссии.">Creating an agent costs 5 TON (one-time fee). This covers AI code generation and agent hosting on our servers. If you sell plugins in the marketplace, we take 30% commission.</p>
+            <p data-en="Creating agents is free! You can use the platform's built-in AI or connect your own API key (OpenAI, Anthropic, Gemini, Groq, DeepSeek, etc.). The balance system supports TON top-ups for premium features and marketplace purchases." data-ru="Создание агентов бесплатно! Можно использовать встроенный AI платформы или подключить свой API-ключ (OpenAI, Anthropic, Gemini, Groq, DeepSeek и др.). Система баланса поддерживает пополнение TON для премиум-функций и покупок в маркетплейсе.">Creating agents is free! You can use the platform's built-in AI or connect your own API key (OpenAI, Anthropic, Gemini, Groq, DeepSeek, etc.). The balance system supports TON top-ups for premium features and marketplace purchases.</p>
           </div>
         </div>
         <div class="faq-item">
@@ -1038,9 +1080,7 @@
       <div class="footer-grid">
         <div class="footer-brand">
           <div class="footer-logo">
-            <div class="logo-icon">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-            </div>
+            <img src="logo.svg" alt="TON Agent Platform" width="32" height="32" style="filter: drop-shadow(0 0 8px rgba(0,136,204,0.3));">
             <span>TON Agent Platform</span>
           </div>
           <p class="footer-desc" data-en="No-code platform for creating AI agents in Telegram. Describe your task in text — get a working bot in 2 minutes." data-ru="No-code платформа для создания AI-агентов в Telegram. Опиши задачу текстом — получи готового бота за 2 минуты.">No-code platform for creating AI agents in Telegram. Describe your task in text — get a working bot in 2 minutes.</p>
@@ -1092,9 +1132,12 @@
         </div>
       </div>
       <div class="footer-partners">
-        <p data-en="Partners" data-ru="Партнёры">Partners</p>
+        <p data-en="Ecosystem" data-ru="Экосистема">Ecosystem</p>
         <div class="partners-list">
-          <span class="soon-text" data-en="Coming soon" data-ru="Скоро">Coming soon</span>
+          <a href="https://ton.org" target="_blank" class="partner-badge">TON Blockchain</a>
+          <a href="https://telegram.org" target="_blank" class="partner-badge">Telegram</a>
+          <a href="https://giftasset.pro" target="_blank" class="partner-badge">GiftAsset</a>
+          <a href="https://fragment.com" target="_blank" class="partner-badge">Fragment</a>
         </div>
       </div>
       <div class="footer-bottom">
