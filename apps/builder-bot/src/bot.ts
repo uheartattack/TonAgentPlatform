@@ -19,6 +19,7 @@ import { getCodeTools } from './agents/tools/code-tools';
 import { pendingBotAuth } from './api-server';
 import { getTonConnectManager } from './ton-connect';
 import { getPluginManager } from './plugins-system';
+import { getTelegramGiftsService } from './services/telegram-gifts';
 import { getUserSettingsRepository, getMarketplaceRepository, getExecutionHistoryRepository, getAgentStateRepository, getBalanceTxRepository } from './db/schema-extensions';
 import { pool as dbPool } from './db';
 import { getWorkflowEngine } from './agent-cooperation';
@@ -1461,7 +1462,7 @@ bot.action('gifts_arbitrage', async (ctx) => {
   const ru = getUserLang(ctx.from!.id) === 'ru';
   const giftsService = getTelegramGiftsService();
   try {
-    const opps = await giftsService.scanArbitrageOpportunities({ maxPriceStars: 10000, minProfitPercent: 10 });
+    const opps = await giftsService.scanArbitrageOpportunities({ maxPriceStars: 10000, minProfitPct: 10 });
     if (!opps || opps.length === 0) {
       await ctx.reply(ru ? '📊 Арбитражных возможностей сейчас нет (проверить через 5 мин).' : '📊 No arbitrage opportunities right now (check in 5 min).', {
         reply_markup: { inline_keyboard: [[{ text: '🔄 Обновить', callback_data: 'gifts_arbitrage' }, { text: '⬅️ Назад', callback_data: 'gifts_menu' }]] },
@@ -1576,7 +1577,8 @@ bot.action('wallet_history', async (ctx) => {
   const userId = ctx.from!.id;
   const ru = getUserLang(userId) === 'ru';
   try {
-    const txs = await getBalanceTxRepository().getHistory(userId, 10, 0);
+    const txResult = await getBalanceTxRepository().getHistory(userId, 10, 0);
+    const txs = Array.isArray(txResult) ? txResult : (txResult as any).transactions || [];
     if (!txs || txs.length === 0) {
       await ctx.reply(ru ? '📊 История транзакций пуста.' : '📊 No transactions yet.');
       return;
@@ -2696,8 +2698,8 @@ bot.on('callback_query', async (ctx) => {
         const { generateAgentWallet } = await import('./services/TonConnect');
         const wallet = await generateAgentWallet();
         const agentStateRepo = getAgentStateRepository();
-        await agentStateRepo.set(agentId, 'wallet_address', wallet.address);
-        await agentStateRepo.set(agentId, 'wallet_mnemonic', wallet.mnemonic);
+        await agentStateRepo.set(agentId, userId, 'wallet_address', wallet.address);
+        await agentStateRepo.set(agentId, userId, 'wallet_mnemonic', wallet.mnemonic);
         address = wallet.address;
       }
 
