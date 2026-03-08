@@ -11,14 +11,15 @@ export interface AgentTemplate {
   icon: string;
   tags: string[];
   code: string;
-  triggerType: 'manual' | 'scheduled' | 'webhook';
+  triggerType: 'manual' | 'scheduled' | 'webhook' | 'ai_agent';
   triggerConfig: Record<string, any>;
   placeholders: Array<{
     name: string;
     description: string;
     example: string;
     required: boolean;
-    question?: string;   // Текст вопроса для wizard (если нужно спросить у пользователя)
+    question?: string;   // Текст вопроса для wizard
+    options?: string[];  // Если задан — показывать кнопки выбора вместо текстового ввода
   }>;
 }
 
@@ -892,63 +893,360 @@ async function agent(context) {
   ]
 };
 
-const arbitrageScanner: AgentTemplate = {
-  id: 'arbitrage-scanner',
-  name: 'Arbitrage Scanner',
-  description: 'Ищет арбитражные возможности между DEX',
+const nftArbitrageV2: AgentTemplate = {
+  id: 'nft-arbitrage-v2',
+  name: 'NFT Arbitrage Pro',
+  description: 'Сканирует NFT коллекции через TonAPI, ищет листинги ниже floor-цены, отслеживает позиции и P&L. Принимает GetGems URL или EQ-адреса. Встроенные популярные коллекции как fallback.',
   category: 'finance',
-  icon: '⚡',
-  tags: ['arbitrage', 'dex', 'trading', 'opportunity'],
+  icon: '🎯',
+  tags: ['nft', 'arbitrage', 'tonapi', 'trading', 'floor', 'ton'],
   triggerType: 'scheduled',
-  triggerConfig: { intervalMs: 30000 },
+  triggerConfig: { intervalMs: 300000 },
   code: `
 async function agent(context) {
-  const tokenAddress = context.config.TOKEN_ADDRESS;
-  const minProfit = parseFloat(context.config.MIN_PROFIT) || 0.5;
-  
-  if (!tokenAddress) {
-    return { success: false, error: 'TOKEN_ADDRESS не указан' };
+  // ── Конфиг ───────────────────────────────────────────────────────
+  var MAX_BUY_TON  = parseFloat(context.config.MAX_BUY_PRICE_TON  || '50');
+  var MIN_PROFIT   = parseFloat(context.config.MIN_PROFIT_PCT      || '15');
+  var DAILY_LIMIT  = parseFloat(context.config.DAILY_LIMIT_TON     || '200');
+  var SELL_MARKUP  = parseFloat(context.config.SELL_MARKUP_PCT     || '20');
+  var AUTO_NOTIFY  = (context.config.AUTO_NOTIFY || 'true') === 'true';
+
+  // ── Парсинг адресов коллекций (принимает EQ-адрес или getgems.io URL) ─
+  function parseCollectionAddr(raw) {
+    raw = (raw || '').trim();
+    var m = raw.match(/(?:getgems\\.io\\/collection\\/|fragment\\.com\\/collection\\/|tonscan\\.org\\/address\\/)([EUk][Qq][\\w-]{46})/);
+    if (m) return m[1];
+    if (/^[EUk][Qq][\\w-]{46}$/.test(raw)) return raw;
+    return null;
   }
-  
+
+  var POPULAR_COLLECTIONS = [
+    'EQAo92DYMokxghKcq-CkCGSk_MgXY5Fo1SPW20gkvZl75iCN',
+    'EQAG2BH0JlmFkbMrLEnyn2bIITaOSssd4WdisE4BdFMkZbir',
+    'EQAOQdwdw8kGftJCSFgOErM1mBjYPe4DBPq8-AhF6vr9si5N',
+  ];
+
+  var rawCollections = (context.config.TARGET_COLLECTIONS || '').split(',');
+  var COLLECTIONS = [];
+  for (var i = 0; i < rawCollections.length; i++) {
+    var addr = parseCollectionAddr(rawCollections[i]);
+    if (addr) COLLECTIONS.push(addr);
+  }
+  if (COLLECTIONS.length === 0) {
+    COLLECTIONS = POPULAR_COLLECTIONS;
+    console.log('TARGET_COLLECTIONS не задан — сканирую популярные коллекции');
+  }
+
+  // ── Кошелёк ───────────────────────────────────────────────────────
+  var WALLET_MNEMONIC = (context.config.WALLET_MNEMONIC || '').trim();
+  var WALLET_ADDRESS  = '';
+
+  var storedMnemonic = getState('wallet_mnemonic');
+  if (!WALLET_MNEMONIC && storedMnemonic) WALLET_MNEMONIC = String(storedMnemonic);
+
+  if (!WALLET_MNEMONIC) {
+    var newWallet = await tonCreateWallet();
+    WALLET_MNEMONIC = newWallet.mnemonic;
+    WALLET_ADDRESS  = newWallet.address;
+    setState('wallet_mnemonic', WALLET_MNEMONIC);
+    setState('wallet_address',  WALLET_ADDRESS);
+    console.log('Кошелёк создан:', WALLET_ADDRESS);
+    if (AUTO_NOTIFY) {
+      await notify('Арбитражник создал кошелёк!\\n\\nАдрес: ' + WALLET_ADDRESS + '\\n\\nПополни кошелёк TON для старта.\\nДневной лимит: ' + DAILY_LIMIT + ' TON');
+    }
+    return { success: true, result: { action: 'wallet_created', address: WALLET_ADDRESS } };
+  }
+
+  var storedAddr = getState('wallet_address');
+  WALLET_ADDRESS = WALLET_ADDRESS || (storedAddr ? String(storedAddr) : '') || await tonGetWalletAddress(WALLET_MNEMONIC);
+  var walletBalance = await tonGetBalance(WALLET_ADDRESS);
+  var REAL_MODE = WALLET_MNEMONIC.split(' ').filter(function(w){ return w.length > 0; }).length >= 12 && walletBalance > 0.1;
+
+  // ── TonAPI helpers ────────────────────────────────────────────────
+  var TONAPI_KEY = context.config.TONAPI_KEY || '';
+
+  function tonapiHdr() {
+    return TONAPI_KEY ? { 'Authorization': 'Bearer ' + TONAPI_KEY } : {};
+  }
+
+  function eqToRaw(addr) {
+    try {
+      var b64 = addr.replace(/-/g, '+').replace(/_/g, '/');
+      var buf = Buffer.from(b64, 'base64');
+      var workchain = buf[1] === 0xff ? -1 : buf[1];
+      var hash = buf.slice(2, 34).toString('hex');
+      return workchain + ':' + hash;
+    } catch(e) { return addr; }
+  }
+
+  async function getFloor(collAddr) {
+    try {
+      var raw = eqToRaw(collAddr);
+      var resp = await fetch('https://tonapi.io/v2/nfts/collections/' + encodeURIComponent(raw) + '/items?limit=50', { headers: tonapiHdr() });
+      if (!resp.ok) return null;
+      var data = await resp.json();
+      var prices = [];
+      for (var i = 0; i < (data.nft_items || []).length; i++) {
+        var item = data.nft_items[i];
+        if (item.sale && item.sale.price && item.sale.price.token_name === 'TON') {
+          prices.push(Number(item.sale.price.value) / 1e9);
+        }
+      }
+      if (prices.length === 0) return null;
+      prices.sort(function(a, b){ return a - b; });
+      return prices[0];
+    } catch(e) { return null; }
+  }
+
+  async function getCollectionName(collAddr) {
+    try {
+      var raw = eqToRaw(collAddr);
+      var resp = await fetch('https://tonapi.io/v2/nfts/collections/' + encodeURIComponent(raw), { headers: tonapiHdr() });
+      if (!resp.ok) return collAddr.slice(0, 10) + '...';
+      var data = await resp.json();
+      return (data.metadata && data.metadata.name) ? data.metadata.name : collAddr.slice(0, 10) + '...';
+    } catch(e) { return collAddr.slice(0, 10) + '...'; }
+  }
+
+  async function scanListings(collAddr, maxPriceTon) {
+    var results = [];
+    try {
+      var raw = eqToRaw(collAddr);
+      var offset = 0;
+      var pages = 0;
+      while (pages < 5) {
+        var resp = await fetch('https://tonapi.io/v2/nfts/collections/' + encodeURIComponent(raw) + '/items?limit=50&offset=' + offset, { headers: tonapiHdr() });
+        if (!resp.ok) break;
+        var data = await resp.json();
+        if (!data.nft_items || data.nft_items.length === 0) break;
+        var foundBelow = false;
+        for (var i = 0; i < data.nft_items.length; i++) {
+          var item = data.nft_items[i];
+          if (!item.sale || !item.sale.price || item.sale.price.token_name !== 'TON') continue;
+          var priceTon = Number(item.sale.price.value) / 1e9;
+          if (priceTon <= maxPriceTon) {
+            foundBelow = true;
+            var meta = item.metadata || {};
+            results.push({
+              address:  item.address,
+              name:     meta.name || item.address.slice(0, 12),
+              priceTon: priceTon,
+              saleAddr: item.sale.contract_address || ''
+            });
+          }
+        }
+        if (!foundBelow) break;
+        offset += 50;
+        pages++;
+      }
+    } catch(e) { /* return what we have */ }
+    results.sort(function(a, b){ return a.priceTon - b.priceTon; });
+    return results;
+  }
+
+  async function executeBuy(listing) {
+    try {
+      if (!listing.saleAddr) return { success: false, error: 'Нет адреса sale-контракта' };
+      var opBuf = Buffer.alloc(4);
+      opBuf.writeUInt32BE(0x474f26cc, 0);
+      var txHash = await tonSend({
+        mnemonic:      WALLET_MNEMONIC,
+        to:            listing.saleAddr,
+        amountNano:    String(Math.floor(listing.priceTon * 1e9) + 50000000),
+        payloadBase64: opBuf.toString('base64')
+      });
+      return { success: true, txHash: txHash };
+    } catch(e) {
+      return { success: false, error: e.message || String(e) };
+    }
+  }
+
+  // ── Загрузка состояния ────────────────────────────────────────────
+  var today    = new Date().toISOString().slice(0, 10);
+  var spentKey = 'daily_spent_' + today;
+
+  var dailySpent = 0;
   try {
-    console.log('⚡ Сканирую арбитраж...');
-    
-    const [dedustPrice, stonfiPrice] = await Promise.all([
-      fetch('https://api.dedust.io/v2/pools/' + tokenAddress + '/price').then(r => r.ok ? r.json() : null).catch(() => null),
-      fetch('https://api.ston.fi/v1/pools?token=' + tokenAddress).then(r => r.ok ? r.json() : null).catch(() => null)
-    ]);
-    
-    const price1 = dedustPrice?.price ? parseFloat(dedustPrice.price) : 0;
-    const price2 = stonfiPrice?.pools?.[0]?.price ? parseFloat(stonfiPrice.pools[0].price) : 0;
-    
-    if (!price1 || !price2) {
-      return { success: true, result: { error: 'Не удалось получить цены' } };
+    var sv = getState(spentKey);
+    dailySpent = parseFloat(String(sv !== null && sv !== undefined ? sv : '0')) || 0;
+  } catch(e) { dailySpent = 0; }
+
+  var positions = [];
+  try {
+    var pv = getState('positions');
+    var ps = pv !== null && pv !== undefined ? (typeof pv === 'string' ? pv : JSON.stringify(pv)) : '[]';
+    positions = JSON.parse(ps || '[]');
+    if (!Array.isArray(positions)) positions = [];
+  } catch(e) { positions = []; }
+
+  var stats = { scans: 0, buys: 0, sells: 0, totalPnl: 0 };
+  try {
+    var stv = getState('stats');
+    var sts = stv !== null && stv !== undefined ? (typeof stv === 'string' ? stv : JSON.stringify(stv)) : '';
+    var parsed = JSON.parse(sts || '{}');
+    if (parsed && typeof parsed === 'object') {
+      stats.scans    = parsed.scans    || 0;
+      stats.buys     = parsed.buys     || 0;
+      stats.sells    = parsed.sells    || 0;
+      stats.totalPnl = parsed.totalPnl || 0;
     }
-    
-    const diff = Math.abs(price1 - price2);
-    const avgPrice = (price1 + price2) / 2;
-    const profitPercent = (diff / avgPrice) * 100;
-    
-    const buyOn = price1 < price2 ? 'DeDust' : 'STON.fi';
-    const sellOn = price1 < price2 ? 'STON.fi' : 'DeDust';
-    
-    let opportunity = null;
-    if (profitPercent >= minProfit) {
-      opportunity = { profit: profitPercent.toFixed(2) + '%', buyOn, sellOn };
-    }
-    
-    return {
-      success: true,
-      result: { token: tokenAddress, prices: { dedust: price1, stonfi: price2 }, profitPercent: profitPercent.toFixed(2) + '%', opportunity }
-    };
-  } catch (error) {
-    return { success: false, error: error.message };
+  } catch(e) { /* use defaults */ }
+
+  stats.scans++;
+  console.log('NFT Arbitrage — скан #' + stats.scans + (REAL_MODE ? ' [REAL]' : walletBalance <= 0.1 ? ' [NO FUNDS]' : ' [SIM]'));
+  console.log('   Кошелёк: ' + WALLET_ADDRESS.slice(0, 16) + '... | Баланс: ' + walletBalance.toFixed(3) + ' TON');
+  console.log('   Коллекций: ' + COLLECTIONS.length + ' | Расход: ' + dailySpent.toFixed(2) + '/' + DAILY_LIMIT + ' TON');
+
+  var opportunities = [];
+  var actions = [];
+
+  // ── Проверка позиций (стоп-лосс / тейк-профит) ───────────────────
+  var updatedPos = [];
+  for (var pi = 0; pi < positions.length; pi++) {
+    var pos = positions[pi];
+    try {
+      var fl = await getFloor(pos.collectionAddr);
+      if (fl === null) { updatedPos.push(pos); continue; }
+      var targetSell = pos.boughtAt * (1 + SELL_MARKUP / 100);
+      var stopLoss   = pos.boughtAt * 0.85;
+      if (fl >= targetSell) {
+        stats.sells++;
+        stats.totalPnl += fl - pos.boughtAt;
+        actions.push({ type: 'SELL', nft: pos.nftAddr, pnl: (fl - pos.boughtAt).toFixed(2) });
+        if (AUTO_NOTIFY) await notify('SELL ' + pos.nftName + ' +' + (fl - pos.boughtAt).toFixed(2) + ' TON');
+      } else if (fl <= stopLoss) {
+        stats.sells++;
+        stats.totalPnl += fl - pos.boughtAt;
+        actions.push({ type: 'STOP_LOSS', nft: pos.nftAddr, pnl: (fl - pos.boughtAt).toFixed(2) });
+        if (AUTO_NOTIFY) await notify('STOP-LOSS ' + pos.nftName + ' ' + (fl - pos.boughtAt).toFixed(2) + ' TON');
+      } else {
+        pos.currentFloor = fl;
+        updatedPos.push(pos);
+      }
+    } catch(e) { updatedPos.push(pos); }
   }
+  positions = updatedPos;
+
+  // ── Сканирование коллекций ────────────────────────────────────────
+  for (var ci = 0; ci < COLLECTIONS.length; ci++) {
+    var collAddr = COLLECTIONS[ci];
+    var collName = await getCollectionName(collAddr);
+    console.log('   [' + collName + '] ' + collAddr.slice(0, 10) + '...');
+
+    var floor = await getFloor(collAddr);
+    if (floor === null) { console.log('     Floor: недоступен'); continue; }
+
+    var threshold = floor * (1 - MIN_PROFIT / 100);
+    var listings  = await scanListings(collAddr, Math.min(threshold, MAX_BUY_TON));
+    console.log('     Floor: ' + floor.toFixed(2) + ' TON | Ниже порога (' + threshold.toFixed(2) + ' TON): ' + listings.length);
+
+    for (var li = 0; li < listings.length; li++) {
+      var listing = listings[li];
+      var profitPct = ((floor - listing.priceTon) / listing.priceTon) * 100;
+      var netProfit = floor - listing.priceTon - 0.15;
+      if (netProfit <= 0) continue;
+
+      opportunities.push({ collection: collName, nft: listing.address, name: listing.name, buyPrice: listing.priceTon, floor: floor, profitPct: profitPct.toFixed(1), netProfit: netProfit.toFixed(2) });
+
+      var canSpend = (dailySpent + listing.priceTon) <= DAILY_LIMIT;
+      var alreadyOwned = positions.some(function(p){ return p.nftAddr === listing.address; });
+
+      if (canSpend && !alreadyOwned && listing.priceTon <= MAX_BUY_TON) {
+        var buyOk = true;
+        var txHash = null;
+        if (REAL_MODE) {
+          var res = await executeBuy(listing);
+          if (res.success) {
+            txHash = res.txHash;
+            console.log('     REAL BUY: ' + listing.name + ' ' + listing.priceTon.toFixed(2) + ' TON | TX: ' + txHash);
+          } else {
+            buyOk = false;
+            console.log('     BUY FAILED: ' + res.error);
+            if (AUTO_NOTIFY) await notify('Ошибка покупки ' + listing.name + ': ' + res.error);
+          }
+        } else {
+          console.log('     SIM BUY: ' + listing.name + ' ' + listing.priceTon.toFixed(2) + ' TON (+' + profitPct.toFixed(1) + '%)');
+        }
+        if (buyOk) {
+          dailySpent += listing.priceTon;
+          stats.buys++;
+          positions.push({ nftAddr: listing.address, nftName: listing.name, collectionAddr: collAddr, boughtAt: listing.priceTon, boughtTs: Date.now(), currentFloor: floor, txHash: txHash });
+          actions.push({ type: REAL_MODE ? 'BUY_REAL' : 'BUY_SIM', name: listing.name, price: listing.priceTon, floor: floor, profitPct: profitPct.toFixed(1) });
+          if (AUTO_NOTIFY) await notify((REAL_MODE ? 'КУПЛЕНО ' : 'SIM BUY ') + listing.name + '\\nЦена: ' + listing.priceTon.toFixed(2) + ' TON | Floor: ' + floor.toFixed(2) + ' TON\\nПотенциал: +' + profitPct.toFixed(1) + '%' + (txHash ? '\\nTX: ' + txHash : '') + '\\nРасход: ' + dailySpent.toFixed(2) + '/' + DAILY_LIMIT + ' TON');
+        }
+      }
+    }
+  }
+
+  // ── Сохранение состояния ─────────────────────────────────────────
+  setState(spentKey,   String(dailySpent));
+  setState('positions', JSON.stringify(positions));
+  setState('stats',     JSON.stringify(stats));
+
+  var report = { scan: stats.scans, date: today, collections: COLLECTIONS.length, opportunities: opportunities.length, actions: actions.length, openPositions: positions.length, dailySpent: dailySpent.toFixed(2), totalPnl: stats.totalPnl.toFixed(2), mode: REAL_MODE ? 'REAL' : 'SIM' };
+
+  if (opportunities.length > 0 && AUTO_NOTIFY && actions.length === 0) {
+    await notify('NFT Арбитраж: ' + opportunities.length + ' возможностей\\nЛучшая: ' + opportunities[0].name + ' (+' + opportunities[0].profitPct + '%)\\nОткрытых позиций: ' + positions.length);
+  }
+
+  console.log('Итог: ' + opportunities.length + ' возм., ' + actions.length + ' действий, PnL: ' + stats.totalPnl.toFixed(2) + ' TON');
+  return { success: true, result: report };
 }
 `,
   placeholders: [
-    { name: 'TOKEN_ADDRESS', description: 'Адрес токена для арбитража', example: 'EQCx...', required: true },
-    { name: 'MIN_PROFIT', description: 'Минимальный профит для уведомления (%)', example: '0.5', required: false }
+    {
+      name: 'TARGET_COLLECTIONS',
+      description: 'Адреса NFT коллекций или getgems.io ссылки через запятую. Если не указано — сканируются популярные коллекции.',
+      example: 'EQAo92DYMokxghKcq-CkCGSk_MgXY5Fo1SPW20gkvZl75iCN,https://getgems.io/collection/EQAG2...',
+      required: false,
+      question: 'Введите адреса коллекций (EQ...) или ссылки getgems.io (пропустите для сканирования популярных):'
+    },
+    {
+      name: 'MAX_BUY_PRICE_TON',
+      description: 'Максимальная цена покупки одного NFT (TON)',
+      example: '50',
+      required: false,
+      question: 'Максимальная цена покупки NFT в TON (по умолчанию 50):'
+    },
+    {
+      name: 'MIN_PROFIT_PCT',
+      description: 'Минимальный потенциальный профит для сделки (%)',
+      example: '15',
+      required: false,
+      question: 'Минимальный профит для входа в сделку, % (по умолчанию 15):'
+    },
+    {
+      name: 'DAILY_LIMIT_TON',
+      description: 'Лимит расходов за день (TON)',
+      example: '200',
+      required: false,
+      question: 'Дневной лимит расходов в TON (по умолчанию 200):'
+    },
+    {
+      name: 'SELL_MARKUP_PCT',
+      description: 'Наценка при продаже относительно цены покупки (%)',
+      example: '20',
+      required: false
+    },
+    {
+      name: 'TONAPI_KEY',
+      description: 'API ключ TonAPI (опционально, для увеличения лимитов запросов)',
+      example: 'AGYDGN4RZD4XLPY...',
+      required: false
+    },
+    {
+      name: 'WALLET_MNEMONIC',
+      description: '24 слова мнемоники кошелька через пробел (для реальных покупок). Без мнемоники агент работает в режиме симуляции.',
+      example: 'word1 word2 word3 ... word24',
+      required: false,
+      question: 'Мнемоника кошелька (24 слова) для реальных покупок. Оставьте пустым для режима симуляции:'
+    },
+    {
+      name: 'AUTO_NOTIFY',
+      description: 'Отправлять уведомления о каждой сделке (true/false)',
+      example: 'true',
+      required: false
+    }
   ]
 };
 
@@ -1368,7 +1666,7 @@ export const advancedAgentTemplates: AgentTemplate[] = [
   nftFloorMonitor,
   jettonBalanceChecker,
   dexSwapMonitor,
-  arbitrageScanner,
+  nftArbitrageV2,
   payrollAgent,
   webhookReceiver,
   webhookSender
@@ -1449,7 +1747,7 @@ const balanceMonitorAgent: AgentTemplate = {
   triggerType: 'scheduled',
   triggerConfig: { intervalMs: 60000 },
   placeholders: [
-    { name: 'WALLET_ADDRESS', description: 'Адрес TON кошелька', example: 'UQB5Ltvn5_q9axVSBXd4GGUVZaAh-hNgPT5emHjNsyYUDgzf', required: true },
+    { name: 'WALLET_ADDRESS', description: 'Адрес TON кошелька', example: 'UQCfRrLVr7MeGbVw4x1XgZ42ZUS7tdf2sEYSyRvmoEB4y_dh', required: true },
     { name: 'MIN_BALANCE', description: 'Минимальный баланс для алерта (TON)', example: '1', required: false },
   ],
   code: `async function agent(context) {
@@ -1636,12 +1934,250 @@ async function agent(context) {
 `,
 };
 
+// ===== AI-AGENT: Unified Arbitrage =====
+// triggerType === 'ai_agent': agent.code = system prompt, AI calls tools autonomously
+
+const unifiedArbitrageAI: AgentTemplate = {
+  id: 'unified-arbitrage-ai',
+  name: '🤖 AI Арбитраж (подарки + NFT)',
+  description: 'Автономный AI-агент который сам ищет арбитраж в Telegram подарках и TON NFT. Общается с вами в чате, объясняет решения.',
+  category: 'finance',
+  icon: '🤖',
+  tags: ['ai', 'arbitrage', 'gifts', 'nft', 'ton', 'fragment', 'auto'],
+  triggerType: 'ai_agent',
+  triggerConfig: {
+    intervalMs: 300_000, // 5 min default
+    config: {
+      AI_PROVIDER:      '{{AI_PROVIDER}}',
+      AI_API_KEY:       '{{AI_API_KEY}}',
+      TONAPI_KEY:       '{{TONAPI_KEY}}',
+      MAX_BUY_STARS:    '500',
+      MIN_PROFIT_PCT:   '15',
+      TARGET_COLLECTIONS: '',
+      WALLET_MNEMONIC:  '{{WALLET_MNEMONIC}}',
+    },
+  },
+  // agent.code = system prompt (the "soul" of the agent)
+  code: `Ты — автономный AI-арбитражный агент на TON Agent Platform.
+
+Твоя задача: каждый тик (каждые 5 минут) анализировать рынок Telegram подарков и TON NFT, находить выгодные возможности и сообщать о них пользователю.
+
+## Твои инструменты:
+
+### Рыночные данные (GiftAsset + SwiftGifts API — РЕАЛЬНЫЕ цены!):
+- **scan_real_arbitrage(max_price_stars, min_profit_pct)** — НАСТОЯЩИЙ арбитраж с реальными ценами по 7 маркетплейсам (GetGems, MRKT, Portals, Tonnel, Fragment, MarketApp, Onchain)
+- **get_gift_floor_real(slug)** — реальные floor prices подарка на всех площадках
+- **get_gift_sales_history(collection_name, limit, model_name)** — история продаж с ценами и датами
+- **get_market_overview()** — обзор рынка: все коллекции + статистика апгрейдов
+- **get_price_list(models?)** — прайс-лист floor цен по всем подаркам
+- **get_gift_aggregator(name, from_price?, to_price?, market?)** — поиск лучших предложений по всем маркетплейсам
+
+### Telegram подарки (MTProto):
+- **get_gift_catalog()** — каталог Telegram подарков с ценами в Stars
+- **appraise_gift(slug)** — оценка уникального подарка
+- **get_fragment_listings(gift_slug, limit)** — листинги на Fragment
+- **scan_arbitrage(max_price_stars, min_profit_pct)** — legacy арбитраж (менее точный)
+
+### Покупка/продажа:
+- **buy_catalog_gift(gift_id, recipient_id)** — купить подарок (требует подтверждения!)
+- **buy_resale_gift(slug)** — купить с Fragment (требует подтверждения!)
+- **list_gift_for_sale(msg_id, price_stars)** — выставить на продажу
+- **get_stars_balance()** — баланс Stars
+
+### Портфель:
+- **get_user_portfolio(username?, telegram_id?)** — портфель подарков пользователя с оценкой
+
+### TON блокчейн:
+- **get_ton_balance(address)** — баланс кошелька
+- **get_nft_floor(collection)** — floor price NFT коллекции
+
+### Утилиты:
+- **get_state(key) / set_state(key, value)** — персистентное состояние между тиками
+- **notify(message)** — уведомление пользователю
+- **http_fetch(url, method, headers, body)** — любой HTTP запрос
+
+## Логика каждого тика:
+1. Если есть сообщения от пользователя — ответь на них в первую очередь
+2. Проверь get_market_overview() — общее состояние рынка
+3. Запусти scan_real_arbitrage — это САМЫЙ ТОЧНЫЙ поиск, использует 7 маркетплейсов
+4. Для каждой найденной возможности — проверь get_gift_sales_history чтобы убедиться что подарок ликвидный (были продажи за последние 24ч)
+5. notify пользователя с деталями найденных возможностей
+6. Проверь open_positions в state — пора ли продавать
+7. Если есть TARGET_COLLECTIONS — проверь NFT floor через get_nft_floor
+8. Сохраняй статистику в state: тик №, лучшие находки, общий P&L
+
+## Правила:
+- НИКОГДА не покупай автоматически без явного разрешения пользователя ("купи", "buy", "go")
+- При обнаружении возможности СООБЩАЙ детали: что покупать, за сколько, на какой площадке, ожидаемая прибыль
+- Объясняй свои решения на русском языке
+- Если баланс Stars недостаточен — предупреждай
+- Если рынок спокойный — кратко сообщи "Тик #N завершён, новых возможностей нет"
+- При общении с пользователем отвечай подробно и по-деловому
+- ВСЕГДА используй scan_real_arbitrage вместо scan_arbitrage — он даёт реальные цены
+
+## Формат уведомлений об арбитраже:
+🎯 Арбитраж найден!
+Подарок: [название]
+Купить на: [площадка] за X ⭐
+Продать на: [площадка] за ~Y ⭐
+Прибыль: ~Z% (~N ⭐)
+Уверенность: [high/medium/low]
+[Для покупки напишите "купи [название]"]`,
+  placeholders: [
+    {
+      name: 'AI_PROVIDER',
+      description: 'Выберите провайдера AI — от него зависят URL и модель по умолчанию',
+      example: 'OpenAI',
+      required: true,
+      question: '🤖 Выберите AI провайдера:',
+      options: ['OpenAI', 'Anthropic (Claude)', 'Groq (бесплатно)', 'Другой'],
+    },
+    {
+      name: 'AI_API_KEY',
+      description: 'API ключ выбранного провайдера. OpenAI: platform.openai.com → API Keys. Anthropic: console.anthropic.com. Groq: console.groq.com (бесплатно).',
+      example: 'sk-proj-... / sk-ant-... / gsk_...',
+      required: true,
+      question: '🔑 Введите API ключ провайдера:',
+    },
+    {
+      name: 'TONAPI_KEY',
+      description: 'Ваш API ключ от tonapi.io (для NFT данных)',
+      example: 'AGYD...X6IVV4WQ',
+      required: true,
+      question: '🔑 Введите ваш TONAPI_KEY (получить на tonapi.io):',
+    },
+    {
+      name: 'WALLET_MNEMONIC',
+      description: '24 слова seed-фразы TON кошелька (опционально, для on-chain операций)',
+      example: 'word1 word2 word3 ... word24',
+      required: false,
+      question: '💎 Введите seed-фразу TON кошелька (24 слова через пробел) или нажмите Skip:',
+    },
+  ],
+};
+
+// ===== SUPER AGENT: Universal AI agent =====
+
+const superAgent: AgentTemplate = {
+  id: 'super-agent',
+  name: '⚡ Super Agent',
+  description: 'Универсальный AI-агент с полным доступом к Telegram (MTProto), TON блокчейну, NFT, подаркам, HTTP API. Как настоящий Telegram пользователь — может читать каналы, отправлять сообщения, вступать в группы, торговать на Fragment.',
+  category: 'utility',
+  icon: '⚡',
+  tags: ['ai', 'super', 'userbot', 'telegram', 'mtproto', 'universal', 'ton', 'nft', 'gifts'],
+  triggerType: 'ai_agent',
+  triggerConfig: {
+    intervalMs: 300_000,
+    config: {
+      AI_PROVIDER: '{{AI_PROVIDER}}',
+      AI_API_KEY: '{{AI_API_KEY}}',
+      TONAPI_KEY: '{{TONAPI_KEY}}',
+      WALLET_MNEMONIC: '{{WALLET_MNEMONIC}}',
+      AGENT_MODE: 'full',
+    },
+  },
+  code: `Ты — Super Agent на платформе TON Agent Platform.
+Ты — автономный AI-агент с полным доступом к Telegram через MTProto (как настоящий пользователь) и TON блокчейну.
+
+## Твои возможности:
+
+### 🔗 Telegram MTProto (как реальный пользователь):
+- **tg_send_message(peer, message)** — отправить сообщение пользователю, в группу или канал
+- **tg_get_messages(peer, limit)** — прочитать последние сообщения из чата/канала
+- **tg_get_channel_info(peer)** — информация о канале (подписчики, описание)
+- **tg_join_channel(peer)** — вступить в канал/группу
+- **tg_leave_channel(peer)** — покинуть канал/группу
+- **tg_get_dialogs(limit)** — список чатов аккаунта
+- **tg_get_members(peer, limit)** — участники группы/канала
+- **tg_search_messages(peer, query, limit)** — поиск сообщений в чате
+- **tg_get_user_info(user)** — информация о пользователе
+
+### 💎 TON Блокчейн:
+- **get_ton_balance(address)** — баланс кошелька
+- **get_nft_floor(collection)** — floor price NFT коллекции
+
+### 🎁 Telegram подарки & Fragment:
+- **get_gift_catalog()** — каталог подарков с ценами
+- **get_fragment_listings(gift_slug, limit)** — листинги на Fragment
+- **appraise_gift(slug)** — оценка подарка (floor, avg, last sale)
+- **scan_arbitrage(max_price_stars, min_profit_pct)** — legacy поиск арбитража
+- **buy_catalog_gift(gift_id, recipient_id)** — купить подарок
+- **buy_resale_gift(slug)** — купить с Fragment
+- **list_gift_for_sale(msg_id, price_stars)** — выставить на продажу
+- **get_stars_balance()** — баланс Stars
+
+### 📊 Рыночные данные (GiftAsset + SwiftGifts — РЕАЛЬНЫЕ цены!):
+- **scan_real_arbitrage(max_price_stars, min_profit_pct)** — НАСТОЯЩИЙ арбитраж по 7 маркетплейсам
+- **get_gift_floor_real(slug)** — реальные floor prices на всех площадках
+- **get_gift_sales_history(collection_name, limit, model_name)** — история продаж
+- **get_market_overview()** — обзор рынка: коллекции + апгрейд-статистика
+- **get_price_list(models?)** — прайс-лист floor цен
+- **get_gift_aggregator(name, from_price?, to_price?, market?)** — лучшие предложения
+- **get_user_portfolio(username?, telegram_id?)** — портфель подарков пользователя
+
+### 🌐 HTTP & API:
+- **http_fetch(url, method, headers, body)** — любой HTTP запрос (GET/POST/PUT/DELETE)
+
+### 💾 Память & Уведомления:
+- **get_state(key) / set_state(key, value)** — персистентное состояние между тиками
+- **notify(message)** — отправить уведомление владельцу
+
+## Логика работы:
+
+1. **При запуске** — проверь сохранённые задачи в state (get_state('tasks'))
+2. **Если есть сообщения** от пользователя — ответь на них В ПЕРВУЮ ОЧЕРЕДЬ
+3. **Выполняй задачи** — мониторинг каналов, арбитраж, сбор данных, уведомления
+4. **Сохраняй прогресс** — используй set_state для запоминания между тиками
+5. **Уведомляй** о важных событиях через notify
+
+## Правила:
+- Общайся на русском языке
+- НИКОГДА не покупай без явного подтверждения пользователя
+- Не спамь в чужие каналы/группы — только по запросу пользователя
+- Если Telegram не авторизован — скажи пользователю выполнить /tglogin
+- Объясняй свои действия, будь прозрачным
+- При первом запуске спроси пользователя что он хочет чтобы ты делал`,
+  placeholders: [
+    {
+      name: 'AI_PROVIDER',
+      description: 'AI провайдер для мозга агента',
+      example: 'OpenAI',
+      required: true,
+      question: '🤖 Выберите AI провайдера:',
+      options: ['OpenAI', 'Anthropic (Claude)', 'Groq (бесплатно)', 'Другой'],
+    },
+    {
+      name: 'AI_API_KEY',
+      description: 'API ключ провайдера. OpenAI: platform.openai.com. Anthropic: console.anthropic.com. Groq: console.groq.com (бесплатно).',
+      example: 'sk-proj-... / sk-ant-... / gsk_...',
+      required: true,
+      question: '🔑 Введите API ключ провайдера:',
+    },
+    {
+      name: 'TONAPI_KEY',
+      description: 'API ключ от tonapi.io (для NFT и блокчейн данных)',
+      example: 'AGYD...X6IVV4WQ',
+      required: false,
+      question: '🔑 TONAPI_KEY (tonapi.io) — для NFT/блокчейн данных. Skip если не нужно:',
+    },
+    {
+      name: 'WALLET_MNEMONIC',
+      description: '24 слова seed-фразы TON кошелька (для on-chain операций)',
+      example: 'word1 word2 ... word24',
+      required: false,
+      question: '💎 Seed-фраза TON кошелька (24 слова) или Skip:',
+    },
+  ],
+};
+
 // ВСЕ шаблоны (для маркетплейса)
 export const allAgentTemplates: AgentTemplate[] = [
   ...agentTemplates,
   ...advancedAgentTemplates,
   ...multiAgentTemplates,
   telegramGiftMonitor,
+  unifiedArbitrageAI,
+  superAgent,
 ];
 
 // Функции для работы с шаблонами

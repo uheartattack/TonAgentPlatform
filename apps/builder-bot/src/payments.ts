@@ -99,7 +99,7 @@ export const PLANS: Record<string, Plan> = {
 };
 
 // ── Адрес кошелька платформы (куда идут платежи) ───────────
-const PLATFORM_WALLET = process.env.PLATFORM_WALLET_ADDRESS || 'UQB5Ltvn5_q9axVSBXd4GGUVZaAh-hNgPT5emHjNsyYUDgzf';
+export const PLATFORM_WALLET = process.env.PLATFORM_WALLET_ADDRESS || 'UQCfRrLVr7MeGbVw4x1XgZ42ZUS7tdf2sEYSyRvmoEB4y_dh';
 const OWNER_ID = parseInt(process.env.OWNER_ID || '0');
 
 // ── Интерфейсы ─────────────────────────────────────────────
@@ -455,5 +455,53 @@ export async function verifyTonTransaction(
   } catch (err) {
     console.error('[Payments] verifyTonTransaction error:', err);
     return { found: false };
+  }
+}
+
+// ── Проверить пополнение баланса профиля ─────────────────────
+// Ищем входящий перевод с комментарием topup:{userId}
+// Возвращает сумму если найдена, иначе 0
+export async function verifyTopupTransaction(
+  userId: number,
+  afterTimestamp?: number  // unix seconds — игнорируем транзакции старше
+): Promise<{ found: boolean; amountTon: number; txHash?: string }> {
+  try {
+    const url = `https://tonapi.io/v2/accounts/${encodeURIComponent(PLATFORM_WALLET)}/events?limit=20`;
+    const tonapiKey = process.env.TONAPI_KEY || '';
+    const headers: Record<string, string> = { 'Accept': 'application/json' };
+    if (tonapiKey) headers['Authorization'] = `Bearer ${tonapiKey}`;
+
+    const res = await fetch(url, { headers });
+    if (!res.ok) throw new Error(`TON API ${res.status}`);
+
+    const data: any = await res.json();
+    const expectedComment = `topup:${userId}`;
+
+    for (const event of (data.events || [])) {
+      const eventTime: number = event.timestamp || 0;
+      // Пропускаем события старше точки отсчёта
+      if (afterTimestamp && eventTime < afterTimestamp) continue;
+
+      for (const action of (event.actions || [])) {
+        if (action.type === 'TonTransfer' && action.TonTransfer) {
+          const tf = action.TonTransfer;
+          const amount = parseInt(tf.amount || '0');
+          const msg: string = (tf.comment || '').trim();
+
+          if (msg === expectedComment && amount >= 100_000_000) {  // минимум 0.1 TON
+            return {
+              found: true,
+              amountTon: amount / 1e9,
+              txHash: event.event_id || String(event.lt),
+            };
+          }
+        }
+      }
+    }
+
+    return { found: false, amountTon: 0 };
+  } catch (err) {
+    console.error('[Payments] verifyTopupTransaction error:', err);
+    return { found: false, amountTon: 0 };
   }
 }

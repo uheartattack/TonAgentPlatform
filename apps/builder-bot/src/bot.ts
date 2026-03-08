@@ -234,21 +234,22 @@ function sanitize(text: string): string {
 const bot = new Telegraf(process.env.BOT_TOKEN || '');
 
 // Статичное меню (русский по умолчанию)
+// ── Главное меню (reply keyboard — всегда внизу) ─────────────────────────
+// Структура: главные функции сверху, дополнительные снизу
 const MAIN_MENU = Markup.keyboard([
-  ['🤖 Мои агенты', '➕ Создать агента'],
-  ['🏪 Маркетплейс', '🔌 Плагины', '⚡ Workflow'],
-  ['💎 TON Connect', '💳 Подписка', '📊 Статистика'],
-  ['👤 Профиль', '❓ Помощь'],
+  ['🤖 Мои агенты',  '✏️ Создать агента'],
+  ['🎁 Гифты & NFT', '🏪 Маркетплейс'],
+  ['💰 Кошелёк',     '👤 Профиль'],
+  ['🔌 Плагины',     '❓ Помощь'],
 ]).resize();
 
-// Динамическое меню с учётом языка
 function getMainMenu(lang: 'ru' | 'en') {
   if (lang === 'en') {
     return Markup.keyboard([
-      ['🤖 My Agents', '➕ Create Agent'],
-      ['🏪 Marketplace', '🔌 Plugins', '⚡ Workflow'],
-      ['💎 TON Connect', '💳 Subscription', '📊 Stats'],
-      ['👤 Profile', '❓ Help'],
+      ['🤖 My Agents',    '✏️ Create Agent'],
+      ['🎁 Gifts & NFT',  '🏪 Marketplace'],
+      ['💰 Wallet',       '👤 Profile'],
+      ['🔌 Plugins',      '❓ Help'],
     ]).resize();
   }
   return MAIN_MENU;
@@ -561,22 +562,26 @@ async function showWelcome(ctx: Context, userId: number, name: string, lang: 'ru
       `${pe('bolt')} Agent auto-starts within 30 seconds`;
 
   await safeReply(ctx, text, { ...getMainMenu(lang), parse_mode: 'HTML' });
+  // Быстрый старт — только ключевые действия
   await ctx.reply(
-    lang === 'ru' ? `${peb('finger')} Или выберите действие:` : `${peb('finger')} Or choose an action:`,
+    lang === 'ru'
+      ? `${peb('finger')} <b>Быстрый старт:</b>`
+      : `${peb('finger')} <b>Quick start:</b>`,
     {
+      parse_mode: 'HTML',
       reply_markup: {
         inline_keyboard: [
           [
-            { text: `${peb('plus')} ${lang === 'ru' ? 'Написать задачу' : 'Describe task'}`, callback_data: 'create_agent_prompt' },
-            { text: `${peb('diamond')} ${lang === 'ru' ? 'Цена TON' : 'TON Price'}`, callback_data: 'live_price' },
+            { text: `✏️ ${lang === 'ru' ? 'Написать задачу' : 'Describe task'}`,       callback_data: 'create_agent_prompt' },
+            { text: `📚 ${lang === 'ru' ? 'Шаблоны' : 'Templates'}`,                   callback_data: 'marketplace' },
           ],
           [
-            { text: `${peb('store')} ${lang === 'ru' ? 'Маркетплейс' : 'Marketplace'}`, callback_data: 'marketplace' },
-            { text: `👤 ${lang === 'ru' ? 'Профиль' : 'Profile'}`, callback_data: 'show_profile' },
+            { text: `🎁 ${lang === 'ru' ? 'Гифт-арбитраж' : 'Gift arbitrage'}`,        callback_data: 'quick_gift_agent' },
+            { text: `${peb('diamond')} ${lang === 'ru' ? 'Цена TON' : 'TON Price'}`,   callback_data: 'live_price' },
           ],
           [
-            { text: `${peb('robot')} ${lang === 'ru' ? 'Мои агенты' : 'My agents'}`, callback_data: 'list_agents' },
-            { text: `${peb('plugin')} ${lang === 'ru' ? 'Плагины' : 'Plugins'}`, callback_data: 'plugins_menu' },
+            { text: `👤 ${lang === 'ru' ? 'Профиль & Баланс' : 'Profile & Balance'}`, callback_data: 'show_profile' },
+            { text: `💰 ${lang === 'ru' ? 'Пополнить' : 'Top Up'}`,                    callback_data: 'topup_start' },
           ],
         ],
       },
@@ -1172,53 +1177,36 @@ bot.command('create', async (ctx) => {
 // Нижнее меню (кнопки)
 // ============================================================
 // ── Русские кнопки клавиатуры ──
-bot.hears('🤖 Мои агенты', (ctx) => showAgentsList(ctx, ctx.from.id));
-bot.hears('➕ Создать агента', (ctx) => {
-  const lang = getUserLang(ctx.from.id);
-  return safeReply(ctx,
-    `${pe('sparkles')} <b>${lang === 'ru' ? 'Создание AI-агента' : 'Create AI Agent'}</b>\n\n` +
-    `${lang === 'ru' ? 'Опишите задачу — AI создаст автономного агента с 20+ инструментами: TON, NFT, подарки, веб, аналитика.' : 'Describe your task — AI creates an autonomous agent with 20+ tools: TON, NFT, gifts, web, analytics.'}\n\n` +
-    `<b>${lang === 'ru' ? '💡 Примеры:' : '💡 Examples:'}</b>\n` +
-    `🎁 <i>"${lang === 'ru' ? 'Сканируй арбитраж подарков каждые 5 мин, уведоми если прибыль больше 15%' : 'Scan gift arbitrage every 5 min, alert if profit > 15%'}"</i>\n` +
-    `📊 <i>"${lang === 'ru' ? 'Мониторь floor TON Diamonds и Punks, сводка раз в час' : 'Monitor TON Diamonds & Punks floor, hourly summary'}"</i>\n` +
-    `🌐 <i>"${lang === 'ru' ? 'Парси новости с coindesk, дайджест каждые 30 мин' : 'Parse coindesk news, digest every 30 min'}"</i>\n` +
-    `🐋 <i>"${lang === 'ru' ? 'Следи за китами: баланс UQ... изменился на 1000+ TON — уведоми' : 'Whale watch: UQ... balance changed 1000+ TON — alert'}"</i>\n` +
-    `🔍 <i>"${lang === 'ru' ? 'Цена TON: уведоми при пробитии $5 или падении ниже $3' : 'TON price: alert on breakout $5 or drop below $3'}"</i>\n\n` +
-    `🎤 <i>${lang === 'ru' ? 'Можно голосовым сообщением!' : 'Voice messages supported!'}</i>\n\n` +
-    `${pe('finger')} <b>${lang === 'ru' ? 'Напишите или скажите задачу:' : 'Type or say your task:'}</b>`,
-    { ...getMainMenu(lang), parse_mode: 'HTML' }
-  );
-});
-bot.hears('🏪 Маркетплейс', (ctx) => showMarketplace(ctx));
-bot.hears('🔌 Плагины', (ctx) => showPlugins(ctx));
-bot.hears('⚡ Workflow', (ctx) => showWorkflows(ctx, ctx.from.id));
-bot.hears('💎 TON Connect', (ctx) => showTonConnect(ctx));
-bot.hears('💳 Подписка', (ctx) => showSubscription(ctx));
-bot.hears('📊 Статистика', (ctx) => showStats(ctx, ctx.from.id));
-bot.hears('❓ Помощь', (ctx) => showHelp(ctx));
-// ── Английские кнопки клавиатуры ──
-bot.hears('🤖 My Agents', (ctx) => showAgentsList(ctx, ctx.from.id));
-bot.hears('➕ Create Agent', (ctx) => {
-  const lang = getUserLang(ctx.from.id);
-  return safeReply(ctx,
-    `${pe('sparkles')} <b>Create Agent</b>\n\n` +
-    `Describe your task in plain words — AI will write the code and run the agent on our server.\n\n` +
-    `<b>Task examples:</b>\n` +
-    `${pe('diamond')} <i>"Check balance UQB5... every hour"</i>\n` +
-    `${pe('trending')} <i>"Monitor TON price, alert if above $5"</i>\n` +
-    `${pe('money')} <i>"Send 100 TON to UQ... on the 10th of each month"</i>\n` +
-    `${pe('globe')} <i>"Check website availability every 5 minutes"</i>\n\n` +
-    `${pe('finger')} <b>Type your task:</b>`,
-    { ...getMainMenu(lang), parse_mode: 'HTML' }
-  );
-});
-bot.hears('🏪 Marketplace', (ctx) => showMarketplace(ctx));
-bot.hears('🔌 Plugins', (ctx) => showPlugins(ctx));
-bot.hears('💎 TON Connect', (ctx) => showTonConnect(ctx));  // same
+// ── Обработчики клавиатуры (RU) ────────────────────────────────────────────
+bot.hears('🤖 Мои агенты',    (ctx) => showAgentsList(ctx, ctx.from.id));
+bot.hears('✏️ Создать агента', (ctx) => showCreatePrompt(ctx));
+bot.hears('🎁 Гифты & NFT',   (ctx) => showGiftsMenu(ctx));
+bot.hears('🏪 Маркетплейс',   (ctx) => showMarketplace(ctx));
+bot.hears('💰 Кошелёк',       (ctx) => showWalletMenu(ctx));
+bot.hears('👤 Профиль',       async (ctx) => showProfile(ctx, ctx.from.id));
+bot.hears('🔌 Плагины',       (ctx) => showPlugins(ctx));
+bot.hears('❓ Помощь',        (ctx) => showHelp(ctx));
+// Старые кнопки для совместимости (если у юзера осталась старая клавиатура)
+bot.hears('➕ Создать агента', (ctx) => showCreatePrompt(ctx));
+bot.hears('💎 TON Connect',   (ctx) => showTonConnect(ctx));
+bot.hears('💳 Подписка',      (ctx) => showSubscription(ctx));
+bot.hears('📊 Статистика',    (ctx) => showStats(ctx, ctx.from.id));
+bot.hears('⚡ Workflow',      (ctx) => showWorkflows(ctx, ctx.from.id));
+
+// ── Обработчики клавиатуры (EN) ────────────────────────────────────────────
+bot.hears('🤖 My Agents',    (ctx) => showAgentsList(ctx, ctx.from.id));
+bot.hears('✏️ Create Agent', (ctx) => showCreatePrompt(ctx));
+bot.hears('🎁 Gifts & NFT',  (ctx) => showGiftsMenu(ctx));
+bot.hears('🏪 Marketplace',  (ctx) => showMarketplace(ctx));
+bot.hears('💰 Wallet',       (ctx) => showWalletMenu(ctx));
+bot.hears('👤 Profile',      async (ctx) => showProfile(ctx, ctx.from.id));
+bot.hears('🔌 Plugins',      (ctx) => showPlugins(ctx));
+bot.hears('❓ Help',         (ctx) => showHelp(ctx));
+// Старые EN для совместимости
+bot.hears('➕ Create Agent', (ctx) => showCreatePrompt(ctx));
+bot.hears('💎 TON Connect',  (ctx) => showTonConnect(ctx));
 bot.hears('💳 Subscription', (ctx) => showSubscription(ctx));
-bot.hears('📊 Stats', (ctx) => showStats(ctx, ctx.from.id));
-bot.hears('❓ Help', (ctx) => showHelp(ctx));
-bot.hears('👤 Profile', async (ctx) => showProfile(ctx, ctx.from.id));
+bot.hears('📊 Stats',        (ctx) => showStats(ctx, ctx.from.id));
 // ── Выбор языка (callback при первом /start) ──
 bot.action(/^setlang_(ru|en)$/, async (ctx) => {
   await ctx.answerCbQuery();
@@ -1247,8 +1235,113 @@ bot.action(/^setlang_(ru|en)$/, async (ctx) => {
   await showWelcome(ctx as any, userId, name, lang);
 });
 
+// ── showCreatePrompt — экран создания агента ────────────────────────────────
+function showCreatePrompt(ctx: Context) {
+  const lang = getUserLang(ctx.from!.id);
+  const ru = lang === 'ru';
+  return safeReply(ctx,
+    `${pe('sparkles')} <b>${ru ? 'Создание AI-агента' : 'Create AI Agent'}</b>\n\n` +
+    `${ru
+      ? 'Опишите задачу — AI создаст автономного агента с 20+ инструментами:\nTON, NFT, подарки, веб-поиск, аналитика.'
+      : 'Describe your task — AI creates an autonomous agent with 20+ tools:\nTON, NFT, gifts, web search, analytics.'
+    }\n\n` +
+    `<b>${ru ? '💡 Примеры:' : '💡 Examples:'}</b>\n` +
+    `🎁 <i>"${ru ? 'Скан арбитраж подарков каждые 5 мин, профит > 15% — уведоми' : 'Scan gift arbitrage every 5 min, profit > 15% — alert'}"</i>\n` +
+    `📊 <i>"${ru ? 'Мониторь floor TON Diamonds, сводка раз в час' : 'Monitor TON Diamonds floor price, hourly summary'}"</i>\n` +
+    `🌐 <i>"${ru ? 'Парси новости coindesk, дайджест каждые 30 мин' : 'Parse coindesk news, digest every 30 min'}"</i>\n` +
+    `💰 <i>"${ru ? 'Слежу за кошельком UQ..., изменение 1000+ TON — уведоми' : 'Track wallet UQ..., balance change 1000+ TON — alert'}"</i>\n` +
+    `🎤 <i>${ru ? '(можно голосовым сообщением!)' : '(voice messages supported!)'}</i>\n\n` +
+    `${pe('finger')} <b>${ru ? 'Напишите или скажите задачу:' : 'Type or say your task:'}</b>`,
+    {
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: `📚 ${ru ? 'Шаблоны' : 'Templates'}`, callback_data: 'marketplace' },
+            { text: `🎁 ${ru ? 'Гифт-арбитраж' : 'Gift arbitrage'}`, callback_data: 'quick_gift_agent' },
+          ],
+        ],
+      },
+    }
+  );
+}
+
+// ── showGiftsMenu — раздел гифтов ─────────────────────────────────────────
+async function showGiftsMenu(ctx: Context) {
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  const text =
+    `🎁 <b>${ru ? 'Гифты & NFT' : 'Gifts & NFT'}</b>\n\n` +
+    `${ru
+      ? 'Торговля уникальными подарками Telegram.\n\nЖизненный цикл:\n<b>Обычный подарок</b> → <b>Апгрейд за Stars ⭐</b> → <b>Уникальный NFT (с номером #)</b>\n\nЦена зависит от:\n• 🖤 Фон (чёрный = дороже всего)\n• 📦 Модель (редкость в %)\n• 🔢 Номер выпуска (#1 самый дорогой)'
+      : 'Trade unique Telegram gifts.\n\nLifecycle:\n<b>Regular gift</b> → <b>Upgrade with Stars ⭐</b> → <b>Unique NFT (with edition #)</b>\n\nPrice depends on:\n• 🖤 Background (black = most valuable)\n• 📦 Model (rarity %)\n• 🔢 Edition number (#1 most expensive)'
+    }`;
+
+  const kb = [
+    [
+      { text: `📊 ${ru ? 'Арбитраж сейчас' : 'Arbitrage now'}`,       callback_data: 'gifts_arbitrage' },
+      { text: `📋 ${ru ? 'Каталог подарков' : 'Gift catalog'}`,       callback_data: 'gifts_catalog' },
+    ],
+    [
+      { text: `🔍 ${ru ? 'Анализ подарка' : 'Analyze gift'}`,         callback_data: 'gifts_analyze' },
+      { text: `⭐ ${ru ? 'Баланс Stars' : 'Stars balance'}`,          callback_data: 'gifts_stars_balance' },
+    ],
+    [
+      { text: `🤖 ${ru ? 'Создать арбитраж-агента' : 'Create arb agent'}`, callback_data: 'quick_gift_agent' },
+      { text: `💎 ${ru ? 'Fragment листинги' : 'Fragment listings'}`, callback_data: 'gifts_fragment' },
+    ],
+    [
+      { text: `📈 ${ru ? 'GiftAsset цены' : 'GiftAsset prices'}`,    callback_data: 'gifts_giftasset' },
+      { text: `🔐 ${ru ? 'Telegram Userbot' : 'Userbot (market)'}`, callback_data: 'gifts_userbot' },
+    ],
+  ];
+
+  await safeReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } });
+}
+
+// ── showWalletMenu — раздел кошелька ────────────────────────────────────────
+async function showWalletMenu(ctx: Context) {
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  const profile = await getUserProfile(userId);
+  const tonConn = getTonConnectManager();
+  const hasWallet = tonConn.isConnected(userId);
+  let walletLine = '';
+  if (hasWallet) {
+    const w = tonConn.getWallet(userId);
+    walletLine = `\n💎 <b>TON Connect:</b> <code>${escHtml((w?.friendlyAddress || '').slice(0, 16))}…</code>`;
+  }
+
+  const text =
+    `💰 <b>${ru ? 'Кошелёк' : 'Wallet'}</b>\n\n` +
+    `${pe('coin')} <b>${ru ? 'Баланс платформы:' : 'Platform balance:'}</b> <b>${(profile.balance_ton || 0).toFixed(3)} TON</b>\n` +
+    `${pe('trending')} <b>${ru ? 'Заработано всего:' : 'Total earned:'}</b> ${(profile.total_earned || 0).toFixed(2)} TON${walletLine}\n\n` +
+    `${ru
+      ? '📥 Пополни баланс → используй для подписки, генерации агентов, покупок на маркетплейсе.\n📤 Вывести TON на любой кошелёк.'
+      : '📥 Top up balance → use for subscriptions, agent generation, marketplace purchases.\n📤 Withdraw TON to any wallet.'
+    }`;
+
+  const kb = [
+    [
+      { text: `💳 ${ru ? 'Пополнить' : 'Top Up'}`,   callback_data: 'topup_start' },
+      { text: `💸 ${ru ? 'Вывести' : 'Withdraw'}`,   callback_data: 'withdraw_start' },
+    ],
+    [
+      { text: `📊 ${ru ? 'История транзакций' : 'Transaction history'}`, callback_data: 'wallet_history' },
+    ],
+    [
+      { text: `💎 ${ru ? 'TON Connect' : 'TON Connect'}`, callback_data: 'show_tonconnect' },
+      { text: `💳 ${ru ? 'Подписка' : 'Subscription'}`,  callback_data: 'show_sub' },
+    ],
+    [
+      { text: `🔗 ${ru ? 'Привязать кошелёк' : 'Link wallet'}`, callback_data: 'profile_link_wallet' },
+    ],
+  ];
+
+  await safeReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } });
+}
+
 // ── Профиль пользователя ──
-bot.hears('👤 Профиль', async (ctx) => showProfile(ctx, ctx.from.id));
 bot.command('profile', async (ctx) => showProfile(ctx, ctx.from.id));
 
 async function showProfile(ctx: Context, userId: number) {
@@ -1329,31 +1422,184 @@ async function showProfile(ctx: Context, userId: number) {
     achievements.forEach(a => { text += `${a}\n`; });
   }
 
+  const ru3 = lang === 'ru';
   await safeReply(ctx, text, {
     parse_mode: 'HTML',
     reply_markup: {
       inline_keyboard: [
+        // Wallet section
         [
-          { text: lang === 'ru' ? '💳 Пополнить' : '💳 Top Up', callback_data: 'topup_start' },
-          { text: `${peb('money')} ${lang === 'ru' ? 'Вывести' : 'Withdraw'}`, callback_data: 'withdraw_start' },
-          { text: `${peb('link')} ${lang === 'ru' ? 'Привязать кошелёк' : 'Link wallet'}`, callback_data: 'profile_link_wallet' },
+          { text: `💳 ${ru3 ? 'Пополнить' : 'Top Up'}`, callback_data: 'topup_start' },
+          { text: `💸 ${ru3 ? 'Вывести' : 'Withdraw'}`, callback_data: 'withdraw_start' },
         ],
         [
-          { text: `${peb('card')} ${lang === 'ru' ? 'Подписка' : 'Subscription'}`, callback_data: 'show_sub' },
-          { text: `🔑 ${lang === 'ru' ? 'API ключи' : 'API Keys'}`, callback_data: 'profile_api_keys' },
+          { text: `📊 ${ru3 ? 'История транзакций' : 'Tx History'}`, callback_data: 'wallet_history' },
+        ],
+        // Account section
+        [
+          { text: `${peb('card')} ${ru3 ? 'Подписка' : 'Subscription'}`, callback_data: 'show_sub' },
+          { text: `🔑 ${ru3 ? 'API ключи' : 'API Keys'}`, callback_data: 'profile_api_keys' },
         ],
         [
-          { text: `${peb('robot')} ${lang === 'ru' ? 'Мои агенты' : 'My agents'}`, callback_data: 'list_agents' },
-          { text: `${peb('globe')} ${lang === 'ru' ? 'Язык' : 'Lang'}`, callback_data: 'profile_change_lang' },
+          { text: `${peb('globe')} ${ru3 ? 'Язык' : 'Lang'}`, callback_data: 'profile_change_lang' },
+          { text: `🔗 ${ru3 ? 'Привязать кошелёк' : 'Link wallet'}`, callback_data: 'profile_link_wallet' },
         ],
+        // Navigation
         [
-          { text: `${peb('store')} ${lang === 'ru' ? 'Маркетплейс' : 'Marketplace'}`, callback_data: 'marketplace' },
+          { text: `🤖 ${ru3 ? 'Мои агенты' : 'My agents'}`, callback_data: 'list_agents' },
+          { text: `💰 ${ru3 ? 'Кошелёк' : 'Wallet'}`, callback_data: 'show_wallet_menu' },
         ],
       ],
     },
   });
 }
 
+
+// ── Gifts menu callbacks ──────────────────────────────────────────────────
+bot.action('gifts_arbitrage', async (ctx) => {
+  await ctx.answerCbQuery('🔄 Ищу арбитраж...');
+  const ru = getUserLang(ctx.from!.id) === 'ru';
+  const giftsService = getTelegramGiftsService();
+  try {
+    const opps = await giftsService.scanArbitrageOpportunities({ maxPriceStars: 10000, minProfitPercent: 10 });
+    if (!opps || opps.length === 0) {
+      await ctx.reply(ru ? '📊 Арбитражных возможностей сейчас нет (проверить через 5 мин).' : '📊 No arbitrage opportunities right now (check in 5 min).', {
+        reply_markup: { inline_keyboard: [[{ text: '🔄 Обновить', callback_data: 'gifts_arbitrage' }, { text: '⬅️ Назад', callback_data: 'gifts_menu' }]] },
+      });
+    } else {
+      const top = opps.slice(0, 5).map((o: any) => `🎁 <b>${escHtml(o.giftName || o.slug)}</b>: ${o.buyPrice}⭐ → ${o.sellTon || o.sellPrice} TON (${o.profitPercent}%)`).join('\n');
+      await safeReply(ctx, `🔥 <b>${ru ? 'Арбитраж подарков' : 'Gift Arbitrage'}</b>\n\n${top}`, {
+        parse_mode: 'HTML',
+        reply_markup: { inline_keyboard: [[{ text: `🤖 ${ru ? 'Создать агента' : 'Create agent'}`, callback_data: 'quick_gift_agent' }, { text: '🔄 Обновить', callback_data: 'gifts_arbitrage' }]] },
+      });
+    }
+  } catch (e: any) {
+    await ctx.reply(`❌ ${e.message}`);
+  }
+});
+
+bot.action('gifts_catalog', async (ctx) => {
+  await ctx.answerCbQuery();
+  const giftsService = getTelegramGiftsService();
+  const catalog = await giftsService.getAvailableGifts();
+  const top10 = catalog.slice(0, 10).map((g: any) => `• ${escHtml(g.name || g.slug)}: ${g.starsPrice}⭐`).join('\n');
+  await safeReply(ctx, `📋 <b>Каталог подарков (${catalog.length} шт.)</b>\n\n${top10}\n\n<i>Это pre-market подарки. Апгрейд за Stars → уникальный NFT.</i>`, {
+    parse_mode: 'HTML',
+    reply_markup: { inline_keyboard: [[{ text: '⬅️ Назад', callback_data: 'gifts_menu' }]] },
+  });
+});
+
+bot.action('gifts_stars_balance', async (ctx) => {
+  await ctx.answerCbQuery();
+  const isAuth = await isAuthorized().catch(() => false);
+  if (!isAuth) {
+    await ctx.reply('❌ Для просмотра баланса Stars нужна авторизация Telegram.\nИспользуйте /tglogin', {
+      reply_markup: { inline_keyboard: [[{ text: '🔑 /tglogin', callback_data: 'tg_login_start' }]] },
+    });
+    return;
+  }
+  const bal = await getTelegramGiftsService().getStarsBalance();
+  await ctx.reply(`⭐ <b>Баланс Stars:</b> ${JSON.stringify(bal)}`, { parse_mode: 'HTML' });
+});
+
+bot.action('gifts_analyze', async (ctx) => {
+  await ctx.answerCbQuery();
+  const ru = getUserLang(ctx.from!.id) === 'ru';
+  await ctx.reply(ru
+    ? '🔍 Введите slug подарка для анализа (например: <code>homemade-cake</code>, <code>jelly-bunny</code>).\n\nОтправьте название подарка:'
+    : '🔍 Enter gift slug for analysis (e.g. <code>homemade-cake</code>, <code>jelly-bunny</code>).\n\nSend gift name:',
+    { parse_mode: 'HTML' }
+  );
+  // Route next text message as gift analyze request
+  // (handled by general orchestrator which understands gift analysis context)
+});
+
+bot.action('gifts_fragment', async (ctx) => {
+  await ctx.answerCbQuery();
+  const ru = getUserLang(ctx.from!.id) === 'ru';
+  await ctx.reply(ru
+    ? '💎 <b>Fragment листинги</b>\n\nВведите slug подарка (например: <code>homemade-cake</code>):'
+    : '💎 <b>Fragment listings</b>\n\nEnter gift slug (e.g. <code>homemade-cake</code>):',
+    { parse_mode: 'HTML' }
+  );
+});
+
+bot.action('gifts_giftasset', async (ctx) => {
+  await ctx.answerCbQuery('⏳ Loading...');
+  const ru = getUserLang(ctx.from!.id) === 'ru';
+  await ctx.reply(ru
+    ? '📈 <b>GiftAsset цены</b>\n\nВведите slug подарка для получения реальных цен по всем маркетплейсам (например: <code>homemade-cake</code>):'
+    : '📈 <b>GiftAsset prices</b>\n\nEnter gift slug to get real prices across all marketplaces (e.g. <code>homemade-cake</code>):',
+    { parse_mode: 'HTML' }
+  );
+});
+
+bot.action('gifts_userbot', async (ctx) => {
+  await ctx.answerCbQuery();
+  const ru = getUserLang(ctx.from!.id) === 'ru';
+  const isAuth = await isAuthorized().catch(() => false);
+  const text = isAuth
+    ? (ru
+        ? '✅ <b>Telegram Userbot активен</b>\n\nЮзербот авторизован и готов к работе.\nАгенты могут:\n• Покупать/продавать подарки за Stars\n• Управлять каналами\n• Читать и отправлять сообщения\n• Участвовать в обсуждениях'
+        : '✅ <b>Telegram Userbot active</b>\n\nUserbot authorized and ready.\nAgents can:\n• Buy/sell gifts for Stars\n• Manage channels\n• Read and send messages\n• Join discussions')
+    : (ru
+        ? '🔐 <b>Авторизация Telegram</b>\n\nДля работы с Telegram-рынком подарков нужен userbot.\n\nНажмите /tglogin для авторизации.'
+        : '🔐 <b>Telegram Authorization</b>\n\nTo trade on Telegram gift market, you need a userbot.\n\nUse /tglogin to authorize.');
+
+  await safeReply(ctx, text, {
+    parse_mode: 'HTML',
+    reply_markup: { inline_keyboard: [
+      isAuth ? [] : [{ text: '🔑 Авторизоваться', callback_data: 'tg_login_start' }],
+      [{ text: '⬅️ Назад', callback_data: 'gifts_menu' }],
+    ].filter(r => r.length > 0) },
+  });
+});
+
+bot.action('gifts_menu', async (ctx) => { await ctx.answerCbQuery(); await showGiftsMenu(ctx); });
+
+bot.action('quick_gift_agent', async (ctx) => {
+  await ctx.answerCbQuery();
+  const ru = getUserLang(ctx.from!.id) === 'ru';
+  // Auto-trigger creation with gift arbitrage description
+  const desc = ru
+    ? 'Сканируй арбитражные возможности в Telegram подарках каждые 5 минут. Используй GiftAsset API для получения реальных цен. Если находишь подарок где разница цен > 10%, отправь уведомление с деталями: название подарка, где купить, где продать, потенциальная прибыль. Следи за чёрными фонами — они самые ценные.'
+    : 'Scan Telegram gift arbitrage opportunities every 5 minutes. Use GiftAsset API for real prices. If you find a gift with price difference > 10%, send notification with details: gift name, where to buy, where to sell, potential profit. Watch for black backgrounds — they are most valuable.';
+  await ctx.reply(ru ? `🚀 Создаю арбитраж-агента...\n\n<i>${escHtml(desc.slice(0, 200))}...</i>` : `🚀 Creating arbitrage agent...\n\n<i>${escHtml(desc.slice(0, 200))}...</i>`, { parse_mode: 'HTML' });
+  // Route to orchestrator
+  const result = await getOrchestrator().processMessage(ctx.from!.id, desc);
+  await sendResult(ctx, result);
+});
+
+// ── Wallet menu callbacks ──────────────────────────────────────────────────
+bot.action('wallet_history', async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  try {
+    const txs = await getBalanceTxRepository().getHistory(userId, 10, 0);
+    if (!txs || txs.length === 0) {
+      await ctx.reply(ru ? '📊 История транзакций пуста.' : '📊 No transactions yet.');
+      return;
+    }
+    const lines = txs.map((t: any) => {
+      const sign = Number(t.amount_ton) >= 0 ? '+' : '';
+      const icon = t.type === 'topup' ? '💳' : t.type === 'withdraw' ? '💸' : t.type === 'spend' ? '🔴' : t.type === 'earn' ? '🟢' : '⚪';
+      const date = new Date(t.created_at).toLocaleDateString('ru-RU');
+      return `${icon} ${sign}${Number(t.amount_ton).toFixed(3)} TON · ${escHtml(t.description || t.type)} · ${date}`;
+    }).join('\n');
+    const profile = await getUserProfile(userId);
+    await safeReply(ctx,
+      `📊 <b>${ru ? 'История транзакций' : 'Transaction History'}</b>\n\n${lines}\n\n💰 ${ru ? 'Баланс:' : 'Balance:'} <b>${(profile.balance_ton || 0).toFixed(3)} TON</b>`,
+      { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '⬅️ Кошелёк', callback_data: 'back_wallet' }]] } }
+    );
+  } catch (e: any) {
+    await ctx.reply('❌ ' + e.message);
+  }
+});
+
+bot.action('show_tonconnect',  async (ctx) => { await ctx.answerCbQuery(); await showTonConnect(ctx); });
+bot.action('back_wallet',      async (ctx) => { await ctx.answerCbQuery(); await showWalletMenu(ctx); });
+bot.action('show_wallet_menu', async (ctx) => { await ctx.answerCbQuery(); await showWalletMenu(ctx); });
 
 // ── Пополнение баланса ───────────────────────
 const pendingTopup = new Map<number, { startTs: number; amountTon?: number }>();
@@ -4452,69 +4698,82 @@ async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
       (hasError ? `\n⚠️ <b>${lang === 'ru' ? 'Последняя ошибка:' : 'Last error:'}</b>\n<code>${escHtml(lastErr!.error.slice(0, 120))}</code>` : '') +
       (desc ? `\n<i>${desc}</i>` : '');
 
-    const keyboard: any[][] = [
-      [
-        { text: a.isActive ? `⏸ ${lang === 'ru' ? 'Остановить' : 'Stop'}` : `${peb('rocket')} ${lang === 'ru' ? 'Запустить' : 'Start'}`, callback_data: `run_agent:${agentId}` },
-        { text: `${peb('clipboard')} ${lang === 'ru' ? 'Логи' : 'Logs'}`, callback_data: `show_logs:${agentId}` },
-      ],
-    ];
+    // ── Keyboard: logical sections ───────────────────────────────────────────
+    const ru2 = lang === 'ru';
+    const keyboard: any[][] = [];
 
-    if (hasError) {
-      keyboard.push([{ text: `${peb('wrench')} AI ${lang === 'ru' ? 'Автопочинка' : 'Auto-repair'}`, callback_data: `auto_repair:${agentId}` }]);
-    }
-
+    // Section 1 — Primary actions
     keyboard.push([
-      { text: `👁 ${lang === 'ru' ? 'Код' : 'Code'}`, callback_data: `show_code:${agentId}` },
-      { text: `🔍 ${lang === 'ru' ? 'Аудит' : 'Audit'}`, callback_data: `audit_agent:${agentId}` },
-    ]);
-    keyboard.push([
-      { text: `✏️ ${lang === 'ru' ? 'Изменить' : 'Edit'}`, callback_data: `edit_agent:${agentId}` },
-      { text: `🏷 ${lang === 'ru' ? 'Переименовать' : 'Rename'}`, callback_data: `rename_agent:${agentId}` },
+      { text: a.isActive ? `⏸ ${ru2 ? 'Остановить' : 'Stop'}` : `▶️ ${ru2 ? 'Запустить' : 'Start'}`, callback_data: `run_agent:${agentId}` },
+      { text: `💬 ${ru2 ? 'Чат' : 'Chat'}`, callback_data: `agent_chat:${agentId}` },
     ]);
 
-    // Кнопка настроек AI — показывает провайдер, ключ, модель
+    // Section 2 — Monitoring: Logs + Code
+    keyboard.push([
+      { text: `📋 ${ru2 ? 'Логи' : 'Logs'}`, callback_data: `show_logs:${agentId}` },
+      { text: `👁 ${ru2 ? 'Код/Промпт' : 'Code/Prompt'}`, callback_data: `show_code:${agentId}` },
+    ]);
+
+    // Section 3 — Edit: Edit prompt + Rename
+    keyboard.push([
+      { text: `✏️ ${ru2 ? 'Изменить' : 'Edit'}`, callback_data: `edit_agent:${agentId}` },
+      { text: `🏷 ${ru2 ? 'Переименовать' : 'Rename'}`, callback_data: `rename_agent:${agentId}` },
+    ]);
+
+    // Section 4 — AI settings (only for ai_agent): provider, key, model
     if (a.triggerType === 'ai_agent') {
-      keyboard.push([{ text: `⚙️ ${lang === 'ru' ? 'Настройки AI' : 'AI Settings'}`, callback_data: `agent_settings:${agentId}` }]);
+      keyboard.push([
+        { text: `⚙️ ${ru2 ? 'Настройки AI' : 'AI Settings'}`, callback_data: `agent_settings:${agentId}` },
+        { text: `🔍 ${ru2 ? 'Аудит' : 'Audit'}`, callback_data: `audit_agent:${agentId}` },
+      ]);
+    } else {
+      keyboard.push([
+        { text: `🔍 ${ru2 ? 'Аудит' : 'Audit'}`, callback_data: `audit_agent:${agentId}` },
+      ]);
     }
 
-    // Кнопка чата — для всех агентов (ai_agent отвечает на тике, остальные — через universal AI chat)
-    keyboard.push([{ text: `💬 ${lang === 'ru' ? 'Чат с агентом' : 'Chat with agent'}`, callback_data: `agent_chat:${agentId}` }]);
-
-    // Кнопка "Развернуть как юзербот" — для всех типов агентов
-    // VM2 агенты имеют telegram.* sandbox, AI агенты имеют tg_* tools
-    keyboard.push([{ text: `🧑‍💻 ${lang === 'ru' ? 'Telegram Userbot' : 'Deploy as Userbot'}`, callback_data: `deploy_userbot:${agentId}` }]);
-
-    // Кнопка межагентной коммуникации
-    try {
-      const iaState = await getAgentStateRepository().get(agentId, 'inter_agent_enabled');
-      const iaEnabled = iaState && iaState.value === 'true';
-      keyboard.push([{
-        text: iaEnabled
-          ? `🔗 ${lang === 'ru' ? 'Межагент: ВКЛ ✅' : 'Inter-agent: ON ✅'}`
-          : `🔗 ${lang === 'ru' ? 'Межагент: ВЫКЛ' : 'Inter-agent: OFF'}`,
-        callback_data: `toggle_inter_agent:${agentId}`,
-      }]);
-    } catch (_) { /* ignore */ }
-
-    // Кнопка кошелька — всегда для ai_agent (создастся при первом запуске)
+    // Section 5 — Wallet (only for ai_agent)
     if (a.triggerType === 'ai_agent') {
       try {
         const stateRows = await getAgentStateRepository().getAll(agentId);
         const walletRow = stateRows.find(r => r.key === 'wallet_address');
         keyboard.push([{
           text: walletRow
-            ? `💼 ${lang === 'ru' ? 'Кошелёк агента' : 'Agent Wallet'}`
-            : `💼 ${lang === 'ru' ? 'Создать кошелёк' : 'Create Wallet'}`,
+            ? `💼 ${ru2 ? 'Кошелёк агента' : 'Agent Wallet'}`
+            : `💼 ${ru2 ? '+ Создать кошелёк' : '+ Create Wallet'}`,
           callback_data: `agent_wallet:${agentId}`,
         }]);
       } catch (_) {
-        keyboard.push([{ text: `💼 ${lang === 'ru' ? 'Кошелёк агента' : 'Agent Wallet'}`, callback_data: `agent_wallet:${agentId}` }]);
+        keyboard.push([{ text: `💼 ${ru2 ? 'Кошелёк агента' : 'Agent Wallet'}`, callback_data: `agent_wallet:${agentId}` }]);
       }
     }
 
+    // Section 6 — Advanced: Inter-agent + Userbot (one row)
+    try {
+      const iaState = await getAgentStateRepository().get(agentId, 'inter_agent_enabled');
+      const iaEnabled = iaState && iaState.value === 'true';
+      keyboard.push([
+        {
+          text: iaEnabled
+            ? `🔗 ${ru2 ? 'Межагент ✅' : 'Inter-agent ✅'}`
+            : `🔗 ${ru2 ? 'Межагент' : 'Inter-agent'}`,
+          callback_data: `toggle_inter_agent:${agentId}`,
+        },
+        { text: `🧑‍💻 Userbot`, callback_data: `deploy_userbot:${agentId}` },
+      ]);
+    } catch (_) {
+      keyboard.push([{ text: `🧑‍💻 Userbot`, callback_data: `deploy_userbot:${agentId}` }]);
+    }
+
+    // Section 7 — Auto-repair (only when error detected)
+    if (hasError) {
+      keyboard.push([{ text: `🔧 ${ru2 ? 'AI Автопочинка' : 'AI Auto-repair'}`, callback_data: `auto_repair:${agentId}` }]);
+    }
+
+    // Section 8 — Bottom: Delete + Back
     keyboard.push([
-      { text: `🗑 ${lang === 'ru' ? 'Удалить' : 'Delete'}`, callback_data: `delete_agent:${agentId}` },
-      { text: `${peb('back')} ${lang === 'ru' ? 'Все агенты' : 'All agents'}`, callback_data: 'list_agents' },
+      { text: `🗑 ${ru2 ? 'Удалить' : 'Delete'}`, callback_data: `delete_agent:${agentId}` },
+      { text: `◀️ ${ru2 ? 'Все агенты' : 'All agents'}`, callback_data: 'list_agents' },
     ]);
 
     await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } });

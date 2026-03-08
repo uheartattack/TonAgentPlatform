@@ -8,22 +8,51 @@ import {
   getAgentLogsRepository,
   getExecutionHistoryRepository,
 } from '../../db/schema-extensions';
+import { isAuthorized } from '../../fragment-service';
+import { buildUserbotSandbox } from '../../services/telegram-userbot';
 
-// ── Sanitizer: fix literal newlines inside string literals ──────────────────
-// AI code generators sometimes emit actual \n characters inside quoted strings
-// instead of the escape sequence \\n, causing SyntaxError "Unterminated string".
+// ── Sanitizer: fix common AI code generation issues ──────────────────────────
+// 1. Fixes literal newlines inside string literals (SyntaxError "Unterminated string")
+// 2. Fixes invalid escape sequences like \" inside single-quoted strings
+//    (SyntaxError "Expecting Unicode escape sequence \uXXXX")
+// 3. Fixes literal \n sequences (\\n in source) that should be escape sequences
 function fixLiteralNewlinesInStrings(code: string): string {
   let result = '';
   let i = 0;
   while (i < code.length) {
     const ch = code[i];
-    if (ch === "'" || ch === '"') {
-      const quote = ch;
+    if (ch === "'") {
+      // Single-quoted string: fix literal newlines AND invalid escape sequences
+      result += ch; i++;
+      while (i < code.length) {
+        const c = code[i];
+        if (c === '\\') {
+          const next = code[i + 1] || '';
+          // Valid JS escape sequences in single-quoted strings:
+          // \n \r \t \\ \' \0 \b \f \v \uXXXX \xXX
+          const validEscapes = new Set(['n', 'r', 't', '\\', "'", '0', 'b', 'f', 'v', 'u', 'x', '\n', '\r']);
+          if (validEscapes.has(next)) {
+            result += c + next; i += 2;
+          } else if (next === '"') {
+            // \" inside single-quoted string is invalid — just use "
+            result += '"'; i += 2;
+          } else {
+            // Unknown escape — just output the character without backslash
+            result += next; i += 2;
+          }
+        }
+        else if (c === "'") { result += c; i++; break; }
+        else if (c === '\n') { result += '\\n'; i++; }
+        else if (c === '\r') { i++; }
+        else { result += c; i++; }
+      }
+    } else if (ch === '"') {
+      // Double-quoted string
       result += ch; i++;
       while (i < code.length) {
         const c = code[i];
         if (c === '\\') { result += c + (code[i + 1] || ''); i += 2; }
-        else if (c === quote) { result += c; i++; break; }
+        else if (c === '"') { result += c; i++; break; }
         else if (c === '\n') { result += '\\n'; i++; }
         else if (c === '\r') { i++; }
         else { result += c; i++; }
@@ -310,33 +339,22 @@ export class ExecutionTools {
 
           // ── getTonBalance(address) — helper: баланс TON в TON (не нанотонах) ──
           getTonBalance: async (address: string): Promise<number> => {
-            // Валидация формата TON-адреса перед запросом
             if (!address || typeof address !== 'string') {
               throw new Error('getTonBalance: адрес не передан');
             }
             const cleaned = address.trim();
-            if (!/^[EUk][Qq][0-9A-Za-z_-]{46}$/.test(cleaned)) {
-              throw new Error(
-                `getTonBalance: некорректный адрес "${cleaned}" ` +
-                `(длина ${cleaned.length}, ожидается 48 символов EQ.../UQ... в base64url). ` +
-                `Проверьте: в адресе могут пропускаться символы _ или -`
+            const apiKey = process.env.TONAPI_KEY || '';
+            try {
+              const res = await nativeFetch(
+                `https://tonapi.io/v2/accounts/${encodeURIComponent(cleaned)}`,
+                { headers: apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {} }
               );
+              if (!res.ok) throw new Error(`TonAPI ${res.status}`);
+              const data = await res.json() as any;
+              return data.balance ? Number(data.balance) / 1e9 : 0;
+            } catch (e: any) {
+              throw new Error(`getTonBalance: ${e.message}`);
             }
-            const res = await nativeFetch(
-              `https://toncenter.com/api/v2/getAddressBalance?address=${encodeURIComponent(cleaned)}`
-            );
-            if (!res.ok) {
-              if (res.status === 422) {
-                throw new Error(
-                  `TonCenter 422: адрес "${cleaned}" не прошёл валидацию сервера. ` +
-                  `Убедитесь что адрес скопирован полностью (включая _ и -)`
-                );
-              }
-              throw new Error(`TonCenter ${res.status}`);
-            }
-            const data = await res.json() as any;
-            if (!data.ok) throw new Error(`TonCenter error: ${data.error}`);
-            return parseInt(data.result || '0', 10) / 1e9;
           },
 
           // ── getPrice(symbol) — helper: цена в USD ──
@@ -348,6 +366,179 @@ export class ExecutionTools {
             if (!res.ok) throw new Error(`CoinGecko ${res.status}`);
             const data = await res.json() as any;
             return data[id]?.usd ?? 0;
+          },
+
+          // ── searchNFTCollection(name) — найти NFT коллекцию по имени ──
+          // Возвращает { address, name, floorTon, items } или null если не найдено
+          searchNFTCollection: async (name: string): Promise<{ address: string; name: string; floorTon: number; items: number } | null> => {
+            const nameLower = name.toLowerCase().trim();
+            const slug = nameLower.replace(/[^a-z0-9]/g, '');
+
+            // Метод 1: GetGems GraphQL (работает с правильными заголовками)
+            try {
+              const gqlBody = JSON.stringify({
+                query: `{ alphaNftCollectionSearch(query: "${name.replace(/['"\\]/g, '')}", count: 3) { items { address name floorPrice approximateItemsCount } } }`
+              });
+              const resp = await nativeFetch('https://api.getgems.io/graphql', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json',
+                  'Origin': 'https://getgems.io',
+                  'Referer': 'https://getgems.io/',
+                  'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                },
+                body: gqlBody,
+              });
+              if (resp.ok) {
+                const data = await resp.json() as any;
+                const items = data?.data?.alphaNftCollectionSearch?.items || [];
+                if (items.length > 0) {
+                  const col = items[0];
+                  return {
+                    address: col.address,
+                    name: col.name || name,
+                    floorTon: col.floorPrice ? parseInt(col.floorPrice) / 1e9 : 0,
+                    items: col.approximateItemsCount || 0,
+                  };
+                }
+              }
+            } catch {}
+
+            // Метод 2: Fragment Telegram Gifts — для коллекций типа "Cupid Charm", "Lol Pop" и т.д.
+            // Slug = имя без пробелов/спецсимволов в нижнем регистре
+            // Адрес получаем через TonAPI поиск по raw_collection_content
+            try {
+              // Проверяем что Fragment знает эту коллекцию
+              const fragResp = await nativeFetch(
+                `https://nft.fragment.com/collection/${slug}.json`,
+                { headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0' } }
+              );
+              if (fragResp.ok) {
+                const fragMeta = await fragResp.json() as any;
+                if (fragMeta?.name) {
+                  // Fragment знает коллекцию — ищем адрес через TonAPI
+                  // raw_collection_content содержит URL метаданных в hex
+                  // Ищем hex-encoded строку с slug
+                  const slugHex = Buffer.from(slug).toString('hex');
+                  for (let offset = 0; offset < 500; offset += 100) {
+                    const resp = await nativeFetch(
+                      `https://tonapi.io/v2/nfts/collections?limit=100&offset=${offset}`,
+                      { headers: { 'Accept': 'application/json' } }
+                    );
+                    if (!resp.ok) break;
+                    const data = await resp.json() as any;
+                    const cols: any[] = data?.nft_collections || [];
+                    if (cols.length === 0) break;
+                    const found = cols.find((c: any) =>
+                      (c?.raw_collection_content || '').includes(slugHex)
+                    );
+                    if (found) {
+                      return {
+                        address: found.address,
+                        name: fragMeta.name || name,
+                        floorTon: 0,
+                        items: found.next_item_index || 0,
+                      };
+                    }
+                  }
+                }
+              }
+            } catch {}
+
+            // Метод 3: TonAPI — поиск по имени в metadata
+            try {
+              for (let offset = 0; offset < 300; offset += 100) {
+                const resp = await nativeFetch(
+                  `https://tonapi.io/v2/nfts/collections?limit=100&offset=${offset}`,
+                  { headers: { 'Accept': 'application/json' } }
+                );
+                if (!resp.ok) break;
+                const data = await resp.json() as any;
+                const cols: any[] = data?.nft_collections || [];
+                if (cols.length === 0) break;
+                const found = cols.find((c: any) => {
+                  const colName = (c?.metadata?.name || '').toLowerCase();
+                  return colName.includes(nameLower) || nameLower.includes(colName);
+                });
+                if (found) {
+                  return {
+                    address: found.address,
+                    name: found?.metadata?.name || name,
+                    floorTon: 0,
+                    items: found.next_item_index || 0,
+                  };
+                }
+              }
+            } catch {}
+
+            return null;
+          },
+
+          // ── getNFTFloorPrice(address) — floor price коллекции по адресу ──
+          // Возвращает floor price в TON (0 если нет листингов)
+          getNFTFloorPrice: async (address: string): Promise<number> => {
+            try {
+              // Конвертируем EQ/UQ адрес в raw формат (0:hex)
+              let rawAddr = address;
+              if (address && !address.startsWith('0:')) {
+                try {
+                  const s = address.replace(/-/g, '+').replace(/_/g, '/');
+                  const padded = s + '=='.slice(0, (4 - s.length % 4) % 4);
+                  const buf = Buffer.from(padded, 'base64');
+                  rawAddr = '0:' + buf.slice(2, 34).toString('hex');
+                } catch {}
+              }
+
+              // Метод 1: GetGems GraphQL — прямой запрос floor price по адресу (самый точный)
+              try {
+                const ggBody = JSON.stringify({
+                  query: `{ nftCollectionByAddress(address: "${rawAddr}") { floorPrice approximateItemsCount } }`,
+                });
+                const ggResp = await nativeFetch('https://api.getgems.io/graphql', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'Origin': 'https://getgems.io',
+                    'Referer': 'https://getgems.io/',
+                    'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                  },
+                  body: ggBody,
+                });
+                if (ggResp.ok) {
+                  const ggData = await ggResp.json() as any;
+                  const fp = ggData?.data?.nftCollectionByAddress?.floorPrice;
+                  if (fp && parseInt(fp) > 0) return parseInt(fp) / 1e9;
+                }
+              } catch {}
+
+              // Метод 2: TonAPI — сканируем items в поиске активных продаж
+              const tonapiKey = process.env.TONAPI_KEY || '';
+              const tonapiHeaders: Record<string, string> = { 'Accept': 'application/json' };
+              if (tonapiKey) tonapiHeaders['Authorization'] = `Bearer ${tonapiKey}`;
+              const prices: number[] = [];
+              for (let offset = 0; offset < 400; offset += 100) {
+                const r = await nativeFetch(
+                  `https://tonapi.io/v2/nfts/collections/${rawAddr}/items?limit=100&offset=${offset}`,
+                  { headers: tonapiHeaders }
+                );
+                if (!r.ok) break;
+                const d = await r.json() as any;
+                const items: any[] = d.nft_items || [];
+                if (items.length === 0) break;
+                for (const item of items) {
+                  const val = item?.sale?.price?.value;
+                  if (val && parseInt(val) > 0) prices.push(parseInt(val) / 1e9);
+                }
+                // Нашли листинги в первых 100 — не нужно сканировать дальше
+                if (prices.length >= 5) break;
+              }
+              prices.sort((a: number, b: number) => a - b);
+              return prices.length > 0 ? prices[0] : 0;
+            } catch {
+              return 0;
+            }
           },
 
           // ── Cross-agent messaging (OpenClaw sessions_send pattern) ──
@@ -386,6 +577,308 @@ export class ExecutionTools {
           // isStopped() — вернёт true когда пользователь нажал "Стоп"
           // Используй в while-цикле: while (!isStopped()) { ... }
           isStopped: stopFlag ? () => stopFlag.stopped : () => false,
+
+          // ── TON кошелёк через TonAPI (TonCenter заблокирован для серверных IP) ──
+          // Использует TONAPI_KEY из env
+
+          // tonCreateWallet() → { mnemonic: string, address: string }
+          tonCreateWallet: async (): Promise<{ mnemonic: string; address: string }> => {
+            const { mnemonicNew, mnemonicToWalletKey } = require('@ton/crypto');
+            const { WalletContractV4 } = require('@ton/ton');
+            const words   = await mnemonicNew(24);
+            const keyPair = await mnemonicToWalletKey(words);
+            const wallet  = WalletContractV4.create({ publicKey: keyPair.publicKey, workchain: 0 });
+            return {
+              mnemonic: words.join(' '),
+              address:  wallet.address.toString({ bounceable: false, urlSafe: true }),
+            };
+          },
+
+          // tonGetWalletAddress(mnemonic) → UQ... адрес кошелька
+          tonGetWalletAddress: async (mnemonic: string): Promise<string> => {
+            const { mnemonicToWalletKey } = require('@ton/crypto');
+            const { WalletContractV4 } = require('@ton/ton');
+            const words   = String(mnemonic).trim().split(/\s+/);
+            const keyPair = await mnemonicToWalletKey(words);
+            const wallet  = WalletContractV4.create({ publicKey: keyPair.publicKey, workchain: 0 });
+            return wallet.address.toString({ bounceable: false, urlSafe: true });
+          },
+
+          // tonGetBalance(address) → баланс в TON (float) через TonAPI
+          tonGetBalance: async (address: string): Promise<number> => {
+            const apiKey = process.env.TONAPI_KEY || '';
+            try {
+              const resp = await nativeFetch(
+                `https://tonapi.io/v2/accounts/${encodeURIComponent(address)}`,
+                { headers: apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {} }
+              );
+              const json = await resp.json() as any;
+              return json.balance ? Number(json.balance) / 1e9 : 0;
+            } catch { return 0; }
+          },
+
+          // tonSend({ mnemonic, to, amountNano, payloadBase64?, stateInitBase64? })
+          // Подписывает и отправляет транзакцию через TonAPI
+          tonSend: async (p: {
+            mnemonic: string;
+            to: string;
+            amountNano: string;
+            payloadBase64?: string | null;
+            stateInitBase64?: string | null;
+          }): Promise<string> => {
+            const { mnemonicToWalletKey } = require('@ton/crypto');
+            const { WalletContractV4 } = require('@ton/ton');
+            const { internal, Cell, Address } = require('@ton/core');
+            const apiKey = process.env.TONAPI_KEY || '';
+            const apiHeaders = (extra: Record<string,string> = {}) => ({
+              'Content-Type': 'application/json',
+              ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {}),
+              ...extra,
+            });
+
+            const words   = String(p.mnemonic).trim().split(/\s+/);
+            const keyPair = await mnemonicToWalletKey(words);
+            const wallet  = WalletContractV4.create({ publicKey: keyPair.publicKey, workchain: 0 });
+            const addr    = wallet.address.toString({ bounceable: false, urlSafe: true });
+
+            // seqno через TonAPI GET /v2/wallet/{address}
+            const walletResp = await nativeFetch(
+              `https://tonapi.io/v2/wallet/${encodeURIComponent(addr)}`,
+              { headers: apiHeaders() }
+            );
+            const walletJson = await walletResp.json() as any;
+            const seqno = walletJson.seqno ?? 0;
+
+            // Собираем и подписываем transfer
+            const transfer = wallet.createTransfer({
+              seqno,
+              secretKey: keyPair.secretKey,
+              messages: [internal({
+                to:    Address.parse(String(p.to)),
+                value: BigInt(String(p.amountNano)),
+                body:  p.payloadBase64  ? Cell.fromBase64(String(p.payloadBase64))  : undefined,
+                init:  p.stateInitBase64 ? Cell.fromBase64(String(p.stateInitBase64)) : undefined,
+              })],
+            });
+
+            // Отправляем BOC через TonAPI POST /v2/blockchain/message
+            const bocBase64 = transfer.toBoc().toString('base64');
+            const sendResp = await nativeFetch('https://tonapi.io/v2/blockchain/message', {
+              method:  'POST',
+              headers: apiHeaders(),
+              body:    JSON.stringify({ boc: bocBase64 }),
+            });
+            if (!sendResp.ok) {
+              const errText = await sendResp.text();
+              throw new Error('TonAPI sendBoc ' + sendResp.status + ': ' + errText.slice(0, 200));
+            }
+
+            return `tx_${Date.now()}_${String(p.to).slice(0, 8)}`;
+          },
+
+          // ── Telegram Gifts helpers (для агентов арбитража подарков) ──
+          // Все функции — тонкие обёртки вокруг TelegramGiftsService
+          getAvailableGifts: async () => {
+            const { getTelegramGiftsService } = await import('../../services/telegram-gifts');
+            return getTelegramGiftsService().getAvailableGifts();
+          },
+          buyTelegramGift: async (giftId: string, recipientUserId: number, text?: string) => {
+            const { getTelegramGiftsService } = await import('../../services/telegram-gifts');
+            return getTelegramGiftsService().buyGiftBot(String(giftId), Number(recipientUserId), text);
+          },
+          getFragmentListings: async (giftSlug: string, limit?: number) => {
+            const { getTelegramGiftsService } = await import('../../services/telegram-gifts');
+            return getTelegramGiftsService().getFragmentListings(String(giftSlug), limit ?? 20);
+          },
+          listGiftForSale: async (msgId: number, priceStars: number) => {
+            const { getTelegramGiftsService } = await import('../../services/telegram-gifts');
+            return getTelegramGiftsService().listGiftForSale(Number(msgId), Number(priceStars));
+          },
+          appraiseGift: async (slug: string) => {
+            const { getTelegramGiftsService } = await import('../../services/telegram-gifts');
+            return getTelegramGiftsService().appraiseGift(String(slug));
+          },
+          scanArbitrageOpportunities: async (opts?: any) => {
+            const { getTelegramGiftsService } = await import('../../services/telegram-gifts');
+            return getTelegramGiftsService().scanArbitrageOpportunities(opts || {});
+          },
+          getStarsBalance: async () => {
+            const { getTelegramGiftsService } = await import('../../services/telegram-gifts');
+            return getTelegramGiftsService().getStarsBalance();
+          },
+
+          // ── GiftAsset / SwiftGifts — реальные рыночные данные ──
+          getGiftFloorReal: async (slug: string) => {
+            const { getGiftAssetClient } = await import('../../services/giftasset');
+            return getGiftAssetClient().getFloorPrices(slug);
+          },
+          getGiftSalesHistory: async (collectionName: string, limit?: number, modelName?: string) => {
+            const { getGiftAssetClient } = await import('../../services/giftasset');
+            return getGiftAssetClient().getUniqueSales(collectionName, limit ?? 20, modelName);
+          },
+          getMarketOverview: async () => {
+            const { getGiftAssetClient } = await import('../../services/giftasset');
+            const ga = getGiftAssetClient();
+            const [lastSales, upgradeStats] = await Promise.all([
+              ga.getAllCollectionsLastSale(),
+              ga.getUpgradeStats(),
+            ]);
+            return { lastSales, upgradeStats };
+          },
+          getPriceList: async (models?: string) => {
+            const { getGiftAssetClient } = await import('../../services/giftasset');
+            return getGiftAssetClient().getPriceList({ models });
+          },
+          scanRealArbitrage: async (opts?: any) => {
+            const { getGiftAssetClient } = await import('../../services/giftasset');
+            return getGiftAssetClient().findArbitrageOpportunities(opts || {});
+          },
+          getGiftAggregator: async (name: string, opts?: any) => {
+            const { getGiftAssetClient } = await import('../../services/giftasset');
+            return getGiftAssetClient().swAggregate({ name, ...opts });
+          },
+          getUserPortfolio: async (username?: string, telegramId?: string) => {
+            const { getGiftAssetClient } = await import('../../services/giftasset');
+            return getGiftAssetClient().getUserGifts({ username, telegramId });
+          },
+
+          // ── Plugins ──
+          listPlugins: async () => {
+            const { getPluginManager } = await import('../../plugins-system');
+            const pm = getPluginManager();
+            return pm.getAllPlugins().map(p => ({
+              id: p.id, name: p.name, type: p.type,
+              description: p.description, isInstalled: p.isInstalled,
+            }));
+          },
+          suggestPlugin: async (taskDescription: string) => {
+            const { getPluginManager } = await import('../../plugins-system');
+            const pm = getPluginManager();
+            const all = pm.getAllPlugins();
+            const task = (taskDescription || '').toLowerCase();
+            return all.filter(p => {
+              const txt = `${p.name} ${p.description} ${p.id} ${p.type}`.toLowerCase();
+              return task.split(/\s+/).some(kw => kw.length >= 3 && txt.includes(kw));
+            }).slice(0, 3).map(p => ({ id: p.id, name: p.name, description: p.description, isInstalled: p.isInstalled }));
+          },
+
+          // ── Web tools ──
+          webSearch: async (query: string) => {
+            const encoded = encodeURIComponent(query || '');
+            const results: any[] = [];
+            // DuckDuckGo HTML search
+            try {
+              const htmlResp = await nativeFetch('https://html.duckduckgo.com/html/?q=' + encoded, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (compatible; TONAgentBot/1.0)' },
+                signal: AbortSignal.timeout(10000),
+              });
+              if (htmlResp.ok) {
+                const html = await htmlResp.text();
+                const linkRe = /<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi;
+                const snipRe = /<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/gi;
+                const links: Array<{ url: string; title: string }> = [];
+                let m;
+                while ((m = linkRe.exec(html)) && links.length < 5) {
+                  let url = m[1];
+                  const uddg = url.match(/uddg=([^&]+)/);
+                  if (uddg) url = decodeURIComponent(uddg[1]);
+                  links.push({ url, title: m[2].replace(/<[^>]+>/g, '').trim() });
+                }
+                const snips: string[] = [];
+                while ((m = snipRe.exec(html)) && snips.length < 5) {
+                  snips.push(m[1].replace(/<[^>]+>/g, '').trim());
+                }
+                for (let i = 0; i < links.length; i++) {
+                  results.push({ title: links[i].title, url: links[i].url, snippet: snips[i] || '' });
+                }
+              }
+            } catch {}
+            // Fallback: Instant Answer API
+            if (results.length === 0) {
+              try {
+                const resp = await nativeFetch('https://api.duckduckgo.com/?q=' + encoded + '&format=json&no_html=1');
+                if (resp.ok) {
+                  const data = await resp.json() as any;
+                  if (data.AbstractText) results.push({ title: data.Heading || query, snippet: data.AbstractText, url: data.AbstractURL || '' });
+                  if (data.RelatedTopics) {
+                    for (const topic of data.RelatedTopics.slice(0, 5)) {
+                      if (topic.Text && topic.FirstURL) results.push({ title: topic.Text.slice(0, 100), snippet: topic.Text, url: topic.FirstURL });
+                    }
+                  }
+                }
+              } catch {}
+            }
+            return results.slice(0, 5);
+          },
+          fetchUrl: async (url: string) => {
+            // SSRF protection
+            try {
+              const u = new URL(url);
+              const h = u.hostname.toLowerCase();
+              if (h === 'localhost' || h === '127.0.0.1' || h === '0.0.0.0'
+                || h.startsWith('10.') || h.startsWith('192.168.') || h.startsWith('172.')
+                || h === '169.254.169.254' || h.endsWith('.internal') || h.endsWith('.local')) {
+                return { error: 'Access to internal addresses is blocked' };
+              }
+            } catch { return { error: 'Invalid URL' }; }
+            const resp = await nativeFetch(url, { headers: { 'User-Agent': 'TONAgentBot/1.0' }, signal: AbortSignal.timeout(10000) });
+            if (!resp.ok) return { error: 'Fetch failed: ' + resp.status };
+            const ct = resp.headers.get('content-type') || '';
+            if (ct.includes('json')) {
+              const j = await resp.json() as any;
+              return JSON.stringify(j).slice(0, 5000);
+            }
+            const text = await resp.text();
+            return text.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '').replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 3000);
+          },
+          notifyRich: async (message: string, buttons?: Array<{ text: string; url?: string }>) => {
+            const { notifyRich } = await import('../../notifier');
+            await notifyRich(params.userId, { text: message, agentId, buttons });
+            return { ok: true };
+          },
+
+          // ── Inter-agent ──
+          askAgent: async (targetAgentId: number, message: string) => {
+            const { addMessageToAIAgent } = await import('../ai-agent-runtime');
+            addMessageToAIAgent(targetAgentId, `[Interagent от #${agentId}]: ${message}`);
+            return { sent: true, targetAgentId };
+          },
+          listMyAgents: async () => {
+            const { getDBTools } = await import('./db-tools');
+            const result = await getDBTools().getUserAgents(params.userId);
+            return (result.data || []).map((a: any) => ({ id: a.id, name: a.name, isActive: a.isActive, triggerType: a.triggerType }));
+          },
+
+          // ── Telegram Userbot (доступен если платформа авторизована через /tglogin) ──
+          // Позволяет агенту действовать как полноценный Telegram-пользователь:
+          //   telegram.sendMessage(chatId, text)
+          //   telegram.getMessages(chatId, limit)
+          //   telegram.joinChannel(username)
+          //   telegram.getDialogs(limit)  и т.д.
+          telegram: await (async () => {
+            try {
+              const auth = await isAuthorized();
+              if (auth) return buildUserbotSandbox();
+            } catch {}
+            // Not authenticated — return stub that throws helpful error
+            const notAuthed = (method: string) => async (..._args: any[]) => {
+              throw new Error(`telegram.${method}: не авторизован. Используй /tglogin в боте.`);
+            };
+            return {
+              sendMessage:    notAuthed('sendMessage'),
+              getMessages:    notAuthed('getMessages'),
+              getChannelInfo: notAuthed('getChannelInfo'),
+              joinChannel:    notAuthed('joinChannel'),
+              leaveChannel:   notAuthed('leaveChannel'),
+              getDialogs:     notAuthed('getDialogs'),
+              getMembers:     notAuthed('getMembers'),
+              forwardMessage: notAuthed('forwardMessage'),
+              deleteMessage:  notAuthed('deleteMessage'),
+              searchMessages: notAuthed('searchMessages'),
+              getUserInfo:    notAuthed('getUserInfo'),
+              sendFile:       notAuthed('sendFile'),
+            };
+          })(),
 
           // ── Стандартные глобалы ──
           JSON,

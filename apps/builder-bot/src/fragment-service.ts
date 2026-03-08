@@ -9,6 +9,7 @@ import { Api } from 'telegram/tl';
 import fs from 'fs';
 import path from 'path';
 import { StringSession } from 'telegram/sessions';
+// events.Raw for UpdateLoginToken — dynamic import to avoid version issues
 
 // ── Telegram App credentials (official Telegram apps) ──────────────
 // These are publicly known credentials from GramJS defaults
@@ -89,6 +90,229 @@ export function getAuthState(userId: number): AuthState | null {
 }
 export function clearAuthState(userId: number) {
   authStates.delete(userId);
+}
+
+// ── QR Code Login ──────────────────────────────────────────────────
+// Uses UpdateLoginToken event (correct approach) + auto-refresh before expiry
+
+let _qrCancelFn: (() => void) | null = null;
+
+/** Cancel any active QR login session */
+export function cancelQRLogin(): void {
+  if (_qrCancelFn) {
+    _qrCancelFn();
+    _qrCancelFn = null;
+  }
+}
+
+/**
+ * Start QR code login — event-based (correct Telegram API usage).
+ *
+ * @param onQRReady  called with new QR URL whenever a QR is generated/refreshed.
+ *                   Return false to cancel login.
+ * @param timeoutMs  total timeout (default 120 seconds)
+ *
+ * Resolves with { ok: true } when authorized, { ok: false, error } on failure/cancel.
+ *
+ * Flow:
+ *   ExportLoginToken → send QR to user
+ *   → user scans on other device (Telegram → Settings → Devices → Link Desktop)
+ *   → GramJS receives UpdateLoginToken update
+ *   → call ImportLoginToken → save session → done
+ *   Auto-refresh QR 5s before expiry.
+ */
+export type Complete2FAFn = (password: string) => Promise<{ ok: boolean; error?: string }>;
+
+export async function authStartQR(
+  onQRReady: (qrUrl: string, expiresIn: number) => Promise<void>,
+  on2FARequired?: (complete: Complete2FAFn) => void,
+  timeoutMs = 120_000,
+): Promise<{ ok: boolean; error?: string }> {
+  // Cancel any previous QR session
+  cancelQRLogin();
+
+  // Ensure clean connection (wipe stale/2FA-blocked session if needed)
+  const ensureClient = async (): Promise<TelegramClient> => {
+    try {
+      return await getClient();
+    } catch (e: any) {
+      const m: string = e.message || '';
+      if (m.includes('SESSION_PASSWORD_NEEDED') || m.includes('AUTH_KEY_UNREGISTERED') || m.includes('USER_DEACTIVATED')) {
+        console.log('[Fragment] QR: stale session, wiping...');
+        saveSession('');
+        _client = null;
+        _connected = false;
+      }
+      return getClient();
+    }
+  };
+
+  let client: TelegramClient;
+  try {
+    client = await ensureClient();
+  } catch (e: any) {
+    return { ok: false, error: e.message || String(e) };
+  }
+
+  return new Promise<{ ok: boolean; error?: string }>(async (resolve) => {
+    let done = false;
+    let refreshTimer: NodeJS.Timeout | null = null;
+    let currentToken: Buffer | null = null;
+    let updateHandler: ((upd: any) => Promise<void>) | null = null;
+    let rawFilter: any = null;
+
+    const finish = (result: { ok: boolean; error?: string }) => {
+      if (done) return;
+      done = true;
+      _qrCancelFn = null;
+      if (refreshTimer) { clearTimeout(refreshTimer); refreshTimer = null; }
+      if (updateHandler && rawFilter) {
+        try { client.removeEventHandler(updateHandler, rawFilter); } catch {}
+      }
+      resolve(result);
+    };
+
+    _qrCancelFn = () => finish({ ok: false, error: 'cancelled' });
+
+    // 2-minute overall timeout
+    const timeoutHandle = setTimeout(() => finish({ ok: false, error: 'timeout' }), timeoutMs);
+
+    // UpdateLoginToken event handler — fires when user scans QR on their phone
+    updateHandler = async (upd: any) => {
+      if (done || !currentToken) return;
+      // Match UpdateLoginToken by className or known constructor ID 0x564FE691
+      const isLoginToken = upd.className === 'UpdateLoginToken' || upd.CONSTRUCTOR_ID === 0x564FE691;
+      if (!isLoginToken) return;
+
+      console.log('[Fragment] UpdateLoginToken received → calling ImportLoginToken');
+      try {
+        const res = await (client as any).invoke(
+          new Api.auth.ImportLoginToken({ token: currentToken })
+        ) as any;
+
+        if (res.className === 'auth.LoginTokenSuccess') {
+          const sessionStr = client.session.save() as unknown as string;
+          saveSession(sessionStr);
+          _connected = true;
+          clearTimeout(timeoutHandle);
+          console.log('[Fragment] ✅ QR login authorized!');
+          finish({ ok: true });
+        } else if (res.className === 'auth.LoginTokenMigrateTo') {
+          // DC migration — regenerate QR immediately
+          console.log('[Fragment] QR DC migration, regenerating...');
+          if (refreshTimer) { clearTimeout(refreshTimer); refreshTimer = null; }
+          generateQR();
+        }
+      } catch (e: any) {
+        const errMsg: string = e.message || String(e);
+        if (errMsg.includes('SESSION_PASSWORD_NEEDED')) {
+          // ── User scanned QR but account has 2FA cloud password ──
+          // STOP refresh timer — no more QR spam after scan
+          if (refreshTimer) { clearTimeout(refreshTimer); refreshTimer = null; }
+          console.log('[Fragment] 2FA cloud password required after QR scan');
+
+          if (on2FARequired) {
+            // Provide caller with a function to complete auth with password
+            on2FARequired(async (password: string) => {
+              try {
+                // eslint-disable-next-line @typescript-eslint/no-var-requires
+                const { computeCheck } = require('telegram/Password');
+                const accountPwd = await (client as any).invoke(new Api.account.GetPassword());
+                const pwdCheck = await computeCheck(accountPwd, password);
+                await (client as any).invoke(new Api.auth.CheckPassword({ password: pwdCheck }));
+                const sessionStr = client.session.save() as unknown as string;
+                saveSession(sessionStr);
+                _connected = true;
+                clearTimeout(timeoutHandle);
+                console.log('[Fragment] ✅ QR + 2FA authorized!');
+                finish({ ok: true });
+                return { ok: true };
+              } catch (e2: any) {
+                const e2msg: string = e2.message || String(e2);
+                // Wrong password — don't finish, let caller retry
+                if (e2msg.includes('PASSWORD_HASH_INVALID') || e2msg.includes('Bad password')) {
+                  return { ok: false, error: 'Неверный пароль 2FA. Попробуй ещё раз.' };
+                }
+                finish({ ok: false, error: e2msg });
+                return { ok: false, error: e2msg };
+              }
+            });
+          } else {
+            // No 2FA handler provided — fail with clear message
+            finish({ ok: false, error: 'SESSION_PASSWORD_NEEDED' });
+          }
+        } else {
+          // Other errors — non-fatal, just log
+          console.log('[Fragment] ImportLoginToken error:', errMsg);
+        }
+      }
+    };
+
+    // Register Raw event handler — use require() for synchronous access
+    // (dynamic import('telegram') does NOT export 'events')
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { Raw: RawEvt } = require('telegram/events');
+      rawFilter = new RawEvt({});
+      client.addEventHandler(updateHandler!, rawFilter);
+    } catch (e: any) {
+      finish({ ok: false, error: 'Events module unavailable: ' + (e.message || e) });
+      return;
+    }
+
+    // Generate QR token and schedule auto-refresh
+    const generateQR = async () => {
+      if (done) return;
+      try {
+        let res: any;
+        try {
+          res = await (client as any).invoke(new Api.auth.ExportLoginToken({
+            apiId:  API_ID,
+            apiHash: API_HASH,
+            exceptIds: [],
+          }));
+        } catch (e: any) {
+          const m: string = e.message || '';
+          if (m.includes('SESSION_PASSWORD_NEEDED')) {
+            // Wipe session and restart fresh
+            saveSession('');
+            _client = null;
+            _connected = false;
+            client = await getClient();
+            res = await (client as any).invoke(new Api.auth.ExportLoginToken({
+              apiId: API_ID, apiHash: API_HASH, exceptIds: [],
+            }));
+          } else throw e;
+        }
+
+        currentToken = Buffer.from(res.token as Uint8Array);
+        const expiresTs: number = typeof res.expires === 'number' ? res.expires : Number(res.expires);
+        const nowSec = Math.floor(Date.now() / 1000);
+        const expiresIn = Math.max(10, expiresTs - nowSec);
+
+        // URL-safe base64 without padding (RFC 4648 §5)
+        const tokenB64 = currentToken.toString('base64url');
+        const qrUrl = `tg://login?token=${tokenB64}`;
+
+        console.log(`[Fragment] QR token generated, expires in ${expiresIn}s`);
+        await onQRReady(qrUrl, expiresIn).catch(() => {});
+
+        // Schedule refresh 5s before expiry
+        if (!done) {
+          refreshTimer = setTimeout(generateQR, Math.max(5000, (expiresIn - 5) * 1000));
+        }
+      } catch (e: any) {
+        finish({ ok: false, error: e.message || String(e) });
+      }
+    };
+
+    await generateQR();
+  });
+}
+
+/** @deprecated Use authStartQR with callback — polling is incorrect API usage */
+export async function pollQRLogin(): Promise<{ status: 'error'; error: string }> {
+  return { status: 'error', error: 'Deprecated: use authStartQR(callback) instead' };
 }
 
 /**
@@ -196,14 +420,29 @@ export async function authSubmitPassword(userId: number, password: string): Prom
 }
 
 /**
- * Check if we have a valid authorized session
+ * Check if we have a valid authorized session.
+ * NOTE: Does NOT create a new connection — only checks existing client.
+ * Uses a 5-second timeout to avoid blocking the bot for 90 seconds
+ * if the GramJS connection is in a bad state.
  */
+export async function getFragmentClient() {
+  return getClient();
+}
+
 export async function isAuthorized(): Promise<boolean> {
+  // Don't try to connect just to check auth — if client isn't initialized, not authorized
+  if (!_client || !_connected) return false;
   try {
-    const client = await getClient();
-    const me = await client.getMe();
+    const me = await Promise.race([
+      _client.getMe(),
+      new Promise<null>((_, reject) =>
+        setTimeout(() => reject(new Error('isAuthorized timeout')), 5000)
+      ),
+    ]);
     return !!me;
   } catch {
+    // If getMe fails or times out — client is in bad state, reset so next call reconnects
+    _connected = false;
     return false;
   }
 }
@@ -409,5 +648,4 @@ export async function getAllGiftFloors(): Promise<Array<{
   }
 }
 
-// Export singleton for app-level use
-export { getClient as getFragmentClient };
+// getFragmentClient is exported above as async function

@@ -363,17 +363,17 @@ async function startBotAuth() {
   }
 
   _botAuthToken = data.authToken;
-  window.open(data.botLink, '_blank');
-
+  // Do NOT use window.open() — it gets blocked by popup blockers after async calls.
+  // Instead show a prominent <a> link the user clicks directly (real user gesture).
   if (container) {
     container.innerHTML = `
       <div style="text-align:center;padding:8px 0 16px">
-        <div style="font-size:2rem;margin-bottom:8px;">📱</div>
-        <p style="color:var(--text-secondary);font-size:.875rem;margin-bottom:4px;font-weight:500;">Ожидаю подтверждения в Telegram...</p>
-        <p style="color:var(--text-muted);font-size:.75rem;margin-bottom:16px;">Нажмите /start в боте — он откроется автоматически</p>
+        <div style="font-size:1.75rem;margin-bottom:10px;">📲</div>
+        <p style="color:var(--text-secondary);font-size:.9rem;margin-bottom:4px;font-weight:500;">Откройте Telegram и нажмите Start</p>
+        <p style="color:var(--text-muted);font-size:.75rem;margin-bottom:16px;">После нажатия /start страница обновится автоматически</p>
         <a href="${escHtml(data.botLink)}" target="_blank"
-           style="display:inline-flex;align-items:center;gap:6px;padding:8px 18px;background:rgba(33,150,243,.15);color:#2196F3;border:1px solid rgba(33,150,243,.3);border-radius:6px;font-size:.8125rem;text-decoration:none;margin-bottom:10px;">
-          🤖 Открыть бота снова
+           style="display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 28px;background:#2196F3;color:#fff;border-radius:8px;font-size:.9375rem;font-weight:600;text-decoration:none;margin-bottom:16px;min-width:200px;">
+          🤖 Открыть Telegram
         </a><br>
         <button onclick="cancelBotAuth()"
           style="background:none;border:none;color:var(--text-muted);font-size:.8125rem;cursor:pointer;text-decoration:underline;">
@@ -423,6 +423,7 @@ const pageLoadFns = {
   knowledge: () => loadKnowledge(),
   connectors:() => loadConnectors(),
   profile:   () => loadProfile(),
+  wallet:    () => loadWallet(),
 };
 
 document.querySelectorAll('.nav-item').forEach(item => {
@@ -1736,5 +1737,359 @@ async function loadProfile() {
     setEl('profile-success-rate', stats.successRate != null ? stats.successRate + '%' : '—');
   }
 }
+
+// ===== WALLET PAGE =====
+let walletData = null;
+let walletTxPage = 0;
+const WALLET_TX_PER_PAGE = 20;
+let walletTxFilter = 'all';
+
+async function loadWallet() {
+  await Promise.all([loadWalletBalance(), loadTransactions()]);
+}
+
+async function loadWalletBalance() {
+  const data = await apiRequest('GET', '/api/balance');
+  if (!data.ok && !data.balance_ton && data.balance_ton !== 0) return;
+  walletData = data;
+
+  const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+
+  // Balance
+  const bal = parseFloat(data.balance_ton || 0);
+  const balEl = document.getElementById('wallet-balance');
+  if (balEl) balEl.innerHTML = bal.toFixed(2) + ' <span class="wallet-currency">TON</span>';
+
+  // Total earned
+  const earned = parseFloat(data.total_earned || 0);
+  const earnedEl = document.getElementById('wallet-earned');
+  if (earnedEl) earnedEl.innerHTML = earned.toFixed(2) + ' <span class="wallet-currency">TON</span>';
+
+  // Platform wallet address
+  const platformAddr = data.platform_wallet || data.wallet_address || '';
+  setEl('wallet-platform-addr', platformAddr || '—');
+
+  // Setup topup modal
+  setupTopupModal(platformAddr);
+
+  // Setup withdraw modal available balance
+  const withdrawAvail = document.getElementById('withdraw-available');
+  if (withdrawAvail) withdrawAvail.textContent = bal.toFixed(2) + ' TON';
+}
+
+async function loadTransactions() {
+  const params = new URLSearchParams({
+    limit: WALLET_TX_PER_PAGE.toString(),
+    offset: (walletTxPage * WALLET_TX_PER_PAGE).toString(),
+  });
+  if (walletTxFilter !== 'all') params.set('type', walletTxFilter);
+
+  const data = await apiRequest('GET', '/api/transactions?' + params.toString());
+  const listEl = document.getElementById('wallet-transactions-list');
+  if (!listEl) return;
+
+  const txs = data.transactions || [];
+  const total = data.total || 0;
+
+  if (!txs.length) {
+    const emptyMsg = currentLang === 'ru' ? 'Нет транзакций' : 'No transactions yet';
+    listEl.innerHTML = '<div class="empty-state" style="padding:40px 20px"><p>' + emptyMsg + '</p></div>';
+    const pgEl = document.getElementById('wallet-pagination');
+    if (pgEl) pgEl.style.display = 'none';
+    return;
+  }
+
+  const txIcons = { topup: '💰', withdraw: '💸', spend: '🔥', earn: '💎', refund: '🔄' };
+  const txLabels = {
+    en: { topup: 'Top Up', withdraw: 'Withdraw', spend: 'Spend', earn: 'Earned', refund: 'Refund' },
+    ru: { topup: 'Пополнение', withdraw: 'Вывод', spend: 'Расход', earn: 'Заработок', refund: 'Возврат' }
+  };
+
+  listEl.innerHTML = txs.map(tx => {
+    const type = tx.type || 'spend';
+    const amount = parseFloat(tx.amount_ton || 0);
+    const isPositive = amount > 0;
+    const sign = isPositive ? '+' : '';
+    const amountClass = isPositive ? 'positive' : 'negative';
+    const date = new Date(tx.created_at);
+    const dateStr = date.toLocaleDateString(currentLang === 'ru' ? 'ru-RU' : 'en-US', { month: 'short', day: 'numeric' });
+    const timeStr = date.toLocaleTimeString(currentLang === 'ru' ? 'ru-RU' : 'en-US', { hour: '2-digit', minute: '2-digit' });
+    const label = (txLabels[currentLang] || txLabels.en)[type] || type;
+    const desc = tx.description || '';
+    const status = tx.status || 'completed';
+
+    return '<div class="wallet-tx-row">' +
+      '<div class="wallet-tx-icon ' + type + '">' + (txIcons[type] || '📋') + '</div>' +
+      '<div class="wallet-tx-info">' +
+        '<div class="wallet-tx-type">' + label + '</div>' +
+        (desc ? '<div class="wallet-tx-desc" title="' + desc.replace(/"/g, '&quot;') + '">' + desc + '</div>' : '') +
+      '</div>' +
+      '<div class="wallet-tx-amount ' + amountClass + '">' + sign + Math.abs(amount).toFixed(2) + ' TON</div>' +
+      '<div class="wallet-tx-meta">' +
+        '<span class="wallet-tx-date">' + dateStr + ' ' + timeStr + '</span>' +
+        '<span class="wallet-tx-status ' + status + '">' + (status === 'completed' ? '✅' : status === 'pending' ? '⏳' : '❌') + '</span>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+
+  // Pagination
+  const totalPages = Math.ceil(total / WALLET_TX_PER_PAGE);
+  const pgEl = document.getElementById('wallet-pagination');
+  if (pgEl) {
+    pgEl.style.display = totalPages > 1 ? 'flex' : 'none';
+    const infoEl = document.getElementById('wallet-page-info');
+    if (infoEl) infoEl.textContent = (walletTxPage + 1) + ' / ' + totalPages;
+    const prevBtn = document.getElementById('wallet-prev-btn');
+    const nextBtn = document.getElementById('wallet-next-btn');
+    if (prevBtn) prevBtn.disabled = walletTxPage === 0;
+    if (nextBtn) nextBtn.disabled = walletTxPage >= totalPages - 1;
+  }
+}
+
+function filterTransactions(type) {
+  walletTxFilter = type;
+  walletTxPage = 0;
+  document.querySelectorAll('.wallet-filter-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.type === type);
+  });
+  loadTransactions().catch(console.error);
+}
+
+function walletPrevPage() {
+  if (walletTxPage > 0) { walletTxPage--; loadTransactions().catch(console.error); }
+}
+
+function walletNextPage() {
+  walletTxPage++;
+  loadTransactions().catch(console.error);
+}
+
+// ===== TOP UP MODAL =====
+function setupTopupModal(platformAddr) {
+  if (!platformAddr) return;
+  const userId = currentUser ? (currentUser.userId || currentUser.id) : '';
+  const comment = 'topup:' + userId;
+
+  const addrEl = document.getElementById('topup-address');
+  if (addrEl) addrEl.textContent = platformAddr;
+
+  const commentEl = document.getElementById('topup-comment');
+  if (commentEl) commentEl.textContent = comment;
+
+  // Deep links (ton:// protocol)
+  const amounts = [1, 5, 10];
+  amounts.forEach(amt => {
+    const linkEl = document.getElementById('topup-deeplink-' + amt);
+    if (linkEl) {
+      const nanoAmount = BigInt(amt) * BigInt(1e9);
+      linkEl.href = 'ton://transfer/' + platformAddr + '?amount=' + nanoAmount.toString() + '&text=' + encodeURIComponent(comment);
+    }
+  });
+
+  // QR Code
+  const qrImg = document.getElementById('topup-qr-img');
+  if (qrImg) {
+    const qrData = 'ton://transfer/' + platformAddr + '?text=' + encodeURIComponent(comment);
+    qrImg.src = 'https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=' + encodeURIComponent(qrData) + '&bgcolor=ffffff&color=000000';
+    qrImg.style.display = 'block';
+  }
+}
+
+function openTopupModal() {
+  const modal = document.getElementById('topup-modal');
+  if (modal) modal.style.display = 'flex';
+  // Reset result
+  const res = document.getElementById('topup-result');
+  if (res) { res.style.display = 'none'; res.className = 'topup-result'; }
+}
+
+function closeTopupModal() {
+  const modal = document.getElementById('topup-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+function copyTopupAddress() {
+  const el = document.getElementById('topup-address');
+  if (el) navigator.clipboard.writeText(el.textContent).then(() => showNotification(currentLang === 'ru' ? 'Адрес скопирован' : 'Address copied', 'success'));
+}
+
+function copyTopupComment() {
+  const el = document.getElementById('topup-comment');
+  if (el) navigator.clipboard.writeText(el.textContent).then(() => showNotification(currentLang === 'ru' ? 'Комментарий скопирован' : 'Comment copied', 'success'));
+}
+
+function copyWalletAddress() {
+  const el = document.getElementById('wallet-platform-addr');
+  if (el && el.textContent !== '—') {
+    navigator.clipboard.writeText(el.textContent).then(() => showNotification(currentLang === 'ru' ? 'Адрес скопирован' : 'Address copied', 'success'));
+  }
+}
+
+async function checkTopup() {
+  const btn = document.getElementById('btn-check-topup');
+  const res = document.getElementById('topup-result');
+  if (btn) { btn.disabled = true; btn.querySelector('span').textContent = currentLang === 'ru' ? 'Проверяю...' : 'Checking...'; }
+
+  try {
+    const data = await apiRequest('POST', '/api/topup/check', {});
+    if (res) {
+      res.style.display = 'block';
+      if (data.credited) {
+        res.className = 'topup-result success';
+        res.textContent = (currentLang === 'ru'
+          ? '✅ Зачислено ' + parseFloat(data.amount).toFixed(2) + ' TON! Баланс: ' + parseFloat(data.newBalance).toFixed(2) + ' TON'
+          : '✅ Credited ' + parseFloat(data.amount).toFixed(2) + ' TON! Balance: ' + parseFloat(data.newBalance).toFixed(2) + ' TON');
+        // Refresh wallet data
+        await loadWalletBalance();
+        await loadTransactions();
+      } else {
+        res.className = 'topup-result error';
+        res.textContent = (currentLang === 'ru'
+          ? '❌ Транзакция не найдена. Убедитесь, что отправили TON с правильным комментарием.'
+          : '❌ Transaction not found. Make sure you sent TON with the correct comment.');
+      }
+    }
+  } catch (e) {
+    if (res) {
+      res.style.display = 'block';
+      res.className = 'topup-result error';
+      res.textContent = '❌ ' + (e.message || 'Error checking transaction');
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.querySelector('span').textContent = currentLang === 'ru' ? 'Я отправил — проверить' : 'I sent it — verify';
+    }
+  }
+}
+
+// ===== WITHDRAW MODAL =====
+function openWithdrawModal() {
+  const modal = document.getElementById('withdraw-modal');
+  if (modal) modal.style.display = 'flex';
+  // Reset
+  const res = document.getElementById('withdraw-result');
+  if (res) { res.style.display = 'none'; }
+  const err = document.getElementById('withdraw-error');
+  if (err) err.style.display = 'none';
+  const addrInput = document.getElementById('withdraw-address');
+  const amtInput = document.getElementById('withdraw-amount');
+  if (addrInput) addrInput.value = '';
+  if (amtInput) amtInput.value = '';
+  updateWithdrawReceive();
+
+  // Update available
+  if (walletData) {
+    const avail = document.getElementById('withdraw-available');
+    if (avail) avail.textContent = parseFloat(walletData.balance_ton || 0).toFixed(2) + ' TON';
+  }
+}
+
+function closeWithdrawModal() {
+  const modal = document.getElementById('withdraw-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+function setMaxWithdraw() {
+  if (!walletData) return;
+  const bal = parseFloat(walletData.balance_ton || 0);
+  const maxAmount = Math.max(0, bal * 0.8 - 0.05); // 80% cap minus fee
+  const amtInput = document.getElementById('withdraw-amount');
+  if (amtInput) amtInput.value = maxAmount.toFixed(2);
+  updateWithdrawReceive();
+}
+
+function updateWithdrawReceive() {
+  const amtInput = document.getElementById('withdraw-amount');
+  const receiveEl = document.getElementById('withdraw-receive');
+  if (!amtInput || !receiveEl) return;
+  const amount = parseFloat(amtInput.value) || 0;
+  const receive = Math.max(0, amount - 0.05);
+  receiveEl.textContent = receive.toFixed(2) + ' TON';
+}
+
+// Listen for amount changes
+document.addEventListener('input', (e) => {
+  if (e.target && e.target.id === 'withdraw-amount') updateWithdrawReceive();
+});
+
+async function submitWithdraw() {
+  const addrInput = document.getElementById('withdraw-address');
+  const amtInput = document.getElementById('withdraw-amount');
+  const errEl = document.getElementById('withdraw-error');
+  const resEl = document.getElementById('withdraw-result');
+  const btn = document.getElementById('btn-withdraw-submit');
+
+  const address = (addrInput ? addrInput.value : '').trim();
+  const amount = parseFloat(amtInput ? amtInput.value : '0');
+
+  // Validate
+  if (!address || (!address.startsWith('EQ') && !address.startsWith('UQ') && !address.startsWith('0:'))) {
+    if (errEl) { errEl.style.display = 'block'; errEl.textContent = currentLang === 'ru' ? 'Введите корректный TON адрес (EQ.../UQ...)' : 'Enter a valid TON address (EQ.../UQ...)'; }
+    return;
+  }
+  if (!amount || amount < 0.1) {
+    if (errEl) { errEl.style.display = 'block'; errEl.textContent = currentLang === 'ru' ? 'Минимальная сумма: 0.1 TON' : 'Minimum amount: 0.1 TON'; }
+    return;
+  }
+
+  if (errEl) errEl.style.display = 'none';
+  if (resEl) resEl.style.display = 'none';
+  if (btn) { btn.disabled = true; btn.querySelector('span').textContent = currentLang === 'ru' ? 'Отправка...' : 'Sending...'; }
+
+  try {
+    const data = await apiRequest('POST', '/api/withdraw', { address, amount });
+    if (data.ok || data.txHash) {
+      if (resEl) {
+        resEl.style.display = 'block';
+        resEl.className = 'withdraw-result success';
+        resEl.textContent = (currentLang === 'ru'
+          ? '✅ Отправлено! TX: ' + (data.txHash || '—').substring(0, 16) + '...'
+          : '✅ Sent! TX: ' + (data.txHash || '—').substring(0, 16) + '...');
+      }
+      // Refresh
+      await loadWalletBalance();
+      await loadTransactions();
+      // Clear form
+      if (addrInput) addrInput.value = '';
+      if (amtInput) amtInput.value = '';
+    } else {
+      if (errEl) {
+        errEl.style.display = 'block';
+        errEl.textContent = data.error || (currentLang === 'ru' ? 'Ошибка вывода' : 'Withdraw failed');
+      }
+    }
+  } catch (e) {
+    if (errEl) {
+      errEl.style.display = 'block';
+      errEl.textContent = '❌ ' + (e.message || 'Error');
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.querySelector('span').textContent = currentLang === 'ru' ? 'Вывести' : 'Withdraw';
+    }
+  }
+}
+
+// ===== MOBILE SIDEBAR TOGGLE =====
+function toggleSidebar() {
+  const sidebar = document.querySelector('.sidebar');
+  const overlay = document.getElementById('sidebar-overlay');
+  if (sidebar) sidebar.classList.toggle('open');
+  if (overlay) overlay.classList.toggle('open');
+}
+
+// Close sidebar when navigating on mobile
+const origNavigateTo = navigateTo;
+navigateTo = function(pageName) {
+  origNavigateTo(pageName);
+  if (window.innerWidth <= 768) {
+    const sidebar = document.querySelector('.sidebar');
+    const overlay = document.getElementById('sidebar-overlay');
+    if (sidebar) sidebar.classList.remove('open');
+    if (overlay) overlay.classList.remove('open');
+  }
+};
 
 console.log('TON Agent Platform Dashboard v2.0 loaded successfully!');

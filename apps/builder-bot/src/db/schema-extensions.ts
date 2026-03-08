@@ -9,8 +9,8 @@
  *   user_settings     — настройки пользователя (AI persona, capabilities, connectors)
  */
 import { drizzle } from 'drizzle-orm/node-postgres';
-import { pgSchema, serial, integer, bigint, text, timestamp, boolean, jsonb } from 'drizzle-orm/pg-core';
-import { eq, and, desc, gte, sql } from 'drizzle-orm';
+import { pgSchema, serial, integer, bigint, text, timestamp, boolean, jsonb, date } from 'drizzle-orm/pg-core';
+import { eq, and, desc, gte, sql, lt } from 'drizzle-orm';
 import { Pool } from 'pg';
 
 const builderSchema = pgSchema('builder_bot');
@@ -159,6 +159,29 @@ export async function runMigrations(pool: Pool): Promise<void> {
         updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
         CONSTRAINT user_settings_unique UNIQUE (user_id, key)
       )
+    `);
+
+    // balance_transactions (ledger)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.balance_transactions (
+        id            SERIAL PRIMARY KEY,
+        user_id       BIGINT NOT NULL,
+        type          TEXT NOT NULL,
+        amount_ton    DOUBLE PRECISION NOT NULL,
+        balance_after DOUBLE PRECISION NOT NULL DEFAULT 0,
+        description   TEXT,
+        tx_hash       TEXT,
+        status        TEXT NOT NULL DEFAULT 'completed',
+        created_at    TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_bal_tx_user
+        ON builder_bot.balance_transactions (user_id, created_at DESC)
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_bal_tx_hash
+        ON builder_bot.balance_transactions (tx_hash)
     `);
 
     await client.query('COMMIT');
@@ -779,4 +802,327 @@ export async function runMarketplaceMigrations(pool: Pool): Promise<void> {
   } finally {
     client.release();
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Таблица 8: ai_proposals — предложения ИИ по самоулучшению
+// ─────────────────────────────────────────────────────────────────────────────
+export const aiProposalsTable = builderSchema.table('ai_proposals', {
+  id:            text('id').primaryKey(),                        // UUID
+  level:         integer('level').notNull(),                     // 1|2|3
+  title:         text('title').notNull(),
+  description:   text('description').notNull(),
+  reasoning:     text('reasoning'),
+  patch:         jsonb('patch').notNull().default([]),           // PatchEntry[]
+  status:        text('status').notNull().default('pending'),   // pending|staging|applied|rejected|rolled_back
+  autoApplied:   boolean('auto_applied').notNull().default(false),
+  stagingResult: text('staging_result'),
+  module:        text('module'),
+  createdAt:     timestamp('created_at').defaultNow().notNull(),
+  appliedAt:     timestamp('applied_at'),
+  rejectedReason: text('rejected_reason'),
+});
+
+// Таблица 9: agent_daily_spend — дневной лимит расходов агентов
+export const agentDailySpendTable = builderSchema.table('agent_daily_spend', {
+  id:         serial('id').primaryKey(),
+  agentId:    integer('agent_id').notNull(),
+  userId:     bigint('user_id', { mode: 'number' }).notNull(),
+  spendDate:  text('spend_date').notNull(),              // YYYY-MM-DD
+  spentNano:  bigint('spent_nano', { mode: 'bigint' }).notNull().default(0n),
+});
+
+export async function runAIProposalsMigrations(pool: Pool): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.ai_proposals (
+        id              TEXT PRIMARY KEY,
+        level           INTEGER NOT NULL,
+        title           TEXT NOT NULL,
+        description     TEXT NOT NULL,
+        reasoning       TEXT,
+        patch           JSONB NOT NULL DEFAULT '[]',
+        status          TEXT NOT NULL DEFAULT 'pending',
+        auto_applied    BOOLEAN NOT NULL DEFAULT FALSE,
+        staging_result  TEXT,
+        module          TEXT,
+        created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+        applied_at      TIMESTAMP,
+        rejected_reason TEXT
+      )
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS ai_proposals_status_idx
+        ON builder_bot.ai_proposals (status, created_at DESC)
+    `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.agent_daily_spend (
+        id         SERIAL PRIMARY KEY,
+        agent_id   INTEGER NOT NULL,
+        user_id    BIGINT NOT NULL,
+        spend_date TEXT NOT NULL,
+        spent_nano BIGINT NOT NULL DEFAULT 0,
+        CONSTRAINT agent_daily_spend_unique UNIQUE (agent_id, spend_date)
+      )
+    `);
+    console.log('✅ AI proposals + daily spend migrations applied');
+  } catch (e) {
+    console.error('❌ AI proposals migration failed:', e);
+  } finally {
+    client.release();
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Repository: AIProposalsRepository
+// ─────────────────────────────────────────────────────────────────────────────
+export interface AIPatchEntry {
+  file: string;
+  oldStr: string;
+  newStr: string;
+}
+
+export interface AIProposal {
+  id: string;
+  level: 1 | 2 | 3;
+  title: string;
+  description: string;
+  reasoning?: string;
+  patch: AIPatchEntry[];
+  status: 'pending' | 'staging' | 'applied' | 'rejected' | 'rolled_back';
+  autoApplied: boolean;
+  stagingResult?: string;
+  module?: string;
+  createdAt: Date;
+  appliedAt?: Date;
+  rejectedReason?: string;
+}
+
+export class AIProposalsRepository {
+  private db: ReturnType<typeof drizzle>;
+
+  constructor(pool: Pool) {
+    this.db = drizzle(pool);
+  }
+
+  async create(proposal: Omit<AIProposal, 'createdAt'>): Promise<string> {
+    await this.db.insert(aiProposalsTable).values({
+      id:          proposal.id,
+      level:       proposal.level,
+      title:       proposal.title,
+      description: proposal.description,
+      reasoning:   proposal.reasoning ?? null,
+      patch:       proposal.patch as any,
+      status:      proposal.status,
+      autoApplied: proposal.autoApplied,
+      module:      proposal.module ?? null,
+    });
+    return proposal.id;
+  }
+
+  async getById(id: string): Promise<AIProposal | null> {
+    const [row] = await this.db
+      .select()
+      .from(aiProposalsTable)
+      .where(eq(aiProposalsTable.id, id))
+      .limit(1);
+    return row ? this.mapRow(row) : null;
+  }
+
+  async list(filter?: { status?: string; level?: number }, limit = 50): Promise<AIProposal[]> {
+    const conditions: any[] = [];
+    if (filter?.status) conditions.push(eq(aiProposalsTable.status, filter.status));
+    if (filter?.level)  conditions.push(eq(aiProposalsTable.level, filter.level));
+    const rows = await this.db
+      .select()
+      .from(aiProposalsTable)
+      .where(conditions.length ? and(...conditions) : undefined)
+      .orderBy(desc(aiProposalsTable.createdAt))
+      .limit(limit);
+    return rows.map(r => this.mapRow(r));
+  }
+
+  async updateStatus(id: string, status: string, extra?: Partial<AIProposal>): Promise<void> {
+    const update: any = { status };
+    if (extra?.appliedAt)      update.appliedAt = extra.appliedAt;
+    if (extra?.rejectedReason) update.rejectedReason = extra.rejectedReason;
+    if (extra?.stagingResult)  update.stagingResult = extra.stagingResult;
+    await this.db.update(aiProposalsTable).set(update).where(eq(aiProposalsTable.id, id));
+  }
+
+  async countByStatus(): Promise<Record<string, number>> {
+    const rows = await this.db
+      .select({ status: aiProposalsTable.status, count: sql<number>`COUNT(*)` })
+      .from(aiProposalsTable)
+      .groupBy(aiProposalsTable.status);
+    return Object.fromEntries(rows.map(r => [r.status, Number(r.count)]));
+  }
+
+  async getRecentApplied(limit = 10): Promise<AIProposal[]> {
+    const rows = await this.db
+      .select()
+      .from(aiProposalsTable)
+      .where(eq(aiProposalsTable.status, 'applied'))
+      .orderBy(desc(aiProposalsTable.appliedAt))
+      .limit(limit);
+    return rows.map(r => this.mapRow(r));
+  }
+
+  private mapRow(row: any): AIProposal {
+    return {
+      id:             row.id,
+      level:          row.level as 1 | 2 | 3,
+      title:          row.title,
+      description:    row.description,
+      reasoning:      row.reasoning ?? undefined,
+      patch:          (row.patch as AIPatchEntry[]) || [],
+      status:         row.status as any,
+      autoApplied:    row.autoApplied,
+      stagingResult:  row.stagingResult ?? undefined,
+      module:         row.module ?? undefined,
+      createdAt:      row.createdAt,
+      appliedAt:      row.appliedAt ?? undefined,
+      rejectedReason: row.rejectedReason ?? undefined,
+    };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Repository: AgentDailySpendRepository
+// ─────────────────────────────────────────────────────────────────────────────
+export class AgentDailySpendRepository {
+  private db: ReturnType<typeof drizzle>;
+
+  constructor(pool: Pool) {
+    this.db = drizzle(pool);
+  }
+
+  private today(): string {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  async getSpent(agentId: number): Promise<bigint> {
+    const today = this.today();
+    const [row] = await this.db
+      .select({ spentNano: agentDailySpendTable.spentNano })
+      .from(agentDailySpendTable)
+      .where(and(eq(agentDailySpendTable.agentId, agentId), eq(agentDailySpendTable.spendDate, today)))
+      .limit(1);
+    return row ? BigInt(row.spentNano as any) : 0n;
+  }
+
+  async addSpend(agentId: number, userId: number, amountNano: bigint): Promise<bigint> {
+    const today = this.today();
+    await this.db
+      .insert(agentDailySpendTable)
+      .values({ agentId, userId, spendDate: today, spentNano: amountNano })
+      .onConflictDoUpdate({
+        target: [agentDailySpendTable.agentId, agentDailySpendTable.spendDate],
+        set: { spentNano: sql`agent_daily_spend.spent_nano + ${amountNano}` },
+      });
+    return this.getSpent(agentId);
+  }
+
+  async canSpend(agentId: number, amountNano: bigint, limitNano: bigint): Promise<boolean> {
+    const spent = await this.getSpent(agentId);
+    return spent + amountNano <= limitNano;
+  }
+}
+
+// ─── BalanceTransactionRepository ─────────────────────────────────────────
+
+export class BalanceTransactionRepository {
+  constructor(private pool: Pool) {}
+
+  async record(userId: number, type: string, amountTon: number, balanceAfter: number, description?: string, txHash?: string, status = 'completed'): Promise<number> {
+    const res = await this.pool.query(
+      `INSERT INTO builder_bot.balance_transactions (user_id, type, amount_ton, balance_after, description, tx_hash, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+      [userId, type, amountTon, balanceAfter, description || null, txHash || null, status]
+    );
+    return res.rows[0].id;
+  }
+
+  async getHistory(userId: number, limit = 20, offset = 0, type?: string): Promise<{ transactions: any[]; total: number }> {
+    let where = 'WHERE user_id = $1';
+    const params: any[] = [userId];
+    if (type && type !== 'all') {
+      where += ' AND type = $2';
+      params.push(type);
+    }
+    const countRes = await this.pool.query(
+      `SELECT COUNT(*) as cnt FROM builder_bot.balance_transactions ${where}`, params
+    );
+    const total = parseInt(countRes.rows[0].cnt, 10);
+    const limitIdx = params.length + 1;
+    const offsetIdx = params.length + 2;
+    const rows = await this.pool.query(
+      `SELECT id, type, amount_ton, balance_after, description, tx_hash, status, created_at
+       FROM builder_bot.balance_transactions ${where}
+       ORDER BY created_at DESC LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+      [...params, limit, offset]
+    );
+    return { transactions: rows.rows, total };
+  }
+
+  async getByTxHash(txHash: string): Promise<any | null> {
+    const res = await this.pool.query(
+      'SELECT * FROM builder_bot.balance_transactions WHERE tx_hash = $1 LIMIT 1',
+      [txHash]
+    );
+    return res.rows[0] || null;
+  }
+
+  async getRecentWithdraws(userId: number, sinceHoursAgo = 24): Promise<number> {
+    const res = await this.pool.query(
+      `SELECT COUNT(*) as cnt FROM builder_bot.balance_transactions
+       WHERE user_id = $1 AND type = 'withdraw' AND status = 'completed'
+       AND created_at > NOW() - INTERVAL '${sinceHoursAgo} hours'`,
+      [userId]
+    );
+    return parseInt(res.rows[0].cnt, 10);
+  }
+
+  async getLastWithdrawTime(userId: number): Promise<Date | null> {
+    const res = await this.pool.query(
+      `SELECT created_at FROM builder_bot.balance_transactions
+       WHERE user_id = $1 AND type = 'withdraw' AND status = 'completed'
+       ORDER BY created_at DESC LIMIT 1`,
+      [userId]
+    );
+    return res.rows[0]?.created_at || null;
+  }
+}
+
+// Singletons
+let balanceTxRepo: BalanceTransactionRepository | null = null;
+let aiProposalsRepo: AIProposalsRepository | null = null;
+let agentDailySpendRepo: AgentDailySpendRepository | null = null;
+
+export function initBalanceTxRepository(pool: Pool): BalanceTransactionRepository {
+  if (!balanceTxRepo) balanceTxRepo = new BalanceTransactionRepository(pool);
+  return balanceTxRepo;
+}
+export function getBalanceTxRepository(): BalanceTransactionRepository {
+  if (!balanceTxRepo) throw new Error('BalanceTransactionRepository not initialized');
+  return balanceTxRepo;
+}
+
+export function initAIProposalsRepository(pool: Pool): AIProposalsRepository {
+  if (!aiProposalsRepo) aiProposalsRepo = new AIProposalsRepository(pool);
+  return aiProposalsRepo;
+}
+export function getAIProposalsRepository(): AIProposalsRepository {
+  if (!aiProposalsRepo) throw new Error('AIProposalsRepository not initialized');
+  return aiProposalsRepo;
+}
+
+export function initAgentDailySpendRepository(pool: Pool): AgentDailySpendRepository {
+  if (!agentDailySpendRepo) agentDailySpendRepo = new AgentDailySpendRepository(pool);
+  return agentDailySpendRepo;
+}
+export function getAgentDailySpendRepository(): AgentDailySpendRepository {
+  if (!agentDailySpendRepo) throw new Error('AgentDailySpendRepository not initialized');
+  return agentDailySpendRepo;
 }
