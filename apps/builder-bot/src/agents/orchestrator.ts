@@ -11,6 +11,7 @@ import { canCreateAgent, canGenerateForFree, trackGeneration, getUserSubscriptio
 import { allAgentTemplates, AgentTemplate } from '../agent-templates';
 import { detectTriggerFromDescription } from './sub-agents/creator';
 import { getUserSettingsRepository } from '../db/schema-extensions';
+import { getSkillDocsForCodeGeneration } from '../plugins-system';
 
 // ── MarkdownV2 escaping (shared with bot.ts) ───────────────────────────────
 function esc(text: string | number | null | undefined): string {
@@ -651,7 +652,7 @@ ID: ${userId}${isOwner ? ' (ВЛАДЕЛЕЦ ПЛАТФОРМЫ)' : ''}
     if (description.length < 8) {
       return {
         type: 'text',
-        content: '❓ Опишите подробнее что должен делать агент\\.\n\n💡 Примеры:\n🎁 _"сканируй арбитраж подарков каждые 5 мин"_\n📊 _"мониторь floor NFT, сводка каждый час"_\n🐋 _"whale alert: следи за кошельком UQ\\.\\.\\."_',
+        content: '❓ Опишите подробнее что должен делать агент\\.\n\n💡 Примеры:\n📈 _"следи за балансом кошелька UQ\\.\\.\\., изменение \\> 100 TON — уведоми"_\n📊 _"мониторь цену TON, пришли сводку каждый час"_\n🌐 _"парси новости coindesk, дайджест каждые 30 мин"_',
       };
     }
 
@@ -667,10 +668,19 @@ ID: ${userId}${isOwner ? ' (ВЛАДЕЛЕЦ ПЛАТФОРМЫ)' : ''}
 
     // 2) Загружаем глобальные пользовательские переменные (API ключи)
     let userVars: Record<string, any> = {};
+    let pluginSkillDocs = '';
     try {
       const repo = getUserSettingsRepository();
       const allSettings = await repo.getAll(userId);
       userVars = (allSettings.user_variables as Record<string, any>) || {};
+
+      // Загружаем установленные плагины и их skillDoc для инжекции в агента
+      const rawPlugins = await repo.get(userId, 'installed_plugins').catch(() => null);
+      const installedPluginIds: string[] = rawPlugins ? JSON.parse(String(rawPlugins)) : [];
+      if (installedPluginIds.length > 0) {
+        pluginSkillDocs = getSkillDocsForCodeGeneration(installedPluginIds);
+        console.log(`[Orchestrator] Injecting ${installedPluginIds.length} plugin(s) skillDocs for user ${userId}`);
+      }
     } catch (e: any) {
       console.warn('[Orchestrator] Failed to load user settings:', e.message);
     }
@@ -725,7 +735,7 @@ ID: ${userId}${isOwner ? ' (ВЛАДЕЛЕЦ ПЛАТФОРМЫ)' : ''}
   "summary": "1 предложение что делает агент"
 }`
           },
-          { role: 'user', content: description }
+          { role: 'user', content: description + (pluginSkillDocs ? `\n\n[USER HAS THESE PLUGINS INSTALLED — their APIs are available to the agent:]\n${pluginSkillDocs}` : '') }
         ],
         max_tokens: 2000,
         temperature: 0.7,
@@ -752,6 +762,11 @@ ID: ${userId}${isOwner ? ' (ВЛАДЕЛЕЦ ПЛАТФОРМЫ)' : ''}
 
     // Засчитываем генерацию
     trackGeneration(userId);
+
+    // Если плагины установлены — добавляем их API docs в system prompt агента
+    if (pluginSkillDocs) {
+      systemPrompt = systemPrompt + '\n\n' + pluginSkillDocs;
+    }
 
     // 4) Собираем triggerConfig для ai_agent
     const triggerConfig: Record<string, any> = {
