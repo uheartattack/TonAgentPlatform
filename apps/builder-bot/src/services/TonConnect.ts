@@ -265,6 +265,40 @@ export async function sendAgentTransaction(
   return sendBoc(boc);
 }
 
+/** Send a transfer with a pre-built Cell payload (e.g. SwiftGifts tx_payload) */
+export async function sendAgentTransactionWithCell(
+  agentWallet: AgentWallet,
+  toAddress: string,
+  amountTon: number,
+  payloadBase64: string
+): Promise<any> {
+  const { Cell } = await import('@ton/core');
+  let bodyCell;
+  try {
+    bodyCell = Cell.fromBase64(payloadBase64);
+  } catch {
+    return { ok: false, error: 'Invalid tx_payload: not a valid base64 Cell BOC' };
+  }
+  const wallet = WalletContractV4.create({ workchain: 0, publicKey: agentWallet.publicKey });
+  const seqno = await getSeqno(agentWallet.address);
+
+  const transfer = wallet.createTransfer({
+    seqno,
+    secretKey: agentWallet.secretKey,
+    messages: [
+      internal({
+        to: toAddress,
+        value: BigInt(Math.floor(amountTon * 1e9)),
+        body: bodyCell,
+        bounce: true,
+      }),
+    ],
+  });
+
+  const boc = transfer.toBoc().toString('base64');
+  return sendBoc(boc);
+}
+
 // ── Legacy helper (used in some places) ──────────────────────────────────────
 
 export async function getWalletInfo(address: string): Promise<any> {
