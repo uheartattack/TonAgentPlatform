@@ -676,7 +676,12 @@ ID: ${userId}${isOwner ? ' (ВЛАДЕЛЕЦ ПЛАТФОРМЫ)' : ''}
 
       // Загружаем установленные плагины и их skillDoc для инжекции в агента
       const rawPlugins = await repo.get(userId, 'installed_plugins').catch(() => null);
-      const installedPluginIds: string[] = rawPlugins ? JSON.parse(String(rawPlugins)) : [];
+      const installedPluginIds: string[] = (() => {
+        if (!rawPlugins) return [];
+        const s = String(rawPlugins).trim();
+        if (s.startsWith('[')) { try { return JSON.parse(s); } catch { return []; } }
+        return s ? [s] : [];
+      })();
       if (installedPluginIds.length > 0) {
         pluginSkillDocs = getSkillDocsForCodeGeneration(installedPluginIds);
         console.log(`[Orchestrator] Injecting ${installedPluginIds.length} plugin(s) skillDocs for user ${userId}`);

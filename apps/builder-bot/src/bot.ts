@@ -54,6 +54,18 @@ const OWNER_ID_NUM = parseInt(process.env.OWNER_ID || '0');
 // ============================================================
 // MarkdownV2 escaping — все 18 спецсимволов Telegram
 // ============================================================
+/** Безопасный парсинг списка установленных плагинов из DB.
+ * Обрабатывает как JSON-массив `["id1","id2"]`, так и plain-строку `"id1"`. */
+function safeParsePluginList(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  const s = String(raw).trim();
+  if (s.startsWith('[')) {
+    try { return JSON.parse(s); } catch { return []; }
+  }
+  // Старый формат: одна строка без JSON — вернуть как массив из одного элемента
+  return s ? [s] : [];
+}
+
 function esc(text: string | number | null | undefined): string {
   if (text === null || text === undefined) return '';
   return String(text)
@@ -2395,7 +2407,7 @@ bot.on('callback_query', async (ctx) => {
     try {
       const settingsRepo = getUserSettingsRepository();
       const current = await settingsRepo.get(userId, 'installed_plugins').catch(() => null);
-      const list: string[] = current ? JSON.parse(String(current)) : [];
+      const list: string[] = safeParsePluginList(current as string);
       if (!list.includes(pid)) list.push(pid);
       await settingsRepo.set(userId, 'installed_plugins', JSON.stringify(list));
       getPluginManager().installPlugin(pid);
@@ -2422,7 +2434,7 @@ bot.on('callback_query', async (ctx) => {
     try {
       const settingsRepo = getUserSettingsRepository();
       const current = await settingsRepo.get(userId, 'installed_plugins').catch(() => null);
-      const list: string[] = current ? JSON.parse(String(current)) : [];
+      const list: string[] = safeParsePluginList(current as string);
       const updated = list.filter(id => id !== pid);
       await settingsRepo.set(userId, 'installed_plugins', JSON.stringify(updated));
       getPluginManager().uninstallPlugin(pid);
@@ -2816,7 +2828,7 @@ bot.on('callback_query', async (ctx) => {
   }
 
   // ── tglogin: menu (re-show auth method picker) ─────────────────
-  if (data === 'tglogin_menu') {
+  if (data === 'tglogin_menu' || data === 'tg_login_start') {
     await ctx.answerCbQuery();
     const lang = getUserLang(userId);
     const ru = lang === 'ru';
@@ -3048,7 +3060,7 @@ bot.on('callback_query', async (ctx) => {
   if (data === 'model_selector') { await ctx.answerCbQuery(); await showModelSelector(ctx); return; }
 
   // ── Подписки ──
-  if (data === 'sub_menu' || data === 'subscription') {
+  if (data === 'sub_menu' || data === 'subscription' || data === 'show_sub') {
     await ctx.answerCbQuery();
     await showSubscription(ctx);
     return;
@@ -5471,7 +5483,7 @@ async function showPlugins(ctx: Context) {
   let installedIds: string[] = [];
   try {
     const raw = await getUserSettingsRepository().get(userId, 'installed_plugins').catch(() => null);
-    installedIds = raw ? JSON.parse(String(raw)) : [];
+    installedIds = safeParsePluginList(raw as string);
   } catch (_) {}
 
   const installedCount = installedIds.length;
@@ -5536,7 +5548,7 @@ async function showPluginDetails(ctx: Context, pluginId: string) {
   let isInstalled = false;
   try {
     const raw = await getUserSettingsRepository().get(userId, 'installed_plugins').catch(() => null);
-    const list: string[] = raw ? JSON.parse(String(raw)) : [];
+    const list: string[] = safeParsePluginList(raw as string);
     isInstalled = list.includes(pluginId);
   } catch (_) {}
 
