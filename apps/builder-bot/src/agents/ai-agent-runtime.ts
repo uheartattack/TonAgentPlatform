@@ -983,6 +983,63 @@ function buildToolDefinitions(): OpenAI.ChatCompletionTool[] {
         },
       },
     },
+    // ── Smart valuation tools ──
+    {
+      type: 'function',
+      function: {
+        name: 'find_underpriced_gifts',
+        description: 'УМНЫЙ ПОИСК НЕДООЦЕНЁННЫХ ПОДАРКОВ. Сравнивает цену каждого листинга с fair value (флор по backdrop+model). Возвращает подарки, которые продаются НИЖЕ рыночной стоимости их атрибутов. Лучший инструмент для поиска выгодных покупок.',
+        parameters: {
+          type: 'object',
+          properties: {
+            collection: { type: 'string', description: 'Slug коллекции (lol-pop, jelly-bunny, plush-pepe и т.д.)' },
+            max_price: { type: 'number', description: 'Максимальная цена в TON (бюджет)' },
+            min_discount_pct: { type: 'number', description: 'Минимальный % скидки от fair value (default: 10)' },
+          },
+          required: ['collection'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'get_price_history',
+        description: 'История цен коллекции за последние дни/недели. Показывает тренды: растёт, падает, стабильна. Используй для принятия решения: покупать сейчас или подождать.',
+        parameters: {
+          type: 'object',
+          properties: {
+            collection_name: { type: 'string', description: 'Название коллекции' },
+          },
+          required: ['collection_name'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'get_market_activity',
+        description: 'Лента покупок/продаж/изменений цен в реальном времени. Показывает ЧТО покупают прямо сейчас, по какой цене, на каком маркете. Используй для анализа спроса и определения реальной ликвидности.',
+        parameters: {
+          type: 'object',
+          properties: {
+            gift: { type: 'string', description: 'Slug подарка (опционально — для конкретной коллекции)' },
+            type: { type: 'string', enum: ['buy', 'listing', 'change_price'], description: 'Тип действия: buy=покупки, listing=новые листинги, change_price=изменения цен' },
+            min_price: { type: 'number', description: 'Минимальная цена фильтра' },
+            max_price: { type: 'number', description: 'Максимальная цена фильтра' },
+            markets: { type: 'array', items: { type: 'string' }, description: 'Маркеты: tonnel, portals, Mrkt, getgems, fragment' },
+          },
+          required: [],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'get_collections_marketcap',
+        description: 'Капитализация всех коллекций подарков. Общий объём рынка, топ коллекции по стоимости. Используй для обзора рынка и выбора перспективных коллекций.',
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+    },
     // ── Plugin tools ──
     {
       type: 'function',
@@ -1906,6 +1963,147 @@ async function executeTool(
       }
     }
 
+    // ── Smart valuation tools ──
+    case 'find_underpriced_gifts': {
+      try {
+        const { getGiftAssetClient } = await import('../services/giftasset');
+        const ga = getGiftAssetClient();
+        const collection = args.collection as string;
+        const maxPrice = args.max_price as number | undefined;
+        const minDiscount = (args.min_discount_pct as number) || 10;
+
+        // 1. Get fair value per backdrop
+        const [backdropData, listings] = await Promise.all([
+          ga.getBackdropFloors(collection).catch(() => null),
+          ga.swAggregate({
+            name: collection,
+            toPrice: maxPrice || null,
+            market: ['tonnel', 'portals', 'Mrkt', 'getgems', 'fragment'],
+            receiver: params.userId,
+          }).catch(() => ({ total: 0, items: [] })),
+        ]);
+
+        // 2. Build backdrop fair value map
+        const fairValues: Record<string, number> = {};
+        if (backdropData && typeof backdropData === 'object') {
+          const entries = Array.isArray(backdropData) ? backdropData
+            : backdropData.backdrops ? backdropData.backdrops
+            : backdropData.data ? backdropData.data
+            : Object.values(backdropData);
+          for (const e of (entries as any[])) {
+            if (e && e.backdrop && e.floor_price) {
+              fairValues[String(e.backdrop).toLowerCase()] = Number(e.floor_price);
+            } else if (e && e.name && e.price) {
+              fairValues[String(e.name).toLowerCase()] = Number(e.price);
+            }
+          }
+        }
+
+        // 3. Also get per-variant prices for more precision
+        let variantPrices: Record<string, number> = {};
+        try {
+          const uniqueData = await ga.getUniqueGiftsPriceList(collection);
+          if (uniqueData && typeof uniqueData === 'object') {
+            const variants = Array.isArray(uniqueData) ? uniqueData
+              : uniqueData.variants || uniqueData.data || Object.values(uniqueData);
+            for (const v of (variants as any[])) {
+              if (v && v.model && v.backdrop && v.floor_price) {
+                const key = `${String(v.model).toLowerCase()}:${String(v.backdrop).toLowerCase()}`;
+                variantPrices[key] = Number(v.floor_price);
+              }
+            }
+          }
+        } catch {}
+
+        // 4. Score each listing
+        const underpriced: any[] = [];
+        for (const item of (listings.items || [])) {
+          const price = Number(item.price_ton || item.price);
+          if (!price || price <= 0) continue;
+          if (maxPrice && price > maxPrice) continue;
+
+          const backdrop = String(item.backdrop || item.options?.backdrop || '').toLowerCase();
+          const model = String(item.model || item.options?.model || '').toLowerCase();
+
+          // Find fair value: variant-specific > backdrop-specific > skip
+          const variantKey = `${model}:${backdrop}`;
+          let fairValue = variantPrices[variantKey] || fairValues[backdrop] || 0;
+          if (!fairValue || fairValue <= 0) continue;
+
+          const discountPct = ((fairValue - price) / fairValue) * 100;
+          if (discountPct >= minDiscount) {
+            underpriced.push({
+              title: item.title || item.name || collection,
+              price_ton: price,
+              fair_value: Number(fairValue.toFixed(2)),
+              discount_pct: Number(discountPct.toFixed(1)),
+              backdrop: item.backdrop || item.options?.backdrop,
+              model: item.model || item.options?.model,
+              provider: item.provider,
+              link: item.link,
+              can_buy_now: !!item.tx_payload,
+              tx_contract: item.tx_contract,
+              tx_payload: item.tx_payload,
+            });
+          }
+        }
+
+        // Sort by discount (biggest bargain first)
+        underpriced.sort((a, b) => b.discount_pct - a.discount_pct);
+        const top = underpriced.slice(0, 15);
+
+        return {
+          collection,
+          total_listings: listings.total,
+          underpriced_count: underpriced.length,
+          backdrop_fair_values: fairValues,
+          variant_fair_values_count: Object.keys(variantPrices).length,
+          top_underpriced: top,
+          note: top.length > 0
+            ? `Found ${underpriced.length} underpriced items! Best deal: ${top[0].title} at ${top[0].price_ton} TON (fair value ${top[0].fair_value}, ${top[0].discount_pct}% below). Use buy_market_gift if can_buy_now=true.`
+            : `No items found ${minDiscount}%+ below fair value in ${collection}. Market is efficiently priced right now.`,
+        };
+      } catch (e: any) {
+        return { error: e.message };
+      }
+    }
+
+    case 'get_price_history': {
+      try {
+        const { getGiftAssetClient } = await import('../services/giftasset');
+        const data = await getGiftAssetClient().getPriceListHistory(args.collection_name as string);
+        return { price_history: data, note: 'Historical price data. Compare with current floor to determine trend (rising/falling/stable). Use for timing buy/sell decisions.' };
+      } catch (e: any) {
+        return { error: e.message };
+      }
+    }
+
+    case 'get_market_activity': {
+      try {
+        const { getGiftAssetClient } = await import('../services/giftasset');
+        const data = await getGiftAssetClient().getMarketActions({
+          gift: args.gift as string | undefined,
+          type: (args.type as 'buy' | 'listing' | 'change_price') || 'buy',
+          minPrice: args.min_price as number | undefined,
+          maxPrice: args.max_price as number | undefined,
+          markets: args.markets as string[] | undefined,
+        });
+        return { activity: data, note: 'Real-time market actions. type=buy shows actual purchases (demand indicator). type=listing shows new offers. Use to gauge liquidity and real demand.' };
+      } catch (e: any) {
+        return { error: e.message };
+      }
+    }
+
+    case 'get_collections_marketcap': {
+      try {
+        const { getGiftAssetClient } = await import('../services/giftasset');
+        const data = await getGiftAssetClient().getCollectionsMarketcap();
+        return { marketcap: data, note: 'Total market capitalization of all gift collections. Top collections by value = most liquid markets.' };
+      } catch (e: any) {
+        return { error: e.message };
+      }
+    }
+
     // ── Plugin tools ──
     case 'list_plugins': {
       const { getPluginManager } = await import('../plugins-system');
@@ -2125,36 +2323,87 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
 - Искать недооценённые подарки: чёрный фон или редкая модель по цене флора = 🔥
 - Следить за свежими коллекциями: первые листинги обычно дешевле рынка
 
-🛠 Инструменты для анализа (используй в таком порядке):
-1. get_top_deals() → ЛУЧШИЕ СДЕЛКИ ДНЯ (GiftAsset Pro) — начинай с этого каждый тик
-2. scan_real_arbitrage() → кросс-маркет спред, верифицированные живым агрегатором
-3. get_collection_offers(name) → ГАРАНТИРОВАННЫЕ покупатели (buy offers) — самая надёжная цена продажи
-4. get_gift_aggregator(slug) → живые листинги с backdrop/model/rarity + BOC для мгновенной покупки
-5. get_unique_gift_prices(name) → цены per-variant (backdrop+model) — точнее флора коллекции
-6. get_backdrop_floors(collection) → флор по цвету фона (чёрный = 5-50x)
-7. get_market_health() → greed + health индексы (>70 greed = продавай, <30 = покупай)
-8. get_attribute_volumes(name) → объём продаж по атрибутам — что реально покупают
-9. get_gift_floor_real(slug) → флор по всем маркетам
-10. get_agent_wallet() + send_ton() → кошелёк и транзакции
-11. buy_market_gift(tx_contract, tx_payload, price_ton) → МГНОВЕННАЯ ПОКУПКА если can_buy_now=true в get_gift_aggregator
-⛔ НЕ ИСПОЛЬЗУЙ: scan_arbitrage() — устарело. Только scan_real_arbitrage().
+🛠 ПОЛНЫЙ АРСЕНАЛ ИНСТРУМЕНТОВ (23 gift-инструмента):
+
+📊 АНАЛИТИКА И ОБЗОР РЫНКА:
+1. get_top_deals() → ТОП сделки дня (GiftAsset Pro) — начинай мониторинг с этого
+2. get_collections_marketcap() → капитализация ВСЕХ коллекций — какие рынки самые большие
+3. get_market_health() → greed + health индексы (>70 greed = продавай, <30 = покупай)
+4. get_market_activity(gift?, type, markets) → ЛЕНТА покупок/продаж в реалтайме — что покупают ПРЯМО СЕЙЧАС
+5. get_price_history(collection_name) → ТРЕНД цен за дни/недели — растёт, падает, стабильна
+
+💰 ОЦЕНКА И ПОИСК ВЫГОДЫ:
+6. find_underpriced_gifts(collection, max_price?, min_discount_pct?) → 🔥 ГЛАВНЫЙ ИНСТРУМЕНТ — находит листинги дешевле fair value по backdrop+model
+7. get_unique_gift_prices(name) → цены per-variant (backdrop+model combo) — точнее флора коллекции
+8. get_backdrop_floors(collection) → флор по цвету фона (чёрный = 5-50x дороже белого)
+9. get_attribute_volumes(name) → объём продаж по атрибутам — что реально покупают (ликвидность)
+10. get_price_list() → текущие флор-цены ВСЕХ коллекций разом
+
+🔍 ПОИСК КОНКРЕТНЫХ ПРЕДЛОЖЕНИЙ:
+11. get_gift_aggregator(name, to_price?, backdrop?, model?) → живые листинги со ВСЕХ маркетов + BOC для покупки
+12. scan_real_arbitrage() → кросс-маркет спреды, верифицированные агрегатором
+13. get_collection_offers(name) → ГАРАНТИРОВАННЫЕ покупатели (buy offers) — надёжная цена продажи
+14. get_gift_floor_real(slug) → флор по всем маркетам отдельно (offchain vs onchain)
+15. get_gift_sales_history(slug) → последние сделки конкретной коллекции
+
+🛒 ПОКУПКА И ПРОДАЖА:
+16. buy_market_gift(tx_contract, tx_payload, price_ton) → МГНОВЕННАЯ ПОКУПКА (нужен can_buy_now=true)
+17. get_agent_wallet() → адрес и баланс кошелька агента
+18. send_ton(to, amount) → отправить TON
+19. list_gift_for_sale(gift_id, price) → выставить подарок на продажу
+
+📦 ПОРТФОЛИО И ИНФО:
+20. get_user_portfolio(username/telegram_id) → портфолио пользователя с оценкой
+21. get_gift_upgrade_stats() → статистика апгрейдов
+22. analyze_gift_profitability(name) → анализ прибыльности коллекции
+
+⛔ УСТАРЕВШИЕ: scan_arbitrage() — НЕ ИСПОЛЬЗУЙ. Только scan_real_arbitrage().
+
+🧠 ЦЕПОЧКИ АНАЛИЗА (Smart Valuation):
+
+📈 Цепочка "НАЙТИ ВЫГОДУ" (главная для автономных агентов):
+1. find_underpriced_gifts(collection, max_price) → сразу получаешь discount% и fair_value
+2. Если discount >15% → buy_market_gift() если can_buy_now=true
+3. Если discount 10-15% → notify_rich() с деталями для ручной покупки
+
+📊 Цепочка "АНАЛИЗ КОЛЛЕКЦИИ" (перед покупкой):
+1. get_price_history(name) → тренд: растёт → покупай, падает → жди
+2. get_attribute_volumes(name) → какие backdrop/model самые ликвидные
+3. get_backdrop_floors(name) → сколько стоит каждый фон → знаешь fair value
+4. get_collection_offers(name) → есть ли гарантированные покупатели (exit strategy)
+5. get_market_activity(gift=name, type='buy') → кто покупает прямо сейчас (спрос)
+
+🔄 Цепочка "АРБИТРАЖ" (кросс-маркет):
+1. scan_real_arbitrage() → спреды между маркетами
+2. get_gift_aggregator(name, to_price) → подтвердить живую цену на cheap-маркете
+3. get_collection_offers(name) → подтвердить цену продажи (buy offers)
+4. Если spread >8% и offer подтверждён → buy_market_gift()
+
+🌍 Цепочка "ОБЗОР РЫНКА" (для мониторинга):
+1. get_collections_marketcap() → крупнейшие коллекции
+2. get_market_health() → greed/health → сейчас покупать или продавать?
+3. get_top_deals() → лучшие сделки среди ВСЕХ коллекций
+4. get_market_activity(type='buy') → реалтайм покупки → где спрос
 
 🛒 ПОТОК ПОКУПКИ (для автономных агентов):
-1. get_gift_aggregator(name="lol-pop", to_price=MAX_PRICE) → найти самый дешевый item
-2. Если item.can_buy_now=true → buy_market_gift(tx_contract=item.tx_contract, tx_payload=item.tx_payload, price_ton=item.price_ton, gift_name=item.title)
-3. Если item.can_buy_now=false → notify_rich() с item.link для ручной покупки пользователем
-4. Если items=[] → ничего не делать, завершить тик молча
+1. find_underpriced_gifts(collection, max_price) → найти самый выгодный item
+   ИЛИ get_gift_aggregator(name, to_price=MAX_PRICE) → найти самый дешёвый
+2. Если can_buy_now=true → buy_market_gift(tx_contract, tx_payload, price_ton, gift_name)
+3. Если can_buy_now=false → notify_rich() с link для ручной покупки
+4. Если ничего не найдено → завершить тик молча
 [END GIFT KNOWLEDGE]`;
 
   // Chat mode vs monitoring mode instructions
   const modeHint = msgs.length > 0
     ? `\n\n⚠️ РЕЖИМ ЧАТА: Пользователь написал тебе сообщение. Ответь ТОЛЬКО текстом напрямую — НЕ вызывай инструмент notify(). Твой текстовый ответ будет доставлен автоматически. Используй инструменты только если они нужны для ответа на вопрос.`
     : `\n\n⚠️ РЕЖИМ МОНИТОРИНГА (СКОРОСТЬ КРИТИЧНА): Пользователь не в чате. Действуй быстро:
-1. Если в state есть target_gift (конкретная цель) → сразу вызови get_gift_aggregator(name=target_gift, to_price=target_price) — БЕЗ предисловий
-2. Если items[] не пустой → вызови notify_rich() с первым листингом: название, цена, маркет, ССЫЛКА для покупки
-3. Если items[] пустой → завершить МОЛЧА (не нотифицировать, не писать ничего)
-4. Если target_gift не задан → get_top_deals() → если есть сделки с profit >8% → notify с топ-3
-ЗАПОМНИ: notify() только если инструмент вернул реальный item с link. Никаких предположений.`;
+1. Если в state есть target_gift (конкретная цель) → find_underpriced_gifts(collection=target_gift, max_price=target_price) — УМНЫЙ ПОИСК
+   Fallback: get_gift_aggregator(name=target_gift, to_price=target_price) — прямой поиск
+2. Если underpriced найдены с discount >15% и can_buy_now=true → buy_market_gift() автоматически
+3. Если underpriced найдены но can_buy_now=false → notify_rich() с деталями + link
+4. Если ничего не найдено → завершить МОЛЧА
+5. Если target_gift не задан → get_top_deals() → если profit >8% → notify с топ-3
+ЗАПОМНИ: notify() только если инструмент вернул реальный item. Никаких предположений.`;
 
   const contextMsg = `[Текущий тик агента]
 Время: ${new Date().toISOString()}
