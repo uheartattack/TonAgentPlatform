@@ -71,6 +71,11 @@ export async function notifyRich(userId: number, opts: {
     if (opts.agentName) {
       sendText = `🤖 <b>${escapeHtml(opts.agentName)}</b>\n${div()}\n${opts.text}`;
     }
+    // Telegram max message length is 4096 chars
+    const MAX_LEN = 4000;
+    if (sendText.length > MAX_LEN) {
+      sendText = sendText.slice(0, MAX_LEN - 50) + '\n<i>... (сообщение обрезано)</i>';
+    }
 
     extra.parse_mode = 'HTML';
     if (opts.silent) extra.disable_notification = true;
