@@ -99,7 +99,7 @@ function getAIClient(config: Record<string, any>): { client: OpenAI; defaultMode
 }
 
 // ── Markdown → HTML converter (for AI-generated text) ─────────────────────
-function mdToHtml(text: string): string {
+export function mdToHtml(text: string): string {
   return text
     // Escape HTML special chars first (except in code blocks)
     .replace(/&/g, '&amp;')
