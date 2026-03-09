@@ -1300,6 +1300,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 24px;
+  max-width: 600px;
+  margin: 32px auto 0;
 }
 
 .mission-item {

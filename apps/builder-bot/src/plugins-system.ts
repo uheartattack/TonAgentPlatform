@@ -425,7 +425,45 @@ Usage example:
     hooks: {},
     install: async () => true,
     uninstall: async () => true,
-    execute: async (params) => params
+    execute: async (params: any) => {
+      const watchAddr = params.address || params.watchAddress || params.watch_address;
+      if (!watchAddr) throw new Error('whale-tracker: address is required');
+      const minTon = parseFloat(params.minAmount || params.min_amount || '1000');
+      const limit = Math.min(parseInt(params.limit || '50'), 100);
+
+      const url = `https://toncenter.com/api/v2/getTransactions?address=${encodeURIComponent(watchAddr)}&limit=${limit}&to_lt=0&archival=false`;
+      const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
+      if (!response.ok) throw new Error(`TonCenter ${response.status}: ${(await response.text()).slice(0, 200)}`);
+      const data = await response.json() as any;
+      if (!data.ok) throw new Error(`TonCenter error: ${data.error || 'unknown'}`);
+
+      const txs = data.result || [];
+      const whales = txs
+        .map((tx: any) => {
+          const inVal = parseInt(tx.in_msg?.value || '0') / 1e9;
+          const outVal = (tx.out_msgs || []).reduce((s: number, m: any) => s + parseInt(m.value || '0') / 1e9, 0);
+          const maxVal = Math.max(inVal, outVal);
+          if (maxVal < minTon) return null;
+          return {
+            hash: tx.transaction_id?.hash,
+            time: new Date(tx.utime * 1000).toISOString(),
+            direction: inVal >= outVal ? 'incoming' : 'outgoing',
+            amount_ton: Math.round(maxVal * 100) / 100,
+            from: tx.in_msg?.source || null,
+            to: tx.in_msg?.destination || null,
+            comment: tx.in_msg?.message || null,
+          };
+        })
+        .filter(Boolean);
+
+      return {
+        address: watchAddr,
+        minTon,
+        totalChecked: txs.length,
+        whalesFound: whales.length,
+        whales: whales.slice(0, 20),
+      };
+    }
   }
 ];
 
@@ -582,9 +620,45 @@ Option 3 — Prefer Discord/Slack webhooks — simpler, free, no setup.`,
     hooks: {},
     install: async () => true,
     uninstall: async () => true,
-    execute: async (params) => params
+    execute: async (params: any) => {
+      // Supports Mailgun REST API (most reliable for agents)
+      const domain = params.mailgunDomain || params.smtpHost;
+      const apiKey = params.mailgunKey || params.smtpPass;
+      const to = params.to || params.emailTo || params.smtpUser;
+      const subject = params.subject || 'TON Agent Alert';
+      const text = params.message || params.text || params.body || '';
+
+      if (!domain || !apiKey || !to) {
+        throw new Error('email-notifier: mailgunDomain (or smtpHost), mailgunKey (or smtpPass), and to (or smtpUser) are required');
+      }
+
+      // Mailgun REST API
+      const mailgunUrl = `https://api.mailgun.net/v3/${domain}/messages`;
+      const formData = new URLSearchParams({
+        from: params.from || `agent@${domain}`,
+        to,
+        subject,
+        text,
+      });
+
+      const response = await fetch(mailgunUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Basic ' + Buffer.from(`api:${apiKey}`).toString('base64'),
+        },
+        body: formData,
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Mailgun ${response.status}: ${errText.slice(0, 200)}`);
+      }
+      const result = await response.json() as any;
+      return { success: true, id: result.id, message: result.message };
+    }
   },
-  
+
   {
     id: 'slack-notifier',
     name: 'Slack Integration',
@@ -633,7 +707,35 @@ Rich Block Kit message:
     hooks: {},
     install: async () => true,
     uninstall: async () => true,
-    execute: async (params) => params
+    execute: async (params: any) => {
+      const webhookUrl = params.webhookUrl || params.webhook_url;
+      if (!webhookUrl || !webhookUrl.startsWith('https://hooks.slack.com/')) {
+        throw new Error('slack-notifier: invalid or missing webhookUrl (must start with https://hooks.slack.com/)');
+      }
+
+      let payload: any;
+      if (params.blocks) {
+        // Rich Block Kit message
+        payload = { blocks: params.blocks };
+        if (params.text) payload.text = params.text; // fallback text
+      } else {
+        // Simple text message
+        payload = { text: params.message || params.text || params.content || '' };
+      }
+
+      const response = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Slack webhook ${response.status}: ${text.slice(0, 200)}`);
+      }
+      return { success: true, statusCode: response.status };
+    }
   }
 ];
 
@@ -697,11 +799,21 @@ Key endpoints:
     },
     install: async () => true,
     uninstall: async () => true,
-    execute: async (params) => {
-      const { apiKey, endpoint } = params;
+    execute: async (params: any) => {
+      const apiKey = params.apiKey || params.api_key || '';
+      const endpoint = params.endpoint || 'rates?tokens=TON&currencies=USD';
+      if (!endpoint) throw new Error('tonapi-pro: endpoint is required');
+      const headers: any = { 'Accept': 'application/json' };
+      if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+
       const response = await fetch(`https://tonapi.io/v2/${endpoint}`, {
-        headers: { 'Authorization': `Bearer ${apiKey}` }
+        headers,
+        signal: AbortSignal.timeout(10000),
       });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`TonAPI ${response.status}: ${text.slice(0, 200)}`);
+      }
       return response.json();
     }
   },
@@ -832,7 +944,48 @@ IMPORTANT rules for safe agent code:
     },
     install: async () => true,
     uninstall: async () => false, // Нельзя удалить
-    execute: async (params) => params
+    execute: async (params: any) => {
+      const code = params.code || params.agentCode || '';
+      if (!code) throw new Error('drain-detector: code is required for scanning');
+
+      const issues: { severity: string; pattern: string; description: string; line?: number }[] = [];
+      const lines = code.split('\n');
+
+      // Check each line for dangerous patterns
+      const dangerousPatterns = [
+        { regex: /private[_\s]*key|mnemonic|seed[_\s]*phrase/i, severity: 'critical', desc: 'Hardcoded private key or mnemonic detected' },
+        { regex: /['"`][A-Za-z0-9]{48,}['"`]/, severity: 'high', desc: 'Possible hardcoded secret or key literal' },
+        { regex: /transfer\s*\(\s*['"`](?:EQ|UQ|0:)[^'"]+['"`]/i, severity: 'critical', desc: 'Hardcoded transfer destination address' },
+        { regex: /\.sendTransaction|\.send\s*\(|internal\s*\(/i, severity: 'warning', desc: 'Transaction sending detected — ensure amounts are validated' },
+        { regex: /process\.env/i, severity: 'warning', desc: 'Environment variable access' },
+        { regex: /eval\s*\(|Function\s*\(/i, severity: 'high', desc: 'Dynamic code execution (eval/Function)' },
+        { regex: /require\s*\(\s*['"`]child_process|exec\s*\(|spawn\s*\(/i, severity: 'critical', desc: 'System command execution' },
+        { regex: /fs\s*\.\s*(writeFile|readFile|unlink|rmdir)/i, severity: 'high', desc: 'Filesystem access detected' },
+        { regex: /\.balance\s*[*/]\s*[0-9.]+|getBalance.*send/i, severity: 'high', desc: 'Balance-proportional drain pattern' },
+      ];
+
+      for (let i = 0; i < lines.length; i++) {
+        for (const pat of dangerousPatterns) {
+          if (pat.regex.test(lines[i])) {
+            issues.push({ severity: pat.severity, pattern: pat.regex.source, description: pat.desc, line: i + 1 });
+          }
+        }
+      }
+
+      const criticalCount = issues.filter(i => i.severity === 'critical').length;
+      const highCount = issues.filter(i => i.severity === 'high').length;
+      const safe = criticalCount === 0 && highCount === 0;
+
+      return {
+        safe,
+        totalIssues: issues.length,
+        critical: criticalCount,
+        high: highCount,
+        warnings: issues.filter(i => i.severity === 'warning').length,
+        issues: issues.slice(0, 20),
+        verdict: safe ? 'Code appears safe' : `Found ${criticalCount} critical and ${highCount} high severity issues`,
+      };
+    }
   },
   
   {
@@ -870,7 +1023,90 @@ Red flags to check:
     hooks: {},
     install: async () => true,
     uninstall: async () => true,
-    execute: async (params) => params
+    execute: async (params: any) => {
+      const address = params.address || params.contractAddress || params.contract_address;
+      if (!address) throw new Error('contract-auditor: address is required');
+
+      const apiKey = params.apiKey || params.tonapi_key || '';
+      const headers: any = apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {};
+
+      // Fetch account info and events in parallel
+      const [accountRes, eventsRes] = await Promise.all([
+        fetch(`https://tonapi.io/v2/accounts/${encodeURIComponent(address)}`, {
+          headers, signal: AbortSignal.timeout(10000),
+        }),
+        fetch(`https://tonapi.io/v2/accounts/${encodeURIComponent(address)}/events?limit=5`, {
+          headers, signal: AbortSignal.timeout(10000),
+        }),
+      ]);
+
+      if (!accountRes.ok) {
+        throw new Error(`TonAPI ${accountRes.status}: ${(await accountRes.text()).slice(0, 200)}`);
+      }
+      const account = await accountRes.json() as any;
+      const events = eventsRes.ok ? (await eventsRes.json() as any) : { events: [] };
+
+      const redFlags: string[] = [];
+      const greenFlags: string[] = [];
+
+      // Check status
+      if (account.status !== 'active') {
+        redFlags.push(`Contract status: ${account.status} (not active/deployed)`);
+      } else {
+        greenFlags.push('Contract is active and deployed');
+      }
+
+      // Check interfaces
+      const interfaces = account.interfaces || [];
+      if (interfaces.length === 0) {
+        redFlags.push('No known interfaces — unknown contract type');
+      } else {
+        greenFlags.push(`Known interfaces: ${interfaces.join(', ')}`);
+      }
+
+      // Check balance
+      const balanceTon = parseInt(account.balance || '0') / 1e9;
+      if (balanceTon < 0.01 && account.status === 'active') {
+        redFlags.push(`Very low balance: ${balanceTon.toFixed(4)} TON`);
+      }
+
+      // Check age from events
+      const eventList = events.events || [];
+      if (eventList.length > 0) {
+        const oldest = eventList[eventList.length - 1];
+        const ageMs = Date.now() - (oldest.timestamp || 0) * 1000;
+        const ageDays = Math.floor(ageMs / (1000 * 60 * 60 * 24));
+        if (ageDays < 7) {
+          redFlags.push(`Very new contract (${ageDays} days old)`);
+        } else {
+          greenFlags.push(`Contract age: ${ageDays} days`);
+        }
+      }
+
+      // Check if wallet type
+      const isWallet = interfaces.some((i: string) => i.startsWith('wallet_'));
+      if (isWallet) {
+        greenFlags.push('Standard wallet contract');
+      }
+
+      const riskScore = redFlags.length === 0 ? 'LOW' : redFlags.length <= 2 ? 'MEDIUM' : 'HIGH';
+
+      return {
+        address,
+        status: account.status,
+        balance_ton: Math.round(balanceTon * 1000) / 1000,
+        interfaces,
+        riskScore,
+        redFlags,
+        greenFlags,
+        recentEvents: eventList.length,
+        verdict: riskScore === 'LOW'
+          ? 'Contract appears safe for interaction'
+          : riskScore === 'MEDIUM'
+            ? 'Some concerns — review red flags before interacting'
+            : 'High risk — multiple red flags detected, proceed with extreme caution',
+      };
+    }
   }
 ];
 

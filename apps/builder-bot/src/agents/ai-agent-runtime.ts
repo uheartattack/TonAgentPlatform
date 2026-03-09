@@ -1464,6 +1464,16 @@ async function executeTool(
       const url = String(args.url || '');
       if (!url) return { error: 'url required' };
       try {
+        // SSRF protection
+        const u = new URL(url);
+        const h = u.hostname.toLowerCase();
+        if (h === 'localhost' || h === '127.0.0.1' || h === '0.0.0.0' || h === '::1'
+          || h.startsWith('10.') || h.startsWith('192.168.') || h.startsWith('172.16.')
+          || h.startsWith('fc') || h.startsWith('fd') || h.startsWith('fe80')
+          || h === '169.254.169.254' || h.endsWith('.internal') || h.endsWith('.local')
+          || u.protocol === 'file:') {
+          return { error: 'Access to internal addresses is blocked' };
+        }
         const resp = await fetch(url, {
           headers: { 'User-Agent': 'TONAgentBot/1.0' },
           signal: AbortSignal.timeout(10000),
@@ -1481,7 +1491,8 @@ async function executeTool(
           .replace(/<[^>]+>/g, ' ')
           .replace(/\s+/g, ' ')
           .trim();
-        return { content: clean.slice(0, 3000), type: 'text' };
+        const truncated = clean.length > 3000;
+        return { content: clean.slice(0, 3000), type: 'text', truncated, originalLength: clean.length };
       } catch (e: any) {
         return { error: e.message };
       }

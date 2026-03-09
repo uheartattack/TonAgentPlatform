@@ -545,14 +545,16 @@ async function showWelcome(ctx: Context, userId: number, name: string, lang: 'ru
 
   const examples = lang === 'ru'
     ? [
-        `<i>"Следи за floor price TON Punks и пришли AI-прогноз"</i>`,
-        `<i>"Уведоми когда мой кошелёк опустится ниже 5 TON"</i>`,
-        `<i>"Алерт когда цена TON упадёт ниже $4"</i>`,
+        `<i>"Найди недооценённые подарки Plush Pepe дешевле 5 TON"</i>`,
+        `<i>"Следи за ценой TON и уведоми при изменении 5%+"</i>`,
+        `<i>"Мониторь арбитраж подарков — ищи спред от 10%"</i>`,
+        `<i>"Парси новости с CoinDesk каждые 30 минут"</i>`,
       ]
     : [
-        `<i>"Track TON Punks floor price and send AI forecast"</i>`,
-        `<i>"Alert me when my wallet drops below 5 TON"</i>`,
-        `<i>"Notify me when TON price falls below $4"</i>`,
+        `<i>"Find underpriced Plush Pepe gifts under 5 TON"</i>`,
+        `<i>"Track TON price and alert on 5%+ changes"</i>`,
+        `<i>"Monitor gift arbitrage — find 10%+ spreads"</i>`,
+        `<i>"Parse CoinDesk news every 30 minutes"</i>`,
       ];
 
   const text = lang === 'ru'
@@ -564,7 +566,7 @@ async function showWelcome(ctx: Context, userId: number, name: string, lang: 'ru
       `${pe('brain')} <b>Просто напиши задачу. Примеры:</b>\n\n` +
       examples.map(e => `• ${e}`).join('\n') + '\n\n' +
       `${div()}\n` +
-      `${pe('bolt')} Агент запустится автоматически через 30 сек`
+      `${pe('bolt')} 7 AI-провайдеров | 20+ инструментов | 12 плагинов`
     : `${pe('sparkles')} <b>Welcome, ${escHtml(name)}!</b>\n\n` +
       `<b>TON Agent Platform</b> — describe a task in plain text,\n` +
       `AI creates an agent that runs 24/7.` +
@@ -573,7 +575,7 @@ async function showWelcome(ctx: Context, userId: number, name: string, lang: 'ru
       `${pe('brain')} <b>Just type your task. Examples:</b>\n\n` +
       examples.map(e => `• ${e}`).join('\n') + '\n\n' +
       `${div()}\n` +
-      `${pe('bolt')} Agent auto-starts within 30 seconds`;
+      `${pe('bolt')} 7 AI providers | 20+ tools | 12 plugins`;
 
   await safeReply(ctx, text, { ...getMainMenu(lang), parse_mode: 'HTML' });
   // Быстрый старт — только ключевые действия
@@ -745,7 +747,10 @@ async function sendPriceCard(ctx: Context) {
       },
     });
   } catch {
-    await ctx.reply(lang === 'ru' ? '❌ Не удалось получить цену TON' : '❌ Failed to fetch TON price');
+    await safeReply(ctx,
+      lang === 'ru' ? '❌ Не удалось получить цену TON. Попробуйте ещё раз.' : '❌ Failed to fetch TON price. Try again.',
+      { reply_markup: { inline_keyboard: [[{ text: '🔄 Retry', callback_data: 'live_price' }]] } }
+    );
   }
 }
 bot.command('price', (ctx) => sendPriceCard(ctx));
@@ -2509,6 +2514,26 @@ bot.on('callback_query', async (ctx) => {
     return;
   }
 
+  // ── Skip name: пропустить ввод названия и создать с авто-именем ──
+  if (data === 'skip_name') {
+    await ctx.answerCbQuery();
+    const pna = pendingNameAsk.get(userId);
+    if (pna) {
+      pendingNameAsk.delete(userId);
+      await ctx.reply('🤖 <i>Разрабатываю агента...</i>', { parse_mode: 'HTML' }).catch(() => {});
+      const anim = await startCreationAnimation(ctx, '', true);
+      try {
+        const result = await getOrchestrator().processMessage(userId, pna.description, ctx.from?.username);
+        anim.stop(); anim.deleteMsg();
+        await sendResult(ctx, result);
+      } catch (err) {
+        anim.stop(); anim.deleteMsg();
+        await ctx.reply('❌ Ошибка создания агента. Попробуйте ещё раз.').catch(() => {});
+      }
+    }
+    return;
+  }
+
   // ── Агент: быстрые действия ──
   if (data === 'create_agent_prompt' || data === 'create_agent') {
     await ctx.answerCbQuery();
@@ -3619,14 +3644,22 @@ bot.on(message('voice'), async (ctx) => {
     }
 
     // Если ожидаем текстовый ввод в любом pending-состоянии — не подходит голосовое
-    if (pendingApiKey.has(userId) || pendingEdits.has(userId)
-      || pendingWithdrawal.has(userId) || pendingTgAuth.has(userId)
-      || pendingRenames.has(userId) || pendingPublish.has(userId)
-      || pendingTemplateSetup.has(userId) || pendingCreations.has(userId)
-      || pendingNameAsk.has(userId) || pendingRepairs.has(String(userId))) {
+    const pendingAction = pendingApiKey.has(userId) ? (lang === 'ru' ? 'ввод API ключа' : 'API key input')
+      : pendingEdits.has(userId) ? (lang === 'ru' ? 'редактирование агента' : 'agent editing')
+      : pendingWithdrawal.has(userId) ? (lang === 'ru' ? 'вывод средств' : 'withdrawal')
+      : pendingTgAuth.has(userId) ? (lang === 'ru' ? 'авторизация Telegram' : 'Telegram auth')
+      : pendingRenames.has(userId) ? (lang === 'ru' ? 'переименование агента' : 'agent renaming')
+      : pendingPublish.has(userId) ? (lang === 'ru' ? 'публикация агента' : 'agent publishing')
+      : pendingTemplateSetup.has(userId) ? (lang === 'ru' ? 'настройка шаблона' : 'template setup')
+      : pendingCreations.has(userId) ? (lang === 'ru' ? 'создание агента' : 'agent creation')
+      : pendingNameAsk.has(userId) ? (lang === 'ru' ? 'ввод названия' : 'name input')
+      : pendingRepairs.has(String(userId)) ? (lang === 'ru' ? 'ремонт агента' : 'agent repair')
+      : null;
+    if (pendingAction) {
       await ctx.reply(lang === 'ru'
-        ? '⌨️ Для этого действия отправьте текстовое сообщение.'
-        : '⌨️ Please send a text message for this action.'
+        ? `⌨️ Сейчас идёт <b>${pendingAction}</b> — отправьте текстовое сообщение.`
+        : `⌨️ Currently in <b>${pendingAction}</b> — please send a text message.`,
+        { parse_mode: 'HTML' }
       );
       return;
     }
@@ -3640,8 +3673,8 @@ bot.on(message('voice'), async (ctx) => {
   } catch (e: any) {
     console.error('[Voice] Error:', e.message);
     await ctx.reply(lang === 'ru'
-      ? '❌ Ошибка обработки голосового сообщения: ' + (e.message || '').slice(0, 100)
-      : '❌ Voice processing error: ' + (e.message || '').slice(0, 100)
+      ? '❌ Ошибка обработки голоса. Попробуйте ещё раз или отправьте текстом.'
+      : '❌ Voice processing error. Try again or send as text.'
     );
   }
 });
@@ -4237,9 +4270,20 @@ bot.on(message('text'), async (ctx) => {
   if (pendingNameAsk.has(userId)) {
     const pna = pendingNameAsk.get(userId)!;
     pendingNameAsk.delete(userId);
-    const customName = trimmed.length >= 2 && trimmed.length <= 60 ? trimmed : undefined;
+    const lang = getUserLang(userId);
+    if (trimmed.length < 2 || trimmed.length > 60) {
+      pendingNameAsk.set(userId, pna); // restore state
+      const hint = lang === 'ru'
+        ? `❌ Название должно быть от 2 до 60 символов (сейчас ${trimmed.length}).\nВведите другое или нажмите <b>Пропустить</b>.`
+        : `❌ Name must be 2-60 characters (got ${trimmed.length}).\nTry another or tap <b>Skip</b>.`;
+      await ctx.reply(hint, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
+        [{ text: '⏩ Пропустить', callback_data: 'skip_name' }],
+      ] } }).catch(() => {});
+      return;
+    }
+    const customName: string | undefined = trimmed;
     // Сразу создаём агента — без выбора расписания
-    const nameLabel = customName ? `📛 <b>${escHtml(customName)}</b> — отлично!` : '🤖 <i>Разрабатываю агента...</i>';
+    const nameLabel = `📛 <b>${escHtml(customName)}</b> — отлично!`;
     await ctx.reply(nameLabel, { parse_mode: 'HTML' }).catch(() => {});
     const anim = await startCreationAnimation(ctx, '', true);
     const descWithName = customName ? `${pna.description}\n\nНазвание: ${customName}` : pna.description;
