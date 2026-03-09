@@ -494,6 +494,59 @@ function isGarbageInput(text: string): boolean {
 }
 
 // ============================================================
+// Periodic cleanup of pending Maps to prevent memory leaks
+// ============================================================
+const _pendingTimestamps = new Map<string, number>(); // mapKey:userId → Date.now()
+const PENDING_TTL = 30 * 60 * 1000; // 30 minutes
+
+function trackPending(mapName: string, userId: number) {
+  _pendingTimestamps.set(`${mapName}:${userId}`, Date.now());
+}
+
+setInterval(() => {
+  const now = Date.now();
+  const stale: string[] = [];
+
+  for (const [key, ts] of _pendingTimestamps) {
+    if (now - ts > PENDING_TTL) {
+      stale.push(key);
+    }
+  }
+
+  for (const key of stale) {
+    _pendingTimestamps.delete(key);
+    const [mapName, userIdStr] = key.split(':');
+    const userId = parseInt(userIdStr, 10);
+    if (isNaN(userId)) continue;
+
+    switch (mapName) {
+      case 'creation':   pendingCreations.delete(userId); break;
+      case 'nameAsk':    pendingNameAsk.delete(userId); break;
+      case 'rename':     pendingRenames.delete(userId); break;
+      case 'edit':       pendingEdits.delete(userId); break;
+      case 'chat':       pendingAgentChats.delete(userId); break;
+      case 'withdrawal': pendingWithdrawal.delete(userId); break;
+      case 'template':   pendingTemplateSetup.delete(userId); break;
+      case 'publish':    pendingPublish.delete(userId); break;
+      case 'tgAuth':     pendingTgAuth.delete(userId); break;
+      case 'apiKey':     pendingApiKey.delete(userId); break;
+    }
+  }
+
+  // Clean QR polling handles for expired entries
+  for (const [userId, handle] of qrPollingHandles) {
+    if (!pendingTgAuth.has(userId)) {
+      clearInterval(handle);
+      qrPollingHandles.delete(userId);
+    }
+  }
+
+  if (stale.length > 0) {
+    console.log(`[Cleanup] Cleared ${stale.length} stale pending entries`);
+  }
+}, 5 * 60 * 1000); // every 5 minutes
+
+// ============================================================
 // Middleware — логирование
 // ============================================================
 bot.use(async (ctx, next) => {
@@ -3491,7 +3544,7 @@ bot.on('callback_query', async (ctx) => {
         await ctx.answerCbQuery('⏪ Откатываю...');
         await sis.rollbackProposal(proposalId);
         await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => {});
-        await ctx.reply(`⏪ Proposal <code>${proposalId.slice(0, 8)}</code> откачен.`, { parse_mode: 'HTML' });
+        await ctx.reply(`⏪ Proposal <code>${proposalId.slice(0, 8)}</code> откатан.`, { parse_mode: 'HTML' });
       } else if (action === 'proposal_discuss') {
         await ctx.answerCbQuery('💬 Обсуждение');
         await ctx.reply(

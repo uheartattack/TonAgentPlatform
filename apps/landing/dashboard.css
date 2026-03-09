@@ -2721,4 +2721,10 @@ select.form-input option {
   .wallet-tx-row { padding: 10px 14px; }
   .wallet-tx-icon { width: 32px; height: 32px; font-size: 0.9rem; margin-right: 10px; }
   .wallet-tx-amount { font-size: 0.85rem; }
+  .metrics-grid { grid-template-columns: 1fr; gap: 10px; }
+  .page-header h1 { font-size: 1.3rem; }
+  .agent-card { padding: 14px; }
+  .agent-card-actions { flex-wrap: wrap; gap: 6px; }
+  .agent-card-actions .btn { font-size: 0.75rem; padding: 4px 8px; }
+  .dashboard-grid { grid-template-columns: 1fr; }
 }

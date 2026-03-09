@@ -377,7 +377,7 @@ export class ExecutionTools {
             // Метод 1: GetGems GraphQL (работает с правильными заголовками)
             try {
               const gqlBody = JSON.stringify({
-                query: `{ alphaNftCollectionSearch(query: "${name.replace(/['"\\]/g, '')}", count: 3) { items { address name floorPrice approximateItemsCount } } }`
+                query: `{ alphaNftCollectionSearch(query: ${JSON.stringify(name.replace(/[^\w\s\-]/g, '').slice(0, 100))}, count: 3) { items { address name floorPrice approximateItemsCount } } }`
               });
               const resp = await nativeFetch('https://api.getgems.io/graphql', {
                 method: 'POST',
