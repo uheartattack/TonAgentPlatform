@@ -3,7 +3,7 @@ import { mnemonicNew, mnemonicToWalletKey, sign } from '@ton/crypto';
 import { WalletContractV4 } from '@ton/ton';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { WalletContractV5R1 } = require('@ton/ton') as { WalletContractV5R1: any };
-import { internal, beginCell, Address, SendMode } from '@ton/core';
+import { internal, beginCell, Address, SendMode, external, storeMessage } from '@ton/core';
 import QRCode from 'qrcode';
 import fetch from 'node-fetch';
 
@@ -197,12 +197,15 @@ export async function sendPlatformTransaction(
     }
 
     const seqno = await getSeqno(address);
-    console.log(`[PlatformTx] Sending ${amountTon} TON → ${toAddress.slice(0,16)}… seqno=${seqno}`);
+    const timeout = Math.floor(Date.now() / 1000) + 600; // 10 min window
+    console.log(`[PlatformTx] Sending ${amountTon} TON → ${toAddress.slice(0,16)}… seqno=${seqno} timeout=${timeout}`);
 
-    const transfer = (wallet as any).createTransfer({
+    // createTransfer returns signed message BODY (not full external message)
+    const transferBody = (wallet as any).createTransfer({
       seqno,
       secretKey: keyPair.secretKey,
       sendMode: SendMode.PAY_GAS_SEPARATELY + SendMode.IGNORE_ERRORS,
+      timeout,
       messages: [
         internal({
           to: toAddress,
@@ -213,7 +216,12 @@ export async function sendPlatformTransaction(
       ],
     });
 
-    const boc = transfer.toBoc().toString('base64');
+    // Wrap body in external message cell — required for broadcasting
+    const walletAddr = Address.parse(address);
+    const extCell = beginCell()
+      .store(storeMessage(external({ to: walletAddr, body: transferBody })))
+      .endCell();
+    const boc = extCell.toBoc().toString('base64');
     const result = await sendBoc(boc);
     if (result.ok) {
       console.log(`[PlatformTx] ✅ Sent! hash=${result.hash}`);
