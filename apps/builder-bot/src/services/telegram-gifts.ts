@@ -36,8 +36,11 @@ export interface ArbitrageOpportunity {
   gift_id?: string;
   slug?: string;
   type: 'catalog' | 'resale';
-  buy_price_stars: number;
-  sell_price_stars: number;
+  buy_price_ton?: number;   // price in TON
+  sell_price_ton?: number;  // price in TON
+  // legacy (kept for compat, deprecated)
+  buy_price_stars?: number;
+  sell_price_stars?: number;
   profit_pct: number;
   description: string;
 }
@@ -287,10 +290,10 @@ export class TelegramGiftsService {
         return realOpps.map(opp => ({
           slug: opp.slug,
           type: 'resale' as const,
-          buy_price_stars: opp.buyPriceStars,
-          sell_price_stars: opp.sellPriceStars,
+          buy_price_ton: opp.buyPriceTon,
+          sell_price_ton: opp.sellPriceTon,
           profit_pct: Math.round(opp.profitPct),
-          description: `${opp.giftName}: buy on ${opp.buyMarket} at ${opp.buyPriceStars}⭐ → sell on ${opp.sellMarket} at ${opp.sellPriceStars}⭐ (${opp.profitPct.toFixed(1)}% profit, ${opp.confidence} confidence)`,
+          description: `${opp.giftName}: buy on ${opp.buyMarket} for ${opp.buyPriceTon} TON → sell on ${opp.sellMarket} for ${opp.sellPriceTon} TON (+${opp.profitPct.toFixed(1)}%, ${opp.confidence} confidence)`,
         }));
       }
     } catch (e: any) {
@@ -314,12 +317,12 @@ export class TelegramGiftsService {
         const profitPct      = ((estimatedFloor - totalCost) / totalCost) * 100;
         if (profitPct >= minProfit) {
           opps.push({
-            gift_id:         gift.id,
-            type:            'catalog',
-            buy_price_stars: totalCost,
+            gift_id:          gift.id,
+            type:             'catalog',
+            buy_price_stars:  totalCost,    // legacy field (Stars)
             sell_price_stars: estimatedFloor,
-            profit_pct:      Math.round(profitPct),
-            description:     `Gift ${gift.id}: buy ${gift.star_count}⭐ + upgrade ${upgradeCost}⭐ = ${totalCost}⭐ → est. sell ~${estimatedFloor}⭐ (heuristic)`,
+            profit_pct:       Math.round(profitPct),
+            description:      `[heuristic] Gift ${gift.id}: buy ${gift.star_count}⭐ + upgrade ${upgradeCost}⭐ — low confidence, prefer real API data`,
           });
         }
       }
