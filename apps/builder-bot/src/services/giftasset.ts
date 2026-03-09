@@ -521,48 +521,57 @@ export class GiftAssetClient {
 
   // ─ Compound methods ────────────────────────────────────────────
 
-  /** Get floor prices for a gift across all known marketplaces */
+  /** Get floor prices for a gift across all known marketplaces (onchain + offchain) */
   async getFloorPrices(slug: string): Promise<FloorPriceData> {
     const floors: Record<string, number> = {};
 
-    // 1) Price list — has floors per marketplace (getgems, mrkt, portals, tonnel)
+    // Always take minimum: live listing beats stale price-list data
+    // Prices > 5000 TON are likely Stars values or API garbage — skip
+    const MAX_SANE_PRICE = 5000;
+    const setMin = (market: string, price: number) => {
+      if (price > 0 && price <= MAX_SANE_PRICE && (!floors[market] || price < floors[market])) floors[market] = price;
+    };
+
+    // 1) Price list — listing floor per marketplace (getgems, mrkt, portals, tonnel)
     try {
       const priceList = await this.getPriceList({ models: slug });
-      // Response: { collection_floors: { "LoL Pop": { getgems: 5.5, mrkt: 5.2, ... } } }
       const cf = priceList?.collection_floors || priceList;
       if (cf && typeof cf === 'object') {
-        // Find matching key (case-insensitive)
-        const key = Object.keys(cf).find(k => k.toLowerCase() === slug.toLowerCase()) || Object.keys(cf).find(k => k.toLowerCase().includes(slug.toLowerCase()));
+        const key = Object.keys(cf).find(k => k.toLowerCase() === slug.toLowerCase())
+                 || Object.keys(cf).find(k => k.toLowerCase().includes(slug.toLowerCase()));
         if (key && cf[key]) {
           for (const [market, price] of Object.entries(cf[key])) {
             if (market === 'last_update') continue;
-            if (typeof price === 'number' && price > 0) floors[market] = price;
+            if (typeof price === 'number') setMin(market, price);
           }
         }
       }
     } catch {}
 
-    // 2) GiftAsset aggregator — real listings with prices
+    // 2) GiftAsset aggregator — live listings, all markets
     try {
       const agg = await this.aggregate({ name: slug, page: 0 });
       for (const item of (agg.items || [])) {
         const market = (item.provider || '').toLowerCase();
-        if (market && item.price > 0) {
-          if (!floors[market] || item.price < floors[market]) {
-            floors[market] = item.price;
-          }
-        }
+        if (market) setMin(market, item.price);
       }
     } catch {}
 
-    // 3) SwiftGifts aggregator (fallback, may be down)
+    // 3) SwiftGifts — offchain markets (tonnel, portals, Mrkt) — often cheaper than onchain
     try {
-      const agg = await this.swAggregate({ name: slug, page: 0 });
+      const agg = await this.swAggregate({ name: slug, page: 0, market: ['tonnel', 'portals', 'Mrkt'] });
       for (const item of (agg.items || [])) {
         const market = (item.provider || '').toLowerCase();
-        if (market && item.price > 0 && !floors[market]) {
-          floors[market] = item.price;
-        }
+        if (market) setMin(market, item.price);  // always update if cheaper
+      }
+    } catch {}
+
+    // 4) SwiftGifts — onchain markets (getgems, fragment) for cross-verification
+    try {
+      const agg = await this.swAggregate({ name: slug, page: 0, market: ['getgems', 'fragment'] });
+      for (const item of (agg.items || [])) {
+        const market = (item.provider || '').toLowerCase();
+        if (market) setMin(market, item.price);
       }
     } catch {}
 
@@ -587,11 +596,11 @@ export class GiftAssetClient {
     minProfitPct?: number;
   }): Promise<RealArbitrageOpportunity[]> {
     const maxPrice  = params.maxPriceStars ?? 5000;
-    // 15% minimum to filter out noise from variant quality differences (different backdrop/model)
-    const minProfit = params.minProfitPct  ?? 15;
+    // 8% minimum — offchain (portals/mrkt) vs onchain (getgems/fragment) spread is legitimate
+    const minProfit = params.minProfitPct  ?? 8;
     const opps: RealArbitrageOpportunity[] = [];
 
-    // Markets where we NEVER sell (bad liquidity)
+    // Markets where we NEVER sell (bad sell liquidity — prefer getgems/fragment as sell market)
     const BUY_ONLY_MARKETS = new Set(['tonnel']);
 
     try {
@@ -634,8 +643,9 @@ export class GiftAssetClient {
         const { candidate, floors } = r.value;
         if (!floors || Object.keys(floors).length < 2) continue;
 
+        // Filter garbage/Stars values (>1500 TON almost certainly means Stars not TON)
         const liveEntries = Object.entries(floors)
-          .filter(([k, v]) => typeof v === 'number' && v > 0)
+          .filter(([k, v]) => typeof v === 'number' && v > 0 && v <= 1500)
           .sort((a, b) => a[1] - b[1]);
         if (liveEntries.length < 2) continue;
 
