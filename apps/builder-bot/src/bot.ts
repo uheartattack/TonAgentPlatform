@@ -30,6 +30,7 @@ import {
   getWalletInfo,
   sendAgentTransaction,
   sendPlatformTransaction,
+  verifyPlatformWalletConfig,
   type AgentWallet,
 } from './services/TonConnect';
 import {
@@ -6129,6 +6130,8 @@ export function startBot() {
 
   launch();
   console.log('✅ Bot is running!');
+  // Verify platform wallet config at startup
+  verifyPlatformWalletConfig().catch(() => {});
   process.once('SIGINT', () => bot.stop('SIGINT'));
   process.once('SIGTERM', () => bot.stop('SIGTERM'));
 }

@@ -1,7 +1,9 @@
 import { TonConnect } from '@tonconnect/sdk';
 import { mnemonicNew, mnemonicToWalletKey, sign } from '@ton/crypto';
-import { WalletContractV4, WalletContractV5R1 } from '@ton/ton';
-import { internal, beginCell, Address } from '@ton/core';
+import { WalletContractV4 } from '@ton/ton';
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { WalletContractV5R1 } = require('@ton/ton') as { WalletContractV5R1: any };
+import { internal, beginCell, Address, SendMode } from '@ton/core';
 import QRCode from 'qrcode';
 import fetch from 'node-fetch';
 
@@ -143,6 +145,36 @@ async function sendBoc(boc: string): Promise<{ ok: boolean; hash?: string; error
 
 // ── Send from PLATFORM wallet (V5R1 — agentplatform.ton) ────────────────────
 
+/** Cached: derived address from mnemonic. Verified on first call. */
+let _platformDerivedAddress: string | null = null;
+
+/** Verify that MNEMONIC matches PLATFORM_WALLET_ADDRESS. Logs warning if mismatch. */
+export async function verifyPlatformWalletConfig(): Promise<{ ok: boolean; derived: string; configured: string }> {
+  const mnemonic = process.env.PLATFORM_WALLET_MNEMONIC || '';
+  const configured = process.env.PLATFORM_WALLET_ADDRESS || PLATFORM_WALLET_ADDRESS;
+  if (!mnemonic) {
+    console.warn('[PlatformWallet] ⚠️  PLATFORM_WALLET_MNEMONIC not set');
+    return { ok: false, derived: '', configured };
+  }
+  try {
+    const words = mnemonic.trim().split(/\s+/);
+    const keyPair = await mnemonicToWalletKey(words);
+    const wallet = WalletContractV5R1.create({ workchain: 0, publicKey: keyPair.publicKey });
+    const derived = wallet.address.toString({ urlSafe: true, bounceable: false });
+    _platformDerivedAddress = derived;
+    const ok = derived === configured;
+    if (!ok) {
+      console.warn(`[PlatformWallet] ⚠️  MNEMONIC mismatch!\n  configured: ${configured}\n  from mnemonic: ${derived}\n  → Withdrawals will FAIL. Fix PLATFORM_WALLET_MNEMONIC in .env`);
+    } else {
+      console.log(`[PlatformWallet] ✅ Wallet verified: ${derived}`);
+    }
+    return { ok, derived, configured };
+  } catch (e: any) {
+    console.error('[PlatformWallet] Error verifying mnemonic:', e.message);
+    return { ok: false, derived: '', configured };
+  }
+}
+
 export async function sendPlatformTransaction(
   toAddress: string,
   amountTon: number,
@@ -157,11 +189,20 @@ export async function sendPlatformTransaction(
     const wallet = WalletContractV5R1.create({ workchain: 0, publicKey: keyPair.publicKey });
     const address = wallet.address.toString({ urlSafe: true, bounceable: false });
 
-    const seqno = await getSeqno(address);
+    // Warn if signing from wrong wallet (mnemonic ≠ configured address)
+    const configured = process.env.PLATFORM_WALLET_ADDRESS || PLATFORM_WALLET_ADDRESS;
+    if (address !== configured) {
+      console.error(`[PlatformTx] ❌ MNEMONIC derives ${address} but PLATFORM_WALLET_ADDRESS=${configured}. Fix .env!`);
+      return { ok: false, error: `Config error: mnemonic → ${address.slice(0,12)}… but wallet is ${configured.slice(0,12)}…` };
+    }
 
-    const transfer = wallet.createTransfer({
+    const seqno = await getSeqno(address);
+    console.log(`[PlatformTx] Sending ${amountTon} TON → ${toAddress.slice(0,16)}… seqno=${seqno}`);
+
+    const transfer = (wallet as any).createTransfer({
       seqno,
       secretKey: keyPair.secretKey,
+      sendMode: SendMode.PAY_GAS_SEPARATELY + SendMode.IGNORE_ERRORS,
       messages: [
         internal({
           to: toAddress,
@@ -174,7 +215,11 @@ export async function sendPlatformTransaction(
 
     const boc = transfer.toBoc().toString('base64');
     const result = await sendBoc(boc);
-    if (result.ok) return { ok: true, txHash: result.hash };
+    if (result.ok) {
+      console.log(`[PlatformTx] ✅ Sent! hash=${result.hash}`);
+      return { ok: true, txHash: result.hash };
+    }
+    console.error(`[PlatformTx] sendBoc failed: ${result.error}`);
     return { ok: false, error: result.error };
   } catch (e: any) {
     console.error('[PlatformTx] Send error:', e);
