@@ -889,7 +889,7 @@ function buildToolDefinitions(): OpenAI.ChatCompletionTool[] {
             to_price:   { type: 'number', description: 'Максимальная цена в TON' },
             market:     { type: 'array', items: { type: 'string' }, description: 'Маркетплейсы: tonnel, portals, Mrkt, getgems, fragment. По умолчанию offchain (tonnel, portals, Mrkt)' },
           },
-          required: ['name', 'receiver'],
+          required: ['name'],
         },
       },
     },
@@ -2095,12 +2095,20 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
 - НИКОГДА не просить пользователя пополнить кошелёк — просто уведомить если баланса недостаточно
 - Не повторять одни и те же возможности каждый тик — использовать set_state/get_state для дедупликации
 
-🚫 СТРОГИЙ ЗАПРЕТ ГАЛЛЮЦИНАЦИЙ:
+🚫 СТРОГИЙ ЗАПРЕТ ГАЛЛЮЦИНАЦИЙ И СПАМА:
 - notify() ТОЛЬКО после того, как инструмент вернул конкретный листинг с полями: provider, price_ton, link
 - НИКОГДА не вызывай notify() на основе: get_state результата, предположений, логики без API-ответа
 - ПОРЯДОК ОБЯЗАТЕЛЕН: сначала инструмент → проверь ответ items[] → если непустой → только тогда notify()
 - Если get_gift_aggregator вернул items[] = [] → не нотифицировать, просто завершить тик молча
 - Если get_gift_aggregator вернул items[0] с реальным price_ton и link → ТОГДА notify() с этой ссылкой
+
+📵 ОДИН notify() ЗА ТИК — АБСОЛЮТНОЕ ПРАВИЛО:
+- НИКОГДА не вызывай notify() несколько раз за один тик — это СПАМ
+- Объедини все находки в ОДНО сообщение: "Нашёл 3 Lol Pop: cheapest 4.47 на Portals, 4.83 на MRKT..."
+- Если пользователь сказал "до X TON" → уведомлять ТОЛЬКО если items[0].price_ton ≤ X
+- Если нашёл только дороже чем просили → НЕ нотифицировать, завершить молча
+
+❓ НЕ СПРАШИВАЙ Telegram ID — receiver берётся автоматически из системы
 
 🎯 Оценка КАЧЕСТВА подарка (влияет на цену):
 1. ФОНЫ (от дороже к дешевле): Чёрный > Тёмно-синий > Фиолетовый > Другие цветные > Белый/Серый
