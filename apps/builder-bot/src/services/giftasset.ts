@@ -142,6 +142,7 @@ export interface RealArbitrageOpportunity {
   profitTon: number;     // profit amount in TON
   profitPct: number;
   confidence: 'low' | 'medium' | 'high';
+  verified?: boolean;  // true = prices from live aggregator (not stale price list)
   // legacy aliases for backward compat
   buyPriceStars?: number;
   sellPriceStars?: number;
@@ -540,56 +541,77 @@ export class GiftAssetClient {
     minProfitPct?: number;
   }): Promise<RealArbitrageOpportunity[]> {
     const maxPrice  = params.maxPriceStars ?? 5000;
-    const minProfit = params.minProfitPct  ?? 5; // 5% default
+    // 15% minimum to filter out noise from variant quality differences (different backdrop/model)
+    const minProfit = params.minProfitPct  ?? 15;
     const opps: RealArbitrageOpportunity[] = [];
 
     // Markets where we NEVER sell (bad liquidity)
     const BUY_ONLY_MARKETS = new Set(['tonnel']);
 
     try {
-      // Price list gives floor per marketplace for every collection
+      // Step 1: Price list → fast first pass to find candidates
       const priceList = await this.getPriceList();
-      // Response: { collection_floors: { "LoL Pop": { getgems: 5.5, mrkt: 5.2, portals: 5.8, tonnel: 5.0 } } }
       const cf = priceList?.collection_floors || priceList;
       if (!cf || typeof cf !== 'object') return opps;
+
+      const candidates: Array<{ name: string; buyMarket: string; buyPrice: number; sellMarket: string; sellPrice: number; spread: number }> = [];
 
       for (const [name, markets] of Object.entries(cf)) {
         if (!markets || typeof markets !== 'object') continue;
         const entries = Object.entries(markets as Record<string, number>)
           .filter(([k, v]) => k !== 'last_update' && typeof v === 'number' && v > 0 && v <= maxPrice);
         if (entries.length < 2) continue;
-
         entries.sort((a, b) => a[1] - b[1]);
-
-        // All markets can be buy sources (including tonnel — cheap floor = good buy)
         const [buyMarket, buyPrice] = entries[0];
-
-        // Sell markets: exclude buy-only markets (tonnel has bad liquidity)
         const sellCandidates = entries.filter(([k]) => !BUY_ONLY_MARKETS.has(k));
-        if (sellCandidates.length === 0) continue;
-
+        if (!sellCandidates.length) continue;
         const [sellMarket, sellPrice] = sellCandidates[sellCandidates.length - 1];
+        if (buyMarket === sellMarket || sellPrice <= buyPrice) continue;
+        const spread = ((sellPrice - buyPrice) / buyPrice) * 100;
+        if (spread >= minProfit) candidates.push({ name, buyMarket, buyPrice, sellMarket, sellPrice, spread });
+      }
 
-        // Don't arb same market to same market
-        if (buyMarket === sellMarket) continue;
-        if (sellPrice <= buyPrice) continue;
+      // Sort by spread, take top 8 to verify with live aggregator
+      candidates.sort((a, b) => b.spread - a.spread);
+      const top = candidates.slice(0, 8);
 
-        const profitPct = ((sellPrice - buyPrice) / buyPrice) * 100;
+      // Step 2: Verify each candidate with live floor prices (actual listings)
+      const verified = await Promise.allSettled(
+        top.map(c => this.getFloorPrices(c.name).then(f => ({ candidate: c, floors: f.floors })))
+      );
+
+      for (const r of verified) {
+        if (r.status !== 'fulfilled') continue;
+        const { candidate, floors } = r.value;
+        if (!floors || Object.keys(floors).length < 2) continue;
+
+        const liveEntries = Object.entries(floors)
+          .filter(([k, v]) => typeof v === 'number' && v > 0)
+          .sort((a, b) => a[1] - b[1]);
+        if (liveEntries.length < 2) continue;
+
+        const [liveBuyMarket, liveBuyPrice] = liveEntries[0];
+        const liveSellCandidates = liveEntries.filter(([k]) => !BUY_ONLY_MARKETS.has(k));
+        if (!liveSellCandidates.length) continue;
+        const [liveSellMarket, liveSellPrice] = liveSellCandidates[liveSellCandidates.length - 1];
+        if (liveBuyMarket === liveSellMarket || liveSellPrice <= liveBuyPrice) continue;
+
+        const profitPct = ((liveSellPrice - liveBuyPrice) / liveBuyPrice) * 100;
         if (profitPct < minProfit) continue;
 
         opps.push({
-          slug: name,
-          giftName: name,
-          buyPriceTon: buyPrice,
-          buyMarket,
-          sellPriceTon: sellPrice,
-          sellMarket,
-          profitTon: Math.round((sellPrice - buyPrice) * 100) / 100,
+          slug: candidate.name,
+          giftName: candidate.name,
+          buyPriceTon: liveBuyPrice,
+          buyMarket: liveBuyMarket,
+          sellPriceTon: liveSellPrice,
+          sellMarket: liveSellMarket,
+          profitTon: Math.round((liveSellPrice - liveBuyPrice) * 100) / 100,
           profitPct: Math.round(profitPct * 10) / 10,
-          confidence: entries.length >= 4 ? 'high' : entries.length >= 3 ? 'medium' : 'low',
-          // legacy aliases
-          buyPriceStars: buyPrice,
-          sellPriceStars: sellPrice,
+          confidence: liveEntries.length >= 4 ? 'high' : liveEntries.length >= 3 ? 'medium' : 'low',
+          verified: true, // prices from live aggregator
+          buyPriceStars: liveBuyPrice,
+          sellPriceStars: liveSellPrice,
         });
       }
     } catch (e: any) {
@@ -598,7 +620,7 @@ export class GiftAssetClient {
       }
     }
 
-    return opps.sort((a, b) => b.profitPct - a.profitPct).slice(0, 20);
+    return opps.sort((a, b) => b.profitPct - a.profitPct).slice(0, 10);
   }
 }
 
