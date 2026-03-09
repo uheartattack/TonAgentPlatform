@@ -815,9 +815,16 @@ export class ExecutionTools {
             try {
               const u = new URL(url);
               const h = u.hostname.toLowerCase();
-              if (h === 'localhost' || h === '127.0.0.1' || h === '0.0.0.0'
-                || h.startsWith('10.') || h.startsWith('192.168.') || h.startsWith('172.')
-                || h === '169.254.169.254' || h.endsWith('.internal') || h.endsWith('.local')) {
+              if (h === 'localhost' || h === '127.0.0.1' || h === '0.0.0.0' || h === '::1'
+                || h === '[::1]' || h.startsWith('10.') || h.startsWith('192.168.')
+                || h.startsWith('172.16.') || h.startsWith('172.17.') || h.startsWith('172.18.')
+                || h.startsWith('172.19.') || h.startsWith('172.2') || h.startsWith('172.3')
+                || h.startsWith('fc') || h.startsWith('fd') || h.startsWith('fe80')
+                || h === '169.254.169.254' || h === 'metadata.google.internal'
+                || h.endsWith('.internal') || h.endsWith('.local') || h.endsWith('.localhost')
+                || u.port === '22' || u.port === '23' || u.port === '3389' || u.port === '5432'
+                || u.port === '6379' || u.port === '27017' || u.port === '3306'
+                || u.protocol === 'file:' || u.protocol === 'ftp:') {
                 return { error: 'Access to internal addresses is blocked' };
               }
             } catch { return { error: 'Invalid URL' }; }

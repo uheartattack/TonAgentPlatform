@@ -26,26 +26,70 @@ function markBlocked(userId: number): void {
   _blockExpiry.set(userId, Date.now() + BLOCK_TTL);
 }
 
-function handleSendError(userId: number, err: any): void {
+function isBotBlocked(err: any): boolean {
   const msg = err?.message || String(err);
-  // 403 = bot blocked by user, 400 = chat not found
-  if (msg.includes('403') || msg.includes('bot was blocked') || msg.includes('chat not found')) {
+  return msg.includes('403') || msg.includes('bot was blocked')
+    || msg.includes('chat not found') || msg.includes('user is deactivated')
+    || msg.includes('PEER_ID_INVALID');
+}
+
+function handleSendError(userId: number, err: any): void {
+  if (isBotBlocked(err)) {
     markBlocked(userId);
-    // Log only once, not every 5 minutes
     console.warn(`[Notifier] User ${userId} blocked bot, muting for 1h`);
     return;
   }
-  console.error(`[Notifier] sendMessage to ${userId} failed:`, msg);
+  console.error(`[Notifier] sendMessage to ${userId} failed:`, err?.message || String(err));
 }
 
 export function initNotifier(bot: Telegraf) {
   _bot = bot;
 }
 
-// Отправить уведомление пользователю (plain text, без MarkdownV2)
+// ── HTML helpers ──────────────────────────────────────────────
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function div(): string { return '━━━━━━━━━━━━━━━━━━━━'; }
+
+// Telegram supports only: b, i, s, u, code, pre, a, tg-spoiler
+const ALLOWED_HTML_TAGS = /^(b|i|s|u|code|pre|a|tg-spoiler)$/i;
+
+/** Strip unsupported HTML tags, keep Telegram-supported ones */
+function sanitizeHtml(text: string): string {
+  return text.replace(/<\/?([a-z][a-z0-9-]*)[^>]*>/gi, (match, tag) => {
+    return ALLOWED_HTML_TAGS.test(tag) ? match : '';
+  });
+}
+
+/** Safely truncate HTML — close open tags before cutting */
+function safeTruncate(text: string, maxLen: number): string {
+  if (text.length <= maxLen) return text;
+  let truncated = text.slice(0, maxLen - 50);
+  // Close any open tags
+  const openTags: string[] = [];
+  truncated.replace(/<(b|i|s|u|code|pre|a|tg-spoiler)[^>]*>/gi, (_, tag) => { openTags.push(tag); return ''; });
+  truncated.replace(/<\/(b|i|s|u|code|pre|a|tg-spoiler)>/gi, (_, tag) => {
+    const idx = openTags.lastIndexOf(tag.toLowerCase());
+    if (idx !== -1) openTags.splice(idx, 1);
+    return '';
+  });
+  // Close remaining open tags in reverse
+  for (let i = openTags.length - 1; i >= 0; i--) {
+    truncated += `</${openTags[i]}>`;
+  }
+  truncated += '\n<i>... (сообщение обрезано)</i>';
+  return truncated;
+}
+
+// ── Core send functions ──────────────────────────────────────
+
+/** Отправить plain text уведомление */
 export async function notifyUser(userId: number, text: string): Promise<void> {
   if (!_bot) { console.warn('[Notifier] bot not initialized'); return; }
-  if (isBlocked(userId)) return; // silently skip blocked users
+  if (isBlocked(userId)) return;
   try {
     await _bot.telegram.sendMessage(userId, text);
   } catch (err: any) {
@@ -53,7 +97,7 @@ export async function notifyUser(userId: number, text: string): Promise<void> {
   }
 }
 
-// Отправить rich-уведомление с HTML и кнопками
+/** Отправить rich-уведомление с HTML и кнопками */
 export async function notifyRich(userId: number, opts: {
   text: string;
   agentId?: number;
@@ -62,32 +106,35 @@ export async function notifyRich(userId: number, opts: {
   silent?: boolean;
 }): Promise<void> {
   if (!_bot) return;
-  if (isBlocked(userId)) return; // silently skip blocked users
+  if (isBlocked(userId)) return;
   try {
     const extra: any = {};
 
-    // Попробуем HTML, fallback на plain text
+    // Build message with agent header
     let sendText = opts.text;
     if (opts.agentName) {
-      sendText = `🤖 <b>${escapeHtml(opts.agentName)}</b>\n${div()}\n${opts.text}`;
-    }
-    // Telegram max message length is 4096 chars
-    const MAX_LEN = 4000;
-    if (sendText.length > MAX_LEN) {
-      sendText = sendText.slice(0, MAX_LEN - 50) + '\n<i>... (сообщение обрезано)</i>';
+      sendText = `🤖 <b>${escapeHtml(opts.agentName)}</b>\n${div()}\n${sanitizeHtml(opts.text)}`;
+    } else {
+      sendText = sanitizeHtml(opts.text);
     }
 
+    // Safe truncation respecting HTML tags
+    sendText = safeTruncate(sendText, 4000);
     extra.parse_mode = 'HTML';
     if (opts.silent) extra.disable_notification = true;
 
-    // Inline keyboard
+    // Inline keyboard — max 8 buttons per row, max 3 rows
     if (opts.buttons && opts.buttons.length > 0) {
-      const rows = opts.buttons.map(b => {
-        if (b.url) return { text: b.text, url: b.url };
-        if (b.callbackData) return { text: b.text, callback_data: b.callbackData };
-        return { text: b.text, callback_data: 'noop' };
-      });
-      extra.reply_markup = { inline_keyboard: [rows] };
+      const btns = opts.buttons.slice(0, 12); // Telegram max ~100 but be reasonable
+      const rows: any[][] = [];
+      for (let i = 0; i < btns.length; i += 4) {
+        rows.push(btns.slice(i, i + 4).map(b => {
+          if (b.url) return { text: b.text, url: b.url };
+          if (b.callbackData) return { text: b.text, callback_data: b.callbackData };
+          return { text: b.text, callback_data: 'noop' };
+        }));
+      }
+      extra.reply_markup = { inline_keyboard: rows.slice(0, 4) };
     } else if (opts.agentId) {
       extra.reply_markup = {
         inline_keyboard: [[
@@ -101,16 +148,10 @@ export async function notifyRich(userId: number, opts: {
     try {
       await _bot.telegram.sendMessage(userId, sendText, extra);
     } catch (e1: any) {
-      // Check if blocked before fallback
-      const m1 = e1?.message || '';
-      if (m1.includes('403') || m1.includes('bot was blocked') || m1.includes('chat not found')) {
-        markBlocked(userId);
-        console.warn(`[Notifier] User ${userId} blocked bot, muting for 1h`);
-        return;
-      }
-      // Fallback без HTML
+      if (isBotBlocked(e1)) { markBlocked(userId); return; }
+      // Fallback: plain text without HTML
       delete extra.parse_mode;
-      const plainText = sendText.replace(/<[^>]+>/g, '');
+      const plainText = sendText.replace(/<[^>]+>/g, '').slice(0, 4000);
       await _bot.telegram.sendMessage(userId, plainText, extra);
     }
   } catch (err: any) {
@@ -118,12 +159,8 @@ export async function notifyRich(userId: number, opts: {
   }
 }
 
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-function div(): string { return '━━━━━━━━━━━━━━━━━━━━'; }
+// ── Agent result notification ────────────────────────────────
 
-// Отправить результат выполнения агента
 export async function notifyAgentResult(params: {
   userId: number;
   agentId: number;
@@ -136,49 +173,62 @@ export async function notifyAgentResult(params: {
 }): Promise<void> {
   const { userId, agentId, agentName, success, result, error, logs, scheduled } = params;
 
-  const prefix = scheduled ? `⏰ Агент "${agentName}" (плановый)` : `🤖 Агент "${agentName}"`;
+  const prefix = scheduled
+    ? `⏰ <b>${escapeHtml(agentName)}</b> (плановый запуск)`
+    : `🤖 <b>${escapeHtml(agentName)}</b>`;
 
   let text = '';
 
   if (success) {
     text = `${prefix} — ✅ Выполнен\n\n`;
 
-    // Показываем результат если есть
     if (result !== undefined && result !== null) {
       const resultStr = typeof result === 'object'
         ? JSON.stringify(result, null, 2)
         : String(result);
 
-      // Обрезаем до 800 символов
-      text += `📊 Результат:\n${resultStr.slice(0, 800)}`;
-      if (resultStr.length > 800) text += '\n... (обрезано)';
+      text += `📊 <b>Результат:</b>\n<code>${escapeHtml(resultStr.slice(0, 800))}</code>`;
+      if (resultStr.length > 800) text += '\n<i>... (обрезано)</i>';
     }
 
-    // Показываем info/success логи агента (console.log внутри кода)
+    // Deduplicate + show info/success logs
     if (logs && logs.length > 0) {
       const infoLogs = logs.filter(l => l.level === 'info' || l.level === 'success');
       if (infoLogs.length > 0) {
-        text += '\n\n📝 Логи:\n';
-        infoLogs.slice(-5).forEach(l => {
+        const unique = [...new Map(infoLogs.map(l => [l.message, l])).values()];
+        text += '\n\n📝 <b>Логи:</b>\n';
+        unique.slice(-5).forEach(l => {
           const emoji = l.level === 'success' ? '✅' : '📌';
-          text += `${emoji} ${l.message}\n`;
+          text += `${emoji} ${escapeHtml(l.message)}\n`;
         });
       }
     }
   } else {
-    text = `${prefix} — ❌ Ошибка\n\n${error || 'Неизвестная ошибка'}`;
+    text = `${prefix} — ❌ Ошибка\n\n${escapeHtml(error || 'Неизвестная ошибка')}`;
 
-    // Показываем ошибки из логов
     if (logs && logs.length > 0) {
       const errLogs = logs.filter(l => l.level === 'error');
       if (errLogs.length > 0) {
-        text += '\n\n🔴 Детали:\n';
-        errLogs.slice(-3).forEach(l => { text += `• ${l.message}\n`; });
+        const unique = [...new Map(errLogs.map(l => [l.message, l])).values()];
+        text += '\n\n🔴 <b>Детали:</b>\n';
+        unique.slice(-3).forEach(l => { text += `• ${escapeHtml(l.message)}\n`; });
       }
     }
   }
 
-  text += `\n\n/run ${agentId} — запустить снова`;
+  // Action buttons
+  const buttons = success
+    ? [
+        { text: '📋 Логи', callbackData: `show_logs:${agentId}` },
+        { text: '💬 Чат', callbackData: `agent_chat:${agentId}` },
+      ]
+    : [
+        { text: '🔧 Починить', callbackData: `repair_agent:${agentId}` },
+        { text: '📋 Логи', callbackData: `show_logs:${agentId}` },
+        { text: '▶️ Перезапуск', callbackData: `run_agent:${agentId}` },
+      ];
 
-  await notifyUser(userId, text);
+  await notifyRich(userId, {
+    text, agentId, buttons, silent: scheduled,
+  });
 }

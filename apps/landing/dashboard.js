@@ -418,13 +418,28 @@ checkExistingSession();
 // ===== NAVIGATION =====
 // Map page names to their lazy-load functions
 const pageLoadFns = {
-  analytics: () => loadAnalytics(),
-  persona:   () => loadPersona(),
-  knowledge: () => loadKnowledge(),
-  connectors:() => loadConnectors(),
-  profile:   () => loadProfile(),
-  wallet:    () => loadWallet(),
+  overview:    () => loadOverview(),
+  analytics:   () => loadAnalytics(),
+  persona:     () => loadPersona(),
+  knowledge:   () => loadKnowledge(),
+  capabilities:() => initCapabilities(),
+  connectors:  () => loadConnectors(),
+  extensions:  () => loadExtensions(),
+  activity:    () => initActivityStream(),
+  operations:  () => loadOperations(),
+  profile:     () => loadProfile(),
+  wallet:      () => loadWallet(),
+  settings:    () => loadSettings(),
 };
+
+// Stub functions for pages that don't have dedicated load logic yet
+function loadOverview() { loadMyStats(); loadAgents(); }
+function loadOperations() { loadAgents(); }
+function loadSettings() {
+  // Settings are static HTML — just mark as loaded
+  console.log('[Dashboard] Settings page loaded');
+}
+function loadExtensions() { loadPluginsReal(); }
 
 document.querySelectorAll('.nav-item').forEach(item => {
   item.addEventListener('click', (e) => {
