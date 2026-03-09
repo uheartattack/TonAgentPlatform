@@ -3648,7 +3648,7 @@ bot.on(message('voice'), async (ctx) => {
 
 bot.on(message('text'), async (ctx) => {
   const text = ctx.message.text;
-  if (text.startsWith('/') || MENU_TEXTS.has(text)) return;
+  if ((text.startsWith('/') && text !== '/stop_chat' && text !== '/stopchat') || MENU_TEXTS.has(text)) return;
 
   const userId = ctx.from.id;
   const trimmed = text.trim();
