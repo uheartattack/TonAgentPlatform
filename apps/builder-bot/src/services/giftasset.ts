@@ -286,13 +286,6 @@ export class GiftAssetClient {
     );
   }
 
-  /** Last sale across all collections */
-  async getAllCollectionsLastSale(): Promise<any> {
-    return cached('ga:allLastSale', 60_000, () =>
-      gaFetch('/api/v1/gifts/get_all_collections_last_sale')
-    );
-  }
-
   /** Daily upgrade statistics */
   async getUpgradeStats(): Promise<any> {
     return cached('ga:upgradeStats', 300_000, () =>
@@ -473,6 +466,59 @@ export class GiftAssetClient {
     );
   }
 
+  /** Greed index per collection — shows market overheating / undervaluation */
+  async getGreedIndex(): Promise<any> {
+    return cached('ga:greed', 120_000, () =>
+      gaFetch('/api/v1/gifts/get_gifts_collections_greed_index')
+    );
+  }
+
+  /** Active buy offers for a collection — guaranteed buyers at specific prices */
+  async getCollectionOffers(collectionName: string, params?: { minPrice?: number; maxPrice?: number }): Promise<any> {
+    return cached(`ga:offers:${collectionName}:${params?.minPrice || ''}:${params?.maxPrice || ''}`, 20_000, () =>
+      gaFetch('/api/v1/gifts/get_collection_offers', {
+        method: 'POST',
+        body: {
+          collection_name: collectionName,
+          min_price: params?.minPrice ?? null,
+          max_price: params?.maxPrice ?? null,
+        },
+      })
+    );
+  }
+
+  /** Unique gifts price list — per-variant (backdrop/model) pricing for a collection */
+  async getUniqueGiftsPriceList(collectionName?: string): Promise<any> {
+    const query: Record<string, string> = {};
+    if (collectionName) query.collection_name = collectionName;
+    return cached(`ga:uniquePrices:${collectionName || 'all'}`, 30_000, () =>
+      gaFetch('/api/v1/gifts/get_unique_gifts_price_list', { query })
+    );
+  }
+
+  /** Attribute sales volumes — which backdrops/models sell most per day */
+  async getAttributeVolumes(collectionName?: string): Promise<any> {
+    const query: Record<string, string> = {};
+    if (collectionName) query.collection_name = collectionName;
+    return cached(`ga:attrVol:${collectionName || 'all'}`, 120_000, () =>
+      gaFetch('/api/v1/gifts/get_attribute_volumes', { query })
+    );
+  }
+
+  /** Collections marketcap */
+  async getCollectionsMarketcap(): Promise<any> {
+    return cached('ga:marketcap', 300_000, () =>
+      gaFetch('/api/v1/gifts/get_gifts_collections_marketcap')
+    );
+  }
+
+  /** Last sale on providers — fresh cross-market prices from actual transactions */
+  async getAllCollectionsLastSale(): Promise<any> {
+    return cached('ga:allLastSale', 20_000, () =>  // 20s cache — fresh data for arbitrage
+      gaFetch('/api/v1/gifts/get_all_collections_last_sale')
+    );
+  }
+
   // ─ Compound methods ────────────────────────────────────────────
 
   /** Get floor prices for a gift across all known marketplaces */
@@ -549,9 +595,12 @@ export class GiftAssetClient {
     const BUY_ONLY_MARKETS = new Set(['tonnel']);
 
     try {
-      // Step 1: Price list → fast first pass to find candidates
-      const priceList = await this.getPriceList();
-      const cf = priceList?.collection_floors || priceList;
+      // Step 1: Last sale data (real transactions) → faster and fresher than price list
+      // Falls back to price list if last sale data is unavailable
+      let rawData = await this.getAllCollectionsLastSale().catch(() => null);
+      // last sale format: { "Lol Pop": { getgems: 5.5, mrkt: 5.2, ... } } or { collection_floors: {...} }
+      if (!rawData) rawData = await this.getPriceList().catch(() => null);
+      const cf = rawData?.collection_floors || rawData?.last_sales || rawData;
       if (!cf || typeof cf !== 'object') return opps;
 
       const candidates: Array<{ name: string; buyMarket: string; buyPrice: number; sellMarket: string; sellPrice: number; spread: number }> = [];

@@ -913,6 +913,59 @@ function buildToolDefinitions(): OpenAI.ChatCompletionTool[] {
         },
       },
     },
+    // ── New GiftAsset Pro tools ──
+    {
+      type: 'function',
+      function: {
+        name: 'get_collection_offers',
+        description: 'Активные buy offers для коллекции — гарантированные покупатели по конкретным ценам. Если есть offer по цене X = можно продать МГНОВЕННО по X. Самый надёжный источник цены продажи.',
+        parameters: {
+          type: 'object',
+          properties: {
+            collection_name: { type: 'string', description: 'Название коллекции' },
+            min_price: { type: 'number', description: 'Минимальная цена оффера в TON' },
+            max_price: { type: 'number', description: 'Максимальная цена оффера в TON' },
+          },
+          required: ['collection_name'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'get_market_health',
+        description: 'Индекс здоровья и жадности рынка по коллекциям. Высокий greed_index = перегрев (продавай). Низкий = недооценка (покупай). health_index = общая ликвидность.',
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'get_attribute_volumes',
+        description: 'Объём продаж по атрибутам (backdrop/model) — какие варианты подарков покупают чаще. Полезно для понимания реального спроса.',
+        parameters: {
+          type: 'object',
+          properties: {
+            collection_name: { type: 'string', description: 'Название коллекции (пусто = все)' },
+          },
+          required: [],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'get_unique_gift_prices',
+        description: 'Цены уникальных подарков с разбивкой по вариантам (backdrop + model). Точные цены per-variant без смешения разного качества.',
+        parameters: {
+          type: 'object',
+          properties: {
+            collection_name: { type: 'string', description: 'Название коллекции' },
+          },
+          required: [],
+        },
+      },
+    },
     // ── Plugin tools ──
     {
       type: 'function',
@@ -1690,6 +1743,59 @@ async function executeTool(
       }
     }
 
+    case 'get_collection_offers': {
+      if (!args.collection_name) return { error: 'collection_name required' };
+      try {
+        const { getGiftAssetClient } = await import('../services/giftasset');
+        const offers = await getGiftAssetClient().getCollectionOffers(
+          args.collection_name as string,
+          { minPrice: args.min_price, maxPrice: args.max_price }
+        );
+        return {
+          collection: args.collection_name,
+          offers,
+          note: 'These are ACTIVE BUY ORDERS — guaranteed buyers. If you list at or below their offer price, sale is instant.',
+        };
+      } catch (e: any) {
+        return { error: e.message };
+      }
+    }
+
+    case 'get_market_health': {
+      try {
+        const { getGiftAssetClient } = await import('../services/giftasset');
+        const ga = getGiftAssetClient();
+        const [greed, health] = await Promise.allSettled([ga.getGreedIndex(), ga.getCollectionHealth()]);
+        return {
+          greed_index:  greed.status  === 'fulfilled' ? greed.value  : null,
+          health_index: health.status === 'fulfilled' ? health.value : null,
+          note: 'greed_index > 70 = market overheated (sell). < 30 = undervalued (buy). health_index = liquidity & activity.',
+        };
+      } catch (e: any) {
+        return { error: e.message };
+      }
+    }
+
+    case 'get_attribute_volumes': {
+      try {
+        const { getGiftAssetClient } = await import('../services/giftasset');
+        const data = await getGiftAssetClient().getAttributeVolumes(args.collection_name as string | undefined);
+        return { attribute_volumes: data, note: 'Shows which backdrops/models have highest sales volume. High volume = liquid market.' };
+      } catch (e: any) {
+        return { error: e.message };
+      }
+    }
+
+    case 'get_unique_gift_prices': {
+      try {
+        const { getGiftAssetClient } = await import('../services/giftasset');
+        const data = await getGiftAssetClient().getUniqueGiftsPriceList(args.collection_name as string | undefined);
+        return { unique_prices: data, note: 'Per-variant prices by backdrop+model combination. More accurate than collection floor.' };
+      } catch (e: any) {
+        return { error: e.message };
+      }
+    }
+
     case 'get_user_portfolio': {
       if (!args.username && !args.telegram_id) return { error: 'Provide username or telegram_id' };
       try {
@@ -1908,15 +2014,17 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
 - Следить за свежими коллекциями: первые листинги обычно дешевле рынка
 
 🛠 Инструменты для анализа (используй в таком порядке):
-1. get_top_deals() → ЛУЧШИЕ СДЕЛКИ ДНЯ по версии GiftAsset Pro — начинай с этого каждый тик
-2. scan_real_arbitrage() → кросс-маркет спред в TON (реальные данные, все маркетплейсы)
-3. get_gift_aggregator(slug) → листинги конкретного подарка с backdrop/model/price/rarity
-4. get_backdrop_floors(collection) → цены флора по цвету фона (чёрный = дороже всего)
-5. get_gift_floor_real(slug) → реальные цены флора по всем маркетам в TON
-6. get_gift_catalog() → pre-market подарки (для мониторинга новых коллекций)
-7. get_agent_wallet() → кошелёк агента для TON транзакций
-8. send_ton(to, amount) → отправить TON с кошелька агента
-⛔ НЕ ИСПОЛЬЗУЙ: scan_arbitrage() — устарело, данные неточные. Всегда используй scan_real_arbitrage().
+1. get_top_deals() → ЛУЧШИЕ СДЕЛКИ ДНЯ (GiftAsset Pro) — начинай с этого каждый тик
+2. scan_real_arbitrage() → кросс-маркет спред, верифицированные живым агрегатором
+3. get_collection_offers(name) → ГАРАНТИРОВАННЫЕ покупатели (buy offers) — самая надёжная цена продажи
+4. get_gift_aggregator(slug) → живые листинги с backdrop/model/rarity + BOC для мгновенной покупки
+5. get_unique_gift_prices(name) → цены per-variant (backdrop+model) — точнее флора коллекции
+6. get_backdrop_floors(collection) → флор по цвету фона (чёрный = 5-50x)
+7. get_market_health() → greed + health индексы (>70 greed = продавай, <30 = покупай)
+8. get_attribute_volumes(name) → объём продаж по атрибутам — что реально покупают
+9. get_gift_floor_real(slug) → флор по всем маркетам
+10. get_agent_wallet() + send_ton() → кошелёк и транзакции
+⛔ НЕ ИСПОЛЬЗУЙ: scan_arbitrage() — устарело. Только scan_real_arbitrage().
 [END GIFT KNOWLEDGE]`;
 
   // Chat mode vs monitoring mode instructions
