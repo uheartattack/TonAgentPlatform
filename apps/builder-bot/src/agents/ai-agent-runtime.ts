@@ -100,11 +100,15 @@ function getAIClient(config: Record<string, any>): { client: OpenAI; defaultMode
 
 // ── Markdown → HTML converter (for AI-generated text) ─────────────────────
 export function mdToHtml(text: string): string {
+  // If text already has HTML tags (AI sometimes outputs <b> directly) — pass through as-is.
+  // Only strip truly dangerous tags; Telegram supports: b, i, code, pre, s, u, a, tg-spoiler.
+  if (/<[a-z][^>]*>/i.test(text)) {
+    return text
+      .replace(/<(?!\/?(?:b|i|s|u|code|pre|a|tg-spoiler)[\s>\/])[^>]+>/gi, '')
+      .trim();
+  }
+  // Otherwise convert markdown → HTML (don't HTML-escape first; TON numbers rarely contain <>&)
   return text
-    // Escape HTML special chars first (except in code blocks)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
     // Code blocks (``` ... ```) → <pre><code>
     .replace(/```[\w]*\n?([\s\S]*?)```/g, (_, code) => `<pre><code>${code.trim()}</code></pre>`)
     // Inline code (`code`) → <code>
@@ -119,7 +123,6 @@ export function mdToHtml(text: string): string {
     .replace(/~~(.+?)~~/g, '<s>$1</s>')
     // Headers: ### H → bold line
     .replace(/^#{1,3}\s+(.+)$/gm, '<b>$1</b>')
-    // Line breaks: double newline → double newline (preserved in HTML)
     .trim();
 }
 
@@ -236,7 +239,7 @@ function buildToolDefinitions(): OpenAI.ChatCompletionTool[] {
       type: 'function',
       function: {
         name: 'scan_arbitrage',
-        description: 'Найти арбитражные возможности в каталоге подарков (купить дёшево → продать дорого)',
+        description: '⚠️ УСТАРЕЛО — используй scan_real_arbitrage вместо этого. Данные могут быть неточными.',
         parameters: {
           type: 'object',
           properties: {
@@ -1906,13 +1909,14 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
 
 🛠 Инструменты для анализа (используй в таком порядке):
 1. get_top_deals() → ЛУЧШИЕ СДЕЛКИ ДНЯ по версии GiftAsset Pro — начинай с этого каждый тик
-2. scan_real_arbitrage() → кросс-маркет спред в TON (полный скан всех коллекций)
-3. get_gift_aggregator(slug) → листинги конкретного подарка с backdrop/model/price
+2. scan_real_arbitrage() → кросс-маркет спред в TON (реальные данные, все маркетплейсы)
+3. get_gift_aggregator(slug) → листинги конкретного подарка с backdrop/model/price/rarity
 4. get_backdrop_floors(collection) → цены флора по цвету фона (чёрный = дороже всего)
-5. get_gift_floor_real(slug) → реальные цены по всем маркетам в TON
+5. get_gift_floor_real(slug) → реальные цены флора по всем маркетам в TON
 6. get_gift_catalog() → pre-market подарки (для мониторинга новых коллекций)
 7. get_agent_wallet() → кошелёк агента для TON транзакций
 8. send_ton(to, amount) → отправить TON с кошелька агента
+⛔ НЕ ИСПОЛЬЗУЙ: scan_arbitrage() — устарело, данные неточные. Всегда используй scan_real_arbitrage().
 [END GIFT KNOWLEDGE]`;
 
   // Chat mode vs monitoring mode instructions
