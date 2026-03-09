@@ -335,6 +335,23 @@ function buildToolDefinitions(): OpenAI.ChatCompletionTool[] {
     {
       type: 'function',
       function: {
+        name: 'buy_market_gift',
+        description: 'Купить подарок на маркете используя tx_payload из get_gift_aggregator. Отправляет транзакцию с кошелька агента. Требует: можно_купить=true (can_buy_now=true в листинге). ИСПОЛЬЗУЙ ТОЛЬКО когда get_gift_aggregator вернул item с tx_payload и tx_contract.',
+        parameters: {
+          type: 'object',
+          properties: {
+            tx_contract:  { type: 'string', description: 'Адрес смарт-контракта (item.tx_contract из get_gift_aggregator)' },
+            tx_payload:   { type: 'string', description: 'Base64 BOC payload транзакции (item.tx_payload из get_gift_aggregator)' },
+            price_ton:    { type: 'number', description: 'Цена покупки в TON (item.price_ton)' },
+            gift_name:    { type: 'string', description: 'Название подарка для уведомления' },
+          },
+          required: ['tx_contract', 'tx_payload', 'price_ton'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
         name: 'get_agent_wallet',
         description: 'Получить или создать TON кошелёк агента. Агент может хранить TON и совершать транзакции. Пользователь должен задепозитить TON на этот адрес.',
         parameters: { type: 'object', properties: {}, required: [] },
@@ -1194,6 +1211,56 @@ async function executeTool(
       }
     }
 
+    case 'buy_market_gift': {
+      try {
+        const walletAddr = (await stateRepo.get(params.agentId, 'wallet_address'))?.value;
+        const walletMn   = (await stateRepo.get(params.agentId, 'wallet_mnemonic'))?.value;
+        if (!walletAddr || !walletMn) {
+          return { error: 'Agent wallet not created. Call get_agent_wallet first, then have user deposit TON.' };
+        }
+        const priceTon = Number(args.price_ton);
+        if (!priceTon || priceTon <= 0) return { error: 'price_ton must be > 0' };
+
+        // Check balance before sending
+        let balanceTon = 0;
+        try {
+          const r = await fetch(`https://tonapi.io/v2/accounts/${encodeURIComponent(walletAddr)}`, {
+            headers: { Authorization: `Bearer ${process.env.TONAPI_KEY || ''}` },
+          });
+          const j = await r.json() as any;
+          balanceTon = Number(j.balance || 0) / 1e9;
+        } catch {}
+        if (balanceTon < priceTon + 0.05) {
+          return {
+            error: `Insufficient balance: ${balanceTon.toFixed(3)} TON, need ${(priceTon + 0.05).toFixed(3)} TON (price + 0.05 TON network fee)`,
+            wallet_address: walletAddr,
+            needed: priceTon + 0.05,
+            available: balanceTon,
+          };
+        }
+
+        const { walletFromMnemonic, sendAgentTransactionWithCell } = await import('../services/TonConnect');
+        const wallet = await walletFromMnemonic(walletMn, 'v4r2');
+        const result = await sendAgentTransactionWithCell(
+          wallet,
+          String(args.tx_contract),
+          priceTon + 0.01, // +0.01 TON for gas
+          String(args.tx_payload)
+        );
+
+        if ((result as any)?.ok) {
+          const giftName = String(args.gift_name || 'подарок');
+          const totalSpent = Number((await stateRepo.get(params.agentId, 'total_ton_spent'))?.value || 0) + priceTon;
+          await stateRepo.set(params.agentId, params.userId, 'total_ton_spent', String(totalSpent));
+          await notifyUser(params.userId, `✅ Куплен ${giftName} за ${priceTon} TON! Tx: ${(result as any).hash}`);
+          return { ok: true, hash: (result as any).hash, price_ton: priceTon, gift: giftName };
+        }
+        return { ok: false, error: (result as any).error || 'Transaction failed' };
+      } catch (e: any) {
+        return { error: e.message };
+      }
+    }
+
     case 'get_agent_wallet': {
       try {
         let addr = (await stateRepo.get(params.agentId, 'wallet_address'))?.value;
@@ -2016,6 +2083,13 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
 - НИКОГДА не просить пользователя пополнить кошелёк — просто уведомить если баланса недостаточно
 - Не повторять одни и те же возможности каждый тик — использовать set_state/get_state для дедупликации
 
+🚫 СТРОГИЙ ЗАПРЕТ ГАЛЛЮЦИНАЦИЙ:
+- notify() ТОЛЬКО после того, как инструмент вернул конкретный листинг с полями: provider, price_ton, link
+- НИКОГДА не вызывай notify() на основе: get_state результата, предположений, логики без API-ответа
+- ПОРЯДОК ОБЯЗАТЕЛЕН: сначала инструмент → проверь ответ items[] → если непустой → только тогда notify()
+- Если get_gift_aggregator вернул items[] = [] → не нотифицировать, просто завершить тик молча
+- Если get_gift_aggregator вернул items[0] с реальным price_ton и link → ТОГДА notify() с этой ссылкой
+
 🎯 Оценка КАЧЕСТВА подарка (влияет на цену):
 1. ФОНЫ (от дороже к дешевле): Чёрный > Тёмно-синий > Фиолетовый > Другие цветные > Белый/Серый
    - Чёрный фон = наценка 5-50x к коллекционной стоимости
@@ -2042,13 +2116,25 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
 8. get_attribute_volumes(name) → объём продаж по атрибутам — что реально покупают
 9. get_gift_floor_real(slug) → флор по всем маркетам
 10. get_agent_wallet() + send_ton() → кошелёк и транзакции
+11. buy_market_gift(tx_contract, tx_payload, price_ton) → МГНОВЕННАЯ ПОКУПКА если can_buy_now=true в get_gift_aggregator
 ⛔ НЕ ИСПОЛЬЗУЙ: scan_arbitrage() — устарело. Только scan_real_arbitrage().
+
+🛒 ПОТОК ПОКУПКИ (для автономных агентов):
+1. get_gift_aggregator(name="lol-pop", to_price=MAX_PRICE) → найти самый дешевый item
+2. Если item.can_buy_now=true → buy_market_gift(tx_contract=item.tx_contract, tx_payload=item.tx_payload, price_ton=item.price_ton, gift_name=item.title)
+3. Если item.can_buy_now=false → notify_rich() с item.link для ручной покупки пользователем
+4. Если items=[] → ничего не делать, завершить тик молча
 [END GIFT KNOWLEDGE]`;
 
   // Chat mode vs monitoring mode instructions
   const modeHint = msgs.length > 0
     ? `\n\n⚠️ РЕЖИМ ЧАТА: Пользователь написал тебе сообщение. Ответь ТОЛЬКО текстом напрямую — НЕ вызывай инструмент notify(). Твой текстовый ответ будет доставлен автоматически. Используй инструменты только если они нужны для ответа на вопрос.`
-    : `\n\n⚠️ РЕЖИМ МОНИТОРИНГА: Пользователь не в чате. Проанализируй ситуацию. Если нашёл важную информацию (выгодная сделка, арбитраж >5% прибыли, резкое изменение цены) — ОБЯЗАТЕЛЬНО вызови инструмент notify() или notify_rich() с описанием. Если ничего важного не нашёл — просто заверши без вывода.`;
+    : `\n\n⚠️ РЕЖИМ МОНИТОРИНГА (СКОРОСТЬ КРИТИЧНА): Пользователь не в чате. Действуй быстро:
+1. Если в state есть target_gift (конкретная цель) → сразу вызови get_gift_aggregator(name=target_gift, to_price=target_price) — БЕЗ предисловий
+2. Если items[] не пустой → вызови notify_rich() с первым листингом: название, цена, маркет, ССЫЛКА для покупки
+3. Если items[] пустой → завершить МОЛЧА (не нотифицировать, не писать ничего)
+4. Если target_gift не задан → get_top_deals() → если есть сделки с profit >8% → notify с топ-3
+ЗАПОМНИ: notify() только если инструмент вернул реальный item с link. Никаких предположений.`;
 
   const contextMsg = `[Текущий тик агента]
 Время: ${new Date().toISOString()}
