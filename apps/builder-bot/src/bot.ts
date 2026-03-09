@@ -1989,23 +1989,16 @@ bot.action('skip_agent_name', async (ctx) => {
     return;
   }
   pendingNameAsk.delete(userId);
-  // Переходим к шагу расписания (имя не задано → придумает AI/шаблон)
-  const previewTask = pna.description.replace(/[_*`[\]]/g, '').slice(0, 120) + (pna.description.length > 120 ? '…' : '');
-  pendingCreations.set(userId, { description: pna.description, step: 'schedule' });
-  await ctx.editMessageText(
-    `⏰ <b>Как часто запускать агента?</b>\n\n📝 <i>"${escHtml(previewTask)}"</i>\n\n${pe('finger')} Выберите расписание:`,
-    {
-      parse_mode: 'HTML',
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: '▶️ Вручную (по кнопке)', callback_data: 'agent_schedule:manual' }],
-          [{ text: '🔁 Каждую минуту', callback_data: 'agent_schedule:1min' }, { text: '⚡ Каждые 5 мин', callback_data: 'agent_schedule:5min' }],
-          [{ text: '⏱ Каждые 15 мин', callback_data: 'agent_schedule:15min' }, { text: '🕐 Каждый час', callback_data: 'agent_schedule:1hour' }],
-          [{ text: '📅 Раз в сутки', callback_data: 'agent_schedule:24hours' }, { text: '❌ Отмена', callback_data: 'agent_schedule:cancel' }],
-        ],
-      },
-    }
-  ).catch(() => {});
+  await ctx.editMessageText('<i>🤖 Разрабатываю агента...</i>', { parse_mode: 'HTML' }).catch(() => {});
+  const anim = await startCreationAnimation(ctx, '', true);
+  try {
+    const result = await getOrchestrator().processMessage(userId, pna.description, ctx.from.username, undefined);
+    anim.stop(); anim.deleteMsg();
+    await sendResult(ctx, result);
+  } catch (err) {
+    anim.stop(); anim.deleteMsg();
+    await ctx.reply('❌ Ошибка создания агента. Попробуйте ещё раз.').catch(() => {});
+  }
 });
 
 bot.action('cancel_name_ask', async (ctx) => {
@@ -2048,12 +2041,12 @@ bot.action(/^agent_chat:(\d+)$/, async (ctx) => {
     lang === 'ru'
       ? `💬 <b>Чат с агентом «${escHtml(name)}»</b>\n\n` +
         (isAI
-          ? 'Пишите сообщения — агент ответит на следующем тике.'
+          ? 'Пишите сообщения — агент отвечает мгновенно.'
           : 'AI отвечает от имени агента. Можешь спросить что он делает или попросить <b>улучшить себя</b>.') +
         '\n\nОтправьте /stop_chat чтобы выйти.'
       : `💬 <b>Chat with agent «${escHtml(name)}»</b>\n\n` +
         (isAI
-          ? 'Send messages — agent will reply on next tick.'
+          ? 'Send messages — agent replies instantly.'
           : 'AI responds on behalf of the agent. Ask what it does or request it to <b>improve itself</b>.') +
         '\n\nSend /stop_chat to exit.',
     { parse_mode: 'HTML' }
@@ -3686,11 +3679,11 @@ bot.on(message('text'), async (ctx) => {
     const a = agentRes.data;
 
     if (a.triggerType === 'ai_agent') {
-      // AI agent — route to agentic loop (answers on next tick)
+      // AI agent — route to agentic loop
       getRunnerAgent().sendMessageToAgent(agentId, trimmed);
       await ctx.reply(lang === 'ru'
-        ? '📨 Сообщение отправлено агенту. Ответ придёт на следующем тике.'
-        : '📨 Message sent to agent. Reply will arrive on next tick.'
+        ? '📨 Сообщение получено — агент ответит в ближайшее время.'
+        : '📨 Message received — agent will reply shortly.'
       );
     } else {
       // Any other agent type — use universal AI chat (immediate response)
@@ -4236,26 +4229,19 @@ bot.on(message('text'), async (ctx) => {
     const pna = pendingNameAsk.get(userId)!;
     pendingNameAsk.delete(userId);
     const customName = trimmed.length >= 2 && trimmed.length <= 60 ? trimmed : undefined;
-    // Переходим к выбору расписания
-    pendingCreations.set(userId, { description: pna.description, step: 'schedule', name: customName });
-    const previewTask = pna.description.replace(/[_*`[\]]/g, '').slice(0, 120) + (pna.description.length > 120 ? '…' : '');
-    const nameLabel = customName ? `📛 *${customName}* — отлично\\!` : '📛 *Название придумаю сам*';
-    await safeReply(ctx,
-      `${nameLabel}\n\n` +
-      `⏰ *Как часто запускать агента?*\n\n` +
-      `📝 _"${previewTask}"_\n\n` +
-      `👇 Выберите расписание:`,
-      {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: '▶️ Вручную (по кнопке)', callback_data: 'agent_schedule:manual' }],
-            [{ text: '🔁 Каждую минуту', callback_data: 'agent_schedule:1min' }, { text: '⚡ Каждые 5 мин', callback_data: 'agent_schedule:5min' }],
-            [{ text: '⏱ Каждые 15 мин', callback_data: 'agent_schedule:15min' }, { text: '🕐 Каждый час', callback_data: 'agent_schedule:1hour' }],
-            [{ text: '📅 Раз в сутки', callback_data: 'agent_schedule:24hours' }, { text: '❌ Отмена', callback_data: 'agent_schedule:cancel' }],
-          ],
-        },
-      }
-    );
+    // Сразу создаём агента — без выбора расписания
+    const nameLabel = customName ? `📛 <b>${escHtml(customName)}</b> — отлично!` : '🤖 <i>Разрабатываю агента...</i>';
+    await ctx.reply(nameLabel, { parse_mode: 'HTML' }).catch(() => {});
+    const anim = await startCreationAnimation(ctx, '', true);
+    const descWithName = customName ? `${pna.description}\n\nНазвание: ${customName}` : pna.description;
+    try {
+      const result = await getOrchestrator().processMessage(userId, descWithName, ctx.from.username, customName);
+      anim.stop(); anim.deleteMsg();
+      await sendResult(ctx, result);
+    } catch (err) {
+      anim.stop(); anim.deleteMsg();
+      await ctx.reply('❌ Ошибка создания агента. Попробуйте ещё раз.').catch(() => {});
+    }
     return;
   }
 
