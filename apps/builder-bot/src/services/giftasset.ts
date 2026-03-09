@@ -658,6 +658,15 @@ export class GiftAssetClient {
         const profitPct = ((liveSellPrice - liveBuyPrice) / liveBuyPrice) * 100;
         if (profitPct < minProfit) continue;
 
+        // Spreads >40% are almost always stale/wrong data — skip unless high confidence
+        if (profitPct > 40 && liveEntries.length < 4) continue;
+
+        // Sanity: offchain markets (portals/mrkt/tonnel) should be CHEAPER than onchain (getgems/fragment)
+        // If offchain is the sell market AND price > onchain buy price by >20% — suspicious
+        const OFFCHAIN = new Set(['tonnel', 'portals', 'mrkt']);
+        const ONCHAIN  = new Set(['getgems', 'fragment']);
+        if (OFFCHAIN.has(liveSellMarket) && ONCHAIN.has(liveBuyMarket) && profitPct > 15) continue;
+
         opps.push({
           slug: candidate.name,
           giftName: candidate.name,
