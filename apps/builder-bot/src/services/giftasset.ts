@@ -604,11 +604,9 @@ export class GiftAssetClient {
     const BUY_ONLY_MARKETS = new Set(['tonnel']);
 
     try {
-      // Step 1: Last sale data (real transactions) → faster and fresher than price list
-      // Falls back to price list if last sale data is unavailable
-      let rawData = await this.getAllCollectionsLastSale().catch(() => null);
-      // last sale format: { "Lol Pop": { getgems: 5.5, mrkt: 5.2, ... } } or { collection_floors: {...} }
-      if (!rawData) rawData = await this.getPriceList().catch(() => null);
+      // Step 1: Current floor prices (active listings) — NOT last sale prices
+      // getAllCollectionsLastSale returns transaction history (what sold) not current listings
+      const rawData = await this.getPriceList().catch(() => null);
       const cf = rawData?.collection_floors || rawData?.last_sales || rawData;
       if (!cf || typeof cf !== 'object') return opps;
 
