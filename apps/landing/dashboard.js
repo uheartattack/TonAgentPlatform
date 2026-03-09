@@ -435,8 +435,22 @@ const pageLoadFns = {
 // Stub functions for pages that don't have dedicated load logic yet
 function loadOverview() { loadMyStats(); loadAgents(); }
 function loadOperations() { loadAgents(); }
-function loadSettings() {
-  // Settings are static HTML — just mark as loaded
+async function loadSettings() {
+  try {
+    const data = await apiRequest('GET', '/api/settings');
+    if (data.ok && data.settings) {
+      // Populate existing settings fields if they exist
+      const cfg = data.settings.agent_config || {};
+      const fields = { 'ai-persona': cfg.persona, 'ai-model': cfg.model, 'response-delay': cfg.responseDelay };
+      for (const [id, val] of Object.entries(fields)) {
+        const el = document.getElementById(id);
+        if (el && val !== undefined) {
+          if (el.tagName === 'INPUT' && el.type === 'range') { el.value = val; updateSliderDisplay(el); }
+          else if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') el.value = val;
+        }
+      }
+    }
+  } catch {}
   console.log('[Dashboard] Settings page loaded');
 }
 function loadExtensions() { loadPluginsReal(); }
@@ -1305,24 +1319,29 @@ function startLiveUpdates() {
     if (el) el.textContent = `${hours}h ${mins}m`;
   }, 60000);
   
-  // Simulate random activity
-  const activityMessages = [
-    { en: 'Processing user query', ru: 'Обработка запроса пользователя', type: 'info' },
-    { en: 'Tool executed: get_balance', ru: 'Выполнен инструмент: get_balance', type: 'success' },
-    { en: 'API call completed in 245ms', ru: 'API вызов выполнен за 245мс', type: 'info' },
-    { en: 'Memory updated: 2 entries', ru: 'Память обновлена: 2 записи', type: 'info' },
-    { en: 'Webhook received from Telegram', ru: 'Получен вебхук от Telegram', type: 'info' },
-    { en: 'Transaction signed via TON Connect', ru: 'Транзакция подписана через TON Connect', type: 'success' },
-    { en: 'Rate limit check passed', ru: 'Проверка лимита запросов пройдена', type: 'info' },
-    { en: 'Context window optimized', ru: 'Контекстное окно оптимизировано', type: 'info' },
-  ];
-  
-  setInterval(() => {
-    if (Math.random() > 0.6) {
-      const msg = activityMessages[Math.floor(Math.random() * activityMessages.length)];
-      addActivity(msg.en, msg.ru, msg.type);
-    }
-  }, 5000);
+  // Poll for new real activity every 30 seconds
+  setInterval(async () => {
+    try {
+      const data = await apiRequest('GET', '/api/activity?limit=5');
+      if (data.ok && data.activity && data.activity.length) {
+        const newEntries = data.activity.filter(e => {
+          const entryTime = new Date(e.timestamp).getTime();
+          return entryTime > (window._lastActivityPoll || 0);
+        });
+        newEntries.reverse().forEach(entry => {
+          addActivity(
+            `[Agent #${entry.agentId}] ${entry.message}`,
+            `[Агент #${entry.agentId}] ${entry.message}`,
+            entry.level === 'error' ? 'error' : entry.level === 'success' ? 'success' : 'info'
+          );
+        });
+        if (newEntries.length > 0) {
+          window._lastActivityPoll = Math.max(...newEntries.map(e => new Date(e.timestamp).getTime()));
+        }
+      }
+    } catch {}
+  }, 30000);
+  window._lastActivityPoll = Date.now();
 }
 
 // ===== REFRESH DATA =====

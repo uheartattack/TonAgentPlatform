@@ -1107,7 +1107,7 @@ async function executeTool(
         const tonApiKey = params.config.TONAPI_KEY || process.env.TONAPI_KEY || '';
         const headers: Record<string, string> = {};
         if (tonApiKey) headers['Authorization'] = `Bearer ${tonApiKey}`;
-        const res  = await fetch(`https://tonapi.io/v2/accounts/${encodeURIComponent(addr)}`, { headers });
+        const res  = await fetch(`https://tonapi.io/v2/accounts/${encodeURIComponent(addr)}`, { headers, signal: AbortSignal.timeout(10000) });
         const data = await res.json() as any;
         const bal  = data.balance ? (parseInt(data.balance) / 1e9).toFixed(4) : '0';
         return { address: addr, balance_ton: bal, status: data.status };
@@ -1142,7 +1142,7 @@ async function executeTool(
         const rawAddr = /^EQ|^UQ/.test(collAddr) ? eqToRaw(collAddr) : collAddr;
 
         const url = `https://tonapi.io/v2/nfts/collections/${encodeURIComponent(rawAddr)}/items?limit=30&offset=0`;
-        const res = await fetch(url, { headers });
+        const res = await fetch(url, { headers, signal: AbortSignal.timeout(10000) });
         const data = await res.json() as any;
 
         const prices: number[] = [];
@@ -1283,6 +1283,7 @@ async function executeTool(
         try {
           const r = await fetch(`https://tonapi.io/v2/accounts/${encodeURIComponent(walletAddr)}`, {
             headers: { Authorization: `Bearer ${process.env.TONAPI_KEY || ''}` },
+            signal: AbortSignal.timeout(10000),
           });
           const j = await r.json() as any;
           balanceTon = Number(j.balance || 0) / 1e9;
@@ -1334,6 +1335,7 @@ async function executeTool(
         try {
           const r = await fetch(`https://tonapi.io/v2/accounts/${encodeURIComponent(addr)}`, {
             headers: { Authorization: `Bearer ${process.env.TONAPI_KEY || ''}` },
+            signal: AbortSignal.timeout(10000),
           });
           const j = await r.json() as any;
           balanceTon = Number(j.balance || 0) / 1e9;
@@ -1679,9 +1681,11 @@ async function executeTool(
         // SSRF protection: block internal/private IPs
         const parsed = new URL(url);
         const host = parsed.hostname.toLowerCase();
-        if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0'
-          || host.startsWith('10.') || host.startsWith('192.168.') || host.startsWith('172.')
-          || host === '169.254.169.254' || host.endsWith('.internal') || host.endsWith('.local')) {
+        if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0' || host === '::1'
+          || host.startsWith('10.') || host.startsWith('192.168.') || host.startsWith('172.16.')
+          || host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80')
+          || host === '169.254.169.254' || host.endsWith('.internal') || host.endsWith('.local')
+          || host.endsWith('.localhost') || parsed.protocol === 'file:' || parsed.protocol === 'ftp:') {
           return { error: 'Access to internal/private addresses is blocked' };
         }
         const method = (args.method as string || 'GET').toUpperCase();
@@ -2210,8 +2214,22 @@ async function executeTool(
       } catch (e: any) { return { error: e.message }; }
     }
 
+    case 'run_plugin': {
+      try {
+        const pluginId = args.plugin_id as string || args.pluginId as string;
+        if (!pluginId) return { error: 'plugin_id required. Use list_plugins() to see available plugins.' };
+        const { getPluginManager } = await import('../plugins-system');
+        const pm = getPluginManager();
+        const result = await pm.executePlugin(pluginId, { ...args.params, userId: params.userId });
+        return result;
+      } catch (e: any) {
+        return { error: e.message };
+      }
+    }
+
     default:
-      return { error: `Unknown tool: ${name}` };
+      console.warn(`[AI Runtime] Unknown tool called: ${name}, args: ${JSON.stringify(args).slice(0, 200)}`);
+      return { error: `Unknown tool: ${name}. Use list_plugins() or check available tools.` };
   }
 }
 
@@ -2220,7 +2238,9 @@ async function executeTool(
 async function logToDb(agentId: number, level: string, message: string, userId = 0): Promise<void> {
   try {
     await getAgentLogsRepository().insert({ agentId, userId, level, message });
-  } catch {}
+  } catch (e) {
+    console.warn('[logToDb] Failed:', (e as any)?.message);
+  }
 }
 
 // ── Core tick ──────────────────────────────────────────────────────────────
@@ -2560,7 +2580,10 @@ export class AIAgentRuntime {
     _activeHandles.set(opts.agentId, entry);
 
     // First tick immediately
-    entry.tick().catch(() => {});
+    entry.tick().catch((e) => {
+      console.error(`[AI runtime] first tick failed for agent #${opts.agentId}:`, e);
+      logToDb(opts.agentId, 'error', `First tick failed: ${(e as any)?.message || String(e)}`, opts.userId);
+    });
 
     console.log(`[AI runtime] Agent #${opts.agentId} activated, interval=${opts.intervalMs}ms`);
   }

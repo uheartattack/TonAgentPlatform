@@ -106,8 +106,11 @@ export function startApiServer() {
   const ALLOWED_ORIGINS = ['https://tonagentplatform.ru', 'http://tonagentplatform.ru', 'http://localhost:3001', 'http://localhost:3000'];
   app.use((req: Request, res: Response, next: NextFunction) => {
     const origin = req.headers.origin || '';
-    if (ALLOWED_ORIGINS.includes(origin) || !origin) {
-      res.header('Access-Control-Allow-Origin', origin || '*');
+    if (origin && ALLOWED_ORIGINS.includes(origin)) {
+      res.header('Access-Control-Allow-Origin', origin);
+    } else if (!origin) {
+      // Server-to-server or same-origin requests (no Origin header)
+      res.header('Access-Control-Allow-Origin', 'https://tonagentplatform.ru');
     } else {
       res.header('Access-Control-Allow-Origin', 'https://tonagentplatform.ru');
     }
@@ -241,18 +244,69 @@ export function startApiServer() {
     }
   });
 
+  // ── DELETE /api/agents/:id — удалить агента ──────────────
+  app.delete('/api/agents/:id', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const agentId = parseInt(req.params.id as string, 10);
+      if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
+
+      // Verify ownership
+      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
+
+      // Stop if running
+      try { await getRunnerAgent().pauseAgent(agentId, userId); } catch {}
+
+      // Delete from DB
+      const r = await getDBTools().deleteAgent(agentId, userId);
+      res.json({ ok: r.success, error: r.error });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── POST /api/agents/:id/rename — переименовать агента ──
+  app.post('/api/agents/:id/rename', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const agentId = parseInt(req.params.id as string, 10);
+      const { name } = req.body || {};
+      if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
+      if (!name || typeof name !== 'string' || name.trim().length < 2 || name.trim().length > 60) {
+        res.status(400).json({ error: 'Name must be 2-60 characters' }); return;
+      }
+
+      // Verify ownership first
+      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
+
+      // Direct SQL update for name
+      await pool.query('UPDATE builder_bot.agents SET name = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3', [name.trim(), agentId, userId]);
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // ── GET /api/agents/:id/logs ──────────────────────────────
   // DB-backed: возвращает персистентные логи из agent_logs таблицы
   app.get('/api/agents/:id/logs', requireAuth, async (req: Request, res: Response) => {
     try {
+      const userId = (req as any).userId as number;
       const agentId = parseInt(req.params.id as string, 10);
-      const limit = parseInt(req.query.limit as string || '30', 10);
-      const offset = parseInt(req.query.offset as string || '0', 10);
+      if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
+
+      // Verify ownership
+      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
+
+      const limit = Math.min(parseInt(req.query.limit as string || '30', 10), 100);
+      const offset = Math.max(parseInt(req.query.offset as string || '0', 10), 0);
 
       let logs: any[] = [];
       try {
         const rows = await getAgentLogsRepository().getByAgent(agentId, limit, offset);
-        // Map createdAt → timestamp for dashboard compatibility
         logs = rows.map(r => ({
           id: r.id,
           level: r.level,
@@ -262,8 +316,7 @@ export function startApiServer() {
           createdAt: r.createdAt.toISOString(),
         }));
       } catch {
-        // Fallback to in-memory runner logs if DB not ready
-        const r = await getRunnerAgent().getLogs(agentId, (req as any).userId, limit);
+        const r = await getRunnerAgent().getLogs(agentId, userId, limit);
         logs = r.data?.logs || [];
       }
       res.json({ ok: true, logs });
@@ -275,9 +328,16 @@ export function startApiServer() {
   // ── GET /api/agents/:id/history — история запусков агента ──
   app.get('/api/agents/:id/history', requireAuth, async (req: Request, res: Response) => {
     try {
+      const userId = (req as any).userId as number;
       const agentId = parseInt(req.params.id as string, 10);
-      const limit = parseInt(req.query.limit as string || '20', 10);
-      const offset = parseInt(req.query.offset as string || '0', 10);
+      if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
+
+      // Verify ownership
+      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
+
+      const limit = Math.min(parseInt(req.query.limit as string || '20', 10), 100);
+      const offset = Math.max(parseInt(req.query.offset as string || '0', 10), 0);
       const rows = await getExecutionHistoryRepository().getByAgent(agentId, limit, offset);
       res.json({ ok: true, history: rows });
     } catch (e: any) {
