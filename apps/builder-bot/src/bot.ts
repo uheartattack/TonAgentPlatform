@@ -4479,18 +4479,12 @@ async function runAgentDirect(ctx: Context, agentId: number, userId: number) {
     const data = runResult.data!;
 
     if (data.isScheduled) {
-      // Агент активирован как scheduler
-      const intervalMs = data.intervalMs || 0;
-      const intervalLabel = intervalMs >= 3_600_000 ? `${intervalMs / 3_600_000} ч`
-        : intervalMs >= 60_000 ? `${intervalMs / 60_000} мин`
-        : `${intervalMs / 1000} сек`;
-
       const successText =
         `${pe('check')} <b>Агент запущен!</b>\n` +
         `${div()}\n` +
         `<b>${escHtml(agent.name)}</b>  #${agentId}\n` +
-        `⏰ Каждые <b>${escHtml(intervalLabel)}</b> · 🖥 сервер 24/7\n` +
-        `${pe('bolt')} <i>Первое уведомление придёт через несколько секунд</i>`;
+        `🟢 Работает 24/7 · сервер\n` +
+        `${pe('bolt')} <i>Первое уведомление придёт в ближайшее время</i>`;
 
       if (statusMsg) {
         await ctx.telegram.editMessageText(ctx.chat!.id, statusMsg.message_id, undefined, successText, {
@@ -4731,16 +4725,17 @@ async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
     const lastErr = agentLastErrors.get(agentId);
     const hasError = !!lastErr;
 
-    // Интервал запуска
+    // Для scheduled (не ai_agent) показываем интервал
     const triggerCfg = typeof a.triggerConfig === 'object' ? a.triggerConfig as Record<string, any> : {};
     const intervalMs = triggerCfg?.intervalMs ? Number(triggerCfg.intervalMs) : 0;
     let intervalLabel = '';
-    if ((a.triggerType === 'scheduled' || a.triggerType === 'ai_agent') && intervalMs > 0) {
+    if (a.triggerType === 'scheduled' && intervalMs > 0) {
       if (intervalMs < 60000) intervalLabel = lang === 'ru' ? ' · каждую минуту' : ' · every minute';
       else if (intervalMs < 3600000) intervalLabel = lang === 'ru' ? ` · каждые ${Math.round(intervalMs / 60000)} мин` : ` · every ${Math.round(intervalMs / 60000)} min`;
       else if (intervalMs < 86400000) intervalLabel = lang === 'ru' ? ' · каждый час' : ' · every hour';
       else intervalLabel = lang === 'ru' ? ` · раз в ${Math.round(intervalMs / 86400000)} д` : ` · every ${Math.round(intervalMs / 86400000)} d`;
     }
+    // ai_agent никогда не показывает интервал — просто "всегда активен"
 
     // Дата создания
     const createdAt = a.createdAt ? new Date(a.createdAt) : null;

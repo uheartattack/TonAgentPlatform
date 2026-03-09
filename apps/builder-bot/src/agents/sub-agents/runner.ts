@@ -144,12 +144,6 @@ export class RunnerAgent {
         // Activate in DB
         await this.dbTools.updateAgent(params.agentId, params.userId, { isActive: true });
 
-        const intervalLabel = ms >= 3_600_000
-          ? `${ms / 3_600_000} ч`
-          : ms >= 60_000
-            ? `${ms / 60_000} мин`
-            : `${ms / 1000} сек`;
-
         return {
           success: true,
           data: {
@@ -159,7 +153,7 @@ export class RunnerAgent {
             status: 'active',
             isScheduled: true,
             intervalMs: ms,
-            message: `🤖 AI-агент "${agent.name}" запущен!\n\n🟢 Работает постоянно (24/7)\n🔄 Мониторинг каждые ${intervalLabel}\n💬 Мгновенные ответы через "Чат с агентом"\n\n📌 Агент сам решает когда отправлять уведомления`,
+            message: `🤖 AI-агент <b>${agent.name}</b> запущен!\n\n🟢 Работает постоянно · 24/7\n💬 Пишите в чат — отвечает мгновенно\n\n📌 Сам найдёт нужную информацию и уведомит`,
           },
         };
       }
