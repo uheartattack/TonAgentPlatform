@@ -98,9 +98,38 @@ function getAIClient(config: Record<string, any>): { client: OpenAI; defaultMode
   };
 }
 
+// ── Markdown → HTML converter (for AI-generated text) ─────────────────────
+function mdToHtml(text: string): string {
+  return text
+    // Escape HTML special chars first (except in code blocks)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    // Code blocks (``` ... ```) → <pre><code>
+    .replace(/```[\w]*\n?([\s\S]*?)```/g, (_, code) => `<pre><code>${code.trim()}</code></pre>`)
+    // Inline code (`code`) → <code>
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    // Bold: **text** or __text__
+    .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+    .replace(/__(.+?)__/g, '<b>$1</b>')
+    // Italic: *text* or _text_ (avoid matching inside words)
+    .replace(/\*([^*]+)\*/g, '<i>$1</i>')
+    .replace(/(?<!\w)_([^_]+)_(?!\w)/g, '<i>$1</i>')
+    // Strikethrough: ~~text~~
+    .replace(/~~(.+?)~~/g, '<s>$1</s>')
+    // Headers: ### H → bold line
+    .replace(/^#{1,3}\s+(.+)$/gm, '<b>$1</b>')
+    // Line breaks: double newline → double newline (preserved in HTML)
+    .trim();
+}
+
 // ── In-memory pending messages (chat → agent) ──────────────────────────────
 
 const _pendingMessages = new Map<number, string[]>(); // agentId → messages[]
+
+// ── Notify-called flag per active tick (agentId → bool) ────────────────────
+// Used to suppress duplicate sends when AI calls notify() AND produces finalContent
+const _tickNotifyFlag = new Map<number, boolean>();
 
 export function addMessageToAIAgent(agentId: number, text: string): void {
   if (!_pendingMessages.has(agentId)) _pendingMessages.set(agentId, []);
@@ -1173,11 +1202,15 @@ async function executeTool(
 
     case 'notify': {
       const msg = String(args.message || '');
-      if (params.onNotify) {
-        await params.onNotify(msg).catch(() => {});
-      } else {
-        await notifyUser(params.userId, msg).catch(() => {});
-      }
+      _tickNotifyFlag.set(params.agentId, true); // mark: notify was called in this tick
+      // Use notifyRich for markdown rendering; fallback to plain text
+      await notifyRich(params.userId, {
+        text: mdToHtml(msg),
+        agentId: params.agentId,
+      }).catch(async () => {
+        if (params.onNotify) await params.onNotify(msg).catch(() => {});
+        else await notifyUser(params.userId, msg).catch(() => {});
+      });
       return { ok: true };
     }
 
@@ -1277,6 +1310,7 @@ async function executeTool(
     case 'notify_rich': {
       const msg = String(args.message || '');
       const buttons = (args.buttons as any[]) || [];
+      _tickNotifyFlag.set(params.agentId, true); // mark: notify was called in this tick
       await notifyRich(params.userId, {
         text: msg,
         agentId: params.agentId,
@@ -1881,10 +1915,15 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
 8. send_ton(to, amount) → отправить TON с кошелька агента
 [END GIFT KNOWLEDGE]`;
 
+  // Chat mode vs monitoring mode instructions
+  const modeHint = msgs.length > 0
+    ? `\n\n⚠️ РЕЖИМ ЧАТА: Пользователь написал тебе сообщение. Ответь ТОЛЬКО текстом напрямую — НЕ вызывай инструмент notify(). Твой текстовый ответ будет доставлен автоматически. Используй инструменты только если они нужны для ответа на вопрос.`
+    : `\n\n⚠️ РЕЖИМ МОНИТОРИНГА: Пользователь не в чате. Проанализируй ситуацию. Если нашёл важную информацию (выгодная сделка, арбитраж >5% прибыли, резкое изменение цены) — ОБЯЗАТЕЛЬНО вызови инструмент notify() или notify_rich() с описанием. Если ничего важного не нашёл — просто заверши без вывода.`;
+
   const contextMsg = `[Текущий тик агента]
 Время: ${new Date().toISOString()}
 Конфиг: ${configSummary || '(пусто)'}${pluginHint}${interAgentHint}
-${GIFT_SYSTEM_KNOWLEDGE}
+${GIFT_SYSTEM_KNOWLEDGE}${modeHint}
 ${msgs.length > 0 ? `\nСообщения от пользователя:\n${msgs.map(m => `- ${m}`).join('\n')}` : ''}`;
 
   const messages: OpenAI.ChatCompletionMessageParam[] = [
@@ -1896,6 +1935,7 @@ ${msgs.length > 0 ? `\nСообщения от пользователя:\n${msgs
   const tools = buildToolDefinitions();
   let totalToolCalls = 0;
   let finalContent: string | undefined;
+  _tickNotifyFlag.set(params.agentId, false); // reset flag for this tick
 
   for (let iter = 0; iter < 5; iter++) {
     let response: OpenAI.ChatCompletion;
@@ -1953,15 +1993,27 @@ ${msgs.length > 0 ? `\nСообщения от пользователя:\n${msgs
   }
 
   // ── Notify if there were user messages and AI replied ────────────
-  if (finalContent && msgs.length > 0) {
-    if (params.onNotify) {
-      await params.onNotify(finalContent).catch(() => {});
-    } else {
-      await notifyUser(params.userId, finalContent).catch(() => {});
-    }
+  // Only send finalContent if:
+  // 1. There IS a text response (finalContent)
+  // 2. User sent a message (msgs.length > 0) → this is a chat reply
+  // 3. notify() was NOT already called during the tick (prevents duplicates)
+  const notifyWasCalled = _tickNotifyFlag.get(params.agentId) === true;
+  _tickNotifyFlag.delete(params.agentId); // cleanup
+
+  if (finalContent && msgs.length > 0 && !notifyWasCalled) {
+    // Chat reply: send the AI's text response to the user
+    await notifyRich(params.userId, {
+      text: mdToHtml(finalContent),
+      agentId: params.agentId,
+      agentName: (params.config?.AGENT_NAME as string) || undefined,
+    }).catch(async () => {
+      // Fallback to plain notify if rich fails
+      if (params.onNotify) await params.onNotify(finalContent!).catch(() => {});
+      else await notifyUser(params.userId, finalContent!).catch(() => {});
+    });
   }
 
-  await logToDb(params.agentId, 'info', `[AI tick] done, tools=${totalToolCalls}`, params.userId);
+  await logToDb(params.agentId, 'info', `[AI tick] done, tools=${totalToolCalls}, notified=${notifyWasCalled}`, params.userId);
 
   return { finalResponse: finalContent, toolCallCount: totalToolCalls };
 }
