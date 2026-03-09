@@ -1777,44 +1777,63 @@ bot.action('check_topup', async (ctx) => {
 });
 
 // ── Withdraw flow ──
-const WITHDRAW_MAX_PER_DAY = 3;
-const WITHDRAW_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+const WITHDRAW_MAX_PER_DAY = 10;
+const WITHDRAW_COOLDOWN_MS = 2 * 60 * 1000; // 2 minutes
 const WITHDRAW_MAX_PERCENT = 0.8; // max 80% of balance
 
 bot.action('withdraw_start', async (ctx) => {
   await ctx.answerCbQuery();
   const userId = ctx.from!.id;
   const lang = getUserLang(userId);
+  const ru = lang === 'ru';
   const profile = await getUserProfile(userId);
 
   if (profile.balance_ton < 0.1) {
-    await ctx.reply(lang === 'ru'
-      ? '❌ Недостаточно TON для вывода (минимум 0.1 TON)'
-      : '❌ Insufficient balance (minimum 0.1 TON)'
+    await safeReply(ctx,
+      `${pe('warning')} <b>${ru ? 'Недостаточно средств' : 'Insufficient funds'}</b>\n\n` +
+      `${ru ? 'Минимальная сумма вывода: <b>0.1 TON</b>' : 'Minimum withdrawal: <b>0.1 TON</b>'}\n` +
+      `${ru ? 'Ваш баланс:' : 'Your balance:'} <b>${(profile.balance_ton || 0).toFixed(3)} TON</b>`,
+      { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
+        [{ text: `💳 ${ru ? 'Пополнить' : 'Top Up'}`, callback_data: 'topup_start' }],
+        [{ text: `◀️ ${ru ? 'Кошелёк' : 'Wallet'}`, callback_data: 'show_wallet_menu' }],
+      ]}}
     );
     return;
   }
 
-  // Rate limit: max 3 withdrawals per day
+  // Rate limit
   try {
     const recentCount = await getBalanceTxRepository().getRecentWithdraws(userId, 24);
     if (recentCount >= WITHDRAW_MAX_PER_DAY) {
-      await ctx.reply(lang === 'ru'
-        ? `❌ Превышен лимит выводов (${WITHDRAW_MAX_PER_DAY}/сутки). Попробуйте позже.`
-        : `❌ Withdrawal limit exceeded (${WITHDRAW_MAX_PER_DAY}/day). Try later.`
+      // Показываем когда сбросится (в полночь UTC)
+      const now = new Date();
+      const tomorrow = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+      const hoursLeft = Math.ceil((tomorrow.getTime() - now.getTime()) / 3600000);
+      await safeReply(ctx,
+        `⏳ <b>${ru ? 'Лимит выводов исчерпан' : 'Withdrawal limit reached'}</b>\n\n` +
+        `${ru ? `Использовано: <b>${recentCount}/${WITHDRAW_MAX_PER_DAY}</b> выводов за сутки` : `Used: <b>${recentCount}/${WITHDRAW_MAX_PER_DAY}</b> withdrawals today`}\n` +
+        `${ru ? `Сброс через: ~${hoursLeft} ч.` : `Resets in: ~${hoursLeft} h.`}`,
+        { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
+          [{ text: `◀️ ${ru ? 'Кошелёк' : 'Wallet'}`, callback_data: 'show_wallet_menu' }],
+        ]}}
       );
       return;
     }
-    // Cooldown: 5 min between withdrawals
+    // Cooldown
     const lastTime = await getBalanceTxRepository().getLastWithdrawTime(userId);
     if (lastTime && (Date.now() - lastTime.getTime()) < WITHDRAW_COOLDOWN_MS) {
-      const waitMin = Math.ceil((WITHDRAW_COOLDOWN_MS - (Date.now() - lastTime.getTime())) / 60000);
-      await ctx.reply(lang === 'ru'
-        ? `⏳ Подождите ${waitMin} мин. перед следующим выводом.`
-        : `⏳ Wait ${waitMin} min before next withdrawal.`
+      const waitSec = Math.ceil((WITHDRAW_COOLDOWN_MS - (Date.now() - lastTime.getTime())) / 1000);
+      await safeReply(ctx,
+        `⏳ <b>${ru ? 'Подождите немного' : 'Please wait'}</b>\n\n` +
+        `${ru ? `До следующего вывода: <b>${waitSec} сек.</b>` : `Next withdrawal in: <b>${waitSec} sec.</b>`}\n` +
+        `<i>${ru ? 'Защита от случайных дублей' : 'Duplicate protection'}</i>`,
+        { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
+          [{ text: `◀️ ${ru ? 'Кошелёк' : 'Wallet'}`, callback_data: 'show_wallet_menu' }],
+        ]}}
       );
       return;
     }
+    // Сколько выводов ещё осталось — покажем в следующем шаге
   } catch {}
 
   if (profile.wallet_address) {
