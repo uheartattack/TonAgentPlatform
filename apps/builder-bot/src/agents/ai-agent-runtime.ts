@@ -1709,6 +1709,8 @@ async function executeTool(
       try {
         const { getGiftAssetClient } = await import('../services/giftasset');
         const receiverId = Number(args.receiver || params.config?.OWNER_TELEGRAM_ID || params.userId || 0);
+        // If to_price filter set → query ALL markets (offchain + onchain) to find cheapest
+        const markets = (args.market as string[] | undefined) || (args.to_price != null ? ['tonnel', 'portals', 'Mrkt', 'getgems', 'fragment'] : undefined);
         const result = await getGiftAssetClient().swAggregate({
           name:      args.name as string,
           receiver:  receiverId,
@@ -1716,7 +1718,7 @@ async function executeTool(
           model:     args.model as string | undefined,
           fromPrice: args.from_price as number | undefined,
           toPrice:   args.to_price as number | undefined,
-          market:    args.market as string[] | undefined,
+          market:    markets,
         });
         // Use rarity % directly from API — no heuristics
         const parseRarityPct = (r: any): number => {
@@ -1758,17 +1760,27 @@ async function executeTool(
             tx_contract:  hasTx ? item.options?.contract  : undefined,
           };
         });
-        // Sort: rarest backdrop first (lowest %), then price
-        items.sort((a: any, b: any) => {
-          const aRar = parseRarityPct(a.backdrop_rarity_pct);
-          const bRar = parseRarityPct(b.backdrop_rarity_pct);
-          if (aRar !== bRar) return aRar - bRar; // lower % = rarer = first
-          return a.price_ton - b.price_ton;
-        });
+        // If price filter specified → sort by price (cheapest first) for floor hunting
+        // Otherwise → sort by rarity (rarest first) for discovery/analysis
+        const hasPriceFilter = args.to_price != null || args.from_price != null;
+        if (hasPriceFilter) {
+          items.sort((a: any, b: any) => a.price_ton - b.price_ton);
+        } else {
+          items.sort((a: any, b: any) => {
+            const aRar = parseRarityPct(a.backdrop_rarity_pct);
+            const bRar = parseRarityPct(b.backdrop_rarity_pct);
+            if (aRar !== bRar) return aRar - bRar; // lower % = rarer = first
+            return a.price_ton - b.price_ton;
+          });
+        }
+        const limit = hasPriceFilter ? 50 : 20;
         return {
           total: result?.total || 0,
-          items: items.slice(0, 20),
-          note: 'All rarity data from API. Lower rarity_pct = rarer = more valuable. can_buy_now=true means tx_payload is ready for purchase. Sorted by backdrop rarity (rarest first), then price.',
+          items: items.slice(0, limit),
+          cheapest_price_ton: items.length > 0 ? items[0].price_ton : null,
+          note: hasPriceFilter
+            ? 'Sorted by price (cheapest first). can_buy_now=true means tx_payload is ready for instant purchase.'
+            : 'Sorted by backdrop rarity (rarest first), then price. can_buy_now=true means tx_payload is ready for purchase.',
         };
       } catch (e: any) {
         if (e.message?.includes('cooldown') || e.message?.includes('SwiftGifts')) {
