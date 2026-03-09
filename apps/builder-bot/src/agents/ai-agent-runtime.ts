@@ -187,12 +187,12 @@ function buildToolDefinitions(): OpenAI.ChatCompletionTool[] {
       type: 'function',
       function: {
         name: 'get_nft_floor',
-        description: 'Получить floor price и топ листинги NFT коллекции через TonAPI',
+        description: '⛔ ТОЛЬКО для настоящих NFT коллекций на TON (TON Punks, TON Diamonds и т.д.) — НЕ для Telegram-подарков (Lol Pop, Jelly Bunny и т.д.). Для подарков используй get_gift_floor_real.',
         parameters: {
           type: 'object',
           properties: {
-            collection: { type: 'string', description: 'Адрес коллекции (EQ/UQ/raw) или URL getgems.io' },
-            ton_api_key: { type: 'string', description: 'TONAPI_KEY (опционально, если не передан используется из config)' },
+            collection: { type: 'string', description: 'Адрес NFT коллекции (EQ/UQ/raw) — только настоящие NFT, не подарки' },
+            ton_api_key: { type: 'string', description: 'TONAPI_KEY (опционально)' },
           },
           required: ['collection'],
         },
@@ -1751,9 +1751,15 @@ async function executeTool(
           args.collection_name as string,
           { minPrice: args.min_price, maxPrice: args.max_price }
         );
+        console.log('[get_collection_offers] raw:', JSON.stringify(offers)?.slice(0, 300));
+        const offersArr = Array.isArray(offers) ? offers
+          : Array.isArray(offers?.offers) ? offers.offers
+          : Array.isArray(offers?.data) ? offers.data
+          : offers?.items ?? offers;
         return {
           collection: args.collection_name,
-          offers,
+          offers: offersArr,
+          total: Array.isArray(offersArr) ? offersArr.length : 'unknown',
           note: 'These are ACTIVE BUY ORDERS — guaranteed buyers. If you list at or below their offer price, sale is instant.',
         };
       } catch (e: any) {
@@ -1970,6 +1976,13 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
   // ── Gift system knowledge (injected for all agents) ────────────────────────
   const GIFT_SYSTEM_KNOWLEDGE = `
 [TELEGRAM GIFTS KNOWLEDGE BASE]
+🚨 ГЛАВНОЕ ПРАВИЛО:
+Для ЛЮБЫХ вопросов о подарках (Lol Pop, Jelly Bunny, Heart Locket, Plush Pepe, и любое другое название коллекции подарков):
+→ ТОЛЬКО инструменты: get_gift_floor_real, get_collection_offers, get_gift_aggregator, scan_real_arbitrage, get_price_list, get_market_overview
+→ НИКОГДА не используй get_nft_floor, get_ton_balance или другие TON/NFT инструменты для подарков
+→ Данные ВСЕГДА доступны через GiftAsset/SwiftGifts API — оффчейн (Tonnel/Portals/Mrkt) и ончейн (GetGems/Fragment)
+→ Если get_collection_offers вернул [] — активных buy-ордеров нет прямо сейчас, объясни как продать через листинг на GetGems
+
 📦 Стадии жизни подарка:
 1. PRE-MARKET (обычный подарок) — выпускается в обычном виде, ещё НЕ является NFT. Нельзя передать или продать. Хранится у пользователя в боте.
 2. UPGRADE (улучшение за Stars) — пользователь платит Stars чтобы улучшить подарок → он становится уникальным NFT с порядковым номером (#1, #2, #3...). Каждый улучшенный получает УНИКАЛЬНЫЙ номер внутри своей коллекции.
@@ -1982,20 +1995,25 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
 - Символ/декор (symbol): Дополнительный элемент украшения, влияет на цену незначительно.
 - Процент выпадения (supply %): Чем НИЖЕ % вероятности → тем РЕЖЕ → тем ДОРОЖЕ.
 
-📊 Маркетплейсы и валюты:
-- Fragment.com → цены в TON (NFT торговля)
-- GiftAsset.pro / api.giftasset.dev → цены в TON (агрегатор, Premium API)
-- SwiftGifts → цены в TON (7 маркетплейсов, SSE realtime)
-- GetGems → цены в TON
-- MRKT.tg, Portals → цены в TON
+📊 Маркетплейсы и типы:
+ОФФЧЕЙН маркеты (подарки НЕ на блокчейне — дешевле):
 - Tonnel → цены в TON (⚠️ ТОЛЬКО ПОКУПКА — плохая ликвидность для продажи)
+- Portals → цены в TON (оффчейн, можно и покупать и продавать)
+- MRKT.tg → цены в TON (оффчейн)
+ОНЧЕЙН маркеты (NFT на блокчейне — дороже, но лучшая ликвидность):
+- GetGems → цены в TON (лучший ликвидный sell-маркет)
+- Fragment.com → цены в TON (NFT торговля, высокая ликвидность)
+- GiftAsset.pro → цены в TON (агрегатор, Premium API)
+- SwiftGifts → цены в TON (агрегатор 7 маркетплейсов)
 
-⚠️ КРИТИЧЕСКИЕ ПРАВИЛА АРБИТРАЖА:
-- Все подарки продаются ТОЛЬКО за TON (не Stars). Цены всегда в TON.
-- Tonnel = только источник покупки, НИКОГДА не продавать на Tonnel (плохая ликвидность)
+⚠️ КРИТИЧЕСКИЕ ПРАВИЛА:
+- ОНЧЕЙН подарки стоят ДОРОЖЕ чем оффчейн аналоги (разница 10-25%) — это НОРМАЛЬНО
+- Когда пишешь флор: ВСЕГДА указывай оффчейн-флор И ончейн-флор ОТДЕЛЬНО
+- Пример правильного ответа: "Portals (offchain): 4.74 TON | GetGems (onchain): 5.40 TON"
+- Tonnel = только источник покупки, НИКОГДА не продавать на Tonnel
 - Апгрейды подарков — ИГНОРИРОВАТЬ. Арбитраж только между маркетплейсами.
 - Stars цены — игнорировать. Только TON.
-- НИКОГДА не просить пользователя пополнить кошелёк — просто уведомить если баланса недостаточно и продолжать мониторинг
+- НИКОГДА не просить пользователя пополнить кошелёк — просто уведомить если баланса недостаточно
 - Не повторять одни и те же возможности каждый тик — использовать set_state/get_state для дедупликации
 
 🎯 Оценка КАЧЕСТВА подарка (влияет на цену):
@@ -2008,8 +2026,8 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
 3. НОМЕР выпуска (#N): #1-#10 стоят значительно дороже. #100+ — ближе к флору.
 
 🔄 Арбитраж стратегии:
-- Купить дешевле на одном маркете → продать дороже на другом (за TON) = прибыль
-- Tonnel часто даёт самый дешёвый floor → купить там, продать на getgems/mrkt/portals
+- Оффчейн → Ончейн: купить дёшево на Portals/Mrkt (offchain) → продать на GetGems (onchain) = 10-25% прибыль
+- Tonnel дешевле всего → купить там, продать на getgems/mrkt/portals
 - Искать недооценённые подарки: чёрный фон или редкая модель по цене флора = 🔥
 - Следить за свежими коллекциями: первые листинги обычно дешевле рынка
 
