@@ -813,12 +813,12 @@ function buildToolDefinitions(): OpenAI.ChatCompletionTool[] {
       type: 'function',
       function: {
         name: 'scan_real_arbitrage',
-        description: 'Найти РЕАЛЬНЫЕ арбитражные возможности с настоящими ценами по 7 маркетплейсам (GiftAsset + SwiftGifts агрегатор)',
+        description: 'Найти РЕАЛЬНЫЕ кросс-маркет арбитраж возможности (цены в TON). Возвращает buyPriceTon/sellPriceTon. Tonnel исключён из продаж.',
         parameters: {
           type: 'object',
           properties: {
-            max_price_stars: { type: 'number', description: 'Максимальная цена покупки в Stars' },
-            min_profit_pct:  { type: 'number', description: 'Минимальная прибыль в %' },
+            max_price_ton:  { type: 'number', description: 'Максимальная цена покупки в TON' },
+            min_profit_pct: { type: 'number', description: 'Минимальная прибыль в % (default: 5)' },
           },
           required: [],
         },
@@ -828,16 +828,41 @@ function buildToolDefinitions(): OpenAI.ChatCompletionTool[] {
       type: 'function',
       function: {
         name: 'get_gift_aggregator',
-        description: 'Поиск лучших предложений подарка по всем маркетплейсам (SwiftGifts агрегатор — 7 площадок)',
+        description: 'Поиск лучших предложений подарка по всем маркетплейсам (SwiftGifts агрегатор). Каждый item содержит options.payload — готовый BOC для TON транзакции (можно сразу покупать!). Сортирует по редкости фона, потом по цене.',
         parameters: {
           type: 'object',
           properties: {
-            name:       { type: 'string', description: 'Название подарка для поиска' },
-            from_price: { type: 'number', description: 'Минимальная цена' },
-            to_price:   { type: 'number', description: 'Максимальная цена' },
-            market:     { type: 'array', items: { type: 'string' }, description: 'Маркетплейсы: getgems, mrkt, portals, tonnel, fragment, marketapp, onchain' },
+            name:       { type: 'string', description: 'Название подарка (например "Lol Pop", "Plush Pepe")' },
+            receiver:   { type: 'number', description: 'Telegram user ID получателя подарка (обязательно для генерации payload)' },
+            backdrop:   { type: 'string', description: 'Фильтр по фону: "All" (все), "Black", "Dark" и т.д.' },
+            model:      { type: 'string', description: 'Фильтр по модели: "All" (все) или конкретная модель' },
+            from_price: { type: 'number', description: 'Минимальная цена в TON' },
+            to_price:   { type: 'number', description: 'Максимальная цена в TON' },
+            market:     { type: 'array', items: { type: 'string' }, description: 'Маркетплейсы: tonnel, portals, Mrkt, getgems, fragment. По умолчанию offchain (tonnel, portals, Mrkt)' },
           },
-          required: ['name'],
+          required: ['name', 'receiver'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'get_top_deals',
+        description: 'Топ-сделки дня — лучшие арбитражные возможности, ранжированные по прибыли (GiftAsset Pro API). Используй в начале каждого тика для быстрой разведки рынка.',
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'get_backdrop_floors',
+        description: 'Цены флора по цветам фона (backdrop) для коллекции. Чёрный фон стоит в 2-5 раз дороже обычного. Используй для оценки конкретных листингов.',
+        parameters: {
+          type: 'object',
+          properties: {
+            collection_name: { type: 'string', description: 'Название коллекции (например "Plush Pepe"), пусто = все коллекции' },
+          },
+          required: [],
         },
       },
     },
@@ -1055,14 +1080,14 @@ async function executeTool(
         const [floorData, salesData, aggData] = await Promise.allSettled([
           ga.getFloorPrices(slug),
           ga.getUniqueSales(slug, 20),
-          ga.getAggregator(slug, 1, 20),
+          ga.swAggregate({ name: slug, page: 0, receiver: Number(params.userId || 0) }),
         ]);
         const floor = floorData.status === 'fulfilled' ? floorData.value : null;
         const sales = salesData.status === 'fulfilled' ? salesData.value : null;
         const agg = aggData.status === 'fulfilled' ? aggData.value : null;
-        // Find cheapest offer
-        const cheapest = agg?.gifts?.[0] || null;
-        const cheapestPriceTon = cheapest?.price ? Number(cheapest.price) : null;
+        // Find cheapest offer (swAggregate returns { total, items[] })
+        const cheapest = (agg as any)?.items?.[0] || null;
+        const cheapestPriceTon = cheapest?.price_ton ? Number(cheapest.price_ton) : (cheapest?.price ? Number(cheapest.price) : null);
         const floorTon = (floor as any)?.min_price_ton || null;
         const withinBudget = cheapestPriceTon && cheapestPriceTon <= budgetTon;
         return {
@@ -1077,7 +1102,7 @@ async function executeTool(
           },
           floor_data: floor,
           recent_sales: Array.isArray(sales) ? sales.slice(0, 5) : sales,
-          cheapest_offers: agg?.gifts?.slice(0, 5) || null,
+          cheapest_offers: (agg as any)?.items?.slice(0, 5) || null,
         };
       } catch (e: any) {
         return { slug: args.slug, error: e.message };
@@ -1525,16 +1550,87 @@ async function executeTool(
 
     case 'get_gift_aggregator': {
       try {
-        const { getGiftAssetClient } = await import('../services/giftasset');
-        return await getGiftAssetClient().swAggregate({
-          name: args.name as string,
-          fromPrice: args.from_price,
-          toPrice: args.to_price,
-          market: args.market,
+        const { getGiftAssetClient, backdropScore } = await import('../services/giftasset');
+        // receiver is required by SwiftGifts API — get from args or fall back to owner ID
+        const receiverId = Number(args.receiver || params.config?.OWNER_TELEGRAM_ID || params.userId || 0);
+        const result = await getGiftAssetClient().swAggregate({
+          name:      args.name as string,
+          receiver:  receiverId,
+          backdrop:  args.backdrop as string | undefined,
+          model:     args.model as string | undefined,
+          fromPrice: args.from_price as number | undefined,
+          toPrice:   args.to_price as number | undefined,
+          market:    args.market as string[] | undefined,
         });
+        // Enrich items with rarity scores for AI decision making
+        const items = (result?.items || []).map((item: any) => {
+          const bScore = backdropScore(item.attributes?.backdrop?.value);
+          const hasTx = !!(item.options?.payload);
+          return {
+            provider:       item.provider,
+            price_ton:      item.price,
+            title:          item.title,
+            number:         item.number,
+            slug:           item.slug,
+            link:           item.link,
+            model:          item.attributes?.model?.value,
+            model_rarity:   item.attributes?.model?.rarity,
+            backdrop:       item.attributes?.backdrop?.value,
+            backdrop_rarity_score: bScore,
+            is_rare_backdrop: bScore >= 4,
+            rarity_note: bScore >= 4
+              ? `🔥 RARE backdrop (${item.attributes?.backdrop?.value}) — worth 5-50x floor`
+              : bScore >= 2 ? `⭐ Good backdrop` : undefined,
+            can_buy_now: hasTx,
+            tx_payload:  hasTx ? item.options?.payload : undefined,  // TON BOC — send this!
+            tx_contract: hasTx ? item.options?.contract : undefined,
+          };
+        });
+        // Sort: rare backdrops first, then by price
+        items.sort((a: any, b: any) => {
+          if (a.backdrop_rarity_score !== b.backdrop_rarity_score) return b.backdrop_rarity_score - a.backdrop_rarity_score;
+          return a.price_ton - b.price_ton;
+        });
+        return {
+          total: result?.total || 0,
+          items: items.slice(0, 20),
+          note: 'Prices in TON. can_buy_now=true means tx_payload/tx_contract are ready for immediate purchase via send_ton. Items sorted by backdrop rarity then price.',
+        };
+      } catch (e: any) {
+        if (e.message?.includes('cooldown') || e.message?.includes('SwiftGifts')) {
+          return { status: 'unavailable', message: 'SwiftGifts API temporarily unavailable. Use scan_real_arbitrage (GiftAsset) as fallback.' };
+        }
+        return { error: e.message };
+      }
+    }
+
+    case 'get_top_deals': {
+      try {
+        const { getGiftAssetClient } = await import('../services/giftasset');
+        const deals = await getGiftAssetClient().getTopDeals();
+        return {
+          deals,
+          note: 'Top arbitrage opportunities ranked by profit margin. Use scan_real_arbitrage for full cross-market analysis.',
+        };
       } catch (e: any) {
         if (e.message?.includes('cooldown') || e.message?.includes('invalid') || e.message?.includes('GiftAsset')) {
-          return { status: 'unavailable', message: 'GiftAsset/SwiftGifts API temporarily unavailable. The API key may be expired or rate-limited. Use web_search or other tools as fallback.' };
+          return { status: 'unavailable', message: 'GiftAsset Pro API temporarily unavailable. Falling back to scan_real_arbitrage.' };
+        }
+        return { error: e.message };
+      }
+    }
+
+    case 'get_backdrop_floors': {
+      try {
+        const { getGiftAssetClient } = await import('../services/giftasset');
+        const floors = await getGiftAssetClient().getBackdropFloors(args.collection_name as string | undefined);
+        return {
+          backdrop_floors: floors,
+          note: 'Price premiums by backdrop color. Black/dark backdrops command 5-50x floor multiplier. Use to evaluate specific listings.',
+        };
+      } catch (e: any) {
+        if (e.message?.includes('cooldown') || e.message?.includes('invalid') || e.message?.includes('GiftAsset')) {
+          return { status: 'unavailable', message: 'GiftAsset Pro API temporarily unavailable.' };
         }
         return { error: e.message };
       }
@@ -1730,28 +1826,42 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
 - Fragment.com → цены в TON (NFT торговля)
 - GiftAsset.pro / api.giftasset.dev → цены в TON (агрегатор, Premium API)
 - SwiftGifts → цены в TON (7 маркетплейсов, SSE realtime)
-- Telegram Market (встроенный) → цены в Stars ⭐ (нужен userbot)
 - GetGems → цены в TON
 - MRKT.tg, Portals → цены в TON
+- Tonnel → цены в TON (⚠️ ТОЛЬКО ПОКУПКА — плохая ликвидность для продажи)
 
-⭐ Звёзды (Stars) vs TON:
-- Stars — внутренняя валюта Telegram. 1 TON ≈ 100-200 Stars (курс меняется).
-- Апгрейд подарка стоит Stars, но продавать NFT можно за TON или Stars.
-- Арбитраж: купить дешевле (одна площадка) → продать дороже (другая) = прибыль.
+⚠️ КРИТИЧЕСКИЕ ПРАВИЛА АРБИТРАЖА:
+- Все подарки продаются ТОЛЬКО за TON (не Stars). Цены всегда в TON.
+- Tonnel = только источник покупки, НИКОГДА не продавать на Tonnel (плохая ликвидность)
+- Апгрейды подарков — ИГНОРИРОВАТЬ. Арбитраж только между маркетплейсами.
+- Stars цены — игнорировать. Только TON.
+- НИКОГДА не просить пользователя пополнить кошелёк — просто уведомить если баланса недостаточно и продолжать мониторинг
+- Не повторять одни и те же возможности каждый тик — использовать set_state/get_state для дедупликации
+
+🎯 Оценка КАЧЕСТВА подарка (влияет на цену):
+1. ФОНЫ (от дороже к дешевле): Чёрный > Тёмно-синий > Фиолетовый > Другие цветные > Белый/Серый
+   - Чёрный фон = наценка 5-50x к коллекционной стоимости
+   - ВСЕГДА проверять backdrop у каждого листинга через get_gift_aggregator
+2. МОДЕЛИ: чем НИЖЕ drop_rate% — тем редкость выше — тем цена выше
+   - Пример: модель с drop_rate 0.5% стоит 3-10x дороже модели с drop_rate 10%
+   - Если цена листинга < ожидаемой по редкости модели → недооценён → покупать
+3. НОМЕР выпуска (#N): #1-#10 стоят значительно дороже. #100+ — ближе к флору.
 
 🔄 Арбитраж стратегии:
-- Купить pre-market дёшево → заплатить Stars за upgrade → продать NFT за TON (если floor > cost)
-- Купить на одном маркете дешевле → продать на другом дороже (cross-market arb)
-- Следить за новыми коллекциями: первые #1-#10 упграды = огромная прибыль
-- Чёрный фон редко бывает → сразу покупать если дёшево
+- Купить дешевле на одном маркете → продать дороже на другом (за TON) = прибыль
+- Tonnel часто даёт самый дешёвый floor → купить там, продать на getgems/mrkt/portals
+- Искать недооценённые подарки: чёрный фон или редкая модель по цене флора = 🔥
+- Следить за свежими коллекциями: первые листинги обычно дешевле рынка
 
-🛠 Инструменты для анализа:
-- get_gift_floor_real(slug) → реальные цены по всем маркетам
-- scan_real_arbitrage() → готовые арбитраж возможности
-- get_gift_aggregator(slug) → лучшие предложения по 7 маркетплейсам
-- get_gift_catalog() → все доступные pre-market подарки с ценами в Stars
-- get_agent_wallet() → кошелёк агента для TON транзакций
-- send_ton(to, amount) → отправить TON с кошелька агента
+🛠 Инструменты для анализа (используй в таком порядке):
+1. get_top_deals() → ЛУЧШИЕ СДЕЛКИ ДНЯ по версии GiftAsset Pro — начинай с этого каждый тик
+2. scan_real_arbitrage() → кросс-маркет спред в TON (полный скан всех коллекций)
+3. get_gift_aggregator(slug) → листинги конкретного подарка с backdrop/model/price
+4. get_backdrop_floors(collection) → цены флора по цвету фона (чёрный = дороже всего)
+5. get_gift_floor_real(slug) → реальные цены по всем маркетам в TON
+6. get_gift_catalog() → pre-market подарки (для мониторинга новых коллекций)
+7. get_agent_wallet() → кошелёк агента для TON транзакций
+8. send_ton(to, amount) → отправить TON с кошелька агента
 [END GIFT KNOWLEDGE]`;
 
   const contextMsg = `[Текущий тик агента]
