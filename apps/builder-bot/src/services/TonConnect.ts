@@ -123,11 +123,13 @@ async function sendBoc(boc: string): Promise<{ ok: boolean; hash?: string; error
         body: JSON.stringify({ boc }),
       });
       if (res.status === 200 || res.status === 201) {
-        const data = await res.json() as any;
+        // TONAPI /blockchain/message returns 200 with empty body on success
+        const raw = await res.text();
+        const data = raw ? JSON.parse(raw) : {};
         return { ok: true, hash: data?.message_hash || 'sent' };
       }
       const err = await res.text();
-      console.warn('[TON] TONAPI sendBoc failed, trying TonCenter:', err);
+      console.warn('[TON] TONAPI sendBoc failed:', res.status, err.slice(0, 200));
     }
     // fallback TonCenter
     const res = await fetch(`${TONCENTER_API}/sendBoc?api_key=${TONCENTER_KEY}`, {
