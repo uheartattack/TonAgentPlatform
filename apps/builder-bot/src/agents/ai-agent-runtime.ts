@@ -1550,8 +1550,7 @@ async function executeTool(
 
     case 'get_gift_aggregator': {
       try {
-        const { getGiftAssetClient, backdropScore } = await import('../services/giftasset');
-        // receiver is required by SwiftGifts API — get from args or fall back to owner ID
+        const { getGiftAssetClient } = await import('../services/giftasset');
         const receiverId = Number(args.receiver || params.config?.OWNER_TELEGRAM_ID || params.userId || 0);
         const result = await getGiftAssetClient().swAggregate({
           name:      args.name as string,
@@ -1562,39 +1561,57 @@ async function executeTool(
           toPrice:   args.to_price as number | undefined,
           market:    args.market as string[] | undefined,
         });
-        // Enrich items with rarity scores for AI decision making
+        // Use rarity % directly from API — no heuristics
+        const parseRarityPct = (r: any): number => {
+          if (!r) return 100;
+          const n = parseFloat(String(r).replace('%', ''));
+          return isNaN(n) ? 100 : n;
+        };
         const items = (result?.items || []).map((item: any) => {
-          const bScore = backdropScore(item.attributes?.backdrop?.value);
+          const backdropRarityPct = parseRarityPct(item.attributes?.backdrop?.rarity);
+          const modelRarityPct    = parseRarityPct(item.attributes?.model?.rarity);
           const hasTx = !!(item.options?.payload);
+          // Lower % = rarer = more valuable
+          const isRareBackdrop = backdropRarityPct <= 2;
+          const isRareModel    = modelRarityPct    <= 1;
           return {
-            provider:       item.provider,
-            price_ton:      item.price,
-            title:          item.title,
-            number:         item.number,
-            slug:           item.slug,
-            link:           item.link,
-            model:          item.attributes?.model?.value,
-            model_rarity:   item.attributes?.model?.rarity,
-            backdrop:       item.attributes?.backdrop?.value,
-            backdrop_rarity_score: bScore,
-            is_rare_backdrop: bScore >= 4,
-            rarity_note: bScore >= 4
-              ? `🔥 RARE backdrop (${item.attributes?.backdrop?.value}) — worth 5-50x floor`
-              : bScore >= 2 ? `⭐ Good backdrop` : undefined,
-            can_buy_now: hasTx,
-            tx_payload:  hasTx ? item.options?.payload : undefined,  // TON BOC — send this!
-            tx_contract: hasTx ? item.options?.contract : undefined,
+            provider:            item.provider,
+            price_ton:           item.price,
+            title:               item.title,
+            number:              item.number,
+            slug:                item.slug,
+            link:                item.link,
+            model:               item.attributes?.model?.value,
+            model_rarity_pct:    item.attributes?.model?.rarity,   // e.g. "1%"
+            backdrop:            item.attributes?.backdrop?.value,
+            backdrop_rarity_pct: item.attributes?.backdrop?.rarity, // e.g. "2%"
+            symbol:              item.attributes?.symbol?.value,
+            symbol_rarity_pct:   item.attributes?.symbol?.rarity,
+            is_rare_backdrop:    isRareBackdrop,  // ≤2% = rare
+            is_rare_model:       isRareModel,     // ≤1% = rare
+            value_note: isRareBackdrop && isRareModel
+              ? `🔥🔥 ULTRA RARE: backdrop ${backdropRarityPct}% + model ${modelRarityPct}% — potential 10-100x floor`
+              : isRareBackdrop
+              ? `🔥 Rare backdrop (${backdropRarityPct}%) — significantly above floor price`
+              : isRareModel
+              ? `⭐ Rare model (${modelRarityPct}%) — worth more than floor`
+              : undefined,
+            can_buy_now:  hasTx,
+            tx_payload:   hasTx ? item.options?.payload   : undefined,
+            tx_contract:  hasTx ? item.options?.contract  : undefined,
           };
         });
-        // Sort: rare backdrops first, then by price
+        // Sort: rarest backdrop first (lowest %), then price
         items.sort((a: any, b: any) => {
-          if (a.backdrop_rarity_score !== b.backdrop_rarity_score) return b.backdrop_rarity_score - a.backdrop_rarity_score;
+          const aRar = parseRarityPct(a.backdrop_rarity_pct);
+          const bRar = parseRarityPct(b.backdrop_rarity_pct);
+          if (aRar !== bRar) return aRar - bRar; // lower % = rarer = first
           return a.price_ton - b.price_ton;
         });
         return {
           total: result?.total || 0,
           items: items.slice(0, 20),
-          note: 'Prices in TON. can_buy_now=true means tx_payload/tx_contract are ready for immediate purchase via send_ton. Items sorted by backdrop rarity then price.',
+          note: 'All rarity data from API. Lower rarity_pct = rarer = more valuable. can_buy_now=true means tx_payload is ready for purchase. Sorted by backdrop rarity (rarest first), then price.',
         };
       } catch (e: any) {
         if (e.message?.includes('cooldown') || e.message?.includes('SwiftGifts')) {
@@ -1610,7 +1627,7 @@ async function executeTool(
         const deals = await getGiftAssetClient().getTopDeals();
         return {
           deals,
-          note: 'Top arbitrage opportunities ranked by profit margin. Use scan_real_arbitrage for full cross-market analysis.',
+          note: 'Top arbitrage opportunities from GiftAsset Pro API. Each item has attributes with rarity% from API — lower % = rarer = more valuable. Use get_gift_aggregator for full listings with tx_payload to buy.',
         };
       } catch (e: any) {
         if (e.message?.includes('cooldown') || e.message?.includes('invalid') || e.message?.includes('GiftAsset')) {
