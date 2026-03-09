@@ -1322,35 +1322,49 @@ async function showWalletMenu(ctx: Context) {
   const profile = await getUserProfile(userId);
   const tonConn = getTonConnectManager();
   const hasWallet = tonConn.isConnected(userId);
-  let walletLine = '';
+
+  // TON Connect wallet line
+  let tonConnectLine = '';
   if (hasWallet) {
     const w = tonConn.getWallet(userId);
-    walletLine = `\n💎 <b>TON Connect:</b> <code>${escHtml((w?.friendlyAddress || '').slice(0, 16))}…</code>`;
+    const addr = (w?.friendlyAddress || '').slice(0, 20);
+    tonConnectLine = `\n${pe('diamond')} <b>TON Connect:</b> <code>${escHtml(addr)}…</code>`;
   }
 
+  // Linked wallet line
+  const linkedLine = profile.wallet_address
+    ? `\n${pe('link')} <b>${ru ? 'Привязан:' : 'Linked:'}</b> <code>${escHtml(profile.wallet_address.slice(0, 20))}…</code>`
+    : `\n${pe('link')} <i>${ru ? 'Внешний кошелёк не привязан' : 'No external wallet linked'}</i>`;
+
   const text =
-    `💰 <b>${ru ? 'Кошелёк' : 'Wallet'}</b>\n\n` +
-    `${pe('coin')} <b>${ru ? 'Баланс платформы:' : 'Platform balance:'}</b> <b>${(profile.balance_ton || 0).toFixed(3)} TON</b>\n` +
-    `${pe('trending')} <b>${ru ? 'Заработано всего:' : 'Total earned:'}</b> ${(profile.total_earned || 0).toFixed(2)} TON${walletLine}\n\n` +
-    `${ru
-      ? '📥 Пополни баланс → используй для подписки, генерации агентов, покупок на маркетплейсе.\n📤 Вывести TON на любой кошелёк.'
-      : '📥 Top up balance → use for subscriptions, agent generation, marketplace purchases.\n📤 Withdraw TON to any wallet.'
-    }`;
+    `${pe('coin')} <b>${ru ? 'Кошелёк' : 'Wallet'}</b>\n` +
+    `${div()}\n` +
+    `${pe('coin')} <b>${ru ? 'Баланс:' : 'Balance:'}</b> <b>${(profile.balance_ton || 0).toFixed(3)} TON</b>\n` +
+    `${pe('trending')} <b>${ru ? 'Заработано:' : 'Earned:'}</b> ${(profile.total_earned || 0).toFixed(3)} TON` +
+    `${tonConnectLine}${linkedLine}\n` +
+    `${div()}\n` +
+    `<i>${ru
+      ? '📥 Пополни → подписка, агенты, маркетплейс\n📤 Вывод TON на любой кошелёк'
+      : '📥 Top up → subscriptions, agents, marketplace\n📤 Withdraw TON to any wallet'
+    }</i>`;
 
   const kb = [
+    // Основные операции
     [
-      { text: `💳 ${ru ? 'Пополнить' : 'Top Up'}`,   callback_data: 'topup_start' },
-      { text: `💸 ${ru ? 'Вывести' : 'Withdraw'}`,   callback_data: 'withdraw_start' },
+      { text: `💳 ${ru ? 'Пополнить' : 'Top Up'}`, callback_data: 'topup_start' },
+      { text: `💸 ${ru ? 'Вывести' : 'Withdraw'}`, callback_data: 'withdraw_start' },
     ],
     [
-      { text: `📊 ${ru ? 'История транзакций' : 'Transaction history'}`, callback_data: 'wallet_history' },
+      { text: `📊 ${ru ? 'История транзакций' : 'Tx History'}`, callback_data: 'wallet_history' },
     ],
+    // Подключение кошельков
     [
-      { text: `💎 ${ru ? 'TON Connect' : 'TON Connect'}`, callback_data: 'show_tonconnect' },
-      { text: `💳 ${ru ? 'Подписка' : 'Subscription'}`,  callback_data: 'show_sub' },
-    ],
-    [
+      { text: `💎 TON Connect`, callback_data: 'show_tonconnect' },
       { text: `🔗 ${ru ? 'Привязать кошелёк' : 'Link wallet'}`, callback_data: 'profile_link_wallet' },
+    ],
+    // Обратно в профиль
+    [
+      { text: `◀️ ${ru ? 'Профиль' : 'Profile'}`, callback_data: 'profile_menu' },
     ],
   ];
 
@@ -1443,24 +1457,16 @@ async function showProfile(ctx: Context, userId: number) {
     parse_mode: 'HTML',
     reply_markup: {
       inline_keyboard: [
-        // Wallet section
-        [
-          { text: `💳 ${ru3 ? 'Пополнить' : 'Top Up'}`, callback_data: 'topup_start' },
-          { text: `💸 ${ru3 ? 'Вывести' : 'Withdraw'}`, callback_data: 'withdraw_start' },
-        ],
-        [
-          { text: `📊 ${ru3 ? 'История транзакций' : 'Tx History'}`, callback_data: 'wallet_history' },
-        ],
-        // Account section
+        // Подписка и монетизация
         [
           { text: `${peb('card')} ${ru3 ? 'Подписка' : 'Subscription'}`, callback_data: 'show_sub' },
           { text: `🔑 ${ru3 ? 'API ключи' : 'API Keys'}`, callback_data: 'profile_api_keys' },
         ],
+        // Настройки
         [
-          { text: `${peb('globe')} ${ru3 ? 'Язык' : 'Lang'}`, callback_data: 'profile_change_lang' },
-          { text: `🔗 ${ru3 ? 'Привязать кошелёк' : 'Link wallet'}`, callback_data: 'profile_link_wallet' },
+          { text: `${peb('globe')} ${ru3 ? 'Язык интерфейса' : 'Interface lang'}`, callback_data: 'profile_change_lang' },
         ],
-        // Navigation
+        // Навигация
         [
           { text: `🤖 ${ru3 ? 'Мои агенты' : 'My agents'}`, callback_data: 'list_agents' },
           { text: `💰 ${ru3 ? 'Кошелёк' : 'Wallet'}`, callback_data: 'show_wallet_menu' },
@@ -1617,6 +1623,7 @@ bot.action('wallet_history', async (ctx) => {
 bot.action('show_tonconnect',  async (ctx) => { await ctx.answerCbQuery(); await showTonConnect(ctx); });
 bot.action('back_wallet',      async (ctx) => { await ctx.answerCbQuery(); await showWalletMenu(ctx); });
 bot.action('show_wallet_menu', async (ctx) => { await ctx.answerCbQuery(); await showWalletMenu(ctx); });
+bot.action('profile_menu',     async (ctx) => { await ctx.answerCbQuery(); await showProfile(ctx, ctx.from!.id); });
 
 // ── Пополнение баланса ───────────────────────
 const pendingTopup = new Map<number, { startTs: number; amountTon?: number }>();
