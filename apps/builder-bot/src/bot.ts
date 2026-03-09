@@ -1779,7 +1779,7 @@ bot.action('check_topup', async (ctx) => {
 
 // ── Withdraw flow ──
 const WITHDRAW_MAX_PER_DAY = 10;
-const WITHDRAW_COOLDOWN_MS = 2 * 60 * 1000; // 2 minutes
+const WITHDRAW_COOLDOWN_MS = 15 * 1000; // 15 seconds
 const WITHDRAW_MAX_PERCENT = 0.8; // max 80% of balance
 
 bot.action('withdraw_start', async (ctx) => {
