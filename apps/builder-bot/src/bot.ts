@@ -1781,6 +1781,7 @@ bot.action('check_topup', async (ctx) => {
 const WITHDRAW_MAX_PER_DAY = 10;
 const WITHDRAW_COOLDOWN_MS = 15 * 1000; // 15 seconds
 const WITHDRAW_MAX_PERCENT = 0.8; // max 80% of balance
+const OWNER_IDS = new Set([101021777]); // platform owners — no rate limits
 
 bot.action('withdraw_start', async (ctx) => {
   await ctx.answerCbQuery();
@@ -1802,10 +1803,11 @@ bot.action('withdraw_start', async (ctx) => {
     return;
   }
 
-  // Rate limit
+  // Rate limit (bypassed for platform owners)
   try {
-    const recentCount = await getBalanceTxRepository().getRecentWithdraws(userId, 24);
-    if (recentCount >= WITHDRAW_MAX_PER_DAY) {
+    const isOwner = OWNER_IDS.has(userId);
+    const recentCount = isOwner ? 0 : await getBalanceTxRepository().getRecentWithdraws(userId, 24);
+    if (!isOwner && recentCount >= WITHDRAW_MAX_PER_DAY) {
       // Показываем когда сбросится (в полночь UTC)
       const now = new Date();
       const tomorrow = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
@@ -1821,8 +1823,8 @@ bot.action('withdraw_start', async (ctx) => {
       return;
     }
     // Cooldown
-    const lastTime = await getBalanceTxRepository().getLastWithdrawTime(userId);
-    if (lastTime && (Date.now() - lastTime.getTime()) < WITHDRAW_COOLDOWN_MS) {
+    const lastTime = isOwner ? null : await getBalanceTxRepository().getLastWithdrawTime(userId);
+    if (!isOwner && lastTime && (Date.now() - lastTime.getTime()) < WITHDRAW_COOLDOWN_MS) {
       const waitSec = Math.ceil((WITHDRAW_COOLDOWN_MS - (Date.now() - lastTime.getTime())) / 1000);
       await safeReply(ctx,
         `⏳ <b>${ru ? 'Подождите немного' : 'Please wait'}</b>\n\n` +
