@@ -323,6 +323,43 @@ export class SelfImprovementSystem {
           errorCount,
         );
       }
+
+      // Also optimize AI agents with high error rates (ai_agent type)
+      const aiAgentResult = await dbPool.query<{
+        agent_id: number;
+        agent_name: string;
+        agent_code: string;
+        error_count: string;
+        recent_logs: string;
+      }>(`
+        SELECT
+          a.id AS agent_id,
+          a.name AS agent_name,
+          a.code AS agent_code,
+          COUNT(*) FILTER (WHERE l.level = 'error')::text AS error_count,
+          string_agg(l.message, '|||' ORDER BY l.created_at DESC) AS recent_logs
+        FROM builder_bot.agents a
+        JOIN builder_bot.agent_logs l ON l.agent_id = a.id
+        WHERE a.trigger_type = 'ai_agent'
+          AND a.is_active = true
+          AND l.created_at > NOW() - INTERVAL '3 hours'
+        GROUP BY a.id, a.name, a.code
+        HAVING COUNT(*) FILTER (WHERE l.level = 'error') >= 5
+        ORDER BY COUNT(*) FILTER (WHERE l.level = 'error') DESC
+        LIMIT 2
+      `).catch(() => ({ rows: [] }));
+
+      for (const row of aiAgentResult.rows) {
+        const agentId = Number(row.agent_id);
+        const logs = (row.recent_logs || '').split('|||').slice(0, 30);
+        await this.optimizeAIAgentPrompt(
+          agentId,
+          row.agent_name,
+          row.agent_code,
+          logs,
+          `${row.error_count} errors in 3 hours`,
+        );
+      }
     } catch (e: any) {
       // Non-critical — don't crash the main cycle
       console.error('[SelfImprovement] scanAndRepairAgents error:', e.message?.slice(0, 100));
@@ -434,6 +471,82 @@ ${currentCode.slice(0, 4000)}
     }
   }
 
+  /**
+   * Оптимизирует system prompt AI-агента на основе анализа его логов.
+   * Используется для ai_agent типа — не трогает code, только prompt.
+   */
+  private aiPromptOptCooldown = new Map<number, number>();
+  private async optimizeAIAgentPrompt(
+    agentId: number,
+    agentName: string,
+    currentPrompt: string,
+    recentLogs: string[],
+    issueDescription: string,
+  ): Promise<void> {
+    const COOLDOWN_MS = 2 * 60 * 60 * 1000; // 2 hours between optimizations per agent
+    const now = Date.now();
+    const lastOpt = this.aiPromptOptCooldown.get(agentId) || 0;
+    if (now - lastOpt < COOLDOWN_MS) return;
+    this.aiPromptOptCooldown.set(agentId, now);
+
+    try {
+      const prompt = `Ты — эксперт по оптимизации AI-агентов. Анализируй system prompt агента и его логи, предложи улучшение.
+
+ИМЯ АГЕНТА: ${agentName}
+ПРОБЛЕМА: ${issueDescription}
+
+ТЕКУЩИЙ SYSTEM PROMPT:
+"""
+${currentPrompt.slice(0, 3000)}
+"""
+
+ПОСЛЕДНИЕ ЛОГИ (${recentLogs.length} записей):
+${recentLogs.slice(0, 20).map(l => `- ${l}`).join('\n')}
+
+ПРАВИЛА ОПТИМИЗАЦИИ:
+1. Сохрани назначение и основную логику агента
+2. Добавь чёткие инструкции для решения выявленной проблемы
+3. Если агент спамит уведомлениями — добавь правило "один notify за тик"
+4. Если агент делает лишние API-вызовы — сократи цепочку инструментов
+5. Если агент галлюцинирует — добавь правило "проверяй данные перед действием"
+6. Будь лаконичным — не раздувай промпт, добавь только нужное
+7. Промпт на том же языке что и оригинал
+
+Ответь ТОЛЬКО полным улучшенным system prompt (без markdown, без объяснений, без кавычек).`;
+
+      const response = await this.ai.chat.completions.create({
+        model:      config.claude.model,
+        max_tokens: 4000,
+        messages:   [{ role: 'user', content: prompt }],
+      });
+
+      const newPrompt = response.choices[0]?.message?.content?.trim() || '';
+      if (!newPrompt || newPrompt.length < 50) {
+        console.log(`[SelfImprovement] Agent #${agentId}: AI returned empty/short prompt, skipping`);
+        return;
+      }
+
+      // Update in DB (code field stores system prompt for ai_agent type)
+      await dbPool.query(
+        'UPDATE builder_bot.agents SET code = $1, updated_at = NOW() WHERE id = $2',
+        [newPrompt, agentId]
+      );
+
+      console.log(`[SelfImprovement] ✅ AI Agent #${agentId} "${agentName}" prompt optimized (${newPrompt.length} chars)`);
+
+      await this.notifyOwner(
+        `🧠 <b>AI-агент оптимизирован</b>\n\n` +
+        `<b>#${agentId} ${agentName}</b>\n` +
+        `Проблема: <code>${issueDescription.slice(0, 150)}</code>\n\n` +
+        `✅ System prompt улучшен на основе анализа ${recentLogs.length} логов.\n` +
+        `<i>Промпт: ${newPrompt.length} символов (было ${currentPrompt.length})</i>`
+      );
+
+    } catch (e: any) {
+      console.error(`[SelfImprovement] optimizeAIAgentPrompt #${agentId} error:`, e.message?.slice(0, 100));
+    }
+  }
+
   // ─── Сканирование платформы ───────────────────────────────────────────────
 
   private async scanPlatform(): Promise<Issue[]> {
@@ -444,6 +557,7 @@ ${currentCode.slice(0, 4000)}
     try { issues.push(...await this.checkAgentErrors()); }   catch {}
     try { issues.push(...await this.checkAPILatency()); }    catch {}
     try { issues.push(...await this.checkDependencies()); }  catch {}
+    try { issues.push(...await this.checkAgentTickQuality()); } catch {}
 
     return issues;
   }
@@ -552,6 +666,104 @@ ${currentCode.slice(0, 4000)}
         description: 'TonAPI unreachable — add retry/fallback logic',
         module:      'api-client',
       }];
+    }
+  }
+
+  /** Анализирует качество тиков AI-агентов: ищет паттерны плохих решений.
+   *  Проверяет: повторяющиеся бесполезные тулколлы, пустые тики, спам notify. */
+  private lastTickQualityCheck = 0;
+  private async checkAgentTickQuality(): Promise<Issue[]> {
+    const ONE_HOUR = 60 * 60 * 1000;
+    if (Date.now() - this.lastTickQualityCheck < ONE_HOUR) return [];
+    this.lastTickQualityCheck = Date.now();
+
+    try {
+      // Check for agents with many ticks but no useful output
+      const result = await dbPool.query<{
+        agent_id: number;
+        agent_name: string;
+        total_ticks: string;
+        error_ticks: string;
+        avg_duration: string;
+      }>(`
+        SELECT
+          eh.agent_id,
+          a.name AS agent_name,
+          COUNT(*)::text AS total_ticks,
+          COUNT(*) FILTER (WHERE eh.status = 'error')::text AS error_ticks,
+          AVG(eh.duration_ms)::text AS avg_duration
+        FROM builder_bot.execution_history eh
+        JOIN builder_bot.agents a ON a.id = eh.agent_id
+        WHERE eh.started_at > NOW() - INTERVAL '6 hours'
+          AND a.trigger_type = 'ai_agent'
+          AND a.is_active = true
+        GROUP BY eh.agent_id, a.name
+        HAVING COUNT(*) >= 10
+        ORDER BY COUNT(*) FILTER (WHERE eh.status = 'error')::float / GREATEST(COUNT(*), 1) DESC
+        LIMIT 5
+      `);
+
+      const issues: Issue[] = [];
+      for (const row of result.rows) {
+        const total = Number(row.total_ticks);
+        const errors = Number(row.error_ticks);
+        const errorRate = errors / total;
+        const avgDuration = Number(row.avg_duration);
+
+        // High error rate in ticks
+        if (errorRate > 0.5 && total >= 10) {
+          issues.push({
+            type: 'performance',
+            severity: errorRate > 0.8 ? 'high' : 'medium',
+            description: `Agent #${row.agent_id} "${row.agent_name}" has ${(errorRate * 100).toFixed(0)}% error rate (${errors}/${total} ticks in 6h). System prompt may need adjustment.`,
+            module: `agent-${row.agent_id}`,
+          });
+        }
+
+        // Very slow ticks (>30s average = wasting AI tokens)
+        if (avgDuration > 30000 && total >= 5) {
+          issues.push({
+            type: 'performance',
+            severity: 'low',
+            description: `Agent #${row.agent_id} "${row.agent_name}" average tick ${(avgDuration / 1000).toFixed(1)}s (${total} ticks). May be making too many tool calls per tick.`,
+            module: `agent-${row.agent_id}`,
+          });
+        }
+      }
+
+      // Check for notification spam patterns
+      const spamResult = await dbPool.query<{
+        agent_id: number;
+        agent_name: string;
+        notify_count: string;
+      }>(`
+        SELECT
+          l.agent_id,
+          a.name AS agent_name,
+          COUNT(*)::text AS notify_count
+        FROM builder_bot.agent_logs l
+        JOIN builder_bot.agents a ON a.id = l.agent_id
+        WHERE l.created_at > NOW() - INTERVAL '1 hour'
+          AND l.message LIKE '%notify%'
+          AND l.level = 'info'
+        GROUP BY l.agent_id, a.name
+        HAVING COUNT(*) > 20
+        ORDER BY COUNT(*) DESC
+        LIMIT 3
+      `);
+
+      for (const row of spamResult.rows) {
+        issues.push({
+          type: 'error',
+          severity: 'medium',
+          description: `Agent #${row.agent_id} "${row.agent_name}" sent ${row.notify_count} notifications in 1 hour — possible spam. System prompt anti-spam rules may be ineffective.`,
+          module: `agent-${row.agent_id}`,
+        });
+      }
+
+      return issues;
+    } catch {
+      return [];
     }
   }
 

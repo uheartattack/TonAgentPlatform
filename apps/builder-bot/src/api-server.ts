@@ -864,6 +864,16 @@ export function startApiServer() {
         return;
       }
 
+      // Topup amount validation
+      if (result.amountTon < 0.1) {
+        res.json({ ok: false, error: 'Minimum topup is 0.1 TON' });
+        return;
+      }
+      if (result.amountTon > 1000) {
+        res.json({ ok: false, error: 'Maximum topup is 1000 TON per transaction' });
+        return;
+      }
+
       // DB dedup
       const existing = await getBalanceTxRepository().getByTxHash(result.txHash);
       if (existing) {
@@ -891,6 +901,13 @@ export function startApiServer() {
   app.post('/api/withdraw', requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = (req as any).userId as number;
+
+      // API-level rate limit: 5 requests/minute per user
+      if (!checkApiRateLimit(`withdraw:${userId}`, 5, 60_000)) {
+        res.status(429).json({ error: 'Too many requests. Try again in a minute.' });
+        return;
+      }
+
       const { address, amount } = req.body || {};
 
       // Input validation
@@ -955,6 +972,26 @@ export function startApiServer() {
       res.status(500).json({ error: e.message });
     }
   });
+
+  // ── Simple API rate limiter ──────────────────────────────────
+  const apiRateLimits = new Map<string, number[]>();
+  function checkApiRateLimit(key: string, maxRequests: number, windowMs: number): boolean {
+    const now = Date.now();
+    const timestamps = (apiRateLimits.get(key) || []).filter(t => now - t < windowMs);
+    if (timestamps.length >= maxRequests) return false;
+    timestamps.push(now);
+    apiRateLimits.set(key, timestamps);
+    return true;
+  }
+  // Clean up every 10 minutes
+  setInterval(() => {
+    const now = Date.now();
+    for (const [k, v] of apiRateLimits) {
+      const fresh = v.filter(t => now - t < 600_000);
+      if (fresh.length === 0) apiRateLimits.delete(k);
+      else apiRateLimits.set(k, fresh);
+    }
+  }, 600_000);
 
   // Fallback — index.html
   app.get('/{*path}', (_req: Request, res: Response) => {

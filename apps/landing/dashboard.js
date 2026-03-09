@@ -1728,6 +1728,15 @@ async function loadProfile() {
     if (fb) fb.style.display = 'none';
   }
 
+  // Balance data
+  const balance = await apiRequest('GET', '/api/balance');
+  if (balance && !balance.error) {
+    setEl('profile-balance', (balance.balance_ton ?? 0).toFixed(2) + ' TON');
+    setEl('profile-earned', (balance.total_earned ?? 0).toFixed(2) + ' TON');
+    setEl('profile-subscription', balance.subscription || 'Free');
+    setEl('profile-wallet', balance.wallet_address ? balance.wallet_address.slice(0, 8) + '...' + balance.wallet_address.slice(-6) : 'Not linked');
+  }
+
   // Stats from API
   const stats = await apiRequest('GET', '/api/stats/me');
   if (stats.ok) {

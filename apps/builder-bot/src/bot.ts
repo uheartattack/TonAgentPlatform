@@ -3779,6 +3779,15 @@ bot.on(message('text'), async (ctx) => {
         );
         return;
       }
+      // Max 80% of balance per withdrawal
+      const maxWithdraw = profile.balance_ton * WITHDRAW_MAX_PERCENT;
+      if (amount > maxWithdraw) {
+        await ctx.reply(lang === 'ru'
+          ? `❌ Максимум ${(maxWithdraw).toFixed(2)} TON за один вывод (80% баланса). Остаток резервируется на комиссии.`
+          : `❌ Max ${(maxWithdraw).toFixed(2)} TON per withdrawal (80% of balance). Remainder reserved for fees.`
+        );
+        return;
+      }
       pendingWithdrawal.delete(userId);
       const toAddr = wState.address || profile.wallet_address || '';
       const walletShort = toAddr.slice(0, 12) + '…';
