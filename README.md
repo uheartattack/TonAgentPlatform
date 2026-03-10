@@ -12,9 +12,9 @@
 [![Telegram Bot](https://img.shields.io/badge/Telegram-@TonAgentPlatformBot-2CA5E0.svg)](https://t.me/TonAgentPlatformBot)
 [![Live](https://img.shields.io/badge/Live-tonagentplatform.ru-brightgreen.svg)](https://tonagentplatform.ru)
 
-*Create, deploy and manage AI-powered agents that trade, monitor, and automate on TON — entirely through a Telegram conversation.*
+*Describe what you want in plain text or voice — the platform generates, sandboxes, and deploys an autonomous AI agent instantly.*
 
-[**🌐 Live Demo**](https://tonagentplatform.ru) · [**🤖 Try the Bot**](https://t.me/TonAgentPlatformBot) · [**📊 Dashboard**](https://tonagentplatform.ru/dashboard.html)
+[**Live Demo**](https://tonagentplatform.ru) · [**Try the Bot**](https://t.me/TonAgentPlatformBot) · [**Dashboard**](https://tonagentplatform.ru/dashboard.html)
 
 </div>
 
@@ -22,9 +22,9 @@
 
 ## What is this?
 
-TON Agent Platform lets anyone create autonomous AI agents that run 24/7 on the TON blockchain — price monitors, DEX traders, wallet watchers, NFT snipers — without writing a single line of code. Users describe what they want in plain language; the platform generates, sandboxes, and deploys the agent instantly.
+TON Agent Platform lets anyone create autonomous AI agents that run 24/7 on the TON blockchain — price monitors, gift arbitrage bots, DEX traders, wallet watchers, NFT snipers — without writing a single line of code. Describe what you want in text or voice; the AI generates a system prompt, picks the right tools, and deploys the agent in seconds.
 
-> "The Zapier for TON blockchain" — describe, deploy, automate.
+> AI-first: you describe the task, AI builds the agent. 7 providers, 65+ tools, 12 plugins, voice commands.
 
 ---
 
@@ -37,29 +37,38 @@ cd TonAgentPlatform && pnpm install
 
 # 2. Configure
 cp apps/builder-bot/.env.example apps/builder-bot/.env
-# Edit .env: add BOT_TOKEN, OPENAI_API_KEY (Gemini or Anthropic)
+# Edit .env: add BOT_TOKEN, DB credentials, optionally AI API keys
 
-# 3. Launch (Docker required)
-docker compose -f infrastructure/docker-compose.prod.yml up -d
+# 3. Launch
+docker compose -f infrastructure/docker-compose.prod.yml up -d   # PostgreSQL
 pnpm --filter builder-bot dev
 ```
 
-Open Telegram → [@TonAgentPlatformBot](https://t.me/TonAgentPlatformBot) → `/start`
+Open Telegram -> [@TonAgentPlatformBot](https://t.me/TonAgentPlatformBot) -> `/start`
 
 ---
 
-## Features
+## Key Features
 
 | | Feature | Description |
 |---|---|---|
-| 🧠 | **AI Code Generation** | Gemini/Claude generates agent code from natural language |
-| 🔒 | **Sandboxed Execution** | Every agent runs in an isolated VM2 sandbox with resource limits |
-| 📊 | **18 Agent Templates** | Ready-to-use templates for common TON automation tasks |
-| 🔌 | **Plugin Ecosystem** | 12 plugins: DeDust, STON.fi, EVAA, TonAPI, CoinGecko, and more |
-| ⏱️ | **Persistent Scheduling** | Agents run 24/7 with configurable intervals (5m, 15m, 1h, daily) |
-| 💎 | **TON Connect** | Native wallet integration — sign transactions without leaving Telegram |
-| 📈 | **Real-time Alerts** | Push notifications for price movements, wallet events, whale trades |
-| 🌐 | **Web Dashboard** | Monitor all agents at [tonagentplatform.ru/dashboard.html](https://tonagentplatform.ru/dashboard.html) |
+| **AI** | **AI-First Agent Creation** | Describe a task in text or voice -> AI generates system prompt + picks tools -> agent runs autonomously |
+| **AI** | **7 AI Providers** | Gemini, OpenAI, Anthropic, Groq, DeepSeek, OpenRouter, Together — switch per agent |
+| **AI** | **Platform Proxy Fallback** | Agents work even without a user API key (platform provides AI) |
+| **Voice** | **Voice Commands** | Send a voice message -> transcription -> agent created or command executed |
+| **Tools** | **65+ Agent Tools** | TON balance, NFT floors, gift arbitrage, web search, HTTP fetch, Telegram userbot, state management, notifications |
+| **Gifts** | **Gift Arbitrage** | Real-time gift pricing via GiftAsset + SwiftGifts APIs, automated buy/sell, market analysis |
+| **Sandbox** | **Sandboxed Execution** | Every agent runs in an isolated VM2 sandbox with SSRF protection + resource limits |
+| **Plugins** | **12 Plugins** | DeDust, STON.fi, EVAA, TonAPI, CoinGecko, Whale Tracker, Discord, Slack, Email, and more |
+| **Templates** | **22 Agent Templates** | Ready-to-use templates for common TON automation tasks |
+| **Schedule** | **Persistent Scheduling** | Agents run 24/7 with configurable intervals (1m to daily), survive restarts |
+| **Wallet** | **TON Connect** | Native wallet integration — sign transactions without leaving Telegram |
+| **Alerts** | **Rich Notifications** | HTML-formatted push alerts with inline buttons, per-agent customization |
+| **Marketplace** | **Agent Marketplace** | Publish, buy, and sell agents — community-driven template economy |
+| **Dashboard** | **Web Dashboard** | Monitor agents, view logs, manage plugins, wallet balance at [tonagentplatform.ru/dashboard](https://tonagentplatform.ru/dashboard.html) |
+| **Userbot** | **Telegram Userbot** | Agents can read/send/forward messages, join channels, search — full Telegram automation via MTProto |
+| **Multi** | **Inter-Agent Communication** | Agents can message each other, coordinate tasks, share data |
+| **Self** | **Self-Improvement** | Platform AI periodically proposes code improvements to agents |
 
 ---
 
@@ -67,21 +76,48 @@ Open Telegram → [@TonAgentPlatformBot](https://t.me/TonAgentPlatformBot) → `
 
 ```mermaid
 graph TB
-    User((User)) -->|Telegram| Bot[Telegraf Bot]
+    User((User)) -->|Telegram / Voice| Bot[Telegraf Bot]
     User -->|Browser| Dashboard[Web Dashboard]
-    Bot --> Orchestrator[AI Orchestrator]
+    Bot --> Orchestrator[AI Orchestrator - NLU + Routing]
     Bot --> APIServer[REST API :3001]
-    Orchestrator --> Creator[Agent Creator - Gemini AI]
+    Orchestrator --> Creator[Agent Creator - AI-First]
+    Orchestrator --> AIRuntime[AI Agent Runtime - 65+ tools]
     Orchestrator --> Runner[Agent Runner - VM2 Sandbox]
-    Runner --> Plugins[Plugin System]
+    Runner --> Plugins[Plugin System - 12 plugins]
+    AIRuntime --> GiftAsset[GiftAsset + SwiftGifts]
+    AIRuntime --> TonAPI[TonAPI v2]
+    AIRuntime --> Userbot[Telegram Userbot - MTProto]
     Plugins --> DeDust[DeDust DEX]
     Plugins --> STON[STON.fi DEX]
     Plugins --> EVAA[EVAA Lending]
-    Plugins --> TonAPI[TonAPI Pro]
-    Creator --> DB[(PostgreSQL)]
+    Creator --> DB[(PostgreSQL + Drizzle)]
     APIServer --> Dashboard
-    Bot --> TonConnect[TON Connect]
+    Bot --> TonConnect[TON Connect v2]
+    Bot --> MultiProvider{7 AI Providers}
+    MultiProvider --> Gemini[Gemini 2.5 Flash]
+    MultiProvider --> Claude[Claude]
+    MultiProvider --> GPT[GPT-4o]
+    MultiProvider --> Groq[Groq / Llama]
+    MultiProvider --> DeepSeek[DeepSeek]
 ```
+
+---
+
+## AI Agent Tools (65+)
+
+Agents autonomously choose which tools to call based on their system prompt:
+
+**TON Blockchain**: `get_ton_balance`, `get_nft_floor`, `send_ton`, `get_agent_wallet`
+
+**Gift Arbitrage**: `get_gift_catalog`, `get_gift_floor_real`, `scan_real_arbitrage`, `buy_catalog_gift`, `buy_resale_gift`, `list_gift_for_sale`, `appraise_gift`, `get_price_list`, `get_market_overview`, `get_gift_sales_history`, `get_top_deals`, `get_market_health`, `get_collections_marketcap`, `get_gift_aggregator`
+
+**Web & Search**: `web_search` (DuckDuckGo), `fetch_url`, `http_fetch`
+
+**Telegram Userbot** (20 tools): `tg_send_message`, `tg_get_messages`, `tg_join_channel`, `tg_search_messages`, `tg_forward`, `tg_react`, and more
+
+**State & Notifications**: `get_state`, `set_state`, `notify`, `notify_rich` (HTML + buttons)
+
+**Agent Coordination**: `list_my_agents`, `ask_agent`, `list_plugins`, `run_plugin`
 
 ---
 
@@ -89,99 +125,106 @@ graph TB
 
 | Plugin | Type | Description | Status |
 |--------|------|-------------|--------|
-| 💧 **DeDust DEX** | DeFi | Swaps, liquidity pools, price feeds via DeDust API | ✅ Ready |
-| 🌊 **STON.fi DEX** | DeFi | AMM swaps, pool analytics via STON.fi API | ✅ Ready |
-| 🏦 **EVAA Lending** | DeFi | Lending/borrowing positions on EVAA Protocol | ✅ Ready |
-| 🔍 **TonAPI Pro** | Data | Wallet data, NFTs, transactions via TonAPI | ✅ Ready |
-| 📊 **CoinGecko Price Feed** | Data | Real-time & historical crypto prices | ✅ Ready |
-| 🐋 **Whale Tracker** | Analytics | Monitor large wallet movements on TON | ✅ Ready |
-| 📡 **TON Stat Analytics** | Analytics | Network stats, DEX volume, chain metrics | ✅ Ready |
-| 📱 **Discord Webhook** | Notification | Discord channel notifications | ✅ Ready |
-| 📧 **Email Notifier** | Notification | SMTP email alerts | ✅ Ready |
-| 💬 **Slack Notifier** | Notification | Slack workspace notifications | ✅ Ready |
-| 🛡️ **Drain Detector** | Security | AI-powered wallet drain detection | ✅ Ready |
-| 🔬 **Contract Auditor** | Security | Smart contract risk analysis | ✅ Ready |
+| **DeDust DEX** | DeFi | Swaps, liquidity pools, price feeds | Ready |
+| **STON.fi DEX** | DeFi | AMM swaps, pool analytics | Ready |
+| **EVAA Lending** | DeFi | Lending/borrowing on EVAA Protocol | Ready |
+| **TonAPI Pro** | Data | Wallet data, NFTs, transactions | Ready |
+| **CoinGecko Price Feed** | Data | Real-time & historical crypto prices | Ready |
+| **Whale Tracker** | Analytics | Large wallet movement monitoring | Ready |
+| **TON Stat Analytics** | Analytics | Network stats, DEX volume, chain metrics | Ready |
+| **Discord Webhook** | Notification | Discord channel notifications | Ready |
+| **Email Notifier** | Notification | SMTP email alerts | Ready |
+| **Slack Notifier** | Notification | Slack workspace notifications | Ready |
+| **Drain Detector** | Security | AI-powered wallet drain detection | Ready |
+| **Contract Auditor** | Security | Smart contract risk analysis | Ready |
 
 ---
 
-## Agent Templates (18)
+## Agent Templates (22)
 
-**DeFi & Trading**
-- `ton-price-monitor` — Alert when TON price crosses a threshold
-- `arbitrage-scanner` — Find price gaps across DeDust / STON.fi
-- `dex-swap-monitor` — Track DEX swaps in real time
-- `crypto-portfolio` — Multi-coin portfolio tracker with P&L
-- `price_alert_v2` — Advanced price alerts with multiple conditions
+**DeFi & Trading**: `ton-price-monitor`, `arbitrage-scanner`, `dex-swap-monitor`, `crypto-portfolio`, `price-alert-v2`
 
-**Wallet & Balance**
-- `ton-balance-checker` — Check TON wallet balance on demand
-- `low-balance-alert` — Alert when wallet drops below threshold
-- `balance_monitor_v2` — Advanced multi-wallet monitoring
-- `jetton-balance-checker` — Track Jetton (TRC-20) token balances
+**Wallet & Balance**: `ton-balance-checker`, `low-balance-alert`, `balance-monitor-v2`, `jetton-balance-checker`
 
-**NFT**
-- `nft-floor-monitor` — Watch NFT collection floor prices hourly
+**NFT**: `nft-floor-monitor`, `nft-arbitrage-v2`, `nft-floor-predictor`
 
-**Automation & Reports**
-- `daily-ton-report` — Daily portfolio summary delivered at set time
-- `payroll-agent` — Scheduled TON payments to multiple wallets
-- `website-monitor` — HTTP uptime & status code monitor
-- `weather-notifier` — Weather alerts for any city
+**Gift Arbitrage**: `telegram-gift-monitor`, `unified-arbitrage-ai` (AI-powered, GiftAsset + SwiftGifts)
 
-**Webhooks & Integration**
-- `webhook-receiver` — React to external HTTP webhook events
-- `webhook-sender` — Send data to external URLs on trigger
-- `telegram-notifier` — Forward alerts to any Telegram chat
+**Automation & Reports**: `daily-ton-report`, `payroll-agent`, `website-monitor`, `weather-notifier`
 
-**Multi-Agent**
-- `multi_agent_orchestrator` — Coordinate multiple agents in parallel
+**Webhooks & Integration**: `webhook-receiver`, `webhook-sender`, `telegram-notifier`
+
+**Multi-Agent**: `multi-agent-orchestrator`, `super-agent` (hybrid)
 
 ---
 
-## API
+## API (42 endpoints)
 
 All authenticated endpoints require `X-Auth-Token` header.
 
 ### Public
 ```
-GET  /api/config                   → bot username, landing URL
-GET  /api/stats                    → global stats (activeAgents, totalUsers, agentsCreated)
-GET  /api/auth/request             → start Telegram deeplink auth, returns authToken + botLink
-GET  /api/auth/check/:token        → poll auth status → {status: 'pending'|'approved', token}
-POST /api/auth/telegram            → Telegram Login Widget callback (HMAC-SHA256 verified)
-GET  /tonconnect-manifest.json     → TON Connect manifest
+GET  /api/config                        Platform config
+GET  /api/stats                         Global stats (agents, users, created)
+GET  /api/auth/request                  Start Telegram deeplink auth
+GET  /api/auth/check/:token             Poll auth status
+POST /api/auth/telegram                 Telegram Login Widget (HMAC-SHA256)
+GET  /api/tonconnect-manifest.json      TON Connect manifest
+GET  /api/platform/health               Health check
 ```
 
-### Authenticated (X-Auth-Token required)
+### Authenticated
 ```
-GET  /api/me                       → current user info
-GET  /api/stats/me                 → personal stats: agentsActive, totalRuns, successRate, uptimeSeconds
-GET  /api/agents                   → list user agents
-GET  /api/agents/:id               → single agent detail
-POST /api/agents/:id/run           → start agent
-POST /api/agents/:id/stop          → stop/pause agent
-GET  /api/agents/:id/logs?limit=   → DB-persisted execution logs
-GET  /api/agents/:id/history?limit=→ execution history (started_at, duration_ms, status)
-GET  /api/activity?limit=          → all agent logs for current user (activity stream)
-GET  /api/executions?status=       → execution history with filter: all|running|success|error
-GET  /api/plugins                  → plugin list (isInstalled reflects per-user state)
-POST /api/plugins/:id/install      → install plugin for user (body: {config})
-DELETE /api/plugins/:id            → uninstall plugin for user
-GET  /api/settings                 → all user settings as {key: value} map
-POST /api/settings                 → save settings (body: {key,value} or {settings:{...}})
-GET  /api/connectors               → connected external services
-POST /api/connectors/:service      → add/update connector (body: {config:{...}})
-DELETE /api/connectors/:service    → remove connector
+GET    /api/me                          Current user
+GET    /api/stats/me                    Personal stats
+GET    /api/agents                      List agents
+GET    /api/agents/:id                  Agent detail
+POST   /api/agents/:id/run              Start agent
+POST   /api/agents/:id/stop             Stop agent
+DELETE /api/agents/:id                  Delete agent
+POST   /api/agents/:id/rename           Rename agent
+GET    /api/agents/:id/logs             Execution logs
+GET    /api/agents/:id/history          Execution history
+GET    /api/activity                    Activity stream
+GET    /api/executions                  Executions with filters
+GET    /api/plugins                     Plugin list
+POST   /api/plugins/:id/install         Install plugin
+DELETE /api/plugins/:id                 Uninstall plugin
+GET    /api/settings                    User settings
+POST   /api/settings                    Save settings
+GET    /api/connectors                  External services
+POST   /api/connectors/:service         Connect service
+DELETE /api/connectors/:service         Disconnect service
+GET    /api/marketplace                 Browse marketplace
+GET    /api/marketplace/my              User listings
+GET    /api/marketplace/purchases       Purchases
+POST   /api/marketplace                 Publish agent
+DELETE /api/marketplace/:id             Remove listing
+GET    /api/proposals                   AI improvement proposals
+POST   /api/proposals/:id/approve       Approve proposal
+POST   /api/proposals/:id/reject        Reject proposal
+POST   /api/proposals/:id/rollback      Rollback proposal
+GET    /api/balance                     Wallet balance
+GET    /api/transactions                Transaction history
+POST   /api/topup/check                 Verify topup
+POST   /api/withdraw                    Withdraw TON
+POST   /api/emergency-stop              Emergency stop all agents
 ```
 
 ---
 
 ## Security
 
-- **Sandboxed execution** — VM2 with restricted globals; no `fs`, `child_process`, `net` access
-- **Resource limits** — 30s max execution time, memory cap per agent
-- **AI security scanner** — Static analysis before every agent deployment
-- **Rate limiting** — Per-user API rate limits on all endpoints
+- **Sandboxed execution** — VM2 with restricted globals; no `fs`, `child_process`, `net`
+- **SSRF protection** — blocks localhost, private IPs (10.x, 172.16.x, 192.168.x), IPv6 (::1, fc/fd/fe80), metadata endpoints (169.254.x), dangerous protocols (file:, ftp:)
+- **Resource limits** — 30s max execution, memory cap per agent
+- **AI security scanner** — static analysis before deployment
+- **Rate limiting** — per-user API rate limits
+- **CORS hardening** — strict origin allowlist, no wildcard
+- **Ownership verification** — all API endpoints verify user owns the resource
+- **Fetch timeouts** — 10s AbortSignal on all external HTTP calls
+- **GraphQL injection protection** — parameterized queries with input sanitization
+- **Memory leak prevention** — periodic cleanup of pending state Maps (30-min TTL)
 - **Auth** — Telegram OAuth + deeplink auth; no passwords stored
 
 ---
@@ -192,10 +235,13 @@ DELETE /api/connectors/:service    → remove connector
 |-------|-----------|
 | Bot framework | Telegraf v4 |
 | Language | TypeScript 5.x |
-| AI backend | Gemini 2.5 Flash (OpenAI-compatible) |
+| AI backend | 7 providers: Gemini 2.5 Flash, Claude, GPT-4o, Groq, DeepSeek, OpenRouter, Together |
 | Database | PostgreSQL 15 + Drizzle ORM |
-| Sandbox | VM2 (isolated Node.js) |
-| TON | @ton/core, @tonconnect/sdk |
+| Agent sandbox | VM2 (isolated Node.js) |
+| AI agent runtime | Autonomous agentic loop (up to 5 tool calls per tick) |
+| TON | @ton/core, @ton/ton, @ton/crypto, @tonconnect/sdk |
+| Telegram | GramJS MTProto (userbot), Telegraf (bot) |
+| Gift APIs | GiftAsset + SwiftGifts (rate-limited, cached) |
 | Infrastructure | Docker Compose + nginx + PM2 |
 | SSL | Let's Encrypt |
 
@@ -225,33 +271,38 @@ interface Plugin {
 
 ## Roadmap
 
-- [x] AI agent code generation (Gemini 2.5 Flash)
-- [x] VM2 sandboxed execution
+- [x] AI-first agent creation (describe in text/voice -> AI builds agent)
+- [x] 7 AI providers with per-agent switching
+- [x] Platform proxy fallback (agents work without user API key)
+- [x] Voice commands (send voice -> transcription -> agent created)
+- [x] 65+ agent tools (TON, gifts, NFT, web, Telegram userbot)
+- [x] Gift arbitrage with real market data (GiftAsset + SwiftGifts)
+- [x] VM2 sandboxed execution with SSRF protection
 - [x] PostgreSQL persistence + Drizzle ORM
-- [x] TON Connect wallet integration
+- [x] TON Connect v2 wallet integration
 - [x] Plugin ecosystem (12 plugins)
-- [x] 18 agent templates
+- [x] 22 agent templates
 - [x] Web dashboard with Telegram auth
 - [x] Persistent 24/7 agent scheduling
-- [x] Production deployment (tonagentplatform.ru, HTTPS)
-- [x] Fast Demo flow with deep links
+- [x] Agent marketplace (publish, buy, sell)
+- [x] Rich notifications (HTML + inline buttons)
+- [x] Telegram userbot integration (MTProto)
+- [x] Inter-agent communication
+- [x] Per-agent TON wallets
+- [x] Self-improvement system (AI proposes code upgrades)
 - [x] DB-persisted agent state (write-through cache, survives restarts)
-- [x] Execution history & activity stream (agent_logs, execution_history tables)
-- [x] Per-user plugin install/uninstall (user_plugins table)
-- [x] User settings & connectors API (user_settings table)
-- [x] Real `/api/stats` from DB (activeAgents, totalUsers, agentsCreated)
-- [x] Real `execute()` for CoinGecko, DeDust, Whale Tracker, Discord Notifier plugins
-- [ ] Prometheus + Grafana monitoring
-- [ ] Agent marketplace (community-published agents)
+- [x] Execution history & activity stream
+- [x] Per-user plugin install/uninstall
+- [x] Production deployment (tonagentplatform.ru, HTTPS)
 - [ ] Telegram Mini App (mobile-optimized)
 - [ ] On-chain agent registry (TON smart contract)
-- [ ] Multi-chain support (ETH, SOL)
+- [ ] DAO governance & platform token
 
 ---
 
 ## License
 
-MIT © 2026 TON Agent Platform
+MIT (c) 2026 TON Agent Platform
 
 ---
 

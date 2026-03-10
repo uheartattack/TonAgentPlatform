@@ -1,21 +1,95 @@
-# TON Agent Platform - Landing Page
+# TON Agent Platform - Landing & Dashboard
 
-Ìàðêåòèíãîâûé ñàéò äëÿ TON Agent Platform.
+Public-facing website and web dashboard for the TON Agent Platform.
 
-## Âîçìîæíîñòè
+**Live**: [tonagentplatform.ru](https://tonagentplatform.ru)
 
-- ?? Àíèìàöèÿ ÷àñòèö íà ôîíå
-- ?? Äâóÿçû÷íîñòü (EN/RU)
-- ?? Àäàïòèâíûé äèçàéí
-- ? FAQ àêêîðäåîí
-- ?? Êàðòî÷êè òàðèôîâ
-- ?? Ñåêöèÿ êîìàíäû
+## Structure
 
-## Çàïóñê ëîêàëüíî
-```bash
-# ×åðåç npx serve
-cd apps/landing
-npx serve .
+```
+apps/landing/
+â”œâ”€â”€ index.html          # Landing page (features, pricing, roadmap, FAQ)
+â”œâ”€â”€ dashboard.html      # Web dashboard (agents, plugins, wallet, logs)
+â”œâ”€â”€ dashboard.js        # Dashboard logic (API calls, auth, real-time updates)
+â”œâ”€â”€ dashboard.css       # Dashboard styles (responsive, dark theme)
+â”œâ”€â”€ logo.gif            # Animated logo
+â””â”€â”€ favicon files
 ```
 
-Îòêðîéòå http://localhost:3000
+## Landing Page (`index.html`)
+
+- **Hero section** with animated stats (agents created, active users)
+- **How It Works** â€” 3-step flow: describe -> AI generates -> agent runs
+- **Agent Capabilities** â€” 65+ tools, 7 AI providers, voice commands, gift arbitrage
+- **Plugin Library** â€” 12 plugins across DeFi, Analytics, Notifications, Security
+- **Live Demo** â€” interactive agent creation simulation
+- **Pricing** â€” Free (3 agents), Starter (5 TON), Pro (15 TON), Unlimited (30 TON)
+- **Roadmap** â€” completed milestones and upcoming features
+- **FAQ** â€” common questions and answers
+- **Bilingual** â€” English/Russian toggle
+
+## Dashboard (`dashboard.html`)
+
+Authenticated via Telegram (deeplink auth or Login Widget).
+
+### Pages
+
+| Page | Description |
+|------|-------------|
+| **Overview** | Metrics cards, activity stream, quick actions |
+| **My Agents** | Agent list with start/stop/delete, logs, config |
+| **Marketplace** | Browse and purchase community agents |
+| **Plugins** | Install/uninstall plugins with configuration |
+| **Wallet** | Balance, topup (QR + deeplink), withdraw, transaction history |
+| **Settings** | AI provider config, notification preferences |
+| **Profile** | User info, subscription, connected wallet, API keys |
+
+### Features
+
+- Real-time activity polling (30s interval)
+- Agent start/stop/rename/delete via API
+- Plugin install/uninstall with per-plugin config
+- Wallet: topup via TON transfer, withdraw to any address
+- Transaction history with type filtering
+- Responsive: mobile breakpoints at 768px and 480px
+- Hamburger menu on mobile
+- Dark theme
+
+## API Connection
+
+Dashboard connects to the bot's REST API at `/api/*` (42 endpoints). Auth token stored in `localStorage`.
+
+Key endpoints used:
+- `GET /api/me` â€” user profile
+- `GET /api/agents` â€” agent list
+- `GET /api/agents/:id/logs` â€” agent logs
+- `POST /api/agents/:id/run` â€” start agent
+- `GET /api/plugins` â€” plugin list
+- `GET /api/balance` â€” wallet balance
+- `GET /api/transactions` â€” transaction history
+- `POST /api/topup/check` â€” verify topup
+- `POST /api/withdraw` â€” withdraw TON
+
+## Local Development
+
+```bash
+cd apps/landing
+npx serve .
+# Open http://localhost:3000
+```
+
+For API access, the bot must be running on `localhost:3001`.
+
+## Deployment
+
+Files are served by nginx on the production server:
+
+```bash
+scp index.html dashboard.html dashboard.js dashboard.css root@server:/app/apps/landing/
+```
+
+Nginx config points `/` to `index.html` and serves static files from `/app/apps/landing/`.
+
+## License
+
+MIT
