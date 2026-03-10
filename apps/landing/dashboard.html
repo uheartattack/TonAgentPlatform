@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="dashboard.css?v=16">
+  <link rel="stylesheet" href="dashboard.css?v=17">
   <!-- Telegram widget loaded in body where button should appear -->
 </head>
 <body>
@@ -141,6 +141,10 @@
             </svg>
             <span data-en="Connectors" data-ru="Коннекторы">Connectors</span>
           </a>
+          <a href="#" class="nav-item" data-page="marketplace" onclick="navigateTo('marketplace')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+            <span data-en="Marketplace" data-ru="Маркетплейс">Marketplace</span>
+          </a>
           <a href="#" class="nav-item" data-page="network">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/>
@@ -169,6 +173,10 @@
         </div>
         <div class="nav-section">
           <span class="nav-label" data-en="System" data-ru="Система">System</span>
+          <a href="#" class="nav-item" data-page="guide" onclick="navigateTo('guide')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <span data-en="Guide" data-ru="Инструкции">Guide</span>
+          </a>
           <a href="#" class="nav-item" data-page="settings">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="12" r="3"/>
@@ -231,12 +239,35 @@
               </svg>
               <span data-en="Refresh" data-ru="Обновить">Refresh</span>
             </button>
-            <button class="btn btn-primary" onclick="navigateTo('builder')">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-              </svg>
-              <span data-en="Deploy Agent" data-ru="Создать агента">Deploy Agent</span>
-            </button>
+            <div style="position:relative;display:inline-block">
+              <button class="btn btn-primary" onclick="showCreateAgentMenu(event)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                <span data-en="Create Agent" data-ru="Создать агента">Create Agent</span>
+              </button>
+              <div id="create-agent-dropdown" class="create-agent-dropdown" style="display:none">
+                <div class="create-option" onclick="navigateTo('builder'); hideCreateMenu()">
+                  <span class="create-option-icon">🔧</span>
+                  <div>
+                    <strong data-en="Constructor" data-ru="Конструктор">Constructor</strong>
+                    <p data-en="Visual flow builder with drag & drop" data-ru="Визуальный конструктор с drag & drop">Visual flow builder with drag & drop</p>
+                  </div>
+                </div>
+                <div class="create-option" onclick="openDashboardChat(); hideCreateMenu()">
+                  <span class="create-option-icon">💬</span>
+                  <div>
+                    <strong data-en="Chat with AI" data-ru="Чат с AI">Chat with AI</strong>
+                    <p data-en="Describe what you need in words" data-ru="Опишите что нужно словами">Describe what you need in words</p>
+                  </div>
+                </div>
+                <a class="create-option" href="https://t.me/TonAgentPlatformBot" target="_blank" onclick="hideCreateMenu()">
+                  <span class="create-option-icon">🤖</span>
+                  <div>
+                    <strong>Telegram Bot</strong>
+                    <p>@TonAgentPlatformBot</p>
+                  </div>
+                </a>
+              </div>
+            </div>
           </div>
         </div>
         
@@ -1516,10 +1547,183 @@
         </div>
       </div>
 
+      <!-- Marketplace Page -->
+      <div id="marketplace-page" class="page" style="display:none">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title" data-en="Agent Marketplace" data-ru="Маркетплейс агентов">Agent Marketplace</h1>
+            <p class="page-subtitle" data-en="Browse, install and publish agent templates" data-ru="Обзор, установка и публикация шаблонов агентов">Browse, install and publish agent templates</p>
+          </div>
+          <div class="header-actions">
+            <button class="btn btn-primary" onclick="openPublishModal()">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <span data-en="Publish Agent" data-ru="Опубликовать">Publish Agent</span>
+            </button>
+          </div>
+        </div>
+        <div class="page-content">
+          <div class="marketplace-tabs" id="marketplace-tabs">
+            <button class="mkt-tab active" onclick="filterMarketplace('all')" data-cat="all" data-en="All" data-ru="Все">All</button>
+            <button class="mkt-tab" onclick="filterMarketplace('monitoring')" data-cat="monitoring" data-en="Monitoring" data-ru="Мониторинг">Monitoring</button>
+            <button class="mkt-tab" onclick="filterMarketplace('defi')" data-cat="defi">DeFi</button>
+            <button class="mkt-tab" onclick="filterMarketplace('nft')" data-cat="nft">NFT</button>
+            <button class="mkt-tab" onclick="filterMarketplace('gifts')" data-cat="gifts" data-en="Gifts" data-ru="Подарки">Gifts</button>
+            <button class="mkt-tab" onclick="filterMarketplace('utility')" data-cat="utility" data-en="Utility" data-ru="Утилиты">Utility</button>
+            <button class="mkt-tab" onclick="filterMarketplace('my')" data-cat="my" data-en="My Listings" data-ru="Мои">My Listings</button>
+          </div>
+          <div id="marketplace-grid" class="marketplace-grid">
+            <div class="loading-placeholder" data-en="Loading marketplace..." data-ru="Загрузка маркетплейса...">Loading marketplace...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Guide Page -->
+      <div id="guide-page" class="page" style="display:none">
+        <div class="page-header">
+          <h1 class="page-title" data-en="Getting Started Guide" data-ru="Инструкции">Getting Started Guide</h1>
+          <p class="page-subtitle" data-en="Everything you need to know about the platform" data-ru="Всё что нужно знать о платформе">Everything you need to know about the platform</p>
+        </div>
+        <div class="page-content guide-content">
+
+          <div class="guide-section">
+            <div class="guide-section-header" onclick="toggleGuideSection(this)">
+              <span>🚀</span>
+              <h3 data-en="1. Creating Your First Agent" data-ru="1. Создание первого агента">1. Creating Your First Agent</h3>
+              <svg class="guide-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+            </div>
+            <div class="guide-body">
+              <p data-en="There are 3 ways to create an agent:" data-ru="Есть 3 способа создать агента:">There are 3 ways to create an agent:</p>
+              <div class="guide-cards">
+                <div class="guide-card">
+                  <span>🔧</span>
+                  <strong data-en="Constructor" data-ru="Конструктор">Constructor</strong>
+                  <p data-en="Visual drag-and-drop builder. Add blocks from the palette, connect ports, and deploy." data-ru="Визуальный конструктор. Добавляйте блоки из палитры, соединяйте порты и деплойте.">Visual drag-and-drop builder.</p>
+                </div>
+                <div class="guide-card">
+                  <span>💬</span>
+                  <strong data-en="AI Chat" data-ru="AI Чат">AI Chat</strong>
+                  <p data-en="Describe what you need in natural language. The AI will create the agent for you." data-ru="Опишите что нужно своими словами. AI создаст агента за вас.">Describe what you need in natural language.</p>
+                </div>
+                <div class="guide-card">
+                  <span>🤖</span>
+                  <strong>Telegram Bot</strong>
+                  <p data-en="Send a message to @TonAgentPlatformBot — same AI, same sync." data-ru="Напишите @TonAgentPlatformBot — тот же AI, полная синхронизация.">Send a message to @TonAgentPlatformBot</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="guide-section">
+            <div class="guide-section-header" onclick="toggleGuideSection(this)">
+              <span>🔧</span>
+              <h3 data-en="2. Flow Builder (Constructor)" data-ru="2. Конструктор (Flow Builder)">2. Flow Builder (Constructor)</h3>
+              <svg class="guide-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+            </div>
+            <div class="guide-body">
+              <p data-en="Controls:" data-ru="Управление:">Controls:</p>
+              <ul>
+                <li data-en="🖱 Left-click on empty space — move camera" data-ru="🖱 ЛКМ по пустому месту — перемещение камеры">🖱 Left-click on empty space — move camera</li>
+                <li data-en="🔍 Mouse wheel — zoom in/out" data-ru="🔍 Колесо мыши — масштабирование">🔍 Mouse wheel — zoom in/out</li>
+                <li data-en="📦 Click node — select & configure" data-ru="📦 Клик по ноде — выбор и настройка">📦 Click node — select & configure</li>
+                <li data-en="🔗 Drag from output port to input port — connect" data-ru="🔗 Тащи от выходного порта к входному — соединение">🔗 Drag from output port to input port — connect</li>
+                <li data-en="✂️ Click on connection + Delete — disconnect" data-ru="✂️ Клик на связь + Delete — отсоединить">✂️ Click on connection + Delete — disconnect</li>
+                <li data-en="🗑 Right-click on connection — delete it" data-ru="🗑 ПКМ по связи — удалить">🗑 Right-click on connection — delete it</li>
+                <li data-en="⚡ Deploy button — create agent from flow" data-ru="⚡ Кнопка Deploy — создать агента из flow">⚡ Deploy button — create agent from flow</li>
+                <li data-en="↩️ Ctrl+Z / Ctrl+Y — undo / redo" data-ru="↩️ Ctrl+Z / Ctrl+Y — отмена / повтор">↩️ Ctrl+Z / Ctrl+Y — undo / redo</li>
+              </ul>
+              <p data-en="Block categories: Triggers, TON, Gifts, Web, Telegram, Logic, State, Output" data-ru="Категории блоков: Триггеры, TON, Подарки, Web, Telegram, Логика, Состояние, Вывод">Block categories: Triggers, TON, Gifts, Web, Telegram, Logic, State, Output</p>
+            </div>
+          </div>
+
+          <div class="guide-section">
+            <div class="guide-section-header" onclick="toggleGuideSection(this)">
+              <span>💬</span>
+              <h3 data-en="3. AI Assistant Chat" data-ru="3. AI Ассистент (Чат)">3. AI Assistant Chat</h3>
+              <svg class="guide-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+            </div>
+            <div class="guide-body">
+              <p data-en="Click the 💬 button in the bottom-right corner to open the chat. The assistant can:" data-ru="Нажмите кнопку 💬 в правом нижнем углу. Ассистент может:">Click the 💬 button in the bottom-right corner.</p>
+              <ul>
+                <li data-en="Create agents from text descriptions" data-ru="Создавать агентов из текстовых описаний">Create agents from descriptions</li>
+                <li data-en="Help with constructor and settings" data-ru="Помогать с конструктором и настройками">Help with constructor and settings</li>
+                <li data-en="Answer questions about the platform" data-ru="Отвечать на вопросы о платформе">Answer questions about the platform</li>
+                <li data-en="Analyze NFT and gift prices" data-ru="Анализировать цены NFT и подарков">Analyze NFT and gift prices</li>
+              </ul>
+              <p data-en="💡 Chats sync between dashboard and Telegram!" data-ru="💡 Чаты синхронизируются между дашбордом и Telegram!">💡 Chats sync between dashboard and Telegram!</p>
+            </div>
+          </div>
+
+          <div class="guide-section">
+            <div class="guide-section-header" onclick="toggleGuideSection(this)">
+              <span>🛒</span>
+              <h3 data-en="4. Marketplace" data-ru="4. Маркетплейс">4. Marketplace</h3>
+              <svg class="guide-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+            </div>
+            <div class="guide-body">
+              <p data-en="Browse ready-made agent templates by category: Monitoring, DeFi, NFT, Gifts, Utility." data-ru="Просматривайте готовые шаблоны по категориям: Мониторинг, DeFi, NFT, Подарки, Утилиты.">Browse ready-made agent templates by category.</p>
+              <p data-en="Click 'Install' to add a template to your agents. You can also publish your own agents for others to use." data-ru="Нажмите 'Установить' чтобы добавить шаблон. Также можно опубликовать своих агентов для других.">Click 'Install' to add a template.</p>
+            </div>
+          </div>
+
+          <div class="guide-section">
+            <div class="guide-section-header" onclick="toggleGuideSection(this)">
+              <span>💎</span>
+              <h3 data-en="5. TON Integration" data-ru="5. Интеграция с TON">5. TON Integration</h3>
+              <svg class="guide-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+            </div>
+            <div class="guide-body">
+              <p data-en="Connect your TON wallet via TonConnect. Agents can check balances, send TON, monitor NFT floors, and trade gifts." data-ru="Подключите TON кошелёк через TonConnect. Агенты могут проверять баланс, отправлять TON, мониторить NFT и торговать подарками.">Connect your TON wallet via TonConnect.</p>
+            </div>
+          </div>
+
+          <div class="guide-section">
+            <div class="guide-section-header" onclick="toggleGuideSection(this)">
+              <span>⚙️</span>
+              <h3 data-en="6. Settings & Persona" data-ru="6. Настройки и Персона">6. Settings & Persona</h3>
+              <svg class="guide-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+            </div>
+            <div class="guide-body">
+              <p data-en="Configure your AI provider, API keys, and Telegram integration in Settings." data-ru="Настройте AI провайдера, API ключи и Telegram интеграцию в Настройках.">Configure your AI provider and API keys in Settings.</p>
+              <p data-en="Set up your Persona to customize the AI assistant's behavior: name, tone, language, and custom instructions." data-ru="Настройте Персону чтобы кастомизировать поведение AI: имя, тон, язык и инструкции.">Set up your Persona to customize the AI.</p>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
     </main>
   </div>
 
+  <!-- Chat Widget -->
+  <div id="chat-widget" class="chat-widget" style="display:none">
+    <div class="chat-header">
+      <div class="chat-header-left">
+        <span class="chat-header-dot"></span>
+        <span data-en="AI Assistant" data-ru="AI Ассистент">AI Assistant</span>
+      </div>
+      <button class="chat-close-btn" onclick="closeChatWidget()">&times;</button>
+    </div>
+    <div class="chat-messages" id="chat-messages">
+      <div class="chat-msg assistant">
+        <span data-en="Hi! I'm your AI assistant. I can create agents, help with the constructor, marketplace — ask me anything! 🤖" data-ru="Привет! Я ваш AI-ассистент. Могу создавать агентов, помочь с конструктором, маркетплейсом — спрашивайте! 🤖">Hi! I'm your AI assistant. Ask me anything! 🤖</span>
+      </div>
+    </div>
+    <div class="chat-input-area">
+      <textarea id="chat-input" rows="1"
+        data-placeholder-en="Ask anything or describe an agent..."
+        data-placeholder-ru="Задайте вопрос или опишите агента..."
+        placeholder="Ask anything or describe an agent..."
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChatMessage()}"></textarea>
+      <button class="chat-send-btn" onclick="sendChatMessage()" id="chat-send-btn">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+      </button>
+    </div>
+  </div>
+  <button id="chat-fab" class="chat-fab" onclick="toggleChatWidget()" title="AI Assistant">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+  </button>
+
   <script src="https://unpkg.com/@tonconnect/ui@2/dist/tonconnect-ui.min.js"></script>
-  <script src="dashboard.js?v=16"></script>
+  <script src="dashboard.js?v=17"></script>
 </body>
 </html>

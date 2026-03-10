@@ -1619,6 +1619,70 @@ export function startApiServer() {
     }
   });
 
+  // ── POST /api/chat — Dashboard AI chat (same orchestrator as TG bot) ──
+  app.post('/api/chat', requireAuth, async (req: Request, res: Response) => {
+    const userId = (req as any).userId;
+    const { message } = req.body;
+    if (!message || typeof message !== 'string') {
+      return res.status(400).json({ ok: false, error: 'message required' });
+    }
+    try {
+      const { getOrchestrator } = await import('./agents/orchestrator');
+      const orchestrator = getOrchestrator();
+      const result = await orchestrator.processMessage(
+        userId,
+        message,
+        (req as any).session?.username,
+        (req as any).session?.firstName
+      );
+      res.json({ ok: true, result });
+    } catch (e: any) {
+      console.error('[API] Chat error:', e?.message);
+      res.status(500).json({ ok: false, error: e?.message || 'Internal error' });
+    }
+  });
+
+  // ── GET /api/chat/history — Get chat history for dashboard ──
+  app.get('/api/chat/history', requireAuth, async (req: Request, res: Response) => {
+    const userId = (req as any).userId;
+    try {
+      const { getMemoryManager } = await import('./db/memory');
+      const history = await getMemoryManager().getLLMHistory(userId, 50);
+      res.json({ ok: true, messages: history });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Internal error' });
+    }
+  });
+
+  // ── POST /api/marketplace/:id/install — Install a marketplace template ──
+  app.post('/api/marketplace/:id/install', requireAuth, async (req: Request, res: Response) => {
+    const userId = (req as any).userId;
+    const listingId = parseInt(req.params.id as string);
+    try {
+      // Find the listing
+      const listingRes = await pool.query(
+        'SELECT agent_id FROM builder_bot.marketplace_listings WHERE id = $1 AND is_active = true',
+        [listingId]
+      );
+      if (!listingRes.rows.length) {
+        return res.status(404).json({ ok: false, error: 'Listing not found' });
+      }
+      const agentId = listingRes.rows[0].agent_id;
+      // Create a copy of the agent for the user
+      const result = await pool.query(
+        `INSERT INTO builder_bot.agents (user_id, name, description, trigger_type, trigger_config, is_active)
+         SELECT $1, name, description, trigger_type, trigger_config, false
+         FROM builder_bot.agents WHERE id = $2 RETURNING id`,
+        [userId, agentId]
+      );
+      const newId = result.rows[0]?.id;
+      res.json({ ok: true, agentId: newId });
+    } catch (e: any) {
+      console.error('[API] Install error:', e?.message);
+      res.status(500).json({ ok: false, error: e?.message || 'Install failed' });
+    }
+  });
+
   // ── Simple API rate limiter ──────────────────────────────────
   const apiRateLimits = new Map<string, number[]>();
   function checkApiRateLimit(key: string, maxRequests: number, windowMs: number): boolean {
