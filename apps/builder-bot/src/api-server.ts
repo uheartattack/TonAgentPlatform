@@ -160,10 +160,9 @@ const NODE_TOOL_MAP: Record<string, string> = {
   gift_prices: 'get_gift_floor_real', scan_arbitrage: 'scan_real_arbitrage',
   web_search: 'web_search', fetch_url: 'fetch_url',
   notify: 'notify', notify_rich: 'notify_rich',
-  condition: '', delay: '',
+  condition: '', delay: '', loop: '', group_ref: '',
   get_state: 'get_state', set_state: 'set_state',
   send_message: 'tg_send_message',
-  // New nodes
   send_ton: 'send_ton',
   gift_floor: 'get_gift_floor_real',
   market_overview: 'get_market_overview',
@@ -175,57 +174,257 @@ const NODE_TOOL_MAP: Record<string, string> = {
   ask_agent: 'ask_agent',
 };
 
-function flowToSystemPrompt(flow: { nodes: any[]; edges: any[] }): string {
-  const nodeMap = new Map(flow.nodes.map((n: any) => [n.id, n]));
-  // Build adjacency
-  const adj = new Map<string, string[]>();
-  for (const e of (flow.edges || [])) {
+// Port-aware adjacency: {port, target}
+interface PortEdge { port: string; target: string; }
+
+function buildPortAdj(edges: any[]): Map<string, PortEdge[]> {
+  const adj = new Map<string, PortEdge[]>();
+  for (const e of (edges || [])) {
     if (!adj.has(e.from)) adj.set(e.from, []);
-    adj.get(e.from)!.push(e.to);
+    adj.get(e.from)!.push({ port: e.fromPort || 'out', target: e.to });
   }
-  // Find trigger (root) node
+  return adj;
+}
+
+function flowToSystemPrompt(flow: { nodes: any[]; edges: any[]; groups?: any[] }): string {
+  const nodeMap = new Map(flow.nodes.map((n: any) => [n.id, n]));
+  const adj = buildPortAdj(flow.edges);
   const triggerNode = flow.nodes.find((n: any) => ['timer', 'manual', 'webhook'].includes(n.type));
   const lines: string[] = [];
   lines.push('You execute the following workflow on every tick. Follow these steps EXACTLY in order:');
   lines.push('');
-  // BFS through the flow
+
   const visited = new Set<string>();
-  const queue = [triggerNode?.id || flow.nodes[0]?.id];
-  let step = 1;
-  while (queue.length > 0) {
-    const id = queue.shift()!;
-    if (!id || visited.has(id)) continue;
-    visited.add(id);
-    const node = nodeMap.get(id);
-    if (!node) continue;
+  let step = { n: 1 };
+
+  function getCondExpr(cfg: any): string {
+    if (cfg.expression) return cfg.expression;
+    if (cfg.left && cfg.operator) return `${cfg.left} ${cfg.operator} ${cfg.right || ''}`;
+    return 'true';
+  }
+
+  function getDelayStr(cfg: any): string {
+    if (cfg.delay_amount && cfg.delay_unit) {
+      return cfg.delay_amount + ' ' + cfg.delay_unit;
+    }
+    return (cfg.ms || 5000) + 'ms';
+  }
+
+  function dfs(nodeId: string, indent: string) {
+    if (!nodeId || visited.has(nodeId)) return;
+    visited.add(nodeId);
+    const node = nodeMap.get(nodeId);
+    if (!node) return;
     const cfg = node.config || {};
+    const edges = adj.get(nodeId) || [];
+
     if (node.type === 'timer') {
       const mins = Math.round((cfg.intervalMs || 300000) / 60000);
-      lines.push(`Step ${step}: TRIGGER — Execute every ${mins} minutes.`);
+      const cronStr = cfg.cron ? ` (cron: ${cfg.cron})` : '';
+      lines.push(`${indent}${step.n++}. TRIGGER — every ${mins} min${cronStr}`);
     } else if (node.type === 'manual') {
-      lines.push(`Step ${step}: TRIGGER — Run on demand (manual start).`);
+      lines.push(`${indent}${step.n++}. TRIGGER — manual start`);
     } else if (node.type === 'webhook') {
-      lines.push(`Step ${step}: TRIGGER — Run when webhook is received.`);
+      lines.push(`${indent}${step.n++}. TRIGGER — webhook ${cfg.path || ''}`);
     } else if (node.type === 'condition') {
-      const children = adj.get(id) || [];
-      lines.push(`Step ${step}: CONDITION — If ${cfg.expression || 'true'}:`);
-      if (children[0]) { const cn = nodeMap.get(children[0]); lines.push(`  TRUE \u2192 proceed to next step`); }
-      if (children[1]) { const cn = nodeMap.get(children[1]); lines.push(`  FALSE \u2192 skip to alternative branch`); }
+      lines.push(`${indent}${step.n++}. CONDITION — if ${getCondExpr(cfg)}:`);
+      const trueEdge = edges.find(e => e.port === 'true');
+      const falseEdge = edges.find(e => e.port === 'false');
+      if (trueEdge) {
+        lines.push(`${indent}  YES:`);
+        dfs(trueEdge.target, indent + '    ');
+      }
+      if (falseEdge) {
+        lines.push(`${indent}  NO:`);
+        dfs(falseEdge.target, indent + '    ');
+      }
+      return; // branches already traversed
+    } else if (node.type === 'loop') {
+      const mode = cfg.mode || 'repeat_n';
+      let loopDesc = '';
+      if (mode === 'repeat_n') loopDesc = `repeat ${cfg.count || 5} times`;
+      else if (mode === 'while') loopDesc = `while ${cfg.while_cond || 'true'}`;
+      else if (mode === 'for_each') loopDesc = `for each ${cfg.item_var || 'item'} in ${cfg.list_var || 'list'}`;
+      lines.push(`${indent}${step.n++}. LOOP — ${loopDesc} (max ${cfg.max_iter || 100}):`);
+      const loopEdge = edges.find(e => e.port === 'loop');
+      const doneEdge = edges.find(e => e.port === 'done');
+      if (loopEdge) {
+        lines.push(`${indent}  BODY:`);
+        dfs(loopEdge.target, indent + '    ');
+      }
+      if (doneEdge) {
+        lines.push(`${indent}  AFTER LOOP:`);
+        dfs(doneEdge.target, indent + '    ');
+      }
+      return;
     } else if (node.type === 'delay') {
-      lines.push(`Step ${step}: DELAY — Wait ${cfg.ms || 5000}ms before continuing.`);
+      lines.push(`${indent}${step.n++}. DELAY — wait ${getDelayStr(cfg)}`);
     } else {
       const tool = NODE_TOOL_MAP[node.type] || node.type;
-      const params = Object.entries(cfg).map(([k, v]) => `${k}="${v}"`).join(', ');
-      lines.push(`Step ${step}: ACTION — Call ${tool}(${params})`);
+      const params = Object.entries(cfg).filter(([k]) => k !== 'save_to').map(([k, v]) => `${k}="${v}"`).join(', ');
+      let savePart = cfg.save_to ? ` → save to \$\{${cfg.save_to}\}` : '';
+      lines.push(`${indent}${step.n++}. ACTION — ${tool}(${params})${savePart}`);
     }
-    step++;
-    for (const next of (adj.get(id) || [])) queue.push(next);
+    // Follow 'out' edges (non-branch)
+    const outEdges = edges.filter(e => e.port === 'out');
+    for (const e of outEdges) dfs(e.target, indent);
   }
+
+  dfs(triggerNode?.id || flow.nodes[0]?.id, '');
   lines.push('');
   lines.push('Use set_state/get_state to persist data between ticks.');
   lines.push('Always call notify() to inform the user about important findings.');
-  lines.push('Store previous values in state to detect changes.');
   return lines.join('\n');
+}
+
+// ── Flow → Executable JS Code compiler ────────────────────────
+function flowToExecutableCode(flow: { nodes: any[]; edges: any[]; groups?: any[] }): string {
+  const nodeMap = new Map(flow.nodes.map((n: any) => [n.id, n]));
+  const adj = buildPortAdj(flow.edges);
+  const triggerNode = flow.nodes.find((n: any) => ['timer', 'manual', 'webhook'].includes(n.type));
+
+  const L: string[] = []; // code lines
+  L.push('// Auto-generated flow code');
+  L.push('async function runFlow() {');
+  L.push('  const state = { _last: null, _results: {} };');
+  L.push('');
+  L.push('  // Interpolate {{result}}, {{json}}, {{field.X}} in strings');
+  L.push('  function tpl(s) {');
+  L.push('    if (typeof s !== "string") return s;');
+  L.push('    return s');
+  L.push('      .replace(/\\{\\{json\\}\\}/g, JSON.stringify(state._last))');
+  L.push('      .replace(/\\{\\{result\\}\\}/g, typeof state._last === "object" ? JSON.stringify(state._last) : String(state._last ?? ""))');
+  L.push('      .replace(/\\{\\{result\\.([\\w]+)\\}\\}/g, function(_, k) {');
+  L.push('        var v = state._last && typeof state._last === "object" ? state._last[k] : undefined;');
+  L.push('        return v !== undefined ? String(v) : "";');
+  L.push('      })');
+  L.push('      .replace(/\\{\\{(\\w+)\\}\\}/g, function(_, k) {');
+  L.push('        var v = state[k]; return v !== undefined ? (typeof v === "object" ? JSON.stringify(v) : String(v)) : "";');
+  L.push('      });');
+  L.push('  }');
+  L.push('  function tplObj(o) { var r = {}; for (var k in o) r[k] = tpl(o[k]); return r; }');
+  L.push('');
+
+  const visited = new Set<string>();
+  let varIdx = 0;
+
+  function getCondCode(cfg: any): string {
+    if (cfg.expression) {
+      // Free expression with tpl interpolation
+      return `(function(){ var expr = tpl(${JSON.stringify(cfg.expression)}); try { return eval(expr); } catch(e) { return false; } })()`;
+    }
+    if (cfg.left && cfg.operator) {
+      const op = cfg.operator;
+      // Left side: check state first (variable), then literal
+      const leftCode = `(state[${JSON.stringify(cfg.left)}] !== undefined ? state[${JSON.stringify(cfg.left)}] : tpl(${JSON.stringify(cfg.left)}))`;
+      const rightCode = cfg.right ? `tpl(${JSON.stringify(cfg.right)})` : '""';
+      if (op === 'contains') return `String(${leftCode}).includes(String(${rightCode}))`;
+      if (op === 'is_empty') return `!${leftCode}`;
+      return `(parseFloat(${leftCode}) || 0) ${op} (parseFloat(${rightCode}) || 0)`;
+    }
+    return 'true';
+  }
+
+  function getDelayMs(cfg: any): number {
+    if (cfg.delay_amount && cfg.delay_unit) {
+      const n = parseFloat(cfg.delay_amount) || 0;
+      const mult: Record<string, number> = { ms: 1, s: 1000, min: 60000, h: 3600000 };
+      return n * (mult[cfg.delay_unit] || 1000);
+    }
+    return parseInt(cfg.ms) || 5000;
+  }
+
+  function emitNode(nodeId: string, indent: string) {
+    if (!nodeId || visited.has(nodeId)) return;
+    visited.add(nodeId);
+    const node = nodeMap.get(nodeId);
+    if (!node) return;
+    const cfg = node.config || {};
+    const edges = adj.get(nodeId) || [];
+
+    if (['timer', 'manual', 'webhook'].includes(node.type)) {
+      L.push(`${indent}// Trigger: ${node.type}`);
+    } else if (node.type === 'condition') {
+      const condExpr = getCondCode(cfg);
+      L.push(`${indent}if (${condExpr}) {`);
+      const trueEdge = edges.find(e => e.port === 'true');
+      const falseEdge = edges.find(e => e.port === 'false');
+      if (trueEdge) emitNode(trueEdge.target, indent + '  ');
+      L.push(`${indent}} else {`);
+      if (falseEdge) emitNode(falseEdge.target, indent + '  ');
+      L.push(`${indent}}`);
+      return;
+    } else if (node.type === 'loop') {
+      const mode = cfg.mode || 'repeat_n';
+      const maxIter = parseInt(cfg.max_iter) || 100;
+      if (mode === 'repeat_n') {
+        const count = parseInt(cfg.count) || 5;
+        L.push(`${indent}for (let _i = 0; _i < ${count} && _i < ${maxIter}; _i++) {`);
+      } else if (mode === 'while') {
+        L.push(`${indent}for (let _i = 0; _i < ${maxIter}; _i++) {`);
+        L.push(`${indent}  var _wc = tpl(${JSON.stringify(cfg.while_cond || 'false')}); try { if (!eval(_wc)) break; } catch(e) { break; }`);
+      } else if (mode === 'for_each') {
+        const listVar = cfg.list_var || 'items';
+        const itemVar = cfg.item_var || 'item';
+        L.push(`${indent}var _list = state[${JSON.stringify(listVar)}] || [];`);
+        L.push(`${indent}for (let _i = 0; _i < _list.length && _i < ${maxIter}; _i++) {`);
+        L.push(`${indent}  state[${JSON.stringify(itemVar)}] = _list[_i];`);
+      }
+      const loopEdge = edges.find(e => e.port === 'loop');
+      if (loopEdge) emitNode(loopEdge.target, indent + '  ');
+      L.push(`${indent}}`);
+      const doneEdge = edges.find(e => e.port === 'done');
+      if (doneEdge) emitNode(doneEdge.target, indent);
+      return;
+    } else if (node.type === 'delay') {
+      L.push(`${indent}await sleep(${getDelayMs(cfg)});`);
+    } else if (node.type === 'get_state') {
+      const vn = 'v' + (varIdx++);
+      L.push(`${indent}var ${vn} = await getState(tpl(${JSON.stringify(cfg.key || '')}));`);
+      if (cfg.key) L.push(`${indent}state[${JSON.stringify(cfg.key)}] = ${vn}; state._last = ${vn};`);
+    } else if (node.type === 'set_state') {
+      L.push(`${indent}await setState(tpl(${JSON.stringify(cfg.key || '')}), tpl(${JSON.stringify(cfg.value || '')}));`);
+    } else if (node.type === 'get_balance') {
+      const vn = 'v' + (varIdx++);
+      L.push(`${indent}var ${vn} = await getBalance(tpl(${JSON.stringify(cfg.address || '')}));`);
+      L.push(`${indent}state._last = ${vn}; state.balance = ${vn}; state._results[${JSON.stringify(nodeId)}] = ${vn};`);
+    } else if (node.type === 'notify' || node.type === 'notify_rich') {
+      L.push(`${indent}await notify(tpl(${JSON.stringify(cfg.message || '{{result}}')}));`);
+    } else if (node.type === 'send_message') {
+      // TG message: interpolate text and peer
+      L.push(`${indent}var _msg = tpl(${JSON.stringify(cfg.text || '{{result}}')});`);
+      L.push(`${indent}if (!_msg || _msg === "undefined") _msg = JSON.stringify(state._last);`);
+      L.push(`${indent}await callTool("tg_send_message", { peer: tpl(${JSON.stringify(cfg.peer || '')}), text: _msg });`);
+    } else if (node.type === 'web_search') {
+      const vn = 'v' + (varIdx++);
+      L.push(`${indent}var ${vn} = await webSearch(tpl(${JSON.stringify(cfg.query || '')}));`);
+      L.push(`${indent}state._last = ${vn}; state._results[${JSON.stringify(nodeId)}] = ${vn};`);
+      if (cfg.save_to) L.push(`${indent}state[${JSON.stringify(cfg.save_to)}] = ${vn};`);
+    } else if (node.type === 'fetch_url' || node.type === 'http_request') {
+      const vn = 'v' + (varIdx++);
+      L.push(`${indent}var ${vn} = await fetchUrl(tpl(${JSON.stringify(cfg.url || '')}));`);
+      L.push(`${indent}state._last = ${vn}; state._results[${JSON.stringify(nodeId)}] = ${vn};`);
+      if (cfg.save_to) L.push(`${indent}state[${JSON.stringify(cfg.save_to)}] = ${vn};`);
+    } else if (node.type === 'send_ton') {
+      L.push(`${indent}await sendTon(tpl(${JSON.stringify(cfg.address || '')}), tpl(${JSON.stringify(cfg.amount || '0')}), tpl(${JSON.stringify(cfg.memo || '')}));`);
+    } else {
+      // Generic tool call — store result, interpolate all params
+      const tool = NODE_TOOL_MAP[node.type] || node.type;
+      const vn = 'v' + (varIdx++);
+      L.push(`${indent}var ${vn} = await callTool(${JSON.stringify(tool)}, tplObj(${JSON.stringify(cfg)}));`);
+      L.push(`${indent}state._last = ${vn}; state._results[${JSON.stringify(nodeId)}] = ${vn};`);
+      if (cfg.save_to) L.push(`${indent}state[${JSON.stringify(cfg.save_to)}] = ${vn};`);
+    }
+
+    // Follow 'out' edges
+    const outEdges = edges.filter(e => e.port === 'out');
+    for (const e of outEdges) emitNode(e.target, indent);
+  }
+
+  emitNode(triggerNode?.id || flow.nodes[0]?.id, '  ');
+  L.push('}');
+  L.push('await runFlow();');
+  return L.join('\n');
 }
 
 // ── App setup ─────────────────────────────────────────────────
@@ -456,6 +655,7 @@ export function startApiServer() {
       }
       const agentName = (name && typeof name === 'string' && name.trim()) || 'Flow Agent';
       const systemPrompt = flowToSystemPrompt(flow);
+      const execCode = flowToExecutableCode(flow);
       // Detect interval from trigger node
       let intervalMs = 300000; // default 5 min
       const timerNode = flow.nodes.find((n: any) => n.type === 'timer');
@@ -468,14 +668,17 @@ export function startApiServer() {
         const uv = await getUserSettingsRepository().get(userId, 'user_variables');
         if (uv) userVars = typeof uv === 'string' ? JSON.parse(uv) : uv;
       } catch {}
+      // Hybrid: system prompt describes workflow for AI, execCode is the real script
+      const hybridPrompt = systemPrompt + '\n\n---\nThe above workflow is also compiled into executable code that runs automatically.\nYou may be asked to handle edge cases or make decisions that the code cannot handle.\nUse your tools when the code execution needs AI judgment.';
       const created = await getDBTools().createAgent({
         userId,
         name: agentName,
         description: 'Flow: ' + flow.nodes.map((n: any) => n.type).join(' \u2192 '),
-        code: systemPrompt,
+        code: hybridPrompt,
         triggerType: 'ai_agent',
         triggerConfig: {
-          code: systemPrompt,
+          code: hybridPrompt,
+          execCode, // compiled executable JS
           intervalMs,
           flow, // store flow JSON for editing
           config: {

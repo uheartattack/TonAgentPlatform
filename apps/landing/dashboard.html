@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="dashboard.css?v=13">
+  <link rel="stylesheet" href="dashboard.css?v=16">
   <!-- Telegram widget loaded in body where button should appear -->
 </head>
 <body>
@@ -1317,6 +1317,40 @@
         </div>
       </div>
 
+      <!-- Logs Modal -->
+      <div class="modal-overlay" id="logs-modal" style="display:none" onclick="if(event.target===this)closeLogsModal()">
+        <div class="modal-content logs-modal-content">
+          <div class="modal-header">
+            <h2 id="logs-modal-title">Logs</h2>
+            <div style="display:flex;gap:8px;align-items:center">
+              <button class="btn btn-ghost btn-sm" onclick="refreshLogs()" title="Refresh">&#x1F504;</button>
+              <button class="modal-close" onclick="closeLogsModal()">&times;</button>
+            </div>
+          </div>
+          <div class="modal-body logs-modal-body" id="logs-modal-body"></div>
+        </div>
+      </div>
+
+      <!-- Delete Agent Modal -->
+      <div class="modal-overlay" id="delete-agent-modal" style="display:none" onclick="if(event.target===this)closeDeleteModal()">
+        <div class="modal-content delete-modal-content">
+          <div class="modal-header">
+            <h2 id="delete-modal-title" data-en="Delete Agent" data-ru="Удалить агента">Delete Agent</h2>
+            <button class="modal-close" onclick="closeDeleteModal()">×</button>
+          </div>
+          <div class="modal-body" style="text-align:center;padding:24px">
+            <div class="delete-icon-wrap">⚠️</div>
+            <p data-en="Delete agent" data-ru="Удалить агента">Delete agent</p>
+            <p><strong id="delete-agent-name"></strong></p>
+            <p class="delete-warning" data-en="This action cannot be undone. The agent and all its data will be permanently removed." data-ru="Это действие нельзя отменить. Агент и все его данные будут удалены навсегда.">This action cannot be undone.</p>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-ghost" onclick="closeDeleteModal()" data-en="Cancel" data-ru="Отмена">Cancel</button>
+            <button class="btn btn-danger" id="delete-confirm-btn" onclick="confirmDeleteAgent()">🗑 <span data-en="Delete" data-ru="Удалить">Delete</span></button>
+          </div>
+        </div>
+      </div>
+
       <!-- Profile Page -->
       <div id="profile-page" class="page">
         <div class="page-header">
@@ -1438,6 +1472,8 @@
               <span data-en="Flow Builder" data-ru="Конструктор">Flow Builder</span>
             </div>
             <div class="flow-topbar-right">
+              <button class="btn btn-ghost btn-sm flow-undo-btn" id="flow-undo-btn" onclick="flowUndo()" disabled title="Undo (Ctrl+Z)">↩</button>
+              <button class="btn btn-ghost btn-sm flow-redo-btn" id="flow-redo-btn" onclick="flowRedo()" disabled title="Redo (Ctrl+Shift+Z)">↪</button>
               <input type="text" id="flow-agent-name" class="flow-name-input" placeholder="Agent name..." data-placeholder-en="Agent name..." data-placeholder-ru="Имя агента...">
               <button class="btn btn-primary btn-sm" id="flow-deploy-btn" onclick="deployFlow()">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10"/></svg>
@@ -1457,6 +1493,14 @@
             <div class="flow-canvas-wrap">
               <canvas id="flow-canvas"></canvas>
               <div id="flow-tooltip" class="flow-tooltip"></div>
+              <!-- Zoom controls -->
+              <div class="flow-zoom-controls">
+                <button class="flow-zoom-btn" onclick="flowZoomIn()" title="Zoom in">+</button>
+                <span class="flow-zoom-label" id="flow-zoom-label">100%</span>
+                <button class="flow-zoom-btn" onclick="flowZoomOut()" title="Zoom out">−</button>
+                <button class="flow-zoom-btn flow-zoom-fit" onclick="flowZoomFit()" title="Fit all">⊞</button>
+                <button class="flow-zoom-btn flow-zoom-reset" onclick="flowZoomReset()" title="Reset">1:1</button>
+              </div>
             </div>
 
             <!-- Config Panel -->
@@ -1476,6 +1520,6 @@
   </div>
 
   <script src="https://unpkg.com/@tonconnect/ui@2/dist/tonconnect-ui.min.js"></script>
-  <script src="dashboard.js?v=13"></script>
+  <script src="dashboard.js?v=16"></script>
 </body>
 </html>

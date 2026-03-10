@@ -475,10 +475,11 @@ export class Orchestrator {
   ): Promise<OrchestratorResult> {
     try {
       // Загружаем контекст пользователя
-      const [agentsResult, history, sub] = await Promise.all([
+      const [agentsResult, history, sub, personaRaw] = await Promise.all([
         this.dbTools.getUserAgents(userId),
         getMemoryManager().getLLMHistory(userId, 8),
         getUserSubscription(userId),
+        getUserSettingsRepository().get(userId, 'persona').catch(() => null),
       ]);
 
       const agents = agentsResult.data || [];
@@ -489,8 +490,14 @@ export class Orchestrator {
         ? agents.map(a => `#${a.id} "${a.name}"${a.isActive ? ' (активен)' : ''} [${a.triggerType}]`).join('\n  ')
         : 'нет агентов';
 
+      // Persona settings
+      const persona = (personaRaw as any) || {};
+      const personaCtx = (persona.name || persona.tone || persona.language || persona.instructions)
+        ? `\n━━━ ПЕРСОНА ━━━\n${persona.name ? `Имя: ${persona.name}\n` : ''}${persona.tone ? `Тон: ${persona.tone}\n` : ''}${persona.language ? `Язык: ${persona.language}\n` : ''}${persona.instructions ? `Инструкции: ${persona.instructions}\n` : ''}`
+        : '';
+
       // Системный промпт с контекстом
-      const systemPrompt = `Ты — умный AI-ассистент TON Agent Platform. Ты помогаешь создавать, управлять и оптимизировать AI-агентов для автоматизации в TON/Telegram.
+      const systemPrompt = `Ты — умный AI-ассистент TON Agent Platform. Ты помогаешь создавать, управлять и оптимизировать AI-агентов для автоматизации в TON/Telegram.${personaCtx}
 
 ━━━ КОНТЕКСТ ━━━
 UserID: ${userId}${isOwner ? ' 👑 OWNER' : ''} | ${plan.icon} ${plan.name} | Генерации: ${genUsed}/${genLimit}

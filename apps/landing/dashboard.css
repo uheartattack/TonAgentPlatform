@@ -2840,6 +2840,27 @@ select.form-input option {
   backdrop-filter: blur(8px);
 }
 
+/* Zoom Controls */
+.flow-zoom-controls {
+  position: absolute; bottom: 12px; right: 12px; z-index: 10;
+  display: flex; align-items: center; gap: 4px;
+  background: rgba(10,15,28,0.85); backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.1); border-radius: 8px;
+  padding: 4px 6px;
+}
+.flow-zoom-btn {
+  width: 28px; height: 28px; border-radius: 6px; border: none;
+  background: rgba(255,255,255,0.06); color: #fff; font-size: 14px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s;
+}
+.flow-zoom-btn:hover { background: rgba(255,255,255,0.15); }
+.flow-zoom-label {
+  color: rgba(255,255,255,0.5); font-size: 11px; min-width: 38px;
+  text-align: center; font-family: 'Inter', monospace;
+}
+.flow-zoom-fit, .flow-zoom-reset { font-size: 11px; font-weight: 600; }
+
 /* Config Panel */
 .flow-config {
   width: 260px; min-width: 260px; border-left: 1px solid var(--border);
@@ -2862,6 +2883,11 @@ select.form-input option {
 .flow-config-body input:focus, .flow-config-body textarea:focus { border-color: var(--primary); }
 .flow-config-body textarea { min-height: 60px; resize: vertical; font-family: 'JetBrains Mono', monospace; }
 
+.flow-row { display: flex; gap: 6px; align-items: flex-end; }
+.flow-row-item { flex: 1; min-width: 0; }
+.flow-row-item label { font-size: 0.7rem !important; margin-bottom: 2px !important; }
+.flow-row-item input, .flow-row-item select { font-size: 0.78rem !important; padding: 5px 6px !important; }
+
 .btn-delete-node {
   width: 100%; margin-top: 16px; padding: 8px; border-radius: 8px;
   background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3);
@@ -2869,6 +2895,45 @@ select.form-input option {
   transition: all 0.15s;
 }
 .btn-delete-node:hover { background: rgba(239,68,68,0.2); }
+
+/* Logs Modal */
+.logs-modal-content { max-width: 720px; width: 90vw; }
+.logs-modal-body { padding: 0 !important; max-height: 65vh; overflow-y: auto; }
+.logs-modal-body::-webkit-scrollbar { width: 6px; }
+.logs-modal-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+.log-entry { display: flex; align-items: flex-start; gap: 8px; padding: 8px 16px; border-left: 3px solid #64748b; font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; line-height: 1.5; border-bottom: 1px solid rgba(255,255,255,0.04); }
+.log-entry:nth-child(even) { background: rgba(255,255,255,0.015); }
+.log-entry.error { border-left-color: #ef4444; background: rgba(239,68,68,0.04); }
+.log-entry.warn { border-left-color: #f59e0b; background: rgba(245,158,11,0.03); }
+.log-entry.success { border-left-color: #10b981; background: rgba(16,185,129,0.03); }
+.log-time { color: rgba(255,255,255,0.35); white-space: nowrap; flex-shrink: 0; font-size: 0.72rem; padding-top: 1px; }
+.log-level { font-weight: 700; font-size: 0.65rem; text-transform: uppercase; padding: 1px 5px; border-radius: 3px; flex-shrink: 0; }
+.log-level.info { color: #94a3b8; background: rgba(148,163,184,0.15); }
+.log-level.error { color: #ef4444; background: rgba(239,68,68,0.15); }
+.log-level.warn { color: #f59e0b; background: rgba(245,158,11,0.15); }
+.log-level.success { color: #10b981; background: rgba(16,185,129,0.15); }
+.log-msg { color: rgba(255,255,255,0.8); word-break: break-all; flex: 1; }
+.logs-empty { text-align: center; color: var(--text-muted); padding: 40px 20px; font-size: 0.85rem; }
+.logs-loading { text-align: center; padding: 40px 20px; color: var(--text-muted); }
+
+/* Delete Agent Modal */
+.delete-modal-content { max-width: 420px; }
+.delete-icon-wrap { font-size: 3rem; margin-bottom: 12px; }
+.delete-warning { color: rgba(255,255,255,0.4); font-size: 0.8rem; margin-top: 12px; line-height: 1.5; }
+.modal-footer { display: flex; justify-content: flex-end; gap: 12px; padding: 16px 24px; border-top: 1px solid rgba(255,255,255,0.08); }
+.btn-danger { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.4); color: #ef4444; padding: 8px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; transition: all 0.2s; }
+.btn-danger:hover { background: rgba(239,68,68,0.3); }
+.agent-card-dissolving { animation: dissolve 0.6s ease forwards; pointer-events: none; }
+@keyframes dissolve {
+  0% { opacity: 1; transform: scale(1); filter: blur(0); }
+  50% { opacity: 0.5; transform: scale(0.95); filter: blur(2px); }
+  100% { opacity: 0; transform: scale(0.8) translateY(-10px); filter: blur(8px); max-height: 0; padding: 0; margin: 0; overflow: hidden; }
+}
+
+/* Undo / Redo buttons */
+.flow-undo-btn, .flow-redo-btn { font-size: 1.1rem !important; padding: 4px 8px !important; min-width: 32px; opacity: 0.7; transition: opacity 0.2s; }
+.flow-undo-btn:hover:not(:disabled), .flow-redo-btn:hover:not(:disabled) { opacity: 1; }
+.flow-undo-btn:disabled, .flow-redo-btn:disabled { opacity: 0.25; cursor: not-allowed; }
 
 /* Deploy result toast */
 .flow-toast {
