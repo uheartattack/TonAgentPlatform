@@ -165,10 +165,36 @@ function runImmediateTick(agentId: number): void {
   handle.tick().catch(() => {});
 }
 
+// ── Capability → Tool mapping ──────────────────────────────────────────────
+const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
+  wallet:      ['get_ton_balance', 'send_ton', 'get_agent_wallet'],
+  nft:         ['get_nft_floor'],
+  gifts:       ['get_gift_catalog', 'get_fragment_listings', 'appraise_gift', 'scan_arbitrage',
+                'buy_catalog_gift', 'buy_resale_gift', 'list_gift_for_sale', 'get_stars_balance',
+                'get_gift_upgrade_stats', 'analyze_gift_profitability', 'buy_market_gift'],
+  gifts_market:['get_gift_floor_real', 'get_gift_sales_history', 'get_market_overview',
+                'get_price_list', 'scan_real_arbitrage', 'get_gift_aggregator', 'get_top_deals',
+                'get_backdrop_floors', 'get_user_portfolio', 'get_collection_offers',
+                'get_market_health', 'get_attribute_volumes', 'get_unique_gift_prices',
+                'find_underpriced_gifts', 'get_price_history', 'get_market_activity',
+                'get_collections_marketcap'],
+  telegram:    ['tg_send_message', 'tg_get_messages', 'tg_get_channel_info', 'tg_join_channel',
+                'tg_leave_channel', 'tg_get_dialogs', 'tg_get_members', 'tg_search_messages',
+                'tg_get_user_info', 'tg_reply', 'tg_react', 'tg_edit', 'tg_forward', 'tg_pin',
+                'tg_mark_read', 'tg_get_comments', 'tg_set_typing', 'tg_send_formatted',
+                'tg_get_message_by_id', 'tg_get_unread', 'tg_send_file'],
+  web:         ['web_search', 'fetch_url', 'http_fetch'],
+  state:       ['get_state', 'set_state'],
+  notify:      ['notify', 'notify_rich'],
+  plugins:     ['list_plugins', 'suggest_plugin', 'run_custom_plugin', 'list_custom_plugins',
+                'apply_plugin', 'remove_plugin'],
+  inter_agent: ['list_my_agents', 'ask_agent', 'assign_task', 'check_tasks', 'manage_agent', 'send_report'],
+};
+
 // ── Tool definitions (OpenAI function_call format) ─────────────────────────
 
-function buildToolDefinitions(agentRole?: string): OpenAI.ChatCompletionTool[] {
-  return [
+function buildToolDefinitions(agentRole?: string, enabledCapabilities?: string[] | null): OpenAI.ChatCompletionTool[] {
+  const allTools: OpenAI.ChatCompletionTool[] = [
     {
       type: 'function',
       function: {
@@ -1168,7 +1194,51 @@ function buildToolDefinitions(agentRole?: string): OpenAI.ChatCompletionTool[] {
         },
       },
     ] : []),
+    // ── apply / remove plugin ──
+    {
+      type: 'function' as const,
+      function: {
+        name: 'apply_plugin',
+        description: 'Подключить плагин к этому агенту. Документация плагина будет доступна на следующем тике.',
+        parameters: {
+          type: 'object',
+          properties: {
+            plugin_id: { type: 'string', description: 'ID плагина (из list_plugins)' },
+          },
+          required: ['plugin_id'],
+        },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'remove_plugin',
+        description: 'Отключить плагин от этого агента.',
+        parameters: {
+          type: 'object',
+          properties: {
+            plugin_id: { type: 'string', description: 'ID плагина' },
+          },
+          required: ['plugin_id'],
+        },
+      },
+    },
   ];
+
+  // Filter by enabled capabilities
+  if (enabledCapabilities && enabledCapabilities.length > 0) {
+    const allowed = new Set<string>();
+    for (const capId of enabledCapabilities) {
+      const tools = CAPABILITY_TOOL_MAP[capId];
+      if (tools) tools.forEach(t => allowed.add(t));
+    }
+    // Always allow core tools
+    ['get_state', 'set_state', 'notify', 'notify_rich', 'apply_plugin', 'remove_plugin',
+     'list_plugins', 'suggest_plugin'].forEach(t => allowed.add(t));
+    return allTools.filter(t => allowed.has(t.function.name));
+  }
+
+  return allTools;
 }
 
 // ── Tool executor ──────────────────────────────────────────────────────────
@@ -2255,6 +2325,40 @@ async function executeTool(
       };
     }
 
+    case 'apply_plugin': {
+      const pluginId = args.plugin_id as string;
+      const { getPluginManager } = await import('../plugins-system');
+      const plugin = getPluginManager().getPlugin(pluginId);
+      if (!plugin) return { error: `Плагин "${pluginId}" не найден. Используй list_plugins для списка.` };
+      try {
+        const { pool } = await import('../db');
+        const row = await pool.query('SELECT trigger_config FROM builder_bot.agents WHERE id=$1', [params.agentId]);
+        const tc = row.rows[0]?.trigger_config || {};
+        const config = tc.config || {};
+        const ep: string[] = config.enabledPlugins || [];
+        if (!ep.includes(pluginId)) ep.push(pluginId);
+        config.enabledPlugins = ep;
+        tc.config = config;
+        await pool.query('UPDATE builder_bot.agents SET trigger_config=$1 WHERE id=$2', [JSON.stringify(tc), params.agentId]);
+        return { ok: true, pluginId, name: plugin.name, message: `Плагин "${plugin.name}" подключён. Его API-документация будет доступна на следующем тике.` };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'remove_plugin': {
+      const pluginId = args.plugin_id as string;
+      try {
+        const { pool } = await import('../db');
+        const row = await pool.query('SELECT trigger_config FROM builder_bot.agents WHERE id=$1', [params.agentId]);
+        const tc = row.rows[0]?.trigger_config || {};
+        const config = tc.config || {};
+        const ep: string[] = config.enabledPlugins || [];
+        config.enabledPlugins = ep.filter((id: string) => id !== pluginId);
+        tc.config = config;
+        await pool.query('UPDATE builder_bot.agents SET trigger_config=$1 WHERE id=$2', [JSON.stringify(tc), params.agentId]);
+        return { ok: true, pluginId, message: `Плагин "${pluginId}" отключён.` };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
     // ── Inter-agent tools ──
     case 'list_my_agents': {
       try {
@@ -2652,8 +2756,19 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
 ${GIFT_SYSTEM_KNOWLEDGE}${modeHint}
 ${msgs.length > 0 ? `\nСообщения от пользователя:\n${msgs.map(m => `- ${m}`).join('\n')}` : ''}`;
 
+  // Inject plugin skillDocs if any plugins are enabled
+  let systemPromptFull = params.systemPrompt;
+  const enabledPlugins = (params.config.enabledPlugins as string[]) || [];
+  if (enabledPlugins.length > 0) {
+    try {
+      const { getSkillDocsForCodeGeneration } = await import('../plugins-system');
+      const pluginDocs = getSkillDocsForCodeGeneration(enabledPlugins);
+      if (pluginDocs) systemPromptFull += '\n\n' + pluginDocs;
+    } catch {}
+  }
+
   const messages: OpenAI.ChatCompletionMessageParam[] = [
-    { role: 'system',    content: params.systemPrompt },
+    { role: 'system',    content: systemPromptFull },
     { role: 'user',      content: contextMsg },
   ];
 
@@ -2664,7 +2779,8 @@ ${msgs.length > 0 ? `\nСообщения от пользователя:\n${msgs
     const roleRes = await (await import('../db')).pool.query('SELECT role FROM builder_bot.agents WHERE id = $1', [params.agentId]);
     if (roleRes.rows[0]?.role) agentRole = roleRes.rows[0].role;
   } catch {}
-  const tools = buildToolDefinitions(agentRole);
+  const enabledCaps = (params.config.enabledCapabilities as string[]) || null;
+  const tools = buildToolDefinitions(agentRole, enabledCaps);
   let totalToolCalls = 0;
   let finalContent: string | undefined;
   _tickNotifyFlag.set(params.agentId, false); // reset flag for this tick

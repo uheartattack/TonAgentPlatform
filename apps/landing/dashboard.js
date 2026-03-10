@@ -37,7 +37,9 @@ function switchLang(lang) {
       }
     }
     // Update page title
-    document.title = lang === 'ru' ? 'TON Agent Platform — Панель управления' : 'TON Agent Platform — Control Center';
+    document.title = lang === 'ru' ? 'TON Agent Platform \u2014 \u041F\u0430\u043D\u0435\u043B\u044C \u0443\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u0438\u044F' : 'TON Agent Platform \u2014 Control Center';
+    // Re-render flow palette with new language
+    if (typeof buildFlowPalette === 'function') buildFlowPalette();
   } catch (_) {}
 }
 
@@ -846,7 +848,22 @@ const capabilitiesData = [
 let currentCapabilityFilter = 'all';
 let capabilitySearchQuery = '';
 
-function initCapabilities() {
+async function initCapabilities() {
+  // Load saved capabilities settings
+  try {
+    const saved = await apiRequest('GET', '/api/settings?key=default_capabilities');
+    if (saved && saved.value) {
+      const settings = typeof saved.value === 'string' ? JSON.parse(saved.value) : saved.value;
+      if (settings && typeof settings === 'object') {
+        for (const cap of capabilitiesData) {
+          if (settings[cap.id] !== undefined) {
+            cap.enabled = settings[cap.id].enabled !== false;
+            if (settings[cap.id].mode) cap.mode = settings[cap.id].mode;
+          }
+        }
+      }
+    }
+  } catch {}
   renderCapabilities();
 }
 
@@ -920,6 +937,7 @@ function changeCapabilityMode(id, mode) {
   const cap = capabilitiesData.find(c => c.id === id);
   if (cap) {
     cap.mode = mode;
+    saveCapabilitiesSettings();
   }
 }
 
@@ -928,7 +946,16 @@ function toggleCapabilityEnabled(id, enabled) {
   if (cap) {
     cap.enabled = enabled;
     renderCapabilities();
+    saveCapabilitiesSettings();
   }
+}
+
+function saveCapabilitiesSettings() {
+  const settings = {};
+  for (const cap of capabilitiesData) {
+    settings[cap.id] = { enabled: cap.enabled, mode: cap.mode };
+  }
+  apiRequest('POST', '/api/settings', { key: 'default_capabilities', value: settings }).catch(() => {});
 }
 
 function filterCapabilities(filter) {
@@ -2569,22 +2596,39 @@ navigateTo = function(pageName) {
 
 // ===== FLOW BUILDER (Visual Agent Constructor) =====
 const FLOW_NODE_DEFS = {
-  timer:         { cat: 'triggers', color: '#f59e0b', icon: '\u23F0',        label: 'Timer',         fields: [{ key: 'intervalMs', label: 'Interval (ms)', type: 'select', options: [{ v: '60000', l: '1 min' }, { v: '300000', l: '5 min' }, { v: '600000', l: '10 min' }, { v: '1800000', l: '30 min' }, { v: '3600000', l: '1 hour' }] }] },
-  manual:        { cat: 'triggers', color: '#f59e0b', icon: '\u25B6\uFE0F', label: 'Manual',        fields: [] },
-  webhook:       { cat: 'triggers', color: '#f59e0b', icon: '\uD83D\uDD17', label: 'Webhook',       fields: [{ key: 'path', label: 'Path', type: 'text', placeholder: '/my-hook' }] },
-  get_balance:   { cat: 'ton',      color: '#3b82f6', icon: '\uD83D\uDCB0', label: 'Get Balance',   fields: [{ key: 'address', label: 'Address', type: 'text', placeholder: 'EQ...' }] },
-  nft_floor:     { cat: 'ton',      color: '#3b82f6', icon: '\uD83D\uDDBC\uFE0F', label: 'NFT Floor', fields: [{ key: 'collection', label: 'Collection', type: 'text', placeholder: 'TON Punks' }] },
-  gift_prices:   { cat: 'gifts',    color: '#a855f7', icon: '\uD83C\uDF81', label: 'Gift Prices',   fields: [{ key: 'slug', label: 'Gift slug', type: 'text', placeholder: 'gift-name' }] },
-  scan_arbitrage:{ cat: 'gifts',    color: '#a855f7', icon: '\uD83D\uDCC8', label: 'Scan Arbitrage',fields: [{ key: 'min_profit_pct', label: 'Min profit %', type: 'number', placeholder: '5' }] },
-  web_search:    { cat: 'web',      color: '#06b6d4', icon: '\uD83D\uDD0D', label: 'Web Search',    fields: [{ key: 'query', label: 'Query', type: 'text', placeholder: 'Search...' }] },
-  fetch_url:     { cat: 'web',      color: '#06b6d4', icon: '\uD83C\uDF10', label: 'Fetch URL',     fields: [{ key: 'url', label: 'URL', type: 'text', placeholder: 'https://...' }] },
-  notify:        { cat: 'output',   color: '#10b981', icon: '\uD83D\uDD14', label: 'Notify',        fields: [{ key: 'message', label: 'Message', type: 'textarea', placeholder: 'Alert: ...' }] },
-  notify_rich:   { cat: 'output',   color: '#10b981', icon: '\uD83D\uDCE8', label: 'Rich Notify',   fields: [{ key: 'message', label: 'HTML Message', type: 'textarea', placeholder: '<b>Alert</b>' }] },
-  send_message:  { cat: 'output',   color: '#0ea5e9', icon: '\u2709\uFE0F', label: 'TG Message',    fields: [{ key: 'peer', label: 'Chat/User', type: 'text', placeholder: '@username' }, { key: 'text', label: 'Text', type: 'textarea', placeholder: 'Message...' }] },
-  condition:     { cat: 'logic',    color: '#f43f5e', icon: '\uD83D\uDD00', label: 'Condition',     fields: [{ key: 'expression', label: 'If expression', type: 'text', placeholder: 'balance < 10' }], extraPorts: ['true', 'false'] },
-  delay:         { cat: 'logic',    color: '#f43f5e', icon: '\u23F3',        label: 'Delay',         fields: [{ key: 'ms', label: 'Delay (ms)', type: 'number', placeholder: '5000' }] },
-  get_state:     { cat: 'state',    color: '#8b5cf6', icon: '\uD83D\uDCE5', label: 'Get State',     fields: [{ key: 'key', label: 'Key', type: 'text', placeholder: 'my_key' }] },
-  set_state:     { cat: 'state',    color: '#8b5cf6', icon: '\uD83D\uDCE4', label: 'Set State',     fields: [{ key: 'key', label: 'Key', type: 'text', placeholder: 'my_key' }, { key: 'value', label: 'Value', type: 'text', placeholder: '...' }] },
+  // ── Triggers ──
+  timer:          { cat: 'triggers', color: '#f59e0b', icon: '\u23F0',  label: 'Timer',          labelRu: '\u0422\u0430\u0439\u043C\u0435\u0440',        desc: 'Run on interval',             descRu: '\u0417\u0430\u043F\u0443\u0441\u043A \u043F\u043E \u0438\u043D\u0442\u0435\u0440\u0432\u0430\u043B\u0443',         fields: [{ key: 'intervalMs', label: 'Interval (ms)', type: 'select', options: [{ v: '60000', l: '1 min' }, { v: '300000', l: '5 min' }, { v: '600000', l: '10 min' }, { v: '1800000', l: '30 min' }, { v: '3600000', l: '1 hour' }] }] },
+  manual:         { cat: 'triggers', color: '#f59e0b', icon: '\u25B6\uFE0F', label: 'Manual',     labelRu: '\u0412\u0440\u0443\u0447\u043D\u0443\u044E',       desc: 'Start manually',              descRu: '\u0417\u0430\u043F\u0443\u0441\u043A \u0432\u0440\u0443\u0447\u043D\u0443\u044E',          fields: [] },
+  webhook:        { cat: 'triggers', color: '#f59e0b', icon: '\uD83D\uDD17', label: 'Webhook',    labelRu: 'Webhook',         desc: 'Trigger via HTTP',            descRu: '\u0417\u0430\u043F\u0443\u0441\u043A \u0447\u0435\u0440\u0435\u0437 HTTP',          fields: [{ key: 'path', label: 'Path', type: 'text', placeholder: '/my-hook' }] },
+  // ── TON ──
+  get_balance:    { cat: 'ton',      color: '#3b82f6', icon: '\uD83D\uDCB0', label: 'Get Balance', labelRu: '\u0411\u0430\u043B\u0430\u043D\u0441',          desc: 'Check TON balance',           descRu: '\u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u0431\u0430\u043B\u0430\u043D\u0441 TON',       fields: [{ key: 'address', label: 'Address', type: 'text', placeholder: 'EQ...' }] },
+  nft_floor:      { cat: 'ton',      color: '#3b82f6', icon: '\uD83D\uDDBC\uFE0F', label: 'NFT Floor', labelRu: '\u0426\u0435\u043D\u0430 NFT', desc: 'NFT floor price',             descRu: 'Floor \u0446\u0435\u043D\u0430 NFT',            fields: [{ key: 'collection', label: 'Collection', type: 'text', placeholder: 'TON Punks' }] },
+  send_ton:       { cat: 'ton',      color: '#3b82f6', icon: '\uD83D\uDCB8', label: 'Send TON',   labelRu: '\u041E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C TON',   desc: 'Send TON transaction',        descRu: '\u041E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C TON',           fields: [{ key: 'address', label: 'To address', type: 'text', placeholder: 'EQ...' }, { key: 'amount', label: 'Amount', type: 'number', placeholder: '1.0' }] },
+  // ── Gifts ──
+  gift_prices:    { cat: 'gifts',    color: '#a855f7', icon: '\uD83C\uDF81', label: 'Gift Prices', labelRu: '\u0426\u0435\u043D\u044B \u043F\u043E\u0434\u0430\u0440\u043A\u043E\u0432',   desc: 'Gift floor price',            descRu: 'Floor \u0446\u0435\u043D\u0430 \u043F\u043E\u0434\u0430\u0440\u043A\u0430',        fields: [{ key: 'slug', label: 'Gift slug', type: 'text', placeholder: 'gift-name' }] },
+  scan_arbitrage: { cat: 'gifts',    color: '#a855f7', icon: '\uD83D\uDCC8', label: 'Scan Arbitrage', labelRu: '\u0410\u0440\u0431\u0438\u0442\u0440\u0430\u0436', desc: 'Find arbitrage deals',       descRu: '\u041F\u043E\u0438\u0441\u043A \u0430\u0440\u0431\u0438\u0442\u0440\u0430\u0436\u0430',          fields: [{ key: 'min_profit_pct', label: 'Min profit %', type: 'number', placeholder: '5' }] },
+  gift_floor:     { cat: 'gifts',    color: '#a855f7', icon: '\uD83D\uDCCA', label: 'Gift Floor', labelRu: '\u0426\u0435\u043D\u0430 \u043F\u043E\u0434\u0430\u0440\u043A\u0430',   desc: 'Real-time gift floor',        descRu: '\u0420\u0435\u0430\u043B\u044C\u043D\u0430\u044F \u0446\u0435\u043D\u0430 \u043F\u043E\u0434\u0430\u0440\u043A\u0430',     fields: [{ key: 'gift_name', label: 'Gift name', type: 'text', placeholder: 'Plush Pepe' }] },
+  market_overview:{ cat: 'gifts',    color: '#a855f7', icon: '\uD83C\uDFEA', label: 'Market Overview', labelRu: '\u041E\u0431\u0437\u043E\u0440 \u0440\u044B\u043D\u043A\u0430', desc: 'Gift market overview',       descRu: '\u041E\u0431\u0437\u043E\u0440 \u0440\u044B\u043D\u043A\u0430 \u043F\u043E\u0434\u0430\u0440\u043A\u043E\u0432',   fields: [] },
+  // ── Web ──
+  web_search:     { cat: 'web',      color: '#06b6d4', icon: '\uD83D\uDD0D', label: 'Web Search', labelRu: '\u041F\u043E\u0438\u0441\u043A',            desc: 'Search the web',              descRu: '\u041F\u043E\u0438\u0441\u043A \u0432 \u0438\u043D\u0442\u0435\u0440\u043D\u0435\u0442\u0435',        fields: [{ key: 'query', label: 'Query', type: 'text', placeholder: 'Search...' }] },
+  fetch_url:      { cat: 'web',      color: '#06b6d4', icon: '\uD83C\uDF10', label: 'Fetch URL',  labelRu: '\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C URL',    desc: 'HTTP GET request',            descRu: 'HTTP GET \u0437\u0430\u043F\u0440\u043E\u0441',            fields: [{ key: 'url', label: 'URL', type: 'text', placeholder: 'https://...' }] },
+  http_request:   { cat: 'web',      color: '#06b6d4', icon: '\u2194\uFE0F', label: 'HTTP Request', labelRu: 'HTTP \u0437\u0430\u043F\u0440\u043E\u0441',   desc: 'Custom HTTP request',         descRu: '\u041F\u0440\u043E\u0438\u0437\u0432\u043E\u043B\u044C\u043D\u044B\u0439 HTTP \u0437\u0430\u043F\u0440\u043E\u0441',   fields: [{ key: 'url', label: 'URL', type: 'text', placeholder: 'https://...' }, { key: 'method', label: 'Method', type: 'select', options: [{ v: 'GET', l: 'GET' }, { v: 'POST', l: 'POST' }] }] },
+  // ── Telegram ──
+  send_message:   { cat: 'telegram', color: '#0ea5e9', icon: '\u2709\uFE0F', label: 'TG Message', labelRu: '\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 TG',    desc: 'Send Telegram message',       descRu: '\u041E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435',      fields: [{ key: 'peer', label: 'Chat/User', type: 'text', placeholder: '@username' }, { key: 'text', label: 'Text', type: 'textarea', placeholder: 'Message...' }] },
+  tg_read:        { cat: 'telegram', color: '#0ea5e9', icon: '\uD83D\uDCE9', label: 'Read Messages', labelRu: '\u0427\u0438\u0442\u0430\u0442\u044C \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F', desc: 'Read chat messages', descRu: '\u0427\u0438\u0442\u0430\u0442\u044C \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F \u0447\u0430\u0442\u0430', fields: [{ key: 'peer', label: 'Chat', type: 'text', placeholder: '@channel' }, { key: 'limit', label: 'Limit', type: 'number', placeholder: '10' }] },
+  tg_react:       { cat: 'telegram', color: '#0ea5e9', icon: '\uD83D\uDC4D', label: 'Reaction',   labelRu: '\u0420\u0435\u0430\u043A\u0446\u0438\u044F',         desc: 'Add reaction to message',     descRu: '\u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u0440\u0435\u0430\u043A\u0446\u0438\u044E',         fields: [{ key: 'peer', label: 'Chat', type: 'text', placeholder: '@channel' }, { key: 'emoji', label: 'Emoji', type: 'text', placeholder: '\uD83D\uDC4D' }] },
+  tg_forward:     { cat: 'telegram', color: '#0ea5e9', icon: '\u2197\uFE0F', label: 'Forward',    labelRu: '\u041F\u0435\u0440\u0435\u0441\u043B\u0430\u0442\u044C',       desc: 'Forward message',             descRu: '\u041F\u0435\u0440\u0435\u0441\u043B\u0430\u0442\u044C \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435',       fields: [{ key: 'from_peer', label: 'From chat', type: 'text', placeholder: '@source' }, { key: 'to_peer', label: 'To chat', type: 'text', placeholder: '@target' }] },
+  // ── Output ──
+  notify:         { cat: 'output',   color: '#10b981', icon: '\uD83D\uDD14', label: 'Notify',     labelRu: '\u0423\u0432\u0435\u0434\u043E\u043C\u0438\u0442\u044C',       desc: 'Send notification',           descRu: '\u041E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u0443\u0432\u0435\u0434\u043E\u043C\u043B\u0435\u043D\u0438\u0435',     fields: [{ key: 'message', label: 'Message', type: 'textarea', placeholder: 'Alert: ...' }] },
+  notify_rich:    { cat: 'output',   color: '#10b981', icon: '\uD83D\uDCE8', label: 'Rich Notify', labelRu: 'HTML \u0443\u0432\u0435\u0434\u043E\u043C\u043B\u0435\u043D\u0438\u0435', desc: 'HTML notification',  descRu: 'HTML \u0443\u0432\u0435\u0434\u043E\u043C\u043B\u0435\u043D\u0438\u0435',     fields: [{ key: 'message', label: 'HTML Message', type: 'textarea', placeholder: '<b>Alert</b>' }] },
+  // ── Logic ──
+  condition:      { cat: 'logic',    color: '#f43f5e', icon: '\uD83D\uDD00', label: 'Condition',  labelRu: '\u0423\u0441\u043B\u043E\u0432\u0438\u0435',        desc: 'If/else branch',              descRu: '\u0412\u0435\u0442\u0432\u043B\u0435\u043D\u0438\u0435 \u0435\u0441\u043B\u0438/\u0438\u043D\u0430\u0447\u0435',       fields: [{ key: 'expression', label: 'If expression', type: 'text', placeholder: 'balance < 10' }], extraPorts: ['true', 'false'] },
+  delay:          { cat: 'logic',    color: '#f43f5e', icon: '\u23F3',  label: 'Delay',          labelRu: '\u0417\u0430\u0434\u0435\u0440\u0436\u043A\u0430',        desc: 'Wait before next step',       descRu: '\u041F\u0430\u0443\u0437\u0430 \u043F\u0435\u0440\u0435\u0434 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u043C \u0448\u0430\u0433\u043E\u043C',   fields: [{ key: 'ms', label: 'Delay (ms)', type: 'number', placeholder: '5000' }] },
+  list_agents:    { cat: 'logic',    color: '#f43f5e', icon: '\uD83E\uDD16', label: 'List Agents', labelRu: '\u0421\u043F\u0438\u0441\u043E\u043A \u0430\u0433\u0435\u043D\u0442\u043E\u0432', desc: 'List your agents', descRu: '\u0421\u043F\u0438\u0441\u043E\u043A \u0432\u0430\u0448\u0438\u0445 \u0430\u0433\u0435\u043D\u0442\u043E\u0432', fields: [] },
+  ask_agent:      { cat: 'logic',    color: '#f43f5e', icon: '\uD83D\uDCAC', label: 'Ask Agent',  labelRu: '\u0421\u043F\u0440\u043E\u0441\u0438\u0442\u044C \u0430\u0433\u0435\u043D\u0442\u0430', desc: 'Ask another agent',  descRu: '\u0421\u043F\u0440\u043E\u0441\u0438\u0442\u044C \u0434\u0440\u0443\u0433\u043E\u0433\u043E \u0430\u0433\u0435\u043D\u0442\u0430', fields: [{ key: 'agent_id', label: 'Agent ID', type: 'number', placeholder: '123' }, { key: 'message', label: 'Message', type: 'textarea', placeholder: 'What is...' }] },
+  // ── State ──
+  get_state:      { cat: 'state',    color: '#8b5cf6', icon: '\uD83D\uDCE5', label: 'Get State',  labelRu: '\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C',       desc: 'Read saved value',            descRu: '\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u0437\u043D\u0430\u0447\u0435\u043D\u0438\u0435',        fields: [{ key: 'key', label: 'Key', type: 'text', placeholder: 'my_key' }] },
+  set_state:      { cat: 'state',    color: '#8b5cf6', icon: '\uD83D\uDCE4', label: 'Set State',  labelRu: '\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C',      desc: 'Save value',                  descRu: '\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C \u0437\u043D\u0430\u0447\u0435\u043D\u0438\u0435',       fields: [{ key: 'key', label: 'Key', type: 'text', placeholder: 'my_key' }, { key: 'value', label: 'Value', type: 'text', placeholder: '...' }] },
 };
 
 const NODE_W = 180, NODE_H = 56, PORT_R = 6;
@@ -2599,6 +2643,56 @@ let _flowParticles = [];
 
 function togglePaletteCat(headerEl) {
   headerEl.parentElement.classList.toggle('collapsed');
+}
+
+const PALETTE_CAT_META = {
+  triggers: { color: '#f59e0b', en: 'Triggers',       ru: '\u0422\u0440\u0438\u0433\u0433\u0435\u0440\u044B' },
+  ton:      { color: '#3b82f6', en: 'TON Blockchain',  ru: 'TON \u0411\u043B\u043E\u043A\u0447\u0435\u0439\u043D' },
+  gifts:    { color: '#a855f7', en: 'Gifts',           ru: '\u041F\u043E\u0434\u0430\u0440\u043A\u0438' },
+  web:      { color: '#06b6d4', en: 'Web',             ru: '\u0412\u0435\u0431' },
+  telegram: { color: '#0ea5e9', en: 'Telegram',        ru: 'Telegram' },
+  output:   { color: '#10b981', en: 'Output',          ru: '\u0412\u044B\u0432\u043E\u0434' },
+  logic:    { color: '#f43f5e', en: 'Logic',           ru: '\u041B\u043E\u0433\u0438\u043A\u0430' },
+  state:    { color: '#8b5cf6', en: 'State',           ru: '\u0421\u043E\u0441\u0442\u043E\u044F\u043D\u0438\u0435' },
+};
+
+function buildFlowPalette() {
+  const container = document.getElementById('flow-palette-content');
+  if (!container) return;
+  const ru = currentLang === 'ru';
+
+  // Group nodes by category
+  const groups = {};
+  for (const [type, def] of Object.entries(FLOW_NODE_DEFS)) {
+    const cat = def.cat;
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push({ type, def });
+  }
+
+  let html = '';
+  const catOrder = ['triggers', 'ton', 'gifts', 'web', 'telegram', 'output', 'logic', 'state'];
+  for (const cat of catOrder) {
+    const nodes = groups[cat];
+    if (!nodes || !nodes.length) continue;
+    const meta = PALETTE_CAT_META[cat] || { color: '#888', en: cat, ru: cat };
+    html += '<div class="palette-category" data-cat="' + cat + '">';
+    html += '<div class="palette-cat-header" onclick="togglePaletteCat(this)">';
+    html += '<span class="cat-dot" style="background:' + meta.color + '"></span>';
+    html += '<span>' + (ru ? meta.ru : meta.en) + '</span>';
+    html += '<svg class="cat-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>';
+    html += '</div>';
+    html += '<div class="palette-nodes">';
+    for (const { type, def } of nodes) {
+      const label = (ru && def.labelRu) ? def.labelRu : def.label;
+      const desc = (ru && def.descRu) ? def.descRu : (def.desc || '');
+      html += '<div class="palette-node" data-type="' + type + '" onclick="addFlowNode(\'' + type + '\')" title="' + desc + '">';
+      html += '<span class="pn-icon">' + def.icon + '</span>';
+      html += '<span class="pn-label">' + label + '</span>';
+      html += '</div>';
+    }
+    html += '</div></div>';
+  }
+  container.innerHTML = html;
 }
 
 function addFlowNode(type) {
@@ -2668,11 +2762,16 @@ function renderFlowConfig() {
   const node = getFlowNode(_flowSelectedId);
   if (!node) { body.innerHTML = ''; return; }
   const def = node.def;
-  let html = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">';
+  const cfgLabel = (currentLang === 'ru' && def.labelRu) ? def.labelRu : def.label;
+  const cfgDesc = (currentLang === 'ru' && def.descRu) ? def.descRu : (def.desc || '');
+  let html = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">';
   html += '<span style="font-size:1.4rem">' + def.icon + '</span>';
-  html += '<strong style="font-size:0.95rem">' + def.label + '</strong>';
+  html += '<strong style="font-size:0.95rem">' + cfgLabel + '</strong>';
   html += '<span style="width:10px;height:10px;border-radius:50%;background:' + def.color + ';box-shadow:0 0 6px ' + def.color + '"></span>';
   html += '</div>';
+  if (cfgDesc) {
+    html += '<div style="font-size:0.8rem;color:rgba(255,255,255,0.4);margin-bottom:16px;">' + cfgDesc + '</div>';
+  }
 
   for (const f of def.fields) {
     html += '<div class="form-group">';
@@ -2732,6 +2831,7 @@ function showFlowToast(msg, type) {
 
 // Canvas rendering & interaction
 function initFlowBuilder() {
+  buildFlowPalette();
   const canvas = document.getElementById('flow-canvas');
   if (!canvas) return;
   _flowCanvas = canvas;
@@ -2790,6 +2890,24 @@ function initFlowBuilder() {
     if (_flowConnecting) {
       _flowConnecting.mx = mx;
       _flowConnecting.my = my;
+      // Magnetic snap — find nearest input port within 25px
+      _flowConnecting.snapTarget = null;
+      let minDist = 25;
+      for (const n of _flowNodes) {
+        if (n.id === _flowConnecting.fromId) continue;
+        const inPos = getPortPos(n, 'in');
+        const dx = mx - inPos.x, dy = my - inPos.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < minDist) {
+          minDist = dist;
+          _flowConnecting.snapTarget = { nodeId: n.id, port: 'in', x: inPos.x, y: inPos.y };
+        }
+      }
+      // Snap cursor to target port
+      if (_flowConnecting.snapTarget) {
+        _flowConnecting.mx = _flowConnecting.snapTarget.x;
+        _flowConnecting.my = _flowConnecting.snapTarget.y;
+      }
     }
   });
 
@@ -2798,18 +2916,30 @@ function initFlowBuilder() {
     const mx = e.clientX - r.left, my = e.clientY - r.top;
 
     if (_flowConnecting) {
-      // Check if dropped on an input port
-      for (const n of _flowNodes) {
-        if (n.id === _flowConnecting.fromId) continue;
-        const port = hitTestPort(n, mx, my);
-        if (port === 'in') {
-          // Don't duplicate
-          const exists = _flowEdges.some(e => e.from === _flowConnecting.fromId && e.fromPort === _flowConnecting.fromPort && e.to === n.id);
-          if (!exists) {
-            _flowEdges.push({ from: _flowConnecting.fromId, fromPort: _flowConnecting.fromPort, to: n.id, toPort: 'in' });
-            _flowParticles.push({ from: _flowConnecting.fromId, fromPort: _flowConnecting.fromPort, to: n.id, t: 0, speed: 0.004 + Math.random() * 0.004 });
+      let connected = false;
+      // Use snap target if available
+      if (_flowConnecting.snapTarget) {
+        const targetId = _flowConnecting.snapTarget.nodeId;
+        const exists = _flowEdges.some(e => e.from === _flowConnecting.fromId && e.fromPort === _flowConnecting.fromPort && e.to === targetId);
+        if (!exists) {
+          _flowEdges.push({ from: _flowConnecting.fromId, fromPort: _flowConnecting.fromPort, to: targetId, toPort: 'in' });
+          _flowParticles.push({ from: _flowConnecting.fromId, fromPort: _flowConnecting.fromPort, to: targetId, t: 0, speed: 0.004 + Math.random() * 0.004 });
+        }
+        connected = true;
+      }
+      // Fallback: hitTest
+      if (!connected) {
+        for (const n of _flowNodes) {
+          if (n.id === _flowConnecting.fromId) continue;
+          const port = hitTestPort(n, mx, my);
+          if (port === 'in') {
+            const exists = _flowEdges.some(e => e.from === _flowConnecting.fromId && e.fromPort === _flowConnecting.fromPort && e.to === n.id);
+            if (!exists) {
+              _flowEdges.push({ from: _flowConnecting.fromId, fromPort: _flowConnecting.fromPort, to: n.id, toPort: 'in' });
+              _flowParticles.push({ from: _flowConnecting.fromId, fromPort: _flowConnecting.fromPort, to: n.id, t: 0, speed: 0.004 + Math.random() * 0.004 });
+            }
+            break;
           }
-          break;
         }
       }
       _flowConnecting = null;
@@ -2833,10 +2963,10 @@ function initFlowBuilder() {
 
   // Start animation
   if (_flowAnimId) cancelAnimationFrame(_flowAnimId);
-  let time = 0;
+  let _flowStartTime = performance.now();
 
   function drawFlowBuilder() {
-    time += 0.016;
+    const time = (performance.now() - _flowStartTime) / 1000;
     const ctx = _flowCtx;
     ctx.clearRect(0, 0, W, H);
 
@@ -2923,15 +3053,44 @@ function initFlowBuilder() {
       const fromNode = getFlowNode(_flowConnecting.fromId);
       if (fromNode) {
         const from = getPortPos(fromNode, _flowConnecting.fromPort);
-        const cpOff = Math.max(40, Math.abs(_flowConnecting.mx - from.x) * 0.4);
-        ctx.setLineDash([6, 4]);
-        ctx.strokeStyle = fromNode.def.color + '99';
-        ctx.lineWidth = 2;
+        const targetX = _flowConnecting.mx, targetY = _flowConnecting.my;
+        const cpOff = Math.max(40, Math.abs(targetX - from.x) * 0.4);
+        const isSnapped = !!_flowConnecting.snapTarget;
+
+        // Line style changes when snapped
+        if (isSnapped) {
+          ctx.setLineDash([]);
+          ctx.strokeStyle = '#10b981';
+          ctx.lineWidth = 2.5;
+        } else {
+          ctx.setLineDash([6, 4]);
+          ctx.strokeStyle = fromNode.def.color + '99';
+          ctx.lineWidth = 2;
+        }
         ctx.beginPath();
         ctx.moveTo(from.x, from.y);
-        ctx.bezierCurveTo(from.x + cpOff, from.y, _flowConnecting.mx - cpOff, _flowConnecting.my, _flowConnecting.mx, _flowConnecting.my);
+        ctx.bezierCurveTo(from.x + cpOff, from.y, targetX - cpOff, targetY, targetX, targetY);
         ctx.stroke();
         ctx.setLineDash([]);
+
+        // Green glow on snap target port
+        if (isSnapped) {
+          const snap = _flowConnecting.snapTarget;
+          const pulse = Math.sin(time * 6) * 3 + 10;
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(snap.x, snap.y, PORT_R + pulse, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(16,185,129,' + (0.15 + Math.sin(time * 6) * 0.1) + ')';
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(snap.x, snap.y, PORT_R + 3, 0, Math.PI * 2);
+          ctx.strokeStyle = '#10b981';
+          ctx.lineWidth = 2;
+          ctx.shadowColor = '#10b981';
+          ctx.shadowBlur = 12;
+          ctx.stroke();
+          ctx.restore();
+        }
       }
     }
 
@@ -2993,22 +3152,35 @@ function initFlowBuilder() {
       ctx.textBaseline = 'middle';
       ctx.fillText(def.icon, n.x + 18, n.y + NODE_H / 2 - 6);
 
-      // Label
+      // Label (localized)
       ctx.font = '600 12px Inter, sans-serif';
       ctx.fillStyle = '#fff';
-      ctx.fillText(def.label, n.x + 40, n.y + NODE_H / 2 - 6);
+      const nodeLabel = (currentLang === 'ru' && def.labelRu) ? def.labelRu : def.label;
+      ctx.fillText(nodeLabel, n.x + 40, n.y + NODE_H / 2 - 6);
 
-      // Subtitle (config summary)
+      // Subtitle (config summary or description)
       const cfgKeys = Object.keys(n.config).filter(k => n.config[k]);
+      ctx.font = '10px Inter, sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.4)';
       if (cfgKeys.length) {
-        ctx.font = '10px Inter, sans-serif';
-        ctx.fillStyle = 'rgba(255,255,255,0.4)';
         const summary = cfgKeys.map(k => n.config[k]).join(', ').slice(0, 22);
         ctx.fillText(summary, n.x + 40, n.y + NODE_H / 2 + 8);
+      } else {
+        const nodeDesc = (currentLang === 'ru' && def.descRu) ? def.descRu : (def.desc || '');
+        if (nodeDesc) ctx.fillText(nodeDesc.slice(0, 24), n.x + 40, n.y + NODE_H / 2 + 8);
       }
 
-      // Input port
+      // Input port with hover glow
       const inP = getPortPos(n, 'in');
+      const inDx = _flowMouse.x - inP.x, inDy = _flowMouse.y - inP.y;
+      const inDist = Math.sqrt(inDx * inDx + inDy * inDy);
+      if (inDist < 30) {
+        const glow = (1 - inDist / 30) * 0.3;
+        ctx.beginPath();
+        ctx.arc(inP.x, inP.y, PORT_R + 6, 0, Math.PI * 2);
+        ctx.fillStyle = def.color.slice(0, 7) + Math.round(glow * 255).toString(16).padStart(2, '0');
+        ctx.fill();
+      }
       ctx.beginPath();
       ctx.arc(inP.x, inP.y, PORT_R, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(15,22,40,0.9)';

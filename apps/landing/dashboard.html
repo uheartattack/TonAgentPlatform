@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="dashboard.css?v=12">
+  <link rel="stylesheet" href="dashboard.css?v=13">
   <!-- Telegram widget loaded in body where button should appear -->
 </head>
 <body>
@@ -1450,85 +1450,7 @@
           <div class="flow-body">
             <!-- Palette -->
             <div class="flow-palette" id="flow-palette">
-              <div class="palette-category" data-cat="triggers">
-                <div class="palette-cat-header" onclick="togglePaletteCat(this)">
-                  <span class="cat-dot" style="background:#f59e0b"></span>
-                  <span data-en="Triggers" data-ru="Триггеры">Triggers</span>
-                  <svg class="cat-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-                </div>
-                <div class="palette-nodes">
-                  <div class="palette-node" data-type="timer" onclick="addFlowNode('timer')"><span class="pn-icon">\u23F0</span><span class="pn-label">Timer</span></div>
-                  <div class="palette-node" data-type="manual" onclick="addFlowNode('manual')"><span class="pn-icon">\u25B6\uFE0F</span><span class="pn-label">Manual</span></div>
-                  <div class="palette-node" data-type="webhook" onclick="addFlowNode('webhook')"><span class="pn-icon">\uD83D\uDD17</span><span class="pn-label">Webhook</span></div>
-                </div>
-              </div>
-              <div class="palette-category" data-cat="ton">
-                <div class="palette-cat-header" onclick="togglePaletteCat(this)">
-                  <span class="cat-dot" style="background:#3b82f6"></span>
-                  <span data-en="TON Blockchain" data-ru="TON Блокчейн">TON Blockchain</span>
-                  <svg class="cat-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-                </div>
-                <div class="palette-nodes">
-                  <div class="palette-node" data-type="get_balance" onclick="addFlowNode('get_balance')"><span class="pn-icon">\uD83D\uDCB0</span><span class="pn-label">Get Balance</span></div>
-                  <div class="palette-node" data-type="nft_floor" onclick="addFlowNode('nft_floor')"><span class="pn-icon">\uD83D\uDDBC\uFE0F</span><span class="pn-label">NFT Floor</span></div>
-                </div>
-              </div>
-              <div class="palette-category" data-cat="gifts">
-                <div class="palette-cat-header" onclick="togglePaletteCat(this)">
-                  <span class="cat-dot" style="background:#a855f7"></span>
-                  <span data-en="Gifts" data-ru="Подарки">Gifts</span>
-                  <svg class="cat-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-                </div>
-                <div class="palette-nodes">
-                  <div class="palette-node" data-type="gift_prices" onclick="addFlowNode('gift_prices')"><span class="pn-icon">\uD83C\uDF81</span><span class="pn-label">Gift Prices</span></div>
-                  <div class="palette-node" data-type="scan_arbitrage" onclick="addFlowNode('scan_arbitrage')"><span class="pn-icon">\uD83D\uDCC8</span><span class="pn-label">Scan Arbitrage</span></div>
-                </div>
-              </div>
-              <div class="palette-category" data-cat="web">
-                <div class="palette-cat-header" onclick="togglePaletteCat(this)">
-                  <span class="cat-dot" style="background:#06b6d4"></span>
-                  <span data-en="Web" data-ru="Веб">Web</span>
-                  <svg class="cat-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-                </div>
-                <div class="palette-nodes">
-                  <div class="palette-node" data-type="web_search" onclick="addFlowNode('web_search')"><span class="pn-icon">\uD83D\uDD0D</span><span class="pn-label">Web Search</span></div>
-                  <div class="palette-node" data-type="fetch_url" onclick="addFlowNode('fetch_url')"><span class="pn-icon">\uD83C\uDF10</span><span class="pn-label">Fetch URL</span></div>
-                </div>
-              </div>
-              <div class="palette-category" data-cat="output">
-                <div class="palette-cat-header" onclick="togglePaletteCat(this)">
-                  <span class="cat-dot" style="background:#10b981"></span>
-                  <span data-en="Output" data-ru="Вывод">Output</span>
-                  <svg class="cat-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-                </div>
-                <div class="palette-nodes">
-                  <div class="palette-node" data-type="notify" onclick="addFlowNode('notify')"><span class="pn-icon">\uD83D\uDD14</span><span class="pn-label">Notify</span></div>
-                  <div class="palette-node" data-type="notify_rich" onclick="addFlowNode('notify_rich')"><span class="pn-icon">\uD83D\uDCE8</span><span class="pn-label">Rich Notify</span></div>
-                  <div class="palette-node" data-type="send_message" onclick="addFlowNode('send_message')"><span class="pn-icon">\u2709\uFE0F</span><span class="pn-label">TG Message</span></div>
-                </div>
-              </div>
-              <div class="palette-category" data-cat="logic">
-                <div class="palette-cat-header" onclick="togglePaletteCat(this)">
-                  <span class="cat-dot" style="background:#f43f5e"></span>
-                  <span data-en="Logic" data-ru="Логика">Logic</span>
-                  <svg class="cat-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-                </div>
-                <div class="palette-nodes">
-                  <div class="palette-node" data-type="condition" onclick="addFlowNode('condition')"><span class="pn-icon">\uD83D\uDD00</span><span class="pn-label">Condition</span></div>
-                  <div class="palette-node" data-type="delay" onclick="addFlowNode('delay')"><span class="pn-icon">\u23F3</span><span class="pn-label">Delay</span></div>
-                </div>
-              </div>
-              <div class="palette-category" data-cat="state">
-                <div class="palette-cat-header" onclick="togglePaletteCat(this)">
-                  <span class="cat-dot" style="background:#8b5cf6"></span>
-                  <span data-en="State" data-ru="Состояние">State</span>
-                  <svg class="cat-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-                </div>
-                <div class="palette-nodes">
-                  <div class="palette-node" data-type="get_state" onclick="addFlowNode('get_state')"><span class="pn-icon">\uD83D\uDCE5</span><span class="pn-label">Get State</span></div>
-                  <div class="palette-node" data-type="set_state" onclick="addFlowNode('set_state')"><span class="pn-icon">\uD83D\uDCE4</span><span class="pn-label">Set State</span></div>
-                </div>
-              </div>
+              <div id="flow-palette-content"></div>
             </div>
 
             <!-- Canvas -->
@@ -1554,6 +1476,6 @@
   </div>
 
   <script src="https://unpkg.com/@tonconnect/ui@2/dist/tonconnect-ui.min.js"></script>
-  <script src="dashboard.js?v=12"></script>
+  <script src="dashboard.js?v=13"></script>
 </body>
 </html>
