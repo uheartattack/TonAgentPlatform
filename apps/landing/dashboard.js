@@ -250,6 +250,8 @@ function showApp() {
 
   // Start live updates
   startLiveUpdates();
+
+  checkOnboarding();
 }
 
 // Load real stats + agents + plugins
@@ -323,6 +325,8 @@ async function loadAgents() {
       </div>
     </div>`;
   }).join('');
+
+  if (agents.length > 0) markGSStep('agent');
 }
 
 async function toggleAgent(agentId, isActive) {
@@ -697,7 +701,24 @@ const pageLoadFns = {
 };
 
 // Stub functions for pages that don't have dedicated load logic yet
-function loadOverview() { loadMyStats(); loadAgents(); }
+function loadOverview() {
+  loadMyStats();
+  loadAgents();
+  updateGSPanel();
+  // Personalized greeting
+  if (currentUser) {
+    var name = currentUser.first_name || currentUser.username || '';
+    var hour = new Date().getHours();
+    var greeting;
+    if (currentLang === 'ru') {
+      greeting = hour < 6 ? 'Доброй ночи' : hour < 12 ? 'Доброе утро' : hour < 18 ? 'Добрый день' : 'Добрый вечер';
+    } else {
+      greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+    }
+    var greetEl = document.getElementById('overview-greeting-text');
+    if (greetEl && name) greetEl.textContent = greeting + ', ' + name;
+  }
+}
 function loadOperations() { loadAgents(); }
 async function loadSettings() {
   try {
@@ -1855,6 +1876,11 @@ function navigateTo(pageName) {
   if (authToken && pageLoadFns[pageName]) {
     pageLoadFns[pageName]().catch(console.error);
   }
+
+  // Track getting-started steps
+  if (pageName === 'settings') markGSStep('ai');
+  if (pageName === 'marketplace') markGSStep('marketplace');
+  if (pageName === 'guide') markGSStep('guide');
 }
 
 // ===== ANALYTICS PAGE =====
@@ -4499,7 +4525,42 @@ function filterMarketplace(cat) {
   document.querySelectorAll('.mkt-tab').forEach(function(t) {
     t.classList.toggle('active', t.getAttribute('data-cat') === cat);
   });
-  loadMarketplace();
+  if (cat === 'purchased') {
+    loadMyPurchases();
+  } else {
+    loadMarketplace();
+  }
+}
+
+async function loadMyPurchases() {
+  try {
+    var data = await apiRequest('GET', '/api/marketplace/purchases');
+    _marketplaceListings = (data.ok ? data.purchases : []) || [];
+  } catch(e) {
+    _marketplaceListings = [];
+  }
+  renderPurchasedGrid();
+}
+
+function renderPurchasedGrid() {
+  var grid = document.getElementById('marketplace-grid');
+  if (!grid) return;
+  if (!_marketplaceListings.length) {
+    grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;text-align:center;padding:60px 20px">' +
+      '<p style="font-size:2rem;margin-bottom:12px">📦</p>' +
+      '<p style="color:var(--text-muted)">' + (currentLang === 'ru' ? 'Нет покупок' : 'No purchases yet') + '</p></div>';
+    return;
+  }
+  grid.innerHTML = _marketplaceListings.map(function(p) {
+    return '<div class="marketplace-card">' +
+      '<div class="mkt-card-header">' +
+        '<span class="mkt-card-category">' + (currentLang === 'ru' ? 'Куплено' : 'Purchased') + '</span>' +
+        '<span class="mkt-card-price">' + (p.type === 'free' ? 'Free' : ((p.pricePaid / 1e9).toFixed(2) + ' TON')) + '</span>' +
+      '</div>' +
+      '<h4>' + (currentLang === 'ru' ? 'Агент #' : 'Agent #') + p.agentId + '</h4>' +
+      '<p style="font-size:.75rem;color:var(--text-muted)">' + new Date(p.createdAt).toLocaleDateString() + '</p>' +
+    '</div>';
+  }).join('');
 }
 
 function renderMarketplaceGrid() {
@@ -4513,16 +4574,18 @@ function renderMarketplaceGrid() {
   }
   grid.innerHTML = _marketplaceListings.map(function(l) {
     var priceText = l.isFree ? (currentLang === 'ru' ? 'Бесплатно' : 'Free') : ((Number(l.price || 0) / 1e9).toFixed(2) + ' TON');
-    return '<div class="marketplace-card">' +
+    return '<div class="marketplace-card" onclick="openMarketplaceDetail(' + l.id + ')" style="cursor:pointer">' +
       '<div class="mkt-card-header">' +
         '<span class="mkt-card-category">' + escHtml(l.category || 'other') + '</span>' +
         '<span class="mkt-card-price">' + priceText + '</span>' +
       '</div>' +
       '<h4>' + escHtml(l.name) + '</h4>' +
       '<p>' + escHtml((l.description || '').slice(0, 140)) + '</p>' +
-      '<button class="btn btn-primary btn-sm" onclick="installFromMarketplace(' + l.id + ')" style="width:100%">' +
-        (currentLang === 'ru' ? '📥 Установить' : '📥 Install') +
-      '</button>' +
+      '<div style="display:flex;gap:8px">' +
+        '<button class="btn btn-primary btn-sm" onclick="event.stopPropagation();buyFromMarketplace(' + l.id + ')" style="flex:1">' +
+          (l.isFree ? (currentLang === 'ru' ? '📥 Установить' : '📥 Install') : (currentLang === 'ru' ? '💳 Купить' : '💳 Buy')) +
+        '</button>' +
+      '</div>' +
     '</div>';
   }).join('');
 }
@@ -4541,14 +4604,262 @@ async function installFromMarketplace(listingId) {
   }
 }
 
-function openPublishModal() {
-  showNotification(currentLang === 'ru' ? '🏪 Используйте бота в Telegram для публикации' : '🏪 Use the Telegram bot to publish agents', 'info');
+async function openPublishModal() {
+  var modal = document.getElementById('publish-modal');
+  if (!modal) return;
+  // Load user's agents for the select
+  try {
+    var data = await apiRequest('GET', '/api/agents');
+    var agents = (data.ok ? data.agents : []) || [];
+    var select = document.getElementById('publish-agent-select');
+    if (select) {
+      select.innerHTML = agents.map(function(a) {
+        return '<option value="' + a.id + '">' + escHtml(a.name || 'Agent #' + a.id) + '</option>';
+      }).join('');
+    }
+  } catch(e) {}
+  modal.style.display = 'flex';
 }
+
+async function submitPublish() {
+  var agentId = document.getElementById('publish-agent-select').value;
+  var name = document.getElementById('publish-name').value.trim();
+  var desc = document.getElementById('publish-desc').value.trim();
+  var category = document.getElementById('publish-category').value;
+  var price = parseFloat(document.getElementById('publish-price').value) || 0;
+  if (!name) { showNotification(currentLang === 'ru' ? 'Введите название' : 'Enter a name', 'error'); return; }
+  if (!desc) { showNotification(currentLang === 'ru' ? 'Введите описание' : 'Enter a description', 'error'); return; }
+  try {
+    var data = await apiRequest('POST', '/api/marketplace', {
+      agentId: parseInt(agentId),
+      name: name,
+      description: desc,
+      category: category,
+      price: price,
+      isFree: price <= 0
+    });
+    if (data.ok) {
+      showNotification(currentLang === 'ru' ? '✅ Агент опубликован!' : '✅ Agent published!', 'success');
+      document.getElementById('publish-modal').style.display = 'none';
+      loadMarketplace();
+    } else {
+      showNotification(data.error || 'Error', 'error');
+    }
+  } catch(e) {
+    showNotification(e.message || 'Error', 'error');
+  }
+}
+
+async function openMarketplaceDetail(listingId) {
+  var modal = document.getElementById('mkt-detail-modal');
+  var content = document.getElementById('mkt-detail-content');
+  if (!modal || !content) return;
+  content.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted)"><div class="auth-spinner" style="margin:0 auto 12px"></div>Loading...</div>';
+  modal.style.display = 'flex';
+  try {
+    var data = await apiRequest('GET', '/api/marketplace/' + listingId);
+    if (!data.ok || !data.listing) { content.innerHTML = '<p style="color:var(--danger)">Not found</p>'; return; }
+    var l = data.listing;
+    var priceText = l.isFree ? (currentLang === 'ru' ? 'Бесплатно' : 'Free') : ((Number(l.price || 0) / 1e9).toFixed(2) + ' TON');
+    var buyBtnText = l.isFree ? (currentLang === 'ru' ? '📥 Установить бесплатно' : '📥 Install Free') : (currentLang === 'ru' ? '💳 Купить за ' + priceText : '💳 Buy for ' + priceText);
+    content.innerHTML = '<h3 class="mkt-detail-name">' + escHtml(l.name) + '</h3>' +
+      '<p class="mkt-detail-desc">' + escHtml(l.description || '') + '</p>' +
+      '<div class="mkt-detail-meta">' +
+        '<div class="mkt-detail-meta-item"><small>' + (currentLang === 'ru' ? 'Категория' : 'Category') + '</small><strong>' + escHtml(l.category || 'other') + '</strong></div>' +
+        '<div class="mkt-detail-meta-item"><small>' + (currentLang === 'ru' ? 'Цена' : 'Price') + '</small><strong>' + priceText + '</strong></div>' +
+        '<div class="mkt-detail-meta-item"><small>' + (currentLang === 'ru' ? 'Продажи' : 'Sales') + '</small><strong>' + (l.salesCount || 0) + '</strong></div>' +
+        '<div class="mkt-detail-meta-item"><small>' + (currentLang === 'ru' ? 'Рейтинг' : 'Rating') + '</small><strong>' + (l.rating ? l.rating.toFixed(1) + ' ⭐' : '—') + '</strong></div>' +
+      '</div>' +
+      '<button class="btn btn-primary" onclick="buyFromMarketplace(' + l.id + ')" style="width:100%">' + buyBtnText + '</button>';
+  } catch(e) {
+    content.innerHTML = '<p style="color:var(--danger)">' + escHtml(e.message || 'Error') + '</p>';
+  }
+}
+
+async function buyFromMarketplace(listingId) {
+  if (!confirm(currentLang === 'ru' ? 'Подтвердите покупку?' : 'Confirm purchase?')) return;
+  try {
+    var data = await apiRequest('POST', '/api/marketplace/' + listingId + '/buy');
+    if (data.ok) {
+      showNotification(data.message || (currentLang === 'ru' ? '✅ Успешно!' : '✅ Success!'), 'success');
+      document.getElementById('mkt-detail-modal').style.display = 'none';
+      loadAgents();
+      loadMarketplace();
+    } else {
+      if (data.error === 'Insufficient balance') {
+        showNotification(currentLang === 'ru' ? '❌ Недостаточно средств. Нужно ' + data.required + ' TON' : '❌ Insufficient balance. Need ' + data.required + ' TON', 'error');
+      } else if (data.error === 'Already purchased') {
+        showNotification(currentLang === 'ru' ? 'Уже куплено!' : 'Already purchased!', 'info');
+      } else {
+        showNotification(data.error || 'Error', 'error');
+      }
+    }
+  } catch(e) {
+    showNotification(e.message || 'Error', 'error');
+  }
+}
+
+// ===== COLLAPSIBLE NAV =====
+function toggleNavSection(sectionId) {
+  var section = document.getElementById(sectionId);
+  if (section) section.classList.toggle('collapsed');
+  try {
+    var collapsed = document.querySelectorAll('.nav-section-collapsible.collapsed');
+    var ids = [];
+    collapsed.forEach(function(el) { ids.push(el.id); });
+    localStorage.setItem('nav_collapsed', JSON.stringify(ids));
+  } catch(e) {}
+}
+// Restore collapsed state
+try {
+  var savedNav = JSON.parse(localStorage.getItem('nav_collapsed') || '[]');
+  savedNav.forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.classList.add('collapsed');
+  });
+} catch(e) {}
 
 // ===== GUIDE =====
 function toggleGuideSection(headerEl) {
   var section = headerEl.closest('.guide-section');
   if (section) section.classList.toggle('expanded');
+}
+
+// ===== ONBOARDING SYSTEM =====
+function checkOnboarding() {
+  if (localStorage.getItem('onboarding_completed')) return;
+  if (!currentUser) return;
+  var modal = document.getElementById('onboarding-modal');
+  if (!modal) return;
+  modal.style.display = 'flex';
+  var subtitle = document.getElementById('onboarding-subtitle');
+  if (subtitle) {
+    var name = currentUser.first_name || currentUser.username || '';
+    subtitle.textContent = currentLang === 'ru'
+      ? name + ', вы присоединились к самой мощной платформе AI-агентов на TON.'
+      : name + ', you\'ve joined the most powerful AI agent platform on TON blockchain.';
+  }
+}
+
+function startOnboarding() {
+  dismissOnboarding();
+  navigateTo('settings');
+  setTimeout(function() { startTour(); }, 800);
+}
+
+function dismissOnboarding() {
+  var modal = document.getElementById('onboarding-modal');
+  if (modal) modal.style.display = 'none';
+  localStorage.setItem('onboarding_completed', '1');
+}
+
+// ===== GETTING STARTED TRACKER =====
+var GS_STEPS = ['ai', 'agent', 'marketplace', 'guide'];
+
+function getGSProgress() {
+  try { return JSON.parse(localStorage.getItem('gs_completed') || '{}'); }
+  catch(e) { return {}; }
+}
+function saveGSProgress(progress) {
+  localStorage.setItem('gs_completed', JSON.stringify(progress));
+}
+function markGSStep(step) {
+  var progress = getGSProgress();
+  if (progress[step]) return;
+  progress[step] = true;
+  saveGSProgress(progress);
+  updateGSPanel();
+}
+function updateGSPanel() {
+  var panel = document.getElementById('getting-started-panel');
+  if (!panel) return;
+  if (localStorage.getItem('gs_dismissed')) { panel.style.display = 'none'; return; }
+  var progress = getGSProgress();
+  var completed = GS_STEPS.filter(function(s) { return progress[s]; }).length;
+  if (completed === GS_STEPS.length) {
+    panel.style.display = 'none';
+    localStorage.setItem('gs_dismissed', '1');
+    showNotification(currentLang === 'ru' ? '🎉 Все шаги выполнены! Отличное начало!' : '🎉 All steps completed! Great start!', 'success');
+    return;
+  }
+  panel.style.display = 'block';
+  GS_STEPS.forEach(function(s) {
+    var stepEl = document.getElementById('gs-step-' + s);
+    if (stepEl) stepEl.classList.toggle('completed', !!progress[s]);
+  });
+  var pct = (completed / GS_STEPS.length) * 100;
+  var bar = document.getElementById('gs-progress-bar');
+  if (bar) bar.style.width = pct + '%';
+  var text = document.getElementById('gs-progress-text');
+  if (text) text.textContent = completed + '/' + GS_STEPS.length;
+}
+function dismissGettingStarted() {
+  localStorage.setItem('gs_dismissed', '1');
+  var panel = document.getElementById('getting-started-panel');
+  if (panel) { panel.style.opacity = '0'; panel.style.transform = 'translateY(-10px)'; setTimeout(function(){ panel.style.display = 'none'; }, 300); }
+}
+
+// ===== INTERACTIVE TOUR =====
+var TOUR_STEPS = [
+  { target: '.sidebar-nav', title: { en: 'Navigation', ru: 'Навигация' }, desc: { en: 'All platform features are organized here. Main actions are at the top — Constructor, Marketplace, AI Assistant.', ru: 'Все функции платформы здесь. Главные действия наверху — Конструктор, Маркетплейс, AI Ассистент.' }, position: 'right' },
+  { target: '[data-page="builder"]', title: { en: 'Visual Constructor', ru: 'Конструктор' }, desc: { en: 'Build agents visually with drag-and-drop blocks. Connect triggers, actions, and logic — no coding needed.', ru: 'Создавайте агентов визуально. Соединяйте триггеры, действия и логику — без кода.' }, position: 'right' },
+  { target: '#chat-fab', title: { en: 'AI Assistant', ru: 'AI Ассистент' }, desc: { en: 'Describe what agent you need in natural language. AI will create and configure it for you. Synced with Telegram!', ru: 'Опишите нужного агента словами. AI создаст и настроит его за вас. Синхронизация с Telegram!' }, position: 'top-left' },
+  { target: '[data-page="marketplace"]', title: { en: 'Marketplace', ru: 'Маркетплейс' }, desc: { en: 'Browse and install ready-made agent templates. DeFi monitoring, NFT tracking, gift arbitrage and more.', ru: 'Смотрите и устанавливайте готовые шаблоны. DeFi мониторинг, NFT трекинг, арбитраж подарков.' }, position: 'right' },
+  { target: '#agents-panel', title: { en: 'Your Agents', ru: 'Ваши агенты' }, desc: { en: 'All created agents appear here. Start, stop, view logs, and manage them in real-time.', ru: 'Все агенты здесь. Запускайте, останавливайте, смотрите логи в реальном времени.' }, position: 'top' },
+];
+var _tourStep = 0;
+var _tourActive = false;
+
+function startTour() {
+  _tourStep = 0;
+  _tourActive = true;
+  var overlay = document.getElementById('tour-overlay');
+  if (overlay) { overlay.style.display = 'block'; overlay.classList.add('active'); }
+  showTourStep();
+}
+function showTourStep() {
+  if (_tourStep >= TOUR_STEPS.length) { endTour(); return; }
+  var step = TOUR_STEPS[_tourStep];
+  var target = document.querySelector(step.target);
+  if (!target) { _tourStep++; showTourStep(); return; }
+  var rect = target.getBoundingClientRect();
+  var spotlight = document.getElementById('tour-spotlight');
+  var tooltip = document.getElementById('tour-tooltip');
+  var content = document.getElementById('tour-tooltip-content');
+  var counter = document.getElementById('tour-step-counter');
+  var pad = 8;
+  spotlight.style.top = (rect.top - pad) + 'px';
+  spotlight.style.left = (rect.left - pad) + 'px';
+  spotlight.style.width = (rect.width + pad * 2) + 'px';
+  spotlight.style.height = (rect.height + pad * 2) + 'px';
+  content.innerHTML = '<h4>' + step.title[currentLang] + '</h4><p>' + step.desc[currentLang] + '</p>';
+  counter.textContent = (_tourStep + 1) + ' / ' + TOUR_STEPS.length;
+  tooltip.className = 'tour-tooltip';
+  var tipW = 340;
+  if (step.position === 'right') {
+    tooltip.style.top = Math.max(10, rect.top) + 'px';
+    tooltip.style.left = (rect.right + 16) + 'px';
+    tooltip.style.bottom = '';
+    tooltip.classList.add('arrow-left');
+  } else if (step.position === 'top') {
+    tooltip.style.top = Math.max(10, rect.top - 160) + 'px';
+    tooltip.style.left = rect.left + 'px';
+    tooltip.style.bottom = '';
+    tooltip.classList.add('arrow-bottom');
+  } else if (step.position === 'top-left') {
+    tooltip.style.top = Math.max(10, rect.top - 160) + 'px';
+    tooltip.style.left = Math.max(10, rect.left - tipW - 16) + 'px';
+    tooltip.style.bottom = '';
+  }
+  var nextBtn = document.getElementById('tour-next-btn');
+  if (nextBtn) nextBtn.textContent = _tourStep === TOUR_STEPS.length - 1 ? (currentLang === 'ru' ? 'Готово!' : 'Done!') : (currentLang === 'ru' ? 'Далее' : 'Next');
+}
+function nextTourStep() { _tourStep++; showTourStep(); }
+function endTour() {
+  _tourActive = false;
+  var overlay = document.getElementById('tour-overlay');
+  if (overlay) { overlay.style.display = 'none'; overlay.classList.remove('active'); }
+  localStorage.setItem('tour_completed', '1');
 }
 
 // ===== NETWORK MAP CLICK =====
