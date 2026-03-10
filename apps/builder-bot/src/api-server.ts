@@ -97,6 +97,71 @@ function requireAuth(req: Request, res: Response, next: NextFunction): void {
   next();
 }
 
+// ── Flow → System Prompt converter ────────────────────────────
+const NODE_TOOL_MAP: Record<string, string> = {
+  timer: '', manual: '', webhook: '',
+  get_balance: 'get_ton_balance', nft_floor: 'get_nft_floor',
+  gift_prices: 'get_gift_floor_real', scan_arbitrage: 'scan_real_arbitrage',
+  web_search: 'web_search', fetch_url: 'fetch_url',
+  notify: 'notify', notify_rich: 'notify_rich',
+  condition: '', delay: '',
+  get_state: 'get_state', set_state: 'set_state',
+  send_message: 'tg_send_message',
+};
+
+function flowToSystemPrompt(flow: { nodes: any[]; edges: any[] }): string {
+  const nodeMap = new Map(flow.nodes.map((n: any) => [n.id, n]));
+  // Build adjacency
+  const adj = new Map<string, string[]>();
+  for (const e of (flow.edges || [])) {
+    if (!adj.has(e.from)) adj.set(e.from, []);
+    adj.get(e.from)!.push(e.to);
+  }
+  // Find trigger (root) node
+  const triggerNode = flow.nodes.find((n: any) => ['timer', 'manual', 'webhook'].includes(n.type));
+  const lines: string[] = [];
+  lines.push('You execute the following workflow on every tick. Follow these steps EXACTLY in order:');
+  lines.push('');
+  // BFS through the flow
+  const visited = new Set<string>();
+  const queue = [triggerNode?.id || flow.nodes[0]?.id];
+  let step = 1;
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    if (!id || visited.has(id)) continue;
+    visited.add(id);
+    const node = nodeMap.get(id);
+    if (!node) continue;
+    const cfg = node.config || {};
+    if (node.type === 'timer') {
+      const mins = Math.round((cfg.intervalMs || 300000) / 60000);
+      lines.push(`Step ${step}: TRIGGER — Execute every ${mins} minutes.`);
+    } else if (node.type === 'manual') {
+      lines.push(`Step ${step}: TRIGGER — Run on demand (manual start).`);
+    } else if (node.type === 'webhook') {
+      lines.push(`Step ${step}: TRIGGER — Run when webhook is received.`);
+    } else if (node.type === 'condition') {
+      const children = adj.get(id) || [];
+      lines.push(`Step ${step}: CONDITION — If ${cfg.expression || 'true'}:`);
+      if (children[0]) { const cn = nodeMap.get(children[0]); lines.push(`  TRUE \u2192 proceed to next step`); }
+      if (children[1]) { const cn = nodeMap.get(children[1]); lines.push(`  FALSE \u2192 skip to alternative branch`); }
+    } else if (node.type === 'delay') {
+      lines.push(`Step ${step}: DELAY — Wait ${cfg.ms || 5000}ms before continuing.`);
+    } else {
+      const tool = NODE_TOOL_MAP[node.type] || node.type;
+      const params = Object.entries(cfg).map(([k, v]) => `${k}="${v}"`).join(', ');
+      lines.push(`Step ${step}: ACTION — Call ${tool}(${params})`);
+    }
+    step++;
+    for (const next of (adj.get(id) || [])) queue.push(next);
+  }
+  lines.push('');
+  lines.push('Use set_state/get_state to persist data between ticks.');
+  lines.push('Always call notify() to inform the user about important findings.');
+  lines.push('Store previous values in state to detect changes.');
+  return lines.join('\n');
+}
+
 // ── App setup ─────────────────────────────────────────────────
 export function startApiServer() {
   const app = express();
@@ -220,6 +285,83 @@ export function startApiServer() {
       res.json({ ok: true, agents });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── POST /api/agents — создать агента через описание ──────
+  app.post('/api/agents', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { description } = req.body || {};
+      if (!description || typeof description !== 'string' || description.trim().length < 8) {
+        res.status(400).json({ ok: false, error: 'Description must be at least 8 characters' });
+        return;
+      }
+      const { getOrchestrator } = await import('./agents/orchestrator');
+      const result = await getOrchestrator().handleCreateAgent(userId, description.trim());
+      if (result.type === 'agent_created' && (result as any).agentId) {
+        const agentData = await getDBTools().getAgent((result as any).agentId, userId);
+        res.json({ ok: true, agentId: (result as any).agentId, agent: agentData.data || null, message: (result.content || '').replace(/\\/g, '') });
+      } else {
+        res.json({ ok: false, error: (result.content || 'Creation failed').replace(/\\/g, '') });
+      }
+    } catch (e: any) {
+      console.error('[API] POST /api/agents error:', e.message);
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  // ── POST /api/agents/flow — создать агента из visual flow ──
+  app.post('/api/agents/flow', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { name, flow } = req.body || {};
+      if (!flow || !flow.nodes || !flow.nodes.length) {
+        res.status(400).json({ ok: false, error: 'Flow must have at least one node' });
+        return;
+      }
+      const agentName = (name && typeof name === 'string' && name.trim()) || 'Flow Agent';
+      const systemPrompt = flowToSystemPrompt(flow);
+      // Detect interval from trigger node
+      let intervalMs = 300000; // default 5 min
+      const timerNode = flow.nodes.find((n: any) => n.type === 'timer');
+      if (timerNode && timerNode.config && timerNode.config.intervalMs) {
+        intervalMs = parseInt(timerNode.config.intervalMs, 10) || 300000;
+      }
+      // Load user variables for AI config
+      let userVars: Record<string, string> = {};
+      try {
+        const uv = await getUserSettingsRepository().get(userId, 'user_variables');
+        if (uv) userVars = typeof uv === 'string' ? JSON.parse(uv) : uv;
+      } catch {}
+      const created = await getDBTools().createAgent({
+        userId,
+        name: agentName,
+        description: 'Flow: ' + flow.nodes.map((n: any) => n.type).join(' \u2192 '),
+        code: systemPrompt,
+        triggerType: 'ai_agent',
+        triggerConfig: {
+          code: systemPrompt,
+          intervalMs,
+          flow, // store flow JSON for editing
+          config: {
+            AI_PROVIDER: userVars.AI_PROVIDER || '',
+            AI_API_KEY: userVars.AI_API_KEY || '',
+          },
+        },
+        isActive: false,
+      });
+      if (!created.success || !created.data) {
+        res.json({ ok: false, error: created.error || 'DB error' });
+        return;
+      }
+      const agentId = (created.data as any).id;
+      // Auto-start
+      try { await getRunnerAgent().runAgent({ agentId, userId }); } catch {}
+      res.json({ ok: true, agentId, agent: created.data });
+    } catch (e: any) {
+      console.error('[API] POST /api/agents/flow error:', e.message);
+      res.status(500).json({ ok: false, error: e.message });
     }
   });
 

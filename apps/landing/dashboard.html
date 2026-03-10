@@ -148,8 +148,16 @@
             </svg>
             <span data-en="Agent Map" data-ru="Карта агентов">Agent Map</span>
           </a>
+          <a href="#" class="nav-item" data-page="builder">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+              <rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 17h7"/><path d="M17.5 14v7"/>
+            </svg>
+            <span data-en="Flow Builder" data-ru="Конструктор">Flow Builder</span>
+            <span class="nav-badge accent">NEW</span>
+          </a>
         </div>
-        
+
         <div class="nav-section">
           <span class="nav-label" data-en="Account" data-ru="Аккаунт">Account</span>
           <a href="#" class="nav-item" data-page="wallet">
@@ -223,11 +231,11 @@
               </svg>
               <span data-en="Refresh" data-ru="Обновить">Refresh</span>
             </button>
-            <button class="btn btn-primary">
+            <button class="btn btn-primary" onclick="navigateTo('builder')">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
               </svg>
-              <span data-en="Deploy Agent" data-ru="Запустить агента">Deploy Agent</span>
+              <span data-en="Deploy Agent" data-ru="Создать агента">Deploy Agent</span>
             </button>
           </div>
         </div>
@@ -1368,6 +1376,132 @@
             <span class="legend-item"><span class="legend-dot active"></span> Active</span>
             <span class="legend-item"><span class="legend-dot paused"></span> Paused</span>
             <span class="legend-item"><span class="legend-dot director"></span> Director</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Flow Builder Page -->
+      <div id="builder-page" class="page">
+        <div class="flow-builder">
+          <!-- Top Bar -->
+          <div class="flow-topbar">
+            <button class="btn btn-ghost btn-sm" onclick="navigateTo('overview')">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+              <span data-en="Back" data-ru="Назад">Back</span>
+            </button>
+            <div class="flow-topbar-center">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 17h7"/><path d="M17.5 14v7"/></svg>
+              <span data-en="Flow Builder" data-ru="Конструктор">Flow Builder</span>
+            </div>
+            <div class="flow-topbar-right">
+              <input type="text" id="flow-agent-name" class="flow-name-input" placeholder="Agent name..." data-placeholder-en="Agent name..." data-placeholder-ru="Имя агента...">
+              <button class="btn btn-primary btn-sm" id="flow-deploy-btn" onclick="deployFlow()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10"/></svg>
+                <span data-en="Deploy" data-ru="Запуск">Deploy</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 3-Column Layout -->
+          <div class="flow-body">
+            <!-- Palette -->
+            <div class="flow-palette" id="flow-palette">
+              <div class="palette-category" data-cat="triggers">
+                <div class="palette-cat-header" onclick="togglePaletteCat(this)">
+                  <span class="cat-dot" style="background:#f59e0b"></span>
+                  <span data-en="Triggers" data-ru="Триггеры">Triggers</span>
+                  <svg class="cat-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                </div>
+                <div class="palette-nodes">
+                  <div class="palette-node" data-type="timer" onclick="addFlowNode('timer')"><span class="pn-icon">\u23F0</span><span class="pn-label">Timer</span></div>
+                  <div class="palette-node" data-type="manual" onclick="addFlowNode('manual')"><span class="pn-icon">\u25B6\uFE0F</span><span class="pn-label">Manual</span></div>
+                  <div class="palette-node" data-type="webhook" onclick="addFlowNode('webhook')"><span class="pn-icon">\uD83D\uDD17</span><span class="pn-label">Webhook</span></div>
+                </div>
+              </div>
+              <div class="palette-category" data-cat="ton">
+                <div class="palette-cat-header" onclick="togglePaletteCat(this)">
+                  <span class="cat-dot" style="background:#3b82f6"></span>
+                  <span data-en="TON Blockchain" data-ru="TON Блокчейн">TON Blockchain</span>
+                  <svg class="cat-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                </div>
+                <div class="palette-nodes">
+                  <div class="palette-node" data-type="get_balance" onclick="addFlowNode('get_balance')"><span class="pn-icon">\uD83D\uDCB0</span><span class="pn-label">Get Balance</span></div>
+                  <div class="palette-node" data-type="nft_floor" onclick="addFlowNode('nft_floor')"><span class="pn-icon">\uD83D\uDDBC\uFE0F</span><span class="pn-label">NFT Floor</span></div>
+                </div>
+              </div>
+              <div class="palette-category" data-cat="gifts">
+                <div class="palette-cat-header" onclick="togglePaletteCat(this)">
+                  <span class="cat-dot" style="background:#a855f7"></span>
+                  <span data-en="Gifts" data-ru="Подарки">Gifts</span>
+                  <svg class="cat-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                </div>
+                <div class="palette-nodes">
+                  <div class="palette-node" data-type="gift_prices" onclick="addFlowNode('gift_prices')"><span class="pn-icon">\uD83C\uDF81</span><span class="pn-label">Gift Prices</span></div>
+                  <div class="palette-node" data-type="scan_arbitrage" onclick="addFlowNode('scan_arbitrage')"><span class="pn-icon">\uD83D\uDCC8</span><span class="pn-label">Scan Arbitrage</span></div>
+                </div>
+              </div>
+              <div class="palette-category" data-cat="web">
+                <div class="palette-cat-header" onclick="togglePaletteCat(this)">
+                  <span class="cat-dot" style="background:#06b6d4"></span>
+                  <span data-en="Web" data-ru="Веб">Web</span>
+                  <svg class="cat-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                </div>
+                <div class="palette-nodes">
+                  <div class="palette-node" data-type="web_search" onclick="addFlowNode('web_search')"><span class="pn-icon">\uD83D\uDD0D</span><span class="pn-label">Web Search</span></div>
+                  <div class="palette-node" data-type="fetch_url" onclick="addFlowNode('fetch_url')"><span class="pn-icon">\uD83C\uDF10</span><span class="pn-label">Fetch URL</span></div>
+                </div>
+              </div>
+              <div class="palette-category" data-cat="output">
+                <div class="palette-cat-header" onclick="togglePaletteCat(this)">
+                  <span class="cat-dot" style="background:#10b981"></span>
+                  <span data-en="Output" data-ru="Вывод">Output</span>
+                  <svg class="cat-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                </div>
+                <div class="palette-nodes">
+                  <div class="palette-node" data-type="notify" onclick="addFlowNode('notify')"><span class="pn-icon">\uD83D\uDD14</span><span class="pn-label">Notify</span></div>
+                  <div class="palette-node" data-type="notify_rich" onclick="addFlowNode('notify_rich')"><span class="pn-icon">\uD83D\uDCE8</span><span class="pn-label">Rich Notify</span></div>
+                  <div class="palette-node" data-type="send_message" onclick="addFlowNode('send_message')"><span class="pn-icon">\u2709\uFE0F</span><span class="pn-label">TG Message</span></div>
+                </div>
+              </div>
+              <div class="palette-category" data-cat="logic">
+                <div class="palette-cat-header" onclick="togglePaletteCat(this)">
+                  <span class="cat-dot" style="background:#f43f5e"></span>
+                  <span data-en="Logic" data-ru="Логика">Logic</span>
+                  <svg class="cat-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                </div>
+                <div class="palette-nodes">
+                  <div class="palette-node" data-type="condition" onclick="addFlowNode('condition')"><span class="pn-icon">\uD83D\uDD00</span><span class="pn-label">Condition</span></div>
+                  <div class="palette-node" data-type="delay" onclick="addFlowNode('delay')"><span class="pn-icon">\u23F3</span><span class="pn-label">Delay</span></div>
+                </div>
+              </div>
+              <div class="palette-category" data-cat="state">
+                <div class="palette-cat-header" onclick="togglePaletteCat(this)">
+                  <span class="cat-dot" style="background:#8b5cf6"></span>
+                  <span data-en="State" data-ru="Состояние">State</span>
+                  <svg class="cat-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                </div>
+                <div class="palette-nodes">
+                  <div class="palette-node" data-type="get_state" onclick="addFlowNode('get_state')"><span class="pn-icon">\uD83D\uDCE5</span><span class="pn-label">Get State</span></div>
+                  <div class="palette-node" data-type="set_state" onclick="addFlowNode('set_state')"><span class="pn-icon">\uD83D\uDCE4</span><span class="pn-label">Set State</span></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Canvas -->
+            <div class="flow-canvas-wrap">
+              <canvas id="flow-canvas"></canvas>
+              <div id="flow-tooltip" class="flow-tooltip"></div>
+            </div>
+
+            <!-- Config Panel -->
+            <div class="flow-config" id="flow-config">
+              <div class="flow-config-header">
+                <h3 data-en="Settings" data-ru="Настройки">Settings</h3>
+              </div>
+              <div id="flow-config-body" class="flow-config-body">
+                <p class="flow-config-empty" data-en="Click a node to configure" data-ru="Кликните на ноду для настройки">Click a node to configure</p>
+              </div>
+            </div>
           </div>
         </div>
       </div>

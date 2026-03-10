@@ -664,7 +664,7 @@ UserID: ${userId}${isOwner ? ' 👑 OWNER' : ''} | ${plan.icon} ${plan.name} | �
 
   // ===== Обработчики intent'ов =====
 
-  private async handleCreateAgent(
+  public async handleCreateAgent(
     userId: number,
     message: string,
     agentName?: string,
