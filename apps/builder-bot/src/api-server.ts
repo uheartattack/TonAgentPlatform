@@ -163,6 +163,16 @@ const NODE_TOOL_MAP: Record<string, string> = {
   condition: '', delay: '',
   get_state: 'get_state', set_state: 'set_state',
   send_message: 'tg_send_message',
+  // New nodes
+  send_ton: 'send_ton',
+  gift_floor: 'get_gift_floor_real',
+  market_overview: 'get_market_overview',
+  http_request: 'fetch_url',
+  tg_read: 'tg_get_messages',
+  tg_react: 'tg_react',
+  tg_forward: 'tg_forward',
+  list_agents: 'list_my_agents',
+  ask_agent: 'ask_agent',
 };
 
 function flowToSystemPrompt(flow: { nodes: any[]; edges: any[] }): string {
@@ -566,6 +576,37 @@ export function startApiServer() {
       // Direct SQL update for name
       await pool.query('UPDATE builder_bot.agents SET name = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3', [name.trim(), agentId, userId]);
       res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── PUT /api/agents/:id/capabilities — обновить возможности агента ──
+  app.put('/api/agents/:id/capabilities', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const agentId = parseInt(req.params.id as string, 10);
+      if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
+
+      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
+      const agent = agentCheck.data;
+
+      const { capabilities } = req.body || {};
+      if (!Array.isArray(capabilities)) { res.status(400).json({ error: 'capabilities must be array' }); return; }
+
+      const validCaps = ['wallet', 'nft', 'gifts', 'gifts_market', 'telegram', 'web', 'state', 'notify', 'plugins', 'inter_agent'];
+      const filtered = capabilities.filter((c: string) => validCaps.includes(c));
+
+      const tc = typeof agent.triggerConfig === 'string' ? JSON.parse(agent.triggerConfig) : (agent.triggerConfig || {});
+      if (!tc.config) tc.config = {};
+      tc.config.enabledCapabilities = filtered;
+
+      await pool.query(
+        'UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3',
+        [JSON.stringify(tc), agentId, userId]
+      );
+      res.json({ ok: true, capabilities: filtered });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

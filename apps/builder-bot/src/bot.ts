@@ -3614,6 +3614,68 @@ bot.on('callback_query', async (ctx) => {
     return;
   }
 
+  // ── Agent capabilities toggle ──────────────────────────────────────────
+  if (data.startsWith('agent_cap:')) {
+    const parts = data.split(':');
+    const agentId = parseInt(parts[1], 10);
+    const capId = parts[2];
+    await ctx.answerCbQuery();
+    try {
+      const agentData = await getDBTools().getAgent(agentId, userId);
+      if (!agentData.success || !agentData.data) { await ctx.reply('❌'); return; }
+      const tc = (typeof agentData.data.triggerConfig === 'object' ? agentData.data.triggerConfig : {}) as Record<string, any>;
+      if (!tc.config) tc.config = {};
+      const caps: string[] = tc.config.enabledCapabilities || [];
+      const idx = caps.indexOf(capId);
+      if (idx >= 0) caps.splice(idx, 1); else caps.push(capId);
+      tc.config.enabledCapabilities = caps;
+      await dbPool.query('UPDATE builder_bot.agents SET trigger_config=$1 WHERE id=$2 AND user_id=$3', [JSON.stringify(tc), agentId, userId]);
+      await showCapabilitiesMenu(ctx, agentId, caps);
+    } catch (e: any) {
+      await ctx.reply('❌ ' + (e.message || String(e)));
+    }
+    return;
+  }
+
+  if (data.startsWith('agent_cap_done:')) {
+    const agentId = parseInt(data.split(':')[1], 10);
+    await ctx.answerCbQuery('✅ Сохранено');
+    await showAgentMenu(ctx, agentId, userId);
+    return;
+  }
+
+  if (data.startsWith('agent_cap_all:')) {
+    const agentId = parseInt(data.split(':')[1], 10);
+    await ctx.answerCbQuery();
+    try {
+      const agentData = await getDBTools().getAgent(agentId, userId);
+      if (!agentData.success || !agentData.data) { await ctx.reply('❌'); return; }
+      const tc = (typeof agentData.data.triggerConfig === 'object' ? agentData.data.triggerConfig : {}) as Record<string, any>;
+      if (!tc.config) tc.config = {};
+      tc.config.enabledCapabilities = [];
+      await dbPool.query('UPDATE builder_bot.agents SET trigger_config=$1 WHERE id=$2 AND user_id=$3', [JSON.stringify(tc), agentId, userId]);
+      await showCapabilitiesMenu(ctx, agentId, []);
+    } catch (e: any) {
+      await ctx.reply('❌ ' + (e.message || String(e)));
+    }
+    return;
+  }
+
+  if (data.startsWith('agent_caps_menu:')) {
+    const agentId = parseInt(data.split(':')[1], 10);
+    await ctx.answerCbQuery();
+    try {
+      const agentData = await getDBTools().getAgent(agentId, userId);
+      if (!agentData.success || !agentData.data) { await ctx.reply('❌'); return; }
+      const tc = (typeof agentData.data.triggerConfig === 'object' ? agentData.data.triggerConfig : {}) as Record<string, any>;
+      const caps: string[] = tc.config?.enabledCapabilities || [];
+      await showCapabilitiesMenu(ctx, agentId, caps);
+    } catch (e: any) {
+      await ctx.reply('❌ ' + (e.message || String(e)));
+    }
+    return;
+  }
+
   // ── Deploy as Telegram Userbot ──────────────────────────────────────────
   // ── Toggle inter-agent communication ──
   if (data.startsWith('toggle_inter_agent:')) {
@@ -4717,15 +4779,23 @@ async function sendResult(ctx: Context, result: {
     await editOrReply(ctx, content, { parse_mode: 'HTML', ...extra });
   }
 
-  // После создания агента — показываем список только если нет auto-start
-  // (если auto-start произошёл в orchestrator — кнопки уже содержат "Логи" и "Остановить")
+  // После создания агента — предлагаем настроить capabilities
   if (result.type === 'agent_created' && result.agentId) {
     const uid = (ctx.from as any)?.id;
-    // Показываем список только если в кнопках нет кнопки логов (значит авто-старта не было)
-    const hasLogs = result.buttons?.some(b => b.callbackData?.startsWith('show_logs:'));
-    if (uid && !hasLogs) {
-      // небольшая задержка чтобы пользователь успел прочитать сообщение
-      setTimeout(() => showAgentsList(ctx, uid).catch(() => {}), 1500);
+    if (uid) {
+      const lang = getUserLang(uid);
+      const ru = lang === 'ru';
+      setTimeout(async () => {
+        try {
+          await ctx.reply(
+            ru ? '🧩 Хотите настроить возможности агента? По умолчанию включены все.' : '🧩 Want to configure agent capabilities? All enabled by default.',
+            { reply_markup: { inline_keyboard: [
+              [{ text: `🧩 ${ru ? 'Настроить возможности' : 'Configure capabilities'}`, callback_data: `agent_caps_menu:${result.agentId}` }],
+              [{ text: `✅ ${ru ? 'Оставить все' : 'Keep all'}`, callback_data: `agent_cap_done:${result.agentId}` }],
+            ] } }
+          );
+        } catch {}
+      }, 1500);
     }
   }
 }
@@ -5030,6 +5100,61 @@ async function showAgentsList(ctx: Context, userId: number) {
 }
 
 // ============================================================
+// Меню возможностей агента (capabilities toggle)
+// ============================================================
+const CAPABILITY_LABELS: Record<string, { icon: string; ru: string; en: string }> = {
+  wallet:       { icon: '💰', ru: 'Кошелёк TON', en: 'TON Wallet' },
+  nft:          { icon: '🖼', ru: 'NFT анализ', en: 'NFT Analysis' },
+  gifts:        { icon: '🎁', ru: 'Подарки', en: 'Gifts' },
+  gifts_market: { icon: '📊', ru: 'Рынок подарков', en: 'Gift Market' },
+  telegram:     { icon: '📱', ru: 'Telegram', en: 'Telegram' },
+  web:          { icon: '🌐', ru: 'Веб поиск', en: 'Web Search' },
+  plugins:      { icon: '🔌', ru: 'Плагины', en: 'Plugins' },
+  inter_agent:  { icon: '🔗', ru: 'Межагент', en: 'Inter-agent' },
+};
+
+async function showCapabilitiesMenu(ctx: Context, agentId: number, enabledCaps: string[]) {
+  const userId = (ctx.from as any)?.id || 0;
+  const lang = getUserLang(userId);
+  const ru = lang === 'ru';
+  const allCaps = enabledCaps.length === 0;
+
+  let text = `🧩 <b>${ru ? 'Возможности агента' : 'Agent Capabilities'}</b> #${agentId}\n`;
+  text += `${div()}\n`;
+  text += ru
+    ? (allCaps ? '<i>Все возможности включены (по умолчанию)</i>\n' : `<i>Выбрано: ${enabledCaps.length} из ${Object.keys(CAPABILITY_LABELS).length}</i>\n`)
+    : (allCaps ? '<i>All capabilities enabled (default)</i>\n' : `<i>Selected: ${enabledCaps.length} of ${Object.keys(CAPABILITY_LABELS).length}</i>\n`);
+  text += '\n';
+  text += ru
+    ? '👆 Нажмите чтобы включить/выключить:'
+    : '👆 Tap to toggle:';
+
+  const keyboard: any[][] = [];
+  const capIds = Object.keys(CAPABILITY_LABELS);
+  for (let i = 0; i < capIds.length; i += 2) {
+    const row: any[] = [];
+    for (let j = i; j < Math.min(i + 2, capIds.length); j++) {
+      const cap = capIds[j];
+      const label = CAPABILITY_LABELS[cap];
+      const isOn = allCaps || enabledCaps.includes(cap);
+      row.push({
+        text: `${isOn ? '✅' : '⬜'} ${label.icon} ${ru ? label.ru : label.en}`,
+        callback_data: `agent_cap:${agentId}:${cap}`,
+      });
+    }
+    keyboard.push(row);
+  }
+  keyboard.push([
+    { text: allCaps ? `🔒 ${ru ? 'Ограничить' : 'Restrict'}` : `🔓 ${ru ? 'Включить все' : 'Enable all'}`, callback_data: `agent_cap_all:${agentId}` },
+  ]);
+  keyboard.push([
+    { text: `✅ ${ru ? 'Готово' : 'Done'}`, callback_data: `agent_cap_done:${agentId}` },
+  ]);
+
+  await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } });
+}
+
+// ============================================================
 // Меню конкретного агента
 // ============================================================
 async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
@@ -5129,6 +5254,9 @@ async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
     if (a.triggerType === 'ai_agent') {
       keyboard.push([
         { text: `⚙️ ${ru2 ? 'Настройки AI' : 'AI Settings'}`, callback_data: `agent_settings:${agentId}` },
+        { text: `🧩 ${ru2 ? 'Возможности' : 'Capabilities'}`, callback_data: `agent_caps_menu:${agentId}` },
+      ]);
+      keyboard.push([
         { text: `🔍 ${ru2 ? 'Аудит' : 'Audit'}`, callback_data: `audit_agent:${agentId}` },
       ]);
     } else {
