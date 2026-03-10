@@ -692,6 +692,8 @@ const pageLoadFns = {
   settings:    () => loadSettings(),
   network:     () => loadNetworkMap(),
   builder:     () => initFlowBuilder(),
+  marketplace: () => loadMarketplace(),
+  guide:       () => Promise.resolve(),
 };
 
 // Stub functions for pages that don't have dedicated load logic yet
@@ -2758,6 +2760,7 @@ let _flowCanvas = null, _flowCtx = null;
 let _flowNextId = 1;
 let _flowParticles = [];
 let _flowMultiSelected = new Set();
+let _flowSelectedEdge = null; // index in _flowEdges or null
 let _flowGroups = []; // [{id, name, nodeIds[], collapsed}]
 let _flowGroupNextId = 1;
 
@@ -2876,16 +2879,40 @@ function addFlowNode(type) {
   const def = FLOW_NODE_DEFS[type];
   if (!def) return;
   const id = 'n' + (_flowNextId++);
-  const cx = _flowCanvas ? _flowCanvas.width / 2 / (window.devicePixelRatio || 1) : 400;
-  const cy = _flowCanvas ? _flowCanvas.height / 2 / (window.devicePixelRatio || 1) : 250;
-  // Offset each new node slightly so they don't stack perfectly
-  const jx = (Math.random() - 0.5) * 80;
-  const jy = (Math.random() - 0.5) * 60;
-  _flowNodes.push({
-    id, type, x: cx + jx, y: cy + jy,
-    config: {},
-    def,
-  });
+
+  // EV3-style: if a node is selected, place new node to its right and auto-connect
+  let wx, wy;
+  const prevNode = _flowSelectedId ? getFlowNode(_flowSelectedId) : null;
+  if (prevNode && def.cat !== 'triggers') {
+    wx = prevNode.x + NODE_W + 40;
+    wy = prevNode.y;
+    // Snap to grid
+    wx = Math.round(wx / 30) * 30;
+    wy = Math.round(wy / 30) * 30;
+  } else {
+    // Place in center of visible area (world coords)
+    const cx = _flowCanvas ? _flowCanvas.parentElement.clientWidth : 800;
+    const cy = _flowCanvas ? _flowCanvas.parentElement.clientHeight : 500;
+    wx = (cx / 2 - _flowPanX) / _flowZoom + (Math.random() - 0.5) * 60;
+    wy = (cy / 2 - _flowPanY) / _flowZoom + (Math.random() - 0.5) * 40;
+    wx = Math.round(wx / 30) * 30;
+    wy = Math.round(wy / 30) * 30;
+  }
+
+  const newNode = { id, type, x: wx, y: wy, config: {}, def };
+  _flowNodes.push(newNode);
+
+  // Auto-connect from previous selected node
+  if (prevNode && def.cat !== 'triggers') {
+    const prevDef = prevNode.def;
+    const fromPort = (prevDef.extraPorts && prevDef.extraPorts.length) ? prevDef.extraPorts[0] : 'out';
+    const exists = _flowEdges.some(e => e.from === prevNode.id && e.fromPort === fromPort && e.to === id);
+    if (!exists) {
+      _flowEdges.push({ from: prevNode.id, fromPort: fromPort, to: id, toPort: 'in' });
+      _flowParticles.push({ from: prevNode.id, fromPort: fromPort, to: id, t: 0, speed: 0.004 + Math.random() * 0.004 });
+    }
+  }
+
   _flowSelectedId = id;
   flowPushState();
   renderFlowConfig();
@@ -2897,6 +2924,50 @@ function deleteFlowNode(id) {
   _flowParticles = _flowParticles.filter(p => p.from !== id && p.to !== id);
   flowPushState();
   if (_flowSelectedId === id) { _flowSelectedId = null; renderFlowConfig(); }
+}
+
+function deleteFlowEdge(idx) {
+  if (idx < 0 || idx >= _flowEdges.length) return;
+  const edge = _flowEdges[idx];
+  _flowEdges.splice(idx, 1);
+  _flowParticles = _flowParticles.filter(p =>
+    !(p.from === edge.from && p.to === edge.to && p.fromPort === edge.fromPort)
+  );
+  _flowSelectedEdge = null;
+  flowPushState();
+  showFlowToast(currentLang === 'ru' ? 'Связь удалена' : 'Connection removed', 'success');
+}
+
+function hitTestEdge(mx, my, threshold) {
+  threshold = threshold || 8;
+  for (let idx = 0; idx < _flowEdges.length; idx++) {
+    const edge = _flowEdges[idx];
+    const fromNode = getFlowNode(edge.from);
+    const toNode = getFlowNode(edge.to);
+    if (!fromNode || !toNode) continue;
+    const from = getPortPos(fromNode, edge.fromPort);
+    const to = getPortPos(toNode, edge.toPort || 'in');
+    const isBackward = to.x < from.x - 20;
+    let cp1x, cp1y, cp2x, cp2y;
+    if (isBackward) {
+      const midY = Math.max(from.y, to.y) + 80;
+      cp1x = from.x + 40; cp1y = midY;
+      cp2x = to.x - 40;   cp2y = midY;
+    } else {
+      const cpOff = Math.max(60, Math.abs(to.x - from.x) * 0.4);
+      cp1x = from.x + cpOff; cp1y = from.y;
+      cp2x = to.x - cpOff;   cp2y = to.y;
+    }
+    for (let i = 0; i <= 20; i++) {
+      const t = i / 20;
+      const it = 1 - t;
+      const px = it*it*it*from.x + 3*it*it*t*cp1x + 3*it*t*t*cp2x + t*t*t*to.x;
+      const py = it*it*it*from.y + 3*it*it*t*cp1y + 3*it*t*t*cp2y + t*t*t*to.y;
+      const dx = mx - px, dy = my - py;
+      if (dx*dx + dy*dy < threshold*threshold) return idx;
+    }
+  }
+  return -1;
 }
 
 function getFlowNode(id) { return _flowNodes.find(n => n.id === id); }
@@ -3399,9 +3470,23 @@ function initFlowBuilder() {
       renderFlowConfig();
       canvas.classList.add('dragging');
     } else {
+      // Check edge click
+      const edgeIdx = hitTestEdge(mx, my);
+      if (edgeIdx >= 0) {
+        _flowSelectedEdge = edgeIdx;
+        _flowSelectedId = null;
+        _flowMultiSelected.clear();
+        renderFlowConfig();
+        return;
+      }
+      // Empty space → deselect all + start LMB pan
       _flowSelectedId = null;
+      _flowSelectedEdge = null;
       _flowMultiSelected.clear();
       renderFlowConfig();
+      _flowPanning = true;
+      _flowPanStart = { x: e.clientX - _flowPanX, y: e.clientY - _flowPanY };
+      canvas.style.cursor = 'grabbing';
     }
   });
 
@@ -3507,6 +3592,18 @@ function initFlowBuilder() {
     canvas.classList.remove('dragging');
   });
 
+  // Right-click → delete edge
+  canvas.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    const r = canvas.getBoundingClientRect();
+    const sx = e.clientX - r.left, sy = e.clientY - r.top;
+    const { x: mx, y: my } = screenToWorld(sx, sy);
+    const edgeIdx = hitTestEdge(mx, my);
+    if (edgeIdx >= 0) {
+      deleteFlowEdge(edgeIdx);
+    }
+  });
+
   // Wheel zoom
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
@@ -3546,8 +3643,9 @@ function initFlowBuilder() {
       flowRedo();
       return;
     }
-    if ((e.key === 'Delete' || e.key === 'Backspace') && _flowSelectedId && document.activeElement === document.body) {
-      deleteFlowNode(_flowSelectedId);
+    if ((e.key === 'Delete' || e.key === 'Backspace') && document.activeElement === document.body) {
+      if (_flowSelectedId) deleteFlowNode(_flowSelectedId);
+      else if (_flowSelectedEdge !== null) deleteFlowEdge(_flowSelectedEdge);
     }
   });
 
@@ -3610,15 +3708,24 @@ function initFlowBuilder() {
       const to = getPortPos(toNode, edge.toPort);
       const isBackward = to.x < from.x - 20;
 
-      // Edge glow
+      // Edge glow (selected edge is brighter + wider)
+      const isEdgeSelected = (idx === _flowSelectedEdge);
       ctx.save();
-      ctx.shadowColor = fromNode.def.color;
-      ctx.shadowBlur = 4;
-      const grad = ctx.createLinearGradient(from.x, from.y, to.x, to.y);
-      grad.addColorStop(0, fromNode.def.color + 'aa');
-      grad.addColorStop(1, toNode.def.color + 'aa');
-      ctx.strokeStyle = grad;
-      ctx.lineWidth = 2;
+      ctx.shadowColor = isEdgeSelected ? '#fff' : fromNode.def.color;
+      ctx.shadowBlur = isEdgeSelected ? 12 : 4;
+      if (isEdgeSelected) {
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 3.5;
+      } else {
+        // Port-colored edges
+        const portColors = { true: '#10b981', false: '#ef4444', loop: '#f59e0b', done: '#10b981' };
+        const srcColor = portColors[edge.fromPort] || fromNode.def.color;
+        const grad = ctx.createLinearGradient(from.x, from.y, to.x, to.y);
+        grad.addColorStop(0, srcColor + 'aa');
+        grad.addColorStop(1, toNode.def.color + 'aa');
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = 2;
+      }
       ctx.beginPath();
       ctx.moveTo(from.x, from.y);
       if (isBackward) {
@@ -3643,20 +3750,37 @@ function initFlowBuilder() {
       ctx.fill();
     });
 
-    // Edge particles
+    // Clean up orphaned particles
+    _flowParticles = _flowParticles.filter(p =>
+      _flowEdges.some(e => e.from === p.from && e.to === p.to && e.fromPort === p.fromPort)
+    );
+
+    // Edge particles — follow EXACT same bezier as drawn edge
     _flowParticles.forEach(p => {
       const fromNode = getFlowNode(p.from);
       const toNode = getFlowNode(p.to);
       if (!fromNode || !toNode) return;
       const from = getPortPos(fromNode, p.fromPort);
       const to = getPortPos(toNode, 'in');
-      const cpOff = Math.max(60, Math.abs(to.x - from.x) * 0.4);
       p.t = (p.t + p.speed) % 1;
       const tt = p.t;
-      // Bezier interpolation
       const it = 1 - tt;
-      const px = it*it*it*from.x + 3*it*it*tt*(from.x+cpOff) + 3*it*tt*tt*(to.x-cpOff) + tt*tt*tt*to.x;
-      const py = it*it*it*from.y + 3*it*it*tt*from.y + 3*it*tt*tt*to.y + tt*tt*tt*to.y;
+
+      // Use SAME control points as edge drawing
+      const isBackward = to.x < from.x - 20;
+      let cp1x, cp1y, cp2x, cp2y;
+      if (isBackward) {
+        const midY = Math.max(from.y, to.y) + 80;
+        cp1x = from.x + 40;  cp1y = midY;
+        cp2x = to.x - 40;    cp2y = midY;
+      } else {
+        const cpOff = Math.max(60, Math.abs(to.x - from.x) * 0.4);
+        cp1x = from.x + cpOff;  cp1y = from.y;
+        cp2x = to.x - cpOff;    cp2y = to.y;
+      }
+
+      const px = it*it*it*from.x + 3*it*it*tt*cp1x + 3*it*tt*tt*cp2x + tt*tt*tt*to.x;
+      const py = it*it*it*from.y + 3*it*it*tt*cp1y + 3*it*tt*tt*cp2y + tt*tt*tt*to.y;
       ctx.beginPath();
       ctx.arc(px, py, 3, 0, Math.PI * 2);
       ctx.fillStyle = fromNode.def.color;
@@ -4037,17 +4161,34 @@ async function loadNetworkMap() {
     const r = canvas.getBoundingClientRect();
     _networkMouse.x = e.clientX - r.left;
     _networkMouse.y = e.clientY - r.top;
+    _networkClickStart = { x: _networkMouse.x, y: _networkMouse.y, time: Date.now(), node: null };
     for (const n of _networkNodes) {
       const dx = _networkMouse.x - n.x, dy = _networkMouse.y - n.y;
       if (dx * dx + dy * dy < n.radius * n.radius) {
         _networkDragNode = n;
         _networkDragOffset.dx = dx;
         _networkDragOffset.dy = dy;
+        _networkClickStart.node = n;
         break;
       }
     }
   });
-  canvas.addEventListener('mouseup', () => { _networkDragNode = null; _networkDragOffset.dx = 0; _networkDragOffset.dy = 0; });
+  canvas.addEventListener('mouseup', (e) => {
+    if (_networkClickStart && _networkClickStart.node) {
+      const r = canvas.getBoundingClientRect();
+      const mx = e.clientX - r.left, my = e.clientY - r.top;
+      const movedX = mx - _networkClickStart.x, movedY = my - _networkClickStart.y;
+      const dist = Math.sqrt(movedX * movedX + movedY * movedY);
+      const elapsed = Date.now() - _networkClickStart.time;
+      if (dist < 5 && elapsed < 300) {
+        showNetworkAgentPanel(_networkClickStart.node);
+      }
+    }
+    _networkDragNode = null;
+    _networkDragOffset.dx = 0;
+    _networkDragOffset.dy = 0;
+    _networkClickStart = null;
+  });
   canvas.addEventListener('mouseleave', () => {
     _networkDragNode = null;
     _networkDragOffset.dx = 0; _networkDragOffset.dy = 0;
@@ -4184,6 +4325,261 @@ async function loadNetworkMap() {
   }
 
   animate();
+}
+
+// ===== CREATE AGENT DROPDOWN =====
+function showCreateAgentMenu(event) {
+  event.stopPropagation();
+  const dd = document.getElementById('create-agent-dropdown');
+  if (!dd) return;
+  dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
+}
+function hideCreateMenu() {
+  const dd = document.getElementById('create-agent-dropdown');
+  if (dd) dd.style.display = 'none';
+}
+document.addEventListener('click', function(e) {
+  const dd = document.getElementById('create-agent-dropdown');
+  if (dd && dd.style.display !== 'none' && !dd.contains(e.target) && !e.target.closest('[onclick*="showCreateAgentMenu"]')) {
+    dd.style.display = 'none';
+  }
+});
+
+// ===== AI CHAT WIDGET =====
+let _chatLoaded = false;
+
+function toggleChatWidget() {
+  const w = document.getElementById('chat-widget');
+  if (!w) return;
+  if (w.style.display === 'none' || !w.style.display) {
+    openDashboardChat();
+  } else {
+    closeChatWidget();
+  }
+}
+
+function openDashboardChat() {
+  const w = document.getElementById('chat-widget');
+  if (w) w.style.display = 'flex';
+  if (!_chatLoaded) {
+    _chatLoaded = true;
+    loadChatHistory();
+  }
+  setTimeout(() => {
+    const input = document.getElementById('chat-input');
+    if (input) input.focus();
+  }, 100);
+}
+
+function closeChatWidget() {
+  const w = document.getElementById('chat-widget');
+  if (w) w.style.display = 'none';
+}
+
+async function loadChatHistory() {
+  try {
+    const data = await apiRequest('GET', '/api/chat/history');
+    if (data.ok && data.messages && data.messages.length) {
+      const container = document.getElementById('chat-messages');
+      // Keep the welcome message, add history after
+      data.messages.forEach(function(m) {
+        appendChatMsg(m.role === 'user' ? 'user' : 'assistant', m.content);
+      });
+      container.scrollTop = container.scrollHeight;
+    }
+  } catch (e) { /* silent */ }
+}
+
+function appendChatMsg(role, content, buttons) {
+  const container = document.getElementById('chat-messages');
+  if (!container) return;
+  const div = document.createElement('div');
+  div.className = 'chat-msg ' + role;
+  // Simple markdown-like: **bold**, `code`, newlines
+  let html = escHtml(content)
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/`([^`]+)`/g, '<code style="background:rgba(255,255,255,0.08);padding:1px 4px;border-radius:3px">$1</code>')
+    .replace(/\n/g, '<br>');
+  if (buttons && buttons.length) {
+    html += '<div class="chat-buttons">';
+    buttons.forEach(function(b) {
+      html += '<button onclick="sendChatCallback(\'' + escHtml(b.callbackData || b.text) + '\')">' + escHtml(b.text) + '</button>';
+    });
+    html += '</div>';
+  }
+  div.innerHTML = html;
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+function escHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+async function sendChatMessage() {
+  var input = document.getElementById('chat-input');
+  var text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  input.style.height = 'auto';
+
+  appendChatMsg('user', text);
+
+  // Typing indicator
+  var container = document.getElementById('chat-messages');
+  var typing = document.createElement('div');
+  typing.className = 'chat-msg assistant chat-typing';
+  typing.id = 'chat-typing';
+  typing.textContent = '⏳ ...';
+  container.appendChild(typing);
+  container.scrollTop = container.scrollHeight;
+
+  var sendBtn = document.getElementById('chat-send-btn');
+  if (sendBtn) sendBtn.disabled = true;
+
+  try {
+    var data = await apiRequest('POST', '/api/chat', { message: text });
+    var typingEl = document.getElementById('chat-typing');
+    if (typingEl) typingEl.remove();
+
+    if (data.ok && data.result) {
+      var r = data.result;
+      appendChatMsg('assistant', r.content, r.buttons);
+
+      // If agent was created, refresh list
+      if (r.type === 'agent_created') {
+        loadAgents();
+        showNotification('🤖 ' + (currentLang === 'ru' ? 'Агент создан!' : 'Agent created!'), 'success');
+      }
+    } else {
+      appendChatMsg('assistant', '❌ ' + (data.error || 'Error'));
+    }
+  } catch (e) {
+    var typingEl2 = document.getElementById('chat-typing');
+    if (typingEl2) typingEl2.remove();
+    appendChatMsg('assistant', '❌ ' + e.message);
+  } finally {
+    if (sendBtn) sendBtn.disabled = false;
+  }
+}
+
+async function sendChatCallback(callbackData) {
+  appendChatMsg('user', callbackData);
+  try {
+    var data = await apiRequest('POST', '/api/chat', { message: callbackData });
+    if (data.ok && data.result) {
+      appendChatMsg('assistant', data.result.content, data.result.buttons);
+      if (data.result.type === 'agent_created') loadAgents();
+    }
+  } catch (e) {
+    appendChatMsg('assistant', '❌ ' + e.message);
+  }
+}
+
+// ===== MARKETPLACE =====
+let _marketplaceListings = [];
+let _marketplaceFilter = 'all';
+
+async function loadMarketplace() {
+  var endpoint = _marketplaceFilter === 'my'
+    ? '/api/marketplace/my'
+    : '/api/marketplace' + (_marketplaceFilter !== 'all' ? '?category=' + _marketplaceFilter : '');
+  try {
+    var data = await apiRequest('GET', endpoint);
+    _marketplaceListings = (data.ok ? data.listings : []) || [];
+  } catch (e) {
+    _marketplaceListings = [];
+  }
+  renderMarketplaceGrid();
+}
+
+function filterMarketplace(cat) {
+  _marketplaceFilter = cat;
+  document.querySelectorAll('.mkt-tab').forEach(function(t) {
+    t.classList.toggle('active', t.getAttribute('data-cat') === cat);
+  });
+  loadMarketplace();
+}
+
+function renderMarketplaceGrid() {
+  var grid = document.getElementById('marketplace-grid');
+  if (!grid) return;
+  if (!_marketplaceListings.length) {
+    grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;text-align:center;padding:60px 20px">' +
+      '<p style="font-size:2rem;margin-bottom:12px">🏪</p>' +
+      '<p style="color:var(--text-muted)">' + (currentLang === 'ru' ? 'Пока ничего нет' : 'Nothing here yet') + '</p></div>';
+    return;
+  }
+  grid.innerHTML = _marketplaceListings.map(function(l) {
+    var priceText = l.isFree ? (currentLang === 'ru' ? 'Бесплатно' : 'Free') : ((Number(l.price || 0) / 1e9).toFixed(2) + ' TON');
+    return '<div class="marketplace-card">' +
+      '<div class="mkt-card-header">' +
+        '<span class="mkt-card-category">' + escHtml(l.category || 'other') + '</span>' +
+        '<span class="mkt-card-price">' + priceText + '</span>' +
+      '</div>' +
+      '<h4>' + escHtml(l.name) + '</h4>' +
+      '<p>' + escHtml((l.description || '').slice(0, 140)) + '</p>' +
+      '<button class="btn btn-primary btn-sm" onclick="installFromMarketplace(' + l.id + ')" style="width:100%">' +
+        (currentLang === 'ru' ? '📥 Установить' : '📥 Install') +
+      '</button>' +
+    '</div>';
+  }).join('');
+}
+
+async function installFromMarketplace(listingId) {
+  try {
+    var data = await apiRequest('POST', '/api/marketplace/' + listingId + '/install');
+    if (data.ok) {
+      showNotification('✅ ' + (currentLang === 'ru' ? 'Агент установлен!' : 'Agent installed!'), 'success');
+      loadAgents();
+    } else {
+      showNotification('❌ ' + (data.error || 'Failed'), 'error');
+    }
+  } catch (e) {
+    showNotification('❌ ' + e.message, 'error');
+  }
+}
+
+function openPublishModal() {
+  showNotification(currentLang === 'ru' ? '🏪 Используйте бота в Telegram для публикации' : '🏪 Use the Telegram bot to publish agents', 'info');
+}
+
+// ===== GUIDE =====
+function toggleGuideSection(headerEl) {
+  var section = headerEl.closest('.guide-section');
+  if (section) section.classList.toggle('expanded');
+}
+
+// ===== NETWORK MAP CLICK =====
+let _networkClickStart = null;
+
+function showNetworkAgentPanel(node) {
+  var container = document.getElementById('network-page');
+  if (!container) return;
+  var existing = document.getElementById('network-agent-panel');
+  if (existing) existing.remove();
+
+  var panel = document.createElement('div');
+  panel.id = 'network-agent-panel';
+  panel.className = 'network-agent-panel';
+  var statusText = node.isActive ? '🟢 Active' : '⏸ Paused';
+  var toggleText = node.isActive ? (currentLang === 'ru' ? '⏸ Стоп' : '⏸ Stop') : (currentLang === 'ru' ? '🚀 Запустить' : '🚀 Start');
+  var toggleClass = node.isActive ? 'btn-warning' : 'btn-success';
+  panel.innerHTML = '<div class="nap-header">' +
+    '<span>' + node.emoji + ' ' + escHtml(node.name) + '</span>' +
+    '<button class="modal-close" onclick="this.closest(\'.network-agent-panel\').remove()" style="background:none;border:none;color:#999;font-size:1.2rem;cursor:pointer">&times;</button>' +
+  '</div>' +
+  '<div class="nap-body">' +
+    '<p>' + (currentLang === 'ru' ? 'Роль' : 'Role') + ': <strong>' + node.role + '</strong></p>' +
+    '<p>Lv.' + (node.level || 1) + ' | XP: ' + (node.xp || 0) + '</p>' +
+    '<p>' + statusText + '</p>' +
+    '<div class="nap-actions">' +
+      '<button class="btn btn-sm ' + toggleClass + '" onclick="toggleAgent(' + node.id + ',' + node.isActive + ');this.closest(\'.network-agent-panel\').remove()">' + toggleText + '</button>' +
+      '<button class="btn btn-ghost btn-sm" onclick="loadAgentLogs(' + node.id + ')">📋 Logs</button>' +
+    '</div>' +
+  '</div>';
+  container.querySelector('.page-content').appendChild(panel);
 }
 
 console.log('TON Agent Platform Dashboard v2.0 loaded successfully!');
