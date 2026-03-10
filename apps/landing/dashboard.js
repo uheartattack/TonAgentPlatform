@@ -4,25 +4,68 @@ let currentLang = localStorage.getItem('lang') || 'en';
 function switchLang(lang) {
   currentLang = lang;
   localStorage.setItem('lang', lang);
-  
+
   // Update buttons
   document.querySelectorAll('.lang-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.lang === lang);
   });
-  
+
   // Update all elements with data-en and data-ru
   document.querySelectorAll('[data-en][data-ru]').forEach(el => {
     el.textContent = el.dataset[lang];
   });
-  
+
   // Update placeholders
-  document.querySelectorAll(`[data-placeholder-${lang}]`).forEach(el => {
-    el.placeholder = el.dataset[`placeholder${lang.charAt(0).toUpperCase() + lang.slice(1)}`];
+  document.querySelectorAll('[data-placeholder-' + lang + ']').forEach(el => {
+    el.placeholder = el.dataset['placeholder' + lang.charAt(0).toUpperCase() + lang.slice(1)];
   });
+
+  // Re-render dynamic content that uses t()
+  if (authToken && currentUser) {
+    loadAgents();
+  }
 }
 
 // Initialize language
 switchLang(currentLang);
+
+// ===== TRANSLATION DICTIONARY =====
+const _tr = {
+  active: { en: 'Active', ru: 'Активен' },
+  paused: { en: 'Paused', ru: 'На паузе' },
+  run: { en: 'Run', ru: 'Запуск' },
+  stop: { en: 'Stop', ru: 'Стоп' },
+  logs: { en: 'Logs', ru: 'Логи' },
+  unnamed: { en: 'Unnamed', ru: 'Без имени' },
+  trigger_scheduled: { en: '\u23F0 Scheduled', ru: '\u23F0 По расписанию' },
+  trigger_webhook: { en: '\uD83D\uDD17 Webhook', ru: '\uD83D\uDD17 Вебхук' },
+  trigger_manual: { en: '\u25B6\uFE0F Manual', ru: '\u25B6\uFE0F Ручной' },
+  trigger_ai_agent: { en: '\uD83E\uDD16 AI Agent', ru: '\uD83E\uDD16 AI Агент' },
+  no_agents_yet: { en: 'No agents yet.', ru: 'Агентов пока нет.' },
+  create_first: { en: 'Create your first agent \u2192', ru: 'Создать первого агента \u2192' },
+  create_in_bot: { en: 'Create in Bot', ru: 'Создать в боте' },
+  or_word: { en: 'or', ru: 'или' },
+  failed_load: { en: 'Failed to load agents.', ru: 'Не удалось загрузить агентов.' },
+  no_logs: { en: 'No logs yet.', ru: 'Логов пока нет.' },
+  role: { en: 'Role', ru: 'Роль' },
+  lv: { en: 'Lv.', ru: 'Ур.' },
+  // Flow builder
+  flow_builder: { en: 'Flow Builder', ru: 'Конструктор' },
+  deploy: { en: 'Deploy', ru: 'Запуск' },
+  agent_name: { en: 'Agent name...', ru: 'Имя агента...' },
+  triggers: { en: 'Triggers', ru: 'Триггеры' },
+  actions: { en: 'Actions', ru: 'Действия' },
+  logic: { en: 'Logic', ru: 'Логика' },
+  output: { en: 'Output', ru: 'Вывод' },
+  state: { en: 'State', ru: 'Состояние' },
+  config: { en: 'Settings', ru: 'Настройки' },
+  no_node_selected: { en: 'Click a node to configure', ru: 'Кликните на ноду для настройки' },
+  delete_node: { en: 'Delete Node', ru: 'Удалить ноду' },
+  deploying: { en: 'Deploying...', ru: 'Запускаю...' },
+  deployed_ok: { en: 'Agent deployed!', ru: 'Агент запущен!' },
+  deploy_fail: { en: 'Deploy failed', ru: 'Ошибка запуска' },
+};
+function t(k) { const e = _tr[k]; return e ? (e[currentLang] || e.en || k) : k; }
 
 // ===== ANIMATED COUNTER =====
 // Плавно считает число от 0 до target за duration мс (WOW-эффект для метрик)
@@ -154,41 +197,46 @@ async function loadAgents() {
 
   const data = await apiRequest('GET', '/api/agents');
   if (!data.ok) {
-    agentsEl.innerHTML = '<div class="empty-state">⚠️ Failed to load agents. Make sure the bot server is running.</div>';
+    agentsEl.innerHTML = '<div class="empty-state">\u26A0\uFE0F ' + t('failed_load') + '</div>';
     return;
   }
   const agents = data.agents || [];
   if (!agents.length) {
-    const botLink = (window._appConfig && window._appConfig.botLink) || 'https://t.me/TonAgentPlatformBot';
     agentsEl.innerHTML = `
       <div class="empty-state">
-        <p>No agents yet.</p>
-        <a href="${escHtml(botLink)}" target="_blank" class="btn btn-primary btn-sm">
-          Create your first agent →
-        </a>
+        <p>${t('no_agents_yet')}</p>
+        <button class="btn btn-primary btn-sm" onclick="navigateTo('builder')">${t('create_first')}</button>
       </div>`;
     return;
   }
 
-  agentsEl.innerHTML = agents.map(a => `
+  const triggerLabel = (tt) => tt === 'scheduled' ? t('trigger_scheduled') : tt === 'webhook' ? t('trigger_webhook') : tt === 'ai_agent' ? t('trigger_ai_agent') : t('trigger_manual');
+  agentsEl.innerHTML = agents.map(a => {
+    const role = a.role || 'worker';
+    const lvl = a.level || 1;
+    return `
     <div class="agent-card" data-id="${a.id}">
       <div class="agent-status ${a.isActive ? 'active' : 'paused'}">
         <span class="status-dot"></span>
-        <span>${a.isActive ? 'Active' : 'Paused'}</span>
+        <span>${a.isActive ? t('active') : t('paused')}</span>
       </div>
       <div class="agent-info">
-        <strong>#${a.id} ${escHtml(a.name || 'Unnamed')}</strong>
+        <strong>#${a.id} ${escHtml(a.name || t('unnamed'))}</strong>
         <span class="agent-desc">${escHtml((a.description || '').slice(0, 80))}</span>
-        <span class="agent-trigger">${a.triggerType === 'scheduled' ? '⏰ Scheduled' : a.triggerType === 'webhook' ? '🔗 Webhook' : '▶️ Manual'}</span>
+        <span class="agent-meta">
+          <span class="agent-trigger">${triggerLabel(a.triggerType)}</span>
+          <span class="agent-role-badge role-${role}">${role}</span>
+          <span class="agent-level">${t('lv')}${lvl}</span>
+        </span>
       </div>
       <div class="agent-actions">
         <button class="btn btn-sm ${a.isActive ? 'btn-warning' : 'btn-success'}" onclick="toggleAgent(${a.id}, ${a.isActive})">
-          ${a.isActive ? '⏸ Stop' : '🚀 Run'}
+          ${a.isActive ? '\u23F8 ' + t('stop') : '\uD83D\uDE80 ' + t('run')}
         </button>
-        <button class="btn btn-ghost btn-sm" onclick="loadAgentLogs(${a.id})">📋 Logs</button>
+        <button class="btn btn-ghost btn-sm" onclick="loadAgentLogs(${a.id})">\uD83D\uDCCB ${t('logs')}</button>
       </div>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 }
 
 async function toggleAgent(agentId, isActive) {
@@ -431,6 +479,7 @@ const pageLoadFns = {
   wallet:      () => loadWallet(),
   settings:    () => loadSettings(),
   network:     () => loadNetworkMap(),
+  builder:     () => initFlowBuilder(),
 };
 
 // Stub functions for pages that don't have dedicated load logic yet
@@ -2136,10 +2185,503 @@ navigateTo = function(pageName) {
   }
 };
 
+// ===== FLOW BUILDER (Visual Agent Constructor) =====
+const FLOW_NODE_DEFS = {
+  timer:         { cat: 'triggers', color: '#f59e0b', icon: '\u23F0',        label: 'Timer',         fields: [{ key: 'intervalMs', label: 'Interval (ms)', type: 'select', options: [{ v: '60000', l: '1 min' }, { v: '300000', l: '5 min' }, { v: '600000', l: '10 min' }, { v: '1800000', l: '30 min' }, { v: '3600000', l: '1 hour' }] }] },
+  manual:        { cat: 'triggers', color: '#f59e0b', icon: '\u25B6\uFE0F', label: 'Manual',        fields: [] },
+  webhook:       { cat: 'triggers', color: '#f59e0b', icon: '\uD83D\uDD17', label: 'Webhook',       fields: [{ key: 'path', label: 'Path', type: 'text', placeholder: '/my-hook' }] },
+  get_balance:   { cat: 'ton',      color: '#3b82f6', icon: '\uD83D\uDCB0', label: 'Get Balance',   fields: [{ key: 'address', label: 'Address', type: 'text', placeholder: 'EQ...' }] },
+  nft_floor:     { cat: 'ton',      color: '#3b82f6', icon: '\uD83D\uDDBC\uFE0F', label: 'NFT Floor', fields: [{ key: 'collection', label: 'Collection', type: 'text', placeholder: 'TON Punks' }] },
+  gift_prices:   { cat: 'gifts',    color: '#a855f7', icon: '\uD83C\uDF81', label: 'Gift Prices',   fields: [{ key: 'slug', label: 'Gift slug', type: 'text', placeholder: 'gift-name' }] },
+  scan_arbitrage:{ cat: 'gifts',    color: '#a855f7', icon: '\uD83D\uDCC8', label: 'Scan Arbitrage',fields: [{ key: 'min_profit_pct', label: 'Min profit %', type: 'number', placeholder: '5' }] },
+  web_search:    { cat: 'web',      color: '#06b6d4', icon: '\uD83D\uDD0D', label: 'Web Search',    fields: [{ key: 'query', label: 'Query', type: 'text', placeholder: 'Search...' }] },
+  fetch_url:     { cat: 'web',      color: '#06b6d4', icon: '\uD83C\uDF10', label: 'Fetch URL',     fields: [{ key: 'url', label: 'URL', type: 'text', placeholder: 'https://...' }] },
+  notify:        { cat: 'output',   color: '#10b981', icon: '\uD83D\uDD14', label: 'Notify',        fields: [{ key: 'message', label: 'Message', type: 'textarea', placeholder: 'Alert: ...' }] },
+  notify_rich:   { cat: 'output',   color: '#10b981', icon: '\uD83D\uDCE8', label: 'Rich Notify',   fields: [{ key: 'message', label: 'HTML Message', type: 'textarea', placeholder: '<b>Alert</b>' }] },
+  send_message:  { cat: 'output',   color: '#0ea5e9', icon: '\u2709\uFE0F', label: 'TG Message',    fields: [{ key: 'peer', label: 'Chat/User', type: 'text', placeholder: '@username' }, { key: 'text', label: 'Text', type: 'textarea', placeholder: 'Message...' }] },
+  condition:     { cat: 'logic',    color: '#f43f5e', icon: '\uD83D\uDD00', label: 'Condition',     fields: [{ key: 'expression', label: 'If expression', type: 'text', placeholder: 'balance < 10' }], extraPorts: ['true', 'false'] },
+  delay:         { cat: 'logic',    color: '#f43f5e', icon: '\u23F3',        label: 'Delay',         fields: [{ key: 'ms', label: 'Delay (ms)', type: 'number', placeholder: '5000' }] },
+  get_state:     { cat: 'state',    color: '#8b5cf6', icon: '\uD83D\uDCE5', label: 'Get State',     fields: [{ key: 'key', label: 'Key', type: 'text', placeholder: 'my_key' }] },
+  set_state:     { cat: 'state',    color: '#8b5cf6', icon: '\uD83D\uDCE4', label: 'Set State',     fields: [{ key: 'key', label: 'Key', type: 'text', placeholder: 'my_key' }, { key: 'value', label: 'Value', type: 'text', placeholder: '...' }] },
+};
+
+const NODE_W = 180, NODE_H = 56, PORT_R = 6;
+let _flowNodes = [], _flowEdges = [], _flowSelectedId = null;
+let _flowDragNode = null, _flowDragOffset = { dx: 0, dy: 0 };
+let _flowConnecting = null; // { fromId, fromPort, mx, my }
+let _flowMouse = { x: 0, y: 0 };
+let _flowAnimId = null;
+let _flowCanvas = null, _flowCtx = null;
+let _flowNextId = 1;
+let _flowParticles = [];
+
+function togglePaletteCat(headerEl) {
+  headerEl.parentElement.classList.toggle('collapsed');
+}
+
+function addFlowNode(type) {
+  const def = FLOW_NODE_DEFS[type];
+  if (!def) return;
+  const id = 'n' + (_flowNextId++);
+  const cx = _flowCanvas ? _flowCanvas.width / 2 / (window.devicePixelRatio || 1) : 400;
+  const cy = _flowCanvas ? _flowCanvas.height / 2 / (window.devicePixelRatio || 1) : 250;
+  // Offset each new node slightly so they don't stack perfectly
+  const jx = (Math.random() - 0.5) * 80;
+  const jy = (Math.random() - 0.5) * 60;
+  _flowNodes.push({
+    id, type, x: cx + jx, y: cy + jy,
+    config: {},
+    def,
+  });
+  _flowSelectedId = id;
+  renderFlowConfig();
+}
+
+function deleteFlowNode(id) {
+  _flowNodes = _flowNodes.filter(n => n.id !== id);
+  _flowEdges = _flowEdges.filter(e => e.from !== id && e.to !== id);
+  _flowParticles = _flowParticles.filter(p => p.from !== id && p.to !== id);
+  if (_flowSelectedId === id) { _flowSelectedId = null; renderFlowConfig(); }
+}
+
+function getFlowNode(id) { return _flowNodes.find(n => n.id === id); }
+
+// Port positions
+function getPortPos(node, port) {
+  const x = node.x, y = node.y;
+  if (port === 'in') return { x: x, y: y + NODE_H / 2 };
+  if (port === 'out') return { x: x + NODE_W, y: y + NODE_H / 2 };
+  if (port === 'true') return { x: x + NODE_W, y: y + NODE_H / 3 };
+  if (port === 'false') return { x: x + NODE_W, y: y + NODE_H * 2 / 3 };
+  return { x: x + NODE_W, y: y + NODE_H / 2 };
+}
+
+function hitTestPort(node, mx, my) {
+  const ports = ['in', 'out'];
+  if (node.def.extraPorts) ports.push(...node.def.extraPorts);
+  for (const p of ports) {
+    const pos = getPortPos(node, p);
+    const dx = mx - pos.x, dy = my - pos.y;
+    if (dx * dx + dy * dy < (PORT_R + 4) * (PORT_R + 4)) return p;
+  }
+  return null;
+}
+
+function hitTestNode(mx, my) {
+  for (let i = _flowNodes.length - 1; i >= 0; i--) {
+    const n = _flowNodes[i];
+    if (mx >= n.x && mx <= n.x + NODE_W && my >= n.y && my <= n.y + NODE_H) return n;
+  }
+  return null;
+}
+
+// Render config panel
+function renderFlowConfig() {
+  const body = document.getElementById('flow-config-body');
+  if (!body) return;
+  if (!_flowSelectedId) {
+    body.innerHTML = '<p class="flow-config-empty">' + t('no_node_selected') + '</p>';
+    return;
+  }
+  const node = getFlowNode(_flowSelectedId);
+  if (!node) { body.innerHTML = ''; return; }
+  const def = node.def;
+  let html = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">';
+  html += '<span style="font-size:1.4rem">' + def.icon + '</span>';
+  html += '<strong style="font-size:0.95rem">' + def.label + '</strong>';
+  html += '<span style="width:10px;height:10px;border-radius:50%;background:' + def.color + ';box-shadow:0 0 6px ' + def.color + '"></span>';
+  html += '</div>';
+
+  for (const f of def.fields) {
+    html += '<div class="form-group">';
+    html += '<label>' + f.label + '</label>';
+    if (f.type === 'textarea') {
+      html += '<textarea data-cfg-key="' + f.key + '" placeholder="' + (f.placeholder || '') + '" oninput="updateFlowNodeConfig(\'' + _flowSelectedId + '\',\'' + f.key + '\',this.value)">' + (node.config[f.key] || '') + '</textarea>';
+    } else if (f.type === 'select') {
+      html += '<select data-cfg-key="' + f.key + '" onchange="updateFlowNodeConfig(\'' + _flowSelectedId + '\',\'' + f.key + '\',this.value)">';
+      for (const opt of (f.options || [])) {
+        const sel = node.config[f.key] == opt.v ? ' selected' : '';
+        html += '<option value="' + opt.v + '"' + sel + '>' + opt.l + '</option>';
+      }
+      html += '</select>';
+    } else {
+      html += '<input type="' + (f.type || 'text') + '" data-cfg-key="' + f.key + '" placeholder="' + (f.placeholder || '') + '" value="' + (node.config[f.key] || '') + '" oninput="updateFlowNodeConfig(\'' + _flowSelectedId + '\',\'' + f.key + '\',this.value)">';
+    }
+    html += '</div>';
+  }
+  html += '<button class="btn-delete-node" onclick="deleteFlowNode(\'' + _flowSelectedId + '\')">\uD83D\uDDD1 ' + t('delete_node') + '</button>';
+  body.innerHTML = html;
+}
+
+function updateFlowNodeConfig(nodeId, key, value) {
+  const node = getFlowNode(nodeId);
+  if (node) node.config[key] = value;
+}
+
+// Deploy flow
+async function deployFlow() {
+  if (!_flowNodes.length) { showFlowToast(t('deploy_fail') + ': add nodes first', 'error'); return; }
+  const name = document.getElementById('flow-agent-name')?.value?.trim() || 'Flow Agent';
+  const flow = { nodes: _flowNodes.map(n => ({ id: n.id, type: n.type, x: n.x, y: n.y, config: n.config })), edges: _flowEdges.map(e => ({ from: e.from, fromPort: e.fromPort, to: e.to, toPort: e.toPort })) };
+  const btn = document.getElementById('flow-deploy-btn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '\u26A1 ' + t('deploying'); }
+  try {
+    const data = await apiRequest('POST', '/api/agents/flow', { name, flow });
+    if (data.ok) {
+      showFlowToast('\u2705 ' + t('deployed_ok') + ' #' + data.agentId, 'success');
+      loadAgents();
+    } else {
+      showFlowToast('\u274C ' + (data.error || t('deploy_fail')), 'error');
+    }
+  } catch (e) {
+    showFlowToast('\u274C ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10"/></svg> ' + t('deploy'); }
+  }
+}
+
+function showFlowToast(msg, type) {
+  const el = document.createElement('div');
+  el.className = 'flow-toast ' + type;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+// Canvas rendering & interaction
+function initFlowBuilder() {
+  const canvas = document.getElementById('flow-canvas');
+  if (!canvas) return;
+  _flowCanvas = canvas;
+  _flowCtx = canvas.getContext('2d');
+
+  // Size canvas
+  const wrap = canvas.parentElement;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = wrap.clientWidth * dpr;
+  canvas.height = wrap.clientHeight * dpr;
+  canvas.style.width = wrap.clientWidth + 'px';
+  canvas.style.height = wrap.clientHeight + 'px';
+  _flowCtx.scale(dpr, dpr);
+
+  const W = wrap.clientWidth, H = wrap.clientHeight;
+
+  // Mouse events
+  canvas.addEventListener('mousedown', (e) => {
+    const r = canvas.getBoundingClientRect();
+    const mx = e.clientX - r.left, my = e.clientY - r.top;
+    _flowMouse.x = mx; _flowMouse.y = my;
+
+    // Check port click first
+    for (const n of _flowNodes) {
+      const port = hitTestPort(n, mx, my);
+      if (port && port !== 'in') {
+        _flowConnecting = { fromId: n.id, fromPort: port, mx, my };
+        return;
+      }
+    }
+
+    // Check node click
+    const node = hitTestNode(mx, my);
+    if (node) {
+      _flowSelectedId = node.id;
+      _flowDragNode = node;
+      _flowDragOffset.dx = mx - node.x;
+      _flowDragOffset.dy = my - node.y;
+      renderFlowConfig();
+      canvas.classList.add('dragging');
+    } else {
+      _flowSelectedId = null;
+      renderFlowConfig();
+    }
+  });
+
+  canvas.addEventListener('mousemove', (e) => {
+    const r = canvas.getBoundingClientRect();
+    const mx = e.clientX - r.left, my = e.clientY - r.top;
+    _flowMouse.x = mx; _flowMouse.y = my;
+
+    if (_flowDragNode) {
+      _flowDragNode.x = mx - _flowDragOffset.dx;
+      _flowDragNode.y = my - _flowDragOffset.dy;
+    }
+    if (_flowConnecting) {
+      _flowConnecting.mx = mx;
+      _flowConnecting.my = my;
+    }
+  });
+
+  canvas.addEventListener('mouseup', (e) => {
+    const r = canvas.getBoundingClientRect();
+    const mx = e.clientX - r.left, my = e.clientY - r.top;
+
+    if (_flowConnecting) {
+      // Check if dropped on an input port
+      for (const n of _flowNodes) {
+        if (n.id === _flowConnecting.fromId) continue;
+        const port = hitTestPort(n, mx, my);
+        if (port === 'in') {
+          // Don't duplicate
+          const exists = _flowEdges.some(e => e.from === _flowConnecting.fromId && e.fromPort === _flowConnecting.fromPort && e.to === n.id);
+          if (!exists) {
+            _flowEdges.push({ from: _flowConnecting.fromId, fromPort: _flowConnecting.fromPort, to: n.id, toPort: 'in' });
+            _flowParticles.push({ from: _flowConnecting.fromId, fromPort: _flowConnecting.fromPort, to: n.id, t: 0, speed: 0.004 + Math.random() * 0.004 });
+          }
+          break;
+        }
+      }
+      _flowConnecting = null;
+    }
+    _flowDragNode = null;
+    canvas.classList.remove('dragging');
+  });
+
+  canvas.addEventListener('mouseleave', () => {
+    _flowDragNode = null;
+    _flowConnecting = null;
+    canvas.classList.remove('dragging');
+  });
+
+  // Delete key
+  window.addEventListener('keydown', (e) => {
+    if ((e.key === 'Delete' || e.key === 'Backspace') && _flowSelectedId && document.activeElement === document.body) {
+      deleteFlowNode(_flowSelectedId);
+    }
+  });
+
+  // Start animation
+  if (_flowAnimId) cancelAnimationFrame(_flowAnimId);
+  let time = 0;
+
+  function drawFlowBuilder() {
+    time += 0.016;
+    const ctx = _flowCtx;
+    ctx.clearRect(0, 0, W, H);
+
+    // Background
+    const bg = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, W / 2);
+    bg.addColorStop(0, '#0d1526');
+    bg.addColorStop(1, '#070b14');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+
+    // Grid
+    ctx.strokeStyle = 'rgba(255,255,255,0.035)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x < W; x += 30) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+    for (let y = 0; y < H; y += 30) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+    // Grid dots at intersections
+    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    for (let x = 0; x < W; x += 30) {
+      for (let y = 0; y < H; y += 30) {
+        ctx.beginPath(); ctx.arc(x, y, 1, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+
+    // Draw edges (bezier curves)
+    _flowEdges.forEach((edge, idx) => {
+      const fromNode = getFlowNode(edge.from);
+      const toNode = getFlowNode(edge.to);
+      if (!fromNode || !toNode) return;
+      const from = getPortPos(fromNode, edge.fromPort);
+      const to = getPortPos(toNode, edge.toPort);
+      const cpOff = Math.max(60, Math.abs(to.x - from.x) * 0.4);
+
+      // Edge glow
+      ctx.save();
+      ctx.shadowColor = fromNode.def.color;
+      ctx.shadowBlur = 4;
+      const grad = ctx.createLinearGradient(from.x, from.y, to.x, to.y);
+      grad.addColorStop(0, fromNode.def.color + 'aa');
+      grad.addColorStop(1, toNode.def.color + 'aa');
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.bezierCurveTo(from.x + cpOff, from.y, to.x - cpOff, to.y, to.x, to.y);
+      ctx.stroke();
+      ctx.restore();
+
+      // Arrow head
+      const angle = Math.atan2(to.y - (to.y - 1), to.x - (to.x - cpOff * 0.2));
+      ctx.fillStyle = toNode.def.color + 'cc';
+      ctx.beginPath();
+      ctx.moveTo(to.x, to.y);
+      ctx.lineTo(to.x - 8 * Math.cos(angle - 0.4), to.y - 8 * Math.sin(angle - 0.4));
+      ctx.lineTo(to.x - 8 * Math.cos(angle + 0.4), to.y - 8 * Math.sin(angle + 0.4));
+      ctx.fill();
+    });
+
+    // Edge particles
+    _flowParticles.forEach(p => {
+      const fromNode = getFlowNode(p.from);
+      const toNode = getFlowNode(p.to);
+      if (!fromNode || !toNode) return;
+      const from = getPortPos(fromNode, p.fromPort);
+      const to = getPortPos(toNode, 'in');
+      const cpOff = Math.max(60, Math.abs(to.x - from.x) * 0.4);
+      p.t = (p.t + p.speed) % 1;
+      const tt = p.t;
+      // Bezier interpolation
+      const it = 1 - tt;
+      const px = it*it*it*from.x + 3*it*it*tt*(from.x+cpOff) + 3*it*tt*tt*(to.x-cpOff) + tt*tt*tt*to.x;
+      const py = it*it*it*from.y + 3*it*it*tt*from.y + 3*it*tt*tt*to.y + tt*tt*tt*to.y;
+      ctx.beginPath();
+      ctx.arc(px, py, 3, 0, Math.PI * 2);
+      ctx.fillStyle = fromNode.def.color;
+      ctx.shadowColor = fromNode.def.color;
+      ctx.shadowBlur = 8;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    });
+
+    // Connecting line (while dragging from port)
+    if (_flowConnecting) {
+      const fromNode = getFlowNode(_flowConnecting.fromId);
+      if (fromNode) {
+        const from = getPortPos(fromNode, _flowConnecting.fromPort);
+        const cpOff = Math.max(40, Math.abs(_flowConnecting.mx - from.x) * 0.4);
+        ctx.setLineDash([6, 4]);
+        ctx.strokeStyle = fromNode.def.color + '99';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(from.x, from.y);
+        ctx.bezierCurveTo(from.x + cpOff, from.y, _flowConnecting.mx - cpOff, _flowConnecting.my, _flowConnecting.mx, _flowConnecting.my);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+
+    // Draw nodes
+    _flowNodes.forEach(n => {
+      const selected = n.id === _flowSelectedId;
+      const def = n.def;
+
+      // Node shadow & glow
+      if (selected) {
+        ctx.save();
+        ctx.shadowColor = def.color;
+        ctx.shadowBlur = 20;
+      }
+
+      // Node body
+      const r = 12;
+      ctx.beginPath();
+      ctx.moveTo(n.x + r, n.y);
+      ctx.lineTo(n.x + NODE_W - r, n.y);
+      ctx.quadraticCurveTo(n.x + NODE_W, n.y, n.x + NODE_W, n.y + r);
+      ctx.lineTo(n.x + NODE_W, n.y + NODE_H - r);
+      ctx.quadraticCurveTo(n.x + NODE_W, n.y + NODE_H, n.x + NODE_W - r, n.y + NODE_H);
+      ctx.lineTo(n.x + r, n.y + NODE_H);
+      ctx.quadraticCurveTo(n.x, n.y + NODE_H, n.x, n.y + NODE_H - r);
+      ctx.lineTo(n.x, n.y + r);
+      ctx.quadraticCurveTo(n.x, n.y, n.x + r, n.y);
+      ctx.closePath();
+
+      // Fill
+      ctx.fillStyle = selected ? 'rgba(20,30,50,0.95)' : 'rgba(15,22,40,0.9)';
+      ctx.fill();
+
+      // Border
+      ctx.strokeStyle = selected ? def.color : 'rgba(255,255,255,0.1)';
+      ctx.lineWidth = selected ? 2 : 1;
+      ctx.stroke();
+
+      if (selected) ctx.restore();
+
+      // Left color bar
+      ctx.fillStyle = def.color;
+      ctx.beginPath();
+      ctx.moveTo(n.x + r, n.y);
+      ctx.lineTo(n.x + 4, n.y);
+      ctx.quadraticCurveTo(n.x, n.y, n.x, n.y + r);
+      ctx.lineTo(n.x, n.y + NODE_H - r);
+      ctx.quadraticCurveTo(n.x, n.y + NODE_H, n.x + 4, n.y + NODE_H);
+      ctx.lineTo(n.x + r, n.y + NODE_H);
+      ctx.lineTo(n.x + r, n.y);
+      ctx.closePath();
+      ctx.globalAlpha = 0.7;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+
+      // Icon
+      ctx.font = '16px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(def.icon, n.x + 18, n.y + NODE_H / 2 - 6);
+
+      // Label
+      ctx.font = '600 12px Inter, sans-serif';
+      ctx.fillStyle = '#fff';
+      ctx.fillText(def.label, n.x + 40, n.y + NODE_H / 2 - 6);
+
+      // Subtitle (config summary)
+      const cfgKeys = Object.keys(n.config).filter(k => n.config[k]);
+      if (cfgKeys.length) {
+        ctx.font = '10px Inter, sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.4)';
+        const summary = cfgKeys.map(k => n.config[k]).join(', ').slice(0, 22);
+        ctx.fillText(summary, n.x + 40, n.y + NODE_H / 2 + 8);
+      }
+
+      // Input port
+      const inP = getPortPos(n, 'in');
+      ctx.beginPath();
+      ctx.arc(inP.x, inP.y, PORT_R, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(15,22,40,0.9)';
+      ctx.fill();
+      ctx.strokeStyle = def.color + '88';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // Output ports
+      const outPorts = def.extraPorts || ['out'];
+      outPorts.forEach((p, pi) => {
+        const pos = getPortPos(n, p);
+        const pulse = Math.sin(time * 3 + pi) * 1.5;
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, PORT_R + pulse, 0, Math.PI * 2);
+        ctx.fillStyle = def.color + '40';
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, PORT_R, 0, Math.PI * 2);
+        ctx.fillStyle = def.color;
+        ctx.fill();
+        // Port label for condition
+        if (p === 'true' || p === 'false') {
+          ctx.font = '9px Inter, sans-serif';
+          ctx.fillStyle = p === 'true' ? '#10b981' : '#ef4444';
+          ctx.textAlign = 'right';
+          ctx.fillText(p, pos.x - 10, pos.y + 3);
+          ctx.textAlign = 'left';
+        }
+      });
+    });
+
+    // Empty state
+    if (!_flowNodes.length) {
+      ctx.textAlign = 'center';
+      ctx.fillStyle = 'rgba(255,255,255,0.15)';
+      ctx.font = '600 18px Inter, sans-serif';
+      ctx.fillText(currentLang === 'ru' ? '\u2190 \u0414\u043E\u0431\u0430\u0432\u044C\u0442\u0435 \u043D\u043E\u0434\u044B \u0438\u0437 \u043F\u0430\u043B\u0438\u0442\u0440\u044B' : '\u2190 Add nodes from the palette', W / 2, H / 2 - 10);
+      ctx.font = '13px Inter, sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.08)';
+      ctx.fillText(currentLang === 'ru' ? '\u0421\u043E\u0435\u0434\u0438\u043D\u044F\u0439\u0442\u0435 \u043F\u043E\u0440\u0442\u044B \u0434\u043B\u044F \u0441\u043E\u0437\u0434\u0430\u043D\u0438\u044F flow' : 'Connect ports to build your flow', W / 2, H / 2 + 16);
+    }
+
+    _flowAnimId = requestAnimationFrame(drawFlowBuilder);
+  }
+
+  drawFlowBuilder();
+  switchLang(currentLang);
+}
+
 // ===== AGENT NETWORK MAP (Neural Canvas) =====
 let _networkAnimId = null;
 let _networkNodes = [];
 let _networkDragNode = null;
+let _networkDragOffset = { dx: 0, dy: 0 };
 let _networkMouse = { x: 0, y: 0 };
 
 async function loadNetworkMap() {
@@ -2223,8 +2765,8 @@ async function loadNetworkMap() {
     _networkMouse.y = e.clientY - r.top;
 
     if (_networkDragNode) {
-      _networkDragNode.x = _networkMouse.x;
-      _networkDragNode.y = _networkMouse.y;
+      _networkDragNode.x = _networkMouse.x - _networkDragOffset.dx;
+      _networkDragNode.y = _networkMouse.y - _networkDragOffset.dy;
       _networkDragNode.vx = 0;
       _networkDragNode.vy = 0;
     }
@@ -2248,14 +2790,23 @@ async function loadNetworkMap() {
   });
 
   canvas.addEventListener('mousedown', (e) => {
+    const r = canvas.getBoundingClientRect();
+    _networkMouse.x = e.clientX - r.left;
+    _networkMouse.y = e.clientY - r.top;
     for (const n of _networkNodes) {
       const dx = _networkMouse.x - n.x, dy = _networkMouse.y - n.y;
-      if (dx * dx + dy * dy < n.radius * n.radius) { _networkDragNode = n; break; }
+      if (dx * dx + dy * dy < n.radius * n.radius) {
+        _networkDragNode = n;
+        _networkDragOffset.dx = dx;
+        _networkDragOffset.dy = dy;
+        break;
+      }
     }
   });
-  canvas.addEventListener('mouseup', () => { _networkDragNode = null; });
+  canvas.addEventListener('mouseup', () => { _networkDragNode = null; _networkDragOffset.dx = 0; _networkDragOffset.dy = 0; });
   canvas.addEventListener('mouseleave', () => {
     _networkDragNode = null;
+    _networkDragOffset.dx = 0; _networkDragOffset.dy = 0;
     if (tooltip) tooltip.style.display = 'none';
   });
 
