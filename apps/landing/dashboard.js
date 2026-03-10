@@ -21,9 +21,24 @@ function switchLang(lang) {
   });
 
   // Re-render dynamic content that uses t()
-  if (authToken && currentUser) {
-    loadAgents();
-  }
+  try {
+    if (authToken && currentUser) loadAgents();
+    // Re-render auth screen if visible
+    const authScreen = document.getElementById('auth-screen');
+    if (authScreen && !authScreen.classList.contains('hidden')) {
+      const h2 = authScreen.querySelector('.auth-box h2');
+      if (h2) h2.textContent = t('welcome_back');
+      const desc = authScreen.querySelector('.auth-desc');
+      if (desc) desc.textContent = t('sign_in_desc');
+      const loginBtn = document.getElementById('tg-login-btn');
+      if (loginBtn) {
+        const svg = loginBtn.querySelector('svg');
+        if (svg) loginBtn.innerHTML = svg.outerHTML + t('sign_in_tg');
+      }
+    }
+    // Update page title
+    document.title = lang === 'ru' ? 'TON Agent Platform — Панель управления' : 'TON Agent Platform — Control Center';
+  } catch (_) {}
 }
 
 // Initialize language
@@ -31,24 +46,78 @@ switchLang(currentLang);
 
 // ===== TRANSLATION DICTIONARY =====
 const _tr = {
+  // Agent status
   active: { en: 'Active', ru: 'Активен' },
   paused: { en: 'Paused', ru: 'На паузе' },
   run: { en: 'Run', ru: 'Запуск' },
   stop: { en: 'Stop', ru: 'Стоп' },
   logs: { en: 'Logs', ru: 'Логи' },
   unnamed: { en: 'Unnamed', ru: 'Без имени' },
+  // Triggers
   trigger_scheduled: { en: '\u23F0 Scheduled', ru: '\u23F0 По расписанию' },
   trigger_webhook: { en: '\uD83D\uDD17 Webhook', ru: '\uD83D\uDD17 Вебхук' },
   trigger_manual: { en: '\u25B6\uFE0F Manual', ru: '\u25B6\uFE0F Ручной' },
   trigger_ai_agent: { en: '\uD83E\uDD16 AI Agent', ru: '\uD83E\uDD16 AI Агент' },
+  // Empty states
   no_agents_yet: { en: 'No agents yet.', ru: 'Агентов пока нет.' },
   create_first: { en: 'Create your first agent \u2192', ru: 'Создать первого агента \u2192' },
   create_in_bot: { en: 'Create in Bot', ru: 'Создать в боте' },
   or_word: { en: 'or', ru: 'или' },
   failed_load: { en: 'Failed to load agents.', ru: 'Не удалось загрузить агентов.' },
   no_logs: { en: 'No logs yet.', ru: 'Логов пока нет.' },
+  no_executions: { en: 'No executions yet.', ru: 'Выполнений пока нет.' },
+  no_entries: { en: 'No entries yet. Click "Add Entry" to begin.', ru: 'Записей пока нет. Нажмите "Добавить" чтобы начать.' },
+  no_variables: { en: 'No variables yet.', ru: 'Переменных пока нет.' },
   role: { en: 'Role', ru: 'Роль' },
   lv: { en: 'Lv.', ru: 'Ур.' },
+  // Auth
+  welcome_back: { en: 'Welcome Back', ru: 'Добро пожаловать' },
+  sign_in_desc: { en: 'Sign in with Telegram to access your agents', ru: 'Войдите через Telegram для доступа к агентам' },
+  sign_in_tg: { en: 'Sign in with Telegram', ru: 'Войти через Telegram' },
+  sign_in_bot: { en: 'Sign in via bot', ru: 'Войти через бота' },
+  auth_failed: { en: 'Auth failed', ru: 'Ошибка авторизации' },
+  session_expired: { en: 'Session expired after server restart — please sign in again', ru: 'Сессия истекла после перезапуска сервера — войдите снова' },
+  connecting: { en: 'Connecting to server...', ru: 'Подключаюсь к серверу...' },
+  secure_auth: { en: 'Secure auth via Telegram', ru: 'Безопасная авторизация через Telegram' },
+  // UI actions
+  show: { en: 'Show', ru: 'Показать' },
+  hide: { en: 'Hide', ru: 'Скрыть' },
+  save: { en: 'Save', ru: 'Сохранить' },
+  cancel: { en: 'Cancel', ru: 'Отмена' },
+  delete: { en: 'Delete', ru: 'Удалить' },
+  loading: { en: 'Loading...', ru: 'Загрузка...' },
+  connected: { en: 'Connected', ru: 'Подключено' },
+  disconnected: { en: 'Disconnected', ru: 'Не подключено' },
+  // Notifications
+  config_saved: { en: 'Configuration saved', ru: 'Конфигурация сохранена' },
+  settings_saved: { en: 'Settings saved', ru: 'Настройки сохранены' },
+  persona_saved: { en: 'Persona saved', ru: 'Персона сохранена' },
+  var_saved: { en: 'Variable saved', ru: 'Переменная сохранена' },
+  var_deleted: { en: 'Variable deleted', ru: 'Переменная удалена' },
+  entry_added: { en: 'Entry added', ru: 'Запись добавлена' },
+  entry_deleted: { en: 'Entry deleted', ru: 'Запись удалена' },
+  connector_saved: { en: 'Connector saved', ru: 'Коннектор сохранён' },
+  connector_deleted: { en: 'Connector removed', ru: 'Коннектор удалён' },
+  login_first: { en: 'Log in first', ru: 'Сначала войдите' },
+  install_failed: { en: 'Install failed', ru: 'Ошибка установки' },
+  uninstall_failed: { en: 'Uninstall failed', ru: 'Ошибка удаления' },
+  save_failed: { en: 'Save failed', ru: 'Ошибка сохранения' },
+  test_ok: { en: 'Test succeeded!', ru: 'Тест успешен!' },
+  save_connector_first: { en: 'Save the connector first', ru: 'Сначала сохраните коннектор' },
+  fill_fields: { en: 'Fill title and content', ru: 'Заполните название и содержимое' },
+  var_name_required: { en: 'Variable name required', ru: 'Укажите имя переменной' },
+  // Wallet
+  addr_copied: { en: 'Address copied', ru: 'Адрес скопирован' },
+  comment_copied: { en: 'Comment copied', ru: 'Комментарий скопирован' },
+  checking: { en: 'Checking...', ru: 'Проверяю...' },
+  sending: { en: 'Sending...', ru: 'Отправка...' },
+  withdraw: { en: 'Withdraw', ru: 'Вывести' },
+  invalid_addr: { en: 'Enter a valid TON address (EQ.../UQ...)', ru: 'Введите корректный TON адрес (EQ.../UQ...)' },
+  min_amount: { en: 'Minimum amount: 0.1 TON', ru: 'Минимальная сумма: 0.1 TON' },
+  verify_sent: { en: 'I sent it \u2014 verify', ru: 'Я отправил \u2014 проверить' },
+  // Extensions
+  installed: { en: 'installed', ru: 'установлен' },
+  uninstalled: { en: 'uninstalled', ru: 'удалён' },
   // Flow builder
   flow_builder: { en: 'Flow Builder', ru: 'Конструктор' },
   deploy: { en: 'Deploy', ru: 'Запуск' },
@@ -116,14 +185,28 @@ async function apiRequest(method, path, body) {
 // ===== AUTH SYSTEM =====
 let currentUser = null;
 
-// Called by Telegram Login Widget
-async function onTelegramAuth(user) {
-  // Verify with our server (HMAC-SHA256)
-  const data = await apiRequest('POST', '/api/auth/telegram', user);
+// Called by new Telegram Login SDK (OIDC popup)
+async function onTelegramAuth(result) {
+  if (result.error) {
+    console.error('Telegram Login error:', result.error);
+    return;
+  }
+  // result has id_token (JWT) and user { id, name, preferred_username, picture }
+  const data = await apiRequest('POST', '/api/auth/telegram-oidc', { id_token: result.id_token });
   if (!data.ok) {
     alert('Auth failed: ' + (data.error || 'Unknown error'));
     return;
   }
+  authToken = data.token;
+  localStorage.setItem('tg_token', authToken);
+  currentUser = { userId: data.userId, username: data.username, first_name: data.firstName };
+  showApp();
+}
+
+// Legacy: old widget callback (keep for backwards compat)
+async function onTelegramAuthLegacy(user) {
+  const data = await apiRequest('POST', '/api/auth/telegram', user);
+  if (!data.ok) { alert('Auth failed: ' + (data.error || 'Unknown error')); return; }
   authToken = data.token;
   localStorage.setItem('tg_token', authToken);
   currentUser = { ...user, userId: data.userId };
@@ -302,9 +385,9 @@ function logout() {
 }
 
 // ── Auth initialization ──────────────────────────────────────────────────────
-// Strategy:
-//   HTTP (localhost/dev) → bot-deeplink auth immediately (widget needs HTTPS)
-//   HTTPS (production)   → Telegram Login Widget first, bot-auth as fallback
+// Uses new Telegram Login SDK (OIDC popup) — works on any domain
+let _tgLoginReady = false;
+
 async function initAuth() {
   // 1. Fetch platform config
   try {
@@ -313,41 +396,93 @@ async function initAuth() {
   } catch (_) {}
 
   const isHttps = window.location.protocol === 'https:';
+  const container = document.getElementById('tg-widget-container');
+  if (!container) return;
 
   if (!isHttps) {
-    // Localhost / HTTP: widget won't work → go straight to bot-auth button
     showBotAuthButton();
     return;
   }
 
-  // HTTPS: try Telegram Login Widget
-  const botUsername = (window._appConfig && window._appConfig.botUsername) || 'TonAgentPlatformBot';
-  const container = document.getElementById('tg-widget-container');
-  if (!container) return;
+  // Load Telegram Login SDK
+  const clientId = (window._appConfig && window._appConfig.tgClientId) || 8595707164;
+  container.innerHTML = '';
 
-  container.innerHTML = ''; // clear "Loading..." placeholder
-  const script = document.createElement('script');
-  script.async = true;
-  script.src = 'https://telegram.org/js/telegram-widget.js?22';
-  script.setAttribute('data-telegram-login', botUsername);
-  script.setAttribute('data-size', 'large');
-  script.setAttribute('data-radius', '8');
-  script.setAttribute('data-onauth', 'onTelegramAuth(user)');
-  script.setAttribute('data-request-access', 'write');
-  container.appendChild(script);
+  // Update auth screen text
+  const welcomeEl = document.querySelector('.auth-card h2');
+  if (welcomeEl) welcomeEl.textContent = t('welcome_back');
+  const descEl = document.querySelector('.auth-card p');
+  if (descEl) descEl.textContent = t('sign_in_desc');
+  const secureEl = document.getElementById('auth-domain-note');
+  if (secureEl) secureEl.textContent = t('secure_auth');
+  const expiredEl = document.getElementById('auth-session-expired');
+  if (expiredEl) expiredEl.textContent = t('session_expired');
 
-  // After 3s: if widget iframe didn't load (domain not registered in BotFather)
-  // fall back to bot-auth button
-  setTimeout(() => {
-    const iframe = document.querySelector('#tg-widget-container iframe');
-    if (!iframe) showBotAuthButton();
-  }, 3000);
+  // Show login button
+  const tgSvg = '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>';
+  container.innerHTML = '<button id="tg-login-btn" style="display:flex;align-items:center;gap:10px;padding:12px 24px;background:linear-gradient(135deg,#2AABEE,#229ED9);color:#fff;border:none;border-radius:8px;font-size:1rem;font-weight:500;cursor:pointer;width:100%;justify-content:center;transition:all .2s;box-shadow:0 2px 12px rgba(42,171,238,.3)" onmouseover="this.style.transform=\'scale(1.02)\'" onmouseout="this.style.transform=\'scale(1)\'">' +
+    tgSvg + t('sign_in_tg') + '</button>';
+
+  // Button click → OIDC code flow redirect (popup mode broken on Telegram side)
+  const redirectUri = window.location.origin + '/dashboard.html';
+  document.getElementById('tg-login-btn').addEventListener('click', () => {
+    const state = Math.random().toString(36).slice(2);
+    sessionStorage.setItem('tg_oauth_state', state);
+    const params = new URLSearchParams({
+      client_id: String(clientId),
+      redirect_uri: redirectUri,
+      response_type: 'code',
+      scope: 'openid profile',
+      state: state,
+    });
+    window.location.href = 'https://oauth.telegram.org/auth?' + params.toString();
+  });
+
+  // Also show bot-auth fallback below
+  const fb = document.createElement('div');
+  fb.style.cssText = 'margin-top:14px;text-align:center;';
+  fb.innerHTML = '<div style="color:rgba(255,255,255,.3);font-size:.72rem;margin-bottom:6px;">' + t('or_word') + '</div>' +
+    '<button onclick="showBotAuthButton()" style="padding:7px 16px;background:rgba(255,255,255,.05);color:rgba(255,255,255,.5);border:1px solid rgba(255,255,255,.08);border-radius:8px;font-size:.78rem;cursor:pointer;transition:all .2s" onmouseover="this.style.background=\'rgba(255,255,255,.1)\'" onmouseout="this.style.background=\'rgba(255,255,255,.05)\'\">' + t('sign_in_bot') + '</button>';
+  container.appendChild(fb);
+}
+
+// Handle OAuth redirect: ?code=XXX&state=YYY
+async function handleOAuthRedirect() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+  const state = params.get('state');
+  if (!code) return false;
+
+  // Verify state
+  const savedState = sessionStorage.getItem('tg_oauth_state');
+  if (state && savedState && state !== savedState) {
+    console.error('OAuth state mismatch');
+    return false;
+  }
+  sessionStorage.removeItem('tg_oauth_state');
+
+  // Clean URL
+  window.history.replaceState({}, '', window.location.pathname);
+
+  // Exchange code for session via our backend
+  const data = await apiRequest('POST', '/api/auth/telegram-code', { code, redirect_uri: window.location.origin + '/dashboard.html' });
+  if (!data.ok) {
+    console.error('Code exchange failed:', data.error);
+    return false;
+  }
+  authToken = data.token;
+  localStorage.setItem('tg_token', authToken);
+  currentUser = { userId: data.userId, username: data.username, first_name: data.firstName };
+  showApp();
+  return true;
 }
 
 // Check if already logged in (token in localStorage)
 async function checkExistingSession() {
+  // First check if this is an OAuth redirect
+  if (await handleOAuthRedirect()) return;
+
   if (!authToken) {
-    // No stored session — init widget and let user log in
     await initAuth();
     return;
   }
@@ -381,7 +516,7 @@ function showBotAuthButton() {
         <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
           <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
         </svg>
-        Войти через Telegram
+        ${t('sign_in_tg')}
       </button>
     `;
   }
@@ -393,7 +528,7 @@ function showBotAuthButton() {
 async function startBotAuth() {
   const container = document.getElementById('tg-widget-container');
   if (container) {
-    container.innerHTML = `<div style="text-align:center;padding:16px 0;color:var(--text-secondary);font-size:.875rem;">⏳ Подключаюсь к серверу...</div>`;
+    container.innerHTML = `<div style="text-align:center;padding:16px 0;color:var(--text-secondary);font-size:.875rem;">\u23F3 ${t('connecting')}</div>`;
   }
 
   const data = await apiRequest('GET', '/api/auth/request');
@@ -501,6 +636,8 @@ async function loadSettings() {
       }
     }
   } catch {}
+  // Load AI API key
+  loadAIKey().catch(() => {});
   console.log('[Dashboard] Settings page loaded');
 }
 function loadExtensions() { loadPluginsReal(); }
@@ -1097,7 +1234,7 @@ async function installExtension(id) {
   if (authToken) {
     const data = await apiRequest('POST', `/api/plugins/${id}/install`, { config: {} });
     if (!data.ok) {
-      showNotification(data.error || 'Install failed', 'error');
+      showNotification(data.error || t('install_failed'), 'error');
       return;
     }
   }
@@ -1117,7 +1254,7 @@ async function uninstallExtension(id) {
   if (authToken) {
     const data = await apiRequest('DELETE', `/api/plugins/${id}`);
     if (!data.ok) {
-      showNotification(data.error || 'Uninstall failed', 'error');
+      showNotification(data.error || t('uninstall_failed'), 'error');
       return;
     }
   }
@@ -1213,7 +1350,7 @@ function updateSliderDisplay(el) {
 
 async function saveAgentConfig() {
   if (!authToken) {
-    showNotification(currentLang === 'ru' ? 'Войдите для сохранения' : 'Log in first', 'error');
+    showNotification(t('login_first'), 'error');
     return;
   }
   const creativityEl  = document.getElementById('slider-creativity');
@@ -1224,9 +1361,9 @@ async function saveAgentConfig() {
   };
   const data = await apiRequest('POST', '/api/settings', { settings: { agent_config: config } });
   if (data.ok) {
-    showNotification(currentLang === 'ru' ? 'Конфигурация сохранена' : 'Configuration saved', 'success');
+    showNotification(t('config_saved'), 'success');
   } else {
-    showNotification(data.error || 'Error saving config', 'error');
+    showNotification(data.error || t('save_failed'), 'error');
   }
 }
 
@@ -1441,16 +1578,16 @@ function togglePassword(btn) {
   const input = btn.previousElementSibling;
   if (input.type === 'password') {
     input.type = 'text';
-    btn.textContent = 'Hide';
+    btn.textContent = t('hide');
   } else {
     input.type = 'password';
-    btn.textContent = 'Show';
+    btn.textContent = t('show');
   }
 }
 
 async function saveSettings() {
   if (!authToken) {
-    showNotification(currentLang === 'ru' ? 'Войдите чтобы сохранить настройки' : 'Log in to save settings', 'error');
+    showNotification(t('login_first'), 'error');
     return;
   }
 
@@ -1465,9 +1602,117 @@ async function saveSettings() {
 
   const data = await apiRequest('POST', '/api/settings', { settings: settingsObj });
   if (data.ok) {
-    showNotification(currentLang === 'ru' ? 'Настройки сохранены' : 'Settings saved', 'success');
+    showNotification(t('settings_saved'), 'success');
   } else {
-    showNotification(data.error || 'Failed to save settings', 'error');
+    showNotification(data.error || t('save_failed'), 'error');
+  }
+}
+
+// ===== AI API KEY MANAGEMENT =====
+const _aiProviderPlaceholders = {
+  gemini: 'AIzaSy...',
+  openai: 'sk-proj-...',
+  anthropic: 'sk-ant-...',
+  groq: 'gsk_...',
+  deepseek: 'sk-...',
+  openrouter: 'sk-or-...',
+  together: 'sk-...',
+};
+
+function onAIProviderChange() {
+  const sel = document.getElementById('ai-provider-select');
+  const input = document.getElementById('ai-api-key-input');
+  if (sel && input) {
+    input.placeholder = _aiProviderPlaceholders[sel.value] || 'API Key...';
+  }
+}
+
+async function loadAIKey() {
+  try {
+    const data = await apiRequest('GET', '/api/settings');
+    if (!data.ok || !data.settings) return;
+    const uv = data.settings.user_variables;
+    if (!uv) return;
+    const vars = typeof uv === 'string' ? JSON.parse(uv) : uv;
+    const provider = vars.AI_PROVIDER || 'gemini';
+    const hasKey = !!vars.AI_API_KEY;
+
+    const sel = document.getElementById('ai-provider-select');
+    if (sel) sel.value = provider;
+    onAIProviderChange();
+
+    const statusEl = document.getElementById('ai-key-status');
+    if (statusEl) {
+      statusEl.style.display = hasKey ? 'inline' : 'none';
+      statusEl.textContent = hasKey ? (currentLang === 'ru' ? 'Сохранён' : 'Saved') : '';
+    }
+    const input = document.getElementById('ai-api-key-input');
+    if (input && hasKey) {
+      input.value = '';
+      input.placeholder = vars.AI_API_KEY.slice(0, 6) + '...' + vars.AI_API_KEY.slice(-4);
+    }
+  } catch {}
+}
+
+async function saveAIKey() {
+  if (!authToken) { showNotification(t('login_first'), 'error'); return; }
+  const sel = document.getElementById('ai-provider-select');
+  const input = document.getElementById('ai-api-key-input');
+  const msgEl = document.getElementById('ai-key-msg');
+  const provider = sel ? sel.value : 'gemini';
+  const key = input ? input.value.trim() : '';
+
+  if (!key) {
+    if (msgEl) { msgEl.style.display = 'inline'; msgEl.style.color = 'var(--danger)'; msgEl.textContent = currentLang === 'ru' ? 'Введите ключ' : 'Enter a key'; }
+    return;
+  }
+
+  // Get existing user_variables and merge
+  let existingVars = {};
+  try {
+    const cur = await apiRequest('GET', '/api/settings');
+    if (cur.ok && cur.settings && cur.settings.user_variables) {
+      existingVars = typeof cur.settings.user_variables === 'string' ? JSON.parse(cur.settings.user_variables) : cur.settings.user_variables;
+    }
+  } catch {}
+
+  existingVars.AI_PROVIDER = provider;
+  existingVars.AI_API_KEY = key;
+
+  const data = await apiRequest('POST', '/api/settings', { key: 'user_variables', value: existingVars });
+  if (data.ok) {
+    if (msgEl) { msgEl.style.display = 'inline'; msgEl.style.color = 'var(--success)'; msgEl.textContent = currentLang === 'ru' ? 'Ключ сохранён!' : 'Key saved!'; }
+    const statusEl = document.getElementById('ai-key-status');
+    if (statusEl) { statusEl.style.display = 'inline'; statusEl.textContent = currentLang === 'ru' ? 'Сохранён' : 'Saved'; }
+    input.value = '';
+    input.placeholder = key.slice(0, 6) + '...' + key.slice(-4);
+    setTimeout(() => { if (msgEl) msgEl.style.display = 'none'; }, 3000);
+  } else {
+    if (msgEl) { msgEl.style.display = 'inline'; msgEl.style.color = 'var(--danger)'; msgEl.textContent = data.error || t('save_failed'); }
+  }
+}
+
+async function clearAIKey() {
+  if (!authToken) return;
+  let existingVars = {};
+  try {
+    const cur = await apiRequest('GET', '/api/settings');
+    if (cur.ok && cur.settings && cur.settings.user_variables) {
+      existingVars = typeof cur.settings.user_variables === 'string' ? JSON.parse(cur.settings.user_variables) : cur.settings.user_variables;
+    }
+  } catch {}
+
+  delete existingVars.AI_API_KEY;
+  delete existingVars.AI_PROVIDER;
+
+  const data = await apiRequest('POST', '/api/settings', { key: 'user_variables', value: existingVars });
+  if (data.ok) {
+    const statusEl = document.getElementById('ai-key-status');
+    if (statusEl) statusEl.style.display = 'none';
+    const input = document.getElementById('ai-api-key-input');
+    if (input) { input.value = ''; input.placeholder = 'sk-... / AIza... / gsk_...'; }
+    const msgEl = document.getElementById('ai-key-msg');
+    if (msgEl) { msgEl.style.display = 'inline'; msgEl.style.color = 'var(--text-secondary)'; msgEl.textContent = currentLang === 'ru' ? 'Ключ удалён' : 'Key cleared'; setTimeout(() => { msgEl.style.display = 'none'; }, 3000); }
   }
 }
 
@@ -1529,7 +1774,7 @@ async function loadAnalytics() {
   if (!tableEl) return;
   const execs = (exData.ok && exData.executions) || [];
   if (!execs.length) {
-    tableEl.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-muted)">No executions yet</div>';
+    tableEl.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-muted)">' + t('no_executions') + '</div>';
     return;
   }
 
@@ -1573,7 +1818,7 @@ async function loadPersona() {
 
 async function savePersona() {
   if (!authToken) {
-    showNotification(currentLang === 'ru' ? 'Войдите для сохранения' : 'Log in first', 'error');
+    showNotification(t('login_first'), 'error');
     return;
   }
   const getVal = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
@@ -1586,7 +1831,7 @@ async function savePersona() {
   };
   const data = await apiRequest('POST', '/api/settings', { settings: { persona } });
   if (data.ok) {
-    showNotification(currentLang === 'ru' ? 'Персона сохранена' : 'Persona saved', 'success');
+    showNotification(t('persona_saved'), 'success');
   } else {
     showNotification(data.error || 'Error', 'error');
   }
@@ -1605,7 +1850,7 @@ function renderKnowledge() {
   const el = document.getElementById('knowledge-entries');
   if (!el) return;
   if (!_knowledgeEntries.length) {
-    el.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-muted)">No entries yet. Click "Add Entry" to begin.</div>';
+    el.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-muted)">' + t('no_entries') + '</div>';
     return;
   }
   el.innerHTML = _knowledgeEntries.map((entry, i) => `
@@ -1628,11 +1873,11 @@ function showAddKnowledge() {
 }
 
 async function saveKnowledgeEntry() {
-  if (!authToken) { showNotification('Log in first', 'error'); return; }
+  if (!authToken) { showNotification(t('login_first'), 'error'); return; }
   const title = (document.getElementById('kb-title') || {}).value?.trim();
   const content = (document.getElementById('kb-content') || {}).value?.trim();
   if (!title || !content) {
-    showNotification(currentLang === 'ru' ? 'Заполните название и содержимое' : 'Fill title and content', 'error');
+    showNotification(t('fill_fields'), 'error');
     return;
   }
 
@@ -1643,7 +1888,7 @@ async function saveKnowledgeEntry() {
     document.getElementById('kb-content').value = '';
     document.getElementById('knowledge-add-form').style.display = 'none';
     renderKnowledge();
-    showNotification(currentLang === 'ru' ? 'Запись добавлена' : 'Entry added', 'success');
+    showNotification(t('entry_added'), 'success');
   } else {
     _knowledgeEntries.pop();
     showNotification(data.error || 'Error', 'error');
@@ -1656,7 +1901,7 @@ async function deleteKnowledgeEntry(idx) {
   const data = await apiRequest('POST', '/api/settings', { settings: { knowledge_base: _knowledgeEntries } });
   if (data.ok) {
     renderKnowledge();
-    showNotification(currentLang === 'ru' ? 'Запись удалена' : 'Entry deleted', 'success');
+    showNotification(t('entry_deleted'), 'success');
   } else {
     showNotification(data.error || 'Error', 'error');
   }
@@ -1687,7 +1932,7 @@ async function loadConnectors() {
   const setStatus = (id, connected) => {
     const el = document.getElementById(id);
     if (!el) return;
-    el.textContent = connected ? 'Connected' : 'Disconnected';
+    el.textContent = connected ? t('connected') : t('disconnected');
     el.className = 'credential-status ' + (connected ? 'active' : '');
   };
   setStatus('discord-status', !!(_connectors.discord && _connectors.discord.webhookUrl));
@@ -1698,11 +1943,11 @@ async function loadConnectors() {
 }
 
 async function saveConnector(service, config) {
-  if (!authToken) { showNotification('Log in first', 'error'); return; }
+  if (!authToken) { showNotification(t('login_first'), 'error'); return; }
   const data = await apiRequest('POST', `/api/connectors/${service}`, { config });
   if (data.ok) {
     _connectors[service] = config;
-    showNotification(currentLang === 'ru' ? 'Коннектор сохранён' : 'Connector saved', 'success');
+    showNotification(t('connector_saved'), 'success');
     loadConnectors(); // refresh statuses
   } else {
     showNotification(data.error || 'Error', 'error');
@@ -1714,7 +1959,7 @@ async function removeConnector(service) {
   const data = await apiRequest('DELETE', `/api/connectors/${service}`);
   if (data.ok) {
     delete _connectors[service];
-    showNotification(currentLang === 'ru' ? 'Коннектор удалён' : 'Connector removed', 'success');
+    showNotification(t('connector_deleted'), 'success');
     loadConnectors();
   } else {
     showNotification(data.error || 'Error', 'error');
@@ -1722,15 +1967,15 @@ async function removeConnector(service) {
 }
 
 async function testConnector(service) {
-  if (!authToken) { showNotification('Log in first', 'error'); return; }
+  if (!authToken) { showNotification(t('login_first'), 'error'); return; }
   const cfg = _connectors[service] || {};
   const url = cfg.webhookUrl || cfg.url;
-  if (!url) { showNotification('Save the connector first', 'error'); return; }
+  if (!url) { showNotification(t('save_connector_first'), 'error'); return; }
   try {
     const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text: '✅ TON Agent Platform: test connection', username: 'TonAgent' }) });
     if (res.ok) {
-      showNotification(currentLang === 'ru' ? 'Тест успешен!' : 'Test succeeded!', 'success');
+      showNotification(t('test_ok'), 'success');
     } else {
       showNotification(`HTTP ${res.status}`, 'error');
     }
@@ -1745,7 +1990,7 @@ function renderVariables() {
   if (!el) return;
   const entries = Object.entries(_userVars);
   if (!entries.length) {
-    el.innerHTML = '<div style="color:var(--text-muted);font-size:.85rem;padding:.5rem 0">No variables yet.</div>';
+    el.innerHTML = '<div style="color:var(--text-muted);font-size:.85rem;padding:.5rem 0">' + t('no_variables') + '</div>';
     return;
   }
   el.innerHTML = entries.map(([k, v]) => `
@@ -1763,10 +2008,10 @@ function showAddVariable() {
 }
 
 async function saveVariable() {
-  if (!authToken) { showNotification('Log in first', 'error'); return; }
+  if (!authToken) { showNotification(t('login_first'), 'error'); return; }
   const key = (document.getElementById('var-key')?.value || '').trim().toUpperCase().replace(/[^A-Z0-9_]/g, '_');
   const val = (document.getElementById('var-value')?.value || '').trim();
-  if (!key) { showNotification('Variable name required', 'error'); return; }
+  if (!key) { showNotification(t('var_name_required'), 'error'); return; }
 
   _userVars[key] = val;
   const data = await apiRequest('POST', '/api/settings', { settings: { user_variables: _userVars } });
@@ -1775,7 +2020,7 @@ async function saveVariable() {
     document.getElementById('var-value').value = '';
     document.getElementById('add-variable-form').style.display = 'none';
     renderVariables();
-    showNotification(currentLang === 'ru' ? 'Переменная сохранена' : 'Variable saved', 'success');
+    showNotification(t('var_saved'), 'success');
   } else {
     delete _userVars[key];
     showNotification(data.error || 'Error', 'error');
@@ -1788,7 +2033,7 @@ async function deleteVariable(key) {
   const data = await apiRequest('POST', '/api/settings', { settings: { user_variables: _userVars } });
   if (data.ok) {
     renderVariables();
-    showNotification(currentLang === 'ru' ? 'Переменная удалена' : 'Variable deleted', 'success');
+    showNotification(t('var_deleted'), 'success');
   } else {
     showNotification(data.error || 'Error', 'error');
   }
@@ -1836,8 +2081,10 @@ let walletData = null;
 let walletTxPage = 0;
 const WALLET_TX_PER_PAGE = 20;
 let walletTxFilter = 'all';
+let _tonConnectUI = null;
 
 async function loadWallet() {
+  initTonConnect();
   await Promise.all([loadWalletBalance(), loadTransactions()]);
 }
 
@@ -1858,9 +2105,16 @@ async function loadWalletBalance() {
   const earnedEl = document.getElementById('wallet-earned');
   if (earnedEl) earnedEl.innerHTML = earned.toFixed(2) + ' <span class="wallet-currency">TON</span>';
 
-  // Platform wallet address
-  const platformAddr = data.platform_wallet || data.wallet_address || '';
+  // Platform wallet address (where users send TON for topup)
+  const platformAddr = data.platform_wallet || '';
   setEl('wallet-platform-addr', platformAddr || '—');
+
+  // User's linked personal wallet — 2-state UI
+  if (data.wallet_address) {
+    showConnectedWallet(data.wallet_address, data.wallet_name || '', data.connected_via || 'manual');
+  } else {
+    showDisconnectedWallet();
+  }
 
   // Setup topup modal
   setupTopupModal(platformAddr);
@@ -2003,25 +2257,145 @@ function closeTopupModal() {
 
 function copyTopupAddress() {
   const el = document.getElementById('topup-address');
-  if (el) navigator.clipboard.writeText(el.textContent).then(() => showNotification(currentLang === 'ru' ? 'Адрес скопирован' : 'Address copied', 'success'));
+  if (el) navigator.clipboard.writeText(el.textContent).then(() => showNotification(t('addr_copied'), 'success'));
 }
 
 function copyTopupComment() {
   const el = document.getElementById('topup-comment');
-  if (el) navigator.clipboard.writeText(el.textContent).then(() => showNotification(currentLang === 'ru' ? 'Комментарий скопирован' : 'Comment copied', 'success'));
+  if (el) navigator.clipboard.writeText(el.textContent).then(() => showNotification(t('comment_copied'), 'success'));
 }
 
 function copyWalletAddress() {
   const el = document.getElementById('wallet-platform-addr');
   if (el && el.textContent !== '—') {
-    navigator.clipboard.writeText(el.textContent).then(() => showNotification(currentLang === 'ru' ? 'Адрес скопирован' : 'Address copied', 'success'));
+    navigator.clipboard.writeText(el.textContent).then(() => showNotification(t('addr_copied'), 'success'));
+  }
+}
+
+async function linkWalletPrompt() {
+  const current = walletData && walletData.wallet_address ? walletData.wallet_address : '';
+  const addr = prompt(currentLang === 'ru' ? 'Введите ваш TON адрес (EQ... / UQ...):' : 'Enter your TON wallet address (EQ... / UQ...):', current);
+  if (!addr) return;
+  const trimmed = addr.trim();
+  if (!trimmed.startsWith('EQ') && !trimmed.startsWith('UQ') && !trimmed.startsWith('0:')) {
+    showNotification(t('invalid_addr'), 'error');
+    return;
+  }
+  await saveWalletAddress(trimmed, null, 'manual');
+}
+
+async function saveWalletAddress(address, walletName, connectedVia) {
+  try {
+    const body = { address };
+    if (walletName) body.wallet_name = walletName;
+    if (connectedVia) body.connected_via = connectedVia;
+    const data = await apiRequest('POST', '/api/wallet/link', body);
+    if (data.ok) {
+      showNotification(currentLang === 'ru' ? 'Кошелёк привязан' : 'Wallet linked', 'success');
+      if (walletData) {
+        walletData.wallet_address = address;
+        walletData.wallet_name = walletName || null;
+        walletData.connected_via = connectedVia || 'manual';
+      }
+      showConnectedWallet(address, walletName || '', connectedVia || 'manual');
+    } else {
+      showNotification(data.error || t('save_failed'), 'error');
+    }
+  } catch (e) {
+    showNotification(e.message || t('save_failed'), 'error');
+  }
+}
+
+function showConnectedWallet(address, walletName, connectedVia) {
+  const disc = document.getElementById('wallet-disconnected');
+  const conn = document.getElementById('wallet-connected');
+  if (disc) disc.style.display = 'none';
+  if (conn) conn.style.display = 'flex';
+  const nameEl = document.getElementById('wallet-connected-name');
+  if (nameEl) nameEl.textContent = walletName || (connectedVia === 'tonconnect' ? 'TON Connect' : (currentLang === 'ru' ? 'Кошелёк' : 'Wallet'));
+  const addrEl = document.getElementById('wallet-connected-addr');
+  if (addrEl) addrEl.textContent = address.slice(0, 6) + '...' + address.slice(-4);
+  addrEl && (addrEl.title = address);
+}
+
+function showDisconnectedWallet() {
+  const disc = document.getElementById('wallet-disconnected');
+  const conn = document.getElementById('wallet-connected');
+  if (disc) disc.style.display = 'flex';
+  if (conn) conn.style.display = 'none';
+}
+
+function _rawToFriendly(raw) {
+  if (!raw.includes(':')) return raw; // already friendly
+  const [wc, hex] = raw.split(':');
+  const hash = new Uint8Array(hex.match(/.{2}/g).map(b => parseInt(b, 16)));
+  const payload = new Uint8Array(34);
+  payload[0] = 0x51; // non-bounceable (UQ)
+  payload[1] = parseInt(wc) & 0xff;
+  payload.set(hash, 2);
+  let crc = 0;
+  for (let i = 0; i < 34; i++) { crc ^= payload[i] << 8; for (let j = 0; j < 8; j++) crc = crc & 0x8000 ? (crc << 1) ^ 0x1021 : crc << 1; crc &= 0xffff; }
+  const full = new Uint8Array(36);
+  full.set(payload);
+  full[34] = (crc >> 8) & 0xff;
+  full[35] = crc & 0xff;
+  return btoa(String.fromCharCode(...full)).replace(/\+/g, '-').replace(/\//g, '_');
+}
+
+function initTonConnect() {
+  if (_tonConnectUI || typeof TON_CONNECT_UI === 'undefined') return;
+  try {
+    _tonConnectUI = new TON_CONNECT_UI.TonConnectUI({
+      manifestUrl: window.location.origin + '/tonconnect-manifest.json',
+    });
+    _tonConnectUI.onStatusChange(wallet => {
+      if (wallet) {
+        const addr = wallet.account.address;
+        const friendly = _rawToFriendly(addr);
+        const appName = wallet.device && wallet.device.appName ? wallet.device.appName : 'TON Connect';
+        saveWalletAddress(friendly, appName, 'tonconnect');
+      }
+    });
+  } catch (e) {
+    console.warn('TON Connect init failed:', e);
+  }
+}
+
+async function connectTonWallet() {
+  if (!_tonConnectUI) initTonConnect();
+  if (!_tonConnectUI) {
+    showNotification('TON Connect not available', 'error');
+    return;
+  }
+  try {
+    await _tonConnectUI.openModal();
+  } catch (e) {
+    console.warn('TON Connect modal error:', e);
+  }
+}
+
+async function disconnectTonWallet() {
+  try {
+    if (_tonConnectUI && _tonConnectUI.connected) {
+      await _tonConnectUI.disconnect();
+    }
+    await apiRequest('POST', '/api/wallet/disconnect', {});
+    if (walletData) {
+      walletData.wallet_address = null;
+      walletData.wallet_name = null;
+      walletData.connected_via = null;
+    }
+    showDisconnectedWallet();
+    showNotification(currentLang === 'ru' ? 'Кошелёк отключён' : 'Wallet disconnected', 'success');
+  } catch (e) {
+    showNotification(e.message || 'Disconnect failed', 'error');
   }
 }
 
 async function checkTopup() {
   const btn = document.getElementById('btn-check-topup');
   const res = document.getElementById('topup-result');
-  if (btn) { btn.disabled = true; btn.querySelector('span').textContent = currentLang === 'ru' ? 'Проверяю...' : 'Checking...'; }
+  if (btn) { btn.disabled = true; btn.querySelector('span').textContent = t('checking'); }
 
   try {
     const data = await apiRequest('POST', '/api/topup/check', {});
@@ -2029,9 +2403,11 @@ async function checkTopup() {
       res.style.display = 'block';
       if (data.credited) {
         res.className = 'topup-result success';
+        const creditedAmt = parseFloat(data.credited || data.amount || 0).toFixed(2);
+        const newBal = parseFloat(data.balance || data.newBalance || 0).toFixed(2);
         res.textContent = (currentLang === 'ru'
-          ? '✅ Зачислено ' + parseFloat(data.amount).toFixed(2) + ' TON! Баланс: ' + parseFloat(data.newBalance).toFixed(2) + ' TON'
-          : '✅ Credited ' + parseFloat(data.amount).toFixed(2) + ' TON! Balance: ' + parseFloat(data.newBalance).toFixed(2) + ' TON');
+          ? '✅ Зачислено ' + creditedAmt + ' TON! Баланс: ' + newBal + ' TON'
+          : '✅ Credited ' + creditedAmt + ' TON! Balance: ' + newBal + ' TON');
         // Refresh wallet data
         await loadWalletBalance();
         await loadTransactions();
@@ -2051,7 +2427,7 @@ async function checkTopup() {
   } finally {
     if (btn) {
       btn.disabled = false;
-      btn.querySelector('span').textContent = currentLang === 'ru' ? 'Я отправил — проверить' : 'I sent it — verify';
+      btn.querySelector('span').textContent = t('verify_sent');
     }
   }
 }
@@ -2067,7 +2443,11 @@ function openWithdrawModal() {
   if (err) err.style.display = 'none';
   const addrInput = document.getElementById('withdraw-address');
   const amtInput = document.getElementById('withdraw-amount');
-  if (addrInput) addrInput.value = '';
+  // Pre-fill saved wallet address
+  if (addrInput) {
+    const savedAddr = walletData && walletData.wallet_address ? walletData.wallet_address : '';
+    addrInput.value = savedAddr;
+  }
   if (amtInput) amtInput.value = '';
   updateWithdrawReceive();
 
@@ -2118,17 +2498,17 @@ async function submitWithdraw() {
 
   // Validate
   if (!address || (!address.startsWith('EQ') && !address.startsWith('UQ') && !address.startsWith('0:'))) {
-    if (errEl) { errEl.style.display = 'block'; errEl.textContent = currentLang === 'ru' ? 'Введите корректный TON адрес (EQ.../UQ...)' : 'Enter a valid TON address (EQ.../UQ...)'; }
+    if (errEl) { errEl.style.display = 'block'; errEl.textContent = t('invalid_addr'); }
     return;
   }
   if (!amount || amount < 0.1) {
-    if (errEl) { errEl.style.display = 'block'; errEl.textContent = currentLang === 'ru' ? 'Минимальная сумма: 0.1 TON' : 'Minimum amount: 0.1 TON'; }
+    if (errEl) { errEl.style.display = 'block'; errEl.textContent = t('min_amount'); }
     return;
   }
 
   if (errEl) errEl.style.display = 'none';
   if (resEl) resEl.style.display = 'none';
-  if (btn) { btn.disabled = true; btn.querySelector('span').textContent = currentLang === 'ru' ? 'Отправка...' : 'Sending...'; }
+  if (btn) { btn.disabled = true; btn.querySelector('span').textContent = t('sending'); }
 
   try {
     const data = await apiRequest('POST', '/api/withdraw', { address, amount });
@@ -2140,6 +2520,8 @@ async function submitWithdraw() {
           ? '✅ Отправлено! TX: ' + (data.txHash || '—').substring(0, 16) + '...'
           : '✅ Sent! TX: ' + (data.txHash || '—').substring(0, 16) + '...');
       }
+      // Save wallet address for future use (syncs with bot)
+      saveWalletAddress(address, null, 'manual').catch(() => {});
       // Refresh
       await loadWalletBalance();
       await loadTransactions();
@@ -2160,7 +2542,7 @@ async function submitWithdraw() {
   } finally {
     if (btn) {
       btn.disabled = false;
-      btn.querySelector('span').textContent = currentLang === 'ru' ? 'Вывести' : 'Withdraw';
+      btn.querySelector('span').textContent = t('withdraw');
     }
   }
 }

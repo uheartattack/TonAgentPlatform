@@ -1984,6 +1984,31 @@ bot.action('profile_link_wallet', async (ctx) => {
   await ctx.answerCbQuery();
   const userId = ctx.from!.id;
   const lang = getUserLang(userId);
+  await safeReply(ctx,
+    lang === 'ru'
+      ? '🔗 <b>Привязка кошелька</b>\n\nВыберите способ:'
+      : '🔗 <b>Link Wallet</b>\n\nChoose method:',
+    {
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: `💎 TON Connect`, callback_data: 'link_wallet_tc' }],
+          [{ text: `✏️ ${lang === 'ru' ? 'Ввести адрес вручную' : 'Enter address manually'}`, callback_data: 'link_wallet_manual' }],
+        ],
+      },
+    }
+  );
+});
+
+bot.action('link_wallet_tc', async (ctx) => {
+  await ctx.answerCbQuery();
+  await showTonConnect(ctx);
+});
+
+bot.action('link_wallet_manual', async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from!.id;
+  const lang = getUserLang(userId);
   pendingWithdrawal.set(userId, { step: 'enter_address' });
   await ctx.reply(
     lang === 'ru'
@@ -2549,6 +2574,18 @@ bot.on('callback_query', async (ctx) => {
   if (data === 'ton_disconnect') {
     await ctx.answerCbQuery('Отключаю...');
     await getTonConnectManager().disconnect(userId);
+    // Clear wallet from profile (syncs with dashboard)
+    try {
+      const settingsRepo = getUserSettingsRepository();
+      const profile = (await settingsRepo.get(userId, 'profile')) || {};
+      if (profile.connected_via === 'tonconnect') {
+        delete profile.wallet_address;
+        delete profile.wallet_name;
+        delete profile.connected_via;
+        delete profile.wallet_connected_at;
+        await settingsRepo.set(userId, 'profile', profile);
+      }
+    } catch {}
     await ctx.reply('🔌 TON Connect отключён');
     return;
   }
@@ -5216,6 +5253,14 @@ async function showTonConnect(ctx: Context) {
     tonConn.onConnect(userId, async (w) => {
       if (w) {
         try {
+          // Save wallet to profile (syncs with dashboard)
+          const settingsRepo = getUserSettingsRepository();
+          const profile = (await settingsRepo.get(userId, 'profile')) || { balance_ton: 0, total_earned: 0, wallet_address: null };
+          profile.wallet_address = w.friendlyAddress;
+          profile.wallet_name = w.walletName;
+          profile.connected_via = 'tonconnect';
+          profile.wallet_connected_at = new Date().toISOString();
+          await settingsRepo.set(userId, 'profile', profile);
           await ctx.telegram.sendMessage(
             userId,
             `✅ Кошелёк подключён!\n\n👛 ${w.walletName}\n📋 ${w.friendlyAddress}`,

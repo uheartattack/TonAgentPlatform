@@ -26,6 +26,8 @@ const PORT = parseInt(process.env.API_PORT || '3001', 10);
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
 const BOT_USERNAME = process.env.BOT_USERNAME || 'TonAgentPlatformBot';
 const LANDING_URL = process.env.LANDING_URL || `http://localhost:${PORT}`;
+const TG_CLIENT_ID = process.env.TG_CLIENT_ID || '';
+const TG_CLIENT_SECRET = process.env.TG_CLIENT_SECRET || '';
 
 // ── In-memory session store: token → userId ──────────────────
 const sessions = new Map<string, { userId: number; username: string; firstName: string; expiresAt: number }>();
@@ -84,6 +86,60 @@ function verifyTelegramAuth(data: Record<string, string>): boolean {
   const hmac = crypto.createHmac('sha256', secretKey).update(checkString).digest('hex');
 
   return hmac === hash;
+}
+
+// ── Telegram OIDC JWT verification ────────────────────────────
+// Verify id_token from new Telegram Login SDK
+let _jwksCache: any = null;
+let _jwksCacheTime = 0;
+
+async function fetchTelegramJWKS(): Promise<any> {
+  if (_jwksCache && Date.now() - _jwksCacheTime < 3600_000) return _jwksCache;
+  const res = await fetch('https://oauth.telegram.org/.well-known/jwks.json');
+  _jwksCache = await res.json();
+  _jwksCacheTime = Date.now();
+  return _jwksCache;
+}
+
+function base64urlDecode(str: string): Buffer {
+  str = str.replace(/-/g, '+').replace(/_/g, '/');
+  while (str.length % 4) str += '=';
+  return Buffer.from(str, 'base64');
+}
+
+async function verifyTelegramOIDC(idToken: string): Promise<{ userId: number; username: string; firstName: string } | null> {
+  try {
+    const parts = idToken.split('.');
+    if (parts.length !== 3) return null;
+    const header = JSON.parse(base64urlDecode(parts[0]).toString());
+    const payload = JSON.parse(base64urlDecode(parts[1]).toString());
+
+    // Validate claims
+    if (payload.iss !== 'https://oauth.telegram.org') return null;
+    if (String(payload.aud) !== TG_CLIENT_ID && payload.aud !== parseInt(TG_CLIENT_ID)) return null;
+    if (payload.exp && payload.exp < Date.now() / 1000) return null;
+
+    // Fetch JWKS and verify signature
+    const jwks = await fetchTelegramJWKS();
+    const key = jwks.keys?.find((k: any) => k.kid === header.kid);
+    if (!key) return null;
+
+    // Build RSA public key from JWK
+    const pubKey = crypto.createPublicKey({ key, format: 'jwk' });
+    const valid = crypto.createVerify('RSA-SHA256')
+      .update(parts[0] + '.' + parts[1])
+      .verify(pubKey, base64urlDecode(parts[2]));
+    if (!valid) return null;
+
+    return {
+      userId: parseInt(payload.sub, 10),
+      username: payload.preferred_username || '',
+      firstName: payload.name || '',
+    };
+  } catch (e) {
+    console.error('OIDC verify error:', e);
+    return null;
+  }
 }
 
 // ── Auth middleware ───────────────────────────────────────────
@@ -197,6 +253,7 @@ export function startApiServer() {
       botLink: `https://t.me/${BOT_USERNAME}`,
       landingUrl: LANDING_URL,
       manifestUrl: `${LANDING_URL}/tonconnect-manifest.json`,
+      tgClientId: TG_CLIENT_ID ? parseInt(TG_CLIENT_ID) : undefined,
     });
   });
 
@@ -253,6 +310,73 @@ export function startApiServer() {
       expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7 дней
     });
     res.json({ ok: true, token, userId, username: data.username, firstName: data.first_name });
+  });
+
+  // ── POST /api/auth/telegram-oidc — new Telegram Login SDK (JWT) ──
+  app.post('/api/auth/telegram-oidc', async (req: Request, res: Response) => {
+    const { id_token } = req.body || {};
+    if (!id_token || typeof id_token !== 'string') {
+      res.status(400).json({ ok: false, error: 'Missing id_token' });
+      return;
+    }
+    const user = await verifyTelegramOIDC(id_token);
+    if (!user) {
+      res.status(401).json({ ok: false, error: 'Invalid or expired token' });
+      return;
+    }
+    const token = generateToken();
+    sessions.set(token, {
+      userId: user.userId,
+      username: user.username,
+      firstName: user.firstName,
+      expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
+    });
+    res.json({ ok: true, token, userId: user.userId, username: user.username, firstName: user.firstName });
+  });
+
+  // ── POST /api/auth/telegram-code — OIDC code exchange flow ──
+  app.post('/api/auth/telegram-code', async (req: Request, res: Response) => {
+    const { code, redirect_uri } = req.body || {};
+    if (!code || !redirect_uri) {
+      res.status(400).json({ ok: false, error: 'Missing code or redirect_uri' });
+      return;
+    }
+    try {
+      // Exchange authorization code for tokens
+      const tokenRes = await fetch('https://oauth.telegram.org/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'authorization_code',
+          code,
+          redirect_uri,
+          client_id: TG_CLIENT_ID,
+          client_secret: TG_CLIENT_SECRET,
+        }).toString(),
+      });
+      const tokenData = await tokenRes.json() as any;
+      if (!tokenData.id_token) {
+        res.status(401).json({ ok: false, error: tokenData.error || 'Token exchange failed' });
+        return;
+      }
+      // Verify the id_token JWT
+      const user = await verifyTelegramOIDC(tokenData.id_token);
+      if (!user) {
+        res.status(401).json({ ok: false, error: 'Invalid id_token' });
+        return;
+      }
+      const token = generateToken();
+      sessions.set(token, {
+        userId: user.userId,
+        username: user.username,
+        firstName: user.firstName,
+        expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
+      });
+      res.json({ ok: true, token, userId: user.userId, username: user.username, firstName: user.firstName });
+    } catch (e: any) {
+      console.error('Code exchange error:', e);
+      res.status(500).json({ ok: false, error: e.message });
+    }
   });
 
   // ── GET /api/me ───────────────────────────────────────────
@@ -1049,6 +1173,9 @@ export function startApiServer() {
         balance_ton: profile.balance_ton || 0,
         total_earned: profile.total_earned || 0,
         wallet_address: profile.wallet_address || null,
+        wallet_name: profile.wallet_name || null,
+        connected_via: profile.connected_via || null,
+        wallet_connected_at: profile.wallet_connected_at || null,
         platform_wallet: PLATFORM_WALLET,
       });
     } catch (e: any) {
@@ -1169,23 +1296,80 @@ export function startApiServer() {
         return;
       }
 
+      // Save wallet address to profile (syncs with bot)
+      if (!profile.wallet_address || profile.wallet_address !== address) {
+        profile.wallet_address = address;
+      }
+
       // Deduct balance
       profile.balance_ton = Math.max(0, profile.balance_ton - amountTon - networkFee);
       await settingsRepo.set(userId, 'profile', profile);
       await getBalanceTxRepository().record(userId, 'withdraw', -(amountTon + networkFee), profile.balance_ton, `Withdraw to ${address.slice(0,12)}...`);
 
       // Send TON
-      const result = await sendPlatformTransaction(address, amountTon, `withdraw:${userId}`);
-      if (result.ok) {
-        try { await getBalanceTxRepository().record(userId, 'withdraw_confirmed', 0, profile.balance_ton, `txHash: ${result.txHash}`, result.txHash); } catch {}
-        res.json({ ok: true, txHash: result.txHash, balance: profile.balance_ton });
-      } else {
-        // Rollback
+      try {
+        const result = await sendPlatformTransaction(address, amountTon, `withdraw:${userId}`);
+        if (result.ok) {
+          try { await getBalanceTxRepository().record(userId, 'withdraw_confirmed', 0, profile.balance_ton, `txHash: ${result.txHash}`, result.txHash); } catch {}
+          res.json({ ok: true, txHash: result.txHash, balance: profile.balance_ton });
+        } else {
+          // Rollback
+          profile.balance_ton += amountTon + networkFee;
+          await settingsRepo.set(userId, 'profile', profile);
+          await getBalanceTxRepository().record(userId, 'refund', amountTon + networkFee, profile.balance_ton, 'Withdraw failed, refunded');
+          res.status(500).json({ error: result.error || 'Transaction failed' });
+        }
+      } catch (sendErr: any) {
+        // Rollback on exception
         profile.balance_ton += amountTon + networkFee;
         await settingsRepo.set(userId, 'profile', profile);
-        await getBalanceTxRepository().record(userId, 'refund', amountTon + networkFee, profile.balance_ton, 'Withdraw failed, refunded');
-        res.status(500).json({ error: result.error || 'Transaction failed' });
+        await getBalanceTxRepository().record(userId, 'refund', amountTon + networkFee, profile.balance_ton, 'Withdraw exception, refunded');
+        res.status(500).json({ error: sendErr.message || 'Send failed' });
       }
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── POST /api/wallet/link — привязать кошелёк ────────────────
+  app.post('/api/wallet/link', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { address } = req.body || {};
+      if (!address || typeof address !== 'string') {
+        res.status(400).json({ error: 'Address required' });
+        return;
+      }
+      if (!address.startsWith('EQ') && !address.startsWith('UQ') && !address.startsWith('0:')) {
+        res.status(400).json({ error: 'Invalid TON address format' });
+        return;
+      }
+      const { wallet_name, connected_via } = req.body || {};
+      const settingsRepo = getUserSettingsRepository();
+      const profile = (await settingsRepo.get(userId, 'profile')) || { balance_ton: 0, total_earned: 0, wallet_address: null, joined_at: new Date().toISOString() };
+      profile.wallet_address = address.trim();
+      if (wallet_name) profile.wallet_name = wallet_name;
+      if (connected_via) profile.connected_via = connected_via;
+      profile.wallet_connected_at = new Date().toISOString();
+      await settingsRepo.set(userId, 'profile', profile);
+      res.json({ ok: true, wallet_address: profile.wallet_address, wallet_name: profile.wallet_name || null, connected_via: profile.connected_via || null });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── POST /api/wallet/disconnect — отвязать кошелёк ──────────
+  app.post('/api/wallet/disconnect', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const settingsRepo = getUserSettingsRepository();
+      const profile = (await settingsRepo.get(userId, 'profile')) || { balance_ton: 0, total_earned: 0, wallet_address: null };
+      delete profile.wallet_address;
+      delete profile.wallet_name;
+      delete profile.connected_via;
+      delete profile.wallet_connected_at;
+      await settingsRepo.set(userId, 'profile', profile);
+      res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
