@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="dashboard.css">
+  <link rel="stylesheet" href="dashboard.css?v=12">
   <!-- Telegram widget loaded in body where button should appear -->
 </head>
 <body>
@@ -31,12 +31,12 @@
         <div class="telegram-login-container" id="tg-widget-container">
           <!-- Telegram Login Widget injected here dynamically by dashboard.js after fetching /api/config -->
           <div id="tg-widget-placeholder" style="min-height:48px;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.4);font-size:.875rem;">
-            ⏳ Loading...
+            <span data-en="Loading..." data-ru="Загрузка...">Loading...</span>
           </div>
         </div>
-        <p class="auth-note" data-en="Secure auth via Telegram Login Widget" data-ru="Безопасная авторизация через Telegram Login Widget">Secure auth via Telegram Login Widget</p>
-        <p id="auth-session-expired" style="color:#f59e0b;font-size:0.8rem;font-weight:500;display:none;margin-top:8px;">
-          🔄 Сессия истекла после перезапуска сервера — войдите снова
+        <p class="auth-note" data-en="Secure auth via Telegram" data-ru="Безопасная авторизация через Telegram">Secure auth via Telegram</p>
+        <p id="auth-session-expired" style="color:#f59e0b;font-size:0.8rem;font-weight:500;display:none;margin-top:8px;" data-en="Session expired — please sign in again" data-ru="Сессия истекла — войдите снова">
+          Session expired — please sign in again
         </p>
         <p class="auth-note" id="auth-domain-note" style="color:#f59e0b;font-size:0.75rem;display:none">
           ⚠️ Widget requires HTTPS domain
@@ -733,40 +733,43 @@
         <div class="page-content">
           <div class="settings-grid">
             <div class="settings-section">
-              <h3 class="section-title" data-en="API Credentials" data-ru="API Ключи">API Credentials</h3>
+              <h3 class="section-title" data-en="AI API Key" data-ru="AI API Ключ">AI API Key</h3>
               <div class="settings-card">
-                <div class="credential-item">
+                <p style="color:var(--text-secondary);font-size:.85rem;margin-bottom:14px" data-en="Your agents need an AI key to think. Choose provider and enter your key." data-ru="Вашим агентам нужен AI ключ для работы. Выберите провайдера и введите ключ.">Your agents need an AI key to think. Choose provider and enter your key.</p>
+                <div class="credential-item" style="margin-bottom:12px">
                   <div class="credential-info">
-                    <span class="credential-name">Anthropic API</span>
-                    <span class="credential-status active" data-en="Active" data-ru="Активен">Active</span>
+                    <span class="credential-name" data-en="Provider" data-ru="Провайдер">Provider</span>
+                  </div>
+                  <select id="ai-provider-select" class="form-input" style="max-width:260px" onchange="onAIProviderChange()">
+                    <option value="gemini">Gemini (Google)</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="anthropic">Anthropic</option>
+                    <option value="groq">Groq</option>
+                    <option value="deepseek">DeepSeek</option>
+                    <option value="openrouter">OpenRouter</option>
+                    <option value="together">Together AI</option>
+                  </select>
+                </div>
+                <div class="credential-item" style="margin-bottom:12px">
+                  <div class="credential-info">
+                    <span class="credential-name">API Key</span>
+                    <span class="credential-status" id="ai-key-status" style="display:none" data-en="Saved" data-ru="Сохранён">Saved</span>
                   </div>
                   <div class="input-group">
-                    <input type="password" class="form-input" value="sk-ant-api03-xxxxxxxx" readonly>
-                    <button class="btn btn-ghost btn-sm" onclick="togglePassword(this)">Show</button>
-                    <button class="btn btn-ghost btn-sm">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                      </svg>
-                    </button>
+                    <input type="password" class="form-input" id="ai-api-key-input" placeholder="sk-... / AIza... / gsk_...">
+                    <button class="btn btn-ghost btn-sm" onclick="togglePassword(this)" data-en="Show" data-ru="Показать">Show</button>
                   </div>
                 </div>
-                <div class="credential-item">
-                  <div class="credential-info">
-                    <span class="credential-name">Telegram Bot Token</span>
-                    <span class="credential-status active" data-en="Active" data-ru="Активен">Active</span>
-                  </div>
-                  <div class="input-group">
-                    <input type="password" class="form-input" value="7xxxxxxxx:xxxxxxxx" readonly>
-                    <button class="btn btn-ghost btn-sm" onclick="togglePassword(this)">Show</button>
-                    <button class="btn btn-ghost btn-sm">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                      </svg>
-                    </button>
-                  </div>
+                <div style="display:flex;gap:8px;align-items:center">
+                  <button class="btn btn-primary btn-sm" onclick="saveAIKey()">
+                    <span data-en="Save Key" data-ru="Сохранить ключ">Save Key</span>
+                  </button>
+                  <button class="btn btn-ghost btn-sm" onclick="clearAIKey()" style="color:var(--danger)">
+                    <span data-en="Clear" data-ru="Очистить">Clear</span>
+                  </button>
+                  <span id="ai-key-msg" style="font-size:.78rem;color:var(--success);display:none"></span>
                 </div>
+                <p style="color:var(--text-muted);font-size:.72rem;margin-top:10px" data-en="Key is stored encrypted and synced with your Telegram bot settings." data-ru="Ключ хранится зашифрованно и синхронизируется с настройками бота.">Key is stored encrypted and synced with your Telegram bot settings.</p>
               </div>
             </div>
             
@@ -1116,8 +1119,48 @@
                 </svg>
               </div>
               <div class="wallet-card-label" data-en="Platform Wallet" data-ru="Кошелёк платформы">Platform Wallet</div>
-              <div class="wallet-card-value wallet-address-val" id="wallet-platform-addr" title="Click to copy" onclick="copyWalletAddress()" style="cursor:pointer;font-size:.85rem;word-break:break-all">—</div>
-              <div class="wallet-card-sub" style="color:var(--success);font-size:.7rem" id="wallet-copy-hint" data-en="Click to copy" data-ru="Нажмите для копирования">Click to copy</div>
+              <div class="wallet-card-value" style="font-size:1rem;font-weight:600;color:var(--primary)" id="wallet-platform-dns">agentplatform.ton</div>
+              <div class="wallet-card-sub wallet-address-val" id="wallet-platform-addr" title="Click to copy" onclick="copyWalletAddress()" style="cursor:pointer;font-size:.7rem;color:var(--text-secondary);word-break:break-all;opacity:.7">—</div>
+            </div>
+          </div>
+
+          <!-- Linked Wallet — TON Connect -->
+          <div id="wallet-link-panel" class="panel" style="margin-bottom:20px;padding:16px 20px">
+            <!-- State: Not connected -->
+            <div id="wallet-disconnected" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+              <div style="display:flex;align-items:center;gap:12px;min-width:0">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" style="flex-shrink:0">
+                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                </svg>
+                <div style="min-width:0">
+                  <div style="font-size:.78rem;color:var(--text-secondary)" data-en="Your Wallet" data-ru="Ваш кошелёк">Your Wallet</div>
+                  <div style="font-size:.85rem;color:var(--text-tertiary)" data-en="Not connected" data-ru="Не подключён">Not connected</div>
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+                <button class="btn btn-primary btn-sm" onclick="connectTonWallet()" style="display:flex;align-items:center;gap:6px">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                  <span data-en="Connect" data-ru="Подключить">Connect</span>
+                </button>
+                <button class="btn btn-ghost btn-sm" onclick="linkWalletPrompt()" style="font-size:.75rem;opacity:.7" data-en="Manual" data-ru="Вручную">Manual</button>
+              </div>
+            </div>
+            <!-- State: Connected -->
+            <div id="wallet-connected" style="display:none;align-items:center;justify-content:space-between;gap:12px">
+              <div style="display:flex;align-items:center;gap:12px;min-width:0">
+                <div style="width:36px;height:36px;border-radius:10px;background:rgba(0,136,204,.15);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0088cc" stroke-width="2"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4h-4z"/></svg>
+                </div>
+                <div style="min-width:0">
+                  <div style="display:flex;align-items:center;gap:6px">
+                    <span id="wallet-connected-name" style="font-size:.82rem;font-weight:600;color:var(--primary)"></span>
+                    <span style="font-size:.65rem;padding:2px 6px;border-radius:4px;background:rgba(16,185,129,.15);color:#10b981" data-en="Connected" data-ru="Подключён">Connected</span>
+                  </div>
+                  <div id="wallet-connected-addr" style="font-size:.82rem;font-family:'JetBrains Mono',monospace;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
+                </div>
+              </div>
+              <button class="btn btn-ghost btn-sm" onclick="disconnectTonWallet()" style="color:var(--danger);flex-shrink:0" data-en="Disconnect" data-ru="Отключить">Disconnect</button>
             </div>
           </div>
 
@@ -1173,7 +1216,8 @@
                 <div class="step-number">1</div>
                 <div class="step-content">
                   <p data-en="Send TON to the platform wallet:" data-ru="Отправьте TON на кошелёк платформы:">Send TON to the platform wallet:</p>
-                  <div class="topup-address-box" id="topup-address" onclick="copyTopupAddress()" title="Click to copy">—</div>
+                  <div style="font-weight:600;font-size:1.1rem;color:var(--primary);margin-bottom:6px">agentplatform.ton</div>
+                  <div class="topup-address-box" id="topup-address" onclick="copyTopupAddress()" title="Click to copy" style="font-size:.82rem;opacity:.8">—</div>
                 </div>
               </div>
               <div class="topup-step">
@@ -1509,6 +1553,7 @@
     </main>
   </div>
 
-  <script src="dashboard.js"></script>
+  <script src="https://unpkg.com/@tonconnect/ui@2/dist/tonconnect-ui.min.js"></script>
+  <script src="dashboard.js?v=12"></script>
 </body>
 </html>

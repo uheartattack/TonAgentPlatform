@@ -2008,9 +2008,9 @@ select.form-input option {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
-  transition: border-color 0.2s;
+  transition: all 0.2s ease;
 }
-.agent-card:hover { border-color: var(--primary); }
+.agent-card:hover { border-color: var(--primary); background: rgba(59,130,246,0.03); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
 .agent-status {
   display: flex;
   align-items: center;
