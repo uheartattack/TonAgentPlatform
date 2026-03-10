@@ -5,45 +5,88 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" type="image/svg+xml" href="logo.svg">
   <link rel="shortcut icon" href="logo.svg">
-  <title>TON Agent Platform — Control Center</title>
+  <title>TON Agent Platform</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="dashboard.css?v=17">
+  <link rel="stylesheet" href="dashboard.css?v=19">
   <!-- Telegram widget loaded in body where button should appear -->
 </head>
 <body>
   <!-- Auth Screen -->
   <div id="auth-screen" class="auth-screen">
-    <div class="auth-container">
-      <div class="auth-logo">
-        <div class="logo-icon pulse">
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-          </svg>
-        </div>
-        <h1 data-en="TON Agent Platform" data-ru="TON Agent Platform">TON Agent Platform</h1>
-        <p data-en="Control Center" data-ru="Панель управления">Control Center</p>
-      </div>
-      <div class="auth-box">
-        <h2 data-en="Welcome Back" data-ru="С возвращением">Welcome Back</h2>
-        <p class="auth-desc" data-en="Sign in with Telegram to access your agents" data-ru="Войдите через Telegram для доступа к агентам">Sign in with Telegram to access your agents</p>
-        <div class="telegram-login-container" id="tg-widget-container">
-          <!-- Telegram Login Widget injected here dynamically by dashboard.js after fetching /api/config -->
-          <div id="tg-widget-placeholder" style="min-height:48px;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.4);font-size:.875rem;">
-            <span data-en="Loading..." data-ru="Загрузка...">Loading...</span>
+    <div class="auth-split">
+      <div class="auth-left">
+        <div class="auth-left-content">
+          <div class="auth-brand">
+            <div class="auth-brand-icon">
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            </div>
+            <h1>TON Agent Platform</h1>
+          </div>
+          <p class="auth-tagline" data-en="Build autonomous AI agents for TON blockchain in minutes" data-ru="Создавайте автономных AI-агентов для блокчейна TON за минуты">Build autonomous AI agents for TON blockchain in minutes</p>
+          <div class="auth-features">
+            <div class="auth-feature-item">
+              <div class="auth-feature-icon">🔧</div>
+              <div><strong data-en="65+ Built-in Tools" data-ru="65+ инструментов">65+ Built-in Tools</strong><span data-en="TON, DeFi, NFT, Telegram, Web" data-ru="TON, DeFi, NFT, Telegram, Web">TON, DeFi, NFT, Telegram, Web</span></div>
+            </div>
+            <div class="auth-feature-item">
+              <div class="auth-feature-icon">🧠</div>
+              <div><strong data-en="7 AI Providers" data-ru="7 AI-провайдеров">7 AI Providers</strong><span data-en="GPT, Claude, Gemini, DeepSeek, Groq" data-ru="GPT, Claude, Gemini, DeepSeek, Groq">GPT, Claude, Gemini, DeepSeek, Groq</span></div>
+            </div>
+            <div class="auth-feature-item">
+              <div class="auth-feature-icon">⚡</div>
+              <div><strong data-en="Visual Constructor" data-ru="Визуальный конструктор">Visual Constructor</strong><span data-en="Drag & drop flow builder, no code" data-ru="Drag & drop, без кода">Drag & drop flow builder, no code</span></div>
+            </div>
+            <div class="auth-feature-item">
+              <div class="auth-feature-icon">💰</div>
+              <div><strong data-en="Free to Start" data-ru="Бесплатный старт">Free to Start</strong><span data-en="No credit card, works with your AI key" data-ru="Без карты, работает с вашим AI ключом">No credit card, works with your AI key</span></div>
+            </div>
+          </div>
+          <div class="auth-social-proof">
+            <div class="auth-stat"><span class="auth-stat-num">1200+</span><small data-en="Agents Created" data-ru="Агентов создано">Agents Created</small></div>
+            <div class="auth-stat-divider"></div>
+            <div class="auth-stat"><span class="auth-stat-num">500+</span><small data-en="Active Users" data-ru="Пользователей">Active Users</small></div>
+            <div class="auth-stat-divider"></div>
+            <div class="auth-stat"><span class="auth-stat-num">$0</span><small data-en="To Get Started" data-ru="Для старта">To Get Started</small></div>
           </div>
         </div>
-        <p class="auth-note" data-en="Secure auth via Telegram" data-ru="Безопасная авторизация через Telegram">Secure auth via Telegram</p>
-        <p id="auth-session-expired" style="color:#f59e0b;font-size:0.8rem;font-weight:500;display:none;margin-top:8px;" data-en="Session expired — please sign in again" data-ru="Сессия истекла — войдите снова">
-          Session expired — please sign in again
-        </p>
-        <p class="auth-note" id="auth-domain-note" style="color:#f59e0b;font-size:0.75rem;display:none">
-          ⚠️ Widget requires HTTPS domain
-        </p>
+      </div>
+      <div class="auth-right">
+        <div class="auth-right-content">
+          <div class="auth-box">
+            <div class="auth-logo">
+              <div class="auth-logo-icon">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+              </div>
+            </div>
+            <h2 data-en="Welcome" data-ru="Добро пожаловать">Welcome</h2>
+            <p class="auth-subtitle" data-en="Sign in to access your AI agents" data-ru="Войдите чтобы управлять AI-агентами">Sign in to access your AI agents</p>
+            <div id="telegram-login-container" class="tg-login-wrap">
+              <div class="auth-loading-placeholder">
+                <div class="auth-spinner"></div>
+                <span data-en="Loading authentication..." data-ru="Загрузка авторизации...">Loading authentication...</span>
+              </div>
+            </div>
+            <p id="session-expired-hint" style="display:none;color:var(--warning);font-size:.8rem;margin-top:8px" data-en="Session expired. Please sign in again." data-ru="Сессия истекла. Войдите снова.">Session expired. Please sign in again.</p>
+            <p id="https-hint" style="display:none;font-size:.75rem;margin-top:12px;color:var(--text-muted)">
+              ⓘ <span data-en="Telegram Login requires HTTPS." data-ru="Telegram Login требует HTTPS.">Telegram Login requires HTTPS.</span>
+              <a href="" id="https-link" style="color:var(--primary)">Switch to HTTPS →</a>
+            </p>
+          </div>
+          <div class="auth-chips">
+            <span class="auth-chip" data-en="✓ No code required" data-ru="✓ Без кода">✓ No code required</span>
+            <span class="auth-chip" data-en="✓ Free tier available" data-ru="✓ Есть бесплатный тариф">✓ Free tier available</span>
+            <span class="auth-chip" data-en="✓ Agents work 24/7" data-ru="✓ Агенты работают 24/7">✓ Agents work 24/7</span>
+          </div>
+        </div>
       </div>
     </div>
-    <div class="auth-bg"></div>
+    <div class="auth-bg">
+      <div class="auth-bg-orb auth-bg-orb-1"></div>
+      <div class="auth-bg-orb auth-bg-orb-2"></div>
+      <div class="auth-bg-orb auth-bg-orb-3"></div>
+    </div>
   </div>
 
   <!-- Main App -->
@@ -66,126 +109,101 @@
           </div>
           <div class="logo-text">
             <span class="logo-title">TON Agent</span>
-            <span class="logo-subtitle" data-en="Control Center" data-ru="Панель управления">Control Center</span>
+            <span class="logo-subtitle" data-en="AI Agent Studio" data-ru="Студия AI-агентов">AI Agent Studio</span>
           </div>
         </a>
       </div>
       
-      <nav class="sidebar-nav">
-        <div class="nav-section">
-          <span class="nav-label" data-en="Overview" data-ru="Обзор">Overview</span>
-          <a href="#" class="nav-item active" data-page="overview">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/>
-              <rect x="14" y="14" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/>
-            </svg>
-            <span data-en="Overview" data-ru="Обзор">Overview</span>
-          </a>
-          <a href="#" class="nav-item" data-page="analytics">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
-            </svg>
-            <span data-en="Analytics" data-ru="Аналитика">Analytics</span>
-          </a>
-        </div>
-        
-        <div class="nav-section">
-          <span class="nav-label" data-en="Agent Core" data-ru="Ядро агента">Agent Core</span>
-          <a href="#" class="nav-item" data-page="capabilities">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
-            </svg>
-            <span data-en="Capabilities" data-ru="Возможности">Capabilities</span>
-            <span class="nav-badge">127</span>
-          </a>
-          <a href="#" class="nav-item" data-page="extensions">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 2l9 4.9V17L12 22l-9-4.9V7z"/>
-            </svg>
-            <span data-en="Extensions" data-ru="Расширения">Extensions</span>
-          </a>
-          <a href="#" class="nav-item" data-page="persona">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
-            </svg>
-            <span data-en="Persona" data-ru="Персона">Persona</span>
-          </a>
-          <a href="#" class="nav-item" data-page="knowledge">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
-            </svg>
-            <span data-en="Knowledge Base" data-ru="База знаний">Knowledge Base</span>
-          </a>
-        </div>
-        
-        <div class="nav-section">
-          <span class="nav-label" data-en="Operations" data-ru="Операции">Operations</span>
-          <a href="#" class="nav-item" data-page="activity">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-              <polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/>
-            </svg>
-            <span data-en="Activity Stream" data-ru="Поток активности">Activity Stream</span>
-            <span class="status-pulse"></span>
-          </a>
-          <a href="#" class="nav-item" data-page="operations">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
-            </svg>
-            <span data-en="Operations" data-ru="Операции">Operations</span>
-            <span class="nav-badge alert">3</span>
-          </a>
-          <a href="#" class="nav-item" data-page="connectors">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>
-            </svg>
-            <span data-en="Connectors" data-ru="Коннекторы">Connectors</span>
-          </a>
-          <a href="#" class="nav-item" data-page="marketplace" onclick="navigateTo('marketplace')">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
-            <span data-en="Marketplace" data-ru="Маркетплейс">Marketplace</span>
-          </a>
-          <a href="#" class="nav-item" data-page="network">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/>
-              <line x1="12" y1="8" x2="5" y2="16"/><line x1="12" y1="8" x2="19" y2="16"/>
-            </svg>
-            <span data-en="Agent Map" data-ru="Карта агентов">Agent Map</span>
-          </a>
-          <a href="#" class="nav-item" data-page="builder">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
-              <rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 17h7"/><path d="M17.5 14v7"/>
-            </svg>
-            <span data-en="Flow Builder" data-ru="Конструктор">Flow Builder</span>
-            <span class="nav-badge accent">NEW</span>
-          </a>
-        </div>
+          <nav class="sidebar-nav">
+            <div class="nav-section">
+              <span class="nav-label" data-en="Main" data-ru="Главное">Main</span>
+              <a href="#" class="nav-item active" data-page="overview" onclick="navigateTo('overview')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                <span data-en="Overview" data-ru="Обзор">Overview</span>
+              </a>
+              <a href="#" class="nav-item" data-page="builder" onclick="navigateTo('builder')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+                <span data-en="Constructor" data-ru="Конструктор">Constructor</span>
+                <span class="nav-badge accent">NEW</span>
+              </a>
+              <a href="#" class="nav-item" data-page="marketplace" onclick="navigateTo('marketplace')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+                <span data-en="Marketplace" data-ru="Маркетплейс">Marketplace</span>
+              </a>
+              <a href="#" class="nav-item" onclick="toggleChatWidget()">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                <span data-en="AI Assistant" data-ru="AI Ассистент">AI Assistant</span>
+              </a>
+            </div>
 
-        <div class="nav-section">
-          <span class="nav-label" data-en="Account" data-ru="Аккаунт">Account</span>
-          <a href="#" class="nav-item" data-page="wallet">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/>
-            </svg>
-            <span data-en="Wallet" data-ru="Кошелёк">Wallet</span>
-          </a>
-        </div>
-        <div class="nav-section">
-          <span class="nav-label" data-en="System" data-ru="Система">System</span>
-          <a href="#" class="nav-item" data-page="guide" onclick="navigateTo('guide')">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-            <span data-en="Guide" data-ru="Инструкции">Guide</span>
-          </a>
-          <a href="#" class="nav-item" data-page="settings">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="3"/>
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-            </svg>
-            <span data-en="Settings" data-ru="Настройки">Settings</span>
-          </a>
-        </div>
-      </nav>
+            <div class="nav-section">
+              <span class="nav-label" data-en="Agents" data-ru="Агенты">Agents</span>
+              <a href="#" class="nav-item" data-page="operations" onclick="navigateTo('operations')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/></svg>
+                <span data-en="My Agents" data-ru="Мои агенты">My Agents</span>
+                <span class="nav-badge alert" id="nav-agents-badge">3</span>
+              </a>
+              <a href="#" class="nav-item" data-page="network" onclick="navigateTo('network')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                <span data-en="Agent Network" data-ru="Сеть агентов">Agent Network</span>
+              </a>
+              <a href="#" class="nav-item" data-page="analytics" onclick="navigateTo('analytics')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                <span data-en="Analytics" data-ru="Аналитика">Analytics</span>
+              </a>
+              <a href="#" class="nav-item" data-page="activity" onclick="navigateTo('activity')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                <span data-en="Activity" data-ru="Активность">Activity</span>
+                <span class="status-pulse"></span>
+              </a>
+            </div>
+
+            <div class="nav-section nav-section-collapsible" id="nav-configure">
+              <span class="nav-label nav-label-toggle" onclick="toggleNavSection('nav-configure')">
+                <span data-en="Configure" data-ru="Настройка">Configure</span>
+                <svg class="nav-collapse-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+              </span>
+              <div class="nav-section-items">
+                <a href="#" class="nav-item" data-page="persona" onclick="navigateTo('persona')">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                  <span data-en="Persona" data-ru="Персона">Persona</span>
+                </a>
+                <a href="#" class="nav-item" data-page="knowledge" onclick="navigateTo('knowledge')">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                  <span data-en="Knowledge" data-ru="База знаний">Knowledge</span>
+                </a>
+                <a href="#" class="nav-item" data-page="capabilities" onclick="navigateTo('capabilities')">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                  <span data-en="Capabilities" data-ru="Возможности">Capabilities</span>
+                  <span class="nav-badge">127</span>
+                </a>
+                <a href="#" class="nav-item" data-page="extensions" onclick="navigateTo('extensions')">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v6m0 12v2M4.93 4.93l4.24 4.24m5.66 5.66l4.24 4.24M2 12h6m12 0h2M4.93 19.07l4.24-4.24m5.66-5.66l4.24-4.24"/></svg>
+                  <span data-en="Extensions" data-ru="Расширения">Extensions</span>
+                </a>
+                <a href="#" class="nav-item" data-page="connectors" onclick="navigateTo('connectors')">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                  <span data-en="Connectors" data-ru="Коннекторы">Connectors</span>
+                </a>
+              </div>
+            </div>
+
+            <div class="nav-section">
+              <span class="nav-label" data-en="Account" data-ru="Аккаунт">Account</span>
+              <a href="#" class="nav-item" data-page="wallet" onclick="navigateTo('wallet')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                <span data-en="Wallet" data-ru="Кошелёк">Wallet</span>
+              </a>
+              <a href="#" class="nav-item" data-page="settings" onclick="navigateTo('settings')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                <span data-en="Settings" data-ru="Настройки">Settings</span>
+              </a>
+              <a href="#" class="nav-item" data-page="guide" onclick="navigateTo('guide')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                <span data-en="Guide" data-ru="Инструкции">Guide</span>
+              </a>
+            </div>
+          </nav>
       
       <div class="sidebar-footer">
         <div class="user-card" style="cursor:pointer" title="Profile" onclick="navigateTo('profile')">
@@ -228,7 +246,7 @@
       <div id="overview-page" class="page active">
         <div class="page-header">
           <div>
-            <h1 class="page-title" data-en="Overview" data-ru="Обзор">Overview</h1>
+            <h1 class="page-title" id="overview-greeting-text" data-en="Overview" data-ru="Обзор">Overview</h1>
             <p class="page-subtitle" data-en="Real-time system status and performance metrics" data-ru="Статус системы и метрики в реальном времени">Real-time system status and performance metrics</p>
           </div>
           <div class="header-actions">
@@ -272,6 +290,51 @@
         </div>
         
         <div class="page-content">
+          <!-- Getting Started Panel -->
+          <div id="getting-started-panel" style="display:none" class="getting-started-panel">
+            <div class="gs-header">
+              <div class="gs-header-left">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                <h3 data-en="Getting Started" data-ru="Начало работы">Getting Started</h3>
+              </div>
+              <button class="btn btn-ghost btn-sm" onclick="dismissGettingStarted()" title="Dismiss">&times;</button>
+            </div>
+            <div class="gs-steps">
+              <div class="gs-step" id="gs-step-ai" onclick="navigateTo('settings')">
+                <div class="gs-step-check" id="gs-check-ai"></div>
+                <div class="gs-step-info">
+                  <strong data-en="Set up AI key" data-ru="Настроить AI ключ">Set up AI key</strong>
+                  <span data-en="Settings → AI Provider" data-ru="Настройки → AI Провайдер">Settings → AI Provider</span>
+                </div>
+              </div>
+              <div class="gs-step" id="gs-step-agent" onclick="navigateTo('builder')">
+                <div class="gs-step-check" id="gs-check-agent"></div>
+                <div class="gs-step-info">
+                  <strong data-en="Create first agent" data-ru="Создать агента">Create first agent</strong>
+                  <span data-en="Constructor or AI Chat" data-ru="Конструктор или AI Чат">Constructor or AI Chat</span>
+                </div>
+              </div>
+              <div class="gs-step" id="gs-step-marketplace" onclick="navigateTo('marketplace')">
+                <div class="gs-step-check" id="gs-check-marketplace"></div>
+                <div class="gs-step-info">
+                  <strong data-en="Browse Marketplace" data-ru="Маркетплейс">Browse Marketplace</strong>
+                  <span data-en="Ready-made templates" data-ru="Готовые шаблоны">Ready-made templates</span>
+                </div>
+              </div>
+              <div class="gs-step" id="gs-step-guide" onclick="navigateTo('guide')">
+                <div class="gs-step-check" id="gs-check-guide"></div>
+                <div class="gs-step-info">
+                  <strong data-en="Read the Guide" data-ru="Прочитать гайд">Read the Guide</strong>
+                  <span data-en="Platform overview" data-ru="Обзор платформы">Platform overview</span>
+                </div>
+              </div>
+            </div>
+            <div class="gs-progress">
+              <div class="gs-progress-bar" id="gs-progress-bar" style="width:0%"></div>
+            </div>
+            <span class="gs-progress-text" id="gs-progress-text">0/4</span>
+          </div>
+
           <!-- Metrics Grid -->
           <div class="metrics-grid">
             <div class="metric-card primary" data-metric="uptime">
@@ -1548,7 +1611,7 @@
       </div>
 
       <!-- Marketplace Page -->
-      <div id="marketplace-page" class="page" style="display:none">
+      <div id="marketplace-page" class="page">
         <div class="page-header">
           <div>
             <h1 class="page-title" data-en="Agent Marketplace" data-ru="Маркетплейс агентов">Agent Marketplace</h1>
@@ -1570,6 +1633,7 @@
             <button class="mkt-tab" onclick="filterMarketplace('gifts')" data-cat="gifts" data-en="Gifts" data-ru="Подарки">Gifts</button>
             <button class="mkt-tab" onclick="filterMarketplace('utility')" data-cat="utility" data-en="Utility" data-ru="Утилиты">Utility</button>
             <button class="mkt-tab" onclick="filterMarketplace('my')" data-cat="my" data-en="My Listings" data-ru="Мои">My Listings</button>
+            <button class="mkt-tab" onclick="filterMarketplace('purchased')" data-cat="purchased" data-en="Purchased" data-ru="Купленные">Purchased</button>
           </div>
           <div id="marketplace-grid" class="marketplace-grid">
             <div class="loading-placeholder" data-en="Loading marketplace..." data-ru="Загрузка маркетплейса...">Loading marketplace...</div>
@@ -1578,12 +1642,18 @@
       </div>
 
       <!-- Guide Page -->
-      <div id="guide-page" class="page" style="display:none">
+      <div id="guide-page" class="page">
         <div class="page-header">
           <h1 class="page-title" data-en="Getting Started Guide" data-ru="Инструкции">Getting Started Guide</h1>
           <p class="page-subtitle" data-en="Everything you need to know about the platform" data-ru="Всё что нужно знать о платформе">Everything you need to know about the platform</p>
         </div>
         <div class="page-content guide-content">
+          <div style="margin-bottom:20px">
+            <button class="btn btn-primary" onclick="startTour()">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+              <span data-en="Take Interactive Tour" data-ru="Интерактивный тур">Take Interactive Tour</span>
+            </button>
+          </div>
 
           <div class="guide-section">
             <div class="guide-section-header" onclick="toggleGuideSection(this)">
@@ -1694,6 +1764,115 @@
     </main>
   </div>
 
+      <!-- Onboarding Welcome Modal -->
+      <div id="onboarding-modal" class="onboarding-modal" style="display:none">
+        <div class="onboarding-backdrop" onclick="dismissOnboarding()"></div>
+        <div class="onboarding-card">
+          <button class="onboarding-close" onclick="dismissOnboarding()">&times;</button>
+          <div class="onboarding-header">
+            <div class="onboarding-icon">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            </div>
+            <h2 data-en="Welcome to TON Agent!" data-ru="Добро пожаловать!">Welcome to TON Agent!</h2>
+            <p id="onboarding-subtitle"></p>
+          </div>
+          <div class="onboarding-steps">
+            <div class="onboarding-step">
+              <div class="onboarding-step-num">1</div>
+              <div class="onboarding-step-content">
+                <strong data-en="Set up AI provider" data-ru="Настройте AI провайдер">Set up AI provider</strong>
+                <span data-en="Choose your preferred AI model and add API key" data-ru="Выберите AI модель и добавьте API ключ">Choose your preferred AI model and add API key</span>
+              </div>
+            </div>
+            <div class="onboarding-step">
+              <div class="onboarding-step-num">2</div>
+              <div class="onboarding-step-content">
+                <strong data-en="Create your first agent" data-ru="Создайте первого агента">Create your first agent</strong>
+                <span data-en="Use Constructor, AI Chat, or install from Marketplace" data-ru="Используйте Конструктор, AI Чат или шаблон из Маркетплейса">Use Constructor, AI Chat, or install from Marketplace</span>
+              </div>
+            </div>
+            <div class="onboarding-step">
+              <div class="onboarding-step-num">3</div>
+              <div class="onboarding-step-content">
+                <strong data-en="Launch & monitor" data-ru="Запускайте и следите">Launch & monitor</strong>
+                <span data-en="Your agent works 24/7 autonomously inside Telegram" data-ru="Ваш агент работает 24/7 автономно в Telegram">Your agent works 24/7 autonomously inside Telegram</span>
+              </div>
+            </div>
+          </div>
+          <div class="onboarding-actions">
+            <button class="btn btn-primary onboarding-go-btn" onclick="startOnboarding()">
+              <span data-en="Let's Go!" data-ru="Начнём!">Let's Go!</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </button>
+            <button class="btn btn-ghost" onclick="dismissOnboarding()">
+              <span data-en="Skip for now" data-ru="Пропустить">Skip for now</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tour Overlay -->
+      <div id="tour-overlay" class="tour-overlay" style="display:none">
+        <div class="tour-spotlight" id="tour-spotlight"></div>
+        <div class="tour-tooltip" id="tour-tooltip">
+          <div class="tour-tooltip-content" id="tour-tooltip-content"></div>
+          <div class="tour-tooltip-footer">
+            <span id="tour-step-counter" class="tour-step-counter"></span>
+            <div class="tour-tooltip-btns">
+              <button class="btn btn-ghost btn-sm" onclick="endTour()" data-en="Skip" data-ru="Пропустить">Skip</button>
+              <button class="btn btn-primary btn-sm" id="tour-next-btn" onclick="nextTourStep()" data-en="Next" data-ru="Далее">Next</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Marketplace Detail Modal -->
+      <div id="mkt-detail-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+        <div class="mkt-detail-card" id="mkt-detail-card">
+          <button class="modal-close-btn" onclick="document.getElementById('mkt-detail-modal').style.display='none'">&times;</button>
+          <div id="mkt-detail-content"></div>
+        </div>
+      </div>
+
+      <!-- Publish Agent Modal -->
+      <div id="publish-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+        <div class="publish-card">
+          <button class="modal-close-btn" onclick="document.getElementById('publish-modal').style.display='none'">&times;</button>
+          <h3 data-en="Publish Agent to Marketplace" data-ru="Опубликовать на Маркетплейсе">Publish Agent to Marketplace</h3>
+          <div class="form-group">
+            <label data-en="Select Agent" data-ru="Выберите агента">Select Agent</label>
+            <select id="publish-agent-select" class="form-select"></select>
+          </div>
+          <div class="form-group">
+            <label data-en="Name" data-ru="Название">Name</label>
+            <input type="text" id="publish-name" class="form-input" placeholder="My Agent Template">
+          </div>
+          <div class="form-group">
+            <label data-en="Description" data-ru="Описание">Description</label>
+            <textarea id="publish-desc" class="form-input" rows="3" placeholder="What does this agent do?"></textarea>
+          </div>
+          <div class="form-row" style="display:flex;gap:12px">
+            <div class="form-group" style="flex:1">
+              <label data-en="Category" data-ru="Категория">Category</label>
+              <select id="publish-category" class="form-select">
+                <option value="monitoring">Monitoring</option>
+                <option value="defi">DeFi</option>
+                <option value="nft">NFT</option>
+                <option value="gifts">Gifts</option>
+                <option value="utility">Utility</option>
+              </select>
+            </div>
+            <div class="form-group" style="flex:1">
+              <label data-en="Price (TON)" data-ru="Цена (TON)">Price (TON)</label>
+              <input type="number" id="publish-price" class="form-input" placeholder="0 = Free" min="0" step="0.1" value="0">
+            </div>
+          </div>
+          <button class="btn btn-primary" onclick="submitPublish()" style="width:100%;margin-top:12px">
+            <span data-en="Publish" data-ru="Опубликовать">Publish</span>
+          </button>
+        </div>
+      </div>
+
   <!-- Chat Widget -->
   <div id="chat-widget" class="chat-widget" style="display:none">
     <div class="chat-header">
@@ -1724,6 +1903,6 @@
   </button>
 
   <script src="https://unpkg.com/@tonconnect/ui@2/dist/tonconnect-ui.min.js"></script>
-  <script src="dashboard.js?v=17"></script>
+  <script src="dashboard.js?v=19"></script>
 </body>
 </html>

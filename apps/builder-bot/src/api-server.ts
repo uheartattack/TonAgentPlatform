@@ -1683,6 +1683,77 @@ export function startApiServer() {
     }
   });
 
+  // ── POST /api/marketplace/:id/buy — Purchase a marketplace listing ──
+  app.post('/api/marketplace/:id/buy', requireAuth, async (req: Request, res: Response) => {
+    const userId = (req as any).userId;
+    const listingId = parseInt(req.params.id as string);
+    try {
+      const repo = getMarketplaceRepository();
+      const listing = await repo.getListing(listingId);
+      if (!listing || !listing.isActive) {
+        return res.status(404).json({ ok: false, error: 'Listing not found' });
+      }
+      // Can't buy own listing
+      if (listing.sellerId === userId) {
+        return res.status(400).json({ ok: false, error: 'Cannot buy your own listing' });
+      }
+      // Already purchased?
+      const already = await repo.hasPurchased(listingId, userId);
+      if (already) {
+        return res.status(400).json({ ok: false, error: 'Already purchased' });
+      }
+
+      const priceTon = (listing.price || 0) / 1e9;
+
+      // If not free, check and deduct balance
+      if (!listing.isFree && priceTon > 0) {
+        const settingsRepo = getUserSettingsRepository();
+        // Get buyer profile
+        const buyerProfile: any = (await settingsRepo.get(userId, 'profile')) || { balance_ton: 0, total_earned: 0, wallet_address: null, joined_at: new Date().toISOString() };
+        const buyerBalance = buyerProfile.balance_ton || 0;
+        if (buyerBalance < priceTon) {
+          return res.status(400).json({ ok: false, error: 'Insufficient balance', required: priceTon, balance: buyerBalance });
+        }
+        // Deduct from buyer
+        buyerProfile.balance_ton = Math.max(0, buyerBalance - priceTon);
+        await settingsRepo.set(userId, 'profile', buyerProfile);
+        await getBalanceTxRepository().record(userId, 'marketplace_buy', -priceTon, buyerProfile.balance_ton, `Marketplace purchase #${listingId}`);
+        // Credit to seller
+        const sellerProfile: any = (await settingsRepo.get(listing.sellerId, 'profile')) || { balance_ton: 0, total_earned: 0, wallet_address: null, joined_at: new Date().toISOString() };
+        sellerProfile.balance_ton = (sellerProfile.balance_ton || 0) + priceTon;
+        sellerProfile.total_earned = (sellerProfile.total_earned || 0) + priceTon;
+        await settingsRepo.set(listing.sellerId, 'profile', sellerProfile);
+        await getBalanceTxRepository().record(listing.sellerId, 'marketplace_sale', priceTon, sellerProfile.balance_ton, `Marketplace sale #${listingId}`);
+      }
+
+      // Clone agent for buyer
+      const cloneRes = await pool.query(
+        `INSERT INTO builder_bot.agents (user_id, name, description, trigger_type, trigger_config, code, is_active)
+         SELECT $1, name, description, trigger_type, trigger_config, code, false
+         FROM builder_bot.agents WHERE id = $2
+         RETURNING id`,
+        [userId, listing.agentId]
+      );
+      const newAgentId = cloneRes.rows[0]?.id;
+
+      // Record purchase
+      await repo.createPurchase({
+        listingId,
+        buyerId: userId,
+        sellerId: listing.sellerId,
+        agentId: newAgentId || listing.agentId,
+        type: listing.isFree ? 'free' : 'buy',
+        pricePaid: listing.isFree ? 0 : listing.price,
+        txHash: `web:${Date.now()}`,
+      });
+
+      res.json({ ok: true, agentId: newAgentId, message: listing.isFree ? 'Installed successfully' : 'Purchased successfully' });
+    } catch (e: any) {
+      console.error('[API] Buy error:', e?.message);
+      res.status(500).json({ ok: false, error: e?.message || 'Internal error' });
+    }
+  });
+
   // ── Simple API rate limiter ──────────────────────────────────
   const apiRateLimits = new Map<string, number[]>();
   function checkApiRateLimit(key: string, maxRequests: number, windowMs: number): boolean {
