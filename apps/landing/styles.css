@@ -1861,3 +1861,20 @@ body {
   box-shadow: 0 8px 24px rgba(0,136,204,0.4);
 }
 .demo-try-btn:hover { transform: translateY(-2px); box-shadow: 0 12px 32px rgba(0,136,204,0.5); }
+
+/* Scroll-to-top Rocket */
+.scroll-rocket {
+  position: fixed; bottom: 32px; right: 32px; z-index: 999;
+  width: 52px; height: 52px; border-radius: 50%;
+  background: linear-gradient(135deg, #0088cc, #00aaff);
+  border: 2px solid rgba(0,170,255,0.3);
+  font-size: 1.5rem; cursor: pointer;
+  box-shadow: 0 4px 20px rgba(0,136,204,0.4);
+  opacity: 0; transform: translateY(20px);
+  transition: opacity 0.3s, transform 0.3s, box-shadow 0.3s;
+  pointer-events: none;
+  display: flex; align-items: center; justify-content: center;
+}
+.scroll-rocket.visible { opacity: 1; transform: translateY(0); pointer-events: auto; }
+.scroll-rocket:hover { transform: translateY(-6px) scale(1.1); box-shadow: 0 8px 30px rgba(0,136,204,0.6); }
+.scroll-rocket:active { transform: translateY(-2px) scale(0.95); }

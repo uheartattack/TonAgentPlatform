@@ -319,6 +319,7 @@ async function loadAgents() {
           ${a.isActive ? '\u23F8 ' + t('stop') : '\uD83D\uDE80 ' + t('run')}
         </button>
         <button class="btn btn-ghost btn-sm" onclick="loadAgentLogs(${a.id})">\uD83D\uDCCB ${t('logs')}</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--danger,#ef4444)" onclick="event.stopPropagation();deleteAgent(${a.id},'${escHtml(a.name || 'Agent').replace(/'/g, "\\'")}')">\uD83D\uDDD1</button>
       </div>
     </div>`;
   }).join('');
@@ -336,18 +337,92 @@ async function toggleAgent(agentId, isActive) {
   await loadAgents();
 }
 
+let _deleteAgentId = null;
+let _deleteAgentName = '';
+
+function deleteAgent(agentId, name) {
+  _deleteAgentId = agentId;
+  _deleteAgentName = name;
+  const modal = document.getElementById('delete-agent-modal');
+  const nameEl = document.getElementById('delete-agent-name');
+  if (nameEl) nameEl.textContent = '#' + agentId + ' ' + name;
+  if (modal) modal.style.display = 'flex';
+}
+
+function closeDeleteModal() {
+  const modal = document.getElementById('delete-agent-modal');
+  if (modal) modal.style.display = 'none';
+  _deleteAgentId = null;
+}
+
+async function confirmDeleteAgent() {
+  if (!_deleteAgentId) return;
+  const btn = document.getElementById('delete-confirm-btn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳'; }
+  const agentId = _deleteAgentId;
+  const data = await apiRequest('DELETE', `/api/agents/${agentId}`);
+  closeDeleteModal();
+  if (btn) { btn.disabled = false; btn.innerHTML = '🗑 ' + t('delete'); }
+  if (data.ok) {
+    // Dissolve animation on the card
+    const card = document.querySelector(`[data-id="${agentId}"]`);
+    if (card) {
+      card.classList.add('agent-card-dissolving');
+      setTimeout(() => { card.remove(); }, 600);
+    }
+    showNotification('🗑 Agent #' + agentId + ' deleted', 'success');
+    setTimeout(() => loadAgents(), 700);
+  } else {
+    showNotification('⚠️ ' + (data.error || 'Failed to delete'), 'error');
+  }
+}
+
+let _logsAgentId = null;
+
 async function loadAgentLogs(agentId) {
-  const data = await apiRequest('GET', `/api/agents/${agentId}/logs?limit=15`);
-  if (!data.ok) { alert('Failed to load logs'); return; }
+  _logsAgentId = agentId;
+  const modal = document.getElementById('logs-modal');
+  const body = document.getElementById('logs-modal-body');
+  const title = document.getElementById('logs-modal-title');
+  if (!modal || !body) return;
+  title.textContent = t('logs') + ' — Agent #' + agentId;
+  body.innerHTML = '<div style="padding:32px;text-align:center;color:rgba(255,255,255,0.4)">⏳ Loading...</div>';
+  modal.style.display = 'flex';
+
+  const data = await apiRequest('GET', `/api/agents/${agentId}/logs?limit=50`);
+  if (!data.ok) {
+    body.innerHTML = '<div style="padding:32px;text-align:center;color:#ef4444">⚠️ Failed to load logs</div>';
+    return;
+  }
   const logs = data.logs || [];
-  const text = logs.length
-    ? logs.map(l => {
-        const ts = l.timestamp || l.createdAt;
-        const time = ts ? new Date(ts).toLocaleTimeString() : '--:--:--';
-        return `[${time}] ${(l.level || 'info').toUpperCase()}: ${l.message}`;
-      }).join('\n')
-    : 'No logs yet.';
-  alert(`Logs for agent #${agentId}:\n\n${text}`);
+  if (!logs.length) {
+    body.innerHTML = '<div style="padding:32px;text-align:center;color:rgba(255,255,255,0.4)">No logs yet.</div>';
+    return;
+  }
+  body.innerHTML = logs.map(l => {
+    const ts = l.timestamp || l.createdAt;
+    const time = ts ? new Date(ts).toLocaleTimeString() : '--:--:--';
+    const level = (l.level || 'info').toLowerCase();
+    const lvlClass = ['error','warn','success'].includes(level) ? level : 'info';
+    const msg = escHtml(l.message || '');
+    return `<div class="log-entry ${lvlClass}">
+      <span class="log-time">${time}</span>
+      <span class="log-level ${lvlClass}">${level}</span>
+      <span class="log-msg">${msg}</span>
+    </div>`;
+  }).join('');
+  // Scroll to bottom (latest logs)
+  body.scrollTop = body.scrollHeight;
+}
+
+function closeLogsModal() {
+  const modal = document.getElementById('logs-modal');
+  if (modal) modal.style.display = 'none';
+  _logsAgentId = null;
+}
+
+function refreshLogs() {
+  if (_logsAgentId) loadAgentLogs(_logsAgentId);
 }
 
 // Load real plugins from API (for Extensions page)
@@ -2597,35 +2672,77 @@ navigateTo = function(pageName) {
 // ===== FLOW BUILDER (Visual Agent Constructor) =====
 const FLOW_NODE_DEFS = {
   // ── Triggers ──
-  timer:          { cat: 'triggers', color: '#f59e0b', icon: '\u23F0',  label: 'Timer',          labelRu: '\u0422\u0430\u0439\u043C\u0435\u0440',        desc: 'Run on interval',             descRu: '\u0417\u0430\u043F\u0443\u0441\u043A \u043F\u043E \u0438\u043D\u0442\u0435\u0440\u0432\u0430\u043B\u0443',         fields: [{ key: 'intervalMs', label: 'Interval (ms)', type: 'select', options: [{ v: '60000', l: '1 min' }, { v: '300000', l: '5 min' }, { v: '600000', l: '10 min' }, { v: '1800000', l: '30 min' }, { v: '3600000', l: '1 hour' }] }] },
+  timer:          { cat: 'triggers', color: '#f59e0b', icon: '\u23F0',  label: 'Timer',          labelRu: '\u0422\u0430\u0439\u043C\u0435\u0440',        desc: 'Run on interval',             descRu: '\u0417\u0430\u043F\u0443\u0441\u043A \u043F\u043E \u0438\u043D\u0442\u0435\u0440\u0432\u0430\u043B\u0443',         fields: [
+    { key: 'intervalMs', label: 'Interval', labelRu: '\u0418\u043D\u0442\u0435\u0440\u0432\u0430\u043B', type: 'select', options: [{ v: '60000', l: '1 min' }, { v: '300000', l: '5 min' }, { v: '600000', l: '10 min' }, { v: '1800000', l: '30 min' }, { v: '3600000', l: '1 hour' }] },
+    { key: 'cron', label: 'Cron', type: 'text', placeholder: '0 9 * * 1-5' }
+  ] },
   manual:         { cat: 'triggers', color: '#f59e0b', icon: '\u25B6\uFE0F', label: 'Manual',     labelRu: '\u0412\u0440\u0443\u0447\u043D\u0443\u044E',       desc: 'Start manually',              descRu: '\u0417\u0430\u043F\u0443\u0441\u043A \u0432\u0440\u0443\u0447\u043D\u0443\u044E',          fields: [] },
   webhook:        { cat: 'triggers', color: '#f59e0b', icon: '\uD83D\uDD17', label: 'Webhook',    labelRu: 'Webhook',         desc: 'Trigger via HTTP',            descRu: '\u0417\u0430\u043F\u0443\u0441\u043A \u0447\u0435\u0440\u0435\u0437 HTTP',          fields: [{ key: 'path', label: 'Path', type: 'text', placeholder: '/my-hook' }] },
   // ── TON ──
   get_balance:    { cat: 'ton',      color: '#3b82f6', icon: '\uD83D\uDCB0', label: 'Get Balance', labelRu: '\u0411\u0430\u043B\u0430\u043D\u0441',          desc: 'Check TON balance',           descRu: '\u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u0431\u0430\u043B\u0430\u043D\u0441 TON',       fields: [{ key: 'address', label: 'Address', type: 'text', placeholder: 'EQ...' }] },
   nft_floor:      { cat: 'ton',      color: '#3b82f6', icon: '\uD83D\uDDBC\uFE0F', label: 'NFT Floor', labelRu: '\u0426\u0435\u043D\u0430 NFT', desc: 'NFT floor price',             descRu: 'Floor \u0446\u0435\u043D\u0430 NFT',            fields: [{ key: 'collection', label: 'Collection', type: 'text', placeholder: 'TON Punks' }] },
-  send_ton:       { cat: 'ton',      color: '#3b82f6', icon: '\uD83D\uDCB8', label: 'Send TON',   labelRu: '\u041E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C TON',   desc: 'Send TON transaction',        descRu: '\u041E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C TON',           fields: [{ key: 'address', label: 'To address', type: 'text', placeholder: 'EQ...' }, { key: 'amount', label: 'Amount', type: 'number', placeholder: '1.0' }] },
+  send_ton:       { cat: 'ton',      color: '#3b82f6', icon: '\uD83D\uDCB8', label: 'Send TON',   labelRu: '\u041E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C TON',   desc: 'Send TON transaction',        descRu: '\u041E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C TON',           fields: [
+    { key: 'address', label: 'To address', labelRu: '\u0410\u0434\u0440\u0435\u0441', type: 'text', placeholder: 'EQ...' },
+    { key: 'amount', label: 'Amount', labelRu: '\u0421\u0443\u043C\u043C\u0430', type: 'number', placeholder: '1.0' },
+    { key: 'memo', label: 'Memo', type: 'text', placeholder: 'Payment for...' }
+  ] },
   // ── Gifts ──
   gift_prices:    { cat: 'gifts',    color: '#a855f7', icon: '\uD83C\uDF81', label: 'Gift Prices', labelRu: '\u0426\u0435\u043D\u044B \u043F\u043E\u0434\u0430\u0440\u043A\u043E\u0432',   desc: 'Gift floor price',            descRu: 'Floor \u0446\u0435\u043D\u0430 \u043F\u043E\u0434\u0430\u0440\u043A\u0430',        fields: [{ key: 'slug', label: 'Gift slug', type: 'text', placeholder: 'gift-name' }] },
   scan_arbitrage: { cat: 'gifts',    color: '#a855f7', icon: '\uD83D\uDCC8', label: 'Scan Arbitrage', labelRu: '\u0410\u0440\u0431\u0438\u0442\u0440\u0430\u0436', desc: 'Find arbitrage deals',       descRu: '\u041F\u043E\u0438\u0441\u043A \u0430\u0440\u0431\u0438\u0442\u0440\u0430\u0436\u0430',          fields: [{ key: 'min_profit_pct', label: 'Min profit %', type: 'number', placeholder: '5' }] },
   gift_floor:     { cat: 'gifts',    color: '#a855f7', icon: '\uD83D\uDCCA', label: 'Gift Floor', labelRu: '\u0426\u0435\u043D\u0430 \u043F\u043E\u0434\u0430\u0440\u043A\u0430',   desc: 'Real-time gift floor',        descRu: '\u0420\u0435\u0430\u043B\u044C\u043D\u0430\u044F \u0446\u0435\u043D\u0430 \u043F\u043E\u0434\u0430\u0440\u043A\u0430',     fields: [{ key: 'gift_name', label: 'Gift name', type: 'text', placeholder: 'Plush Pepe' }] },
   market_overview:{ cat: 'gifts',    color: '#a855f7', icon: '\uD83C\uDFEA', label: 'Market Overview', labelRu: '\u041E\u0431\u0437\u043E\u0440 \u0440\u044B\u043D\u043A\u0430', desc: 'Gift market overview',       descRu: '\u041E\u0431\u0437\u043E\u0440 \u0440\u044B\u043D\u043A\u0430 \u043F\u043E\u0434\u0430\u0440\u043A\u043E\u0432',   fields: [] },
   // ── Web ──
-  web_search:     { cat: 'web',      color: '#06b6d4', icon: '\uD83D\uDD0D', label: 'Web Search', labelRu: '\u041F\u043E\u0438\u0441\u043A',            desc: 'Search the web',              descRu: '\u041F\u043E\u0438\u0441\u043A \u0432 \u0438\u043D\u0442\u0435\u0440\u043D\u0435\u0442\u0435',        fields: [{ key: 'query', label: 'Query', type: 'text', placeholder: 'Search...' }] },
+  web_search:     { cat: 'web',      color: '#06b6d4', icon: '\uD83D\uDD0D', label: 'Web Search', labelRu: '\u041F\u043E\u0438\u0441\u043A',            desc: 'Search the web',              descRu: '\u041F\u043E\u0438\u0441\u043A \u0432 \u0438\u043D\u0442\u0435\u0440\u043D\u0435\u0442\u0435',        fields: [
+    { key: 'query', label: 'Query', labelRu: '\u0417\u0430\u043F\u0440\u043E\u0441', type: 'text', placeholder: 'Search...' },
+    { key: 'save_to', label: 'Save to variable', labelRu: '\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C \u0432', type: 'text', placeholder: 'search_result' }
+  ] },
   fetch_url:      { cat: 'web',      color: '#06b6d4', icon: '\uD83C\uDF10', label: 'Fetch URL',  labelRu: '\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C URL',    desc: 'HTTP GET request',            descRu: 'HTTP GET \u0437\u0430\u043F\u0440\u043E\u0441',            fields: [{ key: 'url', label: 'URL', type: 'text', placeholder: 'https://...' }] },
-  http_request:   { cat: 'web',      color: '#06b6d4', icon: '\u2194\uFE0F', label: 'HTTP Request', labelRu: 'HTTP \u0437\u0430\u043F\u0440\u043E\u0441',   desc: 'Custom HTTP request',         descRu: '\u041F\u0440\u043E\u0438\u0437\u0432\u043E\u043B\u044C\u043D\u044B\u0439 HTTP \u0437\u0430\u043F\u0440\u043E\u0441',   fields: [{ key: 'url', label: 'URL', type: 'text', placeholder: 'https://...' }, { key: 'method', label: 'Method', type: 'select', options: [{ v: 'GET', l: 'GET' }, { v: 'POST', l: 'POST' }] }] },
+  http_request:   { cat: 'web',      color: '#06b6d4', icon: '\u2194\uFE0F', label: 'HTTP Request', labelRu: 'HTTP \u0437\u0430\u043F\u0440\u043E\u0441',   desc: 'Custom HTTP request',         descRu: '\u041F\u0440\u043E\u0438\u0437\u0432\u043E\u043B\u044C\u043D\u044B\u0439 HTTP \u0437\u0430\u043F\u0440\u043E\u0441',   fields: [
+    { key: 'url', label: 'URL', type: 'text', placeholder: 'https://...' },
+    { key: 'method', label: 'Method', labelRu: '\u041C\u0435\u0442\u043E\u0434', type: 'select', options: [{ v: 'GET', l: 'GET' }, { v: 'POST', l: 'POST' }, { v: 'PUT', l: 'PUT' }, { v: 'DELETE', l: 'DELETE' }] },
+    { key: 'headers', label: 'Headers', labelRu: '\u0417\u0430\u0433\u043E\u043B\u043E\u0432\u043A\u0438', type: 'textarea', placeholder: '{"Authorization":"Bearer ..."}' },
+    { key: 'body', label: 'Body', labelRu: '\u0422\u0435\u043B\u043E', type: 'textarea', placeholder: '{"key":"value"}', showWhen: { key: 'method', value: 'POST' } },
+    { key: 'save_to', label: 'Save to variable', labelRu: '\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C \u0432', type: 'text', placeholder: 'response_data' }
+  ] },
   // ── Telegram ──
-  send_message:   { cat: 'telegram', color: '#0ea5e9', icon: '\u2709\uFE0F', label: 'TG Message', labelRu: '\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 TG',    desc: 'Send Telegram message',       descRu: '\u041E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435',      fields: [{ key: 'peer', label: 'Chat/User', type: 'text', placeholder: '@username' }, { key: 'text', label: 'Text', type: 'textarea', placeholder: 'Message...' }] },
+  send_message:   { cat: 'telegram', color: '#0ea5e9', icon: '\u2709\uFE0F', label: 'TG Message', labelRu: '\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 TG',    desc: 'Send Telegram message',       descRu: '\u041E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435',      fields: [{ key: 'peer', label: 'Chat/User', type: 'text', placeholder: '@username' }, { key: 'text', label: 'Text', type: 'textarea', placeholder: '{{result}} \u2014 use for prev step data' }] },
   tg_read:        { cat: 'telegram', color: '#0ea5e9', icon: '\uD83D\uDCE9', label: 'Read Messages', labelRu: '\u0427\u0438\u0442\u0430\u0442\u044C \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F', desc: 'Read chat messages', descRu: '\u0427\u0438\u0442\u0430\u0442\u044C \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F \u0447\u0430\u0442\u0430', fields: [{ key: 'peer', label: 'Chat', type: 'text', placeholder: '@channel' }, { key: 'limit', label: 'Limit', type: 'number', placeholder: '10' }] },
   tg_react:       { cat: 'telegram', color: '#0ea5e9', icon: '\uD83D\uDC4D', label: 'Reaction',   labelRu: '\u0420\u0435\u0430\u043A\u0446\u0438\u044F',         desc: 'Add reaction to message',     descRu: '\u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u0440\u0435\u0430\u043A\u0446\u0438\u044E',         fields: [{ key: 'peer', label: 'Chat', type: 'text', placeholder: '@channel' }, { key: 'emoji', label: 'Emoji', type: 'text', placeholder: '\uD83D\uDC4D' }] },
   tg_forward:     { cat: 'telegram', color: '#0ea5e9', icon: '\u2197\uFE0F', label: 'Forward',    labelRu: '\u041F\u0435\u0440\u0435\u0441\u043B\u0430\u0442\u044C',       desc: 'Forward message',             descRu: '\u041F\u0435\u0440\u0435\u0441\u043B\u0430\u0442\u044C \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435',       fields: [{ key: 'from_peer', label: 'From chat', type: 'text', placeholder: '@source' }, { key: 'to_peer', label: 'To chat', type: 'text', placeholder: '@target' }] },
   // ── Output ──
-  notify:         { cat: 'output',   color: '#10b981', icon: '\uD83D\uDD14', label: 'Notify',     labelRu: '\u0423\u0432\u0435\u0434\u043E\u043C\u0438\u0442\u044C',       desc: 'Send notification',           descRu: '\u041E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u0443\u0432\u0435\u0434\u043E\u043C\u043B\u0435\u043D\u0438\u0435',     fields: [{ key: 'message', label: 'Message', type: 'textarea', placeholder: 'Alert: ...' }] },
+  notify:         { cat: 'output',   color: '#10b981', icon: '\uD83D\uDD14', label: 'Notify',     labelRu: '\u0423\u0432\u0435\u0434\u043E\u043C\u0438\u0442\u044C',       desc: 'Send notification',           descRu: '\u041E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u0443\u0432\u0435\u0434\u043E\u043C\u043B\u0435\u043D\u0438\u0435',     fields: [
+    { key: 'message', label: 'Message', labelRu: '\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435', type: 'textarea', placeholder: '{{result}} \u2014 use for prev step data' },
+    { key: 'format', label: 'Format', labelRu: '\u0424\u043E\u0440\u043C\u0430\u0442', type: 'select', options: [{v:'text',l:'Text'},{v:'html',l:'HTML'}] }
+  ] },
   notify_rich:    { cat: 'output',   color: '#10b981', icon: '\uD83D\uDCE8', label: 'Rich Notify', labelRu: 'HTML \u0443\u0432\u0435\u0434\u043E\u043C\u043B\u0435\u043D\u0438\u0435', desc: 'HTML notification',  descRu: 'HTML \u0443\u0432\u0435\u0434\u043E\u043C\u043B\u0435\u043D\u0438\u0435',     fields: [{ key: 'message', label: 'HTML Message', type: 'textarea', placeholder: '<b>Alert</b>' }] },
   // ── Logic ──
-  condition:      { cat: 'logic',    color: '#f43f5e', icon: '\uD83D\uDD00', label: 'Condition',  labelRu: '\u0423\u0441\u043B\u043E\u0432\u0438\u0435',        desc: 'If/else branch',              descRu: '\u0412\u0435\u0442\u0432\u043B\u0435\u043D\u0438\u0435 \u0435\u0441\u043B\u0438/\u0438\u043D\u0430\u0447\u0435',       fields: [{ key: 'expression', label: 'If expression', type: 'text', placeholder: 'balance < 10' }], extraPorts: ['true', 'false'] },
-  delay:          { cat: 'logic',    color: '#f43f5e', icon: '\u23F3',  label: 'Delay',          labelRu: '\u0417\u0430\u0434\u0435\u0440\u0436\u043A\u0430',        desc: 'Wait before next step',       descRu: '\u041F\u0430\u0443\u0437\u0430 \u043F\u0435\u0440\u0435\u0434 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u043C \u0448\u0430\u0433\u043E\u043C',   fields: [{ key: 'ms', label: 'Delay (ms)', type: 'number', placeholder: '5000' }] },
+  condition:      { cat: 'logic',    color: '#f43f5e', icon: '\uD83D\uDD00', label: 'Condition',  labelRu: '\u0423\u0441\u043B\u043E\u0432\u0438\u0435',        desc: 'If/else branch',              descRu: '\u0412\u0435\u0442\u0432\u043B\u0435\u043D\u0438\u0435 \u0435\u0441\u043B\u0438/\u0438\u043D\u0430\u0447\u0435',       fields: [
+    { type: 'row', children: [
+      { key: 'left', label: 'A', type: 'text', placeholder: 'minFloor / balance' },
+      { key: 'operator', label: 'Op', type: 'select', options: [{v:'==',l:'=='},{v:'!=',l:'!='},{v:'>',l:'>'},{v:'<',l:'<'},{v:'>=',l:'>='},{v:'<=',l:'<='},{v:'contains',l:'\u2283'},{v:'is_empty',l:'\u2205'}] },
+      { key: 'right', label: 'B', type: 'text', placeholder: '10' }
+    ]},
+    { key: 'expression', label: 'Free expression', labelRu: '\u0421\u0432\u043E\u0431\u043E\u0434\u043D\u043E\u0435 \u0432\u044B\u0440\u0430\u0436\u0435\u043D\u0438\u0435', type: 'text', placeholder: '{{result.minFloor}} > 0' }
+  ], extraPorts: ['true', 'false'] },
+  delay:          { cat: 'logic',    color: '#f43f5e', icon: '\u23F3',  label: 'Delay',          labelRu: '\u0417\u0430\u0434\u0435\u0440\u0436\u043A\u0430',        desc: 'Wait before next step',       descRu: '\u041F\u0430\u0443\u0437\u0430 \u043F\u0435\u0440\u0435\u0434 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u043C \u0448\u0430\u0433\u043E\u043C',   fields: [
+    { type: 'row', children: [
+      { key: 'delay_amount', label: 'Wait', labelRu: '\u0416\u0434\u0430\u0442\u044C', type: 'number', placeholder: '5' },
+      { key: 'delay_unit', label: 'Unit', labelRu: '\u0415\u0434.', type: 'select', options: [{v:'ms',l:'ms'},{v:'s',l:'sec'},{v:'min',l:'min'},{v:'h',l:'hour'}] }
+    ]}
+  ] },
   list_agents:    { cat: 'logic',    color: '#f43f5e', icon: '\uD83E\uDD16', label: 'List Agents', labelRu: '\u0421\u043F\u0438\u0441\u043E\u043A \u0430\u0433\u0435\u043D\u0442\u043E\u0432', desc: 'List your agents', descRu: '\u0421\u043F\u0438\u0441\u043E\u043A \u0432\u0430\u0448\u0438\u0445 \u0430\u0433\u0435\u043D\u0442\u043E\u0432', fields: [] },
   ask_agent:      { cat: 'logic',    color: '#f43f5e', icon: '\uD83D\uDCAC', label: 'Ask Agent',  labelRu: '\u0421\u043F\u0440\u043E\u0441\u0438\u0442\u044C \u0430\u0433\u0435\u043D\u0442\u0430', desc: 'Ask another agent',  descRu: '\u0421\u043F\u0440\u043E\u0441\u0438\u0442\u044C \u0434\u0440\u0443\u0433\u043E\u0433\u043E \u0430\u0433\u0435\u043D\u0442\u0430', fields: [{ key: 'agent_id', label: 'Agent ID', type: 'number', placeholder: '123' }, { key: 'message', label: 'Message', type: 'textarea', placeholder: 'What is...' }] },
+  loop:           { cat: 'logic',    color: '#f43f5e', icon: '\uD83D\uDD04', label: 'Loop',       labelRu: '\u0426\u0438\u043A\u043B',            desc: 'Repeat actions',              descRu: '\u041F\u043E\u0432\u0442\u043E\u0440\u0438\u0442\u044C \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u044F',       fields: [
+    { key: 'mode', label: 'Mode', labelRu: '\u0420\u0435\u0436\u0438\u043C', type: 'select', options: [{v:'repeat_n',l:'Repeat N'},{v:'while',l:'While'},{v:'for_each',l:'For Each'}] },
+    { key: 'count', label: 'Count', labelRu: '\u041A\u043E\u043B-\u0432\u043E', type: 'number', placeholder: '5', showWhen: {key:'mode',value:'repeat_n'} },
+    { key: 'while_cond', label: 'While condition', labelRu: '\u041F\u043E\u043A\u0430 \u0443\u0441\u043B\u043E\u0432\u0438\u0435', type: 'text', placeholder: 'balance > 0', showWhen: {key:'mode',value:'while'} },
+    { key: 'list_var', label: 'List variable', labelRu: '\u041F\u0435\u0440\u0435\u043C\u0435\u043D\u043D\u0430\u044F \u0441\u043F\u0438\u0441\u043A\u0430', type: 'text', placeholder: 'items', showWhen: {key:'mode',value:'for_each'} },
+    { key: 'item_var', label: 'Item variable', labelRu: '\u041F\u0435\u0440\u0435\u043C\u0435\u043D\u043D\u0430\u044F \u044D\u043B\u0435\u043C\u0435\u043D\u0442\u0430', type: 'text', placeholder: 'item', showWhen: {key:'mode',value:'for_each'} },
+    { key: 'max_iter', label: 'Max iterations', labelRu: '\u041C\u0430\u043A\u0441. \u0438\u0442\u0435\u0440\u0430\u0446\u0438\u0439', type: 'number', placeholder: '100' }
+  ], extraPorts: ['loop', 'done'] },
+  group_ref:      { cat: 'logic',    color: '#64748b', icon: '\uD83D\uDCE6', label: 'Function',   labelRu: '\u0424\u0443\u043D\u043A\u0446\u0438\u044F',        desc: 'Call function group',         descRu: '\u0412\u044B\u0437\u0432\u0430\u0442\u044C \u0444\u0443\u043D\u043A\u0446\u0438\u044E',       fields: [
+    { key: 'group_id', label: 'Function', labelRu: '\u0424\u0443\u043D\u043A\u0446\u0438\u044F', type: 'select', options: [] }
+  ] },
   // ── State ──
   get_state:      { cat: 'state',    color: '#8b5cf6', icon: '\uD83D\uDCE5', label: 'Get State',  labelRu: '\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C',       desc: 'Read saved value',            descRu: '\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u0437\u043D\u0430\u0447\u0435\u043D\u0438\u0435',        fields: [{ key: 'key', label: 'Key', type: 'text', placeholder: 'my_key' }] },
   set_state:      { cat: 'state',    color: '#8b5cf6', icon: '\uD83D\uDCE4', label: 'Set State',  labelRu: '\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C',      desc: 'Save value',                  descRu: '\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C \u0437\u043D\u0430\u0447\u0435\u043D\u0438\u0435',       fields: [{ key: 'key', label: 'Key', type: 'text', placeholder: 'my_key' }, { key: 'value', label: 'Value', type: 'text', placeholder: '...' }] },
@@ -2640,6 +2757,66 @@ let _flowAnimId = null;
 let _flowCanvas = null, _flowCtx = null;
 let _flowNextId = 1;
 let _flowParticles = [];
+let _flowMultiSelected = new Set();
+let _flowGroups = []; // [{id, name, nodeIds[], collapsed}]
+let _flowGroupNextId = 1;
+
+// Zoom & Pan
+let _flowZoom = 1;
+let _flowPanX = 0, _flowPanY = 0;
+let _flowPanning = false, _flowPanStart = { x: 0, y: 0 };
+let _flowSpaceHeld = false;
+
+// Undo/Redo history
+let _flowHistory = [];     // [{nodes, edges}]
+let _flowHistoryIdx = -1;
+const _flowHistoryMax = 50;
+
+function flowPushState() {
+  // Trim future entries when we branch off
+  _flowHistory = _flowHistory.slice(0, _flowHistoryIdx + 1);
+  _flowHistory.push({
+    nodes: JSON.parse(JSON.stringify(_flowNodes)),
+    edges: JSON.parse(JSON.stringify(_flowEdges)),
+  });
+  if (_flowHistory.length > _flowHistoryMax) _flowHistory.shift();
+  _flowHistoryIdx = _flowHistory.length - 1;
+  updateUndoRedoButtons();
+}
+
+function flowUndo() {
+  if (_flowHistoryIdx <= 0) return;
+  _flowHistoryIdx--;
+  const snap = _flowHistory[_flowHistoryIdx];
+  _flowNodes = JSON.parse(JSON.stringify(snap.nodes));
+  _flowEdges = JSON.parse(JSON.stringify(snap.edges));
+  // Restore defs
+  _flowNodes.forEach(n => { n.def = FLOW_NODE_DEFS[n.type]; });
+  _flowSelectedId = null;
+  _flowParticles = [];
+  renderFlowConfig();
+  updateUndoRedoButtons();
+}
+
+function flowRedo() {
+  if (_flowHistoryIdx >= _flowHistory.length - 1) return;
+  _flowHistoryIdx++;
+  const snap = _flowHistory[_flowHistoryIdx];
+  _flowNodes = JSON.parse(JSON.stringify(snap.nodes));
+  _flowEdges = JSON.parse(JSON.stringify(snap.edges));
+  _flowNodes.forEach(n => { n.def = FLOW_NODE_DEFS[n.type]; });
+  _flowSelectedId = null;
+  _flowParticles = [];
+  renderFlowConfig();
+  updateUndoRedoButtons();
+}
+
+function updateUndoRedoButtons() {
+  const undoBtn = document.getElementById('flow-undo-btn');
+  const redoBtn = document.getElementById('flow-redo-btn');
+  if (undoBtn) undoBtn.disabled = _flowHistoryIdx <= 0;
+  if (redoBtn) redoBtn.disabled = _flowHistoryIdx >= _flowHistory.length - 1;
+}
 
 function togglePaletteCat(headerEl) {
   headerEl.parentElement.classList.toggle('collapsed');
@@ -2710,6 +2887,7 @@ function addFlowNode(type) {
     def,
   });
   _flowSelectedId = id;
+  flowPushState();
   renderFlowConfig();
 }
 
@@ -2717,6 +2895,7 @@ function deleteFlowNode(id) {
   _flowNodes = _flowNodes.filter(n => n.id !== id);
   _flowEdges = _flowEdges.filter(e => e.from !== id && e.to !== id);
   _flowParticles = _flowParticles.filter(p => p.from !== id && p.to !== id);
+  flowPushState();
   if (_flowSelectedId === id) { _flowSelectedId = null; renderFlowConfig(); }
 }
 
@@ -2729,6 +2908,8 @@ function getPortPos(node, port) {
   if (port === 'out') return { x: x + NODE_W, y: y + NODE_H / 2 };
   if (port === 'true') return { x: x + NODE_W, y: y + NODE_H / 3 };
   if (port === 'false') return { x: x + NODE_W, y: y + NODE_H * 2 / 3 };
+  if (port === 'loop') return { x: x + NODE_W, y: y + NODE_H / 3 };
+  if (port === 'done') return { x: x + NODE_W, y: y + NODE_H * 2 / 3 };
   return { x: x + NODE_W, y: y + NODE_H / 2 };
 }
 
@@ -2773,39 +2954,103 @@ function renderFlowConfig() {
     html += '<div style="font-size:0.8rem;color:rgba(255,255,255,0.4);margin-bottom:16px;">' + cfgDesc + '</div>';
   }
 
-  for (const f of def.fields) {
-    html += '<div class="form-group">';
-    html += '<label>' + f.label + '</label>';
+  function renderField(f, nodeId, config) {
+    const flabel = (currentLang === 'ru' && f.labelRu) ? f.labelRu : f.label;
+    let h = '';
     if (f.type === 'textarea') {
-      html += '<textarea data-cfg-key="' + f.key + '" placeholder="' + (f.placeholder || '') + '" oninput="updateFlowNodeConfig(\'' + _flowSelectedId + '\',\'' + f.key + '\',this.value)">' + (node.config[f.key] || '') + '</textarea>';
+      h += '<textarea data-cfg-key="' + f.key + '" placeholder="' + (f.placeholder || '') + '" oninput="updateFlowNodeConfig(\'' + nodeId + '\',\'' + f.key + '\',this.value)">' + (config[f.key] || '') + '</textarea>';
     } else if (f.type === 'select') {
-      html += '<select data-cfg-key="' + f.key + '" onchange="updateFlowNodeConfig(\'' + _flowSelectedId + '\',\'' + f.key + '\',this.value)">';
+      h += '<select data-cfg-key="' + f.key + '" onchange="updateFlowNodeConfig(\'' + nodeId + '\',\'' + f.key + '\',this.value)">';
       for (const opt of (f.options || [])) {
-        const sel = node.config[f.key] == opt.v ? ' selected' : '';
-        html += '<option value="' + opt.v + '"' + sel + '>' + opt.l + '</option>';
+        const sel = config[f.key] == opt.v ? ' selected' : '';
+        h += '<option value="' + opt.v + '"' + sel + '>' + opt.l + '</option>';
       }
-      html += '</select>';
+      h += '</select>';
     } else {
-      html += '<input type="' + (f.type || 'text') + '" data-cfg-key="' + f.key + '" placeholder="' + (f.placeholder || '') + '" value="' + (node.config[f.key] || '') + '" oninput="updateFlowNodeConfig(\'' + _flowSelectedId + '\',\'' + f.key + '\',this.value)">';
+      h += '<input type="' + (f.type || 'text') + '" data-cfg-key="' + f.key + '" placeholder="' + (f.placeholder || '') + '" value="' + (config[f.key] || '') + '" oninput="updateFlowNodeConfig(\'' + nodeId + '\',\'' + f.key + '\',this.value)">';
     }
-    html += '</div>';
+    return h;
+  }
+
+  for (const f of def.fields) {
+    // showWhen: hide field if condition not met
+    if (f.showWhen) {
+      const curVal = node.config[f.showWhen.key] || '';
+      if (curVal !== f.showWhen.value) continue;
+    }
+    if (f.type === 'row') {
+      html += '<div class="form-group flow-row">';
+      for (const child of (f.children || [])) {
+        const clabel = (currentLang === 'ru' && child.labelRu) ? child.labelRu : child.label;
+        html += '<div class="flow-row-item"><label>' + (clabel || '') + '</label>' + renderField(child, _flowSelectedId, node.config) + '</div>';
+      }
+      html += '</div>';
+    } else {
+      const flabel = (currentLang === 'ru' && f.labelRu) ? f.labelRu : f.label;
+      html += '<div class="form-group">';
+      html += '<label>' + flabel + '</label>';
+      html += renderField(f, _flowSelectedId, node.config);
+      html += '</div>';
+    }
   }
   html += '<button class="btn-delete-node" onclick="deleteFlowNode(\'' + _flowSelectedId + '\')">\uD83D\uDDD1 ' + t('delete_node') + '</button>';
+  // Multi-select: show "Create Function" button
+  if (_flowMultiSelected.size >= 2) {
+    const lbl = currentLang === 'ru' ? '\uD83D\uDCE6 \u0421\u043E\u0437\u0434\u0430\u0442\u044C \u0444\u0443\u043D\u043A\u0446\u0438\u044E' : '\uD83D\uDCE6 Create Function';
+    html += '<button class="btn-create-group" onclick="createFlowGroup()" style="width:100%;margin-top:8px;padding:8px;border-radius:8px;background:rgba(100,116,139,0.15);border:1px solid rgba(100,116,139,0.4);color:#94a3b8;cursor:pointer;font-size:0.8rem;font-weight:500;">' + lbl + '</button>';
+  }
   body.innerHTML = html;
 }
 
 function updateFlowNodeConfig(nodeId, key, value) {
   const node = getFlowNode(nodeId);
-  if (node) node.config[key] = value;
+  if (!node) return;
+  node.config[key] = value;
+  // Re-render if this key is referenced by a showWhen
+  const def = node.def;
+  const hasShowWhen = def.fields.some(f => f.showWhen && f.showWhen.key === key);
+  if (hasShowWhen) renderFlowConfig();
 }
 
-// Deploy flow
+function createFlowGroup() {
+  if (_flowMultiSelected.size < 2) return;
+  const nodeIds = [..._flowMultiSelected];
+  const name = prompt(currentLang === 'ru' ? '\u0418\u043C\u044F \u0444\u0443\u043D\u043A\u0446\u0438\u0438:' : 'Function name:', 'Function ' + _flowGroupNextId);
+  if (!name) return;
+  const group = { id: 'g' + (_flowGroupNextId++), name, nodeIds, collapsed: false };
+  _flowGroups.push(group);
+  _flowMultiSelected.clear();
+  // Update group_ref options
+  updateGroupRefOptions();
+  renderFlowConfig();
+}
+
+function updateGroupRefOptions() {
+  const def = FLOW_NODE_DEFS.group_ref;
+  if (def) def.fields[0].options = _flowGroups.map(g => ({ v: g.id, l: g.name }));
+}
+
+function toggleFlowGroup(groupId) {
+  const g = _flowGroups.find(gr => gr.id === groupId);
+  if (g) g.collapsed = !g.collapsed;
+}
+
+// Deploy flow with brain convergence animation
+let _deployAnimating = false;
+
 async function deployFlow() {
   if (!_flowNodes.length) { showFlowToast(t('deploy_fail') + ': add nodes first', 'error'); return; }
+  if (_deployAnimating) return;
+
   const name = document.getElementById('flow-agent-name')?.value?.trim() || 'Flow Agent';
-  const flow = { nodes: _flowNodes.map(n => ({ id: n.id, type: n.type, x: n.x, y: n.y, config: n.config })), edges: _flowEdges.map(e => ({ from: e.from, fromPort: e.fromPort, to: e.to, toPort: e.toPort })) };
+  const flow = { nodes: _flowNodes.map(n => ({ id: n.id, type: n.type, x: n.x, y: n.y, config: n.config })), edges: _flowEdges.map(e => ({ from: e.from, fromPort: e.fromPort, to: e.to, toPort: e.toPort })), groups: _flowGroups };
   const btn = document.getElementById('flow-deploy-btn');
   if (btn) { btn.disabled = true; btn.innerHTML = '\u26A1 ' + t('deploying'); }
+
+  // Run deploy animation
+  _deployAnimating = true;
+  await runDeployAnimation();
+
   try {
     const data = await apiRequest('POST', '/api/agents/flow', { name, flow });
     if (data.ok) {
@@ -2817,8 +3062,213 @@ async function deployFlow() {
   } catch (e) {
     showFlowToast('\u274C ' + e.message, 'error');
   } finally {
+    _deployAnimating = false;
     if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10"/></svg> ' + t('deploy'); }
   }
+}
+
+function runDeployAnimation() {
+  return new Promise(resolve => {
+    if (!_flowCanvas || !_flowCtx || !_flowNodes.length) { resolve(); return; }
+    const ctx = _flowCtx;
+    const wrap = _flowCanvas.parentElement;
+    const W = wrap.clientWidth, H = wrap.clientHeight;
+    const centerX = W / 2, centerY = H / 2;
+
+    // Save original positions
+    const origPositions = _flowNodes.map(n => ({ id: n.id, x: n.x, y: n.y }));
+
+    // Compute world-space center accounting for zoom/pan
+    const worldCX = (centerX - _flowPanX) / _flowZoom;
+    const worldCY = (centerY - _flowPanY) / _flowZoom;
+
+    const duration = 2200; // ms total
+    const convergeEnd = 1200; // blocks converge
+    const glowStart = 800;
+    const textStart = 1400;
+    const startTime = performance.now();
+
+    // Particles for sparkle effect
+    const sparkles = [];
+    for (let i = 0; i < 40; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 1 + Math.random() * 3;
+      sparkles.push({ x: worldCX, y: worldCY, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life: 0.5 + Math.random() * 0.5, born: convergeEnd + Math.random() * 400, r: 2 + Math.random() * 3 });
+    }
+
+    // Temporarily stop normal draw
+    if (_flowAnimId) { cancelAnimationFrame(_flowAnimId); _flowAnimId = null; }
+
+    function animDeploy() {
+      const elapsed = performance.now() - startTime;
+      const t = Math.min(elapsed / duration, 1);
+      const convergeT = Math.min(elapsed / convergeEnd, 1);
+      const easeConverge = 1 - Math.pow(1 - convergeT, 3); // ease-out cubic
+
+      // Clear
+      ctx.clearRect(0, 0, W, H);
+
+      // Background darkens
+      const darkFactor = Math.min(t * 1.5, 1);
+      ctx.fillStyle = `rgba(5,8,18,${0.85 + darkFactor * 0.15})`;
+      ctx.fillRect(0, 0, W, H);
+
+      ctx.save();
+      ctx.translate(_flowPanX, _flowPanY);
+      ctx.scale(_flowZoom, _flowZoom);
+
+      // Move nodes toward center
+      _flowNodes.forEach((n, i) => {
+        const orig = origPositions[i];
+        n.x = orig.x + (worldCX - NODE_W / 2 - orig.x) * easeConverge;
+        n.y = orig.y + (worldCY - NODE_H / 2 - orig.y) * easeConverge;
+      });
+
+      // Draw edges fading
+      const edgeAlpha = Math.max(0, 1 - convergeT * 2);
+      if (edgeAlpha > 0) {
+        _flowEdges.forEach(edge => {
+          const fromNode = getFlowNode(edge.from);
+          const toNode = getFlowNode(edge.to);
+          if (!fromNode || !toNode) return;
+          const from = getPortPos(fromNode, edge.fromPort);
+          const to = getPortPos(toNode, edge.toPort || 'in');
+          ctx.strokeStyle = `rgba(100,180,255,${edgeAlpha * 0.5})`;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(from.x, from.y);
+          const cpOff = Math.max(40, Math.abs(to.x - from.x) * 0.3);
+          ctx.bezierCurveTo(from.x + cpOff, from.y, to.x - cpOff, to.y, to.x, to.y);
+          ctx.stroke();
+        });
+      }
+
+      // Draw nodes shrinking & fading
+      const nodeAlpha = Math.max(0, 1 - Math.pow(convergeT, 2));
+      const nodeScale = 1 - convergeT * 0.7;
+      if (nodeAlpha > 0.01) {
+        _flowNodes.forEach(n => {
+          ctx.save();
+          ctx.globalAlpha = nodeAlpha;
+          ctx.translate(n.x + NODE_W / 2, n.y + NODE_H / 2);
+          ctx.scale(nodeScale, nodeScale);
+          ctx.fillStyle = n.def.color + '40';
+          ctx.beginPath();
+          ctx.roundRect(-NODE_W / 2, -NODE_H / 2, NODE_W, NODE_H, 12);
+          ctx.fill();
+          ctx.strokeStyle = n.def.color + '88';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+          // Icon
+          ctx.font = '16px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillStyle = '#fff';
+          ctx.fillText(n.def.icon, 0, 0);
+          ctx.restore();
+        });
+      }
+
+      // Central brain glow
+      if (elapsed > glowStart) {
+        const glowT = Math.min((elapsed - glowStart) / 800, 1);
+        const glowEase = 1 - Math.pow(1 - glowT, 2);
+        const glowR = 20 + glowEase * 50;
+        const pulse = Math.sin(elapsed / 150) * 5;
+
+        // Outer glow rings
+        for (let ring = 3; ring > 0; ring--) {
+          ctx.beginPath();
+          ctx.arc(worldCX, worldCY, glowR + ring * 15 + pulse, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(0,136,204,${0.03 * glowEase * ring})`;
+          ctx.fill();
+        }
+
+        // Core glow
+        const coreGrad = ctx.createRadialGradient(worldCX, worldCY, 0, worldCX, worldCY, glowR);
+        coreGrad.addColorStop(0, `rgba(0,200,255,${0.8 * glowEase})`);
+        coreGrad.addColorStop(0.5, `rgba(0,136,204,${0.4 * glowEase})`);
+        coreGrad.addColorStop(1, `rgba(0,68,136,0)`);
+        ctx.beginPath();
+        ctx.arc(worldCX, worldCY, glowR, 0, Math.PI * 2);
+        ctx.fillStyle = coreGrad;
+        ctx.fill();
+
+        // Brain emoji
+        ctx.font = `${28 + glowEase * 16}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.globalAlpha = glowEase;
+        ctx.fillText('\uD83E\uDDE0', worldCX, worldCY);
+        ctx.globalAlpha = 1;
+      }
+
+      // Sparkle particles
+      sparkles.forEach(s => {
+        if (elapsed < s.born) return;
+        const age = (elapsed - s.born) / 1000;
+        if (age > s.life) return;
+        const alpha = 1 - age / s.life;
+        s.x += s.vx; s.y += s.vy;
+        s.vx *= 0.97; s.vy *= 0.97;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.r * alpha, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(0,200,255,${alpha * 0.8})`;
+        ctx.shadowColor = '#00aaff';
+        ctx.shadowBlur = 8;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      });
+
+      ctx.restore();
+
+      // Text overlay (screen coords)
+      if (elapsed > textStart) {
+        const textT = Math.min((elapsed - textStart) / 600, 1);
+        const textEase = 1 - Math.pow(1 - textT, 3);
+        ctx.save();
+        ctx.globalAlpha = textEase;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = '700 24px Inter, sans-serif';
+        ctx.fillStyle = '#fff';
+        ctx.shadowColor = '#00aaff';
+        ctx.shadowBlur = 20;
+        const text = currentLang === 'ru' ? '\uD83E\uDD16 \u0410\u0433\u0435\u043D\u0442 \u0441\u043E\u0437\u0434\u0430\u043D!' : '\uD83E\uDD16 Agent Created!';
+        ctx.fillText(text, centerX, centerY + 55);
+        ctx.shadowBlur = 0;
+        ctx.font = '13px Inter, sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        const sub = currentLang === 'ru' ? _flowNodes.length + ' \u0431\u043B\u043E\u043A\u043E\u0432 \u2192 1 \u0430\u0433\u0435\u043D\u0442' : _flowNodes.length + ' blocks \u2192 1 agent';
+        ctx.fillText(sub, centerX, centerY + 80);
+        ctx.restore();
+      }
+
+      if (t < 1) {
+        requestAnimationFrame(animDeploy);
+      } else {
+        // Restore original positions
+        _flowNodes.forEach((n, i) => {
+          n.x = origPositions[i].x;
+          n.y = origPositions[i].y;
+        });
+        // Restart normal drawing loop
+        const _s = performance.now();
+        function resumeDraw() {
+          const time = (performance.now() - _s) / 1000;
+          const ctx2 = _flowCtx;
+          ctx2.clearRect(0, 0, W, H);
+          // Will be drawn by normal drawFlowBuilder via initFlowBuilder reinit
+          _flowAnimId = null;
+        }
+        // Re-init builder to restart draw loop
+        initFlowBuilder();
+        resolve();
+      }
+    }
+
+    animDeploy();
+  });
 }
 
 function showFlowToast(msg, type) {
@@ -2829,9 +3279,63 @@ function showFlowToast(msg, type) {
   setTimeout(() => el.remove(), 3500);
 }
 
+function updateZoomLabel() {
+  const el = document.getElementById('flow-zoom-label');
+  if (el) el.textContent = Math.round(_flowZoom * 100) + '%';
+}
+
+function flowZoomIn() {
+  const newZoom = Math.min(3, _flowZoom * 1.2);
+  const cx = (_flowCanvas ? _flowCanvas.parentElement.clientWidth : 800) / 2;
+  const cy = (_flowCanvas ? _flowCanvas.parentElement.clientHeight : 500) / 2;
+  _flowPanX = cx - (cx - _flowPanX) * (newZoom / _flowZoom);
+  _flowPanY = cy - (cy - _flowPanY) * (newZoom / _flowZoom);
+  _flowZoom = newZoom;
+  updateZoomLabel();
+}
+
+function flowZoomOut() {
+  const newZoom = Math.max(0.2, _flowZoom / 1.2);
+  const cx = (_flowCanvas ? _flowCanvas.parentElement.clientWidth : 800) / 2;
+  const cy = (_flowCanvas ? _flowCanvas.parentElement.clientHeight : 500) / 2;
+  _flowPanX = cx - (cx - _flowPanX) * (newZoom / _flowZoom);
+  _flowPanY = cy - (cy - _flowPanY) * (newZoom / _flowZoom);
+  _flowZoom = newZoom;
+  updateZoomLabel();
+}
+
+function flowZoomFit() {
+  if (!_flowNodes.length) {
+    _flowZoom = 1; _flowPanX = 0; _flowPanY = 0;
+    updateZoomLabel();
+    return;
+  }
+  const W = _flowCanvas ? _flowCanvas.parentElement.clientWidth : 800;
+  const H = _flowCanvas ? _flowCanvas.parentElement.clientHeight : 500;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  _flowNodes.forEach(n => {
+    minX = Math.min(minX, n.x); minY = Math.min(minY, n.y);
+    maxX = Math.max(maxX, n.x + NODE_W); maxY = Math.max(maxY, n.y + NODE_H);
+  });
+  const pad = 60;
+  const bw = maxX - minX + pad * 2;
+  const bh = maxY - minY + pad * 2;
+  _flowZoom = Math.min(1.5, Math.min(W / bw, H / bh));
+  _flowPanX = (W - bw * _flowZoom) / 2 - minX * _flowZoom + pad * _flowZoom;
+  _flowPanY = (H - bh * _flowZoom) / 2 - minY * _flowZoom + pad * _flowZoom;
+  updateZoomLabel();
+}
+
+function flowZoomReset() {
+  _flowZoom = 1; _flowPanX = 0; _flowPanY = 0;
+  updateZoomLabel();
+}
+
 // Canvas rendering & interaction
 function initFlowBuilder() {
   buildFlowPalette();
+  // Push initial empty state for undo
+  if (!_flowHistory.length) flowPushState();
   const canvas = document.getElementById('flow-canvas');
   if (!canvas) return;
   _flowCanvas = canvas;
@@ -2848,11 +3352,26 @@ function initFlowBuilder() {
 
   const W = wrap.clientWidth, H = wrap.clientHeight;
 
+  // Helper: screen coords → world coords (accounting for zoom/pan)
+  function screenToWorld(sx, sy) {
+    return { x: (sx - _flowPanX) / _flowZoom, y: (sy - _flowPanY) / _flowZoom };
+  }
+
   // Mouse events
   canvas.addEventListener('mousedown', (e) => {
     const r = canvas.getBoundingClientRect();
-    const mx = e.clientX - r.left, my = e.clientY - r.top;
+    const sx = e.clientX - r.left, sy = e.clientY - r.top;
+    const { x: mx, y: my } = screenToWorld(sx, sy);
     _flowMouse.x = mx; _flowMouse.y = my;
+
+    // Middle-click or space+click → pan
+    if (e.button === 1 || _flowSpaceHeld) {
+      _flowPanning = true;
+      _flowPanStart = { x: e.clientX - _flowPanX, y: e.clientY - _flowPanY };
+      canvas.style.cursor = 'grabbing';
+      e.preventDefault();
+      return;
+    }
 
     // Check port click first
     for (const n of _flowNodes) {
@@ -2866,6 +3385,13 @@ function initFlowBuilder() {
     // Check node click
     const node = hitTestNode(mx, my);
     if (node) {
+      if (e.shiftKey) {
+        // Multi-select toggle
+        if (_flowMultiSelected.has(node.id)) _flowMultiSelected.delete(node.id);
+        else _flowMultiSelected.add(node.id);
+      } else {
+        _flowMultiSelected.clear();
+      }
       _flowSelectedId = node.id;
       _flowDragNode = node;
       _flowDragOffset.dx = mx - node.x;
@@ -2874,13 +3400,23 @@ function initFlowBuilder() {
       canvas.classList.add('dragging');
     } else {
       _flowSelectedId = null;
+      _flowMultiSelected.clear();
       renderFlowConfig();
     }
   });
 
   canvas.addEventListener('mousemove', (e) => {
     const r = canvas.getBoundingClientRect();
-    const mx = e.clientX - r.left, my = e.clientY - r.top;
+    const sx = e.clientX - r.left, sy = e.clientY - r.top;
+
+    // Pan mode
+    if (_flowPanning) {
+      _flowPanX = e.clientX - _flowPanStart.x;
+      _flowPanY = e.clientY - _flowPanStart.y;
+      return;
+    }
+
+    const { x: mx, y: my } = screenToWorld(sx, sy);
     _flowMouse.x = mx; _flowMouse.y = my;
 
     if (_flowDragNode) {
@@ -2912,8 +3448,16 @@ function initFlowBuilder() {
   });
 
   canvas.addEventListener('mouseup', (e) => {
+    // End pan
+    if (_flowPanning) {
+      _flowPanning = false;
+      canvas.style.cursor = _flowSpaceHeld ? 'grab' : 'default';
+      return;
+    }
+
     const r = canvas.getBoundingClientRect();
-    const mx = e.clientX - r.left, my = e.clientY - r.top;
+    const sx = e.clientX - r.left, sy = e.clientY - r.top;
+    const { x: mx, y: my } = screenToWorld(sx, sy);
 
     if (_flowConnecting) {
       let connected = false;
@@ -2927,7 +3471,7 @@ function initFlowBuilder() {
         }
         connected = true;
       }
-      // Fallback: hitTest
+      // Fallback: hitTest (using world coords)
       if (!connected) {
         for (const n of _flowNodes) {
           if (n.id === _flowConnecting.fromId) continue;
@@ -2937,12 +3481,20 @@ function initFlowBuilder() {
             if (!exists) {
               _flowEdges.push({ from: _flowConnecting.fromId, fromPort: _flowConnecting.fromPort, to: n.id, toPort: 'in' });
               _flowParticles.push({ from: _flowConnecting.fromId, fromPort: _flowConnecting.fromPort, to: n.id, t: 0, speed: 0.004 + Math.random() * 0.004 });
+              connected = true;
             }
             break;
           }
         }
       }
+      if (connected) flowPushState();
       _flowConnecting = null;
+    }
+    if (_flowDragNode) {
+      // Snap to grid (30px)
+      _flowDragNode.x = Math.round(_flowDragNode.x / 30) * 30;
+      _flowDragNode.y = Math.round(_flowDragNode.y / 30) * 30;
+      flowPushState();
     }
     _flowDragNode = null;
     canvas.classList.remove('dragging');
@@ -2951,13 +3503,58 @@ function initFlowBuilder() {
   canvas.addEventListener('mouseleave', () => {
     _flowDragNode = null;
     _flowConnecting = null;
+    _flowPanning = false;
     canvas.classList.remove('dragging');
   });
 
-  // Delete key
+  // Wheel zoom
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const r = canvas.getBoundingClientRect();
+    const sx = e.clientX - r.left, sy = e.clientY - r.top;
+    const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
+    const newZoom = Math.min(3, Math.max(0.2, _flowZoom * zoomFactor));
+    // Zoom toward mouse position
+    _flowPanX = sx - (sx - _flowPanX) * (newZoom / _flowZoom);
+    _flowPanY = sy - (sy - _flowPanY) * (newZoom / _flowZoom);
+    _flowZoom = newZoom;
+    updateZoomLabel();
+  }, { passive: false });
+
+  // Delete / Undo / Redo / Space keys
   window.addEventListener('keydown', (e) => {
+    // Only respond when flow tab is active
+    const flowPage = document.querySelector('[data-page="builder"]');
+    const isFlowActive = flowPage && !flowPage.classList.contains('hidden');
+    if (!isFlowActive) return;
+
+    // Space key for pan mode
+    if (e.code === 'Space' && document.activeElement === document.body) {
+      e.preventDefault();
+      _flowSpaceHeld = true;
+      canvas.style.cursor = 'grab';
+      return;
+    }
+
+    if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+      e.preventDefault();
+      flowUndo();
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'Z' || e.key === 'y')) {
+      e.preventDefault();
+      flowRedo();
+      return;
+    }
     if ((e.key === 'Delete' || e.key === 'Backspace') && _flowSelectedId && document.activeElement === document.body) {
       deleteFlowNode(_flowSelectedId);
+    }
+  });
+
+  window.addEventListener('keyup', (e) => {
+    if (e.code === 'Space') {
+      _flowSpaceHeld = false;
+      if (!_flowPanning) canvas.style.cursor = 'default';
     }
   });
 
@@ -2970,24 +3567,37 @@ function initFlowBuilder() {
     const ctx = _flowCtx;
     ctx.clearRect(0, 0, W, H);
 
-    // Background
+    // Background (no transform — fills entire canvas)
     const bg = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, W / 2);
     bg.addColorStop(0, '#0d1526');
     bg.addColorStop(1, '#070b14');
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, W, H);
 
-    // Grid
+    // Apply zoom & pan transform
+    ctx.save();
+    ctx.translate(_flowPanX, _flowPanY);
+    ctx.scale(_flowZoom, _flowZoom);
+
+    // Grid (infinite feel: compute visible area in world coords)
+    const gridStep = 30;
+    const visMinX = -_flowPanX / _flowZoom;
+    const visMinY = -_flowPanY / _flowZoom;
+    const visMaxX = (W - _flowPanX) / _flowZoom;
+    const visMaxY = (H - _flowPanY) / _flowZoom;
+    const gx0 = Math.floor(visMinX / gridStep) * gridStep;
+    const gy0 = Math.floor(visMinY / gridStep) * gridStep;
+
     ctx.strokeStyle = 'rgba(255,255,255,0.035)';
-    ctx.lineWidth = 1;
-    for (let x = 0; x < W; x += 30) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
-    for (let y = 0; y < H; y += 30) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+    ctx.lineWidth = 1 / _flowZoom;
+    for (let x = gx0; x < visMaxX; x += gridStep) { ctx.beginPath(); ctx.moveTo(x, visMinY); ctx.lineTo(x, visMaxY); ctx.stroke(); }
+    for (let y = gy0; y < visMaxY; y += gridStep) { ctx.beginPath(); ctx.moveTo(visMinX, y); ctx.lineTo(visMaxX, y); ctx.stroke(); }
 
     // Grid dots at intersections
     ctx.fillStyle = 'rgba(255,255,255,0.06)';
-    for (let x = 0; x < W; x += 30) {
-      for (let y = 0; y < H; y += 30) {
-        ctx.beginPath(); ctx.arc(x, y, 1, 0, Math.PI * 2); ctx.fill();
+    for (let x = gx0; x < visMaxX; x += gridStep) {
+      for (let y = gy0; y < visMaxY; y += gridStep) {
+        ctx.beginPath(); ctx.arc(x, y, 1 / _flowZoom, 0, Math.PI * 2); ctx.fill();
       }
     }
 
@@ -2998,7 +3608,7 @@ function initFlowBuilder() {
       if (!fromNode || !toNode) return;
       const from = getPortPos(fromNode, edge.fromPort);
       const to = getPortPos(toNode, edge.toPort);
-      const cpOff = Math.max(60, Math.abs(to.x - from.x) * 0.4);
+      const isBackward = to.x < from.x - 20;
 
       // Edge glow
       ctx.save();
@@ -3011,12 +3621,20 @@ function initFlowBuilder() {
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(from.x, from.y);
-      ctx.bezierCurveTo(from.x + cpOff, from.y, to.x - cpOff, to.y, to.x, to.y);
+      if (isBackward) {
+        // Backward edge: curve below nodes
+        const midY = Math.max(from.y, to.y) + 80;
+        ctx.bezierCurveTo(from.x + 40, midY, to.x - 40, midY, to.x, to.y);
+      } else {
+        const cpOff = Math.max(60, Math.abs(to.x - from.x) * 0.4);
+        ctx.bezierCurveTo(from.x + cpOff, from.y, to.x - cpOff, to.y, to.x, to.y);
+      }
       ctx.stroke();
       ctx.restore();
 
       // Arrow head
-      const angle = Math.atan2(to.y - (to.y - 1), to.x - (to.x - cpOff * 0.2));
+      const ah_cpOff = isBackward ? -40 : Math.max(60, Math.abs(to.x - from.x) * 0.4);
+      const angle = Math.atan2(to.y - (to.y - 1), to.x - (to.x - ah_cpOff * 0.2));
       ctx.fillStyle = toNode.def.color + 'cc';
       ctx.beginPath();
       ctx.moveTo(to.x, to.y);
@@ -3094,6 +3712,54 @@ function initFlowBuilder() {
       }
     }
 
+    // Draw groups (dashed rectangles around grouped nodes)
+    _flowGroups.forEach(g => {
+      const gNodes = g.nodeIds.map(id => getFlowNode(id)).filter(Boolean);
+      if (!gNodes.length) return;
+      if (g.collapsed) {
+        // Collapsed: single large block
+        const avgX = gNodes.reduce((s, n) => s + n.x, 0) / gNodes.length;
+        const avgY = gNodes.reduce((s, n) => s + n.y, 0) / gNodes.length;
+        ctx.save();
+        ctx.setLineDash([5, 3]);
+        ctx.strokeStyle = '#64748b88';
+        ctx.lineWidth = 2;
+        ctx.fillStyle = 'rgba(100,116,139,0.08)';
+        const gw = 200, gh = 70;
+        ctx.beginPath();
+        ctx.roundRect(avgX - 10, avgY - 7, gw, gh, 12);
+        ctx.fill(); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.font = '600 13px Inter, sans-serif';
+        ctx.fillStyle = '#94a3b8';
+        ctx.textAlign = 'center';
+        ctx.fillText('\uD83D\uDCE6 ' + g.name, avgX - 10 + gw / 2, avgY - 7 + gh / 2 + 4);
+        ctx.textAlign = 'left';
+        ctx.restore();
+      } else {
+        // Expanded: dashed rect around all nodes
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        gNodes.forEach(n => {
+          minX = Math.min(minX, n.x); minY = Math.min(minY, n.y);
+          maxX = Math.max(maxX, n.x + NODE_W); maxY = Math.max(maxY, n.y + NODE_H);
+        });
+        const pad = 12;
+        ctx.save();
+        ctx.setLineDash([5, 3]);
+        ctx.strokeStyle = '#64748b66';
+        ctx.lineWidth = 1.5;
+        ctx.fillStyle = 'rgba(100,116,139,0.04)';
+        ctx.beginPath();
+        ctx.roundRect(minX - pad, minY - pad - 18, maxX - minX + pad * 2, maxY - minY + pad * 2 + 18, 10);
+        ctx.fill(); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.font = '500 10px Inter, sans-serif';
+        ctx.fillStyle = '#64748b';
+        ctx.fillText('\uD83D\uDCE6 ' + g.name, minX - pad + 6, minY - pad - 4);
+        ctx.restore();
+      }
+    });
+
     // Draw nodes
     _flowNodes.forEach(n => {
       const selected = n.id === _flowSelectedId;
@@ -3125,9 +3791,17 @@ function initFlowBuilder() {
       ctx.fill();
 
       // Border
-      ctx.strokeStyle = selected ? def.color : 'rgba(255,255,255,0.1)';
-      ctx.lineWidth = selected ? 2 : 1;
+      const isMulti = _flowMultiSelected.has(n.id);
+      if (isMulti) {
+        ctx.setLineDash([4, 3]);
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 2;
+      } else {
+        ctx.strokeStyle = selected ? def.color : 'rgba(255,255,255,0.1)';
+        ctx.lineWidth = selected ? 2 : 1;
+      }
       ctx.stroke();
+      ctx.setLineDash([]);
 
       if (selected) ctx.restore();
 
@@ -3202,10 +3876,11 @@ function initFlowBuilder() {
         ctx.arc(pos.x, pos.y, PORT_R, 0, Math.PI * 2);
         ctx.fillStyle = def.color;
         ctx.fill();
-        // Port label for condition
-        if (p === 'true' || p === 'false') {
+        // Port labels for condition and loop
+        if (p === 'true' || p === 'false' || p === 'loop' || p === 'done') {
           ctx.font = '9px Inter, sans-serif';
-          ctx.fillStyle = p === 'true' ? '#10b981' : '#ef4444';
+          const portColors = { 'true': '#10b981', 'false': '#ef4444', 'loop': '#f59e0b', 'done': '#10b981' };
+          ctx.fillStyle = portColors[p] || '#fff';
           ctx.textAlign = 'right';
           ctx.fillText(p, pos.x - 10, pos.y + 3);
           ctx.textAlign = 'left';
@@ -3213,7 +3888,10 @@ function initFlowBuilder() {
       });
     });
 
-    // Empty state
+    // End zoom/pan transform
+    ctx.restore();
+
+    // Empty state (drawn in screen coords, centered)
     if (!_flowNodes.length) {
       ctx.textAlign = 'center';
       ctx.fillStyle = 'rgba(255,255,255,0.15)';
@@ -3223,6 +3901,13 @@ function initFlowBuilder() {
       ctx.fillStyle = 'rgba(255,255,255,0.08)';
       ctx.fillText(currentLang === 'ru' ? '\u0421\u043E\u0435\u0434\u0438\u043D\u044F\u0439\u0442\u0435 \u043F\u043E\u0440\u0442\u044B \u0434\u043B\u044F \u0441\u043E\u0437\u0434\u0430\u043D\u0438\u044F flow' : 'Connect ports to build your flow', W / 2, H / 2 + 16);
     }
+
+    // Zoom badge (screen coords, bottom-right)
+    ctx.textAlign = 'right';
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    ctx.font = '11px Inter, sans-serif';
+    ctx.fillText(Math.round(_flowZoom * 100) + '%', W - 12, H - 10);
+    ctx.textAlign = 'left';
 
     _flowAnimId = requestAnimationFrame(drawFlowBuilder);
   }
@@ -3243,10 +3928,15 @@ async function loadNetworkMap() {
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
 
-  // Set canvas size
+  // Set canvas size (with DPR for crisp rendering)
   const rect = canvas.parentElement.getBoundingClientRect();
-  canvas.width = rect.width || 900;
-  canvas.height = 500;
+  const _netDpr = window.devicePixelRatio || 1;
+  const _netW = rect.width || 900, _netH = 500;
+  canvas.width = _netW * _netDpr;
+  canvas.height = _netH * _netDpr;
+  canvas.style.width = _netW + 'px';
+  canvas.style.height = _netH + 'px';
+  ctx.scale(_netDpr, _netDpr);
 
   const data = await apiRequest('GET', '/api/agents');
   const agents = (data.ok ? data.agents : []) || [];
@@ -3255,7 +3945,7 @@ async function loadNetworkMap() {
     ctx.fillStyle = '#555';
     ctx.font = '16px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('No agents yet. Create one in the bot!', canvas.width / 2, canvas.height / 2);
+    ctx.fillText('No agents yet. Create one in the bot!', _netW / 2, _netH / 2);
     return;
   }
 
@@ -3270,8 +3960,8 @@ async function loadNetworkMap() {
       id: a.id, name: a.name || 'Agent #' + a.id,
       role, level, xp: a.xp || 0,
       isActive: a.isActive,
-      x: canvas.width / 2 + (Math.cos(i * 2.4) * 150) + (Math.random() - 0.5) * 80,
-      y: canvas.height / 2 + (Math.sin(i * 2.4) * 120) + (Math.random() - 0.5) * 60,
+      x: _netW / 2 + (Math.cos(i * 2.4) * 150) + (Math.random() - 0.5) * 80,
+      y: _netH / 2 + (Math.sin(i * 2.4) * 120) + (Math.random() - 0.5) * 60,
       vx: 0, vy: 0,
       radius, color, emoji,
     };
@@ -3300,8 +3990,8 @@ async function loadNetworkMap() {
 
   // Stars background
   const stars = Array.from({ length: 60 }, () => ({
-    x: Math.random() * canvas.width,
-    y: Math.random() * canvas.height,
+    x: Math.random() * _netW,
+    y: Math.random() * _netH,
     r: Math.random() * 1.2,
     a: Math.random() * 0.5 + 0.1,
   }));
@@ -3370,20 +4060,21 @@ async function loadNetworkMap() {
 
   function animate() {
     time += 0.016;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const W = _netW, H = _netH;
+    ctx.clearRect(0, 0, W, H);
 
     // Background gradient
-    const bg = ctx.createRadialGradient(canvas.width/2, canvas.height/2, 0, canvas.width/2, canvas.height/2, canvas.width/2);
+    const bg = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, W/2);
     bg.addColorStop(0, '#0d1526');
     bg.addColorStop(1, '#070b14');
     ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillRect(0, 0, W, H);
 
     // Grid
     ctx.strokeStyle = 'rgba(255,255,255,0.03)';
     ctx.lineWidth = 1;
-    for (let x = 0; x < canvas.width; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke(); }
-    for (let y = 0; y < canvas.height; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke(); }
+    for (let x = 0; x < W; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+    for (let y = 0; y < H; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
 
     // Stars
     stars.forEach(s => {
@@ -3420,8 +4111,8 @@ async function loadNetworkMap() {
       if (n === _networkDragNode) return;
       n.vx *= 0.92; n.vy *= 0.92;
       n.x += n.vx; n.y += n.vy;
-      n.x = Math.max(n.radius, Math.min(canvas.width - n.radius, n.x));
-      n.y = Math.max(n.radius, Math.min(canvas.height - n.radius, n.y));
+      n.x = Math.max(n.radius, Math.min(_netW - n.radius, n.x));
+      n.y = Math.max(n.radius, Math.min(_netH - n.radius, n.y));
     });
 
     // Draw edges

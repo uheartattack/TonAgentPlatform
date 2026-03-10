@@ -2557,6 +2557,66 @@ async function logToDb(agentId: number, level: string, message: string, userId =
   }
 }
 
+// ── Flow code executor (deterministic) ──────────────────────────────────────
+async function executeFlowCode(execCode: string, params: AIAgentTickParams): Promise<{ success: boolean; error?: string }> {
+  await logToDb(params.agentId, 'info', '[flow-exec] Starting compiled flow code', params.userId);
+  const stateRepo = getAgentStateRepository();
+
+  // Helper functions available in flow code (with logging)
+  const getBalance = async (addr: string) => {
+    await logToDb(params.agentId, 'info', `[flow-exec] getBalance(${addr})`, params.userId);
+    const r = await executeTool('get_ton_balance', { address: addr }, params);
+    await logToDb(params.agentId, 'info', `[flow-exec] balance result: ${JSON.stringify(r).slice(0, 200)}`, params.userId);
+    return r?.balance_ton ?? r;
+  };
+  const notify = async (msg: string) => {
+    await logToDb(params.agentId, 'info', `[flow-exec] notify(${msg.slice(0, 100)})`, params.userId);
+    return executeTool('notify', { message: msg }, params);
+  };
+  const webSearch = async (query: string) => {
+    await logToDb(params.agentId, 'info', `[flow-exec] webSearch(${query})`, params.userId);
+    const r = await executeTool('web_search', { query }, params);
+    return r?.result ?? r;
+  };
+  const fetchUrl = async (url: string) => {
+    await logToDb(params.agentId, 'info', `[flow-exec] fetchUrl(${url})`, params.userId);
+    const r = await executeTool('fetch_url', { url }, params);
+    return r?.content ?? r;
+  };
+  const getState = async (key: string) => {
+    const v = await stateRepo.get(params.agentId, key);
+    return (v as any)?.value ?? null;
+  };
+  const setState = async (key: string, val: any) => {
+    await stateRepo.set(params.agentId, params.userId, key, String(val));
+  };
+  const sendTon = async (to: string, amount: string, memo?: string) => {
+    return executeTool('send_ton', { to, amount, memo: memo || '' }, params);
+  };
+  const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, Math.min(ms, 30000)));
+  const callTool = async (name: string, args: any) => {
+    await logToDb(params.agentId, 'info', `[flow-exec] callTool: ${name}(${JSON.stringify(args).slice(0, 200)})`, params.userId);
+    const r = await executeTool(name, args, params);
+    await logToDb(params.agentId, 'info', `[flow-exec] result: ${JSON.stringify(r).slice(0, 300)}`, params.userId);
+    return r;
+  };
+
+  try {
+    const AsyncFn = Object.getPrototypeOf(async function () {}).constructor;
+    const fn = new AsyncFn(
+      'getBalance', 'notify', 'webSearch', 'fetchUrl', 'getState', 'setState', 'sendTon', 'sleep', 'callTool',
+      execCode,
+    );
+    await fn(getBalance, notify, webSearch, fetchUrl, getState, setState, sendTon, sleep, callTool);
+    await logToDb(params.agentId, 'info', '[flow-exec] Flow code completed successfully', params.userId);
+    return { success: true };
+  } catch (e: any) {
+    const errMsg = `[flow-exec] Error: ${e.message}`;
+    await logToDb(params.agentId, 'error', errMsg, params.userId);
+    return { success: false, error: e.message };
+  }
+}
+
 // ── Core tick ──────────────────────────────────────────────────────────────
 
 export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
@@ -2569,6 +2629,19 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
   const msgs = params.pendingMessages || [];
 
   await logToDb(params.agentId, 'info', `[AI tick] start, pendingMsgs=${msgs.length}`, params.userId);
+
+  // ── Execute compiled flow code if present (deterministic pre-pass) ──
+  const execCode = params.config.execCode as string | undefined;
+  if (execCode && msgs.length === 0) {
+    // Only run compiled code in monitoring mode (not when user sends a message)
+    const flowResult = await executeFlowCode(execCode, params);
+    if (flowResult.success) {
+      await logToDb(params.agentId, 'info', `[AI tick] flow code executed, skipping AI loop`, params.userId);
+      return { toolCallCount: 0, finalResponse: 'Flow executed successfully' };
+    }
+    // If flow code failed, fall through to AI loop as fallback
+    await logToDb(params.agentId, 'info', `[AI tick] flow code failed (${flowResult.error}), falling back to AI`, params.userId);
+  }
 
   // ── Build initial message list ──────────────────────────────────
   // Context message: current state summary + config (without secrets)
