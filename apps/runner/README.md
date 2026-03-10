@@ -1,30 +1,70 @@
 # TON Agent Runner
 
-Сервис для выполнения AI-агентов 24/7.
+Agent execution engine that keeps AI agents running 24/7 with persistent scheduling.
 
-## Возможности
+> **Note**: The runner is integrated into `builder-bot` as `sub-agents/runner.ts` and `ai-agent-runtime.ts`. This package exists as a future standalone runner for horizontal scaling.
 
-- ? Планировщик задач (scheduler)
-- ? Выполнение агентов по расписанию
-- ? Изолированное выполнение (sandbox)
-- ? Загрузка плагинов
-- ? Логирование выполнений
-- ? Graceful shutdown
+## Current Implementation (in builder-bot)
 
-## Запуск
-```bash
-# Development
-pnpm dev
+The runner functionality lives in two files:
 
-# Production
-pnpm build
-pnpm start
+### `runner.ts` вЂ” Scheduling & Lifecycle
+- Restores active agents on bot restart (DB-backed)
+- Manages agent intervals (1m, 5m, 15m, 1h, daily)
+- Handles start/stop/pause with graceful shutdown
+- Pre-warms agent state from DB into memory cache
+- Tracks execution history (started_at, duration_ms, status)
+
+### `ai-agent-runtime.ts` вЂ” AI Agent Execution
+- Autonomous agentic loop: AI decides which tools to call
+- 65+ tools available (TON, gifts, NFT, web, Telegram, state)
+- Up to 5 sequential tool calls per tick
+- Write-through state cache (survives restarts)
+- Circuit breaker on repeated failures
+- Per-agent AI provider selection (7 providers)
+
+## Execution Model
+
+```
+в”Њв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”ђ     в”Њв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”ђ     в”Њв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”ђ
+в”‚   Scheduler  в”‚в”Ђв”Ђв”Ђв”Ђ>в”‚  AI Runtime   в”‚в”Ђв”Ђв”Ђв”Ђ>в”‚  Tool Executor в”‚
+в”‚  (interval)  в”‚     в”‚  (agentic)    в”‚     в”‚  (sandboxed)   в”‚
+в””в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”     в””в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”     в””в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”
+       в”‚                    в”‚                      в”‚
+       в”‚                    в–ј                      в–ј
+       в”‚             в”Њв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”ђ           в”Њв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”ђ
+       в”‚             в”‚  State   в”‚           в”‚  Notify  в”‚
+       в”‚             в”‚  (DB)    в”‚           в”‚  (Tg)    в”‚
+       в””в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”ґв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”           в””в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”
 ```
 
-## Переменные окружения
+### Trigger Types
+| Type | Description |
+|------|-------------|
+| `manual` | User triggers via bot or API |
+| `scheduled` | Runs on interval (cron-like) |
+| `webhook` | Triggered by HTTP POST to webhook URL |
+| `ai_agent` | Autonomous AI loop with tool calling |
 
-- `DATABASE_URL` - PostgreSQL connection string
-- `REDIS_URL` - Redis connection string
-- `POLL_INTERVAL_MS` - Интервал проверки агентов (default: 5000)
-- `MAX_CONCURRENT_EXECUTIONS` - Макс одновременных выполнений (default: 10)
-- `EXECUTION_TIMEOUT_MS` - Таймаут выполнения (default: 300000)
+## Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DB_HOST` | PostgreSQL host | localhost |
+| `DB_PORT` | PostgreSQL port | 5432 |
+| `DB_USER` | PostgreSQL user | postgres |
+| `DB_PASSWORD` | PostgreSQL password | вЂ” |
+| `DB_NAME` | Database name | builder_bot |
+| `TONAPI_KEY` | TonAPI key for blockchain tools | вЂ” |
+
+## Future Plans
+
+- Standalone runner process for horizontal scaling
+- Redis-based job queue
+- Multi-node agent distribution
+- Prometheus metrics export
+- Configurable concurrency limits
+
+## License
+
+MIT

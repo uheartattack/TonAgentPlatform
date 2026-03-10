@@ -1,123 +1,185 @@
-# Builder Bot 🤖
+# Builder Bot
 
-AI-powered платформа для создания и управления агентами через Telegram-бота.
+Core Telegram bot application of the TON Agent Platform. Handles all user interactions, AI agent creation, execution, marketplace, wallet operations, and the REST API.
 
-## Архитектура
+## Architecture
 
 ```
 apps/builder-bot/src/
 ├── agents/
-│   ├── orchestrator.ts      # Главный мозг - анализ intent, роутинг
+│   ├── orchestrator.ts          # NLU intent detection + routing (15+ intents)
+│   ├── ai-agent-runtime.ts      # Autonomous AI agent loop (65+ tools)
 │   ├── sub-agents/
-│   │   ├── creator.ts       # Создание агентов
-│   │   ├── editor.ts        # Редактирование кода
-│   │   ├── runner.ts        # Запуск и управление
-│   │   └── analyst.ts       # Анализ и дебаг
-│   └── tools/
-│       ├── db-tools.ts      # CRUD операции
-│       ├── code-tools.ts    # Генерация через Claude
-│       ├── execution-tools.ts # Выполнение в VM2
-│       └── security-scanner.ts # Сканер угроз
+│   │   ├── creator.ts           # AI-first agent creation (system prompt generation)
+│   │   ├── editor.ts            # Code editing via AI
+│   │   ├── runner.ts            # Agent scheduling, activation, restore
+│   │   └── analyst.ts           # Analysis and debugging
+│   ├── tools/
+│   │   ├── db-tools.ts          # CRUD operations (agents, users, state, logs)
+│   │   ├── code-tools.ts        # Code generation via AI
+│   │   ├── execution-tools.ts   # VM2 sandbox (50+ globals, SSRF protection)
+│   │   └── security-scanner.ts  # Static code analysis
+│   └── plugins-system.ts        # 12 plugins (DeFi, Analytics, Notification, Security)
 ├── db/
-│   ├── index.ts             # Инициализация БД
-│   ├── agents.ts            # Таблица агентов
-│   ├── users.ts             # Пользователи
-│   └── memory.ts            # История разговоров
-├── scenes/
-│   └── execute.ts           # Сцена выполнения (inline кнопки)
-├── bot.ts                   # Роутинг сообщений
-├── config.ts                # Конфигурация
-├── context.ts               # Контекст бота
-└── index.ts                 # Точка входа
+│   ├── index.ts                 # DB initialization + migrations
+│   ├── agents.ts                # Agents table + repository
+│   ├── users.ts                 # Users table + repository
+│   ├── memory.ts                # Conversation memory
+│   └── schema-extensions.ts     # Additional tables (logs, state, marketplace, etc.)
+├── services/
+│   ├── TonConnect.ts            # TON Connect v2 wallet integration
+│   ├── giftasset.ts             # GiftAsset + SwiftGifts unified API client
+│   ├── telegram-gifts.ts        # Gift buy/sell/list via Bot API + MTProto
+│   └── telegram-userbot.ts      # GramJS MTProto userbot (20 tools)
+├── api-server.ts                # Express REST API (42 endpoints)
+├── bot.ts                       # Main bot file (25 commands, 35 actions, voice)
+├── agent-templates.ts           # 22 agent templates
+├── payments.ts                  # Subscription plans + topup/withdraw
+├── config.ts                    # Environment configuration
+├── notifier.ts                  # Rich notifications (HTML + buttons)
+└── index.ts                     # Entry point
 ```
 
-## Установка
+## Setup
 
-### 1. Клонирование и установка зависимостей
+### 1. Install dependencies
 
 ```bash
 cd apps/builder-bot
-npm install
+pnpm install   # or from workspace root: pnpm install
 ```
 
-### 2. Настройка окружения
+### 2. Configure environment
 
 ```bash
 cp .env.example .env
-# Отредактируйте .env файл
 ```
 
-### 3. Настройка PostgreSQL
+Required variables:
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `BOT_TOKEN` | Telegram bot token from @BotFather | Yes |
+| `DB_HOST` | PostgreSQL host (default: localhost) | Yes |
+| `DB_PORT` | PostgreSQL port (default: 5432) | No |
+| `DB_USER` | PostgreSQL user (default: postgres) | Yes |
+| `DB_PASSWORD` | PostgreSQL password | Yes |
+| `DB_NAME` | Database name (default: builder_bot) | No |
+| `OWNER_ID` | Telegram ID of bot owner | Yes |
+| `TONAPI_KEY` | TonAPI v2 key for blockchain data | Yes |
+| `PLATFORM_WALLET_MNEMONIC` | 24-word mnemonic for platform wallet | For payments |
+| `GETGEMS_API_KEY` | GetGems API key for NFT data | Optional |
+| `GIFTASSET_API_KEY` | GiftAsset API key for gift arbitrage | Optional |
+
+### 3. Launch
 
 ```bash
-# Создайте базу данных
-createdb builder_bot
+# Development (ts-node with hot reload)
+pnpm dev
 
-# Или через psql
-psql -U postgres -c "CREATE DATABASE builder_bot;"
+# Production
+pnpm build && pnpm start
+
+# Or via PM2
+pm2 start src/index.ts --name ton-agent-bot --interpreter npx -- ts-node
 ```
 
-### 4. Миграции
+Healthy startup output:
+```
+🏪 Loaded 22 agent templates
+🔌 Loaded 12 plugins
+✅ Bot is running!
+🌐 API Server running on http://localhost:3001
+🎯 Platform ready!
+```
+
+## Bot Commands
+
+### User Commands
+| Command | Description |
+|---------|-------------|
+| `/start` | Initialize bot, show main menu |
+| `/help` | Show help and capabilities |
+| `/list` | List user's agents |
+| `/create [description]` | Create agent from description |
+| `/run [ID]` | Start an agent |
+| `/marketplace` | Browse agent marketplace |
+| `/plugins` | Manage plugins |
+| `/connect` | Connect TON wallet (TON Connect) |
+| `/wallet` | Wallet balance, topup, withdraw |
+| `/price` | Current TON price |
+| `/portfolio` | Portfolio overview |
+| `/gifts` | Gift arbitrage tools |
+| `/tglogin` | Authorize Telegram userbot (QR or phone) |
+| `/profile` | User profile, API keys, subscription |
+| `/stats` | Platform statistics |
+| `/plans` | Subscription plans |
+| `/model` | Select AI provider/model |
+| `/publish` | Publish agent to marketplace |
+| `/config` | Configure agent settings |
+
+### Natural Language (any text or voice message)
+- "Create a TON price monitor that alerts me at $5"
+- "Start agent #3"
+- "Show my agents"
+- "What's the floor price of TON Punks?"
+- "Find gift arbitrage opportunities"
+
+### Voice Commands
+Send any voice message — it gets transcribed and processed as text. Supports agent creation, chat, and all orchestrator actions.
+
+## AI Agent Runtime
+
+Agents of type `ai_agent` run in an autonomous agentic loop:
+
+1. Agent receives a **system prompt** (generated by AI from user description)
+2. On each tick (configurable interval), the AI decides which tools to call
+3. Up to 5 sequential tool calls per tick
+4. State persists between ticks via `get_state` / `set_state`
+5. Results delivered via `notify` / `notify_rich`
+
+### Multi-Provider Support
+
+Each agent can use a different AI provider:
+
+| Provider | Model | Key Prefix |
+|----------|-------|------------|
+| Gemini | gemini-2.5-flash | `AIzaSy...` |
+| OpenAI | gpt-4o-mini | `sk-proj...` / `sk-...` |
+| Anthropic | claude-haiku-4-5 | `sk-ant...` |
+| Groq | llama-3.3-70b-versatile | `gsk_...` |
+| DeepSeek | deepseek-chat | `sk-...` |
+| OpenRouter | gemini-2.5-flash | `sk-or...` |
+| Together | Llama-3.3-70B-Instruct-Turbo | — |
+
+If no API key is configured, agents fall back to the **platform proxy**.
+
+## Security
+
+- VM2 sandbox: no `fs`, `child_process`, `net`, `eval`
+- SSRF protection: blocks localhost, private IPs, IPv6 loopback, metadata endpoints, dangerous ports/protocols
+- Fetch timeouts: 10s AbortSignal on all external HTTP calls
+- GraphQL injection protection: parameterized queries with input sanitization
+- Rate limiting on API endpoints
+- CORS: strict origin allowlist
+- Ownership verification on all agent operations
+- Memory leak prevention: periodic Map cleanup (30-min TTL)
+- 30s max execution time per agent tick
+- AI security scanner: static analysis before deployment
+
+## Production Deployment
 
 ```bash
-npm run db:generate
-npm run db:migrate
+# Upload to server
+scp -i ~/.ssh/key src/*.ts root@server:/app/apps/builder-bot/src/
+
+# Restart
+ssh root@server 'pm2 restart ton-agent-bot'
+
+# Check logs
+ssh root@server 'pm2 logs ton-agent-bot --lines 20 --nostream'
 ```
 
-### 5. Запуск
-
-```bash
-# Разработка
-npm run dev
-
-# Или с hot reload
-npm run watch
-
-# Продакшен
-npm run build
-npm start
-```
-
-## Команды бота
-
-### Основные
-- `/start` - Начать работу
-- `/help` - Справка
-- `/list` - Список агентов
-- `/create [описание]` - Быстрое создание
-- `/run [ID]` - Быстрый запуск
-- `/audit [ID]` - Аудит безопасности
-
-### Естественный язык
-- "Создай агента для проверки баланса TON"
-- "Запусти агента #1"
-- "Измени агента #2, добавь логирование"
-- "Покажи моих агентов"
-- "Объясни агента #3"
-- "Проверь агента #1 на ошибки"
-- "Удали агента #4"
-
-## Переменные окружения
-
-| Переменная | Описание | Обязательная |
-|------------|----------|--------------|
-| `BOT_TOKEN` | Токен Telegram бота | ✅ |
-| `CLAUDE_API_KEY` | API ключ Anthropic | ✅ |
-| `DB_PASSWORD` | Пароль PostgreSQL | ✅ |
-| `OWNER_ID` | Telegram ID владельца | ✅ |
-| `DB_HOST` | Хост БД (default: localhost) | ❌ |
-| `DB_PORT` | Порт БД (default: 5432) | ❌ |
-| `DB_USER` | Пользователь БД (default: postgres) | ❌ |
-| `DB_NAME` | Имя БД (default: builder_bot) | ❌ |
-
-## Безопасность
-
-- ✅ Сканер кода на угрозы (drain-атаки, eval, и т.д.)
-- ✅ Изолированное выполнение в VM2
-- ✅ Таймаут выполнения (30 сек)
-- ✅ Подтверждение удаления
-- ✅ Owner-only команды
-
-## Лицензия
+## License
 
 MIT
