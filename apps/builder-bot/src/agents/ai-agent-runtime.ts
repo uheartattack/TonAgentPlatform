@@ -167,7 +167,7 @@ function runImmediateTick(agentId: number): void {
 
 // ── Tool definitions (OpenAI function_call format) ─────────────────────────
 
-function buildToolDefinitions(): OpenAI.ChatCompletionTool[] {
+function buildToolDefinitions(agentRole?: string): OpenAI.ChatCompletionTool[] {
   return [
     {
       type: 'function',
@@ -1087,6 +1087,87 @@ function buildToolDefinitions(): OpenAI.ChatCompletionTool[] {
         },
       },
     },
+    // ── Custom plugins tools ──
+    {
+      type: 'function',
+      function: {
+        name: 'run_custom_plugin',
+        description: 'Выполнить пользовательский плагин по имени. Плагин — JavaScript код, созданный пользователем через /plugin create.',
+        parameters: {
+          type: 'object',
+          properties: {
+            name:   { type: 'string', description: 'Имя плагина' },
+            params: { type: 'object', description: 'Параметры для плагина (передаются как объект params)' },
+          },
+          required: ['name'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'list_custom_plugins',
+        description: 'Показать список пользовательских плагинов.',
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+    },
+    // ── Director tools (only for role=director) ──
+    ...(agentRole === 'director' ? [
+      {
+        type: 'function' as const,
+        function: {
+          name: 'assign_task',
+          description: 'Назначить задачу реальному человеку через Telegram. Агент отправит ему сообщение с описанием задачи и кнопками Принять/Отклонить.',
+          parameters: {
+            type: 'object',
+            properties: {
+              telegram_user_id: { type: 'number', description: 'Telegram ID пользователя, которому назначить задачу' },
+              task:             { type: 'string', description: 'Описание задачи' },
+              deadline:         { type: 'string', description: 'Дедлайн (опционально, напр. "завтра 18:00")' },
+            },
+            required: ['telegram_user_id', 'task'],
+          },
+        },
+      },
+      {
+        type: 'function' as const,
+        function: {
+          name: 'check_tasks',
+          description: 'Проверить статус всех назначенных задач (pending/accepted/rejected/done)',
+          parameters: { type: 'object', properties: {}, required: [] },
+        },
+      },
+      {
+        type: 'function' as const,
+        function: {
+          name: 'manage_agent',
+          description: 'Управлять другим агентом: запустить, остановить, получить статус или логи',
+          parameters: {
+            type: 'object',
+            properties: {
+              agent_id: { type: 'number', description: 'ID агента для управления' },
+              action:   { type: 'string', enum: ['start', 'stop', 'status', 'logs'], description: 'Действие' },
+            },
+            required: ['agent_id', 'action'],
+          },
+        },
+      },
+      {
+        type: 'function' as const,
+        function: {
+          name: 'send_report',
+          description: 'Отправить отчёт/сообщение руководителю (реальному человеку) через Telegram',
+          parameters: {
+            type: 'object',
+            properties: {
+              user_id: { type: 'number', description: 'Telegram ID получателя' },
+              report:  { type: 'string', description: 'Текст отчёта' },
+            },
+            required: ['user_id', 'report'],
+          },
+        },
+      },
+    ] : []),
   ];
 }
 
@@ -2214,6 +2295,35 @@ async function executeTool(
       } catch (e: any) { return { error: e.message }; }
     }
 
+    case 'run_custom_plugin': {
+      try {
+        const pluginName = args.name as string;
+        if (!pluginName) return { error: 'name required' };
+        const { getCustomPluginsRepository } = await import('../db/schema-extensions');
+        const plugin = await getCustomPluginsRepository().getByName(params.userId, pluginName);
+        if (!plugin) return { error: `Plugin "${pluginName}" not found` };
+        // Execute in VM2 sandbox
+        const { NodeVM } = await import('vm2');
+        const vm = new NodeVM({
+          timeout: 10000,
+          sandbox: { params: args.params || {} },
+          eval: false,
+          wasm: false,
+        });
+        const result = vm.run(`module.exports = (function() { ${plugin.code} })()`, 'plugin.js');
+        await getCustomPluginsRepository().incrementExecCount(params.userId, pluginName);
+        return { result: typeof result === 'object' ? result : String(result) };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'list_custom_plugins': {
+      try {
+        const { getCustomPluginsRepository } = await import('../db/schema-extensions');
+        const plugins = await getCustomPluginsRepository().getByUser(params.userId);
+        return { plugins: plugins.map(p => ({ name: p.name, description: p.description, execCount: p.exec_count })) };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
     case 'run_plugin': {
       try {
         const pluginId = args.plugin_id as string || args.pluginId as string;
@@ -2225,6 +2335,106 @@ async function executeTool(
       } catch (e: any) {
         return { error: e.message };
       }
+    }
+
+    // ── Director tools ────────────────────────────────────────────
+    case 'assign_task': {
+      try {
+        const telegramUserId = args.telegram_user_id as number;
+        const task = args.task as string;
+        const deadline = args.deadline as string | undefined;
+        if (!telegramUserId || !task) return { error: 'telegram_user_id and task required' };
+        const { getAgentTasksRepository } = await import('../db/schema-extensions');
+        const taskRow = await getAgentTasksRepository().create(params.agentId, telegramUserId, params.userId, task, deadline);
+        // Send message to human via bot
+        try {
+          const { getBotInstance } = await import('../bot');
+          const bot = getBotInstance();
+          if (bot) {
+            const agentName = (params as any).agentName || `Agent #${params.agentId}`;
+            const deadlineStr = deadline ? `\n⏰ Дедлайн: ${deadline}` : '';
+            await bot.telegram.sendMessage(telegramUserId,
+              `📋 <b>Новая задача от AI Director</b>\n\n` +
+              `🤖 Агент: ${agentName}\n` +
+              `📝 Задача: ${task}${deadlineStr}`,
+              {
+                parse_mode: 'HTML' as const,
+                reply_markup: {
+                  inline_keyboard: [
+                    [
+                      { text: '✅ Принять', callback_data: `task_accept:${taskRow.id}` },
+                      { text: '❌ Отклонить', callback_data: `task_reject:${taskRow.id}` },
+                    ],
+                    [{ text: '💬 Обсудить', callback_data: `task_discuss:${taskRow.id}` }],
+                  ],
+                },
+              }
+            );
+          }
+        } catch (e: any) {
+          return { taskId: taskRow.id, warning: `Task created but notification failed: ${e.message}` };
+        }
+        return { taskId: taskRow.id, status: 'sent', message: `Задача отправлена пользователю ${telegramUserId}` };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'check_tasks': {
+      try {
+        const { getAgentTasksRepository } = await import('../db/schema-extensions');
+        const tasks = await getAgentTasksRepository().getByAgent(params.agentId);
+        return {
+          tasks: tasks.map(t => ({
+            id: t.id,
+            assignee: t.assignee_id,
+            task: t.task,
+            status: t.status,
+            deadline: t.deadline,
+            response: t.response,
+            created: t.created_at,
+          })),
+        };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'manage_agent': {
+      try {
+        const targetId = args.agent_id as number;
+        const action = args.action as string;
+        if (!targetId || !action) return { error: 'agent_id and action required' };
+        const db = (await import('./tools/db-tools')).getDBTools();
+        const agent = await db.getAgent(targetId, params.userId);
+        if (!agent.success || !agent.data) return { error: `Agent #${targetId} not found` };
+        if (action === 'status') return { id: targetId, name: agent.data.name, isActive: agent.data.isActive };
+        if (action === 'logs') {
+          const logs = await getAgentLogsRepository().getByAgent(targetId, 10);
+          return { logs: logs.map(l => ({ level: l.level, message: l.message, at: l.createdAt })) };
+        }
+        if (action === 'start' || action === 'stop') {
+          const { getRunnerAgent: getRunner } = await import('./sub-agents/runner');
+          const runner = getRunner();
+          if (action === 'start') await runner.runAgent({ agentId: targetId, userId: params.userId });
+          else await runner.pauseAgent(targetId, params.userId);
+          return { ok: true, action, agentId: targetId };
+        }
+        return { error: 'Unknown action' };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'send_report': {
+      try {
+        const targetUserId = args.user_id as number;
+        const report = args.report as string;
+        if (!targetUserId || !report) return { error: 'user_id and report required' };
+        const { getBotInstance } = await import('../bot');
+        const bot = getBotInstance();
+        if (!bot) return { error: 'Bot not available' };
+        const agentName = (params as any).agentName || `Agent #${params.agentId}`;
+        await bot.telegram.sendMessage(targetUserId,
+          `📊 <b>Отчёт от ${agentName}</b>\n\n${report}`,
+          { parse_mode: 'HTML' as const }
+        );
+        return { ok: true, message: `Report sent to ${targetUserId}` };
+      } catch (e: any) { return { error: e.message }; }
     }
 
     default:
@@ -2448,7 +2658,13 @@ ${msgs.length > 0 ? `\nСообщения от пользователя:\n${msgs
   ];
 
   // ── Agentic loop (up to 5 iterations) ──────────
-  const tools = buildToolDefinitions();
+  // Get agent role for conditional director tools
+  let agentRole = 'worker';
+  try {
+    const roleRes = await (await import('../db')).pool.query('SELECT role FROM builder_bot.agents WHERE id = $1', [params.agentId]);
+    if (roleRes.rows[0]?.role) agentRole = roleRes.rows[0].role;
+  } catch {}
+  const tools = buildToolDefinitions(agentRole);
   let totalToolCalls = 0;
   let finalContent: string | undefined;
   _tickNotifyFlag.set(params.agentId, false); // reset flag for this tick
@@ -2530,6 +2746,17 @@ ${msgs.length > 0 ? `\nСообщения от пользователя:\n${msgs
   }
 
   await logToDb(params.agentId, 'info', `[AI tick] done, tools=${totalToolCalls}, notified=${notifyWasCalled}`, params.userId);
+
+  // ── XP / Level gamification ──────────────────────────────────
+  try {
+    const xpGain = 10 + totalToolCalls * 5; // base 10 XP + 5 per tool call
+    await (await import('../db')).pool.query(
+      `UPDATE builder_bot.agents SET xp = COALESCE(xp, 0) + $1,
+       level = GREATEST(1, FLOOR(LOG(2, GREATEST(COALESCE(xp, 0) + $1, 1)) / 2) + 1)
+       WHERE id = $2`,
+      [xpGain, params.agentId]
+    );
+  } catch {}
 
   return { finalResponse: finalContent, toolCallCount: totalToolCalls };
 }

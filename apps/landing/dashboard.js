@@ -430,6 +430,7 @@ const pageLoadFns = {
   profile:     () => loadProfile(),
   wallet:      () => loadWallet(),
   settings:    () => loadSettings(),
+  network:     () => loadNetworkMap(),
 };
 
 // Stub functions for pages that don't have dedicated load logic yet
@@ -2134,5 +2135,259 @@ navigateTo = function(pageName) {
     if (overlay) overlay.classList.remove('open');
   }
 };
+
+// ===== AGENT NETWORK MAP (Neural Canvas) =====
+let _networkAnimId = null;
+let _networkNodes = [];
+let _networkDragNode = null;
+let _networkMouse = { x: 0, y: 0 };
+
+async function loadNetworkMap() {
+  const canvas = document.getElementById('agent-network-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+
+  // Set canvas size
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width || 900;
+  canvas.height = 500;
+
+  const data = await apiRequest('GET', '/api/agents');
+  const agents = (data.ok ? data.agents : []) || [];
+
+  if (!agents.length) {
+    ctx.fillStyle = '#555';
+    ctx.font = '16px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('No agents yet. Create one in the bot!', canvas.width / 2, canvas.height / 2);
+    return;
+  }
+
+  // Build nodes
+  _networkNodes = agents.map((a, i) => {
+    const role = a.role || 'worker';
+    const level = a.level || 1;
+    const radius = role === 'director' ? 28 + level : role === 'manager' ? 22 + level : 16 + Math.min(level, 5);
+    const color = role === 'director' ? '#ffd700' : a.isActive ? '#00ff88' : '#555';
+    const emoji = role === 'director' ? '\u{1F9E0}' : role === 'manager' ? '\u{1F4CA}' : '\u{1F916}';
+    return {
+      id: a.id, name: a.name || 'Agent #' + a.id,
+      role, level, xp: a.xp || 0,
+      isActive: a.isActive,
+      x: canvas.width / 2 + (Math.cos(i * 2.4) * 150) + (Math.random() - 0.5) * 80,
+      y: canvas.height / 2 + (Math.sin(i * 2.4) * 120) + (Math.random() - 0.5) * 60,
+      vx: 0, vy: 0,
+      radius, color, emoji,
+    };
+  });
+
+  // Build edges: director → all workers, managers → nearby workers
+  const edges = [];
+  const directors = _networkNodes.filter(n => n.role === 'director');
+  const managers = _networkNodes.filter(n => n.role === 'manager');
+  const workers = _networkNodes.filter(n => n.role === 'worker');
+
+  directors.forEach(d => {
+    _networkNodes.forEach(n => {
+      if (n.id !== d.id) edges.push({ from: d, to: n });
+    });
+  });
+  managers.forEach(m => {
+    workers.forEach(w => edges.push({ from: m, to: w }));
+  });
+  // If no directors/managers, connect all agents in chain
+  if (!directors.length && !managers.length && _networkNodes.length > 1) {
+    for (let i = 0; i < _networkNodes.length - 1; i++) {
+      edges.push({ from: _networkNodes[i], to: _networkNodes[i + 1] });
+    }
+  }
+
+  // Stars background
+  const stars = Array.from({ length: 60 }, () => ({
+    x: Math.random() * canvas.width,
+    y: Math.random() * canvas.height,
+    r: Math.random() * 1.2,
+    a: Math.random() * 0.5 + 0.1,
+  }));
+
+  // Particles on edges
+  const particles = edges.map(() => ({ t: Math.random(), speed: 0.003 + Math.random() * 0.005 }));
+
+  // Tooltip
+  const tooltip = document.getElementById('network-tooltip');
+
+  // Mouse interaction
+  canvas.addEventListener('mousemove', (e) => {
+    const r = canvas.getBoundingClientRect();
+    _networkMouse.x = e.clientX - r.left;
+    _networkMouse.y = e.clientY - r.top;
+
+    if (_networkDragNode) {
+      _networkDragNode.x = _networkMouse.x;
+      _networkDragNode.y = _networkMouse.y;
+      _networkDragNode.vx = 0;
+      _networkDragNode.vy = 0;
+    }
+
+    // Tooltip hover
+    let hovered = null;
+    for (const n of _networkNodes) {
+      const dx = _networkMouse.x - n.x, dy = _networkMouse.y - n.y;
+      if (dx * dx + dy * dy < n.radius * n.radius) { hovered = n; break; }
+    }
+    if (hovered && tooltip) {
+      tooltip.style.display = 'block';
+      tooltip.style.left = (e.clientX + 12) + 'px';
+      tooltip.style.top = (e.clientY - 10) + 'px';
+      tooltip.innerHTML = `<b>${escHtml(hovered.name)}</b><br>` +
+        `Role: ${hovered.role} | Lv.${hovered.level}<br>` +
+        `XP: ${hovered.xp} | ${hovered.isActive ? '🟢 Active' : '⏸ Paused'}`;
+    } else if (tooltip) {
+      tooltip.style.display = 'none';
+    }
+  });
+
+  canvas.addEventListener('mousedown', (e) => {
+    for (const n of _networkNodes) {
+      const dx = _networkMouse.x - n.x, dy = _networkMouse.y - n.y;
+      if (dx * dx + dy * dy < n.radius * n.radius) { _networkDragNode = n; break; }
+    }
+  });
+  canvas.addEventListener('mouseup', () => { _networkDragNode = null; });
+  canvas.addEventListener('mouseleave', () => {
+    _networkDragNode = null;
+    if (tooltip) tooltip.style.display = 'none';
+  });
+
+  // Animation loop
+  let time = 0;
+  if (_networkAnimId) cancelAnimationFrame(_networkAnimId);
+
+  function animate() {
+    time += 0.016;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Background gradient
+    const bg = ctx.createRadialGradient(canvas.width/2, canvas.height/2, 0, canvas.width/2, canvas.height/2, canvas.width/2);
+    bg.addColorStop(0, '#0d1526');
+    bg.addColorStop(1, '#070b14');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Grid
+    ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x < canvas.width; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke(); }
+    for (let y = 0; y < canvas.height; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke(); }
+
+    // Stars
+    stars.forEach(s => {
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,255,255,${s.a + Math.sin(time * 2 + s.x) * 0.1})`;
+      ctx.fill();
+    });
+
+    // Force-directed physics
+    const k = 8000;
+    for (let i = 0; i < _networkNodes.length; i++) {
+      for (let j = i + 1; j < _networkNodes.length; j++) {
+        const a = _networkNodes[i], b = _networkNodes[j];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
+        const force = k / (dist * dist);
+        const fx = (dx / dist) * force, fy = (dy / dist) * force;
+        a.vx -= fx; a.vy -= fy;
+        b.vx += fx; b.vy += fy;
+      }
+    }
+    edges.forEach(e => {
+      const dx = e.to.x - e.from.x, dy = e.to.y - e.from.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const spring = 0.005;
+      const target = 120;
+      const force = (dist - target) * spring;
+      const fx = (dx / dist) * force, fy = (dy / dist) * force;
+      e.from.vx += fx; e.from.vy += fy;
+      e.to.vx -= fx; e.to.vy -= fy;
+    });
+    _networkNodes.forEach(n => {
+      if (n === _networkDragNode) return;
+      n.vx *= 0.92; n.vy *= 0.92;
+      n.x += n.vx; n.y += n.vy;
+      n.x = Math.max(n.radius, Math.min(canvas.width - n.radius, n.x));
+      n.y = Math.max(n.radius, Math.min(canvas.height - n.radius, n.y));
+    });
+
+    // Draw edges
+    edges.forEach((e, idx) => {
+      const grad = ctx.createLinearGradient(e.from.x, e.from.y, e.to.x, e.to.y);
+      grad.addColorStop(0, e.from.color + '60');
+      grad.addColorStop(1, e.to.color + '60');
+      ctx.beginPath();
+      ctx.moveTo(e.from.x, e.from.y);
+      ctx.lineTo(e.to.x, e.to.y);
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // Particle
+      const p = particles[idx];
+      p.t = (p.t + p.speed) % 1;
+      const px = e.from.x + (e.to.x - e.from.x) * p.t;
+      const py = e.from.y + (e.to.y - e.from.y) * p.t;
+      ctx.beginPath();
+      ctx.arc(px, py, 2, 0, Math.PI * 2);
+      ctx.fillStyle = e.from.color;
+      ctx.fill();
+    });
+
+    // Draw nodes
+    _networkNodes.forEach(n => {
+      const pulse = n.isActive ? Math.sin(time * 3 + n.id) * 3 : 0;
+      const r = n.radius + pulse;
+
+      // Glow
+      const glow = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, r * 2);
+      glow.addColorStop(0, n.color + '40');
+      glow.addColorStop(1, n.color + '00');
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, r * 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Circle
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = n.color + '30';
+      ctx.fill();
+      ctx.strokeStyle = n.color;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Emoji
+      ctx.font = `${Math.max(12, r * 0.7)}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(n.emoji, n.x, n.y);
+
+      // Name below
+      ctx.font = '10px sans-serif';
+      ctx.fillStyle = '#aaa';
+      ctx.fillText(n.name.slice(0, 15), n.x, n.y + r + 12);
+
+      // Level badge
+      if (n.level > 1) {
+        ctx.font = 'bold 9px sans-serif';
+        ctx.fillStyle = n.color;
+        ctx.fillText('Lv.' + n.level, n.x, n.y - r - 6);
+      }
+    });
+
+    _networkAnimId = requestAnimationFrame(animate);
+  }
+
+  animate();
+}
 
 console.log('TON Agent Platform Dashboard v2.0 loaded successfully!');

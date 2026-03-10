@@ -141,6 +141,13 @@
             </svg>
             <span data-en="Connectors" data-ru="Коннекторы">Connectors</span>
           </a>
+          <a href="#" class="nav-item" data-page="network">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/>
+              <line x1="12" y1="8" x2="5" y2="16"/><line x1="12" y1="8" x2="19" y2="16"/>
+            </svg>
+            <span data-en="Agent Map" data-ru="Карта агентов">Agent Map</span>
+          </a>
         </div>
         
         <div class="nav-section">
@@ -1342,6 +1349,25 @@
               <span data-en="To manage or delete all agents, open the bot: " data-ru="Для управления или удаления агентов откройте бота: ">To manage or delete all agents, open the bot: </span>
               <a href="https://t.me/TonAgentPlatformBot" target="_blank" style="color:var(--primary)">@TonAgentPlatformBot</a>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Network Map Page -->
+      <div id="network-page" class="page">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title" data-en="Agent Network Map" data-ru="Карта сети агентов">Agent Network Map</h1>
+            <p class="page-subtitle" data-en="Neural visualization of your agent ecosystem" data-ru="Нейронная визуализация экосистемы агентов">Neural visualization of your agent ecosystem</p>
+          </div>
+        </div>
+        <div class="page-content">
+          <canvas id="agent-network-canvas"></canvas>
+          <div id="network-tooltip" style="display:none;position:fixed;pointer-events:none;background:rgba(10,15,28,0.95);border:1px solid rgba(0,255,136,0.3);border-radius:8px;padding:10px 14px;color:#fff;font-size:13px;z-index:999;backdrop-filter:blur(8px);"></div>
+          <div class="network-legend">
+            <span class="legend-item"><span class="legend-dot active"></span> Active</span>
+            <span class="legend-item"><span class="legend-dot paused"></span> Paused</span>
+            <span class="legend-item"><span class="legend-dot director"></span> Director</span>
           </div>
         </div>
       </div>

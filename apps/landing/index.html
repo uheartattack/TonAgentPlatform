@@ -67,16 +67,16 @@
       </div>
       <div class="hero-stats">
         <div class="stat">
-          <div class="stat-value">7</div>
-          <div class="stat-label" data-en="AI Providers" data-ru="AI-провайдеров">AI Providers</div>
+          <div class="stat-value" id="stat-agents-created">--</div>
+          <div class="stat-label" data-en="Agents Created" data-ru="Агентов создано">Agents Created</div>
         </div>
         <div class="stat">
-          <div class="stat-value">22</div>
-          <div class="stat-label" data-en="Templates" data-ru="Шаблонов">Templates</div>
+          <div class="stat-value" id="stat-active-agents">--</div>
+          <div class="stat-label" data-en="Active Now" data-ru="Активных сейчас">Active Now</div>
         </div>
         <div class="stat">
-          <div class="stat-value">12</div>
-          <div class="stat-label" data-en="Plugins" data-ru="Плагинов">Plugins</div>
+          <div class="stat-value" id="stat-total-users">--</div>
+          <div class="stat-label" data-en="Users" data-ru="Пользователей">Users</div>
         </div>
         <div class="stat">
           <div class="stat-value">$0</div>
@@ -1376,6 +1376,30 @@ document.addEventListener('DOMContentLoaded', () => {
     counters.forEach(c => observer.observe(c));
   }
 });
+
+// Live stats from API
+(async () => {
+  try {
+    const base = location.hostname === 'localhost' ? 'http://localhost:3001' : location.origin;
+    const d = await (await fetch(base + '/api/stats')).json();
+    if (d.ok) {
+      const animate = (id, val) => {
+        const el = document.getElementById(id);
+        if (!el || !val) return;
+        let cur = 0;
+        const step = Math.max(1, Math.floor(val / 40));
+        const t = setInterval(() => {
+          cur += step;
+          if (cur >= val) { cur = val; clearInterval(t); }
+          el.textContent = cur + '+';
+        }, 30);
+      };
+      animate('stat-agents-created', d.agentsCreated);
+      animate('stat-active-agents', d.activeAgents);
+      animate('stat-total-users', d.totalUsers);
+    }
+  } catch (e) { /* fallback: keep "--" */ }
+})();
 
   </script>
 </body>

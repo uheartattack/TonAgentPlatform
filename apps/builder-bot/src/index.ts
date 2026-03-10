@@ -27,6 +27,8 @@ import { initSelfImprovementSystem } from './self-improvement';
 import {
   initAIProposalsRepository,
   initAgentDailySpendRepository,
+  initCustomPluginsRepository,
+  initAgentTasksRepository,
   runAIProposalsMigrations,
 } from './db/schema-extensions';
 
@@ -77,6 +79,8 @@ async function main() {
   // Инициализация AI-репозиториев (proposals + daily spend)
   initAIProposalsRepository(pool);
   initAgentDailySpendRepository(pool);
+  initCustomPluginsRepository(pool);
+  initAgentTasksRepository(pool);
   await runAIProposalsMigrations(pool);
 
   // Восстановить schedulers для агентов которые были активны до перезапуска
