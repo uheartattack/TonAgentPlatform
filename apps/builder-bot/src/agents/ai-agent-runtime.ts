@@ -1235,7 +1235,7 @@ function buildToolDefinitions(agentRole?: string, enabledCapabilities?: string[]
     // Always allow core tools
     ['get_state', 'set_state', 'notify', 'notify_rich', 'apply_plugin', 'remove_plugin',
      'list_plugins', 'suggest_plugin'].forEach(t => allowed.add(t));
-    return allTools.filter(t => allowed.has(t.function.name));
+    return allTools.filter(t => allowed.has((t as any).function.name));
   }
 
   return allTools;
