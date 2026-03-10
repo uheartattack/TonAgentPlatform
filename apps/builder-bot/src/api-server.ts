@@ -201,7 +201,23 @@ export function startApiServer() {
     try {
       const userId = (req as any).userId as number;
       const r = await getDBTools().getUserAgents(userId);
-      res.json({ ok: true, agents: r.data || [] });
+      // Enrich with role/xp/level
+      const agents = r.data || [];
+      try {
+        const roleRes = await pool.query(
+          'SELECT id, role, xp, level FROM builder_bot.agents WHERE user_id = $1', [userId]
+        );
+        const roleMap = new Map(roleRes.rows.map((r: any) => [r.id, r]));
+        for (const a of agents) {
+          const extra = roleMap.get(a.id);
+          if (extra) {
+            (a as any).role = extra.role || 'worker';
+            (a as any).xp = extra.xp || 0;
+            (a as any).level = extra.level || 1;
+          }
+        }
+      } catch {}
+      res.json({ ok: true, agents });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -1052,6 +1068,25 @@ export function startApiServer() {
       else apiRateLimits.set(k, fresh);
     }
   }, 600_000);
+
+  // ── Public stats (no auth) ────────────────────────────────
+  app.get('/api/stats', async (_req: Request, res: Response) => {
+    try {
+      const [agents, active, users] = await Promise.all([
+        pool.query('SELECT COUNT(*) as c FROM builder_bot.agents'),
+        pool.query("SELECT COUNT(*) as c FROM builder_bot.agents WHERE status = 'active'"),
+        pool.query('SELECT COUNT(DISTINCT user_id) as c FROM builder_bot.agents'),
+      ]);
+      res.json({
+        ok: true,
+        agentsCreated: parseInt(agents.rows[0].c) || 0,
+        activeAgents: parseInt(active.rows[0].c) || 0,
+        totalUsers: parseInt(users.rows[0].c) || 0,
+      });
+    } catch {
+      res.json({ ok: false });
+    }
+  });
 
   // Fallback — index.html
   app.get('/{*path}', (_req: Request, res: Response) => {

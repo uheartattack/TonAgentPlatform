@@ -184,6 +184,42 @@ export async function runMigrations(pool: Pool): Promise<void> {
         ON builder_bot.balance_transactions (tx_hash)
     `);
 
+    // user_custom_plugins
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.user_custom_plugins (
+        id          SERIAL PRIMARY KEY,
+        user_id     BIGINT NOT NULL,
+        name        TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        code        TEXT NOT NULL,
+        is_active   BOOLEAN NOT NULL DEFAULT true,
+        exec_count  INTEGER NOT NULL DEFAULT 0,
+        created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+        CONSTRAINT ucp_unique UNIQUE (user_id, name)
+      )
+    `);
+
+    // agent_tasks (Director → human tasks)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.agent_tasks (
+        id             SERIAL PRIMARY KEY,
+        agent_id       INTEGER NOT NULL,
+        assignee_id    BIGINT NOT NULL,
+        assigner_id    BIGINT NOT NULL,
+        task           TEXT NOT NULL,
+        status         TEXT NOT NULL DEFAULT 'pending',
+        deadline       TEXT,
+        response       TEXT,
+        created_at     TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at     TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    // New columns on agents: role, xp, level
+    await client.query(`ALTER TABLE builder_bot.agents ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'worker'`);
+    await client.query(`ALTER TABLE builder_bot.agents ADD COLUMN IF NOT EXISTS xp INTEGER DEFAULT 0`);
+    await client.query(`ALTER TABLE builder_bot.agents ADD COLUMN IF NOT EXISTS level INTEGER DEFAULT 1`);
+
     await client.query('COMMIT');
     console.log('✅ DB migrations applied (schema-extensions)');
   } catch (e) {
@@ -1125,4 +1161,117 @@ export function initAgentDailySpendRepository(pool: Pool): AgentDailySpendReposi
 export function getAgentDailySpendRepository(): AgentDailySpendRepository {
   if (!agentDailySpendRepo) throw new Error('AgentDailySpendRepository not initialized');
   return agentDailySpendRepo;
+}
+
+// ─── UserCustomPluginsRepository ──────────────────────────────────────────
+export class UserCustomPluginsRepository {
+  constructor(private pool: Pool) {}
+
+  async getByUser(userId: number): Promise<any[]> {
+    const res = await this.pool.query(
+      'SELECT * FROM builder_bot.user_custom_plugins WHERE user_id = $1 AND is_active = true ORDER BY created_at DESC',
+      [userId]
+    );
+    return res.rows;
+  }
+
+  async getByName(userId: number, name: string): Promise<any | null> {
+    const res = await this.pool.query(
+      'SELECT * FROM builder_bot.user_custom_plugins WHERE user_id = $1 AND name = $2 AND is_active = true LIMIT 1',
+      [userId, name]
+    );
+    return res.rows[0] || null;
+  }
+
+  async create(userId: number, name: string, description: string, code: string): Promise<any> {
+    const res = await this.pool.query(
+      `INSERT INTO builder_bot.user_custom_plugins (user_id, name, description, code)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT ON CONSTRAINT ucp_unique DO UPDATE SET code = $4, description = $3, is_active = true
+       RETURNING *`,
+      [userId, name, description, code]
+    );
+    return res.rows[0];
+  }
+
+  async remove(userId: number, name: string): Promise<boolean> {
+    const res = await this.pool.query(
+      'UPDATE builder_bot.user_custom_plugins SET is_active = false WHERE user_id = $1 AND name = $2',
+      [userId, name]
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  async incrementExecCount(userId: number, name: string): Promise<void> {
+    await this.pool.query(
+      'UPDATE builder_bot.user_custom_plugins SET exec_count = exec_count + 1 WHERE user_id = $1 AND name = $2',
+      [userId, name]
+    );
+  }
+
+  async countByUser(userId: number): Promise<number> {
+    const res = await this.pool.query(
+      'SELECT COUNT(*) as c FROM builder_bot.user_custom_plugins WHERE user_id = $1 AND is_active = true',
+      [userId]
+    );
+    return parseInt(res.rows[0].c);
+  }
+}
+
+let customPluginsRepo: UserCustomPluginsRepository | null = null;
+export function initCustomPluginsRepository(pool: Pool): UserCustomPluginsRepository {
+  if (!customPluginsRepo) customPluginsRepo = new UserCustomPluginsRepository(pool);
+  return customPluginsRepo;
+}
+export function getCustomPluginsRepository(): UserCustomPluginsRepository {
+  if (!customPluginsRepo) throw new Error('UserCustomPluginsRepository not initialized');
+  return customPluginsRepo;
+}
+
+// ─── AgentTasksRepository (Director → human tasks) ────────────────────────
+export class AgentTasksRepository {
+  constructor(private pool: Pool) {}
+
+  async create(agentId: number, assigneeId: number, assignerId: number, task: string, deadline?: string): Promise<any> {
+    const res = await this.pool.query(
+      `INSERT INTO builder_bot.agent_tasks (agent_id, assignee_id, assigner_id, task, deadline)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [agentId, assigneeId, assignerId, task, deadline || null]
+    );
+    return res.rows[0];
+  }
+
+  async getByAgent(agentId: number): Promise<any[]> {
+    const res = await this.pool.query(
+      'SELECT * FROM builder_bot.agent_tasks WHERE agent_id = $1 ORDER BY created_at DESC LIMIT 50',
+      [agentId]
+    );
+    return res.rows;
+  }
+
+  async updateStatus(taskId: number, status: string, response?: string): Promise<void> {
+    await this.pool.query(
+      'UPDATE builder_bot.agent_tasks SET status = $1, response = $2, updated_at = NOW() WHERE id = $3',
+      [status, response || null, taskId]
+    );
+  }
+
+  async getByAssignee(assigneeId: number, status?: string): Promise<any[]> {
+    const query = status
+      ? 'SELECT * FROM builder_bot.agent_tasks WHERE assignee_id = $1 AND status = $2 ORDER BY created_at DESC LIMIT 20'
+      : 'SELECT * FROM builder_bot.agent_tasks WHERE assignee_id = $1 ORDER BY created_at DESC LIMIT 20';
+    const params = status ? [assigneeId, status] : [assigneeId];
+    const res = await this.pool.query(query, params);
+    return res.rows;
+  }
+}
+
+let agentTasksRepo: AgentTasksRepository | null = null;
+export function initAgentTasksRepository(pool: Pool): AgentTasksRepository {
+  if (!agentTasksRepo) agentTasksRepo = new AgentTasksRepository(pool);
+  return agentTasksRepo;
+}
+export function getAgentTasksRepository(): AgentTasksRepository {
+  if (!agentTasksRepo) throw new Error('AgentTasksRepository not initialized');
+  return agentTasksRepo;
 }

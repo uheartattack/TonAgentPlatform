@@ -299,6 +299,9 @@ interface PendingNameAsk {
 }
 const pendingNameAsk = new Map<number, PendingNameAsk>(); // userId → state
 
+// State machine для пользовательских плагинов
+const pendingPluginCreation = new Map<number, { step: 'name' | 'description' | 'code'; name?: string; description?: string }>();
+
 const SCHEDULE_LABELS: Record<string, string> = {
   manual:   'вручную',
   '1min':   'каждую минуту',
@@ -747,6 +750,20 @@ bot.command('start', async (ctx) => {
     return;
   }
 
+  // ── Share deeplink: /start share_ID ──
+  if (startPayload.startsWith('share_')) {
+    const listingId = parseInt(startPayload.replace('share_', ''), 10);
+    if (!isNaN(listingId)) {
+      const listing = await getMarketplaceRepository().getListing(listingId);
+      if (!listing || !listing.isActive) {
+        await safeReply(ctx, '❌ Агент не найден или снят с продажи.', {});
+        return;
+      }
+      await showListingDetail(ctx, listingId, userId);
+      return;
+    }
+  }
+
   await getMemoryManager().clearHistory(userId);
   const lang = existingLang || 'ru';
   await showWelcome(ctx, userId, name, lang);
@@ -894,6 +911,52 @@ bot.command('stats', (ctx) => showStats(ctx, ctx.from.id));
 bot.command('sub', (ctx) => showSubscription(ctx));
 bot.command('plans', (ctx) => showPlans(ctx));
 bot.command('model', (ctx) => showModelSelector(ctx));
+
+// ── /plugin — пользовательские плагины ──────────────────────────
+bot.command('plugin', async (ctx) => {
+  const userId = ctx.from.id;
+  const args = ctx.message.text.split(' ').slice(1);
+  const sub = args[0]?.toLowerCase();
+
+  if (sub === 'list' || !sub) {
+    const { getCustomPluginsRepository } = await import('./db/schema-extensions');
+    const plugins = await getCustomPluginsRepository().getByUser(userId);
+    if (!plugins.length) {
+      await safeReply(ctx, '📦 У вас нет плагинов.\n\nИспользуйте /plugin create чтобы создать.', {});
+      return;
+    }
+    let text = '📦 <b>Ваши плагины:</b>\n\n';
+    for (const p of plugins) {
+      text += `• <b>${escHtml(p.name)}</b> — ${escHtml(p.description || 'без описания')}\n  📊 Выполнений: ${p.exec_count}\n\n`;
+    }
+    text += '<i>Удалить: /plugin delete имя</i>';
+    await safeReply(ctx, text, { parse_mode: 'HTML' });
+    return;
+  }
+
+  if (sub === 'create') {
+    const { getCustomPluginsRepository } = await import('./db/schema-extensions');
+    const count = await getCustomPluginsRepository().countByUser(userId);
+    if (count >= 10) {
+      await safeReply(ctx, '❌ Максимум 10 плагинов на аккаунт.', {});
+      return;
+    }
+    pendingPluginCreation.set(userId, { step: 'name' });
+    await safeReply(ctx, '🔌 <b>Создание плагина</b>\n\nВведите имя плагина (2-30 символов, только буквы, цифры, _ и -):', { parse_mode: 'HTML' });
+    return;
+  }
+
+  if (sub === 'delete') {
+    const name = args[1];
+    if (!name) { await safeReply(ctx, '❌ Укажите имя: /plugin delete имя', {}); return; }
+    const { getCustomPluginsRepository } = await import('./db/schema-extensions');
+    const ok = await getCustomPluginsRepository().remove(userId, name);
+    await safeReply(ctx, ok ? `✅ Плагин "${escHtml(name)}" удалён.` : '❌ Плагин не найден.', { parse_mode: 'HTML' });
+    return;
+  }
+
+  await safeReply(ctx, '📦 <b>Плагины</b>\n\n/plugin list — список\n/plugin create — создать\n/plugin delete имя — удалить', { parse_mode: 'HTML' });
+});
 
 // ── /tglogin — авторизация Telegram для Fragment API ──────────────
 bot.command('tglogin', async (ctx) => {
@@ -2374,6 +2437,75 @@ bot.on('callback_query', async (ctx) => {
     await ctx.answerCbQuery();
     const listingId = parseInt(data.split(':')[1]);
     await showListingDetail(ctx, listingId, userId);
+    return;
+  }
+
+  // ── Clarification callback (wizard) ──
+  if (data.startsWith('clarify:')) {
+    await ctx.answerCbQuery();
+    const answer = decodeURIComponent(data.replace('clarify:', ''));
+    const result = await getOrchestrator().processMessage(userId, answer, ctx.from?.username);
+    await sendResult(ctx, result);
+    return;
+  }
+
+  // ── Role management ──
+  if (data.startsWith('set_role:')) {
+    await ctx.answerCbQuery();
+    const agentId = parseInt(data.split(':')[1]);
+    await editOrReply(ctx,
+      `🎭 <b>Выберите роль для агента #${agentId}</b>\n\n` +
+      `🤖 <b>Worker</b> — стандартный агент, выполняет задачи\n` +
+      `📊 <b>Manager</b> — управляет процессами, координирует\n` +
+      `🧠 <b>Director</b> — может назначать задачи людям и управлять другими агентами`,
+      {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: '🤖 Worker', callback_data: `role_set:${agentId}:worker` },
+              { text: '📊 Manager', callback_data: `role_set:${agentId}:manager` },
+              { text: '🧠 Director', callback_data: `role_set:${agentId}:director` },
+            ],
+            [{ text: `${peb('back')} Назад`, callback_data: `agent:${agentId}` }],
+          ],
+        },
+      }
+    );
+    return;
+  }
+  if (data.startsWith('role_set:')) {
+    await ctx.answerCbQuery();
+    const parts = data.split(':');
+    const agentId = parseInt(parts[1]);
+    const role = parts[2];
+    try {
+      await dbPool.query('UPDATE builder_bot.agents SET role = $1 WHERE id = $2 AND user_id = $3', [role, agentId, userId]);
+      const emoji = role === 'director' ? '🧠' : role === 'manager' ? '📊' : '🤖';
+      await editOrReply(ctx, `${emoji} Роль агента #${agentId} обновлена на <b>${role}</b>`, { parse_mode: 'HTML' });
+    } catch (e: any) {
+      await editOrReply(ctx, `❌ Ошибка: ${escHtml(e.message)}`, { parse_mode: 'HTML' });
+    }
+    return;
+  }
+
+  // ── Task callbacks (Director → human) ──
+  if (data.startsWith('task_accept:') || data.startsWith('task_reject:')) {
+    await ctx.answerCbQuery();
+    const taskId = parseInt(data.split(':')[1]);
+    const status = data.startsWith('task_accept') ? 'accepted' : 'rejected';
+    try {
+      const { getAgentTasksRepository } = await import('./db/schema-extensions');
+      await getAgentTasksRepository().updateStatus(taskId, status);
+      await editOrReply(ctx, status === 'accepted' ? '✅ Задача принята!' : '❌ Задача отклонена.', {});
+    } catch (e: any) {
+      await editOrReply(ctx, `Ошибка: ${e.message}`, {});
+    }
+    return;
+  }
+  if (data.startsWith('task_discuss:')) {
+    await ctx.answerCbQuery();
+    await safeReply(ctx, '💬 Напишите ответ к задаче. Он будет передан агенту.', {});
     return;
   }
 
@@ -4079,6 +4211,61 @@ bot.on(message('text'), async (ctx) => {
     return;
   }
 
+  // ── Ожидаем ввод данных плагина ──────────────────────────
+  if (pendingPluginCreation.has(userId)) {
+    const state = pendingPluginCreation.get(userId)!;
+    if (state.step === 'name') {
+      const name = trimmed.replace(/[^a-zA-Z0-9_\-]/g, '');
+      if (name.length < 2 || name.length > 30) {
+        await safeReply(ctx, '❌ Имя должно быть 2-30 символов (буквы, цифры, _, -).', {});
+        return;
+      }
+      state.name = name;
+      state.step = 'description';
+      await safeReply(ctx, `✅ Имя: <b>${escHtml(name)}</b>\n\nТеперь введите краткое описание плагина:`, { parse_mode: 'HTML' });
+      return;
+    }
+    if (state.step === 'description') {
+      state.description = trimmed.slice(0, 200);
+      state.step = 'code';
+      await safeReply(ctx,
+        `✅ Описание сохранено.\n\n` +
+        `Теперь отправьте JavaScript код плагина (до 5KB).\n\n` +
+        `<i>Доступные объекты: params (входные данные), state (хранилище), fetch, console.log</i>\n` +
+        `<i>Функция должна вернуть результат через return.</i>`,
+        { parse_mode: 'HTML' }
+      );
+      return;
+    }
+    if (state.step === 'code') {
+      pendingPluginCreation.delete(userId);
+      const code = trimmed;
+      if (code.length > 5120) {
+        await safeReply(ctx, '❌ Код слишком большой (макс 5KB).', {});
+        return;
+      }
+      // Basic security check
+      const dangerous = ['process.', 'require(', 'child_process', '__dirname', '__filename', 'global.', 'eval('];
+      const found = dangerous.find(d => code.includes(d));
+      if (found) {
+        await safeReply(ctx, `❌ Код содержит запрещённую конструкцию: <code>${escHtml(found)}</code>`, { parse_mode: 'HTML' });
+        return;
+      }
+      try {
+        const { getCustomPluginsRepository } = await import('./db/schema-extensions');
+        await getCustomPluginsRepository().create(userId, state.name!, state.description!, code);
+        await safeReply(ctx,
+          `✅ <b>Плагин "${escHtml(state.name!)}" создан!</b>\n\n` +
+          `Ваши AI-агенты теперь могут использовать его через инструмент <code>run_custom_plugin</code>.`,
+          { parse_mode: 'HTML' }
+        );
+      } catch (e: any) {
+        await safeReply(ctx, `❌ Ошибка: ${escHtml(e.message)}`, { parse_mode: 'HTML' });
+      }
+      return;
+    }
+  }
+
   // ── Ожидаем глобальный API ключ ──────────────────────────
   if (pendingApiKey.has(userId)) {
     const pending = pendingApiKey.get(userId)!;
@@ -4852,11 +5039,29 @@ async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
       ? (lang === 'ru' ? 'вчера' : 'yesterday')
       : lang === 'ru' ? `${daysAgo}д назад` : `${daysAgo}d ago`;
 
+    // Role + XP
+    let agentRole = 'worker';
+    let agentXp = 0;
+    let agentLevel = 1;
+    try {
+      const roleRes = await dbPool.query('SELECT role, xp, level FROM builder_bot.agents WHERE id = $1', [agentId]);
+      if (roleRes.rows[0]) {
+        agentRole = roleRes.rows[0].role || 'worker';
+        agentXp = roleRes.rows[0].xp || 0;
+        agentLevel = roleRes.rows[0].level || 1;
+      }
+    } catch {}
+    const roleEmoji = agentRole === 'director' ? '🧠' : agentRole === 'manager' ? '📊' : '🤖';
+    const roleName = agentRole === 'director' ? 'Director' : agentRole === 'manager' ? 'Manager' : 'Worker';
+    const levelBar = '█'.repeat(Math.min(agentLevel, 10)) + '░'.repeat(Math.max(0, 10 - agentLevel));
+
     const text =
       `${statusIcon} <b>${name}</b>  #${a.id}\n` +
       `${div()}\n` +
       `${lang === 'ru' ? 'Статус' : 'Status'}: <b>${statusText}</b>\n` +
       `${triggerIcon} ${escHtml(triggerText + intervalLabel)}\n` +
+      `${roleEmoji} ${roleName} · Lv.${agentLevel} · ${agentXp} XP\n` +
+      `[${levelBar}]\n` +
       (dateLabel ? `${pe('calendar')} ${lang === 'ru' ? 'Создан' : 'Created'}: <i>${dateLabel}</i>\n` : '') +
       (hasError ? `\n⚠️ <b>${lang === 'ru' ? 'Последняя ошибка:' : 'Last error:'}</b>\n<code>${escHtml(lastErr!.error.slice(0, 120))}</code>` : '') +
       (desc ? `\n<i>${desc}</i>` : '');
@@ -4928,7 +5133,12 @@ async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
       keyboard.push([{ text: `🧑‍💻 Userbot`, callback_data: `deploy_userbot:${agentId}` }]);
     }
 
-    // Section 7 — Auto-repair (only when error detected)
+    // Section 7 — Role management
+    keyboard.push([
+      { text: `${roleEmoji} ${ru2 ? 'Роль' : 'Role'}: ${roleName}`, callback_data: `set_role:${agentId}` },
+    ]);
+
+    // Section 8 — Auto-repair (only when error detected)
     if (hasError) {
       keyboard.push([{ text: `🔧 ${ru2 ? 'AI Автопочинка' : 'AI Auto-repair'}`, callback_data: `auto_repair:${agentId}` }]);
     }
@@ -5408,6 +5618,11 @@ async function showListingDetail(ctx: Context, listingId: number, userId: number
     if (alreadyBought) {
       btns.push([{ text: `${peb('rocket')} Запустить`, callback_data: `run_agent:${listing.agentId}` }]);
     }
+    // Share button
+    const botUsername = process.env.BOT_USERNAME || 'TonAgentPlatformBot';
+    const shareUrl = `https://t.me/${botUsername}?start=share_${listingId}`;
+    btns.push([{ text: '🔗 Поделиться', url: `https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(`${listing.name} — AI Agent on TON`)}` }]);
+
     btns.push([{ text: `${peb('back')} Назад`, callback_data: 'mkt_community' }, { text: `${peb('store')} Маркетплейс`, callback_data: 'marketplace' }]);
 
     await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: btns } });
