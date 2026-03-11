@@ -31,11 +31,11 @@ export const PLANS: Record<string, Plan> = {
     generationsPerMonth: 0,       // нет включённых — платно
     pricePerGeneration: 10,       // 10 TON за генерацию
     features: [
-      '3 агента',
-      '1 активный одновременно',
-      'Ручной запуск',
-      'Маркетплейс шаблонов',
-      '10 TON за генерацию AI',
+      '3 agents',
+      '1 active simultaneously',
+      'All trigger types',
+      'Marketplace access',
+      '10 TON per AI generation',
     ],
   },
   starter: {
@@ -49,12 +49,12 @@ export const PLANS: Record<string, Plan> = {
     generationsPerMonth: 30,
     pricePerGeneration: 3,
     features: [
-      '15 агентов',
-      '3 активных одновременно',
-      'Запуск по расписанию',
-      '30 генераций AI/мес',
-      'Все шаблоны маркетплейса',
-      'Приоритетная очередь AI',
+      '15 agents',
+      '3 active simultaneously',
+      '30 AI generations/mo',
+      '3 TON per extra generation',
+      'All trigger types',
+      'Priority AI queue',
     ],
   },
   pro: {
@@ -68,13 +68,12 @@ export const PLANS: Record<string, Plan> = {
     generationsPerMonth: 150,
     pricePerGeneration: 1,
     features: [
-      '100 агентов',
-      '20 активных одновременно',
-      'Webhook триггеры',
-      'Workflow цепочки',
-      '150 генераций AI/мес',
-      'API доступ',
-      'Поддержка 24/7',
+      '100 agents',
+      '20 active simultaneously',
+      '150 AI generations/mo',
+      '1 TON per extra generation',
+      'All trigger types + API',
+      'Priority support',
     ],
   },
   unlimited: {
@@ -88,12 +87,12 @@ export const PLANS: Record<string, Plan> = {
     generationsPerMonth: -1,
     pricePerGeneration: 0,
     features: [
-      'Безлимит агентов',
-      'Безлимит активных',
-      'Безлимит генераций AI',
-      'Всё включено',
-      'Webhook + Workflow + API',
-      'SLA 99.9% + выделенная поддержка',
+      'Unlimited agents',
+      'Unlimited active',
+      'Unlimited AI generations',
+      'Free generations included',
+      'All features included',
+      'Dedicated support',
     ],
   },
 };
@@ -389,6 +388,17 @@ export async function confirmPayment(
   }
 
   return { success: true, plan, expiresAt };
+}
+
+// ── Обновить in-memory кэш подписки (для API server) ──────
+export function updateSubscriptionCache(userId: number, planId: string, expiresAt: Date | null): void {
+  subscriptions.set(userId, {
+    userId,
+    planId,
+    expiresAt,
+    isActive: true,
+    createdAt: new Date(),
+  });
 }
 
 // ── Отформатировать статус подписки ────────────────────────

@@ -1,6 +1,185 @@
 // ===== LANGUAGE SYSTEM =====
 let currentLang = localStorage.getItem('lang') || 'en';
 
+// ===== SVG ICON CONSTANTS =====
+const IC = {
+  wrench: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>',
+  brain: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2z"/></svg>',
+  bolt: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
+  clock: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
+  link: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>',
+  play: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>',
+  robot: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg>',
+  trash: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
+  rocket: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>',
+  pause: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>',
+  clipboard: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>',
+  warn: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+  check: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+  x: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+  refresh: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>',
+  hourglass: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></svg>',
+  dollar: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
+  send: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>',
+  fire: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14 0-5.5 3.5-7.5-2 3.5-1 5.5 0 7.5 1 1 2 2.5 2 5a2.5 2.5 0 0 1-2.5 2.5"/><path d="M12 22c4 0 7-3 7-7 0-2-.5-3.5-1.5-5C16 8 12 6 12 2c-2 4-6 6-7.5 8.5C3.5 12.5 3 14 3 15c0 4 3 7 7 7z"/></svg>',
+  gem: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12l4 6-10 13L2 9z"/><path d="M2 9h20"/><path d="M12 22L6 9"/><path d="M12 22l6-13"/><path d="M9 3l3 6 3-6"/></svg>',
+  download: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
+  creditcard: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>',
+  star: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>',
+  party: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5.8 11.3L2 22l10.7-3.8"/><path d="M4 3h.01"/><path d="M22 8h.01"/><path d="M15 2h.01"/><path d="M22 20h.01"/><path d="M22 2l-2.24.75a2.9 2.9 0 0 0-1.96 3.12v0c.1.86-.57 1.63-1.45 1.63h-.38c-.86 0-1.6.6-1.76 1.44L14 10"/><path d="M22 13l-1.34-.45a2.9 2.9 0 0 0-3.12 1.96v0a1.62 1.62 0 0 1-1.63 1.45h-.01a1.65 1.65 0 0 1-1.44-1.76L14.5 13"/></svg>',
+  phone: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>',
+  store: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>',
+  box: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>',
+  chat: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+  search: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
+  globe: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
+  mail: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>',
+  bell: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>',
+  shuffle: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>',
+  gift: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>',
+  chart: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>',
+  trending: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>',
+  image: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>',
+  thumbsup: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>',
+  arrowup: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>',
+  http: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>',
+  forward: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></svg>',
+  loop: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>',
+  inbox: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>',
+  outbox: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>',
+  dot_green: '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#22c55e"></span>',
+  dot_pause: '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#f59e0b"></span>',
+  shield: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+  crown: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4l3 12h14l3-12-6 7-4-9-4 9-6-7z"/><path d="M3 20h18"/></svg>',
+  zap: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
+  infinity: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.178 8c5.096 0 5.096 8 0 8-5.095 0-7.133-8-12.739-8-4.585 0-4.585 8 0 8 5.606 0 7.644-8 12.74-8z"/></svg>',
+};
+
+// Map server-side plan emoji icons to SVG
+function planIcon(serverIcon) {
+  if (!serverIcon) return '';
+  var map = {
+    '\uD83C\uDD93': IC.shield, '\uD83D\uDE80': IC.rocket, '\u26A1': IC.zap,
+    '\uD83D\uDC51': IC.crown, '\u267E': IC.infinity,
+    '\uD83D\uDD25': IC.fire, '\u2B50': IC.star,
+    '\uD83D\uDC8E': IC.gem, '\u2728': IC.star,
+  };
+  return map[serverIcon] !== undefined ? map[serverIcon] : serverIcon;
+}
+
+// ===== TOAST NOTIFICATION SYSTEM =====
+var _toastIcons = {
+  success: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
+  error: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
+  warning: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+  info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
+};
+
+function toast(message, type, title, duration) {
+  type = type || 'info';
+  duration = duration || 5000;
+  var container = document.getElementById('toast-container');
+  if (!container) return;
+  var el = document.createElement('div');
+  el.className = 'toast toast-' + type;
+  el.style.setProperty('--toast-duration', duration + 'ms');
+  el.innerHTML = '<div class="toast-icon">' + (_toastIcons[type] || _toastIcons.info) + '</div>'
+    + '<div class="toast-content">'
+    + (title ? '<div class="toast-title">' + title + '</div>' : '')
+    + '<div class="toast-msg">' + message + '</div>'
+    + '</div>'
+    + '<button class="toast-close" onclick="dismissToast(this.parentElement)">&times;</button>'
+    + '<div class="toast-progress"></div>';
+  container.appendChild(el);
+  var timer = setTimeout(function() { dismissToast(el); }, duration);
+  el._timer = timer;
+  el.addEventListener('mouseenter', function() { clearTimeout(el._timer); });
+  el.addEventListener('mouseleave', function() {
+    el._timer = setTimeout(function() { dismissToast(el); }, 2000);
+  });
+}
+
+function dismissToast(el) {
+  if (!el || el.classList.contains('removing')) return;
+  el.classList.add('removing');
+  setTimeout(function() { el.remove(); }, 250);
+}
+
+// ===== STUDIO DIALOG SYSTEM =====
+// Replaces all browser confirm(), alert(), prompt() with custom modals
+var _dialogResolve = null;
+
+function studioConfirm(opts) {
+  // opts: { title, message, confirmText, cancelText, type: 'danger'|'warning'|'info'|'success', icon? }
+  return new Promise(function(resolve) {
+    _dialogResolve = resolve;
+    var type = opts.type || 'warning';
+    var icon = opts.icon || _toastIcons[type] || _toastIcons.info;
+    var confirmClass = type === 'danger' ? 'btn-danger' : 'btn-primary';
+    var backdrop = document.getElementById('studio-dialog');
+    backdrop.innerHTML = '<div class="studio-dialog">'
+      + '<div class="studio-dialog-header">'
+      + '<div class="studio-dialog-icon icon-' + type + '">' + icon + '</div>'
+      + '<span class="studio-dialog-title">' + (opts.title || '') + '</span>'
+      + '</div>'
+      + '<div class="studio-dialog-body"><p>' + (opts.message || '') + '</p></div>'
+      + '<div class="studio-dialog-footer">'
+      + '<button class="btn btn-ghost" onclick="_resolveDialog(false)">' + (opts.cancelText || (currentLang === 'ru' ? 'Отмена' : 'Cancel')) + '</button>'
+      + '<button class="btn ' + confirmClass + '" onclick="_resolveDialog(true)">' + (opts.confirmText || 'OK') + '</button>'
+      + '</div></div>';
+    backdrop.style.display = 'flex';
+    backdrop.classList.remove('closing');
+    backdrop.onclick = function(e) { if (e.target === backdrop) _resolveDialog(false); };
+    // ESC key
+    backdrop._esc = function(e) { if (e.key === 'Escape') _resolveDialog(false); };
+    document.addEventListener('keydown', backdrop._esc);
+    // Focus confirm button
+    setTimeout(function() {
+      var btn = backdrop.querySelector('.btn-primary, .btn-danger');
+      if (btn) btn.focus();
+    }, 50);
+  });
+}
+
+function studioAlert(opts) {
+  // opts: { title, message, type }
+  return new Promise(function(resolve) {
+    _dialogResolve = resolve;
+    var type = opts.type || 'error';
+    var icon = opts.icon || _toastIcons[type] || _toastIcons.info;
+    var backdrop = document.getElementById('studio-dialog');
+    backdrop.innerHTML = '<div class="studio-dialog">'
+      + '<div class="studio-dialog-header">'
+      + '<div class="studio-dialog-icon icon-' + type + '">' + icon + '</div>'
+      + '<span class="studio-dialog-title">' + (opts.title || '') + '</span>'
+      + '</div>'
+      + '<div class="studio-dialog-body"><p>' + (opts.message || '') + '</p></div>'
+      + '<div class="studio-dialog-footer">'
+      + '<button class="btn btn-primary" onclick="_resolveDialog(true)">OK</button>'
+      + '</div></div>';
+    backdrop.style.display = 'flex';
+    backdrop.classList.remove('closing');
+    backdrop.onclick = function(e) { if (e.target === backdrop) _resolveDialog(true); };
+    backdrop._esc = function(e) { if (e.key === 'Escape') _resolveDialog(true); };
+    document.addEventListener('keydown', backdrop._esc);
+    setTimeout(function() {
+      var btn = backdrop.querySelector('.btn-primary');
+      if (btn) btn.focus();
+    }, 50);
+  });
+}
+
+function _resolveDialog(val) {
+  var backdrop = document.getElementById('studio-dialog');
+  if (backdrop._esc) document.removeEventListener('keydown', backdrop._esc);
+  backdrop.classList.add('closing');
+  setTimeout(function() {
+    backdrop.style.display = 'none';
+    backdrop.classList.remove('closing');
+  }, 180);
+  if (_dialogResolve) { _dialogResolve(val); _dialogResolve = null; }
+}
+
 function switchLang(lang) {
   currentLang = lang;
   localStorage.setItem('lang', lang);
@@ -56,10 +235,10 @@ const _tr = {
   logs: { en: 'Logs', ru: 'Логи' },
   unnamed: { en: 'Unnamed', ru: 'Без имени' },
   // Triggers
-  trigger_scheduled: { en: '\u23F0 Scheduled', ru: '\u23F0 По расписанию' },
-  trigger_webhook: { en: '\uD83D\uDD17 Webhook', ru: '\uD83D\uDD17 Вебхук' },
-  trigger_manual: { en: '\u25B6\uFE0F Manual', ru: '\u25B6\uFE0F Ручной' },
-  trigger_ai_agent: { en: '\uD83E\uDD16 AI Agent', ru: '\uD83E\uDD16 AI Агент' },
+  trigger_scheduled: { en: 'Scheduled', ru: 'По расписанию' },
+  trigger_webhook: { en: 'Webhook', ru: 'Вебхук' },
+  trigger_manual: { en: 'Manual', ru: 'Ручной' },
+  trigger_ai_agent: { en: 'AI Agent', ru: 'AI Агент' },
   // Empty states
   no_agents_yet: { en: 'No agents yet.', ru: 'Агентов пока нет.' },
   create_first: { en: 'Create your first agent \u2192', ru: 'Создать первого агента \u2192' },
@@ -196,19 +375,19 @@ async function onTelegramAuth(result) {
   // result has id_token (JWT) and user { id, name, preferred_username, picture }
   const data = await apiRequest('POST', '/api/auth/telegram-oidc', { id_token: result.id_token });
   if (!data.ok) {
-    alert('Auth failed: ' + (data.error || 'Unknown error'));
+    toast(data.error || 'Unknown error', 'error', currentLang === 'ru' ? 'Ошибка авторизации' : 'Auth Failed');
     return;
   }
   authToken = data.token;
   localStorage.setItem('tg_token', authToken);
-  currentUser = { userId: data.userId, username: data.username, first_name: data.firstName };
+  currentUser = { userId: data.userId, username: data.username, first_name: data.firstName, photo_url: data.photoUrl || null };
   showApp();
 }
 
 // Legacy: old widget callback (keep for backwards compat)
 async function onTelegramAuthLegacy(user) {
   const data = await apiRequest('POST', '/api/auth/telegram', user);
-  if (!data.ok) { alert('Auth failed: ' + (data.error || 'Unknown error')); return; }
+  if (!data.ok) { toast(data.error || 'Unknown error', 'error', 'Auth Failed'); return; }
   authToken = data.token;
   localStorage.setItem('tg_token', authToken);
   currentUser = { ...user, userId: data.userId };
@@ -236,8 +415,32 @@ function showApp() {
     }
   }
 
+  // Set plan badge from auth data immediately
+  if (currentUser && currentUser._plan) {
+    updateSidebarPlanBadge(currentUser._plan);
+  }
+
+  // Personalized greeting on overview
+  if (currentUser) {
+    var name = currentUser.first_name || currentUser.username || '';
+    var hour = new Date().getHours();
+    var greeting;
+    if (currentLang === 'ru') {
+      greeting = hour < 6 ? 'Доброй ночи' : hour < 12 ? 'Доброе утро' : hour < 18 ? 'Добрый день' : 'Добрый вечер';
+    } else {
+      greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+    }
+    var greetEl = document.getElementById('overview-greeting-text');
+    if (greetEl && name) {
+      greetEl.textContent = greeting + ', ' + name;
+      greetEl.removeAttribute('data-en');
+      greetEl.removeAttribute('data-ru');
+    }
+  }
+
   // Load real data from API
   loadDashboard();
+  loadSubscriptionGlobal();
 
   // Load persisted slider/config values
   loadAgentConfig().catch(console.error);
@@ -262,20 +465,33 @@ async function loadDashboard() {
 async function loadMyStats() {
   const data = await apiRequest('GET', '/api/stats/me');
   if (!data.ok) return;
-  // Active agents — animated counter
+  // Active agents
   animateCount(document.getElementById('sessions-value'), data.agentsActive || 0);
-  // Installed plugins
-  animateCount(document.getElementById('tools-value'), data.pluginsInstalled || data.pluginsTotal || 12);
   // Total runs
-  animateCount(document.getElementById('runs-value'), data.totalRuns || 0);
+  var runsEl = document.getElementById('runs-value');
+  if (runsEl) runsEl.textContent = data.totalRuns ?? '—';
   // Success rate
-  animateCount(document.getElementById('success-rate-value'), data.successRate != null ? data.successRate : 100, 800, '%');
-  // Last 24h
-  animateCount(document.getElementById('last24h-value'), data.last24hRuns || 0);
-  // Init uptime counter from server
-  if (data.uptimeSeconds != null) {
-    window._serverUptimeBase = data.uptimeSeconds;
+  var srEl = document.getElementById('success-rate-value');
+  if (srEl) srEl.textContent = data.successRate != null ? data.successRate + '%' : '—';
+  // Last 24h runs
+  var l24El = document.getElementById('last24h-value');
+  if (l24El) l24El.textContent = data.last24hRuns ?? '—';
+  // Uptime
+  if (data.uptimeSeconds) {
+    var h = Math.floor(data.uptimeSeconds / 3600);
+    var m = Math.floor((data.uptimeSeconds % 3600) / 60);
+    var upEl = document.getElementById('uptime-value');
+    if (upEl) upEl.textContent = h + 'h ' + m + 'm';
   }
+  // Capabilities count (tools + plugins)
+  var capCount = (data.pluginsTotal || 12) + (data.pluginsInstalled || 0) + 65;
+  var toolsEl = document.getElementById('tools-value');
+  if (toolsEl) toolsEl.textContent = capCount;
+  var capBadge = document.getElementById('nav-capabilities-badge');
+  if (capBadge) capBadge.textContent = capCount;
+  // Model name from user settings
+  var modelEl = document.querySelector('.model-name');
+  if (modelEl && data.aiModel) modelEl.textContent = data.aiModel;
 }
 
 async function loadAgents() {
@@ -284,7 +500,7 @@ async function loadAgents() {
 
   const data = await apiRequest('GET', '/api/agents');
   if (!data.ok) {
-    agentsEl.innerHTML = '<div class="empty-state">\u26A0\uFE0F ' + t('failed_load') + '</div>';
+    agentsEl.innerHTML = '<div class="empty-state">' + t('failed_load') + '</div>';
     return;
   }
   const agents = data.agents || [];
@@ -302,7 +518,7 @@ async function loadAgents() {
     const role = a.role || 'worker';
     const lvl = a.level || 1;
     return `
-    <div class="agent-card" data-id="${a.id}">
+    <div class="agent-card" data-id="${a.id}" onclick="openAgentDetail(${a.id})" style="cursor:pointer">
       <div class="agent-status ${a.isActive ? 'active' : 'paused'}">
         <span class="status-dot"></span>
         <span>${a.isActive ? t('active') : t('paused')}</span>
@@ -317,28 +533,236 @@ async function loadAgents() {
         </span>
       </div>
       <div class="agent-actions">
-        <button class="btn btn-sm ${a.isActive ? 'btn-warning' : 'btn-success'}" onclick="toggleAgent(${a.id}, ${a.isActive})">
-          ${a.isActive ? '\u23F8 ' + t('stop') : '\uD83D\uDE80 ' + t('run')}
+        <button class="btn btn-sm ${a.isActive ? 'btn-warning' : 'btn-success'}" onclick="event.stopPropagation();toggleAgent(${a.id}, ${a.isActive})">
+          ${a.isActive ? IC.pause + ' ' + t('stop') : IC.rocket + ' ' + t('run')}
         </button>
-        <button class="btn btn-ghost btn-sm" onclick="loadAgentLogs(${a.id})">\uD83D\uDCCB ${t('logs')}</button>
-        <button class="btn btn-ghost btn-sm" style="color:var(--danger,#ef4444)" onclick="event.stopPropagation();deleteAgent(${a.id},'${escHtml(a.name || 'Agent').replace(/'/g, "\\'")}')">\uD83D\uDDD1</button>
+        <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();loadAgentLogs(${a.id})">${IC.clipboard} ${t('logs')}</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--danger,#ef4444)" onclick="event.stopPropagation();deleteAgent(${a.id},'${escHtml(a.name || 'Agent').replace(/'/g, "\\'")}')">${IC.trash}</button>
       </div>
     </div>`;
   }).join('');
 
   if (agents.length > 0) markGSStep('agent');
+  // Update nav badge with real active count
+  updateNavBadges(agents);
+}
+
+// ===== REAL NOTIFICATION BADGES =====
+function updateNavBadges(agents) {
+  if (!agents) return;
+  var activeCount = agents.filter(function(a) { return a.isActive; }).length;
+  var totalCount = agents.length;
+  // Update My Agents badge - show active count
+  var agentsBadge = document.getElementById('nav-agents-badge');
+  if (agentsBadge) {
+    if (activeCount > 0) {
+      agentsBadge.textContent = activeCount;
+      agentsBadge.style.display = '';
+      agentsBadge.className = 'nav-badge alert';
+    } else if (totalCount > 0) {
+      agentsBadge.textContent = totalCount;
+      agentsBadge.style.display = '';
+      agentsBadge.className = 'nav-badge';
+    } else {
+      agentsBadge.style.display = 'none';
+    }
+  }
 }
 
 async function toggleAgent(agentId, isActive) {
   const endpoint = isActive ? `/api/agents/${agentId}/stop` : `/api/agents/${agentId}/run`;
   const btn = document.querySelector(`[data-id="${agentId}"] .btn-success, [data-id="${agentId}"] .btn-warning`);
-  if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
+  if (btn) { btn.disabled = true; btn.innerHTML = IC.hourglass; }
   const data = await apiRequest('POST', endpoint);
   if (!data.ok) {
-    alert('Error: ' + (data.error || 'Unknown'));
+    toast(data.error || 'Unknown error', 'error');
   }
   // Reload agent list
   await loadAgents();
+}
+
+// ===== AGENT DETAIL PANEL =====
+var _detailAgentId = null;
+var _detailAgentData = null;
+
+async function openAgentDetail(agentId) {
+  _detailAgentId = agentId;
+  var panel = document.getElementById('agent-detail-panel');
+  if (!panel) return;
+  panel.style.display = 'flex';
+  panel.classList.remove('closing');
+  // Load agent data
+  var body = document.getElementById('agent-detail-body');
+  if (body) body.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--text-muted)">' + IC.hourglass + ' Loading...</div>';
+  try {
+    var data = await apiRequest('GET', '/api/agents/' + agentId);
+    if (!data.ok || !data.agent) { toast('Agent not found', 'error'); closeAgentDetail(); return; }
+    _detailAgentData = data.agent;
+    renderAgentDetail();
+  } catch(e) {
+    toast(e.message || 'Error', 'error');
+    closeAgentDetail();
+  }
+}
+
+function renderAgentDetail() {
+  var a = _detailAgentData;
+  if (!a) return;
+  // Header
+  var nameEl = document.getElementById('agent-detail-name');
+  var descEl = document.getElementById('agent-detail-desc');
+  var statusEl = document.getElementById('agent-detail-status');
+  var toggleBtn = document.getElementById('agent-detail-toggle-btn');
+  if (nameEl) { nameEl.textContent = '#' + a.id + ' ' + (a.name || 'Unnamed'); nameEl.contentEditable = 'false'; nameEl.classList.remove('editing'); }
+  if (descEl) descEl.textContent = a.description || 'No description';
+  if (statusEl) {
+    statusEl.className = 'agent-status ' + (a.is_active ? 'active' : 'paused');
+    statusEl.innerHTML = '<span class="status-dot"></span><span>' + (a.is_active ? 'Active' : 'Paused') + '</span>';
+  }
+  if (toggleBtn) {
+    toggleBtn.className = 'btn btn-sm ' + (a.is_active ? 'btn-warning' : 'btn-success');
+    toggleBtn.innerHTML = a.is_active ? IC.pause + ' Stop' : IC.rocket + ' Run';
+  }
+
+  // Body
+  var body = document.getElementById('agent-detail-body');
+  if (!body) return;
+  var triggerType = a.trigger_type || a.triggerType || 'manual';
+  var triggerLabel = triggerType === 'scheduled' ? 'Scheduled' : triggerType === 'webhook' ? 'Webhook' : triggerType === 'ai_agent' ? 'AI Agent' : 'Manual';
+  var config = {};
+  try { config = typeof a.trigger_config === 'string' ? JSON.parse(a.trigger_config) : (a.trigger_config || {}); } catch(e) {}
+
+  var aiProvider = (config.config && config.config.AI_PROVIDER) || 'default';
+  var aiModel = (config.config && config.config.AI_MODEL) || '—';
+  var role = a.role || 'worker';
+  var lvl = a.level || 1;
+  var xp = a.xp || 0;
+
+  var html = '';
+  // Info section
+  html += '<div class="agent-detail-section">';
+  html += '<div class="agent-detail-section-title">Agent Info</div>';
+  html += '<div class="agent-detail-row"><span class="label">Type</span><span class="value">' + triggerLabel + '</span></div>';
+  html += '<div class="agent-detail-row"><span class="label">Role</span><span class="value" style="text-transform:capitalize">' + role + '</span></div>';
+  html += '<div class="agent-detail-row"><span class="label">Level</span><span class="value">Lv.' + lvl + ' (' + xp + ' XP)</span></div>';
+  html += '<div class="agent-detail-row"><span class="label">Created</span><span class="value">' + (a.created_at ? new Date(a.created_at).toLocaleDateString() : '—') + '</span></div>';
+  if (triggerType === 'scheduled' && config.interval) {
+    html += '<div class="agent-detail-row"><span class="label">Interval</span><span class="value">' + config.interval + '</span></div>';
+  }
+  if (triggerType === 'scheduled' && config.cronExpression) {
+    html += '<div class="agent-detail-row"><span class="label">Cron</span><span class="value" style="font-family:JetBrains Mono,monospace;font-size:0.75rem">' + escHtml(config.cronExpression) + '</span></div>';
+  }
+  html += '</div>';
+
+  // AI Config section
+  if (triggerType === 'ai_agent') {
+    html += '<div class="agent-detail-section">';
+    html += '<div class="agent-detail-section-title">AI Configuration</div>';
+    html += '<div class="agent-detail-row"><span class="label">Provider</span><span class="value">' + escHtml(aiProvider) + '</span></div>';
+    if (aiModel !== '—') html += '<div class="agent-detail-row"><span class="label">Model</span><span class="value">' + escHtml(aiModel) + '</span></div>';
+    html += '</div>';
+  }
+
+  // System Prompt section
+  var code = a.code || '';
+  if (code) {
+    html += '<div class="agent-detail-section">';
+    html += '<div class="agent-detail-section-title">System Prompt</div>';
+    html += '<div class="agent-detail-prompt">' + escHtml(code.slice(0, 2000)) + (code.length > 2000 ? '\n...' : '') + '</div>';
+    html += '</div>';
+  }
+
+  // Flow section
+  if (triggerType !== 'ai_agent' && config.nodes && config.nodes.length) {
+    html += '<div class="agent-detail-section">';
+    html += '<div class="agent-detail-section-title">Flow (' + config.nodes.length + ' nodes)</div>';
+    var flowDesc = config.nodes.map(function(n) { return n.type; }).join(' → ');
+    html += '<div style="font-size:0.78rem;color:var(--text-secondary);word-break:break-all">' + escHtml(flowDesc) + '</div>';
+    html += '</div>';
+  }
+
+  body.innerHTML = html;
+}
+
+function closeAgentDetail() {
+  var panel = document.getElementById('agent-detail-panel');
+  if (!panel) return;
+  panel.classList.add('closing');
+  setTimeout(function() { panel.style.display = 'none'; panel.classList.remove('closing'); }, 200);
+}
+
+function toggleAgentRename() {
+  var nameEl = document.getElementById('agent-detail-name');
+  if (!nameEl) return;
+  if (nameEl.contentEditable === 'true') {
+    // Save
+    saveAgentRename();
+  } else {
+    // Enter edit mode
+    nameEl.contentEditable = 'true';
+    nameEl.classList.add('editing');
+    // Remove #ID prefix for editing
+    var a = _detailAgentData;
+    nameEl.textContent = a ? (a.name || '') : nameEl.textContent;
+    nameEl.focus();
+    // Select all text
+    var range = document.createRange();
+    range.selectNodeContents(nameEl);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    // Enter key to save
+    nameEl.onkeydown = function(e) {
+      if (e.key === 'Enter') { e.preventDefault(); saveAgentRename(); }
+      if (e.key === 'Escape') { renderAgentDetail(); }
+    };
+  }
+}
+
+async function saveAgentRename() {
+  var nameEl = document.getElementById('agent-detail-name');
+  if (!nameEl || !_detailAgentId) return;
+  var newName = nameEl.textContent.trim();
+  if (newName.length < 2 || newName.length > 60) {
+    toast(currentLang === 'ru' ? 'Имя должно быть 2-60 символов' : 'Name must be 2-60 characters', 'error');
+    return;
+  }
+  nameEl.contentEditable = 'false';
+  nameEl.classList.remove('editing');
+  try {
+    var data = await apiRequest('POST', '/api/agents/' + _detailAgentId + '/rename', { name: newName });
+    if (data.ok) {
+      toast(currentLang === 'ru' ? 'Агент переименован' : 'Agent renamed', 'success');
+      if (_detailAgentData) _detailAgentData.name = newName;
+      renderAgentDetail();
+      loadAgents();
+      loadAgentsPage();
+    } else {
+      toast(data.error || 'Error', 'error');
+    }
+  } catch(e) {
+    toast(e.message || 'Error', 'error');
+  }
+}
+
+async function toggleAgentFromDetail() {
+  if (!_detailAgentData) return;
+  var isActive = _detailAgentData.is_active;
+  var endpoint = isActive ? '/api/agents/' + _detailAgentId + '/stop' : '/api/agents/' + _detailAgentId + '/run';
+  var btn = document.getElementById('agent-detail-toggle-btn');
+  if (btn) { btn.disabled = true; btn.innerHTML = IC.hourglass; }
+  var data = await apiRequest('POST', endpoint);
+  if (!data.ok) toast(data.error || 'Error', 'error');
+  // Reload detail
+  await openAgentDetail(_detailAgentId);
+  loadAgents();
+  loadAgentsPage();
+}
+
+function deleteAgentFromDetail() {
+  if (!_detailAgentData) return;
+  closeAgentDetail();
+  deleteAgent(_detailAgentId, _detailAgentData.name || 'Agent');
 }
 
 let _deleteAgentId = null;
@@ -362,11 +786,11 @@ function closeDeleteModal() {
 async function confirmDeleteAgent() {
   if (!_deleteAgentId) return;
   const btn = document.getElementById('delete-confirm-btn');
-  if (btn) { btn.disabled = true; btn.innerHTML = '⏳'; }
+  if (btn) { btn.disabled = true; btn.innerHTML = IC.hourglass; }
   const agentId = _deleteAgentId;
   const data = await apiRequest('DELETE', `/api/agents/${agentId}`);
   closeDeleteModal();
-  if (btn) { btn.disabled = false; btn.innerHTML = '🗑 ' + t('delete'); }
+  if (btn) { btn.disabled = false; btn.innerHTML = IC.trash + ' ' + t('delete'); }
   if (data.ok) {
     // Dissolve animation on the card
     const card = document.querySelector(`[data-id="${agentId}"]`);
@@ -374,11 +798,144 @@ async function confirmDeleteAgent() {
       card.classList.add('agent-card-dissolving');
       setTimeout(() => { card.remove(); }, 600);
     }
-    showNotification('🗑 Agent #' + agentId + ' deleted', 'success');
-    setTimeout(() => loadAgents(), 700);
+    showNotification('Agent #' + agentId + ' deleted', 'success');
+    setTimeout(() => { loadAgents(); loadAgentsPage(); }, 700);
   } else {
-    showNotification('⚠️ ' + (data.error || 'Failed to delete'), 'error');
+    showNotification((data.error || 'Failed to delete'), 'error');
   }
+}
+
+// ===== MY AGENTS PAGE (full page with filters) =====
+let _agentsPageData = [];
+let _agentsPageFilter = 'all';
+
+async function loadAgentsPage() {
+  const listEl = document.getElementById('agents-page-list');
+  if (!listEl) return;
+
+  const data = await apiRequest('GET', '/api/agents');
+  if (!data.ok) {
+    listEl.innerHTML = '<div class="empty-state">' + t('failed_load') + '</div>';
+    return;
+  }
+  _agentsPageData = data.agents || [];
+
+  // Update counters
+  var all = _agentsPageData.length;
+  var activeN = _agentsPageData.filter(a => a.isActive).length;
+  var pausedN = all - activeN;
+  var setEl = function(id, val) { var el = document.getElementById(id); if (el) el.textContent = val; };
+  setEl('agents-filter-all', all);
+  setEl('agents-filter-active', activeN);
+  setEl('agents-filter-paused', pausedN);
+  setEl('agents-page-count', all + (currentLang === 'ru' ? ' агентов' : ' agents'));
+
+  renderAgentsPage();
+}
+
+function filterAgentsPage(filter) {
+  _agentsPageFilter = filter;
+  // Update active filter button
+  document.querySelectorAll('#operations-page .op-filter').forEach(function(btn, i) {
+    btn.classList.toggle('active', ['all','active','paused'][i] === filter);
+  });
+  renderAgentsPage();
+}
+
+function renderAgentsPage() {
+  var listEl = document.getElementById('agents-page-list');
+  if (!listEl) return;
+
+  var agents = _agentsPageData;
+  if (_agentsPageFilter === 'active') agents = agents.filter(function(a) { return a.isActive; });
+  else if (_agentsPageFilter === 'paused') agents = agents.filter(function(a) { return !a.isActive; });
+
+  if (!agents.length) {
+    var msg = _agentsPageFilter === 'all'
+      ? (currentLang === 'ru' ? 'Нет агентов. Создайте первого!' : 'No agents yet. Create your first!')
+      : (currentLang === 'ru' ? 'Нет агентов с таким статусом' : 'No agents with this status');
+    listEl.innerHTML = '<div class="empty-state" style="padding:2rem;text-align:center"><p>' + msg + '</p>' +
+      (_agentsPageFilter === 'all' ? '<button class="btn btn-primary btn-sm" onclick="showCreateAgentMenu(event)">' + t('create_first') + '</button>' : '') +
+      '</div>';
+    return;
+  }
+
+  var triggerLabel = function(tt) { return tt === 'scheduled' ? t('trigger_scheduled') : tt === 'webhook' ? t('trigger_webhook') : tt === 'ai_agent' ? t('trigger_ai_agent') : t('trigger_manual'); };
+  var triggerIcon = function(tt) {
+    if (tt === 'scheduled') return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
+    if (tt === 'webhook') return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>';
+    if (tt === 'ai_agent') return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+    return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>';
+  };
+  var timeAgo = function(dateStr) {
+    if (!dateStr) return '';
+    var ms = Date.now() - new Date(dateStr).getTime();
+    if (ms < 60000) return currentLang === 'ru' ? 'только что' : 'just now';
+    if (ms < 3600000) return Math.floor(ms / 60000) + (currentLang === 'ru' ? ' мин' : 'm ago');
+    if (ms < 86400000) return Math.floor(ms / 3600000) + (currentLang === 'ru' ? ' ч' : 'h ago');
+    return Math.floor(ms / 86400000) + (currentLang === 'ru' ? ' д' : 'd ago');
+  };
+  listEl.innerHTML = agents.map(function(a) {
+    var role = a.role || 'worker';
+    var lvl = a.level || 1;
+    var created = timeAgo(a.createdAt);
+    return '<div class="agent-card-enhanced" data-id="' + a.id + '" onclick="openAgentDetail(' + a.id + ')" style="cursor:pointer">' +
+      '<div class="agent-card-top">' +
+      '<div class="agent-status ' + (a.isActive ? 'active' : 'paused') + '"><span class="status-dot"></span><span>' + (a.isActive ? t('active') : t('paused')) + '</span></div>' +
+      '<div class="agent-card-type">' + triggerIcon(a.triggerType) + ' ' + triggerLabel(a.triggerType) + '</div>' +
+      '</div>' +
+      '<div class="agent-card-main">' +
+      '<strong class="agent-card-name">#' + a.id + ' ' + escHtml(a.name || t('unnamed')) + '</strong>' +
+      '<span class="agent-desc">' + escHtml((a.description || '').slice(0, 120)) + '</span>' +
+      '</div>' +
+      '<div class="agent-card-meta">' +
+      '<span class="agent-role-badge role-' + role + '">' + role + '</span>' +
+      '<span class="agent-level">' + t('lv') + lvl + '</span>' +
+      (created ? '<span class="agent-created">' + created + '</span>' : '') +
+      '</div>' +
+      '<div class="agent-card-actions">' +
+      '<button class="btn btn-sm ' + (a.isActive ? 'btn-warning' : 'btn-success') + '" onclick="event.stopPropagation();toggleAgentFromPage(' + a.id + ',' + a.isActive + ')">' + (a.isActive ? IC.pause + ' ' + t('stop') : IC.rocket + ' ' + t('run')) + '</button>' +
+      '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openAgentDetail(' + a.id + ')">' + IC.wrench + ' ' + (currentLang === 'ru' ? 'Детали' : 'Details') + '</button>' +
+      '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();loadAgentLogs(' + a.id + ')">' + IC.clipboard + ' ' + t('logs') + '</button>' +
+      '<button class="btn btn-ghost btn-sm" style="color:var(--danger,#ef4444)" onclick="event.stopPropagation();deleteAgent(' + a.id + ',\'' + escHtml(a.name || 'Agent').replace(/'/g, "\\'") + '\')">' + IC.trash + '</button>' +
+      '</div></div>';
+  }).join('');
+}
+
+async function toggleAgentFromPage(agentId, isActive) {
+  var endpoint = isActive ? '/api/agents/' + agentId + '/stop' : '/api/agents/' + agentId + '/run';
+  var btn = document.querySelector('#agents-page-list [data-id="' + agentId + '"] .btn-success, #agents-page-list [data-id="' + agentId + '"] .btn-warning');
+  if (btn) { btn.disabled = true; btn.innerHTML = IC.hourglass; }
+  var data = await apiRequest('POST', endpoint);
+  if (!data.ok) toast(data.error || 'Unknown error', 'error');
+  await Promise.all([loadAgentsPage(), loadAgents()]);
+}
+
+async function loadExecutionHistory() {
+  var statusParam = currentOperationFilter !== 'all' ? '?status=' + currentOperationFilter : '';
+  var data = await apiRequest('GET', '/api/executions' + statusParam + (statusParam ? '&limit=20' : '?limit=20'));
+  if (data.ok && data.executions) {
+    operationsData = data.executions.map(function(ex) {
+      var startedAt = ex.startedAt ? new Date(ex.startedAt) : new Date();
+      var ageMs = Date.now() - startedAt.getTime();
+      var ageStr = ageMs < 60000 ? 'Just now' : ageMs < 3600000 ? Math.floor(ageMs / 60000) + ' min ago' : Math.floor(ageMs / 3600000) + 'h ago';
+      var STALE_MS = 30 * 60 * 1000;
+      var isStaleRunning = ex.status === 'running' && ageMs > STALE_MS;
+      return {
+        id: ex.id,
+        name: 'Agent #' + ex.agentId + ' run',
+        nameRu: 'Запуск агента #' + ex.agentId,
+        description: 'Trigger: ' + (ex.triggerType || 'manual'),
+        descriptionRu: 'Триггер: ' + (ex.triggerType || 'manual'),
+        status: isStaleRunning ? 'failed' : ex.status === 'running' ? 'running' : ex.status === 'success' ? 'completed' : ex.status === 'error' ? 'failed' : 'queued',
+        createdAt: ageStr, createdAtRu: ageStr,
+        duration: ex.durationMs ? (ex.durationMs / 1000).toFixed(1) + 's' : null,
+        error: ex.errorMessage || null, errorRu: ex.errorMessage || null,
+        progress: ex.status === 'running' ? 50 : null,
+      };
+    });
+  }
+  renderOperations();
 }
 
 let _logsAgentId = null;
@@ -390,12 +947,12 @@ async function loadAgentLogs(agentId) {
   const title = document.getElementById('logs-modal-title');
   if (!modal || !body) return;
   title.textContent = t('logs') + ' — Agent #' + agentId;
-  body.innerHTML = '<div style="padding:32px;text-align:center;color:rgba(255,255,255,0.4)">⏳ Loading...</div>';
+  body.innerHTML = '<div style="padding:32px;text-align:center;color:rgba(255,255,255,0.4)">Loading...</div>';
   modal.style.display = 'flex';
 
   const data = await apiRequest('GET', `/api/agents/${agentId}/logs?limit=50`);
   if (!data.ok) {
-    body.innerHTML = '<div style="padding:32px;text-align:center;color:#ef4444">⚠️ Failed to load logs</div>';
+    body.innerHTML = '<div style="padding:32px;text-align:center;color:#ef4444">Failed to load logs</div>';
     return;
   }
   const logs = data.logs || [];
@@ -476,55 +1033,22 @@ async function initAuth() {
     if (cfg && cfg.ok) window._appConfig = cfg;
   } catch (_) {}
 
-  const isHttps = window.location.protocol === 'https:';
-  const container = document.getElementById('tg-widget-container');
+  const container = document.getElementById('telegram-login-container');
   if (!container) return;
-
-  if (!isHttps) {
-    showBotAuthButton();
-    return;
-  }
-
-  // Load Telegram Login SDK
-  const clientId = (window._appConfig && window._appConfig.tgClientId) || 8595707164;
-  container.innerHTML = '';
 
   // Update auth screen text
   const welcomeEl = document.querySelector('.auth-card h2');
   if (welcomeEl) welcomeEl.textContent = t('welcome_back');
   const descEl = document.querySelector('.auth-card p');
   if (descEl) descEl.textContent = t('sign_in_desc');
-  const secureEl = document.getElementById('auth-domain-note');
+  const secureEl = document.getElementById('https-hint');
   if (secureEl) secureEl.textContent = t('secure_auth');
-  const expiredEl = document.getElementById('auth-session-expired');
+  const expiredEl = document.getElementById('session-expired-hint');
   if (expiredEl) expiredEl.textContent = t('session_expired');
 
-  // Show login button
-  const tgSvg = '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>';
-  container.innerHTML = '<button id="tg-login-btn" style="display:flex;align-items:center;gap:10px;padding:12px 24px;background:linear-gradient(135deg,#2AABEE,#229ED9);color:#fff;border:none;border-radius:8px;font-size:1rem;font-weight:500;cursor:pointer;width:100%;justify-content:center;transition:all .2s;box-shadow:0 2px 12px rgba(42,171,238,.3)" onmouseover="this.style.transform=\'scale(1.02)\'" onmouseout="this.style.transform=\'scale(1)\'">' +
-    tgSvg + t('sign_in_tg') + '</button>';
+  // Use bot auth as primary method (oauth.telegram.org OIDC is unreliable)
+  showBotAuthButton();
 
-  // Button click → OIDC code flow redirect (popup mode broken on Telegram side)
-  const redirectUri = window.location.origin + '/dashboard.html';
-  document.getElementById('tg-login-btn').addEventListener('click', () => {
-    const state = Math.random().toString(36).slice(2);
-    sessionStorage.setItem('tg_oauth_state', state);
-    const params = new URLSearchParams({
-      client_id: String(clientId),
-      redirect_uri: redirectUri,
-      response_type: 'code',
-      scope: 'openid profile',
-      state: state,
-    });
-    window.location.href = 'https://oauth.telegram.org/auth?' + params.toString();
-  });
-
-  // Also show bot-auth fallback below
-  const fb = document.createElement('div');
-  fb.style.cssText = 'margin-top:14px;text-align:center;';
-  fb.innerHTML = '<div style="color:rgba(255,255,255,.3);font-size:.72rem;margin-bottom:6px;">' + t('or_word') + '</div>' +
-    '<button onclick="showBotAuthButton()" style="padding:7px 16px;background:rgba(255,255,255,.05);color:rgba(255,255,255,.5);border:1px solid rgba(255,255,255,.08);border-radius:8px;font-size:.78rem;cursor:pointer;transition:all .2s" onmouseover="this.style.background=\'rgba(255,255,255,.1)\'" onmouseout="this.style.background=\'rgba(255,255,255,.05)\'\">' + t('sign_in_bot') + '</button>';
-  container.appendChild(fb);
 }
 
 // Handle OAuth redirect: ?code=XXX&state=YYY
@@ -538,24 +1062,76 @@ async function handleOAuthRedirect() {
   const savedState = sessionStorage.getItem('tg_oauth_state');
   if (state && savedState && state !== savedState) {
     console.error('OAuth state mismatch');
+    showAuthError(currentLang === 'ru' ? 'Ошибка безопасности (state mismatch). Попробуйте снова.' : 'Security error (state mismatch). Try again.');
+    window.history.replaceState({}, '', window.location.pathname);
     return false;
   }
   sessionStorage.removeItem('tg_oauth_state');
 
-  // Clean URL
-  window.history.replaceState({}, '', window.location.pathname);
+  // Show loading state on auth screen
+  showAuthLoading(true);
 
-  // Exchange code for session via our backend
-  const data = await apiRequest('POST', '/api/auth/telegram-code', { code, redirect_uri: window.location.origin + '/dashboard.html' });
-  if (!data.ok) {
-    console.error('Code exchange failed:', data.error);
+  // Exchange code for session via our backend (retry up to 3 times)
+  let data = null;
+  let lastError = '';
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      data = await apiRequest('POST', '/api/auth/telegram-code', { code, redirect_uri: window.location.origin + '/studio' });
+      if (data.ok) break;
+      lastError = data.error || 'Unknown error';
+    } catch (e) {
+      lastError = e.message || 'Network error';
+    }
+    if (attempt < 2) await new Promise(r => setTimeout(r, 1500));
+  }
+
+  showAuthLoading(false);
+
+  if (!data || !data.ok) {
+    console.error('Code exchange failed:', lastError);
+    showAuthError(currentLang === 'ru'
+      ? 'Не удалось авторизоваться: ' + lastError + '. Попробуйте снова.'
+      : 'Auth failed: ' + lastError + '. Please try again.');
+    // Clean URL so stale code doesn't retry forever
+    window.history.replaceState({}, '', window.location.pathname);
     return false;
   }
+
+  // Success — clean URL and enter app
+  window.history.replaceState({}, '', window.location.pathname);
   authToken = data.token;
   localStorage.setItem('tg_token', authToken);
-  currentUser = { userId: data.userId, username: data.username, first_name: data.firstName };
+  currentUser = { userId: data.userId, username: data.username, first_name: data.firstName, photo_url: data.photoUrl || null };
   showApp();
   return true;
+}
+
+function showAuthLoading(show) {
+  const container = document.getElementById('telegram-login-container');
+  if (!container) return;
+  if (show) {
+    container.innerHTML = '<div style="text-align:center;padding:20px 0;color:var(--text-secondary)">' +
+      '<div class="auth-spinner"></div>' +
+      '<p style="margin-top:12px;font-size:.9rem">' + (currentLang === 'ru' ? 'Авторизация...' : 'Signing in...') + '</p>' +
+      '</div>';
+  }
+}
+
+function showAuthError(msg) {
+  const container = document.getElementById('telegram-login-container');
+  if (!container) return;
+  // Show error above login button
+  let errEl = document.getElementById('auth-error-msg');
+  if (!errEl) {
+    errEl = document.createElement('div');
+    errEl.id = 'auth-error-msg';
+    errEl.style.cssText = 'background:rgba(231,76,60,0.12);border:1px solid rgba(231,76,60,0.3);border-radius:8px;padding:10px 14px;margin-bottom:12px;color:#e74c3c;font-size:.85rem;text-align:center';
+    container.parentElement.insertBefore(errEl, container);
+  }
+  errEl.textContent = msg;
+  errEl.style.display = 'block';
+  // Auto-hide after 8 seconds
+  setTimeout(() => { if (errEl) errEl.style.display = 'none'; }, 8000);
 }
 
 // Check if already logged in (token in localStorage)
@@ -567,16 +1143,31 @@ async function checkExistingSession() {
     await initAuth();
     return;
   }
-  const data = await apiRequest('GET', '/api/me');
+
+  // Verify existing session with backend
+  let data;
+  try {
+    data = await apiRequest('GET', '/api/me');
+  } catch (e) {
+    // Network error — server might be down, still show auth screen
+    console.error('Session check failed:', e);
+    authToken = null;
+    localStorage.removeItem('tg_token');
+    showAuthError(currentLang === 'ru' ? 'Сервер недоступен. Попробуйте позже.' : 'Server unavailable. Try again later.');
+    await initAuth();
+    return;
+  }
+
   if (data.ok) {
-    currentUser = { userId: data.userId, username: data.username, first_name: data.firstName };
+    currentUser = { userId: data.userId, username: data.username, first_name: data.firstName, photo_url: data.photoUrl || null };
+    if (data.planId) currentUser._plan = { id: data.planId, name: data.planName, icon: data.planIcon };
     showApp();
   } else {
     // Token expired (bot restarted / session wiped)
     authToken = null;
     localStorage.removeItem('tg_token');
     // Show friendly "session expired" hint in auth screen
-    const hint = document.getElementById('auth-session-expired');
+    const hint = document.getElementById('session-expired-hint');
     if (hint) hint.style.display = 'block';
     await initAuth();
   }
@@ -587,7 +1178,7 @@ let _botAuthToken = null;
 let _botAuthPolling = null;
 
 function showBotAuthButton() {
-  const container = document.getElementById('tg-widget-container');
+  const container = document.getElementById('telegram-login-container');
   if (container) {
     container.innerHTML = `
       <button
@@ -602,25 +1193,25 @@ function showBotAuthButton() {
     `;
   }
   // Hide the "Widget requires HTTPS" note — it's confusing for end users
-  const note = document.getElementById('auth-domain-note');
+  const note = document.getElementById('https-hint');
   if (note) note.style.display = 'none';
 }
 
 async function startBotAuth() {
-  const container = document.getElementById('tg-widget-container');
+  const container = document.getElementById('telegram-login-container');
   if (container) {
-    container.innerHTML = `<div style="text-align:center;padding:16px 0;color:var(--text-secondary);font-size:.875rem;">\u23F3 ${t('connecting')}</div>`;
+    container.innerHTML = '<div style="text-align:center;padding:16px 0;color:var(--text-secondary);font-size:.875rem;">' + t('connecting') + '</div>';
   }
 
   const data = await apiRequest('GET', '/api/auth/request');
   if (!data.ok) {
     if (container) container.innerHTML = `
       <div style="text-align:center;padding:12px 0">
-        <p style="color:#f59e0b;font-size:.9rem;margin:0 0 8px;font-weight:500;">⚠️ Не удалось подключиться</p>
+        <p style="color:#f59e0b;font-size:.9rem;margin:0 0 8px;font-weight:500;">Не удалось подключиться</p>
         <p style="color:var(--text-muted);font-size:.75rem;margin:0 0 14px;">Убедитесь, что бот-сервер запущен</p>
         <button onclick="showBotAuthButton()"
           style="padding:8px 20px;background:#2196F3;color:#fff;border:none;border-radius:6px;font-size:.875rem;font-weight:500;cursor:pointer;">
-          🔄 Повторить
+          ${IC.refresh} Повторить
         </button>
       </div>`;
     return;
@@ -630,21 +1221,25 @@ async function startBotAuth() {
   // Do NOT use window.open() — it gets blocked by popup blockers after async calls.
   // Instead show a prominent <a> link the user clicks directly (real user gesture).
   if (container) {
-    container.innerHTML = `
-      <div style="text-align:center;padding:8px 0 16px">
-        <div style="font-size:1.75rem;margin-bottom:10px;">📲</div>
-        <p style="color:var(--text-secondary);font-size:.9rem;margin-bottom:4px;font-weight:500;">Откройте Telegram и нажмите Start</p>
-        <p style="color:var(--text-muted);font-size:.75rem;margin-bottom:16px;">После нажатия /start страница обновится автоматически</p>
-        <a href="${escHtml(data.botLink)}" target="_blank"
-           style="display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 28px;background:#2196F3;color:#fff;border-radius:8px;font-size:.9375rem;font-weight:600;text-decoration:none;margin-bottom:16px;min-width:200px;">
-          🤖 Открыть Telegram
-        </a><br>
-        <button onclick="cancelBotAuth()"
-          style="background:none;border:none;color:var(--text-muted);font-size:.8125rem;cursor:pointer;text-decoration:underline;">
-          Отмена
-        </button>
-      </div>
-    `;
+    var authCmd = '/start webauth_' + _botAuthToken;
+    var openLabel = currentLang === 'ru' ? 'Открыть @TonAgentPlatformBot' : 'Open @TonAgentPlatformBot';
+    var instrLabel = currentLang === 'ru' ? 'Откройте бота и отправьте команду' : 'Open the bot and send the command';
+    var autoLabel = currentLang === 'ru' ? 'Страница обновится автоматически после авторизации' : 'Page will refresh automatically after auth';
+    var cancelLabel = currentLang === 'ru' ? 'Отмена' : 'Cancel';
+    container.innerHTML =
+      '<div style="text-align:center;padding:8px 0 16px">' +
+        '<div style="font-size:1.75rem;margin-bottom:10px">' + IC.phone + '</div>' +
+        '<p style="color:var(--text-secondary);font-size:.9rem;margin-bottom:4px;font-weight:500">' + instrLabel + '</p>' +
+        '<div style="display:flex;align-items:center;gap:8px;justify-content:center;margin:12px 0 16px">' +
+          '<code id="auth-code-text" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:8px 14px;font-size:.85rem;font-family:JetBrains Mono,monospace;color:#7dd3fc;letter-spacing:.5px;user-select:all;cursor:pointer" onclick="copyAuthCode()" title="Click to copy">' + escHtml(authCmd) + '</code>' +
+          '<button id="auth-copy-btn" onclick="copyAuthCode()" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:8px;cursor:pointer;color:var(--text-secondary);display:flex;align-items:center" title="Copy">' + IC.clipboard + '</button>' +
+        '</div>' +
+        '<a href="' + escHtml(data.botLink) + '" target="_blank" style="display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 28px;background:linear-gradient(135deg,#2AABEE,#229ED9);color:#fff;border-radius:8px;font-size:.9375rem;font-weight:600;text-decoration:none;margin-bottom:8px;min-width:200px;box-shadow:0 2px 12px rgba(42,171,238,.3)">' + openLabel + '</a>' +
+        '<p style="color:var(--text-muted);font-size:.7rem;margin:8px 0 12px">' + autoLabel + '</p>' +
+        '<button onclick="cancelBotAuth()" style="background:none;border:none;color:var(--text-muted);font-size:.8125rem;cursor:pointer;text-decoration:underline">' + cancelLabel + '</button>' +
+      '</div>';
+    // Store auth command for copy function
+    window._pendingAuthCmd = authCmd;
   }
 
   _botAuthPolling = setInterval(async () => {
@@ -670,9 +1265,24 @@ async function startBotAuth() {
   }, 2000);
 }
 
+function copyAuthCode() {
+  var cmd = window._pendingAuthCmd || '';
+  if (!cmd) return;
+  navigator.clipboard.writeText(cmd).then(function() {
+    var btn = document.getElementById('auth-copy-btn');
+    if (btn) { btn.innerHTML = IC.check; setTimeout(function() { btn.innerHTML = IC.clipboard; }, 1500); }
+    showToast(currentLang === 'ru' ? 'Скопировано!' : 'Copied!', 'success');
+  }).catch(function() {
+    // Fallback: select the text
+    var code = document.getElementById('auth-code-text');
+    if (code) { var range = document.createRange(); range.selectNodeContents(code); var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range); }
+  });
+}
+
 function cancelBotAuth() {
   if (_botAuthPolling) { clearInterval(_botAuthPolling); _botAuthPolling = null; }
   _botAuthToken = null;
+  window._pendingAuthCmd = null;
   showBotAuthButton();
 }
 
@@ -697,6 +1307,7 @@ const pageLoadFns = {
   network:     () => loadNetworkMap(),
   builder:     () => initFlowBuilder(),
   marketplace: () => loadMarketplace(),
+  assistant:   () => loadAssistantPage(),
   guide:       () => Promise.resolve(),
 };
 
@@ -716,10 +1327,14 @@ function loadOverview() {
       greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
     }
     var greetEl = document.getElementById('overview-greeting-text');
-    if (greetEl && name) greetEl.textContent = greeting + ', ' + name;
+    if (greetEl && name) {
+      greetEl.textContent = greeting + ', ' + name;
+      greetEl.removeAttribute('data-en');
+      greetEl.removeAttribute('data-ru');
+    }
   }
 }
-function loadOperations() { loadAgents(); }
+async function loadOperations() { await Promise.all([loadAgentsPage(), loadExecutionHistory()]); }
 async function loadSettings() {
   try {
     const data = await apiRequest('GET', '/api/settings');
@@ -758,7 +1373,8 @@ document.querySelectorAll('.nav-item').forEach(item => {
 
     // Lazy-load page data if authenticated
     if (authToken && pageLoadFns[pageName]) {
-      pageLoadFns[pageName]().catch(console.error);
+      var _r = pageLoadFns[pageName]();
+      if (_r && typeof _r.catch === 'function') _r.catch(console.error);
     }
   });
 });
@@ -1515,10 +2131,10 @@ let operationsData = [];
 let currentOperationFilter = 'all';
 
 async function initOperations() {
-  await loadOperations();
+  await loadOldOperationsView();
 }
 
-async function loadOperations() {
+async function loadOldOperationsView() {
   const statusParam = currentOperationFilter !== 'all' ? `?status=${currentOperationFilter}` : '';
   const data = await apiRequest('GET', '/api/executions' + statusParam + (statusParam ? '&limit=20' : '?limit=20'));
 
@@ -1660,42 +2276,9 @@ function startLiveUpdates() {
 // (real refreshData is defined above — calls API; this block removed to avoid duplicate)
 
 // ===== NOTIFICATIONS =====
-function showNotification(message, type = 'info') {
-  const notification = document.createElement('div');
-  notification.className = `notification notification-${type}`;
-  notification.innerHTML = `
-    <span>${message}</span>
-    <button onclick="this.parentElement.remove()">×</button>
-  `;
-  notification.style.cssText = `
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    padding: 16px 20px;
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    color: var(--text-primary);
-    font-size: 0.875rem;
-    z-index: 10000;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    animation: slideIn 0.3s ease;
-  `;
-  
-  if (type === 'success') {
-    notification.style.borderColor = 'var(--success)';
-  } else if (type === 'error') {
-    notification.style.borderColor = 'var(--danger)';
-  }
-  
-  document.body.appendChild(notification);
-  
-  setTimeout(() => {
-    notification.style.animation = 'slideOut 0.3s ease';
-    setTimeout(() => notification.remove(), 300);
-  }, 4000);
+function showNotification(message, type) {
+  // Redirects to new toast system
+  toast(message, type || 'info');
 }
 
 // ===== SETTINGS =====
@@ -1865,6 +2448,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ===== NAVIGATION HELPER =====
 function navigateTo(pageName) {
+  closePlansModal();
   document.querySelectorAll('.nav-item').forEach(nav => nav.classList.remove('active'));
   const navEl = document.querySelector(`.nav-item[data-page="${pageName}"]`);
   if (navEl) navEl.classList.add('active');
@@ -1874,7 +2458,8 @@ function navigateTo(pageName) {
   if (pageEl) pageEl.classList.add('active');
 
   if (authToken && pageLoadFns[pageName]) {
-    pageLoadFns[pageName]().catch(console.error);
+    var _result = pageLoadFns[pageName]();
+    if (_result && typeof _result.catch === 'function') _result.catch(console.error);
   }
 
   // Track getting-started steps
@@ -1908,7 +2493,7 @@ async function loadAnalytics() {
     return;
   }
 
-  const statusIcon = s => s === 'success' ? '✅' : s === 'running' ? '🔄' : s === 'failed' ? '❌' : '⏳';
+  const statusIcon = s => s === 'success' ? IC.check : s === 'running' ? IC.refresh : s === 'failed' ? IC.x : IC.hourglass;
   tableEl.innerHTML = `
     <table style="width:100%;border-collapse:collapse;font-size:.85rem">
       <thead>
@@ -2103,7 +2688,7 @@ async function testConnector(service) {
   if (!url) { showNotification(t('save_connector_first'), 'error'); return; }
   try {
     const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: '✅ TON Agent Platform: test connection', username: 'TonAgent' }) });
+      body: JSON.stringify({ text: 'TON Agent Platform: test connection', username: 'TonAgent' }) });
     if (res.ok) {
       showNotification(t('test_ok'), 'success');
     } else {
@@ -2187,22 +2772,247 @@ async function loadProfile() {
     if (fb) fb.style.display = 'none';
   }
 
-  // Balance data
-  const balance = await apiRequest('GET', '/api/balance');
+  // Balance + subscription in parallel
+  const [balance, sub, stats] = await Promise.all([
+    apiRequest('GET', '/api/balance'),
+    apiRequest('GET', '/api/subscription'),
+    apiRequest('GET', '/api/stats/me'),
+  ]);
+
+  // Balance
   if (balance && !balance.error) {
     setEl('profile-balance', (balance.balance_ton ?? 0).toFixed(2) + ' TON');
     setEl('profile-earned', (balance.total_earned ?? 0).toFixed(2) + ' TON');
-    setEl('profile-subscription', balance.subscription || 'Free');
-    setEl('profile-wallet', balance.wallet_address ? balance.wallet_address.slice(0, 8) + '...' + balance.wallet_address.slice(-6) : 'Not linked');
+    setEl('profile-wallet', balance.wallet_address ? balance.wallet_address.slice(0, 8) + '...' + balance.wallet_address.slice(-6) : (currentLang === 'ru' ? 'Не привязан' : 'Not linked'));
   }
 
-  // Stats from API
-  const stats = await apiRequest('GET', '/api/stats/me');
-  if (stats.ok) {
+  // Subscription
+  if (sub && sub.ok) {
+    updateSubscriptionUI(sub);
+  }
+
+  // Stats
+  if (stats && stats.ok) {
     setEl('profile-total-agents', stats.agentsTotal ?? '—');
     setEl('profile-active-agents', stats.agentsActive ?? '—');
     setEl('profile-total-runs', stats.totalRuns ?? '—');
     setEl('profile-success-rate', stats.successRate != null ? stats.successRate + '%' : '—');
+  }
+}
+
+// ===== SUBSCRIPTION SYNC =====
+let _currentSub = null;
+let _planPeriod = 'month';
+
+async function loadSubscriptionGlobal() {
+  try {
+    const sub = await apiRequest('GET', '/api/subscription');
+    if (sub && sub.ok) {
+      _currentSub = sub;
+      updateSidebarPlanBadge(sub);
+      updateOverviewUsage(sub);
+      updateSubscriptionUI(sub);
+    }
+  } catch {}
+}
+
+function updateOverviewUsage(sub) {
+  function setBar(labelId, barId, used, max) {
+    var el = document.getElementById(labelId);
+    var bar = document.getElementById(barId);
+    if (el) el.textContent = used + ' / ' + (max === -1 ? '∞' : max);
+    if (bar) {
+      if (max === -1) { bar.style.width = '100%'; bar.style.background = 'linear-gradient(90deg,#4ade80,#22d3ee)'; }
+      else if (max === 0) bar.style.width = '0%';
+      else bar.style.width = Math.min(100, (used / max) * 100) + '%';
+    }
+  }
+  setBar('ov-agents-usage', 'ov-agents-bar', sub.agentsUsed || 0, sub.maxAgents);
+  setBar('ov-active-usage', 'ov-active-bar', sub.activeAgentsUsed || 0, sub.maxActiveAgents);
+  setBar('ov-gen-usage', 'ov-gen-bar', sub.generationsUsed || 0, sub.generationsPerMonth);
+  var badge = document.getElementById('overview-plan-badge');
+  if (badge) badge.innerHTML = planIcon(sub.planIcon) + ' ' + (sub.planName || 'Free');
+}
+
+function updateSubscriptionUI(sub) {
+  _currentSub = sub;
+  const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+
+  // Plan banner
+  var iconEl = document.getElementById('profile-plan-icon');
+  if (iconEl) iconEl.innerHTML = planIcon(sub.planIcon);
+  setEl('profile-plan-name', sub.planName || 'Free');
+
+  // Expiry
+  var expiresEl = document.getElementById('profile-plan-expires');
+  if (expiresEl) {
+    if (!sub.expiresAt) {
+      expiresEl.textContent = sub.planId === 'free' ? '' : (currentLang === 'ru' ? 'Бессрочно' : 'Lifetime');
+    } else {
+      var days = sub.daysRemaining;
+      if (days != null) {
+        expiresEl.textContent = (currentLang === 'ru' ? 'Осталось ' + days + ' дн.' : days + ' days left');
+        if (days <= 3) expiresEl.style.color = '#ef4444';
+        else if (days <= 7) expiresEl.style.color = '#f59e0b';
+      }
+    }
+  }
+
+  // Upgrade button visibility
+  var upgradeBtn = document.querySelector('.sub-plan-banner .btn-accent');
+  if (upgradeBtn) {
+    upgradeBtn.style.display = sub.planId === 'unlimited' ? 'none' : '';
+  }
+
+  // Usage bars
+  function setUsageBar(labelId, barId, used, max) {
+    var labelEl = document.getElementById(labelId);
+    var barEl = document.getElementById(barId);
+    if (labelEl) {
+      var maxStr = max === -1 ? '∞' : max;
+      labelEl.textContent = used + ' / ' + maxStr;
+    }
+    if (barEl) {
+      if (max === -1) {
+        barEl.style.width = '100%';
+        barEl.classList.remove('warning');
+      } else if (max === 0) {
+        barEl.style.width = '0%';
+      } else {
+        var pct = Math.min(100, (used / max) * 100);
+        barEl.style.width = pct + '%';
+        if (pct >= 90) barEl.classList.add('warning');
+        else barEl.classList.remove('warning');
+      }
+    }
+  }
+  setUsageBar('profile-agents-usage', 'profile-agents-bar', sub.agentsUsed || 0, sub.maxAgents);
+  setUsageBar('profile-active-usage', 'profile-active-bar', sub.activeAgentsUsed || 0, sub.maxActiveAgents);
+  setUsageBar('profile-gen-usage', 'profile-gen-bar', sub.generationsUsed || 0, sub.generationsPerMonth);
+
+  // Sidebar badge
+  updateSidebarPlanBadge(sub);
+}
+
+function updateSidebarPlanBadge(sub) {
+  var badge = document.getElementById('user-plan-badge');
+  if (!badge) return;
+  badge.innerHTML = planIcon(sub.planIcon) + ' ' + (sub.planName || 'Free');
+  badge.className = 'user-tier plan-badge-' + (sub.planId || 'free');
+}
+
+// Plans modal
+async function openPlansModal() {
+  var modal = document.getElementById('plans-modal');
+  if (!modal) return;
+  modal.style.display = 'flex';
+  await renderPlansGrid();
+}
+
+function closePlansModal() {
+  var modal = document.getElementById('plans-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+function switchPlanPeriod(period) {
+  _planPeriod = period;
+  document.getElementById('period-month-btn').classList.toggle('active', period === 'month');
+  document.getElementById('period-year-btn').classList.toggle('active', period === 'year');
+  renderPlansGrid();
+}
+
+async function renderPlansGrid() {
+  var grid = document.getElementById('plans-grid');
+  if (!grid) return;
+  grid.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--text-muted)">Loading...</div>';
+
+  try {
+    var data = await apiRequest('GET', '/api/plans');
+    if (!data.ok) { grid.innerHTML = '<div style="color:#ef4444">Error loading plans</div>'; return; }
+
+    var html = '';
+    data.plans.forEach(function(p) {
+      var price = _planPeriod === 'year' ? p.priceYearTon : p.priceMonthTon;
+      var periodLabel = _planPeriod === 'year' ? (currentLang === 'ru' ? '/год' : '/year') : (currentLang === 'ru' ? '/мес' : '/mo');
+      var isCurrent = p.isCurrent;
+      var isPopular = p.id === 'pro';
+      var isDowngrade = false;
+
+      // Determine if upgrade/downgrade
+      var planOrder = { free: 0, starter: 1, pro: 2, unlimited: 3 };
+      var currentOrder = planOrder[data.currentPlanId] || 0;
+      var thisOrder = planOrder[p.id] || 0;
+      if (thisOrder < currentOrder) isDowngrade = true;
+
+      html += '<div class="plan-card' + (isCurrent ? ' current' : '') + (isPopular ? ' popular' : '') + '">';
+      html += '<div class="plan-card-icon">' + planIcon(p.icon) + '</div>';
+      html += '<div class="plan-card-name">' + escHtml(p.name) + '</div>';
+      html += '<div class="plan-card-price">';
+      if (price === 0) {
+        html += (currentLang === 'ru' ? 'Бесплатно' : 'Free');
+      } else {
+        html += price + ' TON <span class="period">' + periodLabel + '</span>';
+      }
+      html += '</div>';
+      html += '<ul class="plan-card-features">';
+      p.features.forEach(function(f) { html += '<li>' + escHtml(f) + '</li>'; });
+      html += '</ul>';
+
+      if (isCurrent) {
+        html += '<button class="plan-card-btn btn-current" disabled>' + (currentLang === 'ru' ? 'Текущий план' : 'Current Plan') + '</button>';
+      } else if (p.id === 'free') {
+        html += '<button class="plan-card-btn btn-downgrade" disabled>' + (currentLang === 'ru' ? 'Базовый' : 'Basic') + '</button>';
+      } else {
+        html += '<button class="plan-card-btn btn-upgrade" onclick="buyPlan(\'' + p.id + '\')">' + (currentLang === 'ru' ? 'Выбрать ' : 'Select ') + p.name + '</button>';
+      }
+      html += '</div>';
+    });
+    grid.innerHTML = html;
+  } catch (e) {
+    grid.innerHTML = '<div style="color:#ef4444">Failed to load plans</div>';
+  }
+}
+
+async function buyPlan(planId) {
+  var confirmed = await studioConfirm({
+    title: currentLang === 'ru' ? 'Подтвердите оплату' : 'Confirm Payment',
+    message: currentLang === 'ru'
+      ? 'Оплата будет списана с вашего баланса. Продолжить?'
+      : 'Payment will be deducted from your balance. Continue?',
+    confirmText: currentLang === 'ru' ? 'Оплатить' : 'Pay Now',
+    cancelText: currentLang === 'ru' ? 'Отмена' : 'Cancel',
+    type: 'warning',
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>'
+  });
+  if (!confirmed) return;
+
+  try {
+    var data = await apiRequest('POST', '/api/subscription/buy', { planId: planId, period: _planPeriod });
+    if (data.ok) {
+      showNotification(
+        planIcon(data.planIcon) + ' ' + (currentLang === 'ru' ? 'Подписка ' + data.planName + ' активирована!' : data.planName + ' plan activated!'),
+        'success'
+      );
+      closePlansModal();
+      // Refresh subscription everywhere
+      await loadSubscriptionGlobal();
+      // Refresh profile if on that page
+      if (document.getElementById('profile-page')?.classList.contains('active')) loadProfile();
+      if (document.getElementById('wallet-page')?.classList.contains('active')) loadWalletBalance();
+    } else {
+      if (data.needTopup) {
+        showNotification(
+          (currentLang === 'ru' ? 'Недостаточно средств. Нужно ещё ' : 'Insufficient balance. Need ') + data.needTopup.toFixed(2) + ' TON',
+          'error'
+        );
+        closePlansModal();
+        navigateTo('wallet');
+      } else {
+        showNotification(data.error || 'Error', 'error');
+      }
+    }
+  } catch (e) {
+    showNotification('Error: ' + e.message, 'error');
   }
 }
 
@@ -2276,7 +3086,7 @@ async function loadTransactions() {
     return;
   }
 
-  const txIcons = { topup: '💰', withdraw: '💸', spend: '🔥', earn: '💎', refund: '🔄' };
+  const txIcons = { topup: IC.dollar, withdraw: IC.send, spend: IC.fire, earn: IC.gem, refund: IC.refresh };
   const txLabels = {
     en: { topup: 'Top Up', withdraw: 'Withdraw', spend: 'Spend', earn: 'Earned', refund: 'Refund' },
     ru: { topup: 'Пополнение', withdraw: 'Вывод', spend: 'Расход', earn: 'Заработок', refund: 'Возврат' }
@@ -2296,7 +3106,7 @@ async function loadTransactions() {
     const status = tx.status || 'completed';
 
     return '<div class="wallet-tx-row">' +
-      '<div class="wallet-tx-icon ' + type + '">' + (txIcons[type] || '📋') + '</div>' +
+      '<div class="wallet-tx-icon ' + type + '">' + (txIcons[type] || IC.clipboard) + '</div>' +
       '<div class="wallet-tx-info">' +
         '<div class="wallet-tx-type">' + label + '</div>' +
         (desc ? '<div class="wallet-tx-desc" title="' + desc.replace(/"/g, '&quot;') + '">' + desc + '</div>' : '') +
@@ -2304,7 +3114,7 @@ async function loadTransactions() {
       '<div class="wallet-tx-amount ' + amountClass + '">' + sign + Math.abs(amount).toFixed(2) + ' TON</div>' +
       '<div class="wallet-tx-meta">' +
         '<span class="wallet-tx-date">' + dateStr + ' ' + timeStr + '</span>' +
-        '<span class="wallet-tx-status ' + status + '">' + (status === 'completed' ? '✅' : status === 'pending' ? '⏳' : '❌') + '</span>' +
+        '<span class="wallet-tx-status ' + status + '">' + (status === 'completed' ? IC.check : status === 'pending' ? IC.hourglass : IC.x) + '</span>' +
       '</div>' +
     '</div>';
   }).join('');
@@ -2402,16 +3212,30 @@ function copyWalletAddress() {
   }
 }
 
-async function linkWalletPrompt() {
-  const current = walletData && walletData.wallet_address ? walletData.wallet_address : '';
-  const addr = prompt(currentLang === 'ru' ? 'Введите ваш TON адрес (EQ... / UQ...):' : 'Enter your TON wallet address (EQ... / UQ...):', current);
+function linkWalletPrompt() {
+  var current = walletData && walletData.wallet_address ? walletData.wallet_address : '';
+  var modal = document.getElementById('wallet-link-modal');
+  var input = document.getElementById('wallet-link-input');
+  if (input) input.value = current;
+  if (modal) modal.style.display = 'flex';
+  setTimeout(function() { if (input) input.focus(); }, 100);
+}
+
+function closeWalletLinkModal() {
+  var modal = document.getElementById('wallet-link-modal');
+  if (modal) { modal.classList.add('closing'); setTimeout(function() { modal.style.display = 'none'; modal.classList.remove('closing'); }, 180); }
+}
+
+async function submitWalletLink() {
+  var input = document.getElementById('wallet-link-input');
+  var addr = input ? input.value.trim() : '';
   if (!addr) return;
-  const trimmed = addr.trim();
-  if (!trimmed.startsWith('EQ') && !trimmed.startsWith('UQ') && !trimmed.startsWith('0:')) {
-    showNotification(t('invalid_addr'), 'error');
+  if (!addr.startsWith('EQ') && !addr.startsWith('UQ') && !addr.startsWith('0:')) {
+    toast(currentLang === 'ru' ? 'Неверный формат адреса' : 'Invalid address format', 'error');
     return;
   }
-  await saveWalletAddress(trimmed, null, 'manual');
+  closeWalletLinkModal();
+  await saveWalletAddress(addr, null, 'manual');
 }
 
 async function saveWalletAddress(address, walletName, connectedVia) {
@@ -2536,23 +3360,23 @@ async function checkTopup() {
         const creditedAmt = parseFloat(data.credited || data.amount || 0).toFixed(2);
         const newBal = parseFloat(data.balance || data.newBalance || 0).toFixed(2);
         res.textContent = (currentLang === 'ru'
-          ? '✅ Зачислено ' + creditedAmt + ' TON! Баланс: ' + newBal + ' TON'
-          : '✅ Credited ' + creditedAmt + ' TON! Balance: ' + newBal + ' TON');
+          ? 'Зачислено ' + creditedAmt + ' TON! Баланс: ' + newBal + ' TON'
+          : 'Credited ' + creditedAmt + ' TON! Balance: ' + newBal + ' TON');
         // Refresh wallet data
         await loadWalletBalance();
         await loadTransactions();
       } else {
         res.className = 'topup-result error';
         res.textContent = (currentLang === 'ru'
-          ? '❌ Транзакция не найдена. Убедитесь, что отправили TON с правильным комментарием.'
-          : '❌ Transaction not found. Make sure you sent TON with the correct comment.');
+          ? 'Транзакция не найдена. Убедитесь, что отправили TON с правильным комментарием.'
+          : 'Transaction not found. Make sure you sent TON with the correct comment.');
       }
     }
   } catch (e) {
     if (res) {
       res.style.display = 'block';
       res.className = 'topup-result error';
-      res.textContent = '❌ ' + (e.message || 'Error checking transaction');
+      res.textContent = (e.message || 'Error checking transaction');
     }
   } finally {
     if (btn) {
@@ -2647,8 +3471,8 @@ async function submitWithdraw() {
         resEl.style.display = 'block';
         resEl.className = 'withdraw-result success';
         resEl.textContent = (currentLang === 'ru'
-          ? '✅ Отправлено! TX: ' + (data.txHash || '—').substring(0, 16) + '...'
-          : '✅ Sent! TX: ' + (data.txHash || '—').substring(0, 16) + '...');
+          ? 'Отправлено! TX: ' + (data.txHash || '—').substring(0, 16) + '...'
+          : 'Sent! TX: ' + (data.txHash || '—').substring(0, 16) + '...');
       }
       // Save wallet address for future use (syncs with bot)
       saveWalletAddress(address, null, 'manual').catch(() => {});
@@ -2667,7 +3491,7 @@ async function submitWithdraw() {
   } catch (e) {
     if (errEl) {
       errEl.style.display = 'block';
-      errEl.textContent = '❌ ' + (e.message || 'Error');
+      errEl.textContent = (e.message || 'Error');
     }
   } finally {
     if (btn) {
@@ -2700,32 +3524,32 @@ navigateTo = function(pageName) {
 // ===== FLOW BUILDER (Visual Agent Constructor) =====
 const FLOW_NODE_DEFS = {
   // ── Triggers ──
-  timer:          { cat: 'triggers', color: '#f59e0b', icon: '\u23F0',  label: 'Timer',          labelRu: '\u0422\u0430\u0439\u043C\u0435\u0440',        desc: 'Run on interval',             descRu: '\u0417\u0430\u043F\u0443\u0441\u043A \u043F\u043E \u0438\u043D\u0442\u0435\u0440\u0432\u0430\u043B\u0443',         fields: [
+  timer:          { cat: 'triggers', color: '#f59e0b', icon: '\u25F7',  label: 'Timer',          labelRu: '\u0422\u0430\u0439\u043C\u0435\u0440',        desc: 'Run on interval',             descRu: '\u0417\u0430\u043F\u0443\u0441\u043A \u043F\u043E \u0438\u043D\u0442\u0435\u0440\u0432\u0430\u043B\u0443',         fields: [
     { key: 'intervalMs', label: 'Interval', labelRu: '\u0418\u043D\u0442\u0435\u0440\u0432\u0430\u043B', type: 'select', options: [{ v: '60000', l: '1 min' }, { v: '300000', l: '5 min' }, { v: '600000', l: '10 min' }, { v: '1800000', l: '30 min' }, { v: '3600000', l: '1 hour' }] },
     { key: 'cron', label: 'Cron', type: 'text', placeholder: '0 9 * * 1-5' }
   ] },
-  manual:         { cat: 'triggers', color: '#f59e0b', icon: '\u25B6\uFE0F', label: 'Manual',     labelRu: '\u0412\u0440\u0443\u0447\u043D\u0443\u044E',       desc: 'Start manually',              descRu: '\u0417\u0430\u043F\u0443\u0441\u043A \u0432\u0440\u0443\u0447\u043D\u0443\u044E',          fields: [] },
-  webhook:        { cat: 'triggers', color: '#f59e0b', icon: '\uD83D\uDD17', label: 'Webhook',    labelRu: 'Webhook',         desc: 'Trigger via HTTP',            descRu: '\u0417\u0430\u043F\u0443\u0441\u043A \u0447\u0435\u0440\u0435\u0437 HTTP',          fields: [{ key: 'path', label: 'Path', type: 'text', placeholder: '/my-hook' }] },
+  manual:         { cat: 'triggers', color: '#f59e0b', icon: '\u25B7', label: 'Manual',     labelRu: '\u0412\u0440\u0443\u0447\u043D\u0443\u044E',       desc: 'Start manually',              descRu: '\u0417\u0430\u043F\u0443\u0441\u043A \u0432\u0440\u0443\u0447\u043D\u0443\u044E',          fields: [] },
+  webhook:        { cat: 'triggers', color: '#f59e0b', icon: '\u21E5', label: 'Webhook',    labelRu: 'Webhook',         desc: 'Trigger via HTTP',            descRu: '\u0417\u0430\u043F\u0443\u0441\u043A \u0447\u0435\u0440\u0435\u0437 HTTP',          fields: [{ key: 'path', label: 'Path', type: 'text', placeholder: '/my-hook' }] },
   // ── TON ──
-  get_balance:    { cat: 'ton',      color: '#3b82f6', icon: '\uD83D\uDCB0', label: 'Get Balance', labelRu: '\u0411\u0430\u043B\u0430\u043D\u0441',          desc: 'Check TON balance',           descRu: '\u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u0431\u0430\u043B\u0430\u043D\u0441 TON',       fields: [{ key: 'address', label: 'Address', type: 'text', placeholder: 'EQ...' }] },
-  nft_floor:      { cat: 'ton',      color: '#3b82f6', icon: '\uD83D\uDDBC\uFE0F', label: 'NFT Floor', labelRu: '\u0426\u0435\u043D\u0430 NFT', desc: 'NFT floor price',             descRu: 'Floor \u0446\u0435\u043D\u0430 NFT',            fields: [{ key: 'collection', label: 'Collection', type: 'text', placeholder: 'TON Punks' }] },
-  send_ton:       { cat: 'ton',      color: '#3b82f6', icon: '\uD83D\uDCB8', label: 'Send TON',   labelRu: '\u041E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C TON',   desc: 'Send TON transaction',        descRu: '\u041E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C TON',           fields: [
+  get_balance:    { cat: 'ton',      color: '#3b82f6', icon: '$', label: 'Get Balance', labelRu: '\u0411\u0430\u043B\u0430\u043D\u0441',          desc: 'Check TON balance',           descRu: '\u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u0431\u0430\u043B\u0430\u043D\u0441 TON',       fields: [{ key: 'address', label: 'Address', type: 'text', placeholder: 'EQ...' }] },
+  nft_floor:      { cat: 'ton',      color: '#3b82f6', icon: '\u25C8', label: 'NFT Floor', labelRu: '\u0426\u0435\u043D\u0430 NFT', desc: 'NFT floor price',             descRu: 'Floor \u0446\u0435\u043D\u0430 NFT',            fields: [{ key: 'collection', label: 'Collection', type: 'text', placeholder: 'TON Punks' }] },
+  send_ton:       { cat: 'ton',      color: '#3b82f6', icon: '\u2197', label: 'Send TON',   labelRu: '\u041E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C TON',   desc: 'Send TON transaction',        descRu: '\u041E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C TON',           fields: [
     { key: 'address', label: 'To address', labelRu: '\u0410\u0434\u0440\u0435\u0441', type: 'text', placeholder: 'EQ...' },
     { key: 'amount', label: 'Amount', labelRu: '\u0421\u0443\u043C\u043C\u0430', type: 'number', placeholder: '1.0' },
     { key: 'memo', label: 'Memo', type: 'text', placeholder: 'Payment for...' }
   ] },
   // ── Gifts ──
-  gift_prices:    { cat: 'gifts',    color: '#a855f7', icon: '\uD83C\uDF81', label: 'Gift Prices', labelRu: '\u0426\u0435\u043D\u044B \u043F\u043E\u0434\u0430\u0440\u043A\u043E\u0432',   desc: 'Gift floor price',            descRu: 'Floor \u0446\u0435\u043D\u0430 \u043F\u043E\u0434\u0430\u0440\u043A\u0430',        fields: [{ key: 'slug', label: 'Gift slug', type: 'text', placeholder: 'gift-name' }] },
-  scan_arbitrage: { cat: 'gifts',    color: '#a855f7', icon: '\uD83D\uDCC8', label: 'Scan Arbitrage', labelRu: '\u0410\u0440\u0431\u0438\u0442\u0440\u0430\u0436', desc: 'Find arbitrage deals',       descRu: '\u041F\u043E\u0438\u0441\u043A \u0430\u0440\u0431\u0438\u0442\u0440\u0430\u0436\u0430',          fields: [{ key: 'min_profit_pct', label: 'Min profit %', type: 'number', placeholder: '5' }] },
-  gift_floor:     { cat: 'gifts',    color: '#a855f7', icon: '\uD83D\uDCCA', label: 'Gift Floor', labelRu: '\u0426\u0435\u043D\u0430 \u043F\u043E\u0434\u0430\u0440\u043A\u0430',   desc: 'Real-time gift floor',        descRu: '\u0420\u0435\u0430\u043B\u044C\u043D\u0430\u044F \u0446\u0435\u043D\u0430 \u043F\u043E\u0434\u0430\u0440\u043A\u0430',     fields: [{ key: 'gift_name', label: 'Gift name', type: 'text', placeholder: 'Plush Pepe' }] },
-  market_overview:{ cat: 'gifts',    color: '#a855f7', icon: '\uD83C\uDFEA', label: 'Market Overview', labelRu: '\u041E\u0431\u0437\u043E\u0440 \u0440\u044B\u043D\u043A\u0430', desc: 'Gift market overview',       descRu: '\u041E\u0431\u0437\u043E\u0440 \u0440\u044B\u043D\u043A\u0430 \u043F\u043E\u0434\u0430\u0440\u043A\u043E\u0432',   fields: [] },
+  gift_prices:    { cat: 'gifts',    color: '#a855f7', icon: '\u274B', label: 'Gift Prices', labelRu: '\u0426\u0435\u043D\u044B \u043F\u043E\u0434\u0430\u0440\u043A\u043E\u0432',   desc: 'Gift floor price',            descRu: 'Floor \u0446\u0435\u043D\u0430 \u043F\u043E\u0434\u0430\u0440\u043A\u0430',        fields: [{ key: 'slug', label: 'Gift slug', type: 'text', placeholder: 'gift-name' }] },
+  scan_arbitrage: { cat: 'gifts',    color: '#a855f7', icon: '\u2195', label: 'Scan Arbitrage', labelRu: '\u0410\u0440\u0431\u0438\u0442\u0440\u0430\u0436', desc: 'Find arbitrage deals',       descRu: '\u041F\u043E\u0438\u0441\u043A \u0430\u0440\u0431\u0438\u0442\u0440\u0430\u0436\u0430',          fields: [{ key: 'min_profit_pct', label: 'Min profit %', type: 'number', placeholder: '5' }] },
+  gift_floor:     { cat: 'gifts',    color: '#a855f7', icon: '\u25A5', label: 'Gift Floor', labelRu: '\u0426\u0435\u043D\u0430 \u043F\u043E\u0434\u0430\u0440\u043A\u0430',   desc: 'Real-time gift floor',        descRu: '\u0420\u0435\u0430\u043B\u044C\u043D\u0430\u044F \u0446\u0435\u043D\u0430 \u043F\u043E\u0434\u0430\u0440\u043A\u0430',     fields: [{ key: 'gift_name', label: 'Gift name', type: 'text', placeholder: 'Plush Pepe' }] },
+  market_overview:{ cat: 'gifts',    color: '#a855f7', icon: '\u25A3', label: 'Market Overview', labelRu: '\u041E\u0431\u0437\u043E\u0440 \u0440\u044B\u043D\u043A\u0430', desc: 'Gift market overview',       descRu: '\u041E\u0431\u0437\u043E\u0440 \u0440\u044B\u043D\u043A\u0430 \u043F\u043E\u0434\u0430\u0440\u043A\u043E\u0432',   fields: [] },
   // ── Web ──
-  web_search:     { cat: 'web',      color: '#06b6d4', icon: '\uD83D\uDD0D', label: 'Web Search', labelRu: '\u041F\u043E\u0438\u0441\u043A',            desc: 'Search the web',              descRu: '\u041F\u043E\u0438\u0441\u043A \u0432 \u0438\u043D\u0442\u0435\u0440\u043D\u0435\u0442\u0435',        fields: [
+  web_search:     { cat: 'web',      color: '#06b6d4', icon: '\u25CE', label: 'Web Search', labelRu: '\u041F\u043E\u0438\u0441\u043A',            desc: 'Search the web',              descRu: '\u041F\u043E\u0438\u0441\u043A \u0432 \u0438\u043D\u0442\u0435\u0440\u043D\u0435\u0442\u0435',        fields: [
     { key: 'query', label: 'Query', labelRu: '\u0417\u0430\u043F\u0440\u043E\u0441', type: 'text', placeholder: 'Search...' },
     { key: 'save_to', label: 'Save to variable', labelRu: '\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C \u0432', type: 'text', placeholder: 'search_result' }
   ] },
-  fetch_url:      { cat: 'web',      color: '#06b6d4', icon: '\uD83C\uDF10', label: 'Fetch URL',  labelRu: '\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C URL',    desc: 'HTTP GET request',            descRu: 'HTTP GET \u0437\u0430\u043F\u0440\u043E\u0441',            fields: [{ key: 'url', label: 'URL', type: 'text', placeholder: 'https://...' }] },
-  http_request:   { cat: 'web',      color: '#06b6d4', icon: '\u2194\uFE0F', label: 'HTTP Request', labelRu: 'HTTP \u0437\u0430\u043F\u0440\u043E\u0441',   desc: 'Custom HTTP request',         descRu: '\u041F\u0440\u043E\u0438\u0437\u0432\u043E\u043B\u044C\u043D\u044B\u0439 HTTP \u0437\u0430\u043F\u0440\u043E\u0441',   fields: [
+  fetch_url:      { cat: 'web',      color: '#06b6d4', icon: '\u25C9', label: 'Fetch URL',  labelRu: '\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C URL',    desc: 'HTTP GET request',            descRu: 'HTTP GET \u0437\u0430\u043F\u0440\u043E\u0441',            fields: [{ key: 'url', label: 'URL', type: 'text', placeholder: 'https://...' }] },
+  http_request:   { cat: 'web',      color: '#06b6d4', icon: '\u21C4', label: 'HTTP Request', labelRu: 'HTTP \u0437\u0430\u043F\u0440\u043E\u0441',   desc: 'Custom HTTP request',         descRu: '\u041F\u0440\u043E\u0438\u0437\u0432\u043E\u043B\u044C\u043D\u044B\u0439 HTTP \u0437\u0430\u043F\u0440\u043E\u0441',   fields: [
     { key: 'url', label: 'URL', type: 'text', placeholder: 'https://...' },
     { key: 'method', label: 'Method', labelRu: '\u041C\u0435\u0442\u043E\u0434', type: 'select', options: [{ v: 'GET', l: 'GET' }, { v: 'POST', l: 'POST' }, { v: 'PUT', l: 'PUT' }, { v: 'DELETE', l: 'DELETE' }] },
     { key: 'headers', label: 'Headers', labelRu: '\u0417\u0430\u0433\u043E\u043B\u043E\u0432\u043A\u0438', type: 'textarea', placeholder: '{"Authorization":"Bearer ..."}' },
@@ -2733,18 +3557,18 @@ const FLOW_NODE_DEFS = {
     { key: 'save_to', label: 'Save to variable', labelRu: '\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C \u0432', type: 'text', placeholder: 'response_data' }
   ] },
   // ── Telegram ──
-  send_message:   { cat: 'telegram', color: '#0ea5e9', icon: '\u2709\uFE0F', label: 'TG Message', labelRu: '\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 TG',    desc: 'Send Telegram message',       descRu: '\u041E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435',      fields: [{ key: 'peer', label: 'Chat/User', type: 'text', placeholder: '@username' }, { key: 'text', label: 'Text', type: 'textarea', placeholder: '{{result}} \u2014 use for prev step data' }] },
-  tg_read:        { cat: 'telegram', color: '#0ea5e9', icon: '\uD83D\uDCE9', label: 'Read Messages', labelRu: '\u0427\u0438\u0442\u0430\u0442\u044C \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F', desc: 'Read chat messages', descRu: '\u0427\u0438\u0442\u0430\u0442\u044C \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F \u0447\u0430\u0442\u0430', fields: [{ key: 'peer', label: 'Chat', type: 'text', placeholder: '@channel' }, { key: 'limit', label: 'Limit', type: 'number', placeholder: '10' }] },
-  tg_react:       { cat: 'telegram', color: '#0ea5e9', icon: '\uD83D\uDC4D', label: 'Reaction',   labelRu: '\u0420\u0435\u0430\u043A\u0446\u0438\u044F',         desc: 'Add reaction to message',     descRu: '\u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u0440\u0435\u0430\u043A\u0446\u0438\u044E',         fields: [{ key: 'peer', label: 'Chat', type: 'text', placeholder: '@channel' }, { key: 'emoji', label: 'Emoji', type: 'text', placeholder: '\uD83D\uDC4D' }] },
-  tg_forward:     { cat: 'telegram', color: '#0ea5e9', icon: '\u2197\uFE0F', label: 'Forward',    labelRu: '\u041F\u0435\u0440\u0435\u0441\u043B\u0430\u0442\u044C',       desc: 'Forward message',             descRu: '\u041F\u0435\u0440\u0435\u0441\u043B\u0430\u0442\u044C \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435',       fields: [{ key: 'from_peer', label: 'From chat', type: 'text', placeholder: '@source' }, { key: 'to_peer', label: 'To chat', type: 'text', placeholder: '@target' }] },
+  send_message:   { cat: 'telegram', color: '#0ea5e9', icon: '\u2709', label: 'TG Message', labelRu: '\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 TG',    desc: 'Send Telegram message',       descRu: '\u041E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435',      fields: [{ key: 'peer', label: 'Chat/User', type: 'text', placeholder: '@username' }, { key: 'text', label: 'Text', type: 'textarea', placeholder: '{{result}} \u2014 use for prev step data' }] },
+  tg_read:        { cat: 'telegram', color: '#0ea5e9', icon: '\u2199', label: 'Read Messages', labelRu: '\u0427\u0438\u0442\u0430\u0442\u044C \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F', desc: 'Read chat messages', descRu: '\u0427\u0438\u0442\u0430\u0442\u044C \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F \u0447\u0430\u0442\u0430', fields: [{ key: 'peer', label: 'Chat', type: 'text', placeholder: '@channel' }, { key: 'limit', label: 'Limit', type: 'number', placeholder: '10' }] },
+  tg_react:       { cat: 'telegram', color: '#0ea5e9', icon: '\u2661', label: 'Reaction',   labelRu: '\u0420\u0435\u0430\u043A\u0446\u0438\u044F',         desc: 'Add reaction to message',     descRu: '\u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u0440\u0435\u0430\u043A\u0446\u0438\u044E',         fields: [{ key: 'peer', label: 'Chat', type: 'text', placeholder: '@channel' }, { key: 'emoji', label: 'Emoji', type: 'text', placeholder: '+1' }] },
+  tg_forward:     { cat: 'telegram', color: '#0ea5e9', icon: '\u2934', label: 'Forward',    labelRu: '\u041F\u0435\u0440\u0435\u0441\u043B\u0430\u0442\u044C',       desc: 'Forward message',             descRu: '\u041F\u0435\u0440\u0435\u0441\u043B\u0430\u0442\u044C \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435',       fields: [{ key: 'from_peer', label: 'From chat', type: 'text', placeholder: '@source' }, { key: 'to_peer', label: 'To chat', type: 'text', placeholder: '@target' }] },
   // ── Output ──
-  notify:         { cat: 'output',   color: '#10b981', icon: '\uD83D\uDD14', label: 'Notify',     labelRu: '\u0423\u0432\u0435\u0434\u043E\u043C\u0438\u0442\u044C',       desc: 'Send notification',           descRu: '\u041E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u0443\u0432\u0435\u0434\u043E\u043C\u043B\u0435\u043D\u0438\u0435',     fields: [
+  notify:         { cat: 'output',   color: '#10b981', icon: '\u266A', label: 'Notify',     labelRu: '\u0423\u0432\u0435\u0434\u043E\u043C\u0438\u0442\u044C',       desc: 'Send notification',           descRu: '\u041E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u0443\u0432\u0435\u0434\u043E\u043C\u043B\u0435\u043D\u0438\u0435',     fields: [
     { key: 'message', label: 'Message', labelRu: '\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435', type: 'textarea', placeholder: '{{result}} \u2014 use for prev step data' },
     { key: 'format', label: 'Format', labelRu: '\u0424\u043E\u0440\u043C\u0430\u0442', type: 'select', options: [{v:'text',l:'Text'},{v:'html',l:'HTML'}] }
   ] },
-  notify_rich:    { cat: 'output',   color: '#10b981', icon: '\uD83D\uDCE8', label: 'Rich Notify', labelRu: 'HTML \u0443\u0432\u0435\u0434\u043E\u043C\u043B\u0435\u043D\u0438\u0435', desc: 'HTML notification',  descRu: 'HTML \u0443\u0432\u0435\u0434\u043E\u043C\u043B\u0435\u043D\u0438\u0435',     fields: [{ key: 'message', label: 'HTML Message', type: 'textarea', placeholder: '<b>Alert</b>' }] },
+  notify_rich:    { cat: 'output',   color: '#10b981', icon: '\u25A4', label: 'Rich Notify', labelRu: 'HTML \u0443\u0432\u0435\u0434\u043E\u043C\u043B\u0435\u043D\u0438\u0435', desc: 'HTML notification',  descRu: 'HTML \u0443\u0432\u0435\u0434\u043E\u043C\u043B\u0435\u043D\u0438\u0435',     fields: [{ key: 'message', label: 'HTML Message', type: 'textarea', placeholder: '<b>Alert</b>' }] },
   // ── Logic ──
-  condition:      { cat: 'logic',    color: '#f43f5e', icon: '\uD83D\uDD00', label: 'Condition',  labelRu: '\u0423\u0441\u043B\u043E\u0432\u0438\u0435',        desc: 'If/else branch',              descRu: '\u0412\u0435\u0442\u0432\u043B\u0435\u043D\u0438\u0435 \u0435\u0441\u043B\u0438/\u0438\u043D\u0430\u0447\u0435',       fields: [
+  condition:      { cat: 'logic',    color: '#f43f5e', icon: '\u25C7', label: 'Condition',  labelRu: '\u0423\u0441\u043B\u043E\u0432\u0438\u0435',        desc: 'If/else branch',              descRu: '\u0412\u0435\u0442\u0432\u043B\u0435\u043D\u0438\u0435 \u0435\u0441\u043B\u0438/\u0438\u043D\u0430\u0447\u0435',       fields: [
     { type: 'row', children: [
       { key: 'left', label: 'A', type: 'text', placeholder: 'minFloor / balance' },
       { key: 'operator', label: 'Op', type: 'select', options: [{v:'==',l:'=='},{v:'!=',l:'!='},{v:'>',l:'>'},{v:'<',l:'<'},{v:'>=',l:'>='},{v:'<=',l:'<='},{v:'contains',l:'\u2283'},{v:'is_empty',l:'\u2205'}] },
@@ -2752,15 +3576,15 @@ const FLOW_NODE_DEFS = {
     ]},
     { key: 'expression', label: 'Free expression', labelRu: '\u0421\u0432\u043E\u0431\u043E\u0434\u043D\u043E\u0435 \u0432\u044B\u0440\u0430\u0436\u0435\u043D\u0438\u0435', type: 'text', placeholder: '{{result.minFloor}} > 0' }
   ], extraPorts: ['true', 'false'] },
-  delay:          { cat: 'logic',    color: '#f43f5e', icon: '\u23F3',  label: 'Delay',          labelRu: '\u0417\u0430\u0434\u0435\u0440\u0436\u043A\u0430',        desc: 'Wait before next step',       descRu: '\u041F\u0430\u0443\u0437\u0430 \u043F\u0435\u0440\u0435\u0434 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u043C \u0448\u0430\u0433\u043E\u043C',   fields: [
+  delay:          { cat: 'logic',    color: '#f43f5e', icon: '\u25F4',  label: 'Delay',          labelRu: '\u0417\u0430\u0434\u0435\u0440\u0436\u043A\u0430',        desc: 'Wait before next step',       descRu: '\u041F\u0430\u0443\u0437\u0430 \u043F\u0435\u0440\u0435\u0434 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u043C \u0448\u0430\u0433\u043E\u043C',   fields: [
     { type: 'row', children: [
       { key: 'delay_amount', label: 'Wait', labelRu: '\u0416\u0434\u0430\u0442\u044C', type: 'number', placeholder: '5' },
       { key: 'delay_unit', label: 'Unit', labelRu: '\u0415\u0434.', type: 'select', options: [{v:'ms',l:'ms'},{v:'s',l:'sec'},{v:'min',l:'min'},{v:'h',l:'hour'}] }
     ]}
   ] },
-  list_agents:    { cat: 'logic',    color: '#f43f5e', icon: '\uD83E\uDD16', label: 'List Agents', labelRu: '\u0421\u043F\u0438\u0441\u043E\u043A \u0430\u0433\u0435\u043D\u0442\u043E\u0432', desc: 'List your agents', descRu: '\u0421\u043F\u0438\u0441\u043E\u043A \u0432\u0430\u0448\u0438\u0445 \u0430\u0433\u0435\u043D\u0442\u043E\u0432', fields: [] },
-  ask_agent:      { cat: 'logic',    color: '#f43f5e', icon: '\uD83D\uDCAC', label: 'Ask Agent',  labelRu: '\u0421\u043F\u0440\u043E\u0441\u0438\u0442\u044C \u0430\u0433\u0435\u043D\u0442\u0430', desc: 'Ask another agent',  descRu: '\u0421\u043F\u0440\u043E\u0441\u0438\u0442\u044C \u0434\u0440\u0443\u0433\u043E\u0433\u043E \u0430\u0433\u0435\u043D\u0442\u0430', fields: [{ key: 'agent_id', label: 'Agent ID', type: 'number', placeholder: '123' }, { key: 'message', label: 'Message', type: 'textarea', placeholder: 'What is...' }] },
-  loop:           { cat: 'logic',    color: '#f43f5e', icon: '\uD83D\uDD04', label: 'Loop',       labelRu: '\u0426\u0438\u043A\u043B',            desc: 'Repeat actions',              descRu: '\u041F\u043E\u0432\u0442\u043E\u0440\u0438\u0442\u044C \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u044F',       fields: [
+  list_agents:    { cat: 'logic',    color: '#f43f5e', icon: '\u25CF', label: 'List Agents', labelRu: '\u0421\u043F\u0438\u0441\u043E\u043A \u0430\u0433\u0435\u043D\u0442\u043E\u0432', desc: 'List your agents', descRu: '\u0421\u043F\u0438\u0441\u043E\u043A \u0432\u0430\u0448\u0438\u0445 \u0430\u0433\u0435\u043D\u0442\u043E\u0432', fields: [] },
+  ask_agent:      { cat: 'logic',    color: '#f43f5e', icon: '\u25C8', label: 'Ask Agent',  labelRu: '\u0421\u043F\u0440\u043E\u0441\u0438\u0442\u044C \u0430\u0433\u0435\u043D\u0442\u0430', desc: 'Ask another agent',  descRu: '\u0421\u043F\u0440\u043E\u0441\u0438\u0442\u044C \u0434\u0440\u0443\u0433\u043E\u0433\u043E \u0430\u0433\u0435\u043D\u0442\u0430', fields: [{ key: 'agent_id', label: 'Agent ID', type: 'number', placeholder: '123' }, { key: 'message', label: 'Message', type: 'textarea', placeholder: 'What is...' }] },
+  loop:           { cat: 'logic',    color: '#f43f5e', icon: '\u21BB', label: 'Loop',       labelRu: '\u0426\u0438\u043A\u043B',            desc: 'Repeat actions',              descRu: '\u041F\u043E\u0432\u0442\u043E\u0440\u0438\u0442\u044C \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u044F',       fields: [
     { key: 'mode', label: 'Mode', labelRu: '\u0420\u0435\u0436\u0438\u043C', type: 'select', options: [{v:'repeat_n',l:'Repeat N'},{v:'while',l:'While'},{v:'for_each',l:'For Each'}] },
     { key: 'count', label: 'Count', labelRu: '\u041A\u043E\u043B-\u0432\u043E', type: 'number', placeholder: '5', showWhen: {key:'mode',value:'repeat_n'} },
     { key: 'while_cond', label: 'While condition', labelRu: '\u041F\u043E\u043A\u0430 \u0443\u0441\u043B\u043E\u0432\u0438\u0435', type: 'text', placeholder: 'balance > 0', showWhen: {key:'mode',value:'while'} },
@@ -2768,12 +3592,12 @@ const FLOW_NODE_DEFS = {
     { key: 'item_var', label: 'Item variable', labelRu: '\u041F\u0435\u0440\u0435\u043C\u0435\u043D\u043D\u0430\u044F \u044D\u043B\u0435\u043C\u0435\u043D\u0442\u0430', type: 'text', placeholder: 'item', showWhen: {key:'mode',value:'for_each'} },
     { key: 'max_iter', label: 'Max iterations', labelRu: '\u041C\u0430\u043A\u0441. \u0438\u0442\u0435\u0440\u0430\u0446\u0438\u0439', type: 'number', placeholder: '100' }
   ], extraPorts: ['loop', 'done'] },
-  group_ref:      { cat: 'logic',    color: '#64748b', icon: '\uD83D\uDCE6', label: 'Function',   labelRu: '\u0424\u0443\u043D\u043A\u0446\u0438\u044F',        desc: 'Call function group',         descRu: '\u0412\u044B\u0437\u0432\u0430\u0442\u044C \u0444\u0443\u043D\u043A\u0446\u0438\u044E',       fields: [
+  group_ref:      { cat: 'logic',    color: '#64748b', icon: '\u25A1', label: 'Function',   labelRu: '\u0424\u0443\u043D\u043A\u0446\u0438\u044F',        desc: 'Call function group',         descRu: '\u0412\u044B\u0437\u0432\u0430\u0442\u044C \u0444\u0443\u043D\u043A\u0446\u0438\u044E',       fields: [
     { key: 'group_id', label: 'Function', labelRu: '\u0424\u0443\u043D\u043A\u0446\u0438\u044F', type: 'select', options: [] }
   ] },
   // ── State ──
-  get_state:      { cat: 'state',    color: '#8b5cf6', icon: '\uD83D\uDCE5', label: 'Get State',  labelRu: '\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C',       desc: 'Read saved value',            descRu: '\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u0437\u043D\u0430\u0447\u0435\u043D\u0438\u0435',        fields: [{ key: 'key', label: 'Key', type: 'text', placeholder: 'my_key' }] },
-  set_state:      { cat: 'state',    color: '#8b5cf6', icon: '\uD83D\uDCE4', label: 'Set State',  labelRu: '\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C',      desc: 'Save value',                  descRu: '\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C \u0437\u043D\u0430\u0447\u0435\u043D\u0438\u0435',       fields: [{ key: 'key', label: 'Key', type: 'text', placeholder: 'my_key' }, { key: 'value', label: 'Value', type: 'text', placeholder: '...' }] },
+  get_state:      { cat: 'state',    color: '#8b5cf6', icon: '\u2193', label: 'Get State',  labelRu: '\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C',       desc: 'Read saved value',            descRu: '\u041F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u0437\u043D\u0430\u0447\u0435\u043D\u0438\u0435',        fields: [{ key: 'key', label: 'Key', type: 'text', placeholder: 'my_key' }] },
+  set_state:      { cat: 'state',    color: '#8b5cf6', icon: '\u2191', label: 'Set State',  labelRu: '\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C',      desc: 'Save value',                  descRu: '\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C \u0437\u043D\u0430\u0447\u0435\u043D\u0438\u0435',       fields: [{ key: 'key', label: 'Key', type: 'text', placeholder: 'my_key' }, { key: 'value', label: 'Value', type: 'text', placeholder: '...' }] },
 };
 
 const NODE_W = 180, NODE_H = 56, PORT_R = 6;
@@ -3090,10 +3914,10 @@ function renderFlowConfig() {
       html += '</div>';
     }
   }
-  html += '<button class="btn-delete-node" onclick="deleteFlowNode(\'' + _flowSelectedId + '\')">\uD83D\uDDD1 ' + t('delete_node') + '</button>';
+  html += '<button class="btn-delete-node" onclick="deleteFlowNode(\'' + _flowSelectedId + '\')">\u2715 ' + t('delete_node') + '</button>';
   // Multi-select: show "Create Function" button
   if (_flowMultiSelected.size >= 2) {
-    const lbl = currentLang === 'ru' ? '\uD83D\uDCE6 \u0421\u043E\u0437\u0434\u0430\u0442\u044C \u0444\u0443\u043D\u043A\u0446\u0438\u044E' : '\uD83D\uDCE6 Create Function';
+    const lbl = currentLang === 'ru' ? '\u25A1 \u0421\u043E\u0437\u0434\u0430\u0442\u044C \u0444\u0443\u043D\u043A\u0446\u0438\u044E' : '\u25A1 Create Function';
     html += '<button class="btn-create-group" onclick="createFlowGroup()" style="width:100%;margin-top:8px;padding:8px;border-radius:8px;background:rgba(100,116,139,0.15);border:1px solid rgba(100,116,139,0.4);color:#94a3b8;cursor:pointer;font-size:0.8rem;font-weight:500;">' + lbl + '</button>';
   }
   body.innerHTML = html;
@@ -3111,13 +3935,27 @@ function updateFlowNodeConfig(nodeId, key, value) {
 
 function createFlowGroup() {
   if (_flowMultiSelected.size < 2) return;
-  const nodeIds = [..._flowMultiSelected];
-  const name = prompt(currentLang === 'ru' ? '\u0418\u043C\u044F \u0444\u0443\u043D\u043A\u0446\u0438\u0438:' : 'Function name:', 'Function ' + _flowGroupNextId);
+  var modal = document.getElementById('flow-group-modal');
+  var input = document.getElementById('flow-group-name-input');
+  if (input) input.value = 'Function ' + _flowGroupNextId;
+  if (modal) modal.style.display = 'flex';
+  setTimeout(function() { if (input) { input.focus(); input.select(); } }, 100);
+}
+
+function closeFlowGroupModal() {
+  var modal = document.getElementById('flow-group-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+function submitFlowGroupName() {
+  var input = document.getElementById('flow-group-name-input');
+  var name = input ? input.value.trim() : '';
   if (!name) return;
-  const group = { id: 'g' + (_flowGroupNextId++), name, nodeIds, collapsed: false };
+  closeFlowGroupModal();
+  var nodeIds = [..._flowMultiSelected];
+  var group = { id: 'g' + (_flowGroupNextId++), name: name, nodeIds: nodeIds, collapsed: false };
   _flowGroups.push(group);
   _flowMultiSelected.clear();
-  // Update group_ref options
   updateGroupRefOptions();
   renderFlowConfig();
 }
@@ -3142,7 +3980,7 @@ async function deployFlow() {
   const name = document.getElementById('flow-agent-name')?.value?.trim() || 'Flow Agent';
   const flow = { nodes: _flowNodes.map(n => ({ id: n.id, type: n.type, x: n.x, y: n.y, config: n.config })), edges: _flowEdges.map(e => ({ from: e.from, fromPort: e.fromPort, to: e.to, toPort: e.toPort })), groups: _flowGroups };
   const btn = document.getElementById('flow-deploy-btn');
-  if (btn) { btn.disabled = true; btn.innerHTML = '\u26A1 ' + t('deploying'); }
+  if (btn) { btn.disabled = true; btn.innerHTML = '... ' + t('deploying'); }
 
   // Run deploy animation
   _deployAnimating = true;
@@ -3151,13 +3989,13 @@ async function deployFlow() {
   try {
     const data = await apiRequest('POST', '/api/agents/flow', { name, flow });
     if (data.ok) {
-      showFlowToast('\u2705 ' + t('deployed_ok') + ' #' + data.agentId, 'success');
+      showFlowToast(t('deployed_ok') + ' #' + data.agentId, 'success');
       loadAgents();
     } else {
-      showFlowToast('\u274C ' + (data.error || t('deploy_fail')), 'error');
+      showFlowToast((data.error || t('deploy_fail')), 'error');
     }
   } catch (e) {
-    showFlowToast('\u274C ' + e.message, 'error');
+    showFlowToast(e.message, 'error');
   } finally {
     _deployAnimating = false;
     if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10"/></svg> ' + t('deploy'); }
@@ -3296,7 +4134,7 @@ function runDeployAnimation() {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.globalAlpha = glowEase;
-        ctx.fillText('\uD83E\uDDE0', worldCX, worldCY);
+        ctx.fillText('AI', worldCX, worldCY);
         ctx.globalAlpha = 1;
       }
 
@@ -3331,7 +4169,7 @@ function runDeployAnimation() {
         ctx.fillStyle = '#fff';
         ctx.shadowColor = '#00aaff';
         ctx.shadowBlur = 20;
-        const text = currentLang === 'ru' ? '\uD83E\uDD16 \u0410\u0433\u0435\u043D\u0442 \u0441\u043E\u0437\u0434\u0430\u043D!' : '\uD83E\uDD16 Agent Created!';
+        const text = currentLang === 'ru' ? '\u0410\u0433\u0435\u043D\u0442 \u0441\u043E\u0437\u0434\u0430\u043D!' : 'Agent Created!';
         ctx.fillText(text, centerX, centerY + 55);
         ctx.shadowBlur = 0;
         ctx.font = '13px Inter, sans-serif';
@@ -3496,13 +4334,18 @@ function initFlowBuilder() {
       renderFlowConfig();
       canvas.classList.add('dragging');
     } else {
-      // Check edge click
+      // Check edge click → disconnect + grab to mouse
       const edgeIdx = hitTestEdge(mx, my);
       if (edgeIdx >= 0) {
-        _flowSelectedEdge = edgeIdx;
+        const edge = _flowEdges[edgeIdx];
+        // Remove edge and start reconnecting from its source port
+        _flowEdges.splice(edgeIdx, 1);
+        _flowParticles = _flowParticles.filter(p => !(p.from === edge.from && p.fromPort === edge.fromPort && p.to === edge.to));
+        _flowConnecting = { fromId: edge.from, fromPort: edge.fromPort, mx, my };
+        _flowSelectedEdge = null;
         _flowSelectedId = null;
         _flowMultiSelected.clear();
-        renderFlowConfig();
+        flowPushState();
         return;
       }
       // Empty space → deselect all + start LMB pan
@@ -3883,7 +4726,7 @@ function initFlowBuilder() {
         ctx.font = '600 13px Inter, sans-serif';
         ctx.fillStyle = '#94a3b8';
         ctx.textAlign = 'center';
-        ctx.fillText('\uD83D\uDCE6 ' + g.name, avgX - 10 + gw / 2, avgY - 7 + gh / 2 + 4);
+        ctx.fillText('\u25A1 ' + g.name, avgX - 10 + gw / 2, avgY - 7 + gh / 2 + 4);
         ctx.textAlign = 'left';
         ctx.restore();
       } else {
@@ -3905,7 +4748,7 @@ function initFlowBuilder() {
         ctx.setLineDash([]);
         ctx.font = '500 10px Inter, sans-serif';
         ctx.fillStyle = '#64748b';
-        ctx.fillText('\uD83D\uDCE6 ' + g.name, minX - pad + 6, minY - pad - 4);
+        ctx.fillText('\u25A1 ' + g.name, minX - pad + 6, minY - pad - 4);
         ctx.restore();
       }
     });
@@ -4072,6 +4915,8 @@ let _networkNodes = [];
 let _networkDragNode = null;
 let _networkDragOffset = { dx: 0, dy: 0 };
 let _networkMouse = { x: 0, y: 0 };
+let _networkSearchQuery = '';
+let _networkTrashHover = false;
 
 async function loadNetworkMap() {
   const canvas = document.getElementById('agent-network-canvas');
@@ -4104,7 +4949,7 @@ async function loadNetworkMap() {
     const role = a.role || 'worker';
     const level = a.level || 1;
     const radius = role === 'director' ? 28 + level : role === 'manager' ? 22 + level : 16 + Math.min(level, 5);
-    const color = role === 'director' ? '#ffd700' : a.isActive ? '#00ff88' : '#555';
+    const color = role === 'director' ? '#ffd700' : a.isActive ? '#0098EA' : '#555';
     const emoji = role === 'director' ? '\u{1F9E0}' : role === 'manager' ? '\u{1F4CA}' : '\u{1F916}';
     return {
       id: a.id, name: a.name || 'Agent #' + a.id,
@@ -4153,6 +4998,8 @@ async function loadNetworkMap() {
   const tooltip = document.getElementById('network-tooltip');
 
   // Mouse interaction
+  const trashZone = document.getElementById('network-trash-zone');
+
   canvas.addEventListener('mousemove', (e) => {
     const r = canvas.getBoundingClientRect();
     _networkMouse.x = e.clientX - r.left;
@@ -4163,6 +5010,15 @@ async function loadNetworkMap() {
       _networkDragNode.y = _networkMouse.y - _networkDragOffset.dy;
       _networkDragNode.vx = 0;
       _networkDragNode.vy = 0;
+      // Show trash zone while dragging
+      if (trashZone) trashZone.classList.add('visible');
+      // Check if hovering over trash zone
+      if (trashZone) {
+        const tz = trashZone.getBoundingClientRect();
+        const inTrash = e.clientX >= tz.left && e.clientX <= tz.right && e.clientY >= tz.top && e.clientY <= tz.bottom;
+        _networkTrashHover = inTrash;
+        trashZone.classList.toggle('hover', inTrash);
+      }
     }
 
     // Tooltip hover
@@ -4171,13 +5027,13 @@ async function loadNetworkMap() {
       const dx = _networkMouse.x - n.x, dy = _networkMouse.y - n.y;
       if (dx * dx + dy * dy < n.radius * n.radius) { hovered = n; break; }
     }
-    if (hovered && tooltip) {
+    if (hovered && tooltip && !_networkDragNode) {
       tooltip.style.display = 'block';
       tooltip.style.left = (e.clientX + 12) + 'px';
       tooltip.style.top = (e.clientY - 10) + 'px';
       tooltip.innerHTML = `<b>${escHtml(hovered.name)}</b><br>` +
         `Role: ${hovered.role} | Lv.${hovered.level}<br>` +
-        `XP: ${hovered.xp} | ${hovered.isActive ? '🟢 Active' : '⏸ Paused'}`;
+        'XP: ' + hovered.xp + ' | ' + (hovered.isActive ? IC.dot_green + ' Active' : IC.dot_pause + ' Paused');
     } else if (tooltip) {
       tooltip.style.display = 'none';
     }
@@ -4200,6 +5056,21 @@ async function loadNetworkMap() {
     }
   });
   canvas.addEventListener('mouseup', (e) => {
+    // Hide trash zone
+    if (trashZone) { trashZone.classList.remove('visible', 'hover'); }
+
+    if (_networkDragNode && _networkTrashHover) {
+      // Dropped on trash zone → confirm deletion
+      const nodeToDelete = _networkDragNode;
+      _networkDragNode = null;
+      _networkDragOffset.dx = 0;
+      _networkDragOffset.dy = 0;
+      _networkClickStart = null;
+      _networkTrashHover = false;
+      showNetworkDeleteConfirm(nodeToDelete);
+      return;
+    }
+
     if (_networkClickStart && _networkClickStart.node) {
       const r = canvas.getBoundingClientRect();
       const mx = e.clientX - r.left, my = e.clientY - r.top;
@@ -4214,11 +5085,14 @@ async function loadNetworkMap() {
     _networkDragOffset.dx = 0;
     _networkDragOffset.dy = 0;
     _networkClickStart = null;
+    _networkTrashHover = false;
   });
   canvas.addEventListener('mouseleave', () => {
     _networkDragNode = null;
     _networkDragOffset.dx = 0; _networkDragOffset.dy = 0;
+    _networkTrashHover = false;
     if (tooltip) tooltip.style.display = 'none';
+    if (trashZone) { trashZone.classList.remove('visible', 'hover'); }
   });
 
   // Animation loop
@@ -4310,6 +5184,13 @@ async function loadNetworkMap() {
       const pulse = n.isActive ? Math.sin(time * 3 + n.id) * 3 : 0;
       const r = n.radius + pulse;
 
+      // Search filter: dim non-matching nodes
+      const matchesSearch = !_networkSearchQuery || n.name.toLowerCase().includes(_networkSearchQuery.toLowerCase());
+      const alpha = matchesSearch ? 1.0 : 0.15;
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
+
       // Glow
       const glow = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, r * 2);
       glow.addColorStop(0, n.color + '40');
@@ -4325,8 +5206,19 @@ async function loadNetworkMap() {
       ctx.fillStyle = n.color + '30';
       ctx.fill();
       ctx.strokeStyle = n.color;
-      ctx.lineWidth = 2;
+      ctx.lineWidth = matchesSearch && _networkSearchQuery ? 3 : 2;
       ctx.stroke();
+
+      // Highlight ring for search match
+      if (matchesSearch && _networkSearchQuery) {
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, r + 4, 0, Math.PI * 2);
+        ctx.strokeStyle = n.color + '60';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 4]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
 
       // Emoji
       ctx.font = `${Math.max(12, r * 0.7)}px sans-serif`;
@@ -4345,6 +5237,8 @@ async function loadNetworkMap() {
         ctx.fillStyle = n.color;
         ctx.fillText('Lv.' + n.level, n.x, n.y - r - 6);
       }
+
+      ctx.restore();
     });
 
     _networkAnimId = requestAnimationFrame(animate);
@@ -4371,30 +5265,16 @@ document.addEventListener('click', function(e) {
   }
 });
 
-// ===== AI CHAT WIDGET =====
+// ===== AI CHAT WIDGET (floating) =====
 let _chatLoaded = false;
 
 function toggleChatWidget() {
-  const w = document.getElementById('chat-widget');
-  if (!w) return;
-  if (w.style.display === 'none' || !w.style.display) {
-    openDashboardChat();
-  } else {
-    closeChatWidget();
-  }
+  // Redirect to the full assistant page instead of floating widget
+  navigateTo('assistant');
 }
 
 function openDashboardChat() {
-  const w = document.getElementById('chat-widget');
-  if (w) w.style.display = 'flex';
-  if (!_chatLoaded) {
-    _chatLoaded = true;
-    loadChatHistory();
-  }
-  setTimeout(() => {
-    const input = document.getElementById('chat-input');
-    if (input) input.focus();
-  }, 100);
+  navigateTo('assistant');
 }
 
 function closeChatWidget() {
@@ -4402,40 +5282,82 @@ function closeChatWidget() {
   if (w) w.style.display = 'none';
 }
 
-async function loadChatHistory() {
+// ===== AI ASSISTANT PAGE =====
+let _assistantLoaded = false;
+
+async function loadAssistantPage() {
+  if (!_assistantLoaded) {
+    _assistantLoaded = true;
+    await loadAssistantHistory();
+  }
+  setTimeout(function() {
+    var input = document.getElementById('assistant-input');
+    if (input) input.focus();
+  }, 100);
+}
+
+async function loadAssistantHistory() {
   try {
-    const data = await apiRequest('GET', '/api/chat/history');
+    var data = await apiRequest('GET', '/api/chat/history');
     if (data.ok && data.messages && data.messages.length) {
-      const container = document.getElementById('chat-messages');
-      // Keep the welcome message, add history after
+      var container = document.getElementById('assistant-messages');
+      if (!container) return;
+      // Hide welcome message
+      var welcome = container.querySelector('.assistant-welcome');
+      if (welcome) welcome.style.display = 'none';
+      // Hide suggestions
+      var sugg = document.getElementById('assistant-suggestions');
+      if (sugg) sugg.style.display = 'none';
       data.messages.forEach(function(m) {
-        appendChatMsg(m.role === 'user' ? 'user' : 'assistant', m.content);
+        appendAssistantMsg(m.role === 'user' ? 'user' : 'assistant', m.content);
       });
       container.scrollTop = container.scrollHeight;
     }
   } catch (e) { /* silent */ }
 }
 
-function appendChatMsg(role, content, buttons) {
-  const container = document.getElementById('chat-messages');
+function appendAssistantMsg(role, content, buttons) {
+  var container = document.getElementById('assistant-messages');
   if (!container) return;
-  const div = document.createElement('div');
-  div.className = 'chat-msg ' + role;
-  // Simple markdown-like: **bold**, `code`, newlines
-  let html = escHtml(content)
+  // Hide welcome on first message
+  var welcome = container.querySelector('.assistant-welcome');
+  if (welcome) welcome.style.display = 'none';
+  var sugg = document.getElementById('assistant-suggestions');
+  if (sugg) sugg.style.display = 'none';
+
+  var div = document.createElement('div');
+  div.className = 'assistant-msg ' + role;
+  // Parse markdown
+  var html = escHtml(content)
     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/`([^`]+)`/g, '<code style="background:rgba(255,255,255,0.08);padding:1px 4px;border-radius:3px">$1</code>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\n/g, '<br>');
+  if (role === 'assistant') {
+    html = '<div class="assistant-msg-avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="assistant-msg-content">' + html;
+  } else {
+    html = '<div class="assistant-msg-content">' + html;
+  }
   if (buttons && buttons.length) {
-    html += '<div class="chat-buttons">';
+    html += '<div class="assistant-msg-buttons">';
     buttons.forEach(function(b) {
-      html += '<button onclick="sendChatCallback(\'' + escHtml(b.callbackData || b.text) + '\')">' + escHtml(b.text) + '</button>';
+      html += '<button class="btn btn-ghost btn-sm" onclick="sendAssistantCallback(\'' + escHtml(b.callbackData || b.text) + '\',\'' + escHtml(b.text) + '\')">' + escHtml(b.text) + '</button>';
     });
     html += '</div>';
   }
+  html += '</div>';
   div.innerHTML = html;
   container.appendChild(div);
   container.scrollTop = container.scrollHeight;
+}
+
+// Also keep the old appendChatMsg for backwards compat with floating widget
+function appendChatMsg(role, content, buttons) {
+  // Redirect to assistant page messages
+  appendAssistantMsg(role, content, buttons);
+}
+
+async function loadChatHistory() {
+  await loadAssistantHistory();
 }
 
 function escHtml(s) {
@@ -4444,63 +5366,112 @@ function escHtml(s) {
 }
 
 async function sendChatMessage() {
-  var input = document.getElementById('chat-input');
+  sendAssistantMessage();
+}
+
+async function sendAssistantMessage() {
+  var input = document.getElementById('assistant-input');
+  if (!input) return;
   var text = input.value.trim();
   if (!text) return;
   input.value = '';
   input.style.height = 'auto';
 
-  appendChatMsg('user', text);
+  appendAssistantMsg('user', text);
 
   // Typing indicator
-  var container = document.getElementById('chat-messages');
+  var container = document.getElementById('assistant-messages');
   var typing = document.createElement('div');
-  typing.className = 'chat-msg assistant chat-typing';
-  typing.id = 'chat-typing';
-  typing.textContent = '⏳ ...';
+  typing.className = 'assistant-msg assistant assistant-typing';
+  typing.id = 'assistant-typing';
+  typing.innerHTML = '<div class="assistant-msg-avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="assistant-msg-content"><div class="typing-dots"><span></span><span></span><span></span></div></div>';
   container.appendChild(typing);
   container.scrollTop = container.scrollHeight;
 
-  var sendBtn = document.getElementById('chat-send-btn');
+  var sendBtn = document.getElementById('assistant-send-btn');
   if (sendBtn) sendBtn.disabled = true;
 
   try {
     var data = await apiRequest('POST', '/api/chat', { message: text });
-    var typingEl = document.getElementById('chat-typing');
+    var typingEl = document.getElementById('assistant-typing');
     if (typingEl) typingEl.remove();
 
     if (data.ok && data.result) {
       var r = data.result;
-      appendChatMsg('assistant', r.content, r.buttons);
-
-      // If agent was created, refresh list
+      appendAssistantMsg('assistant', r.content, r.buttons);
       if (r.type === 'agent_created') {
         loadAgents();
-        showNotification('🤖 ' + (currentLang === 'ru' ? 'Агент создан!' : 'Agent created!'), 'success');
+        toast(currentLang === 'ru' ? 'Агент создан!' : 'Agent created!', 'success');
       }
     } else {
-      appendChatMsg('assistant', '❌ ' + (data.error || 'Error'));
+      appendAssistantMsg('assistant', data.error || 'Error');
     }
   } catch (e) {
-    var typingEl2 = document.getElementById('chat-typing');
+    var typingEl2 = document.getElementById('assistant-typing');
     if (typingEl2) typingEl2.remove();
-    appendChatMsg('assistant', '❌ ' + e.message);
+    appendAssistantMsg('assistant', e.message);
   } finally {
     if (sendBtn) sendBtn.disabled = false;
   }
 }
 
-async function sendChatCallback(callbackData) {
-  appendChatMsg('user', callbackData);
+function sendAssistantSuggestion(btn) {
+  var text = btn.textContent.trim();
+  var input = document.getElementById('assistant-input');
+  if (input) { input.value = text; }
+  sendAssistantMessage();
+}
+
+async function sendAssistantCallback(callbackData, label) {
+  appendAssistantMsg('user', label || callbackData);
+  // Disable buttons
+  document.querySelectorAll('.assistant-msg-buttons button').forEach(function(b) { b.disabled = true; b.style.opacity = '.5'; });
+
+  var container = document.getElementById('assistant-messages');
+  var typing = document.createElement('div');
+  typing.className = 'assistant-msg assistant assistant-typing';
+  typing.id = 'assistant-typing';
+  typing.innerHTML = '<div class="assistant-msg-avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="assistant-msg-content"><div class="typing-dots"><span></span><span></span><span></span></div></div>';
+  container.appendChild(typing);
+  container.scrollTop = container.scrollHeight;
+
   try {
     var data = await apiRequest('POST', '/api/chat', { message: callbackData });
+    var typingEl = document.getElementById('assistant-typing');
+    if (typingEl) typingEl.remove();
     if (data.ok && data.result) {
-      appendChatMsg('assistant', data.result.content, data.result.buttons);
-      if (data.result.type === 'agent_created') loadAgents();
+      appendAssistantMsg('assistant', data.result.content, data.result.buttons);
+      if (data.result.type === 'agent_created') {
+        loadAgents();
+        toast(currentLang === 'ru' ? 'Агент создан!' : 'Agent created!', 'success');
+      }
+    } else {
+      appendAssistantMsg('assistant', data.error || 'Error');
     }
   } catch (e) {
-    appendChatMsg('assistant', '❌ ' + e.message);
+    var typingEl2 = document.getElementById('assistant-typing');
+    if (typingEl2) typingEl2.remove();
+    appendAssistantMsg('assistant', e.message);
   }
+}
+
+// Alias for backwards compat
+async function sendChatCallback(callbackData, label) {
+  return sendAssistantCallback(callbackData, label);
+}
+
+function clearAssistantChat() {
+  var container = document.getElementById('assistant-messages');
+  if (!container) return;
+  container.innerHTML = '<div class="assistant-welcome"><div class="assistant-welcome-icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><h3>' + (currentLang === 'ru' ? 'Чем могу помочь?' : 'How can I help you?') + '</h3><p>' + (currentLang === 'ru' ? 'Могу создать AI-агента, объяснить функции, помочь с настройками и многое другое.' : 'I can create AI agents, explain features, help with settings, and more.') + '</p></div>';
+  var sugg = document.getElementById('assistant-suggestions');
+  if (sugg) sugg.style.display = 'flex';
+  _assistantLoaded = false;
+}
+
+function autoResizeTextarea(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 160) + 'px';
 }
 
 // ===== MARKETPLACE =====
@@ -4547,7 +5518,7 @@ function renderPurchasedGrid() {
   if (!grid) return;
   if (!_marketplaceListings.length) {
     grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;text-align:center;padding:60px 20px">' +
-      '<p style="font-size:2rem;margin-bottom:12px">📦</p>' +
+      '<p style="font-size:2rem;margin-bottom:12px">' + IC.box + '</p>' +
       '<p style="color:var(--text-muted)">' + (currentLang === 'ru' ? 'Нет покупок' : 'No purchases yet') + '</p></div>';
     return;
   }
@@ -4568,7 +5539,7 @@ function renderMarketplaceGrid() {
   if (!grid) return;
   if (!_marketplaceListings.length) {
     grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;text-align:center;padding:60px 20px">' +
-      '<p style="font-size:2rem;margin-bottom:12px">🏪</p>' +
+      '<p style="font-size:2rem;margin-bottom:12px">' + IC.store + '</p>' +
       '<p style="color:var(--text-muted)">' + (currentLang === 'ru' ? 'Пока ничего нет' : 'Nothing here yet') + '</p></div>';
     return;
   }
@@ -4583,7 +5554,7 @@ function renderMarketplaceGrid() {
       '<p>' + escHtml((l.description || '').slice(0, 140)) + '</p>' +
       '<div style="display:flex;gap:8px">' +
         '<button class="btn btn-primary btn-sm" onclick="event.stopPropagation();buyFromMarketplace(' + l.id + ')" style="flex:1">' +
-          (l.isFree ? (currentLang === 'ru' ? '📥 Установить' : '📥 Install') : (currentLang === 'ru' ? '💳 Купить' : '💳 Buy')) +
+          (l.isFree ? (currentLang === 'ru' ? IC.download + ' Установить' : IC.download + ' Install') : (currentLang === 'ru' ? IC.creditcard + ' Купить' : IC.creditcard + ' Buy')) +
         '</button>' +
       '</div>' +
     '</div>';
@@ -4594,13 +5565,13 @@ async function installFromMarketplace(listingId) {
   try {
     var data = await apiRequest('POST', '/api/marketplace/' + listingId + '/install');
     if (data.ok) {
-      showNotification('✅ ' + (currentLang === 'ru' ? 'Агент установлен!' : 'Agent installed!'), 'success');
+      showNotification((currentLang === 'ru' ? 'Агент установлен!' : 'Agent installed!'), 'success');
       loadAgents();
     } else {
-      showNotification('❌ ' + (data.error || 'Failed'), 'error');
+      showNotification((data.error || 'Failed'), 'error');
     }
   } catch (e) {
-    showNotification('❌ ' + e.message, 'error');
+    showNotification(e.message, 'error');
   }
 }
 
@@ -4639,7 +5610,7 @@ async function submitPublish() {
       isFree: price <= 0
     });
     if (data.ok) {
-      showNotification(currentLang === 'ru' ? '✅ Агент опубликован!' : '✅ Agent published!', 'success');
+      showNotification(currentLang === 'ru' ? 'Агент опубликован!' : 'Agent published!', 'success');
       document.getElementById('publish-modal').style.display = 'none';
       loadMarketplace();
     } else {
@@ -4661,14 +5632,14 @@ async function openMarketplaceDetail(listingId) {
     if (!data.ok || !data.listing) { content.innerHTML = '<p style="color:var(--danger)">Not found</p>'; return; }
     var l = data.listing;
     var priceText = l.isFree ? (currentLang === 'ru' ? 'Бесплатно' : 'Free') : ((Number(l.price || 0) / 1e9).toFixed(2) + ' TON');
-    var buyBtnText = l.isFree ? (currentLang === 'ru' ? '📥 Установить бесплатно' : '📥 Install Free') : (currentLang === 'ru' ? '💳 Купить за ' + priceText : '💳 Buy for ' + priceText);
+    var buyBtnText = l.isFree ? (currentLang === 'ru' ? IC.download + ' Установить бесплатно' : IC.download + ' Install Free') : (currentLang === 'ru' ? IC.creditcard + ' Купить за ' + priceText : IC.creditcard + ' Buy for ' + priceText);
     content.innerHTML = '<h3 class="mkt-detail-name">' + escHtml(l.name) + '</h3>' +
       '<p class="mkt-detail-desc">' + escHtml(l.description || '') + '</p>' +
       '<div class="mkt-detail-meta">' +
         '<div class="mkt-detail-meta-item"><small>' + (currentLang === 'ru' ? 'Категория' : 'Category') + '</small><strong>' + escHtml(l.category || 'other') + '</strong></div>' +
         '<div class="mkt-detail-meta-item"><small>' + (currentLang === 'ru' ? 'Цена' : 'Price') + '</small><strong>' + priceText + '</strong></div>' +
         '<div class="mkt-detail-meta-item"><small>' + (currentLang === 'ru' ? 'Продажи' : 'Sales') + '</small><strong>' + (l.salesCount || 0) + '</strong></div>' +
-        '<div class="mkt-detail-meta-item"><small>' + (currentLang === 'ru' ? 'Рейтинг' : 'Rating') + '</small><strong>' + (l.rating ? l.rating.toFixed(1) + ' ⭐' : '—') + '</strong></div>' +
+        '<div class="mkt-detail-meta-item"><small>' + (currentLang === 'ru' ? 'Рейтинг' : 'Rating') + '</small><strong>' + (l.rating ? l.rating.toFixed(1) + ' ' + IC.star : '—') + '</strong></div>' +
       '</div>' +
       '<button class="btn btn-primary" onclick="buyFromMarketplace(' + l.id + ')" style="width:100%">' + buyBtnText + '</button>';
   } catch(e) {
@@ -4677,17 +5648,25 @@ async function openMarketplaceDetail(listingId) {
 }
 
 async function buyFromMarketplace(listingId) {
-  if (!confirm(currentLang === 'ru' ? 'Подтвердите покупку?' : 'Confirm purchase?')) return;
+  var confirmed = await studioConfirm({
+    title: currentLang === 'ru' ? 'Подтвердите покупку' : 'Confirm Purchase',
+    message: currentLang === 'ru' ? 'Агент будет добавлен в вашу коллекцию. Стоимость будет списана с баланса.' : 'The agent will be added to your collection. Cost will be deducted from your balance.',
+    confirmText: currentLang === 'ru' ? 'Купить' : 'Buy Now',
+    cancelText: currentLang === 'ru' ? 'Отмена' : 'Cancel',
+    type: 'info',
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>'
+  });
+  if (!confirmed) return;
   try {
     var data = await apiRequest('POST', '/api/marketplace/' + listingId + '/buy');
     if (data.ok) {
-      showNotification(data.message || (currentLang === 'ru' ? '✅ Успешно!' : '✅ Success!'), 'success');
+      showNotification(data.message || (currentLang === 'ru' ? 'Успешно!' : 'Success!'), 'success');
       document.getElementById('mkt-detail-modal').style.display = 'none';
       loadAgents();
       loadMarketplace();
     } else {
       if (data.error === 'Insufficient balance') {
-        showNotification(currentLang === 'ru' ? '❌ Недостаточно средств. Нужно ' + data.required + ' TON' : '❌ Insufficient balance. Need ' + data.required + ' TON', 'error');
+        showNotification(currentLang === 'ru' ? 'Недостаточно средств. Нужно ' + data.required + ' TON' : 'Insufficient balance. Need ' + data.required + ' TON', 'error');
       } else if (data.error === 'Already purchased') {
         showNotification(currentLang === 'ru' ? 'Уже куплено!' : 'Already purchased!', 'info');
       } else {
@@ -4779,7 +5758,7 @@ function updateGSPanel() {
   if (completed === GS_STEPS.length) {
     panel.style.display = 'none';
     localStorage.setItem('gs_dismissed', '1');
-    showNotification(currentLang === 'ru' ? '🎉 Все шаги выполнены! Отличное начало!' : '🎉 All steps completed! Great start!', 'success');
+    showNotification(currentLang === 'ru' ? 'Все шаги выполнены! Отличное начало!' : 'All steps completed! Great start!', 'success');
     return;
   }
   panel.style.display = 'block';
@@ -4801,56 +5780,91 @@ function dismissGettingStarted() {
 
 // ===== INTERACTIVE TOUR =====
 var TOUR_STEPS = [
-  { target: '.sidebar-nav', title: { en: 'Navigation', ru: 'Навигация' }, desc: { en: 'All platform features are organized here. Main actions are at the top — Constructor, Marketplace, AI Assistant.', ru: 'Все функции платформы здесь. Главные действия наверху — Конструктор, Маркетплейс, AI Ассистент.' }, position: 'right' },
+  { target: '[data-page="overview"]', title: { en: 'Overview', ru: 'Обзор' }, desc: { en: 'Your dashboard with real-time stats, active agents, and quick actions. Everything at a glance.', ru: 'Ваша панель управления с метриками в реальном времени, активными агентами и быстрыми действиями.' }, position: 'right' },
   { target: '[data-page="builder"]', title: { en: 'Visual Constructor', ru: 'Конструктор' }, desc: { en: 'Build agents visually with drag-and-drop blocks. Connect triggers, actions, and logic — no coding needed.', ru: 'Создавайте агентов визуально. Соединяйте триггеры, действия и логику — без кода.' }, position: 'right' },
-  { target: '#chat-fab', title: { en: 'AI Assistant', ru: 'AI Ассистент' }, desc: { en: 'Describe what agent you need in natural language. AI will create and configure it for you. Synced with Telegram!', ru: 'Опишите нужного агента словами. AI создаст и настроит его за вас. Синхронизация с Telegram!' }, position: 'top-left' },
   { target: '[data-page="marketplace"]', title: { en: 'Marketplace', ru: 'Маркетплейс' }, desc: { en: 'Browse and install ready-made agent templates. DeFi monitoring, NFT tracking, gift arbitrage and more.', ru: 'Смотрите и устанавливайте готовые шаблоны. DeFi мониторинг, NFT трекинг, арбитраж подарков.' }, position: 'right' },
-  { target: '#agents-panel', title: { en: 'Your Agents', ru: 'Ваши агенты' }, desc: { en: 'All created agents appear here. Start, stop, view logs, and manage them in real-time.', ru: 'Все агенты здесь. Запускайте, останавливайте, смотрите логи в реальном времени.' }, position: 'top' },
+  { target: '[data-page="assistant"]', title: { en: 'AI Assistant', ru: 'AI Ассистент' }, desc: { en: 'Describe what agent you need in natural language. AI will create and configure it for you. Synced with Telegram!', ru: 'Опишите нужного агента словами. AI создаст и настроит его за вас. Синхронизация с Telegram!' }, position: 'right' },
+  { target: '[data-page="operations"]', title: { en: 'My Agents', ru: 'Мои агенты' }, desc: { en: 'All created agents appear here. Start, stop, view logs, and manage them in real-time.', ru: 'Все агенты здесь. Запускайте, останавливайте, смотрите логи в реальном времени.' }, position: 'right' },
+  { target: '[data-page="wallet"]', title: { en: 'TON Wallet', ru: 'Кошелёк' }, desc: { en: 'Manage your TON wallet, check balance, and fund your agents for marketplace purchases.', ru: 'Управляйте кошельком TON, проверяйте баланс, пополняйте агентов для покупок.' }, position: 'right' },
+  { target: '[data-page="settings"]', title: { en: 'Settings', ru: 'Настройки' }, desc: { en: 'Set up your AI API key, choose a provider, and configure the platform to your needs.', ru: 'Настройте AI API ключ, выберите провайдера, адаптируйте платформу под себя.' }, position: 'right' },
 ];
 var _tourStep = 0;
 var _tourActive = false;
+var _tourResizeHandler = null;
 
 function startTour() {
   _tourStep = 0;
   _tourActive = true;
   var overlay = document.getElementById('tour-overlay');
   if (overlay) { overlay.style.display = 'block'; overlay.classList.add('active'); }
+  // Listen for window resize to reposition
+  _tourResizeHandler = function() { if (_tourActive) showTourStep(); };
+  window.addEventListener('resize', _tourResizeHandler);
   showTourStep();
 }
 function showTourStep() {
   if (_tourStep >= TOUR_STEPS.length) { endTour(); return; }
   var step = TOUR_STEPS[_tourStep];
+  // Navigate to overview first to ensure sidebar targets are visible
+  if (_tourStep === 0) navigateTo('overview');
   var target = document.querySelector(step.target);
   if (!target) { _tourStep++; showTourStep(); return; }
+  // Ensure target is visible (open sidebar on mobile)
+  if (window.innerWidth < 768) {
+    var sb = document.querySelector('.sidebar');
+    if (sb && !sb.classList.contains('open')) toggleSidebar();
+  }
+  // Scroll target into view smoothly
+  target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  // Wait for scroll + layout
+  setTimeout(function() {
+    requestAnimationFrame(function() {
+      positionTourElements(step, target);
+    });
+  }, 150);
+}
+function positionTourElements(step, target) {
   var rect = target.getBoundingClientRect();
   var spotlight = document.getElementById('tour-spotlight');
   var tooltip = document.getElementById('tour-tooltip');
   var content = document.getElementById('tour-tooltip-content');
   var counter = document.getElementById('tour-step-counter');
-  var pad = 8;
+  if (!spotlight || !tooltip || !content || !counter) return;
+  var pad = 6;
+  // Position spotlight exactly on the element
   spotlight.style.top = (rect.top - pad) + 'px';
   spotlight.style.left = (rect.left - pad) + 'px';
   spotlight.style.width = (rect.width + pad * 2) + 'px';
   spotlight.style.height = (rect.height + pad * 2) + 'px';
-  content.innerHTML = '<h4>' + step.title[currentLang] + '</h4><p>' + step.desc[currentLang] + '</p>';
+  // Build tooltip content with step number
+  content.innerHTML = '<div class="tour-step-badge">' + (_tourStep + 1) + '</div><h4>' + step.title[currentLang] + '</h4><p>' + step.desc[currentLang] + '</p>';
   counter.textContent = (_tourStep + 1) + ' / ' + TOUR_STEPS.length;
+  // Reset tooltip classes
   tooltip.className = 'tour-tooltip';
-  var tipW = 340;
+  tooltip.style.cssText = '';
+  var tipW = 320;
+  var vw = window.innerWidth;
+  var vh = window.innerHeight;
+  // Position tooltip to the right of target element (sidebar items)
   if (step.position === 'right') {
-    tooltip.style.top = Math.max(10, rect.top) + 'px';
-    tooltip.style.left = (rect.right + 16) + 'px';
-    tooltip.style.bottom = '';
-    tooltip.classList.add('arrow-left');
+    var tipLeft = rect.right + 14;
+    if (tipLeft + tipW > vw) tipLeft = Math.max(10, rect.left - tipW - 14);
+    var tipTop = Math.max(10, Math.min(vh - 220, rect.top + rect.height / 2 - 50));
+    tooltip.style.top = tipTop + 'px';
+    tooltip.style.left = tipLeft + 'px';
+    tooltip.classList.add(tipLeft > rect.right ? 'arrow-left' : 'arrow-right');
   } else if (step.position === 'top') {
-    tooltip.style.top = Math.max(10, rect.top - 160) + 'px';
-    tooltip.style.left = rect.left + 'px';
-    tooltip.style.bottom = '';
+    tooltip.style.top = Math.max(10, rect.top - 180) + 'px';
+    tooltip.style.left = Math.max(10, Math.min(vw - tipW - 10, rect.left)) + 'px';
     tooltip.classList.add('arrow-bottom');
-  } else if (step.position === 'top-left') {
-    tooltip.style.top = Math.max(10, rect.top - 160) + 'px';
-    tooltip.style.left = Math.max(10, rect.left - tipW - 16) + 'px';
-    tooltip.style.bottom = '';
+  } else if (step.position === 'bottom') {
+    tooltip.style.top = (rect.bottom + 14) + 'px';
+    tooltip.style.left = Math.max(10, Math.min(vw - tipW - 10, rect.left)) + 'px';
+    tooltip.classList.add('arrow-top');
   }
+  // Add highlight class to target element
+  document.querySelectorAll('.tour-highlight').forEach(function(el) { el.classList.remove('tour-highlight'); });
+  target.classList.add('tour-highlight');
   var nextBtn = document.getElementById('tour-next-btn');
   if (nextBtn) nextBtn.textContent = _tourStep === TOUR_STEPS.length - 1 ? (currentLang === 'ru' ? 'Готово!' : 'Done!') : (currentLang === 'ru' ? 'Далее' : 'Next');
 }
@@ -4859,6 +5873,10 @@ function endTour() {
   _tourActive = false;
   var overlay = document.getElementById('tour-overlay');
   if (overlay) { overlay.style.display = 'none'; overlay.classList.remove('active'); }
+  // Remove highlight from all elements
+  document.querySelectorAll('.tour-highlight').forEach(function(el) { el.classList.remove('tour-highlight'); });
+  // Remove resize listener
+  if (_tourResizeHandler) { window.removeEventListener('resize', _tourResizeHandler); _tourResizeHandler = null; }
   localStorage.setItem('tour_completed', '1');
 }
 
@@ -4870,12 +5888,15 @@ function showNetworkAgentPanel(node) {
   if (!container) return;
   var existing = document.getElementById('network-agent-panel');
   if (existing) existing.remove();
+  // Remove delete dialog if present
+  var existingDialog = document.getElementById('network-delete-dialog');
+  if (existingDialog) existingDialog.remove();
 
   var panel = document.createElement('div');
   panel.id = 'network-agent-panel';
   panel.className = 'network-agent-panel';
-  var statusText = node.isActive ? '🟢 Active' : '⏸ Paused';
-  var toggleText = node.isActive ? (currentLang === 'ru' ? '⏸ Стоп' : '⏸ Stop') : (currentLang === 'ru' ? '🚀 Запустить' : '🚀 Start');
+  var statusText = node.isActive ? IC.dot_green + ' Active' : IC.dot_pause + ' Paused';
+  var toggleText = node.isActive ? (currentLang === 'ru' ? IC.pause + ' Стоп' : IC.pause + ' Stop') : (currentLang === 'ru' ? IC.rocket + ' Запустить' : IC.rocket + ' Start');
   var toggleClass = node.isActive ? 'btn-warning' : 'btn-success';
   panel.innerHTML = '<div class="nap-header">' +
     '<span>' + node.emoji + ' ' + escHtml(node.name) + '</span>' +
@@ -4887,10 +5908,57 @@ function showNetworkAgentPanel(node) {
     '<p>' + statusText + '</p>' +
     '<div class="nap-actions">' +
       '<button class="btn btn-sm ' + toggleClass + '" onclick="toggleAgent(' + node.id + ',' + node.isActive + ');this.closest(\'.network-agent-panel\').remove()">' + toggleText + '</button>' +
-      '<button class="btn btn-ghost btn-sm" onclick="loadAgentLogs(' + node.id + ')">📋 Logs</button>' +
+      '<button class="btn btn-ghost btn-sm" onclick="loadAgentLogs(' + node.id + ')">' + IC.clipboard + ' Logs</button>' +
     '</div>' +
   '</div>';
   container.querySelector('.page-content').appendChild(panel);
+}
+
+// ===== NETWORK MAP SEARCH =====
+function filterNetworkNodes(query) {
+  _networkSearchQuery = (query || '').trim();
+}
+
+// ===== NETWORK MAP DELETE =====
+function showNetworkDeleteConfirm(node) {
+  var container = document.getElementById('network-page');
+  if (!container) return;
+  // Remove any existing panels/dialogs
+  var existing = document.getElementById('network-agent-panel');
+  if (existing) existing.remove();
+  var existingDialog = document.getElementById('network-delete-dialog');
+  if (existingDialog) existingDialog.remove();
+
+  var dialog = document.createElement('div');
+  dialog.id = 'network-delete-dialog';
+  dialog.className = 'network-delete-dialog';
+  var title = currentLang === 'ru' ? 'Удалить агента?' : 'Delete agent?';
+  var msg = currentLang === 'ru'
+    ? 'Вы уверены, что хотите удалить <strong>' + escHtml(node.name) + '</strong>? Это действие нельзя отменить.'
+    : 'Are you sure you want to delete <strong>' + escHtml(node.name) + '</strong>? This cannot be undone.';
+  var cancelText = currentLang === 'ru' ? 'Отмена' : 'Cancel';
+  var deleteText = currentLang === 'ru' ? 'Удалить' : 'Delete';
+
+  dialog.innerHTML = '<h3>' + node.emoji + ' ' + title + '</h3>' +
+    '<p>' + msg + '</p>' +
+    '<div class="dialog-actions">' +
+      '<button class="btn btn-ghost btn-sm" onclick="this.closest(\'.network-delete-dialog\').remove()">' + cancelText + '</button>' +
+      '<button class="btn btn-sm" style="background:#e74c3c;color:#fff;border:none" onclick="confirmNetworkDelete(' + node.id + ')">' + deleteText + '</button>' +
+    '</div>';
+  container.querySelector('.page-content').appendChild(dialog);
+}
+
+async function confirmNetworkDelete(agentId) {
+  var dialog = document.getElementById('network-delete-dialog');
+  try {
+    await apiRequest('DELETE', '/api/agents/' + agentId);
+    showNotification(currentLang === 'ru' ? 'Агент удалён' : 'Agent deleted', 'success');
+    // Reload network map
+    loadNetworkMap();
+  } catch (e) {
+    showNotification(currentLang === 'ru' ? 'Ошибка удаления' : 'Delete failed', 'error');
+  }
+  if (dialog) dialog.remove();
 }
 
 console.log('TON Agent Platform Dashboard v2.0 loaded successfully!');
