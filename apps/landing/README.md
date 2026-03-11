@@ -2,7 +2,7 @@
 
 Public-facing website and web dashboard for the TON Agent Platform.
 
-**Live**: [tonagentplatform.ru](https://tonagentplatform.ru)
+**Live**: [tonagentplatform.com](https://tonagentplatform.com)
 
 ## Structure
 

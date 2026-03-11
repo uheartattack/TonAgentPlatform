@@ -1116,7 +1116,7 @@ ${codeSnippet || 'Фрагмент кода недоступен.'}
       `<b>${proposal.title}</b>\n` +
       `${proposal.description.slice(0, 200)}\n\n` +
       `Files: <code>${files.join(', ')}</code>\n` +
-      `<i>Applied automatically. <a href="https://tonagentplatform.ru/api/proposals/${proposal.id}">View</a> · ` +
+      `<i>Applied automatically. <a href="https://tonagentplatform.com/api/proposals/${proposal.id}">View</a> · ` +
       `Use /rollback_${proposal.id.slice(0, 8)} to undo</i>`,
     );
 

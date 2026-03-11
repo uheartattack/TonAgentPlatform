@@ -1,6 +1,6 @@
 # API Reference
 
-Base URL: `https://tonagentplatform.ru`
+Base URL: `https://tonagentplatform.com`
 
 ## Authentication
 

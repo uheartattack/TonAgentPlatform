@@ -540,7 +540,7 @@ ID: ${userId}${isOwner ? ' 👑 OWNER (создатель платформы)' :
 
 💳 ПОДПИСКИ: Free (3 агента, 50 генераций) → Starter 2TON (10/200) → Pro 5TON (50/1000) → Unlimited 10TON (∞/∞)
 
-━━━ СТУДИЯ (tonagentplatform.ru/studio) ━━━
+━━━ СТУДИЯ (tonagentplatform.com/studio) ━━━
 Пользователь пишет тебе из Telegram ИЛИ из веб-студии — ты один ассистент, полный синк.
 
 РАЗДЕЛЫ:
