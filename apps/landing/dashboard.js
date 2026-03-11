@@ -5369,6 +5369,20 @@ function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+function getStudioContext() {
+  var activeNav = document.querySelector('.nav-item.active');
+  var page = activeNav ? activeNav.getAttribute('data-page') : 'unknown';
+  var ctx = { page: page, source: 'studio' };
+  // If agent detail is open, include agent info
+  if (typeof _detailAgentId !== 'undefined' && _detailAgentId && typeof _detailAgentData !== 'undefined' && _detailAgentData) {
+    ctx.agentId = _detailAgentId;
+    ctx.agentName = _detailAgentData.name;
+    ctx.agentStatus = _detailAgentData.is_active ? 'active' : 'paused';
+    ctx.agentType = _detailAgentData.trigger_type;
+  }
+  return ctx;
+}
+
 async function sendChatMessage() {
   sendAssistantMessage();
 }
@@ -5396,7 +5410,7 @@ async function sendAssistantMessage() {
   if (sendBtn) sendBtn.disabled = true;
 
   try {
-    var data = await apiRequest('POST', '/api/chat', { message: text });
+    var data = await apiRequest('POST', '/api/chat', { message: text, context: getStudioContext() });
     var typingEl = document.getElementById('assistant-typing');
     if (typingEl) typingEl.remove();
 
@@ -5440,7 +5454,7 @@ async function sendAssistantCallback(callbackData, label) {
   container.scrollTop = container.scrollHeight;
 
   try {
-    var data = await apiRequest('POST', '/api/chat', { message: callbackData });
+    var data = await apiRequest('POST', '/api/chat', { message: callbackData, context: getStudioContext() });
     var typingEl = document.getElementById('assistant-typing');
     if (typingEl) typingEl.remove();
     if (data.ok && data.result) {
