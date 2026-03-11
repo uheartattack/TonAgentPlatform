@@ -462,16 +462,16 @@ export function startApiServer() {
   app.use(express.json());
 
   // CORS — allow platform domain + localhost for dev
-  const ALLOWED_ORIGINS = ['https://tonagentplatform.ru', 'http://localhost:3001', 'http://localhost:3000'];
+  const ALLOWED_ORIGINS = ['https://tonagentplatform.com', 'http://localhost:3001', 'http://localhost:3000'];
   app.use((req: Request, res: Response, next: NextFunction) => {
     const origin = req.headers.origin || '';
     if (origin && ALLOWED_ORIGINS.includes(origin)) {
       res.header('Access-Control-Allow-Origin', origin);
     } else if (!origin) {
       // Server-to-server or same-origin requests (no Origin header)
-      res.header('Access-Control-Allow-Origin', 'https://tonagentplatform.ru');
+      res.header('Access-Control-Allow-Origin', 'https://tonagentplatform.com');
     } else {
-      res.header('Access-Control-Allow-Origin', 'https://tonagentplatform.ru');
+      res.header('Access-Control-Allow-Origin', 'https://tonagentplatform.com');
     }
     res.header('Access-Control-Allow-Headers', 'Content-Type, X-Auth-Token');
     res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');

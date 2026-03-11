@@ -6286,7 +6286,7 @@ async function showStats(ctx: Context, userId: number) {
   } else {
     keyboard.push([{ text: `${peb('diamond')} ${lang === 'ru' ? 'Подключить TON' : 'Connect TON'}`, callback_data: 'ton_connect' }]);
   }
-  keyboard.push([{ text: `${peb('globe')} ${lang === 'ru' ? 'Открыть студию' : 'Open Studio'}`, url: 'https://tonagentplatform.ru/studio' }]);
+  keyboard.push([{ text: `${peb('globe')} ${lang === 'ru' ? 'Открыть студию' : 'Open Studio'}`, url: 'https://tonagentplatform.com/studio' }]);
   if (isOwner) {
     keyboard.push([{ text: `⚙️ ${lang === 'ru' ? 'Настройки платформы' : 'Platform settings'}`, callback_data: 'platform_settings' }]);
   }
@@ -6584,7 +6584,7 @@ async function showHelp(ctx: Context) {
           { text: `${peb('brain')} ${lang === 'ru' ? 'AI модель' : 'AI model'}`, callback_data: 'model_selector' },
           { text: `${peb('diamond')} TON ${lang === 'ru' ? 'кошелёк' : 'wallet'}`, callback_data: 'ton_connect' },
         ],
-        [{ text: `${peb('globe')} ${lang === 'ru' ? 'Открыть студию' : 'Open Studio'}`, url: 'https://tonagentplatform.ru/studio' }],
+        [{ text: `${peb('globe')} ${lang === 'ru' ? 'Открыть студию' : 'Open Studio'}`, url: 'https://tonagentplatform.com/studio' }],
       ],
     },
   });

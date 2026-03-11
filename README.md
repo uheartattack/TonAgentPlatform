@@ -10,11 +10,11 @@
 [![Node.js](https://img.shields.io/badge/Node.js-20+-green.svg)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)](https://www.typescriptlang.org)
 [![Telegram Bot](https://img.shields.io/badge/Telegram-@TonAgentPlatformBot-2CA5E0.svg)](https://t.me/TonAgentPlatformBot)
-[![Live](https://img.shields.io/badge/Live-tonagentplatform.ru-brightgreen.svg)](https://tonagentplatform.ru)
+[![Live](https://img.shields.io/badge/Live-tonagentplatform.com-brightgreen.svg)](https://tonagentplatform.com)
 
 *Describe what you want in plain text or voice — the platform generates, sandboxes, and deploys an autonomous AI agent instantly.*
 
-[**Live Demo**](https://tonagentplatform.ru) · [**Try the Bot**](https://t.me/TonAgentPlatformBot) · [**Dashboard**](https://tonagentplatform.ru/dashboard.html)
+[**Live Demo**](https://tonagentplatform.com) · [**Try the Bot**](https://t.me/TonAgentPlatformBot) · [**Dashboard**](https://tonagentplatform.com/dashboard.html)
 
 </div>
 
@@ -65,7 +65,7 @@ Open Telegram -> [@TonAgentPlatformBot](https://t.me/TonAgentPlatformBot) -> `/s
 | **Wallet** | **TON Connect** | Native wallet integration — sign transactions without leaving Telegram |
 | **Alerts** | **Rich Notifications** | HTML-formatted push alerts with inline buttons, per-agent customization |
 | **Marketplace** | **Agent Marketplace** | Publish, buy, and sell agents — community-driven template economy |
-| **Dashboard** | **Web Dashboard** | Monitor agents, view logs, manage plugins, wallet balance at [tonagentplatform.ru/dashboard](https://tonagentplatform.ru/dashboard.html) |
+| **Dashboard** | **Web Dashboard** | Monitor agents, view logs, manage plugins, wallet balance at [tonagentplatform.com/dashboard](https://tonagentplatform.com/dashboard.html) |
 | **Userbot** | **Telegram Userbot** | Agents can read/send/forward messages, join channels, search — full Telegram automation via MTProto |
 | **Multi** | **Inter-Agent Communication** | Agents can message each other, coordinate tasks, share data |
 | **Self** | **Self-Improvement** | Platform AI periodically proposes code improvements to agents |
@@ -293,7 +293,7 @@ interface Plugin {
 - [x] DB-persisted agent state (write-through cache, survives restarts)
 - [x] Execution history & activity stream
 - [x] Per-user plugin install/uninstall
-- [x] Production deployment (tonagentplatform.ru, HTTPS)
+- [x] Production deployment (tonagentplatform.com, HTTPS)
 - [ ] Telegram Mini App (mobile-optimized)
 - [ ] On-chain agent registry (TON smart contract)
 - [ ] DAO governance & platform token
@@ -308,6 +308,6 @@ MIT (c) 2026 TON Agent Platform
 
 <div align="center">
 
-Built for the TON ecosystem · [tonagentplatform.ru](https://tonagentplatform.ru) · [@TonAgentPlatformBot](https://t.me/TonAgentPlatformBot)
+Built for the TON ecosystem · [tonagentplatform.com](https://tonagentplatform.com) · [@TonAgentPlatformBot](https://t.me/TonAgentPlatformBot)
 
 </div>
