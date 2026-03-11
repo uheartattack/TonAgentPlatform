@@ -82,11 +82,24 @@ interface AuthState {
   step: 'phone' | 'code' | 'password' | 'done';
   phone?: string;
   phoneCodeHash?: string;
+  createdAt: number;
 }
 
+const AUTH_STATE_TTL = 30 * 60 * 1000; // 30 min
 const authStates = new Map<number, AuthState>();
+
+// Cleanup stale auth states every 15 min
+setInterval(() => {
+  const now = Date.now();
+  for (const [uid, state] of authStates) {
+    if (now - state.createdAt > AUTH_STATE_TTL) authStates.delete(uid);
+  }
+}, 15 * 60 * 1000);
+
 export function getAuthState(userId: number): AuthState | null {
-  return authStates.get(userId) || null;
+  const s = authStates.get(userId);
+  if (s && Date.now() - s.createdAt > AUTH_STATE_TTL) { authStates.delete(userId); return null; }
+  return s || null;
 }
 export function clearAuthState(userId: number) {
   authStates.delete(userId);
@@ -345,6 +358,7 @@ export async function authSendPhone(userId: number, phone: string): Promise<{ ty
       step: 'code',
       phone,
       phoneCodeHash,
+      createdAt: Date.now(),
     });
 
     return { type: 'code_sent', info: `Код отправлен на ${phone}` };
@@ -376,14 +390,14 @@ export async function authSubmitCode(userId: number, code: string): Promise<{ ty
     // Save session
     const sessionStr = client.session.save() as unknown as string;
     saveSession(sessionStr);
-    authStates.set(userId, { step: 'done', phone: state.phone });
+    authStates.set(userId, { step: 'done', phone: state.phone, createdAt: Date.now() });
 
     console.log('[Fragment] ✅ Authorized successfully');
     return { type: 'authorized', info: 'Авторизован успешно!' };
   } catch (e: any) {
     const msg: string = e.message || String(e);
     if (msg.includes('SESSION_PASSWORD_NEEDED')) {
-      authStates.set(userId, { ...state, step: 'password' });
+      authStates.set(userId, { ...state, step: 'password', createdAt: Date.now() });
       return { type: 'need_password', info: 'Требуется пароль 2FA' };
     }
     if (msg.includes('PHONE_CODE_EXPIRED')) {
@@ -411,7 +425,7 @@ export async function authSubmitPassword(userId: number, password: string): Prom
 
     const sessionStr = client.session.save() as unknown as string;
     saveSession(sessionStr);
-    authStates.set(userId, { step: 'done' });
+    authStates.set(userId, { step: 'done', createdAt: Date.now() });
 
     console.log('[Fragment] ✅ 2FA password accepted');
   } catch (e: any) {

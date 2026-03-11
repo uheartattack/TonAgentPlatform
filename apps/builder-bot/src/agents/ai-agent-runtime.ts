@@ -188,7 +188,7 @@ function runImmediateTick(agentId: number): void {
 
 // ── Capability → Tool mapping ──────────────────────────────────────────────
 const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
-  wallet:      ['get_ton_balance', 'send_ton', 'get_agent_wallet'],
+  wallet:      ['get_ton_balance', 'send_ton', 'send_jetton', 'get_agent_wallet'],
   nft:         ['get_nft_floor'],
   gifts:       ['get_gift_catalog', 'get_fragment_listings', 'appraise_gift', 'scan_arbitrage',
                 'buy_catalog_gift', 'buy_resale_gift', 'list_gift_for_sale', 'get_stars_balance',
@@ -213,6 +213,7 @@ const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
   blockchain:  ['ton_get_account', 'ton_get_transactions', 'ton_get_jettons', 'ton_get_nfts',
                 'ton_run_method', 'ton_get_rates', 'ton_dns_resolve', 'ton_get_staking_pools',
                 'ton_emulate_tx', 'ton_send_boc', 'ton_get_validators', 'ton_parse_address'],
+  defi:        ['dex_get_prices', 'dex_swap_simulate'],
   ton_mcp:     [], // dynamic — MCP tools discovered at runtime and injected via mcpTools param
 };
 
@@ -421,6 +422,53 @@ function buildToolDefinitions(agentRole?: string, enabledCapabilities?: string[]
             comment: { type: 'string', description: 'Комментарий к транзакции (опционально)' },
           },
           required: ['to', 'amount'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'send_jetton',
+        description: 'Отправить Jetton-токен (USDT, NOT и др.) с кошелька агента. Требует предварительного пополнения.',
+        parameters: {
+          type: 'object',
+          properties: {
+            to:             { type: 'string', description: 'Адрес получателя (EQ.../UQ...)' },
+            jetton_master:  { type: 'string', description: 'Адрес Jetton Master контракта (EQ...)' },
+            amount:         { type: 'string', description: 'Сумма в минимальных единицах (nano). Для USDT 6 знаков: 1 USDT = 1000000' },
+            comment:        { type: 'string', description: 'Комментарий (опционально)' },
+          },
+          required: ['to', 'jetton_master', 'amount'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'dex_get_prices',
+        description: 'Получить цены токенов на DeDust DEX (USD). Можно искать по символу.',
+        parameters: {
+          type: 'object',
+          properties: {
+            symbol: { type: 'string', description: 'Символ токена (TON, USDT, NOT и т.д.). Если не указан — вернёт все.' },
+          },
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'dex_swap_simulate',
+        description: 'Симулировать обмен токенов на STON.fi DEX. Показывает курс, комиссию и price impact.',
+        parameters: {
+          type: 'object',
+          properties: {
+            offer_address: { type: 'string', description: 'Адрес токена для продажи (TON native = EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c)' },
+            ask_address:   { type: 'string', description: 'Адрес токена для покупки' },
+            amount:        { type: 'string', description: 'Сумма в nano-единицах (для TON: 1 TON = 1000000000)' },
+            slippage:      { type: 'string', description: 'Допустимый slippage (по умолчанию 0.01 = 1%)' },
+          },
+          required: ['offer_address', 'ask_address', 'amount'],
         },
       },
     },
@@ -1734,6 +1782,142 @@ async function executeTool(
       } catch (e: any) {
         return { error: e.message };
       }
+    }
+
+    case 'send_jetton': {
+      try {
+        const walletMn = (await stateRepo.get(params.agentId, 'wallet_mnemonic'))?.value;
+        const walletAddr = (await stateRepo.get(params.agentId, 'wallet_address'))?.value;
+        if (!walletAddr || !walletMn) return { error: 'Agent wallet not created. Call get_agent_wallet first.' };
+        const jettonMaster = String(args.jetton_master);
+        const toAddr = String(args.to);
+        const amount = String(args.amount);
+        if (!amount || BigInt(amount) <= 0n) return { error: 'Invalid amount' };
+
+        // Get agent's jetton wallet address via TonAPI
+        const tonApiKey = params.config.TONAPI_KEY || process.env.TONAPI_KEY || '';
+        const headers: Record<string, string> = {};
+        if (tonApiKey) headers['Authorization'] = `Bearer ${tonApiKey}`;
+        const jettonsRes = await fetch(`https://tonapi.io/v2/accounts/${encodeURIComponent(walletAddr)}/jettons`, { headers, signal: AbortSignal.timeout(10000) });
+        const jettonsData = await jettonsRes.json() as any;
+        const jettonBalance = (jettonsData.balances || []).find((b: any) =>
+          b.jetton?.address === jettonMaster || b.jetton?.address?.includes(jettonMaster.replace(/^0:/, ''))
+        );
+        if (!jettonBalance?.wallet_address?.address) return { error: `No jetton wallet found for ${jettonMaster}. Ensure agent has this token.` };
+
+        // Build jetton transfer message via TonAPI
+        const { walletFromMnemonic } = await import('../services/TonConnect');
+        const { mnemonicToWalletKey } = await import('@ton/crypto');
+        const { beginCell, Address, toNano, internal: internalMsg } = await import('@ton/core');
+        const { WalletContractV4 } = await import('@ton/ton');
+        const TonClient4Mod = await import('@ton/ton');
+
+        const keys = await mnemonicToWalletKey(walletMn.split(' '));
+        const wallet = WalletContractV4.create({ workchain: 0, publicKey: keys.publicKey });
+
+        // Build jetton transfer payload (op=0xf8a7ea5)
+        const forwardPayload = args.comment
+          ? beginCell().storeUint(0, 32).storeStringTail(String(args.comment)).endCell()
+          : beginCell().storeUint(0, 32).endCell();
+
+        const jettonTransferBody = beginCell()
+          .storeUint(0xf8a7ea5, 32)     // op: jetton transfer
+          .storeUint(0, 64)              // query_id
+          .storeCoins(BigInt(amount))     // amount in jetton nano
+          .storeAddress(Address.parse(toAddr))  // destination
+          .storeAddress(Address.parse(walletAddr)) // response_destination (excess back to sender)
+          .storeBit(false)               // no custom_payload
+          .storeCoins(toNano('0.01'))    // forward_ton_amount for notification
+          .storeBit(true)                // forward_payload as ref
+          .storeRef(forwardPayload)
+          .endCell();
+
+        const client = new TonClient4Mod.TonClient4({ endpoint: 'https://mainnet-v4.tonhubapi.com' });
+        const seqno = await client.open(wallet).getSeqno();
+        const transfer = wallet.createTransfer({
+          seqno,
+          secretKey: keys.secretKey,
+          messages: [
+            internalMsg({
+              to: Address.parse(jettonBalance.wallet_address.address),
+              value: toNano('0.05'), // gas for jetton transfer
+              body: jettonTransferBody,
+            }),
+          ],
+        });
+
+        // Send BOC via TonAPI
+        const boc = transfer.toBoc().toString('base64');
+        const sendRes = await fetch('https://tonapi.io/v2/blockchain/message', {
+          method: 'POST',
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ boc }),
+          signal: AbortSignal.timeout(15000),
+        });
+        if (!sendRes.ok) {
+          const errText = await sendRes.text();
+          return { error: `Send failed: ${sendRes.status} ${errText}` };
+        }
+
+        await logToDb(params.agentId, 'info', `[TX] Sent jetton ${jettonMaster} amount=${amount} to ${toAddr}`, params.userId);
+        return { ok: true, note: `Jetton transfer sent: ${amount} of ${jettonMaster} to ${toAddr}` };
+      } catch (e: any) {
+        return { error: e.message };
+      }
+    }
+
+    case 'dex_get_prices': {
+      try {
+        const res = await fetch('https://api.dedust.io/v2/assets', {
+          headers: { 'Accept': 'application/json' },
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!res.ok) return { error: `DeDust API ${res.status}` };
+        const assets = await res.json() as any[];
+        const symbol = args.symbol ? String(args.symbol).toUpperCase() : null;
+        const filtered = symbol
+          ? assets.filter((a: any) => a.symbol?.toUpperCase() === symbol)
+          : assets.filter((a: any) => a.price && parseFloat(a.price) > 0).slice(0, 50);
+        return {
+          count: filtered.length,
+          prices: filtered.map((a: any) => ({
+            symbol: a.symbol,
+            type: a.type,
+            address: a.address,
+            price_usd: a.price,
+            decimals: a.decimals,
+          })),
+        };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'dex_swap_simulate': {
+      try {
+        const sim = await fetch('https://api.ston.fi/v1/swap/simulate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            offer_address: String(args.offer_address),
+            ask_address:   String(args.ask_address),
+            units:         String(args.amount),
+            slippage_tolerance: String(args.slippage || '0.01'),
+          }),
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!sim.ok) {
+          const errText = await sim.text();
+          return { error: `STON.fi API ${sim.status}: ${errText}` };
+        }
+        const data = await sim.json() as any;
+        return {
+          offer_units: data.offer_units,
+          ask_units: data.ask_units,
+          swap_rate: data.swap_rate,
+          price_impact: data.price_impact,
+          fee_units: data.fee_units,
+          min_ask_units: data.min_ask_units,
+        };
+      } catch (e: any) { return { error: e.message }; }
     }
 
     case 'get_state': {
