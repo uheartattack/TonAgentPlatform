@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="studio.css?v=44">
+  <link rel="stylesheet" href="studio.css?v=45">
   <!-- Telegram widget loaded in body where button should appear -->
 </head>
 <body>
@@ -96,7 +96,7 @@
     <!-- Sidebar -->
     <aside class="sidebar">
       <div class="sidebar-header">
-        <a href="index.html" class="logo">
+        <a href="/" class="logo">
           <div class="logo-icon">
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
@@ -596,18 +596,18 @@
               <div class="config-row">
                 <div class="form-group">
                   <label data-en="Direct Messages" data-ru="Личные сообщения">Direct Messages</label>
-                  <select class="form-select">
-                    <option data-en="Open to all" data-ru="Открыты для всех">Open to all</option>
-                    <option data-en="Whitelist only" data-ru="Только из белого списка">Whitelist only</option>
-                    <option data-en="Blacklist mode" data-ru="Режим чёрного списка">Blacklist mode</option>
+                  <select class="form-select" id="tg-dm-mode" onchange="saveTelegramSettings()">
+                    <option value="open" data-en="Open to all" data-ru="Открыты для всех">Open to all</option>
+                    <option value="whitelist" data-en="Whitelist only" data-ru="Только из белого списка">Whitelist only</option>
+                    <option value="blacklist" data-en="Blacklist mode" data-ru="Режим чёрного списка">Blacklist mode</option>
                   </select>
                 </div>
                 <div class="form-group">
                   <label data-en="Group Chats" data-ru="Групповые чаты">Group Chats</label>
-                  <select class="form-select">
-                    <option data-en="Allowlist only" data-ru="Только из списка">Allowlist only</option>
-                    <option data-en="Open" data-ru="Открыты">Open</option>
-                    <option data-en="Disabled" data-ru="Отключены">Disabled</option>
+                  <select class="form-select" id="tg-group-mode" onchange="saveTelegramSettings()">
+                    <option value="allowlist" data-en="Allowlist only" data-ru="Только из списка">Allowlist only</option>
+                    <option value="open" data-en="Open" data-ru="Открыты">Open</option>
+                    <option value="disabled" data-en="Disabled" data-ru="Отключены">Disabled</option>
                   </select>
                 </div>
               </div>
@@ -617,7 +617,7 @@
                     <span class="toggle-title" data-en="Require Mention" data-ru="Требовать упоминание">Require Mention</span>
                     <span class="toggle-desc" data-en="Only respond when mentioned in groups" data-ru="Отвечать только при упоминании в группах">Only respond when mentioned in groups</span>
                   </div>
-                  <input type="checkbox" class="toggle-checkbox" checked>
+                  <input type="checkbox" class="toggle-checkbox" id="tg-require-mention" checked onchange="saveTelegramSettings()">
                   <span class="toggle-slider"></span>
                 </label>
                 <label class="toggle-card">
@@ -625,7 +625,7 @@
                     <span class="toggle-title" data-en="Typing Indicator" data-ru="Индикатор печати">Typing Indicator</span>
                     <span class="toggle-desc" data-en="Show 'typing...' while processing" data-ru="Показывать 'печатает...' при обработке">Show 'typing...' while processing</span>
                   </div>
-                  <input type="checkbox" class="toggle-checkbox" checked>
+                  <input type="checkbox" class="toggle-checkbox" id="tg-typing" checked onchange="saveTelegramSettings()">
                   <span class="toggle-slider"></span>
                 </label>
                 <label class="toggle-card">
@@ -633,14 +633,14 @@
                     <span class="toggle-title" data-en="Auto-reply" data-ru="Автоответ">Auto-reply</span>
                     <span class="toggle-desc" data-en="Respond without manual trigger" data-ru="Отвечать без ручного триггера">Respond without manual trigger</span>
                   </div>
-                  <input type="checkbox" class="toggle-checkbox">
+                  <input type="checkbox" class="toggle-checkbox" id="tg-auto-reply" onchange="saveTelegramSettings()">
                   <span class="toggle-slider"></span>
                 </label>
               </div>
               <div class="form-group debounce-group">
                 <label data-en="Response Delay (ms)" data-ru="Задержка ответа (мс)">Response Delay (ms)</label>
                 <div class="slider-group">
-                  <input type="range" class="form-slider" id="slider-response-delay" min="0" max="5000" step="100" value="1500" oninput="updateSliderDisplay(this)">
+                  <input type="range" class="form-slider" id="slider-response-delay" min="0" max="5000" step="100" value="1500" oninput="updateSliderDisplay(this)" onchange="saveTelegramSettings()">
                   <span class="slider-value">1500ms</span>
                 </div>
               </div>
@@ -940,7 +940,7 @@
                     <span class="setting-name" data-en="Audit Logging" data-ru="Логирование">Audit Logging</span>
                     <span class="setting-desc" data-en="Record all agent actions for review" data-ru="Записывать все действия агента">Record all agent actions for review</span>
                   </div>
-                  <input type="checkbox" class="toggle-checkbox" checked>
+                  <input type="checkbox" class="toggle-checkbox" id="sec-logging" checked onchange="saveSecuritySettings()">
                   <span class="toggle-slider"></span>
                 </label>
                 <label class="setting-item">
@@ -948,7 +948,7 @@
                     <span class="setting-name" data-en="Confirm Sensitive Actions" data-ru="Подтверждать действия">Confirm Sensitive Actions</span>
                     <span class="setting-desc" data-en="Ask before executing critical operations" data-ru="Спрашивать перед критическими операциями">Ask before executing critical operations</span>
                   </div>
-                  <input type="checkbox" class="toggle-checkbox" checked>
+                  <input type="checkbox" class="toggle-checkbox" id="sec-confirm" checked onchange="saveSecuritySettings()">
                   <span class="toggle-slider"></span>
                 </label>
                 <label class="setting-item">
@@ -956,7 +956,7 @@
                     <span class="setting-name" data-en="Rate Limiting" data-ru="Ограничение запросов">Rate Limiting</span>
                     <span class="setting-desc" data-en="Limit requests per minute" data-ru="Ограничить запросы в минуту">Limit requests per minute</span>
                   </div>
-                  <input type="checkbox" class="toggle-checkbox" checked>
+                  <input type="checkbox" class="toggle-checkbox" id="sec-rate-limit" checked onchange="saveSecuritySettings()">
                   <span class="toggle-slider"></span>
                 </label>
               </div>
@@ -2095,6 +2095,6 @@
   </div>
 
   <script src="https://unpkg.com/@tonconnect/ui@2/dist/tonconnect-ui.min.js"></script>
-  <script src="studio.js?v=44"></script>
+  <script src="studio.js?v=45"></script>
 </body>
 </html>

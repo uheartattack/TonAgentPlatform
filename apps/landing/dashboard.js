@@ -444,6 +444,8 @@ function showApp() {
 
   // Load persisted slider/config values
   loadAgentConfig().catch(console.error);
+  loadSecuritySettings().catch(console.error);
+  loadTelegramSettings().catch(console.error);
 
   // Initialize static/async components
   initCapabilities();
@@ -494,6 +496,28 @@ async function loadMyStats() {
   if (modelEl && data.aiModel) modelEl.textContent = data.aiModel;
 }
 
+// ===== PINNED AGENTS =====
+function getPinnedAgents() {
+  try { return JSON.parse(localStorage.getItem('pinned_agents') || '[]'); } catch { return []; }
+}
+function setPinnedAgents(ids) {
+  localStorage.setItem('pinned_agents', JSON.stringify(ids));
+}
+function togglePinAgent(agentId, event) {
+  if (event) event.stopPropagation();
+  var pinned = getPinnedAgents();
+  var idx = pinned.indexOf(agentId);
+  if (idx >= 0) pinned.splice(idx, 1);
+  else pinned.push(agentId);
+  setPinnedAgents(pinned);
+  showNotification(idx >= 0
+    ? (currentLang === 'ru' ? 'Агент откреплён' : 'Agent unpinned')
+    : (currentLang === 'ru' ? 'Агент закреплён на обзоре' : 'Agent pinned to overview'), 'success');
+  // Re-render if on agents or overview page
+  if (typeof renderAgentsPage === 'function') renderAgentsPage();
+  loadAgents();
+}
+
 async function loadAgents() {
   const agentsEl = document.getElementById('agents-list');
   if (!agentsEl) return;
@@ -504,17 +528,21 @@ async function loadAgents() {
     return;
   }
   const agents = data.agents || [];
-  if (!agents.length) {
-    agentsEl.innerHTML = `
-      <div class="empty-state">
-        <p>${t('no_agents_yet')}</p>
-        <button class="btn btn-primary btn-sm" onclick="navigateTo('builder')">${t('create_first')}</button>
-      </div>`;
+  // Overview shows ONLY pinned agents
+  var pinned = getPinnedAgents();
+  var pinnedAgents = agents.filter(function(a) { return pinned.indexOf(a.id) >= 0; });
+  if (!pinnedAgents.length) {
+    agentsEl.innerHTML = '<div class="empty-state" style="padding:1.5rem;text-align:center"><p style="color:var(--text-muted);font-size:0.85rem;">' +
+      (currentLang === 'ru' ? 'Закрепите агентов в «Мои агенты» чтобы они появились здесь' : 'Pin agents in "My Agents" to show them here') +
+      '</p><button class="btn btn-secondary btn-sm" onclick="navigateTo(\'agents\')" style="margin-top:8px">' +
+      (currentLang === 'ru' ? 'Перейти к агентам' : 'Go to agents') + '</button></div>';
+    if (agents.length > 0) markGSStep('agent');
+    updateNavBadges(agents);
     return;
   }
 
   const triggerLabel = (tt) => tt === 'scheduled' ? t('trigger_scheduled') : tt === 'webhook' ? t('trigger_webhook') : tt === 'ai_agent' ? t('trigger_ai_agent') : t('trigger_manual');
-  agentsEl.innerHTML = agents.map(a => {
+  agentsEl.innerHTML = pinnedAgents.map(a => {
     const role = a.role || 'worker';
     const lvl = a.level || 1;
     return `
@@ -537,13 +565,14 @@ async function loadAgents() {
           ${a.isActive ? IC.pause + ' ' + t('stop') : IC.rocket + ' ' + t('run')}
         </button>
         <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();loadAgentLogs(${a.id})">${IC.clipboard} ${t('logs')}</button>
-        <button class="btn btn-ghost btn-sm" style="color:var(--danger,#ef4444)" onclick="event.stopPropagation();deleteAgent(${a.id},'${escHtml(a.name || 'Agent').replace(/'/g, "\\'")}')">${IC.trash}</button>
+        <button class="btn btn-ghost btn-sm" title="${currentLang === 'ru' ? 'Открепить' : 'Unpin'}" onclick="togglePinAgent(${a.id}, event)" style="color:var(--primary)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+        </button>
       </div>
     </div>`;
   }).join('');
 
   if (agents.length > 0) markGSStep('agent');
-  // Update nav badge with real active count
   updateNavBadges(agents);
 }
 
@@ -855,7 +884,7 @@ function renderAgentsPage() {
       ? (currentLang === 'ru' ? 'Нет агентов. Создайте первого!' : 'No agents yet. Create your first!')
       : (currentLang === 'ru' ? 'Нет агентов с таким статусом' : 'No agents with this status');
     listEl.innerHTML = '<div class="empty-state" style="padding:2rem;text-align:center"><p>' + msg + '</p>' +
-      (_agentsPageFilter === 'all' ? '<button class="btn btn-primary btn-sm" onclick="showCreateAgentMenu(event)">' + t('create_first') + '</button>' : '') +
+      (_agentsPageFilter === 'all' ? '<button class="btn btn-primary btn-sm" onclick="navigateTo(\'builder\')">' + t('create_first') + '</button>' : '') +
       '</div>';
     return;
   }
@@ -897,6 +926,8 @@ function renderAgentsPage() {
       '<button class="btn btn-sm ' + (a.isActive ? 'btn-warning' : 'btn-success') + '" onclick="event.stopPropagation();toggleAgentFromPage(' + a.id + ',' + a.isActive + ')">' + (a.isActive ? IC.pause + ' ' + t('stop') : IC.rocket + ' ' + t('run')) + '</button>' +
       '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openAgentDetail(' + a.id + ')">' + IC.wrench + ' ' + (currentLang === 'ru' ? 'Детали' : 'Details') + '</button>' +
       '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();loadAgentLogs(' + a.id + ')">' + IC.clipboard + ' ' + t('logs') + '</button>' +
+      '<button class="btn btn-ghost btn-sm" title="' + (getPinnedAgents().indexOf(a.id) >= 0 ? (currentLang === 'ru' ? 'Открепить' : 'Unpin') : (currentLang === 'ru' ? 'Закрепить на обзор' : 'Pin to overview')) + '" onclick="togglePinAgent(' + a.id + ', event)" style="color:' + (getPinnedAgents().indexOf(a.id) >= 0 ? 'var(--primary)' : 'var(--text-muted)') + '">' +
+      '<svg width="14" height="14" viewBox="0 0 24 24" ' + (getPinnedAgents().indexOf(a.id) >= 0 ? 'fill="currentColor"' : 'fill="none"') + ' stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg></button>' +
       '<button class="btn btn-ghost btn-sm" style="color:var(--danger,#ef4444)" onclick="event.stopPropagation();deleteAgent(' + a.id + ',\'' + escHtml(a.name || 'Agent').replace(/'/g, "\\'") + '\')">' + IC.trash + '</button>' +
       '</div></div>';
   }).join('');
@@ -2123,6 +2154,59 @@ async function loadAgentConfig() {
     delayEl.value = config.responseDelay;
     updateSliderDisplay(delayEl);
   }
+}
+
+// ===== SECURITY SETTINGS =====
+async function saveSecuritySettings() {
+  var sec = {
+    logging: document.getElementById('sec-logging')?.checked ?? true,
+    confirmActions: document.getElementById('sec-confirm')?.checked ?? true,
+    rateLimiting: document.getElementById('sec-rate-limit')?.checked ?? true,
+  };
+  await apiRequest('POST', '/api/settings', { key: 'security_settings', value: sec });
+  showNotification(currentLang === 'ru' ? 'Настройки безопасности сохранены' : 'Security settings saved', 'success');
+}
+async function loadSecuritySettings() {
+  try {
+    var data = await apiRequest('GET', '/api/settings?key=security_settings');
+    if (data && data.value) {
+      var sec = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+      var el1 = document.getElementById('sec-logging'); if (el1) el1.checked = sec.logging !== false;
+      var el2 = document.getElementById('sec-confirm'); if (el2) el2.checked = sec.confirmActions !== false;
+      var el3 = document.getElementById('sec-rate-limit'); if (el3) el3.checked = sec.rateLimiting !== false;
+    }
+  } catch {}
+}
+
+// ===== TELEGRAM SETTINGS =====
+async function saveTelegramSettings() {
+  var tg = {
+    dmMode: document.getElementById('tg-dm-mode')?.value || 'open',
+    groupMode: document.getElementById('tg-group-mode')?.value || 'allowlist',
+    requireMention: document.getElementById('tg-require-mention')?.checked ?? true,
+    typingIndicator: document.getElementById('tg-typing')?.checked ?? true,
+    autoReply: document.getElementById('tg-auto-reply')?.checked ?? false,
+    responseDelay: parseInt(document.getElementById('slider-response-delay')?.value || '1500'),
+  };
+  await apiRequest('POST', '/api/settings', { key: 'telegram_settings', value: tg });
+  showNotification(currentLang === 'ru' ? 'Настройки Telegram сохранены' : 'Telegram settings saved', 'success');
+}
+async function loadTelegramSettings() {
+  try {
+    var data = await apiRequest('GET', '/api/settings?key=telegram_settings');
+    if (data && data.value) {
+      var tg = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+      var dm = document.getElementById('tg-dm-mode'); if (dm && tg.dmMode) dm.value = tg.dmMode;
+      var gm = document.getElementById('tg-group-mode'); if (gm && tg.groupMode) gm.value = tg.groupMode;
+      var rm = document.getElementById('tg-require-mention'); if (rm) rm.checked = tg.requireMention !== false;
+      var ti = document.getElementById('tg-typing'); if (ti) ti.checked = tg.typingIndicator !== false;
+      var ar = document.getElementById('tg-auto-reply'); if (ar) ar.checked = tg.autoReply === true;
+      if (tg.responseDelay != null) {
+        var del = document.getElementById('slider-response-delay');
+        if (del) { del.value = tg.responseDelay; updateSliderDisplay(del); }
+      }
+    }
+  } catch {}
 }
 
 // ===== OPERATIONS =====
@@ -3700,6 +3784,32 @@ function buildFlowPalette() {
   }
 
   let html = '';
+
+  // Builder instructions panel
+  html += '<div class="palette-help">';
+  html += '<div class="palette-cat-header" onclick="togglePaletteCat(this)" style="border-bottom:1px solid rgba(255,255,255,0.06)">';
+  html += '<span class="cat-dot" style="background:#60a5fa"></span>';
+  html += '<span>' + (ru ? '📖 Инструкция' : '📖 Guide') + '</span>';
+  html += '<svg class="cat-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>';
+  html += '</div>';
+  html += '<div class="palette-nodes" style="padding:8px 12px;font-size:0.72rem;color:var(--text-secondary);line-height:1.5">';
+  html += ru
+    ? '<p style="margin:0 0 6px"><b>Как создать агента:</b></p>' +
+      '<p style="margin:0 0 4px">1. Перетащите <b>Триггер</b> (Таймер/Webhook) на канвас</p>' +
+      '<p style="margin:0 0 4px">2. Добавьте <b>действия</b> (TON, Подарки, Веб)</p>' +
+      '<p style="margin:0 0 4px">3. Используйте <b>Условие</b> для ветвления логики</p>' +
+      '<p style="margin:0 0 4px">4. Завершите <b>Уведомлением</b> для отправки результатов</p>' +
+      '<p style="margin:0 0 4px">5. Нажмите <b>Запуск</b> для деплоя</p>' +
+      '<p style="margin:6px 0 0;color:var(--text-muted)">💡 <b>Подсказки:</b> Наведите на ноду чтобы увидеть описание. Используйте <code>{{result}}</code> для передачи данных между шагами. <a href="https://tonagentplatform.com" style="color:var(--primary)" target="_blank">Документация</a></p>'
+    : '<p style="margin:0 0 6px"><b>How to build an agent:</b></p>' +
+      '<p style="margin:0 0 4px">1. Drag a <b>Trigger</b> (Timer/Webhook) onto canvas</p>' +
+      '<p style="margin:0 0 4px">2. Add <b>actions</b> (TON, Gifts, Web)</p>' +
+      '<p style="margin:0 0 4px">3. Use <b>Condition</b> for logic branching</p>' +
+      '<p style="margin:0 0 4px">4. End with <b>Notify</b> to send results</p>' +
+      '<p style="margin:0 0 4px">5. Click <b>Deploy</b> to launch</p>' +
+      '<p style="margin:6px 0 0;color:var(--text-muted)">💡 <b>Tips:</b> Hover nodes for descriptions. Use <code>{{result}}</code> to pass data between steps. <a href="https://tonagentplatform.com" style="color:var(--primary)" target="_blank">Docs</a></p>';
+  html += '</div></div>';
+
   const catOrder = ['triggers', 'ton', 'gifts', 'web', 'telegram', 'output', 'logic', 'state'];
   for (const cat of catOrder) {
     const nodes = groups[cat];

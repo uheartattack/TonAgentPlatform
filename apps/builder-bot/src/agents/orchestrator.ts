@@ -1042,6 +1042,27 @@ ${studioContext?.source === 'studio' ? `
       content += `_Добавьте свой ключ: Профиль → 🔑 API ключи_\n`;
     }
 
+    // Detect requirements — Telegram auth needed for trading tools
+    const needsTgLogin = /buy_catalog|buy_market|buy_resale|list_gift_for_sale|tg_send_message|tg_get_messages|tg_join_channel/i.test(systemPrompt);
+    if (needsTgLogin) {
+      // Check if user is already logged in
+      let isAuthed = false;
+      try {
+        const { isAuthorized } = await import('../fragment-service');
+        isAuthed = await isAuthorized();
+      } catch {}
+      if (!isAuthed) {
+        content += `\n🔐 *Требуется авторизация Telegram*\n`;
+        content += `_Агент использует инструменты торговли/сообщений\\. Выполните /tglogin для полного функционала_\n`;
+      }
+    }
+
+    // Detect if agent needs wallet
+    const needsWallet = /send_ton|send_jetton|get_agent_wallet/i.test(systemPrompt);
+    if (needsWallet) {
+      content += `\n💰 _Агент использует кошелёк — пополните баланс для транзакций_\n`;
+    }
+
     content += `🧠 Самоулучшение: ✅ _\\(AI автоисправление ошибок\\)_\n`;
     content += '\n';
 
