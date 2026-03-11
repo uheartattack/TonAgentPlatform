@@ -2,23 +2,18 @@ import OpenAI from 'openai';
 import { ToolResult } from './db-tools';
 import { getSkillDocsForCodeGeneration } from '../../plugins-system';
 
-// ===== Инициализация API =====
+// ===== Инициализация Platform AI =====
+const PLATFORM_API_KEY = process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY || '';
+const PLATFORM_BASE_URL = process.env.OPENAI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai/';
 
-// CLIProxyAPIPlus — OpenAI-совместимый прокси (всегда локальный 127.0.0.1)
-// НЕ используем OPENAI_BASE_URL — он может указывать на другой хост (192.168.0.x)
-const PROXY_API_KEY = process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY || 'ton-agent-key-123';
-const PROXY_BASE_URL = process.env.CLAUDE_BASE_URL || 'http://127.0.0.1:8317/v1';
-
-// OpenAI-совместимый клиент для прокси
 const openai = new OpenAI({
-  apiKey: PROXY_API_KEY,
-  baseURL: PROXY_BASE_URL,
+  apiKey: PLATFORM_API_KEY,
+  baseURL: PLATFORM_BASE_URL,
 });
-// Основная модель — та же что использует orchestrator (Claude Chat Model из .env)
-const CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-5-20250929';
+const CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'gemini-2.5-flash';
 
 // Qwen3-Coder-Next через OpenRouter (если задан ключ)
-// Если не задан — Claude через прокси для всего
+// Если не задан — используется Platform AI
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
 const QWEN_MODEL = process.env.OPENROUTER_MODEL || 'qwen/qwen3-coder-next';
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1';
@@ -126,8 +121,8 @@ async function callClaudeWithRetry(
   throw new Error('Сервер AI временно перегружен (rate limit). Попробуйте через минуту.');
 }
 
-// ===== Запрос к Qwen / лучшей coding-модели =====
-// Приоритет: kiro-qwen3-coder-next (локальный прокси) → OpenRouter → Claude fallback chain
+// ===== Запрос к AI для генерации кода =====
+// Приоритет: OpenRouter (если ключ) → Platform AI
 
 async function callQwen(systemPrompt: string, userPrompt: string, maxTokens = 4000): Promise<string> {
   const messages = [
@@ -135,29 +130,7 @@ async function callQwen(systemPrompt: string, userPrompt: string, maxTokens = 40
     { role: 'user'   as const, content: userPrompt   },
   ];
 
-  // 1) kiro-qwen3-coder-next через локальный прокси (доступен в CLIProxyAPIPlus)
-  try {
-    const response = await openai.chat.completions.create({
-      model: 'kiro-qwen3-coder-next',
-      max_tokens: maxTokens,
-      messages,
-      temperature: 0.2,
-    });
-    const content = response.choices[0]?.message?.content;
-    if (content) {
-      console.log('[CodeTools] ✅ kiro-qwen3-coder-next success');
-      return content;
-    }
-  } catch (err: any) {
-    const msg: string = err?.message || String(err);
-    if (msg.includes('cooldown')) {
-      console.warn(`[CodeTools] kiro-qwen3-coder-next in cooldown → fallback chain`);
-    } else {
-      console.warn(`[CodeTools] kiro-qwen3-coder-next error: ${msg.slice(0, 80)} → fallback`);
-    }
-  }
-
-  // 2) OpenRouter (если задан ключ)
+  // 1) OpenRouter (если задан ключ)
   if (OPENROUTER_API_KEY) {
     try {
       const response = await fetch(`${OPENROUTER_BASE}/chat/completions`, {

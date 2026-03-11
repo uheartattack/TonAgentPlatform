@@ -188,11 +188,18 @@ function buildPortAdj(edges: any[]): Map<string, PortEdge[]> {
   return adj;
 }
 
-function flowToSystemPrompt(flow: { nodes: any[]; edges: any[]; groups?: any[] }): string {
+function flowToSystemPrompt(flow: { nodes: any[]; edges: any[]; groups?: any[] }, agentDescription?: string): string {
   const nodeMap = new Map(flow.nodes.map((n: any) => [n.id, n]));
   const adj = buildPortAdj(flow.edges);
   const triggerNode = flow.nodes.find((n: any) => ['timer', 'manual', 'webhook'].includes(n.type));
   const lines: string[] = [];
+
+  // If agent has a meaningful description, inject it as context for AI nodes
+  if (agentDescription && agentDescription.length > 10 && !agentDescription.startsWith('Flow:')) {
+    lines.push('Your purpose: ' + agentDescription);
+    lines.push('');
+  }
+
   lines.push('You execute the following workflow on every tick. Follow these steps EXACTLY in order:');
   lines.push('');
 
@@ -692,13 +699,14 @@ export function startApiServer() {
   app.post('/api/agents/flow', requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = (req as any).userId as number;
-      const { name, flow } = req.body || {};
+      const { name, flow, description: flowDesc } = req.body || {};
       if (!flow || !flow.nodes || !flow.nodes.length) {
         res.status(400).json({ ok: false, error: 'Flow must have at least one node' });
         return;
       }
       const agentName = (name && typeof name === 'string' && name.trim()) || 'Flow Agent';
-      const systemPrompt = flowToSystemPrompt(flow);
+      const userDescription = (flowDesc && typeof flowDesc === 'string') ? flowDesc.trim() : '';
+      const systemPrompt = flowToSystemPrompt(flow, userDescription);
       const execCode = flowToExecutableCode(flow);
       // Detect interval from trigger node
       let intervalMs = 300000; // default 5 min
@@ -717,7 +725,7 @@ export function startApiServer() {
       const created = await getDBTools().createAgent({
         userId,
         name: agentName,
-        description: 'Flow: ' + flow.nodes.map((n: any) => n.type).join(' \u2192 '),
+        description: userDescription || ('Flow: ' + flow.nodes.map((n: any) => n.type).join(' \u2192 ')),
         code: hybridPrompt,
         triggerType: 'ai_agent',
         triggerConfig: {
@@ -913,6 +921,180 @@ export function startApiServer() {
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
+  });
+
+  // ── PUT /api/agents/:id/code — Edit agent code/prompt ──
+  app.put('/api/agents/:id/code', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const agentId = parseInt(req.params.id as string, 10);
+      if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
+      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
+      const { code } = req.body || {};
+      if (typeof code !== 'string' || code.length > 50000) { res.status(400).json({ error: 'Invalid code' }); return; }
+      await pool.query('UPDATE builder_bot.agents SET code = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3', [code, agentId, userId]);
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── PUT /api/agents/:id/description — Edit agent description ──
+  app.put('/api/agents/:id/description', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const agentId = parseInt(req.params.id as string, 10);
+      if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
+      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
+      const { description } = req.body || {};
+      if (typeof description !== 'string' || description.length > 2000) { res.status(400).json({ error: 'Invalid description' }); return; }
+      await pool.query('UPDATE builder_bot.agents SET description = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3', [description, agentId, userId]);
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── PUT /api/agents/:id/provider — Change AI provider/model ──
+  app.put('/api/agents/:id/provider', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const agentId = parseInt(req.params.id as string, 10);
+      if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
+      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
+      const agent = agentCheck.data;
+      const { provider, model, apiKey } = req.body || {};
+      const validProviders = ['openai', 'anthropic', 'gemini', 'groq', 'deepseek', 'openrouter', 'together'];
+      if (provider && !validProviders.includes(provider)) { res.status(400).json({ error: 'Invalid provider' }); return; }
+      const tc = typeof agent.triggerConfig === 'string' ? JSON.parse(agent.triggerConfig) : (agent.triggerConfig || {});
+      if (!tc.config) tc.config = {};
+      if (provider) tc.config.AI_PROVIDER = provider;
+      if (model && typeof model === 'string') tc.config.AI_MODEL = model;
+      if (apiKey && typeof apiKey === 'string') tc.config.AI_API_KEY = apiKey;
+      await pool.query('UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3', [JSON.stringify(tc), agentId, userId]);
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── PUT /api/agents/:id/role — Change agent role ──
+  app.put('/api/agents/:id/role', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const agentId = parseInt(req.params.id as string, 10);
+      if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
+      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
+      const { role } = req.body || {};
+      const validRoles = ['worker', 'manager', 'specialist', 'monitor'];
+      if (!validRoles.includes(role)) { res.status(400).json({ error: 'Invalid role' }); return; }
+      await pool.query('UPDATE builder_bot.agents SET role = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3', [role, agentId, userId]);
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── POST /api/agents/:id/chat — Send chat message to agent ──
+  app.post('/api/agents/:id/chat', requireAuth, rateLimit(20, 60000, 'agent_chat'), async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const agentId = parseInt(req.params.id as string, 10);
+      if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
+      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
+      const { message } = req.body || {};
+      if (!message || typeof message !== 'string' || message.length > 4000) { res.status(400).json({ error: 'Invalid message' }); return; }
+      // Send message to AI agent via runner
+      const { getRunnerAgent } = await import('./agents/sub-agents/runner');
+      const runner = getRunnerAgent();
+      const result = await runner.sendMessageToAgent(agentId, message);
+      res.json({ ok: true, ...result });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── POST /api/agents/:id/wallet — Generate wallet for agent ──
+  app.post('/api/agents/:id/wallet', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const agentId = parseInt(req.params.id as string, 10);
+      if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
+      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
+      const agent = agentCheck.data;
+      const tc = typeof agent.triggerConfig === 'string' ? JSON.parse(agent.triggerConfig) : (agent.triggerConfig || {});
+      if (tc.config?.WALLET_MNEMONIC) { res.json({ ok: true, exists: true, address: tc.config.WALLET_ADDRESS || 'configured' }); return; }
+      // Generate new wallet
+      const { mnemonicNew, mnemonicToWalletKey } = await import('@ton/crypto');
+      const { WalletContractV4 } = await import('@ton/ton');
+      const mnemonic = await mnemonicNew();
+      const keyPair = await mnemonicToWalletKey(mnemonic);
+      const wallet = WalletContractV4.create({ publicKey: keyPair.publicKey, workchain: 0 });
+      const address = wallet.address.toString({ bounceable: false });
+      if (!tc.config) tc.config = {};
+      tc.config.WALLET_MNEMONIC = mnemonic.join(' ');
+      tc.config.WALLET_ADDRESS = address;
+      await pool.query('UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3', [JSON.stringify(tc), agentId, userId]);
+      res.json({ ok: true, address });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── GET /api/agents/:id/audit — Security audit for agent ──
+  app.get('/api/agents/:id/audit', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const agentId = parseInt(req.params.id as string, 10);
+      if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
+      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
+      const agent = agentCheck.data;
+      const tc = typeof agent.triggerConfig === 'string' ? JSON.parse(agent.triggerConfig) : (agent.triggerConfig || {});
+      const issues: string[] = [];
+      const passed: string[] = [];
+      // Check API key
+      if (!tc.config?.AI_API_KEY) issues.push('No AI API key configured'); else passed.push('AI API key configured');
+      // Check wallet
+      if (!tc.config?.WALLET_MNEMONIC) issues.push('No wallet configured'); else passed.push('Wallet configured');
+      // Check code length
+      if ((agent.code || '').length < 20) issues.push('System prompt too short'); else passed.push('System prompt defined');
+      // Check capabilities
+      const caps = tc.config?.enabledCapabilities || [];
+      if (caps.length === 0) issues.push('No capabilities enabled'); else passed.push(caps.length + ' capabilities enabled');
+      // Check schedule
+      if (agent.triggerType === 'scheduled' && !tc.cronExpression && !tc.interval) issues.push('Scheduled agent has no schedule'); else if (agent.triggerType === 'scheduled') passed.push('Schedule configured');
+      res.json({ ok: true, issues, passed, score: Math.round(passed.length / (passed.length + issues.length) * 100) });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── GET /api/user_variables — Get user global variables (API keys etc.) ──
+  app.get('/api/user_variables', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const rows = await pool.query('SELECT key, value FROM builder_bot.user_variables WHERE user_id = $1', [userId]);
+      const vars: Record<string, string> = {};
+      for (const r of rows.rows) {
+        // Mask sensitive values
+        if (r.key.toLowerCase().includes('key') || r.key.toLowerCase().includes('secret') || r.key.toLowerCase().includes('mnemonic')) {
+          vars[r.key] = r.value ? r.value.slice(0, 4) + '...' + r.value.slice(-4) : '';
+        } else {
+          vars[r.key] = r.value;
+        }
+      }
+      res.json({ ok: true, variables: vars });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── POST /api/user_variables — Set user variable ──
+  app.post('/api/user_variables', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { key, value } = req.body || {};
+      if (!key || typeof key !== 'string' || key.length > 64) { res.status(400).json({ error: 'Invalid key' }); return; }
+      if (typeof value !== 'string' || value.length > 1024) { res.status(400).json({ error: 'Invalid value' }); return; }
+      await pool.query(
+        'INSERT INTO builder_bot.user_variables (user_id, key, value) VALUES ($1, $2, $3) ON CONFLICT (user_id, key) DO UPDATE SET value = $3',
+        [userId, key, value]
+      );
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
   // ── GET /api/activity — все логи пользователя (для Activity Stream) ──

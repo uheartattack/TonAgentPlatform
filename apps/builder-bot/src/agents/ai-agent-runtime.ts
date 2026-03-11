@@ -74,28 +74,18 @@ function resolveProvider(provider: string): ProviderCfg {
   return { baseURL: 'https://api.openai.com/v1', defaultModel: 'gpt-4o-mini' };
 }
 
-// Platform proxy fallback
-const PLATFORM_AI_URL   = process.env.AI_API_URL || 'http://127.0.0.1:8317/v1';
-const PLATFORM_AI_KEY   = process.env.AI_API_KEY || 'local';
-const PLATFORM_AI_MODEL = process.env.AI_MODEL   || 'claude-sonnet-4-5-20250929';
-
-// Priority: config.AI_API_KEY (user's own key) → platform proxy fallback
+// Returns AI client using user's own API key. Throws if no key configured.
 function getAIClient(config: Record<string, any>): { client: OpenAI; defaultModel: string } {
   const apiKey = (config.AI_API_KEY as string) || '';
   const provider = (config.AI_PROVIDER as string) || '';
 
-  // If user has an actual API key → use their provider
-  if (apiKey && apiKey !== 'local') {
-    const { baseURL, defaultModel } = resolveProvider(provider);
-    const finalURL = (config.AI_BASE_URL as string) || baseURL;
-    return { client: new OpenAI({ baseURL: finalURL, apiKey }), defaultModel };
+  if (!apiKey) {
+    throw new Error('NO_API_KEY');
   }
 
-  // Fallback to platform proxy (CLIProxyAPIPlus or env-configured)
-  return {
-    client: new OpenAI({ baseURL: PLATFORM_AI_URL, apiKey: PLATFORM_AI_KEY }),
-    defaultModel: PLATFORM_AI_MODEL,
-  };
+  const { baseURL, defaultModel } = resolveProvider(provider);
+  const finalURL = (config.AI_BASE_URL as string) || baseURL;
+  return { client: new OpenAI({ baseURL: finalURL, apiKey }), defaultModel };
 }
 
 // ── Markdown → HTML converter (for AI-generated text) ─────────────────────
@@ -3300,8 +3290,21 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
   toolCallCount: number;
   error?: string;
 }> {
-  // getAIClient handles fallback to platform proxy when user has no key
-  const { client: ai, defaultModel } = getAIClient(params.config);
+  let ai: OpenAI;
+  let defaultModel: string;
+  try {
+    const result = getAIClient(params.config);
+    ai = result.client;
+    defaultModel = result.defaultModel;
+  } catch (e: any) {
+    if (e.message === 'NO_API_KEY') {
+      const errMsg = '🔑 API ключ не настроен. Добавьте ключ: Профиль → API ключи';
+      if (params.onNotify) params.onNotify(errMsg);
+      await logToDb(params.agentId, 'error', errMsg, params.userId);
+      return { toolCallCount: 0, error: 'NO_API_KEY' };
+    }
+    throw e;
+  }
   const msgs = params.pendingMessages || [];
 
   await logToDb(params.agentId, 'info', `[AI tick] start, pendingMsgs=${msgs.length}`, params.userId);

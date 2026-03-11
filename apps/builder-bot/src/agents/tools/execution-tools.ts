@@ -150,7 +150,7 @@ export class ExecutionTools {
         'system',
         `[${level.toUpperCase()}] ${message}`,
         { agentId: params.agentId, level, details }
-      ).catch(() => {});
+      ).catch(e => console.error('[Runtime]', e?.message));
 
       // Персистируем лог в DB (fire-and-forget — не блокирует выполнение)
       try {
@@ -160,7 +160,7 @@ export class ExecutionTools {
           level,
           message,
           details,
-        }).catch(() => {});
+        }).catch(e => console.error('[Runtime]', e?.message));
       } catch { /* repository не инициализирован — игнорируем */ }
     };
 
@@ -333,7 +333,7 @@ export class ExecutionTools {
             stateMap.set(String(key), value);
             // Фоновая запись в DB — не блокирует VM
             try {
-              getAgentStateRepository().set(agentId, params.userId, String(key), value).catch(() => {});
+              getAgentStateRepository().set(agentId, params.userId, String(key), value).catch(e => console.error('[Runtime]', e?.message));
             } catch { /* repository не инициализирован (тест) — игнорируем */ }
           },
 
@@ -1025,7 +1025,7 @@ ${code}
       getMemoryManager().addMessage(
         params.userId, 'system', `[${level.toUpperCase()}] ${message}`,
         { agentId: params.agentId, level, details }
-      ).catch(() => {});
+      ).catch(e => console.error('[Runtime]', e?.message));
       // Персистируем лог в DB
       try {
         getAgentLogsRepository().insert({
@@ -1034,7 +1034,7 @@ ${code}
           level,
           message,
           details,
-        }).catch(() => {});
+        }).catch(e => console.error('[Runtime]', e?.message));
       } catch { /* not initialized */ }
     };
 
@@ -1125,7 +1125,7 @@ ${code}
       'system',
       `Агент #${agentId} приостановлен`,
       { agentId, action: 'paused' }
-    ).catch(() => {});
+    ).catch(e => console.error('[Runtime]', e?.message));
 
     return { success: true, message: 'Агент приостановлен' };
   }
@@ -1143,7 +1143,7 @@ ${code}
       'system',
       `Агент #${agentId} активирован`,
       { agentId, action: 'activated' }
-    ).catch(() => {});
+    ).catch(e => console.error('[Runtime]', e?.message));
 
     return { success: true, message: 'Агент активирован' };
   }

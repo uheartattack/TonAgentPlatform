@@ -21,19 +21,15 @@ export const config = {
     ssl: process.env.DB_SSL === 'true',
   },
 
-  // Claude API + CLIProxyAPIPlus
-  // CLIProxyAPIPlus даёт бесплатный доступ через GitHub Copilot / AWS Kiro
-  // https://github.com/router-for-me/CLIProxyAPIPlus
+  // Platform AI (for system prompt generation, orchestrator, etc.)
   claude: {
-    apiKey: process.env.ANTHROPIC_API_KEY || 'free-via-proxy',
-    // Локальный прокси на 8317, либо реальный Anthropic API
-    baseURL: process.env.CLAUDE_BASE_URL || 'http://127.0.0.1:8317/v1',
-    model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-5-20250929',
+    apiKey: process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY || '',
+    baseURL: process.env.OPENAI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai/',
+    model: process.env.CLAUDE_MODEL || 'gemini-2.5-flash',
     maxTokens: parseInt(process.env.CLAUDE_MAX_TOKENS || '4000'),
   },
 
-  // OpenRouter — для Qwen3-Coder-Next (опционально)
-  // Если пустой — код генерируется через Claude (прокси)
+  // OpenRouter — optional
   openrouter: {
     apiKey: process.env.OPENROUTER_API_KEY || '',
     model: process.env.OPENROUTER_MODEL || 'qwen/qwen3-coder-next',
@@ -68,17 +64,9 @@ export function validateConfig(): { valid: boolean; errors: string[] } {
     errors.push('BOT_TOKEN is required');
   }
 
-  // Если не прокси и не задан ключ — предупреждаем
-  const isProxy = config.claude.baseURL.includes('127.0.0.1') ||
-                  config.claude.baseURL.includes('localhost');
-  const hasKey = config.claude.apiKey &&
-                 config.claude.apiKey !== 'free-via-proxy' &&
-                 config.claude.apiKey.length > 10;
-
-  if (!isProxy && !hasKey) {
+  if (!config.claude.apiKey) {
     errors.push(
-      'Either set CLAUDE_BASE_URL to your CLIProxyAPIPlus instance ' +
-      'or set ANTHROPIC_API_KEY to a real API key (Anthropic, Gemini, etc.)'
+      'Set OPENAI_API_KEY or ANTHROPIC_API_KEY for platform AI functionality'
     );
   }
 

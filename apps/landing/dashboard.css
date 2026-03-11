@@ -3324,8 +3324,34 @@ select.form-input option {
   background: rgba(0,255,136,0.06); border-color: rgba(0,255,136,0.15);
   color: var(--text-primary); transform: translateX(4px);
 }
+.palette-node.dragging-source { opacity: 0.3; }
 .pn-icon { font-size: 1rem; }
 .pn-label { font-weight: 500; }
+
+/* Drag ghost for palette → canvas */
+.palette-drag-ghost {
+  position: fixed; pointer-events: none; z-index: 10000;
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 16px; border-radius: 10px;
+  background: rgba(0,255,136,0.12); border: 2px solid rgba(0,255,136,0.5);
+  color: #fff; font-size: 0.85rem; font-weight: 600;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 8px 32px rgba(0,255,136,0.2), 0 0 60px rgba(0,255,136,0.1);
+  transform: translate(-50%, -50%) scale(1.05);
+  transition: opacity 0.15s, transform 0.15s;
+  animation: ghostPulse 1s ease-in-out infinite;
+}
+@keyframes ghostPulse {
+  0%, 100% { box-shadow: 0 8px 32px rgba(0,255,136,0.2), 0 0 60px rgba(0,255,136,0.1); }
+  50% { box-shadow: 0 8px 40px rgba(0,255,136,0.35), 0 0 80px rgba(0,255,136,0.15); }
+}
+.palette-drag-ghost .pn-icon { font-size: 1.2rem; }
+
+/* Canvas drop zone highlight */
+#flow-canvas.drop-active {
+  outline: 2px dashed rgba(0,255,136,0.4);
+  outline-offset: -4px;
+}
 
 /* Canvas */
 .flow-canvas-wrap { flex: 1; position: relative; overflow: hidden; }

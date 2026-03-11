@@ -794,6 +794,330 @@ function deleteAgentFromDetail() {
   deleteAgent(_detailAgentId, _detailAgentData.name || 'Agent');
 }
 
+// ===== AGENT CHAT =====
+var _agentChatId = null;
+var _agentChatHistory = [];
+
+function openAgentChat(agentId) {
+  _agentChatId = agentId;
+  _agentChatHistory = [];
+  var body = document.getElementById('agent-detail-body');
+  if (!body) return;
+  body.innerHTML =
+    '<div class="agent-detail-section">' +
+    '<div class="agent-detail-section-title">Chat with Agent #' + agentId + '</div>' +
+    '<div id="agent-chat-messages" style="max-height:300px;overflow-y:auto;padding:8px;background:rgba(0,0,0,0.2);border-radius:8px;margin-bottom:10px;min-height:100px">' +
+    '<div style="text-align:center;color:var(--text-muted);font-size:.8rem;padding:20px">' + (currentLang === 'ru' ? 'Отправьте сообщение агенту...' : 'Send a message to the agent...') + '</div>' +
+    '</div>' +
+    '<div style="display:flex;gap:8px">' +
+    '<input type="text" id="agent-chat-input" placeholder="' + (currentLang === 'ru' ? 'Сообщение агенту...' : 'Message to agent...') + '" style="flex:1;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text-primary);font-size:.85rem" onkeydown="if(event.key===\'Enter\')sendAgentChatMsg()">' +
+    '<button class="btn btn-primary btn-sm" onclick="sendAgentChatMsg()">' + (currentLang === 'ru' ? 'Отправить' : 'Send') + '</button>' +
+    '</div>' +
+    '<button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="openAgentDetail(_detailAgentId)">' + (currentLang === 'ru' ? 'Назад' : 'Back') + '</button>' +
+    '</div>';
+  document.getElementById('agent-chat-input').focus();
+}
+
+async function sendAgentChatMsg() {
+  var input = document.getElementById('agent-chat-input');
+  var msgBox = document.getElementById('agent-chat-messages');
+  if (!input || !msgBox || !_agentChatId) return;
+  var msg = input.value.trim();
+  if (!msg) return;
+  input.value = '';
+  // Add user message
+  _agentChatHistory.push({ role: 'user', text: msg });
+  renderAgentChat(msgBox);
+  // Send to API
+  try {
+    var data = await apiRequest('POST', '/api/agents/' + _agentChatId + '/chat', { message: msg });
+    if (data.ok) {
+      _agentChatHistory.push({ role: 'agent', text: data.response || data.message || (currentLang === 'ru' ? 'Сообщение отправлено агенту' : 'Message sent to agent') });
+    } else {
+      _agentChatHistory.push({ role: 'error', text: data.error || 'Error' });
+    }
+  } catch(e) {
+    _agentChatHistory.push({ role: 'error', text: e.message || 'Network error' });
+  }
+  renderAgentChat(msgBox);
+  msgBox.scrollTop = msgBox.scrollHeight;
+}
+
+function renderAgentChat(box) {
+  box.innerHTML = _agentChatHistory.map(function(m) {
+    var isUser = m.role === 'user';
+    var isError = m.role === 'error';
+    var bg = isUser ? 'rgba(33,150,243,0.15)' : isError ? 'rgba(239,68,68,0.15)' : 'rgba(0,255,136,0.1)';
+    var align = isUser ? 'flex-end' : 'flex-start';
+    return '<div style="display:flex;justify-content:' + align + ';margin:4px 0">' +
+      '<div style="max-width:80%;padding:8px 12px;border-radius:8px;background:' + bg + ';font-size:.83rem;word-break:break-word">' +
+      '<strong style="font-size:.7rem;color:var(--text-muted)">' + (isUser ? 'You' : isError ? 'Error' : 'Agent') + '</strong><br>' +
+      escHtml(m.text) + '</div></div>';
+  }).join('');
+}
+
+// ===== EDIT PROMPT =====
+function showEditPrompt() {
+  if (!_detailAgentData) return;
+  var body = document.getElementById('agent-detail-body');
+  if (!body) return;
+  var code = _detailAgentData.code || '';
+  body.innerHTML =
+    '<div class="agent-detail-section">' +
+    '<div class="agent-detail-section-title">' + (currentLang === 'ru' ? 'Системный промпт / Код' : 'System Prompt / Code') + '</div>' +
+    '<textarea id="edit-prompt-textarea" style="width:100%;min-height:250px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:8px;padding:12px;color:var(--text-primary);font-family:JetBrains Mono,monospace;font-size:.8rem;resize:vertical">' + escHtml(code) + '</textarea>' +
+    '<div style="display:flex;gap:8px;margin-top:10px">' +
+    '<button class="btn btn-primary btn-sm" onclick="saveEditPrompt()">' + (currentLang === 'ru' ? 'Сохранить' : 'Save') + '</button>' +
+    '<button class="btn btn-ghost btn-sm" onclick="openAgentDetail(_detailAgentId)">' + (currentLang === 'ru' ? 'Отмена' : 'Cancel') + '</button>' +
+    '</div></div>';
+}
+
+async function saveEditPrompt() {
+  var ta = document.getElementById('edit-prompt-textarea');
+  if (!ta || !_detailAgentId) return;
+  var code = ta.value;
+  var data = await apiRequest('PUT', '/api/agents/' + _detailAgentId + '/code', { code: code });
+  if (data.ok) {
+    toast(currentLang === 'ru' ? 'Промпт сохранён' : 'Prompt saved', 'success');
+    if (_detailAgentData) _detailAgentData.code = code;
+    renderAgentDetail();
+  } else {
+    toast(data.error || 'Error', 'error');
+  }
+}
+
+// ===== EDIT DESCRIPTION =====
+function showEditDescription() {
+  if (!_detailAgentData) return;
+  var body = document.getElementById('agent-detail-body');
+  if (!body) return;
+  body.innerHTML =
+    '<div class="agent-detail-section">' +
+    '<div class="agent-detail-section-title">' + (currentLang === 'ru' ? 'Описание агента' : 'Agent Description') + '</div>' +
+    '<textarea id="edit-desc-textarea" style="width:100%;min-height:80px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:8px;padding:12px;color:var(--text-primary);font-size:.85rem;resize:vertical">' + escHtml(_detailAgentData.description || '') + '</textarea>' +
+    '<div style="display:flex;gap:8px;margin-top:10px">' +
+    '<button class="btn btn-primary btn-sm" onclick="saveEditDescription()">' + (currentLang === 'ru' ? 'Сохранить' : 'Save') + '</button>' +
+    '<button class="btn btn-ghost btn-sm" onclick="openAgentDetail(_detailAgentId)">' + (currentLang === 'ru' ? 'Отмена' : 'Cancel') + '</button>' +
+    '</div></div>';
+}
+
+async function saveEditDescription() {
+  var ta = document.getElementById('edit-desc-textarea');
+  if (!ta || !_detailAgentId) return;
+  var desc = ta.value.trim();
+  var data = await apiRequest('PUT', '/api/agents/' + _detailAgentId + '/description', { description: desc });
+  if (data.ok) {
+    toast(currentLang === 'ru' ? 'Описание обновлено' : 'Description updated', 'success');
+    if (_detailAgentData) _detailAgentData.description = desc;
+    renderAgentDetail();
+    loadAgents();
+  } else {
+    toast(data.error || 'Error', 'error');
+  }
+}
+
+// ===== AI SETTINGS =====
+function showAISettings() {
+  if (!_detailAgentData) return;
+  var body = document.getElementById('agent-detail-body');
+  if (!body) return;
+  var config = {};
+  try { config = typeof _detailAgentData.trigger_config === 'string' ? JSON.parse(_detailAgentData.trigger_config) : (_detailAgentData.trigger_config || {}); } catch(e) {}
+  var aiProvider = (config.config && config.config.AI_PROVIDER) || '';
+  var aiModel = (config.config && config.config.AI_MODEL) || '';
+  var hasKey = !!(config.config && config.config.AI_API_KEY);
+
+  var providers = ['openai', 'anthropic', 'gemini', 'groq', 'deepseek', 'openrouter', 'together'];
+  var provOpts = providers.map(function(p) {
+    return '<option value="' + p + '"' + (p === aiProvider ? ' selected' : '') + '>' + p.charAt(0).toUpperCase() + p.slice(1) + '</option>';
+  }).join('');
+
+  body.innerHTML =
+    '<div class="agent-detail-section">' +
+    '<div class="agent-detail-section-title">' + (currentLang === 'ru' ? 'Настройки AI' : 'AI Settings') + '</div>' +
+    '<div style="display:flex;flex-direction:column;gap:12px">' +
+    '<div><label style="font-size:.78rem;color:var(--text-muted);display:block;margin-bottom:4px">' + (currentLang === 'ru' ? 'Провайдер' : 'Provider') + '</label>' +
+    '<select id="ai-provider-select" style="width:100%;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:6px;padding:8px;color:var(--text-primary);font-size:.85rem">' +
+    '<option value="">' + (currentLang === 'ru' ? 'По умолчанию' : 'Default') + '</option>' + provOpts + '</select></div>' +
+    '<div><label style="font-size:.78rem;color:var(--text-muted);display:block;margin-bottom:4px">' + (currentLang === 'ru' ? 'Модель (необязательно)' : 'Model (optional)') + '</label>' +
+    '<input type="text" id="ai-model-input" value="' + escHtml(aiModel) + '" placeholder="auto" style="width:100%;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:6px;padding:8px;color:var(--text-primary);font-size:.85rem"></div>' +
+    '<div><label style="font-size:.78rem;color:var(--text-muted);display:block;margin-bottom:4px">API Key</label>' +
+    '<input type="password" id="ai-key-input" placeholder="' + (hasKey ? '••••••••' : (currentLang === 'ru' ? 'Введите API ключ' : 'Enter API key')) + '" style="width:100%;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:6px;padding:8px;color:var(--text-primary);font-size:.85rem">' +
+    (hasKey ? '<small style="color:var(--text-muted);">' + (currentLang === 'ru' ? 'Ключ уже установлен. Оставьте пустым чтобы не менять.' : 'Key is set. Leave empty to keep.') + '</small>' : '') + '</div>' +
+    '</div>' +
+    '<div style="display:flex;gap:8px;margin-top:12px">' +
+    '<button class="btn btn-primary btn-sm" onclick="saveAISettings()">' + (currentLang === 'ru' ? 'Сохранить' : 'Save') + '</button>' +
+    '<button class="btn btn-ghost btn-sm" onclick="openAgentDetail(_detailAgentId)">' + (currentLang === 'ru' ? 'Назад' : 'Back') + '</button>' +
+    '</div></div>';
+}
+
+async function saveAISettings() {
+  if (!_detailAgentId) return;
+  var provider = document.getElementById('ai-provider-select').value;
+  var model = document.getElementById('ai-model-input').value.trim();
+  var apiKey = document.getElementById('ai-key-input').value.trim();
+  var body = { provider: provider || undefined, model: model || undefined };
+  if (apiKey) body.apiKey = apiKey;
+  var data = await apiRequest('PUT', '/api/agents/' + _detailAgentId + '/provider', body);
+  if (data.ok) {
+    toast(currentLang === 'ru' ? 'Настройки AI обновлены' : 'AI settings updated', 'success');
+    openAgentDetail(_detailAgentId);
+  } else {
+    toast(data.error || 'Error', 'error');
+  }
+}
+
+// ===== CAPABILITIES EDITOR =====
+function showCapabilitiesEditor() {
+  if (!_detailAgentData) return;
+  var body = document.getElementById('agent-detail-body');
+  if (!body) return;
+  var config = {};
+  try { config = typeof _detailAgentData.trigger_config === 'string' ? JSON.parse(_detailAgentData.trigger_config) : (_detailAgentData.trigger_config || {}); } catch(e) {}
+  var enabled = (config.config && config.config.enabledCapabilities) || [];
+
+  var allCaps = [
+    { id: 'wallet', name: 'Wallet', icon: '💰', desc: 'TON balance, send/receive' },
+    { id: 'nft', name: 'NFT', icon: '🖼', desc: 'NFT collections, floor prices' },
+    { id: 'gifts', name: 'Gifts', icon: '🎁', desc: 'Telegram gifts catalog' },
+    { id: 'gifts_market', name: 'Gifts Market', icon: '📊', desc: 'Gift trading, arbitrage' },
+    { id: 'telegram', name: 'Telegram', icon: '📱', desc: 'Messages, channels, groups' },
+    { id: 'web', name: 'Web', icon: '🌐', desc: 'Search, fetch URLs' },
+    { id: 'state', name: 'State', icon: '💾', desc: 'Persistent memory' },
+    { id: 'notify', name: 'Notifications', icon: '🔔', desc: 'User alerts' },
+    { id: 'plugins', name: 'Plugins', icon: '🔌', desc: 'Custom plugins' },
+    { id: 'inter_agent', name: 'Inter-Agent', icon: '🤝', desc: 'Agent cooperation' },
+    { id: 'blockchain', name: 'Blockchain', icon: '⛓', desc: 'TON raw operations' },
+    { id: 'defi', name: 'DeFi', icon: '💱', desc: 'DEX prices, swaps' },
+    { id: 'ton_mcp', name: 'TON MCP', icon: '🔗', desc: 'Model Context Protocol' },
+  ];
+
+  body.innerHTML =
+    '<div class="agent-detail-section">' +
+    '<div class="agent-detail-section-title">' + (currentLang === 'ru' ? 'Возможности агента' : 'Agent Capabilities') + '</div>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">' +
+    allCaps.map(function(c) {
+      var checked = enabled.includes(c.id) ? ' checked' : '';
+      return '<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;background:rgba(255,255,255,0.03);cursor:pointer;font-size:.8rem">' +
+        '<input type="checkbox" class="cap-check" value="' + c.id + '"' + checked + ' style="accent-color:var(--primary)">' +
+        '<span>' + c.icon + ' ' + c.name + '</span></label>';
+    }).join('') +
+    '</div>' +
+    '<div style="display:flex;gap:8px;margin-top:12px">' +
+    '<button class="btn btn-primary btn-sm" onclick="saveCapabilities()">' + (currentLang === 'ru' ? 'Сохранить' : 'Save') + '</button>' +
+    '<button class="btn btn-ghost btn-sm" onclick="openAgentDetail(_detailAgentId)">' + (currentLang === 'ru' ? 'Назад' : 'Back') + '</button>' +
+    '</div></div>';
+}
+
+async function saveCapabilities() {
+  if (!_detailAgentId) return;
+  var checks = document.querySelectorAll('.cap-check:checked');
+  var caps = Array.from(checks).map(function(c) { return c.value; });
+  var data = await apiRequest('PUT', '/api/agents/' + _detailAgentId + '/capabilities', { capabilities: caps });
+  if (data.ok) {
+    toast(currentLang === 'ru' ? 'Возможности обновлены' : 'Capabilities updated', 'success');
+    openAgentDetail(_detailAgentId);
+  } else {
+    toast(data.error || 'Error', 'error');
+  }
+}
+
+// ===== AGENT AUDIT =====
+async function runAgentAudit() {
+  if (!_detailAgentId) return;
+  var body = document.getElementById('agent-detail-body');
+  if (!body) return;
+  body.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--text-muted)">' + IC.hourglass + ' ' + (currentLang === 'ru' ? 'Аудит...' : 'Auditing...') + '</div>';
+  try {
+    var data = await apiRequest('GET', '/api/agents/' + _detailAgentId + '/audit');
+    if (!data.ok) { toast(data.error || 'Error', 'error'); renderAgentDetail(); return; }
+    var html = '<div class="agent-detail-section">';
+    html += '<div class="agent-detail-section-title">' + (currentLang === 'ru' ? 'Результат аудита' : 'Audit Result') + ' — ' + data.score + '%</div>';
+    html += '<div style="background:linear-gradient(90deg,rgba(0,255,136,0.2) ' + data.score + '%,rgba(255,255,255,0.05) ' + data.score + '%);border-radius:4px;height:8px;margin-bottom:12px"></div>';
+    if (data.passed && data.passed.length) {
+      html += '<div style="margin-bottom:8px">';
+      data.passed.forEach(function(p) { html += '<div style="font-size:.8rem;color:#4ade80;padding:2px 0">✓ ' + escHtml(p) + '</div>'; });
+      html += '</div>';
+    }
+    if (data.issues && data.issues.length) {
+      data.issues.forEach(function(i) { html += '<div style="font-size:.8rem;color:#f59e0b;padding:2px 0">⚠ ' + escHtml(i) + '</div>'; });
+    }
+    html += '<button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="openAgentDetail(_detailAgentId)">' + (currentLang === 'ru' ? 'Назад' : 'Back') + '</button>';
+    html += '</div>';
+    body.innerHTML = html;
+  } catch(e) {
+    toast(e.message || 'Error', 'error');
+    renderAgentDetail();
+  }
+}
+
+// ===== CREATE AGENT WALLET =====
+async function createAgentWallet() {
+  if (!_detailAgentId) return;
+  var confirmed = await studioConfirm({
+    title: currentLang === 'ru' ? 'Создать кошелёк' : 'Create Wallet',
+    message: currentLang === 'ru' ? 'Создать TON кошелёк для агента #' + _detailAgentId + '?' : 'Create TON wallet for agent #' + _detailAgentId + '?',
+    confirmText: currentLang === 'ru' ? 'Создать' : 'Create',
+    type: 'info'
+  });
+  if (!confirmed) return;
+  try {
+    var data = await apiRequest('POST', '/api/agents/' + _detailAgentId + '/wallet');
+    if (data.ok) {
+      if (data.exists) {
+        toast(currentLang === 'ru' ? 'Кошелёк уже создан: ' + data.address : 'Wallet already exists: ' + data.address, 'info');
+      } else {
+        toast(currentLang === 'ru' ? 'Кошелёк создан: ' + data.address : 'Wallet created: ' + data.address, 'success');
+      }
+      openAgentDetail(_detailAgentId);
+    } else {
+      toast(data.error || 'Error', 'error');
+    }
+  } catch(e) {
+    toast(e.message || 'Error', 'error');
+  }
+}
+
+// ===== ROLE SELECTOR =====
+function showRoleSelector() {
+  if (!_detailAgentData) return;
+  var body = document.getElementById('agent-detail-body');
+  if (!body) return;
+  var currentRole = _detailAgentData.role || 'worker';
+  var roles = [
+    { id: 'worker', name: 'Worker', icon: '⚙️', desc: currentLang === 'ru' ? 'Выполняет задачи автономно' : 'Executes tasks autonomously' },
+    { id: 'manager', name: 'Manager', icon: '👔', desc: currentLang === 'ru' ? 'Координирует других агентов' : 'Coordinates other agents' },
+    { id: 'specialist', name: 'Specialist', icon: '🎯', desc: currentLang === 'ru' ? 'Эксперт в конкретной области' : 'Expert in a specific domain' },
+    { id: 'monitor', name: 'Monitor', icon: '📡', desc: currentLang === 'ru' ? 'Отслеживает данные и алерты' : 'Tracks data and alerts' },
+  ];
+  body.innerHTML =
+    '<div class="agent-detail-section">' +
+    '<div class="agent-detail-section-title">' + (currentLang === 'ru' ? 'Роль агента' : 'Agent Role') + '</div>' +
+    '<div style="display:flex;flex-direction:column;gap:6px">' +
+    roles.map(function(r) {
+      var sel = r.id === currentRole;
+      return '<div onclick="setAgentRole(\'' + r.id + '\')" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;cursor:pointer;background:' + (sel ? 'rgba(0,255,136,0.1)' : 'rgba(255,255,255,0.03)') + ';border:1px solid ' + (sel ? 'var(--primary)' : 'transparent') + '">' +
+        '<span style="font-size:1.3rem">' + r.icon + '</span>' +
+        '<div><strong style="font-size:.85rem">' + r.name + '</strong><br><small style="color:var(--text-muted);font-size:.75rem">' + r.desc + '</small></div>' +
+        (sel ? '<span style="margin-left:auto;color:var(--primary)">✓</span>' : '') + '</div>';
+    }).join('') +
+    '</div>' +
+    '<button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="openAgentDetail(_detailAgentId)">' + (currentLang === 'ru' ? 'Назад' : 'Back') + '</button>' +
+    '</div>';
+}
+
+async function setAgentRole(role) {
+  if (!_detailAgentId) return;
+  var data = await apiRequest('PUT', '/api/agents/' + _detailAgentId + '/role', { role: role });
+  if (data.ok) {
+    toast(currentLang === 'ru' ? 'Роль обновлена: ' + role : 'Role updated: ' + role, 'success');
+    if (_detailAgentData) _detailAgentData.role = role;
+    openAgentDetail(_detailAgentId);
+  } else {
+    toast(data.error || 'Error', 'error');
+  }
+}
+
 let _deleteAgentId = null;
 let _deleteAgentName = '';
 
@@ -1077,9 +1401,49 @@ async function initAuth() {
   const expiredEl = document.getElementById('session-expired-hint');
   if (expiredEl) expiredEl.textContent = t('session_expired');
 
-  // Use bot auth as primary method (oauth.telegram.org OIDC is unreliable)
-  showBotAuthButton();
+  const isHTTPS = location.protocol === 'https:';
+  const botUsername = (window._appConfig && window._appConfig.botUsername) || 'TonAgentPlatformBot';
 
+  if (isHTTPS) {
+    // Primary: Telegram Login Widget (classic, reliable on HTTPS)
+    showTelegramWidget(container, botUsername);
+  } else {
+    // Localhost/HTTP: only bot auth works
+    showBotAuthButton();
+  }
+}
+
+function showTelegramWidget(container, botUsername) {
+  // Render widget container + fallback bot auth link
+  container.innerHTML = '<div id="tg-widget-holder" style="display:flex;flex-direction:column;align-items:center;gap:14px"></div>';
+  const holder = document.getElementById('tg-widget-holder');
+
+  // Load Telegram Login Widget script
+  const script = document.createElement('script');
+  script.src = 'https://telegram.org/js/telegram-widget.js?22';
+  script.async = true;
+  script.setAttribute('data-telegram-login', botUsername);
+  script.setAttribute('data-size', 'large');
+  script.setAttribute('data-radius', '8');
+  script.setAttribute('data-onauth', 'onTelegramAuthLegacy(user)');
+  script.setAttribute('data-request-access', 'write');
+  holder.appendChild(script);
+
+  // Fallback: if widget doesn't load in 4s, show bot auth too
+  const fallbackTimer = setTimeout(() => {
+    if (!holder.querySelector('iframe')) {
+      // Widget didn't render — show bot auth as primary
+      showBotAuthButton();
+    } else {
+      // Widget loaded — add subtle bot auth alternative below
+      const alt = document.createElement('div');
+      alt.style.cssText = 'margin-top:8px;text-align:center';
+      alt.innerHTML = '<span style="color:var(--text-muted);font-size:.75rem;cursor:pointer;text-decoration:underline" onclick="showBotAuthButton()">' +
+        (currentLang === 'ru' ? 'Или войти через бота' : 'Or sign in via bot') + '</span>';
+      holder.appendChild(alt);
+    }
+  }, 4000);
+  container._fallbackTimer = fallbackTimer;
 }
 
 // Handle OAuth redirect: ?code=XXX&state=YYY
@@ -3786,7 +4150,7 @@ function buildFlowPalette() {
   let html = '';
 
   // Builder instructions panel
-  html += '<div class="palette-help">';
+  html += '<div class="palette-help palette-category collapsed">';
   html += '<div class="palette-cat-header" onclick="togglePaletteCat(this)" style="border-bottom:1px solid rgba(255,255,255,0.06)">';
   html += '<span class="cat-dot" style="background:#60a5fa"></span>';
   html += '<span>' + (ru ? '📖 Инструкция' : '📖 Guide') + '</span>';
@@ -3833,6 +4197,107 @@ function buildFlowPalette() {
     html += '</div></div>';
   }
   container.innerHTML = html;
+  // Attach drag handlers to palette nodes
+  initPaletteDrag();
+}
+
+// ── Palette drag-and-drop to canvas ─────────────────────────────────────────
+let _paletteDragGhost = null;
+let _paletteDragType = null;
+let _paletteDragSource = null;
+
+function initPaletteDrag() {
+  const nodes = document.querySelectorAll('.palette-node[data-type]');
+  nodes.forEach(el => {
+    el.addEventListener('mousedown', onPaletteDragStart);
+    el.addEventListener('touchstart', onPaletteDragStart, { passive: false });
+  });
+}
+
+function onPaletteDragStart(e) {
+  if (e.button && e.button !== 0) return; // only left click
+  e.preventDefault();
+  const el = e.currentTarget;
+  _paletteDragType = el.getAttribute('data-type');
+  _paletteDragSource = el;
+  el.classList.add('dragging-source');
+
+  const def = FLOW_NODE_DEFS[_paletteDragType];
+  if (!def) return;
+
+  // Create ghost
+  const ghost = document.createElement('div');
+  ghost.className = 'palette-drag-ghost';
+  ghost.innerHTML = '<span class="pn-icon">' + def.icon + '</span><span>' + ((currentLang === 'ru' && def.labelRu) ? def.labelRu : def.label) + '</span>';
+  document.body.appendChild(ghost);
+  _paletteDragGhost = ghost;
+
+  const pos = e.touches ? e.touches[0] : e;
+  ghost.style.left = pos.clientX + 'px';
+  ghost.style.top = pos.clientY + 'px';
+
+  document.addEventListener('mousemove', onPaletteDragMove);
+  document.addEventListener('touchmove', onPaletteDragMove, { passive: false });
+  document.addEventListener('mouseup', onPaletteDragEnd);
+  document.addEventListener('touchend', onPaletteDragEnd);
+
+  const canvas = document.getElementById('flow-canvas');
+  if (canvas) canvas.classList.add('drop-active');
+}
+
+function onPaletteDragMove(e) {
+  if (!_paletteDragGhost) return;
+  e.preventDefault();
+  const pos = e.touches ? e.touches[0] : e;
+  _paletteDragGhost.style.left = pos.clientX + 'px';
+  _paletteDragGhost.style.top = pos.clientY + 'px';
+}
+
+function onPaletteDragEnd(e) {
+  document.removeEventListener('mousemove', onPaletteDragMove);
+  document.removeEventListener('touchmove', onPaletteDragMove);
+  document.removeEventListener('mouseup', onPaletteDragEnd);
+  document.removeEventListener('touchend', onPaletteDragEnd);
+
+  const canvas = document.getElementById('flow-canvas');
+  if (canvas) canvas.classList.remove('drop-active');
+
+  if (_paletteDragSource) {
+    _paletteDragSource.classList.remove('dragging-source');
+    _paletteDragSource = null;
+  }
+
+  if (_paletteDragGhost && _paletteDragType) {
+    const pos = e.changedTouches ? e.changedTouches[0] : e;
+    const canvasRect = canvas ? canvas.getBoundingClientRect() : null;
+
+    // Check if dropped on canvas
+    if (canvasRect && pos.clientX >= canvasRect.left && pos.clientX <= canvasRect.right &&
+        pos.clientY >= canvasRect.top && pos.clientY <= canvasRect.bottom) {
+      // Convert screen coords to world coords
+      const wx = (pos.clientX - canvasRect.left - _flowPanX) / _flowZoom;
+      const wy = (pos.clientY - canvasRect.top - _flowPanY) / _flowZoom;
+      addFlowNodeAt(_paletteDragType, Math.round(wx / 30) * 30, Math.round(wy / 30) * 30);
+    }
+
+    // Animate ghost out
+    _paletteDragGhost.style.transition = 'opacity 0.2s, transform 0.2s';
+    _paletteDragGhost.style.opacity = '0';
+    _paletteDragGhost.style.transform = 'translate(-50%, -50%) scale(0.5)';
+    setTimeout(() => { if (_paletteDragGhost) { _paletteDragGhost.remove(); _paletteDragGhost = null; } }, 200);
+  }
+  _paletteDragType = null;
+}
+
+function addFlowNodeAt(type, wx, wy) {
+  const def = FLOW_NODE_DEFS[type];
+  if (!def) return;
+  const id = 'n' + (_flowNextId++);
+  const newNode = { id, type, x: wx, y: wy, config: {}, def };
+  _flowNodes.push(newNode);
+  _flowSelectedId = id;
+  renderFlowConfig();
+  flowPushState();
 }
 
 function addFlowNode(type) {
@@ -4088,6 +4553,7 @@ async function deployFlow() {
   if (_deployAnimating) return;
 
   const name = document.getElementById('flow-agent-name')?.value?.trim() || 'Flow Agent';
+  const description = document.getElementById('flow-agent-desc')?.value?.trim() || '';
   const flow = { nodes: _flowNodes.map(n => ({ id: n.id, type: n.type, x: n.x, y: n.y, config: n.config })), edges: _flowEdges.map(e => ({ from: e.from, fromPort: e.fromPort, to: e.to, toPort: e.toPort })), groups: _flowGroups };
   const btn = document.getElementById('flow-deploy-btn');
   if (btn) { btn.disabled = true; btn.innerHTML = '... ' + t('deploying'); }
@@ -4097,7 +4563,7 @@ async function deployFlow() {
   await runDeployAnimation();
 
   try {
-    const data = await apiRequest('POST', '/api/agents/flow', { name, flow });
+    const data = await apiRequest('POST', '/api/agents/flow', { name, description, flow });
     if (data.ok) {
       showFlowToast(t('deployed_ok') + ' #' + data.agentId, 'success');
       loadAgents();

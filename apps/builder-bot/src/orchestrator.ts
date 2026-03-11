@@ -30,10 +30,10 @@ function esc(text: string | number | null | undefined): string {
     .replace(/!/g, '\\!');
 }
 
-// ── OpenAI-совместимый прокси ──────────────────────────────────────────────
-const PROXY_API_KEY = process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY || 'ton-agent-key-123';
-const PROXY_BASE_URL = process.env.OPENAI_BASE_URL || `${process.env.CLAUDE_BASE_URL || 'http://127.0.0.1:8317'}/v1`;
-const openai = new OpenAI({ apiKey: PROXY_API_KEY, baseURL: PROXY_BASE_URL });
+// ── Platform AI ──────────────────────────────────────────────
+const PLATFORM_API_KEY = process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY || '';
+const PLATFORM_BASE_URL = process.env.OPENAI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai/';
+const openai = new OpenAI({ apiKey: PLATFORM_API_KEY, baseURL: PLATFORM_BASE_URL });
 
 // ── Список моделей с fallback-цепочкой ────────────────────────────────────
 export const MODEL_LIST = [
@@ -719,12 +719,11 @@ export class Orchestrator {
     const msg: string = err?.message || err?.error?.message || '';
     if (msg.includes('cooldown')) {
       const sec = msg.match(/(\d+(?:\.\d+)?)s/)?.[1];
-      return sec ? `⏳ Прокси на cooldown, повторите через ~${Math.ceil(parseFloat(sec))} сек.` : '⏳ Прокси перегружен, подождите немного.';
+      return sec ? `⏳ Сервер на cooldown, повторите через ~${Math.ceil(parseFloat(sec))} сек.` : '⏳ Сервер перегружен, подождите немного.';
     }
-    if (msg.includes('exhausted')) return '🔄 Все Kiro-токены исчерпаны. Нужна переавторизация.';
     if (msg.includes('INSUFFICIENT_MODEL_CAPACITY')) return '🔄 Высокая нагрузка на модель, попробуйте через 30 секунд.';
-    if (msg.includes('ECONNREFUSED') || msg.includes('fetch failed')) return '🔌 Прокси недоступен. Проверьте что CLIProxyAPIPlus запущен.';
-    if (msg.includes('Invalid API key') || msg.includes('Missing API key')) return '🔑 Неверный API-ключ в .env (ANTHROPIC_API_KEY).';
+    if (msg.includes('ECONNREFUSED') || msg.includes('fetch failed')) return '🔌 AI сервер недоступен. Проверьте API ключ.';
+    if (msg.includes('Invalid API key') || msg.includes('Missing API key')) return '🔑 Неверный API-ключ. Проверьте настройки.';
     return '🔄 Попробуйте ещё раз через несколько секунд.';
   }
 

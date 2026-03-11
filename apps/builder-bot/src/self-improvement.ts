@@ -114,7 +114,7 @@ export class SelfImprovementSystem {
   constructor(bot: Telegraf<Context>) {
     this.bot = bot;
     this.ai  = new OpenAI({
-      apiKey:  config.claude.apiKey || 'free-via-proxy',
+      apiKey:  config.claude.apiKey || '',
       baseURL: config.claude.baseURL,
     });
     // 10 минут между циклами (было 60 сек — слишком агрессивно, спам proposals)
@@ -136,7 +136,7 @@ export class SelfImprovementSystem {
         return new OpenAI({ apiKey: vars.AI_API_KEY, baseURL: resolved.baseURL });
       }
     } catch {}
-    return this.ai; // fallback to platform proxy
+    return this.ai; // fallback to default platform AI client
   }
 
   /** Notify the agent's owner (not platform owner) */

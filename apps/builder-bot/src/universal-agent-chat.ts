@@ -4,14 +4,10 @@
  * Allows users to chat with ANY agent type via AI:
  *  - Agent answers questions about what it does
  *  - Agent can self-improve: rewrites its own code on request
- *  - Uses user's configured AI provider (or server CLIProxy fallback)
+ *  - Uses user's configured AI provider (API key required)
  */
 
 import OpenAI from 'openai';
-
-const SERVER_AI_BASE_URL = process.env.AI_API_URL  || 'http://127.0.0.1:8317';
-const SERVER_AI_MODEL    = process.env.AI_MODEL    || 'claude-sonnet-4-5-20250929';
-const SERVER_AI_KEY      = process.env.AI_API_KEY  || 'local';
 
 function resolveProvider(provider: string): { baseURL: string; defaultModel: string } {
   const p = (provider || '').toLowerCase();
@@ -31,21 +27,16 @@ function resolveProvider(provider: string): { baseURL: string; defaultModel: str
 }
 
 function getAIClient(config: Record<string, any>): { client: OpenAI; model: string } {
-  const apiKey = (config.AI_API_KEY as string) || SERVER_AI_KEY;
-  const userProvider = config.AI_PROVIDER as string || '';
+  const apiKey = (config.AI_API_KEY as string) || '';
+  const userProvider = (config.AI_PROVIDER as string) || '';
 
-  let baseURL: string;
-  let model: string;
-
-  if (userProvider) {
-    const prov = resolveProvider(userProvider);
-    baseURL = (config.AI_BASE_URL as string) || prov.baseURL;
-    model   = (config.AI_MODEL   as string) || prov.defaultModel;
-  } else {
-    // No provider configured — fall back to server CLIProxy
-    baseURL = SERVER_AI_BASE_URL;
-    model   = SERVER_AI_MODEL;
+  if (!apiKey) {
+    throw new Error('NO_API_KEY');
   }
+
+  const prov = resolveProvider(userProvider);
+  const baseURL = (config.AI_BASE_URL as string) || prov.baseURL;
+  const model = (config.AI_MODEL as string) || prov.defaultModel;
 
   return { client: new OpenAI({ baseURL, apiKey }), model };
 }

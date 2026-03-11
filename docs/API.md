@@ -2,16 +2,22 @@
 
 Base URL: `https://tonagentplatform.com`
 
+All endpoints except auth and public stats require the `X-Auth-Token` header:
+
+```
+X-Auth-Token: <token>
+```
+
 ## Authentication
 
-All endpoints except `/api/stats` and `/api/auth/*` require a Bearer token.
-
-```
-Authorization: Bearer <token>
-```
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/auth/telegram` | Authenticate via Telegram Login Widget (HMAC-SHA256) |
+| POST | `/api/auth/telegram-oidc` | Authenticate via Telegram OIDC |
+| GET | `/api/auth/request` | Start Telegram deeplink auth flow |
+| GET | `/api/auth/check/:token` | Poll deeplink auth status |
 
 ### POST /api/auth/telegram
-Authenticate via Telegram Login Widget data.
 
 ```json
 // Request
@@ -23,18 +29,25 @@ Authenticate via Telegram Login Widget data.
 
 ## Agents
 
-### GET /api/agents
-List all agents for the authenticated user.
-
-```json
-// Response
-{ "ok": true, "agents": [
-  { "id": 1, "name": "TON Monitor", "trigger_type": "ai_agent", "is_active": true }
-] }
-```
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/agents` | List all agents for authenticated user |
+| POST | `/api/agents` | Create agent from description (AI-first) |
+| GET | `/api/agents/:id` | Get agent details |
+| POST | `/api/agents/:id/run` | Start agent |
+| POST | `/api/agents/:id/stop` | Stop agent |
+| DELETE | `/api/agents/:id` | Delete agent |
+| POST | `/api/agents/:id/rename` | Rename agent |
+| PUT | `/api/agents/:id/code` | Update agent code / system prompt |
+| PUT | `/api/agents/:id/provider` | Switch AI provider for agent |
+| PUT | `/api/agents/:id/role` | Update agent role |
+| PUT | `/api/agents/:id/capabilities` | Update agent capabilities |
+| GET | `/api/agents/:id/logs` | Get execution logs |
+| GET | `/api/agents/:id/audit` | Get audit trail |
+| POST | `/api/agents/:id/chat` | Send message to agent (agent chat) |
+| POST | `/api/agents/:id/wallet` | Create per-agent TON wallet |
 
 ### POST /api/agents
-Create a new agent from description.
 
 ```json
 // Request
@@ -44,19 +57,14 @@ Create a new agent from description.
 { "ok": true, "agent": { "id": 5, "name": "TON Price Monitor" }, "type": "agent_created" }
 ```
 
-### POST /api/agents/:id/run
-Start an agent.
-
-### POST /api/agents/:id/stop
-Stop an agent.
-
-### GET /api/agents/:id/logs
-Get agent execution logs.
-
 ## Chat
 
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/chat` | Send message to platform AI assistant |
+| GET | `/api/chat/history` | Get chat history |
+
 ### POST /api/chat
-Send a message to the AI assistant.
 
 ```json
 // Request (max 4000 chars)
@@ -66,41 +74,72 @@ Send a message to the AI assistant.
 { "ok": true, "result": { "content": "I'll create...", "type": "agent_created", "buttons": [] } }
 ```
 
-### GET /api/chat/history
-Get chat history.
+## Settings
 
-## Wallet
-
-### GET /api/wallet/balance
-Get user wallet balance.
-
-### POST /api/wallet/topup
-Generate TON deposit address.
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/settings` | Get user settings |
+| POST | `/api/settings` | Save user settings |
 
 ## Marketplace
 
-### GET /api/marketplace
-List available agent templates.
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/marketplace` | Browse marketplace listings |
+| GET | `/api/marketplace/my` | User's own listings |
+| GET | `/api/marketplace/purchases` | User's purchases |
+| POST | `/api/marketplace` | Publish agent to marketplace |
+| POST | `/api/marketplace/:id/install` | Install marketplace template |
+| DELETE | `/api/marketplace/:id` | Remove listing |
 
-### POST /api/marketplace/:id/install
-Install a marketplace template.
+## Plugins
 
-## Statistics
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/plugins` | List available plugins |
+| POST | `/api/plugins/:id/install` | Install plugin for user |
+| DELETE | `/api/plugins/:id` | Uninstall plugin |
 
-### GET /api/stats (public)
-Platform-wide statistics.
+## Wallet & Transactions
 
-```json
-{ "ok": true, "agents": 150, "activeAgents": 45, "users": 80 }
-```
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/balance` | Get wallet balance |
+| GET | `/api/transactions` | Transaction history |
+| POST | `/api/topup/check` | Verify TON topup |
+| POST | `/api/withdraw` | Withdraw TON |
 
-### GET /api/stats/me
-User-specific statistics.
+## Proposals (Self-Improvement)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/proposals` | List AI improvement proposals |
+| POST | `/api/proposals/:id/approve` | Approve proposal |
+| POST | `/api/proposals/:id/reject` | Reject proposal |
+| POST | `/api/proposals/:id/rollback` | Rollback applied proposal |
+
+## Other
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/me` | Current user profile |
+| GET | `/api/stats/me` | Personal statistics |
+| GET | `/api/stats` | Platform-wide statistics (public) |
+| GET | `/api/config` | Platform config (public) |
+| GET | `/api/platform/health` | Health check (public) |
+| GET | `/api/activity` | Activity stream |
+| GET | `/api/executions` | Executions with filters |
+| GET | `/api/connectors` | External service connectors |
+| POST | `/api/connectors/:service` | Connect external service |
+| DELETE | `/api/connectors/:service` | Disconnect external service |
+| GET | `/api/tonconnect-manifest.json` | TON Connect manifest (public) |
+| POST | `/api/emergency-stop` | Emergency stop all agents |
 
 ## Rate Limits
 
 | Endpoint | Limit |
 |----------|-------|
-| /api/auth/* | 10/min per IP |
-| /api/chat | 20/min per user |
-| /api/agents (POST) | 5/min per user |
+| `/api/auth/*` | 10/min per IP |
+| `/api/chat` | 20/min per user |
+| `/api/agents` (POST) | 5/min per user |
+| All other endpoints | 60/min per user |

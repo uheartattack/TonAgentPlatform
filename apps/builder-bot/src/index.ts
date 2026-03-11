@@ -44,15 +44,13 @@ async function main() {
     process.exit(1);
   }
 
-  const isProxy = config.claude.baseURL.includes('127.0.0.1') ||
-                  config.claude.baseURL.includes('localhost');
   const codeModel = config.openrouter.apiKey
     ? `Qwen3-Coder-Next (OpenRouter)`
-    : `Claude via proxy (fallback)`;
+    : config.claude.model;
 
   console.log('✅ Configuration validated');
   console.log(`   Owner ID: ${config.owner.id}`);
-  console.log(`   AI Backend: ${isProxy ? `CLIProxyAPIPlus @ ${config.claude.baseURL}` : 'Anthropic API'}`);
+  console.log(`   AI Backend: ${config.claude.baseURL}`);
   console.log(`   Chat Model: ${config.claude.model}`);
   console.log(`   Code Model: ${codeModel}`);
   console.log(`   Security Scan: ${config.security.enableSecurityScan ? 'enabled' : 'disabled'}`);
