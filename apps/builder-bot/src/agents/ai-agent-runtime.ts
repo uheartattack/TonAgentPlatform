@@ -189,11 +189,15 @@ const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
   plugins:     ['list_plugins', 'suggest_plugin', 'run_custom_plugin', 'list_custom_plugins',
                 'apply_plugin', 'remove_plugin'],
   inter_agent: ['list_my_agents', 'ask_agent', 'assign_task', 'check_tasks', 'manage_agent', 'send_report'],
+  blockchain:  ['ton_get_account', 'ton_get_transactions', 'ton_get_jettons', 'ton_get_nfts',
+                'ton_run_method', 'ton_get_rates', 'ton_dns_resolve', 'ton_get_staking_pools',
+                'ton_emulate_tx', 'ton_send_boc', 'ton_get_validators', 'ton_parse_address'],
+  ton_mcp:     [], // dynamic — MCP tools discovered at runtime and injected via mcpTools param
 };
 
 // ── Tool definitions (OpenAI function_call format) ─────────────────────────
 
-function buildToolDefinitions(agentRole?: string, enabledCapabilities?: string[] | null): OpenAI.ChatCompletionTool[] {
+function buildToolDefinitions(agentRole?: string, enabledCapabilities?: string[] | null, mcpTools?: OpenAI.ChatCompletionTool[]): OpenAI.ChatCompletionTool[] {
   const allTools: OpenAI.ChatCompletionTool[] = [
     {
       type: 'function',
@@ -1066,6 +1070,174 @@ function buildToolDefinitions(agentRole?: string, enabledCapabilities?: string[]
         parameters: { type: 'object', properties: {}, required: [] },
       },
     },
+    // ── TonAPI Blockchain tools ──────────────────────────────────
+    {
+      type: 'function',
+      function: {
+        name: 'ton_get_account',
+        description: 'Получить полную информацию об аккаунте TON: баланс, статус, интерфейсы, имя. Работает с EQ/UQ и raw адресами.',
+        parameters: {
+          type: 'object',
+          properties: {
+            address: { type: 'string', description: 'TON адрес (EQ.../UQ.../0:hex)' },
+          },
+          required: ['address'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'ton_get_transactions',
+        description: 'Получить последние транзакции аккаунта с деталями (суммы, адреса, комментарии)',
+        parameters: {
+          type: 'object',
+          properties: {
+            address: { type: 'string', description: 'TON адрес' },
+            limit:   { type: 'number', description: 'Количество транзакций (макс 100, по умолчанию 20)' },
+          },
+          required: ['address'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'ton_get_jettons',
+        description: 'Получить список токенов (Jettons) на аккаунте с балансами и ценами',
+        parameters: {
+          type: 'object',
+          properties: {
+            address: { type: 'string', description: 'TON адрес владельца' },
+          },
+          required: ['address'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'ton_get_nfts',
+        description: 'Получить NFT-коллекции и предметы на аккаунте',
+        parameters: {
+          type: 'object',
+          properties: {
+            address: { type: 'string', description: 'TON адрес владельца' },
+            limit:   { type: 'number', description: 'Количество (по умолчанию 50)' },
+          },
+          required: ['address'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'ton_run_method',
+        description: 'Вызвать GET-метод смарт-контракта (read-only). Например: get_pool_data, get_jetton_data, get_nft_data, seqno, get_wallet_data.',
+        parameters: {
+          type: 'object',
+          properties: {
+            address: { type: 'string', description: 'Адрес смарт-контракта' },
+            method:  { type: 'string', description: 'Имя GET-метода (например: get_pool_data, seqno)' },
+            args:    { type: 'array', items: { type: 'string' }, description: 'Аргументы метода (опционально)' },
+          },
+          required: ['address', 'method'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'ton_get_rates',
+        description: 'Получить курсы TON или любого жетона в fiat/крипто. Поддерживает: ton, jetton адреса. Валюты: usd, eur, rub, btc, eth.',
+        parameters: {
+          type: 'object',
+          properties: {
+            tokens:     { type: 'string', description: 'Токен(ы) через запятую: "ton" или адрес jetton' },
+            currencies: { type: 'string', description: 'Валюты через запятую: "usd,rub,eur" (по умолчанию: "usd,rub")' },
+          },
+          required: ['tokens'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'ton_dns_resolve',
+        description: 'Резолвить TON DNS домен (например: "foundation.ton") в адрес. Также показывает привязанный кошелёк и сайт.',
+        parameters: {
+          type: 'object',
+          properties: {
+            domain: { type: 'string', description: 'TON DNS домен (например: "foundation.ton", "telegram-bot.ton")' },
+          },
+          required: ['domain'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'ton_get_staking_pools',
+        description: 'Получить список стейкинг-пулов TON с APY, минимальным депозитом и статистикой',
+        parameters: {
+          type: 'object',
+          properties: {
+            available_for: { type: 'string', description: 'Адрес номинатора для фильтра (опционально)' },
+          },
+          required: [],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'ton_emulate_tx',
+        description: 'Эмулировать транзакцию перед отправкой — показывает что произойдёт: изменения балансов, газ, ошибки. Безопасная "песочница" для проверки.',
+        parameters: {
+          type: 'object',
+          properties: {
+            boc: { type: 'string', description: 'Base64-encoded BOC транзакции для эмуляции' },
+          },
+          required: ['boc'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'ton_send_boc',
+        description: 'Отправить BOC (сырую транзакцию) в сеть TON. ⚠️ НЕОБРАТИМО — транзакция будет исполнена. Используй ton_emulate_tx для проверки перед отправкой.',
+        parameters: {
+          type: 'object',
+          properties: {
+            boc: { type: 'string', description: 'Base64-encoded BOC для отправки' },
+          },
+          required: ['boc'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'ton_get_validators',
+        description: 'Получить список текущих валидаторов сети TON',
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'ton_parse_address',
+        description: 'Парсинг TON адреса — конвертация между форматами (bounceable EQ, non-bounceable UQ, raw 0:hex)',
+        parameters: {
+          type: 'object',
+          properties: {
+            address: { type: 'string', description: 'TON адрес в любом формате' },
+          },
+          required: ['address'],
+        },
+      },
+    },
     // ── Plugin tools ──
     {
       type: 'function',
@@ -1225,6 +1397,11 @@ function buildToolDefinitions(agentRole?: string, enabledCapabilities?: string[]
     },
   ];
 
+  // Append MCP tools (dynamically discovered from @ton/mcp server)
+  if (mcpTools && mcpTools.length > 0) {
+    allTools.push(...mcpTools);
+  }
+
   // Filter by enabled capabilities
   if (enabledCapabilities && enabledCapabilities.length > 0) {
     const allowed = new Set<string>();
@@ -1235,6 +1412,10 @@ function buildToolDefinitions(agentRole?: string, enabledCapabilities?: string[]
     // Always allow core tools
     ['get_state', 'set_state', 'notify', 'notify_rich', 'apply_plugin', 'remove_plugin',
      'list_plugins', 'suggest_plugin'].forEach(t => allowed.add(t));
+    // Always allow MCP tools if ton_mcp capability is enabled
+    if (enabledCapabilities.includes('ton_mcp') && mcpTools) {
+      mcpTools.forEach(t => allowed.add((t as any).function.name));
+    }
     return allTools.filter(t => allowed.has((t as any).function.name));
   }
 
@@ -1250,6 +1431,17 @@ async function executeTool(
 ): Promise<any> {
   const gifts  = getTelegramGiftsService();
   const stateRepo = getAgentStateRepository();
+
+  // ── MCP tools (dynamically routed to @ton/mcp server) ──
+  if (name.startsWith('mcp_')) {
+    const { getTonMcpManager } = await import('../services/ton-mcp-client');
+    const mcpToolName = name.slice(4); // strip "mcp_" prefix
+    try {
+      return await getTonMcpManager().callTool(params.agentId, mcpToolName, args);
+    } catch (e: any) {
+      return { error: `MCP tool error: ${e.message}` };
+    }
+  }
 
   switch (name) {
     case 'get_ton_balance': {
@@ -2270,6 +2462,269 @@ async function executeTool(
       }
     }
 
+    // ── TonAPI Blockchain tools ──────────────────────────────────
+    case 'ton_get_account': {
+      try {
+        const addr = args.address as string;
+        const tonApiKey = params.config.TONAPI_KEY || process.env.TONAPI_KEY || '';
+        const headers: Record<string, string> = {};
+        if (tonApiKey) headers['Authorization'] = `Bearer ${tonApiKey}`;
+        const res = await fetch(`https://tonapi.io/v2/accounts/${encodeURIComponent(addr)}`, { headers, signal: AbortSignal.timeout(10000) });
+        const data = await res.json() as any;
+        return {
+          address: data.address,
+          balance_ton: data.balance ? (parseInt(data.balance) / 1e9).toFixed(4) : '0',
+          status: data.status,
+          name: data.name || null,
+          icon: data.icon || null,
+          is_wallet: data.is_wallet ?? null,
+          interfaces: data.interfaces || [],
+          memo_required: data.memo_required ?? false,
+          get_methods: data.get_methods || [],
+          last_activity: data.last_activity,
+        };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'ton_get_transactions': {
+      try {
+        const addr = args.address as string;
+        const limit = Math.min(args.limit ?? 20, 100);
+        const tonApiKey = params.config.TONAPI_KEY || process.env.TONAPI_KEY || '';
+        const headers: Record<string, string> = {};
+        if (tonApiKey) headers['Authorization'] = `Bearer ${tonApiKey}`;
+        const res = await fetch(`https://tonapi.io/v2/accounts/${encodeURIComponent(addr)}/events?limit=${limit}`, { headers, signal: AbortSignal.timeout(15000) });
+        const data = await res.json() as any;
+        const events = (data.events || []).map((ev: any) => ({
+          event_id: ev.event_id,
+          timestamp: ev.timestamp,
+          is_scam: ev.is_scam,
+          actions: (ev.actions || []).map((a: any) => ({
+            type: a.type,
+            status: a.status,
+            simple_preview: a.simple_preview,
+            ...(a.TonTransfer ? {
+              ton_transfer: {
+                sender: a.TonTransfer.sender?.address,
+                recipient: a.TonTransfer.recipient?.address,
+                amount_ton: (parseInt(a.TonTransfer.amount || '0') / 1e9).toFixed(4),
+                comment: a.TonTransfer.comment,
+              },
+            } : {}),
+            ...(a.JettonTransfer ? {
+              jetton_transfer: {
+                sender: a.JettonTransfer.sender?.address,
+                recipient: a.JettonTransfer.recipient?.address,
+                amount: a.JettonTransfer.amount,
+                jetton: a.JettonTransfer.jetton?.name || a.JettonTransfer.jetton?.address,
+              },
+            } : {}),
+            ...(a.NftItemTransfer ? {
+              nft_transfer: {
+                sender: a.NftItemTransfer.sender?.address,
+                recipient: a.NftItemTransfer.recipient?.address,
+                nft: a.NftItemTransfer.nft,
+              },
+            } : {}),
+          })),
+        }));
+        return { address: addr, count: events.length, events };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'ton_get_jettons': {
+      try {
+        const addr = args.address as string;
+        const tonApiKey = params.config.TONAPI_KEY || process.env.TONAPI_KEY || '';
+        const headers: Record<string, string> = {};
+        if (tonApiKey) headers['Authorization'] = `Bearer ${tonApiKey}`;
+        const res = await fetch(`https://tonapi.io/v2/accounts/${encodeURIComponent(addr)}/jettons`, { headers, signal: AbortSignal.timeout(10000) });
+        const data = await res.json() as any;
+        const balances = (data.balances || []).map((b: any) => ({
+          jetton: b.jetton?.name || b.jetton?.address,
+          symbol: b.jetton?.symbol,
+          balance: b.balance,
+          decimals: b.jetton?.decimals,
+          usd_price: b.price?.prices?.USD || null,
+          wallet_address: b.wallet_address?.address,
+        }));
+        return { address: addr, count: balances.length, jettons: balances };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'ton_get_nfts': {
+      try {
+        const addr = args.address as string;
+        const limit = Math.min(args.limit ?? 50, 200);
+        const tonApiKey = params.config.TONAPI_KEY || process.env.TONAPI_KEY || '';
+        const headers: Record<string, string> = {};
+        if (tonApiKey) headers['Authorization'] = `Bearer ${tonApiKey}`;
+        const res = await fetch(`https://tonapi.io/v2/accounts/${encodeURIComponent(addr)}/nfts?limit=${limit}&indirect_ownership=true`, { headers, signal: AbortSignal.timeout(15000) });
+        const data = await res.json() as any;
+        const nfts = (data.nft_items || []).map((n: any) => ({
+          address: n.address,
+          name: n.metadata?.name || 'Unknown',
+          description: (n.metadata?.description || '').slice(0, 100),
+          collection: n.collection ? { name: n.collection.name, address: n.collection.address } : null,
+          sale: n.sale ? { price_ton: (parseInt(n.sale.price?.value || '0') / 1e9).toFixed(2), marketplace: n.sale.market?.name } : null,
+          image: n.previews?.[0]?.url || n.metadata?.image,
+        }));
+        return { address: addr, count: nfts.length, nfts };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'ton_run_method': {
+      try {
+        const addr = args.address as string;
+        const method = args.method as string;
+        const methodArgs = (args.args as string[]) || [];
+        const tonApiKey = params.config.TONAPI_KEY || process.env.TONAPI_KEY || '';
+        const headers: Record<string, string> = {};
+        if (tonApiKey) headers['Authorization'] = `Bearer ${tonApiKey}`;
+        let url = `https://tonapi.io/v2/blockchain/accounts/${encodeURIComponent(addr)}/methods/${encodeURIComponent(method)}`;
+        if (methodArgs.length > 0) url += '?args=' + methodArgs.map(a => encodeURIComponent(a)).join(',');
+        const res = await fetch(url, { headers, signal: AbortSignal.timeout(10000) });
+        const data = await res.json() as any;
+        return {
+          success: data.success ?? !data.error,
+          exit_code: data.exit_code,
+          gas_used: data.gas_used,
+          stack: data.stack,
+          decoded: data.decoded,
+        };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'ton_get_rates': {
+      try {
+        const tokens = args.tokens as string || 'ton';
+        const currencies = args.currencies as string || 'usd,rub';
+        const tonApiKey = params.config.TONAPI_KEY || process.env.TONAPI_KEY || '';
+        const headers: Record<string, string> = {};
+        if (tonApiKey) headers['Authorization'] = `Bearer ${tonApiKey}`;
+        const res = await fetch(`https://tonapi.io/v2/rates?tokens=${encodeURIComponent(tokens)}&currencies=${encodeURIComponent(currencies)}`, { headers, signal: AbortSignal.timeout(8000) });
+        const data = await res.json() as any;
+        return { rates: data.rates };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'ton_dns_resolve': {
+      try {
+        const domain = args.domain as string;
+        const tonApiKey = params.config.TONAPI_KEY || process.env.TONAPI_KEY || '';
+        const headers: Record<string, string> = {};
+        if (tonApiKey) headers['Authorization'] = `Bearer ${tonApiKey}`;
+        const res = await fetch(`https://tonapi.io/v2/dns/${encodeURIComponent(domain)}`, { headers, signal: AbortSignal.timeout(10000) });
+        const data = await res.json() as any;
+        return {
+          domain,
+          wallet: data.wallet,
+          next_resolver: data.next_resolver,
+          sites: data.sites,
+          storage: data.storage,
+        };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'ton_get_staking_pools': {
+      try {
+        const tonApiKey = params.config.TONAPI_KEY || process.env.TONAPI_KEY || '';
+        const headers: Record<string, string> = {};
+        if (tonApiKey) headers['Authorization'] = `Bearer ${tonApiKey}`;
+        let url = 'https://tonapi.io/v2/staking/pools';
+        if (args.available_for) url = `https://tonapi.io/v2/staking/nominator/${encodeURIComponent(args.available_for as string)}/pools`;
+        const res = await fetch(url, { headers, signal: AbortSignal.timeout(10000) });
+        const data = await res.json() as any;
+        const pools = (data.pools || []).slice(0, 20).map((p: any) => ({
+          address: p.address,
+          name: p.name,
+          apy: p.apy,
+          min_stake: p.min_stake ? (parseInt(p.min_stake) / 1e9).toFixed(2) : null,
+          total_amount: p.total_amount ? (parseInt(p.total_amount) / 1e9).toFixed(0) : null,
+          nominators_count: p.nominators_count,
+          cycle_end: p.cycle_end,
+          verified: p.verified,
+        }));
+        return { count: pools.length, pools, note: 'APY is annualized. min_stake in TON.' };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'ton_emulate_tx': {
+      try {
+        const boc = args.boc as string;
+        if (!boc) return { error: 'boc required (base64-encoded transaction)' };
+        const tonApiKey = params.config.TONAPI_KEY || process.env.TONAPI_KEY || '';
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (tonApiKey) headers['Authorization'] = `Bearer ${tonApiKey}`;
+        const res = await fetch('https://tonapi.io/v2/wallet/emulate', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ boc }),
+          signal: AbortSignal.timeout(15000),
+        });
+        const data = await res.json() as any;
+        if (!res.ok) return { error: data.error || `HTTP ${res.status}`, details: data };
+        return {
+          ok: true,
+          event: data.event ? {
+            actions: (data.event.actions || []).map((a: any) => ({ type: a.type, status: a.status, simple_preview: a.simple_preview })),
+          } : null,
+          risk: data.risk,
+          trace: data.trace ? { id: data.trace.id } : null,
+          note: 'This is a SIMULATION. No actual transaction was sent.',
+        };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'ton_send_boc': {
+      try {
+        const boc = args.boc as string;
+        if (!boc) return { error: 'boc required (base64-encoded transaction)' };
+        const tonApiKey = params.config.TONAPI_KEY || process.env.TONAPI_KEY || '';
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (tonApiKey) headers['Authorization'] = `Bearer ${tonApiKey}`;
+        const res = await fetch('https://tonapi.io/v2/blockchain/message', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ boc }),
+          signal: AbortSignal.timeout(15000),
+        });
+        if (res.ok) {
+          return { ok: true, note: 'Transaction broadcast to TON network. It may take a few seconds to be included in a block.' };
+        }
+        const data = await res.json() as any;
+        return { ok: false, error: data.error || `HTTP ${res.status}`, details: data };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'ton_get_validators': {
+      try {
+        const tonApiKey = params.config.TONAPI_KEY || process.env.TONAPI_KEY || '';
+        const headers: Record<string, string> = {};
+        if (tonApiKey) headers['Authorization'] = `Bearer ${tonApiKey}`;
+        const res = await fetch('https://tonapi.io/v2/blockchain/validators', { headers, signal: AbortSignal.timeout(10000) });
+        const data = await res.json() as any;
+        const validators = (data.validators || []).slice(0, 20).map((v: any) => ({
+          address: v.address,
+          stake: v.stake ? (parseInt(v.stake) / 1e9).toFixed(0) + ' TON' : null,
+          adnl_address: v.adnl_address,
+        }));
+        return { total: data.validators?.length || 0, top_validators: validators };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'ton_parse_address': {
+      try {
+        const addr = args.address as string;
+        const tonApiKey = params.config.TONAPI_KEY || process.env.TONAPI_KEY || '';
+        const headers: Record<string, string> = {};
+        if (tonApiKey) headers['Authorization'] = `Bearer ${tonApiKey}`;
+        const res = await fetch(`https://tonapi.io/v2/address/${encodeURIComponent(addr)}/parse`, { headers, signal: AbortSignal.timeout(5000) });
+        const data = await res.json() as any;
+        return data;
+      } catch (e: any) { return { error: e.message }; }
+    }
+
     // ── Plugin tools ──
     case 'list_plugins': {
       const { getPluginManager } = await import('../plugins-system');
@@ -2853,7 +3308,28 @@ ${msgs.length > 0 ? `\nСообщения от пользователя:\n${msgs
     if (roleRes.rows[0]?.role) agentRole = roleRes.rows[0].role;
   } catch {}
   const enabledCaps = (params.config.enabledCapabilities as string[]) || null;
-  const tools = buildToolDefinitions(agentRole, enabledCaps);
+
+  // ── Connect TON MCP if ton_mcp capability enabled ──
+  let mcpToolDefs: OpenAI.ChatCompletionTool[] = [];
+  if (!enabledCaps || enabledCaps.includes('ton_mcp')) {
+    try {
+      const { getTonMcpManager } = await import('../services/ton-mcp-client');
+      const manager = getTonMcpManager();
+      const mnemonic = (await getAgentStateRepository().get(params.agentId, 'wallet_mnemonic'))?.value;
+      if (mnemonic) {
+        await manager.getOrCreate(params.agentId, {
+          mnemonic,
+          network: (params.config.TON_NETWORK as string) || 'mainnet',
+          toncenterApiKey: (params.config.TONCENTER_API_KEY as string) || process.env.TONCENTER_API_KEY || '',
+        });
+        mcpToolDefs = manager.getOpenAITools(params.agentId) as any;
+      }
+    } catch (e: any) {
+      console.error(`[MCP] Agent #${params.agentId} init failed: ${e.message}`);
+    }
+  }
+
+  const tools = buildToolDefinitions(agentRole, enabledCaps, mcpToolDefs);
   let totalToolCalls = 0;
   let finalContent: string | undefined;
   _tickNotifyFlag.set(params.agentId, false); // reset flag for this tick
@@ -3010,6 +3486,8 @@ export class AIAgentRuntime {
     if (h) {
       clearInterval(h.interval);
       _activeHandles.delete(agentId);
+      // Kill MCP subprocess if any
+      import('../services/ton-mcp-client').then(m => m.getTonMcpManager().destroy(agentId)).catch(() => {});
       console.log(`[AI runtime] Agent #${agentId} deactivated`);
     }
   }

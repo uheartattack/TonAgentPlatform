@@ -28,7 +28,8 @@
     "telegraf": "^4.16.3",
     "telegram": "^2.26.22",
     "vm2": "^3.10.5",
-    "winston": "^3.11.0"
+    "winston": "^3.11.0",
+    "@modelcontextprotocol/sdk": "^1.12.1"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
