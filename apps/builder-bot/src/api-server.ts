@@ -991,6 +991,37 @@ export function startApiServer() {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── PUT /api/agents/:id/wizard — Apply wizard configuration ──
+  app.put('/api/agents/:id/wizard', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const agentId = parseInt(req.params.id as string, 10);
+      if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
+      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
+      const agent = agentCheck.data;
+      const { config: wizardConfig } = req.body || {};
+      if (!wizardConfig || typeof wizardConfig !== 'object') { res.status(400).json({ error: 'Missing config' }); return; }
+
+      const tc = typeof agent.triggerConfig === 'string' ? JSON.parse(agent.triggerConfig) : (agent.triggerConfig || {});
+      if (!tc.config) tc.config = {};
+
+      // Apply wizard fields
+      if (wizardConfig.AI_PROVIDER) tc.config.AI_PROVIDER = wizardConfig.AI_PROVIDER;
+      if (wizardConfig.AI_API_KEY) tc.config.AI_API_KEY = wizardConfig.AI_API_KEY;
+      if (wizardConfig.intervalMs) {
+        tc.intervalMs = parseInt(wizardConfig.intervalMs, 10);
+        tc.config.intervalMs = tc.intervalMs;
+      }
+      if (wizardConfig.enabledCapabilities) {
+        tc.config.enabledCapabilities = wizardConfig.enabledCapabilities;
+      }
+
+      await pool.query('UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3', [JSON.stringify(tc), agentId, userId]);
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // ── POST /api/agents/:id/chat — Send chat message to agent ──
   app.post('/api/agents/:id/chat', requireAuth, rateLimit(20, 60000, 'agent_chat'), async (req: Request, res: Response) => {
     try {

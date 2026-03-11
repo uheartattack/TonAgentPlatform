@@ -752,7 +752,10 @@
             <h1 class="page-title" data-en="AI Assistant" data-ru="AI Ассистент">AI Assistant</h1>
             <p class="page-subtitle" data-en="Create agents, get help, and manage your platform with AI" data-ru="Создавайте агентов, получайте помощь и управляйте платформой с ИИ">Create agents, get help, and manage your platform with AI</p>
           </div>
-          <div style="display:flex;gap:8px">
+          <div style="display:flex;gap:8px;align-items:center">
+            <select id="assistant-target-select" class="assistant-target-select" onchange="switchAssistantTarget(this.value)">
+              <option value="atlas" data-en="Atlas (Platform AI)" data-ru="Atlas (ИИ платформы)">Atlas (Platform AI)</option>
+            </select>
             <button class="btn btn-ghost btn-sm" onclick="clearAssistantChat()">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
               <span data-en="Clear Chat" data-ru="Очистить чат">Clear Chat</span>
@@ -2041,19 +2044,59 @@
       <div class="agent-detail-body" id="agent-detail-body">
         <!-- Filled by JS -->
       </div>
-      <div class="agent-detail-footer" style="flex-wrap:wrap;gap:6px">
+      <div class="agent-detail-footer">
         <button class="btn btn-success btn-sm" id="agent-detail-toggle-btn" onclick="toggleAgentFromDetail()">Run</button>
         <button class="btn btn-primary btn-sm" onclick="openAgentChat(_detailAgentId)">Chat</button>
         <button class="btn btn-ghost btn-sm" onclick="loadAgentLogs(_detailAgentId)">Logs</button>
-        <button class="btn btn-ghost btn-sm" onclick="showEditPrompt()">Code/Prompt</button>
-        <button class="btn btn-ghost btn-sm" onclick="showEditDescription()">Edit</button>
-        <button class="btn btn-ghost btn-sm" onclick="toggleAgentRename()">Rename</button>
-        <button class="btn btn-ghost btn-sm" onclick="showAISettings()">AI Settings</button>
-        <button class="btn btn-ghost btn-sm" onclick="showCapabilitiesEditor()">Capabilities</button>
-        <button class="btn btn-ghost btn-sm" onclick="runAgentAudit()">Audit</button>
-        <button class="btn btn-ghost btn-sm" onclick="createAgentWallet()">Wallet</button>
-        <button class="btn btn-ghost btn-sm" onclick="showRoleSelector()">Role</button>
+        <button class="btn btn-sm" style="background:var(--bg-tertiary);border:1px solid var(--border)" onclick="openAgentSettings()">Settings</button>
         <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="deleteAgentFromDetail()">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Full-screen Agent Settings Modal -->
+  <div id="agent-settings-modal" class="agent-settings-modal" style="display:none">
+    <div class="agent-settings-container">
+      <div class="agent-settings-header">
+        <div class="agent-settings-title">
+          <h2 id="agent-settings-name">Agent Settings</h2>
+          <span id="agent-settings-status" class="agent-status paused" style="font-size:.75rem"><span class="status-dot"></span><span>Paused</span></span>
+        </div>
+        <button class="modal-close" onclick="closeAgentSettings()">&times;</button>
+      </div>
+      <div class="agent-settings-tabs" id="agent-settings-tabs">
+        <button class="settings-tab active" onclick="switchSettingsTab('prompt')" data-tab="prompt"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg> Code</button>
+        <button class="settings-tab" onclick="switchSettingsTab('info')" data-tab="info"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Info</button>
+        <button class="settings-tab" onclick="switchSettingsTab('ai')" data-tab="ai"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> AI</button>
+        <button class="settings-tab" onclick="switchSettingsTab('caps')" data-tab="caps"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> Capabilities</button>
+        <button class="settings-tab" onclick="switchSettingsTab('wallet')" data-tab="wallet"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg> Wallet</button>
+        <button class="settings-tab" onclick="switchSettingsTab('role')" data-tab="role"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> Role</button>
+        <button class="settings-tab" onclick="switchSettingsTab('audit')" data-tab="audit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> Audit</button>
+      </div>
+      <div class="agent-settings-body" id="agent-settings-body">
+        <!-- Filled by JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Agent Creation Wizard Modal -->
+  <div id="wizard-modal" class="studio-dialog-backdrop" style="display:none" onclick="if(event.target===this)closeWizard()">
+    <div class="studio-dialog" style="max-width:520px;width:95%">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:20px 24px;border-bottom:1px solid var(--border)">
+        <div>
+          <h2 id="wizard-title" style="margin:0;font-size:1.1rem"></h2>
+          <div id="wizard-steps" style="display:flex;gap:6px;margin-top:8px"></div>
+        </div>
+        <button class="modal-close" onclick="closeWizard()">&times;</button>
+      </div>
+      <div id="wizard-body" style="padding:20px 24px;max-height:60vh;overflow-y:auto"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 24px;border-top:1px solid var(--border)">
+        <button class="btn btn-ghost btn-sm" id="wizard-back-btn" onclick="wizardBack()" style="display:none" data-en="Back" data-ru="Назад">Back</button>
+        <span id="wizard-step-label" style="font-size:.78rem;color:var(--text-muted)"></span>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost btn-sm" onclick="closeWizard()" data-en="Skip" data-ru="Пропустить">Skip</button>
+          <button class="btn btn-primary btn-sm" id="wizard-next-btn" onclick="wizardNext()" data-en="Next" data-ru="Далее">Next</button>
+        </div>
       </div>
     </div>
   </div>
