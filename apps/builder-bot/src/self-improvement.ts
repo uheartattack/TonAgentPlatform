@@ -28,6 +28,19 @@ import { getStagingManager } from './staging-manager';
 import { config } from './config';
 import { pool as dbPool } from './db';
 
+// ─── Provider resolver (same as ai-agent-runtime.ts) ──────────────────────────
+function resolveProviderForSI(provider: string): { baseURL: string; model: string } {
+  switch (provider.toLowerCase()) {
+    case 'gemini':    return { baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/', model: 'gemini-2.5-flash' };
+    case 'anthropic': return { baseURL: 'https://openrouter.ai/api/v1', model: 'anthropic/claude-haiku-4-5-20251001' };
+    case 'groq':      return { baseURL: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile' };
+    case 'deepseek':  return { baseURL: 'https://api.deepseek.com/v1', model: 'deepseek-chat' };
+    case 'openrouter': return { baseURL: 'https://openrouter.ai/api/v1', model: 'google/gemini-2.5-flash' };
+    case 'together':  return { baseURL: 'https://api.together.xyz/v1', model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo' };
+    default:          return { baseURL: 'https://api.openai.com/v1', model: 'gpt-4o-mini' };
+  }
+}
+
 // ─── Типы ─────────────────────────────────────────────────────────────────────
 
 interface Issue {
@@ -106,6 +119,36 @@ export class SelfImprovementSystem {
     });
     // 10 минут между циклами (было 60 сек — слишком агрессивно, спам proposals)
     this.intervalMs = parseInt(process.env.SELF_IMPROVE_INTERVAL_MS || '600000');
+  }
+
+  /** Get AI client using user's own API key (falls back to platform proxy) */
+  private async getUserAIClient(userId: string): Promise<OpenAI> {
+    try {
+      const uvRes = await dbPool.query(
+        `SELECT value FROM builder_bot.user_variables WHERE user_id = $1 AND key IN ('AI_API_KEY', 'AI_PROVIDER') ORDER BY key`,
+        [userId]
+      );
+      const vars: Record<string, string> = {};
+      for (const r of uvRes.rows) vars[(r as any).key] = (r as any).value;
+      if (vars.AI_API_KEY) {
+        const provider = vars.AI_PROVIDER || 'openai';
+        const resolved = resolveProviderForSI(provider);
+        return new OpenAI({ apiKey: vars.AI_API_KEY, baseURL: resolved.baseURL });
+      }
+    } catch {}
+    return this.ai; // fallback to platform proxy
+  }
+
+  /** Notify the agent's owner (not platform owner) */
+  private async notifyUser(userId: string, message: string, buttons?: any[][]): Promise<void> {
+    try {
+      const opts: any = { parse_mode: 'HTML' };
+      if (buttons?.length) opts.reply_markup = { inline_keyboard: buttons };
+      await this.bot.telegram.sendMessage(userId, message, opts);
+    } catch (e: any) {
+      // User may have blocked bot — non-critical
+      console.error(`[SelfImprovement] User ${userId} notify failed: ${e.message?.slice(0, 60)}`);
+    }
   }
 
   /** Запускает непрерывный цикл сканирования и улучшения */
@@ -284,13 +327,17 @@ export class SelfImprovementSystem {
         last_error: string;
         agent_name: string;
         agent_code: string;
+        user_id: string;
+        trigger_config: string;
       }>(`
         SELECT
           l.agent_id,
           COUNT(*)::text          AS error_count,
           MAX(l.message)          AS last_error,
           a.name                  AS agent_name,
-          a.code                  AS agent_code
+          a.code                  AS agent_code,
+          a.user_id::text         AS user_id,
+          a.trigger_config::text  AS trigger_config
         FROM builder_bot.agent_logs l
         JOIN builder_bot.agents a ON a.id = l.agent_id
         WHERE l.level = 'error'
@@ -298,7 +345,7 @@ export class SelfImprovementSystem {
           AND a.is_active = true
           AND a.code IS NOT NULL
           AND length(a.code) > 100
-        GROUP BY l.agent_id, a.name, a.code
+        GROUP BY l.agent_id, a.name, a.code, a.user_id, a.trigger_config
         HAVING COUNT(*) >= 3
         ORDER BY COUNT(*) DESC
         LIMIT 3
@@ -307,6 +354,15 @@ export class SelfImprovementSystem {
       for (const row of result.rows) {
         const agentId = Number(row.agent_id);
         const errorCount = Number(row.error_count);
+        const userId = row.user_id;
+
+        // Check self_improvement_enabled flag (default: true for backward compat)
+        let selfImprovementEnabled = true;
+        try {
+          const tc = typeof row.trigger_config === 'string' ? JSON.parse(row.trigger_config) : (row.trigger_config || {});
+          if (tc.config?.self_improvement_enabled === false) selfImprovementEnabled = false;
+        } catch {}
+        if (!selfImprovementEnabled) continue;
 
         // Cooldown: не чиним одного агента чаще раза в 30 минут
         const lastRepair = this.agentRepairCooldown.get(agentId) || 0;
@@ -315,12 +371,17 @@ export class SelfImprovementSystem {
         console.log(`[SelfImprovement] 🔧 Agent #${agentId} "${row.agent_name}" has ${errorCount} errors — attempting auto-repair`);
         this.agentRepairCooldown.set(agentId, now);
 
+        // Try to use user's API key for repair
+        const userAI = await this.getUserAIClient(userId);
+
         await this.repairAgentCode(
           agentId,
           row.agent_name,
           row.agent_code,
           row.last_error,
           errorCount,
+          userId,
+          userAI,
         );
       }
 
@@ -331,11 +392,15 @@ export class SelfImprovementSystem {
         agent_code: string;
         error_count: string;
         recent_logs: string;
+        user_id: string;
+        trigger_config: string;
       }>(`
         SELECT
           a.id AS agent_id,
           a.name AS agent_name,
           a.code AS agent_code,
+          a.user_id::text AS user_id,
+          a.trigger_config::text AS trigger_config,
           COUNT(*) FILTER (WHERE l.level = 'error')::text AS error_count,
           string_agg(l.message, '|||' ORDER BY l.created_at DESC) AS recent_logs
         FROM builder_bot.agents a
@@ -343,7 +408,7 @@ export class SelfImprovementSystem {
         WHERE a.trigger_type = 'ai_agent'
           AND a.is_active = true
           AND l.created_at > NOW() - INTERVAL '3 hours'
-        GROUP BY a.id, a.name, a.code
+        GROUP BY a.id, a.name, a.code, a.user_id, a.trigger_config
         HAVING COUNT(*) FILTER (WHERE l.level = 'error') >= 5
         ORDER BY COUNT(*) FILTER (WHERE l.level = 'error') DESC
         LIMIT 2
@@ -351,13 +416,24 @@ export class SelfImprovementSystem {
 
       for (const row of aiAgentResult.rows) {
         const agentId = Number(row.agent_id);
+        // Check self_improvement flag
+        let enabled = true;
+        try {
+          const tc = typeof row.trigger_config === 'string' ? JSON.parse(row.trigger_config) : (row.trigger_config || {});
+          if (tc.config?.self_improvement_enabled === false) enabled = false;
+        } catch {}
+        if (!enabled) continue;
+
         const logs = (row.recent_logs || '').split('|||').slice(0, 30);
+        const userAI = await this.getUserAIClient(row.user_id);
         await this.optimizeAIAgentPrompt(
           agentId,
           row.agent_name,
           row.agent_code,
           logs,
           `${row.error_count} errors in 3 hours`,
+          row.user_id,
+          userAI,
         );
       }
     } catch (e: any) {
@@ -376,6 +452,8 @@ export class SelfImprovementSystem {
     currentCode: string,
     errorMsg: string,
     errorCount: number,
+    userId?: string,
+    userAI?: OpenAI,
   ): Promise<void> {
     try {
       const prompt = `Ты — опытный JavaScript-разработчик, чинящий бот-агента, который постоянно падает с ошибкой.
@@ -419,7 +497,9 @@ ${currentCode.slice(0, 4000)}
 
 Ответь ТОЛЬКО полным исправленным JavaScript кодом (без markdown, без объяснений, только код начиная с "async function agent(context) {").`;
 
-      const response = await this.ai.chat.completions.create({
+      // Use user's AI client if available, else platform proxy
+      const aiClient = userAI || this.ai;
+      const response = await aiClient.chat.completions.create({
         model:      config.claude.model,
         max_tokens: 4000,
         messages:   [{ role: 'user', content: prompt }],
@@ -457,13 +537,24 @@ ${currentCode.slice(0, 4000)}
 
       console.log(`[SelfImprovement] ✅ Agent #${agentId} "${agentName}" auto-repaired (${newCode.length} chars)`);
 
-      // Уведомляем владельца
+      // Notify agent owner (user), not platform owner
+      if (userId) {
+        await this.notifyUser(userId,
+          `🔧 <b>Агент авто-починен</b>\n\n` +
+          `<b>#${agentId} ${agentName}</b>\n` +
+          `Ошибка (${errorCount}x): <code>${errorMsg.slice(0, 150)}</code>\n\n` +
+          `✅ AI исправил код агента автоматически.\n` +
+          `<i>Следующий запуск покажет результат.</i>`,
+          [[{ text: '📋 Логи', callback_data: `agent_logs:${agentId}` },
+            { text: '⚙️ Настройки', callback_data: `agent_settings:${agentId}` }]]
+        );
+      }
+      // Also notify platform owner
       await this.notifyOwner(
         `🔧 <b>Агент авто-починен</b>\n\n` +
-        `<b>#${agentId} ${agentName}</b>\n` +
-        `Ошибка (${errorCount}x): <code>${errorMsg.slice(0, 150)}</code>\n\n` +
-        `✅ AI сгенерировал исправленный код и обновил агента.\n` +
-        `<i>Следующий запуск агента покажет результат.</i>`
+        `<b>#${agentId} ${agentName}</b> (user ${userId})\n` +
+        `Ошибка (${errorCount}x): <code>${errorMsg.slice(0, 150)}</code>\n` +
+        `✅ ${userAI !== this.ai ? 'User API key' : 'Platform proxy'}`
       );
 
     } catch (e: any) {
@@ -482,6 +573,8 @@ ${currentCode.slice(0, 4000)}
     currentPrompt: string,
     recentLogs: string[],
     issueDescription: string,
+    userId?: string,
+    userAI?: OpenAI,
   ): Promise<void> {
     const COOLDOWN_MS = 2 * 60 * 60 * 1000; // 2 hours between optimizations per agent
     const now = Date.now();
@@ -514,7 +607,8 @@ ${recentLogs.slice(0, 20).map(l => `- ${l}`).join('\n')}
 
 Ответь ТОЛЬКО полным улучшенным system prompt (без markdown, без объяснений, без кавычек).`;
 
-      const response = await this.ai.chat.completions.create({
+      const aiClient = userAI || this.ai;
+      const response = await aiClient.chat.completions.create({
         model:      config.claude.model,
         max_tokens: 4000,
         messages:   [{ role: 'user', content: prompt }],
@@ -533,6 +627,18 @@ ${recentLogs.slice(0, 20).map(l => `- ${l}`).join('\n')}
       );
 
       console.log(`[SelfImprovement] ✅ AI Agent #${agentId} "${agentName}" prompt optimized (${newPrompt.length} chars)`);
+
+      // Notify agent owner
+      if (userId) {
+        await this.notifyUser(userId,
+          `🧠 <b>AI-агент оптимизирован</b>\n\n` +
+          `<b>#${agentId} ${agentName}</b>\n` +
+          `Проблема: ${issueDescription}\n` +
+          `✅ System prompt улучшен автоматически.`,
+          [[{ text: '💬 Чат', callback_data: `agent_chat:${agentId}` },
+            { text: '📋 Логи', callback_data: `agent_logs:${agentId}` }]]
+        );
+      }
 
       await this.notifyOwner(
         `🧠 <b>AI-агент оптимизирован</b>\n\n` +

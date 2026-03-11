@@ -5327,10 +5327,14 @@ function appendAssistantMsg(role, content, buttons) {
 
   var div = document.createElement('div');
   div.className = 'assistant-msg ' + role;
-  // Parse markdown
+  // Parse markdown + navigation links
   var html = escHtml(content)
     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
     .replace(/`([^`]+)`/g, '<code>$1</code>')
+    // Navigation links: [[page:pageName|Label]] → clickable links that navigate within studio
+    .replace(/\[\[page:(\w+)\|([^\]]+)\]\]/g, '<a href="#" class="assistant-nav-link" onclick="navigateTo(\'$1\');return false" style="color:#7dd3fc;text-decoration:underline;cursor:pointer">$2</a>')
+    // Standard markdown links: [text](url) → external links
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener" style="color:#7dd3fc;text-decoration:underline">$1</a>')
     .replace(/\n/g, '<br>');
   if (role === 'assistant') {
     html = '<div class="assistant-msg-avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="assistant-msg-content">' + html;
@@ -5814,14 +5818,19 @@ function showTourStep() {
     var sb = document.querySelector('.sidebar');
     if (sb && !sb.classList.contains('open')) toggleSidebar();
   }
-  // Scroll target into view smoothly
+  // Expand collapsed sections if target is inside one
+  var parentSection = target.closest('.nav-section-collapsible.collapsed');
+  if (parentSection) parentSection.classList.remove('collapsed');
+  // Scroll target into view in sidebar (not page-level scroll)
+  var sidebarNav = target.closest('.sidebar-nav, .sidebar');
+  if (sidebarNav) sidebarNav.scrollTop = Math.max(0, target.offsetTop - sidebarNav.offsetHeight / 2);
   target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   // Wait for scroll + layout
   setTimeout(function() {
     requestAnimationFrame(function() {
       positionTourElements(step, target);
     });
-  }, 150);
+  }, 250);
 }
 function positionTourElements(step, target) {
   var rect = target.getBoundingClientRect();
