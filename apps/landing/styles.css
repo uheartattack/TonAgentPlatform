@@ -153,14 +153,19 @@ body {
 }
 
 .studio-btn {
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: rgba(220,235,255,0.5);
+  color: #fff;
+  background: linear-gradient(135deg, rgba(230,240,255,0.95), rgba(210,225,250,0.88));
+  color: #0a0c10;
+  font-weight: 700;
+  box-shadow: 0 2px 12px rgba(200,225,255,0.25), 0 0 24px rgba(200,225,255,0.15);
 }
 
 .studio-btn:hover {
-  background: rgba(0, 212, 255, 0.15);
-  border-color: var(--accent);
-  box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+  background: linear-gradient(135deg, rgba(240,248,255,1), rgba(220,235,255,0.95));
+  border-color: rgba(235,245,255,0.7);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.15), 0 0 40px rgba(200,225,255,0.35);
+  transform: translateY(-2px);
 }
 
 /* Container */
