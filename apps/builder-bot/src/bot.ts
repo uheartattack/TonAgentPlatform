@@ -533,6 +533,16 @@ setInterval(() => {
       case 'publish':    pendingPublish.delete(userId); break;
       case 'tgAuth':     pendingTgAuth.delete(userId); break;
       case 'apiKey':     pendingApiKey.delete(userId); break;
+      case 'langSetup':  pendingLangSetup.delete(userId); break;
+    }
+  }
+
+  // Clean pendingRepairs (keyed as "userId:agentId") older than 30 min
+  for (const key of pendingRepairs.keys()) {
+    const ts = _pendingTimestamps.get(`repair:${key}`);
+    if (ts && now - ts > PENDING_TTL) {
+      pendingRepairs.delete(key);
+      _pendingTimestamps.delete(`repair:${key}`);
     }
   }
 

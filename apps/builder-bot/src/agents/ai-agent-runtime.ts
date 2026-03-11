@@ -107,8 +107,11 @@ export function mdToHtml(text: string): string {
       .replace(/<(?!\/?(?:b|i|s|u|code|pre|a|tg-spoiler)[\s>\/])[^>]+>/gi, '')
       .trim();
   }
-  // Otherwise convert markdown → HTML (don't HTML-escape first; TON numbers rarely contain <>&)
+  // Escape HTML entities first to prevent XSS, then convert markdown → HTML
   return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
     // Code blocks (``` ... ```) → <pre><code>
     .replace(/```[\w]*\n?([\s\S]*?)```/g, (_, code) => `<pre><code>${code.trim()}</code></pre>`)
     // Inline code (`code`) → <code>
@@ -129,6 +132,24 @@ export function mdToHtml(text: string): string {
 // ── In-memory pending messages (chat → agent) ──────────────────────────────
 
 const _pendingMessages = new Map<number, string[]>(); // agentId → messages[]
+
+// ── Per-agent web request rate limiter (anti-scraping) ──────────────────────
+const _webRequestCounts = new Map<number, { count: number; resetAt: number }>();
+const WEB_REQUESTS_PER_TICK = 10; // max web_search + fetch_url per tick
+function checkWebRateLimit(agentId: number): boolean {
+  const now = Date.now();
+  const entry = _webRequestCounts.get(agentId);
+  if (!entry || now > entry.resetAt) {
+    _webRequestCounts.set(agentId, { count: 1, resetAt: now + 60000 });
+    return true;
+  }
+  if (entry.count >= WEB_REQUESTS_PER_TICK) return false;
+  entry.count++;
+  return true;
+}
+
+// ── Per-agent transaction safety (large amount confirmation) ────────────────
+const HIGH_VALUE_TX_LIMIT_TON = 100; // TON threshold requiring confirmation
 
 // ── Notify-called flag per active tick (agentId → bool) ────────────────────
 // Used to suppress duplicate sends when AI calls notify() AND produces finalContent
@@ -162,7 +183,7 @@ function runImmediateTick(agentId: number): void {
   const handle = _activeHandles.get(agentId);
   if (!handle) return; // agent not active — nothing to trigger
   if (handle.tickRunning) return; // tick already in progress, message will be picked up
-  handle.tick().catch(() => {});
+  handle.tick().catch(e => console.error('[Runtime]', e?.message || e));
 }
 
 // ── Capability → Tool mapping ──────────────────────────────────────────────
@@ -1691,17 +1712,23 @@ async function executeTool(
 
     case 'send_ton': {
       try {
+        const amount = Number(args.amount);
+        if (isNaN(amount) || amount <= 0) return { error: 'Invalid amount' };
+        if (amount > HIGH_VALUE_TX_LIMIT_TON) {
+          return { error: `Safety: transaction of ${amount} TON exceeds limit (${HIGH_VALUE_TX_LIMIT_TON} TON). Reduce amount or contact platform admin.` };
+        }
         const walletAddr = (await stateRepo.get(params.agentId, 'wallet_address'))?.value;
         const walletMn   = (await stateRepo.get(params.agentId, 'wallet_mnemonic'))?.value;
         if (!walletAddr || !walletMn) return { error: 'Agent wallet not created. Call get_agent_wallet first.' };
         const { walletFromMnemonic, sendAgentTransaction } = await import('../services/TonConnect');
         const wallet = await walletFromMnemonic(walletMn, 'v4r2');
-        const result = await sendAgentTransaction(wallet, String(args.to), Number(args.amount), String(args.comment || ''));
+        const result = await sendAgentTransaction(wallet, String(args.to), amount, String(args.comment || ''));
         if ((result as any)?.ok) {
           // Track spend
-          const totalSpent = Number((await stateRepo.get(params.agentId, 'total_ton_spent'))?.value || 0) + Number(args.amount);
+          const totalSpent = Number((await stateRepo.get(params.agentId, 'total_ton_spent'))?.value || 0) + amount;
           await stateRepo.set(params.agentId, params.userId, 'total_ton_spent', String(totalSpent));
-          return { ok: true, hash: (result as any).hash, note: `Sent ${args.amount} TON to ${args.to}` };
+          await logToDb(params.agentId, 'info', `[TX] Sent ${amount} TON to ${args.to}, hash=${(result as any).hash}`, params.userId);
+          return { ok: true, hash: (result as any).hash, note: `Sent ${amount} TON to ${args.to}` };
         }
         return { ok: false, error: (result as any).error };
       } catch (e: any) {
@@ -1733,8 +1760,8 @@ async function executeTool(
         text: mdToHtml(msg),
         agentId: params.agentId,
       }).catch(async () => {
-        if (params.onNotify) await params.onNotify(msg).catch(() => {});
-        else await notifyUser(params.userId, msg).catch(() => {});
+        if (params.onNotify) await params.onNotify(msg).catch(e => console.error('[Runtime]', e?.message || e));
+        else await notifyUser(params.userId, msg).catch(e => console.error('[Runtime]', e?.message || e));
       });
       return { ok: true };
     }
@@ -1743,6 +1770,7 @@ async function executeTool(
     case 'web_search': {
       const query = String(args.query || '');
       if (!query) return { error: 'query required' };
+      if (!checkWebRateLimit(params.agentId)) return { error: 'Rate limit: too many web requests per minute. Slow down.' };
       try {
         const encoded = encodeURIComponent(query);
         const results: any[] = [];
@@ -1808,6 +1836,7 @@ async function executeTool(
     case 'fetch_url': {
       const url = String(args.url || '');
       if (!url) return { error: 'url required' };
+      if (!checkWebRateLimit(params.agentId)) return { error: 'Rate limit: too many web requests per minute. Slow down.' };
       try {
         // SSRF protection
         const u = new URL(url);
@@ -1855,7 +1884,7 @@ async function executeTool(
           text: String(b.text || ''),
           url: b.url ? String(b.url) : undefined,
         })),
-      }).catch(() => {});
+      }).catch(e => console.error('[Runtime]', e?.message || e));
       return { ok: true };
     }
 
@@ -3057,12 +3086,20 @@ async function executeFlowCode(execCode: string, params: AIAgentTickParams): Pro
   };
 
   try {
-    const AsyncFn = Object.getPrototypeOf(async function () {}).constructor;
-    const fn = new AsyncFn(
-      'getBalance', 'notify', 'webSearch', 'fetchUrl', 'getState', 'setState', 'sendTon', 'sleep', 'callTool',
-      execCode,
-    );
-    await fn(getBalance, notify, webSearch, fetchUrl, getState, setState, sendTon, sleep, callTool);
+    // Execute flow code in VM2 sandbox (not via Function constructor) for security
+    const { VM } = require('vm2');
+    const vm = new VM({
+      timeout: 30000,
+      eval: false,
+      wasm: false,
+      sandbox: {
+        getBalance, notify, webSearch, fetchUrl, getState, setState, sendTon, sleep, callTool,
+        console: { log: () => {}, error: () => {}, warn: () => {} },
+      },
+    });
+    // Wrap in async IIFE since VM2 doesn't natively support top-level await well
+    const wrappedCode = `(async () => { ${execCode} })()`;
+    await vm.run(wrappedCode);
     await logToDb(params.agentId, 'info', '[flow-exec] Flow code completed successfully', params.userId);
     return { success: true };
   } catch (e: any) {
@@ -3284,8 +3321,26 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
 ${GIFT_SYSTEM_KNOWLEDGE}${modeHint}
 ${msgs.length > 0 ? `\nСообщения от пользователя:\n${msgs.map(m => `- ${m}`).join('\n')}` : ''}`;
 
-  // Inject plugin skillDocs if any plugins are enabled
-  let systemPromptFull = params.systemPrompt;
+  // Inject safety rules + plugin skillDocs
+  const SAFETY_RULES = `
+━━━ SAFETY & ETHICS RULES ━━━
+You MUST follow these rules AT ALL TIMES:
+1. NEVER help with scams, fraud, phishing, social engineering, or theft
+2. NEVER scrape personal data, email lists, phone numbers, or private information in bulk
+3. NEVER send spam, unsolicited messages, or mass notifications to users who didn't opt in
+4. NEVER attempt to drain wallets, steal tokens, or exploit smart contract vulnerabilities maliciously
+5. NEVER generate or distribute malware, ransomware, or harmful code
+6. NEVER impersonate other people, services, or organizations
+7. NEVER bypass security measures, rate limits, or access controls
+8. NEVER store or transmit passwords, private keys, or seed phrases in plain text to external services
+9. Limit web scraping to max 10 pages per task. Do NOT crawl entire websites.
+10. If a user asks you to do something harmful or unethical, REFUSE and explain why.
+11. Report suspicious activity patterns (many failed transactions, rapid API calls) in your logs.
+12. When handling financial operations (send_ton, buy/sell gifts), ALWAYS double-check amounts and addresses.
+13. NEVER execute transactions above 100 TON without explicit user confirmation.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+
+  let systemPromptFull = params.systemPrompt + '\n' + SAFETY_RULES;
   const enabledPlugins = (params.config.enabledPlugins as string[]) || [];
   if (enabledPlugins.length > 0) {
     try {
@@ -3405,8 +3460,8 @@ ${msgs.length > 0 ? `\nСообщения от пользователя:\n${msgs
       agentName: (params.config?.AGENT_NAME as string) || undefined,
     }).catch(async () => {
       // Fallback to plain notify if rich fails
-      if (params.onNotify) await params.onNotify(finalContent!).catch(() => {});
-      else await notifyUser(params.userId, finalContent!).catch(() => {});
+      if (params.onNotify) await params.onNotify(finalContent!).catch(e => console.error('[Runtime]', e?.message || e));
+      else await notifyUser(params.userId, finalContent!).catch(e => console.error('[Runtime]', e?.message || e));
     });
   }
 
@@ -3487,8 +3542,15 @@ export class AIAgentRuntime {
       clearInterval(h.interval);
       _activeHandles.delete(agentId);
       // Kill MCP subprocess if any
-      import('../services/ton-mcp-client').then(m => m.getTonMcpManager().destroy(agentId)).catch(() => {});
+      import('../services/ton-mcp-client').then(m => m.getTonMcpManager().destroy(agentId)).catch(e => console.error('[Runtime]', e?.message || e));
       console.log(`[AI runtime] Agent #${agentId} deactivated`);
+    }
+  }
+
+  /** Deactivate all running agents (for graceful shutdown) */
+  deactivateAll(): void {
+    for (const agentId of [..._activeHandles.keys()]) {
+      this.deactivate(agentId);
     }
   }
 

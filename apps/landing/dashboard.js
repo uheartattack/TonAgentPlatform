@@ -85,8 +85,8 @@ function toast(message, type, title, duration) {
   el.style.setProperty('--toast-duration', duration + 'ms');
   el.innerHTML = '<div class="toast-icon">' + (_toastIcons[type] || _toastIcons.info) + '</div>'
     + '<div class="toast-content">'
-    + (title ? '<div class="toast-title">' + title + '</div>' : '')
-    + '<div class="toast-msg">' + message + '</div>'
+    + (title ? '<div class="toast-title">' + escHtml(title) + '</div>' : '')
+    + '<div class="toast-msg">' + escHtml(message) + '</div>'
     + '</div>'
     + '<button class="toast-close" onclick="dismissToast(this.parentElement)">&times;</button>'
     + '<div class="toast-progress"></div>';
@@ -119,13 +119,13 @@ function studioConfirm(opts) {
     var backdrop = document.getElementById('studio-dialog');
     backdrop.innerHTML = '<div class="studio-dialog">'
       + '<div class="studio-dialog-header">'
-      + '<div class="studio-dialog-icon icon-' + type + '">' + icon + '</div>'
-      + '<span class="studio-dialog-title">' + (opts.title || '') + '</span>'
+      + '<div class="studio-dialog-icon icon-' + escHtml(type) + '">' + icon + '</div>'
+      + '<span class="studio-dialog-title">' + escHtml(opts.title || '') + '</span>'
       + '</div>'
-      + '<div class="studio-dialog-body"><p>' + (opts.message || '') + '</p></div>'
+      + '<div class="studio-dialog-body"><p>' + escHtml(opts.message || '') + '</p></div>'
       + '<div class="studio-dialog-footer">'
-      + '<button class="btn btn-ghost" onclick="_resolveDialog(false)">' + (opts.cancelText || (currentLang === 'ru' ? 'Отмена' : 'Cancel')) + '</button>'
-      + '<button class="btn ' + confirmClass + '" onclick="_resolveDialog(true)">' + (opts.confirmText || 'OK') + '</button>'
+      + '<button class="btn btn-ghost" onclick="_resolveDialog(false)">' + escHtml(opts.cancelText || (currentLang === 'ru' ? 'Отмена' : 'Cancel')) + '</button>'
+      + '<button class="btn ' + confirmClass + '" onclick="_resolveDialog(true)">' + escHtml(opts.confirmText || 'OK') + '</button>'
       + '</div></div>';
     backdrop.style.display = 'flex';
     backdrop.classList.remove('closing');
@@ -150,10 +150,10 @@ function studioAlert(opts) {
     var backdrop = document.getElementById('studio-dialog');
     backdrop.innerHTML = '<div class="studio-dialog">'
       + '<div class="studio-dialog-header">'
-      + '<div class="studio-dialog-icon icon-' + type + '">' + icon + '</div>'
-      + '<span class="studio-dialog-title">' + (opts.title || '') + '</span>'
+      + '<div class="studio-dialog-icon icon-' + escHtml(type) + '">' + icon + '</div>'
+      + '<span class="studio-dialog-title">' + escHtml(opts.title || '') + '</span>'
       + '</div>'
-      + '<div class="studio-dialog-body"><p>' + (opts.message || '') + '</p></div>'
+      + '<div class="studio-dialog-body"><p>' + escHtml(opts.message || '') + '</p></div>'
       + '<div class="studio-dialog-footer">'
       + '<button class="btn btn-primary" onclick="_resolveDialog(true)">OK</button>'
       + '</div></div>';
