@@ -364,6 +364,12 @@ export class SelfImprovementSystem {
         } catch {}
         if (!selfImprovementEnabled) continue;
 
+        // Skip config errors — not fixable by code repair
+        const lastErr = String(row.last_error || '');
+        if (lastErr.includes('API ключ не настроен') || lastErr.includes('API key not configured') || lastErr.includes('No API key')) {
+          continue;
+        }
+
         // Cooldown: не чиним одного агента чаще раза в 30 минут
         const lastRepair = this.agentRepairCooldown.get(agentId) || 0;
         if (now - lastRepair < COOLDOWN_MS) continue;
@@ -423,6 +429,11 @@ export class SelfImprovementSystem {
           if (tc.config?.self_improvement_enabled === false) enabled = false;
         } catch {}
         if (!enabled) continue;
+
+        // Cooldown: don't optimize same AI agent more than once per hour
+        const lastOptimize = this.agentRepairCooldown.get(agentId + 100000) || 0;
+        if (now - lastOptimize < 60 * 60 * 1000) continue;
+        this.agentRepairCooldown.set(agentId + 100000, now);
 
         const logs = (row.recent_logs || '').split('|||').slice(0, 30);
         const userAI = await this.getUserAIClient(row.user_id);

@@ -75,6 +75,51 @@ var _toastIcons = {
   info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
 };
 
+// ===== PARTICLE DISSOLUTION EFFECT =====
+function spawnParticleDissolution(el) {
+  if (!el) return;
+  var rect = el.getBoundingClientRect();
+  var cols = 5, rows = 4;
+  var pw = rect.width / cols, ph = rect.height / rows;
+  var container = document.createElement('div');
+  container.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:99999;overflow:hidden;';
+  document.body.appendChild(container);
+  // Target: upper-right of viewport
+  var targetX = window.innerWidth * 0.85;
+  var targetY = window.innerHeight * 0.05;
+  for (var r = 0; r < rows; r++) {
+    for (var c = 0; c < cols; c++) {
+      var p = document.createElement('div');
+      var px = rect.left + c * pw;
+      var py = rect.top + r * ph;
+      p.style.cssText = 'position:absolute;width:' + pw + 'px;height:' + ph + 'px;left:' + px + 'px;top:' + py + 'px;' +
+        'background:var(--bg-secondary,#1a1a2e);border:1px solid rgba(200,225,255,0.08);border-radius:4px;' +
+        'opacity:1;transition:transform 0.7s cubic-bezier(0.22,1,0.36,1),opacity 0.6s ease;will-change:transform,opacity;';
+      var delay = (r * cols + c) * 30;
+      p.dataset.delay = delay;
+      container.appendChild(p);
+    }
+  }
+  // Animate each particle with stagger
+  var particles = container.children;
+  for (var i = 0; i < particles.length; i++) {
+    (function(particle, idx) {
+      var delay = parseInt(particle.dataset.delay);
+      setTimeout(function() {
+        var curLeft = parseFloat(particle.style.left);
+        var curTop = parseFloat(particle.style.top);
+        var dx = (targetX - curLeft) + (Math.random() - 0.3) * 200;
+        var dy = (targetY - curTop) + (Math.random() - 0.5) * 150;
+        var rot = (Math.random() - 0.5) * 360;
+        particle.style.transform = 'translate(' + dx + 'px,' + dy + 'px) scale(0.15) rotate(' + rot + 'deg)';
+        particle.style.opacity = '0';
+      }, delay);
+    })(particles[i], i);
+  }
+  // Cleanup
+  setTimeout(function() { container.remove(); }, 1200);
+}
+
 function toast(message, type, title, duration) {
   type = type || 'info';
   duration = duration || 5000;
@@ -442,6 +487,9 @@ function showApp() {
   loadDashboard();
   loadSubscriptionGlobal();
 
+  // Refresh subscription every 5 minutes
+  setInterval(loadSubscriptionGlobal, 5 * 60 * 1000);
+
   // Load persisted slider/config values
   loadAgentConfig().catch(console.error);
   loadSecuritySettings().catch(console.error);
@@ -528,6 +576,7 @@ async function loadAgents() {
     return;
   }
   const agents = data.agents || [];
+  _agentsCache = agents;
   // Overview shows ONLY pinned agents
   var pinned = getPinnedAgents();
   var pinnedAgents = agents.filter(function(a) { return pinned.indexOf(a.id) >= 0; });
@@ -614,7 +663,7 @@ async function toggleAgent(agentId, isActive) {
 var _detailAgentId = null;
 var _detailAgentData = null;
 
-async function openAgentDetail(agentId) {
+async function openAgentDetail(agentId, skipSettings) {
   _detailAgentId = agentId;
   var panel = document.getElementById('agent-detail-panel');
   if (!panel) return;
@@ -628,6 +677,11 @@ async function openAgentDetail(agentId) {
     if (!data.ok || !data.agent) { toast('Agent not found', 'error'); closeAgentDetail(); return; }
     _detailAgentData = data.agent;
     renderAgentDetail();
+    // Open full-screen settings directly (unless called from settings close refresh)
+    if (!skipSettings) {
+      closeAgentDetail();
+      openAgentSettings();
+    }
   } catch(e) {
     toast(e.message || 'Error', 'error');
     closeAgentDetail();
@@ -717,7 +771,7 @@ function closeAgentDetail() {
   var panel = document.getElementById('agent-detail-panel');
   if (!panel) return;
   panel.classList.add('closing');
-  setTimeout(function() { panel.style.display = 'none'; panel.classList.remove('closing'); }, 200);
+  setTimeout(function() { panel.style.display = 'none'; panel.classList.remove('closing'); }, 400);
 }
 
 function toggleAgentRename() {
@@ -782,8 +836,8 @@ async function toggleAgentFromDetail() {
   if (btn) { btn.disabled = true; btn.innerHTML = IC.hourglass; }
   var data = await apiRequest('POST', endpoint);
   if (!data.ok) toast(data.error || 'Error', 'error');
-  // Reload detail
-  await openAgentDetail(_detailAgentId);
+  // Reload detail without re-opening settings
+  await openAgentDetail(_detailAgentId, true);
   loadAgents();
   loadAgentsPage();
 }
@@ -794,7 +848,7 @@ function deleteAgentFromDetail() {
   deleteAgent(_detailAgentId, _detailAgentData.name || 'Agent');
 }
 
-// ===== AGENT CHAT =====
+// ===== AGENT CHAT (opens in slide-over body) =====
 var _agentChatId = null;
 var _agentChatHistory = [];
 
@@ -806,7 +860,7 @@ function openAgentChat(agentId) {
   body.innerHTML =
     '<div class="agent-detail-section">' +
     '<div class="agent-detail-section-title">Chat with Agent #' + agentId + '</div>' +
-    '<div id="agent-chat-messages" style="max-height:300px;overflow-y:auto;padding:8px;background:rgba(0,0,0,0.2);border-radius:8px;margin-bottom:10px;min-height:100px">' +
+    '<div id="agent-chat-messages" style="max-height:400px;overflow-y:auto;padding:8px;background:rgba(0,0,0,0.2);border-radius:8px;margin-bottom:10px;min-height:100px">' +
     '<div style="text-align:center;color:var(--text-muted);font-size:.8rem;padding:20px">' + (currentLang === 'ru' ? 'Отправьте сообщение агенту...' : 'Send a message to the agent...') + '</div>' +
     '</div>' +
     '<div style="display:flex;gap:8px">' +
@@ -815,7 +869,7 @@ function openAgentChat(agentId) {
     '</div>' +
     '<button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="openAgentDetail(_detailAgentId)">' + (currentLang === 'ru' ? 'Назад' : 'Back') + '</button>' +
     '</div>';
-  document.getElementById('agent-chat-input').focus();
+  setTimeout(function() { var el = document.getElementById('agent-chat-input'); if (el) el.focus(); }, 100);
 }
 
 async function sendAgentChatMsg() {
@@ -825,17 +879,13 @@ async function sendAgentChatMsg() {
   var msg = input.value.trim();
   if (!msg) return;
   input.value = '';
-  // Add user message
   _agentChatHistory.push({ role: 'user', text: msg });
   renderAgentChat(msgBox);
-  // Send to API
   try {
     var data = await apiRequest('POST', '/api/agents/' + _agentChatId + '/chat', { message: msg });
-    if (data.ok) {
-      _agentChatHistory.push({ role: 'agent', text: data.response || data.message || (currentLang === 'ru' ? 'Сообщение отправлено агенту' : 'Message sent to agent') });
-    } else {
-      _agentChatHistory.push({ role: 'error', text: data.error || 'Error' });
-    }
+    _agentChatHistory.push(data.ok
+      ? { role: 'agent', text: data.response || data.message || (currentLang === 'ru' ? 'Сообщение отправлено' : 'Message sent') }
+      : { role: 'error', text: data.error || 'Error' });
   } catch(e) {
     _agentChatHistory.push({ role: 'error', text: e.message || 'Network error' });
   }
@@ -856,266 +906,266 @@ function renderAgentChat(box) {
   }).join('');
 }
 
-// ===== EDIT PROMPT =====
-function showEditPrompt() {
-  if (!_detailAgentData) return;
-  var body = document.getElementById('agent-detail-body');
-  if (!body) return;
-  var code = _detailAgentData.code || '';
-  body.innerHTML =
-    '<div class="agent-detail-section">' +
-    '<div class="agent-detail-section-title">' + (currentLang === 'ru' ? 'Системный промпт / Код' : 'System Prompt / Code') + '</div>' +
-    '<textarea id="edit-prompt-textarea" style="width:100%;min-height:250px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:8px;padding:12px;color:var(--text-primary);font-family:JetBrains Mono,monospace;font-size:.8rem;resize:vertical">' + escHtml(code) + '</textarea>' +
-    '<div style="display:flex;gap:8px;margin-top:10px">' +
-    '<button class="btn btn-primary btn-sm" onclick="saveEditPrompt()">' + (currentLang === 'ru' ? 'Сохранить' : 'Save') + '</button>' +
-    '<button class="btn btn-ghost btn-sm" onclick="openAgentDetail(_detailAgentId)">' + (currentLang === 'ru' ? 'Отмена' : 'Cancel') + '</button>' +
-    '</div></div>';
+// ===== FULL-SCREEN AGENT SETTINGS =====
+var _settingsTab = 'prompt';
+
+function openAgentSettings() {
+  if (!_detailAgentData || !_detailAgentId) return;
+  var modal = document.getElementById('agent-settings-modal');
+  if (!modal) return;
+  modal.style.display = '';
+  var nameEl = document.getElementById('agent-settings-name');
+  if (nameEl) nameEl.textContent = '#' + _detailAgentData.id + ' ' + (_detailAgentData.name || 'Unnamed');
+  var statusEl = document.getElementById('agent-settings-status');
+  if (statusEl) {
+    statusEl.className = 'agent-status ' + (_detailAgentData.is_active ? 'active' : 'paused');
+    statusEl.innerHTML = '<span class="status-dot"></span><span>' + (_detailAgentData.is_active ? 'Active' : 'Paused') + '</span>';
+  }
+  _settingsTab = 'prompt';
+  switchSettingsTab('prompt');
 }
 
-async function saveEditPrompt() {
+function closeAgentSettings() {
+  var modal = document.getElementById('agent-settings-modal');
+  if (!modal) return;
+  modal.classList.add('closing');
+  setTimeout(function() {
+    modal.style.display = 'none';
+    modal.classList.remove('closing');
+  }, 400);
+  // Refresh detail data without reopening settings
+  if (_detailAgentId) openAgentDetail(_detailAgentId, true);
+}
+
+function switchSettingsTab(tab) {
+  _settingsTab = tab;
+  // Update tab buttons
+  document.querySelectorAll('.settings-tab').forEach(function(b) {
+    b.classList.toggle('active', b.getAttribute('data-tab') === tab);
+  });
+  var body = document.getElementById('agent-settings-body');
+  if (!body || !_detailAgentData) return;
+  // Smooth tab content transition
+  body.style.animation = 'none';
+  body.offsetHeight; // force reflow
+  body.style.animation = 'tabContentFade 0.3s cubic-bezier(0.4,0,0.2,1)';
+  var a = _detailAgentData;
+  var config = {};
+  try { config = typeof a.trigger_config === 'string' ? JSON.parse(a.trigger_config) : (a.trigger_config || {}); } catch(e) {}
+
+  if (tab === 'prompt') {
+    body.innerHTML =
+      '<div class="settings-section">' +
+      '<div class="settings-section-title">' + (currentLang === 'ru' ? 'Системный промпт / Код агента' : 'System Prompt / Agent Code') + '</div>' +
+      '<div class="settings-field"><textarea id="edit-prompt-textarea">' + escHtml(a.code || '') + '</textarea></div>' +
+      '<div class="settings-actions">' +
+      '<button class="btn btn-primary" onclick="saveSettingsPrompt()">' + (currentLang === 'ru' ? 'Сохранить' : 'Save') + '</button>' +
+      '</div></div>';
+  } else if (tab === 'info') {
+    body.innerHTML =
+      '<div class="settings-section">' +
+      '<div class="settings-section-title">' + (currentLang === 'ru' ? 'Информация об агенте' : 'Agent Information') + '</div>' +
+      '<div class="settings-field"><label>' + (currentLang === 'ru' ? 'Имя' : 'Name') + '</label>' +
+      '<input type="text" id="settings-agent-name" value="' + escHtml(a.name || '') + '"></div>' +
+      '<div class="settings-field"><label>' + (currentLang === 'ru' ? 'Описание' : 'Description') + '</label>' +
+      '<input type="text" id="settings-agent-desc" value="' + escHtml(a.description || '') + '"></div>' +
+      '<div class="settings-actions">' +
+      '<button class="btn btn-primary" onclick="saveSettingsInfo()">' + (currentLang === 'ru' ? 'Сохранить' : 'Save') + '</button>' +
+      '</div></div>';
+  } else if (tab === 'ai') {
+    var aiProvider = (config.config && config.config.AI_PROVIDER) || '';
+    var aiModel = (config.config && config.config.AI_MODEL) || '';
+    var hasKey = !!(config.config && config.config.AI_API_KEY);
+    var providers = ['openai', 'anthropic', 'gemini', 'groq', 'deepseek', 'openrouter', 'together'];
+    var provOpts = '<option value="">' + (currentLang === 'ru' ? 'По умолчанию' : 'Default') + '</option>' +
+      providers.map(function(p) { return '<option value="' + p + '"' + (p === aiProvider ? ' selected' : '') + '>' + p.charAt(0).toUpperCase() + p.slice(1) + '</option>'; }).join('');
+    body.innerHTML =
+      '<div class="settings-section">' +
+      '<div class="settings-section-title">' + (currentLang === 'ru' ? 'Настройки AI' : 'AI Configuration') + '</div>' +
+      '<div class="settings-field"><label>' + (currentLang === 'ru' ? 'Провайдер' : 'Provider') + '</label><select id="ai-provider-select">' + provOpts + '</select></div>' +
+      '<div class="settings-field"><label>' + (currentLang === 'ru' ? 'Модель' : 'Model') + '</label><input type="text" id="ai-model-input" value="' + escHtml(aiModel) + '" placeholder="auto"></div>' +
+      '<div class="settings-field"><label>API Key</label><input type="password" id="ai-key-input" placeholder="' + (hasKey ? '••••••••' : (currentLang === 'ru' ? 'Введите ключ' : 'Enter key')) + '">' +
+      (hasKey ? '<small style="color:var(--text-muted);margin-top:4px;display:block">' + (currentLang === 'ru' ? 'Ключ установлен. Пустое поле = не менять.' : 'Key is set. Leave empty to keep.') + '</small>' : '') + '</div>' +
+      '<div class="settings-actions"><button class="btn btn-primary" onclick="saveSettingsAI()">' + (currentLang === 'ru' ? 'Сохранить' : 'Save') + '</button></div></div>';
+  } else if (tab === 'caps') {
+    var enabled = (config.config && config.config.enabledCapabilities) || [];
+    var isRu = currentLang === 'ru';
+    var allCaps = [
+      { id: 'wallet', name: 'Wallet', icon: '💰',
+        desc: isRu ? 'Управление TON кошельком. Баланс, переводы, история транзакций' : 'TON wallet management. Balance, transfers, transaction history',
+        tools: ['get_ton_balance', 'send_ton'] },
+      { id: 'nft', name: 'NFT', icon: '🖼',
+        desc: isRu ? 'Работа с NFT коллекциями. Floor price, анализ, покупка/продажа' : 'NFT collections. Floor price, analysis, buy/sell',
+        tools: ['get_nft_floor'] },
+      { id: 'gifts', name: 'Gifts', icon: '🎁',
+        desc: isRu ? 'Telegram подарки. Каталог, оценка, покупка/продажа' : 'Telegram gifts. Catalog, appraisal, buy/sell',
+        tools: ['get_gift_catalog', 'appraise_gift', 'buy_catalog_gift'] },
+      { id: 'gifts_market', name: 'Gifts Market', icon: '📊',
+        desc: isRu ? 'Мониторинг рынка подарков. Floor цены, арбитраж, продажи' : 'Gift market monitoring. Floor prices, arbitrage, sales history',
+        tools: ['get_gift_floor_real', 'scan_real_arbitrage', 'get_market_overview'] },
+      { id: 'telegram', name: 'Telegram', icon: '📱',
+        desc: isRu ? 'Авторизация Telegram. Доступ к Fragment, MTProto' : 'Telegram authorization. Access to Fragment, MTProto',
+        tools: ['get_fragment_listings'] },
+      { id: 'web', name: 'Web', icon: '🌐',
+        desc: isRu ? 'Поиск в интернете и загрузка страниц. Web search, HTTP запросы' : 'Web search and page fetching. Web search, HTTP requests',
+        tools: ['web_search', 'fetch_url'] },
+      { id: 'defi', name: 'DeFi', icon: '💱',
+        desc: isRu ? 'DeFi операции. DEX свапы через DeDust/STON.fi' : 'DeFi operations. DEX swaps via DeDust/STON.fi',
+        tools: ['defi_swap'] },
+      { id: 'state', name: 'State', icon: '💾',
+        desc: isRu ? 'Хранение данных между запусками. Ключ-значение хранилище' : 'Persistent storage between runs. Key-value store',
+        tools: ['get_state', 'set_state'] },
+      { id: 'notify', name: 'Notify', icon: '🔔',
+        desc: isRu ? 'Push-уведомления. Отправка оповещений в Telegram' : 'Push notifications. Send alerts to Telegram',
+        tools: ['notify', 'notify_rich'] },
+      { id: 'plugins', name: 'Plugins', icon: '🔌',
+        desc: isRu ? 'MCP плагины. Расширение функций через внешние сервисы' : 'MCP plugins. Extend capabilities via external services',
+        tools: ['mcp_call'] },
+      { id: 'inter_agent', name: 'Inter-Agent', icon: '🤝',
+        desc: isRu ? 'Общение между агентами. Делегирование задач другим агентам' : 'Inter-agent communication. Delegate tasks to other agents',
+        tools: ['send_to_agent'] },
+      { id: 'blockchain', name: 'Blockchain', icon: '⛓',
+        desc: isRu ? 'Чтение данных блокчейна TON. Транзакции, контракты, адреса' : 'Read TON blockchain data. Transactions, contracts, addresses',
+        tools: ['get_account_info'] },
+      { id: 'ton_mcp', name: 'TON MCP', icon: '🔗',
+        desc: isRu ? 'TON MCP сервер. Расширенные операции с блокчейном TON' : 'TON MCP server. Advanced TON blockchain operations',
+        tools: ['ton_mcp'] },
+    ];
+    body.innerHTML =
+      '<div class="settings-section">' +
+      '<div class="settings-section-title">' + (isRu ? 'Возможности агента' : 'Agent Capabilities') + '</div>' +
+      '<p class="settings-field-desc" style="margin-bottom:16px">' + (isRu ? 'Включите нужные возможности для агента. Каждая добавляет соответствующие инструменты.' : 'Enable capabilities for the agent. Each adds corresponding tools.') + '</p>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">' +
+      allCaps.map(function(c) {
+        var ch = enabled.includes(c.id);
+        return '<label class="cap-card' + (ch ? ' cap-active' : '') + '" style="display:flex;gap:10px;padding:12px 14px;border-radius:10px;background:var(--bg-secondary);cursor:pointer;font-size:.85rem;border:1px solid ' + (ch ? 'var(--primary)' : 'var(--border)') + ';transition:border-color var(--transition-fast),background var(--transition-fast)">' +
+          '<input type="checkbox" class="cap-check" value="' + c.id + '"' + (ch ? ' checked' : '') + ' style="accent-color:var(--primary);margin-top:2px" onchange="this.closest(\'label\').classList.toggle(\'cap-active\',this.checked);this.closest(\'label\').style.borderColor=this.checked?\'var(--primary)\':\'var(--border)\'">' +
+          '<div style="flex:1"><div style="font-weight:600">' + c.icon + ' ' + c.name + '</div>' +
+          '<div style="font-size:.72rem;color:var(--text-muted);margin-top:3px;line-height:1.3">' + c.desc + '</div>' +
+          '<div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:3px">' + c.tools.map(function(t) { return '<code style="font-size:.65rem;padding:1px 5px;border-radius:3px;background:rgba(200,225,255,0.06);color:var(--text-secondary)">' + t + '</code>'; }).join('') + '</div>' +
+          '</div></label>';
+      }).join('') +
+      '</div>' +
+      '<div class="settings-actions" style="margin-top:16px"><button class="btn btn-primary" onclick="saveSettingsCaps()">' + (isRu ? 'Сохранить' : 'Save') + '</button></div></div>';
+  } else if (tab === 'wallet') {
+    var walletAddr = (config.config && config.config.WALLET_ADDRESS) || '';
+    body.innerHTML =
+      '<div class="settings-section">' +
+      '<div class="settings-section-title">' + (currentLang === 'ru' ? 'Кошелёк агента' : 'Agent Wallet') + '</div>' +
+      (walletAddr
+        ? '<div style="padding:16px;background:var(--bg-secondary);border-radius:8px;border:1px solid var(--border)"><div style="font-size:.78rem;color:var(--text-muted);margin-bottom:4px">TON Address</div><code style="font-size:.83rem;word-break:break-all;color:var(--primary)">' + escHtml(walletAddr) + '</code></div>'
+        : '<p style="color:var(--text-muted);margin-bottom:16px">' + (currentLang === 'ru' ? 'Кошелёк не создан. Создайте для работы с TON.' : 'No wallet. Create one for TON operations.') + '</p>' +
+          '<button class="btn btn-primary" onclick="createAgentWalletFromSettings()">' + (currentLang === 'ru' ? 'Создать кошелёк' : 'Create Wallet') + '</button>'
+      ) + '</div>';
+  } else if (tab === 'role') {
+    var currentRole = a.role || 'worker';
+    var roles = [
+      { id: 'worker', name: 'Worker', icon: '⚙️', desc: currentLang === 'ru' ? 'Выполняет задачи автономно' : 'Executes tasks autonomously' },
+      { id: 'manager', name: 'Manager', icon: '👔', desc: currentLang === 'ru' ? 'Координирует других агентов' : 'Coordinates other agents' },
+      { id: 'specialist', name: 'Specialist', icon: '🎯', desc: currentLang === 'ru' ? 'Эксперт в конкретной области' : 'Expert in specific domain' },
+      { id: 'monitor', name: 'Monitor', icon: '📡', desc: currentLang === 'ru' ? 'Отслеживает данные и алерты' : 'Tracks data and alerts' },
+    ];
+    body.innerHTML =
+      '<div class="settings-section">' +
+      '<div class="settings-section-title">' + (currentLang === 'ru' ? 'Роль агента' : 'Agent Role') + '</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">' +
+      roles.map(function(r) {
+        var sel = r.id === currentRole;
+        return '<div onclick="setAgentRoleFromSettings(\'' + r.id + '\')" style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:10px;cursor:pointer;background:' + (sel ? 'rgba(0,255,136,0.08)' : 'var(--bg-secondary)') + ';border:1px solid ' + (sel ? 'var(--primary)' : 'var(--border)') + ';transition:all .15s">' +
+          '<span style="font-size:1.5rem">' + r.icon + '</span>' +
+          '<div><strong>' + r.name + '</strong><br><small style="color:var(--text-muted)">' + r.desc + '</small></div>' +
+          (sel ? '<span style="margin-left:auto;color:var(--primary);font-size:1.2rem">✓</span>' : '') + '</div>';
+      }).join('') +
+      '</div></div>';
+  } else if (tab === 'audit') {
+    body.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--text-muted)">' + (currentLang === 'ru' ? 'Загрузка аудита...' : 'Loading audit...') + '</div>';
+    runSettingsAudit(body);
+  }
+}
+
+// Settings save functions
+async function saveSettingsPrompt() {
   var ta = document.getElementById('edit-prompt-textarea');
   if (!ta || !_detailAgentId) return;
-  var code = ta.value;
-  var data = await apiRequest('PUT', '/api/agents/' + _detailAgentId + '/code', { code: code });
-  if (data.ok) {
-    toast(currentLang === 'ru' ? 'Промпт сохранён' : 'Prompt saved', 'success');
-    if (_detailAgentData) _detailAgentData.code = code;
-    renderAgentDetail();
-  } else {
-    toast(data.error || 'Error', 'error');
+  var data = await apiRequest('PUT', '/api/agents/' + _detailAgentId + '/code', { code: ta.value });
+  if (data.ok) { toast(currentLang === 'ru' ? 'Промпт сохранён' : 'Prompt saved', 'success'); _detailAgentData.code = ta.value; }
+  else toast(data.error || 'Error', 'error');
+}
+
+async function saveSettingsInfo() {
+  if (!_detailAgentId) return;
+  var name = document.getElementById('settings-agent-name').value.trim();
+  var desc = document.getElementById('settings-agent-desc').value.trim();
+  if (name.length >= 2) {
+    await apiRequest('POST', '/api/agents/' + _detailAgentId + '/rename', { name: name });
+    _detailAgentData.name = name;
   }
-}
-
-// ===== EDIT DESCRIPTION =====
-function showEditDescription() {
-  if (!_detailAgentData) return;
-  var body = document.getElementById('agent-detail-body');
-  if (!body) return;
-  body.innerHTML =
-    '<div class="agent-detail-section">' +
-    '<div class="agent-detail-section-title">' + (currentLang === 'ru' ? 'Описание агента' : 'Agent Description') + '</div>' +
-    '<textarea id="edit-desc-textarea" style="width:100%;min-height:80px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:8px;padding:12px;color:var(--text-primary);font-size:.85rem;resize:vertical">' + escHtml(_detailAgentData.description || '') + '</textarea>' +
-    '<div style="display:flex;gap:8px;margin-top:10px">' +
-    '<button class="btn btn-primary btn-sm" onclick="saveEditDescription()">' + (currentLang === 'ru' ? 'Сохранить' : 'Save') + '</button>' +
-    '<button class="btn btn-ghost btn-sm" onclick="openAgentDetail(_detailAgentId)">' + (currentLang === 'ru' ? 'Отмена' : 'Cancel') + '</button>' +
-    '</div></div>';
-}
-
-async function saveEditDescription() {
-  var ta = document.getElementById('edit-desc-textarea');
-  if (!ta || !_detailAgentId) return;
-  var desc = ta.value.trim();
   var data = await apiRequest('PUT', '/api/agents/' + _detailAgentId + '/description', { description: desc });
-  if (data.ok) {
-    toast(currentLang === 'ru' ? 'Описание обновлено' : 'Description updated', 'success');
-    if (_detailAgentData) _detailAgentData.description = desc;
-    renderAgentDetail();
-    loadAgents();
-  } else {
-    toast(data.error || 'Error', 'error');
-  }
+  if (data.ok) { toast(currentLang === 'ru' ? 'Сохранено' : 'Saved', 'success'); _detailAgentData.description = desc; loadAgents(); }
+  else toast(data.error || 'Error', 'error');
+  var nameEl = document.getElementById('agent-settings-name');
+  if (nameEl) nameEl.textContent = '#' + _detailAgentId + ' ' + name;
 }
 
-// ===== AI SETTINGS =====
-function showAISettings() {
-  if (!_detailAgentData) return;
-  var body = document.getElementById('agent-detail-body');
-  if (!body) return;
-  var config = {};
-  try { config = typeof _detailAgentData.trigger_config === 'string' ? JSON.parse(_detailAgentData.trigger_config) : (_detailAgentData.trigger_config || {}); } catch(e) {}
-  var aiProvider = (config.config && config.config.AI_PROVIDER) || '';
-  var aiModel = (config.config && config.config.AI_MODEL) || '';
-  var hasKey = !!(config.config && config.config.AI_API_KEY);
-
-  var providers = ['openai', 'anthropic', 'gemini', 'groq', 'deepseek', 'openrouter', 'together'];
-  var provOpts = providers.map(function(p) {
-    return '<option value="' + p + '"' + (p === aiProvider ? ' selected' : '') + '>' + p.charAt(0).toUpperCase() + p.slice(1) + '</option>';
-  }).join('');
-
-  body.innerHTML =
-    '<div class="agent-detail-section">' +
-    '<div class="agent-detail-section-title">' + (currentLang === 'ru' ? 'Настройки AI' : 'AI Settings') + '</div>' +
-    '<div style="display:flex;flex-direction:column;gap:12px">' +
-    '<div><label style="font-size:.78rem;color:var(--text-muted);display:block;margin-bottom:4px">' + (currentLang === 'ru' ? 'Провайдер' : 'Provider') + '</label>' +
-    '<select id="ai-provider-select" style="width:100%;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:6px;padding:8px;color:var(--text-primary);font-size:.85rem">' +
-    '<option value="">' + (currentLang === 'ru' ? 'По умолчанию' : 'Default') + '</option>' + provOpts + '</select></div>' +
-    '<div><label style="font-size:.78rem;color:var(--text-muted);display:block;margin-bottom:4px">' + (currentLang === 'ru' ? 'Модель (необязательно)' : 'Model (optional)') + '</label>' +
-    '<input type="text" id="ai-model-input" value="' + escHtml(aiModel) + '" placeholder="auto" style="width:100%;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:6px;padding:8px;color:var(--text-primary);font-size:.85rem"></div>' +
-    '<div><label style="font-size:.78rem;color:var(--text-muted);display:block;margin-bottom:4px">API Key</label>' +
-    '<input type="password" id="ai-key-input" placeholder="' + (hasKey ? '••••••••' : (currentLang === 'ru' ? 'Введите API ключ' : 'Enter API key')) + '" style="width:100%;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:6px;padding:8px;color:var(--text-primary);font-size:.85rem">' +
-    (hasKey ? '<small style="color:var(--text-muted);">' + (currentLang === 'ru' ? 'Ключ уже установлен. Оставьте пустым чтобы не менять.' : 'Key is set. Leave empty to keep.') + '</small>' : '') + '</div>' +
-    '</div>' +
-    '<div style="display:flex;gap:8px;margin-top:12px">' +
-    '<button class="btn btn-primary btn-sm" onclick="saveAISettings()">' + (currentLang === 'ru' ? 'Сохранить' : 'Save') + '</button>' +
-    '<button class="btn btn-ghost btn-sm" onclick="openAgentDetail(_detailAgentId)">' + (currentLang === 'ru' ? 'Назад' : 'Back') + '</button>' +
-    '</div></div>';
-}
-
-async function saveAISettings() {
+async function saveSettingsAI() {
   if (!_detailAgentId) return;
   var provider = document.getElementById('ai-provider-select').value;
   var model = document.getElementById('ai-model-input').value.trim();
   var apiKey = document.getElementById('ai-key-input').value.trim();
-  var body = { provider: provider || undefined, model: model || undefined };
-  if (apiKey) body.apiKey = apiKey;
-  var data = await apiRequest('PUT', '/api/agents/' + _detailAgentId + '/provider', body);
-  if (data.ok) {
-    toast(currentLang === 'ru' ? 'Настройки AI обновлены' : 'AI settings updated', 'success');
-    openAgentDetail(_detailAgentId);
-  } else {
-    toast(data.error || 'Error', 'error');
-  }
+  var payload = {};
+  if (provider) payload.provider = provider;
+  if (model) payload.model = model;
+  if (apiKey) payload.apiKey = apiKey;
+  var data = await apiRequest('PUT', '/api/agents/' + _detailAgentId + '/provider', payload);
+  if (data.ok) toast(currentLang === 'ru' ? 'AI настройки обновлены' : 'AI settings updated', 'success');
+  else toast(data.error || 'Error', 'error');
 }
 
-// ===== CAPABILITIES EDITOR =====
-function showCapabilitiesEditor() {
-  if (!_detailAgentData) return;
-  var body = document.getElementById('agent-detail-body');
-  if (!body) return;
-  var config = {};
-  try { config = typeof _detailAgentData.trigger_config === 'string' ? JSON.parse(_detailAgentData.trigger_config) : (_detailAgentData.trigger_config || {}); } catch(e) {}
-  var enabled = (config.config && config.config.enabledCapabilities) || [];
-
-  var allCaps = [
-    { id: 'wallet', name: 'Wallet', icon: '💰', desc: 'TON balance, send/receive' },
-    { id: 'nft', name: 'NFT', icon: '🖼', desc: 'NFT collections, floor prices' },
-    { id: 'gifts', name: 'Gifts', icon: '🎁', desc: 'Telegram gifts catalog' },
-    { id: 'gifts_market', name: 'Gifts Market', icon: '📊', desc: 'Gift trading, arbitrage' },
-    { id: 'telegram', name: 'Telegram', icon: '📱', desc: 'Messages, channels, groups' },
-    { id: 'web', name: 'Web', icon: '🌐', desc: 'Search, fetch URLs' },
-    { id: 'state', name: 'State', icon: '💾', desc: 'Persistent memory' },
-    { id: 'notify', name: 'Notifications', icon: '🔔', desc: 'User alerts' },
-    { id: 'plugins', name: 'Plugins', icon: '🔌', desc: 'Custom plugins' },
-    { id: 'inter_agent', name: 'Inter-Agent', icon: '🤝', desc: 'Agent cooperation' },
-    { id: 'blockchain', name: 'Blockchain', icon: '⛓', desc: 'TON raw operations' },
-    { id: 'defi', name: 'DeFi', icon: '💱', desc: 'DEX prices, swaps' },
-    { id: 'ton_mcp', name: 'TON MCP', icon: '🔗', desc: 'Model Context Protocol' },
-  ];
-
-  body.innerHTML =
-    '<div class="agent-detail-section">' +
-    '<div class="agent-detail-section-title">' + (currentLang === 'ru' ? 'Возможности агента' : 'Agent Capabilities') + '</div>' +
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">' +
-    allCaps.map(function(c) {
-      var checked = enabled.includes(c.id) ? ' checked' : '';
-      return '<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;background:rgba(255,255,255,0.03);cursor:pointer;font-size:.8rem">' +
-        '<input type="checkbox" class="cap-check" value="' + c.id + '"' + checked + ' style="accent-color:var(--primary)">' +
-        '<span>' + c.icon + ' ' + c.name + '</span></label>';
-    }).join('') +
-    '</div>' +
-    '<div style="display:flex;gap:8px;margin-top:12px">' +
-    '<button class="btn btn-primary btn-sm" onclick="saveCapabilities()">' + (currentLang === 'ru' ? 'Сохранить' : 'Save') + '</button>' +
-    '<button class="btn btn-ghost btn-sm" onclick="openAgentDetail(_detailAgentId)">' + (currentLang === 'ru' ? 'Назад' : 'Back') + '</button>' +
-    '</div></div>';
-}
-
-async function saveCapabilities() {
+async function saveSettingsCaps() {
   if (!_detailAgentId) return;
-  var checks = document.querySelectorAll('.cap-check:checked');
-  var caps = Array.from(checks).map(function(c) { return c.value; });
+  var caps = Array.from(document.querySelectorAll('.cap-check:checked')).map(function(c) { return c.value; });
   var data = await apiRequest('PUT', '/api/agents/' + _detailAgentId + '/capabilities', { capabilities: caps });
+  if (data.ok) toast(currentLang === 'ru' ? 'Возможности обновлены' : 'Capabilities updated', 'success');
+  else toast(data.error || 'Error', 'error');
+}
+
+async function createAgentWalletFromSettings() {
+  if (!_detailAgentId) return;
+  var data = await apiRequest('POST', '/api/agents/' + _detailAgentId + '/wallet');
   if (data.ok) {
-    toast(currentLang === 'ru' ? 'Возможности обновлены' : 'Capabilities updated', 'success');
-    openAgentDetail(_detailAgentId);
-  } else {
-    toast(data.error || 'Error', 'error');
-  }
+    toast((data.exists ? (currentLang === 'ru' ? 'Кошелёк уже есть' : 'Wallet exists') : (currentLang === 'ru' ? 'Кошелёк создан' : 'Wallet created')) + ': ' + (data.address || ''), 'success');
+    await openAgentDetail(_detailAgentId, true); // refresh data
+    switchSettingsTab('wallet');
+  } else toast(data.error || 'Error', 'error');
 }
 
-// ===== AGENT AUDIT =====
-async function runAgentAudit() {
-  if (!_detailAgentId) return;
-  var body = document.getElementById('agent-detail-body');
-  if (!body) return;
-  body.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--text-muted)">' + IC.hourglass + ' ' + (currentLang === 'ru' ? 'Аудит...' : 'Auditing...') + '</div>';
-  try {
-    var data = await apiRequest('GET', '/api/agents/' + _detailAgentId + '/audit');
-    if (!data.ok) { toast(data.error || 'Error', 'error'); renderAgentDetail(); return; }
-    var html = '<div class="agent-detail-section">';
-    html += '<div class="agent-detail-section-title">' + (currentLang === 'ru' ? 'Результат аудита' : 'Audit Result') + ' — ' + data.score + '%</div>';
-    html += '<div style="background:linear-gradient(90deg,rgba(0,255,136,0.2) ' + data.score + '%,rgba(255,255,255,0.05) ' + data.score + '%);border-radius:4px;height:8px;margin-bottom:12px"></div>';
-    if (data.passed && data.passed.length) {
-      html += '<div style="margin-bottom:8px">';
-      data.passed.forEach(function(p) { html += '<div style="font-size:.8rem;color:#4ade80;padding:2px 0">✓ ' + escHtml(p) + '</div>'; });
-      html += '</div>';
-    }
-    if (data.issues && data.issues.length) {
-      data.issues.forEach(function(i) { html += '<div style="font-size:.8rem;color:#f59e0b;padding:2px 0">⚠ ' + escHtml(i) + '</div>'; });
-    }
-    html += '<button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="openAgentDetail(_detailAgentId)">' + (currentLang === 'ru' ? 'Назад' : 'Back') + '</button>';
-    html += '</div>';
-    body.innerHTML = html;
-  } catch(e) {
-    toast(e.message || 'Error', 'error');
-    renderAgentDetail();
-  }
-}
-
-// ===== CREATE AGENT WALLET =====
-async function createAgentWallet() {
-  if (!_detailAgentId) return;
-  var confirmed = await studioConfirm({
-    title: currentLang === 'ru' ? 'Создать кошелёк' : 'Create Wallet',
-    message: currentLang === 'ru' ? 'Создать TON кошелёк для агента #' + _detailAgentId + '?' : 'Create TON wallet for agent #' + _detailAgentId + '?',
-    confirmText: currentLang === 'ru' ? 'Создать' : 'Create',
-    type: 'info'
-  });
-  if (!confirmed) return;
-  try {
-    var data = await apiRequest('POST', '/api/agents/' + _detailAgentId + '/wallet');
-    if (data.ok) {
-      if (data.exists) {
-        toast(currentLang === 'ru' ? 'Кошелёк уже создан: ' + data.address : 'Wallet already exists: ' + data.address, 'info');
-      } else {
-        toast(currentLang === 'ru' ? 'Кошелёк создан: ' + data.address : 'Wallet created: ' + data.address, 'success');
-      }
-      openAgentDetail(_detailAgentId);
-    } else {
-      toast(data.error || 'Error', 'error');
-    }
-  } catch(e) {
-    toast(e.message || 'Error', 'error');
-  }
-}
-
-// ===== ROLE SELECTOR =====
-function showRoleSelector() {
-  if (!_detailAgentData) return;
-  var body = document.getElementById('agent-detail-body');
-  if (!body) return;
-  var currentRole = _detailAgentData.role || 'worker';
-  var roles = [
-    { id: 'worker', name: 'Worker', icon: '⚙️', desc: currentLang === 'ru' ? 'Выполняет задачи автономно' : 'Executes tasks autonomously' },
-    { id: 'manager', name: 'Manager', icon: '👔', desc: currentLang === 'ru' ? 'Координирует других агентов' : 'Coordinates other agents' },
-    { id: 'specialist', name: 'Specialist', icon: '🎯', desc: currentLang === 'ru' ? 'Эксперт в конкретной области' : 'Expert in a specific domain' },
-    { id: 'monitor', name: 'Monitor', icon: '📡', desc: currentLang === 'ru' ? 'Отслеживает данные и алерты' : 'Tracks data and alerts' },
-  ];
-  body.innerHTML =
-    '<div class="agent-detail-section">' +
-    '<div class="agent-detail-section-title">' + (currentLang === 'ru' ? 'Роль агента' : 'Agent Role') + '</div>' +
-    '<div style="display:flex;flex-direction:column;gap:6px">' +
-    roles.map(function(r) {
-      var sel = r.id === currentRole;
-      return '<div onclick="setAgentRole(\'' + r.id + '\')" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;cursor:pointer;background:' + (sel ? 'rgba(0,255,136,0.1)' : 'rgba(255,255,255,0.03)') + ';border:1px solid ' + (sel ? 'var(--primary)' : 'transparent') + '">' +
-        '<span style="font-size:1.3rem">' + r.icon + '</span>' +
-        '<div><strong style="font-size:.85rem">' + r.name + '</strong><br><small style="color:var(--text-muted);font-size:.75rem">' + r.desc + '</small></div>' +
-        (sel ? '<span style="margin-left:auto;color:var(--primary)">✓</span>' : '') + '</div>';
-    }).join('') +
-    '</div>' +
-    '<button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="openAgentDetail(_detailAgentId)">' + (currentLang === 'ru' ? 'Назад' : 'Back') + '</button>' +
-    '</div>';
-}
-
-async function setAgentRole(role) {
+async function setAgentRoleFromSettings(role) {
   if (!_detailAgentId) return;
   var data = await apiRequest('PUT', '/api/agents/' + _detailAgentId + '/role', { role: role });
   if (data.ok) {
-    toast(currentLang === 'ru' ? 'Роль обновлена: ' + role : 'Role updated: ' + role, 'success');
-    if (_detailAgentData) _detailAgentData.role = role;
-    openAgentDetail(_detailAgentId);
-  } else {
-    toast(data.error || 'Error', 'error');
-  }
+    toast(currentLang === 'ru' ? 'Роль: ' + role : 'Role: ' + role, 'success');
+    _detailAgentData.role = role;
+    switchSettingsTab('role');
+  } else toast(data.error || 'Error', 'error');
+}
+
+async function runSettingsAudit(body) {
+  try {
+    var data = await apiRequest('GET', '/api/agents/' + _detailAgentId + '/audit');
+    if (!data.ok) { body.innerHTML = '<p style="color:var(--danger)">Error</p>'; return; }
+    var html = '<div class="settings-section">';
+    html += '<div class="settings-section-title">' + (currentLang === 'ru' ? 'Результат аудита' : 'Audit Result') + '</div>';
+    html += '<div style="display:flex;align-items:center;gap:16px;margin-bottom:20px"><div style="font-size:2.5rem;font-weight:700;color:var(--primary)">' + data.score + '%</div>';
+    html += '<div style="flex:1;height:10px;background:rgba(255,255,255,0.05);border-radius:5px;overflow:hidden"><div style="height:100%;width:' + data.score + '%;background:var(--primary);border-radius:5px"></div></div></div>';
+    if (data.passed && data.passed.length) {
+      data.passed.forEach(function(p) { html += '<div style="padding:6px 0;font-size:.85rem;color:#4ade80">✓ ' + escHtml(p) + '</div>'; });
+    }
+    if (data.issues && data.issues.length) {
+      data.issues.forEach(function(i) { html += '<div style="padding:6px 0;font-size:.85rem;color:#f59e0b">⚠ ' + escHtml(i) + '</div>'; });
+    }
+    html += '</div>';
+    body.innerHTML = html;
+  } catch(e) { body.innerHTML = '<p style="color:var(--danger)">' + escHtml(e.message) + '</p>'; }
 }
 
 let _deleteAgentId = null;
@@ -1145,14 +1195,18 @@ async function confirmDeleteAgent() {
   closeDeleteModal();
   if (btn) { btn.disabled = false; btn.innerHTML = IC.trash + ' ' + t('delete'); }
   if (data.ok) {
-    // Dissolve animation on the card
+    // Particle dissolution on the card
     const card = document.querySelector(`[data-id="${agentId}"]`);
     if (card) {
-      card.classList.add('agent-card-dissolving');
-      setTimeout(() => { card.remove(); }, 600);
+      spawnParticleDissolution(card);
+      card.style.transition = 'opacity 0.4s ease, transform 0.4s ease';
+      card.style.opacity = '0';
+      card.style.transform = 'scale(0.9)';
+      card.style.pointerEvents = 'none';
+      setTimeout(() => { card.remove(); }, 500);
     }
     showNotification('Agent #' + agentId + ' deleted', 'success');
-    setTimeout(() => { loadAgents(); loadAgentsPage(); }, 700);
+    setTimeout(() => { loadAgents(); loadAgentsPage(); }, 800);
   } else {
     showNotification((data.error || 'Failed to delete'), 'error');
   }
@@ -1160,6 +1214,7 @@ async function confirmDeleteAgent() {
 
 // ===== MY AGENTS PAGE (full page with filters) =====
 let _agentsPageData = [];
+let _agentsCache = [];
 let _agentsPageFilter = 'all';
 
 async function loadAgentsPage() {
@@ -1248,7 +1303,6 @@ function renderAgentsPage() {
       '</div>' +
       '<div class="agent-card-actions">' +
       '<button class="btn btn-sm ' + (a.isActive ? 'btn-warning' : 'btn-success') + '" onclick="event.stopPropagation();toggleAgentFromPage(' + a.id + ',' + a.isActive + ')">' + (a.isActive ? IC.pause + ' ' + t('stop') : IC.rocket + ' ' + t('run')) + '</button>' +
-      '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openAgentDetail(' + a.id + ')">' + IC.wrench + ' ' + (currentLang === 'ru' ? 'Детали' : 'Details') + '</button>' +
       '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();loadAgentLogs(' + a.id + ')">' + IC.clipboard + ' ' + t('logs') + '</button>' +
       '<button class="btn btn-ghost btn-sm" title="' + (getPinnedAgents().indexOf(a.id) >= 0 ? (currentLang === 'ru' ? 'Открепить' : 'Unpin') : (currentLang === 'ru' ? 'Закрепить на обзор' : 'Pin to overview')) + '" onclick="togglePinAgent(' + a.id + ', event)" style="color:' + (getPinnedAgents().indexOf(a.id) >= 0 ? 'var(--primary)' : 'var(--text-muted)') + '">' +
       '<svg width="14" height="14" viewBox="0 0 24 24" ' + (getPinnedAgents().indexOf(a.id) >= 0 ? 'fill="currentColor"' : 'fill="none"') + ' stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg></button>' +
@@ -1401,49 +1455,42 @@ async function initAuth() {
   const expiredEl = document.getElementById('session-expired-hint');
   if (expiredEl) expiredEl.textContent = t('session_expired');
 
-  const isHTTPS = location.protocol === 'https:';
-  const botUsername = (window._appConfig && window._appConfig.botUsername) || 'TonAgentPlatformBot';
+  var botId = (window._appConfig && window._appConfig.tgClientId) || 8595707164;
 
-  if (isHTTPS) {
-    // Primary: Telegram Login Widget (classic, reliable on HTTPS)
-    showTelegramWidget(container, botUsername);
-  } else {
-    // Localhost/HTTP: only bot auth works
-    showBotAuthButton();
-  }
-}
+  // Load new Telegram Login SDK (core.telegram.org/bots/telegram-login)
+  container.innerHTML = '';
+  var holder = document.createElement('div');
+  holder.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:14px';
+  container.appendChild(holder);
 
-function showTelegramWidget(container, botUsername) {
-  // Render widget container + fallback bot auth link
-  container.innerHTML = '<div id="tg-widget-holder" style="display:flex;flex-direction:column;align-items:center;gap:14px"></div>';
-  const holder = document.getElementById('tg-widget-holder');
-
-  // Load Telegram Login Widget script
-  const script = document.createElement('script');
-  script.src = 'https://telegram.org/js/telegram-widget.js?22';
-  script.async = true;
-  script.setAttribute('data-telegram-login', botUsername);
-  script.setAttribute('data-size', 'large');
-  script.setAttribute('data-radius', '8');
-  script.setAttribute('data-onauth', 'onTelegramAuthLegacy(user)');
-  script.setAttribute('data-request-access', 'write');
-  holder.appendChild(script);
-
-  // Fallback: if widget doesn't load in 4s, show bot auth too
-  const fallbackTimer = setTimeout(() => {
-    if (!holder.querySelector('iframe')) {
-      // Widget didn't render — show bot auth as primary
-      showBotAuthButton();
+  // Create styled login button
+  var loginBtn = document.createElement('button');
+  loginBtn.className = 'telegram-login-placeholder';
+  loginBtn.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12s5.37 12 12 12 12-5.37 12-12S18.63 0 12 0zm5.94 8.13l-1.97 9.28c-.15.67-.54.83-1.09.52l-3.01-2.22-1.45 1.4c-.16.16-.3.3-.61.3l.22-3.05 5.55-5.02c.24-.22-.05-.34-.38-.13l-6.87 4.33-2.96-.92c-.64-.2-.66-.64.14-.95l11.58-4.47c.53-.2 1 .13.83.95z"/></svg>' +
+    (currentLang === 'ru' ? 'Войти через Telegram' : 'Sign in with Telegram');
+  loginBtn.onclick = function() {
+    if (window.Telegram && window.Telegram.Login) {
+      Telegram.Login.auth({ client_id: botId, request_access: ['write'] }, onTelegramAuth);
     } else {
-      // Widget loaded — add subtle bot auth alternative below
-      const alt = document.createElement('div');
-      alt.style.cssText = 'margin-top:8px;text-align:center';
-      alt.innerHTML = '<span style="color:var(--text-muted);font-size:.75rem;cursor:pointer;text-decoration:underline" onclick="showBotAuthButton()">' +
-        (currentLang === 'ru' ? 'Или войти через бота' : 'Or sign in via bot') + '</span>';
-      holder.appendChild(alt);
+      toast(currentLang === 'ru' ? 'SDK загружается, попробуйте ещё раз' : 'SDK loading, try again', 'warning');
     }
-  }, 4000);
-  container._fallbackTimer = fallbackTimer;
+  };
+  holder.appendChild(loginBtn);
+
+  // "or via bot" fallback link
+  var alt = document.createElement('div');
+  alt.style.cssText = 'margin-top:6px;text-align:center';
+  alt.innerHTML = '<span style="color:var(--text-muted);font-size:.72rem;cursor:pointer;opacity:.6" onclick="showBotAuthButton()">' +
+    (currentLang === 'ru' ? 'или через бота' : 'or via bot') + '</span>';
+  holder.appendChild(alt);
+
+  // Load Telegram Login SDK
+  if (!document.querySelector('script[src*="telegram-login.js"]')) {
+    var script = document.createElement('script');
+    script.async = true;
+    script.src = 'https://oauth.telegram.org/js/telegram-login.js?3';
+    document.head.appendChild(script);
+  }
 }
 
 // Handle OAuth redirect: ?code=XXX&state=YYY
@@ -2903,11 +2950,21 @@ function navigateTo(pageName) {
 
   document.querySelectorAll('.page').forEach(page => page.classList.remove('active'));
   const pageEl = document.getElementById(`${pageName}-page`);
-  if (pageEl) pageEl.classList.add('active');
+  if (pageEl) {
+    pageEl.style.animation = 'none';
+    pageEl.offsetHeight; // force reflow to retrigger animation
+    pageEl.style.animation = '';
+    pageEl.classList.add('active');
+  }
 
   if (authToken && pageLoadFns[pageName]) {
     var _result = pageLoadFns[pageName]();
     if (_result && typeof _result.catch === 'function') _result.catch(console.error);
+  }
+
+  // Refresh subscription data on profile/overview navigation
+  if (authToken && (pageName === 'profile' || pageName === 'overview')) {
+    loadSubscriptionGlobal();
   }
 
   // Track getting-started steps
@@ -3344,7 +3401,17 @@ function updateSubscriptionUI(sub) {
 
 function updateSidebarPlanBadge(sub) {
   var badge = document.getElementById('user-plan-badge');
-  if (!badge) return;
+  if (!badge) {
+    // Element may not be rendered yet — retry once after DOM settles
+    setTimeout(function() {
+      var b = document.getElementById('user-plan-badge');
+      if (b && sub) {
+        b.innerHTML = planIcon(sub.planIcon) + ' ' + (sub.planName || 'Free');
+        b.className = 'user-tier plan-badge-' + (sub.planId || 'free');
+      }
+    }, 1000);
+    return;
+  }
   badge.innerHTML = planIcon(sub.planIcon) + ' ' + (sub.planName || 'Free');
   badge.className = 'user-tier plan-badge-' + (sub.planId || 'free');
 }
@@ -4293,7 +4360,7 @@ function addFlowNodeAt(type, wx, wy) {
   const def = FLOW_NODE_DEFS[type];
   if (!def) return;
   const id = 'n' + (_flowNextId++);
-  const newNode = { id, type, x: wx, y: wy, config: {}, def };
+  const newNode = { id, type, x: wx, y: wy, config: {}, def, _dropTime: Date.now() };
   _flowNodes.push(newNode);
   _flowSelectedId = id;
   renderFlowConfig();
@@ -4344,6 +4411,19 @@ function addFlowNode(type) {
 }
 
 function deleteFlowNode(id) {
+  // Spawn particle dissolution at node's screen position
+  var node = _flowNodes.find(function(n) { return n.id === id; });
+  if (node) {
+    var canvas = document.getElementById('flow-canvas');
+    if (canvas) {
+      var cr = canvas.getBoundingClientRect();
+      var nw = 160, nh = 60; // approximate node size
+      var screenX = cr.left + node.x * _flowZoom + _flowPanX;
+      var screenY = cr.top + node.y * _flowZoom + _flowPanY;
+      var fakeEl = { getBoundingClientRect: function() { return { left: screenX - nw/2*_flowZoom, top: screenY - nh/2*_flowZoom, width: nw*_flowZoom, height: nh*_flowZoom }; } };
+      spawnParticleDissolution(fakeEl);
+    }
+  }
   _flowNodes = _flowNodes.filter(n => n.id !== id);
   _flowEdges = _flowEdges.filter(e => e.from !== id && e.to !== id);
   _flowParticles = _flowParticles.filter(p => p.from !== id && p.to !== id);
@@ -5334,11 +5414,35 @@ function initFlowBuilder() {
       const selected = n.id === _flowSelectedId;
       const def = n.def;
 
+      // Drop animation (spring scale + glow)
+      var dropScale = 1;
+      var dropGlow = 0;
+      if (n._dropTime) {
+        var elapsed = Date.now() - n._dropTime;
+        if (elapsed < 500) {
+          var t = elapsed / 500;
+          // Spring: overshoot to 1.15 then settle to 1.0
+          dropScale = 1 + 0.15 * Math.sin(t * Math.PI) * (1 - t);
+          dropGlow = (1 - t) * 25;
+        } else {
+          delete n._dropTime;
+        }
+      }
+
+      if (dropScale !== 1) {
+        ctx.save();
+        var cx = n.x + NODE_W / 2;
+        var cy = n.y + NODE_H / 2;
+        ctx.translate(cx, cy);
+        ctx.scale(dropScale, dropScale);
+        ctx.translate(-cx, -cy);
+      }
+
       // Node shadow & glow
-      if (selected) {
+      if (selected || dropGlow > 0) {
         ctx.save();
         ctx.shadowColor = def.color;
-        ctx.shadowBlur = 20;
+        ctx.shadowBlur = selected ? 20 : dropGlow;
       }
 
       // Node body
@@ -5372,7 +5476,7 @@ function initFlowBuilder() {
       ctx.stroke();
       ctx.setLineDash([]);
 
-      if (selected) ctx.restore();
+      if (selected || dropGlow > 0) ctx.restore();
 
       // Left color bar
       ctx.fillStyle = def.color;
@@ -5455,6 +5559,9 @@ function initFlowBuilder() {
           ctx.textAlign = 'left';
         }
       });
+
+      // Restore drop animation transform
+      if (dropScale !== 1) ctx.restore();
     });
 
     // End zoom/pan transform
@@ -5858,18 +5965,217 @@ function closeChatWidget() {
   if (w) w.style.display = 'none';
 }
 
+// ===== AGENT CREATION WIZARD =====
+var _wizardAgentId = null;
+var _wizardSteps = [];
+var _wizardCurrentStep = 0;
+
+function showWizard(agentId, agentName) {
+  _wizardAgentId = agentId;
+  _wizardCurrentStep = 0;
+  var isRu = currentLang === 'ru';
+
+  // Default wizard steps
+  _wizardSteps = [
+    { group: 'ai', title: isRu ? 'AI провайдер' : 'AI Provider', fields: [
+      { id: 'AI_PROVIDER', type: 'select', label: isRu ? 'Провайдер' : 'Provider', desc: isRu ? 'Выберите AI модель для агента' : 'Choose AI model for the agent',
+        options: [{v:'openai',l:'OpenAI'},{v:'anthropic',l:'Anthropic'},{v:'gemini',l:'Google Gemini'},{v:'groq',l:'Groq'},{v:'deepseek',l:'DeepSeek'},{v:'openrouter',l:'OpenRouter'},{v:'together',l:'Together AI'}] },
+      { id: 'AI_API_KEY', type: 'password', label: isRu ? 'API ключ' : 'API Key', desc: isRu ? 'Ваш ключ провайдера. Оставьте пустым для платформенного прокси.' : 'Your provider key. Leave empty for platform proxy.', required: false }
+    ]},
+    { group: 'capabilities', title: isRu ? 'Возможности' : 'Capabilities', fields: [
+      { id: 'caps', type: 'caps', label: isRu ? 'Выберите возможности' : 'Select capabilities', desc: isRu ? 'Какие инструменты нужны вашему агенту?' : 'What tools does your agent need?' }
+    ]},
+    { group: 'schedule', title: isRu ? 'Расписание' : 'Schedule', fields: [
+      { id: 'intervalMs', type: 'select', label: isRu ? 'Интервал запуска' : 'Run Interval', desc: isRu ? 'Как часто агент должен выполняться автоматически' : 'How often should the agent run automatically',
+        options: [{v:'0',l:isRu?'Только вручную':'Manual only'},{v:'60000',l:'1 min'},{v:'300000',l:'5 min'},{v:'900000',l:'15 min'},{v:'1800000',l:'30 min'},{v:'3600000',l:'1 hour'},{v:'21600000',l:'6 hours'},{v:'86400000',l:'24 hours'}] }
+    ]}
+  ];
+
+  var modal = document.getElementById('wizard-modal');
+  if (!modal) return;
+  modal.style.display = 'flex';
+  var title = document.getElementById('wizard-title');
+  if (title) title.textContent = (isRu ? 'Настройка: ' : 'Setup: ') + (agentName || 'Agent #' + agentId);
+  renderWizardStep(0);
+}
+
+function renderWizardStep(idx) {
+  _wizardCurrentStep = idx;
+  var step = _wizardSteps[idx];
+  if (!step) return;
+  var body = document.getElementById('wizard-body');
+  if (!body) return;
+  var isRu = currentLang === 'ru';
+
+  // Step indicators
+  var stepsEl = document.getElementById('wizard-steps');
+  if (stepsEl) {
+    stepsEl.innerHTML = _wizardSteps.map(function(s, i) {
+      return '<span style="width:8px;height:8px;border-radius:50%;background:' + (i === idx ? 'var(--primary)' : i < idx ? '#4ade80' : 'var(--border)') + ';transition:background 0.3s"></span>';
+    }).join('');
+  }
+
+  // Step label
+  var label = document.getElementById('wizard-step-label');
+  if (label) label.textContent = (idx + 1) + ' / ' + _wizardSteps.length;
+
+  // Back button
+  var backBtn = document.getElementById('wizard-back-btn');
+  if (backBtn) backBtn.style.display = idx > 0 ? '' : 'none';
+
+  // Next button text
+  var nextBtn = document.getElementById('wizard-next-btn');
+  if (nextBtn) nextBtn.textContent = idx === _wizardSteps.length - 1 ? (isRu ? 'Готово' : 'Done') : (isRu ? 'Далее' : 'Next');
+
+  // Render fields
+  var html = '<h3 style="margin:0 0 12px;font-size:.95rem">' + step.title + '</h3>';
+  step.fields.forEach(function(f) {
+    if (f.type === 'select') {
+      html += '<div class="settings-field"><label>' + f.label + '</label>' +
+        '<select id="wizard-' + f.id + '" style="width:100%;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text-primary);font-size:.85rem">' +
+        f.options.map(function(o) { return '<option value="' + o.v + '">' + o.l + '</option>'; }).join('') +
+        '</select>' +
+        (f.desc ? '<div class="settings-field-desc">' + f.desc + '</div>' : '') + '</div>';
+    } else if (f.type === 'password' || f.type === 'text') {
+      html += '<div class="settings-field"><label>' + f.label + '</label>' +
+        '<input type="' + f.type + '" id="wizard-' + f.id + '" placeholder="' + (f.placeholder || '') + '" style="width:100%;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text-primary);font-size:.85rem">' +
+        (f.desc ? '<div class="settings-field-desc">' + f.desc + '</div>' : '') + '</div>';
+    } else if (f.type === 'caps') {
+      var quickCaps = [
+        {id:'wallet',icon:'💰',name:'Wallet'}, {id:'nft',icon:'🖼',name:'NFT'}, {id:'gifts_market',icon:'📊',name:'Gifts Market'},
+        {id:'web',icon:'🌐',name:'Web'}, {id:'defi',icon:'💱',name:'DeFi'}, {id:'telegram',icon:'📱',name:'Telegram'},
+        {id:'notify',icon:'🔔',name:'Notify'}, {id:'state',icon:'💾',name:'State'}
+      ];
+      html += '<div class="settings-field"><label>' + f.label + '</label>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">' +
+        quickCaps.map(function(c) {
+          return '<label style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;background:var(--bg-secondary);cursor:pointer;font-size:.82rem;border:1px solid var(--border);transition:border-color 0.2s">' +
+            '<input type="checkbox" class="wizard-cap-check" value="' + c.id + '" style="accent-color:var(--primary)" onchange="this.closest(\'label\').style.borderColor=this.checked?\'var(--primary)\':\'var(--border)\'">' +
+            '<span>' + c.icon + ' ' + c.name + '</span></label>';
+        }).join('') +
+        '</div>' +
+        (f.desc ? '<div class="settings-field-desc">' + f.desc + '</div>' : '') + '</div>';
+    }
+  });
+
+  body.innerHTML = html;
+  // Animate
+  body.style.animation = 'none';
+  body.offsetHeight;
+  body.style.animation = 'tabContentFade 0.35s cubic-bezier(0.4,0,0.2,1)';
+}
+
+function wizardNext() {
+  if (_wizardCurrentStep < _wizardSteps.length - 1) {
+    renderWizardStep(_wizardCurrentStep + 1);
+  } else {
+    submitWizard();
+  }
+}
+
+function wizardBack() {
+  if (_wizardCurrentStep > 0) renderWizardStep(_wizardCurrentStep - 1);
+}
+
+async function submitWizard() {
+  // Collect all values
+  var config = {};
+  var providerEl = document.getElementById('wizard-AI_PROVIDER');
+  if (providerEl) config.AI_PROVIDER = providerEl.value;
+  var keyEl = document.getElementById('wizard-AI_API_KEY');
+  if (keyEl && keyEl.value.trim()) config.AI_API_KEY = keyEl.value.trim();
+  var intervalEl = document.getElementById('wizard-intervalMs');
+  if (intervalEl && intervalEl.value !== '0') config.intervalMs = parseInt(intervalEl.value);
+  // Capabilities
+  var caps = [];
+  document.querySelectorAll('.wizard-cap-check:checked').forEach(function(cb) { caps.push(cb.value); });
+  if (caps.length) config.enabledCapabilities = caps;
+
+  try {
+    if (Object.keys(config).length > 0) {
+      await apiRequest('PUT', '/api/agents/' + _wizardAgentId + '/wizard', { config: config });
+    }
+  } catch(e) { /* silent - best effort */ }
+
+  closeWizard();
+  navigateTo('agents');
+  loadAgentsPage();
+}
+
+function closeWizard() {
+  var modal = document.getElementById('wizard-modal');
+  if (modal) modal.style.display = 'none';
+  _wizardAgentId = null;
+}
+
 // ===== AI ASSISTANT PAGE =====
 let _assistantLoaded = false;
+let _assistantTarget = 'atlas';
+let _agentChatHistories = {}; // agentId → [{role, content}]
+let _atlasChatEl = null; // stores Atlas chat DOM when switching
 
 async function loadAssistantPage() {
   if (!_assistantLoaded) {
     _assistantLoaded = true;
     await loadAssistantHistory();
   }
+  populateAssistantTargets();
   setTimeout(function() {
     var input = document.getElementById('assistant-input');
     if (input) input.focus();
   }, 100);
+}
+
+function populateAssistantTargets() {
+  var select = document.getElementById('assistant-target-select');
+  if (!select) return;
+  // Keep atlas, remove old agent options
+  var currentVal = select.value;
+  while (select.options.length > 1) select.remove(1);
+  // Add agents from cache
+  try {
+    var agents = _agentsPageData && _agentsPageData.length ? _agentsPageData : (_agentsCache || []);
+    agents.forEach(function(a) {
+      var opt = document.createElement('option');
+      opt.value = 'agent_' + a.id;
+      opt.textContent = '#' + a.id + ' ' + (a.name || 'Unnamed');
+      select.appendChild(opt);
+    });
+  } catch(e) {}
+  select.value = currentVal || 'atlas';
+}
+
+function switchAssistantTarget(value) {
+  var container = document.getElementById('assistant-messages');
+  var sugg = document.getElementById('assistant-suggestions');
+  if (!container) return;
+
+  // Save current chat state
+  if (_assistantTarget === 'atlas') {
+    _atlasChatEl = container.innerHTML;
+  } else {
+    _agentChatHistories[_assistantTarget] = container.innerHTML;
+  }
+
+  _assistantTarget = value;
+
+  // Restore target's chat
+  if (value === 'atlas') {
+    container.innerHTML = _atlasChatEl || '';
+    if (sugg) sugg.style.display = container.children.length <= 1 ? '' : 'none';
+  } else {
+    var saved = _agentChatHistories[value];
+    if (saved) {
+      container.innerHTML = saved;
+    } else {
+      var agentName = value.replace('agent_', '#');
+      container.innerHTML = '<div class="assistant-welcome"><div class="assistant-welcome-icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>' +
+        '<h3>' + (currentLang === 'ru' ? 'Чат с агентом ' : 'Chat with Agent ') + agentName + '</h3>' +
+        '<p>' + (currentLang === 'ru' ? 'Отправьте сообщение агенту напрямую' : 'Send a message directly to the agent') + '</p></div>';
+    }
+    if (sugg) sugg.style.display = 'none';
+  }
+  container.scrollTop = container.scrollHeight;
 }
 
 async function loadAssistantHistory() {
@@ -5986,17 +6292,30 @@ async function sendAssistantMessage() {
   if (sendBtn) sendBtn.disabled = true;
 
   try {
-    var data = await apiRequest('POST', '/api/chat', { message: text, context: getStudioContext() });
+    var data;
+    if (_assistantTarget !== 'atlas' && _assistantTarget.startsWith('agent_')) {
+      var agentId = _assistantTarget.replace('agent_', '');
+      data = await apiRequest('POST', '/api/agents/' + agentId + '/chat', { message: text });
+    } else {
+      data = await apiRequest('POST', '/api/chat', { message: text, context: getStudioContext() });
+    }
     var typingEl = document.getElementById('assistant-typing');
     if (typingEl) typingEl.remove();
 
     if (data.ok && data.result) {
       var r = data.result;
-      appendAssistantMsg('assistant', r.content, r.buttons);
+      appendAssistantMsg('assistant', r.content || r.response || r, r.buttons);
       if (r.type === 'agent_created') {
         loadAgents();
         toast(currentLang === 'ru' ? 'Агент создан!' : 'Agent created!', 'success');
+        if (r.agentId) {
+          showWizard(r.agentId, r.agentName || '');
+        } else {
+          navigateTo('agents');
+        }
       }
+    } else if (data.ok && data.response) {
+      appendAssistantMsg('assistant', data.response);
     } else {
       appendAssistantMsg('assistant', data.error || 'Error');
     }
@@ -6038,6 +6357,11 @@ async function sendAssistantCallback(callbackData, label) {
       if (data.result.type === 'agent_created') {
         loadAgents();
         toast(currentLang === 'ru' ? 'Агент создан!' : 'Agent created!', 'success');
+        if (data.result.agentId) {
+          showWizard(data.result.agentId, data.result.agentName || '');
+        } else {
+          navigateTo('agents');
+        }
       }
     } else {
       appendAssistantMsg('assistant', data.error || 'Error');
