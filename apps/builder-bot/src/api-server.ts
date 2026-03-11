@@ -18,7 +18,7 @@ import {
   getAIProposalsRepository,
   getBalanceTxRepository,
 } from './db/schema-extensions';
-import { verifyTopupTransaction, PLATFORM_WALLET } from './payments';
+import { verifyTopupTransaction, PLATFORM_WALLET, getUserSubscription, getUserPlan, PLANS, canCreateAgent, canGenerateForFree, getGenerationsUsed, confirmPayment, createPayment, getPendingPayment, verifyTonTransaction, updateSubscriptionCache } from './payments';
 import { sendPlatformTransaction } from './services/TonConnect';
 import { config as platformConfig } from './config';
 
@@ -30,7 +30,7 @@ const TG_CLIENT_ID = process.env.TG_CLIENT_ID || '';
 const TG_CLIENT_SECRET = process.env.TG_CLIENT_SECRET || '';
 
 // ── In-memory session store: token → userId ──────────────────
-const sessions = new Map<string, { userId: number; username: string; firstName: string; expiresAt: number }>();
+const sessions = new Map<string, { userId: number; username: string; firstName: string; photoUrl?: string; expiresAt: number }>();
 
 // ── Pending bot-auth tokens (polling auth без Telegram Widget) ──
 // token → { pending: true } или { userId, username, firstName }
@@ -54,12 +54,13 @@ function getSession(token: string) {
 }
 
 // Создать сессию из bot-auth (вызывается из bot.ts)
-export function createSessionFromBot(userId: number, username: string, firstName: string): string {
+export function createSessionFromBot(userId: number, username: string, firstName: string, photoUrl?: string): string {
   const token = generateToken();
   sessions.set(token, {
     userId,
     username,
     firstName,
+    photoUrl,
     expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
   });
   return token;
@@ -107,7 +108,7 @@ function base64urlDecode(str: string): Buffer {
   return Buffer.from(str, 'base64');
 }
 
-async function verifyTelegramOIDC(idToken: string): Promise<{ userId: number; username: string; firstName: string } | null> {
+async function verifyTelegramOIDC(idToken: string): Promise<{ userId: number; username: string; firstName: string; photoUrl?: string } | null> {
   try {
     const parts = idToken.split('.');
     if (parts.length !== 3) return null;
@@ -135,6 +136,7 @@ async function verifyTelegramOIDC(idToken: string): Promise<{ userId: number; us
       userId: parseInt(payload.sub, 10),
       username: payload.preferred_username || '',
       firstName: payload.name || '',
+      photoUrl: payload.picture || undefined,
     };
   } catch (e) {
     console.error('OIDC verify error:', e);
@@ -540,7 +542,7 @@ export function startApiServer() {
       firstName: user.firstName,
       expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
     });
-    res.json({ ok: true, token, userId: user.userId, username: user.username, firstName: user.firstName });
+    res.json({ ok: true, token, userId: user.userId, username: user.username, firstName: user.firstName, photoUrl: null });
   });
 
   // ── POST /api/auth/telegram-code — OIDC code exchange flow ──
@@ -579,9 +581,10 @@ export function startApiServer() {
         userId: user.userId,
         username: user.username,
         firstName: user.firstName,
+        photoUrl: user.photoUrl,
         expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
       });
-      res.json({ ok: true, token, userId: user.userId, username: user.username, firstName: user.firstName });
+      res.json({ ok: true, token, userId: user.userId, username: user.username, firstName: user.firstName, photoUrl: user.photoUrl });
     } catch (e: any) {
       console.error('Code exchange error:', e);
       res.status(500).json({ ok: false, error: e.message });
@@ -589,9 +592,23 @@ export function startApiServer() {
   });
 
   // ── GET /api/me ───────────────────────────────────────────
-  app.get('/api/me', requireAuth, (req: Request, res: Response) => {
+  app.get('/api/me', requireAuth, async (req: Request, res: Response) => {
     const session = (req as any).session;
-    res.json({ ok: true, userId: session.userId, username: session.username, firstName: session.firstName });
+    // Also fetch subscription for sidebar badge
+    let planId = 'free', planName = 'Free', planIcon = '🆓';
+    try {
+      const sub = await getUserSubscription(session.userId);
+      const plan = PLANS[sub.planId] || PLANS.free;
+      planId = plan.id; planName = plan.name; planIcon = plan.icon;
+    } catch {}
+    res.json({
+      ok: true,
+      userId: session.userId,
+      username: session.username,
+      firstName: session.firstName,
+      photoUrl: session.photoUrl || null,
+      planId, planName, planIcon,
+    });
   });
 
   // ── GET /api/agents ───────────────────────────────────────
@@ -798,7 +815,7 @@ export function startApiServer() {
       const { capabilities } = req.body || {};
       if (!Array.isArray(capabilities)) { res.status(400).json({ error: 'capabilities must be array' }); return; }
 
-      const validCaps = ['wallet', 'nft', 'gifts', 'gifts_market', 'telegram', 'web', 'state', 'notify', 'plugins', 'inter_agent'];
+      const validCaps = ['wallet', 'nft', 'gifts', 'gifts_market', 'telegram', 'web', 'state', 'notify', 'plugins', 'inter_agent', 'blockchain', 'ton_mcp'];
       const filtered = capabilities.filter((c: string) => validCaps.includes(c));
 
       const tc = typeof agent.triggerConfig === 'string' ? JSON.parse(agent.triggerConfig) : (agent.triggerConfig || {});
@@ -1642,7 +1659,7 @@ export function startApiServer() {
     }
   });
 
-  // ── GET /api/chat/history — Get chat history for dashboard ──
+  // ── GET /api/chat/history — Get chat history for studio ──
   app.get('/api/chat/history', requireAuth, async (req: Request, res: Response) => {
     const userId = (req as any).userId;
     try {
@@ -1750,6 +1767,161 @@ export function startApiServer() {
       res.json({ ok: true, agentId: newAgentId, message: listing.isFree ? 'Installed successfully' : 'Purchased successfully' });
     } catch (e: any) {
       console.error('[API] Buy error:', e?.message);
+      res.status(500).json({ ok: false, error: e?.message || 'Internal error' });
+    }
+  });
+
+  // ── GET /api/subscription — текущая подписка пользователя ────
+  app.get('/api/subscription', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const sub = await getUserSubscription(userId);
+      const plan = PLANS[sub.planId] || PLANS.free;
+
+      // Agent counts
+      const agentCountRes = await pool.query(
+        'SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE status = \'active\') as active FROM builder_bot.agents WHERE user_id = $1',
+        [userId]
+      );
+      const agentCount = parseInt(agentCountRes.rows[0]?.total || '0');
+      const activeCount = parseInt(agentCountRes.rows[0]?.active || '0');
+
+      // Generation usage this month
+      const generationsUsed = getGenerationsUsed(userId);
+
+      // Days remaining
+      let daysRemaining: number | null = null;
+      if (sub.expiresAt) {
+        daysRemaining = Math.max(0, Math.ceil((sub.expiresAt.getTime() - Date.now()) / 86400000));
+      }
+
+      res.json({
+        ok: true,
+        planId: sub.planId,
+        planName: plan.name,
+        planIcon: plan.icon,
+        isActive: sub.isActive,
+        expiresAt: sub.expiresAt ? sub.expiresAt.toISOString() : null,
+        daysRemaining,
+        // Limits
+        maxAgents: plan.maxAgents,
+        maxActiveAgents: plan.maxActiveAgents,
+        generationsPerMonth: plan.generationsPerMonth,
+        pricePerGeneration: plan.pricePerGeneration,
+        // Usage
+        agentsUsed: agentCount,
+        activeAgentsUsed: activeCount,
+        generationsUsed,
+        // Features
+        features: plan.features,
+        // Pricing (for upgrade prompt)
+        priceMonthTon: plan.priceMonthTon,
+        priceYearTon: plan.priceYearTon,
+      });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Internal error' });
+    }
+  });
+
+  // ── GET /api/plans — все доступные планы ─────────────────────
+  app.get('/api/plans', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const sub = await getUserSubscription(userId);
+
+      const plans = Object.values(PLANS).map(p => ({
+        id: p.id,
+        name: p.name,
+        icon: p.icon,
+        priceMonthTon: p.priceMonthTon,
+        priceYearTon: p.priceYearTon,
+        maxAgents: p.maxAgents,
+        maxActiveAgents: p.maxActiveAgents,
+        generationsPerMonth: p.generationsPerMonth,
+        pricePerGeneration: p.pricePerGeneration,
+        features: p.features,
+        isCurrent: p.id === sub.planId,
+      }));
+
+      res.json({ ok: true, plans, currentPlanId: sub.planId });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Internal error' });
+    }
+  });
+
+  // ── POST /api/subscription/buy — купить подписку с баланса ───
+  app.post('/api/subscription/buy', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { planId, period } = req.body;
+
+      if (!planId || !period || !['month', 'year'].includes(period)) {
+        return res.status(400).json({ ok: false, error: 'planId and period (month|year) required' });
+      }
+
+      const plan = PLANS[planId];
+      if (!plan) return res.status(400).json({ ok: false, error: 'Unknown plan' });
+      if (plan.id === 'free') return res.status(400).json({ ok: false, error: 'Free plan does not need purchase' });
+
+      // Check if already on this plan
+      const currentSub = await getUserSubscription(userId);
+      if (currentSub.planId === planId && currentSub.expiresAt && currentSub.expiresAt > new Date()) {
+        return res.status(400).json({ ok: false, error: 'Already subscribed to this plan' });
+      }
+
+      const amount = period === 'year' ? plan.priceYearTon : plan.priceMonthTon;
+
+      // Check balance
+      const settingsRepo = getUserSettingsRepository();
+      const profile = (await settingsRepo.get(userId, 'profile')) || { balance_ton: 0, total_earned: 0 };
+      const balance = profile.balance_ton || 0;
+
+      if (balance < amount) {
+        return res.status(400).json({ ok: false, error: `Insufficient balance. Need ${amount} TON, have ${balance.toFixed(2)} TON`, needTopup: amount - balance });
+      }
+
+      // Deduct balance
+      profile.balance_ton = balance - amount;
+      await settingsRepo.set(userId, 'profile', profile);
+
+      // Record transaction
+      await getBalanceTxRepository().record(userId, 'spend', -amount, profile.balance_ton, `Subscription: ${plan.name} (${period})`, `sub:${planId}:${period}:${Date.now()}`);
+
+      // Set subscription
+      const expiresAt = new Date();
+      if (period === 'year') {
+        expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+      } else {
+        expiresAt.setMonth(expiresAt.getMonth() + 1);
+      }
+
+      // Update DB
+      await pool.query(`
+        INSERT INTO builder_bot.subscriptions (user_id, plan_id, expires_at, is_active, created_at, updated_at)
+        VALUES ($1, $2, $3, true, NOW(), NOW())
+        ON CONFLICT (user_id) DO UPDATE SET plan_id = $2, expires_at = $3, is_active = true, updated_at = NOW()
+      `, [userId, planId, expiresAt]);
+
+      // Update in-memory cache so getUserSubscription returns new plan immediately
+      updateSubscriptionCache(userId, planId, expiresAt);
+
+      // Record payment
+      await pool.query(`
+        INSERT INTO builder_bot.payments (user_id, plan_id, period, amount_ton, tx_hash, status, created_at, confirmed_at)
+        VALUES ($1, $2, $3, $4, $5, 'confirmed', NOW(), NOW())
+      `, [userId, planId, period, amount, `web:balance:${Date.now()}`]);
+
+      res.json({
+        ok: true,
+        planId,
+        planName: plan.name,
+        planIcon: plan.icon,
+        expiresAt: expiresAt.toISOString(),
+        charged: amount,
+        newBalance: profile.balance_ton,
+      });
+    } catch (e: any) {
+      console.error('[API] Subscription buy error:', e?.message);
       res.status(500).json({ ok: false, error: e?.message || 'Internal error' });
     }
   });
