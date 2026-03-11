@@ -3585,11 +3585,50 @@ bot.on('callback_query', async (ctx) => {
       if (nestedCfg.AI_API_KEY) {
         kb.push([{ text: `🗑 ${lang === 'ru' ? 'Убрать ключ агента (использовать глобальный)' : 'Remove agent key (use global)'}`, callback_data: `clear_agent_key:${agentId}` }]);
       }
+      // Self-improvement toggle
+      const selfImproveOn = nestedCfg.self_improvement_enabled !== false;
+      const siLabel = selfImproveOn
+        ? (lang === 'ru' ? '🧠 Самоулучшение: ВКЛ' : '🧠 Self-improve: ON')
+        : (lang === 'ru' ? '🧠 Самоулучшение: ВЫКЛ' : '🧠 Self-improve: OFF');
+      kb.push([{ text: siLabel, callback_data: `toggle_self_improve:${agentId}` }]);
+      text += `\n🧠 <b>${lang === 'ru' ? 'Самоулучшение:' : 'Self-improvement:'}</b> ${selfImproveOn ? '✅' : '❌'}\n`;
+      text += `<i>${lang === 'ru' ? 'AI анализирует ошибки и автоматически исправляет агента' : 'AI analyzes errors and auto-fixes agent'}</i>\n`;
+      if (selfImproveOn && !apiKey) {
+        text += `⚠️ <i>${lang === 'ru' ? 'Используется прокси платформы. Подключите свой API ключ!' : 'Using platform proxy. Add your API key!'}</i>\n`;
+      }
       kb.push([{ text: `${peb('back')} ${lang === 'ru' ? 'Назад' : 'Back'}`, callback_data: `agent_menu:${agentId}` }]);
 
       await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } });
     } catch (e: any) {
       await ctx.reply('❌ ' + (e.message || String(e)));
+    }
+    return;
+  }
+
+  // ── Toggle self-improvement for agent ──
+  if (data.startsWith('toggle_self_improve:')) {
+    const agentId = parseInt(data.split(':')[1], 10);
+    await ctx.answerCbQuery();
+    try {
+      const agentData = await getDBTools().getAgent(agentId, userId);
+      if (!agentData.success || !agentData.data) { await ctx.reply('❌'); return; }
+      const tc = (typeof agentData.data.triggerConfig === 'object' ? agentData.data.triggerConfig : {}) as Record<string, any>;
+      if (!tc.config) tc.config = {};
+      const current = tc.config.self_improvement_enabled !== false;
+      tc.config.self_improvement_enabled = !current;
+      await pool.query(
+        'UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3',
+        [JSON.stringify(tc), agentId, userId]
+      );
+      const lang = getUserLang(userId);
+      const newState = !current;
+      await ctx.reply(
+        newState
+          ? (lang === 'ru' ? '🧠 Самоулучшение включено. AI будет автоматически исправлять ошибки агента.' : '🧠 Self-improvement enabled. AI will auto-fix agent errors.')
+          : (lang === 'ru' ? '🧠 Самоулучшение выключено.' : '🧠 Self-improvement disabled.')
+      );
+    } catch (e: any) {
+      await ctx.reply('❌ ' + (e.message || ''));
     }
     return;
   }
