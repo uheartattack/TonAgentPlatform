@@ -108,20 +108,43 @@ process.on('uncaughtException', (error) => {
   process.exit(1);
 });
 
-// Graceful shutdown
-process.on('SIGINT', async () => {
-  console.log('\n👋 Shutting down gracefully...');
-  const { closeDatabase } = await import('./db');
-  await closeDatabase();
-  process.exit(0);
-});
+// Graceful shutdown with full cleanup
+let _shuttingDown = false;
+async function gracefulShutdown(signal: string) {
+  if (_shuttingDown) return;
+  _shuttingDown = true;
+  console.log(`\n👋 ${signal} — shutting down gracefully...`);
 
-process.on('SIGTERM', async () => {
-  console.log('\n👋 Shutting down gracefully...');
-  const { closeDatabase } = await import('./db');
-  await closeDatabase();
+  // Force exit after 10s
+  const forceTimer = setTimeout(() => { console.error('⚠️ Forced exit'); process.exit(1); }, 10000);
+  (forceTimer as any).unref?.();
+
+  // 1. Stop all AI agents (kills MCP subprocesses, clears intervals)
+  try {
+    const { getAIAgentRuntime } = await import('./agents/ai-agent-runtime');
+    getAIAgentRuntime().deactivateAll();
+    console.log('   ✅ AI agents deactivated');
+  } catch (e: any) { console.error('   ⚠️ AI agents:', e?.message); }
+
+  // 2. Stop Telegram bot
+  try {
+    const bot = getBotInstance();
+    if (bot) bot.stop(signal);
+    console.log('   ✅ Bot stopped');
+  } catch {}
+
+  // 3. Close database pool
+  try {
+    const { closeDatabase } = await import('./db');
+    await closeDatabase();
+    console.log('   ✅ Database closed');
+  } catch {}
+
   process.exit(0);
-});
+}
+
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
 // Запуск
 main().catch((error) => {

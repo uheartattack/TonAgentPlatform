@@ -30,7 +30,7 @@ function loadSession(): string {
 
 function saveSession(session: string) {
   try {
-    fs.writeFileSync(SESSION_FILE, session, 'utf-8');
+    fs.writeFileSync(SESSION_FILE, session, { encoding: 'utf-8', mode: 0o600 });
   } catch (e: any) {
     console.error('[Fragment] Failed to save session:', e.message);
   }

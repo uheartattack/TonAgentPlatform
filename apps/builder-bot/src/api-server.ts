@@ -290,6 +290,33 @@ function flowToExecutableCode(flow: { nodes: any[]; edges: any[]; groups?: any[]
   L.push('async function runFlow() {');
   L.push('  const state = { _last: null, _results: {} };');
   L.push('');
+  // Safe expression evaluator — no eval(), only basic comparisons and math
+  L.push('  function _safeEval(expr) {');
+  L.push('    if (typeof expr !== "string") return !!expr;');
+  L.push('    expr = expr.trim();');
+  L.push('    if (expr === "true") return true;');
+  L.push('    if (expr === "false") return false;');
+  L.push('    if (/^[\\d.]+$/.test(expr)) return parseFloat(expr);');
+  L.push('    // && / || chains first (before comparison regex)');
+  L.push('    if (expr.includes("&&")) return expr.split("&&").every(function(p) { return _safeEval(p); });');
+  L.push('    if (expr.includes("||")) return expr.split("||").some(function(p) { return _safeEval(p); });');
+  L.push('    // a op b');
+  L.push('    var m = expr.match(/^(.+?)\\s*(>=|<=|===|!==|==|!=|>|<)\\s*(.+)$/);');
+  L.push('    if (m) {');
+  L.push('      var l = isNaN(Number(m[1])) ? String(m[1]).trim() : Number(m[1]);');
+  L.push('      var r = isNaN(Number(m[3])) ? String(m[3]).trim() : Number(m[3]);');
+  L.push('      var op = m[2];');
+  L.push('      if (op === ">" ) return l > r;');
+  L.push('      if (op === "<" ) return l < r;');
+  L.push('      if (op === ">=") return l >= r;');
+  L.push('      if (op === "<=") return l <= r;');
+  L.push('      if (op === "==" || op === "===") return l == r;');
+  L.push('      if (op === "!=" || op === "!==") return l != r;');
+  L.push('    }');
+  L.push('    // Fallback: truthy check');
+  L.push('    return !!expr && expr !== "0" && expr !== "null" && expr !== "undefined";');
+  L.push('  }');
+  L.push('');
   L.push('  // Interpolate {{result}}, {{json}}, {{field.X}} in strings');
   L.push('  function tpl(s) {');
   L.push('    if (typeof s !== "string") return s;');
@@ -313,7 +340,7 @@ function flowToExecutableCode(flow: { nodes: any[]; edges: any[]; groups?: any[]
   function getCondCode(cfg: any): string {
     if (cfg.expression) {
       // Free expression with tpl interpolation
-      return `(function(){ var expr = tpl(${JSON.stringify(cfg.expression)}); try { return eval(expr); } catch(e) { return false; } })()`;
+      return `(function(){ var expr = tpl(${JSON.stringify(cfg.expression)}); try { return _safeEval(expr); } catch(e) { return false; } })()`;
     }
     if (cfg.left && cfg.operator) {
       const op = cfg.operator;
@@ -364,7 +391,7 @@ function flowToExecutableCode(flow: { nodes: any[]; edges: any[]; groups?: any[]
         L.push(`${indent}for (let _i = 0; _i < ${count} && _i < ${maxIter}; _i++) {`);
       } else if (mode === 'while') {
         L.push(`${indent}for (let _i = 0; _i < ${maxIter}; _i++) {`);
-        L.push(`${indent}  var _wc = tpl(${JSON.stringify(cfg.while_cond || 'false')}); try { if (!eval(_wc)) break; } catch(e) { break; }`);
+        L.push(`${indent}  var _wc = tpl(${JSON.stringify(cfg.while_cond || 'false')}); try { if (!_safeEval(_wc)) break; } catch(e) { break; }`);
       } else if (mode === 'for_each') {
         const listVar = cfg.list_var || 'items';
         const itemVar = cfg.item_var || 'item';
@@ -435,7 +462,7 @@ export function startApiServer() {
   app.use(express.json());
 
   // CORS — allow platform domain + localhost for dev
-  const ALLOWED_ORIGINS = ['https://tonagentplatform.ru', 'http://tonagentplatform.ru', 'http://localhost:3001', 'http://localhost:3000'];
+  const ALLOWED_ORIGINS = ['https://tonagentplatform.ru', 'http://localhost:3001', 'http://localhost:3000'];
   app.use((req: Request, res: Response, next: NextFunction) => {
     const origin = req.headers.origin || '';
     if (origin && ALLOWED_ORIGINS.includes(origin)) {
@@ -506,7 +533,7 @@ export function startApiServer() {
   });
 
   // ── POST /api/auth/telegram ───────────────────────────────
-  app.post('/api/auth/telegram', (req: Request, res: Response) => {
+  app.post('/api/auth/telegram', rateLimit(10, 60000, 'auth'), (req: Request, res: Response) => {
     const data = req.body as Record<string, string>;
     if (!verifyTelegramAuth(data)) {
       res.status(401).json({ error: 'Invalid Telegram auth data' });
@@ -639,7 +666,7 @@ export function startApiServer() {
   });
 
   // ── POST /api/agents — создать агента через описание ──────
-  app.post('/api/agents', requireAuth, async (req: Request, res: Response) => {
+  app.post('/api/agents', requireAuth, rateLimit(5, 60000, 'create'), async (req: Request, res: Response) => {
     try {
       const userId = (req as any).userId as number;
       const { description } = req.body || {};
@@ -1637,11 +1664,11 @@ export function startApiServer() {
   });
 
   // ── POST /api/chat — Dashboard AI chat (same orchestrator as TG bot) ──
-  app.post('/api/chat', requireAuth, async (req: Request, res: Response) => {
+  app.post('/api/chat', requireAuth, rateLimit(20, 60000, 'chat'), async (req: Request, res: Response) => {
     const userId = (req as any).userId;
     const { message, context } = req.body;
-    if (!message || typeof message !== 'string') {
-      return res.status(400).json({ ok: false, error: 'message required' });
+    if (!message || typeof message !== 'string' || message.length > 4000) {
+      return res.status(400).json({ ok: false, error: 'message required (max 4000 chars)' });
     }
     try {
       const { getOrchestrator } = await import('./agents/orchestrator');
@@ -1937,9 +1964,22 @@ export function startApiServer() {
     apiRateLimits.set(key, timestamps);
     return true;
   }
-  // Clean up every 10 minutes
+  /** Express middleware: rate limit by user or IP */
+  function rateLimit(maxReq: number, windowMs: number, keyPrefix: string) {
+    return (req: Request, res: Response, next: Function) => {
+      const userId = (req as any).userId;
+      const ip = req.ip || req.socket.remoteAddress || 'unknown';
+      const key = `${keyPrefix}:${userId || ip}`;
+      if (!checkApiRateLimit(key, maxReq, windowMs)) {
+        return res.status(429).json({ ok: false, error: 'Too many requests. Please slow down.' });
+      }
+      next();
+    };
+  }
+  // Clean up every 10 minutes + cap Map size
   setInterval(() => {
     const now = Date.now();
+    if (apiRateLimits.size > 10000) apiRateLimits.clear(); // Prevent unbounded growth
     for (const [k, v] of apiRateLimits) {
       const fresh = v.filter(t => now - t < 600_000);
       if (fresh.length === 0) apiRateLimits.delete(k);

@@ -3,14 +3,19 @@ services:
     image: postgres:15-alpine
     container_name: ton-agent-postgres
     environment:
-      POSTGRES_USER: ton_agent
-      POSTGRES_PASSWORD: changeme
-      POSTGRES_DB: ton_agent_platform
+      POSTGRES_USER: ${POSTGRES_USER:-ton_agent}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-ton_agent_platform}
     ports:
       - '127.0.0.1:5432:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ton_agent}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine
@@ -20,6 +25,11 @@ services:
     volumes:
       - redis_data:/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   cli-proxy:
     image: eceasy/cli-proxy-api-plus:latest
