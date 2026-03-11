@@ -6,6 +6,7 @@
 
 **Autonomous AI agents for the TON blockchain — built in Telegram, no code required**
 
+![TON AI Agent Hackathon](https://img.shields.io/badge/TON_Hackathon-Track_1_Agent_Infrastructure-blue)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js](https://img.shields.io/badge/Node.js-20+-green.svg)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)](https://www.typescriptlang.org)
@@ -72,7 +73,18 @@ Open Telegram -> [@TonAgentPlatformBot](https://t.me/TonAgentPlatformBot) -> `/s
 
 ---
 
+## Screenshots
+
+<!-- Add screenshots here -->
+| Agent Creation | Dashboard | Marketplace |
+|:-:|:-:|:-:|
+| *Coming soon* | *Coming soon* | *Coming soon* |
+
+---
+
 ## Architecture
+
+> Full details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | API reference: [docs/API.md](docs/API.md)
 
 ```mermaid
 graph TB
@@ -248,6 +260,8 @@ POST   /api/emergency-stop              Emergency stop all agents
 ---
 
 ## Contributing
+
+> Full guide: [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ### Adding a Plugin
 

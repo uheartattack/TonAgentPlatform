@@ -469,9 +469,9 @@ export class WorkflowEngine {
     error?: string;
   }> {
     try {
-      const PROXY_BASE = process.env.OPENAI_BASE_URL || `${process.env.CLAUDE_BASE_URL || 'http://127.0.0.1:8317'}/v1`;
-      const PROXY_KEY = process.env.OPENAI_API_KEY || 'ton-agent-key-123';
-      const MODEL = process.env.CLAUDE_MODEL || 'claude-opus-4-6';
+      const PROXY_BASE = process.env.OPENAI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai/';
+      const PROXY_KEY = process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY || '';
+      const MODEL = process.env.CLAUDE_MODEL || 'gemini-2.5-flash';
 
       const agentList = existingAgents.length > 0
         ? existingAgents.map(a => `• Agent #${a.id}: "${a.name}" — ${a.description}`).join('\n')

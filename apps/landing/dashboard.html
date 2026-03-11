@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="studio.css?v=46">
+  <link rel="stylesheet" href="studio.css?v=48">
   <!-- Telegram widget loaded in body where button should appear -->
 </head>
 <body>
@@ -1664,7 +1664,8 @@
             <div class="flow-topbar-right">
               <button class="btn btn-ghost btn-sm flow-undo-btn" id="flow-undo-btn" onclick="flowUndo()" disabled title="Undo (Ctrl+Z)">↩</button>
               <button class="btn btn-ghost btn-sm flow-redo-btn" id="flow-redo-btn" onclick="flowRedo()" disabled title="Redo (Ctrl+Shift+Z)">↪</button>
-              <input type="text" id="flow-agent-name" class="flow-name-input" placeholder="Agent name..." data-placeholder-en="Agent name..." data-placeholder-ru="Имя агента...">
+              <input type="text" id="flow-agent-name" class="flow-name-input" placeholder="Agent name..." data-placeholder-en="Agent name..." data-placeholder-ru="Имя агента..." style="max-width:140px">
+              <input type="text" id="flow-agent-desc" class="flow-name-input" placeholder="What should it do?" data-placeholder-en="What should it do?" data-placeholder-ru="Что должен делать?" style="flex:1;min-width:120px">
               <button class="btn btn-primary btn-sm" id="flow-deploy-btn" onclick="deployFlow()">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10"/></svg>
                 <span data-en="Deploy" data-ru="Запуск">Deploy</span>
@@ -2040,9 +2041,18 @@
       <div class="agent-detail-body" id="agent-detail-body">
         <!-- Filled by JS -->
       </div>
-      <div class="agent-detail-footer">
+      <div class="agent-detail-footer" style="flex-wrap:wrap;gap:6px">
         <button class="btn btn-success btn-sm" id="agent-detail-toggle-btn" onclick="toggleAgentFromDetail()">Run</button>
+        <button class="btn btn-primary btn-sm" onclick="openAgentChat(_detailAgentId)">Chat</button>
         <button class="btn btn-ghost btn-sm" onclick="loadAgentLogs(_detailAgentId)">Logs</button>
+        <button class="btn btn-ghost btn-sm" onclick="showEditPrompt()">Code/Prompt</button>
+        <button class="btn btn-ghost btn-sm" onclick="showEditDescription()">Edit</button>
+        <button class="btn btn-ghost btn-sm" onclick="toggleAgentRename()">Rename</button>
+        <button class="btn btn-ghost btn-sm" onclick="showAISettings()">AI Settings</button>
+        <button class="btn btn-ghost btn-sm" onclick="showCapabilitiesEditor()">Capabilities</button>
+        <button class="btn btn-ghost btn-sm" onclick="runAgentAudit()">Audit</button>
+        <button class="btn btn-ghost btn-sm" onclick="createAgentWallet()">Wallet</button>
+        <button class="btn btn-ghost btn-sm" onclick="showRoleSelector()">Role</button>
         <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="deleteAgentFromDetail()">Delete</button>
       </div>
     </div>
@@ -2089,6 +2099,6 @@
   </div>
 
   <script src="https://unpkg.com/@tonconnect/ui@2/dist/tonconnect-ui.min.js"></script>
-  <script src="studio.js?v=46"></script>
+  <script src="studio.js?v=48"></script>
 </body>
 </html>

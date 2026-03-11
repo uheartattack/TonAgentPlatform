@@ -1,7 +1,7 @@
 import { Telegraf, Context, Markup } from 'telegraf';
 import { message } from 'telegraf/filters';
 import { pe, peb, escHtml, div } from './premium-emoji';
-import { getOrchestrator, MODEL_LIST, getUserModel, setUserModel, type ModelId } from './agents/orchestrator';
+import { getOrchestrator, MODEL_LIST, getUserModel, setUserModel, type ModelId, type AgentSetupNeeds } from './agents/orchestrator';
 import {
   authSendPhone, authSubmitCode, authSubmitPassword,
   authStartQR, cancelQRLogin, type Complete2FAFn,
@@ -231,10 +231,10 @@ async function editOrReply(ctx: Context, text: string, extra?: object): Promise<
   await safeReply(ctx, text, extra);
 }
 
-// Убрать XML теги от Kiro/Claude прокси (но НЕ трогать <tg-emoji> теги)
+// Убрать XML теги от AI ответов (но НЕ трогать <tg-emoji> теги)
 function sanitize(text: string): string {
   return text
-    // Убираем только не-tg-emoji XML теги (от AI-прокси)
+    // Убираем только не-tg-emoji XML теги
     .replace(/<(?!tg-emoji)[a-zA-Z_][a-zA-Z0-9_]*>[\s\S]*?<\/(?!tg-emoji)[a-zA-Z_][a-zA-Z0-9_]*>/g, '')
     .replace(/<(?!tg-emoji)[a-zA-Z_][a-zA-Z0-9_]*\s*\/>/g, '')
     .replace(/<(?!tg-emoji)[a-zA-Z_][a-zA-Z0-9_]*(?!\s*emoji)[^>]*>/g, '')
@@ -325,6 +325,19 @@ const pendingEdits = new Map<number, number>();
 // Chat with AI agent: userId → agentId (активный чат-сеанс)
 // ============================================================
 const pendingAgentChats = new Map<number, number>(); // userId → agentId
+
+// ============================================================
+// Post-creation agent setup wizard
+// ============================================================
+interface PendingAgentSetup {
+  agentId: number;
+  steps: Array<'tg_auth' | 'wallet' | 'api_key'>;  // remaining steps
+  currentStep: number;
+  tgAuthed: boolean;
+  hasApiKey: boolean;
+  walletCreated: boolean;
+}
+const pendingAgentSetup = new Map<number, PendingAgentSetup>(); // userId → setup state
 
 // ============================================================
 // Язык пользователя (EN/RU, по умолчанию auto по первому сообщению)
@@ -499,63 +512,81 @@ function isGarbageInput(text: string): boolean {
 // ============================================================
 // Periodic cleanup of pending Maps to prevent memory leaks
 // ============================================================
-const _pendingTimestamps = new Map<string, number>(); // mapKey:userId → Date.now()
+const _pendingTimestamps = new Map<string, number>(); // "mapName:key" → first-seen timestamp
 const PENDING_TTL = 30 * 60 * 1000; // 30 minutes
 
-function trackPending(mapName: string, userId: number) {
-  _pendingTimestamps.set(`${mapName}:${userId}`, Date.now());
+// All pending Maps/Sets to auto-track (built lazily to avoid TDZ issues with later declarations)
+function _getAllPendingMaps(): [string, Map<any, any> | Set<any>][] {
+  return [
+    ['creation', pendingCreations],
+    ['nameAsk', pendingNameAsk],
+    ['rename', pendingRenames],
+    ['edit', pendingEdits],
+    ['chat', pendingAgentChats],
+    ['withdrawal', pendingWithdrawal],
+    ['template', pendingTemplateSetup],
+    ['publish', pendingPublish],
+    ['tgAuth', pendingTgAuth],
+    ['apiKey', pendingApiKey],
+    ['langSetup', pendingLangSetup],
+    ['setup', pendingAgentSetup],
+    ['pluginCreate', pendingPluginCreation],
+    ['topup', pendingTopup],
+    ['2fa', complete2FAFns],
+    ['repair', pendingRepairs], // keyed by string, not userId
+  ];
 }
 
 setInterval(() => {
   const now = Date.now();
-  const stale: string[] = [];
+  let cleaned = 0;
 
-  for (const [key, ts] of _pendingTimestamps) {
-    if (now - ts > PENDING_TTL) {
-      stale.push(key);
+  const allMaps = _getAllPendingMaps();
+  for (const [name, collection] of allMaps) {
+    const keys = collection instanceof Set ? [...collection] : [...collection.keys()];
+    for (const key of keys) {
+      const tsKey = `${name}:${key}`;
+      if (!_pendingTimestamps.has(tsKey)) {
+        // First time seeing this entry — record timestamp
+        _pendingTimestamps.set(tsKey, now);
+      } else if (now - _pendingTimestamps.get(tsKey)! > PENDING_TTL) {
+        // Expired — remove from collection and timestamp tracker
+        if (collection instanceof Set) {
+          collection.delete(key);
+        } else {
+          collection.delete(key);
+        }
+        _pendingTimestamps.delete(tsKey);
+        cleaned++;
+      }
     }
   }
 
-  for (const key of stale) {
-    _pendingTimestamps.delete(key);
-    const [mapName, userIdStr] = key.split(':');
-    const userId = parseInt(userIdStr, 10);
-    if (isNaN(userId)) continue;
-
-    switch (mapName) {
-      case 'creation':   pendingCreations.delete(userId); break;
-      case 'nameAsk':    pendingNameAsk.delete(userId); break;
-      case 'rename':     pendingRenames.delete(userId); break;
-      case 'edit':       pendingEdits.delete(userId); break;
-      case 'chat':       pendingAgentChats.delete(userId); break;
-      case 'withdrawal': pendingWithdrawal.delete(userId); break;
-      case 'template':   pendingTemplateSetup.delete(userId); break;
-      case 'publish':    pendingPublish.delete(userId); break;
-      case 'tgAuth':     pendingTgAuth.delete(userId); break;
-      case 'apiKey':     pendingApiKey.delete(userId); break;
-      case 'langSetup':  pendingLangSetup.delete(userId); break;
-    }
-  }
-
-  // Clean pendingRepairs (keyed as "userId:agentId") older than 30 min
-  for (const key of pendingRepairs.keys()) {
-    const ts = _pendingTimestamps.get(`repair:${key}`);
-    if (ts && now - ts > PENDING_TTL) {
-      pendingRepairs.delete(key);
-      _pendingTimestamps.delete(`repair:${key}`);
+  // Clean stale timestamp entries whose Map entry was already removed normally
+  for (const tsKey of [..._pendingTimestamps.keys()]) {
+    const colonIdx = tsKey.indexOf(':');
+    const name = tsKey.slice(0, colonIdx);
+    const rawKey = tsKey.slice(colonIdx + 1);
+    const entry = allMaps.find(([n]) => n === name);
+    if (!entry) { _pendingTimestamps.delete(tsKey); continue; }
+    const coll = entry[1];
+    const lookupKey = /^\d+$/.test(rawKey) ? parseInt(rawKey, 10) : rawKey;
+    if (coll instanceof Set ? !coll.has(lookupKey) : !(coll as Map<any, any>).has(lookupKey)) {
+      _pendingTimestamps.delete(tsKey);
     }
   }
 
   // Clean QR polling handles for expired entries
-  for (const [userId, handle] of qrPollingHandles) {
+  for (const [userId, handle] of [...qrPollingHandles]) {
     if (!pendingTgAuth.has(userId)) {
       clearInterval(handle);
       qrPollingHandles.delete(userId);
+      cleaned++;
     }
   }
 
-  if (stale.length > 0) {
-    console.log(`[Cleanup] Cleared ${stale.length} stale pending entries`);
+  if (cleaned > 0) {
+    console.log(`[Cleanup] Cleared ${cleaned} stale pending entries`);
   }
 }, 5 * 60 * 1000); // every 5 minutes
 
@@ -3234,6 +3265,16 @@ bot.on('callback_query', async (ctx) => {
           '• AI-агенты могут покупать/продавать подарки',
           { parse_mode: 'HTML' }
         ).catch(() => {});
+        // Continue setup wizard if active
+        const setupQR = pendingAgentSetup.get(userId);
+        if (setupQR) {
+          setupQR.tgAuthed = true;
+          setupQR.currentStep++;
+          setTimeout(() => {
+            const fakeCtx = { reply: (t: string, o?: any) => bot.telegram.sendMessage(userId, t, o), from: { id: userId }, chat: { id: userId }, sendChatAction: () => Promise.resolve() } as any;
+            showSetupStep(fakeCtx, userId).catch(() => {});
+          }, 1500);
+        }
       } else if (result.error === 'timeout') {
         bot.telegram.sendMessage(userId,
           '⏰ Время ожидания истекло. Введи /tglogin для новой попытки.',
@@ -3338,8 +3379,8 @@ bot.on('callback_query', async (ctx) => {
     if (!isOwner) { await ctx.reply('⛔ Только для владельца'); return; }
     await ctx.reply(
       `⚙️ <b>Настройки платформы</b>\n\n` +
-      `• Модель: <code>${escHtml(process.env.CLAUDE_MODEL || 'claude-sonnet-4-5')}</code>\n` +
-      `• Прокси: <code>${escHtml(process.env.CLAUDE_BASE_URL || 'http://127.0.0.1:8317')}</code>\n` +
+      `• Модель: <code>${escHtml(process.env.CLAUDE_MODEL || 'gemini-2.5-flash')}</code>\n` +
+      `• AI URL: <code>${escHtml(process.env.OPENAI_BASE_URL || 'Gemini API')}</code>\n` +
       `• Безопасность: ${process.env.ENABLE_SECURITY_SCAN === 'false' ? '❌' : '✅'}\n` +
       `• TON API Key: ${process.env.TONAPI_KEY ? '✅ настроен' : '⚠️ не настроен'}`,
       { parse_mode: 'HTML' }
@@ -3604,7 +3645,7 @@ bot.on('callback_query', async (ctx) => {
       text += `\n🧠 <b>${lang === 'ru' ? 'Самоулучшение:' : 'Self-improvement:'}</b> ${selfImproveOn ? '✅' : '❌'}\n`;
       text += `<i>${lang === 'ru' ? 'AI анализирует ошибки и автоматически исправляет агента' : 'AI analyzes errors and auto-fixes agent'}</i>\n`;
       if (selfImproveOn && !apiKey) {
-        text += `⚠️ <i>${lang === 'ru' ? 'Используется прокси платформы. Подключите свой API ключ!' : 'Using platform proxy. Add your API key!'}</i>\n`;
+        text += `⚠️ <i>${lang === 'ru' ? 'API ключ не настроен! Добавьте в Профиль → API ключи' : 'No API key! Add in Profile → API keys'}</i>\n`;
       }
       kb.push([{ text: `${peb('back')} ${lang === 'ru' ? 'Назад' : 'Back'}`, callback_data: `agent_menu:${agentId}` }]);
 
@@ -3626,7 +3667,7 @@ bot.on('callback_query', async (ctx) => {
       if (!tc.config) tc.config = {};
       const current = tc.config.self_improvement_enabled !== false;
       tc.config.self_improvement_enabled = !current;
-      await pool.query(
+      await dbPool.query(
         'UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3',
         [JSON.stringify(tc), agentId, userId]
       );
@@ -3745,6 +3786,134 @@ bot.on('callback_query', async (ctx) => {
       await showCapabilitiesMenu(ctx, agentId, caps);
     } catch (e: any) {
       await ctx.reply('❌ ' + (e.message || String(e)));
+    }
+    return;
+  }
+
+  // ── Post-creation setup wizard callbacks ──────────────────────────────────
+  if (data.startsWith('agent_setup:')) {
+    const agentId = parseInt(data.split(':')[1], 10);
+    await ctx.answerCbQuery();
+    const setup = pendingAgentSetup.get(userId);
+    if (setup) {
+      await showSetupStep(ctx, userId);
+    } else {
+      await showAgentMenu(ctx, agentId, userId);
+    }
+    return;
+  }
+
+  if (data.startsWith('setup_tg_qr:')) {
+    await ctx.answerCbQuery();
+    // Reuse the same QR login flow from /tglogin command
+    const h = qrPollingHandles.get(userId);
+    if (h) { clearInterval(h); qrPollingHandles.delete(userId); }
+    pendingTgAuth.set(userId, 'qr_waiting');
+
+    authStartQR(
+      async (qrUrl: string, expiresIn: number) => {
+        if (!['qr_waiting'].includes(pendingTgAuth.get(userId) ?? '')) return;
+        const qrImageUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&margin=10&data=' + encodeURIComponent(qrUrl);
+        try {
+          await bot.telegram.sendPhoto(userId, qrImageUrl, {
+            caption: '🔳 <b>Сканируй QR-код</b>\n\n📱 Telegram → Настройки → Устройства → Подключить устройство\n\n⏱ ' + expiresIn + ' сек\n<i>/cancel для отмены</i>',
+            parse_mode: 'HTML'
+          });
+        } catch {}
+      },
+      (complete2FA: Complete2FAFn) => {
+        pendingTgAuth.set(userId, 'qr_password');
+        complete2FAFns.set(userId, complete2FA);
+        bot.telegram.sendMessage(userId, '🔐 Введите пароль 2FA:', { parse_mode: 'HTML' }).catch(() => {});
+      }
+    ).then((result: { ok: boolean; error?: string }) => {
+      complete2FAFns.delete(userId);
+      if (['qr_waiting', 'qr_password'].includes(pendingTgAuth.get(userId) ?? '')) pendingTgAuth.delete(userId);
+      if (result.ok) {
+        bot.telegram.sendMessage(userId, '🎉 <b>Telegram авторизован!</b>', { parse_mode: 'HTML' }).catch(() => {});
+        const setupQR2 = pendingAgentSetup.get(userId);
+        if (setupQR2) {
+          setupQR2.tgAuthed = true;
+          setupQR2.currentStep++;
+          setTimeout(() => {
+            const fakeCtx = { reply: (t: string, o?: any) => bot.telegram.sendMessage(userId, t, o), from: { id: userId }, chat: { id: userId }, sendChatAction: () => Promise.resolve() } as any;
+            showSetupStep(fakeCtx, userId).catch(() => {});
+          }, 1500);
+        }
+      }
+    }).catch(() => {});
+    return;
+  }
+
+  if (data.startsWith('setup_tg_phone:')) {
+    await ctx.answerCbQuery();
+    pendingTgAuth.set(userId, 'phone');
+    const ru = getUserLang(userId) === 'ru';
+    await ctx.reply(ru ? '📞 Введите номер телефона (с кодом страны, например +79001234567):' : '📞 Enter your phone number (with country code, e.g. +1234567890):');
+    return;
+  }
+
+  if (data.startsWith('setup_wallet_create:')) {
+    const agentId = parseInt(data.split(':')[1], 10);
+    await ctx.answerCbQuery();
+    const ru = getUserLang(userId) === 'ru';
+    try {
+      const wallet = await generateAgentWallet();
+      const setup = pendingAgentSetup.get(userId);
+      if (setup) setup.walletCreated = true;
+      await ctx.reply(
+        `✅ <b>${ru ? 'Кошелёк создан!' : 'Wallet created!'}</b>\n\n` +
+        `📋 <code>${wallet.address}</code>\n\n` +
+        `${ru ? 'Пополните его TON для работы агента. Мнемоника сохранена в зашифрованном виде.' : 'Fund it with TON for agent operations. Mnemonic stored securely.'}`,
+        { parse_mode: 'HTML' }
+      );
+      // Move to next step
+      if (setup) {
+        setup.currentStep++;
+        setTimeout(async () => { try { await showSetupStep(ctx, userId); } catch {} }, 1000);
+      }
+    } catch (e: any) {
+      await ctx.reply('❌ ' + (e.message || String(e)));
+    }
+    return;
+  }
+
+  if (data.startsWith('setup_apikey:')) {
+    const parts = data.split(':');
+    const agentId = parseInt(parts[1], 10);
+    const provider = parts[2];
+    await ctx.answerCbQuery();
+    const ru = getUserLang(userId) === 'ru';
+    // Save provider choice and ask for key
+    pendingApiKey.set(userId, { provider });
+    // Store that this is from setup wizard
+    const setup = pendingAgentSetup.get(userId);
+    if (setup) (setup as any)._apiKeyStep = true;
+
+    const providerNames: Record<string, string> = {
+      openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Google Gemini',
+      groq: 'Groq', openrouter: 'OpenRouter', deepseek: 'DeepSeek',
+    };
+    await ctx.reply(
+      `🔑 <b>${providerNames[provider] || provider}</b>\n\n` +
+      `${ru ? 'Отправьте ваш API ключ:' : 'Send your API key:'}`,
+      { parse_mode: 'HTML' }
+    );
+    return;
+  }
+
+  if (data.startsWith('setup_skip:')) {
+    const agentId = parseInt(data.split(':')[1], 10);
+    await ctx.answerCbQuery();
+    const setup = pendingAgentSetup.get(userId);
+    if (setup) {
+      setup.currentStep++;
+      if (setup.currentStep >= setup.steps.length) {
+        pendingAgentSetup.delete(userId);
+        await finishSetupAndStart(ctx, agentId, userId);
+      } else {
+        await showSetupStep(ctx, userId);
+      }
     }
     return;
   }
@@ -3903,8 +4072,8 @@ bot.on(message('voice'), async (ctx) => {
 
     // 2) Транскрипция: сначала Gemini (multimodal audio), fallback OpenAI Whisper
     const base64Audio = audioBuffer.toString('base64');
-    const proxyUrl = process.env.AI_API_URL || process.env.OPENAI_BASE_URL?.replace('/v1', '') || 'http://127.0.0.1:8317';
-    const apiKey = process.env.AI_API_KEY || process.env.OPENAI_API_KEY || 'local';
+    const whisperBaseUrl = process.env.OPENAI_BASE_URL?.replace('/v1', '') || 'https://api.openai.com';
+    const whisperApiKey = process.env.OPENAI_API_KEY || '';
 
     // Подтягиваем Gemini ключ пользователя из глобальных настроек
     let userGeminiKey = process.env.GEMINI_API_KEY || '';
@@ -3951,18 +4120,17 @@ bot.on(message('voice'), async (ctx) => {
       }
     } catch {}
 
-    // Попытка 2: CLIProxy / OpenAI Whisper API (через платформенный прокси)
-    if (!transcribedText) {
+    // Попытка 2: OpenAI Whisper API (если есть OpenAI ключ)
+    if (!transcribedText && whisperApiKey) {
       try {
-        // Node 20 native FormData + Blob
         const formData = new FormData();
         formData.append('file', new Blob([audioBuffer], { type: 'audio/ogg' }), 'voice.ogg');
         formData.append('model', 'whisper-1');
         formData.append('language', lang === 'ru' ? 'ru' : 'en');
 
-        const whisperResp = await fetch(proxyUrl + '/v1/audio/transcriptions', {
+        const whisperResp = await fetch(whisperBaseUrl + '/v1/audio/transcriptions', {
           method: 'POST',
-          headers: { 'Authorization': 'Bearer ' + apiKey },
+          headers: { 'Authorization': 'Bearer ' + whisperApiKey },
           body: formData as any,
         });
         if (whisperResp.ok) {
@@ -4285,6 +4453,9 @@ bot.on(message('text'), async (ctx) => {
             '• Спроси: <i>"топ подарки Fragment сегодня"</i>',
             { parse_mode: 'HTML' }
           );
+          // Continue setup wizard if active
+          const setupW = pendingAgentSetup.get(userId);
+          if (setupW) { setupW.tgAuthed = true; setupW.currentStep++; setTimeout(() => showSetupStep(ctx, userId).catch(() => {}), 1000); }
         } else if (result.type === 'need_password') {
           pendingTgAuth.set(userId, 'password');
           await ctx.reply('🔐 Введи пароль двухфакторной аутентификации (2FA):');
@@ -4319,6 +4490,9 @@ bot.on(message('text'), async (ctx) => {
           `${pe('check')} Fragment данные доступны. Используй <code>/gifts</code>`,
           { parse_mode: 'HTML' }
         );
+        // Continue setup wizard if active
+        const setupPw = pendingAgentSetup.get(userId);
+        if (setupPw) { setupPw.tgAuthed = true; setupPw.currentStep++; setTimeout(() => showSetupStep(ctx, userId).catch(() => {}), 1000); }
       } catch (e: any) {
         await ctx.reply('❌ Неверный пароль 2FA: ' + e.message + '\n\nПопробуй снова или /cancel');
       }
@@ -4480,6 +4654,9 @@ bot.on(message('text'), async (ctx) => {
         (detectedProvider ? `🤖 ${lang === 'ru' ? 'Провайдер:' : 'Provider:'} <b>${escHtml(detectedProvider)}</b>` : ''),
         { parse_mode: 'HTML' }
       );
+      // Continue setup wizard if active
+      const setupApiW = pendingAgentSetup.get(userId);
+      if (setupApiW) { setupApiW.hasApiKey = true; setupApiW.currentStep++; setTimeout(() => showSetupStep(ctx, userId).catch(() => {}), 1000); }
     } catch (e: any) {
       await ctx.reply('❌ ' + (e.message || String(e)));
     }
@@ -4801,6 +4978,7 @@ async function sendResult(ctx: Context, result: {
   content: string;
   buttons?: Array<{ text: string; callbackData: string }>;
   agentId?: number;
+  setupNeeds?: AgentSetupNeeds;
   wizardTemplateId?: string;
   wizardPrefilled?: Record<string, string>;
 }) {
@@ -4852,25 +5030,126 @@ async function sendResult(ctx: Context, result: {
     await editOrReply(ctx, content, { parse_mode: 'HTML', ...extra });
   }
 
-  // После создания агента — предлагаем настроить capabilities
-  if (result.type === 'agent_created' && result.agentId) {
+  // After agent creation — start smart setup wizard if needs detected
+  if (result.type === 'agent_created' && result.agentId && result.setupNeeds) {
     const uid = (ctx.from as any)?.id;
     if (uid) {
-      const lang = getUserLang(uid);
-      const ru = lang === 'ru';
-      setTimeout(async () => {
-        try {
-          await ctx.reply(
-            ru ? '🧩 Хотите настроить возможности агента? По умолчанию включены все.' : '🧩 Want to configure agent capabilities? All enabled by default.',
-            { reply_markup: { inline_keyboard: [
-              [{ text: `🧩 ${ru ? 'Настроить возможности' : 'Configure capabilities'}`, callback_data: `agent_caps_menu:${result.agentId}` }],
-              [{ text: `✅ ${ru ? 'Оставить все' : 'Keep all'}`, callback_data: `agent_cap_done:${result.agentId}` }],
-            ] } }
-          );
-        } catch {}
-      }, 1500);
+      const needs = result.setupNeeds;
+      const hasSetupNeeds = (needs.tgAuth && !needs.tgAuthed) || needs.wallet || needs.apiKey;
+      if (hasSetupNeeds) {
+        // Build setup steps list
+        const steps: Array<'tg_auth' | 'wallet' | 'api_key'> = [];
+        if (needs.tgAuth && !needs.tgAuthed) steps.push('tg_auth');
+        if (needs.wallet) steps.push('wallet');
+        if (needs.apiKey) steps.push('api_key');
+        pendingAgentSetup.set(uid, {
+          agentId: result.agentId,
+          steps,
+          currentStep: 0,
+          tgAuthed: needs.tgAuthed,
+          hasApiKey: needs.hasApiKey,
+          walletCreated: false,
+        });
+        // Auto-trigger setup after short delay
+        setTimeout(async () => {
+          try { await showSetupStep(ctx, uid); } catch {}
+        }, 1500);
+      } else {
+        // No setup needed — just offer capabilities config
+        const lang = getUserLang(uid);
+        const ru = lang === 'ru';
+        setTimeout(async () => {
+          try {
+            await ctx.reply(
+              ru ? '🧩 Хотите настроить возможности агента? По умолчанию включены все.' : '🧩 Want to configure agent capabilities? All enabled by default.',
+              { reply_markup: { inline_keyboard: [
+                [{ text: `🧩 ${ru ? 'Настроить возможности' : 'Configure capabilities'}`, callback_data: `agent_caps_menu:${result.agentId}` }],
+                [{ text: `✅ ${ru ? 'Оставить все' : 'Keep all'}`, callback_data: `agent_cap_done:${result.agentId}` }],
+              ] } }
+            );
+          } catch {}
+        }, 1500);
+      }
     }
   }
+}
+
+// ============================================================
+// Post-creation setup wizard — guides user through TG auth, wallet, API keys
+// ============================================================
+async function showSetupStep(ctx: Context, userId: number) {
+  const setup = pendingAgentSetup.get(userId);
+  if (!setup || setup.currentStep >= setup.steps.length) {
+    // All done — start agent
+    if (setup) {
+      pendingAgentSetup.delete(userId);
+      await finishSetupAndStart(ctx, setup.agentId, userId);
+    }
+    return;
+  }
+
+  const step = setup.steps[setup.currentStep];
+  const agentId = setup.agentId;
+  const ru = getUserLang(userId) === 'ru';
+  const total = setup.steps.length;
+  const current = setup.currentStep + 1;
+  const progress = `[${current}/${total}]`;
+
+  if (step === 'tg_auth') {
+    await ctx.reply(
+      `${progress} 🔐 <b>${ru ? 'Авторизация Telegram' : 'Telegram Authorization'}</b>\n\n` +
+      `${ru
+        ? 'Ваш агент использует Telegram-инструменты (сообщения, каналы, торговля подарками).\n\nДля работы нужна авторизация через MTProto — это безопасный вход в ваш Telegram-аккаунт.'
+        : 'Your agent uses Telegram tools (messages, channels, gift trading).\n\nMTProto authorization is needed — a secure login to your Telegram account.'
+      }\n\n` +
+      `${ru ? '<i>Рекомендуется QR-код (быстро и безопасно)</i>' : '<i>QR code is recommended (fast & secure)</i>'}`,
+      { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
+        [{ text: `📱 ${ru ? 'QR-код (рекомендуется)' : 'QR Code (recommended)'}`, callback_data: `setup_tg_qr:${agentId}` }],
+        [{ text: `📞 ${ru ? 'По номеру телефона' : 'By phone number'}`, callback_data: `setup_tg_phone:${agentId}` }],
+        [{ text: `⏩ ${ru ? 'Пропустить' : 'Skip'}`, callback_data: `setup_skip:${agentId}` }],
+      ] } }
+    );
+  } else if (step === 'wallet') {
+    await ctx.reply(
+      `${progress} 💰 <b>${ru ? 'Кошелёк TON' : 'TON Wallet'}</b>\n\n` +
+      `${ru
+        ? 'Агент может отправлять TON/жетоны и совершать покупки.\n\nСоздадим для него отдельный кошелёк? Вы сможете пополнить его позже.'
+        : 'Your agent can send TON/jettons and make purchases.\n\nCreate a dedicated wallet? You can fund it later.'
+      }`,
+      { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
+        [{ text: `💰 ${ru ? 'Создать кошелёк' : 'Create wallet'}`, callback_data: `setup_wallet_create:${agentId}` }],
+        [{ text: `⏩ ${ru ? 'Пропустить' : 'Skip'}`, callback_data: `setup_skip:${agentId}` }],
+      ] } }
+    );
+  } else if (step === 'api_key') {
+    await ctx.reply(
+      `${progress} 🔑 <b>${ru ? 'API ключ AI' : 'AI API Key'}</b>\n\n` +
+      `${ru
+        ? 'Для работы агента нужен API ключ AI-провайдера.\n\nВыберите провайдера и введите ключ:'
+        : 'An AI provider API key is required for the agent to work.\n\nChoose a provider and enter your key:'
+      }`,
+      { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
+        [{ text: '🟢 OpenAI', callback_data: `setup_apikey:${agentId}:openai` },
+         { text: '🔵 Anthropic', callback_data: `setup_apikey:${agentId}:anthropic` }],
+        [{ text: '🟡 Gemini', callback_data: `setup_apikey:${agentId}:gemini` },
+         { text: '⚡ Groq', callback_data: `setup_apikey:${agentId}:groq` }],
+        [{ text: '🌐 OpenRouter', callback_data: `setup_apikey:${agentId}:openrouter` },
+         { text: '🐋 DeepSeek', callback_data: `setup_apikey:${agentId}:deepseek` }],
+        [{ text: `⏩ ${ru ? 'Позже' : 'Later'}`, callback_data: `setup_skip:${agentId}` }],
+      ] } }
+    );
+  }
+}
+
+async function finishSetupAndStart(ctx: Context, agentId: number, userId: number) {
+  const ru = getUserLang(userId) === 'ru';
+  await ctx.reply(
+    `✅ <b>${ru ? 'Настройка завершена!' : 'Setup complete!'}</b>\n\n` +
+    `${ru ? 'Запускаю агента...' : 'Starting agent...'}`,
+    { parse_mode: 'HTML' }
+  );
+  // Auto-start the agent
+  await runAgentDirect(ctx, agentId, userId);
 }
 
 // ============================================================

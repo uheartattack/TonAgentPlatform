@@ -2,6 +2,3 @@ node_modules
 .env
 *.log
 .git
-dist
-coverage
-.DS_Store
