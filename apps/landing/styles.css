@@ -152,12 +152,12 @@ body {
   background: rgba(0, 136, 204, 0.1);
 }
 
-.dashboard-btn {
+.studio-btn {
   border-color: var(--accent);
   color: var(--accent);
 }
 
-.dashboard-btn:hover {
+.studio-btn:hover {
   background: rgba(0, 212, 255, 0.15);
   border-color: var(--accent);
   box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
@@ -1866,15 +1866,22 @@ body {
 .scroll-rocket {
   position: fixed; bottom: 32px; right: 32px; z-index: 999;
   width: 52px; height: 52px; border-radius: 50%;
-  background: linear-gradient(135deg, #0088cc, #00aaff);
-  border: 2px solid rgba(0,170,255,0.3);
-  font-size: 1.5rem; cursor: pointer;
-  box-shadow: 0 4px 20px rgba(0,136,204,0.4);
+  background: rgba(0, 152, 234, 0.12);
+  border: 1.5px solid rgba(0, 152, 234, 0.35);
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(0,152,234,0.2);
   opacity: 0; transform: translateY(20px);
-  transition: opacity 0.3s, transform 0.3s, box-shadow 0.3s;
+  transition: opacity 0.3s, transform 0.3s, box-shadow 0.3s, background 0.3s, border-color 0.3s;
   pointer-events: none;
   display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(8px);
 }
 .scroll-rocket.visible { opacity: 1; transform: translateY(0); pointer-events: auto; }
-.scroll-rocket:hover { transform: translateY(-6px) scale(1.1); box-shadow: 0 8px 30px rgba(0,136,204,0.6); }
+.scroll-rocket:hover {
+  transform: translateY(-6px) scale(1.1);
+  box-shadow: 0 8px 30px rgba(0,152,234,0.5);
+  background: rgba(0, 152, 234, 0.2);
+  border-color: rgba(0, 152, 234, 0.6);
+}
+.scroll-rocket:hover svg { stroke: #33adee; }
 .scroll-rocket:active { transform: translateY(-2px) scale(0.95); }

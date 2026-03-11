@@ -724,7 +724,7 @@ bot.command('start', async (ctx) => {
     // Не return — показываем обычное приветствие
   }
 
-  // ── Web dashboard auth via deeplink: /start webauth_TOKEN ──
+  // ── Web studio auth via deeplink: /start webauth_TOKEN ──
   if (startPayload.startsWith('webauth_')) {
     const authToken = startPayload.replace('webauth_', '');
     const pending = pendingBotAuth.get(authToken);
@@ -740,8 +740,8 @@ bot.command('start', async (ctx) => {
       const landingUrl = process.env.LANDING_URL || 'http://localhost:3001';
       await safeReply(ctx,
         `✅ <b>Авторизация успешна!</b>\n\n` +
-        `Привет, ${escHtml(name)}! Вернитесь в браузер — дашборд загружается автоматически.\n\n` +
-        `🌐 ${escHtml(landingUrl)}/dashboard.html`,
+        `Привет, ${escHtml(name)}! Вернитесь в браузер — студия загружается автоматически.\n\n` +
+        `🌐 ${escHtml(landingUrl)}/studio`,
         { parse_mode: 'HTML' }
       );
     } else {
@@ -1289,6 +1289,30 @@ bot.command('run', async (ctx) => {
     return;
   }
   await runAgentDirect(ctx, parseInt(id), ctx.from.id);
+});
+
+// ── Web studio auth via text message (fallback when deeplink ?start= doesn't trigger /start) ──
+bot.hears(/^\/start\s+webauth_([a-f0-9]+)$/i, async (ctx) => {
+  const authToken = (ctx.match as RegExpMatchArray)[1];
+  const userId = ctx.from.id;
+  const pending = pendingBotAuth.get(authToken);
+  if (pending && pending.pending) {
+    pendingBotAuth.set(authToken, {
+      pending: false,
+      userId,
+      username: ctx.from.username || '',
+      firstName: ctx.from.first_name || '',
+      createdAt: pending.createdAt,
+    });
+    const name = ctx.from.first_name || ctx.from.username || 'друг';
+    const landingUrl = process.env.LANDING_URL || 'http://localhost:3001';
+    await safeReply(ctx,
+      `✅ <b>Авторизация успешна!</b>\n\nПривет, ${escHtml(name)}! Вернитесь в браузер — студия загружается автоматически.\n\n🌐 ${escHtml(landingUrl)}/studio`,
+      { parse_mode: 'HTML' }
+    );
+  } else {
+    await ctx.reply('❌ Токен авторизации не найден или истёк. Обновите страницу студии и попробуйте снова.');
+  }
 });
 
 // Кликабельный формат /run_ID (задача 5: без пробела для удобства)
@@ -2574,7 +2598,7 @@ bot.on('callback_query', async (ctx) => {
   if (data === 'ton_disconnect') {
     await ctx.answerCbQuery('Отключаю...');
     await getTonConnectManager().disconnect(userId);
-    // Clear wallet from profile (syncs with dashboard)
+    // Clear wallet from profile (syncs with studio)
     try {
       const settingsRepo = getUserSettingsRepository();
       const profile = (await settingsRepo.get(userId, 'profile')) || {};
@@ -5381,7 +5405,7 @@ async function showTonConnect(ctx: Context) {
     tonConn.onConnect(userId, async (w) => {
       if (w) {
         try {
-          // Save wallet to profile (syncs with dashboard)
+          // Save wallet to profile (syncs with studio)
           const settingsRepo = getUserSettingsRepository();
           const profile = (await settingsRepo.get(userId, 'profile')) || { balance_ton: 0, total_earned: 0, wallet_address: null };
           profile.wallet_address = w.friendlyAddress;
@@ -6213,7 +6237,7 @@ async function showStats(ctx: Context, userId: number) {
   } else {
     keyboard.push([{ text: `${peb('diamond')} ${lang === 'ru' ? 'Подключить TON' : 'Connect TON'}`, callback_data: 'ton_connect' }]);
   }
-  keyboard.push([{ text: `${peb('globe')} ${lang === 'ru' ? 'Открыть дашборд' : 'Open dashboard'}`, url: 'https://tonagentplatform.ru/dashboard.html' }]);
+  keyboard.push([{ text: `${peb('globe')} ${lang === 'ru' ? 'Открыть студию' : 'Open Studio'}`, url: 'https://tonagentplatform.ru/studio' }]);
   if (isOwner) {
     keyboard.push([{ text: `⚙️ ${lang === 'ru' ? 'Настройки платформы' : 'Platform settings'}`, callback_data: 'platform_settings' }]);
   }
@@ -6511,7 +6535,7 @@ async function showHelp(ctx: Context) {
           { text: `${peb('brain')} ${lang === 'ru' ? 'AI модель' : 'AI model'}`, callback_data: 'model_selector' },
           { text: `${peb('diamond')} TON ${lang === 'ru' ? 'кошелёк' : 'wallet'}`, callback_data: 'ton_connect' },
         ],
-        [{ text: `${peb('globe')} ${lang === 'ru' ? 'Открыть дашборд' : 'Open dashboard'}`, url: 'https://tonagentplatform.ru/dashboard.html' }],
+        [{ text: `${peb('globe')} ${lang === 'ru' ? 'Открыть студию' : 'Open Studio'}`, url: 'https://tonagentplatform.ru/studio' }],
       ],
     },
   });
