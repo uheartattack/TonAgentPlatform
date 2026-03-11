@@ -155,6 +155,7 @@ export class Orchestrator {
     message: string,
     username?: string,
     agentName?: string,
+    studioContext?: { page?: string; source?: string; agentId?: number; agentName?: string; agentStatus?: string; agentType?: string },
   ): Promise<OrchestratorResult> {
     const isOwner = userId === OWNER_ID;
 
@@ -172,7 +173,7 @@ export class Orchestrator {
 
     // ── Все запросы проходят через AI с набором инструментов ──
     // AI сам решает: вызвать инструмент или ответить текстом
-    return this.processWithAITools(userId, message, isOwner, agentName);
+    return this.processWithAITools(userId, message, isOwner, agentName, studioContext);
   }
 
   /** Определения инструментов платформы для AI */
@@ -472,6 +473,7 @@ export class Orchestrator {
     message: string,
     isOwner: boolean,
     agentName?: string,
+    studioContext?: { page?: string; source?: string; agentId?: number; agentName?: string; agentStatus?: string; agentType?: string },
   ): Promise<OrchestratorResult> {
     try {
       // Загружаем контекст пользователя
@@ -597,7 +599,18 @@ ID: ${userId}${isOwner ? ' 👑 OWNER (создатель платформы)' :
 • Сложный запрос → предложи разбить на несколько агентов
 • Знай всё о TON: $TON, DeDust, STON.fi, стейкинг, DNS, NFT, Fragment, подарки
 • При ошибках — помогай конкретными шагами с ссылками на нужные разделы
-• Если пользователь спрашивает "аудит" или "проверь моих агентов" → вызови list_agents и проведи анализ каждого`;
+• Если пользователь спрашивает "аудит" или "проверь моих агентов" → вызови list_agents и проведи анализ каждого
+${studioContext?.source === 'studio' ? `
+━━━ КОНТЕКСТ ЭКРАНА (Studio) ━━━
+Пользователь сейчас на странице: ${studioContext.page || 'unknown'}${studioContext.agentId ? `\nОткрыт агент: #${studioContext.agentId} «${studioContext.agentName}» [${studioContext.agentType}] ${studioContext.agentStatus === 'active' ? '🟢' : '⚪'}` : ''}
+Учитывай контекст экрана в ответах:
+• Если на overview → предлагай создать агента или показать маркетплейс
+• Если на builder → помогай с конструктором (блоки, связи, deploy)
+• Если на operations и открыт агент → отвечай про этого агента (используй его #ID)
+• Если на wallet → помогай с балансом, пополнением, транзакциями
+• Если на settings → помогай с настройкой API ключей и провайдера
+• Если на marketplace → помогай выбрать/установить шаблон
+• Давай ссылки [[page:xxx|текст]] на разделы, связанные с ответом` : ''}`;
 
       // Собираем историю + текущее сообщение
       const msgs: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [

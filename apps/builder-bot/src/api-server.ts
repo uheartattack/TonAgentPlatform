@@ -1639,7 +1639,7 @@ export function startApiServer() {
   // ── POST /api/chat — Dashboard AI chat (same orchestrator as TG bot) ──
   app.post('/api/chat', requireAuth, async (req: Request, res: Response) => {
     const userId = (req as any).userId;
-    const { message } = req.body;
+    const { message, context } = req.body;
     if (!message || typeof message !== 'string') {
       return res.status(400).json({ ok: false, error: 'message required' });
     }
@@ -1650,7 +1650,8 @@ export function startApiServer() {
         userId,
         message,
         (req as any).session?.username,
-        (req as any).session?.firstName
+        (req as any).session?.firstName,
+        context
       );
       res.json({ ok: true, result });
     } catch (e: any) {
