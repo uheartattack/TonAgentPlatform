@@ -258,18 +258,18 @@
                 <span data-en="Create Agent" data-ru="Создать агента">Create Agent</span>
               </button>
               <div id="create-agent-dropdown" class="create-agent-dropdown" style="display:none">
+                <div class="create-option" onclick="openDashboardChat(); hideCreateMenu()" style="border-left:3px solid #7dd3fc;background:rgba(125,211,252,0.05)">
+                  <span class="create-option-icon" style="color:#7dd3fc"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+                  <div>
+                    <strong data-en="⚡ AI Assistant (Recommended)" data-ru="⚡ AI Ассистент (Рекомендуется)">⚡ AI Ассистент (Рекомендуется)</strong>
+                    <p data-en="Describe what you need — Atlas will create the perfect agent" data-ru="Опишите что нужно — Atlas создаст идеального агента">Опишите что нужно — Atlas создаст идеального агента</p>
+                  </div>
+                </div>
                 <div class="create-option" onclick="navigateTo('builder'); hideCreateMenu()">
                   <span class="create-option-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></span>
                   <div>
                     <strong data-en="Constructor" data-ru="Конструктор">Constructor</strong>
                     <p data-en="Visual flow builder with drag & drop" data-ru="Визуальный конструктор с drag & drop">Visual flow builder with drag & drop</p>
-                  </div>
-                </div>
-                <div class="create-option" onclick="openDashboardChat(); hideCreateMenu()">
-                  <span class="create-option-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
-                  <div>
-                    <strong data-en="Chat with AI" data-ru="Чат с AI">Chat with AI</strong>
-                    <p data-en="Describe what you need in words" data-ru="Опишите что нужно словами">Describe what you need in words</p>
                   </div>
                 </div>
                 <a class="create-option" href="https://t.me/TonAgentPlatformBot" target="_blank" onclick="hideCreateMenu()">
@@ -935,7 +935,7 @@
             <div class="settings-section">
               <h3 class="section-title" data-en="Telegram Account" data-ru="Telegram аккаунт">Telegram Account</h3>
               <div class="settings-card">
-                <p style="color:var(--text-secondary);font-size:.85rem;margin-bottom:14px" data-en="Connect any Telegram account. Your agents will act as this user (like Telethon)." data-ru="Подключите любой Telegram аккаунт. Ваши агенты будут действовать от его имени (как Telethon).">Connect any Telegram account. Your agents will act as this user (like Telethon).</p>
+                <p style="color:var(--text-secondary);font-size:.85rem;margin-bottom:14px" data-en="Connect any Telegram account. Your agents will act as this user via MTProto." data-ru="Подключите любой Telegram аккаунт. Ваши агенты будут действовать от его имени через MTProto.">Connect any Telegram account. Your agents will act as this user via MTProto.</p>
 
                 <div id="tg-auth-status" style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
                   <span class="connection-badge" id="tg-connection-badge" style="display:none">
@@ -2047,6 +2047,34 @@
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
   </button>
 
+  <!-- Atlas Deploy Modal -->
+  <div id="atlas-deploy-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeAtlasDeploy()">
+    <div class="modal-content" style="max-width:480px;border:1px solid rgba(125,211,252,0.2);background:linear-gradient(135deg,#0f172a 0%,#1e293b 100%)">
+      <div class="modal-header" style="border-bottom:1px solid rgba(125,211,252,0.1)">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#7dd3fc,#3b82f6);display:flex;align-items:center;justify-content:center;font-size:18px">🤖</div>
+          <div>
+            <h3 style="margin:0;font-size:16px;color:#f1f5f9">Atlas Deploy</h3>
+            <p style="margin:0;font-size:12px;color:#64748b">Pre-flight check</p>
+          </div>
+        </div>
+        <button class="modal-close" onclick="closeAtlasDeploy()">&times;</button>
+      </div>
+      <div class="modal-body" style="padding:20px">
+        <div id="atlas-deploy-summary" style="margin-bottom:16px"></div>
+        <div id="atlas-deploy-question" style="margin-bottom:16px"></div>
+        <div id="atlas-deploy-options" style="display:flex;flex-direction:column;gap:8px"></div>
+      </div>
+      <div id="atlas-deploy-footer" style="padding:12px 20px;border-top:1px solid rgba(125,211,252,0.1);display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-ghost" onclick="closeAtlasDeploy()">Отмена</button>
+        <button class="btn btn-primary" id="atlas-deploy-go" onclick="confirmAtlasDeploy()" style="display:none">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10"/></svg>
+          Deploy
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Plans Modal -->
   <div id="plans-modal" class="modal-backdrop" style="display:none" onclick="if(event.target===this)closePlansModal()">
     <div class="plans-modal-card">
@@ -2116,6 +2144,7 @@
         <button class="settings-tab" onclick="switchSettingsTab('caps')" data-tab="caps"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> Capabilities</button>
         <button class="settings-tab" onclick="switchSettingsTab('wallet')" data-tab="wallet"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg> Wallet</button>
         <button class="settings-tab" onclick="switchSettingsTab('role')" data-tab="role"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> Role</button>
+        <button class="settings-tab" onclick="switchSettingsTab('telegram')" data-tab="telegram"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Telegram</button>
         <button class="settings-tab" onclick="switchSettingsTab('audit')" data-tab="audit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> Audit</button>
       </div>
       <div class="agent-settings-body" id="agent-settings-body">

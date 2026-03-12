@@ -1079,10 +1079,221 @@ function switchSettingsTab(tab) {
           (sel ? '<span style="margin-left:auto;color:var(--primary);font-size:1.2rem">✓</span>' : '') + '</div>';
       }).join('') +
       '</div></div>';
+  } else if (tab === 'telegram') {
+    body.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--text-muted)">Loading...</div>';
+    loadAgentTelegramTab(body, _detailAgentId);
   } else if (tab === 'audit') {
     body.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--text-muted)">' + (currentLang === 'ru' ? 'Загрузка аудита...' : 'Loading audit...') + '</div>';
     runSettingsAudit(body);
   }
+}
+
+// ═══ TELEGRAM TAB — per-agent Telegram account ═══
+var _agentTgPolling = null;
+
+async function loadAgentTelegramTab(body, agentId) {
+  try {
+    var data = await apiRequest('GET', '/api/telegram/status?agentId=' + agentId);
+    var info = data || {};
+    var isRu = currentLang === 'ru';
+
+    if (info.authorized) {
+      body.innerHTML =
+        '<div class="settings-section">' +
+        '<div class="settings-section-title">📱 Telegram Account</div>' +
+        '<div style="background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);border-radius:10px;padding:16px;margin-bottom:16px">' +
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">' +
+        '<span style="width:10px;height:10px;border-radius:50%;background:#22c55e;display:inline-block"></span>' +
+        '<span style="color:#22c55e;font-weight:600">' + (isRu ? 'Подключён' : 'Connected') + '</span></div>' +
+        (info.username ? '<div style="color:var(--text-secondary);font-size:13px">@' + escHtml(info.username) + '</div>' : '') +
+        (info.phone ? '<div style="color:var(--text-muted);font-size:12px">+' + escHtml(String(info.phone).replace(/^(\d{1,3})(\d+)(\d{4})$/, '$1•••$3')) + '</div>' : '') +
+        '</div>' +
+        '<button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="disconnectAgentTelegram(' + agentId + ')">' + (isRu ? 'Отключить аккаунт' : 'Disconnect') + '</button>' +
+        '</div>';
+    } else {
+      body.innerHTML =
+        '<div class="settings-section">' +
+        '<div class="settings-section-title">📱 Telegram Account</div>' +
+        '<p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">' +
+        (isRu ? 'Подключите Telegram аккаунт для этого агента. Агент будет действовать как реальный пользователь — читать чаты, отправлять сообщения, вступать в группы.'
+               : 'Connect a Telegram account for this agent. It will act as a real user — read chats, send messages, join groups.') + '</p>' +
+
+        // Auth method selector
+        '<div style="display:flex;gap:8px;margin-bottom:16px">' +
+        '<button class="btn btn-primary btn-sm" id="tg-auth-phone-btn" onclick="showAgentTgPhoneAuth(' + agentId + ')">' +
+        '📱 ' + (isRu ? 'По номеру' : 'Phone') + '</button>' +
+        '<button class="btn btn-ghost btn-sm" id="tg-auth-qr-btn" onclick="startAgentTgQR(' + agentId + ')">' +
+        '📷 QR Code</button></div>' +
+
+        // Phone auth form (default visible)
+        '<div id="tg-phone-form">' +
+        '<div class="settings-field"><label>' + (isRu ? 'Номер телефона' : 'Phone number') + '</label>' +
+        '<input type="tel" id="tg-phone-input" placeholder="+7 999 123 45 67" style="font-size:16px"></div>' +
+        '<button class="btn btn-primary btn-sm" onclick="sendAgentTgCode(' + agentId + ')">' + (isRu ? 'Отправить код' : 'Send code') + '</button></div>' +
+
+        // Code input (hidden)
+        '<div id="tg-code-form" style="display:none">' +
+        '<div class="settings-field"><label>' + (isRu ? 'Код из Telegram' : 'Code from Telegram') + '</label>' +
+        '<input type="text" id="tg-code-input" placeholder="12345" maxlength="6" style="font-size:20px;letter-spacing:8px;text-align:center"></div>' +
+        '<button class="btn btn-primary btn-sm" onclick="submitAgentTgCode(' + agentId + ')">' + (isRu ? 'Подтвердить' : 'Confirm') + '</button></div>' +
+
+        // 2FA password (hidden)
+        '<div id="tg-2fa-form" style="display:none">' +
+        '<div class="settings-field"><label>' + (isRu ? 'Облачный пароль (2FA)' : 'Cloud password (2FA)') + '</label>' +
+        '<input type="password" id="tg-2fa-input" placeholder="••••••••"></div>' +
+        '<button class="btn btn-primary btn-sm" onclick="submitAgentTg2FA(' + agentId + ')">' + (isRu ? 'Подтвердить' : 'Confirm') + '</button></div>' +
+
+        // QR container (hidden)
+        '<div id="tg-qr-container" style="display:none;text-align:center">' +
+        '<div id="tg-qr-img" style="margin:16px auto"></div>' +
+        '<p style="color:var(--text-muted);font-size:12px">' + (isRu ? 'Сканируйте в Telegram на телефоне' : 'Scan with Telegram on your phone') + '</p></div>' +
+
+        // Status message
+        '<div id="tg-auth-status" style="margin-top:12px"></div>' +
+        '</div>';
+    }
+  } catch (e) {
+    body.innerHTML = '<div style="color:var(--danger);padding:2rem;text-align:center">Error: ' + (e.message || e) + '</div>';
+  }
+}
+
+function showAgentTgPhoneAuth(agentId) {
+  var phoneForm = document.getElementById('tg-phone-form');
+  var qrContainer = document.getElementById('tg-qr-container');
+  if (phoneForm) phoneForm.style.display = '';
+  if (qrContainer) qrContainer.style.display = 'none';
+  if (_agentTgPolling) { clearInterval(_agentTgPolling); _agentTgPolling = null; }
+}
+
+async function sendAgentTgCode(agentId) {
+  var phone = (document.getElementById('tg-phone-input') || {}).value || '';
+  phone = phone.replace(/[\s\-\(\)]/g, '');
+  if (!phone || phone.length < 8) { toast('Enter valid phone number', 'error'); return; }
+  var statusEl = document.getElementById('tg-auth-status');
+  if (statusEl) statusEl.innerHTML = '<span style="color:var(--text-muted)">⏳ Sending code...</span>';
+  try {
+    var data = await apiRequest('POST', '/api/telegram/auth/phone', { agentId: agentId, phone: phone });
+    if (data.ok && data.ok !== false && !data.error) {
+      document.getElementById('tg-phone-form').style.display = 'none';
+      document.getElementById('tg-code-form').style.display = '';
+      if (statusEl) statusEl.innerHTML = '<span style="color:#22c55e">✅ Code sent to Telegram</span>';
+      setTimeout(function() { var ci = document.getElementById('tg-code-input'); if (ci) ci.focus(); }, 100);
+    } else {
+      if (statusEl) statusEl.innerHTML = '<span style="color:var(--danger)">❌ ' + escHtml(data.error || 'Error') + '</span>';
+    }
+  } catch (e) {
+    if (statusEl) statusEl.innerHTML = '<span style="color:var(--danger)">❌ ' + escHtml(e.message || 'Error') + '</span>';
+  }
+}
+
+async function submitAgentTgCode(agentId) {
+  var code = (document.getElementById('tg-code-input') || {}).value || '';
+  code = code.replace(/\s/g, '');
+  if (!code || code.length < 4) { toast('Enter the code', 'error'); return; }
+  var statusEl = document.getElementById('tg-auth-status');
+  if (statusEl) statusEl.innerHTML = '<span style="color:var(--text-muted)">⏳ Verifying...</span>';
+  try {
+    var data = await apiRequest('POST', '/api/telegram/auth/code', { agentId: agentId, code: code });
+    if (data.ok && !data.error) {
+      if (statusEl) statusEl.innerHTML = '<span style="color:#22c55e">✅ Connected!</span>';
+      toast('Telegram connected!', 'success');
+      setTimeout(function() { loadAgentTelegramTab(document.getElementById('agent-settings-body'), agentId); }, 500);
+    } else if (data.error === 'need_password') {
+      document.getElementById('tg-code-form').style.display = 'none';
+      document.getElementById('tg-2fa-form').style.display = '';
+      if (statusEl) statusEl.innerHTML = '<span style="color:#fbbf24">🔐 2FA password required</span>';
+      setTimeout(function() { var pi = document.getElementById('tg-2fa-input'); if (pi) pi.focus(); }, 100);
+    } else {
+      if (statusEl) statusEl.innerHTML = '<span style="color:var(--danger)">❌ ' + escHtml(data.error || 'Invalid code') + '</span>';
+    }
+  } catch (e) {
+    if (statusEl) statusEl.innerHTML = '<span style="color:var(--danger)">❌ ' + escHtml(e.message || 'Error') + '</span>';
+  }
+}
+
+async function submitAgentTg2FA(agentId) {
+  var password = (document.getElementById('tg-2fa-input') || {}).value || '';
+  if (!password) { toast('Enter password', 'error'); return; }
+  var statusEl = document.getElementById('tg-auth-status');
+  if (statusEl) statusEl.innerHTML = '<span style="color:var(--text-muted)">⏳ Verifying 2FA...</span>';
+  try {
+    var data = await apiRequest('POST', '/api/telegram/auth/password', { agentId: agentId, password: password });
+    if (data.ok && !data.error) {
+      if (statusEl) statusEl.innerHTML = '<span style="color:#22c55e">✅ Connected!</span>';
+      toast('Telegram connected!', 'success');
+      setTimeout(function() { loadAgentTelegramTab(document.getElementById('agent-settings-body'), agentId); }, 500);
+    } else {
+      if (statusEl) statusEl.innerHTML = '<span style="color:var(--danger)">❌ ' + escHtml(data.error || 'Wrong password') + '</span>';
+    }
+  } catch (e) {
+    if (statusEl) statusEl.innerHTML = '<span style="color:var(--danger)">❌ ' + escHtml(e.message || 'Error') + '</span>';
+  }
+}
+
+async function startAgentTgQR(agentId) {
+  var phoneForm = document.getElementById('tg-phone-form');
+  var codeForm = document.getElementById('tg-code-form');
+  var qrContainer = document.getElementById('tg-qr-container');
+  if (phoneForm) phoneForm.style.display = 'none';
+  if (codeForm) codeForm.style.display = 'none';
+  if (qrContainer) qrContainer.style.display = '';
+  var statusEl = document.getElementById('tg-auth-status');
+  if (statusEl) statusEl.innerHTML = '<span style="color:var(--text-muted)">⏳ Generating QR...</span>';
+
+  try {
+    var data = await apiRequest('POST', '/api/telegram/auth/qr', { agentId: agentId });
+    if (data.ok && data.qrUrl) {
+      var qrImgEl = document.getElementById('tg-qr-img');
+      if (qrImgEl) {
+        var encoded = encodeURIComponent(data.qrUrl);
+        qrImgEl.innerHTML = '<img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encoded + '" width="200" height="200" style="border-radius:12px;border:2px solid var(--border)">';
+      }
+      if (statusEl) statusEl.innerHTML = '<span style="color:var(--text-muted)">📱 Scan QR with Telegram app</span>';
+
+      // Poll for completion
+      if (_agentTgPolling) clearInterval(_agentTgPolling);
+      var pollCount = 0;
+      _agentTgPolling = setInterval(async function() {
+        pollCount++;
+        if (pollCount > 60) { clearInterval(_agentTgPolling); _agentTgPolling = null; return; }
+        try {
+          var poll = await apiRequest('GET', '/api/telegram/auth/poll?agentId=' + agentId);
+          if (poll.status === 'success') {
+            clearInterval(_agentTgPolling); _agentTgPolling = null;
+            if (statusEl) statusEl.innerHTML = '<span style="color:#22c55e">✅ Connected!</span>';
+            toast('Telegram connected!', 'success');
+            setTimeout(function() { loadAgentTelegramTab(document.getElementById('agent-settings-body'), agentId); }, 500);
+          } else if (poll.status === 'need_password') {
+            clearInterval(_agentTgPolling); _agentTgPolling = null;
+            if (qrContainer) qrContainer.style.display = 'none';
+            document.getElementById('tg-2fa-form').style.display = '';
+            if (statusEl) statusEl.innerHTML = '<span style="color:#fbbf24">🔐 2FA password required</span>';
+          } else if (poll.status === 'error') {
+            clearInterval(_agentTgPolling); _agentTgPolling = null;
+            if (statusEl) statusEl.innerHTML = '<span style="color:var(--danger)">❌ ' + escHtml(poll.error || 'Error') + '</span>';
+          } else if (poll.qrUrl && poll.qrUrl !== data.qrUrl) {
+            // QR refreshed
+            data.qrUrl = poll.qrUrl;
+            var enc2 = encodeURIComponent(poll.qrUrl);
+            if (qrImgEl) qrImgEl.innerHTML = '<img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + enc2 + '" width="200" height="200" style="border-radius:12px;border:2px solid var(--border)">';
+          }
+        } catch(e) {}
+      }, 2000);
+    } else {
+      if (statusEl) statusEl.innerHTML = '<span style="color:var(--danger)">❌ ' + escHtml(data.error || 'QR error') + '</span>';
+    }
+  } catch (e) {
+    if (statusEl) statusEl.innerHTML = '<span style="color:var(--danger)">❌ ' + escHtml(e.message || 'Error') + '</span>';
+  }
+}
+
+async function disconnectAgentTelegram(agentId) {
+  if (!confirm(currentLang === 'ru' ? 'Отключить Telegram аккаунт от этого агента?' : 'Disconnect Telegram from this agent?')) return;
+  try {
+    await apiRequest('DELETE', '/api/telegram/disconnect?agentId=' + agentId);
+    toast('Telegram disconnected', 'success');
+    loadAgentTelegramTab(document.getElementById('agent-settings-body'), agentId);
+  } catch(e) { toast(e.message || 'Error', 'error'); }
 }
 
 // Settings save functions
@@ -4627,27 +4838,111 @@ function toggleFlowGroup(groupId) {
   if (g) g.collapsed = !g.collapsed;
 }
 
-// Deploy flow with brain convergence animation
+// ═══ ATLAS DEPLOY MODAL — smart pre-flight check ═══
 let _deployAnimating = false;
+var _atlasDeployData = null;
+var _atlasDeployStep = 0;
+var _atlasDeployAnswers = [];
 
-async function deployFlow() {
-  if (!_flowNodes.length) { showFlowToast(t('deploy_fail') + ': add nodes first', 'error'); return; }
-  if (_deployAnimating) return;
+function closeAtlasDeploy() {
+  document.getElementById('atlas-deploy-modal').style.display = 'none';
+  _atlasDeployData = null;
+}
 
-  const name = document.getElementById('flow-agent-name')?.value?.trim() || 'Flow Agent';
-  const description = document.getElementById('flow-agent-desc')?.value?.trim() || '';
-  const flow = { nodes: _flowNodes.map(n => ({ id: n.id, type: n.type, x: n.x, y: n.y, config: n.config })), edges: _flowEdges.map(e => ({ from: e.from, fromPort: e.fromPort, to: e.to, toPort: e.toPort })), groups: _flowGroups };
-  const btn = document.getElementById('flow-deploy-btn');
+function showAtlasDeployStep() {
+  var summaryEl = document.getElementById('atlas-deploy-summary');
+  var questionEl = document.getElementById('atlas-deploy-question');
+  var optionsEl = document.getElementById('atlas-deploy-options');
+  var goBtn = document.getElementById('atlas-deploy-go');
+  var d = _atlasDeployData;
+
+  if (_atlasDeployStep === 0) {
+    // Step 0: flow summary + ask about AI enhancement
+    summaryEl.innerHTML =
+      '<div style="background:rgba(125,211,252,0.06);border-radius:10px;padding:14px;margin-bottom:4px">' +
+      '<div style="font-size:15px;font-weight:600;color:#f1f5f9;margin-bottom:8px">📋 ' + escHtml(d.name) + '</div>' +
+      '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:#94a3b8">' +
+      '<span>🔧 ' + d.nodeCount + ' блоков</span><span>🔗 ' + d.edgeCount + ' связей</span></div>' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">' +
+      d.caps.map(function(c) { return '<span style="background:rgba(125,211,252,0.12);color:#7dd3fc;padding:3px 10px;border-radius:12px;font-size:12px">' + c + '</span>'; }).join('') +
+      '</div>' +
+      (d.warnings.length ? '<div style="margin-top:10px;font-size:12px;color:#fbbf24">' + d.warnings.join('<br>') + '</div>' : '') +
+      '</div>';
+    questionEl.innerHTML = '<p style="color:#e2e8f0;font-size:14px;margin:0">Хотите, чтобы Atlas улучшил агента AI-интеллектом?</p>';
+    optionsEl.innerHTML = '';
+    [
+      { text: '⚡ Да, улучши AI', value: 'enhance', desc: 'Atlas добавит smart логику и обработку ошибок' },
+      { text: '📦 Деплой как есть', value: 'raw', desc: 'Без изменений, только ваш flow' }
+    ].forEach(function(o) {
+      var b = document.createElement('button');
+      b.className = 'btn btn-ghost';
+      b.style.cssText = 'text-align:left;padding:12px 16px;border:1px solid rgba(125,211,252,0.15);border-radius:10px;display:flex;flex-direction:column;gap:2px';
+      b.innerHTML = '<span style="color:#f1f5f9;font-size:14px">' + o.text + '</span><span style="color:#64748b;font-size:11px">' + o.desc + '</span>';
+      b.onclick = function() { atlasDeployAnswer(o.value); };
+      optionsEl.appendChild(b);
+    });
+    goBtn.style.display = 'none';
+
+  } else if (_atlasDeployStep === 1 && d.hasTelegram) {
+    // Step 1 (telegram flows only): ask about TG auth
+    summaryEl.innerHTML = '';
+    questionEl.innerHTML = '<p style="color:#e2e8f0;font-size:14px;margin:0">📱 Flow использует Telegram. Аккаунт подключён?</p>';
+    optionsEl.innerHTML = '';
+    [
+      { text: '✅ Да, подключён', value: 'tg_ok' },
+      { text: '⚙️ Подключу позже', value: 'tg_later' },
+      { text: '📖 Как подключить?', value: 'tg_help' }
+    ].forEach(function(o) {
+      var b = document.createElement('button');
+      b.className = 'btn btn-ghost';
+      b.style.cssText = 'text-align:left;padding:10px 16px;border:1px solid rgba(125,211,252,0.15);border-radius:10px;color:#e2e8f0;font-size:13px';
+      b.textContent = o.text;
+      b.onclick = function() { atlasDeployAnswer(o.value); };
+      optionsEl.appendChild(b);
+    });
+    goBtn.style.display = 'none';
+
+  } else {
+    // Final: ready to deploy
+    summaryEl.innerHTML = '';
+    questionEl.innerHTML = '<div style="text-align:center;padding:10px">' +
+      '<div style="font-size:36px;margin-bottom:8px">🚀</div>' +
+      '<p style="color:#e2e8f0;font-size:15px;margin:0">Готово к деплою!</p>' +
+      '<p style="color:#64748b;font-size:12px;margin:4px 0 0">' + escHtml(d.name) + ' • ' + d.caps.join(', ') + '</p></div>';
+    optionsEl.innerHTML = '';
+    goBtn.style.display = 'flex';
+  }
+}
+
+function atlasDeployAnswer(value) {
+  _atlasDeployAnswers.push(value);
+  if (value === 'tg_help') {
+    closeAtlasDeploy();
+    navigateTo('settings');
+    toast('📱 Подключите Telegram в разделе Telegram Account', 'info');
+    return;
+  }
+  _atlasDeployStep++;
+  if (_atlasDeployStep === 1 && !_atlasDeployData.hasTelegram) _atlasDeployStep++;
+  showAtlasDeployStep();
+}
+
+async function confirmAtlasDeploy() {
+  var d = _atlasDeployData;
+  closeAtlasDeploy();
+  if (!d) return;
+
+  var enhance = _atlasDeployAnswers.indexOf('enhance') >= 0;
+  var btn = document.getElementById('flow-deploy-btn');
   if (btn) { btn.disabled = true; btn.innerHTML = '... ' + t('deploying'); }
 
-  // Run deploy animation
   _deployAnimating = true;
   await runDeployAnimation();
 
   try {
-    const data = await apiRequest('POST', '/api/agents/flow', { name, description, flow });
+    var data = await apiRequest('POST', '/api/agents/flow', { name: d.name, description: d.description, flow: d.flow, enhance: enhance });
     if (data.ok) {
-      showFlowToast(t('deployed_ok') + ' #' + data.agentId, 'success');
+      showFlowToast('🎉 ' + t('deployed_ok') + ' #' + data.agentId, 'success');
       loadAgents();
     } else {
       showFlowToast((data.error || t('deploy_fail')), 'error');
@@ -4658,6 +4953,46 @@ async function deployFlow() {
     _deployAnimating = false;
     if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10"/></svg> ' + t('deploy'); }
   }
+}
+
+async function deployFlow() {
+  if (!_flowNodes.length) { showFlowToast(t('deploy_fail') + ': add nodes first', 'error'); return; }
+  if (_deployAnimating) return;
+
+  var name = (document.getElementById('flow-agent-name') || {}).value || '';
+  name = name.trim() || 'Flow Agent';
+  var description = (document.getElementById('flow-agent-desc') || {}).value || '';
+  description = description.trim();
+  var flow = {
+    nodes: _flowNodes.map(function(n) { return { id: n.id, type: n.type, x: n.x, y: n.y, config: n.config }; }),
+    edges: _flowEdges.map(function(e) { return { from: e.from, fromPort: e.fromPort, to: e.to, toPort: e.toPort }; }),
+    groups: _flowGroups
+  };
+
+  // Analyze flow capabilities
+  var nodeTypes = _flowNodes.map(function(n) { return n.type || ''; });
+  var hasTelegram = nodeTypes.some(function(tp) { return tp.indexOf('tg_') === 0 || tp === 'send_message'; });
+  var hasGifts = nodeTypes.some(function(tp) { return tp.indexOf('gift') >= 0 || tp.indexOf('arbitrage') >= 0; });
+  var hasTon = nodeTypes.some(function(tp) { return tp.indexOf('balance') >= 0 || tp.indexOf('send_ton') >= 0 || tp.indexOf('nft') >= 0; });
+  var hasWeb = nodeTypes.some(function(tp) { return tp.indexOf('web') >= 0 || tp.indexOf('fetch') >= 0 || tp.indexOf('http') >= 0; });
+
+  var caps = [];
+  if (hasTelegram) caps.push('📱 Telegram');
+  if (hasGifts) caps.push('🎁 Gifts');
+  if (hasTon) caps.push('💰 TON');
+  if (hasWeb) caps.push('🌐 Web');
+  if (!caps.length) caps.push('📋 Auto');
+
+  var warnings = [];
+  if (hasTelegram) warnings.push('⚠️ Telegram требует подключённый аккаунт');
+  if (hasGifts && hasTon) warnings.push('💡 Торговля подарками требует TON-кошелёк');
+
+  // Show Atlas Deploy Modal
+  _atlasDeployData = { name: name, description: description, flow: flow, nodeCount: _flowNodes.length, edgeCount: _flowEdges.length, caps: caps, warnings: warnings, hasTelegram: hasTelegram };
+  _atlasDeployStep = 0;
+  _atlasDeployAnswers = [];
+  document.getElementById('atlas-deploy-modal').style.display = 'flex';
+  showAtlasDeployStep();
 }
 
 function runDeployAnimation() {
@@ -6886,7 +7221,7 @@ async function confirmNetworkDelete(agentId) {
   if (dialog) dialog.remove();
 }
 
-// ===== TELEGRAM USERBOT AUTH (per-user, like Telethon) =====
+// ===== TELEGRAM USERBOT AUTH (per-agent MTProto) =====
 let _tgPollInterval = null;
 
 async function checkTelegramStatus() {

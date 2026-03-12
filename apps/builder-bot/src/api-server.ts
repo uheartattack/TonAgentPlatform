@@ -430,7 +430,7 @@ function flowToExecutableCode(flow: { nodes: any[]; edges: any[]; groups?: any[]
       // TG message: interpolate text and peer
       L.push(`${indent}var _msg = tpl(${JSON.stringify(cfg.text || '{{result}}')});`);
       L.push(`${indent}if (!_msg || _msg === "undefined") _msg = JSON.stringify(state._last);`);
-      L.push(`${indent}await callTool("tg_send_message", { peer: tpl(${JSON.stringify(cfg.peer || '')}), text: _msg });`);
+      L.push(`${indent}await callTool("tg_send_message", { peer: tpl(${JSON.stringify(cfg.peer || '')}), message: _msg });`);
     } else if (node.type === 'web_search') {
       const vn = 'v' + (varIdx++);
       L.push(`${indent}var ${vn} = await webSearch(tpl(${JSON.stringify(cfg.query || '')}));`);
@@ -720,8 +720,19 @@ export function startApiServer() {
         const uv = await getUserSettingsRepository().get(userId, 'user_variables');
         if (uv) userVars = typeof uv === 'string' ? JSON.parse(uv) : uv;
       } catch {}
-      // Hybrid: system prompt describes workflow for AI, execCode is the real script
-      const hybridPrompt = systemPrompt + '\n\n---\nThe above workflow is also compiled into executable code that runs automatically.\nYou may be asked to handle edge cases or make decisions that the code cannot handle.\nUse your tools when the code execution needs AI judgment.';
+      // Determine needed capabilities from flow nodes
+      const nodeTypes = new Set(flow.nodes.map((n: any) => n.type));
+      const flowCaps: string[] = ['state', 'notify'];
+      if (nodeTypes.has('send_message') || nodeTypes.has('tg_get_messages') || nodeTypes.has('tg_join')) flowCaps.push('telegram');
+      if (nodeTypes.has('get_balance') || nodeTypes.has('send_ton')) flowCaps.push('wallet');
+      if (nodeTypes.has('web_search') || nodeTypes.has('fetch_url') || nodeTypes.has('http_request')) flowCaps.push('web');
+      // Only add gift caps if flow explicitly uses gift nodes
+      if (nodeTypes.has('scan_arbitrage') || nodeTypes.has('get_gifts') || nodeTypes.has('gift_floor')) {
+        flowCaps.push('gifts', 'gifts_market');
+      }
+
+      // Constructor agent prompt — focused, no distracting instructions
+      const hybridPrompt = systemPrompt + '\n\n---\nThis agent runs compiled flow code automatically each tick.\nYou handle ONLY chat messages from the user about this workflow.\nDo NOT call tools unless the user asks you to in chat. The compiled code handles everything.';
       const created = await getDBTools().createAgent({
         userId,
         name: agentName,
@@ -736,6 +747,7 @@ export function startApiServer() {
           config: {
             AI_PROVIDER: userVars.AI_PROVIDER || '',
             AI_API_KEY: userVars.AI_API_KEY || '',
+            enabledCapabilities: flowCaps, // ONLY capabilities needed by the flow
           },
         },
         isActive: false,
@@ -1503,57 +1515,84 @@ export function startApiServer() {
     }
   });
 
-  // ── Telegram Userbot Auth (per-user, like Telethon) ────────────────
+  // ── Telegram Userbot Auth (per-AGENT — each agent gets its own TG account) ──
 
   const { userbotManager } = require('./services/userbot-manager');
 
-  // GET /api/telegram/status — check if user has Telegram connected
+  // GET /api/telegram/status?agentId=123 — check if agent has Telegram connected
   app.get('/api/telegram/status', requireAuth, async (req: Request, res: Response) => {
-    const userId = (req as any).userId;
+    const agentId = parseInt(req.query.agentId as string);
+    if (!agentId) { res.json({ ok: true, authorized: false }); return; }
     try {
-      const info = await userbotManager.getUserInfo(userId);
+      const info = await userbotManager.getAgentTelegramInfo(agentId);
       res.json({ ok: true, ...info });
     } catch (e: any) {
       res.json({ ok: true, authorized: false });
     }
   });
 
-  // POST /api/telegram/auth/qr — start QR login for any Telegram account
+  // POST /api/telegram/auth/qr — start QR login for an agent
   app.post('/api/telegram/auth/qr', requireAuth, async (req: Request, res: Response) => {
-    const userId = (req as any).userId;
+    const { agentId } = req.body || {};
+    if (!agentId) { res.status(400).json({ ok: false, error: 'agentId required' }); return; }
     try {
-      const result = await userbotManager.startQRLogin(userId);
+      const result = await userbotManager.startQRLogin(Number(agentId));
       res.json({ ok: true, ...result });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e.message });
     }
   });
 
-  // GET /api/telegram/auth/poll — poll QR auth status
+  // POST /api/telegram/auth/phone — start phone+code login for an agent
+  app.post('/api/telegram/auth/phone', requireAuth, async (req: Request, res: Response) => {
+    const { agentId, phone } = req.body || {};
+    if (!agentId || !phone) { res.status(400).json({ ok: false, error: 'agentId and phone required' }); return; }
+    try {
+      const result = await userbotManager.startPhoneLogin(Number(agentId), phone);
+      res.json({ ok: true, ...result });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  // POST /api/telegram/auth/code — submit verification code (phone flow)
+  app.post('/api/telegram/auth/code', requireAuth, async (req: Request, res: Response) => {
+    const { agentId, code } = req.body || {};
+    if (!agentId || !code) { res.status(400).json({ ok: false, error: 'agentId and code required' }); return; }
+    try {
+      const result = await userbotManager.submitCode(Number(agentId), code);
+      res.json({ ok: true, ...result });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  // GET /api/telegram/auth/poll?agentId=123 — poll auth status
   app.get('/api/telegram/auth/poll', requireAuth, async (req: Request, res: Response) => {
-    const userId = (req as any).userId;
-    const status = userbotManager.getQRStatus(userId);
+    const agentId = parseInt(req.query.agentId as string);
+    if (!agentId) { res.json({ ok: true, status: 'none' }); return; }
+    const status = userbotManager.getAuthStatus(agentId);
     res.json({ ok: true, ...status });
   });
 
-  // POST /api/telegram/auth/password — submit 2FA password after QR scan
+  // POST /api/telegram/auth/password — submit 2FA password (both QR and phone flow)
   app.post('/api/telegram/auth/password', requireAuth, async (req: Request, res: Response) => {
-    const userId = (req as any).userId;
-    const { password } = req.body || {};
-    if (!password) { res.status(400).json({ ok: false, error: 'Password required' }); return; }
+    const { agentId, password } = req.body || {};
+    if (!agentId || !password) { res.status(400).json({ ok: false, error: 'agentId and password required' }); return; }
     try {
-      const result = await userbotManager.submit2FAPassword(userId, password);
+      const result = await userbotManager.submit2FAPassword(Number(agentId), password);
       res.json({ ok: true, ...result });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e.message });
     }
   });
 
-  // DELETE /api/telegram/disconnect — disconnect Telegram account
+  // DELETE /api/telegram/disconnect — disconnect agent's Telegram account
   app.delete('/api/telegram/disconnect', requireAuth, async (req: Request, res: Response) => {
-    const userId = (req as any).userId;
+    const agentId = parseInt(req.query.agentId as string || req.body?.agentId);
+    if (!agentId) { res.status(400).json({ ok: false, error: 'agentId required' }); return; }
     try {
-      await userbotManager.disconnectUser(userId);
+      await userbotManager.disconnectAgent(agentId);
       res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e.message });

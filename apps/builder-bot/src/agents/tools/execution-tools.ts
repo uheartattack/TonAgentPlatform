@@ -863,9 +863,12 @@ export class ExecutionTools {
           //   telegram.joinChannel(username)
           //   telegram.getDialogs(limit)  и т.д.
           telegram: await (async () => {
-            // Per-user Telegram (like Telethon) — each user connects their own account
+            // Per-AGENT Telegram — each agent has its own TG account
             try {
               const { userbotManager } = require('../../services/userbot-manager');
+              const agentSandbox = await userbotManager.buildAgentSandbox(params.agentId || 0);
+              if (agentSandbox) return agentSandbox;
+              // Fallback: try per-user (backward compat)
               const perUserSandbox = await userbotManager.buildUserSandbox(params.userId);
               if (perUserSandbox) return perUserSandbox;
             } catch {}

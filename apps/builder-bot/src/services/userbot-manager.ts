@@ -1,10 +1,10 @@
 /**
- * UserbotManager — Per-user GramJS MTProto session manager
+ * UserbotManager — Per-AGENT GramJS MTProto session manager
  *
- * Like Telethon: each user connects ANY Telegram account,
- * agents operate as that real Telegram user.
- *
- * Sessions stored in DB (user_settings key=telegram_session).
+ * EACH AGENT gets its OWN Telegram account.
+ * Auth methods: QR code OR phone+code+2FA
+ * Sessions stored in DB (agent trigger_config.telegram_session).
+ * Always online — auto-reconnect, health checks.
  */
 
 import { TelegramClient } from 'telegram';
@@ -15,7 +15,7 @@ import { Pool } from 'pg';
 const API_ID   = parseInt(process.env.TG_API_ID   || '2040');
 const API_HASH =          process.env.TG_API_HASH  || 'b18441a1ff607e10a989891a5462e627';
 
-interface UserClient {
+interface AgentClient {
   client: TelegramClient;
   connected: boolean;
   lastUsed: number;
@@ -24,16 +24,22 @@ interface UserClient {
   phone?: string;
 }
 
-interface QRAuthState {
+interface AuthState {
   client: TelegramClient;
   done: boolean;
   cancelFn: (() => void) | null;
+  status: 'pending' | 'waiting_code' | 'need_password' | 'success' | 'error';
+  // QR-specific
   currentToken: Buffer | null;
-  status: 'pending' | 'success' | 'need_password' | 'error';
   qrUrl?: string;
   expiresIn?: number;
+  // Phone-specific
+  phoneHash?: string;
+  phone?: string;
+  // General
   error?: string;
   complete2FA?: (password: string) => Promise<{ ok: boolean; error?: string }>;
+  submitCode?: (code: string) => Promise<{ ok: boolean; error?: string }>;
 }
 
 let _pool: Pool | null = null;
@@ -51,44 +57,195 @@ function getPool(): Pool {
   return _pool;
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// MESSAGE HANDLING PIPELINE
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** Parsed incoming Telegram message (TON Agent Platform internal format) */
+interface TgInboxMessage {
+  id: number;
+  chatId: string;          // string for consistency
+  senderId: number;
+  senderUsername: string;
+  senderFirstName: string;
+  text: string;
+  date: number;            // unix ts
+  isGroup: boolean;
+  isChannel: boolean;
+  isBot: boolean;
+  mentionsMe: boolean;
+  replyToId?: number;
+  hasMedia: boolean;
+  mediaType?: string;
+  _raw: any;               // original GramJS message
+}
+
+/** Context frame — wraps message with metadata for AI context window */
+function buildContextFrame(msg: TgInboxMessage, elapsed?: number): string {
+  const name = msg.senderUsername ? `@${msg.senderUsername}` : msg.senderFirstName || `id:${msg.senderId}`;
+  const time = new Date(msg.date * 1000).toISOString().slice(11, 16);
+  const elapsedStr = elapsed ? ` +${elapsed < 60 ? `${elapsed}s` : `${Math.floor(elapsed / 60)}m`}` : '';
+  const media = msg.hasMedia ? ` [${msg.mediaType || 'media'}]` : '';
+  const reply = msg.replyToId ? ` (reply to #${msg.replyToId})` : '';
+  return `[Telegram ${name}${elapsedStr} ${time}${media}${reply}] <user_message>${msg.text}</user_message>`;
+}
+
+/** Per-chat serial dispatcher — prevents race conditions */
+class ChatDispatcher {
+  private chains = new Map<string, Promise<void>>();
+
+  enqueue(chatId: string, task: () => Promise<void>): Promise<void> {
+    const prev = this.chains.get(chatId) ?? Promise.resolve();
+    const next = prev
+      .then(task, () => task())
+      .finally(() => {
+        if (this.chains.get(chatId) === next) this.chains.delete(chatId);
+      });
+    this.chains.set(chatId, next);
+    return next;
+  }
+}
+
+/** Duplicate filter — prevents processing same message twice */
+class DuplicateFilter {
+  private seen = new Set<string>();
+  private maxSize = 500;
+
+  isDuplicate(chatId: string, msgId: number): boolean {
+    const key = `${chatId}:${msgId}`;
+    if (this.seen.has(key)) return true;
+    this.seen.add(key);
+    if (this.seen.size > this.maxSize) {
+      // Evict oldest half
+      const arr = [...this.seen];
+      this.seen = new Set(arr.slice(arr.length / 2));
+    }
+    return false;
+  }
+}
+
+/** Group context buffer — accumulates messages when agent isn't mentioned */
+class GroupContextBuffer {
+  private history = new Map<string, TgInboxMessage[]>();
+  private maxPerChat = 50;
+  private maxAgeMs = 30 * 60 * 1000; // 30 min
+
+  add(chatId: string, msg: TgInboxMessage): void {
+    if (!this.history.has(chatId)) this.history.set(chatId, []);
+    const arr = this.history.get(chatId)!;
+    arr.push(msg);
+    if (arr.length > this.maxPerChat) arr.splice(0, arr.length - this.maxPerChat);
+  }
+
+  flush(chatId: string): TgInboxMessage[] {
+    const arr = this.history.get(chatId) || [];
+    this.history.delete(chatId);
+    const cutoff = Date.now() / 1000 - this.maxAgeMs / 1000;
+    return arr.filter(m => m.date > cutoff);
+  }
+}
+
+/** Chat history ring — recent messages for AI context window */
+class ChatHistoryRing {
+  private memory = new Map<string, string[]>(); // chatId → last N formatted messages
+  private maxPerChat = 30;
+
+  add(chatId: string, envelope: string): void {
+    if (!this.memory.has(chatId)) this.memory.set(chatId, []);
+    const arr = this.memory.get(chatId)!;
+    arr.push(envelope);
+    if (arr.length > this.maxPerChat) arr.splice(0, arr.length - this.maxPerChat);
+  }
+
+  addResponse(chatId: string, text: string): void {
+    this.add(chatId, `[ME] ${text.slice(0, 500)}`);
+  }
+
+  getContext(chatId: string): string {
+    return (this.memory.get(chatId) || []).join('\n');
+  }
+
+  clear(chatId: string): void {
+    this.memory.delete(chatId);
+  }
+}
+
+// Shared instances
+const chatDispatcher = new ChatDispatcher();
+const dupFilter = new DuplicateFilter();
+const groupBuffer = new GroupContextBuffer();
+const chatRing = new ChatHistoryRing();
+
+// Per-chat last message timestamp for elapsed time calculation
+const _lastMsgTime = new Map<string, number>();
+
+// Agent → message handler config (loaded from DB when agent starts)
+interface AgentMessageConfig {
+  agentId: number;
+  userId: number;
+  selfTgId: number;           // agent's own Telegram user ID
+  selfUsername: string;
+  systemPrompt: string;       // agent's persona/soul
+  dmPolicy: 'open' | 'admin-only' | 'disabled';
+  groupPolicy: 'open' | 'mention-only' | 'disabled';
+  config: Record<string, any>; // AI config (provider, key, model)
+}
+const _agentMsgConfigs = new Map<number, AgentMessageConfig>();
+
+/** Register a message handler config for an agent */
+export function registerAgentMessageConfig(cfg: AgentMessageConfig): void {
+  _agentMsgConfigs.set(cfg.agentId, cfg);
+}
+
+/** Unregister message handler config */
+export function unregisterAgentMessageConfig(agentId: number): void {
+  _agentMsgConfigs.delete(agentId);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+
 class UserbotManager {
-  private clients = new Map<number, UserClient>();
-  private qrStates = new Map<number, QRAuthState>();
+  // Key = agentId (number)
+  private clients = new Map<number, AgentClient>();
+  private authStates = new Map<number, AuthState>();
 
   constructor() {
-    // Auto-reconnect all saved sessions on startup (like Telethon — always online)
     setTimeout(() => this.restoreAllSessions(), 5000);
-    // Health check every 5min — reconnect dropped connections
     setInterval(() => this.healthCheck(), 5 * 60 * 1000);
   }
 
-  /** Restore all saved Telegram sessions from DB on startup */
+  // ── Session restore (always online) ─────────────────────────────────
+
   async restoreAllSessions(): Promise<void> {
     try {
       const pool = getPool();
       const res = await pool.query(
-        `SELECT user_id, value FROM builder_bot.user_settings WHERE key = 'telegram_session'`
+        `SELECT id, trigger_config FROM builder_bot.agents WHERE trigger_type = 'ai_agent' AND is_active = true`
       );
+      let restored = 0;
       for (const row of res.rows) {
-        const userId = Number(row.user_id);
-        const val = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
-        if (val?.session) {
+        const agentId = Number(row.id);
+        const tc = typeof row.trigger_config === 'string' ? JSON.parse(row.trigger_config) : row.trigger_config;
+        const sess = tc?.telegram_session;
+        if (sess?.session) {
           try {
-            await this.connectUser(userId, val.session);
-            console.log(`[UserbotMgr] ✅ Restored session for user ${userId} (@${val.username || '?'})`);
+            await this.connectAgent(agentId, sess.session);
+            console.log(`[UserbotMgr] ✅ Restored agent #${agentId} as @${sess.username || '?'}`);
+            restored++;
           } catch (e: any) {
-            console.warn(`[UserbotMgr] Failed to restore user ${userId}:`, e.message);
+            console.warn(`[UserbotMgr] Failed to restore agent #${agentId}:`, e.message);
           }
         }
       }
-      console.log(`[UserbotMgr] Restored ${this.clients.size} Telegram sessions`);
+      console.log(`[UserbotMgr] Restored ${restored} agent Telegram sessions`);
     } catch (e: any) {
       console.error('[UserbotMgr] restoreAllSessions error:', e.message);
     }
   }
 
-  /** Connect a user with a known session string */
-  async connectUser(userId: number, sessionString: string): Promise<TelegramClient> {
+  // ── Connect/Disconnect ──────────────────────────────────────────────
+
+  async connectAgent(agentId: number, sessionString: string): Promise<TelegramClient> {
     const session = new StringSession(sessionString);
     const client = new TelegramClient(session, API_ID, API_HASH, {
       connectionRetries: 10,
@@ -105,7 +262,7 @@ class UserbotManager {
 
     if (!me) throw new Error('Auth failed');
 
-    this.clients.set(userId, {
+    this.clients.set(agentId, {
       client,
       connected: true,
       lastUsed: Date.now(),
@@ -117,51 +274,61 @@ class UserbotManager {
     return client;
   }
 
-  /** Health check — reconnect dropped sessions (always online) */
+  async disconnectAgent(agentId: number): Promise<void> {
+    const ac = this.clients.get(agentId);
+    if (ac) {
+      try { await ac.client.disconnect(); } catch {}
+      this.clients.delete(agentId);
+    }
+    await this.deleteSessionFromDB(agentId);
+    this.authStates.delete(agentId);
+    console.log(`[UserbotMgr] Disconnected agent #${agentId}`);
+  }
+
+  // ── Health check ────────────────────────────────────────────────────
+
   private async healthCheck(): Promise<void> {
-    for (const [userId, uc] of this.clients) {
-      if (!uc.connected) {
-        // Try to reconnect from DB
+    for (const [agentId, ac] of this.clients) {
+      if (!ac.connected) {
         try {
-          const sess = await this.loadSessionFromDB(userId);
+          const sess = await this.loadSessionFromDB(agentId);
           if (sess) {
-            await this.connectUser(userId, sess);
-            console.log(`[UserbotMgr] Reconnected user ${userId}`);
+            await this.connectAgent(agentId, sess);
+            console.log(`[UserbotMgr] Reconnected agent #${agentId}`);
           }
-        } catch (e: any) {
-          console.warn(`[UserbotMgr] Reconnect failed for ${userId}:`, e.message);
-        }
+        } catch {}
         continue;
       }
-      // Verify connected client is still alive
       try {
         await Promise.race([
-          uc.client.getMe(),
+          ac.client.getMe(),
           new Promise<null>((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000)),
         ]);
       } catch {
-        console.warn(`[UserbotMgr] Client dead for user ${userId}, reconnecting...`);
-        uc.connected = false;
+        console.warn(`[UserbotMgr] Client dead for agent #${agentId}, reconnecting...`);
+        ac.connected = false;
         try {
-          const sess = await this.loadSessionFromDB(userId);
-          if (sess) await this.connectUser(userId, sess);
+          const sess = await this.loadSessionFromDB(agentId);
+          if (sess) await this.connectAgent(agentId, sess);
         } catch {}
       }
     }
   }
 
-  // ── Session DB operations ─────────────────────────────────────────
+  // ── DB operations (session stored in agent's trigger_config) ────────
 
-  async loadSessionFromDB(userId: number): Promise<string | null> {
+  async loadSessionFromDB(agentId: number): Promise<string | null> {
     try {
       const pool = getPool();
       const res = await pool.query(
-        `SELECT value FROM builder_bot.user_settings WHERE user_id = $1 AND key = 'telegram_session'`,
-        [userId]
+        `SELECT trigger_config FROM builder_bot.agents WHERE id = $1`,
+        [agentId]
       );
       if (res.rows.length > 0) {
-        const val = res.rows[0].value;
-        return typeof val === 'string' ? val : (val as any)?.session || null;
+        const tc = typeof res.rows[0].trigger_config === 'string'
+          ? JSON.parse(res.rows[0].trigger_config)
+          : res.rows[0].trigger_config;
+        return tc?.telegram_session?.session || null;
       }
     } catch (e: any) {
       console.error('[UserbotMgr] loadSession error:', e.message);
@@ -169,133 +336,108 @@ class UserbotManager {
     return null;
   }
 
-  async saveSessionToDB(userId: number, session: string, meta?: { phone?: string; username?: string; telegramUserId?: number }): Promise<void> {
+  async saveSessionToDB(agentId: number, session: string, meta?: { phone?: string; username?: string; telegramUserId?: number }): Promise<void> {
     try {
       const pool = getPool();
-      const value = JSON.stringify({ session, ...meta, updatedAt: new Date().toISOString() });
+      // Read existing trigger_config, merge telegram_session
+      const res = await pool.query(`SELECT trigger_config FROM builder_bot.agents WHERE id = $1`, [agentId]);
+      if (res.rows.length === 0) return;
+      const tc = typeof res.rows[0].trigger_config === 'string'
+        ? JSON.parse(res.rows[0].trigger_config)
+        : (res.rows[0].trigger_config || {});
+      tc.telegram_session = { session, ...meta, updatedAt: new Date().toISOString() };
       await pool.query(
-        `INSERT INTO builder_bot.user_settings (user_id, key, value, updated_at)
-         VALUES ($1, 'telegram_session', $2::jsonb, NOW())
-         ON CONFLICT (user_id, key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()`,
-        [userId, value]
+        `UPDATE builder_bot.agents SET trigger_config = $1::jsonb WHERE id = $2`,
+        [JSON.stringify(tc), agentId]
       );
     } catch (e: any) {
       console.error('[UserbotMgr] saveSession error:', e.message);
     }
   }
 
-  async deleteSessionFromDB(userId: number): Promise<void> {
+  async deleteSessionFromDB(agentId: number): Promise<void> {
     try {
       const pool = getPool();
+      const res = await pool.query(`SELECT trigger_config FROM builder_bot.agents WHERE id = $1`, [agentId]);
+      if (res.rows.length === 0) return;
+      const tc = typeof res.rows[0].trigger_config === 'string'
+        ? JSON.parse(res.rows[0].trigger_config)
+        : (res.rows[0].trigger_config || {});
+      delete tc.telegram_session;
       await pool.query(
-        `DELETE FROM builder_bot.user_settings WHERE user_id = $1 AND key = 'telegram_session'`,
-        [userId]
+        `UPDATE builder_bot.agents SET trigger_config = $1::jsonb WHERE id = $2`,
+        [JSON.stringify(tc), agentId]
       );
     } catch (e: any) {
       console.error('[UserbotMgr] deleteSession error:', e.message);
     }
   }
 
-  // ── Client lifecycle ──────────────────────────────────────────────
+  // ── Client access ───────────────────────────────────────────────────
 
-  async getClient(userId: number): Promise<TelegramClient | null> {
-    // Return existing connected client (always online — no idle disconnect)
-    const existing = this.clients.get(userId);
+  async getClient(agentId: number): Promise<TelegramClient | null> {
+    const existing = this.clients.get(agentId);
     if (existing?.connected) {
       existing.lastUsed = Date.now();
       return existing.client;
     }
-
-    // Try loading from DB and reconnecting (auto-reconnect like Telethon)
-    const sessionStr = await this.loadSessionFromDB(userId);
+    const sessionStr = await this.loadSessionFromDB(agentId);
     if (!sessionStr) return null;
-
     try {
-      return await this.connectUser(userId, sessionStr);
+      return await this.connectAgent(agentId, sessionStr);
     } catch (e: any) {
-      console.error(`[UserbotMgr] Connect failed for user ${userId}:`, e.message);
+      console.error(`[UserbotMgr] Connect failed for agent #${agentId}:`, e.message);
       return null;
     }
   }
 
-  async disconnectUser(userId: number): Promise<void> {
-    const uc = this.clients.get(userId);
-    if (uc) {
-      try { await uc.client.disconnect(); } catch {}
-      this.clients.delete(userId);
-    }
-    await this.deleteSessionFromDB(userId);
-    this.qrStates.delete(userId);
-    console.log(`[UserbotMgr] Disconnected user ${userId}`);
-  }
-
-  async isUserAuthorized(userId: number): Promise<boolean> {
-    const uc = this.clients.get(userId);
-    if (uc?.connected) {
-      try {
-        const me = await Promise.race([
-          uc.client.getMe(),
-          new Promise<null>((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000)),
-        ]);
-        return !!me;
-      } catch {
-        uc.connected = false;
-        return false;
-      }
-    }
-    // Check DB
-    const sessionStr = await this.loadSessionFromDB(userId);
+  async isAgentAuthorized(agentId: number): Promise<boolean> {
+    const ac = this.clients.get(agentId);
+    if (ac?.connected) return true;
+    const sessionStr = await this.loadSessionFromDB(agentId);
     return !!sessionStr;
   }
 
-  async getUserInfo(userId: number): Promise<{ authorized: boolean; username?: string; phone?: string; telegramUserId?: number } | null> {
-    // Check in-memory first
-    const uc = this.clients.get(userId);
-    if (uc?.connected) {
-      return { authorized: true, username: uc.username, phone: uc.phone, telegramUserId: uc.telegramUserId };
+  async getAgentTelegramInfo(agentId: number): Promise<{ authorized: boolean; username?: string; phone?: string; telegramUserId?: number }> {
+    const ac = this.clients.get(agentId);
+    if (ac?.connected) {
+      return { authorized: true, username: ac.username, phone: ac.phone, telegramUserId: ac.telegramUserId };
     }
-    // Check DB
     try {
       const pool = getPool();
-      const res = await pool.query(
-        `SELECT value FROM builder_bot.user_settings WHERE user_id = $1 AND key = 'telegram_session'`,
-        [userId]
-      );
+      const res = await pool.query(`SELECT trigger_config FROM builder_bot.agents WHERE id = $1`, [agentId]);
       if (res.rows.length > 0) {
-        const val = typeof res.rows[0].value === 'string' ? JSON.parse(res.rows[0].value) : res.rows[0].value;
-        return { authorized: true, username: val.username, phone: val.phone, telegramUserId: val.telegramUserId };
+        const tc = typeof res.rows[0].trigger_config === 'string'
+          ? JSON.parse(res.rows[0].trigger_config)
+          : res.rows[0].trigger_config;
+        const sess = tc?.telegram_session;
+        if (sess?.session) {
+          return { authorized: true, username: sess.username, phone: sess.phone, telegramUserId: sess.telegramUserId };
+        }
       }
     } catch {}
     return { authorized: false };
   }
 
-  // ── QR Code Login (per-user, any account) ─────────────────────────
+  // ══════════════════════════════════════════════════════════════════════
+  // AUTH METHOD 1: QR Code Login
+  // ══════════════════════════════════════════════════════════════════════
 
-  async startQRLogin(userId: number, timeoutMs = 120_000): Promise<{ ok: boolean; qrUrl?: string; expiresIn?: number; error?: string }> {
-    // Cancel previous QR session for this user
-    const prev = this.qrStates.get(userId);
+  async startQRLogin(agentId: number, timeoutMs = 120_000): Promise<{ ok: boolean; qrUrl?: string; expiresIn?: number; error?: string }> {
+    const prev = this.authStates.get(agentId);
     if (prev?.cancelFn) prev.cancelFn();
 
-    // Create fresh client for this user
     const session = new StringSession('');
     const client = new TelegramClient(session, API_ID, API_HASH, {
-      connectionRetries: 5,
-      requestRetries: 3,
-      autoReconnect: true,
-      useWSS: false,
+      connectionRetries: 5, requestRetries: 3, autoReconnect: true, useWSS: false,
     });
     await client.connect();
 
-    const state: QRAuthState = {
-      client,
-      done: false,
-      cancelFn: null,
-      currentToken: null,
-      status: 'pending',
+    const state: AuthState = {
+      client, done: false, cancelFn: null, currentToken: null, status: 'pending',
     };
-    this.qrStates.set(userId, state);
+    this.authStates.set(agentId, state);
 
-    // Setup event-based QR login
     return new Promise<{ ok: boolean; qrUrl?: string; expiresIn?: number; error?: string }>(async (resolve) => {
       let refreshTimer: NodeJS.Timeout | null = null;
       let updateHandler: ((upd: any) => Promise<void>) | null = null;
@@ -309,107 +451,64 @@ class UserbotManager {
         if (updateHandler && rawFilter) {
           try { client.removeEventHandler(updateHandler, rawFilter); } catch {}
         }
-        if (!result.ok) {
-          state.status = 'error';
-          state.error = result.error;
-        }
+        if (!result.ok) { state.status = 'error'; state.error = result.error; }
       };
 
       state.cancelFn = () => finish({ ok: false, error: 'cancelled' });
-
       const timeoutHandle = setTimeout(() => finish({ ok: false, error: 'timeout' }), timeoutMs);
 
-      // Handle UpdateLoginToken (user scanned QR)
+      const saveAndFinish = async () => {
+        const sessionStr = client.session.save() as unknown as string;
+        const me = await client.getMe() as any;
+        clearTimeout(timeoutHandle);
+        await this.saveSessionToDB(agentId, sessionStr, {
+          username: me?.username, phone: me?.phone,
+          telegramUserId: me?.id?.toJSNumber?.() ?? Number(me?.id),
+        });
+        this.clients.set(agentId, {
+          client, connected: true, lastUsed: Date.now(),
+          telegramUserId: me?.id?.toJSNumber?.() ?? Number(me?.id),
+          username: me?.username, phone: me?.phone,
+        });
+        state.status = 'success';
+        console.log(`[UserbotMgr] ✅ Agent #${agentId} QR login as @${me?.username}`);
+        finish({ ok: true });
+      };
+
       updateHandler = async (upd: any) => {
         if (state.done || !state.currentToken) return;
         const isLoginToken = upd.className === 'UpdateLoginToken' || upd.CONSTRUCTOR_ID === 0x564FE691;
         if (!isLoginToken) return;
-
         try {
-          const res = await (client as any).invoke(
-            new Api.auth.ImportLoginToken({ token: state.currentToken })
-          ) as any;
-
+          const res = await (client as any).invoke(new Api.auth.ImportLoginToken({ token: state.currentToken })) as any;
           if (res.className === 'auth.LoginTokenSuccess') {
-            const sessionStr = client.session.save() as unknown as string;
-            const me = await client.getMe() as any;
-            clearTimeout(timeoutHandle);
-
-            // Save session to DB
-            await this.saveSessionToDB(userId, sessionStr, {
-              username: me?.username,
-              phone: me?.phone,
-              telegramUserId: me?.id?.toJSNumber?.() ?? Number(me?.id),
-            });
-
-            // Store client
-            this.clients.set(userId, {
-              client,
-              connected: true,
-              lastUsed: Date.now(),
-              telegramUserId: me?.id?.toJSNumber?.() ?? Number(me?.id),
-              username: me?.username,
-              phone: me?.phone,
-            });
-
-            state.status = 'success';
-            console.log(`[UserbotMgr] ✅ QR login for user ${userId} as @${me?.username}`);
-            finish({ ok: true });
+            await saveAndFinish();
           } else if (res.className === 'auth.LoginTokenMigrateTo') {
             if (refreshTimer) clearTimeout(refreshTimer);
             generateQR();
           }
         } catch (e: any) {
-          const errMsg: string = e.message || '';
-          if (errMsg.includes('SESSION_PASSWORD_NEEDED')) {
+          if ((e.message || '').includes('SESSION_PASSWORD_NEEDED')) {
             if (refreshTimer) clearTimeout(refreshTimer);
             state.status = 'need_password';
-
-            // Create 2FA completion function
             state.complete2FA = async (password: string) => {
               try {
                 const { computeCheck } = require('telegram/Password');
                 const accountPwd = await (client as any).invoke(new Api.account.GetPassword());
                 const pwdCheck = await computeCheck(accountPwd, password);
                 await (client as any).invoke(new Api.auth.CheckPassword({ password: pwdCheck }));
-
-                const sessionStr = client.session.save() as unknown as string;
-                const me = await client.getMe() as any;
-                clearTimeout(timeoutHandle);
-
-                await this.saveSessionToDB(userId, sessionStr, {
-                  username: me?.username,
-                  phone: me?.phone,
-                  telegramUserId: me?.id?.toJSNumber?.() ?? Number(me?.id),
-                });
-
-                this.clients.set(userId, {
-                  client,
-                  connected: true,
-                  lastUsed: Date.now(),
-                  telegramUserId: me?.id?.toJSNumber?.() ?? Number(me?.id),
-                  username: me?.username,
-                  phone: me?.phone,
-                });
-
-                state.status = 'success';
-                console.log(`[UserbotMgr] ✅ QR+2FA for user ${userId} as @${me?.username}`);
-                finish({ ok: true });
+                await saveAndFinish();
                 return { ok: true };
               } catch (e2: any) {
-                const msg = e2.message || '';
-                if (msg.includes('PASSWORD_HASH_INVALID')) {
-                  return { ok: false, error: 'Wrong password' };
-                }
-                finish({ ok: false, error: msg });
-                return { ok: false, error: msg };
+                if ((e2.message || '').includes('PASSWORD_HASH_INVALID')) return { ok: false, error: 'Wrong password' };
+                finish({ ok: false, error: e2.message });
+                return { ok: false, error: e2.message };
               }
             };
           }
         }
       };
 
-      // Register event handler
       try {
         const { Raw: RawEvt } = require('telegram/events');
         rawFilter = new RawEvt({});
@@ -419,26 +518,18 @@ class UserbotManager {
         return;
       }
 
-      // Generate QR
       const generateQR = async () => {
         if (state.done) return;
         try {
           const res = await (client as any).invoke(new Api.auth.ExportLoginToken({
-            apiId: API_ID,
-            apiHash: API_HASH,
-            exceptIds: [],
+            apiId: API_ID, apiHash: API_HASH, exceptIds: [],
           })) as any;
-
           state.currentToken = Buffer.from(res.token as Uint8Array);
           const expiresTs: number = typeof res.expires === 'number' ? res.expires : Number(res.expires);
           const nowSec = Math.floor(Date.now() / 1000);
           const expiresIn = Math.max(10, expiresTs - nowSec);
-
-          const tokenB64 = state.currentToken.toString('base64url');
-          state.qrUrl = `tg://login?token=${tokenB64}`;
+          state.qrUrl = `tg://login?token=${state.currentToken.toString('base64url')}`;
           state.expiresIn = expiresIn;
-
-          // Auto-refresh 5s before expiry
           if (!state.done) {
             refreshTimer = setTimeout(generateQR, Math.max(5000, (expiresIn - 5) * 1000));
           }
@@ -449,43 +540,143 @@ class UserbotManager {
       };
 
       await generateQR();
-
-      // Return immediately with first QR URL (polling handles the rest)
       resolve({ ok: true, qrUrl: state.qrUrl, expiresIn: state.expiresIn });
     });
   }
 
-  /** Poll QR auth status */
-  getQRStatus(userId: number): { status: 'pending' | 'success' | 'need_password' | 'error' | 'none'; qrUrl?: string; expiresIn?: number; error?: string } {
-    const state = this.qrStates.get(userId);
-    if (!state) return { status: 'none' };
-    return {
-      status: state.status,
-      qrUrl: state.qrUrl,
-      expiresIn: state.expiresIn,
-      error: state.error,
+  // ══════════════════════════════════════════════════════════════════════
+  // AUTH METHOD 2: Phone + Code + 2FA
+  // ══════════════════════════════════════════════════════════════════════
+
+  async startPhoneLogin(agentId: number, phone: string): Promise<{ ok: boolean; error?: string }> {
+    const prev = this.authStates.get(agentId);
+    if (prev?.cancelFn) prev.cancelFn();
+
+    const session = new StringSession('');
+    const client = new TelegramClient(session, API_ID, API_HASH, {
+      connectionRetries: 5, requestRetries: 3, autoReconnect: true, useWSS: false,
+    });
+    await client.connect();
+
+    const state: AuthState = {
+      client, done: false, cancelFn: null, currentToken: null, status: 'pending', phone,
     };
+
+    try {
+      const result = await (client as any).invoke(new Api.auth.SendCode({
+        phoneNumber: phone,
+        apiId: API_ID,
+        apiHash: API_HASH,
+        settings: new Api.CodeSettings({}),
+      })) as any;
+
+      state.phoneHash = result.phoneCodeHash;
+      state.status = 'waiting_code';
+
+      // Setup code submission handler
+      state.submitCode = async (code: string) => {
+        try {
+          await (client as any).invoke(new Api.auth.SignIn({
+            phoneNumber: phone,
+            phoneCodeHash: state.phoneHash!,
+            phoneCode: code,
+          }));
+          // Success — save session
+          const sessionStr = client.session.save() as unknown as string;
+          const me = await client.getMe() as any;
+          await this.saveSessionToDB(agentId, sessionStr, {
+            username: me?.username, phone: me?.phone,
+            telegramUserId: me?.id?.toJSNumber?.() ?? Number(me?.id),
+          });
+          this.clients.set(agentId, {
+            client, connected: true, lastUsed: Date.now(),
+            telegramUserId: me?.id?.toJSNumber?.() ?? Number(me?.id),
+            username: me?.username, phone: me?.phone,
+          });
+          state.status = 'success';
+          state.done = true;
+          console.log(`[UserbotMgr] ✅ Agent #${agentId} phone login as @${me?.username}`);
+          return { ok: true };
+        } catch (e: any) {
+          const msg = e.message || '';
+          if (msg.includes('SESSION_PASSWORD_NEEDED')) {
+            state.status = 'need_password';
+            // Setup 2FA handler
+            state.complete2FA = async (password: string) => {
+              try {
+                const { computeCheck } = require('telegram/Password');
+                const accountPwd = await (client as any).invoke(new Api.account.GetPassword());
+                const pwdCheck = await computeCheck(accountPwd, password);
+                await (client as any).invoke(new Api.auth.CheckPassword({ password: pwdCheck }));
+                const sessionStr2 = client.session.save() as unknown as string;
+                const me2 = await client.getMe() as any;
+                await this.saveSessionToDB(agentId, sessionStr2, {
+                  username: me2?.username, phone: me2?.phone,
+                  telegramUserId: me2?.id?.toJSNumber?.() ?? Number(me2?.id),
+                });
+                this.clients.set(agentId, {
+                  client, connected: true, lastUsed: Date.now(),
+                  telegramUserId: me2?.id?.toJSNumber?.() ?? Number(me2?.id),
+                  username: me2?.username, phone: me2?.phone,
+                });
+                state.status = 'success';
+                state.done = true;
+                console.log(`[UserbotMgr] ✅ Agent #${agentId} phone+2FA as @${me2?.username}`);
+                return { ok: true };
+              } catch (e2: any) {
+                if ((e2.message || '').includes('PASSWORD_HASH_INVALID')) return { ok: false, error: 'Wrong password' };
+                return { ok: false, error: e2.message };
+              }
+            };
+            return { ok: false, error: 'need_password' };
+          }
+          if (msg.includes('PHONE_CODE_INVALID')) return { ok: false, error: 'Invalid code' };
+          if (msg.includes('PHONE_CODE_EXPIRED')) return { ok: false, error: 'Code expired' };
+          return { ok: false, error: msg };
+        }
+      };
+
+      this.authStates.set(agentId, state);
+      return { ok: true };
+    } catch (e: any) {
+      const msg = e.message || '';
+      if (msg.includes('PHONE_NUMBER_INVALID')) return { ok: false, error: 'Invalid phone number' };
+      if (msg.includes('PHONE_NUMBER_FLOOD')) return { ok: false, error: 'Too many attempts, try later' };
+      return { ok: false, error: msg };
+    }
   }
 
-  /** Submit 2FA password after QR scan */
-  async submit2FAPassword(userId: number, password: string): Promise<{ ok: boolean; error?: string }> {
-    const state = this.qrStates.get(userId);
+  // ── Polling / submission ────────────────────────────────────────────
+
+  getAuthStatus(agentId: number): { status: string; qrUrl?: string; expiresIn?: number; error?: string } {
+    const state = this.authStates.get(agentId);
+    if (!state) return { status: 'none' };
+    return { status: state.status, qrUrl: state.qrUrl, expiresIn: state.expiresIn, error: state.error };
+  }
+
+  async submitCode(agentId: number, code: string): Promise<{ ok: boolean; error?: string }> {
+    const state = this.authStates.get(agentId);
+    if (!state?.submitCode) return { ok: false, error: 'No code submission pending' };
+    return state.submitCode(code);
+  }
+
+  async submit2FAPassword(agentId: number, password: string): Promise<{ ok: boolean; error?: string }> {
+    const state = this.authStates.get(agentId);
     if (!state?.complete2FA) return { ok: false, error: 'No 2FA pending' };
     return state.complete2FA(password);
   }
 
-  /** Get count of active clients */
   get activeCount(): number { return this.clients.size; }
 
-  /** Build per-user userbot sandbox (like Telethon) */
-  async buildUserSandbox(userId: number): Promise<Record<string, Function> | null> {
-    const client = await this.getClient(userId);
+  // ── Build sandbox for agent runtime ─────────────────────────────────
+
+  async buildAgentSandbox(agentId: number): Promise<Record<string, Function> | null> {
+    const client = await this.getClient(agentId);
     if (!client) return null;
 
-    const uc = this.clients.get(userId);
-    if (uc) uc.lastUsed = Date.now();
+    const ac = this.clients.get(agentId);
+    if (ac) ac.lastUsed = Date.now();
 
-    // Wrap each function with the user's client
     const wrap = <T extends (...args: any[]) => any>(fn: (client: TelegramClient, ...args: any[]) => ReturnType<T>) => {
       return (...args: any[]) => fn(client, ...args);
     };
@@ -515,9 +706,278 @@ class UserbotManager {
       getUnread:      wrap(ubGetUnread),
     };
   }
+
+  // ── Backward compat wrappers (old per-user calls route to agent) ────
+
+  async buildUserSandbox(userId: number): Promise<Record<string, Function> | null> {
+    // Find first active agent for this user that has a telegram session
+    try {
+      const pool = getPool();
+      const res = await pool.query(
+        `SELECT id FROM builder_bot.agents WHERE user_id = $1 AND trigger_type = 'ai_agent' AND is_active = true ORDER BY id DESC LIMIT 1`,
+        [userId]
+      );
+      if (res.rows.length > 0) {
+        return this.buildAgentSandbox(Number(res.rows[0].id));
+      }
+    } catch {}
+    return null;
+  }
+
+  async getUserInfo(userId: number): Promise<{ authorized: boolean; username?: string; phone?: string; telegramUserId?: number } | null> {
+    return { authorized: false };
+  }
+
+  async isUserAuthorized(userId: number): Promise<boolean> {
+    return false;
+  }
+
+  async disconnectUser(userId: number): Promise<void> {
+    // noop — use disconnectAgent instead
+  }
+
+  async startQRLoginLegacy(userId: number): Promise<any> {
+    return { ok: false, error: 'Use per-agent auth instead' };
+  }
+
+  getQRStatus(userId: number): any {
+    return { status: 'none' };
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // MESSAGE LISTENER — makes agent respond to incoming Telegram messages
+  // ══════════════════════════════════════════════════════════════════════
+
+  private messageHandlers = new Map<number, { handler: Function; filter: any }>();
+
+  /**
+   * Enable incoming message listener for an agent.
+   * The agent will respond to DMs, group mentions, etc. like a real person.
+   */
+  async enableMessageListener(agentId: number): Promise<boolean> {
+    // Try to get client — may need to lazy-connect from DB session
+    let client = await this.getClient(agentId);
+    if (!client) return false;
+
+    const ac = this.clients.get(agentId);
+    if (!ac) return false;
+
+    // Don't register twice
+    if (this.messageHandlers.has(agentId)) return true;
+
+    const selfId = ac.telegramUserId || 0;
+    const selfUsername = (ac.username || '').toLowerCase();
+
+    try {
+      const { NewMessage } = require('telegram/events');
+      const filter = new NewMessage({});
+
+      const handler = async (event: any) => {
+        try {
+          const msg = event.message;
+          if (!msg || !msg.message) return; // no text
+
+          // Parse message
+          const parsed = await this.parseMessage(client, msg, selfId, selfUsername);
+          if (!parsed) return;
+
+          // Skip own messages
+          if (parsed.senderId === selfId) return;
+
+          // Dedup
+          if (dupFilter.isDuplicate(parsed.chatId, parsed.id)) return;
+
+          // Get agent config
+          const cfg = _agentMsgConfigs.get(agentId);
+          if (!cfg) return; // agent not configured for message handling
+
+          // Decision: should we respond?
+          const shouldRespond = this.shouldRespond(parsed, cfg);
+
+          // Always store to conversation memory (even if not responding)
+          const elapsed = _lastMsgTime.has(parsed.chatId)
+            ? Math.floor(parsed.date - (_lastMsgTime.get(parsed.chatId) || 0))
+            : undefined;
+          _lastMsgTime.set(parsed.chatId, parsed.date);
+          const envelope = buildContextFrame(parsed, elapsed);
+          chatRing.add(parsed.chatId, envelope);
+
+          if (!shouldRespond) {
+            // In groups: accumulate pending history for when we ARE mentioned
+            if (parsed.isGroup) groupBuffer.add(parsed.chatId, parsed);
+            return;
+          }
+
+          // Enqueue to per-chat serial queue
+          chatDispatcher.enqueue(parsed.chatId, async () => {
+            await this.processTgInboxMessage(agentId, parsed, cfg);
+          });
+        } catch (e: any) {
+          console.error(`[UserbotMgr] Message handler error agent #${agentId}:`, e.message);
+        }
+      };
+
+      client.addEventHandler(handler, filter);
+      this.messageHandlers.set(agentId, { handler, filter });
+      console.log(`[UserbotMgr] ✅ Message listener enabled for agent #${agentId} (@${selfUsername})`);
+      return true;
+    } catch (e: any) {
+      console.error(`[UserbotMgr] Failed to enable listener for agent #${agentId}:`, e.message);
+      return false;
+    }
+  }
+
+  /** Disable message listener */
+  disableMessageListener(agentId: number): void {
+    const entry = this.messageHandlers.get(agentId);
+    if (!entry) return;
+    const ac = this.clients.get(agentId);
+    if (ac?.client) {
+      try { ac.client.removeEventHandler(entry.handler as any, entry.filter); } catch {}
+    }
+    this.messageHandlers.delete(agentId);
+    unregisterAgentMessageConfig(agentId);
+    console.log(`[UserbotMgr] Message listener disabled for agent #${agentId}`);
+  }
+
+  /** Parse raw GramJS message into TgInboxMessage */
+  private async parseMessage(
+    client: TelegramClient,
+    msg: any,
+    selfId: number,
+    selfUsername: string,
+  ): Promise<TgInboxMessage | null> {
+    try {
+      const chatId = String(msg.chatId || msg.peerId?.channelId || msg.peerId?.chatId || msg.peerId?.userId || 0);
+      const senderId = msg.senderId?.toJSNumber?.() ?? Number(msg.senderId || msg.fromId?.userId || 0);
+      let senderUsername = '';
+      let senderFirstName = '';
+
+      try {
+        if (msg.sender) {
+          senderUsername = msg.sender.username || '';
+          senderFirstName = msg.sender.firstName || '';
+        }
+      } catch {}
+
+      const text = msg.message || '';
+      const isChannel = msg.post === true;
+      const isGroup = !isChannel && (chatId.startsWith('-') || !!msg.peerId?.chatId);
+
+      // Check if mentions me
+      const mentionsMe = msg.mentioned === true
+        || (selfUsername && text.toLowerCase().includes(`@${selfUsername}`));
+
+      return {
+        id: msg.id,
+        chatId,
+        senderId,
+        senderUsername,
+        senderFirstName,
+        text,
+        date: msg.date || Math.floor(Date.now() / 1000),
+        isGroup,
+        isChannel,
+        isBot: msg.sender?.bot === true,
+        mentionsMe,
+        replyToId: msg.replyTo?.replyToMsgId,
+        hasMedia: !!msg.media,
+        mediaType: msg.media?.className || undefined,
+        _raw: msg,
+      };
+    } catch (e: any) {
+      console.error('[UserbotMgr] parseMessage error:', e.message);
+      return null;
+    }
+  }
+
+  /** Decide if agent should respond to this message */
+  private shouldRespond(msg: TgInboxMessage, cfg: AgentMessageConfig): boolean {
+    // Never respond to bots
+    if (msg.isBot) return false;
+    // Never respond to channel posts
+    if (msg.isChannel) return false;
+
+    if (msg.isGroup) {
+      if (cfg.groupPolicy === 'disabled') return false;
+      if (cfg.groupPolicy === 'mention-only') return msg.mentionsMe;
+      return msg.mentionsMe; // default: mention-only for groups
+    }
+
+    // DM
+    if (cfg.dmPolicy === 'disabled') return false;
+    return true; // respond to all DMs by default
+  }
+
+  /** Process incoming message through AI and respond */
+  private async processTgInboxMessage(
+    agentId: number,
+    msg: TgInboxMessage,
+    cfg: AgentMessageConfig,
+  ): Promise<void> {
+    const client = await this.getClient(agentId);
+    if (!client) return;
+
+    try {
+      // Show typing indicator
+      try {
+        const peer = await (client as any).getInputEntity(msg.chatId);
+        await (client as any).invoke(new Api.messages.SetTyping({
+          peer, action: new Api.SendMessageTypingAction(),
+        }));
+      } catch {}
+
+      // Build context: pending history (group) + conversation memory
+      let contextMessages = '';
+      if (msg.isGroup) {
+        const pending = groupBuffer.flush(msg.chatId);
+        if (pending.length > 0) {
+          contextMessages = '[Сообщения в чате с момента моего последнего ответа]\n'
+            + pending.map(p => buildContextFrame(p)).join('\n') + '\n\n';
+        }
+      }
+      contextMessages += '[Текущее сообщение]\n' + buildContextFrame(msg);
+
+      // Get conversation history
+      const history = chatRing.getContext(msg.chatId);
+
+      // Build full prompt for AI
+      const chatContext = history
+        ? `[Контекст чата — последние сообщения]\n${history}\n\n${contextMessages}`
+        : contextMessages;
+
+      // Call AI via the agent runtime
+      const { runAIAgentTick } = await import('../agents/ai-agent-runtime');
+      const result = await runAIAgentTick({
+        agentId: cfg.agentId,
+        userId: cfg.userId,
+        systemPrompt: cfg.systemPrompt + `\n\n[IMPORTANT] Ты отвечаешь в Telegram как реальный пользователь. Будь естественным, коротким, человечным. НЕ используй notify() — отвечай текстом напрямую. Текущий чат: ${msg.isGroup ? 'группа' : 'личные сообщения'}. ${msg.isGroup ? 'Тебя упомянули — ответь.' : 'Это ЛС — ответь.'}`,
+        config: cfg.config,
+        pendingMessages: [chatContext],
+        onNotify: async () => {}, // suppress notify — we send via MTProto
+      });
+
+      // Send response via MTProto (as the real user, not bot)
+      if (result.finalResponse) {
+        const responseText = result.finalResponse.slice(0, 4096); // TG limit
+        try {
+          await (client as any).sendMessage(msg.chatId, {
+            message: responseText,
+            replyTo: msg.isGroup ? msg.id : undefined, // reply in groups
+          });
+          chatRing.addResponse(msg.chatId, responseText);
+          console.log(`[UserbotMgr] Agent #${agentId} replied in ${msg.isGroup ? 'group' : 'DM'} ${msg.chatId}: ${responseText.slice(0, 80)}...`);
+        } catch (sendErr: any) {
+          console.error(`[UserbotMgr] Send failed agent #${agentId}:`, sendErr.message);
+        }
+      }
+    } catch (e: any) {
+      console.error(`[UserbotMgr] processMessage error agent #${agentId}:`, e.message);
+    }
+  }
 }
 
-// ── Per-client userbot functions (same as telegram-userbot.ts but with explicit client param) ──
+// ── Per-client userbot functions ──────────────────────────────────────
 
 async function ubSendMessage(client: TelegramClient, chatId: string | number, text: string): Promise<number> {
   const result = await (client as any).sendMessage(chatId, { message: text }) as any;

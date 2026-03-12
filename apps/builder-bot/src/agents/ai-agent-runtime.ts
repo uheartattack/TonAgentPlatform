@@ -2063,7 +2063,7 @@ async function executeTool(
       return { ok: true };
     }
 
-    // ── Telegram Userbot tools (MTProto, per-user like Telethon) ──
+    // ── Telegram Userbot tools (MTProto, per-agent) ──
     case 'tg_send_message': case 'tg_get_messages': case 'tg_get_channel_info':
     case 'tg_join_channel': case 'tg_leave_channel': case 'tg_get_dialogs':
     case 'tg_get_members': case 'tg_search_messages': case 'tg_get_user_info':
@@ -2072,8 +2072,8 @@ async function executeTool(
     case 'tg_send_formatted': case 'tg_get_message_by_id': case 'tg_get_unread':
     case 'tg_send_file': {
       try {
-        // Per-user Telegram auth (like Telethon)
-        const tgSandbox = await userbotManager.buildUserSandbox(params.userId);
+        // Per-AGENT Telegram auth — each agent has its own TG account
+        const tgSandbox = await userbotManager.buildAgentSandbox(params.agentId || 0) || await userbotManager.buildUserSandbox(params.userId);
         if (!tgSandbox) {
           // Fallback: try global auth (backward compat)
           if (!(await isAuthorized())) {
@@ -2085,7 +2085,7 @@ async function executeTool(
 
         // Route to per-user sandbox function
         switch (name) {
-          case 'tg_send_message': return await tgSandbox.sendMessage(args.peer, args.message);
+          case 'tg_send_message': return await tgSandbox.sendMessage(args.peer, args.message || args.text);
           case 'tg_get_messages': return await tgSandbox.getMessages(args.peer, args.limit ?? 20);
           case 'tg_get_channel_info': return await tgSandbox.getChannelInfo(args.peer);
           case 'tg_join_channel': return await tgSandbox.joinChannel(args.peer);
@@ -3098,7 +3098,7 @@ async function executeTool(
 // ── Global TG fallback (backward compat for single-session mode) ───────────
 async function executeGlobalTgTool(name: string, args: any): Promise<any> {
   switch (name) {
-    case 'tg_send_message': return await tgSendMessage(args.peer, args.message);
+    case 'tg_send_message': return await tgSendMessage(args.peer, args.message || args.text);
     case 'tg_get_messages': return await tgGetMessages(args.peer, args.limit ?? 20);
     case 'tg_get_channel_info': return await tgGetChannelInfo(args.peer);
     case 'tg_join_channel': return await tgJoinChannel(args.peer);
@@ -3227,17 +3227,22 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
 
   await logToDb(params.agentId, 'info', `[AI tick] start, pendingMsgs=${msgs.length}`, params.userId);
 
-  // ── Execute compiled flow code if present (deterministic pre-pass) ──
+  // ── Execute compiled flow code if present (deterministic — NO AI fallback) ──
   const execCode = params.config.execCode as string | undefined;
   if (execCode && msgs.length === 0) {
-    // Only run compiled code in monitoring mode (not when user sends a message)
+    // Flow code = constructor agent. Execute ONLY the compiled code, never fall to AI.
     const flowResult = await executeFlowCode(execCode, params);
     if (flowResult.success) {
-      await logToDb(params.agentId, 'info', `[AI tick] flow code executed, skipping AI loop`, params.userId);
-      return { toolCallCount: 0, finalResponse: 'Flow executed successfully' };
+      await logToDb(params.agentId, 'info', `[AI tick] flow code executed OK`, params.userId);
+    } else {
+      await logToDb(params.agentId, 'error', `[AI tick] flow code FAILED: ${flowResult.error}`, params.userId);
+      // Notify user about the error so they can fix their flow
+      const errNotice = `⚠️ Ошибка в конструкторе: ${flowResult.error}\n\nПроверьте настройки блоков (подключён ли Telegram аккаунт?)`;
+      if (params.onNotify) await params.onNotify(errNotice).catch(() => {});
+      else await notifyUser(params.userId, errNotice).catch(() => {});
     }
-    // If flow code failed, fall through to AI loop as fallback
-    await logToDb(params.agentId, 'info', `[AI tick] flow code failed (${flowResult.error}), falling back to AI`, params.userId);
+    // ALWAYS return here — constructor agents never use AI loop
+    return { toolCallCount: 0, finalResponse: flowResult.success ? 'Flow executed' : flowResult.error };
   }
 
   // ── Build initial message list ──────────────────────────────────
@@ -3265,8 +3270,10 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
     }
   } catch {}
 
-  // ── Gift system knowledge (injected for all agents) ────────────────────────
-  const GIFT_SYSTEM_KNOWLEDGE = `
+  // ── Gift system knowledge (ONLY for agents with gifts capabilities) ─────────
+  const _caps = (params.config.enabledCapabilities as string[]) || null;
+  const hasGiftCaps = !_caps || _caps.some(c => c.includes('gift') || c === 'gifts' || c === 'gifts_market');
+  const GIFT_SYSTEM_KNOWLEDGE = !hasGiftCaps ? '' : `
 [TELEGRAM GIFTS KNOWLEDGE BASE]
 🚨 ГЛАВНОЕ ПРАВИЛО:
 Для ЛЮБЫХ вопросов о подарках (Lol Pop, Jelly Bunny, Heart Locket, Plush Pepe, и любое другое название коллекции подарков):
@@ -3411,14 +3418,16 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
   // Chat mode vs monitoring mode instructions
   const modeHint = msgs.length > 0
     ? `\n\n⚠️ РЕЖИМ ЧАТА: Пользователь написал тебе сообщение. Ответь ТОЛЬКО текстом напрямую — НЕ вызывай инструмент notify(). Твой текстовый ответ будет доставлен автоматически. Используй инструменты только если они нужны для ответа на вопрос.`
-    : `\n\n⚠️ РЕЖИМ МОНИТОРИНГА (СКОРОСТЬ КРИТИЧНА): Пользователь не в чате. Действуй быстро:
+    : `\n\n⚠️ РЕЖИМ МОНИТОРИНГА: Пользователь ждёт от тебя отчёт. Действуй:
 1. Если в state есть target_gift (конкретная цель) → find_underpriced_gifts(collection=target_gift, max_price=target_price) — УМНЫЙ ПОИСК
    Fallback: get_gift_aggregator(name=target_gift, to_price=target_price) — прямой поиск
 2. Если underpriced найдены с discount >15% и can_buy_now=true → buy_market_gift() автоматически
 3. Если underpriced найдены но can_buy_now=false → notify_rich() с деталями + link
-4. Если ничего не найдено → завершить МОЛЧА
-5. Если target_gift не задан → get_top_deals() → если profit >8% → notify с топ-3
-ЗАПОМНИ: notify() только если инструмент вернул реальный item. Никаких предположений.`;
+4. Если target_gift не задан → get_top_deals() → notify_rich() с кратким обзором
+5. ВСЕГДА отправляй notify_rich() в конце тика с кратким отчётом: что проверил, что нашёл (или "ничего интересного").
+   Исключение: если предыдущий тик (get_state 'last_report_time') был <5 мин назад И ничего нового → молча.
+   Формат отчёта: <b>📊 Мониторинг</b>\\n• Проверено: [что]\\n• Результат: [находки или "ничего нового"]
+ПРАВИЛО: notify() вызывай ОДИН раз за тик. Данные ТОЛЬКО из tool_result, не из головы.`;
 
   const contextMsg = `[Текущий тик агента]
 Время: ${new Date().toISOString()}
@@ -3536,7 +3545,24 @@ You MUST follow these rules AT ALL TIMES:
         } catch (toolErr: any) {
           result = { error: toolErr.message || 'Tool execution failed' };
         }
-        await logToDb(params.agentId, 'info', `[tool_result] ${f.name} → ${JSON.stringify(result).slice(0, 300)}`, params.userId);
+        // Smart log: summarize tool results instead of raw JSON dump
+        const resultStr = JSON.stringify(result);
+        let logSummary: string;
+        if (resultStr.length < 200) {
+          logSummary = resultStr;
+        } else {
+          // Summarize: count items, show key fields
+          const itemCount = (result?.deals ? Object.values(result.deals).flat().length : null)
+            ?? result?.items?.length ?? result?.results?.length ?? null;
+          if (itemCount !== null) {
+            logSummary = `{${itemCount} items, ${(resultStr.length / 1024).toFixed(1)}KB}`;
+          } else if (result?.error) {
+            logSummary = `{error: "${result.error}"}`;
+          } else {
+            logSummary = `{${Object.keys(result || {}).join(', ')} | ${(resultStr.length / 1024).toFixed(1)}KB}`;
+          }
+        }
+        await logToDb(params.agentId, 'info', `[tool_result] ${f.name} → ${logSummary}`, params.userId);
 
         return {
           role:         'tool' as const,
@@ -3557,8 +3583,8 @@ You MUST follow these rules AT ALL TIMES:
   const notifyWasCalled = _tickNotifyFlag.get(params.agentId) === true;
   _tickNotifyFlag.delete(params.agentId); // cleanup
 
-  if (finalContent && msgs.length > 0 && !notifyWasCalled) {
-    // Chat reply: send the AI's text response to the user
+  if (finalContent && !notifyWasCalled) {
+    // Send AI's text response to the user (both chat and monitoring modes)
     await notifyRich(params.userId, {
       text: mdToHtml(finalContent),
       agentId: params.agentId,
@@ -3637,6 +3663,45 @@ export class AIAgentRuntime {
       logToDb(opts.agentId, 'error', `First tick failed: ${(e as any)?.message || String(e)}`, opts.userId);
     });
 
+    // ── Enable incoming message listener (agent acts as real TG user) ──
+    // Retry with delay since TG sessions may not be restored yet at startup
+    const setupListener = async (attempt: number) => {
+      try {
+        const { userbotManager, registerAgentMessageConfig } = await import('../services/userbot-manager');
+        const tgInfo = await userbotManager.getAgentTelegramInfo(opts.agentId);
+        console.log(`[AI runtime] setupListener #${opts.agentId} attempt=${attempt} authorized=${tgInfo.authorized} username=${tgInfo.username || 'none'}`);
+        if (tgInfo.authorized) {
+          try {
+            registerAgentMessageConfig({
+              agentId: opts.agentId,
+              userId: opts.userId,
+              selfTgId: tgInfo.telegramUserId || 0,
+              selfUsername: tgInfo.username || '',
+              systemPrompt: opts.systemPrompt,
+              dmPolicy: (opts.config.dmPolicy as any) || 'open',
+              groupPolicy: (opts.config.groupPolicy as any) || 'mention-only',
+              config: opts.config,
+            });
+            const ok = await userbotManager.enableMessageListener(opts.agentId);
+            console.log(`[AI runtime] enableMessageListener #${opts.agentId} result=${ok}`);
+            if (ok) {
+              logToDb(opts.agentId, 'info', `[Runtime] ✅ Message listener ON — responds to DMs and @mentions`, opts.userId);
+            }
+          } catch (innerErr: any) {
+            console.error(`[AI runtime] enableMessageListener CRASH #${opts.agentId}: ${innerErr.message}`);
+            console.error(innerErr.stack);
+          }
+        } else if (attempt < 3) {
+          // TG session not restored yet, retry after delay
+          setTimeout(() => setupListener(attempt + 1), 8000);
+        }
+      } catch (e: any) {
+        if (attempt < 3) setTimeout(() => setupListener(attempt + 1), 8000);
+        else console.error(`[AI runtime] Message listener setup failed for #${opts.agentId}:`, e.message);
+      }
+    };
+    setupListener(0);
+
     console.log(`[AI runtime] Agent #${opts.agentId} activated, interval=${opts.intervalMs}ms`);
   }
 
@@ -3648,6 +3713,8 @@ export class AIAgentRuntime {
       _activeHandles.delete(agentId);
       // Kill MCP subprocess if any
       import('../services/ton-mcp-client').then(m => m.getTonMcpManager().destroy(agentId)).catch(e => console.error('[Runtime]', e?.message || e));
+      // Disable message listener
+      import('../services/userbot-manager').then(m => m.userbotManager.disableMessageListener(agentId)).catch(() => {});
       console.log(`[AI runtime] Agent #${agentId} deactivated`);
     }
   }
