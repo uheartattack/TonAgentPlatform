@@ -7,7 +7,7 @@
 **Autonomous AI agents for the TON blockchain — built in Telegram, no code required**
 
 [![TON Hackathon](https://img.shields.io/badge/TON_Hackathon-Agent_Infrastructure-0098EA?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNMTIgMkw0IDdWMTdMMTIgMjJMMjAgMTdWN0wxMiAyWiIgZmlsbD0id2hpdGUiLz48L3N2Zz4=)](https://github.com/spendollars/TonAgentPlatform)
-[![Previous Grant Winner](https://img.shields.io/badge/Previous_TON_Grant-Winner-gold?style=for-the-badge)](https://github.com/spendollars/TonAgentPlatform)
+[![Previous Grant Winner](https://img.shields.io/badge/Previous_TON_Grant-Winner-gold?style=for-the-badge)](https://identityhub.app/contests/agent-tooling-fast-grants?submission=cmlz5smqj000101p7wao32nfd)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 [![Node.js](https://img.shields.io/badge/Node.js-20+-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
