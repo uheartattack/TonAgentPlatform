@@ -131,6 +131,8 @@ export class RunnerAgent {
         const mergedConfigAI = { ...userVarsAI, ...nestedConfigAI };
         // Pass execCode from trigger_config root level into config so ai-agent-runtime can access it
         if (triggerConfig.execCode) mergedConfigAI.execCode = triggerConfig.execCode;
+        // Pass telegram_session flag so runtime knows this agent responds to messages
+        if (triggerConfig.telegram_session?.session) mergedConfigAI._hasTgSession = true;
         const ms             = intervalMs || 5 * 60_000; // default 5 min
 
         const aiRuntime = getAIAgentRuntime();
