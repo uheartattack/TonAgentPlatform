@@ -1503,6 +1503,63 @@ export function startApiServer() {
     }
   });
 
+  // ── Telegram Userbot Auth (per-user, like Telethon) ────────────────
+
+  const { userbotManager } = require('./services/userbot-manager');
+
+  // GET /api/telegram/status — check if user has Telegram connected
+  app.get('/api/telegram/status', requireAuth, async (req: Request, res: Response) => {
+    const userId = (req as any).userId;
+    try {
+      const info = await userbotManager.getUserInfo(userId);
+      res.json({ ok: true, ...info });
+    } catch (e: any) {
+      res.json({ ok: true, authorized: false });
+    }
+  });
+
+  // POST /api/telegram/auth/qr — start QR login for any Telegram account
+  app.post('/api/telegram/auth/qr', requireAuth, async (req: Request, res: Response) => {
+    const userId = (req as any).userId;
+    try {
+      const result = await userbotManager.startQRLogin(userId);
+      res.json({ ok: true, ...result });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  // GET /api/telegram/auth/poll — poll QR auth status
+  app.get('/api/telegram/auth/poll', requireAuth, async (req: Request, res: Response) => {
+    const userId = (req as any).userId;
+    const status = userbotManager.getQRStatus(userId);
+    res.json({ ok: true, ...status });
+  });
+
+  // POST /api/telegram/auth/password — submit 2FA password after QR scan
+  app.post('/api/telegram/auth/password', requireAuth, async (req: Request, res: Response) => {
+    const userId = (req as any).userId;
+    const { password } = req.body || {};
+    if (!password) { res.status(400).json({ ok: false, error: 'Password required' }); return; }
+    try {
+      const result = await userbotManager.submit2FAPassword(userId, password);
+      res.json({ ok: true, ...result });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  // DELETE /api/telegram/disconnect — disconnect Telegram account
+  app.delete('/api/telegram/disconnect', requireAuth, async (req: Request, res: Response) => {
+    const userId = (req as any).userId;
+    try {
+      await userbotManager.disconnectUser(userId);
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
   // ── Owner-only middleware ──────────────────────────────────────────
   function requireOwner(req: Request, res: Response, next: NextFunction): void {
     const token = req.headers['x-auth-token'] as string || req.query.token as string;

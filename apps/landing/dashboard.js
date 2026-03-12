@@ -6886,4 +6886,176 @@ async function confirmNetworkDelete(agentId) {
   if (dialog) dialog.remove();
 }
 
+// ===== TELEGRAM USERBOT AUTH (per-user, like Telethon) =====
+let _tgPollInterval = null;
+
+async function checkTelegramStatus() {
+  if (!authToken) return;
+  try {
+    const data = await apiRequest('GET', '/api/telegram/status');
+    updateTelegramUI(data);
+  } catch {}
+}
+
+function updateTelegramUI(data) {
+  const badge = document.getElementById('tg-connection-badge');
+  const info = document.getElementById('tg-account-info');
+  const connectBtn = document.getElementById('tg-connect-btn');
+  const disconnectBtn = document.getElementById('tg-disconnect-btn');
+  const qrContainer = document.getElementById('tg-qr-container');
+  const tfa = document.getElementById('tg-2fa-container');
+  if (!badge) return;
+
+  if (data && data.authorized) {
+    badge.style.display = 'inline-flex';
+    badge.classList.add('connected');
+    const statusText = document.getElementById('tg-status-text');
+    if (statusText) statusText.textContent = 'Connected';
+    if (info) info.textContent = data.username ? '@' + data.username : (data.phone || 'Authorized');
+    if (connectBtn) connectBtn.style.display = 'none';
+    if (disconnectBtn) disconnectBtn.style.display = '';
+    if (qrContainer) qrContainer.style.display = 'none';
+    if (tfa) tfa.style.display = 'none';
+  } else {
+    badge.style.display = 'none';
+    if (info) info.textContent = '';
+    if (connectBtn) connectBtn.style.display = '';
+    if (disconnectBtn) disconnectBtn.style.display = 'none';
+  }
+}
+
+async function startTelegramAuth() {
+  if (!authToken) { showNotification(t('login_first'), 'error'); return; }
+  const connectBtn = document.getElementById('tg-connect-btn');
+  if (connectBtn) connectBtn.disabled = true;
+
+  try {
+    const data = await apiRequest('POST', '/api/telegram/auth/qr');
+    if (!data.ok) {
+      showNotification(data.error || 'QR login failed', 'error');
+      if (connectBtn) connectBtn.disabled = false;
+      return;
+    }
+
+    // Show QR
+    const qrContainer = document.getElementById('tg-qr-container');
+    if (qrContainer) qrContainer.style.display = '';
+    if (connectBtn) connectBtn.style.display = 'none';
+
+    renderQR(data.qrUrl);
+
+    // Start polling
+    if (_tgPollInterval) clearInterval(_tgPollInterval);
+    let pollCount = 0;
+    _tgPollInterval = setInterval(async () => {
+      pollCount++;
+      if (pollCount > 60) { // 2 min timeout
+        clearInterval(_tgPollInterval);
+        _tgPollInterval = null;
+        if (qrContainer) qrContainer.style.display = 'none';
+        if (connectBtn) { connectBtn.style.display = ''; connectBtn.disabled = false; }
+        showNotification(currentLang === 'ru' ? 'Время ожидания истекло' : 'QR timeout', 'error');
+        return;
+      }
+
+      try {
+        const poll = await apiRequest('GET', '/api/telegram/auth/poll');
+        if (poll.status === 'success') {
+          clearInterval(_tgPollInterval);
+          _tgPollInterval = null;
+          if (qrContainer) qrContainer.style.display = 'none';
+          showNotification(currentLang === 'ru' ? 'Telegram подключён!' : 'Telegram connected!', 'success');
+          checkTelegramStatus();
+        } else if (poll.status === 'need_password') {
+          clearInterval(_tgPollInterval);
+          _tgPollInterval = null;
+          if (qrContainer) qrContainer.style.display = 'none';
+          const tfa = document.getElementById('tg-2fa-container');
+          if (tfa) tfa.style.display = '';
+        } else if (poll.qrUrl) {
+          // QR refreshed
+          renderQR(poll.qrUrl);
+        }
+      } catch {}
+    }, 2000);
+  } catch (e) {
+    showNotification(e.message || 'Error', 'error');
+    if (connectBtn) connectBtn.disabled = false;
+  }
+}
+
+function renderQR(url) {
+  const canvas = document.getElementById('tg-qr-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const size = 256;
+  canvas.width = size;
+  canvas.height = size;
+
+  // Use QR API to generate image
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = () => {
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, size, size);
+    ctx.drawImage(img, 0, 0, size, size);
+  };
+  img.onerror = () => {
+    // Fallback: show URL as text
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, size, size);
+    ctx.fillStyle = '#000';
+    ctx.font = '11px monospace';
+    ctx.fillText('Scan QR in Telegram', 20, size / 2);
+  };
+  const encodedUrl = encodeURIComponent(url);
+  img.src = 'https://api.qrserver.com/v1/create-qr-code/?size=256x256&data=' + encodedUrl;
+}
+
+async function submitTg2FA() {
+  const input = document.getElementById('tg-2fa-password');
+  const errEl = document.getElementById('tg-2fa-error');
+  if (!input || !input.value.trim()) return;
+
+  try {
+    const data = await apiRequest('POST', '/api/telegram/auth/password', { password: input.value.trim() });
+    if (data.ok) {
+      const tfa = document.getElementById('tg-2fa-container');
+      if (tfa) tfa.style.display = 'none';
+      showNotification(currentLang === 'ru' ? 'Telegram подключён!' : 'Telegram connected!', 'success');
+      checkTelegramStatus();
+    } else {
+      if (errEl) { errEl.textContent = data.error || 'Wrong password'; errEl.style.display = ''; }
+    }
+  } catch (e) {
+    if (errEl) { errEl.textContent = e.message; errEl.style.display = ''; }
+  }
+}
+
+async function disconnectTelegram() {
+  if (!confirm(currentLang === 'ru' ? 'Отключить Telegram аккаунт?' : 'Disconnect Telegram account?')) return;
+  try {
+    await apiRequest('DELETE', '/api/telegram/disconnect');
+    showNotification(currentLang === 'ru' ? 'Telegram отключён' : 'Telegram disconnected', 'success');
+    updateTelegramUI({ authorized: false });
+  } catch (e) {
+    showNotification(e.message || 'Error', 'error');
+  }
+}
+
+// Check Telegram status on settings page load
+const _origNavigateTo = typeof navigateTo === 'function' ? navigateTo : null;
+if (_origNavigateTo) {
+  const _navProxy = new Proxy(navigateTo, {
+    apply(target, thisArg, args) {
+      const result = Reflect.apply(target, thisArg, args);
+      if (args[0] === 'settings') checkTelegramStatus();
+      return result;
+    }
+  });
+  // Can't override navigateTo via proxy easily, so just hook into page load
+}
+// Also check on initial load if settings page visible
+setTimeout(checkTelegramStatus, 2000);
+
 console.log('TON Agent Platform Dashboard v2.0 loaded successfully!');

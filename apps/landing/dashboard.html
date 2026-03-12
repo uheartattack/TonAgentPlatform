@@ -933,6 +933,51 @@
             </div>
             
             <div class="settings-section">
+              <h3 class="section-title" data-en="Telegram Account" data-ru="Telegram аккаунт">Telegram Account</h3>
+              <div class="settings-card">
+                <p style="color:var(--text-secondary);font-size:.85rem;margin-bottom:14px" data-en="Connect any Telegram account. Your agents will act as this user (like Telethon)." data-ru="Подключите любой Telegram аккаунт. Ваши агенты будут действовать от его имени (как Telethon).">Connect any Telegram account. Your agents will act as this user (like Telethon).</p>
+
+                <div id="tg-auth-status" style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+                  <span class="connection-badge" id="tg-connection-badge" style="display:none">
+                    <span class="pulse-dot"></span>
+                    <span id="tg-status-text">Connected</span>
+                  </span>
+                  <span id="tg-account-info" style="font-size:.85rem;color:var(--text-secondary)"></span>
+                </div>
+
+                <!-- QR Container -->
+                <div id="tg-qr-container" style="display:none;text-align:center;padding:20px 0">
+                  <div id="tg-qr-image" style="display:inline-block;padding:16px;background:#fff;border-radius:12px;margin-bottom:12px">
+                    <canvas id="tg-qr-canvas" width="256" height="256"></canvas>
+                  </div>
+                  <p style="color:var(--text-secondary);font-size:.82rem" data-en="Open Telegram → Settings → Devices → Link Desktop Device" data-ru="Откройте Telegram → Настройки → Устройства → Подключить устройство">Open Telegram → Settings → Devices → Link Desktop Device</p>
+                  <p id="tg-qr-timer" style="color:var(--text-muted);font-size:.75rem;margin-top:4px"></p>
+                </div>
+
+                <!-- 2FA Container -->
+                <div id="tg-2fa-container" style="display:none;margin-bottom:16px">
+                  <p style="color:var(--warning);font-size:.85rem;margin-bottom:8px" data-en="Account has 2FA. Enter cloud password:" data-ru="Аккаунт с 2FA. Введите облачный пароль:">Account has 2FA. Enter cloud password:</p>
+                  <div class="input-group" style="max-width:300px">
+                    <input type="password" class="form-input" id="tg-2fa-password" placeholder="Cloud password">
+                    <button class="btn btn-primary btn-sm" onclick="submitTg2FA()" data-en="Submit" data-ru="Отправить">Submit</button>
+                  </div>
+                  <p id="tg-2fa-error" style="color:var(--danger);font-size:.78rem;margin-top:6px;display:none"></p>
+                </div>
+
+                <div style="display:flex;gap:8px;align-items:center">
+                  <button class="btn btn-primary btn-sm" id="tg-connect-btn" onclick="startTelegramAuth()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2L2 13l7 2 2 7z"/></svg>
+                    <span data-en="Connect Telegram" data-ru="Подключить Telegram">Connect Telegram</span>
+                  </button>
+                  <button class="btn btn-ghost btn-sm" id="tg-disconnect-btn" onclick="disconnectTelegram()" style="display:none;color:var(--danger)">
+                    <span data-en="Disconnect" data-ru="Отключить">Disconnect</span>
+                  </button>
+                </div>
+                <p style="color:var(--text-muted);font-size:.72rem;margin-top:10px" data-en="Session persists. Agents use this account for messaging, channel management, and more." data-ru="Сессия сохраняется. Агенты используют этот аккаунт для сообщений, каналов и т.д.">Session persists. Agents use this account for messaging, channel management, and more.</p>
+              </div>
+            </div>
+
+            <div class="settings-section">
               <h3 class="section-title" data-en="Security" data-ru="Безопасность">Security</h3>
               <div class="settings-card">
                 <div class="setting-item">
