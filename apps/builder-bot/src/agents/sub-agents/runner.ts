@@ -129,6 +129,8 @@ export class RunnerAgent {
         const userVarsAI    = await loadUserVariables(params.userId);
         const nestedConfigAI = (triggerConfig.config && typeof triggerConfig.config === 'object') ? triggerConfig.config : {};
         const mergedConfigAI = { ...userVarsAI, ...nestedConfigAI };
+        // Pass execCode from trigger_config root level into config so ai-agent-runtime can access it
+        if (triggerConfig.execCode) mergedConfigAI.execCode = triggerConfig.execCode;
         const ms             = intervalMs || 5 * 60_000; // default 5 min
 
         const aiRuntime = getAIAgentRuntime();
