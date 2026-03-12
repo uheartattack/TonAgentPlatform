@@ -14,7 +14,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-4169E1?style=flat-square&logo=postgresql&logoColor=white)](https://www.postgresql.org)
 [![Telegram Bot](https://img.shields.io/badge/Bot-@TonAgentPlatformBot-2CA5E0?style=flat-square&logo=telegram&logoColor=white)](https://t.me/TonAgentPlatformBot)
-[![Live](https://img.shields.io/badge/Live-tonagentplatform.ru-brightgreen?style=flat-square)](https://tonagentplatform.ru)
+[![Live](https://img.shields.io/badge/Live-tonagentplatform.com-brightgreen?style=flat-square)](https://tonagentplatform.com)
 
 <br>
 
@@ -22,7 +22,7 @@
 
 <br>
 
-[**Try the Bot**](https://t.me/TonAgentPlatformBot) &nbsp;·&nbsp; [**Studio Dashboard**](https://tonagentplatform.ru/dashboard.html) &nbsp;·&nbsp; [**Telegram Channel**](https://t.me/TONAgentPlatform)
+[**Try the Bot**](https://t.me/TonAgentPlatformBot) &nbsp;·&nbsp; [**Studio Dashboard**](https://tonagentplatform.com/dashboard.html) &nbsp;·&nbsp; [**Telegram Channel**](https://t.me/TONAgentPlatform)
 
 </div>
 
@@ -242,6 +242,6 @@ MIT (c) 2026 TON Agent Platform
 
 **Built for the TON ecosystem**
 
-[tonagentplatform.ru](https://tonagentplatform.ru) &nbsp;·&nbsp; [@TonAgentPlatformBot](https://t.me/TonAgentPlatformBot) &nbsp;·&nbsp; [Telegram Channel](https://t.me/TONAgentPlatform)
+[tonagentplatform.com](https://tonagentplatform.com) &nbsp;·&nbsp; [@TonAgentPlatformBot](https://t.me/TonAgentPlatformBot) &nbsp;·&nbsp; [Telegram Channel](https://t.me/TONAgentPlatform)
 
 </div>
