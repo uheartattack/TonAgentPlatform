@@ -303,7 +303,7 @@ export class Orchestrator {
         type: 'function',
         function: {
           name: 'ask_clarification',
-          description: 'Задай 1 уточняющий вопрос ПЕРЕД созданием агента, если описание слишком короткое (<15 слов) или неоднозначное. Предложи 2-4 варианта как кнопки. НЕ используй если описание уже достаточно детальное.',
+          description: 'Задай 1-2 уточняющих вопроса ПЕРЕД созданием агента, если описание неполное или неоднозначное. Предложи 2-4 варианта ответа как кнопки. Спрашивай: что конкретно делать, какой объект, какие условия, какой интервал.',
           parameters: {
             type: 'object',
             properties: {
@@ -577,7 +577,7 @@ ID: ${userId}${isOwner ? ' 👑 OWNER (создатель платформы)' :
 🔵 ВЫЗЫВАЙ list_agents: "мои агенты", "список", "покажи", "what agents"
 🟠 ВЫЗЫВАЙ run/edit/delete/explain/debug_agent: упоминает #ID или имя + действие
 🔴 ВЫЗЫВАЙ analyze_nft: спрашивает цену/floor ПРЯМО СЕЙЧАС (не создание агента)
-🟡 ВЫЗЫВАЙ ask_clarification: описание <15 слов и неоднозначно → уточни 1 вопросом
+🟡 ВЫЗЫВАЙ ask_clarification: описание неполное/неоднозначное → уточни 1-2 вопросами с вариантами
 
 ⚪ НЕ ВЫЗЫВАЙ инструменты: приветствие, "что ты умеешь?", "помощь", общий вопрос о платформе
 
@@ -801,6 +801,89 @@ ${studioContext?.source === 'studio' ? `
     }
 
     // ════════════════════════════════════════════════════════════
+    // ATLAS CLARIFICATION — уточняющие вопросы ПЕРЕД созданием
+    // Если пользователь ещё не прошёл через уточнение — Atlas спрашивает
+    // ════════════════════════════════════════════════════════════
+    const alreadyClarified = message.includes('Уточнение пользователя:');
+    if (!alreadyClarified) {
+      try {
+        const clarifyResp = await openai.chat.completions.create({
+          model: 'claude-sonnet-4-5-20250929',
+          max_tokens: 500,
+          messages: [
+            {
+              role: 'system',
+              content: `Ты — Atlas, AI-ассистент TON Agent Platform. Пользователь хочет создать AI-агента.
+
+Проанализируй описание и определи, нужны ли уточнения ПЕРЕД созданием.
+
+ДОСТУПНЫЕ ВОЗМОЖНОСТИ агентов (capabilities):
+- 💰 Wallet: баланс TON, переводы, история
+- 🖼 NFT: floor price, анализ коллекций
+- 🎁 Gifts: Telegram подарки, арбитраж, покупка/продажа
+- 📊 Market: мониторинг цен, объёмы, торговые сигналы
+- 📱 Telegram: авторизация, Fragment, MTProto
+- 🌐 Web: поиск в интернете, fetch URL
+- 📈 DeFi: DEX свапы (DeDust/STON.fi)
+
+ПРАВИЛА:
+1. Если описание КОНКРЕТНОЕ и полное (содержит: что делать + объект + когда/при каких условиях) → ответь JSON: {"needsClarification": false}
+2. Если описание НЕПОЛНОЕ или НЕОДНОЗНАЧНОЕ → сгенерируй 1-2 ключевых вопроса с вариантами ответов.
+
+Примеры когда НЕ нужны вопросы:
+- "следи за балансом кошелька UQxxx, уведоми при изменении > 100 TON каждые 5 минут" → полное
+- "мониторь floor price TON Punks каждый час, уведоми при падении > 10%" → полное
+
+Примеры когда НУЖНЫ вопросы:
+- "создай бота для подарков" → Какие действия? (мониторинг цен / арбитраж / покупка-продажа)
+- "мониторинг" → Что мониторить? (кошелёк / NFT / цену TON / подарки)
+- "арбитраж" → Какой тип? (подарки / NFT / DeFi)
+- "следи за кошельком" → Какой адрес кошелька?
+
+Формат ответа — ТОЛЬКО JSON:
+{"needsClarification": false}
+или
+{"needsClarification": true, "questions": [{"question": "текст вопроса", "options": ["вариант1", "вариант2", "вариант3"]}]}`
+            },
+            {
+              role: 'user',
+              content: description
+            }
+          ],
+        });
+
+        const raw = clarifyResp.choices?.[0]?.message?.content || '';
+        // Извлекаем JSON из ответа
+        const jsonMatch = raw.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          if (parsed.needsClarification && parsed.questions?.length > 0) {
+            // Формируем уточняющие вопросы с кнопками
+            const q = parsed.questions[0]; // берём первый вопрос
+            const options = (q.options || []).slice(0, 4);
+            const buttons = options.map((opt: string) => ({
+              text: opt,
+              callbackData: `clarify:${encodeURIComponent(opt.slice(0, 50))}`,
+            }));
+
+            // Сохраняем состояние ожидания
+            await getMemoryManager().setWaitingForInput(userId, 'agent_clarification', { description });
+
+            console.log(`[Orchestrator] Atlas asks clarification for: "${description.slice(0, 60)}..."`);
+            return {
+              type: 'buttons',
+              content: `🤖 *Atlas*: ${q.question}`,
+              buttons,
+            };
+          }
+        }
+      } catch (e: any) {
+        console.warn('[Orchestrator] Clarification check failed, proceeding:', e.message);
+        // При ошибке — просто продолжаем создание без уточнений
+      }
+    }
+
+    // ════════════════════════════════════════════════════════════
     // AI-FIRST CREATION — генерируем AI-агента с system prompt
     // Шаблоны доступны через маркетплейс, но не блокируют creation flow
     // ════════════════════════════════════════════════════════════
@@ -892,7 +975,7 @@ ${studioContext?.source === 'studio' ? `
 
 1. ЯЗЫК: Пиши system prompt на том же языке что и описание пользователя
 2. КОНКРЕТНОСТЬ: Каждый тик = конкретный алгоритм действий (шаг 1, шаг 2...)
-3. НИКАКИХ ВОПРОСОВ: Агент ДЕЙСТВУЕТ сразу. Нет информации? Используй дефолты:
+3. АГЕНТ ДЕЙСТВУЕТ СРАЗУ (не переспрашивает пользователя в runtime). Нет информации? Используй дефолты:
    - Коллекции подарков: "Plush Pepe", "Heart Locket", "Lol Pop", "Gem", "Jelly Bunny"
    - Порог уведомления: изменение > 10%
    - Спред арбитража: > 5%

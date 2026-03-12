@@ -15,7 +15,7 @@
 
 *Describe what you want in plain text or voice — the platform generates, sandboxes, and deploys an autonomous AI agent instantly.*
 
-[**Live Demo**](https://tonagentplatform.com) · [**Try the Bot**](https://t.me/TonAgentPlatformBot) · [**Dashboard**](https://tonagentplatform.com/dashboard.html)
+[**Live Demo**](https://tonagentplatform.com) · [**Try the Bot**](https://t.me/TonAgentPlatformBot) · [**Studio**](https://tonagentplatform.com/studio)
 
 </div>
 
@@ -66,7 +66,7 @@ Open Telegram -> [@TonAgentPlatformBot](https://t.me/TonAgentPlatformBot) -> `/s
 | **Wallet** | **TON Connect** | Native wallet integration — sign transactions without leaving Telegram |
 | **Alerts** | **Rich Notifications** | HTML-formatted push alerts with inline buttons, per-agent customization |
 | **Marketplace** | **Agent Marketplace** | Publish, buy, and sell agents — community-driven template economy |
-| **Dashboard** | **Web Dashboard** | Monitor agents, view logs, manage plugins, wallet balance at [tonagentplatform.com/dashboard](https://tonagentplatform.com/dashboard.html) |
+| **Studio** | **Web Studio** | Monitor agents, view logs, manage plugins, wallet balance at [tonagentplatform.com/dashboard](https://tonagentplatform.com/studio) |
 | **Userbot** | **Telegram Userbot** | Agents can read/send/forward messages, join channels, search — full Telegram automation via MTProto |
 | **Multi** | **Inter-Agent Communication** | Agents can message each other, coordinate tasks, share data |
 | **Self** | **Self-Improvement** | Platform AI periodically proposes code improvements to agents |
@@ -76,7 +76,7 @@ Open Telegram -> [@TonAgentPlatformBot](https://t.me/TonAgentPlatformBot) -> `/s
 ## Screenshots
 
 <!-- Add screenshots here -->
-| Agent Creation | Dashboard | Marketplace |
+| Agent Creation | Studio | Marketplace |
 |:-:|:-:|:-:|
 | *Coming soon* | *Coming soon* | *Coming soon* |
 
@@ -89,7 +89,7 @@ Open Telegram -> [@TonAgentPlatformBot](https://t.me/TonAgentPlatformBot) -> `/s
 ```mermaid
 graph TB
     User((User)) -->|Telegram / Voice| Bot[Telegraf Bot]
-    User -->|Browser| Dashboard[Web Dashboard]
+    User -->|Browser| Studio[Web Studio]
     Bot --> Orchestrator[AI Orchestrator - NLU + Routing]
     Bot --> APIServer[REST API :3001]
     Orchestrator --> Creator[Agent Creator - AI-First]
@@ -103,7 +103,7 @@ graph TB
     Plugins --> STON[STON.fi DEX]
     Plugins --> EVAA[EVAA Lending]
     Creator --> DB[(PostgreSQL + Drizzle)]
-    APIServer --> Dashboard
+    APIServer --> Studio
     Bot --> TonConnect[TON Connect v2]
     Bot --> MultiProvider{7 AI Providers}
     MultiProvider --> Gemini[Gemini 2.5 Flash]

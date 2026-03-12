@@ -2021,7 +2021,7 @@ export function startApiServer() {
 
       // Agent counts
       const agentCountRes = await pool.query(
-        'SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE status = \'active\') as active FROM builder_bot.agents WHERE user_id = $1',
+        'SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE is_active = true) as active FROM builder_bot.agents WHERE user_id = $1',
         [userId]
       );
       const agentCount = parseInt(agentCountRes.rows[0]?.total || '0');

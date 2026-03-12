@@ -264,6 +264,8 @@ function switchLang(lang) {
     document.title = lang === 'ru' ? 'TON Agent Platform \u2014 \u041F\u0430\u043D\u0435\u043B\u044C \u0443\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u0438\u044F' : 'TON Agent Platform \u2014 Control Center';
     // Re-render flow palette with new language
     if (typeof buildFlowPalette === 'function') buildFlowPalette();
+    // Re-apply subscription badge (it's dynamically managed, not from data-en/data-ru)
+    if (_currentSub) updateSidebarPlanBadge(_currentSub);
   } catch (_) {}
 }
 
@@ -1602,7 +1604,7 @@ async function checkExistingSession() {
 
   if (data.ok) {
     currentUser = { userId: data.userId, username: data.username, first_name: data.firstName, photo_url: data.photoUrl || null };
-    if (data.planId) currentUser._plan = { id: data.planId, name: data.planName, icon: data.planIcon };
+    if (data.planId) currentUser._plan = { planId: data.planId, planName: data.planName, planIcon: data.planIcon };
     showApp();
   } else {
     // Token expired (bot restarted / session wiped)
