@@ -196,7 +196,7 @@ const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
                 'tg_mark_read', 'tg_get_comments', 'tg_set_typing', 'tg_send_formatted',
                 'tg_get_message_by_id', 'tg_get_unread', 'tg_send_file'],
   web:         ['web_search', 'fetch_url', 'http_fetch'],
-  state:       ['get_state', 'set_state'],
+  state:       ['get_state', 'set_state', 'list_state_keys'],
   notify:      ['notify', 'notify_rich'],
   plugins:     ['list_plugins', 'suggest_plugin', 'run_custom_plugin', 'list_custom_plugins',
                 'apply_plugin', 'remove_plugin'],
@@ -210,7 +210,7 @@ const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
 
 // ── Tool definitions (OpenAI function_call format) ─────────────────────────
 
-function buildToolDefinitions(agentRole?: string, enabledCapabilities?: string[] | null, mcpTools?: OpenAI.ChatCompletionTool[]): OpenAI.ChatCompletionTool[] {
+export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: string[] | null, mcpTools?: OpenAI.ChatCompletionTool[]): OpenAI.ChatCompletionTool[] {
   const allTools: OpenAI.ChatCompletionTool[] = [
     {
       type: 'function',
@@ -450,13 +450,13 @@ function buildToolDefinitions(agentRole?: string, enabledCapabilities?: string[]
       type: 'function',
       function: {
         name: 'dex_swap_simulate',
-        description: 'Симулировать обмен токенов на STON.fi DEX. Показывает курс, комиссию и price impact.',
+        description: 'Симулировать обмен токенов на STON.fi DEX. Показывает курс и price impact. Популярные адреса: TON=EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c, USDT=EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs, NOT=EQAvlWFDxGF2lXm67y4yzC17wYKD9A0guwPkMs1gOsM__NOT. Сначала используй dex_get_prices чтобы найти адрес нужного токена.',
         parameters: {
           type: 'object',
           properties: {
-            offer_address: { type: 'string', description: 'Адрес токена для продажи (TON native = EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c)' },
-            ask_address:   { type: 'string', description: 'Адрес токена для покупки' },
-            amount:        { type: 'string', description: 'Сумма в nano-единицах (для TON: 1 TON = 1000000000)' },
+            offer_address: { type: 'string', description: 'Адрес токена для продажи. TON = EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c' },
+            ask_address:   { type: 'string', description: 'Адрес токена для покупки. Используй dex_get_prices чтобы найти адрес.' },
+            amount:        { type: 'string', description: 'Сумма в nano-единицах (1 TON = 1000000000, 1 USDT = 1000000)' },
             slippage:      { type: 'string', description: 'Допустимый slippage (по умолчанию 0.01 = 1%)' },
           },
           required: ['offer_address', 'ask_address', 'amount'],
@@ -481,7 +481,7 @@ function buildToolDefinitions(agentRole?: string, enabledCapabilities?: string[]
       type: 'function',
       function: {
         name: 'set_state',
-        description: 'Сохранить состояние агента (persists between ticks)',
+        description: 'Сохранить состояние агента (persists between ticks). Используй list_state_keys чтобы узнать какие ключи уже сохранены.',
         parameters: {
           type: 'object',
           properties: {
@@ -490,6 +490,14 @@ function buildToolDefinitions(agentRole?: string, enabledCapabilities?: string[]
           },
           required: ['key', 'value'],
         },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'list_state_keys',
+        description: 'Показать все сохранённые ключи состояния агента. Используй перед get_state чтобы знать какие ключи существуют.',
+        parameters: { type: 'object', properties: {} },
       },
     },
     {
@@ -1484,7 +1492,7 @@ function buildToolDefinitions(agentRole?: string, enabledCapabilities?: string[]
 
 // ── Tool executor ──────────────────────────────────────────────────────────
 
-async function executeTool(
+export async function executeTool(
   name: string,
   args: Record<string, any>,
   params: AIAgentTickParams,
@@ -1859,24 +1867,79 @@ async function executeTool(
 
     case 'dex_get_prices': {
       try {
-        const res = await fetch('https://api.dedust.io/v2/assets', {
-          headers: { 'Accept': 'application/json' },
-          signal: AbortSignal.timeout(10000),
-        });
-        if (!res.ok) return { error: `DeDust API ${res.status}` };
-        const assets = await res.json() as any[];
+        // Use DeDust pools endpoint which has actual price data (lastPrice)
+        const [poolsRes, assetsRes] = await Promise.all([
+          fetch('https://api.dedust.io/v2/pools', {
+            headers: { 'Accept': 'application/json' },
+            signal: AbortSignal.timeout(15000),
+          }),
+          fetch('https://api.dedust.io/v2/assets', {
+            headers: { 'Accept': 'application/json' },
+            signal: AbortSignal.timeout(15000),
+          }),
+        ]);
+        if (!poolsRes.ok) return { error: `DeDust pools API ${poolsRes.status}` };
+        if (!assetsRes.ok) return { error: `DeDust assets API ${assetsRes.status}` };
+
+        const pools = await poolsRes.json() as any[];
+        const assets = await assetsRes.json() as any[];
         const symbol = args.symbol ? String(args.symbol).toUpperCase() : null;
-        const filtered = symbol
-          ? assets.filter((a: any) => a.symbol?.toUpperCase() === symbol)
-          : assets.filter((a: any) => a.price && parseFloat(a.price) > 0).slice(0, 50);
+
+        // Build asset lookup: address → metadata
+        const assetMap = new Map<string, any>();
+        for (const a of assets) {
+          if (a.address) assetMap.set(a.address, a);
+          // native TON has no address
+          if (a.type === 'native') assetMap.set('native', a);
+        }
+
+        // Find pools with TON as one side (for USD pricing) that have lastPrice
+        const tonPools = pools.filter((p: any) =>
+          p.lastPrice && p.assets?.length === 2 &&
+          p.assets.some((a: any) => a.type === 'native')
+        );
+
+        // Build price list from TON-paired pools
+        const prices: any[] = [];
+        for (const pool of tonPools) {
+          const tonAsset = pool.assets.find((a: any) => a.type === 'native');
+          const otherAsset = pool.assets.find((a: any) => a.type !== 'native');
+          if (!otherAsset) continue;
+
+          const meta = otherAsset.metadata || assetMap.get(otherAsset.address) || {};
+          const sym = meta.symbol || meta.name || '?';
+          const tokenIsFirst = pool.assets[0].type !== 'native';
+          // lastPrice = price of asset[0] in terms of asset[1]
+          const priceInTon = tokenIsFirst ? parseFloat(pool.lastPrice) : (1 / parseFloat(pool.lastPrice));
+
+          if (symbol && sym.toUpperCase() !== symbol) continue;
+
+          prices.push({
+            symbol: sym,
+            name: meta.name || sym,
+            address: otherAsset.address,
+            price_ton: priceInTon.toFixed(6),
+            reserves: pool.reserves,
+            pool_address: pool.address,
+          });
+        }
+
+        // Sort by reserves (liquidity)
+        prices.sort((a: any, b: any) => {
+          const rA = parseInt(a.reserves?.[0] || '0');
+          const rB = parseInt(b.reserves?.[0] || '0');
+          return rB - rA;
+        });
+
         return {
-          count: filtered.length,
-          prices: filtered.map((a: any) => ({
-            symbol: a.symbol,
-            type: a.type,
-            address: a.address,
-            price_usd: a.price,
-            decimals: a.decimals,
+          count: prices.length,
+          note: 'Prices are in TON. Multiply by TON/USD rate for USD value.',
+          prices: prices.slice(0, symbol ? 5 : 30).map((p: any) => ({
+            symbol: p.symbol,
+            name: p.name,
+            address: p.address,
+            price_ton: p.price_ton,
+            pool_address: p.pool_address,
           })),
         };
       } catch (e: any) { return { error: e.message }; }
@@ -1927,6 +1990,19 @@ async function executeTool(
       }
     }
 
+    case 'list_state_keys': {
+      try {
+        const allState = await stateRepo.getAll(params.agentId);
+        return {
+          keys: (allState || []).map((s: any) => ({
+            key: s.key,
+            value_preview: String(s.value || '').slice(0, 100),
+            updated: s.updatedAt,
+          })),
+        };
+      } catch (e: any) { return { keys: [], error: e.message }; }
+    }
+
     case 'notify': {
       const msg = String(args.message || '');
       _tickNotifyFlag.set(params.agentId, true); // mark: notify was called in this tick
@@ -1953,7 +2029,7 @@ async function executeTool(
         // 1) Try DuckDuckGo HTML search (works for general queries)
         try {
           const htmlResp = await fetch('https://html.duckduckgo.com/html/?q=' + encoded, {
-            headers: { 'User-Agent': 'Mozilla/5.0 (compatible; TONAgentBot/1.0)' },
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36' },
             signal: AbortSignal.timeout(10000),
           });
           if (htmlResp.ok) {
@@ -3089,9 +3165,38 @@ async function executeTool(
       } catch (e: any) { return { error: e.message }; }
     }
 
-    default:
+    default: {
+      // ── Tool name aliases (AI sometimes uses wrong names) ──
+      const ALIASES: Record<string, string> = {
+        'ton_get_balance': 'get_ton_balance',
+        'ton_balance': 'get_ton_balance',
+        'check_balance': 'get_ton_balance',
+        'search_web': 'web_search',
+        'google_search': 'web_search',
+        'search': 'web_search',
+        'send_message': 'tg_send_message',
+        'read_messages': 'tg_get_messages',
+        'get_messages': 'tg_get_messages',
+        'get_balance': 'get_ton_balance',
+        'get_prices': 'dex_get_prices',
+        'token_prices': 'dex_get_prices',
+        'swap_simulate': 'dex_swap_simulate',
+        'state_keys': 'list_state_keys',
+        'get_agents': 'list_my_agents',
+        'my_agents': 'list_my_agents',
+        'nft_floor': 'get_nft_floor',
+        'gift_catalog': 'get_gift_catalog',
+        'react': 'tg_react',
+        'reply': 'tg_reply',
+      };
+      const alias = ALIASES[name];
+      if (alias) {
+        console.log(`[AI Runtime] Alias: ${name} → ${alias}`);
+        return executeTool(alias, args, params);
+      }
       console.warn(`[AI Runtime] Unknown tool called: ${name}, args: ${JSON.stringify(args).slice(0, 200)}`);
       return { error: `Unknown tool: ${name}. Use list_plugins() or check available tools.` };
+    }
   }
 }
 
@@ -3502,19 +3607,42 @@ You MUST follow these rules AT ALL TIMES:
   let totalToolCalls = 0;
   let finalContent: string | undefined;
   _tickNotifyFlag.set(params.agentId, false); // reset flag for this tick
+  const usedModel = (params.config.AI_MODEL as string) || process.env.AI_MODEL || defaultModel;
+  console.log(`[AI runtime] Agent #${params.agentId} AI call: model=${usedModel} baseURL=${(ai as any).baseURL} tools=${tools.length} msgs=${messages.length}`);
 
   for (let iter = 0; iter < 5; iter++) {
-    let response: OpenAI.ChatCompletion;
-    try {
-      response = await ai.chat.completions.create({
-        model:    (params.config.AI_MODEL as string) || process.env.AI_MODEL || defaultModel,
-        messages,
-        tools,
-        tool_choice: 'auto',
-        max_tokens:  2048,
-      });
-    } catch (e: any) {
-      const errMsg = `AI call failed: ${e.message}`;
+    let response: OpenAI.ChatCompletion = undefined as any;
+    // Retry loop for rate-limit (429) errors
+    let lastErr: any = null;
+    for (let retry = 0; retry < 3; retry++) {
+      try {
+        response = await ai.chat.completions.create({
+          model:    (params.config.AI_MODEL as string) || process.env.AI_MODEL || defaultModel,
+          messages,
+          tools,
+          tool_choice: 'auto',
+          max_tokens:  2048,
+        });
+        lastErr = null;
+        break; // success
+      } catch (e: any) {
+        lastErr = e;
+        // Full error dump for debugging
+        console.error(`[AI runtime] Agent #${params.agentId} AI error dump: status=${e.status} code=${e.code} type=${e.type} msg=${e.message?.slice(0, 200)} headers=${JSON.stringify(e.headers || {}).slice(0, 200)} body=${JSON.stringify(e.error || e.body || {}).slice(0, 300)}`);
+        const is429 = e.message?.includes('429') || e.status === 429 || e.statusCode === 429;
+        if (is429 && retry < 2) {
+          const delay = (retry + 1) * 5000; // 5s, 10s
+          console.log(`[AI runtime] Agent #${params.agentId} 429 rate limit, retry ${retry + 1}/3 in ${delay}ms`);
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+        const errMsg = `AI call failed: ${e.message}`;
+        await logToDb(params.agentId, 'error', errMsg);
+        return { toolCallCount: totalToolCalls, error: errMsg };
+      }
+    }
+    if (lastErr) {
+      const errMsg = `AI call failed after retries: ${lastErr.message}`;
       await logToDb(params.agentId, 'error', errMsg);
       return { toolCallCount: totalToolCalls, error: errMsg };
     }
@@ -3526,6 +3654,7 @@ You MUST follow these rules AT ALL TIMES:
     // No tool calls → agent is done
     if (!assistant.tool_calls || assistant.tool_calls.length === 0) {
       finalContent = assistant.content || undefined;
+      console.log(`[AI runtime] Agent #${params.agentId} iter=${iter} content="${(assistant.content || '').slice(0, 100)}" finish=${choice.finish_reason}`);
       break;
     }
 
@@ -3653,15 +3782,25 @@ export class AIAgentRuntime {
       },
     };
 
-    // Register before first tick so addMessageToAIAgent can find the handle
-    entry.interval = setInterval(entry.tick, opts.intervalMs);
+    // Register handle (needed for addMessageToAIAgent even without ticks)
     _activeHandles.set(opts.agentId, entry);
 
-    // First tick immediately
-    entry.tick().catch((e) => {
-      console.error(`[AI runtime] first tick failed for agent #${opts.agentId}:`, e);
-      logToDb(opts.agentId, 'error', `First tick failed: ${(e as any)?.message || String(e)}`, opts.userId);
-    });
+    // If agent has a Telegram session → it responds to messages, no scheduled ticks needed
+    // This avoids burning Gemini rate limit on periodic ticks
+    const hasTgSession = !!(opts.config as any)?._hasTgSession;
+    if (hasTgSession) {
+      console.log(`[AI runtime] Agent #${opts.agentId} has TG session — skipping scheduled ticks (message-driven only)`);
+      entry.interval = null as any;
+    } else {
+      entry.interval = setInterval(entry.tick, opts.intervalMs);
+      // Delay first tick by 30s
+      setTimeout(() => {
+        entry.tick().catch((e) => {
+          console.error(`[AI runtime] first tick failed for agent #${opts.agentId}:`, e);
+          logToDb(opts.agentId, 'error', `First tick failed: ${(e as any)?.message || String(e)}`, opts.userId);
+        });
+      }, 30000);
+    }
 
     // ── Enable incoming message listener (agent acts as real TG user) ──
     // Retry with delay since TG sessions may not be restored yet at startup
