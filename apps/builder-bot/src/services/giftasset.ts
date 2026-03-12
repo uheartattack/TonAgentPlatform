@@ -169,8 +169,9 @@ const AUTH_COOLDOWN = 10 * 60 * 1000; // 10 min cooldown after 401/403
 let _gaFailedUntil = 0;
 let _gaFailLogged = false;
 let _gaDevFailedUntil = 0;
-let _swFailedUntil = 0;
-let _swFailLogged = false;
+// TEMP: SwiftGifts API disabled — set cooldown to year 2099
+let _swFailedUntil = new Date('2099-01-01').getTime();
+let _swFailLogged = true;
 
 async function gaDevFetch(path: string, opts: { method?: string; body?: any; query?: Record<string, string> } = {}): Promise<any> {
   if (Date.now() < _gaDevFailedUntil) throw new Error('GiftAsset Dev API key invalid (cooldown active)');
