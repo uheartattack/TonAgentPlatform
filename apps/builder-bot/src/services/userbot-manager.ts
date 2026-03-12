@@ -55,12 +55,99 @@ class UserbotManager {
   private clients = new Map<number, UserClient>();
   private qrStates = new Map<number, QRAuthState>();
 
-  // Idle TTL: disconnect after 30min of no use (session stays in DB)
-  private idleTTL = 30 * 60 * 1000;
-
   constructor() {
-    // Cleanup idle clients every 5min
-    setInterval(() => this.cleanupIdle(), 5 * 60 * 1000);
+    // Auto-reconnect all saved sessions on startup (like Telethon — always online)
+    setTimeout(() => this.restoreAllSessions(), 5000);
+    // Health check every 5min — reconnect dropped connections
+    setInterval(() => this.healthCheck(), 5 * 60 * 1000);
+  }
+
+  /** Restore all saved Telegram sessions from DB on startup */
+  async restoreAllSessions(): Promise<void> {
+    try {
+      const pool = getPool();
+      const res = await pool.query(
+        `SELECT user_id, value FROM builder_bot.user_settings WHERE key = 'telegram_session'`
+      );
+      for (const row of res.rows) {
+        const userId = Number(row.user_id);
+        const val = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
+        if (val?.session) {
+          try {
+            await this.connectUser(userId, val.session);
+            console.log(`[UserbotMgr] ✅ Restored session for user ${userId} (@${val.username || '?'})`);
+          } catch (e: any) {
+            console.warn(`[UserbotMgr] Failed to restore user ${userId}:`, e.message);
+          }
+        }
+      }
+      console.log(`[UserbotMgr] Restored ${this.clients.size} Telegram sessions`);
+    } catch (e: any) {
+      console.error('[UserbotMgr] restoreAllSessions error:', e.message);
+    }
+  }
+
+  /** Connect a user with a known session string */
+  async connectUser(userId: number, sessionString: string): Promise<TelegramClient> {
+    const session = new StringSession(sessionString);
+    const client = new TelegramClient(session, API_ID, API_HASH, {
+      connectionRetries: 10,
+      requestRetries: 5,
+      autoReconnect: true,
+      useWSS: false,
+    });
+    await client.connect();
+
+    const me = await Promise.race([
+      client.getMe(),
+      new Promise<null>((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000)),
+    ]) as any;
+
+    if (!me) throw new Error('Auth failed');
+
+    this.clients.set(userId, {
+      client,
+      connected: true,
+      lastUsed: Date.now(),
+      telegramUserId: me.id?.toJSNumber?.() ?? Number(me.id),
+      username: me.username,
+      phone: me.phone,
+    });
+
+    return client;
+  }
+
+  /** Health check — reconnect dropped sessions (always online) */
+  private async healthCheck(): Promise<void> {
+    for (const [userId, uc] of this.clients) {
+      if (!uc.connected) {
+        // Try to reconnect from DB
+        try {
+          const sess = await this.loadSessionFromDB(userId);
+          if (sess) {
+            await this.connectUser(userId, sess);
+            console.log(`[UserbotMgr] Reconnected user ${userId}`);
+          }
+        } catch (e: any) {
+          console.warn(`[UserbotMgr] Reconnect failed for ${userId}:`, e.message);
+        }
+        continue;
+      }
+      // Verify connected client is still alive
+      try {
+        await Promise.race([
+          uc.client.getMe(),
+          new Promise<null>((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000)),
+        ]);
+      } catch {
+        console.warn(`[UserbotMgr] Client dead for user ${userId}, reconnecting...`);
+        uc.connected = false;
+        try {
+          const sess = await this.loadSessionFromDB(userId);
+          if (sess) await this.connectUser(userId, sess);
+        } catch {}
+      }
+    }
   }
 
   // ── Session DB operations ─────────────────────────────────────────
@@ -112,58 +199,19 @@ class UserbotManager {
   // ── Client lifecycle ──────────────────────────────────────────────
 
   async getClient(userId: number): Promise<TelegramClient | null> {
+    // Return existing connected client (always online — no idle disconnect)
     const existing = this.clients.get(userId);
     if (existing?.connected) {
       existing.lastUsed = Date.now();
       return existing.client;
     }
 
-    // Try loading from DB
+    // Try loading from DB and reconnecting (auto-reconnect like Telethon)
     const sessionStr = await this.loadSessionFromDB(userId);
     if (!sessionStr) return null;
 
     try {
-      const session = new StringSession(sessionStr);
-      const client = new TelegramClient(session, API_ID, API_HASH, {
-        connectionRetries: 5,
-        requestRetries: 3,
-        autoReconnect: true,
-        useWSS: false,
-      });
-      await client.connect();
-
-      // Verify still authorized
-      const me = await Promise.race([
-        client.getMe(),
-        new Promise<null>((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000)),
-      ]);
-      if (!me) {
-        await client.disconnect().catch(() => {});
-        return null;
-      }
-
-      const uc: UserClient = {
-        client,
-        connected: true,
-        lastUsed: Date.now(),
-        telegramUserId: (me as any).id?.toJSNumber?.() ?? Number((me as any).id),
-        username: (me as any).username,
-        phone: (me as any).phone,
-      };
-      this.clients.set(userId, uc);
-
-      // Update session (DC info may have changed)
-      const newSess = client.session.save() as unknown as string;
-      if (newSess) {
-        await this.saveSessionToDB(userId, newSess, {
-          username: uc.username,
-          phone: uc.phone,
-          telegramUserId: uc.telegramUserId,
-        });
-      }
-
-      console.log(`[UserbotMgr] Connected user ${userId} as @${uc.username}`);
-      return client;
+      return await this.connectUser(userId, sessionStr);
     } catch (e: any) {
       console.error(`[UserbotMgr] Connect failed for user ${userId}:`, e.message);
       return null;
@@ -426,19 +474,8 @@ class UserbotManager {
     return state.complete2FA(password);
   }
 
-  // ── Cleanup ───────────────────────────────────────────────────────
-
-  private cleanupIdle(): void {
-    const now = Date.now();
-    for (const [userId, uc] of this.clients) {
-      if (now - uc.lastUsed > this.idleTTL) {
-        console.log(`[UserbotMgr] Idle disconnect user ${userId}`);
-        uc.client.disconnect().catch(() => {});
-        uc.connected = false;
-        this.clients.delete(userId);
-      }
-    }
-  }
+  /** Get count of active clients */
+  get activeCount(): number { return this.clients.size; }
 
   /** Build per-user userbot sandbox (like Telethon) */
   async buildUserSandbox(userId: number): Promise<Record<string, Function> | null> {
