@@ -211,24 +211,28 @@ Open Telegram → [@TonAgentPlatformBot](https://t.me/TonAgentPlatformBot) → `
 ## Roadmap
 
 - [x] AI-first agent creation (text + voice → AI builds agent)
-- [x] 7 AI providers with per-agent switching + platform fallback
-- [x] 84 agent tools (TON, gifts, NFT, DeFi, web, Telegram)
-- [x] Gift marketplace integration (GiftAsset + SwiftGifts)
+- [x] 7 AI providers with fallback chain + per-agent switching
+- [x] 80+ agent tools (TON, gifts, NFT, DeFi, web, Telegram, Discord, X/Twitter)
+- [x] Multi-platform support: Telegram, Discord, X/Twitter
+- [x] GiftAsset API + real-time WebSocket price stream
 - [x] Telegram userbot (MTProto) — agents as real users
-- [x] Visual workflow constructor
-- [x] Studio dashboard with Telegram QR auth
+- [x] Shared Session Router — multi-agent on one TG account
+- [x] Pre-transaction security scans + address blacklist
+- [x] Approval workflows for dangerous operations
+- [x] Audit trail + p95/p99 metrics
+- [x] AI-based capability detection (no hardcoded keywords)
+- [x] Skill trees — auto-learning knowledge base per agent
+- [x] Visual workflow constructor + Studio dashboard
+- [x] 20 configurable capabilities per agent
 - [x] VM2 sandboxed execution with SSRF protection
 - [x] TON Connect v2 wallet integration
-- [x] 12 plugins + 22 templates
-- [x] Agent marketplace (publish, buy, sell)
+- [x] 12 plugins + 22 templates + agent marketplace
 - [x] Voice commands + speech recognition
-- [x] Rich notifications (HTML + inline buttons)
-- [x] Inter-agent communication
-- [x] Per-agent TON wallets
-- [x] Self-improvement system
+- [x] Image generation (fal.ai)
+- [x] Blockchain analytics (Dune)
 - [ ] Telegram Mini App
 - [ ] On-chain agent registry (TON smart contract)
-- [ ] DAO governance & platform token
+- [ ] DAO governance + platform token
 
 <br>
 
