@@ -232,3 +232,92 @@ export async function notifyAgentResult(params: {
     text, agentId, buttons, silent: scheduled,
   });
 }
+
+
+// ═══════════════════════════════════════════════════════════
+// APPROVAL NOTIFICATIONS — send confirmation buttons to user
+// ═══════════════════════════════════════════════════════════
+
+const TOOL_DESCRIPTIONS: Record<string, string> = {
+  send_ton: '💎 Отправка TON',
+  send_jetton: '🪙 Отправка жеттона',
+  buy_catalog_gift: '🎁 Покупка подарка из каталога',
+  buy_resale_gift: '🎁 Покупка подарка (перепродажа)',
+  buy_market_gift: '🎁 Покупка подарка на маркете',
+  list_gift_for_sale: '💰 Выставление подарка на продажу',
+  dex_swap_execute: '🔄 Обмен токенов (DEX swap)',
+  tg_leave_channel: '🚪 Выход из канала/группы',
+  tg_delete_message: '🗑 Удаление сообщения',
+};
+
+function formatApprovalArgs(toolName: string, args: any): string {
+  if (!args) return '';
+  const lines: string[] = [];
+  if (toolName === 'send_ton') {
+    lines.push(`Кому: <code>${escapeHtml(String(args.to || '?'))}</code>`);
+    lines.push(`Сумма: <b>${args.amount || '?'} TON</b>`);
+    if (args.comment) lines.push(`Комментарий: ${escapeHtml(String(args.comment))}`);
+  } else if (toolName === 'send_jetton') {
+    lines.push(`Токен: <code>${escapeHtml(String(args.jetton || '?'))}</code>`);
+    lines.push(`Кому: <code>${escapeHtml(String(args.to || '?'))}</code>`);
+    lines.push(`Сумма: <b>${args.amount || '?'}</b>`);
+  } else if (toolName.includes('buy') || toolName.includes('gift')) {
+    if (args.gift_name) lines.push(`Подарок: <b>${escapeHtml(String(args.gift_name))}</b>`);
+    if (args.gift_slug) lines.push(`Slug: <code>${escapeHtml(String(args.gift_slug))}</code>`);
+    if (args.price) lines.push(`Цена: <b>${args.price} ⭐</b>`);
+    if (args.gift_id) lines.push(`ID: <code>${args.gift_id}</code>`);
+  } else if (toolName === 'dex_swap_execute') {
+    lines.push(`Пара: ${escapeHtml(String(args.from_token || '?'))} → ${escapeHtml(String(args.to_token || '?'))}`);
+    lines.push(`Сумма: <b>${args.amount || '?'}</b>`);
+  } else {
+    // Generic
+    for (const [k, v] of Object.entries(args)) {
+      if (v !== undefined && v !== null) lines.push(`${k}: <code>${escapeHtml(String(v).slice(0, 100))}</code>`);
+    }
+  }
+  return lines.join('\n');
+}
+
+export async function notifyApprovalRequest(
+  userId: number,
+  agentId: number,
+  approvalId: number,
+  toolName: string,
+  args: any,
+): Promise<void> {
+  const desc = TOOL_DESCRIPTIONS[toolName] || `\u{1f527} ${toolName}`;
+  // Extract security scan info if present
+  const secScan = args?._securityScan;
+  const cleanArgs = { ...args };
+  delete cleanArgs._securityScan;
+  const argsText = formatApprovalArgs(toolName, cleanArgs);
+
+  // Risk level badge
+  let riskBadge = '';
+  if (secScan) {
+    const riskIcons: Record<string, string> = { LOW: '\u{1f7e2}', MEDIUM: '\u{1f7e1}', HIGH: '\u{1f7e0}', CRITICAL: '\u{1f534}' };
+    const icon = riskIcons[secScan.riskLevel] || '\u{2753}';
+    riskBadge = `${icon} <b>Риск: ${secScan.riskLevel}</b>\n`;
+    if (secScan.warnings && secScan.warnings.length > 0) {
+      riskBadge += secScan.warnings.join('\n') + '\n';
+    }
+    riskBadge += '\n';
+  }
+
+  const text = `\u{26a0}\u{fe0f} <b>Подтверждение действия</b>\n\n`
+    + riskBadge
+    + `Агент #${agentId} хочет выполнить:\n`
+    + `<b>${desc}</b>\n\n`
+    + (argsText ? argsText + '\n\n' : '')
+    + `<i>Автоотмена через 2 минуты</i>`
+    + `
+
+Или ответьте текстом: <code>/approve_action ${approvalId}</code> или <code>/reject_action ${approvalId}</code>`;
+
+  const buttons = [
+    { text: '✅ Подтвердить', callbackData: `approve:${approvalId}` },
+    { text: '❌ Отклонить', callbackData: `reject:${approvalId}` },
+  ];
+
+  await notifyRich(userId, { text, agentId, buttons, silent: false });
+}

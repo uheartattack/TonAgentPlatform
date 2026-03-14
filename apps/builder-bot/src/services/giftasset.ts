@@ -1,7 +1,7 @@
 /**
  * GiftAsset + SwiftGifts API Client
  *
- * GiftAsset (api.giftasset.dev):
+ * GiftAsset (giftasset.gifts):
  *   - Floor prices across 4 marketplaces (GetGems, MRKT, Portals, Fragment)
  *   - Sales history, volumes, upgrade stats, user portfolios
  *   - Auth: x-api-token header
@@ -13,6 +13,8 @@
  *
  * Rate limiting: token bucket (5 RPS shared across both APIs)
  */
+
+import WebSocket from 'ws';
 
 // ── Rate limiter (token bucket) ────────────────────────────────────
 
@@ -151,12 +153,12 @@ export interface RealArbitrageOpportunity {
 // ── GiftAsset Client (giftasset.pro) ──────────────────────────────
 
 const GA_BASE     = 'https://giftasset.pro';       // GiftAsset Pro
-const GA_DEV_BASE = 'https://api.giftasset.dev';   // GiftAsset Dev (separate API)
+const GA_DEV_BASE = 'https://giftasset.gifts';   // GiftAsset (new domain)
 const SW_BASE     = 'https://partners.swiftgifts.tg'; // SwiftGifts
 
 // GiftAsset Pro (giftasset.pro) — header: X-API-Key (per /openapi.json docs)
 const GA_KEY     = process.env.GIFTASSET_API_KEY     || '3303789ecb99a172206c599c24123ffd';
-// GiftAsset Dev (api.giftasset.dev) — header: x-api-token
+// GiftAsset (giftasset.gifts) — header: X-API-Key
 const GA_DEV_KEY = process.env.GIFTASSET_DEV_KEY     || '6HoZu0iA8TNpsQdxtNbgmpgCdMOkFMAFG1XviVLvxOE';
 // SwiftGifts (partners.swiftgifts.tg) — header: x-api-key
 const SW_KEY     = process.env.SWIFTGIFTS_API_KEY    || '93d3ba6d08f439cd9a086b2247d150ed';
@@ -169,8 +171,9 @@ const AUTH_COOLDOWN = 10 * 60 * 1000; // 10 min cooldown after 401/403
 let _gaFailedUntil = 0;
 let _gaFailLogged = false;
 let _gaDevFailedUntil = 0;
-let _swFailedUntil = 0;
-let _swFailLogged = false;
+// TEMP: SwiftGifts API disabled — set cooldown to year 2099
+let _swFailedUntil = new Date('2099-01-01').getTime();
+let _swFailLogged = true;
 
 async function gaDevFetch(path: string, opts: { method?: string; body?: any; query?: Record<string, string> } = {}): Promise<any> {
   if (Date.now() < _gaDevFailedUntil) throw new Error('GiftAsset Dev API key invalid (cooldown active)');
@@ -179,7 +182,7 @@ async function gaDevFetch(path: string, opts: { method?: string; body?: any; que
   if (opts.query) Object.entries(opts.query).forEach(([k, v]) => url.searchParams.set(k, v));
   const res = await fetch(url.toString(), {
     method: opts.method || 'GET',
-    headers: { 'x-api-token': GA_DEV_KEY, 'Content-Type': 'application/json' },
+    headers: { 'X-API-Key': GA_KEY, 'Content-Type': 'application/json' },
     body: opts.body ? JSON.stringify(opts.body) : undefined,
     signal: AbortSignal.timeout(15000),
   });
@@ -263,6 +266,31 @@ export class GiftAssetClient {
 
   /** Floor prices across all marketplaces (via price list) */
   async getPriceList(opts?: { models?: string; premarket?: boolean }): Promise<any> {
+    // Check real-time stream cache — merge fresh stream data into cached API result
+    if (!opts?.premarket) {
+      const cacheKey = `ga:pricelist:${opts?.models || 'all'}:`;
+      const hit = cache.get(cacheKey);
+      if (hit && hit.expiresAt > Date.now()) {
+        const merged = JSON.parse(JSON.stringify(hit.data));
+        const cf = merged?.collection_floors || merged;
+        if (cf && typeof cf === 'object') {
+          let updated = false;
+          for (const [key, val] of Object.entries(cf)) {
+            const streamData = getStreamCacheEntry(key);
+            if (streamData && typeof val === 'object' && val !== null) {
+              for (const [market, price] of Object.entries(streamData.floors)) {
+                const existing = (val as any)[market];
+                if (!existing || price < existing) {
+                  (val as any)[market] = price;
+                  updated = true;
+                }
+              }
+            }
+          }
+          if (updated) return merged;
+        }
+      }
+    }
     const query: Record<string, string> = { models: opts?.models || 'all' };
     if (opts?.premarket) query.premarket = 'true';
     return cached(`ga:pricelist:${opts?.models || 'all'}:${opts?.premarket || ''}`, 30_000, () =>
@@ -525,6 +553,14 @@ export class GiftAssetClient {
   async getFloorPrices(slug: string): Promise<FloorPriceData> {
     const floors: Record<string, number> = {};
 
+    // Pre-seed with real-time stream data if available
+    const streamData = getStreamCacheEntry(slug);
+    if (streamData) {
+      for (const [market, price] of Object.entries(streamData.floors)) {
+        if (price > 0) floors[market] = price;
+      }
+    }
+
     // Always take minimum: live listing beats stale price-list data
     // Prices > 5000 TON are likely Stars values or API garbage — skip
     const MAX_SANE_PRICE = 5000;
@@ -688,6 +724,232 @@ export class GiftAssetClient {
 
     return opps.sort((a, b) => b.profitPct - a.profitPct).slice(0, 10);
   }
+}
+
+
+// ── WebSocket Real-Time Price Stream ──────────────────────────────
+
+export interface SaleUpdate {
+  slug?: string;
+  collection_name?: string;
+  price?: number;
+  market?: string;
+  model?: string;
+  backdrop?: string;
+  timestamp?: string;
+  [key: string]: any;
+}
+
+export type PriceUpdateCallback = (update: SaleUpdate) => void;
+
+/** Real-time stream cache: collection → { market → price, updatedAt } */
+const _streamCache = new Map<string, { floors: Record<string, number>; updatedAt: number }>();
+
+/** How fresh stream data must be to override API cache (ms) */
+const STREAM_FRESHNESS_MS = 5000;
+
+/** Check if stream cache has fresh data for a slug/collection */
+export function getStreamCacheEntry(slug: string): { floors: Record<string, number>; updatedAt: number } | null {
+  const key = slug.toLowerCase();
+  const entry = _streamCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.updatedAt > STREAM_FRESHNESS_MS) return null;
+  return entry;
+}
+
+/** Update stream cache from a sale event */
+function updateStreamCache(update: SaleUpdate): void {
+  const slug = (update.slug || update.collection_name || '').toLowerCase();
+  if (!slug || !update.price || !update.market) return;
+  const existing = _streamCache.get(slug) || { floors: {}, updatedAt: 0 };
+  const market = update.market.toLowerCase();
+  // Only update if price is lower (floor) or we had no entry for this market
+  if (!existing.floors[market] || update.price < existing.floors[market]) {
+    existing.floors[market] = update.price;
+  }
+  existing.updatedAt = Date.now();
+  _streamCache.set(slug, existing);
+}
+
+export class GiftAssetRealtimeStream {
+  private ws: WebSocket | null = null;
+  private pingInterval: NodeJS.Timeout | null = null;
+  private reconnectTimeout: NodeJS.Timeout | null = null;
+  private reconnectDelay = 1000;
+  private maxReconnectDelay = 60000;
+  private running = false;
+  private callbacks: PriceUpdateCallback[] = [];
+  private apiKey: string;
+  private messageCount = 0;
+  private lastMessageAt = 0;
+
+  constructor(apiKey?: string) {
+    this.apiKey = apiKey || GA_KEY;
+  }
+
+  /** Register a callback for price updates */
+  onPriceUpdate(cb: PriceUpdateCallback): void {
+    this.callbacks.push(cb);
+  }
+
+  /** Remove a callback */
+  offPriceUpdate(cb: PriceUpdateCallback): void {
+    this.callbacks = this.callbacks.filter(c => c !== cb);
+  }
+
+  /** Start the WebSocket connection */
+  start(): void {
+    if (this.running) return;
+    this.running = true;
+    this.connect();
+    console.log('[GiftAsset WS] Real-time price stream started');
+  }
+
+  /** Stop the WebSocket connection and cleanup */
+  stop(): void {
+    this.running = false;
+    if (this.pingInterval) { clearInterval(this.pingInterval); this.pingInterval = null; }
+    if (this.reconnectTimeout) { clearTimeout(this.reconnectTimeout); this.reconnectTimeout = null; }
+    if (this.ws) {
+      try { this.ws.close(1000, 'shutdown'); } catch {}
+      this.ws = null;
+    }
+    console.log('[GiftAsset WS] Stream stopped (' + this.messageCount + ' messages received total)');
+  }
+
+  /** Whether the stream is currently connected and running */
+  get isActive(): boolean {
+    return this.running && this.ws !== null && this.ws.readyState === WebSocket.OPEN;
+  }
+
+  /** Stats for debugging */
+  get stats(): { running: boolean; connected: boolean; messageCount: number; lastMessageAt: number; cacheSize: number } {
+    return {
+      running: this.running,
+      connected: this.ws?.readyState === WebSocket.OPEN || false,
+      messageCount: this.messageCount,
+      lastMessageAt: this.lastMessageAt,
+      cacheSize: _streamCache.size,
+    };
+  }
+
+  private connect(): void {
+    if (!this.running) return;
+
+    const url = 'wss://giftasset.gifts/api/v1/gifts/ws/sales_updates?api_key=' + encodeURIComponent(this.apiKey);
+
+    try {
+      this.ws = new WebSocket(url, {
+        headers: {
+          'User-Agent': 'agent',
+          'Origin': 'https://giftasset.gifts',
+        },
+      });
+    } catch (err: any) {
+      console.error('[GiftAsset WS] Failed to create WebSocket:', err.message);
+      this.scheduleReconnect();
+      return;
+    }
+
+    this.ws.on('open', () => {
+      console.log('[GiftAsset WS] Connected to real-time sales stream');
+      this.reconnectDelay = 1000;
+
+      if (this.pingInterval) clearInterval(this.pingInterval);
+      this.pingInterval = setInterval(() => {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+          try { this.ws.ping(); } catch {}
+        }
+      }, 15000);
+    });
+
+    this.ws.on('message', (data: WebSocket.Data) => {
+      this.messageCount++;
+      this.lastMessageAt = Date.now();
+
+      try {
+        const raw = data.toString();
+        if (!raw || raw === 'pong' || raw === 'ping') return;
+
+        const parsed = JSON.parse(raw);
+        const updates: SaleUpdate[] = Array.isArray(parsed) ? parsed : [parsed];
+
+        for (const update of updates) {
+          updateStreamCache(update);
+          for (const cb of this.callbacks) {
+            try { cb(update); } catch (err: any) {
+              console.error('[GiftAsset WS] Callback error:', err.message);
+            }
+          }
+        }
+      } catch (err: any) {
+        if (err instanceof SyntaxError) return;
+        console.error('[GiftAsset WS] Message parse error:', err.message);
+      }
+    });
+
+    this.ws.on('close', (code: number, reason: Buffer) => {
+      console.log('[GiftAsset WS] Disconnected (code=' + code + ', reason=' + (reason?.toString() || 'none') + ')');
+      if (this.pingInterval) { clearInterval(this.pingInterval); this.pingInterval = null; }
+      this.ws = null;
+      this.scheduleReconnect();
+    });
+
+    this.ws.on('error', (err: Error) => {
+      console.error('[GiftAsset WS] Error:', err.message);
+    });
+
+    this.ws.on('pong', () => {
+      // Server responded to our ping — connection is healthy
+    });
+  }
+
+  private scheduleReconnect(): void {
+    if (!this.running) return;
+    if (this.reconnectTimeout) clearTimeout(this.reconnectTimeout);
+
+    console.log('[GiftAsset WS] Reconnecting in ' + Math.round(this.reconnectDelay / 1000) + 's...');
+    this.reconnectTimeout = setTimeout(() => {
+      this.reconnectTimeout = null;
+      this.connect();
+    }, this.reconnectDelay);
+
+    this.reconnectDelay = Math.min(this.reconnectDelay * 2, this.maxReconnectDelay);
+  }
+}
+
+// ── Stream singleton ───────────────────────────────────────────────
+
+let _stream: GiftAssetRealtimeStream | null = null;
+
+/** Start the real-time price stream. Returns the stream instance. */
+export function startRealtimeStream(): GiftAssetRealtimeStream {
+  if (!_stream) {
+    _stream = new GiftAssetRealtimeStream();
+  }
+  if (!_stream.isActive) {
+    _stream.start();
+  }
+  return _stream;
+}
+
+/** Stop the real-time price stream and cleanup. */
+export function stopRealtimeStream(): void {
+  if (_stream) {
+    _stream.stop();
+    _stream = null;
+  }
+  _streamCache.clear();
+}
+
+/** Get the current stream instance (or null if not running). */
+export function getRealtimeStream(): GiftAssetRealtimeStream | null {
+  return _stream;
+}
+
+/** Get stream stats for monitoring. */
+export function getStreamStats(): { running: boolean; connected: boolean; messageCount: number; lastMessageAt: number; cacheSize: number } | null {
+  return _stream?.stats || null;
 }
 
 // ── Singleton ──────────────────────────────────────────────────────

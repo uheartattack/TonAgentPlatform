@@ -10,7 +10,7 @@
 import { Api } from 'telegram/tl';
 import { getFragmentClient, isAuthorized, getGiftFloorPrice } from '../fragment-service';
 
-const BOT_TOKEN = () => process.env.TELEGRAM_BOT_TOKEN || '';
+const BOT_TOKEN = () => process.env.BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
 const TG_API   = (method: string) => `https://api.telegram.org/bot${BOT_TOKEN()}/${method}`;
 
 // ── Types ──────────────────────────────────────────────────────────
