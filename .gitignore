@@ -45,3 +45,31 @@ Thumbs.db
 **/nul
 nul
 HACKATHON_PLAN.md
+
+# Backup files
+*.bak
+*.bak2
+*.old
+*.tmp
+
+# Debug/fix scripts
+fix_*.js
+check_*.js
+update_*.js
+activate_*.js
+get_*.js
+dns-patch.js
+
+# Session files
+tg-session.txt
+*.session
+
+# Internal docs (not for public)
+CHECKLIST.md
+CONTRIBUTING.md
+docs/
+staging/
+
+# Plan files
+*PLAN*.md
+*GRANT*.md
