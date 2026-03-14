@@ -138,126 +138,6 @@ function checkWebRateLimit(agentId: number): boolean {
   entry.count++;
   return true;
 }
-
-// ── Security: Aegis402 Shield Protocol patterns ─────────────────────────────
-// Per-agent address blacklists
-const _addressBlacklists = new Map<number, Set<string>>(); // agentId → Set<address>
-// Per-agent known addresses (sent to before)
-const _knownAddresses = new Map<number, Set<string>>(); // agentId → Set<address>
-// Per-agent financial tx rate tracking
-const _txRateCounts = new Map<number, { count: number; resetAt: number }>();
-const TX_RATE_LIMIT_PER_HOUR = 10;
-const HIGH_AMOUNT_THRESHOLD_TON = 100;
-
-type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
-
-interface SecurityScanResult {
-  riskLevel: RiskLevel;
-  warnings: string[];
-  isBlacklisted: boolean;
-  isNewAddress: boolean;
-  isHighAmount: boolean;
-  isHighFrequency: boolean;
-  txCountLastHour: number;
-}
-
-function getAgentBlacklist(agentId: number): Set<string> {
-  if (!_addressBlacklists.has(agentId)) _addressBlacklists.set(agentId, new Set());
-  return _addressBlacklists.get(agentId)!;
-}
-
-function getKnownAddresses(agentId: number): Set<string> {
-  if (!_knownAddresses.has(agentId)) _knownAddresses.set(agentId, new Set());
-  return _knownAddresses.get(agentId)!;
-}
-
-function trackTxRate(agentId: number): number {
-  const now = Date.now();
-  const entry = _txRateCounts.get(agentId);
-  if (!entry || now > entry.resetAt) {
-    _txRateCounts.set(agentId, { count: 1, resetAt: now + 3600_000 });
-    return 1;
-  }
-  entry.count++;
-  return entry.count;
-}
-
-function getTxCountLastHour(agentId: number): number {
-  const now = Date.now();
-  const entry = _txRateCounts.get(agentId);
-  if (!entry || now > entry.resetAt) return 0;
-  return entry.count;
-}
-
-// Financial tools that involve sending funds or buying/selling
-const FINANCIAL_TOOLS = new Set([
-  'send_ton', 'send_jetton', 'dex_swap_execute',
-  'buy_catalog_gift', 'buy_resale_gift', 'buy_market_gift', 'list_gift_for_sale',
-]);
-
-// Tools that send to an address (for address checks)
-const ADDRESS_SEND_TOOLS = new Set(['send_ton', 'send_jetton']);
-
-function preTransactionScan(agentId: number, toolName: string, args: any): SecurityScanResult {
-  const warnings: string[] = [];
-  let isBlacklisted = false;
-  let isNewAddress = false;
-  let isHighAmount = false;
-  let isHighFrequency = false;
-
-  // Address checks for send tools
-  if (ADDRESS_SEND_TOOLS.has(toolName) && args.to) {
-    const addr = String(args.to);
-    const blacklist = getAgentBlacklist(agentId);
-    if (blacklist.has(addr)) {
-      isBlacklisted = true;
-      warnings.push('\u26d4 Адрес в черном списке агента');
-    }
-    const known = getKnownAddresses(agentId);
-    if (!known.has(addr)) {
-      isNewAddress = true;
-      warnings.push('\u26a0\ufe0f Новый адрес — ранее не использовался');
-    }
-  }
-
-  // Amount check for TON sends
-  if (toolName === 'send_ton' && args.amount) {
-    const amount = Number(args.amount);
-    if (amount > HIGH_AMOUNT_THRESHOLD_TON) {
-      isHighAmount = true;
-      warnings.push(`\ud83d\udea8 Крупная сумма: ${amount} TON`);
-    }
-  }
-
-  // Rate limit check
-  const txCount = getTxCountLastHour(agentId);
-  if (txCount > TX_RATE_LIMIT_PER_HOUR) {
-    isHighFrequency = true;
-    warnings.push(`\u26a0\ufe0f Высокая активность: ${txCount} транзакций за час`);
-  }
-
-  // Calculate risk level
-  let riskLevel: RiskLevel = 'LOW';
-  if (isBlacklisted) {
-    riskLevel = 'CRITICAL';
-  } else if ((isNewAddress && isHighAmount) || isHighFrequency) {
-    riskLevel = 'HIGH';
-  } else if (isNewAddress || isHighAmount) {
-    riskLevel = 'MEDIUM';
-  }
-
-  return { riskLevel, warnings, isBlacklisted, isNewAddress, isHighAmount, isHighFrequency, txCountLastHour: txCount };
-}
-
-function riskEmoji(level: RiskLevel): string {
-  switch (level) {
-    case 'LOW': return '\ud83d\udfe2';
-    case 'MEDIUM': return '\ud83d\udfe1';
-    case 'HIGH': return '\ud83d\udfe0';
-    case 'CRITICAL': return '\ud83d\udd34';
-  }
-}
-
 // ── Prompt Library Cache ──────────────────────────────────────────────────
 interface PromptEntry { act: string; prompt: string; }
 let _promptCache: PromptEntry[] | null = null;
@@ -451,9 +331,6 @@ const TOOL_SCHEMAS: Record<string, { required?: string[]; types?: Record<string,
   x_get_timeline:      { required: ['user_id'], types: { user_id: 'string' } },
   x_get_followers:     { required: ['user_id'], types: { user_id: 'string' } },
   exa_search:        { required: ['query'], types: { query: 'string', num_results: 'number', type: 'string' } },
-  security_scan_address:     { required: ['address'], types: { address: 'string' } },
-  security_blacklist_address:{ required: ['address'], types: { address: 'string', reason: 'string' } },
-  security_get_risk_report:  { required: [], types: {} },
   generate_image:    { required: ['prompt'], types: { prompt: 'string', size: 'string' } },
 };
 
@@ -528,7 +405,6 @@ const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
   ton_mcp:     [], // dynamic — MCP tools discovered at runtime and injected via mcpTools param
   blockchain_analytics: ['dune_execute_query', 'dune_get_results', 'dune_run_sql', 'dune_search_tables'],
   prompts:     ['get_prompt_template', 'list_prompt_categories'],
-  security:    ['security_scan_address', 'security_blacklist_address', 'security_get_risk_report'],
 };
 
 // ── Tool definitions (OpenAI function_call format) ─────────────────────────
@@ -1870,12 +1746,12 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
       type: 'function',
       function: {
         name: 'manage_capabilities',
-        description: 'Enable or disable capabilities. Available: wallet, nft, gifts, telegram, web, discord, x_twitter, media (image gen), knowledge (skill trees), security, blockchain_analytics, prompts, and more.',
+        description: 'Enable or disable your own capabilities/tools. Use when user asks to enable/disable features like wallet, web, telegram, gifts etc.',
         parameters: {
           type: 'object',
           properties: {
             action: { type: 'string', enum: ['enable', 'disable', 'list'], description: 'enable/disable a capability, or list all' },
-            capability: { type: 'string', description: 'Capability ID: wallet, nft, gifts, gifts_market, telegram, web, state, notify, plugins, inter_agent, blockchain, defi, ton_mcp, blockchain_analytics, prompts, discord, x_twitter, media, knowledge, security' },
+            capability: { type: 'string', description: 'Capability ID: wallet, nft, gifts, gifts_market, telegram, web, state, notify, plugins, inter_agent, blockchain, defi, ton_mcp' },
           },
           required: ['action'],
         },
@@ -2218,48 +2094,6 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
         parameters: { type: 'object', properties: {}, required: [] },
       },
     },
-    // ── Security Tools (Aegis402 Shield Protocol) ──
-    {
-      type: 'function',
-      function: {
-        name: 'security_scan_address',
-        description: 'Проверить адрес: черный список, история транзакций с этим адресом, оценка риска',
-        parameters: {
-          type: 'object',
-          properties: {
-            address: { type: 'string', description: 'TON адрес для проверки' },
-          },
-          required: ['address'],
-        },
-      },
-    },
-    {
-      type: 'function',
-      function: {
-        name: 'security_blacklist_address',
-        description: 'Добавить адрес в черный список агента. Все отправки на этот адрес будут заблокированы.',
-        parameters: {
-          type: 'object',
-          properties: {
-            address: { type: 'string', description: 'TON адрес для блокировки' },
-            reason: { type: 'string', description: 'Причина блокировки' },
-          },
-          required: ['address'],
-        },
-      },
-    },
-    {
-      type: 'function',
-      function: {
-        name: 'security_get_risk_report',
-        description: 'Получить отчет о безопасности: количество транзакций, уникальные адреса, объем за час',
-        parameters: {
-          type: 'object',
-          properties: {},
-          required: [],
-        },
-      },
-    },
   ];
 
   // Append MCP tools (dynamically discovered from @ton/mcp server)
@@ -2277,8 +2111,7 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
     // Always allow core tools
     ['get_state', 'set_state', 'notify', 'notify_rich', 'apply_plugin', 'remove_plugin',
      'list_plugins', 'suggest_plugin', 'manage_capabilities', 'get_my_capabilities',
-         'get_shared_state', 'set_shared_state', 'list_shared_state_keys',
-     'security_scan_address', 'security_blacklist_address', 'security_get_risk_report'].forEach(t => allowed.add(t));
+         'get_shared_state', 'set_shared_state', 'list_shared_state_keys'].forEach(t => allowed.add(t));
     // Always allow MCP tools if ton_mcp capability is enabled
     if (enabledCapabilities.includes('ton_mcp') && mcpTools) {
       mcpTools.forEach(t => allowed.add((t as any).function.name));
@@ -2304,40 +2137,11 @@ export async function executeTool(
     return { error: validation.error };
   }
 
-  // ── Pre-transaction security scan (Aegis402 Shield Protocol) ──
-  let _secScan: SecurityScanResult | null = null;
-  if (FINANCIAL_TOOLS.has(name)) {
-    _secScan = preTransactionScan(params.agentId || 0, name, args);
-    console.log(`[Security] ${riskEmoji(_secScan.riskLevel)} ${name} risk: ${_secScan.riskLevel}` +
-      (_secScan.warnings.length ? ' | ' + _secScan.warnings.join('; ') : ''));
-
-    // CRITICAL: block blacklisted addresses immediately
-    if (_secScan.isBlacklisted) {
-      const blockMsg = `Security BLOCKED: destination address is blacklisted.`;
-      auditLog(params.agentId || 0, params.userId || 0, name, args,
-        { blocked: true, reason: 'blacklisted_address', risk: 'CRITICAL' }, false, blockMsg, 0);
-      return { error: blockMsg, blocked: true, riskLevel: 'CRITICAL' };
-    }
-
-    // Track transaction rate
-    trackTxRate(params.agentId || 0);
-
-    // Mark address as known for future checks
-    if (ADDRESS_SEND_TOOLS.has(name) && args.to) {
-      getKnownAddresses(params.agentId || 0).add(String(args.to));
-    }
-  }
-
-  // ── Approval check for dangerous tools (with risk info) ──
+  // ── Approval check for dangerous tools ──
   const _approvalMode = params.config?.approvalMode;
   if (_approvalMode !== 'disabled' && DANGEROUS_TOOLS.has(name)) {
     console.log(`[Tool] ⚠️ Dangerous tool "${name}" — requesting approval`);
-    // Attach security scan info to args for approval notification
-    const approvalArgs = _secScan ? { ...args, _securityScan: {
-      riskLevel: _secScan.riskLevel,
-      warnings: _secScan.warnings,
-    }} : args;
-    const approved = await requestApproval(params.agentId || 0, params.userId || 0, name, approvalArgs);
+    const approved = await requestApproval(params.agentId || 0, params.userId || 0, name, args);
     if (!approved) {
       const msg = `Action "${name}" was rejected or expired. User did not approve.`;
       auditLog(params.agentId || 0, params.userId || 0, name, args, { rejected: true }, false, 'User rejected', 0);
@@ -2380,7 +2184,7 @@ async function _executeToolInner(
   switch (name) {
     case 'manage_capabilities': {
       const poolMC = (await import('../db')).pool;
-      const validCapsMC = ['wallet','nft','gifts','gifts_market','telegram','web','state','notify','plugins','inter_agent','blockchain','defi','ton_mcp','blockchain_analytics','prompts','discord','x_twitter','media','knowledge','security'];
+      const validCapsMC = ['wallet','nft','gifts','gifts_market','telegram','web','state','notify','plugins','inter_agent','blockchain','defi','ton_mcp','blockchain_analytics','prompts','discord','x_twitter','media','knowledge'];
       const capDescMC: Record<string, string> = {
         wallet: 'TON wallet (balance, transfers)',
         nft: 'NFT collections (floor prices)',
@@ -2401,7 +2205,6 @@ async function _executeToolInner(
         x_twitter: 'X (Twitter) posting & monitoring',
         media: 'Media processing (images, audio, video)',
         knowledge: 'Knowledge base & RAG',
-        security: 'Security scanning & address blacklists',
       };
       if (args.action === 'list') {
         const rowMC = await poolMC.query('SELECT trigger_config FROM builder_bot.agents WHERE id=$1', [params.agentId]);
@@ -2431,11 +2234,7 @@ async function _executeToolInner(
         const capTools = CAPABILITY_TOOL_MAP[capId];
         if (capTools) capTools.forEach(t => newToolNames.push(t));
       }
-      // Rebuild tool definitions with updated capabilities so new tools are available THIS tick
-      params.config.enabledCapabilities = capsMC;
-      tools = buildToolDefinitions(agentRole, capsMC, mcpToolDefs);
-      console.log('[AI runtime] Agent #' + params.agentId + ' capabilities changed, rebuilt tools: ' + tools.length);
-      return { ok: true, action: args.action, capability: args.capability, now_enabled: capsMC, available_tools: newToolNames, hint: 'Capabilities updated. You can now call these new tools directly.' };
+      return { ok: true, action: args.action, capability: args.capability, now_enabled: capsMC, available_tools: newToolNames, hint: 'You can now call these tools directly. Use the exact tool names listed in available_tools.' };
     }
 
     case 'get_my_capabilities': {
@@ -4836,93 +4635,6 @@ async function _executeToolInner(
       } catch (e: any) { return { error: e.message }; }
     }
 
-    // ── Security Tools (Aegis402 Shield Protocol) ──
-    case 'security_scan_address': {
-      const addr = String(args.address || '');
-      if (!addr) return { error: 'Address required' };
-      const agentId = params.agentId || 0;
-      const blacklist = getAgentBlacklist(agentId);
-      const known = getKnownAddresses(agentId);
-      const isBlacklisted = blacklist.has(addr);
-      const isKnown = known.has(addr);
-      // Query audit log for tx history with this address
-      let txHistory: any[] = [];
-      try {
-        const { pool } = await import('../db');
-        const res = await pool.query(
-          `SELECT tool_name, args, success, created_at FROM builder_bot.agent_audit_log
-           WHERE agent_id=$1 AND args::text LIKE $2
-           ORDER BY created_at DESC LIMIT 20`,
-          [agentId, `%${addr}%`]
-        );
-        txHistory = res.rows.map((r: any) => ({
-          tool: r.tool_name,
-          success: r.success,
-          date: r.created_at,
-        }));
-      } catch {}
-      return {
-        address: addr,
-        isBlacklisted,
-        isKnownAddress: isKnown,
-        previousTransactions: txHistory.length,
-        txHistory,
-        riskLevel: isBlacklisted ? 'CRITICAL' : (!isKnown ? 'MEDIUM' : 'LOW'),
-      };
-    }
-
-    case 'security_blacklist_address': {
-      const addr = String(args.address || '');
-      if (!addr) return { error: 'Address required' };
-      const reason = String(args.reason || 'Manual blacklist');
-      const agentId = params.agentId || 0;
-      getAgentBlacklist(agentId).add(addr);
-      console.log(`[Security] Agent ${agentId} blacklisted address: ${addr} (${reason})`);
-      auditLog(agentId, params.userId || 0, 'security_blacklist_address',
-        { address: addr, reason }, { success: true }, true, null, 0);
-      return { success: true, address: addr, reason, message: `Address ${addr} added to blacklist` };
-    }
-
-    case 'security_get_risk_report': {
-      const agentId = params.agentId || 0;
-      const txCount = getTxCountLastHour(agentId);
-      const blacklist = getAgentBlacklist(agentId);
-      const known = getKnownAddresses(agentId);
-      // Query recent audit for volume
-      let totalVolume = 0;
-      let recentTxCount = 0;
-      let uniqueAddrs = new Set<string>();
-      try {
-        const { pool } = await import('../db');
-        const res = await pool.query(
-          `SELECT tool_name, args, success FROM builder_bot.agent_audit_log
-           WHERE agent_id=$1 AND tool_name IN ('send_ton','send_jetton','buy_catalog_gift','buy_resale_gift','buy_market_gift','list_gift_for_sale','dex_swap_execute')
-           AND created_at > NOW() - INTERVAL '1 hour' AND success=true`,
-          [agentId]
-        );
-        recentTxCount = res.rows.length;
-        for (const row of res.rows) {
-          try {
-            const a = typeof row.args === 'string' ? JSON.parse(row.args) : row.args;
-            if (a.amount) totalVolume += Number(a.amount) || 0;
-            if (a.to) uniqueAddrs.add(a.to);
-          } catch {}
-        }
-      } catch {}
-      return {
-        riskSummary: {
-          txCountLastHour: txCount,
-          dbTxCountLastHour: recentTxCount,
-          totalVolumeLastHour: totalVolume,
-          uniqueAddressesContacted: uniqueAddrs.size,
-          blacklistedAddresses: blacklist.size,
-          knownAddresses: known.size,
-        },
-        riskLevel: txCount > TX_RATE_LIMIT_PER_HOUR ? 'HIGH' : (txCount > 5 ? 'MEDIUM' : 'LOW'),
-      };
-    }
-
-
     default: {
       // ── Tool name aliases (AI sometimes uses wrong names) ──
       const ALIASES: Record<string, string> = {
@@ -4957,9 +4669,6 @@ async function _executeToolInner(
         'search_tweets': 'x_search_tweets',
         'twitter_search': 'x_search_tweets',
         'reply': 'tg_reply',
-        'scan_address': 'security_scan_address',
-        'blacklist_address': 'security_blacklist_address',
-        'risk_report': 'security_get_risk_report',
       };
       const alias = ALIASES[name];
       if (alias) {
@@ -5329,10 +5038,6 @@ You MUST follow these rules AT ALL TIMES:
 11. Report suspicious activity patterns (many failed transactions, rapid API calls) in your logs.
 12. When handling financial operations (send_ton, buy/sell gifts), ALWAYS double-check amounts and addresses.
 13. NEVER execute transactions above 100 TON without explicit user confirmation.
-14. SECURITY: Before sending funds to a new address, use security_scan_address to check it first.
-15. NEVER send funds to blacklisted addresses. Use security_blacklist_address to block suspicious addresses.
-16. Large transactions (>100 TON) require extra caution. Check the risk report with security_get_risk_report.
-17. If you detect suspicious patterns (rapid transactions, unknown addresses, unusual amounts), pause and notify the owner.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
   let systemPromptFull = params.systemPrompt + '\n' + SAFETY_RULES;
@@ -5379,7 +5084,7 @@ You MUST follow these rules AT ALL TIMES:
     }
   }
 
-  let tools = buildToolDefinitions(agentRole, enabledCaps, mcpToolDefs);
+  const tools = buildToolDefinitions(agentRole, enabledCaps, mcpToolDefs);
   let totalToolCalls = 0;
   let finalContent: string | undefined;
   _tickNotifyFlag.set(params.agentId, false); // reset flag for this tick
