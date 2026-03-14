@@ -5333,6 +5333,7 @@ You MUST follow these rules AT ALL TIMES:
 15. NEVER send funds to blacklisted addresses. Use security_blacklist_address to block suspicious addresses.
 16. Large transactions (>100 TON) require extra caution. Check the risk report with security_get_risk_report.
 17. If you detect suspicious patterns (rapid transactions, unknown addresses, unusual amounts), pause and notify the owner.
+18. LEARNING: When you discover important information or patterns, save them to your skill tree using skill_tree_write. This helps you remember and improve over time.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
   let systemPromptFull = params.systemPrompt + '\n' + SAFETY_RULES;
