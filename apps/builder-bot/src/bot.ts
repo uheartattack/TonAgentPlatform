@@ -4224,6 +4224,37 @@ bot.on(message('voice'), async (ctx) => {
   }
 });
 
+
+bot.command('approve_action', async (ctx) => {
+  const userId = ctx.from?.id;
+  if (!userId) return;
+  const parts = ctx.message.text.split(' ');
+  const id = parseInt(parts[1]);
+  if (!id || isNaN(id)) { await ctx.reply('Usage: /approve_action <ID>'); return; }
+  try {
+    const { resolvePendingApproval } = await import('./agents/ai-agent-runtime');
+    const result = resolvePendingApproval(id, true);
+    await ctx.reply(result ? '✅ Действие одобрено' : '❌ Заявка не найдена или истекла');
+  } catch (e: any) {
+    await ctx.reply('❌ ' + e.message);
+  }
+});
+
+bot.command('reject_action', async (ctx) => {
+  const userId = ctx.from?.id;
+  if (!userId) return;
+  const parts = ctx.message.text.split(' ');
+  const id = parseInt(parts[1]);
+  if (!id || isNaN(id)) { await ctx.reply('Usage: /reject_action <ID>'); return; }
+  try {
+    const { resolvePendingApproval } = await import('./agents/ai-agent-runtime');
+    const result = resolvePendingApproval(id, false);
+    await ctx.reply(result ? '❌ Действие отклонено' : '❌ Заявка не найдена или истекла');
+  } catch (e: any) {
+    await ctx.reply('❌ ' + e.message);
+  }
+});
+
 bot.on(message('text'), async (ctx) => {
   const text = ctx.message.text;
   if ((text.startsWith('/') && text !== '/stop_chat' && text !== '/stopchat') || MENU_TEXTS.has(text)) return;
