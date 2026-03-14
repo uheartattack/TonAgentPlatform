@@ -73,3 +73,4 @@ staging/
 # Plan files
 *PLAN*.md
 *GRANT*.md
+package-lock.json
