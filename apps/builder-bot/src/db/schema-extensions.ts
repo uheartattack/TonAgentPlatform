@@ -215,6 +215,24 @@ export async function runMigrations(pool: Pool): Promise<void> {
       )
     `);
 
+    // agent_approvals (AI agent action approvals)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.agent_approvals (
+        id             SERIAL PRIMARY KEY,
+        agent_id       INTEGER NOT NULL,
+        user_id        BIGINT NOT NULL,
+        action_type    TEXT NOT NULL,
+        action_details JSONB NOT NULL DEFAULT '{}',
+        status         TEXT NOT NULL DEFAULT 'pending',
+        resolved_at    TIMESTAMP,
+        created_at     TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS agent_approvals_user_status_idx
+        ON builder_bot.agent_approvals (user_id, status, created_at DESC)
+    `);
+
     // New columns on agents: role, xp, level
     await client.query(`ALTER TABLE builder_bot.agents ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'worker'`);
     await client.query(`ALTER TABLE builder_bot.agents ADD COLUMN IF NOT EXISTS xp INTEGER DEFAULT 0`);
@@ -868,6 +886,52 @@ export const agentDailySpendTable = builderSchema.table('agent_daily_spend', {
   spentNano:  bigint('spent_nano', { mode: 'bigint' }).notNull().default(0n),
 });
 
+// ─── Таблица 10: agent_audit_log — журнал всех действий агентов ──────────
+export const agentAuditLogTable = builderSchema.table('agent_audit_log', {
+  id:        serial('id').primaryKey(),
+  agentId:   integer('agent_id').notNull(),
+  userId:    bigint('user_id', { mode: 'number' }).notNull(),
+  action:    text('action').notNull(),           // e.g. 'tool_call', 'state_change', 'spend', 'error'
+  details:   jsonb('details'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// ─── Таблица 11: agent_approvals — запросы на одобрение действий ─────────
+export const agentApprovalsTable = builderSchema.table('agent_approvals', {
+  id:          serial('id').primaryKey(),
+  agentId:     integer('agent_id').notNull(),
+  userId:      bigint('user_id', { mode: 'number' }).notNull(),
+  action:      text('action').notNull(),         // действие, требующее одобрения
+  description: text('description').notNull(),
+  status:      text('status').notNull().default('pending'),  // pending | approved | rejected
+  details:     jsonb('details'),
+  createdAt:   timestamp('created_at').defaultNow().notNull(),
+  resolvedAt:  timestamp('resolved_at'),
+});
+
+// ─── Таблица 12: agent_skill_tree — навыки и уровни агентов ─────────────
+export const agentSkillTreeTable = builderSchema.table('agent_skill_tree', {
+  id:          serial('id').primaryKey(),
+  agentId:     integer('agent_id').notNull(),
+  userId:      bigint('user_id', { mode: 'number' }).notNull(),
+  skill:       text('skill').notNull(),          // e.g. 'trading', 'analysis', 'communication'
+  level:       integer('level').notNull().default(1),
+  xp:          integer('xp').notNull().default(0),
+  unlockedAt:  timestamp('unlocked_at').defaultNow().notNull(),
+  updatedAt:   timestamp('updated_at').defaultNow().notNull(),
+});
+
+// ─── Таблица 13: agent_shared_state — общее состояние между агентами ────
+export const agentSharedStateTable = builderSchema.table('agent_shared_state', {
+  id:        serial('id').primaryKey(),
+  userId:    bigint('user_id', { mode: 'number' }).notNull(),
+  namespace: text('namespace').notNull(),        // логическая группа (e.g. 'portfolio', 'signals')
+  key:       text('key').notNull(),
+  value:     jsonb('value').notNull().default({}),
+  updatedBy: integer('updated_by'),              // agent_id кто последний обновил
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
 export async function runAIProposalsMigrations(pool: Pool): Promise<void> {
   const client = await pool.connect();
   try {
@@ -902,7 +966,63 @@ export async function runAIProposalsMigrations(pool: Pool): Promise<void> {
         CONSTRAINT agent_daily_spend_unique UNIQUE (agent_id, spend_date)
       )
     `);
-    console.log('✅ AI proposals + daily spend migrations applied');
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.agent_audit_log (
+        id         SERIAL PRIMARY KEY,
+        agent_id   INTEGER NOT NULL,
+        user_id    BIGINT NOT NULL,
+        action     TEXT NOT NULL,
+        details    JSONB,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS agent_audit_log_agent_idx
+        ON builder_bot.agent_audit_log (agent_id, created_at DESC)
+    `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.agent_approvals (
+        id          SERIAL PRIMARY KEY,
+        agent_id    INTEGER NOT NULL,
+        user_id     BIGINT NOT NULL,
+        action      TEXT NOT NULL,
+        description TEXT NOT NULL,
+        status      TEXT NOT NULL DEFAULT 'pending',
+        details     JSONB,
+        created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+        resolved_at TIMESTAMP
+      )
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS agent_approvals_pending_idx
+        ON builder_bot.agent_approvals (user_id, status) WHERE status = 'pending'
+    `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.agent_skill_tree (
+        id          SERIAL PRIMARY KEY,
+        agent_id    INTEGER NOT NULL,
+        user_id     BIGINT NOT NULL,
+        skill       TEXT NOT NULL,
+        level       INTEGER NOT NULL DEFAULT 1,
+        xp          INTEGER NOT NULL DEFAULT 0,
+        unlocked_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+        CONSTRAINT agent_skill_unique UNIQUE (agent_id, skill)
+      )
+    `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.agent_shared_state (
+        id         SERIAL PRIMARY KEY,
+        user_id    BIGINT NOT NULL,
+        namespace  TEXT NOT NULL,
+        key        TEXT NOT NULL,
+        value      JSONB NOT NULL DEFAULT '{}',
+        updated_by INTEGER,
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        CONSTRAINT agent_shared_state_unique UNIQUE (user_id, namespace, key)
+      )
+    `);
+    console.log('✅ AI proposals + daily spend + audit/approvals/skills/shared migrations applied');
   } catch (e) {
     console.error('❌ AI proposals migration failed:', e);
   } finally {
@@ -1274,4 +1394,63 @@ export function initAgentTasksRepository(pool: Pool): AgentTasksRepository {
 export function getAgentTasksRepository(): AgentTasksRepository {
   if (!agentTasksRepo) throw new Error('AgentTasksRepository not initialized');
   return agentTasksRepo;
+}
+
+// ─── AgentApprovalsRepository (AI agent action approvals) ──────────────────
+export const agentApprovalsTable = builderSchema.table('agent_approvals', {
+  id:            serial('id').primaryKey(),
+  agentId:       integer('agent_id').notNull(),
+  userId:        bigint('user_id', { mode: 'number' }).notNull(),
+  actionType:    text('action_type').notNull(),
+  actionDetails: jsonb('action_details').notNull().default({}),
+  status:        text('status').notNull().default('pending'),  // pending | approved | rejected
+  resolvedAt:    timestamp('resolved_at'),
+  createdAt:     timestamp('created_at').defaultNow().notNull(),
+});
+
+export class AgentApprovalsRepository {
+  constructor(private pool: Pool) {}
+
+  async create(agentId: number, userId: number, actionType: string, actionDetails: any): Promise<any> {
+    const res = await this.pool.query(
+      `INSERT INTO builder_bot.agent_approvals (agent_id, user_id, action_type, action_details)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [agentId, userId, actionType, JSON.stringify(actionDetails)]
+    );
+    return res.rows[0];
+  }
+
+  async getById(approvalId: number): Promise<any | null> {
+    const res = await this.pool.query(
+      'SELECT * FROM builder_bot.agent_approvals WHERE id = $1',
+      [approvalId]
+    );
+    return res.rows[0] || null;
+  }
+
+  async resolve(approvalId: number, status: 'approved' | 'rejected'): Promise<any | null> {
+    const res = await this.pool.query(
+      'UPDATE builder_bot.agent_approvals SET status = $1, resolved_at = NOW() WHERE id = $2 AND status = \'pending\' RETURNING *',
+      [status, approvalId]
+    );
+    return res.rows[0] || null;
+  }
+
+  async getPendingByUser(userId: number): Promise<any[]> {
+    const res = await this.pool.query(
+      'SELECT * FROM builder_bot.agent_approvals WHERE user_id = $1 AND status = \'pending\' ORDER BY created_at DESC LIMIT 20',
+      [userId]
+    );
+    return res.rows;
+  }
+}
+
+let agentApprovalsRepo: AgentApprovalsRepository | null = null;
+export function initAgentApprovalsRepository(pool: Pool): AgentApprovalsRepository {
+  if (!agentApprovalsRepo) agentApprovalsRepo = new AgentApprovalsRepository(pool);
+  return agentApprovalsRepo;
+}
+export function getAgentApprovalsRepository(): AgentApprovalsRepository {
+  if (!agentApprovalsRepo) throw new Error('AgentApprovalsRepository not initialized');
+  return agentApprovalsRepo;
 }
