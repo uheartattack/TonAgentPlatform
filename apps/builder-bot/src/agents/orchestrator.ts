@@ -1251,6 +1251,39 @@ CAPABILITIES: wallet, nft, gifts, market, telegram userbot (21 MTProto функ�
       console.warn('[Orchestrator] Failed to save capabilities:', capErr.message);
     }
 
+    // 5a-2) Auto-create initial skill tree
+    try {
+      const { pool: stPool } = await import('../db');
+      // Create root node
+      await stPool.query(
+        `INSERT INTO builder_bot.agent_skill_tree (agent_id, path, title, content, parent_path)
+         VALUES ($1, 'root', $2, $3, NULL)
+         ON CONFLICT (agent_id, path) DO NOTHING`,
+        [agentId, generatedName, description]
+      );
+      // Create capability nodes
+      const capNames: Record<string, string> = {
+        wallet: 'TON Кошелёк', nft: 'NFT', gifts: 'Подарки', gifts_market: 'Рынок подарков',
+        telegram: 'Telegram', web: 'Веб', defi: 'DeFi', discord: 'Discord',
+        x_twitter: 'X/Twitter', media: 'Генерация медиа', knowledge: 'База знаний',
+        security: 'Безопасность', blockchain_analytics: 'Аналитика',
+      };
+      for (const cap of allDetectedCaps) {
+        if (capNames[cap]) {
+          await stPool.query(
+            `INSERT INTO builder_bot.agent_skill_tree (agent_id, path, title, content, parent_path)
+             VALUES ($1, $2, $3, $4, 'root')
+             ON CONFLICT (agent_id, path) DO NOTHING`,
+            [agentId, 'capabilities/' + cap, capNames[cap], 'Навык: ' + capNames[cap]]
+          );
+        }
+      }
+      console.log('[Orchestrator] Created initial skill tree for agent #' + agentId);
+    } catch (stErr: any) {
+      console.warn('[Orchestrator] Skill tree init failed:', stErr.message);
+    }
+
+
     // 5b) Detect routing rules from system prompt + check for same-account agents
     try {
       const { pool } = await import('../db');

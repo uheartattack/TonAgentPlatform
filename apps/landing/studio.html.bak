@@ -9,8 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="studio.css?v=51">
-  <link rel="stylesheet" href="studio-patch.css?v=51">
+  <link rel="stylesheet" href="studio.css?v=50">
   <!-- Telegram widget loaded in body where button should appear -->
 </head>
 <body>
@@ -151,18 +150,6 @@
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
                 <span data-en="Activity" data-ru="Активность">Activity</span>
                 <span class="status-pulse"></span>
-              </a>
-              <a href="#" class="nav-item" data-page="audit-trail" onclick="navigateTo('audit-trail')">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-                <span data-en="Audit Trail" data-ru="Аудит">Audit Trail</span>
-              </a>
-              <a href="#" class="nav-item" data-page="approvals" onclick="navigateTo('approvals')">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                <span data-en="Approvals" data-ru="Одобрения">Approvals</span>
-              </a>
-              <a href="#" class="nav-item" data-page="health" onclick="navigateTo('health')">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-                <span data-en="Health" data-ru="Здоровье">Health</span>
               </a>
             </div>
 
@@ -664,7 +651,7 @@
         <div class="page-header">
           <div>
             <h1 class="page-title" data-en="Capabilities" data-ru="Возможности">Capabilities</h1>
-            <p class="page-subtitle" data-en="Built-in tools across 20 capability groups" data-ru="Инструменты в 20 группах возможностей">Built-in tools across 20 capability groups</p>
+            <p class="page-subtitle" data-en="127 built-in tools across 16 capability groups" data-ru="127 встроенных инструментов в 16 группах">127 built-in tools across 16 capability groups</p>
           </div>
           <div class="search-box">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1800,58 +1787,6 @@
       </div>
 
       <!-- Guide Page -->
-      
-      <!-- Audit Trail Page -->
-      <div id="audit-trail-page" class="page">
-        <div class="page-header">
-          <div>
-            <h1 class="page-title" data-en="Audit Trail" data-ru="Аудит">Audit Trail</h1>
-            <p class="page-subtitle" data-en="Track all agent tool calls and operations" data-ru="Отслеживайте все вызовы инструментов">Track all agent tool calls and operations</p>
-          </div>
-          <button class="btn btn-ghost" onclick="loadAuditTrail()">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="refresh-icon"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-            <span data-en="Refresh" data-ru="Обновить">Refresh</span>
-          </button>
-        </div>
-        <div class="page-content">
-          <div id="audit-trail-content"></div>
-        </div>
-      </div>
-
-      <!-- Approvals Page -->
-      <div id="approvals-page" class="page">
-        <div class="page-header">
-          <div>
-            <h1 class="page-title" data-en="Approvals" data-ru="Одобрения">Approvals</h1>
-            <p class="page-subtitle" data-en="Review and approve agent actions" data-ru="Просматривайте и одобряйте действия">Review and approve agent actions</p>
-          </div>
-          <button class="btn btn-ghost" onclick="loadApprovals()">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="refresh-icon"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-            <span data-en="Refresh" data-ru="Обновить">Refresh</span>
-          </button>
-        </div>
-        <div class="page-content">
-          <div id="approvals-content"></div>
-        </div>
-      </div>
-
-      <!-- Health Metrics Page -->
-      <div id="health-page" class="page">
-        <div class="page-header">
-          <div>
-            <h1 class="page-title" data-en="Health Metrics" data-ru="Метрики">Health Metrics</h1>
-            <p class="page-subtitle" data-en="System health, tool latency, and performance" data-ru="Здоровье системы, латентность и производительность">System health, tool latency, and performance</p>
-          </div>
-          <button class="btn btn-ghost" onclick="loadHealthMetrics()">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="refresh-icon"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-            <span data-en="Refresh" data-ru="Обновить">Refresh</span>
-          </button>
-        </div>
-        <div class="page-content">
-          <div id="health-content"></div>
-        </div>
-      </div>
-
       <div id="guide-page" class="page">
         <div class="page-header">
           <h1 class="page-title" data-en="Getting Started Guide" data-ru="Инструкции">Getting Started Guide</h1>
@@ -2317,6 +2252,5 @@
 
   <script src="https://unpkg.com/@tonconnect/ui@2/dist/tonconnect-ui.min.js"></script>
   <script src="studio.js?v=53"></script>
-  <script src="studio-patch.js?v=51"></script>
 </body>
 </html>
