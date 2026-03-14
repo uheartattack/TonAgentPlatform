@@ -3745,7 +3745,27 @@ bot.on('callback_query', async (ctx) => {
       tc.config.enabledCapabilities = caps;
       await dbPool.query('UPDATE builder_bot.agents SET trigger_config=$1 WHERE id=$2 AND user_id=$3', [JSON.stringify(tc), agentId, userId]);
       await showCapabilitiesMenu(ctx, agentId, caps);
-    } catch (e: any) {
+
+      // If enabling a capability that needs an API key, check if it is set
+      if (idx < 0) {
+        // was not present before toggle, so it was just added (enabling)
+        const capMeta = CAPABILITY_LABELS[capId];
+        if (capMeta && capMeta.needs) {
+          const neededKey = capMeta.needs;
+          try {
+            const repo = getUserSettingsRepository();
+            const uv = (await repo.get(userId, 'user_variables').catch(() => null)) as Record<string, any> | null;
+            const userVarsCheck = (typeof uv === 'object' && uv) ? uv : {};
+            if (!userVarsCheck[neededKey]) {
+              const lang = getUserLang(userId);
+              const msg = lang === 'ru'
+                ? `⚠️ Для ${capMeta.icon} ${capMeta.ru} нужен ключ <b>${neededKey}</b>.\nДобавьте его в Профиль → 🔑 API ключи.`
+                : `⚠️ ${capMeta.icon} ${capMeta.en} requires <b>${neededKey}</b>.\nAdd it in Profile → 🔑 API keys.`;
+              await ctx.reply(msg, { parse_mode: 'HTML' });
+            }
+          } catch {}
+        }
+      }    } catch (e: any) {
       await ctx.reply('❌ ' + (e.message || String(e)));
     }
     return;
@@ -5454,17 +5474,28 @@ async function showAgentsList(ctx: Context, userId: number) {
 // ============================================================
 // Меню возможностей агента (capabilities toggle)
 // ============================================================
-const CAPABILITY_LABELS: Record<string, { icon: string; ru: string; en: string }> = {
-  wallet:       { icon: '💰', ru: 'Кошелёк TON', en: 'TON Wallet' },
-  nft:          { icon: '🖼', ru: 'NFT анализ', en: 'NFT Analysis' },
-  gifts:        { icon: '🎁', ru: 'Подарки', en: 'Gifts' },
-  gifts_market: { icon: '📊', ru: 'Рынок подарков', en: 'Gift Market' },
-  telegram:     { icon: '📱', ru: 'Telegram', en: 'Telegram' },
-  web:          { icon: '🌐', ru: 'Веб поиск', en: 'Web Search' },
-  plugins:      { icon: '🔌', ru: 'Плагины', en: 'Plugins' },
-  inter_agent:  { icon: '🔗', ru: 'Межагент', en: 'Inter-agent' },
+const CAPABILITY_LABELS: Record<string, { icon: string; ru: string; en: string; needs?: string }> = {
+  wallet:               { icon: '💰', ru: 'Кошелёк TON', en: 'TON Wallet', needs: 'WALLET_MNEMONIC' },
+  nft:                  { icon: '🖼', ru: 'NFT анализ', en: 'NFT Analysis' },
+  gifts:                { icon: '🎁', ru: 'Подарки', en: 'Gifts' },
+  gifts_market:         { icon: '📊', ru: 'Рынок подарков', en: 'Gift Market' },
+  telegram:             { icon: '📱', ru: 'Telegram', en: 'Telegram' },
+  web:                  { icon: '🌐', ru: 'Веб поиск', en: 'Web Search' },
+  defi:                 { icon: '📈', ru: 'DeFi (DEX/Swap)', en: 'DeFi (DEX/Swap)' },
+  blockchain:           { icon: '⛓', ru: 'Блокчейн данные', en: 'Blockchain Data' },
+  blockchain_analytics: { icon: '📉', ru: 'Dune Analytics', en: 'Dune Analytics', needs: 'DUNE_API_KEY' },
+  plugins:              { icon: '🔌', ru: 'Плагины', en: 'Plugins' },
+  inter_agent:          { icon: '🔗', ru: 'Межагент', en: 'Inter-agent' },
+  discord:              { icon: '💬', ru: 'Discord', en: 'Discord', needs: 'DISCORD_BOT_TOKEN' },
+  x_twitter:            { icon: '🐦', ru: 'X / Twitter', en: 'X / Twitter', needs: 'X_BEARER_TOKEN' },
+  media:                { icon: '🎨', ru: 'Генерация картинок', en: 'Image Generation', needs: 'FAL_API_KEY' },
+  knowledge:            { icon: '🧠', ru: 'База знаний', en: 'Knowledge Base' },
+  security:             { icon: '🛡', ru: 'Безопасность', en: 'Security' },
+  prompts:              { icon: '📝', ru: 'Библиотека промптов', en: 'Prompt Library' },
+  ton_mcp:              { icon: '🔧', ru: 'TON MCP', en: 'TON MCP' },
+  state:                { icon: '💾', ru: 'Память', en: 'State' },
+  notify:               { icon: '🔔', ru: 'Уведомления', en: 'Notifications' },
 };
-
 async function showCapabilitiesMenu(ctx: Context, agentId: number, enabledCaps: string[]) {
   const userId = (ctx.from as any)?.id || 0;
   const lang = getUserLang(userId);

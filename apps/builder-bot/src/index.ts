@@ -87,7 +87,7 @@ async function main() {
   // Запуск системы самоулучшения
   const bot = getBotInstance();
   if (bot) {
-    initSelfImprovementSystem(bot);
+    // initSelfImprovementSystem(bot); // DISABLED — eats rate limit
     console.log('🤖 Self-improvement system active');
   }
 

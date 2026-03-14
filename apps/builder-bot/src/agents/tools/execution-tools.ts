@@ -863,13 +863,23 @@ export class ExecutionTools {
           //   telegram.joinChannel(username)
           //   telegram.getDialogs(limit)  и т.д.
           telegram: await (async () => {
+            // Per-AGENT Telegram — each agent has its own TG account
+            try {
+              const { userbotManager } = require('../../services/userbot-manager');
+              const agentSandbox = await userbotManager.buildAgentSandbox(params.agentId || 0);
+              if (agentSandbox) return agentSandbox;
+              // Fallback: try per-user (backward compat)
+              const perUserSandbox = await userbotManager.buildUserSandbox(params.userId);
+              if (perUserSandbox) return perUserSandbox;
+            } catch {}
+            // Fallback: try global auth (backward compat)
             try {
               const auth = await isAuthorized();
               if (auth) return buildUserbotSandbox();
             } catch {}
             // Not authenticated — return stub that throws helpful error
             const notAuthed = (method: string) => async (..._args: any[]) => {
-              throw new Error(`telegram.${method}: не авторизован. Используй /tglogin в боте.`);
+              throw new Error(`telegram.${method}: Telegram not connected. Connect via Studio Settings.`);
             };
             return {
               sendMessage:    notAuthed('sendMessage'),
