@@ -1669,29 +1669,61 @@
 
       <!-- Network Map Page -->
       <div id="network-page" class="page">
-        <div class="page-header">
-          <div>
-            <h1 class="page-title" data-en="Agent Network Map" data-ru="Карта сети агентов">Agent Network Map</h1>
-            <p class="page-subtitle" data-en="Neural visualization of your agent ecosystem" data-ru="Нейронная визуализация экосистемы агентов">Neural visualization of your agent ecosystem</p>
-          </div>
-        </div>
-        <div class="page-content" style="position:relative">
-          <div class="network-controls">
-            <div class="network-search">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              <input type="text" id="network-search-input" placeholder="Search agents..." oninput="filterNetworkNodes(this.value)" data-en-placeholder="Search agents..." data-ru-placeholder="Поиск агентов..." />
+        <div class="network-fullscreen-wrap">
+          <!-- Floating Stats Bar -->
+          <div class="network-stats-bar">
+            <div class="network-stats-item">
+              <span class="network-stats-value" id="net-stat-total">0</span>
+              <span class="network-stats-label" data-en="Agents" data-ru="Агенты">Agents</span>
+            </div>
+            <div class="network-stats-divider"></div>
+            <div class="network-stats-item">
+              <span class="network-stats-value" id="net-stat-active" style="color:#10b981">0</span>
+              <span class="network-stats-label" data-en="Active" data-ru="Активные">Active</span>
+            </div>
+            <div class="network-stats-divider"></div>
+            <div class="network-stats-item">
+              <span class="network-stats-value" id="net-stat-edges" style="color:#0098EA">0</span>
+              <span class="network-stats-label" data-en="Links" data-ru="Связи">Links</span>
             </div>
           </div>
-          <canvas id="agent-network-canvas"></canvas>
-          <div id="network-tooltip" style="display:none;position:fixed;pointer-events:none;background:rgba(10,15,28,0.95);border:1px solid rgba(0,152,234,0.3);border-radius:8px;padding:10px 14px;color:#fff;font-size:13px;z-index:999;backdrop-filter:blur(8px);"></div>
-          <div id="network-trash-zone" class="network-trash-zone">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
-            <span data-en="Drop here to delete" data-ru="Перетащите сюда для удаления">Drop here to delete</span>
+
+          <!-- Floating Search -->
+          <div class="network-search-float">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" id="network-search-input" placeholder="Search agents..." oninput="filterNetworkNodes(this.value)" data-en-placeholder="Search agents..." data-ru-placeholder="Поиск агентов..." />
           </div>
-          <div class="network-legend">
-            <span class="legend-item"><span class="legend-dot active"></span> Active</span>
-            <span class="legend-item"><span class="legend-dot paused"></span> Paused</span>
-            <span class="legend-item"><span class="legend-dot director"></span> Director</span>
+
+          <!-- Canvas -->
+          <canvas id="agent-network-canvas"></canvas>
+
+          <!-- Tooltip -->
+          <div id="network-tooltip" class="network-tooltip-v2"></div>
+
+          <!-- Trash Zone -->
+          <div id="network-trash-zone" class="network-trash-zone">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+            <span data-en="Drop to delete" data-ru="Бросьте для удаления">Drop to delete</span>
+          </div>
+
+          <!-- Floating Legend -->
+          <div class="network-legend-float">
+            <div class="nleg-item"><span class="nleg-dot" style="background:#ffd700;box-shadow:0 0 6px #ffd700"></span><span data-en="Director" data-ru="Директор">Director</span></div>
+            <div class="nleg-item"><span class="nleg-dot" style="background:#a855f7;box-shadow:0 0 6px #a855f7"></span><span data-en="Manager" data-ru="Менеджер">Manager</span></div>
+            <div class="nleg-item"><span class="nleg-dot" style="background:#10b981;box-shadow:0 0 6px #10b981"></span><span data-en="Specialist" data-ru="Специалист">Specialist</span></div>
+            <div class="nleg-item"><span class="nleg-dot" style="background:#f59e0b;box-shadow:0 0 6px #f59e0b"></span><span data-en="Monitor" data-ru="Монитор">Monitor</span></div>
+            <div class="nleg-item"><span class="nleg-dot" style="background:#0098EA;box-shadow:0 0 6px #0098EA"></span><span data-en="Worker" data-ru="Воркер">Worker</span></div>
+            <div class="nleg-item"><span class="nleg-dot" style="background:#555"></span><span data-en="Paused" data-ru="Пауза">Paused</span></div>
+          </div>
+
+          <!-- Zoom Controls -->
+          <div class="network-zoom-controls">
+            <button class="nzoom-btn" onclick="networkZoomIn()" title="Zoom in">+</button>
+            <span class="nzoom-level" id="net-zoom-label">100%</span>
+            <button class="nzoom-btn" onclick="networkZoomOut()" title="Zoom out">&minus;</button>
+            <button class="nzoom-btn nzoom-reset" onclick="networkZoomReset()" title="Reset view">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+            </button>
           </div>
         </div>
       </div>
