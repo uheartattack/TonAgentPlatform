@@ -1218,8 +1218,8 @@ export function startApiServer() {
       // Send message to AI agent via runner
       const { getRunnerAgent } = await import('./agents/sub-agents/runner');
       const runner = getRunnerAgent();
-      const result = await runner.sendMessageToAgent(agentId, message);
-      res.json({ ok: true, ...result });
+      runner.sendMessageToAgent(agentId, message);
+      res.json({ ok: true, queued: true });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -1756,7 +1756,7 @@ export function startApiServer() {
     if (!agentId) { res.status(400).json({ ok: false, error: 'agentId required' }); return; }
     try {
       const result = await userbotManager.startQRLogin(Number(agentId));
-      res.json({ ok: true, ...result });
+      res.json({ ok: true, ...(result && typeof result === 'object' ? result : {}) });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e.message });
     }
@@ -1768,7 +1768,7 @@ export function startApiServer() {
     if (!agentId || !phone) { res.status(400).json({ ok: false, error: 'agentId and phone required' }); return; }
     try {
       const result = await userbotManager.startPhoneLogin(Number(agentId), phone);
-      res.json({ ok: true, ...result });
+      res.json({ ok: true, ...(result && typeof result === 'object' ? result : {}) });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e.message });
     }
@@ -1780,7 +1780,7 @@ export function startApiServer() {
     if (!agentId || !code) { res.status(400).json({ ok: false, error: 'agentId and code required' }); return; }
     try {
       const result = await userbotManager.submitCode(Number(agentId), code);
-      res.json({ ok: true, ...result });
+      res.json({ ok: true, ...(result && typeof result === 'object' ? result : {}) });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e.message });
     }
@@ -1800,7 +1800,7 @@ export function startApiServer() {
     if (!agentId || !password) { res.status(400).json({ ok: false, error: 'agentId and password required' }); return; }
     try {
       const result = await userbotManager.submit2FAPassword(Number(agentId), password);
-      res.json({ ok: true, ...result });
+      res.json({ ok: true, ...(result && typeof result === 'object' ? result : {}) });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e.message });
     }
@@ -2007,7 +2007,7 @@ export function startApiServer() {
       const offset = parseInt(req.query.offset as string || '0', 10);
       const type = req.query.type as string || 'all';
       const result = await getBalanceTxRepository().getHistory(userId, limit, offset, type);
-      res.json({ ok: true, ...result });
+      res.json({ ok: true, ...(result && typeof result === 'object' ? result : {}) });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

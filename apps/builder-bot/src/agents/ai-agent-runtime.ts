@@ -2433,8 +2433,8 @@ async function _executeToolInner(
       }
       // Rebuild tool definitions with updated capabilities so new tools are available THIS tick
       params.config.enabledCapabilities = capsMC;
-      tools = buildToolDefinitions(agentRole, capsMC, mcpToolDefs);
-      console.log('[AI runtime] Agent #' + params.agentId + ' capabilities changed, rebuilt tools: ' + tools.length);
+      // tools rebuilt on next tick (buildToolDefinitions called in runAIAgentTick)
+      console.log('[AI runtime] Agent #' + params.agentId + ' capabilities changed to: ' + capsMC.join(', '));
       return { ok: true, action: args.action, capability: args.capability, now_enabled: capsMC, available_tools: newToolNames, hint: 'Capabilities updated. You can now call these new tools directly.' };
     }
 
@@ -2869,7 +2869,7 @@ async function _executeToolInner(
         const validRoles = ['worker', 'manager', 'specialist', 'monitor'];
         const newRole = String(args.role || '').toLowerCase();
         if (!validRoles.includes(newRole)) return { error: 'Invalid role. Must be: ' + validRoles.join(', ') };
-        const pool = getPool();
+        const pool = (await import("../db")).pool;
         await pool.query('UPDATE builder_bot.agents SET role=$1 WHERE id=$2', [newRole, params.agentId]);
         await logToDb(params.agentId, 'info', `[ROLE] Changed role to ${newRole}`, params.userId);
         return { ok: true, role: newRole, note: 'Role updated. Studio dashboard will reflect this change.' };
@@ -2883,7 +2883,7 @@ async function _executeToolInner(
         // Fallback: check trigger_config (Studio may have created it)
         if (!addr || !mnemonic) {
           try {
-            const pool = getPool();
+            const pool = (await import("../db")).pool;
             const row = await pool.query('SELECT trigger_config FROM builder_bot.agents WHERE id=$1', [params.agentId]);
             const tc = row.rows[0]?.trigger_config || {};
             if (tc.config?.WALLET_ADDRESS && tc.config?.WALLET_MNEMONIC) {
@@ -2903,7 +2903,7 @@ async function _executeToolInner(
           mnemonic = w.mnemonic;
           // Sync wallet to trigger_config for Studio dashboard
           try {
-            const pool = getPool();
+            const pool = (await import("../db")).pool;
             const row = await pool.query('SELECT trigger_config FROM builder_bot.agents WHERE id=$1', [params.agentId]);
             const tc = row.rows[0]?.trigger_config || {};
             if (!tc.config) tc.config = {};
