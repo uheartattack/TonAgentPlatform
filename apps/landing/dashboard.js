@@ -1459,71 +1459,138 @@ async function loadAgentTelegramTab(body, agentId) {
     var isRu = currentLang === 'ru';
 
     if (info.authorized) {
+      var maskedPhone = info.phone ? '+' + String(info.phone).replace(/^(\d{1,3})(\d+)(\d{4})$/, '$1\u2022\u2022\u2022$3') : '';
       body.innerHTML =
-        '<div class="settings-section">' +
-        '<div class="settings-section-title">📱 Telegram Account</div>' +
-        '<div style="background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);border-radius:10px;padding:16px;margin-bottom:16px">' +
-        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">' +
-        '<span style="width:10px;height:10px;border-radius:50%;background:#22c55e;display:inline-block"></span>' +
-        '<span style="color:#22c55e;font-weight:600">' + (isRu ? 'Подключён' : 'Connected') + '</span></div>' +
-        (info.username ? '<div style="color:var(--text-secondary);font-size:13px">@' + escHtml(info.username) + '</div>' : '') +
-        (info.phone ? '<div style="color:var(--text-muted);font-size:12px">+' + escHtml(String(info.phone).replace(/^(\d{1,3})(\d+)(\d{4})$/, '$1•••$3')) + '</div>' : '') +
+        '<div class="rt-page">' +
+        '<div class="rt-header">' +
+          '<div class="rt-header-icon" style="background:rgba(34,197,94,0.12);color:#22c55e">' + IC.send + '</div>' +
+          '<div class="rt-header-text">' +
+            '<h3>Telegram Account</h3>' +
+            '<p>' + (isRu ? 'Аккаунт подключён и готов к работе' : 'Account connected and ready') + '</p>' +
+          '</div>' +
         '</div>' +
-        '<button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="disconnectAgentTelegram(' + agentId + ')">' + (isRu ? 'Отключить аккаунт' : 'Disconnect') + '</button>' +
+        '<div class="st-tg-connected-card">' +
+          '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">' +
+            '<span class="st-tg-connected-dot"></span>' +
+            '<span style="color:#4ade80;font-weight:700;font-size:.95rem">' + (isRu ? 'Подключён' : 'Connected') + '</span>' +
+          '</div>' +
+          (info.username ? '<div style="color:var(--text-primary);font-size:.9rem;font-weight:500;margin-bottom:4px">@' + escHtml(info.username) + '</div>' : '') +
+          (maskedPhone ? '<div style="color:var(--text-muted);font-size:.8rem">' + escHtml(maskedPhone) + '</div>' : '') +
+        '</div>' +
+        '<button class="rt-save-btn" style="background:linear-gradient(135deg,#ef4444 0%,#dc2626 100%);box-shadow:0 4px 16px rgba(239,68,68,0.3)" onclick="disconnectAgentTelegram(' + agentId + ')">' +
+          IC.x + ' ' + (isRu ? 'Отключить аккаунт' : 'Disconnect Account') +
+        '</button>' +
         '</div>';
     } else {
       body.innerHTML =
-        '<div class="settings-section">' +
-        '<div class="settings-section-title">📱 Telegram Account</div>' +
-        '<p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">' +
-        (isRu ? 'Подключите Telegram аккаунт для этого агента. Агент будет действовать как реальный пользователь — читать чаты, отправлять сообщения, вступать в группы.'
-               : 'Connect a Telegram account for this agent. It will act as a real user — read chats, send messages, join groups.') + '</p>' +
+        '<div class="rt-page">' +
+        '<div class="rt-header">' +
+          '<div class="rt-header-icon" style="background:rgba(59,130,246,0.12);color:#3b82f6">' + IC.send + '</div>' +
+          '<div class="rt-header-text">' +
+            '<h3>Telegram</h3>' +
+            '<p>' + (isRu ? 'Подключите аккаунт для чтения чатов, отправки сообщений и вступления в группы' : 'Connect account to read chats, send messages and join groups') + '</p>' +
+          '</div>' +
+        '</div>' +
 
-        // Auth method selector
-        '<div style="display:flex;gap:8px;margin-bottom:16px">' +
-        '<button class="btn btn-primary btn-sm" id="tg-auth-phone-btn" onclick="showAgentTgPhoneAuth(' + agentId + ')">' +
-        '📱 ' + (isRu ? 'По номеру' : 'Phone') + '</button>' +
-        '<button class="btn btn-ghost btn-sm" id="tg-auth-qr-btn" onclick="startAgentTgQR(' + agentId + ')">' +
-        '📷 QR Code</button></div>' +
+        '<div style="display:flex;gap:12px;margin-bottom:24px">' +
+          '<div class="st-tg-method-card st-tg-active" id="tg-method-phone" onclick="showAgentTgPhoneAuth(' + agentId + ');document.getElementById(\'tg-method-phone\').classList.add(\'st-tg-active\');document.getElementById(\'tg-method-qr\').classList.remove(\'st-tg-active\')">' +
+            '<div class="st-tg-method-icon">' + IC.phone + '</div>' +
+            '<div class="st-tg-method-name">' + (isRu ? 'По номеру' : 'Phone Number') + '</div>' +
+            '<div class="st-tg-method-desc">' + (isRu ? 'Код в Telegram' : 'Code via Telegram') + '</div>' +
+          '</div>' +
+          '<div class="st-tg-method-card" id="tg-method-qr" onclick="startAgentTgQR(' + agentId + ');document.getElementById(\'tg-method-qr\').classList.add(\'st-tg-active\');document.getElementById(\'tg-method-phone\').classList.remove(\'st-tg-active\')">' +
+            '<div class="st-tg-method-icon">' + IC.globe + '</div>' +
+            '<div class="st-tg-method-name">QR Code</div>' +
+            '<div class="st-tg-method-desc">' + (isRu ? 'Сканировать камерой' : 'Scan with camera') + '</div>' +
+          '</div>' +
+        '</div>' +
 
-        // Phone auth form (default visible)
         '<div id="tg-phone-form">' +
-        '<div class="settings-field"><label>' + (isRu ? 'Номер телефона' : 'Phone number') + '</label>' +
-        '<input type="tel" id="tg-phone-input" placeholder="+7 999 123 45 67" style="font-size:16px"></div>' +
-        '<button class="btn btn-primary btn-sm" onclick="sendAgentTgCode(' + agentId + ')">' + (isRu ? 'Отправить код' : 'Send code') + '</button></div>' +
+          '<div class="rt-section-label">' + (isRu ? 'Номер телефона' : 'Phone Number') + '</div>' +
+          '<input type="tel" id="tg-phone-input" class="rt-input" placeholder="+7 999 123 45 67" style="margin-bottom:16px">' +
+          '<button class="rt-save-btn" onclick="sendAgentTgCode(' + agentId + ')">' + IC.send + ' ' + (isRu ? 'Отправить код' : 'Send Code') + '</button>' +
+        '</div>' +
 
-        // Code input (hidden)
         '<div id="tg-code-form" style="display:none">' +
-        '<div class="settings-field"><label>' + (isRu ? 'Код из Telegram' : 'Code from Telegram') + '</label>' +
-        '<input type="text" id="tg-code-input" placeholder="12345" maxlength="6" style="font-size:20px;letter-spacing:8px;text-align:center"></div>' +
-        '<button class="btn btn-primary btn-sm" onclick="submitAgentTgCode(' + agentId + ')">' + (isRu ? 'Подтвердить' : 'Confirm') + '</button></div>' +
+          '<div class="rt-section-label" style="text-align:center">' + (isRu ? 'Введите код из Telegram' : 'Enter code from Telegram') + '</div>' +
+          '<div class="st-otp-wrap">' +
+            '<input class="st-otp-digit" type="text" maxlength="1" inputmode="numeric" data-idx="0">' +
+            '<input class="st-otp-digit" type="text" maxlength="1" inputmode="numeric" data-idx="1">' +
+            '<input class="st-otp-digit" type="text" maxlength="1" inputmode="numeric" data-idx="2">' +
+            '<input class="st-otp-digit" type="text" maxlength="1" inputmode="numeric" data-idx="3">' +
+            '<input class="st-otp-digit" type="text" maxlength="1" inputmode="numeric" data-idx="4">' +
+          '</div>' +
+          '<input type="hidden" id="tg-code-input">' +
+          '<div style="text-align:center"><button class="rt-save-btn" onclick="submitAgentTgCode(' + agentId + ')">' + IC.check + ' ' + (isRu ? 'Подтвердить' : 'Confirm') + '</button></div>' +
+        '</div>' +
 
-        // 2FA password (hidden)
         '<div id="tg-2fa-form" style="display:none">' +
-        '<div class="settings-field"><label>' + (isRu ? 'Облачный пароль (2FA)' : 'Cloud password (2FA)') + '</label>' +
-        '<input type="password" id="tg-2fa-input" placeholder="••••••••"></div>' +
-        '<button class="btn btn-primary btn-sm" onclick="submitAgentTg2FA(' + agentId + ')">' + (isRu ? 'Подтвердить' : 'Confirm') + '</button></div>' +
+          '<div class="rt-section-label">' + IC.shield + ' ' + (isRu ? 'Облачный пароль (2FA)' : 'Cloud Password (2FA)') + '</div>' +
+          '<input type="password" id="tg-2fa-input" class="rt-input" placeholder="\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" style="margin-bottom:16px">' +
+          '<button class="rt-save-btn" onclick="submitAgentTg2FA(' + agentId + ')">' + IC.check + ' ' + (isRu ? 'Подтвердить' : 'Confirm') + '</button>' +
+        '</div>' +
 
-        // QR container (hidden)
-        '<div id="tg-qr-container" style="display:none;text-align:center">' +
-        '<div id="tg-qr-img" style="margin:16px auto"></div>' +
-        '<p style="color:var(--text-muted);font-size:12px">' + (isRu ? 'Сканируйте в Telegram на телефоне' : 'Scan with Telegram on your phone') + '</p></div>' +
+        '<div id="tg-qr-container" style="display:none">' +
+          '<div class="st-tg-qr-box">' +
+            '<div id="tg-qr-img"></div>' +
+            '<div style="color:var(--text-muted);font-size:.8rem;text-align:center">' + (isRu ? 'Откройте Telegram на телефоне и сканируйте QR-код' : 'Open Telegram on your phone and scan the QR code') + '</div>' +
+          '</div>' +
+        '</div>' +
 
-        // Status message
-        '<div id="tg-auth-status" style="margin-top:12px"></div>' +
+        '<div id="tg-auth-status"></div>' +
         '</div>';
     }
   } catch (e) {
-    body.innerHTML = '<div style="color:var(--danger);padding:2rem;text-align:center">Error: ' + (e.message || e) + '</div>';
+    body.innerHTML = '<div class="rt-page"><div class="st-tg-status st-tg-status-err">' + IC.x + ' Error: ' + escHtml(e.message || e) + '</div></div>';
   }
 }
 
 function showAgentTgPhoneAuth(agentId) {
   var phoneForm = document.getElementById('tg-phone-form');
   var qrContainer = document.getElementById('tg-qr-container');
+  var codeForm = document.getElementById('tg-code-form');
+  var twoFaForm = document.getElementById('tg-2fa-form');
   if (phoneForm) phoneForm.style.display = '';
   if (qrContainer) qrContainer.style.display = 'none';
+  if (codeForm) codeForm.style.display = 'none';
+  if (twoFaForm) twoFaForm.style.display = 'none';
+  var statusEl = document.getElementById('tg-auth-status');
+  if (statusEl) statusEl.innerHTML = '';
   if (_agentTgPolling) { clearInterval(_agentTgPolling); _agentTgPolling = null; }
+}
+
+function _wireOtpDigits() {
+  setTimeout(function() {
+    var digits = document.querySelectorAll('.st-otp-digit');
+    if (!digits.length) return;
+    digits.forEach(function(d, i) {
+      d.addEventListener('input', function() {
+        d.value = d.value.replace(/[^0-9]/g, '');
+        if (d.value.length === 1 && i < digits.length - 1) digits[i + 1].focus();
+        var code = '';
+        digits.forEach(function(dd) { code += dd.value; });
+        var hidden = document.getElementById('tg-code-input');
+        if (hidden) hidden.value = code;
+      });
+      d.addEventListener('keydown', function(e) {
+        if (e.key === 'Backspace' && !d.value && i > 0) digits[i - 1].focus();
+      });
+      d.addEventListener('paste', function(e) {
+        e.preventDefault();
+        var paste = (e.clipboardData || window.clipboardData).getData('text').replace(/[^0-9]/g, '');
+        for (var j = 0; j < paste.length && j + i < digits.length; j++) {
+          digits[i + j].value = paste[j];
+        }
+        var nextIdx = Math.min(i + paste.length, digits.length - 1);
+        digits[nextIdx].focus();
+        var code = '';
+        digits.forEach(function(dd) { code += dd.value; });
+        var hidden = document.getElementById('tg-code-input');
+        if (hidden) hidden.value = code;
+      });
+    });
+    digits[0].focus();
+  }, 100);
 }
 
 async function sendAgentTgCode(agentId) {
@@ -1531,19 +1598,19 @@ async function sendAgentTgCode(agentId) {
   phone = phone.replace(/[\s\-\(\)]/g, '');
   if (!phone || phone.length < 8) { toast('Enter valid phone number', 'error'); return; }
   var statusEl = document.getElementById('tg-auth-status');
-  if (statusEl) statusEl.innerHTML = '<span style="color:var(--text-muted)">⏳ Sending code...</span>';
+  if (statusEl) statusEl.innerHTML = '<div class="st-tg-status st-tg-status-info">' + IC.refresh + ' ' + (currentLang === 'ru' ? 'Отправка кода...' : 'Sending code...') + '</div>';
   try {
     var data = await apiRequest('POST', '/api/telegram/auth/phone', { agentId: agentId, phone: phone });
     if (data.ok && data.ok !== false && !data.error) {
       document.getElementById('tg-phone-form').style.display = 'none';
       document.getElementById('tg-code-form').style.display = '';
-      if (statusEl) statusEl.innerHTML = '<span style="color:#22c55e">✅ Code sent to Telegram</span>';
-      setTimeout(function() { var ci = document.getElementById('tg-code-input'); if (ci) ci.focus(); }, 100);
+      if (statusEl) statusEl.innerHTML = '<div class="st-tg-status st-tg-status-ok">' + IC.check + ' ' + (currentLang === 'ru' ? 'Код отправлен в Telegram' : 'Code sent to Telegram') + '</div>';
+      _wireOtpDigits();
     } else {
-      if (statusEl) statusEl.innerHTML = '<span style="color:var(--danger)">❌ ' + escHtml(data.error || 'Error') + '</span>';
+      if (statusEl) statusEl.innerHTML = '<div class="st-tg-status st-tg-status-err">' + IC.x + ' ' + escHtml(data.error || 'Error') + '</div>';
     }
   } catch (e) {
-    if (statusEl) statusEl.innerHTML = '<span style="color:var(--danger)">❌ ' + escHtml(e.message || 'Error') + '</span>';
+    if (statusEl) statusEl.innerHTML = '<div class="st-tg-status st-tg-status-err">' + IC.x + ' ' + escHtml(e.message || 'Error') + '</div>';
   }
 }
 
@@ -1552,23 +1619,23 @@ async function submitAgentTgCode(agentId) {
   code = code.replace(/\s/g, '');
   if (!code || code.length < 4) { toast('Enter the code', 'error'); return; }
   var statusEl = document.getElementById('tg-auth-status');
-  if (statusEl) statusEl.innerHTML = '<span style="color:var(--text-muted)">⏳ Verifying...</span>';
+  if (statusEl) statusEl.innerHTML = '<div class="st-tg-status st-tg-status-info">' + IC.refresh + ' ' + (currentLang === 'ru' ? 'Проверка...' : 'Verifying...') + '</div>';
   try {
     var data = await apiRequest('POST', '/api/telegram/auth/code', { agentId: agentId, code: code });
     if (data.ok && !data.error) {
-      if (statusEl) statusEl.innerHTML = '<span style="color:#22c55e">✅ Connected!</span>';
+      if (statusEl) statusEl.innerHTML = '<div class="st-tg-status st-tg-status-ok">' + IC.check + ' ' + (currentLang === 'ru' ? 'Подключено!' : 'Connected!') + '</div>';
       toast('Telegram connected!', 'success');
       setTimeout(function() { loadAgentTelegramTab(document.getElementById('agent-settings-body'), agentId); }, 500);
     } else if (data.error === 'need_password') {
       document.getElementById('tg-code-form').style.display = 'none';
       document.getElementById('tg-2fa-form').style.display = '';
-      if (statusEl) statusEl.innerHTML = '<span style="color:#fbbf24">🔐 2FA password required</span>';
+      if (statusEl) statusEl.innerHTML = '<div class="st-tg-status st-tg-status-warn">' + IC.shield + ' ' + (currentLang === 'ru' ? 'Требуется пароль 2FA' : '2FA password required') + '</div>';
       setTimeout(function() { var pi = document.getElementById('tg-2fa-input'); if (pi) pi.focus(); }, 100);
     } else {
-      if (statusEl) statusEl.innerHTML = '<span style="color:var(--danger)">❌ ' + escHtml(data.error || 'Invalid code') + '</span>';
+      if (statusEl) statusEl.innerHTML = '<div class="st-tg-status st-tg-status-err">' + IC.x + ' ' + escHtml(data.error || 'Invalid code') + '</div>';
     }
   } catch (e) {
-    if (statusEl) statusEl.innerHTML = '<span style="color:var(--danger)">❌ ' + escHtml(e.message || 'Error') + '</span>';
+    if (statusEl) statusEl.innerHTML = '<div class="st-tg-status st-tg-status-err">' + IC.x + ' ' + escHtml(e.message || 'Error') + '</div>';
   }
 }
 
@@ -1576,18 +1643,18 @@ async function submitAgentTg2FA(agentId) {
   var password = (document.getElementById('tg-2fa-input') || {}).value || '';
   if (!password) { toast('Enter password', 'error'); return; }
   var statusEl = document.getElementById('tg-auth-status');
-  if (statusEl) statusEl.innerHTML = '<span style="color:var(--text-muted)">⏳ Verifying 2FA...</span>';
+  if (statusEl) statusEl.innerHTML = '<div class="st-tg-status st-tg-status-info">' + IC.refresh + ' ' + (currentLang === 'ru' ? 'Проверка 2FA...' : 'Verifying 2FA...') + '</div>';
   try {
     var data = await apiRequest('POST', '/api/telegram/auth/password', { agentId: agentId, password: password });
     if (data.ok && !data.error) {
-      if (statusEl) statusEl.innerHTML = '<span style="color:#22c55e">✅ Connected!</span>';
+      if (statusEl) statusEl.innerHTML = '<div class="st-tg-status st-tg-status-ok">' + IC.check + ' ' + (currentLang === 'ru' ? 'Подключено!' : 'Connected!') + '</div>';
       toast('Telegram connected!', 'success');
       setTimeout(function() { loadAgentTelegramTab(document.getElementById('agent-settings-body'), agentId); }, 500);
     } else {
-      if (statusEl) statusEl.innerHTML = '<span style="color:var(--danger)">❌ ' + escHtml(data.error || 'Wrong password') + '</span>';
+      if (statusEl) statusEl.innerHTML = '<div class="st-tg-status st-tg-status-err">' + IC.x + ' ' + escHtml(data.error || 'Wrong password') + '</div>';
     }
   } catch (e) {
-    if (statusEl) statusEl.innerHTML = '<span style="color:var(--danger)">❌ ' + escHtml(e.message || 'Error') + '</span>';
+    if (statusEl) statusEl.innerHTML = '<div class="st-tg-status st-tg-status-err">' + IC.x + ' ' + escHtml(e.message || 'Error') + '</div>';
   }
 }
 
@@ -1599,7 +1666,7 @@ async function startAgentTgQR(agentId) {
   if (codeForm) codeForm.style.display = 'none';
   if (qrContainer) qrContainer.style.display = '';
   var statusEl = document.getElementById('tg-auth-status');
-  if (statusEl) statusEl.innerHTML = '<span style="color:var(--text-muted)">⏳ Generating QR...</span>';
+  if (statusEl) statusEl.innerHTML = '<div class="st-tg-status st-tg-status-info">' + IC.refresh + ' ' + (currentLang === 'ru' ? 'Генерация QR...' : 'Generating QR...') + '</div>';
 
   try {
     var data = await apiRequest('POST', '/api/telegram/auth/qr', { agentId: agentId });
@@ -1609,7 +1676,7 @@ async function startAgentTgQR(agentId) {
         var encoded = encodeURIComponent(data.qrUrl);
         qrImgEl.innerHTML = '<img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encoded + '" width="200" height="200" style="border-radius:12px;border:2px solid var(--border)">';
       }
-      if (statusEl) statusEl.innerHTML = '<span style="color:var(--text-muted)">📱 Scan QR with Telegram app</span>';
+      if (statusEl) statusEl.innerHTML = '<div class="st-tg-status st-tg-status-info">' + IC.phone + ' ' + (currentLang === 'ru' ? 'Сканируйте QR в Telegram' : 'Scan QR with Telegram app') + '</div>';
 
       // Poll for completion
       if (_agentTgPolling) clearInterval(_agentTgPolling);
@@ -1621,17 +1688,17 @@ async function startAgentTgQR(agentId) {
           var poll = await apiRequest('GET', '/api/telegram/auth/poll?agentId=' + agentId);
           if (poll.status === 'success') {
             clearInterval(_agentTgPolling); _agentTgPolling = null;
-            if (statusEl) statusEl.innerHTML = '<span style="color:#22c55e">✅ Connected!</span>';
+            if (statusEl) statusEl.innerHTML = '<div class="st-tg-status st-tg-status-ok">' + IC.check + ' Connected!</div>';
             toast('Telegram connected!', 'success');
             setTimeout(function() { loadAgentTelegramTab(document.getElementById('agent-settings-body'), agentId); }, 500);
           } else if (poll.status === 'need_password') {
             clearInterval(_agentTgPolling); _agentTgPolling = null;
             if (qrContainer) qrContainer.style.display = 'none';
             document.getElementById('tg-2fa-form').style.display = '';
-            if (statusEl) statusEl.innerHTML = '<span style="color:#fbbf24">🔐 2FA password required</span>';
+            if (statusEl) statusEl.innerHTML = '<div class="st-tg-status st-tg-status-warn">' + IC.shield + ' 2FA password required</div>';
           } else if (poll.status === 'error') {
             clearInterval(_agentTgPolling); _agentTgPolling = null;
-            if (statusEl) statusEl.innerHTML = '<span style="color:var(--danger)">❌ ' + escHtml(poll.error || 'Error') + '</span>';
+            if (statusEl) statusEl.innerHTML = '<div class="st-tg-status st-tg-status-err">' + IC.x + ' ' + escHtml(poll.error || 'Error') + '</div>';
           } else if (poll.qrUrl && poll.qrUrl !== data.qrUrl) {
             // QR refreshed
             data.qrUrl = poll.qrUrl;
@@ -1641,10 +1708,10 @@ async function startAgentTgQR(agentId) {
         } catch(e) {}
       }, 2000);
     } else {
-      if (statusEl) statusEl.innerHTML = '<span style="color:var(--danger)">❌ ' + escHtml(data.error || 'QR error') + '</span>';
+      if (statusEl) statusEl.innerHTML = '<div class="st-tg-status st-tg-status-err">' + IC.x + ' ' + escHtml(data.error || 'QR error') + '</div>';
     }
   } catch (e) {
-    if (statusEl) statusEl.innerHTML = '<span style="color:var(--danger)">❌ ' + escHtml(e.message || 'Error') + '</span>';
+    if (statusEl) statusEl.innerHTML = '<div class="st-tg-status st-tg-status-err">' + IC.x + ' ' + escHtml(e.message || 'Error') + '</div>';
   }
 }
 
@@ -1735,7 +1802,12 @@ async function createAgentWalletFromSettings() {
   var data = await apiRequest('POST', '/api/agents/' + _detailAgentId + '/wallet');
   if (data.ok) {
     toast((data.exists ? (currentLang === 'ru' ? 'Кошелёк уже есть' : 'Wallet exists') : (currentLang === 'ru' ? 'Кошелёк создан' : 'Wallet created')) + ': ' + (data.address || ''), 'success');
-    await openAgentDetail(_detailAgentId, true); // refresh data
+    // Inject address into local data immediately so the tab renders it
+    if (data.address && _detailAgentData) {
+      if (!_detailAgentData.trigger_config) _detailAgentData.trigger_config = { config: {} };
+      if (!_detailAgentData.trigger_config.config) _detailAgentData.trigger_config.config = {};
+      _detailAgentData.trigger_config.config.WALLET_ADDRESS = data.address;
+    }
     switchSettingsTab('wallet');
   } else toast(data.error || 'Error', 'error');
 }
@@ -1878,6 +1950,11 @@ async function sendAgentChatMessage() {
 function renderAgentChat() {
   var container = document.getElementById('agent-chat-messages');
   if (!container) return;
+  if (_agentChatHistory.length === 0) {
+    var isRu = currentLang === 'ru';
+    container.innerHTML = '<div class="st-chat-empty">' + IC.chat + '<span>' + (isRu ? 'Начните диалог с агентом...' : 'Start a conversation with the agent...') + '</span></div>';
+    return;
+  }
   container.innerHTML = _agentChatHistory.map(function(m) {
     var cls = m.role === 'user' ? 'chat-msg-user' : (m.role === 'agent' ? 'chat-msg-agent' : 'chat-msg-system');
     return '<div class="chat-msg ' + cls + '">' + escHtml(m.text) + '</div>';
@@ -6452,370 +6529,589 @@ function initFlowBuilder() {
   switchLang(currentLang);
 }
 
-// ===== AGENT NETWORK MAP (Neural Canvas) =====
+// ===== AGENT NETWORK MAP (v2 — fullscreen neural canvas) =====
 let _networkAnimId = null;
 let _networkNodes = [];
+let _networkEdges = [];
 let _networkDragNode = null;
 let _networkDragOffset = { dx: 0, dy: 0 };
 let _networkMouse = { x: 0, y: 0 };
 let _networkSearchQuery = '';
 let _networkTrashHover = false;
+let _networkZoom = 1.0;
+let _networkPan = { x: 0, y: 0 };
+let _networkPanning = false;
+let _networkPanStart = { x: 0, y: 0, px: 0, py: 0 };
+let _networkInitialized = false;
+
+function networkZoomIn() {
+  _networkZoom = Math.min(3, _networkZoom * 1.2);
+  var lbl = document.getElementById('net-zoom-label');
+  if (lbl) lbl.textContent = Math.round(_networkZoom * 100) + '%';
+}
+function networkZoomOut() {
+  _networkZoom = Math.max(0.3, _networkZoom / 1.2);
+  var lbl = document.getElementById('net-zoom-label');
+  if (lbl) lbl.textContent = Math.round(_networkZoom * 100) + '%';
+}
+function networkZoomReset() {
+  _networkZoom = 1.0;
+  _networkPan.x = 0;
+  _networkPan.y = 0;
+  var lbl = document.getElementById('net-zoom-label');
+  if (lbl) lbl.textContent = '100%';
+}
+
+// Convert screen coords to world coords
+function _netScreenToWorld(sx, sy, W, H) {
+  return {
+    x: (sx - W / 2) / _networkZoom + W / 2 - _networkPan.x,
+    y: (sy - H / 2) / _networkZoom + H / 2 - _networkPan.y
+  };
+}
 
 async function loadNetworkMap() {
   const canvas = document.getElementById('agent-network-canvas');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
+  const wrap = canvas.parentElement;
 
-  // Set canvas size (with DPR for crisp rendering)
-  const rect = canvas.parentElement.getBoundingClientRect();
-  const _netDpr = window.devicePixelRatio || 1;
-  const _netW = rect.width || 900, _netH = 500;
-  canvas.width = _netW * _netDpr;
-  canvas.height = _netH * _netDpr;
-  canvas.style.width = _netW + 'px';
-  canvas.style.height = _netH + 'px';
-  ctx.scale(_netDpr, _netDpr);
+  // Size canvas to fill container
+  if (!canvas._netDims) canvas._netDims = { w: 900, h: 600 };
+  function resizeCanvas() {
+    var rect = wrap.getBoundingClientRect();
+    var dpr = window.devicePixelRatio || 1;
+    var w = rect.width || 900, h = rect.height || 600;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    canvas._netDims.w = w;
+    canvas._netDims.h = h;
+  }
+  resizeCanvas();
+  var dims = canvas._netDims;
+
+  // ResizeObserver for dynamic sizing
+  if (typeof ResizeObserver !== 'undefined' && !canvas._resizeObs) {
+    canvas._resizeObs = new ResizeObserver(function() { resizeCanvas(); });
+    canvas._resizeObs.observe(wrap);
+  }
+
+  // Cancel previous animation
+  if (_networkAnimId) { cancelAnimationFrame(_networkAnimId); _networkAnimId = null; }
 
   const data = await apiRequest('GET', '/api/agents');
   const agents = (data.ok ? data.agents : []) || [];
 
+  // Update stats
+  var elTotal = document.getElementById('net-stat-total');
+  var elActive = document.getElementById('net-stat-active');
+  var elEdges = document.getElementById('net-stat-edges');
+  if (elTotal) elTotal.textContent = agents.length;
+  if (elActive) elActive.textContent = agents.filter(function(a) { return a.isActive; }).length;
+
+  // Remove old empty state
+  var oldEmpty = wrap.querySelector('.network-empty-state');
+  if (oldEmpty) oldEmpty.remove();
+
   if (!agents.length) {
-    ctx.fillStyle = '#555';
-    ctx.font = '16px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('No agents yet. Create one in the bot!', _netW / 2, _netH / 2);
+    // Show empty state
+    var emptyDiv = document.createElement('div');
+    emptyDiv.className = 'network-empty-state';
+    emptyDiv.innerHTML = '<div class="network-empty-icon">' + IC.robot + '</div>' +
+      '<div class="network-empty-title" data-en="No agents yet" data-ru="Пока нет агентов">No agents yet</div>' +
+      '<div class="network-empty-desc" data-en="Create your first agent in the bot" data-ru="Создайте первого агента в боте">Create your first agent in the bot</div>';
+    wrap.appendChild(emptyDiv);
+    if (elEdges) elEdges.textContent = '0';
+    switchLang(currentLang);
     return;
   }
 
+  var W = dims.w, H = dims.h;
+
   // Build nodes
-  _networkNodes = agents.map((a, i) => {
-    const role = a.role || 'worker';
-    const level = a.level || 1;
-    const radius = role === 'director' ? 28 + level : role === 'manager' ? 22 + level : role === 'specialist' ? 20 + level : role === 'monitor' ? 18 + level : 16 + Math.min(level, 5);
-    // Custom color from agent config, or role-based defaults
+  var roleColors = { director: '#ffd700', manager: '#a855f7', specialist: '#10b981', monitor: '#f59e0b', worker: '#0098EA' };
+  var roleLabels = { director: 'DIR', manager: 'MGR', specialist: 'SPEC', monitor: 'MON', worker: 'WRK' };
+
+  _networkNodes = agents.map(function(a, i) {
+    var role = a.role || 'worker';
+    var level = a.level || 1;
+    var radius = role === 'director' ? 30 + level : role === 'manager' ? 24 + level : role === 'specialist' ? 22 + level : role === 'monitor' ? 20 + level : 18 + Math.min(level, 5);
     var trigCfg = {}; try { trigCfg = typeof a.trigger_config === 'string' ? JSON.parse(a.trigger_config) : (a.trigger_config || {}); } catch(e) {}
     var customColor = (trigCfg.config && trigCfg.config.agentColor) || '';
-    const roleColors = { director: '#ffd700', manager: '#a855f7', specialist: '#10b981', monitor: '#f59e0b', worker: '#0098EA' };
-    const color = !a.isActive ? '#555' : (customColor || roleColors[role] || '#0098EA');
-    const roleLabels = { director: 'DIR', manager: 'MGR', specialist: 'SPEC', monitor: 'MON', worker: 'WRK' };
+    var color = !a.isActive ? '#555' : (customColor || roleColors[role] || '#0098EA');
     var customRoleName = (trigCfg.config && trigCfg.config.customRole && trigCfg.config.customRole.name) || '';
-    const roleLabel = customRoleName || roleLabels[role] || role.toUpperCase().slice(0, 4);
+    var roleLabel = customRoleName || roleLabels[role] || role.toUpperCase().slice(0, 4);
+    var angle = (i / agents.length) * Math.PI * 2;
+    var spread = Math.min(W, H) * 0.28;
     return {
       id: a.id, name: a.name || 'Agent #' + a.id,
-      role, level, xp: a.xp || 0,
+      role: role, level: level, xp: a.xp || 0,
       isActive: a.isActive,
-      x: _netW / 2 + (Math.cos(i * 2.4) * 150) + (Math.random() - 0.5) * 80,
-      y: _netH / 2 + (Math.sin(i * 2.4) * 120) + (Math.random() - 0.5) * 60,
+      x: W / 2 + Math.cos(angle) * spread + (Math.random() - 0.5) * 60,
+      y: H / 2 + Math.sin(angle) * spread + (Math.random() - 0.5) * 50,
       vx: 0, vy: 0,
-      radius, color, roleLabel,
+      radius: radius, color: color, roleLabel: roleLabel,
     };
   });
 
-  // Build edges: director → all workers, managers → nearby workers
-  const edges = [];
-  const directors = _networkNodes.filter(n => n.role === 'director');
-  const managers = _networkNodes.filter(n => n.role === 'manager');
-  const workers = _networkNodes.filter(n => n.role === 'worker');
+  // Build edges
+  var edges = [];
+  var directors = _networkNodes.filter(function(n) { return n.role === 'director'; });
+  var managers = _networkNodes.filter(function(n) { return n.role === 'manager'; });
+  var workers = _networkNodes.filter(function(n) { return n.role === 'worker'; });
 
-  directors.forEach(d => {
-    _networkNodes.forEach(n => {
+  directors.forEach(function(d) {
+    _networkNodes.forEach(function(n) {
       if (n.id !== d.id) edges.push({ from: d, to: n });
     });
   });
-  managers.forEach(m => {
-    workers.forEach(w => edges.push({ from: m, to: w }));
+  managers.forEach(function(m) {
+    workers.forEach(function(w) { edges.push({ from: m, to: w }); });
   });
-  // If no directors/managers, connect all agents in chain
   if (!directors.length && !managers.length && _networkNodes.length > 1) {
-    for (let i = 0; i < _networkNodes.length - 1; i++) {
+    for (var i = 0; i < _networkNodes.length - 1; i++) {
       edges.push({ from: _networkNodes[i], to: _networkNodes[i + 1] });
     }
+    // Close the loop for visual interest
+    if (_networkNodes.length > 2) {
+      edges.push({ from: _networkNodes[_networkNodes.length - 1], to: _networkNodes[0] });
+    }
+  }
+  _networkEdges = edges;
+  if (elEdges) elEdges.textContent = edges.length;
+
+  // Background particles (nebula dots)
+  var nebulaDots = [];
+  for (var nd = 0; nd < 120; nd++) {
+    nebulaDots.push({
+      x: Math.random(), y: Math.random(),
+      r: Math.random() * 1.5 + 0.3,
+      a: Math.random() * 0.35 + 0.05,
+      speed: (Math.random() - 0.5) * 0.00003,
+      hue: Math.random() > 0.7 ? 210 : (Math.random() > 0.5 ? 270 : 200)
+    });
   }
 
-  // Stars background
-  const stars = Array.from({ length: 60 }, () => ({
-    x: Math.random() * _netW,
-    y: Math.random() * _netH,
-    r: Math.random() * 1.2,
-    a: Math.random() * 0.5 + 0.1,
-  }));
-
-  // Particles on edges
-  const particles = edges.map(() => ({ t: Math.random(), speed: 0.003 + Math.random() * 0.005 }));
+  // Edge particles (multiple per edge)
+  var edgeParticles = edges.map(function() {
+    var count = 2 + Math.floor(Math.random() * 2);
+    var arr = [];
+    for (var p = 0; p < count; p++) {
+      arr.push({ t: Math.random(), speed: 0.002 + Math.random() * 0.004, size: 1.5 + Math.random() * 1.5 });
+    }
+    return arr;
+  });
 
   // Tooltip
-  const tooltip = document.getElementById('network-tooltip');
+  var tooltip = document.getElementById('network-tooltip');
+  var trashZone = document.getElementById('network-trash-zone');
 
-  // Mouse interaction
-  const trashZone = document.getElementById('network-trash-zone');
+  // Remove old event listeners by replacing canvas (only on first init)
+  if (!_networkInitialized) {
+    _networkInitialized = true;
 
-  canvas.addEventListener('mousemove', (e) => {
-    const r = canvas.getBoundingClientRect();
-    _networkMouse.x = e.clientX - r.left;
-    _networkMouse.y = e.clientY - r.top;
+    // Wheel zoom
+    canvas.addEventListener('wheel', function(e) {
+      e.preventDefault();
+      var factor = e.deltaY < 0 ? 1.08 : 1 / 1.08;
+      _networkZoom = Math.max(0.3, Math.min(3, _networkZoom * factor));
+      var lbl = document.getElementById('net-zoom-label');
+      if (lbl) lbl.textContent = Math.round(_networkZoom * 100) + '%';
+    }, { passive: false });
 
-    if (_networkDragNode) {
-      _networkDragNode.x = _networkMouse.x - _networkDragOffset.dx;
-      _networkDragNode.y = _networkMouse.y - _networkDragOffset.dy;
-      _networkDragNode.vx = 0;
-      _networkDragNode.vy = 0;
-      // Show trash zone while dragging
-      if (trashZone) trashZone.classList.add('visible');
-      // Check if hovering over trash zone
-      if (trashZone) {
-        const tz = trashZone.getBoundingClientRect();
-        const inTrash = e.clientX >= tz.left && e.clientX <= tz.right && e.clientY >= tz.top && e.clientY <= tz.bottom;
-        _networkTrashHover = inTrash;
-        trashZone.classList.toggle('hover', inTrash);
+    canvas.addEventListener('mousemove', function(e) {
+      var r = canvas.getBoundingClientRect();
+      var sx = e.clientX - r.left, sy = e.clientY - r.top;
+      _networkMouse.x = sx;
+      _networkMouse.y = sy;
+
+      // Panning (right-click drag or middle-click)
+      if (_networkPanning) {
+        _networkPan.x = _networkPanStart.px + (sx - _networkPanStart.x) / _networkZoom;
+        _networkPan.y = _networkPanStart.py + (sy - _networkPanStart.y) / _networkZoom;
+        return;
       }
-    }
 
-    // Tooltip hover
-    let hovered = null;
-    for (const n of _networkNodes) {
-      const dx = _networkMouse.x - n.x, dy = _networkMouse.y - n.y;
-      if (dx * dx + dy * dy < n.radius * n.radius) { hovered = n; break; }
-    }
-    if (hovered && tooltip && !_networkDragNode) {
-      tooltip.style.display = 'block';
-      tooltip.style.left = (e.clientX + 12) + 'px';
-      tooltip.style.top = (e.clientY - 10) + 'px';
-      tooltip.innerHTML = `<b>${escHtml(hovered.name)}</b><br>` +
-        `Role: ${hovered.role} | Lv.${hovered.level}<br>` +
-        'XP: ' + hovered.xp + ' | ' + (hovered.isActive ? IC.dot_green + ' Active' : IC.dot_pause + ' Paused');
-    } else if (tooltip) {
-      tooltip.style.display = 'none';
-    }
-  });
+      var world = _netScreenToWorld(sx, sy, dims.w, dims.h);
 
-  canvas.addEventListener('mousedown', (e) => {
-    const r = canvas.getBoundingClientRect();
-    _networkMouse.x = e.clientX - r.left;
-    _networkMouse.y = e.clientY - r.top;
-    _networkClickStart = { x: _networkMouse.x, y: _networkMouse.y, time: Date.now(), node: null };
-    for (const n of _networkNodes) {
-      const dx = _networkMouse.x - n.x, dy = _networkMouse.y - n.y;
-      if (dx * dx + dy * dy < n.radius * n.radius) {
-        _networkDragNode = n;
-        _networkDragOffset.dx = dx;
-        _networkDragOffset.dy = dy;
-        _networkClickStart.node = n;
-        break;
+      if (_networkDragNode) {
+        _networkDragNode.x = world.x - _networkDragOffset.dx;
+        _networkDragNode.y = world.y - _networkDragOffset.dy;
+        _networkDragNode.vx = 0;
+        _networkDragNode.vy = 0;
+        if (trashZone) trashZone.classList.add('visible');
+        if (trashZone) {
+          var tz = trashZone.getBoundingClientRect();
+          var inTrash = e.clientX >= tz.left && e.clientX <= tz.right && e.clientY >= tz.top && e.clientY <= tz.bottom;
+          _networkTrashHover = inTrash;
+          trashZone.classList.toggle('hover', inTrash);
+        }
       }
-    }
-  });
-  canvas.addEventListener('mouseup', (e) => {
-    // Hide trash zone
-    if (trashZone) { trashZone.classList.remove('visible', 'hover'); }
 
-    if (_networkDragNode && _networkTrashHover) {
-      // Dropped on trash zone → confirm deletion
-      const nodeToDelete = _networkDragNode;
+      // Tooltip hover
+      var hovered = null;
+      for (var ni = 0; ni < _networkNodes.length; ni++) {
+        var n = _networkNodes[ni];
+        var ddx = world.x - n.x, ddy = world.y - n.y;
+        if (ddx * ddx + ddy * ddy < (n.radius + 4) * (n.radius + 4)) { hovered = n; break; }
+      }
+      if (hovered && tooltip && !_networkDragNode) {
+        tooltip.style.display = 'block';
+        tooltip.style.left = (e.clientX + 14) + 'px';
+        tooltip.style.top = (e.clientY - 14) + 'px';
+        var statusDot = hovered.isActive
+          ? '<span style="color:#10b981">&#9679;</span> Active'
+          : '<span style="color:#555">&#9679;</span> Paused';
+        tooltip.innerHTML = '<div style="font-weight:600;font-size:13px;margin-bottom:4px">' + escHtml(hovered.name) + '</div>' +
+          '<div style="display:flex;gap:12px;margin-bottom:3px"><span style="color:' + hovered.color + '">' + hovered.roleLabel + '</span><span>Lv.' + hovered.level + '</span><span>XP ' + hovered.xp + '</span></div>' +
+          '<div>' + statusDot + '</div>';
+      } else if (tooltip) {
+        tooltip.style.display = 'none';
+      }
+    });
+
+    canvas.addEventListener('mousedown', function(e) {
+      var r = canvas.getBoundingClientRect();
+      var sx = e.clientX - r.left, sy = e.clientY - r.top;
+      _networkMouse.x = sx;
+      _networkMouse.y = sy;
+
+      // Right-click or middle-click → pan
+      if (e.button === 2 || e.button === 1) {
+        e.preventDefault();
+        _networkPanning = true;
+        _networkPanStart = { x: sx, y: sy, px: _networkPan.x, py: _networkPan.y };
+        canvas.style.cursor = 'move';
+        return;
+      }
+
+      var world = _netScreenToWorld(sx, sy, dims.w, dims.h);
+      _networkClickStart = { x: sx, y: sy, time: Date.now(), node: null };
+
+      for (var ni = 0; ni < _networkNodes.length; ni++) {
+        var n = _networkNodes[ni];
+        var ddx = world.x - n.x, ddy = world.y - n.y;
+        if (ddx * ddx + ddy * ddy < n.radius * n.radius) {
+          _networkDragNode = n;
+          _networkDragOffset.dx = ddx;
+          _networkDragOffset.dy = ddy;
+          _networkClickStart.node = n;
+          break;
+        }
+      }
+    });
+
+    canvas.addEventListener('mouseup', function(e) {
+      if (_networkPanning) {
+        _networkPanning = false;
+        canvas.style.cursor = 'grab';
+        return;
+      }
+
+      if (trashZone) trashZone.classList.remove('visible', 'hover');
+
+      if (_networkDragNode && _networkTrashHover) {
+        var nodeToDelete = _networkDragNode;
+        _networkDragNode = null;
+        _networkDragOffset.dx = 0;
+        _networkDragOffset.dy = 0;
+        _networkClickStart = null;
+        _networkTrashHover = false;
+        showNetworkDeleteConfirm(nodeToDelete);
+        return;
+      }
+
+      if (_networkClickStart && _networkClickStart.node) {
+        var r = canvas.getBoundingClientRect();
+        var mx = e.clientX - r.left, my = e.clientY - r.top;
+        var movedX = mx - _networkClickStart.x, movedY = my - _networkClickStart.y;
+        var dist = Math.sqrt(movedX * movedX + movedY * movedY);
+        var elapsed = Date.now() - _networkClickStart.time;
+        if (dist < 5 && elapsed < 300) {
+          showNetworkAgentPanel(_networkClickStart.node);
+        }
+      }
       _networkDragNode = null;
       _networkDragOffset.dx = 0;
       _networkDragOffset.dy = 0;
       _networkClickStart = null;
       _networkTrashHover = false;
-      showNetworkDeleteConfirm(nodeToDelete);
-      return;
-    }
+    });
 
-    if (_networkClickStart && _networkClickStart.node) {
-      const r = canvas.getBoundingClientRect();
-      const mx = e.clientX - r.left, my = e.clientY - r.top;
-      const movedX = mx - _networkClickStart.x, movedY = my - _networkClickStart.y;
-      const dist = Math.sqrt(movedX * movedX + movedY * movedY);
-      const elapsed = Date.now() - _networkClickStart.time;
-      if (dist < 5 && elapsed < 300) {
-        // Check if clicked on the delete "x" button
-        var clickNode = _networkClickStart.node;
-        var delBtnX = clickNode.x + clickNode.radius * 0.7;
-        var delBtnY = clickNode.y - clickNode.radius * 0.7;
-        var delDist = Math.sqrt((mx - delBtnX) * (mx - delBtnX) + (my - delBtnY) * (my - delBtnY));
-        if (delDist <= 8) {
-          showNetworkDeleteConfirm(clickNode);
-        } else {
-          showNetworkAgentPanel(clickNode);
-        }
-      }
-    }
-    _networkDragNode = null;
-    _networkDragOffset.dx = 0;
-    _networkDragOffset.dy = 0;
-    _networkClickStart = null;
-    _networkTrashHover = false;
-  });
-  canvas.addEventListener('mouseleave', () => {
-    _networkDragNode = null;
-    _networkDragOffset.dx = 0; _networkDragOffset.dy = 0;
-    _networkTrashHover = false;
-    if (tooltip) tooltip.style.display = 'none';
-    if (trashZone) { trashZone.classList.remove('visible', 'hover'); }
-  });
+    canvas.addEventListener('contextmenu', function(e) { e.preventDefault(); });
+
+    canvas.addEventListener('mouseleave', function() {
+      _networkDragNode = null;
+      _networkPanning = false;
+      _networkDragOffset.dx = 0; _networkDragOffset.dy = 0;
+      _networkTrashHover = false;
+      if (tooltip) tooltip.style.display = 'none';
+      if (trashZone) trashZone.classList.remove('visible', 'hover');
+      canvas.style.cursor = 'grab';
+    });
+  }
 
   // Animation loop
-  let time = 0;
-  if (_networkAnimId) cancelAnimationFrame(_networkAnimId);
+  var time = 0;
 
   function animate() {
     time += 0.016;
-    const W = _netW, H = _netH;
+    var W = dims.w, H = dims.h;
     ctx.clearRect(0, 0, W, H);
 
-    // Background gradient
-    const bg = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, W/2);
-    bg.addColorStop(0, '#0d1526');
-    bg.addColorStop(1, '#070b14');
+    // === Background ===
+    // Dark gradient
+    var bg = ctx.createRadialGradient(W * 0.3, H * 0.4, 0, W / 2, H / 2, W * 0.7);
+    bg.addColorStop(0, '#0c1224');
+    bg.addColorStop(0.5, '#080b14');
+    bg.addColorStop(1, '#050507');
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, W, H);
 
-    // Grid
-    ctx.strokeStyle = 'rgba(255,255,255,0.03)';
-    ctx.lineWidth = 1;
-    for (let x = 0; x < W; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
-    for (let y = 0; y < H; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+    // Nebula aurora glow
+    var auroraX = W * 0.5 + Math.sin(time * 0.15) * W * 0.2;
+    var auroraY = H * 0.4 + Math.cos(time * 0.12) * H * 0.15;
+    var aurora = ctx.createRadialGradient(auroraX, auroraY, 0, auroraX, auroraY, W * 0.4);
+    aurora.addColorStop(0, 'rgba(0,152,234,0.04)');
+    aurora.addColorStop(0.4, 'rgba(168,85,247,0.02)');
+    aurora.addColorStop(1, 'transparent');
+    ctx.fillStyle = aurora;
+    ctx.fillRect(0, 0, W, H);
 
-    // Stars
-    stars.forEach(s => {
+    // Nebula dots
+    nebulaDots.forEach(function(d) {
+      d.x += d.speed;
+      d.y += d.speed * 0.6;
+      if (d.x > 1.05) d.x = -0.05;
+      if (d.x < -0.05) d.x = 1.05;
+      if (d.y > 1.05) d.y = -0.05;
+      var px = d.x * W, py = d.y * H;
+      var flicker = d.a + Math.sin(time * 1.5 + d.x * 40) * 0.08;
       ctx.beginPath();
-      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(255,255,255,${s.a + Math.sin(time * 2 + s.x) * 0.1})`;
+      ctx.arc(px, py, d.r, 0, Math.PI * 2);
+      ctx.fillStyle = 'hsla(' + d.hue + ',60%,75%,' + Math.max(0, flicker) + ')';
       ctx.fill();
     });
 
-    // Force-directed physics
-    const k = 8000;
-    for (let i = 0; i < _networkNodes.length; i++) {
-      for (let j = i + 1; j < _networkNodes.length; j++) {
-        const a = _networkNodes[i], b = _networkNodes[j];
-        const dx = b.x - a.x, dy = b.y - a.y;
-        const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
-        const force = k / (dist * dist);
-        const fx = (dx / dist) * force, fy = (dy / dist) * force;
+    // Perspective grid
+    ctx.save();
+    ctx.translate(W / 2, H / 2);
+    ctx.scale(_networkZoom, _networkZoom);
+    ctx.translate(-W / 2 + _networkPan.x, -H / 2 + _networkPan.y);
+
+    var gridSize = 50;
+    var gridAlpha = 0.025 + Math.sin(time * 0.5) * 0.005;
+    ctx.strokeStyle = 'rgba(200,220,255,' + gridAlpha + ')';
+    ctx.lineWidth = 0.5;
+    var gx0 = Math.floor((-_networkPan.x - W / 2 / _networkZoom) / gridSize) * gridSize;
+    var gy0 = Math.floor((-_networkPan.y - H / 2 / _networkZoom) / gridSize) * gridSize;
+    var gx1 = gx0 + W / _networkZoom + gridSize * 2;
+    var gy1 = gy0 + H / _networkZoom + gridSize * 2;
+    for (var gx = gx0; gx <= gx1; gx += gridSize) {
+      ctx.beginPath(); ctx.moveTo(gx, gy0); ctx.lineTo(gx, gy1); ctx.stroke();
+    }
+    for (var gy = gy0; gy <= gy1; gy += gridSize) {
+      ctx.beginPath(); ctx.moveTo(gx0, gy); ctx.lineTo(gx1, gy); ctx.stroke();
+    }
+
+    // === Force-directed physics ===
+    var repulseK = 10000;
+    for (var i = 0; i < _networkNodes.length; i++) {
+      for (var j = i + 1; j < _networkNodes.length; j++) {
+        var a = _networkNodes[i], b = _networkNodes[j];
+        var dx = b.x - a.x, dy = b.y - a.y;
+        var dist = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
+        var force = repulseK / (dist * dist);
+        var fx = (dx / dist) * force, fy = (dy / dist) * force;
         a.vx -= fx; a.vy -= fy;
         b.vx += fx; b.vy += fy;
       }
     }
-    edges.forEach(e => {
-      const dx = e.to.x - e.from.x, dy = e.to.y - e.from.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      const spring = 0.005;
-      const target = 120;
-      const force = (dist - target) * spring;
-      const fx = (dx / dist) * force, fy = (dy / dist) * force;
+    // Spring forces on edges
+    edges.forEach(function(e) {
+      var dx = e.to.x - e.from.x, dy = e.to.y - e.from.y;
+      var dist = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
+      var spring = 0.006;
+      var target = 140;
+      var force = (dist - target) * spring;
+      var fx = (dx / dist) * force, fy = (dy / dist) * force;
       e.from.vx += fx; e.from.vy += fy;
       e.to.vx -= fx; e.to.vy -= fy;
     });
-    _networkNodes.forEach(n => {
+    // Center gravity
+    var cx = W / 2, cy = H / 2;
+    _networkNodes.forEach(function(n) {
       if (n === _networkDragNode) return;
-      n.vx *= 0.92; n.vy *= 0.92;
+      var gdx = cx - n.x, gdy = cy - n.y;
+      n.vx += gdx * 0.0003;
+      n.vy += gdy * 0.0003;
+      n.vx *= 0.9; n.vy *= 0.9;
       n.x += n.vx; n.y += n.vy;
-      n.x = Math.max(n.radius, Math.min(_netW - n.radius, n.x));
-      n.y = Math.max(n.radius, Math.min(_netH - n.radius, n.y));
     });
 
-    // Draw edges
-    edges.forEach((e, idx) => {
-      const grad = ctx.createLinearGradient(e.from.x, e.from.y, e.to.x, e.to.y);
-      grad.addColorStop(0, e.from.color + '60');
-      grad.addColorStop(1, e.to.color + '60');
+    // === Draw edges (curved bezier) ===
+    edges.forEach(function(e, idx) {
+      var fx = e.from.x, fy = e.from.y, tx = e.to.x, ty = e.to.y;
+      var mx = (fx + tx) / 2, my = (fy + ty) / 2;
+      // Perpendicular offset for curve
+      var ddx = tx - fx, ddy = ty - fy;
+      var len = Math.sqrt(ddx * ddx + ddy * ddy);
+      var curvature = len * 0.12;
+      var cpx = mx + (-ddy / len) * curvature;
+      var cpy = my + (ddx / len) * curvature;
+
+      // Edge glow
+      var edgeAlpha = 0.35 + Math.sin(time * 2 + idx) * 0.1;
       ctx.beginPath();
-      ctx.moveTo(e.from.x, e.from.y);
-      ctx.lineTo(e.to.x, e.to.y);
-      ctx.strokeStyle = grad;
-      ctx.lineWidth = 1.5;
+      ctx.moveTo(fx, fy);
+      ctx.quadraticCurveTo(cpx, cpy, tx, ty);
+      ctx.strokeStyle = e.from.color + Math.round(edgeAlpha * 255).toString(16).padStart(2, '0');
+      ctx.lineWidth = 1.2;
       ctx.stroke();
 
-      // Particle
-      const p = particles[idx];
-      p.t = (p.t + p.speed) % 1;
-      const px = e.from.x + (e.to.x - e.from.x) * p.t;
-      const py = e.from.y + (e.to.y - e.from.y) * p.t;
+      // Animated dashed overlay
+      ctx.save();
+      ctx.setLineDash([6, 8]);
+      ctx.lineDashOffset = -time * 30 + idx * 10;
       ctx.beginPath();
-      ctx.arc(px, py, 2, 0, Math.PI * 2);
-      ctx.fillStyle = e.from.color;
-      ctx.fill();
+      ctx.moveTo(fx, fy);
+      ctx.quadraticCurveTo(cpx, cpy, tx, ty);
+      ctx.strokeStyle = e.from.color + '18';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+
+      // Multiple particles along curve
+      var parts = edgeParticles[idx];
+      parts.forEach(function(p) {
+        p.t = (p.t + p.speed) % 1;
+        var t = p.t;
+        var pt = 1 - t;
+        var ppx = pt * pt * fx + 2 * pt * t * cpx + t * t * tx;
+        var ppy = pt * pt * fy + 2 * pt * t * cpy + t * t * ty;
+        ctx.beginPath();
+        ctx.arc(ppx, ppy, p.size, 0, Math.PI * 2);
+        var pGlow = ctx.createRadialGradient(ppx, ppy, 0, ppx, ppy, p.size * 3);
+        pGlow.addColorStop(0, e.from.color + 'cc');
+        pGlow.addColorStop(1, e.from.color + '00');
+        ctx.fillStyle = pGlow;
+        ctx.fill();
+      });
     });
 
-    // Draw nodes
-    _networkNodes.forEach(n => {
-      const pulse = n.isActive ? Math.sin(time * 3 + n.id) * 3 : 0;
-      const r = n.radius + pulse;
+    // === Draw nodes ===
+    _networkNodes.forEach(function(n) {
+      var pulse = n.isActive ? Math.sin(time * 2.5 + n.id * 0.7) * 2.5 : 0;
+      var r = n.radius + pulse;
 
-      // Search filter: dim non-matching nodes
-      const matchesSearch = !_networkSearchQuery || n.name.toLowerCase().includes(_networkSearchQuery.toLowerCase());
-      const alpha = matchesSearch ? 1.0 : 0.15;
+      var matchesSearch = !_networkSearchQuery || n.name.toLowerCase().includes(_networkSearchQuery.toLowerCase());
+      var alpha = matchesSearch ? 1.0 : 0.12;
 
       ctx.save();
       ctx.globalAlpha = alpha;
 
-      // Glow
-      const glow = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, r * 2);
-      glow.addColorStop(0, n.color + '40');
+      // Pulsing rings for active agents
+      if (n.isActive) {
+        for (var ri = 1; ri <= 3; ri++) {
+          var ringPhase = (time * 1.2 + ri * 0.8 + n.id * 0.3) % 3;
+          var ringR = r + ringPhase * 14;
+          var ringAlpha = Math.max(0, 0.25 - ringPhase * 0.08);
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, ringR, 0, Math.PI * 2);
+          ctx.strokeStyle = n.color + Math.round(ringAlpha * 255).toString(16).padStart(2, '0');
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+      }
+
+      // Outer glow (large soft)
+      var glow = ctx.createRadialGradient(n.x, n.y, r * 0.5, n.x, n.y, r * 2.5);
+      glow.addColorStop(0, n.color + '25');
       glow.addColorStop(1, n.color + '00');
       ctx.fillStyle = glow;
       ctx.beginPath();
-      ctx.arc(n.x, n.y, r * 2, 0, Math.PI * 2);
+      ctx.arc(n.x, n.y, r * 2.5, 0, Math.PI * 2);
       ctx.fill();
 
-      // Circle
+      // Main node circle with gradient fill
+      var nodeFill = ctx.createRadialGradient(n.x - r * 0.3, n.y - r * 0.3, 0, n.x, n.y, r);
+      nodeFill.addColorStop(0, n.color + '50');
+      nodeFill.addColorStop(0.7, n.color + '20');
+      nodeFill.addColorStop(1, n.color + '10');
       ctx.beginPath();
       ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
-      ctx.fillStyle = n.color + '30';
+      ctx.fillStyle = nodeFill;
       ctx.fill();
-      ctx.strokeStyle = n.color;
-      ctx.lineWidth = matchesSearch && _networkSearchQuery ? 3 : 2;
+
+      // Border
+      ctx.strokeStyle = n.color + (matchesSearch && _networkSearchQuery ? 'ee' : 'aa');
+      ctx.lineWidth = matchesSearch && _networkSearchQuery ? 2.5 : 1.8;
       ctx.stroke();
 
-      // Highlight ring for search match
+      // Search highlight ring
       if (matchesSearch && _networkSearchQuery) {
         ctx.beginPath();
-        ctx.arc(n.x, n.y, r + 4, 0, Math.PI * 2);
-        ctx.strokeStyle = n.color + '60';
+        ctx.arc(n.x, n.y, r + 5, 0, Math.PI * 2);
+        ctx.strokeStyle = n.color + '50';
         ctx.lineWidth = 1.5;
-        ctx.setLineDash([4, 4]);
+        ctx.setLineDash([5, 5]);
+        ctx.lineDashOffset = -time * 20;
         ctx.stroke();
         ctx.setLineDash([]);
       }
 
-      // Role label inside node (instead of emoji)
-      ctx.font = `bold ${Math.max(9, r * 0.5)}px Inter, sans-serif`;
+      // Role label inside
+      ctx.font = 'bold ' + Math.max(9, r * 0.45) + 'px Inter, system-ui, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = '#fff';
       ctx.fillText(n.roleLabel || 'AGT', n.x, n.y);
 
-      // Name below
-      ctx.font = '10px Inter, sans-serif';
-      ctx.fillStyle = '#ccc';
-      ctx.fillText(n.name.slice(0, 18), n.x, n.y + r + 12);
+      // Name pill below node
+      var nameText = n.name.length > 16 ? n.name.slice(0, 15) + '..' : n.name;
+      ctx.font = '10px Inter, system-ui, sans-serif';
+      var nameWidth = ctx.measureText(nameText).width;
+      var pillW = nameWidth + 12, pillH = 16;
+      var pillX = n.x - pillW / 2, pillY = n.y + r + 6;
 
-      // Role tag below name
-      ctx.font = '8px Inter, sans-serif';
-      ctx.fillStyle = n.color + 'aa';
-      ctx.fillText(n.role.toUpperCase(), n.x, n.y + r + 22);
-
-      // Level badge
-      if (n.level > 1) {
-        ctx.font = 'bold 9px Inter, sans-serif';
-        ctx.fillStyle = n.color;
-        ctx.fillText('Lv.' + n.level, n.x, n.y - r - 6);
-      }
-
-      // Delete "x" button at top-right of node
-      var delX = n.x + r * 0.7, delY = n.y - r * 0.7;
+      // Pill background
+      ctx.fillStyle = 'rgba(5,5,7,0.7)';
       ctx.beginPath();
-      ctx.arc(delX, delY, 6, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(239,68,68,0.7)';
+      ctx.roundRect(pillX, pillY, pillW, pillH, 4);
       ctx.fill();
-      ctx.font = 'bold 8px sans-serif';
-      ctx.fillStyle = '#fff';
+      ctx.strokeStyle = n.color + '30';
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+
+      // Name text
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('\u00d7', delX, delY);
+      ctx.fillText(nameText, n.x, pillY + pillH / 2);
+
+      // Level badge (top)
+      if (n.level > 1) {
+        var lvText = 'Lv.' + n.level;
+        ctx.font = 'bold 8px Inter, system-ui, sans-serif';
+        var lvW = ctx.measureText(lvText).width + 8;
+        ctx.fillStyle = n.color + '30';
+        ctx.beginPath();
+        ctx.roundRect(n.x - lvW / 2, n.y - r - 14, lvW, 12, 3);
+        ctx.fill();
+        ctx.fillStyle = n.color;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(lvText, n.x, n.y - r - 8);
+      }
 
       ctx.restore();
     });
+
+    ctx.restore(); // end zoom/pan transform
 
     _networkAnimId = requestAnimationFrame(animate);
   }
@@ -7702,36 +7998,39 @@ let _networkClickStart = null;
 function showNetworkAgentPanel(node) {
   var container = document.getElementById('network-page');
   if (!container) return;
+  var wrap = container.querySelector('.network-fullscreen-wrap');
+  if (!wrap) return;
   var existing = document.getElementById('network-agent-panel');
   if (existing) existing.remove();
-  // Remove delete dialog if present
   var existingDialog = document.getElementById('network-delete-dialog');
   if (existingDialog) existingDialog.remove();
 
   var panel = document.createElement('div');
   panel.id = 'network-agent-panel';
   panel.className = 'network-agent-panel';
-  var statusText = node.isActive ? IC.dot_green + ' Active' : IC.dot_pause + ' Paused';
+  var statusDot = node.isActive
+    ? '<span style="color:#10b981">&#9679;</span> Active'
+    : '<span style="color:#555">&#9679;</span> Paused';
   var toggleText = node.isActive ? (currentLang === 'ru' ? IC.pause + ' Стоп' : IC.pause + ' Stop') : (currentLang === 'ru' ? IC.rocket + ' Запустить' : IC.rocket + ' Start');
   var toggleClass = node.isActive ? 'btn-warning' : 'btn-success';
   var roleDisplay = node.roleLabel || node.role;
   var roleBadgeColor = node.color || '#0098EA';
   panel.innerHTML = '<div class="nap-header">' +
-    '<span style="display:flex;align-items:center;gap:8px"><span style="width:10px;height:10px;border-radius:50%;background:' + roleBadgeColor + ';display:inline-block"></span>' + escHtml(node.name) + '</span>' +
-    '<button class="modal-close" onclick="this.closest(\'.network-agent-panel\').remove()" style="background:none;border:none;color:#999;font-size:1.2rem;cursor:pointer">&times;</button>' +
+    '<span style="display:flex;align-items:center;gap:8px"><span style="width:10px;height:10px;border-radius:50%;background:' + roleBadgeColor + ';box-shadow:0 0 8px ' + roleBadgeColor + '60;display:inline-block"></span>' + escHtml(node.name) + '</span>' +
+    '<button onclick="this.closest(\'.network-agent-panel\').remove()" style="background:none;border:none;color:#666;font-size:1.1rem;cursor:pointer;padding:0 2px;line-height:1">&times;</button>' +
   '</div>' +
   '<div class="nap-body">' +
     '<p>' + (currentLang === 'ru' ? 'Роль' : 'Role') + ': <strong style="color:' + roleBadgeColor + '">' + escHtml(roleDisplay) + '</strong></p>' +
-    '<p>Lv.' + (node.level || 1) + ' | XP: ' + (node.xp || 0) + '</p>' +
-    '<p>' + statusText + '</p>' +
+    '<p>Lv.' + (node.level || 1) + ' &middot; XP: ' + (node.xp || 0) + '</p>' +
+    '<p>' + statusDot + '</p>' +
     '<div class="nap-actions">' +
       '<button class="btn btn-sm ' + toggleClass + '" onclick="toggleAgent(' + node.id + ',' + node.isActive + ');this.closest(\'.network-agent-panel\').remove()">' + toggleText + '</button>' +
       '<button class="btn btn-ghost btn-sm" onclick="openAgentDetail(' + node.id + ')">' + IC.settings + ' ' + (currentLang === 'ru' ? 'Настройки' : 'Settings') + '</button>' +
       '<button class="btn btn-ghost btn-sm" onclick="loadAgentLogs(' + node.id + ')">' + IC.clipboard + ' Logs</button>' +
-      '<button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="showNetworkDeleteConfirm({id:' + node.id + ',name:\'' + escHtml(node.name).replace(/'/g, "\\'") + '\'})">' + (currentLang === 'ru' ? 'Удалить' : 'Delete') + '</button>' +
+      '<button class="btn btn-ghost btn-sm" style="color:#ef4444" onclick="showNetworkDeleteConfirm({id:' + node.id + ',name:\'' + escHtml(node.name).replace(/'/g, "\\'") + '\'})">' + IC.trash + ' ' + (currentLang === 'ru' ? 'Удалить' : 'Delete') + '</button>' +
     '</div>' +
   '</div>';
-  container.querySelector('.page-content').appendChild(panel);
+  wrap.appendChild(panel);
 }
 
 // ===== NETWORK MAP SEARCH =====
@@ -7743,7 +8042,8 @@ function filterNetworkNodes(query) {
 function showNetworkDeleteConfirm(node) {
   var container = document.getElementById('network-page');
   if (!container) return;
-  // Remove any existing panels/dialogs
+  var wrap = container.querySelector('.network-fullscreen-wrap');
+  if (!wrap) return;
   var existing = document.getElementById('network-agent-panel');
   if (existing) existing.remove();
   var existingDialog = document.getElementById('network-delete-dialog');
@@ -7759,13 +8059,13 @@ function showNetworkDeleteConfirm(node) {
   var cancelText = currentLang === 'ru' ? 'Отмена' : 'Cancel';
   var deleteText = currentLang === 'ru' ? 'Удалить' : 'Delete';
 
-  dialog.innerHTML = '<h3>' + node.emoji + ' ' + title + '</h3>' +
+  dialog.innerHTML = '<h3>' + IC.warn + ' ' + title + '</h3>' +
     '<p>' + msg + '</p>' +
     '<div class="dialog-actions">' +
       '<button class="btn btn-ghost btn-sm" onclick="this.closest(\'.network-delete-dialog\').remove()">' + cancelText + '</button>' +
-      '<button class="btn btn-sm" style="background:#e74c3c;color:#fff;border:none" onclick="confirmNetworkDelete(' + node.id + ')">' + deleteText + '</button>' +
+      '<button class="btn btn-sm" style="background:#ef4444;color:#fff;border:none" onclick="confirmNetworkDelete(' + node.id + ')">' + IC.trash + ' ' + deleteText + '</button>' +
     '</div>';
-  container.querySelector('.page-content').appendChild(dialog);
+  wrap.appendChild(dialog);
 }
 
 async function confirmNetworkDelete(agentId) {
