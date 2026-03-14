@@ -1110,6 +1110,36 @@ CAPABILITIES: wallet, nft, gifts, market, telegram userbot (21 MTProto функ�
       systemPrompt = systemPrompt + '\n\n' + pluginSkillDocs;
     }
 
+    // 3.5) Multi-agent detection: check if user has other agents on the same TG account
+    let routingRules: Record<string, any> | undefined;
+    try {
+      // Find all user's agents that have a TG session
+      const allAgentsResult = await this.dbTools.getUserAgents(userId);
+      const allAgents = allAgentsResult.data || [];
+      const existingAgentsWithTg = allAgents.filter((a: any) => {
+        const tc = a.triggerConfig || a.trigger_config;
+        const tcObj = typeof tc === 'string' ? JSON.parse(tc) : tc;
+        return tcObj?.telegram_session?.session && a.triggerType === 'ai_agent';
+      });
+      if (existingAgentsWithTg.length > 0) {
+        // User already has agents with TG sessions — set up routing rules
+        // New agent gets default routing: responds to DMs unless keywords specify otherwise
+        routingRules = {
+          chatTypes: ['dm'],
+          isDefault: existingAgentsWithTg.length === 0, // first agent is default
+          priority: 5,
+        };
+        // Try to auto-detect keywords from system prompt
+        const keywordMatches = systemPrompt.match(/(?:баланс|крипто|nft|подар|gift|арбитраж|arbitrage|trading|канал|channel|модера|moder|контент|content|анализ|analys|мониторинг|monitor|цена|price|новости|news)/gi);
+        if (keywordMatches) {
+          routingRules.keywords = [...new Set(keywordMatches.map((k: string) => k.toLowerCase()))].slice(0, 10);
+        }
+        console.log(`[Orchestrator] Multi-agent detected: user ${userId} has ${existingAgentsWithTg.length} active TG agents. New agent routing: ${JSON.stringify(routingRules)}`);
+      }
+    } catch (e: any) {
+      console.warn(`[Orchestrator] Multi-agent detection error: ${e.message}`);
+    }
+
     // 4) Собираем triggerConfig для ai_agent
     const triggerConfig: Record<string, any> = {
       code: systemPrompt,
@@ -1118,6 +1148,7 @@ CAPABILITIES: wallet, nft, gifts, market, telegram userbot (21 MTProto функ�
         AI_PROVIDER: userVars.AI_PROVIDER || '',
         AI_API_KEY: userVars.AI_API_KEY || '',
         self_improvement_enabled: true,
+        ...(routingRules ? { routingRules } : {}),
       },
     };
 

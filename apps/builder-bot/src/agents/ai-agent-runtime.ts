@@ -29,6 +29,23 @@ import {
 } from '../services/telegram-userbot';
 import { userbotManager } from '../services/userbot-manager';
 
+// ── Singleton pool for shared state ─────────────────────────────────────────
+let _sharedStatePool: any = null;
+function _getSharedStatePool(): any {
+  if (!_sharedStatePool) {
+    const { Pool } = require('pg');
+    _sharedStatePool = new Pool({
+      host: process.env.DB_HOST || 'localhost',
+      port: parseInt(process.env.DB_PORT || '5432'),
+      user: process.env.DB_USER || 'ton_agent',
+      password: process.env.DB_PASSWORD || 'changeme',
+      database: process.env.DB_NAME || 'ton_agent_platform',
+      max: 3,
+    });
+  }
+  return _sharedStatePool;
+}
+
 // ── Types ──────────────────────────────────────────────────────────────────
 
 export interface AIAgentTickParams {
@@ -196,7 +213,7 @@ const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
                 'tg_mark_read', 'tg_get_comments', 'tg_set_typing', 'tg_send_formatted',
                 'tg_get_message_by_id', 'tg_get_unread', 'tg_send_file'],
   web:         ['web_search', 'fetch_url', 'http_fetch'],
-  state:       ['get_state', 'set_state', 'list_state_keys'],
+  state:       ['get_state', 'set_state', 'list_state_keys', 'get_shared_state', 'set_shared_state'],
   notify:      ['notify', 'notify_rich'],
   plugins:     ['list_plugins', 'suggest_plugin', 'run_custom_plugin', 'list_custom_plugins',
                 'apply_plugin', 'remove_plugin'],
@@ -498,6 +515,35 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
         name: 'list_state_keys',
         description: 'Показать все сохранённые ключи состояния агента. Используй перед get_state чтобы знать какие ключи существуют.',
         parameters: { type: 'object', properties: {} },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'get_shared_state',
+        description: 'Получить общее состояние аккаунта (shared между всеми агентами на этом TG аккаунте). Используй для данных, которые нужны всем агентам: адрес кошелька, настройки, общие заметки.',
+        parameters: {
+          type: 'object',
+          properties: {
+            key: { type: 'string', description: 'Ключ общего состояния' },
+          },
+          required: ['key'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'set_shared_state',
+        description: 'Сохранить общее состояние аккаунта (shared между всеми агентами на этом TG аккаунте). Другие агенты на том же аккаунте смогут прочитать это значение.',
+        parameters: {
+          type: 'object',
+          properties: {
+            key:   { type: 'string', description: 'Ключ общего состояния' },
+            value: { type: 'string', description: 'Значение (строка или JSON-строка)' },
+          },
+          required: ['key', 'value'],
+        },
       },
     },
     {
@@ -2001,6 +2047,37 @@ export async function executeTool(
           })),
         };
       } catch (e: any) { return { keys: [], error: e.message }; }
+    }
+
+    case 'get_shared_state': {
+      try {
+        const tgUserId = params.config?.telegramUserId || params.config?._tgUserId || 0;
+        if (!tgUserId) return { key: args.key, value: null, error: 'No TG account linked' };
+        const namespace = `tg_${tgUserId}`;
+        const pg = _getSharedStatePool();
+        const res = await pg.query(
+          `SELECT value FROM builder_bot.agent_shared_state WHERE user_id = $1 AND namespace = $2 AND key = $3`,
+          [params.userId, namespace, args.key]
+        );
+        return { key: args.key, value: res.rows.length > 0 ? res.rows[0].value : null };
+      } catch (e: any) { return { key: args.key, value: null, error: e.message }; }
+    }
+
+    case 'set_shared_state': {
+      try {
+        const tgUserId = params.config?.telegramUserId || params.config?._tgUserId || 0;
+        if (!tgUserId) return { ok: false, error: 'No TG account linked' };
+        const namespace = `tg_${tgUserId}`;
+        const pg = _getSharedStatePool();
+        await pg.query(
+          `INSERT INTO builder_bot.agent_shared_state (user_id, namespace, key, value, updated_by, updated_at)
+           VALUES ($1, $2, $3, $4::jsonb, $5, NOW())
+           ON CONFLICT ON CONSTRAINT agent_shared_state_unique
+           DO UPDATE SET value = $4::jsonb, updated_by = $5, updated_at = NOW()`,
+          [params.userId, namespace, args.key, JSON.stringify(args.value), params.agentId]
+        );
+        return { ok: true, key: args.key };
+      } catch (e: any) { return { ok: false, error: e.message }; }
     }
 
     case 'notify': {
@@ -3603,7 +3680,7 @@ You MUST follow these rules AT ALL TIMES:
     }
   }
 
-  const tools = buildToolDefinitions(agentRole, enabledCaps, mcpToolDefs);
+  let tools = buildToolDefinitions(agentRole, enabledCaps, mcpToolDefs);
   let totalToolCalls = 0;
   let finalContent: string | undefined;
   _tickNotifyFlag.set(params.agentId, false); // reset flag for this tick
@@ -3702,6 +3779,14 @@ You MUST follow these rules AT ALL TIMES:
     );
 
     messages.push(...toolResults);
+
+    // ── Rebuild tools if manage_capabilities was called this iteration ──
+    const hadCapChange = assistant.tool_calls.some((tc: any) => tc.function.name === 'manage_capabilities');
+    if (hadCapChange) {
+      const updatedCaps = (params.config.enabledCapabilities as string[]) || null;
+      tools = buildToolDefinitions(agentRole, updatedCaps, mcpToolDefs);
+      console.log(`[AI runtime] Agent #${params.agentId} tools rebuilt after manage_capabilities: ${tools.length} tools`);
+    }
   }
 
   // ── Notify if there were user messages and AI replied ────────────
@@ -3811,6 +3896,9 @@ export class AIAgentRuntime {
         console.log(`[AI runtime] setupListener #${opts.agentId} attempt=${attempt} authorized=${tgInfo.authorized} username=${tgInfo.username || 'none'}`);
         if (tgInfo.authorized) {
           try {
+            // Inject tgUserId for shared state tools
+            opts.config._tgUserId = tgInfo.telegramUserId || 0;
+            opts.config.telegramUserId = tgInfo.telegramUserId || 0;
             registerAgentMessageConfig({
               agentId: opts.agentId,
               userId: opts.userId,
@@ -3820,6 +3908,7 @@ export class AIAgentRuntime {
               dmPolicy: (opts.config.dmPolicy as any) || 'open',
               groupPolicy: (opts.config.groupPolicy as any) || 'mention-only',
               config: opts.config,
+              routingRules: opts.config.routingRules,
             });
             const ok = await userbotManager.enableMessageListener(opts.agentId);
             console.log(`[AI runtime] enableMessageListener #${opts.agentId} result=${ok}`);

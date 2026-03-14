@@ -779,6 +779,51 @@ export function startApiServer() {
     }
   });
 
+  // ── GET /api/agents/:id/state — agent key-value state ──────
+  app.get('/api/agents/:id/state', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const agentId = parseInt(req.params.id as string, 10);
+      const r = await getDBTools().getAgent(agentId, userId);
+      if (!r.success || !r.data) { res.status(404).json({ error: 'Agent not found' }); return; }
+      // Get state from DB
+      const stateResult = await pool.query(
+        'SELECT key, value FROM builder_bot.agent_state WHERE agent_id = $1 ORDER BY key',
+        [agentId]
+      );
+      const state: Record<string, any> = {};
+      for (const row of stateResult.rows) { state[row.key] = row.value; }
+      res.json({ ok: true, state });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── GET /api/agents/:id/chat/history — chat messages with agent ──
+  app.get('/api/agents/:id/chat/history', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const agentId = parseInt(req.params.id as string, 10);
+      const r = await getDBTools().getAgent(agentId, userId);
+      if (!r.success || !r.data) { res.status(404).json({ error: 'Agent not found' }); return; }
+      // Get recent agent logs that are chat messages
+      const logsResult = await pool.query(
+        `SELECT level, message, created_at FROM builder_bot.agent_logs
+         WHERE agent_id = $1 AND (level = 'chat_user' OR level = 'chat_agent' OR level = 'info')
+         ORDER BY created_at DESC LIMIT 50`,
+        [agentId]
+      );
+      const messages = logsResult.rows.reverse().map((r: any) => ({
+        role: r.level === 'chat_user' ? 'user' : 'agent',
+        text: r.message,
+        time: r.created_at
+      }));
+      res.json({ ok: true, messages });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // ── POST /api/agents/:id/run ──────────────────────────────
   app.post('/api/agents/:id/run', requireAuth, async (req: Request, res: Response) => {
     try {
@@ -1000,6 +1045,84 @@ export function startApiServer() {
       if (!validRoles.includes(role)) { res.status(400).json({ error: 'Invalid role' }); return; }
       await pool.query('UPDATE builder_bot.agents SET role = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3', [role, agentId, userId]);
       res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── PUT /api/agents/:id/routing — Update agent routing rules (for multi-agent shared accounts) ──
+  app.put('/api/agents/:id/routing', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const agentId = parseInt(req.params.id as string, 10);
+      if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
+      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
+      const agent = agentCheck.data;
+      const { routingRules } = req.body || {};
+      if (!routingRules || typeof routingRules !== 'object') { res.status(400).json({ error: 'Missing routingRules' }); return; }
+
+      const tc = typeof agent.triggerConfig === 'string' ? JSON.parse(agent.triggerConfig) : (agent.triggerConfig || {});
+      if (!tc.config) tc.config = {};
+      tc.config.routingRules = {
+        chatIds: Array.isArray(routingRules.chatIds) ? routingRules.chatIds : [],
+        chatTypes: Array.isArray(routingRules.chatTypes) ? routingRules.chatTypes : [],
+        keywords: Array.isArray(routingRules.keywords) ? routingRules.keywords : [],
+        isDefault: !!routingRules.isDefault,
+        priority: parseInt(routingRules.priority, 10) || 5,
+      };
+
+      await pool.query('UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3',
+        [JSON.stringify(tc), agentId, userId]);
+
+      // Update in-memory config if agent is running
+      try {
+        const { registerAgentMessageConfig } = require('./services/userbot-manager');
+        // The config will be reloaded on next message via loadAgentMsgConfigFromDB
+      } catch {}
+
+      res.json({ ok: true, routingRules: tc.config.routingRules });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── GET /api/agents/:id/shared-agents — Get all agents on same TG account ──
+  app.get('/api/agents/:id/shared-agents', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const agentId = parseInt(req.params.id as string, 10);
+      if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
+
+      // Get this agent's TG user ID
+      const agentRes = await pool.query(
+        `SELECT trigger_config FROM builder_bot.agents WHERE id = $1 AND user_id = $2`, [agentId, userId]
+      );
+      if (agentRes.rows.length === 0) { res.status(404).json({ error: 'Agent not found' }); return; }
+      const tc = typeof agentRes.rows[0].trigger_config === 'string'
+        ? JSON.parse(agentRes.rows[0].trigger_config) : agentRes.rows[0].trigger_config;
+      const tgUserId = tc?.telegram_session?.telegramUserId;
+      if (!tgUserId) { res.json({ agents: [], tgUserId: null }); return; }
+
+      // Find all agents with the same TG user ID
+      const sharedRes = await pool.query(
+        `SELECT id, name, description, is_active, trigger_config
+         FROM builder_bot.agents WHERE user_id = $1 AND trigger_type = 'ai_agent'`, [userId]
+      );
+      const sharedAgents = sharedRes.rows
+        .filter((r: any) => {
+          const rtc = typeof r.trigger_config === 'string' ? JSON.parse(r.trigger_config) : r.trigger_config;
+          return rtc?.telegram_session?.telegramUserId === tgUserId;
+        })
+        .map((r: any) => {
+          const rtc = typeof r.trigger_config === 'string' ? JSON.parse(r.trigger_config) : r.trigger_config;
+          return {
+            id: r.id,
+            name: r.name,
+            description: r.description,
+            isActive: r.is_active,
+            routingRules: rtc?.config?.routingRules || null,
+            customRole: rtc?.config?.customRole || null,
+          };
+        });
+
+      res.json({ agents: sharedAgents, tgUserId, tgUsername: tc?.telegram_session?.username });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
