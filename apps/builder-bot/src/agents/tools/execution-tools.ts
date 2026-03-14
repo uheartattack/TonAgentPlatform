@@ -844,6 +844,38 @@ export class ExecutionTools {
             return { ok: true };
           },
 
+          // ── Discord ──
+          discordSendMessage: async (channelId: string, content: string) => {
+            const { discordManager } = await import('../../services/discord-manager');
+            const token = (params.triggerConfig?.config?.DISCORD_BOT_TOKEN || params.context?.config?.DISCORD_BOT_TOKEN);
+            if (!token) throw new Error('DISCORD_BOT_TOKEN not set');
+            const aid = params.agentId || 0;
+            await discordManager.registerAgent(aid, { botToken: token });
+            return discordManager.sendMessage(aid, channelId, content);
+          },
+          discordGetChannels: async (guildId: string) => {
+            const { discordManager } = await import('../../services/discord-manager');
+            const token = (params.triggerConfig?.config?.DISCORD_BOT_TOKEN || params.context?.config?.DISCORD_BOT_TOKEN);
+            if (!token) throw new Error('DISCORD_BOT_TOKEN not set');
+            const aid = params.agentId || 0;
+            await discordManager.registerAgent(aid, { botToken: token });
+            return discordManager.getGuildChannels(aid, guildId);
+          },
+
+          // ── Image generation ──
+          generateImage: async (prompt: string) => {
+            const key = (params.triggerConfig?.config?.FAL_API_KEY || params.context?.config?.FAL_API_KEY) || process.env.FAL_API_KEY;
+            if (!key) throw new Error('FAL_API_KEY not set');
+            const resp = await nativeFetch('https://queue.fal.run/fal-ai/flux/schnell', {
+              method: 'POST',
+              headers: { 'Authorization': 'Key ' + key, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ prompt, image_size: 'square_hd', num_images: 1 })
+            });
+            if (!resp.ok) throw new Error('fal.ai error: ' + resp.status);
+            const data = await resp.json() as any;
+            return data.images?.[0]?.url || data;
+          },
+
           // ── Inter-agent ──
           askAgent: async (targetAgentId: number, message: string) => {
             const { addMessageToAIAgent } = await import('../ai-agent-runtime');
