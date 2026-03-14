@@ -1561,6 +1561,49 @@ async function showWalletMenu(ctx: Context) {
 // ── Профиль пользователя ──
 bot.command('profile', async (ctx) => showProfile(ctx, ctx.from.id));
 
+// ── Approve / Reject action commands ──
+bot.command('approve_action', async (ctx) => {
+  const text = ctx.message?.text || '';
+  const match = text.match(/\/approve_action[_\s]?(\d+)/);
+  if (!match) {
+    await safeReply(ctx, 'Формат: /approve_action_123 (где 123 — ID действия)', {});
+    return;
+  }
+  const approvalId = parseInt(match[1]);
+  try {
+    const { getAgentApprovalsRepository } = await import('./db/schema-extensions');
+    const row = await getAgentApprovalsRepository().resolve(approvalId, 'approved');
+    if (!row) {
+      await safeReply(ctx, `Запрос #${approvalId} не найден или уже обработан.`, {});
+      return;
+    }
+    await safeReply(ctx, `✅ Действие #${approvalId} одобрено (${row.action_type}).`, {});
+  } catch (e: any) {
+    await safeReply(ctx, `❌ Ошибка: ${e.message}`, {});
+  }
+});
+
+bot.command('reject_action', async (ctx) => {
+  const text = ctx.message?.text || '';
+  const match = text.match(/\/reject_action[_\s]?(\d+)/);
+  if (!match) {
+    await safeReply(ctx, 'Формат: /reject_action_123 (где 123 — ID действия)', {});
+    return;
+  }
+  const approvalId = parseInt(match[1]);
+  try {
+    const { getAgentApprovalsRepository } = await import('./db/schema-extensions');
+    const row = await getAgentApprovalsRepository().resolve(approvalId, 'rejected');
+    if (!row) {
+      await safeReply(ctx, `Запрос #${approvalId} не найден или уже обработан.`, {});
+      return;
+    }
+    await safeReply(ctx, `❌ Действие #${approvalId} отклонено (${row.action_type}).`, {});
+  } catch (e: any) {
+    await safeReply(ctx, `❌ Ошибка: ${e.message}`, {});
+  }
+});
+
 async function showProfile(ctx: Context, userId: number) {
   const lang = getUserLang(userId);
   const profile = await getUserProfile(userId);
@@ -2596,6 +2639,27 @@ bot.on('callback_query', async (ctx) => {
   if (data.startsWith('task_discuss:')) {
     await ctx.answerCbQuery();
     await safeReply(ctx, '💬 Напишите ответ к задаче. Он будет передан агенту.', {});
+    return;
+  }
+
+  // ── Approval action callbacks (approve_action:ID / reject_action:ID) ──
+  if (data.startsWith('approve_action:') || data.startsWith('reject_action:')) {
+    await ctx.answerCbQuery();
+    const approvalId = parseInt(data.split(':')[1]);
+    const isApprove = data.startsWith('approve_action');
+    try {
+      const { getAgentApprovalsRepository } = await import('./db/schema-extensions');
+      const row = await getAgentApprovalsRepository().resolve(approvalId, isApprove ? 'approved' : 'rejected');
+      if (!row) {
+        await editOrReply(ctx, `Запрос #${approvalId} не найден или уже обработан.`, {});
+      } else {
+        const emoji = isApprove ? '✅' : '❌';
+        const verb = isApprove ? 'одобрено' : 'отклонено';
+        await editOrReply(ctx, `${emoji} Действие #${approvalId} ${verb} (${escHtml(row.action_type)}).`, { parse_mode: 'HTML' });
+      }
+    } catch (e: any) {
+      await editOrReply(ctx, `Ошибка: ${escHtml(e.message)}`, { parse_mode: 'HTML' });
+    }
     return;
   }
 

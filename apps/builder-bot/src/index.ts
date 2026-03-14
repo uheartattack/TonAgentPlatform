@@ -29,6 +29,7 @@ import {
   initAgentDailySpendRepository,
   initCustomPluginsRepository,
   initAgentTasksRepository,
+  initAgentApprovalsRepository,
   runAIProposalsMigrations,
 } from './db/schema-extensions';
 
@@ -79,6 +80,7 @@ async function main() {
   initAgentDailySpendRepository(pool);
   initCustomPluginsRepository(pool);
   initAgentTasksRepository(pool);
+  initAgentApprovalsRepository(pool);
   await runAIProposalsMigrations(pool);
 
   // Восстановить schedulers для агентов которые были активны до перезапуска

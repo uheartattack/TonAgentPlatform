@@ -403,6 +403,12 @@ async function apiRequest(method, path, body) {
   if (body) opts.body = JSON.stringify(body);
   try {
     const res = await fetch(API_BASE + path, opts);
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) {
+      const text = await res.text();
+      console.error('API returned non-JSON:', res.status, text.slice(0, 200));
+      return { ok: false, error: 'Server returned non-JSON response (status ' + res.status + ')' };
+    }
     return await res.json();
   } catch (e) {
     console.error('API error:', e);
@@ -956,129 +962,484 @@ function switchSettingsTab(tab) {
   try { config = typeof a.trigger_config === 'string' ? JSON.parse(a.trigger_config) : (a.trigger_config || {}); } catch(e) {}
 
   if (tab === 'prompt') {
+    var isRu = currentLang === 'ru';
+    var lineCount = (a.code || '').split('\n').length;
     body.innerHTML =
-      '<div class="settings-section">' +
-      '<div class="settings-section-title">' + (currentLang === 'ru' ? 'Системный промпт / Код агента' : 'System Prompt / Agent Code') + '</div>' +
-      '<div class="settings-field"><textarea id="edit-prompt-textarea">' + escHtml(a.code || '') + '</textarea></div>' +
-      '<div class="settings-actions">' +
-      '<button class="btn btn-primary" onclick="saveSettingsPrompt()">' + (currentLang === 'ru' ? 'Сохранить' : 'Save') + '</button>' +
-      '</div></div>';
+      '<div class="rt-page">' +
+      '<div class="rt-header">' +
+        '<div class="rt-header-icon" style="background:rgba(168,85,247,0.12);color:#a855f7">' + IC.brain + '</div>' +
+        '<div class="rt-header-text">' +
+          '<h3>' + (isRu ? 'Системный промпт' : 'System Prompt') + '</h3>' +
+          '<p>' + (isRu ? 'Инструкции и личность агента. Это его "душа" — определяет поведение, стиль и возможности.' : 'Agent instructions and personality. This is its "soul" — defines behavior, style and capabilities.') + '</p>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + IC.clipboard + ' ' + (isRu ? 'Код агента' : 'Agent Code') + ' <span style="margin-left:auto;font-size:.68rem;font-weight:500;color:var(--text-muted);text-transform:none;letter-spacing:0">' + lineCount + ' ' + (isRu ? 'строк' : 'lines') + '</span></div>' +
+        '<textarea id="edit-prompt-textarea" class="st-textarea">' + escHtml(a.code || '') + '</textarea>' +
+      '</div>' +
+      '<div class="rt-actions">' +
+        '<button class="rt-save-btn" onclick="saveSettingsPrompt()">' + IC.check + ' ' + (isRu ? 'Сохранить промпт' : 'Save Prompt') + '</button>' +
+      '</div>' +
+      '</div>';
   } else if (tab === 'info') {
+    var isRu = currentLang === 'ru';
+    var createdAt = a.createdAt || a.created_at || '';
+    var updatedAt = a.updatedAt || a.updated_at || '';
     body.innerHTML =
-      '<div class="settings-section">' +
-      '<div class="settings-section-title">' + (currentLang === 'ru' ? 'Информация об агенте' : 'Agent Information') + '</div>' +
-      '<div class="settings-field"><label>' + (currentLang === 'ru' ? 'Имя' : 'Name') + '</label>' +
-      '<input type="text" id="settings-agent-name" value="' + escHtml(a.name || '') + '"></div>' +
-      '<div class="settings-field"><label>' + (currentLang === 'ru' ? 'Описание' : 'Description') + '</label>' +
-      '<input type="text" id="settings-agent-desc" value="' + escHtml(a.description || '') + '"></div>' +
-      '<div class="settings-actions">' +
-      '<button class="btn btn-primary" onclick="saveSettingsInfo()">' + (currentLang === 'ru' ? 'Сохранить' : 'Save') + '</button>' +
-      '</div></div>';
+      '<div class="rt-page">' +
+      '<div class="rt-header">' +
+        '<div class="rt-header-icon" style="background:rgba(34,197,94,0.12);color:#22c55e">' + IC.robot + '</div>' +
+        '<div class="rt-header-text">' +
+          '<h3>' + (isRu ? 'Информация об агенте' : 'Agent Information') + '</h3>' +
+          '<p>' + (isRu ? 'Имя, описание и метаданные агента. Видны в списке и на карте.' : 'Name, description and metadata. Visible in the list and on the map.') + '</p>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + IC.robot + ' ' + (isRu ? 'Имя агента' : 'Agent Name') + '</div>' +
+        '<div class="rt-input-wrap">' +
+          '<input type="text" id="settings-agent-name" class="rt-input" value="' + escHtml(a.name || '') + '" placeholder="' + (isRu ? 'Введите имя агента' : 'Enter agent name') + '">' +
+          '<div class="rt-input-hint">' + (isRu ? 'Имя отображается в списке агентов, на карте и в уведомлениях' : 'Displayed in agent list, map and notifications') + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + IC.chat + ' ' + (isRu ? 'Описание' : 'Description') + '</div>' +
+        '<div class="rt-input-wrap">' +
+          '<input type="text" id="settings-agent-desc" class="rt-input" value="' + escHtml(a.description || '') + '" placeholder="' + (isRu ? 'Что делает этот агент' : 'What this agent does') + '">' +
+          '<div class="rt-input-hint">' + (isRu ? 'Краткое описание задач агента' : 'Brief description of agent tasks') + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="st-meta-grid">' +
+        '<div class="st-meta-card">' +
+          '<div class="st-meta-label">ID</div>' +
+          '<div class="st-meta-val">#' + (a.id || _detailAgentId) + '</div>' +
+        '</div>' +
+        '<div class="st-meta-card">' +
+          '<div class="st-meta-label">' + (isRu ? 'Тип' : 'Type') + '</div>' +
+          '<div class="st-meta-val">' + (a.triggerType || a.trigger_type || 'ai_agent') + '</div>' +
+        '</div>' +
+        '<div class="st-meta-card">' +
+          '<div class="st-meta-label">' + (isRu ? 'Статус' : 'Status') + '</div>' +
+          '<div class="st-meta-val" style="color:' + (a.isActive || a.is_active ? '#22c55e' : '#666') + '">' + (a.isActive || a.is_active ? (isRu ? 'Активен' : 'Active') : (isRu ? 'Остановлен' : 'Stopped')) + '</div>' +
+        '</div>' +
+        '<div class="st-meta-card">' +
+          '<div class="st-meta-label">' + (isRu ? 'Роль' : 'Role') + '</div>' +
+          '<div class="st-meta-val">' + (a.role || 'worker') + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-actions">' +
+        '<button class="rt-save-btn" onclick="saveSettingsInfo()">' + IC.check + ' ' + (isRu ? 'Сохранить' : 'Save') + '</button>' +
+      '</div>' +
+      '</div>';
   } else if (tab === 'ai') {
+    var isRu = currentLang === 'ru';
     var aiProvider = (config.config && config.config.AI_PROVIDER) || '';
     var aiModel = (config.config && config.config.AI_MODEL) || '';
     var hasKey = !!(config.config && config.config.AI_API_KEY);
-    var providers = ['openai', 'anthropic', 'gemini', 'groq', 'deepseek', 'openrouter', 'together'];
-    var provOpts = '<option value="">' + (currentLang === 'ru' ? 'По умолчанию' : 'Default') + '</option>' +
-      providers.map(function(p) { return '<option value="' + p + '"' + (p === aiProvider ? ' selected' : '') + '>' + p.charAt(0).toUpperCase() + p.slice(1) + '</option>'; }).join('');
+    var providers = [
+      { id: 'gemini', name: 'Gemini', color: '#4285f4', desc: 'Google AI' },
+      { id: 'openai', name: 'OpenAI', color: '#10a37f', desc: 'GPT-4o' },
+      { id: 'anthropic', name: 'Anthropic', color: '#d97706', desc: 'Claude' },
+      { id: 'groq', name: 'Groq', color: '#f55036', desc: 'Llama 3' },
+      { id: 'deepseek', name: 'DeepSeek', color: '#4f46e5', desc: 'DeepSeek' },
+      { id: 'openrouter', name: 'OpenRouter', color: '#6366f1', desc: 'Multi-model' },
+      { id: 'together', name: 'Together', color: '#0ea5e9', desc: 'Open-source' },
+    ];
     body.innerHTML =
-      '<div class="settings-section">' +
-      '<div class="settings-section-title">' + (currentLang === 'ru' ? 'Настройки AI' : 'AI Configuration') + '</div>' +
-      '<div class="settings-field"><label>' + (currentLang === 'ru' ? 'Провайдер' : 'Provider') + '</label><select id="ai-provider-select">' + provOpts + '</select></div>' +
-      '<div class="settings-field"><label>' + (currentLang === 'ru' ? 'Модель' : 'Model') + '</label><input type="text" id="ai-model-input" value="' + escHtml(aiModel) + '" placeholder="auto"></div>' +
-      '<div class="settings-field"><label>API Key</label><input type="password" id="ai-key-input" placeholder="' + (hasKey ? '••••••••' : (currentLang === 'ru' ? 'Введите ключ' : 'Enter key')) + '">' +
-      (hasKey ? '<small style="color:var(--text-muted);margin-top:4px;display:block">' + (currentLang === 'ru' ? 'Ключ установлен. Пустое поле = не менять.' : 'Key is set. Leave empty to keep.') + '</small>' : '') + '</div>' +
-      '<div class="settings-actions"><button class="btn btn-primary" onclick="saveSettingsAI()">' + (currentLang === 'ru' ? 'Сохранить' : 'Save') + '</button></div></div>';
+      '<div class="rt-page">' +
+      '<div class="rt-header">' +
+        '<div class="rt-header-icon" style="background:rgba(16,163,127,0.12);color:#10a37f">' + IC.bolt + '</div>' +
+        '<div class="rt-header-text">' +
+          '<h3>' + (isRu ? 'Настройки AI' : 'AI Configuration') + '</h3>' +
+          '<p>' + (isRu ? 'Выберите провайдера, модель и API ключ. Без ключа используется платформенный proxy.' : 'Choose provider, model and API key. Without a key, the platform proxy is used.') + '</p>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + IC.globe + ' ' + (isRu ? 'Провайдер' : 'Provider') + '</div>' +
+        '<div class="st-provider-grid">' +
+        providers.map(function(p) {
+          var sel = p.id === aiProvider;
+          return '<div class="st-provider-card' + (sel ? ' st-prov-active' : '') + '" onclick="document.querySelectorAll(\'.st-provider-card\').forEach(function(c){c.classList.remove(\'st-prov-active\')});this.classList.add(\'st-prov-active\');document.getElementById(\'ai-provider-select\').value=\'' + p.id + '\'">' +
+            '<div class="st-prov-dot" style="background:' + p.color + '"></div>' +
+            '<div class="st-prov-info"><div class="st-prov-name">' + p.name + '</div><div class="st-prov-desc">' + p.desc + '</div></div>' +
+            (sel ? '<span style="color:var(--primary)">' + IC.check + '</span>' : '') +
+          '</div>';
+        }).join('') +
+        '</div>' +
+        '<select id="ai-provider-select" style="display:none">' +
+          '<option value="">Default</option>' +
+          providers.map(function(p) { return '<option value="' + p.id + '"' + (p.id === aiProvider ? ' selected' : '') + '>' + p.name + '</option>'; }).join('') +
+        '</select>' +
+      '</div>' +
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + IC.wrench + ' ' + (isRu ? 'Модель' : 'Model') + '</div>' +
+        '<div class="rt-input-wrap">' +
+          '<input type="text" id="ai-model-input" class="rt-input" value="' + escHtml(aiModel) + '" placeholder="' + (isRu ? 'auto (определяется провайдером)' : 'auto (determined by provider)') + '">' +
+          '<div class="rt-input-hint">' + (isRu ? 'Оставьте пустым для модели по умолчанию провайдера' : 'Leave empty for the provider default model') + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + IC.link + ' API Key</div>' +
+        '<div class="rt-input-wrap">' +
+          '<input type="password" id="ai-key-input" class="rt-input" placeholder="' + (hasKey ? '••••••••••••' : (isRu ? 'Вставьте API ключ провайдера' : 'Paste provider API key')) + '">' +
+          '<div class="rt-input-hint">' +
+            (hasKey
+              ? '<span style="color:#22c55e">' + IC.check + '</span> ' + (isRu ? 'Ключ установлен. Оставьте пустым чтобы не менять.' : 'Key is set. Leave empty to keep.')
+              : (isRu ? 'Без ключа агент работает через платформенный proxy (лимиты)' : 'Without a key, the agent uses the platform proxy (rate limited)')
+            ) +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-actions">' +
+        '<button class="rt-save-btn" onclick="saveSettingsAI()">' + IC.check + ' ' + (isRu ? 'Сохранить AI' : 'Save AI') + '</button>' +
+      '</div>' +
+      '</div>';
   } else if (tab === 'caps') {
     var enabled = (config.config && config.config.enabledCapabilities) || [];
     var isRu = currentLang === 'ru';
     var allCaps = [
-      { id: 'wallet', name: 'Wallet', icon: '💰',
+      { id: 'wallet', name: 'Wallet', icon: IC.dollar, color: '#f59e0b',
         desc: isRu ? 'Управление TON кошельком. Баланс, переводы, история транзакций' : 'TON wallet management. Balance, transfers, transaction history',
         tools: ['get_ton_balance', 'send_ton'] },
-      { id: 'nft', name: 'NFT', icon: '🖼',
+      { id: 'nft', name: 'NFT', icon: IC.image, color: '#8b5cf6',
         desc: isRu ? 'Работа с NFT коллекциями. Floor price, анализ, покупка/продажа' : 'NFT collections. Floor price, analysis, buy/sell',
         tools: ['get_nft_floor'] },
-      { id: 'gifts', name: 'Gifts', icon: '🎁',
+      { id: 'gifts', name: 'Gifts', icon: IC.gift, color: '#ec4899',
         desc: isRu ? 'Telegram подарки. Каталог, оценка, покупка/продажа' : 'Telegram gifts. Catalog, appraisal, buy/sell',
         tools: ['get_gift_catalog', 'appraise_gift', 'buy_catalog_gift'] },
-      { id: 'gifts_market', name: 'Gifts Market', icon: '📊',
+      { id: 'gifts_market', name: 'Gifts Market', icon: IC.trending, color: '#14b8a6',
         desc: isRu ? 'Мониторинг рынка подарков. Floor цены, арбитраж, продажи' : 'Gift market monitoring. Floor prices, arbitrage, sales history',
         tools: ['get_gift_floor_real', 'scan_real_arbitrage', 'get_market_overview'] },
-      { id: 'telegram', name: 'Telegram', icon: '📱',
+      { id: 'telegram', name: 'Telegram', icon: IC.send, color: '#3b82f6',
         desc: isRu ? 'Авторизация Telegram. Доступ к Fragment, MTProto' : 'Telegram authorization. Access to Fragment, MTProto',
         tools: ['get_fragment_listings'] },
-      { id: 'web', name: 'Web', icon: '🌐',
+      { id: 'web', name: 'Web', icon: IC.globe, color: '#06b6d4',
         desc: isRu ? 'Поиск в интернете и загрузка страниц. Web search, HTTP запросы' : 'Web search and page fetching. Web search, HTTP requests',
         tools: ['web_search', 'fetch_url'] },
-      { id: 'defi', name: 'DeFi', icon: '💱',
+      { id: 'defi', name: 'DeFi', icon: IC.shuffle, color: '#22c55e',
         desc: isRu ? 'DeFi операции. DEX свапы через DeDust/STON.fi' : 'DeFi operations. DEX swaps via DeDust/STON.fi',
         tools: ['defi_swap'] },
-      { id: 'state', name: 'State', icon: '💾',
+      { id: 'state', name: 'State', icon: IC.box, color: '#64748b',
         desc: isRu ? 'Хранение данных между запусками. Ключ-значение хранилище' : 'Persistent storage between runs. Key-value store',
         tools: ['get_state', 'set_state'] },
-      { id: 'notify', name: 'Notify', icon: '🔔',
+      { id: 'notify', name: 'Notify', icon: IC.bell, color: '#f97316',
         desc: isRu ? 'Push-уведомления. Отправка оповещений в Telegram' : 'Push notifications. Send alerts to Telegram',
         tools: ['notify', 'notify_rich'] },
-      { id: 'plugins', name: 'Plugins', icon: '🔌',
+      { id: 'plugins', name: 'Plugins', icon: IC.bolt, color: '#eab308',
         desc: isRu ? 'MCP плагины. Расширение функций через внешние сервисы' : 'MCP plugins. Extend capabilities via external services',
         tools: ['mcp_call'] },
-      { id: 'inter_agent', name: 'Inter-Agent', icon: '🤝',
+      { id: 'inter_agent', name: 'Inter-Agent', icon: IC.forward, color: '#a855f7',
         desc: isRu ? 'Общение между агентами. Делегирование задач другим агентам' : 'Inter-agent communication. Delegate tasks to other agents',
         tools: ['send_to_agent'] },
-      { id: 'blockchain', name: 'Blockchain', icon: '⛓',
+      { id: 'blockchain', name: 'Blockchain', icon: IC.link, color: '#0098ea',
         desc: isRu ? 'Чтение данных блокчейна TON. Транзакции, контракты, адреса' : 'Read TON blockchain data. Transactions, contracts, addresses',
         tools: ['get_account_info'] },
-      { id: 'ton_mcp', name: 'TON MCP', icon: '🔗',
+      { id: 'ton_mcp', name: 'TON MCP', icon: IC.link, color: '#0098ea',
         desc: isRu ? 'TON MCP сервер. Расширенные операции с блокчейном TON' : 'TON MCP server. Advanced TON blockchain operations',
         tools: ['ton_mcp'] },
+      { id: 'discord', name: 'Discord', icon: IC.chat, color: '#5865f2',
+        desc: isRu ? 'Интеграция с Discord. Отправка сообщений, вебхуки, мониторинг каналов' : 'Discord integration. Send messages, webhooks, channel monitoring',
+        tools: ['discord_send', 'discord_webhook'] },
+      { id: 'x_twitter', name: 'Twitter / X', icon: IC.send, color: '#1d9bf0',
+        desc: isRu ? 'Интеграция с Twitter/X. Публикация, мониторинг, аналитика' : 'Twitter/X integration. Posting, monitoring, analytics',
+        tools: ['x_post', 'x_search'] },
+      { id: 'media', name: 'Media', icon: IC.image, color: '#e11d48',
+        desc: isRu ? 'Генерация изображений и медиа. AI-арт, обработка фото' : 'Image & media generation. AI art, photo processing',
+        tools: ['generate_image', 'process_media'] },
+      { id: 'knowledge', name: 'Knowledge', icon: IC.brain, color: '#6366f1',
+        desc: isRu ? 'Деревья знаний и базы данных. Обучение, FAQ, skill trees' : 'Knowledge base & skill trees. Training, FAQ, skill trees',
+        tools: ['kb_query', 'kb_update'] },
+      { id: 'security', name: 'Security', icon: IC.shield, color: '#ef4444',
+        desc: isRu ? 'Сканирование безопасности. Аудит контрактов, проверка адресов' : 'Security scans. Contract audit, address verification',
+        tools: ['security_scan', 'audit_contract'] },
+      { id: 'blockchain_analytics', name: 'Analytics', icon: IC.chart, color: '#10b981',
+        desc: isRu ? 'Он-чейн аналитика. Отслеживание транзакций, whale alerts' : 'On-chain analytics. Transaction tracking, whale alerts',
+        tools: ['chain_analytics', 'whale_alert'] },
+      { id: 'prompts', name: 'Prompts', icon: IC.clipboard, color: '#78716c',
+        desc: isRu ? 'Библиотека промптов. Шаблоны, цепочки промптов, оптимизация' : 'Prompt library. Templates, prompt chains, optimization',
+        tools: ['prompt_get', 'prompt_chain'] },
     ];
+    var enabledCount = 0;
+    allCaps.forEach(function(c) { if (enabled.includes(c.id)) enabledCount++; });
     body.innerHTML =
-      '<div class="settings-section">' +
-      '<div class="settings-section-title">' + (isRu ? 'Возможности агента' : 'Agent Capabilities') + '</div>' +
-      '<p class="settings-field-desc" style="margin-bottom:16px">' + (isRu ? 'Включите нужные возможности для агента. Каждая добавляет соответствующие инструменты.' : 'Enable capabilities for the agent. Each adds corresponding tools.') + '</p>' +
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">' +
+      '<div class="rt-page">' +
+      '<div class="rt-header">' +
+        '<div class="rt-header-icon" style="background:rgba(234,179,8,0.12);color:#eab308">' + IC.bolt + '</div>' +
+        '<div class="rt-header-text">' +
+          '<h3>' + (isRu ? 'Возможности агента' : 'Agent Capabilities') + '</h3>' +
+          '<p>' + (isRu ? 'Включите модули, которые агент может использовать. Каждый добавляет соответствующие инструменты.' : 'Enable modules the agent can use. Each adds corresponding tools.') + '</p>' +
+        '</div>' +
+        '<span class="st-caps-counter">' + enabledCount + ' / ' + allCaps.length + '</span>' +
+      '</div>' +
+      '<div class="st-caps-grid">' +
       allCaps.map(function(c) {
         var ch = enabled.includes(c.id);
-        return '<label class="cap-card' + (ch ? ' cap-active' : '') + '" style="display:flex;gap:10px;padding:12px 14px;border-radius:10px;background:var(--bg-secondary);cursor:pointer;font-size:.85rem;border:1px solid ' + (ch ? 'var(--primary)' : 'var(--border)') + ';transition:border-color var(--transition-fast),background var(--transition-fast)">' +
-          '<input type="checkbox" class="cap-check" value="' + c.id + '"' + (ch ? ' checked' : '') + ' style="accent-color:var(--primary);margin-top:2px" onchange="this.closest(\'label\').classList.toggle(\'cap-active\',this.checked);this.closest(\'label\').style.borderColor=this.checked?\'var(--primary)\':\'var(--border)\'">' +
-          '<div style="flex:1"><div style="font-weight:600">' + c.icon + ' ' + c.name + '</div>' +
-          '<div style="font-size:.72rem;color:var(--text-muted);margin-top:3px;line-height:1.3">' + c.desc + '</div>' +
-          '<div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:3px">' + c.tools.map(function(t) { return '<code style="font-size:.65rem;padding:1px 5px;border-radius:3px;background:rgba(200,225,255,0.06);color:var(--text-secondary)">' + t + '</code>'; }).join('') + '</div>' +
-          '</div></label>';
+        return '<div class="st-cap-card' + (ch ? ' st-cap-active' : '') + '" data-cap="' + c.id + '" onclick="toggleCapCard(this,\'' + c.id + '\')">' +
+          '<div class="st-cap-top">' +
+            '<div class="st-cap-icon" style="background:' + c.color + '18;color:' + c.color + '">' + c.icon + '</div>' +
+            '<div class="st-cap-toggle"><div class="st-cap-switch' + (ch ? ' st-cap-on' : '') + '"><div class="st-cap-knob"></div></div></div>' +
+          '</div>' +
+          '<div class="st-cap-name">' + c.name + '</div>' +
+          '<div class="st-cap-desc">' + c.desc + '</div>' +
+          '<div class="st-cap-tools">' + c.tools.map(function(t) { return '<span class="st-cap-tool">' + t + '</span>'; }).join('') + '</div>' +
+        '</div>';
       }).join('') +
       '</div>' +
-      '<div class="settings-actions" style="margin-top:16px"><button class="btn btn-primary" onclick="saveSettingsCaps()">' + (isRu ? 'Сохранить' : 'Save') + '</button></div></div>';
+      '<div class="rt-actions">' +
+        '<button class="rt-save-btn" onclick="saveSettingsCaps()">' + IC.check + ' ' + (isRu ? 'Сохранить' : 'Save') + '</button>' +
+      '</div>' +
+      '</div>';
   } else if (tab === 'wallet') {
     var walletAddr = (config.config && config.config.WALLET_ADDRESS) || '';
+    var isRu = currentLang === 'ru';
     body.innerHTML =
-      '<div class="settings-section">' +
-      '<div class="settings-section-title">' + (currentLang === 'ru' ? 'Кошелёк агента' : 'Agent Wallet') + '</div>' +
+      '<div class="rt-page">' +
+      '<div class="rt-header">' +
+        '<div class="rt-header-icon" style="background:rgba(245,158,11,0.12);color:#f59e0b">' + IC.dollar + '</div>' +
+        '<div class="rt-header-text">' +
+          '<h3>' + (isRu ? 'Кошелёк агента' : 'Agent Wallet') + '</h3>' +
+          '<p>' + (isRu ? 'TON кошелёк агента для транзакций и DeFi операций' : 'Agent TON wallet for transactions and DeFi operations') + '</p>' +
+        '</div>' +
+      '</div>' +
       (walletAddr
-        ? '<div style="padding:16px;background:var(--bg-secondary);border-radius:8px;border:1px solid var(--border)"><div style="font-size:.78rem;color:var(--text-muted);margin-bottom:4px">TON Address</div><code style="font-size:.83rem;word-break:break-all;color:var(--primary)">' + escHtml(walletAddr) + '</code></div>'
-        : '<p style="color:var(--text-muted);margin-bottom:16px">' + (currentLang === 'ru' ? 'Кошелёк не создан. Создайте для работы с TON.' : 'No wallet. Create one for TON operations.') + '</p>' +
-          '<button class="btn btn-primary" onclick="createAgentWalletFromSettings()">' + (currentLang === 'ru' ? 'Создать кошелёк' : 'Create Wallet') + '</button>'
-      ) + '</div>';
+        ? '<div class="st-wallet-card">' +
+            '<div class="st-wallet-icon">' + IC.dollar + '</div>' +
+            '<div class="st-wallet-label">TON Address</div>' +
+            '<div class="st-wallet-addr">' + escHtml(walletAddr) + '</div>' +
+            '<div class="st-wallet-actions">' +
+              '<button class="rt-save-btn" onclick="navigator.clipboard.writeText(\'' + escHtml(walletAddr) + '\');toast(\'Copied\',\'success\')" style="font-size:.78rem">' + IC.clipboard + ' ' + (isRu ? 'Копировать' : 'Copy') + '</button>' +
+            '</div>' +
+          '</div>'
+        : '<div class="st-wallet-empty">' +
+            '<div class="st-wallet-empty-icon">' + IC.dollar + '</div>' +
+            '<h4>' + (isRu ? 'Кошелёк не создан' : 'No Wallet Yet') + '</h4>' +
+            '<p>' + (isRu ? 'Создайте TON кошелёк для работы с блокчейном, DeFi и NFT' : 'Create a TON wallet for blockchain, DeFi and NFT operations') + '</p>' +
+            '<button class="rt-save-btn" onclick="createAgentWalletFromSettings()">' + IC.zap + ' ' + (isRu ? 'Создать кошелёк' : 'Create Wallet') + '</button>' +
+          '</div>'
+      ) +
+      '</div>';
   } else if (tab === 'role') {
     var currentRole = a.role || 'worker';
+    var customRole = (config.config && config.config.customRole) || {};
+    var agentColor = (config.config && config.config.agentColor) || '#0098EA';
     var roles = [
-      { id: 'worker', name: 'Worker', icon: '⚙️', desc: currentLang === 'ru' ? 'Выполняет задачи автономно' : 'Executes tasks autonomously' },
-      { id: 'manager', name: 'Manager', icon: '👔', desc: currentLang === 'ru' ? 'Координирует других агентов' : 'Coordinates other agents' },
-      { id: 'specialist', name: 'Specialist', icon: '🎯', desc: currentLang === 'ru' ? 'Эксперт в конкретной области' : 'Expert in specific domain' },
-      { id: 'monitor', name: 'Monitor', icon: '📡', desc: currentLang === 'ru' ? 'Отслеживает данные и алерты' : 'Tracks data and alerts' },
+      { id: 'worker', name: 'Worker', icon: IC.wrench, desc: currentLang === 'ru' ? 'Выполняет задачи автономно по расписанию или событию' : 'Executes tasks autonomously on schedule or event', color: '#3b82f6' },
+      { id: 'manager', name: 'Manager', icon: IC.crown, desc: currentLang === 'ru' ? 'Координирует других агентов, делегирует задачи' : 'Coordinates other agents, delegates tasks', color: '#a855f7' },
+      { id: 'specialist', name: 'Specialist', icon: IC.star, desc: currentLang === 'ru' ? 'Эксперт в конкретной области, глубокая аналитика' : 'Expert in specific domain, deep analytics', color: '#22c55e' },
+      { id: 'monitor', name: 'Monitor', icon: IC.bell, desc: currentLang === 'ru' ? 'Отслеживает данные и отправляет алерты' : 'Tracks data and sends alerts', color: '#f97316' },
     ];
+    var isRu = currentLang === 'ru';
+    var colorSwatches = ['#0098EA', '#3b82f6', '#6366f1', '#a855f7', '#ec4899', '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6', '#06b6d4', '#64748b'];
     body.innerHTML =
-      '<div class="settings-section">' +
-      '<div class="settings-section-title">' + (currentLang === 'ru' ? 'Роль агента' : 'Agent Role') + '</div>' +
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">' +
+      '<div class="rt-page">' +
+      '<div class="rt-header">' +
+        '<div class="rt-header-icon" style="background:rgba(168,85,247,0.12);color:#a855f7">' + IC.crown + '</div>' +
+        '<div class="rt-header-text">' +
+          '<h3>' + (isRu ? 'Роль агента' : 'Agent Role') + '</h3>' +
+          '<p>' + (isRu ? 'Роль определяет поведение агента в мультиагентной системе' : 'Role defines agent behavior in multi-agent systems') + '</p>' +
+        '</div>' +
+      '</div>' +
+      '<div class="st-role-grid">' +
       roles.map(function(r) {
         var sel = r.id === currentRole;
-        return '<div onclick="setAgentRoleFromSettings(\'' + r.id + '\')" style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:10px;cursor:pointer;background:' + (sel ? 'rgba(0,255,136,0.08)' : 'var(--bg-secondary)') + ';border:1px solid ' + (sel ? 'var(--primary)' : 'var(--border)') + ';transition:all .15s">' +
-          '<span style="font-size:1.5rem">' + r.icon + '</span>' +
-          '<div><strong>' + r.name + '</strong><br><small style="color:var(--text-muted)">' + r.desc + '</small></div>' +
-          (sel ? '<span style="margin-left:auto;color:var(--primary);font-size:1.2rem">✓</span>' : '') + '</div>';
+        return '<div class="st-role-card' + (sel ? ' st-role-active' : '') + '" onclick="selectRoleCard(this,\'' + r.id + '\')">' +
+          '<div class="st-role-icon" style="background:' + r.color + '18;color:' + r.color + '">' + r.icon + '</div>' +
+          '<div class="st-role-info">' +
+            '<div class="st-role-name">' + r.name + '</div>' +
+            '<div class="st-role-desc">' + r.desc + '</div>' +
+          '</div>' +
+          '<div class="st-role-check">' + IC.check + '</div>' +
+        '</div>';
       }).join('') +
-      '</div></div>';
+      '</div>' +
+      '<hr class="st-role-divider">' +
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + IC.wrench + ' ' + (isRu ? 'Кастомная роль' : 'Custom Role') + '</div>' +
+        '<div class="rt-row-2">' +
+          '<div class="rt-input-wrap">' +
+            '<input type="text" id="custom-role-name" class="rt-input" value="' + escHtml(customRole.name || '') + '" placeholder="' + (isRu ? 'Напр. Аналитик' : 'E.g. Analyst') + '">' +
+            '<div class="rt-input-hint">' + (isRu ? 'Название роли' : 'Role name') + '</div>' +
+          '</div>' +
+          '<div class="rt-input-wrap">' +
+            '<input type="text" id="custom-role-desc" class="rt-input" value="' + escHtml(customRole.description || '') + '" placeholder="' + (isRu ? 'Что делает этот агент' : 'What this agent does') + '">' +
+            '<div class="rt-input-hint">' + (isRu ? 'Описание роли' : 'Role description') + '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + IC.gem + ' ' + (isRu ? 'Цвет агента' : 'Agent Color') + '</div>' +
+        '<div class="st-color-row">' +
+          colorSwatches.map(function(c) {
+            return '<div class="st-color-swatch' + (c === agentColor ? ' st-color-active' : '') + '" style="background:' + c + '" onclick="pickRoleColor(this,\'' + c + '\')"></div>';
+          }).join('') +
+          '<input type="color" id="agent-color-picker" value="' + escHtml(agentColor) + '" style="width:32px;height:32px;border:1px solid var(--border);border-radius:10px;background:transparent;cursor:pointer;padding:1px">' +
+          '<code id="agent-color-hex" style="font-size:.78rem;color:var(--text-muted);margin-left:4px">' + escHtml(agentColor) + '</code>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-actions">' +
+        '<button class="rt-save-btn" onclick="saveCustomRole()">' + IC.check + ' ' + (isRu ? 'Сохранить' : 'Save') + '</button>' +
+      '</div>' +
+      '</div>';
+    // Wire up color hex display
+    setTimeout(function() {
+      var cp = document.getElementById('agent-color-picker');
+      var hex = document.getElementById('agent-color-hex');
+      if (cp && hex) cp.addEventListener('input', function() {
+        hex.textContent = cp.value;
+        document.querySelectorAll('.st-color-swatch').forEach(function(s) { s.classList.remove('st-color-active'); });
+      });
+    }, 50);
+  } else if (tab === 'routing') {
+    var isRu = currentLang === 'ru';
+    var rules = (config.config && config.config.routingRules) || {};
+    var chatIds = (rules.chatIds || []).join(', ');
+    var keywords = (rules.keywords || []).join(', ');
+    var chatTypes = rules.chatTypes || [];
+    var priority = rules.priority || 10;
+    var isDefault = rules.isDefault || false;
+
+    body.innerHTML =
+      // ── Header ──
+      '<div class="rt-page">' +
+      '<div class="rt-header">' +
+        '<div class="rt-header-icon">' + IC.shuffle + '</div>' +
+        '<div class="rt-header-text">' +
+          '<h3>' + (isRu ? 'Маршрутизация сообщений' : 'Message Routing') + '</h3>' +
+          '<p>' + (isRu
+            ? 'Когда несколько агентов работают на одном TG-аккаунте, правила маршрутизации определяют, какой агент отвечает на какое сообщение.'
+            : 'When multiple agents share one TG account, routing rules determine which agent handles which message.') + '</p>' +
+        '</div>' +
+      '</div>' +
+
+      // ── Shared agents banner (loaded async) ──
+      '<div id="rt-shared-agents" class="rt-shared-banner" style="display:none"></div>' +
+
+      // ── Chat Types — big toggle cards ──
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + IC.chat + ' ' + (isRu ? 'Типы чатов' : 'Chat Types') + '</div>' +
+        '<div class="rt-toggle-row">' +
+          '<label class="rt-toggle-card' + (chatTypes.includes('dm') ? ' rt-active' : '') + '" onclick="this.classList.toggle(\'rt-active\');this.querySelector(\'input\').checked=this.classList.contains(\'rt-active\')">' +
+            '<input type="checkbox" id="routing-dm"' + (chatTypes.includes('dm') ? ' checked' : '') + ' style="display:none">' +
+            '<div class="rt-toggle-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>' +
+            '<div class="rt-toggle-name">' + (isRu ? 'Личные' : 'DM') + '</div>' +
+            '<div class="rt-toggle-desc">' + (isRu ? 'Прямые сообщения' : 'Direct messages') + '</div>' +
+          '</label>' +
+          '<label class="rt-toggle-card' + (chatTypes.includes('group') ? ' rt-active' : '') + '" onclick="this.classList.toggle(\'rt-active\');this.querySelector(\'input\').checked=this.classList.contains(\'rt-active\')">' +
+            '<input type="checkbox" id="routing-group"' + (chatTypes.includes('group') ? ' checked' : '') + ' style="display:none">' +
+            '<div class="rt-toggle-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>' +
+            '<div class="rt-toggle-name">' + (isRu ? 'Группы' : 'Groups') + '</div>' +
+            '<div class="rt-toggle-desc">' + (isRu ? 'Групповые чаты' : 'Group chats') + '</div>' +
+          '</label>' +
+          '<label class="rt-toggle-card' + (chatTypes.includes('channel') ? ' rt-active' : '') + '" onclick="this.classList.toggle(\'rt-active\');this.querySelector(\'input\').checked=this.classList.contains(\'rt-active\')">' +
+            '<input type="checkbox" id="routing-channel"' + (chatTypes.includes('channel') ? ' checked' : '') + ' style="display:none">' +
+            '<div class="rt-toggle-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 2L11 13"/><polygon points="22 2 15 22 11 13 2 9"/></svg></div>' +
+            '<div class="rt-toggle-name">' + (isRu ? 'Каналы' : 'Channels') + '</div>' +
+            '<div class="rt-toggle-desc">' + (isRu ? 'Посты в каналах' : 'Channel posts') + '</div>' +
+          '</label>' +
+        '</div>' +
+      '</div>' +
+
+      // ── Target Chats ──
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + IC.link + ' ' + (isRu ? 'Целевые чаты' : 'Target Chats') + '</div>' +
+        '<div class="rt-input-wrap">' +
+          '<input type="text" id="routing-chat-ids" class="rt-input" value="' + escHtml(chatIds) + '" placeholder="' + (isRu ? '-100123456, @username, @channel' : '-100123456, @username, @channel') + '">' +
+          '<div class="rt-input-hint">' + (isRu
+            ? 'ID чатов или @юзернеймы через запятую. Агент будет отвечать ТОЛЬКО в этих чатах (приоритет +100). Пусто = все чаты.'
+            : 'Chat IDs or @usernames, comma-separated. Agent responds ONLY in these chats (+100 priority). Empty = all chats.') + '</div>' +
+        '</div>' +
+      '</div>' +
+
+      // ── Keywords ──
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + IC.search + ' ' + (isRu ? 'Ключевые слова' : 'Keywords') + '</div>' +
+        '<div class="rt-input-wrap">' +
+          '<input type="text" id="routing-keywords" class="rt-input" value="' + escHtml(keywords) + '" placeholder="' + (isRu ? 'баланс, nft, крипто, подарки' : 'balance, nft, crypto, gifts') + '">' +
+          '<div class="rt-input-hint">' + (isRu
+            ? 'Агент реагирует на сообщения, содержащие эти слова (приоритет +50). Через запятую.'
+            : 'Agent triggers on messages containing these words (+50 priority). Comma-separated.') + '</div>' +
+        '</div>' +
+        '<div id="rt-keyword-tags" class="rt-keyword-tags"></div>' +
+      '</div>' +
+
+      // ── Priority + Default — side by side ──
+      '<div class="rt-row-2">' +
+        '<div class="rt-section" style="flex:1">' +
+          '<div class="rt-section-label">' + IC.chart + ' ' + (isRu ? 'Приоритет' : 'Priority') + '</div>' +
+          '<div class="rt-priority-wrap">' +
+            '<input type="range" id="routing-priority-slider" min="1" max="100" value="' + priority + '" class="rt-slider" oninput="document.getElementById(\'routing-priority\').value=this.value;document.getElementById(\'rt-priority-val\').textContent=this.value">' +
+            '<div class="rt-priority-display">' +
+              '<input type="number" id="routing-priority" value="' + priority + '" min="1" max="100" class="rt-priority-num" oninput="document.getElementById(\'routing-priority-slider\').value=this.value;document.getElementById(\'rt-priority-val\').textContent=this.value">' +
+              '<span id="rt-priority-val" class="rt-priority-badge">' + priority + '</span>' +
+            '</div>' +
+            '<div class="rt-input-hint">' + (isRu ? 'Чем выше — тем больше приоритет при конфликте' : 'Higher = more priority when agents compete') + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="rt-section" style="flex:1">' +
+          '<div class="rt-section-label">' + IC.star + ' ' + (isRu ? 'Режим' : 'Mode') + '</div>' +
+          '<label class="rt-default-toggle' + (isDefault ? ' rt-default-on' : '') + '" onclick="var c=this.querySelector(\'input\');c.checked=!c.checked;this.classList.toggle(\'rt-default-on\',c.checked)">' +
+            '<input type="checkbox" id="routing-is-default"' + (isDefault ? ' checked' : '') + ' style="display:none">' +
+            '<div class="rt-default-icon">' + IC.robot + '</div>' +
+            '<div>' +
+              '<div class="rt-default-title">' + (isRu ? 'Агент по умолчанию' : 'Default Agent') + '</div>' +
+              '<div class="rt-default-desc">' + (isRu ? 'Обрабатывает всё, что не попало в другие агенты' : 'Handles everything not matched by other agents') + '</div>' +
+            '</div>' +
+          '</label>' +
+        '</div>' +
+      '</div>' +
+
+      // ── Score preview ──
+      '<div class="rt-score-preview">' +
+        '<div class="rt-score-title">' + (isRu ? 'Как работает маршрутизация' : 'How routing works') + '</div>' +
+        '<div class="rt-score-grid">' +
+          '<div class="rt-score-item"><span class="rt-score-val">+100</span> ' + (isRu ? 'Совпадение Chat ID' : 'Chat ID match') + '</div>' +
+          '<div class="rt-score-item"><span class="rt-score-val">+50</span> ' + (isRu ? 'Ключевое слово' : 'Keyword match') + '</div>' +
+          '<div class="rt-score-item"><span class="rt-score-val">+10</span> ' + (isRu ? 'Тип чата' : 'Chat type match') + '</div>' +
+          '<div class="rt-score-item"><span class="rt-score-val">+1</span> ' + (isRu ? 'Агент по умолчанию' : 'Default agent') + '</div>' +
+          '<div class="rt-score-item"><span class="rt-score-val">+N</span> ' + (isRu ? 'Бонус приоритета' : 'Priority bonus') + '</div>' +
+        '</div>' +
+        '<div class="rt-input-hint" style="margin-top:8px">' + (isRu
+          ? 'При входящем сообщении все агенты на аккаунте получают score. Побеждает агент с максимальным score.'
+          : 'Each incoming message is scored against all agents. The agent with the highest score responds.') + '</div>' +
+      '</div>' +
+
+      // ── Save button ──
+      '<div class="rt-actions">' +
+        '<button class="rt-save-btn" onclick="saveSettingsRouting()">' +
+          IC.check + ' ' + (isRu ? 'Сохранить правила' : 'Save Rules') +
+        '</button>' +
+      '</div>' +
+      '</div>';
+
+    // ── Render keyword tags ──
+    setTimeout(function() {
+      _renderKeywordTags();
+      var kwInput = document.getElementById('routing-keywords');
+      if (kwInput) kwInput.addEventListener('input', _renderKeywordTags);
+      // Load shared agents info
+      _loadSharedAgents();
+    }, 50);
+  } else if (tab === 'chat') {
+    var isRu = currentLang === 'ru';
+    _agentChatHistory = [];
+    body.innerHTML =
+      '<div class="rt-page">' +
+      '<div class="rt-header">' +
+        '<div class="rt-header-icon" style="background:rgba(59,130,246,0.12);color:#3b82f6">' + IC.chat + '</div>' +
+        '<div class="rt-header-text">' +
+          '<h3>' + (isRu ? 'Чат с агентом' : 'Chat with Agent') + '</h3>' +
+          '<p>' + (isRu ? 'Отправляйте сообщения агенту прямо из Studio' : 'Send messages to the agent directly from Studio') + '</p>' +
+        '</div>' +
+      '</div>' +
+      '<div class="st-chat-wrap">' +
+        '<div id="agent-chat-messages" class="st-chat-messages">' +
+          '<div class="st-chat-empty">' + IC.chat + '<span>' + (isRu ? 'Начните диалог с агентом...' : 'Start a conversation with the agent...') + '</span></div>' +
+        '</div>' +
+        '<div class="st-chat-input-row">' +
+          '<input type="text" id="agent-chat-input" class="st-chat-input" placeholder="' + (isRu ? 'Введите сообщение...' : 'Type a message...') + '" onkeydown="if(event.key===\'Enter\')sendAgentChatMessage()">' +
+          '<button class="st-chat-send" onclick="sendAgentChatMessage()">' + IC.send + '</button>' +
+        '</div>' +
+      '</div>' +
+      '</div>';
   } else if (tab === 'telegram') {
     body.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--text-muted)">Loading...</div>';
     loadAgentTelegramTab(body, _detailAgentId);
@@ -1336,10 +1697,37 @@ async function saveSettingsAI() {
 
 async function saveSettingsCaps() {
   if (!_detailAgentId) return;
-  var caps = Array.from(document.querySelectorAll('.cap-check:checked')).map(function(c) { return c.value; });
+  var caps = Array.from(document.querySelectorAll('.st-cap-active')).map(function(el) { return el.getAttribute('data-cap'); });
   var data = await apiRequest('PUT', '/api/agents/' + _detailAgentId + '/capabilities', { capabilities: caps });
   if (data.ok) toast(currentLang === 'ru' ? 'Возможности обновлены' : 'Capabilities updated', 'success');
   else toast(data.error || 'Error', 'error');
+}
+
+function toggleCapCard(el, capId) {
+  el.classList.toggle('st-cap-active');
+  var sw = el.querySelector('.st-cap-switch');
+  if (sw) sw.classList.toggle('st-cap-on');
+  var counter = document.querySelector('.st-caps-counter');
+  if (counter) {
+    var count = document.querySelectorAll('.st-cap-active').length;
+    var total = document.querySelectorAll('.st-cap-card').length;
+    counter.textContent = count + ' / ' + total;
+  }
+}
+
+function selectRoleCard(el, roleId) {
+  document.querySelectorAll('.st-role-card').forEach(function(c) { c.classList.remove('st-role-active'); });
+  el.classList.add('st-role-active');
+  setAgentRoleFromSettings(roleId);
+}
+
+function pickRoleColor(el, color) {
+  document.querySelectorAll('.st-color-swatch').forEach(function(s) { s.classList.remove('st-color-active'); });
+  el.classList.add('st-color-active');
+  var picker = document.getElementById('agent-color-picker');
+  var hex = document.getElementById('agent-color-hex');
+  if (picker) picker.value = color;
+  if (hex) hex.textContent = color;
 }
 
 async function createAgentWalletFromSettings() {
@@ -1360,6 +1748,141 @@ async function setAgentRoleFromSettings(role) {
     _detailAgentData.role = role;
     switchSettingsTab('role');
   } else toast(data.error || 'Error', 'error');
+}
+
+async function saveCustomRole() {
+  if (!_detailAgentId) return;
+  var roleName = (document.getElementById('custom-role-name') || {}).value || '';
+  var roleDesc = (document.getElementById('custom-role-desc') || {}).value || '';
+  var agentColor = (document.getElementById('agent-color-picker') || {}).value || '#0098EA';
+  var payload = {
+    customRole: { name: roleName.trim(), description: roleDesc.trim() },
+    agentColor: agentColor
+  };
+  var data = await apiRequest('PUT', '/api/agents/' + _detailAgentId + '/wizard', payload);
+  if (data.ok) { toast(currentLang === 'ru' ? 'Роль сохранена' : 'Role saved', 'success'); }
+  else { toast(data.error || 'Error', 'error'); }
+}
+
+function _renderKeywordTags() {
+  var container = document.getElementById('rt-keyword-tags');
+  var input = document.getElementById('routing-keywords');
+  if (!container || !input) return;
+  var words = input.value.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+  if (words.length === 0) { container.innerHTML = ''; return; }
+  container.innerHTML = words.map(function(w) {
+    return '<span class="rt-tag">' + escHtml(w) + '<span class="rt-tag-x" onclick="this.parentNode.remove();_syncKeywordTagsToInput()">x</span></span>';
+  }).join('');
+}
+
+function _syncKeywordTagsToInput() {
+  var container = document.getElementById('rt-keyword-tags');
+  var input = document.getElementById('routing-keywords');
+  if (!container || !input) return;
+  var tags = container.querySelectorAll('.rt-tag');
+  var words = [];
+  tags.forEach(function(t) {
+    var text = t.childNodes[0].textContent.trim();
+    if (text) words.push(text);
+  });
+  input.value = words.join(', ');
+}
+
+async function _loadSharedAgents() {
+  var banner = document.getElementById('rt-shared-agents');
+  if (!banner) return;
+  try {
+    var data = await apiRequest('GET', '/api/agents/' + _detailAgentId + '/shared-agents');
+    if (!data || !data.agents || data.agents.length <= 1) return;
+    var isRu = currentLang === 'ru';
+    var html = '<div class="rt-shared-title">' + IC.link + ' ' +
+      (isRu ? 'Агенты на аккаунте @' + (data.tgUsername || '?') : 'Agents on @' + (data.tgUsername || '?')) +
+      ' <span class="rt-shared-count">' + data.agents.length + '</span></div>' +
+      '<div class="rt-shared-list">';
+    data.agents.forEach(function(sa) {
+      var isCurrent = sa.id === _detailAgentId;
+      var rr = sa.routingRules || {};
+      var tags = [];
+      if (rr.isDefault) tags.push(isRu ? 'по умолчанию' : 'default');
+      if (rr.chatTypes) rr.chatTypes.forEach(function(ct) { tags.push(ct); });
+      if (rr.keywords && rr.keywords.length > 0) tags.push(rr.keywords.slice(0, 3).join(', '));
+      html += '<div class="rt-shared-agent' + (isCurrent ? ' rt-current' : '') + '">' +
+        '<div class="rt-shared-name">' + (isCurrent ? IC.star + ' ' : '') + escHtml(sa.name || '#' + sa.id) + '</div>' +
+        '<div class="rt-shared-tags">' + tags.map(function(t) { return '<span class="rt-mini-tag">' + escHtml(t) + '</span>'; }).join('') + '</div>' +
+        '<div class="rt-shared-status">' + (sa.isActive ? '<span style="color:#22c55e">ON</span>' : '<span style="color:#666">OFF</span>') + '</div>' +
+      '</div>';
+    });
+    html += '</div>';
+    banner.innerHTML = html;
+    banner.style.display = '';
+  } catch (e) { /* silent */ }
+}
+
+async function saveSettingsRouting() {
+  var chatIds = (document.getElementById('routing-chat-ids') || {}).value || '';
+  var keywords = (document.getElementById('routing-keywords') || {}).value || '';
+  var priority = parseInt((document.getElementById('routing-priority') || {}).value) || 10;
+  var isDefault = (document.getElementById('routing-is-default') || {}).checked || false;
+  var chatTypes = [];
+  if ((document.getElementById('routing-dm') || {}).checked) chatTypes.push('dm');
+  if ((document.getElementById('routing-group') || {}).checked) chatTypes.push('group');
+  if ((document.getElementById('routing-channel') || {}).checked) chatTypes.push('channel');
+
+  var btn = document.querySelector('.rt-save-btn');
+  if (btn) { btn.disabled = true; btn.textContent = currentLang === 'ru' ? 'Сохраняю...' : 'Saving...'; }
+
+  var payload = {
+    routingRules: {
+      chatIds: chatIds.split(',').map(function(s) { return s.trim(); }).filter(Boolean),
+      keywords: keywords.split(',').map(function(s) { return s.trim(); }).filter(Boolean),
+      chatTypes: chatTypes,
+      priority: priority,
+      isDefault: isDefault
+    }
+  };
+  var data = await apiRequest('PUT', '/api/agents/' + _detailAgentId + '/routing', payload);
+  if (data && data.ok) {
+    toast(currentLang === 'ru' ? 'Правила маршрутизации сохранены' : 'Routing rules saved', 'success');
+    // Also update via wizard for backwards compat
+    await apiRequest('PUT', '/api/agents/' + _detailAgentId + '/wizard', payload);
+  } else {
+    toast((data && data.error) || 'Error saving routing', 'error');
+  }
+  if (btn) { btn.disabled = false; btn.innerHTML = IC.check + ' ' + (currentLang === 'ru' ? 'Сохранить правила' : 'Save Rules'); }
+}
+
+var _agentChatHistory = [];
+
+async function sendAgentChatMessage() {
+  var input = document.getElementById('agent-chat-input');
+  if (!input || !input.value.trim()) return;
+  var text = input.value.trim();
+  input.value = '';
+
+  _agentChatHistory.push({ role: 'user', text: text, time: new Date() });
+  renderAgentChat();
+
+  try {
+    var data = await apiRequest('POST', '/api/agents/' + _detailAgentId + '/chat', { message: text });
+    if (data.response) {
+      _agentChatHistory.push({ role: 'agent', text: data.response, time: new Date() });
+    } else if (data.error) {
+      _agentChatHistory.push({ role: 'system', text: 'Error: ' + data.error, time: new Date() });
+    }
+  } catch (e) {
+    _agentChatHistory.push({ role: 'system', text: 'Network error', time: new Date() });
+  }
+  renderAgentChat();
+}
+
+function renderAgentChat() {
+  var container = document.getElementById('agent-chat-messages');
+  if (!container) return;
+  container.innerHTML = _agentChatHistory.map(function(m) {
+    var cls = m.role === 'user' ? 'chat-msg-user' : (m.role === 'agent' ? 'chat-msg-agent' : 'chat-msg-system');
+    return '<div class="chat-msg ' + cls + '">' + escHtml(m.text) + '</div>';
+  }).join('');
+  container.scrollTop = container.scrollHeight;
 }
 
 async function runSettingsAudit(body) {
@@ -5968,9 +6491,15 @@ async function loadNetworkMap() {
   _networkNodes = agents.map((a, i) => {
     const role = a.role || 'worker';
     const level = a.level || 1;
-    const radius = role === 'director' ? 28 + level : role === 'manager' ? 22 + level : 16 + Math.min(level, 5);
-    const color = role === 'director' ? '#ffd700' : a.isActive ? '#0098EA' : '#555';
-    const emoji = role === 'director' ? '\u{1F9E0}' : role === 'manager' ? '\u{1F4CA}' : '\u{1F916}';
+    const radius = role === 'director' ? 28 + level : role === 'manager' ? 22 + level : role === 'specialist' ? 20 + level : role === 'monitor' ? 18 + level : 16 + Math.min(level, 5);
+    // Custom color from agent config, or role-based defaults
+    var trigCfg = {}; try { trigCfg = typeof a.trigger_config === 'string' ? JSON.parse(a.trigger_config) : (a.trigger_config || {}); } catch(e) {}
+    var customColor = (trigCfg.config && trigCfg.config.agentColor) || '';
+    const roleColors = { director: '#ffd700', manager: '#a855f7', specialist: '#10b981', monitor: '#f59e0b', worker: '#0098EA' };
+    const color = !a.isActive ? '#555' : (customColor || roleColors[role] || '#0098EA');
+    const roleLabels = { director: 'DIR', manager: 'MGR', specialist: 'SPEC', monitor: 'MON', worker: 'WRK' };
+    var customRoleName = (trigCfg.config && trigCfg.config.customRole && trigCfg.config.customRole.name) || '';
+    const roleLabel = customRoleName || roleLabels[role] || role.toUpperCase().slice(0, 4);
     return {
       id: a.id, name: a.name || 'Agent #' + a.id,
       role, level, xp: a.xp || 0,
@@ -5978,7 +6507,7 @@ async function loadNetworkMap() {
       x: _netW / 2 + (Math.cos(i * 2.4) * 150) + (Math.random() - 0.5) * 80,
       y: _netH / 2 + (Math.sin(i * 2.4) * 120) + (Math.random() - 0.5) * 60,
       vx: 0, vy: 0,
-      radius, color, emoji,
+      radius, color, roleLabel,
     };
   });
 
@@ -6098,7 +6627,16 @@ async function loadNetworkMap() {
       const dist = Math.sqrt(movedX * movedX + movedY * movedY);
       const elapsed = Date.now() - _networkClickStart.time;
       if (dist < 5 && elapsed < 300) {
-        showNetworkAgentPanel(_networkClickStart.node);
+        // Check if clicked on the delete "x" button
+        var clickNode = _networkClickStart.node;
+        var delBtnX = clickNode.x + clickNode.radius * 0.7;
+        var delBtnY = clickNode.y - clickNode.radius * 0.7;
+        var delDist = Math.sqrt((mx - delBtnX) * (mx - delBtnX) + (my - delBtnY) * (my - delBtnY));
+        if (delDist <= 8) {
+          showNetworkDeleteConfirm(clickNode);
+        } else {
+          showNetworkAgentPanel(clickNode);
+        }
       }
     }
     _networkDragNode = null;
@@ -6240,23 +6778,41 @@ async function loadNetworkMap() {
         ctx.setLineDash([]);
       }
 
-      // Emoji
-      ctx.font = `${Math.max(12, r * 0.7)}px sans-serif`;
+      // Role label inside node (instead of emoji)
+      ctx.font = `bold ${Math.max(9, r * 0.5)}px Inter, sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(n.emoji, n.x, n.y);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(n.roleLabel || 'AGT', n.x, n.y);
 
       // Name below
-      ctx.font = '10px sans-serif';
-      ctx.fillStyle = '#aaa';
-      ctx.fillText(n.name.slice(0, 15), n.x, n.y + r + 12);
+      ctx.font = '10px Inter, sans-serif';
+      ctx.fillStyle = '#ccc';
+      ctx.fillText(n.name.slice(0, 18), n.x, n.y + r + 12);
+
+      // Role tag below name
+      ctx.font = '8px Inter, sans-serif';
+      ctx.fillStyle = n.color + 'aa';
+      ctx.fillText(n.role.toUpperCase(), n.x, n.y + r + 22);
 
       // Level badge
       if (n.level > 1) {
-        ctx.font = 'bold 9px sans-serif';
+        ctx.font = 'bold 9px Inter, sans-serif';
         ctx.fillStyle = n.color;
         ctx.fillText('Lv.' + n.level, n.x, n.y - r - 6);
       }
+
+      // Delete "x" button at top-right of node
+      var delX = n.x + r * 0.7, delY = n.y - r * 0.7;
+      ctx.beginPath();
+      ctx.arc(delX, delY, 6, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(239,68,68,0.7)';
+      ctx.fill();
+      ctx.font = 'bold 8px sans-serif';
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('\u00d7', delX, delY);
 
       ctx.restore();
     });
@@ -7158,17 +7714,21 @@ function showNetworkAgentPanel(node) {
   var statusText = node.isActive ? IC.dot_green + ' Active' : IC.dot_pause + ' Paused';
   var toggleText = node.isActive ? (currentLang === 'ru' ? IC.pause + ' Стоп' : IC.pause + ' Stop') : (currentLang === 'ru' ? IC.rocket + ' Запустить' : IC.rocket + ' Start');
   var toggleClass = node.isActive ? 'btn-warning' : 'btn-success';
+  var roleDisplay = node.roleLabel || node.role;
+  var roleBadgeColor = node.color || '#0098EA';
   panel.innerHTML = '<div class="nap-header">' +
-    '<span>' + node.emoji + ' ' + escHtml(node.name) + '</span>' +
+    '<span style="display:flex;align-items:center;gap:8px"><span style="width:10px;height:10px;border-radius:50%;background:' + roleBadgeColor + ';display:inline-block"></span>' + escHtml(node.name) + '</span>' +
     '<button class="modal-close" onclick="this.closest(\'.network-agent-panel\').remove()" style="background:none;border:none;color:#999;font-size:1.2rem;cursor:pointer">&times;</button>' +
   '</div>' +
   '<div class="nap-body">' +
-    '<p>' + (currentLang === 'ru' ? 'Роль' : 'Role') + ': <strong>' + node.role + '</strong></p>' +
+    '<p>' + (currentLang === 'ru' ? 'Роль' : 'Role') + ': <strong style="color:' + roleBadgeColor + '">' + escHtml(roleDisplay) + '</strong></p>' +
     '<p>Lv.' + (node.level || 1) + ' | XP: ' + (node.xp || 0) + '</p>' +
     '<p>' + statusText + '</p>' +
     '<div class="nap-actions">' +
       '<button class="btn btn-sm ' + toggleClass + '" onclick="toggleAgent(' + node.id + ',' + node.isActive + ');this.closest(\'.network-agent-panel\').remove()">' + toggleText + '</button>' +
+      '<button class="btn btn-ghost btn-sm" onclick="openAgentDetail(' + node.id + ')">' + IC.settings + ' ' + (currentLang === 'ru' ? 'Настройки' : 'Settings') + '</button>' +
       '<button class="btn btn-ghost btn-sm" onclick="loadAgentLogs(' + node.id + ')">' + IC.clipboard + ' Logs</button>' +
+      '<button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="showNetworkDeleteConfirm({id:' + node.id + ',name:\'' + escHtml(node.name).replace(/'/g, "\\'") + '\'})">' + (currentLang === 'ru' ? 'Удалить' : 'Delete') + '</button>' +
     '</div>' +
   '</div>';
   container.querySelector('.page-content').appendChild(panel);

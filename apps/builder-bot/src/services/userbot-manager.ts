@@ -279,6 +279,27 @@ interface AgentClient {
   phone?: string;
 }
 
+/** Shared client for one TG account — multiple agents can share it */
+interface SharedAccountClient {
+  client: TelegramClient;
+  tgUserId: number;
+  username: string;
+  phone: string;
+  agentIds: Set<number>;              // all agents on this account
+  messageHandlerRegistered: boolean;
+  connected: boolean;
+  lastUsed: number;
+}
+
+/** Routing rules for multi-agent dispatch on shared account */
+interface AgentRoutingRule {
+  chatIds?: string[];                 // specific chat IDs or @usernames
+  chatTypes?: ('dm' | 'group')[];     // which chat types this agent handles
+  keywords?: string[];                // keyword triggers
+  isDefault?: boolean;                // fallback agent if no other matches
+  priority?: number;                  // tie-breaker (higher = more priority)
+}
+
 interface AuthState {
   client: TelegramClient;
   done: boolean;
@@ -468,11 +489,16 @@ interface AgentMessageConfig {
   dmPolicy: 'open' | 'admin-only' | 'disabled';
   groupPolicy: 'open' | 'mention-only' | 'disabled';
   config: Record<string, any>; // AI config (provider, key, model)
+  routingRules?: AgentRoutingRule; // for multi-agent routing on shared account
 }
 const _agentMsgConfigs = new Map<number, AgentMessageConfig>();
 
-/** Register a message handler config for an agent */
+/** Register a message handler config for an agent (includes routing rules) */
 export function registerAgentMessageConfig(cfg: AgentMessageConfig): void {
+  // Auto-load routing rules from config if not already set
+  if (!cfg.routingRules && cfg.config?.routingRules) {
+    cfg.routingRules = cfg.config.routingRules;
+  }
   _agentMsgConfigs.set(cfg.agentId, cfg);
 }
 
@@ -483,10 +509,70 @@ export function unregisterAgentMessageConfig(agentId: number): void {
 
 // ══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * Routing score — determines which agent should handle a message
+ * on a shared TG account. Higher score = higher priority.
+ */
+function matchScore(msg: TgInboxMessage, rules: AgentRoutingRule | undefined, cfg: AgentMessageConfig): number {
+  // First check basic policy
+  if (msg.isBot || msg.isChannel) return 0;
+  if (msg.isGroup) {
+    if (cfg.groupPolicy === 'disabled') return 0;
+    if (cfg.groupPolicy === 'mention-only' && !msg.mentionsMe) return 0;
+  } else {
+    if (cfg.dmPolicy === 'disabled') return 0;
+  }
+
+  if (!rules) {
+    // No routing rules — agent responds to everything (legacy behavior)
+    return 1;
+  }
+
+  let score = 0;
+
+  // Chat ID match (highest priority)
+  if (rules.chatIds && rules.chatIds.length > 0) {
+    if (rules.chatIds.includes(msg.chatId) ||
+        rules.chatIds.includes(msg.senderUsername ? `@${msg.senderUsername}` : '')) {
+      score += 100;
+    }
+  }
+
+  // Chat type match
+  if (rules.chatTypes && rules.chatTypes.length > 0) {
+    const msgType = msg.isGroup ? 'group' : 'dm';
+    if (rules.chatTypes.includes(msgType)) score += 10;
+  }
+
+  // Keyword match
+  if (rules.keywords && rules.keywords.length > 0) {
+    const textLower = msg.text.toLowerCase();
+    for (const kw of rules.keywords) {
+      if (textLower.includes(kw.toLowerCase())) {
+        score += 50;
+        break; // one keyword match is enough
+      }
+    }
+  }
+
+  // Default agent (fallback)
+  if (rules.isDefault) score += 1;
+
+  // Priority bonus
+  if (rules.priority) score += rules.priority;
+
+  return score;
+}
+
 class UserbotManager {
-  // Key = agentId (number)
+  // Key = agentId (number) — legacy per-agent clients
   private clients = new Map<number, AgentClient>();
   private authStates = new Map<number, AuthState>();
+
+  // ── Shared Session Router ──────────────────────────────────────────
+  // One GramJS client per TG account, multiple agents share it
+  private accountClients = new Map<number, SharedAccountClient>();   // tgUserId → shared client
+  private agentToAccount = new Map<number, number>();                // agentId → tgUserId
 
   constructor() {
     setTimeout(() => this.restoreAllSessions(), 5000);
@@ -535,6 +621,43 @@ class UserbotManager {
       return existing.client;
     }
 
+    // ── Shared Session Router: check if another agent already has a client for this TG account ──
+    // Try to extract tgUserId from session or DB
+    let knownTgUserId: number | undefined;
+    try {
+      const pool = getPool();
+      const metaRes = await pool.query(
+        `SELECT trigger_config FROM builder_bot.agents WHERE id = $1`, [agentId]
+      );
+      if (metaRes.rows.length > 0) {
+        const tc = typeof metaRes.rows[0].trigger_config === 'string'
+          ? JSON.parse(metaRes.rows[0].trigger_config) : metaRes.rows[0].trigger_config;
+        knownTgUserId = tc?.telegram_session?.telegramUserId;
+      }
+    } catch {}
+
+    // If we know the tgUserId and there's already a shared client — reuse it
+    if (knownTgUserId && this.accountClients.has(knownTgUserId)) {
+      const shared = this.accountClients.get(knownTgUserId)!;
+      if (shared.connected) {
+        // Register this agent on the shared client
+        shared.agentIds.add(agentId);
+        shared.lastUsed = Date.now();
+        this.agentToAccount.set(agentId, knownTgUserId);
+        // Also set in legacy clients map for backward compat
+        this.clients.set(agentId, {
+          client: shared.client,
+          connected: true,
+          lastUsed: Date.now(),
+          telegramUserId: shared.tgUserId,
+          username: shared.username,
+          phone: shared.phone,
+        });
+        console.log(`[UserbotMgr] 🔗 Agent #${agentId} sharing client with account @${shared.username} (tgUserId=${knownTgUserId}, agents: ${[...shared.agentIds].join(',')})`);
+        return shared.client;
+      }
+    }
+
     // Prevent concurrent connection attempts
     const pending = this.connectLocks.get(agentId);
     if (pending) {
@@ -570,15 +693,45 @@ class UserbotManager {
 
     if (!me) throw new Error('Auth failed');
 
+    const tgUserId = me.id?.toJSNumber?.() ?? Number(me.id);
+    const username = me.username || '';
+    const phone = me.phone || '';
+
     // Set client in map FIRST to prevent race conditions (restoreAllSessions vs enableMessageListener)
     this.clients.set(agentId, {
       client,
       connected: true,
       lastUsed: Date.now(),
-      telegramUserId: me.id?.toJSNumber?.() ?? Number(me.id),
-      username: me.username,
-      phone: me.phone,
+      telegramUserId: tgUserId,
+      username,
+      phone,
     });
+
+    // ── Shared Session Router: register in accountClients ──
+    if (tgUserId) {
+      const existingShared = this.accountClients.get(tgUserId);
+      if (existingShared) {
+        // Another agent already registered this account — add this agent
+        existingShared.agentIds.add(agentId);
+        existingShared.client = client; // update to fresh client
+        existingShared.connected = true;
+        existingShared.lastUsed = Date.now();
+        console.log(`[UserbotMgr] 🔗 Agent #${agentId} joined shared account @${username} (agents: ${[...existingShared.agentIds].join(',')})`);
+      } else {
+        this.accountClients.set(tgUserId, {
+          client,
+          tgUserId,
+          username,
+          phone,
+          agentIds: new Set([agentId]),
+          messageHandlerRegistered: false,
+          connected: true,
+          lastUsed: Date.now(),
+        });
+        console.log(`[UserbotMgr] 📱 New shared account @${username} (tgUserId=${tgUserId}) for agent #${agentId}`);
+      }
+      this.agentToAccount.set(agentId, tgUserId);
+    }
 
     // If there was an old message handler, it's now on a dead client — remove it
     if (this.messageHandlers.has(agentId)) {
@@ -604,13 +757,38 @@ class UserbotManager {
   }
 
   async disconnectAgent(agentId: number): Promise<void> {
+    // ── Shared Session Router: remove agent from shared account ──
+    const tgUserId = this.agentToAccount.get(agentId);
+    if (tgUserId) {
+      const shared = this.accountClients.get(tgUserId);
+      if (shared) {
+        shared.agentIds.delete(agentId);
+        if (shared.agentIds.size === 0) {
+          // Last agent on this account — disconnect the client
+          try { await shared.client.disconnect(); } catch {}
+          this.accountClients.delete(tgUserId);
+          // Remove account-level message handler
+          this.accountMessageHandlers.delete(tgUserId);
+          console.log(`[UserbotMgr] 📴 Shared account @${shared.username} fully disconnected (no more agents)`);
+        } else {
+          console.log(`[UserbotMgr] Agent #${agentId} removed from shared account @${shared.username} (remaining: ${[...shared.agentIds].join(',')})`);
+        }
+      }
+      this.agentToAccount.delete(agentId);
+    }
+
     const ac = this.clients.get(agentId);
     if (ac) {
-      try { await ac.client.disconnect(); } catch {}
+      // Only disconnect if NOT shared with other agents
+      if (!tgUserId || !this.accountClients.has(tgUserId)) {
+        try { await ac.client.disconnect(); } catch {}
+      }
       this.clients.delete(agentId);
     }
     await this.deleteSessionFromDB(agentId);
     this.authStates.delete(agentId);
+    this.messageHandlers.delete(agentId);
+    unregisterAgentMessageConfig(agentId);
     console.log(`[UserbotMgr] Disconnected agent #${agentId}`);
   }
 
@@ -746,6 +924,30 @@ class UserbotManager {
       }
     } catch {}
     return { authorized: false };
+  }
+
+  /** Get all agent IDs sharing the same TG account */
+  getAgentsOnAccount(agentId: number): number[] {
+    const tgUserId = this.agentToAccount.get(agentId);
+    if (!tgUserId) return [agentId];
+    const shared = this.accountClients.get(tgUserId);
+    if (!shared) return [agentId];
+    return [...shared.agentIds];
+  }
+
+  /** Get all agent IDs for a given TG user ID */
+  getAgentsByTgUserId(tgUserId: number): number[] {
+    const shared = this.accountClients.get(tgUserId);
+    if (!shared) return [];
+    return [...shared.agentIds];
+  }
+
+  /** Check if account has multiple agents */
+  isSharedAccount(agentId: number): boolean {
+    const tgUserId = this.agentToAccount.get(agentId);
+    if (!tgUserId) return false;
+    const shared = this.accountClients.get(tgUserId);
+    return !!shared && shared.agentIds.size > 1;
   }
 
   // ══════════════════════════════════════════════════════════════════════
@@ -1078,10 +1280,12 @@ class UserbotManager {
   // ══════════════════════════════════════════════════════════════════════
 
   private messageHandlers = new Map<number, { handler: Function; filter: any }>();
+  // Per-account message handlers (for shared session router)
+  private accountMessageHandlers = new Map<number, { handler: Function; filter: any }>();
 
   /**
    * Enable incoming message listener for an agent.
-   * The agent will respond to DMs, group mentions, etc. like a real person.
+   * If the agent shares an account with others — uses unified account router.
    */
   async enableMessageListener(agentId: number): Promise<boolean> {
     // Try to get client — may need to lazy-connect from DB session
@@ -1091,11 +1295,21 @@ class UserbotManager {
     const ac = this.clients.get(agentId);
     if (!ac) return false;
 
-    // Don't register twice
-    if (this.messageHandlers.has(agentId)) return true;
-
     const selfId = ac.telegramUserId || 0;
     const selfUsername = (ac.username || '').toLowerCase();
+    const tgUserId = this.agentToAccount.get(agentId);
+
+    // ── Shared Session Router: use account-level handler if multiple agents ──
+    if (tgUserId) {
+      const shared = this.accountClients.get(tgUserId);
+      if (shared && shared.agentIds.size > 0) {
+        // Use unified account listener — one handler routes to all agents
+        return this.enableAccountListener(tgUserId);
+      }
+    }
+
+    // ── Legacy: single agent on this account — direct handler ──
+    if (this.messageHandlers.has(agentId)) return true;
 
     try {
       const { NewMessage } = require('telegram/events');
@@ -1104,113 +1318,37 @@ class UserbotManager {
       const handler = async (event: any) => {
         try {
           const msg = event.message;
-          // Debug: log every event we receive
           const msgText = msg?.message || '';
           const msgFrom = msg?.senderId?.toJSNumber?.() ?? msg?.senderId ?? '?';
-          console.log(`[UserbotMgr] 📨 Event agent#${agentId}: from=${msgFrom} text="${msgText.slice(0, 50)}" hasMsg=${!!msg} hasMsgText=${!!msg?.message}`);
+          console.log(`[UserbotMgr] 📨 Event agent#${agentId}: from=${msgFrom} text="${msgText.slice(0, 50)}"`);
 
-          if (!msg || !msg.message) return; // no text
-
-          // Parse message
+          if (!msg || !msg.message) return;
           const parsed = await this.parseMessage(client, msg, selfId, selfUsername);
           if (!parsed) return;
-
-          // Skip own messages
-          if (parsed.senderId === selfId) {
-            console.log(`[UserbotMgr] Skipping own message agent#${agentId}`);
-            return;
-          }
-
-          // Dedup
+          if (parsed.senderId === selfId) return;
           if (dupFilter.isDuplicate(parsed.chatId, parsed.id, parsed.text)) return;
 
-          // Get agent config
           let cfg = _agentMsgConfigs.get(agentId);
           if (!cfg) {
-            // Fallback: load minimal config from DB
-            console.log(`[UserbotMgr] ⚠️ No agentMsgConfig for agent#${agentId} — loading from DB`);
-            try {
-              const pool = getPool();
-              const dbRes = await pool.query(
-                `SELECT user_id, trigger_config FROM builder_bot.agents WHERE id = $1`,
-                [agentId]
-              );
-              if (dbRes.rows.length > 0) {
-                const row = dbRes.rows[0];
-                const tc = typeof row.trigger_config === 'string' ? JSON.parse(row.trigger_config) : row.trigger_config;
-                cfg = {
-                  agentId,
-                  userId: Number(row.user_id),
-                  selfTgId: selfId,
-                  selfUsername,
-                  systemPrompt: tc?.config?.systemPrompt || tc?.systemPrompt || 'You are a helpful assistant.',
-                  dmPolicy: tc?.config?.dmPolicy || 'open',
-                  groupPolicy: tc?.config?.groupPolicy || 'mention-only',
-                  config: tc?.config || {},
-                };
-                _agentMsgConfigs.set(agentId, cfg);
-                console.log(`[UserbotMgr] ✅ Loaded agentMsgConfig from DB for agent#${agentId}`);
-              } else {
-                console.log(`[UserbotMgr] Agent #${agentId} not found in DB`);
-                return;
-              }
-            } catch (dbErr: any) {
-              console.error(`[UserbotMgr] DB fallback error:`, dbErr.message);
-              return;
-            }
+            cfg = await this.loadAgentMsgConfigFromDB(agentId, selfId, selfUsername);
+            if (!cfg) return;
           }
 
-          // Decision: should we respond?
-          const shouldRespond = this.shouldRespond(parsed, cfg);
-          console.log(`[UserbotMgr] 📋 agent#${agentId} parsed: chat=${parsed.chatId} isGroup=${parsed.isGroup} isDM=${!parsed.isGroup} shouldRespond=${shouldRespond} dmPolicy=${cfg.dmPolicy} groupPolicy=${cfg.groupPolicy}`);
+          const shouldResp = this.shouldRespond(parsed, cfg);
+          console.log(`[UserbotMgr] 📋 agent#${agentId} chat=${parsed.chatId} isGroup=${parsed.isGroup} shouldRespond=${shouldResp}`);
 
-          // Always store to conversation memory (even if not responding)
           const elapsed = _lastMsgTime.has(parsed.chatId)
             ? Math.floor(parsed.date - (_lastMsgTime.get(parsed.chatId) || 0))
             : undefined;
           _lastMsgTime.set(parsed.chatId, parsed.date);
-          const envelope = buildContextFrame(parsed, elapsed);
-          chatRing.add(parsed.chatId, envelope);
+          chatRing.add(parsed.chatId, buildContextFrame(parsed, elapsed));
 
-          if (!shouldRespond) {
-            console.log(`[UserbotMgr] ⏭️ Skipping response for agent#${agentId} in chat ${parsed.chatId}`);
+          if (!shouldResp) {
             if (parsed.isGroup) groupBuffer.add(parsed.chatId, parsed);
             return;
           }
 
-          // Debounce: if already processing for this chat — skip (wait for current to finish)
-          const chatLockKey = `${agentId}:${parsed.chatId}`;
-          if (_chatProcessingLock.has(chatLockKey)) {
-            console.log(`[UserbotMgr] ⏳ Already processing agent#${agentId} chat=${parsed.chatId}, queuing msg`);
-            // Store latest message for processing after current finishes
-            _pendingChatMsg.set(chatLockKey, { msg: parsed, cfg: cfg! });
-            return;
-          }
-          _chatProcessingLock.add(chatLockKey);
-
-          console.log(`[UserbotMgr] 🚀 Dispatching response for agent#${agentId} chat=${parsed.chatId}`);
-          // Fire and forget — NEVER await in event handler (blocks all events)
-          const processAndClear = async () => {
-            try {
-              await this.processTgInboxMessage(agentId, parsed, cfg!);
-            } catch (procErr: any) {
-              console.error(`[UserbotMgr] ❌ processTgInboxMessage CRASHED:`, procErr.message, procErr.stack?.slice(0, 500));
-            } finally {
-              _chatProcessingLock.delete(chatLockKey);
-              // Process queued message if any
-              const queued = _pendingChatMsg.get(chatLockKey);
-              if (queued) {
-                _pendingChatMsg.delete(chatLockKey);
-                _chatProcessingLock.add(chatLockKey);
-                this.processTgInboxMessage(agentId, queued.msg, queued.cfg).catch(e => {
-                  console.error(`[UserbotMgr] ❌ Queued msg CRASHED:`, (e as any).message);
-                }).finally(() => {
-                  _chatProcessingLock.delete(chatLockKey);
-                });
-              }
-            }
-          };
-          processAndClear();
+          this.dispatchToAgent(agentId, parsed, cfg);
         } catch (e: any) {
           console.error(`[UserbotMgr] Message handler error agent #${agentId}:`, e.message);
         }
@@ -1226,15 +1364,188 @@ class UserbotManager {
     }
   }
 
+  // ── Shared Session Router: unified account-level message handler ──
+
+  private async enableAccountListener(tgUserId: number): Promise<boolean> {
+    const shared = this.accountClients.get(tgUserId);
+    if (!shared || !shared.connected) return false;
+
+    // Don't register twice
+    if (shared.messageHandlerRegistered && this.accountMessageHandlers.has(tgUserId)) return true;
+
+    const client = shared.client;
+    const selfId = shared.tgUserId;
+    const selfUsername = (shared.username || '').toLowerCase();
+
+    try {
+      const { NewMessage } = require('telegram/events');
+      const filter = new NewMessage({});
+
+      const handler = async (event: any) => {
+        try {
+          const msg = event.message;
+          if (!msg || !msg.message) return;
+
+          const msgFrom = msg?.senderId?.toJSNumber?.() ?? msg?.senderId ?? '?';
+          console.log(`[UserbotMgr] 📨 Account @${shared.username} event: from=${msgFrom} text="${(msg.message || '').slice(0, 50)}" agents=[${[...shared.agentIds].join(',')}]`);
+
+          const parsed = await this.parseMessage(client, msg, selfId, selfUsername);
+          if (!parsed) return;
+          if (parsed.senderId === selfId) return;
+          if (dupFilter.isDuplicate(parsed.chatId, parsed.id, parsed.text)) return;
+
+          // Store to conversation memory
+          const elapsed = _lastMsgTime.has(parsed.chatId)
+            ? Math.floor(parsed.date - (_lastMsgTime.get(parsed.chatId) || 0))
+            : undefined;
+          _lastMsgTime.set(parsed.chatId, parsed.date);
+          chatRing.add(parsed.chatId, buildContextFrame(parsed, elapsed));
+
+          // ── Route to best agent via matchScore ──
+          const candidates: { agentId: number; score: number; cfg: AgentMessageConfig }[] = [];
+
+          for (const aid of shared.agentIds) {
+            let cfg = _agentMsgConfigs.get(aid);
+            if (!cfg) {
+              cfg = await this.loadAgentMsgConfigFromDB(aid, selfId, selfUsername);
+              if (!cfg) continue;
+            }
+            const score = matchScore(parsed, cfg.routingRules, cfg);
+            if (score > 0) {
+              candidates.push({ agentId: aid, score, cfg });
+            }
+          }
+
+          if (candidates.length === 0) {
+            console.log(`[UserbotMgr] ⏭️ No agent matched for account @${shared.username} chat=${parsed.chatId}`);
+            if (parsed.isGroup) groupBuffer.add(parsed.chatId, parsed);
+            return;
+          }
+
+          // Sort by score descending — pick the best one
+          candidates.sort((a, b) => b.score - a.score);
+          const winner = candidates[0];
+          console.log(`[UserbotMgr] 🎯 Routed to agent #${winner.agentId} (score=${winner.score}) on @${shared.username} chat=${parsed.chatId}${candidates.length > 1 ? ` (${candidates.length} candidates)` : ''}`);
+
+          this.dispatchToAgent(winner.agentId, parsed, winner.cfg);
+        } catch (e: any) {
+          console.error(`[UserbotMgr] Account handler error @${shared.username}:`, e.message);
+        }
+      };
+
+      // Remove any old per-agent handlers on this client first
+      for (const aid of shared.agentIds) {
+        const old = this.messageHandlers.get(aid);
+        if (old) {
+          try { client.removeEventHandler(old.handler as any, old.filter); } catch {}
+          this.messageHandlers.delete(aid);
+          console.log(`[UserbotMgr] Migrated agent #${aid} from per-agent to account-level handler`);
+        }
+      }
+
+      client.addEventHandler(handler, filter);
+      this.accountMessageHandlers.set(tgUserId, { handler, filter });
+      shared.messageHandlerRegistered = true;
+      console.log(`[UserbotMgr] ✅ Account listener enabled for @${shared.username} (tgUserId=${tgUserId}, agents: [${[...shared.agentIds].join(',')}])`);
+      return true;
+    } catch (e: any) {
+      console.error(`[UserbotMgr] Failed to enable account listener for tgUserId=${tgUserId}:`, e.message);
+      return false;
+    }
+  }
+
+  /** Load agent message config from DB (fallback when not in memory) */
+  private async loadAgentMsgConfigFromDB(agentId: number, selfId: number, selfUsername: string): Promise<AgentMessageConfig | null> {
+    try {
+      const pool = getPool();
+      const dbRes = await pool.query(
+        `SELECT user_id, trigger_config FROM builder_bot.agents WHERE id = $1`,
+        [agentId]
+      );
+      if (dbRes.rows.length === 0) return null;
+      const row = dbRes.rows[0];
+      const tc = typeof row.trigger_config === 'string' ? JSON.parse(row.trigger_config) : row.trigger_config;
+      const cfg: AgentMessageConfig = {
+        agentId,
+        userId: Number(row.user_id),
+        selfTgId: selfId,
+        selfUsername,
+        systemPrompt: tc?.config?.systemPrompt || tc?.systemPrompt || 'You are a helpful assistant.',
+        dmPolicy: tc?.config?.dmPolicy || 'open',
+        groupPolicy: tc?.config?.groupPolicy || 'mention-only',
+        config: tc?.config || {},
+        routingRules: tc?.config?.routingRules,
+      };
+      _agentMsgConfigs.set(agentId, cfg);
+      console.log(`[UserbotMgr] ✅ Loaded agentMsgConfig from DB for agent#${agentId}`);
+      return cfg;
+    } catch (dbErr: any) {
+      console.error(`[UserbotMgr] DB fallback error:`, dbErr.message);
+      return null;
+    }
+  }
+
+  /** Dispatch a message to a specific agent with debounce */
+  private dispatchToAgent(agentId: number, msg: TgInboxMessage, cfg: AgentMessageConfig): void {
+    const chatLockKey = `${agentId}:${msg.chatId}`;
+    if (_chatProcessingLock.has(chatLockKey)) {
+      console.log(`[UserbotMgr] ⏳ Already processing agent#${agentId} chat=${msg.chatId}, queuing`);
+      _pendingChatMsg.set(chatLockKey, { msg, cfg });
+      return;
+    }
+    _chatProcessingLock.add(chatLockKey);
+
+    console.log(`[UserbotMgr] 🚀 Dispatching to agent#${agentId} chat=${msg.chatId}`);
+    const processAndClear = async () => {
+      try {
+        await this.processTgInboxMessage(agentId, msg, cfg);
+      } catch (procErr: any) {
+        console.error(`[UserbotMgr] ❌ processTgInboxMessage CRASHED:`, procErr.message, procErr.stack?.slice(0, 500));
+      } finally {
+        _chatProcessingLock.delete(chatLockKey);
+        const queued = _pendingChatMsg.get(chatLockKey);
+        if (queued) {
+          _pendingChatMsg.delete(chatLockKey);
+          _chatProcessingLock.add(chatLockKey);
+          this.processTgInboxMessage(agentId, queued.msg, queued.cfg).catch(e => {
+            console.error(`[UserbotMgr] ❌ Queued msg CRASHED:`, (e as any).message);
+          }).finally(() => {
+            _chatProcessingLock.delete(chatLockKey);
+          });
+        }
+      }
+    };
+    processAndClear();
+  }
+
   /** Disable message listener */
   disableMessageListener(agentId: number): void {
+    // Per-agent handler (legacy)
     const entry = this.messageHandlers.get(agentId);
-    if (!entry) return;
-    const ac = this.clients.get(agentId);
-    if (ac?.client) {
-      try { ac.client.removeEventHandler(entry.handler as any, entry.filter); } catch {}
+    if (entry) {
+      const ac = this.clients.get(agentId);
+      if (ac?.client) {
+        try { ac.client.removeEventHandler(entry.handler as any, entry.filter); } catch {}
+      }
+      this.messageHandlers.delete(agentId);
     }
-    this.messageHandlers.delete(agentId);
+
+    // Shared account: just unregister config (account handler stays for other agents)
+    const tgUserId = this.agentToAccount.get(agentId);
+    if (tgUserId) {
+      const shared = this.accountClients.get(tgUserId);
+      if (shared) {
+        shared.agentIds.delete(agentId);
+        if (shared.agentIds.size === 0 && this.accountMessageHandlers.has(tgUserId)) {
+          const accHandler = this.accountMessageHandlers.get(tgUserId)!;
+          try { shared.client.removeEventHandler(accHandler.handler as any, accHandler.filter); } catch {}
+          this.accountMessageHandlers.delete(tgUserId);
+          shared.messageHandlerRegistered = false;
+          console.log(`[UserbotMgr] Account handler removed for @${shared.username} (no more agents)`);
+        }
+      }
+    }
+
     unregisterAgentMessageConfig(agentId);
     console.log(`[UserbotMgr] Message listener disabled for agent #${agentId}`);
   }
