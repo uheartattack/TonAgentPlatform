@@ -1237,6 +1237,8 @@ CAPABILITIES: wallet, nft, gifts, market, telegram userbot (21 MTProto функ�
     const agentId = agent.id;
 
     // Save detected capabilities + always include state, notify, web as base
+    const detectedCaps: string[] = [];
+    const hasKey = !!(userVars.AI_API_KEY);
     const baseCaps = ['state', 'notify', 'web'];
     const allDetectedCaps = [...new Set([...baseCaps, ...detectedCaps])];
     try {

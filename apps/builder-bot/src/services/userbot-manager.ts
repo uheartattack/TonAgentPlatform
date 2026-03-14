@@ -1756,11 +1756,12 @@ class UserbotManager {
     console.log(`[UserbotMgr] 💬 processTgInboxMessage agent#${agentId} chat=${msg.chatId} userId=${cfg.userId}`);
     const client = await this.getClient(agentId);
     if (!client) { console.log(`[UserbotMgr] ❌ No client for agent#${agentId}`); return; }
+    let typingInterval: ReturnType<typeof setInterval> | undefined;
 
     try {
       // ── Start typing indicator (like a real person) ──
       const chatTarget = /^\d+$/.test(msg.chatId) ? Number(msg.chatId) : msg.chatId;
-      const typingInterval = setInterval(async () => {
+      typingInterval = setInterval(async () => {
         try { await (client as any).invoke(new Api.messages.SetTyping({ peer: chatTarget, action: new Api.SendMessageTypingAction() })); } catch {}
       }, 4000);
       // Send first typing immediately
@@ -1794,7 +1795,7 @@ class UserbotManager {
       // ── Load persona settings from Studio ──
       let persona: any = {};
       try {
-        const personaRes = await pool.query(
+        const personaRes = await getPool().query(
           `SELECT value FROM builder_bot.user_settings WHERE user_id = $1 AND key = 'persona'`,
           [String(cfg.userId)]
         );
@@ -1806,7 +1807,7 @@ class UserbotManager {
       // ── Load agent_config (model override, responseDelay) from Studio ──
       let agentConfig: any = {};
       try {
-        const acRes = await pool.query(
+        const acRes = await getPool().query(
           `SELECT value FROM builder_bot.user_settings WHERE user_id = $1 AND key = 'agent_config'`,
           [String(cfg.userId)]
         );
@@ -2033,7 +2034,7 @@ ABSOLUTE RULES (violation = failure):
 
               // If capabilities were just changed, reload tools for next iteration
               if (fnName === 'manage_capabilities' && result && result.ok) {
-                const newCapsRow = await pool.query('SELECT trigger_config FROM builder_bot.agents WHERE id=$1', [agentId]);
+                const newCapsRow = await getPool().query('SELECT trigger_config FROM builder_bot.agents WHERE id=$1', [agentId]);
                 const newTc = newCapsRow.rows[0]?.trigger_config || {};
                 const newCfg = newTc.config || {};
                 const newEnabledCaps = (newCfg.enabledCapabilities as string[]) || null;
@@ -2175,7 +2176,7 @@ ABSOLUTE RULES (violation = failure):
 
               // If capabilities were just changed, reload tools for next iteration
               if (fnName === 'manage_capabilities' && result && result.ok) {
-                const newCapsRow2 = await pool.query('SELECT trigger_config FROM builder_bot.agents WHERE id=$1', [agentId]);
+                const newCapsRow2 = await getPool().query('SELECT trigger_config FROM builder_bot.agents WHERE id=$1', [agentId]);
                 const newTc2 = newCapsRow2.rows[0]?.trigger_config || {};
                 const newCfg2 = newTc2.config || {};
                 mergedConfig.enabledCapabilities = (newCfg2.enabledCapabilities as string[]) || null;
