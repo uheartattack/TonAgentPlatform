@@ -1188,7 +1188,7 @@ RESPONSE FORMAT — valid JSON:
 
       // Улучшатель: Level 1-2 auto-apply. Придумыватель/Реализатор: always ask owner.
       const isImprover = modeLabel.includes('УЛУЧШАТЕЛЬ');
-      const level = isImprover ? Math.min(parsed.level || 2, 2) : (parsed.level >= 3 ? 3 : 2);
+      const level = (isImprover ? Math.min(parsed.level || 2, 2) : (parsed.level >= 3 ? 3 : 2)) as 1 | 2 | 3;
 
       const proposal: AIProposal = {
         id: randomUUID(),

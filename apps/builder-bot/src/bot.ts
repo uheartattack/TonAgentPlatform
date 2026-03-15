@@ -249,7 +249,7 @@ function sanitize(text: string): string {
 // ============================================================
 // Бот и меню
 // ============================================================
-const bot = new Telegraf(process.env.BOT_TOKEN || '');
+const bot: any = new Telegraf(process.env.BOT_TOKEN || '');
 
 // Статичное меню (русский по умолчанию)
 // ── Главное меню (reply keyboard — всегда внизу) ─────────────────────────
@@ -7251,7 +7251,7 @@ bot.catch((err, ctx) => {
 // ============================================================
 // Запуск
 // ============================================================
-export function getBotInstance() {
+export function getBotInstance(): any {
   return bot;
 }
 

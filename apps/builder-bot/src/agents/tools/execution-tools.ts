@@ -761,9 +761,8 @@ export class ExecutionTools {
               return task.split(/\s+/).some(kw => kw.length >= 3 && txt.includes(kw));
             }).slice(0, 3).map(p => ({ id: p.id, name: p.name, description: p.description, isInstalled: p.isInstalled }));
           },
-
-          // ── Web tools ──
           webSearch: async (query: string) => {
+
             const encoded = encodeURIComponent(query || '');
             const results: any[] = [];
             // DuckDuckGo HTML search
@@ -844,38 +843,6 @@ export class ExecutionTools {
             return { ok: true };
           },
 
-          // ── Discord ──
-          discordSendMessage: async (channelId: string, content: string) => {
-            const { discordManager } = await import('../../services/discord-manager');
-            const token = (params.triggerConfig?.config?.DISCORD_BOT_TOKEN || params.context?.config?.DISCORD_BOT_TOKEN);
-            if (!token) throw new Error('DISCORD_BOT_TOKEN not set');
-            const aid = params.agentId || 0;
-            await discordManager.registerAgent(aid, { botToken: token });
-            return discordManager.sendMessage(aid, channelId, content);
-          },
-          discordGetChannels: async (guildId: string) => {
-            const { discordManager } = await import('../../services/discord-manager');
-            const token = (params.triggerConfig?.config?.DISCORD_BOT_TOKEN || params.context?.config?.DISCORD_BOT_TOKEN);
-            if (!token) throw new Error('DISCORD_BOT_TOKEN not set');
-            const aid = params.agentId || 0;
-            await discordManager.registerAgent(aid, { botToken: token });
-            return discordManager.getGuildChannels(aid, guildId);
-          },
-
-          // ── Image generation ──
-          generateImage: async (prompt: string) => {
-            const key = (params.triggerConfig?.config?.FAL_API_KEY || params.context?.config?.FAL_API_KEY) || process.env.FAL_API_KEY;
-            if (!key) throw new Error('FAL_API_KEY not set');
-            const resp = await nativeFetch('https://queue.fal.run/fal-ai/flux/schnell', {
-              method: 'POST',
-              headers: { 'Authorization': 'Key ' + key, 'Content-Type': 'application/json' },
-              body: JSON.stringify({ prompt, image_size: 'square_hd', num_images: 1 })
-            });
-            if (!resp.ok) throw new Error('fal.ai error: ' + resp.status);
-            const data = await resp.json() as any;
-            return data.images?.[0]?.url || data;
-          },
-
           // ── Inter-agent ──
           askAgent: async (targetAgentId: number, message: string) => {
             const { addMessageToAIAgent } = await import('../ai-agent-runtime');
@@ -928,6 +895,135 @@ export class ExecutionTools {
               sendFile:       notAuthed('sendFile'),
             };
           })(),
+
+          // ── Discord integration (placeholder) ──
+          sendDiscordMessage: async (channelId: string, content: string) => {
+            const token = process.env.DISCORD_BOT_TOKEN || '';
+            if (!token) {
+              addLog('warn', '[sendDiscordMessage] Discord not configured — set DISCORD_BOT_TOKEN in env');
+              return { error: 'Discord not configured' };
+            }
+            try {
+              const resp = await nativeFetch(
+                `https://discord.com/api/v10/channels/${encodeURIComponent(channelId)}/messages`,
+                {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bot ${token}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({ content: String(content).slice(0, 2000) }),
+                  signal: AbortSignal.timeout(10000),
+                }
+              );
+              if (!resp.ok) {
+                const errText = await resp.text();
+                addLog('error', `[sendDiscordMessage] Discord API ${resp.status}: ${errText.slice(0, 200)}`);
+                return { error: `Discord API ${resp.status}` };
+              }
+              const data = await resp.json() as any;
+              addLog('info', `[sendDiscordMessage] Sent to channel ${channelId}: ${String(content).slice(0, 80)}`);
+              return { ok: true, messageId: data.id };
+            } catch (e: any) {
+              addLog('error', `[sendDiscordMessage] ${e.message}`);
+              return { error: e.message };
+            }
+          },
+
+          // ── Twitter/X integration (placeholder) ──
+          sendTweet: async (text: string) => {
+            const apiKey = process.env.X_TWITTER_API_KEY || '';
+            const apiSecret = process.env.X_TWITTER_API_SECRET || '';
+            const accessToken = process.env.X_TWITTER_ACCESS_TOKEN || '';
+            const accessSecret = process.env.X_TWITTER_ACCESS_SECRET || '';
+            if (!apiKey || !accessToken) {
+              addLog('warn', '[sendTweet] Twitter not configured — set X_TWITTER_API_KEY and X_TWITTER_ACCESS_TOKEN in env');
+              return { error: 'Twitter not configured' };
+            }
+            // Twitter OAuth 1.0a requires signature; placeholder logs intent
+            addLog('info', `[sendTweet] Tweet requested (${String(text).slice(0, 80)}). OAuth 1.0a signing required — use twitter client library.`);
+            return { error: 'Twitter OAuth 1.0a signing not yet implemented. Set up a twitter client library for full support.' };
+          },
+
+          // ── Image generation (placeholder) ──
+          generateImage: async (prompt: string) => {
+            addLog('info', `[generateImage] Image generation requested: ${String(prompt).slice(0, 100)}`);
+            return {
+              error: 'Image generation capability is not yet connected. Configure an image generation provider (DALL-E, Stable Diffusion, etc.) by setting IMAGE_GEN_PROVIDER and IMAGE_GEN_API_KEY in env.',
+              prompt: String(prompt).slice(0, 500),
+            };
+          },
+
+          // ── Agent skill tree ──
+          getSkillTree: async (targetAgentId?: number) => {
+            const aid = targetAgentId ?? agentId;
+            try {
+              const { pool } = await import('../../db');
+              const res = await pool.query(
+                `SELECT * FROM agent_skill_tree WHERE agent_id = $1 ORDER BY created_at`,
+                [aid]
+              );
+              if (res.rows && res.rows.length > 0) return res.rows;
+              addLog('info', `[getSkillTree] No skill tree found for agent #${aid}`);
+              return [];
+            } catch (e: any) {
+              // Table might not exist yet
+              if (e.message && (e.message.includes('does not exist') || e.message.includes('relation'))) {
+                addLog('info', `[getSkillTree] agent_skill_tree table does not exist yet`);
+                return [];
+              }
+              addLog('warn', `[getSkillTree] ${e.message}`);
+              return [];
+            }
+          },
+
+          // ── searchWeb / fetchUrl aliases (match ai-agent-runtime naming) ──
+          searchWeb: async (query: string) => {
+            // Delegate to the existing webSearch implementation above
+            const encoded = encodeURIComponent(query || '');
+            const results: any[] = [];
+            try {
+              const htmlResp = await nativeFetch('https://html.duckduckgo.com/html/?q=' + encoded, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (compatible; TONAgentBot/1.0)' },
+                signal: AbortSignal.timeout(10000),
+              });
+              if (htmlResp.ok) {
+                const html = await htmlResp.text();
+                const linkRe = /<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi;
+                const snipRe = /<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/gi;
+                const links: Array<{ url: string; title: string }> = [];
+                let m;
+                while ((m = linkRe.exec(html)) && links.length < 5) {
+                  let url = m[1];
+                  const uddg = url.match(/uddg=([^&]+)/);
+                  if (uddg) url = decodeURIComponent(uddg[1]);
+                  links.push({ url, title: m[2].replace(/<[^>]+>/g, '').trim() });
+                }
+                const snips: string[] = [];
+                while ((m = snipRe.exec(html)) && snips.length < 5) {
+                  snips.push(m[1].replace(/<[^>]+>/g, '').trim());
+                }
+                for (let i = 0; i < links.length; i++) {
+                  results.push({ title: links[i].title, url: links[i].url, snippet: snips[i] || '' });
+                }
+              }
+            } catch {}
+            if (results.length === 0) {
+              try {
+                const resp = await nativeFetch('https://api.duckduckgo.com/?q=' + encoded + '&format=json&no_html=1');
+                if (resp.ok) {
+                  const data = await resp.json() as any;
+                  if (data.AbstractText) results.push({ title: data.Heading || query, snippet: data.AbstractText, url: data.AbstractURL || '' });
+                  if (data.RelatedTopics) {
+                    for (const topic of data.RelatedTopics.slice(0, 5)) {
+                      if (topic.Text && topic.FirstURL) results.push({ title: topic.Text.slice(0, 100), snippet: topic.Text, url: topic.FirstURL });
+                    }
+                  }
+                }
+              } catch {}
+            }
+            return results.slice(0, 5);
+          },
 
           // ── Стандартные глобалы ──
           JSON,
