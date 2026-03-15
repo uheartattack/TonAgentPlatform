@@ -52,9 +52,13 @@ setInterval(() => {
   for (const [token, session] of sessions) {
     if (now > session.expiresAt) sessions.delete(token);
   }
-  // pendingBotAuth не имеет expiresAt — чистим по createdAt (15 минут)
+  // pendingBotAuth: использованные токены (userId получен) удаляем через 2 мин, брошенные через 15 мин
   for (const [token, auth] of pendingBotAuth) {
-    if (now - auth.createdAt > 15 * 60 * 1000) pendingBotAuth.delete(token);
+    const isCompleted = !auth.pending && auth.userId != null;
+    if ((isCompleted && now - auth.createdAt > 2 * 60 * 1000) ||
+        now - auth.createdAt > 15 * 60 * 1000) {
+      pendingBotAuth.delete(token);
+    }
   }
 }, 5 * 60 * 1000).unref();
 
