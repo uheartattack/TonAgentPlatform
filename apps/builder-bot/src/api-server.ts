@@ -113,22 +113,28 @@ function verifyTelegramAuth(data: Record<string, string>): boolean {
 // Verify id_token from new Telegram Login SDK
 let _jwksCache: any = null;
 let _jwksCacheTime = 0;
+let _jwksFetching: Promise<any> | null = null;
 
 async function fetchTelegramJWKS(): Promise<any> {
   if (_jwksCache && Date.now() - _jwksCacheTime < 3600_000) return _jwksCache;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5000);
-  try {
-    const res = await fetch('https://oauth.telegram.org/.well-known/jwks.json', { signal: controller.signal });
-    if (!res.ok) throw new Error(`JWKS fetch failed with status ${res.status}`);
-    const data = await res.json() as any;
-    if (!Array.isArray(data?.keys) || data.keys.length === 0) throw new Error('JWKS: invalid or empty keys in response');
-    _jwksCache = data;
-    _jwksCacheTime = Date.now();
-    return _jwksCache;
-  } finally {
-    clearTimeout(timeout);
-  }
+  if (_jwksFetching) return _jwksFetching;
+  _jwksFetching = (async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    try {
+      const res = await fetch('https://oauth.telegram.org/.well-known/jwks.json', { signal: controller.signal });
+      if (!res.ok) throw new Error(`JWKS fetch failed with status ${res.status}`);
+      const data = await res.json() as any;
+      if (!Array.isArray(data?.keys) || data.keys.length === 0) throw new Error('JWKS: invalid or empty keys in response');
+      _jwksCache = data;
+      _jwksCacheTime = Date.now();
+      return _jwksCache;
+    } finally {
+      clearTimeout(timeout);
+      _jwksFetching = null;
+    }
+  })();
+  return _jwksFetching;
 }
 
 function base64urlDecode(str: string): Buffer {
