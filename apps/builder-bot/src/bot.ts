@@ -160,8 +160,9 @@ async function startCreationAnimation(
   let stepIdx = 0;
   let msgId: number | undefined;
   const chatId = ctx.chat?.id;
+  const lang = getUserLang(chatId as number);
 
-  const text = renderCreationStep(0, scheduleLabel);
+  const text = renderCreationStep(0, scheduleLabel, lang);
 
   if (sendNew) {
     const sent = await ctx.reply(text, { parse_mode: 'HTML' }).catch(() => null);
@@ -174,9 +175,9 @@ async function startCreationAnimation(
       : undefined;
   }
 
-  const lang = getUserLang(chatId as number);
+  const steps = lang === 'en' ? CREATION_STEPS_EN : CREATION_STEPS_RU;
   const stepTimer = setInterval(async () => {
-    stepIdx = Math.min(stepIdx + 1, CREATION_STEPS.length - 1);
+    stepIdx = Math.min(stepIdx + 1, steps.length - 1);
     if (chatId && msgId) {
       await ctx.telegram.editMessageText(
         chatId, msgId, undefined,
@@ -184,7 +185,7 @@ async function startCreationAnimation(
         { parse_mode: 'HTML' },
       ).catch(() => {});
     }
-    if (stepIdx >= CREATION_STEPS.length - 1) {
+    if (stepIdx >= steps.length - 1) {
       clearInterval(stepTimer);
     }
   }, 3000);
