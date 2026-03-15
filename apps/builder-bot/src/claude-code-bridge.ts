@@ -15,11 +15,11 @@ import * as fs from 'fs';
 // ── CLI binary detection ─────────────────────────────────────────────────────
 
 const CLAUDE_CLI_PATHS = [
-  // Remote connection CLI (most common on servers)
-  path.join(process.env.HOME || '/root', '.claude', 'remote', 'ccd-cli'),
-  // Global npm install
+  // Global npm install (works with CLAUDE_CODE_OAUTH_TOKEN)
   '/usr/local/bin/claude',
   '/usr/bin/claude',
+  // Remote connection CLI (may not support OAuth token)
+  path.join(process.env.HOME || '/root', '.claude', 'remote', 'ccd-cli'),
   // npx fallback (slowest)
   'npx',
 ];
@@ -126,8 +126,14 @@ export async function claudeCodeComplete(
     args.push('--allowedTools', ...allowedTools);
   }
 
-  // The prompt itself
-  args.push(prompt);
+  // Pass prompt via stdin (avoids ARG_MAX issues with long prompts)
+  // Only use arg for short prompts
+  const useStdin = prompt.length > 4000;
+  if (!useStdin) {
+    args.push(prompt);
+  } else {
+    args.push('-'); // read from stdin
+  }
 
   return new Promise<ClaudeCodeResult>((resolve, reject) => {
     const startTime = Date.now();
@@ -137,14 +143,20 @@ export async function claudeCodeComplete(
     const proc = spawn(cliPath === 'npx' ? 'npx' : cliPath, args, {
       cwd: process.env.HOME || '/root',
       timeout,
-      env: {
-        ...process.env,
-        // Disable interactive features
-        CLAUDE_CODE_NON_INTERACTIVE: '1',
-        CI: '1',
-      },
+      env: (() => {
+        const e = { ...process.env, CLAUDE_CODE_NON_INTERACTIVE: '1', CI: '1' };
+        // Remove keys that conflict with Claude Code OAuth token
+        delete e.ANTHROPIC_API_KEY;
+        return e;
+      })(),
       stdio: ['pipe', 'pipe', 'pipe'],
     });
+
+    // If using stdin, write the prompt and close
+    if (useStdin) {
+      proc.stdin.write(prompt);
+      proc.stdin.end();
+    }
 
     proc.stdout.on('data', (data: Buffer) => {
       stdout += data.toString();
@@ -156,15 +168,40 @@ export async function claudeCodeComplete(
     proc.on('close', (code) => {
       const durationMs = Date.now() - startTime;
 
+      // Even on non-zero exit, stdout may contain valid JSON with result
       if (code !== 0) {
+        console.warn(`[ClaudeCodeBridge] Non-zero exit=${code}, stdout=${stdout.slice(0, 400)}, stderr=${stderr.slice(0, 200)}`);
+        // Try parsing stdout as JSON first — Claude Code sometimes exits non-zero but has a valid response
+        try {
+          const parsed = JSON.parse(stdout);
+          // If result has real content and isn't an auth/config error, treat as valid
+          const errPatterns = ['Invalid API key', 'Fix external', 'not logged in', 'authenticate', 'unauthorized'];
+          const isRealError = errPatterns.some(p => (parsed.result || '').includes(p));
+          if (parsed.result && !isRealError && (!parsed.is_error || (parsed.subtype === 'success' && parsed.result.length > 50))) {
+            // Actually successful despite non-zero exit code
+            const modelUsageKeys = parsed.modelUsage ? Object.keys(parsed.modelUsage) : [];
+            const usedModel = modelUsageKeys[0] || parsed.model || model || 'unknown';
+            const mu = parsed.modelUsage?.[usedModel] || {};
+            resolve({
+              text: parsed.result,
+              model: usedModel,
+              inputTokens: mu.inputTokens || 0,
+              outputTokens: mu.outputTokens || 0,
+              costUsd: parsed.total_cost_usd || 0,
+              durationMs,
+              sessionId: parsed.session_id,
+            });
+            return;
+          }
+        } catch {}
+
         const errMsg = stderr || stdout || `CLI exited with code ${code}`;
-        // Check for auth issues
         if (errMsg.includes('not logged in') || errMsg.includes('authenticate') || errMsg.includes('unauthorized')) {
           reject(new Error('CLAUDE_AUTH_REQUIRED'));
         } else if (errMsg.includes('rate limit') || errMsg.includes('overloaded')) {
           reject(new Error('CLAUDE_RATE_LIMITED'));
         } else {
-          reject(new Error(`CLAUDE_CLI_ERROR: ${errMsg.slice(0, 500)}`));
+          reject(new Error(`CLAUDE_CLI_ERROR: ${errMsg.slice(0, 800)}`));
         }
         return;
       }
@@ -173,21 +210,34 @@ export async function claudeCodeComplete(
         // Parse JSON output
         const result = JSON.parse(stdout);
 
-        // The JSON output format from claude --print --output-format json:
-        // { result: string, is_error: boolean, session_id: string,
-        //   total_cost_usd: number, total_input_tokens: number, total_output_tokens: number,
-        //   model: string, ... }
+        // Claude Code CLI v2 JSON format:
+        // { type: "result", subtype: "success", is_error: bool, result: string,
+        //   total_cost_usd: number, usage: { input_tokens, output_tokens },
+        //   modelUsage: { "model-name": { inputTokens, outputTokens, costUSD } },
+        //   session_id: string, duration_ms: number }
         if (result.is_error) {
-          reject(new Error(result.result || 'Unknown Claude error'));
-          return;
+          console.warn(`[ClaudeCodeBridge] is_error=true, result: ${(result.result || '').slice(0, 300)}`);
+          // If result contains actual text content (not just an error), treat as success
+          if (result.result && result.result.length > 50 && result.subtype === 'success') {
+            console.log(`[ClaudeCodeBridge] Treating is_error+success as valid response`);
+            // Fall through to success handler
+          } else {
+            reject(new Error(result.result || 'Unknown Claude error'));
+            return;
+          }
         }
+
+        // Extract model name from modelUsage keys
+        const modelUsageKeys = result.modelUsage ? Object.keys(result.modelUsage) : [];
+        const usedModel = modelUsageKeys[0] || result.model || model || 'unknown';
+        const mu = result.modelUsage?.[usedModel] || {};
 
         resolve({
           text: result.result || '',
-          model: result.model || model || 'unknown',
-          inputTokens: result.total_input_tokens || 0,
-          outputTokens: result.total_output_tokens || 0,
-          costUsd: result.total_cost_usd || 0,
+          model: usedModel,
+          inputTokens: mu.inputTokens || result.usage?.input_tokens || result.total_input_tokens || 0,
+          outputTokens: mu.outputTokens || result.usage?.output_tokens || result.total_output_tokens || 0,
+          costUsd: result.total_cost_usd || mu.costUSD || 0,
           durationMs,
           sessionId: result.session_id,
         });
@@ -212,8 +262,10 @@ export async function claudeCodeComplete(
       reject(new Error(`CLAUDE_SPAWN_ERROR: ${err.message}`));
     });
 
-    // Close stdin immediately (we pass prompt via args, not stdin)
-    proc.stdin.end();
+    // Close stdin if not already closed via useStdin
+    if (!useStdin) {
+      proc.stdin.end();
+    }
   });
 }
 
