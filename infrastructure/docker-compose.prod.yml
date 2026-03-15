@@ -31,16 +31,6 @@ services:
       timeout: 5s
       retries: 5
 
-  cli-proxy:
-    image: eceasy/cli-proxy-api-plus:latest
-    container_name: cli-proxy-api-plus
-    ports:
-      - '127.0.0.1:8317:8317'
-    volumes:
-      - cli_proxy_data:/CLIProxyAPI
-    restart: unless-stopped
-
 volumes:
   postgres_data:
   redis_data:
-  cli_proxy_data:

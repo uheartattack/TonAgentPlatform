@@ -1050,7 +1050,7 @@ function switchSettingsTab(tab) {
         '<div class="rt-header-icon" style="background:rgba(16,163,127,0.12);color:#10a37f">' + IC.bolt + '</div>' +
         '<div class="rt-header-text">' +
           '<h3>' + (isRu ? 'Настройки AI' : 'AI Configuration') + '</h3>' +
-          '<p>' + (isRu ? 'Выберите провайдера, модель и API ключ. Без ключа используется платформенный proxy.' : 'Choose provider, model and API key. Without a key, the platform proxy is used.') + '</p>' +
+          '<p>' + (isRu ? 'Выберите провайдера, модель и API ключ для вашего агента.' : 'Choose provider, model and API key for your agent.') + '</p>' +
         '</div>' +
       '</div>' +
       '<div class="rt-section">' +
@@ -1084,7 +1084,7 @@ function switchSettingsTab(tab) {
           '<div class="rt-input-hint">' +
             (hasKey
               ? '<span style="color:#22c55e">' + IC.check + '</span> ' + (isRu ? 'Ключ установлен. Оставьте пустым чтобы не менять.' : 'Key is set. Leave empty to keep.')
-              : (isRu ? 'Без ключа агент работает через платформенный proxy (лимиты)' : 'Without a key, the agent uses the platform proxy (rate limited)')
+              : (isRu ? 'Укажите API ключ провайдера для работы агента' : 'Enter the provider API key to run the agent')
             ) +
           '</div>' +
         '</div>' +
@@ -7169,7 +7169,7 @@ function showWizard(agentId, agentName) {
     { group: 'ai', title: isRu ? 'AI провайдер' : 'AI Provider', fields: [
       { id: 'AI_PROVIDER', type: 'select', label: isRu ? 'Провайдер' : 'Provider', desc: isRu ? 'Выберите AI модель для агента' : 'Choose AI model for the agent',
         options: [{v:'openai',l:'OpenAI'},{v:'anthropic',l:'Anthropic'},{v:'gemini',l:'Google Gemini'},{v:'groq',l:'Groq'},{v:'deepseek',l:'DeepSeek'},{v:'openrouter',l:'OpenRouter'},{v:'together',l:'Together AI'}] },
-      { id: 'AI_API_KEY', type: 'password', label: isRu ? 'API ключ' : 'API Key', desc: isRu ? 'Ваш ключ провайдера. Оставьте пустым для платформенного прокси.' : 'Your provider key. Leave empty for platform proxy.', required: false }
+      { id: 'AI_API_KEY', type: 'password', label: isRu ? 'API ключ' : 'API Key', desc: isRu ? 'Ваш API ключ провайдера' : 'Your provider API key', required: false }
     ]},
     { group: 'capabilities', title: isRu ? 'Возможности' : 'Capabilities', fields: [
       { id: 'caps', type: 'caps', label: isRu ? 'Выберите возможности' : 'Select capabilities', desc: isRu ? 'Какие инструменты нужны вашему агенту?' : 'What tools does your agent need?' }
