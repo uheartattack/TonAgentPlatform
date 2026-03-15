@@ -167,7 +167,7 @@ function selectRelevantTools(message: string, allToolNames: string[], maxTotal =
 
   // If very few tools matched, add some common ones
   if (selected.size < 8) {
-    for (const t of ['web_search', 'fetch_url', 'get_ton_balance', 'tg_send_message', 'tg_read_chat']) {
+    for (const t of ['web_search', 'fetch_url', 'get_ton_balance', 'tg_send_message', 'tg_get_messages']) {
       selected.add(t);
     }
   }
