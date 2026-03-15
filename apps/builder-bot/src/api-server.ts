@@ -121,7 +121,7 @@ async function fetchTelegramJWKS(): Promise<any> {
   try {
     const res = await fetch('https://oauth.telegram.org/.well-known/jwks.json', { signal: controller.signal });
     if (!res.ok) throw new Error(`JWKS fetch failed with status ${res.status}`);
-    const data = await res.json();
+    const data = await res.json() as any;
     if (!Array.isArray(data?.keys) || data.keys.length === 0) throw new Error('JWKS: invalid or empty keys in response');
     _jwksCache = data;
     _jwksCacheTime = Date.now();
@@ -175,10 +175,11 @@ async function verifyTelegramOIDC(idToken: string): Promise<{ userId: number; us
 
 // ── Auth middleware ───────────────────────────────────────────
 function requireAuth(req: Request, res: Response, next: NextFunction): void {
-  const token = req.headers['x-auth-token'] as string || req.query.token as string;
-  if (!token) { res.status(401).json({ error: 'No token' }); return; }
+  // Токен ТОЛЬКО из заголовка — никогда не из URL (утечка в логи, Referer, browser history)
+  const token = req.headers['x-auth-token'] as string;
+  if (!token) { res.status(401).json({ error: 'Требуется заголовок X-Auth-Token' }); return; }
   const session = getSession(token);
-  if (!session) { res.status(401).json({ error: 'Invalid or expired token' }); return; }
+  if (!session) { res.status(401).json({ error: 'Сессия не найдена или истекла — войдите заново' }); return; }
   (req as any).userId = session.userId;
   (req as any).session = session;
   next();
@@ -1197,7 +1198,7 @@ export function startApiServer() {
       const approvalId = parseInt(req.params.id as string, 10);
       const { approved } = req.body || {};
       if (typeof approved !== 'boolean') { res.status(400).json({ error: 'Missing approved boolean' }); return; }
-      const { resolvePendingApproval } = await import('./agents/ai-agent-runtime');
+      const { resolvePendingApproval } = await import('./agents/ai-agent-runtime') as any;
       const ok = resolvePendingApproval(approvalId, approved);
       res.json({ ok, approvalId });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
