@@ -131,10 +131,15 @@ async function callWithFallback(
         msg.includes('502') ||
         msg.includes('429') ||
         msg.includes('rate limit') ||
-        msg.includes('rate_limit') ||
+        msg.includes('Rate limit') ||
+        msg.includes('Too Many Requests') ||
+        msg.includes('overloaded') ||
         msg.includes('ECONNRESET') ||
         msg.includes('Empty response');
-      if (!isRetryable) throw err;
+      if (!isRetryable) {
+        console.warn(`[Orchestrator] model ${model} — non-retryable error (${msg.slice(0, 80)}), aborting fallback chain`);
+        throw err;
+      }
       console.warn(`[Orchestrator] model ${model} failed (${msg.slice(0, 80)}), trying next...`);
     }
   }
@@ -948,10 +953,12 @@ CAPABILITIES: wallet, nft, gifts, market, telegram userbot (21 MTProto функ�
     // Шаблоны доступны через маркетплейс, но не блокируют creation flow
     // ════════════════════════════════════════════════════════════
 
-    // 1) Определяем расписание из описания (только если юзер ЯВНО просит тики/интервал)
+    // 1) Определяем расписание из описания
     const sched = detectTriggerFromDescription(description);
-    const isScheduled = sched.triggerType === 'scheduled' && /кажд\w*\s*\d+|интервал|тик|tick|every\s*\d+|раз в \d+/i.test(description);
-    const intervalMs = isScheduled ? (sched.triggerConfig.intervalMs || 300_000) : 0; // 0 = reactive only (no ticks)
+    const hasCustomInterval = sched.triggerType === 'scheduled' && /кажд\w*\s*\d+|интервал|тик|tick|every\s*\d+|раз в \d+/i.test(description);
+    const isScheduled = hasCustomInterval;
+    // DEFAULT 10 мин — все агенты ПРОАКТИВНЫ (как живые люди). Юзер может задать свой интервал.
+    const intervalMs = hasCustomInterval ? (sched.triggerConfig.intervalMs || 300_000) : 600_000;
 
     // 2) Загружаем глобальные пользовательские переменные (API ключи)
     let userVars: Record<string, any> = {};
@@ -1097,11 +1104,20 @@ CAPABILITIES: wallet, nft, gifts, market, telegram userbot (21 MTProto функ�
 3. Реши нужно ли действовать сейчас
 4. Если да — выполни, если нет — пропусти (не делай ничего ради галочки)
 
+═══ САМОЭВОЛЮЦИЯ ═══
+Ты можешь менять себя! Если пользователь просит изменить твоё поведение, роль, стиль:
+1. get_my_config() — посмотри свой текущий промпт
+2. Напиши НОВЫЙ полный промпт учитывая пожелания пользователя
+3. update_my_prompt(new_prompt, reason) — обнови себя
+4. Подтверди пользователю что обновился
+Ты также можешь сам решить что нужно эволюционировать — например добавить новые правила на основе опыта.
+
 ═══ ПРАВИЛА ═══
 • Веди себя как живой человек, а не как бот
 • Не спамь — пиши только когда есть что сказать
 • Запоминай контекст через get_state/set_state
-• notify() владельцу — только для важных событий"
+• notify() владельцу — только для важных событий
+• Когда просят действие — ДЕЛАЙ сразу через тулы, не обещай «скоро»"
 
 Ответь СТРОГО в формате JSON:
 {
@@ -1207,7 +1223,11 @@ CAPABILITIES: wallet, nft, gifts, market, telegram userbot (21 MTProto функ�
       console.warn(`[Orchestrator] Multi-agent detection error: ${e.message}`);
     }
 
-    // 4) Собираем triggerConfig для ai_agent
+    // 4) Собираем triggerConfig для ai_agent — ВСЕ capabilities по дефолту (как у лучших агентов)
+    const ALL_CAPABILITIES = [
+      'wallet', 'nft', 'gifts', 'gifts_market', 'telegram', 'web',
+      'state', 'notify', 'plugins', 'inter_agent', 'blockchain', 'defi', 'ton_mcp',
+    ];
     const triggerConfig: Record<string, any> = {
       code: systemPrompt,
       intervalMs,
@@ -1215,6 +1235,7 @@ CAPABILITIES: wallet, nft, gifts, market, telegram userbot (21 MTProto функ�
         AI_PROVIDER: userVars.AI_PROVIDER || '',
         AI_API_KEY: userVars.AI_API_KEY || '',
         self_improvement_enabled: true,
+        enabledCapabilities: ALL_CAPABILITIES,
         ...(routingRules ? { routingRules } : {}),
       },
     };
@@ -1240,11 +1261,12 @@ CAPABILITIES: wallet, nft, gifts, market, telegram userbot (21 MTProto функ�
     // 6) Авто-старт
     let autoStarted = false;
     let schedLabel = '';
-    if (isScheduled && intervalMs > 0) {
-      const ms = intervalMs;
+    const ms = intervalMs;
+    if (ms > 0) {
       schedLabel = ms >= 3_600_000 ? `${ms / 3_600_000} ч` : ms >= 60_000 ? `${ms / 60_000} мин` : `${ms / 1000} сек`;
+      if (!isScheduled) schedLabel += ' (проактивный)';
     } else {
-      schedLabel = 'реактивный'; // no ticks — event-driven
+      schedLabel = 'реактивный';
     }
 
     try {
