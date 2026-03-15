@@ -136,6 +136,12 @@ const TOOL_KEYWORDS: Record<string, string[]> = {
   get_user_portfolio:    ['портфель', 'portfolio', 'мои подарки'],
 };
 
+// Pre-computed lowercase keyword entries — вычисляется один раз при старте модуля,
+// чтобы не делать Object.entries() + toLowerCase() при каждом входящем сообщении.
+const TOOL_KEYWORDS_ENTRIES: Array<[string, string[]]> = Object.entries(TOOL_KEYWORDS).map(
+  ([name, kws]) => [name, kws.map(k => k.toLowerCase())]
+);
+
 // Always-available core tools (included in every request)
 const CORE_TOOLS = new Set(['get_state', 'set_state', 'notify', 'web_search']);
 
@@ -148,12 +154,12 @@ function selectRelevantTools(message: string, allToolNames: string[], maxTotal =
   const selected = new Set<string>(CORE_TOOLS);
   const msgLower = message.toLowerCase();
 
-  // Score each tool by keyword match count
+  // Score each tool by keyword match count (uses pre-lowercased TOOL_KEYWORDS_ENTRIES)
   const scores: Array<[string, number]> = [];
-  for (const [toolName, keywords] of Object.entries(TOOL_KEYWORDS)) {
+  for (const [toolName, keywords] of TOOL_KEYWORDS_ENTRIES) {
     let score = 0;
     for (const kw of keywords) {
-      if (msgLower.includes(kw.toLowerCase())) score++;
+      if (msgLower.includes(kw)) score++;
     }
     if (score > 0) scores.push([toolName, score]);
   }
