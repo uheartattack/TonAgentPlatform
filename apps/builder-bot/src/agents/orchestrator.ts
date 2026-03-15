@@ -12,6 +12,7 @@ import { allAgentTemplates, AgentTemplate } from '../agent-templates';
 import { detectTriggerFromDescription } from './sub-agents/creator';
 import { getUserSettingsRepository } from '../db/schema-extensions';
 import { getSkillDocsForCodeGeneration } from '../plugins-system';
+import { claudeCodeChat, isClaudeCodeAvailable } from '../claude-code-bridge';
 
 // ── MarkdownV2 escaping (shared with bot.ts) ───────────────────────────────
 function esc(text: string | number | null | undefined): string {
@@ -55,14 +56,55 @@ export function setUserModel(userId: number, model: ModelId) {
   userModels.set(userId, model);
 }
 
-// ── Запрос с авто-fallback по цепочке моделей ───────────────
+// ── Claude Code availability cache ──────────────────────────
+let _claudeCodeAvailable: boolean | null = null;
+let _claudeCodeCheckTime = 0;
+
+async function checkClaudeCode(): Promise<boolean> {
+  const now = Date.now();
+  // Re-check every 5 minutes
+  if (_claudeCodeAvailable !== null && now - _claudeCodeCheckTime < 300_000) {
+    return _claudeCodeAvailable;
+  }
+  _claudeCodeAvailable = await isClaudeCodeAvailable();
+  _claudeCodeCheckTime = now;
+  if (_claudeCodeAvailable) {
+    console.log('[Orchestrator] ✅ Claude Code CLI detected — using subscription');
+  }
+  return _claudeCodeAvailable;
+}
+
+// ── Запрос с авто-fallback: Claude Code → API models ────────
 async function callWithFallback(
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
   userId: number,
   maxTokens = 1024,
 ): Promise<{ text: string; model: string }> {
+
+  // ── 1. Try Claude Code CLI first (uses subscription, free) ──
+  const useClaudeCode = await checkClaudeCode();
+  if (useClaudeCode) {
+    try {
+      const result = await claudeCodeChat(messages, {
+        maxTokens,
+        model: 'claude-sonnet-4-5-20250929',
+        timeout: 90_000,
+        allowedTools: [], // No tools — just text completion
+      });
+      console.log(`[Orchestrator] Claude Code responded (${result.model})`);
+      return result;
+    } catch (err: any) {
+      const msg = err?.message || String(err);
+      console.warn(`[Orchestrator] Claude Code failed: ${msg.slice(0, 120)}, falling back to API...`);
+      // If auth issue — disable Claude Code for this session
+      if (msg.includes('AUTH_REQUIRED') || msg.includes('not logged in')) {
+        _claudeCodeAvailable = false;
+      }
+    }
+  }
+
+  // ── 2. Fallback: API models with chain ──
   const preferred = getUserModel(userId);
-  // Строим цепочку: предпочтительная первая, остальные за ней
   const chain = [preferred, ...MODEL_LIST.map(m => m.id).filter(id => id !== preferred)];
 
   for (const model of chain) {
@@ -89,9 +131,11 @@ async function callWithFallback(
         msg.includes('502') ||
         msg.includes('ECONNRESET') ||
         msg.includes('Empty response');
+      if (!isRetryable) {
+        console.warn(`[Orchestrator] model ${model} — non-retryable error (${msg.slice(0, 80)}), aborting chain`);
+        throw new Error(`Ошибка AI-провайдера: ${msg.slice(0, 200)}`);
+      }
       console.warn(`[Orchestrator] model ${model} failed (${msg.slice(0, 80)}), trying next...`);
-      if (!isRetryable) throw err; // не ретраим при ошибках авторизации, сети
-      // для ретраибл — просто переходим к следующей модели
     }
   }
   throw new Error('Все модели недоступны. Попробуйте через несколько секунд.');
@@ -193,7 +237,7 @@ export class Orchestrator {
         type: 'function',
         function: {
           name: 'create_agent',
-          description: 'Создать нового AI-агента. Агент может работать в Telegram, Discord, X/Twitter. Умеет: мониторинг, торговля подарками/NFT, DeFi свопы, генерация картинок, база знаний, веб-скрейпинг, блокчейн аналитика. Примеры: "мониторь цену TON", "следи за Discord каналом", "постинг в Twitter", "арбитраж подарков", "генерация контента с картинками".',
+          description: 'Создать нового AI-агента из описания задачи. Используй когда пользователь хочет: автоматизировать что-то, создать мониторинг/бота/напоминание, следить за ценой/балансом/сайтом, отправлять уведомления по расписанию, или выполнять любую периодическую задачу. Примеры: "мониторь цену TON", "следи за NFT коллекцией", "напоминай каждый день", "проверяй баланс кошелька".',
           parameters: {
             type: 'object',
             properties: {
@@ -303,7 +347,7 @@ export class Orchestrator {
         type: 'function',
         function: {
           name: 'ask_clarification',
-          description: 'Задай умные уточняющие вопросы ПЕРЕД созданием агента. Спрашивай ТОЛЬКО то, что НЕ ЯСНО из описания. Если задача понятна - достаточно 1 вопроса для подтверждения. Предложи 2-4 варианта как кнопки. Думай как эксперт - что бы ТЫ спросил на месте пользователя?',
+          description: 'Задай 1-2 уточняющих вопроса ПЕРЕД созданием агента, если описание неполное или неоднозначное. Предложи 2-4 варианта ответа как кнопки. Спрашивай: что конкретно делать, какой объект, какие условия, какой интервал.',
           parameters: {
             type: 'object',
             properties: {
@@ -524,20 +568,9 @@ export class Orchestrator {
       const personaName = (persona as any)?.name || '';
 
       // Системный промпт с контекстом
-      const systemPrompt = `Ты — 🤖 ATLAS, AI-ассистент и конструктор агентов на TON Agent Platform.
+      const systemPrompt = `Ты — 🤖 ATLAS, главный AI-ассистент TON Agent Platform — самой продвинутой платформы автоматизации в экосистеме TON/Telegram.
 
-━━━ ТВОЯ РОЛЬ ━━━
-Ты — НЕ исполнитель задач. Ты — архитектор и консультант. Твоя работа:
-1. ПОНЯТЬ что хочет пользователь
-2. СОЗДАТЬ правильного агента под его задачу
-3. НАСТРОИТЬ агента (capabilities, API ключи, расписание)
-4. ОБЪЯСНИТЬ как агент работает и что ему нужно
-
-ТЫ НЕ ДЕЛАЕШЬ РАБОТУ САМ. Ты создаёшь агентов которые делают работу 24/7.
-Когда пользователь говорит "мониторь цену" — ты НЕ мониторишь. Ты создаёшь агента-монитор.
-Когда говорит "торгуй подарками" — ты НЕ торгуешь. Ты создаёшь агента-трейдера.
-
-Ты эксперт по TON блокчейну, DeFi, NFT, Telegram, Discord, X/Twitter. Знаешь ВСЁ о платформе.${personaCtx}
+Ты не просто бот — ты эксперт по TON блокчейну, DeFi, NFT, Telegram-подаркам, AI-агентам и автоматизации. Ты знаешь ВСЁ о платформе и можешь провести полный аудит агентов пользователя.${personaCtx}
 
 ${personaName ? `Обращайся к пользователю: ${personaName}` : `Приветствие: "${greeting}!"`}
 
@@ -553,25 +586,16 @@ ID: ${userId}${isOwner ? ' 👑 OWNER (создатель платформы)' :
 • Каждый агент имеет: system prompt (душа), состояние (key-value), логи, кошелёк, плагины
 • Агент может: торговать подарками, мониторить цены, отправлять уведомления, работать с Telegram, вызывать API
 
-⚡ ЧТО УМЕЮТ АГЕНТЫ (80+ инструментов — это тулы АГЕНТОВ, не твои):
-• 💰 wallet: баланс TON, отправка TON/Jetton, кошелёк агента — НУЖНА мнемоника (WALLET_MNEMONIC)
+⚡ CAPABILITIES (60+ инструментов для агентов):
+• 💰 wallet: баланс TON, отправка TON, кошелёк агента
 • 🖼 nft: floor price коллекций через TonAPI
-• 🎁 gifts: каталог Telegram-подарков, Fragment листинги, оценка, покупка/продажа
-• 📊 gifts_market: GiftAsset API — real-time floor цены (WebSocket стрим!), история продаж, агрегатор, арбитраж, маркеткап
-• 🌐 web: поиск DDG, Exa AI нейропоиск (нужен EXA_API_KEY), fetch URL
-• 📱 telegram: MTProto userbot — отправка/чтение/реакции/пересылка, Bot API (инвойсы, форумы, стикеры)
-• ⛓ blockchain: TonAPI v2 — аккаунты, транзакции, жетоны, NFT, DNS, стейкинг
-• 📈 defi: DeDust, STON.fi — свопы, LP, цены токенов
-• 📉 blockchain_analytics: Dune Analytics SQL-запросы к on-chain данным — НУЖЕН DUNE_API_KEY
-• 💬 discord: отправка/чтение сообщений, каналы, реакции, модерация — НУЖЕН DISCORD_BOT_TOKEN
-• 🐦 x_twitter: поиск/чтение/постинг твитов, подписчики — НУЖЕН X_BEARER_TOKEN
-• 🎨 media: генерация картинок через fal.ai (Flux Schnell) — НУЖЕН FAL_API_KEY
-• 🧠 knowledge: дерево навыков (skill trees), база знаний агента — CRUD + поиск
-• 🛡 security: сканирование адресов, чёрный список, риск-отчёты, pre-tx проверки (автоматически!)
-• 📝 prompts: библиотека промптов (awesome-chatgpt-prompts)
-• 🔌 plugins: расширения, DeFi-плагины, аналитика
-• 🤝 inter_agent: межагентная связь, делегирование задач, shared state
-• 🔧 ton_mcp: продвинутые TON контракты
+• 🎁 gifts: каталог, Fragment листинги, оценка, арбитраж, покупка/продажа
+• 📊 gifts_market: GiftAsset/SwiftGifts API — реальные floor цены, история продаж, агрегатор, недооценённые подарки, маркеткап
+• 🌐 web: поиск DDG, fetch URL, HTTP запросы
+• 📱 telegram: MTProto userbot — отправка/чтение/реакции/пересылка/поиск в чатах
+• ⛓ blockchain: TonAPI v2 — аккаунты, транзакции, жетоны, NFT, DNS, стейкинг, курсы, вызов GET-методов контрактов, эмуляция транзакций
+• 🔌 plugins: DeFi (DeDust, STON.fi), аналитика, Discord/Slack/Email уведомления, безопасность
+• 🤝 inter_agent: межагентная связь, делегирование задач, отчёты
 
 🤖 7 AI-ПРОВАЙДЕРОВ: Gemini, OpenAI, Anthropic, Groq, DeepSeek, OpenRouter, Together
    Пользователь должен указать свой API ключ для работы агентов
@@ -598,44 +622,25 @@ ID: ${userId}${isOwner ? ' 👑 OWNER (создатель платформы)' :
 
 ━━━ ПРАВИЛА МАРШРУТИЗАЦИИ ━━━
 
-🟢 ВЫЗЫВАЙ create_agent когда пользователь описывает ЛЮБУЮ задачу:
-  - Задача = нужен агент. Всегда. Ты не делаешь работу сам.
-  - "мониторь цену" → создай агента-монитор (НЕ мониторь сам)
-  - "торгуй подарками" → создай агента-трейдер (НЕ торгуй сам)
-  - "постинг в твиттер" → создай агента для X (НЕ пости сам)
-  - "следи за кошельком" → создай агента-наблюдатель
-  - Любая повторяющаяся или автономная задача → агент
+🟢 ВЫЗЫВАЙ create_agent когда:
+  - "автоматизируй/создай/сделай/build/make агента/бота" + описание
+  - "следи/мониторь/watch/track" + объект → это агент мониторинга
+  - "напоминай/каждый день/по расписанию" → периодический агент
+  - Описывает любую повторяющуюся задачу
 
 🔵 ВЫЗЫВАЙ list_agents: "мои агенты", "список", "покажи", "what agents"
 🟠 ВЫЗЫВАЙ run/edit/delete/explain/debug_agent: упоминает #ID или имя + действие
 🔴 ВЫЗЫВАЙ analyze_nft: спрашивает цену/floor ПРЯМО СЕЙЧАС (не создание агента)
-🟡 ОБЯЗАТЕЛЬНО ВЫЗЫВАЙ ask_clarification ПЕРЕД create_agent:
-  - НИКОГДА не вызывай create_agent сразу. СНАЧАЛА пойми задачу через ask_clarification.
-  - НЕ СПРАШИВАЙ ШАБЛОННО! Анализируй описание и спрашивай ТОЛЬКО то, что непонятно.
+🟡 ОБЯЗАТЕЛЬНО ВЫЗЫВАЙ ask_clarification ПЕРЕД create_agent ВСЕГДА:
+  - НИКОГДА не вызывай create_agent сразу. ВСЕГДА СНАЧАЛА ask_clarification.
+  - Спроси: что конкретно агент должен делать? какой тип (userbot/скрипт/мониторинг)?
+  - Спроси про Telegram: нужен ли userbot (действовать от имени Telegram-аккаунта)?
+  - Предложи варианты: "Userbot (действует как реальный пользователь)" / "Бот (через Bot API)" / "Скрипт (автономный)"
+  - Уточни расписание, целевые чаты/каналы, условия действий
+  - Предложи 2-4 конкретных варианта как кнопки
+  - ЕДИНСТВЕННОЕ ИСКЛЮЧЕНИЕ: если пользователь уже ответил на уточняющие вопросы (контекст содержит "clarification_answer")
 
-  ПРИНЦИП: Будь умным. Если из описания почти все ясно - задай 1 короткий вопрос для подтверждения. Если ничего не ясно - спроси больше, но осмысленно.
-
-  ЧТО ТЫ ДОЛЖЕН ПОНЯТЬ (но спрашивать только если НЕ ЯСНО из контекста):
-  - Что конкретно делать (цель, условия, триггеры)
-  - Где работать (Telegram/Discord/X/API) - если не очевидно из задачи
-  - Как часто (расписание) - если не сказано
-  - Нужны ли внешние API - если задача требует Discord/X/картинки
-
-  ПРИМЕРЫ УМНОГО ПОВЕДЕНИЯ:
-  - Пользователь: "мониторь цену TON" - спроси: "Создам агента-монитор. При каком изменении уведомлять?" + кнопки "5%" / "10%" / "Любое" - платформа и расписание очевидны
-  - Пользователь: "постинг контента" - спроси: "Куда постить?" + кнопки "Telegram канал" / "Discord" / "X/Twitter"
-  - Пользователь: "арбитраж подарков" - спроси: "Создам агента-арбитражника. Покупать автоматически или только уведомлять?" - все остальное понятно
-  - Пользователь: "бот для дискорд сервера" - спроси: "Что он должен делать?" + упомяни что нужен Discord Bot Token
-  - Пользователь: "следи за кошельком EQxxx" - спроси: "Создам агента для мониторинга кошелька. О каждой транзакции или только крупных?" + кнопки
-  - Пользователь: "создай бота" (без деталей) - спроси развернуто: "Что бот должен делать?" + кнопки с популярными вариантами
-
-  ЕСЛИ ЗАДАЧА ПОЛНОСТЬЮ ЯСНА - спроси 1 вопрос: "Все верно? Создаю?" с кнопками "Да" / "Настроить"
-
-  ПРО API КЛЮЧИ: не спрашивай заранее как шаблон. Платформа сама покажет что нужно после создания. Упомяни ключ только если задача НЕВОЗМОЖНА без него.
-
-  ИСКЛЮЧЕНИЕ: если контекст содержит "clarification_answer" - сразу создавай.
-
-НЕ ВЫЗЫВАЙ инструменты: приветствие, "что ты умеешь?", "помощь", общий вопрос о платформе
+⚪ НЕ ВЫЗЫВАЙ инструменты: приветствие, "что ты умеешь?", "помощь", общий вопрос о платформе
 
 ━━━ НАВИГАЦИЯ (Web Studio) ━━━
 Когда отвечаешь пользователю из Web Studio, можешь вставлять навигационные ссылки.
@@ -655,13 +660,6 @@ ID: ${userId}${isOwner ? ' 👑 OWNER (создатель платформы)' :
 • [[page:profile|Профиль]] — профиль
 
 Используй ссылки когда даёшь инструкции: "Зайдите в [[page:settings|Настройки]] чтобы добавить API ключ"
-
-━━━ ВАЖНО: ТЫ vs АГЕНТЫ ━━━
-• Если пользователь просит СДЕЛАТЬ что-то (мониторить, торговать, постить, анализировать) → создай агента
-• Если пользователь спрашивает ПРО что-то (что умеет платформа, как работает, помощь) → ответь сам
-• Если пользователь хочет УПРАВЛЯТЬ (запустить, остановить, удалить, настроить агента) → выполни команду
-• Всегда говори "я создам агента который будет...", а НЕ "я буду..."
-• Описывай возможности как "агент сможет...", а не "я смогу..."
 
 ━━━ СТИЛЬ ОБЩЕНИЯ ━━━
 • Определяй язык пользователя и отвечай на нём (русский/английский)
@@ -950,10 +948,10 @@ CAPABILITIES: wallet, nft, gifts, market, telegram userbot (21 MTProto функ�
     // Шаблоны доступны через маркетплейс, но не блокируют creation flow
     // ════════════════════════════════════════════════════════════
 
-    // 1) Определяем расписание из описания
+    // 1) Определяем расписание из описания (только если юзер ЯВНО просит тики/интервал)
     const sched = detectTriggerFromDescription(description);
-    const isScheduled = sched.triggerType === 'scheduled';
-    const intervalMs = isScheduled ? (sched.triggerConfig.intervalMs || 300_000) : 300_000; // default 5 min
+    const isScheduled = sched.triggerType === 'scheduled' && /кажд\w*\s*\d+|интервал|тик|tick|every\s*\d+|раз в \d+/i.test(description);
+    const intervalMs = isScheduled ? (sched.triggerConfig.intervalMs || 300_000) : 0; // 0 = reactive only (no ticks)
 
     // 2) Загружаем глобальные пользовательские переменные (API ключи)
     let userVars: Record<string, any> = {};
@@ -1023,9 +1021,9 @@ CAPABILITIES: wallet, nft, gifts, market, telegram userbot (21 MTProto функ�
 • list_gift_for_sale(gift_id, price_ton, market?) — выставить на продажу
 
 💾 СОСТОЯНИЕ & УВЕДОМЛЕНИЯ:
-• get_state(key) — получить сохранённое значение (между тиками)
-• set_state(key, value) — сохранить значение
-• notify(message) — уведомить пользователя в Telegram
+• get_state(key) — получить сохранённое значение (память между запусками)
+• set_state(key, value) — сохранить значение (переживает перезагрузку)
+• notify(message) — уведомить владельца в Telegram
 • notify_rich(message, buttons?) — HTML уведомление с кнопками
 
 📱 TELEGRAM USERBOT (MTProto — действует от имени РЕАЛЬНОГО аккаунта):
@@ -1056,46 +1054,54 @@ CAPABILITIES: wallet, nft, gifts, market, telegram userbot (21 MTProto функ�
 • suggest_plugin(task) — подобрать плагин
 • run_plugin(pluginId, params) — выполнить плагин
 
-📊 DUNE ANALYTICS (SQL на 130+ блокчейнах):
-• dune_run_sql(sql, name?) — выполнить DuneSQL запрос (ethereum, solana, ton, polygon и др.)
-• dune_execute_query(query_id, parameters?) — выполнить сохранённый Dune запрос
-• dune_get_results(execution_id) — получить результаты выполнения
-• dune_search_tables(query) — поиск доступных таблиц/схем
-
-📝 БИБЛИОТЕКА ПРОМПТОВ:
-• get_prompt_template(query) — найти шаблон промпта по ключевому слову
-• list_prompt_categories() — список категорий промптов
-
 ═══ КРИТИЧЕСКИЕ ПРАВИЛА ═══
 
 1. ЯЗЫК: Пиши system prompt на том же языке что и описание пользователя
-2. КОНКРЕТНОСТЬ: Каждый тик = конкретный алгоритм действий (шаг 1, шаг 2...)
-3. АГЕНТ ДЕЙСТВУЕТ СРАЗУ (не переспрашивает пользователя в runtime). Нет информации? Используй дефолты:
+2. РАЗУМНЫЙ АГЕНТ: Ты создаёшь ДУМАЮЩЕГО агента, а НЕ скрипт.
+   Агент должен сам решать что делать, когда и как. Он анализирует ситуацию и принимает решения.
+   НЕ ПИШИ "на каждом тике" или "каждый запуск" — агент работает РЕАКТИВНО (отвечает на события) и ПРОАКТИВНО (сам решает когда действовать).
+3. ДВА РЕЖИМА РАБОТЫ АГЕНТА:
+   📩 РЕАКТИВНЫЙ: Когда приходит сообщение → агент думает и отвечает (как живой человек).
+      Контекст входящего сообщения приходит в context.input (текст) и context.chatId, context.senderId, context.senderUsername.
+      Агент ДОЛЖЕН проверять context.input и отвечать через tg_reply() или tg_send_message().
+   🧠 ПРОАКТИВНЫЙ: Агент сам решает что делать — проверяет непрочитанные, публикует контент, мониторит данные.
+      Проверяет tg_get_unread(), анализирует что нужно сделать, действует.
+4. АГЕНТ ДЕЙСТВУЕТ СРАЗУ (не переспрашивает пользователя в runtime). Нет информации? Используй дефолты:
    - Коллекции подарков: "Plush Pepe", "Heart Locket", "Lol Pop", "Gem", "Jelly Bunny"
    - Порог уведомления: изменение > 10%
    - Спред арбитража: > 5%
-   - Мониторинг: сравни с предыдущим состоянием через get_state/set_state
-4. СОСТОЯНИЕ: Всегда используй get_state/set_state для:
-   - Отслеживания предыдущих значений (цены, баланс, floor)
-   - Счётчика тиков (для периодических отчётов)
-   - Дедупликации уведомлений (не спамить одно и то же)
-5. УМНЫЕ УВЕДОМЛЕНИЯ: notify() только когда есть что-то важное. Паттерн:
-   - Сохрани предыдущее значение через set_state("prev_price", price)
-   - Сравни с текущим
-   - Если изменение > порога → notify() с деталями
-   - Если без изменений → молчи
-6. ПОДАРКИ: Продажа ТОЛЬКО за TON. Tonnel = только покупка. Апгрейды игнорировать.
-7. НАЧАЛО: Системный промпт начинай с "Действуй немедленно на каждом тике:"
-8. ФОРМАТ: Используй структуру с пронумерованными шагами для ясности
+5. СОСТОЯНИЕ: Используй get_state/set_state для памяти между запусками:
+   - Запоминай с кем общался, о чём, что обещал
+   - Отслеживай предыдущие значения для сравнения
+   - Не спамь одно и то же — дедупликация через state
+6. УМНЫЕ УВЕДОМЛЕНИЯ: notify() только когда есть что-то важное (не спамь владельцу).
+7. ПОДАРКИ: Продажа ТОЛЬКО за TON. Tonnel = только покупка. Апгрейды игнорировать.
+8. НАЧАЛО: Системный промпт начинай с описания РОЛИ и ХАРАКТЕРА агента. Пример:
+   "Ты — [роль]. Твой характер: [стиль]. Ты управляешь аккаунтом в Telegram."
+9. ФОРМАТ: Структурируй промпт по секциям: РОЛЬ, РЕАКТИВНЫЙ РЕЖИМ, ПРОАКТИВНЫЙ РЕЖИМ, ПРАВИЛА.
 
 ═══ ШАБЛОН ОТЛИЧНОГО SYSTEM PROMPT ═══
-"Действуй немедленно на каждом тике:
+"Ты — [роль агента]. [Описание характера и стиля общения].
 
-1. Собери данные: [конкретные инструменты]
-2. Проанализируй: [что сравнить, какие условия проверить]
-3. Если [условие] → notify() с [формат сообщения]
-4. Обнови состояние: set_state([ключ], [значение])
-5. Если ничего нового → пропусти уведомление (не спамь)"
+═══ РЕАКТИВНЫЙ РЕЖИМ (входящее сообщение) ═══
+Когда приходит сообщение (context.input):
+1. Прочитай сообщение и контекст (кто написал, в каком чате)
+2. Подумай что ответить — учитывай историю общения (get_state)
+3. Ответь естественно через tg_reply() или tg_send_message()
+4. Запомни контекст разговора через set_state()
+
+═══ ПРОАКТИВНЫЙ РЕЖИМ (самостоятельные действия) ═══
+Когда нет входящего сообщения:
+1. Проверь непрочитанные: tg_get_unread()
+2. [Специфичные для задачи действия: публикация контента / мониторинг / анализ]
+3. Реши нужно ли действовать сейчас
+4. Если да — выполни, если нет — пропусти (не делай ничего ради галочки)
+
+═══ ПРАВИЛА ═══
+• Веди себя как живой человек, а не как бот
+• Не спамь — пиши только когда есть что сказать
+• Запоминай контекст через get_state/set_state
+• notify() владельцу — только для важных событий"
 
 Ответь СТРОГО в формате JSON:
 {
@@ -1124,21 +1130,22 @@ CAPABILITIES: wallet, nft, gifts, market, telegram userbot (21 MTProto функ�
       summary = parsed.summary || '';
     } catch (e: any) {
       console.error('[Orchestrator] AI prompt generation failed, using description as prompt:', e.message);
-      // Fallback: генерируем достойный промпт на основе описания
-      systemPrompt = `Действуй немедленно на каждом тике:
+      // Fallback: генерируем разумный промпт на основе описания
+      systemPrompt = `Ты — умный AI-агент. Твоя задача: ${description}
 
-Твоя задача: ${description}
+═══ РЕАКТИВНЫЙ РЕЖИМ (входящее сообщение) ═══
+Когда приходит сообщение (context.input):
+1. Прочитай сообщение и определи что от тебя хотят
+2. Используй доступные инструменты для получения данных
+3. Ответь через tg_reply() или tg_send_message() — естественно, как живой человек
+4. Запомни контекст через set_state()
 
-═══ АЛГОРИТМ РАБОТЫ ═══
-1. Загрузи предыдущее состояние: get_state("last_data"), get_state("tick_count")
-2. Собери актуальные данные через доступные инструменты
-3. Сравни с предыдущими данными
-4. Если есть значимое изменение (>5%) → notify() с деталями:
-   - Что изменилось (было → стало)
-   - Конкретные цифры и рекомендации
-5. Обнови состояние: set_state("last_data", новые данные)
-6. Увеличь счётчик: set_state("tick_count", old + 1)
-7. Если ничего нового — НЕ уведомляй (не спамь)
+═══ ПРОАКТИВНЫЙ РЕЖИМ (самостоятельные действия) ═══
+Когда нет входящего сообщения:
+1. Проверь непрочитанные: tg_get_unread()
+2. Проверь что нужно сделать для задачи
+3. Реши — действовать или подождать
+4. Если есть что-то важное → действуй, иначе пропусти
 
 ═══ ДОСТУПНЫЕ ИНСТРУМЕНТЫ ═══
 • get_ton_balance(address) — баланс кошелька
@@ -1147,63 +1154,57 @@ CAPABILITIES: wallet, nft, gifts, market, telegram userbot (21 MTProto функ�
 • scan_real_arbitrage() — арбитраж подарков
 • web_search(query) — поиск в интернете
 • fetch_url(url) — HTTP GET страницы
-• get_state(key) / set_state(key, value) — память между тиками
-• notify(message) — уведомление пользователю
-• list_plugins() — доступные плагины
+• tg_send_message(peer, text) — отправить сообщение
+• tg_get_messages(peer, limit) — прочитать сообщения
+• tg_get_unread(limit) — непрочитанные
+• tg_reply(chat_id, reply_to_id, text) — ответить
+• get_state(key) / set_state(key, value) — память между запусками
+• notify(message) — уведомление владельцу
 
 ═══ ПРАВИЛА ═══
-• Используй get_state/set_state для дедупликации
-• Не повторяй одно и то же уведомление
-• Действуй автономно — не задавай вопросов`;
+• Веди себя как живой человек, не как бот
+• Запоминай контекст общения через get_state/set_state
+• Не спамь — пиши только когда есть что сказать
+• Действуй автономно — не задавай вопросов владельцу`;
       generatedName = generatedName || description.slice(0, 30);
     }
 
     // Засчитываем генерацию
     trackGeneration(userId);
 
-    // Enrich system prompt with relevant prompt template from awesome-chatgpt-prompts
-    try {
-      const promptLibResp = await fetch('https://raw.githubusercontent.com/f/awesome-chatgpt-prompts/main/prompts.csv', {
-        signal: AbortSignal.timeout(8000),
-      });
-      if (promptLibResp.ok) {
-        const csvText = await promptLibResp.text();
-        const csvLines = csvText.split('\n');
-        interface PLEntry { act: string; prompt: string; }
-        const entries: PLEntry[] = [];
-        for (let li = 1; li < csvLines.length; li++) {
-          const line = csvLines[li].trim();
-          if (!line) continue;
-          const m = line.match(/^"([^"]*(?:""[^"]*)*)","([^"]*(?:""[^"]*)*)"$/);
-          if (m) entries.push({ act: m[1].replace(/""/g, '"'), prompt: m[2].replace(/""/g, '"') });
-        }
-        // Search by description keywords
-        const descWords = description.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3);
-        let bestMatch: PLEntry | null = null;
-        let bestScore = 0;
-        for (const entry of entries) {
-          const text = (entry.act + ' ' + entry.prompt).toLowerCase();
-          let score = 0;
-          for (const w of descWords) {
-            if (entry.act.toLowerCase().includes(w)) score += 3;
-            else if (text.includes(w)) score += 1;
-          }
-          if (score > bestScore) { bestScore = score; bestMatch = entry; }
-        }
-        if (bestMatch && bestScore >= 3) {
-          // Extract key behavioral aspects from the prompt template (first 300 chars)
-          const snippet = bestMatch.prompt.slice(0, 300);
-          systemPrompt += '\n\n[Reference style from "' + bestMatch.act + '" template: ' + snippet + '...]';
-          console.log('[Orchestrator] Enriched prompt with template: ' + bestMatch.act + ' (score: ' + bestScore + ')');
-        }
-      }
-    } catch (plErr: any) {
-      console.warn('[Orchestrator] Prompt library enrichment skipped:', plErr.message);
-    }
-
     // Если плагины установлены — добавляем их API docs в system prompt агента
     if (pluginSkillDocs) {
       systemPrompt = systemPrompt + '\n\n' + pluginSkillDocs;
+    }
+
+    // 3.5) Multi-agent detection: check if user has other agents on the same TG account
+    let routingRules: Record<string, any> | undefined;
+    try {
+      // Find all user's agents that have a TG session
+      const allAgentsResult = await this.dbTools.getUserAgents(userId);
+      const allAgents = allAgentsResult.data || [];
+      const existingAgentsWithTg = allAgents.filter((a: any) => {
+        const tc = a.triggerConfig || a.trigger_config;
+        const tcObj = typeof tc === 'string' ? JSON.parse(tc) : tc;
+        return tcObj?.telegram_session?.session && a.triggerType === 'ai_agent';
+      });
+      if (existingAgentsWithTg.length > 0) {
+        // User already has agents with TG sessions — set up routing rules
+        // New agent gets default routing: responds to DMs unless keywords specify otherwise
+        routingRules = {
+          chatTypes: ['dm'],
+          isDefault: existingAgentsWithTg.length === 0, // first agent is default
+          priority: 5,
+        };
+        // Try to auto-detect keywords from system prompt
+        const keywordMatches = systemPrompt.match(/(?:баланс|крипто|nft|подар|gift|арбитраж|arbitrage|trading|канал|channel|модера|moder|контент|content|анализ|analys|мониторинг|monitor|цена|price|новости|news)/gi);
+        if (keywordMatches) {
+          routingRules.keywords = [...new Set(keywordMatches.map((k: string) => k.toLowerCase()))].slice(0, 10);
+        }
+        console.log(`[Orchestrator] Multi-agent detected: user ${userId} has ${existingAgentsWithTg.length} active TG agents. New agent routing: ${JSON.stringify(routingRules)}`);
+      }
+    } catch (e: any) {
+      console.warn(`[Orchestrator] Multi-agent detection error: ${e.message}`);
     }
 
     // 4) Собираем triggerConfig для ai_agent
@@ -1214,7 +1215,7 @@ CAPABILITIES: wallet, nft, gifts, market, telegram userbot (21 MTProto функ�
         AI_PROVIDER: userVars.AI_PROVIDER || '',
         AI_API_KEY: userVars.AI_API_KEY || '',
         self_improvement_enabled: true,
-        // enabledCapabilities will be set after detection below
+        ...(routingRules ? { routingRules } : {}),
       },
     };
 
@@ -1236,170 +1237,14 @@ CAPABILITIES: wallet, nft, gifts, market, telegram userbot (21 MTProto функ�
     const agent = dbResult.data!;
     const agentId = agent.id;
 
-    // Save detected capabilities + always include state, notify, web as base
-    const detectedCaps: string[] = [];
-    const hasKey = !!(userVars.AI_API_KEY);
-    const baseCaps = ['state', 'notify', 'web'];
-    const allDetectedCaps = [...new Set([...baseCaps, ...detectedCaps])];
-    try {
-      const { pool } = await import('../db');
-      const row = await pool.query('SELECT trigger_config FROM builder_bot.agents WHERE id=$1', [agentId]);
-      const tc = row.rows[0]?.trigger_config || {};
-      if (!tc.config) tc.config = {};
-      tc.config.enabledCapabilities = allDetectedCaps;
-      await pool.query('UPDATE builder_bot.agents SET trigger_config=$1 WHERE id=$2', [JSON.stringify(tc), agentId]);
-      console.log('[Orchestrator] Saved capabilities for agent #' + agentId + ': ' + allDetectedCaps.join(', '));
-    } catch (capErr: any) {
-      console.warn('[Orchestrator] Failed to save capabilities:', capErr.message);
-    }
-
-    // 5a-2) Auto-create initial skill tree
-    try {
-      const { pool: stPool } = await import('../db');
-      // Create root node
-      await stPool.query(
-        `INSERT INTO builder_bot.agent_skill_tree (agent_id, path, title, content, parent_path)
-         VALUES ($1, 'root', $2, $3, NULL)
-         ON CONFLICT (agent_id, path) DO NOTHING`,
-        [agentId, generatedName, description]
-      );
-      // Create capability nodes
-      const capNames: Record<string, string> = {
-        wallet: 'TON Кошелёк', nft: 'NFT', gifts: 'Подарки', gifts_market: 'Рынок подарков',
-        telegram: 'Telegram', web: 'Веб', defi: 'DeFi', discord: 'Discord',
-        x_twitter: 'X/Twitter', media: 'Генерация медиа', knowledge: 'База знаний',
-        security: 'Безопасность', blockchain_analytics: 'Аналитика',
-      };
-      for (const cap of allDetectedCaps) {
-        if (capNames[cap]) {
-          await stPool.query(
-            `INSERT INTO builder_bot.agent_skill_tree (agent_id, path, title, content, parent_path)
-             VALUES ($1, $2, $3, $4, 'root')
-             ON CONFLICT (agent_id, path) DO NOTHING`,
-            [agentId, 'capabilities/' + cap, capNames[cap], 'Навык: ' + capNames[cap]]
-          );
-        }
-      }
-      console.log('[Orchestrator] Created initial skill tree for agent #' + agentId);
-    } catch (stErr: any) {
-      console.warn('[Orchestrator] Skill tree init failed:', stErr.message);
-    }
-
-
-    // 5b) Detect routing rules from system prompt + check for same-account agents
-    try {
-      const { pool } = await import('../db');
-      // Load the TG session info for this user (from user_variables or any existing agent)
-      const existingAgentsRes = await pool.query(
-        `SELECT id, name, trigger_config FROM builder_bot.agents
-         WHERE user_id = $1 AND trigger_type = 'ai_agent' AND id != $2`,
-        [userId, agentId]
-      );
-
-      // Check if any existing agent shares the same TG account
-      const newTc = (await pool.query('SELECT trigger_config FROM builder_bot.agents WHERE id=$1', [agentId])).rows[0]?.trigger_config || {};
-      const newTgSession = newTc?.telegram_session;
-      let sameAccountAgents: Array<{ id: number; name: string; routingRules?: any }> = [];
-
-      for (const row of existingAgentsRes.rows) {
-        const existingTc = typeof row.trigger_config === 'string' ? JSON.parse(row.trigger_config) : row.trigger_config;
-        const existingSession = existingTc?.telegram_session;
-        // Match by telegramUserId or by session string
-        if (existingSession && newTgSession) {
-          if (existingSession.telegramUserId && newTgSession.telegramUserId &&
-              existingSession.telegramUserId === newTgSession.telegramUserId) {
-            sameAccountAgents.push({
-              id: Number(row.id),
-              name: row.name || 'Agent #' + row.id,
-              routingRules: existingTc?.config?.routingRules,
-            });
-          } else if (existingSession.session && newTgSession.session &&
-                     existingSession.session === newTgSession.session) {
-            sameAccountAgents.push({
-              id: Number(row.id),
-              name: row.name || 'Agent #' + row.id,
-              routingRules: existingTc?.config?.routingRules,
-            });
-          }
-        }
-      }
-
-      // If there are other agents on the same account, set this one as non-default
-      // (the first agent is default, new ones need explicit routing)
-      if (sameAccountAgents.length > 0) {
-        console.log('[Orchestrator] Same-account agents found: ' + sameAccountAgents.map(a => '#' + a.id).join(', '));
-
-        // Auto-generate basic routing rules from system prompt keywords
-        const promptLower = systemPrompt.toLowerCase();
-        const routingRules: any = {};
-
-        // Detect chat-specific routing
-        const channelMatch = systemPrompt.match(/@([a-zA-Z0-9_]+)/g);
-        if (channelMatch) {
-          routingRules.chatIds = channelMatch.map((m: string) => m);
-        }
-
-        // Detect keywords from prompt
-        const detectedKeywords: string[] = [];
-        const keywordPatterns: Record<string, string[]> = {
-          crypto: ['крипт', 'crypto', 'bitcoin', 'btc', 'eth', 'блокчейн', 'blockchain'],
-          trading: ['трейд', 'trading', 'биржа', 'exchange', 'swap', 'дефи', 'defi'],
-          nft: ['nft', 'нфт', 'коллекц', 'collection'],
-          gifts: ['подарк', 'gift', 'арбитраж', 'arbitrage'],
-          channel: ['канал', 'channel', 'пост', 'post', 'контент', 'content', 'публика'],
-          moderation: ['модер', 'moder', 'бан', 'ban', 'спам', 'spam', 'правил'],
-          support: ['поддерж', 'support', 'помощ', 'help', 'faq', 'вопрос'],
-          analytics: ['аналит', 'analyt', 'статист', 'stats', 'отчет', 'report'],
-        };
-        for (const [category, patterns] of Object.entries(keywordPatterns)) {
-          if (patterns.some(p => promptLower.includes(p))) {
-            detectedKeywords.push(category);
-          }
-        }
-        if (detectedKeywords.length > 0) {
-          routingRules.keywords = detectedKeywords;
-        }
-
-        // Not default (existing agent is default)
-        routingRules.isDefault = false;
-
-        // Save routing rules
-        const tcForRules = (await pool.query('SELECT trigger_config FROM builder_bot.agents WHERE id=$1', [agentId])).rows[0]?.trigger_config || {};
-        if (!tcForRules.config) tcForRules.config = {};
-        tcForRules.config.routingRules = routingRules;
-        await pool.query('UPDATE builder_bot.agents SET trigger_config=$1 WHERE id=$2', [JSON.stringify(tcForRules), agentId]);
-        console.log('[Orchestrator] Saved routing rules for agent #' + agentId + ': ' + JSON.stringify(routingRules));
-
-        // Ensure first existing agent has isDefault=true if it has no routing rules
-        for (const existing of sameAccountAgents) {
-          if (!existing.routingRules) {
-            const existTc = (await pool.query('SELECT trigger_config FROM builder_bot.agents WHERE id=$1', [existing.id])).rows[0]?.trigger_config || {};
-            if (!existTc.config) existTc.config = {};
-            existTc.config.routingRules = { isDefault: true };
-            await pool.query('UPDATE builder_bot.agents SET trigger_config=$1 WHERE id=$2', [JSON.stringify(existTc), existing.id]);
-            console.log('[Orchestrator] Set agent #' + existing.id + ' as default router');
-            break; // only first
-          }
-        }
-      } else {
-        // First agent on this account — set as default
-        const tcForDefault = (await pool.query('SELECT trigger_config FROM builder_bot.agents WHERE id=$1', [agentId])).rows[0]?.trigger_config || {};
-        if (!tcForDefault.config) tcForDefault.config = {};
-        tcForDefault.config.routingRules = { isDefault: true };
-        await pool.query('UPDATE builder_bot.agents SET trigger_config=$1 WHERE id=$2', [JSON.stringify(tcForDefault), agentId]);
-      }
-    } catch (routeErr: any) {
-      console.warn('[Orchestrator] Routing rules detection failed:', routeErr.message);
-    }
-
     // 6) Авто-старт
     let autoStarted = false;
     let schedLabel = '';
-    if (isScheduled) {
+    if (isScheduled && intervalMs > 0) {
       const ms = intervalMs;
       schedLabel = ms >= 3_600_000 ? `${ms / 3_600_000} ч` : ms >= 60_000 ? `${ms / 60_000} мин` : `${ms / 1000} сек`;
     } else {
-      schedLabel = '5 мин'; // default
+      schedLabel = 'реактивный'; // no ticks — event-driven
     }
 
     try {
@@ -1412,70 +1257,25 @@ CAPABILITIES: wallet, nft, gifts, market, telegram userbot (21 MTProto функ�
     // 7) Smart dependency detection
     const TG_TOOLS_PATTERN = /buy_catalog|buy_market|buy_resale|list_gift_for_sale|tg_send_message|tg_get_messages|tg_join_channel|tg_leave_channel|tg_get_dialogs|tg_search_messages|tg_reply|tg_react|tg_edit|tg_forward|tg_pin|tg_set_typing|tg_send_file|tg_send_formatted|tg_get_unread|tg_mark_read|tg_get_comments|tg_get_user_info|tg_get_members|tg_get_channel_info|tg_get_message_by_id/i;
     const WALLET_TOOLS_PATTERN = /send_ton|send_jetton|get_agent_wallet|buy_market_gift/i;
-    // AI-based capability detection: ask AI to analyze the system prompt
-    // Instead of brittle keyword matching, we use the AI model that generated the prompt
-    // to tell us what capabilities are needed
-    const ALL_CAPS = ['wallet','nft','gifts','gifts_market','telegram','web','defi','plugins',
-      'blockchain_analytics','prompts','inter_agent','discord','x_twitter','media','knowledge',
-      'security','blockchain','ton_mcp'];
+    const DEFI_PATTERN = /dex_get_prices|dex_swap_simulate|ton_get_rates|ton_get_staking/i;
+    const GIFT_TRADE_PATTERN = /buy_catalog_gift|buy_resale_gift|list_gift_for_sale|buy_market_gift|scan_arbitrage|scan_real_arbitrage/i;
 
-    try {
-      const capDetectResp = await openai.chat.completions.create({
-        model: getUserModel(userId),
-        messages: [
-          { role: 'system', content: `You analyze AI agent system prompts and determine which capabilities the agent needs.
-Available capabilities: ${ALL_CAPS.join(', ')}
+    const needsTgLogin = TG_TOOLS_PATTERN.test(systemPrompt);
+    const needsWallet = WALLET_TOOLS_PATTERN.test(systemPrompt) || GIFT_TRADE_PATTERN.test(systemPrompt);
+    const hasKey = !!(userVars.AI_API_KEY);
 
-Descriptions:
-- wallet: TON balance, send TON/Jetton, wallet operations
-- nft: NFT collections, floor prices, analysis
-- gifts: Telegram gifts catalog, buying/selling gifts
-- gifts_market: Gift market data, arbitrage, price tracking
-- telegram: Telegram messaging, channels, groups (MTProto userbot)
-- web: Web search, URL fetching, HTTP requests
-- defi: DeFi swaps, liquidity, DEX operations
-- plugins: Platform plugins
-- blockchain_analytics: Dune Analytics, on-chain SQL queries
-- prompts: Prompt templates library
-- inter_agent: Communication between agents
-- discord: Discord server management, messaging
-- x_twitter: X/Twitter posting, searching, reading
-- media: Image generation (fal.ai)
-- knowledge: Knowledge base, skill trees, documentation
-- security: Address scanning, blacklists, risk reports
-- blockchain: Raw blockchain data via TonAPI
-- ton_mcp: Advanced TON smart contract calls
+    // Detect which capability categories the prompt targets
+    const detectedCaps: string[] = [];
+    if (needsWallet || /balance|кошел[её]к|wallet|send_ton|get_ton/i.test(systemPrompt)) detectedCaps.push('wallet');
+    if (/nft|коллекц|collection|floor/i.test(systemPrompt)) detectedCaps.push('nft');
+    if (/gift|подарк|подарок/i.test(systemPrompt)) detectedCaps.push('gifts');
+    if (/market|рын(о|к)|arbitrage|арбитраж|floor_real|price_list/i.test(systemPrompt)) detectedCaps.push('gifts_market');
+    if (needsTgLogin || /telegram|тг|чат|канал|channel|message|сообщен/i.test(systemPrompt)) detectedCaps.push('telegram');
+    if (/search|поиск|web|fetch|http|url|сайт|парс/i.test(systemPrompt)) detectedCaps.push('web');
+    if (DEFI_PATTERN.test(systemPrompt) || /defi|dex|swap|стейкинг|staking/i.test(systemPrompt)) detectedCaps.push('defi');
+    if (/plugin|плагин/i.test(systemPrompt)) detectedCaps.push('plugins');
+    if (/другой агент|inter.?agent|ask_agent|multi.?agent/i.test(systemPrompt)) detectedCaps.push('inter_agent');
 
-Reply with ONLY a JSON array of capability IDs needed. Example: ["wallet","telegram","security"]` },
-          { role: 'user', content: 'Agent system prompt:\n' + systemPrompt.slice(0, 2000) }
-        ],
-        max_tokens: 200,
-        temperature: 0,
-      } as any);
-      const capText = (capDetectResp as any).choices?.[0]?.message?.content || '[]';
-      // Parse JSON array from response
-      const jsonMatch = capText.match(/\[.*\]/s);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]) as string[];
-        for (const cap of parsed) {
-          if (ALL_CAPS.includes(cap) && !detectedCaps.includes(cap)) {
-            detectedCaps.push(cap);
-          }
-        }
-        console.log('[Orchestrator] AI detected capabilities:', detectedCaps.join(', '));
-      }
-    } catch (capDetectErr: any) {
-      console.warn('[Orchestrator] AI cap detection failed, using fallback:', capDetectErr.message);
-      // Minimal fallback: always add security for financial agents
-      if (systemPrompt.match(/wallet|balance|send.*ton|gift.*market|swap|defi/i)) {
-        if (!detectedCaps.includes('wallet')) detectedCaps.push('wallet');
-        if (!detectedCaps.includes('security')) detectedCaps.push('security');
-      }
-      if (systemPrompt.match(/telegram|channel|chat|message/i)) {
-        if (!detectedCaps.includes('telegram')) detectedCaps.push('telegram');
-      }
-    }
-    // Security always on for financial agents
     // Check TG auth status
     let tgAuthed = false;
     try {
@@ -1483,8 +1283,8 @@ Reply with ONLY a JSON array of capability IDs needed. Example: ["wallet","teleg
     } catch {}
 
     const setupNeeds: AgentSetupNeeds = {
-      tgAuth: detectedCaps.includes('telegram'),
-      wallet: detectedCaps.includes('wallet'),
+      tgAuth: needsTgLogin,
+      wallet: needsWallet,
       apiKey: !hasKey,
       tgAuthed,
       hasApiKey: hasKey,
@@ -1508,49 +1308,17 @@ Reply with ONLY a JSON array of capability IDs needed. Example: ["wallet","teleg
       const capIcons: Record<string, string> = {
         wallet: '💰', nft: '🖼', gifts: '🎁', gifts_market: '📊',
         telegram: '📱', web: '🌐', defi: '📈', plugins: '🔌', inter_agent: '🔗',
-        discord: '💬', x_twitter: '🐦', media: '🎨', knowledge: '🧠',
-        security: '🛡', blockchain_analytics: '📉', prompts: '📝', ton_mcp: '🔧',
-        blockchain: '⛓', state: '💾', notify: '🔔',
-      };      const capLabels = detectedCaps.map(c => `${capIcons[c] || '▪️'} ${c}`).join(', ');
+      };
+      const capLabels = detectedCaps.map(c => `${capIcons[c] || '▪️'} ${c}`).join(', ');
       content += `\n🧩 _Возможности: ${esc(capLabels)}_\n`;
     }
 
-    // Show missing API keys for detected capabilities
-    const NEEDS_MAP: Record<string, { key: string; label: string }> = {
-      discord: { key: 'DISCORD_BOT_TOKEN', label: 'Discord Bot Token' },
-      x_twitter: { key: 'X_BEARER_TOKEN', label: 'X/Twitter Bearer Token' },
-      media: { key: 'FAL_API_KEY', label: 'fal.ai API Key' },
-      blockchain_analytics: { key: 'DUNE_API_KEY', label: 'Dune Analytics API Key' },
-      wallet: { key: 'WALLET_MNEMONIC', label: 'Мнемоника кошелька TON' },
-    };
-    const missingKeys: string[] = [];
-    const presentKeys: string[] = [];
-    for (const cap of detectedCaps) {
-      const need = NEEDS_MAP[cap];
-      if (need) {
-        if (!userVars[need.key] && !(triggerConfig?.config as any)?.[need.key]) {
-          missingKeys.push(need.label);
-        } else {
-          presentKeys.push('✅ ' + need.label);
-        }
-      }
-    }
-    if (presentKeys.length > 0) {
-      content += `\n✅ _Настроено: ${esc(presentKeys.join(', '))}_\n`;
-    }
-    if (missingKeys.length > 0) {
-      content += `\n⚠️ *Для полной работы настройте:*\n`;
-      for (const mk of missingKeys) {
-        content += `  → _${esc(mk)}_\n`;
-      }
-      content += `\n💡 _Профиль → 🔑 API ключи_\n`;
-    }
     content += `🧠 Самоулучшение: ✅ _\\(AI автоисправление ошибок\\)_\n`;
 
     // Show what's needed for full operation
     const needsList: string[] = [];
-    if (detectedCaps.includes('telegram') && !tgAuthed) needsList.push('🔐 Telegram авторизация');
-    if (detectedCaps.includes('wallet')) needsList.push('💰 Кошелёк TON');
+    if (needsTgLogin && !tgAuthed) needsList.push('🔐 Telegram авторизация');
+    if (needsWallet) needsList.push('💰 Кошелёк TON');
     if (!hasKey) needsList.push('🔑 API ключ AI');
 
     if (needsList.length > 0) {
