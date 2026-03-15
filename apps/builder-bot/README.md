@@ -152,7 +152,7 @@ Each agent can use a different AI provider:
 | OpenRouter | gemini-2.5-flash | `sk-or...` |
 | Together | Llama-3.3-70B-Instruct-Turbo | — |
 
-If no API key is configured, agents fall back to the **platform proxy**.
+If no API key is configured, agents fall back to the **user API key**.
 
 ## Security
 
