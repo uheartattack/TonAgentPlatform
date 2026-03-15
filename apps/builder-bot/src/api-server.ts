@@ -85,9 +85,10 @@ function verifyTelegramAuth(data: Record<string, string>): boolean {
   const { hash, ...fields } = data;
   if (!hash) return false;
 
-  // Проверяем срок (max 24 часа)
+  // Проверяем срок (max 24 часа, не принимаем токены из будущего)
   const authDate = parseInt(fields.auth_date || '0', 10);
-  if (isNaN(authDate) || Date.now() / 1000 - authDate > 86400) return false;
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (isNaN(authDate) || authDate <= 0 || nowSec - authDate > 86400 || authDate - nowSec > 300) return false;
 
   // Строим data-check-string
   const checkString = Object.keys(fields)
