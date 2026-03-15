@@ -86,7 +86,15 @@ function verifyTelegramAuth(data: Record<string, string>): boolean {
   const secretKey = crypto.createHash('sha256').update(BOT_TOKEN).digest();
   const hmac = crypto.createHmac('sha256', secretKey).update(checkString).digest('hex');
 
-  return hmac === hash;
+  // Защита от timing attack: сравниваем через константное время
+  try {
+    const hmacBuf = Buffer.from(hmac, 'hex');
+    const hashBuf = Buffer.from(hash.toLowerCase(), 'hex');
+    if (hmacBuf.length !== hashBuf.length) return false;
+    return crypto.timingSafeEqual(hmacBuf, hashBuf);
+  } catch {
+    return false;
+  }
 }
 
 // ── Telegram OIDC JWT verification ────────────────────────────
