@@ -38,7 +38,7 @@ function _getSharedStatePool(): any {
       host: process.env.DB_HOST || 'localhost',
       port: parseInt(process.env.DB_PORT || '5432'),
       user: process.env.DB_USER || 'ton_agent',
-      password: process.env.DB_PASSWORD || 'changeme',
+      password: process.env.DB_PASSWORD || (() => { throw new Error('[DB] DB_PASSWORD не задан — укажите переменную окружения в .env файле'); })(),
       database: process.env.DB_NAME || 'ton_agent_platform',
       max: 3,
     });
@@ -1509,6 +1509,58 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
         },
       },
     },
+    // ── Self-modification tools (agent evolves itself) ──
+    {
+      type: 'function' as const,
+      function: {
+        name: 'get_my_config',
+        description: 'Получить свой текущий системный промпт, интервал и описание. Используй перед update_my_prompt чтобы понять что менять.',
+        parameters: { type: 'object', properties: {} },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'update_my_prompt',
+        description: 'Обновить свой системный промпт (свою "душу"). Используй когда пользователь просит изменить твоё поведение, роль, стиль или задачи. Пиши ПОЛНЫЙ новый промпт — он заменит текущий целиком.',
+        parameters: {
+          type: 'object',
+          properties: {
+            new_prompt: { type: 'string', description: 'Новый полный системный промпт (заменит текущий)' },
+            reason: { type: 'string', description: 'Почему меняешь промпт (для лога)' },
+          },
+          required: ['new_prompt'],
+        },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'update_my_interval',
+        description: 'Изменить интервал проактивных тиков (как часто ты просыпаешься для самостоятельных действий). 0 = только реактивный режим.',
+        parameters: {
+          type: 'object',
+          properties: {
+            interval_minutes: { type: 'number', description: 'Интервал в минутах (0 = отключить проактивность, 5-60 минут рекомендуется)' },
+          },
+          required: ['interval_minutes'],
+        },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'update_my_description',
+        description: 'Обновить своё описание (видно в меню агентов).',
+        parameters: {
+          type: 'object',
+          properties: {
+            description: { type: 'string', description: 'Новое описание агента' },
+          },
+          required: ['description'],
+        },
+      },
+    },
   ];
 
   // Append MCP tools (dynamically discovered from @ton/mcp server)
@@ -1525,7 +1577,7 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
     }
     // Always allow core tools
     ['get_state', 'set_state', 'notify', 'notify_rich', 'apply_plugin', 'remove_plugin',
-     'list_plugins', 'suggest_plugin'].forEach(t => allowed.add(t));
+     'list_plugins', 'suggest_plugin', 'get_my_config', 'update_my_prompt', 'update_my_interval', 'update_my_description'].forEach(t => allowed.add(t));
     // Always allow MCP tools if ton_mcp capability is enabled
     if (enabledCapabilities.includes('ton_mcp') && mcpTools) {
       mcpTools.forEach(t => allowed.add((t as any).function.name));
@@ -3060,6 +3112,78 @@ export async function executeTool(
       } catch (e: any) { return { error: e.message }; }
     }
 
+    // ── Self-modification tools (agent evolves itself) ──
+    case 'get_my_config': {
+      try {
+        const { pool } = await import('../db');
+        const row = await pool.query('SELECT code, description, trigger_config FROM builder_bot.agents WHERE id=$1', [params.agentId]);
+        if (!row.rows[0]) return { error: 'Agent not found' };
+        const a = row.rows[0];
+        const tc = a.trigger_config || {};
+        return {
+          current_prompt: a.code || '(empty)',
+          description: a.description || '(empty)',
+          intervalMs: tc.intervalMs || 0,
+          interval_minutes: Math.round((tc.intervalMs || 0) / 60000),
+        };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'update_my_prompt': {
+      const newPrompt = args.new_prompt as string;
+      const reason = (args.reason as string) || 'self-update';
+      if (!newPrompt || newPrompt.length < 20) return { error: 'Промпт слишком короткий (минимум 20 символов)' };
+      if (newPrompt.length > 10000) return { error: 'Промпт слишком длинный (максимум 10000 символов)' };
+      try {
+        const { pool } = await import('../db');
+        // Backup old prompt in state
+        const oldRow = await pool.query('SELECT code FROM builder_bot.agents WHERE id=$1', [params.agentId]);
+        const oldPrompt = oldRow.rows[0]?.code || '';
+        const stateRepo = getAgentStateRepository();
+        await stateRepo.set(params.agentId, params.userId, 'previous_prompt', oldPrompt).catch(() => {});
+        await stateRepo.set(params.agentId, params.userId, 'prompt_update_reason', reason).catch(() => {});
+        await stateRepo.set(params.agentId, params.userId, 'prompt_updated_at', new Date().toISOString()).catch(() => {});
+
+        // Update code column
+        await pool.query('UPDATE builder_bot.agents SET code=$1 WHERE id=$2', [newPrompt, params.agentId]);
+
+        // Also update trigger_config.code
+        const tcRow = await pool.query('SELECT trigger_config FROM builder_bot.agents WHERE id=$1', [params.agentId]);
+        const tc = tcRow.rows[0]?.trigger_config || {};
+        tc.code = newPrompt;
+        await pool.query('UPDATE builder_bot.agents SET trigger_config=$1 WHERE id=$2', [JSON.stringify(tc), params.agentId]);
+
+        logToDb(params.agentId, 'info', `[SELF-EVOLVE] Prompt updated: ${reason}`);
+        return { ok: true, message: 'Промпт обновлён. Новый промпт начнёт действовать со следующего тика.', prompt_length: newPrompt.length };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'update_my_interval': {
+      const minutes = args.interval_minutes as number;
+      if (typeof minutes !== 'number' || minutes < 0 || minutes > 1440) return { error: 'interval_minutes должен быть 0-1440' };
+      const ms = Math.round(minutes * 60000);
+      try {
+        const { pool } = await import('../db');
+        const tcRow = await pool.query('SELECT trigger_config FROM builder_bot.agents WHERE id=$1', [params.agentId]);
+        const tc = tcRow.rows[0]?.trigger_config || {};
+        tc.intervalMs = ms;
+        await pool.query('UPDATE builder_bot.agents SET trigger_config=$1 WHERE id=$2', [JSON.stringify(tc), params.agentId]);
+        logToDb(params.agentId, 'info', `[SELF-EVOLVE] Interval changed to ${minutes} min`);
+        return { ok: true, intervalMs: ms, minutes, message: ms === 0 ? 'Проактивный режим отключён. Будешь работать только реактивно.' : `Интервал обновлён на ${minutes} мин. Изменение вступит в силу при следующем перезапуске.` };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'update_my_description': {
+      const desc = args.description as string;
+      if (!desc || desc.length < 3) return { error: 'Описание слишком короткое' };
+      if (desc.length > 500) return { error: 'Описание слишком длинное (максимум 500 символов)' };
+      try {
+        const { pool } = await import('../db');
+        await pool.query('UPDATE builder_bot.agents SET description=$1 WHERE id=$2', [desc, params.agentId]);
+        return { ok: true, description: desc };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
     // ── Inter-agent tools ──
     case 'list_my_agents': {
       try {
@@ -3870,11 +3994,11 @@ export class AIAgentRuntime {
     // Register handle (needed for addMessageToAIAgent even without ticks)
     _activeHandles.set(opts.agentId, entry);
 
-    // If agent has a Telegram session → it responds to messages, no scheduled ticks needed
-    // This avoids burning Gemini rate limit on periodic ticks
+    // If agent has a Telegram session AND no explicit interval → message-driven only
+    // But if intervalMs > 0, agent wants proactive ticks (posting, checking unread, etc.)
     const hasTgSession = !!(opts.config as any)?._hasTgSession;
-    if (hasTgSession) {
-      console.log(`[AI runtime] Agent #${opts.agentId} has TG session — skipping scheduled ticks (message-driven only)`);
+    if (hasTgSession && (!opts.intervalMs || opts.intervalMs <= 0)) {
+      console.log(`[AI runtime] Agent #${opts.agentId} has TG session, no interval — message-driven only`);
       entry.interval = null as any;
     } else {
       entry.interval = setInterval(entry.tick, opts.intervalMs);
