@@ -143,7 +143,7 @@ function renderCreationStep(stepIdx: number, scheduleLabel: string, lang: 'ru' |
   const steps = lang === 'en' ? CREATION_STEPS_EN : CREATION_STEPS_RU;
   const step = steps[Math.min(stepIdx, steps.length - 1)];
   const bar = ['▓', '▓', '▓', '▓', '▓'].map((_, i) => i <= stepIdx ? '▓' : '░').join('');
-  const pct = Math.round((Math.min(stepIdx, steps.length - 1) / (steps.length - 1)) * 90);
+  const pct = Math.round(((stepIdx + 1) / steps.length) * 100);
   const schedPrefix = lang === 'en' ? 'Schedule' : 'Расписание';
   return (
     `${step.icon} <b>${escHtml(step.label)}...</b>\n\n` +
