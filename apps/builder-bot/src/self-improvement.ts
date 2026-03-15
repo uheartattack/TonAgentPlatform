@@ -366,7 +366,18 @@ export class SelfImprovementSystem {
     this.manualRunning = true;
     try {
       console.log(`[SelfImprovement] 🔨 РЕАЛИЗАТОР (manual): реализую "${idea.title}"`);
-      const codebaseContext = this.gatherCodebaseContext();
+      // Load recently rejected proposals so AI doesn't repeat mistakes
+    let rejectedContext = '';
+    try {
+      const repo = getAIProposalsRepository();
+      const rejected = await repo.list({ status: 'rejected' }, 10).catch(() => []);
+      if (rejected.length) {
+        rejectedContext = '\n\n═══ НЕДАВНО ОТКЛОНЁННЫЕ (НЕ ПОВТОРЯЙ ЭТИ ОШИБКИ) ═══\n' +
+          rejected.map((r: AIProposal) => `❌ ${r.title}: ${(r as any).rejectedReason || r.description?.slice(0, 80) || 'rejected'}`).join('\n');
+      }
+    } catch {}
+
+    const codebaseContext = this.gatherCodebaseContext();
       const prompt = this.buildImplementorPrompt(idea, codebaseContext);
       await this.executeProactivePrompt(prompt, idea.domain, '🔨 РЕАЛИЗАТОР');
       return 'ok';
@@ -423,7 +434,18 @@ export class SelfImprovementSystem {
 
     this.manualRunning = true;
     try {
-      const codebaseContext = this.gatherCodebaseContext();
+      // Load recently rejected proposals so AI doesn't repeat mistakes
+    let rejectedContext = '';
+    try {
+      const repo = getAIProposalsRepository();
+      const rejected = await repo.list({ status: 'rejected' }, 10).catch(() => []);
+      if (rejected.length) {
+        rejectedContext = '\n\n═══ НЕДАВНО ОТКЛОНЁННЫЕ (НЕ ПОВТОРЯЙ ЭТИ ОШИБКИ) ═══\n' +
+          rejected.map((r: AIProposal) => `❌ ${r.title}: ${(r as any).rejectedReason || r.description?.slice(0, 80) || 'rejected'}`).join('\n');
+      }
+    } catch {}
+
+    const codebaseContext = this.gatherCodebaseContext();
 
       const prompt = `Ты — ПРИДУМЫВАТЕЛЬ для TON Agent Platform (@TonAgentPlatformBot).
 Владелец платформы описал свою идею. Твоя задача — допилить её до полной спецификации.
@@ -687,6 +709,17 @@ RESPONSE FORMAT — valid JSON:
 
     console.log(`[SelfImprovement] 🔍 УЛУЧШАТЕЛЬ: аудит категории "${category}"`);
 
+    // Load recently rejected proposals so AI doesn't repeat mistakes
+    let rejectedContext = '';
+    try {
+      const repo = getAIProposalsRepository();
+      const rejected = await repo.list({ status: 'rejected' }, 10).catch(() => []);
+      if (rejected.length) {
+        rejectedContext = '\n\n═══ НЕДАВНО ОТКЛОНЁННЫЕ (НЕ ПОВТОРЯЙ ЭТИ ОШИБКИ) ═══\n' +
+          rejected.map((r: AIProposal) => `❌ ${r.title}: ${(r as any).rejectedReason || r.description?.slice(0, 80) || 'rejected'}`).join('\n');
+      }
+    } catch {}
+
     const codebaseContext = this.gatherCodebaseContext();
 
     // Read actual source files — rotate which ones to analyze each run
@@ -708,7 +741,14 @@ RESPONSE FORMAT — valid JSON:
     }
 
     const prompt = `Ты — СУПЕРУЛУЧШАТЕЛЬ платформы TON Agent Platform. Ты находишь РЕАЛЬНЫЕ проблемы, баги, уязвимости и СЕРЬЁЗНО улучшаешь код.
-Не занимайся мелочами типа добавления комментариев или переименования переменных — делай НАСТОЯЩИЕ улучшения:
+КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО:
+❌ УДАЛЯТЬ существующий код (функции, endpoints, классы, exports) — ТОЛЬКО модифицировать
+❌ Переписывать большие блоки кода — делай точечные изменения
+❌ "Оптимизировать" убирая функционал — пользователи могут его использовать
+❌ Менять формат данных в API responses — сломает клиентов
+❌ Удалять обработчики ошибок или fallback'и
+
+ОБЯЗАТЕЛЬНО делай НАСТОЯЩИЕ улучшения:
 - Фикси баги которые ломают функционал для пользователей
 - Улучшай error handling (перехват ошибок, retry, fallback)
 - Оптимизируй производительность (лишние запросы, утечки, тяжёлые циклы)
@@ -731,6 +771,7 @@ ${codebaseContext}
 
 ACTUAL CODE TO AUDIT:
 ${deepCode.slice(0, 20000)}
+${rejectedContext}
 
 ИНСТРУКЦИИ:
 1. Найди ОДНУ конкретную проблему (не абстрактную, а с точным указанием файла и строки)
@@ -745,8 +786,10 @@ ${deepCode.slice(0, 20000)}
 
 ВАЖНО:
 - oldStr ТОЧНО совпадает с кодом в файле (copy-paste, включая пробелы и отступы)
-- Можешь делать серьёзные улучшения — до 10 патчей, до 300 строк каждый
+- Патч должен быть ТОЧЕЧНЫМ — меняй минимум кода для решения проблемы
+- newStr должен быть ТАКОЙ ЖЕ длины или ДЛИННЕЕ чем oldStr (добавляешь код, не удаляешь!)
 - НИКОГДА не удаляй существующие функции, API endpoints, классы, экспорты — они могут использоваться
+- Не "переписывай" блоки — МОДИФИЦИРУЙ отдельные строки
 - Можешь ДОБАВЛЯТЬ новые функции, МОДИФИЦИРОВАТЬ существующие, УЛУЧШАТЬ логику
 - НЕ трогай: self-improvement.ts, index.ts, config.ts, db/index.ts, .env, package.json
 - После применения будет проверка компиляции TS и перезапуск — если сломается, автооткат
@@ -1016,6 +1059,17 @@ JSON:
     }
     console.log(`[SelfImprovement] 🔨 РЕАЛИЗАТОР: реализую идею "${idea.title}"`);
 
+    // Load recently rejected proposals so AI doesn't repeat mistakes
+    let rejectedContext = '';
+    try {
+      const repo = getAIProposalsRepository();
+      const rejected = await repo.list({ status: 'rejected' }, 10).catch(() => []);
+      if (rejected.length) {
+        rejectedContext = '\n\n═══ НЕДАВНО ОТКЛОНЁННЫЕ (НЕ ПОВТОРЯЙ ЭТИ ОШИБКИ) ═══\n' +
+          rejected.map((r: AIProposal) => `❌ ${r.title}: ${(r as any).rejectedReason || r.description?.slice(0, 80) || 'rejected'}`).join('\n');
+      }
+    } catch {}
+
     const codebaseContext = this.gatherCodebaseContext();
     const prompt = this.buildImplementorPrompt(idea, codebaseContext);
     await this.executeProactivePrompt(prompt, idea.domain, '🔨 РЕАЛИЗАТОР');
@@ -1148,8 +1202,14 @@ RESPONSE FORMAT — valid JSON:
       for (const p of rawPatches) {
         if (!p.file || !p.oldStr || !p.newStr) continue;
 
-        // Safety: block only oversized patches
+        // Safety: block oversized patches AND mass deletions
         const oldLines = p.oldStr.split('\n').length;
+        const newLines = p.newStr.split('\n').length;
+        // Block if deleting more than 30% of lines (prevents gutting files)
+        if (oldLines > 10 && newLines < oldLines * 0.7) {
+          console.log(`[SelfImprovement] ${modeLabel}: BLOCKED — deletes too much (${oldLines}→${newLines} lines) in ${p.file}`);
+          continue;
+        }
         if (oldLines > MAX_PATCH_LINES) {
           console.log(`[SelfImprovement] ${modeLabel}: BLOCKED — patch too large (${oldLines} lines) in ${p.file}`);
           continue;
