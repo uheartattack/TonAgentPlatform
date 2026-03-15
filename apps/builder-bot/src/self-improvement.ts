@@ -102,11 +102,10 @@ const LEVEL3_KEYWORDS = [
 
 // Критические файлы — патчи на них автоматически повышаются до Level 3
 const PROTECTED_FILES = [
-  'security-scanner.ts', 'payments.ts', 'ton-connect.ts',
-  'config.ts', '.env', 'index.ts', 'api-server.ts',
-  'orchestrator.ts', 'self-improvement.ts', 'staging-manager.ts',
-  'claude-code-bridge.ts', 'package.json', 'tsconfig.json',
-  'db/index.ts', 'Dockerfile', 'docker-compose.yml',
+  'config.ts', '.env', 'index.ts',
+  'self-improvement.ts', 'staging-manager.ts',
+  'claude-code-bridge.ts', 'package.json',
+  'db/index.ts',
 ];
 
 function determineLevel(description: string, patch: AIPatchEntry[]): 1 | 2 | 3 {
@@ -708,7 +707,14 @@ RESPONSE FORMAT — valid JSON:
       } catch {}
     }
 
-    const prompt = `Ты — СУПЕРУЛУЧШАТЕЛЬ платформы TON Agent Platform. Твоя задача — найти РЕАЛЬНЫЕ проблемы и пофиксить их.
+    const prompt = `Ты — СУПЕРУЛУЧШАТЕЛЬ платформы TON Agent Platform. Ты находишь РЕАЛЬНЫЕ проблемы, баги, уязвимости и СЕРЬЁЗНО улучшаешь код.
+Не занимайся мелочами типа добавления комментариев или переименования переменных — делай НАСТОЯЩИЕ улучшения:
+- Фикси баги которые ломают функционал для пользователей
+- Улучшай error handling (перехват ошибок, retry, fallback)
+- Оптимизируй производительность (лишние запросы, утечки, тяжёлые циклы)
+- Фикси security issues (SQL injection, XSS, auth bypass, timing attacks)
+- Добавляй отсутствующие валидации на входных данных
+- Улучшай UX (понятные сообщения об ошибках, лучший flow)
 
 КАТЕГОРИЯ АУДИТА: ${category}
 
@@ -734,15 +740,16 @@ ${deepCode.slice(0, 20000)}
 ВСЕ текстовые поля на РУССКОМ. Объясняй простым языком.
 
 УРОВНИ:
-- level 1: Безопасные фиксы (error handling, null checks, missing catch, typo). Применяются АВТОМАТИЧЕСКИ.
-- level 2: Улучшения логики (новые проверки, оптимизация). Применяются АВТОМАТИЧЕСКИ с бэкапом.
+- level 1: Фиксы и улучшения которые не меняют поведение (error handling, оптимизация, новые проверки). Применяются АВТОМАТИЧЕСКИ.
+- level 2: Улучшения которые меняют/добавляют поведение (новые фичи, рефакторинг логики). Применяются АВТОМАТИЧЕСКИ с бэкапом + проверкой.
 
 ВАЖНО:
-- oldStr ТОЧНО совпадает с кодом (copy-paste)
-- Один фикс за раз, максимум 3 патча, каждый до 50 строк
-- НИКОГДА не удаляй функции, endpoints, классы — только ДОБАВЛЯЙ или МОДИФИЦИРУЙ
-- НЕ трогай: self-improvement.ts, index.ts, config.ts, api-server.ts, orchestrator.ts, .env, package.json
-- Если фикс требует удаления >5 строк — это level 3 (требует одобрения)
+- oldStr ТОЧНО совпадает с кодом в файле (copy-paste, включая пробелы и отступы)
+- Можешь делать серьёзные улучшения — до 10 патчей, до 300 строк каждый
+- НИКОГДА не удаляй существующие функции, API endpoints, классы, экспорты — они могут использоваться
+- Можешь ДОБАВЛЯТЬ новые функции, МОДИФИЦИРОВАТЬ существующие, УЛУЧШАТЬ логику
+- НЕ трогай: self-improvement.ts, index.ts, config.ts, db/index.ts, .env, package.json
+- После применения будет проверка компиляции TS и перезапуск — если сломается, автооткат
 
 RESPONSE FORMAT — valid JSON:
 {
@@ -1111,13 +1118,12 @@ RESPONSE FORMAT — valid JSON:
       }
 
       // Protected files list
+      // Only truly critical files that must never be auto-modified
       const PROTECTED_FILES = [
         'src/index.ts', 'src/config.ts', 'src/db/index.ts',
         'src/self-improvement.ts', 'src/claude-code-bridge.ts',
-        'src/staging-manager.ts', 'src/api-server.ts',
-        'src/agents/orchestrator.ts',
+        'src/staging-manager.ts',
         '.env', 'package.json', 'tsconfig.json',
-        'docker-compose.yml', 'Dockerfile',
       ];
       const blocked = (parsed.patch || []).filter((p: any) => PROTECTED_FILES.some(pf => (p.file || '').endsWith(pf)));
       if (blocked.length) {
@@ -1129,10 +1135,9 @@ RESPONSE FORMAT — valid JSON:
         parsed.newFiles = (parsed.newFiles || []).filter((nf: any) => !PROTECTED_FILES.some(pf => (nf.file || '').endsWith(pf)));
       }
 
-      // ═══ SAFETY GUARDS — prevent AI from breaking the platform ═══
-      const MAX_PATCH_LINES = 50;    // Max lines in a single patch
-      const MAX_DELETE_RATIO = 0.5;  // Can't delete more than 50% of what it replaces
-      const MAX_TOTAL_PATCHES = 3;   // Max patches per proposal
+      // ═══ SAFETY GUARDS — can improve anything, but can't DELETE functionality ═══
+      const MAX_PATCH_LINES = 300;   // Big improvements OK
+      const MAX_TOTAL_PATCHES = 10;  // Multiple related fixes OK
 
       // Validate existing file patches
       const staging = getStagingManager();
@@ -1141,15 +1146,10 @@ RESPONSE FORMAT — valid JSON:
       for (const p of rawPatches) {
         if (!p.file || !p.oldStr || !p.newStr) continue;
 
-        // Safety: reject patches that DELETE more than they add
+        // Safety: block only oversized patches
         const oldLines = p.oldStr.split('\n').length;
-        const newLines = p.newStr.split('\n').length;
         if (oldLines > MAX_PATCH_LINES) {
           console.log(`[SelfImprovement] ${modeLabel}: BLOCKED — patch too large (${oldLines} lines) in ${p.file}`);
-          continue;
-        }
-        if (newLines < oldLines * MAX_DELETE_RATIO && oldLines > 5) {
-          console.log(`[SelfImprovement] ${modeLabel}: BLOCKED — deletes too much (${oldLines}→${newLines} lines) in ${p.file}`);
           continue;
         }
 
