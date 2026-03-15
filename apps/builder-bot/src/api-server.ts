@@ -75,7 +75,7 @@ function verifyTelegramAuth(data: Record<string, string>): boolean {
 
   // Проверяем срок (max 24 часа)
   const authDate = parseInt(fields.auth_date || '0', 10);
-  if (Date.now() / 1000 - authDate > 86400) return false;
+  if (isNaN(authDate) || Date.now() / 1000 - authDate > 86400) return false;
 
   // Строим data-check-string
   const checkString = Object.keys(fields)
@@ -645,72 +645,6 @@ export function startApiServer() {
     });
   });
 
-  // ═══════════════════════════════════════════════════════════
-  // HEALTH & READINESS — monitoring endpoints
-  // ═══════════════════════════════════════════════════════════
-
-  app.get('/healthz', (_req: Request, res: Response) => {
-    res.json({ status: 'ok', uptime: process.uptime(), timestamp: new Date().toISOString() });
-  });
-
-  app.get('/readyz', async (_req: Request, res: Response) => {
-    const checks: Record<string, boolean> = {};
-    try { await pool.query('SELECT 1'); checks.database = true; } catch { checks.database = false; }
-    try {
-      const { userbotManager } = await import('./services/userbot-manager');
-      const info = await userbotManager.getAgentTelegramInfo(190);
-      checks.gramjs = !!info.authorized;
-    } catch { checks.gramjs = false; }
-    checks.express = true;
-    const allOk = Object.values(checks).every(v => v);
-    res.status(allOk ? 200 : 503).json({ ready: allOk, checks, uptime: process.uptime() });
-  });
-
-  app.get('/metrics', async (_req: Request, res: Response) => {
-    try {
-      const agents = await pool.query('SELECT COUNT(*)::int as c FROM builder_bot.agents WHERE is_active = true');
-      const audit1h = await pool.query("SELECT COUNT(*)::int as c FROM builder_bot.agent_audit_log WHERE created_at > NOW() - INTERVAL '1 hour'");
-      const pending = await pool.query("SELECT COUNT(*)::int as c FROM builder_bot.agent_approvals WHERE status = 'pending'");
-
-      // Per-tool stats with p95/p99
-      let tool_stats: any[] = [];
-      let slowest_tools: any[] = [];
-      let most_failed: any[] = [];
-      try {
-        const toolStatsRes = await pool.query(`
-          SELECT tool_name,
-            COUNT(*)::int as calls,
-            ROUND(AVG(duration_ms))::int as avg_ms,
-            ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms))::int as p95_ms,
-            ROUND(PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY duration_ms))::int as p99_ms,
-            COUNT(*) FILTER (WHERE NOT success)::int as errors
-          FROM builder_bot.agent_audit_log
-          WHERE created_at > NOW() - INTERVAL '1 hour'
-          GROUP BY tool_name
-          ORDER BY calls DESC
-          LIMIT 20
-        `);
-        tool_stats = toolStatsRes.rows;
-        slowest_tools = [...tool_stats].sort((a, b) => (b.p95_ms || 0) - (a.p95_ms || 0)).slice(0, 5);
-        most_failed = [...tool_stats].filter(t => t.errors > 0).sort((a, b) => b.errors - a.errors).slice(0, 5);
-      } catch (statsErr: any) {
-        console.error('[Metrics] tool_stats query error:', statsErr.message);
-      }
-
-      res.json({
-        active_agents: agents.rows[0].c,
-        actions_last_hour: audit1h.rows[0].c,
-        pending_approvals: pending.rows[0].c,
-        uptime_seconds: Math.floor(process.uptime()),
-        memory_mb: Math.floor(process.memoryUsage().heapUsed / 1024 / 1024),
-        timestamp: new Date().toISOString(),
-        tool_stats,
-        slowest_tools,
-        most_failed,
-      });
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
-  });
-
   // ── GET /api/agents ───────────────────────────────────────
   app.get('/api/agents', requireAuth, async (req: Request, res: Response) => {
     try {
@@ -840,6 +774,51 @@ export function startApiServer() {
       const r = await getDBTools().getAgent(agentId, userId);
       if (!r.success || !r.data) { res.status(404).json({ error: 'Agent not found' }); return; }
       res.json({ ok: true, agent: r.data });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── GET /api/agents/:id/state — agent key-value state ──────
+  app.get('/api/agents/:id/state', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const agentId = parseInt(req.params.id as string, 10);
+      const r = await getDBTools().getAgent(agentId, userId);
+      if (!r.success || !r.data) { res.status(404).json({ error: 'Agent not found' }); return; }
+      // Get state from DB
+      const stateResult = await pool.query(
+        'SELECT key, value FROM builder_bot.agent_state WHERE agent_id = $1 ORDER BY key',
+        [agentId]
+      );
+      const state: Record<string, any> = {};
+      for (const row of stateResult.rows) { state[row.key] = row.value; }
+      res.json({ ok: true, state });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── GET /api/agents/:id/chat/history — chat messages with agent ──
+  app.get('/api/agents/:id/chat/history', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const agentId = parseInt(req.params.id as string, 10);
+      const r = await getDBTools().getAgent(agentId, userId);
+      if (!r.success || !r.data) { res.status(404).json({ error: 'Agent not found' }); return; }
+      // Get recent agent logs that are chat messages
+      const logsResult = await pool.query(
+        `SELECT level, message, created_at FROM builder_bot.agent_logs
+         WHERE agent_id = $1 AND (level = 'chat_user' OR level = 'chat_agent' OR level = 'info')
+         ORDER BY created_at DESC LIMIT 50`,
+        [agentId]
+      );
+      const messages = logsResult.rows.reverse().map((r: any) => ({
+        role: r.level === 'chat_user' ? 'user' : 'agent',
+        text: r.message,
+        time: r.created_at
+      }));
+      res.json({ ok: true, messages });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -1069,7 +1048,7 @@ export function startApiServer() {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
-  // ── PUT /api/agents/:id/routing — Update routing rules for shared session router ──
+  // ── PUT /api/agents/:id/routing — Update agent routing rules (for multi-agent shared accounts) ──
   app.put('/api/agents/:id/routing', requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = (req as any).userId as number;
@@ -1083,94 +1062,67 @@ export function startApiServer() {
 
       const tc = typeof agent.triggerConfig === 'string' ? JSON.parse(agent.triggerConfig) : (agent.triggerConfig || {});
       if (!tc.config) tc.config = {};
-      tc.config.routingRules = routingRules;
+      tc.config.routingRules = {
+        chatIds: Array.isArray(routingRules.chatIds) ? routingRules.chatIds : [],
+        chatTypes: Array.isArray(routingRules.chatTypes) ? routingRules.chatTypes : [],
+        keywords: Array.isArray(routingRules.keywords) ? routingRules.keywords : [],
+        isDefault: !!routingRules.isDefault,
+        priority: parseInt(routingRules.priority, 10) || 5,
+      };
 
-      await pool.query('UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3', [JSON.stringify(tc), agentId, userId]);
-      res.json({ ok: true, routingRules });
+      await pool.query('UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3',
+        [JSON.stringify(tc), agentId, userId]);
+
+      // Update in-memory config if agent is running
+      try {
+        const { registerAgentMessageConfig } = require('./services/userbot-manager');
+        // The config will be reloaded on next message via loadAgentMsgConfigFromDB
+      } catch {}
+
+      res.json({ ok: true, routingRules: tc.config.routingRules });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
-  // ── GET /api/agents/:id/siblings — Get other agents on the same TG account ──
-  app.get('/api/agents/:id/siblings', requireAuth, async (req: Request, res: Response) => {
+  // ── GET /api/agents/:id/shared-agents — Get all agents on same TG account ──
+  app.get('/api/agents/:id/shared-agents', requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = (req as any).userId as number;
       const agentId = parseInt(req.params.id as string, 10);
       if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
-      const agentCheck = await getDBTools().getAgent(agentId, userId);
-      if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
-      const agent = agentCheck.data;
-      const tc = typeof agent.triggerConfig === 'string' ? JSON.parse(agent.triggerConfig) : (agent.triggerConfig || {});
+
+      // Get this agent's TG user ID
+      const agentRes = await pool.query(
+        `SELECT trigger_config FROM builder_bot.agents WHERE id = $1 AND user_id = $2`, [agentId, userId]
+      );
+      if (agentRes.rows.length === 0) { res.status(404).json({ error: 'Agent not found' }); return; }
+      const tc = typeof agentRes.rows[0].trigger_config === 'string'
+        ? JSON.parse(agentRes.rows[0].trigger_config) : agentRes.rows[0].trigger_config;
       const tgUserId = tc?.telegram_session?.telegramUserId;
-      if (!tgUserId) { res.json({ siblings: [] }); return; }
+      if (!tgUserId) { res.json({ agents: [], tgUserId: null }); return; }
 
-      // Find all agents with same telegramUserId
-      const result = await pool.query(
-        `SELECT id, name, trigger_config FROM builder_bot.agents WHERE user_id = $1 AND trigger_type = 'ai_agent' AND id != $2`,
-        [userId, agentId]
+      // Find all agents with the same TG user ID
+      const sharedRes = await pool.query(
+        `SELECT id, name, description, is_active, trigger_config
+         FROM builder_bot.agents WHERE user_id = $1 AND trigger_type = 'ai_agent'`, [userId]
       );
-      const siblings = result.rows.filter((row: any) => {
-        const rowTc = typeof row.trigger_config === 'string' ? JSON.parse(row.trigger_config) : row.trigger_config;
-        return rowTc?.telegram_session?.telegramUserId === tgUserId;
-      }).map((row: any) => {
-        const rowTc = typeof row.trigger_config === 'string' ? JSON.parse(row.trigger_config) : row.trigger_config;
-        return {
-          id: row.id,
-          name: row.name,
-          routingRules: rowTc?.config?.routingRules || {},
-        };
-      });
+      const sharedAgents = sharedRes.rows
+        .filter((r: any) => {
+          const rtc = typeof r.trigger_config === 'string' ? JSON.parse(r.trigger_config) : r.trigger_config;
+          return rtc?.telegram_session?.telegramUserId === tgUserId;
+        })
+        .map((r: any) => {
+          const rtc = typeof r.trigger_config === 'string' ? JSON.parse(r.trigger_config) : r.trigger_config;
+          return {
+            id: r.id,
+            name: r.name,
+            description: r.description,
+            isActive: r.is_active,
+            routingRules: rtc?.config?.routingRules || null,
+            customRole: rtc?.config?.customRole || null,
+          };
+        });
 
-      res.json({ siblings, tgUserId });
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
-  });
-
-  // ── GET /api/agents/:id/audit — Agent action history ──
-  app.get('/api/agents/:id/audit', requireAuth, async (req: Request, res: Response) => {
-    try {
-      const userId = (req as any).userId as number;
-      const agentId = parseInt(req.params.id as string, 10);
-      if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
-      const agentCheck = await getDBTools().getAgent(agentId, userId);
-      if (!agentCheck.success) { res.status(404).json({ error: 'Agent not found' }); return; }
-      const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
-      const offset = parseInt(req.query.offset as string) || 0;
-      const toolFilter = req.query.tool as string;
-      let q = 'SELECT id, tool_name, args, result, success, error_message, duration_ms, created_at FROM builder_bot.agent_audit_log WHERE agent_id = $1';
-      const p: any[] = [agentId];
-      if (toolFilter) { q += ' AND tool_name = $' + (p.length + 1); p.push(toolFilter); }
-      q += ' ORDER BY created_at DESC LIMIT $' + (p.length + 1) + ' OFFSET $' + (p.length + 2);
-      p.push(limit, offset);
-      const result = await pool.query(q, p);
-      const cnt = await pool.query('SELECT COUNT(*)::int as total FROM builder_bot.agent_audit_log WHERE agent_id = $1', [agentId]);
-      res.json({ logs: result.rows, total: cnt.rows[0].total });
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
-  });
-
-  // ── GET /api/agents/:id/approvals — Approval history ──
-  app.get('/api/agents/:id/approvals', requireAuth, async (req: Request, res: Response) => {
-    try {
-      const userId = (req as any).userId as number;
-      const agentId = parseInt(req.params.id as string, 10);
-      if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
-      const agentCheck = await getDBTools().getAgent(agentId, userId);
-      if (!agentCheck.success) { res.status(404).json({ error: 'Agent not found' }); return; }
-      const result = await pool.query(
-        'SELECT id, tool_name, args, status, created_at, resolved_at FROM builder_bot.agent_approvals WHERE agent_id = $1 ORDER BY created_at DESC LIMIT 50',
-        [agentId]
-      );
-      res.json({ approvals: result.rows });
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
-  });
-
-  // ── POST /api/approvals/:id/resolve — Approve/reject from bot callback ──
-  app.post('/api/approvals/:id/resolve', requireAuth, async (req: Request, res: Response) => {
-    try {
-      const approvalId = parseInt(req.params.id as string, 10);
-      const { approved } = req.body || {};
-      if (typeof approved !== 'boolean') { res.status(400).json({ error: 'Missing approved boolean' }); return; }
-      const { resolvePendingApproval } = await import('./agents/ai-agent-runtime');
-      const ok = resolvePendingApproval(approvalId, approved);
-      res.json({ ok, approvalId });
+      res.json({ agents: sharedAgents, tgUserId, tgUsername: tc?.telegram_session?.username });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
@@ -1218,8 +1170,8 @@ export function startApiServer() {
       // Send message to AI agent via runner
       const { getRunnerAgent } = await import('./agents/sub-agents/runner');
       const runner = getRunnerAgent();
-      runner.sendMessageToAgent(agentId, message);
-      res.json({ ok: true, queued: true });
+      const result = await runner.sendMessageToAgent(agentId, message);
+      res.json({ ok: true, ...result });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -1275,54 +1227,6 @@ export function startApiServer() {
       // Check schedule
       if (agent.triggerType === 'scheduled' && !tc.cronExpression && !tc.interval) issues.push('Scheduled agent has no schedule'); else if (agent.triggerType === 'scheduled') passed.push('Schedule configured');
       res.json({ ok: true, issues, passed, score: Math.round(passed.length / (passed.length + issues.length) * 100) });
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
-  });
-
-  // ── GET /api/agents/:id/stats — Agent activity statistics ──
-  app.get('/api/agents/:id/stats', requireAuth, async (req: Request, res: Response) => {
-    try {
-      const userId = (req as any).userId as number;
-      const agentId = parseInt(req.params.id as string, 10);
-      if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
-      const agentCheck = await getDBTools().getAgent(agentId, userId);
-      if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
-      // Count runs from operations log
-      let runs = 0, messages = 0, toolCalls = 0, uptimeHours = 0;
-      try {
-        const opsRes = await pool.query(
-          "SELECT COUNT(*) as cnt FROM builder_bot.agent_operations WHERE agent_id = ",
-          [agentId]
-        );
-        runs = parseInt(opsRes.rows[0]?.cnt || '0', 10);
-      } catch {}
-      // Count messages from agent_state
-      try {
-        const stateRes = await pool.query(
-          "SELECT value FROM builder_bot.agent_state WHERE agent_id =  AND key = 'chat_history'",
-          [agentId]
-        );
-        if (stateRes.rows.length > 0) {
-          const hist = JSON.parse(stateRes.rows[0].value || '[]');
-          messages = Array.isArray(hist) ? hist.length : 0;
-        }
-      } catch {}
-      // Estimate tool calls from operations
-      try {
-        const toolRes = await pool.query(
-          "SELECT COUNT(*) as cnt FROM builder_bot.agent_operations WHERE agent_id =  AND operation_type = 'tool_call'",
-          [agentId]
-        );
-        toolCalls = parseInt(toolRes.rows[0]?.cnt || '0', 10);
-      } catch {}
-      // Calculate uptime if active
-      try {
-        const agent = agentCheck.data as any;
-        if (agent.isActive && agent.createdAt) {
-          const created = new Date(agent.createdAt).getTime();
-          uptimeHours = Math.round((Date.now() - created) / 3600000);
-        }
-      } catch {}
-      res.json({ ok: true, runs, messages, toolCalls, uptimeHours });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
@@ -1756,7 +1660,7 @@ export function startApiServer() {
     if (!agentId) { res.status(400).json({ ok: false, error: 'agentId required' }); return; }
     try {
       const result = await userbotManager.startQRLogin(Number(agentId));
-      res.json({ ok: true, ...(result && typeof result === 'object' ? result : {}) });
+      res.json({ ok: true, ...result });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e.message });
     }
@@ -1768,7 +1672,7 @@ export function startApiServer() {
     if (!agentId || !phone) { res.status(400).json({ ok: false, error: 'agentId and phone required' }); return; }
     try {
       const result = await userbotManager.startPhoneLogin(Number(agentId), phone);
-      res.json({ ok: true, ...(result && typeof result === 'object' ? result : {}) });
+      res.json({ ok: true, ...result });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e.message });
     }
@@ -1780,7 +1684,7 @@ export function startApiServer() {
     if (!agentId || !code) { res.status(400).json({ ok: false, error: 'agentId and code required' }); return; }
     try {
       const result = await userbotManager.submitCode(Number(agentId), code);
-      res.json({ ok: true, ...(result && typeof result === 'object' ? result : {}) });
+      res.json({ ok: true, ...result });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e.message });
     }
@@ -1800,7 +1704,7 @@ export function startApiServer() {
     if (!agentId || !password) { res.status(400).json({ ok: false, error: 'agentId and password required' }); return; }
     try {
       const result = await userbotManager.submit2FAPassword(Number(agentId), password);
-      res.json({ ok: true, ...(result && typeof result === 'object' ? result : {}) });
+      res.json({ ok: true, ...result });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e.message });
     }
@@ -2007,7 +1911,7 @@ export function startApiServer() {
       const offset = parseInt(req.query.offset as string || '0', 10);
       const type = req.query.type as string || 'all';
       const result = await getBalanceTxRepository().getHistory(userId, limit, offset, type);
-      res.json({ ok: true, ...(result && typeof result === 'object' ? result : {}) });
+      res.json({ ok: true, ...result });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
