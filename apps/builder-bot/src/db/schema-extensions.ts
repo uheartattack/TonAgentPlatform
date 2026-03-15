@@ -167,8 +167,8 @@ export async function runMigrations(pool: Pool): Promise<void> {
         id            SERIAL PRIMARY KEY,
         user_id       BIGINT NOT NULL,
         type          TEXT NOT NULL,
-        amount_ton    DOUBLE PRECISION NOT NULL,
-        balance_after DOUBLE PRECISION NOT NULL DEFAULT 0,
+        amount_ton    NUMERIC(20, 9) NOT NULL,
+        balance_after NUMERIC(20, 9) NOT NULL DEFAULT 0,
         description   TEXT,
         tx_hash       TEXT,
         status        TEXT NOT NULL DEFAULT 'completed',
@@ -182,6 +182,23 @@ export async function runMigrations(pool: Pool): Promise<void> {
     await client.query(`
       CREATE INDEX IF NOT EXISTS idx_bal_tx_hash
         ON builder_bot.balance_transactions (tx_hash)
+    `);
+    // Мигрируем существующие колонки с DOUBLE PRECISION → NUMERIC(20,9) для точной финансовой математики
+    await client.query(`
+      DO $
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'builder_bot'
+            AND table_name = 'balance_transactions'
+            AND column_name = 'amount_ton'
+            AND data_type = 'double precision'
+        ) THEN
+          ALTER TABLE builder_bot.balance_transactions
+            ALTER COLUMN amount_ton TYPE NUMERIC(20, 9) USING amount_ton::NUMERIC(20, 9),
+            ALTER COLUMN balance_after TYPE NUMERIC(20, 9) USING balance_after::NUMERIC(20, 9);
+        END IF;
+      END$;
     `);
 
     // user_custom_plugins
