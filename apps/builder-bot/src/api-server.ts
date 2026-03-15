@@ -46,6 +46,18 @@ function generateToken(): string {
   return crypto.randomBytes(32).toString('hex');
 }
 
+// Периодическая очистка истёкших сессий и брошенных bot-auth токенов
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, session] of sessions) {
+    if (now > session.expiresAt) sessions.delete(token);
+  }
+  // pendingBotAuth не имеет expiresAt — чистим по createdAt (15 минут)
+  for (const [token, auth] of pendingBotAuth) {
+    if (now - auth.createdAt > 15 * 60 * 1000) pendingBotAuth.delete(token);
+  }
+}, 5 * 60 * 1000).unref();
+
 function getSession(token: string) {
   const s = sessions.get(token);
   if (!s) return null;
@@ -104,10 +116,19 @@ let _jwksCacheTime = 0;
 
 async function fetchTelegramJWKS(): Promise<any> {
   if (_jwksCache && Date.now() - _jwksCacheTime < 3600_000) return _jwksCache;
-  const res = await fetch('https://oauth.telegram.org/.well-known/jwks.json');
-  _jwksCache = await res.json();
-  _jwksCacheTime = Date.now();
-  return _jwksCache;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const res = await fetch('https://oauth.telegram.org/.well-known/jwks.json', { signal: controller.signal });
+    if (!res.ok) throw new Error(`JWKS fetch failed with status ${res.status}`);
+    const data = await res.json();
+    if (!Array.isArray(data?.keys) || data.keys.length === 0) throw new Error('JWKS: invalid or empty keys in response');
+    _jwksCache = data;
+    _jwksCacheTime = Date.now();
+    return _jwksCache;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function base64urlDecode(str: string): Buffer {
@@ -126,7 +147,7 @@ async function verifyTelegramOIDC(idToken: string): Promise<{ userId: number; us
     // Validate claims
     if (payload.iss !== 'https://oauth.telegram.org') return null;
     if (String(payload.aud) !== TG_CLIENT_ID && payload.aud !== parseInt(TG_CLIENT_ID)) return null;
-    if (payload.exp && payload.exp < Date.now() / 1000) return null;
+    if (!payload.exp || payload.exp < Date.now() / 1000) return null;
 
     // Fetch JWKS and verify signature
     const jwks = await fetchTelegramJWKS();
