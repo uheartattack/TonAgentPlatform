@@ -1638,6 +1638,15 @@ class UserbotManager {
     const client = await this.getClient(agentId);
     if (!client) { console.log(`[UserbotMgr] ❌ No client for agent#${agentId}`); return; }
 
+    // Auto mark-read — agent reads messages like a real person
+    try {
+      const { Api } = require('telegram/tl');
+      const entity = await client.getInputEntity(msg.chatId).catch(() => null);
+      if (entity) {
+        await client.invoke(new Api.messages.ReadHistory({ peer: entity, maxId: 0 })).catch(() => {});
+      }
+    } catch {}
+
     try {
       // ── Build context (proper multi-turn with compaction) ──
       // chatRing already has the current message (added in event handler)
@@ -1670,6 +1679,18 @@ class UserbotManager {
       // ── Resolve provider via registry ──
       const prov = detectProviderByKey(apiKey) || resolveProvider(providerKey);
       const isGemini = prov.nativeApi && prov.id === 'gemini';
+
+      // ── Show "typing..." like a real person ──
+      try {
+        const { Api } = require('telegram/tl');
+        const entity = await client.getInputEntity(msg.chatId).catch(() => null);
+        if (entity) {
+          await client.invoke(new Api.messages.SetTyping({
+            peer: entity,
+            action: new Api.SendMessageTypingAction(),
+          })).catch(() => {});
+        }
+      } catch {}
 
       // ── System prompt ──
       const systemPrompt = `You are a real Telegram user. Respond naturally and briefly, like a human.
