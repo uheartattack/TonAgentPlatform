@@ -12,6 +12,7 @@ import { allAgentTemplates, AgentTemplate } from '../agent-templates';
 import { detectTriggerFromDescription } from './sub-agents/creator';
 import { getUserSettingsRepository } from '../db/schema-extensions';
 import { getSkillDocsForCodeGeneration } from '../plugins-system';
+import { claudeCodeChat, isClaudeCodeAvailable } from '../claude-code-bridge';
 
 // ── MarkdownV2 escaping (shared with bot.ts) ───────────────────────────────
 function esc(text: string | number | null | undefined): string {
@@ -55,14 +56,55 @@ export function setUserModel(userId: number, model: ModelId) {
   userModels.set(userId, model);
 }
 
-// ── Запрос с авто-fallback по цепочке моделей ───────────────
+// ── Claude Code availability cache ──────────────────────────
+let _claudeCodeAvailable: boolean | null = null;
+let _claudeCodeCheckTime = 0;
+
+async function checkClaudeCode(): Promise<boolean> {
+  const now = Date.now();
+  // Re-check every 5 minutes
+  if (_claudeCodeAvailable !== null && now - _claudeCodeCheckTime < 300_000) {
+    return _claudeCodeAvailable;
+  }
+  _claudeCodeAvailable = await isClaudeCodeAvailable();
+  _claudeCodeCheckTime = now;
+  if (_claudeCodeAvailable) {
+    console.log('[Orchestrator] ✅ Claude Code CLI detected — using subscription');
+  }
+  return _claudeCodeAvailable;
+}
+
+// ── Запрос с авто-fallback: Claude Code → API models ────────
 async function callWithFallback(
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
   userId: number,
   maxTokens = 1024,
 ): Promise<{ text: string; model: string }> {
+
+  // ── 1. Try Claude Code CLI first (uses subscription, free) ──
+  const useClaudeCode = await checkClaudeCode();
+  if (useClaudeCode) {
+    try {
+      const result = await claudeCodeChat(messages, {
+        maxTokens,
+        model: 'claude-sonnet-4-5-20250929',
+        timeout: 90_000,
+        allowedTools: [], // No tools — just text completion
+      });
+      console.log(`[Orchestrator] Claude Code responded (${result.model})`);
+      return result;
+    } catch (err: any) {
+      const msg = err?.message || String(err);
+      console.warn(`[Orchestrator] Claude Code failed: ${msg.slice(0, 120)}, falling back to API...`);
+      // If auth issue — disable Claude Code for this session
+      if (msg.includes('AUTH_REQUIRED') || msg.includes('not logged in')) {
+        _claudeCodeAvailable = false;
+      }
+    }
+  }
+
+  // ── 2. Fallback: API models with chain ──
   const preferred = getUserModel(userId);
-  // Строим цепочку: предпочтительная первая, остальные за ней
   const chain = [preferred, ...MODEL_LIST.map(m => m.id).filter(id => id !== preferred)];
 
   for (const model of chain) {
@@ -90,8 +132,7 @@ async function callWithFallback(
         msg.includes('ECONNRESET') ||
         msg.includes('Empty response');
       console.warn(`[Orchestrator] model ${model} failed (${msg.slice(0, 80)}), trying next...`);
-      if (!isRetryable) throw err; // не ретраим при ошибках авторизации, сети
-      // для ретраибл — просто переходим к следующей модели
+      if (!isRetryable) throw err;
     }
   }
   throw new Error('Все модели недоступны. Попробуйте через несколько секунд.');

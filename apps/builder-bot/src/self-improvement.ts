@@ -27,6 +27,7 @@ import { agentLastErrors } from './agents/tools/execution-tools';
 import { getStagingManager } from './staging-manager';
 import { config } from './config';
 import { pool as dbPool } from './db';
+import { claudeCodeChat, isClaudeCodeAvailable } from './claude-code-bridge';
 
 // ─── Provider resolver (same as ai-agent-runtime.ts) ──────────────────────────
 function resolveProviderForSI(provider: string): { baseURL: string; model: string } {
@@ -69,6 +70,20 @@ const LEVEL1_KEYWORDS = [
   'index missing', 'error handling', 'catch block', 'fallback',
   'string parsing', 'json parse', 'type coercion', 'off by one',
 ];
+
+// ── Errors NOT caused by the platform — skip these entirely ─────────────
+const USER_ERROR_PATTERNS = [
+  'API ключ не настроен', 'API key not configured', 'No API key',
+  'NO_API_KEY', 'INSUFFICIENT_QUOTA', 'invalid_api_key',
+  'incorrect api key', 'rate_limit_exceeded', 'billing',
+  'authentication_error', 'permission_denied',
+  'You exceeded your current quota', 'account is not active',
+];
+
+function isUserError(msg: string): boolean {
+  const lower = msg.toLowerCase();
+  return USER_ERROR_PATTERNS.some(p => lower.includes(p.toLowerCase()));
+}
 
 const LEVEL3_KEYWORDS = [
   'fee', 'commission', 'blockchain', 'chain', 'token', 'ico',
@@ -508,15 +523,29 @@ ${currentCode.slice(0, 4000)}
 
 Ответь ТОЛЬКО полным исправленным JavaScript кодом (без markdown, без объяснений, только код начиная с "async function agent(context) {").`;
 
-      // Use user's AI client if available, else user API key
-      const aiClient = userAI || this.ai;
-      const response = await aiClient.chat.completions.create({
-        model:      config.claude.model,
-        max_tokens: 4000,
-        messages:   [{ role: 'user', content: prompt }],
-      });
-
-      const rawText = response.choices[0]?.message?.content?.trim() || '';
+      // Try Claude Code first (subscription), then user's API key, then platform API
+      let rawText = '';
+      const ccAvailable = await isClaudeCodeAvailable();
+      if (ccAvailable) {
+        try {
+          const result = await claudeCodeChat(
+            [{ role: 'user', content: prompt }],
+            { maxTokens: 4000, timeout: 90_000 }
+          );
+          rawText = result.text;
+        } catch (ccErr: any) {
+          console.warn(`[SelfImprovement] Claude Code repair failed: ${ccErr.message?.slice(0, 60)}`);
+        }
+      }
+      if (!rawText) {
+        const aiClient = userAI || this.ai;
+        const response = await aiClient.chat.completions.create({
+          model:      config.claude.model,
+          max_tokens: 4000,
+          messages:   [{ role: 'user', content: prompt }],
+        });
+        rawText = response.choices[0]?.message?.content?.trim() || '';
+      }
 
       // Извлекаем код функции
       let newCode = rawText;
@@ -565,7 +594,7 @@ ${currentCode.slice(0, 4000)}
         `🔧 <b>Агент авто-починен</b>\n\n` +
         `<b>#${agentId} ${agentName}</b> (user ${userId})\n` +
         `Ошибка (${errorCount}x): <code>${errorMsg.slice(0, 150)}</code>\n` +
-        `✅ ${userAI !== this.ai ? 'User API key' : 'Platform proxy'}`
+        `✅ Repaired via ${ccAvailable ? 'Claude Code' : (userAI !== this.ai ? 'User API' : 'Platform AI')}`
       );
 
     } catch (e: any) {
@@ -618,14 +647,27 @@ ${recentLogs.slice(0, 20).map(l => `- ${l}`).join('\n')}
 
 Ответь ТОЛЬКО полным улучшенным system prompt (без markdown, без объяснений, без кавычек).`;
 
-      const aiClient = userAI || this.ai;
-      const response = await aiClient.chat.completions.create({
-        model:      config.claude.model,
-        max_tokens: 4000,
-        messages:   [{ role: 'user', content: prompt }],
-      });
-
-      const newPrompt = response.choices[0]?.message?.content?.trim() || '';
+      // Try Claude Code first, then user/platform API
+      let newPrompt = '';
+      const ccAvailable = await isClaudeCodeAvailable();
+      if (ccAvailable) {
+        try {
+          const result = await claudeCodeChat(
+            [{ role: 'user', content: prompt }],
+            { maxTokens: 4000, timeout: 90_000 }
+          );
+          newPrompt = result.text?.trim() || '';
+        } catch {}
+      }
+      if (!newPrompt) {
+        const aiClient = userAI || this.ai;
+        const response = await aiClient.chat.completions.create({
+          model:      config.claude.model,
+          max_tokens: 4000,
+          messages:   [{ role: 'user', content: prompt }],
+        });
+        newPrompt = response.choices[0]?.message?.content?.trim() || '';
+      }
       if (!newPrompt || newPrompt.length < 50) {
         console.log(`[SelfImprovement] Agent #${agentId}: AI returned empty/short prompt, skipping`);
         return;
@@ -692,6 +734,7 @@ ${recentLogs.slice(0, 20).map(l => `- ${l}`).join('\n')}
       const errorMap = new Map<string, number>();
       for (const log of logs) {
         if (log.level !== 'error') continue;
+        if (isUserError(log.message)) continue; // Skip user config errors
         const key = log.message.slice(0, 100);
         errorMap.set(key, (errorMap.get(key) || 0) + 1);
       }
@@ -745,6 +788,7 @@ ${recentLogs.slice(0, 20).map(l => `- ${l}`).join('\n')}
       for (const [agentId, errorInfo] of agentLastErrors.entries()) {
         const ageMs = Date.now() - (errorInfo.timestamp ? errorInfo.timestamp.getTime() : 0);
         if (ageMs > 3600000) continue;  // старше 1 часа — пропускаем
+        if (isUserError(errorInfo.error || '')) continue; // Skip user config errors
 
         issues.push({
           type:        'error',
@@ -918,10 +962,14 @@ ${recentLogs.slice(0, 20).map(l => `- ${l}`).join('\n')}
     // Ищем информацию в интернете
     const research = await this.researchOnline(issue.description);
 
-    // Читаем релевантный код (если известен модуль)
+    // Читаем релевантный код (если известен модуль) — expanded for Claude Code
     const codeSnippet = this.getRelevantCode(issue.module);
 
-    const prompt = `Ты — опытный инженер-программист, обслуживающий платформу TON Agent Platform для работы с NFT и Telegram-подарками.
+    // Дополнительный контекст: список всех файлов платформы
+    const fileList = this.getPlatformFileList();
+
+    const prompt = `Ты — опытный инженер-программист, обслуживающий платформу TON Agent Platform.
+Платформа написана на TypeScript (Telegraf v4 + PostgreSQL + Drizzle ORM).
 
 ОБНАРУЖЕННАЯ ПРОБЛЕМА:
 Тип: ${issue.type}
@@ -933,11 +981,16 @@ ${issue.sample ? `Пример ошибки: ${issue.sample.slice(0, 300)}` : ''
 РЕЗУЛЬТАТЫ ИССЛЕДОВАНИЯ:
 ${research || 'Релевантная информация не найдена.'}
 
+СТРУКТУРА ПРОЕКТА:
+${fileList}
+
 СООТВЕТСТВУЮЩИЙ КОД:
 ${codeSnippet || 'Фрагмент кода недоступен.'}
 
+ВАЖНО: Игнорируй ошибки конфигурации пользователей (нет API ключа, нет кошелька, etc.) — это НЕ баги платформы.
+
 ЗАДАЧА:
-Сгенерируй исправление для этой проблемы. Ответь ТОЛЬКО валидным JSON (без markdown, без пояснений):
+Сгенерируй исправление. Ответь ТОЛЬКО валидным JSON:
 {
   "title": "Краткое название фикса (макс 60 символов)",
   "description": "Что делает исправление",
@@ -952,21 +1005,40 @@ ${codeSnippet || 'Фрагмент кода недоступен.'}
   ]
 }
 
-Правила уровней:
-- 1 (авто-применение): опечатки, null-проверки, retry-логика, обработка ошибок, газ, логи
-- 2 (staging): новая стратегия, новый источник данных, изменение алгоритма, новая функция
-- 3 (одобрение владельца): комиссии, безопасность, приватные ключи, кошельки, политики
+Уровни:
+- 1: опечатки, null-checks, retry, обработка ошибок, логи, оптимизация
+- 2: новая стратегия, новый источник данных, новый алгоритм
+- 3: комиссии, безопасность, ключи, кошельки, политики
 
-Если не можешь сгенерировать безопасный патч, верни: {"skip": true, "reason": "объяснение"}`;
+Если не можешь — верни: {"skip": true, "reason": "объяснение"}`;
 
     try {
-      const response = await this.ai.chat.completions.create({
-        model:       config.claude.model,
-        max_tokens:  1500,
-        messages:    [{ role: 'user', content: prompt }],
-      });
+      let text = '';
 
-      const text = response.choices[0]?.message?.content?.trim() || '';
+      // ── 1. Try Claude Code CLI first (uses subscription) ──
+      const ccAvailable = await isClaudeCodeAvailable();
+      if (ccAvailable) {
+        try {
+          const result = await claudeCodeChat(
+            [{ role: 'user', content: prompt }],
+            { maxTokens: 2000, timeout: 60_000 }
+          );
+          text = result.text;
+          console.log(`[SelfImprovement] Claude Code generated solution (${result.model})`);
+        } catch (ccErr: any) {
+          console.warn(`[SelfImprovement] Claude Code failed: ${ccErr.message?.slice(0, 80)}, falling back to API`);
+        }
+      }
+
+      // ── 2. Fallback to API ──
+      if (!text) {
+        const response = await this.ai.chat.completions.create({
+          model:       config.claude.model,
+          max_tokens:  1500,
+          messages:    [{ role: 'user', content: prompt }],
+        });
+        text = response.choices[0]?.message?.content?.trim() || '';
+      }
 
       // Парсим JSON
       const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -1023,6 +1095,26 @@ ${codeSnippet || 'Фрагмент кода недоступен.'}
     } catch {
       return '';
     }
+  }
+
+  /** Возвращает список файлов платформы для контекста AI */
+  private getPlatformFileList(): string {
+    try {
+      const srcDir = path.join(process.cwd(), 'src');
+      if (!fs.existsSync(srcDir)) return 'src/ not found';
+      const files: string[] = [];
+      const walk = (dir: string, prefix = '') => {
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const e of entries) {
+          if (e.name.startsWith('.') || e.name === 'node_modules' || e.name === 'dist') continue;
+          const rel = prefix ? `${prefix}/${e.name}` : e.name;
+          if (e.isDirectory()) walk(path.join(dir, e.name), rel);
+          else if (e.name.endsWith('.ts') || e.name.endsWith('.js')) files.push(rel);
+        }
+      };
+      walk(srcDir);
+      return files.map(f => `src/${f}`).join('\n');
+    } catch { return ''; }
   }
 
   /** Читает фрагмент исходного кода для контекста AI */
