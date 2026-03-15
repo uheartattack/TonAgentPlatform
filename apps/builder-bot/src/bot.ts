@@ -187,6 +187,7 @@ async function startCreationAnimation(
     }
     if (stepIdx >= steps.length - 1) {
       clearInterval(stepTimer);
+      clearInterval(typingTimer);
     }
   }, 3000);
 
