@@ -130,6 +130,12 @@ async function fetchTelegramJWKS(): Promise<any> {
       _jwksCache = data;
       _jwksCacheTime = Date.now();
       return _jwksCache;
+    } catch (e) {
+      if (_jwksCache) {
+        console.warn('[JWKS] Refresh failed, serving stale cache:', (e as Error).message);
+        return _jwksCache;
+      }
+      throw e;
     } finally {
       clearTimeout(timeout);
       _jwksFetching = null;
