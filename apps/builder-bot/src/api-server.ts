@@ -75,7 +75,7 @@ function verifyTelegramAuth(data: Record<string, string>): boolean {
 
   // Проверяем срок (max 24 часа)
   const authDate = parseInt(fields.auth_date || '0', 10);
-  if (Date.now() / 1000 - authDate > 86400) return false;
+  if (isNaN(authDate) || Date.now() / 1000 - authDate > 86400) return false;
 
   // Строим data-check-string
   const checkString = Object.keys(fields)
@@ -86,7 +86,15 @@ function verifyTelegramAuth(data: Record<string, string>): boolean {
   const secretKey = crypto.createHash('sha256').update(BOT_TOKEN).digest();
   const hmac = crypto.createHmac('sha256', secretKey).update(checkString).digest('hex');
 
-  return hmac === hash;
+  // Timing-safe HMAC comparison
+  try {
+    const hmacBuf = Buffer.from(hmac, 'hex');
+    const hashBuf = Buffer.from(hash.toLowerCase(), 'hex');
+    if (hmacBuf.length !== hashBuf.length) return false;
+    return crypto.timingSafeEqual(hmacBuf, hashBuf);
+  } catch {
+    return false;
+  }
 }
 
 // ── Telegram OIDC JWT verification ────────────────────────────
