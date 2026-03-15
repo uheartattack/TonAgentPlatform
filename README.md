@@ -22,7 +22,7 @@
 
 <br>
 
-[**Try the Bot**](https://t.me/TonAgentPlatformBot) &nbsp;·&nbsp; [**Studio Dashboard**](https://tonagentplatform.com/dashboard.html) &nbsp;·&nbsp; [**Telegram Channel**](https://t.me/TONAgentPlatform)
+[**Try the Bot**](https://t.me/TonAgentPlatformBot) &nbsp;·&nbsp; [**Studio Dashboard**](https://tonagentplatform.com/studio.html) &nbsp;·&nbsp; [**Telegram Channel**](https://t.me/TONAgentPlatform)
 
 </div>
 

@@ -8,7 +8,7 @@ TON Agent Platform is a monorepo with two apps and shared packages, designed for
 ton-agent-platform/
   apps/
     builder-bot/       # Telegraf bot + REST API (main application)
-    landing/           # Web dashboard (dashboard.html, dashboard.js, dashboard.css)
+    landing/           # Web dashboard (studio.html, studio.js, studio.css)
   packages/            # Shared packages
   infrastructure/      # Docker Compose, nginx configs
 ```
@@ -57,7 +57,7 @@ graph TB
 Central brain of the platform. Routes user messages via AI function calling:
 - Intent detection (create agent, chat, NFT analysis, wallet ops, etc.)
 - Agent CRUD operations
-- Multi-provider AI (7 providers + platform proxy fallback)
+- Multi-provider AI (7 providers: Gemini, OpenAI, Anthropic, Groq, DeepSeek, OpenRouter, Together)
 - Context-aware responses (knows current dashboard page)
 
 ### AI Agent Runtime (`src/agents/ai-agent-runtime.ts`)
@@ -122,7 +122,7 @@ sequenceDiagram
 | OpenRouter | google/gemini-2.5-flash | sk-or-... |
 | Together | Llama-3.3-70B-Instruct-Turbo | — |
 
-All providers use the OpenAI-compatible API format. If the user has no API key, the platform proxy provides AI automatically.
+All providers use the OpenAI-compatible API format. Users must configure their own API key.
 
 ## TON Integration
 

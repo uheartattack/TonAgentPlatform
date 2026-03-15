@@ -121,7 +121,7 @@ export class SelfImprovementSystem {
     this.intervalMs = parseInt(process.env.SELF_IMPROVE_INTERVAL_MS || '600000');
   }
 
-  /** Get AI client using user's own API key (falls back to platform proxy) */
+  /** Get AI client using user's own API key (falls back to user API key) */
   private async getUserAIClient(userId: string): Promise<OpenAI> {
     try {
       const uvRes = await dbPool.query(
@@ -508,7 +508,7 @@ ${currentCode.slice(0, 4000)}
 
 Ответь ТОЛЬКО полным исправленным JavaScript кодом (без markdown, без объяснений, только код начиная с "async function agent(context) {").`;
 
-      // Use user's AI client if available, else platform proxy
+      // Use user's AI client if available, else user API key
       const aiClient = userAI || this.ai;
       const response = await aiClient.chat.completions.create({
         model:      config.claude.model,

@@ -36,7 +36,7 @@ Edit `apps/builder-bot/.env` with required variables:
 | `OPENAI_API_KEY` | No* | OpenAI API key |
 | `ANTHROPIC_API_KEY` | No* | Anthropic API key |
 
-*At least one AI provider key is recommended. Without any key, the platform proxy fallback is used.
+*At least one AI provider key is recommended. Without any key, the user API key fallback is used.
 
 ```bash
 # 5. Run the bot

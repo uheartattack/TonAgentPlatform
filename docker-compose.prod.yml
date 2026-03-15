@@ -43,25 +43,10 @@ services:
       driver: json-file
       options: { max-size: '10m', max-file: '3' }
 
-  # ─── AI Proxy ───────────────────────────────────────────
-  cli-proxy:
-    image: eceasy/cli-proxy-api-plus:latest
-    container_name: cli-proxy-api-plus
-    restart: unless-stopped
-    ports:
-      - '127.0.0.1:8317:8317'
-    volumes:
-      - cli_proxy_data:/CLIProxyAPI
-    logging:
-      driver: json-file
-      options: { max-size: '10m', max-file: '3' }
-
 volumes:
   postgres_data:
     driver: local
   redis_data:
-    driver: local
-  cli_proxy_data:
     driver: local
 
 networks:
