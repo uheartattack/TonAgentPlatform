@@ -129,10 +129,13 @@ async function callWithFallback(
         msg.includes('timeout') ||
         msg.includes('503') ||
         msg.includes('502') ||
+        msg.includes('429') ||
+        msg.includes('rate limit') ||
+        msg.includes('rate_limit') ||
         msg.includes('ECONNRESET') ||
         msg.includes('Empty response');
-      console.warn(`[Orchestrator] model ${model} failed (${msg.slice(0, 80)}), trying next...`);
       if (!isRetryable) throw err;
+      console.warn(`[Orchestrator] model ${model} failed (${msg.slice(0, 80)}), trying next...`);
     }
   }
   throw new Error('Все модели недоступны. Попробуйте через несколько секунд.');
