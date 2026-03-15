@@ -184,6 +184,9 @@ async function startCreationAnimation(
         { parse_mode: 'HTML' },
       ).catch(() => {});
     }
+    if (stepIdx >= CREATION_STEPS.length - 1) {
+      clearInterval(stepTimer);
+    }
   }, 3000);
 
   const typingTimer = setInterval(() => ctx.sendChatAction('typing').catch(() => {}), 4000);
@@ -245,7 +248,7 @@ function sanitize(text: string): string {
 // ============================================================
 // Бот и меню
 // ============================================================
-const bot: Telegraf = new Telegraf(process.env.BOT_TOKEN || '');
+const bot = new Telegraf(process.env.BOT_TOKEN || '');
 
 // Статичное меню (русский по умолчанию)
 // ── Главное меню (reply keyboard — всегда внизу) ─────────────────────────
@@ -325,6 +328,11 @@ const pendingEdits = new Map<number, number>();
 // Chat with AI agent: userId → agentId (активный чат-сеанс)
 // ============================================================
 const pendingAgentChats = new Map<number, number>(); // userId → agentId
+
+// ============================================================
+// Proposal discussion: userId → proposalId
+// ============================================================
+const pendingProposalDiscuss = new Map<number, string>(); // userId → proposalId
 
 // ============================================================
 // Post-creation agent setup wizard
@@ -953,6 +961,47 @@ bot.command('sub', (ctx) => showSubscription(ctx));
 bot.command('plans', (ctx) => showPlans(ctx));
 bot.command('model', (ctx) => showModelSelector(ctx));
 
+// ── /ai — управление AI режимами (только для владельца) ──────────
+const pendingUserIdea = new Map<number, boolean>(); // userId → waiting for idea text
+
+bot.command('ai', async (ctx) => {
+  if (ctx.from.id !== OWNER_ID_NUM) return;
+  const { getSelfImprovementSystem } = await import('./self-improvement');
+  const sis = getSelfImprovementSystem();
+  if (!sis) { await ctx.reply('❌ Система не запущена'); return; }
+
+  const modes = sis.getModesStatus();
+  const ideasCount = sis.getPendingIdeasCount();
+  const ideas = sis.getPendingIdeas();
+
+  let text = '🤖 <b>AI Режимы</b>\n\n';
+  text += `🔍 Улучшатель (авто 10мин): ${modes[0].enabled ? '✅' : '❌'}\n`;
+  text += `💡 Придумыватель (авто 30мин): ${modes[1].enabled ? '✅' : '❌'}\n`;
+  text += `🔨 Реализатор (по кнопке): всегда готов\n`;
+  text += `\n📋 Идей в очереди: <b>${ideasCount}</b>`;
+  if (ideas.length) {
+    text += '\n';
+    for (const i of ideas) text += `  ${i.index + 1}. ${escHtml(i.title)}\n`;
+  }
+
+  const kb: any[][] = [
+    [
+      { text: `${modes[0].enabled ? '✅' : '❌'} Улучшатель`, callback_data: 'ai_toggle:improver' },
+      { text: '▶️ Запустить', callback_data: 'ai_run:improver' },
+    ],
+    [
+      { text: `${modes[1].enabled ? '✅' : '❌'} Придумыватель`, callback_data: 'ai_toggle:ideator' },
+      { text: '▶️ Запустить', callback_data: 'ai_run:ideator' },
+    ],
+    [
+      { text: '✏️ Моя идея', callback_data: 'ai_my_idea' },
+      { text: '🔨 Реализовать', callback_data: 'ai_run:implementor' },
+    ],
+  ];
+
+  await ctx.reply(text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } });
+});
+
 // ── /plugin — пользовательские плагины ──────────────────────────
 bot.command('plugin', async (ctx) => {
   const userId = ctx.from.id;
@@ -1560,6 +1609,49 @@ async function showWalletMenu(ctx: Context) {
 
 // ── Профиль пользователя ──
 bot.command('profile', async (ctx) => showProfile(ctx, ctx.from.id));
+
+// ── Approve / Reject action commands ──
+bot.command('approve_action', async (ctx) => {
+  const text = ctx.message?.text || '';
+  const match = text.match(/\/approve_action[_\s]?(\d+)/);
+  if (!match) {
+    await safeReply(ctx, 'Формат: /approve_action_123 (где 123 — ID действия)', {});
+    return;
+  }
+  const approvalId = parseInt(match[1]);
+  try {
+    const { getAgentApprovalsRepository } = await import('./db/schema-extensions');
+    const row = await getAgentApprovalsRepository().resolve(approvalId, 'approved');
+    if (!row) {
+      await safeReply(ctx, `Запрос #${approvalId} не найден или уже обработан.`, {});
+      return;
+    }
+    await safeReply(ctx, `✅ Действие #${approvalId} одобрено (${row.action_type}).`, {});
+  } catch (e: any) {
+    await safeReply(ctx, `❌ Ошибка: ${e.message}`, {});
+  }
+});
+
+bot.command('reject_action', async (ctx) => {
+  const text = ctx.message?.text || '';
+  const match = text.match(/\/reject_action[_\s]?(\d+)/);
+  if (!match) {
+    await safeReply(ctx, 'Формат: /reject_action_123 (где 123 — ID действия)', {});
+    return;
+  }
+  const approvalId = parseInt(match[1]);
+  try {
+    const { getAgentApprovalsRepository } = await import('./db/schema-extensions');
+    const row = await getAgentApprovalsRepository().resolve(approvalId, 'rejected');
+    if (!row) {
+      await safeReply(ctx, `Запрос #${approvalId} не найден или уже обработан.`, {});
+      return;
+    }
+    await safeReply(ctx, `❌ Действие #${approvalId} отклонено (${row.action_type}).`, {});
+  } catch (e: any) {
+    await safeReply(ctx, `❌ Ошибка: ${e.message}`, {});
+  }
+});
 
 async function showProfile(ctx: Context, userId: number) {
   const lang = getUserLang(userId);
@@ -2596,6 +2688,27 @@ bot.on('callback_query', async (ctx) => {
   if (data.startsWith('task_discuss:')) {
     await ctx.answerCbQuery();
     await safeReply(ctx, '💬 Напишите ответ к задаче. Он будет передан агенту.', {});
+    return;
+  }
+
+  // ── Approval action callbacks (approve_action:ID / reject_action:ID) ──
+  if (data.startsWith('approve_action:') || data.startsWith('reject_action:')) {
+    await ctx.answerCbQuery();
+    const approvalId = parseInt(data.split(':')[1]);
+    const isApprove = data.startsWith('approve_action');
+    try {
+      const { getAgentApprovalsRepository } = await import('./db/schema-extensions');
+      const row = await getAgentApprovalsRepository().resolve(approvalId, isApprove ? 'approved' : 'rejected');
+      if (!row) {
+        await editOrReply(ctx, `Запрос #${approvalId} не найден или уже обработан.`, {});
+      } else {
+        const emoji = isApprove ? '✅' : '❌';
+        const verb = isApprove ? 'одобрено' : 'отклонено';
+        await editOrReply(ctx, `${emoji} Действие #${approvalId} ${verb} (${escHtml(row.action_type)}).`, { parse_mode: 'HTML' });
+      }
+    } catch (e: any) {
+      await editOrReply(ctx, `Ошибка: ${escHtml(e.message)}`, { parse_mode: 'HTML' });
+    }
     return;
   }
 
@@ -3745,27 +3858,7 @@ bot.on('callback_query', async (ctx) => {
       tc.config.enabledCapabilities = caps;
       await dbPool.query('UPDATE builder_bot.agents SET trigger_config=$1 WHERE id=$2 AND user_id=$3', [JSON.stringify(tc), agentId, userId]);
       await showCapabilitiesMenu(ctx, agentId, caps);
-
-      // If enabling a capability that needs an API key, check if it is set
-      if (idx < 0) {
-        // was not present before toggle, so it was just added (enabling)
-        const capMeta = CAPABILITY_LABELS[capId];
-        if (capMeta && capMeta.needs) {
-          const neededKey = capMeta.needs;
-          try {
-            const repo = getUserSettingsRepository();
-            const uv = (await repo.get(userId, 'user_variables').catch(() => null)) as Record<string, any> | null;
-            const userVarsCheck = (typeof uv === 'object' && uv) ? uv : {};
-            if (!userVarsCheck[neededKey]) {
-              const lang = getUserLang(userId);
-              const msg = lang === 'ru'
-                ? `⚠️ Для ${capMeta.icon} ${capMeta.ru} нужен ключ <b>${neededKey}</b>.\nДобавьте его в Профиль → 🔑 API ключи.`
-                : `⚠️ ${capMeta.icon} ${capMeta.en} requires <b>${neededKey}</b>.\nAdd it in Profile → 🔑 API keys.`;
-              await ctx.reply(msg, { parse_mode: 'HTML' });
-            }
-          } catch {}
-        }
-      }    } catch (e: any) {
+    } catch (e: any) {
       await ctx.reply('❌ ' + (e.message || String(e)));
     }
     return;
@@ -4015,6 +4108,140 @@ bot.on('callback_query', async (ctx) => {
     return;
   }
 
+  // ── AI Mode toggle/trigger callbacks ──
+  if (data.startsWith('ai_toggle:') || data.startsWith('ai_run:')) {
+    if (userId !== OWNER_ID_NUM) { await ctx.answerCbQuery('⛔ Только владелец'); return; }
+    const { getSelfImprovementSystem } = await import('./self-improvement');
+    const sis = getSelfImprovementSystem();
+    if (!sis) { await ctx.answerCbQuery('❌ Система не запущена'); return; }
+
+    const mode = data.split(':')[1];
+    const labels: Record<string, string> = { improver: '🔍 Улучшатель', ideator: '💡 Придумыватель', implementor: '🔨 Реализатор' };
+    const label = labels[mode] || mode;
+
+    if (data.startsWith('ai_toggle:')) {
+      const nowEnabled = sis.toggleMode(mode);
+      await ctx.answerCbQuery(`${label}: ${nowEnabled ? '✅ ВКЛ' : '❌ ВЫКЛ'}`);
+
+      // Update message with new state
+      const modes = sis.getModesStatus();
+      const ideasCount = sis.getPendingIdeasCount();
+      let text = '🤖 <b>AI Режимы</b>\n\n';
+      text += `🔍 Улучшатель (авто 10мин): ${modes[0].enabled ? '✅' : '❌'}\n`;
+      text += `💡 Придумыватель (авто 30мин): ${modes[1].enabled ? '✅' : '❌'}\n`;
+      text += `🔨 Реализатор (по кнопке): всегда готов\n`;
+      text += `\n📋 Идей в очереди: <b>${ideasCount}</b>`;
+
+      const kb: any[][] = [
+        [
+          { text: `${modes[0].enabled ? '✅' : '❌'} Улучшатель`, callback_data: 'ai_toggle:improver' },
+          { text: '▶️ Запустить', callback_data: 'ai_run:improver' },
+        ],
+        [
+          { text: `${modes[1].enabled ? '✅' : '❌'} Придумыватель`, callback_data: 'ai_toggle:ideator' },
+          { text: '▶️ Запустить', callback_data: 'ai_run:ideator' },
+        ],
+        [
+          { text: '✏️ Моя идея', callback_data: 'ai_my_idea' },
+          { text: '🔨 Реализовать', callback_data: 'ai_run:implementor' },
+        ],
+      ];
+      await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } }).catch(() => {});
+    } else if (mode === 'implementor') {
+      // Show idea list for selection
+      const ideas = sis.getPendingIdeas();
+      if (!ideas.length) {
+        await ctx.answerCbQuery('Нет идей');
+        await ctx.reply('📋 Очередь идей пуста. Сначала запусти Придумыватель.');
+        return;
+      }
+      await ctx.answerCbQuery('📋 Выбери идею');
+      let text = '🔨 <b>Реализатор — выбери идею:</b>\n\n';
+      const ideaKb: any[][] = [];
+      for (const idea of ideas) {
+        text += `${idea.index + 1}. <b>${escHtml(idea.title)}</b>\n   🏷 ${escHtml(idea.domain)}\n\n`;
+        ideaKb.push([{ text: `${idea.index + 1}. ${idea.title.slice(0, 35)}`, callback_data: `ai_impl:${idea.index}` }]);
+      }
+      await ctx.reply(text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: ideaKb } });
+    } else {
+      // ai_run — manual trigger (improver / ideator) — background
+      await ctx.answerCbQuery(`⏳ Запускаю ${label}...`);
+      await ctx.reply(`⏳ Запускаю <b>${label}</b>... Это займёт 1-2 минуты.`, { parse_mode: 'HTML' });
+
+      // Don't await — run in background to avoid Telegraf 90s timeout
+      sis.triggerMode(mode).then(async (result) => {
+        if (result === 'ok') {
+          // notification already sent inside the mode
+        } else if (result === 'already_running') {
+          await ctx.reply(`⚠️ Уже запущен, подождите.`).catch(() => {});
+        } else if (result === 'claude_unavailable') {
+          await ctx.reply(`❌ Claude Code недоступен.`).catch(() => {});
+        } else {
+          await ctx.reply(`❌ ${result}`).catch(() => {});
+        }
+      }).catch(() => {});
+    }
+    return;
+  }
+
+  // ── ai_impl — реализовать выбранную идею ──
+  if (data.startsWith('ai_impl:')) {
+    if (userId !== OWNER_ID_NUM) { await ctx.answerCbQuery('⛔'); return; }
+    const { getSelfImprovementSystem } = await import('./self-improvement');
+    const sis = getSelfImprovementSystem();
+    if (!sis) { await ctx.answerCbQuery('❌'); return; }
+
+    const index = parseInt(data.split(':')[1]);
+    const ideas = sis.getPendingIdeas();
+    const ideaTitle = ideas[index]?.title || '?';
+
+    await ctx.answerCbQuery('⏳ Запускаю...');
+    await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => {});
+    await ctx.reply(`⏳ Реализую: <b>${escHtml(ideaTitle)}</b>\nЭто займёт 1-2 минуты...`, { parse_mode: 'HTML' });
+
+    // Run in background — don't block callback (Telegraf 90s timeout)
+    sis.implementIdea(index).then(async (result) => {
+      if (result === 'ok') {
+        // notification already sent by executeProactivePrompt
+      } else if (result === 'already_running') {
+        await ctx.reply(`⚠️ Уже запущен, подождите.`).catch(() => {});
+      } else if (result === 'bad_index') {
+        await ctx.reply(`❌ Идея уже была реализована или удалена.`).catch(() => {});
+      } else {
+        await ctx.reply(`❌ ${result}`).catch(() => {});
+      }
+    }).catch(() => {});
+    return;
+  }
+
+  // ── ai_my_idea — владелец хочет описать свою идею ──
+  if (data === 'ai_my_idea') {
+    if (userId !== OWNER_ID_NUM) { await ctx.answerCbQuery('⛔'); return; }
+    await ctx.answerCbQuery('✏️');
+    pendingUserIdea.set(userId, true);
+    await ctx.reply(
+      '✏️ <b>Опиши свою идею</b>\n\n' +
+      'Напиши что хочешь добавить/изменить в платформе.\n' +
+      'Придумыватель допилит твою идею в полную спецификацию с промптом для Реализатора.\n\n' +
+      '<i>"стоп" — отмена</i>',
+      { parse_mode: 'HTML' },
+    );
+    return;
+  }
+
+  // ── ai_drop — удалить идею из очереди ──
+  if (data.startsWith('ai_drop:')) {
+    if (userId !== OWNER_ID_NUM) { await ctx.answerCbQuery('⛔'); return; }
+    const { getSelfImprovementSystem } = await import('./self-improvement');
+    const sis = getSelfImprovementSystem();
+    if (!sis) { await ctx.answerCbQuery('❌'); return; }
+    const index = parseInt(data.split(':')[1]);
+    sis.dropIdea(index);
+    await ctx.answerCbQuery('🗑 Идея удалена');
+    await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => {});
+    return;
+  }
+
   // ── AI Proposal callbacks (self-improvement) — handle before orchestrator ──
   if (data.startsWith('proposal_approve:') || data.startsWith('proposal_reject:') || data.startsWith('proposal_rollback:') || data.startsWith('proposal_discuss:')) {
     const [action, proposalId] = [data.split(':')[0], data.split(':').slice(1).join(':')];
@@ -4040,10 +4267,12 @@ bot.on('callback_query', async (ctx) => {
         await ctx.reply(`⏪ Proposal <code>${proposalId.slice(0, 8)}</code> откатан.`, { parse_mode: 'HTML' });
       } else if (action === 'proposal_discuss') {
         await ctx.answerCbQuery('💬 Обсуждение');
+        pendingProposalDiscuss.set(userId, proposalId);
         await ctx.reply(
-          `💬 <b>Обсуждение proposal ${proposalId.slice(0, 8)}</b>\n\n` +
-          `Напишите ваш вопрос или замечание — AI-система прочитает и учтёт.\n` +
-          `Когда закончите, нажмите ✅ Применить или ❌ Отклонить.`,
+          `💬 <b>Обсуждение фичи</b>\n\n` +
+          `Напишите что думаете — вопрос, замечание, пожелание.\n` +
+          `AI прочитает и ответит с учётом контекста фичи.\n\n` +
+          `<i>Напишите "стоп" чтобы выйти из обсуждения.</i>`,
           { parse_mode: 'HTML' }
         );
       }
@@ -4224,37 +4453,6 @@ bot.on(message('voice'), async (ctx) => {
   }
 });
 
-
-bot.command('approve_action', async (ctx) => {
-  const userId = ctx.from?.id;
-  if (!userId) return;
-  const parts = ctx.message.text.split(' ');
-  const id = parseInt(parts[1]);
-  if (!id || isNaN(id)) { await ctx.reply('Usage: /approve_action <ID>'); return; }
-  try {
-    const { resolvePendingApproval } = await import('./agents/ai-agent-runtime');
-    const result = resolvePendingApproval(id, true);
-    await ctx.reply(result ? '✅ Действие одобрено' : '❌ Заявка не найдена или истекла');
-  } catch (e: any) {
-    await ctx.reply('❌ ' + e.message);
-  }
-});
-
-bot.command('reject_action', async (ctx) => {
-  const userId = ctx.from?.id;
-  if (!userId) return;
-  const parts = ctx.message.text.split(' ');
-  const id = parseInt(parts[1]);
-  if (!id || isNaN(id)) { await ctx.reply('Usage: /reject_action <ID>'); return; }
-  try {
-    const { resolvePendingApproval } = await import('./agents/ai-agent-runtime');
-    const result = resolvePendingApproval(id, false);
-    await ctx.reply(result ? '❌ Действие отклонено' : '❌ Заявка не найдена или истекла');
-  } catch (e: any) {
-    await ctx.reply('❌ ' + e.message);
-  }
-});
-
 bot.on(message('text'), async (ctx) => {
   const text = ctx.message.text;
   if ((text.startsWith('/') && text !== '/stop_chat' && text !== '/stopchat') || MENU_TEXTS.has(text)) return;
@@ -4265,6 +4463,76 @@ bot.on(message('text'), async (ctx) => {
   // ── Сохраняем язык пользователя (авто-определение) ───────
   if (!userLanguages.has(userId)) {
     userLanguages.set(userId, detectLang(trimmed));
+  }
+
+  // ── User idea → Придумыватель допиливает ──
+  if (pendingUserIdea.has(userId)) {
+    if (trimmed.toLowerCase() === 'стоп' || trimmed.toLowerCase() === 'stop') {
+      pendingUserIdea.delete(userId);
+      await ctx.reply('✅ Отменено.');
+      return;
+    }
+    pendingUserIdea.delete(userId);
+    await ctx.reply('⏳ Придумыватель прорабатывает твою идею... 1-2 минуты.', { parse_mode: 'HTML' });
+    await ctx.sendChatAction('typing');
+
+    const { getSelfImprovementSystem } = await import('./self-improvement');
+    const sis = getSelfImprovementSystem();
+    if (!sis) { await ctx.reply('❌ Система не запущена'); return; }
+
+    // Run in background
+    sis.submitUserIdea(trimmed).then(async (result) => {
+      if (result === 'ok') {
+        // notification already sent
+      } else if (result === 'already_running') {
+        await ctx.reply('⚠️ Уже запущен, подождите.').catch(() => {});
+      } else {
+        await ctx.reply(`❌ ${result}`).catch(() => {});
+      }
+    }).catch(() => {});
+    return;
+  }
+
+  // ── Proposal discussion (Product Engineer) ───────────────────
+  if (pendingProposalDiscuss.has(userId)) {
+    const proposalId = pendingProposalDiscuss.get(userId)!;
+
+    if (trimmed.toLowerCase() === 'стоп' || trimmed.toLowerCase() === 'stop') {
+      pendingProposalDiscuss.delete(userId);
+      await ctx.reply('✅ Вышли из обсуждения.');
+      return;
+    }
+
+    await ctx.sendChatAction('typing');
+    try {
+      // Load proposal from DB
+      const { getAIProposalsRepository } = await import('./db/schema-extensions');
+      const proposal = await getAIProposalsRepository().getById(proposalId);
+      if (!proposal) {
+        pendingProposalDiscuss.delete(userId);
+        await ctx.reply('❌ Proposal не найден.');
+        return;
+      }
+
+      // Ask Claude Code about the proposal with user's question
+      const { claudeCodeChat } = await import('./claude-code-bridge');
+      const result = await claudeCodeChat([
+        { role: 'user', content:
+          `Ты — AI Product Engineer платформы TON Agent Platform.\n\n` +
+          `Владелец обсуждает с тобой фичу:\n` +
+          `Название: ${proposal.title}\n` +
+          `Описание: ${proposal.description}\n` +
+          `Обоснование: ${proposal.reasoning || ''}\n\n` +
+          `Вопрос/замечание владельца: "${trimmed}"\n\n` +
+          `Ответь кратко и по делу на РУССКОМ языке. Если владелец хочет изменить фичу — предложи как.`
+        }
+      ], { maxTokens: 1000, timeout: 120_000 });
+
+      await ctx.reply(result.text || 'Не удалось получить ответ.');
+    } catch (e: any) {
+      await ctx.reply('❌ Ошибка: ' + (e.message || String(e)).slice(0, 200));
+    }
+    return;
   }
 
   // ── Chat with AI agent ────────────────────────────────────────
@@ -5505,28 +5773,17 @@ async function showAgentsList(ctx: Context, userId: number) {
 // ============================================================
 // Меню возможностей агента (capabilities toggle)
 // ============================================================
-const CAPABILITY_LABELS: Record<string, { icon: string; ru: string; en: string; needs?: string }> = {
-  wallet:               { icon: '💰', ru: 'Кошелёк TON', en: 'TON Wallet', needs: 'WALLET_MNEMONIC' },
-  nft:                  { icon: '🖼', ru: 'NFT анализ', en: 'NFT Analysis' },
-  gifts:                { icon: '🎁', ru: 'Подарки', en: 'Gifts' },
-  gifts_market:         { icon: '📊', ru: 'Рынок подарков', en: 'Gift Market' },
-  telegram:             { icon: '📱', ru: 'Telegram', en: 'Telegram' },
-  web:                  { icon: '🌐', ru: 'Веб поиск', en: 'Web Search' },
-  defi:                 { icon: '📈', ru: 'DeFi (DEX/Swap)', en: 'DeFi (DEX/Swap)' },
-  blockchain:           { icon: '⛓', ru: 'Блокчейн данные', en: 'Blockchain Data' },
-  blockchain_analytics: { icon: '📉', ru: 'Dune Analytics', en: 'Dune Analytics', needs: 'DUNE_API_KEY' },
-  plugins:              { icon: '🔌', ru: 'Плагины', en: 'Plugins' },
-  inter_agent:          { icon: '🔗', ru: 'Межагент', en: 'Inter-agent' },
-  discord:              { icon: '💬', ru: 'Discord', en: 'Discord', needs: 'DISCORD_BOT_TOKEN' },
-  x_twitter:            { icon: '🐦', ru: 'X / Twitter', en: 'X / Twitter', needs: 'X_BEARER_TOKEN' },
-  media:                { icon: '🎨', ru: 'Генерация картинок', en: 'Image Generation', needs: 'FAL_API_KEY' },
-  knowledge:            { icon: '🧠', ru: 'База знаний', en: 'Knowledge Base' },
-  security:             { icon: '🛡', ru: 'Безопасность', en: 'Security' },
-  prompts:              { icon: '📝', ru: 'Библиотека промптов', en: 'Prompt Library' },
-  ton_mcp:              { icon: '🔧', ru: 'TON MCP', en: 'TON MCP' },
-  state:                { icon: '💾', ru: 'Память', en: 'State' },
-  notify:               { icon: '🔔', ru: 'Уведомления', en: 'Notifications' },
+const CAPABILITY_LABELS: Record<string, { icon: string; ru: string; en: string }> = {
+  wallet:       { icon: '💰', ru: 'Кошелёк TON', en: 'TON Wallet' },
+  nft:          { icon: '🖼', ru: 'NFT анализ', en: 'NFT Analysis' },
+  gifts:        { icon: '🎁', ru: 'Подарки', en: 'Gifts' },
+  gifts_market: { icon: '📊', ru: 'Рынок подарков', en: 'Gift Market' },
+  telegram:     { icon: '📱', ru: 'Telegram', en: 'Telegram' },
+  web:          { icon: '🌐', ru: 'Веб поиск', en: 'Web Search' },
+  plugins:      { icon: '🔌', ru: 'Плагины', en: 'Plugins' },
+  inter_agent:  { icon: '🔗', ru: 'Межагент', en: 'Inter-agent' },
 };
+
 async function showCapabilitiesMenu(ctx: Context, agentId: number, enabledCaps: string[]) {
   const userId = (ctx.from as any)?.id || 0;
   const lang = getUserLang(userId);
@@ -6993,7 +7250,7 @@ bot.catch((err, ctx) => {
 // ============================================================
 // Запуск
 // ============================================================
-export function getBotInstance(): Telegraf {
+export function getBotInstance() {
   return bot;
 }
 
