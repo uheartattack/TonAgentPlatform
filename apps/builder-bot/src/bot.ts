@@ -61,7 +61,11 @@ function safeParsePluginList(raw: string | null | undefined): string[] {
   if (!raw) return [];
   const s = String(raw).trim();
   if (s.startsWith('[')) {
-    try { return JSON.parse(s); } catch { return []; }
+    try {
+      const parsed = JSON.parse(s);
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter((x): x is string => typeof x === 'string');
+    } catch { return []; }
   }
   // Старый формат: одна строка без JSON — вернуть как массив из одного элемента
   return s ? [s] : [];
