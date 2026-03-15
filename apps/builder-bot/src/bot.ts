@@ -61,11 +61,7 @@ function safeParsePluginList(raw: string | null | undefined): string[] {
   if (!raw) return [];
   const s = String(raw).trim();
   if (s.startsWith('[')) {
-    try {
-      const parsed = JSON.parse(s);
-      if (!Array.isArray(parsed)) return [];
-      return parsed.filter((x): x is string => typeof x === 'string');
-    } catch { return []; }
+    try { return JSON.parse(s); } catch { return []; }
   }
   // Старый формат: одна строка без JSON — вернуть как массив из одного элемента
   return s ? [s] : [];
@@ -164,8 +160,8 @@ async function startCreationAnimation(
   let stepIdx = 0;
   let msgId: number | undefined;
   const chatId = ctx.chat?.id;
-  const lang = getUserLang(chatId as number);
 
+  const lang = getUserLang(chatId as number);
   const text = renderCreationStep(0, scheduleLabel, lang);
 
   if (sendNew) {
@@ -178,20 +174,14 @@ async function startCreationAnimation(
       ? ctx.callbackQuery.message?.message_id
       : undefined;
   }
-
-  const steps = lang === 'en' ? CREATION_STEPS_EN : CREATION_STEPS_RU;
   const stepTimer = setInterval(async () => {
-    stepIdx = Math.min(stepIdx + 1, steps.length - 1);
+    stepIdx = Math.min(stepIdx + 1, CREATION_STEPS.length - 1);
     if (chatId && msgId) {
       await ctx.telegram.editMessageText(
         chatId, msgId, undefined,
         renderCreationStep(stepIdx, scheduleLabel, lang),
         { parse_mode: 'HTML' },
       ).catch(() => {});
-    }
-    if (stepIdx >= steps.length - 1) {
-      clearInterval(stepTimer);
-      clearInterval(typingTimer);
     }
   }, 3000);
 
@@ -254,7 +244,7 @@ function sanitize(text: string): string {
 // ============================================================
 // Бот и меню
 // ============================================================
-const bot: any = new Telegraf(process.env.BOT_TOKEN || '');
+const bot = new Telegraf(process.env.BOT_TOKEN || '');
 
 // Статичное меню (русский по умолчанию)
 // ── Главное меню (reply keyboard — всегда внизу) ─────────────────────────
@@ -2711,6 +2701,11 @@ bot.on('callback_query', async (ctx) => {
         const emoji = isApprove ? '✅' : '❌';
         const verb = isApprove ? 'одобрено' : 'отклонено';
         await editOrReply(ctx, `${emoji} Действие #${approvalId} ${verb} (${escHtml(row.action_type)}).`, { parse_mode: 'HTML' });
+        // Wake up the waiting agent tool
+        try {
+          const { resolveApprovalWaiter } = await import('./agents/ai-agent-runtime');
+          resolveApprovalWaiter(approvalId, isApprove ? 'approved' : 'rejected');
+        } catch {}
       }
     } catch (e: any) {
       await editOrReply(ctx, `Ошибка: ${escHtml(e.message)}`, { parse_mode: 'HTML' });
@@ -6872,10 +6867,22 @@ async function showStats(ctx: Context, userId: number) {
     text += `${lang === 'ru' ? 'Агентский кошелёк' : 'Agent wallet'}: <b>${agentBalance.toFixed(4)}</b> TON\n`;
   }
 
+  // Execution stats
+  let execStats = '';
+  try {
+    const { getExecutionHistoryRepository } = await import('./db/schema-extensions');
+    const stats = await getExecutionHistoryRepository().getStats(userId);
+    execStats = `\n📊 <b>${lang === 'ru' ? 'Активность' : 'Activity'}</b>\n` +
+      `${lang === 'ru' ? 'Запусков за 24ч' : 'Runs 24h'}: <b>${stats.last24hRuns}</b> · ` +
+      `${lang === 'ru' ? 'Всего' : 'Total'}: <b>${stats.totalRuns}</b>\n` +
+      `✅ ${stats.successRuns} · ❌ ${stats.errorRuns}\n`;
+  } catch {}
+
   text +=
     `\n${pe('brain')} <b>AI</b>\n` +
     `${lang === 'ru' ? 'Модель' : 'Model'}: ${escHtml(modelInfo?.icon || '')} <b>${escHtml(modelInfo?.label || currentModel)}</b>\n` +
-    `${lang === 'ru' ? 'Авто-fallback' : 'Auto-fallback'}: ${pe('check')} ${lang === 'ru' ? 'включён' : 'enabled'}\n\n` +
+    `${lang === 'ru' ? 'Авто-fallback' : 'Auto-fallback'}: ${pe('check')} ${lang === 'ru' ? 'включён' : 'enabled'}\n` +
+    execStats + `\n` +
     `${pe('plugin')} <b>${lang === 'ru' ? 'Плагины' : 'Plugins'}</b>\n` +
     `${lang === 'ru' ? 'Доступно' : 'Available'}: <b>${pluginStats.total}</b> · ${lang === 'ru' ? 'Установлено' : 'Installed'}: <b>${pluginStats.installed}</b>`;
 
@@ -7256,7 +7263,7 @@ bot.catch((err, ctx) => {
 // ============================================================
 // Запуск
 // ============================================================
-export function getBotInstance(): any {
+export function getBotInstance() {
   return bot;
 }
 
