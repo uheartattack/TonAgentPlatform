@@ -2549,6 +2549,22 @@ RULES:
       const { buildToolDefinitions, executeTool, selectRelevantTools } = await import('../agents/ai-agent-runtime');
       const enabledCaps = (mergedConfig.enabledCapabilities as string[]) || null;
       const allTools = buildToolDefinitions('worker', enabledCaps, []);
+
+      // ── Plugin SDK: dispatch message to plugins + append plugin tools ──
+      try {
+        const { loadPluginsForAgent, getPluginToolDefs, dispatchPluginMessage } = await import('./plugin-manager');
+        await loadPluginsForAgent(agentId);
+        const pluginDefs = getPluginToolDefs(agentId);
+        if (pluginDefs.length > 0) allTools.push(...pluginDefs);
+        // Let plugins see the message (analytics, etc.)
+        await dispatchPluginMessage(agentId, {
+          text: msg.text, chatId: String(msg.chatId),
+          senderId: String(msg.senderId || ''), isGroup: msg.isGroup,
+        });
+      } catch (e: any) {
+        console.warn(`[UserbotMgr] Plugin SDK warning: ${e.message}`);
+      }
+
       // Tool RAG: select only relevant tools based on message + system prompt
       const filteredTools = selectRelevantTools(allTools, msg.text, cfg.systemPrompt || '', 40);
 
