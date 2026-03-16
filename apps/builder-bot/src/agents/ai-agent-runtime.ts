@@ -466,6 +466,8 @@ const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
   image:       ['image_download', 'image_resize', 'image_crop', 'image_add_text', 'image_filter',
                 'image_convert', 'image_info', 'image_composite', 'image_create_text', 'image_analyze'],
   ton_mcp:     [], // dynamic — MCP tools discovered at runtime and injected via mcpTools param
+  workspace:   ['file_write', 'file_read', 'file_list', 'file_delete', 'file_append', 'workspace_info'],
+  mcp:         ['mcp_connect', 'mcp_list_servers', 'mcp_list_tools', 'mcp_call', 'mcp_disconnect'],
 };
 
 // ── Tool definitions (OpenAI function_call format) ─────────────────────────
@@ -2806,6 +2808,157 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
             question: { type: 'string', description: 'Вопрос об изображении (по умолчанию: описать изображение)' },
           },
           required: ['path_or_url'],
+        },
+      },
+    },
+
+    // ── Workspace (file management) tools ──────────────────────────────────
+    {
+      type: 'function',
+      function: {
+        name: 'file_write',
+        description: 'Записать файл в рабочую директорию агента. Создаёт директории автоматически.',
+        parameters: {
+          type: 'object',
+          properties: {
+            path: { type: 'string', description: 'Путь к файлу (относительно workspace агента)' },
+            content: { type: 'string', description: 'Содержимое файла' },
+          },
+          required: ['path', 'content'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'file_read',
+        description: 'Прочитать файл из рабочей директории агента (макс 50KB).',
+        parameters: {
+          type: 'object',
+          properties: {
+            path: { type: 'string', description: 'Путь к файлу' },
+          },
+          required: ['path'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'file_list',
+        description: 'Список файлов и папок в рабочей директории агента.',
+        parameters: {
+          type: 'object',
+          properties: {
+            dir: { type: 'string', description: 'Путь к директории (по умолчанию корень workspace)' },
+          },
+          required: [],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'file_delete',
+        description: 'Удалить файл из рабочей директории агента.',
+        parameters: {
+          type: 'object',
+          properties: {
+            path: { type: 'string', description: 'Путь к файлу' },
+          },
+          required: ['path'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'file_append',
+        description: 'Дописать текст в конец файла в рабочей директории агента.',
+        parameters: {
+          type: 'object',
+          properties: {
+            path: { type: 'string', description: 'Путь к файлу' },
+            content: { type: 'string', description: 'Текст для добавления' },
+          },
+          required: ['path', 'content'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'workspace_info',
+        description: 'Информация о рабочей директории агента (количество файлов и размер).',
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+    },
+
+    // ── MCP (Model Context Protocol) tools ─────────────────────────────────
+    {
+      type: 'function',
+      function: {
+        name: 'mcp_connect',
+        description: 'Подключиться к внешнему MCP серверу для использования его инструментов.',
+        parameters: {
+          type: 'object',
+          properties: {
+            server_url: { type: 'string', description: 'URL MCP сервера (HTTP endpoint)' },
+            server_name: { type: 'string', description: 'Название сервера для идентификации' },
+            api_key: { type: 'string', description: 'API ключ для аутентификации (опционально)' },
+          },
+          required: ['server_url', 'server_name'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'mcp_list_servers',
+        description: 'Список подключённых MCP серверов.',
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'mcp_list_tools',
+        description: 'Список доступных инструментов на подключённых MCP серверах.',
+        parameters: {
+          type: 'object',
+          properties: {
+            server_id: { type: 'string', description: 'ID сервера (опционально, по умолчанию все серверы)' },
+          },
+          required: [],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'mcp_call',
+        description: 'Вызвать инструмент на подключённом MCP сервере.',
+        parameters: {
+          type: 'object',
+          properties: {
+            tool_name: { type: 'string', description: 'Имя инструмента' },
+            args: { type: 'object', description: 'Аргументы для инструмента' },
+          },
+          required: ['tool_name'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'mcp_disconnect',
+        description: 'Отключиться от MCP сервера.',
+        parameters: {
+          type: 'object',
+          properties: {
+            server_id: { type: 'string', description: 'ID сервера для отключения' },
+          },
+          required: ['server_id'],
         },
       },
     },
@@ -5594,6 +5747,110 @@ export async function executeTool(
       return { ok: true, action, scheduled_for: targetTime.toISOString() };
     }
 
+    // ── Workspace (file management) tool handlers ─────────────────────────
+    case 'file_write': {
+      try {
+        const ws = await import('../services/workspace-service');
+        await ws.ensureWorkspace(params.agentId);
+        return await ws.writeFile(params.agentId, args.path, args.content);
+      } catch (e: any) {
+        return { error: e.message };
+      }
+    }
+    case 'file_read': {
+      try {
+        const ws = await import('../services/workspace-service');
+        return await ws.readFile(params.agentId, args.path);
+      } catch (e: any) {
+        return { error: e.message };
+      }
+    }
+    case 'file_list': {
+      try {
+        const ws = await import('../services/workspace-service');
+        await ws.ensureWorkspace(params.agentId);
+        return await ws.listFiles(params.agentId, args.dir || '.');
+      } catch (e: any) {
+        return { error: e.message };
+      }
+    }
+    case 'file_delete': {
+      try {
+        const ws = await import('../services/workspace-service');
+        return await ws.deleteFile(params.agentId, args.path);
+      } catch (e: any) {
+        return { error: e.message };
+      }
+    }
+    case 'file_append': {
+      try {
+        const ws = await import('../services/workspace-service');
+        await ws.ensureWorkspace(params.agentId);
+        return await ws.appendFile(params.agentId, args.path, args.content);
+      } catch (e: any) {
+        return { error: e.message };
+      }
+    }
+    case 'workspace_info': {
+      try {
+        const ws = await import('../services/workspace-service');
+        await ws.ensureWorkspace(params.agentId);
+        return await ws.getWorkspaceSize(params.agentId);
+      } catch (e: any) {
+        return { error: e.message };
+      }
+    }
+
+    // ── MCP (Model Context Protocol) tool handlers ────────────────────────
+    case 'mcp_connect': {
+      try {
+        const mcp = await import('../services/mcp-client');
+        const serverId = (args.server_name || 'mcp').toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+        return await mcp.connectMCPServer({
+          id: serverId,
+          name: args.server_name,
+          url: args.server_url,
+          apiKey: args.api_key,
+        });
+      } catch (e: any) {
+        return { error: e.message };
+      }
+    }
+    case 'mcp_list_servers': {
+      try {
+        const mcp = await import('../services/mcp-client');
+        return { servers: mcp.listMCPServers() };
+      } catch (e: any) {
+        return { error: e.message };
+      }
+    }
+    case 'mcp_list_tools': {
+      try {
+        const mcp = await import('../services/mcp-client');
+        const tools = mcp.getMCPTools(args.server_id);
+        return { tools: tools.map(t => ({ name: t.name, description: t.description })) };
+      } catch (e: any) {
+        return { error: e.message };
+      }
+    }
+    case 'mcp_call': {
+      try {
+        const mcp = await import('../services/mcp-client');
+        return await mcp.callMCPTool(args.tool_name, args.args || {});
+      } catch (e: any) {
+        return { error: e.message };
+      }
+    }
+    case 'mcp_disconnect': {
+      try {
+        const mcp = await import('../services/mcp-client');
+        mcp.disconnectMCPServer(args.server_id);
+        return { ok: true };
+      } catch (e: any) {
+        return { error: e.message };
+      }
+    }
+
     default: {
       // ── Tool name aliases (AI sometimes uses wrong names) ──
       const ALIASES: Record<string, string> = {
@@ -5623,6 +5880,15 @@ export async function executeTool(
         console.log(`[AI Runtime] Alias: ${name} → ${alias}`);
         return executeTool(alias, args, params);
       }
+      // ── Plugin SDK: try plugin tools before giving up ──
+      try {
+        const { getPluginTools, executePluginTool } = await import('../services/plugin-manager');
+        const pTools = getPluginTools(params.agentId);
+        if (pTools.some(t => t.name === name)) {
+          return await executePluginTool(params.agentId, name, args);
+        }
+      } catch {}
+
       console.warn(`[AI Runtime] Unknown tool called: ${name}, args: ${JSON.stringify(args).slice(0, 200)}`);
       return { error: `Unknown tool: ${name}. Use list_plugins() or check available tools.` };
     }
@@ -6420,6 +6686,22 @@ You MUST follow these rules AT ALL TIMES:
   }
 
   let allToolDefs = buildToolDefinitions(agentRole, enabledCaps, mcpToolDefs);
+
+  // ── Plugin SDK: load plugins and append their tool definitions ──
+  try {
+    const { loadPluginsForAgent, getPluginToolDefs, tickPlugins } = await import('../services/plugin-manager');
+    await loadPluginsForAgent(params.agentId);
+    const pluginDefs = getPluginToolDefs(params.agentId);
+    if (pluginDefs.length > 0) {
+      allToolDefs.push(...pluginDefs);
+      console.log(`[AI runtime] Agent #${params.agentId} loaded ${pluginDefs.length} plugin tools`);
+    }
+    // Tick plugins (fire reminders, etc.)
+    await tickPlugins(params.agentId);
+  } catch (e: any) {
+    console.warn(`[AI runtime] Plugin SDK load warning: ${e.message}`);
+  }
+
   // Tool RAG: select only relevant tools based on user message + system prompt
   const userMsgText = msgs.join(' ');
   let tools = selectRelevantTools(allToolDefs, userMsgText, params.systemPrompt, 40);
