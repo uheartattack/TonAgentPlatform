@@ -24,6 +24,7 @@ const IC = {
   fire: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14 0-5.5 3.5-7.5-2 3.5-1 5.5 0 7.5 1 1 2 2.5 2 5a2.5 2.5 0 0 1-2.5 2.5"/><path d="M12 22c4 0 7-3 7-7 0-2-.5-3.5-1.5-5C16 8 12 6 12 2c-2 4-6 6-7.5 8.5C3.5 12.5 3 14 3 15c0 4 3 7 7 7z"/></svg>',
   gem: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12l4 6-10 13L2 9z"/><path d="M2 9h20"/><path d="M12 22L6 9"/><path d="M12 22l6-13"/><path d="M9 3l3 6 3-6"/></svg>',
   download: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
+  upload: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>',
   creditcard: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>',
   star: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>',
   party: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5.8 11.3L2 22l10.7-3.8"/><path d="M4 3h.01"/><path d="M22 8h.01"/><path d="M15 2h.01"/><path d="M22 20h.01"/><path d="M22 2l-2.24.75a2.9 2.9 0 0 0-1.96 3.12v0c.1.86-.57 1.63-1.45 1.63h-.38c-.86 0-1.6.6-1.76 1.44L14 10"/><path d="M22 13l-1.34-.45a2.9 2.9 0 0 0-3.12 1.96v0a1.62 1.62 0 0 1-1.63 1.45h-.01a1.65 1.65 0 0 1-1.44-1.76L14.5 13"/></svg>',
@@ -721,7 +722,7 @@ function renderAgentDetail() {
   var triggerType = a.trigger_type || a.triggerType || 'manual';
   var triggerLabel = triggerType === 'scheduled' ? 'Scheduled' : triggerType === 'webhook' ? 'Webhook' : triggerType === 'ai_agent' ? 'AI Agent' : 'Manual';
   var config = {};
-  try { config = typeof a.trigger_config === 'string' ? JSON.parse(a.trigger_config) : (a.trigger_config || {}); } catch(e) {}
+  try { var _tc = a.trigger_config || a.triggerConfig || {}; config = typeof _tc === 'string' ? JSON.parse(_tc) : _tc; } catch(e) {}
 
   var aiProvider = (config.config && config.config.AI_PROVIDER) || 'default';
   var aiModel = (config.config && config.config.AI_MODEL) || '—';
@@ -959,7 +960,7 @@ function switchSettingsTab(tab) {
   body.style.animation = 'tabContentFade 0.3s cubic-bezier(0.4,0,0.2,1)';
   var a = _detailAgentData;
   var config = {};
-  try { config = typeof a.trigger_config === 'string' ? JSON.parse(a.trigger_config) : (a.trigger_config || {}); } catch(e) {}
+  try { var _tc = a.trigger_config || a.triggerConfig || {}; config = typeof _tc === 'string' ? JSON.parse(_tc) : _tc; } catch(e) {}
 
   if (tab === 'prompt') {
     var isRu = currentLang === 'ru';
@@ -1036,29 +1037,70 @@ function switchSettingsTab(tab) {
     var aiModel = (config.config && config.config.AI_MODEL) || '';
     var hasKey = !!(config.config && config.config.AI_API_KEY);
     var providers = [
-      { id: 'gemini', name: 'Gemini', color: '#4285f4', desc: 'Google AI' },
-      { id: 'openai', name: 'OpenAI', color: '#10a37f', desc: 'GPT-4o' },
-      { id: 'anthropic', name: 'Anthropic', color: '#d97706', desc: 'Claude' },
-      { id: 'groq', name: 'Groq', color: '#f55036', desc: 'Llama 3' },
-      { id: 'deepseek', name: 'DeepSeek', color: '#4f46e5', desc: 'DeepSeek' },
-      { id: 'openrouter', name: 'OpenRouter', color: '#6366f1', desc: 'Multi-model' },
-      { id: 'together', name: 'Together', color: '#0ea5e9', desc: 'Open-source' },
+      { id: 'gemini', name: 'Gemini', color: '#4285f4', desc: 'Google AI',
+        models: 'gemini-2.5-flash (fast), gemini-2.5-pro (smart)',
+        defaultModel: 'gemini-2.5-flash',
+        keyUrl: 'https://aistudio.google.com/apikey',
+        keyHint: isRu ? 'Google AI Studio → Get API Key → Create. Бесплатно до 1500 req/day.' : 'Google AI Studio → Get API Key → Create. Free up to 1500 req/day.',
+        keyPrefix: 'AIzaSy...' },
+      { id: 'openai', name: 'OpenAI', color: '#10a37f', desc: 'GPT-4o',
+        models: 'gpt-4o-mini (cheap), gpt-4o (smart), o3-mini (reasoning)',
+        defaultModel: 'gpt-4o-mini',
+        keyUrl: 'https://platform.openai.com/api-keys',
+        keyHint: isRu ? 'platform.openai.com → API Keys → Create. Нужна оплата от $5.' : 'platform.openai.com → API Keys → Create. Requires $5+ credit.',
+        keyPrefix: 'sk-proj-...' },
+      { id: 'anthropic', name: 'Anthropic', color: '#d97706', desc: 'Claude',
+        models: 'claude-haiku-4-5 (fast), claude-sonnet-4 (smart), claude-opus-4 (best)',
+        defaultModel: 'claude-haiku-4-5-20251001',
+        keyUrl: 'https://console.anthropic.com/settings/keys',
+        keyHint: isRu ? 'console.anthropic.com → API Keys → Create Key. Нужна оплата от $5.' : 'console.anthropic.com → API Keys → Create Key. Requires $5+ credit.',
+        keyPrefix: 'sk-ant-...' },
+      { id: 'groq', name: 'Groq', color: '#f55036', desc: 'Llama 3 (fast)',
+        models: 'llama-3.3-70b-versatile (free), mixtral-8x7b (free)',
+        defaultModel: 'llama-3.3-70b-versatile',
+        keyUrl: 'https://console.groq.com/keys',
+        keyHint: isRu ? 'console.groq.com → API Keys → Create. Полностью бесплатно!' : 'console.groq.com → API Keys → Create. Completely free!',
+        keyPrefix: 'gsk_...' },
+      { id: 'deepseek', name: 'DeepSeek', color: '#4f46e5', desc: 'DeepSeek V3',
+        models: 'deepseek-chat (V3, cheap), deepseek-reasoner (R1)',
+        defaultModel: 'deepseek-chat',
+        keyUrl: 'https://platform.deepseek.com/api_keys',
+        keyHint: isRu ? 'platform.deepseek.com → API Keys. Очень дёшево, ~$0.14/M tokens.' : 'platform.deepseek.com → API Keys. Very cheap, ~$0.14/M tokens.',
+        keyPrefix: 'sk-...' },
+      { id: 'openrouter', name: 'OpenRouter', color: '#6366f1', desc: 'Multi-model',
+        models: 'google/gemini-2.5-flash (free), meta-llama/llama-3.3-70b (free)',
+        defaultModel: 'google/gemini-2.5-flash',
+        keyUrl: 'https://openrouter.ai/keys',
+        keyHint: isRu ? 'openrouter.ai → Keys. Один ключ → 200+ моделей. Есть бесплатные модели.' : 'openrouter.ai → Keys. One key → 200+ models. Free models available.',
+        keyPrefix: 'sk-or-...' },
+      { id: 'together', name: 'Together', color: '#0ea5e9', desc: 'Open-source',
+        models: 'meta-llama/Llama-3.3-70B-Instruct-Turbo, Qwen/Qwen2.5-72B',
+        defaultModel: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
+        keyUrl: 'https://api.together.ai/settings/api-keys',
+        keyHint: isRu ? 'together.ai → Settings → API Keys. $5 бесплатных кредитов при регистрации.' : 'together.ai → Settings → API Keys. $5 free credit on signup.',
+        keyPrefix: '' },
     ];
+
+    // Find current provider info for the detail panel
+    var currentProv = providers.find(function(p) { return p.id === aiProvider; });
+
     body.innerHTML =
       '<div class="rt-page">' +
       '<div class="rt-header">' +
         '<div class="rt-header-icon" style="background:rgba(16,163,127,0.12);color:#10a37f">' + IC.bolt + '</div>' +
         '<div class="rt-header-text">' +
           '<h3>' + (isRu ? 'Настройки AI' : 'AI Configuration') + '</h3>' +
-          '<p>' + (isRu ? 'Выберите провайдера, модель и API ключ для вашего агента.' : 'Choose provider, model and API key for your agent.') + '</p>' +
+          '<p>' + (isRu ? 'Выберите AI провайдера для вашего агента. Без ключа используется бесплатный Platform AI.' : 'Choose AI provider for your agent. Without a key, free Platform AI is used.') + '</p>' +
         '</div>' +
       '</div>' +
+
+      // Provider grid
       '<div class="rt-section">' +
         '<div class="rt-section-label">' + IC.globe + ' ' + (isRu ? 'Провайдер' : 'Provider') + '</div>' +
         '<div class="st-provider-grid">' +
         providers.map(function(p) {
           var sel = p.id === aiProvider;
-          return '<div class="st-provider-card' + (sel ? ' st-prov-active' : '') + '" onclick="document.querySelectorAll(\'.st-provider-card\').forEach(function(c){c.classList.remove(\'st-prov-active\')});this.classList.add(\'st-prov-active\');document.getElementById(\'ai-provider-select\').value=\'' + p.id + '\'">' +
+          return '<div class="st-provider-card' + (sel ? ' st-prov-active' : '') + '" onclick="selectAIProvider(\'' + p.id + '\')">' +
             '<div class="st-prov-dot" style="background:' + p.color + '"></div>' +
             '<div class="st-prov-info"><div class="st-prov-name">' + p.name + '</div><div class="st-prov-desc">' + p.desc + '</div></div>' +
             (sel ? '<span style="color:var(--primary)">' + IC.check + '</span>' : '') +
@@ -1070,25 +1112,39 @@ function switchSettingsTab(tab) {
           providers.map(function(p) { return '<option value="' + p.id + '"' + (p.id === aiProvider ? ' selected' : '') + '>' + p.name + '</option>'; }).join('') +
         '</select>' +
       '</div>' +
+
+      // Dynamic provider info panel
+      '<div id="ai-provider-info" class="rt-section" style="background:var(--bg-tertiary);border-radius:12px;padding:16px;margin-bottom:16px;' + (currentProv ? '' : 'display:none') + '">' +
+        (currentProv ? _renderProviderInfo(currentProv, isRu) : '') +
+      '</div>' +
+
+      // Model input
       '<div class="rt-section">' +
         '<div class="rt-section-label">' + IC.wrench + ' ' + (isRu ? 'Модель' : 'Model') + '</div>' +
         '<div class="rt-input-wrap">' +
-          '<input type="text" id="ai-model-input" class="rt-input" value="' + escHtml(aiModel) + '" placeholder="' + (isRu ? 'auto (определяется провайдером)' : 'auto (determined by provider)') + '">' +
-          '<div class="rt-input-hint">' + (isRu ? 'Оставьте пустым для модели по умолчанию провайдера' : 'Leave empty for the provider default model') + '</div>' +
+          '<input type="text" id="ai-model-input" class="rt-input" value="' + escHtml(aiModel) + '" placeholder="' + (currentProv ? currentProv.defaultModel : (isRu ? 'auto' : 'auto')) + '">' +
+          '<div class="rt-input-hint">' + (isRu ? 'Оставьте пустым — будет использована модель по умолчанию' : 'Leave empty for the default model') +
+            (currentProv ? '<br>' + (isRu ? 'Доступные: ' : 'Available: ') + '<code style="font-size:.75rem">' + currentProv.models + '</code>' : '') +
+          '</div>' +
         '</div>' +
       '</div>' +
+
+      // API Key
       '<div class="rt-section">' +
         '<div class="rt-section-label">' + IC.link + ' API Key</div>' +
         '<div class="rt-input-wrap">' +
-          '<input type="password" id="ai-key-input" class="rt-input" placeholder="' + (hasKey ? '••••••••••••' : (isRu ? 'Вставьте API ключ провайдера' : 'Paste provider API key')) + '">' +
+          '<input type="password" id="ai-key-input" class="rt-input" placeholder="' + (hasKey ? '••••••••••••' : (currentProv ? currentProv.keyPrefix : 'API key')) + '">' +
           '<div class="rt-input-hint">' +
             (hasKey
               ? '<span style="color:#22c55e">' + IC.check + '</span> ' + (isRu ? 'Ключ установлен. Оставьте пустым чтобы не менять.' : 'Key is set. Leave empty to keep.')
-              : (isRu ? 'Укажите API ключ провайдера для работы агента' : 'Enter the provider API key to run the agent')
+              : (currentProv
+                ? currentProv.keyHint + ' <a href="' + currentProv.keyUrl + '" target="_blank" style="color:var(--primary)">' + (isRu ? 'Получить ключ →' : 'Get key →') + '</a>'
+                : (isRu ? 'Выберите провайдера выше' : 'Select a provider above'))
             ) +
           '</div>' +
         '</div>' +
       '</div>' +
+
       '<div class="rt-actions">' +
         '<button class="rt-save-btn" onclick="saveSettingsAI()">' + IC.check + ' ' + (isRu ? 'Сохранить AI' : 'Save AI') + '</button>' +
       '</div>' +
@@ -1189,7 +1245,7 @@ function switchSettingsTab(tab) {
       '</div>' +
       '</div>';
   } else if (tab === 'wallet') {
-    var walletAddr = (config.config && config.config.WALLET_ADDRESS) || '';
+    var walletAddr = (config.config && config.config.WALLET_ADDRESS) || (a._stateWallet) || '';
     var isRu = currentLang === 'ru';
     body.innerHTML =
       '<div class="rt-page">' +
@@ -1206,7 +1262,33 @@ function switchSettingsTab(tab) {
             '<div class="st-wallet-label">TON Address</div>' +
             '<div class="st-wallet-addr">' + escHtml(walletAddr) + '</div>' +
             '<div class="st-wallet-actions">' +
-              '<button class="rt-save-btn" onclick="navigator.clipboard.writeText(\'' + escHtml(walletAddr) + '\');toast(\'Copied\',\'success\')" style="font-size:.78rem">' + IC.clipboard + ' ' + (isRu ? 'Копировать' : 'Copy') + '</button>' +
+              '<button class="rt-save-btn" onclick="navigator.clipboard.writeText(\'' + escHtml(walletAddr) + '\');toast(\'Copied\',\'success\')" style="font-size:.78rem">' + IC.clipboard + ' ' + (isRu ? 'Копировать адрес' : 'Copy Address') + '</button>' +
+            '</div>' +
+          '</div>' +
+          // ── Mnemonic section ──
+          '<div class="rt-section" style="margin-top:16px">' +
+            '<div class="rt-section-label">' + IC.shield + ' ' + (isRu ? 'Мнемоническая фраза (Seed)' : 'Mnemonic Phrase (Seed)') + '</div>' +
+            '<div id="wallet-mnemonic-box" style="background:var(--bg-tertiary);border:1px solid var(--border);border-radius:12px;padding:16px">' +
+              '<div id="wallet-mnemonic-hidden">' +
+                '<div style="display:flex;align-items:center;gap:8px;color:var(--text-muted);font-size:.82rem">' +
+                  IC.shield + ' ' + (isRu
+                    ? '24 слова для восстановления кошелька. Никому не показывайте!'
+                    : '24 words to recover your wallet. Never share with anyone!') +
+                '</div>' +
+                '<button class="rt-save-btn" onclick="revealWalletMnemonic()" style="margin-top:10px;font-size:.78rem;background:rgba(239,68,68,0.1);color:#ef4444;border:1px solid rgba(239,68,68,0.2)">' +
+                  IC.eye + ' ' + (isRu ? 'Показать мнемонику' : 'Reveal Mnemonic') +
+                '</button>' +
+              '</div>' +
+              '<div id="wallet-mnemonic-revealed" style="display:none">' +
+                '<div style="font-size:.72rem;color:#ef4444;margin-bottom:8px;font-weight:600">⚠️ ' +
+                  (isRu ? 'СЕКРЕТНО! Не делитесь и не показывайте на экране при записи!' : 'SECRET! Do not share or show on screen while recording!') +
+                '</div>' +
+                '<div id="wallet-mnemonic-words" style="font-family:monospace;font-size:.82rem;line-height:1.8;word-break:break-all;color:var(--text-primary);background:rgba(0,0,0,0.3);padding:12px;border-radius:8px"></div>' +
+                '<div style="display:flex;gap:8px;margin-top:10px">' +
+                  '<button class="rt-save-btn" onclick="copyWalletMnemonic()" style="font-size:.78rem">' + IC.clipboard + ' ' + (isRu ? 'Копировать' : 'Copy') + '</button>' +
+                  '<button class="rt-save-btn" onclick="hideWalletMnemonic()" style="font-size:.78rem;background:var(--bg-secondary)">' + (isRu ? 'Скрыть' : 'Hide') + '</button>' +
+                '</div>' +
+              '</div>' +
             '</div>' +
           '</div>'
         : '<div class="st-wallet-empty">' +
@@ -1222,10 +1304,21 @@ function switchSettingsTab(tab) {
     var customRole = (config.config && config.config.customRole) || {};
     var agentColor = (config.config && config.config.agentColor) || '#0098EA';
     var roles = [
-      { id: 'worker', name: 'Worker', icon: IC.wrench, desc: currentLang === 'ru' ? 'Выполняет задачи автономно по расписанию или событию' : 'Executes tasks autonomously on schedule or event', color: '#3b82f6' },
-      { id: 'manager', name: 'Manager', icon: IC.crown, desc: currentLang === 'ru' ? 'Координирует других агентов, делегирует задачи' : 'Coordinates other agents, delegates tasks', color: '#a855f7' },
-      { id: 'specialist', name: 'Specialist', icon: IC.star, desc: currentLang === 'ru' ? 'Эксперт в конкретной области, глубокая аналитика' : 'Expert in specific domain, deep analytics', color: '#22c55e' },
-      { id: 'monitor', name: 'Monitor', icon: IC.bell, desc: currentLang === 'ru' ? 'Отслеживает данные и отправляет алерты' : 'Tracks data and sends alerts', color: '#f97316' },
+      { id: 'worker', name: 'Worker', icon: IC.wrench, color: '#3b82f6',
+        desc: currentLang === 'ru' ? 'Исполнитель задач' : 'Task executor',
+        effect: currentLang === 'ru' ? 'Фокус на мониторинге, сборе данных и автоматизации. Работает автономно.' : 'Focus on monitoring, data collection, automation. Works autonomously.' },
+      { id: 'manager', name: 'Manager', icon: IC.crown, color: '#a855f7',
+        desc: currentLang === 'ru' ? 'Координатор агентов' : 'Agent coordinator',
+        effect: currentLang === 'ru' ? 'Делегирует задачи другим агентам. Получает manage_agent + assign_task инструменты.' : 'Delegates to other agents. Gets manage_agent + assign_task tools.' },
+      { id: 'specialist', name: 'Specialist', icon: IC.star, color: '#22c55e',
+        desc: currentLang === 'ru' ? 'Эксперт-аналитик' : 'Expert analyst',
+        effect: currentLang === 'ru' ? 'Глубокий профессиональный анализ. Перепроверяет данные, строит обоснованные выводы.' : 'Deep professional analysis. Cross-checks data, builds justified conclusions.' },
+      { id: 'monitor', name: 'Monitor', icon: IC.bell, color: '#f97316',
+        desc: currentLang === 'ru' ? 'Система алертов' : 'Alert system',
+        effect: currentLang === 'ru' ? 'Уведомляет только при значимых изменениях (>5%). Не спамит. Краткий формат.' : 'Notifies only on significant changes (>5%). No spam. Brief format.' },
+      { id: 'director', name: 'Director', icon: IC.crown, color: '#ffd700',
+        desc: currentLang === 'ru' ? 'Директор' : 'Director',
+        effect: currentLang === 'ru' ? 'Управляет людьми и агентами. Получает assign_task, manage_agent, send_report, check_tasks.' : 'Manages people and agents. Gets assign_task, manage_agent, send_report, check_tasks.' },
     ];
     var isRu = currentLang === 'ru';
     var colorSwatches = ['#0098EA', '#3b82f6', '#6366f1', '#a855f7', '#ec4899', '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6', '#06b6d4', '#64748b'];
@@ -1246,6 +1339,7 @@ function switchSettingsTab(tab) {
           '<div class="st-role-info">' +
             '<div class="st-role-name">' + r.name + '</div>' +
             '<div class="st-role-desc">' + r.desc + '</div>' +
+            '<div class="st-role-effect" style="font-size:.72rem;color:var(--text-muted);margin-top:4px;line-height:1.3">' + IC.bolt + ' ' + r.effect + '</div>' +
           '</div>' +
           '<div class="st-role-check">' + IC.check + '</div>' +
         '</div>';
@@ -1298,30 +1392,29 @@ function switchSettingsTab(tab) {
     var isDefault = rules.isDefault || false;
 
     body.innerHTML =
-      // ── Header ──
       '<div class="rt-page">' +
       '<div class="rt-header">' +
         '<div class="rt-header-icon">' + IC.shuffle + '</div>' +
         '<div class="rt-header-text">' +
-          '<h3>' + (isRu ? 'Маршрутизация сообщений' : 'Message Routing') + '</h3>' +
+          '<h3>' + (isRu ? 'Маршрутизация' : 'Message Routing') + '</h3>' +
           '<p>' + (isRu
-            ? 'Когда несколько агентов работают на одном TG-аккаунте, правила маршрутизации определяют, какой агент отвечает на какое сообщение.'
-            : 'When multiple agents share one TG account, routing rules determine which agent handles which message.') + '</p>' +
+            ? 'Настройте, на какие сообщения этот агент будет реагировать. Актуально когда несколько агентов работают на одном Telegram-аккаунте.'
+            : 'Configure which messages this agent responds to. Relevant when multiple agents share one Telegram account.') + '</p>' +
         '</div>' +
       '</div>' +
 
       // ── Shared agents banner (loaded async) ──
       '<div id="rt-shared-agents" class="rt-shared-banner" style="display:none"></div>' +
 
-      // ── Chat Types — big toggle cards ──
+      // ── Step 1: Where to respond ──
       '<div class="rt-section">' +
-        '<div class="rt-section-label">' + IC.chat + ' ' + (isRu ? 'Типы чатов' : 'Chat Types') + '</div>' +
+        '<div class="rt-section-label">' + IC.chat + ' ' + (isRu ? '1. Где отвечать?' : '1. Where to respond?') + '</div>' +
         '<div class="rt-toggle-row">' +
           '<label class="rt-toggle-card' + (chatTypes.includes('dm') ? ' rt-active' : '') + '" onclick="this.classList.toggle(\'rt-active\');this.querySelector(\'input\').checked=this.classList.contains(\'rt-active\')">' +
             '<input type="checkbox" id="routing-dm"' + (chatTypes.includes('dm') ? ' checked' : '') + ' style="display:none">' +
             '<div class="rt-toggle-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>' +
             '<div class="rt-toggle-name">' + (isRu ? 'Личные' : 'DM') + '</div>' +
-            '<div class="rt-toggle-desc">' + (isRu ? 'Прямые сообщения' : 'Direct messages') + '</div>' +
+            '<div class="rt-toggle-desc">' + (isRu ? 'Приватные чаты' : 'Private chats') + '</div>' +
           '</label>' +
           '<label class="rt-toggle-card' + (chatTypes.includes('group') ? ' rt-active' : '') + '" onclick="this.classList.toggle(\'rt-active\');this.querySelector(\'input\').checked=this.classList.contains(\'rt-active\')">' +
             '<input type="checkbox" id="routing-group"' + (chatTypes.includes('group') ? ' checked' : '') + ' style="display:none">' +
@@ -1329,93 +1422,86 @@ function switchSettingsTab(tab) {
             '<div class="rt-toggle-name">' + (isRu ? 'Группы' : 'Groups') + '</div>' +
             '<div class="rt-toggle-desc">' + (isRu ? 'Групповые чаты' : 'Group chats') + '</div>' +
           '</label>' +
-          '<label class="rt-toggle-card' + (chatTypes.includes('channel') ? ' rt-active' : '') + '" onclick="this.classList.toggle(\'rt-active\');this.querySelector(\'input\').checked=this.classList.contains(\'rt-active\')">' +
-            '<input type="checkbox" id="routing-channel"' + (chatTypes.includes('channel') ? ' checked' : '') + ' style="display:none">' +
-            '<div class="rt-toggle-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 2L11 13"/><polygon points="22 2 15 22 11 13 2 9"/></svg></div>' +
-            '<div class="rt-toggle-name">' + (isRu ? 'Каналы' : 'Channels') + '</div>' +
-            '<div class="rt-toggle-desc">' + (isRu ? 'Посты в каналах' : 'Channel posts') + '</div>' +
-          '</label>' +
+        '</div>' +
+        '<div class="rt-input-hint" style="margin-top:6px">' + (isRu
+          ? 'Включите типы чатов, в которых агент должен работать'
+          : 'Enable the chat types where the agent should work') + '</div>' +
+      '</div>' +
+
+      // ── Step 2: Filter by specific chats ──
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + IC.link + ' ' + (isRu ? '2. Конкретные чаты (опционально)' : '2. Specific chats (optional)') + '</div>' +
+        '<div class="rt-input-wrap">' +
+          '<input type="text" id="routing-chat-ids" class="rt-input" value="' + escHtml(chatIds) + '" placeholder="' + (isRu ? '@username, -100123456' : '@username, -100123456') + '">' +
+          '<div class="rt-input-hint">' + (isRu
+            ? 'Если указаны — агент будет отвечать ТОЛЬКО в этих чатах. Пусто = все чаты подходящего типа.'
+            : 'If set, agent responds ONLY in these chats. Empty = all matching chats.') + '</div>' +
         '</div>' +
       '</div>' +
 
-      // ── Target Chats ──
+      // ── Step 3: Trigger keywords ──
       '<div class="rt-section">' +
-        '<div class="rt-section-label">' + IC.link + ' ' + (isRu ? 'Целевые чаты' : 'Target Chats') + '</div>' +
+        '<div class="rt-section-label">' + IC.search + ' ' + (isRu ? '3. Триггер-слова (опционально)' : '3. Trigger words (optional)') + '</div>' +
         '<div class="rt-input-wrap">' +
-          '<input type="text" id="routing-chat-ids" class="rt-input" value="' + escHtml(chatIds) + '" placeholder="' + (isRu ? '-100123456, @username, @channel' : '-100123456, @username, @channel') + '">' +
+          '<input type="text" id="routing-keywords" class="rt-input" value="' + escHtml(keywords) + '" placeholder="' + (isRu ? 'баланс, nft, крипто' : 'balance, nft, crypto') + '">' +
           '<div class="rt-input-hint">' + (isRu
-            ? 'ID чатов или @юзернеймы через запятую. Агент будет отвечать ТОЛЬКО в этих чатах (приоритет +100). Пусто = все чаты.'
-            : 'Chat IDs or @usernames, comma-separated. Agent responds ONLY in these chats (+100 priority). Empty = all chats.') + '</div>' +
-        '</div>' +
-      '</div>' +
-
-      // ── Keywords ──
-      '<div class="rt-section">' +
-        '<div class="rt-section-label">' + IC.search + ' ' + (isRu ? 'Ключевые слова' : 'Keywords') + '</div>' +
-        '<div class="rt-input-wrap">' +
-          '<input type="text" id="routing-keywords" class="rt-input" value="' + escHtml(keywords) + '" placeholder="' + (isRu ? 'баланс, nft, крипто, подарки' : 'balance, nft, crypto, gifts') + '">' +
-          '<div class="rt-input-hint">' + (isRu
-            ? 'Агент реагирует на сообщения, содержащие эти слова (приоритет +50). Через запятую.'
-            : 'Agent triggers on messages containing these words (+50 priority). Comma-separated.') + '</div>' +
+            ? 'Агент активируется когда сообщение содержит одно из этих слов. Пусто = реагирует на все сообщения.'
+            : 'Agent activates when message contains any of these words. Empty = responds to all messages.') + '</div>' +
         '</div>' +
         '<div id="rt-keyword-tags" class="rt-keyword-tags"></div>' +
       '</div>' +
 
-      // ── Priority + Default — side by side ──
+      // ── Step 4: Priority & Fallback ──
       '<div class="rt-row-2">' +
         '<div class="rt-section" style="flex:1">' +
-          '<div class="rt-section-label">' + IC.chart + ' ' + (isRu ? 'Приоритет' : 'Priority') + '</div>' +
+          '<div class="rt-section-label">' + IC.chart + ' ' + (isRu ? '4. Приоритет' : '4. Priority') + '</div>' +
           '<div class="rt-priority-wrap">' +
             '<input type="range" id="routing-priority-slider" min="1" max="100" value="' + priority + '" class="rt-slider" oninput="document.getElementById(\'routing-priority\').value=this.value;document.getElementById(\'rt-priority-val\').textContent=this.value">' +
             '<div class="rt-priority-display">' +
               '<input type="number" id="routing-priority" value="' + priority + '" min="1" max="100" class="rt-priority-num" oninput="document.getElementById(\'routing-priority-slider\').value=this.value;document.getElementById(\'rt-priority-val\').textContent=this.value">' +
               '<span id="rt-priority-val" class="rt-priority-badge">' + priority + '</span>' +
             '</div>' +
-            '<div class="rt-input-hint">' + (isRu ? 'Чем выше — тем больше приоритет при конфликте' : 'Higher = more priority when agents compete') + '</div>' +
+            '<div class="rt-input-hint">' + (isRu ? 'Если 2 агента подходят — побеждает с большим числом' : 'When 2 agents match — the one with higher number wins') + '</div>' +
           '</div>' +
         '</div>' +
         '<div class="rt-section" style="flex:1">' +
-          '<div class="rt-section-label">' + IC.star + ' ' + (isRu ? 'Режим' : 'Mode') + '</div>' +
+          '<div class="rt-section-label">' + IC.robot + ' ' + (isRu ? 'Резервный' : 'Fallback') + '</div>' +
           '<label class="rt-default-toggle' + (isDefault ? ' rt-default-on' : '') + '" onclick="var c=this.querySelector(\'input\');c.checked=!c.checked;this.classList.toggle(\'rt-default-on\',c.checked)">' +
             '<input type="checkbox" id="routing-is-default"' + (isDefault ? ' checked' : '') + ' style="display:none">' +
             '<div class="rt-default-icon">' + IC.robot + '</div>' +
             '<div>' +
-              '<div class="rt-default-title">' + (isRu ? 'Агент по умолчанию' : 'Default Agent') + '</div>' +
-              '<div class="rt-default-desc">' + (isRu ? 'Обрабатывает всё, что не попало в другие агенты' : 'Handles everything not matched by other agents') + '</div>' +
+              '<div class="rt-default-title">' + (isRu ? 'Резервный агент' : 'Fallback Agent') + '</div>' +
+              '<div class="rt-default-desc">' + (isRu ? 'Отвечает когда ни один другой агент не подходит' : 'Responds when no other agent matches') + '</div>' +
             '</div>' +
           '</label>' +
         '</div>' +
       '</div>' +
 
-      // ── Score preview ──
+      // ── How it works — simplified ──
       '<div class="rt-score-preview">' +
-        '<div class="rt-score-title">' + (isRu ? 'Как работает маршрутизация' : 'How routing works') + '</div>' +
-        '<div class="rt-score-grid">' +
-          '<div class="rt-score-item"><span class="rt-score-val">+100</span> ' + (isRu ? 'Совпадение Chat ID' : 'Chat ID match') + '</div>' +
-          '<div class="rt-score-item"><span class="rt-score-val">+50</span> ' + (isRu ? 'Ключевое слово' : 'Keyword match') + '</div>' +
-          '<div class="rt-score-item"><span class="rt-score-val">+10</span> ' + (isRu ? 'Тип чата' : 'Chat type match') + '</div>' +
-          '<div class="rt-score-item"><span class="rt-score-val">+1</span> ' + (isRu ? 'Агент по умолчанию' : 'Default agent') + '</div>' +
-          '<div class="rt-score-item"><span class="rt-score-val">+N</span> ' + (isRu ? 'Бонус приоритета' : 'Priority bonus') + '</div>' +
-        '</div>' +
-        '<div class="rt-input-hint" style="margin-top:8px">' + (isRu
-          ? 'При входящем сообщении все агенты на аккаунте получают score. Побеждает агент с максимальным score.'
-          : 'Each incoming message is scored against all agents. The agent with the highest score responds.') + '</div>' +
+        '<div class="rt-score-title">' + (isRu ? 'Как это работает?' : 'How does it work?') + '</div>' +
+        '<div class="rt-input-hint" style="margin-top:4px;line-height:1.6">' + (isRu
+          ? '1. Приходит сообщение на Telegram-аккаунт<br>2. Каждый агент получает баллы за совпадения:<br>' +
+            '&nbsp;&nbsp;&nbsp;• Конкретный чат = <b>+100</b> &nbsp; • Триггер-слово = <b>+50</b> &nbsp; • Тип чата = <b>+10</b><br>' +
+            '3. <b>Побеждает агент с наибольшим баллом</b><br>' +
+            '4. Если никто не набрал баллов — отвечает резервный агент'
+          : '1. A message arrives on the Telegram account<br>2. Each agent gets points for matches:<br>' +
+            '&nbsp;&nbsp;&nbsp;• Specific chat = <b>+100</b> &nbsp; • Trigger word = <b>+50</b> &nbsp; • Chat type = <b>+10</b><br>' +
+            '3. <b>Agent with the highest score wins</b><br>' +
+            '4. If no one scores — the fallback agent responds') + '</div>' +
       '</div>' +
 
-      // ── Save button ──
       '<div class="rt-actions">' +
         '<button class="rt-save-btn" onclick="saveSettingsRouting()">' +
-          IC.check + ' ' + (isRu ? 'Сохранить правила' : 'Save Rules') +
+          IC.check + ' ' + (isRu ? 'Сохранить' : 'Save') +
         '</button>' +
       '</div>' +
       '</div>';
 
-    // ── Render keyword tags ──
     setTimeout(function() {
       _renderKeywordTags();
       var kwInput = document.getElementById('routing-keywords');
       if (kwInput) kwInput.addEventListener('input', _renderKeywordTags);
-      // Load shared agents info
       _loadSharedAgents();
     }, 50);
   } else if (tab === 'chat') {
@@ -1446,7 +1532,211 @@ function switchSettingsTab(tab) {
   } else if (tab === 'audit') {
     body.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--text-muted)">' + (currentLang === 'ru' ? 'Загрузка аудита...' : 'Loading audit...') + '</div>';
     runSettingsAudit(body);
+  } else if (tab === 'advanced') {
+    var isRu = currentLang === 'ru';
+    var spendLimit = 500;
+    var tickInterval = 60;
+    var agentLang = 'auto';
+    // Load from agent state
+    try {
+      var stateKeys = ['daily_spend_limit_ton', 'tick_interval_sec', 'agent_language'];
+      stateKeys.forEach(function(k) {
+        var stateVal = config.config && config.config[k];
+        if (k === 'daily_spend_limit_ton' && stateVal) spendLimit = parseInt(stateVal) || 500;
+        if (k === 'tick_interval_sec' && stateVal) tickInterval = parseInt(stateVal) || 60;
+        if (k === 'agent_language' && stateVal) agentLang = stateVal;
+      });
+    } catch(e) {}
+
+    var intervalOptions = [
+      { val: 30, label: '30s' },
+      { val: 60, label: '1 min' },
+      { val: 120, label: '2 min' },
+      { val: 300, label: '5 min' },
+      { val: 600, label: '10 min' },
+      { val: 1800, label: '30 min' },
+      { val: 3600, label: '1h' },
+      { val: 7200, label: '2h' },
+      { val: 21600, label: '6h' },
+      { val: 43200, label: '12h' },
+      { val: 86400, label: '24h' },
+    ];
+
+    body.innerHTML =
+      '<div class="rt-page">' +
+      '<div class="rt-header">' +
+        '<div class="rt-header-icon" style="background:rgba(239,68,68,0.12);color:#ef4444">' + IC.wrench + '</div>' +
+        '<div class="rt-header-text">' +
+          '<h3>' + (isRu ? 'Расширенные настройки' : 'Advanced Settings') + '</h3>' +
+          '<p>' + (isRu ? 'Лимиты, интервалы, язык, клонирование и экспорт агента' : 'Limits, intervals, language, cloning and agent export') + '</p>' +
+        '</div>' +
+      '</div>' +
+
+      // Daily spend limit
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + IC.shield + ' ' + (isRu ? 'Дневной лимит трат (TON)' : 'Daily Spend Limit (TON)') + '</div>' +
+        '<div class="rt-priority-wrap">' +
+          '<input type="range" id="adv-spend-limit" min="0" max="2000" step="10" value="' + spendLimit + '" class="rt-slider" style="accent-color:#ef4444" oninput="document.getElementById(\'adv-spend-val\').textContent=this.value+\' TON\'">' +
+          '<div class="rt-priority-display">' +
+            '<input type="number" id="adv-spend-num" value="' + spendLimit + '" min="0" max="10000" class="rt-priority-num" style="width:80px" oninput="document.getElementById(\'adv-spend-limit\').value=this.value;document.getElementById(\'adv-spend-val\').textContent=this.value+\' TON\'">' +
+            '<span id="adv-spend-val" class="rt-priority-badge" style="background:rgba(239,68,68,0.15);color:#ef4444">' + spendLimit + ' TON</span>' +
+          '</div>' +
+          '<div class="rt-input-hint">' + (isRu ? 'Максимальная сумма, которую агент может потратить в день (отправка TON + покупка подарков). 0 = без лимита.' : 'Max amount the agent can spend per day (send TON + buy gifts). 0 = no limit.') + '</div>' +
+        '</div>' +
+      '</div>' +
+
+      // Tick interval
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + IC.clock + ' ' + (isRu ? 'Интервал тика' : 'Tick Interval') + '</div>' +
+        '<div class="st-provider-grid" style="grid-template-columns:repeat(auto-fill,minmax(70px,1fr));gap:6px">' +
+          intervalOptions.map(function(opt) {
+            var sel = opt.val === tickInterval;
+            return '<div class="st-provider-card' + (sel ? ' st-prov-active' : '') + '" style="padding:10px 8px;text-align:center;cursor:pointer" onclick="document.querySelectorAll(\'.adv-interval-opt\').forEach(function(c){c.classList.remove(\'st-prov-active\')});this.classList.add(\'st-prov-active\');document.getElementById(\'adv-tick-val\').value=\'' + opt.val + '\'" class="adv-interval-opt">' +
+              '<div style="font-weight:600;font-size:.85rem">' + opt.label + '</div>' +
+            '</div>';
+          }).join('') +
+          '<input type="hidden" id="adv-tick-val" value="' + tickInterval + '">' +
+        '</div>' +
+        '<div class="rt-input-hint" style="margin-top:8px">' + (isRu ? 'Как часто агент выполняет свой тик (проверку/действие). Для расписания: используется cron из промпта.' : 'How often the agent runs its tick (check/action). For scheduled: uses cron from prompt.') + '</div>' +
+      '</div>' +
+
+      // Language
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + IC.globe + ' ' + (isRu ? 'Язык ответов агента' : 'Agent Response Language') + '</div>' +
+        '<div class="rt-toggle-row" style="gap:8px">' +
+          '<label class="rt-toggle-card' + (agentLang === 'auto' ? ' rt-active' : '') + '" onclick="selectAdvLang(this,\'auto\')" style="flex:1">' +
+            '<input type="radio" name="adv-lang" value="auto"' + (agentLang === 'auto' ? ' checked' : '') + ' style="display:none">' +
+            '<div class="rt-toggle-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></div>' +
+            '<div class="rt-toggle-name">Auto</div>' +
+            '<div class="rt-toggle-desc">' + (isRu ? 'Зеркалит язык' : 'Mirrors language') + '</div>' +
+          '</label>' +
+          '<label class="rt-toggle-card' + (agentLang === 'ru' ? ' rt-active' : '') + '" onclick="selectAdvLang(this,\'ru\')" style="flex:1">' +
+            '<input type="radio" name="adv-lang" value="ru"' + (agentLang === 'ru' ? ' checked' : '') + ' style="display:none">' +
+            '<div class="rt-toggle-icon" style="font-size:1.3rem">RU</div>' +
+            '<div class="rt-toggle-name">' + (isRu ? 'Русский' : 'Russian') + '</div>' +
+            '<div class="rt-toggle-desc">' + (isRu ? 'Всегда на русском' : 'Always Russian') + '</div>' +
+          '</label>' +
+          '<label class="rt-toggle-card' + (agentLang === 'en' ? ' rt-active' : '') + '" onclick="selectAdvLang(this,\'en\')" style="flex:1">' +
+            '<input type="radio" name="adv-lang" value="en"' + (agentLang === 'en' ? ' checked' : '') + ' style="display:none">' +
+            '<div class="rt-toggle-icon" style="font-size:1.3rem">EN</div>' +
+            '<div class="rt-toggle-name">English</div>' +
+            '<div class="rt-toggle-desc">' + (isRu ? 'Всегда на английском' : 'Always English') + '</div>' +
+          '</label>' +
+        '</div>' +
+      '</div>' +
+
+      // Action buttons
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + IC.bolt + ' ' + (isRu ? 'Действия' : 'Actions') + '</div>' +
+        '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
+          '<button class="rt-save-btn" style="background:linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%)" onclick="cloneAgentFromSettings()">' + IC.clipboard + ' ' + (isRu ? 'Клонировать агента' : 'Clone Agent') + '</button>' +
+          '<button class="rt-save-btn" style="background:linear-gradient(135deg,#0ea5e9 0%,#06b6d4 100%)" onclick="exportAgentJSON()">' + IC.download + ' ' + (isRu ? 'Экспорт JSON' : 'Export JSON') + '</button>' +
+          '<label class="rt-save-btn" style="background:linear-gradient(135deg,#22c55e 0%,#16a34a 100%);cursor:pointer">' + IC.upload + ' ' + (isRu ? 'Импорт JSON' : 'Import JSON') + '<input type="file" accept=".json" style="display:none" onchange="importAgentJSON(this)"></label>' +
+        '</div>' +
+      '</div>' +
+
+      // Save
+      '<div class="rt-actions">' +
+        '<button class="rt-save-btn" onclick="saveSettingsAdvanced()">' + IC.check + ' ' + (isRu ? 'Сохранить настройки' : 'Save Settings') + '</button>' +
+      '</div>' +
+      '</div>';
+
+    // Fix interval card selection class
+    setTimeout(function() {
+      var cards = body.querySelectorAll('.st-provider-card');
+      cards.forEach(function(c) { c.classList.add('adv-interval-opt'); });
+    }, 50);
   }
+}
+
+// ═══ ADVANCED TAB FUNCTIONS ═══
+function selectAdvLang(el, lang) {
+  el.closest('.rt-toggle-row').querySelectorAll('.rt-toggle-card').forEach(function(c) { c.classList.remove('rt-active'); });
+  el.classList.add('rt-active');
+  el.querySelector('input').checked = true;
+}
+
+async function saveSettingsAdvanced() {
+  if (!_detailAgentId) return;
+  try {
+    var spendLimit = parseInt(document.getElementById('adv-spend-num').value) || 500;
+    var tickInterval = parseInt(document.getElementById('adv-tick-val').value) || 60;
+    var langRadio = document.querySelector('input[name="adv-lang"]:checked');
+    var agentLang = langRadio ? langRadio.value : 'auto';
+
+    await apiRequest('POST', '/api/agents/' + _detailAgentId + '/config', {
+      daily_spend_limit_ton: spendLimit,
+      tick_interval_sec: tickInterval,
+      agent_language: agentLang,
+    });
+    toast(currentLang === 'ru' ? 'Настройки сохранены' : 'Settings saved', 'success');
+    // Refresh agent data
+    if (_detailAgentId) openAgentDetail(_detailAgentId, true);
+  } catch (e) {
+    toast('Error: ' + (e.message || e), 'error');
+  }
+}
+
+async function cloneAgentFromSettings() {
+  if (!_detailAgentId || !_detailAgentData) return;
+  var isRu = currentLang === 'ru';
+  try {
+    var a = _detailAgentData;
+    var res = await apiRequest('POST', '/api/agents/clone', { agentId: _detailAgentId });
+    toast(isRu ? 'Агент клонирован!' : 'Agent cloned!', 'success');
+    closeAgentSettings();
+    navigateTo('my-agents');
+  } catch (e) {
+    toast('Error: ' + (e.message || e), 'error');
+  }
+}
+
+function exportAgentJSON() {
+  if (!_detailAgentData) return;
+  var a = _detailAgentData;
+  var exportData = {
+    name: a.name,
+    description: a.description,
+    triggerType: a.triggerType || a.trigger_type,
+    code: a.code,
+    triggerConfig: (function(){ var _t = a.trigger_config || a.triggerConfig || {}; return typeof _t === 'string' ? JSON.parse(_t) : _t; })(),
+    role: a.role,
+    exportedAt: new Date().toISOString(),
+    platform: 'TON Agent Platform',
+  };
+  var blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+  var url = URL.createObjectURL(blob);
+  var link = document.createElement('a');
+  link.href = url;
+  link.download = (a.name || 'agent').replace(/[^a-zA-Z0-9а-яА-ЯёЁ_-]/g, '_') + '.json';
+  link.click();
+  URL.revokeObjectURL(url);
+  toast(currentLang === 'ru' ? 'Экспортировано!' : 'Exported!', 'success');
+}
+
+async function importAgentJSON(input) {
+  if (!input.files || !input.files[0]) return;
+  var isRu = currentLang === 'ru';
+  try {
+    var text = await input.files[0].text();
+    var data = JSON.parse(text);
+    if (!data.name || !data.code) {
+      toast(isRu ? 'Неверный формат файла' : 'Invalid file format', 'error');
+      return;
+    }
+    var res = await apiRequest('POST', '/api/agents', {
+      name: data.name + ' (imported)',
+      description: data.description || '',
+      triggerType: data.triggerType || 'ai_agent',
+      code: data.code,
+      triggerConfig: data.triggerConfig || {},
+    });
+    toast(isRu ? 'Агент импортирован!' : 'Agent imported!', 'success');
+    navigateTo('my-agents');
+  } catch (e) {
+    toast('Error: ' + (e.message || e), 'error');
+  }
+  input.value = '';
 }
 
 // ═══ TELEGRAM TAB — per-agent Telegram account ═══
@@ -1804,12 +2094,52 @@ async function createAgentWalletFromSettings() {
     toast((data.exists ? (currentLang === 'ru' ? 'Кошелёк уже есть' : 'Wallet exists') : (currentLang === 'ru' ? 'Кошелёк создан' : 'Wallet created')) + ': ' + (data.address || ''), 'success');
     // Inject address into local data immediately so the tab renders it
     if (data.address && _detailAgentData) {
-      if (!_detailAgentData.trigger_config) _detailAgentData.trigger_config = { config: {} };
-      if (!_detailAgentData.trigger_config.config) _detailAgentData.trigger_config.config = {};
-      _detailAgentData.trigger_config.config.WALLET_ADDRESS = data.address;
+      var _tcRef = _detailAgentData.trigger_config || _detailAgentData.triggerConfig || { config: {} };
+      if (!_tcRef.config) _tcRef.config = {};
+      _tcRef.config.WALLET_ADDRESS = data.address;
+      _detailAgentData.trigger_config = _tcRef;
+      _detailAgentData.triggerConfig = _tcRef;
     }
     switchSettingsTab('wallet');
   } else toast(data.error || 'Error', 'error');
+}
+
+var _cachedMnemonic = '';
+
+async function revealWalletMnemonic() {
+  if (!_detailAgentId) return;
+  try {
+    var data = await apiRequest('GET', '/api/agents/' + _detailAgentId + '/mnemonic');
+    if (data.ok && data.mnemonic) {
+      _cachedMnemonic = data.mnemonic;
+      var words = data.mnemonic.split(' ');
+      var html = words.map(function(w, i) {
+        return '<span style="display:inline-block;background:var(--bg-secondary);padding:2px 8px;margin:2px;border-radius:6px;border:1px solid var(--border)">' +
+          '<span style="color:var(--text-muted);font-size:.65rem;margin-right:3px">' + (i + 1) + '.</span>' + escHtml(w) + '</span>';
+      }).join(' ');
+      document.getElementById('wallet-mnemonic-words').innerHTML = html;
+      document.getElementById('wallet-mnemonic-hidden').style.display = 'none';
+      document.getElementById('wallet-mnemonic-revealed').style.display = '';
+    } else {
+      toast(data.error || 'No mnemonic found', 'error');
+    }
+  } catch (e) {
+    toast('Failed to load mnemonic', 'error');
+  }
+}
+
+function hideWalletMnemonic() {
+  _cachedMnemonic = '';
+  document.getElementById('wallet-mnemonic-hidden').style.display = '';
+  document.getElementById('wallet-mnemonic-revealed').style.display = 'none';
+  document.getElementById('wallet-mnemonic-words').innerHTML = '';
+}
+
+function copyWalletMnemonic() {
+  if (_cachedMnemonic) {
+    navigator.clipboard.writeText(_cachedMnemonic);
+    toast(currentLang === 'ru' ? 'Мнемоника скопирована' : 'Mnemonic copied', 'success');
+  }
 }
 
 async function setAgentRoleFromSettings(role) {
@@ -1834,6 +2164,68 @@ async function saveCustomRole() {
   var data = await apiRequest('PUT', '/api/agents/' + _detailAgentId + '/wizard', payload);
   if (data.ok) { toast(currentLang === 'ru' ? 'Роль сохранена' : 'Role saved', 'success'); }
   else { toast(data.error || 'Error', 'error'); }
+}
+
+// ── AI provider info panel helper ──
+function _renderProviderInfo(p, isRu) {
+  return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">' +
+    '<div class="st-prov-dot" style="background:' + p.color + ';width:12px;height:12px"></div>' +
+    '<strong>' + p.name + '</strong>' +
+    '<a href="' + p.keyUrl + '" target="_blank" style="margin-left:auto;color:var(--primary);font-size:.82rem;text-decoration:none">' +
+      (isRu ? '🔑 Получить API ключ →' : '🔑 Get API key →') +
+    '</a>' +
+  '</div>' +
+  '<div style="font-size:.82rem;color:var(--text-secondary);margin-bottom:8px">' + p.keyHint + '</div>' +
+  '<div style="font-size:.78rem;color:var(--text-muted)">' +
+    (isRu ? '📋 Модели: ' : '📋 Models: ') + '<code style="font-size:.75rem">' + p.models + '</code>' +
+  '</div>' +
+  '<div style="font-size:.78rem;color:var(--text-muted);margin-top:4px">' +
+    (isRu ? '⚡ По умолчанию: ' : '⚡ Default: ') + '<code style="font-size:.75rem">' + p.defaultModel + '</code>' +
+  '</div>';
+}
+
+// ── Select AI provider and update info panel ──
+function selectAIProvider(providerId) {
+  document.querySelectorAll('.st-provider-card').forEach(function(c) { c.classList.remove('st-prov-active'); });
+  var cards = document.querySelectorAll('.st-provider-card');
+  cards.forEach(function(c) {
+    if (c.querySelector('.st-prov-name') && c.querySelector('.st-prov-name').textContent.toLowerCase() === providerId) {
+      c.classList.add('st-prov-active');
+    }
+  });
+  // Also check by onclick match
+  cards.forEach(function(c) {
+    if (c.getAttribute('onclick') && c.getAttribute('onclick').indexOf("'" + providerId + "'") > -1) {
+      c.classList.add('st-prov-active');
+    }
+  });
+
+  var sel = document.getElementById('ai-provider-select');
+  if (sel) sel.value = providerId;
+
+  // Update info panel
+  var infoPanel = document.getElementById('ai-provider-info');
+  var modelInput = document.getElementById('ai-model-input');
+  var keyInput = document.getElementById('ai-key-input');
+
+  // Find the provider data (re-define inline since we can't access the closure)
+  var providerData = {
+    gemini: { name:'Gemini', color:'#4285f4', models:'gemini-2.5-flash, gemini-2.5-pro', defaultModel:'gemini-2.5-flash', keyUrl:'https://aistudio.google.com/apikey', keyHint:(currentLang==='ru'?'Google AI Studio → Get API Key. Бесплатно до 1500 req/day.':'Google AI Studio → Get API Key. Free up to 1500 req/day.'), keyPrefix:'AIzaSy...' },
+    openai: { name:'OpenAI', color:'#10a37f', models:'gpt-4o-mini, gpt-4o, o3-mini', defaultModel:'gpt-4o-mini', keyUrl:'https://platform.openai.com/api-keys', keyHint:(currentLang==='ru'?'platform.openai.com → API Keys. Нужна оплата от $5.':'platform.openai.com → API Keys. Requires $5+ credit.'), keyPrefix:'sk-proj-...' },
+    anthropic: { name:'Anthropic', color:'#d97706', models:'claude-haiku-4-5, claude-sonnet-4, claude-opus-4', defaultModel:'claude-haiku-4-5-20251001', keyUrl:'https://console.anthropic.com/settings/keys', keyHint:(currentLang==='ru'?'console.anthropic.com → API Keys. Нужна оплата от $5.':'console.anthropic.com → API Keys. Requires $5+ credit.'), keyPrefix:'sk-ant-...' },
+    groq: { name:'Groq', color:'#f55036', models:'llama-3.3-70b-versatile, mixtral-8x7b', defaultModel:'llama-3.3-70b-versatile', keyUrl:'https://console.groq.com/keys', keyHint:(currentLang==='ru'?'console.groq.com → API Keys. Полностью бесплатно!':'console.groq.com → API Keys. Completely free!'), keyPrefix:'gsk_...' },
+    deepseek: { name:'DeepSeek', color:'#4f46e5', models:'deepseek-chat, deepseek-reasoner', defaultModel:'deepseek-chat', keyUrl:'https://platform.deepseek.com/api_keys', keyHint:(currentLang==='ru'?'Очень дёшево, ~$0.14/M tokens.':'Very cheap, ~$0.14/M tokens.'), keyPrefix:'sk-...' },
+    openrouter: { name:'OpenRouter', color:'#6366f1', models:'google/gemini-2.5-flash (free), meta-llama/llama-3.3-70b', defaultModel:'google/gemini-2.5-flash', keyUrl:'https://openrouter.ai/keys', keyHint:(currentLang==='ru'?'Один ключ → 200+ моделей. Есть бесплатные.':'One key → 200+ models. Free models available.'), keyPrefix:'sk-or-...' },
+    together: { name:'Together', color:'#0ea5e9', models:'Llama-3.3-70B-Instruct-Turbo, Qwen2.5-72B', defaultModel:'meta-llama/Llama-3.3-70B-Instruct-Turbo', keyUrl:'https://api.together.ai/settings/api-keys', keyHint:(currentLang==='ru'?'$5 бесплатных кредитов при регистрации.':'$5 free credit on signup.'), keyPrefix:'' },
+  };
+
+  var p = providerData[providerId];
+  if (infoPanel && p) {
+    infoPanel.style.display = '';
+    infoPanel.innerHTML = _renderProviderInfo(p, currentLang === 'ru');
+  }
+  if (modelInput && p) modelInput.placeholder = p.defaultModel;
+  if (keyInput && p) keyInput.placeholder = p.keyPrefix || 'API key';
 }
 
 function _renderKeywordTags() {
@@ -3403,6 +3795,7 @@ async function loadSecuritySettings() {
 }
 
 // ===== TELEGRAM SETTINGS =====
+var _chatPolicies = {};
 async function saveTelegramSettings() {
   var tg = {
     dmMode: document.getElementById('tg-dm-mode')?.value || 'open',
@@ -3411,6 +3804,7 @@ async function saveTelegramSettings() {
     typingIndicator: document.getElementById('tg-typing')?.checked ?? true,
     autoReply: document.getElementById('tg-auto-reply')?.checked ?? false,
     responseDelay: parseInt(document.getElementById('slider-response-delay')?.value || '1500'),
+    chatPolicies: _chatPolicies,
   };
   await apiRequest('POST', '/api/settings', { key: 'telegram_settings', value: tg });
   showNotification(currentLang === 'ru' ? 'Настройки Telegram сохранены' : 'Telegram settings saved', 'success');
@@ -3429,8 +3823,40 @@ async function loadTelegramSettings() {
         var del = document.getElementById('slider-response-delay');
         if (del) { del.value = tg.responseDelay; updateSliderDisplay(del); }
       }
+      if (tg.chatPolicies) { _chatPolicies = tg.chatPolicies; renderChatPolicies(); }
     }
   } catch {}
+}
+
+function renderChatPolicies() {
+  var list = document.getElementById('chat-policies-list');
+  if (!list) return;
+  var modeLabels = { active: '🟢 Active', open: '🔵 Open', 'mention-only': '🟡 Mention', disabled: '🔴 Off' };
+  list.innerHTML = Object.keys(_chatPolicies).length === 0
+    ? '<div style="color:var(--text-muted);font-size:12px">' + (currentLang === 'ru' ? 'Нет per-chat настроек. Агент сам добавит через set_chat_policy()' : 'No per-chat overrides. Agent manages via set_chat_policy()') + '</div>'
+    : Object.entries(_chatPolicies).map(function(e) {
+        return '<div style="display:flex;align-items:center;gap:8px;padding:4px 8px;background:var(--bg-secondary);border-radius:6px">' +
+          '<span style="flex:1;font-size:13px;font-family:monospace">' + e[0] + '</span>' +
+          '<span style="font-size:12px">' + (modeLabels[e[1]] || e[1]) + '</span>' +
+          '<button onclick="removeChatPolicy(\'' + e[0] + '\')" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:14px">&times;</button>' +
+        '</div>';
+      }).join('');
+}
+
+function addChatPolicy() {
+  var id = document.getElementById('chat-policy-id')?.value?.trim();
+  var mode = document.getElementById('chat-policy-mode')?.value;
+  if (!id) return;
+  _chatPolicies[id] = mode;
+  document.getElementById('chat-policy-id').value = '';
+  renderChatPolicies();
+  saveTelegramSettings();
+}
+
+function removeChatPolicy(chatId) {
+  delete _chatPolicies[chatId];
+  renderChatPolicies();
+  saveTelegramSettings();
 }
 
 // ===== OPERATIONS =====
@@ -3787,10 +4213,13 @@ function navigateTo(pageName) {
 }
 
 // ===== ANALYTICS PAGE =====
+let _analyticsLeaderboardSort = 'executions'; // 'executions' | 'success' | 'avgtime'
+
 async function loadAnalytics() {
-  const [statsData, exData] = await Promise.all([
+  const [statsData, exData, agentsData] = await Promise.all([
     apiRequest('GET', '/api/stats/me'),
-    apiRequest('GET', '/api/executions'),
+    apiRequest('GET', '/api/executions?limit=500'),
+    apiRequest('GET', '/api/agents'),
   ]);
 
   // Fill stat cards
@@ -3802,36 +4231,317 @@ async function loadAnalytics() {
     setEl('an-active-agents', statsData.agentsActive ?? '—');
   }
 
-  // Execution history table
+  const execs = (exData.ok && exData.executions) || [];
+  const agents = (agentsData.ok && agentsData.agents) || [];
+
+  // --- Bar chart: Executions over last 7 days ---
+  drawBarChart(execs);
+
+  // --- Donut chart: Success rate ---
+  drawDonutChart(execs);
+
+  // --- Agent leaderboard ---
+  renderLeaderboard(execs, agents);
+
+  // --- Execution history table ---
   const tableEl = document.getElementById('analytics-executions-table');
   if (!tableEl) return;
-  const execs = (exData.ok && exData.executions) || [];
   if (!execs.length) {
     tableEl.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-muted)">' + t('no_executions') + '</div>';
     return;
   }
 
   const statusIcon = s => s === 'success' ? IC.check : s === 'running' ? IC.refresh : s === 'failed' ? IC.x : IC.hourglass;
-  tableEl.innerHTML = `
-    <table style="width:100%;border-collapse:collapse;font-size:.85rem">
-      <thead>
-        <tr style="border-bottom:1px solid var(--border);color:var(--text-muted)">
-          <th style="text-align:left;padding:.6rem 1rem">Agent</th>
-          <th style="text-align:left;padding:.6rem .5rem">Status</th>
-          <th style="text-align:left;padding:.6rem .5rem">Duration</th>
-          <th style="text-align:left;padding:.6rem .5rem">Time</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${execs.slice(0, 50).map(ex => `
-          <tr style="border-bottom:1px solid var(--border-subtle)">
-            <td style="padding:.5rem 1rem;font-weight:500">#${ex.agentId}</td>
-            <td style="padding:.5rem .5rem">${statusIcon(ex.status)} ${ex.status}</td>
-            <td style="padding:.5rem .5rem">${ex.durationMs ? (ex.durationMs / 1000).toFixed(1) + 's' : '—'}</td>
-            <td style="padding:.5rem .5rem;color:var(--text-muted)">${new Date(ex.startedAt || ex.createdAt).toLocaleString()}</td>
-          </tr>`).join('')}
-      </tbody>
-    </table>`;
+  tableEl.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:.85rem">' +
+    '<thead><tr style="border-bottom:1px solid var(--border);color:var(--text-muted)">' +
+    '<th style="text-align:left;padding:.6rem 1rem">Agent</th>' +
+    '<th style="text-align:left;padding:.6rem .5rem">Status</th>' +
+    '<th style="text-align:left;padding:.6rem .5rem">Duration</th>' +
+    '<th style="text-align:left;padding:.6rem .5rem">Time</th>' +
+    '</tr></thead><tbody>' +
+    execs.slice(0, 50).map(function(ex) {
+      return '<tr style="border-bottom:1px solid var(--border-subtle)">' +
+        '<td style="padding:.5rem 1rem;font-weight:500">#' + ex.agentId + '</td>' +
+        '<td style="padding:.5rem .5rem">' + statusIcon(ex.status) + ' ' + ex.status + '</td>' +
+        '<td style="padding:.5rem .5rem">' + (ex.durationMs ? (ex.durationMs / 1000).toFixed(1) + 's' : '—') + '</td>' +
+        '<td style="padding:.5rem .5rem;color:var(--text-muted)">' + new Date(ex.startedAt || ex.createdAt).toLocaleString() + '</td>' +
+        '</tr>';
+    }).join('') +
+    '</tbody></table>';
+}
+
+// ===== BAR CHART: Executions over last 7 days =====
+function drawBarChart(execs) {
+  const canvas = document.getElementById('an-bar-chart');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.parentElement.clientWidth - 10;
+  const h = 220;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w, h);
+
+  // Aggregate by day (last 7 days)
+  var days = [];
+  var dayLabels = [];
+  var now = new Date();
+  for (var i = 6; i >= 0; i--) {
+    var d = new Date(now);
+    d.setDate(d.getDate() - i);
+    d.setHours(0, 0, 0, 0);
+    days.push({ start: d.getTime(), end: d.getTime() + 86400000, success: 0, failed: 0, other: 0 });
+    dayLabels.push(d.toLocaleDateString(currentLang === 'ru' ? 'ru-RU' : 'en-US', { weekday: 'short', day: 'numeric' }));
+  }
+  execs.forEach(function(ex) {
+    var ts = new Date(ex.startedAt || ex.createdAt).getTime();
+    for (var j = 0; j < days.length; j++) {
+      if (ts >= days[j].start && ts < days[j].end) {
+        if (ex.status === 'success') days[j].success++;
+        else if (ex.status === 'failed') days[j].failed++;
+        else days[j].other++;
+        break;
+      }
+    }
+  });
+
+  var maxVal = 1;
+  days.forEach(function(d) { var total = d.success + d.failed + d.other; if (total > maxVal) maxVal = total; });
+
+  var padL = 40, padR = 16, padT = 16, padB = 36;
+  var chartW = w - padL - padR;
+  var chartH = h - padT - padB;
+  var barGroupW = chartW / 7;
+  var barW = Math.min(barGroupW * 0.55, 40);
+
+  // Grid lines + Y labels
+  ctx.strokeStyle = 'rgba(200,225,255,0.08)';
+  ctx.fillStyle = '#5a6270';
+  ctx.font = '11px sans-serif';
+  ctx.textAlign = 'right';
+  var gridLines = 4;
+  for (var g = 0; g <= gridLines; g++) {
+    var yy = padT + chartH - (g / gridLines) * chartH;
+    ctx.beginPath();
+    ctx.moveTo(padL, yy);
+    ctx.lineTo(w - padR, yy);
+    ctx.stroke();
+    ctx.fillText(Math.round(maxVal * g / gridLines), padL - 6, yy + 4);
+  }
+
+  // Bars
+  var colors = { success: '#2dcc70', failed: '#e74c3c', other: '#0098EA' };
+  for (var b = 0; b < 7; b++) {
+    var day = days[b];
+    var total = day.success + day.failed + day.other;
+    var cx = padL + barGroupW * b + barGroupW / 2;
+    var barX = cx - barW / 2;
+
+    // Stacked: success on bottom, failed on top, other on top of that
+    var segments = [
+      { val: day.success, color: colors.success },
+      { val: day.failed, color: colors.failed },
+      { val: day.other, color: colors.other }
+    ];
+    var yOffset = 0;
+    segments.forEach(function(seg) {
+      if (seg.val <= 0) return;
+      var segH = (seg.val / maxVal) * chartH;
+      var segY = padT + chartH - yOffset - segH;
+      ctx.fillStyle = seg.color;
+      // Rounded top for last segment
+      var radius = 4;
+      ctx.beginPath();
+      ctx.moveTo(barX, segY + radius);
+      ctx.arcTo(barX, segY, barX + barW, segY, radius);
+      ctx.arcTo(barX + barW, segY, barX + barW, segY + segH, radius);
+      ctx.lineTo(barX + barW, segY + segH);
+      ctx.lineTo(barX, segY + segH);
+      ctx.closePath();
+      ctx.fill();
+      yOffset += segH;
+    });
+
+    // Total count on top
+    if (total > 0) {
+      ctx.fillStyle = '#e0e4ea';
+      ctx.font = 'bold 11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(total, cx, padT + chartH - yOffset - 5);
+    }
+
+    // X label
+    ctx.fillStyle = '#5a6270';
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(dayLabels[b], cx, h - 8);
+  }
+}
+
+// ===== DONUT CHART: Success rate =====
+function drawDonutChart(execs) {
+  var canvas = document.getElementById('an-donut-chart');
+  var legendEl = document.getElementById('an-donut-legend');
+  if (!canvas) return;
+  var ctx = canvas.getContext('2d');
+  var dpr = window.devicePixelRatio || 1;
+  var size = 200;
+  canvas.width = size * dpr;
+  canvas.height = size * dpr;
+  canvas.style.width = size + 'px';
+  canvas.style.height = size + 'px';
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, size, size);
+
+  var counts = { success: 0, failed: 0, other: 0 };
+  execs.forEach(function(ex) {
+    if (ex.status === 'success') counts.success++;
+    else if (ex.status === 'failed') counts.failed++;
+    else counts.other++;
+  });
+  var total = counts.success + counts.failed + counts.other;
+
+  var slices = [
+    { label: currentLang === 'ru' ? 'Успешно' : 'Success', val: counts.success, color: '#2dcc70' },
+    { label: currentLang === 'ru' ? 'Ошибки' : 'Failed', val: counts.failed, color: '#e74c3c' },
+    { label: currentLang === 'ru' ? 'Прочее' : 'Other', val: counts.other, color: '#0098EA' }
+  ];
+
+  var cx = size / 2, cy = size / 2, outerR = 85, innerR = 55;
+
+  if (total === 0) {
+    // Empty state ring
+    ctx.beginPath();
+    ctx.arc(cx, cy, outerR, 0, Math.PI * 2);
+    ctx.arc(cx, cy, innerR, 0, Math.PI * 2, true);
+    ctx.fillStyle = 'rgba(200,225,255,0.06)';
+    ctx.fill();
+    ctx.fillStyle = '#5a6270';
+    ctx.font = '13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(currentLang === 'ru' ? 'Нет данных' : 'No data', cx, cy);
+  } else {
+    var startAngle = -Math.PI / 2;
+    slices.forEach(function(slice) {
+      if (slice.val <= 0) return;
+      var sweep = (slice.val / total) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, outerR, startAngle, startAngle + sweep);
+      ctx.arc(cx, cy, innerR, startAngle + sweep, startAngle, true);
+      ctx.closePath();
+      ctx.fillStyle = slice.color;
+      ctx.fill();
+      startAngle += sweep;
+    });
+
+    // Center text
+    var pct = total > 0 ? Math.round((counts.success / total) * 100) : 0;
+    ctx.fillStyle = '#f0f2f5';
+    ctx.font = 'bold 28px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(pct + '%', cx, cy - 6);
+    ctx.fillStyle = '#5a6270';
+    ctx.font = '11px sans-serif';
+    ctx.fillText(currentLang === 'ru' ? 'успех' : 'success', cx, cy + 16);
+  }
+
+  // Legend
+  if (legendEl) {
+    legendEl.innerHTML = slices.map(function(s) {
+      return '<div class="analytics-donut-legend-item">' +
+        '<span class="analytics-donut-legend-dot" style="background:' + s.color + '"></span>' +
+        s.label + ': ' + s.val +
+        '</div>';
+    }).join('');
+  }
+}
+
+// ===== AGENT LEADERBOARD =====
+function renderLeaderboard(execs, agents) {
+  var el = document.getElementById('analytics-leaderboard');
+  if (!el) return;
+
+  if (!execs.length) {
+    el.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-muted)">' + t('no_executions') + '</div>';
+    return;
+  }
+
+  // Build per-agent stats
+  var agentMap = {};
+  agents.forEach(function(a) {
+    agentMap[a.id] = a.name || ('Agent #' + a.id);
+  });
+
+  var statsMap = {};
+  execs.forEach(function(ex) {
+    var aid = ex.agentId;
+    if (!statsMap[aid]) statsMap[aid] = { id: aid, name: agentMap[aid] || ('#' + aid), total: 0, success: 0, failed: 0, totalDuration: 0, durCount: 0 };
+    var s = statsMap[aid];
+    s.total++;
+    if (ex.status === 'success') s.success++;
+    if (ex.status === 'failed') s.failed++;
+    if (ex.durationMs) { s.totalDuration += ex.durationMs; s.durCount++; }
+  });
+
+  var rows = Object.values(statsMap);
+
+  // Sort
+  var sortKey = _analyticsLeaderboardSort;
+  if (sortKey === 'success') {
+    rows.sort(function(a, b) { return (b.total ? b.success / b.total : 0) - (a.total ? a.success / a.total : 0); });
+  } else if (sortKey === 'avgtime') {
+    rows.sort(function(a, b) { return (a.durCount ? a.totalDuration / a.durCount : 9e9) - (b.durCount ? b.totalDuration / b.durCount : 9e9); });
+  } else {
+    rows.sort(function(a, b) { return b.total - a.total; });
+  }
+
+  var maxTotal = rows.length ? rows[0].total : 1;
+  if (sortKey !== 'executions') maxTotal = rows.reduce(function(m, r) { return Math.max(m, r.total); }, 1);
+
+  var isRu = currentLang === 'ru';
+  var tabs = [
+    { key: 'executions', label: isRu ? 'По запускам' : 'By Executions' },
+    { key: 'success', label: isRu ? 'По успешности' : 'By Success Rate' },
+    { key: 'avgtime', label: isRu ? 'По скорости' : 'By Avg Time' }
+  ];
+
+  var html = '<div class="leaderboard-tabs">';
+  tabs.forEach(function(tab) {
+    html += '<button class="leaderboard-tab' + (tab.key === sortKey ? ' active' : '') + '" onclick="_analyticsLeaderboardSort=\'' + tab.key + '\';loadAnalytics()">' + tab.label + '</button>';
+  });
+  html += '</div>';
+
+  html += '<table class="leaderboard-table"><thead><tr>';
+  html += '<th>#</th>';
+  html += '<th>' + (isRu ? 'Агент' : 'Agent') + '</th>';
+  html += '<th>' + (isRu ? 'Запуски' : 'Runs') + '</th>';
+  html += '<th>' + (isRu ? 'Успех' : 'Success') + '</th>';
+  html += '<th>' + (isRu ? 'Ср. время' : 'Avg Time') + '</th>';
+  html += '</tr></thead><tbody>';
+
+  rows.slice(0, 10).forEach(function(r, i) {
+    var rankClass = i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : '';
+    var successPct = r.total ? Math.round((r.success / r.total) * 100) : 0;
+    var avgTime = r.durCount ? (r.totalDuration / r.durCount / 1000).toFixed(1) + 's' : '—';
+    var barPct = Math.round((r.total / maxTotal) * 100);
+    var barColor = successPct >= 80 ? '#2dcc70' : successPct >= 50 ? '#f5a623' : '#e74c3c';
+
+    html += '<tr>';
+    html += '<td><span class="leaderboard-rank ' + rankClass + '">' + (i + 1) + '</span></td>';
+    html += '<td style="font-weight:500">' + escHtml(r.name) + '</td>';
+    html += '<td>' + r.total + '<span class="leaderboard-bar-bg"><span class="leaderboard-bar-fill" style="width:' + barPct + '%;background:var(--primary)"></span></span></td>';
+    html += '<td><span style="color:' + barColor + '">' + successPct + '%</span> <span style="color:var(--text-muted);font-size:.75rem">(' + r.success + '/' + r.total + ')</span></td>';
+    html += '<td style="font-family:\'JetBrains Mono\',monospace;font-size:.8rem">' + avgTime + '</td>';
+    html += '</tr>';
+  });
+
+  html += '</tbody></table>';
+  el.innerHTML = html;
 }
 
 // ===== PERSONA PAGE =====
@@ -6639,7 +7349,7 @@ async function loadNetworkMap() {
     var role = a.role || 'worker';
     var level = a.level || 1;
     var radius = role === 'director' ? 30 + level : role === 'manager' ? 24 + level : role === 'specialist' ? 22 + level : role === 'monitor' ? 20 + level : 18 + Math.min(level, 5);
-    var trigCfg = {}; try { trigCfg = typeof a.trigger_config === 'string' ? JSON.parse(a.trigger_config) : (a.trigger_config || {}); } catch(e) {}
+    var trigCfg = {}; try { var _t2 = a.trigger_config || a.triggerConfig || {}; trigCfg = typeof _t2 === 'string' ? JSON.parse(_t2) : _t2; } catch(e) {}
     var customColor = (trigCfg.config && trigCfg.config.agentColor) || '';
     var color = !a.isActive ? '#555' : (customColor || roleColors[role] || '#0098EA');
     var customRoleName = (trigCfg.config && trigCfg.config.customRole && trigCfg.config.customRole.name) || '';
@@ -7812,25 +8522,109 @@ function toggleGuideSection(headerEl) {
 }
 
 // ===== ONBOARDING SYSTEM =====
+var _onboardingStep = 0;
+var _onboardingTotal = 4;
+var _onboardingProvider = 'platform';
+
 function checkOnboarding() {
   if (localStorage.getItem('onboarding_completed')) return;
   if (!currentUser) return;
   var modal = document.getElementById('onboarding-modal');
   if (!modal) return;
+  _onboardingStep = 0;
   modal.style.display = 'flex';
+  renderOnboardingDots();
+  showOnboardingSlide(0);
+  // personalize subtitle
   var subtitle = document.getElementById('onboarding-subtitle');
   if (subtitle) {
     var name = currentUser.first_name || currentUser.username || '';
-    subtitle.textContent = currentLang === 'ru'
-      ? name + ', вы присоединились к самой мощной платформе AI-агентов на TON.'
-      : name + ', you\'ve joined the most powerful AI agent platform on TON blockchain.';
+    if (name) {
+      subtitle.textContent = currentLang === 'ru'
+        ? name + ', добро пожаловать! Создавайте автономных AI-агентов, которые работают в Telegram и взаимодействуют с блокчейном TON — без кода.'
+        : name + ', welcome! Build autonomous AI agents that live inside Telegram and work with the TON blockchain — no coding required.';
+    }
   }
 }
 
-function startOnboarding() {
+function renderOnboardingDots() {
+  var dotsEl = document.getElementById('onboarding-dots');
+  if (!dotsEl) return;
+  var html = '';
+  for (var i = 0; i < _onboardingTotal; i++) {
+    var cls = 'onboarding-dot';
+    if (i === _onboardingStep) cls += ' active';
+    else if (i < _onboardingStep) cls += ' completed';
+    html += '<div class="' + cls + '" onclick="goOnboardingStep(' + i + ')"></div>';
+  }
+  dotsEl.innerHTML = html;
+}
+
+function showOnboardingSlide(idx) {
+  for (var i = 0; i < _onboardingTotal; i++) {
+    var slide = document.getElementById('onboarding-slide-' + i);
+    if (slide) slide.style.display = i === idx ? '' : 'none';
+  }
+  // Update nav buttons
+  var backBtn = document.getElementById('onboarding-back-btn');
+  if (backBtn) backBtn.style.display = idx > 0 ? '' : 'none';
+  var nextLabel = document.getElementById('onboarding-next-label');
+  if (nextLabel) {
+    if (idx === 0) {
+      nextLabel.textContent = currentLang === 'ru' ? 'Начать' : 'Get Started';
+    } else if (idx === _onboardingTotal - 1) {
+      nextLabel.textContent = currentLang === 'ru' ? 'Готово' : 'Finish';
+    } else {
+      nextLabel.textContent = currentLang === 'ru' ? 'Далее' : 'Next';
+    }
+  }
+  renderOnboardingDots();
+}
+
+function goOnboardingStep(idx) {
+  if (idx < 0 || idx >= _onboardingTotal) return;
+  _onboardingStep = idx;
+  showOnboardingSlide(idx);
+}
+
+function onboardingNext() {
+  if (_onboardingStep < _onboardingTotal - 1) {
+    _onboardingStep++;
+    showOnboardingSlide(_onboardingStep);
+  } else {
+    finishOnboarding();
+  }
+}
+
+function onboardingPrev() {
+  if (_onboardingStep > 0) {
+    _onboardingStep--;
+    showOnboardingSlide(_onboardingStep);
+  }
+}
+
+function onboardingSelectProvider(el, provider) {
+  _onboardingProvider = provider;
+  var radios = el.closest('.onboarding-providers').querySelectorAll('.onboarding-provider-radio');
+  radios.forEach(function(r) { r.classList.remove('selected'); });
+  el.querySelector('.onboarding-provider-radio').classList.add('selected');
+}
+
+function onboardingAction(action) {
   dismissOnboarding();
-  navigateTo('settings');
-  setTimeout(function() { startTour(); }, 800);
+  if (action === 'chat') navigateTo('assistant');
+  else if (action === 'constructor') navigateTo('agents');
+  else if (action === 'marketplace') navigateTo('marketplace');
+  else if (action === 'guide') navigateTo('guide');
+  else if (action === 'telegram') window.open('https://t.me/TonAgentPlatformBot', '_blank');
+}
+
+function finishOnboarding() {
+  dismissOnboarding();
+  // If user selected a non-platform provider, navigate to settings so they can add key
+  if (_onboardingProvider && _onboardingProvider !== 'platform') {
+    navigateTo('settings');
+  }
 }
 
 function dismissOnboarding() {
@@ -8254,3 +9048,128 @@ if (_origNavigateTo) {
 setTimeout(checkTelegramStatus, 2000);
 
 console.log('TON Agent Platform Dashboard v2.0 loaded successfully!');
+
+// ── WebSocket real-time updates ──────────────────────────────
+(function initWebSocket() {
+  var ws = null;
+  var wsRetryTimer = null;
+  var wsConnected = false;
+
+  // Add connection indicator to DOM
+  var indicator = document.createElement('div');
+  indicator.id = 'ws-indicator';
+  indicator.style.cssText = 'position:fixed;bottom:12px;right:12px;z-index:9999;display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:12px;font-size:11px;color:#999;background:var(--bg-card,#1a1a2e);border:1px solid var(--border,#2a2a3e);opacity:0.7;transition:opacity 0.3s';
+  indicator.innerHTML = '<span id="ws-dot" style="width:6px;height:6px;border-radius:50%;background:#666;display:inline-block"></span><span id="ws-label">offline</span>';
+  document.body.appendChild(indicator);
+
+  function setStatus(connected) {
+    wsConnected = connected;
+    var dot = document.getElementById('ws-dot');
+    var label = document.getElementById('ws-label');
+    if (dot) dot.style.background = connected ? '#22c55e' : '#666';
+    if (label) label.textContent = connected ? 'live' : 'offline';
+  }
+
+  function connect() {
+    if (!authToken) return;
+    var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    var base = API_BASE.replace(/^https?:/, proto);
+    var url = base + '/ws?token=' + encodeURIComponent(authToken);
+
+    try { ws = new WebSocket(url); } catch (e) { scheduleRetry(); return; }
+
+    ws.onopen = function() { setStatus(true); };
+
+    ws.onmessage = function(e) {
+      try {
+        var evt = JSON.parse(e.data);
+        if (evt.type === 'connected') return;
+        handleWSEvent(evt);
+      } catch (err) { /* ignore parse errors */ }
+    };
+
+    ws.onclose = function() { setStatus(false); scheduleRetry(); };
+    ws.onerror = function() { /* onclose will fire */ };
+  }
+
+  function scheduleRetry() {
+    if (wsRetryTimer) return;
+    wsRetryTimer = setTimeout(function() { wsRetryTimer = null; connect(); }, 5000);
+  }
+
+  function handleWSEvent(evt) {
+    var agentId = evt.agentId;
+    if (!agentId) return;
+
+    // Update _agentsCache in-place
+    if (_agentsCache) {
+      var agent = _agentsCache.find(function(a) { return a.id === agentId; });
+      if (agent) {
+        if (evt.type === 'agent_started') agent.isActive = true;
+        else if (evt.type === 'agent_stopped') agent.isActive = false;
+      }
+    }
+
+    // Update overview cards
+    var card = document.querySelector('.agent-card[data-id="' + agentId + '"]');
+    if (card) {
+      var statusEl = card.querySelector('.agent-status');
+      if (statusEl) {
+        var isActive = evt.type === 'agent_started' || evt.type === 'agent_tick';
+        statusEl.className = 'agent-status ' + (isActive ? 'active' : 'paused');
+        var span = statusEl.querySelector('span:last-child');
+        if (span) span.textContent = isActive ? t('active') : t('paused');
+      }
+    }
+
+    // Update agents page list
+    var pageCards = document.querySelectorAll('.ap-card[data-id="' + agentId + '"], .agent-card[data-id="' + agentId + '"]');
+    pageCards.forEach(function(c) {
+      var st = c.querySelector('.agent-status');
+      if (st) {
+        var active = evt.type === 'agent_started' || evt.type === 'agent_tick';
+        st.className = 'agent-status ' + (active ? 'active' : 'paused');
+        var s = st.querySelector('span:last-child');
+        if (s) s.textContent = active ? t('active') : t('paused');
+      }
+    });
+
+    // Update detail view if open for this agent
+    if (typeof _detailAgentId !== 'undefined' && _detailAgentId === agentId) {
+      var detailStatus = document.getElementById('agent-detail-status');
+      if (detailStatus) {
+        var a = evt.type === 'agent_started' || evt.type === 'agent_tick';
+        detailStatus.className = 'agent-status ' + (a ? 'active' : 'paused');
+        if (_detailAgentData) _detailAgentData.is_active = a;
+      }
+      var settingsStatus = document.getElementById('agent-settings-status');
+      if (settingsStatus) {
+        var a2 = evt.type === 'agent_started' || evt.type === 'agent_tick';
+        settingsStatus.className = 'agent-status ' + (a2 ? 'active' : 'paused');
+      }
+    }
+
+    // Flash indicator on events
+    var ind = document.getElementById('ws-indicator');
+    if (ind) {
+      ind.style.opacity = '1';
+      setTimeout(function() { ind.style.opacity = '0.7'; }, 1500);
+    }
+  }
+
+  // Start connection when auth is ready
+  if (authToken) connect();
+  // Also observe authToken changes by hooking into loadAgents
+  var _origLoadAgents = typeof loadAgents === 'function' ? loadAgents : null;
+  if (_origLoadAgents) {
+    var _hooked = false;
+    var origFn = window.loadAgents || loadAgents;
+    var _checkWS = function() {
+      if (!wsConnected && authToken && !wsRetryTimer) connect();
+    };
+    // Poll for authToken periodically (simple approach)
+    setInterval(function() {
+      if (authToken && !wsConnected && !ws) connect();
+    }, 10000);
+  }
+})();

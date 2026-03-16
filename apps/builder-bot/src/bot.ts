@@ -288,8 +288,21 @@ interface PendingAgentCreation {
   description: string;      // исходное описание пользователя
   step: 'schedule';         // текущий шаг диалога
   name?: string;            // пользовательское имя агента (если дал)
+  createdAt?: number;       // timestamp для TTL cleanup
 }
 const pendingCreations = new Map<number, PendingAgentCreation>();
+
+// Auto-cleanup stale pending states every 5 minutes (prevents stuck users)
+setInterval(() => {
+  const now = Date.now();
+  const TTL = 10 * 60 * 1000; // 10 minutes
+  for (const [userId, pending] of pendingCreations) {
+    if (pending.createdAt && now - pending.createdAt > TTL) {
+      pendingCreations.delete(userId);
+      console.log(`[bot] Auto-cleaned stale pendingCreation for user ${userId}`);
+    }
+  }
+}, 5 * 60 * 1000);
 
 // ============================================================
 // State machine для запроса названия агента
@@ -325,6 +338,11 @@ const pendingEdits = new Map<number, number>();
 // Chat with AI agent: userId → agentId (активный чат-сеанс)
 // ============================================================
 const pendingAgentChats = new Map<number, number>(); // userId → agentId
+
+// ============================================================
+// Proposal discussion: userId → proposalId
+// ============================================================
+const pendingProposalDiscuss = new Map<number, string>(); // userId → proposalId
 
 // ============================================================
 // Post-creation agent setup wizard
@@ -534,6 +552,9 @@ function _getAllPendingMaps(): [string, Map<any, any> | Set<any>][] {
     ['topup', pendingTopup],
     ['2fa', complete2FAFns],
     ['repair', pendingRepairs], // keyed by string, not userId
+    ['agentWallets', agentWallets],
+    ['tonConnectLinks', tonConnectLinks],
+    ['userLang', userLanguages],
   ];
 }
 
@@ -583,6 +604,13 @@ setInterval(() => {
       qrPollingHandles.delete(userId);
       cleaned++;
     }
+  }
+
+  // Cap processedTopupTx to prevent unbounded growth
+  if (processedTopupTx.size > 5000) {
+    const toRemove = [...processedTopupTx].slice(0, processedTopupTx.size - 2000);
+    for (const tx of toRemove) processedTopupTx.delete(tx);
+    cleaned += toRemove.length;
   }
 
   if (cleaned > 0) {
@@ -818,6 +846,43 @@ bot.command('list', (ctx) => showAgentsList(ctx, ctx.from.id));
 bot.command('marketplace', (ctx) => showMarketplace(ctx));
 bot.command('connect', (ctx) => showTonConnect(ctx));
 
+// ── /search — поиск агентов по имени/описанию ──
+bot.command('search', async (ctx) => {
+  const userId = ctx.from.id;
+  const query = (ctx.message?.text || '').replace(/^\/search\s*/i, '').trim().toLowerCase();
+  if (!query) {
+    await safeReply(ctx, '🔍 Использование: /search <ключевое слово>\n\nПоиск среди ваших агентов по имени или описанию.');
+    return;
+  }
+  try {
+    const result = await getDBTools().getUserAgents(userId);
+    if (!result.success || !result.data?.length) {
+      await safeReply(ctx, '❌ У вас нет агентов.');
+      return;
+    }
+    const matches = result.data.filter((a: any) =>
+      (a.name || '').toLowerCase().includes(query) ||
+      (a.description || '').toLowerCase().includes(query)
+    );
+    if (matches.length === 0) {
+      await safeReply(ctx, `🔍 Ничего не найдено по запросу "${escHtml(query)}"`);
+      return;
+    }
+    const lines = matches.slice(0, 20).map((a: any) =>
+      `${a.isActive ? '🟢' : '⚪'} <b>${escHtml(a.name || 'Без имени')}</b> #${a.id}\n   ${escHtml((a.description || '').slice(0, 60))}`
+    );
+    const keyboard = matches.slice(0, 10).map((a: any) => [
+      { text: `${a.isActive ? '🟢' : '⚪'} ${a.name || '#' + a.id}`, callback_data: `manage_agent:${a.id}` },
+    ]);
+    await ctx.reply(
+      `🔍 Найдено ${matches.length} агент(ов) по "${escHtml(query)}":\n\n${lines.join('\n\n')}`,
+      { parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } }
+    );
+  } catch (e: any) {
+    await safeReply(ctx, `❌ Ошибка поиска: ${e.message}`);
+  }
+});
+
 // ── /price — живая цена TON ──────────────────────────────────
 async function sendPriceCard(ctx: Context) {
   const lang = getUserLang(ctx.from?.id || 0);
@@ -952,6 +1017,47 @@ bot.command('stats', (ctx) => showStats(ctx, ctx.from.id));
 bot.command('sub', (ctx) => showSubscription(ctx));
 bot.command('plans', (ctx) => showPlans(ctx));
 bot.command('model', (ctx) => showModelSelector(ctx));
+
+// ── /ai — управление AI режимами (только для владельца) ──────────
+const pendingUserIdea = new Map<number, boolean>(); // userId → waiting for idea text
+
+bot.command('ai', async (ctx) => {
+  if (ctx.from.id !== OWNER_ID_NUM) return;
+  const { getSelfImprovementSystem } = await import('./self-improvement');
+  const sis = getSelfImprovementSystem();
+  if (!sis) { await ctx.reply('❌ Система не запущена'); return; }
+
+  const modes = sis.getModesStatus();
+  const ideasCount = sis.getPendingIdeasCount();
+  const ideas = sis.getPendingIdeas();
+
+  let text = '🤖 <b>AI Режимы</b>\n\n';
+  text += `🔍 Улучшатель (авто 10мин): ${modes[0].enabled ? '✅' : '❌'}\n`;
+  text += `💡 Придумыватель (авто 30мин): ${modes[1].enabled ? '✅' : '❌'}\n`;
+  text += `🔨 Реализатор (по кнопке): всегда готов\n`;
+  text += `\n📋 Идей в очереди: <b>${ideasCount}</b>`;
+  if (ideas.length) {
+    text += '\n';
+    for (const i of ideas) text += `  ${i.index + 1}. ${escHtml(i.title)}\n`;
+  }
+
+  const kb: any[][] = [
+    [
+      { text: `${modes[0].enabled ? '✅' : '❌'} Улучшатель`, callback_data: 'ai_toggle:improver' },
+      { text: '▶️ Запустить', callback_data: 'ai_run:improver' },
+    ],
+    [
+      { text: `${modes[1].enabled ? '✅' : '❌'} Придумыватель`, callback_data: 'ai_toggle:ideator' },
+      { text: '▶️ Запустить', callback_data: 'ai_run:ideator' },
+    ],
+    [
+      { text: '✏️ Моя идея', callback_data: 'ai_my_idea' },
+      { text: '🔨 Реализовать', callback_data: 'ai_run:implementor' },
+    ],
+  ];
+
+  await ctx.reply(text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } });
+});
 
 // ── /plugin — пользовательские плагины ──────────────────────────
 bot.command('plugin', async (ctx) => {
@@ -2656,6 +2762,11 @@ bot.on('callback_query', async (ctx) => {
         const emoji = isApprove ? '✅' : '❌';
         const verb = isApprove ? 'одобрено' : 'отклонено';
         await editOrReply(ctx, `${emoji} Действие #${approvalId} ${verb} (${escHtml(row.action_type)}).`, { parse_mode: 'HTML' });
+        // Wake up the waiting agent tool
+        try {
+          const { resolveApprovalWaiter } = await import('./agents/ai-agent-runtime');
+          resolveApprovalWaiter(approvalId, isApprove ? 'approved' : 'rejected');
+        } catch {}
       }
     } catch (e: any) {
       await editOrReply(ctx, `Ошибка: ${escHtml(e.message)}`, { parse_mode: 'HTML' });
@@ -2945,6 +3056,163 @@ bot.on('callback_query', async (ctx) => {
     await ctx.answerCbQuery('Загружаю логи...');
     const agentId = parseInt(data.split(':')[1]);
     await showAgentLogs(ctx, agentId, userId);
+    return;
+  }
+
+  // ── 🎯 Goals display ──
+  if (data.startsWith('show_goals:')) {
+    await ctx.answerCbQuery('🎯');
+    const agentId = parseInt(data.split(':')[1]);
+    try {
+      const stateRepo = getAgentStateRepository();
+      const goalsRaw = await stateRepo.get(agentId, '_goals').catch(() => null);
+      let goals: Array<{ goal: string; priority: string; status: string; addedAt?: string }> = [];
+      try { goals = JSON.parse(goalsRaw?.value || '[]'); } catch { goals = []; }
+
+      const active = goals.filter(g => g.status === 'active');
+      const completed = goals.filter(g => g.status === 'completed');
+
+      let text = `🎯 <b>Цели агента #${agentId}</b>\n\n`;
+      if (active.length > 0) {
+        text += `<b>Активные (${active.length}):</b>\n`;
+        for (const g of active) {
+          const pIcon = g.priority === 'high' ? '🔴' : g.priority === 'low' ? '⚪' : '🟡';
+          text += `${pIcon} ${escHtml(g.goal)}\n`;
+        }
+      }
+      if (completed.length > 0) {
+        text += `\n<b>Выполненные (${completed.length}):</b>\n`;
+        for (const g of completed.slice(-5)) {
+          text += `✅ ${escHtml(g.goal)}\n`;
+        }
+      }
+      if (goals.length === 0) text += '<i>Агент ещё не сформировал цели. Они появятся после нескольких тиков.</i>';
+
+      // Lessons too
+      const allKeys = await stateRepo.listKeys(agentId);
+      const lessonKeys = allKeys.filter((k: string) => k.startsWith('lesson:')).sort().slice(-10);
+      if (lessonKeys.length > 0) {
+        text += `\n\n📚 <b>Уроки (${lessonKeys.length}):</b>\n`;
+        for (const key of lessonKeys.slice(-5)) {
+          const raw = await stateRepo.get(agentId, key).catch(() => null);
+          if (!raw?.value) continue;
+          try {
+            const l = JSON.parse(raw.value);
+            const icon = l.category === 'error' ? '❌' : l.category === 'success' ? '✅' : '💡';
+            text += `${icon} ${escHtml((l.text || '').slice(0, 120))}\n`;
+          } catch {}
+        }
+      }
+
+      await editOrReply(ctx, text, {
+        parse_mode: 'HTML',
+        reply_markup: { inline_keyboard: [[{ text: '◀️ К агенту', callback_data: `agent_menu:${agentId}` }]] },
+      });
+    } catch (e: any) { await ctx.reply('❌ Ошибка: ' + (e.message || '').slice(0, 100)); }
+    return;
+  }
+
+  // ── 🧠 Memory display ──
+  if (data.startsWith('show_memory:')) {
+    await ctx.answerCbQuery('🧠');
+    const agentId = parseInt(data.split(':')[1]);
+    try {
+      const stateRepo = getAgentStateRepository();
+      const allKeys = await stateRepo.listKeys(agentId);
+      const memKeys = allKeys.filter((k: string) => k.startsWith('mem:'));
+
+      const categoryIcons: Record<string, string> = { contact: '👤', fact: '📌', preference: '⚙️', task: '📋', insight: '💡' };
+      const categories: Record<string, string[]> = {};
+
+      for (const key of memKeys.slice(-30)) {
+        const raw = await stateRepo.get(agentId, key).catch(() => null);
+        if (!raw?.value) continue;
+        const cleanKey = key.replace('mem:', '');
+        let parsed: any;
+        try { parsed = JSON.parse(raw.value); } catch { parsed = { value: raw.value, category: 'fact' }; }
+        const cat = parsed.category || 'fact';
+        const val = parsed.value || raw.value;
+        const imp = parsed.importance === 'high' ? ' ❗' : '';
+        if (!categories[cat]) categories[cat] = [];
+        categories[cat].push(`${escHtml(cleanKey)}: ${escHtml((val + '').slice(0, 100))}${imp}`);
+      }
+
+      let text = `🧠 <b>Память агента #${agentId}</b>\n\n`;
+      if (Object.keys(categories).length > 0) {
+        for (const [cat, entries] of Object.entries(categories)) {
+          const icon = categoryIcons[cat] || '📝';
+          text += `${icon} <b>${cat.toUpperCase()}</b>:\n`;
+          for (const e of entries) text += `  • ${e}\n`;
+          text += '\n';
+        }
+      } else {
+        text += '<i>Память пуста. Агент начнёт запоминать после общения.</i>';
+      }
+
+      // Prompt additions
+      const addRaw = await stateRepo.get(agentId, '_prompt_additions').catch(() => null);
+      if (addRaw?.value) {
+        try {
+          const adds: string[] = JSON.parse(addRaw.value);
+          if (adds.length > 0) {
+            text += `\n🔧 <b>Доп. инструкции (${adds.length}):</b>\n`;
+            for (const a of adds.slice(-5)) text += `  → ${escHtml(a.slice(0, 100))}\n`;
+          }
+        } catch {}
+      }
+
+      text += `\n<i>Всего записей: ${memKeys.length}</i>`;
+
+      await editOrReply(ctx, text, {
+        parse_mode: 'HTML',
+        reply_markup: { inline_keyboard: [[{ text: '◀️ К агенту', callback_data: `agent_menu:${agentId}` }]] },
+      });
+    } catch (e: any) { await ctx.reply('❌ Ошибка: ' + (e.message || '').slice(0, 100)); }
+    return;
+  }
+
+  // ── 📡 Events display ──
+  if (data.startsWith('show_events:')) {
+    await ctx.answerCbQuery('📡');
+    const agentId = parseInt(data.split(':')[1]);
+    try {
+      const { getEventBus } = require('./agents/event-bus');
+      const bus = getEventBus();
+      const subs = bus.getSubscriptions(agentId);
+      const wake = bus.getWakeInfo(agentId);
+
+      let text = `📡 <b>События агента #${agentId}</b>\n\n`;
+
+      if (wake) {
+        const wakeDate = new Date(wake.wakeAt);
+        const remaining = Math.max(0, Math.round((wake.wakeAt - Date.now()) / 1000));
+        text += `⏰ <b>Следующее пробуждение:</b>\n`;
+        text += `  ${escHtml(wakeDate.toISOString().slice(0, 19).replace('T', ' '))} UTC\n`;
+        text += `  Через: ${remaining}с\n`;
+        text += `  Причина: <i>${escHtml(wake.reason)}</i>\n\n`;
+      }
+
+      if (subs.length > 0) {
+        text += `📡 <b>Подписки (${subs.length}):</b>\n`;
+        for (const s of subs) {
+          text += `  • ${escHtml(s.eventType)}`;
+          if (s.filter) text += ` <code>${escHtml(JSON.stringify(s.filter).slice(0, 80))}</code>`;
+          text += '\n';
+        }
+      }
+
+      if (!wake && subs.length === 0) {
+        text += '<i>Нет активных подписок и таймеров.\nАгент может подписаться на события через subscribe_event и запланировать пробуждение через set_next_wake.</i>';
+      }
+
+      const stats = bus.getStats();
+      text += `\n📊 <i>Всего: ${stats.totalSubscriptions} подписок, ${stats.activeWakeTimers} таймеров</i>`;
+
+      await editOrReply(ctx, text, {
+        parse_mode: 'HTML',
+        reply_markup: { inline_keyboard: [[{ text: '◀️ К агенту', callback_data: `agent_menu:${agentId}` }]] },
+      });
+    } catch (e: any) { await ctx.reply('❌ Ошибка: ' + (e.message || '').slice(0, 100)); }
     return;
   }
 
@@ -3394,6 +3662,43 @@ bot.on('callback_query', async (ctx) => {
       `${pe('sparkles')} <b>Создание AI-агента</b>\n\nОпишите что должен делать агент — AI сам разберётся.\n\n<i>Примеры:</i>\n🎁 <i>"сканируй арбитраж подарков, уведоми при прибыли 15%+"</i>\n📊 <i>"мониторь floor NFT коллекций раз в час"</i>\n🐋 <i>"whale alert: следи за крупными переводами на UQ..."</i>\n🌐 <i>"парси крипто-новости, дайджест каждые 30 мин"</i>\n\n🎤 <i>Или отправь голосовое!</i>`,
       { parse_mode: 'HTML' }
     );
+    return;
+  }
+
+  // ── Клонировать агента ──
+  if (data.startsWith('clone_agent:')) {
+    await ctx.answerCbQuery('Клонирую...');
+    const agentId = parseInt(data.split(':')[1]);
+    try {
+      const src = await getDBTools().getAgent(agentId, userId);
+      if (!src.data) { await safeReply(ctx, '❌ Агент не найден'); return; }
+      const a = src.data;
+      const cloneName = `${a.name || 'Agent'} (clone)`.slice(0, 100);
+      const result = await getDBTools().createAgent(
+        userId,
+        cloneName,
+        a.description || '',
+        a.triggerType || 'ai_agent',
+        a.code || '',
+        a.triggerConfig || {},
+      );
+      if (result.data?.agentId) {
+        // Copy state (memories, lessons, goals) from source agent
+        try {
+          const states = await getAgentStateRepository().getAll(agentId);
+          for (const s of states) {
+            if (s.key === 'wallet_address' || s.key === 'wallet_mnemonic') continue; // don't copy wallet
+            if (s.key === '_conversation_history') continue; // fresh history
+            await getAgentStateRepository().set(result.data.agentId, userId, s.key, s.value);
+          }
+        } catch {}
+        await safeReply(ctx, `✅ Агент клонирован!\n\n📋 ${escHtml(cloneName)} #${result.data.agentId}\n\nВсе настройки, память и уроки скопированы.\nКошелёк создастся новый при первом запуске.`);
+      } else {
+        await safeReply(ctx, '❌ Ошибка клонирования');
+      }
+    } catch (e: any) {
+      await safeReply(ctx, `❌ Ошибка: ${e.message}`);
+    }
     return;
   }
 
@@ -3905,7 +4210,7 @@ bot.on('callback_query', async (ctx) => {
           }, 1500);
         }
       }
-    }).catch(() => {});
+    }).catch((e: any) => { console.error(`[bot] QR auth setup error:`, e?.message || e); });
     return;
   }
 
@@ -4059,6 +4364,140 @@ bot.on('callback_query', async (ctx) => {
     return;
   }
 
+  // ── AI Mode toggle/trigger callbacks ──
+  if (data.startsWith('ai_toggle:') || data.startsWith('ai_run:')) {
+    if (userId !== OWNER_ID_NUM) { await ctx.answerCbQuery('⛔ Только владелец'); return; }
+    const { getSelfImprovementSystem } = await import('./self-improvement');
+    const sis = getSelfImprovementSystem();
+    if (!sis) { await ctx.answerCbQuery('❌ Система не запущена'); return; }
+
+    const mode = data.split(':')[1];
+    const labels: Record<string, string> = { improver: '🔍 Улучшатель', ideator: '💡 Придумыватель', implementor: '🔨 Реализатор' };
+    const label = labels[mode] || mode;
+
+    if (data.startsWith('ai_toggle:')) {
+      const nowEnabled = sis.toggleMode(mode);
+      await ctx.answerCbQuery(`${label}: ${nowEnabled ? '✅ ВКЛ' : '❌ ВЫКЛ'}`);
+
+      // Update message with new state
+      const modes = sis.getModesStatus();
+      const ideasCount = sis.getPendingIdeasCount();
+      let text = '🤖 <b>AI Режимы</b>\n\n';
+      text += `🔍 Улучшатель (авто 10мин): ${modes[0].enabled ? '✅' : '❌'}\n`;
+      text += `💡 Придумыватель (авто 30мин): ${modes[1].enabled ? '✅' : '❌'}\n`;
+      text += `🔨 Реализатор (по кнопке): всегда готов\n`;
+      text += `\n📋 Идей в очереди: <b>${ideasCount}</b>`;
+
+      const kb: any[][] = [
+        [
+          { text: `${modes[0].enabled ? '✅' : '❌'} Улучшатель`, callback_data: 'ai_toggle:improver' },
+          { text: '▶️ Запустить', callback_data: 'ai_run:improver' },
+        ],
+        [
+          { text: `${modes[1].enabled ? '✅' : '❌'} Придумыватель`, callback_data: 'ai_toggle:ideator' },
+          { text: '▶️ Запустить', callback_data: 'ai_run:ideator' },
+        ],
+        [
+          { text: '✏️ Моя идея', callback_data: 'ai_my_idea' },
+          { text: '🔨 Реализовать', callback_data: 'ai_run:implementor' },
+        ],
+      ];
+      await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } }).catch(() => {});
+    } else if (mode === 'implementor') {
+      // Show idea list for selection
+      const ideas = sis.getPendingIdeas();
+      if (!ideas.length) {
+        await ctx.answerCbQuery('Нет идей');
+        await ctx.reply('📋 Очередь идей пуста. Сначала запусти Придумыватель.');
+        return;
+      }
+      await ctx.answerCbQuery('📋 Выбери идею');
+      let text = '🔨 <b>Реализатор — выбери идею:</b>\n\n';
+      const ideaKb: any[][] = [];
+      for (const idea of ideas) {
+        text += `${idea.index + 1}. <b>${escHtml(idea.title)}</b>\n   🏷 ${escHtml(idea.domain)}\n\n`;
+        ideaKb.push([{ text: `${idea.index + 1}. ${idea.title.slice(0, 35)}`, callback_data: `ai_impl:${idea.index}` }]);
+      }
+      await ctx.reply(text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: ideaKb } });
+    } else {
+      // ai_run — manual trigger (improver / ideator) — background
+      await ctx.answerCbQuery(`⏳ Запускаю ${label}...`);
+      await ctx.reply(`⏳ Запускаю <b>${label}</b>... Это займёт 1-2 минуты.`, { parse_mode: 'HTML' });
+
+      // Don't await — run in background to avoid Telegraf 90s timeout
+      sis.triggerMode(mode).then(async (result) => {
+        if (result === 'ok') {
+          // notification already sent inside the mode
+        } else if (result === 'already_running') {
+          await ctx.reply(`⚠️ Уже запущен, подождите.`).catch(() => {});
+        } else if (result === 'claude_unavailable') {
+          await ctx.reply(`❌ Claude Code недоступен.`).catch(() => {});
+        } else {
+          await ctx.reply(`❌ ${result}`).catch(() => {});
+        }
+      }).catch(() => {});
+    }
+    return;
+  }
+
+  // ── ai_impl — реализовать выбранную идею ──
+  if (data.startsWith('ai_impl:')) {
+    if (userId !== OWNER_ID_NUM) { await ctx.answerCbQuery('⛔'); return; }
+    const { getSelfImprovementSystem } = await import('./self-improvement');
+    const sis = getSelfImprovementSystem();
+    if (!sis) { await ctx.answerCbQuery('❌'); return; }
+
+    const index = parseInt(data.split(':')[1]);
+    const ideas = sis.getPendingIdeas();
+    const ideaTitle = ideas[index]?.title || '?';
+
+    await ctx.answerCbQuery('⏳ Запускаю...');
+    await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => {});
+    await ctx.reply(`⏳ Реализую: <b>${escHtml(ideaTitle)}</b>\nЭто займёт 1-2 минуты...`, { parse_mode: 'HTML' });
+
+    // Run in background — don't block callback (Telegraf 90s timeout)
+    sis.implementIdea(index).then(async (result) => {
+      if (result === 'ok') {
+        // notification already sent by executeProactivePrompt
+      } else if (result === 'already_running') {
+        await ctx.reply(`⚠️ Уже запущен, подождите.`).catch(() => {});
+      } else if (result === 'bad_index') {
+        await ctx.reply(`❌ Идея уже была реализована или удалена.`).catch(() => {});
+      } else {
+        await ctx.reply(`❌ ${result}`).catch(() => {});
+      }
+    }).catch(() => {});
+    return;
+  }
+
+  // ── ai_my_idea — владелец хочет описать свою идею ──
+  if (data === 'ai_my_idea') {
+    if (userId !== OWNER_ID_NUM) { await ctx.answerCbQuery('⛔'); return; }
+    await ctx.answerCbQuery('✏️');
+    pendingUserIdea.set(userId, true);
+    await ctx.reply(
+      '✏️ <b>Опиши свою идею</b>\n\n' +
+      'Напиши что хочешь добавить/изменить в платформе.\n' +
+      'Придумыватель допилит твою идею в полную спецификацию с промптом для Реализатора.\n\n' +
+      '<i>"стоп" — отмена</i>',
+      { parse_mode: 'HTML' },
+    );
+    return;
+  }
+
+  // ── ai_drop — удалить идею из очереди ──
+  if (data.startsWith('ai_drop:')) {
+    if (userId !== OWNER_ID_NUM) { await ctx.answerCbQuery('⛔'); return; }
+    const { getSelfImprovementSystem } = await import('./self-improvement');
+    const sis = getSelfImprovementSystem();
+    if (!sis) { await ctx.answerCbQuery('❌'); return; }
+    const index = parseInt(data.split(':')[1]);
+    sis.dropIdea(index);
+    await ctx.answerCbQuery('🗑 Идея удалена');
+    await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => {});
+    return;
+  }
+
   // ── AI Proposal callbacks (self-improvement) — handle before orchestrator ──
   if (data.startsWith('proposal_approve:') || data.startsWith('proposal_reject:') || data.startsWith('proposal_rollback:') || data.startsWith('proposal_discuss:')) {
     const [action, proposalId] = [data.split(':')[0], data.split(':').slice(1).join(':')];
@@ -4084,10 +4523,12 @@ bot.on('callback_query', async (ctx) => {
         await ctx.reply(`⏪ Proposal <code>${proposalId.slice(0, 8)}</code> откатан.`, { parse_mode: 'HTML' });
       } else if (action === 'proposal_discuss') {
         await ctx.answerCbQuery('💬 Обсуждение');
+        pendingProposalDiscuss.set(userId, proposalId);
         await ctx.reply(
-          `💬 <b>Обсуждение proposal ${proposalId.slice(0, 8)}</b>\n\n` +
-          `Напишите ваш вопрос или замечание — AI-система прочитает и учтёт.\n` +
-          `Когда закончите, нажмите ✅ Применить или ❌ Отклонить.`,
+          `💬 <b>Обсуждение фичи</b>\n\n` +
+          `Напишите что думаете — вопрос, замечание, пожелание.\n` +
+          `AI прочитает и ответит с учётом контекста фичи.\n\n` +
+          `<i>Напишите "стоп" чтобы выйти из обсуждения.</i>`,
           { parse_mode: 'HTML' }
         );
       }
@@ -4278,6 +4719,76 @@ bot.on(message('text'), async (ctx) => {
   // ── Сохраняем язык пользователя (авто-определение) ───────
   if (!userLanguages.has(userId)) {
     userLanguages.set(userId, detectLang(trimmed));
+  }
+
+  // ── User idea → Придумыватель допиливает ──
+  if (pendingUserIdea.has(userId)) {
+    if (trimmed.toLowerCase() === 'стоп' || trimmed.toLowerCase() === 'stop') {
+      pendingUserIdea.delete(userId);
+      await ctx.reply('✅ Отменено.');
+      return;
+    }
+    pendingUserIdea.delete(userId);
+    await ctx.reply('⏳ Придумыватель прорабатывает твою идею... 1-2 минуты.', { parse_mode: 'HTML' });
+    await ctx.sendChatAction('typing');
+
+    const { getSelfImprovementSystem } = await import('./self-improvement');
+    const sis = getSelfImprovementSystem();
+    if (!sis) { await ctx.reply('❌ Система не запущена'); return; }
+
+    // Run in background
+    sis.submitUserIdea(trimmed).then(async (result) => {
+      if (result === 'ok') {
+        // notification already sent
+      } else if (result === 'already_running') {
+        await ctx.reply('⚠️ Уже запущен, подождите.').catch(() => {});
+      } else {
+        await ctx.reply(`❌ ${result}`).catch(() => {});
+      }
+    }).catch(() => {});
+    return;
+  }
+
+  // ── Proposal discussion (Product Engineer) ───────────────────
+  if (pendingProposalDiscuss.has(userId)) {
+    const proposalId = pendingProposalDiscuss.get(userId)!;
+
+    if (trimmed.toLowerCase() === 'стоп' || trimmed.toLowerCase() === 'stop') {
+      pendingProposalDiscuss.delete(userId);
+      await ctx.reply('✅ Вышли из обсуждения.');
+      return;
+    }
+
+    await ctx.sendChatAction('typing');
+    try {
+      // Load proposal from DB
+      const { getAIProposalsRepository } = await import('./db/schema-extensions');
+      const proposal = await getAIProposalsRepository().getById(proposalId);
+      if (!proposal) {
+        pendingProposalDiscuss.delete(userId);
+        await ctx.reply('❌ Proposal не найден.');
+        return;
+      }
+
+      // Ask Claude Code about the proposal with user's question
+      const { claudeCodeChat } = await import('./claude-code-bridge');
+      const result = await claudeCodeChat([
+        { role: 'user', content:
+          `Ты — AI Product Engineer платформы TON Agent Platform.\n\n` +
+          `Владелец обсуждает с тобой фичу:\n` +
+          `Название: ${proposal.title}\n` +
+          `Описание: ${proposal.description}\n` +
+          `Обоснование: ${proposal.reasoning || ''}\n\n` +
+          `Вопрос/замечание владельца: "${trimmed}"\n\n` +
+          `Ответь кратко и по делу на РУССКОМ языке. Если владелец хочет изменить фичу — предложи как.`
+        }
+      ], { maxTokens: 1000, timeout: 120_000 });
+
+      await ctx.reply(result.text || 'Не удалось получить ответ.');
+    } catch (e: any) {
+      await ctx.reply('❌ Ошибка: ' + (e.message || String(e)).slice(0, 200));
+    }
+    return;
   }
 
   // ── Chat with AI agent ────────────────────────────────────────
@@ -4601,12 +5112,11 @@ bot.on(message('text'), async (ctx) => {
   // ── Ожидаем переименование агента ─────────────────────────
   if (pendingRenames.has(userId)) {
     const agentId = pendingRenames.get(userId)!;
-    pendingRenames.delete(userId);
     if (trimmed.length < 1 || trimmed.length > 60) {
       await ctx.reply('❌ Название должно быть от 1 до 60 символов. Попробуйте снова.');
-      pendingRenames.set(userId, agentId);
       return;
     }
+    pendingRenames.delete(userId);
     try {
       const result = await getDBTools().updateAgent(agentId, userId, { name: trimmed });
       if (result.success) {
@@ -4912,8 +5422,13 @@ bot.on(message('text'), async (ctx) => {
   if (pendingPublish.has(userId)) {
     const pp = pendingPublish.get(userId)!;
     if (pp.step === 'name') {
-      pendingPublish.delete(userId);
-      await doPublishAgent(ctx, userId, pp.agentId, pp.price, trimmed.slice(0, 60));
+      try {
+        pendingPublish.delete(userId);
+        await doPublishAgent(ctx, userId, pp.agentId, pp.price, trimmed.slice(0, 60));
+      } catch (e: any) {
+        console.error(`[bot] doPublishAgent failed:`, e.message);
+        await ctx.reply('❌ Ошибка публикации. Попробуйте ещё раз.').catch(() => {});
+      }
       return;
     }
     pendingPublish.delete(userId);
@@ -5660,6 +6175,15 @@ async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
       { text: `👁 ${ru2 ? 'Код/Промпт' : 'Code/Prompt'}`, callback_data: `show_code:${agentId}` },
     ]);
 
+    // Section 2.5 — Self-awareness: Goals, Memory, Events (only for ai_agent)
+    if (a.triggerType === 'ai_agent') {
+      keyboard.push([
+        { text: `🎯 ${ru2 ? 'Цели' : 'Goals'}`, callback_data: `show_goals:${agentId}` },
+        { text: `🧠 ${ru2 ? 'Память' : 'Memory'}`, callback_data: `show_memory:${agentId}` },
+        { text: `📡 ${ru2 ? 'События' : 'Events'}`, callback_data: `show_events:${agentId}` },
+      ]);
+    }
+
     // Section 3 — Edit: Edit prompt + Rename
     keyboard.push([
       { text: `✏️ ${ru2 ? 'Изменить' : 'Edit'}`, callback_data: `edit_agent:${agentId}` },
@@ -5724,8 +6248,9 @@ async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
       keyboard.push([{ text: `🔧 ${ru2 ? 'AI Автопочинка' : 'AI Auto-repair'}`, callback_data: `auto_repair:${agentId}` }]);
     }
 
-    // Section 8 — Bottom: Delete + Back
+    // Section 8 — Clone + Delete + Back
     keyboard.push([
+      { text: `📋 ${ru2 ? 'Клон' : 'Clone'}`, callback_data: `clone_agent:${agentId}` },
       { text: `🗑 ${ru2 ? 'Удалить' : 'Delete'}`, callback_data: `delete_agent:${agentId}` },
       { text: `◀️ ${ru2 ? 'Все агенты' : 'All agents'}`, callback_data: 'list_agents' },
     ]);
@@ -6611,10 +7136,22 @@ async function showStats(ctx: Context, userId: number) {
     text += `${lang === 'ru' ? 'Агентский кошелёк' : 'Agent wallet'}: <b>${agentBalance.toFixed(4)}</b> TON\n`;
   }
 
+  // Execution stats
+  let execStats = '';
+  try {
+    const { getExecutionHistoryRepository } = await import('./db/schema-extensions');
+    const stats = await getExecutionHistoryRepository().getStats(userId);
+    execStats = `\n📊 <b>${lang === 'ru' ? 'Активность' : 'Activity'}</b>\n` +
+      `${lang === 'ru' ? 'Запусков за 24ч' : 'Runs 24h'}: <b>${stats.last24hRuns}</b> · ` +
+      `${lang === 'ru' ? 'Всего' : 'Total'}: <b>${stats.totalRuns}</b>\n` +
+      `✅ ${stats.successRuns} · ❌ ${stats.errorRuns}\n`;
+  } catch {}
+
   text +=
     `\n${pe('brain')} <b>AI</b>\n` +
     `${lang === 'ru' ? 'Модель' : 'Model'}: ${escHtml(modelInfo?.icon || '')} <b>${escHtml(modelInfo?.label || currentModel)}</b>\n` +
-    `${lang === 'ru' ? 'Авто-fallback' : 'Auto-fallback'}: ${pe('check')} ${lang === 'ru' ? 'включён' : 'enabled'}\n\n` +
+    `${lang === 'ru' ? 'Авто-fallback' : 'Auto-fallback'}: ${pe('check')} ${lang === 'ru' ? 'включён' : 'enabled'}\n` +
+    execStats + `\n` +
     `${pe('plugin')} <b>${lang === 'ru' ? 'Плагины' : 'Plugins'}</b>\n` +
     `${lang === 'ru' ? 'Доступно' : 'Available'}: <b>${pluginStats.total}</b> · ${lang === 'ru' ? 'Установлено' : 'Installed'}: <b>${pluginStats.installed}</b>`;
 
