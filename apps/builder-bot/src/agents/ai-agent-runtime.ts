@@ -290,6 +290,7 @@ const TOOL_GROUP_MAP: Record<string, string> = {
   list_gift_for_sale: 'gift', get_gift_floor_real: 'gift', get_gift_catalog: 'gift',
   scan_real_arbitrage: 'gift', appraise_gift: 'gift',
   tg_send_message: 'tg', tg_edit_message: 'tg', tg_forward_message: 'tg',
+  tg_send_sticker: 'tg', tg_send_gif: 'tg', tg_send_voice: 'tg',
 };
 function checkToolRateLimit(agentId: number, toolName: string): boolean {
   const group = TOOL_GROUP_MAP[toolName];
@@ -446,7 +447,11 @@ const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
                 'tg_unpin', 'tg_schedule_message', 'tg_set_chat_title', 'tg_set_chat_about',
                 'tg_set_chat_photo', 'tg_create_group', 'tg_create_channel', 'tg_invite_users',
                 'tg_archive_chat', 'tg_get_online_count', 'tg_send_contact', 'tg_send_location',
-                'tg_get_history_count', 'tg_send_album', 'tg_get_profile_photos'],
+                'tg_get_history_count', 'tg_send_album', 'tg_get_profile_photos',
+                'tg_send_silent', 'tg_get_webpage', 'tg_press_button',
+                'tg_get_chat_stats', 'tg_save_draft', 'tg_send_with_buttons',
+                'tg_get_poll_results', 'tg_send_sticker', 'tg_send_gif',
+                'tg_send_voice', 'tg_transcribe_voice', 'tg_get_sticker_sets'],
   web:         ['web_search', 'fetch_url', 'http_fetch'],
   state:       ['get_state', 'get_state_multi', 'set_state', 'list_state_keys', 'get_shared_state', 'set_shared_state'],
   events:      ['set_next_wake', 'subscribe_event', 'unsubscribe_event', 'emit_event', 'get_wake_info'],
@@ -458,6 +463,8 @@ const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
                 'ton_run_method', 'ton_get_rates', 'ton_dns_resolve', 'ton_get_staking_pools',
                 'ton_emulate_tx', 'ton_send_boc', 'ton_get_validators', 'ton_parse_address'],
   defi:        ['dex_get_prices', 'dex_swap_simulate'],
+  image:       ['image_download', 'image_resize', 'image_crop', 'image_add_text', 'image_filter',
+                'image_convert', 'image_info', 'image_composite', 'image_create_text', 'image_analyze'],
   ton_mcp:     [], // dynamic — MCP tools discovered at runtime and injected via mcpTools param
 };
 
@@ -1763,6 +1770,143 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
     {
       type: 'function',
       function: {
+        name: 'tg_send_silent',
+        description: 'Отправить сообщение без уведомления (беззвучно).',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID чата' },
+          text: { type: 'string', description: 'Текст сообщения' },
+        }, required: ['chat_id', 'text'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_get_webpage',
+        description: 'Извлечь превью URL (заголовок, описание, изображение).',
+        parameters: { type: 'object', properties: {
+          url: { type: 'string', description: 'URL для извлечения превью' },
+        }, required: ['url'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_press_button',
+        description: 'Нажать inline-кнопку на сообщении бота.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID чата' },
+          message_id: { type: 'number', description: 'ID сообщения с кнопками' },
+          button_index: { type: 'number', description: 'Индекс кнопки (0 = первая)' },
+        }, required: ['chat_id', 'message_id', 'button_index'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_get_chat_stats',
+        description: 'Получить статистику контента в чате (фото, видео, документы, ссылки, голосовые).',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID чата' },
+        }, required: ['chat_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_save_draft',
+        description: 'Сохранить черновик сообщения в чате.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID чата' },
+          text: { type: 'string', description: 'Текст черновика' },
+        }, required: ['chat_id', 'text'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_send_with_buttons',
+        description: 'Отправить сообщение с inline-кнопками (URL или callback).',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID чата' },
+          text: { type: 'string', description: 'Текст сообщения' },
+          buttons: { type: 'array', items: { type: 'object', properties: {
+            text: { type: 'string', description: 'Текст кнопки' },
+            url: { type: 'string', description: 'URL (для URL-кнопки)' },
+            data: { type: 'string', description: 'Callback data (для callback-кнопки)' },
+          }, required: ['text'] }, description: 'Массив кнопок' },
+        }, required: ['chat_id', 'text', 'buttons'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_get_poll_results',
+        description: 'Получить результаты голосования.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID чата' },
+          message_id: { type: 'number', description: 'ID сообщения с голосованием' },
+        }, required: ['chat_id', 'message_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_send_sticker',
+        description: 'Отправить стикер из стикерпака. Укажи shortName набора и индекс стикера (0 = первый).',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID чата' },
+          sticker_set_name: { type: 'string', description: 'Short name стикерпака (например: HotCherry)' },
+          index: { type: 'number', description: 'Индекс стикера в наборе (0 = первый). По умолчанию 0.' },
+        }, required: ['chat_id', 'sticker_set_name'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_send_gif',
+        description: 'Найти и отправить GIF через @gif inline-бота. Случайная GIF из топ-5 результатов.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID чата' },
+          query: { type: 'string', description: 'Поисковый запрос для GIF (например: "happy", "dance", "thumbs up")' },
+        }, required: ['chat_id', 'query'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_send_voice',
+        description: 'Озвучить текст (TTS) и отправить голосовым сообщением. Макс 200 символов.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID чата' },
+          text: { type: 'string', description: 'Текст для озвучки (макс 200 символов)' },
+          lang: { type: 'string', description: 'Язык озвучки (ru, en, de, fr и т.д.). По умолчанию ru.' },
+        }, required: ['chat_id', 'text'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_transcribe_voice',
+        description: 'Расшифровать (транскрибировать) голосовое сообщение в текст через встроенный STT Telegram.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID чата с голосовым сообщением' },
+          message_id: { type: 'number', description: 'ID голосового сообщения (из [voice msg_id=X] аннотации)' },
+        }, required: ['chat_id', 'message_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_get_sticker_sets',
+        description: 'Получить список установленных стикерпаков пользователя. Можно искать по названию.',
+        parameters: { type: 'object', properties: {
+          query: { type: 'string', description: 'Поисковый запрос для фильтрации (опционально)' },
+        }, required: [] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
         name: 'http_fetch',
         description: 'HTTP-запрос к любому URL (GET/POST). Для API, вебхуков, парсинга.',
         parameters: {
@@ -2502,6 +2646,169 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
         },
       },
     },
+    // ── Image processing tools ──
+    {
+      type: 'function' as const,
+      function: {
+        name: 'image_download',
+        description: 'Скачать изображение по URL во временный файл. Возвращает путь к файлу.',
+        parameters: {
+          type: 'object',
+          properties: {
+            url: { type: 'string', description: 'URL изображения для скачивания' },
+          },
+          required: ['url'],
+        },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'image_resize',
+        description: 'Изменить размер изображения. Можно указать ширину и/или высоту.',
+        parameters: {
+          type: 'object',
+          properties: {
+            path: { type: 'string', description: 'Путь к файлу изображения' },
+            width: { type: 'number', description: 'Новая ширина в пикселях (опционально)' },
+            height: { type: 'number', description: 'Новая высота в пикселях (опционально)' },
+          },
+          required: ['path'],
+        },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'image_crop',
+        description: 'Обрезать изображение по координатам.',
+        parameters: {
+          type: 'object',
+          properties: {
+            path: { type: 'string', description: 'Путь к файлу изображения' },
+            left: { type: 'number', description: 'Отступ слева (px)' },
+            top: { type: 'number', description: 'Отступ сверху (px)' },
+            width: { type: 'number', description: 'Ширина области обрезки (px)' },
+            height: { type: 'number', description: 'Высота области обрезки (px)' },
+          },
+          required: ['path', 'left', 'top', 'width', 'height'],
+        },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'image_add_text',
+        description: 'Добавить текст (водяной знак) на изображение.',
+        parameters: {
+          type: 'object',
+          properties: {
+            path: { type: 'string', description: 'Путь к файлу изображения' },
+            text: { type: 'string', description: 'Текст для наложения' },
+            position: { type: 'string', enum: ['top', 'bottom', 'center'], description: 'Позиция текста (по умолчанию bottom)' },
+            font_size: { type: 'number', description: 'Размер шрифта (по умолчанию 32)' },
+            color: { type: 'string', description: 'Цвет текста (по умолчанию white)' },
+          },
+          required: ['path', 'text'],
+        },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'image_filter',
+        description: 'Применить фильтр к изображению: blur, sharpen, grayscale, negate, flip, flop, rotate90, rotate180.',
+        parameters: {
+          type: 'object',
+          properties: {
+            path: { type: 'string', description: 'Путь к файлу изображения' },
+            filter: { type: 'string', enum: ['blur', 'sharpen', 'grayscale', 'negate', 'flip', 'flop', 'rotate90', 'rotate180'], description: 'Фильтр для применения' },
+          },
+          required: ['path', 'filter'],
+        },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'image_convert',
+        description: 'Конвертировать изображение в другой формат (png, jpg, webp).',
+        parameters: {
+          type: 'object',
+          properties: {
+            path: { type: 'string', description: 'Путь к файлу изображения' },
+            format: { type: 'string', enum: ['png', 'jpg', 'webp'], description: 'Целевой формат' },
+          },
+          required: ['path', 'format'],
+        },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'image_info',
+        description: 'Получить информацию об изображении: размеры, формат, вес файла.',
+        parameters: {
+          type: 'object',
+          properties: {
+            path: { type: 'string', description: 'Путь к файлу изображения' },
+          },
+          required: ['path'],
+        },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'image_composite',
+        description: 'Наложить одно изображение на другое (overlay).',
+        parameters: {
+          type: 'object',
+          properties: {
+            base_path: { type: 'string', description: 'Путь к базовому изображению' },
+            overlay_path: { type: 'string', description: 'Путь к изображению-оверлею' },
+            x: { type: 'number', description: 'X координата наложения (по умолчанию 0)' },
+            y: { type: 'number', description: 'Y координата наложения (по умолчанию 0)' },
+            opacity: { type: 'number', description: 'Прозрачность оверлея 0-1 (по умолчанию 1)' },
+          },
+          required: ['base_path', 'overlay_path'],
+        },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'image_create_text',
+        description: 'Создать изображение с текстом на цветном фоне (для мемов, баннеров и т.д.).',
+        parameters: {
+          type: 'object',
+          properties: {
+            text: { type: 'string', description: 'Текст для изображения' },
+            width: { type: 'number', description: 'Ширина (по умолчанию 800)' },
+            height: { type: 'number', description: 'Высота (по умолчанию 400)' },
+            bg_color: { type: 'string', description: 'Цвет фона (по умолчанию #1a1a2e)' },
+            text_color: { type: 'string', description: 'Цвет текста (по умолчанию white)' },
+            font_size: { type: 'number', description: 'Размер шрифта (по умолчанию 48)' },
+          },
+          required: ['text'],
+        },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'image_analyze',
+        description: 'Анализировать изображение с помощью AI Vision. Можно задать вопрос об изображении.',
+        parameters: {
+          type: 'object',
+          properties: {
+            path_or_url: { type: 'string', description: 'Путь к файлу или URL изображения' },
+            question: { type: 'string', description: 'Вопрос об изображении (по умолчанию: описать изображение)' },
+          },
+          required: ['path_or_url'],
+        },
+      },
+    },
   ];
 
   // Append MCP tools (dynamically discovered from @ton/mcp server)
@@ -2537,6 +2844,90 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
   }
 
   return allTools;
+}
+
+// ── Tool RAG: select top-K relevant tools per message ──────────────────────
+
+const TOOL_RELEVANCE: Record<string, string[]> = {
+  'get_ton_balance|send_ton|get_agent_wallet|get_nft_floor|send_jetton': ['ton', 'тон', 'крипт', 'crypto', 'баланс', 'balance', 'кошел', 'wallet', 'nft', 'отправ', 'send', 'перевод', 'transfer'],
+  'get_gift_floor|scan_real_arbitrage|get_market_overview|get_price_list|buy_catalog_gift|buy_resale_gift|list_gift_for_sale|get_gift_aggregator|get_user_portfolio|get_gift_sales_history': ['подарк', 'gift', 'арбитраж', 'arbitrage', 'трейд', 'trade', 'торг', 'buy', 'sell', 'купить', 'продать', 'floor', 'маркет', 'market'],
+  'image_download|image_resize|image_crop|image_add_text|image_filter|image_convert|image_info|image_composite|image_create_text|image_analyze': ['фото', 'photo', 'картинк', 'image', 'изображ', 'picture', 'resize', 'crop', 'фильтр', 'filter', 'водяной знак', 'watermark', 'текст на', 'мем', 'meme'],
+  'web_search|fetch_url|tg_get_webpage': ['поиск', 'search', 'найди', 'find', 'сайт', 'site', 'url', 'http', 'ссылк', 'link', 'новост', 'news', 'статья', 'article'],
+  'tg_send_formatted|tg_pin|tg_unpin|tg_set_chat_title|tg_set_chat_about|tg_set_chat_photo|tg_create_invite_link|tg_get_channel_info|tg_get_comments|tg_schedule_message': ['канал', 'channel', 'пост', 'post', 'публик', 'publish', 'закреп', 'pin', 'описание', 'about', 'название', 'title', 'инвайт', 'invite'],
+  'tg_kick_user|tg_ban_user|tg_unban_user|tg_mute_user|tg_set_admin|tg_get_admins': ['бан', 'ban', 'кик', 'kick', 'мут', 'mute', 'админ', 'admin', 'модер', 'moder'],
+  'tg_send_file|tg_send_album|tg_copy_media|tg_get_media_info|tg_send_sticker|tg_send_gif|tg_send_voice': ['медиа', 'media', 'файл', 'file', 'фото', 'photo', 'видео', 'video', 'стикер', 'sticker', 'гиф', 'gif', 'голос', 'voice', 'альбом', 'album'],
+  'tg_create_poll|tg_get_poll_results': ['голосов', 'poll', 'опрос', 'quiz', 'vote'],
+  'get_state|set_state|knowledge_save|knowledge_search|add_contact_note|add_chat_note|get_contact_dossier|get_chat_dossier|save_lesson': ['запомн', 'remember', 'память', 'memory', 'состояние', 'state', 'знания', 'knowledge', 'досье', 'dossier', 'контакт', 'contact'],
+  'update_self_prompt|update_my_prompt|rollback_prompt': ['промпт', 'prompt', 'улучш', 'improv', 'обнов', 'update', 'измени себя'],
+  'ton_get_account|ton_get_transactions|ton_get_jettons|ton_get_nfts|ton_run_method|ton_get_rates|ton_dns_resolve': ['блокчейн', 'blockchain', 'транзакц', 'transaction', 'аккаунт', 'account', 'jetton', 'жетон', 'dns'],
+  'dex_get_prices|dex_swap_simulate': ['dex', 'дефи', 'defi', 'swap', 'обмен', 'цена', 'price', 'dedust', 'ston'],
+  'buy_market_gift|get_fragment_listings|appraise_gift|get_gift_catalog': ['fragment', 'фрагмент', 'каталог', 'catalog', 'оценк', 'apprais', 'листинг', 'listing'],
+};
+
+const CORE_TOOLS = new Set([
+  'tg_reply', 'tg_send_message', 'tg_get_messages', 'tg_react', 'tg_edit',
+  'tg_mark_read', 'tg_set_typing', 'tg_search_messages', 'tg_get_user_info',
+  'get_state', 'set_state', 'notify', 'web_search', 'fetch_url',
+  'knowledge_save', 'knowledge_search', 'set_next_wake',
+  'add_contact_note', 'add_chat_note', 'get_contact_dossier', 'get_chat_dossier',
+  'tg_get_channel_info', 'tg_send_formatted',
+]);
+
+export function selectRelevantTools(allTools: any[], message: string, systemPrompt: string, maxTools: number = 40): any[] {
+  if (allTools.length <= maxTools) return allTools;
+
+  const textLower = (message + ' ' + systemPrompt).toLowerCase();
+
+  const scored: { tool: any; score: number }[] = allTools.map(t => {
+    const name = t.function?.name || t.name || '';
+
+    // Core tools always get high score
+    if (CORE_TOOLS.has(name)) return { tool: t, score: 100 };
+
+    // Check category relevance
+    let catScore = 0;
+    for (const [toolPattern, keywords] of Object.entries(TOOL_RELEVANCE)) {
+      if (new RegExp(toolPattern).test(name)) {
+        for (const kw of keywords) {
+          if (textLower.includes(kw)) { catScore = 50; break; }
+        }
+        break;
+      }
+    }
+
+    // Tool name mentioned in text
+    if (textLower.includes(name.replace(/_/g, ' ')) || textLower.includes(name)) catScore = Math.max(catScore, 60);
+
+    return { tool: t, score: catScore };
+  });
+
+  // Sort by score desc, take top maxTools
+  scored.sort((a, b) => b.score - a.score);
+  const selected = scored.slice(0, maxTools).map(s => s.tool);
+
+  console.log(`[ToolRAG] Selected ${selected.length}/${allTools.length} tools (${scored.filter(s => s.score > 0).length} relevant)`);
+  return selected;
+}
+
+// ── Observation Masking: compress old tool results to save context ──────────
+
+function compressOldToolResults(messages: any[], keepLastN: number = 2): any[] {
+  let toolResultCount = 0;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'tool' || messages[i].role === 'function') {
+      toolResultCount++;
+      if (toolResultCount > keepLastN) {
+        const content = typeof messages[i].content === 'string' ? messages[i].content : JSON.stringify(messages[i].content);
+        if (content.length > 200) {
+          messages[i] = {
+            ...messages[i],
+            content: content.slice(0, 100) + `... [truncated ${content.length} chars]`,
+          };
+        }
+      }
+    }
+  }
+  return messages;
 }
 
 // ── Tool executor ──────────────────────────────────────────────────────────
@@ -3784,7 +4175,11 @@ export async function executeTool(
     case 'tg_set_chat_about': case 'tg_set_chat_photo': case 'tg_create_group':
     case 'tg_create_channel': case 'tg_invite_users': case 'tg_archive_chat':
     case 'tg_get_online_count': case 'tg_send_contact': case 'tg_send_location':
-    case 'tg_get_history_count': case 'tg_send_album': case 'tg_get_profile_photos': {
+    case 'tg_get_history_count': case 'tg_send_album': case 'tg_get_profile_photos':
+    case 'tg_send_silent': case 'tg_get_webpage': case 'tg_press_button':
+    case 'tg_get_chat_stats': case 'tg_save_draft': case 'tg_send_with_buttons':
+    case 'tg_get_poll_results': case 'tg_send_sticker': case 'tg_send_gif':
+    case 'tg_send_voice': case 'tg_transcribe_voice': case 'tg_get_sticker_sets': {
       try {
         // Per-AGENT Telegram auth — each agent has its own TG account
         const tgSandbox = await userbotManager.buildAgentSandbox(params.agentId || 0) || await userbotManager.buildUserSandbox(params.userId);
@@ -3861,6 +4256,18 @@ export async function executeTool(
           case 'tg_get_history_count': return await tgSandbox.getHistoryCount(args.chat_id);
           case 'tg_send_album': return await tgSandbox.sendAlbum(args.chat_id, args.media_urls, args.caption);
           case 'tg_get_profile_photos': return await tgSandbox.getProfilePhotos(args.user_id, args.limit || 5);
+          case 'tg_send_silent': return await tgSandbox.sendSilent(args.chat_id, args.text);
+          case 'tg_get_webpage': return await tgSandbox.getWebPage(args.url);
+          case 'tg_press_button': return await tgSandbox.pressButton(args.chat_id, args.message_id, args.button_index);
+          case 'tg_get_chat_stats': return await tgSandbox.getChatStats(args.chat_id);
+          case 'tg_save_draft': return await tgSandbox.saveDraft(args.chat_id, args.text);
+          case 'tg_send_with_buttons': return await tgSandbox.sendWithButtons(args.chat_id, args.text, args.buttons);
+          case 'tg_get_poll_results': return await tgSandbox.getPollResults(args.chat_id, args.message_id);
+          case 'tg_send_sticker': return await tgSandbox.sendSticker(args.chat_id, args.sticker_set_name, args.index ?? 0);
+          case 'tg_send_gif': return await tgSandbox.sendGif(args.chat_id, args.query);
+          case 'tg_send_voice': return await tgSandbox.sendVoice(args.chat_id, args.text, args.lang || 'ru');
+          case 'tg_transcribe_voice': return await tgSandbox.transcribeVoice(args.chat_id, args.message_id);
+          case 'tg_get_sticker_sets': return await tgSandbox.getStickerSets(args.query);
           default: return { error: 'Unknown tg tool' };
         }
       } catch (e: any) { return { error: e.message }; }
@@ -5039,6 +5446,122 @@ export async function executeTool(
       } catch (e: any) { return { error: e.message }; }
     }
 
+    // ── Image processing tools ─────────────────────────────────
+    case 'image_download': {
+      try {
+        const { downloadImage } = await import('../services/image-service');
+        const p = await downloadImage(String(args.url));
+        return { path: p };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'image_resize': {
+      try {
+        const { resizeImage } = await import('../services/image-service');
+        const p = await resizeImage(String(args.path), args.width, args.height);
+        return { path: p };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'image_crop': {
+      try {
+        const { cropImage } = await import('../services/image-service');
+        const p = await cropImage(String(args.path), args.left, args.top, args.width, args.height);
+        return { path: p };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'image_add_text': {
+      try {
+        const { addTextOverlay } = await import('../services/image-service');
+        const p = await addTextOverlay(
+          String(args.path), String(args.text),
+          args.position || 'bottom', args.font_size || 32, args.color || 'white'
+        );
+        return { path: p };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'image_filter': {
+      try {
+        const { applyFilter } = await import('../services/image-service');
+        const p = await applyFilter(String(args.path), args.filter);
+        return { path: p };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'image_convert': {
+      try {
+        const { convertImage } = await import('../services/image-service');
+        const p = await convertImage(String(args.path), args.format);
+        return { path: p };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'image_info': {
+      try {
+        const { getImageInfo } = await import('../services/image-service');
+        return await getImageInfo(String(args.path));
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'image_composite': {
+      try {
+        const { compositeImages } = await import('../services/image-service');
+        const p = await compositeImages(
+          String(args.base_path), String(args.overlay_path),
+          args.x || 0, args.y || 0, args.opacity ?? 1
+        );
+        return { path: p };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'image_create_text': {
+      try {
+        const { createTextImage } = await import('../services/image-service');
+        const p = await createTextImage(
+          String(args.text), args.width || 800, args.height || 400,
+          args.bg_color || '#1a1a2e', args.text_color || 'white', args.font_size || 48
+        );
+        return { path: p };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'image_analyze': {
+      try {
+        const { downloadImage } = await import('../services/image-service');
+        const { promises: fs } = await import('fs');
+        let imgPath = String(args.path_or_url);
+        if (imgPath.startsWith('http')) imgPath = await downloadImage(imgPath);
+        const imgBuf = await fs.readFile(imgPath);
+        const base64 = imgBuf.toString('base64');
+        const mimeType = imgPath.endsWith('.png') ? 'image/png' : imgPath.endsWith('.webp') ? 'image/webp' : 'image/jpeg';
+
+        const question = args.question || 'Describe this image in detail. What do you see?';
+
+        // Try to use Gemini Vision API (best for multimodal)
+        const apiKey = (params.config.AI_API_KEY as string) || process.env.GEMINI_API_KEY || '';
+        if (!apiKey) return { error: 'No API key for vision analysis. Set AI_API_KEY.' };
+
+        const visionResp = await fetch(
+          'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + apiKey,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [
+                { inlineData: { mimeType, data: base64 } },
+                { text: question },
+              ]}],
+            }),
+            signal: AbortSignal.timeout(30000),
+          }
+        );
+        const vData = await visionResp.json() as any;
+        return { description: vData?.candidates?.[0]?.content?.parts?.[0]?.text || 'No description available' };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
     case 'schedule_action': {
       const action = args.action as string;
       const when = args.when as string;
@@ -5143,6 +5666,11 @@ async function executeGlobalTgTool(name: string, args: any): Promise<any> {
       if (!sb2) return { error: 'Telegram not connected' };
       return await sb2.getMediaInfo(args.chat_id, args.message_id);
     }
+    case 'tg_send_silent': case 'tg_get_webpage': case 'tg_press_button':
+    case 'tg_get_chat_stats': case 'tg_save_draft': case 'tg_send_with_buttons':
+    case 'tg_get_poll_results': case 'tg_send_sticker': case 'tg_send_gif':
+    case 'tg_send_voice': case 'tg_transcribe_voice': case 'tg_get_sticker_sets':
+      return { error: 'This tool requires per-agent Telegram auth (userbot). Connect via agent settings.' };
     default: return { error: 'Unknown tg tool' };
   }
 }
@@ -5891,7 +6419,10 @@ You MUST follow these rules AT ALL TIMES:
     }
   }
 
-  let tools = buildToolDefinitions(agentRole, enabledCaps, mcpToolDefs);
+  let allToolDefs = buildToolDefinitions(agentRole, enabledCaps, mcpToolDefs);
+  // Tool RAG: select only relevant tools based on user message + system prompt
+  const userMsgText = msgs.join(' ');
+  let tools = selectRelevantTools(allToolDefs, userMsgText, params.systemPrompt, 40);
   let totalToolCalls = 0;
   let finalContent: string | undefined;
   _tickNotifyFlag.set(params.agentId, false); // reset flag for this tick
@@ -5900,9 +6431,12 @@ You MUST follow these rules AT ALL TIMES:
   let prevIterSignature = '';
   let sameSignatureCount = 0;
   const usedModel = (params.config.AI_MODEL as string) || process.env.AI_MODEL || defaultModel;
-  console.log(`[AI runtime] Agent #${params.agentId} AI call: model=${usedModel} baseURL=${(ai as any).baseURL} tools=${tools.length} msgs=${messages.length}`);
+  console.log(`[AI runtime] Agent #${params.agentId} AI call: model=${usedModel} baseURL=${(ai as any).baseURL} tools=${tools.length}(of ${allToolDefs.length}) msgs=${messages.length}`);
 
   for (let iter = 0; iter < 5; iter++) {
+    // Observation Masking: compress old tool results before each AI call
+    if (iter > 0) compressOldToolResults(messages, 2);
+
     let response: OpenAI.ChatCompletion = undefined as any;
     // Retry loop for rate-limit (429) errors
     let lastErr: any = null;
@@ -6080,8 +6614,9 @@ You MUST follow these rules AT ALL TIMES:
     const hadCapChange = assistant.tool_calls.some((tc: any) => tc.function.name === 'manage_capabilities');
     if (hadCapChange) {
       const updatedCaps = (params.config.enabledCapabilities as string[]) || null;
-      tools = buildToolDefinitions(agentRole, updatedCaps, mcpToolDefs);
-      console.log(`[AI runtime] Agent #${params.agentId} tools rebuilt after manage_capabilities: ${tools.length} tools`);
+      allToolDefs = buildToolDefinitions(agentRole, updatedCaps, mcpToolDefs);
+      tools = selectRelevantTools(allToolDefs, userMsgText, params.systemPrompt, 40);
+      console.log(`[AI runtime] Agent #${params.agentId} tools rebuilt after manage_capabilities: ${tools.length}(of ${allToolDefs.length}) tools`);
     }
   }
 
