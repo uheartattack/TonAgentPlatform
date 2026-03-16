@@ -197,6 +197,11 @@ const TOOL_KEYWORDS: Record<string, string[]> = {
   tg_delete_message:     ['удали сообщен', 'delete message'],
   tg_edit_message:       ['редактир', 'edit', 'измени сообщен'],
   tg_get_participants:   ['участник', 'participant', 'member', 'кто в группе'],
+  tg_send_sticker:       ['стикер', 'sticker', 'наклейк'],
+  tg_send_gif:           ['гиф', 'gif', 'гифк', 'анимац'],
+  tg_send_voice:         ['голос', 'voice', 'озвуч', 'tts', 'произнес', 'скажи голосом'],
+  tg_transcribe_voice:   ['транскри', 'transcrib', 'распозн', 'расшифр', 'что сказал', 'голосовое'],
+  tg_get_sticker_sets:   ['стикер', 'sticker', 'набор стикер', 'sticker set', 'стикерпак'],
   // State / system
   get_state:             ['состояни', 'state', 'запомн', 'помн', 'remember'],
   set_state:             ['сохран', 'save', 'запомни', 'state'],
@@ -1777,6 +1782,18 @@ class UserbotManager {
       getHistoryCount: wrap(ubGetHistoryCount),
       setChatPhoto:   wrap(ubSetChatPhoto),
       sendAlbum:      wrap(ubSendAlbum),
+      sendSilent:     wrap(ubSendSilent),
+      getWebPage:     wrap(ubGetWebPage),
+      pressButton:    wrap(ubPressButton),
+      getChatStats:   wrap(ubGetChatStats),
+      saveDraft:      wrap(ubSaveDraft),
+      sendWithButtons: wrap(ubSendWithButtons),
+      getPollResults: wrap(ubGetPollResults),
+      sendSticker:    wrap(ubSendSticker),
+      sendGif:        wrap(ubSendGif),
+      sendVoice:      wrap(ubSendVoice),
+      transcribeVoice: wrap(ubTranscribeVoice),
+      getStickerSets: wrap(ubGetStickerSets),
     };
   }
 
@@ -2301,7 +2318,17 @@ class UserbotManager {
         }
       } catch {}
 
-      const text = msg.message || '';
+      // ── Media annotation prefix for AI context ──
+      let mediaPrefix = '';
+      if (msg.media) {
+        if (msg.photo || (msg.media as any)?.photo) mediaPrefix = `[photo msg_id=${msg.id}] `;
+        else if (msg.video || (msg.media as any)?.document?.mimeType?.startsWith('video')) mediaPrefix = `[video msg_id=${msg.id}] `;
+        else if ((msg as any).voice || (msg.media as any)?.document?.attributes?.some((a: any) => a.voice)) mediaPrefix = `[voice msg_id=${msg.id}] `;
+        else if (msg.document || (msg.media as any)?.document) mediaPrefix = `[file msg_id=${msg.id}] `;
+        else if ((msg as any).sticker) mediaPrefix = `[sticker] `;
+        else if ((msg as any).gif) mediaPrefix = `[gif] `;
+      }
+      const text = mediaPrefix + (msg.message || '');
       const isChannel = msg.post === true;
       const isGroup = !isChannel && (chatId.startsWith('-') || !!msg.peerId?.chatId);
 
@@ -2519,10 +2546,11 @@ RULES:
       } catch {}
 
       // ── Build tools (all available, AI decides what to use) ──
-      const { buildToolDefinitions, executeTool } = await import('../agents/ai-agent-runtime');
+      const { buildToolDefinitions, executeTool, selectRelevantTools } = await import('../agents/ai-agent-runtime');
       const enabledCaps = (mergedConfig.enabledCapabilities as string[]) || null;
       const allTools = buildToolDefinitions('worker', enabledCaps, []);
-      const filteredTools = allTools;
+      // Tool RAG: select only relevant tools based on message + system prompt
+      const filteredTools = selectRelevantTools(allTools, msg.text, cfg.systemPrompt || '', 40);
 
       // Convert to Gemini format + sanitize schemas
       const geminiTools = filteredTools.map((t: any) => {
@@ -2538,13 +2566,22 @@ RULES:
         };
       });
 
-      console.log(`[UserbotMgr] 📡 Agent#${agentId} AI: provider=${prov.id} tools=${geminiTools.length}`);
+      console.log(`[UserbotMgr] 📡 Agent#${agentId} AI: provider=${prov.id} tools=${geminiTools.length}(of ${allTools.length})`);
 
       let aiText = '';
       let alreadySentMessage = false; // Track if agent already sent via tg_reply/tg_send_message
 
       // ── Auto-compact context if too long ──
       const compactedLines = await compactContext(String(msg.chatId), recentLines, apiKey, prov);
+
+      // Observation Masking: compress old conversation entries to save context
+      if (compactedLines.length > 10) {
+        for (let i = 0; i < compactedLines.length - 5; i++) {
+          if (compactedLines[i].length > 300) {
+            compactedLines[i] = compactedLines[i].slice(0, 150) + '... [сжато]';
+          }
+        }
+      }
 
       if (isGemini) {
         // ── Gemini Native API agentic loop ──
@@ -2745,6 +2782,26 @@ RULES:
             });
           }
 
+          // Observation Masking (Gemini): compress old functionResponse parts
+          if (iter > 0) {
+            let frCount = 0;
+            for (let ci = contents.length - 1; ci >= 0; ci--) {
+              const cParts = contents[ci]?.parts;
+              if (!Array.isArray(cParts)) continue;
+              for (let pi = cParts.length - 1; pi >= 0; pi--) {
+                const fr = cParts[pi]?.functionResponse;
+                if (!fr) continue;
+                frCount++;
+                if (frCount > 2) {
+                  const resStr = JSON.stringify(fr.response || {});
+                  if (resStr.length > 200) {
+                    fr.response = { result: resStr.slice(0, 100) + `... [truncated ${resStr.length} chars]` };
+                  }
+                }
+              }
+            }
+          }
+
           // Add tool results to contents + request text summary
           if (alreadySentMessage) {
             toolResponseParts.push({ text: 'Tool results above. You already sent a message to the chat via tg_reply/tg_send_message — do NOT repeat it. Just confirm briefly what you did, or say nothing.' });
@@ -2817,6 +2874,19 @@ RULES:
         // Agentic loop with tools (OpenAI format)
         const openaiToolDefs = filteredTools.length > 0 ? filteredTools : undefined;
         for (let iter = 0; iter < 5; iter++) {
+          // Observation Masking: compress old tool results after first iteration
+          if (iter > 0) {
+            let toolCount = 0;
+            for (let i = merged.length - 1; i >= 0; i--) {
+              if (merged[i].role === 'tool') {
+                toolCount++;
+                if (toolCount > 2) {
+                  const c = typeof merged[i].content === 'string' ? merged[i].content : JSON.stringify(merged[i].content);
+                  if (c.length > 200) merged[i] = { ...merged[i], content: c.slice(0, 100) + `... [truncated ${c.length} chars]` };
+                }
+              }
+            }
+          }
           const completion = await ai.chat.completions.create({
             model,
             messages: merged,
@@ -3839,6 +3909,274 @@ async function ubSendAlbum(client: TelegramClient, chatId: string | number, medi
   } finally {
     for (const f of tmpFiles) { try { fs.unlinkSync(f); } catch {} }
   }
+}
+
+// Send message without notification (silent)
+async function ubSendSilent(client: TelegramClient, chatId: string | number, text: string) {
+  try {
+    const peer = await (client as any).getInputEntity(chatId);
+    const html = mdToHtml(text);
+    const result = await (client as any).invoke(new Api.messages.SendMessage({
+      peer,
+      message: html,
+      randomId: BigInt(Date.now()),
+      silent: true,
+      ...(html !== text ? { parseMode: 'html' } : {}),
+    }));
+    return { ok: true, message_id: (result as any).updates?.[0]?.id || 0 };
+  } catch (e: any) {
+    return { error: e.message || String(e) };
+  }
+}
+
+// Extract URL preview (title, description, image)
+async function ubGetWebPage(client: TelegramClient, url: string) {
+  try {
+    const result = await (client as any).invoke(new Api.messages.GetWebPage({ url, hash: 0 }));
+    const wp = (result as any).webpage;
+    if (!wp || wp.className === 'WebPageEmpty') return { error: 'No preview available for this URL' };
+    return {
+      url: wp.url || url,
+      title: wp.title || '',
+      description: wp.description || '',
+      siteName: wp.siteName || '',
+      photo_url: wp.photo?.sizes?.length ? `photo_id:${wp.photo.id}` : null,
+    };
+  } catch (e: any) {
+    return { error: e.message || String(e) };
+  }
+}
+
+// Press inline button on another bot's message
+async function ubPressButton(client: TelegramClient, chatId: string | number, msgId: number, buttonIdx: number) {
+  try {
+    const peer = await (client as any).getInputEntity(chatId);
+    // Get the message to find the button
+    const msgs = await (client as any).getMessages(chatId, { ids: [msgId] });
+    const msg = msgs?.[0];
+    if (!msg) return { error: 'Message not found' };
+    // Flatten all buttons from all rows
+    const buttons: any[] = [];
+    if (msg.replyMarkup?.rows) {
+      for (const row of msg.replyMarkup.rows) {
+        for (const btn of (row.buttons || [])) {
+          buttons.push(btn);
+        }
+      }
+    }
+    if (buttonIdx < 0 || buttonIdx >= buttons.length) return { error: `Button index ${buttonIdx} out of range (0-${buttons.length - 1})` };
+    const button = buttons[buttonIdx];
+    if (!button.data) return { error: 'Button has no callback data (might be a URL button)' };
+    const result = await (client as any).invoke(new Api.messages.GetBotCallbackAnswer({
+      peer,
+      msgId,
+      data: button.data,
+    }));
+    return { ok: true, answer: (result as any).message || '', alert: (result as any).alert || false };
+  } catch (e: any) {
+    return { error: e.message || String(e) };
+  }
+}
+
+// Get chat content statistics (photos, videos, docs, links, voice)
+async function ubGetChatStats(client: TelegramClient, chatId: string | number) {
+  try {
+    const peer = await (client as any).getInputEntity(chatId);
+    const filters = [
+      { name: 'photos', filter: new Api.InputMessagesFilterPhotos() },
+      { name: 'videos', filter: new Api.InputMessagesFilterVideo() },
+      { name: 'documents', filter: new Api.InputMessagesFilterDocument() },
+      { name: 'links', filter: new Api.InputMessagesFilterUrl() },
+      { name: 'voice_messages', filter: new Api.InputMessagesFilterVoice() },
+    ];
+    const stats: Record<string, number> = {};
+    for (const f of filters) {
+      try {
+        const result = await (client as any).invoke(new Api.messages.Search({
+          peer,
+          q: '',
+          filter: f.filter,
+          minDate: 0,
+          maxDate: 0,
+          offsetId: 0,
+          addOffset: 0,
+          limit: 1,
+          maxId: 0,
+          minId: 0,
+          hash: BigInt(0),
+        }));
+        stats[f.name] = (result as any).count ?? (result as any).messages?.length ?? 0;
+      } catch {
+        stats[f.name] = 0;
+      }
+    }
+    return stats;
+  } catch (e: any) {
+    return { error: e.message || String(e) };
+  }
+}
+
+// Save a draft message in a chat
+async function ubSaveDraft(client: TelegramClient, chatId: string | number, text: string) {
+  try {
+    const peer = await (client as any).getInputEntity(chatId);
+    await (client as any).invoke(new Api.messages.SaveDraft({ peer, message: text }));
+    return { ok: true };
+  } catch (e: any) {
+    return { error: e.message || String(e) };
+  }
+}
+
+// Send message with inline buttons
+async function ubSendWithButtons(client: TelegramClient, chatId: string | number, text: string, buttons: Array<{ text: string; url?: string; data?: string }>) {
+  try {
+    const peer = await (client as any).getInputEntity(chatId);
+    const html = mdToHtml(text);
+    const keyboardButtons = buttons.map(b => {
+      if (b.url) {
+        return new Api.KeyboardButtonUrl({ text: b.text, url: b.url });
+      }
+      return new Api.KeyboardButtonCallback({ text: b.text, data: Buffer.from(b.data || b.text) });
+    });
+    const result = await (client as any).invoke(new Api.messages.SendMessage({
+      peer,
+      message: html,
+      randomId: BigInt(Date.now()),
+      replyMarkup: new Api.ReplyInlineMarkup({
+        rows: [new Api.KeyboardButtonRow({ buttons: keyboardButtons })],
+      }),
+      ...(html !== text ? { parseMode: 'html' } : {}),
+    }));
+    return { ok: true, message_id: (result as any).updates?.[0]?.id || 0 };
+  } catch (e: any) {
+    return { error: e.message || String(e) };
+  }
+}
+
+// Get poll voting results
+async function ubGetPollResults(client: TelegramClient, chatId: string | number, msgId: number) {
+  try {
+    const peer = await (client as any).getInputEntity(chatId);
+    const result = await (client as any).invoke(new Api.messages.GetPollResults({ peer, msgId }));
+    const update = (result as any).updates?.find((u: any) => u.className === 'UpdateMessagePoll');
+    if (!update) return { error: 'No poll results found' };
+    const pollResults = update.results;
+    return {
+      ok: true,
+      total_voters: pollResults?.totalVoters || 0,
+      results: (pollResults?.results || []).map((r: any) => ({
+        option: r.option?.toString() || '',
+        voters: r.voters || 0,
+        chosen: r.chosen || false,
+      })),
+    };
+  } catch (e: any) {
+    return { error: e.message || String(e) };
+  }
+}
+
+// ── Media tools: sticker, gif, voice, transcribe, sticker sets ──────
+
+async function ubSendSticker(client: TelegramClient, chatId: string, stickerSetName: string, index: number = 0) {
+  try {
+    const peer = await (client as any).getInputEntity(chatId);
+    const stickerSet = await (client as any).invoke(new Api.messages.GetStickerSet({
+      stickerset: new Api.InputStickerSetShortName({ shortName: stickerSetName }),
+      hash: 0,
+    }));
+    const docs = stickerSet.documents || [];
+    if (index >= docs.length) return { error: `Sticker index ${index} out of range (set has ${docs.length})` };
+    const doc = docs[index];
+    await (client as any).invoke(new Api.messages.SendMedia({
+      peer,
+      media: new Api.InputMediaDocument({
+        id: new Api.InputDocument({ id: doc.id, accessHash: doc.accessHash, fileReference: doc.fileReference }),
+      }),
+      randomId: BigInt(Math.floor(Math.random() * 1e15)),
+      message: '',
+    }));
+    return { ok: true, sticker_index: index, set: stickerSetName };
+  } catch (e: any) { return { error: e.message || String(e) }; }
+}
+
+async function ubSendGif(client: TelegramClient, chatId: string, query: string) {
+  try {
+    const peer = await (client as any).getInputEntity(chatId);
+    const gifBot = await (client as any).getInputEntity('@gif');
+    const results = await (client as any).invoke(new Api.messages.GetInlineBotResults({
+      bot: gifBot,
+      peer,
+      query,
+      offset: '',
+    }));
+    if (!results.results || results.results.length === 0) return { error: 'No GIFs found' };
+    const picked = results.results[Math.floor(Math.random() * Math.min(results.results.length, 5))];
+    await (client as any).invoke(new Api.messages.SendInlineBotResult({
+      peer,
+      queryId: results.queryId,
+      id: picked.id,
+      randomId: BigInt(Math.floor(Math.random() * 1e15)),
+    }));
+    return { ok: true, query };
+  } catch (e: any) { return { error: e.message || String(e) }; }
+}
+
+async function ubSendVoice(client: TelegramClient, chatId: string, text: string, lang: string = 'ru') {
+  try {
+    const peer = await (client as any).getInputEntity(chatId);
+    // Google TTS (limited to ~200 chars)
+    const ttsText = text.slice(0, 200);
+    const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${lang}&client=tw-ob&q=${encodeURIComponent(ttsText)}`;
+    const resp = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    if (!resp.ok) throw new Error('TTS failed');
+    const buf = Buffer.from(await resp.arrayBuffer());
+    const tmpFile = `/tmp/voice_${Date.now()}.mp3`;
+    const fs = require('fs');
+    fs.writeFileSync(tmpFile, buf);
+
+    await (client as any).sendFile(peer, {
+      file: tmpFile,
+      voice: true,
+      attributes: [new Api.DocumentAttributeAudio({ voice: true, duration: Math.ceil(ttsText.length / 15) })],
+    });
+    try { fs.unlinkSync(tmpFile); } catch {}
+    return { ok: true, text_length: ttsText.length };
+  } catch (e: any) { return { error: e.message || String(e) }; }
+}
+
+async function ubTranscribeVoice(client: TelegramClient, chatId: string, msgId: number) {
+  try {
+    const peer = await (client as any).getInputEntity(chatId);
+    const result = await (client as any).invoke(new (Api.messages as any).TranscribeAudio({ peer, msgId }));
+    if (result.pending) {
+      // Wait for transcription (poll up to 10 seconds)
+      for (let i = 0; i < 5; i++) {
+        await new Promise(r => setTimeout(r, 2000));
+        const check = await (client as any).invoke(new (Api.messages as any).TranscribeAudio({ peer, msgId }));
+        if (!check.pending) return { text: check.text, duration: check.duration };
+      }
+      return { error: 'Transcription timeout' };
+    }
+    return { text: result.text };
+  } catch (e: any) { return { error: e.message || String(e) }; }
+}
+
+async function ubGetStickerSets(client: TelegramClient, query?: string) {
+  try {
+    const result = await (client as any).invoke(new Api.messages.GetAllStickers({ hash: BigInt(0) }));
+    let sets = (result.sets || []).map((s: any) => ({
+      shortName: s.shortName,
+      title: s.title,
+      count: s.count,
+      animated: s.animated || false,
+      video: s.video || false,
+    }));
+    if (query) {
+      const q = query.toLowerCase();
+      sets = sets.filter((s: any) => s.title.toLowerCase().includes(q) || s.shortName.toLowerCase().includes(q));
+    }
+    return { ok: true, count: sets.length, sets: sets.slice(0, 50) };
+  } catch (e: any) { return { error: e.message || String(e) }; }
 }
 
 // ── Singleton export ────────────────────────────────────────────────
