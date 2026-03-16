@@ -98,13 +98,27 @@ async function main() {
   console.log();
 }
 
-// Обработка ошибок
-process.on('unhandledRejection', (error) => {
+// Обработка ошибок + автоматический трекинг в БД
+process.on('unhandledRejection', (error: any) => {
   console.error('❌ Unhandled rejection:', error);
+  try {
+    const { getBugTracker } = require('./db/schema-extensions');
+    const msg = error?.message || String(error);
+    const stack = error?.stack?.slice(0, 500) || '';
+    const file = stack.match(/at\s+.*?\(?(src\/[^:)]+)/)?.[1] || undefined;
+    getBugTracker().recordBug('unhandledRejection', msg, stack, file).catch(() => {});
+  } catch {}
 });
 
-process.on('uncaughtException', (error) => {
+process.on('uncaughtException', (error: any) => {
   console.error('❌ Uncaught exception:', error);
+  try {
+    const { getBugTracker } = require('./db/schema-extensions');
+    const msg = error?.message || String(error);
+    const stack = error?.stack?.slice(0, 500) || '';
+    const file = stack.match(/at\s+.*?\(?(src\/[^:)]+)/)?.[1] || undefined;
+    getBugTracker().recordBug('uncaughtException', msg, stack, file).catch(() => {});
+  } catch {}
   process.exit(1);
 });
 

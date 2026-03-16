@@ -1,15 +1,18 @@
 /**
- * self-improvement.ts — система ИИ-самоулучшения платформы
+ * self-improvement.ts — система ИИ-самоулучшения + AI Product Engineer
  *
- * 3 уровня автономности:
- *   Level 1 🟢 — применяет сразу (баги, retry, gas, null-checks, опечатки)
- *   Level 2 🟡 — деплоит в staging, ждёт аппрува владельца (новые стратегии, интеграции)
- *   Level 3 🔴 — только предложение (комиссии, безопасность, ключи, блокчейны)
+ * Два режима работы:
  *
- * Каждый цикл (по умолчанию каждые 60 сек):
- *   1. scanPlatform() — проверяет ошибки, метрики, зависимости
- *   2. generateSolution() — AI генерирует патч + уровень автономности
- *   3. apply*() — применяет или сохраняет предложение
+ * 1. Reactive (scanAndImprove) — авто-починка агентов и платформы:
+ *    Level 1 🟢 — применяет сразу (баги, retry, null-checks)
+ *    Level 2 🟡 — staging + аппрув владельца
+ *    Level 3 🔴 — только предложение
+ *
+ * 2. Proactive (AI Product Engineer) — проектирует и создаёт новые фичи:
+ *    Циклически обходит домены (agent_capabilities, marketplace, analytics...)
+ *    Использует Claude Code (подписка) для генерации полных фич
+ *    ВСЕ фичи Level 2+ — требуют одобрения владельца через Telegram кнопки
+ *    Не ревьюит код, а ИЗОБРЕТАЕТ новый функционал
  */
 import OpenAI from 'openai';
 import { randomUUID } from 'crypto';
@@ -22,12 +25,17 @@ import {
   AIProposal,
   AIPatchEntry,
 } from './db/schema-extensions';
-import { getAgentLogsRepository, getExecutionHistoryRepository } from './db/schema-extensions';
+import { getAgentLogsRepository, getExecutionHistoryRepository, getBugTracker } from './db/schema-extensions';
 import { agentLastErrors } from './agents/tools/execution-tools';
 import { getStagingManager } from './staging-manager';
 import { config } from './config';
 import { pool as dbPool } from './db';
 import { claudeCodeChat, isClaudeCodeAvailable } from './claude-code-bridge';
+
+// ─── HTML escape for Telegram notifications ────────────────────────────────────
+function escHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
 
 // ─── Provider resolver (same as ai-agent-runtime.ts) ──────────────────────────
 function resolveProviderForSI(provider: string): { baseURL: string; model: string } {
@@ -92,16 +100,31 @@ const LEVEL3_KEYWORDS = [
   'data policy', 'gdpr', 'infrastructure cost', 'server cost',
 ];
 
-// Критические файлы — патчи на них автоматически повышаются до Level 3
+// HARD BLOCK — самоулучшатель НИКОГДА не трогает эти файлы (патчи удаляются)
 const PROTECTED_FILES = [
   'security-scanner.ts', 'payments.ts', 'ton-connect.ts',
   'config.ts', '.env', 'index.ts',
+  'ai-agent-runtime.ts', 'bot.ts', 'schema-extensions.ts',
+  'self-improvement.ts', 'orchestrator.ts', 'userbot-manager.ts',
+  'notifier.ts', 'fragment-service.ts', 'telegram-userbot.ts',
 ];
+
+/** Remove patches that touch protected files — HARD BLOCK, not level escalation */
+function filterProtectedPatches(patch: AIPatchEntry[]): AIPatchEntry[] {
+  return patch.filter(p => {
+    const isProtected = PROTECTED_FILES.some(f => p.file.includes(f));
+    if (isProtected) {
+      console.log(`[SelfImprovement] 🛑 BLOCKED patch for protected file: ${p.file}`);
+    }
+    return !isProtected;
+  });
+}
 
 function determineLevel(description: string, patch: AIPatchEntry[]): 1 | 2 | 3 {
   const text = description.toLowerCase();
 
-  // Если патч трогает защищённые файлы — всегда Level 3
+  // Protected files are already filtered out by filterProtectedPatches()
+  // But double-check just in case
   if (patch.some(p => PROTECTED_FILES.some(f => p.file.includes(f)))) return 3;
 
   // Проверяем ключевые слова
@@ -119,12 +142,48 @@ export class SelfImprovementSystem {
   private ai: OpenAI;
   private intervalMs: number;
   private timer?: NodeJS.Timeout;
+  private proactiveTimer?: NodeJS.Timeout;
   private running = false;
   // Дедупликация: agentId → timestamp последнего авторемонта (30 мин cooldown)
   private agentRepairCooldown = new Map<number, number>();
   // Дедупликация proposals: title hash → timestamp (предотвращает повторные предложения)
   private proposalCooldown = new Map<string, number>();
   private readonly PROPOSAL_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 часа между одинаковыми proposals
+
+  // ─── 3 AI Modes (independent timers) ────────────────────────────────────
+  private aiModes = ['improver', 'ideator', 'implementor'] as const;
+  private disabledModes = new Set<string>(); // modes turned off by owner
+  private manualRunning = false; // prevents double manual triggers
+  private improverTimer?: NodeJS.Timeout;
+  private ideatorTimer?: NodeJS.Timeout;
+
+  private featureDomains = [
+    'agent_capabilities',   // New tools, actions, integrations for AI agents
+    'marketplace',          // New marketplace features, monetization, ratings, reviews
+    'analytics',            // User analytics, agent performance dashboards, insights
+    'social_features',      // Agent sharing, collaboration, multi-user, teams
+    'blockchain_defi',      // New TON/DeFi integrations, staking, swaps, bridges
+    'automation',           // Workflow automation, triggers, chains, scheduled tasks
+    'monetization',         // Revenue features, subscriptions, premium tiers, referrals
+    'developer_tools',      // API improvements, SDK, webhooks, plugin system
+    'ux_innovation',        // Revolutionary UI/UX ideas, gamification, onboarding
+    'integrations',         // External service integrations (Twitter, Discord, CRM, etc.)
+  ];
+  private featureDomainIndex = 0;
+
+  // Ideator saves ideas here for Implementor to pick up
+  private pendingIdeas: Array<{ title: string; description: string; domain: string; prompt: string; createdAt: Date }> = [];
+  private contextFiles = [
+    'src/agents/ai-agent-runtime.ts',
+    'src/agents/orchestrator.ts',
+    'src/bot.ts',
+    'src/api-server.ts',
+    'src/services/userbot-manager.ts',
+    'src/agents/tools/execution-tools.ts',
+    'src/services/telegram-gifts.ts',
+    'src/db/schema-extensions.ts',
+  ];
+  private readonly MAX_CONTEXT_FILE_SIZE = 80 * 1024; // 80KB
 
   constructor(bot: Telegraf<Context>) {
     this.bot = bot;
@@ -166,22 +225,268 @@ export class SelfImprovementSystem {
     }
   }
 
-  /** Запускает непрерывный цикл сканирования и улучшения */
+  /** Запускает независимые таймеры для каждого режима */
   start(): void {
     if (this.running) return;
     this.running = true;
 
-    // Первый запуск через 30 сек после старта (чтобы всё инициализировалось)
-    setTimeout(() => this.scanAndImprove(), 30000);
+    const proactiveEnabled = process.env.PROACTIVE_ENABLED !== 'false';
+    if (!proactiveEnabled) {
+      console.log(`🤖 AI Modes: DISABLED (PROACTIVE_ENABLED=false)`);
+      return;
+    }
 
-    // Затем каждые N секунд
-    this.timer = setInterval(() => this.scanAndImprove(), this.intervalMs);
-    console.log(`🤖 Self-improvement: cycle every ${this.intervalMs / 1000}s`);
+    const improverMs = parseInt(process.env.IMPROVER_INTERVAL_MS || '600000');   // 10 мин
+    const ideatorMs  = parseInt(process.env.IDEATOR_INTERVAL_MS  || '1800000');  // 30 мин
+
+    // Улучшатель — каждые 10 мин
+    setTimeout(() => this.autoRunImprover(), 60000);
+    this.improverTimer = setInterval(() => this.autoRunImprover(), improverMs);
+
+    // Придумыватель — каждые 30 мин
+    setTimeout(() => this.autoRunIdeator(), 120000);
+    this.ideatorTimer = setInterval(() => this.autoRunIdeator(), ideatorMs);
+
+    // Реализатор — НЕ автоматический, только по кнопке
+    console.log(`🔍 Улучшатель: каждые ${improverMs / 1000}с`);
+    console.log(`💡 Придумыватель: каждые ${ideatorMs / 1000}с`);
+    console.log(`🔨 Реализатор: только по кнопке`);
   }
 
   stop(): void {
     if (this.timer) clearInterval(this.timer);
+    if (this.improverTimer) clearInterval(this.improverTimer);
+    if (this.ideatorTimer) clearInterval(this.ideatorTimer);
     this.running = false;
+  }
+
+  private async autoRunImprover(): Promise<void> {
+    if (this.disabledModes.has('improver')) return;
+    try {
+      const ok = await isClaudeCodeAvailable();
+      if (!ok) return;
+      await this.runImprover();
+    } catch (e: any) {
+      console.error('[SelfImprovement] Improver auto error:', e.message?.slice(0, 100));
+    }
+  }
+
+  private async autoRunIdeator(): Promise<void> {
+    if (this.disabledModes.has('ideator')) return;
+    try {
+      const ok = await isClaudeCodeAvailable();
+      if (!ok) return;
+      await this.runIdeator();
+    } catch (e: any) {
+      console.error('[SelfImprovement] Ideator auto error:', e.message?.slice(0, 100));
+    }
+  }
+
+  // ─── Управление режимами (владелец) ──────────────────────────────────────
+
+  /** Включить/выключить конкретный режим */
+  toggleMode(mode: string): boolean {
+    if (this.disabledModes.has(mode)) {
+      this.disabledModes.delete(mode);
+      return true; // теперь включён
+    } else {
+      this.disabledModes.add(mode);
+      return false; // теперь выключен
+    }
+  }
+
+  /** Статус всех режимов */
+  getModesStatus(): { mode: string; enabled: boolean; label: string }[] {
+    const labels: Record<string, string> = {
+      improver: '🔍 Улучшатель',
+      ideator: '💡 Придумыватель',
+      implementor: '🔨 Реализатор',
+    };
+    return this.aiModes.map(m => ({
+      mode: m,
+      enabled: !this.disabledModes.has(m),
+      label: labels[m] || m,
+    }));
+  }
+
+  /** Запустить конкретный режим вручную */
+  async triggerMode(mode: string): Promise<string> {
+    if (this.manualRunning) return 'already_running';
+
+    const ccAvailable = await isClaudeCodeAvailable();
+    if (!ccAvailable) return 'claude_unavailable';
+
+    this.manualRunning = true;
+    try {
+      if (mode === 'improver') await this.runImprover();
+      else if (mode === 'ideator') await this.runIdeator();
+      else if (mode === 'implementor') await this.runImplementor();
+      else return 'unknown_mode';
+      return 'ok';
+    } catch (e: any) {
+      return `error: ${e.message?.slice(0, 100)}`;
+    } finally {
+      this.manualRunning = false;
+    }
+  }
+
+  /** Количество идей в очереди для реализатора */
+  getPendingIdeasCount(): number {
+    return this.pendingIdeas.length;
+  }
+
+  /** Список идей для выбора */
+  getPendingIdeas(): Array<{ index: number; title: string; domain: string; createdAt: Date }> {
+    return this.pendingIdeas.map((idea, i) => ({
+      index: i,
+      title: idea.title,
+      domain: idea.domain,
+      createdAt: idea.createdAt,
+    }));
+  }
+
+  /** Реализовать конкретную идею по индексу */
+  async implementIdea(index: number): Promise<string> {
+    if (index < 0 || index >= this.pendingIdeas.length) return 'bad_index';
+    if (this.manualRunning) return 'already_running';
+
+    const ccAvailable = await isClaudeCodeAvailable();
+    if (!ccAvailable) return 'claude_unavailable';
+
+    // Extract the chosen idea
+    const [idea] = this.pendingIdeas.splice(index, 1);
+
+    this.manualRunning = true;
+    try {
+      console.log(`[SelfImprovement] 🔨 РЕАЛИЗАТОР (manual): реализую "${idea.title}"`);
+      const codebaseContext = this.gatherCodebaseContext();
+      const prompt = this.buildImplementorPrompt(idea, codebaseContext);
+      await this.executeProactivePrompt(prompt, idea.domain, '🔨 РЕАЛИЗАТОР');
+      return 'ok';
+    } catch (e: any) {
+      return `error: ${e.message?.slice(0, 100)}`;
+    } finally {
+      this.manualRunning = false;
+    }
+  }
+
+  /** Удалить идею из очереди */
+  dropIdea(index: number): boolean {
+    if (index < 0 || index >= this.pendingIdeas.length) return false;
+    this.pendingIdeas.splice(index, 1);
+    return true;
+  }
+
+  /** Владелец описывает свою идею → Придумыватель допиливает в полный промпт */
+  async submitUserIdea(rawIdea: string): Promise<string> {
+    if (this.manualRunning) return 'already_running';
+    const ccAvailable = await isClaudeCodeAvailable();
+    if (!ccAvailable) return 'claude_unavailable';
+
+    this.manualRunning = true;
+    try {
+      const codebaseContext = this.gatherCodebaseContext();
+
+      const prompt = `Ты — ПРИДУМЫВАТЕЛЬ для TON Agent Platform (@TonAgentPlatformBot).
+Владелец платформы описал свою идею. Твоя задача — допилить её до полной спецификации.
+
+ИДЕЯ ВЛАДЕЛЬЦА:
+${rawIdea}
+
+ПЛАТФОРМА: TypeScript, Telegraf v4, PostgreSQL, GramJS (userbot), PM2. Маркетплейс шаблонов, AI-агенты, TON блокчейн.
+
+ТЕКУЩИЙ CODEBASE:
+${codebaseContext.slice(0, 4000)}
+
+Разработай полную спецификацию этой идеи:
+- Конкретный user story
+- Какие файлы менять/создавать
+- Подробный промпт для РЕАЛИЗАТОРА (пошаговая инструкция)
+
+ВСЁ на РУССКОМ. Пиши простым языком.
+
+RESPONSE FORMAT — valid JSON:
+{
+  "title": "Название (до 60 символов)",
+  "description": "Полное описание (3-5 предложений)",
+  "userStory": "Юзер делает X → видит Y → получает Z",
+  "userValue": "Почему это круто",
+  "filesToChange": ["src/..."],
+  "implementorPrompt": "Подробная инструкция для реализатора...",
+  "domain": "подходящий_домен",
+  "complexity": "small | medium | large"
+}`;
+
+      let text = '';
+      const result = await claudeCodeChat(
+        [{ role: 'user', content: prompt }],
+        { maxTokens: 3000, timeout: 300_000, model: 'claude-sonnet-4-6' }
+      );
+      text = result.text?.trim() || '';
+
+      if (!text) return 'empty_response';
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) return 'no_json';
+
+      let parsed: any;
+      try { parsed = JSON.parse(jsonMatch[0]); } catch { return 'bad_json'; }
+
+      // Save to pending ideas
+      this.pendingIdeas.push({
+        title: parsed.title || rawIdea.slice(0, 50),
+        description: parsed.description || rawIdea,
+        domain: parsed.domain || 'custom',
+        prompt: parsed.implementorPrompt || parsed.description || rawIdea,
+        createdAt: new Date(),
+      });
+
+      // Save as proposal
+      const proposal: AIProposal = {
+        id: randomUUID(),
+        level: 3,
+        title: `💡 ${(parsed.title || 'Идея').slice(0, 57)}`,
+        description: `${parsed.description || ''}\n\n👤 User Story: ${parsed.userStory || 'N/A'}\n\n📁 Файлы: ${(parsed.filesToChange || []).join(', ')}`,
+        reasoning: parsed.implementorPrompt || '',
+        patch: [],
+        status: 'pending',
+        autoApplied: false,
+        module: parsed.domain || 'custom',
+        createdAt: new Date(),
+      };
+      const repo = getAIProposalsRepository();
+      await repo.create(proposal);
+
+      // Notify with implement button
+      const ideaIndex = this.pendingIdeas.length - 1;
+      const ownerId = config.owner.id;
+      if (ownerId) {
+        await this.bot.telegram.sendMessage(ownerId,
+          `💡 <b>Идея проработана</b>\n\n` +
+          `<b>${escHtml(parsed.title || '')}</b>\n\n` +
+          `${escHtml((parsed.description || '').slice(0, 400))}\n\n` +
+          `👤 <b>User Story:</b> ${escHtml((parsed.userStory || '').slice(0, 200))}\n\n` +
+          `📁 <b>Файлы:</b> ${escHtml((parsed.filesToChange || []).join(', '))}\n` +
+          `⚡ <b>Сложность:</b> ${escHtml(parsed.complexity || '?')}`,
+          {
+            parse_mode: 'HTML',
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: '🔨 Реализовать', callback_data: `ai_impl:${ideaIndex}` },
+                  { text: '❌ Не надо', callback_data: `ai_drop:${ideaIndex}` },
+                ],
+              ],
+            },
+          },
+        ).catch(() => {});
+      }
+
+      return 'ok';
+    } catch (e: any) {
+      return `error: ${e.message?.slice(0, 100)}`;
+    } finally {
+      this.manualRunning = false;
+    }
   }
 
   // ─── Публичные методы для API ──────────────────────────────────────────────
@@ -324,6 +629,668 @@ export class SelfImprovementSystem {
     } catch (e: any) {
       console.error('[SelfImprovement] Scan cycle error:', e.message);
     }
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // MODE 1: УЛУЧШАТЕЛЬ — жёсткий аудит платформы, баги, UX, оптимизация
+  // ════════════════════════════════════════════════════════════════════════════
+  private async runImprover(): Promise<void> {
+    const categories = [
+      'error_handling',  // Неперехваченные ошибки, плохие сообщения
+      'ux_problems',     // Непонятные меню, плохие тексты, кривой flow
+      'performance',     // Медленные запросы, утечки памяти, тяжёлые циклы
+      'security',        // SQL injection, XSS, exposed secrets, auth bypass
+      'dead_code',       // Неиспользуемый код, дублирование, мёртвые ветки
+      'data_integrity',  // Race conditions, missing validations, DB issues
+    ];
+    const category = categories[Math.floor(Math.random() * categories.length)];
+
+    console.log(`[SelfImprovement] 🔍 УЛУЧШАТЕЛЬ: аудит категории "${category}"`);
+
+    // Load real bugs from platform_bugs table
+    let bugsSummary = '';
+    try {
+      const topBugs = await getBugTracker().getTopBugs(10, 'open');
+      if (topBugs.length) {
+        bugsSummary = '\n═══ РЕАЛЬНЫЕ БАГИ ПЛАТФОРМЫ (по частоте) ═══\n' +
+          topBugs.map(b => `[${b.count}x] ${b.source}: ${b.message.slice(0, 120)}${b.file ? ` (${b.file})` : ''}`).join('\n') +
+          '\n═══════════════════════════════════════\n';
+      }
+    } catch {}
+
+    const codebaseContext = this.gatherCodebaseContext();
+
+    // Read a few actual source files for deep analysis
+    let deepCode = '';
+    const filesToRead = this.contextFiles.slice(0, 3);
+    for (const f of filesToRead) {
+      try {
+        const fullPath = path.join(process.cwd(), f);
+        if (fs.existsSync(fullPath)) {
+          const code = fs.readFileSync(fullPath, 'utf8');
+          deepCode += `\n\n=== ${f} (first 3000 chars) ===\n${code.slice(0, 3000)}`;
+        }
+      } catch {}
+    }
+
+    const prompt = `Ты — СУПЕРУЛУЧШАТЕЛЬ платформы TON Agent Platform. Твоя задача — найти РЕАЛЬНЫЕ проблемы и пофиксить их.
+
+КАТЕГОРИЯ АУДИТА: ${category}
+
+ОПИСАНИЕ КАТЕГОРИЙ:
+- error_handling: Найди места где ошибки не перехватываются, показываются стектрейсы юзерам, или сообщения непонятные
+- ux_problems: Найди кривые тексты в боте, непонятные кнопки, плохой flow, места где юзер запутается
+- performance: Найди тяжёлые запросы без лимитов, утечки Map/Set, бесконечные циклы, лишние await
+- security: Найди SQL injection, command injection, exposed secrets в логах, auth bypass
+- dead_code: Найди неиспользуемые функции, дублирующийся код, мёртвые if-ветки
+- data_integrity: Найди race conditions, отсутствие валидации на входных данных, проблемы с DB
+
+CODEBASE STRUCTURE:
+${codebaseContext}
+
+ACTUAL CODE TO AUDIT:
+${deepCode.slice(0, 5000)}
+${bugsSummary}
+
+ИНСТРУКЦИИ:
+1. Найди ОДНУ конкретную проблему (не абстрактную, а с точным указанием файла и строки)
+2. Объясни почему это проблема и как она проявляется у пользователя
+3. Напиши точный патч для исправления
+
+ВСЕ текстовые поля на РУССКОМ. Объясняй простым языком.
+
+RESPONSE FORMAT — valid JSON:
+{
+  "title": "Краткое название проблемы (до 60 символов)",
+  "description": "Что за проблема, где она, как проявляется у пользователя (2-3 предложения)",
+  "userValue": "Что улучшится после фикса (1 предложение)",
+  "reasoning": "Technical details",
+  "domain": "${category}",
+  "level": 2,
+  "patch": [{"file": "src/...", "oldStr": "exact old code", "newStr": "fixed code"}],
+  "newFiles": []
+}
+
+Если не нашёл реальных проблем: {"skip": true, "reason": "всё ок в этой категории"}`;
+
+    await this.executeProactivePrompt(prompt, category, '🔍 УЛУЧШАТЕЛЬ');
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // MODE 2: ПРИДУМЫВАТЕЛЬ — идеи на основе РЕАЛЬНЫХ данных пользователей
+  // ════════════════════════════════════════════════════════════════════════════
+  private async runIdeator(): Promise<void> {
+    console.log(`[SelfImprovement] 💡 ПРИДУМЫВАТЕЛЬ: анализирую данные пользователей...`);
+
+    // ── Собираем реальные данные ──
+    let userErrors = '';
+    let userMessages = '';
+    let agentStats = '';
+    let failedAgents = '';
+
+    try {
+      // 1. Последние ошибки пользователей (agent_logs level='error')
+      const errRes = await dbPool.query(`
+        SELECT al.message, al.details, a.name as agent_name, a.trigger_type,
+               al.created_at
+        FROM builder_bot.agent_logs al
+        JOIN builder_bot.agents a ON a.id = al.agent_id
+        WHERE al.level = 'error' AND al.created_at > NOW() - INTERVAL '48 hours'
+        ORDER BY al.created_at DESC LIMIT 15
+      `).catch(() => ({ rows: [] }));
+      if (errRes.rows.length) {
+        userErrors = errRes.rows.map((r: any) =>
+          `[${r.agent_name}/${r.trigger_type}] ${(r.message || '').slice(0, 120)}`
+        ).join('\n');
+      }
+    } catch {}
+
+    try {
+      // 2. Что юзеры пишут боту (из execution_history result_summary — содержит input/context)
+      const msgRes = await dbPool.query(`
+        SELECT eh.result_summary, a.name as agent_name, a.trigger_type, eh.status, eh.error_message
+        FROM builder_bot.execution_history eh
+        JOIN builder_bot.agents a ON a.id = eh.agent_id
+        WHERE eh.started_at > NOW() - INTERVAL '48 hours'
+          AND eh.result_summary IS NOT NULL
+        ORDER BY eh.started_at DESC LIMIT 20
+      `).catch(() => ({ rows: [] }));
+      if (msgRes.rows.length) {
+        userMessages = msgRes.rows.map((r: any) => {
+          const summary = typeof r.result_summary === 'string' ? r.result_summary : JSON.stringify(r.result_summary).slice(0, 150);
+          return `[${r.agent_name}] ${r.status}: ${summary.slice(0, 120)}`;
+        }).join('\n');
+      }
+    } catch {}
+
+    try {
+      // 3. Статистика: сколько агентов, какого типа, сколько активных
+      const statsRes = await dbPool.query(`
+        SELECT
+          (SELECT COUNT(*) FROM builder_bot.agents) AS total,
+          (SELECT COUNT(*) FROM builder_bot.agents WHERE is_active = true) AS active,
+          (SELECT COUNT(DISTINCT user_id) FROM builder_bot.agents) AS users,
+          (SELECT COUNT(*) FROM builder_bot.agents WHERE trigger_type = 'ai_agent') AS ai_agents,
+          (SELECT COUNT(*) FROM builder_bot.execution_history WHERE started_at > NOW() - INTERVAL '24 hours' AND status = 'error') AS errors_24h,
+          (SELECT COUNT(*) FROM builder_bot.execution_history WHERE started_at > NOW() - INTERVAL '24 hours') AS total_runs_24h
+      `).catch(() => ({ rows: [{}] }));
+      const s = statsRes.rows[0] as any;
+      agentStats = `Агентов: ${s.total || 0} (активных ${s.active || 0}), юзеров: ${s.users || 0}, AI-агентов: ${s.ai_agents || 0}, за 24ч: ${s.total_runs_24h || 0} запусков, ${s.errors_24h || 0} ошибок`;
+    } catch {}
+
+    try {
+      // 4. Часто падающие агенты
+      const failRes = await dbPool.query(`
+        SELECT a.name, a.trigger_type, COUNT(*) as err_count,
+               array_agg(DISTINCT LEFT(eh.error_message, 80)) as errors
+        FROM builder_bot.execution_history eh
+        JOIN builder_bot.agents a ON a.id = eh.agent_id
+        WHERE eh.status = 'error' AND eh.started_at > NOW() - INTERVAL '48 hours'
+        GROUP BY a.id, a.name, a.trigger_type
+        ORDER BY err_count DESC LIMIT 5
+      `).catch(() => ({ rows: [] }));
+      if (failRes.rows.length) {
+        failedAgents = failRes.rows.map((r: any) =>
+          `${r.name} (${r.trigger_type}): ${r.err_count} ошибок — ${(r.errors || []).slice(0, 2).join('; ')}`
+        ).join('\n');
+      }
+    } catch {}
+
+    let recentProposals = '';
+    try {
+      const repo = getAIProposalsRepository();
+      const recent = await repo.list(undefined, 15).catch(() => []);
+      recentProposals = recent.map((p: AIProposal) => `- [${p.status}] ${p.title}`).join('\n');
+    } catch {}
+
+    const recentIdeas = this.pendingIdeas.map(i => `- ${i.title}`).join('\n');
+
+    const prompt = `Ты — ПРИДУМЫВАТЕЛЬ для TON Agent Platform (@TonAgentPlatformBot).
+Твоя задача — проанализировать РЕАЛЬНЫЕ данные платформы и предложить ОДНУ идею которая РЕАЛЬНО нужна пользователям. БЕЗ КОДА. Только концепция.
+
+ПЛАТФОРМА: Telegram бот где юзеры создают AI-агентов. Агенты работают автономно (тики каждые N минут), вызывают тулы (баланс TON, NFT, арбитраж, web search, fetch). Юзербот mode через GramJS. Маркетплейс шаблонов. Dashboard на tonagentplatform.ru.
+
+═══ РЕАЛЬНЫЕ ДАННЫЕ ПЛАТФОРМЫ ═══
+
+СТАТИСТИКА:
+${agentStats || 'недоступна'}
+
+ОШИБКИ ПОЛЬЗОВАТЕЛЕЙ (за 48ч):
+${userErrors || 'нет ошибок'}
+
+ЧАСТО ПАДАЮЩИЕ АГЕНТЫ:
+${failedAgents || 'нет'}
+
+АКТИВНОСТЬ ПОЛЬЗОВАТЕЛЕЙ (последние запуски):
+${userMessages || 'нет данных'}
+
+═══════════════════════════════
+
+УЖЕ ПРЕДЛОЖЕНО (не повторяй):
+${recentProposals || 'ничего'}
+${recentIdeas ? `\nИдеи в очереди:\n${recentIdeas}` : ''}
+
+ЗАДАЧА: На основе РЕАЛЬНЫХ данных выше — что нужно пользователям?
+- Какие ошибки они ловят и как это решить?
+- Чего им не хватает судя по паттернам использования?
+- Что улучшит их опыт прямо сейчас?
+
+Придумай ОДНУ конкретную идею:
+- Что это за фича
+- Зачем она нужна (на основе данных выше)
+- Как юзер будет ей пользоваться
+- Какие файлы менять
+- Подробный промпт для РЕАЛИЗАТОРА
+
+ВСЁ на РУССКОМ.
+
+RESPONSE FORMAT — valid JSON:
+{
+  "title": "Название идеи (до 60 символов)",
+  "description": "Что за фича, как работает, зачем нужна — основано на реальных данных (3-5 предложений)",
+  "userStory": "Юзер делает X → видит Y → получает Z",
+  "userValue": "Почему это решит реальную проблему пользователей",
+  "filesToChange": ["src/bot.ts", "src/new-service.ts"],
+  "implementorPrompt": "Подробная инструкция для реализатора: создай файл X, добавь в Y функцию Z, в bot.ts добавь команду /abc...",
+  "domain": "подходящий_домен",
+  "complexity": "small | medium | large"
+}
+
+Если данных мало для хорошей идеи: {"skip": true, "reason": "..."}`;
+
+    let text = '';
+    try {
+      console.log(`[SelfImprovement] ПРИДУМЫВАТЕЛЬ: sending to Claude Code...`);
+      const result = await claudeCodeChat(
+        [{ role: 'user', content: prompt }],
+        { maxTokens: 3000, timeout: 300_000, model: 'claude-sonnet-4-6' }
+      );
+      text = result.text?.trim() || '';
+    } catch (e: any) {
+      console.error(`[SelfImprovement] ПРИДУМЫВАТЕЛЬ failed: ${e.message?.slice(0, 150)}`);
+      return;
+    }
+
+    if (!text) return;
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return;
+
+    let parsed: any;
+    try { parsed = JSON.parse(jsonMatch[0]); } catch { return; }
+    if (parsed.skip) {
+      console.log(`[SelfImprovement] ПРИДУМЫВАТЕЛЬ: пропуск — ${parsed.reason}`);
+      return;
+    }
+
+    // Save idea for Implementor
+    this.pendingIdeas.push({
+      title: parsed.title || 'Без названия',
+      description: parsed.description || '',
+      domain: parsed.domain || 'custom',
+      prompt: parsed.implementorPrompt || parsed.description || '',
+      createdAt: new Date(),
+    });
+
+    // Also save as Level 3 proposal (idea, no code)
+    const proposal: AIProposal = {
+      id: randomUUID(),
+      level: 3,
+      title: `💡 ${(parsed.title || 'Идея').slice(0, 57)}`,
+      description: `${parsed.description || ''}\n\n👤 User Story: ${parsed.userStory || 'N/A'}\n\n📁 Файлы: ${(parsed.filesToChange || []).join(', ')}`,
+      reasoning: parsed.implementorPrompt || '',
+      patch: [],
+      status: 'pending',
+      autoApplied: false,
+      module: domain,
+      createdAt: new Date(),
+    };
+
+    const repo = getAIProposalsRepository();
+    await repo.create(proposal);
+
+    // Notify owner with "Реализовать?" button
+    const ideaIndex = this.pendingIdeas.length - 1; // just pushed
+    const ownerId = config.owner.id;
+    if (ownerId) {
+      try {
+        await this.bot.telegram.sendMessage(ownerId,
+          `💡 <b>Новая идея от ПРИДУМЫВАТЕЛЯ</b>\n\n` +
+          `<b>${escHtml(parsed.title || '')}</b>\n\n` +
+          `${escHtml((parsed.description || '').slice(0, 400))}\n\n` +
+          `👤 <b>User Story:</b> ${escHtml((parsed.userStory || '').slice(0, 200))}\n\n` +
+          `📁 <b>Файлы:</b> ${escHtml((parsed.filesToChange || []).join(', '))}\n` +
+          `⚡ <b>Сложность:</b> ${escHtml(parsed.complexity || '?')}`,
+          {
+            parse_mode: 'HTML',
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: '🔨 Реализовать', callback_data: `ai_impl:${ideaIndex}` },
+                  { text: '❌ Не надо', callback_data: `ai_drop:${ideaIndex}` },
+                ],
+                [
+                  { text: '💬 Обсудить', callback_data: `proposal_discuss:${proposal.id}` },
+                ],
+              ],
+            },
+          },
+        );
+      } catch (e: any) {
+        console.error('[SelfImprovement] Ideator notify failed:', e.message?.slice(0, 80));
+      }
+    }
+
+    console.log(`[SelfImprovement] 💡 Идея: ${parsed.title} (${domain})`);
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // MODE 3: РЕАЛИЗАТОР — берёт идею от придумывателя и пишет код
+  // ════════════════════════════════════════════════════════════════════════════
+  private async runImplementor(): Promise<void> {
+    // Pick oldest pending idea
+    if (!this.pendingIdeas.length) {
+      console.log(`[SelfImprovement] 🔨 РЕАЛИЗАТОР: нет идей в очереди, пропуск`);
+      return;
+    }
+
+    const idea = this.pendingIdeas.shift()!;
+    console.log(`[SelfImprovement] 🔨 РЕАЛИЗАТОР: реализую идею "${idea.title}"`);
+
+    const codebaseContext = this.gatherCodebaseContext();
+    const prompt = this.buildImplementorPrompt(idea, codebaseContext);
+    await this.executeProactivePrompt(prompt, idea.domain, '🔨 РЕАЛИЗАТОР');
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // Build implementor prompt (shared between auto and manual)
+  // ════════════════════════════════════════════════════════════════════════════
+  private buildImplementorPrompt(idea: { title: string; description: string; domain: string; prompt: string }, codebaseContext: string): string {
+    return `Ты — РЕАЛИЗАТОР для TON Agent Platform. Тебе дали идею — реализуй её в коде.
+
+ИДЕЯ: ${idea.title}
+ОПИСАНИЕ: ${idea.description}
+ДОМЕН: ${idea.domain}
+
+ИНСТРУКЦИЯ ОТ ПРИДУМЫВАТЕЛЯ:
+${idea.prompt}
+
+ТЕКУЩИЙ CODEBASE:
+${codebaseContext}
+
+ПЛАТФОРМА: TypeScript, Telegraf v4, PostgreSQL (dbPool.query), GramJS, PM2.
+Бот: src/bot.ts. AI runtime: src/agents/ai-agent-runtime.ts. API: src/api-server.ts.
+
+ЗАДАЧА: Напиши РАБОЧИЙ КОД для этой идеи.
+
+ВСЕ текстовые поля на РУССКОМ.
+
+RESPONSE FORMAT — valid JSON:
+{
+  "title": "Название (до 60 символов, по-русски)",
+  "description": "Что реализовано (2-3 предложения)",
+  "userValue": "Что получат пользователи (1 предложение)",
+  "reasoning": "Technical approach",
+  "domain": "${idea.domain}",
+  "level": 2,
+  "patch": [{"file": "src/...", "oldStr": "exact existing code", "newStr": "new code"}],
+  "newFiles": [{"file": "src/...", "content": "full file content"}]
+}
+
+ПРАВИЛА:
+- oldStr ДОЛЖЕН быть ТОЧНОЙ копией из реального файла
+- Новые файлы — полные, рабочие, с импортами
+- Максимум 5 патчей + 2 новых файла
+- Production-quality TypeScript
+- Язык кода: English. Язык UI: Russian`;
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // SHARED: Execute prompt and save proposal (used by Improver and Implementor)
+  // ════════════════════════════════════════════════════════════════════════════
+  private async executeProactivePrompt(prompt: string, domain: string, modeLabel: string): Promise<void> {
+    try {
+      // Send prompt (already constructed by runImprover/runIdeator/runImplementor) to Claude Code
+      let text = '';
+      try {
+        console.log(`[SelfImprovement] ${modeLabel}: sending prompt to Claude Code (${prompt.length} chars)...`);
+        const result = await claudeCodeChat(
+          [{ role: 'user', content: prompt }],
+          { maxTokens: 6000, timeout: 600_000, model: 'claude-sonnet-4-6' }
+        );
+        text = result.text?.trim() || '';
+        console.log(`[SelfImprovement] ${modeLabel}: Claude Code responded (${text.length} chars, model: ${result.model})`);
+      } catch (ccErr: any) {
+        console.error(`[SelfImprovement] ${modeLabel} Claude Code failed: ${ccErr.message?.slice(0, 200)}`);
+        return;
+      }
+
+      if (!text) {
+        console.log(`[SelfImprovement] ${modeLabel}: empty response from Claude Code`);
+        return;
+      }
+
+      // Parse JSON response
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        console.log(`[SelfImprovement] ${modeLabel}: no JSON found in response. First 300 chars: ${text.slice(0, 300)}`);
+        return;
+      }
+
+      let parsed: any;
+      try {
+        parsed = JSON.parse(jsonMatch[0]);
+      } catch (parseErr: any) {
+        console.log(`[SelfImprovement] ${modeLabel}: invalid JSON. Error: ${parseErr.message?.slice(0, 100)}. First 300 chars: ${jsonMatch[0].slice(0, 300)}`);
+        return;
+      }
+
+      if (parsed.skip) {
+        console.log(`[SelfImprovement] ${modeLabel}: ${domain} — skipped (${parsed.reason || 'no ideas'})`);
+        return;
+      }
+
+      console.log(`[SelfImprovement] ${modeLabel}: parsed feature "${parsed.title}" with ${(parsed.patch || []).length} patches, ${(parsed.newFiles || []).length} new files`);
+
+      // Deduplication check
+      const proposalKey = `feature:${domain}:${(parsed.title || '').slice(0, 40).toLowerCase().replace(/\s+/g, '_')}`;
+      const lastSeen = this.proposalCooldown.get(proposalKey) || 0;
+      if (Date.now() - lastSeen < this.PROPOSAL_COOLDOWN_MS) {
+        console.log(`[SelfImprovement] ${modeLabel}: duplicate proposal skipped`);
+        return;
+      }
+
+      // Validate existing file patches
+      const staging = getStagingManager();
+      const validPatch: AIPatchEntry[] = [];
+      for (const p of (parsed.patch || [])) {
+        if (!p.file || !p.oldStr || !p.newStr) continue;
+        const validation = staging.validatePatch(p);
+        if (validation.valid) validPatch.push(p);
+        else console.log(`[SelfImprovement] Feature patch validation failed: ${validation.error}`);
+      }
+
+      // Handle new files — convert to patches (create file = patch with empty oldStr)
+      for (const nf of (parsed.newFiles || [])) {
+        if (!nf.file || !nf.content) continue;
+        validPatch.push({
+          file: nf.file,
+          oldStr: '',  // empty = new file
+          newStr: nf.content,
+        });
+      }
+
+      if (!validPatch.length) {
+        // Even without patches, save as Level 3 proposal (idea only)
+        console.log(`[SelfImprovement] ${modeLabel}: "${parsed.title}" has no valid patches — saving as idea`);
+      }
+
+      // Always Level 2+ for new features (require owner approval)
+      const level = parsed.level >= 3 ? 3 : 2;
+
+      const proposal: AIProposal = {
+        id: randomUUID(),
+        level,
+        title: `🚀 ${(parsed.title || 'New Feature').slice(0, 57)}`,
+        description: `${parsed.description || ''}\n\n💡 User Value: ${parsed.userValue || 'N/A'}\n\n🏷️ Domain: ${domain}`,
+        reasoning: parsed.reasoning || '',
+        patch: validPatch,
+        status: 'pending',
+        autoApplied: false,
+        module: domain,
+        createdAt: new Date(),
+      };
+
+      // Save to DB
+      const repo = getAIProposalsRepository();
+      await repo.create(proposal);
+
+      // Apply patches to staging (for review)
+      if (validPatch.length) {
+        const stagingErrors: string[] = [];
+        for (const patch of validPatch) {
+          if (patch.oldStr === '') continue; // skip new files for staging
+          const result = await staging.applyPatchToStaging(patch);
+          if (!result.ok) stagingErrors.push(result.error!);
+        }
+
+        const stagingStatus = stagingErrors.length
+          ? `Staging: ${stagingErrors.length} errors`
+          : `Staging: OK (${validPatch.length} changes)`;
+
+        await repo.updateStatus(proposal.id, 'staging', { stagingResult: stagingStatus } as any);
+      }
+
+      // Mark cooldown
+      this.proposalCooldown.set(proposalKey, Date.now());
+
+      // Build detailed notification for owner
+      const patchSummary = validPatch.map(p => {
+        if (p.oldStr === '') return `📄 NEW: ${p.file}`;
+        return `✏️ ${p.file}`;
+      }).join('\n');
+
+      // Notify owner with approve/reject buttons
+      await this.notifyOwnerWithButtons(
+        `${escHtml(modeLabel)} <b>Новое предложение</b>\n\n` +
+        `<b>${escHtml(proposal.title)}</b>\n\n` +
+        `${escHtml((parsed.description || '').slice(0, 500))}\n\n` +
+        `💡 <b>Для пользователей:</b> ${escHtml((parsed.userValue || '').slice(0, 250))}\n\n` +
+        `📦 <b>Файлы:</b>\n${escHtml(patchSummary)}`,
+        proposal.id,
+      );
+
+      console.log(`[SelfImprovement] ${modeLabel}: "${proposal.title}" (${domain}, ${validPatch.length} patches)`);
+
+    } catch (e: any) {
+      console.error(`[SelfImprovement] ${modeLabel} error:`, e.message?.slice(0, 150));
+    }
+  }
+
+  /**
+   * Gathers DEEP codebase context — reads key source files and extracts
+   * function signatures, exports, class structures, DB tables, API endpoints,
+   * tool definitions, and architectural patterns. Provides the AI Product
+   * Engineer with maximum understanding of the platform.
+   */
+  private gatherCodebaseContext(): string {
+    const sections: string[] = [];
+
+    // ── 1. File structure and signatures ──
+    for (const relFile of this.contextFiles) {
+      try {
+        const filePath = path.join(process.cwd(), relFile);
+        if (!fs.existsSync(filePath)) continue;
+
+        const stat = fs.statSync(filePath);
+        if (stat.size > this.MAX_CONTEXT_FILE_SIZE) {
+          sections.push(`[${relFile}] — ${(stat.size / 1024).toFixed(0)}KB (too large for full read)`);
+          continue;
+        }
+
+        const code = fs.readFileSync(filePath, 'utf8');
+        const lines = code.split('\n');
+        const keyLines: string[] = [];
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (
+            trimmed.startsWith('export ') ||
+            trimmed.startsWith('async function ') ||
+            trimmed.startsWith('function ') ||
+            trimmed.startsWith('class ') ||
+            trimmed.startsWith('interface ') ||
+            trimmed.startsWith('type ') ||
+            trimmed.startsWith('// ─') ||
+            trimmed.startsWith('/** ') ||
+            trimmed.startsWith('bot.command(') ||
+            trimmed.startsWith('bot.action(') ||
+            trimmed.startsWith('app.get(') ||
+            trimmed.startsWith('app.post(') ||
+            trimmed.startsWith('app.put(') ||
+            trimmed.startsWith('app.delete(') ||
+            trimmed.includes('CREATE TABLE') ||
+            trimmed.includes('bot.on(')
+          ) {
+            keyLines.push(trimmed.slice(0, 150));
+          }
+        }
+
+        sections.push(`[${relFile}] (${(stat.size / 1024).toFixed(0)}KB):\n${keyLines.slice(0, 40).join('\n')}`);
+      } catch {}
+    }
+
+    // ── 2. DB Schema — read all tables ──
+    try {
+      const schemaFile = path.join(process.cwd(), 'src/db/schema-extensions.ts');
+      if (fs.existsSync(schemaFile)) {
+        const schema = fs.readFileSync(schemaFile, 'utf8');
+        const tableMatches = schema.match(/CREATE TABLE[^;]+;/gs) || [];
+        if (tableMatches.length) {
+          sections.push(`[DB TABLES]:\n${tableMatches.map(t => t.slice(0, 200)).join('\n\n')}`);
+        }
+      }
+    } catch {}
+
+    // ── 3. Agent tools catalog ──
+    try {
+      const runtimeFile = path.join(process.cwd(), 'src/agents/ai-agent-runtime.ts');
+      if (fs.existsSync(runtimeFile)) {
+        const runtime = fs.readFileSync(runtimeFile, 'utf8');
+        // Extract tool definitions
+        const toolMatches = runtime.match(/\{\s*type:\s*'function',\s*function:\s*\{[^}]+\}/gs) || [];
+        if (toolMatches.length) {
+          const toolNames = toolMatches.map(t => {
+            const nameMatch = t.match(/name:\s*'([^']+)'/);
+            const descMatch = t.match(/description:\s*'([^']+)'/);
+            return nameMatch ? `  - ${nameMatch[1]}: ${descMatch?.[1]?.slice(0, 80) || ''}` : '';
+          }).filter(Boolean);
+          sections.push(`[AI AGENT TOOLS] (${toolNames.length} tools):\n${toolNames.join('\n')}`);
+        }
+      }
+    } catch {}
+
+    // ── 4. Bot commands ──
+    try {
+      const botFile = path.join(process.cwd(), 'src/bot.ts');
+      if (fs.existsSync(botFile)) {
+        const bot = fs.readFileSync(botFile, 'utf8');
+        const commands = bot.match(/bot\.command\('([^']+)'/g) || [];
+        const actions = bot.match(/bot\.action\((?:'([^']+)'|\/([^/]+)\/)/g) || [];
+        sections.push(`[BOT COMMANDS] (${commands.length}):\n${commands.slice(0, 25).join('\n')}`);
+        sections.push(`[BOT ACTIONS/CALLBACKS] (${actions.length}):\n${actions.slice(0, 30).join('\n')}`);
+      }
+    } catch {}
+
+    // ── 5. API endpoints ──
+    try {
+      const apiFile = path.join(process.cwd(), 'src/api-server.ts');
+      if (fs.existsSync(apiFile)) {
+        const api = fs.readFileSync(apiFile, 'utf8');
+        const endpoints = api.match(/app\.(get|post|put|delete|patch)\s*\(\s*['"`][^'"`]+['"`]/g) || [];
+        sections.push(`[API ENDPOINTS] (${endpoints.length}):\n${endpoints.join('\n')}`);
+      }
+    } catch {}
+
+    // ── 6. Services ──
+    try {
+      const servicesDir = path.join(process.cwd(), 'src/services');
+      if (fs.existsSync(servicesDir)) {
+        const serviceFiles = fs.readdirSync(servicesDir).filter(f => f.endsWith('.ts'));
+        sections.push(`[SERVICES]: ${serviceFiles.join(', ')}`);
+      }
+    } catch {}
+
+    // ── 7. Templates catalog ──
+    try {
+      const orchFile = path.join(process.cwd(), 'src/agents/orchestrator.ts');
+      if (fs.existsSync(orchFile)) {
+        const orch = fs.readFileSync(orchFile, 'utf8');
+        const templates = orch.match(/id:\s*'[^']+',\s*name:\s*'[^']+'/g) || [];
+        if (templates.length) {
+          sections.push(`[TEMPLATES] (${templates.length}):\n${templates.slice(0, 15).join('\n')}`);
+        }
+      }
+    } catch {}
+
+    // ── 8. Full file tree ──
+    try {
+      const srcDir = path.join(process.cwd(), 'src');
+      if (fs.existsSync(srcDir)) {
+        const files: string[] = [];
+        const walk = (dir: string, prefix = '') => {
+          const entries = fs.readdirSync(dir, { withFileTypes: true });
+          for (const e of entries) {
+            if (e.name.startsWith('.') || e.name === 'node_modules' || e.name === 'dist') continue;
+            const rel = prefix ? `${prefix}/${e.name}` : e.name;
+            if (e.isDirectory()) walk(path.join(dir, e.name), rel);
+            else if (e.name.endsWith('.ts') || e.name.endsWith('.js')) files.push(`src/${rel}`);
+          }
+        };
+        walk(srcDir);
+        sections.push(`[ALL SOURCE FILES] (${files.length}):\n${files.join('\n')}`);
+      }
+    } catch {}
+
+    return sections.join('\n\n').slice(0, 6000);
   }
 
   /**
@@ -1162,6 +2129,14 @@ ${codeSnippet || 'Фрагмент кода недоступен.'}
   }
 
   private async routeProposal(proposal: AIProposal): Promise<void> {
+    // HARD BLOCK: remove all patches targeting protected files
+    proposal.patch = filterProtectedPatches(proposal.patch);
+    if (!proposal.patch.length && proposal.level <= 2) {
+      // No patches left after filtering — downgrade to idea
+      proposal.level = 3;
+      console.log(`[SelfImprovement] All patches blocked (protected files) → saved as idea: ${proposal.title}`);
+    }
+
     switch (proposal.level) {
       case 1:
         await this.applyLevel1(proposal);
@@ -1203,6 +2178,33 @@ ${codeSnippet || 'Фрагмент кода недоступен.'}
       await staging.restoreBackup(proposal.id);
       await getAIProposalsRepository().updateStatus(proposal.id, 'rejected', {
         rejectedReason: `Auto-apply failed: ${errors.join('; ')}`
+      });
+      return;
+    }
+
+    // 2.5 Syntax validation — проверяем что файлы парсятся после патча
+    try {
+      const ts = require('typescript');
+      for (const file of files) {
+        const fullPath = path.resolve(process.cwd(), file);
+        if (!fs.existsSync(fullPath)) continue;
+        const content = fs.readFileSync(fullPath, 'utf8');
+        const sf = ts.createSourceFile(fullPath, content, ts.ScriptTarget.Latest, true);
+        // Check for parse diagnostics
+        if ((sf as any).parseDiagnostics?.length > 0) {
+          console.error(`[SelfImprovement] ❌ Syntax error after patch in ${file}, reverting!`);
+          await staging.restoreBackup(proposal.id);
+          await getAIProposalsRepository().updateStatus(proposal.id, 'rejected', {
+            rejectedReason: `Syntax error in ${file} after patch`
+          });
+          return;
+        }
+      }
+    } catch (syntaxErr: any) {
+      console.error(`[SelfImprovement] ❌ Syntax check failed, reverting: ${syntaxErr.message?.slice(0, 100)}`);
+      await staging.restoreBackup(proposal.id);
+      await getAIProposalsRepository().updateStatus(proposal.id, 'rejected', {
+        rejectedReason: `Syntax validation failed: ${syntaxErr.message?.slice(0, 100)}`
       });
       return;
     }
@@ -1253,10 +2255,10 @@ ${codeSnippet || 'Фрагмент кода недоступен.'}
     const shortId = proposal.id.slice(0, 8);
     await this.notifyOwnerWithButtons(
       `🟡 <b>Готово в staging (Уровень 2)</b>\n\n` +
-      `<b>${proposal.title}</b>\n` +
-      `${proposal.description.slice(0, 400)}\n\n` +
-      `Обоснование: <i>${(proposal.reasoning || '').slice(0, 300)}</i>\n\n` +
-      `${stagingResult}`,
+      `<b>${escHtml(proposal.title)}</b>\n` +
+      `${escHtml(proposal.description.slice(0, 400))}\n\n` +
+      `Обоснование: <i>${escHtml((proposal.reasoning || '').slice(0, 300))}</i>\n\n` +
+      `${escHtml(stagingResult)}`,
       proposal.id,
     );
 
@@ -1269,9 +2271,9 @@ ${codeSnippet || 'Фрагмент кода недоступен.'}
 
     await this.notifyOwnerWithButtons(
       `🔴 <b>Требуется одобрение (Уровень 3)</b>\n\n` +
-      `<b>${proposal.title}</b>\n` +
-      `${proposal.description.slice(0, 400)}\n\n` +
-      `Обоснование: <i>${(proposal.reasoning || '').slice(0, 300)}</i>\n\n` +
+      `<b>${escHtml(proposal.title)}</b>\n` +
+      `${escHtml(proposal.description.slice(0, 400))}\n\n` +
+      `Обоснование: <i>${escHtml((proposal.reasoning || '').slice(0, 300))}</i>\n\n` +
       `<i>Это изменение требует вашего одобрения.</i>`,
       proposal.id,
     );

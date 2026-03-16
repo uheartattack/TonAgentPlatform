@@ -36,11 +36,37 @@ type TgDialog = {
   unread: number;
 };
 
-/** Send a text message as the authenticated Telegram user */
+/** Send a text message as the authenticated Telegram user (with Markdown→HTML formatting) */
 export async function tgSendMessage(chatId: string | number, text: string): Promise<number> {
   const client = await getFragmentClient();
-  const result = await (client as any).sendMessage(chatId, { message: text }) as any;
-  return result?.id ?? 0;
+  // Convert markdown to HTML for Telegram formatting
+  const html = mdToHtmlSimple(text);
+  try {
+    const result = await (client as any).sendMessage(chatId, { message: html, parseMode: 'html' }) as any;
+    return result?.id ?? 0;
+  } catch {
+    // Fallback to plain text if HTML parsing fails
+    const result = await (client as any).sendMessage(chatId, { message: text }) as any;
+    return result?.id ?? 0;
+  }
+}
+
+function mdToHtmlSimple(text: string): string {
+  if (/<[a-z][^>]*>/i.test(text)) {
+    return text.replace(/<(?!\/?(?:b|i|s|u|code|pre|a|tg-spoiler)[\s>\/])[^>]+>/gi, '').trim();
+  }
+  return text
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/```[\w]*\n?([\s\S]*?)```/g, (_, code) => `<pre><code>${code.trim()}</code></pre>`)
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+    .replace(/__(.+?)__/g, '<b>$1</b>')
+    .replace(/\*([^*]+)\*/g, '<i>$1</i>')
+    .replace(/(?<!\w)_([^_]+)_(?!\w)/g, '<i>$1</i>')
+    .replace(/~~(.+?)~~/g, '<s>$1</s>')
+    .replace(/^#{1,3}\s+(.+)$/gm, '<b>$1</b>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
+    .trim();
 }
 
 /** Get latest messages from a chat/channel */
@@ -163,14 +189,25 @@ export async function tgSendFile(chatId: string | number, filePath: string, capt
   return result?.id ?? 0;
 }
 
-/** Reply to a specific message in a chat */
-export async function tgReplyMessage(chatId: string | number, replyToMsgId: number, text: string): Promise<number> {
+/** Reply to a specific message in a chat, optionally with a quote */
+export async function tgReplyMessage(chatId: string | number, replyToMsgId: number, text: string, quoteText?: string): Promise<number> {
   const client = await getFragmentClient();
-  const result = await (client as any).sendMessage(chatId, {
-    message: text,
-    replyTo: replyToMsgId,
-  }) as any;
-  return result?.id ?? 0;
+  const html = mdToHtmlSimple(text);
+  let replyTo: any = replyToMsgId;
+  if (quoteText) {
+    try {
+      const { Api } = require('telegram/tl');
+      const peer = await (client as any).getInputEntity(chatId);
+      replyTo = new Api.InputReplyToMessage({ replyToMsgId, quoteText, replyToPeerId: peer });
+    } catch { replyTo = replyToMsgId; }
+  }
+  try {
+    const result = await (client as any).sendMessage(chatId, { message: html, parseMode: 'html', replyTo }) as any;
+    return result?.id ?? 0;
+  } catch {
+    const result = await (client as any).sendMessage(chatId, { message: text, replyTo }) as any;
+    return result?.id ?? 0;
+  }
 }
 
 /** Send reaction (emoji) to a message */

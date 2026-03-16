@@ -53,9 +53,18 @@ export class StagingManager {
     }
   }
 
-  /** Применяет патч (oldStr→newStr) к реальному файлу */
+  /** Применяет патч (oldStr→newStr) к реальному файлу. Если oldStr пустой — создаёт новый файл. */
   async applyPatchToFile(patch: PatchEntry): Promise<{ ok: boolean; error?: string }> {
     const fullPath = path.join(this.rootDir, patch.file);
+
+    // New file creation: oldStr is empty, newStr has full content
+    if ((!patch.oldStr || patch.oldStr === '') && patch.newStr) {
+      const dir = path.dirname(fullPath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(fullPath, patch.newStr, 'utf8');
+      console.log(`[StagingManager] Created new file: ${patch.file}`);
+      return { ok: true };
+    }
 
     if (!fs.existsSync(fullPath)) {
       return { ok: false, error: `File not found: ${patch.file}` };
@@ -81,6 +90,15 @@ export class StagingManager {
   async applyPatchToStaging(patch: PatchEntry): Promise<{ ok: boolean; error?: string }> {
     const srcPath  = path.join(this.rootDir, patch.file);
     const destPath = path.join(this.currentDir, patch.file.replace(/\//g, '__'));
+
+    // New file creation in staging
+    if ((!patch.oldStr || patch.oldStr === '') && patch.newStr) {
+      const dir = path.dirname(destPath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(destPath, patch.newStr, 'utf8');
+      console.log(`[StagingManager] Created new file in staging: ${patch.file}`);
+      return { ok: true };
+    }
 
     // Берём source: сначала проверяем уже staged версию, иначе production
     const readPath = fs.existsSync(destPath) ? destPath : srcPath;
