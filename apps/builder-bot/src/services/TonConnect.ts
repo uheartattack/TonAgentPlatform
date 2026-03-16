@@ -2,7 +2,13 @@ import { TonConnect } from '@tonconnect/sdk';
 import { mnemonicNew, mnemonicToWalletKey, sign } from '@ton/crypto';
 import { WalletContractV4 } from '@ton/ton';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { WalletContractV5R1 } = require('@ton/ton') as { WalletContractV5R1: any };
+let WalletContractV5R1: any;
+try { WalletContractV5R1 = require('@ton/ton').WalletContractV5R1; } catch {}
+// Fallback: if V5R1 not available, use V4
+if (!WalletContractV5R1) {
+  console.warn('[TonConnect] WalletContractV5R1 not available, falling back to V4');
+  WalletContractV5R1 = WalletContractV4;
+}
 import { internal, beginCell, Address, SendMode, external, storeMessage } from '@ton/core';
 import QRCode from 'qrcode';
 import fetch from 'node-fetch';

@@ -44,6 +44,13 @@ function handleSendError(userId: number, err: any): void {
 
 export function initNotifier(bot: Telegraf) {
   _bot = bot;
+  // Periodic cleanup of expired blocked users (every 30 min)
+  setInterval(() => {
+    const now = Date.now();
+    for (const [userId, exp] of _blockExpiry) {
+      if (now > exp) { _blockedUsers.delete(userId); _blockExpiry.delete(userId); }
+    }
+  }, 30 * 60 * 1000);
 }
 
 // ── HTML helpers ──────────────────────────────────────────────

@@ -441,7 +441,8 @@ function buildContextFrame(msg: TgInboxMessage, elapsed?: number): string {
   const media = msg.hasMedia ? ` [${msg.mediaType || 'media'}]` : '';
   const reply = msg.replyToId ? ` (reply to #${msg.replyToId})` : '';
   const quote = msg.quoteText ? `\n[Цитата: "${msg.quoteText}"]` : '';
-  return `[Telegram ${name}${elapsedStr} ${time}${media}${reply}] <user_message>${msg.text}</user_message>${quote}`;
+  const safeUserText = `<<<USER_MESSAGE>>>\n${msg.text}\n<<<END_USER_MESSAGE>>>`;
+  return `[Telegram ${name}${elapsedStr} ${time}${media}${reply}] ${safeUserText}${quote}`;
 }
 
 /** Per-chat serial dispatcher — prevents race conditions */
@@ -935,6 +936,15 @@ setInterval(() => {
 const _chatProcessingLock = new Set<string>();
 // Queue latest message while AI is processing
 const _pendingChatMsg = new Map<string, { msg: TgInboxMessage; cfg: AgentMessageConfig }>();
+
+// ── Message Debouncing (group messages batched within 1.5s window) ──
+const _debounceTimers = new Map<string, NodeJS.Timeout>(); // chatKey → timer
+const _debounceBatch = new Map<string, any[]>(); // chatKey → messages[]
+const DEBOUNCE_MS = 1500; // batch group messages within this window
+
+// ── Cooldown per chat (30s between responses in same group) ──
+const _lastResponseTime = new Map<string, number>(); // "agentId:chatId" → timestamp
+const GROUP_COOLDOWN_MS = 30_000; // 30 seconds between responses in same group
 
 // Agent → message handler config (loaded from DB when agent starts)
 interface AgentMessageConfig {
@@ -1885,6 +1895,38 @@ class UserbotManager {
             return;
           }
 
+          // ── Cooldown: skip if agent responded recently in this group ──
+          if (parsed.isGroup && !parsed.mentionsMe) {
+            const cooldownKey = `${agentId}:${parsed.chatId}`;
+            const lastTime = _lastResponseTime.get(cooldownKey) || 0;
+            if (Date.now() - lastTime < GROUP_COOLDOWN_MS) {
+              console.log(`[UserbotMgr] ⏳ Cooldown active for agent#${agentId} in ${parsed.chatId}, skipping`);
+              return;
+            }
+          }
+
+          // ── Debounce group messages (non-mention) within 1.5s window ──
+          if (parsed.isGroup && !parsed.mentionsMe) {
+            const dkey = `legacy:${agentId}:${parsed.chatId}`;
+            if (!_debounceBatch.has(dkey)) _debounceBatch.set(dkey, []);
+            _debounceBatch.get(dkey)!.push({ parsed, cfg });
+
+            if (_debounceTimers.has(dkey)) clearTimeout(_debounceTimers.get(dkey)!);
+            _debounceTimers.set(dkey, setTimeout(async () => {
+              const batch = _debounceBatch.get(dkey) || [];
+              _debounceBatch.delete(dkey);
+              _debounceTimers.delete(dkey);
+              if (batch.length === 0) return;
+              const last = batch[batch.length - 1];
+              try {
+                this.dispatchToAgent(agentId, last.parsed, last.cfg);
+              } catch (e: any) {
+                console.error(`[UserbotMgr] Debounced legacy dispatch error:`, e.message);
+              }
+            }, DEBOUNCE_MS));
+            return;
+          }
+
           this.dispatchToAgent(agentId, parsed, cfg);
         } catch (e: any) {
           console.error(`[UserbotMgr] Message handler error agent #${agentId}:`, e.message);
@@ -1946,34 +1988,77 @@ class UserbotManager {
           _lastMsgTime.set(parsed.chatId, parsed.date);
           chatRing.add(parsed.chatId, buildContextFrame(parsed, elapsed));
 
-          // ── Route to best agent via matchScore ──
-          const candidates: { agentId: number; score: number; cfg: AgentMessageConfig }[] = [];
+          // ── Route helper (extracted for debounce reuse) ──
+          const routeAndDispatch = async (p: typeof parsed) => {
+            const candidates: { agentId: number; score: number; cfg: AgentMessageConfig }[] = [];
 
-          for (const aid of shared.agentIds) {
-            let cfg = _agentMsgConfigs.get(aid);
-            const cfgAge2 = _agentConfigLoadedAt.get(aid) || 0;
-            if (!cfg || (Date.now() - cfgAge2 > AGENT_CONFIG_TTL)) {
-              cfg = await this.loadAgentMsgConfigFromDB(aid, selfId, selfUsername);
-              if (!cfg) continue;
+            for (const aid of shared.agentIds) {
+              let cfg = _agentMsgConfigs.get(aid);
+              const cfgAge2 = _agentConfigLoadedAt.get(aid) || 0;
+              if (!cfg || (Date.now() - cfgAge2 > AGENT_CONFIG_TTL)) {
+                cfg = await this.loadAgentMsgConfigFromDB(aid, selfId, selfUsername);
+                if (!cfg) continue;
+              }
+              const score = matchScore(p, cfg.routingRules, cfg);
+              if (score > 0) {
+                candidates.push({ agentId: aid, score, cfg });
+              }
             }
-            const score = matchScore(parsed, cfg.routingRules, cfg);
-            if (score > 0) {
-              candidates.push({ agentId: aid, score, cfg });
+
+            if (candidates.length === 0) {
+              console.log(`[UserbotMgr] ⏭️ No agent matched for account @${shared.username} chat=${p.chatId}`);
+              if (p.isGroup) groupBuffer.add(p.chatId, p);
+              return;
             }
+
+            // Sort by score descending — pick the best one
+            candidates.sort((a, b) => b.score - a.score);
+
+            for (const winner of candidates) {
+              // ── Cooldown: skip agent if it responded recently in this group ──
+              if (p.isGroup && !p.mentionsMe) {
+                const cooldownKey = `${winner.agentId}:${p.chatId}`;
+                const lastTime = _lastResponseTime.get(cooldownKey) || 0;
+                if (Date.now() - lastTime < GROUP_COOLDOWN_MS) {
+                  console.log(`[UserbotMgr] ⏳ Cooldown active for agent#${winner.agentId} in ${p.chatId}, skipping`);
+                  continue; // try next candidate
+                }
+              }
+
+              console.log(`[UserbotMgr] 🎯 Routed to agent #${winner.agentId} (score=${winner.score}) on @${shared.username} chat=${p.chatId}${candidates.length > 1 ? ` (${candidates.length} candidates)` : ''}`);
+              this.dispatchToAgent(winner.agentId, p, winner.cfg);
+              return; // dispatched to best non-cooldown candidate
+            }
+            console.log(`[UserbotMgr] ⏳ All candidates on cooldown for chat=${p.chatId}`);
+          };
+
+          // ── Debounce group messages (non-mention) to batch within 1.5s ──
+          if (parsed.isGroup && !parsed.mentionsMe) {
+            const dkey = `${tgUserId}:${parsed.chatId}`;
+            if (!_debounceBatch.has(dkey)) _debounceBatch.set(dkey, []);
+            _debounceBatch.get(dkey)!.push({ parsed, msg });
+
+            // Reset timer
+            if (_debounceTimers.has(dkey)) clearTimeout(_debounceTimers.get(dkey)!);
+            _debounceTimers.set(dkey, setTimeout(async () => {
+              const batch = _debounceBatch.get(dkey) || [];
+              _debounceBatch.delete(dkey);
+              _debounceTimers.delete(dkey);
+              if (batch.length === 0) return;
+
+              // All messages already stored in chatRing above; dispatch only the LAST one
+              const last = batch[batch.length - 1];
+              try {
+                await routeAndDispatch(last.parsed);
+              } catch (e: any) {
+                console.error(`[UserbotMgr] Debounced dispatch error:`, e.message);
+              }
+            }, DEBOUNCE_MS));
+            return; // don't process immediately
           }
 
-          if (candidates.length === 0) {
-            console.log(`[UserbotMgr] ⏭️ No agent matched for account @${shared.username} chat=${parsed.chatId}`);
-            if (parsed.isGroup) groupBuffer.add(parsed.chatId, parsed);
-            return;
-          }
-
-          // Sort by score descending — pick the best one
-          candidates.sort((a, b) => b.score - a.score);
-          const winner = candidates[0];
-          console.log(`[UserbotMgr] 🎯 Routed to agent #${winner.agentId} (score=${winner.score}) on @${shared.username} chat=${parsed.chatId}${candidates.length > 1 ? ` (${candidates.length} candidates)` : ''}`);
-
-          this.dispatchToAgent(winner.agentId, parsed, winner.cfg);
+          // DM or mention — dispatch immediately
+          await routeAndDispatch(parsed);
         } catch (e: any) {
           console.error(`[UserbotMgr] Account handler error @${shared.username}:`, e.message);
         }
@@ -2036,21 +2121,16 @@ class UserbotManager {
           }
         }
 
-        // Also poll all supergroups from dialogs (for default agents)
-        const hasDefaultAgent = [...shared.agentIds].some((aid: number) => {
-          const cfg = _agentMsgConfigs.get(aid);
-          return cfg?.routingRules?.isDefault && (cfg?.groupPolicy === 'active' || cfg?.groupPolicy === 'open');
-        });
-
-        if (hasDefaultAgent) {
-          // Poll recent dialogs for supergroups
+        // For default agents: only poll chats where agent has actively participated
+        // (stored in agent_state as 'active_chats' list) — NOT all supergroups
+        for (const aid of shared.agentIds) {
           try {
-            const dlgs = await client.getDialogs({ limit: 30 });
-            for (const d of dlgs) {
-              const entity = d.entity as any;
-              if (entity?.className === 'Channel' && entity?.megagroup) {
-                const chatId = `-100${entity.id}`;
-                if (!activeChats.includes(chatId)) activeChats.push(chatId);
+            const sr = getAgentStateRepository();
+            const stored = await sr.get(aid, 'active_chats').catch(() => null);
+            if (stored?.value) {
+              const chats: string[] = JSON.parse(stored.value);
+              for (const c of chats) {
+                if (!activeChats.includes(c)) activeChats.push(c);
               }
             }
           } catch {}
@@ -2066,20 +2146,19 @@ class UserbotManager {
             const lastKey = `${tgUserId}:${chatId}`;
             const lastSeen = this.supergroupLastMsgId.get(lastKey) || 0;
 
-            for (const msg of msgs.reverse()) {
-              if (!msg || !msg.message) continue;
-              if (msg.id <= lastSeen) continue;
-              if (msg.out === true) continue;
-
-              // New message found!
-              this.supergroupLastMsgId.set(lastKey, msg.id);
-
-              // Check dedup
-              const cId = msg?.peerId?.channelId?.toJSNumber?.() ?? chatId;
-              if (dupFilter.isDuplicate(String(cId), msg.id, msg.message)) continue;
-
-              console.log(`[UserbotMgr] 🔄 POLL @${shared.username}: new msg in ${chatId} id=${msg.id} text="${(msg.message || '').slice(0, 40)}"`);
-              handler({ message: msg });
+            // Process ALL new messages (not just latest — prevents missing messages)
+            const newMsgs = msgs.reverse().filter((m: any) => m && m.message && m.id > lastSeen && !m.out);
+            if (newMsgs.length > 0) {
+              // Update lastSeen to latest
+              this.supergroupLastMsgId.set(lastKey, newMsgs[newMsgs.length - 1].id);
+              // Dispatch all new messages (max 5 per poll to prevent flooding)
+              for (const nm of newMsgs.slice(-5)) {
+                const cId = nm?.peerId?.channelId?.toJSNumber?.() ?? chatId;
+                if (!dupFilter.isDuplicate(String(cId), nm.id, nm.message)) {
+                  console.log(`[UserbotMgr] 🔄 POLL @${shared.username}: new msg in ${chatId} id=${nm.id} text="${(nm.message || '').slice(0, 40)}" (${newMsgs.length} total new)`);
+                  handler({ message: nm });
+                }
+              }
             }
 
             // Initialize lastMsgId on first poll
@@ -2305,6 +2384,43 @@ class UserbotManager {
     const client = await this.getClient(agentId);
     if (!client) { console.log(`[UserbotMgr] ❌ No client for agent#${agentId}`); return; }
 
+    // ── Keyword pre-filter for active mode (skip irrelevant messages before expensive AI call) ──
+    if (msg.isGroup && !msg.mentionsMe) {
+      const policy = this.getChatPolicy(msg.chatId, cfg);
+      if (policy === 'active') {
+        const textLower = msg.text.toLowerCase();
+        const promptLower = (cfg.systemPrompt || '').toLowerCase();
+
+        // Extract agent's domain keywords from its prompt (first 500 chars)
+        const promptWords = promptLower.slice(0, 500).match(/[а-яёa-z]{4,}/g) || [];
+        const stopWords = new Set([
+          'этот', 'если', 'когда', 'через', 'после', 'перед', 'всегда', 'никогда', 'должен', 'нужно',
+          'можно', 'будет', 'будешь', 'только', 'каждый', 'первый', 'второй', 'третий',
+          'that', 'this', 'with', 'from', 'your', 'will', 'have', 'been', 'should', 'would',
+          'could', 'must', 'never', 'always', 'every', 'about', 'after', 'before',
+        ]);
+        const domainKeywords = new Set(promptWords.filter(w => !stopWords.has(w)));
+
+        // Check if message has ANY relevance
+        let relevanceScore = 0;
+        // Direct question
+        if (textLower.includes('?') || /кто|что|как|где|почему|сколько/.test(textLower)) relevanceScore += 0.3;
+        // Contains domain keywords
+        for (const kw of domainKeywords) {
+          if (textLower.includes(kw)) { relevanceScore += 0.4; break; }
+        }
+        // Message is long enough to be meaningful
+        if (msg.text.length > 20) relevanceScore += 0.1;
+        // Contains URL (might need analysis)
+        if (/https?:\/\//.test(msg.text)) relevanceScore += 0.2;
+
+        if (relevanceScore < 0.3) {
+          console.log(`[UserbotMgr] 🔇 Agent#${agentId} pre-filter skip (score=${relevanceScore.toFixed(1)}): "${msg.text.slice(0, 40)}"`);
+          return;
+        }
+      }
+    }
+
     try {
       // ── Track contact + dossier ──
       const cm = getContactMemory(agentId);
@@ -2450,9 +2566,10 @@ RULES:
             }
             contents.push({ role: 'model', parts: [{ text: line.slice(5) }] });
           } else {
-            // User message — extract text from <user_message> tags
-            const match = line.match(/<user_message>([\s\S]*?)<\/user_message>/);
-            pendingUserParts.push(match ? match[1] : line);
+            // User message — extract text from delimiters (new: <<<USER_MESSAGE>>>, legacy: <user_message>)
+            const delimMatch = line.match(/<<<USER_MESSAGE>>>\n?([\s\S]*?)\n?<<<END_USER_MESSAGE>>>/);
+            const legacyMatch = !delimMatch ? line.match(/<user_message>([\s\S]*?)<\/user_message>/) : null;
+            pendingUserParts.push(delimMatch ? delimMatch[1] : legacyMatch ? legacyMatch[1] : line);
           }
         }
         // Flush remaining user messages (including the current one)
@@ -2682,8 +2799,9 @@ RULES:
           } else if (line.startsWith('[Context summary]') || line.startsWith('[Summary]')) {
             messages.push({ role: 'system', content: line });
           } else {
-            const match = line.match(/<user_message>([\s\S]*?)<\/user_message>/);
-            messages.push({ role: 'user', content: match ? match[1] : line });
+            const delimMatch = line.match(/<<<USER_MESSAGE>>>\n?([\s\S]*?)\n?<<<END_USER_MESSAGE>>>/);
+            const legacyMatch = !delimMatch ? line.match(/<user_message>([\s\S]*?)<\/user_message>/) : null;
+            messages.push({ role: 'user', content: delimMatch ? delimMatch[1] : legacyMatch ? legacyMatch[1] : line });
           }
         }
         // Merge consecutive same-role messages
@@ -2820,6 +2938,9 @@ RULES:
           if (l.startsWith('готово') && l.length > 60) return false;
           // Ultimate check: if this line appears verbatim in the system prompt, kill it
           if (l.length > 15 && systemPromptLower && systemPromptLower.includes(l)) return false;
+          // Kill meta-commentary about tool failures (agent shouldn't expose internals)
+          if (l.includes('что-то пошло не так') && (l.includes('реакц') || l.includes('tool') || l.includes('ошибк'))) return false;
+          if (/^(i (will|cannot|can't)|make sure|you can use|be (a bit|more|short))/i.test(l)) return false;
           return true;
         });
         aiText = cleanLines.join('\n').trim();
@@ -2835,14 +2956,47 @@ RULES:
         aiText = aiText.replace(/^Remember to[^.]*\.?\s*/i, '').trim();
         aiText = aiText.replace(/^Now summarize[^.]*\.?\s*/i, '').trim();
 
+        // Kill entire response if it's English meta-commentary / chain-of-thought in a Russian context
+        const trimmedAi = aiText.trim();
+        if (trimmedAi && (
+          /^(I will|I cannot|I can't|I need to|I should|Make sure|You can|Not related|Nothing to|No response|Staying|Skip|Let me|Here'?s? (my|the)|The user|This (is|message)|Based on)/i.test(trimmedAi) ||
+          /^\d+\.\s*\*?\*?(Analyze|Determine|Check|Read|Respond|Consider|Understand|Identify|Look|Think|First|The user)/i.test(trimmedAi) ||
+          /^(Okay|OK|Alright|So),?\s*(I |let me|the user|this|here)/i.test(trimmedAi) ||
+          /^(My (response|answer|reply)|Response:|Answer:|Reply:)/i.test(trimmedAi)
+        )) {
+          console.log(`[UserbotMgr] ⚠️ Agent#${agentId} meta-commentary/CoT detected, clearing: "${trimmedAi.slice(0, 80)}"`);
+          aiText = '';
+        }
+        // If response is mostly English but system prompt is Russian — likely leaked reasoning
+        if (aiText && cfg.systemPrompt && /[а-яё]/i.test(cfg.systemPrompt)) {
+          const russianChars = (aiText.match(/[а-яёА-ЯЁ]/g) || []).length;
+          const latinChars = (aiText.match(/[a-zA-Z]/g) || []).length;
+          if (latinChars > 50 && russianChars < latinChars * 0.1) {
+            console.log(`[UserbotMgr] ⚠️ Agent#${agentId} English response for Russian agent, clearing: "${aiText.slice(0, 80)}"`);
+            aiText = '';
+          }
+        }
         if (!aiText || aiText.length < 2) {
           console.log(`[UserbotMgr] ⚠️ Agent#${agentId} response was only system prompt echo, skipping`);
         }
       }
 
-      // ── In active group mode, empty response = deliberate ignore (don't fallback) ──
+      // ── In active group mode, detect "I choose not to respond" patterns ──
       const effectivePolicy = msg.isGroup ? this.getChatPolicy(msg.chatId, cfg) : cfg.dmPolicy;
-      const isActiveGroupIgnore = msg.isGroup && !msg.mentionsMe && effectivePolicy === 'active' && (!aiText || aiText.length < 2);
+      if (aiText && msg.isGroup && !msg.mentionsMe && (effectivePolicy === 'active' || effectivePolicy === 'open')) {
+        const lt = aiText.toLowerCase().trim();
+        // Gemini says "I will not respond" / "I will stay silent" / "not related to my functions" instead of empty
+        const isRefusal = /^(i will (not|stay)|not related|no response|staying silent|nothing to add|не буду|не отвечаю|промолчу|не по теме|пропускаю|игнорирую)/i.test(lt)
+          || /will (not respond|stay silent|ignore|skip)/i.test(lt)
+          || /^(skip|ignore|pass|silent|no comment)/i.test(lt)
+          || /^make sure to/i.test(lt)
+          || /^you can use/i.test(lt)
+          || /^be (a bit|more|short|brief)/i.test(lt);
+        if (isRefusal) {
+          aiText = ''; // convert to empty → will be caught below
+        }
+      }
+      const isActiveGroupIgnore = msg.isGroup && !msg.mentionsMe && (effectivePolicy === 'active' || effectivePolicy === 'open') && (!aiText || aiText.length < 2);
       if (isActiveGroupIgnore) {
         console.log(`[UserbotMgr] 🔇 Agent#${agentId} chose to ignore group message (active mode)`);
         return; // agent decided not to respond — that's fine
@@ -2888,6 +3042,7 @@ RULES:
         chatRing.addResponse(msg.chatId, aiText);
         chatRing.persistToDb(agentId, cfg.userId).catch(() => {});
         getContactMemory(agentId).persistToDb(agentId, cfg.userId).catch(() => {});
+        if (msg.isGroup) _lastResponseTime.set(`${agentId}:${msg.chatId}`, Date.now());
         return;
       }
       // ── Prompt leak filter: strip system prompt fragments from response ──
@@ -2960,6 +3115,22 @@ RULES:
           chatRing.persistToDb(agentId, cfg.userId).catch(() => {});
           getContactMemory(agentId).persistToDb(agentId, cfg.userId).catch(() => {});
           console.log(`[UserbotMgr] 💬 Agent#${agentId} replied: ${responseText.slice(0, 80)}...`);
+          // ── Update cooldown timestamp after successful response ──
+          if (msg.isGroup) {
+            _lastResponseTime.set(`${agentId}:${msg.chatId}`, Date.now());
+          }
+          // Track active group chats for supergroup poller
+          if (msg.isGroup) {
+            try {
+              const _sr = getAgentStateRepository();
+              const _ac = await _sr.get(agentId, 'active_chats').catch(() => null);
+              const chats: string[] = _ac?.value ? JSON.parse(_ac.value) : [];
+              if (!chats.includes(msg.chatId)) {
+                chats.push(msg.chatId);
+                await _sr.set(agentId, cfg.userId, 'active_chats', JSON.stringify(chats.slice(-20))); // max 20
+              }
+            } catch {}
+          }
         } catch (sendErr: any) {
           console.error(`[UserbotMgr] Send failed agent#${agentId}:`, sendErr.message);
           // Fallback: try sending via Bot API notification

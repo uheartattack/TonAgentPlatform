@@ -4,7 +4,9 @@
  */
 import express, { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
+import http from 'http';
 import path from 'path';
+import { WebSocketServer, WebSocket } from 'ws';
 import { getDBTools } from './agents/tools/db-tools';
 import { getRunnerAgent } from './agents/sub-agents/runner';
 import { getPluginManager } from './plugins-system';
@@ -17,6 +19,7 @@ import {
   getMarketplaceRepository,
   getAIProposalsRepository,
   getBalanceTxRepository,
+  getAgentStateRepository,
 } from './db/schema-extensions';
 import { verifyTopupTransaction, PLATFORM_WALLET, getUserSubscription, getUserPlan, PLANS, canCreateAgent, canGenerateForFree, getGenerationsUsed, confirmPayment, createPayment, getPendingPayment, verifyTonTransaction, updateSubscriptionCache } from './payments';
 import { sendPlatformTransaction } from './services/TonConnect';
@@ -41,6 +44,29 @@ export const pendingBotAuth = new Map<string, {
   firstName?: string;
   createdAt: number;
 }>();
+
+// ── WebSocket broadcast ──────────────────────────────────────
+let _wsClients: Map<number, Set<WebSocket>> | null = null;
+
+export interface WSEvent {
+  type: 'agent_started' | 'agent_stopped' | 'agent_tick' | 'agent_error';
+  agentId: number;
+  agentName?: string;
+  data?: any;
+  timestamp: number;
+}
+
+export function broadcastWSEvent(userId: number, event: WSEvent): void {
+  if (!_wsClients) return;
+  const clients = _wsClients.get(userId);
+  if (!clients || clients.size === 0) return;
+  const msg = JSON.stringify(event);
+  clients.forEach((ws) => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(msg);
+    }
+  });
+}
 
 function generateToken(): string {
   return crypto.randomBytes(32).toString('hex');
@@ -1041,7 +1067,7 @@ export function startApiServer() {
       const agentCheck = await getDBTools().getAgent(agentId, userId);
       if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
       const { role } = req.body || {};
-      const validRoles = ['worker', 'manager', 'specialist', 'monitor'];
+      const validRoles = ['worker', 'manager', 'specialist', 'monitor', 'director'];
       if (!validRoles.includes(role)) { res.status(400).json({ error: 'Invalid role' }); return; }
       await pool.query('UPDATE builder_bot.agents SET role = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3', [role, agentId, userId]);
       res.json({ ok: true });
@@ -1126,6 +1152,69 @@ export function startApiServer() {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── POST /api/agents/:id/config — Update advanced config (spend limit, tick interval, language) ──
+  app.post('/api/agents/:id/config', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const agentId = parseInt(req.params.id as string, 10);
+      if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
+      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
+      const agent = agentCheck.data;
+      const { daily_spend_limit_ton, tick_interval_sec, agent_language } = req.body || {};
+
+      const tc = typeof agent.triggerConfig === 'string' ? JSON.parse(agent.triggerConfig) : (agent.triggerConfig || {});
+      if (!tc.config) tc.config = {};
+      if (daily_spend_limit_ton !== undefined) tc.config.daily_spend_limit_ton = parseInt(daily_spend_limit_ton, 10) || 500;
+      if (tick_interval_sec !== undefined) tc.config.tick_interval_sec = parseInt(tick_interval_sec, 10) || 60;
+      if (agent_language !== undefined) tc.config.agent_language = agent_language || 'auto';
+
+      await pool.query('UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3',
+        [JSON.stringify(tc), agentId, userId]);
+
+      // Also save as agent state for runtime access
+      const stateRepo = getAgentStateRepository();
+      if (daily_spend_limit_ton !== undefined) await stateRepo.set(agentId, userId, 'daily_spend_limit_ton', String(tc.config.daily_spend_limit_ton));
+      if (tick_interval_sec !== undefined) await stateRepo.set(agentId, userId, 'tick_interval_sec', String(tc.config.tick_interval_sec));
+      if (agent_language !== undefined) await stateRepo.set(agentId, userId, 'agent_language', tc.config.agent_language);
+
+      res.json({ ok: true, config: tc.config });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── POST /api/agents/clone — Clone an agent ──
+  app.post('/api/agents/clone', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { agentId } = req.body || {};
+      if (!agentId) { res.status(400).json({ error: 'Missing agentId' }); return; }
+      const agentCheck = await getDBTools().getAgent(parseInt(agentId, 10), userId);
+      if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
+      const a = agentCheck.data;
+
+      // Create clone
+      const cloneName = (a.name || 'Agent') + ' (clone)';
+      const result = await getDBTools().createAgent(userId, cloneName, a.description || '', a.triggerType, a.code || '', a.triggerConfig);
+      if (!result.success || !result.data) { res.status(500).json({ error: 'Failed to create clone' }); return; }
+      const newId = result.data.agentId;
+
+      // Copy state (skip wallet and conversation history)
+      const stateRepo = getAgentStateRepository();
+      const states = await stateRepo.getAll(parseInt(agentId, 10));
+      for (const s of states) {
+        if (s.key === 'wallet_address' || s.key === 'wallet_mnemonic' || s.key === '_conversation_history') continue;
+        await stateRepo.set(newId, userId, s.key, s.value);
+      }
+
+      // Copy role if exists
+      if (a.role) {
+        await pool.query('UPDATE builder_bot.agents SET role = $1 WHERE id = $2', [a.role, newId]);
+      }
+
+      res.json({ ok: true, agentId: newId, name: cloneName });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // ── PUT /api/agents/:id/wizard — Apply wizard configuration ──
   app.put('/api/agents/:id/wizard', requireAuth, async (req: Request, res: Response) => {
     try {
@@ -1167,11 +1256,10 @@ export function startApiServer() {
       if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
       const { message } = req.body || {};
       if (!message || typeof message !== 'string' || message.length > 4000) { res.status(400).json({ error: 'Invalid message' }); return; }
-      // Send message to AI agent via runner
-      const { getRunnerAgent } = await import('./agents/sub-agents/runner');
-      const runner = getRunnerAgent();
-      const result = await runner.sendMessageToAgent(agentId, message);
-      res.json({ ok: true, ...result });
+      // Send message to AI agent and wait for response (up to 30s)
+      const { sendMessageAndWaitResponse } = await import('./agents/ai-agent-runtime');
+      const response = await sendMessageAndWaitResponse(agentId, message);
+      res.json({ ok: true, response });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -1199,11 +1287,45 @@ export function startApiServer() {
       tc.config.WALLET_MNEMONIC = mnemonic.join(' ');
       tc.config.WALLET_ADDRESS = address;
       await pool.query('UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3', [JSON.stringify(tc), agentId, userId]);
+      // Sync to agent_state for runtime consistency
+      try {
+        const { getAgentStateRepository } = await import('./db/schema-extensions');
+        const sr = getAgentStateRepository();
+        await sr.set(agentId, userId, 'wallet_address', address);
+        await sr.set(agentId, userId, 'wallet_mnemonic', mnemonic.join(' '));
+      } catch (e: any) { console.warn('[WalletAPI] state sync:', e.message); }
       res.json({ ok: true, address });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
-  // ── GET /api/agents/:id/audit — Security audit for agent ──
+  // ── GET /api/agents/:id/mnemonic — Get wallet mnemonic (owner only) ──
+  app.get('/api/agents/:id/mnemonic', requireAuth, rateLimit(5, 60000, 'mnemonic'), async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const agentId = parseInt(req.params.id as string, 10);
+      if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
+      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
+      const agent = agentCheck.data;
+      const tc = typeof agent.triggerConfig === 'string' ? JSON.parse(agent.triggerConfig) : (agent.triggerConfig || {});
+
+      // Check trigger_config first, then agent_state
+      let mnemonic = tc.config?.WALLET_MNEMONIC || '';
+      if (!mnemonic) {
+        try {
+          const { getAgentStateRepository } = await import('./db/schema-extensions');
+          const sr = getAgentStateRepository();
+          const val = await sr.get(agentId, 'wallet_mnemonic').catch(() => null) as any;
+          mnemonic = val?.value || '';
+        } catch {}
+      }
+
+      if (!mnemonic) { res.json({ ok: false, error: 'No wallet mnemonic found' }); return; }
+      res.json({ ok: true, mnemonic });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── GET /api/agents/:id/audit — Comprehensive agent audit ──
   app.get('/api/agents/:id/audit', requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = (req as any).userId as number;
@@ -1213,20 +1335,117 @@ export function startApiServer() {
       if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
       const agent = agentCheck.data;
       const tc = typeof agent.triggerConfig === 'string' ? JSON.parse(agent.triggerConfig) : (agent.triggerConfig || {});
-      const issues: string[] = [];
-      const passed: string[] = [];
-      // Check API key
-      if (!tc.config?.AI_API_KEY) issues.push('No AI API key configured'); else passed.push('AI API key configured');
-      // Check wallet
-      if (!tc.config?.WALLET_MNEMONIC) issues.push('No wallet configured'); else passed.push('Wallet configured');
-      // Check code length
-      if ((agent.code || '').length < 20) issues.push('System prompt too short'); else passed.push('System prompt defined');
-      // Check capabilities
+      const code = agent.code || '';
       const caps = tc.config?.enabledCapabilities || [];
-      if (caps.length === 0) issues.push('No capabilities enabled'); else passed.push(caps.length + ' capabilities enabled');
-      // Check schedule
-      if (agent.triggerType === 'scheduled' && !tc.cronExpression && !tc.interval) issues.push('Scheduled agent has no schedule'); else if (agent.triggerType === 'scheduled') passed.push('Schedule configured');
-      res.json({ ok: true, issues, passed, score: Math.round(passed.length / (passed.length + issues.length) * 100) });
+
+      interface AuditItem { category: string; check: string; status: 'pass' | 'warn' | 'fail'; detail: string }
+      const items: AuditItem[] = [];
+
+      // ── 1. AI Configuration ──
+      if (tc.config?.AI_API_KEY) items.push({ category: 'ai', check: 'API Key', status: 'pass', detail: 'AI API key configured' });
+      else items.push({ category: 'ai', check: 'API Key', status: 'warn', detail: 'No API key — using free Platform AI (slower, limited)' });
+
+      const provider = tc.config?.AI_PROVIDER || 'platform';
+      items.push({ category: 'ai', check: 'Provider', status: 'pass', detail: 'Provider: ' + provider });
+
+      const model = tc.config?.AI_MODEL;
+      items.push({ category: 'ai', check: 'Model', status: model ? 'pass' : 'pass', detail: model ? 'Custom model: ' + model : 'Default model (auto)' });
+
+      // ── 2. System Prompt Quality ──
+      if (code.length < 50) items.push({ category: 'prompt', check: 'Prompt length', status: 'fail', detail: 'System prompt too short (' + code.length + ' chars). Needs detailed instructions.' });
+      else if (code.length < 300) items.push({ category: 'prompt', check: 'Prompt length', status: 'warn', detail: 'Prompt is short (' + code.length + ' chars). Consider adding more instructions.' });
+      else items.push({ category: 'prompt', check: 'Prompt length', status: 'pass', detail: 'Prompt: ' + code.length + ' chars' });
+
+      if (/get_state|set_state/.test(code)) items.push({ category: 'prompt', check: 'Memory usage', status: 'pass', detail: 'Uses get_state/set_state for persistent memory' });
+      else items.push({ category: 'prompt', check: 'Memory usage', status: 'warn', detail: 'No memory instructions (get_state/set_state) — agent won\'t remember context between runs' });
+
+      if (/notify|notify_rich/.test(code)) items.push({ category: 'prompt', check: 'Notifications', status: 'pass', detail: 'Has notification instructions' });
+      else items.push({ category: 'prompt', check: 'Notifications', status: 'warn', detail: 'No notify instructions — agent won\'t send alerts to you' });
+
+      if (/tg_send_message|tg_reply|tg_get_messages/.test(code)) items.push({ category: 'prompt', check: 'Telegram tools', status: 'pass', detail: 'Uses Telegram tools (messages, replies)' });
+
+      if (/РЕАКТИВНЫЙ|reactive|входящ|context\.input/.test(code)) items.push({ category: 'prompt', check: 'Reactive mode', status: 'pass', detail: 'Has reactive mode (responds to messages)' });
+      else items.push({ category: 'prompt', check: 'Reactive mode', status: 'warn', detail: 'No reactive mode instructions — won\'t respond to incoming messages' });
+
+      if (/ПРОАКТИВНЫЙ|proactive|unread|tg_get_unread/.test(code)) items.push({ category: 'prompt', check: 'Proactive mode', status: 'pass', detail: 'Has proactive mode (acts autonomously)' });
+
+      // ── 3. Capabilities ──
+      if (caps.length === 0) items.push({ category: 'caps', check: 'Capabilities', status: 'fail', detail: 'No capabilities enabled — agent has no tools' });
+      else if (caps.length < 5) items.push({ category: 'caps', check: 'Capabilities', status: 'warn', detail: caps.length + ' capabilities enabled (consider enabling more)' });
+      else items.push({ category: 'caps', check: 'Capabilities', status: 'pass', detail: caps.length + ' capabilities enabled' });
+
+      // Check if prompt mentions tools that aren't enabled
+      const promptMentionsWallet = /wallet|balance|send_ton|get_ton/i.test(code);
+      const promptMentionsGifts = /gift|подарок|arbitrage|арбитраж/i.test(code);
+      const promptMentionsTg = /tg_send|tg_get|tg_reply|userbot/i.test(code);
+      if (promptMentionsWallet && !caps.includes('wallet')) items.push({ category: 'caps', check: 'Wallet cap', status: 'fail', detail: 'Prompt mentions wallet but capability not enabled' });
+      if (promptMentionsGifts && !caps.includes('gifts') && !caps.includes('gifts_market')) items.push({ category: 'caps', check: 'Gifts cap', status: 'fail', detail: 'Prompt mentions gifts but capability not enabled' });
+      if (promptMentionsTg && !caps.includes('telegram')) items.push({ category: 'caps', check: 'Telegram cap', status: 'warn', detail: 'Prompt mentions Telegram tools but capability not enabled' });
+
+      // ── 4. Wallet ──
+      const { getAgentStateRepository } = await import('./db/schema-extensions');
+      const sr = getAgentStateRepository();
+      const walletAddr = (await sr.get(agentId, 'wallet_address').catch(() => null)) as any;
+      const walletInConfig = tc.config?.WALLET_ADDRESS;
+      if (walletAddr?.value || walletInConfig) {
+        items.push({ category: 'wallet', check: 'Wallet', status: 'pass', detail: 'Wallet: ' + (walletAddr?.value || walletInConfig).slice(0, 12) + '...' });
+        // Check sync
+        if (walletAddr?.value && walletInConfig && walletAddr.value !== walletInConfig) {
+          items.push({ category: 'wallet', check: 'Wallet sync', status: 'warn', detail: 'Wallet addresses differ between state and config — may cause issues' });
+        }
+      } else {
+        if (promptMentionsWallet) items.push({ category: 'wallet', check: 'Wallet', status: 'fail', detail: 'No wallet but prompt needs one. Create in Settings → Wallet' });
+        else items.push({ category: 'wallet', check: 'Wallet', status: 'pass', detail: 'No wallet (not needed for this agent)' });
+      }
+
+      // ── 5. Security ──
+      if (tc.config?.self_improvement_enabled) items.push({ category: 'security', check: 'Self-improvement', status: 'pass', detail: 'Self-improvement enabled (agent can adapt)' });
+
+      const dailyLimit = await sr.get(agentId, 'daily_spend_limit_ton').catch(() => null) as any;
+      items.push({ category: 'security', check: 'Spend limit', status: 'pass', detail: 'Daily spend limit: ' + (dailyLimit?.value || '500') + ' TON' });
+
+      const role = agent.role || 'worker';
+      items.push({ category: 'security', check: 'Role', status: 'pass', detail: 'Role: ' + role });
+
+      // ── 6. Execution Stats ──
+      try {
+        const execRows = await pool.query('SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE status = \'success\') as ok FROM builder_bot.agent_executions WHERE agent_id = $1', [agentId]);
+        const total = parseInt(execRows.rows[0]?.total || '0');
+        const ok = parseInt(execRows.rows[0]?.ok || '0');
+        if (total > 0) {
+          const rate = Math.round(ok / total * 100);
+          items.push({ category: 'stats', check: 'Executions', status: rate > 70 ? 'pass' : (rate > 40 ? 'warn' : 'fail'), detail: total + ' executions, ' + rate + '% success rate' });
+        } else {
+          items.push({ category: 'stats', check: 'Executions', status: 'warn', detail: 'No executions yet' });
+        }
+      } catch {}
+
+      // ── 7. Routing (multi-agent) ──
+      const routing = tc.config?.routingRules;
+      if (routing) {
+        const hasRules = (routing.chatIds?.length > 0) || (routing.keywords?.length > 0) || routing.isDefault;
+        items.push({ category: 'routing', check: 'Routing rules', status: hasRules ? 'pass' : 'warn', detail: hasRules ? 'Routing configured (priority: ' + (routing.priority || 5) + ')' : 'Routing rules empty — agent may not receive messages' });
+      }
+
+      // ── 8. Telegram Auth ──
+      if (tc.telegram_session?.session) {
+        items.push({ category: 'telegram', check: 'TG Auth', status: 'pass', detail: 'Telegram session active' });
+      } else if (promptMentionsTg) {
+        items.push({ category: 'telegram', check: 'TG Auth', status: 'fail', detail: 'Prompt needs Telegram but no session. Use /tglogin in bot' });
+      }
+
+      // Calculate score
+      const failCount = items.filter(i => i.status === 'fail').length;
+      const warnCount = items.filter(i => i.status === 'warn').length;
+      const passCount = items.filter(i => i.status === 'pass').length;
+      const score = Math.round((passCount * 100 + warnCount * 50) / (items.length * 100) * 100);
+
+      // Also return legacy format for compatibility
+      const issues = items.filter(i => i.status === 'fail').map(i => i.detail);
+      const warnings = items.filter(i => i.status === 'warn').map(i => i.detail);
+      const passed = items.filter(i => i.status === 'pass').map(i => i.detail);
+
+      res.json({ ok: true, items, issues, warnings, passed, score, summary: { total: items.length, pass: passCount, warn: warnCount, fail: failCount } });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
@@ -2443,7 +2662,54 @@ export function startApiServer() {
     res.sendFile(path.join(landingPath, 'index.html'));
   });
 
-  app.listen(PORT, () => {
+  // ── HTTP server + WebSocket ─────────────────────────────────
+  const server = http.createServer(app);
+
+  const wss = new WebSocketServer({ noServer: true });
+
+  // userId → Set<WebSocket>
+  const wsClients = new Map<number, Set<WebSocket>>();
+
+  server.on('upgrade', (req, socket, head) => {
+    const url = new URL(req.url || '/', `http://localhost:${PORT}`);
+    if (url.pathname !== '/ws') {
+      socket.destroy();
+      return;
+    }
+    const token = url.searchParams.get('token') || '';
+    const session = getSession(token);
+    if (!session) {
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      (ws as any)._userId = session.userId;
+      wss.emit('connection', ws, req);
+    });
+  });
+
+  wss.on('connection', (ws: WebSocket) => {
+    const userId: number = (ws as any)._userId;
+    if (!wsClients.has(userId)) wsClients.set(userId, new Set());
+    wsClients.get(userId)!.add(ws);
+
+    ws.on('close', () => {
+      const set = wsClients.get(userId);
+      if (set) {
+        set.delete(ws);
+        if (set.size === 0) wsClients.delete(userId);
+      }
+    });
+
+    // Send a welcome ping so client knows it's connected
+    ws.send(JSON.stringify({ type: 'connected' }));
+  });
+
+  // Store reference so broadcastWSEvent can use it
+  _wsClients = wsClients;
+
+  server.listen(PORT, () => {
     console.log(`🌐 API Server running on http://localhost:${PORT}`);
   });
 }

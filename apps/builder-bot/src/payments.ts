@@ -331,12 +331,12 @@ export function createPayment(
   };
   pendingPayments.set(userId, pending);
 
-  // Сохраняем в БД
+  // Сохраняем в БД (non-blocking — function is sync)
   if (_pool) {
     _pool.query(
       'INSERT INTO builder_bot.payments(user_id, plan_id, period, amount_ton, status) VALUES($1,$2,$3,$4,$5)',
       [userId, planId, period, amountTon, 'pending']
-    ).catch(console.error);
+    ).catch((e: any) => console.error('[Payments] DB insert failed:', e.message));
   }
 
   return { address: PLATFORM_WALLET, amountTon, comment, expiresAt };
@@ -375,16 +375,20 @@ export async function confirmPayment(
 
   // Сохраняем в БД
   if (_pool) {
-    await _pool.query(`
-      INSERT INTO builder_bot.subscriptions(user_id, plan_id, expires_at, is_active)
-      VALUES($1,$2,$3,true)
-      ON CONFLICT(user_id) DO UPDATE SET plan_id=$2, expires_at=$3, is_active=true, updated_at=NOW()
-    `, [userId, pending.planId, expiresAt]).catch(console.error);
+    try {
+      await _pool.query(`
+        INSERT INTO builder_bot.subscriptions(user_id, plan_id, expires_at, is_active)
+        VALUES($1,$2,$3,true)
+        ON CONFLICT(user_id) DO UPDATE SET plan_id=$2, expires_at=$3, is_active=true, updated_at=NOW()
+      `, [userId, pending.planId, expiresAt]);
+    } catch (e: any) { console.error('[Payments] subscription DB error:', e.message); }
 
-    await _pool.query(`
-      UPDATE builder_bot.payments SET status='confirmed', tx_hash=$1, confirmed_at=NOW()
-      WHERE user_id=$2 AND status='pending' ORDER BY created_at DESC LIMIT 1
-    `, [txHash, userId]).catch(console.error);
+    try {
+      await _pool.query(`
+        UPDATE builder_bot.payments SET status='confirmed', tx_hash=$1, confirmed_at=NOW()
+        WHERE user_id=$2 AND status='pending' ORDER BY created_at DESC LIMIT 1
+      `, [txHash, userId]);
+    } catch (e: any) { console.error('[Payments] payment confirm DB error:', e.message); }
   }
 
   return { success: true, plan, expiresAt };
