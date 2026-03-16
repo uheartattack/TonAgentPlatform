@@ -12,11 +12,15 @@
  */
 
 import OpenAI from 'openai';
+import { promises as dnsPromises } from 'dns';
+import { isIP } from 'net';
 import { notifyUser, notifyRich } from '../notifier';
 import { getTelegramGiftsService } from '../services/telegram-gifts';
 import {
   getAgentStateRepository,
   getAgentLogsRepository,
+  getExecutionHistoryRepository,
+  getBugTracker,
 } from '../db/schema-extensions';
 import { isAuthorized } from '../fragment-service';
 import {
@@ -28,6 +32,27 @@ import {
   tgSendFormatted, tgGetMessageById, tgGetUnread,
 } from '../services/telegram-userbot';
 import { userbotManager } from '../services/userbot-manager';
+
+// ── Channel post rate limiter (platform-level anti-spam) ────────────────────
+// Key: `${agentId}:${chatId}` → last post timestamp
+const _channelPostTimes = new Map<string, number>();
+const CHANNEL_POST_COOLDOWN = 30 * 60 * 1000; // 30 minutes between posts to same chat
+
+function canPostToChat(agentId: number, chatId: string, isReply: boolean): { allowed: boolean; waitMinutes?: number } {
+  if (isReply) return { allowed: true }; // replies to user messages always allowed
+  const key = `${agentId}:${String(chatId).toLowerCase()}`;
+  const last = _channelPostTimes.get(key) || 0;
+  const elapsed = Date.now() - last;
+  if (elapsed < CHANNEL_POST_COOLDOWN) {
+    return { allowed: false, waitMinutes: Math.ceil((CHANNEL_POST_COOLDOWN - elapsed) / 60000) };
+  }
+  return { allowed: true };
+}
+
+function markPosted(agentId: number, chatId: string) {
+  const key = `${agentId}:${String(chatId).toLowerCase()}`;
+  _channelPostTimes.set(key, Date.now());
+}
 
 // ── Singleton pool for shared state ─────────────────────────────────────────
 let _sharedStatePool: any = null;
@@ -143,7 +168,7 @@ const _pendingMessages = new Map<number, string[]>(); // agentId → messages[]
 
 // ── Per-agent web request rate limiter (anti-scraping) ──────────────────────
 const _webRequestCounts = new Map<number, { count: number; resetAt: number }>();
-const WEB_REQUESTS_PER_TICK = 10; // max web_search + fetch_url per tick
+const WEB_REQUESTS_PER_RUN = 10; // max web_search + fetch_url per run
 function checkWebRateLimit(agentId: number): boolean {
   const now = Date.now();
   const entry = _webRequestCounts.get(agentId);
@@ -151,23 +176,221 @@ function checkWebRateLimit(agentId: number): boolean {
     _webRequestCounts.set(agentId, { count: 1, resetAt: now + 60000 });
     return true;
   }
-  if (entry.count >= WEB_REQUESTS_PER_TICK) return false;
+  if (entry.count >= WEB_REQUESTS_PER_RUN) return false;
   entry.count++;
+  return true;
+}
+
+// ── SSRF protection: validate URL + resolved IP ─────────────────────────────
+function isPrivateIP(ip: string): boolean {
+  // Normalize: strip IPv6 brackets, lowercase
+  let addr = ip.replace(/^\[|\]$/g, '').toLowerCase();
+
+  // IPv6-mapped IPv4 (::ffff:x.x.x.x) → extract the IPv4 part
+  const mappedMatch = addr.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
+  if (mappedMatch) addr = mappedMatch[1];
+
+  // IPv6 loopback
+  if (addr === '::1' || addr === '0:0:0:0:0:0:0:1') return true;
+
+  // IPv6 ULA (fc00::/7) and link-local (fe80::/10)
+  if (/^f[cd][0-9a-f]{2}:/.test(addr)) return true;
+  if (/^fe[89ab][0-9a-f]:/.test(addr)) return true;
+
+  // IPv4 checks
+  const parts = addr.split('.').map(Number);
+  if (parts.length === 4 && parts.every(p => !isNaN(p) && p >= 0 && p <= 255)) {
+    const [a, b] = parts;
+    if (a === 127) return true;                          // 127.0.0.0/8
+    if (a === 0) return true;                            // 0.0.0.0/8
+    if (a === 10) return true;                           // 10.0.0.0/8
+    if (a === 172 && b >= 16 && b <= 31) return true;    // 172.16.0.0/12
+    if (a === 192 && b === 168) return true;             // 192.168.0.0/16
+    if (a === 169 && b === 254) return true;             // 169.254.0.0/16 (link-local)
+    if (a === 100 && b >= 64 && b <= 127) return true;   // 100.64.0.0/10 (CGNAT)
+  }
+  return false;
+}
+
+function fullyDecodeURI(s: string): string {
+  let prev = s;
+  for (let i = 0; i < 5; i++) {
+    try { s = decodeURIComponent(s); } catch { break; }
+    if (s === prev) break;
+    prev = s;
+  }
+  return s;
+}
+
+async function validateUrlSSRF(rawUrl: string): Promise<{ error?: string; decodedUrl?: string }> {
+  // 1. Fully decode (handles double/triple encoding like %2531%2532%2537)
+  const decodedUrl = fullyDecodeURI(rawUrl);
+
+  // 2. Parse
+  let parsed: URL;
+  try {
+    parsed = new URL(decodedUrl);
+  } catch {
+    return { error: 'Invalid URL' };
+  }
+
+  // 3. Protocol whitelist
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return { error: 'Only http/https URLs are allowed' };
+  }
+
+  // 4. Hostname pre-check (catches obvious cases before DNS)
+  const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (host === 'localhost' || host.endsWith('.localhost')
+    || host.endsWith('.internal') || host.endsWith('.local')
+    || host === 'metadata.google.internal'
+    || host === 'instance-data') {
+    return { error: 'Access to internal addresses is blocked' };
+  }
+
+  // Check if hostname is already an IP
+  if (isPrivateIP(host)) {
+    return { error: 'Access to internal/private addresses is blocked' };
+  }
+
+  // 5. DNS resolution check (prevents DNS rebinding with private IPs)
+  try {
+    const addresses = await dnsPromises.resolve4(parsed.hostname).catch(() => [] as string[]);
+    const addresses6 = await dnsPromises.resolve6(parsed.hostname).catch(() => [] as string[]);
+    const allIPs = [...addresses, ...addresses6];
+
+    // If hostname resolved to nothing and isn't already an IP literal, block it
+    if (allIPs.length === 0 && !isIP(parsed.hostname)) {
+      // hostname didn't resolve — allow the fetch to fail naturally
+      return { decodedUrl };
+    }
+
+    for (const ip of allIPs) {
+      if (isPrivateIP(ip)) {
+        return { error: 'Access to internal/private addresses is blocked (resolved IP)' };
+      }
+    }
+  } catch {
+    // DNS resolution failed — let the fetch attempt proceed and fail naturally
+  }
+
+  return { decodedUrl };
+}
+
+// ── Per-agent tool rate limiter (financial + gift + TG tools) ────────────────
+const _toolRateLimits = new Map<string, number[]>(); // "agentId:toolGroup" → timestamps[]
+const TOOL_RATE_LIMITS: Record<string, { max: number; windowMs: number }> = {
+  financial: { max: 5, windowMs: 60_000 },  // 5 financial ops per minute
+  gift:      { max: 10, windowMs: 60_000 }, // 10 gift ops per minute
+  tg:        { max: 15, windowMs: 60_000 }, // 15 TG ops per minute
+};
+const TOOL_GROUP_MAP: Record<string, string> = {
+  send_ton: 'financial', send_jetton: 'financial', ton_send_boc: 'financial',
+  buy_catalog_gift: 'gift', buy_resale_gift: 'gift', buy_market_gift: 'gift',
+  list_gift_for_sale: 'gift', get_gift_floor_real: 'gift', get_gift_catalog: 'gift',
+  scan_real_arbitrage: 'gift', appraise_gift: 'gift',
+  tg_send_message: 'tg', tg_edit_message: 'tg', tg_forward_message: 'tg',
+};
+function checkToolRateLimit(agentId: number, toolName: string): boolean {
+  const group = TOOL_GROUP_MAP[toolName];
+  if (!group) return true;
+  const limit = TOOL_RATE_LIMITS[group];
+  if (!limit) return true;
+  const key = `${agentId}:${group}`;
+  const now = Date.now();
+  let timestamps = _toolRateLimits.get(key) || [];
+  timestamps = timestamps.filter(t => now - t < limit.windowMs);
+  if (timestamps.length >= limit.max) return false;
+  timestamps.push(now);
+  _toolRateLimits.set(key, timestamps);
   return true;
 }
 
 // ── Per-agent transaction safety (large amount confirmation) ────────────────
 const HIGH_VALUE_TX_LIMIT_TON = 100; // TON threshold requiring confirmation
+const DAILY_SPEND_LIMIT_TON = 500;   // Default daily spend cap per agent (in TON)
 
 // ── Notify-called flag per active tick (agentId → bool) ────────────────────
 // Used to suppress duplicate sends when AI calls notify() AND produces finalContent
 const _tickNotifyFlag = new Map<number, boolean>();
+
+// ── Agent metadata cache (60s TTL) ──────────────────────────────────────────
+interface CachedAgentMeta {
+  name: string; description: string; role: string; userId: string;
+  ownerName: string; ownerUsername: string; createdAt: string;
+  cachedAt: number;
+}
+const _agentMetaCache = new Map<number, CachedAgentMeta>();
+const META_CACHE_TTL = 60_000; // 60 seconds
+
+async function getAgentMeta(agentId: number): Promise<CachedAgentMeta | null> {
+  const cached = _agentMetaCache.get(agentId);
+  if (cached && Date.now() - cached.cachedAt < META_CACHE_TTL) return cached;
+  try {
+    const { pool } = await import('../db');
+    const res = await pool.query(
+      `SELECT a.name, a.description, a.created_at, a.role, a.user_id,
+              u.first_name as owner_name, u.username as owner_username
+       FROM builder_bot.agents a LEFT JOIN builder_bot.users u ON a.user_id = u.telegram_id
+       WHERE a.id = $1`, [agentId]);
+    if (!res.rows[0]) return null;
+    const r = res.rows[0];
+    const meta: CachedAgentMeta = {
+      name: r.name || '', description: r.description || '', role: r.role || 'worker',
+      userId: String(r.user_id || ''), ownerName: r.owner_name || '', ownerUsername: r.owner_username || '',
+      createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
+      cachedAt: Date.now(),
+    };
+    _agentMetaCache.set(agentId, meta);
+    return meta;
+  } catch (e: any) {
+    console.warn(`[MetaCache] Failed for agent #${agentId}: ${e.message}`);
+    return cached || null; // return stale cache if available
+  }
+}
 
 export function addMessageToAIAgent(agentId: number, text: string): void {
   if (!_pendingMessages.has(agentId)) _pendingMessages.set(agentId, []);
   _pendingMessages.get(agentId)!.push(text);
   // Trigger an immediate tick so the user gets a fast response
   runImmediateTick(agentId);
+}
+
+// ── Chat response callbacks (for studio chat) ──
+const _chatResponseCallbacks = new Map<number, { resolve: (text: string) => void; timer: NodeJS.Timeout }>();
+
+/**
+ * Send a message to the agent and WAIT for its text response (up to 30s).
+ * Used by the studio chat endpoint.
+ */
+export function sendMessageAndWaitResponse(agentId: number, text: string): Promise<string> {
+  return new Promise((resolve) => {
+    // Clean up any existing callback
+    const existing = _chatResponseCallbacks.get(agentId);
+    if (existing) { clearTimeout(existing.timer); existing.resolve(''); }
+
+    const timer = setTimeout(() => {
+      _chatResponseCallbacks.delete(agentId);
+      resolve('[Агент обрабатывает запрос... ответ появится в следующем тике]');
+    }, 30_000);
+
+    _chatResponseCallbacks.set(agentId, { resolve, timer });
+
+    // Queue message and trigger tick
+    if (!_pendingMessages.has(agentId)) _pendingMessages.set(agentId, []);
+    _pendingMessages.get(agentId)!.push(`[Studio Chat] ${text}`);
+    runImmediateTick(agentId);
+  });
+}
+
+/** Called from the agentic loop when AI produces text content */
+function _resolveChatCallback(agentId: number, text: string): void {
+  const cb = _chatResponseCallbacks.get(agentId);
+  if (cb) {
+    clearTimeout(cb.timer);
+    _chatResponseCallbacks.delete(agentId);
+    cb.resolve(text);
+  }
 }
 
 function popMessages(agentId: number): string[] {
@@ -182,7 +405,12 @@ interface ActiveHandle {
   interval: NodeJS.Timeout;
   tick: () => Promise<void>;
   tickRunning: boolean;
+  firstTickTimer?: NodeJS.Timeout;
+  setupListenerActive?: boolean;
+  consecutiveErrors: number;  // Circuit breaker: deactivate after MAX_CONSECUTIVE_ERRORS
 }
+
+const MAX_CONSECUTIVE_ERRORS = 5; // Deactivate agent after 5 consecutive tick failures
 
 const _activeHandles = new Map<number, ActiveHandle>();
 
@@ -211,9 +439,17 @@ const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
                 'tg_leave_channel', 'tg_get_dialogs', 'tg_get_members', 'tg_search_messages',
                 'tg_get_user_info', 'tg_reply', 'tg_react', 'tg_edit', 'tg_forward', 'tg_pin',
                 'tg_mark_read', 'tg_get_comments', 'tg_set_typing', 'tg_send_formatted',
-                'tg_get_message_by_id', 'tg_get_unread', 'tg_send_file'],
+                'tg_get_message_by_id', 'tg_get_unread', 'tg_send_file',
+                'tg_copy_media', 'tg_get_media_info', 'tg_delete_message',
+                'tg_create_poll', 'tg_kick_user', 'tg_ban_user', 'tg_unban_user',
+                'tg_mute_user', 'tg_get_admins', 'tg_set_admin', 'tg_create_invite_link',
+                'tg_unpin', 'tg_schedule_message', 'tg_set_chat_title', 'tg_set_chat_about',
+                'tg_set_chat_photo', 'tg_create_group', 'tg_create_channel', 'tg_invite_users',
+                'tg_archive_chat', 'tg_get_online_count', 'tg_send_contact', 'tg_send_location',
+                'tg_get_history_count', 'tg_send_album', 'tg_get_profile_photos'],
   web:         ['web_search', 'fetch_url', 'http_fetch'],
-  state:       ['get_state', 'set_state', 'list_state_keys', 'get_shared_state', 'set_shared_state'],
+  state:       ['get_state', 'get_state_multi', 'set_state', 'list_state_keys', 'get_shared_state', 'set_shared_state'],
+  events:      ['set_next_wake', 'subscribe_event', 'unsubscribe_event', 'emit_event', 'get_wake_info'],
   notify:      ['notify', 'notify_rich'],
   plugins:     ['list_plugins', 'suggest_plugin', 'run_custom_plugin', 'list_custom_plugins',
                 'apply_plugin', 'remove_plugin'],
@@ -420,6 +656,14 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
     {
       type: 'function',
       function: {
+        name: 'get_daily_spend',
+        description: 'Узнать дневной лимит расходов агента и сколько потрачено сегодня (TON)',
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
         name: 'send_ton',
         description: 'Отправить TON с кошелька агента на указанный адрес (требует предварительного пополнения кошелька агента)',
         parameters: {
@@ -484,7 +728,7 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
       type: 'function',
       function: {
         name: 'get_state',
-        description: 'Получить сохранённое состояние агента по ключу (persists between ticks)',
+        description: 'Получить сохранённое состояние агента по ключу (постоянное хранилище)',
         parameters: {
           type: 'object',
           properties: {
@@ -497,8 +741,22 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
     {
       type: 'function',
       function: {
+        name: 'get_state_multi',
+        description: 'Получить несколько ключей состояния за один запрос (batch). Эффективнее чем несколько get_state вызовов.',
+        parameters: {
+          type: 'object',
+          properties: {
+            keys: { type: 'array', items: { type: 'string' }, description: 'Массив ключей состояния' },
+          },
+          required: ['keys'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
         name: 'set_state',
-        description: 'Сохранить состояние агента (persists between ticks). Используй list_state_keys чтобы узнать какие ключи уже сохранены.',
+        description: 'Сохранить состояние агента (постоянное хранилище). Используй list_state_keys чтобы узнать какие ключи уже сохранены.',
         parameters: {
           type: 'object',
           properties: {
@@ -514,7 +772,7 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
       function: {
         name: 'list_state_keys',
         description: 'Показать все сохранённые ключи состояния агента. Используй перед get_state чтобы знать какие ключи существуют.',
-        parameters: { type: 'object', properties: {} },
+        parameters: { type: 'object', properties: {}, required: [] },
       },
     },
     {
@@ -529,6 +787,271 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
           },
           required: ['key'],
         },
+      },
+    },
+    // ── Self-Awareness tools ──
+    {
+      type: 'function',
+      function: {
+        name: 'remember',
+        description: 'Запомнить важную информацию от владельца или из опыта. Категории: contact (контакт/канал), fact (факт), preference (предпочтение), task (задача), insight (наблюдение). Всё запомненное будет доступно в каждом тике.',
+        parameters: {
+          type: 'object',
+          properties: {
+            key:      { type: 'string', description: 'Короткий ключ (например: owner_channel, wallet, preference)' },
+            value:    { type: 'string', description: 'Что запомнить' },
+            category: { type: 'string', enum: ['contact', 'fact', 'preference', 'task', 'insight'], description: 'Категория памяти (необязательно, по умолчанию fact)' },
+            importance: { type: 'string', enum: ['high', 'medium', 'low'], description: 'Важность (high=всегда в контексте, medium=обычная, low=может быть сжата)' },
+          },
+          required: ['key', 'value'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'recall',
+        description: 'Вспомнить всё что было запомнено через remember. Возвращает все заметки агента.',
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'update_self_prompt',
+        description: 'Дополнить свой системный промпт новыми инструкциями. НЕ перезаписывает исходный — добавляет в конец. Используй когда владелец просит изменить поведение.',
+        parameters: {
+          type: 'object',
+          properties: {
+            addition: { type: 'string', description: 'Дополнительные инструкции для себя (1-3 предложения)' },
+          },
+          required: ['addition'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'save_lesson',
+        description: 'Сохранить урок/вывод из опыта. Агент учится из ошибок и успехов. Уроки загружаются в каждом тике для контекста.',
+        parameters: {
+          type: 'object',
+          properties: {
+            lesson:   { type: 'string', description: 'Что ты узнал (1-2 предложения)' },
+            category: { type: 'string', enum: ['error', 'success', 'insight'], description: 'Категория: error (ошибка), success (успех), insight (наблюдение)' },
+          },
+          required: ['lesson', 'category'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'manage_goals',
+        description: 'Управлять своими целями. Агент сам формирует цели из задачи и отмечает выполненные.',
+        parameters: {
+          type: 'object',
+          properties: {
+            action:   { type: 'string', enum: ['add', 'complete', 'remove', 'list'], description: 'Действие: add, complete, remove, list' },
+            goal:     { type: 'string', description: 'Текст цели (для add/complete/remove)' },
+            priority: { type: 'string', enum: ['high', 'medium', 'low'], description: 'Приоритет (для add)' },
+          },
+          required: ['action'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'request_pause',
+        description: 'Экстренная остановка. Агент обнаружил проблему и хочет остановиться. Уведомит владельца и деактивирует агента.',
+        parameters: {
+          type: 'object',
+          properties: {
+            reason: { type: 'string', description: 'Причина остановки (1-2 предложения)' },
+          },
+          required: ['reason'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'rollback_prompt',
+        description: 'Откатить дополнения к системному промпту. Удаляет все добавленные через update_self_prompt инструкции.',
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+    },
+    // ── Dossier Tools ──────────────────────────────────────────────────────
+    {
+      type: 'function',
+      function: {
+        name: 'get_contact_dossier',
+        description: 'Получить досье на контакт. Возвращает: имя, username, кол-во сообщений, интересы, настроение, отношения, заметки.',
+        parameters: {
+          type: 'object',
+          properties: {
+            user_id: { type: 'string', description: 'Telegram user ID контакта' },
+          },
+          required: ['user_id'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'add_contact_note',
+        description: 'Добавить заметку о контакте. Запомнить важное о человеке для будущих разговоров.',
+        parameters: {
+          type: 'object',
+          properties: {
+            user_id: { type: 'string', description: 'Telegram user ID контакта' },
+            note:    { type: 'string', description: 'Заметка (до 200 символов)' },
+          },
+          required: ['user_id', 'note'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'set_contact_relationship',
+        description: 'Установить уровень отношений с контактом (stranger/acquaintance/regular/friend/vip).',
+        parameters: {
+          type: 'object',
+          properties: {
+            user_id:      { type: 'string', description: 'Telegram user ID' },
+            relationship: { type: 'string', enum: ['stranger', 'acquaintance', 'regular', 'friend', 'vip'], description: 'Уровень отношений' },
+          },
+          required: ['user_id', 'relationship'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'get_chat_dossier',
+        description: 'Получить досье на чат/канал. Возвращает: тип, кол-во сообщений, активность, участников, заметки.',
+        parameters: {
+          type: 'object',
+          properties: {
+            chat_id: { type: 'string', description: 'Telegram chat ID' },
+          },
+          required: ['chat_id'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'add_chat_note',
+        description: 'Добавить заметку о чате/канале. Запомнить тему, правила, важное.',
+        parameters: {
+          type: 'object',
+          properties: {
+            chat_id: { type: 'string', description: 'Telegram chat ID' },
+            note:    { type: 'string', description: 'Заметка (до 200 символов)' },
+          },
+          required: ['chat_id', 'note'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'list_contacts',
+        description: 'Список всех известных контактов с краткой инфой (имя, статус, интересы). Для полного досье используй get_contact_dossier.',
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'set_chat_policy',
+        description: 'Установить режим для конкретного чата: active (сам решаю отвечать/реагировать/игнорить), open (отвечаю всем), mention-only (только по упоминанию), disabled (молчу). Используй для управления в каких чатах быть активным.',
+        parameters: {
+          type: 'object',
+          properties: {
+            chat_id: { type: 'string', description: 'Telegram chat ID или @username' },
+            policy:  { type: 'string', enum: ['active', 'open', 'mention-only', 'disabled'], description: 'Режим для этого чата' },
+          },
+          required: ['chat_id', 'policy'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'list_chat_policies',
+        description: 'Показать текущие настройки по чатам: какой режим в каком чате (active/open/mention-only/disabled). Также показывает глобальный режим по умолчанию.',
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+    },
+    // ── Event-Driven Tools ──────────────────────────────────────────────────
+    {
+      type: 'function',
+      function: {
+        name: 'set_next_wake',
+        description: 'Запланировать следующее пробуждение агента. Вместо фиксированного интервала, агент сам решает когда проснуться. Минимум 10 сек, максимум 7 дней.',
+        parameters: {
+          type: 'object',
+          properties: {
+            delay_seconds: { type: 'number', description: 'Через сколько секунд проснуться (10-604800)' },
+            reason:        { type: 'string', description: 'Зачем просыпаться (для контекста в следующем тике)' },
+          },
+          required: ['delay_seconds', 'reason'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'subscribe_event',
+        description: 'Подписаться на событие платформы. Агент проснётся когда событие произойдёт. Типы: price_change (изменение цены), wallet_tx (транзакция кошелька), custom (кастомное от другого агента).',
+        parameters: {
+          type: 'object',
+          properties: {
+            event_type: { type: 'string', enum: ['price_change', 'wallet_tx', 'custom'], description: 'Тип события' },
+            filter:     { type: 'object', description: 'Фильтр (необязательно). Для price_change: {asset, threshold}. Для wallet_tx: {direction}. Для custom: {name}.' },
+          },
+          required: ['event_type'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'unsubscribe_event',
+        description: 'Отписаться от события. Если тип не указан — отписывается от всех.',
+        parameters: {
+          type: 'object',
+          properties: {
+            event_type: { type: 'string', enum: ['price_change', 'wallet_tx', 'custom'], description: 'Тип события (необязательно — без него отписка от всех)' },
+          },
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'emit_event',
+        description: 'Отправить кастомное событие. Другие агенты, подписанные на custom с подходящим фильтром, проснутся.',
+        parameters: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'Имя события (например: "price_alert", "task_done")' },
+            data: { type: 'object', description: 'Данные события (произвольный объект)' },
+          },
+          required: ['name'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'get_wake_info',
+        description: 'Узнать когда следующее запланированное пробуждение и список подписок на события.',
+        parameters: { type: 'object', properties: {}, required: [] },
       },
     },
     {
@@ -752,13 +1275,14 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
       type: 'function',
       function: {
         name: 'tg_reply',
-        description: 'Ответить на конкретное сообщение в чате/канале. Используй для участия в обсуждениях.',
+        description: 'Ответить на конкретное сообщение в чате/канале. Можно процитировать часть текста (quote). Используй для обсуждений.',
         parameters: {
           type: 'object',
           properties: {
             chat_id:     { type: 'string', description: 'ID чата/канала или username' },
             reply_to_id: { type: 'number', description: 'ID сообщения на которое отвечаем' },
             text:        { type: 'string', description: 'Текст ответа' },
+            quote:       { type: 'string', description: 'Цитата — часть текста оригинального сообщения которую выделяем (необязательно)' },
           },
           required: ['chat_id', 'reply_to_id', 'text'],
         },
@@ -930,6 +1454,310 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
           },
           required: ['chat_id', 'file_url'],
         },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_copy_media',
+        description: 'Скопировать медиа (фото/видео/GIF/документ) из одного сообщения и отправить в другой чат. Скачивает медиа и пересылает.',
+        parameters: {
+          type: 'object',
+          properties: {
+            from_chat_id: { type: 'string', description: 'Чат-источник (ID или username)' },
+            message_id:   { type: 'number', description: 'ID сообщения с медиа' },
+            to_chat_id:   { type: 'string', description: 'Чат-получатель (ID или username)' },
+            caption:      { type: 'string', description: 'Новая подпись (опционально)' },
+          },
+          required: ['from_chat_id', 'message_id', 'to_chat_id'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_get_media_info',
+        description: 'Получить информацию о медиа в сообщении (тип, размер, имя файла) без скачивания.',
+        parameters: {
+          type: 'object',
+          properties: {
+            chat_id:    { type: 'string', description: 'ID чата или username' },
+            message_id: { type: 'number', description: 'ID сообщения' },
+          },
+          required: ['chat_id', 'message_id'],
+        },
+      },
+    },
+    // ── Extended Telegram tools ─────────────────────────────────────
+    {
+      type: 'function',
+      function: {
+        name: 'tg_delete_message',
+        description: 'Удалить сообщение(я) в чате.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID чата' },
+          message_ids: { oneOf: [{ type: 'number' }, { type: 'array', items: { type: 'number' } }], description: 'ID сообщения или массив ID' },
+        }, required: ['chat_id', 'message_ids'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_create_poll',
+        description: 'Создать голосование в чате/канале.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID чата' },
+          question: { type: 'string', description: 'Вопрос голосования' },
+          options: { type: 'array', items: { type: 'string' }, description: 'Варианты ответа (2-10)' },
+          anonymous: { type: 'boolean', description: 'Анонимное (по умолчанию true)' },
+          multiple_choice: { type: 'boolean', description: 'Множественный выбор' },
+        }, required: ['chat_id', 'question', 'options'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_kick_user',
+        description: 'Кикнуть пользователя из группы/канала (без бана, может вернуться).',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID группы/канала' },
+          user_id: { type: 'string', description: 'ID или username пользователя' },
+        }, required: ['chat_id', 'user_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_ban_user',
+        description: 'Забанить пользователя в группе/канале.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID группы/канала' },
+          user_id: { type: 'string', description: 'ID или username пользователя' },
+          duration_sec: { type: 'number', description: 'Длительность в секундах (0 = навсегда)' },
+        }, required: ['chat_id', 'user_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_unban_user',
+        description: 'Разбанить пользователя.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID группы/канала' },
+          user_id: { type: 'string', description: 'ID пользователя' },
+        }, required: ['chat_id', 'user_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_mute_user',
+        description: 'Замутить пользователя (запретить писать) в группе.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID группы' },
+          user_id: { type: 'string', description: 'ID пользователя' },
+          duration_sec: { type: 'number', description: 'На сколько секунд (по умолчанию 3600 = 1 час)' },
+        }, required: ['chat_id', 'user_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_get_admins',
+        description: 'Получить список администраторов группы/канала.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID группы/канала' },
+        }, required: ['chat_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_set_admin',
+        description: 'Назначить пользователя администратором группы/канала.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID группы/канала' },
+          user_id: { type: 'string', description: 'ID пользователя' },
+          rights: { type: 'object', description: 'Права: { post_messages, edit_messages, delete_messages, ban_users, invite_users, pin_messages }' },
+        }, required: ['chat_id', 'user_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_create_invite_link',
+        description: 'Создать пригласительную ссылку для группы/канала.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID группы/канала' },
+        }, required: ['chat_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_unpin',
+        description: 'Открепить сообщение или все сообщения.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID чата' },
+          message_id: { type: 'number', description: 'ID сообщения (если не указать — открепит все)' },
+        }, required: ['chat_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_schedule_message',
+        description: 'Запланировать отправку сообщения на конкретное время.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID чата' },
+          text: { type: 'string', description: 'Текст сообщения' },
+          send_at: { type: 'number', description: 'Unix timestamp когда отправить' },
+        }, required: ['chat_id', 'text', 'send_at'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_set_chat_title',
+        description: 'Изменить название группы/канала.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID группы/канала' },
+          title: { type: 'string', description: 'Новое название' },
+        }, required: ['chat_id', 'title'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_set_chat_about',
+        description: 'Изменить описание (about) группы/канала.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID группы/канала' },
+          about: { type: 'string', description: 'Новое описание' },
+        }, required: ['chat_id', 'about'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_set_chat_photo',
+        description: 'Изменить фото группы/канала (загрузить из URL).',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID группы/канала' },
+          photo_url: { type: 'string', description: 'URL фото' },
+        }, required: ['chat_id', 'photo_url'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_create_group',
+        description: 'Создать новую группу (чат).',
+        parameters: { type: 'object', properties: {
+          title: { type: 'string', description: 'Название группы' },
+          user_ids: { type: 'array', items: { type: 'string' }, description: 'ID пользователей для добавления' },
+        }, required: ['title'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_create_channel',
+        description: 'Создать новый канал.',
+        parameters: { type: 'object', properties: {
+          title: { type: 'string', description: 'Название канала' },
+          about: { type: 'string', description: 'Описание канала' },
+          megagroup: { type: 'boolean', description: 'Супергруппа вместо канала (по умолчанию false)' },
+        }, required: ['title'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_invite_users',
+        description: 'Пригласить пользователей в группу/канал.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID группы/канала' },
+          user_ids: { type: 'array', items: { type: 'string' }, description: 'ID или usernames пользователей' },
+        }, required: ['chat_id', 'user_ids'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_archive_chat',
+        description: 'Архивировать чат.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID чата' },
+        }, required: ['chat_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_get_online_count',
+        description: 'Получить количество онлайн-пользователей в группе/канале.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID группы/канала' },
+        }, required: ['chat_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_send_contact',
+        description: 'Поделиться контактом в чате.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID чата' },
+          phone: { type: 'string', description: 'Номер телефона' },
+          first_name: { type: 'string', description: 'Имя' },
+          last_name: { type: 'string', description: 'Фамилия' },
+        }, required: ['chat_id', 'phone', 'first_name'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_send_location',
+        description: 'Отправить геолокацию в чат.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID чата' },
+          lat: { type: 'number', description: 'Широта' },
+          lng: { type: 'number', description: 'Долгота' },
+        }, required: ['chat_id', 'lat', 'lng'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_get_history_count',
+        description: 'Получить количество сообщений в чате.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID чата' },
+        }, required: ['chat_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_send_album',
+        description: 'Отправить альбом (несколько фото/видео) в чат.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID чата' },
+          media_urls: { type: 'array', items: { type: 'string' }, description: 'Массив URL медиафайлов (до 10)' },
+          caption: { type: 'string', description: 'Подпись к альбому' },
+        }, required: ['chat_id', 'media_urls'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_get_profile_photos',
+        description: 'Получить аватарки пользователя.',
+        parameters: { type: 'object', properties: {
+          user_id: { type: 'string', description: 'ID или username пользователя' },
+          limit: { type: 'number', description: 'Количество (по умолчанию 5)' },
+        }, required: ['user_id'] },
       },
     },
     {
@@ -1423,8 +2251,8 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
         parameters: { type: 'object', properties: {}, required: [] },
       },
     },
-    // ── Director tools (only for role=director) ──
-    ...(agentRole === 'director' ? [
+    // ── Director & Manager tools ──
+    ...((agentRole === 'director' || agentRole === 'manager') ? [
       {
         type: 'function' as const,
         function: {
@@ -1509,6 +2337,171 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
         },
       },
     },
+    // ── Self-modification tools (agent evolves itself) ──
+    {
+      type: 'function' as const,
+      function: {
+        name: 'get_my_config',
+        description: 'Получить свой текущий системный промпт, интервал и описание. Используй перед update_my_prompt чтобы понять что менять.',
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'update_my_prompt',
+        description: 'Обновить свой системный промпт (свою "душу"). Используй когда пользователь просит изменить твоё поведение, роль, стиль или задачи. Пиши ПОЛНЫЙ новый промпт — он заменит текущий целиком.',
+        parameters: {
+          type: 'object',
+          properties: {
+            new_prompt: { type: 'string', description: 'Новый полный системный промпт (заменит текущий)' },
+            reason: { type: 'string', description: 'Почему меняешь промпт (для лога)' },
+          },
+          required: ['new_prompt'],
+        },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'update_my_interval',
+        description: 'Изменить интервал проактивных тиков (как часто ты просыпаешься для самостоятельных действий). 0 = только реактивный режим.',
+        parameters: {
+          type: 'object',
+          properties: {
+            interval_minutes: { type: 'number', description: 'Интервал в минутах (0 = отключить проактивность, 5-60 минут рекомендуется)' },
+          },
+          required: ['interval_minutes'],
+        },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'update_my_description',
+        description: 'Обновить своё описание (видно в меню агентов).',
+        parameters: {
+          type: 'object',
+          properties: {
+            description: { type: 'string', description: 'Новое описание агента' },
+          },
+          required: ['description'],
+        },
+      },
+    },
+    // ── Workflow / Planning tools ──
+    {
+      type: 'function' as const,
+      function: {
+        name: 'create_plan',
+        description: 'Создать пошаговый план действий. Каждый шаг будет выполнен последовательно. Используй для сложных задач.',
+        parameters: {
+          type: 'object',
+          properties: {
+            plan_name: { type: 'string', description: 'Название плана' },
+            steps: {
+              type: 'array',
+              description: 'Шаги плана в порядке выполнения',
+              items: {
+                type: 'object',
+                properties: {
+                  action: { type: 'string', description: 'Описание действия' },
+                  tool: { type: 'string', description: 'Какой тул вызвать (опционально)' },
+                  condition: { type: 'string', description: 'Условие выполнения (опционально, например: "если цена > 100")' },
+                },
+                required: ['action'],
+              },
+            },
+          },
+          required: ['plan_name', 'steps'],
+        },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'get_execution_stats',
+        description: 'Получить статистику своей работы: сколько запусков, тулов вызвано, ошибок, токенов потрачено.',
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+    },
+    // ── Knowledge store ──
+    {
+      type: 'function' as const,
+      function: {
+        name: 'knowledge_save',
+        description: 'Сохранить важную информацию в долгосрочную память (knowledge base). Используй для фактов, контактов, правил, заметок.',
+        parameters: {
+          type: 'object',
+          properties: {
+            category: { type: 'string', description: 'Категория: contacts, rules, facts, notes, tasks' },
+            title: { type: 'string', description: 'Краткий заголовок' },
+            content: { type: 'string', description: 'Содержимое записи' },
+            tags: { type: 'string', description: 'Теги через запятую (опционально)' },
+          },
+          required: ['category', 'title', 'content'],
+        },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'knowledge_search',
+        description: 'Поиск по базе знаний агента. Ищет по тексту, категории и тегам.',
+        parameters: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: 'Поисковый запрос (ищет в title и content)' },
+            category: { type: 'string', description: 'Фильтр по категории (опционально)' },
+          },
+          required: ['query'],
+        },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'knowledge_list',
+        description: 'Показать все записи в базе знаний агента, по категориям.',
+        parameters: {
+          type: 'object',
+          properties: {
+            category: { type: 'string', description: 'Фильтр по категории (опционально)' },
+          },
+          required: [],
+        },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'knowledge_delete',
+        description: 'Удалить запись из базы знаний по ID.',
+        parameters: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', description: 'ID записи для удаления' },
+          },
+          required: ['id'],
+        },
+      },
+    },
+    // ── Schedule / Cron ──
+    {
+      type: 'function' as const,
+      function: {
+        name: 'schedule_action',
+        description: 'Запланировать действие на будущее. Агент выполнит его в указанное время.',
+        parameters: {
+          type: 'object',
+          properties: {
+            action: { type: 'string', description: 'Описание действия (будет передано как pending task)' },
+            when: { type: 'string', description: 'Когда выполнить: "in 30 minutes", "at 18:00", "tomorrow 10:00"' },
+          },
+          required: ['action', 'when'],
+        },
+      },
+    },
   ];
 
   // Append MCP tools (dynamically discovered from @ton/mcp server)
@@ -1523,9 +2516,19 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
       const tools = CAPABILITY_TOOL_MAP[capId];
       if (tools) tools.forEach(t => allowed.add(t));
     }
-    // Always allow core tools
-    ['get_state', 'set_state', 'notify', 'notify_rich', 'apply_plugin', 'remove_plugin',
-     'list_plugins', 'suggest_plugin'].forEach(t => allowed.add(t));
+    // Always allow core tools (state, notify, self-awareness, events)
+    ['get_state', 'get_state_multi', 'set_state', 'list_state_keys', 'notify', 'notify_rich', 'apply_plugin', 'remove_plugin',
+     'list_plugins', 'suggest_plugin', 'get_my_config', 'update_my_prompt', 'update_my_interval', 'update_my_description',
+     'create_plan', 'get_execution_stats', 'knowledge_save', 'knowledge_search', 'knowledge_list', 'knowledge_delete', 'schedule_action',
+     // Self-awareness & learning (MUST always be available)
+     'remember', 'recall', 'update_self_prompt', 'save_lesson', 'manage_goals', 'request_pause', 'rollback_prompt',
+     // Dossier system (contact/chat memory)
+     'get_contact_dossier', 'add_contact_note', 'set_contact_relationship', 'get_chat_dossier', 'add_chat_note', 'list_contacts',
+     // Chat policy management
+     'set_chat_policy', 'list_chat_policies',
+     // Event-driven (agent decides when to wake up)
+     'set_next_wake', 'subscribe_event', 'unsubscribe_event', 'emit_event', 'get_wake_info',
+    ].forEach(t => allowed.add(t));
     // Always allow MCP tools if ton_mcp capability is enabled
     if (enabledCapabilities.includes('ton_mcp') && mcpTools) {
       mcpTools.forEach(t => allowed.add((t as any).function.name));
@@ -1538,6 +2541,106 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
 
 // ── Tool executor ──────────────────────────────────────────────────────────
 
+// ── Human-in-the-Loop: dangerous actions that require user approval ──
+const DANGEROUS_ACTIONS: Record<string, { label: string; descFn: (args: Record<string, any>) => string }> = {
+  'send_ton':           { label: '💸 Отправка TON',      descFn: a => `Отправить ${a.amount} TON → ${String(a.to).slice(0, 20)}...${a.comment ? ' ('+a.comment+')' : ''}` },
+  'send_jetton':        { label: '💸 Отправка Jetton',   descFn: a => `Отправить ${a.amount} jetton ${String(a.jetton_master).slice(0, 16)}... → ${String(a.to).slice(0, 20)}...` },
+  'buy_catalog_gift':   { label: '🎁 Покупка подарка',   descFn: a => `Купить подарок "${a.gift_name || a.gift_id}" из каталога` },
+  'buy_resale_gift':    { label: '🎁 Покупка с перепродажи', descFn: a => `Купить подарок #${a.gift_id} с перепродажи` },
+  'buy_market_gift':    { label: '🎁 Покупка на маркете', descFn: a => `Купить подарок "${a.name}" за ${a.max_price || '?'} ⭐` },
+  'list_gift_for_sale': { label: '📤 Листинг на продажу', descFn: a => `Выставить подарок #${a.gift_id} за ${a.price} ⭐` },
+  'ton_send_boc':       { label: '📦 Отправка BOC',      descFn: a => `Отправить сырую транзакцию в сеть TON` },
+};
+
+// Pending approval futures: approvalId → { resolve, reject }
+const _approvalWaiters = new Map<number, { resolve: (v: 'approved' | 'rejected') => void; timer: any }>();
+
+export function resolveApprovalWaiter(approvalId: number, status: 'approved' | 'rejected'): boolean {
+  const w = _approvalWaiters.get(approvalId);
+  if (!w) return false;
+  clearTimeout(w.timer);
+  w.resolve(status);
+  _approvalWaiters.delete(approvalId);
+  return true;
+}
+
+async function requestApproval(
+  name: string,
+  args: Record<string, any>,
+  params: AIAgentTickParams,
+  dangerInfo: { label: string; descFn: (a: Record<string, any>) => string },
+): Promise<'approved' | 'rejected' | 'timeout'> {
+  try {
+    const { getAgentApprovalsRepository } = await import('../db/schema-extensions');
+    const desc = dangerInfo.descFn(args);
+    const row = await getAgentApprovalsRepository().create(params.agentId, params.userId, name, { args, description: desc });
+    const approvalId = row.id;
+
+    // Send rich notification with approve/reject buttons
+    await notifyRich(params.userId, {
+      text: `⚠️ <b>Агент запрашивает подтверждение</b>\n\n` +
+            `${dangerInfo.label}\n` +
+            `📋 ${desc}\n\n` +
+            `🤖 Агент #${params.agentId}\n` +
+            `⏱ Таймаут: 5 минут`,
+      agentId: params.agentId,
+      buttons: [
+        [
+          { text: '✅ Одобрить', callback_data: `approve_action:${approvalId}` },
+          { text: '❌ Отклонить', callback_data: `reject_action:${approvalId}` },
+        ],
+      ],
+    });
+
+    // Wait for user response (max 5 minutes)
+    return new Promise<'approved' | 'rejected' | 'timeout'>((resolve) => {
+      const timer = setTimeout(() => {
+        _approvalWaiters.delete(approvalId);
+        resolve('timeout');
+      }, 5 * 60 * 1000);
+      _approvalWaiters.set(approvalId, { resolve: resolve as any, timer, _createdAt: Date.now() });
+    });
+  } catch (e: any) {
+    console.error('[HITL] Approval request failed:', e.message);
+    return 'timeout'; // fail-safe: don't execute
+  }
+}
+
+// ── Daily spend cap enforcement ────────────────────────────────────────────
+async function checkDailySpendCap(agentId: number, userId: number, amountTon: number): Promise<string | null> {
+  try {
+    const { getAgentDailySpendRepository } = await import('../db/schema-extensions');
+    const spendRepo = getAgentDailySpendRepository();
+    const amountNano = BigInt(Math.round(amountTon * 1e9));
+    // Check agent-specific limit from state, or use default
+    const stateRepo = getAgentStateRepository();
+    const customLimit = await stateRepo.get(agentId, 'daily_spend_limit_ton').catch(() => null);
+    const limitTon = customLimit ? Number((customLimit as any).value || DAILY_SPEND_LIMIT_TON) : DAILY_SPEND_LIMIT_TON;
+    const limitNano = BigInt(Math.round(limitTon * 1e9));
+    const canSpend = await spendRepo.canSpend(agentId, amountNano, limitNano);
+    if (!canSpend) {
+      const spentNano = await spendRepo.getSpent(agentId);
+      const spentTon = Number(spentNano) / 1e9;
+      return `Daily spend limit reached: ${spentTon.toFixed(2)}/${limitTon} TON spent today. Try again tomorrow or ask user to increase limit.`;
+    }
+    return null; // OK to spend
+  } catch (e: any) {
+    console.warn(`[DailySpend] check failed for agent #${agentId}: ${e.message}`);
+    return null; // fail-open: allow if DB error
+  }
+}
+
+async function recordDailySpend(agentId: number, userId: number, amountTon: number): Promise<void> {
+  try {
+    const { getAgentDailySpendRepository } = await import('../db/schema-extensions');
+    const spendRepo = getAgentDailySpendRepository();
+    const amountNano = BigInt(Math.round(amountTon * 1e9));
+    await spendRepo.addSpend(agentId, userId, amountNano);
+  } catch (e: any) {
+    console.warn(`[DailySpend] record failed for agent #${agentId}: ${e.message}`);
+  }
+}
+
 export async function executeTool(
   name: string,
   args: Record<string, any>,
@@ -1545,6 +2648,56 @@ export async function executeTool(
 ): Promise<any> {
   const gifts  = getTelegramGiftsService();
   const stateRepo = getAgentStateRepository();
+
+  // ── Tool rate limiting ──
+  if (!checkToolRateLimit(params.agentId, name)) {
+    const group = TOOL_GROUP_MAP[name] || 'unknown';
+    await logToDb(params.agentId, 'warn', `[RateLimit] ${name} (${group} group) rate limited`, params.userId);
+    return { error: `Rate limited: too many ${group} operations. Wait a moment before retrying.` };
+  }
+
+  // ── Daily spend cap check for financial actions ──
+  if (name === 'send_ton' || name === 'send_jetton') {
+    const amount = Number(args.amount) || 0;
+    const amountTon = name === 'send_ton' ? amount : 0.05; // jetton tx costs ~0.05 TON gas
+    const capErr = await checkDailySpendCap(params.agentId, params.userId, amountTon);
+    if (capErr) {
+      await logToDb(params.agentId, 'warn', `[DailySpend] Blocked ${name}: ${capErr}`, params.userId);
+      return { error: capErr };
+    }
+  }
+
+  // ── Human-in-the-Loop: check if action needs approval ──
+  const dangerInfo = DANGEROUS_ACTIONS[name];
+  if (dangerInfo) {
+    // Check if user disabled approval for this agent
+    const autoApprove = await stateRepo.get(params.agentId, 'auto_approve').catch(() => null);
+    if (!autoApprove || autoApprove !== 'true') {
+      await logToDb(params.agentId, 'info', `[HITL] Requesting approval for ${name}(${JSON.stringify(args).slice(0, 150)})`, params.userId);
+      const decision = await requestApproval(name, args, params, dangerInfo);
+      if (decision === 'rejected') {
+        await logToDb(params.agentId, 'info', `[HITL] User REJECTED ${name}`, params.userId);
+        // Save rejection as a lesson so agent learns
+        try {
+          const lessonKey = `lesson:rejection_${Date.now()}`;
+          const lessonValue = JSON.stringify({
+            type: 'rejection',
+            tool: name,
+            args: JSON.stringify(args).slice(0, 200),
+            lesson: `User rejected ${dangerInfo.label}: ${dangerInfo.descFn(args)}. Don't repeat this action without explicit user instruction.`,
+            savedAt: new Date().toISOString(),
+          });
+          await stateRepo.set(params.agentId, params.userId, lessonKey, lessonValue);
+        } catch {}
+        return { error: 'Пользователь отклонил действие. Не выполняй его повторно без явного указания.' };
+      }
+      if (decision === 'timeout') {
+        await logToDb(params.agentId, 'warn', `[HITL] Approval TIMEOUT for ${name}`, params.userId);
+        return { error: 'Пользователь не ответил на запрос подтверждения (таймаут 5 мин). Попробуй позже или уведоми пользователя.' };
+      }
+      await logToDb(params.agentId, 'info', `[HITL] User APPROVED ${name}`, params.userId);
+    }
+  }
 
   // ── MCP tools (dynamically routed to @ton/mcp server) ──
   if (name.startsWith('mcp_')) {
@@ -1776,17 +2929,63 @@ export async function executeTool(
       }
     }
 
+    case 'get_daily_spend': {
+      try {
+        const { getAgentDailySpendRepository } = await import('../db/schema-extensions');
+        const spendRepo = getAgentDailySpendRepository();
+        const spentNano = await spendRepo.getSpent(params.agentId);
+        const spentTon = Number(spentNano) / 1e9;
+        const customLimit = await stateRepo.get(params.agentId, 'daily_spend_limit_ton').catch(() => null);
+        const limitTon = customLimit ? Number((customLimit as any).value || DAILY_SPEND_LIMIT_TON) : DAILY_SPEND_LIMIT_TON;
+        return { spent_ton: spentTon, limit_ton: limitTon, remaining_ton: Math.max(0, limitTon - spentTon), date: new Date().toISOString().slice(0, 10) };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
     case 'get_agent_wallet': {
       try {
+        // ── Unified wallet lookup: check BOTH state AND trigger_config ──
         let addr = (await stateRepo.get(params.agentId, 'wallet_address'))?.value;
         let mnemonic = (await stateRepo.get(params.agentId, 'wallet_mnemonic'))?.value;
+
+        // Fallback: check trigger_config.config (studio-created wallets)
+        if (!addr || !mnemonic) {
+          try {
+            const { pool } = await import('../db');
+            const cfgRow = await pool.query('SELECT trigger_config FROM builder_bot.agents WHERE id = $1', [params.agentId]);
+            if (cfgRow.rows[0]) {
+              const tc = typeof cfgRow.rows[0].trigger_config === 'string'
+                ? JSON.parse(cfgRow.rows[0].trigger_config) : (cfgRow.rows[0].trigger_config || {});
+              if (tc.config?.WALLET_ADDRESS && tc.config?.WALLET_MNEMONIC) {
+                addr = tc.config.WALLET_ADDRESS;
+                mnemonic = tc.config.WALLET_MNEMONIC;
+                // Sync to state for future lookups
+                await stateRepo.set(params.agentId, params.userId, 'wallet_address', addr);
+                await stateRepo.set(params.agentId, params.userId, 'wallet_mnemonic', mnemonic);
+              }
+            }
+          } catch (syncErr: any) { console.warn('[Wallet] sync from config:', syncErr.message); }
+        }
+
         if (!addr || !mnemonic) {
           const { generateAgentWallet } = await import('../services/TonConnect');
           const w = await generateAgentWallet();
-          await stateRepo.set(params.agentId, params.userId, 'wallet_address', w.address);
-          await stateRepo.set(params.agentId, params.userId, 'wallet_mnemonic', w.mnemonic);
           addr = w.address;
           mnemonic = w.mnemonic;
+          // Save to BOTH state and trigger_config for full sync
+          await stateRepo.set(params.agentId, params.userId, 'wallet_address', addr);
+          await stateRepo.set(params.agentId, params.userId, 'wallet_mnemonic', mnemonic);
+          try {
+            const { pool } = await import('../db');
+            const cfgRow = await pool.query('SELECT trigger_config FROM builder_bot.agents WHERE id = $1', [params.agentId]);
+            if (cfgRow.rows[0]) {
+              const tc = typeof cfgRow.rows[0].trigger_config === 'string'
+                ? JSON.parse(cfgRow.rows[0].trigger_config) : (cfgRow.rows[0].trigger_config || {});
+              if (!tc.config) tc.config = {};
+              tc.config.WALLET_ADDRESS = addr;
+              tc.config.WALLET_MNEMONIC = mnemonic;
+              await pool.query('UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2', [JSON.stringify(tc), params.agentId]);
+            }
+          } catch (syncErr: any) { console.warn('[Wallet] sync to config:', syncErr.message); }
         }
         let balanceTon = 0;
         try {
@@ -1817,9 +3016,10 @@ export async function executeTool(
         const wallet = await walletFromMnemonic(walletMn, 'v4r2');
         const result = await sendAgentTransaction(wallet, String(args.to), amount, String(args.comment || ''));
         if ((result as any)?.ok) {
-          // Track spend
+          // Track spend (state + daily cap)
           const totalSpent = Number((await stateRepo.get(params.agentId, 'total_ton_spent'))?.value || 0) + amount;
           await stateRepo.set(params.agentId, params.userId, 'total_ton_spent', String(totalSpent));
+          await recordDailySpend(params.agentId, params.userId, amount);
           await logToDb(params.agentId, 'info', `[TX] Sent ${amount} TON to ${args.to}, hash=${(result as any).hash}`, params.userId);
           return { ok: true, hash: (result as any).hash, note: `Sent ${amount} TON to ${args.to}` };
         }
@@ -2027,6 +3227,18 @@ export async function executeTool(
       } catch { return { key: args.key, value: null }; }
     }
 
+    case 'get_state_multi': {
+      try {
+        const keys = args.keys as string[];
+        if (!Array.isArray(keys) || keys.length === 0) return { error: 'keys must be a non-empty array' };
+        const rows = await stateRepo.getMulti(params.agentId, keys);
+        const result: Record<string, any> = {};
+        for (const k of keys) result[k] = null; // default all to null
+        for (const row of rows) result[row.key] = row.value;
+        return { values: result };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
     case 'set_state': {
       try {
         await stateRepo.set(params.agentId, params.userId, args.key as string, args.value);
@@ -2047,6 +3259,292 @@ export async function executeTool(
           })),
         };
       } catch (e: any) { return { keys: [], error: e.message }; }
+    }
+
+    // ── Self-Awareness tools ──
+    case 'remember': {
+      try {
+        const memKey = `mem:${String(args.key).slice(0, 50)}`;
+        const category = args.category || 'fact';
+        const importance = args.importance || 'medium';
+        const memValue = JSON.stringify({
+          value: String(args.value).slice(0, 500),
+          category,
+          importance,
+          savedAt: new Date().toISOString(),
+        });
+        await stateRepo.set(params.agentId, params.userId, memKey, memValue);
+        return { ok: true, remembered: args.key, category, importance };
+      } catch (e: any) { return { ok: false, error: e.message }; }
+    }
+
+    case 'recall': {
+      try {
+        const allKeys = await stateRepo.listKeys(params.agentId);
+        const memKeys = allKeys.filter((k: string) => k.startsWith('mem:'));
+        const structured: Record<string, Array<{ key: string; value: string; importance?: string }>> = {
+          contact: [], fact: [], preference: [], task: [], insight: [],
+        };
+        for (const key of memKeys) {
+          const raw = await stateRepo.get(params.agentId, key).catch(() => null);
+          const cleanKey = key.replace('mem:', '');
+          if (!raw?.value) continue;
+          // Parse structured or legacy plain text
+          let parsed: any;
+          try { parsed = JSON.parse(raw.value); } catch { parsed = { value: raw.value, category: 'fact', importance: 'medium' }; }
+          const cat = parsed.category || 'fact';
+          if (!structured[cat]) structured[cat] = [];
+          structured[cat].push({ key: cleanKey, value: parsed.value || raw.value, importance: parsed.importance });
+        }
+        const total = Object.values(structured).reduce((sum, arr) => sum + arr.length, 0);
+        return { memories: structured, count: total };
+      } catch (e: any) { return { memories: {}, error: e.message }; }
+    }
+
+    case 'update_self_prompt': {
+      try {
+        const addition = String(args.addition).slice(0, 500);
+        // Load existing additions
+        const existingRaw = await stateRepo.get(params.agentId, '_prompt_additions').catch(() => null);
+        let additions: string[] = [];
+        try { additions = JSON.parse(existingRaw?.value || '[]'); } catch { additions = []; }
+        // ── Version history: save previous state before modifying ──
+        try {
+          const versionsRaw = await stateRepo.get(params.agentId, '_prompt_versions').catch(() => null);
+          let versions: Array<{ additions: string[]; savedAt: string }> = [];
+          try { versions = JSON.parse(versionsRaw?.value || '[]'); } catch { versions = []; }
+          versions.push({ additions: [...additions], savedAt: new Date().toISOString() });
+          if (versions.length > 5) versions = versions.slice(-5); // keep last 5 versions
+          await stateRepo.set(params.agentId, params.userId, '_prompt_versions', JSON.stringify(versions));
+        } catch {}
+        additions.push(addition);
+        // Keep max 10 additions
+        if (additions.length > 10) additions = additions.slice(-10);
+        await stateRepo.set(params.agentId, params.userId, '_prompt_additions', JSON.stringify(additions));
+        return { ok: true, totalAdditions: additions.length, added: addition };
+      } catch (e: any) { return { ok: false, error: e.message }; }
+    }
+
+    case 'request_pause': {
+      try {
+        const reason = String(args.reason || 'Agent requested pause').slice(0, 300);
+        await logToDb(params.agentId, 'warn', `[SELF-STOP] Agent requested pause: ${reason}`, params.userId);
+        // Notify user
+        try {
+          await notifyRich(params.userId, {
+            text: `⏸ <b>Агент #${params.agentId} запросил остановку</b>\n\n📋 Причина: ${reason}\n\nАгент обнаружил проблему и остановился сам. Проверьте логи.`,
+            agentId: params.agentId,
+          });
+        } catch {}
+        // Deactivate
+        setTimeout(() => {
+          try { getAIAgentRuntime().deactivate(params.agentId); } catch {}
+          import('../db').then(({ pool }) =>
+            pool.query('UPDATE builder_bot.agents SET is_active = false WHERE id = $1', [params.agentId])
+          ).catch(() => {});
+        }, 100);
+        return { ok: true, message: 'Agent paused. Owner notified.' };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'rollback_prompt': {
+      try {
+        // Try to restore from version history
+        const versionsRaw = await stateRepo.get(params.agentId, '_prompt_versions').catch(() => null);
+        let restored = false;
+        if (versionsRaw?.value) {
+          try {
+            const versions: Array<{ additions: string[]; savedAt: string }> = JSON.parse(versionsRaw.value);
+            if (versions.length > 0) {
+              // Pop the latest version (restore to the one before it)
+              versions.pop(); // remove current
+              if (versions.length > 0) {
+                const prev = versions[versions.length - 1];
+                await stateRepo.set(params.agentId, params.userId, '_prompt_additions', JSON.stringify(prev.additions));
+                await stateRepo.set(params.agentId, params.userId, '_prompt_versions', JSON.stringify(versions));
+                await logToDb(params.agentId, 'info', `[ROLLBACK] Restored to version from ${prev.savedAt} (${prev.additions.length} additions)`, params.userId);
+                return { ok: true, message: `Rolled back to version from ${prev.savedAt}`, additions: prev.additions.length, versionsRemaining: versions.length };
+              }
+            }
+          } catch {}
+        }
+        // No versions — clear everything
+        await stateRepo.set(params.agentId, params.userId, '_prompt_additions', '[]');
+        await stateRepo.set(params.agentId, params.userId, '_prompt_versions', '[]');
+        await logToDb(params.agentId, 'info', '[ROLLBACK] All prompt additions cleared (no versions to restore)', params.userId);
+        return { ok: true, message: 'All prompt additions rolled back to empty.' };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'save_lesson': {
+      try {
+        const lesson = { text: args.lesson, category: args.category || 'insight', savedAt: new Date().toISOString() };
+        const key = `lesson:${Date.now()}`;
+        await stateRepo.set(params.agentId, params.userId, key, JSON.stringify(lesson));
+        // Keep max 30 lessons — prune oldest
+        const allKeys = await stateRepo.listKeys(params.agentId);
+        const lessonKeys = allKeys.filter((k: string) => k.startsWith('lesson:')).sort();
+        if (lessonKeys.length > 30) {
+          for (const old of lessonKeys.slice(0, lessonKeys.length - 30)) {
+            await stateRepo.delete(params.agentId, old).catch(() => {});
+          }
+        }
+        return { ok: true, lesson: lesson.text, totalLessons: Math.min(lessonKeys.length + 1, 30) };
+      } catch (e: any) { return { ok: false, error: e.message }; }
+    }
+
+    case 'manage_goals': {
+      try {
+        const goalsRaw = await stateRepo.get(params.agentId, '_goals').catch(() => null);
+        let goals: Array<{ goal: string; priority: string; status: string; addedAt: string }> = [];
+        try { goals = JSON.parse(goalsRaw?.value || '[]'); } catch { goals = []; }
+
+        switch (args.action) {
+          case 'add':
+            goals.push({ goal: args.goal, priority: args.priority || 'medium', status: 'active', addedAt: new Date().toISOString() });
+            break;
+          case 'complete':
+            for (const g of goals) { if (g.goal === args.goal && g.status === 'active') g.status = 'completed'; }
+            break;
+          case 'remove':
+            goals = goals.filter(g => g.goal !== args.goal);
+            break;
+          case 'list':
+            return { goals };
+        }
+        await stateRepo.set(params.agentId, params.userId, '_goals', JSON.stringify(goals));
+        return { ok: true, activeGoals: goals.filter(g => g.status === 'active').length, totalGoals: goals.length };
+      } catch (e: any) { return { ok: false, error: e.message }; }
+    }
+
+    // ── Dossier Tools ──
+    case 'get_contact_dossier': {
+      try {
+        const { getContactMemory } = require('../services/userbot-manager');
+        const cm = getContactMemory(params.agentId);
+        await cm.loadFromDb(params.agentId);
+        const dossier = cm.getContactDossier(args.user_id);
+        return { ok: true, dossier: dossier || 'Контакт не найден в досье' };
+      } catch (e: any) { return { ok: false, error: e.message }; }
+    }
+
+    case 'add_contact_note': {
+      try {
+        const { getContactMemory } = require('../services/userbot-manager');
+        const cm = getContactMemory(params.agentId);
+        await cm.loadFromDb(params.agentId);
+        const ok = cm.addNote(args.user_id, args.note);
+        if (ok) await cm.persistToDb(params.agentId, params.userId);
+        return { ok, message: ok ? 'Заметка добавлена' : 'Контакт не найден' };
+      } catch (e: any) { return { ok: false, error: e.message }; }
+    }
+
+    case 'set_contact_relationship': {
+      try {
+        const { getContactMemory } = require('../services/userbot-manager');
+        const cm = getContactMemory(params.agentId);
+        await cm.loadFromDb(params.agentId);
+        const ok = cm.setRelationship(args.user_id, args.relationship);
+        if (ok) await cm.persistToDb(params.agentId, params.userId);
+        return { ok, message: ok ? `Отношения установлены: ${args.relationship}` : 'Контакт не найден' };
+      } catch (e: any) { return { ok: false, error: e.message }; }
+    }
+
+    case 'get_chat_dossier': {
+      try {
+        const { getContactMemory } = require('../services/userbot-manager');
+        const cm = getContactMemory(params.agentId);
+        await cm.loadFromDb(params.agentId);
+        const dossier = cm.getChatDossier(args.chat_id);
+        return { ok: true, dossier: dossier || 'Чат не найден в досье' };
+      } catch (e: any) { return { ok: false, error: e.message }; }
+    }
+
+    case 'add_chat_note': {
+      try {
+        const { getContactMemory } = require('../services/userbot-manager');
+        const cm = getContactMemory(params.agentId);
+        await cm.loadFromDb(params.agentId);
+        const ok = cm.addChatNote(args.chat_id, args.note);
+        if (ok) await cm.persistToDb(params.agentId, params.userId);
+        return { ok, message: ok ? 'Заметка о чате добавлена' : 'Чат не найден' };
+      } catch (e: any) { return { ok: false, error: e.message }; }
+    }
+
+    case 'list_contacts': {
+      try {
+        const { getContactMemory } = require('../services/userbot-manager');
+        const cm = getContactMemory(params.agentId);
+        await cm.loadFromDb(params.agentId);
+        return { ok: true, summary: cm.getSummary() || 'Досье пусто — пока нет контактов' };
+      } catch (e: any) { return { ok: false, error: e.message }; }
+    }
+
+    // ── Chat Policy Management ──
+    case 'set_chat_policy': {
+      try {
+        const pool = (await import('../db')).pool;
+        // Normalize chat_id: resolve usernames/URLs to numeric ID
+        let normalizedChatId = String(args.chat_id || '');
+        // Extract username from URL like https://t.me/toncischat
+        const urlMatch = normalizedChatId.match(/(?:t\.me|telegram\.me)\/([a-zA-Z0-9_]+)/);
+        if (urlMatch) normalizedChatId = '@' + urlMatch[1];
+        // If it's a @username, try to resolve to numeric chat ID via MTProto
+        if (normalizedChatId.startsWith('@')) {
+          try {
+            const { UserbotManager } = require('../services/userbot-manager');
+            const mgr = UserbotManager.getInstance();
+            const client = await (mgr as any).getClient(params.agentId);
+            if (client) {
+              const entity = await client.getEntity(normalizedChatId);
+              const numId = entity?.id?.toJSNumber?.() ?? Number(entity?.id);
+              if (numId) {
+                // Channels/supergroups need -100 prefix
+                const isChannel = entity?.className === 'Channel' || entity?.className === 'ChatForbidden';
+                normalizedChatId = isChannel ? `-100${numId}` : String(numId);
+              }
+            }
+          } catch (resolveErr: any) {
+            console.log(`[set_chat_policy] Could not resolve ${normalizedChatId}: ${resolveErr.message}`);
+            // Keep the @username as fallback
+          }
+        }
+        // Read current trigger_config
+        const res = await pool.query('SELECT trigger_config FROM builder_bot.agents WHERE id = $1', [params.agentId]);
+        if (!res.rows.length) return { ok: false, error: 'Agent not found' };
+        const tc = res.rows[0].trigger_config || { config: {} };
+        if (!tc.config) tc.config = {};
+        if (!tc.config.chatPolicies) tc.config.chatPolicies = {};
+        tc.config.chatPolicies[normalizedChatId] = args.policy;
+        await pool.query('UPDATE builder_bot.agents SET trigger_config = $1 WHERE id = $2', [JSON.stringify(tc), params.agentId]);
+        // Also update in-memory config
+        try {
+          const { _agentMsgConfigs } = require('../services/userbot-manager');
+          const cfg = _agentMsgConfigs?.get?.(params.agentId);
+          if (cfg) {
+            if (!cfg.chatPolicies) cfg.chatPolicies = {};
+            cfg.chatPolicies[normalizedChatId] = args.policy;
+          }
+        } catch {}
+        return { ok: true, chat_id: normalizedChatId, policy: args.policy, message: `Чат ${normalizedChatId} → ${args.policy}` };
+      } catch (e: any) { return { ok: false, error: e.message }; }
+    }
+
+    case 'list_chat_policies': {
+      try {
+        const pool = (await import('../db')).pool;
+        const res = await pool.query('SELECT trigger_config FROM builder_bot.agents WHERE id = $1', [params.agentId]);
+        if (!res.rows.length) return { ok: false, error: 'Agent not found' };
+        const tc = res.rows[0].trigger_config || { config: {} };
+        const globalPolicy = tc.config?.groupPolicy || 'mention-only';
+        const chatPolicies = tc.config?.chatPolicies || {};
+        return {
+          ok: true,
+          globalDefault: globalPolicy,
+          perChat: chatPolicies,
+          count: Object.keys(chatPolicies).length,
+        };
+      } catch (e: any) { return { ok: false, error: e.message }; }
     }
 
     case 'get_shared_state': {
@@ -2080,6 +3578,51 @@ export async function executeTool(
       } catch (e: any) { return { ok: false, error: e.message }; }
     }
 
+    // ── Event-Driven Tools ─────────────────────────────────────
+    case 'set_next_wake': {
+      const { getEventBus } = require('./event-bus');
+      const delaySec = Number(args.delay_seconds) || 60;
+      const reason = String(args.reason || 'scheduled wake');
+      const result = getEventBus().setNextWake(params.agentId, delaySec * 1000, reason);
+      return { ok: true, wake_at: new Date(result.wakeAt).toISOString(), delay_seconds: delaySec, reason };
+    }
+
+    case 'subscribe_event': {
+      const { getEventBus } = require('./event-bus');
+      const eventType = String(args.event_type || 'custom');
+      getEventBus().subscribe(params.agentId, params.userId, eventType as any, args.filter);
+      return { ok: true, event_type: eventType, filter: args.filter || null };
+    }
+
+    case 'unsubscribe_event': {
+      const { getEventBus } = require('./event-bus');
+      getEventBus().unsubscribe(params.agentId, args.event_type);
+      return { ok: true, event_type: args.event_type || 'all' };
+    }
+
+    case 'emit_event': {
+      const { getEventBus } = require('./event-bus');
+      const eventName = String(args.name || 'custom');
+      getEventBus().emit({
+        type: 'custom',
+        source: `agent:${params.agentId}`,
+        data: { name: eventName, ...(args.data || {}) },
+        timestamp: Date.now(),
+      });
+      return { ok: true, event_name: eventName };
+    }
+
+    case 'get_wake_info': {
+      const { getEventBus } = require('./event-bus');
+      const bus = getEventBus();
+      const wake = bus.getWakeInfo(params.agentId);
+      const subs = bus.getSubscriptions(params.agentId);
+      return {
+        next_wake: wake ? { at: new Date(wake.wakeAt).toISOString(), reason: wake.reason } : null,
+        subscriptions: subs.map((s: any) => ({ event_type: s.eventType, filter: s.filter })),
+      };
+    }
+
     case 'notify': {
       const msg = String(args.message || '');
       _tickNotifyFlag.set(params.agentId, true); // mark: notify was called in this tick
@@ -2105,8 +3648,14 @@ export async function executeTool(
 
         // 1) Try DuckDuckGo HTML search (works for general queries)
         try {
-          const htmlResp = await fetch('https://html.duckduckgo.com/html/?q=' + encoded, {
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36' },
+          // Detect Russian query (Cyrillic chars) for locale
+          const hasRussian = /[а-яА-ЯёЁ]/.test(query);
+          const locale = hasRussian ? '&kl=ru-ru' : '';
+          const htmlResp = await fetch('https://html.duckduckgo.com/html/?q=' + encoded + locale, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+              'Accept-Language': hasRussian ? 'ru-RU,ru;q=0.9,en;q=0.5' : 'en-US,en;q=0.9',
+            },
             signal: AbortSignal.timeout(10000),
           });
           if (htmlResp.ok) {
@@ -2166,20 +3715,24 @@ export async function executeTool(
       if (!url) return { error: 'url required' };
       if (!checkWebRateLimit(params.agentId)) return { error: 'Rate limit: too many web requests per minute. Slow down.' };
       try {
-        // SSRF protection
-        const u = new URL(url);
-        const h = u.hostname.toLowerCase();
-        if (h === 'localhost' || h === '127.0.0.1' || h === '0.0.0.0' || h === '::1'
-          || h.startsWith('10.') || h.startsWith('192.168.') || h.startsWith('172.16.')
-          || h.startsWith('fc') || h.startsWith('fd') || h.startsWith('fe80')
-          || h === '169.254.169.254' || h.endsWith('.internal') || h.endsWith('.local')
-          || u.protocol === 'file:') {
-          return { error: 'Access to internal addresses is blocked' };
-        }
-        const resp = await fetch(url, {
+        // SSRF protection: decode, validate hostname, resolve DNS, check IPs
+        const ssrfCheck = await validateUrlSSRF(url);
+        if (ssrfCheck.error) return { error: ssrfCheck.error };
+        const safeUrl = ssrfCheck.decodedUrl!;
+        const resp = await fetch(safeUrl, {
           headers: { 'User-Agent': 'TONAgentBot/1.0' },
           signal: AbortSignal.timeout(10000),
+          redirect: 'manual', // prevent redirect to internal IPs
         });
+        // Check redirects for SSRF (Location header might point to internal IP)
+        if (resp.status >= 300 && resp.status < 400) {
+          const location = resp.headers.get('location');
+          if (location) {
+            const redirCheck = await validateUrlSSRF(new URL(location, safeUrl).href);
+            if (redirCheck.error) return { error: 'Redirect blocked: ' + redirCheck.error };
+          }
+          return { error: 'Redirect not followed for safety. Target: ' + (resp.headers.get('location') || 'unknown') };
+        }
         if (!resp.ok) return { error: 'Fetch failed: ' + resp.status };
         const contentType = resp.headers.get('content-type') || '';
         if (contentType.includes('json')) {
@@ -2223,7 +3776,15 @@ export async function executeTool(
     case 'tg_reply': case 'tg_react': case 'tg_edit': case 'tg_forward':
     case 'tg_pin': case 'tg_mark_read': case 'tg_get_comments': case 'tg_set_typing':
     case 'tg_send_formatted': case 'tg_get_message_by_id': case 'tg_get_unread':
-    case 'tg_send_file': {
+    case 'tg_send_file': case 'tg_copy_media': case 'tg_get_media_info':
+    case 'tg_delete_message': case 'tg_create_poll': case 'tg_kick_user':
+    case 'tg_ban_user': case 'tg_unban_user': case 'tg_mute_user':
+    case 'tg_get_admins': case 'tg_set_admin': case 'tg_create_invite_link':
+    case 'tg_unpin': case 'tg_schedule_message': case 'tg_set_chat_title':
+    case 'tg_set_chat_about': case 'tg_set_chat_photo': case 'tg_create_group':
+    case 'tg_create_channel': case 'tg_invite_users': case 'tg_archive_chat':
+    case 'tg_get_online_count': case 'tg_send_contact': case 'tg_send_location':
+    case 'tg_get_history_count': case 'tg_send_album': case 'tg_get_profile_photos': {
       try {
         // Per-AGENT Telegram auth — each agent has its own TG account
         const tgSandbox = await userbotManager.buildAgentSandbox(params.agentId || 0) || await userbotManager.buildUserSandbox(params.userId);
@@ -2238,7 +3799,14 @@ export async function executeTool(
 
         // Route to per-user sandbox function
         switch (name) {
-          case 'tg_send_message': return await tgSandbox.sendMessage(args.peer, args.message || args.text);
+          case 'tg_send_message': {
+            const isReply = !!(params.pendingMessages && params.pendingMessages.length > 0);
+            const check = canPostToChat(params.agentId, args.peer, isReply);
+            if (!check.allowed) return { error: `Rate limited: wait ${check.waitMinutes}min before posting to this chat again. Use set_next_wake to schedule.` };
+            const r = await tgSandbox.sendMessage(args.peer, args.message || args.text);
+            markPosted(params.agentId, args.peer);
+            return r;
+          }
           case 'tg_get_messages': return await tgSandbox.getMessages(args.peer, args.limit ?? 20);
           case 'tg_get_channel_info': return await tgSandbox.getChannelInfo(args.peer);
           case 'tg_join_channel': return await tgSandbox.joinChannel(args.peer);
@@ -2247,7 +3815,7 @@ export async function executeTool(
           case 'tg_get_members': return await tgSandbox.getMembers(args.peer, args.limit ?? 50);
           case 'tg_search_messages': return await tgSandbox.searchMessages(args.peer, args.query, args.limit ?? 20);
           case 'tg_get_user_info': return await tgSandbox.getUserInfo(args.user);
-          case 'tg_reply': { const id = await tgSandbox.replyMessage(args.chat_id, args.reply_to_id, args.text); return { ok: true, message_id: id }; }
+          case 'tg_reply': { const id = await tgSandbox.replyMessage(args.chat_id, args.reply_to_id, args.text, args.quote); return { ok: true, message_id: id }; }
           case 'tg_react': { await tgSandbox.reactMessage(args.chat_id, args.message_id, args.emoji); return { ok: true }; }
           case 'tg_edit': { await tgSandbox.editMessage(args.chat_id, args.message_id, args.new_text); return { ok: true }; }
           case 'tg_forward': { await tgSandbox.forwardMessage(args.from_chat, args.msg_id, args.to_chat); return { ok: true }; }
@@ -2255,10 +3823,44 @@ export async function executeTool(
           case 'tg_mark_read': { await tgSandbox.markRead(args.chat_id); return { ok: true }; }
           case 'tg_get_comments': return await tgSandbox.getComments(args.chat_id, args.post_id, args.limit ?? 30);
           case 'tg_set_typing': { await tgSandbox.setTyping(args.chat_id); return { ok: true }; }
-          case 'tg_send_formatted': { const id = await tgSandbox.sendFormatted(args.chat_id, args.html, args.reply_to); return { ok: true, message_id: id }; }
+          case 'tg_send_formatted': {
+            const isReply = !!(params.pendingMessages && params.pendingMessages.length > 0);
+            const check = canPostToChat(params.agentId, args.chat_id, isReply);
+            if (!check.allowed) return { error: `Rate limited: wait ${check.waitMinutes}min before posting to this chat again. Use set_next_wake to schedule.` };
+            const id = await tgSandbox.sendFormatted(args.chat_id, args.html, args.reply_to);
+            markPosted(params.agentId, args.chat_id);
+            return { ok: true, message_id: id };
+          }
           case 'tg_get_message_by_id': { const msg = await tgSandbox.getMessageById(args.chat_id, args.message_id); return msg || { error: 'Message not found' }; }
           case 'tg_get_unread': return await tgSandbox.getUnread(args.limit ?? 10);
           case 'tg_send_file': { const id = await tgSandbox.sendFile(args.chat_id, args.file_url, args.caption); return { ok: true, message_id: id }; }
+          case 'tg_copy_media': { const id = await tgSandbox.copyMedia(args.from_chat_id, args.message_id, args.to_chat_id, args.caption); return { ok: true, message_id: id }; }
+          case 'tg_get_media_info': return await tgSandbox.getMediaInfo(args.chat_id, args.message_id);
+          // ── New extended tools ──
+          case 'tg_delete_message': return await tgSandbox.deleteMsg(args.chat_id, args.message_ids);
+          case 'tg_create_poll': return await tgSandbox.createPoll(args.chat_id, args.question, args.options, args.anonymous !== false, args.multiple_choice || false);
+          case 'tg_kick_user': return await tgSandbox.kickUser(args.chat_id, args.user_id);
+          case 'tg_ban_user': return await tgSandbox.banUser(args.chat_id, args.user_id, args.duration_sec || 0);
+          case 'tg_unban_user': return await tgSandbox.unbanUser(args.chat_id, args.user_id);
+          case 'tg_mute_user': return await tgSandbox.muteUser(args.chat_id, args.user_id, args.duration_sec || 3600);
+          case 'tg_get_admins': return await tgSandbox.getAdmins(args.chat_id);
+          case 'tg_set_admin': return await tgSandbox.setAdmin(args.chat_id, args.user_id, args.rights);
+          case 'tg_create_invite_link': return await tgSandbox.createInviteLink(args.chat_id);
+          case 'tg_unpin': return await tgSandbox.unpinMessage(args.chat_id, args.message_id);
+          case 'tg_schedule_message': return await tgSandbox.scheduleMessage(args.chat_id, args.text, args.send_at);
+          case 'tg_set_chat_title': return await tgSandbox.setChatTitle(args.chat_id, args.title);
+          case 'tg_set_chat_about': return await tgSandbox.setChatAbout(args.chat_id, args.about);
+          case 'tg_set_chat_photo': return await tgSandbox.setChatPhoto(args.chat_id, args.photo_url);
+          case 'tg_create_group': return await tgSandbox.createGroup(args.title, args.user_ids || []);
+          case 'tg_create_channel': return await tgSandbox.createChannel(args.title, args.about || '', args.megagroup || false);
+          case 'tg_invite_users': return await tgSandbox.inviteToChannel(args.chat_id, args.user_ids);
+          case 'tg_archive_chat': return await tgSandbox.archiveChat(args.chat_id);
+          case 'tg_get_online_count': return await tgSandbox.getOnlineCount(args.chat_id);
+          case 'tg_send_contact': return await tgSandbox.sendContact(args.chat_id, args.phone, args.first_name, args.last_name || '');
+          case 'tg_send_location': return await tgSandbox.sendLocation(args.chat_id, args.lat, args.lng);
+          case 'tg_get_history_count': return await tgSandbox.getHistoryCount(args.chat_id);
+          case 'tg_send_album': return await tgSandbox.sendAlbum(args.chat_id, args.media_urls, args.caption);
+          case 'tg_get_profile_photos': return await tgSandbox.getProfilePhotos(args.user_id, args.limit || 5);
           default: return { error: 'Unknown tg tool' };
         }
       } catch (e: any) { return { error: e.message }; }
@@ -2267,25 +3869,29 @@ export async function executeTool(
     case 'http_fetch': {
       try {
         const url = args.url as string;
-        // SSRF protection: block internal/private IPs
-        const parsed = new URL(url);
-        const host = parsed.hostname.toLowerCase();
-        if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0' || host === '::1'
-          || host.startsWith('10.') || host.startsWith('192.168.') || host.startsWith('172.16.')
-          || host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80')
-          || host === '169.254.169.254' || host.endsWith('.internal') || host.endsWith('.local')
-          || host.endsWith('.localhost') || parsed.protocol === 'file:' || parsed.protocol === 'ftp:') {
-          return { error: 'Access to internal/private addresses is blocked' };
-        }
+        // SSRF protection: decode, validate hostname, resolve DNS, check IPs
+        const ssrfCheck = await validateUrlSSRF(url);
+        if (ssrfCheck.error) return { error: ssrfCheck.error };
+        const safeUrl = ssrfCheck.decodedUrl!;
         const method = (args.method as string || 'GET').toUpperCase();
         const headers = (args.headers || {}) as Record<string, string>;
         const body = args.body as string | undefined;
-        const res = await fetch(url, {
+        const res = await fetch(safeUrl, {
           method,
           headers: { 'User-Agent': 'TON-Agent-Platform/1.0', ...headers },
           body: method !== 'GET' ? body : undefined,
           signal: AbortSignal.timeout(15000),
+          redirect: 'manual',
         });
+        // Check redirects for SSRF
+        if (res.status >= 300 && res.status < 400) {
+          const location = res.headers.get('location');
+          if (location) {
+            const redirCheck = await validateUrlSSRF(new URL(location, safeUrl).href);
+            if (redirCheck.error) return { error: 'Redirect blocked: ' + redirCheck.error };
+          }
+          return { error: 'Redirect not followed for safety. Target: ' + (res.headers.get('location') || 'unknown') };
+        }
         const text = await res.text();
         let json: any = null;
         try { json = JSON.parse(text); } catch {}
@@ -3060,6 +4666,78 @@ export async function executeTool(
       } catch (e: any) { return { error: e.message }; }
     }
 
+    // ── Self-modification tools (agent evolves itself) ──
+    case 'get_my_config': {
+      try {
+        const { pool } = await import('../db');
+        const row = await pool.query('SELECT code, description, trigger_config FROM builder_bot.agents WHERE id=$1', [params.agentId]);
+        if (!row.rows[0]) return { error: 'Agent not found' };
+        const a = row.rows[0];
+        const tc = a.trigger_config || {};
+        return {
+          current_prompt: a.code || '(empty)',
+          description: a.description || '(empty)',
+          intervalMs: tc.intervalMs || 0,
+          interval_minutes: Math.round((tc.intervalMs || 0) / 60000),
+        };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'update_my_prompt': {
+      const newPrompt = args.new_prompt as string;
+      const reason = (args.reason as string) || 'self-update';
+      if (!newPrompt || newPrompt.length < 20) return { error: 'Промпт слишком короткий (минимум 20 символов)' };
+      if (newPrompt.length > 10000) return { error: 'Промпт слишком длинный (максимум 10000 символов)' };
+      try {
+        const { pool } = await import('../db');
+        // Backup old prompt in state
+        const oldRow = await pool.query('SELECT code FROM builder_bot.agents WHERE id=$1', [params.agentId]);
+        const oldPrompt = oldRow.rows[0]?.code || '';
+        const stateRepo = getAgentStateRepository();
+        await stateRepo.set(params.agentId, params.userId, 'previous_prompt', oldPrompt).catch(() => {});
+        await stateRepo.set(params.agentId, params.userId, 'prompt_update_reason', reason).catch(() => {});
+        await stateRepo.set(params.agentId, params.userId, 'prompt_updated_at', new Date().toISOString()).catch(() => {});
+
+        // Update code column
+        await pool.query('UPDATE builder_bot.agents SET code=$1 WHERE id=$2', [newPrompt, params.agentId]);
+
+        // Also update trigger_config.code
+        const tcRow = await pool.query('SELECT trigger_config FROM builder_bot.agents WHERE id=$1', [params.agentId]);
+        const tc = tcRow.rows[0]?.trigger_config || {};
+        tc.code = newPrompt;
+        await pool.query('UPDATE builder_bot.agents SET trigger_config=$1 WHERE id=$2', [JSON.stringify(tc), params.agentId]);
+
+        logToDb(params.agentId, 'info', `[SELF-EVOLVE] Prompt updated: ${reason}`);
+        return { ok: true, message: 'Промпт обновлён. Новый промпт начнёт действовать со следующего тика.', prompt_length: newPrompt.length };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'update_my_interval': {
+      const minutes = args.interval_minutes as number;
+      if (typeof minutes !== 'number' || minutes < 0 || minutes > 1440) return { error: 'interval_minutes должен быть 0-1440' };
+      const ms = Math.round(minutes * 60000);
+      try {
+        const { pool } = await import('../db');
+        const tcRow = await pool.query('SELECT trigger_config FROM builder_bot.agents WHERE id=$1', [params.agentId]);
+        const tc = tcRow.rows[0]?.trigger_config || {};
+        tc.intervalMs = ms;
+        await pool.query('UPDATE builder_bot.agents SET trigger_config=$1 WHERE id=$2', [JSON.stringify(tc), params.agentId]);
+        logToDb(params.agentId, 'info', `[SELF-EVOLVE] Interval changed to ${minutes} min`);
+        return { ok: true, intervalMs: ms, minutes, message: ms === 0 ? 'Проактивный режим отключён. Будешь работать только реактивно.' : `Интервал обновлён на ${minutes} мин. Изменение вступит в силу при следующем перезапуске.` };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'update_my_description': {
+      const desc = args.description as string;
+      if (!desc || desc.length < 3) return { error: 'Описание слишком короткое' };
+      if (desc.length > 500) return { error: 'Описание слишком длинное (максимум 500 символов)' };
+      try {
+        const { pool } = await import('../db');
+        await pool.query('UPDATE builder_bot.agents SET description=$1 WHERE id=$2', [desc, params.agentId]);
+        return { ok: true, description: desc };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
     // ── Inter-agent tools ──
     case 'list_my_agents': {
       try {
@@ -3094,9 +4772,31 @@ export async function executeTool(
           return { error: `Агент #${targetId} не найден у этого пользователя` };
         }
 
-        // Send message
-        addMessageToAIAgent(targetId, `[От агента #${params.agentId}]: ${message}`);
-        return { success: true, message: `Сообщение отправлено агенту #${targetId} «${targetAgent.data.name || ''}». Ответ придёт на следующем тике.` };
+        // ── Deadlock detection: check if target is already waiting for us ──
+        const pendingToUs = (_pendingMessages.get(params.agentId) || [])
+          .filter(m => m.includes(`[От агента #${targetId}]`));
+        if (pendingToUs.length > 2) {
+          return { error: `Deadlock detected: Agent #${targetId} already has ${pendingToUs.length} pending messages to you. Process incoming messages first before sending more.` };
+        }
+
+        // ── Delivery check: verify target is active ──
+        const targetActive = _activeHandles.has(targetId);
+        const deliveryStatus = targetActive ? 'delivered' : 'queued';
+
+        // ── Response pairing: add request ID ──
+        const requestId = `req_${params.agentId}_${Date.now()}`;
+
+        // Send message with request ID for response pairing
+        addMessageToAIAgent(targetId, `[От агента #${params.agentId} | reqId=${requestId}]: ${message}`);
+        await logToDb(params.agentId, 'info', `[InterAgent] → #${targetId}: ${message.slice(0, 100)} (${deliveryStatus})`, params.userId);
+
+        return {
+          success: true,
+          requestId,
+          deliveryStatus,
+          targetActive,
+          message: `Сообщение отправлено агенту #${targetId} «${targetAgent.data.name || ''}». Статус: ${deliveryStatus}.${!targetActive ? ' Агент неактивен — сообщение будет обработано при запуске.' : ''}`,
+        };
       } catch (e: any) { return { error: e.message }; }
     }
 
@@ -3242,6 +4942,135 @@ export async function executeTool(
       } catch (e: any) { return { error: e.message }; }
     }
 
+    // ── Workflow / Planning ──
+    case 'create_plan': {
+      const planName = args.plan_name as string;
+      const steps = args.steps as Array<{ action: string; tool?: string; condition?: string }>;
+      if (!planName || !steps?.length) return { error: 'Нужны plan_name и steps' };
+      const stateRepo = getAgentStateRepository();
+      const plan = { name: planName, steps: steps.map((s, i) => ({ ...s, status: 'pending', id: i + 1 })), createdAt: new Date().toISOString() };
+      await stateRepo.set(params.agentId, params.userId, `plan:${planName}`, JSON.stringify(plan));
+      // Also add to pending_tasks for proactive execution
+      const existing = await stateRepo.get(params.agentId, 'pending_tasks').catch(() => null);
+      const tasks = existing ? (typeof existing.value === 'string' ? (() => { try { return JSON.parse(existing.value); } catch { return []; } })() : []) : [];
+      for (const s of steps) tasks.push(`[Plan: ${planName}] ${s.action}`);
+      await stateRepo.set(params.agentId, params.userId, 'pending_tasks', JSON.stringify(tasks));
+      return { ok: true, plan_name: planName, steps_count: steps.length, message: `План "${planName}" создан с ${steps.length} шагами и добавлен в pending_tasks` };
+    }
+
+    case 'get_execution_stats': {
+      try {
+        const repo = getExecutionHistoryRepository();
+        const stats = await repo.getStats(params.userId);
+        const agentRuns = await repo.getByAgent(params.agentId, 5);
+        return {
+          overall: stats,
+          recent_runs: agentRuns.map((r: any) => ({
+            id: r.id, status: r.status, duration: r.durationMs,
+            started: r.startedAt, tools: r.resultSummary?.toolCalls || 0,
+            tokens: r.resultSummary?.tokensUsed || 0,
+          })),
+        };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    // ── Knowledge store (uses agent_state with prefix) ──
+    case 'knowledge_save': {
+      const cat = (args.category as string) || 'notes';
+      const title = args.title as string;
+      const content = args.content as string;
+      const tags = (args.tags as string) || '';
+      if (!title || !content) return { error: 'title и content обязательны' };
+      const id = `kb:${cat}:${Date.now()}`;
+      const entry = { title, content, category: cat, tags: tags.split(',').map((t: string) => t.trim()).filter(Boolean), createdAt: new Date().toISOString() };
+      await getAgentStateRepository().set(params.agentId, params.userId, id, JSON.stringify(entry));
+      return { ok: true, id, category: cat, title };
+    }
+
+    case 'knowledge_search': {
+      const q = (args.query as string || '').toLowerCase();
+      const catFilter = args.category as string;
+      if (!q) return { error: 'query обязателен' };
+      const stateRepo = getAgentStateRepository();
+      const allKeys = await stateRepo.listKeys(params.agentId);
+      const kbKeys = allKeys.filter((k: string) => k.startsWith('kb:') && (!catFilter || k.startsWith(`kb:${catFilter}:`)));
+      const results: any[] = [];
+      for (const key of kbKeys.slice(0, 50)) {
+        const val = await stateRepo.get(params.agentId, key).catch(() => null);
+        if (!val) continue;
+        let entry: any;
+        const raw = typeof val === 'object' && val?.value !== undefined ? val.value : val;
+        try { entry = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch { continue; }
+        if (entry.title?.toLowerCase().includes(q) || entry.content?.toLowerCase().includes(q) || entry.tags?.some((t: string) => t.toLowerCase().includes(q))) {
+          results.push({ id: key, ...entry });
+        }
+      }
+      return { count: results.length, results: results.slice(0, 20) };
+    }
+
+    case 'knowledge_list': {
+      const catFilter = args.category as string;
+      const stateRepo = getAgentStateRepository();
+      const allKeys = await stateRepo.listKeys(params.agentId);
+      const kbKeys = allKeys.filter((k: string) => k.startsWith('kb:') && (!catFilter || k.startsWith(`kb:${catFilter}:`)));
+      const entries: any[] = [];
+      for (const key of kbKeys.slice(0, 30)) {
+        const val = await stateRepo.get(params.agentId, key).catch(() => null);
+        if (!val) continue;
+        const raw = typeof val === 'object' && val?.value !== undefined ? val.value : val;
+        try { entries.push({ id: key, ...(typeof raw === 'string' ? JSON.parse(raw) : raw) }); } catch {}
+      }
+      const byCategory: Record<string, any[]> = {};
+      for (const e of entries) {
+        const cat = e.category || 'other';
+        if (!byCategory[cat]) byCategory[cat] = [];
+        byCategory[cat].push({ id: e.id, title: e.title, tags: e.tags });
+      }
+      return { total: entries.length, categories: byCategory };
+    }
+
+    case 'knowledge_delete': {
+      const id = args.id as string;
+      if (!id || !id.startsWith('kb:')) return { error: 'Неверный ID записи' };
+      try {
+        const { pool } = await import('../db');
+        await pool.query('DELETE FROM builder_bot.agent_state WHERE agent_id=$1 AND key=$2', [params.agentId, id]);
+        return { ok: true, deleted: id };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'schedule_action': {
+      const action = args.action as string;
+      const when = args.when as string;
+      if (!action || !when) return { error: 'action и when обязательны' };
+      // Parse relative time
+      let targetTime: Date;
+      const now = new Date();
+      const minMatch = when.match(/(\d+)\s*min/i);
+      const hourMatch = when.match(/(\d+)\s*hour|(\d+)\s*час/i);
+      const atMatch = when.match(/at\s*(\d{1,2}):(\d{2})|в\s*(\d{1,2}):(\d{2})/i);
+      if (minMatch) {
+        targetTime = new Date(now.getTime() + parseInt(minMatch[1]) * 60000);
+      } else if (hourMatch) {
+        targetTime = new Date(now.getTime() + parseInt(hourMatch[1] || hourMatch[2]) * 3600000);
+      } else if (atMatch) {
+        const h = parseInt(atMatch[1] || atMatch[3]);
+        const m = parseInt(atMatch[2] || atMatch[4]);
+        targetTime = new Date(now);
+        targetTime.setHours(h, m, 0, 0);
+        if (targetTime <= now) targetTime.setDate(targetTime.getDate() + 1);
+      } else {
+        targetTime = new Date(now.getTime() + 3600000); // default 1 hour
+      }
+      // Save as scheduled task in state
+      const stateRepo = getAgentStateRepository();
+      const existing = await stateRepo.get(params.agentId, 'scheduled_actions').catch(() => null);
+      const scheduled = existing ? (() => { try { return JSON.parse(existing.value); } catch { return []; } })() : [];
+      scheduled.push({ action, scheduledFor: targetTime.toISOString(), createdAt: now.toISOString() });
+      await stateRepo.set(params.agentId, params.userId, 'scheduled_actions', JSON.stringify(scheduled));
+      return { ok: true, action, scheduled_for: targetTime.toISOString() };
+    }
+
     default: {
       // ── Tool name aliases (AI sometimes uses wrong names) ──
       const ALIASES: Record<string, string> = {
@@ -3289,7 +5118,7 @@ async function executeGlobalTgTool(name: string, args: any): Promise<any> {
     case 'tg_get_members': return await tgGetMembers(args.peer, args.limit ?? 50);
     case 'tg_search_messages': return await tgSearchMessages(args.peer, args.query, args.limit ?? 20);
     case 'tg_get_user_info': return await tgGetUserInfo(args.user);
-    case 'tg_reply': { const id = await tgReplyMessage(args.chat_id, args.reply_to_id, args.text); return { ok: true, message_id: id }; }
+    case 'tg_reply': { const id = await tgReplyMessage(args.chat_id, args.reply_to_id, args.text, args.quote); return { ok: true, message_id: id }; }
     case 'tg_react': { await tgReactMessage(args.chat_id, args.message_id, args.emoji); return { ok: true }; }
     case 'tg_edit': { await tgEditMessage(args.chat_id, args.message_id, args.new_text); return { ok: true }; }
     case 'tg_forward': { await tgForwardMessage(args.from_chat, args.msg_id, args.to_chat); return { ok: true }; }
@@ -3301,6 +5130,19 @@ async function executeGlobalTgTool(name: string, args: any): Promise<any> {
     case 'tg_get_message_by_id': { const msg = await tgGetMessageById(args.chat_id, args.message_id); return msg || { error: 'not found' }; }
     case 'tg_get_unread': return await tgGetUnread(args.limit ?? 10);
     case 'tg_send_file': { const id = await tgSendFile(args.chat_id, args.file_url, args.caption); return { ok: true, message_id: id }; }
+    case 'tg_copy_media': {
+      const ub = (await import('../services/userbot-manager')).getUserbotManager();
+      const sb = await ub.buildUserSandbox(_currentUserId!);
+      if (!sb) return { error: 'Telegram not connected' };
+      const id = await sb.copyMedia(args.from_chat_id, args.message_id, args.to_chat_id, args.caption);
+      return { ok: true, message_id: id };
+    }
+    case 'tg_get_media_info': {
+      const ub2 = (await import('../services/userbot-manager')).getUserbotManager();
+      const sb2 = await ub2.buildUserSandbox(_currentUserId!);
+      if (!sb2) return { error: 'Telegram not connected' };
+      return await sb2.getMediaInfo(args.chat_id, args.message_id);
+    }
     default: return { error: 'Unknown tg tool' };
   }
 }
@@ -3312,6 +5154,109 @@ async function logToDb(agentId: number, level: string, message: string, userId =
     await getAgentLogsRepository().insert({ agentId, userId, level, message });
   } catch (e) {
     console.warn('[logToDb] Failed:', (e as any)?.message);
+  }
+}
+
+// ── Memory Consolidation ─────────────────────────────────────────────────
+// AI-powered compression of old agent state to keep context lean
+// Runs automatically every N runs (default: every 20 runs)
+
+const CONSOLIDATION_INTERVAL = 20; // runs between consolidations
+const MAX_STATE_ENTRIES_BEFORE_CONSOLIDATION = 50;
+
+async function maybeConsolidateMemory(params: AIAgentTickParams, ai: OpenAI, model: string): Promise<void> {
+  const stateRepo = getAgentStateRepository();
+  try {
+    // Check if it's time to consolidate
+    const runCountRaw = await stateRepo.get(params.agentId, '_consolidation_run_count').catch(() => null);
+    const runCount = parseInt(String(runCountRaw?.value || runCountRaw || '0')) || 0;
+
+    if (runCount < CONSOLIDATION_INTERVAL) {
+      await stateRepo.set(params.agentId, params.userId, '_consolidation_run_count', String(runCount + 1));
+      return;
+    }
+
+    // Reset counter
+    await stateRepo.set(params.agentId, params.userId, '_consolidation_run_count', '0');
+
+    // Get all state keys
+    const allKeys = await stateRepo.listKeys(params.agentId);
+    const userKeys = allKeys.filter(k => !k.startsWith('_') && k !== 'wallet_mnemonic' && k !== 'wallet_address' && k !== 'auto_approve' && k !== 'memory_summary' && k !== 'memory_digest');
+
+    if (userKeys.length < MAX_STATE_ENTRIES_BEFORE_CONSOLIDATION) return;
+
+    // Gather all state values
+    const entries: Array<{ key: string; value: string }> = [];
+    for (const key of userKeys.slice(0, 100)) {
+      const val = await stateRepo.get(params.agentId, key).catch(() => null);
+      if (!val) continue;
+      const raw = typeof val === 'object' && val?.value !== undefined ? val.value : val;
+      entries.push({ key, value: String(raw).slice(0, 500) });
+    }
+
+    // Ask AI to consolidate
+    const consolidationPrompt = `Ты — система сжатия памяти AI-агента. Агент накопил ${entries.length} записей в состоянии.
+Твоя задача: сжать всю несущественную информацию в одну запись "memory_summary".
+
+Текущие записи:
+${entries.map(e => `[${e.key}]: ${e.value}`).join('\n')}
+
+Правила 3-уровневой памяти:
+HOT (никогда не удалять): ключи с importance=high, wallet_address, contacts, mem: с importance=high
+WARM (сжимать): conversation_context, старые записи last_post_time, повторяющаяся информация → объединить в summary
+COLD (удалять): устаревшие timestamps, завершённые задачи, дубликаты
+
+1. СОХРАНИ (HOT): wallet_address, pending_tasks, контакты, mem: записи с importance=high, scheduled_actions, plans
+2. СОЖМИ (WARM): conversation_context (оставь только последний), повторяющуюся информацию → включи в summary
+3. УДАЛЯЙ (COLD): устаревшие данные, завершённые задачи, старые timestamps, mem: записи с importance=low старше 3 дней
+4. Верни JSON: { "keep": ["key1", "key2"], "delete": ["key3", "key4"], "summary": "Сжатая память агента" }
+5. НИКОГДА не удаляй ключи: kb:*, plan:*, mem: с importance=high`;
+
+    const response = await ai.chat.completions.create({
+      model,
+      messages: [{ role: 'user', content: consolidationPrompt }],
+      temperature: 0.1,
+      max_tokens: 1000,
+    });
+
+    const text = response.choices[0]?.message?.content || '';
+    let result: { keep?: string[]; delete?: string[]; summary?: string };
+    try {
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      result = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
+    } catch { return; }
+
+    if (!result.delete?.length || !result.summary) return;
+
+    // Safety: never delete more than 60% of entries
+    if (result.delete.length > entries.length * 0.6) {
+      result.delete = result.delete.slice(0, Math.floor(entries.length * 0.6));
+    }
+
+    // Save summary
+    await stateRepo.set(params.agentId, params.userId, 'memory_summary', result.summary);
+
+    // Delete old entries
+    const { pool } = await import('../db');
+    for (const key of result.delete) {
+      if (key.startsWith('kb:') || key.startsWith('plan:') || key === 'wallet_mnemonic' || key === 'wallet_address') continue;
+      // Protect high-importance memories from deletion
+      if (key.startsWith('mem:')) {
+        try {
+          const val = await stateRepo.get(params.agentId, key).catch(() => null);
+          if (val?.value) {
+            const parsed = JSON.parse(val.value);
+            if (parsed.importance === 'high') continue; // HOT tier — never delete
+          }
+        } catch {}
+      }
+      await pool.query('DELETE FROM builder_bot.agent_state WHERE agent_id=$1 AND key=$2', [params.agentId, key]);
+    }
+
+    await logToDb(params.agentId, 'info', `[Memory] Consolidated: kept ${result.keep?.length || 0}, deleted ${result.delete.length}, summary=${result.summary.slice(0, 100)}`, params.userId);
+    console.log(`[Memory] Agent #${params.agentId}: consolidated ${result.delete.length} entries`);
+  } catch (e: any) {
+    console.warn('[Memory] Consolidation failed:', e.message?.slice(0, 100));
   }
 }
 
@@ -3407,7 +5352,17 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
   }
   const msgs = params.pendingMessages || [];
 
-  await logToDb(params.agentId, 'info', `[AI tick] start, pendingMsgs=${msgs.length}`, params.userId);
+  await logToDb(params.agentId, 'info', `[AI run] start, pendingMsgs=${msgs.length}`, params.userId);
+
+  // ── Execution tracking ──
+  let execId: number | null = null;
+  const tickStart = Date.now();
+  try {
+    execId = await getExecutionHistoryRepository().startExecution({
+      agentId: params.agentId, userId: params.userId, triggerType: msgs.length > 0 ? 'message' : 'proactive',
+    });
+  } catch (e: any) { console.warn(`[ExecTracker] startExecution failed: ${e.message}`); }
+  let totalTokensUsed = 0;
 
   // ── Execute compiled flow code if present (deterministic — NO AI fallback) ──
   const execCode = params.config.execCode as string | undefined;
@@ -3415,9 +5370,9 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
     // Flow code = constructor agent. Execute ONLY the compiled code, never fall to AI.
     const flowResult = await executeFlowCode(execCode, params);
     if (flowResult.success) {
-      await logToDb(params.agentId, 'info', `[AI tick] flow code executed OK`, params.userId);
+      await logToDb(params.agentId, 'info', `[AI run] flow code executed OK`, params.userId);
     } else {
-      await logToDb(params.agentId, 'error', `[AI tick] flow code FAILED: ${flowResult.error}`, params.userId);
+      await logToDb(params.agentId, 'error', `[AI run] flow code FAILED: ${flowResult.error}`, params.userId);
       // Notify user about the error so they can fix their flow
       const errNotice = `⚠️ Ошибка в конструкторе: ${flowResult.error}\n\nПроверьте настройки блоков (подключён ли Telegram аккаунт?)`;
       if (params.onNotify) await params.onNotify(errNotice).catch(() => {});
@@ -3428,6 +5383,58 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
   }
 
   // ── Build initial message list ──────────────────────────────────
+  // ── Memory consolidation: compress old state entries if too many ──
+  let memoryDigest = '';
+  try {
+    const _stateRepo = getAgentStateRepository();
+    const allKeys = await _stateRepo.listKeys(params.agentId);
+    const kbKeys = allKeys.filter((k: string) => k.startsWith('kb:'));
+    const logKeys = allKeys.filter((k: string) => k.startsWith('log:') || k.startsWith('history:'));
+
+    if (kbKeys.length > 40) {
+      // Too many knowledge entries — create AI summary
+      const oldEntries: string[] = [];
+      const keysToRemove = kbKeys.slice(0, kbKeys.length - 20); // keep newest 20
+      for (const key of keysToRemove.slice(0, 30)) {
+        const val = await _stateRepo.get(params.agentId, key).catch(() => null);
+        if (val) {
+          const raw = typeof val === 'object' && val?.value !== undefined ? val.value : val;
+          try {
+            const entry = typeof raw === 'string' ? JSON.parse(raw) : raw;
+            oldEntries.push(`[${entry.category}] ${entry.title}: ${(entry.content || '').slice(0, 200)}`);
+          } catch {}
+        }
+      }
+      if (oldEntries.length > 0) {
+        // Store consolidated summary as single entry
+        const consolidatedText = oldEntries.join('\n');
+        const existingDigest = await _stateRepo.get(params.agentId, 'memory_digest').catch(() => null);
+        const prevDigest = existingDigest ? (typeof existingDigest === 'string' ? existingDigest : existingDigest?.value || '') : '';
+        const newDigest = (prevDigest ? prevDigest + '\n---\n' : '') + `[Consolidated ${new Date().toISOString().slice(0, 10)}]:\n${consolidatedText}`;
+        // Keep digest under 3000 chars
+        const trimmedDigest = newDigest.length > 3000 ? newDigest.slice(-3000) : newDigest;
+        await _stateRepo.set(params.agentId, params.userId, 'memory_digest', trimmedDigest);
+        // Remove old entries
+        const { pool } = await import('../db');
+        for (const key of keysToRemove) {
+          await pool.query('DELETE FROM builder_bot.agent_state WHERE agent_id=$1 AND key=$2', [params.agentId, key]).catch(() => {});
+        }
+        await logToDb(params.agentId, 'info', `[Memory] Consolidated ${keysToRemove.length} old KB entries into digest`, params.userId);
+      }
+    }
+    // Load memory digest + AI summary for context
+    const digestVal = await _stateRepo.get(params.agentId, 'memory_digest').catch(() => null);
+    const summaryVal = await _stateRepo.get(params.agentId, 'memory_summary').catch(() => null);
+    const digestRaw = digestVal ? (typeof digestVal === 'string' ? digestVal : digestVal?.value || '') : '';
+    const summaryRaw = summaryVal ? (typeof summaryVal === 'string' ? summaryVal : summaryVal?.value || '') : '';
+    const combined = [summaryRaw, digestRaw].filter(Boolean).join('\n---\n');
+    if (combined) {
+      memoryDigest = `\n[MEMORY — consolidated knowledge]:\n${combined.slice(0, 3000)}\n`;
+    }
+  } catch (e: any) {
+    console.error('[Memory consolidation]', e.message?.slice(0, 100));
+  }
+
   // Context message: current state summary + config (without secrets)
   const configSummary = Object.entries(params.config)
     .filter(([k]) => !k.toLowerCase().includes('mnemonic') && !k.toLowerCase().includes('key'))
@@ -3495,17 +5502,17 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
 - Апгрейды подарков — ИГНОРИРОВАТЬ. Арбитраж только между маркетплейсами.
 - Stars цены — игнорировать. Только TON.
 - НИКОГДА не просить пользователя пополнить кошелёк — просто уведомить если баланса недостаточно
-- Не повторять одни и те же возможности каждый тик — использовать set_state/get_state для дедупликации
+- Не повторять одни и те же возможности каждый запуск — использовать set_state/get_state для дедупликации
 
 🚫 СТРОГИЙ ЗАПРЕТ ГАЛЛЮЦИНАЦИЙ И СПАМА:
 - notify() ТОЛЬКО после того, как инструмент вернул конкретный листинг с полями: provider, price_ton, link
 - НИКОГДА не вызывай notify() на основе: get_state результата, предположений, логики без API-ответа
 - ПОРЯДОК ОБЯЗАТЕЛЕН: сначала инструмент → проверь ответ items[] → если непустой → только тогда notify()
-- Если get_gift_aggregator вернул items[] = [] → не нотифицировать, просто завершить тик молча
+- Если get_gift_aggregator вернул items[] = [] → не нотифицировать, просто завершить молча
 - Если get_gift_aggregator вернул items[0] с реальным price_ton и link → ТОГДА notify() с этой ссылкой
 
-📵 ОДИН notify() ЗА ТИК — АБСОЛЮТНОЕ ПРАВИЛО:
-- НИКОГДА не вызывай notify() несколько раз за один тик — это СПАМ
+📵 ОДИН notify() ЗА ЗАПУСК — АБСОЛЮТНОЕ ПРАВИЛО:
+- НИКОГДА не вызывай notify() несколько раз за один запуск — это СПАМ
 - Объедини все находки в ОДНО сообщение: "Нашёл 3 Lol Pop: cheapest 4.47 на Portals, 4.83 на MRKT..."
 - Если пользователь сказал "до X TON" → уведомлять ТОЛЬКО если items[0].price_ton ≤ X
 - Если нашёл только дороже чем просили → НЕ нотифицировать, завершить молча
@@ -3594,7 +5601,7 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
    ИЛИ get_gift_aggregator(name, to_price=MAX_PRICE) → найти самый дешёвый
 2. Если can_buy_now=true → buy_market_gift(tx_contract, tx_payload, price_ton, gift_name)
 3. Если can_buy_now=false → notify_rich() с link для ручной покупки
-4. Если ничего не найдено → завершить тик молча
+4. Если ничего не найдено → завершить молча
 [END GIFT KNOWLEDGE]`;
 
   // Chat mode vs monitoring mode instructions
@@ -3607,14 +5614,194 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
 3. Если underpriced найдены но can_buy_now=false → notify_rich() с деталями + link
 4. Если target_gift не задан → get_top_deals() → notify_rich() с кратким обзором
 5. ВСЕГДА отправляй notify_rich() в конце тика с кратким отчётом: что проверил, что нашёл (или "ничего интересного").
-   Исключение: если предыдущий тик (get_state 'last_report_time') был <5 мин назад И ничего нового → молча.
+   Исключение: если предыдущий запуск (get_state 'last_report_time') был <5 мин назад И ничего нового → молча.
    Формат отчёта: <b>📊 Мониторинг</b>\\n• Проверено: [что]\\n• Результат: [находки или "ничего нового"]
-ПРАВИЛО: notify() вызывай ОДИН раз за тик. Данные ТОЛЬКО из tool_result, не из головы.`;
+ПРАВИЛО: notify() вызывай ОДИН раз за запуск. Данные ТОЛЬКО из tool_result, не из головы.`;
 
-  const contextMsg = `[Текущий тик агента]
-Время: ${new Date().toISOString()}
-Конфиг: ${configSummary || '(пусто)'}${pluginHint}${interAgentHint}
+  // ── Identity Card + Lessons + Goals + Stats ──
+  let identityBlock = '';
+  let lessonsBlock = '';
+  let goalsBlock = '';
+  let statsBlock = '';
+  try {
+    const meta = await getAgentMeta(params.agentId);
+    if (meta) {
+      const createdAt = new Date(meta.createdAt);
+      const daysSince = Math.floor((Date.now() - createdAt.getTime()) / 86400000);
+      const ownerInfo = meta.ownerName
+        ? `${meta.ownerName}${meta.ownerUsername ? ' (@' + meta.ownerUsername + ')' : ''}`
+        : `User #${meta.userId || params.userId}`;
+      // Role-specific behavior instructions
+      const roleInstructions: Record<string, string> = {
+        worker: `Ты — исполнитель. Фокусируйся на выполнении конкретных задач: мониторинг, сбор данных, автоматизация. Работай автономно, сообщай результаты владельцу. Не пытайся управлять другими агентами.`,
+        manager: `Ты — координатор мультиагентной системы. Используй ask_agent для делегирования задач другим агентам. Контролируй их работу, собирай результаты, оптимизируй процессы. Отправляй сводные отчёты владельцу. Приоритет: координация > выполнение.`,
+        specialist: `Ты — эксперт-аналитик. Давай глубокий, профессиональный анализ данных. Используй несколько источников, перепроверяй цифры, строй выводы с обоснованием. Отвечай подробно с числами и фактами. Качество > скорость.`,
+        monitor: `Ты — система мониторинга и алертов. Отслеживай метрики, цены, события. Отправляй уведомления ТОЛЬКО при значимых изменениях (>5% движение, новые события). Не спамь — каждый алерт должен быть полезен. Формат: краткий + чёткий.`,
+        director: `Ты — директор. Управляешь людьми и агентами. Используй assign_task для людей, manage_agent для агентов, send_report для отчётов руководству. Принимай стратегические решения, делегируй операционку.`,
+      };
+      const roleBehavior = roleInstructions[meta.role || 'worker'] || roleInstructions.worker;
+
+      identityBlock = `
+━━━ ТВОЯ ИДЕНТИЧНОСТЬ ━━━
+Имя: ${meta.name || 'Без имени'}
+Роль: ${meta.role || 'worker'}
+Цель: ${meta.description || 'Не указана'}
+Создатель: ${ownerInfo}
+Создан: ${createdAt.toISOString().slice(0, 10)} (${daysSince} дн. назад)
+ID: #${params.agentId}
+Ты — автономный AI-агент. Ты можешь учиться, запоминать, формировать цели и менять своё поведение.
+
+━━━ ПОВЕДЕНИЕ РОЛИ (${(meta.role || 'worker').toUpperCase()}) ━━━
+${roleBehavior}
+━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+    }
+  } catch (e: any) { console.warn('[Identity]', e.message); }
+
+  // Load agent memories (from remember tool)
+  let memoriesBlock = '';
+  try {
+    const _sr = getAgentStateRepository();
+    const allK = await _sr.listKeys(params.agentId);
+    const memK = allK.filter((k: string) => k.startsWith('mem:'));
+    if (memK.length > 0) {
+      // Structured memory display with categories
+      const categories: Record<string, string[]> = {};
+      const categoryIcons: Record<string, string> = { contact: '👤', fact: '📌', preference: '⚙️', task: '📋', insight: '💡' };
+      let highCount = 0;
+      for (const key of memK.slice(-30)) {
+        const raw = await _sr.get(params.agentId, key).catch(() => null);
+        if (!raw?.value) continue;
+        const cleanKey = key.replace('mem:', '');
+        let parsed: any;
+        try { parsed = JSON.parse(raw.value); } catch { parsed = { value: raw.value, category: 'fact', importance: 'medium' }; }
+        const cat = parsed.category || 'fact';
+        const imp = parsed.importance || 'medium';
+        const val = parsed.value || raw.value;
+        if (!categories[cat]) categories[cat] = [];
+        const marker = imp === 'high' ? '❗' : '';
+        categories[cat].push(`${marker}${cleanKey}: ${val}`);
+        if (imp === 'high') highCount++;
+      }
+      const lines: string[] = [];
+      for (const [cat, entries] of Object.entries(categories)) {
+        const icon = categoryIcons[cat] || '📝';
+        lines.push(`${icon} ${cat.toUpperCase()}:`);
+        for (const e of entries) lines.push(`  • ${e}`);
+      }
+      if (lines.length > 0) {
+        memoriesBlock = `\n━━━ ПАМЯТЬ (${memK.length} записей${highCount > 0 ? ', ' + highCount + ' важных' : ''}) ━━━\n${lines.join('\n')}\n━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      }
+    }
+    // Load prompt additions
+    const addRaw = await _sr.get(params.agentId, '_prompt_additions').catch(() => null);
+    if (addRaw?.value) {
+      try {
+        const additions: string[] = JSON.parse(addRaw.value);
+        if (additions.length > 0) {
+          memoriesBlock += `\n━━━ ДОПОЛНИТЕЛЬНЫЕ ИНСТРУКЦИИ ━━━\n${additions.join('\n')}\n━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+        }
+      } catch {}
+    }
+  } catch {}
+
+  try {
+    const _stateRepo = getAgentStateRepository();
+    // Load lessons
+    const allKeys = await _stateRepo.listKeys(params.agentId);
+    const lessonKeys = allKeys.filter((k: string) => k.startsWith('lesson:')).sort().slice(-10);
+    if (lessonKeys.length > 0) {
+      const lessonEntries: string[] = [];
+      for (const key of lessonKeys) {
+        const raw = await _stateRepo.get(params.agentId, key).catch(() => null);
+        if (raw?.value) {
+          try {
+            const l = JSON.parse(raw.value);
+            const icon = l.category === 'error' ? '❌' : l.category === 'success' ? '✅' : '💡';
+            lessonEntries.push(`${icon} ${l.text}`);
+          } catch {}
+        }
+      }
+      if (lessonEntries.length > 0) {
+        lessonsBlock = `\n━━━ УРОКИ ИЗ ОПЫТА (${lessonEntries.length}) ━━━\n${lessonEntries.join('\n')}\n━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      }
+    }
+
+    // Load goals
+    const goalsRaw = await _stateRepo.get(params.agentId, '_goals').catch(() => null);
+    if (goalsRaw?.value) {
+      try {
+        const goals = JSON.parse(goalsRaw.value);
+        const active = goals.filter((g: any) => g.status === 'active');
+        const completed = goals.filter((g: any) => g.status === 'completed');
+        if (active.length > 0 || completed.length > 0) {
+          const lines: string[] = [];
+          for (const g of active) {
+            const p = g.priority === 'high' ? '🔴' : g.priority === 'low' ? '⚪' : '🟡';
+            lines.push(`${p} [ACTIVE] ${g.goal}`);
+          }
+          for (const g of completed.slice(-3)) lines.push(`✅ [DONE] ${g.goal}`);
+          goalsBlock = `\n━━━ ЦЕЛИ (${active.length} активных) ━━━\n${lines.join('\n')}\n━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+        }
+      } catch {}
+    }
+  } catch {}
+
+  // Execution stats
+  try {
+    const _pool = (await import('../db')).pool;
+    const logRes = await _pool.query(
+      `SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE level = 'error') as errors FROM builder_bot.agent_logs WHERE agent_id = $1`,
+      [params.agentId]
+    );
+    const stats = logRes.rows[0] || {};
+    const now = new Date();
+    const dayName = ['Воскресенье','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота'][now.getDay()];
+    statsBlock = `\n📊 Статистика: ${stats.total || 0} записей в логе, ${stats.errors || 0} ошибок | ${dayName}, ${now.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+  } catch {}
+
+  // ── Event Bus context ──
+  let eventsBlock = '';
+  try {
+    const { getEventBus } = require('./event-bus');
+    const bus = getEventBus();
+    const subs = bus.getSubscriptions(params.agentId);
+    const wake = bus.getWakeInfo(params.agentId);
+    if (subs.length > 0 || wake) {
+      const parts: string[] = [];
+      if (wake) parts.push(`⏰ Следующее пробуждение: ${new Date(wake.wakeAt).toISOString()} (${wake.reason})`);
+      if (subs.length > 0) parts.push(`📡 Подписки: ${subs.map((s: any) => s.eventType + (s.filter ? `(${JSON.stringify(s.filter)})` : '')).join(', ')}`);
+      eventsBlock = `\n━━━ СОБЫТИЯ ━━━\n${parts.join('\n')}\n━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+    }
+  } catch {}
+
+  // ── Wallet info ──
+  let walletBlock = '';
+  try {
+    const _sr2 = getAgentStateRepository();
+    const wAddr = await _sr2.get(params.agentId, 'wallet_address').catch(() => null);
+    if (wAddr?.value) {
+      walletBlock = `\n💰 Твой TON-кошелёк: ${wAddr.value} (используй get_agent_wallet для деталей, get_ton_balance для баланса)`;
+    }
+  } catch {}
+
+  const contextMsg = `[Контекст агента]
+Время: ${new Date().toISOString()}${identityBlock}${walletBlock}${memoriesBlock}${lessonsBlock}${goalsBlock}${eventsBlock}${statsBlock}
+Конфиг: ${configSummary || '(пусто)'}${pluginHint}${interAgentHint}${memoryDigest}
 ${GIFT_SYSTEM_KNOWLEDGE}${modeHint}
+⚠️ HUMAN-IN-THE-LOOP: Опасные действия (send_ton, buy_*, list_gift_for_sale, ton_send_boc) требуют подтверждения пользователя. Если отклонено — НЕ ПОВТОРЯЙ.
+
+🧠 САМООБУЧЕНИЕ: Когда получаешь фидбек (критику, исправления) от владельца:
+1. save_lesson(text, 'feedback') — запомни что он хочет
+2. update_self_prompt(addition) — добавь правило в свой промпт чтобы не повторять ошибку
+3. Если фидбек критичный (стиль, формат, поведение) — update_my_prompt() с улучшенной версией
+
+🔄 КОНТЕКСТ: Перед ответом/действием ВСЕГДА проверяй:
+- get_state() для ранее сохранённых данных (каналы, настройки, предпочтения)
+- knowledge_search() для долгосрочной памяти
+- tg_get_messages() для контекста текущего чата/канала
+НЕ ПЕРЕСПРАШИВАЙ то что уже знаешь! Если не уверен — проверь state/memory СНАЧАЛА.
+
+Используй save_lesson для важных выводов. manage_goals для целей. set_next_wake для расписания.
 ${msgs.length > 0 ? `\nСообщения от пользователя:\n${msgs.map(m => `- ${m}`).join('\n')}` : ''}`;
 
   // Inject safety rules + plugin skillDocs
@@ -3648,15 +5835,39 @@ You MUST follow these rules AT ALL TIMES:
 
   const messages: OpenAI.ChatCompletionMessageParam[] = [
     { role: 'system',    content: systemPromptFull },
-    { role: 'user',      content: contextMsg },
   ];
+
+  // ── Load conversation history from previous runs ──
+  try {
+    const histRaw = await getAgentStateRepository().get(params.agentId, '_conversation_history').catch(() => null);
+    const histStr = typeof histRaw === 'object' && histRaw?.value !== undefined ? histRaw.value : histRaw;
+    if (histStr) {
+      const history: Array<{ role: string; content: string }> = typeof histStr === 'string' ? JSON.parse(histStr) : histStr;
+      // Inject up to last 40 messages as context (more = better memory)
+      for (const msg of history.slice(-40)) {
+        messages.push({ role: msg.role as any, content: msg.content });
+      }
+    }
+  } catch {}
+
+  // Current run context goes after history
+  messages.push({ role: 'user', content: contextMsg });
+
+  // ── Token overflow protection: trim messages if total chars > limit ──
+  const MAX_CONTEXT_CHARS = 60_000; // ~15K tokens rough estimate
+  let totalChars = messages.reduce((sum, m) => sum + (typeof m.content === 'string' ? m.content.length : 0), 0);
+  while (totalChars > MAX_CONTEXT_CHARS && messages.length > 2) {
+    // Remove oldest non-system message (keep system prompt + latest context)
+    const removed = messages.splice(1, 1)[0];
+    totalChars -= typeof removed.content === 'string' ? removed.content.length : 0;
+  }
 
   // ── Agentic loop (up to 5 iterations) ──────────
   // Get agent role for conditional director tools
   let agentRole = 'worker';
   try {
-    const roleRes = await (await import('../db')).pool.query('SELECT role FROM builder_bot.agents WHERE id = $1', [params.agentId]);
-    if (roleRes.rows[0]?.role) agentRole = roleRes.rows[0].role;
+    const meta = await getAgentMeta(params.agentId);
+    if (meta?.role) agentRole = meta.role;
   } catch {}
   const enabledCaps = (params.config.enabledCapabilities as string[]) || null;
 
@@ -3684,6 +5895,10 @@ You MUST follow these rules AT ALL TIMES:
   let totalToolCalls = 0;
   let finalContent: string | undefined;
   _tickNotifyFlag.set(params.agentId, false); // reset flag for this tick
+
+  // ── Loop detection: track tool call signatures per iteration ──
+  let prevIterSignature = '';
+  let sameSignatureCount = 0;
   const usedModel = (params.config.AI_MODEL as string) || process.env.AI_MODEL || defaultModel;
   console.log(`[AI runtime] Agent #${params.agentId} AI call: model=${usedModel} baseURL=${(ai as any).baseURL} tools=${tools.length} msgs=${messages.length}`);
 
@@ -3704,8 +5919,11 @@ You MUST follow these rules AT ALL TIMES:
         break; // success
       } catch (e: any) {
         lastErr = e;
-        // Full error dump for debugging
-        console.error(`[AI runtime] Agent #${params.agentId} AI error dump: status=${e.status} code=${e.code} type=${e.type} msg=${e.message?.slice(0, 200)} headers=${JSON.stringify(e.headers || {}).slice(0, 200)} body=${JSON.stringify(e.error || e.body || {}).slice(0, 300)}`);
+        // Full error dump for debugging (sanitize API keys/tokens)
+        const sanitize = (s: string) => s.replace(/(?:Bearer |sk-|AIzaSy|gsk_|sk-ant-|sk-or-|sk-proj-)[A-Za-z0-9_-]{4,}/g, '[REDACTED]');
+        const safeHeaders = sanitize(JSON.stringify(e.headers || {}).slice(0, 200));
+        const safeBody = sanitize(JSON.stringify(e.error || e.body || {}).slice(0, 300));
+        console.error(`[AI runtime] Agent #${params.agentId} AI error dump: status=${e.status} code=${e.code} type=${e.type} msg=${e.message?.slice(0, 200)} headers=${safeHeaders} body=${safeBody}`);
         const is429 = e.message?.includes('429') || e.status === 429 || e.statusCode === 429;
         if (is429 && retry < 2) {
           const delay = (retry + 1) * 5000; // 5s, 10s
@@ -3715,23 +5933,66 @@ You MUST follow these rules AT ALL TIMES:
         }
         const errMsg = `AI call failed: ${e.message}`;
         await logToDb(params.agentId, 'error', errMsg);
+        if (execId) try { await getExecutionHistoryRepository().finishExecution(execId, 'error', errMsg); } catch (e2: any) { console.warn('[ExecTracker] finishExecution:', e2.message); }
         return { toolCallCount: totalToolCalls, error: errMsg };
       }
     }
     if (lastErr) {
       const errMsg = `AI call failed after retries: ${lastErr.message}`;
       await logToDb(params.agentId, 'error', errMsg);
+      if (execId) try { await getExecutionHistoryRepository().finishExecution(execId, 'error', errMsg); } catch (e2: any) { console.warn('[ExecTracker] finishExecution:', e2.message); }
       return { toolCallCount: totalToolCalls, error: errMsg };
     }
 
     const choice    = response.choices[0];
     const assistant = choice.message;
+
+    // Track tokens
+    if (response.usage) {
+      totalTokensUsed += (response.usage.total_tokens || 0);
+    }
+
+    // ── Handle MALFORMED_FUNCTION_CALL from Gemini / broken tool_calls ──
+    // Gemini sometimes returns tool_calls with invalid JSON or unknown function names
+    if (assistant.tool_calls && assistant.tool_calls.length > 0) {
+      const validToolNames = new Set(tools.map((t: any) => t.function?.name));
+      const hasMalformed = assistant.tool_calls.some((tc: any) => {
+        const fn = tc?.function;
+        if (!fn?.name) return true;
+        if (!validToolNames.has(fn.name)) return true;
+        try { JSON.parse(fn.arguments || '{}'); return false; }
+        catch { return true; }
+      });
+      if (hasMalformed) {
+        console.warn(`[AI runtime] Agent #${params.agentId} MALFORMED tool_calls detected, retrying without tools`);
+        await logToDb(params.agentId, 'warn', `[AI run] MALFORMED_FUNCTION_CALL — retrying as plain text`, params.userId);
+        // Retry same iteration without tools
+        try {
+          const fallback = await ai.chat.completions.create({
+            model: (params.config.AI_MODEL as string) || process.env.AI_MODEL || defaultModel,
+            messages,
+            max_tokens: 2048,
+          });
+          const fbMsg = fallback.choices[0]?.message;
+          if (fbMsg) {
+            messages.push(fbMsg);
+            finalContent = fbMsg.content || undefined;
+          }
+        } catch (fbErr: any) {
+          console.error(`[AI runtime] Agent #${params.agentId} fallback also failed: ${fbErr.message}`);
+        }
+        break;
+      }
+    }
+
     messages.push(assistant);
 
     // No tool calls → agent is done
     if (!assistant.tool_calls || assistant.tool_calls.length === 0) {
       finalContent = assistant.content || undefined;
       console.log(`[AI runtime] Agent #${params.agentId} iter=${iter} content="${(assistant.content || '').slice(0, 100)}" finish=${choice.finish_reason}`);
+      // Resolve studio chat callback if waiting
+      if (finalContent) _resolveChatCallback(params.agentId, finalContent);
       break;
     }
 
@@ -3746,10 +6007,24 @@ You MUST follow these rules AT ALL TIMES:
         await logToDb(params.agentId, 'info', `[tool] ${f.name}(${JSON.stringify(toolArgs).slice(0, 200)})`, params.userId);
 
         let result: any;
-        try {
-          result = await executeTool(f.name, toolArgs, params);
-        } catch (toolErr: any) {
-          result = { error: toolErr.message || 'Tool execution failed' };
+        const toolStart = Date.now();
+        // Auto-retry on transient errors (network, timeout)
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            result = await executeTool(f.name, toolArgs, params);
+            break;
+          } catch (toolErr: any) {
+            const msg = toolErr.message || '';
+            const isRetryable = /timeout|ECONNRESET|ENOTFOUND|fetch failed|503|429/i.test(msg);
+            if (isRetryable && attempt === 0) {
+              console.log(`[AI runtime] Agent #${params.agentId} tool ${f.name} retrying after: ${msg.slice(0, 80)}`);
+              await new Promise(r => setTimeout(r, 2000));
+              continue;
+            }
+            result = { error: toolErr.message || 'Tool execution failed' };
+            // Track bug in platform_bugs table
+            try { getBugTracker().recordBug(`tool:${f.name}`, toolErr.message || 'unknown', toolErr.stack?.slice(0, 500)).catch(() => {}); } catch {}
+          }
         }
         // Smart log: summarize tool results instead of raw JSON dump
         const resultStr = JSON.stringify(result);
@@ -3780,6 +6055,27 @@ You MUST follow these rules AT ALL TIMES:
 
     messages.push(...toolResults);
 
+    // ── Loop detection: break if agent repeats same tool calls 3 times ──
+    const iterSignature = assistant.tool_calls
+      .map((tc: any) => `${tc.function.name}:${tc.function.arguments}`)
+      .sort()
+      .join('|');
+    if (iterSignature === prevIterSignature) {
+      sameSignatureCount++;
+      if (sameSignatureCount >= 2) {
+        await logToDb(params.agentId, 'warn', `[AI run] Loop detected: same tools called ${sameSignatureCount + 1}x in a row (${assistant.tool_calls.map((tc: any) => tc.function.name).join(', ')}). Breaking.`, params.userId);
+        // Inject a system message to redirect the AI
+        messages.push({
+          role: 'system' as any,
+          content: 'LOOP DETECTED: You are repeating the same tool calls. Stop calling these tools and provide a final response to the user. If you are stuck, use notify() to ask the user for help.',
+        });
+        break;
+      }
+    } else {
+      sameSignatureCount = 0;
+    }
+    prevIterSignature = iterSignature;
+
     // ── Rebuild tools if manage_capabilities was called this iteration ──
     const hadCapChange = assistant.tool_calls.some((tc: any) => tc.function.name === 'manage_capabilities');
     if (hadCapChange) {
@@ -3797,6 +6093,16 @@ You MUST follow these rules AT ALL TIMES:
   const notifyWasCalled = _tickNotifyFlag.get(params.agentId) === true;
   _tickNotifyFlag.delete(params.agentId); // cleanup
 
+  // ── Prompt leak filter: strip system instructions from AI response ──
+  if (finalContent) {
+    const lines = finalContent.split('\n');
+    const LEAK_PATTERNS = /^(You are|System:|Instructions:|Ты —|Системный промпт|<system>|As an AI|I am an AI|My instructions)/i;
+    while (lines.length > 0 && LEAK_PATTERNS.test(lines[0].trim())) {
+      lines.shift();
+    }
+    finalContent = lines.join('\n').trim() || undefined;
+  }
+
   if (finalContent && !notifyWasCalled) {
     // Send AI's text response to the user (both chat and monitoring modes)
     await notifyRich(params.userId, {
@@ -3810,7 +6116,57 @@ You MUST follow these rules AT ALL TIMES:
     });
   }
 
-  await logToDb(params.agentId, 'info', `[AI tick] done, tools=${totalToolCalls}, notified=${notifyWasCalled}`, params.userId);
+  await logToDb(params.agentId, 'info', `[AI run] done, tools=${totalToolCalls}, tokens=${totalTokensUsed}, notified=${notifyWasCalled}`, params.userId);
+
+  // ── Save conversation history for next run ──
+  try {
+    // Extract key messages: user inputs + assistant responses (skip tool calls/results for brevity)
+    const historyToSave: Array<{ role: string; content: string }> = [];
+    // Load existing history
+    const existingRaw = await getAgentStateRepository().get(params.agentId, '_conversation_history').catch(() => null);
+    const existingStr = typeof existingRaw === 'object' && existingRaw?.value !== undefined ? existingRaw.value : existingRaw;
+    if (existingStr) {
+      try {
+        const existing = typeof existingStr === 'string' ? JSON.parse(existingStr) : existingStr;
+        historyToSave.push(...existing);
+      } catch {}
+    }
+    // Add messages from this run (user messages + assistant final response)
+    if (msgs.length > 0) {
+      for (const m of msgs) historyToSave.push({ role: 'user', content: m });
+    }
+    if (finalContent) {
+      historyToSave.push({ role: 'assistant', content: finalContent });
+    }
+    // Also add summary of tool calls made
+    if (totalToolCalls > 0) {
+      const toolSummary = messages.filter((m: any) => m.role === 'assistant' && m.tool_calls)
+        .flatMap((m: any) => (m.tool_calls || []).map((tc: any) => tc.function?.name))
+        .filter(Boolean).join(', ');
+      if (toolSummary) {
+        historyToSave.push({ role: 'assistant', content: `[Выполнил: ${toolSummary}]` });
+      }
+    }
+    // Keep only last 40 messages, trim long ones
+    const trimmed = historyToSave.slice(-40).map(m => ({
+      role: m.role,
+      content: (m.content || '').slice(0, 800),
+    }));
+    await getAgentStateRepository().set(params.agentId, params.userId, '_conversation_history', JSON.stringify(trimmed));
+  } catch {}
+
+  // ── Memory consolidation (periodic) ──
+  try { await maybeConsolidateMemory(params, ai, defaultModel); } catch (e: any) { console.warn('[Memory] consolidation:', e.message); }
+
+  // ── Finish execution tracking ──
+  if (execId) {
+    try {
+      await getExecutionHistoryRepository().finishExecution(
+        execId, 'success', undefined,
+        { toolCalls: totalToolCalls, tokensUsed: totalTokensUsed, durationMs: Date.now() - tickStart, hadResponse: !!finalContent },
+      );
+    } catch (e: any) { console.warn('[ExecTracker] finishExecution:', e.message); }
+  }
 
   // ── XP / Level gamification ──────────────────────────────────
   try {
@@ -3821,7 +6177,7 @@ You MUST follow these rules AT ALL TIMES:
        WHERE id = $2`,
       [xpGain, params.agentId]
     );
-  } catch {}
+  } catch (e: any) { console.warn('[XP]', e.message); }
 
   return { finalResponse: finalContent, toolCallCount: totalToolCalls };
 }
@@ -3846,6 +6202,7 @@ export class AIAgentRuntime {
     const entry: ActiveHandle = {
       interval: null as any, // will be set below after setInterval
       tickRunning: false,
+      consecutiveErrors: 0,
       tick: async () => {
         if (entry.tickRunning) { return; } // skip overlapping tick
         entry.tickRunning = true;
@@ -3859,10 +6216,26 @@ export class AIAgentRuntime {
             pendingMessages: pending,
             onNotify:       opts.onNotify,
           });
-        } catch (e) {
-          console.error(`[AI runtime] tick error agent #${opts.agentId}:`, e);
+          entry.consecutiveErrors = 0; // Reset on success
+        } catch (e: any) {
+          entry.consecutiveErrors++;
+          console.error(`[AI runtime] tick error agent #${opts.agentId} (${entry.consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}):`, e?.message || e);
+          // Circuit breaker: deactivate after too many consecutive failures
+          if (entry.consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+            console.error(`[AI runtime] ⛔ Circuit breaker: deactivating agent #${opts.agentId} after ${MAX_CONSECUTIVE_ERRORS} consecutive errors`);
+            logToDb(opts.agentId, 'error', `⛔ Агент деактивирован: ${MAX_CONSECUTIVE_ERRORS} ошибок подряд. Последняя: ${(e?.message || '').slice(0, 200)}`, opts.userId);
+            notifyUser(opts.userId, `⛔ Агент #${opts.agentId} остановлен — ${MAX_CONSECUTIVE_ERRORS} ошибок подряд.\nПоследняя ошибка: ${(e?.message || '').slice(0, 150)}\n\nПерезапустите агента после исправления проблемы.`).catch(() => {});
+            // Deactivate async to avoid deadlock
+            setTimeout(() => {
+              try { getAIAgentRuntime().deactivate(opts.agentId); } catch {}
+              // Mark inactive in DB
+              _getSharedStatePool().query('UPDATE builder_bot.agents SET is_active = false WHERE id = $1', [opts.agentId]).catch(() => {});
+            }, 100);
+          }
         } finally {
           entry.tickRunning = false;
+          // Guarantee _tickNotifyFlag cleanup (prevents stale flag from crashed tick)
+          _tickNotifyFlag.delete(opts.agentId);
         }
       },
     };
@@ -3870,16 +6243,28 @@ export class AIAgentRuntime {
     // Register handle (needed for addMessageToAIAgent even without ticks)
     _activeHandles.set(opts.agentId, entry);
 
-    // If agent has a Telegram session → it responds to messages, no scheduled ticks needed
-    // This avoids burning Gemini rate limit on periodic ticks
+    // ── Register Event Bus tick trigger ──
+    const { getEventBus } = require('./event-bus');
+    const bus = getEventBus();
+    bus.setTickTrigger((eventAgentId: number, event: any) => {
+      const handle = _activeHandles.get(eventAgentId);
+      if (!handle) return;
+      // Inject event context as a pending message so the agent sees it
+      const eventMsg = `[SYSTEM EVENT] type=${event.type}, source=${event.source}, data=${JSON.stringify(event.data)}`;
+      addMessageToAIAgent(eventAgentId, eventMsg);
+    });
+
+    // If agent has a Telegram session AND no explicit interval → message-driven only
+    // But if intervalMs > 0, agent wants proactive ticks (posting, checking unread, etc.)
     const hasTgSession = !!(opts.config as any)?._hasTgSession;
-    if (hasTgSession) {
-      console.log(`[AI runtime] Agent #${opts.agentId} has TG session — skipping scheduled ticks (message-driven only)`);
+    if (hasTgSession && (!opts.intervalMs || opts.intervalMs <= 0)) {
+      console.log(`[AI runtime] Agent #${opts.agentId} has TG session, no interval — message-driven only`);
       entry.interval = null as any;
     } else {
       entry.interval = setInterval(entry.tick, opts.intervalMs);
-      // Delay first tick by 30s
-      setTimeout(() => {
+      // Delay first tick by 30s (save handle for cleanup in deactivate)
+      entry.firstTickTimer = setTimeout(() => {
+        entry.firstTickTimer = undefined;
         entry.tick().catch((e) => {
           console.error(`[AI runtime] first tick failed for agent #${opts.agentId}:`, e);
           logToDb(opts.agentId, 'error', `First tick failed: ${(e as any)?.message || String(e)}`, opts.userId);
@@ -3890,7 +6275,12 @@ export class AIAgentRuntime {
     // ── Enable incoming message listener (agent acts as real TG user) ──
     // Retry with delay since TG sessions may not be restored yet at startup
     const setupListener = async (attempt: number) => {
+      // Guard: prevent re-entry / exponential callbacks
+      if (entry.setupListenerActive) return;
+      entry.setupListenerActive = true;
       try {
+        // Check if agent was deactivated while waiting
+        if (!_activeHandles.has(opts.agentId)) return;
         const { userbotManager, registerAgentMessageConfig } = await import('../services/userbot-manager');
         const tgInfo = await userbotManager.getAgentTelegramInfo(opts.agentId);
         console.log(`[AI runtime] setupListener #${opts.agentId} attempt=${attempt} authorized=${tgInfo.authorized} username=${tgInfo.username || 'none'}`);
@@ -3919,14 +6309,21 @@ export class AIAgentRuntime {
             console.error(`[AI runtime] enableMessageListener CRASH #${opts.agentId}: ${innerErr.message}`);
             console.error(innerErr.stack);
           }
-        } else if (attempt < 3) {
+        } else if (attempt < 3 && _activeHandles.has(opts.agentId)) {
           // TG session not restored yet, retry after delay
+          entry.setupListenerActive = false; // allow next attempt
           setTimeout(() => setupListener(attempt + 1), 8000);
+          return; // don't reset flag yet
         }
       } catch (e: any) {
-        if (attempt < 3) setTimeout(() => setupListener(attempt + 1), 8000);
-        else console.error(`[AI runtime] Message listener setup failed for #${opts.agentId}:`, e.message);
+        if (attempt < 3 && _activeHandles.has(opts.agentId)) {
+          entry.setupListenerActive = false;
+          setTimeout(() => setupListener(attempt + 1), 8000);
+          return;
+        }
+        console.error(`[AI runtime] Message listener setup failed for #${opts.agentId}:`, e.message);
       }
+      entry.setupListenerActive = false;
     };
     setupListener(0);
 
@@ -3938,7 +6335,10 @@ export class AIAgentRuntime {
     const h = _activeHandles.get(agentId);
     if (h) {
       clearInterval(h.interval);
+      if (h.firstTickTimer) clearTimeout(h.firstTickTimer);
       _activeHandles.delete(agentId);
+      // Clean up Event Bus (subscriptions + wake timers)
+      try { require('./event-bus').getEventBus().cleanupAgent(agentId); } catch {}
       // Kill MCP subprocess if any
       import('../services/ton-mcp-client').then(m => m.getTonMcpManager().destroy(agentId)).catch(e => console.error('[Runtime]', e?.message || e));
       // Disable message listener
@@ -3969,6 +6369,30 @@ export class AIAgentRuntime {
 
 let _runtime: AIAgentRuntime | null = null;
 export function getAIAgentRuntime(): AIAgentRuntime {
-  if (!_runtime) _runtime = new AIAgentRuntime();
+  if (!_runtime) {
+    _runtime = new AIAgentRuntime();
+    // ── Periodic cleanup of stale global maps (every 10 minutes) ──
+    setInterval(() => {
+      const activeIds: number[] = [];
+      _activeHandles.forEach((_, id) => activeIds.push(id));
+      const activeSet = new Set(activeIds);
+      // Clean pendingMessages for deactivated agents
+      _pendingMessages.forEach((_, id) => { if (!activeSet.has(id)) _pendingMessages.delete(id); });
+      // Clean tickNotifyFlag for deactivated agents
+      _tickNotifyFlag.forEach((_, id) => { if (!activeSet.has(id)) _tickNotifyFlag.delete(id); });
+      // Clean webRequestCounts for deactivated agents
+      _webRequestCounts.forEach((_, id) => { if (!activeSet.has(id)) _webRequestCounts.delete(id); });
+      // Clean tool rate limit timestamps older than 2 minutes
+      _toolRateLimits.forEach((timestamps, key) => {
+        const fresh = timestamps.filter(t => Date.now() - t < 120_000);
+        if (fresh.length === 0) _toolRateLimits.delete(key);
+        else _toolRateLimits.set(key, fresh);
+      });
+      // Clean approval waiters older than 10 minutes
+      _approvalWaiters.forEach((waiter, key) => {
+        if (Date.now() - (waiter as any)._createdAt > 10 * 60 * 1000) _approvalWaiters.delete(key);
+      });
+    }, 10 * 60 * 1000);
+  }
   return _runtime;
 }
