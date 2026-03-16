@@ -11,6 +11,7 @@
 import { spawn } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 
 // ── CLI binary detection ─────────────────────────────────────────────────────
 
@@ -104,7 +105,6 @@ export async function claudeCodeComplete(
 
   args.push('--print');
   args.push('--output-format', 'json');
-  args.push('--max-turns', '1'); // single completion, no multi-turn
   args.push('--no-session-persistence'); // don't save session
 
   if (systemPrompt) {
@@ -124,15 +124,21 @@ export async function claudeCodeComplete(
   }
   if (allowedTools && allowedTools.length) {
     args.push('--allowedTools', ...allowedTools);
+  } else {
+    args.push('--tools', ''); // no built-in tools — just answer the prompt, don't browse/search
   }
 
-  // Pass prompt via stdin (avoids ARG_MAX issues with long prompts)
-  // Only use arg for short prompts
+  // For long prompts, write to temp file and pipe via shell
   const useStdin = prompt.length > 4000;
+  args.push('--max-turns', useStdin ? '3' : '1'); // stdin pipe consumes 1 turn; extra turn for retries
+  let tempFile = '';
   if (!useStdin) {
     args.push(prompt);
   } else {
-    args.push('-'); // read from stdin
+    // Write prompt to temp file — don't add '-' flag, just pipe to stdin
+    tempFile = path.join(os.tmpdir(), `claude-prompt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.txt`);
+    fs.writeFileSync(tempFile, prompt, 'utf8');
+    console.log(`[ClaudeCodeBridge] Long prompt (${prompt.length} chars) → temp file: ${tempFile}`);
   }
 
   return new Promise<ClaudeCodeResult>((resolve, reject) => {
@@ -140,23 +146,44 @@ export async function claudeCodeComplete(
     let stdout = '';
     let stderr = '';
 
-    const proc = spawn(cliPath === 'npx' ? 'npx' : cliPath, args, {
-      cwd: process.env.HOME || '/root',
-      timeout,
-      env: (() => {
-        const e = { ...process.env, CLAUDE_CODE_NON_INTERACTIVE: '1', CI: '1' };
-        // Remove keys that conflict with Claude Code OAuth token
-        delete e.ANTHROPIC_API_KEY;
-        return e;
-      })(),
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
+    let proc: ReturnType<typeof spawn>;
 
-    // If using stdin, write the prompt and close
-    if (useStdin) {
-      proc.stdin.write(prompt);
-      proc.stdin.end();
+    if (useStdin && tempFile) {
+      // Use execFile with shell to pipe file content — more reliable than Node.js stdin.write
+      const cliCmd = cliPath === 'npx' ? 'npx @anthropic-ai/claude-code' : cliPath;
+      const argsStr = args.map(a => {
+        // Escape single quotes in arg values
+        if (a === '-') return '-';
+        return `'${a.replace(/'/g, "'\\''")}'`;
+      }).join(' ');
+      const shellCmd = `cat '${tempFile}' | ${cliCmd} ${argsStr}`;
+
+      proc = spawn('bash', ['-c', shellCmd], {
+        cwd: process.env.HOME || '/root',
+        env: (() => {
+          const e = { ...process.env, CLAUDE_CODE_NON_INTERACTIVE: '1', CI: '1' };
+          delete e.ANTHROPIC_API_KEY;
+          return e;
+        })(),
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+    } else {
+      proc = spawn(cliPath === 'npx' ? 'npx' : cliPath, args, {
+        cwd: process.env.HOME || '/root',
+        env: (() => {
+          const e = { ...process.env, CLAUDE_CODE_NON_INTERACTIVE: '1', CI: '1' };
+          delete e.ANTHROPIC_API_KEY;
+          return e;
+        })(),
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
     }
+
+    // Safety timeout — kill process if it runs too long
+    const safetyTimer = setTimeout(() => {
+      console.warn(`[ClaudeCodeBridge] Safety timeout (${timeout}ms) — killing CLI process`);
+      proc.kill('SIGKILL');
+    }, timeout);
 
     proc.stdout.on('data', (data: Buffer) => {
       stdout += data.toString();
@@ -166,7 +193,19 @@ export async function claudeCodeComplete(
     });
 
     proc.on('close', (code) => {
+      clearTimeout(safetyTimer);
       const durationMs = Date.now() - startTime;
+
+      // Cleanup temp file if used
+      if (tempFile) {
+        try { fs.unlinkSync(tempFile); } catch {}
+      }
+
+      // Debug: log raw output for troubleshooting
+      if (stdout.length < 100 || !stdout.trim()) {
+        console.warn(`[ClaudeCodeBridge] Raw stdout (${stdout.length} chars): ${stdout.slice(0, 500)}`);
+        console.warn(`[ClaudeCodeBridge] Raw stderr (${stderr.length} chars): ${stderr.slice(0, 500)}`);
+      }
 
       // Even on non-zero exit, stdout may contain valid JSON with result
       if (code !== 0) {
@@ -209,6 +248,15 @@ export async function claudeCodeComplete(
       try {
         // Parse JSON output
         const result = JSON.parse(stdout);
+        console.log(`[ClaudeCodeBridge] Parsed JSON: is_error=${result.is_error}, result_type=${typeof result.result}, result_len=${(result.result || '').length}, cost=$${result.total_cost_usd || 0}, model_keys=${Object.keys(result.modelUsage || {}).join(',')}, stop=${result.stop_reason}, subtype=${result.subtype}`);
+        if ((result.result || '').length === 0) {
+          console.log(`[ClaudeCodeBridge] Empty result! Full JSON keys: ${Object.keys(result).join(',')}`);
+          console.log(`[ClaudeCodeBridge] result field raw: ${JSON.stringify(result.result)}`);
+          // Check if there's text content elsewhere
+          if (result.text) console.log(`[ClaudeCodeBridge] Found text field: ${String(result.text).slice(0, 200)}`);
+          if (result.content) console.log(`[ClaudeCodeBridge] Found content field: ${JSON.stringify(result.content).slice(0, 200)}`);
+          if (result.output) console.log(`[ClaudeCodeBridge] Found output field: ${String(result.output).slice(0, 200)}`);
+        }
 
         // Claude Code CLI v2 JSON format:
         // { type: "result", subtype: "success", is_error: bool, result: string,

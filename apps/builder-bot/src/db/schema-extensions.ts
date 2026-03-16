@@ -10,7 +10,7 @@
  */
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { pgSchema, serial, integer, bigint, text, timestamp, boolean, jsonb, date } from 'drizzle-orm/pg-core';
-import { eq, and, desc, gte, sql, lt } from 'drizzle-orm';
+import { eq, and, desc, gte, sql, lt, inArray } from 'drizzle-orm';
 import { Pool } from 'pg';
 
 const builderSchema = pgSchema('builder_bot');
@@ -283,6 +283,23 @@ export class AgentStateRepository {
       .select({ key: agentStateTable.key, value: agentStateTable.value })
       .from(agentStateTable)
       .where(eq(agentStateTable.agentId, agentId));
+  }
+
+  async getMulti(agentId: number, keys: string[]): Promise<Array<{ key: string; value: any }>> {
+    if (keys.length === 0) return [];
+    return this.db
+      .select({ key: agentStateTable.key, value: agentStateTable.value })
+      .from(agentStateTable)
+      .where(and(eq(agentStateTable.agentId, agentId), inArray(agentStateTable.key, keys)));
+  }
+
+  async listKeys(agentId: number, prefix?: string): Promise<string[]> {
+    const rows = prefix
+      ? await this.db.select({ key: agentStateTable.key }).from(agentStateTable)
+          .where(and(eq(agentStateTable.agentId, agentId), sql`${agentStateTable.key} LIKE ${prefix + '%'}`))
+      : await this.db.select({ key: agentStateTable.key }).from(agentStateTable)
+          .where(eq(agentStateTable.agentId, agentId));
+    return rows.map(r => r.key);
   }
 
   async deleteAgent(agentId: number): Promise<void> {
@@ -1022,7 +1039,25 @@ export async function runAIProposalsMigrations(pool: Pool): Promise<void> {
         CONSTRAINT agent_shared_state_unique UNIQUE (user_id, namespace, key)
       )
     `);
-    console.log('✅ AI proposals + daily spend + audit/approvals/skills/shared migrations applied');
+    // platform_bugs — автоматический трекинг багов
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.platform_bugs (
+        id          SERIAL PRIMARY KEY,
+        error_hash  TEXT NOT NULL,
+        source      TEXT NOT NULL,
+        message     TEXT NOT NULL,
+        stack       TEXT,
+        file        TEXT,
+        count       INTEGER NOT NULL DEFAULT 1,
+        first_seen  TIMESTAMP NOT NULL DEFAULT NOW(),
+        last_seen   TIMESTAMP NOT NULL DEFAULT NOW(),
+        status      TEXT NOT NULL DEFAULT 'open',
+        fix_proposal_id TEXT,
+        CONSTRAINT platform_bugs_hash UNIQUE (error_hash)
+      )
+    `);
+
+    console.log('✅ AI proposals + daily spend + audit/approvals/skills/shared/bugs migrations applied');
   } catch (e) {
     console.error('❌ AI proposals migration failed:', e);
   } finally {
@@ -1453,4 +1488,103 @@ export function initAgentApprovalsRepository(pool: Pool): AgentApprovalsReposito
 export function getAgentApprovalsRepository(): AgentApprovalsRepository {
   if (!agentApprovalsRepo) throw new Error('AgentApprovalsRepository not initialized');
   return agentApprovalsRepo;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BugTracker — автоматический сбор и агрегация ошибок платформы
+// ─────────────────────────────────────────────────────────────────────────────
+export interface PlatformBug {
+  id: number;
+  errorHash: string;
+  source: string;
+  message: string;
+  stack?: string;
+  file?: string;
+  count: number;
+  firstSeen: Date;
+  lastSeen: Date;
+  status: 'open' | 'fixing' | 'fixed' | 'ignored';
+  fixProposalId?: string;
+}
+
+class BugTrackerRepository {
+  constructor(private pool: Pool) {}
+
+  private hashError(source: string, message: string): string {
+    // Simple hash: source + first 100 chars of message (normalized)
+    const normalized = message.replace(/\d+/g, 'N').replace(/[a-f0-9]{8,}/gi, 'HASH').slice(0, 100);
+    const { createHash } = require('crypto');
+    return createHash('md5').update(`${source}:${normalized}`).digest('hex').slice(0, 16);
+  }
+
+  /** Record a bug — upsert: increment count if exists, create if new */
+  async recordBug(source: string, message: string, stack?: string, file?: string): Promise<void> {
+    const hash = this.hashError(source, message);
+    try {
+      await this.pool.query(`
+        INSERT INTO builder_bot.platform_bugs (error_hash, source, message, stack, file)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (error_hash) DO UPDATE SET
+          count = builder_bot.platform_bugs.count + 1,
+          last_seen = NOW(),
+          message = EXCLUDED.message,
+          stack = COALESCE(EXCLUDED.stack, builder_bot.platform_bugs.stack)
+      `, [hash, source, message.slice(0, 1000), (stack || '').slice(0, 2000), file || null]);
+    } catch {}
+  }
+
+  /** Get top bugs sorted by count (for self-improver to fix) */
+  async getTopBugs(limit = 20, status = 'open'): Promise<PlatformBug[]> {
+    try {
+      const res = await this.pool.query(`
+        SELECT id, error_hash, source, message, stack, file, count,
+               first_seen, last_seen, status, fix_proposal_id
+        FROM builder_bot.platform_bugs
+        WHERE status = $1
+        ORDER BY count DESC, last_seen DESC
+        LIMIT $2
+      `, [status, limit]);
+      return res.rows.map((r: any) => ({
+        id: r.id, errorHash: r.error_hash, source: r.source,
+        message: r.message, stack: r.stack, file: r.file,
+        count: r.count, firstSeen: r.first_seen, lastSeen: r.last_seen,
+        status: r.status, fixProposalId: r.fix_proposal_id,
+      }));
+    } catch { return []; }
+  }
+
+  /** Mark bug as fixed/ignored */
+  async updateStatus(id: number, status: string, fixProposalId?: string): Promise<void> {
+    try {
+      await this.pool.query(
+        `UPDATE builder_bot.platform_bugs SET status = $1, fix_proposal_id = COALESCE($2, fix_proposal_id) WHERE id = $3`,
+        [status, fixProposalId || null, id]
+      );
+    } catch {}
+  }
+
+  /** Get bug stats summary */
+  async getStats(): Promise<{ total: number; open: number; fixed: number; topSource: string }> {
+    try {
+      const res = await this.pool.query(`
+        SELECT
+          COUNT(*) as total,
+          COUNT(*) FILTER (WHERE status = 'open') as open,
+          COUNT(*) FILTER (WHERE status = 'fixed') as fixed,
+          (SELECT source FROM builder_bot.platform_bugs WHERE status = 'open' ORDER BY count DESC LIMIT 1) as top_source
+        FROM builder_bot.platform_bugs
+      `);
+      const r = res.rows[0] || {};
+      return { total: +r.total || 0, open: +r.open || 0, fixed: +r.fixed || 0, topSource: r.top_source || 'none' };
+    } catch { return { total: 0, open: 0, fixed: 0, topSource: 'none' }; }
+  }
+}
+
+let bugTrackerRepo: BugTrackerRepository | null = null;
+export function getBugTracker(): BugTrackerRepository {
+  if (!bugTrackerRepo) {
+    const { pool } = require('../db');
+    bugTrackerRepo = new BugTrackerRepository(pool);
+  }
+  return bugTrackerRepo;
 }

@@ -606,7 +606,9 @@
                   <label data-en="Group Chats" data-ru="Групповые чаты">Group Chats</label>
                   <select class="form-select" id="tg-group-mode" onchange="saveTelegramSettings()">
                     <option value="allowlist" data-en="Allowlist only" data-ru="Только из списка">Allowlist only</option>
+                    <option value="mention-only" data-en="Mention only" data-ru="Только по упоминанию">Mention only</option>
                     <option value="open" data-en="Open" data-ru="Открыты">Open</option>
+                    <option value="active" data-en="Active (AI decides)" data-ru="Активный (AI решает сам)">Active (AI decides)</option>
                     <option value="disabled" data-en="Disabled" data-ru="Отключены">Disabled</option>
                   </select>
                 </div>
@@ -639,6 +641,22 @@
                 <div class="slider-group">
                   <input type="range" class="form-slider" id="slider-response-delay" min="0" max="5000" step="100" value="1500" oninput="updateSliderDisplay(this)" onchange="saveTelegramSettings()">
                   <span class="slider-value">1500ms</span>
+                </div>
+              </div>
+              <!-- Per-chat policies -->
+              <div class="form-group" style="margin-top:12px">
+                <label data-en="Per-Chat Mode Override" data-ru="Режим по чатам">Per-Chat Mode Override</label>
+                <p style="font-size:12px;color:var(--text-muted);margin:4px 0 8px" data-en="Agent can manage this via set_chat_policy() tool. You can also add manually:" data-ru="Агент сам управляет через set_chat_policy(). Можно добавить вручную:">Agent can manage this via set_chat_policy() tool. You can also add manually:</p>
+                <div id="chat-policies-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px"></div>
+                <div style="display:flex;gap:6px">
+                  <input type="text" class="form-input" id="chat-policy-id" placeholder="Chat ID / @username" style="flex:1">
+                  <select class="form-select" id="chat-policy-mode" style="width:140px">
+                    <option value="active">Active</option>
+                    <option value="open">Open</option>
+                    <option value="mention-only">Mention only</option>
+                    <option value="disabled">Disabled</option>
+                  </select>
+                  <button class="btn btn-sm btn-primary" onclick="addChatPolicy()" style="white-space:nowrap">+</button>
                 </div>
               </div>
             </div>
@@ -1058,6 +1076,38 @@
             </div>
           </div>
 
+          <!-- Charts Row -->
+          <div class="analytics-charts-row">
+            <div class="panel analytics-chart-panel">
+              <div class="panel-header">
+                <h3 class="panel-title" data-en="Executions (Last 7 Days)" data-ru="Выполнения (7 дней)">Executions (Last 7 Days)</h3>
+              </div>
+              <div class="analytics-chart-wrap">
+                <canvas id="an-bar-chart" width="520" height="220"></canvas>
+              </div>
+            </div>
+            <div class="panel analytics-chart-panel">
+              <div class="panel-header">
+                <h3 class="panel-title" data-en="Success Rate" data-ru="Успешность">Success Rate</h3>
+              </div>
+              <div class="analytics-chart-wrap analytics-donut-wrap">
+                <canvas id="an-donut-chart" width="220" height="220"></canvas>
+                <div id="an-donut-legend" class="analytics-donut-legend"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Agent Leaderboard -->
+          <div class="panel" style="margin-top:1.5rem">
+            <div class="panel-header">
+              <h3 class="panel-title" data-en="Agent Leaderboard" data-ru="Рейтинг агентов">Agent Leaderboard</h3>
+            </div>
+            <div id="analytics-leaderboard">
+              <div class="loading-placeholder" data-en="Loading..." data-ru="Загрузка...">Loading...</div>
+            </div>
+          </div>
+
+          <!-- Execution History -->
           <div class="panel" style="margin-top:1.5rem">
             <div class="panel-header">
               <h3 class="panel-title" data-en="Execution History" data-ru="История выполнения">Execution History</h3>
@@ -1821,117 +1871,224 @@
       <!-- Guide Page -->
       <div id="guide-page" class="page">
         <div class="page-header">
-          <h1 class="page-title" data-en="Getting Started Guide" data-ru="Инструкции">Getting Started Guide</h1>
-          <p class="page-subtitle" data-en="Everything you need to know about the platform" data-ru="Всё что нужно знать о платформе">Everything you need to know about the platform</p>
+          <h1 class="page-title" data-en="Platform Guide" data-ru="Руководство">Platform Guide</h1>
+          <p class="page-subtitle" data-en="Complete guide to TON Agent Platform — from basics to advanced" data-ru="Полное руководство по TON Agent Platform — от основ до продвинутых функций">Complete guide to TON Agent Platform</p>
         </div>
         <div class="page-content guide-content">
-          <div style="margin-bottom:20px">
+          <div style="margin-bottom:24px;display:flex;gap:12px;flex-wrap:wrap">
             <button class="btn btn-primary" onclick="startTour()">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-              <span data-en="Take Interactive Tour" data-ru="Интерактивный тур">Take Interactive Tour</span>
+              <span data-en="Interactive Tour" data-ru="Интерактивный тур">Interactive Tour</span>
+            </button>
+            <button class="btn btn-secondary" onclick="navigateTo('constructor')">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+              <span data-en="Open Constructor" data-ru="Открыть конструктор">Open Constructor</span>
             </button>
           </div>
 
-          <div class="guide-section">
+          <!-- 1. Quick Start -->
+          <div class="guide-section" style="border-left:3px solid #0098ea">
             <div class="guide-section-header" onclick="toggleGuideSection(this)">
-              <span class="guide-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg></span>
-              <h3 data-en="1. Creating Your First Agent" data-ru="1. Создание первого агента">1. Creating Your First Agent</h3>
+              <span class="guide-icon" style="color:#0098ea"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></span>
+              <h3 data-en="1. Quick Start (5 min)" data-ru="1. Быстрый старт (5 мин)">1. Quick Start (5 min)</h3>
               <svg class="guide-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
             </div>
             <div class="guide-body">
-              <p data-en="There are 3 ways to create an agent:" data-ru="Есть 3 способа создать агента:">There are 3 ways to create an agent:</p>
+              <p data-en="Three ways to create your first agent:" data-ru="Три способа создать первого агента:">Three ways to create your first agent:</p>
               <div class="guide-cards">
-                <div class="guide-card">
-                  <span class="guide-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></span>
-                  <strong data-en="Constructor" data-ru="Конструктор">Constructor</strong>
-                  <p data-en="Visual drag-and-drop builder. Add blocks from the palette, connect ports, and deploy." data-ru="Визуальный конструктор. Добавляйте блоки из палитры, соединяйте порты и деплойте.">Visual drag-and-drop builder.</p>
+                <div class="guide-card" style="border-top:2px solid #a855f7">
+                  <span class="guide-icon" style="color:#a855f7"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+                  <strong data-en="AI Chat (easiest)" data-ru="AI Чат (проще всего)">AI Chat (easiest)</strong>
+                  <p data-en="Describe your agent in natural language: 'Create an agent that monitors TON price and alerts me when it drops below $3'. The AI generates the system prompt and deploys it instantly." data-ru="Опишите агента своими словами: «Создай агента, который мониторит цену TON и уведомляет когда она ниже $3». AI сгенерирует промпт и запустит агента.">Describe in natural language.</p>
                 </div>
-                <div class="guide-card">
-                  <span class="guide-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
-                  <strong data-en="AI Chat" data-ru="AI Чат">AI Chat</strong>
-                  <p data-en="Describe what you need in natural language. The AI will create the agent for you." data-ru="Опишите что нужно своими словами. AI создаст агента за вас.">Describe what you need in natural language.</p>
+                <div class="guide-card" style="border-top:2px solid #3b82f6">
+                  <span class="guide-icon" style="color:#3b82f6"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></span>
+                  <strong data-en="Flow Builder" data-ru="Конструктор">Flow Builder</strong>
+                  <p data-en="Visual drag-and-drop builder. Add trigger, processing and output blocks from the palette, connect ports, configure parameters, and deploy." data-ru="Визуальный конструктор. Добавляйте блоки триггеров, обработки и вывода, соединяйте порты, настраивайте параметры и деплойте.">Visual drag-and-drop builder.</p>
                 </div>
-                <div class="guide-card">
-                  <span class="guide-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg></span>
+                <div class="guide-card" style="border-top:2px solid #22c55e">
+                  <span class="guide-icon" style="color:#22c55e"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13"/><polygon points="22 2 15 22 11 13 2 9"/></svg></span>
                   <strong>Telegram Bot</strong>
-                  <p data-en="Send a message to @TonAgentPlatformBot — same AI, same sync." data-ru="Напишите @TonAgentPlatformBot — тот же AI, полная синхронизация.">Send a message to @TonAgentPlatformBot</p>
+                  <p data-en="Send a message to @TonAgentPlatformBot — same AI capabilities, full sync with Studio. Works with voice messages too." data-ru="Напишите @TonAgentPlatformBot — те же возможности AI, полная синхронизация со Studio. Работает и с голосовыми.">Message @TonAgentPlatformBot</p>
                 </div>
+              </div>
+              <div style="margin-top:16px;padding:12px 16px;background:rgba(0,152,234,0.08);border-radius:10px;font-size:.85rem">
+                <strong style="color:#0098ea" data-en="Tip:" data-ru="Совет:">Tip:</strong>
+                <span data-en=" After creating, click on the agent card → Settings to customize AI provider, capabilities, wallet and more." data-ru=" После создания нажмите на карточку агента → Настройки для кастомизации AI провайдера, возможностей, кошелька и др."> After creating, open Settings to customize.</span>
               </div>
             </div>
           </div>
 
-          <div class="guide-section">
+          <!-- 2. Agent Settings -->
+          <div class="guide-section" style="border-left:3px solid #a855f7">
             <div class="guide-section-header" onclick="toggleGuideSection(this)">
-              <span class="guide-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></span>
-              <h3 data-en="2. Flow Builder (Constructor)" data-ru="2. Конструктор (Flow Builder)">2. Flow Builder (Constructor)</h3>
+              <span class="guide-icon" style="color:#a855f7"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09"/></svg></span>
+              <h3 data-en="2. Agent Settings (10 tabs)" data-ru="2. Настройки агента (10 вкладок)">2. Agent Settings (10 tabs)</h3>
               <svg class="guide-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
             </div>
             <div class="guide-body">
-              <p data-en="Controls:" data-ru="Управление:">Controls:</p>
-              <ul>
-                <li data-en="Left-click on empty space — move camera" data-ru="ЛКМ по пустому месту — перемещение камеры">Left-click on empty space — move camera</li>
-                <li data-en="Mouse wheel — zoom in/out" data-ru="Колесо мыши — масштабирование">Mouse wheel — zoom in/out</li>
-                <li data-en="Click node — select & configure" data-ru="Клик по ноде — выбор и настройка">Click node — select & configure</li>
-                <li data-en="Drag from output port to input port — connect" data-ru="Тащи от выходного порта к входному — соединение">Drag from output port to input port — connect</li>
-                <li data-en="Click on connection + Delete — disconnect" data-ru="Клик на связь + Delete — отсоединить">Click on connection + Delete — disconnect</li>
-                <li data-en="Right-click on connection — delete it" data-ru="ПКМ по связи — удалить">Right-click on connection — delete it</li>
-                <li data-en="Deploy button — create agent from flow" data-ru="Кнопка Deploy — создать агента из flow">Deploy button — create agent from flow</li>
-                <li data-en="Ctrl+Z / Ctrl+Y — undo / redo" data-ru="Ctrl+Z / Ctrl+Y — отмена / повтор">Ctrl+Z / Ctrl+Y — undo / redo</li>
+              <p data-en="Click the gear icon on any agent card to open the full settings panel:" data-ru="Нажмите на иконку шестерёнки на карточке агента для открытия панели настроек:">Click gear icon on agent card:</p>
+              <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-top:12px">
+                <div style="padding:10px 14px;background:rgba(168,85,247,0.08);border-radius:8px;font-size:.82rem"><strong style="color:#a855f7">Code</strong> <span data-en="— system prompt editor" data-ru="— редактор промпта">— system prompt</span></div>
+                <div style="padding:10px 14px;background:rgba(34,197,94,0.08);border-radius:8px;font-size:.82rem"><strong style="color:#22c55e">Info</strong> <span data-en="— name, description, metadata" data-ru="— имя, описание, метаданные">— name, description</span></div>
+                <div style="padding:10px 14px;background:rgba(16,163,127,0.08);border-radius:8px;font-size:.82rem"><strong style="color:#10a37f">AI</strong> <span data-en="— provider, model, API key (7 providers)" data-ru="— провайдер, модель, API ключ (7 провайдеров)">— provider, model, key</span></div>
+                <div style="padding:10px 14px;background:rgba(234,179,8,0.08);border-radius:8px;font-size:.82rem"><strong style="color:#eab308">Caps</strong> <span data-en="— 20 capability modules (wallet, NFT, gifts, web...)" data-ru="— 20 модулей (кошелёк, NFT, подарки, web...)">— 20 capability modules</span></div>
+                <div style="padding:10px 14px;background:rgba(168,85,247,0.08);border-radius:8px;font-size:.82rem"><strong style="color:#a855f7">Role</strong> <span data-en="— worker/manager/specialist/monitor + color" data-ru="— worker/manager/specialist/monitor + цвет">— role + color</span></div>
+                <div style="padding:10px 14px;background:rgba(59,130,246,0.08);border-radius:8px;font-size:.82rem"><strong style="color:#3b82f6">Routing</strong> <span data-en="— multi-agent message routing rules" data-ru="— правила маршрутизации сообщений">— message routing</span></div>
+                <div style="padding:10px 14px;background:rgba(245,158,11,0.08);border-radius:8px;font-size:.82rem"><strong style="color:#f59e0b">Wallet</strong> <span data-en="— TON wallet for transactions" data-ru="— TON кошелёк для транзакций">— TON wallet</span></div>
+                <div style="padding:10px 14px;background:rgba(59,130,246,0.08);border-radius:8px;font-size:.82rem"><strong style="color:#3b82f6">Telegram</strong> <span data-en="— connect TG account (phone/QR)" data-ru="— подключить TG аккаунт (телефон/QR)">— TG account</span></div>
+                <div style="padding:10px 14px;background:rgba(99,102,241,0.08);border-radius:8px;font-size:.82rem"><strong style="color:#6366f1">Chat</strong> <span data-en="— talk to your agent directly" data-ru="— чат с агентом напрямую">— talk to agent</span></div>
+                <div style="padding:10px 14px;background:rgba(239,68,68,0.08);border-radius:8px;font-size:.82rem"><strong style="color:#ef4444">Advanced</strong> <span data-en="— spend limits, intervals, language, clone, export" data-ru="— лимиты, интервалы, язык, клон, экспорт">— limits, clone, export</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. AI Providers -->
+          <div class="guide-section" style="border-left:3px solid #10a37f">
+            <div class="guide-section-header" onclick="toggleGuideSection(this)">
+              <span class="guide-icon" style="color:#10a37f"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a4 4 0 0 0-4 4v2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2h-2V6a4 4 0 0 0-4-4z"/></svg></span>
+              <h3 data-en="3. AI Providers (7 supported)" data-ru="3. AI Провайдеры (7 поддерживаемых)">3. AI Providers (7 supported)</h3>
+              <svg class="guide-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+            </div>
+            <div class="guide-body">
+              <p data-en="Each agent can use its own AI provider. Set a global key in Profile → API Keys, or override per-agent in Settings → AI." data-ru="Каждый агент может использовать свой AI провайдер. Глобальный ключ — в Профиле → API ключи, или индивидуально в Настройках → AI.">Each agent can use its own AI provider.</p>
+              <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:12px">
+                <div style="padding:8px 12px;background:rgba(66,133,244,0.1);border-radius:8px;font-size:.82rem;text-align:center"><strong style="color:#4285f4">Gemini</strong><br><span style="color:var(--text-muted);font-size:.75rem">gemini-2.5-flash</span></div>
+                <div style="padding:8px 12px;background:rgba(16,163,127,0.1);border-radius:8px;font-size:.82rem;text-align:center"><strong style="color:#10a37f">OpenAI</strong><br><span style="color:var(--text-muted);font-size:.75rem">gpt-4o-mini</span></div>
+                <div style="padding:8px 12px;background:rgba(217,119,6,0.1);border-radius:8px;font-size:.82rem;text-align:center"><strong style="color:#d97706">Anthropic</strong><br><span style="color:var(--text-muted);font-size:.75rem">claude-haiku-4-5</span></div>
+                <div style="padding:8px 12px;background:rgba(245,80,54,0.1);border-radius:8px;font-size:.82rem;text-align:center"><strong style="color:#f55036">Groq</strong><br><span style="color:var(--text-muted);font-size:.75rem">llama-3.3-70b</span></div>
+                <div style="padding:8px 12px;background:rgba(79,70,229,0.1);border-radius:8px;font-size:.82rem;text-align:center"><strong style="color:#4f46e5">DeepSeek</strong><br><span style="color:var(--text-muted);font-size:.75rem">deepseek-chat</span></div>
+                <div style="padding:8px 12px;background:rgba(99,102,241,0.1);border-radius:8px;font-size:.82rem;text-align:center"><strong style="color:#6366f1">OpenRouter</strong><br><span style="color:var(--text-muted);font-size:.75rem">multi-model</span></div>
+                <div style="padding:8px 12px;background:rgba(14,165,233,0.1);border-radius:8px;font-size:.82rem;text-align:center"><strong style="color:#0ea5e9">Together</strong><br><span style="color:var(--text-muted);font-size:.75rem">llama-3.3-70b</span></div>
+              </div>
+              <div style="margin-top:12px;padding:10px 14px;background:rgba(34,197,94,0.08);border-radius:8px;font-size:.82rem">
+                <strong style="color:#22c55e" data-en="No key?" data-ru="Нет ключа?">No key?</strong>
+                <span data-en=" Agents work without your API key — the platform provides a fallback AI proxy." data-ru=" Агенты работают без вашего ключа — платформа предоставляет fallback AI прокси."> Platform provides fallback AI.</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 4. Capabilities & Tools -->
+          <div class="guide-section" style="border-left:3px solid #eab308">
+            <div class="guide-section-header" onclick="toggleGuideSection(this)">
+              <span class="guide-icon" style="color:#eab308"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></span>
+              <h3 data-en="4. Capabilities & Tools" data-ru="4. Возможности и инструменты">4. Capabilities & Tools</h3>
+              <svg class="guide-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+            </div>
+            <div class="guide-body">
+              <p data-en="Toggle capability modules in Settings → Caps. Each module grants the agent specific tools:" data-ru="Включайте модули в Настройках → Caps. Каждый модуль даёт агенту конкретные инструменты:">Toggle modules in Settings → Caps:</p>
+              <ul style="font-size:.85rem;line-height:1.8">
+                <li><strong data-en="Wallet" data-ru="Кошелёк">Wallet</strong> <span data-en="— check balance, send TON/Jettons, transaction history" data-ru="— баланс, отправка TON/Jettons, история транзакций">— balance, send TON</span></li>
+                <li><strong>NFT</strong> <span data-en="— floor prices, collection analysis, buy/sell NFTs" data-ru="— floor цены, анализ коллекций, покупка/продажа NFT">— floor prices, analysis</span></li>
+                <li><strong data-en="Gifts / Gifts Market" data-ru="Подарки / Рынок подарков">Gifts</strong> <span data-en="— catalog, appraisal, buy/sell, real-time arbitrage scanning" data-ru="— каталог, оценка, покупка/продажа, сканирование арбитража">— catalog, arbitrage scanning</span></li>
+                <li><strong>Web</strong> <span data-en="— search (DuckDuckGo), fetch pages, HTTP requests" data-ru="— поиск (DuckDuckGo), загрузка страниц, HTTP запросы">— search, fetch pages</span></li>
+                <li><strong>DeFi</strong> <span data-en="— DEX swaps via DeDust and STON.fi" data-ru="— свапы через DeDust и STON.fi">— DEX swaps</span></li>
+                <li><strong data-en="Inter-Agent" data-ru="Меж-агентное">Inter-Agent</strong> <span data-en="— send messages between agents, delegate tasks" data-ru="— общение между агентами, делегирование задач">— agent-to-agent messaging</span></li>
+                <li><strong data-en="Notify" data-ru="Уведомления">Notify</strong> <span data-en="— push notifications to Telegram with buttons" data-ru="— пуш-уведомления в Telegram с кнопками">— Telegram push notifications</span></li>
+                <li><strong data-en="State" data-ru="Состояние">State</strong> <span data-en="— persistent key-value storage between runs" data-ru="— персистентное хранилище между запусками">— persistent storage</span></li>
               </ul>
-              <p data-en="Block categories: Triggers, TON, Gifts, Web, Telegram, Logic, State, Output" data-ru="Категории блоков: Триггеры, TON, Подарки, Web, Telegram, Логика, Состояние, Вывод">Block categories: Triggers, TON, Gifts, Web, Telegram, Logic, State, Output</p>
+              <div style="margin-top:12px;padding:10px 14px;background:rgba(234,179,8,0.08);border-radius:8px;font-size:.82rem">
+                <strong style="color:#eab308" data-en="Security:" data-ru="Безопасность:">Security:</strong>
+                <span data-en=" Financial operations (send TON, buy gifts) require user approval. Daily spend cap: 500 TON/day per agent." data-ru=" Финансовые операции (отправка TON, покупка подарков) требуют одобрения. Дневной лимит: 500 TON/день на агента."> Financial ops require approval. 500 TON/day limit.</span>
+              </div>
             </div>
           </div>
 
-          <div class="guide-section">
+          <!-- 5. Flow Builder -->
+          <div class="guide-section" style="border-left:3px solid #3b82f6">
             <div class="guide-section-header" onclick="toggleGuideSection(this)">
-              <span class="guide-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
-              <h3 data-en="3. AI Assistant Chat" data-ru="3. AI Ассистент (Чат)">3. AI Assistant Chat</h3>
+              <span class="guide-icon" style="color:#3b82f6"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></span>
+              <h3 data-en="5. Flow Builder (Constructor)" data-ru="5. Конструктор (Flow Builder)">5. Flow Builder (Constructor)</h3>
               <svg class="guide-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
             </div>
             <div class="guide-body">
-              <p data-en="Click the chat button in the bottom-right corner to open the chat. The assistant can:" data-ru="Нажмите кнопку чата в правом нижнем углу. Ассистент может:">Click the chat button in the bottom-right corner.</p>
-              <ul>
-                <li data-en="Create agents from text descriptions" data-ru="Создавать агентов из текстовых описаний">Create agents from descriptions</li>
-                <li data-en="Help with constructor and settings" data-ru="Помогать с конструктором и настройками">Help with constructor and settings</li>
-                <li data-en="Answer questions about the platform" data-ru="Отвечать на вопросы о платформе">Answer questions about the platform</li>
-                <li data-en="Analyze NFT and gift prices" data-ru="Анализировать цены NFT и подарков">Analyze NFT and gift prices</li>
+              <p data-en="Visual node editor for building agent logic without code:" data-ru="Визуальный редактор нод для построения логики агента без кода:">Visual node editor:</p>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0;font-size:.82rem">
+                <div style="padding:8px 12px;background:rgba(59,130,246,0.08);border-radius:8px" data-en="Drag empty space — pan camera" data-ru="Тащить пустое место — двигать камеру">Drag — pan camera</div>
+                <div style="padding:8px 12px;background:rgba(59,130,246,0.08);border-radius:8px" data-en="Mouse wheel — zoom in/out" data-ru="Колесо мыши — масштаб">Wheel — zoom</div>
+                <div style="padding:8px 12px;background:rgba(59,130,246,0.08);border-radius:8px" data-en="Click node — select & configure" data-ru="Клик по ноде — выбрать">Click node — select</div>
+                <div style="padding:8px 12px;background:rgba(59,130,246,0.08);border-radius:8px" data-en="Drag port to port — connect" data-ru="Порт → порт — соединить">Port → Port — connect</div>
+                <div style="padding:8px 12px;background:rgba(59,130,246,0.08);border-radius:8px" data-en="Right-click connection — delete" data-ru="ПКМ по связи — удалить">Right-click — delete</div>
+                <div style="padding:8px 12px;background:rgba(59,130,246,0.08);border-radius:8px" data-en="Ctrl+Z / Ctrl+Y — undo / redo" data-ru="Ctrl+Z / Ctrl+Y — отмена/повтор">Ctrl+Z/Y — undo/redo</div>
+              </div>
+              <p style="font-size:.85rem" data-en="Block categories: Triggers (schedule, webhook, message), TON (balance, send, swap), Gifts (catalog, buy, sell), Web (search, fetch), Telegram (send, forward), Logic (condition, loop, delay), State (get, set), Output (notify, log)." data-ru="Категории блоков: Триггеры (расписание, вебхук, сообщение), TON (баланс, отправка, свап), Подарки (каталог, покупка, продажа), Web (поиск, загрузка), Telegram (отправка, пересылка), Логика (условие, цикл, задержка), Состояние (чтение, запись), Вывод (уведомление, лог).">Block categories: Triggers, TON, Gifts, Web, Telegram, Logic, State, Output.</p>
+            </div>
+          </div>
+
+          <!-- 6. TON Blockchain -->
+          <div class="guide-section" style="border-left:3px solid #0098ea">
+            <div class="guide-section-header" onclick="toggleGuideSection(this)">
+              <span class="guide-icon" style="color:#0098ea"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h12l4 6-10 13L2 9z"/><path d="M11 3l1 6"/><path d="M2 9h20"/></svg></span>
+              <h3 data-en="6. TON Blockchain" data-ru="6. TON Блокчейн">6. TON Blockchain</h3>
+              <svg class="guide-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+            </div>
+            <div class="guide-body">
+              <p data-en="Each agent can have its own TON wallet. Create one in Settings → Wallet, or connect your external wallet via TonConnect." data-ru="Каждый агент может иметь свой TON кошелёк. Создайте в Настройках → Wallet, или подключите внешний через TonConnect.">Each agent can have its own TON wallet.</p>
+              <ul style="font-size:.85rem;line-height:1.8">
+                <li data-en="Send/receive TON and Jettons" data-ru="Отправка/получение TON и Jettons">Send/receive TON and Jettons</li>
+                <li data-en="DeFi swaps via DeDust and STON.fi" data-ru="DeFi свапы через DeDust и STON.fi">DeFi swaps (DeDust, STON.fi)</li>
+                <li data-en="NFT floor price monitoring (TonAPI)" data-ru="Мониторинг floor цен NFT (TonAPI)">NFT floor monitoring</li>
+                <li data-en="Telegram gifts trading (buy, sell, arbitrage)" data-ru="Торговля подарками Telegram (покупка, продажа, арбитраж)">Gift trading & arbitrage</li>
+                <li data-en="On-chain analytics and whale alerts" data-ru="Он-чейн аналитика и whale alerts">On-chain analytics</li>
               </ul>
-              <p data-en="Tip: Chats sync between studio and Telegram!" data-ru="Совет: Чаты синхронизируются между студией и Telegram!">Tip: Chats sync between studio and Telegram!</p>
+              <div style="margin-top:12px;padding:10px 14px;background:rgba(0,152,234,0.08);border-radius:8px;font-size:.82rem">
+                <strong style="color:#0098ea" data-en="Safety:" data-ru="Защита:">Safety:</strong>
+                <span data-en=" Transactions over 100 TON require manual approval. Daily spend cap configurable in Advanced settings." data-ru=" Транзакции свыше 100 TON требуют одобрения. Дневной лимит настраивается в Advanced."> Transactions >100 TON need approval.</span>
+              </div>
             </div>
           </div>
 
-          <div class="guide-section">
+          <!-- 7. Multi-Agent -->
+          <div class="guide-section" style="border-left:3px solid #ec4899">
             <div class="guide-section-header" onclick="toggleGuideSection(this)">
-              <span class="guide-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg></span>
-              <h3 data-en="4. Marketplace" data-ru="4. Маркетплейс">4. Marketplace</h3>
+              <span class="guide-icon" style="color:#ec4899"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+              <h3 data-en="7. Multi-Agent System" data-ru="7. Мультиагентная система">7. Multi-Agent System</h3>
               <svg class="guide-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
             </div>
             <div class="guide-body">
-              <p data-en="Browse ready-made agent templates by category: Monitoring, DeFi, NFT, Gifts, Utility." data-ru="Просматривайте готовые шаблоны по категориям: Мониторинг, DeFi, NFT, Подарки, Утилиты.">Browse ready-made agent templates by category.</p>
-              <p data-en="Click 'Install' to add a template to your agents. You can also publish your own agents for others to use." data-ru="Нажмите 'Установить' чтобы добавить шаблон. Также можно опубликовать своих агентов для других.">Click 'Install' to add a template.</p>
+              <p data-en="Run multiple agents that communicate and collaborate:" data-ru="Запускайте несколько агентов, которые общаются и работают вместе:">Multiple agents collaborate:</p>
+              <ul style="font-size:.85rem;line-height:1.8">
+                <li data-en="Roles: Worker (executes), Manager (delegates), Specialist (expert), Monitor (alerts)" data-ru="Роли: Worker (исполняет), Manager (делегирует), Specialist (эксперт), Monitor (алерты)">4 roles: Worker, Manager, Specialist, Monitor</li>
+                <li data-en="Inter-agent messaging with deadlock detection" data-ru="Обмен сообщениями между агентами с детекцией дедлоков">Inter-agent messaging + deadlock detection</li>
+                <li data-en="Message routing: agents share one Telegram account, rules determine who responds" data-ru="Маршрутизация: агенты на одном TG аккаунте, правила определяют кто отвечает">Smart message routing on shared TG account</li>
+                <li data-en="Clone agents to scale — same config, fresh state" data-ru="Клонирование агентов — та же конфигурация, чистое состояние">Clone agents to scale</li>
+              </ul>
             </div>
           </div>
 
-          <div class="guide-section">
+          <!-- 8. Marketplace -->
+          <div class="guide-section" style="border-left:3px solid #f97316">
             <div class="guide-section-header" onclick="toggleGuideSection(this)">
-              <span class="guide-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12l4 6-10 13L2 9z"/><path d="M11 3l1 6"/><path d="M2 9h20"/><path d="M7 9l5 13 5-13"/></svg></span>
-              <h3 data-en="5. TON Integration" data-ru="5. Интеграция с TON">5. TON Integration</h3>
+              <span class="guide-icon" style="color:#f97316"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg></span>
+              <h3 data-en="8. Marketplace" data-ru="8. Маркетплейс">8. Marketplace</h3>
               <svg class="guide-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
             </div>
             <div class="guide-body">
-              <p data-en="Connect your TON wallet via TonConnect. Agents can check balances, send TON, monitor NFT floors, and trade gifts." data-ru="Подключите TON кошелёк через TonConnect. Агенты могут проверять баланс, отправлять TON, мониторить NFT и торговать подарками.">Connect your TON wallet via TonConnect.</p>
+              <p data-en="Browse 22+ ready-made agent templates by category:" data-ru="22+ готовых шаблонов агентов по категориям:">22+ ready-made templates:</p>
+              <ul style="font-size:.85rem;line-height:1.8">
+                <li data-en="Monitoring: price alerts, whale tracking, portfolio watch" data-ru="Мониторинг: оповещения о ценах, отслеживание китов, портфолио">Monitoring: price alerts, whale tracking</li>
+                <li data-en="DeFi: auto-swap, yield farming, arbitrage bots" data-ru="DeFi: авто-свап, фарминг, арбитраж">DeFi: auto-swap, arbitrage</li>
+                <li data-en="Gifts: gift scanner, arbitrage finder, collection tracker" data-ru="Подарки: сканер подарков, арбитраж, отслеживание коллекций">Gifts: scanner, arbitrage</li>
+                <li data-en="Utility: schedulers, notification bots, data collectors" data-ru="Утилиты: планировщики, уведомления, сборщики данных">Utility: schedulers, data collectors</li>
+              </ul>
+              <p style="font-size:.85rem;margin-top:8px" data-en="Install with one click. Publish your own agents for others to use." data-ru="Установка в один клик. Публикуйте своих агентов для других.">One-click install. Publish your own.</p>
             </div>
           </div>
 
-          <div class="guide-section">
+          <!-- 9. Keyboard Shortcuts -->
+          <div class="guide-section" style="border-left:3px solid #64748b">
             <div class="guide-section-header" onclick="toggleGuideSection(this)">
-              <span class="guide-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
-              <h3 data-en="6. Settings & Persona" data-ru="6. Настройки и Персона">6. Settings & Persona</h3>
+              <span class="guide-icon" style="color:#64748b"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10"/></svg></span>
+              <h3 data-en="9. Keyboard Shortcuts" data-ru="9. Горячие клавиши">9. Keyboard Shortcuts</h3>
               <svg class="guide-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
             </div>
             <div class="guide-body">
-              <p data-en="Configure your AI provider, API keys, and Telegram integration in Settings." data-ru="Настройте AI провайдера, API ключи и Telegram интеграцию в Настройках.">Configure your AI provider and API keys in Settings.</p>
-              <p data-en="Set up your Persona to customize the AI assistant's behavior: name, tone, language, and custom instructions." data-ru="Настройте Персону чтобы кастомизировать поведение AI: имя, тон, язык и инструкции.">Set up your Persona to customize the AI.</p>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:.82rem">
+                <div style="padding:8px 12px;background:rgba(100,116,139,0.08);border-radius:8px"><kbd style="background:rgba(255,255,255,0.06);padding:2px 6px;border-radius:4px;font-size:.78rem">Ctrl+K</kbd> <span data-en="— command palette" data-ru="— палитра команд">— command palette</span></div>
+                <div style="padding:8px 12px;background:rgba(100,116,139,0.08);border-radius:8px"><kbd style="background:rgba(255,255,255,0.06);padding:2px 6px;border-radius:4px;font-size:.78rem">Ctrl+N</kbd> <span data-en="— new agent" data-ru="— новый агент">— new agent</span></div>
+                <div style="padding:8px 12px;background:rgba(100,116,139,0.08);border-radius:8px"><kbd style="background:rgba(255,255,255,0.06);padding:2px 6px;border-radius:4px;font-size:.78rem">Ctrl+/</kbd> <span data-en="— open chat" data-ru="— открыть чат">— open chat</span></div>
+                <div style="padding:8px 12px;background:rgba(100,116,139,0.08);border-radius:8px"><kbd style="background:rgba(255,255,255,0.06);padding:2px 6px;border-radius:4px;font-size:.78rem">Esc</kbd> <span data-en="— close modals" data-ru="— закрыть модалы">— close modals</span></div>
+              </div>
             </div>
           </div>
 
@@ -1946,44 +2103,136 @@
         <div class="onboarding-backdrop" onclick="dismissOnboarding()"></div>
         <div class="onboarding-card">
           <button class="onboarding-close" onclick="dismissOnboarding()">&times;</button>
-          <div class="onboarding-header">
+
+          <!-- Step indicators -->
+          <div class="onboarding-dots" id="onboarding-dots"></div>
+
+          <!-- Step 1: Welcome -->
+          <div class="onboarding-slide" id="onboarding-slide-0">
             <div class="onboarding-icon">
               <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
             </div>
-            <h2 data-en="Welcome to TON Agent!" data-ru="Добро пожаловать!">Welcome to TON Agent!</h2>
-            <p id="onboarding-subtitle"></p>
-          </div>
-          <div class="onboarding-steps">
-            <div class="onboarding-step">
-              <div class="onboarding-step-num">1</div>
-              <div class="onboarding-step-content">
-                <strong data-en="Set up AI provider" data-ru="Настройте AI провайдер">Set up AI provider</strong>
-                <span data-en="Choose your preferred AI model and add API key" data-ru="Выберите AI модель и добавьте API ключ">Choose your preferred AI model and add API key</span>
-              </div>
-            </div>
-            <div class="onboarding-step">
-              <div class="onboarding-step-num">2</div>
-              <div class="onboarding-step-content">
-                <strong data-en="Create your first agent" data-ru="Создайте первого агента">Create your first agent</strong>
-                <span data-en="Use Constructor, AI Chat, or install from Marketplace" data-ru="Используйте Конструктор, AI Чат или шаблон из Маркетплейса">Use Constructor, AI Chat, or install from Marketplace</span>
-              </div>
-            </div>
-            <div class="onboarding-step">
-              <div class="onboarding-step-num">3</div>
-              <div class="onboarding-step-content">
-                <strong data-en="Launch & monitor" data-ru="Запускайте и следите">Launch & monitor</strong>
-                <span data-en="Your agent works 24/7 autonomously inside Telegram" data-ru="Ваш агент работает 24/7 автономно в Telegram">Your agent works 24/7 autonomously inside Telegram</span>
-              </div>
+            <h2 class="onboarding-title" data-en="Welcome to TON Agent!" data-ru="Добро пожаловать!">Welcome to TON Agent!</h2>
+            <p class="onboarding-desc" id="onboarding-subtitle" data-en="Build autonomous AI agents that live inside Telegram and work with the TON blockchain — no coding required." data-ru="Создавайте автономных AI-агентов, которые работают в Telegram и взаимодействуют с блокчейном TON — без кода.">Build autonomous AI agents that live inside Telegram and work with the TON blockchain — no coding required.</p>
+            <div class="onboarding-features">
+              <div class="onboarding-feature"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span data-en="AI-powered agents" data-ru="AI-агенты">AI-powered agents</span></div>
+              <div class="onboarding-feature"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg><span data-en="TON blockchain integration" data-ru="Интеграция с TON">TON blockchain integration</span></div>
+              <div class="onboarding-feature"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span data-en="24/7 autonomous operation" data-ru="Работа 24/7 автономно">24/7 autonomous operation</span></div>
             </div>
           </div>
-          <div class="onboarding-actions">
-            <button class="btn btn-primary onboarding-go-btn" onclick="startOnboarding()">
-              <span data-en="Let's Go!" data-ru="Начнём!">Let's Go!</span>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+
+          <!-- Step 2: Create first agent -->
+          <div class="onboarding-slide" id="onboarding-slide-1" style="display:none">
+            <div class="onboarding-icon onboarding-icon-agent">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/><circle cx="12" cy="16" r="1"/></svg>
+            </div>
+            <h2 class="onboarding-title" data-en="Create Your First Agent" data-ru="Создайте первого агента">Create Your First Agent</h2>
+            <p class="onboarding-desc" data-en="Choose how you want to build your agent:" data-ru="Выберите способ создания агента:">Choose how you want to build your agent:</p>
+            <div class="onboarding-options">
+              <button class="onboarding-option-btn" onclick="onboardingAction('chat')">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                <div>
+                  <strong data-en="AI Chat" data-ru="AI Чат">AI Chat</strong>
+                  <span data-en="Describe what you need in plain language" data-ru="Опишите задачу простыми словами">Describe what you need in plain language</span>
+                </div>
+              </button>
+              <button class="onboarding-option-btn" onclick="onboardingAction('constructor')">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+                <div>
+                  <strong data-en="Constructor" data-ru="Конструктор">Constructor</strong>
+                  <span data-en="Build step-by-step with visual editor" data-ru="Пошаговая сборка в визуальном редакторе">Build step-by-step with visual editor</span>
+                </div>
+              </button>
+              <button class="onboarding-option-btn" onclick="onboardingAction('marketplace')">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 7v11a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7l-3-5z"/><line x1="3" y1="7" x2="21" y2="7"/><path d="M16 11a4 4 0 0 1-8 0"/></svg>
+                <div>
+                  <strong data-en="Marketplace" data-ru="Маркетплейс">Marketplace</strong>
+                  <span data-en="Install a ready-made agent template" data-ru="Установите готовый шаблон агента">Install a ready-made agent template</span>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          <!-- Step 3: Set up AI provider -->
+          <div class="onboarding-slide" id="onboarding-slide-2" style="display:none">
+            <div class="onboarding-icon onboarding-icon-ai">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M12 2a4 4 0 0 1 4 4v2a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z"/><path d="M20 21v-2a4 4 0 0 0-3-3.87"/><path d="M4 21v-2a4 4 0 0 1 3-3.87"/><circle cx="12" cy="17" r="3"/></svg>
+            </div>
+            <h2 class="onboarding-title" data-en="Set Up AI Provider" data-ru="Настройте AI провайдер">Set Up AI Provider</h2>
+            <p class="onboarding-desc" data-en="Your agents need an AI brain. Pick a provider or use the built-in one for free:" data-ru="Вашим агентам нужен AI. Выберите провайдера или используйте встроенный бесплатно:">Your agents need an AI brain. Pick a provider or use the built-in one for free:</p>
+            <div class="onboarding-providers">
+              <div class="onboarding-provider" onclick="onboardingSelectProvider(this, 'platform')">
+                <div class="onboarding-provider-radio selected"></div>
+                <div>
+                  <strong data-en="Platform AI (Free)" data-ru="Platform AI (Бесплатно)">Platform AI (Free)</strong>
+                  <span data-en="No API key needed — get started instantly" data-ru="Без API ключа — начните прямо сейчас">No API key needed — get started instantly</span>
+                </div>
+              </div>
+              <div class="onboarding-provider" onclick="onboardingSelectProvider(this, 'gemini')">
+                <div class="onboarding-provider-radio"></div>
+                <div>
+                  <strong>Google Gemini</strong>
+                  <span data-en="Fast and capable, generous free tier" data-ru="Быстрый и мощный, щедрый бесплатный план">Fast and capable, generous free tier</span>
+                </div>
+              </div>
+              <div class="onboarding-provider" onclick="onboardingSelectProvider(this, 'openai')">
+                <div class="onboarding-provider-radio"></div>
+                <div>
+                  <strong>OpenAI (GPT)</strong>
+                  <span data-en="Industry-leading models, paid API" data-ru="Лидирующие модели, платный API">Industry-leading models, paid API</span>
+                </div>
+              </div>
+              <div class="onboarding-provider" onclick="onboardingSelectProvider(this, 'anthropic')">
+                <div class="onboarding-provider-radio"></div>
+                <div>
+                  <strong>Anthropic (Claude)</strong>
+                  <span data-en="Advanced reasoning, paid API" data-ru="Продвинутые рассуждения, платный API">Advanced reasoning, paid API</span>
+                </div>
+              </div>
+            </div>
+            <p class="onboarding-hint" data-en="You can change this anytime in Settings." data-ru="Вы можете изменить это в Настройках.">You can change this anytime in Settings.</p>
+          </div>
+
+          <!-- Step 4: Done -->
+          <div class="onboarding-slide" id="onboarding-slide-3" style="display:none">
+            <div class="onboarding-icon onboarding-icon-done">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            </div>
+            <h2 class="onboarding-title" data-en="You're All Set!" data-ru="Всё готово!">You're All Set!</h2>
+            <p class="onboarding-desc" data-en="Your platform is ready. Here are some helpful resources:" data-ru="Платформа готова к работе. Полезные ресурсы:">Your platform is ready. Here are some helpful resources:</p>
+            <div class="onboarding-resources">
+              <button class="onboarding-resource-btn" onclick="onboardingAction('guide')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                <div>
+                  <strong data-en="Read the Guide" data-ru="Читать руководство">Read the Guide</strong>
+                  <span data-en="Learn everything about the platform" data-ru="Узнайте всё о платформе">Learn everything about the platform</span>
+                </div>
+              </button>
+              <button class="onboarding-resource-btn" onclick="onboardingAction('telegram')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                <div>
+                  <strong data-en="Open Telegram Bot" data-ru="Открыть бота в Telegram">Open Telegram Bot</strong>
+                  <span data-en="Manage agents directly from Telegram" data-ru="Управляйте агентами прямо из Telegram">Manage agents directly from Telegram</span>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          <!-- Navigation buttons -->
+          <div class="onboarding-nav">
+            <button class="btn btn-ghost onboarding-skip-btn" onclick="dismissOnboarding()">
+              <span data-en="Skip" data-ru="Пропустить">Skip</span>
             </button>
-            <button class="btn btn-ghost" onclick="dismissOnboarding()">
-              <span data-en="Skip for now" data-ru="Пропустить">Skip for now</span>
-            </button>
+            <div class="onboarding-nav-right">
+              <button class="btn btn-ghost btn-sm onboarding-back-btn" id="onboarding-back-btn" onclick="onboardingPrev()" style="display:none">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                <span data-en="Back" data-ru="Назад">Back</span>
+              </button>
+              <button class="btn btn-primary onboarding-next-btn" id="onboarding-next-btn" onclick="onboardingNext()">
+                <span id="onboarding-next-label" data-en="Get Started" data-ru="Начать">Get Started</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -2180,6 +2429,7 @@
         <button class="settings-tab" onclick="switchSettingsTab('telegram')" data-tab="telegram"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Telegram</button>
         <button class="settings-tab" onclick="switchSettingsTab('chat')" data-tab="chat"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg> Chat</button>
         <button class="settings-tab" onclick="switchSettingsTab('audit')" data-tab="audit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> Audit</button>
+        <button class="settings-tab" onclick="switchSettingsTab('advanced')" data-tab="advanced"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg> Advanced</button>
       </div>
       <div class="agent-settings-body" id="agent-settings-body">
         <!-- Filled by JS -->

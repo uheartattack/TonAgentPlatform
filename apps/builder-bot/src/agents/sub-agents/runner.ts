@@ -5,6 +5,7 @@ import { getMemoryManager } from '../../db/memory';
 import { notifyAgentResult, notifyUser } from '../../notifier';
 import { getUserSettingsRepository } from '../../db/schema-extensions';
 import { getAIAgentRuntime, addMessageToAIAgent } from '../ai-agent-runtime';
+import { broadcastWSEvent } from '../../api-server';
 
 // Загрузить пользовательские переменные из user_settings (безопасно, без ошибок)
 async function loadUserVariables(userId: number): Promise<Record<string, any>> {
@@ -148,6 +149,11 @@ export class RunnerAgent {
         // Activate in DB
         await this.dbTools.updateAgent(params.agentId, params.userId, { isActive: true });
 
+        broadcastWSEvent(params.userId, {
+          type: 'agent_started', agentId: params.agentId,
+          agentName: agent.name, timestamp: Date.now(),
+        });
+
         return {
           success: true,
           data: {
@@ -191,6 +197,19 @@ export class RunnerAgent {
                 error: `Агент упал с ошибкой: ${result.error}`,
                 scheduled: true,
               }).catch(() => {});
+              broadcastWSEvent(params.userId, {
+                type: 'agent_error', agentId: params.agentId,
+                agentName: agent.name,
+                data: { error: result.error },
+                timestamp: Date.now(),
+              });
+            } else {
+              broadcastWSEvent(params.userId, {
+                type: 'agent_tick', agentId: params.agentId,
+                agentName: agent.name,
+                data: { success: result.success },
+                timestamp: Date.now(),
+              });
             }
           },
         });
@@ -201,6 +220,11 @@ export class RunnerAgent {
 
         // Активируем в БД
         await this.dbTools.updateAgent(params.agentId, params.userId, { isActive: true });
+
+        broadcastWSEvent(params.userId, {
+          type: 'agent_started', agentId: params.agentId,
+          agentName: agent.name, timestamp: Date.now(),
+        });
 
         const intervalLabel = ms >= 3_600_000
           ? `${ms / 3_600_000} ч`
@@ -241,6 +265,13 @@ export class RunnerAgent {
 
       // Для manual агентов НЕ меняем isActive - они остаются "paused" после однократного выполнения
       // isActive=true только для scheduled агентов которые работают постоянно
+
+      broadcastWSEvent(params.userId, {
+        type: 'agent_tick', agentId: params.agentId,
+        agentName: agent.name,
+        data: { success: executionResult.data?.success },
+        timestamp: Date.now(),
+      });
 
       // Логируем
       await getMemoryManager().addMessage(
@@ -333,6 +364,14 @@ export class RunnerAgent {
 
     // Деактивируем в БД
     const result = await this.dbTools.updateAgent(agentId, userId, { isActive: false });
+
+    if (result.success) {
+      broadcastWSEvent(userId, {
+        type: 'agent_stopped', agentId,
+        agentName: result.data?.name,
+        timestamp: Date.now(),
+      });
+    }
 
     return {
       success: result.success,
