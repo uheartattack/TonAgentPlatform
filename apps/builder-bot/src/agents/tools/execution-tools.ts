@@ -742,6 +742,44 @@ export class ExecutionTools {
             return getGiftAssetClient().getUserGifts({ username, telegramId });
           },
 
+          // ── Image processing ──
+          imageDownload: async (url: string) => {
+            const { downloadImage } = await import('../../services/image-service');
+            return downloadImage(url);
+          },
+          imageResize: async (path: string, width?: number, height?: number) => {
+            const { resizeImage } = await import('../../services/image-service');
+            return resizeImage(path, width, height);
+          },
+          imageCrop: async (path: string, left: number, top: number, width: number, height: number) => {
+            const { cropImage } = await import('../../services/image-service');
+            return cropImage(path, left, top, width, height);
+          },
+          imageAddText: async (path: string, text: string, position?: 'top' | 'bottom' | 'center', fontSize?: number, color?: string) => {
+            const { addTextOverlay } = await import('../../services/image-service');
+            return addTextOverlay(path, text, position || 'bottom', fontSize || 32, color || 'white');
+          },
+          imageFilter: async (path: string, filter: string) => {
+            const { applyFilter } = await import('../../services/image-service');
+            return applyFilter(path, filter as any);
+          },
+          imageConvert: async (path: string, format: string) => {
+            const { convertImage } = await import('../../services/image-service');
+            return convertImage(path, format as any);
+          },
+          imageInfo: async (path: string) => {
+            const { getImageInfo } = await import('../../services/image-service');
+            return getImageInfo(path);
+          },
+          imageComposite: async (basePath: string, overlayPath: string, x?: number, y?: number, opacity?: number) => {
+            const { compositeImages } = await import('../../services/image-service');
+            return compositeImages(basePath, overlayPath, x || 0, y || 0, opacity ?? 1);
+          },
+          imageCreateText: async (text: string, width?: number, height?: number, bgColor?: string, textColor?: string, fontSize?: number) => {
+            const { createTextImage } = await import('../../services/image-service');
+            return createTextImage(text, width || 800, height || 400, bgColor || '#1a1a2e', textColor || 'white', fontSize || 48);
+          },
+
           // ── Plugins ──
           listPlugins: async () => {
             const { getPluginManager } = await import('../../plugins-system');

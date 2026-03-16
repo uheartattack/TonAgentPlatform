@@ -1338,11 +1338,11 @@ RESPONSE FORMAT — valid JSON:
         const errorCount = Number(row.error_count);
         const userId = row.user_id;
 
-        // Check self_improvement_enabled flag (default: true for backward compat)
-        let selfImprovementEnabled = true;
+        // Check self_improvement_enabled flag (default: false — user must opt-in)
+        let selfImprovementEnabled = false;
         try {
           const tc = typeof row.trigger_config === 'string' ? JSON.parse(row.trigger_config) : (row.trigger_config || {});
-          if (tc.config?.self_improvement_enabled === false) selfImprovementEnabled = false;
+          if (tc.config?.self_improvement_enabled === true) selfImprovementEnabled = true;
         } catch {}
         if (!selfImprovementEnabled) continue;
 
@@ -1404,11 +1404,11 @@ RESPONSE FORMAT — valid JSON:
 
       for (const row of aiAgentResult.rows) {
         const agentId = Number(row.agent_id);
-        // Check self_improvement flag
-        let enabled = true;
+        // Check self_improvement flag (default: false — user must opt-in)
+        let enabled = false;
         try {
           const tc = typeof row.trigger_config === 'string' ? JSON.parse(row.trigger_config) : (row.trigger_config || {});
-          if (tc.config?.self_improvement_enabled === false) enabled = false;
+          if (tc.config?.self_improvement_enabled === true) enabled = true;
         } catch {}
         if (!enabled) continue;
 

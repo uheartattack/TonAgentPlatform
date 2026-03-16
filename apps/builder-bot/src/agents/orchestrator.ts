@@ -1340,7 +1340,7 @@ ${focus}
       config: {
         AI_PROVIDER: userVars.AI_PROVIDER || '',
         AI_API_KEY: userVars.AI_API_KEY || '',
-        self_improvement_enabled: true,
+        self_improvement_enabled: false,
         enabledCapabilities: ALL_CAPABILITIES,
         ...(routingRules ? { routingRules } : {}),
       },
