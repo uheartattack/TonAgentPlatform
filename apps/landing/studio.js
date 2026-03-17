@@ -951,6 +951,9 @@ function switchSettingsTab(tab) {
   // Update tab buttons
   document.querySelectorAll('.settings-tab').forEach(function(b) {
     b.classList.toggle('active', b.getAttribute('data-tab') === tab);
+    if (b.getAttribute('data-tab') === tab) {
+      b.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    }
   });
   var body = document.getElementById('agent-settings-body');
   if (!body || !_detailAgentData) return;
@@ -1042,43 +1045,50 @@ function switchSettingsTab(tab) {
         defaultModel: 'gemini-2.5-flash',
         keyUrl: 'https://aistudio.google.com/apikey',
         keyHint: isRu ? 'Google AI Studio → Get API Key → Create. Бесплатно до 1500 req/day.' : 'Google AI Studio → Get API Key → Create. Free up to 1500 req/day.',
-        keyPrefix: 'AIzaSy...' },
+        keyPrefix: 'AIzaSy...',
+        rating: isRu ? 'Качество \u2605\u2605\u2605\u2606 | Скорость \u2605\u2605\u2605\u2605 | Цена: бесплатно' : 'Quality \u2605\u2605\u2605\u2606 | Speed \u2605\u2605\u2605\u2605 | Price: free' },
       { id: 'openai', name: 'OpenAI', color: '#10a37f', desc: 'GPT-4o',
         models: 'gpt-4o-mini (cheap), gpt-4o (smart), o3-mini (reasoning)',
         defaultModel: 'gpt-4o-mini',
         keyUrl: 'https://platform.openai.com/api-keys',
         keyHint: isRu ? 'platform.openai.com → API Keys → Create. Нужна оплата от $5.' : 'platform.openai.com → API Keys → Create. Requires $5+ credit.',
-        keyPrefix: 'sk-proj-...' },
+        keyPrefix: 'sk-proj-...',
+        rating: isRu ? 'Качество \u2605\u2605\u2605\u2605 | Скорость \u2605\u2605\u2605\u2606 | Цена: $$' : 'Quality \u2605\u2605\u2605\u2605 | Speed \u2605\u2605\u2605\u2606 | Price: $$' },
       { id: 'anthropic', name: 'Anthropic', color: '#d97706', desc: 'Claude',
         models: 'claude-haiku-4-5 (fast), claude-sonnet-4 (smart), claude-opus-4 (best)',
         defaultModel: 'claude-haiku-4-5-20251001',
         keyUrl: 'https://console.anthropic.com/settings/keys',
         keyHint: isRu ? 'console.anthropic.com → API Keys → Create Key. Нужна оплата от $5.' : 'console.anthropic.com → API Keys → Create Key. Requires $5+ credit.',
-        keyPrefix: 'sk-ant-...' },
+        keyPrefix: 'sk-ant-...',
+        rating: isRu ? 'Качество \u2605\u2605\u2605\u2605 | Скорость \u2605\u2605\u2605\u2606 | Цена: $$' : 'Quality \u2605\u2605\u2605\u2605 | Speed \u2605\u2605\u2605\u2606 | Price: $$' },
       { id: 'groq', name: 'Groq', color: '#f55036', desc: 'Llama 3 (fast)',
         models: 'llama-3.3-70b-versatile (free), mixtral-8x7b (free)',
         defaultModel: 'llama-3.3-70b-versatile',
         keyUrl: 'https://console.groq.com/keys',
         keyHint: isRu ? 'console.groq.com → API Keys → Create. Полностью бесплатно!' : 'console.groq.com → API Keys → Create. Completely free!',
-        keyPrefix: 'gsk_...' },
+        keyPrefix: 'gsk_...',
+        rating: isRu ? 'Качество \u2605\u2605\u2605\u2606 | Скорость \u2605\u2605\u2605\u2605 | Цена: бесплатно' : 'Quality \u2605\u2605\u2605\u2606 | Speed \u2605\u2605\u2605\u2605 | Price: free' },
       { id: 'deepseek', name: 'DeepSeek', color: '#4f46e5', desc: 'DeepSeek V3',
         models: 'deepseek-chat (V3, cheap), deepseek-reasoner (R1)',
         defaultModel: 'deepseek-chat',
         keyUrl: 'https://platform.deepseek.com/api_keys',
         keyHint: isRu ? 'platform.deepseek.com → API Keys. Очень дёшево, ~$0.14/M tokens.' : 'platform.deepseek.com → API Keys. Very cheap, ~$0.14/M tokens.',
-        keyPrefix: 'sk-...' },
+        keyPrefix: 'sk-...',
+        rating: isRu ? 'Качество \u2605\u2605\u2605\u2605 | Скорость \u2605\u2605\u2605\u2606 | Цена: $' : 'Quality \u2605\u2605\u2605\u2605 | Speed \u2605\u2605\u2605\u2606 | Price: $' },
       { id: 'openrouter', name: 'OpenRouter', color: '#6366f1', desc: 'Multi-model',
         models: 'google/gemini-2.5-flash (free), meta-llama/llama-3.3-70b (free)',
         defaultModel: 'google/gemini-2.5-flash',
         keyUrl: 'https://openrouter.ai/keys',
         keyHint: isRu ? 'openrouter.ai → Keys. Один ключ → 200+ моделей. Есть бесплатные модели.' : 'openrouter.ai → Keys. One key → 200+ models. Free models available.',
-        keyPrefix: 'sk-or-...' },
+        keyPrefix: 'sk-or-...',
+        rating: isRu ? 'Качество \u2605\u2605\u2605\u2605 | Скорость \u2605\u2605\u2605\u2606 | Цена: varies' : 'Quality \u2605\u2605\u2605\u2605 | Speed \u2605\u2605\u2605\u2606 | Price: varies' },
       { id: 'together', name: 'Together', color: '#0ea5e9', desc: 'Open-source',
         models: 'meta-llama/Llama-3.3-70B-Instruct-Turbo, Qwen/Qwen2.5-72B',
         defaultModel: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
         keyUrl: 'https://api.together.ai/settings/api-keys',
         keyHint: isRu ? 'together.ai → Settings → API Keys. $5 бесплатных кредитов при регистрации.' : 'together.ai → Settings → API Keys. $5 free credit on signup.',
-        keyPrefix: '' },
+        keyPrefix: '',
+        rating: isRu ? 'Качество \u2605\u2605\u2605\u2606 | Скорость \u2605\u2605\u2605\u2605 | Цена: $' : 'Quality \u2605\u2605\u2605\u2606 | Speed \u2605\u2605\u2605\u2605 | Price: $' },
     ];
 
     // Find current provider info for the detail panel
@@ -1102,7 +1112,8 @@ function switchSettingsTab(tab) {
           var sel = p.id === aiProvider;
           return '<div class="st-provider-card' + (sel ? ' st-prov-active' : '') + '" onclick="selectAIProvider(\'' + p.id + '\')">' +
             '<div class="st-prov-dot" style="background:' + p.color + '"></div>' +
-            '<div class="st-prov-info"><div class="st-prov-name">' + p.name + '</div><div class="st-prov-desc">' + p.desc + '</div></div>' +
+            '<div class="st-prov-info"><div class="st-prov-name">' + p.name + '</div><div class="st-prov-desc">' + p.desc + '</div>' +
+            '<div class="st-prov-rating">' + (p.rating || '') + '</div></div>' +
             (sel ? '<span style="color:var(--primary)">' + IC.check + '</span>' : '') +
           '</div>';
         }).join('') +
@@ -1126,6 +1137,15 @@ function switchSettingsTab(tab) {
           '<div class="rt-input-hint">' + (isRu ? 'Оставьте пустым — будет использована модель по умолчанию' : 'Leave empty for the default model') +
             (currentProv ? '<br>' + (isRu ? 'Доступные: ' : 'Available: ') + '<code style="font-size:.75rem">' + currentProv.models + '</code>' : '') +
           '</div>' +
+        '</div>' +
+      '</div>' +
+
+      // Utility model input
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + IC.bolt + ' ' + (isRu ? 'Утилитарная модель' : 'Utility Model') + '</div>' +
+        '<div class="rt-input-wrap">' +
+          '<input type="text" id="ai-utility-model-input" class="rt-input" value="' + escHtml((config.config && config.config.AI_UTILITY_MODEL) || '') + '" placeholder="' + (isRu ? 'auto' : 'auto') + '">' +
+          '<div class="rt-input-hint">' + (isRu ? 'Лёгкая модель для суммаризации и vision. Оставьте пустым для авто-выбора.' : 'Lightweight model for summarization and vision. Leave empty for auto.') + '</div>' +
         '</div>' +
       '</div>' +
 
@@ -1226,6 +1246,28 @@ function switchSettingsTab(tab) {
         '</div>' +
         '<span class="st-caps-counter">' + enabledCount + ' / ' + allCaps.length + '</span>' +
       '</div>' +
+
+      // Tool category quick-toggles
+      '<div class="st-tool-categories">' +
+        '<div class="rt-section-label" style="margin-bottom:8px">' + IC.bolt + ' ' + (isRu ? 'Категории инструментов' : 'Tool Categories') + '</div>' +
+        [
+          { cat: 'telegram', ids: ['telegram'], label: isRu ? 'Telegram (сообщения, медиа, админ)' : 'Telegram (messaging, media, admin)' },
+          { cat: 'ton', ids: ['wallet', 'blockchain', 'ton_mcp'], label: isRu ? 'TON Blockchain (кошелёк, баланс, NFT)' : 'TON Blockchain (wallet, balance, NFT)' },
+          { cat: 'trading', ids: ['gifts', 'gifts_market', 'defi'], label: isRu ? 'Gifts & Trading' : 'Gifts & Trading' },
+          { cat: 'media', ids: ['media'], label: isRu ? 'Обработка изображений' : 'Image Processing' },
+          { cat: 'websearch', ids: ['web'], label: isRu ? 'Веб-поиск' : 'Web Search' },
+          { cat: 'plugins', ids: ['plugins', 'blockchain_analytics', 'prompts', 'knowledge', 'security'], label: isRu ? 'Плагины (аналитика, заметки, напоминания)' : 'Plugins (analytics, notes, reminders)' },
+          { cat: 'workspace', ids: ['state', 'notify', 'inter_agent'], label: isRu ? 'Workspace (файлы, состояние)' : 'Workspace (file management)' },
+          { cat: 'mcp', ids: ['discord', 'x_twitter'], label: isRu ? 'MCP (внешние серверы)' : 'MCP (external servers)' },
+        ].map(function(g) {
+          var allOn = g.ids.every(function(id) { return enabled.includes(id); });
+          return '<label class="st-cat-toggle" onclick="toggleCapCategory(this, ' + JSON.stringify(g.ids).replace(/"/g, "'") + ')">' +
+            '<input type="checkbox"' + (allOn ? ' checked' : '') + ' class="st-cat-cb">' +
+            '<span class="st-cat-label">' + g.label + '</span>' +
+          '</label>';
+        }).join('') +
+      '</div>' +
+
       '<div class="st-caps-grid">' +
       allCaps.map(function(c) {
         var ch = enabled.includes(c.id);
@@ -2043,10 +2085,13 @@ async function saveSettingsAI() {
   var provider = document.getElementById('ai-provider-select').value;
   var model = document.getElementById('ai-model-input').value.trim();
   var apiKey = document.getElementById('ai-key-input').value.trim();
+  var utilityModel = (document.getElementById('ai-utility-model-input') || {}).value || '';
+  utilityModel = utilityModel.trim();
   var payload = {};
   if (provider) payload.provider = provider;
   if (model) payload.model = model;
   if (apiKey) payload.apiKey = apiKey;
+  if (utilityModel) payload.utilityModel = utilityModel;
   var data = await apiRequest('PUT', '/api/agents/' + _detailAgentId + '/provider', payload);
   if (data.ok) toast(currentLang === 'ru' ? 'AI настройки обновлены' : 'AI settings updated', 'success');
   else toast(data.error || 'Error', 'error');
@@ -2064,12 +2109,35 @@ function toggleCapCard(el, capId) {
   el.classList.toggle('st-cap-active');
   var sw = el.querySelector('.st-cap-switch');
   if (sw) sw.classList.toggle('st-cap-on');
+  _updateCapsCounter();
+}
+
+function _updateCapsCounter() {
   var counter = document.querySelector('.st-caps-counter');
   if (counter) {
     var count = document.querySelectorAll('.st-cap-active').length;
     var total = document.querySelectorAll('.st-cap-card').length;
     counter.textContent = count + ' / ' + total;
   }
+}
+
+function toggleCapCategory(labelEl, ids) {
+  var cb = labelEl.querySelector('.st-cat-cb');
+  var shouldEnable = cb.checked;
+  ids.forEach(function(id) {
+    var card = document.querySelector('.st-cap-card[data-cap="' + id + '"]');
+    if (!card) return;
+    if (shouldEnable && !card.classList.contains('st-cap-active')) {
+      card.classList.add('st-cap-active');
+      var sw = card.querySelector('.st-cap-switch');
+      if (sw) sw.classList.add('st-cap-on');
+    } else if (!shouldEnable && card.classList.contains('st-cap-active')) {
+      card.classList.remove('st-cap-active');
+      var sw = card.querySelector('.st-cap-switch');
+      if (sw) sw.classList.remove('st-cap-on');
+    }
+  });
+  _updateCapsCounter();
 }
 
 function selectRoleCard(el, roleId) {

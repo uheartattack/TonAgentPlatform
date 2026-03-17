@@ -131,6 +131,62 @@ function getAIClient(config: Record<string, any>): { client: OpenAI; defaultMode
   return { client: new OpenAI({ baseURL: finalURL, apiKey }), defaultModel };
 }
 
+// ── Dual model: utility (lighter/cheaper) model for summarization, vision, transcription ──
+
+interface UtilityProviderCfg { baseURL: string; model: string; }
+
+/** Map provider → lighter/cheaper model for utility tasks */
+export function resolveUtilityProvider(provider: string): UtilityProviderCfg {
+  const p = (provider || '').toLowerCase();
+  if (p.includes('gemini') || p.includes('google')) {
+    return { baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/', model: 'gemini-2.0-flash-lite' };
+  }
+  if (p.includes('anthropic') || p.includes('claude')) {
+    return { baseURL: 'https://openrouter.ai/api/v1', model: 'anthropic/claude-haiku-4-5-20251001' };
+  }
+  if (p.includes('groq')) {
+    return { baseURL: 'https://api.groq.com/openai/v1', model: 'llama-3.1-8b-instant' };
+  }
+  if (p.includes('deepseek')) {
+    return { baseURL: 'https://api.deepseek.com/v1', model: 'deepseek-chat' };
+  }
+  if (p.includes('openrouter')) {
+    return { baseURL: 'https://openrouter.ai/api/v1', model: 'google/gemini-2.0-flash-lite' };
+  }
+  if (p.includes('together')) {
+    return { baseURL: 'https://api.together.xyz/v1', model: 'meta-llama/Llama-3.1-8B-Instruct-Turbo' };
+  }
+  // Default: OpenAI
+  return { baseURL: 'https://api.openai.com/v1', model: 'gpt-4o-mini' };
+}
+
+/**
+ * Get utility AI client (lighter model for summarization, vision, transcription).
+ * Uses UTILITY_MODEL from config if set, otherwise falls back to provider's lite model.
+ * Falls back to main model if no separate utility config.
+ */
+export function getUtilityAIClient(config: Record<string, any>): { client: OpenAI; model: string } {
+  const apiKey = (config.AI_API_KEY as string) || '';
+  const provider = (config.AI_PROVIDER as string) || '';
+  const utilityModel = (config.UTILITY_MODEL as string) || '';
+
+  if (!apiKey) {
+    throw new Error('NO_API_KEY');
+  }
+
+  // If explicit utility model is configured, use it with the same provider
+  if (utilityModel) {
+    const { baseURL } = resolveProvider(provider);
+    const finalURL = (config.AI_BASE_URL as string) || baseURL;
+    return { client: new OpenAI({ baseURL: finalURL, apiKey }), model: utilityModel };
+  }
+
+  // Otherwise use provider's default lite model
+  const utilCfg = resolveUtilityProvider(provider);
+  const finalURL = (config.AI_BASE_URL as string) || utilCfg.baseURL;
+  return { client: new OpenAI({ baseURL: finalURL, apiKey }), model: utilCfg.model };
+}
+
 // ── Markdown → HTML converter (for AI-generated text) ─────────────────────
 export function mdToHtml(text: string): string {
   // If text already has HTML tags (AI sometimes outputs <b> directly) — pass through as-is.
@@ -2999,23 +3055,7 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
   return allTools;
 }
 
-// ── Tool RAG: select top-K relevant tools per message ──────────────────────
-
-const TOOL_RELEVANCE: Record<string, string[]> = {
-  'get_ton_balance|send_ton|get_agent_wallet|get_nft_floor|send_jetton': ['ton', 'тон', 'крипт', 'crypto', 'баланс', 'balance', 'кошел', 'wallet', 'nft', 'отправ', 'send', 'перевод', 'transfer'],
-  'get_gift_floor|scan_real_arbitrage|get_market_overview|get_price_list|buy_catalog_gift|buy_resale_gift|list_gift_for_sale|get_gift_aggregator|get_user_portfolio|get_gift_sales_history': ['подарк', 'gift', 'арбитраж', 'arbitrage', 'трейд', 'trade', 'торг', 'buy', 'sell', 'купить', 'продать', 'floor', 'маркет', 'market'],
-  'image_download|image_resize|image_crop|image_add_text|image_filter|image_convert|image_info|image_composite|image_create_text|image_analyze': ['фото', 'photo', 'картинк', 'image', 'изображ', 'picture', 'resize', 'crop', 'фильтр', 'filter', 'водяной знак', 'watermark', 'текст на', 'мем', 'meme'],
-  'web_search|fetch_url|tg_get_webpage': ['поиск', 'search', 'найди', 'find', 'сайт', 'site', 'url', 'http', 'ссылк', 'link', 'новост', 'news', 'статья', 'article'],
-  'tg_send_formatted|tg_pin|tg_unpin|tg_set_chat_title|tg_set_chat_about|tg_set_chat_photo|tg_create_invite_link|tg_get_channel_info|tg_get_comments|tg_schedule_message': ['канал', 'channel', 'пост', 'post', 'публик', 'publish', 'закреп', 'pin', 'описание', 'about', 'название', 'title', 'инвайт', 'invite'],
-  'tg_kick_user|tg_ban_user|tg_unban_user|tg_mute_user|tg_set_admin|tg_get_admins': ['бан', 'ban', 'кик', 'kick', 'мут', 'mute', 'админ', 'admin', 'модер', 'moder'],
-  'tg_send_file|tg_send_album|tg_copy_media|tg_get_media_info|tg_send_sticker|tg_send_gif|tg_send_voice': ['медиа', 'media', 'файл', 'file', 'фото', 'photo', 'видео', 'video', 'стикер', 'sticker', 'гиф', 'gif', 'голос', 'voice', 'альбом', 'album'],
-  'tg_create_poll|tg_get_poll_results': ['голосов', 'poll', 'опрос', 'quiz', 'vote'],
-  'get_state|set_state|knowledge_save|knowledge_search|add_contact_note|add_chat_note|get_contact_dossier|get_chat_dossier|save_lesson': ['запомн', 'remember', 'память', 'memory', 'состояние', 'state', 'знания', 'knowledge', 'досье', 'dossier', 'контакт', 'contact'],
-  'update_self_prompt|update_my_prompt|rollback_prompt': ['промпт', 'prompt', 'улучш', 'improv', 'обнов', 'update', 'измени себя'],
-  'ton_get_account|ton_get_transactions|ton_get_jettons|ton_get_nfts|ton_run_method|ton_get_rates|ton_dns_resolve': ['блокчейн', 'blockchain', 'транзакц', 'transaction', 'аккаунт', 'account', 'jetton', 'жетон', 'dns'],
-  'dex_get_prices|dex_swap_simulate': ['dex', 'дефи', 'defi', 'swap', 'обмен', 'цена', 'price', 'dedust', 'ston'],
-  'buy_market_gift|get_fragment_listings|appraise_gift|get_gift_catalog': ['fragment', 'фрагмент', 'каталог', 'catalog', 'оценк', 'apprais', 'листинг', 'listing'],
-};
+// ── Tool RAG: TF-IDF embedding-based relevant tool selection ──────────────
 
 const CORE_TOOLS = new Set([
   'tg_reply', 'tg_send_message', 'tg_get_messages', 'tg_react', 'tg_edit',
@@ -3026,39 +3066,171 @@ const CORE_TOOLS = new Set([
   'tg_get_channel_info', 'tg_send_formatted',
 ]);
 
-export function selectRelevantTools(allTools: any[], message: string, systemPrompt: string, maxTools: number = 40): any[] {
+// ── TF-IDF vectorizer (lightweight, in-process, no external deps) ──
+
+// Bilingual stopwords (EN + RU) to filter out noise
+const STOP_WORDS = new Set([
+  'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+  'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+  'should', 'may', 'might', 'shall', 'can', 'to', 'of', 'in', 'for',
+  'on', 'with', 'at', 'by', 'from', 'as', 'into', 'through', 'during',
+  'before', 'after', 'and', 'but', 'or', 'nor', 'not', 'no', 'so',
+  'if', 'then', 'than', 'too', 'very', 'just', 'that', 'this', 'it',
+  'its', 'my', 'your', 'his', 'her', 'our', 'their', 'all', 'any',
+  'each', 'which', 'what', 'when', 'where', 'how', 'who', 'whom',
+  'и', 'в', 'на', 'с', 'по', 'для', 'из', 'к', 'от', 'до', 'за',
+  'не', 'но', 'а', 'или', 'то', 'как', 'что', 'это', 'он', 'она',
+  'они', 'мы', 'вы', 'его', 'её', 'их', 'наш', 'ваш', 'свой',
+  'все', 'весь', 'каждый', 'который', 'где', 'когда', 'если',
+  'уже', 'ещё', 'так', 'тоже', 'только', 'очень', 'при', 'об',
+  'the', 'returns', 'return', 'using', 'use', 'used', 'optional',
+  'required', 'string', 'number', 'boolean', 'object', 'array',
+]);
+
+/** Tokenize text into lowercase terms, split on non-alphanumeric + underscore */
+function tokenize(text: string): string[] {
+  return text.toLowerCase()
+    .replace(/[_\-]/g, ' ')              // underscores/dashes → spaces
+    .replace(/[^a-zа-яё0-9\s]/gi, ' ')  // strip punctuation
+    .split(/\s+/)
+    .filter(t => t.length > 1 && !STOP_WORDS.has(t));
+}
+
+/** Sparse vector as Map<term, weight> */
+type SparseVec = Map<string, number>;
+
+/** Build IDF from a corpus of documents (each doc = array of tokens) */
+function buildIDF(docs: string[][]): Map<string, number> {
+  const docCount = docs.length;
+  const df = new Map<string, number>(); // document frequency
+  for (const tokens of docs) {
+    const unique = new Set(tokens);
+    for (const t of unique) {
+      df.set(t, (df.get(t) || 0) + 1);
+    }
+  }
+  const idf = new Map<string, number>();
+  for (const [term, count] of df) {
+    // Smooth IDF: log((N+1) / (df+1)) + 1
+    idf.set(term, Math.log((docCount + 1) / (count + 1)) + 1);
+  }
+  return idf;
+}
+
+/** Compute TF-IDF vector for a document given global IDF */
+function tfidfVector(tokens: string[], idf: Map<string, number>): SparseVec {
+  const tf = new Map<string, number>();
+  for (const t of tokens) {
+    tf.set(t, (tf.get(t) || 0) + 1);
+  }
+  const vec: SparseVec = new Map();
+  for (const [term, count] of tf) {
+    const tfidf = (count / tokens.length) * (idf.get(term) || 1);
+    if (tfidf > 0) vec.set(term, tfidf);
+  }
+  return vec;
+}
+
+/** Cosine similarity between two sparse vectors */
+function cosineSim(a: SparseVec, b: SparseVec): number {
+  let dot = 0, normA = 0, normB = 0;
+  for (const [term, wa] of a) {
+    normA += wa * wa;
+    const wb = b.get(term);
+    if (wb !== undefined) dot += wa * wb;
+  }
+  for (const [, wb] of b) normB += wb * wb;
+  if (normA === 0 || normB === 0) return 0;
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+// ── Cached tool vectors (recomputed only when tool set changes) ──
+let _cachedToolVectors: Map<string, SparseVec> | null = null;
+let _cachedToolSignature = '';
+let _cachedIDF: Map<string, number> | null = null;
+
+function getToolVectors(allTools: any[]): { vectors: Map<string, SparseVec>; idf: Map<string, number> } {
+  // Build a signature to detect tool set changes
+  const sig = allTools.map(t => (t.function?.name || t.name || '')).sort().join(',');
+  if (_cachedToolVectors && _cachedIDF && sig === _cachedToolSignature) {
+    return { vectors: _cachedToolVectors, idf: _cachedIDF };
+  }
+
+  // Build corpus: one document per tool (name + description + param names)
+  const docs: string[][] = [];
+  const toolNames: string[] = [];
+
+  for (const t of allTools) {
+    const fn = t.function || t;
+    const name = fn.name || '';
+    const desc = fn.description || '';
+    const paramNames = fn.parameters?.properties
+      ? Object.keys(fn.parameters.properties).join(' ')
+      : '';
+    // Create rich text representation of the tool
+    const toolText = `${name} ${name.replace(/_/g, ' ')} ${desc} ${paramNames}`;
+    docs.push(tokenize(toolText));
+    toolNames.push(name);
+  }
+
+  const idf = buildIDF(docs);
+  const vectors = new Map<string, SparseVec>();
+  for (let i = 0; i < docs.length; i++) {
+    vectors.set(toolNames[i], tfidfVector(docs[i], idf));
+  }
+
+  _cachedToolVectors = vectors;
+  _cachedIDF = idf;
+  _cachedToolSignature = sig;
+  console.log(`[ToolRAG] Built TF-IDF vectors for ${toolNames.length} tools (${idf.size} terms in vocabulary)`);
+
+  return { vectors, idf };
+}
+
+export function selectRelevantTools(allTools: any[], message: string, systemPrompt: string, maxTools: number = 55): any[] {
   if (allTools.length <= maxTools) return allTools;
 
-  const textLower = (message + ' ' + systemPrompt).toLowerCase();
+  const { vectors, idf } = getToolVectors(allTools);
+
+  // Build query vector from message + system prompt
+  const queryText = message + ' ' + systemPrompt;
+  const queryTokens = tokenize(queryText);
+  const queryVec = tfidfVector(queryTokens, idf);
+
+  // Determine complexity: longer messages or multi-sentence → more tools
+  const isComplex = queryTokens.length > 20 || message.includes('\n') || (message.match(/[.!?]/g) || []).length > 2;
+  const targetK = isComplex ? Math.min(maxTools, 30) : Math.min(maxTools, 15);
 
   const scored: { tool: any; score: number }[] = allTools.map(t => {
     const name = t.function?.name || t.name || '';
 
-    // Core tools always get high score
-    if (CORE_TOOLS.has(name)) return { tool: t, score: 100 };
+    // Core tools always included
+    if (CORE_TOOLS.has(name)) return { tool: t, score: 1000 };
 
-    // Check category relevance
-    let catScore = 0;
-    for (const [toolPattern, keywords] of Object.entries(TOOL_RELEVANCE)) {
-      if (new RegExp(toolPattern).test(name)) {
-        for (const kw of keywords) {
-          if (textLower.includes(kw)) { catScore = 50; break; }
-        }
-        break;
-      }
+    // Direct tool name mention in message → always include
+    const textLower = (message + ' ' + systemPrompt).toLowerCase();
+    if (textLower.includes(name) || textLower.includes(name.replace(/_/g, ' '))) {
+      return { tool: t, score: 500 };
     }
 
-    // Tool name mentioned in text
-    if (textLower.includes(name.replace(/_/g, ' ')) || textLower.includes(name)) catScore = Math.max(catScore, 60);
+    // TF-IDF cosine similarity
+    const toolVec = vectors.get(name);
+    if (!toolVec) return { tool: t, score: 0 };
+    const sim = cosineSim(queryVec, toolVec);
 
-    return { tool: t, score: catScore };
+    return { tool: t, score: sim };
   });
 
-  // Sort by score desc, take top maxTools
+  // Sort by score descending
   scored.sort((a, b) => b.score - a.score);
-  const selected = scored.slice(0, maxTools).map(s => s.tool);
 
-  console.log(`[ToolRAG] Selected ${selected.length}/${allTools.length} tools (${scored.filter(s => s.score > 0).length} relevant)`);
+  // Always include core + direct mentions, then fill up to targetK with top similarity
+  const coreCount = scored.filter(s => s.score >= 500).length;
+  const limit = Math.max(targetK, coreCount);
+  const selected = scored.slice(0, limit).map(s => s.tool);
+
+  const relevantCount = scored.filter(s => s.score > 0.01).length;
+  console.log(`[ToolRAG] TF-IDF selected ${selected.length}/${allTools.length} tools (${relevantCount} with sim>0.01, complexity=${isComplex ? 'high' : 'low'})`);
   return selected;
 }
 
@@ -5692,26 +5864,56 @@ export async function executeTool(
 
         const question = args.question || 'Describe this image in detail. What do you see?';
 
-        // Try to use Gemini Vision API (best for multimodal)
         const apiKey = (params.config.AI_API_KEY as string) || process.env.GEMINI_API_KEY || '';
         if (!apiKey) return { error: 'No API key for vision analysis. Set AI_API_KEY.' };
 
-        const visionResp = await fetch(
-          'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + apiKey,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ parts: [
-                { inlineData: { mimeType, data: base64 } },
-                { text: question },
-              ]}],
-            }),
-            signal: AbortSignal.timeout(30000),
-          }
-        );
-        const vData = await visionResp.json() as any;
-        return { description: vData?.candidates?.[0]?.content?.parts?.[0]?.text || 'No description available' };
+        // Use utility model for vision analysis (cheaper for image tasks)
+        const provider = (params.config.AI_PROVIDER as string) || '';
+        const utilityModel = (params.config.UTILITY_MODEL as string) || '';
+
+        // For Gemini provider or no provider set: use native Gemini vision API
+        const isGeminiKey = apiKey.startsWith('AIzaSy') || provider.includes('gemini') || provider.includes('google') || !provider;
+        if (isGeminiKey) {
+          const visionModel = utilityModel || 'gemini-2.0-flash-lite';
+          const visionResp = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${visionModel}:generateContent?key=` + apiKey,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{ parts: [
+                  { inlineData: { mimeType, data: base64 } },
+                  { text: question },
+                ]}],
+              }),
+              signal: AbortSignal.timeout(30000),
+            }
+          );
+          const vData = await visionResp.json() as any;
+          return { description: vData?.candidates?.[0]?.content?.parts?.[0]?.text || 'No description available', model: visionModel };
+        }
+
+        // For OpenAI-compatible providers: use utility client with vision message format
+        try {
+          const util = getUtilityAIClient(params.config);
+          const visionResp = await util.client.chat.completions.create({
+            model: util.model,
+            messages: [{
+              role: 'user',
+              content: [
+                { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64}` } },
+                { type: 'text', text: question },
+              ] as any,
+            }],
+            max_tokens: 1000,
+          });
+          return {
+            description: visionResp.choices[0]?.message?.content || 'No description available',
+            model: util.model,
+          };
+        } catch (visionErr: any) {
+          return { error: `Vision analysis failed: ${visionErr.message}` };
+        }
       } catch (e: any) { return { error: e.message }; }
     }
 
@@ -5958,7 +6160,17 @@ async function logToDb(agentId: number, level: string, message: string, userId =
 const CONSOLIDATION_INTERVAL = 20; // runs between consolidations
 const MAX_STATE_ENTRIES_BEFORE_CONSOLIDATION = 50;
 
-async function maybeConsolidateMemory(params: AIAgentTickParams, ai: OpenAI, model: string): Promise<void> {
+async function maybeConsolidateMemory(params: AIAgentTickParams, ai: OpenAI, model: string, config?: Record<string, any>): Promise<void> {
+  // Use utility model for summarization (cheaper/faster)
+  let utilAi = ai;
+  let utilModel = model;
+  if (config) {
+    try {
+      const util = getUtilityAIClient(config);
+      utilAi = util.client;
+      utilModel = util.model;
+    } catch { /* fall back to main model */ }
+  }
   const stateRepo = getAgentStateRepository();
   try {
     // Check if it's time to consolidate
@@ -6006,8 +6218,8 @@ COLD (удалять): устаревшие timestamps, завершённые �
 4. Верни JSON: { "keep": ["key1", "key2"], "delete": ["key3", "key4"], "summary": "Сжатая память агента" }
 5. НИКОГДА не удаляй ключи: kb:*, plan:*, mem: с importance=high`;
 
-    const response = await ai.chat.completions.create({
-      model,
+    const response = await utilAi.chat.completions.create({
+      model: utilModel,
       messages: [{ role: 'user', content: consolidationPrompt }],
       temperature: 0.1,
       max_tokens: 1000,
@@ -6973,7 +7185,7 @@ You MUST follow these rules AT ALL TIMES:
   } catch {}
 
   // ── Memory consolidation (periodic) ──
-  try { await maybeConsolidateMemory(params, ai, defaultModel); } catch (e: any) { console.warn('[Memory] consolidation:', e.message); }
+  try { await maybeConsolidateMemory(params, ai, defaultModel, params.config); } catch (e: any) { console.warn('[Memory] consolidation:', e.message); }
 
   // ── Finish execution tracking ──
   if (execId) {
