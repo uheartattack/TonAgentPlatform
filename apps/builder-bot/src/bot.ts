@@ -476,6 +476,17 @@ const qrPollingHandles = new Map<number, NodeJS.Timeout>();
 const complete2FAFns = new Map<number, Complete2FAFn>();
 
 // ============================================================
+// State machine для онбординга новых пользователей
+// ============================================================
+interface PendingOnboarding {
+  step: 'welcome' | 'provider' | 'apikey' | 'create_agent';
+  provider?: string;
+  apiKey?: string;
+  createdAt: number;
+}
+const pendingOnboarding = new Map<number, PendingOnboarding>(); // userId → state
+
+// ============================================================
 // Определение «мусорного» ввода (ываыва, aaaa, qwerty и т.п.)
 // ============================================================
 function isGarbageInput(text: string): boolean {
@@ -549,6 +560,7 @@ function _getAllPendingMaps(): [string, Map<any, any> | Set<any>][] {
     ['langSetup', pendingLangSetup],
     ['setup', pendingAgentSetup],
     ['pluginCreate', pendingPluginCreation],
+    ['onboarding', pendingOnboarding],
     ['topup', pendingTopup],
     ['2fa', complete2FAFns],
     ['repair', pendingRepairs], // keyed by string, not userId
@@ -627,6 +639,244 @@ bot.use(async (ctx, next) => {
   if (userId) console.log(`[${new Date().toISOString()}] ${ctx.from?.username || userId}: ${String(text).slice(0, 80)}`);
   return next();
 });
+
+// ============================================================
+// Onboarding Wizard — пошаговая настройка для новых пользователей
+// ============================================================
+
+const PROVIDER_INFO: Record<string, { emoji: string; name: string; price: string; speed: string; quality: string }> = {
+  gemini:     { emoji: '🔴', name: 'Gemini',     price: '💰 бесплатный',    speed: '⚡⚡⚡ быстрый',         quality: '🧠🧠 хороший' },
+  openai:     { emoji: '🟢', name: 'OpenAI',     price: '💰💰💰 дорогой',   speed: '⚡⚡ средний',           quality: '🧠🧠🧠 лучший' },
+  anthropic:  { emoji: '🟣', name: 'Anthropic',  price: '💰💰 средний',     speed: '⚡⚡ средний',           quality: '🧠🧠🧠 лучший' },
+  groq:       { emoji: '🔵', name: 'Groq',       price: '💰 дешёвый',       speed: '⚡⚡⚡ самый быстрый',   quality: '🧠🧠 хороший' },
+  deepseek:   { emoji: '🟠', name: 'DeepSeek',   price: '💰 дешёвый',       speed: '⚡⚡ средний',           quality: '🧠🧠🧠 умный' },
+  openrouter: { emoji: '🌐', name: 'OpenRouter', price: '💰💰 разный',      speed: '⚡⚡ зависит',           quality: '🧠🧠🧠 любая модель' },
+  together:   { emoji: '🤝', name: 'Together',   price: '💰 дешёвый',       speed: '⚡⚡⚡ быстрый',         quality: '🧠🧠 хороший' },
+};
+
+async function validateApiKey(provider: string, apiKey: string): Promise<{ ok: boolean; error?: string }> {
+  const prov = provider.toLowerCase();
+  let baseURL: string;
+  let model: string;
+
+  if (prov.includes('gemini') || prov.includes('google')) {
+    baseURL = 'https://generativelanguage.googleapis.com/v1beta/openai/';
+    model = 'gemini-2.0-flash';
+  } else if (prov.includes('anthropic')) {
+    // Anthropic uses its own API format, test via messages endpoint
+    try {
+      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 5, messages: [{ role: 'user', content: 'hi' }] }),
+      });
+      if (resp.ok || resp.status === 200) return { ok: true };
+      const body = await resp.text().catch(() => '');
+      if (resp.status === 401) return { ok: false, error: 'Неверный ключ (401 Unauthorized)' };
+      if (resp.status === 403) return { ok: false, error: 'Ключ заблокирован (403 Forbidden)' };
+      return { ok: false, error: `Ошибка ${resp.status}: ${body.slice(0, 100)}` };
+    } catch (e: any) {
+      return { ok: false, error: e.message || String(e) };
+    }
+  } else if (prov.includes('groq')) {
+    baseURL = 'https://api.groq.com/openai/v1';
+    model = 'llama-3.3-70b-versatile';
+  } else if (prov.includes('deepseek')) {
+    baseURL = 'https://api.deepseek.com/v1';
+    model = 'deepseek-chat';
+  } else if (prov.includes('openrouter')) {
+    baseURL = 'https://openrouter.ai/api/v1';
+    model = 'google/gemini-2.5-flash';
+  } else if (prov.includes('together')) {
+    baseURL = 'https://api.together.xyz/v1';
+    model = 'meta-llama/Llama-3.3-70B-Instruct-Turbo';
+  } else {
+    baseURL = 'https://api.openai.com/v1';
+    model = 'gpt-4o-mini';
+  }
+
+  // OpenAI-compatible test
+  try {
+    const resp = await fetch(`${baseURL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ model, messages: [{ role: 'user', content: 'hi' }], max_tokens: 5 }),
+    });
+    if (resp.ok || resp.status === 200) return { ok: true };
+    if (resp.status === 401) return { ok: false, error: 'Неверный ключ (401 Unauthorized)' };
+    if (resp.status === 403) return { ok: false, error: 'Ключ заблокирован (403 Forbidden)' };
+    const body = await resp.text().catch(() => '');
+    return { ok: false, error: `Ошибка ${resp.status}: ${body.slice(0, 100)}` };
+  } catch (e: any) {
+    return { ok: false, error: e.message || String(e) };
+  }
+}
+
+async function showOnboardingStep(ctx: Context, userId: number, lang: 'ru' | 'en') {
+  const state = pendingOnboarding.get(userId);
+  if (!state) return;
+
+  const ru = lang === 'ru';
+
+  if (state.step === 'welcome') {
+    const name = ctx.from?.first_name || ctx.from?.username || (ru ? 'друг' : 'friend');
+    const text = ru
+      ? `${pe('sparkles')} <b>Добро пожаловать в TON Agent Platform!</b>\n\n` +
+        `Привет, ${escHtml(name)}! Давай настроим платформу за пару минут.\n\n` +
+        `${pe('brain')} <b>Что умеет платформа:</b>\n` +
+        `• AI-агенты работают 24/7 автономно\n` +
+        `• 20+ инструментов: TON, DeFi, подарки, парсинг\n` +
+        `• 7 AI-провайдеров на выбор\n` +
+        `• Маркетплейс готовых агентов\n\n` +
+        `${pe('bolt')} Нажмите <b>Начать настройку</b>, чтобы выбрать AI-провайдера.`
+      : `${pe('sparkles')} <b>Welcome to TON Agent Platform!</b>\n\n` +
+        `Hey ${escHtml(name)}! Let's set up the platform in a couple of minutes.\n\n` +
+        `${pe('brain')} <b>What the platform can do:</b>\n` +
+        `• AI agents work 24/7 autonomously\n` +
+        `• 20+ tools: TON, DeFi, gifts, parsing\n` +
+        `• 7 AI providers to choose from\n` +
+        `• Marketplace of ready-made agents\n\n` +
+        `${pe('bolt')} Press <b>Start Setup</b> to choose your AI provider.`;
+
+    await editOrReply(ctx, text, {
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: ru ? '🚀 Начать настройку' : '🚀 Start Setup', callback_data: 'ob_start_setup' }],
+          [{ text: ru ? '⏩ Пропустить настройку' : '⏩ Skip Setup', callback_data: 'ob_skip_all' }],
+        ],
+      },
+    });
+  } else if (state.step === 'provider') {
+    const text = ru
+      ? `${pe('brain')} <b>Шаг 1/3 — Выберите AI-провайдера</b>\n\n` +
+        `Провайдер определяет "мозг" ваших агентов.\n` +
+        `Рекомендация для старта: <b>Gemini</b> (бесплатный) или <b>Groq</b> (очень быстрый).\n\n` +
+        Object.entries(PROVIDER_INFO).map(([, info]) =>
+          `${info.emoji} <b>${info.name}</b>\n   ${info.price} | ${info.speed} | ${info.quality}`
+        ).join('\n\n')
+      : `${pe('brain')} <b>Step 1/3 — Choose AI Provider</b>\n\n` +
+        `The provider determines the "brain" of your agents.\n` +
+        `Recommended to start: <b>Gemini</b> (free) or <b>Groq</b> (very fast).\n\n` +
+        Object.entries(PROVIDER_INFO).map(([, info]) =>
+          `${info.emoji} <b>${info.name}</b>\n   ${info.price} | ${info.speed} | ${info.quality}`
+        ).join('\n\n');
+
+    await editOrReply(ctx, text, {
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: '🔴 Gemini (бесплатный)', callback_data: 'ob_provider:gemini' },
+          ],
+          [
+            { text: '🟢 OpenAI', callback_data: 'ob_provider:openai' },
+            { text: '🟣 Anthropic', callback_data: 'ob_provider:anthropic' },
+          ],
+          [
+            { text: '🔵 Groq (быстрый)', callback_data: 'ob_provider:groq' },
+            { text: '🟠 DeepSeek', callback_data: 'ob_provider:deepseek' },
+          ],
+          [
+            { text: '🌐 OpenRouter', callback_data: 'ob_provider:openrouter' },
+            { text: '🤝 Together', callback_data: 'ob_provider:together' },
+          ],
+          [{ text: ru ? '⏩ Пропустить' : '⏩ Skip', callback_data: 'ob_skip_all' }],
+        ],
+      },
+    });
+  } else if (state.step === 'apikey') {
+    const info = PROVIDER_INFO[state.provider || ''] || { emoji: '🤖', name: state.provider || 'Unknown' };
+    const text = ru
+      ? `🔑 <b>Шаг 2/3 — API ключ для ${escHtml(info.name)}</b>\n\n` +
+        `Отправьте API ключ для ${escHtml(info.name)}.\n` +
+        `Ключ будет проверен автоматически.\n\n` +
+        `${getApiKeyHint(state.provider || '', 'ru')}`
+      : `🔑 <b>Step 2/3 — API Key for ${escHtml(info.name)}</b>\n\n` +
+        `Send your API key for ${escHtml(info.name)}.\n` +
+        `The key will be validated automatically.\n\n` +
+        `${getApiKeyHint(state.provider || '', 'en')}`;
+
+    await editOrReply(ctx, text, {
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: ru ? '⏩ Пропустить (без своего ключа)' : '⏩ Skip (use platform key)', callback_data: 'ob_skip_key' }],
+          [{ text: ru ? '◀️ Назад к провайдерам' : '◀️ Back to providers', callback_data: 'ob_back_provider' }],
+        ],
+      },
+    });
+  } else if (state.step === 'create_agent') {
+    const text = ru
+      ? `✅ <b>Шаг 3/3 — Создайте первого агента!</b>\n\n` +
+        `${pe('brain')} Опишите задачу для агента своими словами.\n\n` +
+        `<b>Примеры:</b>\n` +
+        `• <i>"Следи за ценой TON и уведомляй при изменении 5%"</i>\n` +
+        `• <i>"Мониторь подарки — ищи арбитраж от 10% спреда"</i>\n` +
+        `• <i>"Парси новости с CoinDesk каждый час"</i>\n\n` +
+        `${pe('finger')} Напишите описание задачи прямо сейчас:`
+      : `✅ <b>Step 3/3 — Create your first agent!</b>\n\n` +
+        `${pe('brain')} Describe the task for your agent in plain words.\n\n` +
+        `<b>Examples:</b>\n` +
+        `• <i>"Track TON price and notify on 5% changes"</i>\n` +
+        `• <i>"Monitor gifts — find arbitrage with 10% spread"</i>\n` +
+        `• <i>"Parse CoinDesk news every hour"</i>\n\n` +
+        `${pe('finger')} Type your task description now:`;
+
+    await editOrReply(ctx, text, {
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: ru ? '🏪 Или выбрать из шаблонов' : '🏪 Or pick a template', callback_data: 'marketplace' }],
+          [{ text: ru ? '⏩ Позже' : '⏩ Later', callback_data: 'ob_finish' }],
+        ],
+      },
+    });
+  }
+}
+
+function getApiKeyHint(provider: string, lang: 'ru' | 'en'): string {
+  const ru = lang === 'ru';
+  const hints: Record<string, { url: string; prefix: string }> = {
+    gemini:     { url: 'aistudio.google.com/apikey', prefix: 'AIzaSy...' },
+    openai:     { url: 'platform.openai.com/api-keys', prefix: 'sk-proj-...' },
+    anthropic:  { url: 'console.anthropic.com/settings/keys', prefix: 'sk-ant-...' },
+    groq:       { url: 'console.groq.com/keys', prefix: 'gsk_...' },
+    deepseek:   { url: 'platform.deepseek.com/api_keys', prefix: 'sk-...' },
+    openrouter: { url: 'openrouter.ai/settings/keys', prefix: 'sk-or-...' },
+    together:   { url: 'api.together.ai/settings/api-keys', prefix: 'tok_...' },
+  };
+  const hint = hints[provider] || { url: '', prefix: '' };
+  return ru
+    ? `💡 ${hint.prefix ? `Формат ключа: <code>${escHtml(hint.prefix)}</code>\n` : ''}` +
+      `${hint.url ? `🔗 Получить: ${escHtml(hint.url)}` : ''}`
+    : `💡 ${hint.prefix ? `Key format: <code>${escHtml(hint.prefix)}</code>\n` : ''}` +
+      `${hint.url ? `🔗 Get it: ${escHtml(hint.url)}` : ''}`;
+}
+
+async function showPostCreationTips(ctx: Context, userId: number) {
+  const lang = getUserLang(userId);
+  const ru = lang === 'ru';
+  const text = ru
+    ? `💡 <b>Советы для начала:</b>\n\n` +
+      `• 🔐 Подключи Telegram аккаунт для userbot режима — /tglogin\n` +
+      `• 💰 Создай кошелёк TON для крипто-функций — 💰 Кошелёк\n` +
+      `• ⚡ Настрой активный режим для групп\n` +
+      `• 🏪 Загляни на маркетплейс за готовыми шаблонами`
+    : `💡 <b>Tips to get started:</b>\n\n` +
+      `• 🔐 Connect Telegram account for userbot mode — /tglogin\n` +
+      `• 💰 Create a TON wallet for crypto features — 💰 Wallet\n` +
+      `• ⚡ Set up active mode for groups\n` +
+      `• 🏪 Check marketplace for ready-made templates`;
+  await safeReply(ctx, text, { parse_mode: 'HTML' });
+}
 
 // ============================================================
 // showWelcome — единый экран приветствия (вызывается из /start и setlang_*)
@@ -1531,14 +1781,112 @@ bot.action(/^setlang_(ru|en)$/, async (ctx) => {
   const name = ctx.from!.first_name || ctx.from!.username || (lang === 'ru' ? 'друг' : 'friend');
   if (lang === 'ru') {
     await ctx.editMessageText(
-      `✅ Язык: Русский 🇷🇺\n\nОтлично, ${name}! Пишу /start...`
+      `✅ Язык: Русский 🇷🇺\n\nОтлично, ${name}! Настраиваем платформу...`
     ).catch(() => {});
   } else {
     await ctx.editMessageText(
-      `✅ Language: English 🇬🇧\n\nGreat, ${name}! Sending /start...`
+      `✅ Language: English 🇬🇧\n\nGreat, ${name}! Setting up the platform...`
     ).catch(() => {});
   }
-  // Эмулируем /start в выбранном языке
+
+  // Проверяем: новый пользователь (нет агентов и нет API ключа) → онбординг
+  try {
+    const agents = await getAgentsRepository().getByUserId(userId);
+    const vars = ((await getUserSettingsRepository().getAll(userId)).user_variables as Record<string, any>) || {};
+    const hasApiKey = !!(vars.AI_API_KEY);
+    if (agents.length === 0 && !hasApiKey) {
+      // Новый пользователь — запускаем онбординг
+      pendingOnboarding.set(userId, { step: 'welcome', createdAt: Date.now() });
+      await showOnboardingStep(ctx, userId, lang);
+      return;
+    }
+  } catch {}
+
+  // Старый пользователь — обычный welcome
+  await showWelcome(ctx as any, userId, name, lang);
+});
+
+// ============================================================
+// Onboarding wizard callback handlers
+// ============================================================
+
+// Step 1: Welcome → go to provider selection
+bot.action('ob_start_setup', async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from!.id;
+  const state = pendingOnboarding.get(userId);
+  if (!state) {
+    pendingOnboarding.set(userId, { step: 'provider', createdAt: Date.now() });
+  } else {
+    state.step = 'provider';
+  }
+  await showOnboardingStep(ctx, userId, getUserLang(userId));
+});
+
+// Step 2: Provider selected → go to API key input
+bot.action(/^ob_provider:(.+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from!.id;
+  const provider = ctx.match[1];
+  const lang = getUserLang(userId);
+
+  let state = pendingOnboarding.get(userId);
+  if (!state) {
+    state = { step: 'apikey', provider, createdAt: Date.now() };
+    pendingOnboarding.set(userId, state);
+  } else {
+    state.step = 'apikey';
+    state.provider = provider;
+  }
+
+  // Save provider to user_variables immediately
+  try {
+    const repo = getUserSettingsRepository();
+    const vars = ((await repo.getAll(userId)).user_variables as Record<string, any>) || {};
+    vars.AI_PROVIDER = provider;
+    await repo.set(userId, 'user_variables', vars);
+  } catch {}
+
+  await showOnboardingStep(ctx, userId, lang);
+});
+
+// Back to provider selection from API key step
+bot.action('ob_back_provider', async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from!.id;
+  const state = pendingOnboarding.get(userId);
+  if (state) state.step = 'provider';
+  else pendingOnboarding.set(userId, { step: 'provider', createdAt: Date.now() });
+  await showOnboardingStep(ctx, userId, getUserLang(userId));
+});
+
+// Skip API key → go to agent creation step
+bot.action('ob_skip_key', async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from!.id;
+  const state = pendingOnboarding.get(userId);
+  if (state) state.step = 'create_agent';
+  else pendingOnboarding.set(userId, { step: 'create_agent', createdAt: Date.now() });
+  await showOnboardingStep(ctx, userId, getUserLang(userId));
+});
+
+// Skip entire onboarding → show normal welcome
+bot.action('ob_skip_all', async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from!.id;
+  pendingOnboarding.delete(userId);
+  const lang = getUserLang(userId);
+  const name = ctx.from!.first_name || ctx.from!.username || (lang === 'ru' ? 'друг' : 'friend');
+  await showWelcome(ctx as any, userId, name, lang);
+});
+
+// Finish onboarding (from create_agent step "Later" button)
+bot.action('ob_finish', async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from!.id;
+  pendingOnboarding.delete(userId);
+  const lang = getUserLang(userId);
+  const name = ctx.from!.first_name || ctx.from!.username || (lang === 'ru' ? 'друг' : 'friend');
   await showWelcome(ctx as any, userId, name, lang);
 });
 
@@ -5181,6 +5529,79 @@ bot.on(message('text'), async (ctx) => {
         );
       } catch (e: any) {
         await safeReply(ctx, `❌ Ошибка: ${escHtml(e.message)}`, { parse_mode: 'HTML' });
+      }
+      return;
+    }
+  }
+
+  // ── Онбординг: ожидаем API ключ (шаг apikey) или описание агента (шаг create_agent) ──
+  if (pendingOnboarding.has(userId)) {
+    const obState = pendingOnboarding.get(userId)!;
+    const lang = getUserLang(userId);
+    const ru = lang === 'ru';
+
+    if (obState.step === 'apikey') {
+      // Пользователь ввёл API ключ — валидируем
+      await ctx.sendChatAction('typing');
+      const provider = obState.provider || 'openai';
+      const result = await validateApiKey(provider, trimmed);
+
+      if (result.ok) {
+        // Сохраняем ключ
+        try {
+          const repo = getUserSettingsRepository();
+          const vars = ((await repo.getAll(userId)).user_variables as Record<string, any>) || {};
+          vars.AI_API_KEY = trimmed;
+          vars.AI_PROVIDER = provider;
+          await repo.set(userId, 'user_variables', vars);
+        } catch {}
+
+        await safeReply(ctx,
+          `✅ <b>${ru ? 'Ключ проверен и сохранён!' : 'Key validated and saved!'}</b>\n` +
+          `🤖 ${ru ? 'Провайдер:' : 'Provider:'} <b>${escHtml(PROVIDER_INFO[provider]?.name || provider)}</b>`,
+          { parse_mode: 'HTML' }
+        );
+
+        // Переходим к шагу создания агента
+        obState.step = 'create_agent';
+        obState.apiKey = trimmed;
+        setTimeout(() => showOnboardingStep(ctx, userId, lang).catch(() => {}), 800);
+      } else {
+        await safeReply(ctx,
+          `❌ <b>${ru ? 'Ключ не прошёл проверку' : 'Key validation failed'}</b>\n` +
+          `${escHtml(result.error || (ru ? 'Неизвестная ошибка' : 'Unknown error'))}\n\n` +
+          `${ru ? 'Попробуйте ещё раз или нажмите ⏩ Пропустить.' : 'Try again or press ⏩ Skip.'}`,
+          { parse_mode: 'HTML' }
+        );
+      }
+      return;
+    }
+
+    if (obState.step === 'create_agent') {
+      // Пользователь описал агента — создаём через оркестратор
+      pendingOnboarding.delete(userId);
+
+      // Route to orchestrator as normal agent creation
+      const orch = getOrchestrator();
+      await ctx.sendChatAction('typing');
+      try {
+        const result = await orch.processMessage(userId, trimmed, ctx.from?.username);
+        if (result && result.content) {
+          // Convert orchestrator buttons to inline keyboard format
+          const inlineButtons = result.buttons?.map(b => [{ text: b.text, callback_data: b.callbackData }]);
+          await safeReply(ctx, result.content, {
+            parse_mode: 'HTML',
+            ...(inlineButtons ? { reply_markup: { inline_keyboard: inlineButtons } } : {}),
+            ...getMainMenu(lang),
+          });
+        }
+        // Показываем пост-создание советы
+        setTimeout(() => showPostCreationTips(ctx, userId).catch(() => {}), 3000);
+      } catch (e: any) {
+        await safeReply(ctx,
+          `❌ ${ru ? 'Ошибка создания:' : 'Creation error:'} ${escHtml(e.message || String(e))}`,
+          { parse_mode: 'HTML' }
+        );
       }
       return;
     }

@@ -166,94 +166,9 @@ function detectProviderByKey(apiKey: string): ProviderMeta | null {
 }
 
 // ═══════════════════════════════════════════════════════════
-// Tool RAG — keyword-based relevant tool selection
+// Tool RAG — now imported from ai-agent-runtime.ts (TF-IDF embedding-based)
+// Local keyword-based version removed; selectRelevantTools is imported at usage site.
 // ═══════════════════════════════════════════════════════════
-const TOOL_KEYWORDS: Record<string, string[]> = {
-  // TON / blockchain
-  get_ton_balance:       ['баланс', 'balance', 'кошелек', 'wallet', 'ton', 'адрес', 'address', 'сколько тон'],
-  get_nft_floor:         ['nft', 'нфт', 'коллекция', 'collection', 'floor', 'пол', 'punks', 'diamonds'],
-  dex_get_prices:        ['цена токен', 'price token', 'ston', 'bolt', 'scale', 'jetton', 'dex', 'dedust'],
-  get_ton_transactions:  ['транзакц', 'transaction', 'перевод', 'history', 'история'],
-  // Gifts
-  get_gift_catalog:      ['подарк', 'gift', 'каталог', 'catalog', 'купить подарок'],
-  get_fragment_listings: ['fragment', 'фрагмент', 'listing', 'листинг'],
-  appraise_gift:         ['оцен', 'apprais', 'стоит подарок', 'цена подарка'],
-  scan_arbitrage:        ['арбитраж', 'arbitrage', 'выгод', 'profit'],
-  buy_catalog_gift:      ['купить', 'buy', 'purchase', 'приобрести подарок'],
-  buy_resale_gift:       ['купить перепродаж', 'buy resale', 'вторичк'],
-  list_gift_for_sale:    ['продать', 'sell', 'выставить', 'list for sale'],
-  get_stars_balance:     ['стар', 'star', 'баланс звёзд'],
-  // Web
-  web_search:            ['гугл', 'google', 'поиск', 'search', 'найди', 'загугли', 'погугли', 'найти', 'интернет', 'новост', 'цена btc', 'биткоин', 'bitcoin', 'eth', 'курс'],
-  fetch_url:             ['url', 'сайт', 'site', 'страниц', 'page', 'ссылк', 'link', 'открой', 'зайди на'],
-  // Telegram
-  tg_send_message:       ['отправь', 'send', 'напиши', 'сообщени', 'message', 'скажи'],
-  tg_get_messages:       ['прочитай', 'read', 'чат', 'chat', 'последни', 'recent', 'сообщения из', 'что писал', 'что написал', 'переписк'],
-  tg_get_channel_info:   ['инфо чат', 'chat info', 'инфо канал', 'channel info', 'кто в', 'участник', 'подписчик'],
-  tg_join_channel:       ['подпис', 'вступ', 'join', 'subscribe'],
-  tg_leave_channel:      ['отпис', 'покин', 'leave', 'unsubscribe'],
-  tg_forward_message:    ['перешли', 'forward', 'репост'],
-  tg_pin_message:        ['закреп', 'pin'],
-  tg_delete_message:     ['удали сообщен', 'delete message'],
-  tg_edit_message:       ['редактир', 'edit', 'измени сообщен'],
-  tg_get_participants:   ['участник', 'participant', 'member', 'кто в группе'],
-  tg_send_sticker:       ['стикер', 'sticker', 'наклейк'],
-  tg_send_gif:           ['гиф', 'gif', 'гифк', 'анимац'],
-  tg_send_voice:         ['голос', 'voice', 'озвуч', 'tts', 'произнес', 'скажи голосом'],
-  tg_transcribe_voice:   ['транскри', 'transcrib', 'распозн', 'расшифр', 'что сказал', 'голосовое'],
-  tg_get_sticker_sets:   ['стикер', 'sticker', 'набор стикер', 'sticker set', 'стикерпак'],
-  // State / system
-  get_state:             ['состояни', 'state', 'запомн', 'помн', 'remember'],
-  set_state:             ['сохран', 'save', 'запомни', 'state'],
-  list_state_keys:       ['ключ', 'keys', 'состояни', 'state', 'список ключ'],
-  notify:                ['уведомлен', 'notify', 'notification', 'алерт'],
-  // GiftAsset market data
-  get_gift_floor_real:   ['пол подарк', 'floor gift', 'минимальн цена'],
-  get_price_list:        ['прайс', 'price list', 'список цен'],
-  get_market_overview:   ['рынок', 'market', 'overview', 'обзор рынка'],
-  get_user_portfolio:    ['портфель', 'portfolio', 'мои подарки'],
-};
-
-// Always-available core tools (included in every request)
-const CORE_TOOLS = new Set(['get_state', 'set_state', 'notify', 'web_search']);
-
-/**
- * Select relevant tools for a given message using keyword matching.
- * Returns tool names that should be included in the AI request.
- * Always includes CORE_TOOLS + up to `maxExtra` matched tools.
- */
-function selectRelevantTools(message: string, allToolNames: string[], maxTotal = 20): Set<string> {
-  const selected = new Set<string>(CORE_TOOLS);
-  const msgLower = message.toLowerCase();
-
-  // Score each tool by keyword match count
-  const scores: Array<[string, number]> = [];
-  for (const [toolName, keywords] of Object.entries(TOOL_KEYWORDS)) {
-    let score = 0;
-    for (const kw of keywords) {
-      if (msgLower.includes(kw.toLowerCase())) score++;
-    }
-    if (score > 0) scores.push([toolName, score]);
-  }
-
-  // Sort by score descending, take top matches
-  scores.sort((a, b) => b[1] - a[1]);
-  for (const [name] of scores) {
-    if (selected.size >= maxTotal) break;
-    selected.add(name);
-  }
-
-  // If very few tools matched, add some common ones
-  if (selected.size < 8) {
-    for (const t of ['web_search', 'fetch_url', 'get_ton_balance', 'tg_send_message', 'tg_read_chat']) {
-      selected.add(t);
-    }
-  }
-
-  // Filter to only tools that actually exist
-  const existing = new Set(allToolNames);
-  return new Set([...selected].filter(t => existing.has(t)));
-}
 
 // ═══════════════════════════════════════════════════════════
 // Gemini Schema Sanitizer — strip unsupported JSON Schema fields
@@ -306,6 +221,7 @@ async function compactContext(
   messages: string[],
   apiKey: string,
   provider: ProviderMeta,
+  utilityModel?: string,
 ): Promise<string[]> {
   if (messages.length <= 6) return messages; // too few to compact
 
@@ -324,7 +240,7 @@ async function compactContext(
     const summaryPrompt = `Summarize this chat history in 2-3 sentences, keeping key facts and context. Reply ONLY with the summary, no preamble:\n\n${oldMessages.join('\n')}`;
 
     if (provider.nativeApi && provider.id === 'gemini') {
-      const model = provider.liteModel;
+      const model = utilityModel || provider.liteModel;
       const url = `${provider.baseURL}/models/${model}:generateContent?key=${apiKey}`;
       const resp = await fetch(url, {
         method: 'POST',
@@ -2566,7 +2482,7 @@ RULES:
       }
 
       // Tool RAG: select only relevant tools based on message + system prompt
-      const filteredTools = selectRelevantTools(allTools, msg.text, cfg.systemPrompt || '', 40);
+      const filteredTools = selectRelevantTools(allTools, msg.text, cfg.systemPrompt || '', 55);
 
       // Convert to Gemini format + sanitize schemas
       const geminiTools = filteredTools.map((t: any) => {
@@ -2588,7 +2504,7 @@ RULES:
       let alreadySentMessage = false; // Track if agent already sent via tg_reply/tg_send_message
 
       // ── Auto-compact context if too long ──
-      const compactedLines = await compactContext(String(msg.chatId), recentLines, apiKey, prov);
+      const compactedLines = await compactContext(String(msg.chatId), recentLines, apiKey, prov, mergedConfig.UTILITY_MODEL as string);
 
       // Observation Masking: compress old conversation entries to save context
       if (compactedLines.length > 10) {
@@ -2676,8 +2592,9 @@ RULES:
               const errBody = await resp.text().catch(() => '');
               // On 429/503 — try downgrading model first, then retry
               if ((resp.status === 429 || resp.status === 503) && !modelDowngraded && prov.liteModel !== model) {
-                console.log(`[UserbotMgr] Gemini ${resp.status}, downgrading ${model}→${prov.liteModel}`);
-                model = prov.liteModel;
+                const fallbackModel = (mergedConfig.UTILITY_MODEL as string) || prov.liteModel;
+                console.log(`[UserbotMgr] Gemini ${resp.status}, downgrading ${model}→${fallbackModel}`);
+                model = fallbackModel;
                 url = `${prov.baseURL}/models/${model}:generateContent?key=${apiKey}`;
                 modelDowngraded = true;
                 await new Promise(r => setTimeout(r, 2000));
