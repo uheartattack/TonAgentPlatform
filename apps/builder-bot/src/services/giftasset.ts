@@ -174,11 +174,11 @@ const GA_DEV_BASE = 'https://api.giftasset.dev';   // GiftAsset Dev (separate AP
 const SW_BASE     = 'https://partners.swiftgifts.tg'; // SwiftGifts
 
 // GiftAsset Pro (giftasset.pro) — header: X-API-Key (per /openapi.json docs)
-const GA_KEY     = process.env.GIFTASSET_API_KEY     || '3303789ecb99a172206c599c24123ffd';
+const GA_KEY     = process.env.GIFTASSET_API_KEY     || '';
 // GiftAsset Dev (api.giftasset.dev) — header: x-api-token
-const GA_DEV_KEY = process.env.GIFTASSET_DEV_KEY     || '6HoZu0iA8TNpsQdxtNbgmpgCdMOkFMAFG1XviVLvxOE';
+const GA_DEV_KEY = process.env.GIFTASSET_DEV_KEY     || '';
 // SwiftGifts (partners.swiftgifts.tg) — header: x-api-key
-const SW_KEY     = process.env.SWIFTGIFTS_API_KEY    || '93d3ba6d08f439cd9a086b2247d150ed';
+const SW_KEY     = process.env.SWIFTGIFTS_API_KEY    || '';
 
 const limiter = new RateLimiter(5, 5);
 
@@ -193,6 +193,7 @@ let _swFailedUntil = new Date('2099-01-01').getTime();
 let _swFailLogged = true;
 
 async function gaDevFetch(path: string, opts: { method?: string; body?: any; query?: Record<string, string> } = {}): Promise<any> {
+  if (!GA_DEV_KEY) throw new Error('GIFTASSET_DEV_KEY not configured');
   if (Date.now() < _gaDevFailedUntil) throw new Error('GiftAsset Dev API key invalid (cooldown active)');
   await limiter.acquire();
   const url = new URL(path, GA_DEV_BASE);
@@ -696,7 +697,7 @@ export class GiftAssetClient {
           }
         }
       }
-    } catch {}
+    } catch (e: any) { if (!String(e?.message).includes('cooldown')) console.warn(`[GiftAsset] getFloorPrices source1 error for ${slug}:`, e?.message?.slice(0, 120)); }
 
     // 2) GiftAsset aggregator — live listings, all markets
     try {
@@ -705,7 +706,7 @@ export class GiftAssetClient {
         const market = (item.provider || '').toLowerCase();
         if (market) setMin(market, item.price);
       }
-    } catch {}
+    } catch (e: any) { if (!String(e?.message).includes('cooldown')) console.warn(`[GiftAsset] getFloorPrices source2 error for ${slug}:`, e?.message?.slice(0, 120)); }
 
     // 3) SwiftGifts — offchain markets (tonnel, portals, Mrkt) — often cheaper than onchain
     try {
@@ -714,7 +715,7 @@ export class GiftAssetClient {
         const market = (item.provider || '').toLowerCase();
         if (market) setMin(market, item.price);  // always update if cheaper
       }
-    } catch {}
+    } catch (e: any) { /* SwiftGifts disabled — silence expected cooldown errors */ }
 
     // 4) SwiftGifts — onchain markets (getgems, fragment) for cross-verification
     try {
@@ -723,7 +724,7 @@ export class GiftAssetClient {
         const market = (item.provider || '').toLowerCase();
         if (market) setMin(market, item.price);
       }
-    } catch {}
+    } catch (e: any) { /* SwiftGifts disabled — silence expected cooldown errors */ }
 
     let minFloor = Infinity;
     let minFloorMarket = '';
