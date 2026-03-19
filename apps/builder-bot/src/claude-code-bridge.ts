@@ -161,7 +161,7 @@ export async function claudeCodeComplete(
       proc = spawn('bash', ['-c', shellCmd], {
         cwd: process.env.HOME || '/root',
         env: (() => {
-          const e = { ...process.env, CLAUDE_CODE_NON_INTERACTIVE: '1', CI: '1' };
+          const e: Record<string, string | undefined> = { ...process.env, CLAUDE_CODE_NON_INTERACTIVE: '1', CI: '1' };
           delete e.ANTHROPIC_API_KEY;
           return e;
         })(),
@@ -171,7 +171,7 @@ export async function claudeCodeComplete(
       proc = spawn(cliPath === 'npx' ? 'npx' : cliPath, args, {
         cwd: process.env.HOME || '/root',
         env: (() => {
-          const e = { ...process.env, CLAUDE_CODE_NON_INTERACTIVE: '1', CI: '1' };
+          const e: Record<string, string | undefined> = { ...process.env, CLAUDE_CODE_NON_INTERACTIVE: '1', CI: '1' };
           delete e.ANTHROPIC_API_KEY;
           return e;
         })(),

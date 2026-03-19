@@ -65,7 +65,7 @@ async function safeFetchBuffer(url: string, timeoutMs = 15000): Promise<Buffer> 
 }
 
 // ── Utility: safe random ID (non-zero, full 64-bit range) ──
-function safeRandomId(): bigint {
+function safeRandomId(): any {
   const buf = crypto.randomBytes(8);
   // Ensure non-zero by setting the top bit
   buf[0] = buf[0] | 0x01;

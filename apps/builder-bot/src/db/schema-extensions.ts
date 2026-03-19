@@ -308,6 +308,10 @@ export class AgentStateRepository {
     return rows.map(r => r.key);
   }
 
+  async delete(agentId: number, key: string): Promise<void> {
+    await this.db.delete(agentStateTable).where(and(eq(agentStateTable.agentId, agentId), eq(agentStateTable.key, key)));
+  }
+
   async deleteAgent(agentId: number): Promise<void> {
     await this.db.delete(agentStateTable).where(eq(agentStateTable.agentId, agentId));
   }
@@ -1477,7 +1481,7 @@ export function getAgentTasksRepository(): AgentTasksRepository {
 }
 
 // ─── AgentApprovalsRepository (AI agent action approvals) ──────────────────
-export const agentApprovalsTable = builderSchema.table('agent_approvals', {
+export const agentApprovalsTableV2 = builderSchema.table('agent_approvals_v2', {
   id:            serial('id').primaryKey(),
   agentId:       integer('agent_id').notNull(),
   userId:        bigint('user_id', { mode: 'number' }).notNull(),

@@ -1728,7 +1728,10 @@ class UserbotManager {
       getPollResults: wrap(ubGetPollResults),
       sendSticker:    wrap(ubSendSticker),
       sendGif:        wrap(ubSendGif),
-      sendVoice:      wrap(ubSendVoice),
+      sendVoice:      (chatId: string, text: string, lang?: string) => {
+        if (!checkTtsRate(agentId)) return { error: 'TTS rate limit exceeded (max 5/min)' };
+        return ubSendVoice(client, chatId, text, lang);
+      },
       transcribeVoice: wrap(ubTranscribeVoice),
       getStickerSets: wrap(ubGetStickerSets),
     };
@@ -3816,7 +3819,7 @@ async function ubGetAdmins(client: TelegramClient, chatId: string | number) {
     filter: new Api.ChannelParticipantsAdmins(),
     offset: 0,
     limit: 100,
-    hash: BigInt(0),
+    hash: BigInt(0) as any,
   }));
   const users = (result as any).users || [];
   return users.map((u: any) => ({
@@ -3866,7 +3869,7 @@ async function ubCreatePoll(client: TelegramClient, chatId: string | number, que
   const peer = await (client as any).getInputEntity(chatId);
   const poll = new Api.InputMediaPoll({
     poll: new Api.Poll({
-      id: BigInt(Date.now()),
+      id: BigInt(Date.now()) as any,
       question: new Api.TextWithEntities({ text: question, entities: [] }),
       answers: options.map((opt, i) => new Api.PollAnswer({
         text: new Api.TextWithEntities({ text: opt, entities: [] }),
@@ -3880,7 +3883,7 @@ async function ubCreatePoll(client: TelegramClient, chatId: string | number, que
     peer,
     media: poll,
     message: '',
-    randomId: BigInt(Date.now()),
+    randomId: BigInt(Date.now()) as any,
   }));
   return { ok: true, message_id: (result as any).updates?.[0]?.id || 0 };
 }
@@ -3892,7 +3895,7 @@ async function ubScheduleMessage(client: TelegramClient, chatId: string | number
   const result = await (client as any).invoke(new Api.messages.SendMessage({
     peer,
     message: html,
-    randomId: BigInt(Date.now()),
+    randomId: BigInt(Date.now()) as any,
     scheduleDate: sendAtUnix,
     ...(html !== text ? { parseMode: 'html' } : {}),
   }));
@@ -3919,7 +3922,7 @@ async function ubGetProfilePhotos(client: TelegramClient, userId: string | numbe
   const result = await (client as any).invoke(new Api.photos.GetUserPhotos({
     userId: user,
     offset: 0,
-    maxId: BigInt(0),
+    maxId: BigInt(0) as any,
     limit,
   }));
   return { count: (result as any).photos?.length || 0, photos: ((result as any).photos || []).map((p: any) => ({ id: String(p.id), date: p.date })) };
@@ -4001,7 +4004,7 @@ async function ubSendContact(client: TelegramClient, chatId: string | number, ph
     peer,
     media: new Api.InputMediaContact({ phoneNumber: phone, firstName, lastName, vcard: '' }),
     message: '',
-    randomId: BigInt(Date.now()),
+    randomId: BigInt(Date.now()) as any,
   }));
   return { ok: true };
 }
@@ -4013,7 +4016,7 @@ async function ubSendLocation(client: TelegramClient, chatId: string | number, l
     peer,
     media: new Api.InputMediaGeoPoint({ geoPoint: new Api.InputGeoPoint({ lat, long: lng }) }),
     message: '',
-    randomId: BigInt(Date.now()),
+    randomId: BigInt(Date.now()) as any,
   }));
   return { ok: true };
 }
@@ -4029,7 +4032,7 @@ async function ubGetHistoryCount(client: TelegramClient, chatId: string | number
     limit: 1,
     maxId: 0,
     minId: 0,
-    hash: BigInt(0),
+    hash: BigInt(0) as any,
   }));
   return { count: (result as any).count || (result as any).messages?.length || 0 };
 }
@@ -4098,7 +4101,7 @@ async function ubSendSilent(client: TelegramClient, chatId: string | number, tex
     const result = await (client as any).invoke(new Api.messages.SendMessage({
       peer,
       message: html,
-      randomId: BigInt(Date.now()),
+      randomId: BigInt(Date.now()) as any,
       silent: true,
       ...(html !== text ? { parseMode: 'html' } : {}),
     }));
@@ -4182,7 +4185,7 @@ async function ubGetChatStats(client: TelegramClient, chatId: string | number) {
           limit: 1,
           maxId: 0,
           minId: 0,
-          hash: BigInt(0),
+          hash: BigInt(0) as any,
         }));
         stats[f.name] = (result as any).count ?? (result as any).messages?.length ?? 0;
       } catch {
@@ -4220,7 +4223,7 @@ async function ubSendWithButtons(client: TelegramClient, chatId: string | number
     const result = await (client as any).invoke(new Api.messages.SendMessage({
       peer,
       message: html,
-      randomId: BigInt(Date.now()),
+      randomId: BigInt(Date.now()) as any,
       replyMarkup: new Api.ReplyInlineMarkup({
         rows: [new Api.KeyboardButtonRow({ buttons: keyboardButtons })],
       }),
@@ -4271,7 +4274,7 @@ async function ubSendSticker(client: TelegramClient, chatId: string, stickerSetN
       media: new Api.InputMediaDocument({
         id: new Api.InputDocument({ id: doc.id, accessHash: doc.accessHash, fileReference: doc.fileReference }),
       }),
-      randomId: BigInt(Math.floor(Math.random() * 1e15)),
+      randomId: BigInt(Math.floor(Math.random() * 1e15)) as any,
       message: '',
     }));
     return { ok: true, sticker_index: index, set: stickerSetName };
@@ -4294,10 +4297,22 @@ async function ubSendGif(client: TelegramClient, chatId: string, query: string) 
       peer,
       queryId: results.queryId,
       id: picked.id,
-      randomId: BigInt(Math.floor(Math.random() * 1e15)),
+      randomId: BigInt(Math.floor(Math.random() * 1e15)) as any,
     }));
     return { ok: true, query };
   } catch (e: any) { return { error: e.message || String(e) }; }
+}
+
+// ── TTS rate limiter: max 5 calls per minute per agent ──────
+const _ttsRateLimit = new Map<number, number[]>();
+function checkTtsRate(agentId: number): boolean {
+  const now = Date.now();
+  const times = _ttsRateLimit.get(agentId) || [];
+  const recent = times.filter(t => now - t < 60000);
+  if (recent.length >= 5) return false;
+  recent.push(now);
+  _ttsRateLimit.set(agentId, recent);
+  return true;
 }
 
 async function ubSendVoice(client: TelegramClient, chatId: string, text: string, lang: string = 'ru') {
@@ -4343,7 +4358,7 @@ async function ubTranscribeVoice(client: TelegramClient, chatId: string, msgId: 
 
 async function ubGetStickerSets(client: TelegramClient, query?: string) {
   try {
-    const result = await (client as any).invoke(new Api.messages.GetAllStickers({ hash: BigInt(0) }));
+    const result = await (client as any).invoke(new Api.messages.GetAllStickers({ hash: BigInt(0) as any }));
     let sets = (result.sets || []).map((s: any) => ({
       shortName: s.shortName,
       title: s.title,

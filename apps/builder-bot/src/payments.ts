@@ -5,6 +5,39 @@
 
 import { Pool } from 'pg';
 
+// ── TTL-based Map to prevent unbounded memory growth ────────
+class TTLMap<K, V> {
+  private map = new Map<K, { value: V; expiresAt: number }>();
+  constructor(private ttlMs: number, private maxSize: number = 10000) {}
+
+  set(key: K, value: V): void {
+    if (this.map.size >= this.maxSize) this.evict();
+    this.map.set(key, { value, expiresAt: Date.now() + this.ttlMs });
+  }
+
+  get(key: K): V | undefined {
+    const entry = this.map.get(key);
+    if (!entry) return undefined;
+    if (Date.now() > entry.expiresAt) { this.map.delete(key); return undefined; }
+    return entry.value;
+  }
+
+  has(key: K): boolean { return this.get(key) !== undefined; }
+  delete(key: K): void { this.map.delete(key); }
+
+  private evict(): void {
+    const now = Date.now();
+    for (const [k, v] of this.map) {
+      if (now > v.expiresAt) this.map.delete(k);
+    }
+    // If still over limit, remove oldest
+    if (this.map.size >= this.maxSize) {
+      const first = this.map.keys().next().value;
+      if (first !== undefined) this.map.delete(first);
+    }
+  }
+}
+
 // ── Планы подписок ─────────────────────────────────────────
 export interface Plan {
   id: string;
@@ -119,15 +152,13 @@ export interface PendingPayment {
   expiresAt: Date;  // истекает через 15 минут
 }
 
-// ── In-memory хранилища (перенести в PostgreSQL позже) ──────
-const subscriptions = new Map<number, UserSubscription>();
-const pendingPayments = new Map<number, PendingPayment>();
+// ── In-memory хранилища with TTL eviction ───────────────────
+const subscriptions = new TTLMap<number, UserSubscription>(60 * 60 * 1000, 10000);           // 1 hour TTL
+const pendingPayments = new TTLMap<number, PendingPayment>(30 * 60 * 1000, 5000);            // 30 min TTL
+const generationTracker = new TTLMap<number, { month: string; count: number }>(24 * 60 * 60 * 1000, 10000); // 24h TTL
 
-// Трекинг генераций: userId → { month: 'YYYY-MM', count: number }
-const generationTracker = new Map<number, { month: string; count: number }>();
-
-// Защита от double-spend: использованные tx хеши
-const usedTxHashes = new Set<string>();
+// Защита от double-spend: использованные tx хеши (TTL 24h)
+const usedTxHashes = new TTLMap<string, true>(24 * 60 * 60 * 1000, 50000);
 
 // ── Инициализация БД таблицы ────────────────────────────────
 let _pool: Pool | null = null;
@@ -386,22 +417,27 @@ export async function confirmPayment(
   subscriptions.set(userId, sub);
   pendingPayments.delete(userId);
 
-  // Сохраняем в БД
+  // Persist to DB atomically — subscription + payment confirmation in one transaction
   if (_pool) {
+    const client = await _pool.connect();
     try {
-      await _pool.query(`
+      await client.query('BEGIN');
+      await client.query(`
         INSERT INTO builder_bot.subscriptions(user_id, plan_id, expires_at, is_active)
         VALUES($1,$2,$3,true)
         ON CONFLICT(user_id) DO UPDATE SET plan_id=$2, expires_at=$3, is_active=true, updated_at=NOW()
       `, [userId, pending.planId, expiresAt]);
-    } catch (e: any) { console.error('[Payments] subscription DB error:', e.message); }
-
-    try {
-      await _pool.query(`
+      await client.query(`
         UPDATE builder_bot.payments SET status='confirmed', tx_hash=$1, confirmed_at=NOW()
         WHERE id = (SELECT id FROM builder_bot.payments WHERE user_id=$2 AND status='pending' ORDER BY created_at DESC LIMIT 1)
       `, [txHash, userId]);
-    } catch (e: any) { console.error('[Payments] payment confirm DB error:', e.message); }
+      await client.query('COMMIT');
+    } catch (e: any) {
+      await client.query('ROLLBACK').catch(() => {});
+      console.error('[Payments] confirmPayment DB transaction error:', e.message);
+    } finally {
+      client.release();
+    }
   }
 
   return { success: true, plan, expiresAt };
@@ -478,7 +514,7 @@ export async function verifyTonTransaction(
 
           // Check exact amount (no discount), full comment pattern, and not already used
           if (amount >= expectedNano && commentPattern.test(msg) && txHash && !usedTxHashes.has(txHash)) {
-            usedTxHashes.add(txHash);
+            usedTxHashes.set(txHash, true);
             return { found: true, txHash };
           }
         }
