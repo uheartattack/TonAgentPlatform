@@ -83,6 +83,15 @@ async function main() {
   initAgentApprovalsRepository(pool);
   await runAIProposalsMigrations(pool);
 
+  // Инициализация Agentic Wallets
+  try {
+    const { getAgenticWalletService } = require('./services/agentic-wallet');
+    await getAgenticWalletService().runMigration();
+    console.log('🔐 Agentic Wallets ready');
+  } catch (e: any) {
+    console.warn('[AgenticWallet] Init warning:', e.message);
+  }
+
   // Восстановить schedulers для агентов которые были активны до перезапуска
   await restoreActiveAgents();
 

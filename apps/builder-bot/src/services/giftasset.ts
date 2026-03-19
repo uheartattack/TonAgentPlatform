@@ -515,8 +515,138 @@ export class GiftAssetClient {
 
   /** Last sale on providers — fresh cross-market prices from actual transactions */
   async getAllCollectionsLastSale(): Promise<any> {
-    return cached('ga:allLastSale', 20_000, () =>  // 20s cache — fresh data for arbitrage
+    return cached('ga:allLastSale', 20_000, () =>
       gaFetch('/api/v1/gifts/get_all_collections_last_sale')
+    );
+  }
+
+  // ── NEW v2 endpoints (full GiftAsset API coverage) ────────────
+
+  /** Get user gifts by username OR telegram user_id (v2) */
+  async getUserGiftsV2(params: { username?: string; userId?: string; limit?: number; offset?: number }): Promise<any> {
+    const query: Record<string, string> = { limit: String(params.limit || 50) };
+    if (params.username) query.username = params.username;
+    if (params.userId) query.user_id = params.userId;
+    if (params.offset) query.offset = String(params.offset);
+    return gaFetch('/api/v1/gifts/get_gift_by_user_v2', { query });
+  }
+
+  /** Get all collections owned by a user */
+  async getUserCollections(username: string, opts?: { include?: string[]; exclude?: string[]; limit?: number; offset?: number }): Promise<any> {
+    return gaFetch('/api/v1/gifts/get_all_collections_by_user', {
+      method: 'POST',
+      query: { username },
+      body: { include: opts?.include, exclude: opts?.exclude, limit: opts?.limit, offset: opts?.offset },
+    });
+  }
+
+  /** Calculate user profile total value across all gifts */
+  async getUserProfilePrice(username: string, limit = 100, offset = 0): Promise<any> {
+    return cached(`ga:profilePrice:${username}`, 60_000, () =>
+      gaFetch('/api/v1/gifts/get_user_profile_price', { query: { username, limit: String(limit), offset: String(offset) } })
+    );
+  }
+
+  /** Get gift details by name (e.g. "EasterEgg-1") */
+  async getGiftByName(name: string): Promise<any> {
+    return cached(`ga:giftName:${name}`, 300_000, () =>
+      gaFetch('/api/v1/gifts/get_gift_by_name', { query: { name } })
+    );
+  }
+
+  /** Raw collection metadata (backdrops, attributes) */
+  async getCollectionsMetadata(): Promise<any> {
+    return cached('ga:collMeta', 600_000, () =>
+      gaFetch('/api/v1/gifts/get_collections_metadata')
+    );
+  }
+
+  /** Raw attribute metadata per collection */
+  async getAttributesMetadata(): Promise<any> {
+    return cached('ga:attrMeta', 600_000, () =>
+      gaFetch('/api/v1/gifts/get_attributes_metadata')
+    );
+  }
+
+  /** Sales history across ALL providers (combined) */
+  async getAllProvidersSalesHistory(): Promise<any> {
+    return cached('ga:allProvSales', 30_000, () =>
+      gaFetch('/api/v1/gifts/get_all_providers_sales_history')
+    );
+  }
+
+  /** Sales history for a specific provider */
+  async getProviderSalesHistory(provider: string, limit = 50, offset = 0, premarket = false): Promise<any> {
+    const query: Record<string, string> = { provider_name: provider, limit: String(limit), offset: String(offset) };
+    if (premarket) query.premarket = 'true';
+    return gaFetch('/api/v1/gifts/get_providers_sales_history', { query });
+  }
+
+  /** Fee percentage per marketplace */
+  async getProvidersFee(): Promise<any> {
+    return cached('ga:fees', 3600_000, () =>
+      gaFetch('/api/v1/gifts/get_providers_fee')
+    );
+  }
+
+  /** Aggregate sales volumes by provider (hourly/total) */
+  async getProvidersVolumes(): Promise<any> {
+    return cached('ga:provVol', 120_000, () =>
+      gaFetch('/api/v1/gifts/get_providers_volumes')
+    );
+  }
+
+  /** Unique deals filtered by minimum gift price */
+  async getUniqueDeals(limit = 20, offset = 0, giftMinPrice = 0, collectionName?: string): Promise<any> {
+    const query: Record<string, string> = { limit: String(limit), offset: String(offset), gift_min_price: String(giftMinPrice) };
+    if (collectionName) query.collection_name = collectionName;
+    return gaFetch('/api/v1/gifts/get_unique_deals', { query });
+  }
+
+  /** Current collection volumes (today) */
+  async getCollectionsVolumes(): Promise<any> {
+    return cached('ga:collVol', 120_000, () =>
+      gaFetch('/api/v1/gifts/get_collections_volumes')
+    );
+  }
+
+  /** Week-over-week daily volume breakdown */
+  async getCollectionsWeekVolumes(): Promise<any> {
+    return cached('ga:weekVol', 300_000, () =>
+      gaFetch('/api/v1/gifts/get_collections_week_volumes')
+    );
+  }
+
+  /** Month-over-month daily volume breakdown */
+  async getCollectionsMonthVolumes(): Promise<any> {
+    return cached('ga:monthVol', 300_000, () =>
+      gaFetch('/api/v1/gifts/get_collections_month_volumes')
+    );
+  }
+
+  /** Custom timeframe top sales */
+  async getCustomCollectionsVolumes(maxTimeSec: number): Promise<any> {
+    return gaFetch('/api/v1/gifts/get_custom_collections_volumes', { query: { maxtime: String(maxTimeSec) } });
+  }
+
+  /** Emission and distribution stats per collection */
+  async getCollectionsEmission(): Promise<any> {
+    return cached('ga:emission', 300_000, () =>
+      gaFetch('/api/v1/gifts/get_gifts_collections_emission')
+    );
+  }
+
+  /** Aggregate emission across all collections */
+  async getEmissionDistribution(): Promise<any> {
+    return cached('ga:emissionDist', 300_000, () =>
+      gaFetch('/api/v1/gifts/get_gifts_emission_distribution')
+    );
+  }
+
+  /** Backdrops floor with optional v2 flag */
+  async getBackdropFloorsV2(v2 = true): Promise<any> {
+    return cached(`ga:backdropV2:${v2}`, 60_000, () =>
+      gaFetch('/api/v1/gifts/get_gifts_backdrops_floor', { query: { v2: String(v2) } })
     );
   }
 
