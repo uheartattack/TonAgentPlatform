@@ -244,7 +244,7 @@ function sanitize(text: string): string {
 // ============================================================
 // Бот и меню
 // ============================================================
-const bot = new Telegraf(process.env.BOT_TOKEN || '');
+const bot: Telegraf = new Telegraf(process.env.BOT_TOKEN || '');
 
 // Статичное меню (русский по умолчанию)
 // ── Главное меню (reply keyboard — всегда внизу) ─────────────────────────
@@ -426,22 +426,92 @@ async function addUserBalance(
   amount: number,
   opts?: { type?: string; description?: string; txHash?: string }
 ): Promise<UserProfile> {
-  const p = await getUserProfile(userId);
-  p.balance_ton = Math.max(0, p.balance_ton + amount);
-  if (amount > 0) p.total_earned += amount;
-  await saveUserProfile(userId, p);
-
-  // Record in ledger
+  // Use a DB transaction with row-level locking to prevent race conditions
+  const client = await dbPool.connect();
   try {
-    const txType = opts?.type || (amount > 0 ? 'topup' : 'spend');
-    await getBalanceTxRepository().record(
-      userId, txType, amount, p.balance_ton,
-      opts?.description, opts?.txHash
+    await client.query('BEGIN');
+    // Lock the profile row to prevent concurrent balance modifications
+    const { rows } = await client.query(
+      `SELECT value FROM builder_bot.user_settings WHERE user_id = $1 AND key = 'profile' FOR UPDATE`,
+      [userId]
     );
+    const p: UserProfile = rows[0]?.value || { balance_ton: 0, total_earned: 0, wallet_address: null, joined_at: new Date().toISOString() };
+    p.balance_ton = Math.max(0, (p.balance_ton || 0) + amount);
+    if (amount > 0) p.total_earned = (p.total_earned || 0) + amount;
+
+    // Update profile within the transaction
+    await client.query(
+      `INSERT INTO builder_bot.user_settings (user_id, key, value, updated_at)
+       VALUES ($1, 'profile', $2::jsonb, NOW())
+       ON CONFLICT ON CONSTRAINT user_settings_unique DO UPDATE SET value = $2::jsonb, updated_at = NOW()`,
+      [userId, JSON.stringify(p)]
+    );
+
+    // Record in ledger within the same transaction
+    const txType = opts?.type || (amount > 0 ? 'topup' : 'spend');
+    await client.query(
+      `INSERT INTO builder_bot.balance_transactions (user_id, type, amount_ton, balance_after, description, tx_hash, status)
+       VALUES ($1, $2, $3, $4, $5, $6, 'completed')`,
+      [userId, txType, amount, p.balance_ton, opts?.description || null, opts?.txHash || null]
+    );
+
+    await client.query('COMMIT');
+    return p;
   } catch (e) {
-    console.warn('[Ledger] Failed to record balance tx:', e);
+    await client.query('ROLLBACK').catch(() => {});
+    console.warn('[addUserBalance] Transaction failed:', e);
+    // Fallback: return current profile without modification
+    const fallback = await getUserProfile(userId);
+    return fallback;
+  } finally {
+    client.release();
   }
-  return p;
+}
+
+/**
+ * Atomically check balance and deduct in a single DB transaction.
+ * Returns the updated profile if successful, or null if insufficient balance.
+ * Prevents TOCTOU race conditions between check and deduct.
+ */
+async function atomicBalanceDeduct(
+  userId: number,
+  amount: number,
+  opts?: { type?: string; description?: string; txHash?: string }
+): Promise<UserProfile | null> {
+  const client = await dbPool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      `SELECT value FROM builder_bot.user_settings WHERE user_id = $1 AND key = 'profile' FOR UPDATE`,
+      [userId]
+    );
+    const p: UserProfile = rows[0]?.value || { balance_ton: 0, total_earned: 0, wallet_address: null, joined_at: new Date().toISOString() };
+    if ((p.balance_ton || 0) < amount) {
+      await client.query('ROLLBACK');
+      return null; // insufficient balance
+    }
+    p.balance_ton = Math.max(0, (p.balance_ton || 0) - amount);
+    await client.query(
+      `INSERT INTO builder_bot.user_settings (user_id, key, value, updated_at)
+       VALUES ($1, 'profile', $2::jsonb, NOW())
+       ON CONFLICT ON CONSTRAINT user_settings_unique DO UPDATE SET value = $2::jsonb, updated_at = NOW()`,
+      [userId, JSON.stringify(p)]
+    );
+    const txType = opts?.type || 'spend';
+    await client.query(
+      `INSERT INTO builder_bot.balance_transactions (user_id, type, amount_ton, balance_after, description, tx_hash, status)
+       VALUES ($1, $2, $3, $4, $5, $6, 'completed')`,
+      [userId, txType, -amount, p.balance_ton, opts?.description || null, opts?.txHash || null]
+    );
+    await client.query('COMMIT');
+    return p;
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.warn('[atomicBalanceDeduct] Transaction failed:', e);
+    return null;
+  } finally {
+    client.release();
+  }
 }
 
 // pendingWithdrawal: userId → 'enter_address' | 'enter_amount'
@@ -4784,25 +4854,26 @@ bot.on('callback_query', async (ctx) => {
       if (!src.data) { await safeReply(ctx, '❌ Агент не найден'); return; }
       const a = src.data;
       const cloneName = `${a.name || 'Agent'} (clone)`.slice(0, 100);
-      const result = await getDBTools().createAgent(
+      const result = await getDBTools().createAgent({
         userId,
-        cloneName,
-        a.description || '',
-        a.triggerType || 'ai_agent',
-        a.code || '',
-        a.triggerConfig || {},
-      );
-      if (result.data?.agentId) {
+        name: cloneName,
+        description: (a as any).description || '',
+        triggerType: ((a as any).triggerType || 'ai_agent') as 'manual' | 'scheduled' | 'webhook' | 'event' | 'ai_agent',
+        code: (a as any).code || '',
+        triggerConfig: (a as any).triggerConfig || {},
+      });
+      const newAgentId = (result.data as any)?.agentId || (result.data as any)?.id;
+      if (newAgentId) {
         // Copy state (memories, lessons, goals) from source agent
         try {
           const states = await getAgentStateRepository().getAll(agentId);
           for (const s of states) {
             if (s.key === 'wallet_address' || s.key === 'wallet_mnemonic') continue; // don't copy wallet
             if (s.key === '_conversation_history') continue; // fresh history
-            await getAgentStateRepository().set(result.data.agentId, userId, s.key, s.value);
+            await getAgentStateRepository().set(newAgentId, userId, s.key, s.value);
           }
         } catch {}
-        await safeReply(ctx, `✅ Агент клонирован!\n\n📋 ${escHtml(cloneName)} #${result.data.agentId}\n\nВсе настройки, память и уроки скопированы.\nКошелёк создастся новый при первом запуске.`);
+        await safeReply(ctx, `✅ Агент клонирован!\n\n📋 ${escHtml(cloneName)} #${newAgentId}\n\nВсе настройки, память и уроки скопированы.\nКошелёк создастся новый при первом запуске.`);
       } else {
         await safeReply(ctx, '❌ Ошибка клонирования');
       }
@@ -5000,19 +5071,18 @@ bot.on('callback_query', async (ctx) => {
     const payType = parts[1];
 
     if (payType === 'sub') {
-      // Subscription from balance
+      // Subscription from balance — atomic check+deduct
       const planId = parts[2];
       const period = parts[3] as 'month' | 'year';
       const plan = PLANS[planId];
       if (!plan) { await ctx.reply('❌ План не найден'); return; }
       const amount = period === 'year' ? plan.priceYearTon : plan.priceMonthTon;
-      const profile = await getUserProfile(userId);
-      if (profile.balance_ton < amount) {
-        await ctx.reply(`❌ Недостаточно средств. Баланс: ${profile.balance_ton.toFixed(2)} TON, нужно: ${amount} TON`);
+      const deducted = await atomicBalanceDeduct(userId, amount, { type: 'spend', description: `Подписка ${plan.name} (${period})` });
+      if (!deducted) {
+        const profile = await getUserProfile(userId);
+        await ctx.reply(`❌ Недостаточно средств. Баланс: ${(profile.balance_ton || 0).toFixed(2)} TON, нужно: ${amount} TON`);
         return;
       }
-      // Deduct balance
-      await addUserBalance(userId, -amount, { type: 'spend', description: `Подписка ${plan.name} (${period})` });
       // Activate plan
       const payment = createPayment(userId, planId, period);
       if (!('error' in payment)) {
@@ -5027,17 +5097,17 @@ bot.on('callback_query', async (ctx) => {
     }
 
     if (payType === 'gen') {
-      // AI generation from balance
+      // AI generation from balance — atomic check+deduct
       const encodedDesc = parts.slice(2).join(':');
       const description = decodeURIComponent(encodedDesc);
       const plan = await getUserPlan(userId);
       const priceGen = plan.pricePerGeneration;
-      const profile = await getUserProfile(userId);
-      if (profile.balance_ton < priceGen) {
-        await ctx.reply(`❌ Недостаточно средств. Баланс: ${profile.balance_ton.toFixed(2)} TON, нужно: ${priceGen} TON`);
+      const deducted = await atomicBalanceDeduct(userId, priceGen, { type: 'spend', description: 'Генерация AI агента' });
+      if (!deducted) {
+        const profile = await getUserProfile(userId);
+        await ctx.reply(`❌ Недостаточно средств. Баланс: ${(profile.balance_ton || 0).toFixed(2)} TON, нужно: ${priceGen} TON`);
         return;
       }
-      await addUserBalance(userId, -priceGen, { type: 'spend', description: 'Генерация AI агента' });
       trackGeneration(userId);
       await ctx.reply('✅ Оплачено с баланса! Генерирую агента...');
       await ctx.sendChatAction('typing');
@@ -5047,17 +5117,19 @@ bot.on('callback_query', async (ctx) => {
     }
 
     if (payType === 'mkt') {
-      // Marketplace purchase from balance
+      // Marketplace purchase from balance — atomic check+deduct
       const listingId = parseInt(parts[2]);
       const listing = await getMarketplaceRepository().getListing(listingId);
       if (!listing) { await ctx.reply('❌ Листинг не найден'); return; }
       const priceTon = listing.isFree ? 0 : listing.price / 1e9;
-      const profile = await getUserProfile(userId);
-      if (profile.balance_ton < priceTon) {
-        await ctx.reply(`❌ Недостаточно средств. Баланс: ${profile.balance_ton.toFixed(2)} TON, нужно: ${priceTon.toFixed(2)} TON`);
-        return;
+      if (priceTon > 0) {
+        const deducted = await atomicBalanceDeduct(userId, priceTon, { type: 'spend', description: `Покупка агента: ${listing.name}` });
+        if (!deducted) {
+          const profile = await getUserProfile(userId);
+          await ctx.reply(`❌ Недостаточно средств. Баланс: ${(profile.balance_ton || 0).toFixed(2)} TON, нужно: ${priceTon.toFixed(2)} TON`);
+          return;
+        }
       }
-      await addUserBalance(userId, -priceTon, { type: 'spend', description: `Покупка агента: ${listing.name}` });
       // Create agent copy for buyer (same logic as free purchase)
       const agentResult = await getDBTools().getAgent(listing.agentId, listing.sellerId);
       if (!agentResult.success || !agentResult.data) { await ctx.reply('❌ Агент не найден'); return; }
@@ -6094,34 +6166,66 @@ bot.on(message('text'), async (ctx) => {
 
     if (wState.step === 'enter_amount') {
       const amount = parseFloat(trimmed.replace(',', '.'));
-      const profile = await getUserProfile(userId);
       const networkFee = 0.05;
       if (isNaN(amount) || amount <= 0) {
         await ctx.reply(lang === 'ru' ? '❌ Введите корректную сумму (например: 1.5)' : '❌ Enter a valid amount (e.g. 1.5)');
         return;
       }
-      if (amount + networkFee > profile.balance_ton) {
-        await ctx.reply(lang === 'ru'
-          ? `❌ Недостаточно средств. Доступно: ${profile.balance_ton.toFixed(2)} TON (комиссия сети ~${networkFee} TON)`
-          : `❌ Insufficient funds. Available: ${profile.balance_ton.toFixed(2)} TON (network fee ~${networkFee} TON)`
+
+      // Atomic balance check + deduct in a single DB transaction to prevent double-withdraw
+      const toAddr = wState.address || (await getUserProfile(userId)).wallet_address || '';
+      const walletShort = toAddr.slice(0, 12) + '…';
+      const wdClient = await dbPool.connect();
+      let deductedProfile: UserProfile | null = null;
+      try {
+        await wdClient.query('BEGIN');
+        const { rows } = await wdClient.query(
+          `SELECT value FROM builder_bot.user_settings WHERE user_id = $1 AND key = 'profile' FOR UPDATE`,
+          [userId]
         );
-        return;
-      }
-      // Max 80% of balance per withdrawal
-      const maxWithdraw = profile.balance_ton * WITHDRAW_MAX_PERCENT;
-      if (amount > maxWithdraw) {
-        await ctx.reply(lang === 'ru'
-          ? `❌ Максимум ${(maxWithdraw).toFixed(2)} TON за один вывод (80% баланса). Остаток резервируется на комиссии.`
-          : `❌ Max ${(maxWithdraw).toFixed(2)} TON per withdrawal (80% of balance). Remainder reserved for fees.`
+        const profile: UserProfile = rows[0]?.value || { balance_ton: 0, total_earned: 0, wallet_address: null, joined_at: new Date().toISOString() };
+
+        if (amount + networkFee > (profile.balance_ton || 0)) {
+          await wdClient.query('ROLLBACK');
+          await ctx.reply(lang === 'ru'
+            ? `❌ Недостаточно средств. Доступно: ${(profile.balance_ton || 0).toFixed(2)} TON (комиссия сети ~${networkFee} TON)`
+            : `❌ Insufficient funds. Available: ${(profile.balance_ton || 0).toFixed(2)} TON (network fee ~${networkFee} TON)`
+          );
+          return;
+        }
+        const maxWithdraw = (profile.balance_ton || 0) * WITHDRAW_MAX_PERCENT;
+        if (amount > maxWithdraw) {
+          await wdClient.query('ROLLBACK');
+          await ctx.reply(lang === 'ru'
+            ? `❌ Максимум ${(maxWithdraw).toFixed(2)} TON за один вывод (80% баланса). Остаток резервируется на комиссии.`
+            : `❌ Max ${(maxWithdraw).toFixed(2)} TON per withdrawal (80% of balance). Remainder reserved for fees.`
+          );
+          return;
+        }
+
+        // Deduct balance atomically
+        profile.balance_ton = Math.max(0, (profile.balance_ton || 0) - amount - networkFee);
+        await wdClient.query(
+          `INSERT INTO builder_bot.user_settings (user_id, key, value, updated_at)
+           VALUES ($1, 'profile', $2::jsonb, NOW())
+           ON CONFLICT ON CONSTRAINT user_settings_unique DO UPDATE SET value = $2::jsonb, updated_at = NOW()`,
+          [userId, JSON.stringify(profile)]
         );
+        await wdClient.query(
+          `INSERT INTO builder_bot.balance_transactions (user_id, type, amount_ton, balance_after, description, status)
+           VALUES ($1, 'withdraw', $2, $3, $4, 'completed')`,
+          [userId, -(amount + networkFee), profile.balance_ton, `Withdraw to ${toAddr.slice(0,12)}...`]
+        );
+        await wdClient.query('COMMIT');
+        deductedProfile = profile;
+      } catch (txErr) {
+        await wdClient.query('ROLLBACK').catch(() => {});
+        await ctx.reply(lang === 'ru' ? '❌ Ошибка обработки. Попробуйте снова.' : '❌ Processing error. Please try again.');
         return;
+      } finally {
+        wdClient.release();
       }
       pendingWithdrawal.delete(userId);
-      const toAddr = wState.address || profile.wallet_address || '';
-      const walletShort = toAddr.slice(0, 12) + '…';
-
-      // Deduct balance first
-      await addUserBalance(userId, -(amount + networkFee), { type: 'withdraw', description: `Withdraw to ${toAddr.slice(0,12)}...` });
 
       await safeReply(ctx,
         lang === 'ru'
@@ -8889,7 +8993,7 @@ bot.catch((err, ctx) => {
 // ============================================================
 // Запуск
 // ============================================================
-export function getBotInstance() {
+export function getBotInstance(): Telegraf | null {
   return bot;
 }
 

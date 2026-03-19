@@ -1359,9 +1359,9 @@ export function startApiServer() {
 
       // Create clone
       const cloneName = (a.name || 'Agent') + ' (clone)';
-      const result = await getDBTools().createAgent(userId, cloneName, a.description || '', a.triggerType, a.code || '', a.triggerConfig);
+      const result = await getDBTools().createAgent({ userId, name: cloneName, description: a.description || '', triggerType: (a as any).triggerType || 'ai_agent', code: (a as any).code || '', triggerConfig: (a as any).triggerConfig || {} });
       if (!result.success || !result.data) { res.status(500).json({ error: 'Failed to create clone' }); return; }
-      const newId = result.data.agentId;
+      const newId = (result.data as any).agentId || (result.data as any).id;
 
       // Copy state (skip wallet and conversation history)
       const stateRepo = getAgentStateRepository();
@@ -1372,8 +1372,8 @@ export function startApiServer() {
       }
 
       // Copy role if exists
-      if (a.role) {
-        await pool.query('UPDATE builder_bot.agents SET role = $1 WHERE id = $2', [a.role, newId]);
+      if ((a as any).role) {
+        await pool.query('UPDATE builder_bot.agents SET role = $1 WHERE id = $2', [(a as any).role, newId]);
       }
 
       res.json({ ok: true, agentId: newId, name: cloneName });
@@ -1569,7 +1569,7 @@ export function startApiServer() {
       const dailyLimit = await sr.get(agentId, 'daily_spend_limit_ton').catch(() => null) as any;
       items.push({ category: 'security', check: 'Spend limit', status: 'pass', detail: 'Daily spend limit: ' + (dailyLimit?.value || '500') + ' TON' });
 
-      const role = agent.role || 'worker';
+      const role = (agent as any).role || 'worker';
       items.push({ category: 'security', check: 'Role', status: 'pass', detail: 'Role: ' + role });
 
       // ── 6. Execution Stats ──
@@ -2468,22 +2468,44 @@ export function startApiServer() {
         return;
       }
 
-      // Credit balance — record ledger FIRST (has UNIQUE tx_hash constraint to prevent double-credit)
+      // Credit balance atomically — ledger insert + profile update in one transaction
+      const dbClient = await pool.connect();
       try {
-        const settingsRepo = getUserSettingsRepository();
-        await getBalanceTxRepository().record(userId, 'topup', result.amountTon, 0, 'Dashboard topup', result.txHash);
-        // Only credit if ledger insert succeeded (no duplicate)
-        const profile = (await settingsRepo.get(userId, 'profile')) || { balance_ton: 0, total_earned: 0, wallet_address: null, joined_at: new Date().toISOString() };
+        await dbClient.query('BEGIN');
+        // Insert ledger entry first (UNIQUE tx_hash prevents double-credit)
+        await dbClient.query(
+          `INSERT INTO builder_bot.balance_transactions (user_id, type, amount_ton, balance_after, description, tx_hash, status)
+           VALUES ($1, 'topup', $2, 0, 'Dashboard topup', $3, 'completed')`,
+          [userId, result.amountTon, result.txHash]
+        );
+        // Lock and update profile atomically
+        const { rows: profRows } = await dbClient.query(
+          `SELECT value FROM builder_bot.user_settings WHERE user_id = $1 AND key = 'profile' FOR UPDATE`,
+          [userId]
+        );
+        const profile = profRows[0]?.value || { balance_ton: 0, total_earned: 0, wallet_address: null, joined_at: new Date().toISOString() };
         profile.balance_ton = (profile.balance_ton || 0) + result.amountTon;
         profile.total_earned = (profile.total_earned || 0) + result.amountTon;
-        await settingsRepo.set(userId, 'profile', profile);
+        await dbClient.query(
+          `INSERT INTO builder_bot.user_settings (user_id, key, value, updated_at)
+           VALUES ($1, 'profile', $2::jsonb, NOW())
+           ON CONFLICT ON CONSTRAINT user_settings_unique DO UPDATE SET value = $2::jsonb, updated_at = NOW()`,
+          [userId, JSON.stringify(profile)]
+        );
         // Update ledger with final balance
-        await pool.query(`UPDATE builder_bot.balance_transactions SET balance_after = $1 WHERE tx_hash = $2`, [profile.balance_ton, result.txHash]);
+        await dbClient.query(
+          `UPDATE builder_bot.balance_transactions SET balance_after = $1 WHERE tx_hash = $2`,
+          [profile.balance_ton, result.txHash]
+        );
+        await dbClient.query('COMMIT');
         res.json({ ok: true, credited: result.amountTon, balance: profile.balance_ton, txHash: result.txHash });
       } catch (dupErr: any) {
+        await dbClient.query('ROLLBACK').catch(() => {});
         if (dupErr?.code === '23505') { // unique_violation
           res.json({ ok: false, error: 'Already credited' });
         } else { throw dupErr; }
+      } finally {
+        dbClient.release();
       }
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -2530,48 +2552,110 @@ export function startApiServer() {
         return;
       }
 
-      // Balance check
-      const settingsRepo = getUserSettingsRepository();
-      const profile = (await settingsRepo.get(userId, 'profile')) || { balance_ton: 0, total_earned: 0, wallet_address: null, joined_at: new Date().toISOString() };
+      // Balance check + deduct in a single transaction to prevent double-withdraw
       const networkFee = 0.05;
-      if (amountTon + networkFee > profile.balance_ton) {
-        res.status(400).json({ error: 'Insufficient balance' });
-        return;
-      }
-      // Max 80% of balance
-      if (amountTon > profile.balance_ton * 0.8) {
-        res.status(400).json({ error: `Max withdrawal is 80% of balance (${(profile.balance_ton * 0.8).toFixed(2)} TON)` });
-        return;
+      const dbClient = await pool.connect();
+      let profile: any;
+      let deducted = false;
+      try {
+        await dbClient.query('BEGIN');
+        // Lock the profile row to prevent concurrent balance modifications
+        const { rows } = await dbClient.query(
+          `SELECT value FROM builder_bot.user_settings WHERE user_id = $1 AND key = 'profile' FOR UPDATE`,
+          [userId]
+        );
+        profile = rows[0]?.value || { balance_ton: 0, total_earned: 0, wallet_address: null, joined_at: new Date().toISOString() };
+
+        if (amountTon + networkFee > (profile.balance_ton || 0)) {
+          await dbClient.query('ROLLBACK');
+          res.status(400).json({ error: 'Insufficient balance' });
+          return;
+        }
+        if (amountTon > (profile.balance_ton || 0) * 0.8) {
+          await dbClient.query('ROLLBACK');
+          res.status(400).json({ error: `Max withdrawal is 80% of balance (${((profile.balance_ton || 0) * 0.8).toFixed(2)} TON)` });
+          return;
+        }
+
+        // Save wallet address to profile (syncs with bot)
+        if (!profile.wallet_address || profile.wallet_address !== address) {
+          profile.wallet_address = address;
+        }
+
+        // Deduct balance atomically
+        profile.balance_ton = Math.max(0, (profile.balance_ton || 0) - amountTon - networkFee);
+        await dbClient.query(
+          `INSERT INTO builder_bot.user_settings (user_id, key, value, updated_at)
+           VALUES ($1, 'profile', $2::jsonb, NOW())
+           ON CONFLICT ON CONSTRAINT user_settings_unique DO UPDATE SET value = $2::jsonb, updated_at = NOW()`,
+          [userId, JSON.stringify(profile)]
+        );
+        // Record withdrawal in ledger within the same transaction
+        await dbClient.query(
+          `INSERT INTO builder_bot.balance_transactions (user_id, type, amount_ton, balance_after, description, status)
+           VALUES ($1, 'withdraw', $2, $3, $4, 'completed')`,
+          [userId, -(amountTon + networkFee), profile.balance_ton, `Withdraw to ${address.slice(0,12)}...`]
+        );
+        await dbClient.query('COMMIT');
+        deducted = true;
+      } catch (txErr: any) {
+        await dbClient.query('ROLLBACK').catch(() => {});
+        throw txErr;
+      } finally {
+        dbClient.release();
       }
 
-      // Save wallet address to profile (syncs with bot)
-      if (!profile.wallet_address || profile.wallet_address !== address) {
-        profile.wallet_address = address;
-      }
-
-      // Deduct balance
-      profile.balance_ton = Math.max(0, profile.balance_ton - amountTon - networkFee);
-      await settingsRepo.set(userId, 'profile', profile);
-      await getBalanceTxRepository().record(userId, 'withdraw', -(amountTon + networkFee), profile.balance_ton, `Withdraw to ${address.slice(0,12)}...`);
-
-      // Send TON
+      // Send TON (outside the DB transaction — network call)
       try {
         const result = await sendPlatformTransaction(address, amountTon, `withdraw:${userId}`);
         if (result.ok) {
           try { await getBalanceTxRepository().record(userId, 'withdraw_confirmed', 0, profile.balance_ton, `txHash: ${result.txHash}`, result.txHash); } catch {}
           res.json({ ok: true, txHash: result.txHash, balance: profile.balance_ton });
         } else {
-          // Rollback
-          profile.balance_ton += amountTon + networkFee;
-          await settingsRepo.set(userId, 'profile', profile);
-          await getBalanceTxRepository().record(userId, 'refund', amountTon + networkFee, profile.balance_ton, 'Withdraw failed, refunded');
+          // Rollback balance atomically
+          const rbClient = await pool.connect();
+          try {
+            await rbClient.query('BEGIN');
+            const { rows: rbRows } = await rbClient.query(
+              `SELECT value FROM builder_bot.user_settings WHERE user_id = $1 AND key = 'profile' FOR UPDATE`, [userId]
+            );
+            const rbProfile = rbRows[0]?.value || profile;
+            rbProfile.balance_ton = (rbProfile.balance_ton || 0) + amountTon + networkFee;
+            await rbClient.query(
+              `UPDATE builder_bot.user_settings SET value = $1::jsonb, updated_at = NOW() WHERE user_id = $2 AND key = 'profile'`,
+              [JSON.stringify(rbProfile), userId]
+            );
+            await rbClient.query(
+              `INSERT INTO builder_bot.balance_transactions (user_id, type, amount_ton, balance_after, description, status)
+               VALUES ($1, 'refund', $2, $3, 'Withdraw failed, refunded', 'completed')`,
+              [userId, amountTon + networkFee, rbProfile.balance_ton]
+            );
+            await rbClient.query('COMMIT');
+            profile.balance_ton = rbProfile.balance_ton;
+          } catch (rbErr) { await rbClient.query('ROLLBACK').catch(() => {}); } finally { rbClient.release(); }
           res.status(500).json({ error: result.error || 'Transaction failed' });
         }
       } catch (sendErr: any) {
-        // Rollback on exception
-        profile.balance_ton += amountTon + networkFee;
-        await settingsRepo.set(userId, 'profile', profile);
-        await getBalanceTxRepository().record(userId, 'refund', amountTon + networkFee, profile.balance_ton, 'Withdraw exception, refunded');
+        // Rollback on exception — same atomic pattern
+        const rbClient = await pool.connect();
+        try {
+          await rbClient.query('BEGIN');
+          const { rows: rbRows } = await rbClient.query(
+            `SELECT value FROM builder_bot.user_settings WHERE user_id = $1 AND key = 'profile' FOR UPDATE`, [userId]
+          );
+          const rbProfile = rbRows[0]?.value || profile;
+          rbProfile.balance_ton = (rbProfile.balance_ton || 0) + amountTon + networkFee;
+          await rbClient.query(
+            `UPDATE builder_bot.user_settings SET value = $1::jsonb, updated_at = NOW() WHERE user_id = $2 AND key = 'profile'`,
+            [JSON.stringify(rbProfile), userId]
+          );
+          await rbClient.query(
+            `INSERT INTO builder_bot.balance_transactions (user_id, type, amount_ton, balance_after, description, status)
+             VALUES ($1, 'refund', $2, $3, 'Withdraw exception, refunded', 'completed')`,
+            [userId, amountTon + networkFee, rbProfile.balance_ton]
+          );
+          await rbClient.query('COMMIT');
+        } catch (rbErr) { await rbClient.query('ROLLBACK').catch(() => {}); } finally { rbClient.release(); }
         res.status(500).json({ error: sendErr.message || 'Send failed' });
       }
     } catch (e: any) {
@@ -2710,25 +2794,61 @@ export function startApiServer() {
 
       const priceTon = (listing.price || 0) / 1e9;
 
-      // If not free, check and deduct balance
+      // If not free, check and deduct balance atomically (prevents double-buy / negative balance)
       if (!listing.isFree && priceTon > 0) {
-        const settingsRepo = getUserSettingsRepository();
-        // Get buyer profile
-        const buyerProfile: any = (await settingsRepo.get(userId, 'profile')) || { balance_ton: 0, total_earned: 0, wallet_address: null, joined_at: new Date().toISOString() };
-        const buyerBalance = buyerProfile.balance_ton || 0;
-        if (buyerBalance < priceTon) {
-          return res.status(400).json({ ok: false, error: 'Insufficient balance', required: priceTon, balance: buyerBalance });
+        const dbClient = await pool.connect();
+        try {
+          await dbClient.query('BEGIN');
+          // Lock buyer profile row
+          const { rows: buyerRows } = await dbClient.query(
+            `SELECT value FROM builder_bot.user_settings WHERE user_id = $1 AND key = 'profile' FOR UPDATE`,
+            [userId]
+          );
+          const buyerProfile: any = buyerRows[0]?.value || { balance_ton: 0, total_earned: 0, wallet_address: null, joined_at: new Date().toISOString() };
+          const buyerBalance = buyerProfile.balance_ton || 0;
+          if (buyerBalance < priceTon) {
+            await dbClient.query('ROLLBACK');
+            return res.status(400).json({ ok: false, error: 'Insufficient balance', required: priceTon, balance: buyerBalance });
+          }
+          // Deduct from buyer
+          buyerProfile.balance_ton = Math.max(0, buyerBalance - priceTon);
+          await dbClient.query(
+            `INSERT INTO builder_bot.user_settings (user_id, key, value, updated_at)
+             VALUES ($1, 'profile', $2::jsonb, NOW())
+             ON CONFLICT ON CONSTRAINT user_settings_unique DO UPDATE SET value = $2::jsonb, updated_at = NOW()`,
+            [userId, JSON.stringify(buyerProfile)]
+          );
+          await dbClient.query(
+            `INSERT INTO builder_bot.balance_transactions (user_id, type, amount_ton, balance_after, description, status)
+             VALUES ($1, 'marketplace_buy', $2, $3, $4, 'completed')`,
+            [userId, -priceTon, buyerProfile.balance_ton, `Marketplace purchase #${listingId}`]
+          );
+          // Lock seller profile row and credit
+          const { rows: sellerRows } = await dbClient.query(
+            `SELECT value FROM builder_bot.user_settings WHERE user_id = $1 AND key = 'profile' FOR UPDATE`,
+            [listing.sellerId]
+          );
+          const sellerProfile: any = sellerRows[0]?.value || { balance_ton: 0, total_earned: 0, wallet_address: null, joined_at: new Date().toISOString() };
+          sellerProfile.balance_ton = (sellerProfile.balance_ton || 0) + priceTon;
+          sellerProfile.total_earned = (sellerProfile.total_earned || 0) + priceTon;
+          await dbClient.query(
+            `INSERT INTO builder_bot.user_settings (user_id, key, value, updated_at)
+             VALUES ($1, 'profile', $2::jsonb, NOW())
+             ON CONFLICT ON CONSTRAINT user_settings_unique DO UPDATE SET value = $2::jsonb, updated_at = NOW()`,
+            [listing.sellerId, JSON.stringify(sellerProfile)]
+          );
+          await dbClient.query(
+            `INSERT INTO builder_bot.balance_transactions (user_id, type, amount_ton, balance_after, description, status)
+             VALUES ($1, 'marketplace_sale', $2, $3, $4, 'completed')`,
+            [listing.sellerId, priceTon, sellerProfile.balance_ton, `Marketplace sale #${listingId}`]
+          );
+          await dbClient.query('COMMIT');
+        } catch (txErr: any) {
+          await dbClient.query('ROLLBACK').catch(() => {});
+          throw txErr;
+        } finally {
+          dbClient.release();
         }
-        // Deduct from buyer
-        buyerProfile.balance_ton = Math.max(0, buyerBalance - priceTon);
-        await settingsRepo.set(userId, 'profile', buyerProfile);
-        await getBalanceTxRepository().record(userId, 'marketplace_buy', -priceTon, buyerProfile.balance_ton, `Marketplace purchase #${listingId}`);
-        // Credit to seller
-        const sellerProfile: any = (await settingsRepo.get(listing.sellerId, 'profile')) || { balance_ton: 0, total_earned: 0, wallet_address: null, joined_at: new Date().toISOString() };
-        sellerProfile.balance_ton = (sellerProfile.balance_ton || 0) + priceTon;
-        sellerProfile.total_earned = (sellerProfile.total_earned || 0) + priceTon;
-        await settingsRepo.set(listing.sellerId, 'profile', sellerProfile);
-        await getBalanceTxRepository().record(listing.sellerId, 'marketplace_sale', priceTon, sellerProfile.balance_ton, `Marketplace sale #${listingId}`);
       }
 
       // Clone agent for buyer
@@ -2859,23 +2979,7 @@ export function startApiServer() {
 
       const amount = period === 'year' ? plan.priceYearTon : plan.priceMonthTon;
 
-      // Check balance
-      const settingsRepo = getUserSettingsRepository();
-      const profile = (await settingsRepo.get(userId, 'profile')) || { balance_ton: 0, total_earned: 0 };
-      const balance = profile.balance_ton || 0;
-
-      if (balance < amount) {
-        return res.status(400).json({ ok: false, error: `Insufficient balance. Need ${amount} TON, have ${balance.toFixed(2)} TON`, needTopup: amount - balance });
-      }
-
-      // Deduct balance
-      profile.balance_ton = balance - amount;
-      await settingsRepo.set(userId, 'profile', profile);
-
-      // Record transaction
-      await getBalanceTxRepository().record(userId, 'spend', -amount, profile.balance_ton, `Subscription: ${plan.name} (${period})`, `sub:${planId}:${period}:${Date.now()}`);
-
-      // Set subscription
+      // Check balance + deduct + activate subscription atomically
       const expiresAt = new Date();
       if (period === 'year') {
         expiresAt.setFullYear(expiresAt.getFullYear() + 1);
@@ -2883,12 +2987,50 @@ export function startApiServer() {
         expiresAt.setMonth(expiresAt.getMonth() + 1);
       }
 
-      // Update DB
-      await pool.query(`
-        INSERT INTO builder_bot.subscriptions (user_id, plan_id, expires_at, is_active, created_at, updated_at)
-        VALUES ($1, $2, $3, true, NOW(), NOW())
-        ON CONFLICT (user_id) DO UPDATE SET plan_id = $2, expires_at = $3, is_active = true, updated_at = NOW()
-      `, [userId, planId, expiresAt]);
+      const dbClient = await pool.connect();
+      let profile: any;
+      try {
+        await dbClient.query('BEGIN');
+        // Lock the profile row to prevent concurrent balance modifications
+        const { rows: profRows } = await dbClient.query(
+          `SELECT value FROM builder_bot.user_settings WHERE user_id = $1 AND key = 'profile' FOR UPDATE`,
+          [userId]
+        );
+        profile = profRows[0]?.value || { balance_ton: 0, total_earned: 0 };
+        const balance = profile.balance_ton || 0;
+
+        if (balance < amount) {
+          await dbClient.query('ROLLBACK');
+          return res.status(400).json({ ok: false, error: `Insufficient balance. Need ${amount} TON, have ${balance.toFixed(2)} TON`, needTopup: amount - balance });
+        }
+
+        // Deduct balance
+        profile.balance_ton = balance - amount;
+        await dbClient.query(
+          `INSERT INTO builder_bot.user_settings (user_id, key, value, updated_at)
+           VALUES ($1, 'profile', $2::jsonb, NOW())
+           ON CONFLICT ON CONSTRAINT user_settings_unique DO UPDATE SET value = $2::jsonb, updated_at = NOW()`,
+          [userId, JSON.stringify(profile)]
+        );
+        // Record transaction
+        await dbClient.query(
+          `INSERT INTO builder_bot.balance_transactions (user_id, type, amount_ton, balance_after, description, tx_hash, status)
+           VALUES ($1, 'spend', $2, $3, $4, $5, 'completed')`,
+          [userId, -amount, profile.balance_ton, `Subscription: ${plan.name} (${period})`, `sub:${planId}:${period}:${Date.now()}`]
+        );
+        // Activate subscription in the same transaction
+        await dbClient.query(`
+          INSERT INTO builder_bot.subscriptions (user_id, plan_id, expires_at, is_active, created_at, updated_at)
+          VALUES ($1, $2, $3, true, NOW(), NOW())
+          ON CONFLICT (user_id) DO UPDATE SET plan_id = $2, expires_at = $3, is_active = true, updated_at = NOW()
+        `, [userId, planId, expiresAt]);
+        await dbClient.query('COMMIT');
+      } catch (txErr: any) {
+        await dbClient.query('ROLLBACK').catch(() => {});
+        throw txErr;
+      } finally {
+        dbClient.release();
+      }
 
       // Update in-memory cache so getUserSubscription returns new plan immediately
       updateSubscriptionCache(userId, planId, expiresAt);

@@ -601,6 +601,7 @@ interface ChatEngagement {
   reactionCount: number;       // reactions on agent msgs (weight: 1)
   questionCount: number;       // questions in chat (weight: 0.5)
   agentReplyCount: number;     // times agent replied here
+  replyCount?: number;         // generic reply count (alias)
   lastActivityAt: string;
   burstTimestamps: number[];   // timestamps of recent interactions (for burst detection)
   proactiveEnabled: boolean;

@@ -1,4 +1,4 @@
-import { NodeVM } from 'vm2';
+import * as vm from 'node:vm';
 // Native fetch is available in Node 18+
 import { ToolResult } from './db-tools';
 import { getMemoryManager } from '../../db/memory';
@@ -296,7 +296,7 @@ export class ExecutionTools {
     stopFlag?: { stopped: boolean }  // передаётся для persistent mode
   ): Promise<{ success: boolean; result?: any; error?: string }> {
     try {
-      // NodeVM с доступом к fetch через sandbox
+      // Node built-in vm module with sandboxed context (replaced vm2 due to CVEs)
       // Node 18+ имеет глобальный fetch, передаем его в sandbox
       const nativeFetch = (globalThis as any).fetch;
 
@@ -324,79 +324,114 @@ export class ExecutionTools {
         return nativeFetch(input, init);
       };
 
-      const vm = new NodeVM({
-        timeout: 55000, // 55s — у API иногда долгий response
-        sandbox: {
-          // ── SSRF-protected fetch ──
-          fetch: safeFetch,
+      // ── Build sandbox object with all injected functions ──
+      // Resolve telegram sandbox (async) before creating context
+      const telegramSandbox = await (async () => {
+        // Per-AGENT Telegram — each agent has its own TG account
+        try {
+          const { userbotManager } = require('../../services/userbot-manager');
+          const agentSandbox = await userbotManager.buildAgentSandbox(params.agentId || 0);
+          if (agentSandbox) return agentSandbox;
+          // Fallback: try per-user (backward compat)
+          const perUserSandbox = await userbotManager.buildUserSandbox(params.userId);
+          if (perUserSandbox) return perUserSandbox;
+        } catch {}
+        // Fallback: try global auth (backward compat)
+        try {
+          const auth = await isAuthorized();
+          if (auth) return buildUserbotSandbox();
+        } catch {}
+        // Not authenticated — return stub that throws helpful error
+        const notAuthed = (method: string) => async (..._args: any[]) => {
+          throw new Error(`telegram.${method}: Telegram not connected. Connect via Studio Settings.`);
+        };
+        return {
+          sendMessage:    notAuthed('sendMessage'),
+          getMessages:    notAuthed('getMessages'),
+          getChannelInfo: notAuthed('getChannelInfo'),
+          joinChannel:    notAuthed('joinChannel'),
+          leaveChannel:   notAuthed('leaveChannel'),
+          getDialogs:     notAuthed('getDialogs'),
+          getMembers:     notAuthed('getMembers'),
+          forwardMessage: notAuthed('forwardMessage'),
+          deleteMessage:  notAuthed('deleteMessage'),
+          searchMessages: notAuthed('searchMessages'),
+          getUserInfo:    notAuthed('getUserInfo'),
+          sendFile:       notAuthed('sendFile'),
+        };
+      })();
 
-          // ── Контекст агента ──
-          context: {
-            userId: params.userId,
-            agentId: params.agentId,
-            wallet: params.context?.wallet,
-            config: params.context?.config || params.triggerConfig || {},
-            soul: params.triggerConfig?.soul || params.context?.soul || null,
-          },
+      const sandbox: Record<string, any> = {
+        // ── SSRF-protected fetch ──
+        fetch: safeFetch,
 
-          // ── Объект логирования ──
-          console: {
-            log: (...args: any[]) => addLog('info', args.map(String).join(' ')),
-            warn: (...args: any[]) => addLog('warn', args.map(String).join(' ')),
-            error: (...args: any[]) => addLog('error', args.map(String).join(' ')),
-            info: (...args: any[]) => addLog('info', args.map(String).join(' ')),
-          },
+        // ── Контекст агента ──
+        context: {
+          userId: params.userId,
+          agentId: params.agentId,
+          wallet: params.context?.wallet,
+          config: params.context?.config || params.triggerConfig || {},
+          soul: params.triggerConfig?.soul || params.context?.soul || null,
+        },
 
-          // ── notify(text) — отправить Telegram сообщение пользователю СРАЗУ ──
-          // Используй для алертов: если баланс упал, цена изменилась и т.д.
-          notify: (text: string) => {
-            const msg = String(text).slice(0, 4000);
-            addLog('info', `[notify] → user ${params.userId}: ${msg.slice(0, 80)}`);
-            notifyUser(params.userId, msg).catch(e =>
-              addLog('warn', `[notify] failed: ${e?.message}`)
-            );
-          },
+        // ── Объект логирования ──
+        console: {
+          log: (...args: any[]) => addLog('info', args.map(String).join(' ')),
+          warn: (...args: any[]) => addLog('warn', args.map(String).join(' ')),
+          error: (...args: any[]) => addLog('error', args.map(String).join(' ')),
+          info: (...args: any[]) => addLog('info', args.map(String).join(' ')),
+        },
 
-          // ── getState(key) / setState(key, val) — персистентное состояние между запусками ──
-          // Write-through cache: in-memory для быстрых чтений, запись в DB в фоне.
-          // State выживает рестарты сервера (восстанавливается из DB при startup).
-          getState: (key: string) => {
-            const val = stateMap.get(String(key));
-            return val !== undefined ? val : null;
-          },
-          setState: (key: string, value: any) => {
-            stateMap.set(String(key), value);
-            // Фоновая запись в DB — не блокирует VM
-            try {
-              getAgentStateRepository().set(agentId, params.userId, String(key), value).catch(e => console.error('[Runtime]', e?.message));
-            } catch { /* repository не инициализирован (тест) — игнорируем */ }
-          },
+        // ── notify(text) — отправить Telegram сообщение пользователю СРАЗУ ──
+        // Используй для алертов: если баланс упал, цена изменилась и т.д.
+        notify: (text: string) => {
+          const msg = String(text).slice(0, 4000);
+          addLog('info', `[notify] → user ${params.userId}: ${msg.slice(0, 80)}`);
+          notifyUser(params.userId, msg).catch(e =>
+            addLog('warn', `[notify] failed: ${e?.message}`)
+          );
+        },
 
-          // ── getTonBalance(address) — helper: баланс TON в TON (не нанотонах) ──
-          getTonBalance: async (address: string): Promise<number> => {
-            if (!address || typeof address !== 'string') {
-              throw new Error('getTonBalance: адрес не передан');
-            }
-            const cleaned = address.trim();
-            const apiKey = process.env.TONAPI_KEY || '';
-            try {
-              const res = await nativeFetch(
-                `https://tonapi.io/v2/accounts/${encodeURIComponent(cleaned)}`,
-                { headers: apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {}, redirect: 'manual' }
-              );
-              if (!res.ok) throw new Error(`TonAPI ${res.status}`);
-              const data = await res.json() as any;
-              return data.balance ? Number(data.balance) / 1e9 : 0;
-            } catch (e: any) {
-              throw new Error(`getTonBalance: ${e.message}`);
-            }
-          },
+        // ── getState(key) / setState(key, val) — персистентное состояние между запусками ──
+        // Write-through cache: in-memory для быстрых чтений, запись в DB в фоне.
+        // State выживает рестарты сервера (восстанавливается из DB при startup).
+        getState: (key: string) => {
+          const val = stateMap.get(String(key));
+          return val !== undefined ? val : null;
+        },
+        setState: (key: string, value: any) => {
+          stateMap.set(String(key), value);
+          // Фоновая запись в DB — не блокирует VM
+          try {
+            getAgentStateRepository().set(agentId, params.userId, String(key), value).catch(e => console.error('[Runtime]', e?.message));
+          } catch { /* repository не инициализирован (тест) — игнорируем */ }
+        },
 
-          // ── getPrice(symbol) — helper: цена в USD ──
-          getPrice: async (symbol: string = 'TON'): Promise<number> => {
-            const id = symbol.toLowerCase() === 'ton' ? 'the-open-network' : symbol.toLowerCase();
+        // ── getTonBalance(address) — helper: баланс TON в TON (не нанотонах) ──
+        getTonBalance: async (address: string): Promise<number> => {
+          if (!address || typeof address !== 'string') {
+            throw new Error('getTonBalance: адрес не передан');
+          }
+          const cleaned = address.trim();
+          const apiKey = process.env.TONAPI_KEY || '';
+          try {
             const res = await nativeFetch(
-              `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(id)}&vs_currencies=usd`
+              `https://tonapi.io/v2/accounts/${encodeURIComponent(cleaned)}`,
+              { headers: apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {}, redirect: 'manual' }
+            );
+            if (!res.ok) throw new Error(`TonAPI ${res.status}`);
+            const data = await res.json() as any;
+            return data.balance ? Number(data.balance) / 1e9 : 0;
+          } catch (e: any) {
+            throw new Error(`getTonBalance: ${e.message}`);
+          }
+        },
+
+        // ── getPrice(symbol) — helper: цена в USD ──
+        getPrice: async (symbol: string = 'TON'): Promise<number> => {
+          const id = symbol.toLowerCase() === 'ton' ? 'the-open-network' : symbol.toLowerCase();
+          const res = await nativeFetch(
+            `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(id)}&vs_currencies=usd`
             );
             if (!res.ok) throw new Error(`CoinGecko ${res.status}`);
             const data = await res.json() as any;
@@ -941,40 +976,7 @@ export class ExecutionTools {
           //   telegram.getMessages(chatId, limit)
           //   telegram.joinChannel(username)
           //   telegram.getDialogs(limit)  и т.д.
-          telegram: await (async () => {
-            // Per-AGENT Telegram — each agent has its own TG account
-            try {
-              const { userbotManager } = require('../../services/userbot-manager');
-              const agentSandbox = await userbotManager.buildAgentSandbox(params.agentId || 0);
-              if (agentSandbox) return agentSandbox;
-              // Fallback: try per-user (backward compat)
-              const perUserSandbox = await userbotManager.buildUserSandbox(params.userId);
-              if (perUserSandbox) return perUserSandbox;
-            } catch {}
-            // Fallback: try global auth (backward compat)
-            try {
-              const auth = await isAuthorized();
-              if (auth) return buildUserbotSandbox();
-            } catch {}
-            // Not authenticated — return stub that throws helpful error
-            const notAuthed = (method: string) => async (..._args: any[]) => {
-              throw new Error(`telegram.${method}: Telegram not connected. Connect via Studio Settings.`);
-            };
-            return {
-              sendMessage:    notAuthed('sendMessage'),
-              getMessages:    notAuthed('getMessages'),
-              getChannelInfo: notAuthed('getChannelInfo'),
-              joinChannel:    notAuthed('joinChannel'),
-              leaveChannel:   notAuthed('leaveChannel'),
-              getDialogs:     notAuthed('getDialogs'),
-              getMembers:     notAuthed('getMembers'),
-              forwardMessage: notAuthed('forwardMessage'),
-              deleteMessage:  notAuthed('deleteMessage'),
-              searchMessages: notAuthed('searchMessages'),
-              getUserInfo:    notAuthed('getUserInfo'),
-              sendFile:       notAuthed('sendFile'),
-            };
-          })(),
+          telegram: telegramSandbox,
 
           // ── Discord integration (placeholder) ──
           sendDiscordMessage: async (channelId: string, content: string) => {
@@ -1117,29 +1119,47 @@ export class ExecutionTools {
           URL,
           URLSearchParams,
           // AbortController / AbortSignal — необходимы для fetch timeout
-          // VM2 не инжектирует Node 18+ глобалы автоматически
           AbortController,
           AbortSignal,
+          Promise,
+          Array,
+          Object,
+          String: globalThis.String,
+          Number: globalThis.Number,
+          Boolean: globalThis.Boolean,
+          RegExp,
+          Error,
+          TypeError,
+          RangeError,
+          Map,
+          Set,
+          Symbol,
+          encodeURIComponent,
+          decodeURIComponent,
+          encodeURI,
+          decodeURI,
           setTimeout: () => { throw new Error('setTimeout is disabled in agent sandbox. Use sleep() instead.'); },
           setInterval: () => { throw new Error('setInterval is disabled in agent sandbox. Use the scheduler for recurring tasks.'); },
-        },
-        require: {
-          external: false,
-          builtin: [],
-        },
-        eval: false,
-        wasm: false,
+          // Block require/import in sandbox
+          require: () => { throw new Error('require() is disabled in agent sandbox.'); },
+      };
+
+      // Create a V8 context with our sandbox — Node built-in vm module
+      // (replaces vm2 NodeVM which has known sandbox-escape CVEs)
+      const vmContext = vm.createContext(sandbox, {
+        name: `agent-${agentId}`,
+        codeGeneration: { strings: false, wasm: false },
       });
 
       // Sanitize: fix literal newlines inside string literals (common AI codegen mistake)
       // e.g. 'text\nmore' with real \n → 'text\\nmore' → prevents SyntaxError
       code = fixLiteralNewlinesInStrings(code);
 
-      // Оборачиваем код агента в async функцию.
+      // Оборачиваем код агента в async IIFE.
       // Если код определяет функцию agent/main/run — вызываем её автоматически.
       // Если код написан напрямую (без функции) — он выполняется как есть и должен вернуть результат.
       const wrappedCode = `
-module.exports = async function agentMain() {
+(async function agentMain() {
 ${code}
 
   // ── Авто-вызов именованной функции агента ──
@@ -1149,11 +1169,28 @@ ${code}
   if (typeof main === 'function')  return await main(context);
   if (typeof run === 'function')   return await run(context);
   // Если функции нет — код выполнился напрямую (IIFE-стиль), возвращаем undefined
-};
+})();
 `;
 
-      const agentFn = vm.run(wrappedCode, 'agent.js');
-      const result = await agentFn();
+      // Compile and run with timeout (90s for long API calls)
+      // Note: vm.runInContext timeout only applies to synchronous execution.
+      // For async code, we wrap with Promise.race for a hard timeout.
+      const script = new vm.Script(wrappedCode, {
+        filename: 'agent.js',
+      });
+      const asyncResultPromise = script.runInContext(vmContext, {
+        timeout: 90_000,  // 90s timeout for synchronous portions
+        breakOnSigint: true,
+      });
+
+      // Hard timeout for the full async execution (90 seconds)
+      const ASYNC_TIMEOUT_MS = 90_000;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        const t = setTimeout(() => reject(new Error('Agent execution timed out (90s limit)')), ASYNC_TIMEOUT_MS);
+        // Don't keep process alive just for this timer
+        if (t.unref) t.unref();
+      });
+      const result = await Promise.race([asyncResultPromise, timeoutPromise]);
       addLog('success', 'Выполнение завершено', result);
       return { success: true, result };
     } catch (error) {
