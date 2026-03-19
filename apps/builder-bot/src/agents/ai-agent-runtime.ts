@@ -8319,11 +8319,15 @@ If web_search returns nothing useful → say "не смог найти акту�
       }
       // Always keep at least last 8 messages regardless of size
       startIdx = Math.min(startIdx, Math.max(0, history.length - 8));
+      const validRoles = new Set(['user', 'assistant', 'system']);
       for (let i = startIdx; i < history.length; i++) {
-        messages.push({ role: history[i].role as any, content: history[i].content });
+        const role = validRoles.has(history[i].role) ? history[i].role : 'user';
+        if (history[i].content) messages.push({ role: role as any, content: String(history[i].content) });
       }
     }
-  } catch {}
+  } catch (histErr: any) {
+    console.warn(`[AI runtime] Agent #${params.agentId} conversation history load failed:`, histErr?.message?.slice(0, 120));
+  }
 
   // Current run context goes after history
   messages.push({ role: 'user', content: contextMsg });
@@ -8898,7 +8902,7 @@ If web_search returns nothing useful → say "не смог найти акту�
     const MAX_SAVE_CHARS = 50_000;
     const mapped = historyToSave.map(m => ({
       role: m.role,
-      content: (m.content || '').slice(0, 800),
+      content: (m.content || '').length > 800 ? (m.content || '').slice(0, 797) + '...' : (m.content || ''),
     }));
     let saveChars = 0;
     let saveStart = mapped.length;
