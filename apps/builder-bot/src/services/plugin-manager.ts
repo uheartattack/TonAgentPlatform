@@ -300,7 +300,7 @@ function buildContext(inst: PluginInstance, agentId: number): PluginContext {
           host: process.env.DB_HOST || 'localhost',
           port: parseInt(process.env.DB_PORT || '5432'),
           user: process.env.DB_USER || 'ton_agent',
-          password: process.env.DB_PASSWORD || 'changeme',
+          password: process.env.DB_PASSWORD || '',
           database: process.env.DB_NAME || 'ton_agent_platform',
           max: 1,
         });
