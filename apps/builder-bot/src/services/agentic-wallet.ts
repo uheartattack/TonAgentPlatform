@@ -62,7 +62,8 @@ class AgenticMcpBridge {
 
   async connect(mnemonic?: string): Promise<void> {
     const env: Record<string, string> = {
-      ...process.env as Record<string, string>,
+      PATH: process.env.PATH || '',
+      NODE_ENV: process.env.NODE_ENV || 'production',
       NETWORK: process.env.TON_NETWORK || 'mainnet',
       WALLET_VERSION: 'agentic',
     };
@@ -101,7 +102,9 @@ class AgenticMcpBridge {
   }
 
   async destroy(): Promise<void> {
-    try { if (this.client) await this.client.close(); } catch {}
+    try { if (this.client) await this.client.close(); } catch (e: any) {
+      console.warn('[AgenticWallet] MCP close error:', e.message);
+    }
     this.client = null;
     this.transport = null;
   }
@@ -123,7 +126,8 @@ class AgenticWalletService {
 
     if (this.mcpConnecting) {
       await this.mcpConnecting;
-      return this.mcpBridge!;
+      if (!this.mcpBridge) throw new Error('Agentic MCP connection failed (concurrent)');
+      return this.mcpBridge;
     }
 
     this.mcpConnecting = (async () => {
@@ -495,7 +499,9 @@ class AgenticWalletService {
         [userId, today]
       );
       totalSpent = Number(rows[0]?.total || 0) / 1e9;
-    } catch {}
+    } catch (e: any) {
+      console.warn('[AgenticWallet] getStats daily spend query error:', e.message);
+    }
 
     return {
       totalWallets: wallets.length,
@@ -536,7 +542,16 @@ class AgenticWalletService {
       `INSERT INTO builder_bot.agentic_wallets
         (user_id, agent_id, wallet_type, address, operator_key, label, nft_index, collection_addr, metadata)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       ON CONFLICT (address) DO UPDATE SET updated_at = NOW()
+       ON CONFLICT (address) DO UPDATE SET
+         user_id = EXCLUDED.user_id,
+         agent_id = EXCLUDED.agent_id,
+         wallet_type = EXCLUDED.wallet_type,
+         operator_key = EXCLUDED.operator_key,
+         label = EXCLUDED.label,
+         nft_index = EXCLUDED.nft_index,
+         collection_addr = EXCLUDED.collection_addr,
+         metadata = EXCLUDED.metadata,
+         updated_at = NOW()
        RETURNING *`,
       [
         userId,
