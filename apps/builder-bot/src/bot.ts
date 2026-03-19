@@ -564,9 +564,8 @@ function _getAllPendingMaps(): [string, Map<any, any> | Set<any>][] {
     ['topup', pendingTopup],
     ['2fa', complete2FAFns],
     ['repair', pendingRepairs], // keyed by string, not userId
-    ['agentWallets', agentWallets],
-    ['tonConnectLinks', tonConnectLinks],
-    ['userLang', userLanguages],
+    // NOTE: agentWallets, tonConnectLinks, userLanguages are caches — NOT included here
+    // (they should not be pruned by TTL, only refreshed on access)
     ['userIdea', pendingUserIdea],
     ['proposalDiscuss', pendingProposalDiscuss],
     ['walletImport', pendingWalletImport],
@@ -1127,7 +1126,7 @@ bot.command('search', async (ctx) => {
       `${a.isActive ? '🟢' : '⚪'} <b>${escHtml(a.name || 'Без имени')}</b> #${a.id}\n   ${escHtml((a.description || '').slice(0, 60))}`
     );
     const keyboard = matches.slice(0, 10).map((a: any) => [
-      { text: `${a.isActive ? '🟢' : '⚪'} ${a.name || '#' + a.id}`, callback_data: `manage_agent:${a.id}` },
+      { text: `${a.isActive ? '🟢' : '⚪'} ${a.name || '#' + a.id}`, callback_data: `agent_${a.id}` },
     ]);
     await ctx.reply(
       `🔍 Найдено ${matches.length} агент(ов) по "${escHtml(query)}":\n\n${lines.join('\n\n')}`,
@@ -2696,27 +2695,31 @@ bot.action(/^aw_manage:(\d+)$/, async (ctx) => {
 
 // ── Block / Unblock ──
 bot.action(/^aw_block:(\d+)$/, async (ctx) => {
-  await ctx.answerCbQuery('🔴 Blocking...');
-  const { getAgenticWalletService } = await import('./services/agentic-wallet');
-  await getAgenticWalletService().setBlocked(parseInt(ctx.match![1]), ctx.from!.id, true);
-  // Re-render
-  (ctx as any).match = [null, ctx.match![1]];
-  await ctx.reply('🔴 Кошелёк заблокирован. Агент не сможет тратить.');
+  try {
+    await ctx.answerCbQuery('🔴 Blocking...');
+    const { getAgenticWalletService } = await import('./services/agentic-wallet');
+    await getAgenticWalletService().setBlocked(parseInt(ctx.match![1]), ctx.from!.id, true);
+    await ctx.reply('🔴 Кошелёк заблокирован. Агент не сможет тратить.');
+  } catch (e: any) { await safeReply(ctx, `❌ Ошибка: ${e.message}`); }
 });
 
 bot.action(/^aw_unblock:(\d+)$/, async (ctx) => {
-  await ctx.answerCbQuery('🟢 Unblocking...');
-  const { getAgenticWalletService } = await import('./services/agentic-wallet');
-  await getAgenticWalletService().setBlocked(parseInt(ctx.match![1]), ctx.from!.id, false);
-  await ctx.reply('🟢 Кошелёк разблокирован.');
+  try {
+    await ctx.answerCbQuery('🟢 Unblocking...');
+    const { getAgenticWalletService } = await import('./services/agentic-wallet');
+    await getAgenticWalletService().setBlocked(parseInt(ctx.match![1]), ctx.from!.id, false);
+    await ctx.reply('🟢 Кошелёк разблокирован.');
+  } catch (e: any) { await safeReply(ctx, `❌ Ошибка: ${e.message}`); }
 });
 
 // ── Refresh single wallet ──
 bot.action(/^aw_refresh:(\d+)$/, async (ctx) => {
-  await ctx.answerCbQuery('🔄 Refreshing...');
-  const { getAgenticWalletService } = await import('./services/agentic-wallet');
-  const bal = await getAgenticWalletService().refreshBalance(parseInt(ctx.match![1]));
-  await ctx.reply(`💰 Баланс: ${bal.toFixed(4)} TON`);
+  try {
+    await ctx.answerCbQuery('🔄 Refreshing...');
+    const { getAgenticWalletService } = await import('./services/agentic-wallet');
+    const bal = await getAgenticWalletService().refreshBalance(parseInt(ctx.match![1]));
+    await ctx.reply(`💰 Баланс: ${bal.toFixed(4)} TON`);
+  } catch (e: any) { await safeReply(ctx, `❌ Ошибка обновления: ${e.message}`); }
 });
 
 // ── Set spend limit ──
@@ -2820,10 +2823,12 @@ bot.action(/^aw_delete:(\d+)$/, async (ctx) => {
 });
 
 bot.action(/^aw_delete_confirm:(\d+)$/, async (ctx) => {
-  await ctx.answerCbQuery('🗑 Deleting...');
-  const { getAgenticWalletService } = await import('./services/agentic-wallet');
-  await getAgenticWalletService().deleteWallet(parseInt(ctx.match![1]), ctx.from!.id);
-  await ctx.reply('✅ Кошелёк удалён.');
+  try {
+    await ctx.answerCbQuery('🗑 Deleting...');
+    const { getAgenticWalletService } = await import('./services/agentic-wallet');
+    await getAgenticWalletService().deleteWallet(parseInt(ctx.match![1]), ctx.from!.id);
+    await ctx.reply('✅ Кошелёк удалён.');
+  } catch (e: any) { await safeReply(ctx, `❌ Ошибка удаления: ${e.message}`); }
 });
 
 // ── Link agent to wallet ──
@@ -2851,12 +2856,14 @@ bot.action(/^aw_link_agent:(\d+)$/, async (ctx) => {
 });
 
 bot.action(/^aw_assign:(\d+):(\d+)$/, async (ctx) => {
-  await ctx.answerCbQuery('🔗 Linking...');
-  const walletId = parseInt(ctx.match![1]);
-  const agentId = parseInt(ctx.match![2]);
-  const { getAgenticWalletService } = await import('./services/agentic-wallet');
-  await getAgenticWalletService().assignToAgent(walletId, ctx.from!.id, agentId || null);
-  await ctx.reply(agentId ? `✅ Кошелёк привязан к агенту #${agentId}` : '✅ Кошелёк отвязан от агента');
+  try {
+    await ctx.answerCbQuery('🔗 Linking...');
+    const walletId = parseInt(ctx.match![1]);
+    const agentId = parseInt(ctx.match![2]);
+    const { getAgenticWalletService } = await import('./services/agentic-wallet');
+    await getAgenticWalletService().assignToAgent(walletId, ctx.from!.id, agentId || null);
+    await ctx.reply(agentId ? `✅ Кошелёк привязан к агенту #${agentId}` : '✅ Кошелёк отвязан от агента');
+  } catch (e: any) { await safeReply(ctx, `❌ Ошибка: ${e.message}`); }
 });
 
 // ── Пополнение баланса ───────────────────────
