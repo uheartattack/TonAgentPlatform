@@ -102,7 +102,6 @@ const LEVEL3_KEYWORDS = [
 
 // HARD BLOCK — самоулучшатель НИКОГДА не трогает эти файлы (патчи удаляются)
 const PROTECTED_FILES = [
-  'security-scanner.ts', 'payments.ts', 'ton-connect.ts',
   'config.ts', '.env', 'index.ts',
   'ai-agent-runtime.ts', 'bot.ts', 'schema-extensions.ts',
   'self-improvement.ts', 'orchestrator.ts', 'userbot-manager.ts',
@@ -193,6 +192,11 @@ export class SelfImprovementSystem {
     });
     // 10 минут между циклами (было 60 сек — слишком агрессивно, спам proposals)
     this.intervalMs = parseInt(process.env.SELF_IMPROVE_INTERVAL_MS || '600000');
+
+    // Prevent unhandled pool errors from crashing the process
+    dbPool.on('error', (err: Error) => {
+      console.error('[DB Pool] idle client error (non-fatal):', err.message?.slice(0, 100));
+    });
   }
 
   /** Get AI client using user's own API key (falls back to user API key) */

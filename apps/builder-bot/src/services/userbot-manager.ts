@@ -12,8 +12,11 @@ import { StringSession } from 'telegram/sessions';
 import { Api } from 'telegram/tl';
 import { Pool } from 'pg';
 
-const API_ID   = parseInt(process.env.TG_API_ID   || '2040');
-const API_HASH =          process.env.TG_API_HASH  || 'b18441a1ff607e10a989891a5462e627';
+const API_ID   = parseInt(process.env.TG_API_ID   || '0', 10);
+const API_HASH =          process.env.TG_API_HASH  || '';
+if (!API_ID || !API_HASH) {
+  console.warn('[UserbotManager] ВНИМАНИЕ: TG_API_ID или TG_API_HASH не заданы в .env — MTProto / userbot функции будут недоступны.');
+}
 
 // ── Security: URL validation (SSRF prevention) ──
 const _BLOCKED_URLS = [
@@ -1450,6 +1453,8 @@ class UserbotManager {
         });
         state.status = 'success';
         console.log(`[UserbotMgr] ✅ Agent #${agentId} QR login as @${me?.username}`);
+          // Auto-enable message listener after login
+          this.enableMessageListener(agentId).catch(() => {});
         finish({ ok: true });
       };
 
@@ -1574,6 +1579,8 @@ class UserbotManager {
           state.status = 'success';
           state.done = true;
           console.log(`[UserbotMgr] ✅ Agent #${agentId} phone login as @${me?.username}`);
+          // Auto-enable message listener after login
+          this.enableMessageListener(agentId).catch(() => {});
           return { ok: true };
         } catch (e: any) {
           const msg = e.message || '';
@@ -1600,6 +1607,8 @@ class UserbotManager {
                 state.status = 'success';
                 state.done = true;
                 console.log(`[UserbotMgr] ✅ Agent #${agentId} phone+2FA as @${me2?.username}`);
+                // Auto-enable message listener after login
+                this.enableMessageListener(agentId).catch(() => {});
                 return { ok: true };
               } catch (e2: any) {
                 if ((e2.message || '').includes('PASSWORD_HASH_INVALID')) return { ok: false, error: 'Wrong password' };
@@ -3057,9 +3066,9 @@ RULES:
           // Execute tools
           merged.push(choice.message);
           for (const tc of toolCalls) {
-            const fnName = tc.function.name;
+            const fnName = (tc as any).function.name;
             let fnArgs: any = {};
-            try { fnArgs = JSON.parse(tc.function.arguments || '{}'); } catch {}
+            try { fnArgs = JSON.parse((tc as any).function.arguments || '{}'); } catch {}
             console.log(`[UserbotMgr] 🔧 Agent#${agentId} tool: ${fnName}(${JSON.stringify(fnArgs).slice(0, 100)})`);
 
             let result: any;

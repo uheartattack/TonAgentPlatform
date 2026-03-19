@@ -129,8 +129,17 @@ async function callWithFallback(
         msg.includes('timeout') ||
         msg.includes('503') ||
         msg.includes('502') ||
+        msg.includes('429') ||
+        msg.includes('rate limit') ||
+        msg.includes('Rate limit') ||
+        msg.includes('Too Many Requests') ||
+        msg.includes('overloaded') ||
         msg.includes('ECONNRESET') ||
         msg.includes('Empty response');
+      if (!isRetryable) {
+        console.warn(`[Orchestrator] model ${model} — non-retryable error (${msg.slice(0, 80)}), aborting fallback chain`);
+        throw err;
+      }
       console.warn(`[Orchestrator] model ${model} failed (${msg.slice(0, 80)}), trying next...`);
       if (!isRetryable) throw err;
     }
