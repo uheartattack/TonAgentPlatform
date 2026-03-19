@@ -594,9 +594,11 @@ export class UserSettingsRepository {
   }
 }
 
+const _UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 function deepMerge(target: Record<string, any>, source: Record<string, any>): Record<string, any> {
   const result = { ...target };
   for (const [k, v] of Object.entries(source)) {
+    if (_UNSAFE_KEYS.has(k)) continue; // prevent prototype pollution
     if (v && typeof v === 'object' && !Array.isArray(v) && typeof result[k] === 'object') {
       result[k] = deepMerge(result[k], v);
     } else {
@@ -1307,11 +1309,13 @@ export class BalanceTransactionRepository {
   }
 
   async getRecentWithdraws(userId: number, sinceHoursAgo = 24): Promise<number> {
+    // Sanitize to integer to prevent SQL injection via string coercion
+    const hours = Math.max(1, Math.min(8760, Math.floor(Number(sinceHoursAgo) || 24)));
     const res = await this.pool.query(
       `SELECT COUNT(*) as cnt FROM builder_bot.balance_transactions
        WHERE user_id = $1 AND type = 'withdraw' AND status = 'completed'
-       AND created_at > NOW() - INTERVAL '${sinceHoursAgo} hours'`,
-      [userId]
+       AND created_at > NOW() - make_interval(hours => $2)`,
+      [userId, hours]
     );
     return parseInt(res.rows[0].cnt, 10);
   }
