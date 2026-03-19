@@ -76,7 +76,10 @@ export class TelegramGiftsService {
 
       _catalogCache = { gifts, expiresAt: Date.now() + 5 * 60 * 1000 };
       return gifts;
-    } catch { return []; }
+    } catch (e: any) {
+      console.warn('[TelegramGifts] getAvailableGifts error:', e?.message || String(e));
+      return [];
+    }
   }
 
   // ── Bot API: Buy catalog gift (needs Stars on bot balance) ────────
@@ -174,7 +177,9 @@ export class TelegramGiftsService {
           seller_id:   l.seller   ?? undefined,
         }));
       }
-    } catch {}
+    } catch (e: any) {
+      console.warn('[TelegramGifts] fragment cache error:', e?.message || String(e));
+    }
 
     // Fallback: direct MTProto call
     if (!await isAuthorized()) return [];
@@ -182,7 +187,7 @@ export class TelegramGiftsService {
       const client = await getFragmentClient();
       // We need the numeric giftId from slug — extract from catalog
       const gifts  = await this.getAvailableGifts();
-      const gift   = gifts.find(g => g.id.toLowerCase().includes(giftSlug.toLowerCase()));
+      const gift   = gifts.find(g => g.id.toLowerCase() === giftSlug.toLowerCase());
       if (!gift) return [];
 
       // GetResaleStarGifts — newer API, cast to bypass outdated typings
@@ -200,7 +205,10 @@ export class TelegramGiftsService {
         price_ton:   null,
         title:       g.title || undefined,
       }));
-    } catch { return []; }
+    } catch (e: any) {
+      console.warn('[TelegramGifts] MTProto resale listings error:', e?.message || String(e));
+      return [];
+    }
   }
 
   // ── MTProto: Appraise unique gift ─────────────────────────────────
@@ -327,7 +335,9 @@ export class TelegramGiftsService {
           });
         }
       }
-    } catch {}
+    } catch (e: any) {
+      console.warn('[TelegramGifts] heuristic arbitrage scan error:', e?.message || String(e));
+    }
 
     return opps.sort((a, b) => b.profit_pct - a.profit_pct).slice(0, 10);
   }

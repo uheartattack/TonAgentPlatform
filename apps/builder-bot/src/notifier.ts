@@ -42,10 +42,14 @@ function handleSendError(userId: number, err: any): void {
   console.error(`[Notifier] sendMessage to ${userId} failed:`, err?.message || String(err));
 }
 
+let _cleanupInterval: ReturnType<typeof setInterval> | null = null;
+
 export function initNotifier(bot: Telegraf) {
   _bot = bot;
+  // Clear previous interval if initNotifier called again (hot-reload safety)
+  if (_cleanupInterval) clearInterval(_cleanupInterval);
   // Periodic cleanup of expired blocked users (every 30 min)
-  setInterval(() => {
+  _cleanupInterval = setInterval(() => {
     const now = Date.now();
     for (const [userId, exp] of _blockExpiry) {
       if (now > exp) { _blockedUsers.delete(userId); _blockExpiry.delete(userId); }
@@ -77,7 +81,7 @@ function safeTruncate(text: string, maxLen: number): string {
   let truncated = text.slice(0, maxLen - 50);
   // Close any open tags
   const openTags: string[] = [];
-  truncated.replace(/<(b|i|s|u|code|pre|a|tg-spoiler)[^>]*>/gi, (_, tag) => { openTags.push(tag); return ''; });
+  truncated.replace(/<(b|i|s|u|code|pre|a|tg-spoiler)[^>]*>/gi, (_, tag) => { openTags.push(tag.toLowerCase()); return ''; });
   truncated.replace(/<\/(b|i|s|u|code|pre|a|tg-spoiler)>/gi, (_, tag) => {
     const idx = openTags.lastIndexOf(tag.toLowerCase());
     if (idx !== -1) openTags.splice(idx, 1);
