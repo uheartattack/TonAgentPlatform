@@ -392,7 +392,7 @@ export class ExecutionTools {
           getPrice: async (symbol: string = 'TON'): Promise<number> => {
             const id = symbol.toLowerCase() === 'ton' ? 'the-open-network' : symbol.toLowerCase();
             const res = await nativeFetch(
-              `https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=usd`
+              `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(id)}&vs_currencies=usd`
             );
             if (!res.ok) throw new Error(`CoinGecko ${res.status}`);
             const data = await res.json() as any;
@@ -524,7 +524,7 @@ export class ExecutionTools {
               // Метод 1: GetGems GraphQL — прямой запрос floor price по адресу (самый точный)
               try {
                 const ggBody = JSON.stringify({
-                  query: `{ nftCollectionByAddress(address: "${rawAddr}") { floorPrice approximateItemsCount } }`,
+                  query: `{ nftCollectionByAddress(address: ${JSON.stringify(rawAddr)}) { floorPrice approximateItemsCount } }`,
                 });
                 const ggResp = await nativeFetch('https://api.getgems.io/graphql', {
                   method: 'POST',
@@ -884,12 +884,17 @@ export class ExecutionTools {
             try {
               const u = new URL(url);
               const h = u.hostname.toLowerCase();
+              // Check 172.16.0.0 - 172.31.255.255 range properly
+              const is172Private = h.startsWith('172.') && (() => {
+                const second = parseInt(h.split('.')[1], 10);
+                return second >= 16 && second <= 31;
+              })();
               if (h === 'localhost' || h === '127.0.0.1' || h === '0.0.0.0' || h === '::1'
                 || h === '[::1]' || h.startsWith('10.') || h.startsWith('192.168.')
-                || h.startsWith('172.16.') || h.startsWith('172.17.') || h.startsWith('172.18.')
-                || h.startsWith('172.19.') || h.startsWith('172.2') || h.startsWith('172.3')
+                || is172Private
                 || h.startsWith('fc') || h.startsWith('fd') || h.startsWith('fe80')
-                || h === '169.254.169.254' || h === 'metadata.google.internal'
+                || h === '169.254.169.254' || h.startsWith('169.254.')
+                || h === 'metadata.google.internal'
                 || h.endsWith('.internal') || h.endsWith('.local') || h.endsWith('.localhost')
                 || u.port === '22' || u.port === '23' || u.port === '3389' || u.port === '5432'
                 || u.port === '6379' || u.port === '27017' || u.port === '3306'
@@ -1030,7 +1035,7 @@ export class ExecutionTools {
             try {
               const { pool } = await import('../../db');
               const res = await pool.query(
-                `SELECT * FROM agent_skill_tree WHERE agent_id = $1 ORDER BY created_at`,
+                `SELECT * FROM builder_bot.agent_skill_tree WHERE agent_id = $1 ORDER BY created_at`,
                 [aid]
               );
               if (res.rows && res.rows.length > 0) return res.rows;
