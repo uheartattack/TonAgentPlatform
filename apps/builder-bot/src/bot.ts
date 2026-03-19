@@ -211,7 +211,7 @@ async function editOrReply(ctx: Context, text: string, extra?: object): Promise<
       return;
     } catch (editErr: any) {
       // Если текст не изменился (400) — не страшно
-      if (editErr?.response?.error_code === 400 && editErr?.description?.includes('message is not modified')) return;
+      if (editErr?.response?.error_code === 400 && (editErr?.response?.description?.includes('message is not modified') || editErr?.description?.includes('message is not modified'))) return;
       // Иначе пробуем plain text редактирование (без parse_mode)
       try {
         const plain = parseMode === 'HTML'
@@ -1427,7 +1427,7 @@ bot.command('gifts', async (ctx) => {
 
     await safeReply(ctx, msg, { parse_mode: 'HTML' });
   } catch (e: any) {
-    await ctx.reply('❌ Ошибка получения данных: ' + e.message);
+    await safeReply(ctx, '❌ Ошибка получения данных: ' + (e.message || 'unknown'));
   }
 });
 
@@ -1592,7 +1592,7 @@ bot.command('wallet', async (ctx) => {
     `Адрес: <code>${escHtml(wallet.address)}</code>\n` +
     `Баланс: <b>${escHtml(balance.toFixed(4))}</b> TON\n` +
     `Статус: ${escHtml(state)}\n\n` +
-    `⚠️ <b>Сохраните мнемонику:</b>\n<code>${escHtml(wallet.mnemonic.slice(0, 60))}...</code>\n\n` +
+    `⚠️ Мнемоника сохранена на сервере. Используйте Studio для безопасного просмотра.\n\n` +
     'Пополните на 0.1 TON для активации. Используйте /send_agent для транзакций.';
   await safeReply(ctx, text, {
     parse_mode: 'HTML',
@@ -1634,7 +1634,7 @@ bot.command('send_agent', async (ctx) => {
       { parse_mode: 'HTML' }
     );
   } catch (e: any) {
-    await ctx.reply(`❌ Ошибка: ${e.message}`);
+    await safeReply(ctx, `❌ Ошибка: ${e.message || 'unknown'}`);
   }
 });
 
@@ -3756,7 +3756,7 @@ bot.on('callback_query', async (ctx) => {
       `💼 Агентский кошелёк создан!\n\n` +
       `Адрес: ${wallet.address}\n` +
       `Баланс: ${balance.toFixed(4)} TON\n\n` +
-      `⚠️ Сохраните мнемонику:\n${wallet.mnemonic.slice(0, 60)}...\n\n` +
+      `⚠️ Мнемоника сохранена на сервере. Просмотр — в Studio.\n\n` +
       `Пополните на 0.1 TON для активации.\n` +
       `Команда: /send_agent АДРЕС СУММА`,
       {
