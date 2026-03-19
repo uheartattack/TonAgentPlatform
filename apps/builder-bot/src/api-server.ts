@@ -154,7 +154,9 @@ function verifyTelegramAuth(data: Record<string, string>): boolean {
   const secretKey = crypto.createHash('sha256').update(BOT_TOKEN).digest();
   const hmac = crypto.createHmac('sha256', secretKey).update(checkString).digest('hex');
 
-  return hmac === hash;
+  try {
+    return crypto.timingSafeEqual(Buffer.from(hmac, 'hex'), Buffer.from(hash, 'hex'));
+  } catch { return false; }
 }
 
 // ── Telegram OIDC JWT verification ────────────────────────────
@@ -595,7 +597,7 @@ export function startApiServer() {
 
   // ── GET /api/auth/request — получить deeplink + токен для auth через бота ──
   app.get('/api/auth/request', (_req: Request, res: Response) => {
-    const authToken = generateToken().slice(0, 16); // короткий — идёт в deeplink
+    const authToken = generateToken().slice(0, 32); // 128-bit entropy for security
     pendingBotAuth.set(authToken, { pending: true, createdAt: Date.now() });
     // Удаляем через 5 минут
     setTimeout(() => pendingBotAuth.delete(authToken), 5 * 60 * 1000);
@@ -2287,7 +2289,8 @@ export function startApiServer() {
   app.post('/api/topup/check', requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = (req as any).userId as number;
-      const afterTs = req.body?.afterTimestamp || Math.floor(Date.now() / 1000) - 900; // 15 min window
+      const maxLookback = Math.floor(Date.now() / 1000) - 3600; // max 1 hour lookback
+      const afterTs = Math.max(req.body?.afterTimestamp || Math.floor(Date.now() / 1000) - 900, maxLookback);
       const result = await verifyTopupTransaction(userId, afterTs);
 
       if (!result.found || !result.txHash) {
@@ -2848,7 +2851,7 @@ export function startApiServer() {
       // Update agent's WALLET_ADDRESS to use the agentic wallet
       if (result.success && result.wallet?.address && agentId) {
         try {
-          const agentRow = await pool.query('SELECT trigger_config FROM builder_bot.agents WHERE id=$1', [Number(agentId)]);
+          const agentRow = await pool.query('SELECT trigger_config FROM builder_bot.agents WHERE id=$1 AND user_id=$2', [Number(agentId), (req as any).userId]);
           if (agentRow.rows[0]) {
             const tc = agentRow.rows[0].trigger_config || {};
             if (!tc.config) tc.config = {};
@@ -2976,7 +2979,12 @@ export function startApiServer() {
     }
   });
 
-  // Fallback — index.html
+  // API 404 — return JSON for unknown API routes (before SPA fallback)
+  app.use('/api', (_req: Request, res: Response) => {
+    res.status(404).json({ ok: false, error: 'API endpoint not found' });
+  });
+
+  // Fallback — index.html (SPA)
   app.get('/{*path}', (_req: Request, res: Response) => {
     res.sendFile(path.join(landingPath, 'index.html'));
   });
@@ -3019,6 +3027,10 @@ export function startApiServer() {
         set.delete(ws);
         if (set.size === 0) wsClients.delete(userId);
       }
+    });
+
+    ws.on('error', (e: Error) => {
+      console.warn(`[WS] Error for user ${userId}:`, e?.message);
     });
 
     // Send a welcome ping so client knows it's connected
