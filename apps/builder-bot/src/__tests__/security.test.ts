@@ -160,6 +160,6 @@ describe('Input Validation', () => {
   });
 
   it('rejects empty messages', () => {
-    expect(!'' || typeof '' !== 'string').toBe(true);
+    const emptyMsg = ''; expect(!emptyMsg || typeof emptyMsg !== 'string').toBe(true);
   });
 });

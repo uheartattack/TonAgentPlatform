@@ -8,7 +8,7 @@ import { getDBTools } from './agents/tools/db-tools';
 import { getMemoryManager } from './db/memory';
 import { getWorkflowEngine } from './agent-cooperation';
 
-const app = express();
+const app: ReturnType<typeof express> = express();
 app.use(express.json());
 
 // ===== Webhook Routes =====
