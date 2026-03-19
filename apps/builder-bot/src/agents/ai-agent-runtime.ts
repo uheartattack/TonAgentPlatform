@@ -357,6 +357,7 @@ export interface AIAgentTickParams {
   config:     Record<string, any>; // from trigger_config.config
   pendingMessages?: string[];     // chat messages from user since last tick
   onNotify?: (msg: string) => Promise<void>; // send message to user
+  context?: Record<string, any>;
 }
 
 interface ToolCall {
@@ -3989,7 +3990,7 @@ const DANGEROUS_ACTIONS: Record<string, { label: string; descFn: (args: Record<s
 };
 
 // Pending approval futures: approvalId → { resolve, reject }
-const _approvalWaiters = new Map<number, { resolve: (v: 'approved' | 'rejected') => void; timer: any }>();
+const _approvalWaiters = new Map<number, { resolve: (v: 'approved' | 'rejected') => void; timer: any; _createdAt?: number }>();
 
 export function resolveApprovalWaiter(approvalId: number, status: 'approved' | 'rejected'): boolean {
   const w = _approvalWaiters.get(approvalId);
@@ -4021,10 +4022,8 @@ async function requestApproval(
             `⏱ Таймаут: 5 минут`,
       agentId: params.agentId,
       buttons: [
-        [
-          { text: '✅ Одобрить', callback_data: `approve_action:${approvalId}` },
-          { text: '❌ Отклонить', callback_data: `reject_action:${approvalId}` },
-        ],
+          { text: '✅ Одобрить', callbackData: `approve_action:${approvalId}` },
+          { text: '❌ Отклонить', callbackData: `reject_action:${approvalId}` },
       ],
     });
 
@@ -6843,10 +6842,10 @@ export async function executeTool(
           const visionModel = utilityModel || 'gemini-2.5-pro';
           console.log(`[image_analyze] Using ${visionModel}, image size=${imgBuf.length} bytes, mime=${mimeType}`);
           const visionResp = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${visionModel}:generateContent?key=` + apiKey,
+            `https://generativelanguage.googleapis.com/v1beta/models/${visionModel}:generateContent`,
             {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
               body: JSON.stringify({
                 contents: [{ parts: [
                   { inlineData: { mimeType, data: base64 } },
