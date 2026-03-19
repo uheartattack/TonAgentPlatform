@@ -126,6 +126,9 @@ const pendingPayments = new Map<number, PendingPayment>();
 // Трекинг генераций: userId → { month: 'YYYY-MM', count: number }
 const generationTracker = new Map<number, { month: string; count: number }>();
 
+// Защита от double-spend: использованные tx хеши
+const usedTxHashes = new Set<string>();
+
 // ── Инициализация БД таблицы ────────────────────────────────
 let _pool: Pool | null = null;
 
@@ -153,7 +156,10 @@ export function initPayments(pool: Pool): void {
       created_at TIMESTAMP NOT NULL DEFAULT NOW(),
       confirmed_at TIMESTAMP
     );
-  `).catch(err => console.error('[Payments] DB init error:', err));
+  `).catch(err => {
+    console.error('[Payments] CRITICAL: DB migration failed:', err);
+    process.exit(1);
+  });
 }
 
 // ── Получить подписку пользователя ─────────────────────────
@@ -176,6 +182,13 @@ export async function getUserSubscription(userId: number): Promise<UserSubscript
     if (cached.expiresAt && cached.expiresAt < new Date()) {
       cached.planId = 'free';
       cached.isActive = true;
+      // Persist downgrade to DB
+      if (_pool) {
+        _pool.query(
+          'UPDATE builder_bot.subscriptions SET plan_id=$1, updated_at=NOW() WHERE user_id=$2::NUMERIC',
+          ['free', String(userId)]
+        ).catch(e => console.error('[Payments] expire downgrade DB error:', (e as any).message));
+      }
     }
     return cached;
   }
@@ -386,7 +399,7 @@ export async function confirmPayment(
     try {
       await _pool.query(`
         UPDATE builder_bot.payments SET status='confirmed', tx_hash=$1, confirmed_at=NOW()
-        WHERE user_id=$2 AND status='pending' ORDER BY created_at DESC LIMIT 1
+        WHERE id = (SELECT id FROM builder_bot.payments WHERE user_id=$2 AND status='pending' ORDER BY created_at DESC LIMIT 1)
       `, [txHash, userId]);
     } catch (e: any) { console.error('[Payments] payment confirm DB error:', e.message); }
   }
@@ -444,22 +457,29 @@ export async function verifyTonTransaction(
   try {
     const limit = 5;
     const url = `https://tonapi.io/v2/accounts/${encodeURIComponent(PLATFORM_WALLET)}/events?limit=${limit}`;
-    const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+    const tonapiKey = process.env.TONAPI_KEY || '';
+    const reqHeaders: Record<string, string> = { 'Accept': 'application/json' };
+    if (tonapiKey) reqHeaders['Authorization'] = `Bearer ${tonapiKey}`;
+    const res = await fetch(url, { headers: reqHeaders });
     if (!res.ok) throw new Error(`TON API ${res.status}`);
 
     const data: any = await res.json();
     const expectedNano = Math.floor(expectedAmountTon * 1e9);
-    const comment = `sub:`;
+    // Full pattern match: sub:{planId}:{period}:{userId}
+    const commentPattern = new RegExp(`^sub:[a-z]+:(month|year):${userId}$`);
 
     for (const event of (data.events || [])) {
       for (const action of (event.actions || [])) {
         if (action.type === 'TonTransfer' && action.TonTransfer) {
           const tf = action.TonTransfer;
           const amount = parseInt(tf.amount || '0');
-          const msg: string = tf.comment || '';
+          const msg: string = (tf.comment || '').trim();
+          const txHash = event.event_id || event.lt;
 
-          if (amount >= expectedNano * 0.99 && msg.includes(comment) && msg.includes(String(userId))) {
-            return { found: true, txHash: event.event_id || event.lt };
+          // Check exact amount (no discount), full comment pattern, and not already used
+          if (amount >= expectedNano && commentPattern.test(msg) && txHash && !usedTxHashes.has(txHash)) {
+            usedTxHashes.add(txHash);
+            return { found: true, txHash };
           }
         }
       }
