@@ -11,6 +11,9 @@ import {
 import { isAuthorized } from '../../fragment-service';
 import { buildUserbotSandbox } from '../../services/telegram-userbot';
 
+// Valid JS escape characters (hoisted for performance — was being re-created per char)
+const _VALID_ESCAPES = new Set(['n', 'r', 't', '\\', "'", '0', 'b', 'f', 'v', 'u', 'x', '\n', '\r']);
+
 // ── Sanitizer: fix common AI code generation issues ──────────────────────────
 // 1. Fixes literal newlines inside string literals (SyntaxError "Unterminated string")
 // 2. Fixes invalid escape sequences like \" inside single-quoted strings
@@ -30,7 +33,8 @@ function fixLiteralNewlinesInStrings(code: string): string {
           const next = code[i + 1] || '';
           // Valid JS escape sequences in single-quoted strings:
           // \n \r \t \\ \' \0 \b \f \v \uXXXX \xXX
-          const validEscapes = new Set(['n', 'r', 't', '\\', "'", '0', 'b', 'f', 'v', 'u', 'x', '\n', '\r']);
+          // Hoisted to avoid allocation per char — see module-level _VALID_ESCAPES
+          const validEscapes = _VALID_ESCAPES;
           if (validEscapes.has(next)) {
             result += c + next; i += 2;
           } else if (next === '"') {
@@ -233,7 +237,7 @@ export class ExecutionTools {
       if (existing) {
         existing.status = 'idle';
         // Cap logs to prevent unbounded memory growth for scheduled agents
-        if (existing.logs.length > 500) existing.logs.splice(0, existing.logs.length - 200);
+        if (existing.logs.length > 500) existing.logs.splice(0, existing.logs.length - 500);
         this.runningAgents.set(params.agentId, existing);
       }
       _agentRunLock.delete(params.agentId);
@@ -378,7 +382,7 @@ export class ExecutionTools {
             try {
               const res = await nativeFetch(
                 `https://tonapi.io/v2/accounts/${encodeURIComponent(cleaned)}`,
-                { headers: apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {} }
+                { headers: apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {}, redirect: 'manual' }
               );
               if (!res.ok) throw new Error(`TonAPI ${res.status}`);
               const data = await res.json() as any;
@@ -643,9 +647,10 @@ export class ExecutionTools {
                 `https://tonapi.io/v2/accounts/${encodeURIComponent(address)}`,
                 { headers: apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {} }
               );
+              if (!resp.ok) throw new Error(`TonAPI ${resp.status}`);
               const json = await resp.json() as any;
               return json.balance ? Number(json.balance) / 1e9 : 0;
-            } catch { return 0; }
+            } catch (e: any) { console.warn(`[Sandbox] tonGetBalance error: ${e?.message}`); return 0; }
           },
 
           // tonSend({ mnemonic, to, amountNano, payloadBase64?, stateInitBase64? })
@@ -1115,8 +1120,8 @@ export class ExecutionTools {
           // VM2 не инжектирует Node 18+ глобалы автоматически
           AbortController,
           AbortSignal,
-          setTimeout: undefined,
-          setInterval: undefined,
+          setTimeout: () => { throw new Error('setTimeout is disabled in agent sandbox. Use sleep() instead.'); },
+          setInterval: () => { throw new Error('setInterval is disabled in agent sandbox. Use the scheduler for recurring tasks.'); },
         },
         require: {
           external: false,
