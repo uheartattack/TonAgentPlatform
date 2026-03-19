@@ -165,6 +165,8 @@ var _dialogResolve = null;
 function studioConfirm(opts) {
   // opts: { title, message, confirmText, cancelText, type: 'danger'|'warning'|'info'|'success', icon? }
   return new Promise(function(resolve) {
+    // Resolve any pending dialog to prevent hanging promises
+    if (_dialogResolve) { _dialogResolve(false); }
     _dialogResolve = resolve;
     var type = opts.type || 'warning';
     var icon = opts.icon || _toastIcons[type] || _toastIcons.info;
@@ -197,6 +199,7 @@ function studioConfirm(opts) {
 function studioAlert(opts) {
   // opts: { title, message, type }
   return new Promise(function(resolve) {
+    if (_dialogResolve) { _dialogResolve(true); }
     _dialogResolve = resolve;
     var type = opts.type || 'error';
     var icon = opts.icon || _toastIcons[type] || _toastIcons.info;
@@ -3306,6 +3309,10 @@ function escHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 }
+// Escape for use inside inline JS string literals (onclick="...('VALUE')...")
+function escJsAttr(str) {
+  return String(str).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
 
 async function refreshData() {
   const icon = document.querySelector('.refresh-icon');
@@ -3337,9 +3344,9 @@ async function initAuth() {
   if (!container) return;
 
   // Update auth screen text
-  const welcomeEl = document.querySelector('.auth-card h2');
+  const welcomeEl = document.querySelector('.auth-box h2');
   if (welcomeEl) welcomeEl.textContent = t('welcome_back');
-  const descEl = document.querySelector('.auth-card p');
+  const descEl = document.querySelector('.auth-box p');
   if (descEl) descEl.textContent = t('sign_in_desc');
   const secureEl = document.getElementById('https-hint');
   if (secureEl) secureEl.textContent = t('secure_auth');
@@ -3604,7 +3611,7 @@ function copyAuthCode() {
   navigator.clipboard.writeText(cmd).then(function() {
     var btn = document.getElementById('auth-copy-btn');
     if (btn) { btn.innerHTML = IC.check; setTimeout(function() { btn.innerHTML = IC.clipboard; }, 1500); }
-    showToast(currentLang === 'ru' ? 'Скопировано!' : 'Copied!', 'success');
+    toast(currentLang === 'ru' ? 'Скопировано!' : 'Copied!', 'success');
   }).catch(function() {
     // Fallback: select the text
     var code = document.getElementById('auth-code-text');
@@ -8801,8 +8808,8 @@ function appendAssistantMsg(role, content, buttons) {
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     // Navigation links: [[page:pageName|Label]] → clickable links that navigate within studio
     .replace(/\[\[page:(\w+)\|([^\]]+)\]\]/g, '<a href="#" class="assistant-nav-link" onclick="navigateTo(\'$1\');return false" style="color:#7dd3fc;text-decoration:underline;cursor:pointer">$2</a>')
-    // Standard markdown links: [text](url) → external links
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener" style="color:#7dd3fc;text-decoration:underline">$1</a>')
+    // Standard markdown links: [text](url) → external links (only http/https)
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)"']+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:#7dd3fc;text-decoration:underline">$1</a>')
     .replace(/\n/g, '<br>');
   if (role === 'assistant') {
     html = '<div class="assistant-msg-avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="assistant-msg-content">' + html;
@@ -8832,10 +8839,7 @@ async function loadChatHistory() {
   await loadAssistantHistory();
 }
 
-function escHtml(s) {
-  if (!s) return '';
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
+// escHtml defined earlier (line ~3302); removed duplicate here
 
 function getStudioContext() {
   var activeNav = document.querySelector('.nav-item.active');
@@ -9949,7 +9953,7 @@ function awRenderRoot() {
     '<div style="display:flex;align-items:center;gap:14px">' +
       '<div style="width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,rgba(34,197,94,0.12),rgba(59,130,246,0.12));display:flex;align-items:center;justify-content:center">' + AWI.crown + '</div>' +
       '<div><div style="font-size:.75rem;color:var(--text-muted);margin-bottom:2px">Root Wallet</div>' +
-      '<code style="font-size:.85rem;cursor:pointer;color:var(--text-primary)" onclick="navigator.clipboard.writeText(\x27' + root.address + '\x27);toast(\x27Copied!\x27,\x27success\x27)" title="Click to copy">' + addrShort + '</code></div></div>' +
+      '<code style="font-size:.85rem;cursor:pointer;color:var(--text-primary)" onclick="navigator.clipboard.writeText(\x27' + escJsAttr(root.address) + '\x27);toast(\x27Copied!\x27,\x27success\x27)" title="Click to copy">' + escHtml(addrShort) + '</code></div></div>' +
     '<div style="text-align:right"><div style="font-size:1.3rem;font-weight:700;color:#22c55e;font-family:\'JetBrains Mono\',monospace">' + (root.balanceTon || 0).toFixed(4) + ' TON</div>' +
     '<div style="font-size:.72rem;color:var(--text-muted)">Root Balance</div></div></div>';
 }
@@ -9978,7 +9982,7 @@ function awRenderGrid() {
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">' +
         '<span style="font-weight:600;font-size:.92rem;display:flex;align-items:center;gap:6px">' + AWI.walletSm + ' ' + escHtml(w.label || addr) + '</span>' +
         '<span style="font-size:.7rem;padding:3px 8px;border-radius:20px;background:' + (w.isBlocked ? 'rgba(239,68,68,0.1)' : 'rgba(34,197,94,0.1)') + ';color:' + sColor + ';display:flex;align-items:center">' + sDot + sText + '</span></div>' +
-      '<code style="font-size:.76rem;color:var(--text-muted);cursor:pointer;display:block;margin-bottom:12px" onclick="event.stopPropagation();navigator.clipboard.writeText(\x27' + w.address + '\x27);toast(\x27Copied!\x27,\x27success\x27)">' + addr + '</code>' +
+      '<code style="font-size:.76rem;color:var(--text-muted);cursor:pointer;display:block;margin-bottom:12px" onclick="event.stopPropagation();navigator.clipboard.writeText(\x27' + escJsAttr(w.address) + '\x27);toast(\x27Copied!\x27,\x27success\x27)">' + escHtml(addr) + '</code>' +
       '<div style="font-size:1.15rem;font-weight:700;font-family:\'JetBrains Mono\',monospace;color:#22c55e;margin-bottom:12px">' + (w.balanceTon || 0).toFixed(4) + ' <span style="font-size:.75rem;opacity:.5">TON</span></div>' +
       '<div style="display:flex;gap:14px;font-size:.75rem;color:var(--text-muted);margin-bottom:14px">' +
         '<span style="display:flex;align-items:center;gap:4px">' + IC.robot + ' ' + agent + '</span>' +
@@ -10084,7 +10088,7 @@ function awShowDetail(wId) {
   var sDot = '<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:' + (w.isBlocked ? '#ef4444' : '#22c55e') + ';margin-right:4px"></span>';
   openModal(escHtml(w.label || 'Wallet #' + w.id),
     '<div style="margin-bottom:14px"><label style="font-size:.75rem;color:var(--text-muted)">Address</label>' +
-      '<code style="font-size:.82rem;display:block;margin-top:4px;word-break:break-all;cursor:pointer;color:var(--text-primary);background:var(--bg-tertiary);padding:8px 10px;border-radius:8px;border:1px solid var(--border)" onclick="navigator.clipboard.writeText(\x27' + w.address + '\x27);toast(\x27Copied!\x27,\x27success\x27)">' + w.address + '</code></div>' +
+      '<code style="font-size:.82rem;display:block;margin-top:4px;word-break:break-all;cursor:pointer;color:var(--text-primary);background:var(--bg-tertiary);padding:8px 10px;border-radius:8px;border:1px solid var(--border)" onclick="navigator.clipboard.writeText(\x27' + escJsAttr(w.address) + '\x27);toast(\x27Copied!\x27,\x27success\x27)">' + escHtml(w.address) + '</code></div>' +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px">' +
       '<div style="background:var(--bg-tertiary);padding:12px;border-radius:10px;border:1px solid var(--border)"><label style="font-size:.72rem;color:var(--text-muted);display:block;margin-bottom:4px">' + (isRu ? 'Баланс' : 'Balance') + '</label><div style="font-size:1.2rem;font-weight:700;color:#22c55e;font-family:\'JetBrains Mono\',monospace">' + (w.balanceTon || 0).toFixed(4) + ' TON</div></div>' +
       '<div style="background:var(--bg-tertiary);padding:12px;border-radius:10px;border:1px solid var(--border)"><label style="font-size:.72rem;color:var(--text-muted);display:block;margin-bottom:4px">' + (isRu ? 'Лимит' : 'Limit') + '</label><div style="font-size:1.2rem;font-weight:700;font-family:\'JetBrains Mono\',monospace">' + (w.spendLimitTon || 50) + ' TON</div></div></div>' +
@@ -10095,7 +10099,7 @@ function awShowDetail(wId) {
       '<div style="display:flex;gap:6px"><input type="text" id="aw-detail-label" value="' + escHtml(w.label || '') + '" style="flex:1;padding:8px 12px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-size:.85rem"><button class="btn-action" style="font-size:.78rem" onclick="awUpdateLabel(' + w.id + ')">Save</button></div></div>' +
     '<div style="margin-bottom:12px"><label style="font-size:.75rem;color:var(--text-muted);display:block;margin-bottom:4px">' + (isRu ? 'Лимит (TON/день)' : 'Limit (TON/day)') + '</label>' +
       '<div style="display:flex;gap:6px"><input type="number" id="aw-detail-limit" value="' + (w.spendLimitTon || 50) + '" min="0" step="1" style="flex:1;padding:8px 12px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-size:.85rem"><button class="btn-action" style="font-size:.78rem" onclick="awUpdateLimit(' + w.id + ')">Save</button></div></div>',
-    '<button class="btn-action" style="gap:5px" onclick="window.open(\x27ton://transfer/' + w.address + '\x27,\x27_blank\x27)">' + IC.gem + ' Deposit</button>' +
+    '<button class="btn-action" style="gap:5px" onclick="window.open(\x27ton://transfer/' + escJsAttr(w.address) + '\x27,\x27_blank\x27)">' + IC.gem + ' Deposit</button>' +
     '<button class="btn-action" style="gap:5px" onclick="closeModal();awShowTxs(' + w.id + ')">' + IC.clock + ' Txs</button>' +
     '<a class="btn-action" href="https://tonscan.org/address/' + w.address + '" target="_blank" style="text-decoration:none;display:inline-flex;align-items:center;gap:5px">' + IC.link + ' Tonscan</a>' +
     (w.isBlocked
