@@ -19,6 +19,7 @@
  */
 
 import { Api } from 'telegram/tl';
+import crypto from 'crypto';
 import { getFragmentClient } from '../fragment-service';
 
 // ── Security: URL validation to prevent SSRF ──
@@ -65,9 +66,10 @@ async function safeFetchBuffer(url: string, timeoutMs = 15000): Promise<Buffer> 
 
 // ── Utility: safe random ID (non-zero, full 64-bit range) ──
 function safeRandomId(): bigint {
-  const hi = Math.floor(Math.random() * 0x7FFFFFFF) + 1;
-  const lo = Math.floor(Math.random() * 0xFFFFFFFF);
-  return BigInt(hi) * BigInt(0x100000000) + BigInt(lo);
+  const buf = crypto.randomBytes(8);
+  // Ensure non-zero by setting the top bit
+  buf[0] = buf[0] | 0x01;
+  return BigInt('0x' + buf.toString('hex'));
 }
 
 type TgMsg = {
@@ -93,8 +95,8 @@ export async function tgSendMessage(chatId: string | number, text: string): Prom
   try {
     const result = await (client as any).sendMessage(chatId, { message: html, parseMode: 'html' }) as any;
     return result?.id ?? 0;
-  } catch {
-    // Fallback to plain text if HTML parsing fails
+  } catch (e: any) {
+    console.warn(`[tgSendMessage] HTML parse failed, falling back to plain text: ${e.message?.slice(0, 100)}`);
     const result = await (client as any).sendMessage(chatId, { message: text }) as any;
     return result?.id ?? 0;
   }
@@ -117,7 +119,9 @@ function mdToHtmlSimple(text: string): string {
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text, url) => {
       // Security: block javascript: and data: URLs in links
       if (/^(javascript|data|vbscript):/i.test(url.trim())) return text;
-      return `<a href="${url}">${text}</a>`;
+      // Escape & and " in URL to prevent attribute injection
+      const safeUrl = url.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+      return `<a href="${safeUrl}">${text}</a>`;
     })
     .trim();
 }
@@ -238,7 +242,9 @@ export async function tgGetUserInfo(userIdentifier: string | number): Promise<{
 /** Send a file/media message (URL only — no local filesystem paths) */
 export async function tgSendFile(chatId: string | number, filePath: string, caption?: string): Promise<number> {
   // Security: only allow HTTP(S) URLs, block local filesystem paths
-  if (/^https?:\/\//i.test(filePath)) {
+  if (/^(data|javascript):/i.test(filePath)) {
+    throw new Error('data: and javascript: URIs are not allowed.');
+  } else if (/^https?:\/\//i.test(filePath)) {
     validateExternalUrl(filePath);
   } else if (/^[\/\\]|^[a-zA-Z]:\\/.test(filePath)) {
     throw new Error('Local filesystem paths are not allowed. Use an HTTP(S) URL.');
@@ -262,12 +268,13 @@ export async function tgReplyMessage(chatId: string | number, replyToMsgId: numb
     try {
       const peer = await (client as any).getInputEntity(chatId);
       replyTo = new Api.InputReplyToMessage({ replyToMsgId, quoteText, replyToPeerId: peer });
-    } catch { replyTo = replyToMsgId; }
+    } catch (e: any) { console.warn(`[tgReplyMessage] Quote setup failed: ${e.message?.slice(0, 100)}`); replyTo = replyToMsgId; }
   }
   try {
     const result = await (client as any).sendMessage(chatId, { message: html, parseMode: 'html', replyTo }) as any;
     return result?.id ?? 0;
-  } catch {
+  } catch (e: any) {
+    console.warn(`[tgReplyMessage] HTML send failed, falling back to plain text: ${e.message?.slice(0, 100)}`);
     const result = await (client as any).sendMessage(chatId, { message: text, replyTo }) as any;
     return result?.id ?? 0;
   }
@@ -325,7 +332,8 @@ export async function tgGetComments(chatId: string | number, postMsgId: number, 
       from:   '',
       fromId: m.fromId?.userId?.toJSNumber?.() ?? m.fromId?.userId ?? 0,
     }));
-  } catch {
+  } catch (e: any) {
+    console.warn(`[tgGetComments] Failed to get comments: ${e.message?.slice(0, 100)}`);
     return [];
   }
 }
@@ -373,7 +381,8 @@ export async function tgGetMessageById(chatId: string | number, messageId: numbe
       from:   m.sender?.username || m.sender?.firstName || '',
       fromId: m.senderId?.toJSNumber?.() ?? m.senderId,
     };
-  } catch {
+  } catch (e: any) {
+    console.warn(`[tgGetMessageById] Failed to get message: ${e.message?.slice(0, 100)}`);
     return null;
   }
 }
@@ -507,7 +516,7 @@ export async function tgGetMyProfile(): Promise<{ firstName: string; lastName: s
       id: new Api.InputUserSelf(),
     })) as any;
     bio = full?.fullUser?.about || '';
-  } catch {}
+  } catch (e: any) { console.warn(`[tgGetMyProfile] Failed to get bio: ${e.message?.slice(0, 100)}`); }
   return {
     firstName: me.firstName || '',
     lastName: me.lastName || '',
@@ -749,7 +758,8 @@ export async function tgGetAdmins(chatId: string | number): Promise<Array<{ id: 
         role: p.className || 'admin',
       };
     });
-  } catch {
+  } catch (e: any) {
+    console.warn(`[tgGetAdmins] Failed to get admins: ${e.message?.slice(0, 100)}`);
     return [];
   }
 }
