@@ -107,7 +107,7 @@ export class RunnerAgent {
         return { success: false, error: securityResult.error };
       }
 
-      if (!securityResult.data!.safe) {
+      if (!securityResult.data?.safe) {
         return {
           success: true,
           data: {
@@ -312,14 +312,14 @@ export class RunnerAgent {
         return { success: false, error: securityResult.error };
       }
 
-      if (!securityResult.data!.safe) {
+      if (!securityResult.data?.safe) {
         return {
           success: true,
           data: {
             success: false,
             agentId: 0,
             action: 'test',
-            message: 'Код не прошёл проверку безопасности:\n' + securityResult.data!.issues.join('\n'),
+            message: 'Код не прошёл проверку безопасности:\n' + (securityResult.data?.issues || ['Unknown security issue']).join('\n'),
           },
         };
       }
