@@ -3954,8 +3954,9 @@ function truncateToolResult(text: string, maxSize: number = 4000): string {
 function detectStall(history: string[][], window: number = 3): boolean {
   if (history.length < window) return false;
   const recent = history.slice(-window);
-  const first = recent[0].sort().join(',');
-  return recent.every(calls => calls.sort().join(',') === first);
+  // Use slice() before sort() to avoid mutating the original arrays
+  const first = [...recent[0]].sort().join(',');
+  return recent.every(calls => [...calls].sort().join(',') === first);
 }
 
 // ── Token estimation ──────────────────────────────────────────────────────
@@ -7099,19 +7100,10 @@ async function executeGlobalTgTool(name: string, args: any): Promise<any> {
     case 'tg_get_message_by_id': { const msg = await tgGetMessageById(args.chat_id, args.message_id); return msg || { error: 'not found' }; }
     case 'tg_get_unread': return await tgGetUnread(args.limit ?? 10);
     case 'tg_send_file': { const id = await tgSendFile(args.chat_id, args.file_url, args.caption); return { ok: true, message_id: id }; }
-    case 'tg_copy_media': {
-      const ub = (await import('../services/userbot-manager')).getUserbotManager();
-      const sb = await ub.buildUserSandbox(_currentUserId!);
-      if (!sb) return { error: 'Telegram not connected' };
-      const id = await sb.copyMedia(args.from_chat_id, args.message_id, args.to_chat_id, args.caption);
-      return { ok: true, message_id: id };
-    }
-    case 'tg_get_media_info': {
-      const ub2 = (await import('../services/userbot-manager')).getUserbotManager();
-      const sb2 = await ub2.buildUserSandbox(_currentUserId!);
-      if (!sb2) return { error: 'Telegram not connected' };
-      return await sb2.getMediaInfo(args.chat_id, args.message_id);
-    }
+    case 'tg_copy_media':
+    case 'tg_get_media_info':
+      // These require per-agent Telegram auth (need userId context not available in global fallback)
+      return { error: 'This tool requires per-agent Telegram auth. Connect via agent settings.' };
     // ── Profile management ──
     case 'tg_set_avatar': return await tgSetAvatar(args.photo_url);
     case 'tg_delete_avatar': return await tgDeleteAvatar();
@@ -7895,9 +7887,10 @@ ${roleBehavior}
 
   // ── Pre-search: auto web_search for questions requiring fresh data ──
   let _preSearchResults = '';
+  const { FRESHNESS_PATTERNS: _FRESH_RE_PS, PRODUCT_PATTERNS: _PROD_RE_PS } = require('../config/platform');
   if (msgs.length > 0) {
     const lastMsg = msgs[msgs.length - 1].toLowerCase();
-    if (_FRESH_RE.test(lastMsg) || _PROD_RE.test(lastMsg)) {
+    if (_FRESH_RE_PS.test(lastMsg) || _PROD_RE_PS.test(lastMsg)) {
       try {
         // Extract search query from user message
         const searchQuery = lastMsg
@@ -8771,6 +8764,20 @@ If web_search returns nothing useful → say "не смог найти акту�
       finalContent = undefined;
     }
 
+    // ── Heartbeat / Silent detection (BEFORE sending to user) ──────────
+    if (finalContent) {
+      try {
+        const { isHeartbeatOk: _isHB, isSilentReply: _isSR } = require('../constants/limits');
+        if (_isHB(finalContent)) {
+          console.log(`[AI runtime] Agent #${params.agentId} heartbeat NO_ACTION — suppressing`);
+          finalContent = undefined;
+        } else if (_isSR(finalContent)) {
+          console.log(`[AI runtime] Agent #${params.agentId} silent reply — suppressing`);
+          finalContent = undefined;
+        }
+      } catch {}
+    }
+
     if (finalContent) {
       // ── Behavior: read receipts + typing delay ──
       try { await applyBehaviorBeforeResponse(params, chatId); } catch {}
@@ -8869,7 +8876,7 @@ If web_search returns nothing useful → say "не смог найти акту�
       try {
         const existing = typeof existingStr === 'string' ? JSON.parse(existingStr) : existingStr;
         historyToSave.push(...existing);
-      } catch {}
+      } catch (hp: any) { console.warn(`[AI runtime] Agent #${params.agentId} corrupted history JSON, starting fresh:`, hp?.message); }
     }
     // Add messages from this run (user messages + assistant final response)
     if (msgs.length > 0) {
@@ -8904,7 +8911,7 @@ If web_search returns nothing useful → say "не смог найти акту�
     saveStart = Math.min(saveStart, Math.max(0, mapped.length - 8));
     const trimmed = mapped.slice(saveStart);
     await getAgentStateRepository().set(params.agentId, params.userId, '_conversation_history', JSON.stringify(trimmed));
-  } catch {}
+  } catch (histSaveErr: any) { console.error(`[AI runtime] Agent #${params.agentId} FAILED to save conversation history:`, histSaveErr?.message); }
 
   // ── Memory consolidation (periodic) ──
   try { await maybeConsolidateMemory(params, ai, defaultModel, params.config); } catch (e: any) { console.warn('[Memory] consolidation:', e.message); }
@@ -8931,19 +8938,7 @@ If web_search returns nothing useful → say "не смог найти акту�
     );
   } catch (e: any) { console.warn('[XP]', e.message); }
 
-  // ── Heartbeat / Silent detection ──────────────────────────────
-  if (finalContent) {
-    try {
-      const { isHeartbeatOk, isSilentReply } = require('../constants/limits');
-      if (isHeartbeatOk(finalContent)) {
-        console.log(`[AI runtime] Agent #${params.agentId} heartbeat NO_ACTION — suppressing response`);
-        finalContent = undefined;
-      } else if (isSilentReply(finalContent)) {
-        console.log(`[AI runtime] Agent #${params.agentId} silent reply — suppressing response`);
-        finalContent = undefined;
-      }
-    } catch {}
-  }
+  // Heartbeat / Silent detection moved BEFORE notification send (see above)
 
   return { finalResponse: finalContent, toolCallCount: totalToolCalls };
 }
@@ -9157,6 +9152,26 @@ export function getAIAgentRuntime(): AIAgentRuntime {
       // Clean approval waiters older than 10 minutes
       _approvalWaiters.forEach((waiter, key) => {
         if (Date.now() - (waiter as any)._createdAt > 10 * 60 * 1000) _approvalWaiters.delete(key);
+      });
+      // Clean Maps for deactivated agents (prevent unbounded growth)
+      _lastMessageTime.forEach((_, id) => { if (!activeSet.has(id)) _lastMessageTime.delete(id); });
+      _pendingAsks.forEach((_, key) => { const aid = parseInt(key); if (!isNaN(aid) && !activeSet.has(aid)) _pendingAsks.delete(key); });
+      _dailySpendMem.forEach((_, id) => { if (!activeSet.has(id)) _dailySpendMem.delete(id); });
+      // Clean circuit breakers and post tracking (keep only active agents)
+      _circuitBreakers.forEach((_, id) => { if (!activeSet.has(id)) _circuitBreakers.delete(id); });
+      // Clean tool circuit breakers for inactive agents
+      _toolCircuitBreakers.forEach((_, key) => {
+        const agentId = parseInt(key.split(':')[0]);
+        if (!isNaN(agentId) && !activeSet.has(agentId)) _toolCircuitBreakers.delete(key);
+      });
+      // Prune channel post times older than 1 hour
+      const _1h = Date.now() - 3600_000;
+      _channelPostTimes.forEach((ts, key) => {
+        if (ts < _1h) _channelPostTimes.delete(key);
+      });
+      // Prune agent meta cache expired entries
+      _agentMetaCache.forEach((entry, id) => {
+        if ((entry as any).expiresAt && (entry as any).expiresAt < Date.now()) _agentMetaCache.delete(id);
       });
     }, 10 * 60 * 1000);
   }
