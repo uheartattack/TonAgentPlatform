@@ -54,6 +54,13 @@ const IC = {
   crown: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4l3 12h14l3-12-6 7-4-9-4 9-6-7z"/><path d="M3 20h18"/></svg>',
   zap: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
   infinity: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.178 8c5.096 0 5.096 8 0 8-5.095 0-7.133-8-12.739-8-4.585 0-4.585 8 0 8 5.606 0 7.644-8 12.74-8z"/></svg>',
+  eye: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
+  book: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>',
+  user: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+  moon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>',
+  heartbeat: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>',
+  target: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>',
+  split: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3"/><path d="M15 9l6-6"/></svg>',
 };
 
 // Map server-side plan emoji icons to SVG
@@ -600,14 +607,20 @@ async function loadAgents() {
   }
 
   const triggerLabel = (tt) => tt === 'scheduled' ? t('trigger_scheduled') : tt === 'webhook' ? t('trigger_webhook') : tt === 'ai_agent' ? t('trigger_ai_agent') : t('trigger_manual');
+  const overviewStatusClass = (a) => (a.lastError || a.last_error) ? 'error' : a.isActive ? 'active' : 'paused';
+  const overviewStatusLabel = (a) => (a.lastError || a.last_error) ? (currentLang === 'ru' ? 'Ошибка' : 'Error') : a.isActive ? t('active') : t('paused');
+  const overviewTimeAgo = (d) => { if (!d) return ''; var ms = Date.now() - new Date(d).getTime(); if (ms < 60000) return currentLang === 'ru' ? 'только что' : 'just now'; if (ms < 3600000) return Math.floor(ms / 60000) + (currentLang === 'ru' ? ' мин' : 'm'); if (ms < 86400000) return Math.floor(ms / 3600000) + (currentLang === 'ru' ? ' ч' : 'h'); return Math.floor(ms / 86400000) + (currentLang === 'ru' ? ' д' : 'd'); };
   agentsEl.innerHTML = pinnedAgents.map(a => {
     const role = a.role || 'worker';
     const lvl = a.level || 1;
+    const sClass = overviewStatusClass(a);
+    const lastActive = overviewTimeAgo(a.lastActiveAt || a.last_active_at || a.updatedAt || a.updated_at || '');
+    const toolCalls = a.toolCallCount || a.tool_call_count || 0;
     return `
-    <div class="agent-card" data-id="${a.id}" onclick="openAgentDetail(${a.id})" style="cursor:pointer">
-      <div class="agent-status ${a.isActive ? 'active' : 'paused'}">
+    <div class="agent-card agent-card-status-${sClass}" data-id="${a.id}" onclick="openAgentDetail(${a.id})" style="cursor:pointer">
+      <div class="agent-status ${sClass}">
         <span class="status-dot"></span>
-        <span>${a.isActive ? t('active') : t('paused')}</span>
+        <span>${overviewStatusLabel(a)}</span>
       </div>
       <div class="agent-info">
         <strong>#${a.id} ${escHtml(a.name || t('unnamed'))}</strong>
@@ -616,13 +629,16 @@ async function loadAgents() {
           <span class="agent-trigger">${triggerLabel(a.triggerType)}</span>
           <span class="agent-role-badge role-${role}">${role}</span>
           <span class="agent-level">${t('lv')}${lvl}</span>
+          ${lastActive ? '<span class="agent-last-active">' + IC.clock + ' ' + lastActive + '</span>' : ''}
+          ${toolCalls > 0 ? '<span class="agent-tool-calls">' + IC.wrench + ' ' + toolCalls + '</span>' : ''}
         </span>
       </div>
       <div class="agent-actions">
         <button class="btn btn-sm ${a.isActive ? 'btn-warning' : 'btn-success'}" onclick="event.stopPropagation();toggleAgent(${a.id}, ${a.isActive})">
           ${a.isActive ? IC.pause + ' ' + t('stop') : IC.rocket + ' ' + t('run')}
         </button>
-        <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();loadAgentLogs(${a.id})">${IC.clipboard} ${t('logs')}</button>
+        <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();copyAgentPrompt(${a.id}, event)" title="${currentLang === 'ru' ? 'Копировать промпт' : 'Copy prompt'}">${IC.clipboard}</button>
+        <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();loadAgentLogs(${a.id})" title="${t('logs')}">${IC.inbox}</button>
         <button class="btn btn-ghost btn-sm" title="${currentLang === 'ru' ? 'Открепить' : 'Unpin'}" onclick="togglePinAgent(${a.id}, event)" style="color:var(--primary)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
         </button>
@@ -916,22 +932,36 @@ function renderAgentChat(box) {
 }
 
 // ===== FULL-SCREEN AGENT SETTINGS =====
-var _settingsTab = 'prompt';
+var _settingsTab = 'soul';
+var _promptModulesCache = null;
 
 function openAgentSettings() {
   if (!_detailAgentData || !_detailAgentId) return;
   var modal = document.getElementById('agent-settings-modal');
   if (!modal) return;
   modal.style.display = '';
+  var a = _detailAgentData;
   var nameEl = document.getElementById('agent-settings-name');
-  if (nameEl) nameEl.textContent = '#' + _detailAgentData.id + ' ' + (_detailAgentData.name || 'Unnamed');
+  if (nameEl) nameEl.textContent = (a.name || 'Unnamed').replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F000}-\u{1FFFF}]/gu, '').trim();
   var statusEl = document.getElementById('agent-settings-status');
   if (statusEl) {
-    statusEl.className = 'agent-status ' + (_detailAgentData.is_active ? 'active' : 'paused');
-    statusEl.innerHTML = '<span class="status-dot"></span><span>' + (_detailAgentData.is_active ? 'Active' : 'Paused') + '</span>';
+    statusEl.className = 'agent-status ' + (a.is_active ? 'active' : 'paused');
+    statusEl.innerHTML = '<span class="status-dot"></span><span>' + (a.is_active ? (currentLang === 'ru' ? 'Активен' : 'Active') : (currentLang === 'ru' ? 'Остановлен' : 'Paused')) + '</span>';
   }
-  _settingsTab = 'prompt';
-  switchSettingsTab('prompt');
+  // Update toggle button state
+  var toggleBtn = document.getElementById('st-toggle-btn');
+  if (toggleBtn) {
+    if (a.is_active) {
+      toggleBtn.classList.add('running');
+      toggleBtn.innerHTML = IC.pause + '<span>' + (currentLang === 'ru' ? 'Стоп' : 'Stop') + '</span>';
+    } else {
+      toggleBtn.classList.remove('running');
+      toggleBtn.innerHTML = IC.play + '<span>' + (currentLang === 'ru' ? 'Запустить' : 'Start') + '</span>';
+    }
+  }
+  _settingsTab = 'soul';
+  _promptModulesCache = null;
+  switchSettingsTab('soul');
 }
 
 function closeAgentSettings() {
@@ -949,7 +979,7 @@ function closeAgentSettings() {
 function switchSettingsTab(tab) {
   _settingsTab = tab;
   // Update tab buttons
-  document.querySelectorAll('.settings-tab').forEach(function(b) {
+  document.querySelectorAll('.st-nav-item, .settings-tab').forEach(function(b) {
     b.classList.toggle('active', b.getAttribute('data-tab') === tab);
     if (b.getAttribute('data-tab') === tab) {
       b.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
@@ -965,7 +995,7 @@ function switchSettingsTab(tab) {
   var config = {};
   try { var _tc = a.trigger_config || a.triggerConfig || {}; config = typeof _tc === 'string' ? JSON.parse(_tc) : _tc; } catch(e) {}
 
-  if (tab === 'prompt') {
+  if (tab === 'soul') {
     var isRu = currentLang === 'ru';
     var lineCount = (a.code || '').split('\n').length;
     body.innerHTML =
@@ -973,8 +1003,8 @@ function switchSettingsTab(tab) {
       '<div class="rt-header">' +
         '<div class="rt-header-icon" style="background:rgba(168,85,247,0.12);color:#a855f7">' + IC.brain + '</div>' +
         '<div class="rt-header-text">' +
-          '<h3>' + (isRu ? 'Системный промпт' : 'System Prompt') + '</h3>' +
-          '<p>' + (isRu ? 'Инструкции и личность агента. Это его "душа" — определяет поведение, стиль и возможности.' : 'Agent instructions and personality. This is its "soul" — defines behavior, style and capabilities.') + '</p>' +
+          '<h3>' + (isRu ? 'Душа' : 'Soul') + '</h3>' +
+          '<p>' + (isRu ? 'Личность и стиль агента. Агент может самостоятельно модифицировать этот раздел.' : 'Agent personality and style. The agent can self-modify this section.') + '</p>' +
         '</div>' +
       '</div>' +
       '<div class="rt-section">' +
@@ -982,9 +1012,85 @@ function switchSettingsTab(tab) {
         '<textarea id="edit-prompt-textarea" class="st-textarea">' + escHtml(a.code || '') + '</textarea>' +
       '</div>' +
       '<div class="rt-actions">' +
-        '<button class="rt-save-btn" onclick="saveSettingsPrompt()">' + IC.check + ' ' + (isRu ? 'Сохранить промпт' : 'Save Prompt') + '</button>' +
+        '<button class="rt-save-btn" onclick="saveSettingsPrompt()">' + IC.check + ' ' + (isRu ? 'Сохранить' : 'Save Soul') + '</button>' +
       '</div>' +
       '</div>';
+  } else if (tab === 'security') {
+    var isRu = currentLang === 'ru';
+    body.innerHTML =
+      '<div class="rt-page">' +
+      '<div class="rt-header">' +
+        '<div class="rt-header-icon" style="background:rgba(239,68,68,0.12);color:#ef4444">' + IC.shield + '</div>' +
+        '<div class="rt-header-text">' +
+          '<h3>' + (isRu ? 'Безопасность' : 'Security') + '</h3>' +
+          '<p>' + (isRu ? 'Неизменяемые правила безопасности. Защищают агента от prompt-инъекций.' : 'Immutable safety rules. Protect the agent from prompt injection attacks.') + '</p>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' +
+          '<span style="display:inline-flex;align-items:center;gap:6px">' + IC.shield + ' ' +
+          (isRu ? 'Правила безопасности' : 'Security Rules') +
+          ' <span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:4px;background:rgba(239,68,68,0.1);color:#ef4444;font-size:.65rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> ' + (isRu ? 'Только чтение' : 'Read-only') + '</span>' +
+          '</span>' +
+        '</div>' +
+        '<div id="security-rules-content" style="background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;padding:16px;font-family:\'JetBrains Mono\',monospace;font-size:.78rem;line-height:1.6;color:var(--text-secondary);white-space:pre-wrap;max-height:500px;overflow-y:auto;user-select:text">' +
+          (isRu ? 'Загрузка...' : 'Loading...') +
+        '</div>' +
+      '</div>' +
+      '</div>';
+    // Fetch security rules from API
+    loadPromptModules().then(function(modules) {
+      var el = document.getElementById('security-rules-content');
+      if (el && modules) el.textContent = modules.security || (isRu ? 'Правила безопасности не заданы' : 'No security rules defined');
+    });
+  } else if (tab === 'strategy') {
+    var isRu = currentLang === 'ru';
+    body.innerHTML =
+      '<div class="rt-page">' +
+      '<div class="rt-header">' +
+        '<div class="rt-header-icon" style="background:rgba(16,163,127,0.12);color:#10a37f">' + IC.chart + '</div>' +
+        '<div class="rt-header-text">' +
+          '<h3>' + (isRu ? 'Стратегия' : 'Strategy') + '</h3>' +
+          '<p>' + (isRu ? 'Бизнес-правила и параметры торговли. Только вы (владелец) можете редактировать.' : 'Business rules and trading parameters. Only you (the owner) can edit this.') + '</p>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + IC.chart + ' ' + (isRu ? 'Правила стратегии' : 'Strategy Rules') + '</div>' +
+        '<textarea id="edit-strategy-textarea" class="st-textarea" placeholder="' + escHtml(isRu ? 'Введите бизнес-правила, лимиты, условия торговли...' : 'Enter business rules, limits, trading conditions...') + '"></textarea>' +
+      '</div>' +
+      '<div class="rt-actions">' +
+        '<button class="rt-save-btn" onclick="savePromptModule(\'strategy\')">' + IC.check + ' ' + (isRu ? 'Сохранить стратегию' : 'Save Strategy') + '</button>' +
+      '</div>' +
+      '</div>';
+    // Load existing strategy
+    loadPromptModules().then(function(modules) {
+      var el = document.getElementById('edit-strategy-textarea');
+      if (el && modules && modules.strategy) el.value = modules.strategy;
+    });
+  } else if (tab === 'heartbeat') {
+    var isRu = currentLang === 'ru';
+    body.innerHTML =
+      '<div class="rt-page">' +
+      '<div class="rt-header">' +
+        '<div class="rt-header-icon" style="background:rgba(236,72,153,0.12);color:#ec4899">' + IC.heartbeat + '</div>' +
+        '<div class="rt-header-text">' +
+          '<h3>' + (isRu ? 'Пульс' : 'Heartbeat') + '</h3>' +
+          '<p>' + (isRu ? 'Чеклист для автономных периодических действий. Агент читает его при каждом проактивном тике.' : 'Checklist for autonomous periodic actions. The agent reads this during proactive ticks.') + '</p>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + IC.heartbeat + ' ' + (isRu ? 'Проактивные задачи' : 'Proactive Tasks') + '</div>' +
+        '<textarea id="edit-heartbeat-textarea" class="st-textarea" placeholder="' + escHtml(isRu ? '- Проверить баланс кошелька каждые 30 минут\n- Мониторить цены NFT\n- Отправлять дайджест владельцу раз в день' : '- Check wallet balance every 30 minutes\n- Monitor NFT prices\n- Send daily digest to owner') + '"></textarea>' +
+      '</div>' +
+      '<div class="rt-actions">' +
+        '<button class="rt-save-btn" onclick="savePromptModule(\'heartbeat\')">' + IC.check + ' ' + (isRu ? 'Сохранить пульс' : 'Save Heartbeat') + '</button>' +
+      '</div>' +
+      '</div>';
+    // Load existing heartbeat
+    loadPromptModules().then(function(modules) {
+      var el = document.getElementById('edit-heartbeat-textarea');
+      if (el && modules && modules.heartbeat) el.value = modules.heartbeat;
+    });
   } else if (tab === 'info') {
     var isRu = currentLang === 'ru';
     var createdAt = a.createdAt || a.created_at || '';
@@ -1322,7 +1428,7 @@ function switchSettingsTab(tab) {
                 '</button>' +
               '</div>' +
               '<div id="wallet-mnemonic-revealed" style="display:none">' +
-                '<div style="font-size:.72rem;color:#ef4444;margin-bottom:8px;font-weight:600">⚠️ ' +
+                '<div style="font-size:.72rem;color:#ef4444;margin-bottom:8px;font-weight:600">' + IC.warn + ' ' +
                   (isRu ? 'СЕКРЕТНО! Не делитесь и не показывайте на экране при записи!' : 'SECRET! Do not share or show on screen while recording!') +
                 '</div>' +
                 '<div id="wallet-mnemonic-words" style="font-family:monospace;font-size:.82rem;line-height:1.8;word-break:break-all;color:var(--text-primary);background:rgba(0,0,0,0.3);padding:12px;border-radius:8px"></div>' +
@@ -1568,6 +1674,325 @@ function switchSettingsTab(tab) {
         '</div>' +
       '</div>' +
       '</div>';
+  } else if (tab === 'behavior') {
+    var isRu = currentLang === 'ru';
+    var bh = (config.config && config.config.behavior) || {};
+    var typingEnabled = bh.typingDelay !== false;
+    var typingSpeed = bh.typingSpeed || 40;
+    var readReceipts = bh.readReceipts !== false;
+    var readDelay = bh.readDelay || 1.5;
+    var msgSplitting = !!bh.messageSplitting;
+    var thinkingPhrases = bh.thinkingPhrases !== false;
+    var reactions = !!bh.reactions;
+    var scheduleEnabled = !!bh.schedule;
+    var scheduleStart = (bh.scheduleStart || 9);
+    var scheduleEnd = (bh.scheduleEnd || 23);
+    var hesitation = !!bh.hesitation;
+    var randomVariance = bh.randomVariance || 25;
+
+    body.innerHTML =
+      '<div class="rt-page">' +
+      '<div class="rt-header">' +
+        '<div class="rt-header-icon" style="background:rgba(236,72,153,0.12);color:#ec4899">' + IC.user + '</div>' +
+        '<div class="rt-header-text">' +
+          '<h3>' + (isRu ? 'Человекоподобное поведение' : 'Human-like Behavior') + '</h3>' +
+          '<p>' + (isRu ? 'Имитация живого человека: задержки при наборе, прочтение сообщений, реакции' : 'Human simulation: typing delays, read receipts, reactions, natural timing') + '</p>' +
+        '</div>' +
+      '</div>' +
+
+      // Typing Delay
+      '<div class="rt-section">' +
+        '<div class="bh-toggle-row">' +
+          '<div class="bh-toggle-info">' +
+            '<div class="bh-toggle-icon" style="background:rgba(59,130,246,0.12);color:#3b82f6">' + IC.clock + '</div>' +
+            '<div>' +
+              '<div class="bh-toggle-name">' + (isRu ? 'Typing Delay' : 'Typing Delay') + '</div>' +
+              '<div class="bh-toggle-desc">' + (isRu ? 'Показывает "печатает..." перед ответом. Задержка пропорциональна длине' : 'Shows "typing..." before response. Delay proportional to length') + '</div>' +
+            '</div>' +
+          '</div>' +
+          '<label class="bh-switch"><input type="checkbox" id="bh-typing"' + (typingEnabled ? ' checked' : '') + '><span class="bh-slider"></span></label>' +
+        '</div>' +
+        '<div class="bh-sub-setting" id="bh-typing-opts"' + (typingEnabled ? '' : ' style="display:none"') + '>' +
+          '<div class="bh-range-row">' +
+            '<span class="bh-range-label">' + (isRu ? 'Скорость' : 'Speed') + '</span>' +
+            '<input type="range" id="bh-typing-speed" min="15" max="80" value="' + typingSpeed + '" class="rt-slider" oninput="document.getElementById(\'bh-typing-speed-val\').textContent=this.value+\'ms/char\'">' +
+            '<span id="bh-typing-speed-val" class="bh-range-val">' + typingSpeed + 'ms/char</span>' +
+          '</div>' +
+          '<div class="rt-input-hint">' + (isRu ? '15ms = быстрый печатник, 40ms = нормально, 80ms = медленный. Реальные люди: 30-60ms' : '15ms = fast typist, 40ms = normal, 80ms = slow. Real humans: 30-60ms') + '</div>' +
+        '</div>' +
+      '</div>' +
+
+      // Read Receipts
+      '<div class="rt-section">' +
+        '<div class="bh-toggle-row">' +
+          '<div class="bh-toggle-info">' +
+            '<div class="bh-toggle-icon" style="background:rgba(34,197,94,0.12);color:#22c55e">' + IC.eye + '</div>' +
+            '<div>' +
+              '<div class="bh-toggle-name">' + (isRu ? 'Read Receipts' : 'Read Receipts') + '</div>' +
+              '<div class="bh-toggle-desc">' + (isRu ? 'Помечает сообщения прочитанными с задержкой, как живой человек' : 'Marks messages as read with delay, like a real person') + '</div>' +
+            '</div>' +
+          '</div>' +
+          '<label class="bh-switch"><input type="checkbox" id="bh-read-receipts"' + (readReceipts ? ' checked' : '') + '><span class="bh-slider"></span></label>' +
+        '</div>' +
+        '<div class="bh-sub-setting" id="bh-read-opts"' + (readReceipts ? '' : ' style="display:none"') + '>' +
+          '<div class="bh-range-row">' +
+            '<span class="bh-range-label">' + (isRu ? 'Задержка' : 'Delay') + '</span>' +
+            '<input type="range" id="bh-read-delay" min="0.5" max="5" step="0.5" value="' + readDelay + '" class="rt-slider" oninput="document.getElementById(\'bh-read-delay-val\').textContent=this.value+\'s\'">' +
+            '<span id="bh-read-delay-val" class="bh-range-val">' + readDelay + 's</span>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+
+      // Message Splitting
+      '<div class="rt-section">' +
+        '<div class="bh-toggle-row">' +
+          '<div class="bh-toggle-info">' +
+            '<div class="bh-toggle-icon" style="background:rgba(168,85,247,0.12);color:#a855f7">' + IC.split + '</div>' +
+            '<div>' +
+              '<div class="bh-toggle-name">' + (isRu ? 'Разбивка сообщений' : 'Message Splitting') + '</div>' +
+              '<div class="bh-toggle-desc">' + (isRu ? 'Длинные ответы разбиваются на несколько сообщений с паузами между ними' : 'Long responses split into multiple messages with pauses between them') + '</div>' +
+            '</div>' +
+          '</div>' +
+          '<label class="bh-switch"><input type="checkbox" id="bh-splitting"' + (msgSplitting ? ' checked' : '') + '><span class="bh-slider"></span></label>' +
+        '</div>' +
+      '</div>' +
+
+      // Thinking Phrases
+      '<div class="rt-section">' +
+        '<div class="bh-toggle-row">' +
+          '<div class="bh-toggle-info">' +
+            '<div class="bh-toggle-icon" style="background:rgba(245,158,11,0.12);color:#f59e0b">' + IC.brain + '</div>' +
+            '<div>' +
+              '<div class="bh-toggle-name">' + (isRu ? 'Фразы-размышления' : 'Thinking Phrases') + '</div>' +
+              '<div class="bh-toggle-desc">' + (isRu ? '"Секунду...", "Проверяю..." перед сложными ответами' : '"Let me check...", "One moment..." before complex responses') + '</div>' +
+            '</div>' +
+          '</div>' +
+          '<label class="bh-switch"><input type="checkbox" id="bh-thinking"' + (thinkingPhrases ? ' checked' : '') + '><span class="bh-slider"></span></label>' +
+        '</div>' +
+      '</div>' +
+
+      // Reactions
+      '<div class="rt-section">' +
+        '<div class="bh-toggle-row">' +
+          '<div class="bh-toggle-info">' +
+            '<div class="bh-toggle-icon" style="background:rgba(239,68,68,0.12);color:#ef4444">' + IC.thumbsup + '</div>' +
+            '<div>' +
+              '<div class="bh-toggle-name">' + (isRu ? 'Реакции на сообщения' : 'Message Reactions') + '</div>' +
+              '<div class="bh-toggle-desc">' + (isRu ? 'Агент ставит реакции на интересные сообщения' : 'Agent reacts to interesting messages with emoji') + '</div>' +
+            '</div>' +
+          '</div>' +
+          '<label class="bh-switch"><input type="checkbox" id="bh-reactions"' + (reactions ? ' checked' : '') + '><span class="bh-slider"></span></label>' +
+        '</div>' +
+      '</div>' +
+
+      // Hesitation (start typing, stop, start again)
+      '<div class="rt-section">' +
+        '<div class="bh-toggle-row">' +
+          '<div class="bh-toggle-info">' +
+            '<div class="bh-toggle-icon" style="background:rgba(100,116,139,0.12);color:#64748b">' + IC.hourglass + '</div>' +
+            '<div>' +
+              '<div class="bh-toggle-name">' + (isRu ? 'Колебания при наборе' : 'Typing Hesitation') + '</div>' +
+              '<div class="bh-toggle-desc">' + (isRu ? 'Иногда начинает печатать, останавливается и снова печатает' : 'Sometimes starts typing, stops, and starts again') + '</div>' +
+            '</div>' +
+          '</div>' +
+          '<label class="bh-switch"><input type="checkbox" id="bh-hesitation"' + (hesitation ? ' checked' : '') + '><span class="bh-slider"></span></label>' +
+        '</div>' +
+      '</div>' +
+
+      // Random variance
+      '<div class="rt-section">' +
+        '<div class="bh-range-row">' +
+          '<div style="display:flex;align-items:center;gap:8px">' + IC.shuffle + ' <span class="bh-range-label">' + (isRu ? 'Случайность задержек' : 'Delay Randomness') + '</span></div>' +
+          '<input type="range" id="bh-variance" min="0" max="50" value="' + randomVariance + '" class="rt-slider" oninput="document.getElementById(\'bh-variance-val\').textContent=this.value+\'%\'">' +
+          '<span id="bh-variance-val" class="bh-range-val">' + randomVariance + '%</span>' +
+        '</div>' +
+        '<div class="rt-input-hint">' + (isRu ? 'Разброс времени задержек, чтобы не выглядеть механическим. 0% = всегда одинаково, 50% = максимальный разброс' : 'Variance in delay timing to avoid mechanical patterns. 0% = always same, 50% = max variance') + '</div>' +
+      '</div>' +
+
+      // Online/Offline Schedule
+      '<div class="rt-section">' +
+        '<div class="bh-toggle-row">' +
+          '<div class="bh-toggle-info">' +
+            '<div class="bh-toggle-icon" style="background:rgba(99,102,241,0.12);color:#6366f1">' + IC.moon + '</div>' +
+            '<div>' +
+              '<div class="bh-toggle-name">' + (isRu ? 'Расписание активности' : 'Activity Schedule') + '</div>' +
+              '<div class="bh-toggle-desc">' + (isRu ? 'Не отвечать ночью, имитация режима сна' : 'Do not respond at night, simulate sleep schedule') + '</div>' +
+            '</div>' +
+          '</div>' +
+          '<label class="bh-switch"><input type="checkbox" id="bh-schedule"' + (scheduleEnabled ? ' checked' : '') + '><span class="bh-slider"></span></label>' +
+        '</div>' +
+        '<div class="bh-sub-setting" id="bh-schedule-opts"' + (scheduleEnabled ? '' : ' style="display:none"') + '>' +
+          '<div class="bh-time-row">' +
+            '<div class="bh-time-field">' +
+              '<label>' + (isRu ? 'Начало' : 'Start') + '</label>' +
+              '<select id="bh-sched-start" class="rt-input" style="width:auto;padding:6px 10px">' +
+                Array.from({length: 24}, function(_, i) { return '<option value="' + i + '"' + (i === scheduleStart ? ' selected' : '') + '>' + (i < 10 ? '0' : '') + i + ':00</option>'; }).join('') +
+              '</select>' +
+            '</div>' +
+            '<span style="color:var(--text-muted);margin:0 8px">—</span>' +
+            '<div class="bh-time-field">' +
+              '<label>' + (isRu ? 'Конец' : 'End') + '</label>' +
+              '<select id="bh-sched-end" class="rt-input" style="width:auto;padding:6px 10px">' +
+                Array.from({length: 24}, function(_, i) { return '<option value="' + i + '"' + (i === scheduleEnd ? ' selected' : '') + '>' + (i < 10 ? '0' : '') + i + ':00</option>'; }).join('') +
+              '</select>' +
+            '</div>' +
+          '</div>' +
+          '<div class="rt-input-hint">' + (isRu ? 'Агент активен только в указанные часы. Вне расписания — молчит' : 'Agent active only during these hours. Outside schedule — silent') + '</div>' +
+        '</div>' +
+      '</div>' +
+
+      '<div class="rt-actions">' +
+        '<button class="rt-save-btn" onclick="saveSettingsBehavior()">' + IC.check + ' ' + (isRu ? 'Сохранить' : 'Save') + '</button>' +
+      '</div>' +
+      '</div>';
+
+    // Wire up toggles to show/hide sub-settings
+    setTimeout(function() {
+      var pairs = [
+        ['bh-typing', 'bh-typing-opts'],
+        ['bh-read-receipts', 'bh-read-opts'],
+        ['bh-schedule', 'bh-schedule-opts'],
+      ];
+      pairs.forEach(function(p) {
+        var cb = document.getElementById(p[0]);
+        var opts = document.getElementById(p[1]);
+        if (cb && opts) cb.addEventListener('change', function() {
+          opts.style.display = cb.checked ? '' : 'none';
+        });
+      });
+    }, 50);
+
+  } else if (tab === 'learning') {
+    var isRu = currentLang === 'ru';
+    var lr = (config.config && config.config.learning) || {};
+    var feedbackLoop = lr.feedbackLoop !== false;
+    var errorHealing = lr.errorHealing !== false;
+    var qualityScoring = !!lr.qualityScoring;
+    var styleAdaptation = !!lr.styleAdaptation;
+    var maxRetries = lr.maxRetries || 3;
+    var circuitBreakerThreshold = lr.circuitBreakerThreshold || 5;
+    var negativePatterns = lr.negativePatterns || (isRu ? 'нет, не так, неправильно, хуйня, бред, отстой, фигня' : 'no, wrong, bad, terrible, useless, stupid');
+
+    body.innerHTML =
+      '<div class="rt-page">' +
+      '<div class="rt-header">' +
+        '<div class="rt-header-icon" style="background:rgba(16,185,129,0.12);color:#10b981">' + IC.book + '</div>' +
+        '<div class="rt-header-text">' +
+          '<h3>' + (isRu ? 'Самообучение' : 'Self-Learning') + '</h3>' +
+          '<p>' + (isRu ? 'Агент учится на ошибках, адаптируется к стилю пользователя и автоматически восстанавливается после сбоев' : 'Agent learns from mistakes, adapts to user style, and auto-recovers from failures') + '</p>' +
+        '</div>' +
+      '</div>' +
+
+      // Feedback Loop
+      '<div class="rt-section">' +
+        '<div class="bh-toggle-row">' +
+          '<div class="bh-toggle-info">' +
+            '<div class="bh-toggle-icon" style="background:rgba(59,130,246,0.12);color:#3b82f6">' + IC.loop + '</div>' +
+            '<div>' +
+              '<div class="bh-toggle-name">Feedback Loop</div>' +
+              '<div class="bh-toggle-desc">' + (isRu ? 'Когда юзер говорит "нет/не так" — агент автоматически save_lesson и корректирует поведение' : 'When user says "no/wrong" — agent auto-saves lesson and adjusts behavior') + '</div>' +
+            '</div>' +
+          '</div>' +
+          '<label class="bh-switch"><input type="checkbox" id="lr-feedback"' + (feedbackLoop ? ' checked' : '') + '><span class="bh-slider"></span></label>' +
+        '</div>' +
+        '<div class="bh-sub-setting" id="lr-feedback-opts"' + (feedbackLoop ? '' : ' style="display:none"') + '>' +
+          '<div class="rt-section-label" style="margin-bottom:6px">' + IC.search + ' ' + (isRu ? 'Негативные паттерны' : 'Negative Patterns') + '</div>' +
+          '<input type="text" id="lr-neg-patterns" class="rt-input" value="' + escHtml(negativePatterns) + '" placeholder="no, wrong, bad...">' +
+          '<div class="rt-input-hint">' + (isRu ? 'Слова-триггеры через запятую. При обнаружении — агент запоминает ошибку и корректирует ответ' : 'Comma-separated trigger words. When detected — agent saves the mistake and adjusts response') + '</div>' +
+        '</div>' +
+      '</div>' +
+
+      // Error Self-Healing
+      '<div class="rt-section">' +
+        '<div class="bh-toggle-row">' +
+          '<div class="bh-toggle-info">' +
+            '<div class="bh-toggle-icon" style="background:rgba(239,68,68,0.12);color:#ef4444">' + IC.heartbeat + '</div>' +
+            '<div>' +
+              '<div class="bh-toggle-name">Error Self-Healing</div>' +
+              '<div class="bh-toggle-desc">' + (isRu ? 'При ошибке tool call — автоматически пробует другой подход. Circuit breaker при N сбоях подряд' : 'On tool call error — auto-tries alternative approach. Circuit breaker after N consecutive failures') + '</div>' +
+            '</div>' +
+          '</div>' +
+          '<label class="bh-switch"><input type="checkbox" id="lr-healing"' + (errorHealing ? ' checked' : '') + '><span class="bh-slider"></span></label>' +
+        '</div>' +
+        '<div class="bh-sub-setting" id="lr-healing-opts"' + (errorHealing ? '' : ' style="display:none"') + '>' +
+          '<div class="bh-range-row">' +
+            '<span class="bh-range-label">' + (isRu ? 'Макс. повторов' : 'Max retries') + '</span>' +
+            '<input type="range" id="lr-max-retries" min="1" max="5" value="' + maxRetries + '" class="rt-slider" oninput="document.getElementById(\'lr-retries-val\').textContent=this.value">' +
+            '<span id="lr-retries-val" class="bh-range-val">' + maxRetries + '</span>' +
+          '</div>' +
+          '<div class="bh-range-row" style="margin-top:8px">' +
+            '<span class="bh-range-label">' + (isRu ? 'Circuit breaker' : 'Circuit breaker') + '</span>' +
+            '<input type="range" id="lr-circuit" min="2" max="10" value="' + circuitBreakerThreshold + '" class="rt-slider" oninput="document.getElementById(\'lr-circuit-val\').textContent=this.value+\' ' + (isRu ? 'сбоев' : 'fails') + '\'">' +
+            '<span id="lr-circuit-val" class="bh-range-val">' + circuitBreakerThreshold + ' ' + (isRu ? 'сбоев' : 'fails') + '</span>' +
+          '</div>' +
+          '<div class="rt-input-hint">' + (isRu ? 'После N сбоев подряд одного инструмента — переключается на альтернативу или уведомляет' : 'After N consecutive failures of one tool — switches to alternative or notifies') + '</div>' +
+        '</div>' +
+      '</div>' +
+
+      // Quality Scoring
+      '<div class="rt-section">' +
+        '<div class="bh-toggle-row">' +
+          '<div class="bh-toggle-info">' +
+            '<div class="bh-toggle-icon" style="background:rgba(245,158,11,0.12);color:#f59e0b">' + IC.target + '</div>' +
+            '<div>' +
+              '<div class="bh-toggle-name">' + (isRu ? 'Оценка диалогов' : 'Conversation Scoring') + '</div>' +
+              '<div class="bh-toggle-desc">' + (isRu ? 'Каждый диалог оценивается: был ли полезен, доволен ли юзер. Результаты видны в аудите' : 'Each conversation scored: was it helpful, was user satisfied. Results visible in audit') + '</div>' +
+            '</div>' +
+          '</div>' +
+          '<label class="bh-switch"><input type="checkbox" id="lr-scoring"' + (qualityScoring ? ' checked' : '') + '><span class="bh-slider"></span></label>' +
+        '</div>' +
+      '</div>' +
+
+      // Style Adaptation
+      '<div class="rt-section">' +
+        '<div class="bh-toggle-row">' +
+          '<div class="bh-toggle-info">' +
+            '<div class="bh-toggle-icon" style="background:rgba(168,85,247,0.12);color:#a855f7">' + IC.shuffle + '</div>' +
+            '<div>' +
+              '<div class="bh-toggle-name">' + (isRu ? 'Адаптация стиля' : 'Style Adaptation') + '</div>' +
+              '<div class="bh-toggle-desc">' + (isRu ? 'Подстройка длины и тона ответов под стиль пользователя. Краткие вопросы — краткие ответы' : 'Adapts response length and tone to user style. Short questions get short answers') + '</div>' +
+            '</div>' +
+          '</div>' +
+          '<label class="bh-switch"><input type="checkbox" id="lr-adaptation"' + (styleAdaptation ? ' checked' : '') + '><span class="bh-slider"></span></label>' +
+        '</div>' +
+      '</div>' +
+
+      // Self-healing summary card
+      '<div class="bh-summary-card">' +
+        '<div class="bh-summary-title">' + IC.heartbeat + ' ' + (isRu ? 'Как работает самовосстановление' : 'How Self-Healing Works') + '</div>' +
+        '<div class="rt-input-hint" style="margin-top:6px;line-height:1.7">' + (isRu
+          ? '1. Инструмент возвращает ошибку<br>' +
+            '2. LLM получает контекст ошибки и пробует другой подход<br>' +
+            '3. Если та же ошибка N раз подряд — <b>circuit breaker</b> блокирует инструмент<br>' +
+            '4. Агент переключается на fallback или уведомляет пользователя<br>' +
+            '5. Через 5 минут блокировка снимается автоматически'
+          : '1. Tool returns an error<br>' +
+            '2. LLM gets error context and tries a different approach<br>' +
+            '3. If same error N times in a row — <b>circuit breaker</b> blocks the tool<br>' +
+            '4. Agent switches to fallback or notifies user<br>' +
+            '5. Block auto-resets after 5 minutes') + '</div>' +
+      '</div>' +
+
+      '<div class="rt-actions">' +
+        '<button class="rt-save-btn" onclick="saveSettingsLearning()">' + IC.check + ' ' + (isRu ? 'Сохранить' : 'Save') + '</button>' +
+      '</div>' +
+      '</div>';
+
+    // Wire up toggles
+    setTimeout(function() {
+      var pairs = [
+        ['lr-feedback', 'lr-feedback-opts'],
+        ['lr-healing', 'lr-healing-opts'],
+      ];
+      pairs.forEach(function(p) {
+        var cb = document.getElementById(p[0]);
+        var opts = document.getElementById(p[1]);
+        if (cb && opts) cb.addEventListener('change', function() {
+          opts.style.display = cb.checked ? '' : 'none';
+        });
+      });
+    }, 50);
+
   } else if (tab === 'telegram') {
     body.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--text-muted)">Loading...</div>';
     loadAgentTelegramTab(body, _detailAgentId);
@@ -1719,6 +2144,66 @@ async function saveSettingsAdvanced() {
   }
 }
 
+function deleteAgentFromSettings() {
+  if (!_detailAgentId || !_detailAgentData) return;
+  deleteAgent(_detailAgentId, _detailAgentData.name || 'Unnamed');
+}
+
+async function toggleAgentFromSettings() {
+  if (!_detailAgentId || !_detailAgentData) return;
+  var isActive = _detailAgentData.is_active || _detailAgentData.isActive;
+  await toggleAgent(_detailAgentId, isActive);
+  // Refresh
+  await openAgentDetail(_detailAgentId, true);
+  _detailAgentData.is_active = !isActive;
+  openAgentSettings();
+}
+
+async function saveSettingsBehavior() {
+  if (!_detailAgentId) return;
+  try {
+    var behavior = {
+      typingDelay: document.getElementById('bh-typing').checked,
+      typingSpeed: parseInt(document.getElementById('bh-typing-speed').value) || 40,
+      readReceipts: document.getElementById('bh-read-receipts').checked,
+      readDelay: parseFloat(document.getElementById('bh-read-delay').value) || 1.5,
+      messageSplitting: document.getElementById('bh-splitting').checked,
+      thinkingPhrases: document.getElementById('bh-thinking').checked,
+      reactions: document.getElementById('bh-reactions').checked,
+      hesitation: document.getElementById('bh-hesitation').checked,
+      randomVariance: parseInt(document.getElementById('bh-variance').value) || 25,
+      schedule: document.getElementById('bh-schedule').checked,
+      scheduleStart: parseInt(document.getElementById('bh-sched-start').value) || 9,
+      scheduleEnd: parseInt(document.getElementById('bh-sched-end').value) || 23,
+    };
+    await apiRequest('POST', '/api/agents/' + _detailAgentId + '/config', { behavior: behavior });
+    toast(currentLang === 'ru' ? 'Поведение сохранено' : 'Behavior saved', 'success');
+    if (_detailAgentId) openAgentDetail(_detailAgentId, true);
+  } catch (e) {
+    toast('Error: ' + (e.message || e), 'error');
+  }
+}
+
+async function saveSettingsLearning() {
+  if (!_detailAgentId) return;
+  try {
+    var learning = {
+      feedbackLoop: document.getElementById('lr-feedback').checked,
+      negativePatterns: (document.getElementById('lr-neg-patterns').value || '').trim(),
+      errorHealing: document.getElementById('lr-healing').checked,
+      maxRetries: parseInt(document.getElementById('lr-max-retries').value) || 3,
+      circuitBreakerThreshold: parseInt(document.getElementById('lr-circuit').value) || 5,
+      qualityScoring: document.getElementById('lr-scoring').checked,
+      styleAdaptation: document.getElementById('lr-adaptation').checked,
+    };
+    await apiRequest('POST', '/api/agents/' + _detailAgentId + '/config', { learning: learning });
+    toast(currentLang === 'ru' ? 'Обучение сохранено' : 'Learning saved', 'success');
+    if (_detailAgentId) openAgentDetail(_detailAgentId, true);
+  } catch (e) {
+    toast('Error: ' + (e.message || e), 'error');
+  }
+}
+
 async function cloneAgentFromSettings() {
   if (!_detailAgentId || !_detailAgentData) return;
   var isRu = currentLang === 'ru';
@@ -1779,6 +2264,96 @@ async function importAgentJSON(input) {
     toast('Error: ' + (e.message || e), 'error');
   }
   input.value = '';
+}
+
+// Import from main agents page with preview dialog
+async function importAgentFromMainView(input) {
+  if (!input.files || !input.files[0]) return;
+  var isRu = currentLang === 'ru';
+  try {
+    var text = await input.files[0].text();
+    var data = JSON.parse(text);
+    if (!data.name || !data.code) {
+      toast(isRu ? 'Неверный формат: нужны name и code' : 'Invalid format: name and code required', 'error');
+      input.value = '';
+      return;
+    }
+    // Show preview dialog
+    var triggerType = data.triggerType || 'ai_agent';
+    var promptPreview = (data.code || '').slice(0, 200) + (data.code && data.code.length > 200 ? '...' : '');
+    var confirmed = confirm(
+      (isRu ? 'Импорт агента:\n\n' : 'Import agent:\n\n') +
+      (isRu ? 'Имя: ' : 'Name: ') + data.name + '\n' +
+      (isRu ? 'Тип: ' : 'Type: ') + triggerType + '\n' +
+      (isRu ? 'Описание: ' : 'Desc: ') + (data.description || '—') + '\n\n' +
+      (isRu ? 'Промпт (превью):\n' : 'Prompt (preview):\n') + promptPreview + '\n\n' +
+      (isRu ? 'Создать агента?' : 'Create agent?')
+    );
+    if (!confirmed) { input.value = ''; return; }
+    var res = await apiRequest('POST', '/api/agents', {
+      name: data.name + ' (imported)',
+      description: data.description || '',
+      triggerType: triggerType,
+      code: data.code,
+      triggerConfig: data.triggerConfig || {},
+    });
+    if (res.ok) {
+      toast(isRu ? 'Агент импортирован!' : 'Agent imported!', 'success');
+      await loadAgentsPage();
+      await loadAgents();
+    } else {
+      toast(res.error || 'Error', 'error');
+    }
+  } catch (e) {
+    toast('Error: ' + (e.message || e), 'error');
+  }
+  input.value = '';
+}
+
+// Copy agent prompt to clipboard (quick action on card)
+async function copyAgentPrompt(agentId, event) {
+  if (event) event.stopPropagation();
+  var isRu = currentLang === 'ru';
+  try {
+    var data = await apiRequest('GET', '/api/agents/' + agentId);
+    if (!data.ok || !data.agent) { toast(isRu ? 'Не удалось загрузить' : 'Failed to load', 'error'); return; }
+    var code = data.agent.code || '';
+    if (!code) { toast(isRu ? 'Промпт пуст' : 'Prompt is empty', 'warning'); return; }
+    await navigator.clipboard.writeText(code);
+    toast(isRu ? 'Промпт скопирован' : 'Prompt copied', 'success');
+  } catch (e) {
+    toast('Error: ' + (e.message || e), 'error');
+  }
+}
+
+// Export agent directly from card (quick action)
+async function exportAgentFromCard(agentId, event) {
+  if (event) event.stopPropagation();
+  try {
+    var data = await apiRequest('GET', '/api/agents/' + agentId);
+    if (!data.ok || !data.agent) { toast('Error', 'error'); return; }
+    var a = data.agent;
+    var exportData = {
+      name: a.name,
+      description: a.description,
+      triggerType: a.triggerType || a.trigger_type,
+      code: a.code,
+      triggerConfig: (function(){ var _t = a.trigger_config || a.triggerConfig || {}; return typeof _t === 'string' ? JSON.parse(_t) : _t; })(),
+      role: a.role,
+      exportedAt: new Date().toISOString(),
+      platform: 'TON Agent Platform',
+    };
+    var blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var link = document.createElement('a');
+    link.href = url;
+    link.download = (a.name || 'agent').replace(/[^a-zA-Z0-9\u0430-\u044f\u0410-\u042f\u0451\u0401_-]/g, '_') + '.json';
+    link.click();
+    URL.revokeObjectURL(url);
+    toast(currentLang === 'ru' ? 'Экспортировано!' : 'Exported!', 'success');
+  } catch (e) {
+    toast('Error: ' + (e.message || e), 'error');
+  }
 }
 
 // ═══ TELEGRAM TAB — per-agent Telegram account ═══
@@ -2061,8 +2636,31 @@ async function saveSettingsPrompt() {
   var ta = document.getElementById('edit-prompt-textarea');
   if (!ta || !_detailAgentId) return;
   var data = await apiRequest('PUT', '/api/agents/' + _detailAgentId + '/code', { code: ta.value });
-  if (data.ok) { toast(currentLang === 'ru' ? 'Промпт сохранён' : 'Prompt saved', 'success'); _detailAgentData.code = ta.value; }
+  if (data.ok) { toast(currentLang === 'ru' ? 'Сохранено' : 'Saved', 'success'); _detailAgentData.code = ta.value; }
   else toast(data.error || 'Error', 'error');
+}
+
+async function loadPromptModules() {
+  if (!_detailAgentId) return null;
+  if (_promptModulesCache) return _promptModulesCache;
+  try {
+    var data = await apiRequest('GET', '/api/agents/' + _detailAgentId + '/prompt-modules');
+    if (data.ok) { _promptModulesCache = data.modules; return data.modules; }
+  } catch (e) {}
+  return null;
+}
+
+async function savePromptModule(moduleName) {
+  if (!_detailAgentId) return;
+  var ta = document.getElementById('edit-' + moduleName + '-textarea');
+  if (!ta) return;
+  var data = await apiRequest('POST', '/api/agents/' + _detailAgentId + '/prompt-modules', { module: moduleName, content: ta.value });
+  if (data.ok) {
+    toast(currentLang === 'ru' ? 'Сохранено' : 'Saved', 'success');
+    if (_promptModulesCache) _promptModulesCache[moduleName] = ta.value;
+  } else {
+    toast(data.error || 'Error', 'error');
+  }
 }
 
 async function saveSettingsInfo() {
@@ -2240,15 +2838,15 @@ function _renderProviderInfo(p, isRu) {
     '<div class="st-prov-dot" style="background:' + p.color + ';width:12px;height:12px"></div>' +
     '<strong>' + p.name + '</strong>' +
     '<a href="' + p.keyUrl + '" target="_blank" style="margin-left:auto;color:var(--primary);font-size:.82rem;text-decoration:none">' +
-      (isRu ? '🔑 Получить API ключ →' : '🔑 Get API key →') +
+      IC.link + ' ' + (isRu ? 'Получить API ключ' : 'Get API key') + ' &rarr;' +
     '</a>' +
   '</div>' +
   '<div style="font-size:.82rem;color:var(--text-secondary);margin-bottom:8px">' + p.keyHint + '</div>' +
   '<div style="font-size:.78rem;color:var(--text-muted)">' +
-    (isRu ? '📋 Модели: ' : '📋 Models: ') + '<code style="font-size:.75rem">' + p.models + '</code>' +
+    IC.clipboard + ' ' + (isRu ? 'Модели: ' : 'Models: ') + '<code style="font-size:.75rem">' + p.models + '</code>' +
   '</div>' +
   '<div style="font-size:.78rem;color:var(--text-muted);margin-top:4px">' +
-    (isRu ? '⚡ По умолчанию: ' : '⚡ Default: ') + '<code style="font-size:.75rem">' + p.defaultModel + '</code>' +
+    IC.bolt + ' ' + (isRu ? 'По умолчанию: ' : 'Default: ') + '<code style="font-size:.75rem">' + p.defaultModel + '</code>' +
   '</div>';
 }
 
@@ -2556,13 +3154,29 @@ function renderAgentsPage() {
     if (ms < 86400000) return Math.floor(ms / 3600000) + (currentLang === 'ru' ? ' ч' : 'h ago');
     return Math.floor(ms / 86400000) + (currentLang === 'ru' ? ' д' : 'd ago');
   };
+  // Determine status class: active=green, paused=yellow, error=red
+  var statusClass = function(a) {
+    if (a.lastError || a.last_error) return 'error';
+    if (a.isActive) return 'active';
+    return 'paused';
+  };
+  var statusLabel = function(a) {
+    if (a.lastError || a.last_error) return currentLang === 'ru' ? 'Ошибка' : 'Error';
+    if (a.isActive) return t('active');
+    return t('paused');
+  };
+
   listEl.innerHTML = agents.map(function(a) {
     var role = a.role || 'worker';
     var lvl = a.level || 1;
     var created = timeAgo(a.createdAt);
-    return '<div class="agent-card-enhanced" data-id="' + a.id + '" onclick="openAgentDetail(' + a.id + ')" style="cursor:pointer">' +
+    var lastActive = a.lastActiveAt || a.last_active_at || a.updatedAt || a.updated_at || '';
+    var lastActiveStr = lastActive ? timeAgo(lastActive) : '';
+    var toolCalls = a.toolCallCount || a.tool_call_count || 0;
+    var sClass = statusClass(a);
+    return '<div class="agent-card-enhanced agent-card-status-' + sClass + '" data-id="' + a.id + '" onclick="openAgentDetail(' + a.id + ')" style="cursor:pointer">' +
       '<div class="agent-card-top">' +
-      '<div class="agent-status ' + (a.isActive ? 'active' : 'paused') + '"><span class="status-dot"></span><span>' + (a.isActive ? t('active') : t('paused')) + '</span></div>' +
+      '<div class="agent-status ' + sClass + '"><span class="status-dot"></span><span>' + statusLabel(a) + '</span></div>' +
       '<div class="agent-card-type">' + triggerIcon(a.triggerType) + ' ' + triggerLabel(a.triggerType) + '</div>' +
       '</div>' +
       '<div class="agent-card-main">' +
@@ -2572,14 +3186,18 @@ function renderAgentsPage() {
       '<div class="agent-card-meta">' +
       '<span class="agent-role-badge role-' + role + '">' + role + '</span>' +
       '<span class="agent-level">' + t('lv') + lvl + '</span>' +
-      (created ? '<span class="agent-created">' + created + '</span>' : '') +
+      (lastActiveStr ? '<span class="agent-last-active" title="' + (currentLang === 'ru' ? 'Последняя активность' : 'Last active') + '">' + IC.clock + ' ' + lastActiveStr + '</span>' : '') +
+      (toolCalls > 0 ? '<span class="agent-tool-calls" title="' + (currentLang === 'ru' ? 'Вызовов инструментов' : 'Tool calls') + '">' + IC.wrench + ' ' + toolCalls + '</span>' : '') +
+      (created && !lastActiveStr ? '<span class="agent-created">' + created + '</span>' : '') +
       '</div>' +
       '<div class="agent-card-actions">' +
       '<button class="btn btn-sm ' + (a.isActive ? 'btn-warning' : 'btn-success') + '" onclick="event.stopPropagation();toggleAgentFromPage(' + a.id + ',' + a.isActive + ')">' + (a.isActive ? IC.pause + ' ' + t('stop') : IC.rocket + ' ' + t('run')) + '</button>' +
-      '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();loadAgentLogs(' + a.id + ')">' + IC.clipboard + ' ' + t('logs') + '</button>' +
+      '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();copyAgentPrompt(' + a.id + ', event)" title="' + (currentLang === 'ru' ? 'Копировать промпт' : 'Copy prompt') + '">' + IC.clipboard + '</button>' +
+      '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();exportAgentFromCard(' + a.id + ', event)" title="' + (currentLang === 'ru' ? 'Экспорт JSON' : 'Export JSON') + '">' + IC.download + '</button>' +
+      '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();loadAgentLogs(' + a.id + ')" title="' + (currentLang === 'ru' ? 'Логи' : 'Logs') + '">' + IC.inbox + '</button>' +
       '<button class="btn btn-ghost btn-sm" title="' + (getPinnedAgents().indexOf(a.id) >= 0 ? (currentLang === 'ru' ? 'Открепить' : 'Unpin') : (currentLang === 'ru' ? 'Закрепить на обзор' : 'Pin to overview')) + '" onclick="togglePinAgent(' + a.id + ', event)" style="color:' + (getPinnedAgents().indexOf(a.id) >= 0 ? 'var(--primary)' : 'var(--text-muted)') + '">' +
       '<svg width="14" height="14" viewBox="0 0 24 24" ' + (getPinnedAgents().indexOf(a.id) >= 0 ? 'fill="currentColor"' : 'fill="none"') + ' stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg></button>' +
-      '<button class="btn btn-ghost btn-sm" style="color:var(--danger,#ef4444)" onclick="event.stopPropagation();deleteAgent(' + a.id + ',\'' + escHtml(a.name || 'Agent').replace(/'/g, "\\'") + '\')">' + IC.trash + '</button>' +
+      '<button class="btn btn-ghost btn-sm btn-delete-card" onclick="event.stopPropagation();deleteAgent(' + a.id + ',\'' + escHtml(a.name || 'Agent').replace(/'/g, "\\'") + '\')">' + IC.trash + '</button>' +
       '</div></div>';
   }).join('');
 }
@@ -3024,6 +3642,7 @@ const pageLoadFns = {
   marketplace: () => loadMarketplace(),
   assistant:   () => loadAssistantPage(),
   guide:       () => Promise.resolve(),
+  wallets:     () => loadWalletsPage(),
 };
 
 // Stub functions for pages that don't have dedicated load logic yet
@@ -5811,7 +6430,7 @@ function buildFlowPalette() {
   html += '<div class="palette-help palette-category collapsed">';
   html += '<div class="palette-cat-header" onclick="togglePaletteCat(this)" style="border-bottom:1px solid rgba(255,255,255,0.06)">';
   html += '<span class="cat-dot" style="background:#60a5fa"></span>';
-  html += '<span>' + (ru ? '📖 Инструкция' : '📖 Guide') + '</span>';
+  html += '<span>' + IC.book + ' ' + (ru ? 'Инструкция' : 'Guide') + '</span>';
   html += '<svg class="cat-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>';
   html += '</div>';
   html += '<div class="palette-nodes" style="padding:8px 12px;font-size:0.72rem;color:var(--text-secondary);line-height:1.5">';
@@ -5822,14 +6441,14 @@ function buildFlowPalette() {
       '<p style="margin:0 0 4px">3. Используйте <b>Условие</b> для ветвления логики</p>' +
       '<p style="margin:0 0 4px">4. Завершите <b>Уведомлением</b> для отправки результатов</p>' +
       '<p style="margin:0 0 4px">5. Нажмите <b>Запуск</b> для деплоя</p>' +
-      '<p style="margin:6px 0 0;color:var(--text-muted)">💡 <b>Подсказки:</b> Наведите на ноду чтобы увидеть описание. Используйте <code>{{result}}</code> для передачи данных между шагами. <a href="https://tonagentplatform.com" style="color:var(--primary)" target="_blank">Документация</a></p>'
+      '<p style="margin:6px 0 0;color:var(--text-muted)">' + IC.bolt + ' <b>Подсказки:</b> Наведите на ноду чтобы увидеть описание. Используйте <code>{{result}}</code> для передачи данных между шагами. <a href="https://tonagentplatform.com" style="color:var(--primary)" target="_blank">Документация</a></p>'
     : '<p style="margin:0 0 6px"><b>How to build an agent:</b></p>' +
       '<p style="margin:0 0 4px">1. Drag a <b>Trigger</b> (Timer/Webhook) onto canvas</p>' +
       '<p style="margin:0 0 4px">2. Add <b>actions</b> (TON, Gifts, Web)</p>' +
       '<p style="margin:0 0 4px">3. Use <b>Condition</b> for logic branching</p>' +
       '<p style="margin:0 0 4px">4. End with <b>Notify</b> to send results</p>' +
       '<p style="margin:0 0 4px">5. Click <b>Deploy</b> to launch</p>' +
-      '<p style="margin:6px 0 0;color:var(--text-muted)">💡 <b>Tips:</b> Hover nodes for descriptions. Use <code>{{result}}</code> to pass data between steps. <a href="https://tonagentplatform.com" style="color:var(--primary)" target="_blank">Docs</a></p>';
+      '<p style="margin:6px 0 0;color:var(--text-muted)">' + IC.bolt + ' <b>Tips:</b> Hover nodes for descriptions. Use <code>{{result}}</code> to pass data between steps. <a href="https://tonagentplatform.com" style="color:var(--primary)" target="_blank">Docs</a></p>';
   html += '</div></div>';
 
   const catOrder = ['triggers', 'ton', 'gifts', 'web', 'telegram', 'output', 'logic', 'state'];
@@ -6238,9 +6857,9 @@ function showAtlasDeployStep() {
     // Step 0: flow summary + ask about AI enhancement
     summaryEl.innerHTML =
       '<div style="background:rgba(125,211,252,0.06);border-radius:10px;padding:14px;margin-bottom:4px">' +
-      '<div style="font-size:15px;font-weight:600;color:#f1f5f9;margin-bottom:8px">📋 ' + escHtml(d.name) + '</div>' +
+      '<div style="font-size:15px;font-weight:600;color:#f1f5f9;margin-bottom:8px">' + IC.clipboard + ' ' + escHtml(d.name) + '</div>' +
       '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:#94a3b8">' +
-      '<span>🔧 ' + d.nodeCount + ' блоков</span><span>🔗 ' + d.edgeCount + ' связей</span></div>' +
+      '<span>' + IC.wrench + ' ' + d.nodeCount + ' блоков</span><span>' + IC.link + ' ' + d.edgeCount + ' связей</span></div>' +
       '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">' +
       d.caps.map(function(c) { return '<span style="background:rgba(125,211,252,0.12);color:#7dd3fc;padding:3px 10px;border-radius:12px;font-size:12px">' + c + '</span>'; }).join('') +
       '</div>' +
@@ -6249,8 +6868,8 @@ function showAtlasDeployStep() {
     questionEl.innerHTML = '<p style="color:#e2e8f0;font-size:14px;margin:0">Хотите, чтобы Atlas улучшил агента AI-интеллектом?</p>';
     optionsEl.innerHTML = '';
     [
-      { text: '⚡ Да, улучши AI', value: 'enhance', desc: 'Atlas добавит smart логику и обработку ошибок' },
-      { text: '📦 Деплой как есть', value: 'raw', desc: 'Без изменений, только ваш flow' }
+      { text: 'Да, улучши AI', value: 'enhance', desc: 'Atlas добавит smart логику и обработку ошибок' },
+      { text: 'Деплой как есть', value: 'raw', desc: 'Без изменений, только ваш flow' }
     ].forEach(function(o) {
       var b = document.createElement('button');
       b.className = 'btn btn-ghost';
@@ -6264,12 +6883,12 @@ function showAtlasDeployStep() {
   } else if (_atlasDeployStep === 1 && d.hasTelegram) {
     // Step 1 (telegram flows only): ask about TG auth
     summaryEl.innerHTML = '';
-    questionEl.innerHTML = '<p style="color:#e2e8f0;font-size:14px;margin:0">📱 Flow использует Telegram. Аккаунт подключён?</p>';
+    questionEl.innerHTML = '<p style="color:#e2e8f0;font-size:14px;margin:0">' + IC.phone + ' Flow использует Telegram. Аккаунт подключён?</p>';
     optionsEl.innerHTML = '';
     [
-      { text: '✅ Да, подключён', value: 'tg_ok' },
-      { text: '⚙️ Подключу позже', value: 'tg_later' },
-      { text: '📖 Как подключить?', value: 'tg_help' }
+      { text: 'Да, подключён', value: 'tg_ok' },
+      { text: 'Подключу позже', value: 'tg_later' },
+      { text: 'Как подключить?', value: 'tg_help' }
     ].forEach(function(o) {
       var b = document.createElement('button');
       b.className = 'btn btn-ghost';
@@ -6284,7 +6903,7 @@ function showAtlasDeployStep() {
     // Final: ready to deploy
     summaryEl.innerHTML = '';
     questionEl.innerHTML = '<div style="text-align:center;padding:10px">' +
-      '<div style="font-size:36px;margin-bottom:8px">🚀</div>' +
+      '<div style="margin-bottom:8px">' + IC.rocket + '</div>' +
       '<p style="color:#e2e8f0;font-size:15px;margin:0">Готово к деплою!</p>' +
       '<p style="color:#64748b;font-size:12px;margin:4px 0 0">' + escHtml(d.name) + ' • ' + d.caps.join(', ') + '</p></div>';
     optionsEl.innerHTML = '';
@@ -6297,7 +6916,7 @@ function atlasDeployAnswer(value) {
   if (value === 'tg_help') {
     closeAtlasDeploy();
     navigateTo('settings');
-    toast('📱 Подключите Telegram в разделе Telegram Account', 'info');
+    toast('Подключите Telegram в разделе Telegram Account', 'info');
     return;
   }
   _atlasDeployStep++;
@@ -6355,15 +6974,15 @@ async function deployFlow() {
   var hasWeb = nodeTypes.some(function(tp) { return tp.indexOf('web') >= 0 || tp.indexOf('fetch') >= 0 || tp.indexOf('http') >= 0; });
 
   var caps = [];
-  if (hasTelegram) caps.push('📱 Telegram');
-  if (hasGifts) caps.push('🎁 Gifts');
-  if (hasTon) caps.push('💰 TON');
-  if (hasWeb) caps.push('🌐 Web');
-  if (!caps.length) caps.push('📋 Auto');
+  if (hasTelegram) caps.push('Telegram');
+  if (hasGifts) caps.push('Gifts');
+  if (hasTon) caps.push('TON');
+  if (hasWeb) caps.push('Web');
+  if (!caps.length) caps.push('Auto');
 
   var warnings = [];
-  if (hasTelegram) warnings.push('⚠️ Telegram требует подключённый аккаунт');
-  if (hasGifts && hasTon) warnings.push('💡 Торговля подарками требует TON-кошелёк');
+  if (hasTelegram) warnings.push(IC.warn + ' Telegram требует подключённый аккаунт');
+  if (hasGifts && hasTon) warnings.push(IC.bolt + ' Торговля подарками требует TON-кошелёк');
 
   // Show Atlas Deploy Modal
   _atlasDeployData = { name: name, description: description, flow: flow, nodeCount: _flowNodes.length, edgeCount: _flowEdges.length, caps: caps, warnings: warnings, hasTelegram: hasTelegram };
@@ -8009,9 +8628,9 @@ function renderWizardStep(idx) {
         (f.desc ? '<div class="settings-field-desc">' + f.desc + '</div>' : '') + '</div>';
     } else if (f.type === 'caps') {
       var quickCaps = [
-        {id:'wallet',icon:'💰',name:'Wallet'}, {id:'nft',icon:'🖼',name:'NFT'}, {id:'gifts_market',icon:'📊',name:'Gifts Market'},
-        {id:'web',icon:'🌐',name:'Web'}, {id:'defi',icon:'💱',name:'DeFi'}, {id:'telegram',icon:'📱',name:'Telegram'},
-        {id:'notify',icon:'🔔',name:'Notify'}, {id:'state',icon:'💾',name:'State'}
+        {id:'wallet',icon:IC.dollar,name:'Wallet'}, {id:'nft',icon:IC.image,name:'NFT'}, {id:'gifts_market',icon:IC.trending,name:'Gifts Market'},
+        {id:'web',icon:IC.globe,name:'Web'}, {id:'defi',icon:IC.shuffle,name:'DeFi'}, {id:'telegram',icon:IC.send,name:'Telegram'},
+        {id:'notify',icon:IC.bell,name:'Notify'}, {id:'state',icon:IC.box,name:'State'}
       ];
       html += '<div class="settings-field"><label>' + f.label + '</label>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">' +
@@ -9241,3 +9860,264 @@ console.log('TON Agent Platform Dashboard v2.0 loaded successfully!');
     }, 10000);
   }
 })();
+
+// ═══════════════════════════════════════════════════════════════════
+// ═══ GENERIC MODAL ═════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
+
+function openModal(title, bodyHtml, footerHtml) {
+  var m = document.getElementById('generic-modal');
+  if (!m) return;
+  document.getElementById('generic-modal-title').innerHTML = title || '';
+  document.getElementById('generic-modal-body').innerHTML = bodyHtml || '';
+  document.getElementById('generic-modal-footer').innerHTML = footerHtml || '';
+  m.style.display = 'flex';
+}
+
+function closeModal() {
+  var m = document.getElementById('generic-modal');
+  if (m) m.style.display = 'none';
+}
+
+function updateModalBody(html) {
+  var el = document.getElementById('generic-modal-body');
+  if (el) el.innerHTML = html;
+}
+
+
+// ===================================================================
+// === AGENTIC WALLETS PAGE ==========================================
+// ===================================================================
+
+var _awData = [];
+var _awStats = {};
+
+var AWI = {
+  wallet: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/></svg>',
+  walletSm: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/></svg>',
+  crown: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4l3 12h14l3-12-6 7-4-9-4 9-6-7z"/><path d="M3 20h18"/></svg>',
+  arrowIn: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg>',
+  arrowOut: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 14 12 9 7 14"/><line x1="12" y1="9" x2="12" y2="21"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg>',
+  lockOpen: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>',
+  lockClosed: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>',
+};
+
+async function loadWalletsPage() {
+  try {
+    var data = await apiRequest('GET', '/api/agentic-wallets');
+    _awData = data.wallets || [];
+    _awStats = data.stats || {};
+  } catch (e) { _awData = []; _awStats = {}; }
+  awRenderStats(); awRenderRoot(); awRenderGrid();
+}
+
+function awRenderStats() {
+  var el = document.getElementById('aw-stats-row');
+  if (!el) return;
+  var isRu = currentLang === 'ru';
+  var stats = [
+    { label: isRu ? 'Всего кошельков' : 'Total Wallets', value: (_awStats.totalWallets || 0), color: 'var(--text-primary)', icon: AWI.walletSm },
+    { label: isRu ? 'Общий баланс' : 'Total Balance', value: ((_awStats.totalBalanceTon || 0).toFixed(2)) + ' <span style="font-size:.75rem;opacity:.6">TON</span>', color: '#22c55e', icon: IC.gem },
+    { label: isRu ? 'Активных' : 'Active', value: (_awStats.activeWallets || 0) + ' <span style="font-size:.75rem;opacity:.4">/ ' + (_awStats.blockedWallets || 0) + ' ' + (isRu ? 'забл.' : 'blocked') + '</span>', color: 'var(--text-primary)', icon: IC.check },
+    { label: isRu ? 'Потрачено сегодня' : 'Spent Today', value: ((_awStats.totalSpentTodayTon || 0).toFixed(2)) + ' <span style="font-size:.75rem;opacity:.6">TON</span>', color: '#eab308', icon: IC.trending },
+  ];
+  el.innerHTML = stats.map(function(s) {
+    return '<div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px;padding:18px 20px">' +
+      '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;color:var(--text-muted)">' + s.icon + '<span style="font-size:.75rem">' + s.label + '</span></div>' +
+      '<div style="font-size:1.4rem;font-weight:700;color:' + s.color + ';font-family:\'JetBrains Mono\',monospace">' + s.value + '</div></div>';
+  }).join('');
+}
+
+function awRenderRoot() {
+  var el = document.getElementById('aw-root-section');
+  if (!el) return;
+  var isRu = currentLang === 'ru';
+  var root = _awData.find(function(w) { return w.walletType === 'root'; });
+  if (!root) {
+    el.innerHTML = '<div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:16px;padding:40px 32px;text-align:center">' +
+      '<div style="width:56px;height:56px;border-radius:16px;background:linear-gradient(135deg,rgba(59,130,246,0.15),rgba(168,85,247,0.15));display:flex;align-items:center;justify-content:center;margin:0 auto 16px"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.8"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/></svg></div>' +
+      '<h2 style="margin-bottom:8px;font-size:1.15rem">' + (isRu ? 'Добро пожаловать в Agentic Wallets' : 'Welcome to Agentic Wallets') + '</h2>' +
+      '<p style="color:var(--text-muted);margin-bottom:24px;max-width:480px;margin-left:auto;margin-right:auto;font-size:.88rem;line-height:1.5">' +
+        (isRu ? 'Создайте Root-кошелёк — он станет мастер-кошельком, к которому привязаны все суб-кошельки агентов.' : 'Create a Root Wallet to get started. It will serve as your master wallet for all agent sub-wallets.') + '</p>' +
+      '<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">' +
+        '<button class="btn-action" onclick="awSetupRoot()" style="background:var(--accent);gap:6px">' + IC.shield + ' ' + (isRu ? 'Создать Root Wallet' : 'Create Root Wallet') + '</button>' +
+        '<button class="btn-action" onclick="awShowImportModal()" style="background:var(--bg-tertiary);gap:6px">' + IC.download + ' ' + (isRu ? 'Импортировать' : 'Import Existing') + '</button></div></div>';
+    return;
+  }
+  var addrShort = root.address.slice(0, 12) + '...' + root.address.slice(-6);
+  el.innerHTML = '<div style="background:var(--bg-secondary);border:1px solid rgba(34,197,94,0.2);border-radius:14px;padding:20px 24px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px">' +
+    '<div style="display:flex;align-items:center;gap:14px">' +
+      '<div style="width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,rgba(34,197,94,0.12),rgba(59,130,246,0.12));display:flex;align-items:center;justify-content:center">' + AWI.crown + '</div>' +
+      '<div><div style="font-size:.75rem;color:var(--text-muted);margin-bottom:2px">Root Wallet</div>' +
+      '<code style="font-size:.85rem;cursor:pointer;color:var(--text-primary)" onclick="navigator.clipboard.writeText(\x27' + root.address + '\x27);toast(\x27Copied!\x27,\x27success\x27)" title="Click to copy">' + addrShort + '</code></div></div>' +
+    '<div style="text-align:right"><div style="font-size:1.3rem;font-weight:700;color:#22c55e;font-family:\'JetBrains Mono\',monospace">' + (root.balanceTon || 0).toFixed(4) + ' TON</div>' +
+    '<div style="font-size:.72rem;color:var(--text-muted)">Root Balance</div></div></div>';
+}
+
+function awRenderGrid() {
+  var el = document.getElementById('aw-wallets-grid');
+  var titleEl = document.getElementById('aw-wallets-title');
+  if (!el) return;
+  var isRu = currentLang === 'ru';
+  var subs = _awData.filter(function(w) { return w.walletType === 'sub'; });
+  if (titleEl) titleEl.textContent = (isRu ? 'Кошельки агентов' : 'Agent Wallets') + ' (' + subs.length + ')';
+  if (subs.length === 0) {
+    el.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:48px 20px">' +
+      '<div style="width:48px;height:48px;border-radius:14px;background:var(--bg-tertiary);display:flex;align-items:center;justify-content:center;margin:0 auto 14px"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.5"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/></svg></div>' +
+      '<h3 style="margin-bottom:6px;font-size:1rem;color:var(--text-primary)">' + (isRu ? 'Нет кошельков агентов' : 'No agent wallets yet') + '</h3>' +
+      '<p style="color:var(--text-muted);font-size:.85rem">' + (isRu ? 'Создайте суб-кошелёк для автономной работы агента' : 'Deploy a sub-wallet for your agents to use autonomously') + '</p></div>';
+    return;
+  }
+  el.innerHTML = subs.map(function(w) {
+    var addr = w.address.slice(0, 8) + '...' + w.address.slice(-4);
+    var agent = w.agentId ? ('Agent #' + w.agentId) : (isRu ? 'Не привязан' : 'Unlinked');
+    var sColor = w.isBlocked ? '#ef4444' : '#22c55e';
+    var sText = w.isBlocked ? 'Blocked' : 'Active';
+    var sDot = '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:' + sColor + ';margin-right:4px"></span>';
+    return '<div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:14px;padding:20px;cursor:pointer;transition:all .2s" onmouseover="this.style.borderColor=\'rgba(59,130,246,0.4)\';this.style.background=\'var(--bg-tertiary)\'" onmouseout="this.style.borderColor=\'var(--border)\';this.style.background=\'var(--bg-secondary)\'" onclick="awShowDetail(' + w.id + ')">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">' +
+        '<span style="font-weight:600;font-size:.92rem;display:flex;align-items:center;gap:6px">' + AWI.walletSm + ' ' + escHtml(w.label || addr) + '</span>' +
+        '<span style="font-size:.7rem;padding:3px 8px;border-radius:20px;background:' + (w.isBlocked ? 'rgba(239,68,68,0.1)' : 'rgba(34,197,94,0.1)') + ';color:' + sColor + ';display:flex;align-items:center">' + sDot + sText + '</span></div>' +
+      '<code style="font-size:.76rem;color:var(--text-muted);cursor:pointer;display:block;margin-bottom:12px" onclick="event.stopPropagation();navigator.clipboard.writeText(\x27' + w.address + '\x27);toast(\x27Copied!\x27,\x27success\x27)">' + addr + '</code>' +
+      '<div style="font-size:1.15rem;font-weight:700;font-family:\'JetBrains Mono\',monospace;color:#22c55e;margin-bottom:12px">' + (w.balanceTon || 0).toFixed(4) + ' <span style="font-size:.75rem;opacity:.5">TON</span></div>' +
+      '<div style="display:flex;gap:14px;font-size:.75rem;color:var(--text-muted);margin-bottom:14px">' +
+        '<span style="display:flex;align-items:center;gap:4px">' + IC.robot + ' ' + agent + '</span>' +
+        '<span style="display:flex;align-items:center;gap:4px">' + IC.chart + ' ' + (w.spendLimitTon || 50) + ' TON/day</span></div>' +
+      '<div style="display:flex;gap:6px" onclick="event.stopPropagation()">' +
+        '<button class="btn-action" style="font-size:.72rem;padding:5px 10px;gap:4px" onclick="awRefreshOne(' + w.id + ')">' + IC.refresh + '</button>' +
+        (w.isBlocked
+          ? '<button class="btn-action" style="font-size:.72rem;padding:5px 10px;background:rgba(34,197,94,0.1);color:#22c55e;gap:4px" onclick="awToggleBlock(' + w.id + ',false)">' + AWI.lockOpen + ' Unblock</button>'
+          : '<button class="btn-action" style="font-size:.72rem;padding:5px 10px;background:rgba(239,68,68,0.06);color:#ef4444;gap:4px" onclick="awToggleBlock(' + w.id + ',true)">' + AWI.lockClosed + ' Block</button>') +
+        '<button class="btn-action" style="font-size:.72rem;padding:5px 10px;gap:4px" onclick="awShowTxs(' + w.id + ')">' + IC.clock + ' Txs</button></div></div>';
+  }).join('');
+}
+
+async function awSetupRoot() {
+  toast(currentLang === 'ru' ? 'Создаю...' : 'Creating...', 'info');
+  try {
+    await apiRequest('POST', '/api/agentic-wallets/setup-root');
+    toast(currentLang === 'ru' ? 'Root создан!' : 'Root created!', 'success');
+    await loadWalletsPage();
+  } catch (e) { toast('Error: ' + (e.message || e), 'error'); }
+}
+
+function awShowImportModal() {
+  var isRu = currentLang === 'ru';
+  openModal(isRu ? 'Импорт кошелька' : 'Import Wallet',
+    '<div style="margin-bottom:14px"><label style="font-size:.8rem;color:var(--text-muted);display:block;margin-bottom:4px">TON Address</label><input type="text" id="aw-import-address" placeholder="EQA..." style="width:100%;padding:10px 14px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:10px;color:var(--text-primary);font-size:.9rem"></div>' +
+    '<p style="color:var(--text-muted);font-size:.75rem;margin-bottom:10px">' + (isRu ? 'Или 24 слова мнемоники:' : 'Or 24-word mnemonic:') + '</p>' +
+    '<div style="margin-bottom:14px"><label style="font-size:.8rem;color:var(--text-muted);display:block;margin-bottom:4px">Mnemonic</label><input type="password" id="aw-import-mnemonic" placeholder="word1 word2 ..." style="width:100%;padding:10px 14px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:10px;color:var(--text-primary);font-size:.9rem"></div>',
+    '<button class="btn-action" onclick="closeModal()">' + (isRu ? 'Отмена' : 'Cancel') + '</button><button class="btn-action" style="background:var(--accent)" onclick="awDoImport()">' + (isRu ? 'Импортировать' : 'Import') + '</button>');
+}
+
+async function awDoImport() {
+  var a = ((document.getElementById('aw-import-address') || {}).value || '').trim();
+  var m = ((document.getElementById('aw-import-mnemonic') || {}).value || '').trim();
+  if (!a && !m) { toast('Enter address or mnemonic', 'error'); return; }
+  try {
+    var b = {}; if (a) b.address = a; if (m) b.mnemonic = m;
+    await apiRequest('POST', '/api/agentic-wallets/setup-root', b);
+    closeModal(); toast('Imported!', 'success'); await loadWalletsPage();
+  } catch (e) { toast('Error: ' + (e.message || e), 'error'); }
+}
+
+function awShowDeployModal() {
+  var isRu = currentLang === 'ru';
+  openModal(isRu ? 'Новый суб-кошелёк' : 'Deploy Sub-Wallet',
+    '<div style="margin-bottom:14px"><label style="font-size:.8rem;color:var(--text-muted);display:block;margin-bottom:4px">Agent ID (' + (isRu ? 'опц.' : 'opt.') + ')</label><input type="number" id="aw-deploy-agent" placeholder="199" style="width:100%;padding:10px 14px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:10px;color:var(--text-primary);font-size:.9rem"></div>' +
+    '<div style="margin-bottom:14px"><label style="font-size:.8rem;color:var(--text-muted);display:block;margin-bottom:4px">Label</label><input type="text" id="aw-deploy-label" placeholder="Trading Bot" style="width:100%;padding:10px 14px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:10px;color:var(--text-primary);font-size:.9rem"></div>',
+    '<button class="btn-action" onclick="closeModal()">' + (isRu ? 'Отмена' : 'Cancel') + '</button><button class="btn-action" style="background:var(--accent)" onclick="awDoDeploy()">Deploy</button>');
+}
+
+async function awDoDeploy() {
+  var id = parseInt((document.getElementById('aw-deploy-agent') || {}).value) || 0;
+  var lb = ((document.getElementById('aw-deploy-label') || {}).value || '').trim();
+  try { toast('Deploying...', 'info'); await apiRequest('POST', '/api/agentic-wallets/deploy', { agentId: id || undefined, label: lb }); closeModal(); toast('Deployed!', 'success'); await loadWalletsPage(); }
+  catch (e) { toast('Error: ' + (e.message || e), 'error'); }
+}
+
+async function awToggleBlock(id, bl) {
+  try { await apiRequest('POST', '/api/agentic-wallets/' + id + '/block', { blocked: bl }); toast(bl ? 'Blocked' : 'Unblocked', 'success'); await loadWalletsPage(); }
+  catch (e) { toast('Error', 'error'); }
+}
+
+async function awRefreshOne(id) {
+  try { var d = await apiRequest('POST', '/api/agentic-wallets/' + id + '/refresh'); toast('Balance: ' + ((d.balanceTon || 0).toFixed(4)) + ' TON', 'success'); await loadWalletsPage(); }
+  catch (e) { toast('Error', 'error'); }
+}
+
+async function awRefreshAll() {
+  var btn = document.getElementById('aw-refresh-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '...'; }
+  try { await apiRequest('POST', '/api/agentic-wallets/refresh-all'); await loadWalletsPage(); toast('Refreshed!', 'success'); }
+  catch (e) { toast('Error', 'error'); }
+  if (btn) { btn.disabled = false; btn.textContent = currentLang === 'ru' ? 'Обновить всё' : 'Refresh All'; }
+}
+
+async function awShowTxs(wId) {
+  var isRu = currentLang === 'ru';
+  openModal(isRu ? 'Транзакции' : 'Transactions', '<div style="text-align:center;padding:20px"><div class="spinner"></div></div>', '<button class="btn-action" onclick="closeModal()">' + (isRu ? 'Закрыть' : 'Close') + '</button>');
+  try {
+    var data = await apiRequest('GET', '/api/agentic-wallets/' + wId + '/transactions');
+    var txs = data.transactions || [];
+    var w = _awData.find(function(x) { return x.id === wId; });
+    var myAddr = w ? w.address.toLowerCase() : '';
+    if (!txs.length) { updateModalBody('<div style="text-align:center;padding:30px;color:var(--text-muted)"><h3>' + (isRu ? 'Нет транзакций' : 'No transactions') + '</h3></div>'); return; }
+    var h = '';
+    txs.slice(0, 20).forEach(function(tx) {
+      var isIn = tx.to.toLowerCase().includes(myAddr.slice(0, 20));
+      var time = new Date(tx.timestamp * 1000).toLocaleString();
+      h += '<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">' +
+        '<span>' + (isIn ? AWI.arrowIn : AWI.arrowOut) + '</span>' +
+        '<div style="flex:1"><div style="font-weight:600;color:' + (isIn ? '#22c55e' : '#ef4444') + ';font-family:\'JetBrains Mono\',monospace;font-size:.9rem">' + (isIn ? '+' : '-') + tx.amountTon.toFixed(4) + ' TON</div>' +
+        (tx.comment ? '<div style="font-size:.72rem;color:var(--text-muted);margin-top:2px">' + escHtml(tx.comment.slice(0, 50)) + '</div>' : '') +
+        '</div><span style="font-size:.72rem;color:var(--text-muted)">' + time + '</span></div>';
+    });
+    updateModalBody(h);
+  } catch (e) { updateModalBody('<p style="color:#ef4444">' + (e.message || 'Error') + '</p>'); }
+}
+
+function awShowDetail(wId) {
+  var w = _awData.find(function(x) { return x.id === wId; });
+  if (!w) return;
+  var isRu = currentLang === 'ru';
+  var sDot = '<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:' + (w.isBlocked ? '#ef4444' : '#22c55e') + ';margin-right:4px"></span>';
+  openModal(escHtml(w.label || 'Wallet #' + w.id),
+    '<div style="margin-bottom:14px"><label style="font-size:.75rem;color:var(--text-muted)">Address</label>' +
+      '<code style="font-size:.82rem;display:block;margin-top:4px;word-break:break-all;cursor:pointer;color:var(--text-primary);background:var(--bg-tertiary);padding:8px 10px;border-radius:8px;border:1px solid var(--border)" onclick="navigator.clipboard.writeText(\x27' + w.address + '\x27);toast(\x27Copied!\x27,\x27success\x27)">' + w.address + '</code></div>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px">' +
+      '<div style="background:var(--bg-tertiary);padding:12px;border-radius:10px;border:1px solid var(--border)"><label style="font-size:.72rem;color:var(--text-muted);display:block;margin-bottom:4px">' + (isRu ? 'Баланс' : 'Balance') + '</label><div style="font-size:1.2rem;font-weight:700;color:#22c55e;font-family:\'JetBrains Mono\',monospace">' + (w.balanceTon || 0).toFixed(4) + ' TON</div></div>' +
+      '<div style="background:var(--bg-tertiary);padding:12px;border-radius:10px;border:1px solid var(--border)"><label style="font-size:.72rem;color:var(--text-muted);display:block;margin-bottom:4px">' + (isRu ? 'Лимит' : 'Limit') + '</label><div style="font-size:1.2rem;font-weight:700;font-family:\'JetBrains Mono\',monospace">' + (w.spendLimitTon || 50) + ' TON</div></div></div>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px">' +
+      '<div style="background:var(--bg-tertiary);padding:12px;border-radius:10px;border:1px solid var(--border)"><label style="font-size:.72rem;color:var(--text-muted);display:block;margin-bottom:4px">Agent</label><div style="display:flex;align-items:center;gap:5px">' + IC.robot + ' ' + (w.agentId ? 'Agent #' + w.agentId : (isRu ? 'Не привязан' : 'Not linked')) + '</div></div>' +
+      '<div style="background:var(--bg-tertiary);padding:12px;border-radius:10px;border:1px solid var(--border)"><label style="font-size:.72rem;color:var(--text-muted);display:block;margin-bottom:4px">' + (isRu ? 'Статус' : 'Status') + '</label><div style="display:flex;align-items:center">' + sDot + (w.isBlocked ? 'Blocked' : 'Active') + '</div></div></div>' +
+    '<div style="margin-bottom:12px"><label style="font-size:.75rem;color:var(--text-muted);display:block;margin-bottom:4px">' + (isRu ? 'Метка' : 'Label') + '</label>' +
+      '<div style="display:flex;gap:6px"><input type="text" id="aw-detail-label" value="' + escHtml(w.label || '') + '" style="flex:1;padding:8px 12px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-size:.85rem"><button class="btn-action" style="font-size:.78rem" onclick="awUpdateLabel(' + w.id + ')">Save</button></div></div>' +
+    '<div style="margin-bottom:12px"><label style="font-size:.75rem;color:var(--text-muted);display:block;margin-bottom:4px">' + (isRu ? 'Лимит (TON/день)' : 'Limit (TON/day)') + '</label>' +
+      '<div style="display:flex;gap:6px"><input type="number" id="aw-detail-limit" value="' + (w.spendLimitTon || 50) + '" min="0" step="1" style="flex:1;padding:8px 12px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-size:.85rem"><button class="btn-action" style="font-size:.78rem" onclick="awUpdateLimit(' + w.id + ')">Save</button></div></div>',
+    '<button class="btn-action" style="gap:5px" onclick="window.open(\x27ton://transfer/' + w.address + '\x27,\x27_blank\x27)">' + IC.gem + ' Deposit</button>' +
+    '<button class="btn-action" style="gap:5px" onclick="closeModal();awShowTxs(' + w.id + ')">' + IC.clock + ' Txs</button>' +
+    '<a class="btn-action" href="https://tonscan.org/address/' + w.address + '" target="_blank" style="text-decoration:none;display:inline-flex;align-items:center;gap:5px">' + IC.link + ' Tonscan</a>' +
+    (w.isBlocked
+      ? '<button class="btn-action" style="background:rgba(34,197,94,0.1);color:#22c55e;gap:5px" onclick="closeModal();awToggleBlock(' + w.id + ',false)">' + AWI.lockOpen + ' Unblock</button>'
+      : '<button class="btn-action" style="background:rgba(239,68,68,0.06);color:#ef4444;gap:5px" onclick="closeModal();awToggleBlock(' + w.id + ',true)">' + AWI.lockClosed + ' Block</button>') +
+    '<button class="btn-action" style="background:rgba(239,68,68,0.06);color:#ef4444;gap:5px" onclick="awDeleteWallet(' + w.id + ')">' + IC.trash + ' Delete</button>' +
+    '<button class="btn-action" onclick="closeModal()">' + (isRu ? 'Закрыть' : 'Close') + '</button>');
+}
+
+async function awUpdateLabel(id) {
+  var v = ((document.getElementById('aw-detail-label') || {}).value || '').trim();
+  try { await apiRequest('POST', '/api/agentic-wallets/' + id + '/label', { label: v }); toast('Updated!', 'success'); closeModal(); await loadWalletsPage(); }
+  catch (e) { toast('Error', 'error'); }
+}
+async function awUpdateLimit(id) {
+  var v = parseFloat((document.getElementById('aw-detail-limit') || {}).value);
+  if (isNaN(v) || v < 0) { toast('Invalid', 'error'); return; }
+  try { await apiRequest('POST', '/api/agentic-wallets/' + id + '/limit', { limitTon: v }); toast('Limit: ' + v + ' TON/day', 'success'); closeModal(); await loadWalletsPage(); }
+  catch (e) { toast('Error', 'error'); }
+}
+async function awDeleteWallet(id) {
+  if (!confirm(currentLang === 'ru' ? 'Удалить? Убедитесь что вывели средства!' : 'Delete? Withdrew all funds?')) return;
+  try { await apiRequest('DELETE', '/api/agentic-wallets/' + id); toast('Deleted', 'success'); closeModal(); await loadWalletsPage(); }
+  catch (e) { toast('Error', 'error'); }
+}

@@ -808,7 +808,7 @@ RESPONSE FORMAT — valid JSON:
     const prompt = `Ты — ПРИДУМЫВАТЕЛЬ для TON Agent Platform (@TonAgentPlatformBot).
 Твоя задача — проанализировать РЕАЛЬНЫЕ данные платформы и предложить ОДНУ идею которая РЕАЛЬНО нужна пользователям. БЕЗ КОДА. Только концепция.
 
-ПЛАТФОРМА: Telegram бот где юзеры создают AI-агентов. Агенты работают автономно (тики каждые N минут), вызывают тулы (баланс TON, NFT, арбитраж, web search, fetch). Юзербот mode через GramJS. Маркетплейс шаблонов. Dashboard на tonagentplatform.ru.
+ПЛАТФОРМА: Telegram бот где юзеры создают AI-агентов. Агенты работают автономно (тики каждые N минут), вызывают тулы (баланс TON, NFT, арбитраж, web search, fetch). Юзербот mode через GramJS. Маркетплейс шаблонов. Dashboard на tonagentplatform.com.
 
 ═══ РЕАЛЬНЫЕ ДАННЫЕ ПЛАТФОРМЫ ═══
 
@@ -901,7 +901,7 @@ RESPONSE FORMAT — valid JSON:
       patch: [],
       status: 'pending',
       autoApplied: false,
-      module: domain,
+      module: parsed.domain || 'custom',
       createdAt: new Date(),
     };
 
@@ -940,7 +940,7 @@ RESPONSE FORMAT — valid JSON:
       }
     }
 
-    console.log(`[SelfImprovement] 💡 Идея: ${parsed.title} (${domain})`);
+    console.log(`[SelfImprovement] 💡 Идея: ${parsed.title} (${parsed.domain || 'custom'})`);
   }
 
   // ════════════════════════════════════════════════════════════════════════════
@@ -1015,7 +1015,7 @@ RESPONSE FORMAT — valid JSON:
         console.log(`[SelfImprovement] ${modeLabel}: sending prompt to Claude Code (${prompt.length} chars)...`);
         const result = await claudeCodeChat(
           [{ role: 'user', content: prompt }],
-          { maxTokens: 6000, timeout: 600_000, model: 'claude-sonnet-4-6' }
+          { maxTokens: 4000, timeout: 120_000, model: 'claude-sonnet-4-6' }
         );
         text = result.text?.trim() || '';
         console.log(`[SelfImprovement] ${modeLabel}: Claude Code responded (${text.length} chars, model: ${result.model})`);
@@ -1096,7 +1096,7 @@ RESPONSE FORMAT — valid JSON:
         patch: validPatch,
         status: 'pending',
         autoApplied: false,
-        module: domain,
+        module: parsed.domain || 'custom',
         createdAt: new Date(),
       };
 
