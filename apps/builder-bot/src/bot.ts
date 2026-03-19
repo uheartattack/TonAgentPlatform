@@ -143,7 +143,7 @@ function renderCreationStep(stepIdx: number, scheduleLabel: string, lang: 'ru' |
   const steps = lang === 'en' ? CREATION_STEPS_EN : CREATION_STEPS_RU;
   const step = steps[Math.min(stepIdx, steps.length - 1)];
   const bar = ['▓', '▓', '▓', '▓', '▓'].map((_, i) => i <= stepIdx ? '▓' : '░').join('');
-  const pct = Math.round((Math.min(stepIdx, steps.length - 1) / (steps.length - 1)) * 90);
+  const pct = Math.round(((stepIdx + 1) / steps.length) * 100);
   const schedPrefix = lang === 'en' ? 'Schedule' : 'Расписание';
   return (
     `${step.icon} <b>${escHtml(step.label)}...</b>\n\n` +
@@ -161,7 +161,8 @@ async function startCreationAnimation(
   let msgId: number | undefined;
   const chatId = ctx.chat?.id;
 
-  const text = renderCreationStep(0, scheduleLabel);
+  const lang = getUserLang(chatId as number);
+  const text = renderCreationStep(0, scheduleLabel, lang);
 
   if (sendNew) {
     const sent = await ctx.reply(text, { parse_mode: 'HTML' }).catch(() => null);
@@ -173,8 +174,6 @@ async function startCreationAnimation(
       ? ctx.callbackQuery.message?.message_id
       : undefined;
   }
-
-  const lang = getUserLang(chatId as number);
   const stepTimer = setInterval(async () => {
     stepIdx = Math.min(stepIdx + 1, CREATION_STEPS.length - 1);
     if (chatId && msgId) {

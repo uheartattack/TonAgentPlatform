@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <linearGradient id="glow" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0088CC"/>
+      <stop offset="100%" stop-color="#00D4FF"/>
+    </linearGradient>
+  </defs>
+  <!-- Letter A -->
+  <text x="50%" y="62%" dominant-baseline="central" text-anchor="middle"
+    font-family="Inter, Arial, sans-serif" font-weight="900" font-size="140"
+    fill="white" letter-spacing="-5">A</text>
+  <!-- Paper plane orbit path (dashed) -->
+  <ellipse cx="100" cy="110" rx="70" ry="45" fill="none"
+    stroke="rgba(255,255,255,0.3)" stroke-width="2"
+    stroke-dasharray="6 4" transform="rotate(-25 100 110)"/>
+  <!-- Paper plane orbit path (solid) -->
+  <ellipse cx="100" cy="110" rx="70" ry="45" fill="none"
+    stroke="white" stroke-width="2"
+    stroke-dasharray="80 200" stroke-dashoffset="-40"
+    transform="rotate(-25 100 110)"/>
+  <!-- Paper plane icon -->
+  <g transform="translate(148, 68) rotate(30)">
+    <polygon points="0,-8 -6,4 -2,2 0,8 2,2 6,4" fill="white"/>
+    <line x1="0" y1="-8" x2="-6" y2="4" stroke="white" stroke-width="0.5"/>
+    <line x1="0" y1="-8" x2="6" y2="4" stroke="white" stroke-width="0.5"/>
+    <line x1="0" y1="-8" x2="0" y2="8" stroke="white" stroke-width="0.5"/>
+  </g>
+</svg>

@@ -703,7 +703,7 @@ async function openAgentDetail(agentId, skipSettings) {
   try {
     var data = await apiRequest('GET', '/api/agents/' + agentId);
     if (!data.ok || !data.agent) { toast('Agent not found', 'error'); closeAgentDetail(); return; }
-    _detailAgentData = data.agent;
+    _detailAgentData = normalizeAgentData(data.agent);
     renderAgentDetail();
     // Open full-screen settings directly (unless called from settings close refresh)
     if (!skipSettings) {
@@ -975,8 +975,47 @@ function closeAgentSettings() {
     modal.style.display = 'none';
     modal.classList.remove('closing');
   }, 400);
-  // Refresh detail data without reopening settings
-  if (_detailAgentId) openAgentDetail(_detailAgentId, true);
+  // Close side panel if open
+  var panel = document.getElementById('agent-detail-panel');
+  if (panel) panel.style.display = 'none';
+  // Refresh agents list
+  if (typeof loadAgents === 'function') loadAgents();
+  if (typeof loadAgentsPage === 'function') loadAgentsPage();
+}
+
+
+async function refreshAgentOverview() {
+  if (!_detailAgentId) return;
+  try {
+    var data = await apiRequest('GET', '/api/agents/' + _detailAgentId);
+    if (data && data.agent) {
+      _detailAgentData = normalizeAgentData(data.agent);
+      if (_settingsTab === 'overview') switchSettingsTab('overview');
+      var statusEl = document.getElementById('agent-settings-status');
+      if (statusEl) {
+        statusEl.className = 'agent-status ' + (_detailAgentData.is_active ? 'active' : 'paused');
+        statusEl.innerHTML = '<span class="status-dot"></span><span>' + (_detailAgentData.is_active ? 'Active' : 'Paused') + '</span>';
+      }
+    }
+  } catch(e) { console.error('refreshAgentOverview error', e); }
+}
+
+async function refreshAgentDetail() {
+  if (!_detailAgentId) return;
+  try {
+    var data = await apiRequest('GET', '/api/agents/' + _detailAgentId);
+    if (data && data.agent) {
+      _detailAgentData = normalizeAgentData(data.agent);
+      switchSettingsTab(_settingsTab);
+      var nameEl = document.getElementById('agent-settings-name');
+      if (nameEl) nameEl.textContent = '#' + _detailAgentData.id + ' ' + (_detailAgentData.name || 'Unnamed');
+      var statusEl = document.getElementById('agent-settings-status');
+      if (statusEl) {
+        statusEl.className = 'agent-status ' + (_detailAgentData.is_active ? 'active' : 'paused');
+        statusEl.innerHTML = '<span class="status-dot"></span><span>' + (_detailAgentData.is_active ? 'Active' : 'Paused') + '</span>';
+      }
+    }
+  } catch(e) { console.error('refreshAgentDetail error', e); }
 }
 
 function switchSettingsTab(tab) {
@@ -3036,10 +3075,10 @@ async function runSettingsAudit(body) {
     html += '<div style="display:flex;align-items:center;gap:16px;margin-bottom:20px"><div style="font-size:2.5rem;font-weight:700;color:var(--primary)">' + data.score + '%</div>';
     html += '<div style="flex:1;height:10px;background:rgba(255,255,255,0.05);border-radius:5px;overflow:hidden"><div style="height:100%;width:' + data.score + '%;background:var(--primary);border-radius:5px"></div></div></div>';
     if (data.passed && data.passed.length) {
-      data.passed.forEach(function(p) { html += '<div style="padding:6px 0;font-size:.85rem;color:#4ade80">✓ ' + escHtml(p) + '</div>'; });
+      data.passed.forEach(function(p) { html += '<div style="padding:6px 0;font-size:.85rem;color:#4ade80">' + IC.check + ' ' + escHtml(p) + '</div>'; });
     }
     if (data.issues && data.issues.length) {
-      data.issues.forEach(function(i) { html += '<div style="padding:6px 0;font-size:.85rem;color:#f59e0b">⚠ ' + escHtml(i) + '</div>'; });
+      data.issues.forEach(function(i) { html += '<div style="padding:6px 0;font-size:.85rem;color:#f59e0b">' + IC.warn + ' ' + escHtml(i) + '</div>'; });
     }
     html += '</div>';
     body.innerHTML = html;
@@ -3191,7 +3230,7 @@ function renderAgentsPage() {
       '<span class="agent-desc">' + escHtml((a.description || '').slice(0, 120)) + '</span>' +
       '</div>' +
       '<div class="agent-card-meta">' +
-      '<span class="agent-role-badge role-' + role + '">' + role + '</span>' +
+      '<span class="agent-role-badge role-' + role + '" style="background:' + ({worker:'rgba(0,152,234,0.15)',manager:'rgba(155,89,182,0.15)',specialist:'rgba(230,126,34,0.15)',monitor:'rgba(46,204,113,0.15)'}[role] || 'rgba(0,152,234,0.15)') + ';color:' + ({worker:'#0098EA',manager:'#9b59b6',specialist:'#e67e22',monitor:'#2ecc71'}[role] || '#0098EA') + '">' + role + '</span>' +
       '<span class="agent-level">' + t('lv') + lvl + '</span>' +
       (lastActiveStr ? '<span class="agent-last-active" title="' + (currentLang === 'ru' ? 'Последняя активность' : 'Last active') + '">' + IC.clock + ' ' + lastActiveStr + '</span>' : '') +
       (toolCalls > 0 ? '<span class="agent-tool-calls" title="' + (currentLang === 'ru' ? 'Вызовов инструментов' : 'Tool calls') + '">' + IC.wrench + ' ' + toolCalls + '</span>' : '') +
@@ -3207,6 +3246,103 @@ function renderAgentsPage() {
       '<button class="btn btn-ghost btn-sm btn-delete-card" onclick="event.stopPropagation();deleteAgent(' + a.id + ',\'' + escHtml(a.name || 'Agent').replace(/'/g, "\\'") + '\')">' + IC.trash + '</button>' +
       '</div></div>';
   }).join('');
+}
+
+
+// Swipe-to-delete on agent cards (billiard lunge)
+function initSwipeToDelete() {
+  var listEl = document.getElementById('agents-page-list');
+  if (!listEl || listEl._swipeInit) return;
+  listEl._swipeInit = true;
+  var startX = 0, currentCard = null, swiping = false;
+
+  listEl.addEventListener('touchstart', function(e) {
+    var card = e.target.closest('.agent-card-enhanced');
+    if (!card) return;
+    startX = e.touches[0].clientX;
+    currentCard = card;
+    swiping = false;
+  }, { passive: true });
+
+  listEl.addEventListener('touchmove', function(e) {
+    if (!currentCard) return;
+    var dx = e.touches[0].clientX - startX;
+    var dy = e.touches[0].clientY - (currentCard._startY || 0);
+    if (dx > 0) { currentCard.style.transform = ''; return; }
+    swiping = true;
+    var offset = Math.max(dx, -140);
+    currentCard.style.transform = 'translateX(' + offset + 'px)';
+    currentCard.style.transition = 'none';
+    if (dx < -60) {
+      currentCard.style.background = 'linear-gradient(90deg, var(--bg-secondary) 60%, rgba(231,76,60,0.3) 100%)';
+    } else {
+      currentCard.style.background = '';
+    }
+  }, { passive: false });
+
+  listEl.addEventListener('touchend', function(e) {
+    if (!currentCard) return;
+    var dx = e.changedTouches[0].clientX - startX;
+    currentCard.style.transition = 'transform 0.35s cubic-bezier(.4,0,.2,1), background 0.3s ease';
+    if (dx < -80 && swiping) {
+      currentCard.style.transform = 'translateX(-140px)';
+      var agentId = currentCard.getAttribute('data-id');
+      var nameEl = currentCard.querySelector('.agent-card-name');
+      var name = nameEl ? nameEl.textContent.trim() : 'Agent';
+      var card = currentCard;
+      setTimeout(function() {
+        card.style.transform = '';
+        card.style.background = '';
+        deleteAgent(parseInt(agentId), name.replace(/^#\d+\s*/, ''));
+      }, 350);
+    } else {
+      currentCard.style.transform = '';
+      currentCard.style.background = '';
+    }
+    currentCard = null;
+    swiping = false;
+  });
+
+  // Mouse drag for desktop
+  var mouseDown = false, mouseCard = null, mouseStartX = 0;
+  listEl.addEventListener('mousedown', function(e) {
+    var card = e.target.closest('.agent-card-enhanced');
+    if (!card || e.target.closest('button')) return;
+    mouseCard = card;
+    mouseStartX = e.clientX;
+    mouseDown = true;
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', function(e) {
+    if (!mouseDown || !mouseCard) return;
+    var dx = e.clientX - mouseStartX;
+    if (dx > 5) { mouseCard.style.transform = ''; return; }
+    mouseCard.style.transform = 'translateX(' + Math.max(dx, -140) + 'px)';
+    mouseCard.style.transition = 'none';
+    mouseCard.style.background = dx < -60 ? 'linear-gradient(90deg, var(--bg-secondary) 60%, rgba(231,76,60,0.3) 100%)' : '';
+  });
+  document.addEventListener('mouseup', function(e) {
+    if (!mouseDown || !mouseCard) return;
+    var dx = e.clientX - mouseStartX;
+    mouseCard.style.transition = 'transform 0.35s cubic-bezier(.4,0,.2,1), background 0.3s ease';
+    if (dx < -80) {
+      mouseCard.style.transform = 'translateX(-140px)';
+      var agentId = mouseCard.getAttribute('data-id');
+      var nameEl = mouseCard.querySelector('.agent-card-name');
+      var name = nameEl ? nameEl.textContent.trim() : 'Agent';
+      var card = mouseCard;
+      setTimeout(function() {
+        card.style.transform = '';
+        card.style.background = '';
+        deleteAgent(parseInt(agentId), name.replace(/^#\d+\s*/, ''));
+      }, 350);
+    } else {
+      mouseCard.style.transform = '';
+      mouseCard.style.background = '';
+    }
+    mouseCard = null;
+    mouseDown = false;
+  });
 }
 
 async function toggleAgentFromPage(agentId, isActive) {
@@ -5300,7 +5436,7 @@ function renderKnowledge() {
         <div style="font-weight:600;margin-bottom:.25rem">${escHtml(entry.title || 'Entry ' + (i+1))}</div>
         <div style="color:var(--text-muted);font-size:.83rem;white-space:pre-wrap;max-height:60px;overflow:hidden">${escHtml((entry.content || '').slice(0, 200))}</div>
       </div>
-      <button class="btn btn-ghost btn-sm" style="flex-shrink:0;color:#dc3545" onclick="deleteKnowledgeEntry(${i})">✕</button>
+      <button class="btn btn-ghost btn-sm" style="flex-shrink:0;color:#dc3545" onclick="deleteKnowledgeEntry(${i})">${IC.x}</button>
     </div>`).join('');
 }
 
@@ -5439,7 +5575,7 @@ function renderVariables() {
       <code style="background:var(--bg-tertiary);padding:.2rem .5rem;border-radius:4px;font-size:.83rem;flex-shrink:0">${escHtml(k)}</code>
       <span style="color:var(--text-muted);font-size:.83rem">=</span>
       <span style="flex:1;font-size:.83rem;word-break:break-all">${escHtml(String(v))}</span>
-      <button class="btn btn-ghost btn-sm" style="color:#dc3545;flex-shrink:0" onclick="deleteVariable('${escHtml(k)}')">✕</button>
+      <button class="btn btn-ghost btn-sm" style="color:#dc3545;flex-shrink:0" onclick="deleteVariable('${escHtml(k)}')">${IC.x}</button>
     </div>`).join('');
 }
 
@@ -6950,7 +7086,7 @@ async function confirmAtlasDeploy() {
   try {
     var data = await apiRequest('POST', '/api/agents/flow', { name: d.name, description: d.description, flow: d.flow, enhance: enhance });
     if (data.ok) {
-      showFlowToast('🎉 ' + t('deployed_ok') + ' #' + data.agentId, 'success');
+      showFlowToast('' + IC.party + ' ' + t('deployed_ok') + ' #' + data.agentId, 'success');
       loadAgents();
     } else {
       showFlowToast((data.error || t('deploy_fail')), 'error');

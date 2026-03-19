@@ -112,6 +112,22 @@ function generateToken(): string {
   return crypto.randomBytes(32).toString('hex');
 }
 
+// Периодическая очистка истёкших сессий и брошенных bot-auth токенов
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, session] of sessions) {
+    if (now > session.expiresAt) sessions.delete(token);
+  }
+  // pendingBotAuth: использованные токены (userId получен) удаляем через 2 мин, брошенные через 15 мин
+  for (const [token, auth] of pendingBotAuth) {
+    const isCompleted = !auth.pending && auth.userId != null;
+    if ((isCompleted && now - auth.createdAt > 2 * 60 * 1000) ||
+        now - auth.createdAt > 15 * 60 * 1000) {
+      pendingBotAuth.delete(token);
+    }
+  }
+}, 5 * 60 * 1000).unref();
+
 function getSession(token: string) {
   const s = sessions.get(token);
   if (!s) return null;
@@ -141,9 +157,10 @@ function verifyTelegramAuth(data: Record<string, string>): boolean {
   const { hash, ...fields } = data;
   if (!hash) return false;
 
-  // Проверяем срок (max 24 часа)
+  // Проверяем срок (max 24 часа, не принимаем токены из будущего)
   const authDate = parseInt(fields.auth_date || '0', 10);
-  if (Date.now() / 1000 - authDate > 86400) return false;
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (isNaN(authDate) || authDate <= 0 || nowSec - authDate > 86400 || authDate - nowSec > 300) return false;
 
   // Строим data-check-string
   const checkString = Object.keys(fields)
@@ -163,13 +180,34 @@ function verifyTelegramAuth(data: Record<string, string>): boolean {
 // Verify id_token from new Telegram Login SDK
 let _jwksCache: any = null;
 let _jwksCacheTime = 0;
+let _jwksFetching: Promise<any> | null = null;
 
 async function fetchTelegramJWKS(): Promise<any> {
   if (_jwksCache && Date.now() - _jwksCacheTime < 3600_000) return _jwksCache;
-  const res = await fetch('https://oauth.telegram.org/.well-known/jwks.json');
-  _jwksCache = await res.json();
-  _jwksCacheTime = Date.now();
-  return _jwksCache;
+  if (_jwksFetching) return _jwksFetching;
+  _jwksFetching = (async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    try {
+      const res = await fetch('https://oauth.telegram.org/.well-known/jwks.json', { signal: controller.signal });
+      if (!res.ok) throw new Error(`JWKS fetch failed with status ${res.status}`);
+      const data = await res.json() as any;
+      if (!Array.isArray(data?.keys) || data.keys.length === 0) throw new Error('JWKS: invalid or empty keys in response');
+      _jwksCache = data;
+      _jwksCacheTime = Date.now();
+      return _jwksCache;
+    } catch (e) {
+      if (_jwksCache) {
+        console.warn('[JWKS] Refresh failed, serving stale cache:', (e as Error).message);
+        return _jwksCache;
+      }
+      throw e;
+    } finally {
+      clearTimeout(timeout);
+      _jwksFetching = null;
+    }
+  })();
+  return _jwksFetching;
 }
 
 function base64urlDecode(str: string): Buffer {
@@ -188,7 +226,7 @@ async function verifyTelegramOIDC(idToken: string): Promise<{ userId: number; us
     // Validate claims
     if (payload.iss !== 'https://oauth.telegram.org') return null;
     if (String(payload.aud) !== TG_CLIENT_ID && payload.aud !== parseInt(TG_CLIENT_ID)) return null;
-    if (payload.exp && payload.exp < Date.now() / 1000) return null;
+    if (!payload.exp || payload.exp < Date.now() / 1000) return null;
 
     // Fetch JWKS and verify signature
     const jwks = await fetchTelegramJWKS();
@@ -216,10 +254,11 @@ async function verifyTelegramOIDC(idToken: string): Promise<{ userId: number; us
 
 // ── Auth middleware ───────────────────────────────────────────
 function requireAuth(req: Request, res: Response, next: NextFunction): void {
-  const token = req.headers['x-auth-token'] as string || req.query.token as string;
-  if (!token) { res.status(401).json({ error: 'No token' }); return; }
+  // Токен ТОЛЬКО из заголовка — никогда не из URL (утечка в логи, Referer, browser history)
+  const token = req.headers['x-auth-token'] as string;
+  if (!token) { res.status(401).json({ error: 'Требуется заголовок X-Auth-Token' }); return; }
   const session = getSession(token);
-  if (!session) { res.status(401).json({ error: 'Invalid or expired token' }); return; }
+  if (!session) { res.status(401).json({ error: 'Сессия не найдена или истекла — войдите заново' }); return; }
   (req as any).userId = session.userId;
   (req as any).session = session;
   next();
@@ -724,6 +763,72 @@ export function startApiServer() {
       photoUrl: session.photoUrl || null,
       planId, planName, planIcon,
     });
+  });
+
+  // ═══════════════════════════════════════════════════════════
+  // HEALTH & READINESS — monitoring endpoints
+  // ═══════════════════════════════════════════════════════════
+
+  app.get('/healthz', (_req: Request, res: Response) => {
+    res.json({ status: 'ok', uptime: process.uptime(), timestamp: new Date().toISOString() });
+  });
+
+  app.get('/readyz', async (_req: Request, res: Response) => {
+    const checks: Record<string, boolean> = {};
+    try { await pool.query('SELECT 1'); checks.database = true; } catch { checks.database = false; }
+    try {
+      const { userbotManager } = await import('./services/userbot-manager');
+      const info = await userbotManager.getAgentTelegramInfo(190);
+      checks.gramjs = !!info.authorized;
+    } catch { checks.gramjs = false; }
+    checks.express = true;
+    const allOk = Object.values(checks).every(v => v);
+    res.status(allOk ? 200 : 503).json({ ready: allOk, checks, uptime: process.uptime() });
+  });
+
+  app.get('/metrics', async (_req: Request, res: Response) => {
+    try {
+      const agents = await pool.query('SELECT COUNT(*)::int as c FROM builder_bot.agents WHERE is_active = true');
+      const audit1h = await pool.query("SELECT COUNT(*)::int as c FROM builder_bot.agent_audit_log WHERE created_at > NOW() - INTERVAL '1 hour'");
+      const pending = await pool.query("SELECT COUNT(*)::int as c FROM builder_bot.agent_approvals WHERE status = 'pending'");
+
+      // Per-tool stats with p95/p99
+      let tool_stats: any[] = [];
+      let slowest_tools: any[] = [];
+      let most_failed: any[] = [];
+      try {
+        const toolStatsRes = await pool.query(`
+          SELECT tool_name,
+            COUNT(*)::int as calls,
+            ROUND(AVG(duration_ms))::int as avg_ms,
+            ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms))::int as p95_ms,
+            ROUND(PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY duration_ms))::int as p99_ms,
+            COUNT(*) FILTER (WHERE NOT success)::int as errors
+          FROM builder_bot.agent_audit_log
+          WHERE created_at > NOW() - INTERVAL '1 hour'
+          GROUP BY tool_name
+          ORDER BY calls DESC
+          LIMIT 20
+        `);
+        tool_stats = toolStatsRes.rows;
+        slowest_tools = [...tool_stats].sort((a, b) => (b.p95_ms || 0) - (a.p95_ms || 0)).slice(0, 5);
+        most_failed = [...tool_stats].filter(t => t.errors > 0).sort((a, b) => b.errors - a.errors).slice(0, 5);
+      } catch (statsErr: any) {
+        console.error('[Metrics] tool_stats query error:', statsErr.message);
+      }
+
+      res.json({
+        active_agents: agents.rows[0].c,
+        actions_last_hour: audit1h.rows[0].c,
+        pending_approvals: pending.rows[0].c,
+        uptime_seconds: Math.floor(process.uptime()),
+        memory_mb: Math.floor(process.memoryUsage().heapUsed / 1024 / 1024),
+        timestamp: new Date().toISOString(),
+        tool_stats,
+        slowest_tools,
+        most_failed,
+      });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
   // ── GET /api/agents ───────────────────────────────────────
@@ -1578,6 +1683,54 @@ export function startApiServer() {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── GET /api/agents/:id/stats — Agent activity statistics ──
+  app.get('/api/agents/:id/stats', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const agentId = parseInt(req.params.id as string, 10);
+      if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
+      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
+      // Count runs from operations log
+      let runs = 0, messages = 0, toolCalls = 0, uptimeHours = 0;
+      try {
+        const opsRes = await pool.query(
+          "SELECT COUNT(*) as cnt FROM builder_bot.agent_operations WHERE agent_id = ",
+          [agentId]
+        );
+        runs = parseInt(opsRes.rows[0]?.cnt || '0', 10);
+      } catch {}
+      // Count messages from agent_state
+      try {
+        const stateRes = await pool.query(
+          "SELECT value FROM builder_bot.agent_state WHERE agent_id =  AND key = 'chat_history'",
+          [agentId]
+        );
+        if (stateRes.rows.length > 0) {
+          const hist = JSON.parse(stateRes.rows[0].value || '[]');
+          messages = Array.isArray(hist) ? hist.length : 0;
+        }
+      } catch {}
+      // Estimate tool calls from operations
+      try {
+        const toolRes = await pool.query(
+          "SELECT COUNT(*) as cnt FROM builder_bot.agent_operations WHERE agent_id =  AND operation_type = 'tool_call'",
+          [agentId]
+        );
+        toolCalls = parseInt(toolRes.rows[0]?.cnt || '0', 10);
+      } catch {}
+      // Calculate uptime if active
+      try {
+        const agent = agentCheck.data as any;
+        if (agent.isActive && agent.createdAt) {
+          const created = new Date(agent.createdAt).getTime();
+          uptimeHours = Math.round((Date.now() - created) / 3600000);
+        }
+      } catch {}
+      res.json({ ok: true, runs, messages, toolCalls, uptimeHours });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // ── GET /api/user_variables — Get user global variables (API keys etc.) ──
   app.get('/api/user_variables', requireAuth, async (req: Request, res: Response) => {
     try {
@@ -2018,7 +2171,7 @@ export function startApiServer() {
     if (!await verifyAgentOwnership(Number(agentId), userId)) { res.status(403).json({ ok: false, error: 'Access denied' }); return; }
     try {
       const result = await userbotManager.startQRLogin(Number(agentId));
-      res.json({ ok: true, ...result });
+      res.json({ ok: true, ...(result && typeof result === 'object' ? result : {}) });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: 'QR login failed' });
     }
@@ -2032,7 +2185,7 @@ export function startApiServer() {
     if (!await verifyAgentOwnership(Number(agentId), userId)) { res.status(403).json({ ok: false, error: 'Access denied' }); return; }
     try {
       const result = await userbotManager.startPhoneLogin(Number(agentId), phone);
-      res.json({ ok: true, ...result });
+      res.json({ ok: true, ...(result && typeof result === 'object' ? result : {}) });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: 'Phone login failed' });
     }
@@ -2046,7 +2199,7 @@ export function startApiServer() {
     if (!await verifyAgentOwnership(Number(agentId), userId)) { res.status(403).json({ ok: false, error: 'Access denied' }); return; }
     try {
       const result = await userbotManager.submitCode(Number(agentId), code);
-      res.json({ ok: true, ...result });
+      res.json({ ok: true, ...(result && typeof result === 'object' ? result : {}) });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: 'Code submission failed' });
     }
@@ -2070,7 +2223,7 @@ export function startApiServer() {
     if (!await verifyAgentOwnership(Number(agentId), userId)) { res.status(403).json({ ok: false, error: 'Access denied' }); return; }
     try {
       const result = await userbotManager.submit2FAPassword(Number(agentId), password);
-      res.json({ ok: true, ...result });
+      res.json({ ok: true, ...(result && typeof result === 'object' ? result : {}) });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: '2FA submission failed' });
     }
@@ -2279,7 +2432,7 @@ export function startApiServer() {
       const offset = parseInt(req.query.offset as string || '0', 10);
       const type = req.query.type as string || 'all';
       const result = await getBalanceTxRepository().getHistory(userId, limit, offset, type);
-      res.json({ ok: true, ...result });
+      res.json({ ok: true, ...(result && typeof result === 'object' ? result : {}) });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
