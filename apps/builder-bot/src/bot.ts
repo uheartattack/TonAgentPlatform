@@ -2188,7 +2188,7 @@ bot.action('gifts_arbitrage', async (ctx) => {
       });
     }
   } catch (e: any) {
-    await ctx.reply(`❌ ${e.message}`);
+    await safeReply(ctx, `❌ ${e.message || 'unknown error'}`);
   }
 });
 
@@ -3819,7 +3819,7 @@ bot.on('callback_query', async (ctx) => {
           [{ text: `◀️ ${ru ? 'К плагинам' : 'Plugins'}`, callback_data: 'plugins' }],
         ]}}
       );
-    } catch (e: any) { await ctx.reply(`❌ ${e.message}`); }
+    } catch (e: any) { await safeReply(ctx, `❌ ${e.message || 'error'}`); }
     return;
   }
   if (data.startsWith('plugin_uninstall:')) {
@@ -3836,7 +3836,7 @@ bot.on('callback_query', async (ctx) => {
       await ctx.reply(ru ? `✅ Плагин удалён` : `✅ Plugin removed`, {
         reply_markup: { inline_keyboard: [[{ text: `◀️ ${ru ? 'К плагинам' : 'Plugins'}`, callback_data: 'plugins' }]] }
       });
-    } catch (e: any) { await ctx.reply(`❌ ${e.message}`); }
+    } catch (e: any) { await safeReply(ctx, `❌ ${e.message || 'error'}`); }
     return;
   }
 
@@ -6322,7 +6322,7 @@ bot.on(message('text'), async (ctx) => {
         await ctx.reply(`❌ Ошибка переименования: ${result.error || 'Неизвестная ошибка'}`);
       }
     } catch (e: any) {
-      await ctx.reply(`❌ Ошибка: ${e.message}`);
+      await safeReply(ctx, `❌ Ошибка: ${e.message || 'unknown'}`);
     }
     return;
   }
@@ -8229,7 +8229,7 @@ async function startPublishFlow(ctx: Context, userId: number) {
       { parse_mode: 'HTML', reply_markup: { inline_keyboard: rows } }
     );
   } catch (e: any) {
-    await ctx.reply(`❌ Ошибка: ${e.message}`);
+    await safeReply(ctx, `❌ Ошибка: ${e.message || 'unknown'}`);
   }
 }
 
