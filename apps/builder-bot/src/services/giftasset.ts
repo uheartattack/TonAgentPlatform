@@ -42,10 +42,29 @@ class RateLimiter {
 interface CacheEntry<T> { data: T; expiresAt: number; }
 const cache = new Map<string, CacheEntry<any>>();
 
+const CACHE_MAX_SIZE = 500;
+
 function cached<T>(key: string, ttlMs: number, fn: () => Promise<T>): Promise<T> {
   const hit = cache.get(key);
   if (hit && hit.expiresAt > Date.now()) return Promise.resolve(hit.data as T);
   return fn().then(data => {
+    // Evict expired entries and enforce size cap
+    if (cache.size >= CACHE_MAX_SIZE) {
+      const now = Date.now();
+      for (const [k, v] of cache) {
+        if (v.expiresAt <= now) cache.delete(k);
+      }
+      // If still over limit, remove oldest entries
+      if (cache.size >= CACHE_MAX_SIZE) {
+        const toRemove = cache.size - CACHE_MAX_SIZE + 50; // free 50 slots
+        let removed = 0;
+        for (const k of cache.keys()) {
+          if (removed >= toRemove) break;
+          cache.delete(k);
+          removed++;
+        }
+      }
+    }
     cache.set(key, { data, expiresAt: Date.now() + ttlMs });
     return data;
   });
@@ -476,7 +495,7 @@ export class GiftAssetClient {
 
   /** Active buy offers for a collection — guaranteed buyers at specific prices */
   async getCollectionOffers(collectionName: string, params?: { minPrice?: number; maxPrice?: number }): Promise<any> {
-    return cached(`ga:offers:${collectionName}:${params?.minPrice || ''}:${params?.maxPrice || ''}`, 20_000, () =>
+    return cached(`ga:offers:${collectionName}:${params?.minPrice ?? '_'}:${params?.maxPrice ?? '_'}`, 20_000, () =>
       gaFetch('/api/v1/gifts/get_collection_offers', {
         method: 'POST',
         body: {
@@ -711,7 +730,7 @@ export class GiftAssetClient {
     for (const [market, price] of Object.entries(floors)) {
       if (price < minFloor) { minFloor = price; minFloorMarket = market; }
     }
-    if (minFloor === Infinity) { minFloor = 0; minFloorMarket = 'unknown'; }
+    if (minFloor === Infinity) { minFloor = -1; minFloorMarket = 'no_data'; } // -1 = no data (0 would mean "free")
 
     return { slug, floors, minFloor, minFloorMarket };
   }
