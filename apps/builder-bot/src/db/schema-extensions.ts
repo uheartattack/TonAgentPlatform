@@ -1003,19 +1003,24 @@ export async function runAIProposalsMigrations(pool: Pool): Promise<void> {
       CREATE INDEX IF NOT EXISTS agent_audit_log_agent_idx
         ON builder_bot.agent_audit_log (agent_id, created_at DESC)
     `);
+    // agent_approvals may have been created earlier with different columns; ensure both schemas work
     await client.query(`
       CREATE TABLE IF NOT EXISTS builder_bot.agent_approvals (
         id          SERIAL PRIMARY KEY,
         agent_id    INTEGER NOT NULL,
         user_id     BIGINT NOT NULL,
-        action      TEXT NOT NULL,
-        description TEXT NOT NULL,
+        action      TEXT NOT NULL DEFAULT '',
+        description TEXT NOT NULL DEFAULT '',
         status      TEXT NOT NULL DEFAULT 'pending',
         details     JSONB,
         created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
         resolved_at TIMESTAMP
       )
     `);
+    // Add missing columns if table was created with old schema (action_type/action_details)
+    await client.query(`ALTER TABLE builder_bot.agent_approvals ADD COLUMN IF NOT EXISTS action TEXT NOT NULL DEFAULT ''`);
+    await client.query(`ALTER TABLE builder_bot.agent_approvals ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT ''`);
+    await client.query(`ALTER TABLE builder_bot.agent_approvals ADD COLUMN IF NOT EXISTS details JSONB`);
     await client.query(`
       CREATE INDEX IF NOT EXISTS agent_approvals_pending_idx
         ON builder_bot.agent_approvals (user_id, status) WHERE status = 'pending'
