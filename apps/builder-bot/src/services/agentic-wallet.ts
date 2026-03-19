@@ -10,9 +10,41 @@
  * Fallback на legacy V4R2 если agentic не настроен.
  */
 
+import crypto from 'crypto';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { pool } from '../db/index';
+
+// ── Mnemonic Encryption (AES-256-GCM) ────────────────────────────────────────
+
+const ENCRYPTION_KEY = process.env.WALLET_ENCRYPTION_KEY || '';
+const ALGORITHM = 'aes-256-gcm';
+
+function encryptMnemonic(plaintext: string): string {
+  if (!ENCRYPTION_KEY) {
+    console.warn('[AgenticWallet] WALLET_ENCRYPTION_KEY not set — storing mnemonic unencrypted');
+    return plaintext;
+  }
+  const key = crypto.scryptSync(ENCRYPTION_KEY, 'agentic-wallet-salt', 32);
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
+  let encrypted = cipher.update(plaintext, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  const tag = cipher.getAuthTag().toString('hex');
+  return `enc:${iv.toString('hex')}:${tag}:${encrypted}`;
+}
+
+function decryptMnemonic(stored: string): string {
+  if (!stored.startsWith('enc:')) return stored; // legacy unencrypted
+  if (!ENCRYPTION_KEY) throw new Error('WALLET_ENCRYPTION_KEY required to decrypt mnemonic');
+  const [, ivHex, tagHex, encrypted] = stored.split(':');
+  const key = crypto.scryptSync(ENCRYPTION_KEY, 'agentic-wallet-salt', 32);
+  const decipher = crypto.createDecipheriv(ALGORITHM, key, Buffer.from(ivHex, 'hex'));
+  decipher.setAuthTag(Buffer.from(tagHex, 'hex'));
+  let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+  decrypted += decipher.final('utf8');
+  return decrypted;
+}
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -245,11 +277,11 @@ class AgenticWalletService {
         operatorKey: newWallet.publicKey?.toString('hex'),
       });
 
-      // Store mnemonic in user_settings (encrypted reference)
+      // Store mnemonic in user_settings (encrypted)
       await pool.query(
         `INSERT INTO builder_bot.user_settings (user_id, key, value) VALUES ($1, 'root_wallet_mnemonic', $2)
          ON CONFLICT ON CONSTRAINT user_settings_unique DO UPDATE SET value = $2, updated_at = NOW()`,
-        [userId, JSON.stringify(newWallet.mnemonic)]
+        [userId, encryptMnemonic(JSON.stringify(newWallet.mnemonic))]
       );
 
       return { success: true, wallet: record };
@@ -298,7 +330,7 @@ class AgenticWalletService {
             // Store operator mnemonic in agent_state
             const { getAgentStateRepository } = require('../db/schema-extensions');
             await getAgentStateRepository().set(agentId, userId, 'agentic_wallet_address', address);
-            await getAgentStateRepository().set(agentId, userId, 'agentic_operator_mnemonic', operatorWords.join(' '));
+            await getAgentStateRepository().set(agentId, userId, 'agentic_operator_mnemonic', encryptMnemonic(operatorWords.join(' ')));
 
             return { success: true, wallet: record };
           }
@@ -321,7 +353,7 @@ class AgenticWalletService {
       // Store in agent_state for backwards compatibility
       const { getAgentStateRepository } = require('../db/schema-extensions');
       await getAgentStateRepository().set(agentId, userId, 'wallet_address', newWallet.address);
-      await getAgentStateRepository().set(agentId, userId, 'wallet_mnemonic', newWallet.mnemonic);
+      await getAgentStateRepository().set(agentId, userId, 'wallet_mnemonic', encryptMnemonic(newWallet.mnemonic));
       await getAgentStateRepository().set(agentId, userId, 'agentic_wallet_id', String(record.id));
 
       return { success: true, wallet: record };
@@ -606,4 +638,4 @@ export function getAgenticWalletService(): AgenticWalletService {
   return _service;
 }
 
-export { AgenticWalletService };
+export { AgenticWalletService, encryptMnemonic, decryptMnemonic };
