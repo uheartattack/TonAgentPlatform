@@ -567,6 +567,11 @@ function _getAllPendingMaps(): [string, Map<any, any> | Set<any>][] {
     ['agentWallets', agentWallets],
     ['tonConnectLinks', tonConnectLinks],
     ['userLang', userLanguages],
+    ['userIdea', pendingUserIdea],
+    ['proposalDiscuss', pendingProposalDiscuss],
+    ['walletImport', pendingWalletImport],
+    ['walletLimit', pendingWalletLimit],
+    ['walletRename', pendingWalletRename],
   ];
 }
 
@@ -2003,6 +2008,10 @@ async function showWalletMenu(ctx: Context) {
       { text: `💎 TON Connect`, callback_data: 'show_tonconnect' },
       { text: `🔗 ${ru ? 'Привязать кошелёк' : 'Link wallet'}`, callback_data: 'profile_link_wallet' },
     ],
+    // Agentic Wallets
+    [
+      { text: `🔐 ${ru ? 'Agentic Wallets' : 'Agentic Wallets'}`, callback_data: 'agentic_wallets_menu' },
+    ],
     // Обратно в профиль
     [
       { text: `◀️ ${ru ? 'Профиль' : 'Profile'}`, callback_data: 'profile_menu' },
@@ -2308,6 +2317,547 @@ bot.action('show_tonconnect',  async (ctx) => { await ctx.answerCbQuery(); await
 bot.action('back_wallet',      async (ctx) => { await ctx.answerCbQuery(); await showWalletMenu(ctx); });
 bot.action('show_wallet_menu', async (ctx) => { await ctx.answerCbQuery(); await showWalletMenu(ctx); });
 bot.action('profile_menu',     async (ctx) => { await ctx.answerCbQuery(); await showProfile(ctx, ctx.from!.id); });
+
+// ══════════════════════════════════════════════════════════════════════════
+// ── AGENTIC WALLETS — полное управление кошельками агентов ──────────────
+// ══════════════════════════════════════════════════════════════════════════
+
+bot.action('agentic_wallets_menu', async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  try {
+    const { getAgenticWalletService } = await import('./services/agentic-wallet');
+    const svc = getAgenticWalletService();
+    const wallets = await svc.getUserWallets(userId);
+    const rootWallet = wallets.find(w => w.walletType === 'root');
+    const subWallets = wallets.filter(w => w.walletType === 'sub');
+    const stats = await svc.getStats(userId);
+
+    let text =
+      `🔐 <b>Agentic Wallets</b>\n` +
+      `${div()}\n` +
+      `<i>${ru ? 'Self-custody кошельки для ваших агентов.\nАгент тратит автономно — вы контролируете.' : 'Self-custody wallets for your agents.\nAgent spends autonomously — you stay in control.'}</i>\n\n`;
+
+    if (rootWallet) {
+      const addrShort = rootWallet.address.slice(0, 8) + '…' + rootWallet.address.slice(-6);
+      text += `👑 <b>Root Wallet:</b> <code>${escHtml(addrShort)}</code>\n`;
+      text += `💰 ${ru ? 'Баланс:' : 'Balance:'} <b>${rootWallet.balanceTon.toFixed(4)} TON</b>\n\n`;
+    } else {
+      text += `👑 <b>Root Wallet:</b> <i>${ru ? 'не настроен' : 'not set up'}</i>\n\n`;
+    }
+
+    text += `📊 <b>${ru ? 'Статистика' : 'Stats'}:</b>\n`;
+    text += `   ${ru ? 'Всего кошельков' : 'Total wallets'}: <b>${stats.totalWallets}</b>\n`;
+    text += `   ${ru ? 'Активных' : 'Active'}: <b>${stats.activeWallets}</b> | ${ru ? 'Заблокированных' : 'Blocked'}: <b>${stats.blockedWallets}</b>\n`;
+    text += `   ${ru ? 'Общий баланс' : 'Total balance'}: <b>${stats.totalBalanceTon.toFixed(4)} TON</b>\n`;
+    text += `   ${ru ? 'Потрачено сегодня' : 'Spent today'}: <b>${stats.totalSpentTodayTon.toFixed(4)} TON</b>\n`;
+
+    if (subWallets.length > 0) {
+      text += `\n📋 <b>${ru ? 'Кошельки агентов' : 'Agent Wallets'}:</b>\n`;
+      for (const w of subWallets.slice(0, 10)) {
+        const status = w.isBlocked ? '🔴' : '🟢';
+        const agentLabel = w.agentId ? `#${w.agentId}` : (ru ? 'не привязан' : 'unlinked');
+        const addr = w.address.slice(0, 6) + '…' + w.address.slice(-4);
+        text += `${status} <b>${escHtml(w.label || addr)}</b> — ${w.balanceTon.toFixed(3)} TON [${agentLabel}]\n`;
+      }
+      if (subWallets.length > 10) {
+        text += `<i>+${subWallets.length - 10} ${ru ? 'ещё' : 'more'}...</i>\n`;
+      }
+    }
+
+    const kb: any[][] = [];
+
+    if (!rootWallet) {
+      kb.push([{ text: `👑 ${ru ? 'Создать Root Wallet' : 'Create Root Wallet'}`, callback_data: 'aw_setup_root' }]);
+      kb.push([{ text: `📥 ${ru ? 'Импорт кошелька' : 'Import Wallet'}`, callback_data: 'aw_import' }]);
+    } else {
+      kb.push([
+        { text: `➕ ${ru ? 'Новый Sub-Wallet' : 'New Sub-Wallet'}`, callback_data: 'aw_deploy_sub' },
+        { text: `🔄 ${ru ? 'Обновить балансы' : 'Refresh'}`, callback_data: 'aw_refresh_all' },
+      ]);
+    }
+
+    if (subWallets.length > 0) {
+      kb.push([{ text: `📋 ${ru ? 'Управление кошельками' : 'Manage Wallets'}`, callback_data: 'aw_list_manage' }]);
+    }
+
+    kb.push([
+      { text: `🌐 Dashboard`, url: 'https://agentic-wallets-dashboard.vercel.app' },
+    ]);
+
+    kb.push([{ text: `◀️ ${ru ? 'Кошелёк' : 'Wallet'}`, callback_data: 'show_wallet_menu' }]);
+
+    await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } });
+  } catch (e: any) {
+    await ctx.reply('❌ ' + String(e));
+  }
+});
+
+// ── Setup Root Wallet ──
+bot.action('aw_setup_root', async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  try {
+    const { getAgenticWalletService } = await import('./services/agentic-wallet');
+    const result = await getAgenticWalletService().setupRootWallet(userId);
+
+    if (result.dashboardUrl) {
+      await editOrReply(ctx,
+        `👑 <b>${ru ? 'Настройка Root Wallet' : 'Root Wallet Setup'}</b>\n\n` +
+        `${ru ? 'Перейдите в Dashboard для завершения настройки:' : 'Go to Dashboard to complete setup:'}`,
+        { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
+          [{ text: '🌐 Open Dashboard', url: result.dashboardUrl }],
+          [{ text: '◀️ Назад', callback_data: 'agentic_wallets_menu' }],
+        ] } }
+      );
+      return;
+    }
+
+    if (result.wallet) {
+      await editOrReply(ctx,
+        `✅ <b>Root Wallet ${ru ? 'создан' : 'created'}!</b>\n\n` +
+        `📍 <b>${ru ? 'Адрес' : 'Address'}:</b>\n<code>${escHtml(result.wallet.address)}</code>\n\n` +
+        `${ru ? 'Этот кошелёк — ваш главный. Все Sub-Wallets агентов будут привязаны к нему.' : 'This is your master wallet. All agent Sub-Wallets will be linked to it.'}`,
+        { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
+          [{ text: `➕ ${ru ? 'Создать Sub-Wallet' : 'Create Sub-Wallet'}`, callback_data: 'aw_deploy_sub' }],
+          [{ text: '◀️ Agentic Wallets', callback_data: 'agentic_wallets_menu' }],
+        ] } }
+      );
+    } else {
+      await ctx.reply(`❌ ${result.error || 'Setup failed'}`);
+    }
+  } catch (e: any) {
+    await ctx.reply('❌ ' + String(e));
+  }
+});
+
+// ── Import existing wallet ──
+const pendingWalletImport = new Map<number, { type: 'address' | 'mnemonic'; startTs: number }>();
+
+bot.action('aw_import', async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  await editOrReply(ctx,
+    `📥 <b>${ru ? 'Импорт кошелька' : 'Import Wallet'}</b>\n\n` +
+    `${ru ? 'Выберите способ:' : 'Choose method:'}`,
+    { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
+      [{ text: `📍 ${ru ? 'Ввести адрес' : 'Enter Address'}`, callback_data: 'aw_import_addr' }],
+      [{ text: `🔑 ${ru ? 'Ввести мнемонику (24 слова)' : 'Enter Mnemonic (24 words)'}`, callback_data: 'aw_import_mnemonic' }],
+      [{ text: '◀️ Назад', callback_data: 'agentic_wallets_menu' }],
+    ] } }
+  );
+});
+
+bot.action('aw_import_addr', async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from!.id;
+  pendingWalletImport.set(userId, { type: 'address', startTs: Date.now() });
+  await editOrReply(ctx,
+    `📍 Отправьте TON адрес кошелька (EQ... или UQ...):`,
+    { reply_markup: { inline_keyboard: [[{ text: '❌ Отмена', callback_data: 'agentic_wallets_menu' }]] } }
+  );
+});
+
+bot.action('aw_import_mnemonic', async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from!.id;
+  pendingWalletImport.set(userId, { type: 'mnemonic', startTs: Date.now() });
+  await editOrReply(ctx,
+    `🔑 Отправьте 24 слова мнемоники через пробел:\n\n⚠️ <i>Сообщение будет удалено после обработки!</i>`,
+    { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '❌ Отмена', callback_data: 'agentic_wallets_menu' }]] } }
+  );
+});
+
+// ── Deploy Sub-Wallet ──
+bot.action('aw_deploy_sub', async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+
+  // Get user's agents to choose from
+  try {
+    const agents = await getDBTools().getUserAgents(userId);
+    if (!agents.data || agents.data.length === 0) {
+      await ctx.reply(ru ? '❌ У вас нет агентов. Создайте агента сначала.' : '❌ No agents found. Create an agent first.');
+      return;
+    }
+
+    const { getAgenticWalletService } = await import('./services/agentic-wallet');
+    const svc = getAgenticWalletService();
+    const existingWallets = await svc.getSubWallets(userId);
+    const linkedAgentIds = new Set(existingWallets.map(w => w.agentId).filter(Boolean));
+
+    const kb: any[][] = [];
+    for (const a of agents.data.slice(0, 15)) {
+      if (linkedAgentIds.has(a.id)) continue; // Skip agents that already have wallets
+      const name = a.name || `Agent #${a.id}`;
+      kb.push([{ text: `💼 ${name}`, callback_data: `aw_deploy_for:${a.id}` }]);
+    }
+
+    if (kb.length === 0) {
+      await ctx.reply(ru ? '✅ Все агенты уже имеют кошельки!' : '✅ All agents already have wallets!');
+      return;
+    }
+
+    kb.push([{ text: `🆕 ${ru ? 'Без агента (свободный)' : 'No agent (free)'}`, callback_data: 'aw_deploy_for:0' }]);
+    kb.push([{ text: '◀️ Назад', callback_data: 'agentic_wallets_menu' }]);
+
+    await editOrReply(ctx,
+      `➕ <b>${ru ? 'Выберите агента для нового кошелька' : 'Choose agent for new wallet'}:</b>`,
+      { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } }
+    );
+  } catch (e: any) {
+    await ctx.reply('❌ ' + String(e));
+  }
+});
+
+bot.action(/^aw_deploy_for:(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery('⏳ Deploying...');
+  const userId = ctx.from!.id;
+  const agentId = parseInt(ctx.match![1]);
+  const ru = getUserLang(userId) === 'ru';
+  try {
+    const { getAgenticWalletService } = await import('./services/agentic-wallet');
+    const result = await getAgenticWalletService().deploySubWallet(
+      userId,
+      agentId || 0, // 0 = unlinked
+      agentId ? `Agent #${agentId}` : 'Free Wallet'
+    );
+
+    if (result.success && result.wallet) {
+      const w = result.wallet;
+      const deepLink = `ton://transfer/${w.address}`;
+      await editOrReply(ctx,
+        `✅ <b>${ru ? 'Кошелёк создан' : 'Wallet created'}!</b>\n\n` +
+        `📍 <b>${ru ? 'Адрес' : 'Address'}:</b>\n<code>${escHtml(w.address)}</code>\n\n` +
+        `🏷 <b>Label:</b> ${escHtml(w.label)}\n` +
+        `💰 <b>${ru ? 'Лимит' : 'Limit'}:</b> ${w.spendLimitTon} TON/${ru ? 'день' : 'day'}\n\n` +
+        `📥 ${ru ? 'Отправьте TON на этот адрес чтобы агент мог тратить.' : 'Send TON to this address so the agent can spend.'}`,
+        { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
+          [{ text: `💎 ${ru ? 'Открыть в кошельке' : 'Open in Wallet'}`, url: deepLink }],
+          [{ text: '◀️ Agentic Wallets', callback_data: 'agentic_wallets_menu' }],
+        ] } }
+      );
+    } else {
+      await ctx.reply(`❌ ${result.error || 'Deploy failed'}`);
+    }
+  } catch (e: any) {
+    await ctx.reply('❌ ' + String(e));
+  }
+});
+
+// ── Refresh all balances ──
+bot.action('aw_refresh_all', async (ctx) => {
+  await ctx.answerCbQuery('🔄 Refreshing...');
+  const userId = ctx.from!.id;
+  try {
+    const { getAgenticWalletService } = await import('./services/agentic-wallet');
+    await getAgenticWalletService().refreshAllBalances(userId);
+    // Re-show the menu with updated balances
+    // Trigger the menu handler by calling the action directly
+    await (ctx as any).match; // just to proceed
+  } catch {}
+  // Re-render menu
+  try {
+    const { getAgenticWalletService } = await import('./services/agentic-wallet');
+    const svc = getAgenticWalletService();
+    const wallets = await svc.getUserWallets(userId);
+    const stats = await svc.getStats(userId);
+    const ru = getUserLang(userId) === 'ru';
+    const subWallets = wallets.filter(w => w.walletType === 'sub');
+    const rootWallet = wallets.find(w => w.walletType === 'root');
+
+    let text =
+      `🔐 <b>Agentic Wallets</b> <i>(${ru ? 'обновлено' : 'refreshed'} ✅)</i>\n${div()}\n`;
+
+    if (rootWallet) {
+      const addrShort = rootWallet.address.slice(0, 8) + '…' + rootWallet.address.slice(-6);
+      text += `👑 <b>Root:</b> <code>${escHtml(addrShort)}</code> — ${rootWallet.balanceTon.toFixed(4)} TON\n\n`;
+    }
+
+    text += `📊 ${ru ? 'Кошельков' : 'Wallets'}: <b>${stats.totalWallets}</b> | `;
+    text += `${ru ? 'Баланс' : 'Balance'}: <b>${stats.totalBalanceTon.toFixed(4)} TON</b>\n`;
+
+    if (subWallets.length > 0) {
+      text += `\n📋 <b>${ru ? 'Кошельки' : 'Wallets'}:</b>\n`;
+      for (const w of subWallets.slice(0, 10)) {
+        const status = w.isBlocked ? '🔴' : '🟢';
+        text += `${status} <b>${escHtml(w.label)}</b> — ${w.balanceTon.toFixed(3)} TON\n`;
+      }
+    }
+
+    const kb: any[][] = [
+      [
+        { text: `➕ ${ru ? 'Новый' : 'New'}`, callback_data: 'aw_deploy_sub' },
+        { text: `🔄 ${ru ? 'Обновить' : 'Refresh'}`, callback_data: 'aw_refresh_all' },
+      ],
+    ];
+    if (subWallets.length > 0) {
+      kb.push([{ text: `📋 ${ru ? 'Управление' : 'Manage'}`, callback_data: 'aw_list_manage' }]);
+    }
+    kb.push([{ text: '🌐 Dashboard', url: 'https://agentic-wallets-dashboard.vercel.app' }]);
+    kb.push([{ text: `◀️ ${ru ? 'Кошелёк' : 'Wallet'}`, callback_data: 'show_wallet_menu' }]);
+
+    await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } });
+  } catch (e: any) {
+    await ctx.reply('❌ ' + String(e));
+  }
+});
+
+// ── Manage wallets list ──
+bot.action('aw_list_manage', async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  try {
+    const { getAgenticWalletService } = await import('./services/agentic-wallet');
+    const wallets = await getAgenticWalletService().getSubWallets(userId);
+
+    if (wallets.length === 0) {
+      await ctx.reply(ru ? 'Нет кошельков для управления.' : 'No wallets to manage.');
+      return;
+    }
+
+    const kb: any[][] = [];
+    for (const w of wallets.slice(0, 20)) {
+      const status = w.isBlocked ? '🔴' : '🟢';
+      const bal = w.balanceTon.toFixed(3);
+      kb.push([{
+        text: `${status} ${w.label || w.address.slice(0, 10)} — ${bal} TON`,
+        callback_data: `aw_manage:${w.id}`,
+      }]);
+    }
+    kb.push([{ text: '◀️ Назад', callback_data: 'agentic_wallets_menu' }]);
+
+    await editOrReply(ctx,
+      `📋 <b>${ru ? 'Управление кошельками' : 'Wallet Management'}</b>\n` +
+      `<i>${ru ? 'Выберите кошелёк для настройки:' : 'Choose a wallet to manage:'}</i>`,
+      { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } }
+    );
+  } catch (e: any) {
+    await ctx.reply('❌ ' + String(e));
+  }
+});
+
+// ── Single wallet management ──
+bot.action(/^aw_manage:(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from!.id;
+  const walletId = parseInt(ctx.match![1]);
+  const ru = getUserLang(userId) === 'ru';
+  try {
+    const { rows } = await dbPool.query(
+      `SELECT * FROM builder_bot.agentic_wallets WHERE id = $1 AND user_id = $2`,
+      [walletId, userId]
+    );
+    if (!rows[0]) { await ctx.reply('Wallet not found'); return; }
+    const w = rows[0];
+    const balanceTon = Number(w.balance_nano || 0) / 1e9;
+    const deepLink = `ton://transfer/${w.address}`;
+
+    let text =
+      `💼 <b>${escHtml(w.label || 'Wallet')}</b>\n${div()}\n` +
+      `📍 <b>${ru ? 'Адрес' : 'Address'}:</b>\n<code>${escHtml(w.address)}</code>\n\n` +
+      `💰 <b>${ru ? 'Баланс' : 'Balance'}:</b> ${balanceTon.toFixed(4)} TON\n` +
+      `📊 <b>${ru ? 'Лимит' : 'Limit'}:</b> ${Number(w.spend_limit_ton)} TON/${ru ? 'день' : 'day'}\n` +
+      `🤖 <b>${ru ? 'Агент' : 'Agent'}:</b> ${w.agent_id ? `#${w.agent_id}` : (ru ? 'не привязан' : 'unlinked')}\n` +
+      `📌 <b>${ru ? 'Статус' : 'Status'}:</b> ${w.is_blocked ? '🔴 Заблокирован' : '🟢 Активен'}\n`;
+
+    const kb: any[][] = [
+      [
+        { text: `💎 ${ru ? 'Пополнить' : 'Deposit'}`, url: deepLink },
+        { text: `🔄 ${ru ? 'Обновить' : 'Refresh'}`, callback_data: `aw_refresh:${walletId}` },
+      ],
+      [
+        w.is_blocked
+          ? { text: `🟢 ${ru ? 'Разблокировать' : 'Unblock'}`, callback_data: `aw_unblock:${walletId}` }
+          : { text: `🔴 ${ru ? 'Заблокировать' : 'Block'}`, callback_data: `aw_block:${walletId}` },
+        { text: `📊 ${ru ? 'Лимит' : 'Limit'}`, callback_data: `aw_set_limit:${walletId}` },
+      ],
+      [
+        { text: `📜 ${ru ? 'Транзакции' : 'Transactions'}`, callback_data: `aw_txs:${walletId}` },
+        { text: `🏷 ${ru ? 'Имя' : 'Label'}`, callback_data: `aw_rename:${walletId}` },
+      ],
+      [
+        { text: `🔗 ${ru ? 'Привязать агента' : 'Link Agent'}`, callback_data: `aw_link_agent:${walletId}` },
+        { text: `🗑 ${ru ? 'Удалить' : 'Delete'}`, callback_data: `aw_delete:${walletId}` },
+      ],
+      [{ text: '◀️ Назад', callback_data: 'aw_list_manage' }],
+    ];
+
+    await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } });
+  } catch (e: any) {
+    await ctx.reply('❌ ' + String(e));
+  }
+});
+
+// ── Block / Unblock ──
+bot.action(/^aw_block:(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery('🔴 Blocking...');
+  const { getAgenticWalletService } = await import('./services/agentic-wallet');
+  await getAgenticWalletService().setBlocked(parseInt(ctx.match![1]), ctx.from!.id, true);
+  // Re-render
+  (ctx as any).match = [null, ctx.match![1]];
+  await ctx.reply('🔴 Кошелёк заблокирован. Агент не сможет тратить.');
+});
+
+bot.action(/^aw_unblock:(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery('🟢 Unblocking...');
+  const { getAgenticWalletService } = await import('./services/agentic-wallet');
+  await getAgenticWalletService().setBlocked(parseInt(ctx.match![1]), ctx.from!.id, false);
+  await ctx.reply('🟢 Кошелёк разблокирован.');
+});
+
+// ── Refresh single wallet ──
+bot.action(/^aw_refresh:(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery('🔄 Refreshing...');
+  const { getAgenticWalletService } = await import('./services/agentic-wallet');
+  const bal = await getAgenticWalletService().refreshBalance(parseInt(ctx.match![1]));
+  await ctx.reply(`💰 Баланс: ${bal.toFixed(4)} TON`);
+});
+
+// ── Set spend limit ──
+const pendingWalletLimit = new Map<number, { walletId: number; startTs: number }>();
+
+bot.action(/^aw_set_limit:(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from!.id;
+  pendingWalletLimit.set(userId, { walletId: parseInt(ctx.match![1]), startTs: Date.now() });
+  const ru = getUserLang(userId) === 'ru';
+  await editOrReply(ctx,
+    `📊 ${ru ? 'Введите новый дневной лимит в TON (например: 10):' : 'Enter new daily limit in TON (e.g. 10):'}`,
+    { reply_markup: { inline_keyboard: [
+      [
+        { text: '5 TON', callback_data: 'aw_limit_quick:5' },
+        { text: '10 TON', callback_data: 'aw_limit_quick:10' },
+        { text: '50 TON', callback_data: 'aw_limit_quick:50' },
+        { text: '100 TON', callback_data: 'aw_limit_quick:100' },
+      ],
+      [{ text: '❌ Отмена', callback_data: 'agentic_wallets_menu' }],
+    ] } }
+  );
+});
+
+bot.action(/^aw_limit_quick:(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from!.id;
+  const pending = pendingWalletLimit.get(userId);
+  if (!pending) return;
+  const limitTon = parseInt(ctx.match![1]);
+  const { getAgenticWalletService } = await import('./services/agentic-wallet');
+  await getAgenticWalletService().setSpendLimit(pending.walletId, userId, limitTon);
+  pendingWalletLimit.delete(userId);
+  await ctx.reply(`✅ Лимит установлен: ${limitTon} TON/день`);
+});
+
+// ── Transaction history ──
+bot.action(/^aw_txs:(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from!.id;
+  const walletId = parseInt(ctx.match![1]);
+  const ru = getUserLang(userId) === 'ru';
+  try {
+    const { rows } = await dbPool.query(
+      `SELECT address, label FROM builder_bot.agentic_wallets WHERE id = $1 AND user_id = $2`,
+      [walletId, userId]
+    );
+    if (!rows[0]) { await ctx.reply('Not found'); return; }
+
+    const { getAgenticWalletService } = await import('./services/agentic-wallet');
+    const txs = await getAgenticWalletService().getTransactions(rows[0].address, 10);
+
+    let text = `📜 <b>${ru ? 'Транзакции' : 'Transactions'}: ${escHtml(rows[0].label)}</b>\n${div()}\n`;
+
+    if (txs.length === 0) {
+      text += `<i>${ru ? 'Транзакций пока нет' : 'No transactions yet'}</i>`;
+    } else {
+      for (const tx of txs) {
+        const dir = tx.to.toLowerCase().includes(rows[0].address.toLowerCase().slice(0, 20)) ? '📥' : '📤';
+        const date = new Date(tx.timestamp * 1000).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' });
+        text += `${dir} <b>${tx.amountTon.toFixed(4)} TON</b> — ${date}\n`;
+        if (tx.comment) text += `   💬 <i>${escHtml(tx.comment.slice(0, 40))}</i>\n`;
+      }
+    }
+
+    await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
+      [{ text: `🔗 Tonscan`, url: `https://tonscan.org/address/${rows[0].address}` }],
+      [{ text: '◀️ Назад', callback_data: `aw_manage:${walletId}` }],
+    ] } });
+  } catch (e: any) {
+    await ctx.reply('❌ ' + String(e));
+  }
+});
+
+// ── Rename wallet ──
+const pendingWalletRename = new Map<number, { walletId: number; startTs: number }>();
+
+bot.action(/^aw_rename:(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  pendingWalletRename.set(ctx.from!.id, { walletId: parseInt(ctx.match![1]), startTs: Date.now() });
+  await editOrReply(ctx, '🏷 Введите новое имя для кошелька:',
+    { reply_markup: { inline_keyboard: [[{ text: '❌ Отмена', callback_data: 'agentic_wallets_menu' }]] } }
+  );
+});
+
+// ── Delete wallet ──
+bot.action(/^aw_delete:(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  const walletId = parseInt(ctx.match![1]);
+  const ru = getUserLang(ctx.from!.id) === 'ru';
+  await editOrReply(ctx,
+    `⚠️ <b>${ru ? 'Удалить кошелёк?' : 'Delete wallet?'}</b>\n` +
+    `<i>${ru ? 'Убедитесь что вывели все средства!' : 'Make sure you withdrew all funds!'}</i>`,
+    { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
+      [
+        { text: `✅ ${ru ? 'Да, удалить' : 'Yes, delete'}`, callback_data: `aw_delete_confirm:${walletId}` },
+        { text: '❌ Отмена', callback_data: `aw_manage:${walletId}` },
+      ],
+    ] } }
+  );
+});
+
+bot.action(/^aw_delete_confirm:(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery('🗑 Deleting...');
+  const { getAgenticWalletService } = await import('./services/agentic-wallet');
+  await getAgenticWalletService().deleteWallet(parseInt(ctx.match![1]), ctx.from!.id);
+  await ctx.reply('✅ Кошелёк удалён.');
+});
+
+// ── Link agent to wallet ──
+bot.action(/^aw_link_agent:(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from!.id;
+  const walletId = parseInt(ctx.match![1]);
+  const ru = getUserLang(userId) === 'ru';
+  try {
+    const agents = await getDBTools().getUserAgents(userId);
+    const kb: any[][] = [];
+    kb.push([{ text: `🔓 ${ru ? 'Отвязать' : 'Unlink'}`, callback_data: `aw_assign:${walletId}:0` }]);
+    for (const a of (agents.data || []).slice(0, 15)) {
+      kb.push([{ text: `🤖 ${a.name || `Agent #${a.id}`}`, callback_data: `aw_assign:${walletId}:${a.id}` }]);
+    }
+    kb.push([{ text: '◀️ Назад', callback_data: `aw_manage:${walletId}` }]);
+
+    await editOrReply(ctx,
+      `🔗 <b>${ru ? 'Привязать агента к кошельку' : 'Link agent to wallet'}:</b>`,
+      { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } }
+    );
+  } catch (e: any) {
+    await ctx.reply('❌ ' + String(e));
+  }
+});
+
+bot.action(/^aw_assign:(\d+):(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery('🔗 Linking...');
+  const walletId = parseInt(ctx.match![1]);
+  const agentId = parseInt(ctx.match![2]);
+  const { getAgenticWalletService } = await import('./services/agentic-wallet');
+  await getAgenticWalletService().assignToAgent(walletId, ctx.from!.id, agentId || null);
+  await ctx.reply(agentId ? `✅ Кошелёк привязан к агенту #${agentId}` : '✅ Кошелёк отвязан от агента');
+});
 
 // ── Пополнение баланса ───────────────────────
 const pendingTopup = new Map<number, { startTs: number; amountTon?: number }>();
@@ -3643,6 +4193,7 @@ bot.on('callback_query', async (ctx) => {
     const fixedCode = pendingRepairs.get(`${userId}:${agentId}`);
     if (!fixedCode) { await ctx.reply('❌ Фикс устарел, запустите автопочинку снова.'); return; }
 
+    await savePromptVersion(agentId, userId);
     const updateResult = await getDBTools().updateAgentCode(agentId, userId, fixedCode);
     if (!updateResult.success) { await ctx.reply(`❌ Не удалось обновить код: ${updateResult.error}`); return; }
 
@@ -3749,54 +4300,259 @@ bot.on('callback_query', async (ctx) => {
     try {
       const stateRows = await getAgentStateRepository().getAll(agentId);
       const stateMap = Object.fromEntries(stateRows.map(r => [r.key, r.value]));
-      let address  = stateMap['wallet_address'] as string | undefined;
+      const address  = stateMap['wallet_address'] as string | undefined;
       const mnemonic = stateMap['wallet_mnemonic'] as string | undefined;
 
-      // Если кошелька нет — создать сейчас
-      if (!address) {
-        const { generateAgentWallet } = await import('./services/TonConnect');
-        const wallet = await generateAgentWallet();
-        const agentStateRepo = getAgentStateRepository();
-        await agentStateRepo.set(agentId, userId, 'wallet_address', wallet.address);
-        await agentStateRepo.set(agentId, userId, 'wallet_mnemonic', wallet.mnemonic);
-        address = wallet.address;
+      // Check if agent has an agentic sub-wallet
+      let agenticWallet: any = null;
+      try {
+        const { getAgenticWalletService } = await import('./services/agentic-wallet');
+        agenticWallet = await getAgenticWalletService().getAgentWallet(agentId);
+      } catch {}
+
+      // ── Кошелька НЕТ — показать выбор ──
+      if (!address && !agenticWallet) {
+        const agentData = await getDBTools().getAgent(agentId, userId);
+        const agentName = escHtml(agentData.data?.name || `#${agentId}`);
+
+        // Check if user has a root agentic wallet
+        let hasRoot = false;
+        try {
+          const { getAgenticWalletService } = await import('./services/agentic-wallet');
+          const root = await getAgenticWalletService().getRootWallet(userId);
+          hasRoot = !!root;
+        } catch {}
+
+        const text =
+          `💼 <b>${ru ? 'Кошелёк агента' : 'Agent Wallet'} "${agentName}"</b>\n` +
+          `${div()}\n\n` +
+          (ru
+            ? `У этого агента нет кошелька. Выберите вариант:\n\n` +
+              `<b>🔐 Agentic Wallet (рекомендуется)</b>\n` +
+              `Привязка к общему Root Wallet. Один кошелёк для всех агентов.\n` +
+              `• Дневной лимит трат (по умолчанию 10 TON)\n` +
+              `• Блокировка одной кнопкой\n` +
+              `• Общий баланс — пополнять один раз\n` +
+              `• Видимость всех транзакций в Dashboard\n\n` +
+              `<b>💎 Отдельный кошелёк</b>\n` +
+              `Создаёт новый V4R2 кошелёк только для этого агента.\n` +
+              `• Свой адрес + seed-фраза\n` +
+              `• Полностью изолированный баланс\n` +
+              `• Пополнять отдельно\n` +
+              `• Подходит если хотите разделить средства`
+            : `This agent has no wallet. Choose an option:\n\n` +
+              `<b>🔐 Agentic Wallet (recommended)</b>\n` +
+              `Link to shared Root Wallet. One wallet for all agents.\n` +
+              `• Daily spend limit (default 10 TON)\n` +
+              `• Block with one tap\n` +
+              `• Shared balance — top up once\n` +
+              `• All transactions visible in Dashboard\n\n` +
+              `<b>💎 Separate Wallet</b>\n` +
+              `Creates a new V4R2 wallet just for this agent.\n` +
+              `• Own address + seed phrase\n` +
+              `• Fully isolated balance\n` +
+              `• Top up separately\n` +
+              `• Best for separating funds`);
+
+        const kb: any[][] = [];
+        if (hasRoot) {
+          kb.push([{ text: `🔐 ${ru ? 'Agentic Wallet (общий)' : 'Agentic Wallet (shared)'}`, callback_data: `aw_deploy_for:${agentId}` }]);
+        } else {
+          kb.push([{ text: `🔐 ${ru ? 'Создать Root + привязать' : 'Create Root + link'}`, callback_data: `aw_setup_root_then:${agentId}` }]);
+        }
+        kb.push([{ text: `💎 ${ru ? 'Отдельный кошелёк' : 'Separate Wallet'}`, callback_data: `aw_create_solo:${agentId}` }]);
+        kb.push([{ text: `◀️ ${ru ? 'К агенту' : 'Back'}`, callback_data: `agent_menu:${agentId}` }]);
+
+        await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } });
+        return;
       }
+
+      // ── Кошелёк ЕСТЬ — показать детали ──
+      let displayAddress = address || '';
+      let walletType = ru ? 'Отдельный' : 'Separate';
+      let agenticLine = '';
+      let spendLimit = '';
+
+      if (agenticWallet) {
+        displayAddress = agenticWallet.address || displayAddress;
+        walletType = 'Agentic Sub-Wallet';
+        agenticLine = `\n🔐 <b>Agentic:</b> ${agenticWallet.isBlocked ? '🔴 ' + (ru ? 'Заблокирован' : 'Blocked') : '🟢 ' + (ru ? 'Активен' : 'Active')}`;
+        spendLimit = `\n📊 ${ru ? 'Лимит' : 'Limit'}: <b>${agenticWallet.spendLimitTon || 10} TON</b>/${ru ? 'день' : 'day'}`;
+      }
+
+      if (!displayAddress && address) displayAddress = address;
 
       // Баланс через TONAPI
       let balanceTon = 0;
-      try {
-        const apiKey = process.env.TONAPI_KEY || '';
-        const r = await fetch(`https://tonapi.io/v2/accounts/${encodeURIComponent(address)}`,
-          { headers: apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {} });
-        const j = await r.json() as any;
-        if (j.balance !== undefined) balanceTon = Number(j.balance) / 1e9;
-      } catch (_) { /* ignore */ }
+      if (displayAddress) {
+        try {
+          const apiKey = process.env.TONAPI_KEY || '';
+          const r = await fetch(`https://tonapi.io/v2/accounts/${encodeURIComponent(displayAddress)}`,
+            { headers: apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {} });
+          const j = await r.json() as any;
+          if (j.balance !== undefined) balanceTon = Number(j.balance) / 1e9;
+        } catch (_) {}
+      }
 
       const agentData = await getDBTools().getAgent(agentId, userId);
-      const agentName = escHtml(agentData.data?.name || `Агент #${agentId}`);
+      const agentName = escHtml(agentData.data?.name || `#${agentId}`);
       const balStr = balanceTon > 0 ? `${balanceTon.toFixed(4)} TON` : (ru ? '0 TON (пусто)' : '0 TON (empty)');
-      const deepLink = `ton://transfer/${address}?text=${encodeURIComponent('agent:' + agentId)}`;
-      const addrShort = address.slice(0, 8) + '…' + address.slice(-6);
+      const deepLink = `ton://transfer/${displayAddress}?text=${encodeURIComponent('agent:' + agentId)}`;
 
       const text =
         `💼 <b>${ru ? 'Кошелёк агента' : 'Agent Wallet'} "${agentName}"</b>\n` +
         `${div()}\n` +
-        `${ru ? 'Адрес' : 'Address'}:\n<code>${escHtml(address)}</code>\n\n` +
+        `📦 ${ru ? 'Тип' : 'Type'}: <b>${walletType}</b>${agenticLine}${spendLimit}\n\n` +
+        `${ru ? 'Адрес' : 'Address'}:\n<code>${escHtml(displayAddress)}</code>\n\n` +
         `💰 ${ru ? 'Баланс' : 'Balance'}: <b>${escHtml(balStr)}</b>\n` +
         `${div()}\n` +
         `📥 ${ru ? 'Пополнение:' : 'Deposit:'}\n` +
-        `${ru ? 'Отправьте TON на адрес выше. Агент получит средства и сможет самостоятельно совершать транзакции (покупка гифтов, NFT и тп).' : 'Send TON to the address above. The agent will receive funds and can execute transactions autonomously (buy gifts, NFTs, etc.).'}\n\n` +
+        `${ru ? 'Отправьте TON на адрес выше. Агент сможет самостоятельно совершать транзакции.' : 'Send TON to the address above. The agent can execute transactions autonomously.'}\n\n` +
         (mnemonic
-          ? `🔐 <b>${ru ? 'Резервная фраза (24 слова):' : 'Seed phrase (24 words):'}</b>\n<tg-spoiler>${escHtml(mnemonic)}</tg-spoiler>\n\n⚠️ ${ru ? 'Не передавай никому!' : 'Never share this phrase!'}`
+          ? `🔐 <b>${ru ? 'Seed-фраза:' : 'Seed phrase:'}</b>\n<tg-spoiler>${escHtml(mnemonic)}</tg-spoiler>\n⚠️ ${ru ? 'Никому не передавай!' : 'Never share!'}\n`
           : '');
 
-      const kb = [
-        [{ text: `💎 ${ru ? 'Открыть в TON-кошельке' : 'Open in TON Wallet'}`, url: deepLink }],
-        [{ text: `🔄 ${ru ? 'Обновить баланс' : 'Refresh balance'}`, callback_data: `agent_wallet:${agentId}` }],
-        [{ text: `◀️ ${ru ? 'К агенту' : 'Back'}`, callback_data: `agent_menu:${agentId}` }],
-      ];
+      const kb: any[][] = [];
+      kb.push([{ text: `💎 ${ru ? 'Открыть в TON-кошельке' : 'Open in TON Wallet'}`, url: deepLink }]);
+      kb.push([{ text: `🔄 ${ru ? 'Обновить' : 'Refresh'}`, callback_data: `agent_wallet:${agentId}` }]);
+      if (agenticWallet) {
+        kb.push([{
+          text: agenticWallet.isBlocked
+            ? `🟢 ${ru ? 'Разблокировать' : 'Unblock'}`
+            : `🔴 ${ru ? 'Заблокировать' : 'Block'}`,
+          callback_data: `aw_toggle_block:${agenticWallet.id}:${agentId}`,
+        }]);
+      }
+      kb.push([{ text: `◀️ ${ru ? 'К агенту' : 'Back'}`, callback_data: `agent_menu:${agentId}` }]);
 
       await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } });
+    } catch (e) {
+      await ctx.reply('❌ ' + String(e));
+    }
+    return;
+  }
+
+  // ── Create solo wallet for agent ──
+  if (data.startsWith('aw_create_solo:')) {
+    await ctx.answerCbQuery();
+    const agentId = parseInt(data.split(':')[1]);
+    const ru = getUserLang(userId) === 'ru';
+    try {
+      const { generateAgentWallet } = await import('./services/TonConnect');
+      const wallet = await generateAgentWallet();
+      const agentStateRepo = getAgentStateRepository();
+      await agentStateRepo.set(agentId, userId, 'wallet_address', wallet.address);
+      await agentStateRepo.set(agentId, userId, 'wallet_mnemonic', wallet.mnemonic);
+      // Also inject into agent's trigger_config for AI tools
+      const tcRow = await dbPool.query('SELECT trigger_config FROM builder_bot.agents WHERE id=$1 AND user_id=$2', [agentId, userId]);
+      if (tcRow.rows[0]) {
+        const tc = tcRow.rows[0].trigger_config || {};
+        tc.config = tc.config || {};
+        tc.config.WALLET_ADDRESS = wallet.address;
+        tc.config.WALLET_MNEMONIC = wallet.mnemonic;
+        await dbPool.query('UPDATE builder_bot.agents SET trigger_config=$1 WHERE id=$2', [JSON.stringify(tc), agentId]);
+      }
+      await safeReply(ctx, `✅ ${ru ? 'Кошелёк создан!' : 'Wallet created!'}\n\n<code>${escHtml(wallet.address)}</code>`, { parse_mode: 'HTML' });
+      // Show wallet details
+      await showAgentMenu(ctx, agentId, userId);
+    } catch (e) {
+      await ctx.reply('❌ ' + String(e));
+    }
+    return;
+  }
+
+  // ── Deploy agentic sub-wallet for agent ──
+  if (data.startsWith('aw_deploy_for:')) {
+    await ctx.answerCbQuery();
+    const agentId = parseInt(data.split(':')[1]);
+    const ru = getUserLang(userId) === 'ru';
+    try {
+      const { getAgenticWalletService } = await import('./services/agentic-wallet');
+      const agentData = await getDBTools().getAgent(agentId, userId);
+      const label = agentData.data?.name || `Agent #${agentId}`;
+      const result = await getAgenticWalletService().deploySubWallet(userId, agentId, label);
+      if (result.success && result.wallet) {
+        // Also inject wallet address into agent config
+        const tcRow = await dbPool.query('SELECT trigger_config FROM builder_bot.agents WHERE id=$1 AND user_id=$2', [agentId, userId]);
+        if (tcRow.rows[0]) {
+          const tc = tcRow.rows[0].trigger_config || {};
+          tc.config = tc.config || {};
+          tc.config.WALLET_ADDRESS = result.wallet.address;
+          await dbPool.query('UPDATE builder_bot.agents SET trigger_config=$1 WHERE id=$2', [JSON.stringify(tc), agentId]);
+        }
+        await safeReply(ctx, `✅ ${ru ? 'Agentic Wallet привязан!' : 'Agentic Wallet linked!'}\n\n<code>${escHtml(result.wallet.address)}</code>\n📊 ${ru ? 'Лимит' : 'Limit'}: ${result.wallet.spendLimitTon} TON/${ru ? 'день' : 'day'}`, { parse_mode: 'HTML' });
+        await showAgentMenu(ctx, agentId, userId);
+      } else {
+        await ctx.reply('❌ ' + (result.error || 'Deploy failed'));
+      }
+    } catch (e) {
+      await ctx.reply('❌ ' + String(e));
+    }
+    return;
+  }
+
+  // ── Setup root wallet then deploy for agent ──
+  if (data.startsWith('aw_setup_root_then:')) {
+    await ctx.answerCbQuery();
+    const agentId = parseInt(data.split(':')[1]);
+    const ru = getUserLang(userId) === 'ru';
+    try {
+      const { getAgenticWalletService } = await import('./services/agentic-wallet');
+      // Create root wallet first
+      const rootResult = await getAgenticWalletService().setupRootWallet(userId);
+      if (!rootResult.success) {
+        await ctx.reply(`❌ ${ru ? 'Ошибка создания Root Wallet' : 'Root Wallet creation failed'}: ${rootResult.error || 'unknown'}`);
+        return;
+      }
+      // Then deploy sub-wallet for agent
+      const agentData = await getDBTools().getAgent(agentId, userId);
+      const label = agentData.data?.name || `Agent #${agentId}`;
+      const subResult = await getAgenticWalletService().deploySubWallet(userId, agentId, label);
+      if (subResult.success && subResult.wallet) {
+        // Inject wallet address into agent config
+        const tcRow = await dbPool.query('SELECT trigger_config FROM builder_bot.agents WHERE id=$1 AND user_id=$2', [agentId, userId]);
+        if (tcRow.rows[0]) {
+          const tc = tcRow.rows[0].trigger_config || {};
+          tc.config = tc.config || {};
+          tc.config.WALLET_ADDRESS = subResult.wallet.address;
+          await dbPool.query('UPDATE builder_bot.agents SET trigger_config=$1 WHERE id=$2', [JSON.stringify(tc), agentId]);
+        }
+        await safeReply(ctx,
+          `✅ ${ru ? 'Root Wallet + Sub-Wallet созданы!' : 'Root Wallet + Sub-Wallet created!'}\n\n` +
+          `🔐 Root: <code>${escHtml(rootResult.wallet?.address || '?')}</code>\n` +
+          `💼 Agent: <code>${escHtml(subResult.wallet.address)}</code>\n` +
+          `📊 ${ru ? 'Лимит' : 'Limit'}: ${subResult.wallet.spendLimitTon} TON/${ru ? 'день' : 'day'}`,
+          { parse_mode: 'HTML' });
+        await showAgentMenu(ctx, agentId, userId);
+      } else {
+        await ctx.reply('❌ Sub-wallet: ' + (subResult.error || 'Deploy failed'));
+      }
+    } catch (e) {
+      await ctx.reply('❌ ' + String(e));
+    }
+    return;
+  }
+
+  // ── Toggle block agentic wallet ──
+  if (data.startsWith('aw_toggle_block:')) {
+    await ctx.answerCbQuery();
+    const parts = data.split(':');
+    const walletId = parseInt(parts[1]);
+    const agentId = parseInt(parts[2]);
+    const ru = getUserLang(userId) === 'ru';
+    try {
+      const { getAgenticWalletService } = await import('./services/agentic-wallet');
+      const wallet = await getAgenticWalletService().getWalletById(walletId);
+      if (!wallet) { await ctx.reply('❌ Wallet not found'); return; }
+      const newBlocked = !wallet.isBlocked;
+      await getAgenticWalletService().setBlocked(walletId, userId, newBlocked);
+      await safeReply(ctx, newBlocked
+        ? `🔴 ${ru ? 'Кошелёк заблокирован' : 'Wallet blocked'}`
+        : `🟢 ${ru ? 'Кошелёк разблокирован' : 'Wallet unblocked'}`);
+      // Refresh wallet view
+      await editOrReply(ctx, '...', { parse_mode: 'HTML' }).catch(() => {});
+      // Trigger re-render via callback
+      ctx.callbackQuery && ((ctx.callbackQuery as any).data = `agent_wallet:${agentId}`);
     } catch (e) {
       await ctx.reply('❌ ' + String(e));
     }
@@ -3966,7 +4722,7 @@ bot.on('callback_query', async (ctx) => {
           { parse_mode: 'HTML' }
         ).catch(() => {});
       }
-    }).catch(() => {});
+    }).catch(e => console.warn('[Bot] QR auth error:', e?.message || e));
 
     return;
   }
@@ -4050,6 +4806,83 @@ bot.on('callback_query', async (ctx) => {
     return;
   }
 
+  // ── История промптов (версии кода) ──
+  if (data.startsWith('prompt_history:')) {
+    await ctx.answerCbQuery();
+    const agentId = parseInt(data.split(':')[1]);
+    try {
+      const stateRepo = getAgentStateRepository();
+      const versionsRaw = await stateRepo.get(agentId, '_code_versions').catch(() => null);
+      let versions: Array<{ code: string; savedAt: string }> = [];
+      try { versions = JSON.parse(versionsRaw?.value || '[]'); } catch { versions = []; }
+      if (!versions.length) {
+        await editOrReply(ctx,
+          `📜 <b>История промптов</b> #${agentId}\n\nИстория пуста. Версии сохраняются при каждом изменении кода/промпта.`,
+          { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '◀️ Назад', callback_data: `agent_menu:${agentId}` }]] } }
+        );
+        return;
+      }
+      const lang = getUserLang(userId);
+      const ru = lang === 'ru';
+      const lines = versions.slice(-5).reverse().map((v, i) => {
+        const d = new Date(v.savedAt);
+        const dateStr = d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+        const preview = (v.code || '').replace(/\n/g, ' ').slice(0, 80);
+        return `<b>${i + 1}.</b> ${dateStr}\n<code>${escHtml(preview)}...</code>`;
+      });
+      const keyboard: any[][] = versions.slice(-5).reverse().map((_, i) => [
+        { text: `🔄 ${ru ? 'Восстановить' : 'Restore'} #${i + 1}`, callback_data: `restore_version:${agentId}:${versions.length - 1 - i}` },
+      ]);
+      keyboard.push([{ text: '◀️ Назад', callback_data: `agent_menu:${agentId}` }]);
+      await editOrReply(ctx,
+        `📜 <b>${ru ? 'История промптов' : 'Prompt History'}</b> #${agentId}\n\n${lines.join('\n\n')}`,
+        { parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } }
+      );
+    } catch (e: any) {
+      await safeReply(ctx, `❌ Ошибка: ${e.message}`);
+    }
+    return;
+  }
+
+  // ── Восстановить версию промпта ──
+  if (data.startsWith('restore_version:')) {
+    const parts = data.split(':');
+    const agentId = parseInt(parts[1]);
+    const versionIdx = parseInt(parts[2]);
+    try {
+      const stateRepo = getAgentStateRepository();
+      const versionsRaw = await stateRepo.get(agentId, '_code_versions').catch(() => null);
+      let versions: Array<{ code: string; savedAt: string }> = [];
+      try { versions = JSON.parse(versionsRaw?.value || '[]'); } catch { versions = []; }
+      if (versionIdx < 0 || versionIdx >= versions.length) {
+        await ctx.answerCbQuery('Версия не найдена');
+        return;
+      }
+      const version = versions[versionIdx];
+      // Save current code as a new version before restoring
+      await savePromptVersion(agentId, userId);
+      const updateResult = await getDBTools().updateAgentCode(agentId, userId, version.code);
+      if (updateResult.success) {
+        await ctx.answerCbQuery('✅ Восстановлено!');
+        const d = new Date(version.savedAt);
+        await safeReply(ctx,
+          `✅ Промпт восстановлен из версии от ${d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}\n\nЗапустите агента чтобы проверить.`,
+          { reply_markup: { inline_keyboard: [[
+            { text: '🚀 Запустить', callback_data: `run_agent:${agentId}` },
+            { text: '◀️ К агенту', callback_data: `agent_menu:${agentId}` },
+          ]] } }
+        );
+      } else {
+        await ctx.answerCbQuery('❌ Ошибка');
+        await safeReply(ctx, `❌ Не удалось восстановить: ${updateResult.error}`);
+      }
+    } catch (e: any) {
+      await ctx.answerCbQuery('❌ Ошибка');
+      await safeReply(ctx, `❌ Ошибка: ${e.message}`);
+    }
+    return;
+  }
+
   // ── Удалить агента: шаг 1 — диалог подтверждения ──
   if (data.startsWith('delete_agent:')) {
     await ctx.answerCbQuery();
@@ -4081,10 +4914,17 @@ bot.on('callback_query', async (ctx) => {
     await ctx.answerCbQuery('Удаляю...');
     const agentId = parseInt(data.split(':')[1]);
     // Останавливаем агента если он запущен
-    await getRunnerAgent().pauseAgent(agentId, userId).catch(() => {});
+    await getRunnerAgent().pauseAgent(agentId, userId).catch(e => console.warn('[Bot] pauseAgent on delete:', e?.message || e));
     const result = await getDBTools().deleteAgent(agentId, userId);
     await ctx.reply(result.success ? `🗑 Агент #${agentId} удалён` : `❌ Ошибка: ${result.error}`);
-    if (result.success) await showAgentsList(ctx, userId);
+    if (result.success) {
+      // Clean up bot-level Maps that reference deleted agentId
+      pendingRepairs.delete(`${userId}:${agentId}`);
+      if (pendingAgentChats.get(userId) === agentId) pendingAgentChats.delete(userId);
+      // TODO: also clean _pendingMessages, _webRequestCounts in ai-agent-runtime.ts
+      // (they have their own periodic cleanup, but explicit removal on delete would be cleaner)
+      await showAgentsList(ctx, userId);
+    }
     return;
   }
   if (data === 'cancel_delete') { await ctx.answerCbQuery('Отменено ✓'); return; }
@@ -4783,7 +5623,7 @@ bot.on('callback_query', async (ctx) => {
         } else {
           await ctx.reply(`❌ ${result}`).catch(() => {});
         }
-      }).catch(() => {});
+      }).catch(e => console.warn('[Bot] triggerMode error:', e?.message || e));
     }
     return;
   }
@@ -4814,7 +5654,7 @@ bot.on('callback_query', async (ctx) => {
       } else {
         await ctx.reply(`❌ ${result}`).catch(() => {});
       }
-    }).catch(() => {});
+    }).catch(e => console.warn('[Bot] implementIdea error:', e?.message || e));
     return;
   }
 
@@ -5093,7 +5933,7 @@ bot.on(message('text'), async (ctx) => {
       } else {
         await ctx.reply(`❌ ${result}`).catch(() => {});
       }
-    }).catch(() => {});
+    }).catch(e => console.warn('[Bot] submitUserIdea error:', e?.message || e));
     return;
   }
 
@@ -5185,6 +6025,7 @@ bot.on(message('text'), async (ctx) => {
 
         // If AI returned new code — save it
         if (result.newCode) {
+          await savePromptVersion(agentId, userId);
           const updateResult = await getDBTools().updateAgentCode(agentId, userId, result.newCode);
           if (updateResult.success) {
             await ctx.reply(result.reply + '\n\n✅ <i>Код агента обновлён платформой.</i>', { parse_mode: 'HTML' });
@@ -5608,6 +6449,75 @@ bot.on(message('text'), async (ctx) => {
   }
 
   // ── Ожидаем глобальный API ключ ──────────────────────────
+  // ── Agentic Wallet pending text handlers ──
+  if (pendingWalletImport.has(userId)) {
+    const pending = pendingWalletImport.get(userId)!;
+    pendingWalletImport.delete(userId);
+    try {
+      const { getAgenticWalletService } = await import('./services/agentic-wallet');
+      if (pending.type === 'address') {
+        if (!/^[EU]Q[A-Za-z0-9_\-]{46,48}$/.test(trimmed) && !/^0:[a-fA-F0-9]{64}$/.test(trimmed)) {
+          await safeReply(ctx, '❌ Неверный формат адреса. Ожидается EQ... или UQ...', {});
+          return;
+        }
+        const result = await getAgenticWalletService().setupRootWallet(userId, { address: trimmed });
+        if (result.success) {
+          await safeReply(ctx, `✅ Root wallet импортирован!\n📍 <code>${escHtml(trimmed)}</code>`, { parse_mode: 'HTML' });
+        } else {
+          await safeReply(ctx, `❌ ${result.error}`, {});
+        }
+      } else {
+        // Mnemonic — delete user message for security
+        try { await ctx.deleteMessage(); } catch {}
+        const words = trimmed.split(/\s+/);
+        if (words.length !== 24) {
+          await safeReply(ctx, '❌ Мнемоника должна содержать 24 слова.', {});
+          return;
+        }
+        const result = await getAgenticWalletService().setupRootWallet(userId, { mnemonic: trimmed });
+        if (result.success && result.wallet) {
+          await safeReply(ctx, `✅ Root wallet импортирован!\n📍 <code>${escHtml(result.wallet.address)}</code>\n\n⚠️ Ваше сообщение с мнемоникой удалено из безопасности.`, { parse_mode: 'HTML' });
+        } else {
+          await safeReply(ctx, `❌ ${result.error}`, {});
+        }
+      }
+    } catch (e: any) {
+      await safeReply(ctx, '❌ ' + String(e), {});
+    }
+    return;
+  }
+
+  if (pendingWalletRename.has(userId)) {
+    const pending = pendingWalletRename.get(userId)!;
+    pendingWalletRename.delete(userId);
+    try {
+      const { getAgenticWalletService } = await import('./services/agentic-wallet');
+      await getAgenticWalletService().setLabel(pending.walletId, userId, trimmed.slice(0, 50));
+      await safeReply(ctx, `✅ Имя кошелька изменено на: ${trimmed.slice(0, 50)}`, {});
+    } catch (e: any) {
+      await safeReply(ctx, '❌ ' + String(e), {});
+    }
+    return;
+  }
+
+  if (pendingWalletLimit.has(userId)) {
+    const pending = pendingWalletLimit.get(userId)!;
+    const limitNum = parseFloat(trimmed);
+    if (isNaN(limitNum) || limitNum <= 0) {
+      await safeReply(ctx, '❌ Введите число больше 0.', {});
+      return;
+    }
+    pendingWalletLimit.delete(userId);
+    try {
+      const { getAgenticWalletService } = await import('./services/agentic-wallet');
+      await getAgenticWalletService().setSpendLimit(pending.walletId, userId, limitNum);
+      await safeReply(ctx, `✅ Лимит установлен: ${limitNum} TON/день`, {});
+    } catch (e: any) {
+      await safeReply(ctx, '❌ ' + String(e), {});
+    }
+    return;
+  }
+
   if (pendingApiKey.has(userId)) {
     const pending = pendingApiKey.get(userId)!;
     pendingApiKey.delete(userId);
@@ -5781,6 +6691,7 @@ bot.on(message('text'), async (ctx) => {
         await safeReply(ctx, `❌ AI не смог изменить код: ${escHtml(fixResult.error || 'Unknown')}`, { parse_mode: 'HTML' });
         return;
       }
+      await savePromptVersion(agentId, userId);
       const saveResult = await getDBTools().updateAgentCode(agentId, userId, fixResult.data.code);
       if (saveResult.success) {
         await safeReply(ctx,
@@ -6509,6 +7420,24 @@ async function showCapabilitiesMenu(ctx: Context, agentId: number, enabledCaps: 
 // ============================================================
 // Меню конкретного агента
 // ============================================================
+// ── Save prompt version before code update ──
+async function savePromptVersion(agentId: number, userId: number) {
+  try {
+    const agentResult = await getDBTools().getAgent(agentId, userId);
+    if (!agentResult.success || !agentResult.data?.code) return;
+    const oldCode = agentResult.data.code;
+    const stateRepo = getAgentStateRepository();
+    const versionsRaw = await stateRepo.get(agentId, '_code_versions').catch(() => null);
+    let versions: Array<{ code: string; savedAt: string }> = [];
+    try { versions = JSON.parse(versionsRaw?.value || '[]'); } catch { versions = []; }
+    // Don't save duplicate if last version is same code
+    if (versions.length > 0 && versions[versions.length - 1].code === oldCode) return;
+    versions.push({ code: oldCode, savedAt: new Date().toISOString() });
+    if (versions.length > 10) versions = versions.slice(-10); // keep last 10
+    await stateRepo.set(agentId, userId, '_code_versions', JSON.stringify(versions));
+  } catch {}
+}
+
 async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
   try {
     const lang = getUserLang(userId);
@@ -6605,10 +7534,11 @@ async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
       ]);
     }
 
-    // Section 3 — Edit: Edit prompt + Rename
+    // Section 3 — Edit: Edit prompt + Rename + History
     keyboard.push([
       { text: `✏️ ${ru2 ? 'Изменить' : 'Edit'}`, callback_data: `edit_agent:${agentId}` },
       { text: `🏷 ${ru2 ? 'Переименовать' : 'Rename'}`, callback_data: `rename_agent:${agentId}` },
+      { text: `📜 ${ru2 ? 'История' : 'History'}`, callback_data: `prompt_history:${agentId}` },
     ]);
 
     // Section 4 — AI settings (only for ai_agent): provider, key, model
@@ -7982,7 +8912,7 @@ export function startBot() {
   launch();
   console.log('✅ Bot is running!');
   // Verify platform wallet config at startup
-  verifyPlatformWalletConfig().catch(() => {});
+  verifyPlatformWalletConfig().catch(e => console.warn('[Bot] verifyPlatformWalletConfig:', e?.message || e));
   process.once('SIGINT', () => bot.stop('SIGINT'));
   process.once('SIGTERM', () => bot.stop('SIGTERM'));
 }

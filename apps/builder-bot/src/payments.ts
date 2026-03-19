@@ -184,8 +184,8 @@ export async function getUserSubscription(userId: number): Promise<UserSubscript
   if (_pool) {
     try {
       const r = await _pool.query(
-        'SELECT * FROM builder_bot.subscriptions WHERE user_id = $1',
-        [userId]
+        'SELECT * FROM builder_bot.subscriptions WHERE user_id = $1::NUMERIC',
+        [String(userId)]
       );
       if (r.rows[0]) {
         const row = r.rows[0];
@@ -200,8 +200,8 @@ export async function getUserSubscription(userId: number): Promise<UserSubscript
         if (sub.expiresAt && sub.expiresAt < new Date()) {
           sub.planId = 'free';
           await _pool.query(
-            'UPDATE builder_bot.subscriptions SET plan_id=$1, updated_at=NOW() WHERE user_id=$2',
-            ['free', userId]
+            'UPDATE builder_bot.subscriptions SET plan_id=$1, updated_at=NOW() WHERE user_id=$2::NUMERIC',
+            ['free', String(userId)]
           );
         }
         subscriptions.set(userId, sub);

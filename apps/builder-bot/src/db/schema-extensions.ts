@@ -183,6 +183,12 @@ export async function runMigrations(pool: Pool): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_bal_tx_hash
         ON builder_bot.balance_transactions (tx_hash)
     `);
+    // Ensure tx_hash uniqueness to prevent double-credit TOCTOU
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_bal_tx_hash_unique
+        ON builder_bot.balance_transactions (tx_hash)
+        WHERE tx_hash IS NOT NULL
+    `);
 
     // user_custom_plugins
     await client.query(`
@@ -1057,7 +1063,37 @@ export async function runAIProposalsMigrations(pool: Pool): Promise<void> {
       )
     `);
 
-    console.log('✅ AI proposals + daily spend + audit/approvals/skills/shared/bugs migrations applied');
+    // agentic_wallets — self-custody wallets for agents
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.agentic_wallets (
+        id              SERIAL PRIMARY KEY,
+        user_id         BIGINT NOT NULL,
+        agent_id        INTEGER,
+        wallet_type     TEXT NOT NULL DEFAULT 'sub',
+        address         TEXT NOT NULL,
+        operator_key    TEXT,
+        label           TEXT DEFAULT '',
+        is_blocked      BOOLEAN NOT NULL DEFAULT FALSE,
+        balance_nano    BIGINT NOT NULL DEFAULT 0,
+        spend_limit_ton NUMERIC NOT NULL DEFAULT 50,
+        nft_index       TEXT,
+        collection_addr TEXT,
+        metadata        JSONB DEFAULT '{}',
+        created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at      TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_aw_user ON builder_bot.agentic_wallets(user_id)
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_aw_agent ON builder_bot.agentic_wallets(agent_id) WHERE agent_id IS NOT NULL
+    `);
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_aw_address ON builder_bot.agentic_wallets(address)
+    `);
+
+    console.log('✅ AI proposals + daily spend + audit/approvals/skills/shared/bugs + agentic_wallets migrations applied');
   } catch (e) {
     console.error('❌ AI proposals migration failed:', e);
   } finally {
