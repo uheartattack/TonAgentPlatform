@@ -107,8 +107,18 @@ interface AgentRunData {
 // При рестарте бота state восстанавливается из DB (см. runner.ts restoreActiveAgents).
 export const agentState: Map<number, Map<string, any>> = new Map();
 
-// Последняя ошибка для auto-repair
+// Последняя ошибка для auto-repair (capped to prevent unbounded growth)
 export const agentLastErrors: Map<number, { error: string; code: string; timestamp: Date }> = new Map();
+
+// Lock set to prevent TOCTOU race in runAgent
+const _agentRunLock = new Set<number>();
+
+// Prune stale entries from agentState/agentLastErrors (call on agent deactivation)
+export function pruneAgentMemory(agentId: number): void {
+  agentState.delete(agentId);
+  agentLastErrors.delete(agentId);
+  _agentRunLock.delete(agentId);
+}
 
 // ===== Persistent runner registry =====
 // Хранит stopFlag и promise для живых агентов (persistent mode)
@@ -172,12 +182,19 @@ export class ExecutionTools {
         userId:  params.userId,
         triggerType: params.triggerType || 'manual',
       });
-    } catch { /* not initialized */ }
+    } catch (histErr: any) { console.warn(`[ExecutionTools] history.start failed agent #${params.agentId}:`, histErr?.message); }
 
     try {
+      // Atomic lock to prevent TOCTOU race (two concurrent runAgent calls)
+      if (_agentRunLock.has(params.agentId)) {
+        return { success: false, error: 'Агент уже запущен' };
+      }
+      _agentRunLock.add(params.agentId);
+
       // Проверяем, не запущен ли уже
       const current = this.runningAgents.get(params.agentId);
       if (current?.status === 'running') {
+        _agentRunLock.delete(params.agentId);
         return {
           success: false,
           error: 'Агент уже запущен',
@@ -211,12 +228,15 @@ export class ExecutionTools {
         } catch { /* ignore */ }
       }
 
-      // Обновляем статус
+      // Обновляем статус + release lock
       const existing = this.runningAgents.get(params.agentId);
       if (existing) {
         existing.status = 'idle';
+        // Cap logs to prevent unbounded memory growth for scheduled agents
+        if (existing.logs.length > 500) existing.logs.splice(0, existing.logs.length - 200);
         this.runningAgents.set(params.agentId, existing);
       }
+      _agentRunLock.delete(params.agentId);
 
       if (params.onResult) {
         params.onResult({ success: result.success, result: result.result, error: result.error, logs, executionTime });
@@ -248,6 +268,7 @@ export class ExecutionTools {
         existing.status = 'error';
         this.runningAgents.set(params.agentId, existing);
       }
+      _agentRunLock.delete(params.agentId);
 
       return {
         success: false,
@@ -289,11 +310,21 @@ export class ExecutionTools {
       }
       const stateMap = agentState.get(agentId)!;
 
+      // SSRF-protected fetch wrapper — blocks internal/metadata IPs
+      const _BLOCKED_RE = /^https?:\/\/(?:localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|10\.\d+\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+|169\.254\.\d+\.\d+|\[?::1\]?)/i;
+      const safeFetch = (input: any, init?: any) => {
+        const url = typeof input === 'string' ? input : input?.url || String(input);
+        if (_BLOCKED_RE.test(url) || /^file:/i.test(url) || /^ftp:/i.test(url)) {
+          return Promise.reject(new Error('Blocked: internal/local URLs are not allowed'));
+        }
+        return nativeFetch(input, init);
+      };
+
       const vm = new NodeVM({
         timeout: 55000, // 55s — у API иногда долгий response
         sandbox: {
-          // ── Реальный fetch из Node 18+ ──
-          fetch: nativeFetch,
+          // ── SSRF-protected fetch ──
+          fetch: safeFetch,
 
           // ── Контекст агента ──
           context: {
@@ -1160,16 +1191,22 @@ ${code}
         });
       }, params.intervalMs);
 
-      // Сохраняем состояние
-      this.runningAgents.set(params.agentId, {
-        status: 'idle',
-        startTime: new Date(),
-        logs: [],
-        intervalHandle,
-        intervalMs: params.intervalMs,
-        agentId: params.agentId,
-        userId: params.userId,
-      });
+      // Сохраняем intervalHandle в существующий entry (не перезаписывая status!)
+      const agentEntry = this.runningAgents.get(params.agentId);
+      if (agentEntry) {
+        agentEntry.intervalHandle = intervalHandle;
+        agentEntry.intervalMs = params.intervalMs;
+      } else {
+        this.runningAgents.set(params.agentId, {
+          status: 'idle',
+          startTime: new Date(),
+          logs: [],
+          intervalHandle,
+          intervalMs: params.intervalMs,
+          agentId: params.agentId,
+          userId: params.userId,
+        });
+      }
 
       return { success: true, message: `Агент активирован, интервал ${params.intervalMs}ms` };
     } catch (error) {
@@ -1272,6 +1309,8 @@ ${code}
       clearInterval(current.intervalHandle);
     }
     this.runningAgents.delete(agentId);
+    // Clean up memory caches to prevent unbounded growth
+    pruneAgentMemory(agentId);
     return { success: true, message: 'Агент деактивирован' };
   }
 
