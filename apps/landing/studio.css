@@ -588,6 +588,24 @@ body {
   letter-spacing: 1.5px;
   letter-spacing: 0.5px;
 }
+.alpha-badge {
+  display: inline-block;
+  font-size: 0.5rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: linear-gradient(135deg, #f5a623 0%, #e74c3c 100%);
+  color: #fff;
+  text-transform: uppercase;
+  line-height: 1;
+  margin-top: 2px;
+  animation: alphaPulse 3s ease-in-out infinite;
+}
+@keyframes alphaPulse {
+  0%, 100% { opacity: 0.85; }
+  50% { opacity: 1; box-shadow: 0 0 8px rgba(245,166,35,0.4); }
+}
 
 /* Sidebar Navigation */
 .sidebar-nav {
@@ -4046,6 +4064,25 @@ select.form-input option {
   border-radius: 20px;
   font-size: 0.8rem;
   color: var(--text-secondary);
+}
+
+/* Onboarding disclaimer */
+.onboarding-disclaimer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 10px 14px;
+  background: rgba(245, 166, 35, 0.08);
+  border: 1px solid rgba(245, 166, 35, 0.25);
+  border-radius: 10px;
+  font-size: 0.75rem;
+  color: var(--warning);
+  line-height: 1.4;
+}
+.onboarding-disclaimer svg {
+  flex-shrink: 0;
+  stroke: var(--warning);
 }
 
 /* Step 2: Option buttons */
