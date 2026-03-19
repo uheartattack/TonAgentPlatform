@@ -164,7 +164,7 @@ function _getSharedStatePool(): any {
       host: process.env.DB_HOST || 'localhost',
       port: parseInt(process.env.DB_PORT || '5432'),
       user: process.env.DB_USER || 'ton_agent',
-      password: process.env.DB_PASSWORD || 'changeme',
+      password: process.env.DB_PASSWORD || '',
       database: process.env.DB_NAME || 'ton_agent_platform',
       max: 3,
     });
@@ -4078,7 +4078,7 @@ async function checkDailySpendCap(agentId: number, userId: number, amountTon: nu
     return null; // OK to spend
   } catch (e: any) {
     console.warn(`[DailySpend] check failed for agent #${agentId}: ${e.message}`);
-    return null; // fail-open: allow if DB error
+    return `Daily spend check failed (DB error). Transaction blocked for safety. Retry later.`; // fail-closed: block if DB error
   }
 }
 
@@ -9098,6 +9098,17 @@ export class AIAgentRuntime {
       clearInterval(h.interval);
       if (h.firstTickTimer) clearTimeout(h.firstTickTimer);
       _activeHandles.delete(agentId);
+      // Clean up memory maps to prevent leaks
+      _pendingMessages.delete(agentId);
+      _lastMessageTime.delete(agentId);
+      _channelPostTimes.forEach((_, key) => { if (key.startsWith(agentId + ':')) _channelPostTimes.delete(key); });
+      _circuitBreakers.delete(agentId);
+      _recentPostHashes.forEach((_, key) => { if (key.startsWith(agentId + ':')) _recentPostHashes.delete(key); });
+      _toolCircuitBreakers.forEach((_, key) => { if (key.startsWith(agentId + ':')) _toolCircuitBreakers.delete(key); });
+      _dailySpendMem.delete(agentId);
+      _webRequestCounts.delete(agentId);
+      // Note: _approvalWaiters is keyed by approval ID (number), cleaned by timeout
+      _pendingAsks.delete(String(agentId));
       // Clean up Event Bus (subscriptions + wake timers)
       try { require('./event-bus').getEventBus().cleanupAgent(agentId); } catch {}
       // Kill MCP subprocess if any
