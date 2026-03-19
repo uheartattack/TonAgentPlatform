@@ -139,7 +139,7 @@ async function callWithFallback(
 }
 
 // ID владельца (owner)
-const OWNER_ID = parseInt(process.env.OWNER_ID || '130806013', 10);
+const OWNER_ID = parseInt(process.env.OWNER_ID || '0', 10);
 
 // Контекст разговора
 interface ConversationContext {
@@ -820,6 +820,7 @@ ${studioContext?.source === 'studio' ? `
 
       case 'toggle_agent': {
         const agentId = safeId(params[0]);
+        if (!agentId) return { type: 'text', content: '❌ Invalid agent ID' };
         const result = await this.runner.toggleAgent(agentId, userId);
         return {
           type: 'text',
@@ -1474,7 +1475,8 @@ ${toolSections}
       return { type: 'text', content: `❌ Ошибка: ${dbResult.error}` };
     }
 
-    const agent = dbResult.data!;
+    const agent = dbResult.data;
+    if (!agent) return { type: 'text', content: '❌ Agent creation returned empty result' };
     const agentId = agent.id;
 
     // 5.5) Save modular prompt modules (SOUL, STRATEGY, HEARTBEAT) for prompt-builder
@@ -1685,6 +1687,7 @@ ${toolSections}
     }
 
     const agentId = parseInt(agentIdMatch[1] || agentIdMatch[2]);
+    if (isNaN(agentId)) return { type: 'text', content: '❌ Не удалось определить ID агента. Укажите #ID, например: "измени агента #5"' };
 
     // Извлекаем запрос на изменение
     const modification = message
@@ -1956,7 +1959,7 @@ ${toolSections}
                       agent.triggerType === 'webhook' ? '🔗' : '📡';
       content += `${status} **#${agent.id}** ${agent.name} ${trigger}\n`;
       if (agent.description) {
-        content += `   _${agent.description.slice(0, 50)}..._\n`;
+        content += `   _${agent.description.length > 50 ? agent.description.slice(0, 50) + '...' : agent.description}_\n`;
       }
       content += '\n';
     });
@@ -2528,8 +2531,7 @@ ${topData.join('\n')}
         { role: 'user', content: userContent },
       ], userId, 800);
 
-      // Сохраняем в историю
-      await getMemoryManager().addMessage(userId, 'user', message);
+      // Save assistant response to history (user message already saved by processMessage)
       await getMemoryManager().addMessage(userId, 'assistant', analysis);
 
       return {
@@ -2999,7 +3001,7 @@ ${isOwner ? '\nТЫ ОБЩАЕШЬСЯ С ВЛАДЕЛЬЦЕМ ПЛАТФОРМ�
       }
 
       // Шаблоны прошли ручную проверку → security score 95-98
-      const secScore = 95 + Math.floor(Math.random() * 4);
+      const secScore = 96; // Templates are manually reviewed — fixed score
       // Блокируем авто-старт только если есть обязательные (required=true) плейсхолдеры
       const hasPlaceholders = template.placeholders.some(p => (p as any).required === true);
       const allPlaceholders = template.placeholders;
