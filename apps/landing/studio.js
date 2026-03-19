@@ -2774,6 +2774,7 @@ async function createAgentWalletFromSettings() {
 }
 
 var _cachedMnemonic = '';
+var _mnemonicClearTimer = null;
 
 async function revealWalletMnemonic() {
   if (!_detailAgentId) return;
@@ -2781,6 +2782,9 @@ async function revealWalletMnemonic() {
     var data = await apiRequest('GET', '/api/agents/' + _detailAgentId + '/mnemonic');
     if (data.ok && data.mnemonic) {
       _cachedMnemonic = data.mnemonic;
+      // Auto-clear mnemonic from memory after 60 seconds for security
+      if (_mnemonicClearTimer) clearTimeout(_mnemonicClearTimer);
+      _mnemonicClearTimer = setTimeout(function() { _cachedMnemonic = ''; _mnemonicClearTimer = null; }, 60000);
       var words = data.mnemonic.split(' ');
       var html = words.map(function(w, i) {
         return '<span style="display:inline-block;background:var(--bg-secondary);padding:2px 8px;margin:2px;border-radius:6px;border:1px solid var(--border)">' +
@@ -6868,9 +6872,9 @@ function showAtlasDeployStep() {
       '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:#94a3b8">' +
       '<span>' + IC.wrench + ' ' + d.nodeCount + ' блоков</span><span>' + IC.link + ' ' + d.edgeCount + ' связей</span></div>' +
       '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">' +
-      d.caps.map(function(c) { return '<span style="background:rgba(125,211,252,0.12);color:#7dd3fc;padding:3px 10px;border-radius:12px;font-size:12px">' + c + '</span>'; }).join('') +
+      d.caps.map(function(c) { return '<span style="background:rgba(125,211,252,0.12);color:#7dd3fc;padding:3px 10px;border-radius:12px;font-size:12px">' + escHtml(c) + '</span>'; }).join('') +
       '</div>' +
-      (d.warnings.length ? '<div style="margin-top:10px;font-size:12px;color:#fbbf24">' + d.warnings.join('<br>') + '</div>' : '') +
+      (d.warnings.length ? '<div style="margin-top:10px;font-size:12px;color:#fbbf24">' + d.warnings.map(escHtml).join('<br>') + '</div>' : '') +
       '</div>';
     questionEl.innerHTML = '<p style="color:#e2e8f0;font-size:14px;margin:0">Хотите, чтобы Atlas улучшил агента AI-интеллектом?</p>';
     optionsEl.innerHTML = '';
