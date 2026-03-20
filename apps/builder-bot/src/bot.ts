@@ -1,7 +1,7 @@
 import { Telegraf, Context, Markup } from 'telegraf';
 import { message } from 'telegraf/filters';
 import { pe, peb, escHtml, div } from './premium-emoji';
-import { getOrchestrator, MODEL_LIST, getUserModel, setUserModel, type ModelId, type AgentSetupNeeds } from './agents/orchestrator';
+import { getOrchestrator, MODEL_LIST, getUserModel, setUserModel, type ModelId, type AgentSetupNeeds, setLastInteractedAgent } from './agents/orchestrator';
 import {
   authSendPhone, authSubmitCode, authSubmitPassword,
   authStartQR, cancelQRLogin, type Complete2FAFn,
@@ -2373,6 +2373,43 @@ bot.command('gdp', async (ctx) => {
       }
     }
 
+    await safeReply(ctx, text, { parse_mode: 'HTML' });
+  } catch (e: any) {
+    await safeReply(ctx, '❌ ' + e.message);
+  }
+});
+
+bot.command('domain', async (ctx) => {
+  try {
+    const { getUserDomains, claimAgentDomain, resolveDomain } = require('./services/ton-dns');
+    const userId = ctx.from!.id;
+    const args = ctx.message.text.split(' ').slice(1);
+
+    // /domain resolve <name.ton>
+    if (args[0] === 'resolve' && args[1]) {
+      const result = await resolveDomain(args[1]);
+      if (result.ok) return safeReply(ctx, `🌐 <b>${escHtml(args[1])}</b>\n📍 ${escHtml(result.address)}`, { parse_mode: 'HTML' });
+      return safeReply(ctx, `❌ ${result.error}`);
+    }
+
+    // /domain claim <agentId> <name>
+    if (args[0] === 'claim' && args[1] && args[2]) {
+      const agentId = parseInt(args[1]);
+      if (isNaN(agentId)) return safeReply(ctx, '❌ /domain claim <agent_id> <name>');
+      const result = await claimAgentDomain(agentId, userId, args[2]);
+      if (result.ok) return safeReply(ctx, `✅ Домен <b>${escHtml(args[2])}.ton</b> закреплён за агентом #${agentId}`, { parse_mode: 'HTML' });
+      return safeReply(ctx, `❌ ${result.error}`);
+    }
+
+    // /domain — list user's domains
+    const domains = await getUserDomains(userId);
+    if (!domains.length) {
+      return safeReply(ctx, '🌐 <b>TON DNS</b>\n\nУ вас нет доменов.\n\n/domain claim &lt;agent_id&gt; &lt;name&gt; — закрепить домен\n/domain resolve &lt;name.ton&gt; — проверить домен', { parse_mode: 'HTML' });
+    }
+    let text = '🌐 <b>Ваши .ton домены:</b>\n\n';
+    for (const d of domains) {
+      text += `• <b>${escHtml(d.domain)}</b> → Агент #${d.agentId} (${d.status})\n`;
+    }
     await safeReply(ctx, text, { parse_mode: 'HTML' });
   } catch (e: any) {
     await safeReply(ctx, '❌ ' + e.message);
@@ -7299,7 +7336,14 @@ async function sendResult(ctx: Context, result: {
     await editOrReply(ctx, content, { parse_mode: 'HTML', ...extra });
   }
 
-  // After agent creation — start smart setup wizard if needs detected
+  // After agent creation — track for iterative refinement + start smart setup wizard
+  if (result.type === 'agent_created' && result.agentId) {
+    const uid = (ctx.from as any)?.id;
+    if (uid) {
+      pendingRefinements.set(uid, result.agentId);
+      setLastInteractedAgent(uid, result.agentId);
+    }
+  }
   if (result.type === 'agent_created' && result.agentId && result.setupNeeds) {
     const uid = (ctx.from as any)?.id;
     if (uid) {
@@ -9249,6 +9293,8 @@ export function startBot() {
   initNotifier(bot);
   try { const { initCrewSystem } = require('./services/crew-system'); initCrewSystem(dbPool); } catch (e: any) { console.warn('CrewSystem init failed:', e.message); }
   try { const { initReputation } = require('./services/agent-reputation'); initReputation(dbPool); } catch (e: any) { console.warn('Reputation init failed:', e.message); }
+  try { const { initTonDNS } = require('./services/ton-dns'); initTonDNS(dbPool); } catch (e: any) { console.warn('TonDNS init failed:', e.message); }
+  try { const { initPluginMarketplace } = require('./services/plugin-marketplace'); initPluginMarketplace(dbPool); } catch (e: any) { console.warn('PluginMarketplace init failed:', e.message); }
 
   console.log('🤖 Starting TON Agent Platform Bot...');
   console.log(`🏪 Loaded ${allAgentTemplates.length} agent templates`);
