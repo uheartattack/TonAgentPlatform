@@ -767,7 +767,6 @@ function _getAllPendingMaps(): [string, Map<any, any> | Set<any>][] {
     ['walletImport', pendingWalletImport],
     ['walletLimit', pendingWalletLimit],
     ['walletRename', pendingWalletRename],
-    ['memSetting', pendingMemSetting],
   ];
 }
 
@@ -3639,7 +3638,6 @@ bot.action('link_wallet_manual', async (ctx) => {
 
 // ── Глобальные API ключи ──────────────────────────────────────────────
 const pendingApiKey = new Map<number, { provider?: string }>();
-const pendingMemSetting = new Map<number, { agentId: number; field: string; ts: number }>();
 
 bot.action('profile_api_keys', async (ctx) => {
   await ctx.answerCbQuery();
@@ -3881,6 +3879,11 @@ bot.action(/^agent_memory:(\d+)$/, async (ctx) => {
   const agentId = parseInt(ctx.match[1]);
 
   try {
+    // Ownership check
+    const ownerCheck = await getDBTools().getAgent(agentId, userId);
+    if (!ownerCheck.success || !ownerCheck.data) { await ctx.answerCbQuery('Агент не найден'); return; }
+    await ctx.answerCbQuery();
+
     const { getMemoryStats, getMemorySettings } = await import('./services/agent-memory');
     const stats = await getMemoryStats(agentId);
     const settings = await getMemorySettings(agentId);
@@ -3944,7 +3947,11 @@ bot.action(/^mem_browse:(\d+):(\w+)(?::(\d+))?$/, async (ctx) => {
   const category = ctx.match[2];
   const offset = parseInt(ctx.match[3] || '0');
 
+  const ownerCheck = await getDBTools().getAgent(agentId, ctx.from.id);
+  if (!ownerCheck.success || !ownerCheck.data) { await ctx.answerCbQuery('Нет доступа'); return; }
+
   try {
+    await ctx.answerCbQuery();
     const { browseMemory } = await import('./services/agent-memory');
     const { entries, total } = await browseMemory(agentId, category, offset, 8);
 
@@ -3983,10 +3990,13 @@ bot.action(/^mem_browse:(\d+):(\w+)(?::(\d+))?$/, async (ctx) => {
 
 bot.action(/^mem_clear:(\d+):(\w+)$/, async (ctx) => {
   if (!ctx.from) return;
+  const userId = ctx.from.id;
   const agentId = parseInt(ctx.match[1]);
   const category = ctx.match[2] as any;
 
   try {
+    const ownerCheck = await getDBTools().getAgent(agentId, userId);
+    if (!ownerCheck.success || !ownerCheck.data) { await ctx.answerCbQuery('Нет доступа'); return; }
     const { clearMemoryCategory } = await import('./services/agent-memory');
     const deleted = await clearMemoryCategory(agentId, category);
     await ctx.answerCbQuery(`Удалено ${deleted} записей`);
@@ -4004,6 +4014,10 @@ bot.action(/^mem_clear:(\d+):(\w+)$/, async (ctx) => {
 bot.action(/^mem_compress:(\d+)$/, async (ctx) => {
   if (!ctx.from) return;
   const agentId = parseInt(ctx.match[1]);
+  const userId = ctx.from.id;
+
+  const ownerCheck = await getDBTools().getAgent(agentId, userId);
+  if (!ownerCheck.success || !ownerCheck.data) { await ctx.answerCbQuery('Нет доступа'); return; }
 
   try {
     await ctx.answerCbQuery('Сжатие памяти...');
@@ -4037,6 +4051,10 @@ bot.action(/^mem_compress:(\d+)$/, async (ctx) => {
 bot.action(/^mem_maintain:(\d+)$/, async (ctx) => {
   if (!ctx.from) return;
   const agentId = parseInt(ctx.match[1]);
+  const userId = ctx.from.id;
+
+  const ownerCheck = await getDBTools().getAgent(agentId, userId);
+  if (!ownerCheck.success || !ownerCheck.data) { await ctx.answerCbQuery('Нет доступа'); return; }
 
   try {
     await ctx.answerCbQuery('Обслуживание...');
@@ -4059,8 +4077,13 @@ bot.action(/^mem_maintain:(\d+)$/, async (ctx) => {
 bot.action(/^mem_settings:(\d+)$/, async (ctx) => {
   if (!ctx.from) return;
   const agentId = parseInt(ctx.match[1]);
+  const userId = ctx.from.id;
+
+  const ownerCheck = await getDBTools().getAgent(agentId, userId);
+  if (!ownerCheck.success || !ownerCheck.data) { await ctx.answerCbQuery('Нет доступа'); return; }
 
   try {
+    await ctx.answerCbQuery();
     const { getMemorySettings } = await import('./services/agent-memory');
     const s = await getMemorySettings(agentId);
 
@@ -4097,6 +4120,10 @@ bot.action(/^mem_toggle:(\d+):(\w+)$/, async (ctx) => {
   if (!ctx.from) return;
   const agentId = parseInt(ctx.match[1]);
   const key = ctx.match[2];
+  const userId = ctx.from.id;
+
+  const ownerCheck = await getDBTools().getAgent(agentId, userId);
+  if (!ownerCheck.success || !ownerCheck.data) { await ctx.answerCbQuery('Нет доступа'); return; }
 
   try {
     const { getMemorySettings, setMemorySettings } = await import('./services/agent-memory');
@@ -4135,7 +4162,9 @@ bot.action(/^mem_toggle:(\d+):(\w+)$/, async (ctx) => {
 
 bot.action(/^mem_set_ttl:(\d+)$/, async (ctx) => {
   if (!ctx.from) return;
-  pendingMemSetting.set(ctx.from.id, { agentId: parseInt(ctx.match[1]), field: 'memoryTTLDays', ts: Date.now() });
+  const ownerCheck = await getDBTools().getAgent(parseInt(ctx.match[1]), ctx.from.id);
+  if (!ownerCheck.success || !ownerCheck.data) { await ctx.answerCbQuery('Нет доступа'); return; }
+  await ctx.answerCbQuery();
   await editOrReply(ctx, '⏱️ Введите TTL памяти в днях (0 = бесконечный):', {
     reply_markup: { inline_keyboard: [
       [{ text: '0 (∞)', callback_data: `mem_set_val:${ctx.match[1]}:memoryTTLDays:0` }, { text: '30', callback_data: `mem_set_val:${ctx.match[1]}:memoryTTLDays:30` }],
@@ -4147,6 +4176,9 @@ bot.action(/^mem_set_ttl:(\d+)$/, async (ctx) => {
 
 bot.action(/^mem_set_budget:(\d+)$/, async (ctx) => {
   if (!ctx.from) return;
+  const ownerCheck = await getDBTools().getAgent(parseInt(ctx.match[1]), ctx.from.id);
+  if (!ownerCheck.success || !ownerCheck.data) { await ctx.answerCbQuery('Нет доступа'); return; }
+  await ctx.answerCbQuery();
   await editOrReply(ctx, '📊 Выберите бюджет токенов для памяти в контексте:', {
     reply_markup: { inline_keyboard: [
       [
@@ -4165,6 +4197,9 @@ bot.action(/^mem_set_budget:(\d+)$/, async (ctx) => {
 
 bot.action(/^mem_set_max:(\d+):(\w+)$/, async (ctx) => {
   if (!ctx.from) return;
+  const ownerCheck = await getDBTools().getAgent(parseInt(ctx.match[1]), ctx.from.id);
+  if (!ownerCheck.success || !ownerCheck.data) { await ctx.answerCbQuery('Нет доступа'); return; }
+  await ctx.answerCbQuery();
   const field = ctx.match[2];
   const label = field === 'maxMemories' ? 'воспоминаний' : 'уроков';
   await editOrReply(ctx, `📦 Макс. кол-во ${label}:`, {
@@ -4186,12 +4221,16 @@ bot.action(/^mem_set_max:(\d+):(\w+)$/, async (ctx) => {
 bot.action(/^mem_set_val:(\d+):(\w+):(\d+)$/, async (ctx) => {
   if (!ctx.from) return;
   const agentId = parseInt(ctx.match[1]);
+  const userId = ctx.from.id;
   const field = ctx.match[2];
   const value = parseInt(ctx.match[3]);
 
+  const ownerCheck = await getDBTools().getAgent(agentId, userId);
+  if (!ownerCheck.success || !ownerCheck.data) { await ctx.answerCbQuery('Нет доступа'); return; }
+
   try {
     const { setMemorySettings } = await import('./services/agent-memory');
-    await setMemorySettings(agentId, ctx.from.id, { [field]: value } as any);
+    await setMemorySettings(agentId, userId, { [field]: value } as any);
     await ctx.answerCbQuery(`${field} = ${value}`);
     // Re-render settings
     const { getMemorySettings } = await import('./services/agent-memory');

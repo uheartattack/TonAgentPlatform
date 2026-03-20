@@ -1467,7 +1467,8 @@ ${toolSections}
       const allAgents = allAgentsResult.data || [];
       const existingAgentsWithTg = allAgents.filter((a: any) => {
         const tc = a.triggerConfig || a.trigger_config;
-        const tcObj = typeof tc === 'string' ? JSON.parse(tc) : tc;
+        let tcObj: any;
+        try { tcObj = typeof tc === 'string' ? JSON.parse(tc) : tc; } catch { tcObj = {}; }
         return tcObj?.telegram_session?.session && a.triggerType === 'ai_agent';
       });
       if (existingAgentsWithTg.length > 0) {
