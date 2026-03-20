@@ -964,6 +964,7 @@ const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
   confirmation:['ask_user_confirmation'],
   image_gen:   ['generate_image'],
   email:       ['send_email'],
+  self_memory: ['memory_stats', 'clear_memory_category', 'compress_memories', 'browse_memory', 'run_memory_maintenance', 'get_memory_settings', 'update_memory_settings'],
 };
 
 // ── Tool definitions (OpenAI function_call format) ─────────────────────────
@@ -4130,6 +4131,100 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
         }, required: ['chat_id'] },
       },
     },
+
+    // ── Self-Memory Management Tools ──────────────────────────────────
+    {
+      type: 'function' as const,
+      function: {
+        name: 'memory_stats',
+        description: 'Get statistics about your memory: count of entries by category, total size, evolution count. Use to understand what you remember.',
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'clear_memory_category',
+        description: 'Clear all entries in a specific memory category. Use carefully — this is irreversible.',
+        parameters: {
+          type: 'object',
+          properties: {
+            category: { type: 'string', enum: ['memories', 'lessons', 'knowledge', 'contacts', 'chatDossiers', 'engagement', 'all'], description: 'Category to clear' },
+          },
+          required: ['category'],
+        },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'compress_memories',
+        description: 'Compress old memories or lessons into fewer consolidated entries using AI summarization. Reduces clutter while preserving key facts.',
+        parameters: {
+          type: 'object',
+          properties: {
+            category: { type: 'string', enum: ['memories', 'lessons'], description: 'Category to compress (default: memories)' },
+          },
+          required: [],
+        },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'browse_memory',
+        description: 'Browse your memory entries by category with pagination. Returns key, preview and size of each entry.',
+        parameters: {
+          type: 'object',
+          properties: {
+            category: { type: 'string', enum: ['memories', 'lessons', 'knowledge', 'contacts', 'chatDossiers', 'engagement'], description: 'Category to browse (omit for all)' },
+            offset: { type: 'number', description: 'Starting position (default: 0)' },
+            limit: { type: 'number', description: 'Number of entries (default: 10, max: 20)' },
+          },
+          required: [],
+        },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'run_memory_maintenance',
+        description: 'Run memory maintenance: enforce retention limits, apply TTL, clean old daily logs. Returns count of pruned/expired entries.',
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'get_memory_settings',
+        description: 'Get current memory configuration: enabled categories, retention limits, TTL, context injection priority.',
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'update_memory_settings',
+        description: 'Update memory configuration. Pass only the fields you want to change.',
+        parameters: {
+          type: 'object',
+          properties: {
+            enableMemories: { type: 'boolean', description: 'Enable remember/recall' },
+            enableLessons: { type: 'boolean', description: 'Enable save_lesson' },
+            enableKnowledge: { type: 'boolean', description: 'Enable knowledge base' },
+            enableContacts: { type: 'boolean', description: 'Enable contact dossiers' },
+            enableEvolution: { type: 'boolean', description: 'Enable prompt self-evolution' },
+            maxMemories: { type: 'number', description: 'Max memory entries (default 200)' },
+            maxLessons: { type: 'number', description: 'Max lesson entries (default 30)' },
+            memoryTTLDays: { type: 'number', description: 'Auto-expire memories after N days (0=never)' },
+            lessonTTLDays: { type: 'number', description: 'Auto-expire lessons after N days (0=never)' },
+            maxContextTokens: { type: 'number', description: 'Token budget for memory in context (default 2000)' },
+            evolveInterval: { type: 'number', description: 'Interactions between evolutions (default 50)' },
+          },
+          required: [],
+        },
+      },
+    },
   ];
 
   // Append MCP tools (dynamically discovered from @ton/mcp server)
@@ -4158,6 +4253,8 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
      'set_next_wake', 'subscribe_event', 'unsubscribe_event', 'emit_event', 'get_wake_info',
      // Human-in-the-loop confirmation (always available)
      'ask_user_confirmation',
+     // Self-memory management (always available)
+     'memory_stats', 'clear_memory_category', 'compress_memories', 'browse_memory', 'run_memory_maintenance', 'get_memory_settings', 'update_memory_settings',
     ].forEach(t => allowed.add(t));
     // Always allow MCP tools if ton_mcp capability is enabled
     if (enabledCapabilities.includes('ton_mcp') && mcpTools) {
@@ -5332,6 +5429,10 @@ export async function executeTool(
     // ── Self-Awareness tools ──
     case 'remember': {
       try {
+        const { isCategoryEnabled } = await import('../services/agent-memory');
+        if (!(await isCategoryEnabled(params.agentId, 'memories'))) {
+          return { ok: false, error: 'Memories are disabled in memory settings. Use update_memory_settings to enable.' };
+        }
         const memKey = `mem:${String(args.key).slice(0, 50)}`;
         const category = args.category || 'fact';
         const importance = args.importance || 'medium';
@@ -5467,6 +5568,10 @@ export async function executeTool(
 
     case 'save_lesson': {
       try {
+        const { isCategoryEnabled: isLessonEnabled } = await import('../services/agent-memory');
+        if (!(await isLessonEnabled(params.agentId, 'lessons'))) {
+          return { ok: false, error: 'Lessons are disabled in memory settings. Use update_memory_settings to enable.' };
+        }
         const lesson = { text: args.lesson, category: args.category || 'insight', savedAt: new Date().toISOString() };
         const key = `lesson:${Date.now()}`;
         await stateRepo.set(params.agentId, params.userId, key, JSON.stringify(lesson));
@@ -5480,6 +5585,52 @@ export async function executeTool(
         }
         return { ok: true, lesson: lesson.text, totalLessons: Math.min(lessonKeys.length + 1, 30) };
       } catch (e: any) { return { ok: false, error: e.message }; }
+    }
+
+    // ── Self-Memory Management Tools ──────────────────────────────────
+    case 'memory_stats': {
+      const { getMemoryStats } = await import('../services/agent-memory');
+      const stats = await getMemoryStats(params.agentId);
+      return { result: stats };
+    }
+
+    case 'clear_memory_category': {
+      const { clearMemoryCategory } = await import('../services/agent-memory');
+      const deleted = await clearMemoryCategory(params.agentId, args.category);
+      return { result: { deleted, category: args.category } };
+    }
+
+    case 'compress_memories': {
+      const { compressMemories } = await import('../services/agent-memory');
+      const { client: aiClientForCompress, defaultModel: compressModel } = getAIClient(params.config);
+      const result = await compressMemories(params.agentId, params.userId, aiClientForCompress, compressModel, args.category || 'memories');
+      return { result };
+    }
+
+    case 'browse_memory': {
+      const { browseMemory } = await import('../services/agent-memory');
+      const limit = Math.min(args.limit || 10, 20);
+      const result = await browseMemory(params.agentId, args.category, args.offset || 0, limit);
+      return { result };
+    }
+
+    case 'run_memory_maintenance': {
+      const { runMemoryMaintenance } = await import('../services/agent-memory');
+      const result = await runMemoryMaintenance(params.agentId);
+      return { result };
+    }
+
+    case 'get_memory_settings': {
+      const { getMemorySettings } = await import('../services/agent-memory');
+      const settings = await getMemorySettings(params.agentId);
+      return { result: settings };
+    }
+
+    case 'update_memory_settings': {
+      const { setMemorySettings, getMemorySettings } = await import('../services/agent-memory');
+      await setMemorySettings(params.agentId, params.userId, args);
+      const updated = await getMemorySettings(params.agentId);
+      return { result: { updated: true, settings: updated } };
     }
 
     case 'manage_goals': {
@@ -7354,6 +7505,10 @@ export async function executeTool(
 
     // ── Knowledge store (uses agent_state with prefix) ──
     case 'knowledge_save': {
+      const { isCategoryEnabled: isKnowledgeEnabled } = await import('../services/agent-memory');
+      if (!(await isKnowledgeEnabled(params.agentId, 'knowledge'))) {
+        return { ok: false, error: 'Knowledge base is disabled in memory settings. Use update_memory_settings to enable.' };
+      }
       const cat = (args.category as string) || 'notes';
       const title = args.title as string;
       const content = args.content as string;
@@ -8456,8 +8611,10 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
 
     // Long-term memory: session summaries + daily logs
     try {
-      const { buildMemoryDigest } = await import('../services/agent-memory');
-      const ltm = await buildMemoryDigest(params.agentId);
+      const { buildPrioritizedMemoryDigest } = await import('../services/agent-memory');
+      const chatId = params.context?.chatId as string | undefined;
+      const senderId = params.context?.senderId as string | undefined;
+      const ltm = await buildPrioritizedMemoryDigest(params.agentId, chatId, senderId);
       if (ltm) memoryDigest += ltm;
     } catch {}
   } catch (e: any) {

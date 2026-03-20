@@ -807,3 +807,586 @@ export async function buildProactiveContext(agentId: number): Promise<string> {
   });
   return `\n🟢 ПРОАКТИВНЫЕ ЧАТЫ (отвечай даже без упоминания):\n${lines.join('\n')}`;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CONFIGURABLE SELF-MEMORY SYSTEM
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Memory settings for an agent — stored as agent_state key `_memory_settings` */
+export interface MemorySettings {
+  // Category toggles (true = enabled)
+  enableMemories: boolean;      // remember/recall (mem:* keys)
+  enableLessons: boolean;       // save_lesson (lesson:* keys)
+  enableKnowledge: boolean;     // knowledge_save/search (kb:* keys)
+  enableContacts: boolean;      // contact dossiers (contact:* keys)
+  enableChatDossiers: boolean;  // chat_dossier:* keys
+  enableEvolution: boolean;     // self-evolving prompt
+
+  // Retention limits
+  maxMemories: number;          // max mem:* entries (default 200)
+  maxLessons: number;           // max lesson:* entries (default 30)
+  maxKnowledge: number;         // max kb:* entries (default 100)
+  maxContacts: number;          // max contact:* entries (default 500)
+  memoryTTLDays: number;        // auto-expire memories after N days (0 = never)
+  lessonTTLDays: number;        // auto-expire lessons after N days (0 = never)
+
+  // Priority settings for context injection
+  priorityCategories: string[]; // ordered priority: ['memories','contacts','lessons','knowledge']
+  maxContextTokens: number;     // max tokens budget for memory injection (default 2000)
+
+  // Evolution settings
+  evolveInterval: number;       // interactions between evolutions (default 50)
+  maxEvolutions: number;        // max total evolutions (default 20, 0 = unlimited)
+}
+
+const DEFAULT_MEMORY_SETTINGS: MemorySettings = {
+  enableMemories: true,
+  enableLessons: true,
+  enableKnowledge: true,
+  enableContacts: true,
+  enableChatDossiers: true,
+  enableEvolution: true,
+  maxMemories: 200,
+  maxLessons: 30,
+  maxKnowledge: 100,
+  maxContacts: 500,
+  memoryTTLDays: 0,
+  lessonTTLDays: 0,
+  priorityCategories: ['memories', 'contacts', 'lessons', 'knowledge'],
+  maxContextTokens: 2000,
+  evolveInterval: 50,
+  maxEvolutions: 20,
+};
+
+/** Get memory settings for agent (with defaults) */
+export async function getMemorySettings(agentId: number): Promise<MemorySettings> {
+  try {
+    const { getAgentStateRepository } = await import('../db/schema-extensions');
+    const repo = getAgentStateRepository();
+    const raw = await repo.get(agentId, '_memory_settings').catch(() => null);
+    if (raw?.value) {
+      return { ...DEFAULT_MEMORY_SETTINGS, ...JSON.parse(raw.value) };
+    }
+  } catch {}
+  return { ...DEFAULT_MEMORY_SETTINGS };
+}
+
+/** Save memory settings for agent */
+export async function setMemorySettings(agentId: number, userId: number, settings: Partial<MemorySettings>): Promise<void> {
+  const { getAgentStateRepository } = await import('../db/schema-extensions');
+  const repo = getAgentStateRepository();
+  const current = await getMemorySettings(agentId);
+  const merged = { ...current, ...settings };
+  await repo.set(agentId, userId, '_memory_settings', JSON.stringify(merged));
+}
+
+/** Check if a memory category is enabled */
+export async function isCategoryEnabled(agentId: number, category: 'memories' | 'lessons' | 'knowledge' | 'contacts' | 'chatDossiers' | 'evolution'): Promise<boolean> {
+  const settings = await getMemorySettings(agentId);
+  switch (category) {
+    case 'memories': return settings.enableMemories;
+    case 'lessons': return settings.enableLessons;
+    case 'knowledge': return settings.enableKnowledge;
+    case 'contacts': return settings.enableContacts;
+    case 'chatDossiers': return settings.enableChatDossiers;
+    case 'evolution': return settings.enableEvolution;
+    default: return true;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MEMORY STATISTICS
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface MemoryStats {
+  totalKeys: number;
+  categories: {
+    memories: number;    // mem:*
+    lessons: number;     // lesson:*
+    knowledge: number;   // kb:*
+    contacts: number;    // contact:*
+    chatDossiers: number;// chat_dossier:*
+    engagement: number;  // chat_engagement:*
+    system: number;      // _* keys
+    other: number;
+  };
+  totalSizeBytes: number;
+  oldestKey?: { key: string; age: string };
+  newestKey?: { key: string; age: string };
+  evolutionCount: number;
+  sessionsCount: number;
+  dailyLogsCount: number;
+}
+
+/** Get comprehensive memory statistics for an agent */
+export async function getMemoryStats(agentId: number): Promise<MemoryStats> {
+  const pool = await getPool();
+
+  const categories = { memories: 0, lessons: 0, knowledge: 0, contacts: 0, chatDossiers: 0, engagement: 0, system: 0, other: 0 };
+  let totalSizeBytes = 0;
+
+  // Count keys by category
+  const keysRes = await pool.query(
+    `SELECT key, length(value::text) as size FROM builder_bot.agent_state WHERE agent_id = $1`,
+    [agentId]
+  );
+
+  for (const row of keysRes.rows) {
+    const k: string = row.key;
+    const size = parseInt(row.size) || 0;
+    totalSizeBytes += size;
+
+    if (k.startsWith('mem:')) categories.memories++;
+    else if (k.startsWith('lesson:')) categories.lessons++;
+    else if (k.startsWith('kb:')) categories.knowledge++;
+    else if (k.startsWith('contact:') && !k.startsWith('contact_note:')) categories.contacts++;
+    else if (k.startsWith('chat_dossier:')) categories.chatDossiers++;
+    else if (k.startsWith('chat_engagement:')) categories.engagement++;
+    else if (k.startsWith('_')) categories.system++;
+    else categories.other++;
+  }
+
+  // Evolution count
+  let evolutionCount = 0;
+  try {
+    const evoRaw = await pool.query(
+      `SELECT value FROM builder_bot.agent_state WHERE agent_id=$1 AND key='_prompt_evolution'`, [agentId]
+    );
+    if (evoRaw.rows[0]?.value) {
+      const evo = JSON.parse(evoRaw.rows[0].value);
+      evolutionCount = evo.evolveCount || 0;
+    }
+  } catch {}
+
+  // Sessions count
+  const sessRes = await pool.query(
+    `SELECT COUNT(*) as cnt FROM builder_bot.agent_sessions WHERE agent_id=$1`, [agentId]
+  );
+  const sessionsCount = parseInt(sessRes.rows[0]?.cnt) || 0;
+
+  // Daily logs count
+  const logsRes = await pool.query(
+    `SELECT COUNT(*) as cnt FROM builder_bot.agent_daily_logs WHERE agent_id=$1`, [agentId]
+  );
+  const dailyLogsCount = parseInt(logsRes.rows[0]?.cnt) || 0;
+
+  return {
+    totalKeys: keysRes.rows.length,
+    categories,
+    totalSizeBytes,
+    evolutionCount,
+    sessionsCount,
+    dailyLogsCount,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MEMORY MANAGEMENT — TTL, cleanup, compression
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Clear all entries in a memory category */
+export async function clearMemoryCategory(
+  agentId: number,
+  category: 'memories' | 'lessons' | 'knowledge' | 'contacts' | 'chatDossiers' | 'engagement' | 'all',
+): Promise<number> {
+  const pool = await getPool();
+
+  const prefixMap: Record<string, string> = {
+    memories: 'mem:',
+    lessons: 'lesson:',
+    knowledge: 'kb:',
+    contacts: 'contact:',
+    chatDossiers: 'chat_dossier:',
+    engagement: 'chat_engagement:',
+  };
+
+  if (category === 'all') {
+    // Delete all non-system keys
+    const res = await pool.query(
+      `DELETE FROM builder_bot.agent_state WHERE agent_id = $1 AND key NOT LIKE '\\_%'`,
+      [agentId]
+    );
+    return res.rowCount || 0;
+  }
+
+  const prefix = prefixMap[category];
+  if (!prefix) return 0;
+
+  const res = await pool.query(
+    `DELETE FROM builder_bot.agent_state WHERE agent_id = $1 AND key LIKE $2`,
+    [agentId, `${prefix}%`]
+  );
+  return res.rowCount || 0;
+}
+
+/** Enforce retention limits — delete oldest entries exceeding max count */
+export async function enforceRetentionLimits(agentId: number): Promise<{ pruned: number }> {
+  const settings = await getMemorySettings(agentId);
+  const pool = await getPool();
+  let pruned = 0;
+
+  const limits: Array<{ prefix: string; max: number }> = [
+    { prefix: 'mem:', max: settings.maxMemories },
+    { prefix: 'lesson:', max: settings.maxLessons },
+    { prefix: 'kb:', max: settings.maxKnowledge },
+    { prefix: 'contact:', max: settings.maxContacts },
+  ];
+
+  for (const { prefix, max } of limits) {
+    if (max <= 0) continue;
+    // Count entries
+    const countRes = await pool.query(
+      `SELECT COUNT(*) as cnt FROM builder_bot.agent_state WHERE agent_id = $1 AND key LIKE $2`,
+      [agentId, `${prefix}%`]
+    );
+    const count = parseInt(countRes.rows[0]?.cnt) || 0;
+    if (count <= max) continue;
+
+    // Delete oldest (by key sort — timestamps sort naturally)
+    const toDelete = count - max;
+    const oldestRes = await pool.query(
+      `SELECT key FROM builder_bot.agent_state WHERE agent_id = $1 AND key LIKE $2 ORDER BY key ASC LIMIT $3`,
+      [agentId, `${prefix}%`, toDelete]
+    );
+    for (const row of oldestRes.rows) {
+      await pool.query(`DELETE FROM builder_bot.agent_state WHERE agent_id = $1 AND key = $2`, [agentId, row.key]);
+      pruned++;
+    }
+  }
+
+  return { pruned };
+}
+
+/** Apply TTL — delete entries older than configured days */
+export async function applyMemoryTTL(agentId: number): Promise<{ expired: number }> {
+  const settings = await getMemorySettings(agentId);
+  const pool = await getPool();
+  let expired = 0;
+
+  // TTL for memories (mem:* keys)
+  if (settings.memoryTTLDays > 0) {
+    const keysRes = await pool.query(
+      `SELECT key, value FROM builder_bot.agent_state WHERE agent_id = $1 AND key LIKE 'mem:%'`,
+      [agentId]
+    );
+    const cutoff = Date.now() - settings.memoryTTLDays * 86400_000;
+    for (const row of keysRes.rows) {
+      try {
+        const val = JSON.parse(row.value);
+        const savedAt = val.savedAt ? new Date(val.savedAt).getTime() : 0;
+        if (savedAt > 0 && savedAt < cutoff) {
+          await pool.query(`DELETE FROM builder_bot.agent_state WHERE agent_id=$1 AND key=$2`, [agentId, row.key]);
+          expired++;
+        }
+      } catch {}
+    }
+  }
+
+  // TTL for lessons (lesson:* keys — timestamp in key name)
+  if (settings.lessonTTLDays > 0) {
+    const keysRes = await pool.query(
+      `SELECT key FROM builder_bot.agent_state WHERE agent_id = $1 AND key LIKE 'lesson:%'`,
+      [agentId]
+    );
+    const cutoff = Date.now() - settings.lessonTTLDays * 86400_000;
+    for (const row of keysRes.rows) {
+      const ts = parseInt(row.key.replace('lesson:', ''));
+      if (!isNaN(ts) && ts < cutoff) {
+        await pool.query(`DELETE FROM builder_bot.agent_state WHERE agent_id=$1 AND key=$2`, [agentId, row.key]);
+        expired++;
+      }
+    }
+  }
+
+  return { expired };
+}
+
+/** Compress old memories — summarize many into few consolidated entries */
+export async function compressMemories(
+  agentId: number,
+  userId: number,
+  aiClient: OpenAI,
+  model: string,
+  category: 'memories' | 'lessons' = 'memories',
+): Promise<{ compressed: number; consolidated: number }> {
+  const { getAgentStateRepository } = await import('../db/schema-extensions');
+  const repo = getAgentStateRepository();
+  const prefix = category === 'lessons' ? 'lesson:' : 'mem:';
+
+  // Get all entries in category
+  const pool = await getPool();
+  const res = await pool.query(
+    `SELECT key, value FROM builder_bot.agent_state WHERE agent_id = $1 AND key LIKE $2 ORDER BY key ASC`,
+    [agentId, `${prefix}%`]
+  );
+
+  if (res.rows.length < 10) return { compressed: 0, consolidated: 0 };
+
+  // Take oldest half for compression
+  const half = Math.floor(res.rows.length / 2);
+  const toCompress = res.rows.slice(0, half);
+
+  // Build text from entries
+  const entries = toCompress.map((r: any) => {
+    try {
+      const val = JSON.parse(r.value);
+      return val.text || val.value || val.lesson || String(r.value).slice(0, 200);
+    } catch {
+      return String(r.value).slice(0, 200);
+    }
+  });
+
+  try {
+    const aiRes = await aiClient.chat.completions.create({
+      model,
+      messages: [
+        {
+          role: 'system',
+          content: `Сожми ${entries.length} записей памяти AI-агента в 3-5 консолидированных записей.
+Каждая запись — одна строка. Сохрани ключевые факты, удали дубли и устаревшее.
+Ответь JSON массивом строк: ["запись 1", "запись 2", ...]`,
+        },
+        { role: 'user', content: entries.join('\n---\n') },
+      ],
+      max_tokens: 500,
+    });
+
+    const text = aiRes.choices[0]?.message?.content?.trim() || '';
+    const jsonMatch = text.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) return { compressed: 0, consolidated: 0 };
+
+    const consolidated: string[] = JSON.parse(jsonMatch[0]);
+    if (!Array.isArray(consolidated) || consolidated.length === 0) return { compressed: 0, consolidated: 0 };
+
+    // Delete old entries
+    for (const row of toCompress) {
+      await pool.query(`DELETE FROM builder_bot.agent_state WHERE agent_id=$1 AND key=$2`, [agentId, row.key]);
+    }
+
+    // Save consolidated entries
+    for (const entry of consolidated) {
+      const key = `${prefix}compressed_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      await repo.set(agentId, userId, key, JSON.stringify({
+        text: entry,
+        category: 'consolidated',
+        importance: 'high',
+        savedAt: new Date().toISOString(),
+        compressed: true,
+        sourceCount: toCompress.length,
+      }));
+    }
+
+    await appendDailyLog(agentId, `🗜️ Memory compression: ${toCompress.length} ${category} → ${consolidated.length} consolidated entries`);
+    return { compressed: toCompress.length, consolidated: consolidated.length };
+  } catch (e: any) {
+    console.warn(`[AgentMemory] Compression failed: ${e.message?.slice(0, 100)}`);
+    return { compressed: 0, consolidated: 0 };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PRIORITY-BASED MEMORY INJECTION
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Build memory digest with priority and token budget */
+export async function buildPrioritizedMemoryDigest(agentId: number, chatId?: string, senderId?: string): Promise<string> {
+  const settings = await getMemorySettings(agentId);
+  const { getAgentStateRepository } = await import('../db/schema-extensions');
+  const repo = getAgentStateRepository();
+
+  const parts: string[] = [];
+  let tokensUsed = 0;
+  const maxTokens = settings.maxContextTokens;
+  const estTokens = (s: string) => Math.ceil(s.length / 3.5); // rough estimate
+
+  // Process categories in priority order
+  for (const cat of settings.priorityCategories) {
+    if (tokensUsed >= maxTokens) break;
+    const budget = maxTokens - tokensUsed;
+
+    try {
+      let block = '';
+
+      switch (cat) {
+        case 'memories': {
+          if (!settings.enableMemories) break;
+          const keys = await repo.listKeys(agentId);
+          const memKeys = keys.filter((k: string) => k.startsWith('mem:')).slice(-20);
+          if (memKeys.length === 0) break;
+
+          const entries: string[] = [];
+          for (const key of memKeys.slice(-10)) {
+            const raw = await repo.get(agentId, key).catch(() => null);
+            if (!raw?.value) continue;
+            try {
+              const val = JSON.parse(raw.value);
+              const importance = val.importance === 'high' ? '❗' : val.importance === 'medium' ? '•' : '·';
+              entries.push(`${importance} ${val.text || val.value || ''}`);
+            } catch {
+              entries.push(`· ${String(raw.value).slice(0, 100)}`);
+            }
+          }
+          if (entries.length > 0) {
+            block = `🧠 Мои воспоминания (${memKeys.length} записей):\n${entries.join('\n')}`;
+          }
+          break;
+        }
+
+        case 'contacts': {
+          if (!settings.enableContacts) break;
+          if (!senderId) break;
+          block = await buildUserContext(agentId, senderId);
+          break;
+        }
+
+        case 'lessons': {
+          if (!settings.enableLessons) break;
+          const keys = await repo.listKeys(agentId);
+          const lessonKeys = keys.filter((k: string) => k.startsWith('lesson:')).slice(-10);
+          if (lessonKeys.length === 0) break;
+
+          const entries: string[] = [];
+          for (const key of lessonKeys.slice(-5)) {
+            const raw = await repo.get(agentId, key).catch(() => null);
+            if (!raw?.value) continue;
+            try {
+              const val = JSON.parse(raw.value);
+              const icon = val.category === 'error' ? '❌' : val.category === 'success' ? '✅' : '💡';
+              entries.push(`${icon} ${val.text || ''}`);
+            } catch {}
+          }
+          if (entries.length > 0) {
+            block = `📚 Уроки из опыта:\n${entries.join('\n')}`;
+          }
+          break;
+        }
+
+        case 'knowledge': {
+          if (!settings.enableKnowledge) break;
+          const keys = await repo.listKeys(agentId);
+          const kbKeys = keys.filter((k: string) => k.startsWith('kb:')).slice(-10);
+          if (kbKeys.length === 0) break;
+
+          const entries: string[] = [];
+          for (const key of kbKeys.slice(-5)) {
+            const raw = await repo.get(agentId, key).catch(() => null);
+            if (!raw?.value) continue;
+            try {
+              const val = JSON.parse(raw.value);
+              entries.push(`📎 ${val.title || key}: ${(val.content || '').slice(0, 100)}`);
+            } catch {}
+          }
+          if (entries.length > 0) {
+            block = `📖 База знаний (${kbKeys.length} записей):\n${entries.join('\n')}`;
+          }
+          break;
+        }
+      }
+
+      if (block) {
+        const blockTokens = estTokens(block);
+        if (blockTokens <= budget) {
+          parts.push(block);
+          tokensUsed += blockTokens;
+        } else {
+          // Truncate to fit budget
+          const maxChars = Math.floor(budget * 3.5);
+          parts.push(block.slice(0, maxChars) + '...');
+          tokensUsed = maxTokens;
+        }
+      }
+    } catch {}
+  }
+
+  // Always add session summaries and daily log (core memory)
+  if (tokensUsed < maxTokens) {
+    try {
+      const summaries = await getRecentSessionSummaries(agentId, 3);
+      if (summaries.length > 0) {
+        const block = `📝 Предыдущие сессии:\n${summaries.map(s => `  • ${s}`).join('\n')}`;
+        const bt = estTokens(block);
+        if (tokensUsed + bt <= maxTokens) {
+          parts.push(block);
+          tokensUsed += bt;
+        }
+      }
+    } catch {}
+  }
+
+  if (tokensUsed < maxTokens) {
+    try {
+      const log = await getRecentDailyLog(agentId);
+      if (log && log.length > 10) {
+        const remaining = Math.floor((maxTokens - tokensUsed) * 3.5);
+        const truncated = log.length > remaining ? '...' + log.slice(-remaining) : log;
+        parts.push(`📅 Дневник:\n${truncated}`);
+      }
+    } catch {}
+  }
+
+  // Chat-specific context
+  if (chatId && settings.enableChatDossiers) {
+    try {
+      const chatCtx = await buildChatContext(agentId, chatId);
+      if (chatCtx) parts.push(chatCtx);
+    } catch {}
+  }
+
+  if (parts.length === 0) return '';
+  return `\n━━━ ДОЛГОСРОЧНАЯ ПАМЯТЬ ━━━\n${parts.join('\n\n')}\n━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+}
+
+/** Browse memory entries by category with pagination */
+export async function browseMemory(
+  agentId: number,
+  category?: string,
+  offset: number = 0,
+  limit: number = 10,
+): Promise<{ entries: Array<{ key: string; preview: string; size: number }>; total: number }> {
+  const pool = await getPool();
+
+  let prefix = '';
+  if (category === 'memories') prefix = 'mem:';
+  else if (category === 'lessons') prefix = 'lesson:';
+  else if (category === 'knowledge') prefix = 'kb:';
+  else if (category === 'contacts') prefix = 'contact:';
+  else if (category === 'chatDossiers') prefix = 'chat_dossier:';
+  else if (category === 'engagement') prefix = 'chat_engagement:';
+  else if (category === 'system') prefix = '_';
+
+  const whereClause = prefix ? `AND key LIKE $2` : `AND key NOT LIKE '\\_%'`;
+  const params: any[] = [agentId];
+  if (prefix) params.push(`${prefix}%`);
+
+  const countRes = await pool.query(
+    `SELECT COUNT(*) as cnt FROM builder_bot.agent_state WHERE agent_id = $1 ${whereClause}`,
+    params
+  );
+  const total = parseInt(countRes.rows[0]?.cnt) || 0;
+
+  const dataRes = await pool.query(
+    `SELECT key, value, length(value::text) as size FROM builder_bot.agent_state WHERE agent_id = $1 ${whereClause} ORDER BY key DESC LIMIT ${limit} OFFSET ${offset}`,
+    params
+  );
+
+  const entries = dataRes.rows.map((r: any) => {
+    let preview = '';
+    try {
+      const val = JSON.parse(r.value);
+      preview = val.text || val.title || val.name || val.value || JSON.stringify(val).slice(0, 80);
+    } catch {
+      preview = String(r.value).slice(0, 80);
+    }
+    return { key: r.key, preview: preview.slice(0, 80), size: parseInt(r.size) || 0 };
+  });
+
+  return { entries, total };
+}
+
+/** Run maintenance: enforce limits + TTL + daily log cleanup */
+export async function runMemoryMaintenance(agentId: number): Promise<{ pruned: number; expired: number; logsDeleted: number }> {
+  const { pruned } = await enforceRetentionLimits(agentId);
+  const { expired } = await applyMemoryTTL(agentId);
+  const logsDeleted = await cleanupOldDailyLogs(agentId, 60);
+  return { pruned, expired, logsDeleted };
+}
