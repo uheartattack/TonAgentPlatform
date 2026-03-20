@@ -767,6 +767,7 @@ function _getAllPendingMaps(): [string, Map<any, any> | Set<any>][] {
     ['walletImport', pendingWalletImport],
     ['walletLimit', pendingWalletLimit],
     ['walletRename', pendingWalletRename],
+    ['memSetting', pendingMemSetting],
   ];
 }
 
@@ -3638,6 +3639,7 @@ bot.action('link_wallet_manual', async (ctx) => {
 
 // ── Глобальные API ключи ──────────────────────────────────────────────
 const pendingApiKey = new Map<number, { provider?: string }>();
+const pendingMemSetting = new Map<number, { agentId: number; field: string; ts: number }>();
 
 bot.action('profile_api_keys', async (ctx) => {
   await ctx.answerCbQuery();
@@ -3866,6 +3868,358 @@ bot.action(/^agent_schedule:(.+)$/, async (ctx) => {
     anim.deleteMsg();
     console.error('[bot] agent_schedule create error:', err);
     await ctx.reply('❌ Ошибка создания агента. Попробуйте ещё раз.').catch(() => {});
+  }
+});
+
+// ============================================================
+// Memory Management UI
+// ============================================================
+
+bot.action(/^agent_memory:(\d+)$/, async (ctx) => {
+  if (!ctx.from) return;
+  const userId = ctx.from.id;
+  const agentId = parseInt(ctx.match[1]);
+
+  try {
+    const { getMemoryStats, getMemorySettings } = await import('./services/agent-memory');
+    const stats = await getMemoryStats(agentId);
+    const settings = await getMemorySettings(agentId);
+
+    const sizeKB = (stats.totalSizeBytes / 1024).toFixed(1);
+    const cats = stats.categories;
+
+    let text = `🧠 <b>Память агента #${agentId}</b>\n\n`;
+    text += `📊 <b>Статистика:</b>\n`;
+    text += `  Всего ключей: <b>${stats.totalKeys}</b> (${sizeKB} KB)\n`;
+    text += `  💭 Воспоминания: ${cats.memories}\n`;
+    text += `  📚 Уроки: ${cats.lessons}\n`;
+    text += `  📖 База знаний: ${cats.knowledge}\n`;
+    text += `  👤 Контакты: ${cats.contacts}\n`;
+    text += `  💬 Досье чатов: ${cats.chatDossiers}\n`;
+    text += `  🟢 Engagement: ${cats.engagement}\n`;
+    text += `  🧬 Эволюций: ${stats.evolutionCount}\n`;
+    text += `  📝 Сессий: ${stats.sessionsCount}\n`;
+    text += `  📅 Дневников: ${stats.dailyLogsCount}\n`;
+    text += `\n⚙️ <b>Настройки:</b>\n`;
+    text += `  Воспоминания: ${settings.enableMemories ? '✅' : '❌'} (макс ${settings.maxMemories})\n`;
+    text += `  Уроки: ${settings.enableLessons ? '✅' : '❌'} (макс ${settings.maxLessons})\n`;
+    text += `  База знаний: ${settings.enableKnowledge ? '✅' : '❌'} (макс ${settings.maxKnowledge})\n`;
+    text += `  Контакты: ${settings.enableContacts ? '✅' : '❌'} (макс ${settings.maxContacts})\n`;
+    text += `  Эволюция: ${settings.enableEvolution ? '✅' : '❌'} (каждые ${settings.evolveInterval} взаимодействий)\n`;
+    text += `  TTL памяти: ${settings.memoryTTLDays > 0 ? settings.memoryTTLDays + ' дней' : '∞'}\n`;
+    text += `  Бюджет контекста: ${settings.maxContextTokens} токенов\n`;
+    text += `  Приоритет: ${settings.priorityCategories.join(' → ')}\n`;
+
+    const buttons = [
+      [
+        { text: '💭 Воспоминания', callback_data: `mem_browse:${agentId}:memories` },
+        { text: '📚 Уроки', callback_data: `mem_browse:${agentId}:lessons` },
+      ],
+      [
+        { text: '📖 Знания', callback_data: `mem_browse:${agentId}:knowledge` },
+        { text: '👤 Контакты', callback_data: `mem_browse:${agentId}:contacts` },
+      ],
+      [
+        { text: '⚙️ Настройки памяти', callback_data: `mem_settings:${agentId}` },
+      ],
+      [
+        { text: '🗜️ Сжать память', callback_data: `mem_compress:${agentId}` },
+        { text: '🧹 Обслуживание', callback_data: `mem_maintain:${agentId}` },
+      ],
+      [
+        { text: '⬅️ Назад', callback_data: `agent_menu:${agentId}` },
+      ],
+    ];
+
+    await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } });
+  } catch (e: any) {
+    console.error('[Memory UI]', e);
+    await safeReply(ctx, 'Ошибка загрузки памяти');
+  }
+});
+
+bot.action(/^mem_browse:(\d+):(\w+)(?::(\d+))?$/, async (ctx) => {
+  if (!ctx.from) return;
+  const agentId = parseInt(ctx.match[1]);
+  const category = ctx.match[2];
+  const offset = parseInt(ctx.match[3] || '0');
+
+  try {
+    const { browseMemory } = await import('./services/agent-memory');
+    const { entries, total } = await browseMemory(agentId, category, offset, 8);
+
+    const catNames: Record<string, string> = {
+      memories: '💭 Воспоминания', lessons: '📚 Уроки', knowledge: '📖 База знаний',
+      contacts: '👤 Контакты', chatDossiers: '💬 Досье чатов', engagement: '🟢 Engagement',
+    };
+
+    let text = `${catNames[category] || category} агента #${agentId}\n`;
+    text += `Записей: ${total} (показаны ${offset + 1}-${Math.min(offset + 8, total)})\n\n`;
+
+    for (const entry of entries) {
+      text += `🔑 <code>${escHtml(entry.key.slice(0, 40))}</code>\n`;
+      text += `   ${escHtml(entry.preview)} (${entry.size}B)\n\n`;
+    }
+
+    if (entries.length === 0) text += '<i>Пусто</i>';
+
+    const nav: any[] = [];
+    if (offset > 0) nav.push({ text: '⬅️ Назад', callback_data: `mem_browse:${agentId}:${category}:${Math.max(0, offset - 8)}` });
+    if (offset + 8 < total) nav.push({ text: '➡️ Далее', callback_data: `mem_browse:${agentId}:${category}:${offset + 8}` });
+
+    const buttons: any[][] = [];
+    if (nav.length > 0) buttons.push(nav);
+    buttons.push([
+      { text: '🗑️ Очистить категорию', callback_data: `mem_clear:${agentId}:${category}` },
+    ]);
+    buttons.push([{ text: '⬅️ К памяти', callback_data: `agent_memory:${agentId}` }]);
+
+    await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } });
+  } catch (e: any) {
+    console.error('[Memory Browse]', e);
+    await safeReply(ctx, 'Ошибка загрузки');
+  }
+});
+
+bot.action(/^mem_clear:(\d+):(\w+)$/, async (ctx) => {
+  if (!ctx.from) return;
+  const agentId = parseInt(ctx.match[1]);
+  const category = ctx.match[2] as any;
+
+  try {
+    const { clearMemoryCategory } = await import('./services/agent-memory');
+    const deleted = await clearMemoryCategory(agentId, category);
+    await ctx.answerCbQuery(`Удалено ${deleted} записей`);
+    // Refresh browse view
+    const { browseMemory } = await import('./services/agent-memory');
+    const { total } = await browseMemory(agentId, category, 0, 8);
+    await editOrReply(ctx, `✅ Категория очищена (${deleted} записей удалено)\n\nОсталось: ${total}`, {
+      reply_markup: { inline_keyboard: [[{ text: '⬅️ К памяти', callback_data: `agent_memory:${agentId}` }]] },
+    });
+  } catch (e: any) {
+    await safeReply(ctx, 'Ошибка очистки');
+  }
+});
+
+bot.action(/^mem_compress:(\d+)$/, async (ctx) => {
+  if (!ctx.from) return;
+  const agentId = parseInt(ctx.match[1]);
+
+  try {
+    await ctx.answerCbQuery('Сжатие памяти...');
+    await editOrReply(ctx, '🗜️ Сжимаю воспоминания...\nЭто может занять 10-20 секунд.');
+
+    // We need an AI client — use the platform fallback
+    const { compressMemories } = await import('./services/agent-memory');
+    const OpenAI = (await import('openai')).default;
+    const client = new OpenAI({
+      baseURL: process.env.OPENAI_BASE_URL || 'https://openrouter.ai/api/v1',
+      apiKey: process.env.OPENAI_API_KEY || '',
+    });
+    const result = await compressMemories(agentId, ctx.from.id, client, 'google/gemini-2.5-flash', 'memories');
+
+    let text = '🗜️ Результат сжатия:\n';
+    if (result.compressed > 0) {
+      text += `✅ ${result.compressed} записей → ${result.consolidated} консолидированных`;
+    } else {
+      text += 'Недостаточно записей для сжатия (нужно >10)';
+    }
+
+    await editOrReply(ctx, text, {
+      reply_markup: { inline_keyboard: [[{ text: '⬅️ К памяти', callback_data: `agent_memory:${agentId}` }]] },
+    });
+  } catch (e: any) {
+    console.error('[Memory Compress]', e);
+    await safeReply(ctx, 'Ошибка сжатия');
+  }
+});
+
+bot.action(/^mem_maintain:(\d+)$/, async (ctx) => {
+  if (!ctx.from) return;
+  const agentId = parseInt(ctx.match[1]);
+
+  try {
+    await ctx.answerCbQuery('Обслуживание...');
+    const { runMemoryMaintenance } = await import('./services/agent-memory');
+    const result = await runMemoryMaintenance(agentId);
+
+    let text = '🧹 Обслуживание памяти завершено:\n';
+    text += `  Удалено по лимиту: ${result.pruned}\n`;
+    text += `  Истекло по TTL: ${result.expired}\n`;
+    text += `  Старых логов: ${result.logsDeleted}`;
+
+    await editOrReply(ctx, text, {
+      reply_markup: { inline_keyboard: [[{ text: '⬅️ К памяти', callback_data: `agent_memory:${agentId}` }]] },
+    });
+  } catch (e: any) {
+    await safeReply(ctx, 'Ошибка обслуживания');
+  }
+});
+
+bot.action(/^mem_settings:(\d+)$/, async (ctx) => {
+  if (!ctx.from) return;
+  const agentId = parseInt(ctx.match[1]);
+
+  try {
+    const { getMemorySettings } = await import('./services/agent-memory');
+    const s = await getMemorySettings(agentId);
+
+    const toggleBtn = (label: string, key: string, value: boolean) => ({
+      text: `${value ? '✅' : '❌'} ${label}`,
+      callback_data: `mem_toggle:${agentId}:${key}`,
+    });
+
+    const buttons = [
+      [toggleBtn('Воспоминания', 'enableMemories', s.enableMemories), toggleBtn('Уроки', 'enableLessons', s.enableLessons)],
+      [toggleBtn('База знаний', 'enableKnowledge', s.enableKnowledge), toggleBtn('Контакты', 'enableContacts', s.enableContacts)],
+      [toggleBtn('Эволюция', 'enableEvolution', s.enableEvolution), toggleBtn('Досье чатов', 'enableChatDossiers', s.enableChatDossiers)],
+      [
+        { text: `TTL: ${s.memoryTTLDays || '∞'}д`, callback_data: `mem_set_ttl:${agentId}` },
+        { text: `Бюджет: ${s.maxContextTokens}т`, callback_data: `mem_set_budget:${agentId}` },
+      ],
+      [
+        { text: `Макс памяти: ${s.maxMemories}`, callback_data: `mem_set_max:${agentId}:maxMemories` },
+        { text: `Макс уроков: ${s.maxLessons}`, callback_data: `mem_set_max:${agentId}:maxLessons` },
+      ],
+      [{ text: '⬅️ К памяти', callback_data: `agent_memory:${agentId}` }],
+    ];
+
+    await editOrReply(ctx, '⚙️ <b>Настройки памяти</b>\n\nНажмите на категорию чтобы включить/выключить:', {
+      parse_mode: 'HTML',
+      reply_markup: { inline_keyboard: buttons },
+    });
+  } catch (e: any) {
+    await safeReply(ctx, 'Ошибка настроек');
+  }
+});
+
+bot.action(/^mem_toggle:(\d+):(\w+)$/, async (ctx) => {
+  if (!ctx.from) return;
+  const agentId = parseInt(ctx.match[1]);
+  const key = ctx.match[2];
+
+  try {
+    const { getMemorySettings, setMemorySettings } = await import('./services/agent-memory');
+    const current = await getMemorySettings(agentId);
+    const newVal = !(current as any)[key];
+    await setMemorySettings(agentId, ctx.from.id, { [key]: newVal } as any);
+    await ctx.answerCbQuery(`${key}: ${newVal ? '✅ Вкл' : '❌ Выкл'}`);
+    // Re-render settings
+    const s = await getMemorySettings(agentId);
+    const toggleBtn = (label: string, k: string, value: boolean) => ({
+      text: `${value ? '✅' : '❌'} ${label}`,
+      callback_data: `mem_toggle:${agentId}:${k}`,
+    });
+    const buttons = [
+      [toggleBtn('Воспоминания', 'enableMemories', s.enableMemories), toggleBtn('Уроки', 'enableLessons', s.enableLessons)],
+      [toggleBtn('База знаний', 'enableKnowledge', s.enableKnowledge), toggleBtn('Контакты', 'enableContacts', s.enableContacts)],
+      [toggleBtn('Эволюция', 'enableEvolution', s.enableEvolution), toggleBtn('Досье чатов', 'enableChatDossiers', s.enableChatDossiers)],
+      [
+        { text: `TTL: ${s.memoryTTLDays || '∞'}д`, callback_data: `mem_set_ttl:${agentId}` },
+        { text: `Бюджет: ${s.maxContextTokens}т`, callback_data: `mem_set_budget:${agentId}` },
+      ],
+      [
+        { text: `Макс памяти: ${s.maxMemories}`, callback_data: `mem_set_max:${agentId}:maxMemories` },
+        { text: `Макс уроков: ${s.maxLessons}`, callback_data: `mem_set_max:${agentId}:maxLessons` },
+      ],
+      [{ text: '⬅️ К памяти', callback_data: `agent_memory:${agentId}` }],
+    ];
+    await editOrReply(ctx, '⚙️ <b>Настройки памяти</b>\n\nНажмите на категорию чтобы включить/выключить:', {
+      parse_mode: 'HTML',
+      reply_markup: { inline_keyboard: buttons },
+    });
+  } catch (e: any) {
+    await safeReply(ctx, 'Ошибка переключения');
+  }
+});
+
+bot.action(/^mem_set_ttl:(\d+)$/, async (ctx) => {
+  if (!ctx.from) return;
+  pendingMemSetting.set(ctx.from.id, { agentId: parseInt(ctx.match[1]), field: 'memoryTTLDays', ts: Date.now() });
+  await editOrReply(ctx, '⏱️ Введите TTL памяти в днях (0 = бесконечный):', {
+    reply_markup: { inline_keyboard: [
+      [{ text: '0 (∞)', callback_data: `mem_set_val:${ctx.match[1]}:memoryTTLDays:0` }, { text: '30', callback_data: `mem_set_val:${ctx.match[1]}:memoryTTLDays:30` }],
+      [{ text: '60', callback_data: `mem_set_val:${ctx.match[1]}:memoryTTLDays:60` }, { text: '90', callback_data: `mem_set_val:${ctx.match[1]}:memoryTTLDays:90` }],
+      [{ text: '⬅️ Назад', callback_data: `mem_settings:${ctx.match[1]}` }],
+    ]},
+  });
+});
+
+bot.action(/^mem_set_budget:(\d+)$/, async (ctx) => {
+  if (!ctx.from) return;
+  await editOrReply(ctx, '📊 Выберите бюджет токенов для памяти в контексте:', {
+    reply_markup: { inline_keyboard: [
+      [
+        { text: '1000', callback_data: `mem_set_val:${ctx.match[1]}:maxContextTokens:1000` },
+        { text: '2000', callback_data: `mem_set_val:${ctx.match[1]}:maxContextTokens:2000` },
+        { text: '3000', callback_data: `mem_set_val:${ctx.match[1]}:maxContextTokens:3000` },
+      ],
+      [
+        { text: '4000', callback_data: `mem_set_val:${ctx.match[1]}:maxContextTokens:4000` },
+        { text: '5000', callback_data: `mem_set_val:${ctx.match[1]}:maxContextTokens:5000` },
+      ],
+      [{ text: '⬅️ Назад', callback_data: `mem_settings:${ctx.match[1]}` }],
+    ]},
+  });
+});
+
+bot.action(/^mem_set_max:(\d+):(\w+)$/, async (ctx) => {
+  if (!ctx.from) return;
+  const field = ctx.match[2];
+  const label = field === 'maxMemories' ? 'воспоминаний' : 'уроков';
+  await editOrReply(ctx, `📦 Макс. кол-во ${label}:`, {
+    reply_markup: { inline_keyboard: [
+      [
+        { text: '50', callback_data: `mem_set_val:${ctx.match[1]}:${field}:50` },
+        { text: '100', callback_data: `mem_set_val:${ctx.match[1]}:${field}:100` },
+        { text: '200', callback_data: `mem_set_val:${ctx.match[1]}:${field}:200` },
+      ],
+      [
+        { text: '500', callback_data: `mem_set_val:${ctx.match[1]}:${field}:500` },
+        { text: '1000', callback_data: `mem_set_val:${ctx.match[1]}:${field}:1000` },
+      ],
+      [{ text: '⬅️ Назад', callback_data: `mem_settings:${ctx.match[1]}` }],
+    ]},
+  });
+});
+
+bot.action(/^mem_set_val:(\d+):(\w+):(\d+)$/, async (ctx) => {
+  if (!ctx.from) return;
+  const agentId = parseInt(ctx.match[1]);
+  const field = ctx.match[2];
+  const value = parseInt(ctx.match[3]);
+
+  try {
+    const { setMemorySettings } = await import('./services/agent-memory');
+    await setMemorySettings(agentId, ctx.from.id, { [field]: value } as any);
+    await ctx.answerCbQuery(`${field} = ${value}`);
+    // Re-render settings
+    const { getMemorySettings } = await import('./services/agent-memory');
+    const s = await getMemorySettings(agentId);
+    const toggleBtn = (label: string, k: string, v: boolean) => ({
+      text: `${v ? '✅' : '❌'} ${label}`,
+      callback_data: `mem_toggle:${agentId}:${k}`,
+    });
+    const buttons = [
+      [toggleBtn('Воспоминания', 'enableMemories', s.enableMemories), toggleBtn('Уроки', 'enableLessons', s.enableLessons)],
+      [toggleBtn('База знаний', 'enableKnowledge', s.enableKnowledge), toggleBtn('Контакты', 'enableContacts', s.enableContacts)],
+      [toggleBtn('Эволюция', 'enableEvolution', s.enableEvolution), toggleBtn('Досье чатов', 'enableChatDossiers', s.enableChatDossiers)],
+      [
+        { text: `TTL: ${s.memoryTTLDays || '∞'}д`, callback_data: `mem_set_ttl:${agentId}` },
+        { text: `Бюджет: ${s.maxContextTokens}т`, callback_data: `mem_set_budget:${agentId}` },
+      ],
+      [
+        { text: `Макс памяти: ${s.maxMemories}`, callback_data: `mem_set_max:${agentId}:maxMemories` },
+        { text: `Макс уроков: ${s.maxLessons}`, callback_data: `mem_set_max:${agentId}:maxLessons` },
+      ],
+      [{ text: '⬅️ К памяти', callback_data: `agent_memory:${agentId}` }],
+    ];
+    await editOrReply(ctx, '⚙️ <b>Настройки памяти</b>\n\n✅ Настройка сохранена!\nНажмите на категорию чтобы включить/выключить:', {
+      parse_mode: 'HTML',
+      reply_markup: { inline_keyboard: buttons },
+    });
+  } catch (e: any) {
+    await safeReply(ctx, 'Ошибка сохранения');
   }
 });
 
@@ -8441,7 +8795,7 @@ async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
     if (a.triggerType === 'ai_agent') {
       keyboard.push([
         { text: `🎯 ${ru2 ? 'Цели' : 'Goals'}`, callback_data: `show_goals:${agentId}` },
-        { text: `🧠 ${ru2 ? 'Память' : 'Memory'}`, callback_data: `show_memory:${agentId}` },
+        { text: `🧠 ${ru2 ? 'Память' : 'Memory'}`, callback_data: `agent_memory:${agentId}` },
         { text: `📡 ${ru2 ? 'События' : 'Events'}`, callback_data: `show_events:${agentId}` },
       ]);
     }
