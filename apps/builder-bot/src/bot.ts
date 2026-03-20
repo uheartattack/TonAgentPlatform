@@ -732,6 +732,7 @@ function clearAllPendingStates(userId: number): void {
   pendingWalletImport.delete(userId);
   pendingWalletLimit.delete(userId);
   pendingWalletRename.delete(userId);
+  pendingRefinements.delete(userId);
 }
 
 // ============================================================
@@ -767,6 +768,7 @@ function _getAllPendingMaps(): [string, Map<any, any> | Set<any>][] {
     ['walletImport', pendingWalletImport],
     ['walletLimit', pendingWalletLimit],
     ['walletRename', pendingWalletRename],
+    ['refinements', pendingRefinements],
   ];
 }
 
@@ -10153,57 +10155,6 @@ async function showHelp(ctx: Context) {
     },
   });
 }
-
-// ============================================================
-// AI Proposal callbacks (self-improvement system)
-// ============================================================
-bot.action(/^proposal_approve:(.+)$/, async (ctx) => {
-  await ctx.answerCbQuery('⏳ Применяю...');
-  const proposalId = ctx.match[1];
-  if (ctx.from?.id !== OWNER_ID_NUM) return;
-  try {
-    const { getSelfImprovementSystem } = await import('./self-improvement');
-    const sis = getSelfImprovementSystem();
-    if (!sis) { await ctx.reply('❌ Система самоулучшения не запущена'); return; }
-    await sis.approveProposal(proposalId);
-    await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => {});
-    await ctx.reply(`✅ Proposal <code>${proposalId.slice(0, 8)}</code> применён.`, { parse_mode: 'HTML' });
-  } catch (e: any) {
-    await ctx.reply('❌ Ошибка: ' + escHtml(e.message), { parse_mode: 'HTML' });
-  }
-});
-
-bot.action(/^proposal_reject:(.+)$/, async (ctx) => {
-  await ctx.answerCbQuery('🚫 Отклоняю...');
-  const proposalId = ctx.match[1];
-  if (ctx.from?.id !== OWNER_ID_NUM) return;
-  try {
-    const { getSelfImprovementSystem } = await import('./self-improvement');
-    const sis = getSelfImprovementSystem();
-    if (!sis) { await ctx.reply('❌ Система самоулучшения не запущена'); return; }
-    await sis.rejectProposal(proposalId, 'Rejected by owner via bot');
-    await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => {});
-    await ctx.reply(`🚫 Proposal <code>${proposalId.slice(0, 8)}</code> отклонён.`, { parse_mode: 'HTML' });
-  } catch (e: any) {
-    await ctx.reply('❌ Ошибка: ' + escHtml(e.message), { parse_mode: 'HTML' });
-  }
-});
-
-bot.action(/^proposal_rollback:(.+)$/, async (ctx) => {
-  await ctx.answerCbQuery('⏪ Откатываю...');
-  const proposalId = ctx.match[1];
-  if (ctx.from?.id !== OWNER_ID_NUM) return;
-  try {
-    const { getSelfImprovementSystem } = await import('./self-improvement');
-    const sis = getSelfImprovementSystem();
-    if (!sis) { await ctx.reply('❌ Система самоулучшения не запущена'); return; }
-    await sis.rollbackProposal(proposalId);
-    await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => {});
-    await ctx.reply(`⏪ Proposal <code>${proposalId.slice(0, 8)}</code> откатан.`, { parse_mode: 'HTML' });
-  } catch (e: any) {
-    await ctx.reply('❌ Ошибка: ' + escHtml(e.message), { parse_mode: 'HTML' });
-  }
-});
 
 // ============================================================
 // Обработка ошибок
