@@ -312,6 +312,89 @@
 - **Описание**: Если юзер быстро отправит 2 сообщения подряд во время wizard, оба обработаются параллельно с одним и тем же `remaining[]` state
 - **Fix**: Mutex или sequential processing per user
 
+### M36. ai-agent-runtime.ts:761 — `_chatResponseCallbacks` не чистится в deactivate()
+- **Статус**: 🔧 TODO
+- **Описание**: Promise зависает навсегда + timer стреляет после деактивации агента
+- **Fix**: В deactivate() — clearTimeout, resolve(''), delete
+
+### M37. ai-agent-runtime.ts:717 — `_tickNotifyFlag` не чистится в deactivate()
+- **Статус**: 🔧 TODO
+- **Описание**: Stale flag может повлиять на переактивированного агента с тем же ID
+- **Fix**: `_tickNotifyFlag.delete(agentId)` в deactivate()
+
+### M38. ai-agent-runtime.ts:153 — `_recentPostHashes` unbounded growth
+- **Статус**: 🔧 TODO
+- **Описание**: Хеши постов растут для каждого agentId:chatId. Periodic cleanup не трогает этот Map.
+- **Fix**: Удалять ключи неактивных агентов в periodic cleanup
+
+### M39. ai-agent-runtime.ts:10063 — `_agentMetaCache` cleanup проверяет несуществующее поле
+- **Статус**: 🔧 TODO
+- **Описание**: Cleanup проверяет `expiresAt` но поле не существует в CachedAgentMeta. Cache никогда не чистится periodic cleanup'ом.
+- **Fix**: `Date.now() - entry.cachedAt > 300_000` вместо `entry.expiresAt`
+
+### M40. ai-agent-runtime.ts — `_toolRateLimits` не чистятся для неактивных агентов
+- **Статус**: 🔧 TODO
+- **Описание**: Cleanup удаляет старые timestamps внутри ключей, но не удаляет ключи деактивированных агентов
+- **Fix**: Удалять ключи с agentId не в activeSet
+
+### M41. ai-agent-runtime.ts:4514 — `_approvalWaiters` cleanup не работает при undefined `_createdAt`
+- **Статус**: 🔧 TODO
+- **Описание**: `Date.now() - undefined = NaN`, NaN > X = false. Waiter без _createdAt никогда не чистится.
+- **Fix**: `if (!waiter._createdAt || ...)`
+
+### M42. ai-agent-runtime.ts:6996 — `_pendingAsks` stale entries для деактивированных target агентов
+- **Статус**: 🔧 TODO
+- **Описание**: deactivate() удаляет СВОИ outgoing asks, но НЕ ссылки TO деактивированного агента. Если agent B деактивирован, agent A ждёт ответа вечно.
+- **Fix**: В deactivate() итерировать _pendingAsks и удалять references к agentId
+
+### M43. ai-agent-runtime.ts:7902 — рекурсия в alias resolution без guard
+- **Статус**: 🔧 TODO
+- **Описание**: Круговой alias (теоретический) вызовет stack overflow
+- **Fix**: `if (alias && name !== alias) return executeTool(alias, ...)`
+
+### M44. ai-agent-runtime.ts:9314 — aggressive context trimming без summary
+- **Статус**: 🔧 TODO
+- **Описание**: При context overflow `compressOldToolResults(messages, 2)` + `splice` уничтожает почти весь контекст. AI повторяет те же tool calls.
+- **Fix**: Inject system message summarizing lost context
+
+### M45. ai-agent-runtime.ts:7756 — SMTP error codes не проверяются на всех шагах
+- **Статус**: 🔧 TODO
+- **Описание**: EHLO/connect шаги не проверяют 5xx ошибки, код продолжает AUTH/STARTTLS
+- **Fix**: Добавить error checking на каждом шаге
+
+### M46. ai-agent-runtime.ts:18 — inconsistent stateRepo.get() return handling
+- **Статус**: 🔧 TODO
+- **Описание**: Иногда `val.value`, иногда `typeof val === 'object' ? val.value : val`. Некоторые места получают wrapper object вместо string.
+- **Fix**: Создать helper `unwrapState(val)` и использовать везде
+
+### M47. ai-agent-runtime.ts:9879 — Event Bus `setTickTrigger` перезаписывается при каждом activate
+- **Статус**: 🔧 TODO
+- **Описание**: Каждая активация агента перезаписывает global handler. Только последний активированный агент получает events.
+- **Fix**: Регистрировать один раз при инициализации модуля, не per-agent
+
+---
+
+## 🔴 CRITICAL (ai-agent-runtime.ts audit)
+
+### C9. ai-agent-runtime.ts:4566 — daily spend cap bypass через concurrent tool calls
+- **Статус**: 🔧 TODO
+- **Описание**: TOOL_CONCURRENCY=3. Два параллельных send_ton оба проходят cap check до обновления total. Можно потратить 2x лимита.
+- **Fix**: Финансовые tools (send_ton, buy_*) выполнять serial, не в parallel batch
+
+### C10. ai-agent-runtime.ts:7032 — `run_custom_plugin` всё ещё использует vm2 (deprecated, CVE)
+- **Статус**: ⚠️ KNOWN LIMITATION (overlaps C1)
+- **Описание**: vm2 имеет known sandbox escape CVEs. Deprecated upstream.
+- **Fix**: Миграция на isolated-vm (отдельный спринт)
+
+---
+
+## 🟠 HIGH (ai-agent-runtime.ts audit)
+
+### H17. ai-agent-runtime.ts:7751 — SMTP socket leak on timeout
+- **Статус**: 🔧 TODO
+- **Описание**: При 30s timeout socket.destroy() вызывается, но data listener не удаляется. После TLS upgrade старый socket listener не удалён.
+- **Fix**: `socket.removeAllListeners()` before destroy
+
 ---
 
 ## 🔵 LOW
@@ -366,12 +449,15 @@
 ---
 
 ## 📊 STATS
-- **Найдено**: 68 багов
+- **Найдено**: 83 бага
 - **Зафикшено**: 0 (из этого списка)
-- **Критических**: 8
-- **High**: 16
-- **Medium**: 35 (+10 из bot.ts аудита)
+- **Критических**: 10
+- **High**: 17
+- **Medium**: 47
 - **Low**: 4
-- **Аудит bot.ts**: ✅ завершён (13 багов добавлено)
-- **Аудит ai-agent-runtime.ts**: 🔄 pending
+- **Аудит service files**: ✅ (14 файлов, 28 багов)
+- **Аудит core files**: ✅ (13 файлов, 31 баг)
+- **Аудит bot.ts**: ✅ (9544 строки, 13 багов)
+- **Аудит ai-agent-runtime.ts**: ✅ (10069 строк, 15 багов)
 - **Последний аудит**: 2026-03-20
+- **Все файлы проверены** ✅
