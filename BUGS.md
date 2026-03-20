@@ -53,6 +53,26 @@
 - **Описание**: `await res.json() as any` без проверки res.ok
 - **Fix**: Добавить `if (!res.ok)` check
 
+### H6. giftasset.ts:205 — wrong auth header in Dev API fallback
+- **Статус**: 🔧 TODO
+- **Описание**: `gaDevFetch` шлёт Pro key (`GA_KEY`) вместо Dev key (`GA_DEV_KEY`). Весь fallback на Dev API сломан — получает 401.
+- **Fix**: Заменить `'X-API-Key': GA_KEY` на `'x-api-token': GA_DEV_KEY`
+
+### H7. plugin-manager.ts:298 — new PG Pool на каждый notify()
+- **Статус**: 🔧 TODO
+- **Описание**: Каждый вызов `ctx.notify()` создаёт новый Pool, query, end(). Под нагрузкой = connection exhaustion.
+- **Fix**: Импортировать и использовать shared pool
+
+### H8. userbot-manager.ts:852 — chatRing singleton shared between agents
+- **Статус**: 🔧 TODO
+- **Описание**: Единственный `ChatHistoryRing` шарится между ВСЕМИ агентами. Если 2 агента в одном чате — их контексты смешиваются.
+- **Fix**: Per-agent ChatHistoryRing instances
+
+### H9. userbot-manager.ts:93 — XSS в mdToHtml (нет URL sanitization)
+- **Статус**: 🔧 TODO
+- **Описание**: `mdToHtml` не блокирует `javascript:` URLs и не экранирует `"` в href. Attribute injection возможен.
+- **Fix**: Добавить ту же санитизацию что в telegram-userbot.ts
+
 ---
 
 ## 🟡 MEDIUM
@@ -106,6 +126,51 @@
 - **Статус**: 🔧 TODO
 - **Описание**: Вызов .json() на error response может крашнуться
 - **Fix**: `if (!res.ok) return [];`
+
+### M11. agentic-wallet.ts:28 — static salt в scryptSync
+- **Статус**: 🔧 TODO
+- **Описание**: Hardcoded salt `'agentic-wallet-salt'` — все ключи из одного пароля дают одинаковый AES key
+- **Fix**: Per-mnemonic random salt, хранить вместе с шифротекстом
+
+### M12. agent-memory.ts:564 — race condition в evolvePrompt
+- **Статус**: 🔧 TODO
+- **Описание**: Read-modify-write на code + trigger_config без транзакции
+- **Fix**: Обернуть в BEGIN/COMMIT
+
+### M13. agent-reputation.ts:651 — GDP query crash на невалидном ton_amount
+- **Статус**: 🔧 TODO
+- **Описание**: `::real` cast на произвольный JSONB string может крашнуть весь запрос
+- **Fix**: Safe cast с regex validation или COALESCE
+
+### M14. discord-manager.ts:25 — SSRF path injection
+- **Статус**: 🔧 TODO
+- **Описание**: channelId/guildId интерполируются в URL без валидации, `../` injection
+- **Fix**: Валидация `if (!/^\d+$/.test(id))`
+
+### M15. agent-memory.ts:99 — silent errors в daily log
+- **Статус**: 🔧 TODO
+- **Описание**: Both INSERT paths имеют `.catch(() => {})` — ошибки молча глотаются
+- **Fix**: console.warn в catch
+
+### M16. userbot-manager.ts:853 — _rawDedup Set без cleanup
+- **Статус**: 🔧 TODO
+- **Описание**: Set растёт бесконечно, каждый messageId добавляется но не удаляется
+- **Fix**: Periodic cleanup или TTL
+
+### M17. plugin-marketplace.ts:240 — install count при re-install
+- **Статус**: 🔧 TODO
+- **Описание**: Re-activation expired плагина тоже инкрементит install count
+- **Fix**: Проверять rowCount от INSERT vs UPDATE
+
+### M18. crew-system.ts:96 — unbounded shared memory
+- **Статус**: 🔧 TODO
+- **Описание**: sharedMem Map растёт без ограничений — нет cap на количество crew
+- **Fix**: Cleanup crews старше порога
+
+### M19. x-manager.ts:36 — path injection в X API URLs
+- **Статус**: 🔧 TODO
+- **Описание**: tweetId/userId интерполируются без валидации
+- **Fix**: `encodeURIComponent()` или regex validation
 
 ---
 
@@ -161,10 +226,11 @@
 ---
 
 ## 📊 STATS
-- **Найдено**: 24 бага
+- **Найдено**: 37 багов (и будет больше — 3 аудитора ещё работают)
 - **Зафикшено**: 0 (из этого списка)
 - **Критических**: 3
-- **High**: 5
-- **Medium**: 10
+- **High**: 9
+- **Medium**: 19
 - **Low**: 4
 - **Последний аудит**: 2026-03-20
+- **Аудит в процессе**: bot.ts, ai-agent-runtime.ts, orchestrator, api-server, payments
