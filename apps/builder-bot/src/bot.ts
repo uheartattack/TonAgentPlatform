@@ -3628,7 +3628,7 @@ bot.action('link_wallet_manual', async (ctx) => {
   await ctx.answerCbQuery();
   const userId = ctx.from!.id;
   const lang = getUserLang(userId);
-  pendingWithdrawal.set(userId, { step: 'enter_address' });
+  pendingWithdrawal.set(userId, { step: 'enter_address', purpose: 'link' } as any);
   await ctx.reply(
     lang === 'ru'
       ? '🔗 Введите адрес вашего TON кошелька (EQ...) для привязки:'
@@ -5388,10 +5388,6 @@ bot.on('callback_query', async (ctx) => {
       await safeReply(ctx, newBlocked
         ? `🔴 ${ru ? 'Кошелёк заблокирован' : 'Wallet blocked'}`
         : `🟢 ${ru ? 'Кошелёк разблокирован' : 'Wallet unblocked'}`);
-      // Refresh wallet view
-      await editOrReply(ctx, '...', { parse_mode: 'HTML' }).catch(() => {});
-      // Trigger re-render via callback
-      ctx.callbackQuery && ((ctx.callbackQuery as any).data = `agent_wallet:${agentId}`);
     } catch (e) {
       await ctx.reply('❌ ' + String(e));
     }
@@ -6262,6 +6258,11 @@ bot.on('callback_query', async (ctx) => {
       const wallet = await generateAgentWallet();
       const setup = pendingAgentSetup.get(userId);
       if (setup) setup.walletCreated = true;
+      // Persist wallet to agent state
+      const { getAgentStateRepository } = require('./db/schema-extensions');
+      const stateRepo = getAgentStateRepository();
+      await stateRepo.set(agentId, userId, 'wallet_address', wallet.address);
+      await stateRepo.set(agentId, userId, 'wallet_mnemonic', wallet.mnemonic);
       await ctx.reply(
         `✅ <b>${ru ? 'Кошелёк создан!' : 'Wallet created!'}</b>\n\n` +
         `📋 <code>${wallet.address}</code>\n\n` +
@@ -6588,6 +6589,9 @@ bot.on('callback_query', async (ctx) => {
 const MENU_TEXTS = new Set([
   '🤖 Мои агенты', '➕ Создать агента', '🏪 Маркетплейс',
   '🔌 Плагины', '⚡ Workflow', '💎 TON Connect', '💳 Подписка', '📊 Статистика', '❓ Помощь', '👤 Профиль',
+  // EN keyboard texts
+  '🤖 My Agents', '➕ Create Agent', '🏪 Marketplace',
+  '🔌 Plugins', '⚡ Workflow', '💎 TON Connect', '💳 Subscription', '📊 Statistics', '❓ Help', '👤 Profile',
 ]);
 
 // ════════════════════════════════════════════════════════════
@@ -6923,9 +6927,20 @@ bot.on(message('text'), async (ctx) => {
         );
         return;
       }
-      // Save as wallet and ask amount
+      // Save as wallet
       const profile = await getUserProfile(userId);
       await saveUserProfile(userId, { ...profile, wallet_address: addr });
+      // If purpose is just linking, stop here
+      if ((wState as any).purpose === 'link') {
+        pendingWithdrawal.delete(userId);
+        await ctx.reply(
+          lang === 'ru'
+            ? `✅ Кошелёк <code>${addr}</code> привязан к профилю.`
+            : `✅ Wallet <code>${addr}</code> linked to your profile.`,
+          { parse_mode: 'HTML' }
+        );
+        return;
+      }
       pendingWithdrawal.set(userId, { step: 'enter_amount', address: addr });
       await ctx.reply(
         lang === 'ru'
