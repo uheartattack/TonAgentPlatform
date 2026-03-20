@@ -854,6 +854,7 @@ interface ActiveHandle {
 const MAX_CONSECUTIVE_ERRORS = 5; // Deactivate agent after 5 consecutive tick failures
 
 const _activeHandles = new Map<number, ActiveHandle>();
+let _tickTriggerRegistered = false;
 
 /** Run an immediate tick for the given agent (e.g. when a chat message arrives). */
 function runImmediateTick(agentId: number): void {
@@ -9980,16 +9981,19 @@ export class AIAgentRuntime {
     // Register handle (needed for addMessageToAIAgent even without ticks)
     _activeHandles.set(opts.agentId, entry);
 
-    // ── Register Event Bus tick trigger ──
-    const { getEventBus } = require('./event-bus');
-    const bus = getEventBus();
-    bus.setTickTrigger((eventAgentId: number, event: any) => {
-      const handle = _activeHandles.get(eventAgentId);
-      if (!handle) return;
-      // Inject event context as a pending message so the agent sees it
-      const eventMsg = `[SYSTEM EVENT] type=${event.type}, source=${event.source}, data=${JSON.stringify(event.data)}`;
-      addMessageToAIAgent(eventAgentId, eventMsg);
-    });
+    // ── Register Event Bus tick trigger (once globally) ──
+    if (!_tickTriggerRegistered) {
+      const { getEventBus } = require('./event-bus');
+      const bus = getEventBus();
+      bus.setTickTrigger((eventAgentId: number, event: any) => {
+        const handle = _activeHandles.get(eventAgentId);
+        if (!handle) return;
+        // Inject event context as a pending message so the agent sees it
+        const eventMsg = `[SYSTEM EVENT] type=${event.type}, source=${event.source}, data=${JSON.stringify(event.data)}`;
+        addMessageToAIAgent(eventAgentId, eventMsg);
+      });
+      _tickTriggerRegistered = true;
+    }
 
     // If agent has a Telegram session AND no explicit interval → message-driven only
     // But if intervalMs > 0, agent wants proactive ticks (posting, checking unread, etc.)

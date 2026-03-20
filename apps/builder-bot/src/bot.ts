@@ -368,6 +368,20 @@ interface PendingAgentSetup {
 const pendingAgentSetup = new Map<number, PendingAgentSetup>(); // userId → setup state
 
 // ============================================================
+// Agent ownership cache — avoids repeated DB lookups for hot paths
+// ============================================================
+const _ownerCache = new Map<number, { ownerId: number; ts: number }>();
+function getCachedOwner(agentId: number): number | null {
+  const c = _ownerCache.get(agentId);
+  if (c && Date.now() - c.ts < 30000) return c.ownerId;
+  return null;
+}
+function setCachedOwner(agentId: number, ownerId: number) {
+  _ownerCache.set(agentId, { ownerId, ts: Date.now() });
+  if (_ownerCache.size > 5000) _ownerCache.clear();
+}
+
+// ============================================================
 // Язык пользователя (EN/RU, по умолчанию auto по первому сообщению)
 // ============================================================
 const userLanguages = new Map<number, 'ru' | 'en'>(); // userId → lang
@@ -537,6 +551,7 @@ interface PendingTemplateSetup {
   remaining: string[];                  // placeholder names still to fill
 }
 const pendingTemplateSetup = new Map<number, PendingTemplateSetup>(); // userId → state
+const _wizardLock = new Set<number>(); // prevents double-processing of template wizard input
 
 // ============================================================
 // State machine для публикации агента в маркетплейс
@@ -708,6 +723,15 @@ setInterval(() => {
     for (const tx of toRemove) processedTopupTx.delete(tx);
     cleaned += toRemove.length;
   }
+
+  // Cap cache Maps to prevent unbounded growth (not TTL-based, just size-capped)
+  if (userLanguages.size > 10000) { userLanguages.clear(); cleaned += 1; }
+  if (agentWallets.size > 10000) { agentWallets.clear(); cleaned += 1; }
+  if (tonConnectLinks.size > 10000) { tonConnectLinks.clear(); cleaned += 1; }
+  if (_ownerCache.size > 5000) { _ownerCache.clear(); cleaned += 1; }
+
+  // Cap _pendingTimestamps tracker itself
+  if (_pendingTimestamps.size > 10000) { _pendingTimestamps.clear(); cleaned += 1; }
 
   if (cleaned > 0) {
     console.log(`[Cleanup] Cleared ${cleaned} stale pending entries`);
@@ -7438,32 +7462,38 @@ bot.on(message('text'), async (ctx) => {
 
   // ── Template variable wizard: collect user input ─────────
   if (pendingTemplateSetup.has(userId)) {
-    const state = pendingTemplateSetup.get(userId)!;
-    const t = allAgentTemplates.find(x => x.id === state.templateId);
-    if (t && state.remaining.length > 0) {
-      const currentKey = state.remaining[0];
-      const placeholder = t.placeholders.find(p => p.name === currentKey);
-      const lang = getUserLang(userId);
-      // If placeholder uses option buttons — ignore text input
-      if (placeholder?.options && placeholder.options.length > 0) {
-        await ctx.reply(lang === 'ru' ? '👆 Нажмите одну из кнопок выше' : '👆 Please tap one of the buttons above');
+    if (_wizardLock.has(userId)) return; // prevent double-processing
+    _wizardLock.add(userId);
+    try {
+      const state = pendingTemplateSetup.get(userId)!;
+      const t = allAgentTemplates.find(x => x.id === state.templateId);
+      if (t && state.remaining.length > 0) {
+        const currentKey = state.remaining[0];
+        const placeholder = t.placeholders.find(p => p.name === currentKey);
+        const lang = getUserLang(userId);
+        // If placeholder uses option buttons — ignore text input
+        if (placeholder?.options && placeholder.options.length > 0) {
+          await ctx.reply(lang === 'ru' ? '👆 Нажмите одну из кнопок выше' : '👆 Please tap one of the buttons above');
+          return;
+        }
+        // Allow "skip"/"пропустить" to skip optional vars
+        const isSkip = /^(skip|пропустить|пропуск)$/i.test(trimmed);
+        if (isSkip && !placeholder?.required) {
+          state.remaining.shift();
+        } else if (trimmed.length > 0) {
+          state.collected[currentKey] = trimmed;
+          state.remaining.shift();
+        } else {
+          await ctx.reply(lang === 'ru' ? '❌ Введите значение или нажмите «Пропустить»' : '❌ Enter a value or tap Skip');
+          return;
+        }
+        await promptNextTemplateVar(ctx, userId, state);
         return;
       }
-      // Allow "skip"/"пропустить" to skip optional vars
-      const isSkip = /^(skip|пропустить|пропуск)$/i.test(trimmed);
-      if (isSkip && !placeholder?.required) {
-        state.remaining.shift();
-      } else if (trimmed.length > 0) {
-        state.collected[currentKey] = trimmed;
-        state.remaining.shift();
-      } else {
-        await ctx.reply(lang === 'ru' ? '❌ Введите значение или нажмите «Пропустить»' : '❌ Enter a value or tap Skip');
-        return;
-      }
-      await promptNextTemplateVar(ctx, userId, state);
-      return;
+      pendingTemplateSetup.delete(userId);
+    } finally {
+      _wizardLock.delete(userId);
     }
-    pendingTemplateSetup.delete(userId);
   }
 
   // ── Ожидаем название листинга от пользователя ─────────────
@@ -8167,6 +8197,7 @@ async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
     const r = await getDBTools().getAgent(agentId, userId);
     if (!r.success || !r.data) { await ctx.reply('❌ ' + (lang === 'ru' ? 'Агент не найден' : 'Agent not found')); return; }
     const a = r.data;
+    setCachedOwner(agentId, userId);
     const name = escHtml((a.name || '').slice(0, 60));
     const desc = escHtml((a.description || '').slice(0, 250));
     const statusIcon = a.isActive ? pe('green') : '⏸';

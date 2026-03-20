@@ -38,6 +38,8 @@ function getAIClient(config: Record<string, any>): { client: OpenAI; model: stri
   const baseURL = (config.AI_BASE_URL as string) || prov.baseURL;
   const model = (config.AI_MODEL as string) || prov.defaultModel;
 
+  if (!baseURL) throw new Error('Missing AI credentials: no baseURL resolved');
+
   return { client: new OpenAI({ baseURL, apiKey }), model };
 }
 
