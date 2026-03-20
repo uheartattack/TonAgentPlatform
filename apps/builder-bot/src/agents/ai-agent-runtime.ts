@@ -82,6 +82,22 @@ function sanitizeForLog(obj: any): string {
   );
 }
 
+// ── Human-in-the-Loop: ask_user_confirmation pending responses ───────────────
+const _pendingConfirmations = new Map<string, { resolve: (v: string) => void; timer: any; userId: number; agentId: number }>();
+let _confirmationCounter = 0;
+
+export function handleUserConfirmation(userId: number, text: string): boolean {
+  for (const [askId, pending] of _pendingConfirmations) {
+    if (pending.userId === userId) {
+      clearTimeout(pending.timer);
+      pending.resolve(text);
+      _pendingConfirmations.delete(askId);
+      return true;
+    }
+  }
+  return false;
+}
+
 // ── Channel post rate limiter (platform-level anti-spam) ────────────────────
 // Key: `${agentId}:${chatId}` → last post timestamp
 const _channelPostTimes = new Map<string, number>();
@@ -838,6 +854,9 @@ const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
   ton_mcp:     [], // dynamic — MCP tools discovered at runtime and injected via mcpTools param
   workspace:   ['file_write', 'file_read', 'file_list', 'file_delete', 'file_append', 'workspace_info'],
   mcp:         ['mcp_connect', 'mcp_list_servers', 'mcp_list_tools', 'mcp_call', 'mcp_disconnect'],
+  confirmation:['ask_user_confirmation'],
+  image_gen:   ['generate_image'],
+  email:       ['send_email'],
 };
 
 // ── Tool definitions (OpenAI function_call format) ─────────────────────────
@@ -3544,6 +3563,61 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
         },
       },
     },
+
+    // ── Human-in-the-Loop: ask_user_confirmation ─────────────────────
+    {
+      type: 'function',
+      function: {
+        name: 'ask_user_confirmation',
+        description: 'Отправить пользователю вопрос и дождаться ответа да/нет. Используй для подтверждения важных действий.',
+        parameters: {
+          type: 'object',
+          properties: {
+            question: { type: 'string', description: 'Вопрос для пользователя (будет отправлен в чат)' },
+            timeout_seconds: { type: 'number', description: 'Таймаут ожидания ответа в секундах (по умолчанию 120, макс 300)' },
+          },
+          required: ['question'],
+        },
+      },
+    },
+
+    // ── Image Generation ─────────────────────────────────────────────
+    {
+      type: 'function',
+      function: {
+        name: 'generate_image',
+        description: 'Сгенерировать изображение по текстовому описанию. Возвращает URL изображения.',
+        parameters: {
+          type: 'object',
+          properties: {
+            prompt: { type: 'string', description: 'Описание изображения (на английском для лучшего результата)' },
+            width: { type: 'number', description: 'Ширина в пикселях (по умолчанию 1024, макс 2048)' },
+            height: { type: 'number', description: 'Высота в пикселях (по умолчанию 1024, макс 2048)' },
+            style: { type: 'string', description: 'Стиль: realistic, anime, digital-art, oil-painting (опционально)' },
+          },
+          required: ['prompt'],
+        },
+      },
+    },
+
+    // ── Email / SMTP ─────────────────────────────────────────────────
+    {
+      type: 'function',
+      function: {
+        name: 'send_email',
+        description: 'Отправить email через SMTP. Требует настройки SMTP в конфиге агента (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM).',
+        parameters: {
+          type: 'object',
+          properties: {
+            to: { type: 'string', description: 'Email получателя' },
+            subject: { type: 'string', description: 'Тема письма' },
+            body: { type: 'string', description: 'Текст письма (plain text)' },
+            html: { type: 'string', description: 'HTML версия письма (опционально)' },
+          },
+          required: ['to', 'subject', 'body'],
+        },
+      },
+    },
   ];
 
   // Append MCP tools (dynamically discovered from @ton/mcp server)
@@ -3570,6 +3644,8 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
      'set_chat_policy', 'list_chat_policies',
      // Event-driven (agent decides when to wake up)
      'set_next_wake', 'subscribe_event', 'unsubscribe_event', 'emit_event', 'get_wake_info',
+     // Human-in-the-loop confirmation (always available)
+     'ask_user_confirmation',
     ].forEach(t => allowed.add(t));
     // Always allow MCP tools if ton_mcp capability is enabled
     if (enabledCapabilities.includes('ton_mcp') && mcpTools) {
@@ -7019,6 +7095,283 @@ export async function executeTool(
       }
     }
 
+    // ── Human-in-the-Loop: ask_user_confirmation ─────────────────────
+    case 'ask_user_confirmation': {
+      try {
+        const question = String(args.question || '');
+        if (!question) return { error: 'question is required' };
+        const timeoutSec = Math.min(Math.max(Number(args.timeout_seconds) || 120, 10), 300);
+        const askId = `confirm_${params.agentId}_${++_confirmationCounter}`;
+
+        // Send question to user via notifier
+        const questionText = `\u{1F916} Агент #${params.agentId} спрашивает:\n\n${question}\n\n\u{2709}\u{FE0F} Ответьте да/нет (yes/no):`;
+        await notifyUser(params.userId, questionText);
+
+        // Wait for user reply with timeout
+        const userReply = await new Promise<string>((resolve) => {
+          const timer = setTimeout(() => {
+            _pendingConfirmations.delete(askId);
+            resolve('__timeout__');
+          }, timeoutSec * 1000);
+          _pendingConfirmations.set(askId, { resolve, timer, userId: params.userId, agentId: params.agentId });
+        });
+
+        if (userReply === '__timeout__') {
+          return { approved: false, reason: 'timeout', message: `User did not reply within ${timeoutSec}s` };
+        }
+
+        // Parse response
+        const lower = userReply.trim().toLowerCase();
+        const positivePatterns = ['да', 'yes', 'ок', 'ok', 'давай', 'го', '+', 'конечно', 'разумеется', 'ага', 'угу', 'yep', 'yup', 'sure', 'y'];
+        const approved = positivePatterns.some(p => lower === p || lower.startsWith(p + ' ') || lower.startsWith(p + ','));
+        return { approved, user_reply: userReply };
+      } catch (e: any) {
+        return { error: e.message };
+      }
+    }
+
+    // ── Image Generation ─────────────────────────────────────────────
+    case 'generate_image': {
+      try {
+        const prompt = String(args.prompt || '');
+        if (!prompt) return { error: 'prompt is required' };
+        const width = Math.min(Math.max(Number(args.width) || 1024, 256), 2048);
+        const height = Math.min(Math.max(Number(args.height) || 1024, 256), 2048);
+        const style = args.style ? String(args.style) : '';
+
+        const fullPrompt = style ? `${prompt}, ${style} style` : prompt;
+        const encodedPrompt = encodeURIComponent(fullPrompt);
+
+        // Primary: Pollinations.ai (free, no API key)
+        const pollinationsUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${width}&height=${height}&nologo=true`;
+
+        // Verify the URL works (HEAD request)
+        try {
+          const checkResp = await fetch(pollinationsUrl, { method: 'HEAD', signal: AbortSignal.timeout(15000) });
+          if (checkResp.ok || checkResp.status === 302 || checkResp.status === 301) {
+            return { url: pollinationsUrl, provider: 'pollinations', width, height, prompt: fullPrompt };
+          }
+        } catch {}
+
+        // Fallback: OpenAI DALL-E (if user has OpenAI key)
+        const openaiKey = params.config.AI_API_KEY || params.config.OPENAI_API_KEY;
+        const provider = (params.config.AI_PROVIDER || '').toLowerCase();
+        if (openaiKey && (provider === 'openai' || provider === '' || !provider)) {
+          try {
+            const dalleResp = await fetch('https://api.openai.com/v1/images/generations', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${openaiKey}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                model: 'dall-e-3',
+                prompt: fullPrompt,
+                n: 1,
+                size: width <= 512 && height <= 512 ? '1024x1024' : `${Math.min(width, 1792)}x${Math.min(height, 1024)}`,
+              }),
+              signal: AbortSignal.timeout(60000),
+            });
+            const dalleData = await dalleResp.json() as any;
+            if (dalleData.data && dalleData.data[0]?.url) {
+              return { url: dalleData.data[0].url, provider: 'dall-e-3', width, height, prompt: fullPrompt };
+            }
+            if (dalleData.error) return { error: `DALL-E: ${dalleData.error.message}` };
+          } catch (de: any) {
+            return { error: `DALL-E fallback failed: ${de.message}` };
+          }
+        }
+
+        // If Pollinations HEAD failed, still return the URL (it often works with direct GET)
+        return { url: pollinationsUrl, provider: 'pollinations', width, height, prompt: fullPrompt, note: 'HEAD check failed but URL may still work' };
+      } catch (e: any) {
+        return { error: e.message };
+      }
+    }
+
+    // ── Email / SMTP ─────────────────────────────────────────────────
+    case 'send_email': {
+      try {
+        const to = String(args.to || '');
+        const subject = String(args.subject || '');
+        const body = String(args.body || '');
+        if (!to || !subject || !body) return { error: 'to, subject, and body are required' };
+
+        // Validate email format
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return { error: 'Invalid email address format' };
+
+        // Get SMTP config from agent settings
+        const smtpHost = params.config.SMTP_HOST;
+        const smtpPort = Number(params.config.SMTP_PORT) || 587;
+        const smtpUser = params.config.SMTP_USER;
+        const smtpPass = params.config.SMTP_PASS;
+        const smtpFrom = params.config.SMTP_FROM || smtpUser;
+
+        if (!smtpHost || !smtpUser || !smtpPass) {
+          return { error: 'SMTP not configured. Set SMTP_HOST, SMTP_USER, SMTP_PASS in agent config.' };
+        }
+
+        const htmlBody = args.html ? String(args.html) : '';
+        const boundary = `----=_Part_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+
+        // Build email content
+        let emailData = '';
+        emailData += `From: ${smtpFrom}\r\n`;
+        emailData += `To: ${to}\r\n`;
+        emailData += `Subject: =?UTF-8?B?${Buffer.from(subject).toString('base64')}?=\r\n`;
+        emailData += `MIME-Version: 1.0\r\n`;
+        emailData += `Date: ${new Date().toUTCString()}\r\n`;
+
+        if (htmlBody) {
+          emailData += `Content-Type: multipart/alternative; boundary="${boundary}"\r\n\r\n`;
+          emailData += `--${boundary}\r\n`;
+          emailData += `Content-Type: text/plain; charset=UTF-8\r\n\r\n`;
+          emailData += `${body}\r\n`;
+          emailData += `--${boundary}\r\n`;
+          emailData += `Content-Type: text/html; charset=UTF-8\r\n\r\n`;
+          emailData += `${htmlBody}\r\n`;
+          emailData += `--${boundary}--\r\n`;
+        } else {
+          emailData += `Content-Type: text/plain; charset=UTF-8\r\n\r\n`;
+          emailData += `${body}\r\n`;
+        }
+
+        // Send via SMTP using net/tls
+        const result = await new Promise<{ ok: boolean; error?: string }>((resolve) => {
+          const net = require('net');
+          const tls = require('tls');
+          let socket: any;
+          let response = '';
+          let step = 0; // 0=connect, 1=EHLO, 2=STARTTLS, 3=EHLO2, 4=AUTH, 5=MAIL, 6=RCPT, 7=DATA, 8=BODY, 9=QUIT
+          let tlsUpgraded = false;
+          const useDirectTLS = smtpPort === 465;
+
+          const timeout = setTimeout(() => {
+            try { socket?.destroy(); } catch {}
+            resolve({ ok: false, error: 'SMTP connection timeout (30s)' });
+          }, 30000);
+
+          function handleLine(line: string) {
+            const code = parseInt(line.slice(0, 3));
+            // Multi-line responses: wait for final line (code followed by space)
+            if (line.length > 3 && line[3] === '-') return;
+
+            switch (step) {
+              case 0: // Connected, send EHLO
+                step = 1;
+                socket.write(`EHLO agent.tonplatform.ru\r\n`);
+                break;
+              case 1: // EHLO response
+                if (useDirectTLS || tlsUpgraded) {
+                  // Already on TLS, proceed to AUTH
+                  step = 4;
+                  const authStr = Buffer.from(`\x00${smtpUser}\x00${smtpPass}`).toString('base64');
+                  socket.write(`AUTH PLAIN ${authStr}\r\n`);
+                } else {
+                  step = 2;
+                  socket.write(`STARTTLS\r\n`);
+                }
+                break;
+              case 2: // STARTTLS response
+                if (code === 220) {
+                  const tlsSocket = tls.connect({ socket, host: smtpHost, servername: smtpHost, rejectUnauthorized: false }, () => {
+                    socket = tlsSocket;
+                    tlsUpgraded = true;
+                    step = 3;
+                    socket.write(`EHLO agent.tonplatform.ru\r\n`);
+                    socket.on('data', onData);
+                  });
+                  tlsSocket.on('error', (e: any) => {
+                    clearTimeout(timeout);
+                    resolve({ ok: false, error: `TLS error: ${e.message}` });
+                  });
+                } else {
+                  // STARTTLS not supported, try AUTH anyway
+                  step = 4;
+                  const authStr = Buffer.from(`\x00${smtpUser}\x00${smtpPass}`).toString('base64');
+                  socket.write(`AUTH PLAIN ${authStr}\r\n`);
+                }
+                break;
+              case 3: // EHLO after TLS
+                step = 4;
+                const authStr3 = Buffer.from(`\x00${smtpUser}\x00${smtpPass}`).toString('base64');
+                socket.write(`AUTH PLAIN ${authStr3}\r\n`);
+                break;
+              case 4: // AUTH response
+                if (code !== 235) {
+                  clearTimeout(timeout);
+                  socket.write(`QUIT\r\n`);
+                  resolve({ ok: false, error: `SMTP auth failed (${code}): ${line}` });
+                  return;
+                }
+                step = 5;
+                socket.write(`MAIL FROM:<${smtpFrom}>\r\n`);
+                break;
+              case 5: // MAIL FROM response
+                step = 6;
+                socket.write(`RCPT TO:<${to}>\r\n`);
+                break;
+              case 6: // RCPT TO response
+                if (code !== 250) {
+                  clearTimeout(timeout);
+                  socket.write(`QUIT\r\n`);
+                  resolve({ ok: false, error: `Recipient rejected (${code}): ${line}` });
+                  return;
+                }
+                step = 7;
+                socket.write(`DATA\r\n`);
+                break;
+              case 7: // DATA response (354)
+                step = 8;
+                socket.write(emailData.replace(/\r\n\.\r\n/g, '\r\n..\r\n'));
+                socket.write(`\r\n.\r\n`);
+                break;
+              case 8: // Message accepted
+                step = 9;
+                socket.write(`QUIT\r\n`);
+                clearTimeout(timeout);
+                resolve({ ok: code === 250, error: code !== 250 ? `Send failed (${code}): ${line}` : undefined });
+                break;
+            }
+          }
+
+          let buffer = '';
+          function onData(data: Buffer) {
+            buffer += data.toString();
+            const lines = buffer.split('\r\n');
+            buffer = lines.pop() || '';
+            for (const line of lines) {
+              if (line.trim()) handleLine(line);
+            }
+          }
+
+          try {
+            if (useDirectTLS) {
+              socket = tls.connect({ host: smtpHost, port: smtpPort, rejectUnauthorized: false }, () => {
+                socket.on('data', onData);
+              });
+            } else {
+              socket = net.createConnection({ host: smtpHost, port: smtpPort }, () => {
+                socket.on('data', onData);
+              });
+            }
+            socket.on('error', (e: any) => {
+              clearTimeout(timeout);
+              resolve({ ok: false, error: `SMTP error: ${e.message}` });
+            });
+          } catch (e: any) {
+            clearTimeout(timeout);
+            resolve({ ok: false, error: `SMTP connect error: ${e.message}` });
+          }
+        });
+
+        if (!result.ok) return { error: result.error || 'SMTP send failed' };
+        return { ok: true, to, subject, message: 'Email sent successfully' };
+      } catch (e: any) {
+        return { error: e.message };
+      }
+    }
+
     default: {
       // ── Tool name aliases (AI sometimes uses wrong names) ──
       const ALIASES: Record<string, string> = {
@@ -9112,6 +9465,14 @@ export class AIAgentRuntime {
       _webRequestCounts.delete(agentId);
       // Note: _approvalWaiters is keyed by approval ID (number), cleaned by timeout
       _pendingAsks.delete(String(agentId));
+      // Clean up pending confirmations for this agent
+      for (const [askId, pending] of _pendingConfirmations) {
+        if (pending.agentId === agentId) {
+          clearTimeout(pending.timer);
+          pending.resolve('__timeout__');
+          _pendingConfirmations.delete(askId);
+        }
+      }
       // Clean up Event Bus (subscriptions + wake timers)
       try { require('./event-bus').getEventBus().cleanupAgent(agentId); } catch {}
       // Kill MCP subprocess if any
