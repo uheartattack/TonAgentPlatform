@@ -14,7 +14,7 @@ function resolveProvider(provider: string): { baseURL: string; defaultModel: str
   if (p.includes('gemini') || p.includes('google'))
     return { baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/', defaultModel: 'gemini-2.5-flash' };
   if (p.includes('anthropic') || p.includes('claude'))
-    return { baseURL: 'https://openrouter.ai/api/v1', defaultModel: 'anthropic/claude-haiku-4-5-20251001' };
+    return { baseURL: 'https://api.anthropic.com/v1/', defaultModel: 'claude-haiku-4-5-20251001' };
   if (p.includes('groq'))
     return { baseURL: 'https://api.groq.com/openai/v1', defaultModel: 'llama-3.3-70b-versatile' };
   if (p.includes('deepseek'))

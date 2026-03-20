@@ -96,12 +96,13 @@ export async function appendDailyLog(agentId: number, content: string): Promise<
      ON CONFLICT (agent_id, log_date)
      DO UPDATE SET content = builder_bot.agent_daily_logs.content || $2`,
     [agentId, entry]
-  ).catch(() => {
+  ).catch((err) => {
     // Fallback if unique index doesn't exist yet — just insert
+    console.warn('[AgentMemory] appendDailyLog primary insert failed:', err?.message);
     pool.query(
       `INSERT INTO builder_bot.agent_daily_logs (agent_id, content) VALUES ($1, $2)`,
       [agentId, entry]
-    ).catch(() => {});
+    ).catch((err2) => { console.warn('[AgentMemory] appendDailyLog fallback insert failed:', err2?.message); });
   });
 }
 
@@ -561,22 +562,31 @@ ${(recentLog || '').slice(-1000)}
     const pool = await getPool();
     const evolutionBlock = `\n\n═══ САМООБУЧЕНИЕ (эволюция #${evo.evolveCount}, ${new Date().toISOString().slice(0, 10)}) ═══\nДомен: ${evo.domain}\n${additions}\n═══════════════════════════════`;
 
-    await pool.query(
-      `UPDATE builder_bot.agents SET code = code || $1 WHERE id = $2`,
-      [evolutionBlock, agentId]
-    );
-
-    // Also update in trigger_config.code
+    // Wrap read-modify-write in a transaction to avoid race conditions
+    const dbClient = await pool.connect();
     try {
-      const agentRow = await pool.query('SELECT trigger_config FROM builder_bot.agents WHERE id=$1', [agentId]);
+      await dbClient.query('BEGIN');
+      await dbClient.query(
+        `UPDATE builder_bot.agents SET code = code || $1 WHERE id = $2`,
+        [evolutionBlock, agentId]
+      );
+
+      // Also update in trigger_config.code
+      const agentRow = await dbClient.query('SELECT trigger_config FROM builder_bot.agents WHERE id=$1 FOR UPDATE', [agentId]);
       if (agentRow.rows[0]) {
         const tc = agentRow.rows[0].trigger_config || {};
         if (tc.code) {
           tc.code = tc.code + evolutionBlock;
-          await pool.query('UPDATE builder_bot.agents SET trigger_config=$1 WHERE id=$2', [JSON.stringify(tc), agentId]);
+          await dbClient.query('UPDATE builder_bot.agents SET trigger_config=$1 WHERE id=$2', [JSON.stringify(tc), agentId]);
         }
       }
-    } catch {}
+      await dbClient.query('COMMIT');
+    } catch (txErr) {
+      await dbClient.query('ROLLBACK').catch(() => {});
+      throw txErr;
+    } finally {
+      dbClient.release();
+    }
 
     await appendDailyLog(agentId, `🧬 Prompt evolution #${evo.evolveCount}: domain=${evo.domain}\n${additions}`);
     console.log(`[AgentMemory] Agent #${agentId} evolved prompt (#${evo.evolveCount}): domain=${evo.domain}, +${additions.length} chars`);

@@ -89,8 +89,15 @@ function mdToHtml(text: string): string {
     // Headers: ### H → bold line
     html = html.replace(/^#{1,3}\s+(.+)$/gm, '<b>$1</b>');
 
-    // Links: [text](url)
-    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+    // Links: [text](url) — with URL sanitization
+    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m: string, linkText: string, url: string) => {
+      const trimmed = url.trim();
+      // Block javascript:, data:, vbscript: protocols
+      if (/^(javascript|data|vbscript):/i.test(trimmed)) return linkText;
+      // Escape quotes and ampersands in URL to prevent attribute injection
+      const safeUrl = trimmed.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+      return `<a href="${safeUrl}">${linkText}</a>`;
+    });
 
     return html.trim();
   } catch {
@@ -851,6 +858,7 @@ const dupFilter = new DuplicateFilter();
 const groupBuffer = new GroupContextBuffer();
 const chatRing = new ChatHistoryRing();
 const _rawDedup = new Set<string>(); // dedup for RAW → NewMessage bridge
+const _RAW_DEDUP_MAX = 10000;
 
 // Per-chat last message timestamp for elapsed time calculation
 const _lastMsgTime = new Map<string, number>();
@@ -858,6 +866,8 @@ const _lastMsgTime = new Map<string, number>();
 // Periodic cleanup: cap unbounded maps to prevent memory leaks
 setInterval(() => {
   const now = Date.now();
+  // Cap _rawDedup: clear if too large (entries are short-lived dedup keys)
+  if (_rawDedup.size > _RAW_DEDUP_MAX) _rawDedup.clear();
   // Cap _lastMsgTime: remove entries older than 24h
   if (_lastMsgTime.size > 5000) {
     const cutoff = (now / 1000) - 86400;

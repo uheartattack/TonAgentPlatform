@@ -55,6 +55,7 @@ export function initNotifier(bot: Telegraf) {
       if (now > exp) { _blockedUsers.delete(userId); _blockExpiry.delete(userId); }
     }
   }, 30 * 60 * 1000);
+  _cleanupInterval.unref();
 }
 
 // ── HTML helpers ──────────────────────────────────────────────
@@ -81,11 +82,11 @@ function safeTruncate(text: string, maxLen: number): string {
   let truncated = text.slice(0, maxLen - 50);
   // Close any open tags
   const openTags: string[] = [];
-  truncated.replace(/<(b|i|s|u|code|pre|a|tg-spoiler)[^>]*>/gi, (_, tag) => { openTags.push(tag.toLowerCase()); return ''; });
-  truncated.replace(/<\/(b|i|s|u|code|pre|a|tg-spoiler)>/gi, (_, tag) => {
+  truncated.replace(/<(b|i|s|u|code|pre|a|tg-spoiler)[^>]*>/gi, (_match, tag) => { openTags.push(tag.toLowerCase()); return _match; });
+  truncated.replace(/<\/(b|i|s|u|code|pre|a|tg-spoiler)>/gi, (_match, tag) => {
     const idx = openTags.lastIndexOf(tag.toLowerCase());
     if (idx !== -1) openTags.splice(idx, 1);
-    return '';
+    return _match;
   });
   // Close remaining open tags in reverse
   for (let i = openTags.length - 1; i >= 0; i--) {
