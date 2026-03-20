@@ -35,6 +35,20 @@ import {
   tgSendPhoto, tgSendVoice, tgCreatePoll, tgScheduleMessage, tgGetAdmins,
 } from '../services/telegram-userbot';
 import { userbotManager } from '../services/userbot-manager';
+import {
+  ubCreateChannel2, ubEditChannelTitle, ubEditChannelAbout, ubSetChannelUsername,
+  ubToggleSlowMode, ubDeleteChannel,
+  ubEditAdmin, ubBanUser2, ubKickUser2, ubMuteUser2, ubDeleteUserMessages,
+  ubToggleAntiSpam, ubGetAdminLog,
+  ubCreateInviteLink2, ubApproveJoinRequest,
+  ubSendStory, ubDeleteStory, ubGetStoryViews, ubGetPeerStories,
+  ubDownloadMedia2, ubCopyMessage, ubExportMessageLink, ubUnpinMessage2, ubUnpinAll,
+  ubSendVideoNote,
+  ubCreateForumTopic, ubEditForumTopic, ubGetForumTopics,
+  ubGetChannelStats, ubGetGroupStats,
+  ubSearchGlobal, ubResolveUsername, ubBlockUser, ubUnblockUser,
+  ubApplyBoost,
+} from '../services/userbot-manager';
 
 // ── User input sanitization: prevent prompt injection ──────────────────────
 // Strips control chars, zero-width chars, unicode tags, XML tags, triple backticks
@@ -838,6 +852,32 @@ const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
                 'tg_get_chat_stats', 'tg_save_draft', 'tg_send_with_buttons',
                 'tg_get_poll_results', 'tg_send_sticker', 'tg_send_gif',
                 'tg_send_voice', 'tg_transcribe_voice', 'tg_get_sticker_sets'],
+  telegram_admin: [
+    'tg_create_channel2', 'tg_edit_channel_title', 'tg_edit_channel_about',
+    'tg_set_channel_username', 'tg_toggle_slow_mode', 'tg_delete_channel',
+    'tg_edit_admin2', 'tg_ban_user2', 'tg_kick_user2', 'tg_mute_user2',
+    'tg_delete_user_messages', 'tg_toggle_antispam', 'tg_get_admin_log',
+    'tg_create_invite_link2', 'tg_approve_join_request',
+  ],
+  telegram_stories: [
+    'tg_send_story', 'tg_delete_story', 'tg_get_story_views', 'tg_get_peer_stories',
+  ],
+  telegram_forums: [
+    'tg_create_forum_topic', 'tg_edit_forum_topic', 'tg_get_forum_topics',
+  ],
+  telegram_analytics: [
+    'tg_get_channel_stats', 'tg_get_group_stats',
+  ],
+  telegram_media: [
+    'tg_download_media2', 'tg_copy_message2', 'tg_export_message_link',
+    'tg_unpin_message2', 'tg_unpin_all', 'tg_send_video_note',
+  ],
+  telegram_discovery: [
+    'tg_search_global', 'tg_resolve_username', 'tg_block_user', 'tg_unblock_user',
+  ],
+  telegram_premium: [
+    'tg_apply_boost',
+  ],
   web:         ['web_search', 'fetch_url', 'http_fetch'],
   state:       ['get_state', 'get_state_multi', 'set_state', 'list_state_keys', 'get_shared_state', 'set_shared_state'],
   events:      ['set_next_wake', 'subscribe_event', 'unsubscribe_event', 'emit_event', 'get_wake_info'],
@@ -3618,6 +3658,411 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
         },
       },
     },
+
+    // ── Channel Management (userbot-manager) ────────────────────────
+    {
+      type: 'function',
+      function: {
+        name: 'tg_create_channel2',
+        description: 'Создать новый канал или супергруппу через userbot (расширенная версия с about и megagroup).',
+        parameters: { type: 'object', properties: {
+          title: { type: 'string', description: 'Название канала/группы' },
+          about: { type: 'string', description: 'Описание канала' },
+          megagroup: { type: 'boolean', description: 'Создать супергруппу вместо канала (по умолчанию false)' },
+        }, required: ['title'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_edit_channel_title',
+        description: 'Изменить название канала/группы.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID канала/группы' },
+          title: { type: 'string', description: 'Новое название' },
+        }, required: ['chat_id', 'title'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_edit_channel_about',
+        description: 'Изменить описание канала/группы.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID канала/группы' },
+          about: { type: 'string', description: 'Новое описание' },
+        }, required: ['chat_id', 'about'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_set_channel_username',
+        description: 'Установить публичный username канала/группы.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID канала/группы' },
+          username: { type: 'string', description: 'Новый username (без @)' },
+        }, required: ['chat_id', 'username'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_toggle_slow_mode',
+        description: 'Включить/выключить медленный режим в группе. 0 = выключить.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID группы' },
+          seconds: { type: 'number', description: 'Интервал в секундах (0, 10, 30, 60, 300, 900, 3600)' },
+        }, required: ['chat_id', 'seconds'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_delete_channel',
+        description: 'Удалить канал/группу. НЕОБРАТИМО!',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID канала/группы для удаления' },
+        }, required: ['chat_id'] },
+      },
+    },
+
+    // ── Moderation (userbot-manager) ────────────────────────────────
+    {
+      type: 'function',
+      function: {
+        name: 'tg_edit_admin2',
+        description: 'Назначить/изменить права администратора в канале/группе (расширенная версия).',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID канала/группы' },
+          target_user_id: { type: 'string', description: 'ID пользователя' },
+          rights: { type: 'object', description: 'Права: { post_messages, edit_messages, delete_messages, ban_users, invite_users, pin_messages, manage_call, add_admins, anonymous, manage_topics }' },
+        }, required: ['chat_id', 'target_user_id', 'rights'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_ban_user2',
+        description: 'Забанить пользователя в группе/канале (расширенная версия с until_date).',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID группы/канала' },
+          target_user_id: { type: 'string', description: 'ID пользователя' },
+          until_date: { type: 'number', description: 'Unix timestamp окончания бана (0 = навсегда)' },
+        }, required: ['chat_id', 'target_user_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_kick_user2',
+        description: 'Кикнуть пользователя из группы/канала (расширенная версия).',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID группы/канала' },
+          target_user_id: { type: 'string', description: 'ID пользователя' },
+        }, required: ['chat_id', 'target_user_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_mute_user2',
+        description: 'Замутить пользователя в группе (расширенная версия с until_date).',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID группы' },
+          target_user_id: { type: 'string', description: 'ID пользователя' },
+          until_date: { type: 'number', description: 'Unix timestamp окончания мута (0 = навсегда)' },
+        }, required: ['chat_id', 'target_user_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_delete_user_messages',
+        description: 'Удалить все сообщения конкретного пользователя в группе.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID группы' },
+          target_user_id: { type: 'string', description: 'ID пользователя' },
+        }, required: ['chat_id', 'target_user_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_toggle_antispam',
+        description: 'Включить/выключить встроенный антиспам Telegram в группе.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID группы' },
+          enabled: { type: 'boolean', description: 'Включить (true) или выключить (false) антиспам' },
+        }, required: ['chat_id', 'enabled'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_get_admin_log',
+        description: 'Получить лог действий администраторов в канале/группе.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID канала/группы' },
+          limit: { type: 'number', description: 'Количество записей (по умолчанию 50)' },
+        }, required: ['chat_id'] },
+      },
+    },
+
+    // ── Invite Links (userbot-manager) ──────────────────────────────
+    {
+      type: 'function',
+      function: {
+        name: 'tg_create_invite_link2',
+        description: 'Создать пригласительную ссылку с расширенными параметрами (лимит, срок, одобрение, название).',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID канала/группы' },
+          expire_date: { type: 'number', description: 'Unix timestamp истечения ссылки (опционально)' },
+          usage_limit: { type: 'number', description: 'Максимум использований (опционально)' },
+          request_needed: { type: 'boolean', description: 'Требовать одобрение заявки (опционально)' },
+          title: { type: 'string', description: 'Название ссылки (опционально)' },
+        }, required: ['chat_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_approve_join_request',
+        description: 'Одобрить или отклонить заявку на вступление в группу/канал.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID канала/группы' },
+          target_user_id: { type: 'string', description: 'ID пользователя' },
+          approve: { type: 'boolean', description: 'true = одобрить, false = отклонить' },
+        }, required: ['chat_id', 'target_user_id', 'approve'] },
+      },
+    },
+
+    // ── Stories (userbot-manager) ───────────────────────────────────
+    {
+      type: 'function',
+      function: {
+        name: 'tg_send_story',
+        description: 'Опубликовать историю (story) в Telegram. Медиа загружается по URL.',
+        parameters: { type: 'object', properties: {
+          media_url: { type: 'string', description: 'URL фото или видео для истории' },
+          caption: { type: 'string', description: 'Подпись к истории (опционально)' },
+          pinned: { type: 'boolean', description: 'Закрепить историю в профиле (опционально)' },
+        }, required: ['media_url'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_delete_story',
+        description: 'Удалить свою историю.',
+        parameters: { type: 'object', properties: {
+          story_id: { type: 'number', description: 'ID истории для удаления' },
+        }, required: ['story_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_get_story_views',
+        description: 'Получить статистику просмотров истории.',
+        parameters: { type: 'object', properties: {
+          story_id: { type: 'number', description: 'ID истории' },
+        }, required: ['story_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_get_peer_stories',
+        description: 'Получить список историй пользователя/канала.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID пользователя/канала или username' },
+        }, required: ['chat_id'] },
+      },
+    },
+
+    // ── Media (userbot-manager) ─────────────────────────────────────
+    {
+      type: 'function',
+      function: {
+        name: 'tg_download_media2',
+        description: 'Скачать медиа из сообщения (фото/видео/документ) и получить base64/путь.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID чата' },
+          message_id: { type: 'number', description: 'ID сообщения с медиа' },
+        }, required: ['chat_id', 'message_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_copy_message2',
+        description: 'Скопировать сообщение из одного чата в другой (сохраняя форматирование).',
+        parameters: { type: 'object', properties: {
+          from_chat_id: { type: 'string', description: 'ID чата-источника' },
+          message_id: { type: 'number', description: 'ID сообщения' },
+          to_chat_id: { type: 'string', description: 'ID чата-назначения' },
+        }, required: ['from_chat_id', 'message_id', 'to_chat_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_export_message_link',
+        description: 'Получить публичную ссылку на сообщение в канале/группе.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID канала/группы' },
+          message_id: { type: 'number', description: 'ID сообщения' },
+        }, required: ['chat_id', 'message_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_unpin_message2',
+        description: 'Открепить конкретное сообщение (расширенная версия).',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID чата' },
+          message_id: { type: 'number', description: 'ID сообщения для открепления' },
+        }, required: ['chat_id', 'message_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_unpin_all',
+        description: 'Открепить все закреплённые сообщения в чате.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID чата' },
+        }, required: ['chat_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_send_video_note',
+        description: 'Отправить видеокружок (кружочек/видеозаметку) в чат. Видео загружается по URL.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID чата' },
+          video_url: { type: 'string', description: 'URL видео для кружочка' },
+        }, required: ['chat_id', 'video_url'] },
+      },
+    },
+
+    // ── Forum topics (userbot-manager) ──────────────────────────────
+    {
+      type: 'function',
+      function: {
+        name: 'tg_create_forum_topic',
+        description: 'Создать топик (тему) в форум-группе.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID форум-группы' },
+          title: { type: 'string', description: 'Название топика' },
+          icon_color: { type: 'number', description: 'Цвет иконки (опционально)' },
+        }, required: ['chat_id', 'title'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_edit_forum_topic',
+        description: 'Редактировать топик форума (название, закрыть/открыть).',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID форум-группы' },
+          topic_id: { type: 'number', description: 'ID топика' },
+          title: { type: 'string', description: 'Новое название (опционально)' },
+          closed: { type: 'boolean', description: 'Закрыть (true) или открыть (false) топик (опционально)' },
+        }, required: ['chat_id', 'topic_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_get_forum_topics',
+        description: 'Получить список топиков форум-группы.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID форум-группы' },
+          limit: { type: 'number', description: 'Количество (по умолчанию 50)' },
+        }, required: ['chat_id'] },
+      },
+    },
+
+    // ── Analytics (userbot-manager) ─────────────────────────────────
+    {
+      type: 'function',
+      function: {
+        name: 'tg_get_channel_stats',
+        description: 'Получить детальную статистику канала (подписчики, просмотры, рост и т.д.).',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID канала' },
+        }, required: ['chat_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_get_group_stats',
+        description: 'Получить статистику группы (участники, сообщения, активность).',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID группы' },
+        }, required: ['chat_id'] },
+      },
+    },
+
+    // ── Discovery (userbot-manager) ─────────────────────────────────
+    {
+      type: 'function',
+      function: {
+        name: 'tg_search_global',
+        description: 'Глобальный поиск по Telegram: каналы, группы, пользователи, сообщения.',
+        parameters: { type: 'object', properties: {
+          query: { type: 'string', description: 'Поисковый запрос' },
+          limit: { type: 'number', description: 'Количество результатов (по умолчанию 20)' },
+        }, required: ['query'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_resolve_username',
+        description: 'Получить информацию о пользователе/канале/группе по username.',
+        parameters: { type: 'object', properties: {
+          username: { type: 'string', description: 'Username (без @)' },
+        }, required: ['username'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_block_user',
+        description: 'Заблокировать пользователя в личных сообщениях.',
+        parameters: { type: 'object', properties: {
+          target_user_id: { type: 'string', description: 'ID пользователя' },
+        }, required: ['target_user_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_unblock_user',
+        description: 'Разблокировать пользователя.',
+        parameters: { type: 'object', properties: {
+          target_user_id: { type: 'string', description: 'ID пользователя' },
+        }, required: ['target_user_id'] },
+      },
+    },
+
+    // ── Premium (userbot-manager) ───────────────────────────────────
+    {
+      type: 'function',
+      function: {
+        name: 'tg_apply_boost',
+        description: 'Применить буст к каналу/группе (требует Telegram Premium).',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID канала/группы для буста' },
+        }, required: ['chat_id'] },
+      },
+    },
   ];
 
   // Append MCP tools (dynamically discovered from @ton/mcp server)
@@ -5371,7 +5816,20 @@ export async function executeTool(
     case 'tg_send_silent': case 'tg_get_webpage': case 'tg_press_button':
     case 'tg_get_chat_stats': case 'tg_save_draft': case 'tg_send_with_buttons':
     case 'tg_get_poll_results': case 'tg_send_sticker': case 'tg_send_gif':
-    case 'tg_send_voice': case 'tg_transcribe_voice': case 'tg_get_sticker_sets': {
+    case 'tg_send_voice': case 'tg_transcribe_voice': case 'tg_get_sticker_sets':
+    // ── New userbot-manager tools ──
+    case 'tg_create_channel2': case 'tg_edit_channel_title': case 'tg_edit_channel_about':
+    case 'tg_set_channel_username': case 'tg_toggle_slow_mode': case 'tg_delete_channel':
+    case 'tg_edit_admin2': case 'tg_ban_user2': case 'tg_kick_user2': case 'tg_mute_user2':
+    case 'tg_delete_user_messages': case 'tg_toggle_antispam': case 'tg_get_admin_log':
+    case 'tg_create_invite_link2': case 'tg_approve_join_request':
+    case 'tg_send_story': case 'tg_delete_story': case 'tg_get_story_views': case 'tg_get_peer_stories':
+    case 'tg_download_media2': case 'tg_copy_message2': case 'tg_export_message_link':
+    case 'tg_unpin_message2': case 'tg_unpin_all': case 'tg_send_video_note':
+    case 'tg_create_forum_topic': case 'tg_edit_forum_topic': case 'tg_get_forum_topics':
+    case 'tg_get_channel_stats': case 'tg_get_group_stats':
+    case 'tg_search_global': case 'tg_resolve_username': case 'tg_block_user': case 'tg_unblock_user':
+    case 'tg_apply_boost': {
       try {
         // Per-AGENT Telegram auth — each agent has its own TG account
         const tgSandbox = await userbotManager.buildAgentSandbox(params.agentId || 0) || await userbotManager.buildUserSandbox(params.userId);
@@ -5469,6 +5927,50 @@ export async function executeTool(
           case 'tg_send_voice': return await tgSandbox.sendVoice(args.chat_id, args.text, args.lang || 'ru');
           case 'tg_transcribe_voice': return await tgSandbox.transcribeVoice(args.chat_id, args.message_id);
           case 'tg_get_sticker_sets': return await tgSandbox.getStickerSets(args.query);
+          // ── Channel Management (userbot-manager) ──
+          case 'tg_create_channel2': return await ubCreateChannel2(params.userId, params.agentId || 0, args.title, args.about || '', args.megagroup || false);
+          case 'tg_edit_channel_title': return await ubEditChannelTitle(params.userId, params.agentId || 0, args.chat_id, args.title);
+          case 'tg_edit_channel_about': return await ubEditChannelAbout(params.userId, params.agentId || 0, args.chat_id, args.about);
+          case 'tg_set_channel_username': return await ubSetChannelUsername(params.userId, params.agentId || 0, args.chat_id, args.username);
+          case 'tg_toggle_slow_mode': return await ubToggleSlowMode(params.userId, params.agentId || 0, args.chat_id, args.seconds);
+          case 'tg_delete_channel': return await ubDeleteChannel(params.userId, params.agentId || 0, args.chat_id);
+          // ── Moderation ──
+          case 'tg_edit_admin2': return await ubEditAdmin(params.userId, params.agentId || 0, args.chat_id, args.target_user_id, args.rights || {});
+          case 'tg_ban_user2': return await ubBanUser2(params.userId, params.agentId || 0, args.chat_id, args.target_user_id, args.until_date || 0);
+          case 'tg_kick_user2': return await ubKickUser2(params.userId, params.agentId || 0, args.chat_id, args.target_user_id);
+          case 'tg_mute_user2': return await ubMuteUser2(params.userId, params.agentId || 0, args.chat_id, args.target_user_id, args.until_date || 0);
+          case 'tg_delete_user_messages': return await ubDeleteUserMessages(params.userId, params.agentId || 0, args.chat_id, args.target_user_id);
+          case 'tg_toggle_antispam': return await ubToggleAntiSpam(params.userId, params.agentId || 0, args.chat_id, args.enabled);
+          case 'tg_get_admin_log': return await ubGetAdminLog(params.userId, params.agentId || 0, args.chat_id, args.limit || 50);
+          // ── Invite Links ──
+          case 'tg_create_invite_link2': return await ubCreateInviteLink2(params.userId, params.agentId || 0, args.chat_id, { expireDate: args.expire_date, usageLimit: args.usage_limit, requestNeeded: args.request_needed, title: args.title });
+          case 'tg_approve_join_request': return await ubApproveJoinRequest(params.userId, params.agentId || 0, args.chat_id, args.target_user_id, args.approve);
+          // ── Stories ──
+          case 'tg_send_story': return await ubSendStory(params.userId, params.agentId || 0, args.media_url, args.caption, args.pinned);
+          case 'tg_delete_story': return await ubDeleteStory(params.userId, params.agentId || 0, args.story_id);
+          case 'tg_get_story_views': return await ubGetStoryViews(params.userId, params.agentId || 0, args.story_id);
+          case 'tg_get_peer_stories': return await ubGetPeerStories(params.userId, params.agentId || 0, args.chat_id);
+          // ── Media ──
+          case 'tg_download_media2': return await ubDownloadMedia2(params.userId, params.agentId || 0, args.chat_id, args.message_id);
+          case 'tg_copy_message2': return await ubCopyMessage(params.userId, params.agentId || 0, args.from_chat_id, args.message_id, args.to_chat_id);
+          case 'tg_export_message_link': return await ubExportMessageLink(params.userId, params.agentId || 0, args.chat_id, args.message_id);
+          case 'tg_unpin_message2': return await ubUnpinMessage2(params.userId, params.agentId || 0, args.chat_id, args.message_id);
+          case 'tg_unpin_all': return await ubUnpinAll(params.userId, params.agentId || 0, args.chat_id);
+          case 'tg_send_video_note': return await ubSendVideoNote(params.userId, params.agentId || 0, args.chat_id, args.video_url);
+          // ── Forum ──
+          case 'tg_create_forum_topic': return await ubCreateForumTopic(params.userId, params.agentId || 0, args.chat_id, args.title, args.icon_color);
+          case 'tg_edit_forum_topic': return await ubEditForumTopic(params.userId, params.agentId || 0, args.chat_id, args.topic_id, args.title, args.closed);
+          case 'tg_get_forum_topics': return await ubGetForumTopics(params.userId, params.agentId || 0, args.chat_id, args.limit || 50);
+          // ── Analytics ──
+          case 'tg_get_channel_stats': return await ubGetChannelStats(params.userId, params.agentId || 0, args.chat_id);
+          case 'tg_get_group_stats': return await ubGetGroupStats(params.userId, params.agentId || 0, args.chat_id);
+          // ── Discovery ──
+          case 'tg_search_global': return await ubSearchGlobal(params.userId, params.agentId || 0, args.query, args.limit || 20);
+          case 'tg_resolve_username': return await ubResolveUsername(params.userId, params.agentId || 0, args.username);
+          case 'tg_block_user': return await ubBlockUser(params.userId, params.agentId || 0, args.target_user_id);
+          case 'tg_unblock_user': return await ubUnblockUser(params.userId, params.agentId || 0, args.target_user_id);
+          // ── Premium ──
+          case 'tg_apply_boost': return await ubApplyBoost(params.userId, params.agentId || 0, args.chat_id);
           default: return { error: 'Unknown tg tool' };
         }
       } catch (e: any) { return { error: e.message }; }
@@ -7476,6 +7978,19 @@ async function executeGlobalTgTool(name: string, args: any): Promise<any> {
     case 'tg_get_chat_stats': case 'tg_save_draft': case 'tg_send_with_buttons':
     case 'tg_get_poll_results': case 'tg_send_sticker': case 'tg_send_gif':
     case 'tg_transcribe_voice': case 'tg_get_sticker_sets':
+    // ── New userbot-manager tools (all require per-agent auth) ──
+    case 'tg_create_channel2': case 'tg_edit_channel_title': case 'tg_edit_channel_about':
+    case 'tg_set_channel_username': case 'tg_toggle_slow_mode': case 'tg_delete_channel':
+    case 'tg_edit_admin2': case 'tg_ban_user2': case 'tg_kick_user2': case 'tg_mute_user2':
+    case 'tg_delete_user_messages': case 'tg_toggle_antispam': case 'tg_get_admin_log':
+    case 'tg_create_invite_link2': case 'tg_approve_join_request':
+    case 'tg_send_story': case 'tg_delete_story': case 'tg_get_story_views': case 'tg_get_peer_stories':
+    case 'tg_download_media2': case 'tg_copy_message2': case 'tg_export_message_link':
+    case 'tg_unpin_message2': case 'tg_unpin_all': case 'tg_send_video_note':
+    case 'tg_create_forum_topic': case 'tg_edit_forum_topic': case 'tg_get_forum_topics':
+    case 'tg_get_channel_stats': case 'tg_get_group_stats':
+    case 'tg_search_global': case 'tg_resolve_username': case 'tg_block_user': case 'tg_unblock_user':
+    case 'tg_apply_boost':
       return { error: 'This tool requires per-agent Telegram auth (userbot). Connect via agent settings.' };
     default: return { error: 'Unknown tg tool' };
   }
