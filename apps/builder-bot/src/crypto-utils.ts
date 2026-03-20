@@ -29,7 +29,7 @@ export function decryptApiKey(stored: string): string {
     const encrypted = Buffer.from(parts[2], 'base64');
     const decipher = crypto.createDecipheriv(_ENC_ALGO, _ENC_KEY, iv);
     decipher.setAuthTag(tag);
-    return decipher.update(encrypted) + decipher.final('utf8');
+    return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
   } catch (e) {
     console.warn('[crypto-utils] decryptApiKey failed, returning raw value:', (e as Error).message);
     return stored;
