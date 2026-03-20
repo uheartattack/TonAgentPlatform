@@ -20,6 +20,12 @@ import { pendingBotAuth } from './api-server';
 import { getTonConnectManager } from './ton-connect';
 import { getPluginManager } from './plugins-system';
 import { getTelegramGiftsService } from './services/telegram-gifts';
+import {
+  initPluginMarketplace, searchPlugins, getPluginListing, installPlugin,
+  uninstallPlugin, ratePlugin, getCreatorRevenue, getCreatorListings,
+  getUserPlugins as getMarketplaceUserPlugins, CATEGORIES as PLUGIN_CATEGORIES,
+  type PluginListing as MktPluginListing,
+} from './services/plugin-marketplace';
 import { getUserSettingsRepository, getMarketplaceRepository, getExecutionHistoryRepository, getAgentStateRepository, getBalanceTxRepository } from './db/schema-extensions';
 import { pool as dbPool } from './db';
 import { getWorkflowEngine } from './agent-cooperation';
@@ -332,6 +338,11 @@ const pendingRenames = new Map<number, number>(); // userId → agentId
 // State machine для редактирования агента (userId → agentId)
 // ============================================================
 const pendingEdits = new Map<number, number>();
+
+// ============================================================
+// Iterative refinement tracking: stores last created/edited agentId per user
+// ============================================================
+const pendingRefinements = new Map<number, number>(); // userId → last agentId
 
 // ============================================================
 // Chat with AI agent: userId → agentId (активный чат-сеанс)
@@ -1426,6 +1437,132 @@ bot.command('plugin', async (ctx) => {
   }
 
   await safeReply(ctx, '📦 <b>Плагины</b>\n\n/plugin list — список\n/plugin create — создать\n/plugin delete имя — удалить', { parse_mode: 'HTML' });
+});
+
+// ── /plugin_market — Plugin Marketplace with revenue sharing ──────
+bot.command('plugin_market', async (ctx) => {
+  const lang = getUserLang(ctx.from.id);
+  const CATS = [
+    { id: 'data-feed',      icon: '📡', name: lang === 'ru' ? 'Дата-фиды' : 'Data Feeds' },
+    { id: 'dex-connector',  icon: '🔄', name: lang === 'ru' ? 'DEX коннекторы' : 'DEX Connectors' },
+    { id: 'notification',   icon: '🔔', name: lang === 'ru' ? 'Уведомления' : 'Notifications' },
+    { id: 'analytics',      icon: '📊', name: lang === 'ru' ? 'Аналитика' : 'Analytics' },
+    { id: 'social',         icon: '💬', name: lang === 'ru' ? 'Социальные' : 'Social' },
+    { id: 'utility',        icon: '🔧', name: lang === 'ru' ? 'Утилиты' : 'Utilities' },
+    { id: 'telegram',       icon: '✈️', name: 'Telegram' },
+    { id: 'defi',           icon: '💎', name: 'DeFi' },
+    { id: 'nft',            icon: '🖼', name: 'NFT' },
+  ];
+
+  // Count plugins per category
+  const allPlugins = await searchPlugins(undefined, undefined, 500);
+  const totalCount = allPlugins.length;
+
+  let text =
+    `🔌 <b>${lang === 'ru' ? 'Маркетплейс плагинов' : 'Plugin Marketplace'}</b>\n` +
+    `<i>${lang === 'ru' ? 'Расширения для ваших агентов — бесплатные и платные' : 'Extensions for your agents — free and paid'}</i>\n\n` +
+    `📦 ${lang === 'ru' ? 'Всего плагинов' : 'Total plugins'}: <b>${totalCount}</b>\n\n`;
+
+  for (const c of CATS) {
+    const count = allPlugins.filter(p => p.category === c.id).length;
+    if (count > 0) text += `${c.icon} <b>${escHtml(c.name)}</b> — ${count}\n`;
+  }
+
+  if (totalCount === 0) {
+    text += `<i>${lang === 'ru' ? 'Пока нет плагинов. Будьте первым — опубликуйте свой!' : 'No plugins yet. Be the first — publish yours!'}</i>\n`;
+  }
+
+  // Top plugins by installs
+  const top = allPlugins.slice(0, 3);
+  if (top.length > 0) {
+    text += `\n🔥 <b>${lang === 'ru' ? 'Популярные' : 'Popular'}:</b>\n`;
+    for (const p of top) {
+      const price = p.priceStars > 0 ? `${p.priceStars} ⭐` : (lang === 'ru' ? 'Бесплатно' : 'Free');
+      const stars = p.avgRating > 0 ? ` ${'⭐'.repeat(Math.round(p.avgRating))}` : '';
+      text += `• <b>${escHtml(p.name)}</b> — ${price}${stars} (${p.installs} ${lang === 'ru' ? 'уст.' : 'inst.'})\n`;
+    }
+  }
+
+  const btns: Array<Array<{ text: string; callback_data: string }>> = [];
+  // Category buttons (2 per row)
+  for (let i = 0; i < CATS.length; i += 2) {
+    const row: Array<{ text: string; callback_data: string }> = [];
+    row.push({ text: `${CATS[i].icon} ${CATS[i].name}`, callback_data: `pmkt_cat:${CATS[i].id}` });
+    if (CATS[i + 1]) {
+      row.push({ text: `${CATS[i + 1].icon} ${CATS[i + 1].name}`, callback_data: `pmkt_cat:${CATS[i + 1].id}` });
+    }
+    btns.push(row);
+  }
+  btns.push([{ text: `📋 ${lang === 'ru' ? 'Все плагины' : 'All plugins'}`, callback_data: 'pmkt_all' }]);
+  btns.push([
+    { text: `📦 ${lang === 'ru' ? 'Мои плагины' : 'My plugins'}`, callback_data: 'pmkt_my' },
+    { text: `💰 ${lang === 'ru' ? 'Мой доход' : 'My revenue'}`, callback_data: 'pmkt_revenue' },
+  ]);
+
+  await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: btns } });
+});
+
+// ── /my_plugins — user's installed marketplace plugins ──────
+bot.command('my_plugins', async (ctx) => {
+  const userId = ctx.from.id;
+  const lang = getUserLang(userId);
+  const plugins = await getMarketplaceUserPlugins(userId);
+
+  if (!plugins.length) {
+    await safeReply(ctx,
+      `📦 <b>${lang === 'ru' ? 'Мои плагины' : 'My Plugins'}</b>\n\n` +
+      `${lang === 'ru' ? 'У вас нет установленных плагинов из маркетплейса.' : 'You have no installed marketplace plugins.'}\n\n` +
+      `${lang === 'ru' ? 'Найдите плагины в' : 'Find plugins at'} /plugin_market`,
+      { parse_mode: 'HTML' }
+    );
+    return;
+  }
+
+  let text = `📦 <b>${lang === 'ru' ? 'Мои плагины' : 'My Plugins'} (${plugins.length}):</b>\n\n`;
+  for (const p of plugins.slice(0, 15)) {
+    const price = p.priceStars > 0 ? `${p.priceStars} ⭐` : '🆓';
+    const stars = p.avgRating > 0 ? ` ${'⭐'.repeat(Math.round(p.avgRating))}` : '';
+    text += `${price} <b>${escHtml(p.name)}</b> v${escHtml(p.version)}${stars}\n`;
+    text += `   <i>${escHtml((p.description || '').slice(0, 60))}</i>\n\n`;
+  }
+
+  const btns = plugins.slice(0, 8).map(p => [
+    { text: `🔍 ${p.name}`, callback_data: `pmkt_view:${p.id}` },
+    { text: '❌', callback_data: `pmkt_uninstall:${p.id}` },
+  ]);
+  btns.push([{ text: `🔌 ${lang === 'ru' ? 'Маркетплейс' : 'Marketplace'}`, callback_data: 'pmkt_home' }]);
+
+  await safeReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: btns } });
+});
+
+// ── /plugin_revenue — creator revenue stats ──────
+bot.command('plugin_revenue', async (ctx) => {
+  const userId = ctx.from.id;
+  const lang = getUserLang(userId);
+  const revenue = await getCreatorRevenue(userId);
+  const listings = await getCreatorListings(userId);
+
+  let text =
+    `💰 <b>${lang === 'ru' ? 'Доход от плагинов' : 'Plugin Revenue'}</b>\n\n` +
+    `${lang === 'ru' ? 'Заработано' : 'Total earned'}: <b>${revenue.totalEarned} ⭐</b>\n` +
+    `${lang === 'ru' ? 'Установок' : 'Total installs'}: <b>${revenue.totalInstalls}</b>\n` +
+    `${lang === 'ru' ? 'К выплате' : 'Pending payout'}: <b>${revenue.pendingPayout} ⭐</b>\n` +
+    `${lang === 'ru' ? 'Комиссия платформы' : 'Platform fee'}: 15%\n\n`;
+
+  if (listings.length > 0) {
+    text += `📋 <b>${lang === 'ru' ? 'Ваши плагины' : 'Your plugins'} (${listings.length}):</b>\n\n`;
+    for (const l of listings.slice(0, 10)) {
+      const price = l.priceStars > 0 ? `${l.priceStars} ⭐` : (lang === 'ru' ? 'Бесплатно' : 'Free');
+      const status = l.isActive ? '🟢' : '🔴';
+      text += `${status} <b>${escHtml(l.name)}</b> — ${price} — ${l.installs} ${lang === 'ru' ? 'уст.' : 'inst.'}\n`;
+    }
+  } else {
+    text += `<i>${lang === 'ru' ? 'Вы ещё не опубликовали ни одного плагина.' : 'You have not published any plugins yet.'}</i>\n`;
+  }
+
+  text += `\n${lang === 'ru' ? 'Опубликуйте плагин в' : 'Publish a plugin at'} /plugin_market`;
+
+  await safeReply(ctx, text, { parse_mode: 'HTML' });
 });
 
 // ── /tglogin — авторизация Telegram для Fragment API ──────────────
