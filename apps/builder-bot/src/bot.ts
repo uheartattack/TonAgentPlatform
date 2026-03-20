@@ -2282,10 +2282,9 @@ bot.command('crew', async (ctx) => {
     }
     let text = '🤝 <b>Ваши команды агентов:</b>\n\n';
     for (const c of crews) {
-      const status = c.isActive ? '🟢' : '⚪';
-      text += `${status} <b>${escHtml(c.name)}</b> (ID: ${c.id})\n`;
+      text += `🟢 <b>${escHtml(c.name)}</b> (ID: ${c.id})\n`;
       text += `   📋 ${escHtml(c.description?.slice(0, 60) || 'Без описания')}\n`;
-      text += `   🔄 ${c.flowType} | 👥 ${c.agents.length} агентов\n\n`;
+      text += `   🔄 ${c.flow?.type || 'sequential'} | 👥 ${c.agents?.length || 0} агентов\n\n`;
     }
     await safeReply(ctx, text, { parse_mode: 'HTML' });
   } catch (e: any) {
@@ -2304,8 +2303,8 @@ bot.command('leaderboard', async (ctx) => {
     const medals = ['🥇', '🥈', '🥉'];
     for (const entry of leaders) {
       const medal = medals[entry.rank - 1] || `${entry.rank}.`;
-      text += `${medal} <b>${escHtml(entry.agentName)}</b>\n`;
-      text += `   Автор: ${escHtml(entry.creatorName)} | Рейтинг: ${entry.score}/100\n\n`;
+      text += `${medal} <b>${escHtml(entry.agentName || 'Agent #' + entry.agentId)}</b>\n`;
+      text += `   ${entry.tier || ''} | Рейтинг: ${entry.value || 0}/100\n\n`;
     }
     await safeReply(ctx, text, { parse_mode: 'HTML' });
   } catch (e: any) {
@@ -2326,18 +2325,21 @@ bot.command('kya', async (ctx) => {
 
     const tierEmoji: Record<string, string> = { unverified: '⬜', bronze: '🟫', silver: '⬛', gold: '🟨', platinum: '💎' };
 
+    const tier = kya.trustScore?.tier || 'unverified';
+    const score = kya.trustScore?.score || 0;
     let text = `📋 <b>Know Your Agent: ${escHtml(kya.agentName)}</b>\n\n`;
-    text += `${tierEmoji[kya.trustTier] || '⬜'} Доверие: <b>${kya.trustScore}/100</b> (${kya.trustTier})\n`;
-    text += `👤 Создатель: ${kya.creatorUsername ? '@' + escHtml(kya.creatorUsername) : 'ID ' + kya.creatorTelegramId}\n`;
+    text += `${tierEmoji[tier] || '⬜'} Доверие: <b>${score}/100</b> (${tier})\n`;
+    text += `👤 Создатель: ID ${kya.creatorId}\n`;
     text += `🔐 Хеш кода: <code>${kya.codeHash}</code>\n\n`;
 
+    const cap = kya.capabilities || {} as any;
     text += '<b>Возможности:</b>\n';
-    if (kya.canSendTon) text += '💸 Отправка TON\n';
-    if (kya.canAccessWallet) text += '👛 Доступ к кошельку\n';
-    if (kya.canReadMessages) text += '📖 Чтение сообщений\n';
-    if (kya.canSendMessages) text += '✉️ Отправка сообщений\n';
-    if (kya.canModerateGroups) text += '🛡 Модерация групп\n';
-    if ((kya as any).canCallExternalAPIs) text += '🌐 Внешние API\n';
+    if (cap.canSendTon) text += '💸 Отправка TON\n';
+    if (cap.canAccessWallet) text += '👛 Доступ к кошельку\n';
+    if (cap.canReadMessages) text += '📖 Чтение сообщений\n';
+    if (cap.canSendNotifications) text += '✉️ Уведомления\n';
+    if (cap.canModerateGroups) text += '🛡 Модерация групп\n';
+    if (cap.canCallExternalAPIs) text += '🌐 Внешние API\n';
 
     if (kya.warnings.length) {
       text += '\n<b>Предупреждения:</b>\n';
@@ -2357,21 +2359,15 @@ bot.command('gdp', async (ctx) => {
     const gdp = await getPlatformGDP();
     if (!gdp) return safeReply(ctx, '📊 Данные пока недоступны');
 
+    const c = gdp.current || gdp;
     let text = '📊 <b>Agent Economy Dashboard</b>\n\n';
-    text += `🤖 Агентов: <b>${gdp.totalAgents}</b> (активных: ${gdp.activeAgents})\n`;
-    text += `👥 Создателей: <b>${gdp.totalCreators}</b>\n`;
-    text += `⚡ Запусков за 24ч: <b>${gdp.totalExecutions24h}</b>\n`;
-    text += `📈 Запусков за 7д: <b>${gdp.totalExecutions7d}</b>\n`;
-    text += `📊 Всего запусков: <b>${gdp.totalExecutionsAllTime}</b>\n`;
-    text += `💎 Объём TON: <b>${gdp.totalTonVolume.toFixed(2)}</b>\n`;
-    text += `📉 Рост за 7д: <b>${gdp.growthRate7d > 0 ? '+' : ''}${gdp.growthRate7d}%</b>\n`;
-
-    if (gdp.topAgentsByExecutions?.length) {
-      text += '\n<b>Топ агенты:</b>\n';
-      for (const a of gdp.topAgentsByExecutions.slice(0, 5)) {
-        text += `  • ${escHtml(a.name)} — ${a.executions} запусков\n`;
-      }
-    }
+    text += `🤖 Агентов: <b>${c.totalAgents || 0}</b> (активных: ${c.activeAgents || 0})\n`;
+    text += `👥 Создателей: <b>${c.totalCreators || 0}</b>\n`;
+    text += `⚡ Запусков за 24ч: <b>${c.executions24h || 0}</b>\n`;
+    text += `📈 Запусков за 7д: <b>${c.executions7d || 0}</b>\n`;
+    text += `📊 Всего запусков: <b>${c.executionsAll || 0}</b>\n`;
+    text += `💎 Объём TON: <b>${(c.tonVolumeAll || 0).toFixed?.(2) || 0}</b>\n`;
+    text += `📉 Рост: <b>${(c.growthRateExecs || 0) > 0 ? '+' : ''}${c.growthRateExecs || 0}%</b> запусков | <b>${(c.growthRateAgents || 0) > 0 ? '+' : ''}${c.growthRateAgents || 0}%</b> агентов\n`;
 
     await safeReply(ctx, text, { parse_mode: 'HTML' });
   } catch (e: any) {
@@ -3748,6 +3744,228 @@ bot.on('callback_query', async (ctx) => {
   if (data.startsWith('create_from_template:')) {
     await ctx.answerCbQuery('Создаю агента...');
     await createAgentFromTemplate(ctx, data.split(':')[1], userId);
+    return;
+  }
+
+  // ── Plugin Marketplace (pmkt_*) ──
+  if (data === 'pmkt_home') {
+    await ctx.answerCbQuery();
+    const pmLang = getUserLang(userId);
+    const allP = await searchPlugins(undefined, undefined, 500);
+    let pmText =
+      `🔌 <b>${pmLang === 'ru' ? 'Маркетплейс плагинов' : 'Plugin Marketplace'}</b>\n` +
+      `📦 ${pmLang === 'ru' ? 'Всего' : 'Total'}: <b>${allP.length}</b>\n\n`;
+    const pmCats = [
+      { id: 'data-feed', icon: '📡', name: pmLang === 'ru' ? 'Дата-фиды' : 'Data Feeds' },
+      { id: 'dex-connector', icon: '🔄', name: 'DEX' },
+      { id: 'notification', icon: '🔔', name: pmLang === 'ru' ? 'Уведомления' : 'Notifications' },
+      { id: 'analytics', icon: '📊', name: pmLang === 'ru' ? 'Аналитика' : 'Analytics' },
+      { id: 'social', icon: '💬', name: pmLang === 'ru' ? 'Социальные' : 'Social' },
+      { id: 'utility', icon: '🔧', name: pmLang === 'ru' ? 'Утилиты' : 'Utilities' },
+      { id: 'telegram', icon: '✈️', name: 'Telegram' },
+      { id: 'defi', icon: '💎', name: 'DeFi' },
+      { id: 'nft', icon: '🖼', name: 'NFT' },
+    ];
+    for (const c of pmCats) {
+      const cnt = allP.filter(p => p.category === c.id).length;
+      if (cnt > 0) pmText += `${c.icon} <b>${escHtml(c.name)}</b> — ${cnt}\n`;
+    }
+    const pmBtns: Array<Array<{ text: string; callback_data: string }>> = [];
+    for (let i = 0; i < pmCats.length; i += 2) {
+      const row: Array<{ text: string; callback_data: string }> = [];
+      row.push({ text: `${pmCats[i].icon} ${pmCats[i].name}`, callback_data: `pmkt_cat:${pmCats[i].id}` });
+      if (pmCats[i + 1]) row.push({ text: `${pmCats[i + 1].icon} ${pmCats[i + 1].name}`, callback_data: `pmkt_cat:${pmCats[i + 1].id}` });
+      pmBtns.push(row);
+    }
+    pmBtns.push([{ text: `📋 ${pmLang === 'ru' ? 'Все плагины' : 'All'}`, callback_data: 'pmkt_all' }]);
+    pmBtns.push([
+      { text: `📦 ${pmLang === 'ru' ? 'Мои' : 'Mine'}`, callback_data: 'pmkt_my' },
+      { text: `💰 ${pmLang === 'ru' ? 'Доход' : 'Revenue'}`, callback_data: 'pmkt_revenue' },
+    ]);
+    await editOrReply(ctx, pmText, { parse_mode: 'HTML', reply_markup: { inline_keyboard: pmBtns } });
+    return;
+  }
+
+  if (data === 'pmkt_all') {
+    await ctx.answerCbQuery();
+    const pmLang = getUserLang(userId);
+    const allP = await searchPlugins(undefined, undefined, 30);
+    let pmText = `📋 <b>${pmLang === 'ru' ? 'Все плагины' : 'All Plugins'} (${allP.length}):</b>\n\n`;
+    for (const p of allP.slice(0, 15)) {
+      const pprice = p.priceStars > 0 ? `${p.priceStars} ⭐` : '🆓';
+      const prating = p.avgRating > 0 ? ` ${p.avgRating.toFixed(1)}★` : '';
+      pmText += `${pprice} <b>${escHtml(p.name)}</b>${prating} — ${p.installs} ${pmLang === 'ru' ? 'уст.' : 'inst.'}\n`;
+    }
+    if (allP.length === 0) pmText += `<i>${pmLang === 'ru' ? 'Пока нет плагинов.' : 'No plugins yet.'}</i>`;
+    const pmBtns = allP.slice(0, 10).map(p => [
+      { text: `🔍 ${p.name}`, callback_data: `pmkt_view:${p.id}` },
+    ]);
+    pmBtns.push([{ text: `◀️ ${pmLang === 'ru' ? 'Назад' : 'Back'}`, callback_data: 'pmkt_home' }]);
+    await editOrReply(ctx, pmText, { parse_mode: 'HTML', reply_markup: { inline_keyboard: pmBtns } });
+    return;
+  }
+
+  if (data.startsWith('pmkt_cat:')) {
+    await ctx.answerCbQuery();
+    const pmCat = data.split(':')[1];
+    const pmLang = getUserLang(userId);
+    const pmPlugins = await searchPlugins(undefined, pmCat, 20);
+    const pmCatNames: Record<string, string> = {
+      'data-feed': '📡 Data Feeds', 'dex-connector': '🔄 DEX', 'notification': '🔔 Notifications',
+      'analytics': '📊 Analytics', 'social': '💬 Social', 'utility': '🔧 Utilities',
+      'telegram': '✈️ Telegram', 'defi': '💎 DeFi', 'nft': '🖼 NFT',
+    };
+    const pmCatName = pmCatNames[pmCat] || pmCat;
+    let pmText = `${pmCatName}\n<b>${pmLang === 'ru' ? 'Плагины' : 'Plugins'} (${pmPlugins.length}):</b>\n\n`;
+    for (const p of pmPlugins.slice(0, 15)) {
+      const pprice = p.priceStars > 0 ? `${p.priceStars} ⭐` : '🆓';
+      const prating = p.avgRating > 0 ? ` ${p.avgRating.toFixed(1)}★` : '';
+      pmText += `${pprice} <b>${escHtml(p.name)}</b>${prating} — ${p.installs} ${pmLang === 'ru' ? 'уст.' : 'inst.'}\n`;
+    }
+    if (pmPlugins.length === 0) pmText += `<i>${pmLang === 'ru' ? 'Нет плагинов в этой категории.' : 'No plugins in this category.'}</i>`;
+    const pmBtns = pmPlugins.slice(0, 10).map(p => [
+      { text: `🔍 ${p.name}`, callback_data: `pmkt_view:${p.id}` },
+    ]);
+    pmBtns.push([{ text: `◀️ ${pmLang === 'ru' ? 'Назад' : 'Back'}`, callback_data: 'pmkt_home' }]);
+    await editOrReply(ctx, pmText, { parse_mode: 'HTML', reply_markup: { inline_keyboard: pmBtns } });
+    return;
+  }
+
+  if (data.startsWith('pmkt_view:')) {
+    await ctx.answerCbQuery();
+    const pmLid = parseInt(data.split(':')[1]);
+    const pmLang = getUserLang(userId);
+    const pmP = await getPluginListing(pmLid);
+    if (!pmP) { await editOrReply(ctx, '❌ Plugin not found'); return; }
+    const pmPrice = pmP.priceStars > 0 ? `${pmP.priceStars} ⭐ (${(pmP.priceStars * 0.01).toFixed(2)} TON)` : (pmLang === 'ru' ? '🆓 Бесплатно' : '🆓 Free');
+    const pmRating = pmP.totalRatings > 0 ? `${pmP.avgRating.toFixed(1)}★ (${pmP.totalRatings} ${pmLang === 'ru' ? 'отзывов' : 'reviews'})` : (pmLang === 'ru' ? 'Нет отзывов' : 'No reviews');
+    const pmText =
+      `🔌 <b>${escHtml(pmP.name)}</b> v${escHtml(pmP.version)}\n\n` +
+      `📁 ${pmLang === 'ru' ? 'Категория' : 'Category'}: <b>${escHtml(pmP.category)}</b>\n` +
+      `💰 ${pmLang === 'ru' ? 'Цена' : 'Price'}: <b>${pmPrice}</b>\n` +
+      `⭐ ${pmLang === 'ru' ? 'Рейтинг' : 'Rating'}: ${pmRating}\n` +
+      `📥 ${pmLang === 'ru' ? 'Установок' : 'Installs'}: <b>${pmP.installs}</b>\n\n` +
+      `📝 ${escHtml(pmP.description || (pmLang === 'ru' ? 'Без описания' : 'No description'))}\n`;
+    const viewBtns: Array<Array<{ text: string; callback_data: string }>> = [
+      [{ text: `📥 ${pmLang === 'ru' ? 'Установить' : 'Install'}`, callback_data: `pmkt_install:${pmLid}` }],
+      [
+        { text: '⭐1', callback_data: `pmkt_rate:${pmLid}:1` },
+        { text: '⭐2', callback_data: `pmkt_rate:${pmLid}:2` },
+        { text: '⭐3', callback_data: `pmkt_rate:${pmLid}:3` },
+        { text: '⭐4', callback_data: `pmkt_rate:${pmLid}:4` },
+        { text: '⭐5', callback_data: `pmkt_rate:${pmLid}:5` },
+      ],
+      [{ text: `◀️ ${pmLang === 'ru' ? 'Назад' : 'Back'}`, callback_data: 'pmkt_home' }],
+    ];
+    await editOrReply(ctx, pmText, { parse_mode: 'HTML', reply_markup: { inline_keyboard: viewBtns } });
+    return;
+  }
+
+  if (data.startsWith('pmkt_install:')) {
+    const pmLid = parseInt(data.split(':')[1]);
+    const pmLang = getUserLang(userId);
+    const pmResult = await installPlugin(userId, pmLid);
+    if (pmResult.ok) {
+      await ctx.answerCbQuery(pmLang === 'ru' ? '✅ Плагин установлен!' : '✅ Plugin installed!');
+      const pmP = await getPluginListing(pmLid);
+      await editOrReply(ctx,
+        `✅ <b>${pmLang === 'ru' ? 'Плагин установлен' : 'Plugin Installed'}</b>\n\n` +
+        `🔌 <b>${escHtml(pmP?.name || '#' + pmLid)}</b>\n\n` +
+        `${pmLang === 'ru' ? 'Плагин доступен вашим агентам.' : 'Plugin is now available to your agents.'}`,
+        { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
+          [{ text: `📦 ${pmLang === 'ru' ? 'Мои плагины' : 'My plugins'}`, callback_data: 'pmkt_my' }],
+          [{ text: `◀️ ${pmLang === 'ru' ? 'Маркетплейс' : 'Marketplace'}`, callback_data: 'pmkt_home' }],
+        ] } }
+      );
+    } else {
+      await ctx.answerCbQuery(`❌ ${pmResult.error || 'Error'}`, { show_alert: true });
+    }
+    return;
+  }
+
+  if (data.startsWith('pmkt_uninstall:')) {
+    const pmLid = parseInt(data.split(':')[1]);
+    const pmLang = getUserLang(userId);
+    const pmOk = await uninstallPlugin(userId, pmLid);
+    await ctx.answerCbQuery(pmOk ? (pmLang === 'ru' ? '✅ Удалено' : '✅ Uninstalled') : '❌ Error');
+    const pmMyPlugins = await getMarketplaceUserPlugins(userId);
+    let pmText = `📦 <b>${pmLang === 'ru' ? 'Мои плагины' : 'My Plugins'} (${pmMyPlugins.length}):</b>\n\n`;
+    if (pmMyPlugins.length === 0) {
+      pmText += `<i>${pmLang === 'ru' ? 'Список пуст.' : 'List is empty.'}</i>`;
+    } else {
+      for (const pp of pmMyPlugins.slice(0, 15)) {
+        const pprice = pp.priceStars > 0 ? `${pp.priceStars} ⭐` : '🆓';
+        pmText += `${pprice} <b>${escHtml(pp.name)}</b> v${escHtml(pp.version)}\n`;
+      }
+    }
+    const uninstBtns = pmMyPlugins.slice(0, 8).map(pp => [
+      { text: `🔍 ${pp.name}`, callback_data: `pmkt_view:${pp.id}` },
+      { text: '❌', callback_data: `pmkt_uninstall:${pp.id}` },
+    ]);
+    uninstBtns.push([{ text: `◀️ ${pmLang === 'ru' ? 'Маркетплейс' : 'Marketplace'}`, callback_data: 'pmkt_home' }]);
+    await editOrReply(ctx, pmText, { parse_mode: 'HTML', reply_markup: { inline_keyboard: uninstBtns } });
+    return;
+  }
+
+  if (data.startsWith('pmkt_rate:')) {
+    const pmParts = data.split(':');
+    const pmLid = parseInt(pmParts[1]);
+    const pmRatingVal = parseInt(pmParts[2]);
+    const pmLang = getUserLang(userId);
+    const pmOk = await ratePlugin(userId, pmLid, pmRatingVal);
+    if (pmOk) {
+      await ctx.answerCbQuery(`${pmLang === 'ru' ? 'Оценка' : 'Rated'}: ${'⭐'.repeat(pmRatingVal)}`);
+    } else {
+      await ctx.answerCbQuery(pmLang === 'ru' ? '❌ Установите плагин, чтобы оценить' : '❌ Install plugin to rate', { show_alert: true });
+    }
+    return;
+  }
+
+  if (data === 'pmkt_my') {
+    await ctx.answerCbQuery();
+    const pmLang = getUserLang(userId);
+    const pmMyPlugins = await getMarketplaceUserPlugins(userId);
+    let pmText = `📦 <b>${pmLang === 'ru' ? 'Мои плагины' : 'My Plugins'} (${pmMyPlugins.length}):</b>\n\n`;
+    if (pmMyPlugins.length === 0) {
+      pmText += `<i>${pmLang === 'ru' ? 'Нет установленных плагинов.' : 'No installed plugins.'}</i>\n`;
+      pmText += `\n${pmLang === 'ru' ? 'Найдите плагины в маркетплейсе!' : 'Find plugins in the marketplace!'}`;
+    } else {
+      for (const pp of pmMyPlugins.slice(0, 15)) {
+        const pprice = pp.priceStars > 0 ? `${pp.priceStars} ⭐` : '🆓';
+        pmText += `${pprice} <b>${escHtml(pp.name)}</b> v${escHtml(pp.version)}\n`;
+        pmText += `   <i>${escHtml((pp.description || '').slice(0, 50))}</i>\n\n`;
+      }
+    }
+    const myBtns = pmMyPlugins.slice(0, 8).map(pp => [
+      { text: `🔍 ${pp.name}`, callback_data: `pmkt_view:${pp.id}` },
+      { text: '❌', callback_data: `pmkt_uninstall:${pp.id}` },
+    ]);
+    myBtns.push([{ text: `◀️ ${pmLang === 'ru' ? 'Маркетплейс' : 'Marketplace'}`, callback_data: 'pmkt_home' }]);
+    await editOrReply(ctx, pmText, { parse_mode: 'HTML', reply_markup: { inline_keyboard: myBtns } });
+    return;
+  }
+
+  if (data === 'pmkt_revenue') {
+    await ctx.answerCbQuery();
+    const pmLang = getUserLang(userId);
+    const pmRevenue = await getCreatorRevenue(userId);
+    const pmListings = await getCreatorListings(userId);
+    let pmText =
+      `💰 <b>${pmLang === 'ru' ? 'Доход от плагинов' : 'Plugin Revenue'}</b>\n\n` +
+      `${pmLang === 'ru' ? 'Заработано' : 'Earned'}: <b>${pmRevenue.totalEarned} ⭐</b>\n` +
+      `${pmLang === 'ru' ? 'Установок' : 'Installs'}: <b>${pmRevenue.totalInstalls}</b>\n` +
+      `${pmLang === 'ru' ? 'Комиссия' : 'Fee'}: 15%\n\n`;
+    if (pmListings.length > 0) {
+      pmText += `📋 <b>${pmLang === 'ru' ? 'Ваши плагины' : 'Your plugins'}:</b>\n`;
+      for (const l of pmListings.slice(0, 8)) {
+        const lprice = l.priceStars > 0 ? `${l.priceStars} ⭐` : (pmLang === 'ru' ? 'Бесплатно' : 'Free');
+        pmText += `• <b>${escHtml(l.name)}</b> — ${lprice} — ${l.installs} ${pmLang === 'ru' ? 'уст.' : 'inst.'}\n`;
+      }
+    }
+    const revBtns = [
+      [{ text: `◀️ ${pmLang === 'ru' ? 'Маркетплейс' : 'Marketplace'}`, callback_data: 'pmkt_home' }],
+    ];
+    await editOrReply(ctx, pmText, { parse_mode: 'HTML', reply_markup: { inline_keyboard: revBtns } });
     return;
   }
 
