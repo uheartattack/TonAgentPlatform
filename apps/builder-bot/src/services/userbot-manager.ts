@@ -4411,6 +4411,654 @@ export async function downloadTgMedia(agentId: number, chatId: string | number, 
   }
 }
 
+// ── NEW: Exported per-userId/agentId functions ──────────────────────
+
+// Helper: get client for agent
+async function _getAgentClient(agentId: number): Promise<TelegramClient> {
+  const client = await userbotManager.getClient(agentId);
+  if (!client) throw new Error(`No active client for agent #${agentId}`);
+  return client;
+}
+
+// ── Channel/Group Management ────────────────────────────────────────
+
+export async function ubCreateChannel2(userId: number, agentId: number, title: string, about: string, megagroup = false) {
+  try {
+    const client = await _getAgentClient(agentId);
+    const result = await (client as any).invoke(new Api.channels.CreateChannel({
+      title,
+      about,
+      broadcast: !megagroup,
+      megagroup,
+    }));
+    const ch = (result as any).chats?.[0];
+    return { ok: true, channel_id: ch ? String(ch.id) : '0', title, username: ch?.username || null };
+  } catch (e: any) {
+    console.warn('[UB] ubCreateChannel2 error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+export async function ubEditChannelTitle(userId: number, agentId: number, chatId: string, title: string) {
+  try {
+    const client = await _getAgentClient(agentId);
+    const channel = await (client as any).getInputEntity(chatId);
+    await (client as any).invoke(new Api.channels.EditTitle({ channel, title }));
+    return { ok: true };
+  } catch (e: any) {
+    console.warn('[UB] ubEditChannelTitle error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+export async function ubEditChannelAbout(userId: number, agentId: number, chatId: string, about: string) {
+  try {
+    const client = await _getAgentClient(agentId);
+    const peer = await (client as any).getInputEntity(chatId);
+    await (client as any).invoke(new Api.messages.EditChatAbout({ peer, about }));
+    return { ok: true };
+  } catch (e: any) {
+    console.warn('[UB] ubEditChannelAbout error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+export async function ubSetChannelUsername(userId: number, agentId: number, chatId: string, username: string) {
+  try {
+    const client = await _getAgentClient(agentId);
+    const channel = await (client as any).getInputEntity(chatId);
+    await (client as any).invoke(new Api.channels.UpdateUsername({ channel, username }));
+    return { ok: true };
+  } catch (e: any) {
+    console.warn('[UB] ubSetChannelUsername error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+export async function ubToggleSlowMode(userId: number, agentId: number, chatId: string, seconds: number) {
+  try {
+    const client = await _getAgentClient(agentId);
+    const channel = await (client as any).getInputEntity(chatId);
+    await (client as any).invoke(new Api.channels.ToggleSlowMode({ channel, seconds }));
+    return { ok: true };
+  } catch (e: any) {
+    console.warn('[UB] ubToggleSlowMode error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+export async function ubDeleteChannel(userId: number, agentId: number, chatId: string) {
+  try {
+    const client = await _getAgentClient(agentId);
+    const channel = await (client as any).getInputEntity(chatId);
+    await (client as any).invoke(new Api.channels.DeleteChannel({ channel }));
+    return { ok: true };
+  } catch (e: any) {
+    console.warn('[UB] ubDeleteChannel error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+// ── Moderation ──────────────────────────────────────────────────────
+
+export async function ubEditAdmin(userId: number, agentId: number, chatId: string, targetUserId: string, rights: Record<string, boolean>) {
+  try {
+    const client = await _getAgentClient(agentId);
+    const channel = await (client as any).getInputEntity(chatId);
+    const user = await (client as any).getInputEntity(targetUserId);
+    await (client as any).invoke(new Api.channels.EditAdmin({
+      channel,
+      userId: user,
+      adminRights: new Api.ChatAdminRights(rights as any),
+      rank: '',
+    }));
+    return { ok: true };
+  } catch (e: any) {
+    console.warn('[UB] ubEditAdmin error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+export async function ubBanUser2(userId: number, agentId: number, chatId: string, targetUserId: string, untilDate = 0) {
+  try {
+    const client = await _getAgentClient(agentId);
+    const channel = await (client as any).getInputEntity(chatId);
+    const participant = await (client as any).getInputEntity(targetUserId);
+    await (client as any).invoke(new Api.channels.EditBanned({
+      channel,
+      participant,
+      bannedRights: new Api.ChatBannedRights({
+        viewMessages: true,
+        untilDate: untilDate as any,
+      }),
+    }));
+    return { ok: true };
+  } catch (e: any) {
+    console.warn('[UB] ubBanUser2 error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+export async function ubKickUser2(userId: number, agentId: number, chatId: string, targetUserId: string) {
+  try {
+    const client = await _getAgentClient(agentId);
+    const channel = await (client as any).getInputEntity(chatId);
+    const participant = await (client as any).getInputEntity(targetUserId);
+    // Ban then immediately unban = kick
+    await (client as any).invoke(new Api.channels.EditBanned({
+      channel,
+      participant,
+      bannedRights: new Api.ChatBannedRights({
+        viewMessages: true,
+        untilDate: 0 as any,
+      }),
+    }));
+    await (client as any).invoke(new Api.channels.EditBanned({
+      channel,
+      participant,
+      bannedRights: new Api.ChatBannedRights({
+        untilDate: 0 as any,
+      }),
+    }));
+    return { ok: true };
+  } catch (e: any) {
+    console.warn('[UB] ubKickUser2 error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+export async function ubMuteUser2(userId: number, agentId: number, chatId: string, targetUserId: string, untilDate = 0) {
+  try {
+    const client = await _getAgentClient(agentId);
+    const channel = await (client as any).getInputEntity(chatId);
+    const participant = await (client as any).getInputEntity(targetUserId);
+    await (client as any).invoke(new Api.channels.EditBanned({
+      channel,
+      participant,
+      bannedRights: new Api.ChatBannedRights({
+        sendMessages: true,
+        untilDate: untilDate as any,
+      }),
+    }));
+    return { ok: true };
+  } catch (e: any) {
+    console.warn('[UB] ubMuteUser2 error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+export async function ubDeleteUserMessages(userId: number, agentId: number, chatId: string, targetUserId: string) {
+  try {
+    const client = await _getAgentClient(agentId);
+    const channel = await (client as any).getInputEntity(chatId);
+    const participant = await (client as any).getInputEntity(targetUserId);
+    await (client as any).invoke(new Api.channels.DeleteParticipantHistory({
+      channel,
+      participant,
+    }));
+    return { ok: true };
+  } catch (e: any) {
+    console.warn('[UB] ubDeleteUserMessages error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+export async function ubToggleAntiSpam(userId: number, agentId: number, chatId: string, enabled: boolean) {
+  try {
+    const client = await _getAgentClient(agentId);
+    const channel = await (client as any).getInputEntity(chatId);
+    await (client as any).invoke(new Api.channels.ToggleAntiSpam({
+      channel,
+      enabled,
+    }));
+    return { ok: true };
+  } catch (e: any) {
+    console.warn('[UB] ubToggleAntiSpam error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+export async function ubGetAdminLog(userId: number, agentId: number, chatId: string, limit = 50) {
+  try {
+    const client = await _getAgentClient(agentId);
+    const channel = await (client as any).getInputEntity(chatId);
+    const result = await (client as any).invoke(new Api.channels.GetAdminLog({
+      channel,
+      q: '',
+      eventsFilter: undefined as any,
+      admins: [] as any,
+      maxId: BigInt(0) as any,
+      minId: BigInt(0) as any,
+      limit,
+    }));
+    const events = ((result as any).events || []).map((ev: any) => ({
+      id: String(ev.id),
+      date: ev.date,
+      userId: ev.userId ? String(ev.userId) : null,
+      action: ev.action?.className || 'unknown',
+    }));
+    return { ok: true, events };
+  } catch (e: any) {
+    console.warn('[UB] ubGetAdminLog error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+// ── Invite Links ────────────────────────────────────────────────────
+
+export async function ubCreateInviteLink2(userId: number, agentId: number, chatId: string, opts?: { expireDate?: number; usageLimit?: number; requestNeeded?: boolean; title?: string }) {
+  try {
+    const client = await _getAgentClient(agentId);
+    const peer = await (client as any).getInputEntity(chatId);
+    const result = await (client as any).invoke(new Api.messages.ExportChatInvite({
+      peer,
+      expireDate: opts?.expireDate as any,
+      usageLimit: opts?.usageLimit as any,
+      requestNeeded: opts?.requestNeeded,
+      title: opts?.title,
+    }));
+    return { ok: true, link: (result as any).link || '', expireDate: (result as any).expireDate || null };
+  } catch (e: any) {
+    console.warn('[UB] ubCreateInviteLink2 error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+export async function ubApproveJoinRequest(userId: number, agentId: number, chatId: string, targetUserId: string, approve: boolean) {
+  try {
+    const client = await _getAgentClient(agentId);
+    const peer = await (client as any).getInputEntity(chatId);
+    const user = await (client as any).getInputEntity(targetUserId);
+    await (client as any).invoke(new Api.messages.HideChatJoinRequest({
+      peer,
+      userId: user,
+      approved: approve,
+    }));
+    return { ok: true, approved: approve };
+  } catch (e: any) {
+    console.warn('[UB] ubApproveJoinRequest error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+// ── Stories ──────────────────────────────────────────────────────────
+
+export async function ubSendStory(userId: number, agentId: number, mediaUrl: string, caption?: string, pinned?: boolean) {
+  try {
+    _validateUrl(mediaUrl);
+    const client = await _getAgentClient(agentId);
+    const resp = await fetch(mediaUrl);
+    const buf = Buffer.from(await resp.arrayBuffer());
+    const file = await (client as any).uploadFile({ file: buf, workers: 1 });
+    const isVideo = /\.(mp4|mov|avi|webm)/i.test(mediaUrl);
+    const media = isVideo
+      ? new Api.InputMediaUploadedDocument({ file, mimeType: 'video/mp4', attributes: [new Api.DocumentAttributeVideo({ duration: 15, w: 720, h: 1280, roundMessage: false, supportsStreaming: true } as any)] })
+      : new Api.InputMediaUploadedPhoto({ file });
+    const result = await (client as any).invoke(new Api.stories.SendStory({
+      peer: new Api.InputPeerSelf(),
+      media,
+      caption: caption || '',
+      pinned: pinned || false,
+      privacyRules: [new Api.InputPrivacyValueAllowAll()],
+      randomId: BigInt(Math.floor(Math.random() * 1e15)) as any,
+    }));
+    const storyId = (result as any).updates?.find((u: any) => u.story)?.story?.id;
+    return { ok: true, storyId: storyId || null };
+  } catch (e: any) {
+    console.warn('[UB] ubSendStory error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+export async function ubDeleteStory(userId: number, agentId: number, storyId: number) {
+  try {
+    const client = await _getAgentClient(agentId);
+    await (client as any).invoke(new Api.stories.DeleteStories({
+      peer: new Api.InputPeerSelf(),
+      id: [storyId],
+    }));
+    return { ok: true };
+  } catch (e: any) {
+    console.warn('[UB] ubDeleteStory error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+export async function ubGetStoryViews(userId: number, agentId: number, storyId: number) {
+  try {
+    const client = await _getAgentClient(agentId);
+    const result = await (client as any).invoke(new Api.stories.GetStoryViewsList({
+      peer: new Api.InputPeerSelf(),
+      id: storyId,
+      offsetDate: 0,
+      offsetId: BigInt(0) as any,
+      limit: 100,
+    } as any));
+    const views = ((result as any).views || []).map((v: any) => ({
+      userId: String(v.userId),
+      date: v.date,
+    }));
+    return { ok: true, count: (result as any).count || views.length, views };
+  } catch (e: any) {
+    console.warn('[UB] ubGetStoryViews error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+export async function ubGetPeerStories(userId: number, agentId: number, chatId: string) {
+  try {
+    const client = await _getAgentClient(agentId);
+    const peer = await (client as any).getInputEntity(chatId);
+    const result = await (client as any).invoke(new Api.stories.GetPeerStories({ peer }));
+    const stories = ((result as any).stories?.stories || []).map((s: any) => ({
+      id: s.id,
+      date: s.date,
+      caption: s.caption || '',
+      views: s.views?.viewsCount || 0,
+      pinned: s.pinned || false,
+    }));
+    return { ok: true, stories };
+  } catch (e: any) {
+    console.warn('[UB] ubGetPeerStories error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+// ── Media & Content ─────────────────────────────────────────────────
+
+export async function ubDownloadMedia2(userId: number, agentId: number, chatId: string, msgId: number) {
+  try {
+    const client = await _getAgentClient(agentId);
+    const msgs = await (client as any).getMessages(chatId, { ids: [msgId] });
+    const msg = msgs?.[0];
+    if (!msg?.media) return { ok: false, error: 'No media in message' };
+    const buffer = await (client as any).downloadMedia(msg, { }) as Buffer;
+    if (!buffer || buffer.length === 0) return { ok: false, error: 'Empty media' };
+    if (buffer.length > 50 * 1024) return { ok: false, error: 'Media exceeds 50KB limit' };
+    const base64 = buffer.toString('base64');
+    return { ok: true, base64, size: buffer.length };
+  } catch (e: any) {
+    console.warn('[UB] ubDownloadMedia2 error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+export async function ubCopyMessage(userId: number, agentId: number, fromChatId: string, msgId: number, toChatId: string) {
+  try {
+    const client = await _getAgentClient(agentId);
+    const msgs = await (client as any).getMessages(fromChatId, { ids: [msgId] });
+    const msg = msgs?.[0];
+    if (!msg) return { ok: false, error: 'Message not found' };
+    if (msg.media) {
+      const result = await (client as any).sendFile(toChatId, {
+        file: msg.media,
+        caption: msg.message || '',
+        parseMode: 'html',
+      });
+      return { ok: true, newMsgId: (result as any).id || 0 };
+    } else {
+      const result = await (client as any).sendMessage(toChatId, { message: msg.message || '' });
+      return { ok: true, newMsgId: (result as any).id || 0 };
+    }
+  } catch (e: any) {
+    console.warn('[UB] ubCopyMessage error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+export async function ubExportMessageLink(userId: number, agentId: number, chatId: string, msgId: number) {
+  try {
+    const client = await _getAgentClient(agentId);
+    const channel = await (client as any).getInputEntity(chatId);
+    const result = await (client as any).invoke(new Api.channels.ExportMessageLink({
+      channel,
+      id: msgId,
+      grouped: false,
+    }));
+    return { ok: true, link: (result as any).link || '' };
+  } catch (e: any) {
+    console.warn('[UB] ubExportMessageLink error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+export async function ubUnpinMessage2(userId: number, agentId: number, chatId: string, msgId: number) {
+  try {
+    const client = await _getAgentClient(agentId);
+    const peer = await (client as any).getInputEntity(chatId);
+    await (client as any).invoke(new Api.messages.UpdatePinnedMessage({
+      peer,
+      id: msgId,
+      unpin: true,
+    }));
+    return { ok: true };
+  } catch (e: any) {
+    console.warn('[UB] ubUnpinMessage2 error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+export async function ubUnpinAll(userId: number, agentId: number, chatId: string) {
+  try {
+    const client = await _getAgentClient(agentId);
+    const peer = await (client as any).getInputEntity(chatId);
+    await (client as any).invoke(new Api.messages.UnpinAllMessages({ peer }));
+    return { ok: true };
+  } catch (e: any) {
+    console.warn('[UB] ubUnpinAll error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+export async function ubSendVideoNote(userId: number, agentId: number, chatId: string, videoUrl: string) {
+  try {
+    _validateUrl(videoUrl);
+    const client = await _getAgentClient(agentId);
+    const resp = await fetch(videoUrl);
+    const buf = Buffer.from(await resp.arrayBuffer());
+    const result = await (client as any).sendFile(chatId, {
+      file: buf,
+      videoNote: true,
+      attributes: [new Api.DocumentAttributeVideo({ duration: 0, w: 384, h: 384, roundMessage: true, supportsStreaming: true } as any)],
+    });
+    return { ok: true, msgId: (result as any).id || 0 };
+  } catch (e: any) {
+    console.warn('[UB] ubSendVideoNote error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+// ── Forum Topics ────────────────────────────────────────────────────
+
+export async function ubCreateForumTopic(userId: number, agentId: number, chatId: string, title: string, iconColor?: number) {
+  try {
+    const client = await _getAgentClient(agentId);
+    const channel = await (client as any).getInputEntity(chatId);
+    const result = await (client as any).invoke(new Api.channels.CreateForumTopic({
+      channel,
+      title,
+      iconColor: iconColor as any,
+      randomId: BigInt(Math.floor(Math.random() * 1e15)) as any,
+    }));
+    const topicId = (result as any).updates?.find((u: any) => u.id)?.id;
+    return { ok: true, topicId: topicId || null };
+  } catch (e: any) {
+    console.warn('[UB] ubCreateForumTopic error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+export async function ubEditForumTopic(userId: number, agentId: number, chatId: string, topicId: number, title?: string, closed?: boolean) {
+  try {
+    const client = await _getAgentClient(agentId);
+    const channel = await (client as any).getInputEntity(chatId);
+    await (client as any).invoke(new Api.channels.EditForumTopic({
+      channel,
+      topicId,
+      title: title as any,
+      closed: closed as any,
+    }));
+    return { ok: true };
+  } catch (e: any) {
+    console.warn('[UB] ubEditForumTopic error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+export async function ubGetForumTopics(userId: number, agentId: number, chatId: string, limit = 50) {
+  try {
+    const client = await _getAgentClient(agentId);
+    const channel = await (client as any).getInputEntity(chatId);
+    const result = await (client as any).invoke(new Api.channels.GetForumTopics({
+      channel,
+      offsetDate: 0,
+      offsetId: 0,
+      offsetTopic: 0,
+      limit,
+    }));
+    const topics = ((result as any).topics || []).map((t: any) => ({
+      id: t.id,
+      title: t.title || '',
+      iconColor: t.iconColor,
+      date: t.date,
+      closed: t.closed || false,
+    }));
+    return { ok: true, topics };
+  } catch (e: any) {
+    console.warn('[UB] ubGetForumTopics error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+// ── Analytics ───────────────────────────────────────────────────────
+
+export async function ubGetChannelStats(userId: number, agentId: number, chatId: string) {
+  try {
+    const client = await _getAgentClient(agentId);
+    const channel = await (client as any).getInputEntity(chatId);
+    const result = await (client as any).invoke(new Api.stats.GetBroadcastStats({
+      channel,
+      dark: false,
+    }));
+    return {
+      ok: true,
+      followers: (result as any).followers?.current || 0,
+      viewsPerPost: (result as any).viewsPerPost?.current || 0,
+      sharesPerPost: (result as any).sharesPerPost?.current || 0,
+      enabledNotifications: (result as any).enabledNotifications?.part || 0,
+    };
+  } catch (e: any) {
+    console.warn('[UB] ubGetChannelStats error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+export async function ubGetGroupStats(userId: number, agentId: number, chatId: string) {
+  try {
+    const client = await _getAgentClient(agentId);
+    const channel = await (client as any).getInputEntity(chatId);
+    const result = await (client as any).invoke(new Api.stats.GetMegagroupStats({
+      channel,
+      dark: false,
+    }));
+    return {
+      ok: true,
+      members: (result as any).members?.current || 0,
+      messages: (result as any).messages?.current || 0,
+      posters: (result as any).posters?.current || 0,
+    };
+  } catch (e: any) {
+    console.warn('[UB] ubGetGroupStats error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+// ── Discovery ───────────────────────────────────────────────────────
+
+export async function ubSearchGlobal(userId: number, agentId: number, query: string, limit = 20) {
+  try {
+    const client = await _getAgentClient(agentId);
+    const result = await (client as any).invoke(new Api.messages.SearchGlobal({
+      q: query,
+      filter: new Api.InputMessagesFilterEmpty(),
+      minDate: 0,
+      maxDate: 0,
+      offsetRate: 0,
+      offsetPeer: new Api.InputPeerEmpty(),
+      offsetId: 0,
+      limit,
+    }));
+    const messages = ((result as any).messages || []).map((m: any) => ({
+      id: m.id,
+      chatId: String(m.peerId?.channelId || m.peerId?.chatId || m.peerId?.userId || ''),
+      text: (m.message || '').slice(0, 200),
+      date: m.date,
+    }));
+    return { ok: true, messages };
+  } catch (e: any) {
+    console.warn('[UB] ubSearchGlobal error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+export async function ubResolveUsername(userId: number, agentId: number, username: string) {
+  try {
+    const client = await _getAgentClient(agentId);
+    const result = await (client as any).invoke(new Api.contacts.ResolveUsername({ username: username.replace('@', '') }));
+    const peer = (result as any).peer;
+    const user = (result as any).users?.[0];
+    const chat = (result as any).chats?.[0];
+    return {
+      ok: true,
+      type: peer?.className || 'unknown',
+      id: String(user?.id || chat?.id || ''),
+      title: chat?.title || [user?.firstName, user?.lastName].filter(Boolean).join(' ') || '',
+      username: user?.username || chat?.username || '',
+    };
+  } catch (e: any) {
+    console.warn('[UB] ubResolveUsername error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+export async function ubBlockUser(userId: number, agentId: number, targetUserId: string) {
+  try {
+    const client = await _getAgentClient(agentId);
+    const id = await (client as any).getInputEntity(targetUserId);
+    await (client as any).invoke(new Api.contacts.Block({ id }));
+    return { ok: true };
+  } catch (e: any) {
+    console.warn('[UB] ubBlockUser error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+export async function ubUnblockUser(userId: number, agentId: number, targetUserId: string) {
+  try {
+    const client = await _getAgentClient(agentId);
+    const id = await (client as any).getInputEntity(targetUserId);
+    await (client as any).invoke(new Api.contacts.Unblock({ id }));
+    return { ok: true };
+  } catch (e: any) {
+    console.warn('[UB] ubUnblockUser error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+// ── Premium ─────────────────────────────────────────────────────────
+
+export async function ubApplyBoost(userId: number, agentId: number, chatId: string) {
+  try {
+    const client = await _getAgentClient(agentId);
+    const peer = await (client as any).getInputEntity(chatId);
+    await (client as any).invoke(new (Api as any).premium.ApplyBoost({ peer }));
+    return { ok: true };
+  } catch (e: any) {
+    console.warn('[UB] ubApplyBoost error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
 // ── Singleton export ────────────────────────────────────────────────
 
 export const userbotManager = new UserbotManager();
