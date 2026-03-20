@@ -6351,7 +6351,7 @@ export async function executeTool(
       try {
         const { getGiftAssetClient } = await import('../services/giftasset');
         return await getGiftAssetClient().findArbitrageOpportunities({
-          maxPriceStars: args.max_price_stars,
+          maxPriceStars: args.max_price_ton ?? args.max_price_stars,
           minProfitPct: args.min_profit_pct,
         });
       } catch (e: any) {
