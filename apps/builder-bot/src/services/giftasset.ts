@@ -1026,6 +1026,9 @@ export class GiftAssetRealtimeStream {
       return;
     }
 
+    // Clean up old ping interval before new connection handlers
+    if (this.pingInterval) { clearInterval(this.pingInterval); this.pingInterval = null; }
+
     this.ws.on('open', () => {
       console.log('[GiftAsset WS] Connected to real-time sales stream');
       this.reconnectDelay = 1000;

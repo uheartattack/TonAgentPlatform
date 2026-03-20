@@ -506,6 +506,7 @@ async function starsToTon(stars: number): Promise<number> {
       'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd',
       { signal: AbortSignal.timeout(5000) }
     );
+    if (!r.ok) throw new Error(`CoinGecko ${r.status}`);
     const d: any = await r.json();
     const tonUsd = d?.['the-open-network']?.usd || 4;
     // 1 Star = $0.013 (Telegram's current rate: 50 Stars = $0.67)
