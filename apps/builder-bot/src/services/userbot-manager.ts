@@ -11,6 +11,7 @@ import { TelegramClient } from 'telegram';
 import { StringSession } from 'telegram/sessions';
 import { Api } from 'telegram/tl';
 import { pool as sharedPool } from '../db/index';
+import { safeNumber, getSenderId, getChatId, getFromId, getEntityId, isGroupMessage, isChannelPost, peerToId } from './gramjs-utils';
 
 const API_ID   = parseInt(process.env.TG_API_ID   || '0', 10);
 const API_HASH =          process.env.TG_API_HASH  || '';
@@ -1113,7 +1114,7 @@ class UserbotManager {
 
     if (!me) throw new Error('Auth failed');
 
-    const tgUserId = me.id?.toJSNumber?.() ?? Number(me.id);
+    const tgUserId = getEntityId(me);
     const username = me.username || '';
     const phone = me.phone || '';
 
@@ -1453,11 +1454,11 @@ class UserbotManager {
         clearTimeout(timeoutHandle);
         await this.saveSessionToDB(agentId, sessionStr, {
           username: me?.username, phone: me?.phone,
-          telegramUserId: me?.id?.toJSNumber?.() ?? Number(me?.id),
+          telegramUserId: getEntityId(me),
         });
         this.clients.set(agentId, {
           client, connected: true, lastUsed: Date.now(),
-          telegramUserId: me?.id?.toJSNumber?.() ?? Number(me?.id),
+          telegramUserId: getEntityId(me),
           username: me?.username, phone: me?.phone,
         });
         state.status = 'success';
@@ -1578,11 +1579,11 @@ class UserbotManager {
           const me = await client.getMe() as any;
           await this.saveSessionToDB(agentId, sessionStr, {
             username: me?.username, phone: me?.phone,
-            telegramUserId: me?.id?.toJSNumber?.() ?? Number(me?.id),
+            telegramUserId: getEntityId(me),
           });
           this.clients.set(agentId, {
             client, connected: true, lastUsed: Date.now(),
-            telegramUserId: me?.id?.toJSNumber?.() ?? Number(me?.id),
+            telegramUserId: getEntityId(me),
             username: me?.username, phone: me?.phone,
           });
           state.status = 'success';
@@ -1606,11 +1607,11 @@ class UserbotManager {
                 const me2 = await client.getMe() as any;
                 await this.saveSessionToDB(agentId, sessionStr2, {
                   username: me2?.username, phone: me2?.phone,
-                  telegramUserId: me2?.id?.toJSNumber?.() ?? Number(me2?.id),
+                  telegramUserId: getEntityId(me2),
                 });
                 this.clients.set(agentId, {
                   client, connected: true, lastUsed: Date.now(),
-                  telegramUserId: me2?.id?.toJSNumber?.() ?? Number(me2?.id),
+                  telegramUserId: getEntityId(me2),
                   username: me2?.username, phone: me2?.phone,
                 });
                 state.status = 'success';
@@ -1827,7 +1828,7 @@ class UserbotManager {
         try {
           const msg = event.message;
           const msgText = msg?.message || '';
-          const msgFrom = msg?.senderId?.toJSNumber?.() ?? msg?.senderId ?? '?';
+          const msgFrom = getSenderId(msg) || '?';
           console.log(`[UserbotMgr] 📨 Event agent#${agentId}: from=${msgFrom} text="${msgText.slice(0, 50)}"`);
 
           if (!msg || !msg.message) return;
@@ -1932,7 +1933,7 @@ class UserbotManager {
           const msg = event.message;
           if (!msg || !msg.message) return;
 
-          const msgFrom = msg?.senderId?.toJSNumber?.() ?? msg?.senderId ?? '?';
+          const msgFrom = getSenderId(msg) || '?';
           console.log(`[UserbotMgr] 📨 Account @${shared.username} event: from=${msgFrom} text="${(msg.message || '').slice(0, 50)}" agents=[${[...shared.agentIds].join(',')}]`);
 
           // Skip our own outgoing messages
@@ -2123,7 +2124,7 @@ class UserbotManager {
               this.supergroupLastMsgId.set(lastKey, newMsgs[newMsgs.length - 1].id);
               // Dispatch all new messages (max 5 per poll to prevent flooding)
               for (const nm of newMsgs.slice(-5)) {
-                const cId = nm?.peerId?.channelId?.toJSNumber?.() ?? chatId;
+                const cId = safeNumber(nm?.peerId?.channelId) || chatId;
                 if (!dupFilter.isDuplicate(String(cId), nm.id, nm.message)) {
                   console.log(`[UserbotMgr] 🔄 POLL @${shared.username}: new msg in ${chatId} id=${nm.id} text="${(nm.message || '').slice(0, 40)}" (${newMsgs.length} total new)`);
                   handler({ message: nm }).catch((he: any) => console.error(`[UserbotMgr] handler error @${shared.username} chat=${chatId}:`, he?.message || he));
@@ -2255,12 +2256,9 @@ class UserbotManager {
     selfUsername: string,
   ): Promise<TgInboxMessage | null> {
     try {
-      const chatId = String(msg.chatId || msg.peerId?.channelId || msg.peerId?.chatId || msg.peerId?.userId || 0);
-      // Safe BigInt→number: use toString() first to avoid JS Number overflow
-      const rawSenderId = msg.senderId || msg.fromId?.userId || 0;
-      const senderId = typeof rawSenderId === 'object' && rawSenderId?.toString
-        ? Number(rawSenderId.toString())
-        : Number(rawSenderId);
+      // ── Telethon-style ID parsing via gramjs-utils ──
+      const chatId = getChatId(msg);
+      const senderId = getSenderId(msg);
       let senderUsername = '';
       let senderFirstName = '';
 
@@ -2282,8 +2280,8 @@ class UserbotManager {
         else if ((msg as any).gif) mediaPrefix = `[gif] `;
       }
       const text = mediaPrefix + (msg.message || '');
-      const isChannel = msg.post === true;
-      const isGroup = !isChannel && (chatId.startsWith('-') || !!msg.peerId?.chatId);
+      const isChannel = isChannelPost(msg);
+      const isGroup = isGroupMessage(msg);
 
       // Check if mentions me
       const mentionsMe = msg.mentioned === true
@@ -2926,7 +2924,7 @@ RULES:
                 userId: cfg.userId,
                 systemPrompt,
                 config: mergedConfig,
-                context: { chatId: msg.chatId, senderId: msg.senderId },
+                context: { chatId: msg.chatId, senderId: msg.senderId, isOwner: String(msg.senderId) === String(cfg.userId), senderName: msg.senderFirstName, senderUsername: msg.senderUsername },
                 onNotify: async (m: string) => {
                   try {
                     const target = /^\d+$/.test(msg.chatId) ? Number(msg.chatId) : msg.chatId;
@@ -3092,7 +3090,7 @@ RULES:
               result = await executeTool(fnName, fnArgs, {
                 agentId: cfg.agentId, userId: cfg.userId,
                 systemPrompt, config: mergedConfig,
-                context: { chatId: msg.chatId, senderId: msg.senderId },
+                context: { chatId: msg.chatId, senderId: msg.senderId, isOwner: String(msg.senderId) === String(cfg.userId), senderName: msg.senderFirstName, senderUsername: msg.senderUsername },
                 onNotify: async (m: string) => {
                   try {
                     const target = /^\d+$/.test(msg.chatId) ? Number(msg.chatId) : msg.chatId;
@@ -3449,7 +3447,7 @@ async function ubGetMessages(client: TelegramClient, chatId: string | number, li
     return {
       id: m.id, text, date: m.date,
       from: m.sender?.username || m.sender?.firstName || '',
-      fromId: m.senderId?.toJSNumber?.() ?? m.senderId,
+      fromId: getFromId(m),
       hasMedia: !!m.media,
       mediaType: m.media?.className || null,
     };
@@ -3518,8 +3516,8 @@ async function ubGetDialogs(client: TelegramClient, limit = 20) {
 async function ubGetMembers(client: TelegramClient, chatId: string | number, limit = 50) {
   const p = await (client as any).getParticipants(chatId, { limit }) as any[];
   return p.map((m: any) => ({
-    id: m.id?.toJSNumber?.() ?? Number(m.id), username: m.username,
-    name: [m.firstName, m.lastName].filter(Boolean).join(' ') || m.username || String(m.id),
+    id: getEntityId(m), username: m.username,
+    name: [m.firstName, m.lastName].filter(Boolean).join(' ') || m.username || String(getEntityId(m)),
   }));
 }
 
@@ -3536,14 +3534,14 @@ async function ubSearchMessages(client: TelegramClient, chatId: string | number,
   return msgs.map((m: any) => ({
     id: m.id, text: m.message || '', date: m.date,
     from: m.sender?.username || m.sender?.firstName || '',
-    fromId: m.senderId?.toJSNumber?.() ?? m.senderId,
+    fromId: getFromId(m),
   }));
 }
 
 async function ubGetUserInfo(client: TelegramClient, userIdentifier: string | number) {
   const entity = await (client as any).getEntity(userIdentifier) as any;
   return {
-    id: entity.id?.toJSNumber?.() ?? Number(entity.id), username: entity.username,
+    id: getEntityId(entity), username: entity.username,
     firstName: entity.firstName, lastName: entity.lastName, bio: entity.about, phone: entity.phone,
   };
 }
@@ -3684,7 +3682,7 @@ async function ubGetComments(client: TelegramClient, chatId: string | number, po
     })) as any;
     return (result.messages || []).map((m: any) => ({
       id: m.id, text: m.message || '', date: m.date,
-      from: '', fromId: m.fromId?.userId?.toJSNumber?.() ?? m.fromId?.userId ?? 0,
+      from: '', fromId: getFromId(m),
     }));
   } catch { return []; }
 }
@@ -3704,7 +3702,7 @@ async function ubGetMessageById(client: TelegramClient, chatId: string | number,
     const msgs = await (client as any).getMessages(chatId, { ids: [messageId] }) as any[];
     if (!msgs.length) return null;
     const m = msgs[0];
-    return { id: m.id, text: m.message || '', date: m.date, from: m.sender?.username || m.sender?.firstName || '', fromId: m.senderId?.toJSNumber?.() ?? m.senderId };
+    return { id: m.id, text: m.message || '', date: m.date, from: m.sender?.username || m.sender?.firstName || '', fromId: getFromId(m) };
   } catch { return null; }
 }
 

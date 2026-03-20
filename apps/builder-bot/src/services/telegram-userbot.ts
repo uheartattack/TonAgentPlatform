@@ -21,6 +21,7 @@
 import { Api } from 'telegram/tl';
 import crypto from 'crypto';
 import { getFragmentClient } from '../fragment-service';
+import { safeNumber, getFromId, getEntityId } from './gramjs-utils';
 
 // ── Security: URL validation to prevent SSRF ──
 const BLOCKED_URL_PATTERNS = [
@@ -150,7 +151,7 @@ export async function tgGetMessages(chatId: string | number, limit = 20): Promis
     text:   m.message || '',
     date:   m.date,
     from:   m.sender?.username || m.sender?.firstName || '',
-    fromId: m.senderId?.toJSNumber?.() ?? m.senderId,
+    fromId: getFromId(m),
   }));
 }
 
@@ -209,7 +210,7 @@ export async function tgGetMembers(chatId: string | number, limit = 50): Promise
   const client = await getFragmentClient();
   const participants = await (client as any).getParticipants(chatId, { limit }) as any[];
   return participants.map((p: any) => ({
-    id:       p.id?.toJSNumber?.() ?? Number(p.id),
+    id:       getEntityId(p),
     username: p.username,
     name:     [p.firstName, p.lastName].filter(Boolean).join(' ') || p.username || String(p.id),
   }));
@@ -242,7 +243,7 @@ export async function tgSearchMessages(chatId: string | number, query: string, l
     text:   m.message || '',
     date:   m.date,
     from:   m.sender?.username || m.sender?.firstName || '',
-    fromId: m.senderId?.toJSNumber?.() ?? m.senderId,
+    fromId: getFromId(m),
   }));
 }
 
@@ -254,7 +255,7 @@ export async function tgGetUserInfo(userIdentifier: string | number): Promise<{
   const client = await getFragmentClient();
   const entity = await (client as any).getEntity(userIdentifier) as any;
   return {
-    id:        entity.id?.toJSNumber?.() ?? Number(entity.id),
+    id:        getEntityId(entity),
     username:  entity.username,
     firstName: entity.firstName,
     lastName:  entity.lastName,
@@ -361,7 +362,7 @@ export async function tgGetComments(chatId: string | number, postMsgId: number, 
       text:   m.message || '',
       date:   m.date,
       from:   '',
-      fromId: m.fromId?.userId?.toJSNumber?.() ?? m.fromId?.userId ?? 0,
+      fromId: getFromId(m),
     }));
   } catch (e: any) {
     console.warn(`[tgGetComments] Failed to get comments: ${e.message?.slice(0, 100)}`);
@@ -413,7 +414,7 @@ export async function tgGetMessageById(chatId: string | number, messageId: numbe
       text:   m.message || '',
       date:   m.date,
       from:   m.sender?.username || m.sender?.firstName || '',
-      fromId: m.senderId?.toJSNumber?.() ?? m.senderId,
+      fromId: getFromId(m),
     };
   } catch (e: any) {
     console.warn(`[tgGetMessageById] Failed to get message: ${e.message?.slice(0, 100)}`);
@@ -645,7 +646,7 @@ export async function tgGetReceivedGifts(userId?: string | number, limit = 20): 
       from: g.fromId?.toString() || 'anonymous',
       date: g.date,
       message: g.message?.text || '',
-      stars: g.gift?.stars?.toJSNumber?.() || g.gift?.stars || 0,
+      stars: safeNumber(g.gift?.stars) || 0,
       limited: g.gift?.limited || false,
       soldOut: g.gift?.soldOut || false,
       name: g.gift?.title || '',
@@ -798,9 +799,10 @@ export async function tgGetAdmins(chatId: string | number): Promise<Array<{ id: 
       hash: 0 as any,
     })) as any;
     return (result.participants || []).map((p: any) => {
-      const user = (result.users || []).find((u: any) => u.id?.toJSNumber?.() === p.userId?.toJSNumber?.() || u.id === p.userId);
+      const pUserId = safeNumber(p.userId);
+      const user = (result.users || []).find((u: any) => getEntityId(u) === pUserId);
       return {
-        id: p.userId?.toJSNumber?.() || p.userId || 0,
+        id: pUserId,
         name: user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : 'Unknown',
         role: p.className || 'admin',
       };

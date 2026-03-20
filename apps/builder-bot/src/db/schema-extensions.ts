@@ -1055,13 +1055,31 @@ export async function runAIProposalsMigrations(pool: Pool): Promise<void> {
         resolved_at TIMESTAMP
       )
     `);
-    // Add missing columns if table was created with old schema (action_type/action_details)
+    // Add missing columns for BOTH V1 and V2 schemas to coexist
     await client.query(`ALTER TABLE builder_bot.agent_approvals ADD COLUMN IF NOT EXISTS action TEXT NOT NULL DEFAULT ''`);
     await client.query(`ALTER TABLE builder_bot.agent_approvals ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT ''`);
     await client.query(`ALTER TABLE builder_bot.agent_approvals ADD COLUMN IF NOT EXISTS details JSONB`);
+    // V1 columns needed by AgentApprovalsRepository.create()
+    await client.query(`ALTER TABLE builder_bot.agent_approvals ADD COLUMN IF NOT EXISTS action_type TEXT NOT NULL DEFAULT ''`);
+    await client.query(`ALTER TABLE builder_bot.agent_approvals ADD COLUMN IF NOT EXISTS action_details JSONB NOT NULL DEFAULT '{}'`);
     await client.query(`
       CREATE INDEX IF NOT EXISTS agent_approvals_pending_idx
         ON builder_bot.agent_approvals (user_id, status) WHERE status = 'pending'
+    `);
+    // agent_daily_logs — used by AgentMemory.appendDailyLog
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.agent_daily_logs (
+        id          SERIAL PRIMARY KEY,
+        agent_id    INTEGER NOT NULL,
+        log_date    DATE NOT NULL DEFAULT CURRENT_DATE,
+        content     TEXT NOT NULL DEFAULT '',
+        created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+        UNIQUE(agent_id, log_date)
+      )
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS agent_daily_logs_agent_date_idx
+        ON builder_bot.agent_daily_logs (agent_id, log_date DESC)
     `);
     await client.query(`
       CREATE TABLE IF NOT EXISTS builder_bot.agent_skill_tree (

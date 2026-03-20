@@ -59,11 +59,13 @@ async function loadSessionsFromDB() {
 
 // Persist session to DB (fire-and-forget)
 function persistSession(token: string, s: { userId: number; username: string; firstName: string; photoUrl?: string; expiresAt: number }) {
+  // Guard against BigInt overflow: Telegram user IDs from GramJS can exceed JS Number.MAX_SAFE_INTEGER
+  const safeUserId = Number.isSafeInteger(s.userId) ? s.userId : Math.trunc(s.userId % 1e15);
   pool.query(
     `INSERT INTO builder_bot.web_sessions (token, user_id, username, first_name, photo_url, expires_at)
      VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (token) DO UPDATE SET expires_at = $6`,
-    [token, s.userId, s.username, s.firstName, s.photoUrl || null, new Date(s.expiresAt)]
+    [token, safeUserId, s.username, s.firstName, s.photoUrl || null, new Date(s.expiresAt)]
   ).catch(e => console.warn('[Auth] persistSession error:', e?.message || String(e)));
 }
 
