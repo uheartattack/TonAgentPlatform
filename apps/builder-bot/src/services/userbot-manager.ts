@@ -856,6 +856,14 @@ export function getContactMemory(agentId: number): ContactMemory {
 const chatDispatcher = new ChatDispatcher();
 const dupFilter = new DuplicateFilter();
 const groupBuffer = new GroupContextBuffer();
+// Per-agent ChatHistoryRing instances (avoid cross-agent chat history pollution)
+const _chatRings = new Map<number, ChatHistoryRing>();
+function getChatRing(agentId: number): ChatHistoryRing {
+  let ring = _chatRings.get(agentId);
+  if (!ring) { ring = new ChatHistoryRing(); _chatRings.set(agentId, ring); }
+  return ring;
+}
+/** @deprecated Use getChatRing(agentId) instead. Kept as fallback for any code that references it. */
 const chatRing = new ChatHistoryRing();
 const _rawDedup = new Set<string>(); // dedup for RAW → NewMessage bridge
 const _RAW_DEDUP_MAX = 10000;
@@ -875,6 +883,8 @@ setInterval(() => {
   }
   // Cap _summaryCache: remove expired entries (TTL 60s)
   for (const [k, v] of _summaryCache) { if (now - v.ts > 120000) _summaryCache.delete(k); }
+  // Cap per-agent chatRings to prevent unbounded growth
+  if (_chatRings.size > 500) _chatRings.clear();
   if (_summaryCache.size > 2000) _summaryCache.clear();
 }, 10 * 60 * 1000); // every 10 minutes
 
@@ -1014,7 +1024,7 @@ class UserbotManager {
           try {
             await this.connectAgent(agentId, sess.session);
             // Load persistent memory
-            await chatRing.loadFromDb(agentId).catch(() => {});
+            await getChatRing(agentId).loadFromDb(agentId).catch(() => {});
             await getContactMemory(agentId).loadFromDb(agentId).catch(() => {});
             console.log(`[UserbotMgr] ✅ Restored agent #${agentId} as @${sess.username || '?'}`);
             restored++;
@@ -1855,7 +1865,7 @@ class UserbotManager {
             ? Math.floor(parsed.date - (_lastMsgTime.get(parsed.chatId) || 0))
             : undefined;
           _lastMsgTime.set(parsed.chatId, parsed.date);
-          chatRing.add(parsed.chatId, buildContextFrame(parsed, elapsed));
+          getChatRing(agentId).add(parsed.chatId, buildContextFrame(parsed, elapsed));
 
           if (!shouldResp) {
             if (parsed.isGroup) groupBuffer.add(parsed.chatId, parsed);
@@ -1953,7 +1963,8 @@ class UserbotManager {
             ? Math.floor(parsed.date - (_lastMsgTime.get(parsed.chatId) || 0))
             : undefined;
           _lastMsgTime.set(parsed.chatId, parsed.date);
-          chatRing.add(parsed.chatId, buildContextFrame(parsed, elapsed));
+          const _frame = buildContextFrame(parsed, elapsed);
+          for (const _aid of shared.agentIds) getChatRing(_aid).add(parsed.chatId, _frame);
 
           // ── Route helper (extracted for debounce reuse) ──
           const routeAndDispatch = async (p: typeof parsed) => {
@@ -2444,7 +2455,7 @@ class UserbotManager {
 
         // Reply to our message (user is responding to agent) — always respond
         if (msg.replyToId) {
-          const histLines: string[] = (chatRing as any)?.memory?.get(String(msg.chatId)) || [];
+          const histLines: string[] = (getChatRing((cfg || {} as any).agentId || 0) as any)?.memory?.get(String(msg.chatId)) || [];
           const replyToOurs = histLines.some((l: string) => l.includes('🤖') || l.includes('[Ты]'));
           if (replyToOurs) score = 1.0;
         }
@@ -2485,7 +2496,7 @@ class UserbotManager {
       }
       // Track reply to agent's message
       if (msg.replyToId) {
-        const histLines: string[] = (chatRing as any)?.memory?.get(chatIdStr) || [];
+        const histLines: string[] = (getChatRing(agentId) as any)?.memory?.get(chatIdStr) || [];
         const replyToOurs = histLines.some((l: string) => l.includes('[Ты]'));
         if (replyToOurs) trackChatEngagement(agentId, cfg.userId, chatIdStr, 'reply_to_agent').catch(() => {});
       }
@@ -2511,7 +2522,7 @@ class UserbotManager {
 
       // ── Build context (proper multi-turn with compaction) ──
       // chatRing already has the current message (added in event handler)
-      const historyLines: string[] = (chatRing as any)?.memory?.get(String(msg.chatId)) || [];
+      const historyLines: string[] = (getChatRing((cfg || {} as any).agentId || 0) as any)?.memory?.get(String(msg.chatId)) || [];
       let recentLines: string[] = historyLines.slice(-20); // last 20 entries (more context = better memory)
       // If somehow current msg is missing from ring, add it
       const msgSnippet = msg.text.slice(0, 30);
@@ -3286,8 +3297,8 @@ RULES:
       // Skip if agent already sent a message via tg_reply/tg_send_message in agentic loop
       if (alreadySentMessage && aiText) {
         console.log(`[UserbotMgr] 🔇 Agent#${agentId} already sent via tool, skipping duplicate text: "${aiText.slice(0, 60)}"`);
-        chatRing.addResponse(msg.chatId, aiText);
-        chatRing.persistToDb(agentId, cfg.userId).catch(() => {});
+        getChatRing(agentId).addResponse(msg.chatId, aiText);
+        getChatRing(agentId).persistToDb(agentId, cfg.userId).catch(() => {});
         getContactMemory(agentId).persistToDb(agentId, cfg.userId).catch(() => {});
         if (msg.isGroup) _lastResponseTime.set(`${agentId}:${msg.chatId}`, Date.now());
         return;
@@ -3368,9 +3379,9 @@ RULES:
               }
             }
           }
-          chatRing.addResponse(msg.chatId, responseText);
+          getChatRing(agentId).addResponse(msg.chatId, responseText);
           // Persist chat history + contacts to DB (non-blocking)
-          chatRing.persistToDb(agentId, cfg.userId).catch(() => {});
+          getChatRing(agentId).persistToDb(agentId, cfg.userId).catch(() => {});
           getContactMemory(agentId).persistToDb(agentId, cfg.userId).catch(() => {});
           console.log(`[UserbotMgr] 💬 Agent#${agentId} replied: ${responseText.slice(0, 80)}...`);
           // ── Update cooldown timestamp after successful response ──
