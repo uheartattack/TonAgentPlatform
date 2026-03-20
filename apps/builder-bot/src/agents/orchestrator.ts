@@ -242,6 +242,19 @@ function detectLang(text: string): 'ru' | 'en' {
   return ru >= en ? 'ru' : 'en';
 }
 
+// ── Track last agent each user interacted with (for refine_agent) ──
+const lastInteractedAgent = new Map<number, number>(); // userId → agentId
+
+/** Set the last agent a user interacted with */
+export function setLastInteractedAgent(userId: number, agentId: number) {
+  lastInteractedAgent.set(userId, agentId);
+}
+
+/** Get the last agent a user interacted with */
+export function getLastInteractedAgent(userId: number): number | undefined {
+  return lastInteractedAgent.get(userId);
+}
+
 export class Orchestrator {
   // Ленивая инициализация (чтобы избежать ошибок при импорте до подключения БД)
   private get creator() { return getCreatorAgent(); }
@@ -345,6 +358,21 @@ export class Orchestrator {
               modification: { type: 'string', description: 'Что именно нужно изменить' },
             },
             required: ['agent_id', 'modification'],
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'refine_agent',
+          description: 'Пользователь хочет доработать/улучшить существующего агента БЕЗ указания ID. Используй когда: "теперь добавь...", "ещё сделай...", "а можно чтобы он...", "добавь уведомление", "измени интервал", "сделай чтобы он ещё и...", "добавь трекинг Jetton". НЕ используй для нового агента — только для изменения существующего.',
+          parameters: {
+            type: 'object',
+            properties: {
+              agent_id: { type: 'number', description: 'ID агента (если указан). Если не указан — используется последний созданный/изменённый агент.' },
+              refinement: { type: 'string', description: 'Что именно пользователь хочет добавить/изменить/улучшить' },
+            },
+            required: ['refinement'],
           },
         },
       },
@@ -532,10 +560,17 @@ export class Orchestrator {
           ? this.handleDeleteAgentById(userId, Number(args.agent_id))
           : this.handleDeleteAgent(userId, originalMessage);
 
-      case 'edit_agent':
-        return args.agent_id
-          ? this.handleEditAgentById(userId, Number(args.agent_id), args.modification || originalMessage)
-          : this.handleEditAgent(userId, originalMessage);
+      case 'edit_agent': {
+        const editResult = args.agent_id
+          ? await this.handleEditAgentById(userId, Number(args.agent_id), args.modification || originalMessage)
+          : await this.handleEditAgent(userId, originalMessage);
+        // Track last interacted agent for refine_agent
+        if (args.agent_id) lastInteractedAgent.set(userId, Number(args.agent_id));
+        return editResult;
+      }
+
+      case 'refine_agent':
+        return this.handleRefineAgent(userId, args.agent_id ? Number(args.agent_id) : undefined, args.refinement || originalMessage);
 
       case 'explain_agent':
         return args.agent_id
@@ -677,6 +712,7 @@ ID: ${userId}${isOwner ? ' 👑 OWNER (создатель платформы)' :
 
 🔵 ВЫЗЫВАЙ list_agents: "мои агенты", "список", "покажи", "what agents"
 🟠 ВЫЗЫВАЙ run/edit/delete/explain/debug_agent: упоминает #ID или имя + действие
+🟣 ВЫЗЫВАЙ refine_agent: пользователь хочет ДОРАБОТАТЬ агента без указания ID: "теперь добавь...", "ещё сделай...", "а можно чтобы он...", "добавь трекинг", "измени интервал". Это продолжение предыдущего создания/изменения. НЕ путай с create_agent (новый агент) или edit_agent (с указанием #ID).
 🔴 ВЫЗЫВАЙ analyze_nft: спрашивает цену/floor ПРЯМО СЕЙЧАС (не создание агента)
 🟡 ОБЯЗАТЕЛЬНО ВЫЗЫВАЙ ask_clarification ПЕРЕД create_agent ВСЕГДА:
   - НИКОГДА не вызывай create_agent сразу. ВСЕГДА СНАЧАЛА ask_clarification.
@@ -1488,6 +1524,9 @@ ${toolSections}
     if (!agent) return { type: 'text', content: '❌ Agent creation returned empty result' };
     const agentId = agent.id;
 
+    // Track last interacted agent for refine_agent
+    lastInteractedAgent.set(userId, agentId);
+
     // 5.5) Save modular prompt modules (SOUL, STRATEGY, HEARTBEAT) for prompt-builder
     try {
       const { savePromptModule, PROMPT_MODULES } = await import('./prompt-builder');
@@ -1916,6 +1955,61 @@ ${toolSections}
       buttons: [
         { text: '🚀 Запустить', callbackData: `run_agent:${agentId}` },
         { text: '🔍 Аудит', callbackData: `audit_agent:${agentId}` },
+      ],
+    };
+  }
+
+  /** Iterative agent refinement — auto-resolves agent ID from last interaction */
+  private async handleRefineAgent(userId: number, agentId: number | undefined, refinement: string): Promise<OrchestratorResult> {
+    // If no agentId provided, try to resolve from last interaction
+    if (!agentId) {
+      agentId = lastInteractedAgent.get(userId);
+    }
+
+    // Still no agentId — find the most recently created agent
+    if (!agentId) {
+      const agentsResult = await this.dbTools.getUserAgents(userId);
+      const agents = agentsResult.data || [];
+      if (!agents.length) {
+        return { type: 'text', content: '❌ У вас нет агентов для уточнения. Сначала создайте агента.' };
+      }
+      // Use the last one (most recent)
+      agentId = agents[agents.length - 1].id;
+    }
+
+    if (!refinement || refinement.length < 3) {
+      return { type: 'text', content: `Что именно хотите изменить в агенте #${agentId}? Опишите подробнее.` };
+    }
+
+    // Use the existing editor.modifyCode which handles ownership check, code loading, AI modification, and saving
+    const result = await this.editor.modifyCode({ userId, agentId, modificationRequest: refinement });
+    if (!result.success) return { type: 'text', content: `❌ Ошибка: ${result.error}` };
+    const data = result.data!;
+    if (!data.success) return { type: 'text', content: `⚠️ ${data.message}\n\nИзменения не сохранены.` };
+
+    // Track this agent as last interacted
+    lastInteractedAgent.set(userId, agentId);
+
+    // Try to restart if agent is active
+    let restarted = false;
+    try {
+      const agentInfo = await this.dbTools.getAgentCode(agentId, userId);
+      if (agentInfo.success) {
+        // Check if agent is running by trying to restart it
+        const runResult = await this.runner.runAgent({ agentId, userId });
+        if (runResult.success) restarted = true;
+      }
+    } catch {}
+
+    const restartNote = restarted ? '\n\n🔄 Агент перезапущен с обновлениями.' : '';
+
+    return {
+      type: 'buttons',
+      content: `✅ Агент #${agentId} обновлён!\n\n📝 *Изменение:* ${esc(refinement.slice(0, 150))}\n${data.changes ? `\n🔧 *Детали:*\n${data.changes}\n` : ''}\n🔐 Безопасность: ${data.securityScore}/100${restartNote}\n\n💡 _Продолжайте уточнять — "ещё добавь\\.\\.\\.", "измени\\.\\.\\."_`,
+      buttons: [
+        { text: '🚀 Запустить', callbackData: `run_agent:${agentId}` },
+        { text: '💬 Чат', callbackData: `agent_chat:${agentId}` },
+        { text: '👁 Код', callbackData: `show_code:${agentId}` },
       ],
     };
   }
