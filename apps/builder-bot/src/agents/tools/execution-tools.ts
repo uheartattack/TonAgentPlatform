@@ -1211,6 +1211,24 @@ export class ExecutionTools {
         codeGeneration: { strings: false, wasm: false },
       });
 
+      // Harden sandbox: freeze prototypes to prevent prototype pollution escapes
+      // This blocks the main vm escape vector: sandbox.constructor.constructor('return this')()
+      try {
+        vm.runInContext(`
+          'use strict';
+          // Block constructor traversal (main vm escape vector)
+          Object.defineProperty(Object.prototype, 'constructor', { configurable: false, writable: false });
+          // Freeze core prototypes
+          [Object, Array, Function, String, Number, Boolean, RegExp, Error, Promise, Map, Set].forEach(C => {
+            if (C.prototype) Object.freeze(C.prototype);
+          });
+          // Block access to process/globalThis via constructor chain
+          (function() {
+            try { delete this.constructor; } catch {}
+          })();
+        `, vmContext);
+      } catch {}
+
       // Sanitize: fix literal newlines inside string literals (common AI codegen mistake)
       // e.g. 'text\nmore' with real \n → 'text\\nmore' → prevents SyntaxError
       code = fixLiteralNewlinesInStrings(code);

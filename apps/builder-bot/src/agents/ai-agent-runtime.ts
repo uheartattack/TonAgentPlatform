@@ -7097,15 +7097,25 @@ export async function executeTool(
         const { getCustomPluginsRepository } = await import('../db/schema-extensions');
         const plugin = await getCustomPluginsRepository().getByName(params.userId, pluginName);
         if (!plugin) return { error: `Plugin "${pluginName}" not found` };
-        // Execute in VM2 sandbox
-        const { NodeVM } = await import('vm2');
-        const vm = new NodeVM({
-          timeout: 10000,
-          sandbox: { params: args.params || {} },
-          eval: false,
-          wasm: false,
+        // Execute in hardened vm sandbox (replaces deprecated vm2)
+        const nodeVm = await import('node:vm');
+        const pluginSandbox = {
+          params: args.params || {},
+          console: { log: () => {}, error: () => {}, warn: () => {} },
+          JSON, Math, Date, parseInt, parseFloat, isNaN, isFinite,
+          Promise, Array, Object, String: globalThis.String, Number: globalThis.Number,
+          Boolean: globalThis.Boolean, RegExp, Error, Map, Set,
+          setTimeout: () => { throw new Error('setTimeout disabled'); },
+          require: () => { throw new Error('require disabled'); },
+        };
+        const pluginCtx = nodeVm.createContext(pluginSandbox, {
+          name: 'plugin-sandbox',
+          codeGeneration: { strings: false, wasm: false },
         });
-        const result = vm.run(`module.exports = (function() { ${plugin.code} })()`, 'plugin.js');
+        // Freeze prototypes to block constructor-chain escape
+        try { nodeVm.runInContext(`[Object,Array,Function,String,Number,Boolean,RegExp,Error,Promise,Map,Set].forEach(C=>{if(C.prototype)Object.freeze(C.prototype)})`, pluginCtx); } catch {}
+        const pluginScript = new nodeVm.Script(`(function(){${plugin.code}})()`, { filename: 'plugin.js' });
+        const result = pluginScript.runInContext(pluginCtx, { timeout: 10000, breakOnSigint: true });
         await getCustomPluginsRepository().incrementExecCount(params.userId, pluginName);
         return { result: typeof result === 'object' ? result : String(result) };
       } catch (e: any) { return { error: e.message }; }
@@ -8246,20 +8256,24 @@ async function executeFlowCode(execCode: string, params: AIAgentTickParams): Pro
   };
 
   try {
-    // Execute flow code in VM2 sandbox (not via Function constructor) for security
-    const { VM } = require('vm2');
-    const vm = new VM({
-      timeout: 30000,
-      eval: false,
-      wasm: false,
-      sandbox: {
-        getBalance, notify, webSearch, fetchUrl, getState, setState, sendTon, sleep, callTool,
-        console: { log: () => {}, error: () => {}, warn: () => {} },
-      },
+    // Execute flow code in hardened vm sandbox (replaces deprecated vm2)
+    const nodeVm = require('node:vm');
+    const flowSandbox = {
+      getBalance, notify, webSearch, fetchUrl, getState, setState, sendTon, sleep, callTool,
+      console: { log: () => {}, error: () => {}, warn: () => {} },
+      JSON, Math, Date, parseInt, parseFloat, isNaN, isFinite, Promise, Array, Object,
+      String: globalThis.String, Number: globalThis.Number, Boolean: globalThis.Boolean,
+      RegExp, Error, Map, Set, setTimeout: (fn: any, ms: number) => setTimeout(fn, Math.min(ms, 30000)),
+      require: () => { throw new Error('require disabled'); },
+    };
+    const flowCtx = nodeVm.createContext(flowSandbox, {
+      name: 'flow-sandbox',
+      codeGeneration: { strings: false, wasm: false },
     });
-    // Wrap in async IIFE since VM2 doesn't natively support top-level await well
+    try { nodeVm.runInContext(`[Object,Array,Function,String,Number,Boolean,RegExp,Error,Promise,Map,Set].forEach(C=>{if(C.prototype)Object.freeze(C.prototype)})`, flowCtx); } catch {}
     const wrappedCode = `(async () => { ${execCode} })()`;
-    await vm.run(wrappedCode);
+    const flowScript = new nodeVm.Script(wrappedCode, { filename: 'flow.js' });
+    await flowScript.runInContext(flowCtx, { timeout: 30000, breakOnSigint: true });
     await logToDb(params.agentId, 'info', '[flow-exec] Flow code completed successfully', params.userId);
     return { success: true };
   } catch (e: any) {
