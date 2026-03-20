@@ -193,8 +193,22 @@ async function startCreationAnimation(
 
   const typingTimer = setInterval(() => ctx.sendChatAction('typing').catch(() => {}), 4000);
 
+  let stopped = false;
+  const stopFn = () => {
+    if (stopped) return;
+    stopped = true;
+    clearInterval(stepTimer);
+    clearInterval(typingTimer);
+    clearTimeout(autoStopTimer);
+  };
+
+  // Auto-stop after 60 seconds to prevent timer leaks
+  const autoStopTimer = setTimeout(() => {
+    stopFn();
+  }, 60_000);
+
   return {
-    stop: () => { clearInterval(stepTimer); clearInterval(typingTimer); },
+    stop: stopFn,
     deleteMsg: () => {
       if (chatId && msgId && sendNew) ctx.telegram.deleteMessage(chatId, msgId).catch(() => {});
     },
@@ -634,6 +648,32 @@ function isGarbageInput(text: string): boolean {
 }
 
 // ============================================================
+// Clear all pending states for a user (prevents race conditions)
+// ============================================================
+function clearAllPendingStates(userId: number): void {
+  pendingCreations.delete(userId);
+  pendingNameAsk.delete(userId);
+  pendingRenames.delete(userId);
+  pendingEdits.delete(userId);
+  pendingAgentChats.delete(userId);
+  pendingWithdrawal.delete(userId);
+  pendingTemplateSetup.delete(userId);
+  pendingPublish.delete(userId);
+  pendingTgAuth.delete(userId);
+  pendingApiKey.delete(userId);
+  pendingLangSetup.delete(userId);
+  pendingAgentSetup.delete(userId);
+  pendingPluginCreation.delete(userId);
+  pendingOnboarding.delete(userId);
+  pendingTopup.delete(userId);
+  pendingUserIdea.delete(userId);
+  pendingProposalDiscuss.delete(userId);
+  pendingWalletImport.delete(userId);
+  pendingWalletLimit.delete(userId);
+  pendingWalletRename.delete(userId);
+}
+
+// ============================================================
 // Periodic cleanup of pending Maps to prevent memory leaks
 // ============================================================
 const _pendingTimestamps = new Map<string, number>(); // "mapName:key" → first-seen timestamp
@@ -713,6 +753,18 @@ setInterval(() => {
     if (!pendingTgAuth.has(userId)) {
       clearInterval(handle);
       qrPollingHandles.delete(userId);
+      cleaned++;
+    }
+  }
+
+  // Clean complete2FAFns entries older than 10 minutes
+  const TFA_TTL = 10 * 60 * 1000;
+  for (const key of [...complete2FAFns.keys()]) {
+    const tsKey = `2fa:${key}`;
+    const ts = _pendingTimestamps.get(tsKey);
+    if (ts && now - ts > TFA_TTL) {
+      complete2FAFns.delete(key);
+      _pendingTimestamps.delete(tsKey);
       cleaned++;
     }
   }
@@ -1237,7 +1289,8 @@ bot.command('search', async (ctx) => {
       { parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } }
     );
   } catch (e: any) {
-    await safeReply(ctx, `❌ Ошибка поиска: ${e.message}`);
+    console.error('Search error:', e);
+    await safeReply(ctx, '❌ Произошла ошибка при поиске. Попробуйте позже.');
   }
 });
 
@@ -1779,7 +1832,8 @@ bot.command('mypurchases', async (ctx) => {
       reply_markup: { inline_keyboard: btns },
     });
   } catch (e: any) {
-    await safeReply(ctx, `❌ Ошибка: ${escHtml(e.message)}`, { parse_mode: 'HTML' });
+    console.error('Command error:', e);
+    await safeReply(ctx, '❌ Произошла ошибка. Попробуйте позже.');
   }
 });
 
@@ -1802,7 +1856,8 @@ bot.command('mylistings', async (ctx) => {
     });
     await safeReply(ctx, text, { parse_mode: 'HTML' });
   } catch (e: any) {
-    await safeReply(ctx, `❌ Ошибка: ${escHtml(e.message)}`, { parse_mode: 'HTML' });
+    console.error('Listings error:', e);
+    await safeReply(ctx, '❌ Произошла ошибка. Попробуйте позже.');
   }
 });
 
@@ -2271,7 +2326,8 @@ bot.command('approve_action', async (ctx) => {
     }
     await safeReply(ctx, `✅ Действие #${approvalId} одобрено (${row.action_type}).`, {});
   } catch (e: any) {
-    await safeReply(ctx, `❌ Ошибка: ${e.message}`, {});
+    console.error('Approve action error:', e);
+    await safeReply(ctx, '❌ Произошла ошибка. Попробуйте позже.', {});
   }
 });
 
@@ -2292,7 +2348,8 @@ bot.command('reject_action', async (ctx) => {
     }
     await safeReply(ctx, `❌ Действие #${approvalId} отклонено (${row.action_type}).`, {});
   } catch (e: any) {
-    await safeReply(ctx, `❌ Ошибка: ${e.message}`, {});
+    console.error('Reject action error:', e);
+    await safeReply(ctx, '❌ Произошла ошибка. Попробуйте позже.', {});
   }
 });
 
@@ -3743,6 +3800,7 @@ bot.action(/^agent_schedule:(.+)$/, async (ctx) => {
 // Callback-кнопки
 // ============================================================
 bot.on('callback_query', async (ctx) => {
+  if (!ctx.from) return;
   const userId = ctx.from.id;
   const cbq = ctx.callbackQuery;
   if (!('data' in cbq) || !cbq.data) {
@@ -5265,6 +5323,7 @@ bot.on('callback_query', async (ctx) => {
   if (data.startsWith('edit_agent:')) {
     await ctx.answerCbQuery();
     const agentId = parseInt(data.split(':')[1]);
+    clearAllPendingStates(userId);
     pendingEdits.set(userId, agentId); // Запоминаем агента для модификации
     const agentData = await getDBTools().getAgent(agentId, userId);
     const agentName = agentData.data?.name || `#${agentId}`;
@@ -5288,6 +5347,7 @@ bot.on('callback_query', async (ctx) => {
   if (data.startsWith('rename_agent:')) {
     await ctx.answerCbQuery();
     const agentId = parseInt(data.split(':')[1]);
+    clearAllPendingStates(userId);
     pendingRenames.set(userId, agentId);
     await editOrReply(ctx,
       `🏷 <b>Переименование агента #${agentId}</b>\n\nВведите новое название (до 60 символов):`,
@@ -6454,6 +6514,7 @@ const MENU_TEXTS = new Set([
 // ГОЛОСОВЫЕ СООБЩЕНИЯ → транскрипция → создание агента / чат
 // ════════════════════════════════════════════════════════════
 bot.on(message('voice'), async (ctx) => {
+  if (!ctx.from) return;
   const userId = ctx.from.id;
   const lang = getUserLang(userId);
 
@@ -6602,6 +6663,7 @@ bot.on(message('voice'), async (ctx) => {
 });
 
 bot.on(message('text'), async (ctx) => {
+  if (!ctx.from) return;
   const text = ctx.message.text;
   if ((text.startsWith('/') && text !== '/stop_chat' && text !== '/stopchat') || MENU_TEXTS.has(text)) return;
 
@@ -7094,7 +7156,7 @@ bot.on(message('text'), async (ctx) => {
         return;
       }
       // Basic security check
-      const dangerous = ['process.', 'require(', 'child_process', '__dirname', '__filename', 'global.', 'eval('];
+      const dangerous = ['process.', 'require(', 'child_process', '__dirname', '__filename', 'global.', 'eval(', 'globalThis', 'Function(', 'import(', 'global[', 'Proxy', 'Reflect', 'constructor'];
       const found = dangerous.find(d => code.includes(d));
       if (found) {
         await safeReply(ctx, `❌ Код содержит запрещённую конструкцию: <code>${escHtml(found)}</code>`, { parse_mode: 'HTML' });
@@ -7109,7 +7171,8 @@ bot.on(message('text'), async (ctx) => {
           { parse_mode: 'HTML' }
         );
       } catch (e: any) {
-        await safeReply(ctx, `❌ Ошибка: ${escHtml(e.message)}`, { parse_mode: 'HTML' });
+        console.error('Plugin creation error:', e);
+        await safeReply(ctx, '❌ Произошла ошибка при создании плагина. Попробуйте позже.');
       }
       return;
     }
@@ -7208,7 +7271,9 @@ bot.on(message('text'), async (ctx) => {
         }
       } else {
         // Mnemonic — delete user message for security
-        try { await ctx.deleteMessage(); } catch {}
+        try { await ctx.deleteMessage(); } catch {
+          await safeReply(ctx, '⚠️ Не удалось удалить сообщение с мнемоникой. Удалите его вручную для безопасности!', {});
+        }
         const words = trimmed.split(/\s+/);
         if (words.length !== 24) {
           await safeReply(ctx, '❌ Мнемоника должна содержать 24 слова.', {});
@@ -7380,8 +7445,8 @@ bot.on(message('text'), async (ctx) => {
     if (Object.keys(configUpdateMap).length > 0) {
       // Apply all config updates via jsonb_set without touching the code
       try {
-        let updateQuery = 'SELECT trigger_config FROM builder_bot.agents WHERE id = $1';
-        const res = await dbPool.query(updateQuery, [agentId]);
+        let updateQuery = 'SELECT trigger_config FROM builder_bot.agents WHERE id = $1 AND owner_id = $2';
+        const res = await dbPool.query(updateQuery, [agentId, userId]);
         const currentTriggerConfig = res.rows[0]?.trigger_config || {};
         const currentConfig: Record<string, any> = (typeof currentTriggerConfig === 'object' && currentTriggerConfig?.config)
           ? { ...currentTriggerConfig.config }
@@ -7393,8 +7458,8 @@ bot.on(message('text'), async (ctx) => {
 
         const newTriggerConfig = { ...currentTriggerConfig, config: currentConfig };
         await dbPool.query(
-          'UPDATE builder_bot.agents SET trigger_config = $1::jsonb WHERE id = $2',
-          [JSON.stringify(newTriggerConfig), agentId]
+          'UPDATE builder_bot.agents SET trigger_config = $1::jsonb WHERE id = $2 AND owner_id = $3',
+          [JSON.stringify(newTriggerConfig), agentId, userId]
         );
 
         const changesDesc = Object.entries(configUpdateMap)
@@ -7413,7 +7478,8 @@ bot.on(message('text'), async (ctx) => {
           }
         );
       } catch (e: any) {
-        await safeReply(ctx, `❌ Ошибка обновления конфигурации: ${escHtml(e.message)}`);
+        console.error('Config update error:', e);
+        await safeReply(ctx, '❌ Произошла ошибка при обновлении конфигурации. Попробуйте позже.');
       }
       return;
     }
@@ -7455,7 +7521,8 @@ bot.on(message('text'), async (ctx) => {
       }
     } catch (err: any) {
       anim.stop();
-      await safeReply(ctx, `❌ Ошибка: ${escHtml(err?.message || 'Unknown')}`, { parse_mode: 'HTML' });
+      console.error('Agent edit error:', err);
+      await safeReply(ctx, '❌ Произошла ошибка при редактировании. Попробуйте позже.');
     }
     return;
   }
@@ -7616,12 +7683,12 @@ bot.on(message('text'), async (ctx) => {
 
   try {
     const result = await getOrchestrator().processMessage(userId, text, ctx.from.username);
-    anim!.stop();
-    anim!.deleteMsg();
+    anim?.stop();
+    anim?.deleteMsg();
     await sendResult(ctx, result);
   } catch (err) {
-    anim!.stop();
-    anim!.deleteMsg();
+    anim?.stop();
+    anim?.deleteMsg();
     console.error('Text handler error:', err);
     await ctx.reply('❌ Ошибка. Попробуйте ещё раз или /start');
   }
@@ -8241,7 +8308,7 @@ async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
     let agentXp = 0;
     let agentLevel = 1;
     try {
-      const roleRes = await dbPool.query('SELECT role, xp, level FROM builder_bot.agents WHERE id = $1', [agentId]);
+      const roleRes = await dbPool.query('SELECT role, xp, level FROM builder_bot.agents WHERE id = $1 AND owner_id = $2', [agentId, userId]);
       if (roleRes.rows[0]) {
         agentRole = roleRes.rows[0].role || 'worker';
         agentXp = roleRes.rows[0].xp || 0;

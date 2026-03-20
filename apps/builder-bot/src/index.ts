@@ -32,6 +32,7 @@ import {
   initAgentApprovalsRepository,
   runAIProposalsMigrations,
 } from './db/schema-extensions';
+import { initPayments } from './payments';
 
 // Главная функция запуска
 async function main() {
@@ -63,6 +64,9 @@ async function main() {
     console.error('❌ Failed to initialize database:', dbResult.error);
     process.exit(1);
   }
+
+  // Инициализируем платёжную систему
+  await initPayments(pool);
 
   // Инициализируем TON Connect (PostgreSQL storage + restore sessions)
   await initTonConnect(pool);

@@ -149,6 +149,7 @@ class TonMcpClientManager {
         return mc;
       } catch (e: any) {
         console.error(`[MCP] Agent #${agentId} connect failed: ${e.message}`);
+        await mc.destroy();
         throw e;
       } finally {
         this.connecting.delete(agentId);

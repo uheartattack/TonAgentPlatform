@@ -27,8 +27,18 @@ function esc(text: string | number | null | undefined): string {
     .replace(/!/g, '\\!');
 }
 
-// Tracks users who have completed clarification (keyed by userId, value = enriched description)
-const clarifiedUsers = new Map<number, string>();
+// Tracks users who have completed clarification (keyed by userId, value = {description, timestamp})
+const clarifiedUsers = new Map<number, { description: string; timestamp: number }>();
+
+// TTL cleanup: remove clarifiedUsers entries older than 30 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [userId, entry] of clarifiedUsers) {
+    if (now - entry.timestamp > 30 * 60 * 1000) {
+      clarifiedUsers.delete(userId);
+    }
+  }
+}, 30 * 60 * 1000).unref();
 
 // Platform AI — uses configured API key (Gemini, OpenAI, etc.)
 const PLATFORM_API_KEY = process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY || '';
@@ -56,6 +66,10 @@ export function getUserModel(userId: number): ModelId {
   return userModels.get(userId) || DEFAULT_MODEL;
 }
 export function setUserModel(userId: number, model: ModelId) {
+  if (userModels.size > 10000) {
+    const firstKey = userModels.keys().next().value;
+    if (firstKey !== undefined) userModels.delete(firstKey);
+  }
   userModels.set(userId, model);
 }
 
@@ -249,6 +263,10 @@ const lastInteractedAgent = new Map<number, number>(); // userId → agentId
 
 /** Set the last agent a user interacted with */
 export function setLastInteractedAgent(userId: number, agentId: number) {
+  if (lastInteractedAgent.size > 10000) {
+    const firstKey = lastInteractedAgent.keys().next().value;
+    if (firstKey !== undefined) lastInteractedAgent.delete(firstKey);
+  }
   lastInteractedAgent.set(userId, agentId);
 }
 
@@ -547,7 +565,7 @@ export class Orchestrator {
           // Перенаправляем на handleCreateAgent, где есть safety-net clarification
           return this.handleCreateAgent(userId, desc, agentName);
         }
-        const enrichedDesc = clarifiedUsers.get(userId) || desc;
+        const enrichedDesc = clarifiedUsers.get(userId)?.description || desc;
         clarifiedUsers.delete(userId);
         return this.handleCreateAgent(userId, enrichedDesc, agentName);
       }
@@ -588,11 +606,11 @@ export class Orchestrator {
           : this.handleDebugAgent(userId, originalMessage);
 
       case 'ask_clarification': {
-        await getMemoryManager().setWaitingForInput(userId, 'agent_clarification', { description: args.context || originalMessage });
         const options = (args.options || []).slice(0, 4);
-        const buttons = options.map((opt: string) => ({
+        await getMemoryManager().setWaitingForInput(userId, 'agent_clarification', { description: args.context || originalMessage, currentOptions: options });
+        const buttons = options.map((opt: string, i: number) => ({
           text: opt,
-          callbackData: `clarify:${encodeURIComponent(opt.slice(0, 18))}`,
+          callbackData: `clarify:${i}`,
         }));
         return {
           type: buttons.length ? 'buttons' : 'text',
@@ -1025,13 +1043,14 @@ ${studioContext?.source === 'studio' ? `
       // ГАРАНТИРОВАННО задаём вопросы (AI или fallback)
       const q = questionsToAsk[0];
       const options = (q.options || []).slice(0, 4);
-      const buttons = options.map((opt: string) => ({
+      const buttons = options.map((opt: string, i: number) => ({
         text: opt,
-        callbackData: `clarify:${encodeURIComponent(opt.slice(0, 18))}`,
+        callbackData: `clarify:${i}`,
       }));
 
       await getMemoryManager().setWaitingForInput(userId, 'agent_clarification', {
         description,
+        currentOptions: options,
         allQuestions: questionsToAsk.length > 1 ? questionsToAsk.slice(1) : undefined,
       });
 
@@ -1818,6 +1837,7 @@ ${toolSections}
     }
 
     const agentId = parseInt(agentIdMatch[1] || agentIdMatch[2]);
+    if (isNaN(agentId)) return { type: 'text', content: '❌ Не удалось определить ID агента. Укажите #ID, например: "запусти агента #5"' };
 
     // Запускаем
     const result = await this.runner.runAgent({ agentId, userId });
@@ -2785,10 +2805,12 @@ ${isOwner ? '\nТЫ ОБЩАЕШЬСЯ С ВЛАДЕЛЬЦЕМ ПЛАТФОРМ�
 
     switch (waitingContext.waitingFor) {
       case 'agent_clarification': {
-        // Strip clarify: prefix from Studio callback buttons
+        // Strip clarify: prefix — resolve index to full option text
         let answer = message;
         if (answer.startsWith('clarify:')) {
-          answer = decodeURIComponent(answer.replace('clarify:', ''));
+          const idx = parseInt(answer.replace('clarify:', ''), 10);
+          const storedOptions: string[] = waitingContext.context.currentOptions || [];
+          answer = (!isNaN(idx) && storedOptions[idx]) ? storedOptions[idx] : answer;
         }
 
         // Если есть ещё вопросы в цепочке — задаём следующий
@@ -2796,13 +2818,14 @@ ${isOwner ? '\nТЫ ОБЩАЕШЬСЯ С ВЛАДЕЛЬЦЕМ ПЛАТФОРМ�
         if (remainingQuestions && remainingQuestions.length > 0) {
           const nextQ = remainingQuestions[0];
           const nextOptions = (nextQ.options || []).slice(0, 4);
-          const nextButtons = nextOptions.map((opt: string) => ({
+          const nextButtons = nextOptions.map((opt: string, i: number) => ({
             text: opt,
-            callbackData: `clarify:${encodeURIComponent(opt.slice(0, 18))}`,
+            callbackData: `clarify:${i}`,
           }));
 
           await getMemoryManager().setWaitingForInput(userId, 'agent_clarification', {
             description: `${waitingContext.context.description}\n\nUser clarification: ${answer}`,
+            currentOptions: nextOptions,
             allQuestions: remainingQuestions.slice(1),
           });
 
@@ -2815,7 +2838,7 @@ ${isOwner ? '\nТЫ ОБЩАЕШЬСЯ С ВЛАДЕЛЬЦЕМ ПЛАТФОРМ�
 
         // Все вопросы заданы — создаём агента с обогащённым описанием
         const enrichedDesc = `${waitingContext.context.description}\n\nUser clarification: ${answer}`;
-        clarifiedUsers.set(userId, enrichedDesc);
+        clarifiedUsers.set(userId, { description: enrichedDesc, timestamp: Date.now() });
         return this.handleCreateAgent(userId, enrichedDesc);
       }
 

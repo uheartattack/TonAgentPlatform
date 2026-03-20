@@ -20,6 +20,31 @@ function validatePath(agentId: number, filePath: string): string {
   if (!resolved.startsWith(root)) {
     throw new Error('Path traversal detected');
   }
+  // Check real path to prevent symlink-based traversal
+  try {
+    const realRoot = require('fs').realpathSync(root);
+    const realResolved = require('fs').realpathSync(resolved);
+    if (!realResolved.startsWith(realRoot)) {
+      throw new Error('Path traversal detected via symlink');
+    }
+  } catch (e: any) {
+    // If the file doesn't exist yet, check the parent directory
+    if (e.code === 'ENOENT') {
+      try {
+        const parentDir = path.dirname(resolved);
+        const realRoot = require('fs').realpathSync(root);
+        const realParent = require('fs').realpathSync(parentDir);
+        if (!realParent.startsWith(realRoot)) {
+          throw new Error('Path traversal detected via symlink');
+        }
+      } catch (e2: any) {
+        if (e2.code !== 'ENOENT') throw e2;
+        // Parent also doesn't exist yet — will be created by mkdir; safe since resolved is under root
+      }
+    } else if (e.message?.includes('traversal')) {
+      throw e;
+    }
+  }
   return resolved;
 }
 

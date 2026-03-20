@@ -59,6 +59,7 @@ export class DiscordManager {
   }
 
   async createWebhook(agentId: number, channelId: string, name: string): Promise<any> {
+    this.validateSnowflake(channelId, 'channelId');
     const cfg = this.configs.get(agentId);
     if (!cfg) throw new Error('Discord not configured');
     const res = await fetch(`${DISCORD_API}/channels/${channelId}/webhooks`, {
@@ -71,6 +72,8 @@ export class DiscordManager {
   }
 
   async addReaction(agentId: number, channelId: string, messageId: string, emoji: string): Promise<void> {
+    this.validateSnowflake(channelId, 'channelId');
+    this.validateSnowflake(messageId, 'messageId');
     const cfg = this.configs.get(agentId);
     if (!cfg) throw new Error('Discord not configured');
     const encodedEmoji = encodeURIComponent(emoji);
@@ -82,6 +85,7 @@ export class DiscordManager {
   }
 
   async getGuildMembers(agentId: number, guildId: string, limit = 50): Promise<any[]> {
+    this.validateSnowflake(guildId, 'guildId');
     const cfg = this.configs.get(agentId);
     if (!cfg) throw new Error('Discord not configured');
     const res = await fetch(`${DISCORD_API}/guilds/${guildId}/members?limit=${limit}`, {

@@ -4611,14 +4611,21 @@ function checkDailySpendLimitMem(agentId: number, amountTon: number, limitTon: n
   const today = new Date().toISOString().slice(0, 10);
   const entry = _dailySpendMem.get(agentId);
   if (!entry || entry.date !== today) {
-    _dailySpendMem.set(agentId, { total: amountTon, date: today });
-    return { allowed: true, spent: amountTon, limit: limitTon };
+    return { allowed: true, spent: 0, limit: limitTon };
   }
   if (entry.total + amountTon > limitTon) {
     return { allowed: false, spent: entry.total, limit: limitTon };
   }
-  entry.total += amountTon;
   return { allowed: true, spent: entry.total, limit: limitTon };
+}
+function recordDailySpendMem(agentId: number, amountTon: number): void {
+  const today = new Date().toISOString().slice(0, 10);
+  const entry = _dailySpendMem.get(agentId);
+  if (!entry || entry.date !== today) {
+    _dailySpendMem.set(agentId, { total: amountTon, date: today });
+  } else {
+    entry.total += amountTon;
+  }
 }
 
 // ── Daily spend cap enforcement (DB-backed) ────────────────────────────────
@@ -4920,6 +4927,16 @@ export async function executeTool(
         const priceTon = Number(args.price_ton);
         if (!priceTon || priceTon <= 0) return { error: 'price_ton must be > 0' };
 
+        // Daily spend cap check (same as send_ton)
+        const memCheck = checkDailySpendLimitMem(params.agentId, priceTon);
+        if (!memCheck.allowed) {
+          return { error: `Daily spend limit (fast check): ${memCheck.spent.toFixed(2)}/${memCheck.limit} TON spent today. Wait until tomorrow.` };
+        }
+        const capErr = await checkDailySpendCap(params.agentId, params.userId, priceTon);
+        if (capErr) {
+          return { error: capErr };
+        }
+
         // Check balance before sending
         let balanceTon = 0;
         try {
@@ -4950,6 +4967,8 @@ export async function executeTool(
 
         if ((result as any)?.ok) {
           const giftName = String(args.gift_name || 'подарок');
+          recordDailySpendMem(params.agentId, priceTon);
+          await recordDailySpend(params.agentId, params.userId, priceTon);
           const totalSpent = Number(unwrapState(await stateRepo.get(params.agentId, 'total_ton_spent')) || 0) + priceTon;
           await stateRepo.set(params.agentId, params.userId, 'total_ton_spent', String(totalSpent));
           await notifyUser(params.userId, `✅ Куплен ${giftName} за ${priceTon} TON! Tx: ${(result as any).hash}`);
@@ -5048,7 +5067,8 @@ export async function executeTool(
         const wallet = await walletFromMnemonic(walletMn, 'v4r2');
         const result = await sendAgentTransaction(wallet, String(args.to), amount, String(args.comment || ''));
         if ((result as any)?.ok) {
-          // Track spend (state + daily cap)
+          // Track spend (state + daily cap + in-memory)
+          recordDailySpendMem(params.agentId, amount);
           const totalSpent = Number(unwrapState(await stateRepo.get(params.agentId, 'total_ton_spent')) || 0) + amount;
           await stateRepo.set(params.agentId, params.userId, 'total_ton_spent', String(totalSpent));
           await recordDailySpend(params.agentId, params.userId, amount);
@@ -5340,7 +5360,7 @@ export async function executeTool(
         // Security: only allow prompt changes from owner (not random chat users)
         const senderId = params.context?.senderId;
         const ownerId = String(params.userId);
-        if (senderId && String(senderId) !== ownerId && String(senderId) !== String(params.context?.chatId)) {
+        if (senderId && String(senderId) !== ownerId) {
           console.log(`[Security] update_self_prompt blocked: sender=${senderId} is not owner=${ownerId}`);
           return { error: 'Only the agent owner can modify the prompt. This action was blocked.' };
         }
@@ -6039,11 +6059,15 @@ export async function executeTool(
         if (ssrfCheck.error) return { error: ssrfCheck.error };
         const safeUrl = ssrfCheck.decodedUrl!;
         const method = (args.method as string || 'GET').toUpperCase();
-        const headers = (args.headers || {}) as Record<string, string>;
+        const fetchHeaders = (args.headers || {}) as Record<string, string>;
+        const BLOCKED_HEADERS = ['authorization', 'cookie', 'host', 'x-forwarded-for', 'x-forwarded-host', 'x-real-ip', 'proxy-authorization'];
+        for (const key of Object.keys(fetchHeaders)) {
+          if (BLOCKED_HEADERS.includes(key.toLowerCase())) delete fetchHeaders[key];
+        }
         const body = args.body as string | undefined;
         const res = await fetch(safeUrl, {
           method,
-          headers: { 'User-Agent': 'TON-Agent-Platform/1.0', ...headers },
+          headers: { 'User-Agent': 'TON-Agent-Platform/1.0', ...fetchHeaders },
           body: method !== 'GET' ? body : undefined,
           signal: AbortSignal.timeout(15000),
           redirect: 'manual',
@@ -7075,6 +7099,15 @@ export async function executeTool(
         // Track this agent as waiting for a response from targetId
         if (!_pendingAsks.has(callerIdStr)) _pendingAsks.set(callerIdStr, new Set());
         _pendingAsks.get(callerIdStr)!.add(targetId);
+
+        // Safety cleanup: remove stale _pendingAsks entry after 5 minutes
+        setTimeout(() => {
+          const pending = _pendingAsks.get(callerIdStr);
+          if (pending) {
+            pending.delete(targetId);
+            if (pending.size === 0) _pendingAsks.delete(callerIdStr);
+          }
+        }, 5 * 60 * 1000);
 
         // Send message with request ID for response pairing
         addMessageToAIAgent(targetId, `[От агента #${params.agentId} | request_id=${reqId}]: ${message}`);
@@ -8810,8 +8843,8 @@ ${roleBehavior}
   try {
     const chatId = params.context?.chatId;
     const senderId = params.context?.senderId;
-    const senderName = params.context?.senderName;
-    const senderUsername = params.context?.senderUsername;
+    const senderName = params.context?.senderName ? sanitizeForPromptShort(params.context.senderName) : undefined;
+    const senderUsername = params.context?.senderUsername ? sanitizeForPromptShort(params.context.senderUsername) : undefined;
     if (chatId || senderId) {
       const { buildChatContext, buildUserContext, touchUserDossier } = await import('../services/agent-memory');
       if (chatId) chatContextBlock = await buildChatContext(params.agentId, String(chatId));
@@ -9376,6 +9409,7 @@ If web_search returns nothing useful → say "не смог найти акту�
   // Tool RAG: select only relevant tools based on user message + system prompt
   const userMsgText = msgs.join(' ');
   let tools = selectRelevantTools(allToolDefs, userMsgText, params.systemPrompt, providerCfg.maxTools);
+  const originalTools = [...tools]; // Save for restoration after 400-error retry
 
   // ── PHOTO GUARD: when user asks for photo/image, REMOVE tg_send_gif to prevent misuse ──
   const { PHOTO_PATTERNS, FRESHNESS_PATTERNS: _FRESH_RE, PRODUCT_PATTERNS: _PROD_RE } = require('../config/platform');
@@ -9453,7 +9487,7 @@ If web_search returns nothing useful → say "не смог найти акту�
         const is400 = e.status === 400 || e.statusCode === 400 || (e.message || '').includes('400');
         if (is400 && retry < 2 && tools.length > 0) {
           console.warn(`[AI runtime] Agent #${params.agentId} 400 error — retrying without tools`);
-          tools = []; // clear tools for next retry
+          tools = []; // temporarily clear tools for this retry
           continue;
         }
         cbRecordFailure(params.agentId); // circuit breaker: track failure
@@ -9463,9 +9497,17 @@ If web_search returns nothing useful → say "не смог найти акту�
         return { toolCallCount: totalToolCalls, error: errMsg };
       }
     }
+    // Restore tools after retry loop (may have been cleared on 400 error)
+    if (tools.length === 0 && originalTools.length > 0) tools = [...originalTools];
     if (lastErr) {
       cbRecordFailure(params.agentId); // circuit breaker: track failure
       const errMsg = `AI call failed after retries: ${lastErr.message}`;
+      await logToDb(params.agentId, 'error', errMsg);
+      if (execId) try { await getExecutionHistoryRepository().finish(execId, 'error', 0, errMsg); } catch (e2: any) { console.warn('[ExecTracker] finish:', e2.message); }
+      return { toolCallCount: totalToolCalls, error: errMsg };
+    }
+    if (!response || !response.choices) {
+      const errMsg = 'AI call returned empty response (no choices)';
       await logToDb(params.agentId, 'error', errMsg);
       if (execId) try { await getExecutionHistoryRepository().finish(execId, 'error', 0, errMsg); } catch (e2: any) { console.warn('[ExecTracker] finish:', e2.message); }
       return { toolCallCount: totalToolCalls, error: errMsg };
@@ -9840,11 +9882,25 @@ If web_search returns nothing useful → say "не смог найти акту�
             toolCalls: totalToolCalls,
             hadError: messages.some((m: any) => m.role === 'tool' && JSON.stringify(m.content || '').includes('"error"')),
           };
-          await getAgentStateRepository().set(
+          const _stateRepo = getAgentStateRepository();
+          await _stateRepo.set(
             params.agentId, params.userId,
             `quality:${Date.now()}`,
             JSON.stringify(score),
           );
+          // Prune old quality entries — keep only last 30
+          try {
+            const allState = await _stateRepo.getAll(params.agentId);
+            const qualityKeys = allState
+              .filter((s: any) => s.key.startsWith('quality:'))
+              .sort((a: any, b: any) => a.key > b.key ? 1 : -1);
+            if (qualityKeys.length > 30) {
+              const toDelete = qualityKeys.slice(0, qualityKeys.length - 30);
+              for (const entry of toDelete) {
+                await _stateRepo.delete(params.agentId, entry.key);
+              }
+            }
+          } catch {}
         } catch {}
       }
     }
@@ -10095,10 +10151,13 @@ export class AIAgentRuntime {
       // Clean up memory maps to prevent leaks
       _pendingMessages.delete(agentId);
       _lastMessageTime.delete(agentId);
-      _channelPostTimes.forEach((_, key) => { if (key.startsWith(agentId + ':')) _channelPostTimes.delete(key); });
+      const channelKeys = [..._channelPostTimes.keys()].filter(k => k.startsWith(agentId + ':'));
+      for (const k of channelKeys) _channelPostTimes.delete(k);
       _circuitBreakers.delete(agentId);
-      _recentPostHashes.forEach((_, key) => { if (key.startsWith(agentId + ':')) _recentPostHashes.delete(key); });
-      _toolCircuitBreakers.forEach((_, key) => { if (key.startsWith(agentId + ':')) _toolCircuitBreakers.delete(key); });
+      const postHashKeys = [..._recentPostHashes.keys()].filter(k => k.startsWith(agentId + ':'));
+      for (const k of postHashKeys) _recentPostHashes.delete(k);
+      const toolCbKeys = [..._toolCircuitBreakers.keys()].filter(k => k.startsWith(agentId + ':'));
+      for (const k of toolCbKeys) _toolCircuitBreakers.delete(k);
       _dailySpendMem.delete(agentId);
       _webRequestCounts.delete(agentId);
       _tickNotifyFlag.delete(agentId);
@@ -10204,7 +10263,7 @@ export function getAIAgentRuntime(): AIAgentRuntime {
       });
       // Prune agent meta cache expired entries (use cachedAt + 300s TTL)
       _agentMetaCache.forEach((entry, id) => {
-        if (Date.now() - entry.cachedAt > 300_000) _agentMetaCache.delete(id);
+        if (Date.now() - entry.cachedAt > META_CACHE_TTL) _agentMetaCache.delete(id);
       });
     }, 10 * 60 * 1000);
   }

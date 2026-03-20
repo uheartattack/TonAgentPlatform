@@ -10,7 +10,7 @@
 import { TelegramClient } from 'telegram';
 import { StringSession } from 'telegram/sessions';
 import { Api } from 'telegram/tl';
-import { Pool } from 'pg';
+import { pool as sharedPool } from '../db/index';
 
 const API_ID   = parseInt(process.env.TG_API_ID   || '0', 10);
 const API_HASH =          process.env.TG_API_HASH  || '';
@@ -337,19 +337,8 @@ interface AuthState {
   submitCode?: (code: string) => Promise<{ ok: boolean; error?: string }>;
 }
 
-let _pool: Pool | null = null;
-
-function getPool(): Pool {
-  if (!_pool) {
-    _pool = new Pool({
-      host:     process.env.DB_HOST     || 'localhost',
-      port:     parseInt(process.env.DB_PORT || '5432'),
-      user:     process.env.DB_USER     || 'ton_agent',
-      password: process.env.DB_PASSWORD || '',
-      database: process.env.DB_NAME     || 'ton_agent_platform',
-    });
-  }
-  return _pool;
+function getPool() {
+  return sharedPool;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -881,12 +870,12 @@ setInterval(() => {
     const cutoff = (now / 1000) - 86400;
     for (const [k, v] of _lastMsgTime) { if (v < cutoff) _lastMsgTime.delete(k); }
   }
-  // Cap _summaryCache: remove expired entries (TTL 60s)
+  // Cap _summaryCache: remove expired entries (TTL 60s) and enforce max size of 1000
   for (const [k, v] of _summaryCache) { if (now - v.ts > 120000) _summaryCache.delete(k); }
+  if (_summaryCache.size > 1000) _summaryCache.clear();
   // Cap per-agent chatRings to prevent unbounded growth
   if (_chatRings.size > 500) _chatRings.clear();
-  if (_summaryCache.size > 2000) _summaryCache.clear();
-}, 10 * 60 * 1000); // every 10 minutes
+}, 5 * 60 * 1000); // every 5 minutes
 
 // Per-chat processing lock: prevents concurrent AI calls for same chat
 const _chatProcessingLock = new Set<string>();

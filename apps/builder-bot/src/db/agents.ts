@@ -1,6 +1,6 @@
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { pgSchema, serial, bigint, text, timestamp, boolean, jsonb } from 'drizzle-orm/pg-core';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, ne, and, desc, sql } from 'drizzle-orm';
 import { Pool } from 'pg';
 
 // Используем схему builder_bot (не конфликтует с platform)
@@ -195,10 +195,18 @@ export class AgentsRepository {
     activeAgents: number;
     totalUsers: number;
   }> {
-    const all = await this.db.select().from(agents);
-    const active = all.filter((a) => a.isActive).length;
-    const users = new Set(all.map((a) => a.userId)).size;
-    return { totalAgents: all.length, activeAgents: active, totalUsers: users };
+    const [row] = await this.db
+      .select({
+        total: sql<number>`count(*)::int`,
+        active: sql<number>`count(*) filter (where is_active)::int`,
+        users: sql<number>`count(distinct user_id)::int`,
+      })
+      .from(agents);
+    return {
+      totalAgents: row?.total ?? 0,
+      activeAgents: row?.active ?? 0,
+      totalUsers: row?.users ?? 0,
+    };
   }
 
   // Проверить существование имени
@@ -209,7 +217,7 @@ export class AgentsRepository {
     ];
 
     if (excludeId) {
-      conditions.push(eq(agents.id, excludeId));
+      conditions.push(ne(agents.id, excludeId));
     }
 
     const [existing] = await this.db

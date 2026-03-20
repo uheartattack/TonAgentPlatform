@@ -89,9 +89,19 @@ class MCPConnection {
 
 // ── Public API ──
 
+const MAX_MCP_CONNECTIONS = 50;
+
 export async function connectMCPServer(config: MCPServerConfig): Promise<{ tools: number }> {
   const conn = new MCPConnection(config);
   await conn.connect();
+  // Evict oldest connection if at capacity
+  if (serverConnections.size >= MAX_MCP_CONNECTIONS && !serverConnections.has(config.id)) {
+    const oldestKey = serverConnections.keys().next().value;
+    if (oldestKey !== undefined) {
+      serverConnections.get(oldestKey)?.disconnect();
+      serverConnections.delete(oldestKey);
+    }
+  }
   serverConnections.set(config.id, conn);
   return { tools: conn.getTools().length };
 }

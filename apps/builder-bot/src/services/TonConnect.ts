@@ -24,7 +24,15 @@ export const PLATFORM_WALLET_ADDRESS =
   process.env.PLATFORM_WALLET_ADDRESS ||
   'UQCfRrLVr7MeGbVw4x1XgZ42ZUS7tdf2sEYSyRvmoEB4y_dh';
 
-const sessions = new Map<string, any>();
+const sessions = new Map<string, { value: any; createdAt: number }>();
+
+// Periodic cleanup: remove session entries older than 1 hour, every 30 minutes
+setInterval(() => {
+  const cutoff = Date.now() - 60 * 60 * 1000;
+  for (const [k, v] of sessions) {
+    if (v.createdAt < cutoff) sessions.delete(k);
+  }
+}, 30 * 60 * 1000);
 
 export interface AgentWallet {
   address: string;
@@ -322,15 +330,15 @@ export async function getWalletInfo(address: string): Promise<any> {
 
 export function createUserSession(userId: string, manifestUrl: string): TonConnect {
   const storage = {
-    setItem:    async (key: string, value: string) => { sessions.set(`${userId}:${key}`, value); },
-    getItem:    async (key: string) => sessions.get(`${userId}:${key}`) || null,
+    setItem:    async (key: string, value: string) => { sessions.set(`${userId}:${key}`, { value, createdAt: Date.now() }); },
+    getItem:    async (key: string) => sessions.get(`${userId}:${key}`)?.value || null,
     removeItem: async (key: string) => { sessions.delete(`${userId}:${key}`); },
   };
   return new TonConnect({ manifestUrl, storage });
 }
 
 export function getUserSession(userId: string): any {
-  return sessions.get(`connector:${userId}`) || null;
+  return sessions.get(`connector:${userId}`)?.value || null;
 }
 
 export async function generateConnectionQR(connector: TonConnect): Promise<string> {

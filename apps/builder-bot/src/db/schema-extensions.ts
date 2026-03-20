@@ -771,16 +771,27 @@ export class MarketplaceRepository {
     listingId: number; buyerId: number; sellerId: number; agentId: number;
     type: 'buy' | 'rent' | 'free'; pricePaid: number; txHash?: string; expiresAt?: Date;
   }): Promise<any> {
-    const [row] = await this.db
-      .insert(marketplacePurchasesTable)
-      .values({ ...data, txHash: data.txHash ?? null, expiresAt: data.expiresAt ?? null })
-      .returning();
-    // Увеличиваем счётчик продаж
-    await this.db
-      .update(marketplaceListingsTable)
-      .set({ totalSales: sql`total_sales + 1`, updatedAt: new Date() })
-      .where(eq(marketplaceListingsTable.id, data.listingId));
-    return row;
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const txDb = drizzle(client as any);
+      const [row] = await txDb
+        .insert(marketplacePurchasesTable)
+        .values({ ...data, txHash: data.txHash ?? null, expiresAt: data.expiresAt ?? null })
+        .returning();
+      // Увеличиваем счётчик продаж
+      await txDb
+        .update(marketplaceListingsTable)
+        .set({ totalSales: sql`total_sales + 1`, updatedAt: new Date() })
+        .where(eq(marketplaceListingsTable.id, data.listingId));
+      await client.query('COMMIT');
+      return row;
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
   }
 
   // Покупки конкретного пользователя
@@ -832,6 +843,7 @@ export function getMarketplaceRepository(): MarketplaceRepository {
 export async function runMarketplaceMigrations(pool: Pool): Promise<void> {
   const client = await pool.connect();
   try {
+    await client.query('BEGIN');
     await client.query(`
       CREATE TABLE IF NOT EXISTS builder_bot.marketplace_listings (
         id           SERIAL PRIMARY KEY,
@@ -881,8 +893,10 @@ export async function runMarketplaceMigrations(pool: Pool): Promise<void> {
         ON builder_bot.marketplace_purchases (listing_id, buyer_id)
         WHERE type != 'rent'
     `);
+    await client.query('COMMIT');
     console.log('✅ Marketplace migrations applied');
   } catch (e) {
+    await client.query('ROLLBACK');
     console.error('❌ Marketplace migration failed:', e);
   } finally {
     client.release();
@@ -969,6 +983,7 @@ export const agentSharedStateTable = builderSchema.table('agent_shared_state', {
 export async function runAIProposalsMigrations(pool: Pool): Promise<void> {
   const client = await pool.connect();
   try {
+    await client.query('BEGIN');
     await client.query(`
       CREATE TABLE IF NOT EXISTS builder_bot.ai_proposals (
         id              TEXT PRIMARY KEY,
@@ -1113,8 +1128,10 @@ export async function runAIProposalsMigrations(pool: Pool): Promise<void> {
       CREATE UNIQUE INDEX IF NOT EXISTS idx_aw_address ON builder_bot.agentic_wallets(address)
     `);
 
+    await client.query('COMMIT');
     console.log('✅ AI proposals + daily spend + audit/approvals/skills/shared/bugs + agentic_wallets migrations applied');
   } catch (e) {
+    await client.query('ROLLBACK');
     console.error('❌ AI proposals migration failed:', e);
   } finally {
     client.release();
@@ -1261,14 +1278,15 @@ export class AgentDailySpendRepository {
 
   async addSpend(agentId: number, userId: number, amountNano: bigint): Promise<bigint> {
     const today = this.today();
-    await this.db
+    const [row] = await this.db
       .insert(agentDailySpendTable)
       .values({ agentId, userId, spendDate: today, spentNano: amountNano })
       .onConflictDoUpdate({
         target: [agentDailySpendTable.agentId, agentDailySpendTable.spendDate],
         set: { spentNano: sql`agent_daily_spend.spent_nano + ${amountNano}` },
-      });
-    return this.getSpent(agentId);
+      })
+      .returning({ spentNano: agentDailySpendTable.spentNano });
+    return BigInt(row.spentNano as any);
   }
 
   async canSpend(agentId: number, amountNano: bigint, limitNano: bigint): Promise<boolean> {
