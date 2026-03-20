@@ -723,6 +723,11 @@ export function startApiServer() {
           client_secret: TG_CLIENT_SECRET,
         }).toString(),
       });
+      if (!tokenRes.ok) {
+        const errText = await tokenRes.text().catch(() => 'unknown');
+        res.status(401).json({ ok: false, error: `Token exchange failed: ${tokenRes.status} ${errText.slice(0, 100)}` });
+        return;
+      }
       const tokenData = await tokenRes.json() as any;
       if (!tokenData.id_token) {
         res.status(401).json({ ok: false, error: tokenData.error || 'Token exchange failed' });
