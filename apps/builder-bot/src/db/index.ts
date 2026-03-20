@@ -49,7 +49,7 @@ export async function initDatabase() {
     initMemoryManager(pool);
     initAgentsRepository(pool);
     initDBTools(pool);
-    initPayments(pool);
+    // initPayments is now async and called separately in index.ts main()
     initTonConnectStorage(pool); // PostgreSQL storage для TON Connect сессий
 
     // Новые репозитории для production-ready MVP

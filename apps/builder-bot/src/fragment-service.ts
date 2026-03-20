@@ -37,8 +37,13 @@ function saveSession(session: string) {
 }
 
 // ── Client singleton ───────────────────────────────────────────────
+// WARNING: This is a shared global TelegramClient for ALL users.
+// Only one Telegram account can be authorized at a time.
+// If user A authorizes, user B's session will override user A's.
+// A proper fix would use per-user sessions (e.g. keyed by userId).
 let _client: TelegramClient | null = null;
 let _connected = false;
+let _authorizedUserId: number | null = null;
 
 async function getClient(): Promise<TelegramClient> {
   if (_client && _connected) return _client;
@@ -74,6 +79,7 @@ async function reconnectClient(): Promise<void> {
     const sessionStr = rawSession != null ? String(rawSession) : '';
     if (sessionStr) saveSession(sessionStr);
     console.log('[Fragment] Force reconnect, session:', sessionStr ? sessionStr.slice(0, 40) + '...' : 'empty');
+    await _client.disconnect().catch(() => {});
     _client = null;
     _connected = false;
   }
@@ -393,6 +399,7 @@ export async function authSubmitCode(userId: number, code: string): Promise<{ ty
     const sessionStr = client.session.save() as unknown as string;
     saveSession(sessionStr);
     authStates.set(userId, { step: 'done', phone: state.phone, createdAt: Date.now() });
+    _authorizedUserId = userId;
 
     console.log('[Fragment] ✅ Authorized successfully');
     return { type: 'authorized', info: 'Авторизован успешно!' };
@@ -428,6 +435,7 @@ export async function authSubmitPassword(userId: number, password: string): Prom
     const sessionStr = client.session.save() as unknown as string;
     saveSession(sessionStr);
     authStates.set(userId, { step: 'done', createdAt: Date.now() });
+    _authorizedUserId = userId;
 
     console.log('[Fragment] ✅ 2FA password accepted');
   } catch (e: any) {
@@ -445,9 +453,15 @@ export async function getFragmentClient() {
   return getClient();
 }
 
-export async function isAuthorized(): Promise<boolean> {
+export function getAuthorizedUserId(): number | null {
+  return _authorizedUserId;
+}
+
+export async function isAuthorized(userId?: number): Promise<boolean> {
   // Don't try to connect just to check auth — if client isn't initialized, not authorized
   if (!_client || !_connected) return false;
+  // If userId provided, check it matches the currently authorized user
+  if (userId !== undefined && _authorizedUserId !== null && userId !== _authorizedUserId) return false;
   try {
     const me = await Promise.race([
       _client.getMe(),
