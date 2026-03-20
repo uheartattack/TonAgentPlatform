@@ -464,7 +464,7 @@ export class RunnerAgent {
     }
 
     const agent = agentResult.data;
-    const statusResult = this.executionTools.getAgentStatus(agentId);
+    const statusResult = await this.executionTools.getAgentStatus(agentId);
 
     return {
       success: true,

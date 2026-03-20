@@ -4919,45 +4919,61 @@ export async function executeTool(
     }
 
     case 'get_gift_catalog': {
-      const catalog = await gifts.getAvailableGifts();
-      return { count: catalog.length, gifts: catalog.slice(0, 30) };
+      try {
+        const catalog = await gifts.getAvailableGifts();
+        return { count: catalog.length, gifts: catalog.slice(0, 30) };
+      } catch (e: any) { return { ok: false, error: e.message?.slice(0, 200) || 'Failed to get gift catalog' }; }
     }
 
     case 'get_fragment_listings': {
-      const listings = await gifts.getFragmentListings(args.gift_slug as string, args.limit ?? 20);
-      return { slug: args.gift_slug, count: listings.length, listings };
+      try {
+        const listings = await gifts.getFragmentListings(args.gift_slug as string, args.limit ?? 20);
+        return { slug: args.gift_slug, count: listings.length, listings };
+      } catch (e: any) { return { ok: false, error: e.message?.slice(0, 200) || 'Failed to get fragment listings' }; }
     }
 
     case 'appraise_gift': {
-      return await gifts.appraiseGift(args.slug as string);
+      try {
+        return await gifts.appraiseGift(args.slug as string);
+      } catch (e: any) { return { ok: false, error: e.message?.slice(0, 200) || 'Failed to appraise gift' }; }
     }
 
     case 'scan_arbitrage': {
-      const opps = await gifts.scanArbitrageOpportunities({
-        maxPriceStars: args.max_price_stars,
-        minProfitPct:  args.min_profit_pct,
-        tonApiKey:     params.config.TONAPI_KEY,
-      });
-      return { count: opps.length, opportunities: opps };
+      try {
+        const opps = await gifts.scanArbitrageOpportunities({
+          maxPriceStars: args.max_price_stars,
+          minProfitPct:  args.min_profit_pct,
+          tonApiKey:     params.config.TONAPI_KEY,
+        });
+        return { count: opps.length, opportunities: opps };
+      } catch (e: any) { return { ok: false, error: e.message?.slice(0, 200) || 'Failed to scan arbitrage' }; }
     }
 
     case 'buy_catalog_gift': {
-      if (args.use_userbot) {
-        return await gifts.buyGiftUserbot(String(args.gift_id), Number(args.recipient_id));
-      }
-      return await gifts.buyGiftBot(String(args.gift_id), Number(args.recipient_id));
+      try {
+        if (args.use_userbot) {
+          return await gifts.buyGiftUserbot(String(args.gift_id), Number(args.recipient_id));
+        }
+        return await gifts.buyGiftBot(String(args.gift_id), Number(args.recipient_id));
+      } catch (e: any) { return { ok: false, error: e.message?.slice(0, 200) || 'Failed to buy gift' }; }
     }
 
     case 'buy_resale_gift': {
-      return await gifts.buyResaleGift(args.slug as string);
+      try {
+        return await gifts.buyResaleGift(args.slug as string);
+      } catch (e: any) { return { ok: false, error: e.message?.slice(0, 200) || 'Failed to buy resale gift' }; }
     }
 
     case 'list_gift_for_sale': {
-      return await gifts.listGiftForSale(Number(args.msg_id), Number(args.price_stars));
+      try {
+        return await gifts.listGiftForSale(Number(args.msg_id), Number(args.price_stars));
+      } catch (e: any) { return { ok: false, error: e.message?.slice(0, 200) || 'Failed to list gift' }; }
     }
 
     case 'get_stars_balance': {
-      return await gifts.getStarsBalance();
+      try {
+        return await gifts.getStarsBalance();
+      } catch (e: any) { return { ok: false, error: e.message?.slice(0, 200) || 'Failed to get stars balance' }; }
     }
 
     case 'get_gift_upgrade_stats': {
@@ -5589,48 +5605,66 @@ export async function executeTool(
 
     // ── Self-Memory Management Tools ──────────────────────────────────
     case 'memory_stats': {
-      const { getMemoryStats } = await import('../services/agent-memory');
-      const stats = await getMemoryStats(params.agentId);
-      return { result: stats };
+      try {
+        const { getMemoryStats } = await import('../services/agent-memory');
+        const stats = await getMemoryStats(params.agentId);
+        return { result: stats };
+      } catch (e: any) { return { ok: false, error: e.message?.slice(0, 200) || 'Failed to get memory stats' }; }
     }
 
     case 'clear_memory_category': {
-      const { clearMemoryCategory } = await import('../services/agent-memory');
-      const deleted = await clearMemoryCategory(params.agentId, args.category);
-      return { result: { deleted, category: args.category } };
+      try {
+        const validCats = ['memories', 'lessons', 'knowledge', 'contacts', 'chatDossiers', 'engagement', 'all'];
+        if (!validCats.includes(args.category)) return { ok: false, error: `Invalid category: ${args.category}. Valid: ${validCats.join(', ')}` };
+        const { clearMemoryCategory } = await import('../services/agent-memory');
+        const deleted = await clearMemoryCategory(params.agentId, args.category);
+        return { result: { deleted, category: args.category } };
+      } catch (e: any) { return { ok: false, error: e.message?.slice(0, 200) || 'Failed to clear memory' }; }
     }
 
     case 'compress_memories': {
-      const { compressMemories } = await import('../services/agent-memory');
-      const { client: aiClientForCompress, defaultModel: compressModel } = getAIClient(params.config);
-      const result = await compressMemories(params.agentId, params.userId, aiClientForCompress, compressModel, args.category || 'memories');
-      return { result };
+      try {
+        const cat = args.category || 'memories';
+        if (!['memories', 'lessons'].includes(cat)) return { ok: false, error: 'Category must be memories or lessons' };
+        const { compressMemories } = await import('../services/agent-memory');
+        const { client: aiClientForCompress, defaultModel: compressModel } = getAIClient(params.config);
+        const result = await compressMemories(params.agentId, params.userId, aiClientForCompress, compressModel, cat);
+        return { result };
+      } catch (e: any) { return { ok: false, error: e.message?.slice(0, 200) || 'Failed to compress memories (check API key)' }; }
     }
 
     case 'browse_memory': {
-      const { browseMemory } = await import('../services/agent-memory');
-      const limit = Math.min(args.limit || 10, 20);
-      const result = await browseMemory(params.agentId, args.category, args.offset || 0, limit);
-      return { result };
+      try {
+        const { browseMemory } = await import('../services/agent-memory');
+        const limit = Math.min(args.limit || 10, 20);
+        const offset = Math.max(0, args.offset || 0);
+        const result = await browseMemory(params.agentId, args.category, offset, limit);
+        return { result };
+      } catch (e: any) { return { ok: false, error: e.message?.slice(0, 200) || 'Failed to browse memory' }; }
     }
 
     case 'run_memory_maintenance': {
-      const { runMemoryMaintenance } = await import('../services/agent-memory');
-      const result = await runMemoryMaintenance(params.agentId);
-      return { result };
+      try {
+        const { runMemoryMaintenance } = await import('../services/agent-memory');
+        const result = await runMemoryMaintenance(params.agentId);
+        return { result };
+      } catch (e: any) { return { ok: false, error: e.message?.slice(0, 200) || 'Failed to run maintenance' }; }
     }
 
     case 'get_memory_settings': {
-      const { getMemorySettings } = await import('../services/agent-memory');
-      const settings = await getMemorySettings(params.agentId);
-      return { result: settings };
+      try {
+        const { getMemorySettings } = await import('../services/agent-memory');
+        const settings = await getMemorySettings(params.agentId);
+        return { result: settings };
+      } catch (e: any) { return { ok: false, error: e.message?.slice(0, 200) || 'Failed to get settings' }; }
     }
 
     case 'update_memory_settings': {
-      const { setMemorySettings, getMemorySettings } = await import('../services/agent-memory');
-      await setMemorySettings(params.agentId, params.userId, args);
-      const updated = await getMemorySettings(params.agentId);
-      return { result: { updated: true, settings: updated } };
+      try {
+        const { setMemorySettings } = await import('../services/agent-memory');
+        const updated = await setMemorySettings(params.agentId, params.userId, args);
+        return { result: { updated: true, settings: updated } };
+      } catch (e: any) { return { ok: false, error: e.message?.slice(0, 200) || 'Failed to update settings' }; }
     }
 
     case 'manage_goals': {

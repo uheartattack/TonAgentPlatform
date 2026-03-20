@@ -587,7 +587,7 @@ ${(recentLog || '').slice(-1000)}
       }
       await dbClient.query('COMMIT');
     } catch (txErr) {
-      await dbClient.query('ROLLBACK').catch(() => {});
+      await dbClient.query('ROLLBACK').catch((rbErr) => { console.error('[AgentMemory] ROLLBACK failed:', rbErr?.message); });
       throw txErr;
     } finally {
       dbClient.release();
@@ -686,19 +686,16 @@ export async function trackChatEngagement(
         break;
     }
 
-    eng.score += scoreAdd;
+    eng.score = Math.min(eng.score + scoreAdd, 10000); // cap score
     eng.lastActivityAt = new Date().toISOString();
 
-    // Burst detection: track timestamps, bonus if >5 in 30 min
+    // Burst detection: filter old timestamps first, then push
+    eng.burstTimestamps = eng.burstTimestamps.filter(t => now - t < BURST_WINDOW_MS).slice(-20);
     eng.burstTimestamps.push(now);
-    eng.burstTimestamps = eng.burstTimestamps.filter(t => now - t < BURST_WINDOW_MS);
     if (eng.burstTimestamps.length >= BURST_MIN_COUNT && scoreAdd > 0) {
-      eng.score += W_BURST_BONUS;
+      eng.score = Math.min(eng.score + W_BURST_BONUS, 10000);
       console.log(`[Proactive] Agent #${agentId} burst detected in chat ${chatId} (${eng.burstTimestamps.length} events in 30min)`);
     }
-
-    // Keep only last 20 burst timestamps
-    if (eng.burstTimestamps.length > 20) eng.burstTimestamps = eng.burstTimestamps.slice(-20);
 
     // Auto-enable proactive mode if score threshold reached
     if (!eng.proactiveEnabled && !eng.ownerOverride && eng.score >= PROACTIVE_SCORE_THRESHOLD) {
@@ -740,7 +737,8 @@ export async function isProactiveChat(agentId: number, chatId: string): Promise<
       if (hoursSince > PROACTIVE_DECAY_HOURS) {
         eng.proactiveEnabled = false;
         eng.score = Math.max(0, eng.score * 0.5); // halve score on decay
-        await repo.set(agentId, 0, `chat_engagement:${chatId}`, JSON.stringify(eng));
+        // Use agentId as userId for system-initiated decay (agent's own state)
+        await repo.set(agentId, agentId, `chat_engagement:${chatId}`, JSON.stringify(eng));
         console.log(`[Proactive] Agent #${agentId} proactive decayed in chat ${chatId} (${hoursSince.toFixed(0)}h inactive)`);
         return false;
       }
@@ -872,12 +870,20 @@ export async function getMemorySettings(agentId: number): Promise<MemorySettings
 }
 
 /** Save memory settings for agent */
-export async function setMemorySettings(agentId: number, userId: number, settings: Partial<MemorySettings>): Promise<void> {
+export async function setMemorySettings(agentId: number, userId: number, settings: Partial<MemorySettings>): Promise<MemorySettings> {
+  // Validate numeric ranges
+  if (settings.maxMemories !== undefined) settings.maxMemories = Math.max(1, Math.min(10000, Math.floor(settings.maxMemories)));
+  if (settings.maxLessons !== undefined) settings.maxLessons = Math.max(1, Math.min(1000, Math.floor(settings.maxLessons)));
+  if (settings.maxContextTokens !== undefined) settings.maxContextTokens = Math.max(100, Math.min(20000, Math.floor(settings.maxContextTokens)));
+  if (settings.memoryTTLDays !== undefined) settings.memoryTTLDays = Math.max(0, Math.min(3650, Math.floor(settings.memoryTTLDays)));
+  if (settings.evolveInterval !== undefined) settings.evolveInterval = Math.max(5, Math.min(1000, Math.floor(settings.evolveInterval)));
+
   const { getAgentStateRepository } = await import('../db/schema-extensions');
   const repo = getAgentStateRepository();
   const current = await getMemorySettings(agentId);
   const merged = { ...current, ...settings };
   await repo.set(agentId, userId, '_memory_settings', JSON.stringify(merged));
+  return merged;
 }
 
 /** Check if a memory category is enabled */
@@ -1042,16 +1048,13 @@ export async function enforceRetentionLimits(agentId: number): Promise<{ pruned:
     const count = parseInt(countRes.rows[0]?.cnt) || 0;
     if (count <= max) continue;
 
-    // Delete oldest (by key sort — timestamps sort naturally)
+    // Batch delete oldest (by key sort — timestamps sort naturally)
     const toDelete = count - max;
-    const oldestRes = await pool.query(
-      `SELECT key FROM builder_bot.agent_state WHERE agent_id = $1 AND key LIKE $2 ORDER BY key ASC LIMIT $3`,
+    const delRes = await pool.query(
+      `DELETE FROM builder_bot.agent_state WHERE agent_id = $1 AND key IN (SELECT key FROM builder_bot.agent_state WHERE agent_id = $1 AND key LIKE $2 ORDER BY key ASC LIMIT $3)`,
       [agentId, `${prefix}%`, toDelete]
     );
-    for (const row of oldestRes.rows) {
-      await pool.query(`DELETE FROM builder_bot.agent_state WHERE agent_id = $1 AND key = $2`, [agentId, row.key]);
-      pruned++;
-    }
+    pruned += delRes.rowCount || 0;
   }
 
   return { pruned };
@@ -1091,7 +1094,8 @@ export async function applyMemoryTTL(agentId: number): Promise<{ expired: number
     const cutoff = Date.now() - settings.lessonTTLDays * 86400_000;
     for (const row of keysRes.rows) {
       const ts = parseInt(row.key.replace('lesson:', ''));
-      if (!isNaN(ts) && ts < cutoff) {
+      // Validate ts is a reasonable epoch ms (after 2020 = 1577836800000)
+      if (!isNaN(ts) && ts > 1_577_836_800_000 && ts < cutoff) {
         await pool.query(`DELETE FROM builder_bot.agent_state WHERE agent_id=$1 AND key=$2`, [agentId, row.key]);
         expired++;
       }
@@ -1210,7 +1214,7 @@ export async function buildPrioritizedMemoryDigest(agentId: number, chatId?: str
       switch (cat) {
         case 'memories': {
           if (!settings.enableMemories) break;
-          const keys = await repo.listKeys(agentId);
+          const keys = await repo.listKeys(agentId) || [];
           const memKeys = keys.filter((k: string) => k.startsWith('mem:')).slice(-20);
           if (memKeys.length === 0) break;
 
@@ -1241,7 +1245,7 @@ export async function buildPrioritizedMemoryDigest(agentId: number, chatId?: str
 
         case 'lessons': {
           if (!settings.enableLessons) break;
-          const keys = await repo.listKeys(agentId);
+          const keys = await repo.listKeys(agentId) || [];
           const lessonKeys = keys.filter((k: string) => k.startsWith('lesson:')).slice(-10);
           if (lessonKeys.length === 0) break;
 
@@ -1263,7 +1267,7 @@ export async function buildPrioritizedMemoryDigest(agentId: number, chatId?: str
 
         case 'knowledge': {
           if (!settings.enableKnowledge) break;
-          const keys = await repo.listKeys(agentId);
+          const keys = await repo.listKeys(agentId) || [];
           const kbKeys = keys.filter((k: string) => k.startsWith('kb:')).slice(-10);
           if (kbKeys.length === 0) break;
 
@@ -1345,6 +1349,10 @@ export async function browseMemory(
 ): Promise<{ entries: Array<{ key: string; preview: string; size: number }>; total: number }> {
   const pool = await getPool();
 
+  // Clamp pagination params
+  offset = Math.max(0, Math.floor(offset));
+  limit = Math.max(1, Math.min(100, Math.floor(limit)));
+
   let prefix = '';
   if (category === 'memories') prefix = 'mem:';
   else if (category === 'lessons') prefix = 'lesson:';
@@ -1362,11 +1370,11 @@ export async function browseMemory(
     `SELECT COUNT(*) as cnt FROM builder_bot.agent_state WHERE agent_id = $1 ${whereClause}`,
     params
   );
-  const total = parseInt(countRes.rows[0]?.cnt) || 0;
+  const total = parseInt(countRes.rows[0]?.cnt ?? '0', 10) || 0;
 
   const dataRes = await pool.query(
-    `SELECT key, value, length(value::text) as size FROM builder_bot.agent_state WHERE agent_id = $1 ${whereClause} ORDER BY key DESC LIMIT ${limit} OFFSET ${offset}`,
-    params
+    `SELECT key, value, length(value::text) as size FROM builder_bot.agent_state WHERE agent_id = $1 ${whereClause} ORDER BY key DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    [...params, limit, offset]
   );
 
   const entries = dataRes.rows.map((r: any) => {
