@@ -13,7 +13,9 @@ import { pgSchema, serial, integer, bigint, text, timestamp, boolean, jsonb, dat
 import { eq, and, desc, gte, sql, lt, inArray } from 'drizzle-orm';
 import { Pool } from 'pg';
 
-const builderSchema = pgSchema('builder_bot');
+/** Schema name used throughout DDL and queries. Change here to rename the schema. */
+export const SCHEMA_NAME = 'builder_bot';
+const builderSchema = pgSchema(SCHEMA_NAME);
 
 // ─── Таблица 1: agent_state ────────────────────────────────────────────────
 export const agentStateTable = builderSchema.table('agent_state', {
@@ -77,7 +79,7 @@ export async function runMigrations(pool: Pool): Promise<void> {
     await client.query('BEGIN');
 
     // Убедимся что схема существует
-    await client.query('CREATE SCHEMA IF NOT EXISTS builder_bot');
+    await client.query(`CREATE SCHEMA IF NOT EXISTS ${SCHEMA_NAME}`);
 
     // agent_state
     await client.query(`

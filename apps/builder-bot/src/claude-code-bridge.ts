@@ -33,6 +33,7 @@ function findClaudeCli(): string | null {
   for (const p of CLAUDE_CLI_PATHS) {
     if (p === 'npx') {
       // npx is always available but slow — use as last resort
+      console.log(`[ClaudeCodeBridge] Falling back to npx (no binary found at explicit paths)`);
       _cachedCliPath = 'npx';
       return _cachedCliPath;
     }
@@ -42,10 +43,13 @@ function findClaudeCli(): string | null {
         console.log(`[ClaudeCodeBridge] Found CLI at: ${p}`);
         return p;
       }
-    } catch {}
+      console.log(`[ClaudeCodeBridge] Checked path (not found): ${p}`);
+    } catch (e: any) {
+      console.log(`[ClaudeCodeBridge] Checked path (error): ${p} — ${e.message}`);
+    }
   }
 
-  console.warn('[ClaudeCodeBridge] No Claude Code CLI found');
+  console.warn('[ClaudeCodeBridge] No Claude Code CLI found in paths:', CLAUDE_CLI_PATHS.join(', '));
   return null;
 }
 
