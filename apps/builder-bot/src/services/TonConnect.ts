@@ -304,9 +304,10 @@ export async function sendAgentTransactionWithCell(
   const wallet = WalletContractV4.create({ workchain: 0, publicKey: agentWallet.publicKey });
   const seqno = await getSeqno(agentWallet.address);
 
-  const transfer = wallet.createTransfer({
+  const transferBody = wallet.createTransfer({
     seqno,
     secretKey: agentWallet.secretKey,
+    sendMode: SendMode.PAY_GAS_SEPARATELY + SendMode.IGNORE_ERRORS,
     messages: [
       internal({
         to: toAddress,
@@ -317,7 +318,12 @@ export async function sendAgentTransactionWithCell(
     ],
   });
 
-  const boc = transfer.toBoc().toString('base64');
+  // Wrap body in external message cell — required for broadcasting
+  const walletAddr = Address.parse(agentWallet.address);
+  const extCell = beginCell()
+    .store(storeMessage(external({ to: walletAddr, body: transferBody })))
+    .endCell();
+  const boc = extCell.toBoc().toString('base64');
   return sendBoc(boc);
 }
 
