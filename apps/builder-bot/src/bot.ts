@@ -4310,7 +4310,7 @@ bot.on('callback_query', async (ctx) => {
   // ── Clarification callback (wizard) ──
   if (data.startsWith('clarify:')) {
     await ctx.answerCbQuery();
-    const answer = decodeURIComponent(data.replace('clarify:', ''));
+    const answer = decodeURIComponent(data);
     const result = await getOrchestrator().processMessage(userId, answer, ctx.from?.username);
     await sendResult(ctx, result);
     return;
@@ -6699,7 +6699,7 @@ bot.on(message('voice'), async (ctx) => {
       const agentRes = await getDBTools().getAgent(agentId, userId);
       if (agentRes.success && agentRes.data) {
         if (agentRes.data.triggerType === 'ai_agent') {
-          getRunnerAgent().sendMessageToAgent(agentId, transcribedText);
+          await getRunnerAgent().sendMessageToAgent(agentId, transcribedText);
           await ctx.reply(lang === 'ru' ? '📨 Голосовое отправлено агенту.' : '📨 Voice sent to agent.');
         }
       }
@@ -7512,7 +7512,7 @@ bot.on(message('text'), async (ctx) => {
     if (Object.keys(configUpdateMap).length > 0) {
       // Apply all config updates via jsonb_set without touching the code
       try {
-        let updateQuery = 'SELECT trigger_config FROM builder_bot.agents WHERE id = $1 AND owner_id = $2';
+        let updateQuery = 'SELECT trigger_config FROM builder_bot.agents WHERE id = $1 AND user_id = $2';
         const res = await dbPool.query(updateQuery, [agentId, userId]);
         const currentTriggerConfig = res.rows[0]?.trigger_config || {};
         const currentConfig: Record<string, any> = (typeof currentTriggerConfig === 'object' && currentTriggerConfig?.config)
@@ -7525,7 +7525,7 @@ bot.on(message('text'), async (ctx) => {
 
         const newTriggerConfig = { ...currentTriggerConfig, config: currentConfig };
         await dbPool.query(
-          'UPDATE builder_bot.agents SET trigger_config = $1::jsonb WHERE id = $2 AND owner_id = $3',
+          'UPDATE builder_bot.agents SET trigger_config = $1::jsonb WHERE id = $2 AND user_id = $3',
           [JSON.stringify(newTriggerConfig), agentId, userId]
         );
 
@@ -8381,7 +8381,7 @@ async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
     let agentXp = 0;
     let agentLevel = 1;
     try {
-      const roleRes = await dbPool.query('SELECT role, xp, level FROM builder_bot.agents WHERE id = $1 AND owner_id = $2', [agentId, userId]);
+      const roleRes = await dbPool.query('SELECT role, xp, level FROM builder_bot.agents WHERE id = $1 AND user_id = $2', [agentId, userId]);
       if (roleRes.rows[0]) {
         agentRole = roleRes.rows[0].role || 'worker';
         agentXp = roleRes.rows[0].xp || 0;

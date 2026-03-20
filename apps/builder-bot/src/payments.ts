@@ -397,6 +397,7 @@ export async function confirmPayment(
   txHash: string
 ): Promise<{ success: boolean; plan?: Plan; expiresAt?: Date; error?: string }> {
   if (usedTxHashes.has(txHash)) return { success: false, error: 'Transaction already used' };
+  usedTxHashes.set(txHash, true); // Mark immediately to prevent concurrent double-spend
   const pending = pendingPayments.get(userId);
   if (!pending) return { success: false, error: 'Нет ожидающего платежа' };
   if (pending.expiresAt < new Date()) {
