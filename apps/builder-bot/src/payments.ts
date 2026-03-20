@@ -440,7 +440,7 @@ export async function confirmPayment(
       `, [txHash, userId]);
       await client.query('COMMIT');
     } catch (e: any) {
-      await client.query('ROLLBACK').catch(() => {});
+      await client.query('ROLLBACK').catch((rbErr: any) => { console.error('[Payments] ROLLBACK failed:', rbErr?.message); });
       console.error('[Payments] confirmPayment DB transaction error:', e.message);
     } finally {
       client.release();
