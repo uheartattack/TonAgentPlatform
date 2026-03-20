@@ -193,8 +193,13 @@ export async function claudeCodeComplete(
       proc.kill('SIGKILL');
     }, timeout);
 
+    const STDOUT_MAX = 5 * 1024 * 1024; // 5 MB cap
     proc.stdout.on('data', (data: Buffer) => {
       stdout += data.toString();
+      // Truncate from the beginning if exceeding cap
+      if (stdout.length > STDOUT_MAX) {
+        stdout = stdout.slice(stdout.length - STDOUT_MAX);
+      }
     });
     proc.stderr.on('data', (data: Buffer) => {
       stderr += data.toString();

@@ -102,7 +102,7 @@ setInterval(() => {
   for (const [uid, state] of authStates) {
     if (now - state.createdAt > AUTH_STATE_TTL) authStates.delete(uid);
   }
-}, 15 * 60 * 1000);
+}, 15 * 60 * 1000).unref();
 
 export function getAuthState(userId: number): AuthState | null {
   const s = authStates.get(userId);
@@ -362,6 +362,11 @@ export async function authSendPhone(userId: number, phone: string): Promise<{ ty
     // NOTE: Do NOT reconnect here — phoneCodeHash is tied to the current session.
     // Reconnecting would invalidate the hash and cause PHONE_CODE_EXPIRED on SignIn.
 
+    // Cap auth states to prevent unbounded memory growth
+    if (authStates.size >= 1000) {
+      const oldest = authStates.keys().next().value;
+      if (oldest !== undefined) authStates.delete(oldest);
+    }
     authStates.set(userId, {
       step: 'code',
       phone,
@@ -490,7 +495,8 @@ export interface GiftResaleData {
   updatedAt: string;
 }
 
-// Cache for gift data (30 min TTL)
+// Cache for gift data (30 min TTL, max 500 entries)
+const GIFT_CACHE_MAX = 500;
 const giftCache = new Map<string, { data: GiftResaleData; expires: number }>();
 
 /** Stars → TON conversion (approx: 1 Star ≈ 0.013 TON at current rates) */
@@ -613,6 +619,18 @@ export async function getGiftFloorPrice(giftSlug: string, giftId?: string): Prom
       updatedAt: new Date().toISOString(),
     };
 
+    // Evict expired entries and enforce max size before caching
+    if (giftCache.size >= GIFT_CACHE_MAX) {
+      const now = Date.now();
+      for (const [k, v] of giftCache) {
+        if (v.expires < now) giftCache.delete(k);
+      }
+      // If still over limit, remove oldest entries
+      while (giftCache.size >= GIFT_CACHE_MAX) {
+        const first = giftCache.keys().next().value;
+        if (first !== undefined) giftCache.delete(first); else break;
+      }
+    }
     // Cache for 30 min
     giftCache.set(cacheKey, { data, expires: Date.now() + 30 * 60 * 1000 });
 

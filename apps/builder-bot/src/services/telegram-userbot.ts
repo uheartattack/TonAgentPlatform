@@ -72,6 +72,19 @@ function safeRandomId(): any {
   return BigInt('0x' + buf.toString('hex'));
 }
 
+// ── Rate limiter: 500ms minimum gap between TG API calls ──
+let _lastTgCallTime = 0;
+const TG_CALL_MIN_GAP_MS = 500;
+
+async function rateLimitTgCall(): Promise<void> {
+  const now = Date.now();
+  const elapsed = now - _lastTgCallTime;
+  if (elapsed < TG_CALL_MIN_GAP_MS) {
+    await new Promise(r => setTimeout(r, TG_CALL_MIN_GAP_MS - elapsed));
+  }
+  _lastTgCallTime = Date.now();
+}
+
 type TgMsg = {
   id:     number;
   text:   string;
@@ -89,6 +102,7 @@ type TgDialog = {
 
 /** Send a text message as the authenticated Telegram user (with Markdown→HTML formatting) */
 export async function tgSendMessage(chatId: string | number, text: string): Promise<number> {
+  await rateLimitTgCall();
   const client = await getFragmentClient();
   // Convert markdown to HTML for Telegram formatting
   const html = mdToHtmlSimple(text);
@@ -128,6 +142,7 @@ function mdToHtmlSimple(text: string): string {
 
 /** Get latest messages from a chat/channel */
 export async function tgGetMessages(chatId: string | number, limit = 20): Promise<TgMsg[]> {
+  await rateLimitTgCall();
   const client = await getFragmentClient();
   const msgs = await (client as any).getMessages(chatId, { limit }) as any[];
   return msgs.map((m: any) => ({
@@ -143,6 +158,7 @@ export async function tgGetMessages(chatId: string | number, limit = 20): Promis
 export async function tgGetChannelInfo(chatId: string | number): Promise<{
   id: string; title: string; username?: string; membersCount?: number; description?: string;
 }> {
+  await rateLimitTgCall();
   const client = await getFragmentClient();
   const entity = await (client as any).getEntity(chatId) as any;
   return {
@@ -156,6 +172,7 @@ export async function tgGetChannelInfo(chatId: string | number): Promise<{
 
 /** Join a public channel/group by username or invite link */
 export async function tgJoinChannel(channelUsername: string): Promise<void> {
+  await rateLimitTgCall();
   const client = await getFragmentClient();
   await (client as any).invoke(new Api.channels.JoinChannel({
     channel: await (client as any).getEntity(channelUsername),
@@ -164,6 +181,7 @@ export async function tgJoinChannel(channelUsername: string): Promise<void> {
 
 /** Leave a channel/group */
 export async function tgLeaveChannel(channelUsername: string | number): Promise<void> {
+  await rateLimitTgCall();
   const client = await getFragmentClient();
   await (client as any).invoke(new Api.channels.LeaveChannel({
     channel: await (client as any).getEntity(channelUsername),
@@ -172,6 +190,7 @@ export async function tgLeaveChannel(channelUsername: string | number): Promise<
 
 /** Get list of dialogs (active chats) */
 export async function tgGetDialogs(limit = 20): Promise<TgDialog[]> {
+  await rateLimitTgCall();
   const client = await getFragmentClient();
   const dialogs = await (client as any).getDialogs({ limit }) as any[];
   return dialogs.map((d: any) => ({
@@ -186,6 +205,7 @@ export async function tgGetDialogs(limit = 20): Promise<TgDialog[]> {
 export async function tgGetMembers(chatId: string | number, limit = 50): Promise<{
   id: number; username?: string; name: string;
 }[]> {
+  await rateLimitTgCall();
   const client = await getFragmentClient();
   const participants = await (client as any).getParticipants(chatId, { limit }) as any[];
   return participants.map((p: any) => ({
@@ -197,6 +217,7 @@ export async function tgGetMembers(chatId: string | number, limit = 50): Promise
 
 /** Forward a message from one chat to another */
 export async function tgForwardMessage(fromChatId: string | number, messageId: number, toChatId: string | number): Promise<void> {
+  await rateLimitTgCall();
   const client = await getFragmentClient();
   await (client as any).forwardMessages(toChatId, {
     messages: [messageId],
@@ -206,12 +227,14 @@ export async function tgForwardMessage(fromChatId: string | number, messageId: n
 
 /** Delete own message */
 export async function tgDeleteMessage(chatId: string | number, messageId: number): Promise<void> {
+  await rateLimitTgCall();
   const client = await getFragmentClient();
   await (client as any).deleteMessages(chatId, [messageId], { revoke: true });
 }
 
 /** Search messages in a chat */
 export async function tgSearchMessages(chatId: string | number, query: string, limit = 20): Promise<TgMsg[]> {
+  await rateLimitTgCall();
   const client = await getFragmentClient();
   const msgs = await (client as any).getMessages(chatId, { limit, search: query }) as any[];
   return msgs.map((m: any) => ({
@@ -227,6 +250,7 @@ export async function tgSearchMessages(chatId: string | number, query: string, l
 export async function tgGetUserInfo(userIdentifier: string | number): Promise<{
   id: number; username?: string; firstName?: string; lastName?: string; bio?: string; phone?: string;
 }> {
+  await rateLimitTgCall();
   const client = await getFragmentClient();
   const entity = await (client as any).getEntity(userIdentifier) as any;
   return {
@@ -249,6 +273,7 @@ export async function tgSendFile(chatId: string | number, filePath: string, capt
   } else if (/^[\/\\]|^[a-zA-Z]:\\/.test(filePath)) {
     throw new Error('Local filesystem paths are not allowed. Use an HTTP(S) URL.');
   }
+  await rateLimitTgCall();
   const client = await getFragmentClient();
   const isImage = /\.(jpg|jpeg|png|gif|webp|bmp)(\?.*)?$/i.test(filePath); // SVG removed — Telegram doesn't support inline SVG
   const result = await (client as any).sendFile(chatId, {
@@ -261,6 +286,7 @@ export async function tgSendFile(chatId: string | number, filePath: string, capt
 
 /** Reply to a specific message in a chat, optionally with a quote */
 export async function tgReplyMessage(chatId: string | number, replyToMsgId: number, text: string, quoteText?: string): Promise<number> {
+  await rateLimitTgCall();
   const client = await getFragmentClient();
   const html = mdToHtmlSimple(text);
   let replyTo: any = replyToMsgId;
@@ -282,6 +308,7 @@ export async function tgReplyMessage(chatId: string | number, replyToMsgId: numb
 
 /** Send reaction (emoji) to a message */
 export async function tgReactMessage(chatId: string | number, messageId: number, emoji: string): Promise<void> {
+  await rateLimitTgCall();
   const client = await getFragmentClient();
   const peer = await (client as any).getInputEntity(chatId);
   await (client as any).invoke(new Api.messages.SendReaction({
@@ -293,24 +320,28 @@ export async function tgReactMessage(chatId: string | number, messageId: number,
 
 /** Edit own message */
 export async function tgEditMessage(chatId: string | number, messageId: number, newText: string): Promise<void> {
+  await rateLimitTgCall();
   const client = await getFragmentClient();
   await (client as any).editMessage(chatId, { message: messageId, text: newText });
 }
 
 /** Pin a message in a chat */
 export async function tgPinMessage(chatId: string | number, messageId: number, silent = true): Promise<void> {
+  await rateLimitTgCall();
   const client = await getFragmentClient();
   await (client as any).pinMessage(chatId, messageId, { notify: !silent });
 }
 
 /** Mark messages in a chat as read */
 export async function tgMarkRead(chatId: string | number): Promise<void> {
+  await rateLimitTgCall();
   const client = await getFragmentClient();
   await (client as any).markAsRead(chatId);
 }
 
 /** Get discussion/comments for a channel post */
 export async function tgGetComments(chatId: string | number, postMsgId: number, limit = 30): Promise<TgMsg[]> {
+  await rateLimitTgCall();
   const client = await getFragmentClient();
   try {
     const peer = await (client as any).getInputEntity(chatId);
@@ -340,6 +371,7 @@ export async function tgGetComments(chatId: string | number, postMsgId: number, 
 
 /** Set "typing" status in a chat for a given duration */
 export async function tgSetTyping(chatId: string | number, seconds = 3): Promise<void> {
+  await rateLimitTgCall();
   const client = await getFragmentClient();
   const peer = await (client as any).getInputEntity(chatId);
   // Typing indicator auto-expires after ~5s, so re-send every 4s for longer durations
@@ -358,6 +390,7 @@ export async function tgSetTyping(chatId: string | number, seconds = 3): Promise
 
 /** Send message with HTML formatting */
 export async function tgSendFormatted(chatId: string | number, html: string, replyTo?: number): Promise<number> {
+  await rateLimitTgCall();
   const client = await getFragmentClient();
   const result = await (client as any).sendMessage(chatId, {
     message: html,
@@ -369,6 +402,7 @@ export async function tgSendFormatted(chatId: string | number, html: string, rep
 
 /** Get specific message by ID */
 export async function tgGetMessageById(chatId: string | number, messageId: number): Promise<TgMsg | null> {
+  await rateLimitTgCall();
   const client = await getFragmentClient();
   try {
     const msgs = await (client as any).getMessages(chatId, { ids: [messageId] }) as any[];
@@ -389,6 +423,7 @@ export async function tgGetMessageById(chatId: string | number, messageId: numbe
 
 /** Get unread dialogs with messages */
 export async function tgGetUnread(limit = 10): Promise<{ chatId: string; title: string; unread: number; lastMessage: string }[]> {
+  await rateLimitTgCall();
   const client = await getFragmentClient();
   const dialogs = await (client as any).getDialogs({ limit: 50 }) as any[];
   return dialogs
@@ -454,6 +489,7 @@ export function buildUserbotSandbox() {
 
 /** Change the authenticated user's profile photo from a URL */
 export async function tgSetAvatar(photoUrl: string): Promise<{ ok: boolean }> {
+  await rateLimitTgCall();
   const client = await getFragmentClient();
   // Download image with SSRF protection and size limit
   const buffer = await safeFetchBuffer(photoUrl, 20000);
@@ -472,6 +508,7 @@ export async function tgSetAvatar(photoUrl: string): Promise<{ ok: boolean }> {
 
 /** Delete the current profile photo */
 export async function tgDeleteAvatar(): Promise<{ ok: boolean }> {
+  await rateLimitTgCall();
   const client = await getFragmentClient();
   // Get current photos and delete the first one
   const photos = await (client as any).invoke(new Api.photos.GetUserPhotos({
@@ -491,6 +528,7 @@ export async function tgDeleteAvatar(): Promise<{ ok: boolean }> {
 
 /** Update profile bio (about) */
 export async function tgSetBio(about: string): Promise<{ ok: boolean }> {
+  await rateLimitTgCall();
   const client = await getFragmentClient();
   await (client as any).invoke(new Api.account.UpdateProfile({ about: about.slice(0, 70) }));
   return { ok: true };
@@ -498,6 +536,7 @@ export async function tgSetBio(about: string): Promise<{ ok: boolean }> {
 
 /** Update profile first and last name */
 export async function tgSetName(firstName: string, lastName?: string): Promise<{ ok: boolean }> {
+  await rateLimitTgCall();
   const client = await getFragmentClient();
   const params: any = { firstName: firstName.slice(0, 64) };
   if (lastName !== undefined) params.lastName = lastName.slice(0, 64);
@@ -507,6 +546,7 @@ export async function tgSetName(firstName: string, lastName?: string): Promise<{
 
 /** Get own profile info */
 export async function tgGetMyProfile(): Promise<{ firstName: string; lastName: string; bio: string; username: string; phone: string }> {
+  await rateLimitTgCall();
   const client = await getFragmentClient();
   const me = await (client as any).getMe() as any;
   // Get full user for bio
@@ -532,6 +572,7 @@ export async function tgGetMyProfile(): Promise<{ firstName: string; lastName: s
 
 /** Send a star gift to a user (3-step payment flow) */
 export async function tgSendGift(userId: string | number, giftId: number | string, message?: string): Promise<{ ok: boolean; error?: string }> {
+  await rateLimitTgCall();
   // Validate giftId before BigInt conversion
   let giftIdBig: bigint;
   try {
@@ -590,6 +631,7 @@ export async function tgSendGift(userId: string | number, giftId: number | strin
 
 /** Get received star gifts */
 export async function tgGetReceivedGifts(userId?: string | number, limit = 20): Promise<any[]> {
+  await rateLimitTgCall();
   const client = await getFragmentClient();
   try {
     const peer = userId ? await (client as any).getInputEntity(userId) : new Api.InputUserSelf();
@@ -625,6 +667,7 @@ export async function tgSendPhoto(chatId: string | number, photoUrl: string, cap
   // Validate URL upfront to fail fast
   validateExternalUrl(photoUrl);
 
+  await rateLimitTgCall();
   const client = await getFragmentClient();
   const peer = await (client as any).getInputEntity(chatId);
 
@@ -676,6 +719,7 @@ export async function tgSendPhoto(chatId: string | number, photoUrl: string, cap
 
 /** Send a voice message (text-to-speech) */
 export async function tgSendVoice(chatId: string | number, text: string): Promise<number> {
+  await rateLimitTgCall();
   const client = await getFragmentClient();
   // Detect language for TTS from text content
   const lang = /[а-яёА-ЯЁ]/.test(text) ? 'ru' : 'en';
@@ -697,6 +741,7 @@ export async function tgSendVoice(chatId: string | number, text: string): Promis
 
 /** Create a poll in a chat */
 export async function tgCreatePoll(chatId: string | number, question: string, options: string[]): Promise<number> {
+  await rateLimitTgCall();
   const client = await getFragmentClient();
   const poll = new Api.InputMediaPoll({
     poll: new Api.Poll({
@@ -721,6 +766,7 @@ export async function tgCreatePoll(chatId: string | number, question: string, op
 
 /** Schedule a message for later. timestamp can be in seconds (Unix) or milliseconds (JS Date). */
 export async function tgScheduleMessage(chatId: string | number, text: string, timestamp: number): Promise<number> {
+  await rateLimitTgCall();
   const client = await getFragmentClient();
   const peer = await (client as any).getInputEntity(chatId);
   // Auto-detect: if timestamp > 1e12 it's in ms, otherwise seconds
@@ -740,6 +786,7 @@ export async function tgScheduleMessage(chatId: string | number, text: string, t
 
 /** Get admins of a chat */
 export async function tgGetAdmins(chatId: string | number): Promise<Array<{ id: number; name: string; role: string }>> {
+  await rateLimitTgCall();
   const client = await getFragmentClient();
   try {
     const peer = await (client as any).getInputEntity(chatId);

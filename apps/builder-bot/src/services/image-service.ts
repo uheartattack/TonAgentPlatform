@@ -2,8 +2,9 @@ import sharp from 'sharp';
 import { promises as fs } from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import os from 'os';
 
-const TMP_DIR = '/tmp/agent-images';
+const TMP_DIR = path.join(os.tmpdir(), 'agent-images');
 
 // Ensure tmp dir exists
 async function ensureTmpDir() {

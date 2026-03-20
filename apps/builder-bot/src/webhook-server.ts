@@ -1,5 +1,7 @@
 // ============================================
 // Webhook Server for TON Agent Platform
+// NOTE: This module is dead code unless startWebhookServer() is imported and called
+// from another entry point. The main bot uses api-server.ts instead.
 // ============================================
 
 import express from 'express';

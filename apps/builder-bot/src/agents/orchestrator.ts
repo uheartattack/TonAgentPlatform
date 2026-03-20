@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { isAuthorized as isFragmentAuthorized, getGiftFloorPrice, getAllGiftFloors } from '../fragment-service';
+import { isAuthorized as isFragmentAuthorized, getAuthorizedUserId, getGiftFloorPrice, getAllGiftFloors } from '../fragment-service';
 import { getCreatorAgent } from './sub-agents/creator';
 import { getWorkflowEngine } from '../agent-cooperation';
 import { getEditorAgent } from './sub-agents/editor';
@@ -1639,10 +1639,10 @@ ${toolSections}
     if (/plugin|плагин/i.test(systemPrompt)) detectedCaps.push('plugins');
     if (/другой агент|inter.?agent|ask_agent|multi.?agent/i.test(systemPrompt)) detectedCaps.push('inter_agent');
 
-    // Check TG auth status
+    // Check TG auth status (verify the authorized session belongs to this user)
     let tgAuthed = false;
     try {
-      tgAuthed = await isFragmentAuthorized();
+      tgAuthed = await isFragmentAuthorized() && getAuthorizedUserId() === userId;
     } catch {}
 
     const setupNeeds: AgentSetupNeeds = {
@@ -2316,7 +2316,8 @@ ${toolSections}
     }
   }
 
-  /** Поиск коллекции по имени через GetGems (поиск по ключевым словам) */
+  /** @deprecated GetGems HTML scraping doesn't work from server IPs (GRAPHQL_STRANGE_QUERY / client-side rendering).
+   *  Kept for potential local dev use; always returns null in production. Use TonAPI search instead. */
   private async searchGetGemsCollection(query: string): Promise<string | null> {
     try {
       const resp = await fetch(
@@ -2326,20 +2327,20 @@ ${toolSections}
             'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36',
             'Accept': 'text/html',
           },
+          signal: AbortSignal.timeout(5000),
         }
       );
       if (!resp.ok) return null;
       const html = await resp.text();
-      // Try __NEXT_DATA__ JSON for exact address
       const nextData = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
       if (nextData) {
         const addrInJson = nextData[1].match(/"address":"(EQ[A-Za-z0-9_\-]{46})"/);
         if (addrInJson) return addrInJson[1];
       }
-      // Fallback: any EQ address in href
       const m = html.match(/\/collection\/(EQ[A-Za-z0-9_\-]{46})/);
       return m ? m[1] : null;
-    } catch {
+    } catch (e) {
+      console.log(`[Orchestrator] searchGetGemsCollection failed (expected in prod): ${e instanceof Error ? e.message : e}`);
       return null;
     }
   }
@@ -2432,7 +2433,8 @@ ${toolSections}
     return null;
   }
 
-  /** Получить топ коллекции GetGems по объёму (через страницу trending) */
+  /** @deprecated GetGems HTML scraping doesn't work from server IPs (data loaded client-side, no SSR).
+   *  Always returns [] in production. Use TonAPI /v2/nfts/collections instead. */
   private async fetchGetGemsTopCollections(): Promise<Array<{
     name: string; address: string; floorPrice: number; volume?: number;
   }>> {
@@ -2442,10 +2444,10 @@ ${toolSections}
           'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36',
           'Accept': 'text/html',
         },
+        signal: AbortSignal.timeout(5000),
       });
       if (!resp.ok) return [];
       const html = await resp.text();
-      // Extract from __NEXT_DATA__
       const m = html.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s);
       if (!m) return [];
       const data = JSON.parse(m[1]);
@@ -2467,7 +2469,8 @@ ${toolSections}
         }
       }
       return results.slice(0, 10);
-    } catch {
+    } catch (e) {
+      console.log(`[Orchestrator] fetchGetGemsTopCollections failed (expected in prod): ${e instanceof Error ? e.message : e}`);
       return [];
     }
   }
@@ -2574,7 +2577,7 @@ ${toolSections}
 - Источник: getgems.io`;
       } else if (isGiftRequest) {
         // Try real Fragment data via MTProto (requires auth)
-        const fragmentAuth = await isFragmentAuthorized();
+        const fragmentAuth = await isFragmentAuthorized() && getAuthorizedUserId() === userId;
         if (fragmentAuth) {
           // Extract gift slug from message
           const giftSlugMatch = message.match(/([a-z]+-[a-z]+(?:-[a-z]+)?)/i);
@@ -3040,6 +3043,13 @@ ${isOwner ? '\nТЫ ОБЩАЕШЬСЯ С ВЛАДЕЛЬЦЕМ ПЛАТФОРМ�
     if (/каждый\s+час/i.test(desc))          return 60 * 60_000;
     if (/каждые?\s+24\s+часа/i.test(desc))   return 24 * 60 * 60_000;
     if (/вручную/i.test(desc))               return 0; // 0 = manual
+
+    // General patterns: "каждые N минут", "каждые N час(ов)"
+    const minMatch = desc.match(/каждые?\s+(\d+)\s+минут/i);
+    if (minMatch) return parseInt(minMatch[1], 10) * 60_000;
+    const hourMatch = desc.match(/каждые?\s+(\d+)\s+час/i);
+    if (hourMatch) return parseInt(hourMatch[1], 10) * 60 * 60_000;
+
     return null; // не найдено → использовать дефолт шаблона
   }
 

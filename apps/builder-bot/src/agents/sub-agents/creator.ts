@@ -73,12 +73,8 @@ export function detectTriggerFromDescription(description: string): {
     { re: /every\s+(\d+)\s+hour/,                ms: 0 },
     // день
     { re: /каждый\s+день|ежедневно|раз\s+в\s+день|every\s+day/, ms: 86_400_000 },
-    // 30 минут
-    { re: /каждые?\s+30\s*мин|every\s+30\s*min/, ms: 30 * 60_000 },
-    // 5 минут
-    { re: /каждые?\s+5\s*мин|every\s+5\s*min/,  ms: 5 * 60_000 },
-    // 10 минут
-    { re: /каждые?\s+10\s*мин|every\s+10\s*min/, ms: 10 * 60_000 },
+    // Specific N-minute patterns (30, 5, 10 min etc.) are already covered by the
+    // generic /каждые?\s+(\d+)\s+минут/ and /every\s+(\d+)\s+minute/ patterns above.
   ];
 
   for (const { re, ms } of patterns) {

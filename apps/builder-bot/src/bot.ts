@@ -1,5 +1,7 @@
 import { Telegraf, Context, Markup } from 'telegraf';
 import { message } from 'telegraf/filters';
+import { Address } from '@ton/core';
+import { encryptApiKey, decryptApiKey } from './crypto-utils';
 import { pe, peb, escHtml, div } from './premium-emoji';
 import { getOrchestrator, MODEL_LIST, getUserModel, setUserModel, type ModelId, type AgentSetupNeeds, setLastInteractedAgent } from './agents/orchestrator';
 import {
@@ -57,6 +59,62 @@ import {
 } from './payments';
 
 const OWNER_ID_NUM = parseInt(process.env.OWNER_ID || '0');
+
+// Shared API key detection patterns (used in both global key and agent-edit flows)
+const API_KEY_PATTERNS: ReadonlyArray<{ pattern: RegExp; provider: string }> = [
+  { pattern: /AIzaSy[A-Za-z0-9_\-]{33}/, provider: 'gemini' },
+  { pattern: /sk-ant-[A-Za-z0-9_\-]{80,}/, provider: 'anthropic' },
+  { pattern: /sk-proj-[A-Za-z0-9_\-]{40,}/, provider: 'openai' },
+  { pattern: /sk-[A-Za-z0-9]{40,}/, provider: 'openai' },
+  { pattern: /gsk_[A-Za-z0-9]{40,}/, provider: 'groq' },
+  { pattern: /sk-or-[A-Za-z0-9_\-]{40,}/, provider: 'openrouter' },
+];
+
+// ============================================================
+// Per-user rate limiter for expensive operations (create/edit/publish)
+// ============================================================
+const _rateLimits = new Map<number, { count: number; resetAt: number }>();
+const RATE_LIMIT_MAX = 10;       // max operations per window
+const RATE_LIMIT_WINDOW = 60000; // 1 minute
+
+/** Returns true if rate limit exceeded. */
+function checkRateLimit(userId: number): boolean {
+  const now = Date.now();
+  const entry = _rateLimits.get(userId);
+  if (!entry || now >= entry.resetAt) {
+    _rateLimits.set(userId, { count: 1, resetAt: now + RATE_LIMIT_WINDOW });
+    return false;
+  }
+  entry.count++;
+  if (entry.count > RATE_LIMIT_MAX) return true;
+  return false;
+}
+
+// Periodic cleanup of stale rate limit entries (every 5 min)
+setInterval(() => {
+  const now = Date.now();
+  for (const [uid, entry] of _rateLimits) {
+    if (now >= entry.resetAt) _rateLimits.delete(uid);
+  }
+}, 5 * 60 * 1000);
+
+// ============================================================
+// TON address validation (prefix + structural via @ton/core)
+// ============================================================
+function isValidTonAddress(addr: string): boolean {
+  // Quick prefix check
+  if (!addr.startsWith('EQ') && !addr.startsWith('UQ') && !addr.startsWith('kQ') && !addr.startsWith('0:')) return false;
+  try {
+    if (addr.startsWith('0:')) {
+      Address.parseRaw(addr);
+    } else {
+      Address.parseFriendly(addr);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 // ============================================================
 // MarkdownV2 escaping — все 18 спецсимволов Telegram
@@ -448,11 +506,14 @@ interface UserProfile {
   joined_at: string;
 }
 
+/** Returns user profile from DB, never throws — falls back to a default on any error. */
 async function getUserProfile(userId: number): Promise<UserProfile> {
   try {
     const saved = await getUserSettingsRepository().get(userId, 'profile');
     if (saved && typeof saved === 'object') return saved as UserProfile;
-  } catch {}
+  } catch (e) {
+    console.warn(`[bot] getUserProfile failed for userId=${userId}:`, (e as Error).message);
+  }
   return { balance_ton: 0, total_earned: 0, wallet_address: null, joined_at: new Date().toISOString() };
 }
 
@@ -734,6 +795,15 @@ setInterval(() => {
     }
   }
 
+  // Max-size enforcement: if any pending map exceeds 5000 entries, evict oldest (first keys)
+  for (const [, collection] of allMaps) {
+    if (collection.size > 5000) {
+      const keys = collection instanceof Set ? [...collection] : [...collection.keys()];
+      const excess = keys.slice(0, collection.size - 5000);
+      for (const k of excess) { collection.delete(k); cleaned++; }
+    }
+  }
+
   // Clean stale timestamp entries whose Map entry was already removed normally
   for (const tsKey of [..._pendingTimestamps.keys()]) {
     const colonIdx = tsKey.indexOf(':');
@@ -781,6 +851,9 @@ setInterval(() => {
   if (agentWallets.size > 10000) { agentWallets.clear(); cleaned += 1; }
   if (tonConnectLinks.size > 10000) { tonConnectLinks.clear(); cleaned += 1; }
   if (_ownerCache.size > 5000) { _ownerCache.clear(); cleaned += 1; }
+
+  // Clear stale wizard locks to prevent permanently stuck users
+  _wizardLock.clear();
 
   // Cap _pendingTimestamps tracker itself
   if (_pendingTimestamps.size > 10000) { _pendingTimestamps.clear(); cleaned += 1; }
@@ -1349,7 +1422,7 @@ bot.command('portfolio', async (ctx) => {
   const parts = ctx.message.text.trim().split(/\s+/);
   const addr  = parts[1] || '';
 
-  if (!addr || (!addr.startsWith('EQ') && !addr.startsWith('UQ') && !addr.startsWith('0:'))) {
+  if (!addr || !isValidTonAddress(addr)) {
     await ctx.reply(
       lang === 'ru'
         ? '💼 Использование: <code>/portfolio EQD4...</code>\n<i>Введите адрес TON кошелька</i>'
@@ -4494,19 +4567,25 @@ bot.on('callback_query', async (ctx) => {
   if (data === 'workflow' || data === 'workflows_menu') { await ctx.answerCbQuery(); await showWorkflows(ctx, userId); return; }
   if (data.startsWith('workflow_template:')) {
     await ctx.answerCbQuery();
-    await showWorkflowTemplate(ctx, parseInt(data.split(':')[1]));
+    const tplKey = data.slice('workflow_template:'.length);
+    const tplIdx = _resolveWorkflowTemplateIndex(tplKey);
+    if (tplIdx < 0) { await safeReply(ctx, '❌ Шаблон не найден'); return; }
+    await showWorkflowTemplate(ctx, tplIdx);
     return;
   }
   if (data.startsWith('workflow_create_from:')) {
     await ctx.answerCbQuery('Создаю workflow...');
-    await createWorkflowFromTemplate(ctx, userId, parseInt(data.split(':')[1]));
+    const tplKey = data.slice('workflow_create_from:'.length);
+    const tplIdx = _resolveWorkflowTemplateIndex(tplKey);
+    if (tplIdx < 0) { await safeReply(ctx, '❌ Шаблон не найден'); return; }
+    await createWorkflowFromTemplate(ctx, userId, tplIdx);
     return;
   }
   if (data === 'workflow_create') {
     await ctx.answerCbQuery();
     const engine = getWorkflowEngine();
     const templates = engine.getWorkflowTemplates();
-    const btns = templates.map((t, i) => [{ text: `📋 ${t.name}`, callback_data: `workflow_template:${i}` }]);
+    const btns = templates.map((t, i) => [{ text: `📋 ${t.name}`, callback_data: `workflow_template:${_workflowTemplateKey(t, i)}` }]);
     btns.push([{ text: '◀️ Назад', callback_data: 'workflow' }]);
     await ctx.reply(`${pe('bolt')} <b>Создание Workflow</b>\n\nВыберите шаблон:`, {
       parse_mode: 'HTML',
@@ -5927,7 +6006,8 @@ bot.on('callback_query', async (ctx) => {
       const mergedCfg = { ...userVars, ...nestedCfg };
 
       const provider = (mergedCfg.AI_PROVIDER as string) || 'не задан';
-      const apiKey = (mergedCfg.AI_API_KEY as string) || '';
+      const apiKeyRaw = (mergedCfg.AI_API_KEY as string) || '';
+      const apiKey = decryptApiKey(apiKeyRaw);
       const model = (mergedCfg.AI_MODEL as string) || '';
       const maskedKey = apiKey ? apiKey.slice(0, 6) + '…' + apiKey.slice(-4) : (lang === 'ru' ? 'не задан' : 'not set');
       const keySource = nestedCfg.AI_API_KEY ? (lang === 'ru' ? 'агент' : 'agent') : userVars.AI_API_KEY ? (lang === 'ru' ? 'глобальный' : 'global') : '';
@@ -6836,7 +6916,7 @@ bot.on(message('text'), async (ctx) => {
 
     if (wState.step === 'enter_address') {
       const addr = trimmed;
-      if (!addr.startsWith('EQ') && !addr.startsWith('UQ') && !addr.startsWith('0:')) {
+      if (!isValidTonAddress(addr)) {
         await ctx.reply(lang === 'ru'
           ? '❌ Неверный формат адреса. Введите TON адрес (EQ... или UQ...):'
           : '❌ Invalid address format. Enter TON address (EQ... or UQ...):'
@@ -7195,7 +7275,7 @@ bot.on(message('text'), async (ctx) => {
         try {
           const repo = getUserSettingsRepository();
           const vars = ((await repo.getAll(userId)).user_variables as Record<string, any>) || {};
-          vars.AI_API_KEY = trimmed;
+          vars.AI_API_KEY = encryptApiKey(trimmed);
           vars.AI_PROVIDER = provider;
           await repo.set(userId, 'user_variables', vars);
         } catch {}
@@ -7259,7 +7339,7 @@ bot.on(message('text'), async (ctx) => {
     try {
       const { getAgenticWalletService } = await import('./services/agentic-wallet');
       if (pending.type === 'address') {
-        if (!/^[EU]Q[A-Za-z0-9_\-]{46,48}$/.test(trimmed) && !/^0:[a-fA-F0-9]{64}$/.test(trimmed)) {
+        if (!isValidTonAddress(trimmed)) {
           await safeReply(ctx, '❌ Неверный формат адреса. Ожидается EQ... или UQ...', {});
           return;
         }
@@ -7330,15 +7410,7 @@ bot.on(message('text'), async (ctx) => {
     try {
       // Detect provider from key pattern
       let detectedProvider = pending.provider || '';
-      const apiKeyPatterns: { pattern: RegExp; provider: string }[] = [
-        { pattern: /AIzaSy[A-Za-z0-9_\-]{33}/, provider: 'gemini' },
-        { pattern: /sk-ant-[A-Za-z0-9_\-]{80,}/, provider: 'anthropic' },
-        { pattern: /sk-proj-[A-Za-z0-9_\-]{40,}/, provider: 'openai' },
-        { pattern: /sk-[A-Za-z0-9]{40,}/, provider: 'openai' },
-        { pattern: /gsk_[A-Za-z0-9]{40,}/, provider: 'groq' },
-        { pattern: /sk-or-[A-Za-z0-9_\-]{40,}/, provider: 'openrouter' },
-      ];
-      for (const { pattern, provider: p } of apiKeyPatterns) {
+      for (const { pattern, provider: p } of API_KEY_PATTERNS) {
         if (pattern.test(trimmed)) { detectedProvider = p; break; }
       }
       // Also support "provider=key" format
@@ -7349,13 +7421,13 @@ bot.on(message('text'), async (ctx) => {
         const keyOnly = eqMatch[2].trim();
         const repo = getUserSettingsRepository();
         const vars = ((await repo.getAll(userId)).user_variables as Record<string, any>) || {};
-        vars.AI_API_KEY = keyOnly;
+        vars.AI_API_KEY = encryptApiKey(keyOnly);
         if (detectedProvider) vars.AI_PROVIDER = detectedProvider;
         await repo.set(userId, 'user_variables', vars);
       } else {
         const repo = getUserSettingsRepository();
         const vars = ((await repo.getAll(userId)).user_variables as Record<string, any>) || {};
-        vars.AI_API_KEY = trimmed;
+        vars.AI_API_KEY = encryptApiKey(trimmed);
         if (detectedProvider) vars.AI_PROVIDER = detectedProvider;
         await repo.set(userId, 'user_variables', vars);
       }
@@ -7377,6 +7449,10 @@ bot.on(message('text'), async (ctx) => {
   if (pendingEdits.has(userId)) {
     const agentId = pendingEdits.get(userId)!;
     pendingEdits.delete(userId);
+    if (checkRateLimit(userId)) {
+      await ctx.reply('⚠️ Слишком много операций. Подождите минуту.').catch(() => {});
+      return;
+    }
     const agentResult = await getDBTools().getAgent(agentId, userId);
     if (!agentResult.success || !agentResult.data) {
       await ctx.reply('❌ Агент не найден'); return;
@@ -7388,18 +7464,9 @@ bot.on(message('text'), async (ctx) => {
 
     // ── API Key auto-detection ─────────────────────────────────────
     // Распознаём ключи по паттерну и сохраняем в config агента
-    const apiKeyPatterns: Array<{ pattern: RegExp; provider: string }> = [
-      { pattern: /AIzaSy[A-Za-z0-9_\-]{33}/, provider: 'Gemini' },
-      { pattern: /sk-ant-[A-Za-z0-9_\-]{80,}/, provider: 'Anthropic' },
-      { pattern: /sk-proj-[A-Za-z0-9_\-]{40,}/, provider: 'OpenAI' },
-      { pattern: /sk-[A-Za-z0-9]{40,}/, provider: 'OpenAI' },
-      { pattern: /gsk_[A-Za-z0-9]{40,}/, provider: 'Groq' },
-      { pattern: /sk-or-[A-Za-z0-9_\-]{40,}/, provider: 'OpenRouter' },
-    ];
-
     let detectedKey = '';
     let detectedProvider = '';
-    for (const { pattern, provider } of apiKeyPatterns) {
+    for (const { pattern, provider } of API_KEY_PATTERNS) {
       const km = trimmed.match(pattern);
       if (km) { detectedKey = km[0]; detectedProvider = provider; break; }
     }
@@ -7576,6 +7643,8 @@ bot.on(message('text'), async (ctx) => {
       }
       return;
     }
+    // Unexpected step value — log and clean up
+    console.warn(`[bot] pendingPublish unexpected step '${pp.step}' for user ${userId}, clearing state`);
     pendingPublish.delete(userId);
   }
 
@@ -7595,6 +7664,10 @@ bot.on(message('text'), async (ctx) => {
       return;
     }
     const customName: string | undefined = trimmed;
+    if (checkRateLimit(userId)) {
+      await ctx.reply('⚠️ Слишком много операций. Подождите минуту.').catch(() => {});
+      return;
+    }
     // Сразу создаём агента — без выбора расписания
     const nameLabel = `📛 <b>${escHtml(customName)}</b> — отлично!`;
     await ctx.reply(nameLabel, { parse_mode: 'HTML' }).catch(() => {});
@@ -8934,7 +9007,9 @@ async function buyMarketplaceListing(ctx: Context, listingId: number, userId: nu
     // Получаем исходный код агента
     const agentResult = await getDBTools().getAgent(listing.agentId, listing.sellerId);
     if (!agentResult.success || !agentResult.data) {
-      return editOrReply(ctx, '❌ Агент продавца не найден', {});
+      // Mark listing as unavailable so others don't hit the same error
+      try { await getMarketplaceRepository().deactivateListing(listingId, listing.sellerId); } catch {}
+      return editOrReply(ctx, '❌ Агент продавца не найден или удалён. Листинг деактивирован.', {});
     }
     const sourceAgent = agentResult.data;
 
@@ -9048,6 +9123,10 @@ async function startPublishFlow(ctx: Context, userId: number) {
 }
 
 async function doPublishAgent(ctx: Context, userId: number, agentId: number, priceNano: number, name: string) {
+  if (checkRateLimit(userId)) {
+    await ctx.reply('⚠️ Слишком много операций. Подождите минуту.').catch(() => {});
+    return;
+  }
   try {
     const agentResult = await getDBTools().getAgent(agentId, userId);
     if (!agentResult.success || !agentResult.data) {
@@ -9143,6 +9222,10 @@ async function showPlugins(ctx: Context) {
   await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: btns } });
 }
 
+// NOTE: p.isInstalled below comes from the plugin registry's static data, NOT from the
+// per-user DB setting (installed_plugins). This can diverge from reality if a user
+// installs/uninstalls at runtime. showPluginDetails() reads DB correctly.
+// To fix properly, pass userId and query DB here as well.
 async function showAllPlugins(ctx: Context) {
   const plugins = getPluginManager().getAllPlugins();
   let text = `🔌 <b>Все плагины (${escHtml(plugins.length)}):</b>\n\n`;
@@ -9207,6 +9290,24 @@ async function showPluginDetails(ctx: Context, pluginId: string) {
 // ============================================================
 // Workflow
 // ============================================================
+/** Generate a stable callback key for a workflow template (slug from name, fallback to index). */
+function _workflowTemplateKey(t: { name: string }, idx: number): string {
+  const slug = t.name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30);
+  return slug || String(idx);
+}
+
+/** Resolve a workflow template key (slug or numeric index) back to an array index. */
+function _resolveWorkflowTemplateIndex(key: string): number {
+  const templates = getWorkflowEngine().getWorkflowTemplates();
+  // Try matching by slug first
+  const idx = templates.findIndex((t, i) => _workflowTemplateKey(t, i) === key);
+  if (idx >= 0) return idx;
+  // Fallback: try parsing as numeric index (backwards compat)
+  const num = parseInt(key, 10);
+  if (!isNaN(num) && num >= 0 && num < templates.length) return num;
+  return -1;
+}
+
 async function showWorkflows(ctx: Context, userId: number) {
   const lang = getUserLang(userId);
   const engine = getWorkflowEngine();
@@ -9228,7 +9329,7 @@ async function showWorkflows(ctx: Context, userId: number) {
   text += `<b>${lang === 'ru' ? 'Готовые шаблоны:' : 'Ready templates:'}</b>\n`;
   templates.forEach((t, i) => { text += `${i + 1}. ${escHtml(t.name)}\n`; });
 
-  const btns = templates.map((t, i) => [{ text: `${peb('clipboard')} ${t.name}`, callback_data: `workflow_template:${i}` }]);
+  const btns = templates.map((t, i) => [{ text: `${peb('clipboard')} ${t.name}`, callback_data: `workflow_template:${_workflowTemplateKey(t, i)}` }]);
   btns.push([{ text: `${peb('robot')} ${lang === 'ru' ? 'Описать workflow (AI создаст)' : 'Describe workflow (AI creates)'}`, callback_data: 'workflow_describe' }]);
   btns.push([{ text: `${peb('plus')} ${lang === 'ru' ? 'Выбрать шаблон' : 'Choose template'}`, callback_data: 'workflow_create' }]);
   await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: btns } });
@@ -9712,7 +9813,7 @@ export async function startBot() {
   initNotifier(bot);
   try { const { initCrewSystem } = require('./services/crew-system'); initCrewSystem(dbPool); } catch (e: any) { console.warn('CrewSystem init failed:', e.message); }
   try { const { initReputation } = require('./services/agent-reputation'); initReputation(dbPool); } catch (e: any) { console.warn('Reputation init failed:', e.message); }
-  try { const { initTonDNS } = require('./services/ton-dns'); initTonDNS(dbPool); } catch (e: any) { console.warn('TonDNS init failed:', e.message); }
+  try { const { initTonDNS } = require('./services/ton-dns'); await initTonDNS(dbPool); } catch (e: any) { console.warn('TonDNS init failed:', e.message); }
   try { const { initPluginMarketplace } = require('./services/plugin-marketplace'); initPluginMarketplace(dbPool); } catch (e: any) { console.warn('PluginMarketplace init failed:', e.message); }
 
   console.log('🤖 Starting TON Agent Platform Bot...');

@@ -347,7 +347,7 @@ export function trackGeneration(userId: number): void {
   if (!tracker || tracker.month !== month) {
     generationTracker.set(userId, { month, count: 1 });
   } else {
-    tracker.count += 1;
+    generationTracker.set(userId, { month, count: tracker.count + 1 });
   }
 }
 

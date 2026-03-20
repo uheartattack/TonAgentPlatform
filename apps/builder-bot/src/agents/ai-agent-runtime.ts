@@ -12,6 +12,8 @@
  */
 
 import OpenAI from 'openai';
+import crypto from 'crypto';
+import { decryptApiKey } from '../crypto-utils';
 import { promises as dnsPromises } from 'dns';
 import { isIP } from 'net';
 import { notifyUser, notifyRich } from '../notifier';
@@ -81,7 +83,9 @@ function sanitizeForPromptShort(text: string): string {
 
 // ── Log sanitization: mask API keys/tokens in any logged string ──────────────
 function sanitizeForLog(obj: any): string {
-  const str = typeof obj === 'string' ? obj : JSON.stringify(obj);
+  let str = typeof obj === 'string' ? obj : JSON.stringify(obj);
+  // Truncate before applying regex to prevent ReDoS on very long strings
+  if (str.length > 50_000) str = str.slice(0, 50_000) + '...[truncated]';
   return str.replace(
     /(AIzaSy[\w-]{6})([\w-]{24,})|(sk-ant-[\w-]{6})([\w-]{14,})|(sk-proj-[\w-]{6})([\w-]{14,})|(sk-[a-zA-Z0-9]{6})([a-zA-Z0-9]{14,})|(gsk_[\w]{6})([\w]{14,})|(sk-or-[\w-]{6})([\w-]{14,})|(Bearer\s+)(\S{8})(\S{12,})/g,
     (match, ...groups) => {
@@ -149,11 +153,24 @@ function cbRecordSuccess(agentId: number): void {
   if (_circuitBreakers.has(agentId)) _circuitBreakers.delete(agentId);
 }
 
+// ── EQ/UQ address to raw format converter (for TonAPI) ──────────────────────
+function eqToRaw(addr: string): string {
+  try {
+    const b64 = addr.slice(2).replace(/-/g, '+').replace(/_/g, '/');
+    const buf = Buffer.from(b64, 'base64');
+    const wc  = buf[1] === 0xff ? -1 : buf[1];
+    const hex = buf.slice(2, 34).toString('hex');
+    return `${wc}:${hex}`;
+  } catch (e: any) {
+    console.warn(`[AI-Runtime] eqToRaw conversion failed for "${addr}": ${e.message || e}`);
+    return addr;
+  }
+}
+
 // Duplicate content detector — prevent posting same content twice
 const _recentPostHashes = new Map<string, string[]>(); // key → last 5 content hashes
 function _hashContent(text: string): string {
   const norm = text.replace(/\s+/g, ' ').trim().slice(0, 200).toLowerCase();
-  const crypto = require('crypto');
   return crypto.createHash('sha256').update(norm).digest('hex').slice(0, 16);
 }
 function isDuplicateContent(agentId: number, chatId: string, content: string): boolean {
@@ -267,6 +284,8 @@ function addVariance(baseMs: number, variancePct: number): number {
   return Math.max(100, baseMs + (Math.random() * 2 - 1) * range);
 }
 
+// NOTE: Uses server-local timezone (process TZ). If agents need user-local scheduling,
+// the BehaviorConfig should include a timezone field and this should use date-fns-tz or similar.
 function isWithinSchedule(bh: BehaviorConfig): boolean {
   if (!bh.schedule) return true;
   const hour = new Date().getHours();
@@ -311,7 +330,8 @@ function splitMessage(text: string, maxLen: number = 800): string[] {
     }
     if (chunk.trim()) result.push(chunk.trim());
   }
-  return result;
+  // Filter out any empty/whitespace-only parts
+  return result.filter(p => p.length > 0);
 }
 
 const THINKING_PHRASES_RU = ['Секунду...', 'Проверяю...', 'Сейчас посмотрю...', 'Дайте подумать...', 'Анализирую...'];
@@ -419,7 +439,8 @@ function resolveProvider(provider: string): ProviderCfg {
 
 // Returns AI client using user's own API key. Throws if no key configured.
 function getAIClient(config: Record<string, any>): { client: OpenAI; defaultModel: string; providerCfg: ProviderCfg } {
-  const apiKey = (config.AI_API_KEY as string) || '';
+  const rawKey = (config.AI_API_KEY as string) || '';
+  const apiKey = decryptApiKey(rawKey);
   const provider = (config.AI_PROVIDER as string) || '';
 
   if (!apiKey) {
@@ -508,8 +529,8 @@ export function mdToHtml(text: string): string {
     // Bold: **text** or __text__
     .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
     .replace(/__(.+?)__/g, '<b>$1</b>')
-    // Italic: *text* or _text_ (avoid matching inside words)
-    .replace(/\*([^*]+)\*/g, '<i>$1</i>')
+    // Italic: *text* or _text_ (avoid matching already-converted <b> tags and inside words)
+    .replace(/(?<![<\w])\*([^*<>]+)\*(?![>\w])/g, '<i>$1</i>')
     .replace(/(?<!\w)_([^_]+)_(?!\w)/g, '<i>$1</i>')
     // Strikethrough: ~~text~~
     .replace(/~~(.+?)~~/g, '<s>$1</s>')
@@ -690,6 +711,10 @@ async function validateUrlSSRF(rawUrl: string): Promise<{ error?: string; decode
   }
 
   // 5. DNS resolution check (prevents DNS rebinding with private IPs)
+  // NOTE: Known limitation — DNS rebinding TOCTOU: a hostname may resolve to a public IP here
+  // but re-resolve to a private IP during the actual fetch. Mitigating this fully would require
+  // passing the resolved IP directly to fetch (via custom Agent/connect callback), which is not
+  // trivial with the current HTTP client. Acceptable risk for sandboxed agent workloads.
   try {
     const addresses = await dnsPromises.resolve4(parsed.hostname).catch(() => [] as string[]);
     const addresses6 = await dnsPromises.resolve6(parsed.hostname).catch(() => [] as string[]);
@@ -4526,7 +4551,7 @@ function detectStall(history: string[][], window: number = 3): boolean {
 
 // ── Token estimation ──────────────────────────────────────────────────────
 
-function estimateTokens(messages: any[]): number {
+function estimateTokens(messages: any[], tools?: any[]): number {
   let chars = 0;
   for (const m of messages) {
     if (typeof m.content === 'string') chars += m.content.length;
@@ -4537,7 +4562,9 @@ function estimateTokens(messages: any[]): number {
       }
     }
   }
-  return Math.ceil(chars / 4); // ~4 chars per token estimate
+  // Rough estimate for tool definitions: ~100 tokens per tool (name + description + params schema)
+  const toolTokens = (tools?.length ?? 0) * 100;
+  return Math.ceil(chars / 4) + toolTokens; // ~4 chars per token estimate
 }
 
 // ── Tool executor ──────────────────────────────────────────────────────────
@@ -4768,20 +4795,6 @@ export async function executeTool(
         const tonApiKey = args.ton_api_key || params.config.TONAPI_KEY || process.env.TONAPI_KEY || '';
         const headers: Record<string, string> = {};
         if (tonApiKey) headers['Authorization'] = `Bearer ${tonApiKey}`;
-
-        // Convert EQ to raw if needed
-        function eqToRaw(addr: string): string {
-          try {
-            const b64 = addr.slice(2).replace(/-/g, '+').replace(/_/g, '/');
-            const buf = Buffer.from(b64, 'base64');
-            const wc  = buf[1] === 0xff ? -1 : buf[1];
-            const hex = buf.slice(2, 34).toString('hex');
-            return `${wc}:${hex}`;
-          } catch (e: any) {
-            console.warn(`[AI-Runtime] eqToRaw conversion failed for "${addr}": ${e.message || e}`);
-            return addr;
-          }
-        }
 
         let collAddr = raw;
         if (raw.includes('getgems.io')) {
@@ -5567,6 +5580,8 @@ export async function executeTool(
         // If it's a @username, try to resolve to numeric chat ID via MTProto
         if (normalizedChatId.startsWith('@')) {
           try {
+            // Intentional require() instead of top-level import: avoids circular dependency
+            // (userbot-manager imports ai-agent-runtime for event hooks)
             const { UserbotManager } = require('../services/userbot-manager');
             const mgr = UserbotManager.getInstance();
             const client = await (mgr as any).getClient(params.agentId);
@@ -9957,7 +9972,13 @@ If web_search returns nothing useful → say "не смог найти акту�
     }
     saveStart = Math.min(saveStart, Math.max(0, mapped.length - 8));
     const trimmed = mapped.slice(saveStart);
-    await getAgentStateRepository().set(params.agentId, params.userId, '_conversation_history', JSON.stringify(trimmed));
+    // Only persist if history actually changed (compare hash to avoid unnecessary DB writes)
+    const newJson = JSON.stringify(trimmed);
+    const newHash = crypto.createHash('sha256').update(newJson).digest('hex').slice(0, 16);
+    const prevHash = existingStr ? crypto.createHash('sha256').update(typeof existingStr === 'string' ? existingStr : JSON.stringify(existingStr)).digest('hex').slice(0, 16) : '';
+    if (newHash !== prevHash) {
+      await getAgentStateRepository().set(params.agentId, params.userId, '_conversation_history', newJson);
+    }
   } catch (histSaveErr: any) { console.error(`[AI runtime] Agent #${params.agentId} FAILED to save conversation history:`, histSaveErr?.message); }
 
   // ── Memory consolidation (periodic) ──
@@ -10214,11 +10235,18 @@ export class AIAgentRuntime {
 // ── Singleton ──────────────────────────────────────────────────────────────
 
 let _runtime: AIAgentRuntime | null = null;
+let _cleanupInterval: ReturnType<typeof setInterval> | null = null;
+
+/** Stop the periodic cleanup interval (for graceful shutdown / tests) */
+export function stopPeriodicCleanup(): void {
+  if (_cleanupInterval) { clearInterval(_cleanupInterval); _cleanupInterval = null; }
+}
+
 export function getAIAgentRuntime(): AIAgentRuntime {
   if (!_runtime) {
     _runtime = new AIAgentRuntime();
     // ── Periodic cleanup of stale global maps (every 10 minutes) ──
-    setInterval(() => {
+    _cleanupInterval = setInterval(() => {
       const activeIds: number[] = [];
       _activeHandles.forEach((_, id) => activeIds.push(id));
       const activeSet = new Set(activeIds);

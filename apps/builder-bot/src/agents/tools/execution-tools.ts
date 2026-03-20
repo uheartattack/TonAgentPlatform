@@ -159,6 +159,34 @@ const persistentRunners: Map<number, PersistentRunner> = new Map();
 
 export class ExecutionTools {
   private runningAgents: Map<number, AgentRunData> = new Map();
+  private _cleanupTimer: ReturnType<typeof setInterval> | null = null;
+
+  /** Start periodic cleanup of stale runningAgents entries (every 10 min).
+   *  Removes entries whose agentId no longer exists in the DB. */
+  startPeriodicCleanup(): void {
+    if (this._cleanupTimer) return;
+    this._cleanupTimer = setInterval(async () => {
+      if (this.runningAgents.size === 0) return;
+      try {
+        const { getDBTools } = await import('./db-tools');
+        const db = getDBTools();
+        for (const [agentId, data] of this.runningAgents.entries()) {
+          // Skip agents that are actively running
+          if (data.status === 'running') continue;
+          const result = await db.getAgent(agentId);
+          if (!result.success || !result.data) {
+            // Agent no longer exists in DB — clean up
+            if (data.intervalHandle) clearInterval(data.intervalHandle);
+            this.runningAgents.delete(agentId);
+            console.log(`[ExecutionTools] Cleaned up stale runningAgents entry for agent#${agentId}`);
+          }
+        }
+      } catch (e) {
+        // Non-critical — just log
+        console.warn('[ExecutionTools] Periodic cleanup error:', e instanceof Error ? e.message : e);
+      }
+    }, 10 * 60 * 1000); // 10 minutes
+  }
 
   // Запустить агента
   async runAgent(params: {
@@ -1119,53 +1147,8 @@ export class ExecutionTools {
             }
           },
 
-          // ── searchWeb / fetchUrl aliases (match ai-agent-runtime naming) ──
-          searchWeb: async (query: string) => {
-            // Delegate to the existing webSearch implementation above
-            const encoded = encodeURIComponent(query || '');
-            const results: any[] = [];
-            try {
-              const htmlResp = await nativeFetch('https://html.duckduckgo.com/html/?q=' + encoded, {
-                headers: { 'User-Agent': 'Mozilla/5.0 (compatible; TONAgentBot/1.0)' },
-                signal: AbortSignal.timeout(10000),
-              });
-              if (htmlResp.ok) {
-                const html = await htmlResp.text();
-                const linkRe = /<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi;
-                const snipRe = /<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/gi;
-                const links: Array<{ url: string; title: string }> = [];
-                let m;
-                while ((m = linkRe.exec(html)) && links.length < 5) {
-                  let url = m[1];
-                  const uddg = url.match(/uddg=([^&]+)/);
-                  if (uddg) url = decodeURIComponent(uddg[1]);
-                  links.push({ url, title: m[2].replace(/<[^>]+>/g, '').trim() });
-                }
-                const snips: string[] = [];
-                while ((m = snipRe.exec(html)) && snips.length < 5) {
-                  snips.push(m[1].replace(/<[^>]+>/g, '').trim());
-                }
-                for (let i = 0; i < links.length; i++) {
-                  results.push({ title: links[i].title, url: links[i].url, snippet: snips[i] || '' });
-                }
-              }
-            } catch {}
-            if (results.length === 0) {
-              try {
-                const resp = await nativeFetch('https://api.duckduckgo.com/?q=' + encoded + '&format=json&no_html=1');
-                if (resp.ok) {
-                  const data = await resp.json() as any;
-                  if (data.AbstractText) results.push({ title: data.Heading || query, snippet: data.AbstractText, url: data.AbstractURL || '' });
-                  if (data.RelatedTopics) {
-                    for (const topic of data.RelatedTopics.slice(0, 5)) {
-                      if (topic.Text && topic.FirstURL) results.push({ title: topic.Text.slice(0, 100), snippet: topic.Text, url: topic.FirstURL });
-                    }
-                  }
-                }
-              } catch {}
-            }
-            return results.slice(0, 5);
-          },
+          // ── searchWeb alias (delegates to webSearch to avoid code duplication) ──
+          searchWeb: null as any, // assigned after sandbox construction below
 
           // ── Стандартные глобалы ──
           JSON,
@@ -1203,6 +1186,9 @@ export class ExecutionTools {
           // Block require/import in sandbox
           require: () => { throw new Error('require() is disabled in agent sandbox.'); },
       };
+
+      // Wire up searchWeb alias now that sandbox is fully constructed
+      sandbox.searchWeb = sandbox.webSearch;
 
       // Create a V8 context with our sandbox — Node built-in vm module
       // (replaces vm2 NodeVM which has known sandbox-escape CVEs)
@@ -1704,6 +1690,7 @@ let executionTools: ExecutionTools | null = null;
 export function getExecutionTools(): ExecutionTools {
   if (!executionTools) {
     executionTools = new ExecutionTools();
+    executionTools.startPeriodicCleanup();
   }
   return executionTools;
 }

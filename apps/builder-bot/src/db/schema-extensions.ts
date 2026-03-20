@@ -169,8 +169,8 @@ export async function runMigrations(pool: Pool): Promise<void> {
         id            SERIAL PRIMARY KEY,
         user_id       BIGINT NOT NULL,
         type          TEXT NOT NULL,
-        amount_ton    DOUBLE PRECISION NOT NULL,
-        balance_after DOUBLE PRECISION NOT NULL DEFAULT 0,
+        amount_ton    NUMERIC(20,9) NOT NULL,
+        balance_after NUMERIC(20,9) NOT NULL DEFAULT 0,
         description   TEXT,
         tx_hash       TEXT,
         status        TEXT NOT NULL DEFAULT 'completed',
@@ -223,7 +223,11 @@ export async function runMigrations(pool: Pool): Promise<void> {
       )
     `);
 
-    // agent_approvals (AI agent action approvals)
+    // agent_approvals V1 DDL — original schema (action_type, action_details columns).
+    // V2 Drizzle definition (agentApprovalsTable at line ~948) uses different column names
+    // (action, description, details). The runAIProposalsMigrations() ALTER TABLE statements
+    // below ensure both column sets exist on the same table for backward compatibility.
+    // TODO: consolidate into a single schema once V1 callers are migrated.
     await client.query(`
       CREATE TABLE IF NOT EXISTS builder_bot.agent_approvals (
         id             SERIAL PRIMARY KEY,
@@ -945,6 +949,10 @@ export const agentAuditLogTable = builderSchema.table('agent_audit_log', {
 });
 
 // ─── Таблица 11: agent_approvals — запросы на одобрение действий ─────────
+// V2 Drizzle definition with (action, description, details) columns.
+// The V1 DDL in runMigrations() creates the table with (action_type, action_details).
+// ALTER TABLE statements in runAIProposalsMigrations() add both column sets so both work.
+// See also agentApprovalsTableV2 below and AgentApprovalsRepository which uses raw SQL.
 export const agentApprovalsTable = builderSchema.table('agent_approvals', {
   id:          serial('id').primaryKey(),
   agentId:     integer('agent_id').notNull(),
