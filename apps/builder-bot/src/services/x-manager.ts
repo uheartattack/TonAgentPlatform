@@ -23,6 +23,11 @@ export class XManager {
     return { 'Authorization': `Bearer ${cfg.bearerToken}`, 'Content-Type': 'application/json' };
   }
 
+  /** Validate that an ID is safe to interpolate into a URL path */
+  private validateId(id: string, name: string): void {
+    if (!/^\d+$/.test(id)) throw new Error(`Invalid ${name}: must be numeric`);
+  }
+
   async searchTweets(agentId: number, query: string, maxResults = 10): Promise<any> {
     const headers = this.getHeaders(agentId);
     const params = new URLSearchParams({ query, max_results: String(maxResults), 'tweet.fields': 'created_at,public_metrics,author_id' });
@@ -32,6 +37,7 @@ export class XManager {
   }
 
   async getTweet(agentId: number, tweetId: string): Promise<any> {
+    this.validateId(tweetId, 'tweetId');
     const headers = this.getHeaders(agentId);
     const res = await fetch(`${X_API}/tweets/${tweetId}?tweet.fields=created_at,public_metrics,author_id`, { headers });
     if (!res.ok) throw new Error(`X API ${res.status}`);
@@ -39,13 +45,15 @@ export class XManager {
   }
 
   async getUserByUsername(agentId: number, username: string): Promise<any> {
+    if (!/^[a-zA-Z0-9_]{1,15}$/.test(username)) throw new Error('Invalid username format');
     const headers = this.getHeaders(agentId);
-    const res = await fetch(`${X_API}/users/by/username/${username}?user.fields=public_metrics,description`, { headers });
+    const res = await fetch(`${X_API}/users/by/username/${encodeURIComponent(username)}?user.fields=public_metrics,description`, { headers });
     if (!res.ok) throw new Error(`X API ${res.status}`);
     return await res.json();
   }
 
   async getUserTimeline(agentId: number, userId: string, maxResults = 10): Promise<any> {
+    this.validateId(userId, 'userId');
     const headers = this.getHeaders(agentId);
     const res = await fetch(`${X_API}/users/${userId}/tweets?max_results=${maxResults}&tweet.fields=created_at,public_metrics`, { headers });
     if (!res.ok) throw new Error(`X API ${res.status}`);

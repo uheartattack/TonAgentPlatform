@@ -534,6 +534,9 @@ export async function restoreActiveAgents(): Promise<void> {
         runner.runAgent({ agentId: agent.id, userId: agent.userId })
           .then(() => console.log(`[Runner] ✅ Restored agent #${agent.id} "${agent.name}" (user ${agent.userId})`))
           .catch(e => console.error(`[Runner] ❌ Failed agent #${agent.id}:`, e));
+
+        // Rate limit: 500ms delay between activations to avoid overwhelming DB/API on restart
+        await new Promise(r => setTimeout(r, 500));
       } catch (e) {
         console.error(`[Runner] ❌ Failed to restore agent #${agent.id} "${agent.name}":`, e);
         // Один сломавшийся агент не должен блокировать остальные

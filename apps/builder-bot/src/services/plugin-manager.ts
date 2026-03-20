@@ -294,26 +294,13 @@ function buildContext(inst: PluginInstance, agentId: number): PluginContext {
     notify: async (text: string) => {
       try {
         const { notifyUser } = await import('../notifier');
-        // Get userId from agent — look up in DB
-        const { Pool } = require('pg');
-        const pool = new Pool({
-          host: process.env.DB_HOST || 'localhost',
-          port: parseInt(process.env.DB_PORT || '5432'),
-          user: process.env.DB_USER || 'ton_agent',
-          password: process.env.DB_PASSWORD || '',
-          database: process.env.DB_NAME || 'ton_agent_platform',
-          max: 1,
-        });
-        try {
-          const res = await pool.query(
-            'SELECT user_id FROM builder_bot.agents WHERE id = $1 LIMIT 1',
-            [agentId],
-          );
-          if (res.rows.length > 0) {
-            await notifyUser(Number(res.rows[0].user_id), text);
-          }
-        } finally {
-          await pool.end();
+        const { pool } = await import('../db');
+        const res = await pool.query(
+          'SELECT user_id FROM builder_bot.agents WHERE id = $1 LIMIT 1',
+          [agentId],
+        );
+        if (res.rows.length > 0) {
+          await notifyUser(Number(res.rows[0].user_id), text);
         }
       } catch (e: any) {
         console.warn(`[Plugin:${inst.definition.id}] notify failed: ${e.message}`);

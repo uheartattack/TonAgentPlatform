@@ -59,7 +59,8 @@ async function getClient(): Promise<TelegramClient> {
   _connected = true;
 
   // Save updated session (may include DC info)
-  const sessionStr = _client.session.save() as unknown as string;
+  const rawSession = _client.session.save();
+  const sessionStr = rawSession != null ? String(rawSession) : '';
   if (sessionStr) saveSession(sessionStr);
   console.log('[Fragment] Connected. Session after connect:', sessionStr ? sessionStr.slice(0, 40) + '...' : 'empty');
 
@@ -69,7 +70,8 @@ async function getClient(): Promise<TelegramClient> {
 /** Force reconnect client (e.g. after DC migration) */
 async function reconnectClient(): Promise<void> {
   if (_client) {
-    const sessionStr = _client.session.save() as unknown as string;
+    const rawSession = _client.session.save();
+    const sessionStr = rawSession != null ? String(rawSession) : '';
     if (sessionStr) saveSession(sessionStr);
     console.log('[Fragment] Force reconnect, session:', sessionStr ? sessionStr.slice(0, 40) + '...' : 'empty');
     _client = null;

@@ -25,20 +25,32 @@ function encryptMnemonic(plaintext: string): string {
     console.warn('[AgenticWallet] WALLET_ENCRYPTION_KEY not set — storing mnemonic unencrypted');
     return plaintext;
   }
-  const key = crypto.scryptSync(ENCRYPTION_KEY, 'agentic-wallet-salt', 32);
+  const salt = crypto.randomBytes(16);
+  const key = crypto.scryptSync(ENCRYPTION_KEY, salt, 32);
   const iv = crypto.randomBytes(16);
   const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
   let encrypted = cipher.update(plaintext, 'utf8', 'hex');
   encrypted += cipher.final('hex');
   const tag = cipher.getAuthTag().toString('hex');
-  return `enc:${iv.toString('hex')}:${tag}:${encrypted}`;
+  return `enc:${salt.toString('hex')}:${iv.toString('hex')}:${tag}:${encrypted}`;
 }
 
 function decryptMnemonic(stored: string): string {
   if (!stored.startsWith('enc:')) return stored; // legacy unencrypted
   if (!ENCRYPTION_KEY) throw new Error('WALLET_ENCRYPTION_KEY required to decrypt mnemonic');
-  const [, ivHex, tagHex, encrypted] = stored.split(':');
-  const key = crypto.scryptSync(ENCRYPTION_KEY, 'agentic-wallet-salt', 32);
+  const parts = stored.split(':');
+  // New format: enc:salt:iv:tag:ciphertext (5 parts)
+  // Legacy format: enc:iv:tag:ciphertext (4 parts)
+  let saltHex: string, ivHex: string, tagHex: string, encrypted: string;
+  if (parts.length === 5) {
+    [, saltHex, ivHex, tagHex, encrypted] = parts;
+  } else {
+    // Legacy: static salt
+    saltHex = '';
+    [, ivHex, tagHex, encrypted] = parts;
+  }
+  const salt = saltHex ? Buffer.from(saltHex, 'hex') : Buffer.from('agentic-wallet-salt');
+  const key = crypto.scryptSync(ENCRYPTION_KEY, salt, 32);
   const decipher = crypto.createDecipheriv(ALGORITHM, key, Buffer.from(ivHex, 'hex'));
   decipher.setAuthTag(Buffer.from(tagHex, 'hex'));
   let decrypted = decipher.update(encrypted, 'hex', 'utf8');

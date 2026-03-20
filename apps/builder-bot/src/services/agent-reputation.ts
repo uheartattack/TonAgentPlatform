@@ -645,10 +645,15 @@ export async function getPlatformGDP(): Promise<PlatformGDP> {
   const tonRes = await p.query(`
     SELECT
       COALESCE(SUM(CASE WHEN started_at > NOW() - INTERVAL '24 hours'
-        THEN (result_summary->>'ton_amount')::real ELSE 0 END), 0) AS vol_24h,
+        THEN CASE WHEN (result_summary->>'ton_amount') ~ '^[0-9]+(\\.[0-9]+)?$'
+             THEN (result_summary->>'ton_amount')::real ELSE 0 END
+        ELSE 0 END), 0) AS vol_24h,
       COALESCE(SUM(CASE WHEN started_at > NOW() - INTERVAL '7 days'
-        THEN (result_summary->>'ton_amount')::real ELSE 0 END), 0) AS vol_7d,
-      COALESCE(SUM((result_summary->>'ton_amount')::real), 0) AS vol_all
+        THEN CASE WHEN (result_summary->>'ton_amount') ~ '^[0-9]+(\\.[0-9]+)?$'
+             THEN (result_summary->>'ton_amount')::real ELSE 0 END
+        ELSE 0 END), 0) AS vol_7d,
+      COALESCE(SUM(CASE WHEN (result_summary->>'ton_amount') ~ '^[0-9]+(\\.[0-9]+)?$'
+        THEN (result_summary->>'ton_amount')::real ELSE 0 END), 0) AS vol_all
     FROM builder_bot.execution_history
     WHERE result_summary->>'ton_amount' IS NOT NULL
   `);

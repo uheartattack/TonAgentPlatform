@@ -70,7 +70,7 @@ async function main() {
   console.log();
 
   // Запуск бота
-  startBot();
+  await startBot();
 
   // Запуск REST API сервера (лендинг + Telegram auth)
   startApiServer();
@@ -89,7 +89,7 @@ async function main() {
     await getAgenticWalletService().runMigration();
     console.log('🔐 Agentic Wallets ready');
   } catch (e: any) {
-    console.warn('[AgenticWallet] Init warning:', e.message);
+    console.error('[AgenticWallet] Init error:', e.message, e.stack?.slice(0, 300));
   }
 
   // Восстановить schedulers для агентов которые были активны до перезапуска

@@ -70,6 +70,27 @@ function fixLiteralNewlinesInStrings(code: string): string {
         else if (c === '`') { result += c; i++; break; }
         else { result += c; i++; }
       }
+    } else if (ch === '/') {
+      // Possible regex literal — check if preceded by a regex-triggering token
+      // Look back to last non-whitespace char to heuristically detect regex context
+      const lastNonWs = result.replace(/\s+$/, '').slice(-1);
+      const regexPreceding = '=(!:;,([{&|?+->~^%*/';
+      if (lastNonWs === '' || regexPreceding.includes(lastNonWs)) {
+        // Treat as regex literal — copy verbatim until unescaped /
+        result += ch; i++;
+        while (i < code.length) {
+          const c = code[i];
+          if (c === '\\') { result += c + (code[i + 1] || ''); i += 2; }
+          else if (c === '/') { result += c; i++; break; }
+          else if (c === '\n') { break; } // regex can't span lines — not a regex
+          else { result += c; i++; }
+        }
+        // Copy flags (g, i, m, s, u, y)
+        while (i < code.length && /[gimsuy]/.test(code[i])) { result += code[i]; i++; }
+      } else {
+        // Division operator
+        result += ch; i++;
+      }
     } else { result += ch; i++; }
   }
   return result;
@@ -316,11 +337,50 @@ export class ExecutionTools {
 
       // SSRF-protected fetch wrapper — blocks internal/metadata IPs
       const _BLOCKED_RE = /^https?:\/\/(?:localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|10\.\d+\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+|169\.254\.\d+\.\d+|\[?::1\]?)/i;
+      const _isBlockedIp = (hostname: string): boolean => {
+        // Resolve numeric/octal/hex IP representations to catch bypasses
+        // e.g. 0177.0.0.1, 2130706433, 0x7f000001
+        try {
+          // Remove brackets for IPv6
+          const h = hostname.replace(/^\[|\]$/g, '');
+          // Check for decimal IP (e.g. 2130706433)
+          if (/^\d+$/.test(h)) {
+            const num = parseInt(h, 10);
+            if (num >= 0 && num <= 0xFFFFFFFF) {
+              const a = (num >>> 24) & 0xFF, b = (num >>> 16) & 0xFF, c = (num >>> 8) & 0xFF, d = num & 0xFF;
+              const ip = `${a}.${b}.${c}.${d}`;
+              if (/^(127\.|10\.|0\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.)/.test(ip)) return true;
+            }
+          }
+          // Check for hex IP (e.g. 0x7f000001)
+          if (/^0x[0-9a-fA-F]+$/.test(h)) {
+            const num = parseInt(h, 16);
+            const a = (num >>> 24) & 0xFF, b = (num >>> 16) & 0xFF, c = (num >>> 8) & 0xFF, d2 = num & 0xFF;
+            const ip = `${a}.${b}.${c}.${d2}`;
+            if (/^(127\.|10\.|0\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.)/.test(ip)) return true;
+          }
+          // Check for octal IP (e.g. 0177.0.0.1)
+          if (/^0\d+\./.test(h)) {
+            const parts = h.split('.').map((p: string) => parseInt(p, 8));
+            if (parts.length === 4 && parts.every((p: number) => p >= 0 && p <= 255)) {
+              const ip = parts.join('.');
+              if (/^(127\.|10\.|0\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.)/.test(ip)) return true;
+            }
+          }
+        } catch {}
+        return false;
+      };
       const safeFetch = (input: any, init?: any) => {
         const url = typeof input === 'string' ? input : input?.url || String(input);
         if (_BLOCKED_RE.test(url) || /^file:/i.test(url) || /^ftp:/i.test(url)) {
           return Promise.reject(new Error('Blocked: internal/local URLs are not allowed'));
         }
+        try {
+          const parsed = new URL(url);
+          if (_isBlockedIp(parsed.hostname)) {
+            return Promise.reject(new Error('Blocked: internal/local URLs are not allowed'));
+          }
+        } catch {}
         return nativeFetch(input, init);
       };
 

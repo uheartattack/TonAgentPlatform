@@ -108,8 +108,8 @@ app.get('/api/agents/:userId', async (req, res) => {
   const userId = parseInt(req.params.userId);
   const apiKey = req.headers['x-api-key'] as string;
   
-  // Проверка API ключа (в продакшене)
-  // if (apiKey !== process.env.API_KEY) return res.status(401).json({ error: 'Invalid API key' });
+  // Проверка API ключа
+  if (!process.env.API_KEY || apiKey !== process.env.API_KEY) return res.status(401).json({ error: 'Invalid API key' });
   
   try {
     const result = await getDBTools().getUserAgents(userId);
@@ -122,8 +122,10 @@ app.get('/api/agents/:userId', async (req, res) => {
 // API: Запустить агента
 app.post('/api/agents/:agentId/run', async (req, res) => {
   const agentId = parseInt(req.params.agentId);
+  const apiKey = req.headers['x-api-key'] as string;
+  if (!process.env.API_KEY || apiKey !== process.env.API_KEY) return res.status(401).json({ error: 'Invalid API key' });
   const { userId, context } = req.body;
-  
+
   try {
     const runner = getRunnerAgent();
     const result = await runner.runAgent({ agentId, userId, context });

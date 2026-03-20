@@ -85,7 +85,11 @@ export function detectTriggerFromDescription(description: string): {
     const m = d.match(re);
     if (m) {
       let intervalMs = ms;
-      if (ms === 0 && m[1]) intervalMs = parseInt(m[1]) * (re.source.includes('секунд') ? 1_000 : re.source.includes('час') ? 3_600_000 : 60_000);
+      if (ms === 0 && m[1]) {
+        const num = parseInt(m[1]);
+        if (isNaN(num)) continue;
+        intervalMs = num * (re.source.includes('секунд') ? 1_000 : re.source.includes('час') ? 3_600_000 : 60_000);
+      }
       if (intervalMs > 0) {
         return {
           triggerType: 'scheduled',
@@ -293,8 +297,15 @@ export class CreatorAgent {
   }): Promise<ToolResult<CreateAgentResult>> {
     // Повторно сканируем безопасность
     const securityResult = await this.securityScanner.scanCode(params.code);
-    const securityPassed = securityResult.success && securityResult.data!.passed;
-    const securityScore = securityResult.success ? securityResult.data!.score : 0;
+    const securityPassed = securityResult.success && securityResult.data?.passed;
+    const securityScore = securityResult.success ? securityResult.data?.score ?? 0 : 0;
+
+    if (!securityPassed) {
+      return {
+        success: false,
+        error: `Код не прошёл проверку безопасности (score: ${securityScore}). Создание агента отклонено.`,
+      };
+    }
 
     const dbResult = await this.dbTools.createAgent({
       userId: params.userId,

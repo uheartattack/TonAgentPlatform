@@ -46,10 +46,16 @@ const cache = new Map<string, CacheEntry<any>>();
 
 const CACHE_MAX_SIZE = 500;
 
+// Pending promises map to deduplicate in-flight requests
+const _pending = new Map<string, Promise<any>>();
+
 function cached<T>(key: string, ttlMs: number, fn: () => Promise<T>): Promise<T> {
   const hit = cache.get(key);
   if (hit && hit.expiresAt > Date.now()) return Promise.resolve(hit.data as T);
-  return fn().then(data => {
+  // Deduplicate: if a request for the same key is already in-flight, reuse it
+  const inflight = _pending.get(key);
+  if (inflight) return inflight as Promise<T>;
+  const promise = fn().then(data => {
     // Evict expired entries and enforce size cap
     if (cache.size >= CACHE_MAX_SIZE) {
       const now = Date.now();
@@ -69,7 +75,11 @@ function cached<T>(key: string, ttlMs: number, fn: () => Promise<T>): Promise<T>
     }
     cache.set(key, { data, expiresAt: Date.now() + ttlMs });
     return data;
+  }).finally(() => {
+    _pending.delete(key);
   });
+  _pending.set(key, promise);
+  return promise;
 }
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -202,7 +212,7 @@ async function gaDevFetch(path: string, opts: { method?: string; body?: any; que
   if (opts.query) Object.entries(opts.query).forEach(([k, v]) => url.searchParams.set(k, v));
   const res = await fetch(url.toString(), {
     method: opts.method || 'GET',
-    headers: { 'X-API-Key': GA_KEY, 'Content-Type': 'application/json' },
+    headers: { 'x-api-token': GA_DEV_KEY, 'Content-Type': 'application/json' },
     body: opts.body ? JSON.stringify(opts.body) : undefined,
     signal: AbortSignal.timeout(15000),
   });

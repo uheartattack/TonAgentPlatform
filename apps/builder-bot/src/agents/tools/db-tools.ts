@@ -3,6 +3,7 @@ import { eq, and, desc } from 'drizzle-orm';
 import { Pool } from 'pg';
 import { agents, type Agent, type NewAgent } from '../../db/agents';
 import { getMemoryManager } from '../../db/memory';
+import { pruneAgentMemory } from './execution-tools';
 
 // Результаты операций
 export interface ToolResult<T = any> {
@@ -224,6 +225,9 @@ export class DBTools {
           eq(agents.id, agentId),
           eq(agents.userId, userId)
         ));
+
+      // Clean up in-memory state for the deleted agent
+      pruneAgentMemory(agentId);
 
       // Логируем в память
       await getMemoryManager().addMessage(

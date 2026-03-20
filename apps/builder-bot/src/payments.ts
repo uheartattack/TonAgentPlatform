@@ -30,10 +30,13 @@ class TTLMap<K, V> {
     for (const [k, v] of this.map) {
       if (now > v.expiresAt) this.map.delete(k);
     }
-    // If still over limit, remove oldest
-    if (this.map.size >= this.maxSize) {
-      const first = this.map.keys().next().value;
-      if (first !== undefined) this.map.delete(first);
+    // If still over limit, remove oldest entries down to 80% of maxSize
+    const target = Math.floor(this.maxSize * 0.8);
+    const iter = this.map.keys();
+    while (this.map.size > target) {
+      const next = iter.next();
+      if (next.done) break;
+      this.map.delete(next.value);
     }
   }
 }
@@ -155,7 +158,7 @@ export interface PendingPayment {
 // ── In-memory хранилища with TTL eviction ───────────────────
 const subscriptions = new TTLMap<number, UserSubscription>(60 * 60 * 1000, 10000);           // 1 hour TTL
 const pendingPayments = new TTLMap<number, PendingPayment>(30 * 60 * 1000, 5000);            // 30 min TTL
-const generationTracker = new TTLMap<number, { month: string; count: number }>(24 * 60 * 60 * 1000, 10000); // 24h TTL
+const generationTracker = new TTLMap<number, { month: string; count: number }>(31 * 24 * 60 * 60 * 1000, 10000); // 31 days TTL (monthly limit)
 
 // Защита от double-spend: использованные tx хеши (TTL 24h)
 const usedTxHashes = new TTLMap<string, true>(24 * 60 * 60 * 1000, 50000);
@@ -558,11 +561,15 @@ export async function verifyTopupTransaction(
           const amount = parseInt(tf.amount || '0');
           const msg: string = (tf.comment || '').trim();
 
+          const txHash = event.event_id || String(event.lt);
+          if (txHash && usedTxHashes.has(txHash)) continue;
+
           if (msg === expectedComment && amount >= 100_000_000) {  // минимум 0.1 TON
+            if (txHash) usedTxHashes.set(txHash, true);
             return {
               found: true,
               amountTon: amount / 1e9,
-              txHash: event.event_id || String(event.lt),
+              txHash,
             };
           }
         }
