@@ -1219,9 +1219,10 @@ export class ExecutionTools {
           // Block constructor traversal (main vm escape vector)
           Object.defineProperty(Object.prototype, 'constructor', { configurable: false, writable: false });
           // Freeze core prototypes
-          [Object, Array, Function, String, Number, Boolean, RegExp, Error, Promise, Map, Set].forEach(C => {
+          [Object, Array, Function, String, Number, Boolean, RegExp, Promise, Map, Set].forEach(C => {
             if (C.prototype) Object.freeze(C.prototype);
           });
+          Object.defineProperty(Error.prototype, 'constructor', { configurable: false, writable: false });
           // Block access to process/globalThis via constructor chain
           (function() {
             try { delete this.constructor; } catch {}

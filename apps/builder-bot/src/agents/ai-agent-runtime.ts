@@ -7146,7 +7146,7 @@ export async function executeTool(
           codeGeneration: { strings: false, wasm: false },
         });
         // Freeze prototypes to block constructor-chain escape
-        try { nodeVm.runInContext(`[Object,Array,Function,String,Number,Boolean,RegExp,Error,Promise,Map,Set].forEach(C=>{if(C.prototype)Object.freeze(C.prototype)})`, pluginCtx); } catch {}
+        try { nodeVm.runInContext(`[Object,Array,Function,String,Number,Boolean,RegExp,Promise,Map,Set].forEach(C=>{if(C.prototype)Object.freeze(C.prototype)});Object.defineProperty(Error.prototype,'constructor',{configurable:false,writable:false})`, pluginCtx); } catch {}
         const pluginScript = new nodeVm.Script(`(function(){${plugin.code}})()`, { filename: 'plugin.js' });
         const result = pluginScript.runInContext(pluginCtx, { timeout: 10000, breakOnSigint: true });
         await getCustomPluginsRepository().incrementExecCount(params.userId, pluginName);
@@ -8303,7 +8303,7 @@ async function executeFlowCode(execCode: string, params: AIAgentTickParams): Pro
       name: 'flow-sandbox',
       codeGeneration: { strings: false, wasm: false },
     });
-    try { nodeVm.runInContext(`[Object,Array,Function,String,Number,Boolean,RegExp,Error,Promise,Map,Set].forEach(C=>{if(C.prototype)Object.freeze(C.prototype)})`, flowCtx); } catch {}
+    try { nodeVm.runInContext(`[Object,Array,Function,String,Number,Boolean,RegExp,Promise,Map,Set].forEach(C=>{if(C.prototype)Object.freeze(C.prototype)});Object.defineProperty(Error.prototype,'constructor',{configurable:false,writable:false})`, flowCtx); } catch {}
     const wrappedCode = `(async () => { ${execCode} })()`;
     const flowScript = new nodeVm.Script(wrappedCode, { filename: 'flow.js' });
     await flowScript.runInContext(flowCtx, { timeout: 30000, breakOnSigint: true });
