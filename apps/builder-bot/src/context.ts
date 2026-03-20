@@ -25,11 +25,12 @@ export interface UserInfo {
   lastActivityAt: Date;
 }
 
+// Parse OWNER_ID once at module load instead of on every call
+const OWNER_ID = parseInt(process.env.OWNER_ID || '0', 10);
+
 // Проверка прав доступа
 export function checkPermission(userId: number, requiredRole: UserRole): boolean {
-  const ownerId = parseInt(process.env.OWNER_ID || '0', 10);
-
-  if (userId === ownerId) return true;
+  if (userId === OWNER_ID) return true;
   if (requiredRole === 'user') return true;
 
   // Здесь можно добавить проверку ролей из БД
@@ -38,9 +39,7 @@ export function checkPermission(userId: number, requiredRole: UserRole): boolean
 
 // Получение роли пользователя
 export function getUserRole(userId: number): UserRole {
-  const ownerId = parseInt(process.env.OWNER_ID || '0', 10);
-
-  if (userId === ownerId) return 'owner';
+  if (userId === OWNER_ID) return 'owner';
 
   // Здесь можно добавить проверку админов из БД
   return 'user';

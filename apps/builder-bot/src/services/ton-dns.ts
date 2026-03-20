@@ -3,22 +3,26 @@ import { Pool } from 'pg';
 let _pool: Pool | null = null;
 const TONAPI_BASE = 'https://tonapi.io/v2';
 
-export function initTonDNS(pool: Pool) {
+export async function initTonDNS(pool: Pool) {
   _pool = pool;
-  pool.query(`
-    CREATE TABLE IF NOT EXISTS builder_bot.agent_domains (
-      id SERIAL PRIMARY KEY,
-      agent_id INTEGER NOT NULL UNIQUE,
-      user_id INTEGER NOT NULL,
-      domain TEXT NOT NULL UNIQUE,
-      resolved_address TEXT,
-      registered_at TIMESTAMPTZ DEFAULT NOW(),
-      expires_at TIMESTAMPTZ,
-      status TEXT DEFAULT 'claimed'
-    );
-    CREATE INDEX IF NOT EXISTS idx_agent_domains_domain ON builder_bot.agent_domains(domain);
-    CREATE INDEX IF NOT EXISTS idx_agent_domains_user ON builder_bot.agent_domains(user_id);
-  `).catch(e => console.warn('[TonDNS] Migration error:', e.message));
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.agent_domains (
+        id SERIAL PRIMARY KEY,
+        agent_id INTEGER NOT NULL UNIQUE,
+        user_id INTEGER NOT NULL,
+        domain TEXT NOT NULL UNIQUE,
+        resolved_address TEXT,
+        registered_at TIMESTAMPTZ DEFAULT NOW(),
+        expires_at TIMESTAMPTZ,
+        status TEXT DEFAULT 'claimed'
+      );
+      CREATE INDEX IF NOT EXISTS idx_agent_domains_domain ON builder_bot.agent_domains(domain);
+      CREATE INDEX IF NOT EXISTS idx_agent_domains_user ON builder_bot.agent_domains(user_id);
+    `);
+  } catch (e: any) {
+    console.warn('[TonDNS] Migration error:', e.message);
+  }
 }
 
 /** Resolve a .ton domain to wallet address via TonAPI */

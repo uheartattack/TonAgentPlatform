@@ -93,7 +93,8 @@ export async function getWalletBalance(address: string): Promise<number> {
     }
     // fallback TonCenter
     const res = await fetch(
-      `${TONCENTER_API}/getAddressBalance?address=${encodeURIComponent(address)}&api_key=${TONCENTER_KEY}`
+      `${TONCENTER_API}/getAddressBalance?address=${encodeURIComponent(address)}`,
+      { headers: TONCENTER_KEY ? { 'X-API-Key': TONCENTER_KEY } : {} }
     );
     const data = await res.json() as any;
     if (data.ok && data.result) return parseInt(data.result) / 1e9;
@@ -116,7 +117,8 @@ async function getSeqno(address: string): Promise<number> {
     }
     // fallback TonCenter v2
     const res = await fetch(
-      `${TONCENTER_API}/getWalletInformation?address=${encodeURIComponent(address)}&api_key=${TONCENTER_KEY}`
+      `${TONCENTER_API}/getWalletInformation?address=${encodeURIComponent(address)}`,
+      { headers: TONCENTER_KEY ? { 'X-API-Key': TONCENTER_KEY } : {} }
     );
     const data = await res.json() as any;
     return data?.result?.seqno || 0;
@@ -147,9 +149,9 @@ async function sendBoc(boc: string): Promise<{ ok: boolean; hash?: string; error
       console.warn('[TON] TONAPI sendBoc failed:', res.status, err.slice(0, 200));
     }
     // fallback TonCenter
-    const res = await fetch(`${TONCENTER_API}/sendBoc?api_key=${TONCENTER_KEY}`, {
+    const res = await fetch(`${TONCENTER_API}/sendBoc`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(TONCENTER_KEY ? { 'X-API-Key': TONCENTER_KEY } : {}) },
       body: JSON.stringify({ boc }),
     });
     const data = await res.json() as any;
@@ -263,7 +265,7 @@ export async function sendAgentTransaction(
   const wallet = WalletContractV4.create({ workchain: 0, publicKey: agentWallet.publicKey });
   const seqno = await getSeqno(agentWallet.address);
 
-  const transfer = wallet.createTransfer({
+  const transferBody = wallet.createTransfer({
     seqno,
     secretKey: agentWallet.secretKey,
     messages: [
@@ -276,7 +278,12 @@ export async function sendAgentTransaction(
     ],
   });
 
-  const boc = transfer.toBoc().toString('base64');
+  // Wrap body in external message cell — required for broadcasting
+  const walletAddr = Address.parse(agentWallet.address);
+  const extCell = beginCell()
+    .store(storeMessage(external({ to: walletAddr, body: transferBody })))
+    .endCell();
+  const boc = extCell.toBoc().toString('base64');
   return sendBoc(boc);
 }
 
@@ -335,10 +342,6 @@ export function createUserSession(userId: string, manifestUrl: string): TonConne
     removeItem: async (key: string) => { sessions.delete(`${userId}:${key}`); },
   };
   return new TonConnect({ manifestUrl, storage });
-}
-
-export function getUserSession(userId: string): any {
-  return sessions.get(`connector:${userId}`)?.value || null;
 }
 
 export async function generateConnectionQR(connector: TonConnect): Promise<string> {

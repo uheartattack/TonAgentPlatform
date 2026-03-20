@@ -497,6 +497,9 @@ export function getRunnerAgent(): RunnerAgent {
 // ── Восстановление активных агентов после перезапуска ─────────────────────
 // Вызывается из index.ts после старта бота.
 // Читает из БД все агенты с isActive=true и повторно активирует их schedulers.
+// TODO: Add a periodic health-check mechanism (e.g. every 5 min) to detect agents
+// that crashed silently (scheduler stopped but DB still shows isActive=true) and
+// either restart them or mark them as failed with user notification.
 export async function restoreActiveAgents(): Promise<void> {
   try {
     const { getAgentsRepository } = await import('../../db/agents');

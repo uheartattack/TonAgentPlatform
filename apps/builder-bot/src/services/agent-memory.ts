@@ -97,12 +97,17 @@ export async function appendDailyLog(agentId: number, content: string): Promise<
      DO UPDATE SET content = builder_bot.agent_daily_logs.content || $2`,
     [agentId, entry]
   ).catch((err) => {
-    // Fallback if unique index doesn't exist yet — just insert
-    console.warn('[AgentMemory] appendDailyLog primary insert failed:', err?.message);
-    pool.query(
-      `INSERT INTO builder_bot.agent_daily_logs (agent_id, content) VALUES ($1, $2)`,
-      [agentId, entry]
-    ).catch((err2) => { console.warn('[AgentMemory] appendDailyLog fallback insert failed:', err2?.message); });
+    // Only fallback if it's a unique constraint / relation-not-found error (23505 / 42P01)
+    const code = err?.code;
+    if (code === '23505' || code === '42P01' || code === '42P07') {
+      console.warn('[AgentMemory] appendDailyLog primary insert failed (constraint/relation):', err?.message);
+      pool.query(
+        `INSERT INTO builder_bot.agent_daily_logs (agent_id, content) VALUES ($1, $2)`,
+        [agentId, entry]
+      ).catch((err2) => { console.warn('[AgentMemory] appendDailyLog fallback insert failed:', err2?.message); });
+    } else {
+      console.error('[AgentMemory] appendDailyLog unexpected error:', err?.message);
+    }
   });
 }
 

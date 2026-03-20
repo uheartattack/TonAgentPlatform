@@ -92,6 +92,8 @@ function pool(): Pool {
 
 const MAX_KEYS_PER_NS = 100;
 const MAX_CREWS = 500;
+const MAX_NAMESPACES_PER_CREW = 50;
+const MAX_VALUE_SIZE = 10 * 1024; // 10 KB
 
 /** crewId → namespace → key → value */
 const sharedMem = new Map<string, Map<string, Map<string, any>>>();
@@ -106,7 +108,13 @@ function nsMap(crewId: string, namespace: string): Map<string, any> {
     sharedMem.set(crewId, new Map());
   }
   const crew = sharedMem.get(crewId)!;
-  if (!crew.has(namespace)) crew.set(namespace, new Map());
+  if (!crew.has(namespace)) {
+    if (crew.size >= MAX_NAMESPACES_PER_CREW) {
+      const oldest = crew.keys().next().value;
+      if (oldest !== undefined) crew.delete(oldest);
+    }
+    crew.set(namespace, new Map());
+  }
   return crew.get(namespace)!;
 }
 
@@ -115,6 +123,11 @@ export function getSharedMemory(crewId: string, namespace: string, key: string):
 }
 
 export function setSharedMemory(crewId: string, namespace: string, key: string, value: any): void {
+  // Enforce value size limit
+  const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+  if (serialized && serialized.length > MAX_VALUE_SIZE) {
+    throw new Error(`Shared memory value too large (${serialized.length} bytes, max ${MAX_VALUE_SIZE})`);
+  }
   const ns = nsMap(crewId, namespace);
   if (!ns.has(key) && ns.size >= MAX_KEYS_PER_NS) {
     // Evict oldest entry (first inserted)

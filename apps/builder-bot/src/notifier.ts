@@ -21,7 +21,15 @@ function isBlocked(userId: number): boolean {
   return true;
 }
 
+const BLOCKED_USERS_MAX = 5000;
+
 function markBlocked(userId: number): void {
+  // Cap blocked users set to prevent unbounded growth
+  if (_blockedUsers.size >= BLOCKED_USERS_MAX && !_blockedUsers.has(userId)) {
+    // Evict the oldest entry (first in insertion order)
+    const oldest = _blockedUsers.values().next().value;
+    if (oldest !== undefined) { _blockedUsers.delete(oldest); _blockExpiry.delete(oldest); }
+  }
   _blockedUsers.add(userId);
   _blockExpiry.set(userId, Date.now() + BLOCK_TTL);
 }
