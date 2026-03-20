@@ -196,18 +196,22 @@ export async function installPlugin(userId: number, listingId: number): Promise<
 
   // If paid, process payment
   if (listing.priceStars > 0) {
-    // Check user balance
-    const profileRes = await _pool.query('SELECT balance FROM builder_bot.profiles WHERE user_id=$1', [userId]);
-    const balance = parseFloat(profileRes.rows[0]?.balance) || 0;
-
     // Convert stars to TON equivalent (simplified: 1 star ~ 0.01 TON)
     const costTon = listing.priceStars * 0.01;
-    if (balance < costTon) return { ok: false, error: `Insufficient balance. Need ${costTon} TON, have ${balance} TON` };
 
-    // Transactional payment
+    // Transactional payment — balance check inside transaction to avoid race
     const client = await _pool.connect();
     try {
       await client.query('BEGIN');
+
+      // Lock and check user balance inside the transaction
+      const profileRes = await client.query('SELECT balance FROM builder_bot.profiles WHERE user_id=$1 FOR UPDATE', [userId]);
+      const balance = parseFloat(profileRes.rows[0]?.balance) || 0;
+      if (balance < costTon) {
+        await client.query('ROLLBACK');
+        client.release();
+        return { ok: false, error: `Insufficient balance. Need ${costTon} TON, have ${balance} TON` };
+      }
 
       // Deduct from buyer
       await client.query(

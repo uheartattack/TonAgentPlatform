@@ -89,7 +89,7 @@ export class DBTools {
   async getAgent(agentId: number, userId?: number): Promise<ToolResult<Agent>> {
     try {
       const conditions = [eq(agents.id, agentId)];
-      if (userId) {
+      if (userId != null) {
         conditions.push(eq(agents.userId, userId));
       }
 
@@ -159,36 +159,31 @@ export class DBTools {
         return existing;
       }
 
-      // Если меняем имя - проверяем уникальность
-      if (updates.name && updates.name !== existing.data!.name) {
-        const duplicate = await this.db
-          .select()
-          .from(agents)
+      // Name uniqueness: attempt the update and catch unique constraint violations
+      // to avoid TOCTOU race between the check and the update.
+      let updated: typeof existing.data;
+      try {
+        [updated] = await this.db
+          .update(agents)
+          .set({
+            ...updates,
+            updatedAt: new Date(),
+          })
           .where(and(
-            eq(agents.userId, userId),
-            eq(agents.name, updates.name)
+            eq(agents.id, agentId),
+            eq(agents.userId, userId)
           ))
-          .limit(1);
-
-        if (duplicate.length > 0) {
+          .returning();
+      } catch (e: any) {
+        // Handle unique constraint violation on (user_id, name)
+        if (e.code === '23505' || (e.message && e.message.includes('unique'))) {
           return {
             success: false,
             error: `Агент с именем "${updates.name}" уже существует`,
           };
         }
+        throw e;
       }
-
-      const [updated] = await this.db
-        .update(agents)
-        .set({
-          ...updates,
-          updatedAt: new Date(),
-        })
-        .where(and(
-          eq(agents.id, agentId),
-          eq(agents.userId, userId)
-        ))
-        .returning();
 
       // Логируем в память
       await getMemoryManager().addMessage(

@@ -577,7 +577,7 @@ export function startApiServer() {
   // Load persistent sessions from DB
   loadSessionsFromDB().catch(() => {});
   // Cleanup expired sessions every hour
-  setInterval(cleanupExpiredSessions, 3600_000);
+  setInterval(cleanupExpiredSessions, 3600_000).unref();
 
   const app = express();
   app.use(express.json({ limit: '1mb' })); // Limit request body size

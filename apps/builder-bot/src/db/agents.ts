@@ -34,7 +34,7 @@ export class AgentsRepository {
   // Получить агента по ID
   async getById(agentId: number, userId?: number): Promise<Agent | null> {
     const conditions = [eq(agents.id, agentId)];
-    if (userId) {
+    if (userId != null) {
       conditions.push(eq(agents.userId, userId));
     }
 
@@ -147,36 +147,53 @@ export class AgentsRepository {
     return this.update(agentId, userId, { isActive: !agent.isActive });
   }
 
-  // Поиск по имени/описанию
+  // Поиск по имени/описанию (SQL ILIKE — не тянет все записи в память)
   async search(userId: number, query: string): Promise<Agent[]> {
-    const userAgents = await this.getByUserId(userId);
-    const lowerQuery = query.toLowerCase();
-
-    return userAgents.filter(
-      (agent) =>
-        agent.name.toLowerCase().includes(lowerQuery) ||
-        agent.description.toLowerCase().includes(lowerQuery)
-    );
+    const pattern = `%${query}%`;
+    return this.db
+      .select()
+      .from(agents)
+      .where(and(
+        eq(agents.userId, userId),
+        sql`(${agents.name} ILIKE ${pattern} OR ${agents.description} ILIKE ${pattern})`
+      ))
+      .orderBy(desc(agents.updatedAt));
   }
 
-  // Получить статистику
+  // Получить статистику (SQL COUNT — не тянет все записи в память)
   async getStats(userId: number): Promise<{
     total: number;
     active: number;
     inactive: number;
     byTrigger: Record<string, number>;
   }> {
-    const userAgents = await this.getByUserId(userId);
+    const [row] = await this.db
+      .select({
+        total: sql<number>`count(*)::int`,
+        active: sql<number>`count(*) filter (where is_active)::int`,
+        inactive: sql<number>`count(*) filter (where not is_active)::int`,
+      })
+      .from(agents)
+      .where(eq(agents.userId, userId));
+
+    const triggerRows = await this.db
+      .select({
+        triggerType: agents.triggerType,
+        cnt: sql<number>`count(*)::int`,
+      })
+      .from(agents)
+      .where(eq(agents.userId, userId))
+      .groupBy(agents.triggerType);
 
     const byTrigger: Record<string, number> = {};
-    userAgents.forEach((agent) => {
-      byTrigger[agent.triggerType] = (byTrigger[agent.triggerType] || 0) + 1;
-    });
+    for (const r of triggerRows) {
+      byTrigger[r.triggerType] = r.cnt;
+    }
 
     return {
-      total: userAgents.length,
-      active: userAgents.filter((a) => a.isActive).length,
-      inactive: userAgents.filter((a) => !a.isActive).length,
+      total: row?.total ?? 0,
+      active: row?.active ?? 0,
+      inactive: row?.inactive ?? 0,
       byTrigger,
     };
   }

@@ -1010,11 +1010,12 @@ export class GiftAssetRealtimeStream {
   private connect(): void {
     if (!this.running) return;
 
-    const url = 'wss://giftasset.gifts/api/v1/gifts/ws/sales_updates?api_key=' + encodeURIComponent(this.apiKey);
+    const url = 'wss://giftasset.gifts/api/v1/gifts/ws/sales_updates';
 
     try {
       this.ws = new WebSocket(url, {
         headers: {
+          'x-api-token': this.apiKey,
           'User-Agent': 'agent',
           'Origin': 'https://giftasset.gifts',
         },
