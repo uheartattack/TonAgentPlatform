@@ -395,6 +395,60 @@
 - **Описание**: При 30s timeout socket.destroy() вызывается, но data listener не удаляется. После TLS upgrade старый socket listener не удалён.
 - **Fix**: `socket.removeAllListeners()` before destroy
 
+### H18. ai-agent-runtime.ts:6995 — deadlock detection только 1 level deep
+- **Статус**: 🔧 TODO
+- **Описание**: ask_agent проверяет A→B→A циклы, но не A→B→C→A. 3+ агента в цикле зависнут навсегда.
+- **Fix**: DFS cycle detection вместо 1-level check
+
+### H19. ai-agent-runtime.ts:4724 — silent failure в address conversion
+- **Статус**: 🔧 TODO
+- **Описание**: `catch { return addr; }` — при ошибке конвертации EQ→raw возвращается невалидный адрес. Downstream tools получают мусор.
+- **Fix**: Return `{ error: 'Invalid address' }` или логировать warning
+
+### H20. ai-agent-runtime.ts:560 — SSRF bypass через IPv6 full form
+- **Статус**: 🔧 TODO
+- **Описание**: `isBlockedUrl()` блокирует `::1` но не `0:0:0:0:0:0:0:1` (полная IPv6 форма localhost)
+- **Fix**: Нормализовать IPv6 перед проверкой
+
+---
+
+## 🟡 MEDIUM (ai-agent-runtime.ts audit — additional)
+
+### M48. ai-agent-runtime.ts:9222 — infinite loop risk в context truncation
+- **Статус**: 🔧 TODO
+- **Описание**: `while (totalChars > MAX_CONTEXT_CHARS && messages.length > 7)` — если system prompt сам превышает лимит, цикл бесконечный (messages.length остаётся > 7).
+- **Fix**: Добавить counter limit: `for (let i = 0; i < 100 && ...; i++)`
+
+### M49. ai-agent-runtime.ts:543 — `_webRequestCounts` Map не чистится
+- **Статус**: 🔧 TODO
+- **Описание**: Rate limiter для web requests растёт бесконечно. Не чистится при deactivate.
+- **Fix**: Cleanup в deactivate() + periodic cleanup
+
+### M50. ai-agent-runtime.ts:753 — race condition в addMessageToAIAgent
+- **Статус**: 🔧 TODO
+- **Описание**: Между `.has()` и `.push()` агент может быть деактивирован — сообщение теряется
+- **Fix**: Atomic check+push: `if (!map.has(id)) map.set(id, []); map.get(id)!.push(msg);`
+
+### M51. ai-agent-runtime.ts:9537 — tool batch ignores stopFlag
+- **Статус**: 🔧 TODO
+- **Описание**: `Promise.all([...batch])` не проверяет stop signal. Если агент запросил остановку, tools 2-N всё равно выполняются.
+- **Fix**: Check `params.stopFlag` в каждом concurrent tool
+
+### M52. ai-agent-runtime.ts:5695 — regex exec loop без lastIndex reset
+- **Статус**: 🔧 TODO
+- **Описание**: Stateful regex `.exec()` не сбрасывает `lastIndex`. При повторном использовании начинает с предыдущей позиции.
+- **Fix**: `regex.lastIndex = 0;` перед loop
+
+### M53. ai-agent-runtime.ts:4316 — tool call lookup без null check
+- **Статус**: 🔧 TODO
+- **Описание**: `m.tool_calls.find(...)` может вернуть `undefined`, затем сразу обращение к свойствам
+- **Fix**: `const tc = m.tool_calls?.find(...); if (!tc) continue;`
+
+### M54. ai-agent-runtime.ts:9631 — chatId может быть undefined
+- **Статус**: 🔧 TODO
+- **Описание**: `params.config._chatId` используется без null check. Telegram операции молча фейлятся.
+- **Fix**: Guard: `if (!chatId) { skip tg ops }`
+
 ---
 
 ## 🔵 LOW
@@ -418,6 +472,16 @@
 - **Статус**: ⏳ LOW PRIORITY
 - **Описание**: Динамический require модулей с silent catch
 - **Fix**: `console.error('[Module] Failed:', e.stack)`
+
+### L5. ai-agent-runtime.ts:9750 — corrupted history silently discarded
+- **Статус**: ⏳ LOW PRIORITY
+- **Описание**: При ошибке парсинга истории catch логирует warning но не сохраняет fallback. Следующий tick теряет историю навсегда.
+- **Fix**: Save rollback history before parse; restore on failure
+
+### L6. ai-agent-runtime.ts:4166 — IDF zero-division edge case
+- **Статус**: ⏳ LOW PRIORITY
+- **Описание**: Если документ в ВСЕХ docs, `log(docsLen / df) = 0`. Общие слова получают нулевой вес.
+- **Fix**: Laplace smoothing: `log((docsLen + 1) / (df + 1))`
 
 ---
 
@@ -449,15 +513,15 @@
 ---
 
 ## 📊 STATS
-- **Найдено**: 83 бага
+- **Найдено**: 95 багов
 - **Зафикшено**: 0 (из этого списка)
 - **Критических**: 10
-- **High**: 17
-- **Medium**: 47
-- **Low**: 4
+- **High**: 20
+- **Medium**: 54
+- **Low**: 6
 - **Аудит service files**: ✅ (14 файлов, 28 багов)
 - **Аудит core files**: ✅ (13 файлов, 31 баг)
 - **Аудит bot.ts**: ✅ (9544 строки, 13 багов)
-- **Аудит ai-agent-runtime.ts**: ✅ (10069 строк, 15 багов)
+- **Аудит ai-agent-runtime.ts**: ✅ (10069 строк, 27 багов — двойной аудит)
 - **Последний аудит**: 2026-03-20
-- **Все файлы проверены** ✅
+- **Все файлы проверены** ✅ (двойная проверка runtime)
