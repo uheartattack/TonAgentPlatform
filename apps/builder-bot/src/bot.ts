@@ -2135,6 +2135,113 @@ bot.command('reject_action', async (ctx) => {
   }
 });
 
+// ── /crew — список команд агентов ──
+bot.command('crew', async (ctx) => {
+  try {
+    const { listCrews } = require('./services/crew-system');
+    const crews = await listCrews(ctx.from.id);
+    if (!crews.length) {
+      return safeReply(ctx, '🤝 У вас пока нет команд агентов.\n\nСоздайте команду через AI: опишите задачу для нескольких агентов.');
+    }
+    let text = '🤝 <b>Ваши команды агентов:</b>\n\n';
+    for (const c of crews) {
+      const status = c.isActive ? '🟢' : '⚪';
+      text += `${status} <b>${escHtml(c.name)}</b> (ID: ${c.id})\n`;
+      text += `   📋 ${escHtml(c.description?.slice(0, 60) || 'Без описания')}\n`;
+      text += `   🔄 ${c.flowType} | 👥 ${c.agents.length} агентов\n\n`;
+    }
+    await safeReply(ctx, text, { parse_mode: 'HTML' });
+  } catch (e: any) {
+    await safeReply(ctx, '❌ Ошибка: ' + e.message);
+  }
+});
+
+// ── /leaderboard — таблица лидеров ──
+bot.command('leaderboard', async (ctx) => {
+  try {
+    const { getLeaderboard } = require('./services/agent-reputation');
+    const leaders = await getLeaderboard('rating', 'alltime', 10);
+    if (!leaders.length) return safeReply(ctx, '🏆 Таблица лидеров пока пуста.');
+
+    let text = '🏆 <b>Таблица лидеров</b>\n\n';
+    const medals = ['🥇', '🥈', '🥉'];
+    for (const entry of leaders) {
+      const medal = medals[entry.rank - 1] || `${entry.rank}.`;
+      text += `${medal} <b>${escHtml(entry.agentName)}</b>\n`;
+      text += `   Автор: ${escHtml(entry.creatorName)} | Рейтинг: ${entry.score}/100\n\n`;
+    }
+    await safeReply(ctx, text, { parse_mode: 'HTML' });
+  } catch (e: any) {
+    await safeReply(ctx, '❌ ' + e.message);
+  }
+});
+
+// ── /kya — Know Your Agent ──
+bot.command('kya', async (ctx) => {
+  try {
+    const args = ctx.message.text.split(' ');
+    const agentId = parseInt(args[1]);
+    if (!agentId) return safeReply(ctx, '📋 Использование: /kya <agent_id>');
+
+    const { getKYA } = require('./services/agent-reputation');
+    const kya = await getKYA(agentId);
+    if (!kya) return safeReply(ctx, '❌ Агент не найден');
+
+    const tierEmoji: Record<string, string> = { unverified: '⬜', bronze: '🟫', silver: '⬛', gold: '🟨', platinum: '💎' };
+
+    let text = `📋 <b>Know Your Agent: ${escHtml(kya.agentName)}</b>\n\n`;
+    text += `${tierEmoji[kya.trustTier] || '⬜'} Доверие: <b>${kya.trustScore}/100</b> (${kya.trustTier})\n`;
+    text += `👤 Создатель: ${kya.creatorUsername ? '@' + escHtml(kya.creatorUsername) : 'ID ' + kya.creatorTelegramId}\n`;
+    text += `🔐 Хеш кода: <code>${kya.codeHash}</code>\n\n`;
+
+    text += '<b>Возможности:</b>\n';
+    if (kya.canSendTon) text += '💸 Отправка TON\n';
+    if (kya.canAccessWallet) text += '👛 Доступ к кошельку\n';
+    if (kya.canReadMessages) text += '📖 Чтение сообщений\n';
+    if (kya.canSendMessages) text += '✉️ Отправка сообщений\n';
+    if (kya.canModerateGroups) text += '🛡 Модерация групп\n';
+    if ((kya as any).canCallExternalAPIs) text += '🌐 Внешние API\n';
+
+    if (kya.warnings.length) {
+      text += '\n<b>Предупреждения:</b>\n';
+      for (const w of kya.warnings) text += `${w}\n`;
+    }
+
+    await safeReply(ctx, text, { parse_mode: 'HTML' });
+  } catch (e: any) {
+    await safeReply(ctx, '❌ ' + e.message);
+  }
+});
+
+// ── /gdp — Agent Economy Dashboard ──
+bot.command('gdp', async (ctx) => {
+  try {
+    const { getPlatformGDP } = require('./services/agent-reputation');
+    const gdp = await getPlatformGDP();
+    if (!gdp) return safeReply(ctx, '📊 Данные пока недоступны');
+
+    let text = '📊 <b>Agent Economy Dashboard</b>\n\n';
+    text += `🤖 Агентов: <b>${gdp.totalAgents}</b> (активных: ${gdp.activeAgents})\n`;
+    text += `👥 Создателей: <b>${gdp.totalCreators}</b>\n`;
+    text += `⚡ Запусков за 24ч: <b>${gdp.totalExecutions24h}</b>\n`;
+    text += `📈 Запусков за 7д: <b>${gdp.totalExecutions7d}</b>\n`;
+    text += `📊 Всего запусков: <b>${gdp.totalExecutionsAllTime}</b>\n`;
+    text += `💎 Объём TON: <b>${gdp.totalTonVolume.toFixed(2)}</b>\n`;
+    text += `📉 Рост за 7д: <b>${gdp.growthRate7d > 0 ? '+' : ''}${gdp.growthRate7d}%</b>\n`;
+
+    if (gdp.topAgentsByExecutions?.length) {
+      text += '\n<b>Топ агенты:</b>\n';
+      for (const a of gdp.topAgentsByExecutions.slice(0, 5)) {
+        text += `  • ${escHtml(a.name)} — ${a.executions} запусков\n`;
+      }
+    }
+
+    await safeReply(ctx, text, { parse_mode: 'HTML' });
+  } catch (e: any) {
+    await safeReply(ctx, '❌ ' + e.message);
+  }
+});
+
 async function showProfile(ctx: Context, userId: number) {
   const lang = getUserLang(userId);
   const profile = await getUserProfile(userId);
@@ -5982,6 +6089,10 @@ bot.on(message('text'), async (ctx) => {
   const userId = ctx.from.id;
   const trimmed = text.trim();
 
+  // Check if this is a confirmation reply for HitL
+  const { handleUserConfirmation } = require('./agents/ai-agent-runtime');
+  if (handleUserConfirmation(ctx.from.id, ctx.message.text)) return; // consumed by pending confirmation
+
   // ── Сохраняем язык пользователя (авто-определение) ───────
   if (!userLanguages.has(userId)) {
     userLanguages.set(userId, detectLang(trimmed));
@@ -8999,6 +9110,8 @@ export function getBotInstance(): Telegraf | null {
 
 export function startBot() {
   initNotifier(bot);
+  try { const { initCrewSystem } = require('./services/crew-system'); initCrewSystem(dbPool); } catch (e: any) { console.warn('CrewSystem init failed:', e.message); }
+  try { const { initReputation } = require('./services/agent-reputation'); initReputation(dbPool); } catch (e: any) { console.warn('Reputation init failed:', e.message); }
 
   console.log('🤖 Starting TON Agent Platform Bot...');
   console.log(`🏪 Loaded ${allAgentTemplates.length} agent templates`);
