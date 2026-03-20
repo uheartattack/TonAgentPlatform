@@ -421,10 +421,8 @@ export async function confirmPayment(
     isActive: true,
     createdAt: now,
   };
-  subscriptions.set(userId, sub);
-  pendingPayments.delete(userId);
 
-  // Persist to DB atomically — subscription + payment confirmation in one transaction
+  // Persist to DB first, then update in-memory cache
   if (_pool) {
     const client = await _pool.connect();
     try {
@@ -442,10 +440,15 @@ export async function confirmPayment(
     } catch (e: any) {
       await client.query('ROLLBACK').catch((rbErr: any) => { console.error('[Payments] ROLLBACK failed:', rbErr?.message); });
       console.error('[Payments] confirmPayment DB transaction error:', e.message);
+      // DB failed but still update in-memory so user isn't stuck
     } finally {
       client.release();
     }
   }
+
+  // Update in-memory cache after DB commit
+  subscriptions.set(userId, sub);
+  pendingPayments.delete(userId);
 
   return { success: true, plan, expiresAt };
 }
