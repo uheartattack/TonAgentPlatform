@@ -1,5 +1,5 @@
 import { drizzle } from 'drizzle-orm/node-postgres';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, sql } from 'drizzle-orm';
 import { Pool } from 'pg';
 import { agents, type Agent, type NewAgent } from '../../db/agents';
 import { getMemoryManager } from '../../db/memory';
@@ -252,15 +252,10 @@ export class DBTools {
   // Активировать/деактивировать агента
   async toggleAgent(agentId: number, userId: number): Promise<ToolResult<Agent>> {
     try {
-      const existing = await this.getAgent(agentId, userId);
-      if (!existing.success) {
-        return existing;
-      }
-
       const [updated] = await this.db
         .update(agents)
         .set({
-          isActive: !existing.data!.isActive,
+          isActive: sql`NOT is_active`,
           updatedAt: new Date(),
         })
         .where(and(
@@ -268,6 +263,13 @@ export class DBTools {
           eq(agents.userId, userId)
         ))
         .returning();
+
+      if (!updated) {
+        return {
+          success: false,
+          error: 'Агент не найден',
+        };
+      }
 
       const status = updated.isActive ? 'активирован' : 'деактивирован';
 

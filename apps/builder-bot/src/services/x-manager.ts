@@ -71,6 +71,7 @@ export class XManager {
   }
 
   async replyToTweet(agentId: number, tweetId: string, text: string): Promise<any> {
+    this.validateId(tweetId, 'tweetId');
     const headers = this.getHeaders(agentId);
     const res = await fetch(`${X_API}/tweets`, {
       method: 'POST', headers,
@@ -81,6 +82,8 @@ export class XManager {
   }
 
   async likeTweet(agentId: number, userId: string, tweetId: string): Promise<any> {
+    this.validateId(userId, 'userId');
+    this.validateId(tweetId, 'tweetId');
     const headers = this.getHeaders(agentId);
     const res = await fetch(`${X_API}/users/${userId}/likes`, {
       method: 'POST', headers,
@@ -91,6 +94,8 @@ export class XManager {
   }
 
   async retweet(agentId: number, userId: string, tweetId: string): Promise<any> {
+    this.validateId(userId, 'userId');
+    this.validateId(tweetId, 'tweetId');
     const headers = this.getHeaders(agentId);
     const res = await fetch(`${X_API}/users/${userId}/retweets`, {
       method: 'POST', headers,
@@ -101,6 +106,7 @@ export class XManager {
   }
 
   async getFollowers(agentId: number, userId: string, maxResults = 50): Promise<any> {
+    this.validateId(userId, 'userId');
     const headers = this.getHeaders(agentId);
     const res = await fetch(`${X_API}/users/${userId}/followers?max_results=${maxResults}&user.fields=public_metrics`, { headers });
     if (!res.ok) throw new Error(`X API ${res.status}`);

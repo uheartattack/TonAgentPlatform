@@ -1695,7 +1695,7 @@ export function startApiServer() {
       let runs = 0, messages = 0, toolCalls = 0, uptimeHours = 0;
       try {
         const opsRes = await pool.query(
-          "SELECT COUNT(*) as cnt FROM builder_bot.agent_operations WHERE agent_id = ",
+          "SELECT COUNT(*) as cnt FROM builder_bot.agent_operations WHERE agent_id = $1",
           [agentId]
         );
         runs = parseInt(opsRes.rows[0]?.cnt || '0', 10);
@@ -1703,7 +1703,7 @@ export function startApiServer() {
       // Count messages from agent_state
       try {
         const stateRes = await pool.query(
-          "SELECT value FROM builder_bot.agent_state WHERE agent_id =  AND key = 'chat_history'",
+          "SELECT value FROM builder_bot.agent_state WHERE agent_id = $1 AND key = 'chat_history'",
           [agentId]
         );
         if (stateRes.rows.length > 0) {
@@ -1714,7 +1714,7 @@ export function startApiServer() {
       // Estimate tool calls from operations
       try {
         const toolRes = await pool.query(
-          "SELECT COUNT(*) as cnt FROM builder_bot.agent_operations WHERE agent_id =  AND operation_type = 'tool_call'",
+          "SELECT COUNT(*) as cnt FROM builder_bot.agent_operations WHERE agent_id = $1 AND operation_type = 'tool_call'",
           [agentId]
         );
         toolCalls = parseInt(toolRes.rows[0]?.cnt || '0', 10);
@@ -2263,7 +2263,7 @@ export function startApiServer() {
       const filter = (req.query.status as any) || 'pending';
       const limit  = parseInt(req.query.limit as string || '20', 10);
       const repo   = getAIProposalsRepository();
-      const proposals = await repo.list(filter, limit);
+      const proposals = await repo.list({ status: filter }, limit);
       const statusMap = await repo.countByStatus();
       const counts = {
         pending:  statusMap['pending']  || 0,

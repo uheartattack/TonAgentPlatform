@@ -21,23 +21,29 @@ app.get('/health', (req, res) => {
 // Webhook для агента
 app.post('/webhook/:agentId', async (req, res) => {
   const agentId = parseInt(req.params.agentId);
+  if (isNaN(agentId)) return res.status(400).json({ error: 'Invalid agent ID' });
   const secret = req.headers['x-webhook-secret'] as string;
-  
+
+  // Require webhook secret — unauthenticated access is not allowed
+  if (!secret) {
+    return res.status(401).json({ error: 'Missing x-webhook-secret header' });
+  }
+
   console.log(`🔗 Webhook received for agent #${agentId}`);
-  
+
   try {
     // Получаем агента
     const agentResult = await getDBTools().getAgent(agentId, 0); // 0 = system user
-    
+
     if (!agentResult.success || !agentResult.data) {
       return res.status(404).json({ error: 'Agent not found' });
     }
-    
+
     const agent = agentResult.data;
-    
-    // Проверяем секрет если настроен
+
+    // Проверяем секрет — всегда требуется
     const triggerConfig = agent.triggerConfig as Record<string, any>;
-    if (triggerConfig?.secret && triggerConfig.secret !== secret) {
+    if (!triggerConfig?.secret || triggerConfig.secret !== secret) {
       return res.status(401).json({ error: 'Invalid webhook secret' });
     }
     
@@ -103,11 +109,20 @@ app.post('/webhook/workflow/:workflowId', async (req, res) => {
   }
 });
 
+// ── Auth middleware for API endpoints ──
+function requireApiKey(req: any, res: any, next: any) {
+  const apiKey = (req.headers['x-api-key'] || req.headers['x-auth-token']) as string;
+  if (!process.env.API_KEY || apiKey !== process.env.API_KEY) {
+    return res.status(401).json({ error: 'Invalid API key' });
+  }
+  next();
+}
+
 // API: Получить список агентов пользователя
 app.get('/api/agents/:userId', async (req, res) => {
   const userId = parseInt(req.params.userId);
   const apiKey = req.headers['x-api-key'] as string;
-  
+
   // Проверка API ключа
   if (!process.env.API_KEY || apiKey !== process.env.API_KEY) return res.status(401).json({ error: 'Invalid API key' });
   
@@ -120,10 +135,9 @@ app.get('/api/agents/:userId', async (req, res) => {
 });
 
 // API: Запустить агента
-app.post('/api/agents/:agentId/run', async (req, res) => {
+app.post('/api/agents/:agentId/run', requireApiKey, async (req, res) => {
   const agentId = parseInt(req.params.agentId);
-  const apiKey = req.headers['x-api-key'] as string;
-  if (!process.env.API_KEY || apiKey !== process.env.API_KEY) return res.status(401).json({ error: 'Invalid API key' });
+  if (isNaN(agentId)) return res.status(400).json({ error: 'Invalid agent ID' });
   const { userId, context } = req.body;
 
   try {
@@ -136,8 +150,9 @@ app.post('/api/agents/:agentId/run', async (req, res) => {
 });
 
 // API: Получить логи агента
-app.get('/api/agents/:agentId/logs', async (req, res) => {
+app.get('/api/agents/:agentId/logs', requireApiKey, async (req, res) => {
   const agentId = parseInt(req.params.agentId);
+  if (isNaN(agentId)) return res.status(400).json({ error: 'Invalid agent ID' });
   const userId = parseInt(req.query.userId as string);
   const limit = parseInt(req.query.limit as string) || 20;
   
@@ -151,7 +166,7 @@ app.get('/api/agents/:agentId/logs', async (req, res) => {
 });
 
 // API: Создать workflow
-app.post('/api/workflows', async (req, res) => {
+app.post('/api/workflows', requireApiKey, async (req, res) => {
   const { userId, name, description, nodes } = req.body;
   
   try {
@@ -178,7 +193,7 @@ app.post('/api/workflows/:workflowId/run', async (req, res) => {
 });
 
 // API: Получить workflow пользователя
-app.get('/api/workflows/:userId', async (req, res) => {
+app.get('/api/workflows/:userId', requireApiKey, async (req, res) => {
   const userId = parseInt(req.params.userId);
   
   try {
@@ -191,14 +206,14 @@ app.get('/api/workflows/:userId', async (req, res) => {
 });
 
 // API: Получить плагины
-app.get('/api/plugins', (req, res) => {
+app.get('/api/plugins', requireApiKey, (req, res) => {
   const { getPluginManager } = require('./plugins-system');
   const manager = getPluginManager();
   res.json(manager.getAllPlugins());
 });
 
 // API: Установить плагин
-app.post('/api/plugins/:pluginId/install', async (req, res) => {
+app.post('/api/plugins/:pluginId/install', requireApiKey, async (req, res) => {
   const { pluginId } = req.params;
   const { getPluginManager } = require('./plugins-system');
   const manager = getPluginManager();

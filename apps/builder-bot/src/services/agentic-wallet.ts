@@ -187,7 +187,8 @@ class AgenticWalletService {
     })();
 
     await this.mcpConnecting;
-    return this.mcpBridge!;
+    if (!this.mcpBridge) throw new Error('MCP bridge connection failed');
+    return this.mcpBridge;
   }
 
   // ── DB Operations ──

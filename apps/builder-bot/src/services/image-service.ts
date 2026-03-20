@@ -46,17 +46,26 @@ export async function cropImage(inputPath: string, left: number, top: number, wi
   return outPath;
 }
 
+// Validate color parameter for SVG safety
+function validateSvgColor(color: string): string {
+  if (!/^[a-zA-Z0-9#(),.\s]+$/.test(color)) {
+    throw new Error('Invalid color value');
+  }
+  return color;
+}
+
 // Add text overlay (watermark) using SVG overlay
 export async function addTextOverlay(inputPath: string, text: string, position: 'top' | 'bottom' | 'center' = 'bottom', fontSize: number = 32, color: string = 'white'): Promise<string> {
   await ensureTmpDir();
+  validateSvgColor(color);
   const meta = await sharp(inputPath).metadata();
   const w = meta.width || 800;
   const h = meta.height || 600;
 
   const yPos = position === 'top' ? fontSize + 10 : position === 'center' ? h / 2 : h - 20;
 
-  // Escape XML special chars
-  const safeText = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // Escape XML special chars (including quotes)
+  const safeText = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 
   const svgOverlay = Buffer.from(`
     <svg width="${w}" height="${h}">
@@ -141,7 +150,9 @@ export async function compositeImages(basePath: string, overlayPath: string, x: 
 // Create solid color image with text (for memes, banners, etc.)
 export async function createTextImage(text: string, width: number = 800, height: number = 400, bgColor: string = '#1a1a2e', textColor: string = 'white', fontSize: number = 48): Promise<string> {
   await ensureTmpDir();
-  const safeText = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  validateSvgColor(bgColor);
+  validateSvgColor(textColor);
+  const safeText = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 
   // Split text into lines
   const maxCharsPerLine = Math.floor(width / (fontSize * 0.6));

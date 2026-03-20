@@ -475,7 +475,7 @@ export class ExecutionTools {
           const cleaned = address.trim();
           const apiKey = process.env.TONAPI_KEY || '';
           try {
-            const res = await nativeFetch(
+            const res = await safeFetch(
               `https://tonapi.io/v2/accounts/${encodeURIComponent(cleaned)}`,
               { headers: apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {}, redirect: 'manual' }
             );
@@ -490,7 +490,7 @@ export class ExecutionTools {
         // ── getPrice(symbol) — helper: цена в USD ──
         getPrice: async (symbol: string = 'TON'): Promise<number> => {
           const id = symbol.toLowerCase() === 'ton' ? 'the-open-network' : symbol.toLowerCase();
-          const res = await nativeFetch(
+          const res = await safeFetch(
             `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(id)}&vs_currencies=usd`
             );
             if (!res.ok) throw new Error(`CoinGecko ${res.status}`);
@@ -1263,12 +1263,13 @@ ${code}
 
       // Hard timeout for the full async execution (90 seconds)
       const ASYNC_TIMEOUT_MS = 90_000;
+      let timer: ReturnType<typeof setTimeout>;
       const timeoutPromise = new Promise<never>((_, reject) => {
-        const t = setTimeout(() => reject(new Error('Agent execution timed out (90s limit)')), ASYNC_TIMEOUT_MS);
+        timer = setTimeout(() => reject(new Error('Agent execution timed out (90s limit)')), ASYNC_TIMEOUT_MS);
         // Don't keep process alive just for this timer
-        if (t.unref) t.unref();
+        if (timer.unref) timer.unref();
       });
-      const result = await Promise.race([asyncResultPromise, timeoutPromise]);
+      const result = await Promise.race([asyncResultPromise, timeoutPromise]).finally(() => clearTimeout(timer));
       addLog('success', 'Выполнение завершено', result);
       return { success: true, result };
     } catch (error) {
@@ -1361,6 +1362,8 @@ ${code}
 
     const addLog = (level: ExecutionLog['level'], message: string, details?: any) => {
       logs.push({ timestamp: new Date(), level, message, details });
+      // Cap logs at 500 to prevent unbounded memory growth
+      if (logs.length > 500) logs.splice(0, logs.length - 500);
       getMemoryManager().addMessage(
         params.userId, 'system', `[${level.toUpperCase()}] ${message}`,
         { agentId: params.agentId, level, details }
@@ -1657,6 +1660,28 @@ interface AgentMessage {
 }
 
 const agentMessageQueue = new Map<number, AgentMessage[]>(); // toAgentId → messages
+
+// Periodic cleanup: remove queue entries older than 10 minutes, cap Map size at 1000
+setInterval(() => {
+  const now = Date.now();
+  for (const [agentId, msgs] of agentMessageQueue) {
+    // Remove messages older than 10 minutes
+    const fresh = msgs.filter(m => now - m.timestamp.getTime() < 10 * 60 * 1000);
+    if (fresh.length === 0) {
+      agentMessageQueue.delete(agentId);
+    } else {
+      agentMessageQueue.set(agentId, fresh);
+    }
+  }
+  // Hard cap: if still over 1000 entries, delete oldest keys
+  if (agentMessageQueue.size > 1000) {
+    const keys = [...agentMessageQueue.keys()];
+    const excess = keys.length - 1000;
+    for (let i = 0; i < excess; i++) {
+      agentMessageQueue.delete(keys[i]);
+    }
+  }
+}, 60_000).unref(); // Run every 60s, don't keep process alive
 
 export function sendAgentMessage(fromAgentId: number, toAgentId: number, data: any): void {
   const queue = agentMessageQueue.get(toAgentId) || [];

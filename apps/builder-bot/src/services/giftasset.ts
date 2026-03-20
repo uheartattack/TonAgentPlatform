@@ -32,7 +32,12 @@ class RateLimiter {
     if (this.tokens < 1) {
       const wait = ((1 - this.tokens) / this.refillRate) * 1000;
       await new Promise(r => setTimeout(r, wait));
-      this.tokens = 0;
+      // Refill tokens based on time spent waiting, then subtract 1
+      const afterWait = Date.now();
+      const waitElapsed = (afterWait - this.lastRefill) / 1000;
+      this.tokens = Math.min(this.maxTokens, this.tokens + waitElapsed * this.refillRate);
+      this.lastRefill = afterWait;
+      this.tokens = Math.max(0, this.tokens - 1);
     } else {
       this.tokens -= 1;
     }
@@ -928,6 +933,15 @@ function updateStreamCache(update: SaleUpdate): void {
     existing.floors[market] = update.price;
   }
   existing.updatedAt = Date.now();
+  // Evict oldest entries if cache exceeds max size
+  if (_streamCache.size > 500) {
+    let removed = 0;
+    for (const k of _streamCache.keys()) {
+      if (removed >= 100) break;
+      _streamCache.delete(k);
+      removed++;
+    }
+  }
   _streamCache.set(slug, existing);
 }
 

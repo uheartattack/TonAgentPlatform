@@ -166,34 +166,36 @@ const usedTxHashes = new TTLMap<string, true>(24 * 60 * 60 * 1000, 50000);
 // ── Инициализация БД таблицы ────────────────────────────────
 let _pool: Pool | null = null;
 
-export function initPayments(pool: Pool): void {
+export async function initPayments(pool: Pool): Promise<void> {
   _pool = pool;
   // Создаём таблицу если не существует
-  pool.query(`
-    CREATE SCHEMA IF NOT EXISTS builder_bot;
-    CREATE TABLE IF NOT EXISTS builder_bot.subscriptions (
-      user_id BIGINT PRIMARY KEY,
-      plan_id TEXT NOT NULL DEFAULT 'free',
-      expires_at TIMESTAMP,
-      is_active BOOLEAN NOT NULL DEFAULT true,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-    );
-    CREATE TABLE IF NOT EXISTS builder_bot.payments (
-      id SERIAL PRIMARY KEY,
-      user_id BIGINT NOT NULL,
-      plan_id TEXT NOT NULL,
-      period TEXT NOT NULL,
-      amount_ton DECIMAL(10,4) NOT NULL,
-      tx_hash TEXT,
-      status TEXT NOT NULL DEFAULT 'pending',
-      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      confirmed_at TIMESTAMP
-    );
-  `).catch(err => {
+  try {
+    await pool.query(`
+      CREATE SCHEMA IF NOT EXISTS builder_bot;
+      CREATE TABLE IF NOT EXISTS builder_bot.subscriptions (
+        user_id BIGINT PRIMARY KEY,
+        plan_id TEXT NOT NULL DEFAULT 'free',
+        expires_at TIMESTAMP,
+        is_active BOOLEAN NOT NULL DEFAULT true,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS builder_bot.payments (
+        id SERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL,
+        plan_id TEXT NOT NULL,
+        period TEXT NOT NULL,
+        amount_ton DECIMAL(10,4) NOT NULL,
+        tx_hash TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        confirmed_at TIMESTAMP
+      );
+    `);
+  } catch (err) {
     console.error('[Payments] CRITICAL: DB migration failed:', err);
-    process.exit(1);
-  });
+    throw err;
+  }
 }
 
 // ── Получить подписку пользователя ─────────────────────────
@@ -394,6 +396,7 @@ export async function confirmPayment(
   userId: number,
   txHash: string
 ): Promise<{ success: boolean; plan?: Plan; expiresAt?: Date; error?: string }> {
+  if (usedTxHashes.has(txHash)) return { success: false, error: 'Transaction already used' };
   const pending = pendingPayments.get(userId);
   if (!pending) return { success: false, error: 'Нет ожидающего платежа' };
   if (pending.expiresAt < new Date()) {

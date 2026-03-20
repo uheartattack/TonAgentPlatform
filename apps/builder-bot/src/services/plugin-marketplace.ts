@@ -150,8 +150,10 @@ export async function searchPlugins(query?: string, category?: string, limit: nu
   }
 
   if (query) {
+    // Escape ILIKE wildcards in user input
+    const escapedQuery = query.replace(/[%_\\]/g, '\\$&');
     sql += ` AND (name ILIKE $${idx} OR description ILIKE $${idx})`;
-    params.push(`%${query}%`);
+    params.push(`%${escapedQuery}%`);
     idx++;
   }
 
