@@ -13,6 +13,9 @@ function resolveProvider(provider: string): { baseURL: string; defaultModel: str
   const p = (provider || '').toLowerCase();
   if (p.includes('gemini') || p.includes('google'))
     return { baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/', defaultModel: 'gemini-2.5-flash' };
+  // Anthropic API is not OpenAI-compatible, so we route through OpenRouter.
+  // If the user's key starts with 'sk-ant-' it won't work with OpenRouter;
+  // they need an OpenRouter key for Anthropic models via this path.
   if (p.includes('anthropic') || p.includes('claude'))
     return { baseURL: 'https://openrouter.ai/api/v1', defaultModel: 'anthropic/claude-haiku-4-5-20251001' };
   if (p.includes('groq'))
@@ -39,6 +42,11 @@ function getAIClient(config: Record<string, any>): { client: OpenAI; model: stri
   const model = (config.AI_MODEL as string) || prov.defaultModel;
 
   if (!baseURL) throw new Error('Missing AI credentials: no baseURL resolved');
+
+  // Warn if user has a native Anthropic key but we're routing through OpenRouter
+  if (apiKey.startsWith('sk-ant-') && baseURL.includes('openrouter.ai')) {
+    console.warn('[universal-agent-chat] Anthropic key (sk-ant-*) detected but routed to OpenRouter — this will fail. User needs an OpenRouter key for Anthropic models.');
+  }
 
   return { client: new OpenAI({ baseURL, apiKey }), model };
 }

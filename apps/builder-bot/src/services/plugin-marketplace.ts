@@ -209,7 +209,6 @@ export async function installPlugin(userId: number, listingId: number): Promise<
       const balance = parseFloat(profileRes.rows[0]?.balance) || 0;
       if (balance < costTon) {
         await client.query('ROLLBACK');
-        client.release();
         return { ok: false, error: `Insufficient balance. Need ${costTon} TON, have ${balance} TON` };
       }
 

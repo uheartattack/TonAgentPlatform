@@ -20,10 +20,15 @@ function validatePath(agentId: number, filePath: string): string {
   if (!resolved.startsWith(root)) {
     throw new Error('Path traversal detected');
   }
+  // Ensure workspace root exists before realpath checks (realpath fails on missing dirs)
+  const fsSync = require('fs');
+  if (!fsSync.existsSync(root)) {
+    fsSync.mkdirSync(root, { recursive: true });
+  }
   // Check real path to prevent symlink-based traversal
   try {
-    const realRoot = require('fs').realpathSync(root);
-    const realResolved = require('fs').realpathSync(resolved);
+    const realRoot = fsSync.realpathSync(root);
+    const realResolved = fsSync.realpathSync(resolved);
     if (!realResolved.startsWith(realRoot)) {
       throw new Error('Path traversal detected via symlink');
     }
@@ -32,8 +37,8 @@ function validatePath(agentId: number, filePath: string): string {
     if (e.code === 'ENOENT') {
       try {
         const parentDir = path.dirname(resolved);
-        const realRoot = require('fs').realpathSync(root);
-        const realParent = require('fs').realpathSync(parentDir);
+        const realRoot = fsSync.realpathSync(root);
+        const realParent = fsSync.realpathSync(parentDir);
         if (!realParent.startsWith(realRoot)) {
           throw new Error('Path traversal detected via symlink');
         }

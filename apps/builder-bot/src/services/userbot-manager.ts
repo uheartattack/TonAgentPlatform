@@ -138,8 +138,8 @@ const PROVIDERS: Record<string, ProviderMeta> = {
     nativeApi: false, maxTools: 128, keyPrefix: 'sk-',
   },
   anthropic: {
-    id: 'anthropic', baseURL: 'https://api.anthropic.com/v1',
-    defaultModel: _cfgModels.claude, liteModel: _cfgModels.claude,
+    id: 'anthropic', baseURL: 'https://openrouter.ai/api/v1',
+    defaultModel: 'anthropic/claude-haiku-4-5-20251001', liteModel: 'anthropic/claude-haiku-4-5-20251001',
     nativeApi: false, maxTools: 0, keyPrefix: 'sk-ant-',
   },
   groq: {
