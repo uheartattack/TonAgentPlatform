@@ -72,17 +72,17 @@ function safeRandomId(): any {
   return BigInt('0x' + buf.toString('hex'));
 }
 
-// ── Rate limiter: 500ms minimum gap between TG API calls ──
-let _lastTgCallTime = 0;
+// ── Rate limiter: 500ms minimum gap between TG API calls (mutex-based) ──
 const TG_CALL_MIN_GAP_MS = 500;
+let _tgCallQueue: Promise<void> = Promise.resolve();
 
 async function rateLimitTgCall(): Promise<void> {
-  const now = Date.now();
-  const elapsed = now - _lastTgCallTime;
-  if (elapsed < TG_CALL_MIN_GAP_MS) {
-    await new Promise(r => setTimeout(r, TG_CALL_MIN_GAP_MS - elapsed));
-  }
-  _lastTgCallTime = Date.now();
+  const prev = _tgCallQueue;
+  let resolve: () => void;
+  _tgCallQueue = new Promise<void>(r => { resolve = r; });
+  await prev;
+  await new Promise(r => setTimeout(r, TG_CALL_MIN_GAP_MS));
+  resolve!();
 }
 
 type TgMsg = {

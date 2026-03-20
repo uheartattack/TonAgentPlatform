@@ -487,7 +487,8 @@ export function resolveUtilityProvider(provider: string): UtilityProviderCfg {
  * Falls back to main model if no separate utility config.
  */
 export function getUtilityAIClient(config: Record<string, any>): { client: OpenAI; model: string } {
-  const apiKey = (config.AI_API_KEY as string) || '';
+  const rawKey = (config.AI_API_KEY as string) || '';
+  const apiKey = decryptApiKey(rawKey);
   const provider = (config.AI_PROVIDER as string) || '';
   const utilityModel = (config.UTILITY_MODEL as string) || '';
 
@@ -1500,7 +1501,7 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
         parameters: {
           type: 'object',
           properties: {
-            delay_seconds: { type: 'number', description: 'Через сколько секунд проснуться (10-604800)' },
+            delay_seconds: { type: 'number', description: 'Через сколько секунд проснуться (1800-604800)' },
             reason:        { type: 'string', description: 'Зачем просыпаться (для контекста в следующем тике)' },
           },
           required: ['delay_seconds', 'reason'],
@@ -4747,7 +4748,7 @@ export async function executeTool(
             type: 'rejection',
             tool: name,
             args: JSON.stringify(args).slice(0, 200),
-            lesson: `User rejected ${dangerInfo.label}: ${dangerInfo.descFn(args)}. Don't repeat this action without explicit user instruction.`,
+            text: `User rejected ${dangerInfo.label}: ${dangerInfo.descFn(args)}. Don't repeat this action without explicit user instruction.`,
             savedAt: new Date().toISOString(),
           });
           await stateRepo.set(params.agentId, params.userId, lessonKey, lessonValue);
@@ -5877,7 +5878,7 @@ export async function executeTool(
       await notifyRich(params.userId, {
         text: msg,
         agentId: params.agentId,
-        agentName: (params as any).agentName || 'Agent #' + params.agentId,
+        agentName: (params.config?.AGENT_NAME as string) || 'Agent #' + params.agentId,
         buttons: buttons.map((b: any) => ({
           text: String(b.text || ''),
           url: b.url ? String(b.url) : undefined,
@@ -10266,7 +10267,7 @@ export function getAIAgentRuntime(): AIAgentRuntime {
       });
       // Clean approval waiters older than 10 minutes (guard against undefined _createdAt)
       _approvalWaiters.forEach((waiter, key) => {
-        if (!(waiter as any)._createdAt || Date.now() - (waiter as any)._createdAt > 10 * 60 * 1000) _approvalWaiters.delete(key);
+        if ((waiter as any)._createdAt === undefined || Date.now() - (waiter as any)._createdAt > 10 * 60 * 1000) _approvalWaiters.delete(key);
       });
       // Clean _recentPostHashes for inactive agents
       _recentPostHashes.forEach((_, key) => {
@@ -10293,7 +10294,7 @@ export function getAIAgentRuntime(): AIAgentRuntime {
       _agentMetaCache.forEach((entry, id) => {
         if (Date.now() - entry.cachedAt > META_CACHE_TTL) _agentMetaCache.delete(id);
       });
-    }, 10 * 60 * 1000);
+    }, 10 * 60 * 1000).unref();
   }
   return _runtime;
 }
