@@ -27,7 +27,7 @@ export interface UserInfo {
 
 // Проверка прав доступа
 export function checkPermission(userId: number, requiredRole: UserRole): boolean {
-  const ownerId = parseInt(process.env.OWNER_ID || '130806013');
+  const ownerId = parseInt(process.env.OWNER_ID || '0', 10);
 
   if (userId === ownerId) return true;
   if (requiredRole === 'user') return true;
@@ -38,7 +38,7 @@ export function checkPermission(userId: number, requiredRole: UserRole): boolean
 
 // Получение роли пользователя
 export function getUserRole(userId: number): UserRole {
-  const ownerId = parseInt(process.env.OWNER_ID || '130806013');
+  const ownerId = parseInt(process.env.OWNER_ID || '0', 10);
 
   if (userId === ownerId) return 'owner';
 

@@ -109,8 +109,8 @@ async function safeReply(ctx: Context, text: string, extra?: object): Promise<vo
     if (err?.response?.error_code === 400) {
       // Убираем HTML/Markdown теги для plain text
       const plain = parseMode === 'HTML'
-        ? text.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
-        : text.replace(/\\([_*[\]()~`>#+\-=|{}.!\\])/g, '$1').replace(/[*_`]/g, '');
+        ? text.replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+        : text.replace(/<[^>]*>/g, '').replace(/\\([_*[\]()~`>#+\-=|{}.!\\])/g, '$1').replace(/[*_`]/g, '');
       const plainExtra: any = { ...extraObj };
       delete plainExtra.parse_mode;
       try {
@@ -4697,6 +4697,109 @@ bot.on('callback_query', async (ctx) => {
     return;
   }
 
+  // ── Остановить агента (из нотификации) ──
+  if (data.startsWith('stop_agent:')) {
+    await ctx.answerCbQuery('Останавливаю...');
+    const agentId = parseInt(data.split(':')[1]);
+    try {
+      const agentResult = await getDBTools().getAgent(agentId, userId);
+      if (!agentResult.success || !agentResult.data) {
+        await ctx.reply(`❌ Агент #${agentId} не найден`);
+        return;
+      }
+      const pauseResult = await getRunnerAgent().pauseAgent(agentId, userId);
+      if (pauseResult.success) {
+        await editOrReply(ctx,
+          `⏸ <b>Агент остановлен</b>\n${div()}\n<b>${escHtml(agentResult.data.name)}</b>  #${agentId}`,
+          {
+            parse_mode: 'HTML',
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: '🚀 Запустить снова', callback_data: `run_agent:${agentId}` }],
+                [{ text: '◀️ К агенту', callback_data: `agent_menu:${agentId}` }],
+              ],
+            },
+          }
+        );
+      } else {
+        await editOrReply(ctx, `❌ Ошибка остановки: ${escHtml(pauseResult.error || '')}`, { parse_mode: 'HTML' });
+      }
+    } catch (e: any) {
+      await ctx.reply(`❌ Ошибка: ${(e.message || '').slice(0, 100)}`);
+    }
+    return;
+  }
+
+  // ── Проверка оплаты маркетплейса ──
+  if (data.startsWith('mkt_check_pay:')) {
+    await ctx.answerCbQuery('Проверяю оплату...');
+    const listingId = parseInt(data.split(':')[1]);
+    try {
+      const listing = await getMarketplaceRepository().getListing(listingId);
+      if (!listing) { await ctx.reply('❌ Листинг не найден'); return; }
+      const priceTon = listing.price / 1e9;
+
+      await ctx.reply('🔍 Проверяю транзакцию...');
+      const verify = await verifyTonTransaction(userId, priceTon);
+
+      if (verify.found && verify.txHash) {
+        // Payment confirmed — create agent copy for buyer
+        const agentResult = await getDBTools().getAgent(listing.agentId, listing.sellerId);
+        if (!agentResult.success || !agentResult.data) { await ctx.reply('❌ Агент продавца не найден'); return; }
+        const src = agentResult.data;
+        const newAgent = await getDBTools().createAgent({
+          userId,
+          name: listing.name,
+          description: `[Маркетплейс #${listingId}] ${src.description || ''}`,
+          code: src.code,
+          triggerType: src.triggerType as any,
+          triggerConfig: (src.triggerConfig as any) || {},
+          isActive: false,
+        });
+        if (newAgent.success && newAgent.data) {
+          await getMarketplaceRepository().createPurchase({
+            listingId, buyerId: userId, sellerId: listing.sellerId,
+            agentId: newAgent.data.id, type: 'buy', pricePaid: listing.price, txHash: verify.txHash,
+          });
+          await editOrReply(ctx,
+            `${pe('check')} <b>Оплата подтверждена!</b>\n${div()}\n` +
+            `${pe('robot')} <b>${escHtml(listing.name)}</b>  #${newAgent.data.id}\n\n` +
+            `<i>Агент добавлен — можете запустить</i>`,
+            {
+              parse_mode: 'HTML',
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: `${peb('rocket')} Запустить`, callback_data: `run_agent:${newAgent.data.id}` }, { text: `👁 Просмотр`, callback_data: `agent_menu:${newAgent.data.id}` }],
+                  [{ text: `${peb('robot')} Мои агенты`, callback_data: 'list_agents' }],
+                ],
+              },
+            }
+          );
+        } else {
+          await ctx.reply(`❌ Ошибка создания агента: ${escHtml(newAgent.error || '')}`);
+        }
+      } else {
+        await safeReply(ctx,
+          `⏳ Транзакция ещё не найдена.\n\n` +
+          `Убедитесь что отправили <b>${escHtml(priceTon.toFixed(2))} TON</b>\n\n` +
+          `Попробуйте снова через 1-2 минуты.`,
+          {
+            parse_mode: 'HTML',
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: '🔄 Проверить снова', callback_data: `mkt_check_pay:${listingId}` }],
+                [{ text: '◀️ К листингу', callback_data: `mkt_view:${listingId}` }],
+              ],
+            },
+          }
+        );
+      }
+    } catch (e: any) {
+      await ctx.reply(`❌ Ошибка проверки: ${(e.message || '').slice(0, 100)}`);
+    }
+    return;
+  }
+
   // ── 🔧 AI Автопочинка ──
   if (data.startsWith('auto_repair:')) {
     await ctx.answerCbQuery('🔧 Анализирую ошибку...');
@@ -5692,7 +5795,7 @@ bot.on('callback_query', async (ctx) => {
     const tonConn = getTonConnectManager();
     if (!tonConn.isConnected(userId)) {
       await safeReply(ctx,
-        `❌ Подключите TON кошелёк для оплаты\\.\n\n` +
+        `❌ Подключите TON кошелёк для оплаты.\n\n` +
         `Нажмите 💎 TON Connect в меню или /connect`,
       );
       return;
@@ -6448,7 +6551,7 @@ bot.on(message('voice'), async (ctx) => {
       : pendingTemplateSetup.has(userId) ? (lang === 'ru' ? 'настройка шаблона' : 'template setup')
       : pendingCreations.has(userId) ? (lang === 'ru' ? 'создание агента' : 'agent creation')
       : pendingNameAsk.has(userId) ? (lang === 'ru' ? 'ввод названия' : 'name input')
-      : pendingRepairs.has(String(userId)) ? (lang === 'ru' ? 'ремонт агента' : 'agent repair')
+      : [...pendingRepairs.keys()].some(k => k.startsWith(`${userId}:`)) ? (lang === 'ru' ? 'ремонт агента' : 'agent repair')
       : null;
     if (pendingAction) {
       await ctx.reply(lang === 'ru'
@@ -9507,7 +9610,7 @@ export function getBotInstance(): Telegraf | null {
   return bot;
 }
 
-export function startBot() {
+export async function startBot() {
   initNotifier(bot);
   try { const { initCrewSystem } = require('./services/crew-system'); initCrewSystem(dbPool); } catch (e: any) { console.warn('CrewSystem init failed:', e.message); }
   try { const { initReputation } = require('./services/agent-reputation'); initReputation(dbPool); } catch (e: any) { console.warn('Reputation init failed:', e.message); }
@@ -9517,6 +9620,9 @@ export function startBot() {
   console.log('🤖 Starting TON Agent Platform Bot...');
   console.log(`🏪 Loaded ${allAgentTemplates.length} agent templates`);
   console.log(`🔌 Loaded ${getPluginManager().getAllPlugins().length} plugins`);
+
+  // Verify bot can connect to Telegram before proceeding
+  await bot.telegram.getMe();
 
   // Retry logic: if Telegram returns 409 (previous polling still active) — wait and retry
   const launch = (attempt = 1) => {

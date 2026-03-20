@@ -64,7 +64,7 @@ function persistSession(token: string, s: { userId: number; username: string; fi
      VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (token) DO UPDATE SET expires_at = $6`,
     [token, s.userId, s.username, s.firstName, s.photoUrl || null, new Date(s.expiresAt)]
-  ).catch(() => {});
+  ).catch(e => console.warn('[Auth] persistSession error:', e?.message || String(e)));
 }
 
 // Cleanup expired sessions (run periodically)

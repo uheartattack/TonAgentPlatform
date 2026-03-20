@@ -917,12 +917,15 @@ export const agentDailySpendTable = builderSchema.table('agent_daily_spend', {
 
 // ─── Таблица 10: agent_audit_log — журнал всех действий агентов ──────────
 export const agentAuditLogTable = builderSchema.table('agent_audit_log', {
-  id:        serial('id').primaryKey(),
-  agentId:   integer('agent_id').notNull(),
-  userId:    bigint('user_id', { mode: 'number' }).notNull(),
-  action:    text('action').notNull(),           // e.g. 'tool_call', 'state_change', 'spend', 'error'
-  details:   jsonb('details'),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
+  id:         serial('id').primaryKey(),
+  agentId:    integer('agent_id').notNull(),
+  userId:     bigint('user_id', { mode: 'number' }).notNull(),
+  action:     text('action').notNull(),           // e.g. 'tool_call', 'state_change', 'spend', 'error'
+  details:    jsonb('details'),
+  toolName:   text('tool_name'),
+  durationMs: integer('duration_ms'),
+  success:    boolean('success'),
+  createdAt:  timestamp('created_at').defaultNow().notNull(),
 });
 
 // ─── Таблица 11: agent_approvals — запросы на одобрение действий ─────────
@@ -1009,6 +1012,10 @@ export async function runAIProposalsMigrations(pool: Pool): Promise<void> {
       CREATE INDEX IF NOT EXISTS agent_audit_log_agent_idx
         ON builder_bot.agent_audit_log (agent_id, created_at DESC)
     `);
+    // Add columns required by /metrics endpoint (tool_name, duration_ms, success)
+    await client.query(`ALTER TABLE builder_bot.agent_audit_log ADD COLUMN IF NOT EXISTS tool_name TEXT`);
+    await client.query(`ALTER TABLE builder_bot.agent_audit_log ADD COLUMN IF NOT EXISTS duration_ms INTEGER`);
+    await client.query(`ALTER TABLE builder_bot.agent_audit_log ADD COLUMN IF NOT EXISTS success BOOLEAN DEFAULT true`);
     // agent_approvals may have been created earlier with different columns; ensure both schemas work
     await client.query(`
       CREATE TABLE IF NOT EXISTS builder_bot.agent_approvals (

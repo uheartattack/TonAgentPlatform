@@ -152,11 +152,9 @@ function cbRecordSuccess(agentId: number): void {
 // Duplicate content detector — prevent posting same content twice
 const _recentPostHashes = new Map<string, string[]>(); // key → last 5 content hashes
 function _hashContent(text: string): string {
-  // Simple hash: normalize whitespace, take first 200 chars, create numeric hash
   const norm = text.replace(/\s+/g, ' ').trim().slice(0, 200).toLowerCase();
-  let h = 0;
-  for (let i = 0; i < norm.length; i++) h = ((h << 5) - h + norm.charCodeAt(i)) | 0;
-  return String(h);
+  const crypto = require('crypto');
+  return crypto.createHash('sha256').update(norm).digest('hex').slice(0, 16);
 }
 function isDuplicateContent(agentId: number, chatId: string, content: string): boolean {
   const key = `${agentId}:${String(chatId).toLowerCase()}`;
@@ -185,21 +183,23 @@ function markPosted(agentId: number, chatId: string) {
   _channelPostTimes.set(key, Date.now());
 }
 
-// ── Singleton pool for shared state ─────────────────────────────────────────
-let _sharedStatePool: any = null;
-function _getSharedStatePool(): any {
-  if (!_sharedStatePool) {
-    const { Pool } = require('pg');
-    _sharedStatePool = new Pool({
-      host: process.env.DB_HOST || 'localhost',
-      port: parseInt(process.env.DB_PORT || '5432'),
-      user: process.env.DB_USER || 'ton_agent',
-      password: process.env.DB_PASSWORD || '',
-      database: process.env.DB_NAME || 'ton_agent_platform',
-      max: 3,
+// ── Singleton pool for shared state (promise-based to prevent duplicate on parallel calls) ──
+let _sharedStatePoolPromise: Promise<any> | null = null;
+function _getSharedStatePool(): Promise<any> {
+  if (!_sharedStatePoolPromise) {
+    _sharedStatePoolPromise = Promise.resolve().then(() => {
+      const { Pool } = require('pg');
+      return new Pool({
+        host: process.env.DB_HOST || 'localhost',
+        port: parseInt(process.env.DB_PORT || '5432'),
+        user: process.env.DB_USER || 'ton_agent',
+        password: process.env.DB_PASSWORD || '',
+        database: process.env.DB_NAME || 'ton_agent_platform',
+        max: 3,
+      });
     });
   }
-  return _sharedStatePool;
+  return _sharedStatePoolPromise;
 }
 
 // ── Behavior middleware: human-like delays, read receipts, message splitting ──
@@ -556,16 +556,55 @@ function checkWebRateLimit(agentId: number): boolean {
 
 // ── SSRF protection: validate URL + resolved IP ─────────────────────────────
 
+/** Normalize IPv6 addresses: collapse zero groups (e.g. 0:0:0:0:0:0:0:1 → ::1) */
+function normalizeIPv6(addr: string): string {
+  // Only process if it looks like an IPv6 address (contains colons, not just IPv4)
+  if (!addr.includes(':') || /^\d+\.\d+\.\d+\.\d+$/.test(addr)) return addr;
+  try {
+    // Split into groups, expand :: if present
+    let groups: string[];
+    if (addr.includes('::')) {
+      const [left, right] = addr.split('::');
+      const leftGroups = left ? left.split(':') : [];
+      const rightGroups = right ? right.split(':') : [];
+      const missing = 8 - leftGroups.length - rightGroups.length;
+      groups = [...leftGroups, ...Array(missing).fill('0'), ...rightGroups];
+    } else {
+      groups = addr.split(':');
+    }
+    if (groups.length !== 8) return addr;
+    // Normalize each group to remove leading zeros
+    const normalized = groups.map(g => (parseInt(g, 16) || 0).toString(16));
+    // Find longest run of consecutive '0' groups for :: compression
+    let bestStart = -1, bestLen = 0, curStart = -1, curLen = 0;
+    for (let i = 0; i < 8; i++) {
+      if (normalized[i] === '0') {
+        if (curStart === -1) curStart = i;
+        curLen++;
+        if (curLen > bestLen) { bestStart = curStart; bestLen = curLen; }
+      } else { curStart = -1; curLen = 0; }
+    }
+    if (bestLen >= 2) {
+      const left = normalized.slice(0, bestStart).join(':');
+      const right = normalized.slice(bestStart + bestLen).join(':');
+      return `${left}::${right}`;
+    }
+    return normalized.join(':');
+  } catch { return addr; }
+}
+
 /** Enhanced URL blocker: catches port-based attacks, IPv6-mapped localhost, and internal schemes */
 function isBlockedUrl(urlStr: string): boolean {
   try {
     const decoded = fullyDecodeURI(urlStr);
     const url = new URL(decoded);
     const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+    // Normalize IPv6: collapse expanded forms like 0:0:0:0:0:0:0:1 → ::1
+    const normalizedHost = normalizeIPv6(host);
     // Block localhost variants
-    if (['localhost', '127.0.0.1', '0.0.0.0', '::1', '[::1]'].includes(host)) return true;
+    if (['localhost', '127.0.0.1', '0.0.0.0', '::1', '[::1]'].includes(normalizedHost)) return true;
     // Block IPv6 mapped IPv4 localhost
-    if (host.includes('::ffff:127.') || host.includes('::ffff:0.')) return true;
+    if (normalizedHost.includes('::ffff:127.') || normalizedHost.includes('::ffff:0.')) return true;
     // Block private ranges (quick regex check before DNS)
     if (/^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.)/.test(host)) return true;
     // Block 0.x.x.x
@@ -751,8 +790,9 @@ async function getAgentMeta(agentId: number): Promise<CachedAgentMeta | null> {
 }
 
 export function addMessageToAIAgent(agentId: number, text: string): void {
-  if (!_pendingMessages.has(agentId)) _pendingMessages.set(agentId, []);
-  _pendingMessages.get(agentId)!.push(text);
+  const msgs = _pendingMessages.get(agentId) || [];
+  msgs.push(text);
+  if (!_pendingMessages.has(agentId)) _pendingMessages.set(agentId, msgs);
   // Trigger an immediate tick so the user gets a fast response
   runImmediateTick(agentId);
 }
@@ -4187,9 +4227,11 @@ function tfidfVector(tokens: string[], idf: Map<string, number>): SparseVec {
   for (const t of tokens) {
     tf.set(t, (tf.get(t) || 0) + 1);
   }
+  // Laplace-smoothed IDF for unseen terms: log((N+1) / (0+1)) + 1
+  const unseenIdf = Math.log((idf.size + 1) / 1) + 1;
   const vec: SparseVec = new Map();
   for (const [term, count] of tf) {
-    const tfidf = (count / tokens.length) * (idf.get(term) || 1);
+    const tfidf = (count / tokens.length) * (idf.get(term) ?? unseenIdf);
     if (tfidf > 0) vec.set(term, tfidf);
   }
   return vec;
@@ -4586,8 +4628,8 @@ async function checkDailySpendCap(agentId: number, userId: number, amountTon: nu
     const amountNano = BigInt(Math.round(amountTon * 1e9));
     // Check agent-specific limit from state, or use default
     const stateRepo = getAgentStateRepository();
-    const customLimit = await stateRepo.get(agentId, 'daily_spend_limit_ton').catch(() => null);
-    const limitTon = customLimit ? Number((customLimit as any).value || DAILY_SPEND_LIMIT_TON) : DAILY_SPEND_LIMIT_TON;
+    const customLimit = unwrapState(await stateRepo.get(agentId, 'daily_spend_limit_ton').catch(() => null));
+    const limitTon = customLimit ? Number(customLimit) || DAILY_SPEND_LIMIT_TON : DAILY_SPEND_LIMIT_TON;
     const limitNano = BigInt(Math.round(limitTon * 1e9));
     const canSpend = await spendRepo.canSpend(agentId, amountNano, limitNano);
     if (!canSpend) {
@@ -4611,6 +4653,12 @@ async function recordDailySpend(agentId: number, userId: number, amountTon: numb
   } catch (e: any) {
     console.warn(`[DailySpend] record failed for agent #${agentId}: ${e.message}`);
   }
+}
+
+/** Unwrap stateRepo.get() result: handles both {value: string} and raw string returns */
+function unwrapState(val: any): string | null {
+  if (val && typeof val === 'object' && 'value' in val) return val.value;
+  return val ?? null;
 }
 
 export async function executeTool(
@@ -4651,7 +4699,7 @@ export async function executeTool(
   const dangerInfo = DANGEROUS_ACTIONS[name];
   if (dangerInfo) {
     // Check if user disabled approval for this agent
-    const autoApprove = await stateRepo.get(params.agentId, 'auto_approve').catch(() => null);
+    const autoApprove = unwrapState(await stateRepo.get(params.agentId, 'auto_approve').catch(() => null));
     if (!autoApprove || autoApprove !== 'true') {
       await logToDb(params.agentId, 'info', `[HITL] Requesting approval for ${name}(${JSON.stringify(args).slice(0, 150)})`, params.userId);
       const decision = await requestApproval(name, args, params, dangerInfo);
@@ -4721,7 +4769,10 @@ export async function executeTool(
             const wc  = buf[1] === 0xff ? -1 : buf[1];
             const hex = buf.slice(2, 34).toString('hex');
             return `${wc}:${hex}`;
-          } catch { return addr; }
+          } catch (e: any) {
+            console.warn(`[AI-Runtime] eqToRaw conversion failed for "${addr}": ${e.message || e}`);
+            return addr;
+          }
         }
 
         let collAddr = raw;
@@ -4860,8 +4911,8 @@ export async function executeTool(
 
     case 'buy_market_gift': {
       try {
-        const walletAddr = (await stateRepo.get(params.agentId, 'wallet_address'))?.value;
-        const walletMn   = (await stateRepo.get(params.agentId, 'wallet_mnemonic'))?.value;
+        const walletAddr = unwrapState(await stateRepo.get(params.agentId, 'wallet_address'));
+        const walletMn   = unwrapState(await stateRepo.get(params.agentId, 'wallet_mnemonic'));
         if (!walletAddr || !walletMn) {
           return { error: 'Agent wallet not created. Call get_agent_wallet first, then have user deposit TON.' };
         }
@@ -4898,7 +4949,7 @@ export async function executeTool(
 
         if ((result as any)?.ok) {
           const giftName = String(args.gift_name || 'подарок');
-          const totalSpent = Number((await stateRepo.get(params.agentId, 'total_ton_spent'))?.value || 0) + priceTon;
+          const totalSpent = Number(unwrapState(await stateRepo.get(params.agentId, 'total_ton_spent')) || 0) + priceTon;
           await stateRepo.set(params.agentId, params.userId, 'total_ton_spent', String(totalSpent));
           await notifyUser(params.userId, `✅ Куплен ${giftName} за ${priceTon} TON! Tx: ${(result as any).hash}`);
           return { ok: true, hash: (result as any).hash, price_ton: priceTon, gift: giftName };
@@ -4915,8 +4966,8 @@ export async function executeTool(
         const spendRepo = getAgentDailySpendRepository();
         const spentNano = await spendRepo.getSpent(params.agentId);
         const spentTon = Number(spentNano) / 1e9;
-        const customLimit = await stateRepo.get(params.agentId, 'daily_spend_limit_ton').catch(() => null);
-        const limitTon = customLimit ? Number((customLimit as any).value || DAILY_SPEND_LIMIT_TON) : DAILY_SPEND_LIMIT_TON;
+        const customLimit = unwrapState(await stateRepo.get(params.agentId, 'daily_spend_limit_ton').catch(() => null));
+        const limitTon = customLimit ? Number(customLimit) || DAILY_SPEND_LIMIT_TON : DAILY_SPEND_LIMIT_TON;
         return { spent_ton: spentTon, limit_ton: limitTon, remaining_ton: Math.max(0, limitTon - spentTon), date: new Date().toISOString().slice(0, 10) };
       } catch (e: any) { return { error: e.message }; }
     }
@@ -4924,8 +4975,8 @@ export async function executeTool(
     case 'get_agent_wallet': {
       try {
         // ── Unified wallet lookup: check BOTH state AND trigger_config ──
-        let addr = (await stateRepo.get(params.agentId, 'wallet_address'))?.value;
-        let mnemonic = (await stateRepo.get(params.agentId, 'wallet_mnemonic'))?.value;
+        let addr = unwrapState(await stateRepo.get(params.agentId, 'wallet_address'));
+        let mnemonic = unwrapState(await stateRepo.get(params.agentId, 'wallet_mnemonic'));
 
         // Fallback: check trigger_config.config (studio-created wallets)
         if (!addr || !mnemonic) {
@@ -4989,15 +5040,15 @@ export async function executeTool(
         if (amount > HIGH_VALUE_TX_LIMIT_TON) {
           return { error: `Safety: transaction of ${amount} TON exceeds limit (${HIGH_VALUE_TX_LIMIT_TON} TON). Reduce amount or contact platform admin.` };
         }
-        const walletAddr = (await stateRepo.get(params.agentId, 'wallet_address'))?.value;
-        const walletMn   = (await stateRepo.get(params.agentId, 'wallet_mnemonic'))?.value;
+        const walletAddr = unwrapState(await stateRepo.get(params.agentId, 'wallet_address'));
+        const walletMn   = unwrapState(await stateRepo.get(params.agentId, 'wallet_mnemonic'));
         if (!walletAddr || !walletMn) return { error: 'Agent wallet not created. Call get_agent_wallet first.' };
         const { walletFromMnemonic, sendAgentTransaction } = await import('../services/TonConnect');
         const wallet = await walletFromMnemonic(walletMn, 'v4r2');
         const result = await sendAgentTransaction(wallet, String(args.to), amount, String(args.comment || ''));
         if ((result as any)?.ok) {
           // Track spend (state + daily cap)
-          const totalSpent = Number((await stateRepo.get(params.agentId, 'total_ton_spent'))?.value || 0) + amount;
+          const totalSpent = Number(unwrapState(await stateRepo.get(params.agentId, 'total_ton_spent')) || 0) + amount;
           await stateRepo.set(params.agentId, params.userId, 'total_ton_spent', String(totalSpent));
           await recordDailySpend(params.agentId, params.userId, amount);
           await logToDb(params.agentId, 'info', `[TX] Sent ${amount} TON to ${args.to}, hash=${(result as any).hash}`, params.userId);
@@ -5013,8 +5064,8 @@ export async function executeTool(
 
     case 'send_jetton': {
       try {
-        const walletMn = (await stateRepo.get(params.agentId, 'wallet_mnemonic'))?.value;
-        const walletAddr = (await stateRepo.get(params.agentId, 'wallet_address'))?.value;
+        const walletMn = unwrapState(await stateRepo.get(params.agentId, 'wallet_mnemonic'));
+        const walletAddr = unwrapState(await stateRepo.get(params.agentId, 'wallet_address'));
         if (!walletAddr || !walletMn) return { error: 'Agent wallet not created. Call get_agent_wallet first.' };
         const jettonMaster = String(args.jetton_master);
         const toAddr = String(args.to);
@@ -5577,7 +5628,7 @@ export async function executeTool(
         const tgUserId = params.config?.telegramUserId || params.config?._tgUserId || 0;
         if (!tgUserId) return { key: args.key, value: null, error: 'No TG account linked' };
         const namespace = `tg_${tgUserId}`;
-        const pg = _getSharedStatePool();
+        const pg = await _getSharedStatePool();
         const res = await pg.query(
           `SELECT value FROM builder_bot.agent_shared_state WHERE user_id = $1 AND namespace = $2 AND key = $3`,
           [params.userId, namespace, args.key]
@@ -5591,7 +5642,7 @@ export async function executeTool(
         const tgUserId = params.config?.telegramUserId || params.config?._tgUserId || 0;
         if (!tgUserId) return { ok: false, error: 'No TG account linked' };
         const namespace = `tg_${tgUserId}`;
-        const pg = _getSharedStatePool();
+        const pg = await _getSharedStatePool();
         await pg.query(
           `INSERT INTO builder_bot.agent_shared_state (user_id, namespace, key, value, updated_by, updated_at)
            VALUES ($1, $2, $3, $4::jsonb, $5, NOW())
@@ -5692,6 +5743,7 @@ export async function executeTool(
             const snippetRegex = /<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/gi;
             const links: Array<{ url: string; title: string }> = [];
             let m;
+            linkRegex.lastIndex = 0;
             while ((m = linkRegex.exec(html)) && links.length < 5) {
               const rawUrl = m[1];
               const title = m[2].replace(/<[^>]+>/g, '').trim();
@@ -5702,6 +5754,7 @@ export async function executeTool(
               links.push({ url, title });
             }
             const snippets: string[] = [];
+            snippetRegex.lastIndex = 0;
             while ((m = snippetRegex.exec(html)) && snippets.length < 5) {
               snippets.push(m[1].replace(/<[^>]+>/g, '').trim());
             }
@@ -6992,12 +7045,27 @@ export async function executeTool(
           return { error: 'Agent not active', delivered: false, agent_id: targetId };
         }
 
-        // ── Deadlock detection via _pendingAsks ──
+        // ── Deadlock detection via DFS on _pendingAsks graph ──
         const callerIdStr = String(params.agentId);
         const targetIdStr = String(targetId);
-        const targetWaitingFor = _pendingAsks.get(targetIdStr);
-        if (targetWaitingFor && targetWaitingFor.has(params.agentId)) {
-          return { error: 'Circular dependency detected: would create deadlock', delivered: false };
+        // Check if adding caller→target would create a cycle (A→B→...→A)
+        {
+          const visited = new Set<string>();
+          const stack = [targetIdStr];
+          let hasCycle = false;
+          while (stack.length > 0) {
+            const node = stack.pop()!;
+            if (node === callerIdStr) { hasCycle = true; break; }
+            if (visited.has(node)) continue;
+            visited.add(node);
+            const waitingFor = _pendingAsks.get(node);
+            if (waitingFor) {
+              for (const dep of waitingFor) stack.push(String(dep));
+            }
+          }
+          if (hasCycle) {
+            return { error: 'Circular dependency detected: would create deadlock', delivered: false };
+          }
         }
 
         // ── Response pairing: generate unique request ID ──
@@ -7749,7 +7817,7 @@ export async function executeTool(
           const useDirectTLS = smtpPort === 465;
 
           const timeout = setTimeout(() => {
-            try { socket?.destroy(); } catch {}
+            try { socket?.removeAllListeners(); socket?.destroy(); } catch {}
             resolve({ ok: false, error: 'SMTP connection timeout (30s)' });
           }, 30000);
 
@@ -7760,10 +7828,22 @@ export async function executeTool(
 
             switch (step) {
               case 0: // Connected, send EHLO
+                if (code >= 400) {
+                  clearTimeout(timeout);
+                  socket.write(`QUIT\r\n`);
+                  resolve({ ok: false, error: `SMTP connect rejected (${code}): ${line}` });
+                  return;
+                }
                 step = 1;
                 socket.write(`EHLO agent.tonplatform.ru\r\n`);
                 break;
               case 1: // EHLO response
+                if (code >= 400) {
+                  clearTimeout(timeout);
+                  socket.write(`QUIT\r\n`);
+                  resolve({ ok: false, error: `SMTP EHLO rejected (${code}): ${line}` });
+                  return;
+                }
                 if (useDirectTLS || tlsUpgraded) {
                   // Already on TLS, proceed to AUTH
                   step = 4;
@@ -7776,6 +7856,7 @@ export async function executeTool(
                 break;
               case 2: // STARTTLS response
                 if (code === 220) {
+                  socket.removeListener('data', onData);
                   const tlsSocket = tls.connect({ socket, host: smtpHost, servername: smtpHost, rejectUnauthorized: false }, () => {
                     socket = tlsSocket;
                     tlsUpgraded = true;
@@ -7899,7 +7980,7 @@ export async function executeTool(
         'reply': 'tg_reply',
       };
       const alias = ALIASES[name];
-      if (alias) {
+      if (alias && name !== alias) {
         console.log(`[AI Runtime] Alias: ${name} → ${alias}`);
         return executeTool(alias, args, params);
       }
@@ -9217,9 +9298,9 @@ If web_search returns nothing useful → say "не смог найти акту�
       console.warn(`[AgentMemory] Smart compaction failed, falling back to trim: ${e.message?.slice(0, 100)}`);
     }
 
-    // Fallback: brute-force trim if still over limit
+    // Fallback: brute-force trim if still over limit (max 200 iterations to prevent infinite loop)
     if (totalChars > MAX_CONTEXT_CHARS) {
-      while (totalChars > MAX_CONTEXT_CHARS && messages.length > 7) {
+      for (let _trimIter = 0; _trimIter < 200 && totalChars > MAX_CONTEXT_CHARS && messages.length > 7; _trimIter++) {
         const removed = messages.splice(1, 1)[0];
         totalChars -= typeof removed.content === 'string' ? removed.content.length : 0;
       }
@@ -9349,6 +9430,7 @@ If web_search returns nothing useful → say "не смог найти акту�
             console.warn(`[AI runtime] Agent #${params.agentId} context overflow — emergency trim & retry`);
             while (messages.length > 5) messages.splice(1, 1);
             compressOldToolResults(messages, 2);
+            messages.push({ role: 'system' as any, content: '[Context was trimmed due to length. Some earlier tool results were removed.]' });
             continue;
           }
         } catch {}
@@ -9534,10 +9616,29 @@ If web_search returns nothing useful → say "не смог найти акту�
     };
 
     // Execute in batches of TOOL_CONCURRENCY
+    // C9: Financial tools must run serially to prevent daily spend cap bypass via concurrent calls
+    const SERIAL_FINANCIAL_TOOLS = new Set(['send_ton', 'send_jetton', 'ton_send_boc', 'buy_catalog_gift', 'buy_resale_gift', 'list_gift_for_sale']);
     for (let i = 0; i < assistant.tool_calls.length; i += TOOL_CONCURRENCY) {
+      // M51: Check if agent was deactivated before each batch
+      if (!_activeHandles.has(params.agentId)) {
+        await logToDb(params.agentId, 'info', `[AI run] Agent deactivated mid-batch, stopping tool execution`, params.userId);
+        break;
+      }
       const batch = assistant.tool_calls.slice(i, i + TOOL_CONCURRENCY);
-      const batchResults = await Promise.all(batch.map(executeOneToolCall));
-      toolResults.push(...batchResults);
+      // Separate financial tools for serial execution
+      const financialCalls = batch.filter((tc: any) => SERIAL_FINANCIAL_TOOLS.has(tc.function?.name));
+      const normalCalls = batch.filter((tc: any) => !SERIAL_FINANCIAL_TOOLS.has(tc.function?.name));
+      // Execute normal tools in parallel
+      if (normalCalls.length > 0) {
+        const normalResults = await Promise.all(normalCalls.map(executeOneToolCall));
+        toolResults.push(...normalResults);
+      }
+      // Execute financial tools one at a time (prevents concurrent spend cap bypass)
+      for (const ftc of financialCalls) {
+        if (!_activeHandles.has(params.agentId)) break;
+        const result = await executeOneToolCall(ftc);
+        toolResults.push(result);
+      }
     }
 
     messages.push(...toolResults);
@@ -9747,7 +9848,11 @@ If web_search returns nothing useful → say "не смог найти акту�
       try {
         const existing = typeof existingStr === 'string' ? JSON.parse(existingStr) : existingStr;
         historyToSave.push(...existing);
-      } catch (hp: any) { console.warn(`[AI runtime] Agent #${params.agentId} corrupted history JSON, starting fresh:`, hp?.message); }
+      } catch (hp: any) {
+        console.warn(`[AI runtime] Agent #${params.agentId} corrupted history JSON, saving backup and starting fresh:`, hp?.message);
+        // Save corrupted history as backup before overwriting
+        try { await getAgentStateRepository().set(params.agentId, params.userId, '_conversation_history_backup', typeof existingStr === 'string' ? existingStr : JSON.stringify(existingStr)); } catch {}
+      }
     }
     // Add messages from this run (user messages + assistant final response)
     if (msgs.length > 0) {
@@ -9861,7 +9966,7 @@ export class AIAgentRuntime {
             setTimeout(() => {
               try { getAIAgentRuntime().deactivate(opts.agentId); } catch {}
               // Mark inactive in DB
-              _getSharedStatePool().query('UPDATE builder_bot.agents SET is_active = false WHERE id = $1', [opts.agentId]).catch(() => {});
+              _getSharedStatePool().then(pg => pg.query('UPDATE builder_bot.agents SET is_active = false WHERE id = $1', [opts.agentId])).catch(() => {});
             }, 100);
           }
         } finally {
@@ -9978,8 +10083,21 @@ export class AIAgentRuntime {
       _toolCircuitBreakers.forEach((_, key) => { if (key.startsWith(agentId + ':')) _toolCircuitBreakers.delete(key); });
       _dailySpendMem.delete(agentId);
       _webRequestCounts.delete(agentId);
+      _tickNotifyFlag.delete(agentId);
+      // Clean up _chatResponseCallbacks
+      const chatCb = _chatResponseCallbacks.get(agentId);
+      if (chatCb) {
+        clearTimeout(chatCb.timer);
+        chatCb.resolve('');
+        _chatResponseCallbacks.delete(agentId);
+      }
       // Note: _approvalWaiters is keyed by approval ID (number), cleaned by timeout
       _pendingAsks.delete(String(agentId));
+      // M42: Also clean _pendingAsks entries that reference this agent as a target
+      _pendingAsks.forEach((targets, key) => {
+        targets.delete(agentId);
+        if (targets.size === 0) _pendingAsks.delete(key);
+      });
       // Clean up pending confirmations for this agent
       for (const [askId, pending] of _pendingConfirmations) {
         if (pending.agentId === agentId) {
@@ -10033,15 +10151,22 @@ export function getAIAgentRuntime(): AIAgentRuntime {
       _tickNotifyFlag.forEach((_, id) => { if (!activeSet.has(id)) _tickNotifyFlag.delete(id); });
       // Clean webRequestCounts for deactivated agents
       _webRequestCounts.forEach((_, id) => { if (!activeSet.has(id)) _webRequestCounts.delete(id); });
-      // Clean tool rate limit timestamps older than 2 minutes
+      // Clean tool rate limit timestamps older than 2 minutes + inactive agents
       _toolRateLimits.forEach((timestamps, key) => {
+        const agentId = parseInt(key.split(':')[0]);
+        if (!isNaN(agentId) && !activeSet.has(agentId)) { _toolRateLimits.delete(key); return; }
         const fresh = timestamps.filter(t => Date.now() - t < 120_000);
         if (fresh.length === 0) _toolRateLimits.delete(key);
         else _toolRateLimits.set(key, fresh);
       });
-      // Clean approval waiters older than 10 minutes
+      // Clean approval waiters older than 10 minutes (guard against undefined _createdAt)
       _approvalWaiters.forEach((waiter, key) => {
-        if (Date.now() - (waiter as any)._createdAt > 10 * 60 * 1000) _approvalWaiters.delete(key);
+        if (!(waiter as any)._createdAt || Date.now() - (waiter as any)._createdAt > 10 * 60 * 1000) _approvalWaiters.delete(key);
+      });
+      // Clean _recentPostHashes for inactive agents
+      _recentPostHashes.forEach((_, key) => {
+        const agentId = parseInt(key.split(':')[0]);
+        if (!isNaN(agentId) && !activeSet.has(agentId)) _recentPostHashes.delete(key);
       });
       // Clean Maps for deactivated agents (prevent unbounded growth)
       _lastMessageTime.forEach((_, id) => { if (!activeSet.has(id)) _lastMessageTime.delete(id); });
@@ -10059,9 +10184,9 @@ export function getAIAgentRuntime(): AIAgentRuntime {
       _channelPostTimes.forEach((ts, key) => {
         if (ts < _1h) _channelPostTimes.delete(key);
       });
-      // Prune agent meta cache expired entries
+      // Prune agent meta cache expired entries (use cachedAt + 300s TTL)
       _agentMetaCache.forEach((entry, id) => {
-        if ((entry as any).expiresAt && (entry as any).expiresAt < Date.now()) _agentMetaCache.delete(id);
+        if (Date.now() - entry.cachedAt > 300_000) _agentMetaCache.delete(id);
       });
     }, 10 * 60 * 1000);
   }

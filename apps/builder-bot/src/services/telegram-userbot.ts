@@ -47,7 +47,7 @@ async function safeFetchBuffer(url: string, timeoutMs = 15000): Promise<Buffer> 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const fetch = (globalThis as any).fetch || require('node-fetch');
+    const fetch = (globalThis as any).fetch || (() => { try { return require('node-fetch'); } catch { throw new Error('No fetch implementation available (globalThis.fetch missing and node-fetch not installed)'); } })();
     const resp = await fetch(url, { signal: controller.signal });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const contentLength = parseInt(resp.headers.get('content-length') || '0', 10);

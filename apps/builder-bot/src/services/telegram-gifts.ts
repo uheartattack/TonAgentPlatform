@@ -62,6 +62,7 @@ export class TelegramGiftsService {
     }
     try {
       const res  = await fetch(TG_API('getAvailableGifts'));
+      if (!res.ok) return [];
       const data = await res.json() as any;
       if (!data.ok) return [];
 

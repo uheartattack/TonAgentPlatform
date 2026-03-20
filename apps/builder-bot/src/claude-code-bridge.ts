@@ -152,11 +152,15 @@ export async function claudeCodeComplete(
       // Use execFile with shell to pipe file content — more reliable than Node.js stdin.write
       const cliCmd = cliPath === 'npx' ? 'npx @anthropic-ai/claude-code' : cliPath;
       const argsStr = args.map(a => {
-        // Escape single quotes in arg values
+        // Escape for shell safety: single-quote wrapping prevents interpretation of
+        // backticks, $(), and all other shell metacharacters. Only single quotes
+        // need escaping inside single-quoted strings. Also strip null bytes.
         if (a === '-') return '-';
-        return `'${a.replace(/'/g, "'\\''")}'`;
+        const sanitized = a.replace(/\0/g, '');
+        return `'${sanitized.replace(/'/g, "'\\''")}'`;
       }).join(' ');
-      const shellCmd = `cat '${tempFile}' | ${cliCmd} ${argsStr}`;
+      const safeTempFile = tempFile.replace(/'/g, "'\\''").replace(/\0/g, '');
+      const shellCmd = `cat '${safeTempFile}' | ${cliCmd} ${argsStr}`;
 
       proc = spawn('bash', ['-c', shellCmd], {
         cwd: process.env.HOME || '/root',

@@ -248,11 +248,14 @@ export async function installPlugin(userId: number, listingId: number): Promise<
     }
   } else {
     // Free plugin — just install
-    await _pool.query(
-      'INSERT INTO builder_bot.plugin_installs (listing_id, user_id, status) VALUES ($1,$2,$3) ON CONFLICT (listing_id, user_id) DO UPDATE SET status=$3, installed_at=NOW()',
+    const installRes = await _pool.query(
+      'INSERT INTO builder_bot.plugin_installs (listing_id, user_id, status) VALUES ($1,$2,$3) ON CONFLICT (listing_id, user_id) DO UPDATE SET status=$3, installed_at=NOW() RETURNING (xmax = 0) AS is_insert',
       [listingId, userId, 'active']
     );
-    await _pool.query('UPDATE builder_bot.plugin_listings SET installs = installs + 1 WHERE id=$1', [listingId]);
+    // Only increment install count for genuinely new installs, not re-activations
+    if (installRes.rows[0]?.is_insert) {
+      await _pool.query('UPDATE builder_bot.plugin_listings SET installs = installs + 1 WHERE id=$1', [listingId]);
+    }
   }
 
   return { ok: true };

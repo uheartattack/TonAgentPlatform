@@ -27,6 +27,9 @@ function esc(text: string | number | null | undefined): string {
     .replace(/!/g, '\\!');
 }
 
+// Tracks users who have completed clarification (keyed by userId, value = enriched description)
+const clarifiedUsers = new Map<number, string>();
+
 // Platform AI — uses configured API key (Gemini, OpenAI, etc.)
 const PLATFORM_API_KEY = process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY || '';
 const PLATFORM_BASE_URL = process.env.OPENAI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai/';
@@ -141,7 +144,6 @@ async function callWithFallback(
         throw err;
       }
       console.warn(`[Orchestrator] model ${model} failed (${msg.slice(0, 80)}), trying next...`);
-      if (!isRetryable) throw err;
     }
   }
   throw new Error('Все модели недоступны. Попробуйте через несколько секунд.');
@@ -515,7 +517,8 @@ export class Orchestrator {
           msg.includes('timed out') || msg.includes('timeout') ||
           msg.includes('503') || msg.includes('502') ||
           msg.includes('ECONNRESET') || msg.includes('Empty response') ||
-          msg.includes('tool') || msg.includes('function');
+          msg.includes('does not support tools') || msg.includes('function_call') ||
+          msg.includes('tool_use') || msg.includes('tools are not supported');
         console.warn(`[Orchestrator] model ${model} failed (${msg.slice(0, 80)}), trying next...`);
         if (!isRetryable) throw err;
       }
@@ -538,13 +541,15 @@ export class Orchestrator {
         // ═══ PROGRAMMATIC ENFORCEMENT: всегда сначала уточняем ═══
         // Если AI вызвал create_agent напрямую (обошёл ask_clarification) — перехватываем
         const desc = args.description || originalMessage;
-        const wasAlreadyClarified = desc.includes('__ATLAS_CLARIFIED__:');
+        const wasAlreadyClarified = clarifiedUsers.has(userId);
         if (!wasAlreadyClarified) {
           console.log('[Orchestrator] INTERCEPTED create_agent → forcing clarification first');
           // Перенаправляем на handleCreateAgent, где есть safety-net clarification
           return this.handleCreateAgent(userId, desc, agentName);
         }
-        return this.handleCreateAgent(userId, desc, agentName);
+        const enrichedDesc = clarifiedUsers.get(userId) || desc;
+        clarifiedUsers.delete(userId);
+        return this.handleCreateAgent(userId, enrichedDesc, agentName);
       }
 
       case 'list_agents':
@@ -958,7 +963,7 @@ ${studioContext?.source === 'studio' ? `
     // ATLAS CLARIFICATION — ГАРАНТИРОВАННЫЕ уточняющие вопросы
     // ПРОГРАММНОЕ ПРИНУЖДЕНИЕ: нет ответа пользователя = нет создания
     // ════════════════════════════════════════════════════════════
-    const alreadyClarified = message.includes('__ATLAS_CLARIFIED__:');
+    const alreadyClarified = clarifiedUsers.has(userId);
     if (!alreadyClarified) {
       // Hardcoded fallback questions — используются если AI недоступен
       const fallbackQuestions = [
@@ -2797,7 +2802,7 @@ ${isOwner ? '\nТЫ ОБЩАЕШЬСЯ С ВЛАДЕЛЬЦЕМ ПЛАТФОРМ�
           }));
 
           await getMemoryManager().setWaitingForInput(userId, 'agent_clarification', {
-            description: `${waitingContext.context.description}\n\n__ATLAS_CLARIFIED__: ${answer}`,
+            description: `${waitingContext.context.description}\n\nUser clarification: ${answer}`,
             allQuestions: remainingQuestions.slice(1),
           });
 
@@ -2809,7 +2814,8 @@ ${isOwner ? '\nТЫ ОБЩАЕШЬСЯ С ВЛАДЕЛЬЦЕМ ПЛАТФОРМ�
         }
 
         // Все вопросы заданы — создаём агента с обогащённым описанием
-        const enrichedDesc = `${waitingContext.context.description}\n\n__ATLAS_CLARIFIED__: ${answer}`;
+        const enrichedDesc = `${waitingContext.context.description}\n\nUser clarification: ${answer}`;
+        clarifiedUsers.set(userId, enrichedDesc);
         return this.handleCreateAgent(userId, enrichedDesc);
       }
 

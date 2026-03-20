@@ -79,6 +79,7 @@ export async function getWalletBalance(address: string): Promise<number> {
       const res = await fetch(`${TONAPI_BASE}/accounts/${encodeURIComponent(address)}`, {
         headers: { Authorization: `Bearer ${TONAPI_KEY}` },
       });
+      if (!res.ok) throw new Error(`TONAPI ${res.status}: ${res.statusText}`);
       const data = await res.json() as any;
       if (data.balance != null) return Number(data.balance) / 1e9;
     }

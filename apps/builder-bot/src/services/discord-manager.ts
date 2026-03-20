@@ -19,7 +19,12 @@ export class DiscordManager {
     this.configs.set(agentId, config);
   }
 
+  private validateSnowflake(id: string, name: string): void {
+    if (!/^\d+$/.test(id)) throw new Error(`Invalid ${name}: must be numeric`);
+  }
+
   async sendMessage(agentId: number, channelId: string, content: string): Promise<any> {
+    this.validateSnowflake(channelId, 'channelId');
     const cfg = this.configs.get(agentId);
     if (!cfg) throw new Error('Discord not configured for this agent');
     const res = await fetch(`${DISCORD_API}/channels/${channelId}/messages`, {
@@ -32,6 +37,7 @@ export class DiscordManager {
   }
 
   async getMessages(agentId: number, channelId: string, limit = 20): Promise<any[]> {
+    this.validateSnowflake(channelId, 'channelId');
     const cfg = this.configs.get(agentId);
     if (!cfg) throw new Error('Discord not configured');
     const res = await fetch(`${DISCORD_API}/channels/${channelId}/messages?limit=${limit}`, {
@@ -42,6 +48,7 @@ export class DiscordManager {
   }
 
   async getGuildChannels(agentId: number, guildId: string): Promise<any[]> {
+    this.validateSnowflake(guildId, 'guildId');
     const cfg = this.configs.get(agentId);
     if (!cfg) throw new Error('Discord not configured');
     const res = await fetch(`${DISCORD_API}/guilds/${guildId}/channels`, {

@@ -91,12 +91,20 @@ function pool(): Pool {
 // ═══════════════════════════════════════════════════════════════════════════
 
 const MAX_KEYS_PER_NS = 100;
+const MAX_CREWS = 500;
 
 /** crewId → namespace → key → value */
 const sharedMem = new Map<string, Map<string, Map<string, any>>>();
 
 function nsMap(crewId: string, namespace: string): Map<string, any> {
-  if (!sharedMem.has(crewId)) sharedMem.set(crewId, new Map());
+  if (!sharedMem.has(crewId)) {
+    // Evict oldest crew if at limit
+    if (sharedMem.size >= MAX_CREWS) {
+      const oldest = sharedMem.keys().next().value;
+      if (oldest !== undefined) sharedMem.delete(oldest);
+    }
+    sharedMem.set(crewId, new Map());
+  }
   const crew = sharedMem.get(crewId)!;
   if (!crew.has(namespace)) crew.set(namespace, new Map());
   return crew.get(namespace)!;
