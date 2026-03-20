@@ -1355,7 +1355,7 @@ bot.command('search', async (ctx) => {
       `${a.isActive ? '🟢' : '⚪'} <b>${escHtml(a.name || 'Без имени')}</b> #${a.id}\n   ${escHtml((a.description || '').slice(0, 60))}`
     );
     const keyboard = matches.slice(0, 10).map((a: any) => [
-      { text: `${a.isActive ? '🟢' : '⚪'} ${a.name || '#' + a.id}`, callback_data: `agent_${a.id}` },
+      { text: `${a.isActive ? '🟢' : '⚪'} ${a.name || '#' + a.id}`, callback_data: `agent_menu:${a.id}` },
     ]);
     await ctx.reply(
       `🔍 Найдено ${matches.length} агент(ов) по "${escHtml(query)}":\n\n${lines.join('\n\n')}`,
@@ -4334,7 +4334,7 @@ bot.on('callback_query', async (ctx) => {
               { text: '📊 Manager', callback_data: `role_set:${agentId}:manager` },
               { text: '🧠 Director', callback_data: `role_set:${agentId}:director` },
             ],
-            [{ text: `${peb('back')} Назад`, callback_data: `agent:${agentId}` }],
+            [{ text: `${peb('back')} Назад`, callback_data: `agent_menu:${agentId}` }],
           ],
         },
       }
@@ -6590,8 +6590,11 @@ const MENU_TEXTS = new Set([
   '🤖 Мои агенты', '➕ Создать агента', '🏪 Маркетплейс',
   '🔌 Плагины', '⚡ Workflow', '💎 TON Connect', '💳 Подписка', '📊 Статистика', '❓ Помощь', '👤 Профиль',
   // EN keyboard texts
-  '🤖 My Agents', '➕ Create Agent', '🏪 Marketplace',
-  '🔌 Plugins', '⚡ Workflow', '💎 TON Connect', '💳 Subscription', '📊 Statistics', '❓ Help', '👤 Profile',
+  '💰 Кошелёк', '🎁 Гифты & NFT',
+  // EN keyboard texts
+  '🤖 My Agents', '✏️ Create Agent', '➕ Create Agent', '🏪 Marketplace',
+  '🔌 Plugins', '⚡ Workflow', '💎 TON Connect', '💳 Subscription', '📊 Statistics', '📊 Stats', '❓ Help', '👤 Profile',
+  '💰 Wallet', '🎁 Gifts & NFT',
 ]);
 
 // ════════════════════════════════════════════════════════════
