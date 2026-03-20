@@ -24,6 +24,31 @@
 - **Описание**: `agentResult.data` используется до проверки `!agentResult.data`
 - **Fix**: Переместить null check перед использованием data
 
+### C4. payments.ts:561 — double-spend на topup (нет usedTxHashes check)
+- **Статус**: 🔧 TODO
+- **Описание**: `verifyTopupTransaction()` НЕ проверяет usedTxHashes. Юзер может кредитовать баланс одной и той же транзакцией многократно.
+- **Fix**: Добавить `if (usedTxHashes.has(txHash)) continue;` как в verifyTonTransaction
+
+### C5. orchestrator.ts:541 — clarification bypass через magic string
+- **Статус**: 🔧 TODO
+- **Описание**: Юзер может вписать `__ATLAS_CLARIFIED__:` в сообщение и пропустить все вопросы уточнения
+- **Fix**: Boolean flag в контексте вместо magic string
+
+### C6. context.ts:30 — hardcoded OWNER_ID fallback `130806013`
+- **Статус**: 🔧 TODO
+- **Описание**: Без env var любой юзер с ID 130806013 получает admin. Дефолт должен быть '0'.
+- **Fix**: `parseInt(process.env.OWNER_ID || '0', 10)`
+
+### C7. webhook-server.ts:112 — auth закомментирован, API открыт
+- **Статус**: 🔧 TODO
+- **Описание**: API key check закомментирован. Любой может листить и запускать агентов по userId.
+- **Fix**: Раскомментировать auth или удалить эндпоинты (api-server.ts уже имеет auth)
+
+### C8. creator.ts:295 — агент сохраняется при failed security scan
+- **Статус**: 🔧 TODO
+- **Описание**: Если security scan фейлит, агент всё равно сохраняется + potential null deref на data!.score
+- **Fix**: `if (!securityPassed) return error;`
+
 ---
 
 ## 🟠 HIGH
@@ -72,6 +97,31 @@
 - **Статус**: 🔧 TODO
 - **Описание**: `mdToHtml` не блокирует `javascript:` URLs и не экранирует `"` в href. Attribute injection возможен.
 - **Fix**: Добавить ту же санитизацию что в telegram-userbot.ts
+
+### H10. universal-agent-chat.ts:17 — Anthropic keys fail через OpenRouter
+- **Статус**: 🔧 TODO
+- **Описание**: Anthropic provider роутится на OpenRouter, а не напрямую. sk-ant-* ключи не работают с OpenRouter.
+- **Fix**: Для Anthropic использовать нативный SDK или документировать что нужен OpenRouter key
+
+### H11. claude-code-bridge.ts:159 — potential shell injection в CLI args
+- **Статус**: 🔧 TODO
+- **Описание**: argsStr экранирует только кавычки, но не backticks и `$(...)`. User prompt может содержать shell metacharacters.
+- **Fix**: Всегда использовать stdin pipe для untrusted content
+
+### H12. schema-extensions.ts — missing DDL columns для /metrics
+- **Статус**: 🔧 TODO
+- **Описание**: agent_audit_log не имеет tool_name, duration_ms, success — /metrics endpoint крашится
+- **Fix**: ALTER TABLE ADD COLUMN IF NOT EXISTS
+
+### H13. index.ts:73 — startBot() не awaited
+- **Статус**: 🔧 TODO
+- **Описание**: Bot может не быть готов когда restoreActiveAgents() запускается. Agents шлют notifications в неподключённый бот.
+- **Fix**: `await startBot();`
+
+### H14. runner.ts:534 — restoreActiveAgents без rate limiting
+- **Статус**: 🔧 TODO
+- **Описание**: 50+ агентов восстанавливаются одновременно при рестарте — overload AI API
+- **Fix**: Задержка 500ms между активациями
 
 ---
 
@@ -172,6 +222,36 @@
 - **Описание**: tweetId/userId интерполируются без валидации
 - **Fix**: `encodeURIComponent()` или regex validation
 
+### M20. payments.ts:344 — generation tracker TTL (24h) < billing period (month)
+- **Статус**: 🔧 TODO
+- **Описание**: TTLMap evicts count каждые 24h, но лимит месячный. Юзер получает бесплатные генерации.
+- **Fix**: TTL = 31 день или persist в DB
+
+### M21. execution-tools.ts:22 — fixLiteralNewlinesInStrings не обрабатывает regex literals
+- **Статус**: 🔧 TODO
+- **Описание**: `/it's a test/` вызовет парсер войти в single-quote mode и испортит код
+- **Fix**: Добавить regex literal detection
+
+### M22. execution-tools.ts:318 — SSRF bypass через octal/decimal localhost
+- **Статус**: 🔧 TODO
+- **Описание**: `0177.0.0.1`, `2130706433`, `0x7f000001` не блокируются regex
+- **Fix**: Resolve hostname → IP before checking
+
+### M23. execution-tools.ts:112 — agentState Map leak для deleted agents
+- **Статус**: 🔧 TODO
+- **Описание**: При удалении агента его state в Map остаётся навсегда
+- **Fix**: Вызывать pruneAgentMemory(agentId) при удалении
+
+### M24. notifier.ts:52 — interval не .unref()
+- **Статус**: 🔧 TODO
+- **Описание**: Node.js не может graceful exit если этот interval последний
+- **Fix**: `.unref()` на interval
+
+### M25. orchestrator.ts:518 — слишком широкий retry pattern
+- **Статус**: 🔧 TODO
+- **Описание**: `msg.includes('function')` матчит любой JS stacktrace → бесполезные ретраи
+- **Fix**: Более специфичные паттерны: 'does not support tools'
+
 ---
 
 ## 🔵 LOW
@@ -226,11 +306,10 @@
 ---
 
 ## 📊 STATS
-- **Найдено**: 37 багов (и будет больше — 3 аудитора ещё работают)
+- **Найдено**: 55 багов (ещё 2 аудитора работают: bot.ts, ai-agent-runtime.ts)
 - **Зафикшено**: 0 (из этого списка)
-- **Критических**: 3
-- **High**: 9
-- **Medium**: 19
+- **Критических**: 8
+- **High**: 14
+- **Medium**: 25
 - **Low**: 4
 - **Последний аудит**: 2026-03-20
-- **Аудит в процессе**: bot.ts, ai-agent-runtime.ts, orchestrator, api-server, payments
