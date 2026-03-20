@@ -123,6 +123,16 @@
 - **Описание**: 50+ агентов восстанавливаются одновременно при рестарте — overload AI API
 - **Fix**: Задержка 500ms между активациями
 
+### H15. bot.ts:8570 — `stop_agent:ID` callback НЕТ HANDLER'а
+- **Статус**: 🔧 TODO
+- **Описание**: Кнопка "⏹ Стоп" в нотификациях агента генерирует callback `stop_agent:ID`, но handler для этого callback data отсутствует. Кнопка просто не работает.
+- **Fix**: Добавить `bot.action(/^stop_agent:(\d+)$/, ...)` handler
+
+### H16. bot.ts:8754 — `mkt_check_pay:ID` callback НЕТ HANDLER'а
+- **Статус**: 🔧 TODO
+- **Описание**: Кнопка "✅ Проверить оплату" в marketplace генерирует callback `mkt_check_pay:ID`, но handler отсутствует. Оплата marketplace покупок не завершается.
+- **Fix**: Добавить `bot.action(/^mkt_check_pay:(\d+)$/, ...)` handler
+
 ---
 
 ## 🟡 MEDIUM
@@ -252,6 +262,56 @@
 - **Описание**: `msg.includes('function')` матчит любой JS stacktrace → бесполезные ретраи
 - **Fix**: Более специфичные паттерны: 'does not support tools'
 
+### M26. bot.ts:301 — pendingRepairs cleanup wrong key type
+- **Статус**: 🔧 TODO
+- **Описание**: `pendingRepairs` Map ключи — `agentId:string`, но cleanup timeout пытается удалить по числовому ID. Entries никогда не удаляются.
+- **Fix**: Использовать тот же строковый ключ в setTimeout
+
+### M27. bot.ts:5695 — MarkdownV2 escaping `\\.` используется в HTML mode
+- **Статус**: 🔧 TODO
+- **Описание**: Текст с `\\.` экранированием отправляется с `parse_mode: 'HTML'`. Юзер видит literal `\\.` вместо точки.
+- **Fix**: Использовать `esc()` только для MarkdownV2, для HTML — HTML-entities
+
+### M28. bot.ts — `userLanguages` Map никогда не чистится
+- **Статус**: 🔧 TODO
+- **Описание**: Каждый юзер добавляется в Map при первом сообщении, никогда не удаляется. Memory leak.
+- **Fix**: TTL-based cleanup или LRU cache
+
+### M29. bot.ts — `agentWallets` Map никогда не чистится
+- **Статус**: 🔧 TODO
+- **Описание**: Кошельки агентов кешируются навсегда. Memory leak.
+- **Fix**: TTL-based cleanup
+
+### M30. bot.ts — `tonConnectLinks` Map никогда не чистится
+- **Статус**: 🔧 TODO
+- **Описание**: TON Connect ссылки кешируются навсегда. Memory leak.
+- **Fix**: TTL-based cleanup
+
+### M31. bot.ts — 10+ pending Maps без TTL cleanup
+- **Статус**: 🔧 TODO
+- **Описание**: pendingRenames, pendingEdits, pendingRefinements, pendingAgentChats, pendingTgAuth, pendingApiKey, pendingPublish, pendingTemplateSetup — все без auto-cleanup. Overlaps с M1.
+- **Fix**: Единый TTLMap или periodic cleanup для всех
+
+### M32. bot.ts — duplicate agentOwnershipCheck не cached
+- **Статус**: 🔧 TODO
+- **Описание**: Множественные DB queries `SELECT owner_id FROM agents WHERE id=$1` для одного и того же агента в одном callback. Нет кеширования ownership.
+- **Fix**: Short-lived ownership cache (30s TTL)
+
+### M33. bot.ts — error in HitL confirmation routing
+- **Статус**: 🔧 TODO
+- **Описание**: `handleUserConfirmation()` вызывается в top of text handler, но если юзер уже в pendingAgentChats, confirmation может перехватиться chat handler'ом.
+- **Fix**: Проверять pendingConfirmations ПЕРЕД pendingAgentChats
+
+### M34. bot.ts — safeReply HTML fallback не strip tags
+- **Статус**: 🔧 TODO
+- **Описание**: При fallback с HTML parse_mode на plain text, HTML теги (`<b>`, `<code>`) остаются visible юзеру
+- **Fix**: Strip HTML tags в fallback branch
+
+### M35. bot.ts — race condition в template wizard multi-step
+- **Статус**: 🔧 TODO
+- **Описание**: Если юзер быстро отправит 2 сообщения подряд во время wizard, оба обработаются параллельно с одним и тем же `remaining[]` state
+- **Fix**: Mutex или sequential processing per user
+
 ---
 
 ## 🔵 LOW
@@ -306,10 +366,12 @@
 ---
 
 ## 📊 STATS
-- **Найдено**: 55 багов (ещё 2 аудитора работают: bot.ts, ai-agent-runtime.ts)
+- **Найдено**: 68 багов
 - **Зафикшено**: 0 (из этого списка)
 - **Критических**: 8
-- **High**: 14
-- **Medium**: 25
+- **High**: 16
+- **Medium**: 35 (+10 из bot.ts аудита)
 - **Low**: 4
+- **Аудит bot.ts**: ✅ завершён (13 багов добавлено)
+- **Аудит ai-agent-runtime.ts**: 🔄 pending
 - **Последний аудит**: 2026-03-20
