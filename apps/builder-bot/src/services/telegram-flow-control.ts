@@ -501,20 +501,20 @@ export async function flushTokenUsage(agentId: number, stateRepo: any, userId: n
   if (_flushingAgents.has(agentId)) return;
   _flushingAgents.add(agentId);
 
-  try {
-    // Snapshot and reset BEFORE async DB call to prevent race
-    const snapshot = {
-      promptTokens: bucket.promptTokens,
-      completionTokens: bucket.completionTokens,
-      totalTokens: bucket.totalTokens,
-      calls: bucket.calls,
-    };
-    bucket.promptTokens = 0;
-    bucket.completionTokens = 0;
-    bucket.totalTokens = 0;
-    bucket.calls = 0;
-    bucket.lastFlush = Date.now();
+  // Snapshot and reset BEFORE async DB call to prevent race
+  const snapshot = {
+    promptTokens: bucket.promptTokens,
+    completionTokens: bucket.completionTokens,
+    totalTokens: bucket.totalTokens,
+    calls: bucket.calls,
+  };
+  bucket.promptTokens = 0;
+  bucket.completionTokens = 0;
+  bucket.totalTokens = 0;
+  bucket.calls = 0;
+  bucket.lastFlush = Date.now();
 
+  try {
     const existing = await stateRepo.get(agentId, '_token_usage').catch(() => null);
     let cumulative = { promptTokens: 0, completionTokens: 0, totalTokens: 0, calls: 0 };
     try {

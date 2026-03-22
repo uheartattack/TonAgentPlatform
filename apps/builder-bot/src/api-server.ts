@@ -2198,8 +2198,8 @@ export function startApiServer() {
     }
   });
 
-  // ── Helper: verify agent belongs to authenticated user ──
-  async function verifyAgentOwnership(agentId: number, userId: number): Promise<boolean> {
+  // ── Helper: verify agent belongs to authenticated user (simple bool version for telegram endpoints) ──
+  async function checkAgentOwner(agentId: number, userId: number): Promise<boolean> {
     try {
       const r = await getDBTools().getAgent(agentId, userId);
       return r.success && !!r.data;
@@ -2211,7 +2211,7 @@ export function startApiServer() {
     const { agentId } = req.body || {};
     const userId = (req as any).userId;
     if (!agentId) { res.status(400).json({ ok: false, error: 'agentId required' }); return; }
-    if (!await verifyAgentOwnership(Number(agentId), userId)) { res.status(403).json({ ok: false, error: 'Access denied' }); return; }
+    if (!await checkAgentOwner(Number(agentId), userId)) { res.status(403).json({ ok: false, error: 'Access denied' }); return; }
     try {
       const result = await userbotManager.startQRLogin(Number(agentId));
       res.json({ ok: true, ...(result && typeof result === 'object' ? result : {}) });
@@ -2225,7 +2225,7 @@ export function startApiServer() {
     const { agentId, phone } = req.body || {};
     const userId = (req as any).userId;
     if (!agentId || !phone) { res.status(400).json({ ok: false, error: 'agentId and phone required' }); return; }
-    if (!await verifyAgentOwnership(Number(agentId), userId)) { res.status(403).json({ ok: false, error: 'Access denied' }); return; }
+    if (!await checkAgentOwner(Number(agentId), userId)) { res.status(403).json({ ok: false, error: 'Access denied' }); return; }
     try {
       const result = await userbotManager.startPhoneLogin(Number(agentId), phone);
       res.json({ ok: true, ...(result && typeof result === 'object' ? result : {}) });
@@ -2239,7 +2239,7 @@ export function startApiServer() {
     const { agentId, code } = req.body || {};
     const userId = (req as any).userId;
     if (!agentId || !code) { res.status(400).json({ ok: false, error: 'agentId and code required' }); return; }
-    if (!await verifyAgentOwnership(Number(agentId), userId)) { res.status(403).json({ ok: false, error: 'Access denied' }); return; }
+    if (!await checkAgentOwner(Number(agentId), userId)) { res.status(403).json({ ok: false, error: 'Access denied' }); return; }
     try {
       const result = await userbotManager.submitCode(Number(agentId), code);
       res.json({ ok: true, ...(result && typeof result === 'object' ? result : {}) });
@@ -2253,7 +2253,7 @@ export function startApiServer() {
     const agentId = parseInt(req.query.agentId as string);
     const userId = (req as any).userId;
     if (!agentId) { res.json({ ok: true, status: 'none' }); return; }
-    if (!await verifyAgentOwnership(agentId, userId)) { res.status(403).json({ ok: false, error: 'Access denied' }); return; }
+    if (!await checkAgentOwner(agentId, userId)) { res.status(403).json({ ok: false, error: 'Access denied' }); return; }
     const status = userbotManager.getAuthStatus(agentId);
     res.json({ ok: true, ...status });
   });
@@ -2263,7 +2263,7 @@ export function startApiServer() {
     const { agentId, password } = req.body || {};
     const userId = (req as any).userId;
     if (!agentId || !password) { res.status(400).json({ ok: false, error: 'agentId and password required' }); return; }
-    if (!await verifyAgentOwnership(Number(agentId), userId)) { res.status(403).json({ ok: false, error: 'Access denied' }); return; }
+    if (!await checkAgentOwner(Number(agentId), userId)) { res.status(403).json({ ok: false, error: 'Access denied' }); return; }
     try {
       const result = await userbotManager.submit2FAPassword(Number(agentId), password);
       res.json({ ok: true, ...(result && typeof result === 'object' ? result : {}) });
@@ -2277,7 +2277,7 @@ export function startApiServer() {
     const agentId = parseInt(req.query.agentId as string || req.body?.agentId);
     const userId = (req as any).userId;
     if (!agentId) { res.status(400).json({ ok: false, error: 'agentId required' }); return; }
-    if (!await verifyAgentOwnership(agentId, userId)) { res.status(403).json({ ok: false, error: 'Access denied' }); return; }
+    if (!await checkAgentOwner(agentId, userId)) { res.status(403).json({ ok: false, error: 'Access denied' }); return; }
     try {
       await userbotManager.disconnectAgent(agentId);
       res.json({ ok: true });
