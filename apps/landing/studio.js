@@ -537,28 +537,27 @@ async function loadDashboard() {
 async function loadMyStats() {
   const data = await apiRequest('GET', '/api/stats/me');
   if (!data.ok) return;
-  // Active agents
-  animateCount(document.getElementById('sessions-value'), data.agentsActive || 0);
-  // Total runs
-  var runsEl = document.getElementById('runs-value');
-  if (runsEl) runsEl.textContent = data.totalRuns ?? '—';
-  // Success rate
-  var srEl = document.getElementById('success-rate-value');
-  if (srEl) srEl.textContent = data.successRate != null ? data.successRate + '%' : '—';
-  // Last 24h runs
-  var l24El = document.getElementById('last24h-value');
-  if (l24El) l24El.textContent = data.last24hRuns ?? '—';
-  // Uptime
+  // Active agents — animated
+  animateCount(document.getElementById('sessions-value'), data.agentsActive || 0, 1000);
+  // Total runs — animated
+  animateCount(document.getElementById('runs-value'), data.totalRuns || 0, 1200);
+  // Success rate — animated with % suffix
+  animateCount(document.getElementById('success-rate-value'), data.successRate || 0, 1000, '%');
+  // Last 24h runs — animated
+  animateCount(document.getElementById('last24h-value'), data.last24hRuns || 0, 800);
+  // Uptime — animated
   if (data.uptimeSeconds) {
     var h = Math.floor(data.uptimeSeconds / 3600);
     var m = Math.floor((data.uptimeSeconds % 3600) / 60);
     var upEl = document.getElementById('uptime-value');
-    if (upEl) upEl.textContent = h + 'h ' + m + 'm';
+    if (upEl) {
+      animateCount(upEl, h, 1000);
+      setTimeout(function() { if (upEl) upEl.textContent = h + 'h ' + m + 'm'; }, 1100);
+    }
   }
-  // Capabilities count (tools + plugins)
+  // Capabilities count (tools + plugins) — animated
   var capCount = (data.pluginsTotal || 12) + (data.pluginsInstalled || 0) + 65;
-  var toolsEl = document.getElementById('tools-value');
-  if (toolsEl) toolsEl.textContent = capCount;
+  animateCount(document.getElementById('tools-value'), capCount, 1500);
   var capBadge = document.getElementById('nav-capabilities-badge');
   if (capBadge) capBadge.textContent = capCount;
   // Model name from user settings
@@ -8692,14 +8691,17 @@ async function loadNetworkMap() {
   _networkNodes = agents.map(function(a, i) {
     var role = a.role || 'worker';
     var level = a.level || 1;
-    var radius = role === 'director' ? 30 + level : role === 'manager' ? 24 + level : role === 'specialist' ? 22 + level : role === 'monitor' ? 20 + level : 18 + Math.min(level, 5);
+    var baseBoost = agents.length <= 3 ? 8 : 0; // bigger nodes when few agents
+    var radius = role === 'director' ? 30 + level + baseBoost : role === 'manager' ? 24 + level + baseBoost : role === 'specialist' ? 22 + level + baseBoost : role === 'monitor' ? 20 + level + baseBoost : 18 + Math.min(level, 5) + baseBoost;
     var trigCfg = {}; try { var _t2 = a.trigger_config || a.triggerConfig || {}; trigCfg = typeof _t2 === 'string' ? JSON.parse(_t2) : _t2; } catch(e) {}
     var customColor = (trigCfg.config && trigCfg.config.agentColor) || '';
     var color = !a.isActive ? '#555' : (customColor || roleColors[role] || '#0098EA');
     var customRoleName = (trigCfg.config && trigCfg.config.customRole && trigCfg.config.customRole.name) || '';
     var roleLabel = customRoleName || roleLabels[role] || role.toUpperCase().slice(0, 4);
     var angle = (i / agents.length) * Math.PI * 2;
-    var spread = Math.min(W, H) * 0.28;
+    // Larger spread for fewer agents so they're visible
+    var spreadRatio = agents.length <= 3 ? 0.35 : agents.length <= 6 ? 0.32 : 0.28;
+    var spread = Math.min(W, H) * spreadRatio;
     return {
       id: a.id, name: a.name || 'Agent #' + a.id,
       role: role, level: level, xp: a.xp || 0,

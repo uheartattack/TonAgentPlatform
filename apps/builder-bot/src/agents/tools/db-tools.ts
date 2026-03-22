@@ -64,6 +64,13 @@ export class DBTools {
         })
         .returning();
 
+      // Set role based on trigger type (column not in Drizzle schema, use raw SQL)
+      try {
+        const defaultRole = params.triggerType === 'ai_agent' ? 'specialist' : 'worker';
+        const { pool } = await import('../../db');
+        await pool.query('UPDATE builder_bot.agents SET role = $1 WHERE id = $2', [defaultRole, agent.id]);
+      } catch {}
+
       // Логируем в память
       await getMemoryManager().addMessage(
         params.userId,
