@@ -1354,6 +1354,42 @@ export function startApiServer() {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── GET/POST /api/agents/:id/hooks — Agent hooks (blocklist, triggers, session, tool scopes) ──
+  app.get('/api/agents/:id/hooks', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const agentId = parseInt(req.params.id as string, 10);
+      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      if (!agentCheck.success) { res.status(404).json({ error: 'Agent not found' }); return; }
+      const { loadBlocklist, loadTriggers, loadSessionConfig, loadToolScopes } = require('./services/agent-hooks');
+      const stateRepo = getAgentStateRepository();
+      const [blocklist, triggers, session, toolScopes] = await Promise.all([
+        loadBlocklist(stateRepo, agentId),
+        loadTriggers(stateRepo, agentId),
+        loadSessionConfig(stateRepo, agentId),
+        loadToolScopes(stateRepo, agentId),
+      ]);
+      res.json({ blocklist, triggers, session, toolScopes });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.post('/api/agents/:id/hooks', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const agentId = parseInt(req.params.id as string, 10);
+      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      if (!agentCheck.success) { res.status(404).json({ error: 'Agent not found' }); return; }
+      const { saveBlocklist, saveTriggers, saveSessionConfig, saveToolScopes } = require('./services/agent-hooks');
+      const stateRepo = getAgentStateRepository();
+      const { blocklist, triggers, session, toolScopes } = req.body || {};
+      if (blocklist !== undefined) await saveBlocklist(stateRepo, agentId, userId, blocklist);
+      if (triggers !== undefined) await saveTriggers(stateRepo, agentId, userId, triggers);
+      if (session !== undefined) await saveSessionConfig(stateRepo, agentId, userId, session);
+      if (toolScopes !== undefined) await saveToolScopes(stateRepo, agentId, userId, toolScopes);
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // ── POST /api/agents/clone — Clone an agent ──
   app.post('/api/agents/clone', requireAuth, async (req: Request, res: Response) => {
     try {
@@ -3279,6 +3315,263 @@ export function startApiServer() {
     } catch (e: any) {
       res.json({ ok: false, error: e.message });
     }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // LIFECYCLE ENDPOINTS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  app.get('/api/agents/:id/lifecycle', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { lifecycleManager } = await import('./services/agent-lifecycle');
+      const info = lifecycleManager.getInfo(Number(req.params.id));
+      res.json({ ok: true, ...info });
+    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+  });
+
+  app.post('/api/agents/:id/lifecycle/start', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const agentId = Number(req.params.id);
+      const userId = (req as any).userId as number;
+      const { getRunnerAgent } = await import('./agents/sub-agents/runner');
+      await getRunnerAgent().runAgent({ agentId, userId });
+      const { lifecycleManager } = await import('./services/agent-lifecycle');
+      lifecycleManager.markRunning(agentId);
+      res.json({ ok: true, state: 'running' });
+    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+  });
+
+  app.post('/api/agents/:id/lifecycle/stop', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const agentId = Number(req.params.id);
+      const userId = (req as any).userId as number;
+      const { getRunnerAgent } = await import('./agents/sub-agents/runner');
+      await getRunnerAgent().pauseAgent(agentId, userId);
+      const { lifecycleManager } = await import('./services/agent-lifecycle');
+      lifecycleManager.markStopped(agentId);
+      res.json({ ok: true, state: 'stopped' });
+    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+  });
+
+  app.post('/api/agents/:id/lifecycle/restart', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const agentId = Number(req.params.id);
+      const userId = (req as any).userId as number;
+      const { getRunnerAgent } = await import('./agents/sub-agents/runner');
+      await getRunnerAgent().pauseAgent(agentId, userId);
+      await new Promise(r => setTimeout(r, 1000));
+      await getRunnerAgent().runAgent({ agentId, userId });
+      const { lifecycleManager } = await import('./services/agent-lifecycle');
+      lifecycleManager.markRunning(agentId);
+      res.json({ ok: true, state: 'running' });
+    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MEMORY ENDPOINTS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  app.get('/api/agents/:id/memory', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const agentId = Number(req.params.id);
+      const ms = await import('./services/agent-memory-store');
+      const persistent = await ms.readPersistentMemory(agentId);
+      const dailyLogs = await ms.listDailyLogs(agentId);
+      const stats = await ms.getMemoryStats(agentId);
+      res.json({ ok: true, persistent, dailyLogs, stats });
+    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+  });
+
+  app.post('/api/agents/:id/memory', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const agentId = Number(req.params.id);
+      const { target, content, section } = req.body;
+      const ms = await import('./services/agent-memory-store');
+      if (target === 'persistent') {
+        if (req.body.replace) {
+          await ms.replacePersistentMemory(agentId, content);
+          res.json({ ok: true });
+        } else {
+          const result = await ms.writePersistentMemory(agentId, content, section);
+          res.json({ ok: true, ...result });
+        }
+      } else if (target === 'daily') {
+        const result = await ms.writeDailyLog(agentId, content, section);
+        res.json({ ok: true, ...result });
+      } else {
+        res.json({ ok: false, error: 'Invalid target. Use "persistent" or "daily".' });
+      }
+    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+  });
+
+  app.get('/api/agents/:id/memory/search', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const agentId = Number(req.params.id);
+      const query = String(req.query.q || '');
+      const limit = Number(req.query.limit) || 10;
+      const ms = await import('./services/agent-memory-store');
+      const results = await ms.searchMemory(agentId, query, limit);
+      res.json({ ok: true, results });
+    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+  });
+
+  app.get('/api/agents/:id/memory/daily/:date', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const agentId = Number(req.params.id);
+      const ms = await import('./services/agent-memory-store');
+      const content = await ms.readDailyLog(agentId, req.params.date);
+      res.json({ ok: true, content });
+    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+  });
+
+  app.delete('/api/agents/:id/memory', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const agentId = Number(req.params.id);
+      const target = String(req.query.target || 'all');
+      const ms = await import('./services/agent-memory-store');
+      await ms.clearMemory(agentId, target as any);
+      res.json({ ok: true });
+    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // TASKS ENDPOINTS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  app.get('/api/agents/:id/tasks', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const agentId = Number(req.params.id);
+      const ts = await import('./services/agent-task-store');
+      const status = req.query.status as any;
+      const limit = Number(req.query.limit) || 50;
+      const tasks = await ts.listTasks(agentId, { status, limit });
+      const stats = await ts.getTaskStats(agentId);
+      res.json({ ok: true, tasks, stats });
+    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+  });
+
+  app.post('/api/agents/:id/tasks', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const agentId = Number(req.params.id);
+      const ts = await import('./services/agent-task-store');
+      const task = await ts.createTask(agentId, req.body);
+      res.json({ ok: true, task });
+    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+  });
+
+  app.put('/api/agents/:id/tasks/:taskId', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const agentId = Number(req.params.id);
+      const ts = await import('./services/agent-task-store');
+      const task = await ts.updateTask(agentId, req.params.taskId, req.body);
+      res.json({ ok: true, task });
+    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+  });
+
+  app.delete('/api/agents/:id/tasks/:taskId', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const agentId = Number(req.params.id);
+      const ts = await import('./services/agent-task-store');
+      const ok = await ts.deleteTask(agentId, req.params.taskId);
+      res.json({ ok });
+    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // TOKEN USAGE ENDPOINTS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  app.get('/api/agents/:id/tokens', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const agentId = Number(req.params.id);
+      const tt = await import('./services/token-tracker');
+      const days = Number(req.query.days) || 30;
+      const history = await tt.getUsageHistory(agentId, days);
+      const total = await tt.getTotalUsage(agentId);
+      const current = tt.getCurrentUsage(agentId);
+      const budget = await tt.checkBudget(agentId);
+      res.json({ ok: true, history, total, current, budget });
+    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+  });
+
+  app.post('/api/agents/:id/tokens/budget', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const agentId = Number(req.params.id);
+      const tt = await import('./services/token-tracker');
+      tt.setDailyBudget(agentId, Number(req.body.limit) || 0);
+      res.json({ ok: true });
+    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+  });
+
+  app.get('/api/tokens/overview', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const tt = await import('./services/token-tracker');
+      const days = Number(req.query.days) || 7;
+      const agents = await tt.getAllAgentsUsage(days);
+      res.json({ ok: true, agents });
+    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // TOOL CONFIG ENDPOINTS (enhanced toolscope)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  app.get('/api/agents/:id/tool-config', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const agentId = Number(req.params.id);
+      const stateRepo = getAgentStateRepository();
+      const raw = await stateRepo.get(agentId, '_tool_config').catch(() => null);
+      let tools: any[] = [];
+      if (Array.isArray(raw)) { tools = raw; }
+      else if (typeof raw === 'string') { try { tools = JSON.parse(raw); } catch {} }
+      res.json({ ok: true, tools });
+    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+  });
+
+  app.put('/api/agents/:id/tool-config', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const agentId = Number(req.params.id);
+      const stateRepo = getAgentStateRepository();
+      await stateRepo.set(agentId, (req as any).userId, '_tool_config', req.body.tools || []);
+      res.json({ ok: true });
+    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // CONTACTS (users the agent interacted with)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  app.get('/api/agents/:id/contacts', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const agentId = Number(req.params.id);
+      const stateRepo = getAgentStateRepository();
+      const raw = await stateRepo.get(agentId, '_contacts').catch(() => null);
+      let contacts: any[] = [];
+      if (Array.isArray(raw)) { contacts = raw; }
+      else if (typeof raw === 'string') { try { contacts = JSON.parse(raw); } catch {} }
+      res.json({ ok: true, contacts });
+    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+  });
+
+  app.put('/api/agents/:id/contacts/:userId', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const agentId = Number(req.params.id);
+      const contactUserId = req.params.userId;
+      const stateRepo = getAgentStateRepository();
+      const raw = await stateRepo.get(agentId, '_contacts').catch(() => null);
+      let contacts: any[] = [];
+      if (Array.isArray(raw)) { contacts = raw; }
+      else if (typeof raw === 'string') { try { contacts = JSON.parse(raw); } catch {} }
+
+      const idx = contacts.findIndex((c: any) => String(c.id) === contactUserId);
+      if (idx >= 0) {
+        contacts[idx] = { ...contacts[idx], ...req.body };
+      } else {
+        contacts.push({ id: contactUserId, ...req.body });
+      }
+      await stateRepo.set(agentId, (req as any).userId, '_contacts', contacts);
+      res.json({ ok: true });
+    } catch (e: any) { res.json({ ok: false, error: e.message }); }
   });
 
   // API 404 — return JSON for unknown API routes (before SPA fallback)

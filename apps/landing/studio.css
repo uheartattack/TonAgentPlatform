@@ -6623,3 +6623,63 @@ select:focus {
   font-size: .82rem; font-weight: 600; color: #10b981;
 }
 .bh-summary-title svg { width: 14px; height: 14px; stroke: #10b981; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   NEW TABS: Lifecycle, Token Usage, Contacts, Memory, Tasks
+   ═══════════════════════════════════════════════════════════════════════════ */
+.stat-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  text-align: center;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.stat-card:hover {
+  border-color: rgba(255,255,255,0.1);
+  box-shadow: 0 0 12px rgba(255,255,255,0.03);
+}
+.stat-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+.stat-label {
+  font-size: .68rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+@keyframes lcPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.3); }
+}
+.lifecycle-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: .82rem;
+  font-weight: 600;
+  transition: background 0.3s, color 0.3s;
+}
+#token-chart div[title]:hover { filter: brightness(1.2); }
+#tasks-list > div {
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+#tasks-list > div:hover {
+  transform: translateX(2px);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+#contacts-list > div { transition: border-color 0.2s; }
+#contacts-list > div:hover { border-color: rgba(255,255,255,0.1); }
+#mem-search-results > div { transition: border-color 0.2s; }
+#mem-search-results > div:hover { border-color: rgba(139,92,246,0.3); }
+#mem-daily-logs > div:hover {
+  border-color: rgba(139,92,246,0.3);
+  background: rgba(139,92,246,0.04);
+}
