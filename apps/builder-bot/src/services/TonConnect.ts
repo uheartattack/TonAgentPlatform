@@ -27,12 +27,13 @@ export const PLATFORM_WALLET_ADDRESS =
 const sessions = new Map<string, { value: any; createdAt: number }>();
 
 // Periodic cleanup: remove session entries older than 1 hour, every 30 minutes
-setInterval(() => {
+const _sessionCleanupTimer = setInterval(() => {
   const cutoff = Date.now() - 60 * 60 * 1000;
   for (const [k, v] of sessions) {
     if (v.createdAt < cutoff) sessions.delete(k);
   }
 }, 30 * 60 * 1000);
+if (_sessionCleanupTimer.unref) _sessionCleanupTimer.unref();
 
 export interface AgentWallet {
   address: string;

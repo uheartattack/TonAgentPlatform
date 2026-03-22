@@ -900,7 +900,7 @@ setInterval(() => {
   if (_chatRings.size > 500) _chatRings.clear();
   // Clean up loop guard tracker
   loopGuardCleanup();
-}, 5 * 60 * 1000); // every 5 minutes
+}, 5 * 60 * 1000).unref(); // every 5 minutes; unref so Node can exit gracefully
 
 // Per-chat serial processing queue with backpressure (max 10 concurrent chats)
 const _chatQueue = new ChatProcessingQueue(10);
@@ -1018,7 +1018,8 @@ class UserbotManager {
 
   constructor() {
     setTimeout(() => this.restoreAllSessions(), 5000);
-    setInterval(() => this.healthCheck(), 5 * 60 * 1000);
+    const hcTimer = setInterval(() => this.healthCheck(), 5 * 60 * 1000);
+    if (hcTimer.unref) hcTimer.unref();
   }
 
   // ── Session restore (always online) ─────────────────────────────────
