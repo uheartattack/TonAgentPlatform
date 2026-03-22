@@ -936,12 +936,10 @@ async function _oneOffChat(agentId: number): Promise<void> {
       const v = typeof r.value === 'string' ? r.value : (r.value?.value || r.value);
       if (v && !config[r.key]) config[r.key] = v;
     }
-    const { getAIClient, resolveProvider } = await import('./ai-agent-runtime');
-    const providerCfg = resolveProvider(config.AI_PROVIDER as string || '');
-    const ai = getAIClient(config, providerCfg);
+    const { client: ai, defaultModel } = getAIClient(config);
     const userMsg = msgs.join('\n');
     const response = await ai.chat.completions.create({
-      model: providerCfg.defaultModel,
+      model: defaultModel,
       messages: [
         { role: 'system', content: agent.code || 'You are a helpful AI agent.' },
         { role: 'user', content: userMsg },
