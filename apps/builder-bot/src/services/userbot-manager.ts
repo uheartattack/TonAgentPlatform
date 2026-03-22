@@ -2219,6 +2219,16 @@ class UserbotManager {
     console.log(`[UserbotMgr] 🚀 Dispatching to agent#${agentId} chat=${msg.chatId}`);
     _chatQueue.enqueue(chatKey, async () => {
       try {
+        // Auto-typing: show "typing..." indicator while AI processes
+        try {
+          const ac = this.clients.get(agentId) || this.sharedClients.values().next().value;
+          if (ac?.client?.connected) {
+            await ac.client.invoke(new Api.messages.SetTyping({
+              peer: await ac.client.getInputEntity(BigInt(msg.chatId)),
+              action: new Api.SendMessageTypingAction(),
+            }));
+          }
+        } catch {}
         await this.processTgInboxMessage(agentId, msg, cfg);
       } catch (procErr: any) {
         console.error(`[UserbotMgr] ❌ processTgInboxMessage CRASHED:`, procErr.message, procErr.stack?.slice(0, 500));
