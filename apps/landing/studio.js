@@ -447,7 +447,7 @@ async function onTelegramAuth(result) {
   }
   authToken = data.token;
   localStorage.setItem('tg_token', authToken);
-  currentUser = { userId: data.userId, username: data.username, first_name: data.firstName, photo_url: data.photoUrl || null };
+  currentUser = { userId: data.userId, userIdStr: data.userIdStr || String(data.userId), username: data.username, first_name: data.firstName, photo_url: data.photoUrl || null };
   showApp();
 }
 
@@ -4042,7 +4042,7 @@ async function handleOAuthRedirect() {
   window.history.replaceState({}, '', window.location.pathname);
   authToken = data.token;
   localStorage.setItem('tg_token', authToken);
-  currentUser = { userId: data.userId, username: data.username, first_name: data.firstName, photo_url: data.photoUrl || null };
+  currentUser = { userId: data.userId, userIdStr: data.userIdStr || String(data.userId), username: data.username, first_name: data.firstName, photo_url: data.photoUrl || null };
   showApp();
   return true;
 }
@@ -4100,7 +4100,7 @@ async function checkExistingSession() {
   }
 
   if (data.ok) {
-    currentUser = { userId: data.userId, username: data.username, first_name: data.firstName, photo_url: data.photoUrl || null };
+    currentUser = { userId: data.userId, userIdStr: data.userIdStr || String(data.userId), username: data.username, first_name: data.firstName, photo_url: data.photoUrl || null };
     if (data.planId) currentUser._plan = { planId: data.planId, planName: data.planName, planIcon: data.planIcon };
     showApp();
   } else {
@@ -6085,7 +6085,7 @@ async function loadProfile() {
   // User info from auth
   setEl('profile-name', [currentUser.first_name, currentUser.last_name].filter(Boolean).join(' ') || currentUser.first_name || '—');
   setEl('profile-username', currentUser.username ? '@' + currentUser.username : '—');
-  setEl('profile-id', currentUser.userId || currentUser.id || '—');
+  setEl('profile-id', currentUser.userIdStr || currentUser.userId || currentUser.id || '—');
 
   // Avatar
   if (currentUser.photo_url) {
