@@ -165,14 +165,24 @@ export async function flushTokenUsage(): Promise<number> {
            request_count = builder_bot.agent_token_usage.request_count + $6`,
         [agentId, bucket.inputTokens, bucket.outputTokens, bucket.totalTokens, bucket.estimatedCost, bucket.requestCount]
       );
+      // Reset only successfully flushed buckets (don't lose data on partial failure)
+      bucket.inputTokens = 0;
+      bucket.outputTokens = 0;
+      bucket.totalTokens = 0;
+      bucket.estimatedCost = 0;
+      bucket.requestCount = 0;
+      bucket.lastUpdated = Date.now();
       flushed++;
     } catch (err: any) {
       console.error(`[TokenTracker] Flush failed for agent #${agentId}:`, err.message);
+      // Don't reset this bucket — data preserved for next flush attempt
     }
   }
 
-  // Reset in-memory buckets after flush
-  _buckets.clear();
+  // Remove only zeroed-out buckets (successfully flushed)
+  for (const [agentId, bucket] of _buckets) {
+    if (bucket.totalTokens === 0 && bucket.requestCount === 0) _buckets.delete(agentId);
+  }
   return flushed;
 }
 

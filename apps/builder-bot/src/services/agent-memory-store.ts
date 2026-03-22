@@ -126,21 +126,30 @@ export async function writeDailyLog(
   if (section) entry += ` - ${section}`;
   entry += `\n\n${content}\n\n---\n\n`;
 
-  await pool.query(
-    `INSERT INTO builder_bot.agent_daily_logs (agent_id, log_date, content)
-     VALUES ($1, CURRENT_DATE, $2)
-     ON CONFLICT (agent_id, log_date)
-     DO UPDATE SET content = builder_bot.agent_daily_logs.content || $2`,
-    [agentId, entry]
-  ).catch(() => {
-    // Fallback if table constraint differs
-    pool.query(
-      `INSERT INTO builder_bot.agent_daily_logs (agent_id, content) VALUES ($1, $2)`,
+  let writeOk = false;
+  try {
+    await pool.query(
+      `INSERT INTO builder_bot.agent_daily_logs (agent_id, log_date, content)
+       VALUES ($1, CURRENT_DATE, $2)
+       ON CONFLICT (agent_id, log_date)
+       DO UPDATE SET content = builder_bot.agent_daily_logs.content || $2`,
       [agentId, entry]
-    ).catch(() => {});
-  });
+    );
+    writeOk = true;
+  } catch (err1: any) {
+    // Fallback if table constraint differs — include log_date
+    try {
+      await pool.query(
+        `INSERT INTO builder_bot.agent_daily_logs (agent_id, log_date, content) VALUES ($1, CURRENT_DATE, $2)`,
+        [agentId, entry]
+      );
+      writeOk = true;
+    } catch (err2: any) {
+      console.warn('[MemoryStore] Daily log write failed:', err2.message?.slice(0, 100));
+    }
+  }
 
-  return { success: true };
+  return { success: writeOk };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -165,9 +174,6 @@ export async function searchMemory(
   const results: MemorySearchResult[] = [];
   const terms = query.trim().split(/\s+/).filter(t => t.length >= 2);
   if (terms.length === 0) return [];
-
-  // Build ILIKE patterns for PostgreSQL (no FTS5, this is PG not SQLite)
-  const patterns = terms.map(t => `%${t.toLowerCase()}%`);
 
   // 1. Search persistent memory
   const persistent = await readPersistentMemory(agentId);
@@ -226,7 +232,7 @@ export async function searchMemory(
         });
       }
     }
-  } catch {}
+  } catch (err: any) { console.warn('[MemoryStore] Query failed:', err.message?.slice(0, 100)); }
 
   // 3. Search session summaries
   try {
@@ -251,7 +257,7 @@ export async function searchMemory(
         });
       }
     }
-  } catch {}
+  } catch (err: any) { console.warn('[MemoryStore] Query failed:', err.message?.slice(0, 100)); }
 
   // Sort by score desc, limit
   results.sort((a, b) => b.score - a.score);
@@ -283,7 +289,7 @@ export async function getMemoryStats(agentId: number): Promise<MemoryStats> {
       [agentId]
     );
     dailyLogCount = Number(r1.rows[0]?.cnt) || 0;
-  } catch {}
+  } catch (err: any) { console.warn('[MemoryStore] Query failed:', err.message?.slice(0, 100)); }
 
   let sessionCount = 0;
   let totalTokens = 0;
@@ -294,7 +300,7 @@ export async function getMemoryStats(agentId: number): Promise<MemoryStats> {
     );
     sessionCount = Number(r2.rows[0]?.cnt) || 0;
     totalTokens = Number(r2.rows[0]?.tokens) || 0;
-  } catch {}
+  } catch (err: any) { console.warn('[MemoryStore] Query failed:', err.message?.slice(0, 100)); }
 
   return {
     persistentSize: persistent.length,

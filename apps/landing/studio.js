@@ -10893,8 +10893,9 @@ async function loadContactsData() {
       var name = c.firstName || c.username || c.id;
       var isBot = c.isBot ? '<span style="font-size:.6rem;padding:2px 6px;border-radius:4px;background:rgba(59,130,246,0.1);color:#3b82f6;margin-left:4px">BOT</span>' : '';
       var isAdmin = c.isAdmin ? '<span style="font-size:.6rem;padding:2px 6px;border-radius:4px;background:rgba(245,158,11,0.1);color:#f59e0b;margin-left:4px">ADMIN</span>' : '';
-      var allowedToggle = '<label style="display:flex;align-items:center;gap:4px;font-size:.72rem;cursor:pointer"><input type="checkbox" ' + (c.isAllowed !== false ? 'checked' : '') + ' onchange="toggleContactProp(' + _detailAgentId + ',\'' + c.id + '\',\'isAllowed\',this.checked)"> ' + (isRu ? 'Разрешён' : 'Allowed') + '</label>';
-      var adminToggle = '<label style="display:flex;align-items:center;gap:4px;font-size:.72rem;cursor:pointer"><input type="checkbox" ' + (c.isAdmin ? 'checked' : '') + ' onchange="toggleContactProp(' + _detailAgentId + ',\'' + c.id + '\',\'isAdmin\',this.checked)"> ' + (isRu ? 'Админ' : 'Admin') + '</label>';
+      var safeId = escHtml(String(c.id));
+      var allowedToggle = '<label style="display:flex;align-items:center;gap:4px;font-size:.72rem;cursor:pointer"><input type="checkbox" ' + (c.isAllowed !== false ? 'checked' : '') + ' onchange="toggleContactProp(' + _detailAgentId + ',\'' + safeId + '\',\'isAllowed\',this.checked)"> ' + (isRu ? 'Разрешён' : 'Allowed') + '</label>';
+      var adminToggle = '<label style="display:flex;align-items:center;gap:4px;font-size:.72rem;cursor:pointer"><input type="checkbox" ' + (c.isAdmin ? 'checked' : '') + ' onchange="toggleContactProp(' + _detailAgentId + ',\'' + safeId + '\',\'isAdmin\',this.checked)"> ' + (isRu ? 'Админ' : 'Admin') + '</label>';
       return '<div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--bg-primary);border:1px solid var(--border);border-radius:8px">' +
         '<div style="flex:1"><span style="font-weight:600;font-size:.82rem">' + escHtml(String(name)) + '</span>' + isBot + isAdmin +
           (c.username ? '<div style="font-size:.68rem;color:var(--text-muted)">@' + escHtml(c.username) + '</div>' : '') +
@@ -11058,8 +11059,9 @@ async function loadTasksData() {
       var prioLabel = t.priority > 1 ? ' <span style="color:#ef4444;font-size:.6rem">!!!</span>' : t.priority > 0 ? ' <span style="color:#f59e0b;font-size:.6rem">!</span>' : '';
       var deps = t.dependsOn && t.dependsOn.length > 0 ? '<div style="font-size:.6rem;color:var(--text-muted);margin-top:2px">deps: ' + t.dependsOn.length + '</div>' : '';
       var actions = '';
-      if (t.status === 'pending') actions = '<button onclick="updateTaskStatus(\'' + t.id + '\',\'in_progress\')" style="font-size:.65rem;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:rgba(59,130,246,0.1);color:#3b82f6;cursor:pointer">' + (currentLang === 'ru' ? 'Начать' : 'Start') + '</button>';
-      if (t.status === 'in_progress') actions = '<button onclick="updateTaskStatus(\'' + t.id + '\',\'done\')" style="font-size:.65rem;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:rgba(16,185,129,0.1);color:#10b981;cursor:pointer">' + (currentLang === 'ru' ? 'Готово' : 'Done') + '</button>';
+      var safeTaskId = escHtml(String(t.id));
+      if (t.status === 'pending') actions = '<button onclick="updateTaskStatus(\'' + safeTaskId + '\',\'in_progress\')" style="font-size:.65rem;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:rgba(59,130,246,0.1);color:#3b82f6;cursor:pointer">' + (currentLang === 'ru' ? 'Начать' : 'Start') + '</button>';
+      if (t.status === 'in_progress') actions = '<button onclick="updateTaskStatus(\'' + safeTaskId + '\',\'done\')" style="font-size:.65rem;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:rgba(16,185,129,0.1);color:#10b981;cursor:pointer">' + (currentLang === 'ru' ? 'Готово' : 'Done') + '</button>';
       return '<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;border-left:3px solid ' + color + '">' +
         '<div style="flex:1">' +
           '<div style="font-size:.8rem;font-weight:500;color:var(--text-primary)">' + escHtml(t.description) + prioLabel + '</div>' +
@@ -11067,7 +11069,7 @@ async function loadTasksData() {
           (t.error ? '<div style="font-size:.65rem;color:#ef4444">' + escHtml(t.error.slice(0, 100)) + '</div>' : '') +
         '</div>' +
         '<div style="display:flex;gap:6px;align-items:center">' + actions +
-          '<button onclick="deleteAgentTask(\'' + t.id + '\')" style="font-size:.65rem;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:rgba(239,68,68,0.08);color:#ef4444;cursor:pointer">' + IC.x + '</button>' +
+          '<button onclick="deleteAgentTask(\'' + safeTaskId + '\')" style="font-size:.65rem;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:rgba(239,68,68,0.08);color:#ef4444;cursor:pointer">' + IC.x + '</button>' +
         '</div>' +
       '</div>';
     }).join('');
