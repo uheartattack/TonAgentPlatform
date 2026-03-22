@@ -3318,52 +3318,66 @@ export function startApiServer() {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // OWNERSHIP HELPER — prevents IDOR on all agent endpoints below
+  // ═══════════════════════════════════════════════════════════════════════════
+  async function verifyAgentOwnership(req: Request, res: Response): Promise<{ agentId: number; userId: number } | null> {
+    const agentId = Number(req.params.id);
+    const userId = (req as any).userId as number;
+    if (isNaN(agentId)) { res.status(400).json({ ok: false, error: 'Invalid agent ID' }); return null; }
+    const check = await getDBTools().getAgent(agentId, userId);
+    if (!check.success || !check.data) { res.status(404).json({ ok: false, error: 'Agent not found or access denied' }); return null; }
+    return { agentId, userId };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // LIFECYCLE ENDPOINTS
   // ═══════════════════════════════════════════════════════════════════════════
 
   app.get('/api/agents/:id/lifecycle', requireAuth, async (req: Request, res: Response) => {
     try {
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
       const { lifecycleManager } = await import('./services/agent-lifecycle');
-      const info = lifecycleManager.getInfo(Number(req.params.id));
+      const info = lifecycleManager.getInfo(own.agentId);
       res.json({ ok: true, ...info });
     } catch (e: any) { res.json({ ok: false, error: e.message }); }
   });
 
   app.post('/api/agents/:id/lifecycle/start', requireAuth, async (req: Request, res: Response) => {
     try {
-      const agentId = Number(req.params.id);
-      const userId = (req as any).userId as number;
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
       const { getRunnerAgent } = await import('./agents/sub-agents/runner');
-      await getRunnerAgent().runAgent({ agentId, userId });
-      const { lifecycleManager } = await import('./services/agent-lifecycle');
-      lifecycleManager.markRunning(agentId);
-      res.json({ ok: true, state: 'running' });
+      const result = await getRunnerAgent().runAgent({ agentId: own.agentId, userId: own.userId });
+      if (result.success && result.data?.success !== false) {
+        const { lifecycleManager } = await import('./services/agent-lifecycle');
+        lifecycleManager.markRunning(own.agentId);
+      }
+      res.json({ ok: true, state: result.success ? 'running' : 'stopped' });
     } catch (e: any) { res.json({ ok: false, error: e.message }); }
   });
 
   app.post('/api/agents/:id/lifecycle/stop', requireAuth, async (req: Request, res: Response) => {
     try {
-      const agentId = Number(req.params.id);
-      const userId = (req as any).userId as number;
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
       const { getRunnerAgent } = await import('./agents/sub-agents/runner');
-      await getRunnerAgent().pauseAgent(agentId, userId);
+      await getRunnerAgent().pauseAgent(own.agentId, own.userId);
       const { lifecycleManager } = await import('./services/agent-lifecycle');
-      lifecycleManager.markStopped(agentId);
+      lifecycleManager.markStopped(own.agentId);
       res.json({ ok: true, state: 'stopped' });
     } catch (e: any) { res.json({ ok: false, error: e.message }); }
   });
 
   app.post('/api/agents/:id/lifecycle/restart', requireAuth, async (req: Request, res: Response) => {
     try {
-      const agentId = Number(req.params.id);
-      const userId = (req as any).userId as number;
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
       const { getRunnerAgent } = await import('./agents/sub-agents/runner');
-      await getRunnerAgent().pauseAgent(agentId, userId);
+      await getRunnerAgent().pauseAgent(own.agentId, own.userId);
       await new Promise(r => setTimeout(r, 1000));
-      await getRunnerAgent().runAgent({ agentId, userId });
-      const { lifecycleManager } = await import('./services/agent-lifecycle');
-      lifecycleManager.markRunning(agentId);
-      res.json({ ok: true, state: 'running' });
+      const result = await getRunnerAgent().runAgent({ agentId: own.agentId, userId: own.userId });
+      if (result.success && result.data?.success !== false) {
+        const { lifecycleManager } = await import('./services/agent-lifecycle');
+        lifecycleManager.markRunning(own.agentId);
+      }
+      res.json({ ok: true, state: result.success ? 'running' : 'stopped' });
     } catch (e: any) { res.json({ ok: false, error: e.message }); }
   });
 
@@ -3373,7 +3387,8 @@ export function startApiServer() {
 
   app.get('/api/agents/:id/memory', requireAuth, async (req: Request, res: Response) => {
     try {
-      const agentId = Number(req.params.id);
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
+      const agentId = own.agentId;
       const ms = await import('./services/agent-memory-store');
       const persistent = await ms.readPersistentMemory(agentId);
       const dailyLogs = await ms.listDailyLogs(agentId);
@@ -3384,7 +3399,8 @@ export function startApiServer() {
 
   app.post('/api/agents/:id/memory', requireAuth, async (req: Request, res: Response) => {
     try {
-      const agentId = Number(req.params.id);
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
+      const agentId = own.agentId;
       const { target, content, section } = req.body;
       const ms = await import('./services/agent-memory-store');
       if (target === 'persistent') {
@@ -3406,7 +3422,8 @@ export function startApiServer() {
 
   app.get('/api/agents/:id/memory/search', requireAuth, async (req: Request, res: Response) => {
     try {
-      const agentId = Number(req.params.id);
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
+      const agentId = own.agentId;
       const query = String(req.query.q || '');
       const limit = Number(req.query.limit) || 10;
       const ms = await import('./services/agent-memory-store');
@@ -3417,16 +3434,17 @@ export function startApiServer() {
 
   app.get('/api/agents/:id/memory/daily/:date', requireAuth, async (req: Request, res: Response) => {
     try {
-      const agentId = Number(req.params.id);
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
       const ms = await import('./services/agent-memory-store');
-      const content = await ms.readDailyLog(agentId, req.params.date);
+      const content = await ms.readDailyLog(own.agentId, req.params.date);
       res.json({ ok: true, content });
     } catch (e: any) { res.json({ ok: false, error: e.message }); }
   });
 
   app.delete('/api/agents/:id/memory', requireAuth, async (req: Request, res: Response) => {
     try {
-      const agentId = Number(req.params.id);
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
+      const agentId = own.agentId;
       const target = String(req.query.target || 'all');
       const ms = await import('./services/agent-memory-store');
       await ms.clearMemory(agentId, target as any);
@@ -3440,39 +3458,39 @@ export function startApiServer() {
 
   app.get('/api/agents/:id/tasks', requireAuth, async (req: Request, res: Response) => {
     try {
-      const agentId = Number(req.params.id);
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
       const ts = await import('./services/agent-task-store');
       const status = req.query.status as any;
       const limit = Number(req.query.limit) || 50;
-      const tasks = await ts.listTasks(agentId, { status, limit });
-      const stats = await ts.getTaskStats(agentId);
+      const tasks = await ts.listTasks(own.agentId, { status, limit });
+      const stats = await ts.getTaskStats(own.agentId);
       res.json({ ok: true, tasks, stats });
     } catch (e: any) { res.json({ ok: false, error: e.message }); }
   });
 
   app.post('/api/agents/:id/tasks', requireAuth, async (req: Request, res: Response) => {
     try {
-      const agentId = Number(req.params.id);
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
       const ts = await import('./services/agent-task-store');
-      const task = await ts.createTask(agentId, req.body);
+      const task = await ts.createTask(own.agentId, req.body);
       res.json({ ok: true, task });
     } catch (e: any) { res.json({ ok: false, error: e.message }); }
   });
 
   app.put('/api/agents/:id/tasks/:taskId', requireAuth, async (req: Request, res: Response) => {
     try {
-      const agentId = Number(req.params.id);
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
       const ts = await import('./services/agent-task-store');
-      const task = await ts.updateTask(agentId, req.params.taskId, req.body);
+      const task = await ts.updateTask(own.agentId, req.params.taskId, req.body);
       res.json({ ok: true, task });
     } catch (e: any) { res.json({ ok: false, error: e.message }); }
   });
 
   app.delete('/api/agents/:id/tasks/:taskId', requireAuth, async (req: Request, res: Response) => {
     try {
-      const agentId = Number(req.params.id);
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
       const ts = await import('./services/agent-task-store');
-      const ok = await ts.deleteTask(agentId, req.params.taskId);
+      const ok = await ts.deleteTask(own.agentId, req.params.taskId);
       res.json({ ok });
     } catch (e: any) { res.json({ ok: false, error: e.message }); }
   });
@@ -3483,22 +3501,22 @@ export function startApiServer() {
 
   app.get('/api/agents/:id/tokens', requireAuth, async (req: Request, res: Response) => {
     try {
-      const agentId = Number(req.params.id);
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
       const tt = await import('./services/token-tracker');
       const days = Number(req.query.days) || 30;
-      const history = await tt.getUsageHistory(agentId, days);
-      const total = await tt.getTotalUsage(agentId);
-      const current = tt.getCurrentUsage(agentId);
-      const budget = await tt.checkBudget(agentId);
+      const history = await tt.getUsageHistory(own.agentId, days);
+      const total = await tt.getTotalUsage(own.agentId);
+      const current = tt.getCurrentUsage(own.agentId);
+      const budget = await tt.checkBudget(own.agentId);
       res.json({ ok: true, history, total, current, budget });
     } catch (e: any) { res.json({ ok: false, error: e.message }); }
   });
 
   app.post('/api/agents/:id/tokens/budget', requireAuth, async (req: Request, res: Response) => {
     try {
-      const agentId = Number(req.params.id);
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
       const tt = await import('./services/token-tracker');
-      tt.setDailyBudget(agentId, Number(req.body.limit) || 0);
+      tt.setDailyBudget(own.agentId, Number(req.body.limit) || 0);
       res.json({ ok: true });
     } catch (e: any) { res.json({ ok: false, error: e.message }); }
   });
@@ -3518,9 +3536,9 @@ export function startApiServer() {
 
   app.get('/api/agents/:id/tool-config', requireAuth, async (req: Request, res: Response) => {
     try {
-      const agentId = Number(req.params.id);
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
       const stateRepo = getAgentStateRepository();
-      const raw = await stateRepo.get(agentId, '_tool_config').catch(() => null);
+      const raw = await stateRepo.get(own.agentId, '_tool_config').catch(() => null);
       let tools: any[] = [];
       if (Array.isArray(raw)) { tools = raw; }
       else if (typeof raw === 'string') { try { tools = JSON.parse(raw); } catch {} }
@@ -3530,9 +3548,9 @@ export function startApiServer() {
 
   app.put('/api/agents/:id/tool-config', requireAuth, async (req: Request, res: Response) => {
     try {
-      const agentId = Number(req.params.id);
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
       const stateRepo = getAgentStateRepository();
-      await stateRepo.set(agentId, (req as any).userId, '_tool_config', req.body.tools || []);
+      await stateRepo.set(own.agentId, own.userId, '_tool_config', req.body.tools || []);
       res.json({ ok: true });
     } catch (e: any) { res.json({ ok: false, error: e.message }); }
   });
@@ -3543,9 +3561,9 @@ export function startApiServer() {
 
   app.get('/api/agents/:id/contacts', requireAuth, async (req: Request, res: Response) => {
     try {
-      const agentId = Number(req.params.id);
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
       const stateRepo = getAgentStateRepository();
-      const raw = await stateRepo.get(agentId, '_contacts').catch(() => null);
+      const raw = await stateRepo.get(own.agentId, '_contacts').catch(() => null);
       let contacts: any[] = [];
       if (Array.isArray(raw)) { contacts = raw; }
       else if (typeof raw === 'string') { try { contacts = JSON.parse(raw); } catch {} }
@@ -3555,10 +3573,10 @@ export function startApiServer() {
 
   app.put('/api/agents/:id/contacts/:userId', requireAuth, async (req: Request, res: Response) => {
     try {
-      const agentId = Number(req.params.id);
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
       const contactUserId = req.params.userId;
       const stateRepo = getAgentStateRepository();
-      const raw = await stateRepo.get(agentId, '_contacts').catch(() => null);
+      const raw = await stateRepo.get(own.agentId, '_contacts').catch(() => null);
       let contacts: any[] = [];
       if (Array.isArray(raw)) { contacts = raw; }
       else if (typeof raw === 'string') { try { contacts = JSON.parse(raw); } catch {} }
@@ -3569,7 +3587,7 @@ export function startApiServer() {
       } else {
         contacts.push({ id: contactUserId, ...req.body });
       }
-      await stateRepo.set(agentId, (req as any).userId, '_contacts', contacts);
+      await stateRepo.set(own.agentId, own.userId, '_contacts', contacts);
       res.json({ ok: true });
     } catch (e: any) { res.json({ ok: false, error: e.message }); }
   });

@@ -10153,8 +10153,9 @@ If web_search returns nothing useful → say "не смог найти акту�
     toolResultHashes.push(iterResultHashes);
     if (detectStall(toolCallHistory, 3)) {
       // Only break if results are ALSO repeating (otherwise agent is making progress)
+      const lastResultSig = [...toolResultHashes[toolResultHashes.length - 1]].sort().join('|');
       const resultsAlsoRepeat = toolResultHashes.length >= 3 &&
-        toolResultHashes.slice(-3).every(rh => rh.sort().join('|') === [...toolResultHashes[toolResultHashes.length - 1]].sort().join('|'));
+        toolResultHashes.slice(-3).every(rh => [...rh].sort().join('|') === lastResultSig);
       if (resultsAlsoRepeat) {
         await logToDb(params.agentId, 'warn', `[AI run] Stall detected: same tools AND results repeated 3 iterations (${iterToolNames.join(', ')}). Breaking.`, params.userId);
         break;

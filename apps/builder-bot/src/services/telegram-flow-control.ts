@@ -530,6 +530,14 @@ export async function flushTokenUsage(agentId: number, stateRepo: any, userId: n
     await stateRepo.set(agentId, userId, '_token_usage', cumulative);
   } catch (e: any) {
     console.warn(`[TokenUsage] Flush failed for agent#${agentId}: ${e.message?.slice(0, 100)}`);
+    // Restore counters so data isn't permanently lost
+    const b = _tokenBuckets.get(agentId);
+    if (b) {
+      b.promptTokens += snapshot.promptTokens;
+      b.completionTokens += snapshot.completionTokens;
+      b.totalTokens += snapshot.totalTokens;
+      b.calls += snapshot.calls;
+    }
   } finally {
     _flushingAgents.delete(agentId);
   }

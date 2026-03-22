@@ -86,7 +86,8 @@ export function checkBlocklist(text: string, config: BlocklistConfig): boolean {
   if (!config.enabled || config.keywords.length === 0) return false;
   const normalized = text.toLowerCase().normalize('NFKC');
   // Split into words for word-boundary matching (prevents "ass" matching "password")
-  const words = normalized.split(/[\s,.!?;:'"()\[\]{}\-_\/\\|]+/).filter(w => w.length > 0);
+  // Include Unicode punctuation: em-dash, ellipsis, guillemets, CJK symbols
+  const words = normalized.split(/[\s,.!?;:'"()\[\]{}\-_\/\\|«»—–…\u2000-\u200A\u3000\uFF01-\uFF0F]+/u).filter(w => w.length > 0);
   for (const kw of config.keywords) {
     const kwLower = kw.toLowerCase().normalize('NFKC');
     // Multi-word keywords: match as substring (phrase matching)

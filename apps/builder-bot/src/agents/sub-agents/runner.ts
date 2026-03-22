@@ -54,9 +54,15 @@ export interface ControlResult {
 
 // Разобрать интервал из description/triggerConfig
 function parseIntervalMs(description: string, triggerConfig?: Record<string, any>): number | null {
-  // Priority 1: explicit config
-  if (triggerConfig?.intervalMs) return parseInt(String(triggerConfig.intervalMs));
-  if (triggerConfig?.interval_ms) return parseInt(String(triggerConfig.interval_ms));
+  // Priority 1: explicit config (validate to prevent NaN → 1ms infinite loop)
+  if (triggerConfig?.intervalMs) {
+    const ms = parseInt(String(triggerConfig.intervalMs));
+    if (!isNaN(ms) && ms > 0) return Math.max(10_000, ms); // min 10s
+  }
+  if (triggerConfig?.interval_ms) {
+    const ms = parseInt(String(triggerConfig.interval_ms));
+    if (!isNaN(ms) && ms > 0) return Math.max(10_000, ms);
+  }
 
   // Priority 2: parse from description
   const lowerDesc = description.toLowerCase();
@@ -68,7 +74,7 @@ function parseIntervalMs(description: string, triggerConfig?: Record<string, any
   // Minutes
   if (/каждую\s+минуту|раз\s+в\s+минуту|every\s+minute/.test(lowerDesc)) return 60_000;
   const minuteMatch = lowerDesc.match(/(?:каждые?|every)\s+(\d+)\s+(?:минут|minute|min)/);
-  if (minuteMatch) return parseInt(minuteMatch[1]) * 60_000;
+  if (minuteMatch) return Math.max(10_000, parseInt(minuteMatch[1]) * 60_000);
 
   // Hours
   if (/каждый\s+час|раз\s+в\s+час|every\s+hour|hourly/.test(lowerDesc)) return 3_600_000;
