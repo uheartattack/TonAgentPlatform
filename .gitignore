@@ -44,7 +44,13 @@ Thumbs.db
 # Null/garbage files
 **/nul
 nul
-HACKATHON_PLAN.md
+
+# Temp/junk files
+~$*
+*.docx
+generate-checklist.js
+!.jpg
+photo_*.jpg
 
 # Backup files
 *.bak
@@ -66,7 +72,6 @@ tg-session.txt
 
 # Internal docs (not for public)
 CHECKLIST.md
-CONTRIBUTING.md
 docs/
 staging/
 
