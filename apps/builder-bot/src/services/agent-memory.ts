@@ -173,17 +173,19 @@ export async function summarizeMessages(
       messages: [
         {
           role: 'system',
-          content: `Summarize this conversation transcript concisely. Focus on:
-1. Key decisions and actions taken
-2. Important information learned
-3. Open items and next steps
-4. User preferences discovered
+          content: `Summarize this conversation transcript using the following structure:
 
-Write in the SAME LANGUAGE as the conversation. Max 500 chars. No headers, just bullet points.`,
+**User Intent:** What the user wanted to achieve
+**Key Decisions:** Important choices or confirmations made
+**Actions Taken:** Tools called and their outcomes (brief)
+**Important Context:** Facts, preferences, or data discovered
+**Open Items:** Anything unfinished or pending
+
+Write in the SAME LANGUAGE as the conversation. Max 600 chars. Be concise — one line per section. Skip empty sections.`,
         },
         { role: 'user', content: transcript.slice(0, 8000) },
       ],
-      max_tokens: 300,
+      max_tokens: 400,
     });
     return res.choices[0]?.message?.content?.trim() || '';
   } catch (e: any) {

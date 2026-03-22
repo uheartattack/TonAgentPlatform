@@ -420,6 +420,8 @@ const pendingRefinements = new Map<number, number>(); // userId → last agentId
 // Chat with AI agent: userId → agentId (активный чат-сеанс)
 // ============================================================
 const pendingAgentChats = new Map<number, number>(); // userId → agentId
+const pendingBlocklistAdd = new Map<number, number>(); // userId → agentId
+const pendingTriggerAdd = new Map<number, { agentId: number; step: 'keyword' | 'context'; keyword?: string }>(); // userId → state
 
 // ============================================================
 // Proposal discussion: userId → proposalId
@@ -6582,6 +6584,171 @@ bot.on('callback_query', async (ctx) => {
     return;
   }
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // HOOKS: Blocklist, Triggers, Session Policy
+  // ══════════════════════════════════════════════════════════════════════════
+
+  if (data.startsWith('hooks_blocklist:')) {
+    const agentId = parseInt(data.split(':')[1], 10);
+    await ctx.answerCbQuery();
+    try {
+      const { loadBlocklist } = require('./services/agent-hooks');
+      const stateRepo = getAgentStateRepository();
+      const bl = await loadBlocklist(stateRepo, agentId);
+      const ru = getUserLang(userId) === 'ru';
+      let text = `🚫 <b>${ru ? 'Блоклист' : 'Blocklist'}</b> #${agentId}\n`;
+      text += `${ru ? 'Статус' : 'Status'}: ${bl.enabled ? '✅ Вкл' : '⬜ Выкл'}\n\n`;
+      if (bl.keywords.length > 0) {
+        text += `${ru ? 'Слова' : 'Keywords'}: <code>${escHtml(bl.keywords.join(', '))}</code>\n`;
+      } else {
+        text += `${ru ? 'Список пуст. Отправьте слова через запятую.' : 'Empty. Send keywords separated by commas.'}\n`;
+      }
+      if (bl.reply) text += `\n${ru ? 'Авто-ответ' : 'Auto-reply'}: <i>${escHtml(bl.reply)}</i>`;
+      const btns: any[][] = [
+        [{ text: bl.enabled ? '⬜ Выключить' : '✅ Включить', callback_data: `bl_toggle:${agentId}` }],
+        [{ text: '➕ Добавить слова', callback_data: `bl_add:${agentId}` }],
+        [{ text: '🗑 Очистить', callback_data: `bl_clear:${agentId}` }],
+        [{ text: '◀️ Назад', callback_data: `agent_menu:${agentId}` }],
+      ];
+      await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: btns } });
+    } catch (e: any) { await ctx.reply('❌ ' + (e.message || '').slice(0, 100)); }
+    return;
+  }
+
+  if (data.startsWith('bl_toggle:')) {
+    const agentId = parseInt(data.split(':')[1], 10);
+    await ctx.answerCbQuery();
+    try {
+      const { loadBlocklist, saveBlocklist } = require('./services/agent-hooks');
+      const stateRepo = getAgentStateRepository();
+      const bl = await loadBlocklist(stateRepo, agentId);
+      bl.enabled = !bl.enabled;
+      await saveBlocklist(stateRepo, agentId, userId, bl);
+      // Re-show menu
+      const cbData = `hooks_blocklist:${agentId}`;
+      (ctx as any).callbackQuery.data = cbData;
+      // Inline re-invoke by falling through to next tick
+      await ctx.reply(bl.enabled ? '✅ Блоклист включён' : '⬜ Блоклист выключен');
+    } catch (e: any) { await ctx.reply('❌ ' + (e.message || '').slice(0, 100)); }
+    return;
+  }
+
+  if (data.startsWith('bl_add:')) {
+    const agentId = parseInt(data.split(':')[1], 10);
+    await ctx.answerCbQuery();
+    pendingBlocklistAdd.set(userId, agentId);
+    await ctx.reply('✏️ Отправьте слова для блоклиста через запятую:\n<i>Пример: спам, реклама, казино</i>', { parse_mode: 'HTML' });
+    return;
+  }
+
+  if (data.startsWith('bl_clear:')) {
+    const agentId = parseInt(data.split(':')[1], 10);
+    await ctx.answerCbQuery();
+    try {
+      const { loadBlocklist, saveBlocklist } = require('./services/agent-hooks');
+      const stateRepo = getAgentStateRepository();
+      const bl = await loadBlocklist(stateRepo, agentId);
+      bl.keywords = [];
+      await saveBlocklist(stateRepo, agentId, userId, bl);
+      await ctx.reply('🗑 Блоклист очищен');
+    } catch (e: any) { await ctx.reply('❌ ' + (e.message || '').slice(0, 100)); }
+    return;
+  }
+
+  if (data.startsWith('hooks_triggers:')) {
+    const agentId = parseInt(data.split(':')[1], 10);
+    await ctx.answerCbQuery();
+    try {
+      const { loadTriggers } = require('./services/agent-hooks');
+      const stateRepo = getAgentStateRepository();
+      const triggers = await loadTriggers(stateRepo, agentId);
+      const ru = getUserLang(userId) === 'ru';
+      let text = `🎯 <b>${ru ? 'Контекстные триггеры' : 'Context Triggers'}</b> #${agentId}\n\n`;
+      if (triggers.length === 0) {
+        text += ru
+          ? '<i>Нет триггеров. Триггеры инжектят дополнительный контекст когда в сообщении встречается ключевое слово.</i>'
+          : '<i>No triggers. Triggers inject additional context when a keyword is found in a message.</i>';
+      } else {
+        triggers.forEach((t: any, i: number) => {
+          text += `${t.enabled ? '✅' : '⬜'} <b>${escHtml(t.keyword)}</b>\n`;
+          text += `   → <i>${escHtml(t.context.slice(0, 80))}</i>\n\n`;
+        });
+      }
+      const btns: any[][] = [
+        [{ text: '➕ Добавить триггер', callback_data: `trig_add:${agentId}` }],
+      ];
+      if (triggers.length > 0) {
+        btns.push([{ text: '🗑 Удалить все', callback_data: `trig_clear:${agentId}` }]);
+      }
+      btns.push([{ text: '◀️ Назад', callback_data: `agent_menu:${agentId}` }]);
+      await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: btns } });
+    } catch (e: any) { await ctx.reply('❌ ' + (e.message || '').slice(0, 100)); }
+    return;
+  }
+
+  if (data.startsWith('trig_add:')) {
+    const agentId = parseInt(data.split(':')[1], 10);
+    await ctx.answerCbQuery();
+    pendingTriggerAdd.set(userId, { agentId, step: 'keyword' });
+    await ctx.reply('🎯 Отправьте ключевое слово для триггера:', { parse_mode: 'HTML' });
+    return;
+  }
+
+  if (data.startsWith('trig_clear:')) {
+    const agentId = parseInt(data.split(':')[1], 10);
+    await ctx.answerCbQuery();
+    try {
+      const { saveTriggers } = require('./services/agent-hooks');
+      const stateRepo = getAgentStateRepository();
+      await saveTriggers(stateRepo, agentId, userId, []);
+      await ctx.reply('🗑 Все триггеры удалены');
+    } catch (e: any) { await ctx.reply('❌ ' + (e.message || '').slice(0, 100)); }
+    return;
+  }
+
+  if (data.startsWith('hooks_session:')) {
+    const agentId = parseInt(data.split(':')[1], 10);
+    await ctx.answerCbQuery();
+    try {
+      const { loadSessionConfig } = require('./services/agent-hooks');
+      const stateRepo = getAgentStateRepository();
+      const cfg = await loadSessionConfig(stateRepo, agentId);
+      const ru = getUserLang(userId) === 'ru';
+      let text = `🔄 <b>${ru ? 'Политика сессии' : 'Session Policy'}</b> #${agentId}\n\n`;
+      const policyLabels: Record<string, string> = { none: '♾ Без сброса', daily: '📅 Ежедневный сброс', idle: `⏰ Сброс через ${cfg.idleMinutes} мин` };
+      text += `${ru ? 'Текущая' : 'Current'}: <b>${policyLabels[cfg.resetPolicy] || cfg.resetPolicy}</b>\n\n`;
+      text += ru
+        ? '<i>Выберите когда очищать историю диалога:</i>'
+        : '<i>Choose when to clear conversation history:</i>';
+      const btns: any[][] = [
+        [{ text: `${cfg.resetPolicy === 'none' ? '✅' : '⬜'} Без сброса`, callback_data: `sess_set:${agentId}:none` }],
+        [{ text: `${cfg.resetPolicy === 'daily' ? '✅' : '⬜'} Ежедневно`, callback_data: `sess_set:${agentId}:daily` }],
+        [{ text: `${cfg.resetPolicy === 'idle' ? '✅' : '⬜'} По бездействию (60мин)`, callback_data: `sess_set:${agentId}:idle` }],
+        [{ text: '◀️ Назад', callback_data: `agent_menu:${agentId}` }],
+      ];
+      await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: btns } });
+    } catch (e: any) { await ctx.reply('❌ ' + (e.message || '').slice(0, 100)); }
+    return;
+  }
+
+  if (data.startsWith('sess_set:')) {
+    const parts = data.split(':');
+    const agentId = parseInt(parts[1], 10);
+    const policy = parts[2] as 'none' | 'daily' | 'idle';
+    await ctx.answerCbQuery();
+    try {
+      const { loadSessionConfig, saveSessionConfig } = require('./services/agent-hooks');
+      const stateRepo = getAgentStateRepository();
+      const cfg = await loadSessionConfig(stateRepo, agentId);
+      cfg.resetPolicy = policy;
+      if (policy === 'idle' && !cfg.idleMinutes) cfg.idleMinutes = 60;
+      await saveSessionConfig(stateRepo, agentId, userId, cfg);
+      const labels: Record<string, string> = { none: '♾ Без сброса', daily: '📅 Ежедневно', idle: '⏰ По бездействию' };
+      await ctx.reply(`✅ Политика сессии: ${labels[policy]}`);
+    } catch (e: any) { await ctx.reply('❌ ' + (e.message || '').slice(0, 100)); }
+    return;
+  }
+
   // ── Post-creation setup wizard callbacks ──────────────────────────────────
   if (data.startsWith('agent_setup:')) {
     const agentId = parseInt(data.split(':')[1], 10);
@@ -7101,7 +7268,7 @@ bot.on(message('voice'), async (ctx) => {
       const agentRes = await getDBTools().getAgent(agentId, userId);
       if (agentRes.success && agentRes.data) {
         if (agentRes.data.triggerType === 'ai_agent') {
-          await getRunnerAgent().sendMessageToAgent(agentId, transcribedText);
+          await getRunnerAgent().sendMessageToAgent(agentId, transcribedText, { senderId: userId, isOwner: true });
           await ctx.reply(lang === 'ru' ? '📨 Голосовое отправлено агенту.' : '📨 Voice sent to agent.');
         }
       }
@@ -7231,6 +7398,50 @@ bot.on(message('text'), async (ctx) => {
     return;
   }
 
+  // ── Blocklist: add keywords ──────────────────────────────────
+  if (pendingBlocklistAdd.has(userId)) {
+    const agentId = pendingBlocklistAdd.get(userId)!;
+    pendingBlocklistAdd.delete(userId);
+    try {
+      const { loadBlocklist, saveBlocklist } = require('./services/agent-hooks');
+      const stateRepo = getAgentStateRepository();
+      const bl = await loadBlocklist(stateRepo, agentId);
+      const newKws = trimmed.split(',').map((s: string) => s.trim()).filter((s: string) => s.length > 0);
+      bl.keywords = [...new Set([...bl.keywords, ...newKws])];
+      await saveBlocklist(stateRepo, agentId, userId, bl);
+      await ctx.reply(`✅ Добавлено ${newKws.length} слов(а). Всего: ${bl.keywords.length}\n<code>${escHtml(bl.keywords.join(', '))}</code>`, { parse_mode: 'HTML' });
+    } catch (e: any) { await ctx.reply('❌ ' + (e.message || '').slice(0, 100)); }
+    return;
+  }
+
+  // ── Trigger: add keyword + context (2-step) ──────────────────
+  if (pendingTriggerAdd.has(userId)) {
+    const state = pendingTriggerAdd.get(userId)!;
+    if (state.step === 'keyword') {
+      state.keyword = trimmed;
+      state.step = 'context';
+      await ctx.reply(`🎯 Ключевое слово: <b>${escHtml(trimmed)}</b>\n\nТеперь отправьте контекст который нужно инжектить когда это слово встречается:`, { parse_mode: 'HTML' });
+      return;
+    }
+    if (state.step === 'context') {
+      pendingTriggerAdd.delete(userId);
+      try {
+        const { loadTriggers, saveTriggers } = require('./services/agent-hooks');
+        const stateRepo = getAgentStateRepository();
+        const triggers = await loadTriggers(stateRepo, state.agentId);
+        triggers.push({
+          id: String(Date.now()),
+          keyword: state.keyword!,
+          context: trimmed,
+          enabled: true,
+        });
+        await saveTriggers(stateRepo, state.agentId, userId, triggers);
+        await ctx.reply(`✅ Триггер добавлен!\n\n🔑 <b>${escHtml(state.keyword!)}</b>\n→ <i>${escHtml(trimmed.slice(0, 100))}</i>`, { parse_mode: 'HTML' });
+      } catch (e: any) { await ctx.reply('❌ ' + (e.message || '').slice(0, 100)); }
+      return;
+    }
+  }
+
   // ── Chat with AI agent ────────────────────────────────────────
   if (pendingAgentChats.has(userId)) {
     const agentId = pendingAgentChats.get(userId)!;
@@ -7252,8 +7463,8 @@ bot.on(message('text'), async (ctx) => {
     const a = agentRes.data;
 
     if (a.triggerType === 'ai_agent') {
-      // AI agent — route to agentic loop
-      getRunnerAgent().sendMessageToAgent(agentId, trimmed);
+      // AI agent — route to agentic loop (mark as owner since they chat via bot)
+      getRunnerAgent().sendMessageToAgent(agentId, trimmed, { senderId: userId, isOwner: true });
       await ctx.reply(lang === 'ru'
         ? '📨 Сообщение получено — агент ответит в ближайшее время.'
         : '📨 Message received — agent will reply shortly.'
@@ -8605,7 +8816,9 @@ async function showAgentLogs(ctx: Context, agentId: number, userId: number) {
 // ============================================================
 async function showAgentsList(ctx: Context, userId: number) {
   try {
+    console.log(`[showAgentsList] userId=${userId}`);
     const r = await getDBTools().getUserAgents(userId);
+    console.log(`[showAgentsList] result: success=${r.success} count=${r.data?.length || 0} error=${r.error || ''}`);
     if (!r.success || !r.data?.length) {
       await editOrReply(ctx,
         `${pe('robot')} <b>Ваши агенты</b>\n\n` +
@@ -8896,7 +9109,16 @@ async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
       keyboard.push([{ text: `🧑‍💻 Userbot`, callback_data: `deploy_userbot:${agentId}` }]);
     }
 
-    // Section 7 — Role management
+    // Section 7 — Hooks & Session (blocklist, triggers, session policy)
+    if (a.triggerType === 'ai_agent') {
+      keyboard.push([
+        { text: `🚫 ${ru2 ? 'Блоклист' : 'Blocklist'}`, callback_data: `hooks_blocklist:${agentId}` },
+        { text: `🎯 ${ru2 ? 'Триггеры' : 'Triggers'}`, callback_data: `hooks_triggers:${agentId}` },
+        { text: `🔄 ${ru2 ? 'Сессия' : 'Session'}`, callback_data: `hooks_session:${agentId}` },
+      ]);
+    }
+
+    // Section 8 — Role management
     keyboard.push([
       { text: `${roleEmoji} ${ru2 ? 'Роль' : 'Role'}: ${roleName}`, callback_data: `set_role:${agentId}` },
     ]);
