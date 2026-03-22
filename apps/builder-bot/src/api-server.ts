@@ -3530,7 +3530,7 @@ export function startApiServer() {
       // Filter to only show agents owned by this user (prevent IDOR)
       const userAgentIds = new Set<number>();
       try {
-        const agentList = await getDBTools().listAgents(userId);
+        const agentList = await getDBTools().getUserAgents(userId);
         if (agentList.success && agentList.data) {
           for (const a of agentList.data) userAgentIds.add(a.id);
         }
