@@ -3620,6 +3620,14 @@ export function startApiServer() {
     res.status(404).json({ ok: false, error: 'API endpoint not found' });
   });
 
+  // Studio SPA — serve studio.html for all /studio/* routes
+  app.get('/studio', (_req: Request, res: Response) => {
+    res.sendFile(path.join(landingPath, 'studio.html'));
+  });
+  app.get('/studio/:page', (_req: Request, res: Response) => {
+    res.sendFile(path.join(landingPath, 'studio.html'));
+  });
+
   // Fallback — index.html (SPA)
   app.get('/{*path}', (_req: Request, res: Response) => {
     res.sendFile(path.join(landingPath, 'index.html'));

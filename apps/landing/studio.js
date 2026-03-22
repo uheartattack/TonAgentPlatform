@@ -825,6 +825,20 @@ function closeAgentDetail() {
   setTimeout(function() { panel.style.display = 'none'; panel.classList.remove('closing'); }, 400);
 }
 
+// ESC key closes agent settings panel + any overlays
+document.addEventListener('keydown', function(e) {
+  if (e.key !== 'Escape') return;
+  // Close daily log overlay first
+  var overlay = document.getElementById('daily-log-overlay');
+  if (overlay) { overlay.remove(); return; }
+  // Close any open modal
+  var modal = document.querySelector('.studio-dialog-backdrop[style*="display: flex"], .studio-dialog-backdrop[style*="display:flex"]');
+  if (modal) { modal.style.display = 'none'; return; }
+  // Close agent detail panel
+  var panel = document.getElementById('agent-detail-panel');
+  if (panel && panel.style.display !== 'none') { closeAgentDetail(); return; }
+});
+
 function toggleAgentRename() {
   var nameEl = document.getElementById('agent-detail-name');
   if (!nameEl) return;
@@ -2164,32 +2178,49 @@ function switchSettingsTab(tab) {
         '<div class="rt-header-icon" style="background:rgba(139,92,246,0.12);color:#8b5cf6">' + IC.brain + '</div>' +
         '<div class="rt-header-text">' +
           '<h3>' + (isRu ? 'Память агента' : 'Agent Memory') + '</h3>' +
-          '<p>' + (isRu ? 'Долгосрочная память, ежедневные логи и поиск' : 'Long-term memory, daily logs and search') + '</p>' +
+          '<p>' + (isRu ? 'Долгосрочная память, ежедневные логи и поиск по всему контексту' : 'Long-term memory, daily logs and full-context search') + '</p>' +
         '</div>' +
       '</div>' +
+
+      // Stats cards
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:16px">' +
+        '<div class="stat-card"><div class="stat-value" id="mem-stat-size">-</div><div class="stat-label">' + (isRu ? 'Размер' : 'Size') + '</div></div>' +
+        '<div class="stat-card"><div class="stat-value" id="mem-stat-lines">-</div><div class="stat-label">' + (isRu ? 'Строк' : 'Lines') + '</div></div>' +
+        '<div class="stat-card"><div class="stat-value" id="mem-stat-logs">-</div><div class="stat-label">' + (isRu ? 'Лог-файлов' : 'Log files') + '</div></div>' +
+        '<div class="stat-card"><div class="stat-value" id="mem-stat-sessions">-</div><div class="stat-label">' + (isRu ? 'Сессий' : 'Sessions') + '</div></div>' +
+      '</div>' +
+
+      // Persistent memory
       '<div class="rt-section">' +
-        '<div class="rt-section-label" style="display:flex;justify-content:space-between;align-items:center">' +
-          '<span>' + IC.brain + ' ' + (isRu ? 'Постоянная память' : 'Persistent Memory') + '</span>' +
-          '<span id="mem-stats" style="font-size:.68rem;color:var(--text-muted)"></span>' +
-        '</div>' +
-        '<textarea id="mem-persistent-text" class="st-textarea" style="min-height:200px" placeholder="' + (isRu ? 'Постоянная память агента...' : 'Agent persistent memory...') + '"></textarea>' +
+        '<div class="rt-section-label">' + IC.brain + ' ' + (isRu ? 'Постоянная память' : 'Persistent Memory') + '</div>' +
+        '<textarea id="mem-persistent-text" class="st-textarea" style="min-height:180px;font-family:\'JetBrains Mono\',monospace;font-size:.78rem;line-height:1.6" placeholder="' + (isRu ? 'Факты, контакты, предпочтения — всё что агент должен помнить между сессиями...' : 'Facts, contacts, preferences — everything the agent should remember between sessions...') + '"></textarea>' +
         '<div style="display:flex;gap:8px;margin-top:8px">' +
           '<button class="rt-save-btn" onclick="saveMemoryPersistent()">' + IC.check + ' ' + (isRu ? 'Сохранить' : 'Save') + '</button>' +
           '<button class="rt-save-btn" onclick="clearAgentMemory(\'persistent\')" style="background:linear-gradient(135deg,#ef4444,#dc2626)">' + (isRu ? 'Очистить' : 'Clear') + '</button>' +
         '</div>' +
       '</div>' +
+
+      // Search
       '<div class="rt-section">' +
         '<div class="rt-section-label">' + IC.search + ' ' + (isRu ? 'Поиск по памяти' : 'Search Memory') + '</div>' +
-        '<div style="display:flex;gap:8px">' +
-          '<input type="text" id="mem-search-input" class="st-input" style="flex:1" placeholder="' + (isRu ? 'Введите запрос...' : 'Enter search query...') + '" onkeydown="if(event.key===\'Enter\')searchAgentMemory()">' +
-          '<button class="rt-save-btn" onclick="searchAgentMemory()">' + IC.search + ' ' + (isRu ? 'Искать' : 'Search') + '</button>' +
+        '<div style="display:flex;gap:8px;align-items:center">' +
+          '<div style="flex:1;position:relative">' +
+            '<input type="text" id="mem-search-input" class="st-input" style="width:100%;padding-left:36px" placeholder="' + (isRu ? 'Ключевые слова...' : 'Keywords...') + '" onkeydown="if(event.key===\'Enter\')searchAgentMemory()">' +
+            '<span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);opacity:.4">' + IC.search + '</span>' +
+          '</div>' +
+          '<button class="rt-save-btn" onclick="searchAgentMemory()">' + (isRu ? 'Найти' : 'Find') + '</button>' +
         '</div>' +
-        '<div id="mem-search-results" style="margin-top:8px"></div>' +
+        '<div id="mem-search-results" style="margin-top:10px"></div>' +
       '</div>' +
+
+      // Daily logs
       '<div class="rt-section">' +
-        '<div class="rt-section-label">' + (isRu ? 'Ежедневные логи' : 'Daily Logs') + '</div>' +
-        '<div id="mem-daily-logs" style="display:flex;flex-direction:column;gap:6px">' +
-          '<div style="text-align:center;color:var(--text-muted);padding:1rem">' + (isRu ? 'Загрузка...' : 'Loading...') + '</div>' +
+        '<div class="rt-section-label" style="display:flex;justify-content:space-between;align-items:center">' +
+          '<span>' + IC.clock + ' ' + (isRu ? 'Ежедневные логи' : 'Daily Logs') + '</span>' +
+          '<button class="rt-save-btn" onclick="clearAgentMemory(\'daily\')" style="background:rgba(239,68,68,0.1);color:#ef4444;font-size:.68rem;padding:4px 10px">' + (isRu ? 'Очистить логи' : 'Clear logs') + '</button>' +
+        '</div>' +
+        '<div id="mem-daily-logs" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px">' +
+          '<div style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:1.5rem;font-size:.8rem">' + (isRu ? 'Загрузка...' : 'Loading...') + '</div>' +
         '</div>' +
       '</div>' +
       '</div>';
@@ -3497,16 +3528,21 @@ async function sendAgentChatMessage() {
   input.value = '';
 
   _agentChatHistory.push({ role: 'user', text: text, time: new Date() });
+  // Show typing indicator
+  _agentChatHistory.push({ role: 'agent', text: '', typing: true, time: new Date() });
   renderAgentChat();
 
   try {
     var data = await apiRequest('POST', '/api/agents/' + _detailAgentId + '/chat', { message: text });
+    // Remove typing indicator
+    _agentChatHistory = _agentChatHistory.filter(function(m) { return !m.typing; });
     if (data.response) {
       _agentChatHistory.push({ role: 'agent', text: data.response, time: new Date() });
     } else if (data.error) {
       _agentChatHistory.push({ role: 'system', text: 'Error: ' + data.error, time: new Date() });
     }
   } catch (e) {
+    _agentChatHistory = _agentChatHistory.filter(function(m) { return !m.typing; });
     _agentChatHistory.push({ role: 'system', text: 'Network error', time: new Date() });
   }
   renderAgentChat();
@@ -3522,6 +3558,9 @@ function renderAgentChat() {
   }
   container.innerHTML = _agentChatHistory.map(function(m) {
     var cls = m.role === 'user' ? 'chat-msg-user' : (m.role === 'agent' ? 'chat-msg-agent' : 'chat-msg-system');
+    if (m.typing) {
+      return '<div class="chat-msg chat-msg-agent"><span class="typing-dots"><span>.</span><span>.</span><span>.</span></span></div>';
+    }
     return '<div class="chat-msg ' + cls + '">' + escHtml(m.text) + '</div>';
   }).join('');
   container.scrollTop = container.scrollHeight;
@@ -5471,8 +5510,13 @@ document.addEventListener('click', (e) => {
 
 // ===== INITIALIZE =====
 document.addEventListener('DOMContentLoaded', () => {
-  // Check if already logged in (for demo)
-  // simulateLogin();
+  // Route from URL path: /studio/profile → navigateTo('profile')
+  var path = window.location.pathname.replace(/\/$/, '');
+  var match = path.match(/\/studio\/(\w+)/);
+  if (match && match[1]) {
+    // Defer navigation until auth is ready
+    setTimeout(function() { if (authToken) navigateTo(match[1]); }, 500);
+  }
 });
 
 // ===== NAVIGATION HELPER =====
@@ -5499,6 +5543,11 @@ function navigateTo(pageName) {
   // Refresh subscription data on profile/overview navigation
   if (authToken && (pageName === 'profile' || pageName === 'overview')) {
     loadSubscriptionGlobal();
+  }
+
+  // Update URL hash for bookmarking/sharing
+  if (history.replaceState) {
+    history.replaceState(null, '', '/studio/' + pageName);
   }
 
   // Track getting-started steps
@@ -10925,26 +10974,45 @@ async function toggleContactProp(agentId, userId, prop, value) {
 async function loadMemoryData() {
   try {
     var data = await apiRequest('GET', '/api/agents/' + _detailAgentId + '/memory');
+    var isRu = currentLang === 'ru';
     // Persistent memory
     var textarea = document.getElementById('mem-persistent-text');
     if (textarea) textarea.value = data.persistent || '';
-    // Stats
-    var statsEl = document.getElementById('mem-stats');
-    if (statsEl && data.stats) {
-      statsEl.textContent = (data.stats.persistentSize > 0 ? Math.round(data.stats.persistentSize / 1024) + 'KB' : '0') +
-        ' | ' + data.stats.persistentLineCount + ' lines | ' + data.stats.dailyLogCount + ' daily logs | ' + data.stats.sessionCount + ' sessions';
+    // Stat cards
+    if (data.stats) {
+      var sizeEl = document.getElementById('mem-stat-size');
+      var linesEl = document.getElementById('mem-stat-lines');
+      var logsCountEl = document.getElementById('mem-stat-logs');
+      var sessionsEl = document.getElementById('mem-stat-sessions');
+      if (sizeEl) sizeEl.textContent = data.stats.persistentSize > 0 ? Math.round(data.stats.persistentSize / 1024) + 'KB' : '0';
+      if (linesEl) linesEl.textContent = String(data.stats.persistentLineCount || 0);
+      if (logsCountEl) logsCountEl.textContent = String(data.stats.dailyLogCount || 0);
+      if (sessionsEl) sessionsEl.textContent = String(data.stats.sessionCount || 0);
     }
-    // Daily logs
+    // Daily logs as cards
     var logsEl = document.getElementById('mem-daily-logs');
     if (logsEl && data.dailyLogs) {
       if (data.dailyLogs.length === 0) {
-        logsEl.innerHTML = '<div style="text-align:center;color:var(--text-muted);font-size:.78rem;padding:1rem">' + (currentLang === 'ru' ? 'Нет ежедневных логов' : 'No daily logs') + '</div>';
+        logsEl.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--text-muted);font-size:.8rem;padding:2rem">' +
+          IC.clock + ' ' + (isRu ? 'Ежедневных логов пока нет' : 'No daily logs yet') + '</div>';
       } else {
         logsEl.innerHTML = data.dailyLogs.map(function(dl) {
-          return '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;cursor:pointer" onclick="viewDailyLog(\'' + dl.date + '\')">' +
-            '<span style="font-weight:600;font-size:.78rem">' + dl.date + '</span>' +
-            '<span style="font-size:.68rem;color:var(--text-muted)">' + Math.round(dl.size / 1024) + 'KB</span>' +
-            '<span style="margin-left:auto;color:var(--text-muted);font-size:.72rem">' + IC.arrowRight + '</span>' +
+          var safeDate = escHtml(dl.date);
+          var sizeKb = Math.round((dl.size || 0) / 1024);
+          // Parse date for display
+          var parts = dl.date.split('-');
+          var day = parts[2] || '??';
+          var monthNames = isRu
+            ? ['','янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек']
+            : ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+          var month = monthNames[parseInt(parts[1])] || parts[1];
+          return '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:10px;padding:14px;cursor:pointer;text-align:center;transition:border-color .2s,transform .15s" ' +
+            'onmouseenter="this.style.borderColor=\'rgba(139,92,246,0.4)\';this.style.transform=\'translateY(-2px)\'" ' +
+            'onmouseleave="this.style.borderColor=\'var(--border)\';this.style.transform=\'none\'" ' +
+            'onclick="viewDailyLog(\'' + safeDate + '\')">' +
+            '<div style="font-size:1.4rem;font-weight:700;color:var(--text-primary);line-height:1">' + day + '</div>' +
+            '<div style="font-size:.7rem;color:#8b5cf6;text-transform:uppercase;letter-spacing:.5px;margin-top:2px">' + month + '</div>' +
+            '<div style="font-size:.6rem;color:var(--text-muted);margin-top:6px">' + sizeKb + 'KB</div>' +
           '</div>';
         }).join('');
       }

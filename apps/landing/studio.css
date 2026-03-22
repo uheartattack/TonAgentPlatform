@@ -6683,3 +6683,22 @@ select:focus {
   border-color: rgba(139,92,246,0.3);
   background: rgba(139,92,246,0.04);
 }
+
+/* Typing dots animation */
+.typing-dots {
+  display: inline-flex;
+  gap: 3px;
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text-muted);
+}
+.typing-dots span {
+  animation: typingBounce 1.4s infinite;
+}
+.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes typingBounce {
+  0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-4px); }
+}
