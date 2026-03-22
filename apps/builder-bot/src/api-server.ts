@@ -3339,7 +3339,7 @@ export function startApiServer() {
       const { lifecycleManager } = await import('./services/agent-lifecycle');
       const info = lifecycleManager.getInfo(own.agentId);
       res.json({ ok: true, ...info });
-    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+    } catch (e: any) { console.error('[API]', e.message?.slice(0, 200)); res.status(500).json({ ok: false, error: 'Internal error' }); }
   });
 
   app.post('/api/agents/:id/lifecycle/start', requireAuth, async (req: Request, res: Response) => {
@@ -3352,7 +3352,7 @@ export function startApiServer() {
         lifecycleManager.markRunning(own.agentId);
       }
       res.json({ ok: true, state: result.success ? 'running' : 'stopped' });
-    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+    } catch (e: any) { console.error('[API]', e.message?.slice(0, 200)); res.status(500).json({ ok: false, error: 'Internal error' }); }
   });
 
   app.post('/api/agents/:id/lifecycle/stop', requireAuth, async (req: Request, res: Response) => {
@@ -3363,7 +3363,7 @@ export function startApiServer() {
       const { lifecycleManager } = await import('./services/agent-lifecycle');
       lifecycleManager.markStopped(own.agentId);
       res.json({ ok: true, state: 'stopped' });
-    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+    } catch (e: any) { console.error('[API]', e.message?.slice(0, 200)); res.status(500).json({ ok: false, error: 'Internal error' }); }
   });
 
   app.post('/api/agents/:id/lifecycle/restart', requireAuth, async (req: Request, res: Response) => {
@@ -3378,7 +3378,7 @@ export function startApiServer() {
         lifecycleManager.markRunning(own.agentId);
       }
       res.json({ ok: true, state: result.success ? 'running' : 'stopped' });
-    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+    } catch (e: any) { console.error('[API]', e.message?.slice(0, 200)); res.status(500).json({ ok: false, error: 'Internal error' }); }
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -3394,7 +3394,7 @@ export function startApiServer() {
       const dailyLogs = await ms.listDailyLogs(agentId);
       const stats = await ms.getMemoryStats(agentId);
       res.json({ ok: true, persistent, dailyLogs, stats });
-    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+    } catch (e: any) { console.error('[API]', e.message?.slice(0, 200)); res.status(500).json({ ok: false, error: 'Internal error' }); }
   });
 
   app.post('/api/agents/:id/memory', requireAuth, async (req: Request, res: Response) => {
@@ -3417,7 +3417,7 @@ export function startApiServer() {
       } else {
         res.json({ ok: false, error: 'Invalid target. Use "persistent" or "daily".' });
       }
-    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+    } catch (e: any) { console.error('[API]', e.message?.slice(0, 200)); res.status(500).json({ ok: false, error: 'Internal error' }); }
   });
 
   app.get('/api/agents/:id/memory/search', requireAuth, async (req: Request, res: Response) => {
@@ -3429,7 +3429,7 @@ export function startApiServer() {
       const ms = await import('./services/agent-memory-store');
       const results = await ms.searchMemory(agentId, query, limit);
       res.json({ ok: true, results });
-    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+    } catch (e: any) { console.error('[API]', e.message?.slice(0, 200)); res.status(500).json({ ok: false, error: 'Internal error' }); }
   });
 
   app.get('/api/agents/:id/memory/daily/:date', requireAuth, async (req: Request, res: Response) => {
@@ -3438,7 +3438,7 @@ export function startApiServer() {
       const ms = await import('./services/agent-memory-store');
       const content = await ms.readDailyLog(own.agentId, req.params.date as string);
       res.json({ ok: true, content });
-    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+    } catch (e: any) { console.error('[API]', e.message?.slice(0, 200)); res.status(500).json({ ok: false, error: 'Internal error' }); }
   });
 
   app.delete('/api/agents/:id/memory', requireAuth, async (req: Request, res: Response) => {
@@ -3449,7 +3449,7 @@ export function startApiServer() {
       const ms = await import('./services/agent-memory-store');
       await ms.clearMemory(agentId, target as any);
       res.json({ ok: true });
-    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+    } catch (e: any) { console.error('[API]', e.message?.slice(0, 200)); res.status(500).json({ ok: false, error: 'Internal error' }); }
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -3465,7 +3465,7 @@ export function startApiServer() {
       const tasks = await ts.listTasks(own.agentId, { status, limit });
       const stats = await ts.getTaskStats(own.agentId);
       res.json({ ok: true, tasks, stats });
-    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+    } catch (e: any) { console.error('[API]', e.message?.slice(0, 200)); res.status(500).json({ ok: false, error: 'Internal error' }); }
   });
 
   app.post('/api/agents/:id/tasks', requireAuth, async (req: Request, res: Response) => {
@@ -3474,7 +3474,7 @@ export function startApiServer() {
       const ts = await import('./services/agent-task-store');
       const task = await ts.createTask(own.agentId, req.body);
       res.json({ ok: true, task });
-    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+    } catch (e: any) { console.error('[API]', e.message?.slice(0, 200)); res.status(500).json({ ok: false, error: 'Internal error' }); }
   });
 
   app.put('/api/agents/:id/tasks/:taskId', requireAuth, async (req: Request, res: Response) => {
@@ -3483,7 +3483,7 @@ export function startApiServer() {
       const ts = await import('./services/agent-task-store');
       const task = await ts.updateTask(own.agentId, req.params.taskId as string, req.body);
       res.json({ ok: true, task });
-    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+    } catch (e: any) { console.error('[API]', e.message?.slice(0, 200)); res.status(500).json({ ok: false, error: 'Internal error' }); }
   });
 
   app.delete('/api/agents/:id/tasks/:taskId', requireAuth, async (req: Request, res: Response) => {
@@ -3492,7 +3492,7 @@ export function startApiServer() {
       const ts = await import('./services/agent-task-store');
       const ok = await ts.deleteTask(own.agentId, req.params.taskId as string);
       res.json({ ok });
-    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+    } catch (e: any) { console.error('[API]', e.message?.slice(0, 200)); res.status(500).json({ ok: false, error: 'Internal error' }); }
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -3509,7 +3509,7 @@ export function startApiServer() {
       const current = tt.getCurrentUsage(own.agentId);
       const budget = await tt.checkBudget(own.agentId);
       res.json({ ok: true, history, total, current, budget });
-    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+    } catch (e: any) { console.error('[API]', e.message?.slice(0, 200)); res.status(500).json({ ok: false, error: 'Internal error' }); }
   });
 
   app.post('/api/agents/:id/tokens/budget', requireAuth, async (req: Request, res: Response) => {
@@ -3518,16 +3518,26 @@ export function startApiServer() {
       const tt = await import('./services/token-tracker');
       tt.setDailyBudget(own.agentId, Number(req.body.limit) || 0);
       res.json({ ok: true });
-    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+    } catch (e: any) { console.error('[API]', e.message?.slice(0, 200)); res.status(500).json({ ok: false, error: 'Internal error' }); }
   });
 
   app.get('/api/tokens/overview', requireAuth, async (req: Request, res: Response) => {
     try {
+      const userId = (req as any).userId as number;
       const tt = await import('./services/token-tracker');
       const days = Number(req.query.days) || 7;
-      const agents = await tt.getAllAgentsUsage(days);
+      const allAgents = await tt.getAllAgentsUsage(days);
+      // Filter to only show agents owned by this user (prevent IDOR)
+      const userAgentIds = new Set<number>();
+      try {
+        const agentList = await getDBTools().listAgents(userId);
+        if (agentList.success && agentList.data) {
+          for (const a of agentList.data) userAgentIds.add(a.id);
+        }
+      } catch {}
+      const agents = allAgents.filter(a => userAgentIds.has(a.agentId));
       res.json({ ok: true, agents });
-    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+    } catch (e: any) { res.status(500).json({ ok: false, error: 'Internal error' }); }
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -3543,7 +3553,7 @@ export function startApiServer() {
       if (Array.isArray(raw)) { tools = raw; }
       else if (typeof raw === 'string') { try { tools = JSON.parse(raw); } catch {} }
       res.json({ ok: true, tools });
-    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+    } catch (e: any) { console.error('[API]', e.message?.slice(0, 200)); res.status(500).json({ ok: false, error: 'Internal error' }); }
   });
 
   app.put('/api/agents/:id/tool-config', requireAuth, async (req: Request, res: Response) => {
@@ -3552,7 +3562,7 @@ export function startApiServer() {
       const stateRepo = getAgentStateRepository();
       await stateRepo.set(own.agentId, own.userId, '_tool_config', req.body.tools || []);
       res.json({ ok: true });
-    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+    } catch (e: any) { console.error('[API]', e.message?.slice(0, 200)); res.status(500).json({ ok: false, error: 'Internal error' }); }
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -3568,7 +3578,7 @@ export function startApiServer() {
       if (Array.isArray(raw)) { contacts = raw; }
       else if (typeof raw === 'string') { try { contacts = JSON.parse(raw); } catch {} }
       res.json({ ok: true, contacts });
-    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+    } catch (e: any) { console.error('[API]', e.message?.slice(0, 200)); res.status(500).json({ ok: false, error: 'Internal error' }); }
   });
 
   app.put('/api/agents/:id/contacts/:userId', requireAuth, async (req: Request, res: Response) => {

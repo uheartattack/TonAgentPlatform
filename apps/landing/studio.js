@@ -10843,7 +10843,7 @@ function renderTokenChart(history) {
   var maxTokens = Math.max.apply(null, history.map(function(h) { return h.totalTokens; })) || 1;
   var bars = history.slice().reverse().map(function(h) {
     var pct = Math.max(2, Math.round(h.totalTokens / maxTokens * 100));
-    var date = h.date.slice(5); // MM-DD
+    var date = escHtml(h.date.slice(5)); // MM-DD
     return '<div style="display:flex;flex-direction:column;align-items:center;flex:1;min-width:20px">' +
       '<div style="width:80%;background:linear-gradient(180deg,#f59e0b,#d97706);border-radius:3px 3px 0 0;height:' + pct + '%;min-height:2px;transition:height 0.3s" title="' + h.totalTokens + ' tokens"></div>' +
       '<div style="font-size:.55rem;color:var(--text-muted);margin-top:2px;transform:rotate(-45deg);white-space:nowrap">' + date + '</div>' +
@@ -10857,7 +10857,7 @@ function renderTokenTable(history) {
   if (!container || !history.length) return;
   var isRu = currentLang === 'ru';
   var rows = history.slice(0, 14).map(function(h) {
-    return '<tr><td>' + h.date + '</td><td>' + formatNum(h.inputTokens) + '</td><td>' + formatNum(h.outputTokens) + '</td><td>' + formatNum(h.totalTokens) + '</td><td>$' + h.estimatedCost.toFixed(4) + '</td><td>' + h.requestCount + '</td></tr>';
+    return '<tr><td>' + escHtml(h.date) + '</td><td>' + formatNum(h.inputTokens) + '</td><td>' + formatNum(h.outputTokens) + '</td><td>' + formatNum(h.totalTokens) + '</td><td>$' + h.estimatedCost.toFixed(4) + '</td><td>' + h.requestCount + '</td></tr>';
   }).join('');
   container.innerHTML =
     '<table style="width:100%;font-size:.72rem;border-collapse:collapse">' +
@@ -11096,8 +11096,10 @@ async function createAgentTask() {
       scheduledFor: scheduled || undefined
     });
     toast(currentLang === 'ru' ? 'Задача создана' : 'Task created', 'success');
-    document.getElementById('task-create-form').style.display = 'none';
-    document.getElementById('task-desc').value = '';
+    var formEl = document.getElementById('task-create-form');
+    if (formEl) formEl.style.display = 'none';
+    var descEl = document.getElementById('task-desc');
+    if (descEl) descEl.value = '';
     loadTasksData();
   } catch(e) { toast('Error: ' + e.message, 'error'); }
 }

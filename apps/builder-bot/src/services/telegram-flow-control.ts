@@ -62,11 +62,11 @@ class AdaptiveFloodGate {
     console.log(`[FloodGate] ${chatKey}: penalized ${waitSec}s`);
   }
 
-  /** After a successful send, extend spacing if still inside penalty window. */
-  recordOk(chatKey: string): void {
-    const slot = this.slots.get(chatKey);
-    if (!slot || Date.now() >= slot.unlocksAt) return;
-    slot.unlocksAt = Date.now() + slot.durationMs;
+  /** After a successful send during penalty window, no-op.
+   *  Previously extended penalty on every success — caused infinite throttle loops. */
+  recordOk(_chatKey: string): void {
+    // Intentionally no-op: successful sends should NOT extend the penalty.
+    // Penalty decays naturally via _startDecay timer.
   }
 
   /** Check if a chat is currently gated (without waiting). */
@@ -473,7 +473,7 @@ interface TokenBucket {
 const _tokenBuckets = new Map<number, TokenBucket>();
 const TOKEN_FLUSH_INTERVAL_MS = 300_000; // flush accumulated tokens to state every 5min
 
-export function trackTokenUsage(
+export function trackFlowTokenUsage(
   agentId: number,
   usage: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number },
 ): void {

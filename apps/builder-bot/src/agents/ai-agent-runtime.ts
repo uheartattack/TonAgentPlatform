@@ -53,7 +53,7 @@ import {
 } from '../services/userbot-manager';
 import {
   acquireOpLock, releaseOpLock, getActiveOp,
-  trackTokenUsage, shouldFlushTokens, flushTokenUsage,
+  trackFlowTokenUsage, shouldFlushTokens, flushTokenUsage,
 } from '../services/telegram-flow-control';
 import {
   checkToolScope, getDefaultToolScope, loadToolScopes, loadBlocklist, loadTriggers,
@@ -9923,7 +9923,7 @@ If web_search returns nothing useful → say "не смог найти акту�
     // Track tokens (in-memory accumulator + per-tick counter)
     if (response.usage) {
       totalTokensUsed += (response.usage.total_tokens || 0);
-      trackTokenUsage(params.agentId, response.usage);
+      trackFlowTokenUsage(params.agentId, response.usage);
     }
 
     // ── Handle Gemini function_call_filter: MALFORMED_FUNCTION_CALL ──
