@@ -9220,19 +9220,32 @@ function showWizard(agentId, agentName) {
   _wizardCurrentStep = 0;
   var isRu = currentLang === 'ru';
 
-  // Default wizard steps
+  // 5-step creation wizard (adapted from teleton-agent onboarding)
   _wizardSteps = [
-    { group: 'ai', title: isRu ? 'AI провайдер' : 'AI Provider', fields: [
-      { id: 'AI_PROVIDER', type: 'select', label: isRu ? 'Провайдер' : 'Provider', desc: isRu ? 'Выберите AI модель для агента' : 'Choose AI model for the agent',
-        options: [{v:'openai',l:'OpenAI'},{v:'anthropic',l:'Anthropic'},{v:'gemini',l:'Google Gemini'},{v:'groq',l:'Groq'},{v:'deepseek',l:'DeepSeek'},{v:'openrouter',l:'OpenRouter'},{v:'together',l:'Together AI'}] },
-      { id: 'AI_API_KEY', type: 'password', label: isRu ? 'API ключ' : 'API Key', desc: isRu ? 'Ваш API ключ провайдера' : 'Your provider API key', required: false }
+    // Step 1: Role
+    { group: 'role', title: isRu ? '1. Роль агента' : '1. Agent Role', fields: [
+      { id: 'ROLE', type: 'select', label: isRu ? 'Роль' : 'Role', desc: isRu ? 'Определяет поведение и набор инструментов' : 'Defines behavior and toolset',
+        options: [{v:'specialist',l:isRu?'Специалист — глубокий анализ':'Specialist — deep analysis'},{v:'worker',l:isRu?'Работник — автоматизация':'Worker — automation'},{v:'monitor',l:isRu?'Монитор — алерты':'Monitor — alerts'},{v:'manager',l:isRu?'Менеджер — координация':'Manager — coordination'},{v:'director',l:isRu?'Директор — управление':'Director — management'}] }
     ]},
-    { group: 'capabilities', title: isRu ? 'Возможности' : 'Capabilities', fields: [
-      { id: 'caps', type: 'caps', label: isRu ? 'Выберите возможности' : 'Select capabilities', desc: isRu ? 'Какие инструменты нужны вашему агенту?' : 'What tools does your agent need?' }
+    // Step 2: AI Provider
+    { group: 'ai', title: isRu ? '2. AI провайдер' : '2. AI Provider', fields: [
+      { id: 'AI_PROVIDER', type: 'select', label: isRu ? 'Провайдер' : 'Provider', desc: isRu ? 'Можно оставить по умолчанию (Gemini — бесплатный)' : 'Can leave default (Gemini — free)',
+        options: [{v:'gemini',l:'Google Gemini (free)'},{v:'openai',l:'OpenAI GPT-4o'},{v:'anthropic',l:'Anthropic Claude'},{v:'groq',l:'Groq (fast & free)'},{v:'deepseek',l:'DeepSeek'},{v:'openrouter',l:'OpenRouter'},{v:'together',l:'Together AI'}] },
+      { id: 'AI_API_KEY', type: 'password', label: isRu ? 'API ключ (опционально)' : 'API Key (optional)', desc: isRu ? 'Оставьте пустым для использования AI платформы' : 'Leave empty to use platform AI', required: false }
     ]},
-    { group: 'schedule', title: isRu ? 'Расписание' : 'Schedule', fields: [
-      { id: 'intervalMs', type: 'select', label: isRu ? 'Интервал запуска' : 'Run Interval', desc: isRu ? 'Как часто агент должен выполняться автоматически' : 'How often should the agent run automatically',
-        options: [{v:'0',l:isRu?'Только вручную':'Manual only'},{v:'60000',l:'1 min'},{v:'300000',l:'5 min'},{v:'900000',l:'15 min'},{v:'1800000',l:'30 min'},{v:'3600000',l:'1 hour'},{v:'21600000',l:'6 hours'},{v:'86400000',l:'24 hours'}] }
+    // Step 3: Capabilities
+    { group: 'capabilities', title: isRu ? '3. Возможности' : '3. Capabilities', fields: [
+      { id: 'caps', type: 'caps', label: isRu ? 'Выберите что нужно агенту' : 'Select what the agent needs', desc: isRu ? 'Можно изменить позже в настройках' : 'Can be changed later in settings' }
+    ]},
+    // Step 4: Schedule
+    { group: 'schedule', title: isRu ? '4. Расписание' : '4. Schedule', fields: [
+      { id: 'intervalMs', type: 'select', label: isRu ? 'Интервал запуска' : 'Run Interval', desc: isRu ? 'Как часто агент должен работать автоматически' : 'How often should the agent run automatically',
+        options: [{v:'0',l:isRu?'24/7 — постоянно (рекомендуется)':'24/7 — always on (recommended)'},{v:'60000',l:'1 min'},{v:'300000',l:'5 min'},{v:'900000',l:'15 min'},{v:'1800000',l:'30 min'},{v:'3600000',l:'1 hour'},{v:'86400000',l:'24 hours'}] }
+    ]},
+    // Step 5: Wallet
+    { group: 'wallet', title: isRu ? '5. TON кошелёк' : '5. TON Wallet', fields: [
+      { id: 'CREATE_WALLET', type: 'select', label: isRu ? 'Кошелёк' : 'Wallet', desc: isRu ? 'Нужен для TON переводов, покупки подарков и DeFi' : 'Required for TON transfers, gift buying and DeFi',
+        options: [{v:'auto',l:isRu?'Создать автоматически (рекомендуется)':'Create automatically (recommended)'},{v:'skip',l:isRu?'Пропустить — создам позже':'Skip — I will create later'}] }
     ]}
   ];
 
@@ -9323,26 +9336,43 @@ function wizardBack() {
 }
 
 async function submitWizard() {
-  // Collect all values
+  // Collect all values from all steps
   var config = {};
+  // Role
+  var roleEl = document.getElementById('wizard-ROLE');
+  if (roleEl && roleEl.value) config.role = roleEl.value;
+  // AI Provider
   var providerEl = document.getElementById('wizard-AI_PROVIDER');
   if (providerEl) config.AI_PROVIDER = providerEl.value;
   var keyEl = document.getElementById('wizard-AI_API_KEY');
   if (keyEl && keyEl.value.trim()) config.AI_API_KEY = keyEl.value.trim();
+  // Schedule
   var intervalEl = document.getElementById('wizard-intervalMs');
   if (intervalEl && intervalEl.value !== '0') config.intervalMs = parseInt(intervalEl.value);
   // Capabilities
   var caps = [];
   document.querySelectorAll('.wizard-cap-check:checked').forEach(function(cb) { caps.push(cb.value); });
   if (caps.length) config.enabledCapabilities = caps;
+  // Wallet
+  var walletEl = document.getElementById('wizard-CREATE_WALLET');
+  if (walletEl && walletEl.value === 'auto') config.createWallet = true;
 
   try {
     if (Object.keys(config).length > 0) {
       await apiRequest('PUT', '/api/agents/' + _wizardAgentId + '/wizard', { config: config });
     }
+    // Set role via separate endpoint
+    if (config.role) {
+      await apiRequest('PUT', '/api/agents/' + _wizardAgentId + '/role', { role: config.role }).catch(function() {});
+    }
+    // Create wallet if requested
+    if (config.createWallet) {
+      await apiRequest('POST', '/api/agents/' + _wizardAgentId + '/wallet').catch(function() {});
+    }
   } catch(e) { /* silent - best effort */ }
 
   closeWizard();
+  toast(currentLang === 'ru' ? 'Агент настроен!' : 'Agent configured!', 'success');
   navigateTo('agents');
   loadAgentsPage();
 }
