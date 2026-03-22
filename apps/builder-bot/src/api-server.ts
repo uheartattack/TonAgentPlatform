@@ -3436,7 +3436,7 @@ export function startApiServer() {
     try {
       const own = await verifyAgentOwnership(req, res); if (!own) return;
       const ms = await import('./services/agent-memory-store');
-      const content = await ms.readDailyLog(own.agentId, req.params.date);
+      const content = await ms.readDailyLog(own.agentId, req.params.date as string);
       res.json({ ok: true, content });
     } catch (e: any) { res.json({ ok: false, error: e.message }); }
   });
@@ -3481,7 +3481,7 @@ export function startApiServer() {
     try {
       const own = await verifyAgentOwnership(req, res); if (!own) return;
       const ts = await import('./services/agent-task-store');
-      const task = await ts.updateTask(own.agentId, req.params.taskId, req.body);
+      const task = await ts.updateTask(own.agentId, req.params.taskId as string, req.body);
       res.json({ ok: true, task });
     } catch (e: any) { res.json({ ok: false, error: e.message }); }
   });
@@ -3490,7 +3490,7 @@ export function startApiServer() {
     try {
       const own = await verifyAgentOwnership(req, res); if (!own) return;
       const ts = await import('./services/agent-task-store');
-      const ok = await ts.deleteTask(own.agentId, req.params.taskId);
+      const ok = await ts.deleteTask(own.agentId, req.params.taskId as string);
       res.json({ ok });
     } catch (e: any) { res.json({ ok: false, error: e.message }); }
   });
