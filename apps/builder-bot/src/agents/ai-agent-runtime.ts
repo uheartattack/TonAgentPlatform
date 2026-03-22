@@ -904,9 +904,56 @@ let _tickTriggerRegistered = false;
 /** Run an immediate tick for the given agent (e.g. when a chat message arrives). */
 function runImmediateTick(agentId: number): void {
   const handle = _activeHandles.get(agentId);
-  if (!handle) return; // agent not active — nothing to trigger
+  if (!handle) {
+    // Agent not running — try a one-shot AI call for chat messages
+    _oneOffChat(agentId).catch(e => console.error('[Runtime] oneOffChat error:', e?.message || e));
+    return;
+  }
   if (handle.tickRunning) return; // tick already in progress, message will be picked up
   handle.tick().catch(e => console.error('[Runtime]', e?.message || e));
+}
+
+/** One-shot AI call for Studio chat when agent is not running */
+async function _oneOffChat(agentId: number): Promise<void> {
+  const msgs = popMessages(agentId);
+  if (msgs.length === 0) return;
+  try {
+    const pool = (await import('../db')).pool;
+    const agentRes = await pool.query(
+      'SELECT code, trigger_config, user_id FROM builder_bot.agents WHERE id = $1',
+      [agentId]
+    );
+    if (!agentRes.rows[0]) { _resolveChatCallback(agentId, 'Agent not found'); return; }
+    const agent = agentRes.rows[0];
+    const tc = typeof agent.trigger_config === 'string' ? JSON.parse(agent.trigger_config) : (agent.trigger_config || {});
+    const config = (tc.config && typeof tc.config === 'object') ? tc.config : {};
+    // Load user's global AI keys
+    const userVarsRes = await pool.query(
+      "SELECT key, value FROM builder_bot.agent_state WHERE agent_id = 0 AND key LIKE 'AI_%' AND user_id = $1",
+      [agent.user_id]
+    ).catch(() => ({ rows: [] }));
+    for (const r of userVarsRes.rows) {
+      const v = typeof r.value === 'string' ? r.value : (r.value?.value || r.value);
+      if (v && !config[r.key]) config[r.key] = v;
+    }
+    const { getAIClient, resolveProvider } = await import('./ai-agent-runtime');
+    const providerCfg = resolveProvider(config.AI_PROVIDER as string || '');
+    const ai = getAIClient(config, providerCfg);
+    const userMsg = msgs.join('\n');
+    const response = await ai.chat.completions.create({
+      model: providerCfg.defaultModel,
+      messages: [
+        { role: 'system', content: agent.code || 'You are a helpful AI agent.' },
+        { role: 'user', content: userMsg },
+      ],
+      max_tokens: 1024,
+    });
+    const text = response.choices?.[0]?.message?.content || '';
+    _resolveChatCallback(agentId, text || '[No response]');
+  } catch (e: any) {
+    console.error('[Runtime] _oneOffChat error:', e.message?.slice(0, 200));
+    _resolveChatCallback(agentId, 'Error: ' + (e.message || 'Unknown error').slice(0, 100));
+  }
 }
 
 // ── Capability → Tool mapping ──────────────────────────────────────────────
