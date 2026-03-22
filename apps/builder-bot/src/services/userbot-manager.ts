@@ -2221,10 +2221,10 @@ class UserbotManager {
       try {
         // Auto-typing: show "typing..." indicator while AI processes
         try {
-          const ac = this.clients.get(agentId) || this.sharedClients.values().next().value;
+          const ac = this.clients.get(agentId) || Array.from(this.accountClients.values())[0];
           if (ac?.client?.connected) {
             await ac.client.invoke(new Api.messages.SetTyping({
-              peer: await ac.client.getInputEntity(BigInt(msg.chatId)),
+              peer: await ac.client.getInputEntity(msg.chatId as any),
               action: new Api.SendMessageTypingAction(),
             }));
           }
