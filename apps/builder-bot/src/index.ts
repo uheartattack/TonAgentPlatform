@@ -73,8 +73,22 @@ async function main() {
 
   console.log();
 
-  // Запуск бота
-  await startBot();
+  // Запуск бота (retry on network errors — Telegram API may be temporarily unreachable)
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      await startBot();
+      break;
+    } catch (botErr: any) {
+      const isNetwork = /ETIMEDOUT|ECONNRESET|ECONNREFUSED|ENETUNREACH|EAI_AGAIN/.test(botErr.code || botErr.message || '');
+      if (isNetwork && attempt < 5) {
+        const delay = attempt * 5;
+        console.warn(`⚠️ Bot start failed (attempt ${attempt}/5): ${botErr.message}. Retrying in ${delay}s...`);
+        await new Promise(r => setTimeout(r, delay * 1000));
+        continue;
+      }
+      throw botErr;
+    }
+  }
 
   // Запуск REST API сервера (лендинг + Telegram auth)
   startApiServer();

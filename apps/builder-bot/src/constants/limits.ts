@@ -168,7 +168,14 @@ export function isContextOverflowError(msg: string): boolean {
 
 // ── Gemini schema sanitizer ─────────────────────────────────────────────────
 // Removes unsupported JSON Schema keywords that cause Gemini to reject tools
-const GEMINI_UNSUPPORTED_KEYS = ['$schema', '$id', '$ref', '$defs', '$anchor', 'title', 'default', 'examples'];
+const GEMINI_UNSUPPORTED_KEYS = [
+  '$schema', '$id', '$ref', '$defs', '$anchor',
+  'title', 'default', 'examples', 'format',
+  'additionalProperties', 'minItems', 'maxItems',
+  'minLength', 'maxLength', 'minimum', 'maximum',
+  'exclusiveMinimum', 'exclusiveMaximum', 'pattern',
+  'patternProperties', 'if', 'then', 'else',
+];
 
 function sanitizeSchemaForGemini(schema: any): any {
   if (!schema || typeof schema !== 'object') return schema;
@@ -179,19 +186,19 @@ function sanitizeSchemaForGemini(schema: any): any {
     if (GEMINI_UNSUPPORTED_KEYS.includes(key)) continue;
 
     if (key === 'anyOf' && Array.isArray(val)) {
-      // Convert anyOf with const values to enum
       const constVals = (val as any[]).filter(v => v && v.const !== undefined);
       if (constVals.length > 0) {
         cleaned.type = typeof constVals[0].const === 'number' ? 'number' : 'string';
         cleaned.enum = constVals.map(v => v.const);
         continue;
       }
-      // Take first non-null branch
       const nonNull = (val as any[]).find(v => v && v.type !== 'null');
-      if (nonNull) {
-        Object.assign(cleaned, sanitizeSchemaForGemini(nonNull));
-        continue;
-      }
+      if (nonNull) { Object.assign(cleaned, sanitizeSchemaForGemini(nonNull)); continue; }
+    }
+
+    if (key === 'oneOf' && Array.isArray(val)) {
+      const nonNull = (val as any[]).find(v => v && v.type !== 'null');
+      if (nonNull) { Object.assign(cleaned, sanitizeSchemaForGemini(nonNull)); continue; }
     }
 
     if (key === 'const') {
@@ -202,6 +209,15 @@ function sanitizeSchemaForGemini(schema: any): any {
 
     cleaned[key] = sanitizeSchemaForGemini(val);
   }
+
+  // Gemini requires type on every schema object with properties
+  if (cleaned.properties && !cleaned.type) cleaned.type = 'object';
+  // Gemini rejects empty properties {}
+  if (cleaned.properties && typeof cleaned.properties === 'object' && Object.keys(cleaned.properties).length === 0) {
+    delete cleaned.properties;
+    if (cleaned.type === 'object') cleaned.type = 'string';
+  }
+
   return cleaned;
 }
 
