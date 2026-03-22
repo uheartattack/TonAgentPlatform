@@ -218,7 +218,7 @@ function base64urlDecode(str: string): Buffer {
   return Buffer.from(str, 'base64');
 }
 
-async function verifyTelegramOIDC(idToken: string): Promise<{ userId: number; username: string; firstName: string; photoUrl?: string } | null> {
+async function verifyTelegramOIDC(idToken: string): Promise<{ userId: number; userIdStr: string; username: string; firstName: string; photoUrl?: string } | null> {
   try {
     const parts = idToken.split('.');
     if (parts.length !== 3) return null;
@@ -242,8 +242,20 @@ async function verifyTelegramOIDC(idToken: string): Promise<{ userId: number; us
       .verify(pubKey, base64urlDecode(parts[2]));
     if (!valid) return null;
 
+    // Telegram OIDC 'sub' is the Telegram user ID but can exceed JS Number.MAX_SAFE_INTEGER
+    // For IDs > 2^53, parseInt loses precision (e.g. 7698131116661179392 → 7698131116661179000)
+    // Store as string for display, but use safe numeric for DB operations
+    const subStr = String(payload.sub);
+    let numericId: number;
+    try {
+      const bigId = BigInt(subStr);
+      numericId = bigId <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(bigId) : Number(bigId % BigInt(1_000_000_000_000));
+    } catch {
+      numericId = parseInt(subStr, 10) || 0;
+    }
     return {
-      userId: parseInt(payload.sub, 10),
+      userId: numericId,
+      userIdStr: subStr,
       username: payload.preferred_username || '',
       firstName: payload.name || '',
       photoUrl: payload.picture || undefined,
@@ -765,6 +777,7 @@ export function startApiServer() {
     res.json({
       ok: true,
       userId: session.userId,
+      userIdStr: String(session.userId),  // safe string representation for display
       username: session.username,
       firstName: session.firstName,
       photoUrl: session.photoUrl || null,
