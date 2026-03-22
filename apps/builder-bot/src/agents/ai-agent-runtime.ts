@@ -51,6 +51,15 @@ import {
   ubSearchGlobal, ubResolveUsername, ubBlockUser, ubUnblockUser,
   ubApplyBoost,
 } from '../services/userbot-manager';
+import {
+  acquireOpLock, releaseOpLock, getActiveOp,
+  trackTokenUsage, shouldFlushTokens, flushTokenUsage,
+} from '../services/telegram-flow-control';
+import {
+  checkToolScope, getDefaultToolScope, loadToolScopes, loadBlocklist, loadTriggers,
+  loadSessionConfig, shouldResetSession, checkBlocklist, matchTriggers,
+  type ToolScopeConfig,
+} from '../services/agent-hooks';
 
 // ── User input sanitization: prevent prompt injection ──────────────────────
 // Strips control chars, zero-width chars, unicode tags, XML tags, triple backticks
@@ -4614,9 +4623,11 @@ function truncateToolResult(text: string, maxSize: number = 4000): string {
       const summaryField = parsed.summary || parsed.message || parsed.data?.summary || parsed.data?.message;
       if (summaryField && typeof summaryField === 'string') {
         return JSON.stringify({
+          success: parsed.success ?? true,
           _truncated: true,
           _originalSize: text.length,
           summary: summaryField.slice(0, 1000),
+          _hint: 'Full data truncated. Use limit parameter for smaller results.',
         });
       }
 
@@ -4652,9 +4663,19 @@ function truncateToolResult(text: string, maxSize: number = 4000): string {
 function detectStall(history: string[][], window: number = 3): boolean {
   if (history.length < window) return false;
   const recent = history.slice(-window);
-  // Use slice() before sort() to avoid mutating the original arrays
+  // Same tool names repeated N iterations
   const first = [...recent[0]].sort().join(',');
-  return recent.every(calls => [...calls].sort().join(',') === first);
+  if (recent.every(calls => [...calls].sort().join(',') === first)) return true;
+  // A→B→A→B alternating pattern detection (window >= 4)
+  if (history.length >= 4) {
+    const last4 = history.slice(-4);
+    const sig0 = [...last4[0]].sort().join(',');
+    const sig1 = [...last4[1]].sort().join(',');
+    const sig2 = [...last4[2]].sort().join(',');
+    const sig3 = [...last4[3]].sort().join(',');
+    if (sig0 === sig2 && sig1 === sig3 && sig0 !== sig1) return true;
+  }
+  return false;
 }
 
 // ── Token estimation ──────────────────────────────────────────────────────
@@ -4818,6 +4839,57 @@ export async function executeTool(
     await logToDb(params.agentId, 'warn', `[RateLimit] ${name} (${group} group) rate limited`, params.userId);
     return { error: `Rate limited: too many ${group} operations. Wait a moment before retrying.` };
   }
+
+  // ── Tool scope enforcement (dm-only, group-only, admin-only) ──
+  {
+    const chatId = params.context?.chatId;
+    const senderId = params.context?.senderId;
+    const isGroup = chatId ? String(chatId).startsWith('-') : false;
+    const isOwner = !senderId || String(senderId) === String(params.userId);
+
+    // Load custom scopes (cached per-tick via params.context._toolScopes)
+    let toolScopes: Record<string, ToolScopeConfig> = {};
+    try {
+      if (params.context?._toolScopes) {
+        toolScopes = params.context._toolScopes;
+      } else {
+        toolScopes = await loadToolScopes(stateRepo, params.agentId);
+        if (params.context) (params.context as any)._toolScopes = toolScopes;
+      }
+    } catch {}
+
+    // Check if tool is disabled
+    const customCfg = toolScopes[name];
+    if (customCfg && customCfg.enabled === false) {
+      return { error: `Tool "${name}" is disabled in agent settings.` };
+    }
+
+    // Get scope (custom → default)
+    const scope = customCfg?.scope || getDefaultToolScope(name);
+    const scopeErr = checkToolScope(name, scope, isGroup, isOwner);
+    if (scopeErr) {
+      await logToDb(params.agentId, 'warn', `[ToolScope] ${name} blocked: ${scopeErr}`, params.userId);
+      return { error: scopeErr };
+    }
+  }
+
+  // ── Atomic lock for financial operations (prevents double-spend) ──
+  const FINANCIAL_OPS = new Set(['send_ton', 'send_jetton', 'buy_catalog_gift', 'buy_resale_gift', 'list_gift_for_sale']);
+  const _isFinancialOp = FINANCIAL_OPS.has(name);
+  if (_isFinancialOp) {
+    const activeOp = getActiveOp(params.agentId);
+    if (activeOp) {
+      return { error: `Another financial operation is in progress: ${activeOp}. Wait for it to complete before starting a new one.` };
+    }
+    if (!acquireOpLock(params.agentId, name)) {
+      return { error: `Could not acquire lock for ${name}. Another operation may be running.` };
+    }
+  }
+
+  // Auto-release lock after financial operations complete (or fail)
+  // This wraps the rest of executeTool implicitly: every return path below
+  // that is a financial op will hit this cleanup via the outer try/finally.
+  try {
 
   // ── Daily spend cap check for financial actions ──
   if (name === 'send_ton' || name === 'send_jetton') {
@@ -5459,6 +5531,14 @@ export async function executeTool(
     // ── Self-Awareness tools ──
     case 'remember': {
       try {
+        // Memory poisoning prevention: block memory writes from group chats by non-owners
+        const _chatId = params.context?.chatId;
+        const _senderId = params.context?.senderId;
+        const _isGroupCtx = _chatId && String(_chatId).startsWith('-');
+        if (_isGroupCtx && _senderId && String(_senderId) !== String(params.userId)) {
+          console.log(`[Security] remember blocked: group chat memory write by non-owner (sender=${_senderId}, owner=${params.userId})`);
+          return { ok: false, error: 'Memory writes are blocked in group chats for security. Only owner messages can trigger memory saves.' };
+        }
         const { isCategoryEnabled } = await import('../services/agent-memory');
         if (!(await isCategoryEnabled(params.agentId, 'memories'))) {
           return { ok: false, error: 'Memories are disabled in memory settings. Use update_memory_settings to enable.' };
@@ -5598,6 +5678,12 @@ export async function executeTool(
 
     case 'save_lesson': {
       try {
+        // Memory poisoning prevention: block lesson writes from group chats by non-owners
+        const _lChatId = params.context?.chatId;
+        const _lSenderId = params.context?.senderId;
+        if (_lChatId && String(_lChatId).startsWith('-') && _lSenderId && String(_lSenderId) !== String(params.userId)) {
+          return { ok: false, error: 'Lesson saves are blocked in group chats for security.' };
+        }
         const { isCategoryEnabled: isLessonEnabled } = await import('../services/agent-memory');
         if (!(await isLessonEnabled(params.agentId, 'lessons'))) {
           return { ok: false, error: 'Lessons are disabled in memory settings. Use update_memory_settings to enable.' };
@@ -8273,6 +8359,11 @@ export async function executeTool(
       return { error: `Unknown tool: ${name}. Use list_plugins() or check available tools.` };
     }
   }
+
+  } finally {
+    // Release atomic lock for financial operations
+    if (_isFinancialOp) releaseOpLock(params.agentId);
+  }
 }
 
 // ── Global TG fallback (backward compat for single-session mode) ───────────
@@ -8561,6 +8652,51 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
     throw e;
   }
   const msgs = params.pendingMessages || [];
+  const _stateRepo = getAgentStateRepository();
+
+  // ── Keyword Blocklist: skip messages that match blocked keywords ──
+  if (msgs.length > 0) {
+    try {
+      const blocklist = await loadBlocklist(_stateRepo, params.agentId);
+      const lastMsg = msgs[msgs.length - 1];
+      if (checkBlocklist(lastMsg, blocklist)) {
+        console.log(`[Hooks] Agent #${params.agentId} blocklist hit: "${lastMsg.slice(0, 40)}"`);
+        await logToDb(params.agentId, 'info', `[Blocklist] Message blocked: "${lastMsg.slice(0, 60)}"`, params.userId);
+        return { toolCallCount: 0, error: 'BLOCKLIST_HIT' };
+      }
+    } catch {}
+  }
+
+  // ── Session Reset Policy: clear history if policy triggers ──
+  try {
+    const sessionCfg = await loadSessionConfig(_stateRepo, params.agentId);
+    if (sessionCfg.resetPolicy !== 'none') {
+      const lastActivityRaw = await _stateRepo.get(params.agentId, '_last_activity_ts').catch(() => null);
+      const lastTs = lastActivityRaw?.value ? Number(lastActivityRaw.value) : null;
+      if (shouldResetSession(sessionCfg, lastTs)) {
+        // Clear conversation history
+        await _stateRepo.set(params.agentId, params.userId, '_conversation_history', '[]');
+        console.log(`[Hooks] Agent #${params.agentId} session reset (policy=${sessionCfg.resetPolicy})`);
+        await logToDb(params.agentId, 'info', `[Session] Auto-reset (${sessionCfg.resetPolicy})`, params.userId);
+      }
+    }
+    // Update last activity timestamp
+    await _stateRepo.set(params.agentId, params.userId, '_last_activity_ts', String(Date.now()));
+  } catch {}
+
+  // ── Context Triggers: inject extra context for matching keywords ──
+  let _triggerContext = '';
+  if (msgs.length > 0) {
+    try {
+      const triggers = await loadTriggers(_stateRepo, params.agentId);
+      const lastMsg = msgs[msgs.length - 1];
+      const matched = matchTriggers(lastMsg, triggers);
+      if (matched.length > 0) {
+        _triggerContext = '\n[Context triggers matched]:\n' + matched.join('\n') + '\n';
+        console.log(`[Hooks] Agent #${params.agentId} ${matched.length} trigger(s) matched`);
+      }
+    } catch {}
+  }
 
   // ── Behavior: schedule check — skip proactive ticks outside active hours ──
   const _bhCfg: BehaviorConfig = params.config.behavior || {};
@@ -9138,7 +9274,7 @@ ${roleBehavior}
   const contextMsg = `[Контекст агента]
 Текущая дата: ${_dateStr}, ${_timeStr} (МСК)
 Год: ${_now.getFullYear()}${identityBlock}${walletBlock}${memoriesBlock}${lessonsBlock}${goalsBlock}${eventsBlock}${statsBlock}
-Конфиг: ${configSummary || '(пусто)'}${pluginHint}${interAgentHint}${memoryDigest}${chatContextBlock}${userContextBlock}${proactiveBlock}
+Конфиг: ${configSummary || '(пусто)'}${pluginHint}${interAgentHint}${memoryDigest}${chatContextBlock}${userContextBlock}${proactiveBlock}${_triggerContext}
 ${GIFT_SYSTEM_KNOWLEDGE}${modeHint}
 ⚠️ HUMAN-IN-THE-LOOP: Опасные действия (send_ton, buy_*, list_gift_for_sale, ton_send_boc) требуют подтверждения пользователя. Если отклонено — НЕ ПОВТОРЯЙ.
 
@@ -9668,20 +9804,38 @@ If web_search returns nothing useful → say "не смог найти акту�
     tools = sanitizeToolsForGemini(tools);
   }
 
+  // ── Gemini message sanitization: only first message can be system role ──
+  if (providerName.includes('gemini') || providerName.includes('google')) {
+    for (let i = 1; i < messages.length; i++) {
+      if ((messages[i] as any).role === 'system') {
+        (messages[i] as any).role = 'user';
+        (messages[i] as any).content = `[System note] ${(messages[i] as any).content}`;
+      }
+    }
+  }
+
   let totalToolCalls = 0;
   let finalContent: string | undefined;
   _tickNotifyFlag.set(params.agentId, false); // reset flag for this tick
 
-  // ── Loop detection: track tool call signatures per iteration (Teleton pattern) ──
+  // ── Loop detection: track tool call signatures per iteration ──
   const iterationSignatures: Set<string> = new Set(); // hash of ALL tool calls per iteration
   const recentToolCalls: string[] = [];               // per-tool consecutive repeat detection
   let loopBreakFlag = false;
   const toolCallHistory: string[][] = [];             // for name-only stall detection
+  const toolResultHashes: string[][] = [];            // for result-aware stall detection
   const usedModel = (params.config.AI_MODEL as string) || process.env.AI_MODEL || defaultModel;
-  const estTokens = estimateTokens(messages);
+  let estTokens = estimateTokens(messages);
   console.log(`[AI runtime] Agent #${params.agentId} AI call: model=${usedModel} baseURL=${sanitizeForLog((ai as any).baseURL || '')} tools=${tools.length}(of ${allToolDefs.length}) msgs=${messages.length} ~${estTokens}tok`);
 
   for (let iter = 0; iter < 5; iter++) {
+    // Re-estimate tokens each iteration (messages grow with tool results)
+    estTokens = estimateTokens(messages, tools);
+    if (estTokens > 100_000) {
+      console.warn(`[AI runtime] Agent #${params.agentId} token estimate ${estTokens} exceeds 100K, forcing compaction`);
+      compressOldToolResults(messages, 2);
+      estTokens = estimateTokens(messages, tools);
+    }
     // Observation Masking: compress old tool results before each AI call
     compressOldToolResults(messages, iter === 0 ? 10 : 4);
 
@@ -9690,13 +9844,17 @@ If web_search returns nothing useful → say "не смог найти акту�
     let lastErr: any = null;
     for (let retry = 0; retry < 3; retry++) {
       try {
-        response = await ai.chat.completions.create({
+        // Build request — omit tools/tool_choice when empty (Gemini rejects tool_choice with no tools)
+        const reqBody: any = {
           model:    (params.config.AI_MODEL as string) || process.env.AI_MODEL || defaultModel,
           messages,
-          tools,
-          tool_choice: 'auto',
           max_tokens:  2048,
-        });
+        };
+        if (tools.length > 0) {
+          reqBody.tools = tools;
+          reqBody.tool_choice = 'auto';
+        }
+        response = await ai.chat.completions.create(reqBody);
         lastErr = null;
         cbRecordSuccess(params.agentId); // circuit breaker: reset on success
         break; // success
@@ -9704,9 +9862,13 @@ If web_search returns nothing useful → say "не смог найти акту�
         lastErr = e;
         // Full error dump for debugging (sanitize API keys/tokens)
         const safeHeaders = sanitizeForLog(JSON.stringify(e.headers || {}).slice(0, 200));
-        const safeBody = sanitizeForLog(JSON.stringify(e.error || e.body || {}).slice(0, 300));
-        const safeMsg = sanitizeForLog(e.message?.slice(0, 200) || '');
-        console.error(`[AI runtime] Agent #${params.agentId} AI error dump: status=${e.status} code=${e.code} type=${e.type} msg=${safeMsg} headers=${safeHeaders} body=${safeBody}`);
+        const rawBody = e.error || e.body || e.response?.body || e.cause || {};
+        const safeBody = sanitizeForLog(JSON.stringify(rawBody).slice(0, 500));
+        const safeMsg = sanitizeForLog(e.message?.slice(0, 300) || '');
+        // Try to extract response text for Gemini "no body" errors
+        let responseText = '';
+        try { if (e.response?.text) responseText = sanitizeForLog((await e.response.text()).slice(0, 300)); } catch {}
+        console.error(`[AI runtime] Agent #${params.agentId} AI error dump: status=${e.status} code=${e.code} type=${e.type} msg=${safeMsg} headers=${safeHeaders} body=${safeBody}${responseText ? ' respText=' + responseText : ''} tools=${tools.length} msgCount=${messages.length}`);
         const is429 = e.message?.includes('429') || e.status === 429 || e.statusCode === 429;
         if (is429 && retry < 2) {
           const delay = (retry + 1) * 5000; // 5s, 10s
@@ -9758,9 +9920,10 @@ If web_search returns nothing useful → say "не смог найти акту�
     const choice    = response.choices[0];
     const assistant = choice.message;
 
-    // Track tokens
+    // Track tokens (in-memory accumulator + per-tick counter)
     if (response.usage) {
       totalTokensUsed += (response.usage.total_tokens || 0);
+      trackTokenUsage(params.agentId, response.usage);
     }
 
     // ── Handle Gemini function_call_filter: MALFORMED_FUNCTION_CALL ──
@@ -9978,12 +10141,28 @@ If web_search returns nothing useful → say "не смог найти акту�
     }
     iterationSignatures.add(iterSig);
 
-    // ── Name-only stall detection: same tool names repeated 3 iterations ──
+    // ── Name-only stall detection: same tool names repeated 3+ iterations ──
     const iterToolNames = assistant.tool_calls.map((tc: any) => tc.function.name);
     toolCallHistory.push(iterToolNames);
+    // Collect result hashes for this iteration (result-aware stall check)
+    const iterResultHashes = toolResults.map((tr: any) => {
+      const content = typeof tr.content === 'string' ? tr.content : JSON.stringify(tr.content);
+      // Simple hash: first 50 chars + length (cheap but effective)
+      return content.slice(0, 50) + ':' + content.length;
+    });
+    toolResultHashes.push(iterResultHashes);
     if (detectStall(toolCallHistory, 3)) {
-      await logToDb(params.agentId, 'warn', `[AI run] Stall detected: same tools repeated 3 iterations (${iterToolNames.join(', ')}). Breaking.`, params.userId);
-      break;
+      // Only break if results are ALSO repeating (otherwise agent is making progress)
+      const resultsAlsoRepeat = toolResultHashes.length >= 3 &&
+        toolResultHashes.slice(-3).every(rh => rh.sort().join('|') === [...toolResultHashes[toolResultHashes.length - 1]].sort().join('|'));
+      if (resultsAlsoRepeat) {
+        await logToDb(params.agentId, 'warn', `[AI run] Stall detected: same tools AND results repeated 3 iterations (${iterToolNames.join(', ')}). Breaking.`, params.userId);
+        break;
+      }
+      // Tools repeat but results differ — warn but continue (agent is monitoring)
+      if (toolCallHistory.length >= 4) {
+        console.log(`[AI runtime] Agent #${params.agentId} tools repeat but results differ — monitoring mode, allowing`);
+      }
     }
 
     // ── Rebuild tools if manage_capabilities was called this iteration ──
@@ -10149,6 +10328,11 @@ If web_search returns nothing useful → say "не смог найти акту�
   }
 
   await logToDb(params.agentId, 'info', `[AI run] done, tools=${totalToolCalls}, tokens=${totalTokensUsed}, notified=${notifyWasCalled}`, params.userId);
+
+  // ── Flush accumulated token usage to DB (every ~5 min) ──
+  if (shouldFlushTokens(params.agentId)) {
+    flushTokenUsage(params.agentId, getAgentStateRepository(), params.userId).catch(() => {});
+  }
 
   // ── Save conversation history for next run ──
   try {

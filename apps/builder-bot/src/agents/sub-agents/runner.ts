@@ -54,32 +54,58 @@ export interface ControlResult {
 
 // Разобрать интервал из description/triggerConfig
 function parseIntervalMs(description: string, triggerConfig?: Record<string, any>): number | null {
-  // Из triggerConfig
+  // Priority 1: explicit config
   if (triggerConfig?.intervalMs) return parseInt(String(triggerConfig.intervalMs));
   if (triggerConfig?.interval_ms) return parseInt(String(triggerConfig.interval_ms));
 
-  // Из описания
+  // Priority 2: parse from description
   const lowerDesc = description.toLowerCase();
 
-  if (/каждую\s+минуту|раз\s+в\s+минуту|every\s+minute/.test(lowerDesc)) return 60_000;
+  // Seconds
+  const secMatch = lowerDesc.match(/(?:каждые?|every)\s+(\d+)\s+(?:секунд|second|sec)/);
+  if (secMatch) return Math.max(10_000, parseInt(secMatch[1]) * 1000); // min 10s
 
-  const minuteMatch = lowerDesc.match(/каждые?\s+(\d+)\s+минут/);
+  // Minutes
+  if (/каждую\s+минуту|раз\s+в\s+минуту|every\s+minute/.test(lowerDesc)) return 60_000;
+  const minuteMatch = lowerDesc.match(/(?:каждые?|every)\s+(\d+)\s+(?:минут|minute|min)/);
   if (minuteMatch) return parseInt(minuteMatch[1]) * 60_000;
 
-  const minuteMatchEn = lowerDesc.match(/every\s+(\d+)\s+minute/);
-  if (minuteMatchEn) return parseInt(minuteMatchEn[1]) * 60_000;
-
-  if (/каждый\s+час|раз\s+в\s+час|every\s+hour/.test(lowerDesc)) return 3_600_000;
-
-  const hourMatch = lowerDesc.match(/каждые?\s+(\d+)\s+час/);
+  // Hours
+  if (/каждый\s+час|раз\s+в\s+час|every\s+hour|hourly/.test(lowerDesc)) return 3_600_000;
+  const hourMatch = lowerDesc.match(/(?:каждые?|every)\s+(\d+)\s+(?:час|hour)/);
   if (hourMatch) return parseInt(hourMatch[1]) * 3_600_000;
 
-  const hourMatchEn = lowerDesc.match(/every\s+(\d+)\s+hour/);
-  if (hourMatchEn) return parseInt(hourMatchEn[1]) * 3_600_000;
+  // Days
+  if (/каждый\s+день|ежедневно|every\s+day|daily/.test(lowerDesc)) return 86_400_000;
 
-  if (/каждый\s+день|ежедневно|every\s+day/.test(lowerDesc)) return 86_400_000;
+  // Weekday patterns
+  if (/(?:по\s+понедельникам|every\s+monday|каждый\s+понедельник)/.test(lowerDesc)) return 7 * 86_400_000;
+  if (/(?:еженедельно|weekly|раз\s+в\s+неделю|every\s+week)/.test(lowerDesc)) return 7 * 86_400_000;
+
+  // Generic number + time unit
+  const genericMatch = lowerDesc.match(/(\d+)\s*(?:m|мин|min)(?:ут)?/);
+  if (genericMatch) return parseInt(genericMatch[1]) * 60_000;
+
+  // Log unrecognized schedule for debugging
+  if (/каждый|every|раз\s+в|интервал|interval|repeat|повтор/.test(lowerDesc)) {
+    console.warn(`[Runner] Schedule pattern not recognized in description: "${description.slice(0, 100)}"`);
+  }
 
   return null;
+}
+
+/** Merge user variables + trigger config into a single config object (DRY helper) */
+function mergeAgentConfig(
+  userVars: Record<string, any>,
+  triggerConfig: Record<string, any>,
+): Record<string, any> {
+  const nestedConfig = (triggerConfig.config && typeof triggerConfig.config === 'object') ? triggerConfig.config : {};
+  const merged = { ...userVars, ...nestedConfig };
+  // Pass execCode from trigger_config root level
+  if (triggerConfig.execCode) merged.execCode = triggerConfig.execCode;
+  // Pass telegram_session flag
+  if (triggerConfig.telegram_session?.session) merged._hasTgSession = true;
+  return merged;
 }
 
 // ===== Sub-Agent: Runner =====
@@ -128,12 +154,7 @@ export class RunnerAgent {
       if (isAIAgent) {
         // === AI AGENT MODE: agent.code = system prompt, AI decides tools ===
         const userVarsAI    = await loadUserVariables(params.userId);
-        const nestedConfigAI = (triggerConfig.config && typeof triggerConfig.config === 'object') ? triggerConfig.config : {};
-        const mergedConfigAI = { ...userVarsAI, ...nestedConfigAI };
-        // Pass execCode from trigger_config root level into config so ai-agent-runtime can access it
-        if (triggerConfig.execCode) mergedConfigAI.execCode = triggerConfig.execCode;
-        // Pass telegram_session flag so runtime knows this agent responds to messages
-        if (triggerConfig.telegram_session?.session) mergedConfigAI._hasTgSession = true;
+        const mergedConfigAI = mergeAgentConfig(userVarsAI, triggerConfig);
         const ms             = intervalMs || 5 * 60_000; // default 5 min
 
         const aiRuntime = getAIAgentRuntime();
@@ -173,12 +194,8 @@ export class RunnerAgent {
         // Код агента — обычная async function agent(context), не требует while-loop.
         // Платформа сама вызывает её каждые intervalMs миллисекунд.
 
-        // Инжектируем пользовательские переменные в triggerConfig (для доступа через context.config)
         const userVarsForScheduled = await loadUserVariables(params.userId);
-        // triggerConfig из DB имеет вид {config:{...user settings...}, intervalMs:...}
-        // Разворачиваем вложенный config на верхний уровень, чтобы context.config.KEY работало напрямую
-        const nestedConfig = (triggerConfig.config && typeof triggerConfig.config === 'object') ? triggerConfig.config : {};
-        const mergedTriggerConfig = { ...userVarsForScheduled, ...nestedConfig, intervalMs: intervalMs || 60_000 };
+        const mergedTriggerConfig = { ...mergeAgentConfig(userVarsForScheduled, triggerConfig), intervalMs: intervalMs || 60_000 };
         const ms = intervalMs || 60_000;
 
         const activateResult = await this.executionTools.activateScheduledAgent({
@@ -351,8 +368,8 @@ export class RunnerAgent {
   }
 
   // Отправить сообщение AI-агенту (chat feature)
-  sendMessageToAgent(agentId: number, text: string): void {
-    addMessageToAIAgent(agentId, text);
+  sendMessageToAgent(agentId: number, text: string, context?: Record<string, any>): void {
+    addMessageToAIAgent(agentId, text, context);
   }
 
   // Приостановить агента (остановить scheduler + деактивировать в БД)

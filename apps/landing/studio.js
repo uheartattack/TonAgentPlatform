@@ -61,6 +61,9 @@ const IC = {
   heartbeat: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>',
   target: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>',
   split: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3"/><path d="M15 9l6-6"/></svg>',
+  users: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  plus: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
+  arrowRight: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>',
 };
 
 // Map server-side plan emoji icons to SVG
@@ -691,8 +694,28 @@ async function toggleAgent(agentId, isActive) {
 var _detailAgentId = null;
 var _detailAgentData = null;
 
+function normalizeAgentData(a) {
+  if (!a) return a;
+  // Ensure both camelCase and snake_case variants exist
+  if (a.is_active === undefined && a.isActive !== undefined) a.is_active = a.isActive;
+  if (a.isActive === undefined && a.is_active !== undefined) a.isActive = a.is_active;
+  if (a.trigger_config === undefined && a.triggerConfig !== undefined) a.trigger_config = a.triggerConfig;
+  if (a.triggerConfig === undefined && a.trigger_config !== undefined) a.triggerConfig = a.trigger_config;
+  if (a.last_error === undefined && a.lastError !== undefined) a.last_error = a.lastError;
+  if (a.lastError === undefined && a.last_error !== undefined) a.lastError = a.last_error;
+  if (a.enabled_capabilities === undefined && a.enabledCapabilities !== undefined) a.enabled_capabilities = a.enabledCapabilities;
+  if (a.enabledCapabilities === undefined && a.enabled_capabilities !== undefined) a.enabledCapabilities = a.enabled_capabilities;
+  if (a.created_at === undefined && a.createdAt !== undefined) a.created_at = a.createdAt;
+  if (a.createdAt === undefined && a.created_at !== undefined) a.createdAt = a.created_at;
+  // Parse trigger_config if string
+  if (typeof a.trigger_config === 'string') { try { a.trigger_config = JSON.parse(a.trigger_config); a.triggerConfig = a.trigger_config; } catch(e) {} }
+  if (typeof a.triggerConfig === 'string') { try { a.triggerConfig = JSON.parse(a.triggerConfig); a.trigger_config = a.triggerConfig; } catch(e) {} }
+  return a;
+}
+
 async function openAgentDetail(agentId, skipSettings) {
   _detailAgentId = agentId;
+  delete _hooksCache[agentId]; // invalidate hooks cache on open
   var panel = document.getElementById('agent-detail-panel');
   if (!panel) return;
   panel.style.display = 'flex';
@@ -2041,6 +2064,183 @@ function switchSettingsTab(tab) {
   } else if (tab === 'audit') {
     body.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--text-muted)">' + (currentLang === 'ru' ? 'Загрузка аудита...' : 'Loading audit...') + '</div>';
     runSettingsAudit(body);
+  } else if (tab === 'blocklist' || tab === 'triggers' || tab === 'session' || tab === 'toolscope') {
+    body.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--text-muted)">Loading...</div>';
+    loadHooksTab(body, tab, _detailAgentId);
+  } else if (tab === 'lifecycle') {
+    var isRu = currentLang === 'ru';
+    body.innerHTML =
+      '<div class="rt-page">' +
+      '<div class="rt-header">' +
+        '<div class="rt-header-icon" style="background:rgba(16,185,129,0.12);color:#10b981">' + IC.play + '</div>' +
+        '<div class="rt-header-text">' +
+          '<h3>' + (isRu ? 'Жизненный цикл' : 'Lifecycle') + '</h3>' +
+          '<p>' + (isRu ? 'Статус, аптайм и управление запуском агента' : 'Status, uptime and agent run management') + '</p>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + (isRu ? 'Текущий статус' : 'Current Status') + '</div>' +
+        '<div id="lifecycle-status" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">' +
+          '<div class="lifecycle-badge" id="lc-state-badge" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;font-size:.82rem;font-weight:600;background:rgba(100,116,139,0.15);color:#94a3b8"><span class="lc-dot" style="width:8px;height:8px;border-radius:50%;background:currentColor"></span> loading...</div>' +
+          '<div id="lc-uptime" style="font-size:.78rem;color:var(--text-muted)"></div>' +
+          '<div id="lc-error" style="font-size:.78rem;color:#ef4444;display:none"></div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + (isRu ? 'Управление' : 'Controls') + '</div>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+          '<button class="rt-save-btn" onclick="lifecycleAction(\'start\')" style="background:linear-gradient(135deg,#10b981,#059669)">' + IC.play + ' ' + (isRu ? 'Запустить' : 'Start') + '</button>' +
+          '<button class="rt-save-btn" onclick="lifecycleAction(\'stop\')" style="background:linear-gradient(135deg,#ef4444,#dc2626)">' + IC.pause + ' ' + (isRu ? 'Остановить' : 'Stop') + '</button>' +
+          '<button class="rt-save-btn" onclick="lifecycleAction(\'restart\')" style="background:linear-gradient(135deg,#f59e0b,#d97706)">' + IC.refresh + ' ' + (isRu ? 'Перезапустить' : 'Restart') + '</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + (isRu ? 'История состояний' : 'State History') + '</div>' +
+        '<div id="lc-history" style="font-size:.78rem;color:var(--text-muted)">' + (isRu ? 'Загрузка...' : 'Loading...') + '</div>' +
+      '</div>' +
+      '</div>';
+    loadLifecycleData();
+
+  } else if (tab === 'tokens') {
+    var isRu = currentLang === 'ru';
+    body.innerHTML =
+      '<div class="rt-page">' +
+      '<div class="rt-header">' +
+        '<div class="rt-header-icon" style="background:rgba(245,158,11,0.12);color:#f59e0b">' + IC.dollar + '</div>' +
+        '<div class="rt-header-text">' +
+          '<h3>' + (isRu ? 'Расход токенов' : 'Token Usage') + '</h3>' +
+          '<p>' + (isRu ? 'Статистика потребления AI токенов и оценка стоимости' : 'AI token consumption statistics and cost estimation') + '</p>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + (isRu ? 'Общий расход' : 'Total Usage') + '</div>' +
+        '<div id="token-totals" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px">' +
+          '<div class="stat-card"><div class="stat-value" id="tk-total">-</div><div class="stat-label">' + (isRu ? 'Всего токенов' : 'Total Tokens') + '</div></div>' +
+          '<div class="stat-card"><div class="stat-value" id="tk-cost">-</div><div class="stat-label">' + (isRu ? 'Ориентировочная стоимость' : 'Est. Cost') + '</div></div>' +
+          '<div class="stat-card"><div class="stat-value" id="tk-requests">-</div><div class="stat-label">' + (isRu ? 'Запросов' : 'Requests') + '</div></div>' +
+          '<div class="stat-card"><div class="stat-value" id="tk-today">-</div><div class="stat-label">' + (isRu ? 'Сегодня' : 'Today') + '</div></div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + (isRu ? 'Дневной лимит токенов' : 'Daily Token Budget') + '</div>' +
+        '<div style="display:flex;gap:8px;align-items:center">' +
+          '<input type="number" id="tk-budget-input" class="st-input" style="width:180px" placeholder="0 = unlimited" value="0">' +
+          '<button class="rt-save-btn" onclick="saveTokenBudget()">' + IC.check + ' ' + (isRu ? 'Сохранить лимит' : 'Save Limit') + '</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + (isRu ? 'По дням (последние 30)' : 'Daily (last 30 days)') + '</div>' +
+        '<div id="token-chart" style="width:100%;height:200px;background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;position:relative;overflow:hidden"></div>' +
+        '<div id="token-table" style="margin-top:12px"></div>' +
+      '</div>' +
+      '</div>';
+    loadTokenData();
+
+  } else if (tab === 'contacts') {
+    var isRu = currentLang === 'ru';
+    body.innerHTML =
+      '<div class="rt-page">' +
+      '<div class="rt-header">' +
+        '<div class="rt-header-icon" style="background:rgba(99,102,241,0.12);color:#6366f1">' + IC.users + '</div>' +
+        '<div class="rt-header-text">' +
+          '<h3>' + (isRu ? 'Контакты' : 'Contacts') + '</h3>' +
+          '<p>' + (isRu ? 'Пользователи, с которыми взаимодействовал агент' : 'Users the agent has interacted with') + '</p>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + (isRu ? 'Список контактов' : 'Contact List') + '</div>' +
+        '<div id="contacts-list" style="display:flex;flex-direction:column;gap:8px">' +
+          '<div style="text-align:center;color:var(--text-muted);padding:2rem">' + (isRu ? 'Загрузка...' : 'Loading...') + '</div>' +
+        '</div>' +
+      '</div>' +
+      '</div>';
+    loadContactsData();
+
+  } else if (tab === 'memory') {
+    var isRu = currentLang === 'ru';
+    body.innerHTML =
+      '<div class="rt-page">' +
+      '<div class="rt-header">' +
+        '<div class="rt-header-icon" style="background:rgba(139,92,246,0.12);color:#8b5cf6">' + IC.brain + '</div>' +
+        '<div class="rt-header-text">' +
+          '<h3>' + (isRu ? 'Память агента' : 'Agent Memory') + '</h3>' +
+          '<p>' + (isRu ? 'Долгосрочная память, ежедневные логи и поиск' : 'Long-term memory, daily logs and search') + '</p>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-section">' +
+        '<div class="rt-section-label" style="display:flex;justify-content:space-between;align-items:center">' +
+          '<span>' + IC.brain + ' ' + (isRu ? 'Постоянная память' : 'Persistent Memory') + '</span>' +
+          '<span id="mem-stats" style="font-size:.68rem;color:var(--text-muted)"></span>' +
+        '</div>' +
+        '<textarea id="mem-persistent-text" class="st-textarea" style="min-height:200px" placeholder="' + (isRu ? 'Постоянная память агента...' : 'Agent persistent memory...') + '"></textarea>' +
+        '<div style="display:flex;gap:8px;margin-top:8px">' +
+          '<button class="rt-save-btn" onclick="saveMemoryPersistent()">' + IC.check + ' ' + (isRu ? 'Сохранить' : 'Save') + '</button>' +
+          '<button class="rt-save-btn" onclick="clearAgentMemory(\'persistent\')" style="background:linear-gradient(135deg,#ef4444,#dc2626)">' + (isRu ? 'Очистить' : 'Clear') + '</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + IC.search + ' ' + (isRu ? 'Поиск по памяти' : 'Search Memory') + '</div>' +
+        '<div style="display:flex;gap:8px">' +
+          '<input type="text" id="mem-search-input" class="st-input" style="flex:1" placeholder="' + (isRu ? 'Введите запрос...' : 'Enter search query...') + '" onkeydown="if(event.key===\'Enter\')searchAgentMemory()">' +
+          '<button class="rt-save-btn" onclick="searchAgentMemory()">' + IC.search + ' ' + (isRu ? 'Искать' : 'Search') + '</button>' +
+        '</div>' +
+        '<div id="mem-search-results" style="margin-top:8px"></div>' +
+      '</div>' +
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + (isRu ? 'Ежедневные логи' : 'Daily Logs') + '</div>' +
+        '<div id="mem-daily-logs" style="display:flex;flex-direction:column;gap:6px">' +
+          '<div style="text-align:center;color:var(--text-muted);padding:1rem">' + (isRu ? 'Загрузка...' : 'Loading...') + '</div>' +
+        '</div>' +
+      '</div>' +
+      '</div>';
+    loadMemoryData();
+
+  } else if (tab === 'tasks') {
+    var isRu = currentLang === 'ru';
+    body.innerHTML =
+      '<div class="rt-page">' +
+      '<div class="rt-header">' +
+        '<div class="rt-header-icon" style="background:rgba(34,197,94,0.12);color:#22c55e">' + IC.check + '</div>' +
+        '<div class="rt-header-text">' +
+          '<h3>' + (isRu ? 'Задачи агента' : 'Agent Tasks') + '</h3>' +
+          '<p>' + (isRu ? 'Управление задачами с зависимостями и приоритетами' : 'Manage tasks with dependencies and priorities') + '</p>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-section">' +
+        '<div class="rt-section-label" style="display:flex;justify-content:space-between;align-items:center">' +
+          '<span>' + (isRu ? 'Статистика' : 'Stats') + '</span>' +
+          '<div id="task-stats" style="display:flex;gap:12px;font-size:.72rem"></div>' +
+        '</div>' +
+        '<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">' +
+          '<select id="task-filter" class="st-input" style="width:150px" onchange="loadTasksData()">' +
+            '<option value="">' + (isRu ? 'Все' : 'All') + '</option>' +
+            '<option value="pending">' + (isRu ? 'Ожидающие' : 'Pending') + '</option>' +
+            '<option value="in_progress">' + (isRu ? 'В процессе' : 'In Progress') + '</option>' +
+            '<option value="done">' + (isRu ? 'Готово' : 'Done') + '</option>' +
+            '<option value="failed">' + (isRu ? 'Ошибка' : 'Failed') + '</option>' +
+          '</select>' +
+          '<button class="rt-save-btn" onclick="showCreateTaskForm()">' + IC.plus + ' ' + (isRu ? 'Новая задача' : 'New Task') + '</button>' +
+        '</div>' +
+        '<div id="task-create-form" style="display:none;margin-bottom:16px;padding:16px;background:var(--bg-primary);border:1px solid var(--border);border-radius:8px">' +
+          '<input type="text" id="task-desc" class="st-input" style="width:100%;margin-bottom:8px" placeholder="' + (isRu ? 'Описание задачи...' : 'Task description...') + '">' +
+          '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+            '<select id="task-priority" class="st-input" style="width:120px">' +
+              '<option value="0">' + (isRu ? 'Обычный' : 'Normal') + '</option>' +
+              '<option value="1">' + (isRu ? 'Высокий' : 'High') + '</option>' +
+              '<option value="2">' + (isRu ? 'Критичный' : 'Critical') + '</option>' +
+            '</select>' +
+            '<input type="datetime-local" id="task-scheduled" class="st-input" style="width:200px">' +
+            '<button class="rt-save-btn" onclick="createAgentTask()">' + IC.check + ' ' + (isRu ? 'Создать' : 'Create') + '</button>' +
+            '<button class="rt-save-btn" onclick="document.getElementById(\'task-create-form\').style.display=\'none\'" style="background:rgba(100,116,139,0.2);color:var(--text-secondary)">' + (isRu ? 'Отмена' : 'Cancel') + '</button>' +
+          '</div>' +
+        '</div>' +
+        '<div id="tasks-list" style="display:flex;flex-direction:column;gap:6px">' +
+          '<div style="text-align:center;color:var(--text-muted);padding:2rem">' + (isRu ? 'Загрузка...' : 'Loading...') + '</div>' +
+        '</div>' +
+      '</div>' +
+      '</div>';
+    loadTasksData();
+
   } else if (tab === 'advanced') {
     var isRu = currentLang === 'ru';
     var spendLimit = 500;
@@ -2184,6 +2384,267 @@ async function saveSettingsAdvanced() {
   } catch (e) {
     toast('Error: ' + (e.message || e), 'error');
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// HOOKS TABS: Blocklist, Triggers, Session, Tool Scope
+// ═══════════════════════════════════════════════════════════════════════
+
+var _hooksCache = {}; // agentId → hooks data
+
+async function loadHooksTab(body, tab, agentId) {
+  var isRu = currentLang === 'ru';
+  try {
+    if (!_hooksCache[agentId]) {
+      var resp = await apiRequest('GET', '/api/agents/' + agentId + '/hooks');
+      _hooksCache[agentId] = resp;
+    }
+    var hooks = _hooksCache[agentId];
+    if (tab === 'blocklist') renderBlocklistTab(body, hooks, agentId, isRu);
+    else if (tab === 'triggers') renderTriggersTab(body, hooks, agentId, isRu);
+    else if (tab === 'session') renderSessionTab(body, hooks, agentId, isRu);
+    else if (tab === 'toolscope') renderToolScopeTab(body, hooks, agentId, isRu);
+  } catch (e) {
+    body.innerHTML = '<div style="padding:2rem;color:#ef4444">Error: ' + (e.message || e) + '</div>';
+  }
+}
+
+function renderBlocklistTab(body, hooks, agentId, isRu) {
+  var bl = hooks.blocklist || { enabled: false, keywords: [], reply: '' };
+  var kwList = (bl.keywords || []).map(function(kw, i) {
+    return '<span class="rt-tag" style="display:inline-flex;align-items:center;gap:4px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);padding:4px 10px;border-radius:999px;font-size:.8rem;color:#ef4444">' +
+      escHtml(kw) +
+      ' <span style="cursor:pointer;opacity:.6" onclick="removeBlocklistKw(' + agentId + ',' + i + ')">✕</span>' +
+    '</span> ';
+  }).join('');
+
+  body.innerHTML =
+    '<div class="rt-page">' +
+    '<div class="rt-header">' +
+      '<div class="rt-header-icon" style="background:rgba(239,68,68,0.12);color:#ef4444">' + IC.shield + '</div>' +
+      '<div class="rt-header-text">' +
+        '<h3>' + (isRu ? 'Блоклист' : 'Blocklist') + '</h3>' +
+        '<p>' + (isRu ? 'Агент не будет отвечать на сообщения содержащие заблокированные слова' : 'Agent will ignore messages containing blocked keywords') + '</p>' +
+      '</div>' +
+    '</div>' +
+    '<div class="rt-section">' +
+      '<div class="rt-section-label">' + (isRu ? 'Статус' : 'Status') + '</div>' +
+      '<label class="rt-toggle" style="cursor:pointer;display:flex;align-items:center;gap:8px">' +
+        '<input type="checkbox" id="bl-enabled" ' + (bl.enabled ? 'checked' : '') + ' onchange="saveBlocklistState(' + agentId + ')" style="width:18px;height:18px">' +
+        '<span>' + (isRu ? 'Блоклист активен' : 'Blocklist active') + '</span>' +
+      '</label>' +
+    '</div>' +
+    '<div class="rt-section">' +
+      '<div class="rt-section-label">' + (isRu ? 'Ключевые слова' : 'Keywords') + '</div>' +
+      '<div id="bl-keywords-list" style="margin-bottom:8px;display:flex;flex-wrap:wrap;gap:6px">' + (kwList || '<span style="color:var(--text-muted);font-size:.85rem">' + (isRu ? 'Пусто' : 'Empty') + '</span>') + '</div>' +
+      '<div style="display:flex;gap:8px">' +
+        '<input type="text" id="bl-new-kw" placeholder="' + (isRu ? 'Слово или фраза...' : 'Word or phrase...') + '" style="flex:1;background:var(--glass-bg);border:1px solid var(--glass-border);border-radius:8px;padding:8px 12px;color:var(--text-primary);font-size:.85rem" onkeydown="if(event.key===\'Enter\')addBlocklistKw(' + agentId + ')">' +
+        '<button class="rt-save-btn" style="padding:8px 16px" onclick="addBlocklistKw(' + agentId + ')">' + (isRu ? '+ Добавить' : '+ Add') + '</button>' +
+      '</div>' +
+    '</div>' +
+    '<div class="rt-section">' +
+      '<div class="rt-section-label">' + (isRu ? 'Авто-ответ (необязательно)' : 'Auto-reply (optional)') + '</div>' +
+      '<input type="text" id="bl-reply" value="' + escHtml(bl.reply || '') + '" placeholder="' + (isRu ? 'Оставьте пустым чтобы молча игнорировать' : 'Leave empty to silently ignore') + '" style="width:100%;background:var(--glass-bg);border:1px solid var(--glass-border);border-radius:8px;padding:8px 12px;color:var(--text-primary);font-size:.85rem" onchange="saveBlocklistState(' + agentId + ')">' +
+    '</div>' +
+    '</div>';
+}
+
+async function addBlocklistKw(agentId) {
+  var inp = document.getElementById('bl-new-kw');
+  var val = (inp.value || '').trim();
+  if (!val) return;
+  var hooks = _hooksCache[agentId];
+  if (!hooks.blocklist) hooks.blocklist = { enabled: false, keywords: [] };
+  var newKws = val.split(',').map(function(s) { return s.trim(); }).filter(function(s) { return s.length > 0; });
+  hooks.blocklist.keywords = Array.from(new Set(hooks.blocklist.keywords.concat(newKws)));
+  inp.value = '';
+  await apiRequest('POST', '/api/agents/' + agentId + '/hooks', { blocklist: hooks.blocklist });
+  toast('+' + newKws.length + ' keywords', 'success');
+  renderBlocklistTab(document.getElementById('agent-settings-body'), hooks, agentId, currentLang === 'ru');
+}
+
+async function removeBlocklistKw(agentId, idx) {
+  var hooks = _hooksCache[agentId];
+  hooks.blocklist.keywords.splice(idx, 1);
+  await apiRequest('POST', '/api/agents/' + agentId + '/hooks', { blocklist: hooks.blocklist });
+  renderBlocklistTab(document.getElementById('agent-settings-body'), hooks, agentId, currentLang === 'ru');
+}
+
+async function saveBlocklistState(agentId) {
+  var hooks = _hooksCache[agentId];
+  if (!hooks.blocklist) hooks.blocklist = { enabled: false, keywords: [] };
+  hooks.blocklist.enabled = document.getElementById('bl-enabled').checked;
+  var replyEl = document.getElementById('bl-reply');
+  if (replyEl) hooks.blocklist.reply = replyEl.value || '';
+  await apiRequest('POST', '/api/agents/' + agentId + '/hooks', { blocklist: hooks.blocklist });
+  toast('Saved', 'success');
+}
+
+function renderTriggersTab(body, hooks, agentId, isRu) {
+  var triggers = hooks.triggers || [];
+  var rows = triggers.map(function(t, i) {
+    return '<div class="rt-section" style="padding:12px 16px;display:flex;align-items:flex-start;gap:12px">' +
+      '<input type="checkbox" ' + (t.enabled ? 'checked' : '') + ' style="width:18px;height:18px;margin-top:2px" onchange="toggleTrigger(' + agentId + ',' + i + ',this.checked)">' +
+      '<div style="flex:1">' +
+        '<div style="font-weight:600;color:var(--text-primary)">' + escHtml(t.keyword) + '</div>' +
+        '<div style="font-size:.8rem;color:var(--text-muted);margin-top:2px">' + escHtml(t.context.slice(0, 120)) + '</div>' +
+      '</div>' +
+      '<button style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:1.1rem" onclick="deleteTrigger(' + agentId + ',' + i + ')">✕</button>' +
+    '</div>';
+  }).join('');
+
+  body.innerHTML =
+    '<div class="rt-page">' +
+    '<div class="rt-header">' +
+      '<div class="rt-header-icon" style="background:rgba(245,158,11,0.12);color:#f59e0b">' + IC.bolt + '</div>' +
+      '<div class="rt-header-text">' +
+        '<h3>' + (isRu ? 'Контекстные триггеры' : 'Context Triggers') + '</h3>' +
+        '<p>' + (isRu ? 'Когда в сообщении встречается ключевое слово — в промпт агента автоматически добавляется дополнительный контекст' : 'When a keyword is found in a message, extra context is automatically injected into the agent prompt') + '</p>' +
+      '</div>' +
+    '</div>' +
+    (rows || '<div style="text-align:center;padding:2rem;color:var(--text-muted)">' + (isRu ? 'Нет триггеров' : 'No triggers') + '</div>') +
+    '<div class="rt-section">' +
+      '<div class="rt-section-label">' + (isRu ? 'Новый триггер' : 'New Trigger') + '</div>' +
+      '<div style="display:flex;flex-direction:column;gap:8px">' +
+        '<input type="text" id="trig-keyword" placeholder="' + (isRu ? 'Ключевое слово...' : 'Keyword...') + '" style="background:var(--glass-bg);border:1px solid var(--glass-border);border-radius:8px;padding:8px 12px;color:var(--text-primary);font-size:.85rem">' +
+        '<textarea id="trig-context" rows="3" placeholder="' + (isRu ? 'Контекст для инжекции в промпт...' : 'Context to inject into prompt...') + '" style="background:var(--glass-bg);border:1px solid var(--glass-border);border-radius:8px;padding:8px 12px;color:var(--text-primary);font-size:.85rem;resize:vertical"></textarea>' +
+        '<button class="rt-save-btn" onclick="addTrigger(' + agentId + ')">' + (isRu ? '+ Добавить триггер' : '+ Add Trigger') + '</button>' +
+      '</div>' +
+    '</div>' +
+    '</div>';
+}
+
+async function addTrigger(agentId) {
+  var kw = (document.getElementById('trig-keyword').value || '').trim();
+  var ctx = (document.getElementById('trig-context').value || '').trim();
+  if (!kw || !ctx) { toast('Fill both fields', 'error'); return; }
+  var hooks = _hooksCache[agentId];
+  if (!hooks.triggers) hooks.triggers = [];
+  hooks.triggers.push({ id: String(Date.now()), keyword: kw, context: ctx, enabled: true });
+  await apiRequest('POST', '/api/agents/' + agentId + '/hooks', { triggers: hooks.triggers });
+  toast('Trigger added', 'success');
+  renderTriggersTab(document.getElementById('agent-settings-body'), hooks, agentId, currentLang === 'ru');
+}
+
+async function toggleTrigger(agentId, idx, enabled) {
+  var hooks = _hooksCache[agentId];
+  hooks.triggers[idx].enabled = enabled;
+  await apiRequest('POST', '/api/agents/' + agentId + '/hooks', { triggers: hooks.triggers });
+}
+
+async function deleteTrigger(agentId, idx) {
+  var hooks = _hooksCache[agentId];
+  hooks.triggers.splice(idx, 1);
+  await apiRequest('POST', '/api/agents/' + agentId + '/hooks', { triggers: hooks.triggers });
+  renderTriggersTab(document.getElementById('agent-settings-body'), hooks, agentId, currentLang === 'ru');
+}
+
+function renderSessionTab(body, hooks, agentId, isRu) {
+  var cfg = hooks.session || { resetPolicy: 'none', idleMinutes: 60 };
+  var policies = [
+    { val: 'none', icon: '♾', label: isRu ? 'Без сброса' : 'No reset', desc: isRu ? 'История копится бесконечно' : 'History accumulates forever' },
+    { val: 'daily', icon: '📅', label: isRu ? 'Ежедневно' : 'Daily', desc: isRu ? 'Очистка истории каждый день' : 'Clear history every day' },
+    { val: 'idle', icon: '⏰', label: isRu ? 'По бездействию' : 'On idle', desc: isRu ? 'Сброс после N минут тишины' : 'Reset after N minutes of silence' },
+  ];
+  var cards = policies.map(function(p) {
+    var active = cfg.resetPolicy === p.val;
+    return '<div class="st-provider-card' + (active ? ' selected' : '') + '" style="cursor:pointer;padding:14px;text-align:center" onclick="setSessionPolicy(' + agentId + ',\'' + p.val + '\')">' +
+      '<div style="font-size:1.5rem;margin-bottom:4px">' + p.icon + '</div>' +
+      '<div style="font-weight:600;font-size:.85rem">' + p.label + '</div>' +
+      '<div style="font-size:.75rem;color:var(--text-muted);margin-top:2px">' + p.desc + '</div>' +
+    '</div>';
+  }).join('');
+
+  body.innerHTML =
+    '<div class="rt-page">' +
+    '<div class="rt-header">' +
+      '<div class="rt-header-icon" style="background:rgba(16,185,129,0.12);color:#10b981">' + IC.clock + '</div>' +
+      '<div class="rt-header-text">' +
+        '<h3>' + (isRu ? 'Политика сессии' : 'Session Policy') + '</h3>' +
+        '<p>' + (isRu ? 'Когда автоматически сбрасывать историю диалога агента' : 'When to automatically reset agent conversation history') + '</p>' +
+      '</div>' +
+    '</div>' +
+    '<div class="rt-section">' +
+      '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">' + cards + '</div>' +
+    '</div>' +
+    (cfg.resetPolicy === 'idle' ?
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + (isRu ? 'Минут бездействия' : 'Idle minutes') + '</div>' +
+        '<input type="number" id="sess-idle-min" value="' + (cfg.idleMinutes || 60) + '" min="5" max="1440" style="width:120px;background:var(--glass-bg);border:1px solid var(--glass-border);border-radius:8px;padding:8px 12px;color:var(--text-primary);font-size:.85rem" onchange="setSessionIdleMin(' + agentId + ',this.value)">' +
+      '</div>' : '') +
+    '</div>';
+}
+
+async function setSessionPolicy(agentId, policy) {
+  var hooks = _hooksCache[agentId];
+  if (!hooks.session) hooks.session = { resetPolicy: 'none', idleMinutes: 60 };
+  hooks.session.resetPolicy = policy;
+  await apiRequest('POST', '/api/agents/' + agentId + '/hooks', { session: hooks.session });
+  toast('Session policy: ' + policy, 'success');
+  renderSessionTab(document.getElementById('agent-settings-body'), hooks, agentId, currentLang === 'ru');
+}
+
+async function setSessionIdleMin(agentId, val) {
+  var hooks = _hooksCache[agentId];
+  hooks.session.idleMinutes = parseInt(val) || 60;
+  await apiRequest('POST', '/api/agents/' + agentId + '/hooks', { session: hooks.session });
+}
+
+function renderToolScopeTab(body, hooks, agentId, isRu) {
+  var scopes = hooks.toolScopes || {};
+  var SCOPE_LABELS = { 'always': '🌐 ' + (isRu ? 'Везде' : 'All'), 'dm-only': '👤 ' + (isRu ? 'Личка' : 'DM'), 'group-only': '👥 ' + (isRu ? 'Группы' : 'Groups'), 'admin-only': '🔒 ' + (isRu ? 'Админ' : 'Admin') };
+  var TOOL_GROUPS = {
+    'Financial': ['send_ton', 'send_jetton', 'buy_catalog_gift', 'buy_resale_gift', 'list_gift_for_sale', 'get_agent_wallet'],
+    'Admin': ['tg_ban_user2', 'tg_kick_user2', 'tg_mute_user2', 'tg_delete_user_messages', 'tg_edit_admin2'],
+    'Self-modify': ['update_my_prompt', 'update_my_interval', 'update_my_description'],
+  };
+  var DEFAULT_SCOPES = {
+    'send_ton': 'dm-only', 'send_jetton': 'dm-only', 'buy_catalog_gift': 'dm-only', 'buy_resale_gift': 'dm-only',
+    'list_gift_for_sale': 'dm-only', 'get_agent_wallet': 'dm-only',
+    'tg_ban_user2': 'admin-only', 'tg_kick_user2': 'admin-only', 'tg_mute_user2': 'admin-only',
+    'tg_delete_user_messages': 'admin-only', 'tg_edit_admin2': 'admin-only',
+    'update_my_prompt': 'dm-only', 'update_my_interval': 'dm-only', 'update_my_description': 'dm-only',
+  };
+
+  var html = '<div class="rt-page">' +
+    '<div class="rt-header">' +
+      '<div class="rt-header-icon" style="background:rgba(99,102,241,0.12);color:#6366f1">' + IC.shield + '</div>' +
+      '<div class="rt-header-text">' +
+        '<h3>' + (isRu ? 'Доступ к инструментам' : 'Tool Scope') + '</h3>' +
+        '<p>' + (isRu ? 'Ограничьте где и кем могут использоваться опасные инструменты' : 'Restrict where and by whom dangerous tools can be used') + '</p>' +
+      '</div>' +
+    '</div>';
+
+  Object.keys(TOOL_GROUPS).forEach(function(groupName) {
+    html += '<div class="rt-section"><div class="rt-section-label">' + groupName + '</div>';
+    TOOL_GROUPS[groupName].forEach(function(toolName) {
+      var custom = scopes[toolName] || {};
+      var scope = custom.scope || DEFAULT_SCOPES[toolName] || 'always';
+      var enabled = custom.enabled !== false;
+      var scopeOptions = ['always', 'dm-only', 'group-only', 'admin-only'].map(function(s) {
+        return '<option value="' + s + '"' + (scope === s ? ' selected' : '') + '>' + SCOPE_LABELS[s] + '</option>';
+      }).join('');
+      html += '<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--glass-border)">' +
+        '<input type="checkbox" ' + (enabled ? 'checked' : '') + ' style="width:16px;height:16px" onchange="setToolScope(' + agentId + ',\'' + toolName + '\',this.checked,null)">' +
+        '<code style="flex:1;font-size:.8rem;color:' + (enabled ? 'var(--text-primary)' : 'var(--text-muted)') + '">' + toolName + '</code>' +
+        '<select style="background:var(--glass-bg);border:1px solid var(--glass-border);border-radius:6px;padding:4px 8px;color:var(--text-primary);font-size:.78rem" onchange="setToolScope(' + agentId + ',\'' + toolName + '\',null,this.value)">' + scopeOptions + '</select>' +
+      '</div>';
+    });
+    html += '</div>';
+  });
+
+  html += '</div>';
+  body.innerHTML = html;
+}
+
+async function setToolScope(agentId, toolName, enabled, scope) {
+  var hooks = _hooksCache[agentId];
+  if (!hooks.toolScopes) hooks.toolScopes = {};
+  if (!hooks.toolScopes[toolName]) hooks.toolScopes[toolName] = { enabled: true, scope: 'always' };
+  if (enabled !== null) hooks.toolScopes[toolName].enabled = enabled;
+  if (scope !== null) hooks.toolScopes[toolName].scope = scope;
+  await apiRequest('POST', '/api/agents/' + agentId + '/hooks', { toolScopes: hooks.toolScopes });
+  toast('Saved', 'success');
 }
 
 function deleteAgentFromSettings() {
@@ -10264,4 +10725,392 @@ async function awDeleteWallet(id) {
   if (!confirm(currentLang === 'ru' ? 'Удалить? Убедитесь что вывели средства!' : 'Delete? Withdrew all funds?')) return;
   try { await apiRequest('DELETE', '/api/agentic-wallets/' + id); toast('Deleted', 'success'); closeModal(); await loadWalletsPage(); }
   catch (e) { toast('Error', 'error'); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LIFECYCLE TAB
+// ═══════════════════════════════════════════════════════════════════════════
+
+var _lcInterval = null;
+async function loadLifecycleData() {
+  if (_lcInterval) clearInterval(_lcInterval);
+  try {
+    var data = await apiRequest('GET', '/api/agents/' + _detailAgentId + '/lifecycle');
+    renderLifecycleState(data);
+  } catch(e) {
+    var el = document.getElementById('lc-state-badge');
+    if (el) el.textContent = 'Error: ' + e.message;
+  }
+  // Auto-refresh every 5s
+  _lcInterval = setInterval(async function() {
+    if (_settingsTab !== 'lifecycle') { clearInterval(_lcInterval); return; }
+    try {
+      var data = await apiRequest('GET', '/api/agents/' + _detailAgentId + '/lifecycle');
+      renderLifecycleState(data);
+    } catch(e) {}
+  }, 5000);
+}
+
+function renderLifecycleState(data) {
+  var badge = document.getElementById('lc-state-badge');
+  var uptimeEl = document.getElementById('lc-uptime');
+  var errorEl = document.getElementById('lc-error');
+  if (!badge) return;
+
+  var state = data.state || 'stopped';
+  var colors = { stopped: { bg: 'rgba(100,116,139,0.15)', color: '#94a3b8' }, starting: { bg: 'rgba(245,158,11,0.15)', color: '#f59e0b' }, running: { bg: 'rgba(16,185,129,0.15)', color: '#10b981' }, stopping: { bg: 'rgba(239,68,68,0.15)', color: '#ef4444' } };
+  var c = colors[state] || colors.stopped;
+  var labels = { stopped: currentLang === 'ru' ? 'Остановлен' : 'Stopped', starting: currentLang === 'ru' ? 'Запускается' : 'Starting', running: currentLang === 'ru' ? 'Работает' : 'Running', stopping: currentLang === 'ru' ? 'Останавливается' : 'Stopping' };
+  badge.style.background = c.bg;
+  badge.style.color = c.color;
+  badge.innerHTML = '<span class="lc-dot" style="width:8px;height:8px;border-radius:50%;background:currentColor;' + (state === 'running' ? 'animation:lcPulse 2s infinite' : '') + '"></span> ' + (labels[state] || state);
+
+  if (uptimeEl) {
+    if (data.uptime != null) {
+      var h = Math.floor(data.uptime / 3600);
+      var m = Math.floor((data.uptime % 3600) / 60);
+      var s = data.uptime % 60;
+      uptimeEl.textContent = (currentLang === 'ru' ? 'Аптайм: ' : 'Uptime: ') + (h > 0 ? h + 'h ' : '') + m + 'm ' + s + 's';
+    } else {
+      uptimeEl.textContent = '';
+    }
+  }
+
+  if (errorEl) {
+    if (data.error) {
+      errorEl.style.display = 'block';
+      errorEl.textContent = (currentLang === 'ru' ? 'Ошибка: ' : 'Error: ') + data.error;
+    } else {
+      errorEl.style.display = 'none';
+    }
+  }
+}
+
+async function lifecycleAction(action) {
+  try {
+    toast((currentLang === 'ru' ? 'Выполняется...' : 'Processing...'), 'info');
+    await apiRequest('POST', '/api/agents/' + _detailAgentId + '/lifecycle/' + action);
+    toast(action + ' OK', 'success');
+    await loadLifecycleData();
+  } catch(e) {
+    toast('Error: ' + e.message, 'error');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TOKEN USAGE TAB
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function loadTokenData() {
+  try {
+    var data = await apiRequest('GET', '/api/agents/' + _detailAgentId + '/tokens?days=30');
+    // Totals
+    var totalEl = document.getElementById('tk-total');
+    var costEl = document.getElementById('tk-cost');
+    var reqEl = document.getElementById('tk-requests');
+    var todayEl = document.getElementById('tk-today');
+    if (totalEl) totalEl.textContent = formatNum(data.total?.totalTokens || 0);
+    if (costEl) costEl.textContent = '$' + (data.total?.totalCost || 0).toFixed(4);
+    if (reqEl) reqEl.textContent = formatNum(data.total?.totalRequests || 0);
+    // Today from current in-memory bucket
+    if (todayEl) todayEl.textContent = formatNum(data.current?.totalTokens || 0);
+    // Budget
+    var budgetInput = document.getElementById('tk-budget-input');
+    if (budgetInput && data.budget) budgetInput.value = data.budget.limit || 0;
+    // Chart
+    renderTokenChart(data.history || []);
+    // Table
+    renderTokenTable(data.history || []);
+  } catch(e) {
+    var totalEl = document.getElementById('tk-total');
+    if (totalEl) totalEl.textContent = 'Error';
+  }
+}
+
+function formatNum(n) {
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+  return String(n);
+}
+
+function renderTokenChart(history) {
+  var container = document.getElementById('token-chart');
+  if (!container || !history.length) {
+    if (container) container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);font-size:.78rem">' + (currentLang === 'ru' ? 'Нет данных' : 'No data yet') + '</div>';
+    return;
+  }
+  // Simple bar chart
+  var maxTokens = Math.max.apply(null, history.map(function(h) { return h.totalTokens; })) || 1;
+  var bars = history.slice().reverse().map(function(h) {
+    var pct = Math.max(2, Math.round(h.totalTokens / maxTokens * 100));
+    var date = h.date.slice(5); // MM-DD
+    return '<div style="display:flex;flex-direction:column;align-items:center;flex:1;min-width:20px">' +
+      '<div style="width:80%;background:linear-gradient(180deg,#f59e0b,#d97706);border-radius:3px 3px 0 0;height:' + pct + '%;min-height:2px;transition:height 0.3s" title="' + h.totalTokens + ' tokens"></div>' +
+      '<div style="font-size:.55rem;color:var(--text-muted);margin-top:2px;transform:rotate(-45deg);white-space:nowrap">' + date + '</div>' +
+    '</div>';
+  }).join('');
+  container.innerHTML = '<div style="display:flex;align-items:flex-end;height:160px;padding:8px 4px 24px 4px;gap:2px">' + bars + '</div>';
+}
+
+function renderTokenTable(history) {
+  var container = document.getElementById('token-table');
+  if (!container || !history.length) return;
+  var isRu = currentLang === 'ru';
+  var rows = history.slice(0, 14).map(function(h) {
+    return '<tr><td>' + h.date + '</td><td>' + formatNum(h.inputTokens) + '</td><td>' + formatNum(h.outputTokens) + '</td><td>' + formatNum(h.totalTokens) + '</td><td>$' + h.estimatedCost.toFixed(4) + '</td><td>' + h.requestCount + '</td></tr>';
+  }).join('');
+  container.innerHTML =
+    '<table style="width:100%;font-size:.72rem;border-collapse:collapse">' +
+    '<thead><tr style="color:var(--text-muted);text-align:left;border-bottom:1px solid var(--border)">' +
+      '<th style="padding:6px">' + (isRu ? 'Дата' : 'Date') + '</th><th style="padding:6px">Input</th><th style="padding:6px">Output</th><th style="padding:6px">Total</th><th style="padding:6px">' + (isRu ? 'Стоимость' : 'Cost') + '</th><th style="padding:6px">' + (isRu ? 'Запросы' : 'Requests') + '</th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+async function saveTokenBudget() {
+  var val = parseInt((document.getElementById('tk-budget-input') || {}).value) || 0;
+  try {
+    await apiRequest('POST', '/api/agents/' + _detailAgentId + '/tokens/budget', { limit: val });
+    toast(currentLang === 'ru' ? 'Лимит сохранён' : 'Budget saved', 'success');
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CONTACTS TAB
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function loadContactsData() {
+  try {
+    var data = await apiRequest('GET', '/api/agents/' + _detailAgentId + '/contacts');
+    var list = document.getElementById('contacts-list');
+    if (!list) return;
+    var contacts = data.contacts || [];
+    if (contacts.length === 0) {
+      list.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:2rem">' + (currentLang === 'ru' ? 'Контактов пока нет' : 'No contacts yet') + '</div>';
+      return;
+    }
+    var isRu = currentLang === 'ru';
+    list.innerHTML = contacts.map(function(c) {
+      var name = c.firstName || c.username || c.id;
+      var isBot = c.isBot ? '<span style="font-size:.6rem;padding:2px 6px;border-radius:4px;background:rgba(59,130,246,0.1);color:#3b82f6;margin-left:4px">BOT</span>' : '';
+      var isAdmin = c.isAdmin ? '<span style="font-size:.6rem;padding:2px 6px;border-radius:4px;background:rgba(245,158,11,0.1);color:#f59e0b;margin-left:4px">ADMIN</span>' : '';
+      var allowedToggle = '<label style="display:flex;align-items:center;gap:4px;font-size:.72rem;cursor:pointer"><input type="checkbox" ' + (c.isAllowed !== false ? 'checked' : '') + ' onchange="toggleContactProp(' + _detailAgentId + ',\'' + c.id + '\',\'isAllowed\',this.checked)"> ' + (isRu ? 'Разрешён' : 'Allowed') + '</label>';
+      var adminToggle = '<label style="display:flex;align-items:center;gap:4px;font-size:.72rem;cursor:pointer"><input type="checkbox" ' + (c.isAdmin ? 'checked' : '') + ' onchange="toggleContactProp(' + _detailAgentId + ',\'' + c.id + '\',\'isAdmin\',this.checked)"> ' + (isRu ? 'Админ' : 'Admin') + '</label>';
+      return '<div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--bg-primary);border:1px solid var(--border);border-radius:8px">' +
+        '<div style="flex:1"><span style="font-weight:600;font-size:.82rem">' + escHtml(String(name)) + '</span>' + isBot + isAdmin +
+          (c.username ? '<div style="font-size:.68rem;color:var(--text-muted)">@' + escHtml(c.username) + '</div>' : '') +
+          '<div style="font-size:.65rem;color:var(--text-muted)">' + (isRu ? 'Сообщений: ' : 'Messages: ') + (c.messageCount || 0) + '</div>' +
+        '</div>' +
+        '<div style="display:flex;gap:12px">' + allowedToggle + adminToggle + '</div>' +
+      '</div>';
+    }).join('');
+  } catch(e) {
+    var list = document.getElementById('contacts-list');
+    if (list) list.innerHTML = '<div style="color:#ef4444;padding:1rem">Error: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+async function toggleContactProp(agentId, userId, prop, value) {
+  try {
+    var body = {};
+    body[prop] = value;
+    await apiRequest('PUT', '/api/agents/' + agentId + '/contacts/' + userId, body);
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MEMORY TAB
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function loadMemoryData() {
+  try {
+    var data = await apiRequest('GET', '/api/agents/' + _detailAgentId + '/memory');
+    // Persistent memory
+    var textarea = document.getElementById('mem-persistent-text');
+    if (textarea) textarea.value = data.persistent || '';
+    // Stats
+    var statsEl = document.getElementById('mem-stats');
+    if (statsEl && data.stats) {
+      statsEl.textContent = (data.stats.persistentSize > 0 ? Math.round(data.stats.persistentSize / 1024) + 'KB' : '0') +
+        ' | ' + data.stats.persistentLineCount + ' lines | ' + data.stats.dailyLogCount + ' daily logs | ' + data.stats.sessionCount + ' sessions';
+    }
+    // Daily logs
+    var logsEl = document.getElementById('mem-daily-logs');
+    if (logsEl && data.dailyLogs) {
+      if (data.dailyLogs.length === 0) {
+        logsEl.innerHTML = '<div style="text-align:center;color:var(--text-muted);font-size:.78rem;padding:1rem">' + (currentLang === 'ru' ? 'Нет ежедневных логов' : 'No daily logs') + '</div>';
+      } else {
+        logsEl.innerHTML = data.dailyLogs.map(function(dl) {
+          return '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;cursor:pointer" onclick="viewDailyLog(\'' + dl.date + '\')">' +
+            '<span style="font-weight:600;font-size:.78rem">' + dl.date + '</span>' +
+            '<span style="font-size:.68rem;color:var(--text-muted)">' + Math.round(dl.size / 1024) + 'KB</span>' +
+            '<span style="margin-left:auto;color:var(--text-muted);font-size:.72rem">' + IC.arrowRight + '</span>' +
+          '</div>';
+        }).join('');
+      }
+    }
+  } catch(e) {
+    toast('Memory load error: ' + e.message, 'error');
+  }
+}
+
+async function saveMemoryPersistent() {
+  var text = (document.getElementById('mem-persistent-text') || {}).value || '';
+  try {
+    await apiRequest('POST', '/api/agents/' + _detailAgentId + '/memory', { target: 'persistent', content: text, replace: true });
+    toast(currentLang === 'ru' ? 'Память сохранена' : 'Memory saved', 'success');
+    loadMemoryData();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+async function clearAgentMemory(target) {
+  if (!confirm(currentLang === 'ru' ? 'Очистить память? Это нельзя отменить.' : 'Clear memory? This cannot be undone.')) return;
+  try {
+    await apiRequest('DELETE', '/api/agents/' + _detailAgentId + '/memory?target=' + target);
+    toast(currentLang === 'ru' ? 'Очищено' : 'Cleared', 'success');
+    loadMemoryData();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+async function searchAgentMemory() {
+  var query = (document.getElementById('mem-search-input') || {}).value || '';
+  if (!query.trim()) return;
+  var resultsEl = document.getElementById('mem-search-results');
+  if (!resultsEl) return;
+  resultsEl.innerHTML = '<div style="color:var(--text-muted);font-size:.78rem;padding:8px">' + (currentLang === 'ru' ? 'Поиск...' : 'Searching...') + '</div>';
+  try {
+    var data = await apiRequest('GET', '/api/agents/' + _detailAgentId + '/memory/search?q=' + encodeURIComponent(query));
+    var results = data.results || [];
+    if (results.length === 0) {
+      resultsEl.innerHTML = '<div style="color:var(--text-muted);font-size:.78rem;padding:8px">' + (currentLang === 'ru' ? 'Ничего не найдено' : 'No results found') + '</div>';
+      return;
+    }
+    resultsEl.innerHTML = results.map(function(r) {
+      var sourceColors = { persistent: '#8b5cf6', daily_log: '#10b981', session: '#3b82f6' };
+      return '<div style="padding:8px 12px;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;margin-bottom:4px">' +
+        '<div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">' +
+          '<span style="font-size:.6rem;padding:2px 6px;border-radius:4px;background:rgba(0,0,0,0.2);color:' + (sourceColors[r.source] || '#94a3b8') + '">' + r.source + '</span>' +
+          '<span style="font-size:.65rem;color:var(--text-muted)">score: ' + (r.score * 100).toFixed(0) + '%</span>' +
+          (r.date ? '<span style="font-size:.65rem;color:var(--text-muted)">' + r.date + '</span>' : '') +
+        '</div>' +
+        '<div style="font-size:.75rem;color:var(--text-primary);white-space:pre-wrap;word-break:break-word">' + escHtml(r.text.slice(0, 300)) + '</div>' +
+      '</div>';
+    }).join('');
+  } catch(e) {
+    resultsEl.innerHTML = '<div style="color:#ef4444;font-size:.78rem;padding:8px">Error: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+async function viewDailyLog(date) {
+  try {
+    var data = await apiRequest('GET', '/api/agents/' + _detailAgentId + '/memory/daily/' + date);
+    var content = data.content || (currentLang === 'ru' ? 'Пусто' : 'Empty');
+    // Show in a modal-like overlay
+    var body = document.getElementById('agent-settings-body');
+    if (!body) return;
+    var existingOverlay = document.getElementById('daily-log-overlay');
+    if (existingOverlay) existingOverlay.remove();
+    var overlay = document.createElement('div');
+    overlay.id = 'daily-log-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;display:flex;align-items:center;justify-content:center;padding:2rem';
+    overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+    overlay.innerHTML = '<div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px;max-width:700px;width:100%;max-height:80vh;overflow-y:auto;padding:24px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">' +
+        '<h3 style="margin:0;color:var(--text-primary)">' + (currentLang === 'ru' ? 'Лог за ' : 'Log for ') + date + '</h3>' +
+        '<button onclick="this.closest(\'#daily-log-overlay\').remove()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:1.2rem">' + IC.x + '</button>' +
+      '</div>' +
+      '<pre style="font-family:\'JetBrains Mono\',monospace;font-size:.74rem;line-height:1.6;color:var(--text-secondary);white-space:pre-wrap;word-break:break-word">' + escHtml(content) + '</pre>' +
+    '</div>';
+    document.body.appendChild(overlay);
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TASKS TAB
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function loadTasksData() {
+  try {
+    var status = (document.getElementById('task-filter') || {}).value || '';
+    var data = await apiRequest('GET', '/api/agents/' + _detailAgentId + '/tasks' + (status ? '?status=' + status : ''));
+    // Stats
+    var statsEl = document.getElementById('task-stats');
+    if (statsEl && data.stats) {
+      var s = data.stats;
+      var isRu = currentLang === 'ru';
+      statsEl.innerHTML =
+        '<span style="color:#f59e0b">' + (isRu ? 'Ожид: ' : 'Pending: ') + s.pending + '</span>' +
+        '<span style="color:#3b82f6">' + (isRu ? 'В работе: ' : 'Active: ') + s.inProgress + '</span>' +
+        '<span style="color:#10b981">' + (isRu ? 'Готово: ' : 'Done: ') + s.done + '</span>' +
+        '<span style="color:#ef4444">' + (isRu ? 'Ошибки: ' : 'Failed: ') + s.failed + '</span>';
+    }
+    // List
+    var listEl = document.getElementById('tasks-list');
+    if (!listEl) return;
+    var tasks = data.tasks || [];
+    if (tasks.length === 0) {
+      listEl.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:2rem">' + (currentLang === 'ru' ? 'Задач нет' : 'No tasks') + '</div>';
+      return;
+    }
+    var statusColors = { pending: '#f59e0b', in_progress: '#3b82f6', done: '#10b981', failed: '#ef4444', cancelled: '#94a3b8' };
+    var statusLabels = { pending: currentLang === 'ru' ? 'Ожидание' : 'Pending', in_progress: currentLang === 'ru' ? 'В процессе' : 'In Progress', done: currentLang === 'ru' ? 'Готово' : 'Done', failed: currentLang === 'ru' ? 'Ошибка' : 'Failed', cancelled: currentLang === 'ru' ? 'Отменено' : 'Cancelled' };
+    listEl.innerHTML = tasks.map(function(t) {
+      var color = statusColors[t.status] || '#94a3b8';
+      var prioLabel = t.priority > 1 ? ' <span style="color:#ef4444;font-size:.6rem">!!!</span>' : t.priority > 0 ? ' <span style="color:#f59e0b;font-size:.6rem">!</span>' : '';
+      var deps = t.dependsOn && t.dependsOn.length > 0 ? '<div style="font-size:.6rem;color:var(--text-muted);margin-top:2px">deps: ' + t.dependsOn.length + '</div>' : '';
+      var actions = '';
+      if (t.status === 'pending') actions = '<button onclick="updateTaskStatus(\'' + t.id + '\',\'in_progress\')" style="font-size:.65rem;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:rgba(59,130,246,0.1);color:#3b82f6;cursor:pointer">' + (currentLang === 'ru' ? 'Начать' : 'Start') + '</button>';
+      if (t.status === 'in_progress') actions = '<button onclick="updateTaskStatus(\'' + t.id + '\',\'done\')" style="font-size:.65rem;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:rgba(16,185,129,0.1);color:#10b981;cursor:pointer">' + (currentLang === 'ru' ? 'Готово' : 'Done') + '</button>';
+      return '<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;border-left:3px solid ' + color + '">' +
+        '<div style="flex:1">' +
+          '<div style="font-size:.8rem;font-weight:500;color:var(--text-primary)">' + escHtml(t.description) + prioLabel + '</div>' +
+          '<div style="font-size:.65rem;color:var(--text-muted)">' + (statusLabels[t.status] || t.status) + (t.scheduledFor ? ' | ' + new Date(t.scheduledFor).toLocaleString() : '') + deps + '</div>' +
+          (t.error ? '<div style="font-size:.65rem;color:#ef4444">' + escHtml(t.error.slice(0, 100)) + '</div>' : '') +
+        '</div>' +
+        '<div style="display:flex;gap:6px;align-items:center">' + actions +
+          '<button onclick="deleteAgentTask(\'' + t.id + '\')" style="font-size:.65rem;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:rgba(239,68,68,0.08);color:#ef4444;cursor:pointer">' + IC.x + '</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  } catch(e) {
+    var listEl = document.getElementById('tasks-list');
+    if (listEl) listEl.innerHTML = '<div style="color:#ef4444;padding:1rem">Error: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+function showCreateTaskForm() {
+  var form = document.getElementById('task-create-form');
+  if (form) form.style.display = form.style.display === 'none' ? 'block' : 'none';
+}
+
+async function createAgentTask() {
+  var desc = (document.getElementById('task-desc') || {}).value || '';
+  if (!desc.trim()) { toast(currentLang === 'ru' ? 'Введите описание' : 'Enter description', 'error'); return; }
+  var priority = parseInt((document.getElementById('task-priority') || {}).value) || 0;
+  var scheduled = (document.getElementById('task-scheduled') || {}).value || '';
+  try {
+    await apiRequest('POST', '/api/agents/' + _detailAgentId + '/tasks', {
+      description: desc,
+      priority: priority,
+      scheduledFor: scheduled || undefined
+    });
+    toast(currentLang === 'ru' ? 'Задача создана' : 'Task created', 'success');
+    document.getElementById('task-create-form').style.display = 'none';
+    document.getElementById('task-desc').value = '';
+    loadTasksData();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+async function updateTaskStatus(taskId, status) {
+  try {
+    await apiRequest('PUT', '/api/agents/' + _detailAgentId + '/tasks/' + taskId, { status: status });
+    loadTasksData();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+async function deleteAgentTask(taskId) {
+  if (!confirm(currentLang === 'ru' ? 'Удалить задачу?' : 'Delete task?')) return;
+  try {
+    await apiRequest('DELETE', '/api/agents/' + _detailAgentId + '/tasks/' + taskId);
+    loadTasksData();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
 }
