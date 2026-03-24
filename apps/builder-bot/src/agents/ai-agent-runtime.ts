@@ -1030,7 +1030,11 @@ const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
   blockchain:  ['ton_get_account', 'ton_get_transactions', 'ton_get_jettons', 'ton_get_nfts',
                 'ton_run_method', 'ton_get_rates', 'ton_dns_resolve', 'ton_get_staking_pools',
                 'ton_emulate_tx', 'ton_send_boc', 'ton_get_validators', 'ton_parse_address'],
-  defi:        ['dex_get_prices', 'dex_swap_simulate'],
+  defi:        ['dex_get_prices', 'dex_swap_simulate',
+                'stonfi_swap', 'stonfi_quote', 'stonfi_search', 'stonfi_trending', 'stonfi_pools',
+                'dedust_swap', 'dedust_quote', 'dedust_pools', 'dedust_prices', 'dedust_token_info'],
+  dns:         ['dns_check', 'dns_resolve', 'dns_auctions', 'dns_bid', 'dns_link', 'dns_unlink', 'dns_set_site', 'dns_start_auction'],
+  payments:    ['verify_payment', 'check_tx_used'],
   image:       ['image_download', 'image_resize', 'image_crop', 'image_add_text', 'image_filter',
                 'image_convert', 'image_info', 'image_composite', 'image_create_text', 'image_analyze'],
   ton_mcp:     [], // dynamic — MCP tools discovered at runtime and injected via mcpTools param
@@ -2906,6 +2910,29 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
         }, required: ['offer_id', 'accept'] },
       },
     },
+    // ── STON.fi DEX ──
+    { type: 'function', function: { name: 'stonfi_swap', description: 'Выполнить свап на STON.fi DEX. Автоматически находит лучший маршрут.', parameters: { type: 'object', properties: { from_token: { type: 'string', description: 'Адрес токена для продажи (или TON)' }, to_token: { type: 'string', description: 'Адрес токена для покупки' }, amount: { type: 'number', description: 'Количество токенов для продажи' }, slippage: { type: 'number', description: 'Макс. проскальзывание в % (по умолчанию 1)' } }, required: ['from_token', 'to_token', 'amount'] } } },
+    { type: 'function', function: { name: 'stonfi_quote', description: 'Получить котировку свапа на STON.fi без выполнения.', parameters: { type: 'object', properties: { from_token: { type: 'string', description: 'Адрес токена для продажи' }, to_token: { type: 'string', description: 'Адрес токена для покупки' }, amount: { type: 'number', description: 'Количество' } }, required: ['from_token', 'to_token', 'amount'] } } },
+    { type: 'function', function: { name: 'stonfi_search', description: 'Поиск токенов на STON.fi по имени или адресу.', parameters: { type: 'object', properties: { query: { type: 'string', description: 'Название, тикер или адрес токена' } }, required: ['query'] } } },
+    { type: 'function', function: { name: 'stonfi_trending', description: 'Топ трендовых токенов на STON.fi (по объёму).', parameters: { type: 'object', properties: { limit: { type: 'number', description: 'Макс. количество (по умолчанию 10)' } }, required: [] } } },
+    { type: 'function', function: { name: 'stonfi_pools', description: 'Список пулов ликвидности на STON.fi.', parameters: { type: 'object', properties: { token: { type: 'string', description: 'Фильтр по токену (опционально)' }, limit: { type: 'number', description: 'Макс. количество' } }, required: [] } } },
+    // ── DeDust DEX ──
+    { type: 'function', function: { name: 'dedust_swap', description: 'Выполнить свап на DeDust DEX.', parameters: { type: 'object', properties: { from_token: { type: 'string', description: 'Адрес исходного токена' }, to_token: { type: 'string', description: 'Адрес целевого токена' }, amount: { type: 'number', description: 'Количество' }, slippage: { type: 'number', description: 'Проскальзывание %' } }, required: ['from_token', 'to_token', 'amount'] } } },
+    { type: 'function', function: { name: 'dedust_quote', description: 'Котировка свапа на DeDust без выполнения.', parameters: { type: 'object', properties: { from_token: { type: 'string', description: 'Исходный токен' }, to_token: { type: 'string', description: 'Целевой токен' }, amount: { type: 'number', description: 'Количество' } }, required: ['from_token', 'to_token', 'amount'] } } },
+    { type: 'function', function: { name: 'dedust_pools', description: 'Список пулов DeDust с ликвидностью и APY.', parameters: { type: 'object', properties: { limit: { type: 'number', description: 'Макс. количество' } }, required: [] } } },
+    { type: 'function', function: { name: 'dedust_prices', description: 'Текущие цены токенов на DeDust.', parameters: { type: 'object', properties: { tokens: { type: 'array', items: { type: 'string' }, description: 'Список адресов токенов' } }, required: [] } } },
+    { type: 'function', function: { name: 'dedust_token_info', description: 'Информация о токене на DeDust (ликвидность, объём, цена).', parameters: { type: 'object', properties: { token: { type: 'string', description: 'Адрес или тикер токена' } }, required: ['token'] } } },
+    // ── TON DNS ──
+    { type: 'function', function: { name: 'dns_check', description: 'Проверить доступность .ton домена.', parameters: { type: 'object', properties: { domain: { type: 'string', description: 'Домен (например alice.ton)' } }, required: ['domain'] } } },
+    { type: 'function', function: { name: 'dns_resolve', description: 'Разрешить .ton домен в адрес кошелька.', parameters: { type: 'object', properties: { domain: { type: 'string', description: 'Домен для разрешения' } }, required: ['domain'] } } },
+    { type: 'function', function: { name: 'dns_auctions', description: 'Список активных аукционов .ton доменов.', parameters: { type: 'object', properties: { limit: { type: 'number', description: 'Макс. количество' } }, required: [] } } },
+    { type: 'function', function: { name: 'dns_start_auction', description: 'Начать аукцион на .ton домен.', parameters: { type: 'object', properties: { domain: { type: 'string', description: 'Домен' } }, required: ['domain'] } } },
+    { type: 'function', function: { name: 'dns_bid', description: 'Сделать ставку на аукционе .ton домена.', parameters: { type: 'object', properties: { domain: { type: 'string', description: 'Домен' }, amount: { type: 'number', description: 'Ставка в TON' } }, required: ['domain', 'amount'] } } },
+    { type: 'function', function: { name: 'dns_link', description: 'Привязать .ton домен к кошельку/сайту.', parameters: { type: 'object', properties: { domain: { type: 'string', description: 'Домен' }, address: { type: 'string', description: 'Адрес кошелька для привязки' } }, required: ['domain', 'address'] } } },
+    { type: 'function', function: { name: 'dns_unlink', description: 'Отвязать .ton домен.', parameters: { type: 'object', properties: { domain: { type: 'string', description: 'Домен' } }, required: ['domain'] } } },
+    { type: 'function', function: { name: 'dns_set_site', description: 'Привязать сайт к .ton домену (ADNL адрес).', parameters: { type: 'object', properties: { domain: { type: 'string', description: 'Домен' }, site_address: { type: 'string', description: 'ADNL адрес сайта' } }, required: ['domain', 'site_address'] } } },
+    // ── Payment verification ──
+    { type: 'function', function: { name: 'verify_payment', description: 'Проверить TON платёж на блокчейне с защитой от повторного использования.', parameters: { type: 'object', properties: { wallet: { type: 'string', description: 'Адрес кошелька получателя' }, amount: { type: 'number', description: 'Ожидаемая сумма в TON' }, memo: { type: 'string', description: 'Мемо/комментарий платежа (ID пользователя)' }, max_age_min: { type: 'number', description: 'Макс. возраст платежа в минутах (по умолчанию 10)' } }, required: ['wallet', 'amount', 'memo'] } } },
     // ── Memory/Session search ──
     {
       type: 'function',
@@ -6146,6 +6173,98 @@ export async function executeTool(
       } catch (e: any) { return { keys: [], error: e.message }; }
     }
 
+    // ── STON.fi / DeDust / DNS / Payment tools ──
+    case 'stonfi_swap': case 'stonfi_quote': case 'stonfi_search': case 'stonfi_trending': case 'stonfi_pools':
+    case 'dedust_swap': case 'dedust_quote': case 'dedust_pools': case 'dedust_prices': case 'dedust_token_info':
+    case 'dns_check': case 'dns_resolve': case 'dns_auctions': case 'dns_start_auction': case 'dns_bid': case 'dns_link': case 'dns_unlink': case 'dns_set_site':
+    case 'verify_payment': {
+      try {
+        const toolName = f.name;
+        // STON.fi API
+        if (toolName.startsWith('stonfi_')) {
+          const base = 'https://api.ston.fi/v1';
+          if (toolName === 'stonfi_search') {
+            const r = await fetch(`${base}/assets/search?search_string=${encodeURIComponent(args.query)}`);
+            return await r.json();
+          }
+          if (toolName === 'stonfi_trending') {
+            const r = await fetch(`${base}/assets?sort=volume_24h&order=desc&limit=${args.limit || 10}`);
+            return await r.json();
+          }
+          if (toolName === 'stonfi_pools') {
+            const url = args.token ? `${base}/pools?token=${args.token}&limit=${args.limit || 20}` : `${base}/pools?limit=${args.limit || 20}`;
+            const r = await fetch(url);
+            return await r.json();
+          }
+          if (toolName === 'stonfi_quote') {
+            const r = await fetch(`${base}/swap/simulate?offer_address=${args.from_token}&ask_address=${args.to_token}&units=${Math.floor(args.amount * 1e9)}&slippage_tolerance=${args.slippage || 1}`);
+            return await r.json();
+          }
+          return { error: 'stonfi_swap requires wallet integration — use dex_swap_simulate for quotes' };
+        }
+        // DeDust API
+        if (toolName.startsWith('dedust_')) {
+          const base = 'https://api.dedust.io/v2';
+          if (toolName === 'dedust_pools') {
+            const r = await fetch(`${base}/pools?limit=${args.limit || 20}`);
+            return await r.json();
+          }
+          if (toolName === 'dedust_prices') {
+            const r = await fetch(`${base}/prices`);
+            return await r.json();
+          }
+          if (toolName === 'dedust_token_info') {
+            const r = await fetch(`${base}/assets/${args.token}`);
+            return await r.json();
+          }
+          if (toolName === 'dedust_quote') {
+            const r = await fetch(`${base}/routing/plan?from=${args.from_token}&to=${args.to_token}&amount=${Math.floor(args.amount * 1e9)}`);
+            return await r.json();
+          }
+          return { error: 'dedust_swap requires wallet integration — use dedust_quote for quotes' };
+        }
+        // TON DNS
+        if (toolName.startsWith('dns_')) {
+          const domain = (args.domain || '').replace(/\.ton$/, '');
+          if (toolName === 'dns_check') {
+            const r = await fetch(`https://tonapi.io/v2/dns/${domain}.ton`);
+            const d = await r.json();
+            return { available: !d.wallet, domain: domain + '.ton', wallet: d.wallet?.address };
+          }
+          if (toolName === 'dns_resolve') {
+            const r = await fetch(`https://tonapi.io/v2/dns/${domain}.ton`);
+            return await r.json();
+          }
+          if (toolName === 'dns_auctions') {
+            const r = await fetch(`https://tonapi.io/v2/dns/auctions?limit=${args.limit || 20}`);
+            return await r.json();
+          }
+          return { info: `${toolName} requires wallet — use ton_dns_resolve from blockchain tools` };
+        }
+        // Payment verification
+        if (toolName === 'verify_payment') {
+          const r = await fetch(`https://tonapi.io/v2/blockchain/accounts/${args.wallet}/transactions?limit=20`);
+          const data = await r.json();
+          const txs = data.transactions || [];
+          for (const tx of txs) {
+            const inMsg = tx.in_msg;
+            if (!inMsg || inMsg.msg_type !== 'int_msg') continue;
+            const amount = Number(inMsg.value) / 1e9;
+            if (amount < args.amount * 0.99) continue;
+            const comment = inMsg.decoded_body?.text || '';
+            if (comment.toLowerCase().includes(args.memo.toLowerCase())) {
+              const age = (Date.now() / 1000) - tx.utime;
+              if (age < (args.max_age_min || 10) * 60) {
+                return { verified: true, tx_hash: tx.hash, amount: `${amount} TON`, age_seconds: Math.floor(age) };
+              }
+            }
+          }
+          return { verified: false, error: `Payment not found. Send ${args.amount} TON with memo "${args.memo}"` };
+        }
+        return { error: 'Unknown tool' };
+      } catch (e: any) { return { error: e.message?.slice(0, 200) }; }
+    }
+
     // ── Session/Memory search tools ──
     case 'session_search': {
       try {
@@ -6247,6 +6366,14 @@ export async function executeTool(
         if (_isGroupCtx && _senderId && String(_senderId) !== String(params.userId)) {
           console.log(`[Security] remember blocked: group chat memory write by non-owner (sender=${_senderId}, owner=${params.userId})`);
           return { ok: false, error: 'Memory writes are blocked in group chats for security. Only owner messages can trigger memory saves.' };
+        }
+        // Memory guard: scan for prompt injection / exfiltration in memory content
+        const { scanMemoryContent } = await import('../services/memory-guard');
+        const memContent = String(args.value || args.content || '');
+        const scanResult = scanMemoryContent(memContent);
+        if (!scanResult.safe) {
+          console.warn(`[Security] remember blocked: memory injection detected: ${scanResult.threats.join(', ')}`);
+          return { ok: false, error: `Memory write blocked: suspicious content detected (${scanResult.threats[0]})` };
         }
         const { isCategoryEnabled } = await import('../services/agent-memory');
         if (!(await isCategoryEnabled(params.agentId, 'memories'))) {
