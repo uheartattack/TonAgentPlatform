@@ -5,13 +5,11 @@
  * Falls back to pure keyword if embedding fails.
  */
 
-import OpenAI from 'openai';
-
 // ═══════════════════════════════════════════════════════════════════════════
 // CONFIG
 // ═══════════════════════════════════════════════════════════════════════════
 
-const EMBEDDING_MODEL = 'text-embedding-004';
+const EMBEDDING_MODEL = 'models/text-embedding-004';
 const EMBEDDING_DIMS = 256; // Gemini supports dimensionality reduction
 const VECTOR_WEIGHT = 0.6;
 const KEYWORD_WEIGHT = 0.4;
@@ -33,61 +31,62 @@ interface EmbeddingEntry {
 
 let _toolEmbeddings = new Map<string, EmbeddingEntry>();
 let _toolSignature = '';
-let _embeddingClient: OpenAI | null = null;
+let _lastEmbedApiKey = '';
 
-let _lastApiKey = '';
-
-function getEmbeddingClient(apiKey?: string): OpenAI {
-  const key = apiKey || process.env.PLATFORM_AI_KEY || process.env.GEMINI_API_KEY || '';
-  // Recreate client if key changed
-  if (!_embeddingClient || key !== _lastApiKey) {
-    if (!key) {
-      // No key available — return dummy client that will fail gracefully
-      _embeddingClient = new OpenAI({ baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/', apiKey: 'none' });
-      _lastApiKey = '';
-      return _embeddingClient;
-    }
-    _embeddingClient = new OpenAI({
-      baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
-      apiKey: key,
-    });
-    _lastApiKey = key;
-  }
-  return _embeddingClient;
-}
-
-/** Get embedding for a single text */
+/** Get embedding via native Gemini REST API (not OpenAI compat) */
 async function embed(text: string, apiKey?: string): Promise<number[] | null> {
+  const key = apiKey || process.env.PLATFORM_AI_KEY || process.env.GEMINI_API_KEY || '';
+  if (!key || key === 'none') return null;
   try {
-    const client = getEmbeddingClient(apiKey);
-    const res = await client.embeddings.create({
-      model: EMBEDDING_MODEL,
-      input: text,
-      dimensions: EMBEDDING_DIMS,
-    } as any);
-    return (res.data[0] as any)?.embedding || null;
-  } catch (e: any) {
-    // Silent fail — fallback to keyword only
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${key}`;
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'models/text-embedding-004',
+        content: { parts: [{ text }] },
+        outputDimensionality: EMBEDDING_DIMS,
+      }),
+    });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    return data.embedding?.values || null;
+  } catch {
     return null;
   }
 }
 
-/** Batch embed (Gemini supports up to 2048 inputs) */
+/** Batch embed via native Gemini REST API */
 async function embedBatch(texts: string[], apiKey?: string): Promise<(number[] | null)[]> {
   if (texts.length === 0) return [];
+  const key = apiKey || process.env.PLATFORM_AI_KEY || process.env.GEMINI_API_KEY || '';
+  if (!key || key === 'none') return texts.map(() => null);
   try {
-    const client = getEmbeddingClient(apiKey);
-    // Split into chunks of 100 for safety
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:batchEmbedContents?key=${key}`;
     const results: (number[] | null)[] = [];
+    // Process in chunks of 100
     for (let i = 0; i < texts.length; i += 100) {
       const batch = texts.slice(i, i + 100);
-      const res = await client.embeddings.create({
-        model: EMBEDDING_MODEL,
-        input: batch,
-        dimensions: EMBEDDING_DIMS,
-      } as any);
-      for (const item of res.data) {
-        results.push((item as any)?.embedding || null);
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requests: batch.map(text => ({
+            model: 'models/text-embedding-004',
+            content: { parts: [{ text }] },
+            outputDimensionality: EMBEDDING_DIMS,
+          })),
+        }),
+      });
+      if (!resp.ok) {
+        const errText = await resp.text().catch(() => '');
+        console.warn(`[ToolRAG] Batch embedding HTTP ${resp.status}: ${errText.slice(0, 100)}`);
+        for (let j = 0; j < batch.length; j++) results.push(null);
+        continue;
+      }
+      const data = await resp.json();
+      for (const emb of (data.embeddings || [])) {
+        results.push(emb?.values || null);
       }
     }
     return results;
@@ -133,6 +132,7 @@ export async function indexTools(tools: any[], apiKey?: string): Promise<void> {
     });
   }
   _toolSignature = sig;
+  _lastEmbedApiKey = apiKey || '';
 
   const embeddedCount = vectors.filter(v => v && v.length > 0).length;
   console.log(`[ToolRAG] Indexed ${names.length} tools (${embeddedCount} with embeddings, ${names.length - embeddedCount} keyword-only)`);
@@ -179,7 +179,7 @@ export async function searchTools(
   if (_toolEmbeddings.size === 0) return [];
 
   // Embed query
-  const queryVec = await embed(query, _lastApiKey || undefined);
+  const queryVec = await embed(query, _lastEmbedApiKey || undefined);
   const hasVectors = queryVec && queryVec.length > 0;
 
   // Determine weights
