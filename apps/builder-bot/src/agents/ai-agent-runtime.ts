@@ -987,7 +987,13 @@ const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
                 'tg_get_common_chats', 'tg_check_username', 'tg_set_username',
                 'tg_get_blocked', 'tg_search_stickers', 'tg_add_sticker_set',
                 'tg_get_folders', 'tg_create_folder', 'tg_add_to_folder',
-                'tg_transfer_collectible', 'tg_set_gift_visibility', 'tg_get_stars_transactions'],
+                'tg_transfer_collectible', 'tg_set_gift_visibility', 'tg_get_stars_transactions',
+                'tg_get_scheduled', 'tg_delete_scheduled', 'tg_send_scheduled_now',
+                'tg_get_admined_channels', 'tg_check_channel_username',
+                'tg_search_gifs', 'tg_set_personal_channel',
+                'tg_get_collectible_info', 'tg_get_unique_gift_value', 'tg_set_collectible_price',
+                'tg_send_gift_offer', 'tg_resolve_gift_offer',
+                'session_search', 'memory_read'],
   telegram_admin: [
     'tg_create_channel2', 'tg_edit_channel_title', 'tg_edit_channel_about',
     'tg_set_channel_username', 'tg_toggle_slow_mode', 'tg_delete_channel',
@@ -2766,6 +2772,158 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
           limit: { type: 'number', description: 'Максимум записей (по умолчанию 50)' },
           offset: { type: 'string', description: 'Оффсет для пагинации' },
         }, required: [] },
+      },
+    },
+    // ── Scheduled messages management ──
+    {
+      type: 'function',
+      function: {
+        name: 'tg_get_scheduled',
+        description: 'Получить список запланированных сообщений в чате.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID чата' },
+        }, required: ['chat_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_delete_scheduled',
+        description: 'Удалить запланированное сообщение.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID чата' },
+          message_id: { type: 'number', description: 'ID запланированного сообщения' },
+        }, required: ['chat_id', 'message_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_send_scheduled_now',
+        description: 'Отправить запланированное сообщение немедленно.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID чата' },
+          message_id: { type: 'number', description: 'ID запланированного сообщения' },
+        }, required: ['chat_id', 'message_id'] },
+      },
+    },
+    // ── Channel discovery ──
+    {
+      type: 'function',
+      function: {
+        name: 'tg_get_admined_channels',
+        description: 'Список каналов/групп где ты админ.',
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_check_channel_username',
+        description: 'Проверить доступность username для канала/группы.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID канала/группы' },
+          username: { type: 'string', description: 'Username для проверки' },
+        }, required: ['chat_id', 'username'] },
+      },
+    },
+    // ── GIF search ──
+    {
+      type: 'function',
+      function: {
+        name: 'tg_search_gifs',
+        description: 'Поиск GIF анимаций по запросу.',
+        parameters: { type: 'object', properties: {
+          query: { type: 'string', description: 'Поисковый запрос' },
+          limit: { type: 'number', description: 'Максимум результатов (по умолчанию 20)' },
+        }, required: ['query'] },
+      },
+    },
+    // ── Profile extras ──
+    {
+      type: 'function',
+      function: {
+        name: 'tg_set_personal_channel',
+        description: 'Установить личный канал в профиле (отображается у всех).',
+        parameters: { type: 'object', properties: {
+          channel_id: { type: 'string', description: 'ID канала (или пустая строка для удаления)' },
+        }, required: ['channel_id'] },
+      },
+    },
+    // ── Gift advanced ──
+    {
+      type: 'function',
+      function: {
+        name: 'tg_get_collectible_info',
+        description: 'Получить детальную информацию о коллекционном подарке.',
+        parameters: { type: 'object', properties: {
+          gift_id: { type: 'string', description: 'ID подарка (slug или numeric)' },
+        }, required: ['gift_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_get_unique_gift_value',
+        description: 'Оценить стоимость уникального подарка на основе рынка.',
+        parameters: { type: 'object', properties: {
+          gift_id: { type: 'string', description: 'ID уникального подарка' },
+        }, required: ['gift_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_set_collectible_price',
+        description: 'Установить цену перепродажи коллекционного подарка.',
+        parameters: { type: 'object', properties: {
+          gift_id: { type: 'string', description: 'ID подарка' },
+          price: { type: 'number', description: 'Цена в Stars (0 = снять с продажи)' },
+        }, required: ['gift_id', 'price'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_send_gift_offer',
+        description: 'Предложить обмен подарками пользователю.',
+        parameters: { type: 'object', properties: {
+          to_user: { type: 'string', description: 'Username или ID получателя' },
+          my_gift_id: { type: 'string', description: 'ID моего подарка для обмена' },
+          want_gift_id: { type: 'string', description: 'ID подарка который хочу получить' },
+          message: { type: 'string', description: 'Сообщение к офферу' },
+        }, required: ['to_user', 'my_gift_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_resolve_gift_offer',
+        description: 'Принять или отклонить оффер обмена подарками.',
+        parameters: { type: 'object', properties: {
+          offer_id: { type: 'string', description: 'ID оффера' },
+          accept: { type: 'boolean', description: 'true = принять, false = отклонить' },
+        }, required: ['offer_id', 'accept'] },
+      },
+    },
+    // ── Memory/Session search ──
+    {
+      type: 'function',
+      function: {
+        name: 'session_search',
+        description: 'Поиск по прошлым сессиям агента — резюме, ключевые решения, действия.',
+        parameters: { type: 'object', properties: {
+          query: { type: 'string', description: 'Поисковый запрос' },
+          limit: { type: 'number', description: 'Максимум результатов (по умолчанию 10)' },
+        }, required: ['query'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'memory_read',
+        description: 'Прочитать всю постоянную память агента.',
+        parameters: { type: 'object', properties: {}, required: [] },
       },
     },
     // ── Journal / Trading log tools ──
@@ -5988,6 +6146,24 @@ export async function executeTool(
       } catch (e: any) { return { keys: [], error: e.message }; }
     }
 
+    // ── Session/Memory search tools ──
+    case 'session_search': {
+      try {
+        const { getRecentSessionSummaries } = await import('../services/agent-memory');
+        const summaries = await getRecentSessionSummaries(params.agentId || 0, args.limit || 10);
+        const query = (args.query || '').toLowerCase();
+        const filtered = query ? summaries.filter(s => s.toLowerCase().includes(query)) : summaries;
+        return { ok: true, count: filtered.length, sessions: filtered.slice(0, args.limit || 10) };
+      } catch (e: any) { return { error: e.message }; }
+    }
+    case 'memory_read': {
+      try {
+        const ms = await import('../services/agent-memory-store');
+        const content = await ms.readPersistentMemory(params.agentId || 0);
+        return { ok: true, content: content || '(empty)', size: content.length };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
     // ── Journal tools ──
     case 'journal_log': {
       try {
@@ -6731,6 +6907,11 @@ export async function executeTool(
     case 'tg_search_stickers': case 'tg_add_sticker_set':
     case 'tg_get_blocked': case 'tg_get_common_chats': case 'tg_check_username': case 'tg_set_username':
     case 'tg_transfer_collectible': case 'tg_set_gift_visibility': case 'tg_get_stars_transactions':
+    case 'tg_get_scheduled': case 'tg_delete_scheduled': case 'tg_send_scheduled_now':
+    case 'tg_get_admined_channels': case 'tg_check_channel_username':
+    case 'tg_search_gifs': case 'tg_set_personal_channel':
+    case 'tg_get_collectible_info': case 'tg_get_unique_gift_value': case 'tg_set_collectible_price':
+    case 'tg_send_gift_offer': case 'tg_resolve_gift_offer':
     // ── New userbot-manager tools ──
     case 'tg_create_channel2': case 'tg_edit_channel_title': case 'tg_edit_channel_about':
     case 'tg_set_channel_username': case 'tg_toggle_slow_mode': case 'tg_delete_channel':
@@ -6857,6 +7038,23 @@ export async function executeTool(
           case 'tg_transfer_collectible': return await tgSandbox.transferCollectible(args.gift_id, args.to_user);
           case 'tg_set_gift_visibility': return await tgSandbox.setGiftVisibility(args.gift_id, args.visible);
           case 'tg_get_stars_transactions': return await tgSandbox.getStarsTransactions(args.limit || 50, args.offset);
+          // ── Scheduled messages ──
+          case 'tg_get_scheduled': return await tgSandbox.getScheduled(args.chat_id);
+          case 'tg_delete_scheduled': return await tgSandbox.deleteScheduled(args.chat_id, args.message_id);
+          case 'tg_send_scheduled_now': return await tgSandbox.sendScheduledNow(args.chat_id, args.message_id);
+          // ── Channel discovery ──
+          case 'tg_get_admined_channels': return await tgSandbox.getAdminedChannels();
+          case 'tg_check_channel_username': return await tgSandbox.checkChannelUsername(args.chat_id, args.username);
+          // ── GIF search ──
+          case 'tg_search_gifs': return await tgSandbox.searchGifs(args.query, args.limit || 20);
+          // ── Profile extras ──
+          case 'tg_set_personal_channel': return await tgSandbox.setPersonalChannel(args.channel_id);
+          // ── Gift advanced ──
+          case 'tg_get_collectible_info': return await tgSandbox.getCollectibleInfo(args.gift_id);
+          case 'tg_get_unique_gift_value': return await tgSandbox.getUniqueGiftValue(args.gift_id);
+          case 'tg_set_collectible_price': return await tgSandbox.setCollectiblePrice(args.gift_id, args.price);
+          case 'tg_send_gift_offer': return await tgSandbox.sendGiftOffer(args.to_user, args.my_gift_id, args.want_gift_id, args.message);
+          case 'tg_resolve_gift_offer': return await tgSandbox.resolveGiftOffer(args.offer_id, args.accept);
           // ── Channel Management (userbot-manager) ──
           case 'tg_create_channel2': return await ubCreateChannel2(params.userId, params.agentId || 0, args.title, args.about || '', args.megagroup || false);
           case 'tg_edit_channel_title': return await ubEditChannelTitle(params.userId, params.agentId || 0, args.chat_id, args.title);
