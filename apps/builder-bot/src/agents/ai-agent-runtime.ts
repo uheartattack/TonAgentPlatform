@@ -993,7 +993,7 @@ const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
                 'tg_search_gifs', 'tg_set_personal_channel',
                 'tg_get_collectible_info', 'tg_get_unique_gift_value', 'tg_set_collectible_price',
                 'tg_send_gift_offer', 'tg_resolve_gift_offer',
-                'session_search', 'memory_read'],
+],
   telegram_admin: [
     'tg_create_channel2', 'tg_edit_channel_title', 'tg_edit_channel_about',
     'tg_set_channel_username', 'tg_toggle_slow_mode', 'tg_delete_channel',
@@ -1034,7 +1034,7 @@ const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
                 'stonfi_swap', 'stonfi_quote', 'stonfi_search', 'stonfi_trending', 'stonfi_pools',
                 'dedust_swap', 'dedust_quote', 'dedust_pools', 'dedust_prices', 'dedust_token_info'],
   dns:         ['dns_check', 'dns_resolve', 'dns_auctions', 'dns_bid', 'dns_link', 'dns_unlink', 'dns_set_site', 'dns_start_auction'],
-  payments:    ['verify_payment', 'check_tx_used'],
+  payments:    ['verify_payment'],
   image:       ['image_download', 'image_resize', 'image_crop', 'image_add_text', 'image_filter',
                 'image_convert', 'image_info', 'image_composite', 'image_create_text', 'image_analyze'],
   ton_mcp:     [], // dynamic — MCP tools discovered at runtime and injected via mcpTools param
@@ -1043,7 +1043,7 @@ const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
   confirmation:['ask_user_confirmation'],
   image_gen:   ['generate_image'],
   email:       ['send_email'],
-  self_memory: ['memory_stats', 'clear_memory_category', 'compress_memories', 'browse_memory', 'run_memory_maintenance', 'get_memory_settings', 'update_memory_settings'],
+  self_memory: ['memory_stats', 'clear_memory_category', 'compress_memories', 'browse_memory', 'run_memory_maintenance', 'get_memory_settings', 'update_memory_settings', 'session_search', 'memory_read'],
   journal:     ['journal_log', 'journal_query', 'journal_update', 'journal_stats'],
   deals:       ['deal_propose', 'deal_verify', 'deal_status', 'deal_list', 'deal_cancel'],
 };
@@ -1157,6 +1157,7 @@ const TOOLS_THAT_SEND = new Set([
   'tg_send_voice', 'tg_send_file', 'tg_send_sticker', 'tg_send_gif',
   'tg_send_album', 'tg_send_video_note', 'tg_send_contact', 'tg_send_location',
   'notify', 'notify_rich', 'tg_send_with_buttons', 'tg_send_silent',
+  'tg_send_dice', 'tg_create_quiz', 'tg_reply_keyboard', 'tg_create_poll',
 ]);
 
 function toolAlreadySentResponse(messages: any[]): boolean {
@@ -2911,13 +2912,13 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
       },
     },
     // ── STON.fi DEX ──
-    { type: 'function', function: { name: 'stonfi_swap', description: 'Выполнить свап на STON.fi DEX. Автоматически находит лучший маршрут.', parameters: { type: 'object', properties: { from_token: { type: 'string', description: 'Адрес токена для продажи (или TON)' }, to_token: { type: 'string', description: 'Адрес токена для покупки' }, amount: { type: 'number', description: 'Количество токенов для продажи' }, slippage: { type: 'number', description: 'Макс. проскальзывание в % (по умолчанию 1)' } }, required: ['from_token', 'to_token', 'amount'] } } },
+    { type: 'function', function: { name: 'stonfi_swap', description: '[PREVIEW] Симуляция свапа на STON.fi — показывает котировку и маршрут. Реальный свап требует подключения кошелька.', parameters: { type: 'object', properties: { from_token: { type: 'string', description: 'Адрес токена для продажи (или TON)' }, to_token: { type: 'string', description: 'Адрес токена для покупки' }, amount: { type: 'number', description: 'Количество токенов (в обычных единицах, не nano)' }, slippage: { type: 'number', description: 'Макс. проскальзывание в % (по умолчанию 1)' } }, required: ['from_token', 'to_token', 'amount'] } } },
     { type: 'function', function: { name: 'stonfi_quote', description: 'Получить котировку свапа на STON.fi без выполнения.', parameters: { type: 'object', properties: { from_token: { type: 'string', description: 'Адрес токена для продажи' }, to_token: { type: 'string', description: 'Адрес токена для покупки' }, amount: { type: 'number', description: 'Количество' } }, required: ['from_token', 'to_token', 'amount'] } } },
     { type: 'function', function: { name: 'stonfi_search', description: 'Поиск токенов на STON.fi по имени или адресу.', parameters: { type: 'object', properties: { query: { type: 'string', description: 'Название, тикер или адрес токена' } }, required: ['query'] } } },
     { type: 'function', function: { name: 'stonfi_trending', description: 'Топ трендовых токенов на STON.fi (по объёму).', parameters: { type: 'object', properties: { limit: { type: 'number', description: 'Макс. количество (по умолчанию 10)' } }, required: [] } } },
     { type: 'function', function: { name: 'stonfi_pools', description: 'Список пулов ликвидности на STON.fi.', parameters: { type: 'object', properties: { token: { type: 'string', description: 'Фильтр по токену (опционально)' }, limit: { type: 'number', description: 'Макс. количество' } }, required: [] } } },
     // ── DeDust DEX ──
-    { type: 'function', function: { name: 'dedust_swap', description: 'Выполнить свап на DeDust DEX.', parameters: { type: 'object', properties: { from_token: { type: 'string', description: 'Адрес исходного токена' }, to_token: { type: 'string', description: 'Адрес целевого токена' }, amount: { type: 'number', description: 'Количество' }, slippage: { type: 'number', description: 'Проскальзывание %' } }, required: ['from_token', 'to_token', 'amount'] } } },
+    { type: 'function', function: { name: 'dedust_swap', description: '[PREVIEW] Симуляция свапа на DeDust — показывает котировку. Реальный свап требует кошелька.', parameters: { type: 'object', properties: { from_token: { type: 'string', description: 'Адрес исходного токена' }, to_token: { type: 'string', description: 'Адрес целевого токена' }, amount: { type: 'number', description: 'Количество (в обычных единицах)' }, slippage: { type: 'number', description: 'Проскальзывание %' } }, required: ['from_token', 'to_token', 'amount'] } } },
     { type: 'function', function: { name: 'dedust_quote', description: 'Котировка свапа на DeDust без выполнения.', parameters: { type: 'object', properties: { from_token: { type: 'string', description: 'Исходный токен' }, to_token: { type: 'string', description: 'Целевой токен' }, amount: { type: 'number', description: 'Количество' } }, required: ['from_token', 'to_token', 'amount'] } } },
     { type: 'function', function: { name: 'dedust_pools', description: 'Список пулов DeDust с ликвидностью и APY.', parameters: { type: 'object', properties: { limit: { type: 'number', description: 'Макс. количество' } }, required: [] } } },
     { type: 'function', function: { name: 'dedust_prices', description: 'Текущие цены токенов на DeDust.', parameters: { type: 'object', properties: { tokens: { type: 'array', items: { type: 'string' }, description: 'Список адресов токенов' } }, required: [] } } },
@@ -3051,7 +3052,7 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
         name: 'deal_list',
         description: 'Список активных сделок.',
         parameters: { type: 'object', properties: {
-          status: { type: 'string', enum: ['pending','active','completed','cancelled','expired'], description: 'Фильтр по статусу' },
+          status: { type: 'string', enum: ['open','closed','cancelled'], description: 'Фильтр по статусу' },
           limit: { type: 'number', description: 'Максимум записей' },
         }, required: [] },
       },
@@ -6184,7 +6185,7 @@ export async function executeTool(
         if (toolName.startsWith('stonfi_')) {
           const base = 'https://api.ston.fi/v1';
           if (toolName === 'stonfi_search') {
-            const r = await fetch(`${base}/assets/search?search_string=${encodeURIComponent(args.query)}`);
+            const r = await fetch(`${base}/assets/search?search_string=${encodeURIComponent(args.query || "")}`);
             return await r.json();
           }
           if (toolName === 'stonfi_trending') {
@@ -6227,23 +6228,23 @@ export async function executeTool(
         if (toolName.startsWith('dns_')) {
           const domain = (args.domain || '').replace(/\.ton$/, '');
           if (toolName === 'dns_check') {
-            const r = await fetch(`https://tonapi.io/v2/dns/${domain}.ton`);
+            const r = await fetch(`https://tonapi.io/v2/dns/${encodeURIComponent(domain)}.ton`);
             const d = await r.json();
             return { available: !d.wallet, domain: domain + '.ton', wallet: d.wallet?.address };
           }
           if (toolName === 'dns_resolve') {
-            const r = await fetch(`https://tonapi.io/v2/dns/${domain}.ton`);
+            const r = await fetch(`https://tonapi.io/v2/dns/${encodeURIComponent(domain)}.ton`);
             return await r.json();
           }
           if (toolName === 'dns_auctions') {
             const r = await fetch(`https://tonapi.io/v2/dns/auctions?limit=${args.limit || 20}`);
             return await r.json();
           }
-          return { info: `${toolName} requires wallet — use ton_dns_resolve from blockchain tools` };
+          return { error: `${toolName} requires wallet integration (not yet implemented). Use dns_check/dns_resolve/dns_auctions for queries.` };
         }
         // Payment verification
         if (toolName === 'verify_payment') {
-          const r = await fetch(`https://tonapi.io/v2/blockchain/accounts/${args.wallet}/transactions?limit=20`);
+          const r = await fetch(`https://tonapi.io/v2/blockchain/accounts/${encodeURIComponent(args.wallet)}/transactions?limit=20`);
           const data = await r.json();
           const txs = data.transactions || [];
           for (const tx of txs) {
@@ -6279,7 +6280,7 @@ export async function executeTool(
       try {
         const ms = await import('../services/agent-memory-store');
         const content = await ms.readPersistentMemory(params.agentId || 0);
-        return { ok: true, content: content || '(empty)', size: content.length };
+        return { ok: true, content: content || '(empty)', size: (content || '').length };
       } catch (e: any) { return { error: e.message }; }
     }
 
@@ -6340,8 +6341,8 @@ export async function executeTool(
           return entry ? { ok: true, deal: entry } : { error: 'Deal not found' };
         }
         if (f.name === 'deal_status') {
-          const entries = await queryJournal(agId, { status: undefined, limit: 100 });
-          const deal = entries.find(e => e.id === args.deal_id);
+          const { queryTrade } = await import('../services/journal');
+          const deal = await queryTrade(agId, args.deal_id);
           return deal ? { ok: true, deal } : { error: 'Deal not found' };
         }
         if (f.name === 'deal_list') {
