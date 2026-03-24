@@ -10148,7 +10148,7 @@ If web_search returns nothing useful → say "не смог найти акту�
   let tools: any[];
   try {
     const { selectToolsHybrid } = await import('../services/tool-rag');
-    tools = await selectToolsHybrid(allToolDefs, userMsgText, params.systemPrompt, providerCfg.maxTools);
+    tools = await selectToolsHybrid(allToolDefs, userMsgText, params.systemPrompt, providerCfg.maxTools, (params.config.AI_API_KEY as string) || process.env.PLATFORM_AI_KEY || '');
   } catch (ragErr: any) {
     console.warn(`[ToolRAG] Hybrid RAG failed, falling back to TF-IDF: ${ragErr.message?.slice(0, 100)}`);
     tools = selectRelevantTools(allToolDefs, userMsgText, params.systemPrompt, providerCfg.maxTools);
@@ -10565,7 +10565,7 @@ If web_search returns nothing useful → say "не смог найти акту�
       allToolDefs = buildToolDefinitions(agentRole, updatedCaps, mcpToolDefs);
       try {
         const { selectToolsHybrid } = await import('../services/tool-rag');
-        tools = await selectToolsHybrid(allToolDefs, userMsgText, params.systemPrompt, providerCfg.maxTools);
+        tools = await selectToolsHybrid(allToolDefs, userMsgText, params.systemPrompt, providerCfg.maxTools, (params.config.AI_API_KEY as string) || process.env.PLATFORM_AI_KEY || '');
       } catch {
         tools = selectRelevantTools(allToolDefs, userMsgText, params.systemPrompt, providerCfg.maxTools);
       }
