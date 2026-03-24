@@ -931,6 +931,7 @@ interface AgentMessageConfig {
 }
 export const _agentMsgConfigs = new Map<number, AgentMessageConfig>();
 const _agentConfigLoadedAt = new Map<number, number>(); // agentId → timestamp
+const _ownerTgIdCache = new Map<number, number>(); // DB userId → TG userId
 const AGENT_CONFIG_TTL = 5 * 60 * 1000; // 5 minutes
 
 /** Register a message handler config for an agent (includes routing rules) */
@@ -2382,7 +2383,17 @@ class UserbotManager {
     }
 
     // ── Anti-loop: block if too many responses in time window (owner bypasses) ──
-    const isOwnerMsg = msg.senderId === Number(cfg.userId);
+    // cfg.userId is DB user_id, not TG id. Look up owner's TG id from users table.
+    let ownerTgId = _ownerTgIdCache.get(cfg.userId);
+    if (!ownerTgId) {
+      try {
+        const pool = getPool();
+        const r = await pool.query(`SELECT telegram_id FROM builder_bot.users WHERE id = $1`, [cfg.userId]);
+        ownerTgId = r.rows[0]?.telegram_id ? Number(r.rows[0].telegram_id) : 0;
+        _ownerTgIdCache.set(cfg.userId, ownerTgId);
+      } catch { ownerTgId = 0; }
+    }
+    const isOwnerMsg = ownerTgId > 0 && msg.senderId === ownerTgId;
     if (!isOwnerMsg && !loopGuardCheck(agentId, msg.chatId)) {
       console.log(`[UserbotMgr] 🔁 Agent#${agentId} LOOP_GUARD: too many responses in chat=${msg.chatId}, skipping`);
       return;
