@@ -91,11 +91,10 @@ async function embedBatch(texts: string[]): Promise<(number[] | null)[]> {
 // TOOL INDEXING
 // ═══════════════════════════════════════════════════════════════════════════
 
-interface ToolDef {
-  function: { name: string; description?: string; parameters?: any };
-}
+// Accept any tool shape (OpenAI ChatCompletionTool or custom)
+type ToolDef = any;
 
-function toolToSearchText(t: ToolDef): string {
+function toolToSearchText(t: any): string {
   const fn = t.function || (t as any);
   const name = fn.name || '';
   const desc = fn.description || '';
@@ -106,7 +105,7 @@ function toolToSearchText(t: ToolDef): string {
 }
 
 /** Index all tools — compute embeddings (async, cached) */
-export async function indexTools(tools: ToolDef[]): Promise<void> {
+export async function indexTools(tools: any[]): Promise<void> {
   const sig = tools.map(t => (t.function?.name || (t as any).name || '')).sort().join(',');
   if (sig === _toolSignature && _toolEmbeddings.size > 0) return; // already indexed
 
@@ -212,7 +211,7 @@ function isAlwaysIncluded(name: string): boolean {
  * Falls back to original TF-IDF selectRelevantTools if embeddings unavailable.
  */
 export async function selectToolsHybrid(
-  allTools: ToolDef[],
+  allTools: any[],
   userMessage: string,
   systemPrompt: string,
   maxTools: number = 30,
@@ -223,8 +222,8 @@ export async function selectToolsHybrid(
   await indexTools(allTools);
 
   // Always-included tools
-  const alwaysTools = allTools.filter(t => isAlwaysIncluded(t.function?.name || (t as any).name || ''));
-  const alwaysNames = new Set(alwaysTools.map(t => t.function?.name || (t as any).name));
+  const alwaysTools = allTools.filter((t: any) => isAlwaysIncluded(t.function?.name || t.name || ''));
+  const alwaysNames = new Set(alwaysTools.map((t: any) => t.function?.name || t.name));
 
   // Search with user message context
   const query = `${userMessage} ${systemPrompt}`.slice(0, 500);
@@ -232,9 +231,9 @@ export async function selectToolsHybrid(
 
   // Build result set: always-included + top scored
   const selectedNames = new Set(alwaysNames);
-  const selected: ToolDef[] = [...alwaysTools];
+  const selected: any[] = [...alwaysTools];
 
-  const toolMap = new Map(allTools.map(t => [t.function?.name || (t as any).name, t]));
+  const toolMap = new Map(allTools.map((t: any) => [t.function?.name || t.name, t]));
 
   for (const r of results) {
     if (selected.length >= maxTools) break;
