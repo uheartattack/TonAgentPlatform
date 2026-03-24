@@ -9896,7 +9896,9 @@ If web_search returns nothing useful → say "не смог найти акту�
           max_tokens:  2048,
         };
         if (tools.length > 0) {
-          reqBody.tools = tools;
+          // Gemini has ~30 tool limit; cap to prevent 400 "no body" errors
+          const maxTools = providerName.includes('gemini') || providerName.includes('google') ? 30 : 128;
+          reqBody.tools = tools.length > maxTools ? tools.slice(0, maxTools) : tools;
           reqBody.tool_choice = 'auto';
         }
         response = await ai.chat.completions.create(reqBody);

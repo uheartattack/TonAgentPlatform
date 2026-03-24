@@ -64,7 +64,7 @@ export const LIMITS = {
 
 // ── Context limits per provider ──
 export const PROVIDER_LIMITS: Record<string, { maxContextChars: number; maxTools: number }> = {
-  gemini:     { maxContextChars: 25_000, maxTools: 60 },
+  gemini:     { maxContextChars: 25_000, maxTools: 30 },
   anthropic:  { maxContextChars: 40_000, maxTools: 80 },
   openai:     { maxContextChars: 30_000, maxTools: 80 },
   groq:       { maxContextChars: 15_000, maxTools: 40 },
