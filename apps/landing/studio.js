@@ -1211,13 +1211,24 @@ function switchSettingsTab(tab) {
         '</div>' +
         '<div class="st-meta-card">' +
           '<div class="st-meta-label">' + (isRu ? 'Роль' : 'Role') + '</div>' +
-          '<div class="st-meta-val">' + (a.role || 'worker') + '</div>' +
+          '<div class="st-meta-val">' + (a.role || 'specialist') + '</div>' +
         '</div>' +
+        (createdAt ? '<div class="st-meta-card"><div class="st-meta-label">' + (isRu ? 'Создан' : 'Created') + '</div><div class="st-meta-val" style="font-size:.72rem">' + new Date(createdAt).toLocaleDateString() + '</div></div>' : '') +
+        (updatedAt ? '<div class="st-meta-card"><div class="st-meta-label">' + (isRu ? 'Обновлён' : 'Updated') + '</div><div class="st-meta-val" style="font-size:.72rem">' + new Date(updatedAt).toLocaleDateString() + '</div></div>' : '') +
+        '<div class="st-meta-card"><div class="st-meta-label">' + (isRu ? 'Запусков' : 'Runs') + '</div><div class="st-meta-val" id="info-run-count">-</div></div>' +
+        '<div class="st-meta-card"><div class="st-meta-label">' + (isRu ? 'Токены' : 'Tokens') + '</div><div class="st-meta-val" id="info-token-count">-</div></div>' +
       '</div>' +
       '<div class="rt-actions">' +
         '<button class="rt-save-btn" onclick="saveSettingsInfo()">' + IC.check + ' ' + (isRu ? 'Сохранить' : 'Save') + '</button>' +
       '</div>' +
       '</div>';
+    // Load stats asynchronously
+    apiRequest('GET', '/api/agents/' + _detailAgentId + '/tokens?days=365').then(function(d) {
+      var runEl = document.getElementById('info-run-count');
+      var tokEl = document.getElementById('info-token-count');
+      if (runEl && d.total) runEl.textContent = d.total.totalRequests || 0;
+      if (tokEl && d.total) tokEl.textContent = formatNum(d.total.totalTokens || 0);
+    }).catch(function() {});
   } else if (tab === 'ai') {
     var isRu = currentLang === 'ru';
     var aiProvider = (config.config && config.config.AI_PROVIDER) || '';
@@ -1346,6 +1357,31 @@ function switchSettingsTab(tab) {
                 : (isRu ? 'Выберите провайдера выше' : 'Select a provider above'))
             ) +
           '</div>' +
+        '</div>' +
+      '</div>' +
+
+      // Temperature
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + IC.fire + ' ' + (isRu ? 'Температура' : 'Temperature') + '</div>' +
+        '<div class="rt-priority-wrap">' +
+          '<input type="range" id="ai-temperature" min="0" max="2" step="0.1" value="' + ((config.config && config.config.AI_TEMPERATURE) || '0.7') + '" class="rt-slider" style="accent-color:#f59e0b" oninput="document.getElementById(\'ai-temp-val\').textContent=this.value">' +
+          '<div class="rt-priority-display">' +
+            '<span id="ai-temp-val" class="rt-priority-badge" style="background:rgba(245,158,11,0.15);color:#f59e0b">' + ((config.config && config.config.AI_TEMPERATURE) || '0.7') + '</span>' +
+          '</div>' +
+          '<div class="rt-input-hint">' + (isRu ? '0 = детерминированный, 1 = сбалансированный, 2 = креативный' : '0 = deterministic, 1 = balanced, 2 = creative') + '</div>' +
+        '</div>' +
+      '</div>' +
+
+      // Max tokens
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + IC.chart + ' ' + (isRu ? 'Макс. токенов ответа' : 'Max Response Tokens') + '</div>' +
+        '<div class="rt-priority-wrap">' +
+          '<input type="range" id="ai-max-tokens" min="256" max="8192" step="256" value="' + ((config.config && config.config.AI_MAX_TOKENS) || '2048') + '" class="rt-slider" style="accent-color:#6366f1" oninput="document.getElementById(\'ai-maxtok-val\').textContent=this.value">' +
+          '<div class="rt-priority-display">' +
+            '<input type="number" id="ai-max-tokens-num" value="' + ((config.config && config.config.AI_MAX_TOKENS) || '2048') + '" min="256" max="16384" class="rt-priority-num" style="width:80px" oninput="document.getElementById(\'ai-max-tokens\').value=this.value;document.getElementById(\'ai-maxtok-val\').textContent=this.value">' +
+            '<span id="ai-maxtok-val" class="rt-priority-badge" style="background:rgba(99,102,241,0.15);color:#6366f1">' + ((config.config && config.config.AI_MAX_TOKENS) || '2048') + '</span>' +
+          '</div>' +
+          '<div class="rt-input-hint">' + (isRu ? 'Максимальная длина ответа AI. 2048 по умолчанию. Больше = дороже.' : 'Max AI response length. 2048 default. Higher = more expensive.') + '</div>' +
         '</div>' +
       '</div>' +
 
@@ -2366,6 +2402,63 @@ function switchSettingsTab(tab) {
 
       // Action buttons
       '<div class="rt-section">' +
+        '<div class="rt-section-label">' + IC.brain + ' ' + (isRu ? 'Сжатие контекста' : 'Context Compaction') + '</div>' +
+        '<select id="adv-compaction" class="rt-input" style="max-width:300px" onchange="">' +
+          '<option value="structured"' + ((config.config && config.config.compaction_strategy) === 'off' ? '' : ' selected') + '>' + (isRu ? 'Структурированное (рекомендуется)' : 'Structured (recommended)') + '</option>' +
+          '<option value="simple"' + ((config.config && config.config.compaction_strategy) === 'simple' ? ' selected' : '') + '>' + (isRu ? 'Простое' : 'Simple') + '</option>' +
+          '<option value="off"' + ((config.config && config.config.compaction_strategy) === 'off' ? ' selected' : '') + '>' + (isRu ? 'Выключено' : 'Off') + '</option>' +
+        '</select>' +
+        '<div class="rt-input-hint">' + (isRu ? 'Как сжимать старые сообщения когда контекст переполняется. Структурированное создаёт резюме: Намерение / Решения / Действия / Контекст / Незавершённое.' : 'How to compact old messages when context overflows. Structured creates summary: Intent / Decisions / Actions / Context / Open Items.') + '</div>' +
+      '</div>' +
+
+      // Observation masking
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + IC.eye + ' ' + (isRu ? 'Маскирование наблюдений' : 'Observation Masking') + '</div>' +
+        '<div style="display:flex;align-items:center;gap:12px">' +
+          '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.82rem"><input type="checkbox" id="adv-masking-on" style="accent-color:var(--primary)"' + (config.config && config.config.masking_enabled !== false ? ' checked' : '') + '> ' + (isRu ? 'Включено' : 'Enabled') + '</label>' +
+          '<div style="display:flex;align-items:center;gap:6px">' +
+            '<span style="font-size:.78rem;color:var(--text-muted)">' + (isRu ? 'Хранить последних:' : 'Keep recent:') + '</span>' +
+            '<input type="number" id="adv-masking-keep" class="rt-priority-num" style="width:60px" value="' + ((config.config && config.config.masking_keep_recent) || 10) + '" min="3" max="50">' +
+          '</div>' +
+        '</div>' +
+        '<div class="rt-input-hint">' + (isRu ? 'Маскирует старые результаты инструментов для экономии токенов. Недавние результаты сохраняются полностью.' : 'Masks old tool results to save tokens. Recent results kept in full.') + '</div>' +
+      '</div>' +
+
+      // Flood protection
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + IC.shield + ' ' + (isRu ? 'Защита от флуда' : 'Flood Protection') + '</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
+          '<div><span style="font-size:.78rem;color:var(--text-muted)">' + (isRu ? 'Кулдаун (сек)' : 'Cooldown (sec)') + '</span>' +
+            '<input type="number" id="adv-flood-cooldown" class="rt-input" style="margin-top:4px" value="' + ((config.config && config.config.flood_cooldown_sec) || 5) + '" min="1" max="120"></div>' +
+          '<div><span style="font-size:.78rem;color:var(--text-muted)">' + (isRu ? 'Макс. ретраев' : 'Max retries') + '</span>' +
+            '<input type="number" id="adv-flood-retries" class="rt-input" style="margin-top:4px" value="' + ((config.config && config.config.flood_max_retries) || 3) + '" min="0" max="10"></div>' +
+        '</div>' +
+        '<div class="rt-input-hint">' + (isRu ? 'Адаптивная защита от FLOOD_WAIT от Telegram. Кулдаун увеличивается экспоненциально.' : 'Adaptive FLOOD_WAIT protection from Telegram. Cooldown increases exponentially.') + '</div>' +
+      '</div>' +
+
+      // Loop guard
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + IC.loop + ' ' + (isRu ? 'Защита от зацикливания' : 'Loop Guard') + '</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
+          '<div><span style="font-size:.78rem;color:var(--text-muted)">' + (isRu ? 'Макс. ответов за окно' : 'Max responses per window') + '</span>' +
+            '<input type="number" id="adv-loop-max" class="rt-input" style="margin-top:4px" value="' + ((config.config && config.config.loop_max_responses) || 4) + '" min="1" max="20"></div>' +
+          '<div><span style="font-size:.78rem;color:var(--text-muted)">' + (isRu ? 'Окно (сек)' : 'Window (sec)') + '</span>' +
+            '<input type="number" id="adv-loop-window" class="rt-input" style="margin-top:4px" value="' + ((config.config && config.config.loop_window_sec) || 120) + '" min="30" max="600"></div>' +
+        '</div>' +
+        '<div class="rt-input-hint">' + (isRu ? 'Предотвращает бесконечное общение бот-бот. Если агент отправляет N ответов за указанное окно — пауза.' : 'Prevents infinite bot-to-bot chat. If agent sends N responses within the window — pauses.') + '</div>' +
+      '</div>' +
+
+      // Memory poisoning protection
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + IC.shield + ' ' + (isRu ? 'Защита памяти' : 'Memory Protection') + '</div>' +
+        '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.82rem">' +
+          '<input type="checkbox" id="adv-memory-protect" style="accent-color:var(--primary)"' + (config.config && config.config.memory_poisoning_protection !== false ? ' checked' : '') + '>' +
+          (isRu ? 'Блокировать запись в память из групповых чатов (предотвращает poisoning)' : 'Block memory writes from group chats (prevents poisoning)') +
+        '</label>' +
+      '</div>' +
+
+      // Actions (clone/export/import)
+      '<div class="rt-section">' +
         '<div class="rt-section-label">' + IC.bolt + ' ' + (isRu ? 'Действия' : 'Actions') + '</div>' +
         '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
           '<button class="rt-save-btn" style="background:linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%)" onclick="cloneAgentFromSettings()">' + IC.clipboard + ' ' + (isRu ? 'Клонировать агента' : 'Clone Agent') + '</button>' +
@@ -2403,10 +2496,27 @@ async function saveSettingsAdvanced() {
     var langRadio = document.querySelector('input[name="adv-lang"]:checked');
     var agentLang = langRadio ? langRadio.value : 'auto';
 
+    var compaction = (document.getElementById('adv-compaction') || {}).value || 'structured';
+    var maskingOn = (document.getElementById('adv-masking-on') || {}).checked !== false;
+    var maskingKeep = parseInt((document.getElementById('adv-masking-keep') || {}).value) || 10;
+    var floodCooldown = parseInt((document.getElementById('adv-flood-cooldown') || {}).value) || 5;
+    var floodRetries = parseInt((document.getElementById('adv-flood-retries') || {}).value) || 3;
+    var loopMax = parseInt((document.getElementById('adv-loop-max') || {}).value) || 4;
+    var loopWindow = parseInt((document.getElementById('adv-loop-window') || {}).value) || 120;
+    var memProtect = (document.getElementById('adv-memory-protect') || {}).checked !== false;
+
     await apiRequest('POST', '/api/agents/' + _detailAgentId + '/config', {
       daily_spend_limit_ton: spendLimit,
       tick_interval_sec: tickInterval,
       agent_language: agentLang,
+      compaction_strategy: compaction,
+      masking_enabled: maskingOn,
+      masking_keep_recent: maskingKeep,
+      flood_cooldown_sec: floodCooldown,
+      flood_max_retries: floodRetries,
+      loop_max_responses: loopMax,
+      loop_window_sec: loopWindow,
+      memory_poisoning_protection: memProtect,
     });
     toast(currentLang === 'ru' ? 'Настройки сохранены' : 'Settings saved', 'success');
     // Refresh agent data
@@ -3218,11 +3328,15 @@ async function saveSettingsAI() {
   var apiKey = document.getElementById('ai-key-input').value.trim();
   var utilityModel = (document.getElementById('ai-utility-model-input') || {}).value || '';
   utilityModel = utilityModel.trim();
+  var temperature = (document.getElementById('ai-temperature') || {}).value;
+  var maxTokens = (document.getElementById('ai-max-tokens') || {}).value || (document.getElementById('ai-max-tokens-num') || {}).value;
   var payload = {};
   if (provider) payload.provider = provider;
   if (model) payload.model = model;
   if (apiKey) payload.apiKey = apiKey;
   if (utilityModel) payload.utilityModel = utilityModel;
+  if (temperature) payload.temperature = parseFloat(temperature);
+  if (maxTokens) payload.maxTokens = parseInt(maxTokens);
   var data = await apiRequest('PUT', '/api/agents/' + _detailAgentId + '/provider', payload);
   if (data.ok) toast(currentLang === 'ru' ? 'AI настройки обновлены' : 'AI settings updated', 'success');
   else toast(data.error || 'Error', 'error');
