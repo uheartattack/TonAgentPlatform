@@ -2381,8 +2381,9 @@ class UserbotManager {
       return;
     }
 
-    // ── Anti-loop: block if too many responses in time window ──
-    if (!loopGuardCheck(agentId, msg.chatId)) {
+    // ── Anti-loop: block if too many responses in time window (owner bypasses) ──
+    const isOwnerMsg = msg.senderId === Number(cfg.userId);
+    if (!isOwnerMsg && !loopGuardCheck(agentId, msg.chatId)) {
       console.log(`[UserbotMgr] 🔁 Agent#${agentId} LOOP_GUARD: too many responses in chat=${msg.chatId}, skipping`);
       return;
     }
