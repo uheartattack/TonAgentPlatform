@@ -3615,6 +3615,75 @@ export function startApiServer() {
     } catch (e: any) { res.json({ ok: false, error: e.message }); }
   });
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // JOURNAL ENDPOINTS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  app.get('/api/agents/:id/journal', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
+      const j = await import('./services/journal');
+      const entries = await j.queryJournal(own.agentId, {
+        type: req.query.type as string, asset: req.query.asset as string,
+        status: req.query.status as string, days: Number(req.query.days) || 30,
+        limit: Number(req.query.limit) || 50,
+      });
+      const stats = await j.getJournalStats(own.agentId, Number(req.query.days) || 30);
+      res.json({ ok: true, entries, stats });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+
+  app.post('/api/agents/:id/journal', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
+      const j = await import('./services/journal');
+      const entry = await j.logTrade(own.agentId, req.body);
+      res.json({ ok: true, entry });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+
+  app.put('/api/agents/:id/journal/:tradeId', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
+      const j = await import('./services/journal');
+      const entry = await j.updateTrade(own.agentId, req.params.tradeId, req.body);
+      res.json({ ok: true, entry });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // CHAT PERMISSIONS ENDPOINTS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  app.get('/api/agents/:id/permissions', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
+      const cp = await import('./services/chat-permissions');
+      const perms = await cp.getAllPermissions(own.agentId);
+      const modules = cp.getModuleList();
+      res.json({ ok: true, permissions: perms, modules });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+
+  app.put('/api/agents/:id/permissions', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
+      const cp = await import('./services/chat-permissions');
+      const { chatId, module, level } = req.body;
+      const result = await cp.setPermission(own.agentId, chatId, module, level, own.userId);
+      res.json(result);
+    } catch (e: any) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+
+  app.delete('/api/agents/:id/permissions/:chatId', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
+      const cp = await import('./services/chat-permissions');
+      await cp.resetChat(own.agentId, req.params.chatId);
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+
   // API 404 — return JSON for unknown API routes (before SPA fallback)
   app.use('/api', (_req: Request, res: Response) => {
     res.status(404).json({ ok: false, error: 'API endpoint not found' });

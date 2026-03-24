@@ -1034,6 +1034,8 @@ const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
   image_gen:   ['generate_image'],
   email:       ['send_email'],
   self_memory: ['memory_stats', 'clear_memory_category', 'compress_memories', 'browse_memory', 'run_memory_maintenance', 'get_memory_settings', 'update_memory_settings'],
+  journal:     ['journal_log', 'journal_query', 'journal_update', 'journal_stats'],
+  deals:       ['deal_propose', 'deal_verify', 'deal_status', 'deal_list', 'deal_cancel'],
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1099,6 +1101,12 @@ async function callWithFallback(
   try {
     return await ai.chat.completions.create(reqBody);
   } catch (e: any) {
+    // Credential refresh on 401 (teleton-agent pattern) — retry once
+    const is401 = e.status === 401 || e.message?.includes('Unauthorized') || e.message?.includes('invalid_api_key');
+    if (is401) {
+      console.warn(`[AI runtime] 401 auth error for ${provider}, retrying once...`);
+      try { return await ai.chat.completions.create(reqBody); } catch { /* fall through */ }
+    }
     const is404 = e.status === 404 || e.message?.includes('model_not_found') || e.message?.includes('not found');
     if (!is404 || fallbacks.length === 0) throw e;
 
@@ -2758,6 +2766,120 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
           limit: { type: 'number', description: 'Максимум записей (по умолчанию 50)' },
           offset: { type: 'string', description: 'Оффсет для пагинации' },
         }, required: [] },
+      },
+    },
+    // ── Journal / Trading log tools ──
+    {
+      type: 'function',
+      function: {
+        name: 'journal_log',
+        description: 'Записать сделку/операцию в торговый журнал. Используй для КАЖДОЙ финансовой операции.',
+        parameters: { type: 'object', properties: {
+          type: { type: 'string', enum: ['trade','gift_buy','gift_sell','send','receive','swap','deal','other'], description: 'Тип операции' },
+          asset: { type: 'string', description: 'Актив (TON, USDT, ChillGuy #123, и т.д.)' },
+          direction: { type: 'string', enum: ['buy','sell','send','receive'], description: 'Направление' },
+          amount: { type: 'number', description: 'Количество' },
+          price: { type: 'number', description: 'Цена за единицу (опционально)' },
+          reasoning: { type: 'string', description: 'Причина/обоснование сделки' },
+          counterparty: { type: 'string', description: 'Контрагент (username или ID)' },
+          tx_hash: { type: 'string', description: 'Хеш транзакции в блокчейне' },
+        }, required: ['type', 'asset', 'direction', 'amount', 'reasoning'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'journal_query',
+        description: 'Поиск и анализ записей торгового журнала. Фильтрация по типу, активу, статусу.',
+        parameters: { type: 'object', properties: {
+          type: { type: 'string', description: 'Фильтр по типу (trade, gift_buy, swap, etc.)' },
+          asset: { type: 'string', description: 'Фильтр по активу' },
+          status: { type: 'string', enum: ['open','closed','cancelled'], description: 'Фильтр по статусу' },
+          days: { type: 'number', description: 'Период в днях (по умолчанию 30)' },
+          limit: { type: 'number', description: 'Максимум записей' },
+        }, required: [] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'journal_update',
+        description: 'Обновить запись журнала — добавить P&L, закрыть сделку, добавить tx hash.',
+        parameters: { type: 'object', properties: {
+          trade_id: { type: 'string', description: 'ID записи' },
+          pnl: { type: 'number', description: 'Прибыль/убыток' },
+          status: { type: 'string', enum: ['open','closed','cancelled'], description: 'Новый статус' },
+          tx_hash: { type: 'string', description: 'Хеш транзакции' },
+          reasoning: { type: 'string', description: 'Дополнительное обоснование' },
+        }, required: ['trade_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'journal_stats',
+        description: 'Статистика торговли: общий P&L, win rate, средний P&L, лучшая/худшая сделка.',
+        parameters: { type: 'object', properties: {
+          days: { type: 'number', description: 'Период в днях (по умолчанию 30)' },
+        }, required: [] },
+      },
+    },
+    // ── Deal system tools ──
+    {
+      type: 'function',
+      function: {
+        name: 'deal_propose',
+        description: 'Предложить P2P сделку пользователю (обмен подарками, TON, услугами).',
+        parameters: { type: 'object', properties: {
+          counterparty: { type: 'string', description: 'Username или ID контрагента' },
+          offer: { type: 'string', description: 'Что предлагаем (описание)' },
+          ask: { type: 'string', description: 'Что просим взамен' },
+          amount: { type: 'number', description: 'Сумма в TON (если применимо)' },
+          expires_hours: { type: 'number', description: 'Срок действия в часах (по умолчанию 24)' },
+        }, required: ['counterparty', 'offer', 'ask'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'deal_verify',
+        description: 'Проверить оплату/выполнение условий сделки.',
+        parameters: { type: 'object', properties: {
+          deal_id: { type: 'string', description: 'ID сделки' },
+          tx_hash: { type: 'string', description: 'Хеш подтверждающей транзакции' },
+        }, required: ['deal_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'deal_status',
+        description: 'Получить статус конкретной сделки.',
+        parameters: { type: 'object', properties: {
+          deal_id: { type: 'string', description: 'ID сделки' },
+        }, required: ['deal_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'deal_list',
+        description: 'Список активных сделок.',
+        parameters: { type: 'object', properties: {
+          status: { type: 'string', enum: ['pending','active','completed','cancelled','expired'], description: 'Фильтр по статусу' },
+          limit: { type: 'number', description: 'Максимум записей' },
+        }, required: [] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'deal_cancel',
+        description: 'Отменить сделку.',
+        parameters: { type: 'object', properties: {
+          deal_id: { type: 'string', description: 'ID сделки' },
+          reason: { type: 'string', description: 'Причина отмены' },
+        }, required: ['deal_id'] },
       },
     },
     // ── Profile management tools ──
@@ -5864,6 +5986,79 @@ export async function executeTool(
           })),
         };
       } catch (e: any) { return { keys: [], error: e.message }; }
+    }
+
+    // ── Journal tools ──
+    case 'journal_log': {
+      try {
+        const { logTrade } = await import('../services/journal');
+        const entry = await logTrade(params.agentId || 0, {
+          type: args.type, asset: args.asset, direction: args.direction,
+          amount: args.amount, price: args.price, reasoning: args.reasoning,
+          counterparty: args.counterparty, txHash: args.tx_hash,
+        });
+        return { ok: true, trade_id: entry.id, status: entry.status };
+      } catch (e: any) { return { error: e.message }; }
+    }
+    case 'journal_query': {
+      try {
+        const { queryJournal } = await import('../services/journal');
+        const entries = await queryJournal(params.agentId || 0, {
+          type: args.type, asset: args.asset, status: args.status,
+          days: args.days, limit: args.limit,
+        });
+        return { ok: true, count: entries.length, entries: entries.slice(0, 20) };
+      } catch (e: any) { return { error: e.message }; }
+    }
+    case 'journal_update': {
+      try {
+        const { updateTrade } = await import('../services/journal');
+        const entry = await updateTrade(params.agentId || 0, args.trade_id, {
+          pnl: args.pnl, status: args.status, txHash: args.tx_hash, reasoning: args.reasoning,
+        });
+        return entry ? { ok: true, ...entry } : { error: 'Trade not found' };
+      } catch (e: any) { return { error: e.message }; }
+    }
+    case 'journal_stats': {
+      try {
+        const { getJournalStats } = await import('../services/journal');
+        return await getJournalStats(params.agentId || 0, args.days || 30);
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    // ── Deal tools (simple P2P deal tracking) ──
+    case 'deal_propose': case 'deal_verify': case 'deal_status': case 'deal_list': case 'deal_cancel': {
+      try {
+        const { logTrade, queryJournal, updateTrade } = await import('../services/journal');
+        const agId = params.agentId || 0;
+        if (f.name === 'deal_propose') {
+          const entry = await logTrade(agId, {
+            type: 'deal', asset: `${args.offer} ↔ ${args.ask}`, direction: 'buy',
+            amount: args.amount || 0, reasoning: `Deal with ${args.counterparty}: offer=${args.offer}, ask=${args.ask}`,
+            counterparty: args.counterparty,
+            metadata: { offer: args.offer, ask: args.ask, expiresAt: Date.now() + (args.expires_hours || 24) * 3600000 },
+          });
+          return { ok: true, deal_id: entry.id, status: 'pending', expires: new Date(Date.now() + (args.expires_hours || 24) * 3600000).toISOString() };
+        }
+        if (f.name === 'deal_verify') {
+          const entry = await updateTrade(agId, args.deal_id, { status: 'closed', txHash: args.tx_hash, reasoning: 'Payment verified' });
+          return entry ? { ok: true, deal: entry } : { error: 'Deal not found' };
+        }
+        if (f.name === 'deal_status') {
+          const entries = await queryJournal(agId, { status: undefined, limit: 100 });
+          const deal = entries.find(e => e.id === args.deal_id);
+          return deal ? { ok: true, deal } : { error: 'Deal not found' };
+        }
+        if (f.name === 'deal_list') {
+          const entries = await queryJournal(agId, { type: 'deal', status: args.status, limit: args.limit || 20 });
+          return { ok: true, count: entries.length, deals: entries };
+        }
+        if (f.name === 'deal_cancel') {
+          const entry = await updateTrade(agId, args.deal_id, { status: 'cancelled', reasoning: args.reason || 'Cancelled' });
+          return entry ? { ok: true } : { error: 'Deal not found' };
+        }
+        return { error: 'Unknown deal action' };
+      } catch (e: any) { return { error: e.message }; }
     }
 
     // ── Self-Awareness tools ──
@@ -10222,10 +10417,35 @@ If web_search returns nothing useful → say "не смог найти акту�
     // Re-estimate tokens each iteration (messages grow with tool results)
     estTokens = estimateTokens(messages, tools);
     if (estTokens > 100_000) {
-      console.warn(`[AI runtime] Agent #${params.agentId} token estimate ${estTokens} exceeds 100K, forcing compaction`);
+      console.warn(`[AI runtime] Agent #${params.agentId} token estimate ${estTokens} exceeds 100K, auto-recovery: archive + compact`);
+      // Archive transcript to daily log before compacting (teleton-agent pattern)
+      try {
+        const { appendDailyLog, summarizeMessages } = await import('../services/agent-memory');
+        const transcript = messages.slice(1, -5).filter((m: any) => m.role !== 'system');
+        const summary = await summarizeMessages(transcript, ai, usedModel);
+        if (summary) await appendDailyLog(params.agentId || 0, `[Auto-archive] ${transcript.length} msgs → ${summary}`);
+      } catch {}
+      // Aggressive compaction: keep only system + last 3 messages
+      const systemMsg = messages[0];
+      const recent = messages.slice(-3);
+      messages.length = 0;
+      messages.push(systemMsg, { role: 'user', content: `[Контекст переполнен — ${estTokens} токенов. Старые сообщения заархивированы. Продолжай с последнего.]` } as any, ...recent);
       compressOldToolResults(messages, 2);
       estTokens = estimateTokens(messages, tools);
     }
+    // Transcript dedup: remove duplicate tool results by tool_call_id (teleton-agent pattern)
+    const seenToolCallIds = new Set<string>();
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i] as any;
+      if (msg.role === 'tool' && msg.tool_call_id) {
+        if (seenToolCallIds.has(msg.tool_call_id)) {
+          messages.splice(i, 1); // remove duplicate
+        } else {
+          seenToolCallIds.add(msg.tool_call_id);
+        }
+      }
+    }
+
     // Observation Masking: compress old tool results before each AI call
     compressOldToolResults(messages, iter === 0 ? 10 : 4);
 
