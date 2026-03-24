@@ -9976,12 +9976,36 @@ If web_search returns nothing useful → say "не смог найти акту�
     tools = sanitizeToolsForGemini(tools);
   }
 
-  // ── Gemini message sanitization: only first message can be system role ──
+  // ── Gemini message sanitization ──
   if (providerName.includes('gemini') || providerName.includes('google')) {
-    for (let i = 1; i < messages.length; i++) {
-      if ((messages[i] as any).role === 'system') {
-        (messages[i] as any).role = 'user';
-        (messages[i] as any).content = `[System note] ${(messages[i] as any).content}`;
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i] as any;
+      // Only first message can be system role
+      if (i > 0 && msg.role === 'system') {
+        msg.role = 'user';
+        msg.content = `[System note] ${msg.content || ''}`;
+      }
+      // Fix null/undefined content (Gemini rejects these)
+      if (msg.role !== 'assistant' && (msg.content === null || msg.content === undefined)) {
+        msg.content = '';
+      }
+      // Assistant messages must have content OR tool_calls, not both empty
+      if (msg.role === 'assistant' && !msg.content && (!msg.tool_calls || msg.tool_calls.length === 0)) {
+        msg.content = '...';
+      }
+      // Tool messages must have non-null content
+      if (msg.role === 'tool' && !msg.content) {
+        msg.content = '{}';
+      }
+    }
+    // Gemini requires alternating user/assistant. Fix consecutive same-role messages
+    for (let i = messages.length - 1; i > 0; i--) {
+      const curr = messages[i] as any;
+      const prev = messages[i - 1] as any;
+      if (curr.role === 'user' && prev.role === 'user') {
+        // Merge consecutive user messages
+        prev.content = (prev.content || '') + '\n' + (curr.content || '');
+        messages.splice(i, 1);
       }
     }
   }
