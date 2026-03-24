@@ -35,21 +35,31 @@ let _toolEmbeddings = new Map<string, EmbeddingEntry>();
 let _toolSignature = '';
 let _embeddingClient: OpenAI | null = null;
 
-function getEmbeddingClient(): OpenAI {
-  if (!_embeddingClient) {
-    const key = process.env.PLATFORM_AI_KEY || process.env.GEMINI_API_KEY || '';
+let _lastApiKey = '';
+
+function getEmbeddingClient(apiKey?: string): OpenAI {
+  const key = apiKey || process.env.PLATFORM_AI_KEY || process.env.GEMINI_API_KEY || '';
+  // Recreate client if key changed
+  if (!_embeddingClient || key !== _lastApiKey) {
+    if (!key) {
+      // No key available — return dummy client that will fail gracefully
+      _embeddingClient = new OpenAI({ baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/', apiKey: 'none' });
+      _lastApiKey = '';
+      return _embeddingClient;
+    }
     _embeddingClient = new OpenAI({
       baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
       apiKey: key,
     });
+    _lastApiKey = key;
   }
   return _embeddingClient;
 }
 
 /** Get embedding for a single text */
-async function embed(text: string): Promise<number[] | null> {
+async function embed(text: string, apiKey?: string): Promise<number[] | null> {
   try {
-    const client = getEmbeddingClient();
+    const client = getEmbeddingClient(apiKey);
     const res = await client.embeddings.create({
       model: EMBEDDING_MODEL,
       input: text,
@@ -63,10 +73,10 @@ async function embed(text: string): Promise<number[] | null> {
 }
 
 /** Batch embed (Gemini supports up to 2048 inputs) */
-async function embedBatch(texts: string[]): Promise<(number[] | null)[]> {
+async function embedBatch(texts: string[], apiKey?: string): Promise<(number[] | null)[]> {
   if (texts.length === 0) return [];
   try {
-    const client = getEmbeddingClient();
+    const client = getEmbeddingClient(apiKey);
     // Split into chunks of 100 for safety
     const results: (number[] | null)[] = [];
     for (let i = 0; i < texts.length; i += 100) {
@@ -105,7 +115,7 @@ function toolToSearchText(t: any): string {
 }
 
 /** Index all tools — compute embeddings (async, cached) */
-export async function indexTools(tools: any[]): Promise<void> {
+export async function indexTools(tools: any[], apiKey?: string): Promise<void> {
   const sig = tools.map(t => (t.function?.name || (t as any).name || '')).sort().join(',');
   if (sig === _toolSignature && _toolEmbeddings.size > 0) return; // already indexed
 
@@ -113,7 +123,7 @@ export async function indexTools(tools: any[]): Promise<void> {
   const names = tools.map(t => t.function?.name || (t as any).name || '');
 
   // Batch embed all tool descriptions
-  const vectors = await embedBatch(texts);
+  const vectors = await embedBatch(texts, apiKey);
 
   _toolEmbeddings = new Map();
   for (let i = 0; i < names.length; i++) {
@@ -169,7 +179,7 @@ export async function searchTools(
   if (_toolEmbeddings.size === 0) return [];
 
   // Embed query
-  const queryVec = await embed(query);
+  const queryVec = await embed(query, _lastApiKey || undefined);
   const hasVectors = queryVec && queryVec.length > 0;
 
   // Determine weights
@@ -215,11 +225,12 @@ export async function selectToolsHybrid(
   userMessage: string,
   systemPrompt: string,
   maxTools: number = 30,
-): Promise<ToolDef[]> {
+  apiKey?: string,
+): Promise<any[]> {
   if (allTools.length <= maxTools) return allTools;
 
-  // Ensure tools are indexed
-  await indexTools(allTools);
+  // Ensure tools are indexed (pass apiKey for Gemini embedding)
+  await indexTools(allTools, apiKey);
 
   // Always-included tools
   const alwaysTools = allTools.filter((t: any) => isAlwaysIncluded(t.function?.name || t.name || ''));
