@@ -982,7 +982,12 @@ const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
                 'tg_send_silent', 'tg_get_webpage', 'tg_press_button',
                 'tg_get_chat_stats', 'tg_save_draft', 'tg_send_with_buttons',
                 'tg_get_poll_results', 'tg_send_sticker', 'tg_send_gif',
-                'tg_send_voice', 'tg_transcribe_voice', 'tg_get_sticker_sets'],
+                'tg_send_voice', 'tg_transcribe_voice', 'tg_get_sticker_sets',
+                'tg_send_dice', 'tg_create_quiz', 'tg_reply_keyboard',
+                'tg_get_common_chats', 'tg_check_username', 'tg_set_username',
+                'tg_get_blocked', 'tg_search_stickers', 'tg_add_sticker_set',
+                'tg_get_folders', 'tg_create_folder', 'tg_add_to_folder',
+                'tg_transfer_collectible', 'tg_set_gift_visibility', 'tg_get_stars_transactions'],
   telegram_admin: [
     'tg_create_channel2', 'tg_edit_channel_title', 'tg_edit_channel_about',
     'tg_set_channel_username', 'tg_toggle_slow_mode', 'tg_delete_channel',
@@ -2584,6 +2589,174 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
         description: 'Получить список установленных стикерпаков пользователя. Можно искать по названию.',
         parameters: { type: 'object', properties: {
           query: { type: 'string', description: 'Поисковый запрос для фильтрации (опционально)' },
+        }, required: [] },
+      },
+    },
+    // ── Dice / interactive ──
+    {
+      type: 'function',
+      function: {
+        name: 'tg_send_dice',
+        description: 'Отправить анимированные кубики/дартс/слот/боулинг. Emoji определяет тип: 🎲🎯🏀⚽🎰🎳',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID чата' },
+          emoji: { type: 'string', description: 'Тип: 🎲 (кубик), 🎯 (дартс), 🏀 (баскетбол), ⚽ (футбол), 🎰 (слоты), 🎳 (боулинг)', enum: ['🎲','🎯','🏀','⚽','🎰','🎳'] },
+        }, required: ['chat_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_create_quiz',
+        description: 'Создать квиз с правильным ответом. Пользователи видят результат после ответа.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID чата' },
+          question: { type: 'string', description: 'Вопрос квиза' },
+          options: { type: 'array', items: { type: 'string' }, description: 'Варианты ответов (2-10)' },
+          correct_option: { type: 'number', description: 'Индекс правильного ответа (0-based)' },
+          explanation: { type: 'string', description: 'Пояснение (показывается после ответа)' },
+        }, required: ['chat_id', 'question', 'options', 'correct_option'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_reply_keyboard',
+        description: 'Отправить сообщение с кнопками reply keyboard (под полем ввода, не inline).',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID чата' },
+          text: { type: 'string', description: 'Текст сообщения' },
+          buttons: { type: 'array', items: { type: 'array', items: { type: 'string' } }, description: 'Двумерный массив кнопок [[row1btn1, row1btn2], [row2btn1]]' },
+          one_time: { type: 'boolean', description: 'Скрыть клавиатуру после нажатия' },
+          resize: { type: 'boolean', description: 'Уменьшить размер клавиатуры' },
+        }, required: ['chat_id', 'text', 'buttons'] },
+      },
+    },
+    // ── Folder management ──
+    {
+      type: 'function',
+      function: {
+        name: 'tg_get_folders',
+        description: 'Получить список папок/фильтров чатов пользователя.',
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_create_folder',
+        description: 'Создать новую папку чатов с фильтрами.',
+        parameters: { type: 'object', properties: {
+          title: { type: 'string', description: 'Название папки' },
+          include_chats: { type: 'array', items: { type: 'string' }, description: 'ID чатов для включения' },
+          exclude_chats: { type: 'array', items: { type: 'string' }, description: 'ID чатов для исключения' },
+        }, required: ['title'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_add_to_folder',
+        description: 'Добавить чат в существующую папку.',
+        parameters: { type: 'object', properties: {
+          folder_id: { type: 'number', description: 'ID папки' },
+          chat_id: { type: 'string', description: 'ID чата для добавления' },
+        }, required: ['folder_id', 'chat_id'] },
+      },
+    },
+    // ── Sticker management ──
+    {
+      type: 'function',
+      function: {
+        name: 'tg_search_stickers',
+        description: 'Поиск стикерпаков по ключевому слову.',
+        parameters: { type: 'object', properties: {
+          query: { type: 'string', description: 'Поисковый запрос' },
+        }, required: ['query'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_add_sticker_set',
+        description: 'Установить/добавить стикерпак в свою коллекцию.',
+        parameters: { type: 'object', properties: {
+          short_name: { type: 'string', description: 'Short name стикерпака (из URL t.me/addstickers/...)' },
+        }, required: ['short_name'] },
+      },
+    },
+    // ── User relationships ──
+    {
+      type: 'function',
+      function: {
+        name: 'tg_get_blocked',
+        description: 'Получить список заблокированных пользователей.',
+        parameters: { type: 'object', properties: {
+          limit: { type: 'number', description: 'Максимум результатов (по умолчанию 100)' },
+        }, required: [] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_get_common_chats',
+        description: 'Получить общие группы/каналы с пользователем.',
+        parameters: { type: 'object', properties: {
+          user_id: { type: 'string', description: 'ID или username пользователя' },
+        }, required: ['user_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_check_username',
+        description: 'Проверить доступность username в Telegram.',
+        parameters: { type: 'object', properties: {
+          username: { type: 'string', description: 'Username для проверки (без @)' },
+        }, required: ['username'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_set_username',
+        description: 'Изменить username аккаунта.',
+        parameters: { type: 'object', properties: {
+          username: { type: 'string', description: 'Новый username (без @, или пустая строка для удаления)' },
+        }, required: ['username'] },
+      },
+    },
+    // ── Gift lifecycle ──
+    {
+      type: 'function',
+      function: {
+        name: 'tg_transfer_collectible',
+        description: 'Передать коллекционный подарок другому пользователю.',
+        parameters: { type: 'object', properties: {
+          gift_id: { type: 'string', description: 'ID подарка' },
+          to_user: { type: 'string', description: 'ID или username получателя' },
+        }, required: ['gift_id', 'to_user'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_set_gift_visibility',
+        description: 'Показать или скрыть подарок в профиле.',
+        parameters: { type: 'object', properties: {
+          gift_id: { type: 'string', description: 'ID подарка' },
+          visible: { type: 'boolean', description: 'true = показать, false = скрыть' },
+        }, required: ['gift_id', 'visible'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tg_get_stars_transactions',
+        description: 'Получить историю транзакций Stars.',
+        parameters: { type: 'object', properties: {
+          limit: { type: 'number', description: 'Максимум записей (по умолчанию 50)' },
+          offset: { type: 'string', description: 'Оффсет для пагинации' },
         }, required: [] },
       },
     },
@@ -6358,6 +6531,11 @@ export async function executeTool(
     case 'tg_get_chat_stats': case 'tg_save_draft': case 'tg_send_with_buttons':
     case 'tg_get_poll_results': case 'tg_send_sticker': case 'tg_send_gif':
     case 'tg_send_voice': case 'tg_transcribe_voice': case 'tg_get_sticker_sets':
+    case 'tg_send_dice': case 'tg_create_quiz': case 'tg_reply_keyboard':
+    case 'tg_get_folders': case 'tg_create_folder': case 'tg_add_to_folder':
+    case 'tg_search_stickers': case 'tg_add_sticker_set':
+    case 'tg_get_blocked': case 'tg_get_common_chats': case 'tg_check_username': case 'tg_set_username':
+    case 'tg_transfer_collectible': case 'tg_set_gift_visibility': case 'tg_get_stars_transactions':
     // ── New userbot-manager tools ──
     case 'tg_create_channel2': case 'tg_edit_channel_title': case 'tg_edit_channel_about':
     case 'tg_set_channel_username': case 'tg_toggle_slow_mode': case 'tg_delete_channel':
@@ -6468,6 +6646,22 @@ export async function executeTool(
           case 'tg_send_voice': return await tgSandbox.sendVoice(args.chat_id, args.text, args.lang || 'ru');
           case 'tg_transcribe_voice': return await tgSandbox.transcribeVoice(args.chat_id, args.message_id);
           case 'tg_get_sticker_sets': return await tgSandbox.getStickerSets(args.query);
+          // ── New tools (dice, quiz, folders, stickers, relationships, gifts) ──
+          case 'tg_send_dice': return await tgSandbox.sendDice(args.chat_id, args.emoji || '🎲');
+          case 'tg_create_quiz': return await tgSandbox.createQuiz(args.chat_id, args.question, args.options, args.correct_option, args.explanation);
+          case 'tg_reply_keyboard': return await tgSandbox.sendReplyKeyboard(args.chat_id, args.text, args.buttons, args.one_time, args.resize);
+          case 'tg_get_folders': return await tgSandbox.getFolders();
+          case 'tg_create_folder': return await tgSandbox.createFolder(args.title, args.include_chats, args.exclude_chats);
+          case 'tg_add_to_folder': return await tgSandbox.addToFolder(args.folder_id, args.chat_id);
+          case 'tg_search_stickers': return await tgSandbox.searchStickers(args.query);
+          case 'tg_add_sticker_set': return await tgSandbox.addStickerSet(args.short_name);
+          case 'tg_get_blocked': return await tgSandbox.getBlocked(args.limit || 100);
+          case 'tg_get_common_chats': return await tgSandbox.getCommonChats(args.user_id);
+          case 'tg_check_username': return await tgSandbox.checkUsername(args.username);
+          case 'tg_set_username': return await tgSandbox.setUsername(args.username);
+          case 'tg_transfer_collectible': return await tgSandbox.transferCollectible(args.gift_id, args.to_user);
+          case 'tg_set_gift_visibility': return await tgSandbox.setGiftVisibility(args.gift_id, args.visible);
+          case 'tg_get_stars_transactions': return await tgSandbox.getStarsTransactions(args.limit || 50, args.offset);
           // ── Channel Management (userbot-manager) ──
           case 'tg_create_channel2': return await ubCreateChannel2(params.userId, params.agentId || 0, args.title, args.about || '', args.megagroup || false);
           case 'tg_edit_channel_title': return await ubEditChannelTitle(params.userId, params.agentId || 0, args.chat_id, args.title);

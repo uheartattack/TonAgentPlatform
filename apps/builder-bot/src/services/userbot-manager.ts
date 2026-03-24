@@ -1771,6 +1771,22 @@ class UserbotManager {
       },
       transcribeVoice: wrap(ubTranscribeVoice),
       getStickerSets: wrap(ubGetStickerSets),
+      // ── New tools ──
+      sendDice:           wrap(ubSendDice),
+      createQuiz:         wrap(ubCreateQuiz),
+      sendReplyKeyboard:  wrap(ubSendReplyKeyboard),
+      getFolders:         () => ubGetFolders(client),
+      createFolder:       wrap(ubCreateFolder),
+      addToFolder:        wrap(ubAddToFolder),
+      searchStickers:     wrap(ubSearchStickers),
+      addStickerSet:      wrap(ubAddStickerSet),
+      getBlocked:         wrap(ubGetBlocked),
+      getCommonChats:     wrap(ubGetCommonChats),
+      checkUsername:      wrap(ubCheckUsername),
+      setUsername:        wrap(ubSetUsername),
+      transferCollectible: wrap(ubTransferCollectible),
+      setGiftVisibility:  wrap(ubSetGiftVisibility),
+      getStarsTransactions: wrap(ubGetStarsTransactions),
     };
   }
 
@@ -4395,6 +4411,183 @@ async function ubGetStickerSets(client: TelegramClient, query?: string) {
     }
     return { ok: true, count: sets.length, sets: sets.slice(0, 50) };
   } catch (e: any) { return { error: e.message || String(e) }; }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// NEW TG TOOLS (dice, quiz, folders, stickers, relationships, gifts)
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function ubSendDice(client: TelegramClient, chatId: string, emoji: string = '🎲') {
+  try {
+    const peer = await client.getInputEntity(chatId);
+    const result = await (client as any).invoke(new Api.messages.SendMedia({
+      peer, media: new Api.InputMediaDice({ emoticon: emoji }), message: '', randomId: BigInt(Math.floor(Math.random() * 1e15)) as any,
+    }));
+    return { ok: true, value: result?.updates?.[0]?.message?.media?.value };
+  } catch (e: any) { return { error: e.message }; }
+}
+
+async function ubCreateQuiz(client: TelegramClient, chatId: string, question: string, options: string[], correctOption: number, explanation?: string) {
+  try {
+    const peer = await client.getInputEntity(chatId);
+    const poll = new Api.Poll({
+      id: BigInt(Math.floor(Math.random() * 1e15)) as any,
+      question: new Api.TextWithEntities({ text: question, entities: [] }),
+      answers: options.map((o, i) => new Api.PollAnswer({ text: new Api.TextWithEntities({ text: o, entities: [] }), option: Buffer.from([i]) })),
+      quiz: true,
+    });
+    const result = await (client as any).invoke(new Api.messages.SendMedia({
+      peer, media: new Api.InputMediaPoll({
+        poll,
+        correctAnswers: [Buffer.from([correctOption])],
+        solution: explanation ? new Api.TextWithEntities({ text: explanation, entities: [] }) : undefined,
+      }), message: '', randomId: BigInt(Math.floor(Math.random() * 1e15)) as any,
+    }));
+    return { ok: true };
+  } catch (e: any) { return { error: e.message }; }
+}
+
+async function ubSendReplyKeyboard(client: TelegramClient, chatId: string, text: string, buttons: string[][], oneTime?: boolean, resize?: boolean) {
+  try {
+    const peer = await client.getInputEntity(chatId);
+    const rows = buttons.map(row =>
+      new Api.KeyboardButtonRow({ buttons: row.map(b => new Api.KeyboardButton({ text: b })) })
+    );
+    const result = await (client as any).invoke(new Api.messages.SendMessage({
+      peer, message: text,
+      replyMarkup: new Api.ReplyKeyboardMarkup({ rows, singleUse: oneTime || false, resize: resize !== false }),
+      randomId: BigInt(Math.floor(Math.random() * 1e15)) as any,
+    }));
+    return { ok: true };
+  } catch (e: any) { return { error: e.message }; }
+}
+
+async function ubGetFolders(client: TelegramClient) {
+  try {
+    const result = await (client as any).invoke(new Api.messages.GetDialogFilters());
+    const filters = (result.filters || result || []).map((f: any) => ({
+      id: f.id, title: f.title || 'Untitled', emoji: f.emoticon || '',
+      includeCount: f.includePeers?.length || 0, excludeCount: f.excludePeers?.length || 0,
+    }));
+    return { ok: true, folders: filters };
+  } catch (e: any) { return { error: e.message }; }
+}
+
+async function ubCreateFolder(client: TelegramClient, title: string, includeChats?: string[], excludeChats?: string[]) {
+  try {
+    const includePeers = [];
+    for (const c of (includeChats || [])) {
+      try { includePeers.push(await client.getInputEntity(c)); } catch {}
+    }
+    const excludePeers = [];
+    for (const c of (excludeChats || [])) {
+      try { excludePeers.push(await client.getInputEntity(c)); } catch {}
+    }
+    // Find next available filter ID
+    const existing = await (client as any).invoke(new Api.messages.GetDialogFilters());
+    const maxId = Math.max(2, ...(existing.filters || existing || []).map((f: any) => f.id || 0));
+    await (client as any).invoke(new Api.messages.UpdateDialogFilter({
+      id: maxId + 1,
+      filter: new Api.DialogFilter({
+        id: maxId + 1, title: new Api.TextWithEntities({ text: title, entities: [] }),
+        includePeers, excludePeers, pinnedPeers: [],
+      }),
+    }));
+    return { ok: true, folderId: maxId + 1 };
+  } catch (e: any) { return { error: e.message }; }
+}
+
+async function ubAddToFolder(client: TelegramClient, folderId: number, chatId: string) {
+  try {
+    const existing = await (client as any).invoke(new Api.messages.GetDialogFilters());
+    const filter = (existing.filters || existing || []).find((f: any) => f.id === folderId);
+    if (!filter) return { error: 'Folder not found' };
+    const peer = await client.getInputEntity(chatId);
+    filter.includePeers = [...(filter.includePeers || []), peer];
+    await (client as any).invoke(new Api.messages.UpdateDialogFilter({ id: folderId, filter }));
+    return { ok: true };
+  } catch (e: any) { return { error: e.message }; }
+}
+
+async function ubSearchStickers(client: TelegramClient, query: string) {
+  try {
+    const result = await (client as any).invoke(new Api.messages.SearchStickerSets({ q: query, hash: BigInt(0) as any }));
+    const sets = (result.sets || []).map((s: any) => ({ shortName: s.shortName, title: s.title, count: s.count }));
+    return { ok: true, count: sets.length, sets: sets.slice(0, 30) };
+  } catch (e: any) { return { error: e.message }; }
+}
+
+async function ubAddStickerSet(client: TelegramClient, shortName: string) {
+  try {
+    const stickerSet = await (client as any).invoke(new Api.messages.GetStickerSet({ stickerset: new Api.InputStickerSetShortName({ shortName }), hash: 0 }));
+    await (client as any).invoke(new Api.messages.InstallStickerSet({ stickerset: new Api.InputStickerSetShortName({ shortName }), archived: false }));
+    return { ok: true, title: stickerSet?.set?.title };
+  } catch (e: any) { return { error: e.message }; }
+}
+
+async function ubGetBlocked(client: TelegramClient, limit: number = 100) {
+  try {
+    const result = await (client as any).invoke(new Api.contacts.GetBlocked({ offset: 0, limit }));
+    const users = (result.users || []).map((u: any) => ({ id: u.id?.toString(), firstName: u.firstName, lastName: u.lastName, username: u.username }));
+    return { ok: true, count: users.length, users };
+  } catch (e: any) { return { error: e.message }; }
+}
+
+async function ubGetCommonChats(client: TelegramClient, userId: string) {
+  try {
+    const user = await client.getInputEntity(userId);
+    const result = await (client as any).invoke(new Api.messages.GetCommonChats({ userId: user, maxId: BigInt(0) as any, limit: 100 }));
+    const chats = (result.chats || []).map((c: any) => ({ id: c.id?.toString(), title: c.title, type: c.megagroup ? 'group' : 'channel' }));
+    return { ok: true, count: chats.length, chats };
+  } catch (e: any) { return { error: e.message }; }
+}
+
+async function ubCheckUsername(client: TelegramClient, username: string) {
+  try {
+    const result = await (client as any).invoke(new Api.account.CheckUsername({ username: username.replace(/^@/, '') }));
+    return { ok: true, available: !!result };
+  } catch (e: any) {
+    if (e.message?.includes('USERNAME_INVALID')) return { ok: true, available: false, reason: 'invalid format' };
+    if (e.message?.includes('USERNAME_OCCUPIED')) return { ok: true, available: false, reason: 'occupied' };
+    return { error: e.message };
+  }
+}
+
+async function ubSetUsername(client: TelegramClient, username: string) {
+  try {
+    await (client as any).invoke(new Api.account.UpdateUsername({ username: username.replace(/^@/, '') }));
+    return { ok: true };
+  } catch (e: any) { return { error: e.message }; }
+}
+
+async function ubTransferCollectible(client: TelegramClient, giftId: string, toUser: string) {
+  try {
+    const peer = await client.getInputEntity(toUser);
+    // Use payments.TransferStarGift API
+    await (client as any).invoke(new Api.payments.TransferStarGift({ stargift: new Api.InputSavedStarGiftUser({ msgId: parseInt(giftId) }), toId: peer }));
+    return { ok: true };
+  } catch (e: any) { return { error: e.message }; }
+}
+
+async function ubSetGiftVisibility(client: TelegramClient, giftId: string, visible: boolean) {
+  try {
+    await (client as any).invoke(new Api.payments.SaveStarGift({ stargift: new Api.InputSavedStarGiftUser({ msgId: parseInt(giftId) }), unsave: !visible }));
+    return { ok: true, visible };
+  } catch (e: any) { return { error: e.message }; }
+}
+
+async function ubGetStarsTransactions(client: TelegramClient, limit: number = 50, offset?: string) {
+  try {
+    const result = await (client as any).invoke(new Api.payments.GetStarsTransactions({
+      peer: new Api.InputPeerSelf(), offset: offset || '', limit,
+    }));
+    const txns = (result.history || []).map((t: any) => ({
+      id: t.id, stars: t.stars?.toString(), date: t.date,
+      description: t.description || t.title || '',
+      type: t.stars > 0 ? 'incoming' : 'outgoing',
+    }));
+    return { ok: true, count: txns.length, transactions: txns, nextOffset: result.nextOffset };
+  } catch (e: any) { return { error: e.message }; }
 }
 
 // ── Helper: download TG media to disk (for image_analyze) ──────────
