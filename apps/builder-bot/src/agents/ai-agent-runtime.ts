@@ -9829,9 +9829,16 @@ If web_search returns nothing useful → say "не смог найти акту�
     console.warn(`[AI runtime] Plugin SDK load warning: ${e.message}`);
   }
 
-  // Tool RAG: select only relevant tools based on user message + system prompt
+  // Tool RAG: hybrid embedding + keyword selection (async), falls back to TF-IDF
   const userMsgText = msgs.join(' ');
-  let tools = selectRelevantTools(allToolDefs, userMsgText, params.systemPrompt, providerCfg.maxTools);
+  let tools: any[];
+  try {
+    const { selectToolsHybrid } = await import('../services/tool-rag');
+    tools = await selectToolsHybrid(allToolDefs, userMsgText, params.systemPrompt, providerCfg.maxTools);
+  } catch (ragErr: any) {
+    console.warn(`[ToolRAG] Hybrid RAG failed, falling back to TF-IDF: ${ragErr.message?.slice(0, 100)}`);
+    tools = selectRelevantTools(allToolDefs, userMsgText, params.systemPrompt, providerCfg.maxTools);
+  }
   const originalTools = [...tools]; // Save for restoration after 400-error retry
 
   // ── PHOTO GUARD: when user asks for photo/image, REMOVE tg_send_gif to prevent misuse ──
@@ -10218,7 +10225,12 @@ If web_search returns nothing useful → say "не смог найти акту�
     if (hadCapChange) {
       const updatedCaps = (params.config.enabledCapabilities as string[]) || null;
       allToolDefs = buildToolDefinitions(agentRole, updatedCaps, mcpToolDefs);
-      tools = selectRelevantTools(allToolDefs, userMsgText, params.systemPrompt, providerCfg.maxTools);
+      try {
+        const { selectToolsHybrid } = await import('../services/tool-rag');
+        tools = await selectToolsHybrid(allToolDefs, userMsgText, params.systemPrompt, providerCfg.maxTools);
+      } catch {
+        tools = selectRelevantTools(allToolDefs, userMsgText, params.systemPrompt, providerCfg.maxTools);
+      }
       console.log(`[AI runtime] Agent #${params.agentId} tools rebuilt after manage_capabilities: ${tools.length}(of ${allToolDefs.length}) tools`);
     }
   }
