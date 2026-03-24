@@ -1031,6 +1031,126 @@ const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
   self_memory: ['memory_stats', 'clear_memory_category', 'compress_memories', 'browse_memory', 'run_memory_maintenance', 'get_memory_settings', 'update_memory_settings'],
 };
 
+// ═══════════════════════════════════════════════════════════════════════════
+// TOOLSET PROFILES — predefined capability bundles for quick setup
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const TOOLSET_PROFILES: Record<string, { label: string; labelRu: string; caps: string[] }> = {
+  minimal: {
+    label: 'Minimal — chat only',
+    labelRu: 'Минимальный — только чат',
+    caps: ['telegram', 'state', 'notify'],
+  },
+  standard: {
+    label: 'Standard — chat + web + wallet',
+    labelRu: 'Стандартный — чат + web + кошелёк',
+    caps: ['telegram', 'state', 'notify', 'web', 'wallet', 'image', 'workspace'],
+  },
+  trading: {
+    label: 'Trading — gifts + DeFi + blockchain',
+    labelRu: 'Трейдинг — подарки + DeFi + блокчейн',
+    caps: ['telegram', 'state', 'notify', 'web', 'wallet', 'gifts', 'gifts_market', 'defi', 'blockchain', 'nft'],
+  },
+  full: {
+    label: 'Full — everything enabled',
+    labelRu: 'Полный — всё включено',
+    caps: Object.keys(CAPABILITY_TOOL_MAP),
+  },
+  admin: {
+    label: 'Admin — moderation + analytics',
+    labelRu: 'Админ — модерация + аналитика',
+    caps: ['telegram', 'telegram_admin', 'telegram_analytics', 'telegram_forums', 'state', 'notify', 'web'],
+  },
+  content: {
+    label: 'Content — media + stories + channels',
+    labelRu: 'Контент — медиа + сторис + каналы',
+    caps: ['telegram', 'telegram_admin', 'telegram_stories', 'telegram_media', 'image', 'web', 'state', 'notify', 'workspace'],
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MODEL FALLBACK CHAIN — try requested model, fallback to provider default
+// ═══════════════════════════════════════════════════════════════════════════
+
+const MODEL_FALLBACKS: Record<string, string[]> = {
+  gemini:    ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'],
+  anthropic: ['claude-haiku-4-5-20251001', 'claude-sonnet-4-20250514'],
+  openai:    ['gpt-4o-mini', 'gpt-4o'],
+  groq:      ['llama-3.3-70b-versatile', 'mixtral-8x7b-32768'],
+  deepseek:  ['deepseek-chat'],
+  openrouter:['google/gemini-2.5-flash', 'meta-llama/llama-3.3-70b'],
+  together:  ['meta-llama/Llama-3.3-70B-Instruct-Turbo'],
+};
+
+/** Try model, fallback on 404/model_not_found */
+async function callWithFallback(
+  ai: OpenAI,
+  reqBody: any,
+  provider: string,
+): Promise<any> {
+  const originalModel = reqBody.model;
+  const fallbacks = MODEL_FALLBACKS[provider] || [];
+
+  try {
+    return await ai.chat.completions.create(reqBody);
+  } catch (e: any) {
+    const is404 = e.status === 404 || e.message?.includes('model_not_found') || e.message?.includes('not found');
+    if (!is404 || fallbacks.length === 0) throw e;
+
+    // Try fallbacks
+    for (const fb of fallbacks) {
+      if (fb === originalModel) continue;
+      try {
+        console.log(`[AI runtime] Model ${originalModel} failed, trying fallback: ${fb}`);
+        reqBody.model = fb;
+        return await ai.chat.completions.create(reqBody);
+      } catch (fbErr: any) {
+        if (fbErr.status === 404 || fbErr.message?.includes('not found')) continue;
+        throw fbErr; // non-404 error, propagate
+      }
+    }
+    // All fallbacks failed, throw original error
+    reqBody.model = originalModel;
+    throw e;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// THINK-BLOCK STRIPPING — remove <think>...</think> from reasoning models
+// ═══════════════════════════════════════════════════════════════════════════
+
+function stripThinkBlocks(text: string): string {
+  if (!text) return text;
+  // Remove <think>...</think> blocks (DeepSeek R1, QwQ, etc.)
+  return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TOOL-SENT RESPONSE DETECTION — skip text reply if tool already sent message
+// ═══════════════════════════════════════════════════════════════════════════
+
+const TOOLS_THAT_SEND = new Set([
+  'tg_send_message', 'tg_reply', 'tg_send_formatted', 'tg_send_photo',
+  'tg_send_voice', 'tg_send_file', 'tg_send_sticker', 'tg_send_gif',
+  'tg_send_album', 'tg_send_video_note', 'tg_send_contact', 'tg_send_location',
+  'notify', 'notify_rich', 'tg_send_with_buttons', 'tg_send_silent',
+]);
+
+function toolAlreadySentResponse(messages: any[]): boolean {
+  // Check last iteration's tool calls
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg.role === 'assistant' && msg.tool_calls) {
+      for (const tc of msg.tool_calls) {
+        if (TOOLS_THAT_SEND.has(tc.function?.name)) return true;
+      }
+      break; // only check last assistant message with tool calls
+    }
+    if (msg.role === 'user') break; // went past current iteration
+  }
+  return false;
+}
+
 // ── Tool definitions (OpenAI function_call format) ─────────────────────────
 
 export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: string[] | null, mcpTools?: OpenAI.ChatCompletionTool[]): OpenAI.ChatCompletionTool[] {
@@ -9908,7 +10028,7 @@ If web_search returns nothing useful → say "не смог найти акту�
           reqBody.tools = tools.length > maxTools ? tools.slice(0, maxTools) : tools;
           reqBody.tool_choice = 'auto';
         }
-        response = await ai.chat.completions.create(reqBody);
+        response = await callWithFallback(ai, reqBody, providerName);
         lastErr = null;
         cbRecordSuccess(params.agentId); // circuit breaker: reset on success
         break; // success
@@ -10040,8 +10160,8 @@ If web_search returns nothing useful → say "не смог найти акту�
 
     // No tool calls → agent is done
     if (!assistant.tool_calls || assistant.tool_calls.length === 0) {
-      finalContent = assistant.content || undefined;
-      console.log(`[AI runtime] Agent #${params.agentId} iter=${iter} content="${(assistant.content || '').slice(0, 100)}" finish=${choice.finish_reason}`);
+      finalContent = stripThinkBlocks(assistant.content || '') || undefined;
+      console.log(`[AI runtime] Agent #${params.agentId} iter=${iter} content="${(finalContent || '').slice(0, 100)}" finish=${choice.finish_reason}`);
       // Resolve studio chat callback if waiting
       if (finalContent) _resolveChatCallback(params.agentId, finalContent);
       break;
@@ -10241,7 +10361,14 @@ If web_search returns nothing useful → say "не смог найти акту�
   // 2. User sent a message (msgs.length > 0) → this is a chat reply
   // 3. notify() was NOT already called during the tick (prevents duplicates)
   const notifyWasCalled = _tickNotifyFlag.get(params.agentId) === true;
+  const toolSentResponse = toolAlreadySentResponse(messages);
   _tickNotifyFlag.delete(params.agentId); // cleanup
+
+  // If a tool already sent a message (tg_send_message, notify, etc.), suppress duplicate text reply
+  if (finalContent && toolSentResponse && !notifyWasCalled) {
+    console.log(`[AI runtime] Agent #${params.agentId} suppressing duplicate text reply — tool already sent message`);
+    finalContent = undefined;
+  }
 
   // ── Prompt leak filter: strip system instructions from AI response ──
   if (finalContent) {

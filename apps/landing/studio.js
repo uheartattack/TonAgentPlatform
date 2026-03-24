@@ -9413,13 +9413,34 @@ function renderWizardStep(idx) {
         '<input type="' + f.type + '" id="wizard-' + f.id + '" placeholder="' + (f.placeholder || '') + '" style="width:100%;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text-primary);font-size:.85rem">' +
         (f.desc ? '<div class="settings-field-desc">' + f.desc + '</div>' : '') + '</div>';
     } else if (f.type === 'caps') {
+      // Toolset profile presets
+      var profiles = [
+        {id:'minimal',icon:IC.chat,label:isRu?'Минимальный':'Minimal',desc:isRu?'Только чат':'Chat only',caps:['telegram','state','notify']},
+        {id:'standard',icon:IC.globe,label:isRu?'Стандартный':'Standard',desc:isRu?'Чат + web + кошелёк':'Chat + web + wallet',caps:['telegram','state','notify','web','wallet','image','workspace']},
+        {id:'trading',icon:IC.trending,label:isRu?'Трейдинг':'Trading',desc:isRu?'Подарки + DeFi':'Gifts + DeFi',caps:['telegram','state','notify','web','wallet','gifts','gifts_market','defi','blockchain','nft']},
+        {id:'full',icon:IC.infinity,label:isRu?'Полный':'Full',desc:isRu?'Всё включено':'Everything',caps:['wallet','nft','gifts','gifts_market','telegram','telegram_admin','telegram_stories','telegram_forums','telegram_analytics','telegram_media','telegram_discovery','telegram_premium','web','state','events','notify','plugins','inter_agent','blockchain','defi','image','workspace','mcp','confirmation','self_memory']},
+        {id:'admin',icon:IC.shield,label:isRu?'Админ':'Admin',desc:isRu?'Модерация':'Moderation',caps:['telegram','telegram_admin','telegram_analytics','telegram_forums','state','notify','web']},
+        {id:'content',icon:IC.image,label:isRu?'Контент':'Content',desc:isRu?'Медиа + сторис':'Media + stories',caps:['telegram','telegram_admin','telegram_stories','telegram_media','image','web','state','notify','workspace']},
+      ];
+      html += '<div class="settings-field"><label>' + (isRu ? 'Профиль набора инструментов' : 'Toolset Profile') + '</label>' +
+        '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:12px">' +
+        profiles.map(function(p) {
+          return '<div class="wizard-profile-card" data-profile="' + p.id + '" onclick="applyWizardProfile(\'' + p.id + '\')" style="padding:10px;border-radius:8px;background:var(--bg-secondary);cursor:pointer;border:1px solid var(--border);text-align:center;transition:border-color 0.2s,transform 0.15s">' +
+            '<div style="font-size:1.1rem;margin-bottom:4px">' + p.icon + '</div>' +
+            '<div style="font-size:.78rem;font-weight:600">' + p.label + '</div>' +
+            '<div style="font-size:.62rem;color:var(--text-muted)">' + p.desc + '</div>' +
+          '</div>';
+        }).join('') +
+        '</div>' +
+        '<div style="font-size:.68rem;color:var(--text-muted);margin-bottom:8px">' + (isRu ? 'Или выберите вручную:' : 'Or select manually:') + '</div>';
       var quickCaps = [
         {id:'wallet',icon:IC.dollar,name:'Wallet'}, {id:'nft',icon:IC.image,name:'NFT'}, {id:'gifts_market',icon:IC.trending,name:'Gifts Market'},
         {id:'web',icon:IC.globe,name:'Web'}, {id:'defi',icon:IC.shuffle,name:'DeFi'}, {id:'telegram',icon:IC.send,name:'Telegram'},
-        {id:'notify',icon:IC.bell,name:'Notify'}, {id:'state',icon:IC.box,name:'State'}
+        {id:'notify',icon:IC.bell,name:'Notify'}, {id:'state',icon:IC.box,name:'State'},
+        {id:'image',icon:IC.image,name:'Image'}, {id:'workspace',icon:IC.box,name:'Files'},
+        {id:'blockchain',icon:IC.link,name:'Blockchain'}, {id:'plugins',icon:IC.wrench,name:'Plugins'},
       ];
-      html += '<div class="settings-field"><label>' + f.label + '</label>' +
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">' +
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">' +
         quickCaps.map(function(c) {
           return '<label style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;background:var(--bg-secondary);cursor:pointer;font-size:.82rem;border:1px solid var(--border);transition:border-color 0.2s">' +
             '<input type="checkbox" class="wizard-cap-check" value="' + c.id + '" style="accent-color:var(--primary)" onchange="this.closest(\'label\').style.borderColor=this.checked?\'var(--primary)\':\'var(--border)\'">' +
@@ -9435,6 +9456,36 @@ function renderWizardStep(idx) {
   body.style.animation = 'none';
   body.offsetHeight;
   body.style.animation = 'tabContentFade 0.35s cubic-bezier(0.4,0,0.2,1)';
+}
+
+var _wizardProfiles = {
+  minimal: ['telegram','state','notify'],
+  standard: ['telegram','state','notify','web','wallet','image','workspace'],
+  trading: ['telegram','state','notify','web','wallet','gifts','gifts_market','defi','blockchain','nft'],
+  full: ['wallet','nft','gifts','gifts_market','telegram','telegram_admin','telegram_stories','telegram_forums','telegram_analytics','telegram_media','telegram_discovery','telegram_premium','web','state','events','notify','plugins','inter_agent','blockchain','defi','image','workspace','mcp','confirmation','self_memory'],
+  admin: ['telegram','telegram_admin','telegram_analytics','telegram_forums','state','notify','web'],
+  content: ['telegram','telegram_admin','telegram_stories','telegram_media','image','web','state','notify','workspace'],
+};
+
+function applyWizardProfile(profileId) {
+  var caps = _wizardProfiles[profileId] || [];
+  // Uncheck all
+  document.querySelectorAll('.wizard-cap-check').forEach(function(cb) {
+    cb.checked = false;
+    cb.closest('label').style.borderColor = 'var(--border)';
+  });
+  // Check matching
+  document.querySelectorAll('.wizard-cap-check').forEach(function(cb) {
+    if (caps.indexOf(cb.value) >= 0) {
+      cb.checked = true;
+      cb.closest('label').style.borderColor = 'var(--primary)';
+    }
+  });
+  // Highlight selected profile card
+  document.querySelectorAll('.wizard-profile-card').forEach(function(card) {
+    card.style.borderColor = card.getAttribute('data-profile') === profileId ? 'var(--primary)' : 'var(--border)';
+    card.style.transform = card.getAttribute('data-profile') === profileId ? 'scale(1.03)' : '';
+  });
 }
 
 function wizardNext() {
