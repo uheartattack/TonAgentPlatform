@@ -3241,6 +3241,21 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
     {
       type: 'function',
       function: {
+        name: 'get_top_deals',
+        description: 'Найти лучшие сделки на рынке подарков — топ арбитраж возможности отсортированные по профиту. Алиас scan_real_arbitrage.',
+        parameters: {
+          type: 'object',
+          properties: {
+            max_price_ton:  { type: 'number', description: 'Максимальная цена покупки в TON' },
+            min_profit_pct: { type: 'number', description: 'Минимальная прибыль в % (default: 5)' },
+          },
+          required: [],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
         name: 'get_gift_aggregator',
         description: 'Поиск лучших предложений подарка по всем маркетплейсам (SwiftGifts агрегатор). Каждый item содержит options.payload — готовый BOC для TON транзакции (можно сразу покупать!). Сортирует по редкости фона, потом по цене.',
         parameters: {
@@ -7328,6 +7343,7 @@ export async function executeTool(
       }
     }
 
+    case 'get_top_deals':
     case 'scan_real_arbitrage': {
       try {
         const { getGiftAssetClient } = await import('../services/giftasset');

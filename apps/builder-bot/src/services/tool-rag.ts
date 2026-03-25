@@ -16,8 +16,17 @@ const KEYWORD_WEIGHT = 0.4;
 const MIN_SCORE = 0.08;
 const ALWAYS_INCLUDE_PATTERNS = [
   /^tg_send_message$/, /^tg_reply_message$/, /^tg_get_messages$/,
-  /^get_state$/, /^set_state$/, /^notify_user$/, /^remember$/,
-  /^save_lesson$/, /^web_search$/, /^image_analyze$/,
+  /^tg_send_formatted$/, /^tg_get_unread$/, /^tg_mark_read$/,
+  /^tg_kick_user/, /^tg_ban_user/, /^tg_mute_user/, /^tg_unban_user$/,
+  /^tg_react$/, /^tg_pin$/, /^tg_forward_message$/,
+  /^tg_send_file$/, /^tg_send_photo$/, /^tg_send_voice$/,
+  /^tg_get_dialogs$/, /^tg_search_messages$/, /^tg_get_channel_info$/,
+  /^get_state$/, /^set_state$/, /^get_state_multi$/, /^list_state_keys$/,
+  /^notify_user$/, /^notify$/, /^notify_rich$/, /^remember$/, /^recall$/,
+  /^save_lesson$/, /^web_search$/, /^fetch_url$/, /^image_analyze$/,
+  /^get_ton_balance$/, /^send_ton$/, /^get_gift_floor_real$/,
+  /^scan_real_arbitrage$/, /^get_market_overview$/, /^get_top_deals$/,
+  /^schedule_action$/, /^set_next_wake$/,
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════
