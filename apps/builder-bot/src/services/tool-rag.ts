@@ -59,7 +59,7 @@ async function embed(text: string, apiKey?: string): Promise<number[] | null> {
     });
     if (!resp.ok) return null;
     const data = await resp.json();
-    return data.embedding?.values || null;
+    return (data as any).embedding?.values || null;
   } catch {
     return null;
   }
@@ -94,7 +94,7 @@ async function embedBatch(texts: string[], apiKey?: string): Promise<(number[] |
         continue;
       }
       const data = await resp.json();
-      for (const emb of (data.embeddings || [])) {
+      for (const emb of ((data as any).embeddings || [])) {
         results.push(emb?.values || null);
       }
     }

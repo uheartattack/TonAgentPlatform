@@ -9032,7 +9032,7 @@ async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
     let hasTgAuth = false;
     try {
       const { userbotManager } = await import('./services/userbot-manager');
-      hasTgAuth = userbotManager.isConnected(agentId);
+      hasTgAuth = !!(await userbotManager.getClient(agentId));
     } catch {}
 
     let hasWallet = false;
