@@ -790,6 +790,7 @@ const DAILY_SPEND_LIMIT_TON = 500;   // Default daily spend cap per agent (in TO
 // Used to suppress duplicate sends when AI calls notify() AND produces finalContent
 const _tickNotifyFlag = new Map<number, boolean>();
 const _notifyRateLimit = new Map<string, number[]>();
+const _onboardingNotified = new Set<string>(); // tracks one-time onboarding notifications
 
 // ── Agent metadata cache (60s TTL) ──────────────────────────────────────────
 interface CachedAgentMeta {
@@ -9552,9 +9553,14 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
     providerCfg = result.providerCfg;
   } catch (e: any) {
     if (e.message === 'NO_API_KEY') {
-      const errMsg = '🔑 API ключ не настроен. Добавьте ключ: Профиль → API ключи';
-      if (params.onNotify) params.onNotify(errMsg);
-      await logToDb(params.agentId, 'error', errMsg, params.userId);
+      // Only notify ONCE per agent (not every tick)
+      const notifiedKey = `no_api_key_notified:${params.agentId}`;
+      if (!_onboardingNotified.has(notifiedKey)) {
+        _onboardingNotified.add(notifiedKey);
+        const errMsg = '🔑 API ключ не настроен. Агент приостановлен.\n\nДобавьте ключ: Профиль → API ключи, или откройте настройки агента в Студио.';
+        if (params.onNotify) params.onNotify(errMsg);
+        await logToDb(params.agentId, 'warn', '[Onboarding] API key missing — agent paused, user notified once', params.userId);
+      }
       return { toolCallCount: 0, error: 'NO_API_KEY' };
     }
     throw e;

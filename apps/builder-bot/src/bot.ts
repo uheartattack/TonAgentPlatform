@@ -9018,6 +9018,47 @@ async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
     const roleName = agentRole === 'director' ? 'Director' : agentRole === 'manager' ? 'Manager' : 'Worker';
     const levelBar = '█'.repeat(Math.min(agentLevel, 10)) + '░'.repeat(Math.max(0, 10 - agentLevel));
 
+    // ── Onboarding checklist: detect what's missing ──
+    const cfg = typeof a.triggerConfig === 'object' ? a.triggerConfig as Record<string, any> : {};
+    const agentCfg = cfg?.config || {};
+    const hasApiKey = !!(agentCfg.AI_API_KEY || agentCfg.apiKey);
+    let hasGlobalKey = false;
+    try {
+      const uvRes = await dbPool.query('SELECT value FROM builder_bot.user_variables WHERE user_id=$1 AND key=$2', [userId, 'AI_API_KEY']);
+      hasGlobalKey = !!(uvRes.rows[0]?.value);
+    } catch {}
+    const aiKeyOk = hasApiKey || hasGlobalKey || !!(process.env.PLATFORM_AI_KEY);
+
+    let hasTgAuth = false;
+    try {
+      const { userbotManager } = await import('./services/userbot-manager');
+      hasTgAuth = userbotManager.isConnected(agentId);
+    } catch {}
+
+    let hasWallet = false;
+    try {
+      const walletState = await getAgentStateRepository().get(agentId, 'wallet_address');
+      hasWallet = !!(walletState?.value || walletState);
+    } catch {}
+
+    const ru = lang === 'ru';
+    let checklist = '';
+    const checklistIssues: string[] = [];
+    if (a.triggerType === 'ai_agent') {
+      const c1 = aiKeyOk ? '✅' : '❌';
+      const c2 = hasTgAuth ? '✅' : '⚠️';
+      const c3 = hasWallet ? '✅' : '⚠️';
+      if (!aiKeyOk) checklistIssues.push(ru ? '❌ API ключ — агент не работает!' : '❌ API key — agent won\'t work!');
+      if (!hasTgAuth) checklistIssues.push(ru ? '⚠️ Telegram не подключён' : '⚠️ Telegram not connected');
+      if (!hasWallet) checklistIssues.push(ru ? '⚠️ Кошелёк не создан' : '⚠️ Wallet not created');
+
+      if (checklistIssues.length > 0) {
+        checklist = '\n\n' + (ru ? '📋 <b>Настройка:</b>' : '📋 <b>Setup:</b>') + '\n' +
+          `${c1} ${ru ? 'AI ключ' : 'AI Key'}  ${c2} Telegram  ${c3} ${ru ? 'Кошелёк' : 'Wallet'}\n` +
+          checklistIssues.join('\n');
+      }
+    }
+
     const text =
       `${statusIcon} <b>${name}</b>  #${a.id}\n` +
       `${div()}\n` +
@@ -9026,6 +9067,7 @@ async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
       `${roleEmoji} ${roleName} · Lv.${agentLevel} · ${agentXp} XP\n` +
       `[${levelBar}]\n` +
       (dateLabel ? `${pe('calendar')} ${lang === 'ru' ? 'Создан' : 'Created'}: <i>${dateLabel}</i>\n` : '') +
+      checklist +
       (hasError ? `\n⚠️ <b>${lang === 'ru' ? 'Последняя ошибка:' : 'Last error:'}</b>\n<code>${escHtml(lastErr!.error.slice(0, 120))}</code>` : '') +
       (desc ? `\n<i>${desc}</i>` : '');
 
