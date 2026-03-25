@@ -6197,7 +6197,7 @@ export async function executeTool(
     case 'dns_check': case 'dns_resolve': case 'dns_auctions': case 'dns_start_auction': case 'dns_bid': case 'dns_link': case 'dns_unlink': case 'dns_set_site':
     case 'verify_payment': {
       try {
-        const toolName = f.name;
+        const toolName = name;
         // STON.fi API
         if (toolName.startsWith('stonfi_')) {
           const base = 'https://api.ston.fi/v1';
@@ -6247,7 +6247,7 @@ export async function executeTool(
           if (toolName === 'dns_check') {
             const r = await fetch(`https://tonapi.io/v2/dns/${encodeURIComponent(domain)}.ton`);
             const d = await r.json();
-            return { available: !d.wallet, domain: domain + '.ton', wallet: d.wallet?.address };
+            return { available: !(d as any).wallet, domain: domain + '.ton', wallet: (d as any).wallet?.address };
           }
           if (toolName === 'dns_resolve') {
             const r = await fetch(`https://tonapi.io/v2/dns/${encodeURIComponent(domain)}.ton`);
@@ -6263,7 +6263,7 @@ export async function executeTool(
         if (toolName === 'verify_payment') {
           const r = await fetch(`https://tonapi.io/v2/blockchain/accounts/${encodeURIComponent(args.wallet)}/transactions?limit=20`);
           const data = await r.json();
-          const txs = data.transactions || [];
+          const txs = (data as any).transactions || [];
           for (const tx of txs) {
             const inMsg = tx.in_msg;
             if (!inMsg || inMsg.msg_type !== 'int_msg') continue;
@@ -6344,7 +6344,7 @@ export async function executeTool(
       try {
         const { logTrade, queryJournal, updateTrade } = await import('../services/journal');
         const agId = params.agentId || 0;
-        if (f.name === 'deal_propose') {
+        if (name === 'deal_propose') {
           const entry = await logTrade(agId, {
             type: 'deal', asset: `${args.offer} ↔ ${args.ask}`, direction: 'buy',
             amount: args.amount || 0, reasoning: `Deal with ${args.counterparty}: offer=${args.offer}, ask=${args.ask}`,
@@ -6353,20 +6353,20 @@ export async function executeTool(
           });
           return { ok: true, deal_id: entry.id, status: 'pending', expires: new Date(Date.now() + (args.expires_hours || 24) * 3600000).toISOString() };
         }
-        if (f.name === 'deal_verify') {
+        if (name === 'deal_verify') {
           const entry = await updateTrade(agId, args.deal_id, { status: 'closed', txHash: args.tx_hash, reasoning: 'Payment verified' });
           return entry ? { ok: true, deal: entry } : { error: 'Deal not found' };
         }
-        if (f.name === 'deal_status') {
+        if (name === 'deal_status') {
           const { queryTrade } = await import('../services/journal');
           const deal = await queryTrade(agId, args.deal_id);
           return deal ? { ok: true, deal } : { error: 'Deal not found' };
         }
-        if (f.name === 'deal_list') {
+        if (name === 'deal_list') {
           const entries = await queryJournal(agId, { type: 'deal', status: args.status, limit: args.limit || 20 });
           return { ok: true, count: entries.length, deals: entries };
         }
-        if (f.name === 'deal_cancel') {
+        if (name === 'deal_cancel') {
           const entry = await updateTrade(agId, args.deal_id, { status: 'cancelled', reasoning: args.reason || 'Cancelled' });
           return entry ? { ok: true } : { error: 'Deal not found' };
         }
@@ -10782,7 +10782,7 @@ If web_search returns nothing useful → say "не смог найти акту�
       try {
         const { appendDailyLog, summarizeMessages } = await import('../services/agent-memory');
         const transcript = messages.slice(1, -5).filter((m: any) => m.role !== 'system');
-        const summary = await summarizeMessages(transcript, ai, usedModel);
+        const summary = await summarizeMessages(transcript as any, ai, usedModel);
         if (summary) await appendDailyLog(params.agentId || 0, `[Auto-archive] ${transcript.length} msgs → ${summary}`);
       } catch {}
       // Aggressive compaction: keep only system + last 3 messages
@@ -10928,7 +10928,7 @@ If web_search returns nothing useful → say "не смог найти акту�
 
       // Phase 1: Normalize — Gemini returns arguments as object, not JSON string
       for (const tc of assistant.tool_calls) {
-        const fn = tc?.function;
+        const fn = (tc as any)?.function;
         if (!fn) continue;
         // Gemini quirk: arguments is already an object
         if (fn.arguments && typeof fn.arguments === 'object') {

@@ -3631,7 +3631,7 @@ export function startApiServer() {
     try {
       const cm = await import('./services/core-memory');
       const { content } = req.body;
-      await cm.updateBlock(Number(req.params.id), req.params.block, content || '');
+      await cm.updateBlock(Number(req.params.id), String(req.params.block), content || '');
       res.json({ ok: true });
     } catch (e: any) { res.json({ ok: false, error: e.message }); }
   });
@@ -3639,7 +3639,7 @@ export function startApiServer() {
   app.post('/api/agents/:id/core-memory/:block/append', requireAuth, async (req: Request, res: Response) => {
     try {
       const cm = await import('./services/core-memory');
-      await cm.appendToBlock(Number(req.params.id), req.params.block, req.body.content || '');
+      await cm.appendToBlock(Number(req.params.id), String(req.params.block), req.body.content || '');
       res.json({ ok: true });
     } catch (e: any) { res.json({ ok: false, error: e.message }); }
   });
@@ -3649,10 +3649,10 @@ export function startApiServer() {
       const cm = await import('./services/core-memory');
       const keyword = String(req.query.keyword || '');
       if (keyword) {
-        const found = await cm.deleteFromBlock(Number(req.params.id), req.params.block, keyword);
+        const found = await cm.deleteFromBlock(Number(req.params.id), String(req.params.block), keyword);
         res.json({ ok: true, found });
       } else {
-        await cm.updateBlock(Number(req.params.id), req.params.block, '');
+        await cm.updateBlock(Number(req.params.id), String(req.params.block), '');
         res.json({ ok: true });
       }
     } catch (e: any) { res.json({ ok: false, error: e.message }); }
@@ -3689,7 +3689,7 @@ export function startApiServer() {
     try {
       const own = await verifyAgentOwnership(req, res); if (!own) return;
       const j = await import('./services/journal');
-      const entry = await j.updateTrade(own.agentId, req.params.tradeId, req.body);
+      const entry = await j.updateTrade(own.agentId, String(req.params.tradeId), req.body);
       res.json({ ok: true, entry });
     } catch (e: any) { res.status(500).json({ ok: false, error: e.message }); }
   });
@@ -3722,7 +3722,7 @@ export function startApiServer() {
     try {
       const own = await verifyAgentOwnership(req, res); if (!own) return;
       const cp = await import('./services/chat-permissions');
-      await cp.resetChat(own.agentId, req.params.chatId);
+      await cp.resetChat(own.agentId, String(req.params.chatId));
       res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ ok: false, error: e.message }); }
   });
