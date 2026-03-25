@@ -4538,7 +4538,7 @@ async function ubCreateQuiz(client: TelegramClient, chatId: string, question: st
       peer, media: new Api.InputMediaPoll({
         poll,
         correctAnswers: [Buffer.from([correctOption])],
-        solution: explanation ? new Api.TextWithEntities({ text: explanation, entities: [] }) : undefined,
+        solution: explanation ? new (Api as any).TextWithEntities({ text: explanation, entities: [] }) as any : undefined,
       }), message: '', randomId: BigInt(Math.floor(Math.random() * 1e15)) as any,
     }));
     return { ok: true };
@@ -4742,7 +4742,7 @@ async function ubCheckChannelUsername(client: TelegramClient, chatId: string, us
 
 async function ubSearchGifs(client: TelegramClient, query: string, limit: number = 20) {
   try {
-    const result = await (client as any).invoke(new Api.messages.SearchGifs({ q: query, offset: 0 }));
+    const result = await (client as any).invoke(new (Api.messages as any).SearchGifs({ q: query, offset: 0 }));
     const gifs = (result.results || []).slice(0, limit).map((r: any) => ({
       id: r.document?.id?.toString(),
       type: r.type,
@@ -4764,10 +4764,9 @@ async function ubSetPersonalChannel(client: TelegramClient, channelId: string) {
 
 async function ubGetCollectibleInfo(client: TelegramClient, giftId: string) {
   try {
-    const result = await (client as any).invoke(new Api.payments.GetStarGiftWithdrawalUrl
-      ? new Api.payments.GetUniqueStarGift({ slug: giftId })
-      : { error: 'API not available' }
-    );
+    const GetUniqueStarGift = (Api.payments as any).GetUniqueStarGift;
+    if (!GetUniqueStarGift) return { error: 'API not available in this GramJS version' };
+    const result = await (client as any).invoke(new GetUniqueStarGift({ slug: giftId }));
     return { ok: true, gift: result };
   } catch (e: any) { return { error: e.message }; }
 }
@@ -4780,8 +4779,8 @@ async function ubGetUniqueGiftValue(client: TelegramClient, giftId: string) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query: `{ uniqueGift(slug: "${giftId}") { floorPrice lastSalePrice } }` }),
     });
-    const data = await resp.json();
-    return { ok: true, ...data?.data?.uniqueGift };
+    const data = await resp.json() as any;
+    return { ok: true, ...(data?.data?.uniqueGift || {}) };
   } catch (e: any) { return { error: e.message }; }
 }
 
