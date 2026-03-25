@@ -2213,7 +2213,13 @@ function switchSettingsTab(tab) {
         '<div class="rt-header-icon" style="background:rgba(139,92,246,0.12);color:#8b5cf6">' + IC.brain + '</div>' +
         '<div class="rt-header-text">' +
           '<h3>' + (isRu ? 'Память агента' : 'Agent Memory') + '</h3>' +
-          '<p>' + (isRu ? 'Долгосрочная память, ежедневные логи и поиск по всему контексту' : 'Long-term memory, daily logs and full-context search') + '</p>' +
+          '<p>' + (isRu ? 'Структурированная память, логи и поиск' : 'Structured memory, logs and search') + '</p>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + IC.brain + ' ' + (isRu ? 'Блоки памяти' : 'Core Memory Blocks') + '</div>' +
+        '<div id="core-memory-blocks" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">' +
+          '<div style="text-align:center;color:var(--text-muted);padding:1rem;grid-column:1/-1">' + (isRu ? 'Загрузка...' : 'Loading...') + '</div>' +
         '</div>' +
       '</div>' +
 
@@ -11170,7 +11176,53 @@ async function toggleContactProp(agentId, userId, prop, value) {
 // MEMORY TAB
 // ═══════════════════════════════════════════════════════════════════════════
 
+async function loadCoreMemoryBlocks() {
+  var container = document.getElementById('core-memory-blocks');
+  if (!container) return;
+  try {
+    var data = await apiRequest('GET', '/api/agents/' + _detailAgentId + '/core-memory');
+    var blocks = data.blocks || [];
+    if (blocks.length === 0) {
+      container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:1rem;grid-column:1/-1">' + (currentLang === 'ru' ? 'Нет данных' : 'No data') + '</div>';
+      return;
+    }
+    var isRu = currentLang === 'ru';
+    var blockIcons = { identity: IC.user, preferences: IC.wrench, lessons: IC.book, goals: IC.target, contacts: IC.users };
+    var blockColors = { identity: '#8b5cf6', preferences: '#f59e0b', lessons: '#10b981', goals: '#3b82f6', contacts: '#6366f1' };
+    var blockNames = { identity: isRu ? 'Личность' : 'Identity', preferences: isRu ? 'Предпочтения' : 'Preferences', lessons: isRu ? 'Уроки' : 'Lessons', goals: isRu ? 'Цели' : 'Goals', contacts: isRu ? 'Контакты' : 'Contacts' };
+    container.innerHTML = blocks.map(function(b) {
+      var pct = b.limit > 0 ? Math.round(b.used / b.limit * 100) : 0;
+      var barColor = pct > 80 ? '#ef4444' : pct > 50 ? '#f59e0b' : (blockColors[b.name] || '#8b5cf6');
+      return '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:10px;padding:14px;border-top:3px solid ' + (blockColors[b.name] || '#8b5cf6') + '">' +
+        '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">' +
+          '<span style="color:' + (blockColors[b.name] || '#8b5cf6') + '">' + (blockIcons[b.name] || IC.brain) + '</span>' +
+          '<span style="font-weight:600;font-size:.82rem">' + (blockNames[b.name] || b.name) + '</span>' +
+          '<span style="margin-left:auto;font-size:.6rem;color:var(--text-muted)">' + b.used + '/' + b.limit + '</span>' +
+        '</div>' +
+        '<div style="height:3px;background:var(--border);border-radius:2px;margin-bottom:8px">' +
+          '<div style="height:100%;width:' + pct + '%;background:' + barColor + ';border-radius:2px;transition:width 0.3s"></div>' +
+        '</div>' +
+        '<textarea class="st-textarea core-mem-block" data-block="' + b.name + '" style="min-height:80px;font-size:.75rem;resize:vertical" placeholder="' + (b.description || '') + '">' + escHtml(b.content) + '</textarea>' +
+        '<button onclick="saveCoreBlock(\'' + b.name + '\')" class="rt-save-btn" style="margin-top:6px;font-size:.7rem;padding:4px 12px">' + IC.check + ' ' + (isRu ? 'Сохранить' : 'Save') + '</button>' +
+      '</div>';
+    }).join('');
+  } catch(e) {
+    container.innerHTML = '<div style="color:#ef4444;padding:1rem;grid-column:1/-1">Error: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+async function saveCoreBlock(blockName) {
+  var textarea = document.querySelector('.core-mem-block[data-block="' + blockName + '"]');
+  if (!textarea) return;
+  try {
+    await apiRequest('PUT', '/api/agents/' + _detailAgentId + '/core-memory/' + blockName, { content: textarea.value });
+    toast(currentLang === 'ru' ? 'Блок сохранён' : 'Block saved', 'success');
+    loadCoreMemoryBlocks();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
 async function loadMemoryData() {
+  loadCoreMemoryBlocks();
   try {
     var data = await apiRequest('GET', '/api/agents/' + _detailAgentId + '/memory');
     var isRu = currentLang === 'ru';

@@ -258,16 +258,25 @@ export async function buildModularPrompt(params: {
     sections.push(`\u2501\u2501\u2501 OWNER PROFILE \u2501\u2501\u2501\n${userProfile}`);
   }
 
-  // 6. MEMORY (long-term, cap at 150 lines)
+  // 6. CORE MEMORY (structured blocks: identity/preferences/lessons/goals/contacts)
+  try {
+    const { getCoreMemoryForPrompt } = await import('../services/core-memory');
+    const coreMemory = await getCoreMemoryForPrompt(agentId);
+    if (coreMemory) {
+      sections.push(`## Core Memory\n\n${coreMemory}`);
+    }
+  } catch {}
+
+  // 6b. LEGACY MEMORY (unstructured blob, cap at 150 lines)
   const memory = modules[PROMPT_MODULES.MEMORY];
   if (memory) {
     const lines = memory.split('\n');
     if (lines.length > 150) {
       sections.push(
-        `\u2501\u2501\u2501 MEMORY \u2501\u2501\u2501\n${lines.slice(0, 150).join('\n')}\n[... truncated at 150 lines, oldest entries removed]`,
+        `## Persistent Memory\n${lines.slice(0, 150).join('\n')}\n[... truncated at 150 lines]`,
       );
     } else {
-      sections.push(`\u2501\u2501\u2501 MEMORY \u2501\u2501\u2501\n${memory}`);
+      sections.push(`## Persistent Memory\n${memory}`);
     }
   }
 
