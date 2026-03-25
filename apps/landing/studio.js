@@ -4401,8 +4401,9 @@ const pageLoadFns = {
   builder:     () => initFlowBuilder(),
   marketplace: () => loadMarketplace(),
   assistant:   () => loadAssistantPage(),
-  guide:       () => Promise.resolve(),
-  wallets:     () => loadWalletsPage(),
+  guide:         () => loadGuidePage(),
+  notifications: () => loadNotificationsPage(),
+  wallets:       () => loadWalletsPage(),
 };
 
 // Stub functions for pages that don't have dedicated load logic yet
@@ -8805,16 +8806,16 @@ async function loadNetworkMap() {
   _networkNodes = agents.map(function(a, i) {
     var role = a.role || 'worker';
     var level = a.level || 1;
-    var baseBoost = agents.length <= 3 ? 8 : 0; // bigger nodes when few agents
-    var radius = role === 'director' ? 30 + level + baseBoost : role === 'manager' ? 24 + level + baseBoost : role === 'specialist' ? 22 + level + baseBoost : role === 'monitor' ? 20 + level + baseBoost : 18 + Math.min(level, 5) + baseBoost;
+    var baseBoost = agents.length <= 3 ? 20 : agents.length <= 6 ? 12 : 6;
+    var radius = role === 'director' ? 40 + level * 2 + baseBoost : role === 'manager' ? 34 + level * 2 + baseBoost : role === 'specialist' ? 30 + level + baseBoost : role === 'monitor' ? 28 + level + baseBoost : 24 + Math.min(level, 5) + baseBoost;
     var trigCfg = {}; try { var _t2 = a.trigger_config || a.triggerConfig || {}; trigCfg = typeof _t2 === 'string' ? JSON.parse(_t2) : _t2; } catch(e) {}
     var customColor = (trigCfg.config && trigCfg.config.agentColor) || '';
-    var color = !a.isActive ? '#555' : (customColor || roleColors[role] || '#0098EA');
+    var color = !a.isActive ? '#6b7280' : (customColor || roleColors[role] || '#0098EA');
     var customRoleName = (trigCfg.config && trigCfg.config.customRole && trigCfg.config.customRole.name) || '';
     var roleLabel = customRoleName || roleLabels[role] || role.toUpperCase().slice(0, 4);
     var angle = (i / agents.length) * Math.PI * 2;
     // Larger spread for fewer agents so they're visible
-    var spreadRatio = agents.length <= 3 ? 0.35 : agents.length <= 6 ? 0.32 : 0.28;
+    var spreadRatio = agents.length <= 3 ? 0.38 : agents.length <= 6 ? 0.34 : 0.30;
     var spread = Math.min(W, H) * spreadRatio;
     return {
       id: a.id, name: a.name || 'Agent #' + a.id,
@@ -9198,28 +9199,29 @@ async function loadNetworkMap() {
         }
       }
 
-      // Outer glow (large soft)
-      var glow = ctx.createRadialGradient(n.x, n.y, r * 0.5, n.x, n.y, r * 2.5);
-      glow.addColorStop(0, n.color + '25');
+      // Outer glow (large, bright)
+      var glow = ctx.createRadialGradient(n.x, n.y, r * 0.3, n.x, n.y, r * 3);
+      glow.addColorStop(0, n.color + '60');
+      glow.addColorStop(0.5, n.color + '20');
       glow.addColorStop(1, n.color + '00');
       ctx.fillStyle = glow;
       ctx.beginPath();
-      ctx.arc(n.x, n.y, r * 2.5, 0, Math.PI * 2);
+      ctx.arc(n.x, n.y, r * 3, 0, Math.PI * 2);
       ctx.fill();
 
-      // Main node circle with gradient fill
+      // Main node circle — SOLID fill with bright gradient
       var nodeFill = ctx.createRadialGradient(n.x - r * 0.3, n.y - r * 0.3, 0, n.x, n.y, r);
-      nodeFill.addColorStop(0, n.color + '50');
-      nodeFill.addColorStop(0.7, n.color + '20');
-      nodeFill.addColorStop(1, n.color + '10');
+      nodeFill.addColorStop(0, n.color + 'dd');
+      nodeFill.addColorStop(0.6, n.color + '99');
+      nodeFill.addColorStop(1, n.color + '55');
       ctx.beginPath();
       ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
       ctx.fillStyle = nodeFill;
       ctx.fill();
 
-      // Border
-      ctx.strokeStyle = n.color + (matchesSearch && _networkSearchQuery ? 'ee' : 'aa');
-      ctx.lineWidth = matchesSearch && _networkSearchQuery ? 2.5 : 1.8;
+      // Border — bright and visible
+      ctx.strokeStyle = n.color + (matchesSearch && _networkSearchQuery ? 'ff' : 'dd');
+      ctx.lineWidth = matchesSearch && _networkSearchQuery ? 3 : 2.2;
       ctx.stroke();
 
       // Search highlight ring
@@ -11382,4 +11384,269 @@ async function deleteAgentTask(taskId) {
     await apiRequest('DELETE', '/api/agents/' + _detailAgentId + '/tasks/' + taskId);
     loadTasksData();
   } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// NOTIFICATIONS PAGE
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function loadNotificationsPage() {
+  var container = document.getElementById('page-notifications');
+  if (!container) return;
+  var isRu = currentLang === 'ru';
+
+  container.innerHTML =
+    '<div class="page-header">' +
+      '<h2 class="page-title">' +
+        '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> ' +
+        (isRu ? 'Уведомления' : 'Notifications') +
+      '</h2>' +
+      '<p class="page-subtitle">' + (isRu ? 'Алерты, проблемы и рекомендации для ваших агентов' : 'Alerts, issues and recommendations for your agents') + '</p>' +
+    '</div>' +
+    '<div class="notif-filters" style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">' +
+      '<button class="notif-filter active" data-filter="all" onclick="filterNotifications(\'all\')">' + (isRu ? 'Все' : 'All') + '</button>' +
+      '<button class="notif-filter" data-filter="error" onclick="filterNotifications(\'error\')">❌ ' + (isRu ? 'Ошибки' : 'Errors') + '</button>' +
+      '<button class="notif-filter" data-filter="warning" onclick="filterNotifications(\'warning\')">⚠️ ' + (isRu ? 'Предупреждения' : 'Warnings') + '</button>' +
+      '<button class="notif-filter" data-filter="success" onclick="filterNotifications(\'success\')">✅ ' + (isRu ? 'Успехи' : 'Successes') + '</button>' +
+      '<button class="notif-filter" data-filter="info" onclick="filterNotifications(\'info\')">ℹ️ ' + (isRu ? 'Инфо' : 'Info') + '</button>' +
+    '</div>' +
+    '<div id="notif-list" class="notif-list">' +
+      '<div class="notif-loading">' + (isRu ? 'Загрузка...' : 'Loading...') + '</div>' +
+    '</div>';
+
+  // Load notifications from all agents
+  try {
+    var data = await apiRequest('GET', '/api/agents');
+    var agents = (data.ok ? data.agents : []) || [];
+    var notifications = [];
+
+    for (var i = 0; i < agents.length; i++) {
+      var a = agents[i];
+      var cfg = {};
+      try { var _tc = a.trigger_config || a.triggerConfig || {}; cfg = typeof _tc === 'string' ? JSON.parse(_tc) : _tc; } catch(e) {}
+      var agentCfg = cfg.config || {};
+
+      // Check for issues
+      var hasApiKey = !!(agentCfg.AI_API_KEY || agentCfg.apiKey);
+      if (!hasApiKey && a.triggerType === 'ai_agent') {
+        notifications.push({
+          type: 'error', agent: a.name || 'Agent #' + a.id, agentId: a.id,
+          title: isRu ? 'API ключ не настроен' : 'API key not configured',
+          message: isRu ? 'Агент не может работать без AI ключа. Перейдите в настройки и добавьте ключ.' : 'Agent cannot work without an AI key. Go to settings and add one.',
+          action: 'agent_settings:' + a.id,
+          time: Date.now() - 3600000,
+        });
+      }
+
+      if (a.isActive && a.triggerType === 'ai_agent') {
+        notifications.push({
+          type: 'success', agent: a.name || 'Agent #' + a.id, agentId: a.id,
+          title: isRu ? 'Агент активен' : 'Agent active',
+          message: isRu ? 'Агент работает в штатном режиме.' : 'Agent is running normally.',
+          time: Date.now() - 300000,
+        });
+      }
+
+      if (!a.isActive && a.triggerType === 'ai_agent') {
+        notifications.push({
+          type: 'warning', agent: a.name || 'Agent #' + a.id, agentId: a.id,
+          title: isRu ? 'Агент приостановлен' : 'Agent paused',
+          message: isRu ? 'Агент не запущен. Запустите его в настройках.' : 'Agent is not running. Start it in settings.',
+          action: 'run_agent:' + a.id,
+          time: Date.now() - 1800000,
+        });
+      }
+    }
+
+    // Sort by time (newest first)
+    notifications.sort(function(a, b) { return b.time - a.time; });
+    window._studioNotifications = notifications;
+    renderNotifications(notifications);
+
+    // Update badge
+    var errorCount = notifications.filter(function(n) { return n.type === 'error'; }).length;
+    var badge = document.getElementById('nav-notif-badge');
+    if (badge) {
+      if (errorCount > 0) {
+        badge.style.display = 'inline-flex';
+        badge.textContent = errorCount;
+      } else {
+        badge.style.display = 'none';
+      }
+    }
+  } catch(e) {
+    var list = document.getElementById('notif-list');
+    if (list) list.innerHTML = '<div class="notif-empty">Error: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+function renderNotifications(notifications) {
+  var list = document.getElementById('notif-list');
+  if (!list) return;
+  var isRu = currentLang === 'ru';
+
+  if (!notifications.length) {
+    list.innerHTML = '<div class="notif-empty">' +
+      '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.5"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>' +
+      '<div style="margin-top:12px;font-size:.9rem;color:var(--text-muted)">' + (isRu ? 'Нет уведомлений' : 'No notifications') + '</div>' +
+    '</div>';
+    return;
+  }
+
+  var typeIcons = { error: '❌', warning: '⚠️', success: '✅', info: 'ℹ️' };
+  var typeColors = { error: '#ef4444', warning: '#f59e0b', success: '#10b981', info: '#3b82f6' };
+  var typeBgs = { error: 'rgba(239,68,68,0.08)', warning: 'rgba(245,158,11,0.08)', success: 'rgba(16,185,129,0.08)', info: 'rgba(59,130,246,0.08)' };
+
+  list.innerHTML = notifications.map(function(n, i) {
+    var ago = getTimeAgo(n.time);
+    var actionBtn = n.action
+      ? '<button class="notif-action-btn" onclick="handleNotifAction(\'' + n.action + '\')" style="border-color:' + typeColors[n.type] + ';color:' + typeColors[n.type] + '">' + (isRu ? 'Исправить' : 'Fix') + '</button>'
+      : '';
+    return '<div class="notif-card" data-type="' + n.type + '" style="border-left:3px solid ' + typeColors[n.type] + ';background:' + typeBgs[n.type] + ';animation:notifSlideIn 0.3s ease ' + (i * 0.05) + 's both">' +
+      '<div class="notif-card-header">' +
+        '<span class="notif-icon">' + typeIcons[n.type] + '</span>' +
+        '<span class="notif-title">' + escHtml(n.title) + '</span>' +
+        '<span class="notif-agent">' + escHtml(n.agent) + '</span>' +
+        '<span class="notif-time">' + ago + '</span>' +
+      '</div>' +
+      '<div class="notif-card-body">' + escHtml(n.message) + '</div>' +
+      (actionBtn ? '<div class="notif-card-actions">' + actionBtn + '</div>' : '') +
+    '</div>';
+  }).join('');
+}
+
+function filterNotifications(type) {
+  document.querySelectorAll('.notif-filter').forEach(function(b) {
+    b.classList.toggle('active', b.getAttribute('data-filter') === type);
+  });
+  var all = window._studioNotifications || [];
+  var filtered = type === 'all' ? all : all.filter(function(n) { return n.type === type; });
+  renderNotifications(filtered);
+}
+
+function handleNotifAction(action) {
+  if (action.startsWith('agent_settings:')) {
+    var id = parseInt(action.split(':')[1]);
+    openAgentDetail(id);
+    setTimeout(function() { switchSettingsTab('ai'); }, 300);
+  } else if (action.startsWith('run_agent:')) {
+    var id = parseInt(action.split(':')[1]);
+    apiRequest('POST', '/api/agents/' + id + '/run').then(function() {
+      toast(currentLang === 'ru' ? 'Агент запущен!' : 'Agent started!', 'success');
+      loadNotificationsPage();
+    }).catch(function(e) { toast('Error: ' + e.message, 'error'); });
+  }
+}
+
+function getTimeAgo(ts) {
+  var diff = Date.now() - ts;
+  var isRu = currentLang === 'ru';
+  if (diff < 60000) return isRu ? 'только что' : 'just now';
+  if (diff < 3600000) return Math.floor(diff / 60000) + (isRu ? ' мин назад' : 'm ago');
+  if (diff < 86400000) return Math.floor(diff / 3600000) + (isRu ? ' ч назад' : 'h ago');
+  return Math.floor(diff / 86400000) + (isRu ? ' д назад' : 'd ago');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GUIDE PAGE (Full-screen instructions)
+// ═══════════════════════════════════════════════════════════════════════════
+
+function loadGuidePage() {
+  var container = document.getElementById('page-guide');
+  if (!container) return;
+  var isRu = currentLang === 'ru';
+
+  container.innerHTML =
+    '<div class="guide-hero">' +
+      '<div class="guide-hero-glow"></div>' +
+      '<h1 class="guide-hero-title">' + (isRu ? 'Добро пожаловать в TON Agent Studio' : 'Welcome to TON Agent Studio') + '</h1>' +
+      '<p class="guide-hero-sub">' + (isRu ? 'Создавайте AI-агентов которые живут в Telegram как настоящие люди' : 'Create AI agents that live in Telegram like real people') + '</p>' +
+    '</div>' +
+
+    '<div class="guide-grid">' +
+
+      // Step 1
+      '<div class="guide-card" style="--delay:0.1s">' +
+        '<div class="guide-card-num">01</div>' +
+        '<div class="guide-card-icon" style="background:rgba(16,185,129,0.12);color:#10b981"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></div>' +
+        '<h3>' + (isRu ? 'Создайте агента' : 'Create an Agent') + '</h3>' +
+        '<p>' + (isRu
+          ? 'Опишите задачу текстом или голосом. AI сгенерирует системный промпт и подключит нужные инструменты из 77 доступных.'
+          : 'Describe the task in text or voice. AI generates a system prompt and connects the right tools from 77 available.') + '</p>' +
+        '<button class="guide-action-btn" onclick="navigateTo(\'builder\')">' + (isRu ? 'Открыть конструктор' : 'Open Constructor') + ' →</button>' +
+      '</div>' +
+
+      // Step 2
+      '<div class="guide-card" style="--delay:0.2s">' +
+        '<div class="guide-card-num">02</div>' +
+        '<div class="guide-card-icon" style="background:rgba(59,130,246,0.12);color:#3b82f6"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></div>' +
+        '<h3>' + (isRu ? 'Подключите Telegram' : 'Connect Telegram') + '</h3>' +
+        '<p>' + (isRu
+          ? 'Авторизуйте аккаунт через QR-код. Агент будет работать как полноценный пользователь — не бот.'
+          : 'Authorize via QR code. The agent works as a real user — not a bot.') + '</p>' +
+        '<button class="guide-action-btn" onclick="navigateTo(\'connectors\')">' + (isRu ? 'Настроить подключение' : 'Set up connection') + ' →</button>' +
+      '</div>' +
+
+      // Step 3
+      '<div class="guide-card" style="--delay:0.3s">' +
+        '<div class="guide-card-num">03</div>' +
+        '<div class="guide-card-icon" style="background:rgba(139,92,246,0.12);color:#8b5cf6"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4"/></svg></div>' +
+        '<h3>' + (isRu ? 'Настройте поведение' : 'Configure Behavior') + '</h3>' +
+        '<p>' + (isRu
+          ? 'Душа, безопасность, стратегия, расписание — 25 табов настроек для полного контроля.'
+          : 'Soul, security, strategy, schedule — 25 settings tabs for complete control.') + '</p>' +
+        '<button class="guide-action-btn" onclick="navigateTo(\'operations\')">' + (isRu ? 'Мои агенты' : 'My Agents') + ' →</button>' +
+      '</div>' +
+
+      // Step 4
+      '<div class="guide-card" style="--delay:0.4s">' +
+        '<div class="guide-card-num">04</div>' +
+        '<div class="guide-card-icon" style="background:rgba(245,158,11,0.12);color:#f59e0b"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>' +
+        '<h3>' + (isRu ? 'Запустите!' : 'Launch!') + '</h3>' +
+        '<p>' + (isRu
+          ? 'Агент начнёт работать 24/7 — отвечать в чатах, торговать, модерировать, мониторить и уведомлять.'
+          : 'The agent works 24/7 — replying in chats, trading, moderating, monitoring and notifying.') + '</p>' +
+        '<button class="guide-action-btn" onclick="navigateTo(\'network\')">' + (isRu ? 'Сеть агентов' : 'Agent Network') + ' →</button>' +
+      '</div>' +
+
+    '</div>' +
+
+    // Features grid
+    '<h2 class="guide-section-title">' + (isRu ? '77 инструментов в 10 категориях' : '77 tools in 10 categories') + '</h2>' +
+    '<div class="guide-features">' +
+      guideFeature('💬', isRu ? 'Сообщения' : 'Messages', isRu ? 'Отправка, ответы, пересылка, реакции, поиск, форматирование' : 'Send, reply, forward, react, search, format'),
+      guideFeature('📸', isRu ? 'Медиа' : 'Media', isRu ? 'Фото, голосовые, файлы, стикеры, GIF' : 'Photos, voice, files, stickers, GIFs'),
+      guideFeature('🛡', isRu ? 'Модерация' : 'Moderation', isRu ? 'Кик, бан, мьют, закрепить, опросы, инвайты' : 'Kick, ban, mute, pin, polls, invites'),
+      guideFeature('💎', isRu ? 'TON DeFi' : 'TON DeFi', isRu ? 'Баланс, свопы DeDust/STON.fi, жетоны, NFT' : 'Balance, swaps DeDust/STON.fi, jettons, NFTs'),
+      guideFeature('🎁', isRu ? 'Подарки' : 'Gifts', isRu ? 'Каталог, арбитраж, покупка, продажа, аналитика' : 'Catalog, arbitrage, buy, sell, analytics'),
+      guideFeature('🧠', isRu ? 'Память' : 'Memory', isRu ? 'Долгосрочная, ежедневные логи, поиск, компактинг' : 'Long-term, daily logs, search, compaction'),
+      guideFeature('👤', isRu ? 'Профиль' : 'Profile', isRu ? 'Аватарка, имя, био, stories' : 'Avatar, name, bio, stories'),
+      guideFeature('🌐', isRu ? 'Веб' : 'Web', isRu ? 'Поиск, загрузка страниц, HTTP запросы' : 'Search, fetch pages, HTTP requests'),
+      guideFeature('💰', isRu ? 'Кошелёк' : 'Wallet', isRu ? 'Отправка TON/жетонов, лимиты, atomic lock' : 'Send TON/jettons, limits, atomic lock'),
+      guideFeature('⏰', isRu ? 'Планирование' : 'Planning', isRu ? 'Расписание, задачи, уведомления, пробуждение' : 'Schedule, tasks, notifications, wake-up'),
+    '</div>' +
+
+    // FAQ
+    '<h2 class="guide-section-title">FAQ</h2>' +
+    '<div class="guide-faq">' +
+      guideFaq(isRu ? 'Чем отличается от обычного бота?' : 'How is this different from a regular bot?',
+        isRu ? 'Наш агент — полноценный Telegram-аккаунт через MTProto. Он выглядит как человек, ставит реакции, меняет аватарку, пишет stories. Обычный бот этого не может.' : 'Our agent is a full Telegram account via MTProto. It looks like a human, sets reactions, changes avatar, posts stories. Regular bots can\'t do this.') +
+      guideFaq(isRu ? 'Это безопасно?' : 'Is it safe?',
+        isRu ? 'Atomic lock на финансовые операции, дневные лимиты, sandbox для кода, защита от prompt injection, блоклист, tool scope — какие инструменты доступны в группах vs в личке.' : 'Atomic lock on financial ops, daily limits, code sandbox, prompt injection protection, blocklist, tool scope — which tools are available in groups vs DMs.') +
+      guideFaq(isRu ? 'Какие AI-провайдеры поддерживаются?' : 'Which AI providers are supported?',
+        isRu ? 'Gemini, Claude, GPT, Groq, DeepSeek, OpenRouter, Together — 7 провайдеров. Агент сам выбирает нужные инструменты через Tool RAG.' : 'Gemini, Claude, GPT, Groq, DeepSeek, OpenRouter, Together — 7 providers. Agent auto-selects tools via Tool RAG.') +
+      guideFaq(isRu ? 'Сколько стоит?' : 'How much does it cost?',
+        isRu ? 'Активация агента 5 TON. PRO подписка от $19/мес. Маркетплейс шаблонов с комиссией 30%.' : 'Agent activation 5 TON. PRO subscription from $19/mo. Template marketplace with 30% commission.') +
+    '</div>';
+}
+
+function guideFeature(emoji, title, desc) {
+  return '<div class="guide-feature">' +
+    '<span class="guide-feature-emoji">' + emoji + '</span>' +
+    '<div><b>' + title + '</b><br><span style="color:var(--text-muted);font-size:.78rem">' + desc + '</span></div>' +
+  '</div>';
+}
+
+function guideFaq(q, a) {
+  return '<details class="guide-faq-item"><summary>' + escHtml(q) + '</summary><p>' + escHtml(a) + '</p></details>';
 }
