@@ -904,6 +904,16 @@ setInterval(() => {
 
 // Per-chat serial processing queue with backpressure (max 10 concurrent chats)
 const _chatQueue = new ChatProcessingQueue(10);
+
+// Per-agent priority queue — processes messages sequentially with priority ordering
+interface QueueItem {
+  chatKey: string;
+  msg: TgInboxMessage;
+  cfg: AgentMessageConfig;
+  priority: number; // 0=owner, 1=DM, 2=group
+  enqueuedAt: number;
+}
+const _agentQueues = new Map<number, { queue: QueueItem[]; processing: boolean }>();
 // Global send rate limiter (25 msg/sec, 20 per group/min)
 const _sendLimiter = new SendRateLimiter(25, 20);
 
@@ -2243,27 +2253,102 @@ class UserbotManager {
     }
   }
 
-  /** Dispatch a message — serialized per agent+chat via ChatProcessingQueue. */
+  /**
+   * Dispatch a message — priority queue per agent.
+   * Owner messages → priority 0 (first), group users → priority 2 (last).
+   * Stale messages (>60s old) are dropped.
+   * Per-agent concurrency: 1 at a time, max 20 queued per agent.
+   * Timeout: 90s per message processing.
+   */
   private dispatchToAgent(agentId: number, msg: TgInboxMessage, cfg: AgentMessageConfig): void {
     const chatKey = `${agentId}:${msg.chatId}`;
-    console.log(`[UserbotMgr] 🚀 Dispatching to agent#${agentId} chat=${msg.chatId}`);
-    _chatQueue.enqueue(chatKey, async () => {
+    const isOwner = msg.senderId && String(msg.senderId) === String(cfg.userId);
+    const priority = isOwner ? 0 : msg.isGroup ? 2 : 1; // owner=0, DM=1, group=2
+
+    // Drop stale messages (>60s old)
+    const msgAge = Date.now() - (msg.date ? msg.date * 1000 : Date.now());
+    if (msgAge > 60_000) {
+      console.log(`[UserbotMgr] ⏳ Dropping stale msg agent#${agentId} chat=${msg.chatId} age=${Math.round(msgAge / 1000)}s`);
+      return;
+    }
+
+    // Get or create per-agent queue
+    let agentQ = _agentQueues.get(agentId);
+    if (!agentQ) {
+      agentQ = { queue: [], processing: false };
+      _agentQueues.set(agentId, agentQ);
+    }
+
+    // Backpressure: drop if queue too long (keep owner messages always)
+    if (agentQ.queue.length >= 20 && !isOwner) {
+      console.warn(`[UserbotMgr] ⚠️ Queue full for agent#${agentId} (${agentQ.queue.length}), dropping msg from chat=${msg.chatId}`);
+      return;
+    }
+
+    console.log(`[UserbotMgr] 🚀 Dispatching to agent#${agentId} chat=${msg.chatId} prio=${priority} queued=${agentQ.queue.length}`);
+
+    // Insert into priority queue (lower number = higher priority)
+    const item = { chatKey, msg, cfg, priority, enqueuedAt: Date.now() };
+    let inserted = false;
+    for (let i = 0; i < agentQ.queue.length; i++) {
+      if (priority < agentQ.queue[i].priority) {
+        agentQ.queue.splice(i, 0, item);
+        inserted = true;
+        break;
+      }
+    }
+    if (!inserted) agentQ.queue.push(item);
+
+    // Start processing if not already running
+    this._processAgentQueue(agentId);
+  }
+
+  /** Process agent queue sequentially — one message at a time per agent */
+  private async _processAgentQueue(agentId: number): Promise<void> {
+    const agentQ = _agentQueues.get(agentId);
+    if (!agentQ || agentQ.processing) return;
+    agentQ.processing = true;
+
+    while (agentQ.queue.length > 0) {
+      const item = agentQ.queue.shift()!;
+
+      // Skip if waited too long in queue (>45s)
+      const waitTime = Date.now() - item.enqueuedAt;
+      if (waitTime > 45_000) {
+        console.log(`[UserbotMgr] ⏳ Skipping queued msg agent#${agentId} chat=${item.msg.chatId} waited=${Math.round(waitTime / 1000)}s`);
+        continue;
+      }
+
       try {
-        // Auto-typing: show "typing..." indicator while AI processes
+        // Auto-typing indicator
         try {
           const ac = this.clients.get(agentId) || Array.from(this.accountClients.values())[0];
           if (ac?.client?.connected) {
             await ac.client.invoke(new Api.messages.SetTyping({
-              peer: await ac.client.getInputEntity(msg.chatId as any),
+              peer: await ac.client.getInputEntity(item.msg.chatId as any),
               action: new Api.SendMessageTypingAction(),
             }));
           }
         } catch {}
-        await this.processTgInboxMessage(agentId, msg, cfg);
+
+        // Process with timeout (90s max)
+        await Promise.race([
+          this.processTgInboxMessage(agentId, item.msg, item.cfg),
+          new Promise<void>((_, reject) => setTimeout(() => reject(new Error('TIMEOUT_90s')), 90_000)),
+        ]);
       } catch (procErr: any) {
-        console.error(`[UserbotMgr] ❌ processTgInboxMessage CRASHED:`, procErr.message, procErr.stack?.slice(0, 500));
+        const errMsg = procErr.message || '';
+        if (errMsg.includes('TIMEOUT_90s')) {
+          console.error(`[UserbotMgr] ⏰ TIMEOUT processing agent#${agentId} chat=${item.msg.chatId} — moving to next`);
+        } else {
+          console.error(`[UserbotMgr] ❌ processTgInboxMessage CRASHED:`, errMsg, procErr.stack?.slice(0, 300));
+        }
       }
-    });
+    }
+
+    agentQ.processing = false;
+    // Cleanup empty queues
+    if (agentQ.queue.length === 0) _agentQueues.delete(agentId);
   }
 
   /** Disable message listener */
@@ -4488,11 +4573,15 @@ async function ubGetFolders(client: TelegramClient) {
 
 async function ubCreateFolder(client: TelegramClient, title: string, includeChats?: string[], excludeChats?: string[]) {
   try {
-    const includePeers = [];
+    const includePeers: any[] = [];
     for (const c of (includeChats || [])) {
       try { includePeers.push(await client.getInputEntity(c)); } catch {}
     }
-    const excludePeers = [];
+    // Telegram requires at least 1 chat in includePeers
+    if (includePeers.length === 0) {
+      return { error: 'Папка не может быть пустой. Укажи include_chats — массив ID чатов которые нужно добавить в папку. Используй tg_get_dialogs чтобы найти нужные чаты, или спроси у пользователя какие чаты добавить.' };
+    }
+    const excludePeers: any[] = [];
     for (const c of (excludeChats || [])) {
       try { excludePeers.push(await client.getInputEntity(c)); } catch {}
     }
