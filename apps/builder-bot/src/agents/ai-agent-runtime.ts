@@ -789,6 +789,7 @@ const DAILY_SPEND_LIMIT_TON = 500;   // Default daily spend cap per agent (in TO
 // ── Notify-called flag per active tick (agentId → bool) ────────────────────
 // Used to suppress duplicate sends when AI calls notify() AND produces finalContent
 const _tickNotifyFlag = new Map<number, boolean>();
+const _notifyRateLimit = new Map<string, number[]>();
 
 // ── Agent metadata cache (60s TTL) ──────────────────────────────────────────
 interface CachedAgentMeta {
@@ -6878,6 +6879,17 @@ export async function executeTool(
 
     case 'notify': {
       const msg = String(args.message || '');
+
+      // Rate limit: max 3 notifies per 10 min per agent
+      const notifyKey = `notify:${params.agentId}`;
+      const notifyTimes = (_notifyRateLimit.get(notifyKey) || []).filter((t: number) => Date.now() - t < 600_000);
+      if (notifyTimes.length >= 3) {
+        console.warn(`[AI runtime] Agent #${params.agentId} notify rate limited (${notifyTimes.length}/3 per 10min)`);
+        return { ok: false, error: 'Rate limited: max 3 notifications per 10 minutes. Use set_state to store data instead of spamming notify.' };
+      }
+      notifyTimes.push(Date.now());
+      _notifyRateLimit.set(notifyKey, notifyTimes);
+
       _tickNotifyFlag.set(params.agentId, true); // mark: notify was called in this tick
       // Use notifyRich for markdown rendering; fallback to plain text
       await notifyRich(params.userId, {
