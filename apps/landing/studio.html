@@ -158,6 +158,11 @@
                 <span data-en="Activity" data-ru="Активность">Activity</span>
                 <span class="status-pulse"></span>
               </a>
+              <a href="#" class="nav-item" data-page="notifications" onclick="navigateTo('notifications')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                <span data-en="Notifications" data-ru="Уведомления">Notifications</span>
+                <span class="nav-badge alert" id="nav-notif-badge" style="display:none">0</span>
+              </a>
             </div>
 
             <div class="nav-section nav-section-collapsible" id="nav-configure">
@@ -1903,6 +1908,10 @@
       </div>
 
       <!-- Guide Page -->
+      <div id="notifications-page" class="page">
+        <div class="page-content" id="page-notifications"></div>
+      </div>
+
       <div id="guide-page" class="page">
         <div class="page-header">
           <h1 class="page-title" data-en="Platform Guide" data-ru="Руководство">Platform Guide</h1>
