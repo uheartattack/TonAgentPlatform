@@ -334,8 +334,8 @@ export class MessageBatchDebouncer<T> {
 // Prevents bot-to-bot conversation loops and excessive self-responses.
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const LOOP_WINDOW_MS = 120_000;  // 2 min window
-const LOOP_MAX_RESPONSES = 4;    // max responses per agent per chat per window
+const LOOP_WINDOW_MS = 300_000;  // 5 min window
+const LOOP_MAX_RESPONSES = 8;    // max responses per agent per chat per window
 
 const _loopTracker = new Map<string, number[]>();
 
