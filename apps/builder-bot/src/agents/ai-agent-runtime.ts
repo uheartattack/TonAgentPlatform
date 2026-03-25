@@ -10888,20 +10888,41 @@ If web_search returns nothing useful → say "не смог найти акту�
       continue; // retry same iteration with fewer tools
     }
 
-    // ── Handle MALFORMED tool_calls (invalid JSON, unknown names) ──
+    // ── Normalize + filter MALFORMED tool_calls ──
     if (assistant.tool_calls && assistant.tool_calls.length > 0) {
       const validToolNames = new Set(tools.map((t: any) => t.function?.name));
-      const hasMalformed = assistant.tool_calls.some((tc: any) => {
+
+      // Phase 1: Normalize — Gemini returns arguments as object, not JSON string
+      for (const tc of assistant.tool_calls) {
         const fn = tc?.function;
-        if (!fn?.name) return true;
-        if (!validToolNames.has(fn.name)) return true;
-        try { JSON.parse(fn.arguments || '{}'); return false; }
-        catch { return true; }
+        if (!fn) continue;
+        // Gemini quirk: arguments is already an object
+        if (fn.arguments && typeof fn.arguments === 'object') {
+          fn.arguments = JSON.stringify(fn.arguments);
+        }
+        // Missing arguments → empty object
+        if (!fn.arguments) fn.arguments = '{}';
+      }
+
+      // Phase 2: Filter out truly broken calls, keep valid ones
+      const validCalls = assistant.tool_calls.filter((tc: any) => {
+        const fn = tc?.function;
+        if (!fn?.name) return false;
+        if (!validToolNames.has(fn.name)) {
+          console.warn(`[AI runtime] Agent #${params.agentId} unknown tool "${fn.name}" — skipping`);
+          return false;
+        }
+        try { JSON.parse(fn.arguments || '{}'); return true; }
+        catch {
+          console.warn(`[AI runtime] Agent #${params.agentId} bad JSON in "${fn.name}" args — skipping`);
+          return false;
+        }
       });
-      if (hasMalformed) {
-        console.warn(`[AI runtime] Agent #${params.agentId} MALFORMED tool_calls detected, retrying without tools`);
-        await logToDb(params.agentId, 'warn', `[AI run] MALFORMED_FUNCTION_CALL — retrying as plain text`, params.userId);
-        // Retry same iteration without tools
+
+      // If ALL calls were bad → fallback to plain text
+      if (validCalls.length === 0 && assistant.tool_calls.length > 0) {
+        console.warn(`[AI runtime] Agent #${params.agentId} ALL ${assistant.tool_calls.length} tool_calls malformed, falling back to plain text`);
+        await logToDb(params.agentId, 'warn', `[AI run] ALL_CALLS_MALFORMED (${assistant.tool_calls.length}) — fallback`, params.userId);
         try {
           const fallback = await ai.chat.completions.create({
             model: (params.config.AI_MODEL as string) || process.env.AI_MODEL || defaultModel,
@@ -10909,15 +10930,15 @@ If web_search returns nothing useful → say "не смог найти акту�
             max_tokens: 2048,
           });
           const fbMsg = fallback.choices[0]?.message;
-          if (fbMsg) {
-            messages.push(fbMsg);
-            finalContent = fbMsg.content || undefined;
-          }
+          if (fbMsg) { messages.push(fbMsg); finalContent = fbMsg.content || undefined; }
         } catch (fbErr: any) {
           console.error(`[AI runtime] Agent #${params.agentId} fallback also failed: ${fbErr.message}`);
         }
         break;
       }
+
+      // Replace with only valid calls
+      assistant.tool_calls = validCalls;
     }
 
     messages.push(assistant);
