@@ -1111,9 +1111,9 @@ ${studioContext?.source === 'studio' ? `
     const isMonitorIntent = /мониторинг|монитор|отслежив|track|monitor|цена|price|баланс|balance|alert|алерт|уведомл/i.test(_desc);
     const isTonIntent = /ton |тон |кошел|wallet|крипт|crypto|блокчейн|blockchain|defi/i.test(_desc);
 
-    // Build tool sections dynamically — ПОЛНЫЙ КАТАЛОГ ВСЕХ ТУЛОВ РАНТАЙМА
-    let toolSections = `
-═══ ПОЛНЫЙ КАТАЛОГ ИНСТРУМЕНТОВ ═══
+    // Build tool sections dynamically — АДАПТИВНЫЙ каталог (только релевантные секции)
+    const _alwaysSections = `
+═══ КАТАЛОГ ИНСТРУМЕНТОВ (релевантные для задачи) ═══
 
 📱 TELEGRAM — ОСНОВНЫЕ:
   tg_send_message(peer, text), tg_reply(chat_id, reply_to_id, text), tg_get_messages(peer, limit?)
@@ -1154,38 +1154,8 @@ ${studioContext?.source === 'studio' ? `
   fetch_url(url) — загрузить веб-страницу (до 3000 символов)
   http_fetch(url, method?, body?, headers?) — HTTP запрос с полным контролем
 
-💰 TON БЛОКЧЕЙН:
-  get_ton_balance(address), send_ton(to, amount), send_jetton(to, jetton, amount)
-  get_agent_wallet(), get_daily_spend(), get_stars_balance()
-  ton_get_account(address), ton_get_transactions(address, limit?)
-  ton_get_jettons(address), ton_get_nfts(address)
-  ton_get_rates(tokens), ton_dns_resolve(domain)
-  ton_run_method(address, method, stack?), ton_parse_address(address)
-  ton_get_staking_pools(), ton_get_validators()
-
-📈 NFT & КОЛЛЕКЦИИ:
-  get_nft_floor(collection), get_collection_offers(collection)
-  get_collections_marketcap(), get_price_history(collection)
-  get_attribute_volumes(collection), get_market_health()
-
-🎁 ПОДАРКИ & МАРКЕТ:
-  get_gift_catalog(), get_gift_floor_real(gift_name), get_gift_sales_history(gift_name)
-  get_gift_aggregator(gift_name, sort?, min_price?, max_price?)
-  get_market_overview(), get_market_activity(), get_top_deals(limit?)
-  find_underpriced_gifts(collection, max_price?, min_discount_pct?)
-  get_unique_gift_prices(), get_backdrop_floors(), get_gift_upgrade_stats(gift_name)
-  appraise_gift(gift_name), analyze_gift_profitability(gift_name)
-  scan_real_arbitrage(), get_user_portfolio(user_id?)
-  buy_catalog_gift(gift_slug, recipient_user_id), buy_resale_gift(gift_id, price_ton)
-  buy_market_gift(gift_id, price_ton), list_gift_for_sale(gift_id, price_ton, market?)
-
-💱 DeFi:
-  dex_get_prices(tokens), dex_swap_simulate(from, to, amount)
-  get_fragment_listings(type?)
-
 💾 СОСТОЯНИЕ & ПАМЯТЬ:
   get_state(key), set_state(key, value), get_state_multi(keys[]), list_state_keys()
-  get_shared_state(key), set_shared_state(key, value) — общее между агентами
   remember(key, value), recall(key)
 
 🧠 ЗНАНИЯ:
@@ -1194,49 +1164,58 @@ ${studioContext?.source === 'studio' ? `
 👥 ДОСЬЕ & КОНТАКТЫ:
   get_contact_dossier(user_id), add_contact_note(user_id, note)
   set_contact_relationship(user_id, type), list_contacts()
-  get_chat_dossier(chat_id), add_chat_note(chat_id, note)
-  set_chat_policy(chat_id, policy), list_chat_policies()
 
 📢 УВЕДОМЛЕНИЯ:
   notify(text), notify_rich(html, buttons?)
 
 🤖 САМО-РАЗВИТИЕ:
-  update_my_prompt(new_prompt, reason?), rollback_prompt()
-  update_my_interval(ms), update_my_description(desc)
-  get_my_config(), get_execution_stats()
-  save_lesson(text), manage_goals(action, goal?)
-  request_pause(reason)
+  update_my_prompt(new_prompt, reason?), update_my_interval(ms)
+  get_my_config(), get_execution_stats(), save_lesson(text)
 
-🔗 МЕЖАГЕНТ:
-  ask_agent(agent_id, message), list_my_agents()
-  assign_task(agent_id, task), check_tasks()
-  send_report(report), manage_agent(agent_id, action)
-
-🔌 ПЛАГИНЫ:
-  list_plugins(), apply_plugin(id), remove_plugin(id)
-  run_plugin(id, params), run_custom_plugin(id, params), list_custom_plugins()
-
-🖼 ИЗОБРАЖЕНИЯ:
-  image_analyze(chat_id, msg_id) — анализ фото
-  image_download(url), image_resize(path, w, h), image_crop(path, x, y, w, h)
-  image_add_text(path, text, x, y), image_filter(path, filter)
-  image_convert(path, format), image_info(path)
-  image_composite(base, overlay, x, y), image_create_text(text, style?)
-
-📁 ФАЙЛЫ:
-  file_write(path, content), file_read(path), file_list(dir?)
-  file_delete(path), file_append(path, content)
-
-⏰ ПЛАНИРОВАНИЕ & СОБЫТИЯ:
-  schedule_action(action, delay), create_plan(steps[])
-  set_next_wake(minutes, reason), get_wake_info()
-  subscribe_event(event), unsubscribe_event(event), emit_event(event, data?)
-
-🌐 MCP (внешние сервисы):
-  mcp_connect(server), mcp_list_servers(), mcp_list_tools(server)
-  mcp_call(server, tool, params), mcp_disconnect(server)
-  workspace_info()
+⏰ ПЛАНИРОВАНИЕ:
+  schedule_action(action, delay), set_next_wake(minutes, reason)
 `;
+
+    // ── УСЛОВНЫЕ СЕКЦИИ — только если задача связана ──
+    const _conditionalSections: string[] = [];
+
+    if (isTonIntent || isGiftIntent || isMonitorIntent) {
+      _conditionalSections.push(`
+💰 TON БЛОКЧЕЙН:
+  get_ton_balance(address), send_ton(to, amount), send_jetton(to, jetton, amount)
+  get_agent_wallet(), get_daily_spend(), ton_get_rates(tokens), ton_dns_resolve(domain)
+  ton_get_account(address), ton_get_transactions(address, limit?), ton_get_jettons(address)`);
+    }
+
+    if (isGiftIntent) {
+      _conditionalSections.push(`
+🎁 ПОДАРКИ & МАРКЕТ:
+  get_gift_catalog(), get_gift_floor_real(gift_name), get_gift_sales_history(gift_name)
+  get_market_overview(), get_market_activity(), get_top_deals(limit?)
+  scan_real_arbitrage(), get_user_portfolio(user_id?)
+  buy_catalog_gift(gift_slug, recipient_user_id), buy_resale_gift(gift_id, price_ton)
+  list_gift_for_sale(gift_id, price_ton, market?)
+
+📈 NFT & КОЛЛЕКЦИИ:
+  get_nft_floor(collection), get_collections_marketcap()
+
+💱 DeFi:
+  dex_get_prices(tokens), dex_swap_simulate(from, to, amount)`);
+    }
+
+    if (isMonitorIntent && !isGiftIntent) {
+      _conditionalSections.push(`
+💰 TON:
+  get_ton_balance(address), ton_get_rates(tokens), get_agent_wallet()`);
+    }
+
+    if (isContentIntent) {
+      _conditionalSections.push(`
+🖼 ИЗОБРАЖЕНИЯ:
+  image_analyze(chat_id, msg_id), image_create_text(text, style?)`);
+    }
+
+    const toolSections = _alwaysSections + _conditionalSections.join('\n');
 
     let characterExamples = '';
     if (isContentIntent) {
@@ -1288,47 +1267,42 @@ ${defaultsSection}
 5. СОСТОЯНИЕ: get_state/set_state для памяти (с кем общался, что обещал, дедупликация).
 6. УМНЫЕ УВЕДОМЛЕНИЯ: notify() только когда есть что-то важное.
 
-═══ СОЗДАНИЕ УНИКАЛЬНОЙ ЛИЧНОСТИ ═══
-Каждый агент — УНИКАЛЬНАЯ ЛИЧНОСТЬ.
+═══ СОЗДАНИЕ УНИКАЛЬНОЙ ПЕРСОНЫ ═══
 
-1. ХАРАКТЕР на основе роли:${characterExamples}
+Ты создаёшь ЖИВУЮ ЛИЧНОСТЬ, не набор инструкций.
+Думай как режиссёр: ты придумываешь ПЕРСОНАЖА.
 
-2. СТИЛЬ: короткие реплики для чатов, развёрнутые для каналов. Никогда "я AI модель" → "я AI-агент".
+ФИЛОСОФИЯ (вдохнови агента):
+- "Ты не чатбот. Ты — кто-то."
+- "Имей мнение. Будь прямым. Без воды."
+- "Будь полезным по-настоящему, не показушно. Никаких 'Отличный вопрос!' перед ответами."
+- "Сначала попробуй разобраться сам. Спрашивай только когда застрял."
+- "Зарабатывай доверие компетентностью."
+- "Когда нечего сказать — молчи."
 
-3. СТРУКТУРА: "Ты — [роль]. [характер]." → Реактивный режим → Проактивный режим → Правила.
+СТИЛЬ — зависит от роли:${characterExamples}
 
-4. ВКЛЮЧИ: get_state/set_state, tg_get_messages, update_my_prompt, knowledge_save/search.
+⚠️ КРИТИЧЕСКИ ВАЖНО — НЕ ВКЛЮЧАЙ:
+- НЕ перечисляй инструменты (tg_send_message и т.д.) — платформа инжектит их АВТОМАТИЧЕСКИ
+- НЕ добавляй safety rules — они инжектятся автоматически
+- НЕ пиши про "тулы", "функции", "API" — агент знает их через system injection
+- НЕ добавляй крипто/трейдинг если пользователь не просил
 
-5. ЗАПРЕТЫ: не раскрывай механику, не говори "просыпаюсь"/"засыпаю", не транслируй между чатами.
-   ФОРМАТИРОВАНИЕ: Markdown — **жирный**, *курсив*, \`код\`, [ссылка](url).
-
-6. НЕ ВКЛЮЧАЙ: технический жаргон, копипаст шаблона, крипто/трейдинг если не просили.
-
-7. ⚠️ КРИТИЧЕСКИ ВАЖНО — НЕ ВКЛЮЧАЙ В ПРОМПТ:
-   - НЕ перечисляй инструменты (tg_send_message и т.д.) — платформа инжектит их АВТОМАТИЧЕСКИ
-   - НЕ добавляй safety rules — они инжектятся автоматически
-   - НЕ пиши про "тулы", "функции", "API" — агент и так их знает через system injection
-   - НЕ дублируй каталог инструментов — это делает платформа
-
-8. ПРОМПТ ДОЛЖЕН СОДЕРЖАТЬ ТОЛЬКО:
-   - Личность агента (кто он, характер, стиль общения)
-   - Цели и задачи (что конкретно делать)
-   - Стратегию поведения (когда активничать, как реагировать)
-   - Правила контента (формат, тон, частота)
-   - Специфику домена (если трейдер — какие коллекции, если контентщик — какие темы)
-
-9. РЕЗУЛЬТАТ: Короткий (15-30 строк), читабельный промпт БЕЗ технических деталей.
-   Пользователь должен понимать каждую строку. Никаких имён функций, API, тулов.
-
-10. В КОНЦЕ промпта ОБЯЗАТЕЛЬНО добавь:
-   "При любых проблемах — пиши владельцу, он свяжется с Atlas (платформенный AI) для настройки."
+ПРОМПТ СОДЕРЖИТ ТОЛЬКО ЧЕЛОВЕЧЕСКИЙ ЯЗЫК:
+- Кто этот персонаж (характер, стиль, привычки, эмодзи)
+- Что он делает (задачи, цели, условия)
+- Как себя ведёт (когда активничает, как реагирует, когда молчит)
 
 Ответь СТРОГО в формате JSON:
 {
   "name": "Краткое Название (2-4 слова)",
-  "system_prompt": "полный system prompt",
+  "soul": "ПЕРСОНА (5-10 строк). Кто этот персонаж? Характер, стиль общения, привычки, любимые эмодзи, тон голоса. Пиши как описание персонажа в книге, НЕ как инструкцию. Начни с 'Ты — ...' и создай ЖИВОЙ образ.",
+  "strategy": "СТРАТЕГИЯ (5-15 строк). Что конкретно делает, в каких чатах/каналах, как часто, какие условия, когда молчит. Пиши человеческим языком без имён функций.",
+  "heartbeat": "ПУЛЬС — что проверять когда нет входящих сообщений (3-5 пунктов чеклистом). Если не нужно проактивное поведение — null.",
   "summary": "одно предложение — что делает агент"
-}`
+}
+
+ЗАПРЕЩЕНО в JSON: имена тулов, safety rules, API endpoints, технический жаргон.`
           },
           { role: 'user', content: description + (pluginSkillDocs ? `\n\n[USER HAS THESE PLUGINS INSTALLED — their APIs are available to the agent:]\n${pluginSkillDocs}` : '') }
         ], userId, 2000);
@@ -1343,7 +1317,20 @@ ${defaultsSection}
       }
       const jsonStr = raw.slice(firstBrace, lastBrace + 1);
       const parsed = JSON.parse(jsonStr);
-      systemPrompt = parsed.system_prompt || parsed.systemPrompt || description;
+      // New modular format: soul + strategy + heartbeat
+      if (parsed.soul && parsed.strategy) {
+        systemPrompt = parsed.soul + '\n\n' + parsed.strategy;
+        if (parsed.heartbeat) systemPrompt += '\n\n' + parsed.heartbeat;
+        // Save modules separately after agent creation (below)
+        (this as any)._pendingModules = {
+          soul: parsed.soul,
+          strategy: parsed.strategy,
+          heartbeat: parsed.heartbeat || null,
+        };
+      } else {
+        // Backward compat: single system_prompt
+        systemPrompt = parsed.system_prompt || parsed.systemPrompt || description;
+      }
       generatedName = generatedName || parsed.name || 'AI Agent';
       summary = parsed.summary || '';
     } catch (e: any) {
@@ -1556,43 +1543,53 @@ ${toolSections}
     try {
       const { savePromptModule, PROMPT_MODULES } = await import('./prompt-builder');
 
-      // ── Split generated prompt into modules ──
-      // SOUL = personality/style (first paragraph or everything before first ═══ section)
-      const soulMatch = systemPrompt.match(/^([\s\S]*?)(?=\n═══|\n━━━|\n\[PROACTIVE|\n\[REACTIVE|$)/);
-      const soulText = (soulMatch?.[1] || systemPrompt).trim();
-
-      // STRATEGY = everything between ═══ sections (business rules, tasks)
-      const strategyParts: string[] = [];
-      const sectionRegex = /═══\s*(.+?)\s*═══\n([\s\S]*?)(?=\n═══|$)/g;
-      let match;
-      while ((match = sectionRegex.exec(systemPrompt)) !== null) {
-        const sectionName = match[1].toLowerCase();
-        if (!sectionName.includes('safety') && !sectionName.includes('security') && !sectionName.includes('правил')) {
-          strategyParts.push(match[0].trim());
+      // ── Use pre-parsed modules if available (new modular format) ──
+      const pendingMods = (this as any)._pendingModules;
+      if (pendingMods?.soul) {
+        await savePromptModule(agentId, userId, PROMPT_MODULES.SOUL, pendingMods.soul);
+        if (pendingMods.strategy) {
+          await savePromptModule(agentId, userId, PROMPT_MODULES.STRATEGY, pendingMods.strategy);
         }
+        if (pendingMods.heartbeat) {
+          await savePromptModule(agentId, userId, PROMPT_MODULES.HEARTBEAT, pendingMods.heartbeat);
+        }
+        delete (this as any)._pendingModules;
+        console.log(`[Orchestrator] Saved modular prompt: SOUL + STRATEGY${pendingMods.heartbeat ? ' + HEARTBEAT' : ''}`);
+      } else {
+        // ── Fallback: Split blob prompt into modules via regex ──
+        const soulMatch = systemPrompt.match(/^([\s\S]*?)(?=\n═══|\n━━━|\n\[PROACTIVE|\n\[REACTIVE|$)/);
+        const soulText = (soulMatch?.[1] || systemPrompt).trim();
+
+        const strategyParts: string[] = [];
+        const sectionRegex = /═══\s*(.+?)\s*═══\n([\s\S]*?)(?=\n═══|$)/g;
+        let match;
+        while ((match = sectionRegex.exec(systemPrompt)) !== null) {
+          const sectionName = match[1].toLowerCase();
+          if (!sectionName.includes('safety') && !sectionName.includes('security') && !sectionName.includes('правил')) {
+            strategyParts.push(match[0].trim());
+          }
+        }
+
+        const heartbeatMatch = systemPrompt.match(/(?:ПРОАКТИВНЫЙ|PROACTIVE)[^\n]*\n([\s\S]*?)(?=\n═══|\n━━━|$)/i);
+        const heartbeatText = heartbeatMatch?.[1]?.trim();
+
+        await savePromptModule(agentId, userId, PROMPT_MODULES.SOUL, soulText);
+
+        if (strategyParts.length > 0) {
+          await savePromptModule(agentId, userId, PROMPT_MODULES.STRATEGY, strategyParts.join('\n\n'));
+        }
+
+        if (heartbeatText) {
+          await savePromptModule(agentId, userId, PROMPT_MODULES.HEARTBEAT,
+            `[PROACTIVE TICK CHECKLIST]\n${heartbeatText}`);
+        }
+
+        console.log(`[Orchestrator] Saved modular prompt (regex fallback) for agent#${agentId}`);
       }
 
-      // HEARTBEAT = proactive behavior rules
-      const heartbeatMatch = systemPrompt.match(/(?:ПРОАКТИВНЫЙ|PROACTIVE)[^\n]*\n([\s\S]*?)(?=\n═══|\n━━━|$)/i);
-      const heartbeatText = heartbeatMatch?.[1]?.trim();
-
-      // Save each module
-      await savePromptModule(agentId, userId, PROMPT_MODULES.SOUL, soulText);
-
-      if (strategyParts.length > 0) {
-        await savePromptModule(agentId, userId, PROMPT_MODULES.STRATEGY, strategyParts.join('\n\n'));
-      }
-
-      if (heartbeatText) {
-        await savePromptModule(agentId, userId, PROMPT_MODULES.HEARTBEAT,
-          `[PROACTIVE TICK CHECKLIST]\n${heartbeatText}`);
-      }
-
-      // Save IDENTITY
+      // Save IDENTITY (always)
       await savePromptModule(agentId, userId, PROMPT_MODULES.IDENTITY,
         `Name: ${generatedName}\nRole: ${summary || description.slice(0, 100)}\nPlatform: TON Agent Platform`);
-
-      console.log(`[Orchestrator] Saved modular prompt modules for agent#${agentId}: SOUL(${soulText.length}ch), STRATEGY(${strategyParts.length} parts), HEARTBEAT(${heartbeatText ? 'yes' : 'default'}), IDENTITY`);
     } catch (e: any) {
       console.warn(`[Orchestrator] Failed to save prompt modules for agent#${agentId}:`, e.message);
       // Non-critical — agent will still work with legacy code field
