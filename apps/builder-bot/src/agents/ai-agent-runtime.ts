@@ -106,7 +106,12 @@ function sanitizeForLog(obj: any): string {
       if (groups[12]) return groups[12] + groups[13] + '***';
       return match;
     }
-  );
+  )
+  // PII redaction (hermes-agent pattern): mask mnemonics, seed phrases, private keys, DB connection strings
+  .replace(/\b([a-z]{3,8}\s+){11,23}[a-z]{3,8}\b/gi, '[MNEMONIC_REDACTED]') // 12-24 word seed phrases
+  .replace(/\b(0x)?[0-9a-fA-F]{64}\b/g, (m) => m.slice(0, 10) + '***[KEY_REDACTED]') // 64-char hex private keys
+  .replace(/postgres(ql)?:\/\/[^\s"']+/gi, 'postgres://***[DB_REDACTED]') // DB connection strings
+  .replace(/\b\d{10,13}:[A-Za-z0-9_-]{35}\b/g, '***[BOT_TOKEN_REDACTED]'); // Telegram bot tokens
 }
 
 // ── Human-in-the-Loop: ask_user_confirmation pending responses ───────────────
@@ -10769,11 +10774,33 @@ If web_search returns nothing useful → say "не смог найти акту�
   let loopBreakFlag = false;
   const toolCallHistory: string[][] = [];             // for name-only stall detection
   const toolResultHashes: string[][] = [];            // for result-aware stall detection
-  const usedModel = (params.config.AI_MODEL as string) || process.env.AI_MODEL || defaultModel;
+  const configModel = (params.config.AI_MODEL as string) || process.env.AI_MODEL || defaultModel;
+
+  // ── Smart Model Routing (hermes-agent pattern) ──
+  // Simple queries → cheap model, complex → strong model
+  const MAX_ITERS = 5;
+  const lastUserMsg = [...msgs].reverse().find(m => typeof m === 'string') || '';
+  const isSimpleQuery = lastUserMsg.length < 160
+    && lastUserMsg.split(/\s+/).length < 28
+    && !/```|http|debug|implement|refactor|analyze|arbitrage|swap|trade|стратег|анализ|реализ|напиши код/i.test(lastUserMsg);
+  const cheapModel = providerName.includes('gemini') ? 'gemini-2.0-flash-lite' :
+    providerName.includes('groq') ? 'llama-3.1-8b-instant' :
+    providerName.includes('openai') ? 'gpt-4o-mini' : null;
+  const usedModel = (isSimpleQuery && cheapModel && !params.isProactiveTick) ? cheapModel : configModel;
+  if (isSimpleQuery && cheapModel && usedModel === cheapModel) {
+    console.log(`[AI runtime] Agent #${params.agentId} smart-routed to cheap model: ${cheapModel}`);
+  }
+
   let estTokens = estimateTokens(messages);
   console.log(`[AI runtime] Agent #${params.agentId} AI call: model=${usedModel} baseURL=${sanitizeForLog((ai as any).baseURL || '')} tools=${tools.length}(of ${allToolDefs.length}) msgs=${messages.length} ~${estTokens}tok`);
 
-  for (let iter = 0; iter < 5; iter++) {
+  for (let iter = 0; iter < MAX_ITERS; iter++) {
+    // ── Iteration budget pressure warnings (hermes-agent pattern) ──
+    if (iter === MAX_ITERS - 2) {
+      messages.push({ role: 'user', content: '[SYSTEM: You have 1 iteration left. Wrap up your work and provide a final response.]' } as any);
+    } else if (iter === MAX_ITERS - 3 && MAX_ITERS >= 4) {
+      messages.push({ role: 'user', content: '[SYSTEM: Budget warning — 2 iterations remaining. Be efficient.]' } as any);
+    }
     // Re-estimate tokens each iteration (messages grow with tool results)
     estTokens = estimateTokens(messages, tools);
     if (estTokens > 100_000) {
