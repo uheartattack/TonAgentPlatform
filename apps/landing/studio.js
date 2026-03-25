@@ -6047,59 +6047,219 @@ async function savePersona() {
 // ===== KNOWLEDGE BASE PAGE =====
 let _knowledgeEntries = [];
 
+var _kbFilter = 'all';
+
 async function loadKnowledge() {
   const data = await apiRequest('GET', '/api/settings');
   _knowledgeEntries = (data.ok && data.settings && data.settings.knowledge_base) || [];
+  renderKnowledgeStats();
   renderKnowledge();
 }
 
-function renderKnowledge() {
-  const el = document.getElementById('knowledge-entries');
+function renderKnowledgeStats() {
+  var el = document.getElementById('kb-stats');
   if (!el) return;
-  if (!_knowledgeEntries.length) {
-    el.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-muted)">' + t('no_entries') + '</div>';
+  var total = _knowledgeEntries.length;
+  var totalChars = _knowledgeEntries.reduce(function(s, e) { return s + (e.content || '').length; }, 0);
+  var categories = {};
+  _knowledgeEntries.forEach(function(e) { var c = e.category || 'general'; categories[c] = (categories[c] || 0) + 1; });
+  var topCat = Object.entries(categories).sort(function(a, b) { return b[1] - a[1]; })[0];
+  var isRu = currentLang === 'ru';
+  el.innerHTML =
+    '<div class="stat-card"><div class="stat-value">' + total + '</div><div class="stat-label">' + (isRu ? 'Записей' : 'Entries') + '</div></div>' +
+    '<div class="stat-card"><div class="stat-value">' + (totalChars >= 1000 ? (totalChars / 1000).toFixed(1) + 'K' : totalChars) + '</div><div class="stat-label">' + (isRu ? 'Символов' : 'Characters') + '</div></div>' +
+    '<div class="stat-card"><div class="stat-value">' + Object.keys(categories).length + '</div><div class="stat-label">' + (isRu ? 'Категорий' : 'Categories') + '</div></div>' +
+    '<div class="stat-card"><div class="stat-value">' + (topCat ? topCat[0] : '-') + '</div><div class="stat-label">' + (isRu ? 'Топ категория' : 'Top Category') + '</div></div>';
+}
+
+function renderKnowledge() {
+  var el = document.getElementById('knowledge-entries');
+  if (!el) return;
+  var filtered = _kbFilter === 'all' ? _knowledgeEntries : _knowledgeEntries.filter(function(e) { return (e.category || 'general') === _kbFilter; });
+  if (!filtered.length) {
+    el.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-muted)">' + (currentLang === 'ru' ? 'Нет записей' : 'No entries') + '</div>';
     return;
   }
-  el.innerHTML = _knowledgeEntries.map((entry, i) => `
-    <div style="padding:.75rem 1rem;border-bottom:1px solid var(--border-subtle);display:flex;gap:.75rem;align-items:flex-start">
-      <div style="flex:1;min-width:0">
-        <div style="font-weight:600;margin-bottom:.25rem">${escHtml(entry.title || 'Entry ' + (i+1))}</div>
-        <div style="color:var(--text-muted);font-size:.83rem;white-space:pre-wrap;max-height:60px;overflow:hidden">${escHtml((entry.content || '').slice(0, 200))}</div>
-      </div>
-      <button class="btn btn-ghost btn-sm" style="flex-shrink:0;color:#dc3545" onclick="deleteKnowledgeEntry(${i})">${IC.x}</button>
-    </div>`).join('');
+  var catColors = { general: '#6366f1', api: '#f59e0b', trading: '#10b981', contacts: '#3b82f6', faq: '#8b5cf6', config: '#64748b' };
+  el.innerHTML = filtered.map(function(entry, i) {
+    var realIdx = _knowledgeEntries.indexOf(entry);
+    var cat = entry.category || 'general';
+    var color = catColors[cat] || '#6366f1';
+    var size = (entry.content || '').length;
+    var date = entry.createdAt ? new Date(entry.createdAt).toLocaleDateString() : '';
+    var source = entry.source === 'file' ? '<span style="font-size:.6rem;padding:2px 6px;border-radius:4px;background:rgba(59,130,246,0.1);color:#3b82f6;margin-left:4px">FILE</span>' : '';
+    return '<div style="padding:.75rem 1rem;border-bottom:1px solid var(--border-subtle);display:flex;gap:.75rem;align-items:flex-start;border-left:3px solid ' + color + '">' +
+      '<div style="flex:1;min-width:0">' +
+        '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">' +
+          '<span style="font-weight:600;font-size:.85rem">' + escHtml(entry.title || 'Entry ' + (i + 1)) + '</span>' +
+          '<span style="font-size:.6rem;padding:2px 6px;border-radius:4px;background:' + color + '20;color:' + color + '">' + cat + '</span>' +
+          source +
+        '</div>' +
+        '<div style="color:var(--text-muted);font-size:.78rem;white-space:pre-wrap;max-height:60px;overflow:hidden;line-height:1.4">' + escHtml((entry.content || '').slice(0, 300)) + '</div>' +
+        '<div style="display:flex;gap:12px;margin-top:4px;font-size:.68rem;color:var(--text-muted)">' +
+          '<span>' + size + ' chars</span>' +
+          (date ? '<span>' + date + '</span>' : '') +
+        '</div>' +
+      '</div>' +
+      '<div style="display:flex;gap:4px;flex-shrink:0">' +
+        '<button class="btn btn-ghost btn-sm" onclick="editKnowledgeEntry(' + realIdx + ')" title="Edit">' + IC.wrench + '</button>' +
+        '<button class="btn btn-ghost btn-sm" style="color:#dc3545" onclick="deleteKnowledgeEntry(' + realIdx + ')">' + IC.x + '</button>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function filterKnowledge(cat, btn) {
+  _kbFilter = cat;
+  document.querySelectorAll('.kb-filter').forEach(function(b) { b.classList.remove('active'); });
+  if (btn) btn.classList.add('active');
+  renderKnowledge();
 }
 
 function showAddKnowledge() {
-  const form = document.getElementById('knowledge-add-form');
+  var form = document.getElementById('knowledge-add-form');
   if (form) {
     form.style.display = 'block';
-    const titleEl = document.getElementById('kb-title');
-    if (titleEl) titleEl.focus();
+    var titleEl = document.getElementById('kb-title');
+    if (titleEl) { titleEl.value = ''; titleEl.focus(); }
+    var contentEl = document.getElementById('kb-content');
+    if (contentEl) contentEl.value = '';
+    var catEl = document.getElementById('kb-category');
+    if (catEl) catEl.value = 'general';
+    updateKbCharCount();
   }
 }
 
+function updateKbCharCount() {
+  var el = document.getElementById('kb-char-count');
+  var content = (document.getElementById('kb-content') || {}).value || '';
+  if (el) el.textContent = content.length + ' chars';
+}
+
+// Wire up char counter
+document.addEventListener('input', function(e) {
+  if (e.target && e.target.id === 'kb-content') updateKbCharCount();
+});
+
 async function saveKnowledgeEntry() {
   if (!authToken) { showNotification(t('login_first'), 'error'); return; }
-  const title = (document.getElementById('kb-title') || {}).value?.trim();
-  const content = (document.getElementById('kb-content') || {}).value?.trim();
+  var title = (document.getElementById('kb-title') || {}).value?.trim();
+  var content = (document.getElementById('kb-content') || {}).value?.trim();
+  var category = (document.getElementById('kb-category') || {}).value || 'general';
   if (!title || !content) {
-    showNotification(t('fill_fields'), 'error');
+    showNotification(currentLang === 'ru' ? 'Заполните все поля' : 'Fill all fields', 'error');
     return;
   }
 
-  _knowledgeEntries.push({ title, content, createdAt: new Date().toISOString() });
-  const data = await apiRequest('POST', '/api/settings', { settings: { knowledge_base: _knowledgeEntries } });
+  _knowledgeEntries.push({ title: title, content: content, category: category, createdAt: new Date().toISOString(), source: 'manual' });
+  var data = await apiRequest('POST', '/api/settings', { settings: { knowledge_base: _knowledgeEntries } });
   if (data.ok) {
     document.getElementById('kb-title').value = '';
     document.getElementById('kb-content').value = '';
     document.getElementById('knowledge-add-form').style.display = 'none';
+    renderKnowledgeStats();
     renderKnowledge();
-    showNotification(t('entry_added'), 'success');
+    showNotification(currentLang === 'ru' ? 'Запись добавлена' : 'Entry added', 'success');
   } else {
     _knowledgeEntries.pop();
     showNotification(data.error || 'Error', 'error');
   }
+}
+
+function editKnowledgeEntry(idx) {
+  var entry = _knowledgeEntries[idx];
+  if (!entry) return;
+  showAddKnowledge();
+  document.getElementById('kb-title').value = entry.title || '';
+  document.getElementById('kb-content').value = entry.content || '';
+  document.getElementById('kb-category').value = entry.category || 'general';
+  updateKbCharCount();
+  // Remove old entry (will be re-added on save)
+  _knowledgeEntries.splice(idx, 1);
+  renderKnowledge();
+}
+
+async function uploadKnowledgeFile(input) {
+  if (!input.files || !input.files[0]) return;
+  var file = input.files[0];
+  var maxSize = 512 * 1024; // 512KB
+  if (file.size > maxSize) {
+    showNotification(currentLang === 'ru' ? 'Файл слишком большой (макс 512KB)' : 'File too large (max 512KB)', 'error');
+    input.value = '';
+    return;
+  }
+
+  var reader = new FileReader();
+  reader.onload = async function(e) {
+    var text = e.target.result;
+    var title = file.name.replace(/\.[^.]+$/, '');
+    var ext = file.name.split('.').pop().toLowerCase();
+    var category = 'general';
+    if (ext === 'json') category = 'api';
+    if (ext === 'csv') category = 'config';
+
+    // Chunk large files (>4000 chars) into multiple entries
+    var CHUNK_SIZE = 4000;
+    if (text.length > CHUNK_SIZE) {
+      var chunks = [];
+      for (var i = 0; i < text.length; i += CHUNK_SIZE) {
+        chunks.push(text.slice(i, i + CHUNK_SIZE));
+      }
+      for (var c = 0; c < chunks.length; c++) {
+        _knowledgeEntries.push({
+          title: title + ' (part ' + (c + 1) + '/' + chunks.length + ')',
+          content: chunks[c],
+          category: category,
+          createdAt: new Date().toISOString(),
+          source: 'file',
+          filename: file.name,
+        });
+      }
+      showNotification((currentLang === 'ru' ? 'Файл разбит на ' : 'File split into ') + chunks.length + (currentLang === 'ru' ? ' частей' : ' chunks'), 'info');
+    } else {
+      _knowledgeEntries.push({ title: title, content: text, category: category, createdAt: new Date().toISOString(), source: 'file', filename: file.name });
+    }
+
+    var data = await apiRequest('POST', '/api/settings', { settings: { knowledge_base: _knowledgeEntries } });
+    if (data.ok) {
+      renderKnowledgeStats();
+      renderKnowledge();
+      showNotification(currentLang === 'ru' ? 'Файл загружен' : 'File uploaded', 'success');
+    } else {
+      showNotification(data.error || 'Error', 'error');
+    }
+    input.value = '';
+  };
+  reader.readAsText(file);
+}
+
+function searchKnowledge() {
+  var query = (document.getElementById('kb-search') || {}).value?.trim().toLowerCase();
+  var resultsEl = document.getElementById('kb-search-results');
+  if (!resultsEl) return;
+  if (!query || query.length < 2) { resultsEl.style.display = 'none'; return; }
+
+  var results = _knowledgeEntries.filter(function(e) {
+    return (e.title || '').toLowerCase().includes(query) || (e.content || '').toLowerCase().includes(query);
+  }).slice(0, 10);
+
+  if (results.length === 0) {
+    resultsEl.style.display = 'block';
+    resultsEl.innerHTML = '<div style="padding:.75rem 1rem;color:var(--text-muted);font-size:.82rem">' + (currentLang === 'ru' ? 'Ничего не найдено' : 'No results') + '</div>';
+    return;
+  }
+
+  resultsEl.style.display = 'block';
+  resultsEl.innerHTML = results.map(function(r) {
+    var idx = (r.content || '').toLowerCase().indexOf(query);
+    var snippet = idx >= 0 ? '...' + (r.content || '').slice(Math.max(0, idx - 40), idx + query.length + 80) + '...' : (r.content || '').slice(0, 120);
+    // Highlight match
+    snippet = escHtml(snippet).replace(new RegExp('(' + escHtml(query) + ')', 'gi'), '<mark style="background:#f59e0b40;padding:1px 2px;border-radius:2px">$1</mark>');
+    return '<div style="padding:.5rem 1rem;border-bottom:1px solid var(--border-subtle)">' +
+      '<div style="font-weight:600;font-size:.8rem">' + escHtml(r.title || '?') + '</div>' +
+      '<div style="font-size:.75rem;color:var(--text-muted);line-height:1.4">' + snippet + '</div>' +
+    '</div>';
+  }).join('');
 }
 
 async function deleteKnowledgeEntry(idx) {
