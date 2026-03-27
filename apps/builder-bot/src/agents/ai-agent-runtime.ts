@@ -10967,21 +10967,25 @@ If web_search returns nothing useful → say "не смог найти акту�
 
       // Tool aliases — redirect hallucinated tool names to real ones
       const TOOL_ALIASES: Record<string, string> = {
-        'get_market_activity': 'web_search',
-        'get_market_health': 'web_search',
-        'get_top_deals': 'web_search',
-        'scan_real_arbitrage': 'web_search',
-        'get_market_overview': 'web_search',
         'search_messages': 'tg_search_messages',
         'send_message': 'tg_send_message',
         'get_balance': 'get_ton_balance',
         'check_balance': 'get_ton_balance',
       };
 
+      // Tools to silently drop (hallucinated by AI from old context, never execute)
+      const SILENT_DROP = new Set([
+        'get_market_activity', 'get_market_health', 'get_top_deals',
+        'scan_real_arbitrage', 'get_market_overview', 'find_underpriced_gifts',
+        'get_gift_upgrade_stats', 'analyze_gift_profitability', 'appraise_gift',
+      ]);
+
       // Phase 2: Filter out truly broken calls, keep valid ones (with alias resolution)
       const validCalls = assistant.tool_calls.filter((tc: any) => {
         const fn = tc?.function;
         if (!fn?.name) return false;
+        // Silent drop — don't log, don't execute, just ignore
+        if (SILENT_DROP.has(fn.name)) return false;
         // Resolve alias
         if (!validToolNames.has(fn.name) && TOOL_ALIASES[fn.name]) {
           fn.name = TOOL_ALIASES[fn.name];
