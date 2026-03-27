@@ -10967,10 +10967,11 @@ If web_search returns nothing useful → say "не смог найти акту�
 
       // Tool aliases — redirect hallucinated tool names to real ones
       const TOOL_ALIASES: Record<string, string> = {
-        'get_market_activity': 'get_market_overview',
-        'get_market_health': 'get_market_overview',
-        'get_top_deals': 'get_market_overview',
-        'scan_real_arbitrage': 'get_market_overview',
+        'get_market_activity': 'web_search',
+        'get_market_health': 'web_search',
+        'get_top_deals': 'web_search',
+        'scan_real_arbitrage': 'web_search',
+        'get_market_overview': 'web_search',
         'search_messages': 'tg_search_messages',
         'send_message': 'tg_send_message',
         'get_balance': 'get_ton_balance',
