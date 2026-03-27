@@ -10969,7 +10969,8 @@ If web_search returns nothing useful → say "не смог найти акту�
       const TOOL_ALIASES: Record<string, string> = {
         'get_market_activity': 'get_market_overview',
         'get_market_health': 'get_market_overview',
-        'get_top_deals': 'scan_real_arbitrage',
+        'get_top_deals': 'get_market_overview',
+        'scan_real_arbitrage': 'get_market_overview',
         'search_messages': 'tg_search_messages',
         'send_message': 'tg_send_message',
         'get_balance': 'get_ton_balance',
