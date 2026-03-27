@@ -10786,7 +10786,7 @@ If web_search returns nothing useful → say "не смог найти акту�
   const cheapModel = providerName.includes('gemini') ? 'gemini-2.0-flash-lite' :
     providerName.includes('groq') ? 'llama-3.1-8b-instant' :
     providerName.includes('openai') ? 'gpt-4o-mini' : null;
-  const usedModel = (isSimpleQuery && cheapModel && !params.isProactiveTick) ? cheapModel : configModel;
+  const usedModel = (isSimpleQuery && cheapModel && !(params as any).isProactiveTick) ? cheapModel : configModel;
   if (isSimpleQuery && cheapModel && usedModel === cheapModel) {
     console.log(`[AI runtime] Agent #${params.agentId} smart-routed to cheap model: ${cheapModel}`);
   }
