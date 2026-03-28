@@ -1339,7 +1339,7 @@ function switchSettingsTab(tab) {
       '<div class="rt-section">' +
         '<div class="rt-section-label">' + IC.bolt + ' ' + (isRu ? 'Утилитарная модель' : 'Utility Model') + '</div>' +
         '<div class="rt-input-wrap">' +
-          '<input type="text" id="ai-utility-model-input" class="rt-input" value="' + escHtml((config.config && config.config.AI_UTILITY_MODEL) || '') + '" placeholder="' + (isRu ? 'auto' : 'auto') + '">' +
+          '<input type="text" id="ai-utility-model-input" class="rt-input" value="' + escHtml((config.config && (config.config.UTILITY_MODEL || config.config.AI_UTILITY_MODEL)) || '') + '" placeholder="' + (isRu ? 'auto' : 'auto') + '">' +
           '<div class="rt-input-hint">' + (isRu ? 'Лёгкая модель для суммаризации и vision. Оставьте пустым для авто-выбора.' : 'Lightweight model for summarization and vision. Leave empty for auto.') + '</div>' +
         '</div>' +
       '</div>' +
@@ -3657,8 +3657,6 @@ async function saveSettingsRouting() {
   var data = await apiRequest('PUT', '/api/agents/' + _detailAgentId + '/routing', payload);
   if (data && data.ok) {
     toast(currentLang === 'ru' ? 'Правила маршрутизации сохранены' : 'Routing rules saved', 'success');
-    // Also update via wizard for backwards compat
-    await apiRequest('PUT', '/api/agents/' + _detailAgentId + '/wizard', payload);
   } else {
     toast((data && data.error) || 'Error saving routing', 'error');
   }

@@ -10843,10 +10843,13 @@ If web_search returns nothing useful → say "не смог найти акту�
     for (let retry = 0; retry < 3; retry++) {
       try {
         // Build request — omit tools/tool_choice when empty (Gemini rejects tool_choice with no tools)
+        const cfgMaxTokens = Number(params.config.AI_MAX_TOKENS) || 2048;
+        const cfgTemperature = Number(params.config.AI_TEMPERATURE) || undefined;
         const reqBody: any = {
           model:    (params.config.AI_MODEL as string) || process.env.AI_MODEL || defaultModel,
           messages,
-          max_tokens:  2048,
+          max_tokens: cfgMaxTokens,
+          ...(cfgTemperature !== undefined && { temperature: cfgTemperature }),
         };
         if (tools.length > 0) {
           // Gemini has ~30 tool limit; cap to prevent 400 "no body" errors
