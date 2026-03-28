@@ -7378,7 +7378,7 @@ bot.on(message('text'), async (ctx) => {
       }
 
       // Ask Claude Code about the proposal with user's question
-      const { claudeCodeChat } = await import('./claude-code-bridge');
+      const { claudeCodeChat } = await import('./ai-code-bridge');
       const result = await claudeCodeChat([
         { role: 'user', content:
           `Ты — AI Product Engineer платформы TON Agent Platform.\n\n` +

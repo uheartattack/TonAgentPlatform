@@ -12,7 +12,7 @@ import { allAgentTemplates, AgentTemplate } from '../agent-templates';
 import { detectTriggerFromDescription } from './sub-agents/creator';
 import { getUserSettingsRepository } from '../db/schema-extensions';
 import { getSkillDocsForCodeGeneration } from '../plugins-system';
-import { claudeCodeChat, isClaudeCodeAvailable } from '../claude-code-bridge';
+import { claudeCodeChat, isClaudeCodeAvailable } from '../ai-code-bridge';
 
 // ── MarkdownV2 escaping (shared with bot.ts) ───────────────────────────────
 function esc(text: string | number | null | undefined): string {

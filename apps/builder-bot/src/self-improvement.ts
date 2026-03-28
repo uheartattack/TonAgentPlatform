@@ -30,7 +30,7 @@ import { agentLastErrors } from './agents/tools/execution-tools';
 import { getStagingManager } from './staging-manager';
 import { config } from './config';
 import { pool as dbPool } from './db';
-import { claudeCodeChat, isClaudeCodeAvailable } from './claude-code-bridge';
+import { claudeCodeChat, isClaudeCodeAvailable } from './ai-code-bridge';
 
 // ─── HTML escape for Telegram notifications ────────────────────────────────────
 function escHtml(s: string): string {
