@@ -1201,7 +1201,14 @@ export function startApiServer() {
       if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
       const { code } = req.body || {};
       if (typeof code !== 'string' || code.length > 50000) { res.status(400).json({ error: 'Invalid code' }); return; }
+      // Update both agents.code AND trigger_config.code (runtime reads trigger_config)
       await pool.query('UPDATE builder_bot.agents SET code = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3', [code, agentId, userId]);
+      try {
+        await pool.query(
+          `UPDATE builder_bot.agents SET trigger_config = jsonb_set(COALESCE(trigger_config::jsonb, '{}'::jsonb), '{code}', to_jsonb($1::text)) WHERE id = $2 AND user_id = $3`,
+          [code, agentId, userId]
+        );
+      } catch {}
       res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
@@ -1230,7 +1237,7 @@ export function startApiServer() {
       const agentCheck = await getDBTools().getAgent(agentId, userId);
       if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
       const agent = agentCheck.data;
-      const { provider, model, apiKey } = req.body || {};
+      const { provider, model, apiKey, temperature, maxTokens, utilityModel } = req.body || {};
       const validProviders = ['openai', 'anthropic', 'gemini', 'groq', 'deepseek', 'openrouter', 'together'];
       if (provider && !validProviders.includes(provider)) { res.status(400).json({ error: 'Invalid provider' }); return; }
       const tc = typeof agent.triggerConfig === 'string' ? JSON.parse(agent.triggerConfig) : (agent.triggerConfig || {});
@@ -1238,6 +1245,9 @@ export function startApiServer() {
       if (provider) tc.config.AI_PROVIDER = provider;
       if (model && typeof model === 'string') tc.config.AI_MODEL = model;
       if (apiKey && typeof apiKey === 'string') tc.config.AI_API_KEY = apiKey;
+      if (typeof temperature === 'number') tc.config.AI_TEMPERATURE = temperature;
+      if (typeof maxTokens === 'number') tc.config.AI_MAX_TOKENS = maxTokens;
+      if (utilityModel && typeof utilityModel === 'string') tc.config.AI_UTILITY_MODEL = utilityModel;
       await pool.query('UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3', [JSON.stringify(tc), agentId, userId]);
       res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
@@ -1346,12 +1356,28 @@ export function startApiServer() {
       const agentCheck = await getDBTools().getAgent(agentId, userId);
       if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
       const agent = agentCheck.data;
-      const { daily_spend_limit_ton, tick_interval_sec, agent_language } = req.body || {};
+      const { daily_spend_limit_ton, tick_interval_sec, agent_language, behavior, learning, routing, groupPolicy, chatPolicies } = req.body || {};
 
       const tc = typeof agent.triggerConfig === 'string' ? JSON.parse(agent.triggerConfig) : (agent.triggerConfig || {});
       if (!tc.config) tc.config = {};
+
+      // Behavior settings (humanization)
+      if (behavior && typeof behavior === 'object') tc.config.behavior = behavior;
+      // Learning settings (self-improvement)
+      if (learning && typeof learning === 'object') tc.config.learning = learning;
+      // Routing rules
+      if (routing && typeof routing === 'object') tc.config.routingRules = routing;
+      // Group policy
+      if (groupPolicy) tc.config.groupPolicy = groupPolicy;
+      // Per-chat policies
+      if (chatPolicies && typeof chatPolicies === 'object') tc.config.chatPolicies = chatPolicies;
+
       if (daily_spend_limit_ton !== undefined) tc.config.daily_spend_limit_ton = parseInt(daily_spend_limit_ton, 10) || 500;
-      if (tick_interval_sec !== undefined) tc.config.tick_interval_sec = parseInt(tick_interval_sec, 10) || 60;
+      if (tick_interval_sec !== undefined) {
+        tc.config.tick_interval_sec = parseInt(tick_interval_sec, 10) || 60;
+        // Also update intervalMs so runtime picks up the new interval
+        tc.intervalMs = tc.config.tick_interval_sec * 1000;
+      }
       if (agent_language !== undefined) tc.config.agent_language = agent_language || 'auto';
 
       await pool.query('UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3',
