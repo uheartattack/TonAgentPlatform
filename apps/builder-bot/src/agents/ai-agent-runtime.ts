@@ -11479,6 +11479,26 @@ If web_search returns nothing useful → say "не смог найти акту�
 
   // Heartbeat / Silent detection moved BEFORE notification send (see above)
 
+  // ── Agent Evals: auto quality scoring ──
+  try {
+    const { evaluateResponse, saveEval, checkDegradation } = await import('../services/agent-evals');
+    const lastInput = msgs.length > 0 ? String(msgs[msgs.length - 1] || '') : '';
+    const evalResult = evaluateResponse({
+      agentId: params.agentId,
+      input: lastInput,
+      response: finalContent || '',
+      toolCallCount: totalToolCalls,
+      iterationCount: iter,
+      model: usedModel,
+      expectedLang: (params.config.agent_language as string) || undefined,
+    });
+    await saveEval(evalResult);
+    if (evalResult.flags.length > 0) {
+      console.warn(`[Evals] Agent #${params.agentId} flags: ${evalResult.flags.join(', ')} score=${evalResult.overallScore}`);
+    }
+    await checkDegradation(params.agentId, params.userId);
+  } catch {}
+
   return { finalResponse: finalContent, toolCallCount: totalToolCalls };
 }
 
