@@ -1247,7 +1247,7 @@ export function startApiServer() {
       if (apiKey && typeof apiKey === 'string') tc.config.AI_API_KEY = apiKey;
       if (typeof temperature === 'number') tc.config.AI_TEMPERATURE = temperature;
       if (typeof maxTokens === 'number') tc.config.AI_MAX_TOKENS = maxTokens;
-      if (utilityModel && typeof utilityModel === 'string') tc.config.AI_UTILITY_MODEL = utilityModel;
+      if (utilityModel && typeof utilityModel === 'string') tc.config.UTILITY_MODEL = utilityModel;
       await pool.query('UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3', [JSON.stringify(tc), agentId, userId]);
       res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
@@ -1356,7 +1356,7 @@ export function startApiServer() {
       const agentCheck = await getDBTools().getAgent(agentId, userId);
       if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
       const agent = agentCheck.data;
-      const { daily_spend_limit_ton, tick_interval_sec, agent_language, behavior, learning, routing, groupPolicy, chatPolicies } = req.body || {};
+      const { daily_spend_limit_ton, tick_interval_sec, agent_language, behavior, learning, routing, groupPolicy, chatPolicies, customRole, agentColor } = req.body || {};
 
       const tc = typeof agent.triggerConfig === 'string' ? JSON.parse(agent.triggerConfig) : (agent.triggerConfig || {});
       if (!tc.config) tc.config = {};
@@ -1371,6 +1371,9 @@ export function startApiServer() {
       if (groupPolicy) tc.config.groupPolicy = groupPolicy;
       // Per-chat policies
       if (chatPolicies && typeof chatPolicies === 'object') tc.config.chatPolicies = chatPolicies;
+      // Custom role & color
+      if (customRole && typeof customRole === 'object') tc.config.customRole = customRole;
+      if (agentColor) tc.config.agentColor = agentColor;
 
       if (daily_spend_limit_ton !== undefined) tc.config.daily_spend_limit_ton = parseInt(daily_spend_limit_ton, 10) || 500;
       if (tick_interval_sec !== undefined) {

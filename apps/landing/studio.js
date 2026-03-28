@@ -3480,11 +3480,11 @@ async function saveCustomRole() {
   var roleName = (document.getElementById('custom-role-name') || {}).value || '';
   var roleDesc = (document.getElementById('custom-role-desc') || {}).value || '';
   var agentColor = (document.getElementById('agent-color-picker') || {}).value || '#0098EA';
-  var payload = {
+  // Save directly to agent trigger_config via config endpoint
+  var data = await apiRequest('POST', '/api/agents/' + _detailAgentId + '/config', {
     customRole: { name: roleName.trim(), description: roleDesc.trim() },
-    agentColor: agentColor
-  };
-  var data = await apiRequest('PUT', '/api/agents/' + _detailAgentId + '/wizard', payload);
+    agentColor: agentColor,
+  });
   if (data.ok) { toast(currentLang === 'ru' ? 'Роль сохранена' : 'Role saved', 'success'); }
   else { toast(data.error || 'Error', 'error'); }
 }
@@ -5261,6 +5261,13 @@ async function saveTelegramSettings() {
     chatPolicies: _chatPolicies,
   };
   await apiRequest('POST', '/api/settings', { key: 'telegram_settings', value: tg });
+  // Also save to agent's trigger_config so runtime picks it up
+  if (_detailAgentId) {
+    await apiRequest('POST', '/api/agents/' + _detailAgentId + '/config', {
+      groupPolicy: tg.groupMode || 'allowlist',
+      chatPolicies: tg.chatPolicies || {},
+    });
+  }
   showNotification(currentLang === 'ru' ? 'Настройки Telegram сохранены' : 'Telegram settings saved', 'success');
 }
 async function loadTelegramSettings() {
