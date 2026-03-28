@@ -10971,13 +10971,19 @@ If web_search returns nothing useful → say "не смог найти акту�
         'send_message': 'tg_send_message',
         'get_balance': 'get_ton_balance',
         'check_balance': 'get_ton_balance',
+        'schedule_message': 'tg_send_message',
       };
 
       // Tools to silently drop (hallucinated by AI from old context, never execute)
+      // If tool is not in validToolNames AND is in this set → skip without logging
       const SILENT_DROP = new Set([
         'get_market_activity', 'get_market_health', 'get_top_deals',
         'scan_real_arbitrage', 'get_market_overview', 'find_underpriced_gifts',
         'get_gift_upgrade_stats', 'analyze_gift_profitability', 'appraise_gift',
+        'get_gift_floor_real', 'get_gift_catalog', 'get_gift_sales_history',
+        'get_gift_aggregator', 'get_user_portfolio', 'buy_catalog_gift',
+        'buy_resale_gift', 'buy_market_gift', 'list_gift_for_sale',
+        'get_unique_gift_prices', 'get_backdrop_floors', 'get_price_list',
       ]);
 
       // Phase 2: Filter out truly broken calls, keep valid ones (with alias resolution)
