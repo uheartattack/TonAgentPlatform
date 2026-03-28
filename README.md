@@ -20,7 +20,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Node.js](https://img.shields.io/badge/Node.js-20+-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-4169E1?style=flat-square&logo=postgresql&logoColor=white)](https://www.postgresql.org)
-[![License: BSL 1.1](https://img.shields.io/badge/License-BSL_1.1-red.svg?style=flat-square)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
 [![Telegram Bot](https://img.shields.io/badge/Bot-@TonAgentPlatformBot-2CA5E0?style=flat-square&logo=telegram&logoColor=white)](https://t.me/TonAgentPlatformBot)
 [![Live](https://img.shields.io/badge/Status-Live-brightgreen?style=flat-square)](https://tonagentplatform.com)
 
@@ -311,7 +311,7 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guid
 
 ## License
 
-BSL 1.1 &copy; 2026 TON Agent Platform. Source available &mdash; not open source. See [LICENSE](LICENSE) for details.
+MIT &copy; 2026 TON Agent Platform. See [LICENSE](LICENSE) for details.
 
 ---
 
