@@ -252,6 +252,14 @@ export async function buildModularPrompt(params: {
   const identity = modules[PROMPT_MODULES.IDENTITY] || defaultIdentity(config);
   sections.push(`\u2501\u2501\u2501 IDENTITY \u2501\u2501\u2501\n${identity}`);
 
+  // 4b. CUSTOM ROLE (if set by user)
+  if (config.customRole && typeof config.customRole === 'object') {
+    const cr = config.customRole as any;
+    if (cr.name) {
+      sections.push(`## Your Role\nRole: ${cr.name}${cr.description ? '\nDescription: ' + cr.description : ''}`);
+    }
+  }
+
   // 5. USER (owner profile)
   const userProfile = modules[PROMPT_MODULES.USER];
   if (userProfile) {

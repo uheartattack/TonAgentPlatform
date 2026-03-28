@@ -2605,6 +2605,9 @@ class UserbotManager {
           return;
         }
 
+        // Owner messages always pass — never skip owner
+        if (isOwnerMsg) score = Math.max(score, 1.0);
+
         if (score < 0.5) {
           // Check if proactive mode is auto-enabled for this chat
           let isProactive = false;

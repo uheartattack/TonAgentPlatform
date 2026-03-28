@@ -94,9 +94,36 @@ export function getCurrentUsage(agentId: number): TokenBucket {
   };
 }
 
-/** Set daily token budget for an agent (0 = unlimited) */
-export function setDailyBudget(agentId: number, limit: number): void {
+/** Set daily token budget for an agent (0 = unlimited). Persists to DB. */
+export async function setDailyBudget(agentId: number, limit: number): Promise<void> {
   _dailyBudgets.set(agentId, limit);
+  // Persist to agent_state so it survives restarts
+  try {
+    const pool = await getPool();
+    await pool.query(
+      `INSERT INTO builder_bot.agent_state (agent_id, user_id, key, value, updated_at)
+       VALUES ($1, 0, '_token_budget', $2, NOW())
+       ON CONFLICT (agent_id, key) DO UPDATE SET value=$2, updated_at=NOW()`,
+      [agentId, JSON.stringify({ limit })]
+    );
+  } catch {}
+}
+
+/** Load budgets from DB on startup */
+export async function loadBudgetsFromDB(): Promise<void> {
+  try {
+    const pool = await getPool();
+    const res = await pool.query(
+      `SELECT agent_id, value FROM builder_bot.agent_state WHERE key='_token_budget'`
+    );
+    for (const row of res.rows) {
+      try {
+        const parsed = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
+        const limit = parsed?.limit || parsed?.text ? JSON.parse(parsed.text)?.limit : 0;
+        if (limit > 0) _dailyBudgets.set(row.agent_id, Number(limit));
+      } catch {}
+    }
+  } catch {}
 }
 
 /** Check if agent is within daily budget */

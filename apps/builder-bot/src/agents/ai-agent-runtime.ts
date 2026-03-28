@@ -10628,7 +10628,8 @@ If web_search returns nothing useful → say "не смог найти акту�
   // ── Smart context compaction: AI-summarize old messages → daily log → trim ──
   const MAX_CONTEXT_CHARS = providerCfg.maxContextChars;
   let totalChars = messages.reduce((sum, m) => sum + (typeof m.content === 'string' ? m.content.length : 0), 0);
-  if (totalChars > MAX_CONTEXT_CHARS || messages.length > 50) {
+  const _compactionStrategy = (params.config.compaction_strategy as string) || 'structured';
+  if ((totalChars > MAX_CONTEXT_CHARS || messages.length > 50) && _compactionStrategy !== 'off') {
     const beforeCount = messages.length;
     try {
       const { compactContext } = await import('../services/agent-memory');
@@ -10835,7 +10836,9 @@ If web_search returns nothing useful → say "не смог найти акту�
     }
 
     // Observation Masking: compress old tool results before each AI call
-    compressOldToolResults(messages, iter === 0 ? 10 : 4);
+    const _maskingEnabled = params.config.masking_enabled !== false; // default true
+    const _maskingKeepRecent = Number(params.config.masking_keep_recent) || (iter === 0 ? 10 : 4);
+    if (_maskingEnabled) compressOldToolResults(messages, _maskingKeepRecent);
 
     let response: OpenAI.ChatCompletion = undefined as any;
     // Retry loop for rate-limit (429) errors
@@ -11294,6 +11297,16 @@ If web_search returns nothing useful → say "не смог найти акту�
     }
 
     if (finalContent) {
+      // ── Behavior: auto-react to incoming message with emoji ──
+      if (bh.reactions && chatId && msgs.length > 0 && Math.random() < 0.3) {
+        try {
+          const reactionEmojis = ['👍', '🔥', '❤️', '👀', '🤔', '💯', '⚡', '🎯'];
+          const emoji = reactionEmojis[Math.floor(Math.random() * reactionEmojis.length)];
+          const lastMsgId = (params.config._lastMessageId as number) || 0;
+          if (lastMsgId && chatId) await tgReactMessage(chatId, String(lastMsgId), emoji).catch(() => {});
+        } catch {}
+      }
+
       // ── Behavior: read receipts + typing delay ──
       try { await applyBehaviorBeforeResponse(params, chatId); } catch {}
 
