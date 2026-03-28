@@ -3645,6 +3645,21 @@ export function startApiServer() {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════
+  // EVALS (auto quality scoring)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  app.get('/api/agents/:id/evals', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const evals = await import('./services/agent-evals');
+      const agentId = Number(req.params.id);
+      const limit = Number(req.query.limit) || 50;
+      const results = await evals.getEvals(agentId, limit);
+      const avgScore = await evals.getAvgScore(agentId);
+      res.json({ ok: true, evals: results, avgScore });
+    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+  });
+
   // CORE MEMORY (structured blocks: identity/preferences/lessons/goals/contacts)
   // ═══════════════════════════════════════════════════════════════════════════
 

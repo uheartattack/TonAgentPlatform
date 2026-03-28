@@ -2110,6 +2110,33 @@ function switchSettingsTab(tab) {
   } else if (tab === 'telegram') {
     body.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--text-muted)">Loading...</div>';
     loadAgentTelegramTab(body, _detailAgentId);
+  } else if (tab === 'evals') {
+    var isRu = currentLang === 'ru';
+    body.innerHTML =
+      '<div class="rt-page">' +
+      '<div class="rt-header">' +
+        '<div class="rt-header-icon" style="background:rgba(16,185,129,0.12);color:#10b981">' + IC.check + '</div>' +
+        '<div class="rt-header-text">' +
+          '<h3>' + (isRu ? 'Оценки качества' : 'Quality Evals') + '</h3>' +
+          '<p>' + (isRu ? 'Автоматическая оценка каждого ответа агента' : 'Auto quality scoring for every agent response') + '</p>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + (isRu ? 'Средний балл' : 'Average Score') + '</div>' +
+        '<div id="eval-avg" style="display:flex;gap:16px;align-items:center">' +
+          '<div style="font-size:2.5rem;font-weight:700;color:#10b981" id="eval-avg-num">-</div>' +
+          '<div style="font-size:.78rem;color:var(--text-muted)">' + (isRu ? 'из 10 (последние 20 ответов)' : 'out of 10 (last 20 responses)') + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + (isRu ? 'История оценок' : 'Eval History') + '</div>' +
+        '<div id="eval-list" style="display:flex;flex-direction:column;gap:6px">' +
+          '<div style="text-align:center;color:var(--text-muted);padding:2rem">' + (isRu ? 'Загрузка...' : 'Loading...') + '</div>' +
+        '</div>' +
+      '</div>' +
+      '</div>';
+    loadEvalsData();
+
   } else if (tab === 'audit') {
     body.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--text-muted)">' + (currentLang === 'ru' ? 'Загрузка аудита...' : 'Loading audit...') + '</div>';
     runSettingsAudit(body);
@@ -11514,6 +11541,56 @@ async function viewDailyLog(date) {
 // ═══════════════════════════════════════════════════════════════════════════
 // TASKS TAB
 // ═══════════════════════════════════════════════════════════════════════════
+
+async function loadEvalsData() {
+  try {
+    var data = await apiRequest('GET', '/api/agents/' + _detailAgentId + '/evals?limit=30');
+    var avgEl = document.getElementById('eval-avg-num');
+    if (avgEl) {
+      var score = data.avgScore || 0;
+      avgEl.textContent = score.toFixed(1);
+      avgEl.style.color = score >= 7 ? '#10b981' : score >= 5 ? '#f59e0b' : '#ef4444';
+    }
+    var listEl = document.getElementById('eval-list');
+    if (!listEl) return;
+    var evals = data.evals || [];
+    if (evals.length === 0) {
+      listEl.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:2rem">' + (currentLang === 'ru' ? 'Ещё нет оценок. Агент начнёт получать оценки после следующего ответа.' : 'No evals yet. Agent will get scored after next response.') + '</div>';
+      return;
+    }
+    var isRu = currentLang === 'ru';
+    listEl.innerHTML = evals.map(function(e) {
+      var score = e.overallScore || 0;
+      var color = score >= 7 ? '#10b981' : score >= 5 ? '#f59e0b' : '#ef4444';
+      var criteria = e.criteria || {};
+      var flagsHtml = (e.flags || []).map(function(f) {
+        return '<span style="font-size:.6rem;padding:2px 6px;border-radius:4px;background:rgba(239,68,68,0.1);color:#ef4444">' + f + '</span>';
+      }).join(' ');
+      var date = new Date(e.timestamp).toLocaleString();
+      return '<div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;border-left:3px solid ' + color + '">' +
+        '<div style="font-size:1.4rem;font-weight:700;color:' + color + ';min-width:40px;text-align:center">' + score.toFixed(1) + '</div>' +
+        '<div style="flex:1;min-width:0">' +
+          '<div style="display:flex;gap:8px;font-size:.68rem;color:var(--text-muted);flex-wrap:wrap">' +
+            '<span>' + (isRu ? 'Рел' : 'Rel') + ': ' + (criteria.relevance || 0) + '</span>' +
+            '<span>' + (isRu ? 'Без' : 'Safe') + ': ' + (criteria.safety || 0) + '</span>' +
+            '<span>' + (isRu ? 'Эфф' : 'Eff') + ': ' + (criteria.efficiency || 0) + '</span>' +
+            '<span>' + (isRu ? 'Яз' : 'Lang') + ': ' + (criteria.language || 0) + '</span>' +
+            '<span>' + (isRu ? 'Гал' : 'Hall') + ': ' + (criteria.hallucination || 0) + '</span>' +
+          '</div>' +
+          (flagsHtml ? '<div style="margin-top:4px">' + flagsHtml + '</div>' : '') +
+        '</div>' +
+        '<div style="font-size:.65rem;color:var(--text-muted);text-align:right;white-space:nowrap">' +
+          '<div>' + e.model + '</div>' +
+          '<div>' + date + '</div>' +
+          '<div>' + e.toolCallCount + ' tools, ' + e.iterationCount + ' iters</div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  } catch(e) {
+    var listEl = document.getElementById('eval-list');
+    if (listEl) listEl.innerHTML = '<div style="color:#ef4444;padding:1rem">Error: ' + escHtml(e.message) + '</div>';
+  }
+}
 
 async function loadTasksData() {
   try {
