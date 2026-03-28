@@ -1684,6 +1684,12 @@ function switchSettingsTab(tab) {
             '<div class="rt-toggle-name">' + (isRu ? 'Группы' : 'Groups') + '</div>' +
             '<div class="rt-toggle-desc">' + (isRu ? 'Групповые чаты' : 'Group chats') + '</div>' +
           '</label>' +
+          '<label class="rt-toggle-card' + (chatTypes.includes('channel') ? ' rt-active' : '') + '" onclick="this.classList.toggle(\'rt-active\');this.querySelector(\'input\').checked=this.classList.contains(\'rt-active\')">' +
+            '<input type="checkbox" id="routing-channel"' + (chatTypes.includes('channel') ? ' checked' : '') + ' style="display:none">' +
+            '<div class="rt-toggle-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></div>' +
+            '<div class="rt-toggle-name">' + (isRu ? 'Каналы' : 'Channels') + '</div>' +
+            '<div class="rt-toggle-desc">' + (isRu ? 'Комменты каналов' : 'Channel comments') + '</div>' +
+          '</label>' +
         '</div>' +
         '<div class="rt-input-hint" style="margin-top:6px">' + (isRu
           ? 'Включите типы чатов, в которых агент должен работать'
@@ -3640,6 +3646,7 @@ async function saveSettingsRouting() {
   var chatTypes = [];
   if ((document.getElementById('routing-dm') || {}).checked) chatTypes.push('dm');
   if ((document.getElementById('routing-group') || {}).checked) chatTypes.push('group');
+  if ((document.getElementById('routing-channel') || {}).checked) chatTypes.push('channel');
   if ((document.getElementById('routing-channel') || {}).checked) chatTypes.push('channel');
 
   var btn = document.querySelector('.rt-save-btn');

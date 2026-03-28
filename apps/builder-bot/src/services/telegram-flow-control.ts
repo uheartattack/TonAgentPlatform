@@ -340,11 +340,13 @@ const LOOP_MAX_RESPONSES = 8;    // max responses per agent per chat per window
 const _loopTracker = new Map<string, number[]>();
 
 /** Check if agent can respond in this chat. Returns true if allowed. */
-export function loopGuardCheck(agentId: number, chatKey: string): boolean {
+export function loopGuardCheck(agentId: number, chatKey: string, maxResponses?: number, windowMs?: number): boolean {
   const key = `${agentId}:${chatKey}`;
   const now = Date.now();
-  const times = (_loopTracker.get(key) || []).filter(t => now - t < LOOP_WINDOW_MS);
-  if (times.length >= LOOP_MAX_RESPONSES) return false;
+  const window = windowMs || LOOP_WINDOW_MS;
+  const max = maxResponses || LOOP_MAX_RESPONSES;
+  const times = (_loopTracker.get(key) || []).filter(t => now - t < window);
+  if (times.length >= max) return false;
   times.push(now);
   _loopTracker.set(key, times);
   return true;
