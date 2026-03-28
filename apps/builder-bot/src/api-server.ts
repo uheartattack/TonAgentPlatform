@@ -3665,38 +3665,41 @@ export function startApiServer() {
 
   app.get('/api/agents/:id/core-memory', requireAuth, async (req: Request, res: Response) => {
     try {
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
       const cm = await import('./services/core-memory');
-      const blocks = await cm.getAllBlocks(Number(req.params.id));
+      const blocks = await cm.getAllBlocks(own.agentId);
       res.json({ ok: true, blocks });
     } catch (e: any) { res.json({ ok: false, error: e.message }); }
   });
 
   app.put('/api/agents/:id/core-memory/:block', requireAuth, async (req: Request, res: Response) => {
     try {
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
       const cm = await import('./services/core-memory');
-      const { content } = req.body;
-      await cm.updateBlock(Number(req.params.id), String(req.params.block), content || '');
+      await cm.updateBlock(own.agentId, String(req.params.block), req.body.content || '');
       res.json({ ok: true });
     } catch (e: any) { res.json({ ok: false, error: e.message }); }
   });
 
   app.post('/api/agents/:id/core-memory/:block/append', requireAuth, async (req: Request, res: Response) => {
     try {
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
       const cm = await import('./services/core-memory');
-      await cm.appendToBlock(Number(req.params.id), String(req.params.block), req.body.content || '');
+      await cm.appendToBlock(own.agentId, String(req.params.block), req.body.content || '');
       res.json({ ok: true });
     } catch (e: any) { res.json({ ok: false, error: e.message }); }
   });
 
   app.delete('/api/agents/:id/core-memory/:block', requireAuth, async (req: Request, res: Response) => {
     try {
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
       const cm = await import('./services/core-memory');
       const keyword = String(req.query.keyword || '');
       if (keyword) {
-        const found = await cm.deleteFromBlock(Number(req.params.id), String(req.params.block), keyword);
+        const found = await cm.deleteFromBlock(own.agentId, String(req.params.block), keyword);
         res.json({ ok: true, found });
       } else {
-        await cm.updateBlock(Number(req.params.id), String(req.params.block), '');
+        await cm.updateBlock(own.agentId, String(req.params.block), '');
         res.json({ ok: true });
       }
     } catch (e: any) { res.json({ ok: false, error: e.message }); }
