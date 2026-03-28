@@ -10765,6 +10765,7 @@ If web_search returns nothing useful → say "не смог найти акту�
   }
 
   let totalToolCalls = 0;
+  let totalIterations = 0;
   let finalContent: string | undefined;
   _tickNotifyFlag.set(params.agentId, false); // reset flag for this tick
 
@@ -11042,6 +11043,7 @@ If web_search returns nothing useful → say "не смог найти акту�
 
     // ── Execute tool calls with concurrency cap (max 3 parallel) ──────────
     totalToolCalls += assistant.tool_calls.length;
+    totalIterations++;
     const TOOL_CONCURRENCY = 3;
     const toolResults: { role: 'tool'; tool_call_id: string; content: string }[] = [];
 
@@ -11488,7 +11490,7 @@ If web_search returns nothing useful → say "не смог найти акту�
       input: lastInput,
       response: finalContent || '',
       toolCallCount: totalToolCalls,
-      iterationCount: iter,
+      iterationCount: totalIterations,
       model: usedModel,
       expectedLang: (params.config.agent_language as string) || undefined,
     });
