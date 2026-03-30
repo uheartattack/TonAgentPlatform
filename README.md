@@ -1,328 +1,358 @@
 <div align="center">
 
-<img src="logo.gif" alt="TON Agent Platform" width="420">
+<br>
 
-<br><br>
+<h1>🤖 TON Agent Platform</h1>
 
-# TON Agent Platform
-
-### Autonomous AI Agents for the TON Blockchain
-
-*Describe what you want in plain text or voice — get a 24/7 autonomous agent in seconds. No code. No servers.*
+<p><b>Создавай автономных AI-агентов для блокчейна TON — голосом или текстом, без кода</b></p>
+<p><i>Create autonomous AI agents for the TON blockchain — by voice or text, no code required</i></p>
 
 <br>
 
-[![TON Hackathon](https://img.shields.io/badge/TON_Hackathon-Agent_Infrastructure-0098EA?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNMTIgMkw0IDdWMTdMMTIgMjJMMjAgMTdWN0wxMiAyWiIgZmlsbD0id2hpdGUiLz48L3N2Zz4=)](https://identityhub.app/contests/ai-hackathon?submission=cmmnwv6sg001b01oboxo8f57r)
-[![Previous Grant Winner](https://img.shields.io/badge/Previous_TON_Grant-Winner-gold?style=for-the-badge)](https://identityhub.app/contests/agent-tooling-fast-grants?submission=cmlz5smqj000101p7wao32nfd)
+[![TON Hackathon](https://img.shields.io/badge/TON_Hackathon_2026-Agent_Infrastructure-0098EA?style=for-the-badge&logoColor=white)](https://identityhub.app/contests/ai-hackathon?submission=cmmnwv6sg001b01oboxo8f57r)
+[![TON Grant Winner](https://img.shields.io/badge/TON_Grant-Winner_🏆-FFD700?style=for-the-badge)](https://identityhub.app/contests/agent-tooling-fast-grants?submission=cmlz5smqj000101p7wao32nfd)
 
 <br>
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Node.js](https://img.shields.io/badge/Node.js-20+-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-4169E1?style=flat-square&logo=postgresql&logoColor=white)](https://www.postgresql.org)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
-[![Telegram Bot](https://img.shields.io/badge/Bot-@TonAgentPlatformBot-2CA5E0?style=flat-square&logo=telegram&logoColor=white)](https://t.me/TonAgentPlatformBot)
-[![Live](https://img.shields.io/badge/Status-Live-brightgreen?style=flat-square)](https://tonagentplatform.com)
+[![License: MIT](https://img.shields.io/badge/License-MIT-22c55e?style=flat-square)](LICENSE)
+[![Status](https://img.shields.io/badge/Status-Live_🟢-22c55e?style=flat-square)](https://tonagentplatform.com)
+[![Telegram](https://img.shields.io/badge/Bot-@TonAgentPlatformBot-2CA5E0?style=flat-square&logo=telegram&logoColor=white)](https://t.me/TonAgentPlatformBot)
 
 <br>
 
-[**Launch Bot**](https://t.me/TonAgentPlatformBot) &nbsp;&bull;&nbsp; [**Open Studio**](https://tonagentplatform.com/studio.html) &nbsp;&bull;&nbsp; [**Website**](https://tonagentplatform.com) &nbsp;&bull;&nbsp; [**Channel**](https://t.me/TONAgentPlatform)
+[**🤖 Запустить бота**](https://t.me/TonAgentPlatformBot) &nbsp;·&nbsp; [**🎨 Открыть Studio**](https://tonagentplatform.com/studio.html) &nbsp;·&nbsp; [**🌐 Сайт**](https://tonagentplatform.com) &nbsp;·&nbsp; [**📢 Канал**](https://t.me/TONAgentPlatform)
+
+<br>
 
 </div>
 
 ---
 
-## Overview
-
-TON Agent Platform enables anyone to create **autonomous AI agents** that operate on the TON blockchain through Telegram &mdash; without writing a single line of code.
-
-Describe your task in text or voice. The AI generates a system prompt, selects from 84+ tools, and deploys the agent in seconds. Each agent gets its own TON wallet and can operate as a real Telegram user via MTProto.
-
-> **Built by two young developers. Previous TON grant winner.**
-
----
-
-## Key Features
+## 🇷🇺 О проекте &nbsp;|&nbsp; 🇬🇧 About
 
 <table>
-<tr><td width="50%" valign="top">
+<tr>
+<td width="50%" valign="top">
 
-**AI-First Creation**
-Describe a task in text or voice &rarr; AI generates prompt + picks tools &rarr; agent runs autonomously
+### 🇷🇺 Русский
 
-**7 AI Providers**
-Gemini, GPT-4o, Claude, Groq, DeepSeek, OpenRouter, Together &mdash; switch per agent or use platform fallback
+**TON Agent Platform** — инфраструктура для создания автономных AI-агентов, работающих в блокчейне TON через Telegram.
 
-**Voice Commands**
-Send a voice message &rarr; transcription &rarr; agent created or command executed
+Просто опиши задачу текстом или голосом — AI сгенерирует промпт, подберёт инструменты и задеплоит агента за секунды. Никакого кода, никаких серверов.
 
-**84+ Agent Tools**
-TON, gifts, NFTs, DeFi, web search, Telegram userbot, state management, notifications, scheduling
+Каждый агент получает собственный TON-кошелёк, умеет торговать подарками, взаимодействовать с DeFi, работать как настоящий Telegram-пользователь через MTProto и выполнять задачи 24/7.
 
-**Studio Dashboard**
-Full web interface: agent settings, memory editor, task manager, token usage analytics, lifecycle control
+> Построено двумя молодыми разработчиками. Победители TON Grant.
 
-</td><td width="50%" valign="top">
+</td>
+<td width="50%" valign="top">
 
-**Gift Marketplace Integration**
-Real-time pricing via GiftAsset + SwiftGifts, arbitrage scanning, portfolio tracking, automated buy/sell
+### 🇬🇧 English
 
-**Telegram Userbot (MTProto)**
-Agents operate as real Telegram users &mdash; read chats, send messages, react, join channels, search, forward
+**TON Agent Platform** is infrastructure for building autonomous AI agents operating on the TON blockchain through Telegram.
 
-**Per-Agent Memory & Tasks**
-Persistent memory with FTS search, daily logs, task queue with DAG dependencies, token usage tracking
+Just describe your task in text or voice — AI generates a system prompt, picks the right tools, and deploys the agent in seconds. No code. No servers.
 
-**Security-First Architecture**
-Sandboxed execution, SSRF protection, IDOR checks, prompt injection defense, memory poisoning prevention
+Each agent gets its own TON wallet, can trade gifts, interact with DeFi, operate as a real Telegram user via MTProto, and work 24/7 autonomously.
 
-**12 Plugins + 22 Templates**
-DeDust, STON.fi, EVAA, CoinGecko, Whale Tracker, Discord, Email, Slack &mdash; install with one click
+> Built by two young developers from Russia. Previous TON Grant winners.
 
-</td></tr>
+</td>
+</tr>
 </table>
 
 ---
 
-## Architecture
+## ✨ Ключевые возможности &nbsp;|&nbsp; Key Features
+
+<table>
+<tr>
+<td width="50%">
+
+### 🇷🇺
+
+| | Возможность | Описание |
+|:-|:------------|:---------|
+| 🎙️ | **Голосовое создание** | Надиктуй задачу — агент готов за 10 сек |
+| 🤖 | **7 AI-провайдеров** | Gemini, GPT-4o, Claude, Groq, DeepSeek... |
+| 🛠️ | **84+ инструментов** | TON, подарки, NFT, DeFi, веб, Telegram |
+| 🎁 | **Маркетплейс подарков** | Реальные цены, арбитраж, авто-торговля |
+| 📱 | **MTProto Userbot** | Агент = настоящий Telegram-пользователь |
+| 🧠 | **Память агента** | Персистентная + FTS-поиск + дневные логи |
+| 📊 | **Studio Dashboard** | 17 вкладок: настройки, графики, задачи |
+| 🔐 | **Безопасность** | Sandbox, SSRF, anti-loop, op-lock |
+
+</td>
+<td width="50%">
+
+### 🇬🇧
+
+| | Feature | Description |
+|:-|:--------|:------------|
+| 🎙️ | **Voice Creation** | Speak your task — agent ready in 10 sec |
+| 🤖 | **7 AI Providers** | Gemini, GPT-4o, Claude, Groq, DeepSeek... |
+| 🛠️ | **84+ Tools** | TON, gifts, NFTs, DeFi, web, Telegram |
+| 🎁 | **Gift Marketplace** | Real-time pricing, arbitrage, auto-trading |
+| 📱 | **MTProto Userbot** | Agent operates as a real Telegram user |
+| 🧠 | **Agent Memory** | Persistent + FTS search + daily logs |
+| 📊 | **Studio Dashboard** | 17 settings tabs: charts, tokens, tasks |
+| 🔐 | **Security** | Sandbox, SSRF, anti-loop, op-lock |
+
+</td>
+</tr>
+</table>
+
+---
+
+## 🏗️ Архитектура &nbsp;|&nbsp; Architecture
 
 ```mermaid
 graph TB
-    subgraph Clients
-        User((User))
+    subgraph Clients["Clients"]
         TG[Telegram]
         Web[Web Studio]
     end
 
-    subgraph Core["Core Platform"]
+    subgraph Core["Core"]
         Bot[Telegraf Bot]
-        API[REST API + WebSocket]
+        API[REST API]
         Orch[AI Orchestrator]
     end
 
-    subgraph Agents["Agent Runtime"]
-        Creator[Agent Creator]
-        Runtime[AI Agent Runtime<br/>84+ tools, 5-iter loop]
-        Runner[Scheduled Runner]
-        Lifecycle[Lifecycle Manager<br/>FSM: stop/start/restart]
+    subgraph Runtime["Agent Runtime"]
+        Creator[Creator]
+        AIRuntime[AI Runtime - 84 tools - 5-iter loop]
+        Lifecycle[Lifecycle FSM]
     end
 
-    subgraph Data["Data Layer"]
-        DB[(PostgreSQL + Drizzle)]
-        Memory[Agent Memory<br/>persistent + daily logs + FTS]
-        Tasks[Task Queue<br/>DAG dependencies]
-        Tokens[Token Tracker<br/>per-agent daily usage]
+    subgraph Data["Data"]
+        DB[(PostgreSQL)]
+        Memory[Memory + FTS]
+        Tasks[Task Queue DAG]
+        Tokens[Token Tracker]
     end
 
-    subgraph Integrations
-        TON[TON Blockchain<br/>TonAPI v2 + TON Connect]
-        Gifts[GiftAsset + SwiftGifts<br/>real-time pricing]
-        Userbot[Telegram Userbot<br/>GramJS MTProto]
+    subgraph Integrations["Integrations"]
+        TON[TON Blockchain]
+        Gifts[GiftAsset + SwiftGifts]
+        Userbot[GramJS MTProto]
         AI{7 AI Providers}
-        Plugins[12 Plugins<br/>DeFi, Analytics, Alerts]
+        Plugins[12 Plugins]
     end
 
-    User -->|text / voice| TG --> Bot
-    User -->|browser| Web --> API
-    Bot --> Orch
-    API --> Orch
-    Orch --> Creator & Runtime & Runner
-    Runtime --> TON & Gifts & Userbot & AI & Plugins
-    Creator --> DB
-    Runtime --> Memory & Tasks & Tokens
-    Lifecycle -.-> Runtime & Runner
-    Memory & Tasks & Tokens --> DB
+    TG --> Bot --> Orch
+    Web --> API --> Orch
+    Orch --> Creator & AIRuntime
+    AIRuntime --> TON & Gifts & Userbot & AI & Plugins
+    AIRuntime --> Memory & Tasks & Tokens --> DB
+    Lifecycle -.-> AIRuntime
 
-    style Core fill:#1a1a2e,stroke:#0098EA,stroke-width:2px,color:#fff
-    style Agents fill:#16213e,stroke:#f59e0b,stroke-width:2px,color:#fff
-    style Data fill:#0f3460,stroke:#10b981,stroke-width:2px,color:#fff
-    style Integrations fill:#1a1a2e,stroke:#8b5cf6,stroke-width:2px,color:#fff
+    style Core fill:#0d1117,stroke:#0098EA,stroke-width:2px,color:#fff
+    style Runtime fill:#0d1117,stroke:#f59e0b,stroke-width:2px,color:#fff
+    style Data fill:#0d1117,stroke:#10b981,stroke-width:2px,color:#fff
+    style Integrations fill:#0d1117,stroke:#8b5cf6,stroke-width:2px,color:#fff
+    style Clients fill:#0d1117,stroke:#ec4899,stroke-width:2px,color:#fff
 ```
 
 ---
 
-## Agent Tools (84+)
+## 🛠️ Инструменты агента &nbsp;|&nbsp; Agent Tools (84+)
 
-| Category | Examples | Count |
-|:---------|:---------|:-----:|
-| **TON Blockchain** | `get_ton_balance` `send_ton` `get_agent_wallet` `get_nft_floor` | 4 |
-| **Gift Marketplace** | `get_gift_floor_real` `scan_real_arbitrage` `buy_catalog_gift` `buy_resale_gift` `list_gift_for_sale` `get_price_list` `get_market_overview` `get_user_portfolio` | 15 |
-| **DeFi** | `dex_get_prices` `dex_swap_simulate` `dex_get_pool_info` `dex_get_routes` | 4 |
-| **Telegram Userbot** | `tg_send_message` `tg_get_messages` `tg_join_channel` `tg_search_messages` `tg_forward` `tg_react` `tg_set_avatar` `tg_create_poll` | 20 |
-| **Web & Search** | `web_search` `fetch_url` `http_fetch` | 3 |
-| **State & Notifications** | `get_state` `set_state` `notify` `notify_rich` | 4 |
-| **Agent Coordination** | `list_my_agents` `ask_agent` `list_plugins` `run_plugin` | 4 |
-| **NFT Analytics** | `get_nft_collection` `get_nft_items` `get_nft_history` | 3 |
-| **Scheduling** | `set_timer` `cancel_timer` `get_time` `sleep` | 4 |
-| **Plugins** | 12 plugins with their own tool sets | ~23 |
-
----
-
-## Plugin Library
-
-| Plugin | Category | Description |
-|:-------|:---------|:------------|
-| DeDust DEX | DeFi | Swaps, liquidity pools, price feeds |
-| STON.fi DEX | DeFi | AMM swaps, pool analytics |
-| EVAA Lending | DeFi | Lending/borrowing on EVAA Protocol |
-| TonAPI Pro | Data | Wallet data, NFTs, transactions |
-| CoinGecko | Data | Real-time & historical crypto prices |
-| Whale Tracker | Analytics | Large wallet movement monitoring |
-| TON Stat | Analytics | Network stats, DEX volume, chain metrics |
-| Discord | Alerts | Discord channel notifications |
-| Email | Alerts | SMTP email alerts |
-| Slack | Alerts | Slack workspace notifications |
-| Drain Detector | Security | AI-powered wallet drain detection |
-| Contract Auditor | Security | Smart contract risk analysis |
+| Категория | Примеры | # |
+|:----------|:--------|:-:|
+| 💎 **TON Blockchain** | `get_ton_balance` `send_ton` `get_nft_floor` `get_agent_wallet` | 4 |
+| 🎁 **Gift Marketplace** | `get_gift_floor_real` `scan_real_arbitrage` `buy_catalog_gift` `buy_resale_gift` `get_price_list` `get_user_portfolio` | 15 |
+| 💱 **DeFi** | `dex_get_prices` `dex_swap_simulate` `dex_get_pool_info` `dex_get_routes` | 4 |
+| 📡 **Telegram Userbot** | `tg_send_message` `tg_get_messages` `tg_join_channel` `tg_search_messages` `tg_react` `tg_create_poll` | 20 |
+| 🌐 **Web & Search** | `web_search` `fetch_url` `http_fetch` | 3 |
+| 🔔 **Notifications** | `notify` `notify_rich` `get_state` `set_state` | 4 |
+| 🤝 **Multi-Agent** | `ask_agent` `list_my_agents` `run_plugin` `list_plugins` | 4 |
+| 🖼️ **NFT Analytics** | `get_nft_collection` `get_nft_items` `get_nft_history` | 3 |
+| ⏰ **Scheduling** | `set_timer` `cancel_timer` `sleep` `get_time` | 4 |
+| 🔌 **Plugins** | 12 плагинов / 12 plugins | ~23 |
 
 ---
 
-## Studio Dashboard
+## 🔌 Плагины &nbsp;|&nbsp; Plugins
 
-The web-based Studio provides full control over every agent:
-
-| Tab | Description |
-|:----|:------------|
-| **Soul** | Agent personality and system prompt editor |
-| **Security** | Immutable safety rules (read-only) |
-| **Strategy** | Business strategy and goals |
-| **Heartbeat** | Proactive tasks when agent is idle |
-| **AI Settings** | Provider, model, API key per agent |
-| **Capabilities** | Toggle 20 capability categories |
-| **Lifecycle** | Real-time status, uptime, start/stop/restart |
-| **Token Usage** | Daily consumption chart, cost estimation, budget limits |
-| **Memory** | Persistent memory editor, FTS search, daily log viewer |
-| **Tasks** | Task queue with priorities, dependencies, scheduling |
-| **Contacts** | Users the agent interacted with, allowed/admin toggles |
-| **Blocklist** | Keyword filtering with word-boundary matching |
-| **Triggers** | Context injection rules on keyword match |
-| **Telegram** | Userbot auth (QR login / phone+OTP) |
-| **Wallet** | TON wallet address, mnemonic, balance |
-| **Chat** | Conversation history with the agent |
-| **Audit** | Execution logs and error tracking |
+| Плагин | Категория | Описание |
+|:-------|:---------|:---------|
+| **DeDust DEX** | DeFi | Свапы, пулы / Swaps, liquidity pools |
+| **STON.fi DEX** | DeFi | AMM свапы / AMM swaps, analytics |
+| **EVAA Lending** | DeFi | Кредитование / Lending on EVAA Protocol |
+| **TonAPI Pro** | Data | Кошельки, NFT / Wallets, NFTs, txs |
+| **CoinGecko** | Data | Крипто-цены / Crypto prices real-time |
+| **Whale Tracker** | Analytics | Мониторинг китов / Whale monitoring |
+| **TON Stat** | Analytics | Статистика сети / Network & DEX stats |
+| **Discord** | Alerts | Discord уведомления / Notifications |
+| **Email** | Alerts | SMTP алерты / SMTP email alerts |
+| **Slack** | Alerts | Slack уведомления / Slack notifications |
+| **Drain Detector** | Security | AI-защита / AI wallet drain defense |
+| **Contract Auditor** | Security | Аудит контрактов / Contract risk analysis |
 
 ---
 
-## Quick Start
+## 🎨 Studio Dashboard
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### 🇷🇺 Вкладки Studio
+
+- 🌟 **Soul** — промпт и личность агента
+- 🛡️ **Security** — правила безопасности
+- 📈 **Strategy** — бизнес-цели и стратегия
+- 💓 **Heartbeat** — задачи в режиме ожидания
+- 🤖 **AI Settings** — провайдер, модель, ключ
+- ♻️ **Lifecycle** — статус, аптайм, старт/стоп
+- 📊 **Token Usage** — расход, бюджет, графики
+- 🧠 **Memory** — редактор + FTS-поиск
+- 📋 **Tasks** — задачи с зависимостями (DAG)
+- 👥 **Contacts** — история и права юзеров
+- 📡 **Telegram** — авторизация MTProto (QR)
+- 💎 **Wallet** — TON-кошелёк агента
+- 💬 **Chat** — история и тест-диалог
+
+</td>
+<td width="50%" valign="top">
+
+### 🇬🇧 Studio Tabs
+
+- 🌟 **Soul** — agent prompt and personality
+- 🛡️ **Security** — immutable safety rules
+- 📈 **Strategy** — business goals and strategy
+- 💓 **Heartbeat** — proactive idle tasks
+- 🤖 **AI Settings** — provider, model, API key
+- ♻️ **Lifecycle** — status, uptime, start/stop
+- 📊 **Token Usage** — consumption, budget, charts
+- 🧠 **Memory** — persistent editor + FTS search
+- 📋 **Tasks** — task queue with DAG dependencies
+- 👥 **Contacts** — user history and permissions
+- 📡 **Telegram** — MTProto auth (QR login)
+- 💎 **Wallet** — agent's TON wallet
+- 💬 **Chat** — conversation history + test dialog
+
+</td>
+</tr>
+</table>
+
+---
+
+## 🚀 Быстрый старт &nbsp;|&nbsp; Quick Start
 
 ```bash
-# Clone and install
-git clone https://github.com/spendollars/TonAgentPlatform
+# 1. Клонируй / Clone
+git clone https://github.com/uheartattack/TonAgentPlatform
 cd TonAgentPlatform && pnpm install
 
-# Configure
+# 2. Настрой / Configure
 cp apps/builder-bot/.env.example apps/builder-bot/.env
-# Edit .env: add BOT_TOKEN, DB credentials, AI API keys (optional)
+# Заполни: BOT_TOKEN, DATABASE_URL, AI API ключи (опционально)
+# Fill in: BOT_TOKEN, DATABASE_URL, AI API keys (optional)
 
-# Launch
-docker compose -f infrastructure/docker-compose.prod.yml up -d   # PostgreSQL
-pnpm --filter builder-bot dev                                     # Bot + API
+# 3. База данных / Database
+docker compose -f infrastructure/docker-compose.prod.yml up -d
+
+# 4. Старт / Start
+pnpm --filter builder-bot dev
 ```
 
-Open Telegram &rarr; [@TonAgentPlatformBot](https://t.me/TonAgentPlatformBot) &rarr; `/start`
+Telegram → [@TonAgentPlatformBot](https://t.me/TonAgentPlatformBot) → `/start`
 
 ---
 
-## Tech Stack
+## ⚙️ Технологии &nbsp;|&nbsp; Tech Stack
 
-| Layer | Technology |
-|:------|:-----------|
+| Слой / Layer | Технология |
+|:-------------|:-----------|
 | **Bot Framework** | Telegraf v4 |
-| **Language** | TypeScript 5.x, strict mode |
+| **Language** | TypeScript 5.x (strict) |
 | **AI Providers** | Gemini 2.5, Claude, GPT-4o, Groq, DeepSeek, OpenRouter, Together |
 | **Database** | PostgreSQL 15 + Drizzle ORM |
-| **Agent Sandbox** | Node.js VM (isolated, SSRF-protected) |
-| **Agent Runtime** | Autonomous agentic loop (function calling, 5 iterations, compaction) |
-| **TON** | @ton/core, @ton/ton, @ton/crypto, @tonconnect/sdk, TonAPI v2 |
-| **Telegram** | GramJS MTProto (userbot) + Telegraf (bot) |
-| **Gift APIs** | GiftAsset + SwiftGifts (rate-limited, cached, 7 tools) |
+| **Sandbox** | Node.js VM (isolated, SSRF-protected) |
+| **TON** | @ton/core · @ton/ton · @ton/crypto · TonAPI v2 |
+| **Telegram** | GramJS MTProto + Telegraf |
+| **Gift APIs** | GiftAsset + SwiftGifts (rate-limited, cached) |
 | **Infra** | Docker Compose + nginx + PM2 + Let's Encrypt |
-| **Monitoring** | Per-agent token tracking, lifecycle FSM, audit trail |
 
 ---
 
-## Security
+## 🔐 Безопасность &nbsp;|&nbsp; Security
 
-| Layer | Protection |
-|:------|:-----------|
-| **Execution** | Sandboxed VM with restricted globals; no `fs`, `child_process`, `net` |
-| **Network** | SSRF protection: blocks localhost, private IPs, metadata endpoints |
-| **Resources** | 30s max execution, memory cap per agent, daily token budgets |
-| **Code** | AI security scanner before deployment |
-| **API** | IDOR ownership verification on every endpoint, CORS allowlist |
-| **Auth** | Telegram OAuth + deeplink + QR login; no passwords stored |
-| **Anti-Loop** | A-B-A-B pattern detection, result-aware stall detection, loop guard |
-| **Flood** | Adaptive flood gate with jittered decay, per-chat serial queue |
-| **Financial** | Atomic operation lock with generation counter (prevents double-spend) |
-| **Memory** | Group chat poisoning prevention (only owner can write agent memory) |
-| **Input** | Prompt injection defense: user input sanitization, XML tag stripping |
+| Защита / Protection | Описание / Description |
+|:--------------------|:-----------------------|
+| **Sandbox VM** | Нет доступа к `fs`, `child_process`, `net` |
+| **SSRF Protection** | Блокировка localhost + private IPs |
+| **Anti-Loop Guard** | A-B-A-B детектор, stall detection |
+| **Flood Gate** | Адаптивный flood gate с jitter |
+| **Op Lock** | Атомарный лок финансовых операций |
+| **Memory Guard** | Защита памяти от poisoning в группах |
+| **IDOR Check** | Проверка владельца на каждом endpoint |
+| **Input Sanitize** | Prompt injection defense |
 
 ---
 
-## Roadmap
+## 📈 Дорожная карта &nbsp;|&nbsp; Roadmap
 
-- [x] AI-first agent creation (text + voice)
-- [x] 7 AI providers with fallback chain + per-agent switching
-- [x] 84+ agent tools (TON, gifts, NFT, DeFi, web, Telegram, Discord, X)
-- [x] Multi-platform: Telegram, Discord, X/Twitter
-- [x] GiftAsset + SwiftGifts real-time pricing
-- [x] Telegram userbot (MTProto) &mdash; agents as real users
-- [x] Shared Session Router &mdash; multi-agent on one TG account
-- [x] Studio Dashboard with 17 settings tabs
-- [x] Per-agent memory, tasks, token tracking
-- [x] Security audit: IDOR, XSS, data loss, infinite loop protection
-- [x] TON Connect v2 wallet integration
-- [x] 12 plugins + 22 templates + marketplace
-- [x] Voice commands + speech recognition
-- [x] Visual workflow constructor
+- [x] AI-first создание агентов (текст + голос)
+- [x] 7 AI-провайдеров с fallback-цепочкой
+- [x] 84+ инструментов агента
+- [x] Telegram Userbot (MTProto)
+- [x] GiftAsset + SwiftGifts реальные цены
+- [x] Studio Dashboard (17 вкладок)
+- [x] Память, задачи, трекинг токенов
+- [x] 12 плагинов + 22 шаблона + маркетплейс
+- [x] Голосовые команды
+- [x] TON Connect v2
 - [ ] Telegram Mini App
-- [ ] On-chain agent registry (TON smart contract)
-- [ ] DAO governance + platform token
+- [ ] On-chain реестр агентов
+- [ ] DAO + платформенный токен
 
 ---
 
-## Project Structure
+## 📁 Структура &nbsp;|&nbsp; Project Structure
 
 ```
 ton-agent-platform/
 ├── apps/
-│   ├── builder-bot/          # Main application
+│   ├── builder-bot/            # Основное приложение / Main app
 │   │   ├── src/
-│   │   │   ├── agents/       # AI runtime, orchestrator, runner, tools
-│   │   │   ├── services/     # Lifecycle, memory, tasks, tokens, hooks, flow control
-│   │   │   ├── api-server.ts # REST API (80+ endpoints)
-│   │   │   ├── bot.ts        # Telegram bot handlers
-│   │   │   └── db/           # PostgreSQL schema + Drizzle ORM
-│   │   └── plugins/          # 12 installable plugins
-│   └── landing/              # Web Studio (HTML/CSS/JS)
-│       ├── studio.html       # Studio UI
-│       ├── studio.js         # 11K+ lines of Studio logic
-│       └── studio.css        # Studio styles
-├── infrastructure/           # Docker Compose, nginx configs
-├── packages/                 # Shared packages
-└── scripts/                  # Utility scripts
+│   │   │   ├── agents/         # AI runtime, orchestrator, runner, tools
+│   │   │   ├── services/       # Lifecycle, memory, tasks, tokens, hooks
+│   │   │   ├── api-server.ts   # REST API (80+ endpoints)
+│   │   │   ├── bot.ts          # Telegram bot handlers
+│   │   │   └── db/             # PostgreSQL schema + Drizzle ORM
+│   │   └── plugins/            # 12 installable plugins
+│   └── landing/                # Web Studio
+│       ├── studio.html
+│       ├── studio.js           # ~11K lines of Studio logic
+│       └── studio.css
+├── infrastructure/             # Docker Compose, nginx
+└── packages/                   # Shared packages
 ```
-
----
-
-## Contributing
-
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-## License
-
-MIT &copy; 2026 TON Agent Platform. See [LICENSE](LICENSE) for details.
 
 ---
 
 <div align="center">
 
-**Built for the TON ecosystem**
+<br>
 
-[tonagentplatform.com](https://tonagentplatform.com) &nbsp;&bull;&nbsp; [@TonAgentPlatformBot](https://t.me/TonAgentPlatformBot) &nbsp;&bull;&nbsp; [Telegram Channel](https://t.me/TONAgentPlatform)
+**💎 Построено для экосистемы TON &nbsp;|&nbsp; Built for the TON ecosystem 💎**
 
 <br>
 
-<sub>Made with determination by two young developers from Russia</sub>
+[tonagentplatform.com](https://tonagentplatform.com) &nbsp;·&nbsp; [@TonAgentPlatformBot](https://t.me/TonAgentPlatformBot) &nbsp;·&nbsp; [Telegram Channel](https://t.me/TONAgentPlatform)
+
+<br>
+
+<sub>Made with ❤️ by two young developers from Russia &nbsp;|&nbsp; Сделано двумя молодыми разработчиками из России</sub>
+
+<br>
+
+[![Star on GitHub](https://img.shields.io/github/stars/uheartattack/TonAgentPlatform?style=social)](https://github.com/uheartattack/TonAgentPlatform)
 
 </div>
