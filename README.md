@@ -167,16 +167,20 @@ graph TB
 
 | Категория | Примеры | # |
 |:----------|:--------|:-:|
-| 💎 **TON Blockchain** | `get_ton_balance` `send_ton` `get_nft_floor` `get_agent_wallet` | 4 |
-| 🎁 **Gift Marketplace** | `get_gift_floor_real` `scan_real_arbitrage` `buy_catalog_gift` `buy_resale_gift` `get_price_list` `get_user_portfolio` | 15 |
-| 💱 **DeFi** | `dex_get_prices` `dex_swap_simulate` `dex_get_pool_info` `dex_get_routes` | 4 |
-| 📡 **Telegram Userbot** | `tg_send_message` `tg_get_messages` `tg_join_channel` `tg_search_messages` `tg_react` `tg_create_poll` | 20 |
-| 🌐 **Web & Search** | `web_search` `fetch_url` `http_fetch` | 3 |
-| 🔔 **Notifications** | `notify` `notify_rich` `get_state` `set_state` | 4 |
-| 🤝 **Multi-Agent** | `ask_agent` `list_my_agents` `run_plugin` `list_plugins` | 4 |
-| 🖼️ **NFT Analytics** | `get_nft_collection` `get_nft_items` `get_nft_history` | 3 |
-| ⏰ **Scheduling** | `set_timer` `cancel_timer` `sleep` `get_time` | 4 |
-| 🔌 **Plugins** | 12 плагинов / 12 plugins | ~23 |
+| 📡 **Telegram Userbot** | `tg_send_message` `tg_get_messages` `tg_join_channel` `tg_search_messages` `tg_react` `tg_create_poll` `tg_send_gift` `tg_get_members` `tg_ban_user` `tg_create_channel` | 91 |
+| 💎 **TON Blockchain** | `get_ton_balance` `send_ton` `send_jetton` `get_agent_wallet` `ton_get_account` `ton_get_nfts` `ton_get_transactions` `ton_get_jettons` `ton_get_rates` `ton_emulate_tx` | 11 |
+| 🎁 **Gift Marketplace** | `get_gift_floor_real` `scan_real_arbitrage` `buy_catalog_gift` `buy_resale_gift` `get_price_list` `get_user_portfolio` `get_market_overview` `get_gift_sales_history` `find_underpriced_gifts` | 39 |
+| 💱 **DeFi (DeDust + STON.fi)** | `dedust_swap` `dedust_quote` `dedust_pools` `stonfi_swap` `stonfi_quote` `stonfi_trending` `dex_get_prices` `dex_swap_simulate` | 16 |
+| 🧠 **Memory & Knowledge** | `remember` `recall` `browse_memory` `knowledge_save` `knowledge_search` `knowledge_list` `memory_stats` `compress_memories` `run_memory_maintenance` | 20 |
+| 🖼️ **Image Generation** | `generate_image` `image_analyze` `image_resize` `image_crop` `image_filter` `image_composite` `image_add_text` `image_convert` `image_download` | 10 |
+| 🔗 **State & Notifications** | `get_state` `set_state` `get_shared_state` `set_shared_state` `list_state_keys` `notify` `notify_rich` | 7 |
+| 📋 **Tasks & Planning** | `assign_task` `check_tasks` `create_plan` `manage_goals` `schedule_action` `set_next_wake` | 6 |
+| 📁 **Files & DNS** | `file_read` `file_write` `file_append` `file_delete` `file_list` `dns_resolve` `dns_check` `dns_bid` `dns_link` | 13 |
+| 🤝 **Multi-Agent & MCP** | `ask_agent` `list_my_agents` `manage_agent` `mcp_call` `mcp_connect` `mcp_list_tools` `suggest_plugin` | 7 |
+| 📓 **Journal & Deals** | `journal_log` `journal_query` `deal_propose` `deal_verify` `deal_status` `verify_payment` | 6 |
+| 🌐 **Web & Search** | `web_search` `fetch_url` `http_fetch` `send_email` | 4 |
+| 🔌 **Plugins** | `apply_plugin` `list_plugins` `run_custom_plugin` `remove_plugin` + 12 ready plugins | ~23 |
+| ⚙️ **Agent Self-Management** | `update_my_prompt` `update_my_interval` `update_my_description` `rollback_prompt` `request_pause` | 5 |
 
 ---
 
