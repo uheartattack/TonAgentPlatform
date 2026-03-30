@@ -78,11 +78,13 @@ Each agent gets its own TON wallet, can trade gifts, interact with DeFi, operate
 |:-|:------------|:---------|
 | 🎙️ | **Голосовое создание** | Надиктуй задачу — агент готов за 10 сек |
 | 🤖 | **7 AI-провайдеров** | Gemini, GPT-4o, Claude, Groq, DeepSeek... |
-| 🛠️ | **84+ инструментов** | TON, подарки, NFT, DeFi, веб, Telegram |
+| 🛠️ | **311 инструментов** | TON, подарки, NFT, DeFi, веб, Telegram |
 | 🎁 | **Маркетплейс подарков** | Реальные цены, арбитраж, авто-торговля |
 | 📱 | **MTProto Userbot** | Агент = настоящий Telegram-пользователь |
 | 🧠 | **Память агента** | Персистентная + FTS-поиск + дневные логи |
-| 📊 | **Studio Dashboard** | 17 вкладок: настройки, графики, задачи |
+| 📊 | **Studio Dashboard** | 29 вкладок: настройки, графики, задачи |
+| 🔬 | **Agent Evals** | Авто-оценка качества, алерты деградации |
+| 📚 | **База знаний** | Загрузка документов, индексация, FTS-поиск |
 | 🔐 | **Безопасность** | Sandbox, SSRF, anti-loop, op-lock |
 
 </td>
@@ -94,11 +96,13 @@ Each agent gets its own TON wallet, can trade gifts, interact with DeFi, operate
 |:-|:--------|:------------|
 | 🎙️ | **Voice Creation** | Speak your task — agent ready in 10 sec |
 | 🤖 | **7 AI Providers** | Gemini, GPT-4o, Claude, Groq, DeepSeek... |
-| 🛠️ | **84+ Tools** | TON, gifts, NFTs, DeFi, web, Telegram |
+| 🛠️ | **311 Tools** | TON, gifts, NFTs, DeFi, web, Telegram |
 | 🎁 | **Gift Marketplace** | Real-time pricing, arbitrage, auto-trading |
 | 📱 | **MTProto Userbot** | Agent operates as a real Telegram user |
 | 🧠 | **Agent Memory** | Persistent + FTS search + daily logs |
-| 📊 | **Studio Dashboard** | 17 settings tabs: charts, tokens, tasks |
+| 📊 | **Studio Dashboard** | 29 settings tabs: charts, tokens, tasks |
+| 🔬 | **Agent Evals** | Auto quality scoring, degradation alerts |
+| 📚 | **Knowledge Base** | Upload docs, chunk & index, FTS search |
 | 🔐 | **Security** | Sandbox, SSRF, anti-loop, op-lock |
 
 </td>
@@ -124,7 +128,7 @@ graph TB
 
     subgraph Runtime["Agent Runtime"]
         Creator[Creator]
-        AIRuntime[AI Runtime - 84 tools - 5-iter loop]
+        AIRuntime[AI Runtime - 311 tools - 5-iter loop]
         Lifecycle[Lifecycle FSM]
     end
 
@@ -159,7 +163,7 @@ graph TB
 
 ---
 
-## 🛠️ Инструменты агента &nbsp;|&nbsp; Agent Tools (84+)
+## 🛠️ Инструменты агента &nbsp;|&nbsp; Agent Tools (311)
 
 | Категория | Примеры | # |
 |:----------|:--------|:-:|
@@ -300,10 +304,10 @@ Telegram → [@TonAgentPlatformBot](https://t.me/TonAgentPlatformBot) → `/star
 
 - [x] AI-first создание агентов (текст + голос)
 - [x] 7 AI-провайдеров с fallback-цепочкой
-- [x] 84+ инструментов агента
+- [x] 311 инструментов агента
 - [x] Telegram Userbot (MTProto)
 - [x] GiftAsset + SwiftGifts реальные цены
-- [x] Studio Dashboard (17 вкладок)
+- [x] Studio Dashboard (29 вкладок)
 - [x] Память, задачи, трекинг токенов
 - [x] 12 плагинов + 22 шаблона + маркетплейс
 - [x] Голосовые команды
