@@ -443,28 +443,32 @@ function resolveProvider(provider: string): ProviderCfg {
     maxContextChars: PROVIDER_LIMITS[key]?.maxContextChars || 25_000,
     maxTools: PROVIDER_LIMITS[key]?.maxTools || 60,
   });
-  if (p.includes('gemini') || p.includes('google'))  return resolve('gemini');
+  if (p.includes('gemini') || p.includes('google'))   return resolve('gemini');
+  if (p.includes('claude-code') || p === 'platform')  return resolve('anthropic');
   if (p.includes('anthropic') || p.includes('claude')) return resolve('anthropic');
-  if (p.includes('groq'))       return resolve('groq');
-  if (p.includes('deepseek'))   return resolve('deepseek');
-  if (p.includes('openrouter')) return resolve('openrouter');
-  if (p.includes('together'))   return resolve('together');
+  if (p.includes('groq'))        return resolve('groq');
+  if (p.includes('deepseek'))    return resolve('deepseek');
+  if (p.includes('openrouter'))  return resolve('openrouter');
+  if (p.includes('together'))    return resolve('together');
   return resolve('openai');
 }
 
-// Returns AI client using user's own API key. Throws if no key configured.
+// Returns AI client using the agent's own API key. Throws NO_API_KEY if not configured.
+// Each user must provide their own key — platform OAuth is not shared with user agents.
 function getAIClient(config: Record<string, any>): { client: OpenAI; defaultModel: string; providerCfg: ProviderCfg } {
   const rawKey = (config.AI_API_KEY as string) || '';
   const apiKey = decryptApiKey(rawKey);
   const provider = (config.AI_PROVIDER as string) || '';
 
-  if (!apiKey) {
-    throw new Error('NO_API_KEY');
-  }
+  if (!apiKey) throw new Error('NO_API_KEY');
 
   const providerCfg = resolveProvider(provider);
   const finalURL = (config.AI_BASE_URL as string) || providerCfg.baseURL;
-  return { client: new OpenAI({ baseURL: finalURL, apiKey }), defaultModel: providerCfg.defaultModel, providerCfg };
+  // Anthropic API requires version header
+  const extraHeaders = providerCfg.baseURL.includes('anthropic.com') || apiKey.startsWith('sk-ant')
+    ? { 'anthropic-version': '2023-06-01' }
+    : {};
+  return { client: new OpenAI({ baseURL: finalURL, apiKey, defaultHeaders: extraHeaders }), defaultModel: providerCfg.defaultModel, providerCfg };
 }
 
 // ── Dual model: utility (lighter/cheaper) model for summarization, vision, transcription ──
