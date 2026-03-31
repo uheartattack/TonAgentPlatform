@@ -2162,7 +2162,7 @@ ${codeSnippet || 'Фрагмент кода недоступен.'}
     if (process.env.REQUIRE_APPROVAL === 'true') {
       console.log(`[SelfImprovement] REQUIRE_APPROVAL=true — escalating Level 1 to owner approval`);
       await getAIProposalsRepository().updateStatus(proposal.id, 'pending');
-      await this.notifyOwner(
+      await this.notifyOwnerWithButtons(
         `🟡 <b>Approval Required (Level 1→2)</b>
 
 ` +
