@@ -2156,8 +2156,27 @@ ${codeSnippet || 'Фрагмент кода недоступен.'}
 
   // ─── Применение изменений ─────────────────────────────────────────────────
 
-  /** Level 1: применяет сразу, информирует владельца */
+  /** Level 1: применяет сразу (или ждёт одобрения если REQUIRE_APPROVAL=true) */
   private async applyLevel1(proposal: AIProposal): Promise<void> {
+    // Safety gate: if REQUIRE_APPROVAL env flag is set, escalate to Level 2 (owner approval)
+    if (process.env.REQUIRE_APPROVAL === 'true') {
+      console.log(`[SelfImprovement] REQUIRE_APPROVAL=true — escalating Level 1 to owner approval`);
+      await getAIProposalsRepository().updateStatus(proposal.id, 'pending');
+      await this.notifyOwner(
+        `🟡 <b>Approval Required (Level 1→2)</b>
+
+` +
+        `<b>${proposal.title}</b>
+` +
+        `${proposal.description.slice(0, 200)}
+
+` +
+        `<i>REQUIRE_APPROVAL=true — manual approval needed</i>`,
+        proposal.id,
+      );
+      return;
+    }
+
     if (!proposal.patch.length) {
       // Нет патча — просто сохраняем как Level 3
       await getAIProposalsRepository().updateStatus(proposal.id, 'pending');
