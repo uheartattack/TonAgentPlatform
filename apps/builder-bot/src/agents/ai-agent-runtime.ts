@@ -851,9 +851,10 @@ async function getAgentMeta(agentId: number): Promise<CachedAgentMeta | null> {
 const _pendingContext = new Map<number, Record<string, any>>();
 
 export function addMessageToAIAgent(agentId: number, text: string, context?: Record<string, any>): void {
-  const msgs = _pendingMessages.get(agentId) || [];
-  msgs.push(text);
-  if (!_pendingMessages.has(agentId)) _pendingMessages.set(agentId, msgs);
+  // Atomic check-and-set to prevent zombie messages for deactivated agents (M50)
+  if (!_pendingMessages.has(agentId)) _pendingMessages.set(agentId, []);
+  const msgs = _pendingMessages.get(agentId);
+  if (msgs) msgs.push(text);
   if (context) _pendingContext.set(agentId, context);
   // Trigger an immediate tick so the user gets a fast response
   runImmediateTick(agentId);
