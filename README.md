@@ -165,6 +165,8 @@ graph TB
 
 ## 🛠️ Инструменты агента &nbsp;|&nbsp; Agent Tools (311)
 
+> **Note:** 311 includes all tool variants and aliases. ~80 core tools with unique business logic + ~230 Telegram API method wrappers.
+
 | Категория | Примеры | # |
 |:----------|:--------|:-:|
 | 📡 **Telegram Userbot** | `tg_send_message` `tg_get_messages` `tg_join_channel` `tg_search_messages` `tg_react` `tg_create_poll` `tg_send_gift` `tg_get_members` `tg_ban_user` `tg_create_channel` | 91 |
