@@ -85,13 +85,19 @@ app.post('/webhook/:agentId', async (req, res) => {
 // Webhook для workflow
 app.post('/webhook/workflow/:workflowId', async (req, res) => {
   const workflowId = req.params.workflowId;
-  
+
+  // Require API key auth — unauthenticated workflow execution is not allowed
+  const apiKey = (req.headers['x-api-key'] || req.headers['x-auth-token']) as string;
+  if (!process.env.API_KEY || apiKey !== process.env.API_KEY) {
+    return res.status(401).json({ error: 'Invalid API key' });
+  }
+
   console.log(`🔗 Webhook received for workflow ${workflowId}`);
-  
+
   try {
     const engine = getWorkflowEngine();
     const workflow = engine.getWorkflow(workflowId);
-    
+
     if (!workflow) {
       return res.status(404).json({ error: 'Workflow not found' });
     }

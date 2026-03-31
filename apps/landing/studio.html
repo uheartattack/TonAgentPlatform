@@ -9,13 +9,13 @@
   <title>TON Agent Studio</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="studio.css?v=50">
   <!-- Telegram widget loaded in body where button should appear -->
 </head>
 <body>
   <!-- Auth Screen -->
-  <div id="auth-screen" class="auth-screen">
+  <div id="auth-screen" class="auth-screen hidden">
     <div class="auth-split">
       <div class="auth-left">
         <div class="auth-left-content">
@@ -99,14 +99,13 @@
       <div class="sidebar-header">
         <a href="/" class="logo">
           <div class="logo-icon">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5">
+              <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
             </svg>
           </div>
           <div class="logo-text">
             <span class="logo-title">TON Agent <span class="logo-accent">Studio</span></span>
             <span class="logo-subtitle">AI Agent Builder</span>
-            <span class="alpha-badge">SUPER-ALPHA</span>
           </div>
         </a>
       </div>
@@ -247,6 +246,23 @@
     </button>
     <div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleSidebar()"></div>
 
+    <!-- Main Wrapper -->
+    <div class="main-wrapper">
+    <!-- Topbar -->
+    <div class="studio-topbar" id="studio-topbar">
+      <div class="topbar-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <input type="text" id="topbar-search-input" class="topbar-search-input" placeholder="Search agents, tools, settings..." data-ru-placeholder="Поиск агентов, инструментов..." oninput="handleTopbarSearch(this.value)">
+      </div>
+      <div class="topbar-right">
+        <div class="topbar-balance" id="topbar-balance-wrap">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+          <span>Balance: <strong id="topbar-ton-balance">0</strong> TON</span>
+        </div>
+        <div class="topbar-divider"></div>
+        <div class="topbar-avatar" id="topbar-avatar-badge" onclick="navigateTo('profile')">T</div>
+      </div>
+    </div>
     <!-- Main Content -->
     <main class="main-content">
       <!-- Overview Page -->
@@ -880,6 +896,25 @@
           </div>
         </div>
         <div class="page-content">
+          <!-- Stat cards row (Blink style) -->
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:1.25rem" id="agents-stat-row">
+            <div style="background:#0f1629;border:1px solid rgba(255,255,255,0.07);border-radius:14px;padding:18px 20px">
+              <div style="font-size:.72rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px" data-en="Total Agents" data-ru="Всего агентов">Total Agents</div>
+              <div id="stat-total-agents" style="font-size:1.7rem;font-weight:700;color:#f1f5f9;line-height:1">0</div>
+            </div>
+            <div style="background:#0f1629;border:1px solid rgba(255,255,255,0.07);border-radius:14px;padding:18px 20px">
+              <div style="font-size:.72rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px" data-en="Active" data-ru="Активных">Active</div>
+              <div id="stat-active-agents" style="font-size:1.7rem;font-weight:700;color:#10b981;line-height:1">0</div>
+            </div>
+            <div style="background:#0f1629;border:1px solid rgba(255,255,255,0.07);border-radius:14px;padding:18px 20px">
+              <div style="font-size:.72rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px" data-en="Paused" data-ru="На паузе">Paused</div>
+              <div id="stat-paused-agents" style="font-size:1.7rem;font-weight:700;color:#f59e0b;line-height:1">0</div>
+            </div>
+            <div style="background:#0f1629;border:1px solid rgba(255,255,255,0.07);border-radius:14px;padding:18px 20px">
+              <div style="font-size:.72rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px" data-en="AI Agents" data-ru="AI-агентов">AI Agents</div>
+              <div id="stat-ai-agents" style="font-size:1.7rem;font-weight:700;color:#0ea5e9;line-height:1">0</div>
+            </div>
+          </div>
           <!-- Agent filters -->
           <div class="operations-filters" style="margin-bottom:1rem">
             <button class="op-filter active" onclick="filterAgentsPage('all')">
@@ -2182,6 +2217,7 @@
       </div>
 
     </main>
+    </div><!-- /main-wrapper -->
   </div>
 
       <!-- Onboarding Welcome Modal -->

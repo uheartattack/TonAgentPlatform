@@ -25,7 +25,7 @@ export const config = {
   claude: {
     apiKey: process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY || '',
     baseURL: process.env.OPENAI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai/',
-    model: process.env.CLAUDE_MODEL || 'gemini-2.5-flash',
+    model: process.env.AI_MODEL || process.env.CLAUDE_MODEL || 'gemini-2.5-flash',
     maxTokens: parseInt(process.env.CLAUDE_MAX_TOKENS || '4000'),
   },
 
@@ -38,7 +38,7 @@ export const config = {
 
   // Owner (владелец платформы)
   owner: {
-    id: parseInt(process.env.OWNER_ID || '130806013'),
+    id: parseInt(process.env.OWNER_ID || '0'),
   },
 
   // Security
@@ -68,6 +68,15 @@ export function validateConfig(): { valid: boolean; errors: string[] } {
     errors.push(
       'Set OPENAI_API_KEY or ANTHROPIC_API_KEY for platform AI functionality'
     );
+  }
+
+  // Wallet encryption key is required in production (NODE_ENV=production or explicit flag)
+  if (process.env.NODE_ENV === 'production' && !process.env.WALLET_ENCRYPTION_KEY) {
+    errors.push('WALLET_ENCRYPTION_KEY is required in production to encrypt wallet mnemonics');
+  }
+
+  if (!process.env.OWNER_ID) {
+    errors.push('OWNER_ID is required — set your Telegram user ID');
   }
 
   return {

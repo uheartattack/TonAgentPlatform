@@ -449,6 +449,36 @@ async function onTelegramAuth(result) {
   localStorage.setItem('tg_token', authToken);
   currentUser = { userId: data.userId, userIdStr: data.userIdStr || String(data.userId), username: data.username, first_name: data.firstName, photo_url: data.photoUrl || null };
   showApp();
+  updateTopbar();
+}
+
+function updateTopbar() {
+  // Avatar
+  var av = document.getElementById('topbar-avatar-badge');
+  if (av && currentUser) {
+    var name = currentUser.first_name || currentUser.username || 'U';
+    av.textContent = name.charAt(0).toUpperCase();
+    av.title = name;
+  }
+  // Balance from wallet data if available
+  var balEl = document.getElementById('topbar-ton-balance');
+  if (balEl && typeof _walletBalance !== 'undefined' && _walletBalance != null) {
+    balEl.textContent = parseFloat(_walletBalance).toFixed(2);
+  }
+}
+
+function handleTopbarSearch(val) {
+  // Route search to active page's search handler
+  if (!val || val.length < 2) return;
+  var active = document.querySelector('.nav-item.active');
+  var page = active ? active.getAttribute('data-page') : '';
+  if (page === 'operations') {
+    var f = document.getElementById('agent-search-input');
+    if (f) { f.value = val; filterAgents(val); }
+  } else if (page === 'marketplace') {
+    var m = document.getElementById('marketplace-search');
+    if (m) { m.value = val; filterMarketplace(val); }
+  }
 }
 
 // Legacy: old widget callback (keep for backwards compat)
@@ -598,6 +628,8 @@ async function loadAgents() {
   }
   const agents = data.agents || [];
   _agentsCache = agents;
+  // Update topbar avatar with user initial
+  updateTopbar();
   // Overview shows ONLY pinned agents
   var pinned = getPinnedAgents();
   var pinnedAgents = agents.filter(function(a) { return pinned.indexOf(a.id) >= 0; });
@@ -715,11 +747,25 @@ function normalizeAgentData(a) {
 async function openAgentDetail(agentId, skipSettings) {
   _detailAgentId = agentId;
   delete _hooksCache[agentId]; // invalidate hooks cache on open
+
+  // When going directly to full-screen settings — skip the slide-over entirely
+  if (!skipSettings) {
+    try {
+      var data0 = await apiRequest('GET', '/api/agents/' + agentId);
+      if (!data0.ok || !data0.agent) { toast('Agent not found', 'error'); return; }
+      _detailAgentData = normalizeAgentData(data0.agent);
+      openAgentSettings();
+    } catch(e) {
+      toast(e.message || 'Error', 'error');
+    }
+    return;
+  }
+
+  // skipSettings=true → show slide-over panel (e.g. after closing full-screen settings)
   var panel = document.getElementById('agent-detail-panel');
   if (!panel) return;
   panel.style.display = 'flex';
   panel.classList.remove('closing');
-  // Load agent data
   var body = document.getElementById('agent-detail-body');
   if (body) body.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--text-muted)">' + IC.hourglass + ' Loading...</div>';
   try {
@@ -727,11 +773,6 @@ async function openAgentDetail(agentId, skipSettings) {
     if (!data.ok || !data.agent) { toast('Agent not found', 'error'); closeAgentDetail(); return; }
     _detailAgentData = normalizeAgentData(data.agent);
     renderAgentDetail();
-    // Open full-screen settings directly (unless called from settings close refresh)
-    if (!skipSettings) {
-      closeAgentDetail();
-      openAgentSettings();
-    }
   } catch(e) {
     toast(e.message || 'Error', 'error');
     closeAgentDetail();
@@ -805,16 +846,102 @@ function renderAgentDetail() {
     html += '</div>';
   }
 
-  // Flow section
-  if (triggerType !== 'ai_agent' && config.nodes && config.nodes.length) {
-    html += '<div class="agent-detail-section">';
-    html += '<div class="agent-detail-section-title">Flow (' + config.nodes.length + ' nodes)</div>';
-    var flowDesc = config.nodes.map(function(n) { return n.type; }).join(' → ');
-    html += '<div style="font-size:0.78rem;color:var(--text-secondary);word-break:break-all">' + escHtml(flowDesc) + '</div>';
-    html += '</div>';
-  }
+  // ── Flow Diagram ──────────────────────────────────────────────────────────
+  html += '<div class="agent-detail-section">';
+  html += '<div class="agent-detail-section-title">' + (currentLang === 'ru' ? 'Схема работы' : 'Flow Diagram') + '</div>';
+  html += buildFlowDiagram(triggerType, a);
+  html += '</div>';
+
+  // ── Token Usage ───────────────────────────────────────────────────────────
+  html += '<div class="agent-detail-section" id="agent-token-section">';
+  html += '<div class="agent-detail-section-title">' + (currentLang === 'ru' ? 'Использование токенов' : 'Token Usage') + '</div>';
+  html += '<div class="token-stats" id="agent-token-stats">';
+  html += '<div class="token-stat"><div class="token-stat-label">' + (currentLang === 'ru' ? 'Сегодня' : 'Today') + '</div><div class="token-stat-value accent" id="ts-today">—</div></div>';
+  html += '<div class="token-stat"><div class="token-stat-label">' + (currentLang === 'ru' ? 'За всё время' : 'All Time') + '</div><div class="token-stat-value" id="ts-alltime">—</div></div>';
+  html += '<div class="token-stat"><div class="token-stat-label">' + (currentLang === 'ru' ? 'Стоимость' : 'Cost USD') + '</div><div class="token-stat-value green" id="ts-cost">—</div></div>';
+  html += '<div class="token-stat"><div class="token-stat-label">' + (currentLang === 'ru' ? 'Запросов' : 'Requests') + '</div><div class="token-stat-value amber" id="ts-reqs">—</div></div>';
+  html += '</div></div>';
 
   body.innerHTML = html;
+
+  // Load token stats async (don't block render)
+  loadAgentTokenStats(a.id);
+}
+
+/** Build visual flow diagram HTML for an agent */
+function buildFlowDiagram(triggerType, agent) {
+  var isRu = currentLang === 'ru';
+  var nodes = [];
+
+  if (triggerType === 'ai_agent') {
+    nodes = [
+      { icon: '💬', label: isRu ? 'Сообщение' : 'Input', type: 'trigger' },
+      { icon: '🤖', label: isRu ? 'AI Модель' : 'AI Model', type: 'process' },
+      { icon: '🛠', label: isRu ? 'Инструменты' : 'Tools', type: 'tools' },
+      { icon: '📤', label: isRu ? 'Ответ' : 'Output', type: 'output' },
+    ];
+  } else if (triggerType === 'scheduled') {
+    var interval = (agent.triggerConfig && agent.triggerConfig.interval) || (agent.trigger_config && agent.trigger_config.interval) || '';
+    nodes = [
+      { icon: '⏰', label: interval || (isRu ? 'Расписание' : 'Schedule'), type: 'trigger' },
+      { icon: '📝', label: isRu ? 'Код' : 'Code Run', type: 'process' },
+      { icon: '🔌', label: isRu ? 'Плагины' : 'Plugins', type: 'tools' },
+      { icon: '📤', label: isRu ? 'Результат' : 'Result', type: 'output' },
+    ];
+  } else if (triggerType === 'webhook') {
+    nodes = [
+      { icon: '📡', label: 'Webhook', type: 'trigger' },
+      { icon: '📝', label: isRu ? 'Код' : 'Code Run', type: 'process' },
+      { icon: '🔌', label: isRu ? 'Плагины' : 'Plugins', type: 'tools' },
+      { icon: '🔁', label: isRu ? 'Ответ' : 'Response', type: 'output' },
+    ];
+  } else {
+    nodes = [
+      { icon: '▶', label: isRu ? 'Запуск' : 'Manual', type: 'trigger' },
+      { icon: '📝', label: isRu ? 'Код' : 'Code Run', type: 'process' },
+      { icon: '🔌', label: isRu ? 'Плагины' : 'Plugins', type: 'tools' },
+      { icon: '📤', label: isRu ? 'Результат' : 'Result', type: 'output' },
+    ];
+  }
+
+  var html = '<div class="agent-flow-diagram">';
+  for (var i = 0; i < nodes.length; i++) {
+    var n = nodes[i];
+    html += '<div class="flow-node">' +
+      '<div class="flow-node-icon ' + n.type + '">' + n.icon + '</div>' +
+      '<div class="flow-node-label">' + escHtml(n.label) + '</div>' +
+      '</div>';
+    if (i < nodes.length - 1) {
+      html += '<div class="flow-arrow">→</div>';
+    }
+  }
+  html += '</div>';
+  return html;
+}
+
+/** Load token stats for agent and update DOM */
+async function loadAgentTokenStats(agentId) {
+  try {
+    var data = await apiRequest('GET', '/api/agents/' + agentId + '/tokens');
+    if (!data || !data.ok) return;
+
+    var fmtNum = function(n) {
+      if (!n || n === 0) return '0';
+      if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+      if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+      return String(n);
+    };
+
+    var todayEl = document.getElementById('ts-today');
+    var alltimeEl = document.getElementById('ts-alltime');
+    var costEl = document.getElementById('ts-cost');
+    var reqsEl = document.getElementById('ts-reqs');
+
+    if (todayEl) todayEl.textContent = fmtNum(data.today.totalTokens);
+    if (alltimeEl) alltimeEl.textContent = fmtNum(data.allTime.totalTokens);
+    if (costEl) costEl.textContent = data.allTime.estimatedCost > 0 ? '$' + data.allTime.estimatedCost.toFixed(4) : '$0.00';
+    if (reqsEl) reqsEl.textContent = fmtNum(data.allTime.totalRequests);
+  } catch (_) {}
 }
 
 function closeAgentDetail() {
@@ -921,52 +1048,149 @@ function openAgentChat(agentId) {
   _agentChatHistory = [];
   var body = document.getElementById('agent-detail-body');
   if (!body) return;
+  var isRu = currentLang === 'ru';
   body.innerHTML =
-    '<div class="agent-detail-section">' +
-    '<div class="agent-detail-section-title">Chat with Agent #' + agentId + '</div>' +
-    '<div id="agent-chat-messages" style="max-height:400px;overflow-y:auto;padding:8px;background:rgba(0,0,0,0.2);border-radius:8px;margin-bottom:10px;min-height:100px">' +
-    '<div style="text-align:center;color:var(--text-muted);font-size:.8rem;padding:20px">' + (currentLang === 'ru' ? 'Отправьте сообщение агенту...' : 'Send a message to the agent...') + '</div>' +
+    '<div style="display:flex;flex-direction:column;height:calc(100vh - 120px);min-height:400px">' +
+    // Header
+    '<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);flex-shrink:0">' +
+    '<button onclick="openAgentDetail(_detailAgentId)" style="background:none;border:none;color:var(--text-muted);cursor:pointer;padding:4px;border-radius:6px;display:flex;align-items:center" title="Back">' +
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button>' +
+    '<div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#0098EA,#005f9e);display:flex;align-items:center;justify-content:center">' +
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7H3a7 7 0 0 1 7-7h1V5.73C10.4 5.39 10 4.74 10 4a2 2 0 0 1 2-2z"/></svg></div>' +
+    '<div><div style="font-weight:600;font-size:.9rem">Agent #' + agentId + '</div><div style="font-size:.72rem;color:#00ff88">● ' + (isRu ? 'онлайн' : 'online') + '</div></div>' +
     '</div>' +
-    '<div style="display:flex;gap:8px">' +
-    '<input type="text" id="agent-chat-input" placeholder="' + (currentLang === 'ru' ? 'Сообщение агенту...' : 'Message to agent...') + '" style="flex:1;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text-primary);font-size:.85rem" onkeydown="if(event.key===\'Enter\')sendAgentChatMsg()">' +
-    '<button class="btn btn-primary btn-sm" onclick="sendAgentChatMsg()">' + (currentLang === 'ru' ? 'Отправить' : 'Send') + '</button>' +
+    // Messages
+    '<div id="agent-chat-messages" style="flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:2px">' +
+    '<div style="text-align:center;padding:24px 0">' +
+    '<div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#0098EA22,#0098EA44);border:1px solid #0098EA44;display:flex;align-items:center;justify-content:center;margin:0 auto 12px">' +
+    '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0098EA" stroke-width="1.5"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7H3a7 7 0 0 1 7-7h1V5.73C10.4 5.39 10 4.74 10 4a2 2 0 0 1 2-2z"/></svg></div>' +
+    '<div style="font-size:.85rem;color:var(--text-muted)">' + (isRu ? 'Агент готов к общению' : 'Agent is ready to chat') + '</div>' +
     '</div>' +
-    '<button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="openAgentDetail(_detailAgentId)">' + (currentLang === 'ru' ? 'Назад' : 'Back') + '</button>' +
+    '</div>' +
+    // Input
+    '<div style="padding:12px 16px;border-top:1px solid var(--border);flex-shrink:0">' +
+    '<div style="display:flex;gap:8px;align-items:flex-end;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:12px;padding:8px 8px 8px 14px;transition:border-color .2s" onfocus="this.style.borderColor=\'#0098EA\'" onblur="this.style.borderColor=\'\'">' +
+    '<textarea id="agent-chat-input" rows="1" placeholder="' + (isRu ? 'Сообщение...' : 'Message...') + '" ' +
+    'style="flex:1;background:none;border:none;outline:none;resize:none;color:var(--text-primary);font-size:.875rem;line-height:1.5;max-height:120px;overflow-y:auto;font-family:inherit" ' +
+    'onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();sendAgentChatMsg()}" ' +
+    'oninput="this.style.height=\'auto\';this.style.height=Math.min(this.scrollHeight,120)+\'px\'"></textarea>' +
+    '<button id="agent-chat-send" onclick="sendAgentChatMsg()" style="width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,#0098EA,#006aad);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:opacity .2s" title="Send">' +
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>' +
+    '</button>' +
+    '</div>' +
+    '<div style="font-size:.7rem;color:var(--text-muted);margin-top:5px;text-align:center">' + (isRu ? 'Enter — отправить · Shift+Enter — новая строка' : 'Enter to send · Shift+Enter for new line') + '</div>' +
+    '</div>' +
     '</div>';
   setTimeout(function() { var el = document.getElementById('agent-chat-input'); if (el) el.focus(); }, 100);
+}
+
+async function _streamAgentChat(agentId, msg, onChunk, onDone, onError) {
+  try {
+    // Send conversation history for context (exclude streaming/current entry)
+    var histForSend = (_agentChatHistory || []).filter(function(m) { return !m.streaming && m.text; }).slice(-12);
+    var response = await fetch('/api/agents/' + agentId + '/chat/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Auth-Token': authToken || '' },
+      body: JSON.stringify({ message: msg, history: histForSend }),
+    });
+    if (!response.ok || !response.body) throw new Error('stream_failed');
+    var reader = response.body.getReader();
+    var decoder = new TextDecoder();
+    var buffer = '';
+    var eventName = '';
+    while (true) {
+      var _r = await reader.read();
+      if (_r.done) break;
+      buffer += decoder.decode(_r.value, { stream: true });
+      var lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        if (line.startsWith('event:')) { eventName = line.slice(6).trim(); continue; }
+        if (line.startsWith('data:')) {
+          try {
+            var parsed = JSON.parse(line.slice(5).trim());
+            if (eventName === 'chunk' && parsed.text) onChunk(parsed.text);
+            else if (eventName === 'done') { onDone(parsed.fullText || ''); return; }
+            else if (eventName === 'error') { onError(parsed.message || 'AI error'); return; }
+          } catch(ep) {}
+          eventName = '';
+        }
+      }
+    }
+    onDone('');
+  } catch(e) {
+    onError(e.message);
+  }
 }
 
 async function sendAgentChatMsg() {
   var input = document.getElementById('agent-chat-input');
   var msgBox = document.getElementById('agent-chat-messages');
+  var sendBtn = document.getElementById('agent-chat-send');
   if (!input || !msgBox || !_agentChatId) return;
   var msg = input.value.trim();
   if (!msg) return;
+
   input.value = '';
+  input.disabled = true;
+  if (sendBtn) { sendBtn.disabled = true; sendBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:spin 1s linear infinite"><path d="M21 12a9 9 0 11-6.219-8.56"/></svg>'; }
+
   _agentChatHistory.push({ role: 'user', text: msg });
+  _agentChatHistory.push({ role: 'agent', text: '', streaming: true });
+  var agentEntry = _agentChatHistory[_agentChatHistory.length - 1];
   renderAgentChat(msgBox);
-  try {
-    var data = await apiRequest('POST', '/api/agents/' + _agentChatId + '/chat', { message: msg });
-    _agentChatHistory.push(data.ok
-      ? { role: 'agent', text: data.response || data.message || (currentLang === 'ru' ? 'Сообщение отправлено' : 'Message sent') }
-      : { role: 'error', text: data.error || 'Error' });
-  } catch(e) {
-    _agentChatHistory.push({ role: 'error', text: e.message || 'Network error' });
-  }
-  renderAgentChat(msgBox);
+
+  var done = false;
+  await _streamAgentChat(_agentChatId, msg,
+    function(chunk) { agentEntry.text += chunk; renderAgentChat(msgBox); msgBox.scrollTop = msgBox.scrollHeight; },
+    function(full) { agentEntry.streaming = false; if (!agentEntry.text && full) agentEntry.text = full; if (!agentEntry.text) agentEntry.text = '…'; renderAgentChat(msgBox); done = true; },
+    function(err) {
+      // fallback: non-streaming
+      if (!done) {
+        apiRequest('POST', '/api/agents/' + _agentChatId + '/chat', { message: msg }).then(function(d) {
+          agentEntry.streaming = false;
+          agentEntry.text = d.ok ? (d.response || '…') : (d.error || 'Error');
+          if (!d.ok) agentEntry.role = 'error';
+          renderAgentChat(msgBox);
+        });
+      }
+    }
+  );
+
   msgBox.scrollTop = msgBox.scrollHeight;
+  input.disabled = false;
+  if (sendBtn) { sendBtn.disabled = false; sendBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>'; }
+  input.focus();
 }
 
 function renderAgentChat(box) {
+  var isRu = currentLang === 'ru';
   box.innerHTML = _agentChatHistory.map(function(m) {
     var isUser = m.role === 'user';
-    var isError = m.role === 'error';
-    var bg = isUser ? 'rgba(33,150,243,0.15)' : isError ? 'rgba(239,68,68,0.15)' : 'rgba(0,255,136,0.1)';
+    var isErr = m.role === 'error';
+    var isStream = m.streaming;
     var align = isUser ? 'flex-end' : 'flex-start';
-    return '<div style="display:flex;justify-content:' + align + ';margin:4px 0">' +
-      '<div style="max-width:80%;padding:8px 12px;border-radius:8px;background:' + bg + ';font-size:.83rem;word-break:break-word">' +
-      '<strong style="font-size:.7rem;color:var(--text-muted)">' + (isUser ? 'You' : isError ? 'Error' : 'Agent') + '</strong><br>' +
-      escHtml(m.text) + '</div></div>';
+    var bubbleBg = isUser
+      ? 'linear-gradient(135deg,#0098EA,#006aad)'
+      : isErr ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.05)';
+    var border = isErr ? '1px solid rgba(239,68,68,0.3)' : isStream ? '1px solid rgba(0,152,234,0.25)' : '1px solid rgba(255,255,255,0.06)';
+    var textColor = isUser ? '#fff' : isErr ? '#f87171' : 'var(--text-primary)';
+    var cursor = isStream ? '<span class="chat-cursor">▋</span>' : '';
+    var textHtml = escHtml(m.text || (isStream ? '' : '')).replace(/\n/g, '<br>');
+    if (!isUser) {
+      // Render basic markdown for agent responses
+      textHtml = escHtml(m.text || '').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/`([^`]+)`/g, '<code style="background:rgba(0,152,234,0.15);padding:1px 5px;border-radius:3px;font-size:.8em">$1</code>').replace(/\n/g, '<br>');
+    }
+    var avatar = isUser ? '' :
+      '<div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#0098EA,#005f9e);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-right:8px">' +
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7H3a7 7 0 0 1 7-7h1V5.73C10.4 5.39 10 4.74 10 4a2 2 0 0 1 2-2z"/><path d="M7 14v3a5 5 0 0 0 10 0v-3"/></svg>' +
+      '</div>';
+    return '<div style="display:flex;justify-content:' + align + ';margin:8px 0;align-items:flex-end">' +
+      (isUser ? '' : avatar) +
+      '<div style="max-width:78%;padding:10px 14px;border-radius:' + (isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px') + ';background:' + bubbleBg + ';border:' + border + ';font-size:.84rem;line-height:1.55;word-break:break-word;color:' + textColor + '">' +
+      textHtml + cursor +
+      '</div></div>';
   }).join('');
 }
 
@@ -2894,7 +3118,7 @@ async function cloneAgentFromSettings() {
     var res = await apiRequest('POST', '/api/agents/clone', { agentId: _detailAgentId });
     toast(isRu ? 'Агент клонирован!' : 'Agent cloned!', 'success');
     closeAgentSettings();
-    navigateTo('my-agents');
+    navigateTo('operations');
   } catch (e) {
     toast('Error: ' + (e.message || e), 'error');
   }
@@ -2931,17 +3155,19 @@ async function importAgentJSON(input) {
     var data = JSON.parse(text);
     if (!data.name || !data.code) {
       toast(isRu ? 'Неверный формат файла' : 'Invalid file format', 'error');
+      input.value = '';
       return;
     }
-    var res = await apiRequest('POST', '/api/agents', {
+    var res = await apiRequest('POST', '/api/agents/import', {
       name: data.name + ' (imported)',
       description: data.description || '',
       triggerType: data.triggerType || 'ai_agent',
       code: data.code,
       triggerConfig: data.triggerConfig || {},
     });
+    if (!res.ok) { toast(res.error || 'Error', 'error'); input.value = ''; return; }
     toast(isRu ? 'Агент импортирован!' : 'Agent imported!', 'success');
-    navigateTo('my-agents');
+    navigateTo('operations');
   } catch (e) {
     toast('Error: ' + (e.message || e), 'error');
   }
@@ -2963,16 +3189,17 @@ async function importAgentFromMainView(input) {
     // Show preview dialog
     var triggerType = data.triggerType || 'ai_agent';
     var promptPreview = (data.code || '').slice(0, 200) + (data.code && data.code.length > 200 ? '...' : '');
-    var confirmed = confirm(
-      (isRu ? 'Импорт агента:\n\n' : 'Import agent:\n\n') +
-      (isRu ? 'Имя: ' : 'Name: ') + data.name + '\n' +
-      (isRu ? 'Тип: ' : 'Type: ') + triggerType + '\n' +
-      (isRu ? 'Описание: ' : 'Desc: ') + (data.description || '—') + '\n\n' +
-      (isRu ? 'Промпт (превью):\n' : 'Prompt (preview):\n') + promptPreview + '\n\n' +
-      (isRu ? 'Создать агента?' : 'Create agent?')
-    );
+    var confirmed = await studioConfirm({
+      title: isRu ? 'Импорт агента' : 'Import Agent',
+      message: (isRu ? 'Имя: ' : 'Name: ') + data.name + '\n' +
+        (isRu ? 'Тип: ' : 'Type: ') + triggerType + '\n' +
+        (isRu ? 'Описание: ' : 'Desc: ') + (data.description || '—') + '\n\n' +
+        (isRu ? 'Промпт (превью):\n' : 'Prompt (preview):\n') + promptPreview,
+      confirmText: isRu ? 'Создать' : 'Create',
+      type: 'info'
+    });
     if (!confirmed) { input.value = ''; return; }
-    var res = await apiRequest('POST', '/api/agents', {
+    var res = await apiRequest('POST', '/api/agents/import', {
       name: data.name + ' (imported)',
       description: data.description || '',
       triggerType: triggerType,
@@ -3670,7 +3897,7 @@ async function saveSettingsRouting() {
   if (btn) { btn.disabled = false; btn.innerHTML = IC.check + ' ' + (currentLang === 'ru' ? 'Сохранить правила' : 'Save Rules'); }
 }
 
-var _agentChatHistory = [];
+// _agentChatHistory is declared at line ~949 (agent chat slide-over)
 
 async function sendAgentChatMessage() {
   var input = document.getElementById('agent-chat-input');
@@ -3678,43 +3905,28 @@ async function sendAgentChatMessage() {
   var text = input.value.trim();
   input.value = '';
 
-  _agentChatHistory.push({ role: 'user', text: text, time: new Date() });
-  // Show typing indicator
-  _agentChatHistory.push({ role: 'agent', text: '', typing: true, time: new Date() });
-  renderAgentChat();
+  _agentChatHistory.push({ role: 'user', text: text });
+  _agentChatHistory.push({ role: 'agent', text: '', streaming: true });
+  var agentEntry = _agentChatHistory[_agentChatHistory.length - 1];
+  var getBox = function() { return document.getElementById('agent-chat-messages'); };
+  var render = function() { var c = getBox(); if (c) { renderAgentChat(c); c.scrollTop = c.scrollHeight; } };
+  render();
 
-  try {
-    var data = await apiRequest('POST', '/api/agents/' + _detailAgentId + '/chat', { message: text });
-    // Remove typing indicator
-    _agentChatHistory = _agentChatHistory.filter(function(m) { return !m.typing; });
-    if (data.response) {
-      _agentChatHistory.push({ role: 'agent', text: data.response, time: new Date() });
-    } else if (data.error) {
-      _agentChatHistory.push({ role: 'system', text: 'Error: ' + data.error, time: new Date() });
+  var done = false;
+  await _streamAgentChat(_detailAgentId, text,
+    function(chunk) { agentEntry.text += chunk; render(); },
+    function(full) { agentEntry.streaming = false; if (!agentEntry.text && full) agentEntry.text = full; if (!agentEntry.text) agentEntry.text = '…'; render(); done = true; },
+    function(err) {
+      if (!done) {
+        apiRequest('POST', '/api/agents/' + _detailAgentId + '/chat', { message: text }).then(function(d) {
+          agentEntry.streaming = false;
+          agentEntry.text = d.ok ? (d.response || '…') : (d.error || 'Error');
+          if (!d.ok) agentEntry.role = 'error';
+          render();
+        }).catch(function() { agentEntry.streaming = false; agentEntry.text = 'Ошибка: ' + err; agentEntry.role = 'error'; render(); });
+      }
     }
-  } catch (e) {
-    _agentChatHistory = _agentChatHistory.filter(function(m) { return !m.typing; });
-    _agentChatHistory.push({ role: 'system', text: 'Network error', time: new Date() });
-  }
-  renderAgentChat();
-}
-
-function renderAgentChat() {
-  var container = document.getElementById('agent-chat-messages');
-  if (!container) return;
-  if (_agentChatHistory.length === 0) {
-    var isRu = currentLang === 'ru';
-    container.innerHTML = '<div class="st-chat-empty">' + IC.chat + '<span>' + (isRu ? 'Начните диалог с агентом...' : 'Start a conversation with the agent...') + '</span></div>';
-    return;
-  }
-  container.innerHTML = _agentChatHistory.map(function(m) {
-    var cls = m.role === 'user' ? 'chat-msg-user' : (m.role === 'agent' ? 'chat-msg-agent' : 'chat-msg-system');
-    if (m.typing) {
-      return '<div class="chat-msg chat-msg-agent"><span class="typing-dots"><span>.</span><span>.</span><span>.</span></span></div>';
-    }
-    return '<div class="chat-msg ' + cls + '">' + escHtml(m.text) + '</div>';
-  }).join('');
-  container.scrollTop = container.scrollHeight;
+  );
 }
 
 async function runSettingsAudit(body) {
@@ -3800,11 +4012,17 @@ async function loadAgentsPage() {
   var all = _agentsPageData.length;
   var activeN = _agentsPageData.filter(a => a.isActive).length;
   var pausedN = all - activeN;
+  var aiN = _agentsPageData.filter(a => a.triggerType === 'ai_agent').length;
   var setEl = function(id, val) { var el = document.getElementById(id); if (el) el.textContent = val; };
   setEl('agents-filter-all', all);
   setEl('agents-filter-active', activeN);
   setEl('agents-filter-paused', pausedN);
   setEl('agents-page-count', all + (currentLang === 'ru' ? ' агентов' : ' agents'));
+  // Blink stat cards
+  setEl('stat-total-agents', all);
+  setEl('stat-active-agents', activeN);
+  setEl('stat-paused-agents', pausedN);
+  setEl('stat-ai-agents', aiN);
 
   renderAgentsPage();
 }
@@ -4130,6 +4348,10 @@ async function initAuth() {
     const cfg = await fetch(API_BASE + '/api/config').then(r => r.json());
     if (cfg && cfg.ok) window._appConfig = cfg;
   } catch (_) {}
+
+  // Show auth screen (it starts hidden to avoid language flash)
+  const authScreenEl = document.getElementById('auth-screen');
+  if (authScreenEl) authScreenEl.classList.remove('hidden');
 
   const container = document.getElementById('telegram-login-container');
   if (!container) return;
@@ -9936,32 +10158,141 @@ async function sendAssistantMessage() {
   if (sendBtn) sendBtn.disabled = true;
 
   try {
-    var data;
     if (_assistantTarget !== 'atlas' && _assistantTarget.startsWith('agent_')) {
-      var agentId = _assistantTarget.replace('agent_', '');
-      data = await apiRequest('POST', '/api/agents/' + agentId + '/chat', { message: text });
-    } else {
-      data = await apiRequest('POST', '/api/chat', { message: text, context: getStudioContext() });
-    }
-    var typingEl = document.getElementById('assistant-typing');
-    if (typingEl) typingEl.remove();
-
-    if (data.ok && data.result) {
-      var r = data.result;
-      appendAssistantMsg('assistant', r.content || r.response || r, r.buttons);
-      if (r.type === 'agent_created') {
-        loadAgents();
-        toast(currentLang === 'ru' ? 'Агент создан!' : 'Agent created!', 'success');
-        if (r.agentId) {
-          showWizard(r.agentId, r.agentName || '');
-        } else {
-          navigateTo('agents');
+      // ── Streaming for agent chat ──────────────────────────────────────
+      var agentId2 = _assistantTarget.replace('agent_', '');
+      var typingEl0 = document.getElementById('assistant-typing');
+      // Create streaming message bubble
+      if (typingEl0) typingEl0.remove();
+      var streamDiv = document.createElement('div');
+      streamDiv.className = 'assistant-msg assistant';
+      streamDiv.innerHTML = '<div class="assistant-msg-avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="assistant-msg-content"><span class="chat-cursor">▋</span></div>';
+      var ctr = document.getElementById('assistant-messages');
+      if (ctr) { ctr.appendChild(streamDiv); ctr.scrollTop = ctr.scrollHeight; }
+      var streamEl = streamDiv.querySelector('.assistant-msg-content'); // direct ref — no id needed
+      var streamText = '';
+      await _streamAgentChat(agentId2, text,
+        function(chunk) {
+          streamText += chunk;
+          if (streamEl) {
+            streamEl.innerHTML = escHtml(streamText)
+              .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+              .replace(/`([^`]+)`/g, '<code style="background:rgba(0,152,234,0.15);padding:1px 5px;border-radius:3px;font-size:.8em">$1</code>')
+              .replace(/\n/g, '<br>') + '<span class="chat-cursor">▋</span>';
+            if (ctr) ctr.scrollTop = ctr.scrollHeight;
+          }
+        },
+        function(full) {
+          var finalText = streamText || full || '…';
+          if (streamEl) {
+            streamEl.innerHTML = escHtml(finalText)
+              .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+              .replace(/`([^`]+)`/g, '<code style="background:rgba(0,152,234,0.15);padding:1px 5px;border-radius:3px;font-size:.8em">$1</code>')
+              .replace(/\n/g, '<br>');
+          }
+        },
+        function(err) {
+          // fallback
+          apiRequest('POST', '/api/agents/' + agentId2 + '/chat', { message: text }).then(function(d) {
+            if (streamEl) streamEl.innerHTML = escHtml(d.ok ? (d.response || '…') : (d.error || err)).replace(/\n/g, '<br>');
+          });
         }
-      }
-    } else if (data.ok && data.response) {
-      appendAssistantMsg('assistant', data.response);
+      );
     } else {
-      appendAssistantMsg('assistant', data.error || 'Error');
+      // ── Atlas streaming chat ─────────────────────────────────────────
+      var typingEl0a = document.getElementById('assistant-typing');
+      if (typingEl0a) typingEl0a.remove();
+
+      // Try streaming first
+      var atlasStreamed = false;
+      try {
+        var atlasResp = await fetch('/api/chat/stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Auth-Token': authToken || '' },
+          body: JSON.stringify({ message: text, context: getStudioContext() }),
+        });
+        // If server returns JSON (command route), handle normally
+        var ct = atlasResp.headers.get('content-type') || '';
+        if (ct.includes('application/json')) {
+          var data = await atlasResp.json();
+          if (data.ok && data.result) {
+            var r = data.result;
+            appendAssistantMsg('assistant', r.content || r.response || String(r), r.buttons);
+            if (r.type === 'agent_created') {
+              loadAgents();
+              toast(currentLang === 'ru' ? 'Агент создан!' : 'Agent created!', 'success');
+              if (r.agentId) { showWizard(r.agentId, r.agentName || ''); } else { navigateTo('agents'); }
+            }
+          } else { appendAssistantMsg('assistant', data.error || 'Error'); }
+          atlasStreamed = true;
+        } else if (atlasResp.ok && atlasResp.body) {
+          // SSE stream
+          var atlasDiv = document.createElement('div');
+          atlasDiv.className = 'assistant-msg assistant';
+          atlasDiv.innerHTML = '<div class="assistant-msg-avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="assistant-msg-content"><span class="chat-cursor">▋</span></div>';
+          var atlasCtr = document.getElementById('assistant-messages');
+          if (atlasCtr) { atlasCtr.appendChild(atlasDiv); atlasCtr.scrollTop = atlasCtr.scrollHeight; }
+          var atlasStreamEl = atlasDiv.querySelector('.assistant-msg-content'); // direct ref — no id collisions
+
+          var atlasReader = atlasResp.body.getReader();
+          var atlasDecoder = new TextDecoder();
+          var atlasBuf = '', atlasEvt = '', atlasText = '';
+          while (true) {
+            var _ar = await atlasReader.read();
+            if (_ar.done) break;
+            atlasBuf += atlasDecoder.decode(_ar.value, { stream: true });
+            var atlasLines = atlasBuf.split('\n');
+            atlasBuf = atlasLines.pop() || '';
+            for (var _i = 0; _i < atlasLines.length; _i++) {
+              var _line = atlasLines[_i];
+              if (_line.startsWith('event:')) { atlasEvt = _line.slice(6).trim(); continue; }
+              if (_line.startsWith('data:')) {
+                try {
+                  var _p = JSON.parse(_line.slice(5).trim());
+                  if (atlasEvt === 'chunk' && _p.text) {
+                    atlasText += _p.text;
+                    if (atlasStreamEl) {
+                      atlasStreamEl.innerHTML = escHtml(atlasText)
+                        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                        .replace(/`([^`]+)`/g, '<code>$1</code>')
+                        .replace(/\[\[page:(\w+)\|([^\]]+)\]\]/g, '<a href="#" class="assistant-nav-link" onclick="navigateTo(\'$1\');return false" style="color:#7dd3fc;text-decoration:underline;cursor:pointer">$2</a>')
+                        .replace(/\n/g, '<br>') + '<span class="chat-cursor">▋</span>';
+                      if (atlasCtr) atlasCtr.scrollTop = atlasCtr.scrollHeight;
+                    }
+                  } else if (atlasEvt === 'done') {
+                    if (atlasStreamEl) {
+                      var _final = atlasText || _p.fullText || '…';
+                      atlasStreamEl.innerHTML = escHtml(_final)
+                        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                        .replace(/`([^`]+)`/g, '<code>$1</code>')
+                        .replace(/\[\[page:(\w+)\|([^\]]+)\]\]/g, '<a href="#" class="assistant-nav-link" onclick="navigateTo(\'$1\');return false" style="color:#7dd3fc;text-decoration:underline;cursor:pointer">$2</a>')
+                        .replace(/\n/g, '<br>');
+                    }
+                  } else if (atlasEvt === 'error') {
+                    if (atlasStreamEl) atlasStreamEl.textContent = _p.message || 'Error';
+                  }
+                } catch(_ep) {}
+                atlasEvt = '';
+              }
+            }
+          }
+          atlasStreamed = true;
+        }
+      } catch(_se) { atlasStreamed = false; }
+
+      if (!atlasStreamed) {
+        // Ultimate fallback: non-streaming
+        var data2 = await apiRequest('POST', '/api/chat', { message: text, context: getStudioContext() });
+        if (data2.ok && data2.result) {
+          var r2 = data2.result;
+          appendAssistantMsg('assistant', r2.content || r2.response || String(r2), r2.buttons);
+          if (r2.type === 'agent_created') {
+            loadAgents();
+            toast(currentLang === 'ru' ? 'Агент создан!' : 'Agent created!', 'success');
+            if (r2.agentId) { showWizard(r2.agentId, r2.agentName || ''); } else { navigateTo('agents'); }
+          }
+        } else { appendAssistantMsg('assistant', data2.error || 'Error'); }
+      }
     }
   } catch (e) {
     var typingEl2 = document.getElementById('assistant-typing');

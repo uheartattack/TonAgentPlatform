@@ -1068,6 +1068,11 @@ export class ExecutionTools {
 
           // ── Discord integration (placeholder) ──
           sendDiscordMessage: async (channelId: string, content: string) => {
+            // channelId must be a snowflake (numeric string) — reject anything else
+            if (!/^\d{1,20}$/.test(String(channelId))) {
+              addLog('error', `[sendDiscordMessage] Invalid channelId: ${channelId}`);
+              return { error: 'Invalid channelId — must be numeric Discord snowflake' };
+            }
             const token = process.env.DISCORD_BOT_TOKEN || '';
             if (!token) {
               addLog('warn', '[sendDiscordMessage] Discord not configured — set DISCORD_BOT_TOKEN in env');
@@ -1075,7 +1080,7 @@ export class ExecutionTools {
             }
             try {
               const resp = await nativeFetch(
-                `https://discord.com/api/v10/channels/${encodeURIComponent(channelId)}/messages`,
+                `https://discord.com/api/v10/channels/${channelId}/messages`,
                 {
                   method: 'POST',
                   headers: {
@@ -1237,7 +1242,11 @@ ${code}
 })();
 `;
 
-      // Compile and run with timeout (90s for long API calls)
+      // Compile and run with timeout (90s for long API calls).
+      // Security: Node's vm module provides context isolation with hardened prototypes above.
+      // The codeGeneration:false option blocks eval/new Function. Prototype freeze blocks
+      // constructor-chain escapes. Memory is bounded by Node.js process limits (~512MB default).
+      // For full process-level isolation, a future upgrade to isolated-vm is planned (KNOWN_ISSUES.md).
       // Note: vm.runInContext timeout only applies to synchronous execution.
       // For async code, we wrap with Promise.race for a hard timeout.
       const script = new vm.Script(wrappedCode, {

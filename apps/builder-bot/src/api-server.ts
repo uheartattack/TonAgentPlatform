@@ -24,6 +24,7 @@ import {
 import { verifyTopupTransaction, PLATFORM_WALLET, getUserSubscription, getUserPlan, PLANS, canCreateAgent, canGenerateForFree, getGenerationsUsed, confirmPayment, createPayment, getPendingPayment, verifyTonTransaction, updateSubscriptionCache } from './payments';
 import { sendPlatformTransaction } from './services/TonConnect';
 import { config as platformConfig } from './config';
+import { encryptMnemonic, decryptMnemonic } from './services/agentic-wallet';
 
 const PORT = parseInt(process.env.API_PORT || '3001', 10);
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
@@ -607,15 +608,14 @@ export function startApiServer() {
 
   // CORS — allow platform domain + localhost for dev
   const ALLOWED_ORIGINS = ['https://tonagentplatform.com', 'https://tonagentplatform.ru'];
+  const DEFAULT_ORIGIN = 'https://tonagentplatform.ru';
   app.use((req: Request, res: Response, next: NextFunction) => {
     const origin = req.headers.origin || '';
     if (origin && ALLOWED_ORIGINS.includes(origin)) {
       res.header('Access-Control-Allow-Origin', origin);
-    } else if (!origin) {
-      // Server-to-server or same-origin requests (no Origin header)
-      res.header('Access-Control-Allow-Origin', 'https://tonagentplatform.com');
     } else {
-      res.header('Access-Control-Allow-Origin', 'https://tonagentplatform.com');
+      // Server-to-server, same-origin, or unknown origin — allow primary domain
+      res.header('Access-Control-Allow-Origin', DEFAULT_ORIGIN);
     }
     res.header('Access-Control-Allow-Headers', 'Content-Type, X-Auth-Token');
     res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
@@ -972,6 +972,41 @@ export function startApiServer() {
     }
   });
 
+  // ── POST /api/agents/import — import agent from JSON export ──
+  app.post('/api/agents/import', requireAuth, rateLimit(5, 60000, 'import'), async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { name, description, triggerType, code, triggerConfig } = req.body || {};
+      if (!name || typeof name !== 'string' || name.trim().length < 2) {
+        res.status(400).json({ ok: false, error: 'Agent name is required' });
+        return;
+      }
+      if (!code || typeof code !== 'string') {
+        res.status(400).json({ ok: false, error: 'Agent code/prompt is required' });
+        return;
+      }
+      const validTriggers = ['ai_agent', 'scheduled', 'webhook', 'manual'];
+      const resolvedTrigger = validTriggers.includes(triggerType) ? triggerType : 'ai_agent';
+      const created = await getDBTools().createAgent({
+        userId,
+        name: name.trim().slice(0, 60),
+        description: (description || '').slice(0, 500),
+        code: code.slice(0, 50000),
+        triggerType: resolvedTrigger,
+        triggerConfig: typeof triggerConfig === 'object' ? triggerConfig : {},
+        isActive: false,
+      });
+      if (!created.success || !created.data) {
+        res.json({ ok: false, error: created.error || 'DB error' });
+        return;
+      }
+      res.json({ ok: true, agentId: (created.data as any).id, agent: created.data });
+    } catch (e: any) {
+      console.error('[API] POST /api/agents/import error:', e.message);
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
   // ── GET /api/agents/:id ───────────────────────────────────
   app.get('/api/agents/:id', requireAuth, async (req: Request, res: Response) => {
     try {
@@ -1189,6 +1224,37 @@ export function startApiServer() {
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
+  });
+
+  // ── GET /api/agents/:id/tokens — Token usage stats ──────────────────────
+  app.get('/api/agents/:id/tokens', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const agentId = parseInt(req.params.id as string, 10);
+      if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
+      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
+
+      const tt = await import('./services/token-tracker');
+      const [inMemory, allTime, history7d] = await Promise.all([
+        Promise.resolve(tt.getCurrentUsage(agentId)),
+        tt.getTotalUsage(agentId),
+        tt.getUsageHistory(agentId, 7),
+      ]);
+
+      // Today = DB record for today + unflushed in-memory
+      const todayDb = history7d.find(r => r.date === new Date().toISOString().slice(0, 10));
+      const todayTokens = (todayDb?.totalTokens || 0) + inMemory.totalTokens;
+      const todayCost = (todayDb?.estimatedCost || 0) + inMemory.estimatedCost;
+      const todayRequests = (todayDb?.requestCount || 0) + inMemory.requestCount;
+
+      res.json({
+        ok: true,
+        today: { totalTokens: todayTokens, estimatedCost: Math.round(todayCost * 10000) / 10000, requestCount: todayRequests },
+        allTime: { totalTokens: allTime.totalTokens, estimatedCost: Math.round(allTime.totalCost * 10000) / 10000, totalRequests: allTime.totalRequests },
+        history7d,
+      });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
   // ── PUT /api/agents/:id/code — Edit agent code/prompt ──
@@ -1515,6 +1581,130 @@ export function startApiServer() {
     }
   });
 
+  // ── Chat history per session (agentId:userId → messages[]) ─────────────
+  const _studioChatHistory = new Map<string, Array<{ role: 'user' | 'assistant'; content: string }>>();
+
+  // ── POST /api/agents/:id/chat/stream — Streaming SSE chat ──────────────
+  app.post('/api/agents/:id/chat/stream', requireAuth, rateLimit(20, 60000, 'agent_chat_stream'), async (req: Request, res: Response) => {
+    const userId = (req as any).userId as number;
+    const agentId = parseInt(req.params.id as string, 10);
+    if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
+
+    try {
+      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
+      const { message, history } = req.body || {};
+      if (!message || typeof message !== 'string' || message.length > 4000) { res.status(400).json({ error: 'Invalid message' }); return; }
+
+      const agent = agentCheck.data;
+      const tc = (typeof agent.triggerConfig === 'object' ? agent.triggerConfig : {}) as Record<string, any>;
+      const cfg = (tc.config || {}) as Record<string, any>;
+
+      // ── Resolve AI client (with platform proxy fallback) ───────────────
+      const { decryptApiKey } = await import('./crypto-utils');
+      const rawKey = (cfg.AI_API_KEY as string) || '';
+      const apiKey = rawKey ? decryptApiKey(rawKey) : '';
+      const provider = ((cfg.AI_PROVIDER as string) || '').toLowerCase();
+
+      const PROVIDER_MAP: Record<string, { baseURL: string; model: string }> = {
+        gemini:     { baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/', model: 'gemini-2.0-flash' },
+        anthropic:  { baseURL: 'https://api.anthropic.com/v1/', model: 'claude-haiku-4-5-20251001' },
+        groq:       { baseURL: 'https://api.groq.com/openai/v1/', model: 'llama-3.3-70b-versatile' },
+        deepseek:   { baseURL: 'https://api.deepseek.com/v1/', model: 'deepseek-chat' },
+        openrouter: { baseURL: 'https://openrouter.ai/api/v1/', model: 'google/gemini-2.5-flash' },
+      };
+      const providerCfg = PROVIDER_MAP[provider] || { baseURL: 'https://api.openai.com/v1/', model: 'gpt-4o-mini' };
+      // Platform fallback: use OPENAI_API_KEY / OPENAI_BASE_URL / CLAUDE_MODEL (same as orchestrator)
+      const platformKey = process.env.PLATFORM_AI_KEY || process.env.OPENAI_API_KEY || '';
+      const platformURL = process.env.PLATFORM_AI_URL || process.env.OPENAI_BASE_URL || providerCfg.baseURL;
+      const platformModel = process.env.PLATFORM_AI_MODEL || process.env.CLAUDE_MODEL || 'gemini-2.0-flash';
+      const finalKey = apiKey || platformKey;
+      const finalURL = apiKey ? providerCfg.baseURL : platformURL;
+      const model = (cfg.AI_MODEL as string) || (apiKey ? providerCfg.model : platformModel);
+
+      const OpenAI = (await import('openai')).default;
+      const client = new OpenAI({ baseURL: finalURL, apiKey: finalKey || 'no-key' });
+
+      // ── Build studio-friendly system prompt ─────────────────────────────
+      const now = new Date();
+      const dateStr = now.toLocaleDateString('ru-RU', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
+      // Studio chat: use description only — NOT the operational code/prompt
+      // (agent code can contain specialized instructions like "refuse off-topic" that break studio chat)
+      const agentDesc = (agent.description || '').slice(0, 300);
+      const systemPrompt = [
+        `Ты — AI-агент "${agent.name || 'Агент'}" (#${agentId}) на платформе TON Agent Platform.`,
+        `Сегодня: ${dateStr}.`,
+        `Ты общаешься с владельцем агента через Studio (веб-интерфейс).`,
+        `Отвечай кратко, по делу, на том же языке что и вопрос.`,
+        `Ты можешь отвечать на любые вопросы — это тестовый чат владельца, не ограниченный миссией агента.`,
+        agentDesc ? `\nОписание агента: ${agentDesc}` : '',
+      ].filter(Boolean).join('\n');
+
+      // ── Conversation history per session ─────────────────────────────────
+      const histKey = `${agentId}:${userId}`;
+      if (!_studioChatHistory.has(histKey)) _studioChatHistory.set(histKey, []);
+      const hist = _studioChatHistory.get(histKey)!;
+
+      // If client sends history, use it (client is source of truth for UI)
+      // Otherwise build from server-side memory
+      const clientHistory: Array<{ role: string; text: string }> = Array.isArray(history) ? history : [];
+      const msgHistory = clientHistory.length > 0
+        ? clientHistory.slice(-10).map((m: any) => ({ role: (m.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant', content: String(m.text || m.content || '') }))
+        : hist.slice(-10);
+
+      // ── Setup SSE ────────────────────────────────────────────────────────
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.setHeader('X-Accel-Buffering', 'no');
+      res.flushHeaders();
+
+      const sendEvent = (event: string, data: any) => {
+        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      };
+
+      sendEvent('start', { agentId, model });
+
+      // ── Stream AI response ───────────────────────────────────────────────
+      try {
+        const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+          { role: 'system', content: systemPrompt },
+          ...msgHistory.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+          { role: 'user', content: message },
+        ];
+
+        const stream = await client.chat.completions.create({
+          model,
+          stream: true,
+          messages,
+          max_tokens: 1024,
+        });
+
+        let fullText = '';
+        for await (const chunk of stream as any) {
+          const delta = chunk.choices?.[0]?.delta?.content;
+          if (delta) {
+            fullText += delta;
+            sendEvent('chunk', { text: delta });
+          }
+        }
+
+        // Save to server-side history
+        hist.push({ role: 'user', content: message });
+        hist.push({ role: 'assistant', content: fullText });
+        if (hist.length > 40) hist.splice(0, hist.length - 40); // keep last 40 msgs
+
+        sendEvent('done', { fullText });
+      } catch (aiErr: any) {
+        sendEvent('error', { message: aiErr.message || 'AI error' });
+      }
+
+      res.end();
+    } catch (e: any) {
+      try { res.write(`event: error\ndata: ${JSON.stringify({ message: e.message })}\n\n`); res.end(); } catch {}
+    }
+  });
+
   // ── POST /api/agents/:id/wallet — Generate wallet for agent ──
   app.post('/api/agents/:id/wallet', requireAuth, async (req: Request, res: Response) => {
     try {
@@ -1534,7 +1724,8 @@ export function startApiServer() {
       const wallet = WalletContractV4.create({ publicKey: keyPair.publicKey, workchain: 0 });
       const address = wallet.address.toString({ bounceable: false });
       if (!tc.config) tc.config = {};
-      tc.config.WALLET_MNEMONIC = mnemonic.join(' ');
+      const mnemonicPlain = mnemonic.join(' ');
+      tc.config.WALLET_MNEMONIC = encryptMnemonic(mnemonicPlain);
       tc.config.WALLET_ADDRESS = address;
       await pool.query('UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3', [JSON.stringify(tc), agentId, userId]);
       // Sync to agent_state for runtime consistency
@@ -1542,7 +1733,7 @@ export function startApiServer() {
         const { getAgentStateRepository } = await import('./db/schema-extensions');
         const sr = getAgentStateRepository();
         await sr.set(agentId, userId, 'wallet_address', address);
-        await sr.set(agentId, userId, 'wallet_mnemonic', mnemonic.join(' '));
+        await sr.set(agentId, userId, 'wallet_mnemonic', encryptMnemonic(mnemonicPlain));
       } catch (e: any) { console.warn('[WalletAPI] state sync:', e.message); }
       res.json({ ok: true, address });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
@@ -1559,7 +1750,7 @@ export function startApiServer() {
       const agent = agentCheck.data;
       const tc = typeof agent.triggerConfig === 'string' ? JSON.parse(agent.triggerConfig) : (agent.triggerConfig || {});
 
-      // Check trigger_config first, then agent_state
+      // Check trigger_config first, then agent_state (decrypt if stored encrypted)
       let mnemonic = tc.config?.WALLET_MNEMONIC || '';
       if (!mnemonic) {
         try {
@@ -1571,6 +1762,10 @@ export function startApiServer() {
       }
 
       if (!mnemonic) { res.json({ ok: false, error: 'No wallet mnemonic found' }); return; }
+      // Decrypt if stored in encrypted format
+      try { mnemonic = decryptMnemonic(mnemonic); } catch (e: any) {
+        console.warn('[WalletAPI] decryptMnemonic failed:', e.message);
+      }
       res.json({ ok: true, mnemonic });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
@@ -2789,6 +2984,92 @@ export function startApiServer() {
       res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── POST /api/chat/stream — Atlas streaming chat ───────────────────────
+  // For conversational questions: streams directly. For commands: falls back to orchestrator.
+  const _atlasChatHistory = new Map<number, Array<{ role: 'user' | 'assistant'; content: string }>>();
+
+  app.post('/api/chat/stream', requireAuth, rateLimit(20, 60000, 'atlas_stream'), async (req: Request, res: Response) => {
+    const userId = (req as any).userId as number;
+    const { message, history, context } = req.body || {};
+    if (!message || typeof message !== 'string' || message.length > 4000) {
+      res.status(400).json({ error: 'message required' }); return;
+    }
+
+    // Detect platform commands → route to orchestrator (non-streaming)
+    const cmdPattern = /^(создай|создать|сделай|сделать|запусти|останови|удали|покажи|список|help|start|stop|delete|create|show|list)\b/i;
+    if (cmdPattern.test(message.trim())) {
+      try {
+        const { getOrchestrator } = await import('./agents/orchestrator');
+        const orchestrator = getOrchestrator();
+        const result = await orchestrator.processMessage(userId, message, undefined, undefined, context);
+        res.json({ ok: true, result, streamed: false });
+      } catch (e: any) {
+        res.status(500).json({ ok: false, error: e?.message });
+      }
+      return;
+    }
+
+    // Streaming conversational response
+    try {
+      const now = new Date();
+      const dateStr = now.toLocaleDateString('ru-RU', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
+      const systemPrompt = [
+        'Ты — Atlas, AI-ассистент платформы TON Agent Platform.',
+        `Сегодня: ${dateStr}.`,
+        'Платформа позволяет создавать и управлять AI-агентами в Telegram, работающими с TON блокчейном.',
+        'Отвечай кратко и по делу. Говори на языке пользователя.',
+        'Если пользователь хочет создать агента — скажи, чтобы написал "создай агента [описание]".',
+        context ? `\nКонтекст интерфейса: страница="${(context as any).page}", агент=${(context as any).agentId || 'нет'}` : '',
+      ].filter(Boolean).join('\n');
+
+      if (!_atlasChatHistory.has(userId)) _atlasChatHistory.set(userId, []);
+      const hist = _atlasChatHistory.get(userId)!;
+      const clientHistory: Array<{ role: string; content: string }> = Array.isArray(history) ? history : [];
+      const msgHistory = clientHistory.length > 0
+        ? clientHistory.slice(-8).map((m: any) => ({ role: (m.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant', content: String(m.content || m.text || '') }))
+        : hist.slice(-8);
+
+      const OpenAI = (await import('openai')).default;
+      const client = new OpenAI({
+        apiKey: process.env.OPENAI_API_KEY || '',
+        baseURL: process.env.OPENAI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai/',
+      });
+      const model = process.env.CLAUDE_MODEL || 'gemini-2.0-flash';
+
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.setHeader('X-Accel-Buffering', 'no');
+      res.flushHeaders();
+
+      const sendEvent = (event: string, data: any) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      sendEvent('start', { model });
+
+      try {
+        const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+          { role: 'system', content: systemPrompt },
+          ...msgHistory.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+          { role: 'user', content: message },
+        ];
+        const stream = await client.chat.completions.create({ model, stream: true, messages, max_tokens: 1024 });
+        let fullText = '';
+        for await (const chunk of stream as any) {
+          const delta = chunk.choices?.[0]?.delta?.content;
+          if (delta) { fullText += delta; sendEvent('chunk', { text: delta }); }
+        }
+        hist.push({ role: 'user', content: message });
+        hist.push({ role: 'assistant', content: fullText });
+        if (hist.length > 40) hist.splice(0, hist.length - 40);
+        sendEvent('done', { fullText });
+      } catch (aiErr: any) {
+        sendEvent('error', { message: aiErr.message || 'AI error' });
+      }
+      res.end();
+    } catch (e: any) {
+      try { res.write(`event: error\ndata: ${JSON.stringify({ message: e.message })}\n\n`); res.end(); } catch {}
     }
   });
 

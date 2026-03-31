@@ -135,6 +135,67 @@ export function getUserLang(userId: number, text?: string): 'ru' | 'en' {
 }
 
 // ============================================================
+// TTL cleanup — run every 30 minutes to prevent memory leaks
+// ============================================================
+
+const PENDING_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+export function startPendingStateTTLCleanup(): void {
+  setInterval(() => {
+    const now = Date.now();
+    const cutoff = now - PENDING_TTL_MS;
+
+    for (const [userId, state] of pendingCreations) {
+      if (state.createdAt && state.createdAt < cutoff) pendingCreations.delete(userId);
+    }
+    for (const [userId, state] of pendingOnboarding) {
+      if (state.createdAt < cutoff) pendingOnboarding.delete(userId);
+    }
+    for (const [userId, state] of pendingWalletImport) {
+      if (state.startTs < cutoff) pendingWalletImport.delete(userId);
+    }
+    for (const [userId, state] of pendingWalletLimit) {
+      if (state.startTs < cutoff) pendingWalletLimit.delete(userId);
+    }
+    for (const [userId, state] of pendingWalletRename) {
+      if (state.startTs < cutoff) pendingWalletRename.delete(userId);
+    }
+    for (const [userId, state] of pendingTopup) {
+      if (state.startTs < cutoff) pendingTopup.delete(userId);
+    }
+
+    // Maps without timestamps: cap at 1000 entries (evict oldest by Map insertion order)
+    const CAPS: Array<Map<any, any> | Set<any>> = [
+      pendingRenames, pendingEdits, pendingRefinements, pendingAgentChats,
+      pendingBlocklistAdd, pendingTriggerAdd, pendingProposalDiscuss,
+      pendingWithdrawal, pendingTemplateSetup, pendingPublish,
+      pendingTgAuth, pendingApiKey, pendingUserIdea, pendingPluginCreation,
+      pendingNameAsk, pendingAgentSetup, pendingRepairs, pendingLangSetup,
+    ];
+    for (const m of CAPS) {
+      if (m.size > 1000) {
+        const iter = (m as Map<any, any>).keys?.() ?? (m as Set<any>).values();
+        while (m.size > 800) {
+          const { value, done } = iter.next();
+          if (done) break;
+          (m as any).delete(value);
+        }
+      }
+    }
+
+    // Cap caches
+    if (_ownerCache.size > 10000) _ownerCache.clear();
+    if (userLanguages.size > 10000) userLanguages.clear();
+    if (_rateLimits.size > 5000) {
+      // Evict expired rate limit windows
+      for (const [k, v] of _rateLimits) {
+        if (v.resetAt < now) _rateLimits.delete(k);
+      }
+    }
+  }, 30 * 60 * 1000);
+}
+
+// ============================================================
 // clearAllPendingStates — clears every pending Map for a userId
 // ============================================================
 
