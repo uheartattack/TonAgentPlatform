@@ -33,6 +33,7 @@ import {
   runAIProposalsMigrations,
 } from './db/schema-extensions';
 import { initPayments } from './payments';
+import { startPendingStateTTLCleanup } from './state';
 
 // Главная функция запуска
 async function main() {
@@ -67,6 +68,9 @@ async function main() {
 
   // Инициализируем платёжную систему
   await initPayments(pool);
+
+  // Start TTL cleanup for in-memory pending-Maps (prevents memory leaks)
+  startPendingStateTTLCleanup();
 
   // Инициализируем TON Connect (PostgreSQL storage + restore sessions)
   await initTonConnect(pool);

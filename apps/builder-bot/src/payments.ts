@@ -160,8 +160,9 @@ const subscriptions = new TTLMap<number, UserSubscription>(60 * 60 * 1000, 10000
 const pendingPayments = new TTLMap<number, PendingPayment>(30 * 60 * 1000, 5000);            // 30 min TTL
 const generationTracker = new TTLMap<number, { month: string; count: number }>(31 * 24 * 60 * 60 * 1000, 10000); // 31 days TTL (monthly limit)
 
-// Защита от double-spend: использованные tx хеши (TTL 24h)
-const usedTxHashes = new TTLMap<string, true>(24 * 60 * 60 * 1000, 50000);
+// Защита от double-spend: использованные tx хеши (TTL 32 дня — покрывает полный цикл billing)
+// In-memory cache is rebuilt from DB on startup via loadUsedTxHashesFromDB()
+const usedTxHashes = new TTLMap<string, true>(32 * 24 * 60 * 60 * 1000, 100000);
 
 // ── Инициализация БД таблицы ────────────────────────────────
 let _pool: Pool | null = null;
@@ -191,11 +192,38 @@ export async function initPayments(pool: Pool): Promise<void> {
         created_at TIMESTAMP NOT NULL DEFAULT NOW(),
         confirmed_at TIMESTAMP
       );
+      CREATE TABLE IF NOT EXISTS builder_bot.used_tx_hashes (
+        tx_hash TEXT PRIMARY KEY,
+        used_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
     `);
+    // Load recent tx hashes (last 32 days) into in-memory cache to survive restarts
+    await loadUsedTxHashesFromDB();
   } catch (err) {
     console.error('[Payments] CRITICAL: DB migration failed:', err);
     throw err;
   }
+}
+
+async function loadUsedTxHashesFromDB(): Promise<void> {
+  if (!_pool) return;
+  try {
+    const r = await _pool.query(
+      `SELECT tx_hash FROM builder_bot.used_tx_hashes WHERE used_at > NOW() - INTERVAL '32 days'`
+    );
+    for (const row of r.rows) usedTxHashes.set(row.tx_hash, true);
+    if (r.rows.length > 0) console.log(`[Payments] Loaded ${r.rows.length} used tx hashes from DB`);
+  } catch (e) {
+    console.error('[Payments] Failed to load used tx hashes from DB:', (e as any).message);
+  }
+}
+
+async function persistTxHash(txHash: string): Promise<void> {
+  if (!_pool) return;
+  _pool.query(
+    `INSERT INTO builder_bot.used_tx_hashes(tx_hash) VALUES($1) ON CONFLICT DO NOTHING`,
+    [txHash]
+  ).catch((e: any) => console.error('[Payments] Failed to persist tx hash:', e.message));
 }
 
 // ── Получить подписку пользователя ─────────────────────────
@@ -398,6 +426,7 @@ export async function confirmPayment(
 ): Promise<{ success: boolean; plan?: Plan; expiresAt?: Date; error?: string }> {
   if (usedTxHashes.has(txHash)) return { success: false, error: 'Transaction already used' };
   usedTxHashes.set(txHash, true); // Mark immediately to prevent concurrent double-spend
+  void persistTxHash(txHash);
   const pending = pendingPayments.get(userId);
   if (!pending) return { success: false, error: 'Нет ожидающего платежа' };
   if (pending.expiresAt < new Date()) {
@@ -525,6 +554,7 @@ export async function verifyTonTransaction(
           // Check exact amount (no discount), full comment pattern, and not already used
           if (amount >= expectedNano && commentPattern.test(msg) && txHash && !usedTxHashes.has(txHash)) {
             usedTxHashes.set(txHash, true);
+            void persistTxHash(txHash);
             return { found: true, txHash };
           }
         }
@@ -572,7 +602,7 @@ export async function verifyTopupTransaction(
           if (txHash && usedTxHashes.has(txHash)) continue;
 
           if (msg === expectedComment && amount >= 100_000_000) {  // минимум 0.1 TON
-            if (txHash) usedTxHashes.set(txHash, true);
+            if (txHash) { usedTxHashes.set(txHash, true); void persistTxHash(txHash); }
             return {
               found: true,
               amountTon: amount / 1e9,

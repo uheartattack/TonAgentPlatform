@@ -114,6 +114,57 @@ function mergeAgentConfig(
   return merged;
 }
 
+// ── Per-agent serial message queue — prevents concurrent processing crashes ──
+// Owner messages jump to front (priority), others go to back.
+const agentMessageQueues = new Map<string, Array<{
+  message: string;
+  userId: number;
+  isOwner: boolean;
+  context?: Record<string, any>;
+  resolve: (result: any) => void;
+  reject: (err: any) => void;
+}>>();
+const agentProcessing = new Map<string, boolean>();
+
+async function processAgentMessageInternal(agentId: string, message: string, userId: number, context?: Record<string, any>): Promise<void> {
+  addMessageToAIAgent(parseInt(agentId, 10), message, context);
+}
+
+async function drainAgentQueue(agentId: string): Promise<void> {
+  if (agentProcessing.get(agentId)) return;
+  agentProcessing.set(agentId, true);
+  try {
+    const queue = agentMessageQueues.get(agentId) ?? [];
+    while (queue.length > 0) {
+      const item = queue.shift()!;
+      try {
+        const result = await processAgentMessageInternal(agentId, item.message, item.userId, item.context);
+        item.resolve(result);
+      } catch (err) {
+        item.reject(err);
+      }
+    }
+  } finally {
+    agentProcessing.set(agentId, false);
+  }
+}
+
+export async function enqueueAgentMessage(agentId: number, message: string, userId: number, isOwner = false, context?: Record<string, any>): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const key = String(agentId);
+    if (!agentMessageQueues.has(key)) agentMessageQueues.set(key, []);
+    const queue = agentMessageQueues.get(key)!;
+    const item = { message, userId, isOwner, context, resolve, reject };
+    // Owner messages jump to front (priority 'now'), others go to back ('later')
+    if (isOwner) {
+      queue.unshift(item);
+    } else {
+      queue.push(item);
+    }
+    drainAgentQueue(key).catch(err => console.error('[Queue] drainAgentQueue error:', err));
+  });
+}
+
 // ===== Sub-Agent: Runner =====
 // Отвечает за запуск, паузу и управление агентами
 
@@ -152,7 +203,8 @@ export class RunnerAgent {
       }
 
       // Шаг 3: Определяем нужен ли persistent режим
-      const triggerConfig = (agent.triggerConfig as Record<string, any>) || {};
+      const runConfig = Object.freeze({ ...((agent.triggerConfig as Record<string, any>) || {}) }); // snapshot once per tick
+      const triggerConfig = runConfig;
       const isScheduled = agent.triggerType === 'scheduled';
       const isAIAgent   = agent.triggerType === 'ai_agent';
       const intervalMs  = parseIntervalMs(agent.description || '', triggerConfig);
@@ -373,9 +425,11 @@ export class RunnerAgent {
     }
   }
 
-  // Отправить сообщение AI-агенту (chat feature)
+  // Отправить сообщение AI-агенту (chat feature) — serialized via per-agent queue
   sendMessageToAgent(agentId: number, text: string, context?: Record<string, any>): void {
-    addMessageToAIAgent(agentId, text, context);
+    enqueueAgentMessage(agentId, text, 0, false, context).catch(err =>
+      console.error(`[Runner] sendMessageToAgent queue error agent #${agentId}:`, err)
+    );
   }
 
   // Приостановить агента (остановить scheduler + деактивировать в БД)

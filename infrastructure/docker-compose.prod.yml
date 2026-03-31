@@ -5,7 +5,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${DB_USER:-ton_agent}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env — do not use the default}
       POSTGRES_DB: ${DB_NAME:-ton_agent_platform}
     ports:
       - '127.0.0.1:5432:5432'
@@ -20,28 +20,8 @@ services:
       driver: json-file
       options: { max-size: '10m', max-file: '3' }
 
-  redis:
-    image: redis:7-alpine
-    container_name: ton-agent-redis
-    restart: unless-stopped
-    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
-    ports:
-      - '127.0.0.1:6379:6379'
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-    logging:
-      driver: json-file
-      options: { max-size: '10m', max-file: '3' }
-
 volumes:
   postgres_data:
-    driver: local
-  redis_data:
     driver: local
 
 networks:
