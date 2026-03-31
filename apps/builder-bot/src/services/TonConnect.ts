@@ -97,6 +97,7 @@ export async function getWalletBalance(address: string): Promise<number> {
       `${TONCENTER_API}/getAddressBalance?address=${encodeURIComponent(address)}`,
       { headers: TONCENTER_KEY ? { 'X-API-Key': TONCENTER_KEY } : {} }
     );
+    if (!res.ok) return 0;
     const data = await res.json() as any;
     if (data.ok && data.result) return parseInt(data.result) / 1e9;
     return 0;
@@ -113,14 +114,17 @@ async function getSeqno(address: string): Promise<number> {
       const res = await fetch(`${TONAPI_BASE}/wallet/${encodeURIComponent(address)}/seqno`, {
         headers: { Authorization: `Bearer ${TONAPI_KEY}` },
       });
-      const data = await res.json() as any;
-      if (data.seqno != null) return Number(data.seqno);
+      if (res.ok) {
+        const data = await res.json() as any;
+        if (data.seqno != null) return Number(data.seqno);
+      }
     }
     // fallback TonCenter v2
     const res = await fetch(
       `${TONCENTER_API}/getWalletInformation?address=${encodeURIComponent(address)}`,
       { headers: TONCENTER_KEY ? { 'X-API-Key': TONCENTER_KEY } : {} }
     );
+    if (!res.ok) return 0;
     const data = await res.json() as any;
     return data?.result?.seqno || 0;
   } catch {
