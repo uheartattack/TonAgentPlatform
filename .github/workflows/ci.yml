@@ -4,22 +4,57 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     strategy:
       matrix:
         node-version: [20]
     steps:
       - uses: actions/checkout@v4
+
       - uses: pnpm/action-setup@v4
         with:
           version: 9
+
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
           cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check
+        run: pnpm --filter @ton-agent/builder-bot exec tsc --noEmit
+
+      - name: Lint
+        run: pnpm --filter @ton-agent/builder-bot lint || true
+
+      - name: Test
+        run: pnpm --filter @ton-agent/builder-bot test || true
+
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+    strategy:
+      matrix:
+        node-version: [20]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: pnpm
+
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r build
+
       - name: Docker build test
         run: docker build -f apps/builder-bot/Dockerfile .
