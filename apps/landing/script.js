@@ -210,39 +210,77 @@ document.querySelectorAll('a[href^="#"]').forEach(anchor => {
 });
 
 // Counter animation for stats
-function animateCounter(element, target, duration = 2000) {
-  let start = 0;
-  const increment = target / (duration / 16);
-  
-  function updateCounter() {
-    start += increment;
-    if (start < target) {
-      element.textContent = Math.floor(start).toLocaleString();
-      requestAnimationFrame(updateCounter);
-    } else {
-      element.textContent = target.toLocaleString();
-    }
+function animateCounter(element, target, duration = 1600) {
+  const current = parseInt(element.dataset.current || '0');
+  const delta = target - current;
+  if (delta === 0) return;
+  const start = performance.now();
+  function updateCounter(now) {
+    const elapsed = now - start;
+    const progress = Math.min(elapsed / duration, 1);
+    const eased = 1 - Math.pow(1 - progress, 3); // ease-out cubic
+    const value = Math.round(current + delta * eased);
+    element.textContent = value.toLocaleString();
+    if (progress < 1) requestAnimationFrame(updateCounter);
+    else element.dataset.current = String(target);
   }
-  
-  updateCounter();
+  requestAnimationFrame(updateCounter);
 }
 
-// Animate counters when they come into view
+// Load real platform stats from API and auto-refresh every 30s
+const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:3001' : 'https://tonagentplatform.com';
+let statsLoaded = false;
+
+async function loadPlatformStats() {
+  try {
+    const res = await fetch(`${API_BASE}/api/stats`, { cache: 'no-store' });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.ok) return;
+
+    const fields = {
+      'stat-agents-created': data.agentsCreated ?? 0,
+      'stat-active-agents':  data.activeAgents  ?? 0,
+      'stat-total-users':    data.totalUsers     ?? 0,
+    };
+
+    for (const [id, value] of Object.entries(fields)) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      if (!statsLoaded) {
+        // First load: just set, animation fires when scrolled into view
+        el.dataset.real = String(value);
+        el.dataset.current = '0';
+        el.textContent = '--'; // keep placeholder until visible
+      } else {
+        // Subsequent refresh: animate to new value
+        animateCounter(el, value);
+      }
+    }
+    statsLoaded = true;
+  } catch { /* API unreachable — keep placeholder */ }
+}
+
+// Animate counters when they come into view (uses real data if loaded)
 const statsObserver = new IntersectionObserver((entries) => {
   entries.forEach(entry => {
     if (entry.isIntersecting && !entry.target.classList.contains('counted')) {
       entry.target.classList.add('counted');
-      const value = parseInt(entry.target.textContent.replace(/,/g, ''));
-      if (!isNaN(value)) {
-        animateCounter(entry.target, value);
-      }
+      const real = parseInt(entry.target.dataset.real || '');
+      const fallback = parseInt(entry.target.textContent.replace(/,/g, ''));
+      const target = !isNaN(real) ? real : (!isNaN(fallback) ? fallback : 0);
+      if (target > 0) animateCounter(entry.target, target);
     }
   });
-}, { threshold: 0.5 });
+}, { threshold: 0.3 });
 
-document.querySelectorAll('.stat-value').forEach(stat => {
+document.querySelectorAll('.stat-value[id]').forEach(stat => {
   statsObserver.observe(stat);
 });
+
+// Initial load + refresh every 30 seconds
+loadPlatformStats();
+setInterval(loadPlatformStats, 30_000);
 
 // Spotlight effect for plugin cards
 document.querySelectorAll('.plugin-card').forEach(card => {
