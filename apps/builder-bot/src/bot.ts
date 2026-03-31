@@ -32,6 +32,17 @@ import { getUserSettingsRepository, getMarketplaceRepository, getExecutionHistor
 import { pool as dbPool } from './db';
 import { getWorkflowEngine } from './agent-cooperation';
 import { allAgentTemplates, type AgentTemplate } from './agent-templates';
+import { TOOLSET_PROFILES } from './agents/ai-agent-runtime';
+// Полный список capabilities (копия из CAPABILITY_TOOL_MAP ключей, без circular dep проблем)
+const ALL_CAPABILITIES_FULL = [
+  'wallet', 'nft', 'gifts', 'gifts_market',
+  'telegram', 'telegram_admin', 'telegram_stories', 'telegram_forums',
+  'telegram_analytics', 'telegram_media', 'telegram_discovery', 'telegram_premium',
+  'web', 'state', 'events', 'notify', 'plugins', 'inter_agent',
+  'blockchain', 'defi', 'dns', 'payments',
+  'image', 'ton_mcp', 'workspace', 'mcp', 'confirmation',
+  'image_gen', 'email', 'self_memory', 'journal', 'deals',
+];
 import {
   generateAgentWallet,
   getWalletBalance,
@@ -57,6 +68,19 @@ import {
   PLATFORM_WALLET,
   formatSubscription,
 } from './payments';
+
+// ── Shared state & helpers (extracted for architectural clarity) ──────────
+// src/state.ts holds all pending-Maps and their interfaces.
+// Future handler modules should import directly from './state'.
+// bot.ts re-exports so external consumers can import from a single place.
+import type {
+  PendingAgentCreation as _PendingAgentCreation,
+  PendingNameAsk as _PendingNameAsk,
+  PendingAgentSetup as _PendingAgentSetup,
+  PendingTemplateSetup as _PendingTemplateSetup,
+  PendingPublish as _PendingPublish,
+  PendingOnboarding as _PendingOnboarding,
+} from './state';
 
 const OWNER_ID_NUM = parseInt(process.env.OWNER_ID || '0');
 
@@ -8885,31 +8909,64 @@ async function showAgentsList(ctx: Context, userId: number) {
 // Меню возможностей агента (capabilities toggle)
 // ============================================================
 const CAPABILITY_LABELS: Record<string, { icon: string; ru: string; en: string }> = {
-  wallet:       { icon: '💰', ru: 'Кошелёк TON', en: 'TON Wallet' },
-  nft:          { icon: '🖼', ru: 'NFT анализ', en: 'NFT Analysis' },
-  gifts:        { icon: '🎁', ru: 'Подарки', en: 'Gifts' },
-  gifts_market: { icon: '📊', ru: 'Рынок подарков', en: 'Gift Market' },
-  telegram:     { icon: '📱', ru: 'Telegram', en: 'Telegram' },
-  web:          { icon: '🌐', ru: 'Веб поиск', en: 'Web Search' },
-  plugins:      { icon: '🔌', ru: 'Плагины', en: 'Plugins' },
-  inter_agent:  { icon: '🔗', ru: 'Межагент', en: 'Inter-agent' },
+  // ── Блокчейн / финансы ─────────────────────────────────────────────────
+  wallet:            { icon: '💰', ru: 'Кошелёк TON', en: 'TON Wallet' },
+  blockchain:        { icon: '⛓', ru: 'Блокчейн TON', en: 'TON Blockchain' },
+  defi:              { icon: '🔄', ru: 'DeFi / DEX', en: 'DeFi / DEX' },
+  nft:               { icon: '🖼', ru: 'NFT анализ', en: 'NFT Analysis' },
+  dns:               { icon: '🔑', ru: 'TON DNS', en: 'TON DNS' },
+  payments:          { icon: '💳', ru: 'Платежи', en: 'Payments' },
+  // ── Подарки / маркет ───────────────────────────────────────────────────
+  gifts:             { icon: '🎁', ru: 'Подарки (базовые)', en: 'Gifts (basic)' },
+  gifts_market:      { icon: '📊', ru: 'Рынок подарков', en: 'Gift Market' },
+  // ── Telegram ───────────────────────────────────────────────────────────
+  telegram:          { icon: '📱', ru: 'Telegram', en: 'Telegram' },
+  telegram_admin:    { icon: '🛡', ru: 'TG Администрирование', en: 'TG Admin' },
+  telegram_stories:  { icon: '📸', ru: 'TG Истории', en: 'TG Stories' },
+  telegram_forums:   { icon: '💬', ru: 'TG Форумы', en: 'TG Forums' },
+  telegram_analytics:{ icon: '📈', ru: 'TG Аналитика', en: 'TG Analytics' },
+  telegram_media:    { icon: '🎬', ru: 'TG Медиа', en: 'TG Media' },
+  telegram_discovery:{ icon: '🔍', ru: 'TG Поиск', en: 'TG Discovery' },
+  telegram_premium:  { icon: '⭐', ru: 'TG Premium', en: 'TG Premium' },
+  ton_mcp:           { icon: '🔗', ru: 'TON MCP', en: 'TON MCP' },
+  // ── Веб / данные ───────────────────────────────────────────────────────
+  web:               { icon: '🌐', ru: 'Веб поиск', en: 'Web Search' },
+  image:             { icon: '🖼', ru: 'Работа с картинками', en: 'Images' },
+  image_gen:         { icon: '🎨', ru: 'Генерация картинок', en: 'Image Gen' },
+  email:             { icon: '📧', ru: 'Email', en: 'Email' },
+  workspace:         { icon: '📂', ru: 'Файлы', en: 'Files' },
+  mcp:               { icon: '🔌', ru: 'MCP серверы', en: 'MCP Servers' },
+  // ── Платформа ──────────────────────────────────────────────────────────
+  state:             { icon: '💾', ru: 'Состояние', en: 'State' },
+  events:            { icon: '📡', ru: 'События / таймеры', en: 'Events / Timers' },
+  notify:            { icon: '🔔', ru: 'Уведомления', en: 'Notifications' },
+  plugins:           { icon: '🔌', ru: 'Плагины', en: 'Plugins' },
+  inter_agent:       { icon: '🤝', ru: 'Межагентность', en: 'Inter-agent' },
+  self_memory:       { icon: '🧠', ru: 'Память агента', en: 'Agent Memory' },
+  journal:           { icon: '📓', ru: 'Журнал', en: 'Journal' },
+  deals:             { icon: '🤝', ru: 'Сделки', en: 'Deals' },
+  confirmation:      { icon: '✅', ru: 'Подтверждения', en: 'Confirmations' },
 };
 
 async function showCapabilitiesMenu(ctx: Context, agentId: number, enabledCaps: string[]) {
   const userId = (ctx.from as any)?.id || 0;
   const lang = getUserLang(userId);
   const ru = lang === 'ru';
-  const allCaps = enabledCaps.length === 0;
+  const totalCaps = Object.keys(CAPABILITY_LABELS).length;
+  // «Все включены» = пустой массив ИЛИ все caps явно перечислены
+  const allCaps = enabledCaps.length === 0 || enabledCaps.length >= totalCaps;
 
   let text = `🧩 <b>${ru ? 'Возможности агента' : 'Agent Capabilities'}</b> #${agentId}\n`;
   text += `${div()}\n`;
-  text += ru
-    ? (allCaps ? '<i>Все возможности включены (по умолчанию)</i>\n' : `<i>Выбрано: ${enabledCaps.length} из ${Object.keys(CAPABILITY_LABELS).length}</i>\n`)
-    : (allCaps ? '<i>All capabilities enabled (default)</i>\n' : `<i>Selected: ${enabledCaps.length} of ${Object.keys(CAPABILITY_LABELS).length}</i>\n`);
+  if (allCaps) {
+    text += ru ? '<i>✅ Все возможности включены</i>\n' : '<i>✅ All capabilities enabled</i>\n';
+  } else {
+    text += ru
+      ? `<i>Включено: ${enabledCaps.length} из ${totalCaps}</i>\n`
+      : `<i>Enabled: ${enabledCaps.length} of ${totalCaps}</i>\n`;
+  }
   text += '\n';
-  text += ru
-    ? '👆 Нажмите чтобы включить/выключить:'
-    : '👆 Tap to toggle:';
+  text += ru ? '👆 Нажмите чтобы включить/выключить:' : '👆 Tap to toggle:';
 
   const keyboard: any[][] = [];
   const capIds = Object.keys(CAPABILITY_LABELS);
@@ -9059,6 +9116,24 @@ async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
       }
     }
 
+    // ── Краткий список capabilities для ai_agent ─────────────────────────
+    let capsLine = '';
+    if (a.triggerType === 'ai_agent') {
+      const enabledCaps = (agentCfg.enabledCapabilities as string[] | undefined);
+      const totalCaps = Object.keys(CAPABILITY_LABELS).length;
+      if (!enabledCaps || enabledCaps.length === 0 || enabledCaps.length >= totalCaps) {
+        capsLine = `\n🧩 ${ru ? 'Все возможности' : 'All capabilities'} (${totalCaps})`;
+      } else {
+        // Показываем иконки активных capabilities
+        const icons = enabledCaps
+          .map(c => CAPABILITY_LABELS[c]?.icon)
+          .filter(Boolean)
+          .slice(0, 10)
+          .join('');
+        capsLine = `\n🧩 ${icons} <i>${enabledCaps.length}/${totalCaps}</i>`;
+      }
+    }
+
     const text =
       `${statusIcon} <b>${name}</b>  #${a.id}\n` +
       `${div()}\n` +
@@ -9066,7 +9141,8 @@ async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
       `${triggerIcon} ${escHtml(triggerText + intervalLabel)}\n` +
       `${roleEmoji} ${roleName} · Lv.${agentLevel} · ${agentXp} XP\n` +
       `[${levelBar}]\n` +
-      (dateLabel ? `${pe('calendar')} ${lang === 'ru' ? 'Создан' : 'Created'}: <i>${dateLabel}</i>\n` : '') +
+      capsLine +
+      (dateLabel ? `\n${pe('calendar')} ${lang === 'ru' ? 'Создан' : 'Created'}: <i>${dateLabel}</i>` : '') +
       checklist +
       (hasError ? `\n⚠️ <b>${lang === 'ru' ? 'Последняя ошибка:' : 'Last error:'}</b>\n<code>${escHtml(lastErr!.error.slice(0, 120))}</code>` : '') +
       (desc ? `\n<i>${desc}</i>` : '');
@@ -9474,7 +9550,12 @@ async function doCreateAgentFromTemplate(ctx: Context, templateId: string, userI
   const name = t.id + '_' + Date.now().toString(36).slice(-4);
 
   // Merge collected vars into triggerConfig.config
-  const triggerConfig = { ...t.triggerConfig, config: { ...(t.triggerConfig.config || {}), ...vars } };
+  // Для ai_agent шаблонов — явно прописываем все capabilities, как у описательных агентов
+  const templateConfig = { ...(t.triggerConfig.config || {}), ...vars };
+  if (t.triggerType === 'ai_agent' && !templateConfig.enabledCapabilities) {
+    templateConfig.enabledCapabilities = ALL_CAPABILITIES_FULL;
+  }
+  const triggerConfig = { ...t.triggerConfig, config: templateConfig };
 
   const result = await getDBTools().createAgent({
     userId,
