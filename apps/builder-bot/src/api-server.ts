@@ -3032,12 +3032,22 @@ export function startApiServer() {
         ? clientHistory.slice(-8).map((m: any) => ({ role: (m.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant', content: String(m.content || m.text || '') }))
         : hist.slice(-8);
 
+      // Atlas streaming: prefer Anthropic API with Claude Code OAuth token
+      const _oauthToken = process.env.CLAUDE_CODE_OAUTH_TOKEN || '';
       const OpenAI = (await import('openai')).default;
-      const client = new OpenAI({
-        apiKey: process.env.OPENAI_API_KEY || '',
-        baseURL: process.env.OPENAI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai/',
-      });
-      const model = process.env.CLAUDE_MODEL || 'gemini-2.0-flash';
+      const client = _oauthToken
+        ? new OpenAI({
+            apiKey: _oauthToken,
+            baseURL: 'https://api.anthropic.com/v1',
+            defaultHeaders: { 'anthropic-version': '2023-06-01' },
+          })
+        : new OpenAI({
+            apiKey: process.env.OPENAI_API_KEY || '',
+            baseURL: process.env.OPENAI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai/',
+          });
+      const model = _oauthToken
+        ? (process.env.ATLAS_MODEL || 'claude-opus-4-6')
+        : (process.env.CLAUDE_MODEL || 'gemini-2.0-flash');
 
       res.setHeader('Content-Type', 'text/event-stream');
       res.setHeader('Cache-Control', 'no-cache');

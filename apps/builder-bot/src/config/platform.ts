@@ -16,9 +16,9 @@ export const MODELS = {
   gemini:         process.env.GEMINI_MODEL         || 'gemini-2.5-flash',
   geminiPro:      process.env.GEMINI_PRO_MODEL      || 'gemini-2.5-pro',
   geminiLite:     process.env.GEMINI_LITE_MODEL     || 'gemini-2.5-flash-lite',
-  // Anthropic
-  claude:         process.env.CLAUDE_MODEL          || 'claude-haiku-4-5-20251001',
-  claudeSmart:    process.env.CLAUDE_SMART_MODEL    || 'anthropic/claude-sonnet-4-20250514',
+  // Anthropic (Claude Code OAuth token — direct api.anthropic.com)
+  claude:         process.env.CLAUDE_MODEL          || 'claude-opus-4-6',
+  claudeSmart:    process.env.CLAUDE_SMART_MODEL    || 'claude-opus-4-6',
   // OpenAI
   openai:         process.env.OPENAI_MODEL          || 'gpt-4o-mini',
   openaiSmart:    process.env.OPENAI_SMART_MODEL    || 'gpt-4o',
@@ -35,7 +35,7 @@ export const MODELS = {
 // ── AI Provider base URLs ──
 export const PROVIDER_URLS = {
   gemini:     'https://generativelanguage.googleapis.com/v1beta/openai/',
-  anthropic:  'https://openrouter.ai/api/v1',
+  anthropic:  'https://api.anthropic.com/v1',
   openai:     'https://api.openai.com/v1',
   groq:       'https://api.groq.com/openai/v1',
   deepseek:   'https://api.deepseek.com/v1',
@@ -74,10 +74,12 @@ export const PROVIDER_LIMITS: Record<string, { maxContextChars: number; maxTools
 };
 
 // ── Platform AI (fallback when user has no key) ──
+// Uses Claude Code OAuth token (CLAUDE_CODE_OAUTH_TOKEN) → Anthropic API
+// Override via PLATFORM_AI_URL / PLATFORM_AI_KEY / PLATFORM_AI_MODEL
 export const PLATFORM_AI = {
-  url:   process.env.PLATFORM_AI_URL   || 'https://generativelanguage.googleapis.com/v1beta/openai/',
-  key:   process.env.PLATFORM_AI_KEY   || '',
-  model: process.env.PLATFORM_AI_MODEL || 'gemini-2.5-flash',
+  url:   process.env.PLATFORM_AI_URL   || 'https://api.anthropic.com/v1',
+  key:   process.env.PLATFORM_AI_KEY   || process.env.CLAUDE_CODE_OAUTH_TOKEN || '',
+  model: process.env.PLATFORM_AI_MODEL || 'claude-opus-4-6',
 };
 
 // ── Freshness detection patterns (for auto web_search) ──

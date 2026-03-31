@@ -104,7 +104,9 @@ async function callWithFallback(
     try {
       const result = await claudeCodeChat(messages, {
         maxTokens,
-        model: process.env.ATLAS_MODEL || 'gemini-2.5-flash',
+        // Use Claude models — Claude Code CLI doesn't support Gemini
+        model: process.env.ATLAS_MODEL || 'claude-opus-4-6',
+        fallbackModel: 'claude-sonnet-4-6',
         timeout: 90_000,
         allowedTools: [], // No tools — just text completion
       });
