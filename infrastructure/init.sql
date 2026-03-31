@@ -1,3 +1,14 @@
+-- TON Agent Platform — Legacy Platform Schema
+-- =============================================
+-- NOTE: The bot (apps/builder-bot) does NOT use this file.
+--       It uses the 'builder_bot' schema, created automatically by
+--       src/db/agents.ts (Drizzle ORM) and src/db/schema-extensions.ts.
+--
+--       This file defines the original "platform API" schema (public.*).
+--       It exists for reference / future platform services only.
+--       Do not run this against the bot's PostgreSQL instance.
+-- =============================================
+
 -- TON Agent Platform Database Schema
 
 -- Users table
