@@ -988,27 +988,30 @@ export function startApiServer() {
     try {
       const userId = (req as any).userId as number;
       const session = (req as any).session;
-      const isAdmin = isPlatformAdmin(userId) || isPlatformAdminByUsername(session?.username || '');
-      // Admins see ALL agents, regular users see only their own
-      let agents: any[];
-      if (isAdmin) {
-        const allRes = await pool.query(
-          `SELECT id, user_id as "userId", name, description, code, trigger_type as "triggerType",
-                  trigger_config as "triggerConfig", is_active as "isActive",
-                  created_at as "createdAt", updated_at as "updatedAt"
-           FROM builder_bot.agents ORDER BY id DESC`
-        );
-        agents = allRes.rows;
-      } else {
-        const r = await getDBTools().getUserAgents(userId);
-        agents = r.data || [];
-      }
+      // "My Agents" shows own agents + shared with me (NOT all for admins — they use admin panel)
+      const ownRes = await pool.query(
+        `SELECT id, user_id as "userId", name, description, code, trigger_type as "triggerType",
+                trigger_config as "triggerConfig", is_active as "isActive",
+                created_at as "createdAt", updated_at as "updatedAt"
+         FROM builder_bot.agents WHERE user_id = $1
+         UNION
+         SELECT a.id, a.user_id as "userId", a.name, a.description, a.code, a.trigger_type as "triggerType",
+                a.trigger_config as "triggerConfig", a.is_active as "isActive",
+                a.created_at as "createdAt", a.updated_at as "updatedAt"
+         FROM builder_bot.agents a
+         JOIN builder_bot.shared_agents sa ON sa.agent_id = a.id
+         WHERE sa.shared_with_user_id = $1
+         ORDER BY id DESC`,
+        [userId]
+      );
+      let agents: any[] = ownRes.rows;
       // Enrich with role/xp/level
       try {
-        const roleQuery = isAdmin
-          ? 'SELECT id, role, xp, level FROM builder_bot.agents'
-          : 'SELECT id, role, xp, level FROM builder_bot.agents WHERE user_id = $1';
-        const roleRes = await pool.query(roleQuery, isAdmin ? [] : [userId]);
+        const agentIds = agents.map(a => a.id);
+        const roleRes = agentIds.length > 0
+          ? await pool.query('SELECT id, role, xp, level FROM builder_bot.agents WHERE id = ANY($1)', [agentIds])
+          : { rows: [] };
+        const roleMap = new Map(roleRes.rows.map((r: any) => [r.id, r]));
         const roleMap = new Map(roleRes.rows.map((r: any) => [r.id, r]));
         for (const a of agents) {
           const extra = roleMap.get(a.id);
@@ -1216,8 +1219,16 @@ export function startApiServer() {
   app.post('/api/agents/:id/run', requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = (req as any).userId as number;
+      const session = (req as any).session;
       const agentId = parseInt(req.params.id as string, 10);
-      const r = await getRunnerAgent().runAgent({ agentId, userId });
+      // Admins can run any agent — pass the agent's actual owner userId
+      const isAdmin = isPlatformAdmin(userId) || isPlatformAdminByUsername(session?.username || '');
+      let runUserId = userId;
+      if (isAdmin) {
+        const agentRow = await pool.query(`SELECT user_id FROM builder_bot.agents WHERE id = $1`, [agentId]);
+        runUserId = agentRow.rows[0]?.user_id || userId;
+      }
+      const r = await getRunnerAgent().runAgent({ agentId, userId: runUserId });
       res.json({ ok: r.success, data: r.data, error: r.error });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -1228,12 +1239,78 @@ export function startApiServer() {
   app.post('/api/agents/:id/stop', requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = (req as any).userId as number;
+      const session = (req as any).session;
       const agentId = parseInt(req.params.id as string, 10);
-      const r = await getRunnerAgent().pauseAgent(agentId, userId);
+      const isAdmin = isPlatformAdmin(userId) || isPlatformAdminByUsername(session?.username || '');
+      let stopUserId = userId;
+      if (isAdmin) {
+        const agentRow = await pool.query(`SELECT user_id FROM builder_bot.agents WHERE id = $1`, [agentId]);
+        stopUserId = agentRow.rows[0]?.user_id || userId;
+      }
+      const r = await getRunnerAgent().pauseAgent(agentId, stopUserId);
       res.json({ ok: r.success, error: r.error });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
+  });
+
+  // ── POST /api/agents/:id/share — share agent with another user ──
+  app.post('/api/agents/:id/share', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
+      const { username, userId: targetUserId, permission } = req.body || {};
+      let shareWithId: number | null = null;
+
+      if (targetUserId) {
+        shareWithId = Number(targetUserId);
+      } else if (username) {
+        // Look up user by username in web_sessions
+        const r = await pool.query(
+          `SELECT user_id FROM builder_bot.web_sessions WHERE username = $1 ORDER BY created_at DESC LIMIT 1`,
+          [username.replace(/^@/, '')]
+        );
+        shareWithId = r.rows[0]?.user_id ? Number(r.rows[0].user_id) : null;
+      }
+
+      if (!shareWithId) { res.json({ ok: false, error: 'User not found' }); return; }
+      if (shareWithId === own.userId) { res.json({ ok: false, error: 'Cannot share with yourself' }); return; }
+
+      await pool.query(
+        `INSERT INTO builder_bot.shared_agents (agent_id, shared_with_user_id, shared_by_user_id, permission)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (agent_id, shared_with_user_id) DO UPDATE SET permission = $4`,
+        [own.agentId, shareWithId, own.userId, permission || 'manage']
+      );
+      res.json({ ok: true, sharedWith: shareWithId });
+    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+  });
+
+  // ── DELETE /api/agents/:id/share/:userId — unshare ──
+  app.delete('/api/agents/:id/share/:userId', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
+      await pool.query(
+        `DELETE FROM builder_bot.shared_agents WHERE agent_id = $1 AND shared_with_user_id = $2`,
+        [own.agentId, Number(req.params.userId)]
+      );
+      res.json({ ok: true });
+    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+  });
+
+  // ── GET /api/agents/:id/shares — list who has access ──
+  app.get('/api/agents/:id/shares', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
+      const r = await pool.query(
+        `SELECT sa.shared_with_user_id as "userId", sa.permission, sa.created_at,
+                ws.username, ws.first_name as "firstName"
+         FROM builder_bot.shared_agents sa
+         LEFT JOIN LATERAL (SELECT username, first_name FROM builder_bot.web_sessions WHERE user_id = sa.shared_with_user_id LIMIT 1) ws ON true
+         WHERE sa.agent_id = $1`,
+        [own.agentId]
+      );
+      res.json({ ok: true, shares: r.rows });
+    } catch (e: any) { res.json({ ok: false, error: e.message }); }
   });
 
   // ── DELETE /api/agents/:id — удалить агента ──────────────
