@@ -1012,7 +1012,6 @@ export function startApiServer() {
           ? await pool.query('SELECT id, role, xp, level FROM builder_bot.agents WHERE id = ANY($1)', [agentIds])
           : { rows: [] };
         const roleMap = new Map(roleRes.rows.map((r: any) => [r.id, r]));
-        const roleMap = new Map(roleRes.rows.map((r: any) => [r.id, r]));
         for (const a of agents) {
           const extra = roleMap.get(a.id);
           if (extra) {
