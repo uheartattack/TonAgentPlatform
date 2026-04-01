@@ -21,7 +21,7 @@ import {
   getBalanceTxRepository,
   getAgentStateRepository,
 } from './db/schema-extensions';
-import { verifyTopupTransaction, PLATFORM_WALLET, getUserSubscription, getUserPlan, PLANS, canCreateAgent, canGenerateForFree, getGenerationsUsed, confirmPayment, createPayment, getPendingPayment, verifyTonTransaction, updateSubscriptionCache } from './payments';
+import { verifyTopupTransaction, PLATFORM_WALLET, getUserSubscription, getUserPlan, PLANS, canCreateAgent, canGenerateForFree, getGenerationsUsed, confirmPayment, createPayment, getPendingPayment, verifyTonTransaction, updateSubscriptionCache, isPlatformAdmin, isPlatformAdminByUsername } from './payments';
 import { sendPlatformTransaction } from './services/TonConnect';
 import { config as platformConfig } from './config';
 import { encryptMnemonic, decryptMnemonic } from './services/agentic-wallet';
@@ -63,8 +63,11 @@ function persistSession(token: string, s: { userId: number; username: string; fi
   // Guard against BigInt overflow: Telegram user IDs from GramJS can exceed JS Number.MAX_SAFE_INTEGER
   const safeUserId = Number.isSafeInteger(s.userId) ? s.userId : Math.trunc(s.userId % 1e15);
   pool.query(
-    `INSERT INTO builder_bot.web_sessions (token, user_id, username, first_name, photo_url, expires_at)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO builder_bot.web_sessions (token, user_id, username, first_name, photo_url, expires_at, telegram_id)
+     VALUES ($1, $2, $3, $4, $5, $6, COALESCE(
+       (SELECT telegram_id FROM builder_bot.platform_admins WHERE username = $3 LIMIT 1),
+       $2
+     ))
      ON CONFLICT (token) DO UPDATE SET expires_at = $6`,
     [token, safeUserId, s.username, s.firstName, s.photoUrl || null, new Date(s.expiresAt)]
   ).catch(e => console.warn('[Auth] persistSession error:', e?.message || String(e)));
@@ -618,7 +621,7 @@ export function startApiServer() {
       res.header('Access-Control-Allow-Origin', DEFAULT_ORIGIN);
     }
     res.header('Access-Control-Allow-Headers', 'Content-Type, X-Auth-Token');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
     if (req.method === 'OPTIONS') { res.sendStatus(200); return; }
     next();
   });
@@ -769,20 +772,149 @@ export function startApiServer() {
     const session = (req as any).session;
     // Also fetch subscription for sidebar badge
     let planId = 'free', planName = 'Free', planIcon = '🆓';
+    const isAdmin = isPlatformAdmin(session.userId) || isPlatformAdminByUsername(session.username || '');
     try {
-      const sub = await getUserSubscription(session.userId);
-      const plan = PLANS[sub.planId] || PLANS.free;
-      planId = plan.id; planName = plan.name; planIcon = plan.icon;
+      if (isAdmin) {
+        planId = 'unlimited'; planName = 'Unlimited'; planIcon = '💎';
+      } else {
+        const sub = await getUserSubscription(session.userId);
+        const plan = PLANS[sub.planId] || PLANS.free;
+        planId = plan.id; planName = plan.name; planIcon = plan.icon;
+      }
+    } catch {}
+    // Get real telegram_id from DB (may differ from user_id for users who changed TG accounts)
+    let telegramId = String(session.userId);
+    let acceptedTos = false, acceptedErrors = false;
+    try {
+      const { pool } = await import('./db');
+      const tgRow = await pool.query(
+        `SELECT telegram_id, accepted_tos, accepted_errors_sharing FROM builder_bot.web_sessions WHERE token = $1`,
+        [req.headers['x-auth-token']]
+      );
+      if (tgRow.rows[0]?.telegram_id) telegramId = String(tgRow.rows[0].telegram_id);
+      acceptedTos = tgRow.rows[0]?.accepted_tos === true;
+      acceptedErrors = tgRow.rows[0]?.accepted_errors_sharing === true;
     } catch {}
     res.json({
       ok: true,
       userId: session.userId,
-      userIdStr: String(session.userId),  // safe string representation for display
+      userIdStr: String(session.userId),
       username: session.username,
       firstName: session.firstName,
       photoUrl: session.photoUrl || null,
+      telegramId,
       planId, planName, planIcon,
+      isAdmin: isPlatformAdmin(session.userId) || isPlatformAdminByUsername(session.username || ''),
+      acceptedTos: acceptedTos || false,
+      acceptedErrors: acceptedErrors || false,
     });
+  });
+
+  // ── POST /api/me/accept-tos — accept terms of service ──
+  app.post('/api/me/accept-tos', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const token = req.headers['x-auth-token'] as string;
+      const { acceptTos, acceptErrors } = req.body;
+      await pool.query(
+        `UPDATE builder_bot.web_sessions SET accepted_tos = $2, accepted_errors_sharing = $3, tos_accepted_at = NOW() WHERE token = $1`,
+        [token, acceptTos === true, acceptErrors === true]
+      );
+      res.json({ ok: true });
+    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+  });
+
+  // ── Shared avatar cache (used by /api/me/avatar AND /api/agents/:id/avatar) ──
+  const _avatarCache = new Map<string, { buf: Buffer | null; ts: number }>();
+  const AVATAR_CACHE_TTL = 30 * 60_000; // 30 min
+  const AVATAR_NEGATIVE_TTL = 5 * 60_000; // 5 min for "no photo" cache
+
+  // ── GET /api/me/avatar — user's own TG avatar (via any connected agent) ──
+  app.get('/api/me/avatar', (req: Request, res: Response, next: NextFunction) => {
+    const qToken = req.query.t as string;
+    if (qToken && !req.headers['x-auth-token']) req.headers['x-auth-token'] = qToken;
+    requireAuth(req, res, next);
+  }, async (req: Request, res: Response) => {
+    try {
+      const session = (req as any).session;
+      const { pool } = await import('./db');
+      // Get real telegram_id from session DB (may differ from user_id)
+      let tgId = String(session.userId); // default fallback
+      try {
+        const tgRow = await pool.query(
+          `SELECT telegram_id FROM builder_bot.web_sessions WHERE token = $1`,
+          [req.headers['x-auth-token']]
+        );
+        if (tgRow.rows[0]?.telegram_id) tgId = String(tgRow.rows[0].telegram_id);
+      } catch {}
+      if (!tgId || tgId === '0') { res.status(404).json({ ok: false, error: 'No TG ID' }); return; }
+
+      // Check avatar cache
+      const cacheKey = `me:${tgId}`;
+      const cached = _avatarCache.get(cacheKey);
+      if (cached && Date.now() - cached.ts < AVATAR_CACHE_TTL) {
+        if (cached.buf) { res.set('Content-Type', 'image/jpeg'); res.set('Cache-Control', 'public, max-age=1800'); res.send(cached.buf); }
+        else { res.status(404).json({ ok: false }); }
+        return;
+      }
+
+      // Find any connected agent to download photo (user's agents first, then any active)
+      const { userbotManager } = await import('./services/userbot-manager');
+      let agentsRes = await pool.query(
+        `SELECT id FROM builder_bot.agents WHERE user_id = $1 AND is_active = true LIMIT 5`, [session.userId]
+      );
+      if (agentsRes.rows.length === 0) {
+        agentsRes = await pool.query(`SELECT id FROM builder_bot.agents WHERE is_active = true LIMIT 10`);
+      }
+      let buf: Buffer | null = null;
+      // Strategy 1: Use Bot API (faster, works for all users who interacted with bot)
+      try {
+        const botToken = process.env.BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
+        if (botToken) {
+          const photosRes = await fetch(`https://api.telegram.org/bot${botToken}/getUserProfilePhotos?user_id=${tgId}&limit=1`);
+          const photosData = await photosRes.json() as any;
+          const fileId = photosData?.result?.photos?.[0]?.[0]?.file_id; // smallest size
+          if (fileId) {
+            const fileRes = await fetch(`https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`);
+            const fileData = await fileRes.json() as any;
+            const filePath = fileData?.result?.file_path;
+            if (filePath) {
+              const imgRes = await fetch(`https://api.telegram.org/file/bot${botToken}/${filePath}`);
+              if (imgRes.ok) {
+                buf = Buffer.from(await imgRes.arrayBuffer());
+              }
+            }
+          }
+        }
+      } catch {}
+      // Strategy 2: Fallback to GramJS (with timeout)
+      if (!buf || buf.length === 0) {
+        for (const ag of agentsRes.rows) {
+          try {
+            const client = await userbotManager.getClient(ag.id);
+            if (!client) continue;
+            const entityP = Promise.resolve().then(async () => {
+              const entity = await (client as any).getEntity(tgId);
+              return (client as any).downloadProfilePhoto(entity, { isBig: false }) as Promise<Buffer>;
+            });
+            const timeoutP = new Promise<null>((r) => setTimeout(() => r(null), 6000));
+            buf = await Promise.race([entityP, timeoutP]);
+            if (buf && buf.length > 0) break;
+          } catch { continue; }
+        }
+      }
+      if (!buf || buf.length === 0) {
+        _avatarCache.set(cacheKey, { buf: null, ts: Date.now() });
+        res.status(404).json({ ok: false, error: 'No photo' });
+        return;
+      }
+      _avatarCache.set(cacheKey, { buf, ts: Date.now() });
+      res.set('Content-Type', 'image/jpeg');
+      res.set('Cache-Control', 'public, max-age=1800');
+      res.send(buf);
+    } catch (e: any) {
+      console.error('[API me/avatar]', e.message?.slice(0, 100));
+      res.status(500).json({ ok: false });
+    }
   });
 
   // ═══════════════════════════════════════════════════════════
@@ -855,13 +987,28 @@ export function startApiServer() {
   app.get('/api/agents', requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = (req as any).userId as number;
-      const r = await getDBTools().getUserAgents(userId);
-      // Enrich with role/xp/level
-      const agents = r.data || [];
-      try {
-        const roleRes = await pool.query(
-          'SELECT id, role, xp, level FROM builder_bot.agents WHERE user_id = $1', [userId]
+      const session = (req as any).session;
+      const isAdmin = isPlatformAdmin(userId) || isPlatformAdminByUsername(session?.username || '');
+      // Admins see ALL agents, regular users see only their own
+      let agents: any[];
+      if (isAdmin) {
+        const allRes = await pool.query(
+          `SELECT id, user_id as "userId", name, description, code, trigger_type as "triggerType",
+                  trigger_config as "triggerConfig", is_active as "isActive",
+                  created_at as "createdAt", updated_at as "updatedAt"
+           FROM builder_bot.agents ORDER BY id DESC`
         );
+        agents = allRes.rows;
+      } else {
+        const r = await getDBTools().getUserAgents(userId);
+        agents = r.data || [];
+      }
+      // Enrich with role/xp/level
+      try {
+        const roleQuery = isAdmin
+          ? 'SELECT id, role, xp, level FROM builder_bot.agents'
+          : 'SELECT id, role, xp, level FROM builder_bot.agents WHERE user_id = $1';
+        const roleRes = await pool.query(roleQuery, isAdmin ? [] : [userId]);
         const roleMap = new Map(roleRes.rows.map((r: any) => [r.id, r]));
         for (const a of agents) {
           const extra = roleMap.get(a.id);
@@ -1582,7 +1729,20 @@ export function startApiServer() {
   });
 
   // ── Chat history per session (agentId:userId → messages[]) ─────────────
-  const _studioChatHistory = new Map<string, Array<{ role: 'user' | 'assistant'; content: string }>>();
+  // Bounded: max 1000 sessions, with TTL cleanup every 30 min
+  const _studioChatHistory = new Map<string, { msgs: Array<{ role: 'user' | 'assistant'; content: string }>; lastAccess: number }>();
+  const STUDIO_CHAT_TTL_MS = 30 * 60 * 1000; // 30 min idle TTL
+  setInterval(() => {
+    const now = Date.now();
+    for (const [k, v] of _studioChatHistory) {
+      if (now - v.lastAccess > STUDIO_CHAT_TTL_MS) _studioChatHistory.delete(k);
+    }
+    // Hard cap: evict oldest if still over 1000
+    if (_studioChatHistory.size > 1000) {
+      const oldest = [..._studioChatHistory.entries()].sort((a, b) => a[1].lastAccess - b[1].lastAccess);
+      for (const [k] of oldest.slice(0, _studioChatHistory.size - 1000)) _studioChatHistory.delete(k);
+    }
+  }, STUDIO_CHAT_TTL_MS).unref();
 
   // ── POST /api/agents/:id/chat/stream — Streaming SSE chat ──────────────
   app.post('/api/agents/:id/chat/stream', requireAuth, rateLimit(20, 60000, 'agent_chat_stream'), async (req: Request, res: Response) => {
@@ -1642,8 +1802,10 @@ export function startApiServer() {
 
       // ── Conversation history per session ─────────────────────────────────
       const histKey = `${agentId}:${userId}`;
-      if (!_studioChatHistory.has(histKey)) _studioChatHistory.set(histKey, []);
-      const hist = _studioChatHistory.get(histKey)!;
+      if (!_studioChatHistory.has(histKey)) _studioChatHistory.set(histKey, { msgs: [], lastAccess: Date.now() });
+      const histEntry = _studioChatHistory.get(histKey)!;
+      histEntry.lastAccess = Date.now();
+      const hist = histEntry.msgs;
 
       // If client sends history, use it (client is source of truth for UI)
       // Otherwise build from server-side memory
@@ -1757,7 +1919,7 @@ export function startApiServer() {
           const { getAgentStateRepository } = await import('./db/schema-extensions');
           const sr = getAgentStateRepository();
           const val = await sr.get(agentId, 'wallet_mnemonic').catch(() => null) as any;
-          mnemonic = val?.value || '';
+          mnemonic = (val && typeof val === 'object' && 'value' in val ? val.value : val) || '';
         } catch {}
       }
 
@@ -1830,12 +1992,13 @@ export function startApiServer() {
       // ── 4. Wallet ──
       const { getAgentStateRepository } = await import('./db/schema-extensions');
       const sr = getAgentStateRepository();
-      const walletAddr = (await sr.get(agentId, 'wallet_address').catch(() => null)) as any;
+      const _walletAddrRaw = (await sr.get(agentId, 'wallet_address').catch(() => null)) as any;
+      const walletAddr = _walletAddrRaw && typeof _walletAddrRaw === 'object' && 'value' in _walletAddrRaw ? _walletAddrRaw.value : _walletAddrRaw;
       const walletInConfig = tc.config?.WALLET_ADDRESS;
-      if (walletAddr?.value || walletInConfig) {
-        items.push({ category: 'wallet', check: 'Wallet', status: 'pass', detail: 'Wallet: ' + (walletAddr?.value || walletInConfig).slice(0, 12) + '...' });
+      if (walletAddr || walletInConfig) {
+        items.push({ category: 'wallet', check: 'Wallet', status: 'pass', detail: 'Wallet: ' + (walletAddr || walletInConfig).slice(0, 12) + '...' });
         // Check sync
-        if (walletAddr?.value && walletInConfig && walletAddr.value !== walletInConfig) {
+        if (walletAddr && walletInConfig && walletAddr !== walletInConfig) {
           items.push({ category: 'wallet', check: 'Wallet sync', status: 'warn', detail: 'Wallet addresses differ between state and config — may cause issues' });
         }
       } else {
@@ -1846,8 +2009,9 @@ export function startApiServer() {
       // ── 5. Security ──
       if (tc.config?.self_improvement_enabled) items.push({ category: 'security', check: 'Self-improvement', status: 'pass', detail: 'Self-improvement enabled (agent can adapt)' });
 
-      const dailyLimit = await sr.get(agentId, 'daily_spend_limit_ton').catch(() => null) as any;
-      items.push({ category: 'security', check: 'Spend limit', status: 'pass', detail: 'Daily spend limit: ' + (dailyLimit?.value || '500') + ' TON' });
+      const dailyLimitRaw = await sr.get(agentId, 'daily_spend_limit_ton').catch(() => null) as any;
+      const dailyLimit = dailyLimitRaw && typeof dailyLimitRaw === 'object' && 'value' in dailyLimitRaw ? dailyLimitRaw.value : dailyLimitRaw;
+      items.push({ category: 'security', check: 'Spend limit', status: 'pass', detail: 'Daily spend limit: ' + (dailyLimit || '500') + ' TON' });
 
       const role = (agent as any).role || 'worker';
       items.push({ category: 'security', check: 'Role', status: 'pass', detail: 'Role: ' + role });
@@ -1987,8 +2151,9 @@ export function startApiServer() {
           [agentId]
         );
         if (stateRes.rows.length > 0) {
-          const hist = JSON.parse(stateRes.rows[0].value || '[]');
-          messages = Array.isArray(hist) ? hist.length : 0;
+          const raw = stateRes.rows[0].value;
+          const hist = raw === null ? [] : Array.isArray(raw) ? raw : (typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch { return []; } })() : []);
+          messages = hist.length;
         }
       } catch {}
       // Estimate tool calls from operations
@@ -2237,6 +2402,99 @@ export function startApiServer() {
 
       res.json({ ok: true, service, connectors });
     } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── POST /api/voice/transcribe — Transcribe audio via Whisper/Gemini ──────
+  app.post('/api/voice/transcribe', requireAuth, rateLimit(10, 60000, 'voice_transcribe'), async (req: Request, res: Response) => {
+    try {
+      // multer-style: audio arrives as multipart/form-data or raw body
+      const contentType = req.headers['content-type'] || '';
+      let audioBuffer: Buffer | null = null;
+      let mimeType = 'audio/webm';
+
+      if (contentType.includes('multipart/form-data')) {
+        // Use busboy to parse audio field
+        const busboy = require('busboy');
+        const bb = busboy({ headers: req.headers, limits: { fileSize: 10 * 1024 * 1024 } }); // 10 MB limit
+        audioBuffer = await new Promise<Buffer>((resolve, reject) => {
+          const chunks: Buffer[] = [];
+          bb.on('file', (_field: string, stream: any, info: any) => {
+            mimeType = info.mimeType || mimeType;
+            stream.on('data', (d: Buffer) => chunks.push(d));
+            stream.on('end', () => resolve(Buffer.concat(chunks)));
+            stream.on('error', reject);
+          });
+          bb.on('error', reject);
+          req.pipe(bb);
+        });
+      } else {
+        // Raw body
+        audioBuffer = req.body instanceof Buffer ? req.body : Buffer.from(req.body || '');
+      }
+
+      if (!audioBuffer || audioBuffer.length < 100) {
+        res.status(400).json({ error: 'No audio data received' });
+        return;
+      }
+
+      // Try Gemini multimodal transcription first, fall back to Whisper
+      let transcription = '';
+      const geminiKey = process.env.GEMINI_API_KEY || '';
+      if (geminiKey) {
+        try {
+          const b64 = audioBuffer.toString('base64');
+          const gRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [
+                { inlineData: { mimeType, data: b64 } },
+                { text: 'Transcribe this audio to text. Return only the transcription, nothing else.' }
+              ]}]
+            })
+          });
+          const gData = await gRes.json() as any;
+          transcription = gData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+        } catch (ge: any) {
+          console.warn('[VoiceAPI] Gemini transcription failed:', ge.message);
+        }
+      }
+
+      // Fallback: Whisper via OpenAI
+      if (!transcription) {
+        const openaiKey = process.env.OPENAI_API_KEY || '';
+        if (openaiKey) {
+          try {
+            const { OpenAI } = await import('openai');
+            const openai = new OpenAI({ apiKey: openaiKey });
+            const { Blob: NodeBlob } = await import('buffer');
+            const audioFile = new (globalThis.File || NodeBlob as any)(
+              [audioBuffer],
+              'audio.webm',
+              { type: mimeType }
+            );
+            const whisperRes = await (openai.audio.transcriptions as any).create({
+              model: 'whisper-1',
+              file: audioFile,
+              language: 'ru',
+            });
+            transcription = whisperRes.text?.trim() || '';
+          } catch (we: any) {
+            console.warn('[VoiceAPI] Whisper transcription failed:', we.message);
+          }
+        }
+      }
+
+      if (!transcription) {
+        res.status(422).json({ error: 'Could not transcribe audio. Check API keys.' });
+        return;
+      }
+
+      res.json({ text: transcription });
+    } catch (e: any) {
+      console.error('[VoiceAPI] Error:', e.message);
       res.status(500).json({ error: e.message });
     }
   });
@@ -3000,10 +3258,23 @@ export function startApiServer() {
 
     // Detect platform commands → route to orchestrator (non-streaming)
     const cmdPattern = /^(создай|создать|сделай|сделать|запусти|останови|удали|покажи|список|help|start|stop|delete|create|show|list)\b/i;
-    if (cmdPattern.test(message.trim())) {
+    const createPattern = /(создай|создать|сделай|сделать|create)\s+(агент\w*|бот\w*|agent\w*|bot\w*)/i;
+    // Also catch "создай ... агента" pattern
+    const isCreateCmd = createPattern.test(message.trim());
+    const isCmdMsg = cmdPattern.test(message.trim());
+    console.log(`[Atlas/stream] msg="${message.slice(0,60)}" isCmd=${isCmdMsg} isCreate=${isCreateCmd}`);
+    if (isCmdMsg || isCreateCmd) {
       try {
         const { getOrchestrator } = await import('./agents/orchestrator');
         const orchestrator = getOrchestrator();
+        // Direct create: bypass AI tool-calling (Gemini often skips tool calls)
+        if (isCreateCmd) {
+          // Pass the FULL message as description — handleCreateAgent will extract what it needs
+          console.log(`[Atlas/stream] → handleCreateAgent desc="${message.slice(0,80)}"`);
+          const result = await orchestrator.handleCreateAgent(userId, message);
+          res.json({ ok: true, result, streamed: false });
+          return;
+        }
         const result = await orchestrator.processMessage(userId, message, undefined, undefined, context);
         res.json({ ok: true, result, streamed: false });
       } catch (e: any) {
@@ -3032,22 +3303,36 @@ export function startApiServer() {
         ? clientHistory.slice(-8).map((m: any) => ({ role: (m.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant', content: String(m.content || m.text || '') }))
         : hist.slice(-8);
 
-      // Atlas streaming: prefer Anthropic API with Claude Code OAuth token
-      const _oauthToken = process.env.CLAUDE_CODE_OAUTH_TOKEN || '';
+      // Atlas streaming: use Anthropic native SDK if key available, else Gemini via OpenAI-compat
+      const _anthropicKey = process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_CODE_OAUTH_TOKEN || '';
+      const _useAnthropic = !!_anthropicKey && _anthropicKey.startsWith('sk-ant-');
       const OpenAI = (await import('openai')).default;
-      const client = _oauthToken
-        ? new OpenAI({
-            apiKey: _oauthToken,
-            baseURL: 'https://api.anthropic.com/v1',
-            defaultHeaders: { 'anthropic-version': '2023-06-01' },
-          })
-        : new OpenAI({
+      let client: any;
+      let model: string;
+      let useNativeAnthropic = false;
+
+      if (_useAnthropic) {
+        // Use Anthropic native SDK for streaming (NOT OpenAI-compat — Anthropic doesn't support /chat/completions)
+        try {
+          const Anthropic = (await import('@anthropic-ai/sdk')).default;
+          client = new Anthropic({ apiKey: _anthropicKey });
+          model = process.env.ATLAS_MODEL || 'claude-sonnet-4-5';
+          useNativeAnthropic = true;
+        } catch {
+          // SDK not installed — fallback to Gemini
+          client = new OpenAI({
             apiKey: process.env.OPENAI_API_KEY || '',
             baseURL: process.env.OPENAI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai/',
           });
-      const model = _oauthToken
-        ? (process.env.ATLAS_MODEL || 'claude-opus-4-6')
-        : (process.env.CLAUDE_MODEL || 'gemini-2.0-flash');
+          model = 'gemini-2.5-flash';
+        }
+      } else {
+        client = new OpenAI({
+          apiKey: process.env.OPENAI_API_KEY || '',
+          baseURL: process.env.OPENAI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai/',
+        });
+        model = process.env.CLAUDE_MODEL || 'gemini-2.5-flash';
+      }
 
       res.setHeader('Content-Type', 'text/event-stream');
       res.setHeader('Cache-Control', 'no-cache');
@@ -3064,11 +3349,44 @@ export function startApiServer() {
           ...msgHistory.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
           { role: 'user', content: message },
         ];
-        const stream = await client.chat.completions.create({ model, stream: true, messages, max_tokens: 1024 });
         let fullText = '';
-        for await (const chunk of stream as any) {
-          const delta = chunk.choices?.[0]?.delta?.content;
-          if (delta) { fullText += delta; sendEvent('chunk', { text: delta }); }
+        // Model fallback chain for rate limits / errors
+        const modelChain = useNativeAnthropic
+          ? [model, 'claude-haiku-4-5-20251001']
+          : [model, 'gemini-2.5-flash', 'gemini-2.0-flash'];
+        const nonSystemMsgs = messages.filter(m => m.role !== 'system');
+
+        for (const tryModel of modelChain) {
+          try {
+            if (useNativeAnthropic) {
+              const stream = client.messages.stream({
+                model: tryModel,
+                system: systemPrompt,
+                messages: nonSystemMsgs,
+                max_tokens: 1024,
+              });
+              for await (const event of stream as any) {
+                if (event.type === 'content_block_delta' && event.delta?.text) {
+                  fullText += event.delta.text;
+                  sendEvent('chunk', { text: event.delta.text });
+                }
+              }
+            } else {
+              const stream = await client.chat.completions.create({ model: tryModel, stream: true, messages, max_tokens: 1024 });
+              for await (const chunk of stream as any) {
+                const delta = chunk.choices?.[0]?.delta?.content;
+                if (delta) { fullText += delta; sendEvent('chunk', { text: delta }); }
+              }
+            }
+            break; // success — exit chain
+          } catch (modelErr: any) {
+            const errMsg = modelErr?.message || '';
+            if (errMsg.includes('429') || errMsg.includes('rate_limit') || errMsg.includes('overloaded') || errMsg.includes('529')) {
+              console.warn(`[Atlas] ${tryModel} rate limited, trying next...`);
+              continue; // try next model
+            }
+            throw modelErr; // non-retryable — rethrow
+          }
         }
         hist.push({ role: 'user', content: message });
         hist.push({ role: 'assistant', content: fullText });
@@ -3439,9 +3757,22 @@ export function startApiServer() {
     const timestamps = (apiRateLimits.get(key) || []).filter(t => now - t < windowMs);
     if (timestamps.length >= maxRequests) return false;
     timestamps.push(now);
-    apiRateLimits.set(key, timestamps);
+    // Cap per-key array to prevent unbounded growth under sustained attack
+    apiRateLimits.set(key, timestamps.length > maxRequests * 2 ? timestamps.slice(-maxRequests) : timestamps);
     return true;
   }
+  // Periodic cleanup of expired rate limit entries (cap total keys at 10k)
+  setInterval(() => {
+    const now = Date.now();
+    for (const [k, ts] of apiRateLimits) {
+      if (ts.every(t => now - t > 3600_000)) apiRateLimits.delete(k); // remove entries idle > 1h
+    }
+    if (apiRateLimits.size > 10_000) {
+      // Hard evict oldest 20%
+      const keys = [...apiRateLimits.keys()];
+      for (const k of keys.slice(0, Math.floor(keys.length * 0.2))) apiRateLimits.delete(k);
+    }
+  }, 5 * 60_000).unref();
   /** Express middleware: rate limit by user or IP */
   function rateLimit(maxReq: number, windowMs: number, keyPrefix: string) {
     return (req: Request, res: Response, next: Function) => {
@@ -3653,10 +3984,80 @@ export function startApiServer() {
   // ═══════════════════════════════════════════════════════════════════════════
   // OWNERSHIP HELPER — prevents IDOR on all agent endpoints below
   // ═══════════════════════════════════════════════════════════════════════════
+  // ── GET /api/admin/agents — admin panel: all agents with errors (no private data) ──
+  app.get('/api/admin/agents', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const sess = (req as any).session;
+      if (!isPlatformAdmin(userId) && !isPlatformAdminByUsername(sess?.username || '')) { res.status(403).json({ ok: false, error: 'Admin only' }); return; }
+
+      // Get all agents with owner info
+      const agentsRes = await pool.query(`
+        SELECT a.id, a.name, a.user_id as "userId", a.is_active as "isActive",
+               a.trigger_type as "triggerType",
+               ws.username as "ownerUsername"
+        FROM builder_bot.agents a
+        LEFT JOIN LATERAL (
+          SELECT username FROM builder_bot.web_sessions WHERE user_id = a.user_id LIMIT 1
+        ) ws ON true
+        ORDER BY a.is_active DESC, a.id DESC
+      `);
+
+      // Check which users opted into error sharing
+      const sharingRes = await pool.query(`
+        SELECT DISTINCT user_id FROM builder_bot.web_sessions
+        WHERE accepted_errors_sharing = true
+      `).catch(() => ({ rows: [] }));
+      const errorSharingUsers = new Set(sharingRes.rows.map((r: any) => Number(r.user_id)));
+      // Platform admins always share errors
+      for (const a of agentsRes.rows) {
+        if (isPlatformAdmin(a.userId)) errorSharingUsers.add(a.userId);
+      }
+
+      // Get error counts per agent (last 24h) — only for users who opted in
+      const errRes = await pool.query(`
+        SELECT agent_id, COUNT(*) as cnt,
+               MAX(message) as last_error
+        FROM builder_bot.agent_logs
+        WHERE level IN ('error','fatal') AND created_at > NOW() - INTERVAL '24 hours'
+        GROUP BY agent_id
+      `).catch(() => ({ rows: [] }));
+      const errMap = new Map<number, { count: number; last: string }>();
+      for (const r of errRes.rows) errMap.set(r.agent_id, { count: Number(r.cnt), last: r.last_error });
+
+      const agents = agentsRes.rows.map((a: any) => {
+        const canSeeErrors = errorSharingUsers.has(a.userId);
+        return {
+          id: a.id,
+          name: a.name,
+          userId: a.userId,
+          ownerUsername: a.ownerUsername || null,
+          isActive: a.isActive,
+          triggerType: a.triggerType,
+          recentErrors: canSeeErrors ? (errMap.get(a.id)?.count || 0) : -1, // -1 = opted out
+          lastError: canSeeErrors ? (errMap.get(a.id)?.last || null) : null,
+          errorSharingEnabled: canSeeErrors,
+        };
+      });
+
+      res.json({ ok: true, agents });
+    } catch (e: any) {
+      console.error('[API admin/agents]', e.message?.slice(0, 100));
+      res.status(500).json({ ok: false, error: 'Internal error' });
+    }
+  });
+
   async function verifyAgentOwnership(req: Request, res: Response): Promise<{ agentId: number; userId: number } | null> {
     const agentId = Number(req.params.id);
     const userId = (req as any).userId as number;
     if (isNaN(agentId)) { res.status(400).json({ ok: false, error: 'Invalid agent ID' }); return null; }
+    // Platform admins can access ANY agent
+    const session = (req as any).session;
+    if (isPlatformAdmin(userId) || isPlatformAdminByUsername(session?.username || '')) {
+      const check = await getDBTools().getAgent(agentId);
+      if (!check.success || !check.data) { res.status(404).json({ ok: false, error: 'Agent not found' }); return null; }
+      return { agentId, userId };
+    }
     const check = await getDBTools().getAgent(agentId, userId);
     if (!check.success || !check.data) { res.status(404).json({ ok: false, error: 'Agent not found or access denied' }); return null; }
     return { agentId, userId };
@@ -3905,34 +4306,318 @@ export function startApiServer() {
   app.get('/api/agents/:id/contacts', requireAuth, async (req: Request, res: Response) => {
     try {
       const own = await verifyAgentOwnership(req, res); if (!own) return;
-      const stateRepo = getAgentStateRepository();
-      const raw = await stateRepo.get(own.agentId, '_contacts').catch(() => null);
-      let contacts: any[] = [];
-      if (Array.isArray(raw)) { contacts = raw; }
-      else if (typeof raw === 'string') { try { contacts = JSON.parse(raw); } catch {} }
-      res.json({ ok: true, contacts });
-    } catch (e: any) { console.error('[API]', e.message?.slice(0, 200)); res.status(500).json({ ok: false, error: 'Internal error' }); }
+      const { pool } = await import('./db');
+      // Ensure table exists (created on first message receipt)
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS builder_bot.agent_contacts (
+          id SERIAL PRIMARY KEY, agent_id INTEGER NOT NULL, tg_user_id BIGINT NOT NULL,
+          username TEXT, first_name TEXT, last_name TEXT,
+          message_count INTEGER DEFAULT 1, last_seen_at TIMESTAMPTZ DEFAULT NOW(),
+          is_allowed BOOLEAN DEFAULT true, is_admin BOOLEAN DEFAULT false,
+          UNIQUE(agent_id, tg_user_id)
+        )
+      `);
+      const rows = await pool.query(
+        `SELECT tg_user_id as id, username, first_name as "firstName", last_name as "lastName",
+                message_count as "messageCount", last_seen_at as "lastSeen",
+                is_allowed as "isAllowed", is_admin as "isAdmin"
+         FROM builder_bot.agent_contacts
+         WHERE agent_id = $1
+         ORDER BY message_count DESC NULLS LAST, last_seen_at DESC
+         LIMIT 100`,
+        [own.agentId]
+      );
+      res.json({ ok: true, contacts: rows.rows });
+    } catch (e: any) { console.error('[API contacts]', e.message?.slice(0, 200)); res.status(500).json({ ok: false, error: 'Internal error' }); }
   });
 
-  app.put('/api/agents/:id/contacts/:userId', requireAuth, async (req: Request, res: Response) => {
+  app.put('/api/agents/:id/contacts/:contactUserId', requireAuth, async (req: Request, res: Response) => {
     try {
       const own = await verifyAgentOwnership(req, res); if (!own) return;
-      const contactUserId = req.params.userId;
-      const stateRepo = getAgentStateRepository();
-      const raw = await stateRepo.get(own.agentId, '_contacts').catch(() => null);
-      let contacts: any[] = [];
-      if (Array.isArray(raw)) { contacts = raw; }
-      else if (typeof raw === 'string') { try { contacts = JSON.parse(raw); } catch {} }
-
-      const idx = contacts.findIndex((c: any) => String(c.id) === contactUserId);
-      if (idx >= 0) {
-        contacts[idx] = { ...contacts[idx], ...req.body };
-      } else {
-        contacts.push({ id: contactUserId, ...req.body });
-      }
-      await stateRepo.set(own.agentId, own.userId, '_contacts', contacts);
+      const contactTgId = parseInt(req.params.contactUserId, 10);
+      if (isNaN(contactTgId)) { res.status(400).json({ ok: false, error: 'Invalid userId' }); return; }
+      const { pool } = await import('./db');
+      const { isAllowed, isAdmin } = req.body;
+      await pool.query(
+        `UPDATE builder_bot.agent_contacts
+         SET is_allowed = COALESCE($3, is_allowed), is_admin = COALESCE($4, is_admin)
+         WHERE agent_id = $1 AND tg_user_id = $2`,
+        [own.agentId, contactTgId, isAllowed ?? null, isAdmin ?? null]
+      );
       res.json({ ok: true });
     } catch (e: any) { res.json({ ok: false, error: e.message }); }
+  });
+
+  // ── GET /api/agents/:id/avatar/:tgId — proxy Telegram profile photo (user or group) ──
+  // Auth via query param `t` (token) since <img> tags can't set headers
+  app.get('/api/agents/:id/avatar/:tgId', (req: Request, res: Response, next: NextFunction) => {
+    // Allow auth via query token for <img> tags
+    const qToken = req.query.t as string;
+    if (qToken && !req.headers['x-auth-token']) {
+      req.headers['x-auth-token'] = qToken;
+    }
+    requireAuth(req, res, next);
+  }, async (req: Request, res: Response) => {
+    try {
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
+      const tgId = req.params.tgId;
+      const cacheKey = `${own.agentId}:${tgId}`;
+
+      // Check cache (including negative cache)
+      const cached = _avatarCache.get(cacheKey);
+      if (cached) {
+        const ttl = cached.buf ? AVATAR_CACHE_TTL : AVATAR_NEGATIVE_TTL;
+        if (Date.now() - cached.ts < ttl) {
+          if (cached.buf) {
+            res.set('Content-Type', 'image/jpeg');
+            res.set('Cache-Control', 'public, max-age=1800');
+            res.send(cached.buf);
+          } else {
+            res.status(404).json({ ok: false, error: 'No photo' });
+          }
+          return;
+        }
+      }
+
+      const { userbotManager } = await import('./services/userbot-manager');
+      const client = await userbotManager.getClient(own.agentId);
+      if (!client) { res.status(404).json({ ok: false, error: 'No TG client' }); return; }
+
+      try {
+        // GramJS downloadProfilePhoto accepts string ID directly, or entity
+        // For groups (-100xxx), resolve entity first; for users, string works
+        let target: any = tgId;
+        if (tgId.startsWith('-')) {
+          try { target = await (client as any).getEntity(tgId); } catch {
+            try { target = await (client as any).getEntity(BigInt(tgId)); } catch {
+              _avatarCache.set(cacheKey, { buf: null, ts: Date.now() });
+              res.status(404).json({ ok: false, error: 'Entity not found' });
+              return;
+            }
+          }
+        }
+        const buf = await (client as any).downloadProfilePhoto(target, { isBig: false }) as Buffer;
+        if (!buf || buf.length === 0) {
+          _avatarCache.set(cacheKey, { buf: null, ts: Date.now() });
+          res.status(404).json({ ok: false, error: 'No photo' });
+          return;
+        }
+        // Cache positive result
+        _avatarCache.set(cacheKey, { buf, ts: Date.now() });
+        // Evict old entries
+        if (_avatarCache.size > 500) {
+          const now = Date.now();
+          for (const [k, v] of _avatarCache) {
+            const t = v.buf ? AVATAR_CACHE_TTL : AVATAR_NEGATIVE_TTL;
+            if (now - v.ts > t) _avatarCache.delete(k);
+          }
+        }
+        res.set('Content-Type', 'image/jpeg');
+        res.set('Cache-Control', 'public, max-age=1800');
+        res.send(buf);
+      } catch (photoErr: any) {
+        _avatarCache.set(cacheKey, { buf: null, ts: Date.now() });
+        res.status(404).json({ ok: false, error: 'Photo download failed' });
+      }
+    } catch (e: any) { res.status(500).json({ ok: false, error: 'Internal error' }); }
+  });
+
+  // ── GET /api/agents/:id/profiles — structured memory: contacts, lessons, goals, prefs ──
+  app.get('/api/agents/:id/profiles', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
+      const stateRepo = getAgentStateRepository();
+      // Get all relevant keys
+      const allKeys: string[] = await (stateRepo as any).listKeys(own.agentId).catch(() => []);
+      const memKeys = allKeys.filter((k: string) => k.startsWith('mem:') || k.startsWith('contact_note:') || k.startsWith('contact_dossier:') || k.startsWith('lesson:') || k.startsWith('goal:'));
+
+      const profiles: Record<string, any> = {}; // userId → { notes, facts, relationship }
+      const lessons: any[] = [];
+      const goals: any[] = [];
+
+      await Promise.all(memKeys.map(async (key: string) => {
+        const val = await stateRepo.get(own.agentId, key).catch(() => null);
+        if (!val) return;
+
+        if (key.startsWith('contact_dossier:')) {
+          const userId = key.replace('contact_dossier:', '');
+          const d = typeof val === 'string' ? (() => { try { return JSON.parse(val); } catch { return {}; } })() : (val || {});
+          if (!profiles[userId]) profiles[userId] = { userId, notes: [], facts: [] };
+          profiles[userId].name = d.name || d.username;
+          profiles[userId].relationship = d.relationship;
+          profiles[userId].summary = d.summary;
+          profiles[userId].traits = d.traits || [];
+        } else if (key.startsWith('contact_note:')) {
+          const parts = key.split(':');
+          const userId = parts[1];
+          const ts = parts[2];
+          if (!profiles[userId]) profiles[userId] = { userId, notes: [], facts: [] };
+          const note = typeof val === 'object' && val !== null && 'note' in val ? (val as any).note : String(val);
+          profiles[userId].notes.push({ ts: Number(ts), text: note });
+        } else if (key.startsWith('mem:')) {
+          const stripped = key.replace('mem:', '');
+          // mem:user_USERID_field or mem:pref_xxx or mem:other
+          const userMatch = stripped.match(/^user_(\d+)_(.+)$/);
+          if (userMatch) {
+            const userId = userMatch[1];
+            const field = userMatch[2];
+            if (!profiles[userId]) profiles[userId] = { userId, notes: [], facts: [] };
+            const v = typeof val === 'object' && val !== null && 'value' in val ? (val as any).value : val;
+            profiles[userId].facts.push({ field, value: String(v).slice(0, 200) });
+          }
+        } else if (key.startsWith('lesson:')) {
+          const lesson = typeof val === 'object' && val !== null ? val : { text: String(val) };
+          lessons.push({ key, ...(lesson as any) });
+        } else if (key === 'agent_goals') {
+          const g = typeof val === 'string' ? (() => { try { return JSON.parse(val); } catch { return []; } })() : (Array.isArray(val) ? val : []);
+          goals.push(...g);
+        }
+      }));
+
+      // Sort notes by timestamp
+      Object.values(profiles).forEach((p: any) => {
+        p.notes.sort((a: any, b: any) => b.ts - a.ts);
+      });
+
+      res.json({
+        ok: true,
+        profiles: Object.values(profiles),
+        lessons: lessons.slice(-30),
+        goals,
+      });
+    } catch (e: any) { console.error('[API profiles]', e.message?.slice(0, 200)); res.status(500).json({ ok: false, error: 'Internal error' }); }
+  });
+
+  // ── GET /api/agents/:id/chat-names — resolve chatIds to Telegram names ──
+  const _chatNameCache = new Map<string, { name: string; ts: number }>();
+  const CHAT_NAME_TTL = 60 * 60_000; // 1 hour
+  app.post('/api/agents/:id/chat-names', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
+      const chatIds: string[] = req.body.chatIds || [];
+      if (chatIds.length === 0 || chatIds.length > 50) {
+        res.json({ ok: true, names: {} });
+        return;
+      }
+      const result: Record<string, string> = {};
+      const toResolve: string[] = [];
+
+      // Check cache first
+      for (const cid of chatIds) {
+        const cached = _chatNameCache.get(`${own.agentId}:${cid}`);
+        if (cached && Date.now() - cached.ts < CHAT_NAME_TTL) {
+          result[cid] = cached.name;
+        } else {
+          toResolve.push(cid);
+        }
+      }
+
+      if (toResolve.length > 0) {
+        try {
+          const { userbotManager } = await import('./services/userbot-manager');
+          const client = await userbotManager.getClient(own.agentId);
+          if (client) {
+            for (const cid of toResolve) {
+              try {
+                const entity = await (client as any).getEntity(cid);
+                let name = '';
+                if (entity.title) {
+                  name = entity.title; // group/channel
+                } else if (entity.firstName) {
+                  name = entity.firstName + (entity.lastName ? ' ' + entity.lastName : '');
+                } else if (entity.username) {
+                  name = '@' + entity.username;
+                }
+                if (name) {
+                  result[cid] = name;
+                  _chatNameCache.set(`${own.agentId}:${cid}`, { name, ts: Date.now() });
+                }
+              } catch { /* entity not found, skip */ }
+            }
+          }
+        } catch { /* no client */ }
+      }
+
+      res.json({ ok: true, names: result });
+    } catch (e: any) { res.json({ ok: true, names: {} }); }
+  });
+
+  // ── GET /api/agents/:id/chats — list all chats with last message preview ──
+  app.get('/api/agents/:id/chats', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
+      const { pool } = await import('./db');
+      const rows = await pool.query(
+        `SELECT key, value FROM builder_bot.agent_state WHERE agent_id = $1 AND key LIKE '_chat:%' ORDER BY updated_at DESC LIMIT 100`,
+        [own.agentId]
+      );
+      const chats = rows.rows.map((row: any) => {
+        const chatId = row.key.replace('_chat:', '');
+        const val = row.value;
+        const msgs: string[] = Array.isArray(val) ? val : (typeof val === 'string' ? (() => { try { return JSON.parse(val); } catch { return []; } })() : []);
+        const last = msgs[msgs.length - 1] || '';
+        const isGroup = chatId.startsWith('-');
+
+        // ── Extract best name from ALL frames ──
+        // For groups: scan all frames for @username mentions, pick the most common sender
+        // For DMs: use the non-ME sender's @username or id
+        let bestName = '';
+        const senderCounts = new Map<string, number>();
+        for (const frame of msgs) {
+          // Frames: [ME], [[user] @name ...], [[owner] @name ...], [@name ...], [id:12345 ...]
+          if (frame.startsWith('[ME]')) continue;
+          const headerMatch = frame.match(/^\[(?:\[(?:user|owner|bot)\]\s*)?(@?\w[\w.]*)\s/);
+          if (headerMatch) {
+            const sender = headerMatch[1];
+            senderCounts.set(sender, (senderCounts.get(sender) || 0) + 1);
+          }
+          const idMatch = frame.match(/^\[id:(\d+)\s/);
+          if (idMatch && !bestName) bestName = idMatch[1];
+        }
+        // Pick most frequent sender
+        if (senderCounts.size > 0) {
+          let maxCount = 0;
+          for (const [s, c] of senderCounts) {
+            if (c > maxCount) { maxCount = c; bestName = s; }
+          }
+        }
+        // For groups with multiple senders, indicate it's a group
+        const uniqueSenders = senderCounts.size;
+
+        // Preview from last msg
+        const preview = last.replace(/^\[[^\]]+\]\s*/, '').replace(/<\/?user_message>/g, '').replace(/<<<[A-Z_]+>>>/g, '').replace(/\[(?:photo|video|voice|file|sticker|gif)[^\]]*\]/g, '').trim().slice(0, 100);
+
+        return {
+          chatId,
+          messageCount: msgs.length,
+          lastMessage: preview,
+          senderName: bestName || chatId,
+          isGroup,
+          uniqueSenders,
+        };
+      });
+      res.json({ ok: true, chats });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+
+  // ── GET /api/agents/:id/chats/:chatId — full history of one chat ──
+  app.get('/api/agents/:id/chats/:chatId', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
+      const chatId = req.params.chatId;
+      const stateRepo = getAgentStateRepository();
+      const raw = await stateRepo.get(own.agentId, `_chat:${chatId}`).catch(() => null);
+      const msgs: string[] = Array.isArray(raw) ? raw : (typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch { return []; } })() : []);
+      // Parse each frame into structured message
+      const parsed = msgs.map((line: string) => {
+        const isMe = line.startsWith('[ME]');
+        const headerMatch = line.match(/^\[([^\]]+)\]/);
+        const header = headerMatch ? headerMatch[1] : '';
+        const text = line.replace(/^\[[^\]]+\]\s*/, '').replace(/<\/?user_message>/g, '').replace(/<<<[A-Z_]+>>>/g, '').trim();
+        return { isMe, header, text };
+      });
+      res.json({ ok: true, chatId, messages: parsed });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e.message }); }
   });
 
   // ═══════════════════════════════════════════════════════════════════════════

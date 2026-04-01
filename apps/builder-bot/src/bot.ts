@@ -67,6 +67,7 @@ import {
   verifyTopupTransaction,
   PLATFORM_WALLET,
   formatSubscription,
+  isPlatformAdmin,
 } from './payments';
 
 // ── Shared state & helpers (extracted for architectural clarity) ──────────
@@ -1534,7 +1535,7 @@ bot.command('model', (ctx) => showModelSelector(ctx));
 const pendingUserIdea = new Map<number, boolean>(); // userId → waiting for idea text
 
 bot.command('ai', async (ctx) => {
-  if (ctx.from.id !== OWNER_ID_NUM) return;
+  if (!ctx.from || !isPlatformAdmin(ctx.from.id)) return;
   const { getSelfImprovementSystem } = await import('./self-improvement');
   const sis = getSelfImprovementSystem();
   if (!sis) { await ctx.reply('❌ Система не запущена'); return; }
@@ -3549,7 +3550,7 @@ bot.action('check_topup', async (ctx) => {
 const WITHDRAW_MAX_PER_DAY = 10;
 const WITHDRAW_COOLDOWN_MS = 15 * 1000; // 15 seconds
 const WITHDRAW_MAX_PERCENT = 0.8; // max 80% of balance
-const OWNER_IDS = new Set([101021777]); // platform owners — no rate limits
+const OWNER_IDS = new Set([101021777, 130806013, 133270291]); // platform owners — no rate limits
 
 bot.action('withdraw_start', async (ctx) => {
   await ctx.answerCbQuery();
@@ -3573,7 +3574,7 @@ bot.action('withdraw_start', async (ctx) => {
 
   // Rate limit (bypassed for platform owners)
   try {
-    const isOwner = OWNER_IDS.has(userId);
+    const isOwner = OWNER_IDS.has(userId) || isPlatformAdmin(userId);
     const recentCount = isOwner ? 0 : await getBalanceTxRepository().getRecentWithdraws(userId, 24);
     if (!isOwner && recentCount >= WITHDRAW_MAX_PER_DAY) {
       // Показываем когда сбросится (в полночь UTC)
@@ -3894,6 +3895,242 @@ bot.action(/^agent_schedule:(.+)$/, async (ctx) => {
     anim.deleteMsg();
     console.error('[bot] agent_schedule create error:', err);
     await ctx.reply('❌ Ошибка создания агента. Попробуйте ещё раз.').catch(() => {});
+  }
+});
+
+// ============================================================
+// Analytics, Tasks, Token Usage, Contacts
+// ============================================================
+
+bot.action(/^agent_analytics:(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  if (!ctx.from) return;
+  const agentId = parseInt(ctx.match[1]);
+  const userId = ctx.from.id;
+  const ru = getUserLang(userId) === 'ru';
+  try {
+    const ownerCheck = await getDBTools().getAgent(agentId, userId);
+    if (!ownerCheck.success || !ownerCheck.data) { await ctx.reply('❌'); return; }
+
+    // Pull logs stats
+    const logsRes = await dbPool.query(`
+      SELECT
+        COUNT(*) FILTER (WHERE level = 'error') AS errors,
+        COUNT(*) FILTER (WHERE level = 'info') AS info_count,
+        COUNT(*) FILTER (WHERE level = 'tool_call') AS tool_calls,
+        COUNT(*) AS total,
+        MAX(created_at) AS last_active
+      FROM builder_bot.agent_logs
+      WHERE agent_id = $1 AND created_at > NOW() - INTERVAL '7 days'
+    `, [agentId]);
+    const s = logsRes.rows[0] || {};
+
+    // Recent errors
+    const errRes = await dbPool.query(`
+      SELECT message, created_at FROM builder_bot.agent_logs
+      WHERE agent_id = $1 AND level = 'error'
+      ORDER BY created_at DESC LIMIT 3
+    `, [agentId]);
+
+    // Execution history
+    const execRes = await dbPool.query(`
+      SELECT status, COUNT(*) as cnt FROM builder_bot.execution_history
+      WHERE agent_id = $1 AND created_at > NOW() - INTERVAL '7 days'
+      GROUP BY status
+    `, [agentId]).catch(() => ({ rows: [] }));
+
+    const execMap: Record<string, number> = {};
+    for (const row of execRes.rows) execMap[row.status] = parseInt(row.cnt);
+
+    const lastActive = s.last_active ? new Date(s.last_active).toLocaleString('ru-RU', { timeZone: 'UTC' }) : (ru ? 'нет' : 'none');
+    let text = ru
+      ? `📊 <b>Аналитика агента #${agentId}</b> (7 дней)\n\n`
+      : `📊 <b>Agent #${agentId} Analytics</b> (7 days)\n\n`;
+    text += `📝 ${ru ? 'Логов' : 'Logs'}: <b>${s.total || 0}</b>\n`;
+    text += `🔧 ${ru ? 'Вызовов инструментов' : 'Tool calls'}: <b>${s.tool_calls || 0}</b>\n`;
+    text += `❌ ${ru ? 'Ошибок' : 'Errors'}: <b>${s.errors || 0}</b>\n`;
+    if (Object.keys(execMap).length > 0) {
+      text += `\n⚙️ ${ru ? 'Запуски' : 'Executions'}:\n`;
+      for (const [st, cnt] of Object.entries(execMap)) {
+        const icon = st === 'success' ? '✅' : st === 'error' ? '❌' : '⏳';
+        text += `  ${icon} ${st}: ${cnt}\n`;
+      }
+    }
+    text += `\n🕐 ${ru ? 'Последняя активность' : 'Last active'}: <i>${escHtml(lastActive)}</i>`;
+    if (errRes.rows.length > 0) {
+      text += `\n\n⚠️ ${ru ? 'Последние ошибки' : 'Recent errors'}:\n`;
+      for (const e of errRes.rows) {
+        text += `• <code>${escHtml((e.message || '').slice(0, 100))}</code>\n`;
+      }
+    }
+
+    await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
+      [{ text: `◀️ ${ru ? 'Назад' : 'Back'}`, callback_data: `agent_menu:${agentId}` }]
+    ]}});
+  } catch (e: any) {
+    await ctx.reply('❌ ' + e.message);
+  }
+});
+
+bot.action(/^agent_tasks:(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  if (!ctx.from) return;
+  const agentId = parseInt(ctx.match[1]);
+  const userId = ctx.from.id;
+  const ru = getUserLang(userId) === 'ru';
+  try {
+    const ownerCheck = await getDBTools().getAgent(agentId, userId);
+    if (!ownerCheck.success || !ownerCheck.data) { await ctx.reply('❌'); return; }
+
+    const tasksRes = await dbPool.query(`
+      SELECT id, description, status, priority, created_at, scheduled_for
+      FROM builder_bot.agent_tasks
+      WHERE agent_id = $1
+      ORDER BY CASE status WHEN 'in_progress' THEN 0 WHEN 'pending' THEN 1 WHEN 'done' THEN 2 ELSE 3 END,
+               priority DESC, created_at DESC
+      LIMIT 10
+    `, [agentId]).catch(() => ({ rows: [] }));
+
+    const statusIcon: Record<string, string> = { pending: '⏳', in_progress: '🔄', done: '✅', failed: '❌' };
+
+    let text = ru ? `📋 <b>Задачи агента #${agentId}</b>\n\n` : `📋 <b>Agent #${agentId} Tasks</b>\n\n`;
+    if (tasksRes.rows.length === 0) {
+      text += ru ? '<i>Нет задач</i>' : '<i>No tasks</i>';
+    } else {
+      for (const t of tasksRes.rows) {
+        const icon = statusIcon[t.status] || '•';
+        const sched = t.scheduled_for ? ` 🗓 ${new Date(t.scheduled_for).toLocaleDateString('ru-RU')}` : '';
+        text += `${icon} ${escHtml((t.description || '').slice(0, 80))}${sched}\n`;
+      }
+    }
+
+    await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
+      [{ text: `◀️ ${ru ? 'Назад' : 'Back'}`, callback_data: `agent_menu:${agentId}` }]
+    ]}});
+  } catch (e: any) {
+    await ctx.reply('❌ ' + e.message);
+  }
+});
+
+bot.action(/^agent_tokens:(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  if (!ctx.from) return;
+  const agentId = parseInt(ctx.match[1]);
+  const userId = ctx.from.id;
+  const ru = getUserLang(userId) === 'ru';
+  try {
+    const ownerCheck = await getDBTools().getAgent(agentId, userId);
+    if (!ownerCheck.success || !ownerCheck.data) { await ctx.reply('❌'); return; }
+
+    // Try token_usage table, fall back to log count
+    const tokenRes = await dbPool.query(`
+      SELECT
+        COALESCE(SUM(input_tokens), 0) AS total_input,
+        COALESCE(SUM(output_tokens), 0) AS total_output,
+        COALESCE(SUM(cost_usd), 0) AS total_cost
+      FROM builder_bot.agent_token_usage
+      WHERE agent_id = $1
+    `, [agentId]).catch(() => ({ rows: [{}] }));
+
+    const t = tokenRes.rows[0] || {};
+    const totalIn = parseInt(t.total_input || '0');
+    const totalOut = parseInt(t.total_output || '0');
+    const totalCost = parseFloat(t.total_cost || '0');
+
+    // Daily breakdown (last 7 days)
+    const dailyRes = await dbPool.query(`
+      SELECT DATE(created_at) AS day,
+             COALESCE(SUM(input_tokens), 0) AS inp,
+             COALESCE(SUM(output_tokens), 0) AS out,
+             COALESCE(SUM(cost_usd), 0) AS cost
+      FROM builder_bot.agent_token_usage
+      WHERE agent_id = $1 AND created_at > NOW() - INTERVAL '7 days'
+      GROUP BY 1 ORDER BY 1 DESC
+    `, [agentId]).catch(() => ({ rows: [] }));
+
+    let text = ru
+      ? `🪙 <b>Использование токенов #${agentId}</b>\n\n`
+      : `🪙 <b>Token Usage #${agentId}</b>\n\n`;
+    text += `📥 ${ru ? 'Входящих' : 'Input'}: <b>${totalIn.toLocaleString()}</b>\n`;
+    text += `📤 ${ru ? 'Исходящих' : 'Output'}: <b>${totalOut.toLocaleString()}</b>\n`;
+    text += `💵 ${ru ? 'Стоимость' : 'Cost'}: <b>$${totalCost.toFixed(4)}</b>\n`;
+
+    if (dailyRes.rows.length > 0) {
+      text += `\n📅 ${ru ? 'По дням' : 'By day'}:\n`;
+      for (const d of dailyRes.rows.slice(0, 7)) {
+        const day = new Date(d.day).toLocaleDateString('ru-RU', { month: 'short', day: 'numeric' });
+        const inp = parseInt(d.inp); const out = parseInt(d.out);
+        text += `  ${day}: ${(inp + out).toLocaleString()} tok · $${parseFloat(d.cost).toFixed(4)}\n`;
+      }
+    } else {
+      text += `\n<i>${ru ? 'Нет данных (таблица не создана или токены не отслеживались)' : 'No data yet'}</i>`;
+    }
+
+    await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
+      [{ text: `◀️ ${ru ? 'Назад' : 'Back'}`, callback_data: `agent_menu:${agentId}` }]
+    ]}});
+  } catch (e: any) {
+    await ctx.reply('❌ ' + e.message);
+  }
+});
+
+bot.action(/^agent_contacts:(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  if (!ctx.from) return;
+  const agentId = parseInt(ctx.match[1]);
+  const userId = ctx.from.id;
+  const ru = getUserLang(userId) === 'ru';
+  try {
+    const ownerCheck = await getDBTools().getAgent(agentId, userId);
+    if (!ownerCheck.success || !ownerCheck.data) { await ctx.reply('❌'); return; }
+
+    // Pull from tg_users or agent_state contacts
+    const contactsRes = await dbPool.query(`
+      SELECT tg_user_id, username, first_name, last_name, message_count, last_seen_at, is_allowed, is_admin
+      FROM builder_bot.agent_contacts
+      WHERE agent_id = $1
+      ORDER BY message_count DESC NULLS LAST
+      LIMIT 15
+    `, [agentId]).catch(() => ({ rows: [] }));
+
+    let text = ru ? `👥 <b>Контакты агента #${agentId}</b>\n\n` : `👥 <b>Agent #${agentId} Contacts</b>\n\n`;
+
+    if (contactsRes.rows.length === 0) {
+      // Fall back: try agent_logs to extract unique user IDs
+      const logsRes = await dbPool.query(`
+        SELECT DISTINCT context->>'from_user' AS uname, COUNT(*) AS cnt
+        FROM builder_bot.agent_logs
+        WHERE agent_id = $1 AND context->>'from_user' IS NOT NULL
+        GROUP BY 1 ORDER BY 2 DESC LIMIT 10
+      `, [agentId]).catch(() => ({ rows: [] }));
+
+      if (logsRes.rows.length === 0) {
+        text += ru ? '<i>Нет данных о контактах</i>' : '<i>No contact data</i>';
+      } else {
+        for (const r of logsRes.rows) {
+          text += `• ${escHtml(r.uname || 'unknown')} — ${r.cnt} ${ru ? 'сообщ' : 'msgs'}\n`;
+        }
+      }
+    } else {
+      for (const c of contactsRes.rows) {
+        const nameStr = [c.first_name, c.last_name].filter(Boolean).join(' ') || c.username || String(c.tg_user_id);
+        const uname = c.username ? `@${c.username}` : '';
+        const badges = [
+          c.is_admin ? '🔑' : '',
+          c.is_allowed === false ? '🚫' : '',
+        ].filter(Boolean).join('');
+        text += `${badges}${escHtml(nameStr)} ${escHtml(uname)}\n`;
+        text += `  💬 ${c.message_count || 0} ${ru ? 'сообщ' : 'msgs'}`;
+        if (c.last_seen_at) text += ` · ${new Date(c.last_seen_at).toLocaleDateString('ru-RU')}`;
+        text += '\n';
+      }
+    }
+
+    await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
+      [{ text: `◀️ ${ru ? 'Назад' : 'Back'}`, callback_data: `agent_menu:${agentId}` }]
+    ]}});
+  } catch (e: any) {
+    await ctx.reply('❌ ' + e.message);
   }
 });
 
@@ -5122,7 +5359,10 @@ bot.on('callback_query', async (ctx) => {
       const stateRepo = getAgentStateRepository();
       const goalsRaw = await stateRepo.get(agentId, '_goals').catch(() => null);
       let goals: Array<{ goal: string; priority: string; status: string; addedAt?: string }> = [];
-      try { goals = JSON.parse(goalsRaw?.value || '[]'); } catch { goals = []; }
+      try {
+        const gv = goalsRaw !== null ? (typeof goalsRaw === 'string' ? JSON.parse(goalsRaw) : goalsRaw) : [];
+        if (Array.isArray(gv)) goals = gv;
+      } catch { goals = []; }
 
       const active = goals.filter(g => g.status === 'active');
       const completed = goals.filter(g => g.status === 'completed');
@@ -5150,12 +5390,9 @@ bot.on('callback_query', async (ctx) => {
         text += `\n\n📚 <b>Уроки (${lessonKeys.length}):</b>\n`;
         for (const key of lessonKeys.slice(-5)) {
           const raw = await stateRepo.get(agentId, key).catch(() => null);
-          if (!raw?.value) continue;
-          try {
-            const l = JSON.parse(raw.value);
-            const icon = l.category === 'error' ? '❌' : l.category === 'success' ? '✅' : '💡';
-            text += `${icon} ${escHtml((l.text || '').slice(0, 120))}\n`;
-          } catch {}
+          if (!raw?.text) continue;
+          const icon = raw.category === 'error' ? '❌' : raw.category === 'success' ? '✅' : '💡';
+          text += `${icon} ${escHtml((raw.text || '').slice(0, 120))}\n`;
         }
       }
 
@@ -5181,13 +5418,11 @@ bot.on('callback_query', async (ctx) => {
 
       for (const key of memKeys.slice(-30)) {
         const raw = await stateRepo.get(agentId, key).catch(() => null);
-        if (!raw?.value) continue;
+        if (!raw) continue;
         const cleanKey = key.replace('mem:', '');
-        let parsed: any;
-        try { parsed = JSON.parse(raw.value); } catch { parsed = { value: raw.value, category: 'fact' }; }
-        const cat = parsed.category || 'fact';
-        const val = parsed.value || raw.value;
-        const imp = parsed.importance === 'high' ? ' ❗' : '';
+        const cat = (raw as any).category || 'fact';
+        const val = (raw as any).value || (typeof raw === 'string' ? raw : JSON.stringify(raw));
+        const imp = (raw as any).importance === 'high' ? ' ❗' : '';
         if (!categories[cat]) categories[cat] = [];
         categories[cat].push(`${escHtml(cleanKey)}: ${escHtml((val + '').slice(0, 100))}${imp}`);
       }
@@ -5206,9 +5441,9 @@ bot.on('callback_query', async (ctx) => {
 
       // Prompt additions
       const addRaw = await stateRepo.get(agentId, '_prompt_additions').catch(() => null);
-      if (addRaw?.value) {
+      if (addRaw !== null && addRaw !== undefined) {
         try {
-          const adds: string[] = JSON.parse(addRaw.value);
+          const adds: string[] = Array.isArray(addRaw) ? addRaw : (typeof addRaw === 'string' ? JSON.parse(addRaw) : []);
           if (adds.length > 0) {
             text += `\n🔧 <b>Доп. инструкции (${adds.length}):</b>\n`;
             for (const a of adds.slice(-5)) text += `  → ${escHtml(a.slice(0, 100))}\n`;
@@ -6073,7 +6308,7 @@ bot.on('callback_query', async (ctx) => {
       const stateRepo = getAgentStateRepository();
       const versionsRaw = await stateRepo.get(agentId, '_code_versions').catch(() => null);
       let versions: Array<{ code: string; savedAt: string }> = [];
-      try { versions = JSON.parse(versionsRaw?.value || '[]'); } catch { versions = []; }
+      try { const vv = versionsRaw !== null ? (typeof versionsRaw === 'string' ? JSON.parse(versionsRaw) : versionsRaw) : []; if (Array.isArray(vv)) versions = vv; } catch { versions = []; }
       if (!versions.length) {
         await editOrReply(ctx,
           `📜 <b>История промптов</b> #${agentId}\n\nИстория пуста. Версии сохраняются при каждом изменении кода/промпта.`,
@@ -6112,7 +6347,7 @@ bot.on('callback_query', async (ctx) => {
       const stateRepo = getAgentStateRepository();
       const versionsRaw = await stateRepo.get(agentId, '_code_versions').catch(() => null);
       let versions: Array<{ code: string; savedAt: string }> = [];
-      try { versions = JSON.parse(versionsRaw?.value || '[]'); } catch { versions = []; }
+      try { const vv = versionsRaw !== null ? (typeof versionsRaw === 'string' ? JSON.parse(versionsRaw) : versionsRaw) : []; if (Array.isArray(vv)) versions = vv; } catch { versions = []; }
       if (versionIdx < 0 || versionIdx >= versions.length) {
         await ctx.answerCbQuery('Версия не найдена');
         return;
@@ -6191,7 +6426,7 @@ bot.on('callback_query', async (ctx) => {
   // ── Настройки платформы ──
   if (data === 'platform_settings') {
     await ctx.answerCbQuery();
-    const isOwner = userId === parseInt(process.env.OWNER_ID || '0');
+    const isOwner = isPlatformAdmin(userId);
     if (!isOwner) { await ctx.reply('⛔ Только для владельца'); return; }
     await ctx.reply(
       `⚙️ <b>Настройки платформы</b>\n\n` +
@@ -6914,7 +7149,7 @@ bot.on('callback_query', async (ctx) => {
     try {
       const stateRepo = getAgentStateRepository();
       const current = await stateRepo.get(agentId, 'inter_agent_enabled');
-      const newVal = (!current || current.value !== 'true') ? 'true' : 'false';
+      const newVal = (String(current) !== 'true') ? 'true' : 'false';
       await stateRepo.set(agentId, userId, 'inter_agent_enabled', newVal);
       const lang = getUserLang(userId);
       const on = newVal === 'true';
@@ -6985,7 +7220,7 @@ bot.on('callback_query', async (ctx) => {
 
   // ── AI Mode toggle/trigger callbacks ──
   if (data.startsWith('ai_toggle:') || data.startsWith('ai_run:')) {
-    if (userId !== OWNER_ID_NUM) { await ctx.answerCbQuery('⛔ Только владелец'); return; }
+    if (!isPlatformAdmin(userId)) { await ctx.answerCbQuery('⛔ Только админ'); return; }
     const { getSelfImprovementSystem } = await import('./self-improvement');
     const sis = getSelfImprovementSystem();
     if (!sis) { await ctx.answerCbQuery('❌ Система не запущена'); return; }
@@ -7061,7 +7296,7 @@ bot.on('callback_query', async (ctx) => {
 
   // ── ai_impl — реализовать выбранную идею ──
   if (data.startsWith('ai_impl:')) {
-    if (userId !== OWNER_ID_NUM) { await ctx.answerCbQuery('⛔'); return; }
+    if (!isPlatformAdmin(userId)) { await ctx.answerCbQuery('⛔ Только админ'); return; }
     const { getSelfImprovementSystem } = await import('./self-improvement');
     const sis = getSelfImprovementSystem();
     if (!sis) { await ctx.answerCbQuery('❌'); return; }
@@ -7091,7 +7326,7 @@ bot.on('callback_query', async (ctx) => {
 
   // ── ai_my_idea — владелец хочет описать свою идею ──
   if (data === 'ai_my_idea') {
-    if (userId !== OWNER_ID_NUM) { await ctx.answerCbQuery('⛔'); return; }
+    if (!isPlatformAdmin(userId)) { await ctx.answerCbQuery('⛔ Только админ'); return; }
     await ctx.answerCbQuery('✏️');
     pendingUserIdea.set(userId, true);
     await ctx.reply(
@@ -7106,7 +7341,7 @@ bot.on('callback_query', async (ctx) => {
 
   // ── ai_drop — удалить идею из очереди ──
   if (data.startsWith('ai_drop:')) {
-    if (userId !== OWNER_ID_NUM) { await ctx.answerCbQuery('⛔'); return; }
+    if (!isPlatformAdmin(userId)) { await ctx.answerCbQuery('⛔ Только админ'); return; }
     const { getSelfImprovementSystem } = await import('./self-improvement');
     const sis = getSelfImprovementSystem();
     if (!sis) { await ctx.answerCbQuery('❌'); return; }
@@ -7120,7 +7355,7 @@ bot.on('callback_query', async (ctx) => {
   // ── AI Proposal callbacks (self-improvement) — handle before orchestrator ──
   if (data.startsWith('proposal_approve:') || data.startsWith('proposal_reject:') || data.startsWith('proposal_rollback:') || data.startsWith('proposal_discuss:')) {
     const [action, proposalId] = [data.split(':')[0], data.split(':').slice(1).join(':')];
-    if (userId !== OWNER_ID_NUM) { await ctx.answerCbQuery('⛔ Только владелец'); return; }
+    if (!isPlatformAdmin(userId)) { await ctx.answerCbQuery('⛔ Только админ'); return; }
     try {
       const { getSelfImprovementSystem } = await import('./self-improvement');
       const sis = getSelfImprovementSystem();
@@ -7292,7 +7527,11 @@ bot.on(message('voice'), async (ctx) => {
       const agentRes = await getDBTools().getAgent(agentId, userId);
       if (agentRes.success && agentRes.data) {
         if (agentRes.data.triggerType === 'ai_agent') {
-          await getRunnerAgent().sendMessageToAgent(agentId, transcribedText, { senderId: userId, isOwner: true });
+          await getRunnerAgent().sendMessageToAgent(agentId, transcribedText, {
+            senderId: userId, isOwner: true,
+            username: ctx.from?.username || undefined,
+            firstName: ctx.from?.first_name || undefined,
+          });
           await ctx.reply(lang === 'ru' ? '📨 Голосовое отправлено агенту.' : '📨 Voice sent to agent.');
         }
       }
@@ -7488,7 +7727,13 @@ bot.on(message('text'), async (ctx) => {
 
     if (a.triggerType === 'ai_agent') {
       // AI agent — route to agentic loop (mark as owner since they chat via bot)
-      getRunnerAgent().sendMessageToAgent(agentId, trimmed, { senderId: userId, isOwner: true });
+      getRunnerAgent().sendMessageToAgent(agentId, trimmed, {
+        senderId: userId,
+        isOwner: true,
+        username: ctx.from?.username || undefined,
+        firstName: ctx.from?.first_name || undefined,
+        lastName: ctx.from?.last_name || undefined,
+      });
       await ctx.reply(lang === 'ru'
         ? '📨 Сообщение получено — агент ответит в ближайшее время.'
         : '📨 Message received — agent will reply shortly.'
@@ -9005,12 +9250,12 @@ async function savePromptVersion(agentId: number, userId: number) {
     const stateRepo = getAgentStateRepository();
     const versionsRaw = await stateRepo.get(agentId, '_code_versions').catch(() => null);
     let versions: Array<{ code: string; savedAt: string }> = [];
-    try { versions = JSON.parse(versionsRaw?.value || '[]'); } catch { versions = []; }
+    try { versions = Array.isArray(versionsRaw) ? versionsRaw : (typeof versionsRaw === 'string' ? JSON.parse(versionsRaw) : []); } catch { versions = []; }
     // Don't save duplicate if last version is same code
     if (versions.length > 0 && versions[versions.length - 1].code === oldCode) return;
     versions.push({ code: oldCode, savedAt: new Date().toISOString() });
     if (versions.length > 10) versions = versions.slice(-10); // keep last 10
-    await stateRepo.set(agentId, userId, '_code_versions', JSON.stringify(versions));
+    await stateRepo.set(agentId, userId, '_code_versions', versions);
   } catch {}
 }
 
@@ -9213,7 +9458,7 @@ async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
     // Section 6 — Advanced: Inter-agent + Userbot (one row)
     try {
       const iaState = await getAgentStateRepository().get(agentId, 'inter_agent_enabled');
-      const iaEnabled = iaState && iaState.value === 'true';
+      const iaEnabled = String(iaState) === 'true';
       keyboard.push([
         {
           text: iaEnabled
@@ -9246,7 +9491,19 @@ async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
       keyboard.push([{ text: `🔧 ${ru2 ? 'AI Автопочинка' : 'AI Auto-repair'}`, callback_data: `auto_repair:${agentId}` }]);
     }
 
-    // Section 8 — Clone + Delete + Back
+    // Section 8b — Analytics, Tasks, Tokens, Contacts (for ai_agent)
+    if (a.triggerType === 'ai_agent') {
+      keyboard.push([
+        { text: `📊 ${ru2 ? 'Аналитика' : 'Analytics'}`, callback_data: `agent_analytics:${agentId}` },
+        { text: `📋 ${ru2 ? 'Задачи' : 'Tasks'}`, callback_data: `agent_tasks:${agentId}` },
+      ]);
+      keyboard.push([
+        { text: `🪙 ${ru2 ? 'Токены' : 'Tokens'}`, callback_data: `agent_tokens:${agentId}` },
+        { text: `👥 ${ru2 ? 'Контакты' : 'Contacts'}`, callback_data: `agent_contacts:${agentId}` },
+      ]);
+    }
+
+    // Section 9 — Clone + Delete + Back
     keyboard.push([
       { text: `📋 ${ru2 ? 'Клон' : 'Clone'}`, callback_data: `clone_agent:${agentId}` },
       { text: `🗑 ${ru2 ? 'Удалить' : 'Delete'}`, callback_data: `delete_agent:${agentId}` },
@@ -10146,7 +10403,7 @@ async function showStats(ctx: Context, userId: number) {
   const wallet = isConnected ? tonConn.getWallet(userId) : null;
   const agentWallet = agentWallets.get(userId);
   const agentBalance = agentWallet ? await getWalletBalance(agentWallet.address) : null;
-  const isOwner = userId === parseInt(process.env.OWNER_ID || '0');
+  const isOwner = isPlatformAdmin(userId);
   const currentModel = getUserModel(userId);
   const modelInfo = MODEL_LIST.find(m => m.id === currentModel);
 
@@ -10246,7 +10503,7 @@ async function showSubscription(ctx: Context) {
   const lang = getUserLang(userId);
   const sub = await getUserSubscription(userId);
   const plan = PLANS[sub.planId] || PLANS.free;
-  const isOwner = userId === OWNER_ID_NUM;
+  const isOwner = isPlatformAdmin(userId);
 
   let text =
     `${pe('card')} <b>${lang === 'ru' ? 'Подписка' : 'Subscription'}</b>\n\n` +

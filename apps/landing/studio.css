@@ -778,8 +778,13 @@ body {
   box-shadow: 0 0 10px rgba(14,165,233,0.3);
 }
 
-.user-avatar-img.hidden {
-  display: none;
+.user-avatar-img.hidden,
+.user-avatar-fallback.hidden {
+  display: none !important;
+}
+
+.user-avatar-img {
+  object-fit: cover;
 }
 
 .user-avatar-fallback {
@@ -3861,8 +3866,8 @@ select.form-input option {
 }
 .guide-section-header:hover { background: rgba(255,255,255,0.03); }
 .guide-section-header span:first-child { font-size: 1.3rem; }
-.guide-icon { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; background: rgba(14,165,233,0.1); border: 1px solid rgba(14,165,233,0.2); border-radius: 30px; color: #0ea5e9; flex-shrink: 0; }
-.guide-card .guide-icon { width: 28px; height: 28px; border-radius: 7px; }
+.guide-icon { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; background: rgba(14,165,233,0.1) !important; border: 1px solid rgba(14,165,233,0.15); border-radius: 10px; color: #0ea5e9 !important; flex-shrink: 0; }
+.guide-card .guide-icon { width: 28px; height: 28px; border-radius: 8px; }
 .guide-section-header h3 { flex: 1; margin: 0; font-size: 0.95rem; font-weight: 600; }
 .guide-chevron {
   transition: transform 0.3s; color: var(--text-muted);
@@ -7466,20 +7471,20 @@ input:focus, textarea:focus, select:focus {
 /* ===== NAV ACTIVE ITEM: WHITE PILL — FINAL ===== */
 .nav-item.active,
 .nav-item.active:hover {
-  background: #ffffff !important;
-  color: #0068a8 !important;
+  background: linear-gradient(135deg, #0ea5e9, #0284c7) !important;
+  color: #ffffff !important;
   border: none !important;
   box-shadow:
-    0 0 20px rgba(255,255,255,0.22),
-    0 0 44px rgba(255,255,255,0.07),
-    0 4px 18px rgba(0,0,0,0.45) !important;
+    0 0 20px rgba(14,165,233,0.3),
+    0 0 44px rgba(14,165,233,0.1),
+    0 4px 18px rgba(0,0,0,0.35) !important;
   font-weight: 700 !important;
   padding: 11px 14px !important;
 }
 .nav-item.active svg,
 .nav-item.active:hover svg {
   opacity: 1 !important;
-  color: #0068a8 !important;
+  color: #ffffff !important;
   stroke: currentColor !important;
 }
 .nav-item.active::before,

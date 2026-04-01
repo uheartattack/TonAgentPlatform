@@ -2166,8 +2166,8 @@ class UserbotManager {
             const { getAgentStateRepository: _getASR } = require('../db/schema-extensions');
             const sr = _getASR();
             const stored = await sr.get(aid, 'active_chats').catch(() => null);
-            if (stored?.value) {
-              const chats: string[] = JSON.parse(stored.value);
+            if (stored !== null && stored !== undefined) {
+              const chats: string[] = Array.isArray(stored) ? stored : (typeof stored === 'string' ? JSON.parse(stored) : []);
               for (const c of chats) {
                 if (!activeChats.includes(c)) activeChats.push(c);
               }
@@ -2202,9 +2202,10 @@ class UserbotManager {
               }
             }
 
-            // Initialize lastMsgId on first poll
-            if (lastSeen === 0 && msgs.length > 0) {
-              this.supergroupLastMsgId.set(lastKey, msgs[0].id);
+            // Initialize lastMsgId on first poll (only when no recent msgs found — prevents overwriting correct value)
+            // Use the NEWEST message ID (msgs is ascending after reverse, so last element = newest)
+            if (lastSeen === 0 && msgs.length > 0 && newMsgs.length === 0) {
+              this.supergroupLastMsgId.set(lastKey, msgs[msgs.length - 1].id);
             }
           } catch (pe: any) { console.warn(`[UserbotMgr] poll-chat error @${shared.username} chat=${chatId}:`, pe?.message); }
         }
@@ -3490,11 +3491,14 @@ RULES:
           }
           // Convert markdown → HTML for Telegram formatting
           const formattedText = mdToHtml(responseText);
+          // Only reply-to if message is recent (< 2 min), otherwise just send — prevents tagging old messages
+          const _msgAge = Math.floor(Date.now() / 1000) - (msg.date || 0);
+          const _replyTo = (msg.isGroup && _msgAge < 120) ? msg.id : undefined;
           try {
             await (client as any).sendMessage(chatTarget, {
               message: formattedText,
               parseMode: 'html',
-              replyTo: msg.isGroup ? msg.id : undefined,
+              replyTo: _replyTo,
             });
           } catch (fmtErr: any) {
             // If HTML parse fails — try stripped HTML, then minimal HTML
@@ -3505,14 +3509,14 @@ RULES:
               await (client as any).sendMessage(chatTarget, {
                 message: stripped,
                 parseMode: 'html',
-                replyTo: msg.isGroup ? msg.id : undefined,
+                replyTo: _replyTo,
               });
             } catch {
               // Last resort: plain text (won't work in channels with PLAIN_FORBIDDEN)
               try {
                 await (client as any).sendMessage(chatTarget, {
                   message: responseText.replace(/[*_~`#]/g, ''),
-                  replyTo: msg.isGroup ? msg.id : undefined,
+                  replyTo: _replyTo,
                 });
               } catch (lastErr: any) {
                 console.error(`[UserbotMgr] All send methods failed agent#${agentId}: ${lastErr.message?.slice(0, 80)}`);
@@ -3534,10 +3538,10 @@ RULES:
               const { getAgentStateRepository: _getASR2 } = require('../db/schema-extensions');
               const _sr = _getASR2();
               const _ac = await _sr.get(agentId, 'active_chats').catch(() => null);
-              const chats: string[] = _ac?.value ? JSON.parse(_ac.value) : [];
+              const chats: string[] = Array.isArray(_ac) ? _ac : (_ac !== null && _ac !== undefined ? (typeof _ac === 'string' ? JSON.parse(_ac) : []) : []);
               if (!chats.includes(msg.chatId)) {
                 chats.push(msg.chatId);
-                await _sr.set(agentId, cfg.userId, 'active_chats', JSON.stringify(chats.slice(-20))); // max 20
+                await _sr.set(agentId, cfg.userId, 'active_chats', chats.slice(-20)); // max 20
               }
             } catch {}
           }

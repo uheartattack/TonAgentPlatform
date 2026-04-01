@@ -2920,25 +2920,33 @@ function renderTriggersTab(body, hooks, agentId, isRu) {
 async function addTrigger(agentId) {
   var kw = (document.getElementById('trig-keyword').value || '').trim();
   var ctx = (document.getElementById('trig-context').value || '').trim();
-  if (!kw || !ctx) { toast('Fill both fields', 'error'); return; }
+  if (!kw || !ctx) { toast(currentLang === 'ru' ? 'Заполните оба поля' : 'Fill both fields', 'error'); return; }
   var hooks = _hooksCache[agentId];
-  if (!hooks.triggers) hooks.triggers = [];
+  if (!hooks || !hooks.triggers) { if (hooks) hooks.triggers = []; else { toast('Reload page and try again', 'error'); return; } }
   hooks.triggers.push({ id: String(Date.now()), keyword: kw, context: ctx, enabled: true });
-  await apiRequest('POST', '/api/agents/' + agentId + '/hooks', { triggers: hooks.triggers });
-  toast('Trigger added', 'success');
+  var r = await apiRequest('POST', '/api/agents/' + agentId + '/hooks', { triggers: hooks.triggers });
+  if (r && r.error) { toast('Error: ' + r.error, 'error'); hooks.triggers.pop(); return; }
+  document.getElementById('trig-keyword').value = '';
+  document.getElementById('trig-context').value = '';
+  toast(currentLang === 'ru' ? 'Триггер добавлен' : 'Trigger added', 'success');
   renderTriggersTab(document.getElementById('agent-settings-body'), hooks, agentId, currentLang === 'ru');
 }
 
 async function toggleTrigger(agentId, idx, enabled) {
   var hooks = _hooksCache[agentId];
+  if (!hooks || !hooks.triggers || !hooks.triggers[idx]) return;
   hooks.triggers[idx].enabled = enabled;
-  await apiRequest('POST', '/api/agents/' + agentId + '/hooks', { triggers: hooks.triggers });
+  var r = await apiRequest('POST', '/api/agents/' + agentId + '/hooks', { triggers: hooks.triggers });
+  if (r && r.error) toast('Save error: ' + r.error, 'error');
 }
 
 async function deleteTrigger(agentId, idx) {
   var hooks = _hooksCache[agentId];
+  if (!hooks || !hooks.triggers) return;
   hooks.triggers.splice(idx, 1);
-  await apiRequest('POST', '/api/agents/' + agentId + '/hooks', { triggers: hooks.triggers });
+  var r = await apiRequest('POST', '/api/agents/' + agentId + '/hooks', { triggers: hooks.triggers });
+  if (r && r.error) { toast('Delete error: ' + r.error, 'error'); return; }
+  toast(currentLang === 'ru' ? 'Триггер удалён' : 'Trigger deleted', 'success');
   renderTriggersTab(document.getElementById('agent-settings-body'), hooks, agentId, currentLang === 'ru');
 }
 
@@ -12281,4 +12289,116 @@ function guideFeature(emoji, title, desc) {
 
 function guideFaq(q, a) {
   return '<details class="guide-faq-item"><summary>' + escHtml(q) + '</summary><p>' + escHtml(a) + '</p></details>';
+}
+
+// ── Voice Input for Studio Chat & Agent Creation ─────────────────────────────
+var _voiceRecording = false;
+var _mediaRecorder = null;
+var _voiceChunks = [];
+var _voiceStream = null;
+
+async function toggleVoiceInput() {
+  if (_voiceRecording) {
+    stopVoiceRecording();
+  } else {
+    await startVoiceRecording(false);
+  }
+}
+
+async function openVoiceCreate() {
+  navigateTo('assistant');
+  await new Promise(r => setTimeout(r, 300));
+  await startVoiceRecording(true);
+}
+
+async function startVoiceRecording(forCreate) {
+  if (!navigator.mediaDevices || !window.MediaRecorder) {
+    showToast('Ваш браузер не поддерживает запись голоса', 'error');
+    return;
+  }
+  try {
+    _voiceStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (e) {
+    showToast('Нет доступа к микрофону: ' + (e.message || e), 'error');
+    return;
+  }
+
+  _voiceChunks = [];
+  var mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus'
+    : MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm'
+    : 'audio/ogg';
+  _mediaRecorder = new MediaRecorder(_voiceStream, { mimeType });
+  _mediaRecorder.ondataavailable = function(e) { if (e.data.size > 0) _voiceChunks.push(e.data); };
+  _mediaRecorder.onstop = function() {
+    var blob = new Blob(_voiceChunks, { type: mimeType });
+    _voiceStream && _voiceStream.getTracks().forEach(t => t.stop());
+    _voiceStream = null;
+    transcribeAndSend(blob, forCreate);
+  };
+  _mediaRecorder.start(200);
+  _voiceRecording = true;
+
+  // Update UI
+  var micBtn = document.getElementById('chat-voice-btn');
+  var micIcon = document.getElementById('voice-icon-mic');
+  var stopIcon = document.getElementById('voice-icon-stop');
+  var statusEl = document.getElementById('voice-status');
+  if (micBtn) micBtn.style.color = '#ef4444';
+  if (micIcon) micIcon.style.display = 'none';
+  if (stopIcon) stopIcon.style.display = '';
+  if (statusEl) { statusEl.style.display = 'block'; statusEl.textContent = '🔴 Запись... нажмите ещё раз чтобы остановить'; }
+
+  // Auto-stop after 60s
+  setTimeout(function() { if (_voiceRecording) stopVoiceRecording(); }, 60000);
+}
+
+function stopVoiceRecording() {
+  if (!_voiceRecording || !_mediaRecorder) return;
+  _voiceRecording = false;
+  _mediaRecorder.stop();
+  _mediaRecorder = null;
+
+  var micBtn = document.getElementById('chat-voice-btn');
+  var micIcon = document.getElementById('voice-icon-mic');
+  var stopIcon = document.getElementById('voice-icon-stop');
+  var statusEl = document.getElementById('voice-status');
+  if (micBtn) micBtn.style.color = '#94a3b8';
+  if (micIcon) micIcon.style.display = '';
+  if (stopIcon) stopIcon.style.display = 'none';
+  if (statusEl) { statusEl.textContent = '⏳ Распознаю речь...'; }
+}
+
+async function transcribeAndSend(blob, forCreate) {
+  var statusEl = document.getElementById('voice-status');
+  try {
+    var fd = new FormData();
+    fd.append('audio', blob, 'voice.webm');
+    var res = await fetch(API_BASE + '/api/voice/transcribe', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + getToken() },
+      body: fd
+    });
+    var data = await res.json();
+    if (!data.text) throw new Error(data.error || 'Пустой ответ');
+
+    var text = data.text.trim();
+    if (statusEl) statusEl.style.display = 'none';
+
+    if (forCreate) {
+      // Send transcribed text as assistant message for agent creation
+      var input = document.getElementById('assistant-input');
+      if (input) { input.value = text; sendAssistantMessage(); }
+    } else {
+      // Insert transcribed text into the chat input
+      var chatInput = document.getElementById('chat-input');
+      if (chatInput) {
+        chatInput.value = text;
+        chatInput.dispatchEvent(new Event('input'));
+        chatInput.focus();
+      }
+    }
+  } catch (e) {
+    if (statusEl) { statusEl.textContent = 'Ошибка распознавания: ' + (e.message || e); }
+    setTimeout(function() { if (statusEl) statusEl.style.display = 'none'; }, 4000);
+  }
 }

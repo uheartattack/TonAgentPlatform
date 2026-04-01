@@ -9,7 +9,7 @@
 // CONFIG
 // ═══════════════════════════════════════════════════════════════════════════
 
-const EMBEDDING_MODEL = 'models/text-embedding-004';
+const EMBEDDING_MODEL = 'models/gemini-embedding-001';
 const EMBEDDING_DIMS = 256; // Gemini supports dimensionality reduction
 const VECTOR_WEIGHT = 0.6;
 const KEYWORD_WEIGHT = 0.4;
@@ -24,8 +24,7 @@ const ALWAYS_INCLUDE_PATTERNS = [
   /^get_state$/, /^set_state$/, /^get_state_multi$/, /^list_state_keys$/,
   /^notify_user$/, /^notify$/, /^notify_rich$/, /^remember$/, /^recall$/,
   /^save_lesson$/, /^web_search$/, /^fetch_url$/, /^image_analyze$/,
-  /^get_ton_balance$/, /^send_ton$/, /^get_gift_floor_real$/,
-  /^scan_real_arbitrage$/, /^get_market_overview$/, /^get_top_deals$/,
+  /^get_ton_balance$/, /^send_ton$/,
   /^schedule_action$/, /^set_next_wake$/,
 ];
 
@@ -44,15 +43,17 @@ let _lastEmbedApiKey = '';
 
 /** Get embedding via native Gemini REST API (not OpenAI compat) */
 async function embed(text: string, apiKey?: string): Promise<number[] | null> {
-  const key = apiKey || process.env.PLATFORM_AI_KEY || process.env.GEMINI_API_KEY || '';
+  // Use PLATFORM_AI_KEY, GEMINI_API_KEY, or OPENAI_API_KEY if Gemini base URL
+  const isGeminiBase = (process.env.OPENAI_BASE_URL || '').includes('generativelanguage.googleapis.com');
+  const key = apiKey || process.env.PLATFORM_AI_KEY || process.env.GEMINI_API_KEY || (isGeminiBase ? process.env.OPENAI_API_KEY : '') || '';
   if (!key || key === 'none') return null;
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${key}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=${key}`;
     const resp = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'models/text-embedding-004',
+        model: 'models/gemini-embedding-001',
         content: { parts: [{ text }] },
         outputDimensionality: EMBEDDING_DIMS,
       }),
@@ -68,10 +69,12 @@ async function embed(text: string, apiKey?: string): Promise<number[] | null> {
 /** Batch embed via native Gemini REST API */
 async function embedBatch(texts: string[], apiKey?: string): Promise<(number[] | null)[]> {
   if (texts.length === 0) return [];
-  const key = apiKey || process.env.PLATFORM_AI_KEY || process.env.GEMINI_API_KEY || '';
+  // Use PLATFORM_AI_KEY, GEMINI_API_KEY, or OPENAI_API_KEY if Gemini base URL
+  const isGeminiBase = (process.env.OPENAI_BASE_URL || '').includes('generativelanguage.googleapis.com');
+  const key = apiKey || process.env.PLATFORM_AI_KEY || process.env.GEMINI_API_KEY || (isGeminiBase ? process.env.OPENAI_API_KEY : '') || '';
   if (!key || key === 'none') return texts.map(() => null);
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:batchEmbedContents?key=${key}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:batchEmbedContents?key=${key}`;
     const results: (number[] | null)[] = [];
     // Process in chunks of 100
     for (let i = 0; i < texts.length; i += 100) {
@@ -81,7 +84,7 @@ async function embedBatch(texts: string[], apiKey?: string): Promise<(number[] |
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           requests: batch.map(text => ({
-            model: 'models/text-embedding-004',
+            model: 'models/gemini-embedding-001',
             content: { parts: [{ text }] },
             outputDimensionality: EMBEDDING_DIMS,
           })),
