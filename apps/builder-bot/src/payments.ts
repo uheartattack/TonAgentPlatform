@@ -64,7 +64,7 @@ export const PLANS: Record<string, Plan> = {
     priceYearTon: 0,
     maxAgents: 3,
     maxActiveAgents: 1,
-    generationsPerMonth: 0,       // нет включённых — платно
+    generationsPerMonth: 1,       // 1 бесплатная генерация для новичков
     pricePerGeneration: 10,       // 10 TON за генерацию
     features: [
       '3 agents',
