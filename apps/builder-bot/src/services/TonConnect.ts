@@ -50,8 +50,17 @@ export async function generateAgentWallet(): Promise<AgentWallet> {
   const mnemonic = await mnemonicNew(24);
   const keyPair = await mnemonicToWalletKey(mnemonic);
   const wallet = WalletContractV4.create({ workchain: 0, publicKey: keyPair.publicKey });
+  // Address.toString() may throw on frozen objects in newer @ton/core — use Address helper
+  let addr: string;
+  try {
+    addr = wallet.address.toString({ urlSafe: true, bounceable: false });
+  } catch {
+    // Fallback: reconstruct Address from raw
+    const { Address } = require('@ton/core');
+    addr = Address.parse(wallet.address.toRawString()).toString({ urlSafe: true, bounceable: false });
+  }
   return {
-    address: wallet.address.toString({ urlSafe: true, bounceable: false }),
+    address: addr,
     mnemonic: mnemonic.join(' '),
     publicKey: keyPair.publicKey,
     secretKey: keyPair.secretKey,
@@ -71,8 +80,15 @@ export async function walletFromMnemonic(
     version === 'v5r1'
       ? WalletContractV5R1.create({ workchain: 0, publicKey: keyPair.publicKey })
       : WalletContractV4.create({ workchain: 0, publicKey: keyPair.publicKey });
+  let addr: string;
+  try {
+    addr = wallet.address.toString({ urlSafe: true, bounceable: false });
+  } catch {
+    const { Address } = require('@ton/core');
+    addr = Address.parse(wallet.address.toRawString()).toString({ urlSafe: true, bounceable: false });
+  }
   return {
-    address: wallet.address.toString({ urlSafe: true, bounceable: false }),
+    address: addr,
     mnemonic: mnemonicStr,
     publicKey: keyPair.publicKey,
     secretKey: keyPair.secretKey,
