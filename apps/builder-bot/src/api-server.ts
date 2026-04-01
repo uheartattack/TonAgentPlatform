@@ -1475,10 +1475,14 @@ export function startApiServer() {
       if (!Array.isArray(capabilities)) { res.status(400).json({ error: 'capabilities must be array' }); return; }
 
       const validCaps = [
-        'wallet', 'nft', 'gifts', 'gifts_market', 'telegram', 'web', 'state', 'notify',
-        'plugins', 'inter_agent', 'blockchain', 'ton_mcp', 'defi', 'media',
-        'knowledge', 'security', 'blockchain_analytics', 'prompts',
-        'discord', 'x_twitter',
+        'wallet', 'nft', 'gifts', 'gifts_market', 'telegram', 'telegram_admin',
+        'telegram_stories', 'telegram_forums', 'telegram_analytics', 'telegram_media',
+        'telegram_discovery', 'telegram_premium',
+        'web', 'state', 'events', 'notify', 'plugins', 'inter_agent',
+        'blockchain', 'ton_mcp', 'defi', 'dns', 'payments',
+        'media', 'knowledge', 'security', 'blockchain_analytics', 'prompts',
+        'discord', 'x_twitter', 'image', 'image_gen', 'workspace', 'mcp',
+        'confirmation', 'email', 'self_memory', 'journal', 'deals',
       ];
       const filtered = capabilities.filter((c: string) => validCaps.includes(c));
 
