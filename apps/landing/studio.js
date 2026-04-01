@@ -447,18 +447,30 @@ async function onTelegramAuth(result) {
   }
   authToken = data.token;
   localStorage.setItem('tg_token', authToken);
-  currentUser = { userId: data.userId, userIdStr: data.userIdStr || String(data.userId), username: data.username, first_name: data.firstName, photo_url: data.photoUrl || null };
+  currentUser = { userId: data.userId, userIdStr: data.userIdStr || String(data.userId), username: data.username, first_name: data.firstName, photo_url: data.photoUrl || null, _isAdmin: data.isAdmin || false, _acceptedTos: data.acceptedTos || false };
   showApp();
   updateTopbar();
 }
 
 function updateTopbar() {
-  // Avatar
+  // Avatar — try real TG photo
   var av = document.getElementById('topbar-avatar-badge');
   if (av && currentUser) {
     var name = currentUser.first_name || currentUser.username || 'U';
-    av.textContent = name.charAt(0).toUpperCase();
     av.title = name;
+    if (authToken) {
+      var topImg = new Image();
+      topImg.onload = function() {
+        av.textContent = '';
+        av.style.backgroundImage = 'url(' + topImg.src + ')';
+        av.style.backgroundSize = 'cover';
+        av.style.backgroundPosition = 'center';
+      };
+      topImg.onerror = function() { av.textContent = name.charAt(0).toUpperCase(); };
+      topImg.src = '/api/me/avatar?t=' + encodeURIComponent(authToken);
+    } else {
+      av.textContent = name.charAt(0).toUpperCase();
+    }
   }
   // Balance from wallet data if available
   var balEl = document.getElementById('topbar-ton-balance');
@@ -487,7 +499,7 @@ async function onTelegramAuthLegacy(user) {
   if (!data.ok) { toast(data.error || 'Unknown error', 'error', 'Auth Failed'); return; }
   authToken = data.token;
   localStorage.setItem('tg_token', authToken);
-  currentUser = { ...user, userId: data.userId };
+  currentUser = { ...user, userId: data.userId, _isAdmin: data.isAdmin || false, _acceptedTos: true };
   showApp();
 }
 
@@ -495,22 +507,40 @@ function showApp() {
   document.getElementById('auth-screen').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
 
+  // Check ToS acceptance — show popup if not accepted
+  if (currentUser && !currentUser._acceptedTos) {
+    showTosPopup();
+  }
+
   // Update user info in sidebar
   if (currentUser) {
     const name = currentUser.first_name || currentUser.username || 'User';
     const nameEl = document.getElementById('user-name');
     if (nameEl) nameEl.textContent = name;
 
-    if (currentUser.photo_url) {
-      const img = document.getElementById('user-avatar');
-      if (img) {
-        img.src = currentUser.photo_url;
+    // Load user avatar: from OIDC photo_url or from TG via /api/me/avatar
+    (function loadUserAvatar() {
+      var img = document.getElementById('user-avatar');
+      var fallback = document.getElementById('user-avatar-fallback');
+      if (!img) return;
+      var showImg = function(src) {
+        img.src = src;
         img.classList.remove('hidden');
-        const fallback = document.getElementById('user-avatar-fallback');
+        img.onerror = function() { img.classList.add('hidden'); if (fallback) fallback.classList.remove('hidden'); };
         if (fallback) fallback.classList.add('hidden');
+      };
+      if (currentUser.photo_url) {
+        showImg(currentUser.photo_url);
+      } else if (authToken) {
+        showImg('/api/me/avatar?t=' + encodeURIComponent(authToken) + '&_=' + Date.now());
       }
-    }
+    })();
   }
+
+  // Show admin-only nav items
+  document.querySelectorAll('.admin-only-nav').forEach(function(el) {
+    el.style.display = (currentUser && currentUser._isAdmin) ? '' : 'none';
+  });
 
   // Set plan badge from auth data immediately
   if (currentUser && currentUser._plan) {
@@ -552,6 +582,14 @@ function showApp() {
   initExtensions();
   initActivityStream().catch(console.error);   // async — DB-backed
   initOperations().catch(console.error);        // async — DB-backed
+
+  // Load topbar balance
+  apiRequest('GET', '/api/balance').then(function(d) {
+    if (d && (d.balance_ton || d.balance_ton === 0)) {
+      var el = document.getElementById('topbar-ton-balance');
+      if (el) el.textContent = parseFloat(d.balance_ton || 0).toFixed(2);
+    }
+  }).catch(function(){});
 
   // Start live updates
   startLiveUpdates();
@@ -1287,6 +1325,10 @@ function switchSettingsTab(tab) {
       b.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
     }
   });
+  // Update URL to /studio/agents/:id/:tab
+  if (history.replaceState && typeof _detailAgentId !== 'undefined' && _detailAgentId) {
+    history.replaceState(null, '', '/studio/agents/' + _detailAgentId + '/' + tab);
+  }
   var body = document.getElementById('agent-settings-body');
   if (!body || !_detailAgentData) return;
   // Smooth tab content transition
@@ -2395,8 +2437,8 @@ function switchSettingsTab(tab) {
       '<div class="rt-section">' +
         '<div class="rt-section-label">' + (isRu ? 'Управление' : 'Controls') + '</div>' +
         '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
-          '<button class="rt-save-btn" onclick="lifecycleAction(\'start\')" style="background:linear-gradient(135deg,#10b981,#059669)">' + IC.play + ' ' + (isRu ? 'Запустить' : 'Start') + '</button>' +
-          '<button class="rt-save-btn" onclick="lifecycleAction(\'stop\')" style="background:linear-gradient(135deg,#ef4444,#dc2626)">' + IC.pause + ' ' + (isRu ? 'Остановить' : 'Stop') + '</button>' +
+          '<button class="rt-save-btn" onclick="lifecycleAction(\'start\')" style="background:linear-gradient(135deg,#0ea5e9,#0284c7)">' + IC.play + ' ' + (isRu ? 'Запустить' : 'Start') + '</button>' +
+          '<button class="rt-save-btn" onclick="lifecycleAction(\'stop\')" style="background:linear-gradient(135deg,#0ea5e9,#0284c7)">' + IC.pause + ' ' + (isRu ? 'Остановить' : 'Stop') + '</button>' +
           '<button class="rt-save-btn" onclick="lifecycleAction(\'restart\')" style="background:linear-gradient(135deg,#f59e0b,#d97706)">' + IC.refresh + ' ' + (isRu ? 'Перезапустить' : 'Restart') + '</button>' +
         '</div>' +
       '</div>' +
@@ -2462,6 +2504,32 @@ function switchSettingsTab(tab) {
       '</div>';
     loadContactsData();
 
+  } else if (tab === 'chats') {
+    var isRu = currentLang === 'ru';
+    body.innerHTML =
+      '<div style="display:flex;height:calc(100vh - 120px);gap:0;overflow:hidden;border-radius:12px;border:1px solid var(--border)">' +
+        // Left: chat list
+        '<div id="chats-sidebar" style="width:280px;min-width:220px;border-right:1px solid var(--border);display:flex;flex-direction:column;background:var(--bg-primary)">' +
+          '<div style="padding:14px 16px;border-bottom:1px solid var(--border);font-weight:700;font-size:.9rem;color:var(--text-primary);display:flex;align-items:center;gap:8px">' +
+            '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>' +
+            (isRu ? 'Переписка' : 'Inbox') +
+          '</div>' +
+          '<div id="chats-list" style="flex:1;overflow-y:auto;padding:8px">' +
+            '<div style="text-align:center;color:var(--text-muted);padding:2rem;font-size:.82rem">' + (isRu ? 'Загрузка...' : 'Loading...') + '</div>' +
+          '</div>' +
+        '</div>' +
+        // Right: chat view
+        '<div id="chat-view" style="flex:1;display:flex;flex-direction:column;background:var(--bg-secondary)">' +
+          '<div id="chat-view-header" style="padding:14px 18px;border-bottom:1px solid var(--border);background:var(--bg-primary);display:flex;align-items:center;gap:12px">' +
+            '<div style="color:var(--text-muted);font-size:.85rem">' + (isRu ? 'Выберите чат' : 'Select a chat') + '</div>' +
+          '</div>' +
+          '<div id="chat-view-messages" style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px">' +
+            '<div style="text-align:center;color:var(--text-muted);padding:4rem;font-size:.82rem">' + (isRu ? '← Выберите чат слева' : '← Select a chat on the left') + '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    loadChatsData();
+
   } else if (tab === 'memory') {
     var isRu = currentLang === 'ru';
     body.innerHTML =
@@ -2470,59 +2538,91 @@ function switchSettingsTab(tab) {
         '<div class="rt-header-icon" style="background:rgba(139,92,246,0.12);color:#8b5cf6">' + IC.brain + '</div>' +
         '<div class="rt-header-text">' +
           '<h3>' + (isRu ? 'Память агента' : 'Agent Memory') + '</h3>' +
-          '<p>' + (isRu ? 'Структурированная память, логи и поиск' : 'Structured memory, logs and search') + '</p>' +
-        '</div>' +
-      '</div>' +
-      '<div class="rt-section">' +
-        '<div class="rt-section-label">' + IC.brain + ' ' + (isRu ? 'Блоки памяти' : 'Core Memory Blocks') + '</div>' +
-        '<div id="core-memory-blocks" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">' +
-          '<div style="text-align:center;color:var(--text-muted);padding:1rem;grid-column:1/-1">' + (isRu ? 'Загрузка...' : 'Loading...') + '</div>' +
+          '<p>' + (isRu ? 'Контакты, факты, уроки и цели — всё что агент помнит' : 'Contacts, facts, lessons and goals — everything the agent knows') + '</p>' +
         '</div>' +
       '</div>' +
 
-      // Stats cards
-      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:16px">' +
+      // Stats row
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin-bottom:18px">' +
+        '<div class="stat-card"><div class="stat-value" id="mem-stat-contacts">-</div><div class="stat-label">' + (isRu ? 'Контактов' : 'Contacts') + '</div></div>' +
+        '<div class="stat-card"><div class="stat-value" id="mem-stat-lessons">-</div><div class="stat-label">' + (isRu ? 'Уроков' : 'Lessons') + '</div></div>' +
         '<div class="stat-card"><div class="stat-value" id="mem-stat-size">-</div><div class="stat-label">' + (isRu ? 'Размер' : 'Size') + '</div></div>' +
-        '<div class="stat-card"><div class="stat-value" id="mem-stat-lines">-</div><div class="stat-label">' + (isRu ? 'Строк' : 'Lines') + '</div></div>' +
-        '<div class="stat-card"><div class="stat-value" id="mem-stat-logs">-</div><div class="stat-label">' + (isRu ? 'Лог-файлов' : 'Log files') + '</div></div>' +
-        '<div class="stat-card"><div class="stat-value" id="mem-stat-sessions">-</div><div class="stat-label">' + (isRu ? 'Сессий' : 'Sessions') + '</div></div>' +
+        '<div class="stat-card"><div class="stat-value" id="mem-stat-logs">-</div><div class="stat-label">' + (isRu ? 'Лог-файлов' : 'Daily logs') + '</div></div>' +
       '</div>' +
 
-      // Persistent memory
-      '<div class="rt-section">' +
-        '<div class="rt-section-label">' + IC.brain + ' ' + (isRu ? 'Постоянная память' : 'Persistent Memory') + '</div>' +
-        '<textarea id="mem-persistent-text" class="st-textarea" style="min-height:180px;font-family:\'JetBrains Mono\',monospace;font-size:.78rem;line-height:1.6" placeholder="' + (isRu ? 'Факты, контакты, предпочтения — всё что агент должен помнить между сессиями...' : 'Facts, contacts, preferences — everything the agent should remember between sessions...') + '"></textarea>' +
-        '<div style="display:flex;gap:8px;margin-top:8px">' +
-          '<button class="rt-save-btn" onclick="saveMemoryPersistent()">' + IC.check + ' ' + (isRu ? 'Сохранить' : 'Save') + '</button>' +
-          '<button class="rt-save-btn" onclick="clearAgentMemory(\'persistent\')" style="background:linear-gradient(135deg,#ef4444,#dc2626)">' + (isRu ? 'Очистить' : 'Clear') + '</button>' +
-        '</div>' +
+      // Sub-tab bar
+      '<div style="display:flex;gap:4px;margin-bottom:16px;background:var(--bg-primary);border-radius:10px;padding:4px">' +
+        '<button id="mem-sub-contacts" class="mem-sub-btn active" onclick="switchMemSubTab(\'contacts\')" style="flex:1;padding:7px 10px;border-radius:7px;border:none;cursor:pointer;font-size:.78rem;font-weight:500;background:rgba(139,92,246,0.18);color:#8b5cf6;transition:all .2s">👤 ' + (isRu ? 'Контакты' : 'Contacts') + '</button>' +
+        '<button id="mem-sub-knowledge" class="mem-sub-btn" onclick="switchMemSubTab(\'knowledge\')" style="flex:1;padding:7px 10px;border-radius:7px;border:none;cursor:pointer;font-size:.78rem;font-weight:500;background:transparent;color:var(--text-muted);transition:all .2s">📚 ' + (isRu ? 'Факты' : 'Facts') + '</button>' +
+        '<button id="mem-sub-lessons" class="mem-sub-btn" onclick="switchMemSubTab(\'lessons\')" style="flex:1;padding:7px 10px;border-radius:7px;border:none;cursor:pointer;font-size:.78rem;font-weight:500;background:transparent;color:var(--text-muted);transition:all .2s">💡 ' + (isRu ? 'Уроки' : 'Lessons') + '</button>' +
+        '<button id="mem-sub-raw" class="mem-sub-btn" onclick="switchMemSubTab(\'raw\')" style="flex:1;padding:7px 10px;border-radius:7px;border:none;cursor:pointer;font-size:.78rem;font-weight:500;background:transparent;color:var(--text-muted);transition:all .2s">📝 ' + (isRu ? 'Память' : 'Raw') + '</button>' +
+        '<button id="mem-sub-logs" class="mem-sub-btn" onclick="switchMemSubTab(\'logs\')" style="flex:1;padding:7px 10px;border-radius:7px;border:none;cursor:pointer;font-size:.78rem;font-weight:500;background:transparent;color:var(--text-muted);transition:all .2s">📅 ' + (isRu ? 'Логи' : 'Logs') + '</button>' +
       '</div>' +
 
-      // Search
-      '<div class="rt-section">' +
-        '<div class="rt-section-label">' + IC.search + ' ' + (isRu ? 'Поиск по памяти' : 'Search Memory') + '</div>' +
-        '<div style="display:flex;gap:8px;align-items:center">' +
+      // Sub-tab: Contacts
+      '<div id="mem-panel-contacts">' +
+        '<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">' +
           '<div style="flex:1;position:relative">' +
-            '<input type="text" id="mem-search-input" class="st-input" style="width:100%;padding-left:36px" placeholder="' + (isRu ? 'Ключевые слова...' : 'Keywords...') + '" onkeydown="if(event.key===\'Enter\')searchAgentMemory()">' +
+            '<input type="text" id="mem-contact-search" class="st-input" style="width:100%;padding-left:36px" placeholder="' + (isRu ? 'Поиск контакта...' : 'Search contacts...') + '" oninput="filterContacts()">' +
             '<span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);opacity:.4">' + IC.search + '</span>' +
           '</div>' +
-          '<button class="rt-save-btn" onclick="searchAgentMemory()">' + (isRu ? 'Найти' : 'Find') + '</button>' +
         '</div>' +
-        '<div id="mem-search-results" style="margin-top:10px"></div>' +
+        '<div id="mem-contacts-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px">' +
+          '<div style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:2rem;font-size:.8rem">⟳ ' + (isRu ? 'Загрузка...' : 'Loading...') + '</div>' +
+        '</div>' +
       '</div>' +
 
-      // Daily logs
-      '<div class="rt-section">' +
-        '<div class="rt-section-label" style="display:flex;justify-content:space-between;align-items:center">' +
-          '<span>' + IC.clock + ' ' + (isRu ? 'Ежедневные логи' : 'Daily Logs') + '</span>' +
-          '<button class="rt-save-btn" onclick="clearAgentMemory(\'daily\')" style="background:rgba(239,68,68,0.1);color:#ef4444;font-size:.68rem;padding:4px 10px">' + (isRu ? 'Очистить логи' : 'Clear logs') + '</button>' +
+      // Sub-tab: Knowledge/Facts
+      '<div id="mem-panel-knowledge" style="display:none">' +
+        '<div class="rt-section">' +
+          '<div class="rt-section-label">' + IC.brain + ' ' + (isRu ? 'Блоки памяти' : 'Core Memory Blocks') + '</div>' +
+          '<div id="core-memory-blocks" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">' +
+            '<div style="text-align:center;color:var(--text-muted);padding:1rem;grid-column:1/-1">⟳</div>' +
+          '</div>' +
         '</div>' +
-        '<div id="mem-daily-logs" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px">' +
-          '<div style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:1.5rem;font-size:.8rem">' + (isRu ? 'Загрузка...' : 'Loading...') + '</div>' +
+        '<div class="rt-section">' +
+          '<div style="display:flex;gap:8px;align-items:center">' +
+            '<div style="flex:1;position:relative">' +
+              '<input type="text" id="mem-search-input" class="st-input" style="width:100%;padding-left:36px" placeholder="' + (isRu ? 'Поиск по памяти...' : 'Search memory...') + '" onkeydown="if(event.key===\'Enter\')searchAgentMemory()">' +
+              '<span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);opacity:.4">' + IC.search + '</span>' +
+            '</div>' +
+            '<button class="rt-save-btn" onclick="searchAgentMemory()">' + (isRu ? 'Найти' : 'Find') + '</button>' +
+          '</div>' +
+          '<div id="mem-search-results" style="margin-top:10px"></div>' +
         '</div>' +
       '</div>' +
+
+      // Sub-tab: Lessons
+      '<div id="mem-panel-lessons" style="display:none">' +
+        '<div id="mem-lessons-list">' +
+          '<div style="text-align:center;color:var(--text-muted);padding:2rem;font-size:.8rem">⟳ ' + (isRu ? 'Загрузка...' : 'Loading...') + '</div>' +
+        '</div>' +
+      '</div>' +
+
+      // Sub-tab: Raw persistent memory
+      '<div id="mem-panel-raw" style="display:none">' +
+        '<div class="rt-section">' +
+          '<textarea id="mem-persistent-text" class="st-textarea" style="min-height:220px;font-family:\'JetBrains Mono\',monospace;font-size:.78rem;line-height:1.6" placeholder="' + (isRu ? 'Факты, события, предпочтения...' : 'Facts, events, preferences...') + '"></textarea>' +
+          '<div style="display:flex;gap:8px;margin-top:8px">' +
+            '<button class="rt-save-btn" onclick="saveMemoryPersistent()">' + IC.check + ' ' + (isRu ? 'Сохранить' : 'Save') + '</button>' +
+            '<button class="rt-save-btn" onclick="clearAgentMemory(\'persistent\')" style="background:linear-gradient(135deg,#0ea5e9,#0284c7)">' + (isRu ? 'Очистить' : 'Clear') + '</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+
+      // Sub-tab: Daily logs
+      '<div id="mem-panel-logs" style="display:none">' +
+        '<div style="display:flex;justify-content:flex-end;margin-bottom:10px">' +
+          '<button class="rt-save-btn" onclick="clearAgentMemory(\'daily\')" style="background:rgba(14,165,233,0.1);color:#0ea5e9;font-size:.68rem;padding:4px 10px">' + (isRu ? 'Очистить логи' : 'Clear logs') + '</button>' +
+        '</div>' +
+        '<div id="mem-daily-logs" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px">' +
+          '<div style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:1.5rem;font-size:.8rem">⟳</div>' +
+        '</div>' +
+      '</div>' +
+
       '</div>';
     loadMemoryData();
+    loadProfilesData();
 
   } else if (tab === 'tasks') {
     var isRu = currentLang === 'ru';
@@ -3301,7 +3401,7 @@ async function loadAgentTelegramTab(body, agentId) {
           (info.username ? '<div style="color:var(--text-primary);font-size:.9rem;font-weight:500;margin-bottom:4px">@' + escHtml(info.username) + '</div>' : '') +
           (maskedPhone ? '<div style="color:var(--text-muted);font-size:.8rem">' + escHtml(maskedPhone) + '</div>' : '') +
         '</div>' +
-        '<button class="rt-save-btn" style="background:linear-gradient(135deg,#ef4444 0%,#dc2626 100%);box-shadow:0 4px 16px rgba(239,68,68,0.3)" onclick="disconnectAgentTelegram(' + agentId + ')">' +
+        '<button class="rt-save-btn" style="background:linear-gradient(135deg,#0ea5e9 0%,#0284c7 100%);box-shadow:0 4px 16px rgba(14,165,233,0.3)" onclick="disconnectAgentTelegram(' + agentId + ')">' +
           IC.x + ' ' + (isRu ? 'Отключить аккаунт' : 'Disconnect Account') +
         '</button>' +
         '</div>';
@@ -4344,6 +4444,8 @@ function logout() {
   localStorage.removeItem('tg_token');
   document.getElementById('auth-screen').classList.remove('hidden');
   document.getElementById('app').classList.add('hidden');
+  // Re-initialize auth screen so login button appears immediately
+  initAuth();
 }
 
 // ── Auth initialization ──────────────────────────────────────────────────────
@@ -4462,7 +4564,7 @@ async function handleOAuthRedirect() {
   window.history.replaceState({}, '', window.location.pathname);
   authToken = data.token;
   localStorage.setItem('tg_token', authToken);
-  currentUser = { userId: data.userId, userIdStr: data.userIdStr || String(data.userId), username: data.username, first_name: data.firstName, photo_url: data.photoUrl || null };
+  currentUser = { userId: data.userId, userIdStr: data.userIdStr || String(data.userId), username: data.username, first_name: data.firstName, photo_url: data.photoUrl || null, _isAdmin: data.isAdmin || false, _acceptedTos: data.acceptedTos || false };
   showApp();
   return true;
 }
@@ -4520,7 +4622,7 @@ async function checkExistingSession() {
   }
 
   if (data.ok) {
-    currentUser = { userId: data.userId, userIdStr: data.userIdStr || String(data.userId), username: data.username, first_name: data.firstName, photo_url: data.photoUrl || null };
+    currentUser = { userId: data.userId, userIdStr: data.userIdStr || String(data.userId), username: data.username, first_name: data.firstName, photo_url: data.photoUrl || null, _isAdmin: data.isAdmin || false, _acceptedTos: data.acceptedTos || false };
     if (data.planId) currentUser._plan = { planId: data.planId, planName: data.planName, planIcon: data.planIcon };
     showApp();
   } else {
@@ -4672,6 +4774,9 @@ const pageLoadFns = {
   guide:         () => loadGuidePage(),
   notifications: () => loadNotificationsPage(),
   wallets:       () => loadWalletsPage(),
+  'admin-agents':() => loadAdminAgentsPage(),
+  'terms':       () => loadTermsPage(),
+  'privacy':     () => loadPrivacyPage(),
 };
 
 // Stub functions for pages that don't have dedicated load logic yet
@@ -5900,16 +6005,36 @@ document.addEventListener('click', (e) => {
 // ===== INITIALIZE =====
 document.addEventListener('DOMContentLoaded', () => {
   // Route from URL path: /studio/profile → navigateTo('profile')
+  // /studio/agents/201 → open agent 201
+  // /studio/agents/201/chats → open agent 201 on chats tab
   var path = window.location.pathname.replace(/\/$/, '');
-  var match = path.match(/\/studio\/(\w+)/);
-  if (match && match[1]) {
-    // Defer navigation until auth is ready
-    setTimeout(function() { if (authToken) navigateTo(match[1]); }, 500);
+  var agentMatch = path.match(/\/studio\/agents\/(\d+)(?:\/(\w+))?/);
+  if (agentMatch) {
+    var _routeAgentId = parseInt(agentMatch[1]);
+    var _routeTab = agentMatch[2] || 'soul';
+    setTimeout(async function() {
+      if (!authToken) return;
+      navigateTo('agents');
+      await new Promise(function(r){ setTimeout(r, 400); });
+      await openAgentDetail(_routeAgentId);
+      await new Promise(function(r){ setTimeout(r, 300); });
+      switchSettingsTab(_routeTab);
+    }, 600);
+  } else {
+    var match = path.match(/\/studio\/(\w+)/);
+    if (match && match[1]) {
+      setTimeout(function() { if (authToken) navigateTo(match[1]); }, 500);
+    }
   }
 });
 
 // ===== NAVIGATION HELPER =====
+// Page name aliases (multiple names → same page)
+const _pageAliases = { 'agents': 'operations', 'my-agents': 'operations' };
+
 function navigateTo(pageName) {
+  // Resolve aliases
+  pageName = _pageAliases[pageName] || pageName;
   closePlansModal();
   document.querySelectorAll('.nav-item').forEach(nav => nav.classList.remove('active'));
   const navEl = document.querySelector(`.nav-item[data-page="${pageName}"]`);
@@ -5934,9 +6059,13 @@ function navigateTo(pageName) {
     loadSubscriptionGlobal();
   }
 
-  // Update URL hash for bookmarking/sharing
+  // Update URL for bookmarking/sharing
   if (history.replaceState) {
     history.replaceState(null, '', '/studio/' + pageName);
+  }
+  // Reset agent URL when leaving agents page
+  if (pageName !== 'agents' && typeof _detailAgentId !== 'undefined' && _detailAgentId) {
+    // keep as-is; agent URL set in switchSettingsTab
   }
 
   // Track getting-started steps
@@ -6685,13 +6814,19 @@ async function loadProfile() {
   setEl('profile-username', currentUser.username ? '@' + currentUser.username : '—');
   setEl('profile-id', currentUser.userIdStr || currentUser.userId || currentUser.id || '—');
 
-  // Avatar
-  if (currentUser.photo_url) {
-    const img = document.getElementById('profile-avatar');
-    if (img) { img.src = currentUser.photo_url; img.style.display = 'block'; }
-    const fb = document.getElementById('profile-avatar-fallback');
-    if (fb) fb.style.display = 'none';
-  }
+  // Avatar — try OIDC photo or TG avatar
+  (function() {
+    var img = document.getElementById('profile-avatar');
+    var fb = document.getElementById('profile-avatar-fallback');
+    if (!img) return;
+    var src = currentUser.photo_url || (authToken ? '/api/me/avatar?t=' + encodeURIComponent(authToken) : '');
+    if (src) {
+      img.src = src;
+      img.style.display = 'block';
+      img.onerror = function() { img.style.display = 'none'; if (fb) fb.style.display = ''; };
+      if (fb) fb.style.display = 'none';
+    }
+  })();
 
   // Balance + subscription in parallel
   const [balance, sub, stats] = await Promise.all([
@@ -6970,6 +7105,9 @@ async function loadWalletBalance() {
   const bal = parseFloat(data.balance_ton || 0);
   const balEl = document.getElementById('wallet-balance');
   if (balEl) balEl.innerHTML = bal.toFixed(2) + ' <span class="wallet-currency">TON</span>';
+  // Update topbar balance
+  const topBal = document.getElementById('topbar-ton-balance');
+  if (topBal) topBal.textContent = bal.toFixed(2);
 
   // Total earned
   const earned = parseFloat(data.total_earned || 0);
@@ -10858,7 +10996,19 @@ function positionTourElements(step, target) {
   var nextBtn = document.getElementById('tour-next-btn');
   if (nextBtn) nextBtn.textContent = _tourStep === TOUR_STEPS.length - 1 ? (currentLang === 'ru' ? 'Готово!' : 'Done!') : (currentLang === 'ru' ? 'Далее' : 'Next');
 }
-function nextTourStep() { _tourStep++; showTourStep(); }
+function nextTourStep() {
+  // Fade out tooltip before moving
+  var tooltip = document.getElementById('tour-tooltip');
+  if (tooltip) { tooltip.style.opacity = '0'; tooltip.style.transform = 'translateY(8px)'; }
+  setTimeout(function() {
+    _tourStep++;
+    showTourStep();
+    // Fade in after reposition
+    setTimeout(function() {
+      if (tooltip) { tooltip.style.opacity = '1'; tooltip.style.transform = 'translateY(0)'; }
+    }, 100);
+  }, 300);
+}
 function endTour() {
   _tourActive = false;
   var overlay = document.getElementById('tour-overlay');
@@ -11142,7 +11292,7 @@ console.log('TON Agent Platform Dashboard v2.0 loaded successfully!');
   // Add connection indicator to DOM
   var indicator = document.createElement('div');
   indicator.id = 'ws-indicator';
-  indicator.style.cssText = 'position:fixed;bottom:12px;right:12px;z-index:9999;display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:12px;font-size:11px;color:#999;background:var(--bg-card,#1a1a2e);border:1px solid var(--border,#2a2a3e);opacity:0.7;transition:opacity 0.3s';
+  indicator.style.cssText = 'display:none';
   indicator.innerHTML = '<span id="ws-dot" style="width:6px;height:6px;border-radius:50%;background:#666;display:inline-block"></span><span id="ws-label">offline</span>';
   document.body.appendChild(indicator);
 
@@ -11759,6 +11909,174 @@ async function saveCoreBlock(blockName) {
   } catch(e) { toast('Error: ' + e.message, 'error'); }
 }
 
+// ─── Memory sub-tab switcher ─────────────────────────────────────────────────
+var _activeMemSubTab = 'contacts';
+function switchMemSubTab(name) {
+  _activeMemSubTab = name;
+  var panels = ['contacts','knowledge','lessons','raw','logs'];
+  panels.forEach(function(p) {
+    var panel = document.getElementById('mem-panel-' + p);
+    var btn = document.getElementById('mem-sub-' + p);
+    if (!panel || !btn) return;
+    var active = p === name;
+    panel.style.display = active ? '' : 'none';
+    btn.style.background = active ? 'rgba(139,92,246,0.18)' : 'transparent';
+    btn.style.color = active ? '#8b5cf6' : 'var(--text-muted)';
+  });
+  if (name === 'knowledge') loadCoreMemoryBlocks();
+}
+
+// ─── Contact profile avatar ───────────────────────────────────────────────────
+function _profileAvatar(name, size, tgUserId) {
+  size = size || 40;
+  var initial = (name || '?').trim().charAt(0).toUpperCase();
+  var colors = ['#8b5cf6','#3b82f6','#10b981','#f59e0b','#ef4444','#06b6d4','#a855f7','#14b8a6'];
+  var idx = (name || '').split('').reduce(function(a,c){return a+c.charCodeAt(0);},0) % colors.length;
+  var fallback = '<div style="width:' + size + 'px;height:' + size + 'px;border-radius:50%;background:' + colors[idx] + ';display:flex;align-items:center;justify-content:center;font-size:' + Math.round(size*0.42) + 'px;font-weight:700;color:#fff;flex-shrink:0">' + initial + '</div>';
+  if (tgUserId && _detailAgentId && authToken) {
+    var imgUrl = '/api/agents/' + _detailAgentId + '/avatar/' + encodeURIComponent(tgUserId) + '?t=' + encodeURIComponent(authToken);
+    return '<div class="tg-avatar-wrap" style="width:' + size + 'px;height:' + size + 'px;border-radius:50%;overflow:hidden;flex-shrink:0;position:relative">' +
+      '<img src="' + imgUrl + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%" ' +
+        'onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'" loading="lazy">' +
+      '<div style="display:none;width:' + size + 'px;height:' + size + 'px;border-radius:50%;background:' + colors[idx] + ';align-items:center;justify-content:center;font-size:' + Math.round(size*0.42) + 'px;font-weight:700;color:#fff;position:absolute;top:0;left:0">' + initial + '</div>' +
+    '</div>';
+  }
+  return fallback;
+}
+
+// ─── Format relative time ─────────────────────────────────────────────────────
+function _relTime(ts) {
+  if (!ts) return '';
+  var diff = Date.now() - ts;
+  if (diff < 60000) return 'just now';
+  if (diff < 3600000) return Math.floor(diff/60000) + 'm ago';
+  if (diff < 86400000) return Math.floor(diff/3600000) + 'h ago';
+  return Math.floor(diff/86400000) + 'd ago';
+}
+
+// ─── Load profiles (contacts + lessons + goals) ───────────────────────────────
+var _allProfiles = [];
+async function loadProfilesData() {
+  try {
+    var data = await apiRequest('GET', '/api/agents/' + _detailAgentId + '/profiles');
+    var isRu = currentLang === 'ru';
+    _allProfiles = data.profiles || [];
+
+    // Update stats
+    var statC = document.getElementById('mem-stat-contacts');
+    if (statC) statC.textContent = String(_allProfiles.length);
+    var statL = document.getElementById('mem-stat-lessons');
+    if (statL) statL.textContent = String((data.lessons || []).length);
+
+    renderContacts(_allProfiles);
+    renderLessons(data.lessons || [], data.goals || [], isRu);
+  } catch(e) {
+    var grid = document.getElementById('mem-contacts-grid');
+    if (grid) grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:2rem;font-size:.8rem">' + (currentLang === 'ru' ? 'Нет данных — агент ещё не общался или не сохранял информацию о контактах.' : 'No data — agent hasn\'t saved contact info yet.') + '</div>';
+  }
+}
+
+function filterContacts() {
+  var q = ((document.getElementById('mem-contact-search') || {}).value || '').toLowerCase();
+  var filtered = q ? _allProfiles.filter(function(p) {
+    return (p.name||'').toLowerCase().includes(q) || (p.userId||'').includes(q) ||
+      (p.notes||[]).some(function(n){return n.text.toLowerCase().includes(q);}) ||
+      (p.facts||[]).some(function(f){return (f.value||'').toLowerCase().includes(q);});
+  }) : _allProfiles;
+  renderContacts(filtered);
+}
+
+function renderContacts(profiles) {
+  var grid = document.getElementById('mem-contacts-grid');
+  if (!grid) return;
+  var isRu = currentLang === 'ru';
+  if (!profiles || profiles.length === 0) {
+    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:3rem;font-size:.82rem">' +
+      '👤 ' + (isRu ? 'Агент ещё не накопил информацию о контактах.<br><span style="font-size:.74rem;opacity:.7">Она появится автоматически в ходе разговоров.</span>' :
+      'Agent hasn\'t accumulated contact info yet.<br><span style="font-size:.74rem;opacity:.7">It will appear automatically as conversations progress.</span>') + '</div>';
+    return;
+  }
+  grid.innerHTML = profiles.map(function(p) {
+    var displayName = p.name || ('@' + p.userId) || (isRu ? 'Неизвестный' : 'Unknown');
+    var lastNote = p.notes && p.notes[0] ? p.notes[0] : null;
+    var latestTs = lastNote ? lastNote.ts : 0;
+    var factsHtml = (p.facts || []).slice(0, 4).map(function(f) {
+      return '<span style="display:inline-block;margin:2px;padding:2px 7px;border-radius:12px;background:rgba(139,92,246,0.1);color:#a78bfa;font-size:.67rem">' +
+        escHtml(f.field.replace(/_/g,' ')) + ': ' + escHtml(String(f.value).slice(0,40)) + '</span>';
+    }).join('');
+    var notesHtml = (p.notes || []).slice(0, 2).map(function(n) {
+      return '<div style="font-size:.72rem;color:var(--text-muted);line-height:1.4;padding:4px 0;border-top:1px solid rgba(255,255,255,0.04)">' +
+        '<span style="color:#64748b;font-size:.65rem">' + _relTime(n.ts) + '</span> ' + escHtml(String(n.text).slice(0,120)) + '</div>';
+    }).join('');
+    var relBadge = p.relationship ? '<span style="font-size:.65rem;padding:2px 7px;border-radius:10px;background:rgba(16,185,129,0.12);color:#10b981;margin-left:6px">' + escHtml(p.relationship) + '</span>' : '';
+
+    return '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:12px;padding:14px;transition:border-color .2s" ' +
+      'onmouseenter="this.style.borderColor=\'rgba(139,92,246,0.35)\'" onmouseleave="this.style.borderColor=\'var(--border)\'">' +
+      '<div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:8px">' +
+        _profileAvatar(displayName, 38, p.userId) +
+        '<div style="flex:1;min-width:0">' +
+          '<div style="font-size:.85rem;font-weight:600;color:var(--text-primary);display:flex;align-items:center;gap:4px;flex-wrap:wrap">' +
+            escHtml(displayName) + relBadge +
+          '</div>' +
+          '<div style="font-size:.68rem;color:var(--text-muted);margin-top:1px">ID: ' + escHtml(String(p.userId)) + (latestTs ? ' · ' + _relTime(latestTs) : '') + '</div>' +
+        '</div>' +
+      '</div>' +
+      (p.summary ? '<div style="font-size:.74rem;color:var(--text-secondary);margin-bottom:6px;line-height:1.5;padding:6px;background:rgba(139,92,246,0.05);border-radius:6px;border-left:2px solid #8b5cf6">' + escHtml(p.summary.slice(0,200)) + '</div>' : '') +
+      (factsHtml ? '<div style="margin-bottom:6px">' + factsHtml + '</div>' : '') +
+      notesHtml +
+      ((p.notes||[]).length > 2 ? '<div style="font-size:.65rem;color:var(--text-muted);text-align:right;margin-top:4px">+' + ((p.notes.length - 2)) + ' ' + (isRu ? 'заметок' : 'more notes') + '</div>' : '') +
+    '</div>';
+  }).join('');
+}
+
+function renderLessons(lessons, goals, isRu) {
+  var el = document.getElementById('mem-lessons-list');
+  if (!el) return;
+  var html = '';
+
+  if (goals && goals.length > 0) {
+    html += '<div class="rt-section"><div class="rt-section-label">🎯 ' + (isRu ? 'Активные цели' : 'Active Goals') + '</div>' +
+      '<div style="display:flex;flex-direction:column;gap:6px">';
+    html += goals.filter(function(g){return g.status !== 'completed' && g.status !== 'cancelled';}).map(function(g) {
+      var priorityColors = { critical: '#ef4444', high: '#f59e0b', medium: '#8b5cf6', low: '#64748b' };
+      var pColor = priorityColors[g.priority] || '#64748b';
+      return '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--border);border-radius:8px">' +
+        '<div style="width:8px;height:8px;border-radius:50%;background:' + pColor + ';margin-top:5px;flex-shrink:0"></div>' +
+        '<div style="flex:1">' +
+          '<div style="font-size:.8rem;color:var(--text-primary);line-height:1.4">' + escHtml(String(g.goal || '').slice(0,200)) + '</div>' +
+          '<div style="font-size:.67rem;color:var(--text-muted);margin-top:2px">' + (g.priority||'') + (g.addedAt ? ' · ' + new Date(g.addedAt).toLocaleDateString() : '') + '</div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+    html += '</div></div>';
+  }
+
+  if (lessons && lessons.length > 0) {
+    html += '<div class="rt-section"><div class="rt-section-label">💡 ' + (isRu ? 'Уроки и инсайты' : 'Lessons & Insights') + '</div>' +
+      '<div style="display:flex;flex-direction:column;gap:6px">';
+    var typeIcons = { error: '⚠️', feedback: '💬', discovery: '🔍', preference: '❤️', default: '💡' };
+    html += lessons.slice().reverse().map(function(l) {
+      var icon = typeIcons[l.type] || typeIcons.default;
+      var text = l.text || l.lesson || String(l).slice(0, 200);
+      return '<div style="display:flex;gap:10px;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--border);border-radius:8px">' +
+        '<span style="font-size:.9rem;flex-shrink:0;margin-top:1px">' + icon + '</span>' +
+        '<div style="flex:1">' +
+          '<div style="font-size:.79rem;color:var(--text-primary);line-height:1.5">' + escHtml(String(text).slice(0,250)) + '</div>' +
+          (l.type ? '<div style="font-size:.65rem;color:var(--text-muted);margin-top:2px">' + escHtml(l.type) + '</div>' : '') +
+        '</div>' +
+      '</div>';
+    }).join('');
+    html += '</div></div>';
+  }
+
+  if (!html) {
+    html = '<div style="text-align:center;color:var(--text-muted);padding:3rem;font-size:.82rem">' +
+      '💡 ' + (isRu ? 'Уроков и целей пока нет.<br><span style="font-size:.74rem;opacity:.7">Они накапливаются автоматически в процессе работы агента.</span>' :
+      'No lessons or goals yet.<br><span style="font-size:.74rem;opacity:.7">They accumulate automatically as the agent works.</span>') + '</div>';
+  }
+  el.innerHTML = html;
+}
+
 async function loadMemoryData() {
   loadCoreMemoryBlocks();
   try {
@@ -11770,13 +12088,9 @@ async function loadMemoryData() {
     // Stat cards
     if (data.stats) {
       var sizeEl = document.getElementById('mem-stat-size');
-      var linesEl = document.getElementById('mem-stat-lines');
       var logsCountEl = document.getElementById('mem-stat-logs');
-      var sessionsEl = document.getElementById('mem-stat-sessions');
       if (sizeEl) sizeEl.textContent = data.stats.persistentSize > 0 ? Math.round(data.stats.persistentSize / 1024) + 'KB' : '0';
-      if (linesEl) linesEl.textContent = String(data.stats.persistentLineCount || 0);
       if (logsCountEl) logsCountEl.textContent = String(data.stats.dailyLogCount || 0);
-      if (sessionsEl) sessionsEl.textContent = String(data.stats.sessionCount || 0);
     }
     // Daily logs as cards
     var logsEl = document.getElementById('mem-daily-logs');
@@ -12196,6 +12510,235 @@ function loadGuidePage() {
   if (!container) return;
   var isRu = currentLang === 'ru';
 
+  // ── Guide sections data ──
+  var sections = [
+    { id: 'start', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>',
+      title: isRu ? 'Быстрый старт' : 'Quick Start',
+      subtitle: isRu ? 'Создайте первого агента за 2 минуты' : 'Create your first agent in 2 minutes',
+      gradient: 'linear-gradient(135deg, rgba(14,165,233,0.15), rgba(6,182,212,0.08))',
+      cards: [
+        { title: isRu ? 'AI Чат' : 'AI Chat', desc: isRu ? 'Опишите задачу — AI создаст агента' : 'Describe the task — AI creates the agent', action: 'navigateTo("assistant")', btn: isRu ? 'Открыть чат' : 'Open chat' },
+        { title: isRu ? 'Конструктор' : 'Constructor', desc: isRu ? 'Drag & drop блоки в визуальном редакторе' : 'Drag & drop blocks in visual editor', action: 'navigateTo("builder")', btn: isRu ? 'Открыть' : 'Open' },
+        { title: 'Telegram Bot', desc: isRu ? 'Отправьте описание в @TonAgentPlatformBot' : 'Send description to @TonAgentPlatformBot', action: 'window.open("https://t.me/TonAgentPlatformBot")', btn: isRu ? 'Открыть бот' : 'Open bot' },
+      ],
+      tip: isRu ? 'После создания нажмите на карточку агента → Настройки для кастомизации.' : 'After creating, click agent card → Settings to customize.',
+      details: isRu ? [
+        { q: 'Шаг 1: Опишите задачу', a: 'Откройте AI Ассистент (Ctrl+/) и опишите что должен делать агент. Пример: «Мониторь цену TON каждые 5 минут и уведомляй когда ниже $2.5». AI сгенерирует системный промпт, выберет нужные инструменты и создаст агента.' },
+        { q: 'Шаг 2: Подключите Telegram', a: 'Перейдите в настройки агента → Telegram → авторизуйте аккаунт через QR-код. Агент получит доступ к вашему Telegram как полноценный пользователь (MTProto, не Bot API). Он может писать в группы, ставить реакции, менять аватарку.' },
+        { q: 'Шаг 3: Настройте поведение', a: 'В настройках агента 17 вкладок: промпт, AI провайдер, инструменты, роутинг сообщений, память, безопасность, расписание. Начните с AI (выберите провайдера) и Capabilities (включите нужные модули).' },
+        { q: 'Шаг 4: Запустите', a: 'Нажмите "Запустить" на карточке агента. Он начнёт работать 24/7 — отвечать в чатах, выполнять задачи по расписанию, мониторить цены и уведомлять вас.' },
+        { q: 'Пример: Арбитраж подарков', a: 'Создайте агента с описанием "Мониторь рынок Telegram подарков, ищи арбитражные возможности между маркетами (Fragment, GetGems, Tonnel), уведомляй когда спред больше 10%". Включите capabilities: gifts_market, notify. Агент будет каждые 5 минут сканировать маркеты.' },
+        { q: 'Пример: Модератор группы', a: 'Описание: "Модерируй группу @mygroup — удаляй спам, баня ботов, отвечай на вопросы новичков про TON". Capabilities: telegram, telegram_admin. Подключите Telegram аккаунт с правами админа в группе.' },
+      ] : [
+        { q: 'Step 1: Describe the task', a: 'Open AI Assistant (Ctrl+/) and describe what the agent should do.' },
+        { q: 'Step 2: Connect Telegram', a: 'Go to agent Settings → Telegram → authorize via QR code.' },
+        { q: 'Step 3: Configure behavior', a: '17 settings tabs: prompt, AI provider, tools, routing, memory, security, schedule.' },
+        { q: 'Step 4: Launch', a: 'Click "Start" on the agent card. It works 24/7.' },
+      ],
+    },
+    { id: 'settings', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/></svg>',
+      title: isRu ? 'Настройки агента' : 'Agent Settings',
+      subtitle: isRu ? '17 вкладок для полного контроля' : '17 tabs for complete control',
+      gradient: 'linear-gradient(135deg, rgba(139,92,246,0.15), rgba(168,85,247,0.08))',
+      items: [
+        'Code — ' + (isRu ? 'редактор промпта' : 'prompt editor'),
+        'AI — ' + (isRu ? 'провайдер, модель, ключ' : 'provider, model, key'),
+        'Caps — ' + (isRu ? '20 модулей возможностей' : '20 capability modules'),
+        'Routing — ' + (isRu ? 'маршрутизация сообщений' : 'message routing'),
+        'Memory — ' + (isRu ? 'долгосрочная память' : 'long-term memory'),
+        'Security — ' + (isRu ? 'лимиты, блоклист, sandbox' : 'limits, blocklist, sandbox'),
+      ],
+      details: isRu ? [
+        { q: 'Code (Системный промпт)', a: 'Главный таб — здесь вы задаёте характер и поведение агента. Это текст который AI получает перед каждым ответом. Пишите как инструкцию: "Ты — эксперт по TON DeFi. Отвечай коротко. Используй данные из get_ton_balance и get_nft_floor."' },
+        { q: 'AI (Провайдер и модель)', a: 'Выберите AI провайдера (Gemini, Claude, GPT и др.) и конкретную модель. Можете использовать свой API ключ или платформенный. Настройте температуру (креативность) и макс. токенов.' },
+        { q: 'Capabilities (Возможности)', a: 'Включите/отключите модули: wallet (TON операции), telegram (сообщения), gifts (подарки), web (поиск), nft, defi, memory (память), notify (уведомления). Каждый модуль даёт агенту набор инструментов.' },
+        { q: 'Routing (Маршрутизация)', a: 'Для мультиагентных систем: какие сообщения получает этот агент. Фильтры по ключевым словам, типам чатов (DM/группы), приоритет. Агент с высшим приоритетом отвечает первым.' },
+        { q: 'Behavior (Поведение)', a: 'Человечность: задержки ответов, имитация набора текста, реакции на сообщения. Расписание: в какое время агент активен. Cooldown: минимальный интервал между ответами в группах.' },
+        { q: 'Memory (Память)', a: 'Постоянная память: факты, контакты, предпочтения. Дневные логи: что агент делал каждый день. Поиск по памяти. Защита от poisoning в группах — блокировка записи от незнакомцев.' },
+        { q: 'Security (Безопасность)', a: 'Дневной лимит TON, блоклист пользователей, sandbox для кода, защита от prompt injection, tool scope (какие инструменты доступны в группах vs в ЛС), atomic lock на финансовые операции.' },
+        { q: 'Wallet (Кошелёк)', a: 'Агентский TON-кошелёк: отправка/получение TON и жетонов, лимиты расходов, подключение через мнемонику или TonConnect.' },
+        { q: 'Advanced (Продвинутое)', a: 'Тип компактинга контекста, маскирование наблюдений, flood-protection, loop guard, интервал тиков, язык агента.' },
+      ] : [],
+    },
+    { id: 'ai', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/></svg>',
+      title: isRu ? 'AI Провайдеры' : 'AI Providers',
+      subtitle: isRu ? '7 провайдеров на выбор' : '7 providers to choose from',
+      gradient: 'linear-gradient(135deg, rgba(16,185,129,0.15), rgba(34,197,94,0.08))',
+      items: ['Gemini — gemini-2.5-flash/pro', 'Claude — sonnet/haiku/opus', 'GPT — gpt-4o-mini', 'Groq — llama-3.3-70b', 'DeepSeek — deepseek-chat', 'OpenRouter — google/gemini', 'Together — meta-llama'],
+    },
+    { id: 'tools', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>',
+      title: isRu ? 'Инструменты' : 'Tools',
+      subtitle: isRu ? '77 инструментов в 10 категориях' : '77 tools in 10 categories',
+      gradient: 'linear-gradient(135deg, rgba(245,158,11,0.15), rgba(234,179,8,0.08))',
+      grid: [
+        { emoji: '💬', name: isRu ? 'Сообщения' : 'Messages' }, { emoji: '📸', name: isRu ? 'Медиа' : 'Media' },
+        { emoji: '🛡', name: isRu ? 'Модерация' : 'Moderation' }, { emoji: '💎', name: 'TON DeFi' },
+        { emoji: '🎁', name: isRu ? 'Подарки' : 'Gifts' }, { emoji: '🧠', name: isRu ? 'Память' : 'Memory' },
+        { emoji: '👤', name: isRu ? 'Профиль' : 'Profile' }, { emoji: '🌐', name: 'Web' },
+        { emoji: '💰', name: isRu ? 'Кошелёк' : 'Wallet' }, { emoji: '⏰', name: isRu ? 'Планирование' : 'Planning' },
+      ],
+    },
+    { id: 'flow', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>',
+      title: isRu ? 'Конструктор' : 'Flow Builder',
+      subtitle: isRu ? 'Визуальный drag & drop редактор' : 'Visual drag & drop editor',
+      gradient: 'linear-gradient(135deg, rgba(99,102,241,0.15), rgba(79,70,229,0.08))',
+      cards: [
+        { title: isRu ? 'Триггеры' : 'Triggers', desc: isRu ? 'Таймер, Webhook, Ручной запуск' : 'Timer, Webhook, Manual start' },
+        { title: isRu ? 'Действия' : 'Actions', desc: isRu ? 'TON, Gifts, Telegram, Web, DeFi' : 'TON, Gifts, Telegram, Web, DeFi' },
+        { title: isRu ? 'Логика' : 'Logic', desc: isRu ? 'Условия, циклы, задержки' : 'Conditions, loops, delays' },
+      ],
+      action: { label: isRu ? 'Открыть конструктор' : 'Open Constructor', fn: 'navigateTo("builder")' },
+    },
+    { id: 'ton', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.7 10.3a2.41 2.41 0 0 0 0 3.41l7.59 7.59a2.41 2.41 0 0 0 3.41 0l7.59-7.59a2.41 2.41 0 0 0 0-3.41l-7.59-7.59a2.41 2.41 0 0 0-3.41 0z"/></svg>',
+      title: 'TON Blockchain',
+      subtitle: isRu ? 'Кошельки, свопы, NFT, жетоны' : 'Wallets, swaps, NFTs, jettons',
+      gradient: 'linear-gradient(135deg, rgba(14,165,233,0.15), rgba(2,132,199,0.08))',
+      items: [isRu ? 'Баланс TON/жетонов' : 'TON/jetton balance', isRu ? 'Свопы через DeDust/STON.fi' : 'Swaps via DeDust/STON.fi', isRu ? 'NFT floor price + аналитика' : 'NFT floor price + analytics', isRu ? 'Отправка TON/жетонов' : 'Send TON/jettons', isRu ? 'Агентский кошелёк' : 'Agentic wallet'],
+    },
+    { id: 'multi', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+      title: isRu ? 'Мультиагенты' : 'Multi-Agent',
+      subtitle: isRu ? 'Команды агентов, роли, маршрутизация' : 'Agent teams, roles, routing',
+      gradient: 'linear-gradient(135deg, rgba(236,72,153,0.15), rgba(219,39,119,0.08))',
+      items: [isRu ? 'Роли: worker, manager, specialist' : 'Roles: worker, manager, specialist', isRu ? 'Маршрутизация по ключевым словам' : 'Keyword-based routing', isRu ? 'Inter-agent коммуникация' : 'Inter-agent communication', isRu ? 'Общее состояние между агентами' : 'Shared state between agents'],
+    },
+    { id: 'market', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>',
+      title: isRu ? 'Маркетплейс' : 'Marketplace',
+      subtitle: isRu ? 'Готовые шаблоны агентов' : 'Ready-made agent templates',
+      gradient: 'linear-gradient(135deg, rgba(34,197,94,0.15), rgba(22,163,74,0.08))',
+      action: { label: isRu ? 'Открыть маркетплейс' : 'Open Marketplace', fn: 'navigateTo("marketplace")' },
+      items: [isRu ? 'DeFi мониторинг' : 'DeFi monitoring', isRu ? 'NFT трекинг' : 'NFT tracking', isRu ? 'Арбитраж подарков' : 'Gift arbitrage', isRu ? 'Контент-менеджер' : 'Content manager'],
+    },
+    { id: 'keys', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3H6a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3h12a3 3 0 0 0 3-3 3 3 0 0 0-3-3z"/></svg>',
+      title: isRu ? 'Горячие клавиши' : 'Shortcuts',
+      subtitle: isRu ? 'Быстрые команды' : 'Quick commands',
+      gradient: 'linear-gradient(135deg, rgba(100,116,139,0.15), rgba(71,85,105,0.08))',
+      shortcuts: [
+        { key: 'Ctrl+K', desc: isRu ? 'Палитра команд' : 'Command palette' },
+        { key: 'Ctrl+N', desc: isRu ? 'Новый агент' : 'New agent' },
+        { key: 'Ctrl+/', desc: isRu ? 'Открыть чат' : 'Open chat' },
+        { key: 'Esc', desc: isRu ? 'Закрыть модалы' : 'Close modals' },
+      ],
+    },
+  ];
+
+  // ── Render tabs + content ──
+  var _activeGuideTab = sections[0].id;
+
+  function renderGuide() {
+    var s = sections.find(function(x){ return x.id === _activeGuideTab; }) || sections[0];
+    // Tab bar
+    var tabs = '<div style="display:flex;gap:2px;padding:4px;background:rgba(255,255,255,0.03);border-radius:12px;margin-bottom:24px;overflow-x:auto;-webkit-overflow-scrolling:touch">';
+    sections.forEach(function(sec) {
+      var active = sec.id === _activeGuideTab;
+      tabs += '<button onclick="_switchGuideTab(\'' + sec.id + '\')" style="' +
+        'flex-shrink:0;display:flex;align-items:center;gap:6px;padding:10px 16px;border:none;border-radius:10px;cursor:pointer;' +
+        'font-size:.82rem;font-weight:' + (active ? '600' : '400') + ';transition:all .2s;white-space:nowrap;' +
+        'background:' + (active ? 'rgba(14,165,233,0.15)' : 'transparent') + ';' +
+        'color:' + (active ? '#0ea5e9' : 'var(--text-muted)') + ';' +
+        '">' + sec.icon + ' ' + sec.title + '</button>';
+    });
+    tabs += '</div>';
+
+    // Content area
+    var content = '<div style="animation:fadeIn .3s ease">';
+    // Hero
+    content += '<div style="' + s.gradient + ';border-radius:16px;padding:32px 28px;margin-bottom:24px">' +
+      '<div style="display:flex;align-items:center;gap:14px;margin-bottom:12px">' +
+        '<div style="width:44px;height:44px;border-radius:12px;background:rgba(14,165,233,0.15);display:flex;align-items:center;justify-content:center;color:#0ea5e9">' + s.icon + '</div>' +
+        '<div><h2 style="margin:0;font-size:1.3rem;color:var(--text-primary)">' + s.title + '</h2>' +
+          '<p style="margin:2px 0 0;font-size:.88rem;color:var(--text-muted)">' + s.subtitle + '</p></div>' +
+      '</div>' +
+    '</div>';
+
+    // Cards
+    if (s.cards) {
+      content += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:20px">';
+      s.cards.forEach(function(c) {
+        content += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:12px;padding:20px;transition:border-color .2s,transform .15s" ' +
+          'onmouseenter="this.style.borderColor=\'rgba(14,165,233,0.3)\';this.style.transform=\'translateY(-2px)\'" ' +
+          'onmouseleave="this.style.borderColor=\'var(--border)\';this.style.transform=\'none\'">' +
+          '<h4 style="margin:0 0 6px;font-size:.92rem;color:var(--text-primary)">' + c.title + '</h4>' +
+          '<p style="margin:0 0 12px;font-size:.82rem;color:var(--text-muted);line-height:1.5">' + c.desc + '</p>' +
+          (c.action ? '<button class="rt-save-btn" style="padding:6px 16px;font-size:.78rem" onclick="' + c.action + '">' + (c.btn || '→') + '</button>' : '') +
+        '</div>';
+      });
+      content += '</div>';
+    }
+
+    // Items list
+    if (s.items) {
+      content += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px;margin-bottom:20px">';
+      s.items.forEach(function(item) {
+        content += '<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--bg-primary);border:1px solid var(--border);border-radius:10px;font-size:.85rem;color:var(--text-secondary)">' +
+          '<div style="width:6px;height:6px;border-radius:50%;background:#0ea5e9;flex-shrink:0"></div>' + escHtml(item) + '</div>';
+      });
+      content += '</div>';
+    }
+
+    // Grid (for tools)
+    if (s.grid) {
+      content += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-bottom:20px">';
+      s.grid.forEach(function(g) {
+        content += '<div style="display:flex;align-items:center;gap:8px;padding:12px;background:var(--bg-primary);border:1px solid var(--border);border-radius:10px">' +
+          '<span style="font-size:1.2rem">' + g.emoji + '</span>' +
+          '<span style="font-size:.84rem;color:var(--text-primary);font-weight:500">' + g.name + '</span>' +
+        '</div>';
+      });
+      content += '</div>';
+    }
+
+    // Shortcuts
+    if (s.shortcuts) {
+      content += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;margin-bottom:20px">';
+      s.shortcuts.forEach(function(sc) {
+        content += '<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--bg-primary);border:1px solid var(--border);border-radius:10px">' +
+          '<kbd style="background:rgba(14,165,233,0.1);color:#0ea5e9;padding:4px 10px;border-radius:6px;font-size:.82rem;font-family:\'JetBrains Mono\',monospace;font-weight:600">' + sc.key + '</kbd>' +
+          '<span style="font-size:.84rem;color:var(--text-muted)">' + sc.desc + '</span>' +
+        '</div>';
+      });
+      content += '</div>';
+    }
+
+    // Action button
+    if (s.action) {
+      content += '<button class="rt-save-btn" onclick="' + s.action.fn + '" style="margin-top:8px">' + s.action.label + ' →</button>';
+    }
+
+    // Details (expandable Q&A sections)
+    if (s.details && s.details.length > 0) {
+      content += '<div style="margin-top:20px;display:flex;flex-direction:column;gap:8px">';
+      s.details.forEach(function(d) {
+        content += '<details style="background:var(--bg-primary);border:1px solid var(--border);border-radius:12px;overflow:hidden">' +
+          '<summary style="padding:14px 18px;cursor:pointer;font-size:.9rem;font-weight:600;color:var(--text-primary);list-style:none;display:flex;align-items:center;gap:10px;user-select:none">' +
+            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" stroke-width="2.5" style="flex-shrink:0;transition:transform .2s"><polyline points="6 9 12 15 18 9"/></svg>' +
+            d.q +
+          '</summary>' +
+          '<div style="padding:0 18px 16px;font-size:.85rem;color:var(--text-secondary);line-height:1.7;border-top:1px solid var(--border)">' +
+            '<div style="padding-top:12px">' + d.a + '</div>' +
+          '</div>' +
+        '</details>';
+      });
+      content += '</div>';
+    }
+
+    // Tip
+    if (s.tip) {
+      content += '<div style="margin-top:16px;padding:14px 18px;background:rgba(14,165,233,0.06);border-left:3px solid #0ea5e9;border-radius:0 10px 10px 0;font-size:.84rem;color:var(--text-secondary)">' +
+        '<strong style="color:#0ea5e9">' + (isRu ? 'Совет: ' : 'Tip: ') + '</strong>' + s.tip + '</div>';
+    }
+
+    content += '</div>';
+    container.innerHTML = tabs + content;
+  }
+
+  window._switchGuideTab = function(id) {
+    _activeGuideTab = id;
+    renderGuide();
+  };
+
+  renderGuide();
+  return;
+
   container.innerHTML =
     '<div class="guide-hero">' +
       '<div class="guide-hero-glow"></div>' +
@@ -12401,4 +12944,452 @@ async function transcribeAndSend(blob, forCreate) {
     if (statusEl) { statusEl.textContent = 'Ошибка распознавания: ' + (e.message || e); }
     setTimeout(function() { if (statusEl) statusEl.style.display = 'none'; }, 4000);
   }
+}
+
+// ── Inbox: avatar with TG photo (works for users AND groups) ──
+function _chatAvatar(name, isGroup, chatId, size) {
+  size = size || 38;
+  var fontSize = size >= 34 ? '.85rem' : '.7rem';
+  var colors = ['#6366f1','#3b82f6','#10b981','#f59e0b','#ec4899','#8b5cf6','#14b8a6'];
+  var initials = isGroup ? '#' : (name || '?').replace(/^[@\s]+/, '').slice(0,1).toUpperCase();
+  var color = colors[(name||'').split('').reduce(function(a,c){return a+c.charCodeAt(0);},0) % colors.length];
+  var s = size + 'px';
+  var fallbackDiv = '<div style="width:'+s+';height:'+s+';min-width:'+s+';border-radius:50%;background:' + color + ';display:flex;align-items:center;justify-content:center;font-weight:700;font-size:'+fontSize+';color:#fff">' + escHtml(initials) + '</div>';
+  // Try real TG avatar for both users and groups
+  var tgId = chatId ? String(chatId) : '';
+  if (tgId && _detailAgentId && authToken) {
+    var imgUrl = '/api/agents/' + _detailAgentId + '/avatar/' + encodeURIComponent(tgId) + '?t=' + encodeURIComponent(authToken);
+    return '<div style="width:'+s+';height:'+s+';min-width:'+s+';border-radius:50%;overflow:hidden;position:relative">' +
+      '<img src="' + imgUrl + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%" ' +
+        'onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'" loading="lazy">' +
+      '<div style="display:none;width:'+s+';height:'+s+';min-width:'+s+';border-radius:50%;background:' + color + ';align-items:center;justify-content:center;font-weight:700;font-size:'+fontSize+';color:#fff;position:absolute;top:0;left:0">' + escHtml(initials) + '</div>' +
+    '</div>';
+  }
+  return fallbackDiv;
+}
+
+async function loadChatsData() {
+  if (!_detailAgentId) return;
+  var isRu = currentLang === 'ru';
+  var list = document.getElementById('chats-list');
+  if (!list) return;
+  try {
+    var data = await apiRequest('GET', '/api/agents/' + _detailAgentId + '/chats');
+    if (!data.ok || !data.chats || data.chats.length === 0) {
+      list.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:2rem;font-size:.82rem">' + (isRu ? 'Агент ещё ни с кем не общался' : 'No conversations yet') + '</div>';
+      return;
+    }
+    list.innerHTML = data.chats.map(function(c) {
+      var isGroup = c.isGroup || String(c.chatId).startsWith('-');
+      var name = c.senderName || c.chatId;
+      // Clean name: remove brackets, timestamps, tags
+      name = name.replace(/^\[|\]$/g,'').replace(/\s+\d{2}:\d{2}.*$/,'').replace(/^\+\d+[smhd]\s*/,'').trim() || c.chatId;
+      // For groups with multiple senders show as group name
+      var groupBadge = '';
+      if (isGroup && c.uniqueSenders > 1) {
+        groupBadge = '<span style="font-size:.6rem;padding:1px 5px;border-radius:4px;background:rgba(99,102,241,0.15);color:#818cf8;margin-left:4px">' + c.uniqueSenders + ' users</span>';
+      }
+      var preview = (c.lastMessage || '').replace(/<[^>]+>/g,'').slice(0, 60);
+      var id = 'chat-item-' + String(c.chatId).replace(/[^a-zA-Z0-9]/g,'_');
+      return '<div id="' + id + '" class="_chat-item" data-chatid="' + escHtml(c.chatId) + '" data-chatname="' + escHtml(name) + '" onclick="openAgentChat(this)" style="cursor:pointer;padding:10px 10px;border-radius:8px;display:flex;gap:10px;align-items:center;transition:background .15s">' +
+        _chatAvatar(name, isGroup, c.chatId) +
+        '<div style="flex:1;min-width:0">' +
+          '<div style="display:flex;justify-content:space-between;align-items:baseline">' +
+            '<span style="font-weight:600;font-size:.83rem;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px">' + escHtml(name) + groupBadge + '</span>' +
+            '<span style="font-size:.7rem;color:var(--text-muted);flex-shrink:0;margin-left:4px">' + c.messageCount + (isRu ? ' соо' : ' msg') + '</span>' +
+          '</div>' +
+          '<div style="font-size:.75rem;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px">' + escHtml(preview || '—') + '</div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+    // ── Resolve real Telegram names for chats (async enrichment) ──
+    var chatIds = data.chats.map(function(c) { return c.chatId; });
+    apiRequest('POST', '/api/agents/' + _detailAgentId + '/chat-names', { chatIds: chatIds }).then(function(nameData) {
+      if (!nameData || !nameData.names) return;
+      var names = nameData.names;
+      document.querySelectorAll('._chat-item').forEach(function(el) {
+        var cid = el.getAttribute('data-chatid');
+        if (cid && names[cid]) {
+          var nameEl = el.querySelector('span[style*="font-weight:600"]');
+          if (nameEl) nameEl.textContent = names[cid];
+          el.setAttribute('data-chatname', names[cid]);
+        }
+      });
+    }).catch(function() {});
+
+  } catch(e) {
+    list.innerHTML = '<div style="color:var(--error);padding:1rem;font-size:.82rem">' + escHtml(e.message||'Error') + '</div>';
+  }
+}
+
+function openAgentChat(el) {
+  var chatId = el.getAttribute('data-chatid');
+  var chatName = el.getAttribute('data-chatname');
+  // Highlight selected
+  document.querySelectorAll('._chat-item').forEach(function(i){ i.style.background=''; });
+  el.style.background = 'var(--bg-hover, rgba(99,102,241,0.1))';
+  loadAgentChatHistory(chatId, chatName);
+}
+
+async function loadAgentChatHistory(chatId, chatName) {
+  if (!_detailAgentId) return;
+  var isRu = currentLang === 'ru';
+  var header = document.getElementById('chat-view-header');
+  var msgs = document.getElementById('chat-view-messages');
+  if (!header || !msgs) return;
+  var isGroup = String(chatId).startsWith('-');
+  header.innerHTML =
+    _chatAvatar(chatName, isGroup, chatId) +
+    '<div>' +
+      '<div style="font-weight:700;font-size:.88rem;color:var(--text-primary)">' + escHtml(chatName) + '</div>' +
+      '<div style="font-size:.73rem;color:var(--text-muted)">' + escHtml(chatId) + '</div>' +
+    '</div>';
+  msgs.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:2rem;font-size:.82rem">' + (isRu ? 'Загрузка...' : 'Loading...') + '</div>';
+  try {
+    var data = await apiRequest('GET', '/api/agents/' + _detailAgentId + '/chats/' + encodeURIComponent(chatId));
+    if (!data.ok || !data.messages || data.messages.length === 0) {
+      msgs.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:2rem;font-size:.82rem">' + (isRu ? 'История пуста' : 'No messages') + '</div>';
+      return;
+    }
+    msgs.innerHTML = data.messages.map(function(m) {
+      if (m.isMe) {
+        // Agent bubble — right side, accent color
+        return '<div style="display:flex;justify-content:flex-end;align-items:flex-end;gap:8px">' +
+          '<div style="max-width:70%;display:flex;flex-direction:column;align-items:flex-end">' +
+            '<div style="font-size:.7rem;color:var(--text-muted);margin-bottom:3px;padding-right:4px">' + (isRu ? '🤖 Агент' : '🤖 Agent') + '</div>' +
+            '<div style="padding:9px 13px;border-radius:16px 16px 4px 16px;background:rgba(99,102,241,0.18);border:1px solid rgba(99,102,241,0.3);font-size:.82rem;color:var(--text-primary);line-height:1.55;word-break:break-word;white-space:pre-wrap">' + escHtml(m.text||'') + '</div>' +
+          '</div>' +
+          '<div style="width:28px;height:28px;min-width:28px;border-radius:50%;background:#6366f1;display:flex;align-items:center;justify-content:center;font-size:.7rem">🤖</div>' +
+        '</div>';
+      } else {
+        // User bubble — left side
+        var uname = (m.header||'').replace(/^\[|\]$/g,'').replace(/\s+\d{2}:\d{2}.*$/,'').replace(/^\[?(owner|user|bot)\]\s*/i,'').trim() || '?';
+        var timeMatch = (m.header||'').match(/(\d{2}:\d{2})/);
+        var timeStr = timeMatch ? timeMatch[1] : '';
+        return '<div style="display:flex;align-items:flex-end;gap:8px">' +
+          _chatAvatar(uname, false, chatId, 28) +
+          '<div style="max-width:70%;display:flex;flex-direction:column">' +
+            '<div style="font-size:.7rem;color:var(--text-muted);margin-bottom:3px;padding-left:4px">' + escHtml(uname) + (timeStr ? ' · ' + timeStr : '') + '</div>' +
+            '<div style="padding:9px 13px;border-radius:16px 16px 16px 4px;background:var(--bg-primary);border:1px solid var(--border);font-size:.82rem;color:var(--text-primary);line-height:1.55;word-break:break-word;white-space:pre-wrap">' + escHtml(m.text||'') + '</div>' +
+          '</div>' +
+        '</div>';
+      }
+    }).join('');
+    // Scroll to bottom
+    msgs.scrollTop = msgs.scrollHeight;
+  } catch(e) {
+    msgs.innerHTML = '<div style="color:var(--error);padding:1rem;font-size:.82rem">' + escHtml(e.message||'Error') + '</div>';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ADMIN AGENTS PAGE — all platform agents, start/stop, errors only
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function loadAdminAgentsPage() {
+  var container = document.getElementById('admin-agents-content');
+  if (!container) return;
+  var isRu = currentLang === 'ru';
+  container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:2rem;font-size:.85rem">⟳ ' + (isRu ? 'Загрузка...' : 'Loading...') + '</div>';
+  try {
+    var data = await apiRequest('GET', '/api/admin/agents');
+    if (!data.ok || !data.agents) { container.innerHTML = '<div style="color:var(--error);padding:2rem">Access denied or error</div>'; return; }
+    var agents = data.agents;
+
+    // Stats bar
+    var active = agents.filter(function(a) { return a.isActive; }).length;
+    var withErrors = agents.filter(function(a) { return a.recentErrors > 0; }).length;
+    var statsHtml = '<div style="display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap">' +
+      '<div class="stat-card"><div class="stat-value">' + agents.length + '</div><div class="stat-label">' + (isRu ? 'Всего' : 'Total') + '</div></div>' +
+      '<div class="stat-card"><div class="stat-value" style="color:#10b981">' + active + '</div><div class="stat-label">' + (isRu ? 'Активных' : 'Active') + '</div></div>' +
+      '<div class="stat-card"><div class="stat-value" style="color:#ef4444">' + withErrors + '</div><div class="stat-label">' + (isRu ? 'С ошибками' : 'With errors') + '</div></div>' +
+    '</div>';
+
+    // Table
+    var tableHtml = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.82rem">' +
+      '<thead><tr style="border-bottom:2px solid var(--border);text-align:left">' +
+        '<th style="padding:10px 8px">ID</th>' +
+        '<th style="padding:10px 8px">' + (isRu ? 'Агент' : 'Agent') + '</th>' +
+        '<th style="padding:10px 8px">' + (isRu ? 'Владелец' : 'Owner') + '</th>' +
+        '<th style="padding:10px 8px">' + (isRu ? 'Статус' : 'Status') + '</th>' +
+        '<th style="padding:10px 8px">' + (isRu ? 'Ошибки 24ч' : 'Errors 24h') + '</th>' +
+        '<th style="padding:10px 8px">' + (isRu ? 'Действие' : 'Action') + '</th>' +
+      '</tr></thead><tbody>';
+
+    agents.forEach(function(a) {
+      var statusDot = a.isActive
+        ? '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#10b981;margin-right:6px"></span>' + (isRu ? 'Активен' : 'Active')
+        : '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#64748b;margin-right:6px"></span>' + (isRu ? 'Стоп' : 'Stopped');
+      var errBadge = a.recentErrors === -1
+        ? '<span style="font-size:.7rem;color:var(--text-muted);font-style:italic">' + (isRu ? 'скрыто' : 'hidden') + '</span>'
+        : a.recentErrors > 0
+          ? '<span style="padding:2px 8px;border-radius:10px;background:rgba(239,68,68,0.15);color:#ef4444;font-size:.75rem;font-weight:600">' + a.recentErrors + '</span>'
+          : '<span style="color:var(--text-muted)">0</span>';
+      var actionBtn = a.isActive
+        ? '<button class="rt-save-btn" style="padding:5px 14px;font-size:.75rem" onclick="adminAgentAction(' + a.id + ',\'stop\')">' + (isRu ? 'Стоп' : 'Stop') + '</button>'
+        : '<button class="rt-save-btn" style="padding:5px 14px;font-size:.75rem" onclick="adminAgentAction(' + a.id + ',\'start\')">' + (isRu ? 'Запуск' : 'Start') + '</button>';
+      tableHtml += '<tr style="border-bottom:1px solid var(--border)">' +
+        '<td style="padding:8px;color:var(--text-muted)">#' + a.id + '</td>' +
+        '<td style="padding:8px;font-weight:600;color:var(--text-primary)">' + escHtml((a.name || '').slice(0, 30)) + '</td>' +
+        '<td style="padding:8px;color:var(--text-muted);font-size:.78rem">' + escHtml(a.ownerUsername || 'ID:' + a.userId) + '</td>' +
+        '<td style="padding:8px">' + statusDot + '</td>' +
+        '<td style="padding:8px;text-align:center">' + errBadge + '</td>' +
+        '<td style="padding:8px">' + actionBtn + '</td>' +
+      '</tr>';
+      // Show last error if any
+      if (a.lastError) {
+        tableHtml += '<tr style="border-bottom:1px solid var(--border)">' +
+          '<td></td><td colspan="5" style="padding:4px 8px 10px;font-size:.74rem;color:#ef4444;font-family:\'JetBrains Mono\',monospace">' +
+            '⚠ ' + escHtml(String(a.lastError).slice(0, 200)) +
+          '</td></tr>';
+      }
+    });
+    tableHtml += '</tbody></table></div>';
+    container.innerHTML = statsHtml + tableHtml;
+  } catch(e) {
+    container.innerHTML = '<div style="color:var(--error);padding:2rem">' + escHtml(e.message || 'Error') + '</div>';
+  }
+}
+
+async function adminAgentAction(agentId, action) {
+  try {
+    var endpoint = action === 'start' ? '/api/agents/' + agentId + '/run' : '/api/agents/' + agentId + '/stop';
+    await apiRequest('POST', endpoint);
+    toast((action === 'start' ? 'Started' : 'Stopped') + ' agent #' + agentId, 'success');
+    setTimeout(loadAdminAgentsPage, 1000);
+  } catch(e) { toast('Error: ' + (e.message || e), 'error'); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TERMS OF SERVICE / PRIVACY CONSENT POPUP
+// ═══════════════════════════════════════════════════════════════════════════
+
+function showTosPopup() {
+  var existing = document.getElementById('tos-overlay');
+  if (existing) existing.remove();
+  var isRu = currentLang === 'ru';
+
+  var overlay = document.createElement('div');
+  overlay.id = 'tos-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:10000;display:flex;align-items:center;justify-content:center;padding:1.5rem;backdrop-filter:blur(4px)';
+
+  overlay.innerHTML =
+    '<div style="background:var(--bg-secondary,#1a1f2e);border:1px solid var(--border,#2a3040);border-radius:16px;max-width:520px;width:100%;max-height:85vh;overflow-y:auto;padding:32px">' +
+      '<div style="text-align:center;margin-bottom:20px">' +
+        '<div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,#0ea5e9,#0284c7);display:inline-flex;align-items:center;justify-content:center;margin-bottom:12px">' +
+          '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>' +
+        '</div>' +
+        '<h2 style="margin:0;font-size:1.3rem;color:var(--text-primary,#fff)">' + (isRu ? 'Пользовательское соглашение' : 'Terms of Service') + '</h2>' +
+        '<p style="margin:8px 0 0;color:var(--text-muted,#94a3b8);font-size:.85rem">' + (isRu ? 'Пожалуйста, ознакомьтесь и примите условия' : 'Please review and accept the terms') + '</p>' +
+      '</div>' +
+
+      // Privacy section
+      '<div style="background:var(--bg-primary,#141821);border:1px solid var(--border,#2a3040);border-radius:10px;padding:16px;margin-bottom:16px">' +
+        '<h3 style="margin:0 0 10px;font-size:.92rem;color:#0ea5e9;display:flex;align-items:center;gap:8px">' +
+          '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> ' +
+          (isRu ? 'Конфиденциальность переписок' : 'Conversation Privacy') +
+        '</h3>' +
+        '<p style="margin:0;font-size:.82rem;color:var(--text-secondary,#cbd5e1);line-height:1.6">' +
+          (isRu
+            ? 'Переписки ваших AI-агентов хранятся в зашифрованном виде и <b>доступны только вам</b>. Платформа <b>не имеет доступа</b> к содержимому переписок ваших агентов. Администраторы могут видеть только техническую информацию: статус агента, количество сообщений и ошибки.'
+            : 'Your AI agent conversations are stored encrypted and are <b>accessible only to you</b>. The platform <b>does not have access</b> to the content of your agent conversations. Administrators can only see technical information: agent status, message counts, and errors.') +
+        '</p>' +
+      '</div>' +
+
+      // Error sharing section
+      '<div style="background:var(--bg-primary,#141821);border:1px solid var(--border,#2a3040);border-radius:10px;padding:16px;margin-bottom:20px">' +
+        '<h3 style="margin:0 0 10px;font-size:.92rem;color:#f59e0b;display:flex;align-items:center;gap:8px">' +
+          '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> ' +
+          (isRu ? 'Сбор информации об ошибках' : 'Error Information Collection') +
+        '</h3>' +
+        '<p style="margin:0;font-size:.82rem;color:var(--text-secondary,#cbd5e1);line-height:1.6">' +
+          (isRu
+            ? 'Для улучшения платформы мы собираем <b>только техническую информацию об ошибках</b>: тип ошибки, контекст (без содержимого сообщений) и время возникновения. Это помогает нам быстрее находить и исправлять проблемы.'
+            : 'To improve the platform, we collect <b>only technical error information</b>: error type, context (without message content), and timestamp. This helps us find and fix issues faster.') +
+        '</p>' +
+      '</div>' +
+
+      // Checkboxes
+      '<div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px">' +
+        '<label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;font-size:.83rem;color:var(--text-primary,#fff)">' +
+          '<input type="checkbox" id="tos-accept-terms" style="accent-color:#0ea5e9;margin-top:2px;width:18px;height:18px;flex-shrink:0">' +
+          '<span>' + (isRu
+            ? 'Я принимаю <a href="/terms" target="_blank" style="color:#0ea5e9;text-decoration:underline">пользовательское соглашение</a> и <a href="/privacy" target="_blank" style="color:#0ea5e9;text-decoration:underline">политику конфиденциальности</a>'
+            : 'I accept the <a href="/terms" target="_blank" style="color:#0ea5e9;text-decoration:underline">Terms of Service</a> and <a href="/privacy" target="_blank" style="color:#0ea5e9;text-decoration:underline">Privacy Policy</a>') +
+          '</span>' +
+        '</label>' +
+        '<label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;font-size:.83rem;color:var(--text-primary,#fff)">' +
+          '<input type="checkbox" id="tos-accept-errors" style="accent-color:#0ea5e9;margin-top:2px;width:18px;height:18px;flex-shrink:0">' +
+          '<span>' + (isRu
+            ? 'Я согласен на сбор технической информации об ошибках для улучшения сервиса'
+            : 'I consent to the collection of technical error data to improve the service') +
+          '</span>' +
+        '</label>' +
+      '</div>' +
+
+      // Note about optional
+      '<div style="font-size:.75rem;color:var(--text-muted,#64748b);margin-bottom:16px;line-height:1.5;padding:0 4px">' +
+        (isRu
+          ? '* Сбор ошибок — необязательно. Если вы откажетесь, мы не будем собирать информацию об ошибках ваших агентов, но это может замедлить решение проблем.'
+          : '* Error collection is optional. If you decline, we won\'t collect error data from your agents, but this may slow down issue resolution.') +
+      '</div>' +
+
+      // Button
+      '<button id="tos-accept-btn" disabled onclick="acceptTos()" class="rt-save-btn" style="width:100%;justify-content:center;opacity:0.5;cursor:not-allowed">' +
+        (isRu ? 'Принять и продолжить' : 'Accept & Continue') +
+      '</button>' +
+    '</div>';
+
+  document.body.appendChild(overlay);
+
+  // Enable button when ToS checkbox is checked (errors checkbox is optional)
+  var cb1 = document.getElementById('tos-accept-terms');
+  var btn = document.getElementById('tos-accept-btn');
+  function updateBtn() {
+    var ok = cb1 && cb1.checked;
+    if (btn) { btn.disabled = !ok; btn.style.opacity = ok ? '1' : '0.5'; btn.style.cursor = ok ? 'pointer' : 'not-allowed'; }
+  }
+  if (cb1) cb1.onchange = updateBtn;
+}
+
+async function acceptTos() {
+  try {
+    var errCb = document.getElementById('tos-accept-errors');
+    var acceptErrors = errCb ? errCb.checked : false;
+    await apiRequest('POST', '/api/me/accept-tos', { acceptTos: true, acceptErrors: acceptErrors });
+    if (currentUser) currentUser._acceptedTos = true;
+    var overlay = document.getElementById('tos-overlay');
+    if (overlay) overlay.remove();
+    toast(currentLang === 'ru' ? 'Спасибо! Добро пожаловать.' : 'Thank you! Welcome.', 'success');
+  } catch(e) { toast('Error: ' + (e.message||e), 'error'); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TERMS OF SERVICE & PRIVACY POLICY PAGES
+// ═══════════════════════════════════════════════════════════════════════════
+
+function _legalStyles() {
+  return 'style="font-size:.88rem;color:var(--text-secondary);line-height:1.8"';
+}
+function _legalH(text) { return '<h2 style="font-size:1.1rem;color:var(--text-primary);margin:28px 0 12px;font-weight:700">' + text + '</h2>'; }
+function _legalP(text) { return '<p style="margin:0 0 14px;font-size:.86rem;color:var(--text-secondary);line-height:1.7">' + text + '</p>'; }
+
+function loadTermsPage() {
+  var el = document.getElementById('terms-content');
+  if (!el) return;
+  var isRu = currentLang === 'ru';
+  var updated = '1 ' + (isRu ? 'апреля' : 'April') + ' 2026';
+
+  el.innerHTML = '<div ' + _legalStyles() + '>' +
+    '<h1 style="font-size:1.5rem;color:var(--text-primary);margin-bottom:4px">' + (isRu ? 'Пользовательское соглашение' : 'Terms of Service') + '</h1>' +
+    '<p style="color:var(--text-muted);font-size:.78rem;margin-bottom:24px">' + (isRu ? 'Последнее обновление: ' : 'Last updated: ') + updated + '</p>' +
+
+    _legalH(isRu ? '1. Общие положения' : '1. General') +
+    _legalP(isRu
+      ? 'TON Agent Platform (далее — «Платформа») предоставляет инструменты для создания и управления автономными AI-агентами в экосистеме TON/Telegram. Используя Платформу, вы соглашаетесь с настоящими условиями.'
+      : 'TON Agent Platform (the "Platform") provides tools for creating and managing autonomous AI agents in the TON/Telegram ecosystem. By using the Platform, you agree to these terms.') +
+
+    _legalH(isRu ? '2. Учётная запись' : '2. Account') +
+    _legalP(isRu
+      ? 'Для использования Платформы необходима авторизация через Telegram. Вы несёте ответственность за действия, совершённые через вашу учётную запись, включая действия ваших AI-агентов.'
+      : 'Using the Platform requires Telegram authentication. You are responsible for all actions performed through your account, including actions of your AI agents.') +
+
+    _legalH(isRu ? '3. AI-агенты' : '3. AI Agents') +
+    _legalP(isRu
+      ? 'Агенты действуют от вашего имени. Вы несёте полную ответственность за: содержимое системных промптов, действия агентов в чатах и группах, финансовые операции (отправка TON, покупка/продажа подарков). Платформа не несёт ответственности за убытки, вызванные действиями ваших агентов.'
+      : 'Agents act on your behalf. You are fully responsible for: system prompt content, agent actions in chats and groups, financial operations (sending TON, buying/selling gifts). The Platform is not liable for losses caused by your agents.') +
+
+    _legalH(isRu ? '4. API ключи и провайдеры' : '4. API Keys & Providers') +
+    _legalP(isRu
+      ? 'Вы предоставляете собственные API ключи для AI-провайдеров (Gemini, Claude, GPT и др.). Платформа хранит ключи в зашифрованном виде и использует их исключительно для работы ваших агентов. Вы несёте ответственность за соблюдение условий использования AI-провайдеров.'
+      : 'You provide your own API keys for AI providers (Gemini, Claude, GPT, etc.). The Platform stores keys encrypted and uses them solely for your agents. You are responsible for complying with AI provider terms.') +
+
+    _legalH(isRu ? '5. Telegram аккаунт' : '5. Telegram Account') +
+    _legalP(isRu
+      ? 'При подключении Telegram аккаунта к агенту (MTProto), агент получает доступ к вашему аккаунту. Вы подтверждаете, что имеете право использовать данный аккаунт и понимаете риски автоматизации.'
+      : 'When connecting a Telegram account to an agent (MTProto), the agent gains access to your account. You confirm you have the right to use this account and understand automation risks.') +
+
+    _legalH(isRu ? '6. Финансовые операции' : '6. Financial Operations') +
+    _legalP(isRu
+      ? 'Платформа предоставляет инструменты для работы с TON блокчейном. Все транзакции необратимы. Платформа не является финансовым посредником и не несёт ответственности за потерю средств.'
+      : 'The Platform provides tools for TON blockchain operations. All transactions are irreversible. The Platform is not a financial intermediary and is not liable for loss of funds.') +
+
+    _legalH(isRu ? '7. Ограничения' : '7. Restrictions') +
+    _legalP(isRu
+      ? 'Запрещено: использование агентов для спама, мошенничества или нарушения законов; попытки обхода лимитов и защит; использование для атак на другие сервисы; распространение вредоносного контента.'
+      : 'Prohibited: using agents for spam, fraud, or illegal activities; attempting to bypass limits and protections; using for attacks on other services; distributing harmful content.') +
+
+    _legalH(isRu ? '8. Прекращение доступа' : '8. Termination') +
+    _legalP(isRu
+      ? 'Мы оставляем за собой право приостановить или заблокировать аккаунт при нарушении условий. Вы можете удалить аккаунт и все данные в любое время через настройки профиля.'
+      : 'We reserve the right to suspend or block accounts for violations. You can delete your account and all data at any time through profile settings.') +
+
+    _legalH(isRu ? '9. Контакты' : '9. Contact') +
+    _legalP(isRu
+      ? 'По вопросам: <a href="https://t.me/TonAgentPlatformBot" style="color:#0ea5e9">@TonAgentPlatformBot</a> | <a href="https://t.me/tonagentplatform" style="color:#0ea5e9">@tonagentplatform</a>'
+      : 'Contact: <a href="https://t.me/TonAgentPlatformBot" style="color:#0ea5e9">@TonAgentPlatformBot</a> | <a href="https://t.me/tonagentplatform" style="color:#0ea5e9">@tonagentplatform</a>') +
+
+  '</div>';
+}
+
+function loadPrivacyPage() {
+  var el = document.getElementById('privacy-content');
+  if (!el) return;
+  var isRu = currentLang === 'ru';
+  var updated = '1 ' + (isRu ? 'апреля' : 'April') + ' 2026';
+
+  el.innerHTML = '<div ' + _legalStyles() + '>' +
+    '<h1 style="font-size:1.5rem;color:var(--text-primary);margin-bottom:4px">' + (isRu ? 'Политика конфиденциальности' : 'Privacy Policy') + '</h1>' +
+    '<p style="color:var(--text-muted);font-size:.78rem;margin-bottom:24px">' + (isRu ? 'Последнее обновление: ' : 'Last updated: ') + updated + '</p>' +
+
+    _legalH(isRu ? '1. Какие данные мы собираем' : '1. What Data We Collect') +
+    _legalP(isRu
+      ? '<b>Данные аккаунта:</b> Telegram ID, username, имя — получаем при авторизации через Telegram.'
+      : '<b>Account data:</b> Telegram ID, username, name — received during Telegram authorization.') +
+    _legalP(isRu
+      ? '<b>Данные агентов:</b> системные промпты, настройки, логи выполнения, метрики использования.'
+      : '<b>Agent data:</b> system prompts, settings, execution logs, usage metrics.') +
+    _legalP(isRu
+      ? '<b>Техническая информация:</b> тип ошибок, время возникновения, контекст (без содержимого сообщений) — только с вашего согласия.'
+      : '<b>Technical information:</b> error types, timestamps, context (without message content) — only with your consent.') +
+
+    _legalH(isRu ? '2. Переписки агентов' : '2. Agent Conversations') +
+    '<div style="padding:16px;background:rgba(14,165,233,0.06);border-left:3px solid #0ea5e9;border-radius:0 10px 10px 0;margin-bottom:16px">' +
+    _legalP(isRu
+      ? '<b>Переписки ваших AI-агентов доступны только вам.</b> Платформа не читает, не анализирует и не передаёт третьим лицам содержимое переписок ваших агентов. Администраторы платформы имеют доступ только к технической информации: статус агента, количество сообщений, ошибки.'
+      : '<b>Your AI agent conversations are accessible only to you.</b> The Platform does not read, analyze, or share the content of your agent conversations. Platform administrators only have access to technical information: agent status, message counts, errors.') +
+    '</div>' +
+
+    _legalH(isRu ? '3. API ключи' : '3. API Keys') +
+    _legalP(isRu
+      ? 'API ключи AI-провайдеров хранятся в зашифрованном виде (AES-256-GCM). Ключи используются исключительно для выполнения запросов ваших агентов и не передаются третьим лицам.'
+      : 'AI provider API keys are stored encrypted (AES-256-GCM). Keys are used solely for your agent requests and are not shared with third parties.') +
+
+    _legalH(isRu ? '4. Telegram данные' : '4. Telegram Data') +
+    _legalP(isRu
+      ? 'При подключении Telegram аккаунта к агенту, сессия MTProto хранится на сервере в зашифрованном виде. Мы не имеем доступа к вашим личным сообщениям, контактам или медиа-файлам за пределами того, что необходимо для работы агента.'
+      : 'When connecting a Telegram account to an agent, the MTProto session is stored encrypted on the server. We do not access your personal messages, contacts, or media beyond what is necessary for agent operation.') +
+
+    _legalH(isRu ? '5. Сбор ошибок' : '5. Error Collection') +
+    _legalP(isRu
+      ? 'При вашем согласии мы собираем информацию об ошибках: тип ошибки, stack trace, время, ID агента. Это помогает улучшать платформу. Содержимое сообщений НЕ включается в отчёты об ошибках. Вы можете отозвать согласие в настройках.'
+      : 'With your consent, we collect error information: error type, stack trace, timestamp, agent ID. This helps improve the platform. Message content is NOT included in error reports. You can withdraw consent in settings.') +
+
+    _legalH(isRu ? '6. Хранение данных' : '6. Data Storage') +
+    _legalP(isRu
+      ? 'Данные хранятся на серверах в Европе. Вы можете запросить удаление всех данных через настройки профиля или обратившись в поддержку.'
+      : 'Data is stored on servers in Europe. You can request deletion of all data through profile settings or by contacting support.') +
+
+    _legalH(isRu ? '7. Ваши права' : '7. Your Rights') +
+    _legalP(isRu
+      ? 'Вы имеете право: получить копию ваших данных, удалить аккаунт и все связанные данные, отозвать согласие на сбор ошибок, отключить Telegram аккаунт от агентов в любое время.'
+      : 'You have the right to: receive a copy of your data, delete your account and all associated data, withdraw consent for error collection, disconnect your Telegram account from agents at any time.') +
+
+    _legalH(isRu ? '8. Контакты' : '8. Contact') +
+    _legalP(isRu
+      ? 'DPO: <a href="https://t.me/uheartattack" style="color:#0ea5e9">@uheartattack</a> | Поддержка: <a href="https://t.me/TonAgentPlatformBot" style="color:#0ea5e9">@TonAgentPlatformBot</a>'
+      : 'DPO: <a href="https://t.me/uheartattack" style="color:#0ea5e9">@uheartattack</a> | Support: <a href="https://t.me/TonAgentPlatformBot" style="color:#0ea5e9">@TonAgentPlatformBot</a>') +
+
+  '</div>';
 }
