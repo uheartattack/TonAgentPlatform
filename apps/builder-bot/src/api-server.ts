@@ -823,6 +823,94 @@ export function startApiServer() {
     } catch (e: any) { res.json({ ok: false, error: e.message }); }
   });
 
+  // ── DELETE /api/me/account — delete all user data (GDPR right to be forgotten) ──
+  app.delete('/api/me/account', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { confirmation } = req.body || {};
+      if (confirmation !== 'DELETE') { res.json({ ok: false, error: 'Type DELETE to confirm' }); return; }
+
+      // 1. Disconnect all Telegram sessions
+      try {
+        const { userbotManager } = await import('./services/userbot-manager');
+        const agents = await pool.query(`SELECT id FROM builder_bot.agents WHERE user_id = $1`, [userId]);
+        for (const a of agents.rows) {
+          try { await userbotManager.disconnectAgent(a.id); } catch {}
+        }
+      } catch {}
+
+      // 2. Stop all running agents
+      try {
+        const runner = getRunnerAgent();
+        const agents = await pool.query(`SELECT id FROM builder_bot.agents WHERE user_id = $1 AND is_active = true`, [userId]);
+        for (const a of agents.rows) {
+          try { await runner.pauseAgent(a.id, userId); } catch {}
+        }
+      } catch {}
+
+      // 3. Delete all user data from all tables
+      const agentIds = (await pool.query(`SELECT id FROM builder_bot.agents WHERE user_id = $1`, [userId])).rows.map((r: any) => r.id);
+      if (agentIds.length > 0) {
+        await pool.query(`DELETE FROM builder_bot.agent_state WHERE agent_id = ANY($1)`, [agentIds]);
+        await pool.query(`DELETE FROM builder_bot.agent_logs WHERE agent_id = ANY($1)`, [agentIds]);
+        await pool.query(`DELETE FROM builder_bot.agent_contacts WHERE agent_id = ANY($1)`, [agentIds]);
+        await pool.query(`DELETE FROM builder_bot.agent_daily_logs WHERE agent_id = ANY($1)`, [agentIds]);
+        await pool.query(`DELETE FROM builder_bot.agent_evals WHERE agent_id = ANY($1)`, [agentIds]);
+        await pool.query(`DELETE FROM builder_bot.agent_tasks WHERE agent_id = ANY($1)`, [agentIds]);
+        await pool.query(`DELETE FROM builder_bot.agent_token_usage WHERE agent_id = ANY($1)`, [agentIds]);
+        await pool.query(`DELETE FROM builder_bot.agent_sessions WHERE agent_id = ANY($1)`, [agentIds]);
+        await pool.query(`DELETE FROM builder_bot.shared_agents WHERE agent_id = ANY($1) OR shared_by_user_id = $2`, [agentIds, userId]);
+      }
+      await pool.query(`DELETE FROM builder_bot.agents WHERE user_id = $1`, [userId]);
+      await pool.query(`DELETE FROM builder_bot.agentic_wallets WHERE user_id = $1`, [userId]);
+      await pool.query(`DELETE FROM builder_bot.user_settings WHERE user_id = $1`, [userId]);
+      await pool.query(`DELETE FROM builder_bot.subscriptions WHERE user_id = $1`, [userId]);
+      await pool.query(`DELETE FROM builder_bot.balance_transactions WHERE user_id = $1`, [userId]);
+      await pool.query(`DELETE FROM builder_bot.user_balance WHERE user_id = $1`, [userId]);
+      await pool.query(`DELETE FROM builder_bot.shared_agents WHERE shared_with_user_id = $1`, [userId]);
+      // 4. Delete sessions (logs out everywhere)
+      await pool.query(`DELETE FROM builder_bot.web_sessions WHERE user_id = $1`, [userId]);
+      // Clear in-memory session
+      for (const [token, s] of sessions) { if (s.userId === userId) sessions.delete(token); }
+
+      console.log(`[GDPR] User ${userId} deleted all data`);
+      res.json({ ok: true, message: 'All data deleted. You have been logged out.' });
+    } catch (e: any) {
+      console.error('[GDPR] Delete account error:', e.message);
+      res.json({ ok: false, error: e.message });
+    }
+  });
+
+  // ── GET /api/me/export — export all user data (GDPR data portability) ──
+  app.get('/api/me/export', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const session = (req as any).session;
+
+      // Collect all user data
+      const agents = (await pool.query(`SELECT id, name, description, code, trigger_type, is_active, created_at FROM builder_bot.agents WHERE user_id = $1`, [userId])).rows;
+      const wallets = (await pool.query(`SELECT id, address, wallet_type, label, created_at FROM builder_bot.agentic_wallets WHERE user_id = $1`, [userId])).rows;
+      const settings = (await pool.query(`SELECT key, value FROM builder_bot.user_settings WHERE user_id = $1`, [userId])).rows;
+      const sub = (await pool.query(`SELECT plan_id, expires_at, is_active FROM builder_bot.subscriptions WHERE user_id = $1`, [userId])).rows;
+      const balance = (await pool.query(`SELECT type, amount_ton, description, created_at FROM builder_bot.balance_transactions WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100`, [userId])).rows;
+
+      const exportData = {
+        exportDate: new Date().toISOString(),
+        platform: 'TON Agent Platform',
+        account: { userId, username: session.username, firstName: session.firstName },
+        subscription: sub[0] || { planId: 'free' },
+        agents: agents.map((a: any) => ({ id: a.id, name: a.name, description: a.description, type: a.trigger_type, active: a.is_active, created: a.created_at })),
+        wallets: wallets.map((w: any) => ({ address: w.address, type: w.wallet_type, label: w.label })),
+        settings: settings.filter((s: any) => !s.key.includes('mnemonic') && !s.key.includes('secret')), // exclude secrets
+        transactions: balance,
+      };
+
+      res.set('Content-Type', 'application/json');
+      res.set('Content-Disposition', `attachment; filename="ton-agent-data-${userId}-${Date.now()}.json"`);
+      res.send(JSON.stringify(exportData, null, 2));
+    } catch (e: any) { res.json({ ok: false, error: e.message }); }
+  });
+
   // ── Shared avatar cache (used by /api/me/avatar AND /api/agents/:id/avatar) ──
   const _avatarCache = new Map<string, { buf: Buffer | null; ts: number }>();
   const AVATAR_CACHE_TTL = 30 * 60_000; // 30 min

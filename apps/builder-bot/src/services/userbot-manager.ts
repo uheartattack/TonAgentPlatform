@@ -1332,7 +1332,12 @@ class UserbotManager {
         const tc = typeof res.rows[0].trigger_config === 'string'
           ? JSON.parse(res.rows[0].trigger_config)
           : res.rows[0].trigger_config;
-        return tc?.telegram_session?.session || null;
+        let sess = tc?.telegram_session?.session || null;
+        // Decrypt if encrypted (starts with 'enc:')
+        if (sess && sess.startsWith('enc:')) {
+          try { const { decryptApiKey } = require('../crypto-utils'); sess = decryptApiKey(sess); } catch {}
+        }
+        return sess;
       }
     } catch (e: any) {
       console.error('[UserbotMgr] loadSession error:', e.message);
@@ -1349,7 +1354,10 @@ class UserbotManager {
       const tc = typeof res.rows[0].trigger_config === 'string'
         ? JSON.parse(res.rows[0].trigger_config)
         : (res.rows[0].trigger_config || {});
-      tc.telegram_session = { session, ...meta, updatedAt: new Date().toISOString() };
+      // Encrypt session string for privacy compliance
+      let encSession = session;
+      try { const { encryptApiKey } = require('../crypto-utils'); encSession = encryptApiKey(session); } catch {}
+      tc.telegram_session = { session: encSession, ...meta, updatedAt: new Date().toISOString() };
       await pool.query(
         `UPDATE builder_bot.agents SET trigger_config = $1::jsonb WHERE id = $2`,
         [JSON.stringify(tc), agentId]

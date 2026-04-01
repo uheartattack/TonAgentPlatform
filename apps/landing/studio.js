@@ -13275,6 +13275,97 @@ function _legalStyles() {
 function _legalH(text) { return '<h2 style="font-size:1.1rem;color:var(--text-primary);margin:28px 0 12px;font-weight:700">' + text + '</h2>'; }
 function _legalP(text) { return '<p style="margin:0 0 14px;font-size:.86rem;color:var(--text-secondary);line-height:1.7">' + text + '</p>'; }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// PROFILE: PRIVACY, DATA EXPORT, DELETE ACCOUNT, UI SETTINGS
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function toggleErrorConsent(enabled) {
+  try {
+    await apiRequest('POST', '/api/me/accept-tos', { acceptTos: true, acceptErrors: enabled });
+    toast(currentLang === 'ru'
+      ? (enabled ? 'Сбор ошибок включён' : 'Сбор ошибок отключён')
+      : (enabled ? 'Error sharing enabled' : 'Error sharing disabled'), 'success');
+  } catch(e) { toast('Error: ' + (e.message||e), 'error'); }
+}
+
+async function exportMyData() {
+  toast(currentLang === 'ru' ? 'Собираю данные...' : 'Collecting data...', 'info');
+  try {
+    var resp = await fetch('/api/me/export', { headers: { 'X-Auth-Token': authToken } });
+    if (!resp.ok) throw new Error('Export failed');
+    var blob = await resp.blob();
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = 'ton-agent-data-' + Date.now() + '.json'; a.click();
+    URL.revokeObjectURL(url);
+    toast(currentLang === 'ru' ? 'Данные скачаны' : 'Data downloaded', 'success');
+  } catch(e) { toast('Error: ' + (e.message||e), 'error'); }
+}
+
+function deleteMyAccount() {
+  var isRu = currentLang === 'ru';
+  var msg = isRu
+    ? 'Это действие НЕОБРАТИМО. Будут удалены:\n\n• Все агенты и их данные\n• Все кошельки\n• История транзакций\n• Telegram сессии\n• Подписка\n\nВведите DELETE для подтверждения:'
+    : 'This action is IRREVERSIBLE. Will be deleted:\n\n• All agents and data\n• All wallets\n• Transaction history\n• Telegram sessions\n• Subscription\n\nType DELETE to confirm:';
+  var input = prompt(msg);
+  if (input !== 'DELETE') { toast(isRu ? 'Отменено' : 'Cancelled', 'info'); return; }
+  apiRequest('DELETE', '/api/me/account', { confirmation: 'DELETE' }).then(function(d) {
+    if (d.ok) {
+      toast(isRu ? 'Аккаунт удалён' : 'Account deleted', 'success');
+      setTimeout(function() { logout(); }, 1500);
+    } else { toast(d.error || 'Error', 'error'); }
+  }).catch(function(e) { toast('Error: ' + (e.message||e), 'error'); });
+}
+
+function setUIScale(val) {
+  document.getElementById('ui-scale-value').textContent = val + '%';
+  document.querySelector('.main-content').style.zoom = (val / 100);
+  localStorage.setItem('ui_scale', val);
+}
+
+function setAccentColor(color) {
+  document.documentElement.style.setProperty('--accent', color);
+  document.documentElement.style.setProperty('--primary', color);
+  document.querySelectorAll('.accent-dot').forEach(function(d) {
+    d.style.borderColor = d.style.background === color || d.onclick.toString().includes(color) ? '#fff' : 'transparent';
+  });
+  localStorage.setItem('accent_color', color);
+  // Update rt-save-btn gradient
+  document.querySelectorAll('.rt-save-btn:not([style*="gradient"])').forEach(function(b) { b.style.background = color; });
+}
+
+// Restore UI settings from localStorage
+(function restoreUISettings() {
+  var scale = localStorage.getItem('ui_scale');
+  if (scale) { var mc = document.querySelector('.main-content'); if (mc) mc.style.zoom = (parseInt(scale) / 100); }
+  var accent = localStorage.getItem('accent_color');
+  if (accent) {
+    document.documentElement.style.setProperty('--accent', accent);
+    document.documentElement.style.setProperty('--primary', accent);
+  }
+})();
+
+// Load error consent checkbox state in profile
+var _origLoadProfile = typeof loadProfile === 'function' ? loadProfile : null;
+if (_origLoadProfile) {
+  var _patchedLoadProfile = async function() {
+    await _origLoadProfile();
+    // Set error consent checkbox
+    try {
+      var data = await apiRequest('GET', '/api/me');
+      var cb = document.getElementById('profile-error-consent');
+      if (cb) cb.checked = data.acceptedErrors || false;
+      var scaleSlider = document.getElementById('ui-scale-slider');
+      var scaleVal = document.getElementById('ui-scale-value');
+      var savedScale = localStorage.getItem('ui_scale') || '100';
+      if (scaleSlider) scaleSlider.value = savedScale;
+      if (scaleVal) scaleVal.textContent = savedScale + '%';
+    } catch {}
+  };
+  // Monkey-patch loadProfile
+  loadProfile = _patchedLoadProfile;
+}
+
 function loadTermsPage() {
   var el = document.getElementById('terms-content');
   if (!el) return;

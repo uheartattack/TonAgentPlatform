@@ -1853,9 +1853,54 @@
             <div class="panel-header">
               <h3 class="panel-title" style="color:#dc3545" data-en="Danger Zone" data-ru="Опасная зона">Danger Zone</h3>
             </div>
-            <div style="padding:1rem;color:var(--text-muted);font-size:.9rem">
-              <span data-en="To manage or delete all agents, open the bot: " data-ru="Для управления или удаления агентов откройте бота: ">To manage or delete all agents, open the bot: </span>
-              <a href="https://t.me/TonAgentPlatformBot" target="_blank" style="color:var(--primary)">@TonAgentPlatformBot</a>
+            <!-- Privacy & Data Section -->
+            <div class="panel" style="margin-top:20px">
+              <div class="panel-header">
+                <h3 class="panel-title" data-en="Privacy & Data" data-ru="Конфиденциальность и данные">Privacy & Data</h3>
+              </div>
+              <div style="padding:16px;display:flex;flex-direction:column;gap:12px">
+                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:.86rem;color:var(--text-primary)">
+                  <input type="checkbox" id="profile-error-consent" style="accent-color:#0ea5e9;width:18px;height:18px" onchange="toggleErrorConsent(this.checked)">
+                  <span data-en="Share error reports to improve the platform" data-ru="Делиться отчётами об ошибках для улучшения платформы">Share error reports</span>
+                </label>
+                <div style="display:flex;gap:10px;flex-wrap:wrap">
+                  <button class="rt-save-btn" style="padding:8px 18px;font-size:.8rem" onclick="exportMyData()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    <span data-en="Export My Data" data-ru="Скачать мои данные">Export My Data</span>
+                  </button>
+                  <button class="rt-save-btn" style="padding:8px 18px;font-size:.8rem;background:linear-gradient(135deg,#dc2626,#b91c1c)" onclick="deleteMyAccount()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    <span data-en="Delete Account" data-ru="Удалить аккаунт">Delete Account</span>
+                  </button>
+                </div>
+                <p style="font-size:.72rem;color:var(--text-muted);margin:0" data-en="Deleting your account permanently removes all agents, data, wallets, and sessions." data-ru="Удаление аккаунта навсегда удаляет всех агентов, данные, кошельки и сессии.">Deleting removes everything.</p>
+              </div>
+            </div>
+
+            <!-- UI Settings -->
+            <div class="panel" style="margin-top:16px">
+              <div class="panel-header">
+                <h3 class="panel-title" data-en="Interface" data-ru="Интерфейс">Interface</h3>
+              </div>
+              <div style="padding:16px;display:flex;flex-direction:column;gap:14px">
+                <div>
+                  <label style="font-size:.78rem;color:var(--text-muted);display:block;margin-bottom:6px" data-en="UI Scale" data-ru="Масштаб интерфейса">UI Scale</label>
+                  <div style="display:flex;align-items:center;gap:10px">
+                    <input type="range" id="ui-scale-slider" min="80" max="120" value="100" step="5" style="flex:1;accent-color:#0ea5e9" oninput="setUIScale(this.value)">
+                    <span id="ui-scale-value" style="font-size:.82rem;color:var(--text-primary);min-width:35px;text-align:right">100%</span>
+                  </div>
+                </div>
+                <div>
+                  <label style="font-size:.78rem;color:var(--text-muted);display:block;margin-bottom:6px" data-en="Accent Color" data-ru="Акцентный цвет">Accent Color</label>
+                  <div style="display:flex;gap:8px" id="accent-color-picker">
+                    <div onclick="setAccentColor('#0ea5e9')" style="width:28px;height:28px;border-radius:50%;background:#0ea5e9;cursor:pointer;border:2px solid transparent" class="accent-dot active"></div>
+                    <div onclick="setAccentColor('#8b5cf6')" style="width:28px;height:28px;border-radius:50%;background:#8b5cf6;cursor:pointer;border:2px solid transparent" class="accent-dot"></div>
+                    <div onclick="setAccentColor('#10b981')" style="width:28px;height:28px;border-radius:50%;background:#10b981;cursor:pointer;border:2px solid transparent" class="accent-dot"></div>
+                    <div onclick="setAccentColor('#f59e0b')" style="width:28px;height:28px;border-radius:50%;background:#f59e0b;cursor:pointer;border:2px solid transparent" class="accent-dot"></div>
+                    <div onclick="setAccentColor('#ef4444')" style="width:28px;height:28px;border-radius:50%;background:#ef4444;cursor:pointer;border:2px solid transparent" class="accent-dot"></div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
