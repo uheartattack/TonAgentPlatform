@@ -283,11 +283,16 @@ class AgenticWalletService {
       // Generate V4R2 wallet as root (self-custody, no external redirect)
       const { generateAgentWallet } = require('./TonConnect');
       const newWallet = await generateAgentWallet();
+      // Safely convert address to string (Address object may be frozen)
+      let walletAddress = '';
+      try {
+        walletAddress = typeof newWallet.address === 'string' ? newWallet.address : String(newWallet.address);
+      } catch { walletAddress = newWallet.address + ''; }
       const record = await this.createWalletRecord(userId, {
         walletType: 'root',
-        address: newWallet.address,
+        address: walletAddress,
         label: 'Root Wallet (V4R2)',
-        operatorKey: newWallet.publicKey?.toString('hex'),
+        operatorKey: newWallet.publicKey ? Buffer.from(newWallet.publicKey).toString('hex') : undefined,
       });
 
       // Store mnemonic in user_settings (encrypted)
@@ -299,6 +304,7 @@ class AgenticWalletService {
 
       return { success: true, wallet: record };
     } catch (e: any) {
+      console.error('[AgenticWallet] setupRoot error:', e.message, '\n', e.stack?.slice(0, 500));
       return { success: false, error: e.message };
     }
   }

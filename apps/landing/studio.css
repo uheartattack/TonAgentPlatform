@@ -4256,33 +4256,38 @@ select.form-input option {
   inset: 0;
   z-index: 5000;
   pointer-events: none;
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  opacity: 0;
+  transition: opacity 0.4s ease;
 }
-.tour-overlay.active { pointer-events: auto; }
+.tour-overlay.active { pointer-events: auto; opacity: 1; }
 .tour-spotlight {
   position: fixed;
-  box-shadow: 0 0 0 9999px rgba(0,0,0,0.75);
+  box-shadow: 0 0 0 9999px rgba(0,0,0,0.7), 0 0 30px rgba(14,165,233,0.4);
   border-radius: var(--radius-md);
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 5001;
   pointer-events: none;
-  border: 2px solid rgba(14,165,233,0.6);
-  box-shadow: 0 0 20px rgba(14,165,233,0.3);
+  border: 2px solid rgba(14,165,233,0.5);
 }
 .tour-tooltip {
   position: fixed;
   z-index: 5002;
-  background: #0c1120;
+  background: rgba(12,17,32,0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(14,165,233,0.2);
-  border-radius: 30px;
-  padding: 20px;
+  border-radius: 16px;
+  padding: 22px;
   max-width: 340px;
-  box-shadow: 0 16px 48px rgba(0,0,0,0.6);
-  animation: tooltipIn 0.3s ease;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5), 0 0 20px rgba(14,165,233,0.1);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   pointer-events: auto;
 }
 @keyframes tooltipIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(12px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 .tour-tooltip-content h4 {
   font-size: 1rem;
@@ -5088,8 +5093,13 @@ select.form-input option {
   background: rgba(14,165,233,0.12) !important;
   border-color: rgba(14,165,233,0.4) !important;
   box-shadow: 0 0 20px rgba(14,165,233,0.25), inset 0 0 0 1px rgba(14,165,233,0.15) !important;
-  border-radius: 30px;
+  border-radius: 12px;
   transition: all 0.3s ease !important;
+  animation: tourPulse 2s ease-in-out infinite !important;
+}
+@keyframes tourPulse {
+  0%, 100% { box-shadow: 0 0 20px rgba(14,165,233,0.25), inset 0 0 0 1px rgba(14,165,233,0.15); }
+  50% { box-shadow: 0 0 30px rgba(14,165,233,0.4), inset 0 0 0 2px rgba(14,165,233,0.25); }
 }
 .tour-step-badge {
   display: inline-flex; align-items: center; justify-content: center;
@@ -7705,3 +7715,10 @@ input[type="number"], textarea, select, .form-control,
 
 /* Remove old blue ::after left bar from nav-item */
 .nav-item::after { display: none !important; }
+
+/* Guide details arrow rotation */
+#page-guide details[open] > summary svg:first-child { transform: rotate(180deg); }
+#page-guide details > summary::-webkit-details-marker { display: none; }
+#page-guide details > summary::marker { display: none; content: ""; }
+#page-guide details > summary:hover { background: rgba(14,165,233,0.04); }
+

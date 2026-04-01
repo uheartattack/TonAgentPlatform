@@ -3830,13 +3830,48 @@ export function startApiServer() {
   // Setup root wallet
   app.post('/api/agentic-wallets/setup-root', requireAuth, async (req: Request, res: Response) => {
     try {
+      const userId = (req as any).userId as number;
       const { getAgenticWalletService } = await import('./services/agentic-wallet');
-      const result = await getAgenticWalletService().setupRootWallet(
-        (req as any).userId,
-        { address: req.body?.address, mnemonic: req.body?.mnemonic }
-      );
-      res.json({ ok: result.success, ...result });
+      const svc = getAgenticWalletService();
+
+      // Check if root already exists
+      const existing = await svc.getRootWallet(userId);
+      if (existing) { res.json({ ok: false, error: 'Root wallet already exists' }); return; }
+
+      if (req.body?.address) {
+        // Import by address
+        const result = await svc.setupRootWallet(userId, { address: req.body.address });
+        res.json({ ok: result.success, ...result });
+      } else if (req.body?.mnemonic) {
+        // Import by mnemonic
+        const result = await svc.setupRootWallet(userId, { mnemonic: req.body.mnemonic });
+        res.json({ ok: result.success, ...result });
+      } else {
+        // Generate new wallet — use child_process to avoid ts-node frozen Address issue
+        const { execSync } = require('child_process');
+        const walletJson = execSync(
+          `node -e "const {mnemonicNew,mnemonicToWalletKey}=require('@ton/crypto');const {WalletContractV4}=require('@ton/ton');(async()=>{const m=await mnemonicNew(24);const k=await mnemonicToWalletKey(m);const w=WalletContractV4.create({workchain:0,publicKey:k.publicKey});console.log(JSON.stringify({address:w.address.toString({urlSafe:true,bounceable:false}),mnemonic:m.join(' '),pubKey:Buffer.from(k.publicKey).toString('hex')}));})()"`,
+          { cwd: '/app/apps/builder-bot', timeout: 15000, encoding: 'utf8' }
+        ).trim();
+        const w = JSON.parse(walletJson);
+
+        await pool.query(
+          `INSERT INTO builder_bot.agentic_wallets (user_id, wallet_type, address, label, operator_key, metadata)
+           VALUES ($1, 'root', $2, 'Root Wallet (V4R2)', $3, '{}')
+           ON CONFLICT (address) DO NOTHING`,
+          [userId, w.address, w.pubKey]
+        );
+        const { encryptMnemonic } = await import('./services/agentic-wallet');
+        await pool.query(
+          `INSERT INTO builder_bot.user_settings (user_id, key, value) VALUES ($1, 'root_wallet_mnemonic', $2)
+           ON CONFLICT ON CONSTRAINT user_settings_unique DO UPDATE SET value = $2, updated_at = NOW()`,
+          [userId, encryptMnemonic(w.mnemonic)]
+        );
+
+        res.json({ ok: true, success: true, wallet: { address: w.address, walletType: 'root', label: 'Root Wallet (V4R2)' } });
+      }
     } catch (e: any) {
+      console.error('[API setup-root]', e.message, e.stack?.slice(0, 200));
       res.json({ ok: false, error: e.message });
     }
   });
