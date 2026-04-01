@@ -988,22 +988,37 @@ export function startApiServer() {
     try {
       const userId = (req as any).userId as number;
       const session = (req as any).session;
-      // "My Agents" shows own agents + shared with me (NOT all for admins — they use admin panel)
-      const ownRes = await pool.query(
-        `SELECT id, user_id as "userId", name, description, code, trigger_type as "triggerType",
-                trigger_config as "triggerConfig", is_active as "isActive",
-                created_at as "createdAt", updated_at as "updatedAt"
-         FROM builder_bot.agents WHERE user_id = $1
-         UNION
-         SELECT a.id, a.user_id as "userId", a.name, a.description, a.code, a.trigger_type as "triggerType",
-                a.trigger_config as "triggerConfig", a.is_active as "isActive",
-                a.created_at as "createdAt", a.updated_at as "updatedAt"
-         FROM builder_bot.agents a
-         JOIN builder_bot.shared_agents sa ON sa.agent_id = a.id
-         WHERE sa.shared_with_user_id = $1
-         ORDER BY id DESC`,
-        [userId]
-      );
+      // "My Agents" shows own + shared + (for admins) other admin agents
+      const isAdmin = isPlatformAdmin(userId) || isPlatformAdminByUsername(session?.username || '');
+      const ownRes = isAdmin
+        ? await pool.query(
+            `SELECT DISTINCT ON (a.id) a.id, a.user_id as "userId", a.name, a.description, a.code,
+                    a.trigger_type as "triggerType", a.trigger_config as "triggerConfig",
+                    a.is_active as "isActive", a.created_at as "createdAt", a.updated_at as "updatedAt"
+             FROM builder_bot.agents a
+             LEFT JOIN builder_bot.platform_admins pa ON TRUE
+             LEFT JOIN builder_bot.web_sessions ws ON ws.username = pa.username AND ws.expires_at > NOW()
+             WHERE a.user_id = $1
+                OR a.user_id IN (SELECT DISTINCT ws2.user_id FROM builder_bot.web_sessions ws2 JOIN builder_bot.platform_admins pa2 ON ws2.username = pa2.username WHERE ws2.expires_at > NOW())
+                OR a.id IN (SELECT agent_id FROM builder_bot.shared_agents WHERE shared_with_user_id = $1)
+             ORDER BY a.id DESC`,
+            [userId]
+          )
+        : await pool.query(
+            `SELECT id, user_id as "userId", name, description, code, trigger_type as "triggerType",
+                    trigger_config as "triggerConfig", is_active as "isActive",
+                    created_at as "createdAt", updated_at as "updatedAt"
+             FROM builder_bot.agents WHERE user_id = $1
+             UNION
+             SELECT a.id, a.user_id as "userId", a.name, a.description, a.code, a.trigger_type as "triggerType",
+                    a.trigger_config as "triggerConfig", a.is_active as "isActive",
+                    a.created_at as "createdAt", a.updated_at as "updatedAt"
+             FROM builder_bot.agents a
+             JOIN builder_bot.shared_agents sa ON sa.agent_id = a.id
+             WHERE sa.shared_with_user_id = $1
+             ORDER BY id DESC`,
+            [userId]
+          );
       let agents: any[] = ownRes.rows;
       // Enrich with role/xp/level
       try {
