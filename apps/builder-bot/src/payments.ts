@@ -137,6 +137,50 @@ export const PLANS: Record<string, Plan> = {
 export const PLATFORM_WALLET = process.env.PLATFORM_WALLET_ADDRESS || 'UQCfRrLVr7MeGbVw4x1XgZ42ZUS7tdf2sEYSyRvmoEB4y_dh';
 const OWNER_ID = parseInt(process.env.OWNER_ID || '0');
 
+// ── Platform Admins (loaded from DB, cached in memory) ─────
+let _platformAdminIds = new Set<number>();
+let _platformAdminUsernames = new Set<string>();
+let _adminsLoadedAt = 0;
+
+export function isPlatformAdmin(userId: number): boolean {
+  if (userId === OWNER_ID && OWNER_ID > 0) return true;
+  return _platformAdminIds.has(userId);
+}
+
+export function isPlatformAdminByUsername(username: string): boolean {
+  return _platformAdminUsernames.has(username.toLowerCase().replace(/^@/, ''));
+}
+
+export async function loadPlatformAdmins(): Promise<void> {
+  if (!_pool) return;
+  try {
+    const r = await _pool.query(`SELECT telegram_id, username, alt_ids FROM builder_bot.platform_admins`);
+    const idSet = new Set<number>();
+    const nameSet = new Set<string>();
+    for (const row of r.rows) {
+      idSet.add(Number(row.telegram_id));
+      if (row.username) nameSet.add(row.username.toLowerCase());
+      // Also add alternative IDs (for users with changing TG IDs)
+      if (Array.isArray(row.alt_ids)) {
+        for (const aid of row.alt_ids) idSet.add(Number(aid));
+      }
+    }
+    _platformAdminIds = idSet;
+    _platformAdminUsernames = nameSet;
+    _adminsLoadedAt = Date.now();
+    if (idSet.size > 0) console.log(`[Payments] Loaded ${r.rows.length} platform admins (${idSet.size} IDs)`);
+  } catch (e: any) {
+    console.error('[Payments] Failed to load platform admins:', e.message?.slice(0, 80));
+  }
+}
+
+// Refresh admins every 10 minutes
+function _ensureAdminsFresh(): void {
+  if (Date.now() - _adminsLoadedAt > 10 * 60_000) {
+    loadPlatformAdmins().catch(() => {});
+  }
+}
+
 // ── Интерфейсы ─────────────────────────────────────────────
 export interface UserSubscription {
   userId: number;
@@ -199,6 +243,8 @@ export async function initPayments(pool: Pool): Promise<void> {
     `);
     // Load recent tx hashes (last 32 days) into in-memory cache to survive restarts
     await loadUsedTxHashesFromDB();
+    // Load platform admins
+    await loadPlatformAdmins();
   } catch (err) {
     console.error('[Payments] CRITICAL: DB migration failed:', err);
     throw err;
@@ -228,8 +274,9 @@ async function persistTxHash(txHash: string): Promise<void> {
 
 // ── Получить подписку пользователя ─────────────────────────
 export async function getUserSubscription(userId: number): Promise<UserSubscription> {
-  // Owner всегда Unlimited
-  if (userId === OWNER_ID) {
+  // Platform admins always get Unlimited
+  _ensureAdminsFresh();
+  if (isPlatformAdmin(userId)) {
     return {
       userId,
       planId: 'unlimited',
@@ -425,8 +472,8 @@ export async function confirmPayment(
   txHash: string
 ): Promise<{ success: boolean; plan?: Plan; expiresAt?: Date; error?: string }> {
   if (usedTxHashes.has(txHash)) return { success: false, error: 'Transaction already used' };
-  usedTxHashes.set(txHash, true); // Mark immediately to prevent concurrent double-spend
-  void persistTxHash(txHash);
+  // Mark in-memory immediately (Node.js is single-threaded, so this is safe for same-process concurrency)
+  usedTxHashes.set(txHash, true);
   const pending = pendingPayments.get(userId);
   if (!pending) return { success: false, error: 'Нет ожидающего платежа' };
   if (pending.expiresAt < new Date()) {
@@ -461,6 +508,11 @@ export async function confirmPayment(
         VALUES($1,$2,$3,true)
         ON CONFLICT(user_id) DO UPDATE SET plan_id=$2, expires_at=$3, is_active=true, updated_at=NOW()
       `, [userId, pending.planId, expiresAt]);
+      // Persist tx hash atomically within the same transaction to prevent double-spend on crash/restart
+      await client.query(
+        `INSERT INTO builder_bot.used_tx_hashes(tx_hash) VALUES($1) ON CONFLICT DO NOTHING`,
+        [txHash]
+      );
       await client.query(`
         UPDATE builder_bot.payments SET status='confirmed', tx_hash=$1, confirmed_at=NOW()
         WHERE id = (SELECT id FROM builder_bot.payments WHERE user_id=$2 AND status='pending' ORDER BY created_at DESC LIMIT 1)
@@ -496,11 +548,11 @@ export function updateSubscriptionCache(userId: number, planId: string, expiresA
 // ── Отформатировать статус подписки ────────────────────────
 export function formatSubscription(sub: UserSubscription): string {
   const plan = PLANS[sub.planId] || PLANS.free;
-  const isOwner = sub.userId === OWNER_ID;
+  const isAdmin = isPlatformAdmin(sub.userId);
 
   let status = `${plan.icon} *${plan.name}*`;
-  if (isOwner) {
-    status += ' _(владелец — бесплатно)_';
+  if (isAdmin) {
+    status += ' _(админ — бесплатно)_';
   } else if (sub.expiresAt) {
     const daysLeft = Math.ceil((sub.expiresAt.getTime() - Date.now()) / 86400000);
     status += daysLeft > 0

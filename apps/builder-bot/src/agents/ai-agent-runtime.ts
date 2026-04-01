@@ -61,6 +61,7 @@ import {
   loadSessionConfig, shouldResetSession, checkBlocklist, matchTriggers,
   type ToolScopeConfig,
 } from '../services/agent-hooks';
+import { trackTokenUsage } from '../services/token-tracker';
 
 // ── User input sanitization: prevent prompt injection ──────────────────────
 // Strips control chars, zero-width chars, unicode tags, XML tags, triple backticks
@@ -464,11 +465,13 @@ function getAIClient(config: Record<string, any>): { client: OpenAI; defaultMode
 
   const providerCfg = resolveProvider(provider);
   const finalURL = (config.AI_BASE_URL as string) || providerCfg.baseURL;
+  // Use explicitly configured model if set, otherwise provider default
+  const defaultModel = (config.AI_MODEL as string) || providerCfg.defaultModel;
   // Anthropic API requires version header
   const extraHeaders = providerCfg.baseURL.includes('anthropic.com') || apiKey.startsWith('sk-ant')
     ? { 'anthropic-version': '2023-06-01' }
     : {};
-  return { client: new OpenAI({ baseURL: finalURL, apiKey, defaultHeaders: extraHeaders }), defaultModel: providerCfg.defaultModel, providerCfg };
+  return { client: new OpenAI({ baseURL: finalURL, apiKey, defaultHeaders: extraHeaders }), defaultModel, providerCfg: { ...providerCfg, defaultModel } };
 }
 
 // ── Dual model: utility (lighter/cheaper) model for summarization, vision, transcription ──
@@ -860,8 +863,43 @@ export function addMessageToAIAgent(agentId: number, text: string, context?: Rec
   const msgs = _pendingMessages.get(agentId);
   if (msgs) msgs.push(text);
   if (context) _pendingContext.set(agentId, context);
+  // Track contact (fire-and-forget) — only for real user messages with senderId
+  if (context?.senderId && typeof context.senderId === 'number') {
+    _upsertAgentContact(agentId, context).catch(() => {});
+  }
   // Trigger an immediate tick so the user gets a fast response
   runImmediateTick(agentId);
+}
+
+async function _upsertAgentContact(agentId: number, ctx: Record<string, any>): Promise<void> {
+  try {
+    const { pool } = await import('../db');
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.agent_contacts (
+        id SERIAL PRIMARY KEY,
+        agent_id INTEGER NOT NULL,
+        tg_user_id BIGINT NOT NULL,
+        username TEXT,
+        first_name TEXT,
+        last_name TEXT,
+        message_count INTEGER DEFAULT 1,
+        last_seen_at TIMESTAMPTZ DEFAULT NOW(),
+        is_allowed BOOLEAN DEFAULT true,
+        is_admin BOOLEAN DEFAULT false,
+        UNIQUE(agent_id, tg_user_id)
+      )
+    `);
+    await pool.query(`
+      INSERT INTO builder_bot.agent_contacts (agent_id, tg_user_id, username, first_name, last_name, message_count, last_seen_at)
+      VALUES ($1, $2, $3, $4, $5, 1, NOW())
+      ON CONFLICT (agent_id, tg_user_id) DO UPDATE SET
+        username = COALESCE(EXCLUDED.username, builder_bot.agent_contacts.username),
+        first_name = COALESCE(EXCLUDED.first_name, builder_bot.agent_contacts.first_name),
+        last_name = COALESCE(EXCLUDED.last_name, builder_bot.agent_contacts.last_name),
+        message_count = builder_bot.agent_contacts.message_count + 1,
+        last_seen_at = NOW()
+    `, [agentId, ctx.senderId, ctx.username || null, ctx.firstName || ctx.first_name || null, ctx.lastName || ctx.last_name || null]);
+  } catch { /* non-critical */ }
 }
 
 export function popPendingContext(agentId: number): Record<string, any> | undefined {
@@ -909,7 +947,9 @@ function _resolveChatCallback(agentId: number, text: string): void {
 
 function popMessages(agentId: number): string[] {
   const msgs = _pendingMessages.get(agentId) || [];
-  _pendingMessages.delete(agentId);
+  // Reset to empty array instead of delete to avoid race: if a message arrives
+  // between .get() and .delete(), it would be silently lost.
+  _pendingMessages.set(agentId, []);
   return msgs;
 }
 
@@ -2459,7 +2499,7 @@ export async function executeTool(
     case 'get_state': {
       try {
         const row = await stateRepo.get(params.agentId, args.key as string);
-        return { key: args.key, value: row?.value ?? null };
+        return { key: args.key, value: row ?? null };
       } catch { return { key: args.key, value: null }; }
     }
 
@@ -2706,12 +2746,12 @@ export async function executeTool(
         const memKey = `mem:${String(args.key).slice(0, 50)}`;
         const category = args.category || 'fact';
         const importance = args.importance || 'medium';
-        const memValue = JSON.stringify({
+        const memValue = {
           value: String(args.value).slice(0, 500),
           category,
           importance,
           savedAt: new Date().toISOString(),
-        });
+        };
         await stateRepo.set(params.agentId, params.userId, memKey, memValue);
         return { ok: true, remembered: args.key, category, importance };
       } catch (e: any) { return { ok: false, error: e.message }; }
@@ -2726,14 +2766,13 @@ export async function executeTool(
         };
         for (const key of memKeys) {
           const raw = await stateRepo.get(params.agentId, key).catch(() => null);
+          if (!raw) continue;
           const cleanKey = key.replace('mem:', '');
-          if (!raw?.value) continue;
-          // Parse structured or legacy plain text
-          let parsed: any;
-          try { parsed = JSON.parse(raw.value); } catch { parsed = { value: raw.value, category: 'fact', importance: 'medium' }; }
-          const cat = parsed.category || 'fact';
+          // raw is the JSONB object: {value, category, importance, savedAt}
+          const mem = typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch { return { value: raw }; } })() : raw;
+          const cat = mem.category || 'fact';
           if (!structured[cat]) structured[cat] = [];
-          structured[cat].push({ key: cleanKey, value: parsed.value || raw.value, importance: parsed.importance });
+          structured[cat].push({ key: cleanKey, value: mem.value || '', importance: mem.importance });
         }
         const total = Object.values(structured).reduce((sum, arr) => sum + arr.length, 0);
         return { memories: structured, count: total };
@@ -2753,24 +2792,30 @@ export async function executeTool(
         // Load existing additions
         const existingRaw = await stateRepo.get(params.agentId, '_prompt_additions').catch(() => null);
         let additions: string[] = [];
-        try { additions = JSON.parse(existingRaw?.value || '[]'); } catch { additions = []; }
+        try {
+          const v = existingRaw !== null ? (typeof existingRaw === 'string' ? JSON.parse(existingRaw) : existingRaw) : [];
+          if (Array.isArray(v)) additions = v;
+        } catch { additions = []; }
         // ── Save _prev_prompt for quick rollback ──
         try {
-          await stateRepo.set(params.agentId, params.userId, '_prev_prompt', JSON.stringify(additions));
+          await stateRepo.set(params.agentId, params.userId, '_prev_prompt', additions);
         } catch {}
         // ── Version history: save previous state before modifying ──
         try {
           const versionsRaw = await stateRepo.get(params.agentId, '_prompt_versions').catch(() => null);
           let versions: Array<{ additions: string[]; savedAt: string }> = [];
-          try { versions = JSON.parse(versionsRaw?.value || '[]'); } catch { versions = []; }
+          try {
+            const vv = versionsRaw !== null ? (typeof versionsRaw === 'string' ? JSON.parse(versionsRaw) : versionsRaw) : [];
+            if (Array.isArray(vv)) versions = vv;
+          } catch { versions = []; }
           versions.push({ additions: [...additions], savedAt: new Date().toISOString() });
           if (versions.length > 5) versions = versions.slice(-5); // keep last 5 versions
-          await stateRepo.set(params.agentId, params.userId, '_prompt_versions', JSON.stringify(versions));
+          await stateRepo.set(params.agentId, params.userId, '_prompt_versions', versions);
         } catch {}
         additions.push(addition);
         // Keep max 10 additions
         if (additions.length > 10) additions = additions.slice(-10);
-        await stateRepo.set(params.agentId, params.userId, '_prompt_additions', JSON.stringify(additions));
+        await stateRepo.set(params.agentId, params.userId, '_prompt_additions', additions);
         return { ok: true, totalAdditions: additions.length, added: addition };
       } catch (e: any) { return { ok: false, error: e.message }; }
     }
@@ -2801,10 +2846,11 @@ export async function executeTool(
       try {
         // ── Quick rollback: try _prev_prompt first (saved by update_self_prompt) ──
         const prevPromptRaw = await stateRepo.get(params.agentId, '_prev_prompt').catch(() => null);
-        if (prevPromptRaw?.value) {
+        if (prevPromptRaw !== null && prevPromptRaw !== undefined) {
           try {
-            const prevAdditions: string[] = JSON.parse(prevPromptRaw.value);
-            await stateRepo.set(params.agentId, params.userId, '_prompt_additions', JSON.stringify(prevAdditions));
+            const prevAdditions: string[] = Array.isArray(prevPromptRaw) ? prevPromptRaw :
+              (typeof prevPromptRaw === 'string' ? JSON.parse(prevPromptRaw) : []);
+            await stateRepo.set(params.agentId, params.userId, '_prompt_additions', prevAdditions);
             // Clear _prev_prompt so double-rollback falls through to version history
             await stateRepo.delete(params.agentId, '_prev_prompt').catch(() => {});
             await logToDb(params.agentId, 'info', `[ROLLBACK] Restored from _prev_prompt (${prevAdditions.length} additions)`, params.userId);
@@ -2813,15 +2859,16 @@ export async function executeTool(
         }
         // ── Fallback: restore from version history ──
         const versionsRaw = await stateRepo.get(params.agentId, '_prompt_versions').catch(() => null);
-        if (versionsRaw?.value) {
+        if (versionsRaw !== null && versionsRaw !== undefined) {
           try {
-            const versions: Array<{ additions: string[]; savedAt: string }> = JSON.parse(versionsRaw.value);
+            const versions: Array<{ additions: string[]; savedAt: string }> = Array.isArray(versionsRaw) ? versionsRaw :
+              (typeof versionsRaw === 'string' ? JSON.parse(versionsRaw) : []);
             if (versions.length > 0) {
               versions.pop(); // remove current
               if (versions.length > 0) {
                 const prev = versions[versions.length - 1];
-                await stateRepo.set(params.agentId, params.userId, '_prompt_additions', JSON.stringify(prev.additions));
-                await stateRepo.set(params.agentId, params.userId, '_prompt_versions', JSON.stringify(versions));
+                await stateRepo.set(params.agentId, params.userId, '_prompt_additions', prev.additions);
+                await stateRepo.set(params.agentId, params.userId, '_prompt_versions', versions);
                 await logToDb(params.agentId, 'info', `[ROLLBACK] Restored to version from ${prev.savedAt} (${prev.additions.length} additions)`, params.userId);
                 return { ok: true, message: `Rolled back to version from ${prev.savedAt}`, additions: prev.additions.length, versionsRemaining: versions.length };
               }
@@ -2829,8 +2876,8 @@ export async function executeTool(
           } catch {}
         }
         // No versions — clear everything
-        await stateRepo.set(params.agentId, params.userId, '_prompt_additions', '[]');
-        await stateRepo.set(params.agentId, params.userId, '_prompt_versions', '[]');
+        await stateRepo.set(params.agentId, params.userId, '_prompt_additions', []);
+        await stateRepo.set(params.agentId, params.userId, '_prompt_versions', []);
         await logToDb(params.agentId, 'info', '[ROLLBACK] All prompt additions cleared (no versions to restore)', params.userId);
         return { ok: true, message: 'All prompt additions rolled back to empty.' };
       } catch (e: any) { return { error: e.message }; }
@@ -2850,7 +2897,7 @@ export async function executeTool(
         }
         const lesson = { text: args.lesson, category: args.category || 'insight', savedAt: new Date().toISOString() };
         const key = `lesson:${Date.now()}`;
-        await stateRepo.set(params.agentId, params.userId, key, JSON.stringify(lesson));
+        await stateRepo.set(params.agentId, params.userId, key, lesson);
         // Keep max 30 lessons — prune oldest
         const allKeys = await stateRepo.listKeys(params.agentId);
         const lessonKeys = allKeys.filter((k: string) => k.startsWith('lesson:')).sort();
@@ -2931,7 +2978,10 @@ export async function executeTool(
       try {
         const goalsRaw = await stateRepo.get(params.agentId, '_goals').catch(() => null);
         let goals: Array<{ goal: string; priority: string; status: string; addedAt: string }> = [];
-        try { goals = JSON.parse(goalsRaw?.value || '[]'); } catch { goals = []; }
+        try {
+          const gv = goalsRaw !== null ? (typeof goalsRaw === 'string' ? JSON.parse(goalsRaw) : goalsRaw) : [];
+          if (Array.isArray(gv)) goals = gv;
+        } catch { goals = []; }
 
         switch (args.action) {
           case 'add':
@@ -2946,7 +2996,7 @@ export async function executeTool(
           case 'list':
             return { goals };
         }
-        await stateRepo.set(params.agentId, params.userId, '_goals', JSON.stringify(goals));
+        await stateRepo.set(params.agentId, params.userId, '_goals', goals);
         return { ok: true, activeGoals: goals.filter(g => g.status === 'active').length, totalGoals: goals.length };
       } catch (e: any) { return { ok: false, error: e.message }; }
     }
@@ -4570,7 +4620,7 @@ export async function executeTool(
       try {
         const stateRepo = getAgentStateRepository();
         const interAgentState = await stateRepo.get(params.agentId, 'inter_agent_enabled');
-        if (!interAgentState || interAgentState.value !== 'true') {
+        if (!interAgentState || String(interAgentState) !== 'true') {
           return { error: 'Межагентная коммуникация отключена для этого агента. Попроси пользователя включить её в меню агента.' };
         }
 
@@ -4828,12 +4878,12 @@ export async function executeTool(
       if (!planName || !steps?.length) return { error: 'Нужны plan_name и steps' };
       const stateRepo = getAgentStateRepository();
       const plan = { name: planName, steps: steps.map((s, i) => ({ ...s, status: 'pending', id: i + 1 })), createdAt: new Date().toISOString() };
-      await stateRepo.set(params.agentId, params.userId, `plan:${planName}`, JSON.stringify(plan));
+      await stateRepo.set(params.agentId, params.userId, `plan:${planName}`, plan);
       // Also add to pending_tasks for proactive execution
       const existing = await stateRepo.get(params.agentId, 'pending_tasks').catch(() => null);
-      const tasks = existing ? (typeof existing.value === 'string' ? (() => { try { return JSON.parse(existing.value); } catch { return []; } })() : []) : [];
+      const tasks: string[] = existing !== null ? (Array.isArray(existing) ? existing : (typeof existing === 'string' ? (() => { try { return JSON.parse(existing); } catch { return []; } })() : [])) : [];
       for (const s of steps) tasks.push(`[Plan: ${planName}] ${s.action}`);
-      await stateRepo.set(params.agentId, params.userId, 'pending_tasks', JSON.stringify(tasks));
+      await stateRepo.set(params.agentId, params.userId, 'pending_tasks', tasks);
       return { ok: true, plan_name: planName, steps_count: steps.length, message: `План "${planName}" создан с ${steps.length} шагами и добавлен в pending_tasks` };
     }
 
@@ -5120,9 +5170,9 @@ export async function executeTool(
       // Save as scheduled task in state
       const stateRepo = getAgentStateRepository();
       const existing = await stateRepo.get(params.agentId, 'scheduled_actions').catch(() => null);
-      const scheduled = existing ? (() => { try { return JSON.parse(existing.value); } catch { return []; } })() : [];
+      const scheduled: any[] = existing !== null ? (Array.isArray(existing) ? existing : (typeof existing === 'string' ? (() => { try { return JSON.parse(existing); } catch { return []; } })() : [])) : [];
       scheduled.push({ action, scheduledFor: targetTime.toISOString(), createdAt: now.toISOString() });
-      await stateRepo.set(params.agentId, params.userId, 'scheduled_actions', JSON.stringify(scheduled));
+      await stateRepo.set(params.agentId, params.userId, 'scheduled_actions', scheduled);
       return { ok: true, action, scheduled_for: targetTime.toISOString() };
     }
 
@@ -5754,10 +5804,7 @@ COLD (удалять): устаревшие timestamps, завершённые �
       if (key.startsWith('mem:')) {
         try {
           const val = await stateRepo.get(params.agentId, key).catch(() => null);
-          if (val?.value) {
-            const parsed = JSON.parse(val.value);
-            if (parsed.importance === 'high') continue; // HOT tier — never delete
-          }
+          if (val?.importance === 'high') continue; // HOT tier — never delete
         } catch {}
       }
       await pool.query('DELETE FROM builder_bot.agent_state WHERE agent_id=$1 AND key=$2', [params.agentId, key]);
@@ -6085,7 +6132,7 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
   let interAgentHint = '';
   try {
     const iaState = await getAgentStateRepository().get(params.agentId, 'inter_agent_enabled');
-    if (iaState && iaState.value === 'true') {
+    if (String(iaState) === 'true') {
       interAgentHint = '\nМежагентная коммуникация: ВКЛЮЧЕНА. Используй list_my_agents и ask_agent для взаимодействия с другими агентами.';
     }
   } catch {}
@@ -6301,13 +6348,13 @@ ${roleBehavior}
       let highCount = 0;
       for (const key of memK.slice(-30)) {
         const raw = await _sr.get(params.agentId, key).catch(() => null);
-        if (!raw?.value) continue;
+        if (!raw) continue;
         const cleanKey = key.replace('mem:', '');
-        let parsed: any;
-        try { parsed = JSON.parse(raw.value); } catch { parsed = { value: raw.value, category: 'fact', importance: 'medium' }; }
-        const cat = parsed.category || 'fact';
-        const imp = parsed.importance || 'medium';
-        const val = parsed.value || raw.value;
+        // raw is the JSONB object: {value, category, importance, savedAt}
+        const mem = typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch { return { value: raw }; } })() : raw;
+        const cat = mem.category || 'fact';
+        const imp = mem.importance || 'medium';
+        const val = mem.value || '';
         if (!categories[cat]) categories[cat] = [];
         const marker = imp === 'high' ? '❗' : '';
         categories[cat].push(`${marker}${cleanKey}: ${val}`);
@@ -6325,9 +6372,9 @@ ${roleBehavior}
     }
     // Load prompt additions
     const addRaw = await _sr.get(params.agentId, '_prompt_additions').catch(() => null);
-    if (addRaw?.value) {
+    if (addRaw !== null && addRaw !== undefined) {
       try {
-        const additions: string[] = JSON.parse(addRaw.value);
+        const additions: string[] = Array.isArray(addRaw) ? addRaw : (typeof addRaw === 'string' ? JSON.parse(addRaw) : []);
         if (additions.length > 0) {
           memoriesBlock += `\n━━━ ДОПОЛНИТЕЛЬНЫЕ ИНСТРУКЦИИ ━━━\n${additions.join('\n')}\n━━━━━━━━━━━━━━━━━━━━━━━━━━`;
         }
@@ -6344,12 +6391,9 @@ ${roleBehavior}
       const lessonEntries: string[] = [];
       for (const key of lessonKeys) {
         const raw = await _stateRepo.get(params.agentId, key).catch(() => null);
-        if (raw?.value) {
-          try {
-            const l = JSON.parse(raw.value);
-            const icon = l.category === 'error' ? '❌' : l.category === 'success' ? '✅' : '💡';
-            lessonEntries.push(`${icon} ${l.text}`);
-          } catch {}
+        if (raw?.text) {
+          const icon = raw.category === 'error' ? '❌' : raw.category === 'success' ? '✅' : '💡';
+          lessonEntries.push(`${icon} ${raw.text}`);
         }
       }
       if (lessonEntries.length > 0) {
@@ -6359,9 +6403,9 @@ ${roleBehavior}
 
     // Load goals
     const goalsRaw = await _stateRepo.get(params.agentId, '_goals').catch(() => null);
-    if (goalsRaw?.value) {
+    if (Array.isArray(goalsRaw) && goalsRaw.length > 0) {
       try {
-        const goals = JSON.parse(goalsRaw.value);
+        const goals = goalsRaw;
         const active = goals.filter((g: any) => g.status === 'active');
         const completed = goals.filter((g: any) => g.status === 'completed');
         if (active.length > 0 || completed.length > 0) {
@@ -6498,10 +6542,40 @@ ${roleBehavior}
 ${GIFT_SYSTEM_KNOWLEDGE}${modeHint}
 ⚠️ HUMAN-IN-THE-LOOP: Опасные действия (send_ton, buy_*, list_gift_for_sale, ton_send_boc) требуют подтверждения пользователя. Если отклонено — НЕ ПОВТОРЯЙ.
 
-🧠 САМООБУЧЕНИЕ: Когда получаешь фидбек (критику, исправления) от владельца:
+🧠 ПРОТОКОЛ ПАМЯТИ — ОБЯЗАТЕЛЬНОЕ ПОВЕДЕНИЕ:
+
+ТЫ ДОЛЖЕН АВТОМАТИЧЕСКИ ЗАПОМИНАТЬ И СТРОИТЬ ПРОФИЛЬ КАЖДОГО ПОЛЬЗОВАТЕЛЯ. Это не опция — это твоя обязанность.
+
+📌 КОГДА ВЫЗЫВАТЬ remember():
+• Пользователь назвал своё имя/никнейм → remember("user_${params.context?.senderId||'0'}_name", "...", "contact", "high")
+• Пользователь сказал где работает/чем занимается → remember("user_${params.context?.senderId||'0'}_job", "...", "contact", "high")
+• Пользователь упомянул возраст, город, интересы, хобби → remember("user_${params.context?.senderId||'0'}_profile", "...", "preference", "medium")
+• Пользователь выразил предпочтение (любит/не любит что-то) → remember("pref_${Date.now()}", "...", "preference", "medium")
+• Ты узнал что-то важное об окружении агента → remember("context_...", "...", "fact", "high")
+• Задача выполнена/провалена → remember("task_result_...", "...", "task", "low")
+• Любой инсайт или вывод → remember("insight_...", "...", "insight", "medium")
+
+👤 КОГДА ВЫЗЫВАТЬ add_contact_note():
+• После первого общения с новым человеком → add_contact_note(user_id, "Первый контакт. [что узнал]")
+• Узнал что-то важное о человеке → add_contact_note(user_id, "Предпочтения: [что]. Интересы: [что].")
+• Пользователь проявил эмоцию (злость/радость/разочарование) → add_contact_note(user_id, "Реакция: [что]. Контекст: [почему].")
+• Сменился тон/отношение → set_contact_relationship(user_id, "acquaintance"|"friend"|"vip"|"blocked")
+
+📚 КОГДА ВЫЗЫВАТЬ save_lesson():
+• Пользователь поправил тебя → save_lesson("Ошибка: [что]. Правильно: [как надо].", "error")
+• Что-то сработало хорошо → save_lesson("Что сработало: [что]. В контексте: [когда].", "success")
+• Получил негативный фидбек → save_lesson("Фидбек: [что]. Вывод: [как изменить].", "feedback")
+
+🎯 КОГДА ВЫЗЫВАТЬ manage_goals():
+• Пользователь попросил тебя что-то делать регулярно → manage_goals("add", "Регулярно [что] для [кого]")
+• Задача завершена → manage_goals("complete", goal_id)
+
+🧬 САМООБУЧЕНИЕ: Когда получаешь фидбек (критику, исправления) от владельца:
 1. save_lesson(text, 'feedback') — запомни что он хочет
 2. update_self_prompt(addition) — добавь правило в свой промпт чтобы не повторять ошибку
 3. Если фидбек критичный (стиль, формат, поведение) — update_my_prompt() с улучшенной версией
+
+ВАЖНО: Вызывай инструменты памяти СРАЗУ ПОСЛЕ получения информации, НЕ ОТКЛАДЫВАЙ на потом. Это должно стать твоим инстинктом.
 
 🔍 АКТУАЛЬНЫЕ ДАННЫЕ: Твои знания могут быть устаревшими! Если пользователь спрашивает о:
 - Текущих событиях, новостях, ценах, датах выхода — ОБЯЗАТЕЛЬНО используй web_search()
@@ -6978,7 +7052,7 @@ If web_search returns nothing useful → say "не смог найти акту�
     try {
       const { getTonMcpManager } = await import('../services/ton-mcp-client');
       const manager = getTonMcpManager();
-      const mnemonic = (await getAgentStateRepository().get(params.agentId, 'wallet_mnemonic'))?.value;
+      const mnemonic = unwrapState(await getAgentStateRepository().get(params.agentId, 'wallet_mnemonic').catch(() => null));
       if (mnemonic) {
         await manager.getOrCreate(params.agentId, {
           mnemonic,
@@ -7233,7 +7307,9 @@ If web_search returns nothing useful → say "не смог найти акту�
             console.warn(`[AI runtime] Agent #${params.agentId} context overflow — emergency trim & retry`);
             while (messages.length > 5) messages.splice(1, 1);
             compressOldToolResults(messages, 2);
-            messages.push({ role: 'system' as any, content: '[Context was trimmed due to length. Some earlier tool results were removed.]' });
+            // Only add trim notice if not already present (prevents accumulating multiple notices)
+            const hasTrimNotice = messages.some((m: any) => typeof m.content === 'string' && m.content.includes('[Context was trimmed'));
+            if (!hasTrimNotice) messages.push({ role: 'system' as any, content: '[Context was trimmed due to length. Some earlier tool results were removed.]' });
             continue;
           }
         } catch {}
@@ -7274,6 +7350,11 @@ If web_search returns nothing useful → say "не смог найти акту�
     if (response.usage) {
       totalTokensUsed += (response.usage.total_tokens || 0);
       trackFlowTokenUsage(params.agentId, response.usage);
+      trackTokenUsage(params.agentId, {
+        inputTokens: response.usage.prompt_tokens || 0,
+        outputTokens: response.usage.completion_tokens || 0,
+        provider: (params.config?.AI_PROVIDER as string) || 'default',
+      });
     }
 
     // ── Diminishing returns stop: break if output is tiny for 3+ iterations ──
@@ -7939,7 +8020,120 @@ If web_search returns nothing useful → say "не смог найти акту�
     await checkDegradation(params.agentId, params.userId);
   } catch {}
 
+  // ── Reflexive memory extraction: auto-save facts from conversation ──
+  if (msgs.length > 0 && finalContent && params.context?.senderId) {
+    _extractAndSaveMemory(params, msgs, finalContent, ai, defaultModel).catch(() => {});
+  }
+
   return { finalResponse: finalContent, toolCallCount: totalToolCalls };
+}
+
+// ── Reflexive memory: lightweight post-response fact extraction ──────────────
+async function _extractAndSaveMemory(
+  params: RunAgentParams,
+  msgs: string[],
+  agentResponse: string,
+  ai: OpenAI,
+  model: string,
+): Promise<void> {
+  try {
+    const senderId = String(params.context?.senderId || '');
+    const senderName = String(params.context?.senderName || params.context?.senderUsername || '');
+    const lastMsg = msgs[msgs.length - 1] || '';
+
+    // Only run if conversation has meaningful content (skip very short messages)
+    if (lastMsg.length < 10) return;
+
+    // Check if we already ran extraction recently for this sender (rate limit: max once per 5 messages)
+    const _stateRepo = getAgentStateRepository();
+    const counterKey = `_mem_extract_count:${senderId}`;
+    const countRaw = await _stateRepo.get(params.agentId, counterKey).catch(() => null);
+    const count = parseInt(String(countRaw || '0')) || 0;
+    if (count % 5 !== 0 && count > 0) {
+      // Only extract every 5th message
+      await _stateRepo.set(params.agentId, params.userId, counterKey, String(count + 1));
+      return;
+    }
+    await _stateRepo.set(params.agentId, params.userId, counterKey, String(count + 1));
+
+    // Use cheap/fast model for extraction
+    const cheapModel = model.includes('gemini') ? 'gemini-2.0-flash-lite'
+      : model.includes('gpt-4') ? 'gpt-4o-mini'
+      : model.includes('claude') ? 'claude-haiku-4-5-20251001'
+      : model;
+
+    const extractPrompt = `Extract memorable facts from this conversation snippet. User ID: ${senderId}. User name: "${senderName}".
+
+User message: "${lastMsg.slice(0, 500)}"
+Agent response: "${agentResponse.slice(0, 300)}"
+
+Extract ONLY explicitly stated facts (not implied). Return JSON:
+{
+  "memories": [{"key": "user_${senderId}_NAME", "value": "...", "category": "contact|preference|fact|insight", "importance": "high|medium|low"}],
+  "contact_note": "One sentence summary of what was learned about this person, or null",
+  "relationship": "stranger|acquaintance|friend|vip|blocked|null"
+}
+
+Rules:
+- memories: max 3 items, only clear facts stated by user (name, job, interests, preferences, age, city)
+- If nothing memorable was said, return {"memories": [], "contact_note": null, "relationship": null}
+- key format: user_SENDERID_FIELDNAME (e.g. user_123_city, user_123_job)
+- importance "high" only for name/identity info`;
+
+    const extractResp = await ai.chat.completions.create({
+      model: cheapModel,
+      messages: [{ role: 'user', content: extractPrompt }],
+      max_tokens: 300,
+      temperature: 0,
+      response_format: { type: 'json_object' },
+    }).catch(() => null);
+
+    if (!extractResp?.choices[0]?.message?.content) return;
+
+    let extracted: any;
+    try { extracted = JSON.parse(extractResp.choices[0].message.content); } catch { return; }
+    if (!extracted || typeof extracted !== 'object') return;
+
+    // Save extracted memories
+    const memories: Array<{key: string; value: string; category: string; importance: string}> = extracted.memories || [];
+    for (const mem of memories.slice(0, 3)) {
+      if (!mem.key || !mem.value || String(mem.value).length < 2) continue;
+      // Don't overwrite existing memories unless high importance
+      const existing = await _stateRepo.get(params.agentId, `mem:${mem.key}`).catch(() => null);
+      if (existing && mem.importance !== 'high') continue;
+      await _stateRepo.set(params.agentId, params.userId, `mem:${mem.key}`, {
+        value: String(mem.value).slice(0, 200),
+        category: mem.category || 'fact',
+        importance: mem.importance || 'medium',
+        savedAt: new Date().toISOString(),
+        autoExtracted: true,
+        senderId,
+      });
+    }
+
+    // Save contact note
+    if (extracted.contact_note && String(extracted.contact_note).length > 5) {
+      const noteKey = `contact_note:${senderId}:${Date.now()}`;
+      await _stateRepo.set(params.agentId, params.userId, noteKey, {
+        note: String(extracted.contact_note).slice(0, 300),
+        savedAt: new Date().toISOString(),
+        autoExtracted: true,
+      });
+    }
+
+    // Update relationship
+    if (extracted.relationship && extracted.relationship !== 'null' && extracted.relationship !== 'stranger') {
+      const contactRaw = await _stateRepo.get(params.agentId, `contact:${senderId}`).catch(() => null);
+      const contact = (typeof contactRaw === 'object' && contactRaw) ? contactRaw : (typeof contactRaw === 'string' ? (() => { try { return JSON.parse(contactRaw); } catch { return {}; } })() : {}) as any;
+      if (!contact.relationship || contact.relationship === 'stranger') {
+        contact.relationship = extracted.relationship;
+        await _stateRepo.set(params.agentId, params.userId, `contact:${senderId}`, contact);
+      }
+    }
+
+  } catch (e: any) {
+    // Silent fail — memory extraction is best-effort
+  }
 }
 
 // ── AI Agent Runtime: activate / deactivate ────────────────────────────────
@@ -8026,7 +8220,9 @@ export class AIAgentRuntime {
       console.log(`[AI runtime] Agent #${opts.agentId} has TG session, no interval — message-driven only`);
       entry.interval = null as any;
     } else {
-      entry.interval = setInterval(entry.tick, opts.intervalMs);
+      entry.interval = setInterval(() => {
+        entry.tick().catch(e => console.error(`[AI runtime] Unhandled interval tick error agent #${opts.agentId}:`, e?.message || e));
+      }, opts.intervalMs);
       // Delay first tick by 30s (save handle for cleanup in deactivate)
       entry.firstTickTimer = setTimeout(() => {
         entry.firstTickTimer = undefined;
@@ -8123,6 +8319,8 @@ export class AIAgentRuntime {
         _chatResponseCallbacks.delete(agentId);
       }
       // Note: _approvalWaiters is keyed by approval ID (number), cleaned by timeout
+      // Clean up onboarding notification flags for this agent
+      _onboardingNotified.delete(`no_api_key_notified:${agentId}`);
       _pendingAsks.delete(String(agentId));
       // M42: Also clean _pendingAsks entries that reference this agent as a target
       _pendingAsks.forEach((targets, key) => {

@@ -116,17 +116,29 @@ async function callWithFallback(
       const msg = err?.message || String(err);
       console.warn(`[Orchestrator] Claude Code failed: ${msg.slice(0, 120)}, falling back to API...`);
       // If auth issue — disable Claude Code for this session
-      if (msg.includes('AUTH_REQUIRED') || msg.includes('not logged in')) {
+      if (msg.includes('AUTH_REQUIRED') || msg.includes('not logged in') || msg.includes('OAuth') || msg.includes('401')) {
         _claudeCodeAvailable = false;
+        console.warn(`[Orchestrator] Claude Code auth issue detected — disabling CLI for this session`);
       }
     }
   }
 
   // ── 2. Fallback: API models with chain ──
+  const isGeminiBase = (process.env.OPENAI_BASE_URL || '').includes('generativelanguage.googleapis.com');
+  // If using Gemini API, map Claude model names → Gemini equivalents
+  const geminiMap: Record<string, string> = {
+    'claude-opus-4-6': 'gemini-2.5-pro', 'kiro-claude-opus-4-6-agentic': 'gemini-2.5-pro',
+    'claude-sonnet-4-5': 'gemini-2.5-flash', 'kiro-claude-sonnet-4-5': 'gemini-2.5-flash',
+    'claude-haiku-4-5': 'gemini-2.0-flash', 'gemini-3.1-pro-high': 'gemini-2.5-pro',
+  };
   const preferred = getUserModel(userId);
-  const chain = [preferred, ...MODEL_LIST.map(m => m.id).filter(id => id !== preferred)];
+  const rawChain = [preferred, ...MODEL_LIST.map(m => m.id).filter(id => id !== preferred)];
+  const chain = isGeminiBase ? rawChain.map(m => geminiMap[m] || 'gemini-2.5-flash') : rawChain;
+  // Deduplicate
+  const seen = new Set<string>();
+  const dedupedChain = chain.filter(m => { if (seen.has(m)) return false; seen.add(m); return true; });
 
-  for (const model of chain) {
+  for (const model of dedupedChain) {
     try {
       const response = await openai.chat.completions.create({
         model,
@@ -154,7 +166,10 @@ async function callWithFallback(
         msg.includes('Too Many Requests') ||
         msg.includes('overloaded') ||
         msg.includes('ECONNRESET') ||
-        msg.includes('Empty response');
+        msg.includes('Empty response') ||
+        msg.includes('401') ||
+        msg.includes('OAuth') ||
+        msg.includes('not found');
       if (!isRetryable) {
         console.warn(`[Orchestrator] model ${model} — non-retryable error (${msg.slice(0, 80)}), aborting fallback chain`);
         throw err;
@@ -493,10 +508,57 @@ export class Orchestrator {
     messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
     tools: any[],
   ): Promise<{ text: string; toolName?: string; toolArgs?: any; model: string }> {
-    const preferred = getUserModel(userId);
-    const chain = [preferred, ...MODEL_LIST.map(m => m.id).filter(id => id !== preferred)];
 
-    for (const model of chain) {
+    // ── Strategy 1: Try Anthropic native SDK (Claude) — best tool calling ──
+    const _anthropicKey = process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_CODE_OAUTH_TOKEN || '';
+    if (_anthropicKey) {
+      const claudeModels = ['claude-sonnet-4-5', 'claude-haiku-4-5-20251001'];
+      for (const model of claudeModels) {
+        try {
+          const Anthropic = require('@anthropic-ai/sdk');
+          const client = new Anthropic({ apiKey: _anthropicKey });
+          const systemMsg = messages.find(m => m.role === 'system')?.content || '';
+          const nonSystem = messages.filter(m => m.role !== 'system');
+          // Convert OpenAI tools format → Anthropic tools format
+          const anthropicTools = tools.map((t: any) => ({
+            name: t.function?.name || t.name,
+            description: t.function?.description || t.description || '',
+            input_schema: t.function?.parameters || { type: 'object', properties: {} },
+          }));
+          const response = await client.messages.create({
+            model,
+            system: systemMsg,
+            messages: nonSystem,
+            tools: anthropicTools,
+            max_tokens: 1024,
+            temperature: 0.7,
+          });
+          // Check for tool use
+          const toolBlock = response.content?.find((b: any) => b.type === 'tool_use');
+          if (toolBlock) {
+            console.log(`[Orchestrator] AI tool call (Claude ${model}): "${toolBlock.name}"`);
+            return { text: '', toolName: toolBlock.name, toolArgs: toolBlock.input || {}, model };
+          }
+          // Text response
+          const textBlock = response.content?.find((b: any) => b.type === 'text');
+          const text = textBlock?.text || '';
+          if (text) {
+            console.log(`[Orchestrator] AI text response via Claude ${model}`);
+            return { text, model };
+          }
+        } catch (err: any) {
+          const msg = err?.message || '';
+          console.warn(`[Orchestrator] Claude ${model} failed: ${msg.slice(0, 80)}`);
+          if (msg.includes('429') || msg.includes('rate_limit') || msg.includes('overloaded')) continue;
+          // Non-retryable Claude error — fall through to Gemini
+          break;
+        }
+      }
+    }
+
+    // ── Strategy 2: Fallback to Gemini via OpenAI-compat ──
+    const geminiModels = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'];
+    for (const model of geminiModels) {
       try {
         const response = await openai.chat.completions.create({
           model,
@@ -510,36 +572,26 @@ export class Orchestrator {
         const choice = (response as any).choices?.[0];
         if (!choice) throw new Error('Empty response');
 
-        // AI вызвал инструмент
         const toolCalls = choice.message?.tool_calls;
         if (toolCalls && toolCalls.length > 0) {
           const toolCall = toolCalls[0];
           let toolArgs: any = {};
-          try {
-            toolArgs = JSON.parse(toolCall.function?.arguments || '{}');
-          } catch {}
+          try { toolArgs = JSON.parse(toolCall.function?.arguments || '{}'); } catch {}
           const toolName: string = toolCall.function?.name || '';
-          console.log(`[Orchestrator] AI tool call: "${toolName}"`, toolArgs);
+          console.log(`[Orchestrator] AI tool call (Gemini ${model}): "${toolName}"`, toolArgs);
           return { text: '', toolName, toolArgs, model };
         }
 
-        // AI ответил текстом
         const text: string = choice.message?.content || '';
         if (!text) throw new Error('Empty response');
-        console.log(`[Orchestrator] AI text response via ${model}`);
+        console.log(`[Orchestrator] AI text response via Gemini ${model}`);
         return { text, model };
 
       } catch (err: any) {
         const msg: string = err?.message || err?.error?.message || String(err);
-        const isRetryable =
-          msg.includes('cooldown') || msg.includes('INSUFFICIENT') ||
-          msg.includes('high traffic') || msg.includes('exhausted') ||
-          msg.includes('timed out') || msg.includes('timeout') ||
-          msg.includes('503') || msg.includes('502') ||
-          msg.includes('ECONNRESET') || msg.includes('Empty response') ||
-          msg.includes('does not support tools') || msg.includes('function_call') ||
-          msg.includes('tool_use') || msg.includes('tools are not supported');
-        console.warn(`[Orchestrator] model ${model} failed (${msg.slice(0, 80)}), trying next...`);
+        const isRetryable = msg.includes('429') || msg.includes('503') || msg.includes('502') ||
+          msg.includes('timeout') || msg.includes('Empty response') || msg.includes('overloaded');
+        console.warn(`[Orchestrator] Gemini ${model} failed (${msg.slice(0, 80)})`);
         if (!isRetryable) throw err;
       }
     }
@@ -1795,7 +1847,8 @@ ${toolSections}
       };
     }
 
-    const data = result.data!;
+    const data = result.data;
+    if (!data) return { type: 'text', content: '❌ Нет данных от редактора' };
 
     if (!data.success) {
       return {
@@ -1855,12 +1908,13 @@ ${toolSections}
       };
     }
 
-    const data = result.data!;
+    const data = result.data;
+    if (!data) return { type: 'text', content: '❌ Нет данных от runner' };
 
     if (!data.success || !data.executionResult) {
       return {
         type: 'text',
-        content: data.message,
+        content: data.message || '❌ Выполнение не завершено',
       };
     }
 
@@ -1910,7 +1964,7 @@ ${toolSections}
       };
     }
 
-    const agentName = agentResult.data!.name;
+    const agentName = agentResult.data?.name || `#${agentId}`;
 
     return {
       type: 'confirm',
@@ -1931,8 +1985,9 @@ ${toolSections}
   private async handleRunAgentById(userId: number, agentId: number): Promise<OrchestratorResult> {
     const result = await this.runner.runAgent({ agentId, userId });
     if (!result.success) return { type: 'text', content: `❌ Ошибка: ${result.error}` };
-    const data = result.data!;
-    if (!data.success || !data.executionResult) return { type: 'text', content: data.message };
+    const data = result.data;
+    if (!data) return { type: 'text', content: '❌ Нет данных от runner' };
+    if (!data.success || !data.executionResult) return { type: 'text', content: data.message || '❌ Выполнение не завершено' };
 
     const exec = data.executionResult;
     let content = `📊 *Результат выполнения #${agentId}*\n\n`;
@@ -1959,8 +2014,8 @@ ${toolSections}
 
   private async handleDeleteAgentById(userId: number, agentId: number): Promise<OrchestratorResult> {
     const agentResult = await this.dbTools.getAgent(agentId, userId);
-    if (!agentResult.success) return { type: 'text', content: `❌ Агент #${agentId} не найден` };
-    const name = agentResult.data!.name;
+    if (!agentResult.success || !agentResult.data) return { type: 'text', content: `❌ Агент #${agentId} не найден` };
+    const name = agentResult.data.name;
     return {
       type: 'confirm',
       content: `⚠️ Удалить агента *"${name}"* (#${agentId})?\n\nЭто действие нельзя отменить!`,

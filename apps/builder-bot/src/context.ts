@@ -30,17 +30,17 @@ const OWNER_ID = parseInt(process.env.OWNER_ID || '0', 10);
 
 // Проверка прав доступа
 export function checkPermission(userId: number, requiredRole: UserRole): boolean {
-  if (userId === OWNER_ID) return true;
+  // Lazy import to avoid circular dependency
+  let isAdmin = false;
+  try { const { isPlatformAdmin } = require('./payments'); isAdmin = isPlatformAdmin(userId); } catch {}
+  if (isAdmin || userId === OWNER_ID) return true;
   if (requiredRole === 'user') return true;
-
-  // Здесь можно добавить проверку ролей из БД
   return false;
 }
 
 // Получение роли пользователя
 export function getUserRole(userId: number): UserRole {
+  try { const { isPlatformAdmin } = require('./payments'); if (isPlatformAdmin(userId)) return 'owner'; } catch {}
   if (userId === OWNER_ID) return 'owner';
-
-  // Здесь можно добавить проверку админов из БД
   return 'user';
 }
