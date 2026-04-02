@@ -1819,6 +1819,7 @@ class UserbotManager {
       getPollResults: wrap(ubGetPollResults),
       sendSticker:    wrap(ubSendSticker),
       sendGif:        wrap(ubSendGif),
+      queryInlineBot: wrap(ubQueryInlineBot),
       sendVoice:      (chatId: string, text: string, lang?: string) => {
         if (!checkTtsRate(agentId)) return { error: 'TTS rate limit exceeded (max 5/min)' };
         return ubSendVoice(client, chatId, text, lang);
@@ -2418,6 +2419,8 @@ class UserbotManager {
           console.error(`[UserbotMgr] ⏰ TIMEOUT processing agent#${agentId} chat=${item.msg.chatId} — moving to next`);
         } else {
           console.error(`[UserbotMgr] ❌ processTgInboxMessage CRASHED:`, errMsg, procErr.stack?.slice(0, 300));
+          // Log to DB for admin panel visibility
+          try { const { getAgentLogsRepository } = require('../db/schema-extensions'); await getAgentLogsRepository().insert({ agentId, userId: item.cfg?.userId || 0, level: 'error', message: `CRASH: ${errMsg}` }); } catch {}
         }
       }
     }
@@ -3744,6 +3747,7 @@ RULES:
       }
     } catch (e: any) {
       console.error(`[UserbotMgr] processMessage error agent#${agentId}:`, e.message);
+      try { const { getAgentLogsRepository } = require('../db/schema-extensions'); await getAgentLogsRepository().insert({ agentId, userId: cfg?.userId || 0, level: 'error', message: `${e.message?.slice(0, 500)}` }); } catch {}
       console.error(`[UserbotMgr] stack:`, e.stack?.slice(0, 500));
     } finally {
       // Always clean up typing interval
@@ -4612,6 +4616,33 @@ async function ubSendSticker(client: TelegramClient, chatId: string, stickerSetN
       message: '',
     }));
     return { ok: true, sticker_index: index, set: stickerSetName };
+  } catch (e: any) { return { error: e.message || String(e) }; }
+}
+
+async function ubQueryInlineBot(client: TelegramClient, chatId: string, botUsername: string, query: string, sendResult?: boolean | number) {
+  try {
+    const peer = await (client as any).getInputEntity(chatId);
+    const bot = await (client as any).getInputEntity(botUsername.startsWith('@') ? botUsername : '@' + botUsername);
+    const results = await (client as any).invoke(new Api.messages.GetInlineBotResults({
+      bot, peer, query, offset: '',
+    }));
+    if (!results.results || results.results.length === 0) return { ok: false, error: 'No results', query };
+    const items = results.results.map((r: any, i: number) => ({
+      index: i, id: r.id, type: r.type,
+      title: r.title || r.sendMessage?.message?.slice(0, 100) || '',
+      description: r.description || '',
+    }));
+    // Auto-send if requested (true = first result, number = specific index)
+    if (sendResult !== undefined && sendResult !== false) {
+      const idx = sendResult === true ? 0 : Number(sendResult);
+      const picked = results.results[Math.min(idx, results.results.length - 1)];
+      await (client as any).invoke(new Api.messages.SendInlineBotResult({
+        peer, queryId: results.queryId, id: picked.id,
+        randomId: BigInt(Math.floor(Math.random() * 1e15)) as any,
+      }));
+      return { ok: true, sent: true, index: idx, total: items.length, items: items.slice(0, 5) };
+    }
+    return { ok: true, total: items.length, items: items.slice(0, 10) };
   } catch (e: any) { return { error: e.message || String(e) }; }
 }
 
