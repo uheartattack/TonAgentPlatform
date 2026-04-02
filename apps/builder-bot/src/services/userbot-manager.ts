@@ -814,6 +814,24 @@ class ContactMemory {
         repo.set(agentId, userId, '_contacts', JSON.stringify(contactData)),
         repo.set(agentId, userId, '_chats', JSON.stringify(chatData)),
       ]);
+      // Also sync to agent_contacts table for API visibility
+      try {
+        const { pool } = require('../db');
+        for (const [id, c] of this.contacts) {
+          if (!id || id === 'undefined') continue;
+          const tgId = parseInt(id) || 0;
+          if (tgId === 0) continue;
+          await pool.query(`
+            INSERT INTO builder_bot.agent_contacts (agent_id, tg_user_id, username, first_name, message_count, last_seen_at)
+            VALUES ($1, $2, $3, $4, $5, NOW())
+            ON CONFLICT (agent_id, tg_user_id) DO UPDATE SET
+              username = COALESCE(EXCLUDED.username, builder_bot.agent_contacts.username),
+              first_name = COALESCE(EXCLUDED.first_name, builder_bot.agent_contacts.first_name),
+              message_count = EXCLUDED.message_count,
+              last_seen_at = NOW()
+          `, [agentId, tgId, (c as any).username || null, (c as any).name || null, (c as any).chatCount || 1]).catch(() => {});
+        }
+      } catch {}
       this._dirty = false;
     } catch {}
   }
