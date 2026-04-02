@@ -565,6 +565,23 @@ function showApp() {
     }
   }
 
+  // Atlas promotion banner on overview
+  var atlasBanner = document.getElementById('atlas-promo-banner');
+  if (!atlasBanner) {
+    atlasBanner = document.createElement('div');
+    atlasBanner.id = 'atlas-promo-banner';
+    atlasBanner.style.cssText = 'margin:0 0 20px;padding:16px 20px;background:linear-gradient(135deg,rgba(14,165,233,0.08),rgba(6,182,212,0.04));border:1px solid rgba(14,165,233,0.15);border-radius:12px;display:flex;align-items:center;gap:14px;cursor:pointer';
+    atlasBanner.onclick = function() { navigateTo('assistant'); };
+    atlasBanner.innerHTML =
+      '<div style="width:40px;height:40px;border-radius:10px;background:rgba(14,165,233,0.12);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>' +
+      '<div style="flex:1"><div style="font-size:.88rem;font-weight:600;color:var(--text-primary)">' + (currentLang === 'ru' ? 'Atlas — ваш AI-ассистент' : 'Atlas — your AI assistant') + '</div>' +
+      '<div style="font-size:.78rem;color:var(--text-muted);margin-top:2px">' + (currentLang === 'ru' ? 'Создаёт агентов, настраивает, объясняет, проводит аудит. Просто опишите что нужно.' : 'Creates agents, configures, explains, audits. Just describe what you need.') + '</div></div>' +
+      '<div style="color:#0ea5e9;font-size:.82rem;font-weight:600;white-space:nowrap">' + (currentLang === 'ru' ? 'Открыть →' : 'Open →') + '</div>';
+    var overviewPage = document.getElementById('overview-page');
+    var statsGrid = overviewPage?.querySelector('.stat-card')?.parentElement;
+    if (statsGrid) statsGrid.parentElement?.insertBefore(atlasBanner, statsGrid);
+  }
+
   // Load real data from API
   loadDashboard();
   loadSubscriptionGlobal();
@@ -2114,7 +2131,7 @@ function switchSettingsTab(tab) {
           '<div class="bh-toggle-info">' +
             '<div class="bh-toggle-icon" style="background:rgba(34,197,94,0.12);color:#22c55e">' + IC.eye + '</div>' +
             '<div>' +
-              '<div class="bh-toggle-name">' + (isRu ? 'Read Receipts' : 'Read Receipts') + '</div>' +
+              '<div class="bh-toggle-name">' + (isRu ? 'Read Receipts (ограничено)' : 'Read Receipts (limited)') + '</div>' +
               '<div class="bh-toggle-desc">' + (isRu ? 'Помечает сообщения прочитанными с задержкой, как живой человек' : 'Marks messages as read with delay, like a real person') + '</div>' +
             '</div>' +
           '</div>' +
@@ -4168,7 +4185,8 @@ function renderAgentsPage() {
       ? (currentLang === 'ru' ? 'Нет агентов. Создайте первого!' : 'No agents yet. Create your first!')
       : (currentLang === 'ru' ? 'Нет агентов с таким статусом' : 'No agents with this status');
     listEl.innerHTML = '<div class="empty-state" style="padding:2rem;text-align:center"><p>' + msg + '</p>' +
-      (_agentsPageFilter === 'all' ? '<button class="btn btn-primary btn-sm" onclick="navigateTo(\'builder\')">' + t('create_first') + '</button>' : '') +
+      (_agentsPageFilter === 'all' ? '<button class="btn btn-primary btn-sm" onclick="navigateTo(\'assistant\')" style="margin-bottom:10px">' + (currentLang === 'ru' ? 'Описать агента Atlas →' : 'Describe agent to Atlas →') + '</button><br>' +
+      '<span style="font-size:.75rem;color:var(--text-muted)">' + (currentLang === 'ru' ? 'Atlas создаст агента по вашему описанию — промпт, инструменты, настройки' : 'Atlas will create an agent from your description — prompt, tools, settings') + '</span>' : '') +
       '</div>';
     return;
   }
