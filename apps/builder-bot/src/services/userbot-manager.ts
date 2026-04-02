@@ -192,7 +192,9 @@ function resolveProvider(key: string): ProviderMeta {
 
 function detectProviderByKey(apiKey: string): ProviderMeta | null {
   if (!apiKey) return null;
-  for (const p of Object.values(PROVIDERS)) {
+  // Sort by keyPrefix length DESC so more specific prefixes match first (sk-or- before sk-)
+  const sorted = Object.values(PROVIDERS).filter(p => p.keyPrefix).sort((a, b) => (b.keyPrefix?.length || 0) - (a.keyPrefix?.length || 0));
+  for (const p of sorted) {
     if (p.keyPrefix && apiKey.startsWith(p.keyPrefix)) return p;
   }
   return null;
@@ -1941,7 +1943,8 @@ class UserbotManager {
           if (parsed.isGroup && !parsed.mentionsMe) {
             const cooldownKey = `${agentId}:${parsed.chatId}`;
             const lastTime = _lastResponseTime.get(cooldownKey) || 0;
-            if (Date.now() - lastTime < GROUP_COOLDOWN_MS) {
+            const _cooldownMs = cfg.config?.flood_cooldown_sec ? Number(cfg.config.flood_cooldown_sec) * 1000 : GROUP_COOLDOWN_MS;
+            if (Date.now() - lastTime < _cooldownMs) {
               console.log(`[UserbotMgr] ⏳ Cooldown active for agent#${agentId} in ${parsed.chatId}, skipping`);
               return;
             }
@@ -2517,7 +2520,10 @@ class UserbotManager {
       } catch { ownerTgId = 0; }
     }
     const isOwnerMsg = ownerTgId > 0 && msg.senderId === ownerTgId;
-    if (!isOwnerMsg && !loopGuardCheck(agentId, msg.chatId)) {
+    // Read per-agent loop guard settings from config (falls back to defaults)
+    const _loopMax = Number(cfg.config?.loop_max_responses) || undefined;
+    const _loopWindowMs = cfg.config?.loop_window_sec ? Number(cfg.config.loop_window_sec) * 1000 : undefined;
+    if (!isOwnerMsg && !loopGuardCheck(agentId, msg.chatId, _loopMax, _loopWindowMs)) {
       console.log(`[UserbotMgr] 🔁 Agent#${agentId} LOOP_GUARD: too many responses in chat=${msg.chatId}, skipping`);
       return;
     }
