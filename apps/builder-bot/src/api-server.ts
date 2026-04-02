@@ -1752,7 +1752,9 @@ export function startApiServer() {
       const agentCheck = await getDBTools().getAgent(agentId, userId);
       if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
       const agent = agentCheck.data;
-      const { daily_spend_limit_ton, tick_interval_sec, agent_language, behavior, learning, routing, groupPolicy, chatPolicies, customRole, agentColor } = req.body || {};
+      const { daily_spend_limit_ton, tick_interval_sec, agent_language, behavior, learning, routing, groupPolicy, chatPolicies, customRole, agentColor,
+        compaction_strategy, masking_enabled, masking_keep_recent, flood_cooldown_sec, flood_max_retries,
+        loop_max_responses, loop_window_sec, memory_poisoning_protection } = req.body || {};
 
       const tc = typeof agent.triggerConfig === 'string' ? JSON.parse(agent.triggerConfig) : (agent.triggerConfig || {});
       if (!tc.config) tc.config = {};
@@ -1778,6 +1780,15 @@ export function startApiServer() {
         tc.intervalMs = tc.config.tick_interval_sec * 1000;
       }
       if (agent_language !== undefined) tc.config.agent_language = agent_language || 'auto';
+      // Advanced settings
+      if (compaction_strategy !== undefined) tc.config.compaction_strategy = compaction_strategy;
+      if (masking_enabled !== undefined) tc.config.masking_enabled = masking_enabled;
+      if (masking_keep_recent !== undefined) tc.config.masking_keep_recent = parseInt(masking_keep_recent, 10) || 10;
+      if (flood_cooldown_sec !== undefined) tc.config.flood_cooldown_sec = parseInt(flood_cooldown_sec, 10) || 5;
+      if (flood_max_retries !== undefined) tc.config.flood_max_retries = parseInt(flood_max_retries, 10) || 3;
+      if (loop_max_responses !== undefined) tc.config.loop_max_responses = parseInt(loop_max_responses, 10) || 4;
+      if (loop_window_sec !== undefined) tc.config.loop_window_sec = parseInt(loop_window_sec, 10) || 120;
+      if (memory_poisoning_protection !== undefined) tc.config.memory_poisoning_protection = memory_poisoning_protection;
 
       await pool.query('UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3',
         [JSON.stringify(tc), agentId, userId]);

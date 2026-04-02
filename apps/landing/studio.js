@@ -3717,11 +3717,22 @@ async function saveSettingsAI() {
 }
 
 async function saveSettingsCaps() {
-  if (!_detailAgentId) return;
+  if (!_detailAgentId) { toast('No agent selected', 'error'); return; }
   var caps = Array.from(document.querySelectorAll('.st-cap-active')).map(function(el) { return el.getAttribute('data-cap'); });
+  console.log('[saveSettingsCaps] agentId=' + _detailAgentId + ' caps=' + JSON.stringify(caps));
+  if (caps.length === 0) { toast(currentLang === 'ru' ? 'Выберите хотя бы одну возможность' : 'Select at least one capability', 'error'); return; }
   var data = await apiRequest('PUT', '/api/agents/' + _detailAgentId + '/capabilities', { capabilities: caps });
-  if (data.ok) toast(currentLang === 'ru' ? 'Возможности обновлены' : 'Capabilities updated', 'success');
-  else toast(data.error || 'Error', 'error');
+  console.log('[saveSettingsCaps] response:', JSON.stringify(data));
+  if (data.ok) {
+    toast(currentLang === 'ru' ? 'Возможности обновлены (' + caps.length + ')' : 'Capabilities updated (' + caps.length + ')', 'success');
+    // Update local cache so page reload shows correct state
+    if (_detailAgentData && _detailAgentData.triggerConfig) {
+      var tc = typeof _detailAgentData.triggerConfig === 'string' ? JSON.parse(_detailAgentData.triggerConfig) : _detailAgentData.triggerConfig;
+      if (!tc.config) tc.config = {};
+      tc.config.enabledCapabilities = caps;
+      _detailAgentData.triggerConfig = tc;
+    }
+  } else toast(data.error || 'Error', 'error');
 }
 
 function toggleCapCard(el, capId) {
@@ -10012,7 +10023,7 @@ function renderWizardStep(idx) {
         {id:'wallet',icon:IC.dollar,name:'Wallet'}, {id:'nft',icon:IC.image,name:'NFT'}, {id:'gifts_market',icon:IC.trending,name:'Gifts Market'},
         {id:'web',icon:IC.globe,name:'Web'}, {id:'defi',icon:IC.shuffle,name:'DeFi'}, {id:'telegram',icon:IC.send,name:'Telegram'},
         {id:'notify',icon:IC.bell,name:'Notify'}, {id:'state',icon:IC.box,name:'State'},
-        {id:'image',icon:IC.image,name:'Image'}, {id:'workspace',icon:IC.box,name:'Files'},
+        {id:'image',icon:IC.image,name:'Image'}, {id:'image_gen',icon:IC.zap,name:'DALL-E'}, {id:'workspace',icon:IC.box,name:'Files'},
         {id:'blockchain',icon:IC.link,name:'Blockchain'}, {id:'plugins',icon:IC.wrench,name:'Plugins'},
       ];
       html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">' +
@@ -12510,30 +12521,35 @@ function loadGuidePage() {
   if (!container) return;
   var isRu = currentLang === 'ru';
 
-  // ── Guide sections data ──
+  // ── Guide sections data (comprehensive, no emojis) ──
+  var _ico = function(d) { return '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + d + '</svg>'; };
   var sections = [
-    { id: 'start', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>',
+    { id: 'start', icon: _ico('<circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/>'),
       title: isRu ? 'Быстрый старт' : 'Quick Start',
       subtitle: isRu ? 'Создайте первого агента за 2 минуты' : 'Create your first agent in 2 minutes',
       gradient: 'linear-gradient(135deg, rgba(14,165,233,0.15), rgba(6,182,212,0.08))',
       cards: [
-        { title: isRu ? 'AI Чат' : 'AI Chat', desc: isRu ? 'Опишите задачу — AI создаст агента' : 'Describe the task — AI creates the agent', action: 'navigateTo("assistant")', btn: isRu ? 'Открыть чат' : 'Open chat' },
-        { title: isRu ? 'Конструктор' : 'Constructor', desc: isRu ? 'Drag & drop блоки в визуальном редакторе' : 'Drag & drop blocks in visual editor', action: 'navigateTo("builder")', btn: isRu ? 'Открыть' : 'Open' },
-        { title: 'Telegram Bot', desc: isRu ? 'Отправьте описание в @TonAgentPlatformBot' : 'Send description to @TonAgentPlatformBot', action: 'window.open("https://t.me/TonAgentPlatformBot")', btn: isRu ? 'Открыть бот' : 'Open bot' },
+        { title: isRu ? 'Atlas AI (рекомендуется)' : 'Atlas AI (recommended)', desc: isRu ? 'Опишите задачу текстом — Atlas создаст агента, настроит промпт, выберет инструменты и запустит. Atlas знает все о платформе.' : 'Describe the task — Atlas creates the agent, sets up prompt, picks tools and launches it. Atlas knows everything about the platform.', action: 'navigateTo("assistant")', btn: isRu ? 'Открыть Atlas' : 'Open Atlas' },
+        { title: isRu ? 'Визуальный конструктор' : 'Visual Constructor', desc: isRu ? 'Drag & drop блоки: триггер, действия, логика. Без кода. Подходит для сложных workflow с условиями и циклами.' : 'Drag & drop blocks: trigger, actions, logic. No code. Good for complex workflows with conditions and loops.', action: 'navigateTo("builder")', btn: isRu ? 'Открыть' : 'Open' },
+        { title: 'Telegram Bot', desc: isRu ? 'Отправьте описание в @TonAgentPlatformBot — те же возможности что и Atlas, но в Telegram. Работает с голосовыми сообщениями.' : 'Send description to @TonAgentPlatformBot — same capabilities as Atlas but in Telegram. Works with voice messages.', action: 'window.open("https://t.me/TonAgentPlatformBot")', btn: isRu ? 'Открыть бот' : 'Open bot' },
       ],
-      tip: isRu ? 'После создания нажмите на карточку агента → Настройки для кастомизации.' : 'After creating, click agent card → Settings to customize.',
+      tip: isRu ? 'Atlas — главный AI-ассистент платформы. Он может создавать агентов, объяснять настройки, проводить аудит, помогать с промптами. Просто спросите его о чем угодно.' : 'Atlas is the main AI assistant. It can create agents, explain settings, audit agents, help with prompts. Just ask it anything.',
       details: isRu ? [
-        { q: 'Шаг 1: Опишите задачу', a: 'Откройте AI Ассистент (Ctrl+/) и опишите что должен делать агент. Пример: «Мониторь цену TON каждые 5 минут и уведомляй когда ниже $2.5». AI сгенерирует системный промпт, выберет нужные инструменты и создаст агента.' },
-        { q: 'Шаг 2: Подключите Telegram', a: 'Перейдите в настройки агента → Telegram → авторизуйте аккаунт через QR-код. Агент получит доступ к вашему Telegram как полноценный пользователь (MTProto, не Bot API). Он может писать в группы, ставить реакции, менять аватарку.' },
-        { q: 'Шаг 3: Настройте поведение', a: 'В настройках агента 17 вкладок: промпт, AI провайдер, инструменты, роутинг сообщений, память, безопасность, расписание. Начните с AI (выберите провайдера) и Capabilities (включите нужные модули).' },
-        { q: 'Шаг 4: Запустите', a: 'Нажмите "Запустить" на карточке агента. Он начнёт работать 24/7 — отвечать в чатах, выполнять задачи по расписанию, мониторить цены и уведомлять вас.' },
-        { q: 'Пример: Арбитраж подарков', a: 'Создайте агента с описанием "Мониторь рынок Telegram подарков, ищи арбитражные возможности между маркетами (Fragment, GetGems, Tonnel), уведомляй когда спред больше 10%". Включите capabilities: gifts_market, notify. Агент будет каждые 5 минут сканировать маркеты.' },
-        { q: 'Пример: Модератор группы', a: 'Описание: "Модерируй группу @mygroup — удаляй спам, баня ботов, отвечай на вопросы новичков про TON". Capabilities: telegram, telegram_admin. Подключите Telegram аккаунт с правами админа в группе.' },
+        { q: 'Что такое Atlas и зачем он нужен', a: 'Atlas — главный AI-ассистент платформы. Он находится в разделе "AI Ассистент" в боковом меню (или нажмите Ctrl+/). Atlas умеет: создавать агентов по описанию, менять настройки, объяснять как работает любая функция, проводить аудит агентов, помогать писать промпты, отвечать на вопросы о TON/DeFi/NFT. Просто напишите ему что вам нужно на любом языке.' },
+        { q: 'Шаг 1: Создайте агента', a: 'Откройте Atlas и напишите: "создай агента [описание]". Примеры:\n\n- "Создай агента который мониторит цену TON и уведомляет когда ниже $2.5"\n- "Создай модератора для группы @mygroup"\n- "Создай агента для арбитража подарков"\n\nAtlas сгенерирует системный промпт, выберет нужные инструменты из 77 доступных, создаст агента и запустит его.' },
+        { q: 'Шаг 2: Подключите Telegram аккаунт', a: 'Откройте настройки агента (клик по карточке) и перейдите на вкладку "Telegram". Нажмите "Подключить" и отсканируйте QR-код в приложении Telegram (Настройки → Устройства → Подключить устройство). После этого агент получит доступ к вашему Telegram через MTProto — это полноценный доступ как у пользователя, не как у бота. Агент может: писать в группы, ставить реакции, менять аватарку, постить stories, создавать опросы.' },
+        { q: 'Шаг 3: Настройте AI провайдера', a: 'Во вкладке "AI" выберите провайдера и вставьте API ключ:\n\n- Gemini (Google) — бесплатный, 15 запросов/мин. Ключ: aistudio.google.com\n- OpenRouter — бесплатные модели (Qwen, Llama). Ключ: openrouter.ai/keys\n- Groq — бесплатный, быстрый (30 RPM). Ключ: console.groq.com\n- Claude (Anthropic) — платный, самый умный\n- GPT (OpenAI) — платный\n\nЕсли не знаете какой выбрать — начните с Gemini (бесплатный) или спросите Atlas.' },
+        { q: 'Шаг 4: Выберите возможности (Capabilities)', a: 'Во вкладке "Инструменты" включите модули которые нужны агенту. Каждый модуль даёт набор инструментов:\n\n- Telegram — отправка сообщений, реакции, поиск\n- Telegram Admin — кик, бан, мьют, закрепление\n- Wallet — баланс TON, отправка транзакций\n- Gifts Market — цены подарков, арбитраж\n- DeFi — свопы через DeDust/STON.fi\n- Web — поиск в интернете, загрузка страниц\n- Image — генерация изображений (DALL-E)\n- Memory — долгосрочная память между сессиями\n\nНе включайте лишние модули — это замедляет агента.' },
+        { q: 'Шаг 5: Запустите', a: 'Нажмите "Запустить" на карточке агента. Зелёный индикатор означает что агент работает. Он будет:\n\n- Отвечать на сообщения в подключённых чатах\n- Выполнять задачи по расписанию (если настроен тик-интервал)\n- Мониторить цены и уведомлять вас\n\nЧтобы остановить — нажмите "Стоп". Логи работы видны во вкладке "Логи".' },
+        { q: 'Пример: Арбитраж подарков', a: 'Напишите Atlas: "Создай агента для мониторинга рынка Telegram подарков. Он должен каждые 5 минут проверять цены на всех маркетах (Fragment, GetGems, Tonnel, Portals) и уведомлять когда спред между маркетами больше 10%."\n\nAtlas создаст агента с capabilities: gifts_market, notify. Агент будет использовать инструменты scan_real_arbitrage и get_market_overview.' },
+        { q: 'Пример: Модератор группы', a: 'Напишите Atlas: "Создай модератора для группы. Он должен удалять спам, банить ботов, приветствовать новичков и отвечать на частые вопросы."\n\nCapabilities: telegram, telegram_admin. Подключите Telegram аккаунт с правами админа в нужной группе. Укажите в настройках роутинга конкретную группу.' },
+        { q: 'Пример: Контент-менеджер канала', a: 'Напишите Atlas: "Создай агента который ведёт Telegram канал. Он должен генерировать посты про TON/crypto каждые 6 часов, добавлять изображения, форматировать текст."\n\nCapabilities: telegram, web, image, image_gen. Агент будет искать новости через web_search, генерировать изображения через DALL-E и публиковать в канал.' },
       ] : [
-        { q: 'Step 1: Describe the task', a: 'Open AI Assistant (Ctrl+/) and describe what the agent should do.' },
-        { q: 'Step 2: Connect Telegram', a: 'Go to agent Settings → Telegram → authorize via QR code.' },
-        { q: 'Step 3: Configure behavior', a: '17 settings tabs: prompt, AI provider, tools, routing, memory, security, schedule.' },
-        { q: 'Step 4: Launch', a: 'Click "Start" on the agent card. It works 24/7.' },
+        { q: 'What is Atlas', a: 'Atlas is the main AI assistant. Open it via sidebar or Ctrl+/. It can create agents, explain settings, audit agents, help with prompts.' },
+        { q: 'Step 1: Create an agent', a: 'Tell Atlas: "create an agent that monitors TON price". It generates the prompt, picks tools, and launches.' },
+        { q: 'Step 2: Connect Telegram', a: 'Agent Settings → Telegram → scan QR code. Agent gets full MTProto access.' },
+        { q: 'Step 3: Configure AI provider', a: 'AI tab → pick provider (Gemini free, Groq free, Claude paid) → paste API key.' },
+        { q: 'Step 4: Launch', a: 'Click Start. Green indicator = running 24/7.' },
       ],
     },
     { id: 'settings', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/></svg>',
@@ -12549,15 +12565,15 @@ function loadGuidePage() {
         'Security — ' + (isRu ? 'лимиты, блоклист, sandbox' : 'limits, blocklist, sandbox'),
       ],
       details: isRu ? [
-        { q: 'Code (Системный промпт)', a: 'Главный таб — здесь вы задаёте характер и поведение агента. Это текст который AI получает перед каждым ответом. Пишите как инструкцию: "Ты — эксперт по TON DeFi. Отвечай коротко. Используй данные из get_ton_balance и get_nft_floor."' },
-        { q: 'AI (Провайдер и модель)', a: 'Выберите AI провайдера (Gemini, Claude, GPT и др.) и конкретную модель. Можете использовать свой API ключ или платформенный. Настройте температуру (креативность) и макс. токенов.' },
-        { q: 'Capabilities (Возможности)', a: 'Включите/отключите модули: wallet (TON операции), telegram (сообщения), gifts (подарки), web (поиск), nft, defi, memory (память), notify (уведомления). Каждый модуль даёт агенту набор инструментов.' },
-        { q: 'Routing (Маршрутизация)', a: 'Для мультиагентных систем: какие сообщения получает этот агент. Фильтры по ключевым словам, типам чатов (DM/группы), приоритет. Агент с высшим приоритетом отвечает первым.' },
-        { q: 'Behavior (Поведение)', a: 'Человечность: задержки ответов, имитация набора текста, реакции на сообщения. Расписание: в какое время агент активен. Cooldown: минимальный интервал между ответами в группах.' },
-        { q: 'Memory (Память)', a: 'Постоянная память: факты, контакты, предпочтения. Дневные логи: что агент делал каждый день. Поиск по памяти. Защита от poisoning в группах — блокировка записи от незнакомцев.' },
-        { q: 'Security (Безопасность)', a: 'Дневной лимит TON, блоклист пользователей, sandbox для кода, защита от prompt injection, tool scope (какие инструменты доступны в группах vs в ЛС), atomic lock на финансовые операции.' },
-        { q: 'Wallet (Кошелёк)', a: 'Агентский TON-кошелёк: отправка/получение TON и жетонов, лимиты расходов, подключение через мнемонику или TonConnect.' },
-        { q: 'Advanced (Продвинутое)', a: 'Тип компактинга контекста, маскирование наблюдений, flood-protection, loop guard, интервал тиков, язык агента.' },
+        { q: 'Code — Системный промпт (самая важная настройка)', a: 'Системный промпт определяет личность, поведение и задачи агента. AI получает этот текст перед каждым ответом. Пишите как инструкцию:\n\n"Ты — эксперт по TON DeFi. Отвечай коротко и по делу. При вопросах о ценах используй get_ton_balance. Не давай финансовых советов."\n\nСоветы:\n- Будьте конкретны: вместо "будь полезным" пишите "отвечай на вопросы о TON блокчейне, используя данные из инструментов"\n- Укажите ограничения: "никогда не отправляй TON без подтверждения владельца"\n- Задайте тон: "используй неформальный стиль, короткие фразы, иногда ставь реакции"\n- Если не уверены — попросите Atlas написать промпт за вас' },
+        { q: 'AI — Провайдер и модель', a: 'Каждый агент использует свой API ключ для AI. Платформа не оплачивает запросы — вы платите провайдеру напрямую.\n\nПровайдеры:\n- Gemini (Google): бесплатный ключ на aistudio.google.com. Лимит 15 запросов/мин. Модели: gemini-2.5-flash (быстрая), gemini-2.5-pro (умная)\n- Groq: бесплатный ключ на console.groq.com. 30 запросов/мин. Модель: llama-3.3-70b\n- OpenRouter: бесплатные модели на openrouter.ai. 50 запросов/день (бесплатно) или 1000/день ($10 разово)\n- Claude (Anthropic): платный, от $3/M токенов. Лучший для сложных задач\n- GPT (OpenAI): платный, от $2.5/M токенов\n\nТемпература: 0.0 = строго по инструкции, 1.0 = креативно. Рекомендуется 0.7.\nМакс. токенов: длина ответа. 1024 = обычный ответ, 4096 = длинный.' },
+        { q: 'Capabilities — Возможности (инструменты)', a: 'Каждая capability даёт агенту набор инструментов. Включайте только нужные — лишние замедляют агента.\n\nОсновные:\n- Telegram: отправка сообщений, ответы, реакции, поиск, пересылка\n- Telegram Admin: кик, бан, мьют, закреп, управление правами (нужны права админа)\n- Wallet: проверка баланса TON, отправка транзакций (нужна мнемоника кошелька)\n- Web: поиск в Google, загрузка веб-страниц, HTTP запросы\n- State: сохранение/чтение данных между запусками агента\n- Notify: отправка уведомлений владельцу\n- Memory: долгосрочная память, контакты, уроки\n\nСпециальные:\n- Gifts Market: реальные цены подарков, арбитраж, аналитика рынка\n- DeFi: свопы через DeDust/STON.fi, цены жетонов\n- NFT: floor price коллекций, метаданные\n- Image/DALL-E: генерация и обработка изображений\n- MCP: подключение внешних инструментов через протокол MCP' },
+        { q: 'Routing — Маршрутизация сообщений', a: 'Определяет какие сообщения получает агент. Важно для мультиагентных систем (несколько агентов на одном TG аккаунте).\n\n- Ключевые слова: агент активируется только на сообщения содержащие эти слова\n- Типы чатов: DM (личка), группы, каналы\n- Приоритет: при конфликте нескольких агентов, отвечает тот у кого приоритет выше (1-100)\n- Default: если включено — агент отвечает на все сообщения которые не подошли другим агентам\n\nGroup Policy:\n- Active: отвечает на все сообщения в группе (осторожно — быстро расходует лимиты API)\n- Mention-only: отвечает только когда @упомянут (рекомендуется для групп)\n- Disabled: не отвечает в группах' },
+        { q: 'Behavior — Поведение и человечность', a: 'Настройки которые делают агента более похожим на человека:\n\n- Задержка набора: имитирует "печатает..." перед ответом\n- Скорость набора: символов в секунду (40 = медленно, 100 = быстро)\n- Реакции: автоматические реакции на сообщения (сердечки, лайки)\n- Колебания: иногда добавляет "хм", "ну" в начало ответа\n- Разбиение: длинные ответы разбивает на несколько сообщений\n\nРасписание: если включено, агент активен только в указанное время (например 9:00-23:00).' },
+        { q: 'Memory — Долгосрочная память', a: 'Агент автоматически запоминает важную информацию:\n\n- Имена и предпочтения пользователей\n- Уроки из ошибок\n- Контексты прошлых разговоров\n\nДанные хранятся в базе и доступны между перезапусками. В Studio видны во вкладке "Память" — контакты, факты, уроки.\n\nЗащита от poisoning: в групповых чатах незнакомцы не могут записывать в память агента ложную информацию.' },
+        { q: 'Security — Безопасность', a: 'Критически важные настройки:\n\n- Дневной лимит TON: максимальная сумма которую агент может потратить за день\n- Блоклист: ID пользователей которых агент игнорирует\n- Tool scope: какие инструменты доступны в группах (рекомендуется ограничить финансовые)\n- Atomic lock: блокировка параллельных финансовых операций (предотвращает двойную трату)\n- Prompt injection protection: агент не выполняет команды от незнакомцев которые пытаются изменить его поведение' },
+        { q: 'Wallet — Кошелёк агента', a: 'Агент может иметь свой TON кошелёк для выполнения транзакций. Настройка:\n\n1. Перейдите в Кошельки (боковое меню) → Создать Root Wallet\n2. В настройках агента → Wallet → выберите "Agentic Wallet"\n3. Установите лимит расходов\n\nАгент сможет: проверять баланс, отправлять TON, покупать подарки, делать свопы. Все операции логируются.' },
+        { q: 'Advanced — Продвинутые настройки', a: 'Для опытных пользователей:\n\n- Tick interval: как часто агент просыпается (60 сек = каждую минуту, 0 = только по сообщениям)\n- Компактинг: как сжимается контекст при длинных разговорах (structured = AI пишет резюме)\n- Loop guard: максимум ответов в одном чате за 5 минут (защита от спам-петель)\n- Flood cooldown: минимальный интервал между ответами в группах\n- Язык: auto = определяется по сообщению, ru/en = фиксированный' },
       ] : [],
     },
     { id: 'ai', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/></svg>',
@@ -12571,12 +12587,21 @@ function loadGuidePage() {
       subtitle: isRu ? '77 инструментов в 10 категориях' : '77 tools in 10 categories',
       gradient: 'linear-gradient(135deg, rgba(245,158,11,0.15), rgba(234,179,8,0.08))',
       grid: [
-        { emoji: '💬', name: isRu ? 'Сообщения' : 'Messages' }, { emoji: '📸', name: isRu ? 'Медиа' : 'Media' },
-        { emoji: '🛡', name: isRu ? 'Модерация' : 'Moderation' }, { emoji: '💎', name: 'TON DeFi' },
-        { emoji: '🎁', name: isRu ? 'Подарки' : 'Gifts' }, { emoji: '🧠', name: isRu ? 'Память' : 'Memory' },
-        { emoji: '👤', name: isRu ? 'Профиль' : 'Profile' }, { emoji: '🌐', name: 'Web' },
-        { emoji: '💰', name: isRu ? 'Кошелёк' : 'Wallet' }, { emoji: '⏰', name: isRu ? 'Планирование' : 'Planning' },
+        { emoji: 'MSG', name: isRu ? 'Сообщения' : 'Messages' }, { emoji: 'MED', name: isRu ? 'Медиа' : 'Media' },
+        { emoji: 'MOD', name: isRu ? 'Модерация' : 'Moderation' }, { emoji: 'TON', name: 'DeFi' },
+        { emoji: 'GFT', name: isRu ? 'Подарки' : 'Gifts' }, { emoji: 'MEM', name: isRu ? 'Память' : 'Memory' },
+        { emoji: 'USR', name: isRu ? 'Профиль' : 'Profile' }, { emoji: 'WEB', name: 'Web' },
+        { emoji: 'WAL', name: isRu ? 'Кошелёк' : 'Wallet' }, { emoji: 'SCH', name: isRu ? 'Планирование' : 'Planning' },
       ],
+      details: isRu ? [
+        { q: 'Сообщения (17 инструментов)', a: 'tg_send_message — отправка в любой чат/канал/пользователю\ntg_reply — ответ на конкретное сообщение с цитатой\ntg_forward_message — пересылка\ntg_edit — редактирование своих сообщений\ntg_react — поставить реакцию (сердце, огонь, и др.)\ntg_pin — закрепить сообщение\ntg_get_messages — прочитать последние сообщения из чата\ntg_get_unread — получить непрочитанные\ntg_search_messages — поиск по тексту в чате\ntg_get_dialogs — список всех чатов\ntg_mark_read — отметить прочитанным\ntg_send_formatted — HTML форматирование (жирный, курсив, код)\ntg_send_photo — отправка фото\ntg_send_file — отправка документа\ntg_send_voice — голосовое сообщение\ntg_get_channel_info — информация о канале/группе\ntg_get_user_info — информация о пользователе' },
+        { q: 'Модерация (8 инструментов)', a: 'tg_kick_user — удалить пользователя из группы\ntg_ban_user — забанить (не сможет вернуться)\ntg_mute_user — замьютить на время\ntg_unban_user — разбанить\ntg_get_members — список участников группы\ntg_create_poll — создать опрос\ntg_join_channel — вступить в канал/группу\ntg_leave_channel — покинуть' },
+        { q: 'TON DeFi (6 инструментов)', a: 'get_ton_balance — баланс TON и жетонов по адресу\nsend_ton — отправить TON транзакцию\nsend_jetton — отправить жетон (USDT, NOT и др.)\nget_nft_floor — floor price NFT коллекции\nswap_dedust — свопы через DeDust\nswap_stonfi — свопы через STON.fi' },
+        { q: 'Подарки (12+ инструментов)', a: 'get_gift_floor_real — реальная цена подарка на всех маркетах\nscan_real_arbitrage — поиск арбитража между маркетами\nget_market_overview — обзор рынка подарков\nget_price_list — список цен всех подарков\nget_top_deals — лучшие сделки дня\nget_gift_aggregator — агрегатор со всех маркетов\nget_collection_offers — ордера на покупку\nget_market_health — здоровье рынка\nget_price_history — история цен\nget_user_portfolio — портфолио пользователя\nbuy_catalog_gift — купить подарок из каталога\nlist_gift_for_sale — выставить на продажу' },
+        { q: 'Web (3 инструмента)', a: 'web_search — поиск в Google/Bing с AI-извлечением результатов\nfetch_url — загрузка веб-страницы, извлечение текста\nhttp_request — произвольный HTTP запрос (GET/POST/PUT/DELETE) с заголовками и телом' },
+        { q: 'Память и состояние (6 инструментов)', a: 'get_state / set_state — чтение/запись данных агента (переживают перезапуск)\nget_state_multi — прочитать несколько ключей за раз\nlist_state_keys — список всех сохранённых ключей\nremember — сохранить факт в долгосрочную память\nrecall — найти факт по ключевому слову\nsave_lesson — сохранить урок (агент учится на ошибках)' },
+        { q: 'Уведомления и планирование', a: 'notify / notify_user — отправить уведомление владельцу агента\nnotify_rich — форматированное уведомление с кнопками\nschedule_action — запланировать действие на конкретное время\nset_next_wake — установить время следующего пробуждения агента' },
+      ] : [],
     },
     { id: 'flow', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>',
       title: isRu ? 'Конструктор' : 'Flow Builder',
@@ -12680,7 +12705,7 @@ function loadGuidePage() {
       content += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-bottom:20px">';
       s.grid.forEach(function(g) {
         content += '<div style="display:flex;align-items:center;gap:8px;padding:12px;background:var(--bg-primary);border:1px solid var(--border);border-radius:10px">' +
-          '<span style="font-size:1.2rem">' + g.emoji + '</span>' +
+          '<span style="font-size:.65rem;font-weight:700;color:#0ea5e9;background:rgba(14,165,233,0.1);padding:3px 6px;border-radius:4px;font-family:monospace;letter-spacing:.5px">' + g.emoji + '</span>' +
           '<span style="font-size:.84rem;color:var(--text-primary);font-weight:500">' + g.name + '</span>' +
         '</div>';
       });
@@ -12736,6 +12761,7 @@ function loadGuidePage() {
     renderGuide();
   };
 
+  // Use tabs guide version with full detailed content
   renderGuide();
   return;
 
