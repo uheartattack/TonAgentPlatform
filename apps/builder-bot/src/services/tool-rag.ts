@@ -248,19 +248,34 @@ export async function selectToolsHybrid(
   const alwaysTools = allTools.filter((t: any) => isAlwaysIncluded(t.function?.name || t.name || ''));
   const alwaysNames = new Set(alwaysTools.map((t: any) => t.function?.name || t.name));
 
-  // Search with user message context
-  const query = `${userMessage} ${systemPrompt}`.slice(0, 500);
-  const results = await searchTools(query, maxTools);
+  // Smart query: for short messages, use ONLY user message (not system prompt)
+  // This prevents system prompt from dominating tool selection for simple greetings
+  const msgLen = (userMessage || '').trim().length;
+  const query = msgLen > 0 && msgLen < 50
+    ? userMessage.slice(0, 200)  // short msg: only user text
+    : `${userMessage} ${systemPrompt}`.slice(0, 500);  // long msg: include context
 
-  // Build result set: always-included + top scored
+  // Dynamic limit: short messages get fewer tools, complex ones get more
+  const dynamicMax = msgLen < 20 ? Math.min(maxTools, 15) :
+                     msgLen < 80 ? Math.min(maxTools, 25) :
+                     maxTools;
+
+  const results = await searchTools(query, dynamicMax * 2); // fetch more, filter by score
+
+  // Build result set: always-included + scored above threshold
   const selectedNames = new Set(alwaysNames);
   const selected: any[] = [...alwaysTools];
 
   const toolMap = new Map(allTools.map((t: any) => [t.function?.name || t.name, t]));
 
+  // Score threshold: only include tools with meaningful relevance
+  const SCORE_THRESHOLD = 0.08;
   for (const r of results) {
-    if (selected.length >= maxTools) break;
+    if (selected.length >= dynamicMax) break;
     if (selectedNames.has(r.name)) continue;
+    // Skip low-score tools (not relevant to message)
+    const score = (r.vectorScore || 0) + (r.keywordScore || 0);
+    if (score < SCORE_THRESHOLD && selected.length >= alwaysNames.size + 5) continue;
     const tool = toolMap.get(r.name);
     if (tool) {
       selected.push(tool);
@@ -268,13 +283,13 @@ export async function selectToolsHybrid(
     }
   }
 
-  // If we got very few results (embedding failed), fall back to all tools capped
-  if (selected.length < Math.min(15, allTools.length)) {
-    console.log(`[ToolRAG] Hybrid returned only ${selected.length} tools, falling back to full set capped at ${maxTools}`);
-    return allTools.slice(0, maxTools);
+  // If we got very few results (embedding failed), fall back to always + basic set
+  if (selected.length < Math.min(10, allTools.length)) {
+    console.log(`[ToolRAG] Hybrid returned only ${selected.length} tools, falling back to capped set`);
+    return allTools.slice(0, Math.min(dynamicMax, 30));
   }
 
   const embCount = results.filter(r => r.vectorScore > 0).length;
-  console.log(`[ToolRAG] Hybrid selected ${selected.length}/${allTools.length} tools (${alwaysNames.size} always + ${embCount} by embedding + ${selected.length - alwaysNames.size - embCount} by keyword)`);
+  console.log(`[ToolRAG] Smart selected ${selected.length}/${allTools.length} tools (${alwaysNames.size} always, limit=${dynamicMax}, msgLen=${msgLen})`);
   return selected;
 }
