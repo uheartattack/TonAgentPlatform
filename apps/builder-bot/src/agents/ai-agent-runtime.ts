@@ -2724,10 +2724,11 @@ export async function executeTool(
     case 'remember': {
       try {
         // Memory poisoning prevention: block memory writes from group chats by non-owners
+        const _memProtect = params.config.memory_poisoning_protection !== false; // default true
         const _chatId = params.context?.chatId;
         const _senderId = params.context?.senderId;
         const _isGroupCtx = _chatId && String(_chatId).startsWith('-');
-        if (_isGroupCtx && _senderId && String(_senderId) !== String(params.userId)) {
+        if (_memProtect && _isGroupCtx && _senderId && String(_senderId) !== String(params.userId)) {
           console.log(`[Security] remember blocked: group chat memory write by non-owner (sender=${_senderId}, owner=${params.userId})`);
           return { ok: false, error: 'Memory writes are blocked in group chats for security. Only owner messages can trigger memory saves.' };
         }
@@ -2886,9 +2887,10 @@ export async function executeTool(
     case 'save_lesson': {
       try {
         // Memory poisoning prevention: block lesson writes from group chats by non-owners
+        const _lessonMemProtect = params.config.memory_poisoning_protection !== false;
         const _lChatId = params.context?.chatId;
         const _lSenderId = params.context?.senderId;
-        if (_lChatId && String(_lChatId).startsWith('-') && _lSenderId && String(_lSenderId) !== String(params.userId)) {
+        if (_lessonMemProtect && _lChatId && String(_lChatId).startsWith('-') && _lSenderId && String(_lSenderId) !== String(params.userId)) {
           return { ok: false, error: 'Lesson saves are blocked in group chats for security.' };
         }
         const { isCategoryEnabled: isLessonEnabled } = await import('../services/agent-memory');
