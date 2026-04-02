@@ -3503,11 +3503,83 @@ RULES:
               } catch {}
             }
           }
+          // ── Apply humanization behavior before sending ──
+          const _bh = mergedConfig.behavior || cfg.config?.behavior || {};
+          const _addVar = (v: number, pct: number) => Math.max(0, Math.round(v * (1 + (Math.random() - 0.5) * ((pct || 25) / 50))));
+
+          // 1. Read receipts with delay
+          if (_bh.readReceipts) {
+            try {
+              const readMs = _addVar((_bh.readDelay || 1.5) * 1000, _bh.randomVariance || 25);
+              await new Promise(r => setTimeout(r, readMs));
+              await (client as any).markAsRead(chatTarget);
+            } catch {}
+          }
+
+          // 2. Typing delay proportional to response length
+          if (_bh.typingDelay) {
+            try {
+              const speed = _bh.typingSpeed || 40; // ms per char
+              const typingMs = _addVar(Math.min(responseText.length * speed, 12000), _bh.randomVariance || 25);
+              // Hesitation: sometimes start typing, pause, resume
+              if (_bh.hesitation && Math.random() < 0.25) {
+                await (client as any).invoke(new (require('telegram/tl').Api.messages.SetTyping)({ peer: chatTarget, action: new (require('telegram/tl').Api.SendMessageTypingAction)() })).catch(() => {});
+                await new Promise(r => setTimeout(r, _addVar(800, _bh.randomVariance || 25)));
+                await (client as any).invoke(new (require('telegram/tl').Api.messages.SetTyping)({ peer: chatTarget, action: new (require('telegram/tl').Api.SendMessageCancelAction)() })).catch(() => {});
+                await new Promise(r => setTimeout(r, _addVar(600, _bh.randomVariance || 25)));
+              }
+              await (client as any).invoke(new (require('telegram/tl').Api.messages.SetTyping)({ peer: chatTarget, action: new (require('telegram/tl').Api.SendMessageTypingAction)() })).catch(() => {});
+              await new Promise(r => setTimeout(r, typingMs));
+            } catch {}
+          }
+
+          // 3. Thinking phrases before long answers
+          if (_bh.thinkingPhrases && responseText.length > 300 && Math.random() < 0.4) {
+            try {
+              const phrases = ['Секунду...', 'Проверяю...', 'Хм, дай подумать...', 'Момент...'];
+              const phrase = phrases[Math.floor(Math.random() * phrases.length)];
+              await (client as any).sendMessage(chatTarget, { message: phrase });
+              await new Promise(r => setTimeout(r, _addVar(1500, _bh.randomVariance || 25)));
+            } catch {}
+          }
+
           // Convert markdown → HTML for Telegram formatting
           const formattedText = mdToHtml(responseText);
           // Only reply-to if message is recent (< 2 min), otherwise just send — prevents tagging old messages
           const _msgAge = Math.floor(Date.now() / 1000) - (msg.date || 0);
           const _replyTo = (msg.isGroup && _msgAge < 120) ? msg.id : undefined;
+
+          // 4. Message splitting for long responses
+          if (_bh.messageSplitting && responseText.length > 800) {
+            try {
+              const parts = responseText.split(/\n\n+/).filter((p: string) => p.trim().length > 0);
+              if (parts.length > 1) {
+                for (let pi = 0; pi < parts.length; pi++) {
+                  const partHtml = mdToHtml(parts[pi]);
+                  try {
+                    await (client as any).sendMessage(chatTarget, {
+                      message: partHtml, parseMode: 'html',
+                      replyTo: pi === 0 ? _replyTo : undefined,
+                    });
+                  } catch {
+                    await (client as any).sendMessage(chatTarget, { message: parts[pi], replyTo: pi === 0 ? _replyTo : undefined });
+                  }
+                  if (pi < parts.length - 1) {
+                    const partDelay = _addVar(2000, _bh.randomVariance || 25);
+                    await (client as any).invoke(new (require('telegram/tl').Api.messages.SetTyping)({ peer: chatTarget, action: new (require('telegram/tl').Api.SendMessageTypingAction)() })).catch(() => {});
+                    await new Promise(r => setTimeout(r, partDelay));
+                  }
+                }
+                getChatRing(agentId).addResponse(msg.chatId, responseText);
+                getChatRing(agentId).persistToDb(agentId, cfg.userId).catch(() => {});
+                getContactMemory(agentId).persistToDb(agentId, cfg.userId).catch(() => {});
+                if (msg.isGroup) _lastResponseTime.set(`${agentId}:${msg.chatId}`, Date.now());
+                // Skip normal send — already sent in parts
+                return;
+              }
+            } catch {}
+          }
+
           try {
             await (client as any).sendMessage(chatTarget, {
               message: formattedText,
