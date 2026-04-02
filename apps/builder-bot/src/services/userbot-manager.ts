@@ -937,6 +937,22 @@ const _agentQueues = new Map<number, { queue: QueueItem[]; processing: boolean }
 // Global send rate limiter (25 msg/sec, 20 per group/min)
 const _sendLimiter = new SendRateLimiter(25, 20);
 
+// ── Proactive AI rate gate: track calls per minute, wait if near limit ──
+const _aiCallTimes = new Map<number, number[]>(); // agentId → timestamps
+const AI_RPM_LIMIT = 14; // leave 1 buffer below typical 15 RPM free tier
+async function proactiveAIWait(agentId: number): Promise<void> {
+  const now = Date.now();
+  let times = _aiCallTimes.get(agentId) || [];
+  times = times.filter(t => now - t < 60_000); // keep last minute
+  if (times.length >= AI_RPM_LIMIT) {
+    const waitMs = 60_000 - (now - times[0]) + 500; // wait until oldest expires + buffer
+    console.log(`[FloodGate] Agent#${agentId} proactive wait ${Math.round(waitMs / 1000)}s (${times.length} calls/min)`);
+    await new Promise(r => setTimeout(r, Math.min(waitMs, 30_000)));
+  }
+  times.push(now);
+  _aiCallTimes.set(agentId, times);
+}
+
 // ── Message Debouncing (group messages batched within 1.5s window) ──
 const _debounceTimers = new Map<string, NodeJS.Timeout>(); // chatKey → timer
 const _debounceBatch = new Map<string, any[]>(); // chatKey → messages[]
@@ -2302,6 +2318,33 @@ class UserbotManager {
       return;
     }
 
+    // ── DM debounce: batch rapid messages from same chat (1s window) ──
+    if (!msg.isGroup) {
+      const dbKey = `dm:${agentId}:${msg.chatId}`;
+      if (!_debounceBatch.has(dbKey)) _debounceBatch.set(dbKey, []);
+      _debounceBatch.get(dbKey)!.push({ msg, cfg });
+      if (_debounceTimers.has(dbKey)) clearTimeout(_debounceTimers.get(dbKey)!);
+      _debounceTimers.set(dbKey, setTimeout(() => {
+        const batch = _debounceBatch.get(dbKey) || [];
+        _debounceBatch.delete(dbKey);
+        _debounceTimers.delete(dbKey);
+        if (batch.length === 0) return;
+        // Merge text from all messages, dispatch as one
+        if (batch.length > 1) {
+          const merged = batch[batch.length - 1]; // use last msg as base
+          merged.msg = { ...merged.msg, text: batch.map((b: any) => b.msg.text).filter(Boolean).join('\n') };
+          console.log(`[UserbotMgr] 📦 Debounced ${batch.length} DM msgs → 1 for agent#${agentId}`);
+        }
+        this._doDispatch(agentId, batch[batch.length - 1].msg, batch[batch.length - 1].cfg, chatKey, priority);
+      }, 1000));
+      return;
+    }
+
+    this._doDispatch(agentId, msg, cfg, chatKey, priority);
+  }
+
+  private _doDispatch(agentId: number, msg: TgInboxMessage, cfg: AgentMessageConfig, chatKey: string, priority: number): void {
+    const isOwner = msg.senderId && String(msg.senderId) === String(cfg.userId);
     // Get or create per-agent queue
     let agentQ = _agentQueues.get(agentId);
     if (!agentQ) {
@@ -2935,6 +2978,8 @@ RULES:
         };
       });
 
+      // Proactive rate gate: wait if near RPM limit (prevents 429)
+      await proactiveAIWait(agentId);
       console.log(`[UserbotMgr] 📡 Agent#${agentId} AI: provider=${prov.id} tools=${geminiTools.length}(of ${allTools.length})`);
 
       // ── Pre-AI behavior: read receipts + start typing ──
