@@ -119,8 +119,8 @@ export async function loadBudgetsFromDB(): Promise<void> {
     for (const row of res.rows) {
       try {
         const parsed = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
-        const limit = parsed?.limit || parsed?.text ? JSON.parse(parsed.text)?.limit : 0;
-        if (limit > 0) _dailyBudgets.set(row.agent_id, Number(limit));
+        const limit = typeof parsed?.limit === 'number' ? parsed.limit : 0;
+        if (limit > 0) _dailyBudgets.set(row.agent_id, limit);
       } catch {}
     }
   } catch {}

@@ -765,7 +765,7 @@ export class GiftAssetClient {
         const market = (item.provider || '').toLowerCase();
         if (market) setMin(market, item.price);  // always update if cheaper
       }
-    } catch (e: any) { /* SwiftGifts disabled — silence expected cooldown errors */ }
+    } catch (e: any) { if (!(e?.message?.includes('cooldown') || e?.message?.includes('429'))) console.debug(`[GiftAsset] SwiftGifts offchain query failed for ${slug}:`, e?.message); }
 
     // 4) SwiftGifts — onchain markets (getgems, fragment) for cross-verification
     try {
@@ -774,7 +774,7 @@ export class GiftAssetClient {
         const market = (item.provider || '').toLowerCase();
         if (market) setMin(market, item.price);
       }
-    } catch (e: any) { /* SwiftGifts disabled — silence expected cooldown errors */ }
+    } catch (e: any) { if (!(e?.message?.includes('cooldown') || e?.message?.includes('429'))) console.debug(`[GiftAsset] SwiftGifts onchain query failed for ${slug}:`, e?.message); }
 
     let minFloor = Infinity;
     let minFloorMarket = '';
@@ -807,7 +807,7 @@ export class GiftAssetClient {
     try {
       // Step 1: Current floor prices (active listings) — NOT last sale prices
       // getAllCollectionsLastSale returns transaction history (what sold) not current listings
-      const rawData = await this.getPriceList().catch(() => null);
+      const rawData = await this.getPriceList().catch((e: any) => { console.warn('[GiftAsset] getPriceList failed in findArbitrageOpportunities:', e?.message); return null; });
       const cf = rawData?.collection_floors || rawData?.last_sales || rawData;
       if (!cf || typeof cf !== 'object') return opps;
 

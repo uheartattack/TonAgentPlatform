@@ -114,6 +114,16 @@ async function main() {
     console.error('[AgenticWallet] Init error:', e.message, e.stack?.slice(0, 300));
   }
 
+  // Запуск TokenTracker auto-flush (каждые 5 мин → DB)
+  try {
+    const { startAutoFlush, loadBudgetsFromDB } = require('./services/token-tracker');
+    await loadBudgetsFromDB();
+    startAutoFlush(5 * 60 * 1000);
+    console.log('🪙 TokenTracker auto-flush started');
+  } catch (e: any) {
+    console.warn('[TokenTracker] Init error:', e.message);
+  }
+
   // Восстановить schedulers для агентов которые были активны до перезапуска
   await restoreActiveAgents();
 

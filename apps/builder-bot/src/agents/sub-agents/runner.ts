@@ -6,6 +6,7 @@ import { notifyAgentResult, notifyUser } from '../../notifier';
 import { getUserSettingsRepository } from '../../db/schema-extensions';
 import { getAIAgentRuntime, addMessageToAIAgent } from '../ai-agent-runtime';
 import { broadcastWSEvent } from '../../api-server';
+import { lifecycleManager } from '../../services/agent-lifecycle';
 
 // Загрузить пользовательские переменные из user_settings (безопасно, без ошибок)
 async function loadUserVariables(userId: number): Promise<Record<string, any>> {
@@ -134,7 +135,8 @@ async function drainAgentQueue(agentId: string): Promise<void> {
   if (agentProcessing.get(agentId)) return;
   agentProcessing.set(agentId, true);
   try {
-    const queue = agentMessageQueues.get(agentId) ?? [];
+    // Keep draining until queue is empty — items may be added during await yields
+    let queue = agentMessageQueues.get(agentId) ?? [];
     while (queue.length > 0) {
       const item = queue.shift()!;
       try {
@@ -143,9 +145,14 @@ async function drainAgentQueue(agentId: string): Promise<void> {
       } catch (err) {
         item.reject(err);
       }
+      // Re-fetch queue reference in case it was replaced
+      queue = agentMessageQueues.get(agentId) ?? [];
     }
   } finally {
     agentProcessing.set(agentId, false);
+    // Re-drain if items arrived while we were processing
+    const remaining = agentMessageQueues.get(agentId) ?? [];
+    if (remaining.length > 0) drainAgentQueue(agentId).catch(e => console.error('[Queue] re-drain error:', e));
   }
 }
 
@@ -227,6 +234,7 @@ export class RunnerAgent {
 
         // Activate in DB
         await this.dbTools.updateAgent(params.agentId, params.userId, { isActive: true });
+        lifecycleManager.markRunning(params.agentId);
 
         broadcastWSEvent(params.userId, {
           type: 'agent_started', agentId: params.agentId,
@@ -443,6 +451,7 @@ export class RunnerAgent {
     const result = await this.dbTools.updateAgent(agentId, userId, { isActive: false });
 
     if (result.success) {
+      lifecycleManager.markStopped(agentId);
       broadcastWSEvent(userId, {
         type: 'agent_stopped', agentId,
         agentName: result.data?.name,
