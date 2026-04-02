@@ -2898,7 +2898,10 @@ RULES:
       systemPrompt = systemPrompt.replace(PRE_SEARCH_PLACEHOLDER, _preSearchResult);
 
       // Tool RAG: select only relevant tools based on message + system prompt
-      const filteredTools = selectRelevantTools(allTools, msg.text, cfg.systemPrompt || '', 70);
+      // Dynamic tool limit: short messages get fewer tools (faster response)
+      const _msgLen = (msg.text || '').trim().length;
+      const _dynToolLimit = _msgLen < 20 ? 15 : _msgLen < 80 ? 25 : 40;
+      const filteredTools = selectRelevantTools(allTools, msg.text, cfg.systemPrompt || '', _dynToolLimit);
 
       // Convert to Gemini format + sanitize schemas
       const geminiTools = filteredTools.map((t: any) => {
