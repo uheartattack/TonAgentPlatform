@@ -176,54 +176,63 @@ export function shouldResetSession(
 }
 
 // ── State persistence helpers ───────────────────────────────────────────────
+function parseJsonbValue(raw: any): any {
+  if (raw === null || raw === undefined) return null;
+  // JSONB column: Drizzle auto-parses, so raw may already be an object. Handle both cases.
+  if (typeof raw === 'string') {
+    try { return JSON.parse(raw); } catch { return null; }
+  }
+  return raw;
+}
+
 export async function loadBlocklist(stateRepo: any, agentId: number): Promise<BlocklistConfig> {
   try {
     const raw = await stateRepo.get(agentId, '_hooks_blocklist');
-    const val = raw?.value || raw;
-    if (val) return { ...DEFAULT_BLOCKLIST, ...JSON.parse(val) };
+    const val = parseJsonbValue(raw);
+    if (val) return { ...DEFAULT_BLOCKLIST, ...val };
   } catch {}
   return { ...DEFAULT_BLOCKLIST };
 }
 
 export async function saveBlocklist(stateRepo: any, agentId: number, userId: number, config: BlocklistConfig): Promise<void> {
-  await stateRepo.set(agentId, userId, '_hooks_blocklist', JSON.stringify(config));
+  await stateRepo.set(agentId, userId, '_hooks_blocklist', config);
 }
 
 export async function loadTriggers(stateRepo: any, agentId: number): Promise<ContextTrigger[]> {
   try {
     const raw = await stateRepo.get(agentId, '_hooks_triggers');
-    const val = raw?.value || raw;
-    if (val) return JSON.parse(val);
+    const val = parseJsonbValue(raw);
+    if (Array.isArray(val)) return val;
   } catch {}
   return [];
 }
 
 export async function saveTriggers(stateRepo: any, agentId: number, userId: number, triggers: ContextTrigger[]): Promise<void> {
-  await stateRepo.set(agentId, userId, '_hooks_triggers', JSON.stringify(triggers));
+  await stateRepo.set(agentId, userId, '_hooks_triggers', triggers);
 }
 
 export async function loadToolScopes(stateRepo: any, agentId: number): Promise<Record<string, ToolScopeConfig>> {
   try {
     const raw = await stateRepo.get(agentId, '_hooks_tool_scope');
-    const val = raw?.value || raw;
-    if (val) return JSON.parse(val);
+    const val = parseJsonbValue(raw);
+    if (val && typeof val === 'object') return val;
   } catch {}
   return {};
 }
 
 export async function saveToolScopes(stateRepo: any, agentId: number, userId: number, scopes: Record<string, ToolScopeConfig>): Promise<void> {
-  await stateRepo.set(agentId, userId, '_hooks_tool_scope', JSON.stringify(scopes));
+  await stateRepo.set(agentId, userId, '_hooks_tool_scope', scopes);
 }
 
 export async function loadSessionConfig(stateRepo: any, agentId: number): Promise<SessionConfig> {
   try {
     const raw = await stateRepo.get(agentId, '_hooks_session');
-    const val = raw?.value || raw;
-    if (val) return { ...DEFAULT_SESSION, ...JSON.parse(val) };
+    const val = parseJsonbValue(raw);
+    if (val) return { ...DEFAULT_SESSION, ...val };
   } catch {}
   return { ...DEFAULT_SESSION };
 }
 
 export async function saveSessionConfig(stateRepo: any, agentId: number, userId: number, config: SessionConfig): Promise<void> {
-  await stateRepo.set(agentId, userId, '_hooks_session', JSON.stringify(config));
+  await stateRepo.set(agentId, userId, '_hooks_session', config);
 }
