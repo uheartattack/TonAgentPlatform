@@ -467,9 +467,10 @@ function getAIClient(config: Record<string, any>): { client: OpenAI; defaultMode
   const finalURL = (config.AI_BASE_URL as string) || providerCfg.baseURL;
   // Use explicitly configured model if set, otherwise provider default
   const defaultModel = (config.AI_MODEL as string) || providerCfg.defaultModel;
-  // Anthropic API requires version header
-  const extraHeaders = providerCfg.baseURL.includes('anthropic.com') || apiKey.startsWith('sk-ant')
-    ? { 'anthropic-version': '2023-06-01' }
+  // Anthropic API requires version header + prompt caching beta
+  const isAnthropic = providerCfg.baseURL.includes('anthropic.com') || apiKey.startsWith('sk-ant');
+  const extraHeaders = isAnthropic
+    ? { 'anthropic-version': '2023-06-01', 'anthropic-beta': 'prompt-caching-2024-07-31' }
     : {};
   return { client: new OpenAI({ baseURL: finalURL, apiKey, defaultHeaders: extraHeaders }), defaultModel, providerCfg: { ...providerCfg, defaultModel } };
 }
@@ -5630,6 +5631,21 @@ export async function executeTool(
   } finally {
     // Release atomic lock for financial operations
     if (_isFinancialOp) releaseOpLock(params.agentId);
+  }
+
+  // ── Post-hook: auto-log financial operations to journal ──
+  if (_isFinancialOp && result && !(result as any).error) {
+    try {
+      const { logTrade } = await import('../services/journal');
+      await logTrade(params.agentId || 0, {
+        type: name.includes('buy') ? 'buy' : name.includes('sell') || name.includes('list') ? 'sell' : 'transfer',
+        asset: name.includes('gift') ? 'gift' : name.includes('jetton') ? 'jetton' : 'TON',
+        amount: String(args.amount || ''),
+        price: String(args.price || ''),
+        status: 'completed',
+        notes: `Auto-logged: ${name}(${JSON.stringify(args).slice(0, 100)})`,
+      }).catch(() => {});
+    } catch {}
   }
 }
 
