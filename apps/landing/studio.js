@@ -260,7 +260,23 @@ function switchLang(lang) {
 
   // Re-render dynamic content that uses t()
   try {
-    if (authToken && currentUser) loadAgents();
+    // Re-render current active page only (don't navigate away)
+    var activePage = document.querySelector('.page.active');
+    var activePageId = activePage ? activePage.id : '';
+    if (activePageId === 'guide-page') {
+      // Preserve active guide tab
+      var _savedGuideTab = typeof _activeGuideTab !== 'undefined' ? _activeGuideTab : null;
+      loadGuidePage();
+      if (_savedGuideTab && typeof _switchGuideTab === 'function') _switchGuideTab(_savedGuideTab);
+    } else if (activePageId === 'operations-page') {
+      if (authToken && currentUser) loadAgentsPage();
+    } else if (activePageId === 'profile-page') {
+      if (typeof loadProfile === 'function') loadProfile();
+    } else if (activePageId === 'terms-page') {
+      loadTermsPage();
+    } else if (activePageId === 'privacy-page') {
+      loadPrivacyPage();
+    }
     // Re-render auth screen if visible
     const authScreen = document.getElementById('auth-screen');
     if (authScreen && !authScreen.classList.contains('hidden')) {

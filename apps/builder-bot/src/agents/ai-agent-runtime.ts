@@ -1050,7 +1050,7 @@ const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
                 'tg_get_history_count', 'tg_send_album', 'tg_get_profile_photos',
                 'tg_send_silent', 'tg_get_webpage', 'tg_press_button',
                 'tg_get_chat_stats', 'tg_save_draft', 'tg_send_with_buttons',
-                'tg_get_poll_results', 'tg_send_sticker', 'tg_send_gif',
+                'tg_get_poll_results', 'tg_send_sticker', 'tg_send_gif', 'tg_query_inline_bot',
                 'tg_send_voice', 'tg_transcribe_voice', 'tg_get_sticker_sets',
                 'tg_send_dice', 'tg_create_quiz', 'tg_reply_keyboard',
                 'tg_get_common_chats', 'tg_check_username', 'tg_set_username',
@@ -3534,6 +3534,7 @@ export async function executeTool(
           case 'tg_get_poll_results': return await tgSandbox.getPollResults(args.chat_id, args.message_id);
           case 'tg_send_sticker': return await tgSandbox.sendSticker(args.chat_id, args.sticker_set_name, args.index ?? 0);
           case 'tg_send_gif': return await tgSandbox.sendGif(args.chat_id, args.query);
+          case 'tg_query_inline_bot': return await tgSandbox.queryInlineBot(args.chat_id, args.bot_username, args.query, args.send_result);
           case 'tg_send_voice': return await tgSandbox.sendVoice(args.chat_id, args.text, args.lang || 'ru');
           case 'tg_transcribe_voice': return await tgSandbox.transcribeVoice(args.chat_id, args.message_id);
           case 'tg_get_sticker_sets': return await tgSandbox.getStickerSets(args.query);
