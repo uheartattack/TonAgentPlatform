@@ -810,6 +810,8 @@ async function openAgentDetail(agentId, skipSettings) {
       if (!data0.ok || !data0.agent) { toast('Agent not found', 'error'); return; }
       _detailAgentData = normalizeAgentData(data0.agent);
       openAgentSettings();
+      // Show agent settings tour on first visit
+      if (!_agentTourShown) { _agentTourShown = true; setTimeout(startAgentTour, 800); }
     } catch(e) {
       toast(e.message || 'Error', 'error');
     }
@@ -11048,6 +11050,40 @@ function endTour() {
   if (_tourResizeHandler) { window.removeEventListener('resize', _tourResizeHandler); _tourResizeHandler = null; }
   localStorage.setItem('tour_completed', '1');
 }
+
+// ── Agent Settings Tour (shown when user first opens agent settings) ──
+var AGENT_TOUR_STEPS = [
+  { target: '[data-tab="soul"]', title: { en: 'System Prompt', ru: 'Системный промпт' }, desc: { en: 'The personality and behavior of your agent. Everything starts here — describe who the agent is and what it does.', ru: 'Личность и поведение агента. Всё начинается здесь — опишите кто агент и что делает. Это самая важная настройка.' }, position: 'right' },
+  { target: '[data-tab="ai"]', title: { en: 'AI Provider', ru: 'AI Провайдер' }, desc: { en: 'Choose AI model and paste your API key. Gemini is free, Groq is fast, Claude is smartest.', ru: 'Выберите AI модель и вставьте API ключ. Gemini бесплатный, Groq быстрый, Claude самый умный.' }, position: 'right' },
+  { target: '[data-tab="caps"]', title: { en: 'Capabilities', ru: 'Возможности' }, desc: { en: 'Enable tool modules: Telegram, Wallet, Gifts, Web, DeFi, Image. Only enable what the agent needs — fewer tools = faster responses.', ru: 'Включите модули: Telegram, Wallet, Gifts, Web, DeFi, Image. Включайте только нужные — меньше инструментов = быстрее ответы.' }, position: 'right' },
+  { target: '[data-tab="behavior"]', title: { en: 'Humanization', ru: 'Человечность' }, desc: { en: 'Make agent feel human: typing delays, read receipts, reactions, message splitting. Adjustable per-setting.', ru: 'Сделайте агента похожим на человека: задержки набора, прочтение, реакции, разбиение сообщений.' }, position: 'right' },
+  { target: '[data-tab="routing"]', title: { en: 'Routing', ru: 'Маршрутизация' }, desc: { en: 'Control which messages this agent receives. Filter by keywords, chat type, priority. Essential for multi-agent setups.', ru: 'Управляйте какие сообщения получает агент. Фильтр по словам, типу чата, приоритету. Важно для мультиагентных систем.' }, position: 'right' },
+  { target: '[data-tab="advanced"]', title: { en: 'Advanced', ru: 'Продвинутое' }, desc: { en: 'Tick interval, loop guard, flood cooldown, memory protection, compaction strategy. For power users.', ru: 'Интервал тиков, loop guard, cooldown, защита памяти, стратегия компактинга. Для продвинутых.' }, position: 'right' },
+];
+
+function startAgentTour() {
+  _tourStep = 0;
+  _tourActive = true;
+  // Replace steps temporarily
+  var _origSteps = TOUR_STEPS;
+  TOUR_STEPS = AGENT_TOUR_STEPS;
+  var overlay = document.getElementById('tour-overlay');
+  if (overlay) { overlay.style.display = 'block'; overlay.classList.add('active'); }
+  _tourResizeHandler = function() { if (_tourActive) showTourStep(); };
+  window.addEventListener('resize', _tourResizeHandler);
+  // Override endTour to restore
+  var _origEnd = endTour;
+  endTour = function() {
+    _origEnd();
+    TOUR_STEPS = _origSteps;
+    endTour = _origEnd;
+    localStorage.setItem('agent_tour_completed', '1');
+  };
+  showTourStep();
+}
+
+// Auto-show agent tour on first agent detail open
+var _agentTourShown = localStorage.getItem('agent_tour_completed') === '1';
 
 // ===== NETWORK MAP CLICK =====
 let _networkClickStart = null;
