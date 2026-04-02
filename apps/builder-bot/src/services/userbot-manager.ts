@@ -2919,26 +2919,24 @@ RULES:
 
       console.log(`[UserbotMgr] 📡 Agent#${agentId} AI: provider=${prov.id} tools=${geminiTools.length}(of ${allTools.length})`);
 
-      // ── Pre-AI behavior: read receipts + start typing (runs PARALLEL with AI) ──
+      // ── Pre-AI behavior: read receipts + start typing ──
       const _bhPre = mergedConfig.behavior || cfg.config?.behavior || {};
+      let _typingInterval: any = null;
       if (_bhPre.readReceipts || _bhPre.typingDelay) {
         const { Api: _PreApi } = require('telegram/tl');
-        // Sequence: read delay → mark as read → start typing → AI generates
         const _readChatId = msg.chatId;
+        // Read delay → mark as read
         if (_bhPre.readReceipts) {
           const _rdMs = Math.max(500, Math.round((_bhPre.readDelay || 1.5) * 1000 * (0.5 + Math.random() * 0.5)));
           await new Promise(r => setTimeout(r, _rdMs));
           try { await (client as any).markAsRead(_readChatId); } catch {}
         }
-        // Now start typing (after reading) + refresh every 4s so "typing..." doesn't disappear
-        let _typingInterval: any = null;
-        if (_bhPre.typingDelay || _bhPre.readReceipts) {
-          const _sendTyping = async () => {
-            try { await (client as any).invoke(new _PreApi.messages.SetTyping({ peer: _readChatId, action: new _PreApi.SendMessageTypingAction() })); } catch {}
-          };
-          await _sendTyping();
-          _typingInterval = setInterval(_sendTyping, 4000); // refresh typing every 4s
-        }
+        // Start typing + refresh every 4s
+        const _sendTyping = async () => {
+          try { await (client as any).invoke(new _PreApi.messages.SetTyping({ peer: _readChatId, action: new _PreApi.SendMessageTypingAction() })); } catch {}
+        };
+        await _sendTyping();
+        _typingInterval = setInterval(_sendTyping, 4000);
       }
 
       let aiText = '';
@@ -3684,6 +3682,9 @@ RULES:
     } catch (e: any) {
       console.error(`[UserbotMgr] processMessage error agent#${agentId}:`, e.message);
       console.error(`[UserbotMgr] stack:`, e.stack?.slice(0, 500));
+    } finally {
+      // Always clean up typing interval
+      if (_typingInterval) { clearInterval(_typingInterval); _typingInterval = null; }
     }
   }
 }
