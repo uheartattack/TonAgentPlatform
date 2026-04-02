@@ -271,6 +271,14 @@ async function verifyTelegramOIDC(idToken: string): Promise<{ userId: number; us
 }
 
 // ── Auth middleware ───────────────────────────────────────────
+// Admin-aware agent getter: admins can access any agent
+async function getAgentForUser(agentId: number, req: Request): Promise<any> {
+  const userId = (req as any).userId as number;
+  const session = (req as any).session;
+  const admin = isPlatformAdmin(userId) || isPlatformAdminByUsername(session?.username || '');
+  return admin ? getDBTools().getAgent(agentId) : getDBTools().getAgent(agentId, userId);
+}
+
 function requireAuth(req: Request, res: Response, next: NextFunction): void {
   // Токен ТОЛЬКО из заголовка — никогда не из URL (утечка в логи, Referer, browser history)
   const token = req.headers['x-auth-token'] as string;
@@ -1263,8 +1271,10 @@ export function startApiServer() {
   app.get('/api/agents/:id', requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = (req as any).userId as number;
+      const session = (req as any).session;
       const agentId = parseInt(req.params.id as string, 10);
-      const r = await getDBTools().getAgent(agentId, userId);
+      const isAdmin = isPlatformAdmin(userId) || isPlatformAdminByUsername(session?.username || '');
+      const r = isAdmin ? await getDBTools().getAgent(agentId) : await getAgentForUser(agentId, req);
       if (!r.success || !r.data) { res.status(404).json({ error: 'Agent not found' }); return; }
       res.json({ ok: true, agent: r.data });
     } catch (e: any) {
@@ -1277,7 +1287,7 @@ export function startApiServer() {
     try {
       const userId = (req as any).userId as number;
       const agentId = parseInt(req.params.id as string, 10);
-      const r = await getDBTools().getAgent(agentId, userId);
+      const r = await getAgentForUser(agentId, req);
       if (!r.success || !r.data) { res.status(404).json({ error: 'Agent not found' }); return; }
       // Get state from DB
       const stateResult = await pool.query(
@@ -1297,7 +1307,7 @@ export function startApiServer() {
     try {
       const userId = (req as any).userId as number;
       const agentId = parseInt(req.params.id as string, 10);
-      const r = await getDBTools().getAgent(agentId, userId);
+      const r = await getAgentForUser(agentId, req);
       if (!r.success || !r.data) { res.status(404).json({ error: 'Agent not found' }); return; }
       // Get recent agent logs that are chat messages
       const logsResult = await pool.query(
@@ -1423,7 +1433,7 @@ export function startApiServer() {
       if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
 
       // Verify ownership
-      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      const agentCheck = await getAgentForUser(agentId, req);
       if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
 
       // Stop if running
@@ -1449,7 +1459,7 @@ export function startApiServer() {
       }
 
       // Verify ownership first
-      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      const agentCheck = await getAgentForUser(agentId, req);
       if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
 
       // Direct SQL update for name
@@ -1467,7 +1477,7 @@ export function startApiServer() {
       const agentId = parseInt(req.params.id as string, 10);
       if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
 
-      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      const agentCheck = await getAgentForUser(agentId, req);
       if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
       const agent = agentCheck.data;
 
@@ -1509,7 +1519,7 @@ export function startApiServer() {
       if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
 
       // Verify ownership
-      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      const agentCheck = await getAgentForUser(agentId, req);
       if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
 
       const limit = Math.min(parseInt(req.query.limit as string || '30', 10), 100);
@@ -1544,7 +1554,7 @@ export function startApiServer() {
       if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
 
       // Verify ownership
-      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      const agentCheck = await getAgentForUser(agentId, req);
       if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
 
       const limit = Math.min(parseInt(req.query.limit as string || '20', 10), 100);
@@ -1562,7 +1572,7 @@ export function startApiServer() {
       const userId = (req as any).userId as number;
       const agentId = parseInt(req.params.id as string, 10);
       if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
-      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      const agentCheck = await getAgentForUser(agentId, req);
       if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
 
       const tt = await import('./services/token-tracker');
@@ -1593,7 +1603,7 @@ export function startApiServer() {
       const userId = (req as any).userId as number;
       const agentId = parseInt(req.params.id as string, 10);
       if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
-      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      const agentCheck = await getAgentForUser(agentId, req);
       if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
       const { code } = req.body || {};
       if (typeof code !== 'string' || code.length > 50000) { res.status(400).json({ error: 'Invalid code' }); return; }
@@ -1615,7 +1625,7 @@ export function startApiServer() {
       const userId = (req as any).userId as number;
       const agentId = parseInt(req.params.id as string, 10);
       if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
-      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      const agentCheck = await getAgentForUser(agentId, req);
       if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
       const { description } = req.body || {};
       if (typeof description !== 'string' || description.length > 2000) { res.status(400).json({ error: 'Invalid description' }); return; }
@@ -1630,7 +1640,7 @@ export function startApiServer() {
       const userId = (req as any).userId as number;
       const agentId = parseInt(req.params.id as string, 10);
       if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
-      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      const agentCheck = await getAgentForUser(agentId, req);
       if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
       const agent = agentCheck.data;
       const { provider, model, apiKey, temperature, maxTokens, utilityModel } = req.body || {};
@@ -1655,7 +1665,7 @@ export function startApiServer() {
       const userId = (req as any).userId as number;
       const agentId = parseInt(req.params.id as string, 10);
       if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
-      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      const agentCheck = await getAgentForUser(agentId, req);
       if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
       const { role } = req.body || {};
       const validRoles = ['worker', 'manager', 'specialist', 'monitor', 'director'];
@@ -1671,7 +1681,7 @@ export function startApiServer() {
       const userId = (req as any).userId as number;
       const agentId = parseInt(req.params.id as string, 10);
       if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
-      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      const agentCheck = await getAgentForUser(agentId, req);
       if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
       const agent = agentCheck.data;
       const { routingRules } = req.body || {};
@@ -1749,7 +1759,7 @@ export function startApiServer() {
       const userId = (req as any).userId as number;
       const agentId = parseInt(req.params.id as string, 10);
       if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
-      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      const agentCheck = await getAgentForUser(agentId, req);
       if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
       const agent = agentCheck.data;
       const { daily_spend_limit_ton, tick_interval_sec, agent_language, behavior, learning, routing, groupPolicy, chatPolicies, customRole, agentColor,
@@ -1808,7 +1818,7 @@ export function startApiServer() {
     try {
       const userId = (req as any).userId as number;
       const agentId = parseInt(req.params.id as string, 10);
-      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      const agentCheck = await getAgentForUser(agentId, req);
       if (!agentCheck.success) { res.status(404).json({ error: 'Agent not found' }); return; }
       const { loadBlocklist, loadTriggers, loadSessionConfig, loadToolScopes } = require('./services/agent-hooks');
       const stateRepo = getAgentStateRepository();
@@ -1826,7 +1836,7 @@ export function startApiServer() {
     try {
       const userId = (req as any).userId as number;
       const agentId = parseInt(req.params.id as string, 10);
-      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      const agentCheck = await getAgentForUser(agentId, req);
       if (!agentCheck.success) { res.status(404).json({ error: 'Agent not found' }); return; }
       const { saveBlocklist, saveTriggers, saveSessionConfig, saveToolScopes } = require('./services/agent-hooks');
       const stateRepo = getAgentStateRepository();
@@ -1878,7 +1888,7 @@ export function startApiServer() {
       const userId = (req as any).userId as number;
       const agentId = parseInt(req.params.id as string, 10);
       if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
-      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      const agentCheck = await getAgentForUser(agentId, req);
       if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
       const agent = agentCheck.data;
       const { config: wizardConfig } = req.body || {};
@@ -1909,7 +1919,7 @@ export function startApiServer() {
       const userId = (req as any).userId as number;
       const agentId = parseInt(req.params.id as string, 10);
       if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
-      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      const agentCheck = await getAgentForUser(agentId, req);
       if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
       const { message } = req.body || {};
       if (!message || typeof message !== 'string' || message.length > 4000) { res.status(400).json({ error: 'Invalid message' }); return; }
@@ -1945,7 +1955,7 @@ export function startApiServer() {
     if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
 
     try {
-      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      const agentCheck = await getAgentForUser(agentId, req);
       if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
       const { message, history } = req.body || {};
       if (!message || typeof message !== 'string' || message.length > 4000) { res.status(400).json({ error: 'Invalid message' }); return; }
@@ -2067,7 +2077,7 @@ export function startApiServer() {
       const userId = (req as any).userId as number;
       const agentId = parseInt(req.params.id as string, 10);
       if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
-      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      const agentCheck = await getAgentForUser(agentId, req);
       if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
       const agent = agentCheck.data;
       const tc = typeof agent.triggerConfig === 'string' ? JSON.parse(agent.triggerConfig) : (agent.triggerConfig || {});
@@ -2101,7 +2111,7 @@ export function startApiServer() {
       const userId = (req as any).userId as number;
       const agentId = parseInt(req.params.id as string, 10);
       if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
-      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      const agentCheck = await getAgentForUser(agentId, req);
       if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
       const agent = agentCheck.data;
       const tc = typeof agent.triggerConfig === 'string' ? JSON.parse(agent.triggerConfig) : (agent.triggerConfig || {});
@@ -2132,7 +2142,7 @@ export function startApiServer() {
       const userId = (req as any).userId as number;
       const agentId = parseInt(req.params.id as string, 10);
       if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
-      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      const agentCheck = await getAgentForUser(agentId, req);
       if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
       const agent = agentCheck.data;
       const tc = typeof agent.triggerConfig === 'string' ? JSON.parse(agent.triggerConfig) : (agent.triggerConfig || {});
@@ -2258,7 +2268,7 @@ export function startApiServer() {
       const userId = (req as any).userId as number;
       const agentId = parseInt(req.params.id as string, 10);
       if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
-      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      const agentCheck = await getAgentForUser(agentId, req);
       if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
 
       const sr = getAgentStateRepository();
@@ -2311,7 +2321,7 @@ export function startApiServer() {
       const allowed = ['soul', 'strategy', 'identity', 'user', 'memory', 'heartbeat', 'bootstrap'];
       if (!allowed.includes(moduleName)) { res.status(400).json({ error: 'Unknown module: ' + moduleName }); return; }
 
-      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      const agentCheck = await getAgentForUser(agentId, req);
       if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
 
       const sr = getAgentStateRepository();
@@ -2327,7 +2337,7 @@ export function startApiServer() {
       const userId = (req as any).userId as number;
       const agentId = parseInt(req.params.id as string, 10);
       if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
-      const agentCheck = await getDBTools().getAgent(agentId, userId);
+      const agentCheck = await getAgentForUser(agentId, req);
       if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
       // Count runs from operations log
       let runs = 0, messages = 0, toolCalls = 0, uptimeHours = 0;
@@ -2833,7 +2843,7 @@ export function startApiServer() {
     if (!agentId || !name) return res.status(400).json({ ok: false, error: 'agentId and name required' });
     try {
       // Проверяем что агент принадлежит пользователю
-      const agentResult = await getDBTools().getAgent(agentId, userId);
+      const agentResult = await getAgentForUser(agentId, req);
       if (!agentResult.success || !agentResult.data) {
         return res.status(403).json({ ok: false, error: 'Agent not found or not yours' });
       }
@@ -2890,7 +2900,7 @@ export function startApiServer() {
   // ── Helper: verify agent belongs to authenticated user (simple bool version for telegram endpoints) ──
   async function checkAgentOwner(agentId: number, userId: number): Promise<boolean> {
     try {
-      const r = await getDBTools().getAgent(agentId, userId);
+      const r = await getAgentForUser(agentId, req);
       return r.success && !!r.data;
     } catch { return false; }
   }
@@ -4291,7 +4301,7 @@ export function startApiServer() {
       if (!check.success || !check.data) { res.status(404).json({ ok: false, error: 'Agent not found' }); return null; }
       return { agentId, userId };
     }
-    const check = await getDBTools().getAgent(agentId, userId);
+    const check = await getAgentForUser(agentId, req);
     if (!check.success || !check.data) { res.status(404).json({ ok: false, error: 'Agent not found or access denied' }); return null; }
     return { agentId, userId };
   }
