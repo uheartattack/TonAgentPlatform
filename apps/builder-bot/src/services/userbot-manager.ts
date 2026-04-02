@@ -3718,6 +3718,13 @@ RULES:
           getChatRing(agentId).persistToDb(agentId, cfg.userId).catch(() => {});
           getContactMemory(agentId).persistToDb(agentId, cfg.userId).catch(() => {});
           console.log(`[UserbotMgr] 💬 Agent#${agentId} replied: ${responseText.slice(0, 80)}...`);
+          // Auto-extract memory from conversation (async, non-blocking)
+          try {
+            const { _extractAndSaveMemoryFromChat } = await import('../agents/ai-agent-runtime');
+            if (typeof _extractAndSaveMemoryFromChat === 'function') {
+              _extractAndSaveMemoryFromChat(agentId, cfg.userId, msg, responseText, apiKey, providerKey).catch(() => {});
+            }
+          } catch {}
           // ── Update cooldown timestamp after successful response ──
           if (msg.isGroup) {
             _lastResponseTime.set(`${agentId}:${msg.chatId}`, Date.now());

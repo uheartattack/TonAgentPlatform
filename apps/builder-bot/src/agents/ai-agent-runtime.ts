@@ -8155,6 +8155,24 @@ Rules:
   }
 }
 
+/** Exported wrapper for UserbotMgr to call memory extraction after responding */
+export async function _extractAndSaveMemoryFromChat(
+  agentId: number, userId: number, msg: any, responseText: string,
+  apiKey: string, providerKey: string,
+): Promise<void> {
+  try {
+    const senderId = String(msg.senderId || '');
+    if (!senderId || responseText.length < 5) return;
+    const providerCfg = resolveProvider(providerKey);
+    const key = decryptApiKey(apiKey);
+    if (!key) return;
+    const ai = new (require('openai').default)({ baseURL: providerCfg.baseURL, apiKey: key });
+    const model = providerCfg.defaultModel;
+    const params = { agentId, userId, config: {}, context: { senderId, senderName: msg.senderUsername || msg.senderFirstName || '' } } as any;
+    await _extractAndSaveMemory(params, [msg.text || ''], responseText, ai, model);
+  } catch {}
+}
+
 // ── AI Agent Runtime: activate / deactivate ────────────────────────────────
 
 export class AIAgentRuntime {
