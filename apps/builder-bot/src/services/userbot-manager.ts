@@ -2930,9 +2930,14 @@ RULES:
           await new Promise(r => setTimeout(r, _rdMs));
           try { await (client as any).markAsRead(_readChatId); } catch {}
         }
-        // Now start typing (after reading)
-        if (_bhPre.typingDelay) {
-          try { await (client as any).invoke(new _PreApi.messages.SetTyping({ peer: _readChatId, action: new _PreApi.SendMessageTypingAction() })); } catch {}
+        // Now start typing (after reading) + refresh every 4s so "typing..." doesn't disappear
+        let _typingInterval: any = null;
+        if (_bhPre.typingDelay || _bhPre.readReceipts) {
+          const _sendTyping = async () => {
+            try { await (client as any).invoke(new _PreApi.messages.SetTyping({ peer: _readChatId, action: new _PreApi.SendMessageTypingAction() })); } catch {}
+          };
+          await _sendTyping();
+          _typingInterval = setInterval(_sendTyping, 4000); // refresh typing every 4s
         }
       }
 
@@ -3479,6 +3484,7 @@ RULES:
       // ── Send response via MTProto ──
       // Skip if agent already sent a message via tg_reply/tg_send_message in agentic loop
       if (alreadySentMessage && aiText) {
+        if (_typingInterval) { clearInterval(_typingInterval); _typingInterval = null; }
         console.log(`[UserbotMgr] 🔇 Agent#${agentId} already sent via tool, skipping duplicate text: "${aiText.slice(0, 60)}"`);
         getChatRing(agentId).addResponse(msg.chatId, aiText);
         getChatRing(agentId).persistToDb(agentId, cfg.userId).catch(() => {});
@@ -3500,11 +3506,21 @@ RULES:
         aiText = cleanLines.join('\n').trim();
       }
 
+      // ── SILENT/NO_ACTION detection (teleton pattern) ──
+      if (aiText) {
+        const _silentCheck = aiText.trim();
+        if (_silentCheck === '__SILENT__' || _silentCheck === 'NO_ACTION' || _silentCheck === '__SKIP__') {
+          if (_typingInterval) { clearInterval(_typingInterval); _typingInterval = null; }
+          console.log(`[UserbotMgr] 🔇 Agent#${agentId} explicit silence token: ${_silentCheck}`);
+          return;
+        }
+      }
+
       // ── Active mode: filter out non-responses (AI decided to stay silent) ──
       if (aiText && msg.isGroup && !msg.mentionsMe && this.getChatPolicy(msg.chatId, cfg) === 'active') {
         const stripped = aiText.replace(/\s+/g, '').toLowerCase();
-        // AI returns empty, dots, "ok", "хорошо", single emoji = decided to skip
         if (!stripped || stripped.length < 3 || /^(\.{1,3}|ok\.?|хорошо\.?|ок\.?|ага|угу|ну|да|понял|ясно)$/.test(stripped)) {
+          if (_typingInterval) { clearInterval(_typingInterval); _typingInterval = null; }
           console.log(`[UserbotMgr] 🔇 Agent#${agentId} active mode: AI chose silence ("${aiText.slice(0, 30)}")`);
           return;
         }
@@ -3531,6 +3547,9 @@ RULES:
               } catch {}
             }
           }
+          // Stop typing refresh interval
+          if (_typingInterval) { clearInterval(_typingInterval); _typingInterval = null; }
+
           // ── Apply humanization behavior before sending ──
           const _bh = mergedConfig.behavior || cfg.config?.behavior || {};
           const _addVar = (v: number, pct: number) => Math.max(100, Math.round(v * (1 + (Math.random() - 0.5) * ((pct || 25) / 50))));
