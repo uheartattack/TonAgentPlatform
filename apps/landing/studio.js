@@ -10438,7 +10438,7 @@ async function sendAssistantMessage() {
             if (r.type === 'agent_created') {
               loadAgents();
               toast(currentLang === 'ru' ? 'Агент создан!' : 'Agent created!', 'success');
-              if (r.agentId) { showWizard(r.agentId, r.agentName || ''); } else { navigateTo('agents'); }
+              if (r.agentId) { openAgentDetail(r.agentId).then(function() { setTimeout(function(){ startAgentTour(true); }, 800); }); } else { navigateTo('operations'); }
             }
           } else { appendAssistantMsg('assistant', data.error || 'Error'); }
           atlasStreamed = true;
@@ -10506,7 +10506,7 @@ async function sendAssistantMessage() {
           if (r2.type === 'agent_created') {
             loadAgents();
             toast(currentLang === 'ru' ? 'Агент создан!' : 'Agent created!', 'success');
-            if (r2.agentId) { showWizard(r2.agentId, r2.agentName || ''); } else { navigateTo('agents'); }
+            if (r2.agentId) { openAgentDetail(r2.agentId).then(function() { setTimeout(startAgentTour, 800); }); } else { navigateTo('operations'); }
           }
         } else { appendAssistantMsg('assistant', data2.error || 'Error'); }
       }
@@ -10550,7 +10550,7 @@ async function sendAssistantCallback(callbackData, label) {
         loadAgents();
         toast(currentLang === 'ru' ? 'Агент создан!' : 'Agent created!', 'success');
         if (data.result.agentId) {
-          showWizard(data.result.agentId, data.result.agentName || '');
+          openAgentDetail(data.result.agentId).then(function() { setTimeout(function(){ startAgentTour(true); }, 800); });
         } else {
           navigateTo('agents');
         }
@@ -11093,15 +11093,19 @@ function endTour() {
 
 // ── Agent Settings Tour (shown when user first opens agent settings) ──
 var AGENT_TOUR_STEPS = [
-  { target: '[data-tab="soul"]', title: { en: 'System Prompt', ru: 'Системный промпт' }, desc: { en: 'The personality and behavior of your agent. Everything starts here — describe who the agent is and what it does.', ru: 'Личность и поведение агента. Всё начинается здесь — опишите кто агент и что делает. Это самая важная настройка.' }, position: 'right' },
-  { target: '[data-tab="ai"]', title: { en: 'AI Provider', ru: 'AI Провайдер' }, desc: { en: 'Choose AI model and paste your API key. Gemini is free, Groq is fast, Claude is smartest.', ru: 'Выберите AI модель и вставьте API ключ. Gemini бесплатный, Groq быстрый, Claude самый умный.' }, position: 'right' },
-  { target: '[data-tab="caps"]', title: { en: 'Capabilities', ru: 'Возможности' }, desc: { en: 'Enable tool modules: Telegram, Wallet, Gifts, Web, DeFi, Image. Only enable what the agent needs — fewer tools = faster responses.', ru: 'Включите модули: Telegram, Wallet, Gifts, Web, DeFi, Image. Включайте только нужные — меньше инструментов = быстрее ответы.' }, position: 'right' },
-  { target: '[data-tab="behavior"]', title: { en: 'Humanization', ru: 'Человечность' }, desc: { en: 'Make agent feel human: typing delays, read receipts, reactions, message splitting. Adjustable per-setting.', ru: 'Сделайте агента похожим на человека: задержки набора, прочтение, реакции, разбиение сообщений.' }, position: 'right' },
-  { target: '[data-tab="routing"]', title: { en: 'Routing', ru: 'Маршрутизация' }, desc: { en: 'Control which messages this agent receives. Filter by keywords, chat type, priority. Essential for multi-agent setups.', ru: 'Управляйте какие сообщения получает агент. Фильтр по словам, типу чата, приоритету. Важно для мультиагентных систем.' }, position: 'right' },
-  { target: '[data-tab="advanced"]', title: { en: 'Advanced', ru: 'Продвинутое' }, desc: { en: 'Tick interval, loop guard, flood cooldown, memory protection, compaction strategy. For power users.', ru: 'Интервал тиков, loop guard, cooldown, защита памяти, стратегия компактинга. Для продвинутых.' }, position: 'right' },
+  { target: '[data-tab="soul"]', title: { en: 'System Prompt', ru: 'Промпт — душа агента' }, desc: { en: 'This defines WHO your agent is and HOW it behaves. Write clear instructions: what to do, how to talk, what to avoid. Atlas already generated a good prompt — you can edit it anytime.', ru: 'Здесь вы задаёте КТО ваш агент и КАК он себя ведёт. Пишите чёткие инструкции: что делать, как говорить, чего избегать. Atlas уже сгенерировал хороший промпт — его можно редактировать.' }, position: 'right' },
+  { target: '[data-tab="ai"]', title: { en: 'AI Provider — the brain', ru: 'AI Провайдер — мозг агента' }, desc: { en: 'IMPORTANT: Paste your API key here. Without it the agent cannot think. Free options: Gemini (aistudio.google.com), Groq (console.groq.com), OpenRouter (openrouter.ai/keys).', ru: 'ВАЖНО: Вставьте сюда API ключ. Без него агент не может думать. Бесплатно: Gemini (aistudio.google.com), Groq (console.groq.com), OpenRouter (openrouter.ai/keys).' }, position: 'right' },
+  { target: '[data-tab="telegram"]', title: { en: 'Telegram — connection', ru: 'Telegram — подключение' }, desc: { en: 'Connect your Telegram account so the agent can chat in groups and DMs like a real person (not a bot). Scan QR code from Telegram app → Settings → Devices.', ru: 'Подключите Telegram аккаунт чтобы агент мог общаться в группах и личке как человек (не бот). Сканируйте QR в приложении Telegram → Настройки → Устройства.' }, position: 'right' },
+  { target: '[data-tab="caps"]', title: { en: 'Capabilities — tools', ru: 'Возможности — инструменты' }, desc: { en: 'Each module gives the agent a set of tools. Telegram = messaging, Wallet = TON operations, Web = search, Gifts = gift market. Enable only what you need — fewer tools = faster agent.', ru: 'Каждый модуль даёт агенту набор инструментов. Telegram = сообщения, Wallet = TON операции, Web = поиск, Gifts = рынок подарков. Включайте только нужное — меньше = быстрее.' }, position: 'right' },
+  { target: '[data-tab="behavior"]', title: { en: 'Behavior — humanization', ru: 'Поведение — человечность' }, desc: { en: 'Makes the agent feel human: typing delays before answers, read receipts with delay, auto-reactions, thinking phrases. Already configured with good defaults.', ru: 'Делает агента похожим на человека: задержка набора, прочтение с паузой, авто-реакции, фразы "Секунду...". Уже настроено с хорошими дефолтами.' }, position: 'right' },
+  { target: '[data-tab="learning"]', title: { en: 'Learning — self-improvement', ru: 'Обучение — самосовершенствование' }, desc: { en: 'Agent learns from mistakes: if user says "no, wrong" — saves lesson and adapts. Error self-healing retries failed tools. Style adaptation matches user\'s communication style.', ru: 'Агент учится на ошибках: если юзер скажет "нет, не так" — запоминает урок. Самовосстановление при ошибках. Адаптация стиля под собеседника.' }, position: 'right' },
+  { target: '[data-tab="memory"]', title: { en: 'Memory — long-term', ru: 'Память — долгосрочная' }, desc: { en: 'Agent automatically remembers contacts, facts, preferences, lessons. Survives restarts. You can view and edit saved memories here.', ru: 'Агент автоматически запоминает контакты, факты, предпочтения, уроки. Переживает перезапуски. Здесь можно просматривать и редактировать память.' }, position: 'right' },
+  { target: '[data-tab="routing"]', title: { en: 'Routing — message filter', ru: 'Маршрутизация — фильтр сообщений' }, desc: { en: 'Control which messages this agent receives. Filter by keywords, chat type (DM/groups), priority. Important when you have multiple agents on one account.', ru: 'Какие сообщения получает агент. Фильтр по словам, типу чата (ЛС/группы), приоритету. Важно когда несколько агентов на одном аккаунте.' }, position: 'right' },
+  { target: '[data-tab="advanced"]', title: { en: 'Advanced settings', ru: 'Продвинутые настройки' }, desc: { en: 'For power users: tick interval, loop guard, flood protection, memory poisoning protection, context compaction. Good defaults already set.', ru: 'Для продвинутых: интервал тиков, защита от зацикливания, flood защита, защита памяти, компактинг контекста. Хорошие дефолты уже установлены.' }, position: 'right' },
 ];
 
-function startAgentTour() {
+function startAgentTour(force) {
+  if (!force && localStorage.getItem('agent_tour_completed') === '1') return;
   _tourStep = 0;
   _tourActive = true;
   // Replace steps temporarily
