@@ -875,6 +875,14 @@ export function startApiServer() {
       await pool.query(`DELETE FROM builder_bot.subscriptions WHERE user_id = $1`, [userId]);
       await pool.query(`DELETE FROM builder_bot.balance_transactions WHERE user_id = $1`, [userId]);
       await pool.query(`DELETE FROM builder_bot.user_balance WHERE user_id = $1`, [userId]);
+      // Additional tables for complete GDPR deletion
+      await pool.query(`DELETE FROM builder_bot.user_plugins WHERE user_id = $1`, [userId]).catch(() => {});
+      await pool.query(`DELETE FROM builder_bot.user_custom_plugins WHERE user_id = $1`, [userId]).catch(() => {});
+      await pool.query(`DELETE FROM builder_bot.marketplace_listings WHERE user_id = $1`, [userId]).catch(() => {});
+      await pool.query(`DELETE FROM builder_bot.marketplace_purchases WHERE user_id = $1`, [userId]).catch(() => {});
+      await pool.query(`DELETE FROM builder_bot.payments WHERE user_id = $1`, [userId]).catch(() => {});
+      await pool.query(`DELETE FROM builder_bot.agent_journal WHERE agent_id = ANY($1)`, [agentIds]).catch(() => {});
+      await pool.query(`DELETE FROM builder_bot.agent_audit_log WHERE agent_id = ANY($1)`, [agentIds]).catch(() => {});
       await pool.query(`DELETE FROM builder_bot.shared_agents WHERE shared_with_user_id = $1`, [userId]);
       // 4. Delete sessions (logs out everywhere)
       await pool.query(`DELETE FROM builder_bot.web_sessions WHERE user_id = $1`, [userId]);
@@ -1463,7 +1471,7 @@ export function startApiServer() {
       if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
 
       // Direct SQL update for name
-      await pool.query('UPDATE builder_bot.agents SET name = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3', [name.trim(), agentId, userId]);
+      await pool.query('UPDATE builder_bot.agents SET name = $1, updated_at = NOW() WHERE id = $2', [name.trim(), agentId]);
       res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -1501,7 +1509,7 @@ export function startApiServer() {
       tc.config.enabledCapabilities = filtered;
 
       await pool.query(
-        'UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3',
+        'UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2',
         [JSON.stringify(tc), agentId, userId]
       );
       res.json({ ok: true, capabilities: filtered });
@@ -1608,11 +1616,11 @@ export function startApiServer() {
       const { code } = req.body || {};
       if (typeof code !== 'string' || code.length > 50000) { res.status(400).json({ error: 'Invalid code' }); return; }
       // Update both agents.code AND trigger_config.code (runtime reads trigger_config)
-      await pool.query('UPDATE builder_bot.agents SET code = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3', [code, agentId, userId]);
+      await pool.query('UPDATE builder_bot.agents SET code = $1, updated_at = NOW() WHERE id = $2', [code, agentId]);
       try {
         await pool.query(
-          `UPDATE builder_bot.agents SET trigger_config = jsonb_set(COALESCE(trigger_config::jsonb, '{}'::jsonb), '{code}', to_jsonb($1::text)) WHERE id = $2 AND user_id = $3`,
-          [code, agentId, userId]
+          `UPDATE builder_bot.agents SET trigger_config = jsonb_set(COALESCE(trigger_config::jsonb, '{}'::jsonb), '{code}', to_jsonb($1::text)) WHERE id = $2`,
+          [code, agentId]
         );
       } catch {}
       res.json({ ok: true });
@@ -1629,7 +1637,7 @@ export function startApiServer() {
       if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
       const { description } = req.body || {};
       if (typeof description !== 'string' || description.length > 2000) { res.status(400).json({ error: 'Invalid description' }); return; }
-      await pool.query('UPDATE builder_bot.agents SET description = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3', [description, agentId, userId]);
+      await pool.query('UPDATE builder_bot.agents SET description = $1, updated_at = NOW() WHERE id = $2', [description, agentId]);
       res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
@@ -1654,7 +1662,7 @@ export function startApiServer() {
       if (typeof temperature === 'number') tc.config.AI_TEMPERATURE = temperature;
       if (typeof maxTokens === 'number') tc.config.AI_MAX_TOKENS = maxTokens;
       if (utilityModel && typeof utilityModel === 'string') tc.config.UTILITY_MODEL = utilityModel;
-      await pool.query('UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3', [JSON.stringify(tc), agentId, userId]);
+      await pool.query('UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2', [JSON.stringify(tc), agentId, userId]);
       res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
@@ -1670,7 +1678,7 @@ export function startApiServer() {
       const { role } = req.body || {};
       const validRoles = ['worker', 'manager', 'specialist', 'monitor', 'director'];
       if (!validRoles.includes(role)) { res.status(400).json({ error: 'Invalid role' }); return; }
-      await pool.query('UPDATE builder_bot.agents SET role = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3', [role, agentId, userId]);
+      await pool.query('UPDATE builder_bot.agents SET role = $1, updated_at = NOW() WHERE id = $2', [role, agentId]);
       res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
@@ -1697,7 +1705,7 @@ export function startApiServer() {
         priority: parseInt(routingRules.priority, 10) || 5,
       };
 
-      await pool.query('UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3',
+      await pool.query('UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2',
         [JSON.stringify(tc), agentId, userId]);
 
       // Update in-memory config if agent is running
@@ -1800,7 +1808,7 @@ export function startApiServer() {
       if (loop_window_sec !== undefined) tc.config.loop_window_sec = parseInt(loop_window_sec, 10) || 120;
       if (memory_poisoning_protection !== undefined) tc.config.memory_poisoning_protection = memory_poisoning_protection;
 
-      await pool.query('UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3',
+      await pool.query('UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2',
         [JSON.stringify(tc), agentId, userId]);
 
       // Also save as agent state for runtime access
@@ -1908,7 +1916,7 @@ export function startApiServer() {
         tc.config.enabledCapabilities = wizardConfig.enabledCapabilities;
       }
 
-      await pool.query('UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3', [JSON.stringify(tc), agentId, userId]);
+      await pool.query('UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2', [JSON.stringify(tc), agentId, userId]);
       res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
@@ -2093,7 +2101,7 @@ export function startApiServer() {
       const mnemonicPlain = mnemonic.join(' ');
       tc.config.WALLET_MNEMONIC = encryptMnemonic(mnemonicPlain);
       tc.config.WALLET_ADDRESS = address;
-      await pool.query('UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3', [JSON.stringify(tc), agentId, userId]);
+      await pool.query('UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2', [JSON.stringify(tc), agentId, userId]);
       // Sync to agent_state for runtime consistency
       try {
         const { getAgentStateRepository } = await import('./db/schema-extensions');
@@ -2898,10 +2906,21 @@ export function startApiServer() {
   });
 
   // ── Helper: verify agent belongs to authenticated user (simple bool version for telegram endpoints) ──
-  async function checkAgentOwner(agentId: number, userId: number): Promise<boolean> {
+  async function checkAgentOwner(agentId: number, userId: number, reqObj?: Request): Promise<boolean> {
     try {
-      const r = await getAgentForUser(agentId, req);
-      return r.success && !!r.data;
+      if (reqObj) {
+        const r = await getAgentForUser(agentId, reqObj);
+        return r.success && !!r.data;
+      }
+      // Fallback: direct DB check
+      const r = await getDBTools().getAgent(agentId, userId);
+      if (r.success && r.data) return true;
+      // Admin check
+      if (isPlatformAdmin(userId)) {
+        const r2 = await getDBTools().getAgent(agentId);
+        return r2.success && !!r2.data;
+      }
+      return false;
     } catch { return false; }
   }
 
@@ -2910,7 +2929,7 @@ export function startApiServer() {
     const { agentId } = req.body || {};
     const userId = (req as any).userId;
     if (!agentId) { res.status(400).json({ ok: false, error: 'agentId required' }); return; }
-    if (!await checkAgentOwner(Number(agentId), userId)) { res.status(403).json({ ok: false, error: 'Access denied' }); return; }
+    if (!await checkAgentOwner(Number(agentId), userId, req)) { res.status(403).json({ ok: false, error: 'Access denied' }); return; }
     try {
       const result = await userbotManager.startQRLogin(Number(agentId));
       res.json({ ok: true, ...(result && typeof result === 'object' ? result : {}) });
@@ -2924,7 +2943,7 @@ export function startApiServer() {
     const { agentId, phone } = req.body || {};
     const userId = (req as any).userId;
     if (!agentId || !phone) { res.status(400).json({ ok: false, error: 'agentId and phone required' }); return; }
-    if (!await checkAgentOwner(Number(agentId), userId)) { res.status(403).json({ ok: false, error: 'Access denied' }); return; }
+    if (!await checkAgentOwner(Number(agentId), userId, req)) { res.status(403).json({ ok: false, error: 'Access denied' }); return; }
     try {
       const result = await userbotManager.startPhoneLogin(Number(agentId), phone);
       res.json({ ok: true, ...(result && typeof result === 'object' ? result : {}) });
@@ -2938,7 +2957,7 @@ export function startApiServer() {
     const { agentId, code } = req.body || {};
     const userId = (req as any).userId;
     if (!agentId || !code) { res.status(400).json({ ok: false, error: 'agentId and code required' }); return; }
-    if (!await checkAgentOwner(Number(agentId), userId)) { res.status(403).json({ ok: false, error: 'Access denied' }); return; }
+    if (!await checkAgentOwner(Number(agentId), userId, req)) { res.status(403).json({ ok: false, error: 'Access denied' }); return; }
     try {
       const result = await userbotManager.submitCode(Number(agentId), code);
       res.json({ ok: true, ...(result && typeof result === 'object' ? result : {}) });
@@ -2952,7 +2971,7 @@ export function startApiServer() {
     const agentId = parseInt(req.query.agentId as string);
     const userId = (req as any).userId;
     if (!agentId) { res.json({ ok: true, status: 'none' }); return; }
-    if (!await checkAgentOwner(agentId, userId)) { res.status(403).json({ ok: false, error: 'Access denied' }); return; }
+    if (!await checkAgentOwner(agentId, userId, req)) { res.status(403).json({ ok: false, error: 'Access denied' }); return; }
     const status = userbotManager.getAuthStatus(agentId);
     res.json({ ok: true, ...status });
   });
@@ -2962,7 +2981,7 @@ export function startApiServer() {
     const { agentId, password } = req.body || {};
     const userId = (req as any).userId;
     if (!agentId || !password) { res.status(400).json({ ok: false, error: 'agentId and password required' }); return; }
-    if (!await checkAgentOwner(Number(agentId), userId)) { res.status(403).json({ ok: false, error: 'Access denied' }); return; }
+    if (!await checkAgentOwner(Number(agentId), userId, req)) { res.status(403).json({ ok: false, error: 'Access denied' }); return; }
     try {
       const result = await userbotManager.submit2FAPassword(Number(agentId), password);
       res.json({ ok: true, ...(result && typeof result === 'object' ? result : {}) });
@@ -2976,7 +2995,7 @@ export function startApiServer() {
     const agentId = parseInt(req.query.agentId as string || req.body?.agentId);
     const userId = (req as any).userId;
     if (!agentId) { res.status(400).json({ ok: false, error: 'agentId required' }); return; }
-    if (!await checkAgentOwner(agentId, userId)) { res.status(403).json({ ok: false, error: 'Access denied' }); return; }
+    if (!await checkAgentOwner(agentId, userId, req)) { res.status(403).json({ ok: false, error: 'Access denied' }); return; }
     try {
       await userbotManager.disconnectAgent(agentId);
       res.json({ ok: true });
@@ -4870,8 +4889,9 @@ export function startApiServer() {
 
   app.get('/api/agents/:id/evals', requireAuth, async (req: Request, res: Response) => {
     try {
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
       const evals = await import('./services/agent-evals');
-      const agentId = Number(req.params.id);
+      const agentId = own.agentId;
       const limit = Number(req.query.limit) || 50;
       const results = await evals.getEvals(agentId, limit);
       const avgScore = await evals.getAvgScore(agentId);
