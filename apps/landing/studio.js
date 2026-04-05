@@ -1298,6 +1298,30 @@ function openAgentSettings() {
   _settingsTab = 'soul';
   _promptModulesCache = null;
   switchSettingsTab('soul');
+
+  // Show warning banner if API key missing
+  var config = (typeof a.triggerConfig === 'string' ? JSON.parse(a.triggerConfig) : a.triggerConfig) || {};
+  var cfg = config.config || {};
+  var hasApiKey = !!(cfg.AI_API_KEY);
+  var hasTg = !!(config.telegram_session?.session);
+  var bannerEl = document.getElementById('settings-warning-banner');
+  if (!bannerEl) {
+    bannerEl = document.createElement('div');
+    bannerEl.id = 'settings-warning-banner';
+    var settingsBody = document.getElementById('agent-settings-body');
+    if (settingsBody) settingsBody.parentElement?.insertBefore(bannerEl, settingsBody);
+  }
+  var isRu = currentLang === 'ru';
+  var warnings = [];
+  if (!hasApiKey) warnings.push(isRu ? 'API ключ не установлен — агент не может думать. Перейдите во вкладку AI.' : 'API key not set — agent cannot think. Go to AI tab.');
+  if (!hasTg && a.triggerType === 'ai_agent') warnings.push(isRu ? 'Telegram не подключён — агент не может общаться в чатах.' : 'Telegram not connected — agent cannot chat.');
+  if (warnings.length > 0) {
+    bannerEl.style.cssText = 'padding:12px 16px;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:10px;margin:8px 16px;font-size:.84rem;color:#f59e0b;line-height:1.5';
+    bannerEl.innerHTML = warnings.join('<br>');
+    bannerEl.style.display = '';
+  } else {
+    bannerEl.style.display = 'none';
+  }
 }
 
 function closeAgentSettings() {
@@ -9967,7 +9991,7 @@ function showWizard(agentId, agentName) {
     { group: 'ai', title: isRu ? '2. AI провайдер' : '2. AI Provider', fields: [
       { id: 'AI_PROVIDER', type: 'select', label: isRu ? 'Провайдер' : 'Provider', desc: isRu ? 'Можно оставить по умолчанию (Gemini — бесплатный)' : 'Can leave default (Gemini — free)',
         options: [{v:'gemini',l:'Google Gemini (free)'},{v:'openai',l:'OpenAI GPT-4o'},{v:'anthropic',l:'Anthropic Claude'},{v:'groq',l:'Groq (fast & free)'},{v:'deepseek',l:'DeepSeek'},{v:'openrouter',l:'OpenRouter'},{v:'together',l:'Together AI'}] },
-      { id: 'AI_API_KEY', type: 'password', label: isRu ? 'API ключ (опционально)' : 'API Key (optional)', desc: isRu ? 'Оставьте пустым для использования AI платформы' : 'Leave empty to use platform AI', required: false }
+      { id: 'AI_API_KEY', type: 'password', label: isRu ? 'API ключ' : 'API Key', desc: isRu ? 'Без ключа агент не сможет работать. Бесплатно: Gemini (aistudio.google.com), Groq (console.groq.com), OpenRouter (openrouter.ai/keys)' : 'Without a key the agent cannot work. Free: Gemini (aistudio.google.com), Groq (console.groq.com), OpenRouter (openrouter.ai/keys)', required: false }
     ]},
     // Step 3: Capabilities
     { group: 'capabilities', title: isRu ? '3. Возможности' : '3. Capabilities', fields: [
