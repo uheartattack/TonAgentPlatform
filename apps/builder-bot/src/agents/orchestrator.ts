@@ -1796,19 +1796,34 @@ ${toolSections}
     if (needsWallet) needsList.push('💰 Кошелёк TON');
     if (!hasKey) needsList.push('🔑 API ключ AI');
 
-    if (needsList.length > 0) {
-      content += `\n⚙️ *Для полной работы нужно:*\n`;
-      needsList.forEach(n => { content += `  ${esc(n)}\n`; });
-      content += `_Настройка запустится автоматически_\n`;
+    // Always show clear next steps
+    content += `\n`;
+    if (!hasKey) {
+      content += `\n🔑 *Шаг 1: Вставьте API ключ*\n`;
+      content += `_Без ключа агент не может думать\\. Бесплатные варианты:_\n`;
+      content += `  • Gemini — aistudio\\.google\\.com \\(15 запросов/мин\\)\n`;
+      content += `  • Groq — console\\.groq\\.com \\(30 запросов/мин\\)\n`;
+      content += `  • OpenRouter — openrouter\\.ai/keys \\(бесплатные модели\\)\n`;
+    }
+    if (needsTgLogin && !tgAuthed) {
+      content += `\n🔐 *${hasKey ? 'Шаг 2' : 'Шаг 2'}: Подключите Telegram*\n`;
+      content += `_Чтобы агент общался в чатах как человек \\(не бот\\)\\._\n`;
+      content += `_Настройки агента → Telegram → QR\\-код_\n`;
+    }
+    if (needsWallet) {
+      content += `\n💰 *Кошелёк TON* \\(опционально\\)\n`;
+      content += `_Для DeFi операций и отправки транзакций\\._\n`;
     }
 
     content += '\n';
 
-    if (autoStarted && needsList.length === 0) {
+    if (autoStarted && !hasKey) {
+      content += `⏸ *Ожидает API ключ* — вставьте ключ и агент заработает`;
+    } else if (autoStarted && needsList.length === 0) {
       content += `🟢 *Запущен на сервере* — работает каждые ${esc(schedLabel)}\n`;
       content += `💬 _Используйте "Чат с агентом" для общения_`;
     } else if (needsList.length > 0) {
-      content += `⏳ *Настройте агента* — после этого он запустится автоматически`;
+      content += `⏳ *Выполните шаги выше* — агент запустится автоматически`;
     } else {
       content += `👇 Нажмите *Запустить* — агент будет работать 24/7`;
     }
