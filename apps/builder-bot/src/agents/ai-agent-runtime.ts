@@ -1701,9 +1701,9 @@ function estimateTokens(messages: any[], tools?: any[]): number {
       }
     }
   }
-  // Rough estimate for tool definitions: ~100 tokens per tool (name + description + params schema)
-  const toolTokens = (tools?.length ?? 0) * 100;
-  return Math.ceil(chars / 4) + toolTokens; // ~4 chars per token estimate
+  // More accurate estimate: JSON.stringify tools / 4 chars per token
+  const toolChars = tools ? JSON.stringify(tools).length : 0;
+  return Math.ceil((chars + toolChars) / 4); // ~4 chars per token estimate
 }
 
 // ── Tool executor ──────────────────────────────────────────────────────────
@@ -3716,7 +3716,6 @@ export async function executeTool(
       }
     }
 
-    case 'get_top_deals':
     case 'scan_real_arbitrage': {
       try {
         const { getGiftAssetClient } = await import('../services/giftasset');
