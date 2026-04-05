@@ -5632,21 +5632,20 @@ export async function executeTool(
   } finally {
     // Release atomic lock for financial operations
     if (_isFinancialOp) releaseOpLock(params.agentId);
-  }
-
-  // ── Post-hook: auto-log financial operations to journal ──
-  if (_isFinancialOp && result && !(result as any).error) {
-    try {
-      const { logTrade } = await import('../services/journal');
-      await logTrade(params.agentId || 0, {
-        type: name.includes('buy') ? 'buy' : name.includes('sell') || name.includes('list') ? 'sell' : 'transfer',
-        asset: name.includes('gift') ? 'gift' : name.includes('jetton') ? 'jetton' : 'TON',
-        amount: String(args.amount || ''),
-        price: String(args.price || ''),
-        status: 'completed',
-        notes: `Auto-logged: ${name}(${JSON.stringify(args).slice(0, 100)})`,
-      }).catch(() => {});
-    } catch {}
+    // Post-hook: auto-log financial operations to journal
+    if (_isFinancialOp) {
+      try {
+        const { logTrade } = await import('../services/journal');
+        await logTrade(params.agentId || 0, {
+          type: name.includes('buy') ? 'buy' : name.includes('sell') || name.includes('list') ? 'sell' : 'transfer',
+          asset: name.includes('gift') ? 'gift' : name.includes('jetton') ? 'jetton' : 'TON',
+          amount: String(args.amount || ''),
+          price: String(args.price || ''),
+          status: 'completed',
+          notes: `Auto-logged: ${name}(${JSON.stringify(args).slice(0, 100)})`,
+        }).catch(() => {});
+      } catch {}
+    }
   }
 }
 
@@ -7466,8 +7465,11 @@ If web_search returns nothing useful → say "не смог найти акту�
       const validCalls = assistant.tool_calls.filter((tc: any) => {
         const fn = tc?.function;
         if (!fn?.name) return false;
-        // Silent drop — don't log, don't execute, just ignore
-        if (SILENT_DROP.has(fn.name)) return false;
+        // Tools not in current ToolRAG selection — return error so AI adapts
+        if (SILENT_DROP.has(fn.name) && !validToolNames.has(fn.name)) {
+          // Instead of silent drop, we'll add a fake result below
+          return true; // keep it, but executeTool will check validToolNames
+        }
         // Resolve alias
         if (!validToolNames.has(fn.name) && TOOL_ALIASES[fn.name]) {
           fn.name = TOOL_ALIASES[fn.name];
@@ -8348,6 +8350,7 @@ export class AIAgentRuntime {
       _dailySpendMem.delete(agentId);
       _webRequestCounts.delete(agentId);
       _tickNotifyFlag.delete(agentId);
+      _notifyRateLimit.delete(`notify:${agentId}`);
       // Clean up _chatResponseCallbacks
       const chatCb = _chatResponseCallbacks.get(agentId);
       if (chatCb) {

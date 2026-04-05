@@ -7448,10 +7448,12 @@ bot.on(message('voice'), async (ctx) => {
       const allSettings = await repo.getAll(userId);
       const uv = (allSettings.user_variables as Record<string, any>) || {};
       // Если у юзера есть ключ и провайдер Gemini
-      if (uv.AI_API_KEY && /AIzaSy/i.test(uv.AI_API_KEY)) {
-        userGeminiKey = uv.AI_API_KEY;
-      } else if (uv.AI_API_KEY && (uv.AI_PROVIDER || '').toLowerCase().includes('gemini')) {
-        userGeminiKey = uv.AI_API_KEY;
+      // Decrypt API key before use (stored encrypted via encryptApiKey)
+      const _rawUserKey = uv.AI_API_KEY ? (() => { try { const { decryptApiKey } = require('./crypto-utils'); return decryptApiKey(uv.AI_API_KEY); } catch { return uv.AI_API_KEY; } })() : '';
+      if (_rawUserKey && /AIzaSy/i.test(_rawUserKey)) {
+        userGeminiKey = _rawUserKey;
+      } else if (_rawUserKey && (uv.AI_PROVIDER || '').toLowerCase().includes('gemini')) {
+        userGeminiKey = _rawUserKey;
       }
     } catch {}
 

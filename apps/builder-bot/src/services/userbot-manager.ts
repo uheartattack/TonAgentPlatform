@@ -917,9 +917,18 @@ setInterval(() => {
   for (const [k, v] of _summaryCache) { if (now - v.ts > 120000) _summaryCache.delete(k); }
   if (_summaryCache.size > 1000) _summaryCache.clear();
   // Cap per-agent chatRings to prevent unbounded growth
-  if (_chatRings.size > 500) _chatRings.clear();
+  // Evict oldest half instead of destroying all (Bug #17 fix)
+  if (_chatRings.size > 500) {
+    const keys = [..._chatRings.keys()];
+    for (let i = 0; i < keys.length / 2; i++) _chatRings.delete(keys[i]);
+  }
   // Clean up loop guard tracker
   loopGuardCleanup();
+  // Clean leaked Maps (Bugs #6,7,8,9,24)
+  if (_ownerTgIdCache.size > 1000) _ownerTgIdCache.clear();
+  const _respCutoff = now - 3600_000; // 1 hour
+  for (const [k, v] of _lastResponseTime) { if (v < _respCutoff) _lastResponseTime.delete(k); }
+  for (const [k, v] of _aiCallTimes) { if (v.length === 0 || v[v.length - 1] < _respCutoff) _aiCallTimes.delete(k); }
 }, 5 * 60 * 1000).unref(); // every 5 minutes; unref so Node can exit gracefully
 
 // Per-chat serial processing queue with backpressure (max 10 concurrent chats)
@@ -1302,6 +1311,14 @@ class UserbotManager {
           this.accountClients.delete(tgUserId);
           // Remove account-level message handler
           this.accountMessageHandlers.delete(tgUserId);
+          // Stop supergroup poller
+          const poller = this.supergroupPollers.get(tgUserId);
+          if (poller) { clearInterval(poller); this.supergroupPollers.delete(tgUserId); }
+          // Clean debounce timers for this agent
+          for (const [key, timer] of _debounceTimers) {
+            if (key.includes(`:${agentId}:`)) { clearTimeout(timer); _debounceTimers.delete(key); _debounceBatch.delete(key); }
+          }
+          _agentQueues.delete(agentId);
           console.log(`[UserbotMgr] 📴 Shared account @${shared.username} fully disconnected (no more agents)`);
         } else {
           console.log(`[UserbotMgr] Agent #${agentId} removed from shared account @${shared.username} (remaining: ${[...shared.agentIds].join(',')})`);
@@ -2309,7 +2326,8 @@ class UserbotManager {
    */
   private dispatchToAgent(agentId: number, msg: TgInboxMessage, cfg: AgentMessageConfig): void {
     const chatKey = `${agentId}:${msg.chatId}`;
-    const isOwner = msg.senderId && String(msg.senderId) === String(cfg.userId);
+    const _ownerTg = _ownerTgIdCache.get(cfg.userId) || cfg.userId;
+    const isOwner = msg.senderId && (String(msg.senderId) === String(_ownerTg) || String(msg.senderId) === String(cfg.userId));
     const priority = isOwner ? 0 : msg.isGroup ? 2 : 1; // owner=0, DM=1, group=2
 
     // Drop stale messages (>60s old)
@@ -2345,7 +2363,8 @@ class UserbotManager {
   }
 
   private _doDispatch(agentId: number, msg: TgInboxMessage, cfg: AgentMessageConfig, chatKey: string, priority: number): void {
-    const isOwner = msg.senderId && String(msg.senderId) === String(cfg.userId);
+    const _ownerTg = _ownerTgIdCache.get(cfg.userId) || cfg.userId;
+    const isOwner = msg.senderId && (String(msg.senderId) === String(_ownerTg) || String(msg.senderId) === String(cfg.userId));
     // Get or create per-agent queue
     let agentQ = _agentQueues.get(agentId);
     if (!agentQ) {

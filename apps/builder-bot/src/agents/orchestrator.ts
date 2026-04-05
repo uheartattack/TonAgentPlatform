@@ -590,6 +590,7 @@ export class Orchestrator {
       } catch (err: any) {
         const msg: string = err?.message || err?.error?.message || String(err);
         const isRetryable = msg.includes('429') || msg.includes('503') || msg.includes('502') ||
+          msg.includes('401') || msg.includes('not found') || msg.includes('OAuth') ||
           msg.includes('timeout') || msg.includes('Empty response') || msg.includes('overloaded');
         console.warn(`[Orchestrator] Gemini ${model} failed (${msg.slice(0, 80)})`);
         if (!isRetryable) throw err;
@@ -1398,7 +1399,8 @@ ${defaultsSection}
         systemPrompt = parsed.soul + '\n\n' + parsed.strategy;
         if (parsed.heartbeat) systemPrompt += '\n\n' + parsed.heartbeat;
         // Save modules separately after agent creation (below)
-        (this as any)._pendingModules = {
+        if (!(this as any)._pendingModulesMap) (this as any)._pendingModulesMap = new Map();
+        (this as any)._pendingModulesMap.set(userId, {
           soul: parsed.soul,
           strategy: parsed.strategy,
           heartbeat: parsed.heartbeat || null,
@@ -1626,7 +1628,7 @@ ${toolSections}
       const { savePromptModule, PROMPT_MODULES } = await import('./prompt-builder');
 
       // ── Use pre-parsed modules if available (new modular format) ──
-      const pendingMods = (this as any)._pendingModules;
+      const pendingMods = (this as any)._pendingModulesMap?.get(userId);
       if (pendingMods?.soul) {
         await savePromptModule(agentId, userId, PROMPT_MODULES.SOUL, pendingMods.soul);
         if (pendingMods.strategy) {
@@ -1635,7 +1637,7 @@ ${toolSections}
         if (pendingMods.heartbeat) {
           await savePromptModule(agentId, userId, PROMPT_MODULES.HEARTBEAT, pendingMods.heartbeat);
         }
-        delete (this as any)._pendingModules;
+        (this as any)._pendingModulesMap?.delete(userId);
         console.log(`[Orchestrator] Saved modular prompt: SOUL + STRATEGY${pendingMods.heartbeat ? ' + HEARTBEAT' : ''}`);
       } else {
         // ── Fallback: Split blob prompt into modules via regex ──
