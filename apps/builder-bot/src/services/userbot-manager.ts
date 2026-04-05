@@ -1258,7 +1258,7 @@ class UserbotManager {
 
     // CRITICAL: Initialize GramJS update loop + entity cache (AFTER client is in map)
     try {
-      await client.getDialogs({ limit: 200 });
+      const _cachedDialogs = await client.getDialogs({ limit: 200 });
       console.log(`[UserbotMgr] getDialogs(200) done for agent #${agentId} — entity cache populated`);
     } catch (e: any) {
       console.warn(`[UserbotMgr] getDialogs() warning for agent #${agentId}:`, e.message);
@@ -1271,7 +1271,7 @@ class UserbotManager {
     }
     // Subscribe to supergroup/channel updates via GetChannelDifference
     try {
-      const _dlgs = await client.getDialogs({ limit: 200 });
+      const _dlgs = _cachedDialogs; // reuse from above, avoid duplicate API call
       let subCount = 0;
       for (const d of _dlgs) {
         try {
@@ -2120,7 +2120,8 @@ class UserbotManager {
               if (p.isGroup && !p.mentionsMe) {
                 const cooldownKey = `${winner.agentId}:${p.chatId}`;
                 const lastTime = _lastResponseTime.get(cooldownKey) || 0;
-                if (Date.now() - lastTime < GROUP_COOLDOWN_MS) {
+                const _cdMs = winner.cfg?.config?.flood_cooldown_sec ? Number(winner.cfg.config.flood_cooldown_sec) * 1000 : GROUP_COOLDOWN_MS;
+                if (Date.now() - lastTime < _cdMs) {
                   console.log(`[UserbotMgr] ⏳ Cooldown active for agent#${winner.agentId} in ${p.chatId}, skipping`);
                   continue; // try next candidate
                 }

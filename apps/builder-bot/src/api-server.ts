@@ -1034,7 +1034,10 @@ export function startApiServer() {
     try { await pool.query('SELECT 1'); checks.database = true; } catch { checks.database = false; }
     try {
       const { userbotManager } = await import('./services/userbot-manager');
-      const info = await userbotManager.getAgentTelegramInfo(190);
+      // Use first active agent for GramJS readiness check (was hardcoded 190)
+      const _activeAgents = await pool.query('SELECT id FROM builder_bot.agents WHERE is_active = true LIMIT 1');
+      const _checkAgentId = _activeAgents.rows[0]?.id || 201;
+      const info = await userbotManager.getAgentTelegramInfo(_checkAgentId);
       checks.gramjs = !!info.authorized;
     } catch { checks.gramjs = false; }
     checks.express = true;
@@ -3471,6 +3474,11 @@ export function startApiServer() {
   // ── POST /api/chat/stream — Atlas streaming chat ───────────────────────
   // For conversational questions: streams directly. For commands: falls back to orchestrator.
   const _atlasChatHistory = new Map<number, Array<{ role: 'user' | 'assistant'; content: string }>>();
+  // Cleanup atlas chat history (cap 500 users, 40 msgs each)
+  setInterval(() => {
+    if (_atlasChatHistory.size > 500) _atlasChatHistory.clear();
+    for (const [, v] of _atlasChatHistory) { if (v.length > 40) v.splice(0, v.length - 40); }
+  }, 30 * 60_000).unref();
 
   app.post('/api/chat/stream', requireAuth, rateLimit(20, 60000, 'atlas_stream'), async (req: Request, res: Response) => {
     const userId = (req as any).userId as number;

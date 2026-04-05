@@ -513,10 +513,11 @@ export class Orchestrator {
     const _anthropicKey = process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_CODE_OAUTH_TOKEN || '';
     if (_anthropicKey) {
       const claudeModels = ['claude-sonnet-4-5', 'claude-haiku-4-5-20251001'];
+      const Anthropic = require('@anthropic-ai/sdk');
+      const _claudeClient = new Anthropic({ apiKey: _anthropicKey });
       for (const model of claudeModels) {
         try {
-          const Anthropic = require('@anthropic-ai/sdk');
-          const client = new Anthropic({ apiKey: _anthropicKey });
+          const client = _claudeClient;
           const systemMsg = messages.find(m => m.role === 'system')?.content || '';
           const nonSystem = messages.filter(m => m.role !== 'system');
           // Convert OpenAI tools format → Anthropic tools format
@@ -546,6 +547,7 @@ export class Orchestrator {
             console.log(`[Orchestrator] AI text response via Claude ${model}`);
             return { text, model };
           }
+          throw new Error('Empty response from Claude');
         } catch (err: any) {
           const msg = err?.message || '';
           console.warn(`[Orchestrator] Claude ${model} failed: ${msg.slice(0, 80)}`);
@@ -762,7 +764,7 @@ ID: ${userId}${isOwner ? ' 👑 OWNER (создатель платформы)' :
 
 🎤 ГОЛОСОВЫЕ КОМАНДЫ: отправляй голосовое → автотранскрипция → выполнение
 
-💳 ПОДПИСКИ: Free (3 агента, 50 генераций) → Starter 2TON (10/200) → Pro 5TON (50/1000) → Unlimited 10TON (∞/∞)
+💳 ПОДПИСКИ: Free (3 агента, 1 генерация) → Starter 5TON/мес (15/30) → Pro 15TON/мес (100/150) → Unlimited 30TON/мес (∞/∞)
 
 ━━━ СТУДИЯ (tonagentplatform.com/studio) ━━━
 Пользователь пишет тебе из Telegram ИЛИ из веб-студии — ты один ассистент, полный синк.
