@@ -1406,7 +1406,7 @@ ${defaultsSection}
           soul: parsed.soul,
           strategy: parsed.strategy,
           heartbeat: parsed.heartbeat || null,
-        };
+        });
       } else {
         // Backward compat: single system_prompt
         systemPrompt = parsed.system_prompt || parsed.systemPrompt || description;
@@ -1594,9 +1594,37 @@ ${toolSections}
         ...(resolvedModel ? { AI_MODEL: resolvedModel } : {}),
         self_improvement_enabled: false,
         enabledCapabilities: ALL_CAPABILITIES,
-        // Userbot agents respond in groups by default
-        groupPolicy: needsTgLogin ? 'active' : undefined,
+        groupPolicy: needsTgLogin ? 'active' : 'mention-only',
         ...(routingRules ? { routingRules } : {}),
+        // Smart defaults (same as agent 201)
+        behavior: {
+          typingDelay: true,
+          typingSpeed: 40,
+          readReceipts: true,
+          readDelay: 1.5,
+          messageSplitting: true,
+          thinkingPhrases: true,
+          reactions: true,
+          hesitation: false,
+          randomVariance: 25,
+          schedule: false,
+        },
+        learning: {
+          feedbackLoop: true,
+          negativePatterns: 'нет, не так, неправильно, бред, отстой, фигня',
+          errorHealing: true,
+          maxRetries: 3,
+          circuitBreakerThreshold: 5,
+          qualityScoring: true,
+          styleAdaptation: true,
+        },
+        compaction_strategy: 'structured',
+        masking_enabled: true,
+        masking_keep_recent: 8,
+        memory_poisoning_protection: true,
+        flood_cooldown_sec: 30,
+        loop_max_responses: 8,
+        loop_window_sec: 300,
       },
     };
 

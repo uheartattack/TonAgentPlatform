@@ -929,6 +929,13 @@ setInterval(() => {
   const _respCutoff = now - 3600_000; // 1 hour
   for (const [k, v] of _lastResponseTime) { if (v < _respCutoff) _lastResponseTime.delete(k); }
   for (const [k, v] of _aiCallTimes) { if (v.length === 0 || v[v.length - 1] < _respCutoff) _aiCallTimes.delete(k); }
+  // Clean TTS rate limit (Bug #8)
+  if (_ttsRateLimit.size > 200) _ttsRateLimit.clear();
+  // Clean contactMemories for inactive agents (Bug #5)
+  if (contactMemories.size > 100) {
+    const active = new Set([..._agentMsgConfigs.keys()]);
+    for (const [id] of contactMemories) { if (!active.has(id)) contactMemories.delete(id); }
+  }
 }, 5 * 60 * 1000).unref(); // every 5 minutes; unref so Node can exit gracefully
 
 // Per-chat serial processing queue with backpressure (max 10 concurrent chats)
@@ -1319,6 +1326,9 @@ class UserbotManager {
             if (key.includes(`:${agentId}:`)) { clearTimeout(timer); _debounceTimers.delete(key); _debounceBatch.delete(key); }
           }
           _agentQueues.delete(agentId);
+          // Stop supergroup poller for this account
+          const _pollerTimer = this.supergroupPollers.get(tgUserId);
+          if (_pollerTimer) { clearInterval(_pollerTimer); this.supergroupPollers.delete(tgUserId); }
           console.log(`[UserbotMgr] 📴 Shared account @${shared.username} fully disconnected (no more agents)`);
         } else {
           console.log(`[UserbotMgr] Agent #${agentId} removed from shared account @${shared.username} (remaining: ${[...shared.agentIds].join(',')})`);
