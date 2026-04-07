@@ -13881,14 +13881,28 @@ function setUIScale(val) {
 }
 
 function setAccentColor(color) {
-  document.documentElement.style.setProperty('--accent', color);
-  document.documentElement.style.setProperty('--primary', color);
+  var root = document.documentElement;
+  root.style.setProperty('--accent', color);
+  root.style.setProperty('--primary', color);
+  root.style.setProperty('--primary-light', color);
+  root.style.setProperty('--accent-light', color);
+  // Parse RGB for alpha variants
+  var r, g, b;
+  if (color.startsWith('#')) {
+    var hex = color.slice(1);
+    r = parseInt(hex.substring(0, 2), 16);
+    g = parseInt(hex.substring(2, 4), 16);
+    b = parseInt(hex.substring(4, 6), 16);
+  } else { r = 14; g = 165; b = 233; }
+  root.style.setProperty('--accent-dim', 'rgba(' + r + ',' + g + ',' + b + ',0.15)');
+  root.style.setProperty('--accent-glow', 'rgba(' + r + ',' + g + ',' + b + ',0.3)');
+  root.style.setProperty('--primary-dark', color);
+  root.style.setProperty('--accent-dark', color);
+  // Update accent dots
   document.querySelectorAll('.accent-dot').forEach(function(d) {
     d.style.borderColor = d.style.background === color || d.onclick.toString().includes(color) ? '#fff' : 'transparent';
   });
   localStorage.setItem('accent_color', color);
-  // Update rt-save-btn gradient
-  document.querySelectorAll('.rt-save-btn:not([style*="gradient"])').forEach(function(b) { b.style.background = color; });
 }
 
 // Restore UI settings from localStorage
