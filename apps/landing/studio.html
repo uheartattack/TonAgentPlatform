@@ -152,6 +152,11 @@
                 <span data-en="All Agents" data-ru="Все агенты">All Agents</span>
                 <span class="nav-badge accent">ADM</span>
               </a>
+              <a href="#" class="nav-item admin-only-nav" data-page="bugs" onclick="navigateTo('bugs')" style="display:none">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 2l1.88 1.88M14.12 3.88L16 2M9 7.13v-1a3.003 3.003 0 1 1 6 0v1M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6M6 13H2M22 13h-4M6 17l-1.5 1.5M18 17l1.5 1.5"/></svg>
+                <span data-en="Bug Tracker" data-ru="Баг-трекер">Bug Tracker</span>
+                <span class="nav-badge accent">ADM</span>
+              </a>
               <a href="#" class="nav-item" data-page="wallets" onclick="navigateTo('wallets')">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/></svg>
                 <span data-en="Wallets" data-ru="Кошельки">Wallets</span>
@@ -1110,6 +1115,12 @@
           </div>
         </div>
         <div id="admin-agents-content" style="padding:20px">
+          <div style="text-align:center;color:var(--text-muted);padding:2rem">Loading...</div>
+        </div>
+      </div>
+
+      <div id="bugs-page" class="page">
+        <div id="bugs-page-content" style="padding:0">
           <div style="text-align:center;color:var(--text-muted);padding:2rem">Loading...</div>
         </div>
       </div>

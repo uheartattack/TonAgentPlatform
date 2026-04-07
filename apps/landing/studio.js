@@ -4849,6 +4849,7 @@ const pageLoadFns = {
   notifications: () => loadNotificationsPage(),
   wallets:       () => loadWalletsPage(),
   'admin-agents':() => loadAdminAgentsPage(),
+  'bugs':        () => loadBugDashboard(),
   'terms':       () => loadTermsPage(),
   'privacy':     () => loadPrivacyPage(),
 };
@@ -13736,6 +13737,76 @@ function loadPrivacyPage() {
 
   '</div>';
 }
+
+// ══════════════════════════════════════════════════════════════
+// BUG DASHBOARD — Platform bugs, Agent errors, Tester feedback
+// ══════════════════════════════════════════════════════════════
+var _bugTab = 'platform';
+
+async function loadBugDashboard() {
+  var container = document.getElementById('main-content') || document.querySelector('.page-content');
+  if (!container) return;
+  var isRu = currentLang === 'ru';
+  container.innerHTML = '<div style="padding:24px;max-width:1200px;margin:0 auto">' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px">' +
+      '<h2 style="margin:0;font-size:1.3rem;color:var(--text-primary)">' + (isRu ? '🐛 Баг-трекер' : '🐛 Bug Tracker') + '</h2>' +
+      '<div style="display:flex;gap:4px;background:var(--bg-primary);border-radius:10px;padding:3px;border:1px solid var(--border)">' +
+        _bugTabBtn('platform', isRu ? '⚙️ Платформа' : '⚙️ Platform') +
+        _bugTabBtn('agents', isRu ? '🤖 Агенты' : '🤖 Agents') +
+        _bugTabBtn('feedback', isRu ? '📝 Фидбек' : '📝 Feedback') +
+      '</div></div>' +
+    '<div id="bugs-content"><div style="text-align:center;padding:40px;color:var(--text-muted)">Loading...</div></div></div>';
+  loadBugTab(_bugTab);
+}
+function _bugTabBtn(id, label) { var a = _bugTab === id; return '<button onclick="switchBugTab(\'' + id + '\')" style="padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:.82rem;font-weight:600;transition:all .2s;' + (a ? 'background:var(--primary);color:white' : 'background:transparent;color:var(--text-muted)') + '">' + label + '</button>'; }
+function switchBugTab(t) { _bugTab = t; loadBugDashboard(); }
+function _bugStatCard(icon, label, count, color) { return '<div style="padding:16px;background:var(--bg-primary);border:1px solid var(--border);border-radius:12px;text-align:center"><div style="font-size:1.5rem;margin-bottom:4px">' + icon + '</div><div style="font-size:1.4rem;font-weight:700;color:' + color + '">' + count + '</div><div style="font-size:.72rem;color:var(--text-muted);margin-top:2px">' + label + '</div></div>'; }
+function _timeAgo(d) { if (!d) return '—'; var ms = Date.now() - new Date(d).getTime(); var r = currentLang === 'ru'; if (ms < 60000) return r ? 'сейчас' : 'now'; if (ms < 3600000) return Math.floor(ms / 60000) + (r ? ' мин' : 'm'); if (ms < 86400000) return Math.floor(ms / 3600000) + (r ? ' ч' : 'h'); return Math.floor(ms / 86400000) + (r ? ' дн' : 'd'); }
+
+async function loadBugTab(tab) {
+  var c = document.getElementById('bugs-content'); if (!c) return; var isRu = currentLang === 'ru';
+  if (tab === 'platform') {
+    try {
+      var d = await apiRequest('GET', '/api/admin/bugs?status=open&limit=50');
+      if (!d.ok) { c.innerHTML = '<p style="color:var(--danger)">' + escHtml(d.error || 'Error') + '</p>'; return; }
+      var st = d.stats || {};
+      var h = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">' + _bugStatCard('🔴', isRu ? 'Открытые' : 'Open', st.open || 0, '#ef4444') + _bugStatCard('🟡', isRu ? 'В работе' : 'Fixing', st.fixing || 0, '#f59e0b') + _bugStatCard('🟢', isRu ? 'Исправлены' : 'Fixed', st.fixed || 0, '#10b981') + _bugStatCard('⚪', isRu ? 'Игнорируются' : 'Ignored', st.ignored || 0, '#6b7280') + '</div>';
+      if (d.sources && d.sources.length) { h += '<div style="margin-bottom:16px;padding:14px;background:var(--bg-primary);border:1px solid var(--border);border-radius:10px"><div style="font-size:.78rem;font-weight:600;color:var(--text-muted);margin-bottom:8px">' + (isRu ? 'ИСТОЧНИКИ' : 'SOURCES') + '</div>'; d.sources.forEach(function(s) { var pct = d.sources[0].total > 0 ? Math.round(s.total / d.sources[0].total * 100) : 0; h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span style="font-size:.78rem;color:var(--text-primary);min-width:180px">' + escHtml(s.source) + '</span><div style="flex:1;height:6px;background:rgba(255,255,255,0.05);border-radius:3px;overflow:hidden"><div style="height:100%;width:' + pct + '%;background:var(--primary);border-radius:3px"></div></div><span style="font-size:.72rem;color:var(--text-muted);min-width:32px;text-align:right">' + s.total + '</span></div>'; }); h += '</div>'; }
+      h += '<div style="display:flex;flex-direction:column;gap:8px">';
+      if (!d.bugs.length) h += '<div style="text-align:center;padding:40px;color:var(--text-muted)">' + (isRu ? 'Нет открытых багов 🎉' : 'No open bugs 🎉') + '</div>';
+      d.bugs.forEach(function(b) { h += '<div style="padding:14px;background:var(--bg-primary);border:1px solid var(--border);border-radius:10px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><div style="display:flex;align-items:center;gap:8px"><span style="font-size:.72rem;padding:2px 8px;border-radius:4px;background:rgba(239,68,68,0.1);color:#ef4444;font-weight:600">x' + b.count + '</span><span style="font-size:.76rem;color:var(--text-muted)">' + escHtml(b.source || '') + '</span></div><div style="display:flex;gap:4px"><button onclick="updateBugStatus(' + b.id + ',\'fixing\')" style="padding:3px 8px;border-radius:6px;border:1px solid rgba(245,158,11,0.3);background:rgba(245,158,11,0.1);color:#f59e0b;font-size:.68rem;cursor:pointer">Fix</button><button onclick="updateBugStatus(' + b.id + ',\'fixed\')" style="padding:3px 8px;border-radius:6px;border:1px solid rgba(16,185,129,0.3);background:rgba(16,185,129,0.1);color:#10b981;font-size:.68rem;cursor:pointer">Done</button><button onclick="updateBugStatus(' + b.id + ',\'ignored\')" style="padding:3px 8px;border-radius:6px;border:1px solid rgba(107,114,128,0.3);background:rgba(107,114,128,0.1);color:#6b7280;font-size:.68rem;cursor:pointer">Ign</button></div></div><div style="font-size:.82rem;color:var(--text-primary);word-break:break-word;line-height:1.4">' + escHtml((b.message || '').slice(0, 200)) + '</div>' + (b.file ? '<div style="font-size:.7rem;color:var(--text-muted);margin-top:4px;font-family:monospace">' + escHtml(b.file) + '</div>' : '') + '<div style="font-size:.68rem;color:var(--text-muted);margin-top:4px">First: ' + _timeAgo(b.first_seen) + ' · Last: ' + _timeAgo(b.last_seen) + '</div></div>'; });
+      h += '</div>'; c.innerHTML = h;
+    } catch(e) { c.innerHTML = '<p style="color:var(--danger)">' + e.message + '</p>'; }
+  } else if (tab === 'agents') {
+    try {
+      var d = await apiRequest('GET', '/api/admin/agent-errors?days=7');
+      if (!d.ok) { c.innerHTML = '<p style="color:var(--danger)">' + escHtml(d.error || 'Error') + '</p>'; return; }
+      var cats = d.categories || {};
+      var h = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">' + _bugStatCard('💥', 'Crash', cats.crash || 0, '#ef4444') + _bugStatCard('🔧', 'Tool', cats.tool_error || 0, '#f59e0b') + _bugStatCard('🌐', 'API', cats.api_error || 0, '#6366f1') + _bugStatCard('❓', isRu ? 'Другие' : 'Other', cats.other || 0, '#6b7280') + '</div>';
+      h += '<div style="font-size:.82rem;font-weight:600;color:var(--text-primary);margin-bottom:12px">' + (isRu ? 'Паттерны ошибок (7 дней)' : 'Error Patterns (7 days)') + '</div><div style="display:flex;flex-direction:column;gap:6px">';
+      if (!d.patterns || !d.patterns.length) h += '<div style="text-align:center;padding:40px;color:var(--text-muted)">' + (isRu ? 'Нет ошибок 🎉' : 'No errors 🎉') + '</div>';
+      (d.patterns || []).forEach(function(p) { h += '<div style="padding:12px;background:var(--bg-primary);border:1px solid var(--border);border-radius:10px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span style="font-size:.72rem;padding:2px 8px;border-radius:4px;background:rgba(239,68,68,0.1);color:#ef4444;font-weight:600">x' + p.count + '</span><span style="font-size:.72rem;color:var(--text-muted)">' + p.agentCount + ' agents</span></div><div style="font-size:.8rem;color:var(--text-primary);word-break:break-word">' + escHtml(p.message.slice(0, 150)) + '</div></div>'; });
+      h += '</div>'; c.innerHTML = h;
+    } catch(e) { c.innerHTML = '<p style="color:var(--danger)">' + e.message + '</p>'; }
+  } else if (tab === 'feedback') {
+    try {
+      var d = await apiRequest('GET', '/api/admin/feedback');
+      if (!d.ok) { c.innerHTML = '<p style="color:var(--danger)">' + escHtml(d.error || 'Error') + '</p>'; return; }
+      var sc = {}, tc = {}; (d.feedback || []).forEach(function(f) { sc[f.status] = (sc[f.status] || 0) + 1; tc[f.type] = (tc[f.type] || 0) + 1; });
+      var h = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">' + _bugStatCard('🐛', 'Bugs', tc.bug || 0, '#ef4444') + _bugStatCard('💡', 'Features', tc.feature || 0, '#6366f1') + _bugStatCard('🆘', 'Support', tc.support || 0, '#f59e0b') + _bugStatCard('💬', 'General', tc.general || 0, '#6b7280') + '</div>';
+      h += '<div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap">';
+      ['all', 'new', 'in_progress', 'resolved', 'closed'].forEach(function(s) { var lbl = s === 'all' ? (isRu ? 'Все' : 'All') : s === 'new' ? '🔵 New' : s === 'in_progress' ? '🟡 WIP' : s === 'resolved' ? '🟢 Done' : '⚪ Closed'; h += '<button onclick="filterFeedback(\'' + s + '\')" style="padding:6px 14px;border-radius:8px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:.78rem;cursor:pointer">' + lbl + ' (' + (s === 'all' ? (d.feedback || []).length : (sc[s] || 0)) + ')</button>'; });
+      h += '</div><div id="feedback-list" style="display:flex;flex-direction:column;gap:8px">';
+      var icons = { bug: '🐛', feature: '💡', support: '🆘', general: '💬' }; var colors = { new: '#3b82f6', in_progress: '#f59e0b', resolved: '#10b981', closed: '#6b7280' };
+      (d.feedback || []).forEach(function(f) { h += '<div class="feedback-item" data-status="' + f.status + '" style="padding:14px;background:var(--bg-primary);border:1px solid var(--border);border-radius:10px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:6px"><div style="display:flex;align-items:center;gap:8px">' + (icons[f.type] || '❓') + ' <span style="font-size:.78rem;font-weight:600">#' + f.id + '</span><span style="font-size:.72rem;color:var(--text-muted)">@' + escHtml(f.username || String(f.user_id)) + '</span><span style="font-size:.68rem;padding:2px 8px;border-radius:4px;background:' + (colors[f.status] || '#666') + '20;color:' + (colors[f.status] || '#666') + ';font-weight:600">' + f.status + '</span></div><div style="display:flex;gap:4px"><button onclick="replyFeedback(' + f.id + ')" style="padding:3px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);font-size:.68rem;cursor:pointer">Reply</button><button onclick="resolveFeedback(' + f.id + ')" style="padding:3px 8px;border-radius:6px;border:1px solid rgba(16,185,129,0.3);background:rgba(16,185,129,0.1);color:#10b981;font-size:.68rem;cursor:pointer">Resolve</button></div></div><div style="font-size:.82rem;color:var(--text-primary);word-break:break-word;line-height:1.4">' + escHtml((f.message || '').slice(0, 300)) + '</div>' + (f.admin_reply ? '<div style="margin-top:8px;padding:8px 12px;background:rgba(16,185,129,0.05);border-left:3px solid #10b981;border-radius:0 8px 8px 0;font-size:.78rem;color:var(--text-secondary)">↳ ' + escHtml(f.admin_reply) + '</div>' : '') + '<div style="font-size:.68rem;color:var(--text-muted);margin-top:6px">' + _timeAgo(f.created_at) + (f.agent_id ? ' · Agent #' + f.agent_id : '') + '</div></div>'; });
+      h += '</div>'; c.innerHTML = h;
+    } catch(e) { c.innerHTML = '<p style="color:var(--danger)">' + e.message + '</p>'; }
+  }
+}
+async function updateBugStatus(id, s) { try { var d = await apiRequest('PUT', '/api/admin/bugs/' + id, { status: s }); if (d.ok) { toast('Updated', 'success'); loadBugTab('platform'); } else toast(d.error, 'error'); } catch(e) { toast(e.message, 'error'); } }
+function filterFeedback(s) { document.querySelectorAll('.feedback-item').forEach(function(el) { el.style.display = (s === 'all' || el.getAttribute('data-status') === s) ? '' : 'none'; }); }
+async function replyFeedback(id) { var r = prompt(currentLang === 'ru' ? 'Ответ:' : 'Reply:'); if (!r) return; try { var d = await apiRequest('PUT', '/api/admin/feedback/' + id, { adminReply: r, status: 'in_progress' }); if (d.ok) { toast('Replied', 'success'); loadBugTab('feedback'); } } catch(e) { toast(e.message, 'error'); } }
+async function resolveFeedback(id) { try { var d = await apiRequest('PUT', '/api/admin/feedback/' + id, { status: 'resolved' }); if (d.ok) { toast('Resolved', 'success'); loadBugTab('feedback'); } } catch(e) { toast(e.message, 'error'); } }
 
 // ── Feedback FAB (floating action button) ──
 function initFeedbackFAB() {

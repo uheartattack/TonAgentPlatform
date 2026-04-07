@@ -1113,6 +1113,105 @@ export function startApiServer() {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── GET /api/admin/bugs — platform bugs dashboard (admin only) ──
+  app.get('/api/admin/bugs', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { isPlatformAdmin } = await import('./payments');
+      if (!isPlatformAdmin(userId)) { res.status(403).json({ error: 'Admin only' }); return; }
+      const status = (req.query.status as string) || 'open';
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+
+      // Platform bugs (auto-collected)
+      const bugs = await pool.query(
+        `SELECT id, source, message, stack, file, count, first_seen, last_seen, status, fix_proposal_id
+         FROM builder_bot.platform_bugs WHERE status = $1 ORDER BY count DESC, last_seen DESC LIMIT $2`,
+        [status, limit]
+      );
+
+      // Stats
+      const stats = await pool.query(`
+        SELECT status, COUNT(*) as cnt FROM builder_bot.platform_bugs GROUP BY status
+      `);
+      const statMap: Record<string, number> = {};
+      stats.rows.forEach((r: any) => { statMap[r.status] = parseInt(r.cnt); });
+
+      // Top sources
+      const sources = await pool.query(`
+        SELECT source, SUM(count) as total FROM builder_bot.platform_bugs WHERE status = 'open'
+        GROUP BY source ORDER BY total DESC LIMIT 10
+      `);
+
+      res.json({ ok: true, bugs: bugs.rows, stats: statMap, sources: sources.rows });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── PUT /api/admin/bugs/:id — update bug status (admin only) ──
+  app.put('/api/admin/bugs/:id', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { isPlatformAdmin } = await import('./payments');
+      if (!isPlatformAdmin(userId)) { res.status(403).json({ error: 'Admin only' }); return; }
+      const bugId = parseInt(req.params.id);
+      const { status } = req.body; // open | fixing | fixed | ignored
+      if (!['open', 'fixing', 'fixed', 'ignored'].includes(status)) { res.status(400).json({ error: 'Invalid status' }); return; }
+      await pool.query(`UPDATE builder_bot.platform_bugs SET status = $1 WHERE id = $2`, [status, bugId]);
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── GET /api/admin/agent-errors — agent errors grouped by type (admin only) ──
+  app.get('/api/admin/agent-errors', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { isPlatformAdmin } = await import('./payments');
+      if (!isPlatformAdmin(userId)) { res.status(403).json({ error: 'Admin only' }); return; }
+      const days = Math.min(parseInt(req.query.days as string) || 7, 30);
+      const agentId = req.query.agentId ? parseInt(req.query.agentId as string) : null;
+
+      // Only show errors from users who opted in
+      let q = `
+        SELECT l.agent_id, l.message, l.details, l.created_at, a.name as agent_name, a.user_id,
+               ws.username as owner_username, ws.accepted_errors_sharing
+        FROM builder_bot.agent_logs l
+        JOIN builder_bot.agents a ON a.id = l.agent_id
+        LEFT JOIN builder_bot.web_sessions ws ON ws.user_id = a.user_id
+        WHERE l.level IN ('error', 'fatal') AND l.created_at > NOW() - INTERVAL '${days} days'
+        AND (ws.accepted_errors_sharing = true OR a.user_id = $1)
+      `;
+      const params: any[] = [userId];
+      if (agentId) { params.push(agentId); q += ` AND l.agent_id = $${params.length}`; }
+      q += ` ORDER BY l.created_at DESC LIMIT 200`;
+
+      const errors = await pool.query(q, params);
+
+      // Group by error pattern
+      const grouped: Record<string, { message: string; count: number; agents: Set<number>; lastSeen: string }> = {};
+      for (const e of errors.rows) {
+        const key = (e.message || '').slice(0, 100);
+        if (!grouped[key]) grouped[key] = { message: key, count: 0, agents: new Set(), lastSeen: e.created_at };
+        grouped[key].count++;
+        grouped[key].agents.add(e.agent_id);
+      }
+      const patterns = Object.values(grouped)
+        .map(g => ({ message: g.message, count: g.count, agentCount: g.agents.size, lastSeen: g.lastSeen }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 50);
+
+      // Stats by category
+      const categories: Record<string, number> = { crash: 0, tool_error: 0, api_error: 0, other: 0 };
+      for (const e of errors.rows) {
+        const msg = (e.message || '').toLowerCase();
+        if (msg.includes('crash')) categories.crash++;
+        else if (msg.includes('[tool') || msg.includes('tool_result')) categories.tool_error++;
+        else if (msg.includes('api') || msg.includes('fetch') || msg.includes('429') || msg.includes('500')) categories.api_error++;
+        else categories.other++;
+      }
+
+      res.json({ ok: true, errors: errors.rows.slice(0, 100), patterns, categories, total: errors.rows.length });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // ── Shared avatar cache (used by /api/me/avatar AND /api/agents/:id/avatar) ──
   const _avatarCache = new Map<string, { buf: Buffer | null; ts: number }>();
   const AVATAR_CACHE_TTL = 30 * 60_000; // 30 min
