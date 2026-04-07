@@ -12766,6 +12766,11 @@ async function loadNotificationsPage() {
 
     // Sort by time (newest first)
     notifications.sort(function(a, b) { return b.time - a.time; });
+    // Apply retention filter
+    if (typeof _notifRetainDays !== 'undefined' && _notifRetainDays > 0) {
+      var cutoff = Date.now() - _notifRetainDays * 86400000;
+      notifications = notifications.filter(function(n) { return n.time > cutoff; });
+    }
     window._studioNotifications = notifications;
     renderNotifications(notifications);
 
@@ -13833,6 +13838,38 @@ function _playNotifSound() {
   } catch {}
 }
 
+// ── Notification history retention ──
+var _notifRetainDays = parseInt(localStorage.getItem('notif_retain_days') || '30');
+
+function setNotifRetain(val) {
+  document.querySelectorAll('.notif-retain-btn').forEach(function(b) {
+    b.style.background = 'var(--bg-primary)'; b.style.borderColor = 'var(--border)'; b.style.color = 'var(--text-primary)';
+  });
+  if (event && event.target) { event.target.style.background = 'rgba(14,165,233,0.15)'; event.target.style.borderColor = '#0ea5e9'; event.target.style.color = '#0ea5e9'; }
+  var customEl = document.getElementById('notif-custom-retain');
+  if (val === 'custom') {
+    if (customEl) customEl.style.display = '';
+    return;
+  }
+  if (customEl) customEl.style.display = 'none';
+  var days = val === 'off' ? 0 : val === '1d' ? 1 : val === '7d' ? 7 : val === '30d' ? 30 : 30;
+  _notifRetainDays = days;
+  localStorage.setItem('notif_retain_days', String(days));
+  toast(currentLang === 'ru' ? (days ? 'История: ' + days + ' дн.' : 'Авто-удаление выключено') : (days ? 'History: ' + days + ' days' : 'Auto-delete off'), 'success');
+}
+
+function applyCustomRetain() {
+  var inp = document.getElementById('notif-retain-days');
+  var days = inp ? parseInt(inp.value) : 14;
+  if (isNaN(days) || days < 1) days = 1;
+  if (days > 365) days = 365;
+  _notifRetainDays = days;
+  localStorage.setItem('notif_retain_days', String(days));
+  var customEl = document.getElementById('notif-custom-retain');
+  if (customEl) customEl.style.display = 'none';
+  toast(currentLang === 'ru' ? 'История: ' + days + ' дн.' : 'History: ' + days + ' days', 'success');
+}
+
 function setUIScale(val) {
   // Sync all scale displays
   var els = [document.getElementById('ui-scale-value'), document.getElementById('sidebar-scale-value')];
@@ -13874,6 +13911,9 @@ function setAccentColor(color) {
   if (ns === 'true') { _notifSound = true; var nst = document.getElementById('notif-sound-toggle'); if (nst) nst.checked = true; }
   var nb = localStorage.getItem('notif_badge');
   if (nb === 'false') { _notifBadge = false; var nbt = document.getElementById('notif-badge-toggle'); if (nbt) nbt.checked = false; }
+  // Restore retain setting
+  var nr = localStorage.getItem('notif_retain_days');
+  if (nr !== null) _notifRetainDays = parseInt(nr);
 })();
 
 // Load error consent checkbox state in profile
