@@ -7311,6 +7311,11 @@ input:focus, textarea:focus, select:focus {
   min-height: 100vh;
   margin-left: var(--sidebar-width);
 }
+@media (max-width: 768px) {
+  .main-wrapper {
+    margin-left: 0;
+  }
+}
 
 .studio-topbar {
   height: 52px;
