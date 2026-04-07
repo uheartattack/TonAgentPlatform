@@ -137,7 +137,7 @@ body {
   width: 80px;
   height: 80px;
   margin: 0 auto 24px;
-  background: linear-gradient(135deg, #0ea5e9, #0284c7);
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
   border-radius: var(--radius-lg);
   display: flex;
   align-items: center;
@@ -200,7 +200,7 @@ body {
   justify-content: center;
   gap: 12px;
   padding: 16px 24px;
-  background: linear-gradient(135deg, #0ea5e9, #0284c7);
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
   border-radius: var(--radius-md);
   color: white;
   font-weight: 600;
@@ -261,7 +261,7 @@ body {
 .auth-brand-icon {
   width: 56px;
   height: 56px;
-  background: linear-gradient(135deg, #0ea5e9, #0284c7);
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
   border-radius: 30px;
   display: flex;
   align-items: center;
@@ -340,7 +340,7 @@ body {
   display: block;
   font-size: 1.5rem;
   font-weight: 700;
-  color: #0ea5e9;
+  color: var(--primary);
 }
 .auth-stat small {
   font-size: 0.7rem;
@@ -366,7 +366,7 @@ body {
   width: 64px;
   height: 64px;
   margin: 0 auto;
-  background: linear-gradient(135deg, #0ea5e9, #0284c7);
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
   border-radius: 24px;
   display: flex;
   align-items: center;
@@ -559,7 +559,7 @@ body {
 .logo-icon {
   width: 34px;
   height: 34px;
-  background: linear-gradient(135deg, #0098EA, #005fa3);
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
   border-radius: 24px;
   display: flex;
   align-items: center;
@@ -591,7 +591,7 @@ body {
   white-space: nowrap;
 }
 .logo-accent {
-  color: #0098EA;
+  color: var(--primary);
   font-weight: 800;
 }
 
@@ -684,7 +684,7 @@ body {
 .nav-badge {
   margin-left: auto;
   background: rgba(14,165,233,0.2);
-  color: #0ea5e9;
+  color: var(--primary);
   padding: 1px 7px;
   border-radius: 9999px;
   font-size: 0.6rem;
@@ -774,7 +774,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #0ea5e9, #0284c7);
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
   box-shadow: 0 0 10px rgba(14,165,233,0.3);
 }
 
@@ -832,10 +832,10 @@ body {
 }
 
 .lang-btn.active {
-  background: #0098EA;
-  border-color: #0098EA;
+  background: var(--primary);
+  border-color: var(--primary);
   color: white;
-  box-shadow: 0 0 10px rgba(0,152,234,0.3);
+  box-shadow: 0 0 10px var(--accent-glow);
 }
 
 .logout-btn {
@@ -1015,7 +1015,7 @@ body {
 }
 
 .btn-primary {
-  background: #0098EA;
+  background: var(--primary);
   color: #ffffff;
   border: 1px solid #0098EA;
   box-shadow: 0 4px 14px rgba(0,152,234,0.25);
@@ -1031,7 +1031,7 @@ body {
 
 .btn-secondary {
   background: rgba(14, 165, 233, 0.08);
-  color: #0ea5e9;
+  color: var(--primary);
   border: 1px solid rgba(14, 165, 233, 0.2);
 }
 
@@ -1153,12 +1153,12 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #0ea5e9;
+  color: var(--primary);
   flex-shrink: 0;
 }
 
 .metric-card.primary .metric-icon {
-  color: #0ea5e9;
+  color: var(--primary);
   background: rgba(14, 165, 233, 0.1);
   border-color: rgba(14, 165, 233, 0.2);
 }
@@ -1170,7 +1170,7 @@ body {
 }
 
 .metric-card.accent .metric-icon {
-  color: #0ea5e9;
+  color: var(--primary);
   background: rgba(14, 165, 233, 0.1);
   border-color: rgba(14, 165, 233, 0.2);
 }
@@ -1309,7 +1309,7 @@ body {
 
 .memory-icon.blue {
   background: rgba(14, 165, 233, 0.1);
-  color: #0ea5e9;
+  color: var(--primary);
 }
 
 .memory-icon.cyan {
@@ -1349,7 +1349,7 @@ body {
 
 .memory-progress {
   height: 100%;
-  background: linear-gradient(90deg, #0ea5e9, #38bdf8);
+  background: linear-gradient(90deg, var(--primary), var(--primary-light));
   border-radius: 6px;
   transition: width var(--transition-slow);
 }
@@ -1451,7 +1451,7 @@ select.form-input option {
   appearance: none;
   width: 18px;
   height: 18px;
-  background: #0ea5e9;
+  background: var(--primary);
   border-radius: 50%;
   cursor: pointer;
   transition: transform var(--transition-fast);
@@ -1465,7 +1465,7 @@ select.form-input option {
 .slider-value {
   font-size: 0.875rem;
   font-weight: 600;
-  color: #0ea5e9;
+  color: var(--primary);
   min-width: 40px;
   text-align: right;
 }
@@ -1520,7 +1520,7 @@ select.form-input option {
 }
 
 .toggle-switch input:checked + .toggle-slider {
-  background: #0ea5e9;
+  background: var(--primary);
   box-shadow: 0 0 12px rgba(14,165,233,0.4);
 }
 
@@ -1713,8 +1713,8 @@ select.form-input option {
 }
 
 .filter-chip.active {
-  background: #0ea5e9;
-  border-color: #0ea5e9;
+  background: var(--primary);
+  border-color: var(--primary);
   color: white;
   box-shadow: 0 0 12px rgba(14,165,233,0.3);
 }
@@ -1833,7 +1833,7 @@ select.form-input option {
 }
 
 .tab-btn.active {
-  background: #0ea5e9;
+  background: var(--primary);
   color: white;
   box-shadow: 0 0 12px rgba(14,165,233,0.3);
 }
@@ -2022,8 +2022,8 @@ select.form-input option {
 }
 
 .op-filter.active {
-  background: #0ea5e9;
-  border-color: #0ea5e9;
+  background: var(--primary);
+  border-color: var(--primary);
   color: white;
   box-shadow: 0 0 12px rgba(14,165,233,0.3);
 }
@@ -2130,7 +2130,7 @@ select.form-input option {
 
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #0ea5e9, #38bdf8);
+  background: linear-gradient(90deg, var(--primary), var(--primary-light));
   border-radius: 6px;
   transition: width var(--transition-slow);
   animation: progressShine 2s infinite;
@@ -2471,7 +2471,7 @@ select.form-input option {
 }
 
 .wallet-card-icon {
-  color: #0ea5e9;
+  color: var(--primary);
   margin-bottom: 12px;
   opacity: 0.9;
 }
@@ -2546,9 +2546,9 @@ select.form-input option {
   transform: translateX(100%);
 }
 .btn-wallet-action.topup {
-  background: #0ea5e9;
+  background: var(--primary);
   color: white;
-  border-color: #0ea5e9;
+  border-color: var(--primary);
   box-shadow: 0 2px 12px rgba(14,165,233,0.3);
 }
 .btn-wallet-action.topup:hover {
@@ -2795,7 +2795,7 @@ select.form-input option {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: #0ea5e9;
+  background: var(--primary);
   color: white;
   display: flex;
   align-items: center;
@@ -2822,7 +2822,7 @@ select.form-input option {
   padding: 10px 14px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.82rem;
-  color: #0ea5e9;
+  color: var(--primary);
   cursor: pointer;
   transition: all var(--transition-fast);
   word-break: break-all;
@@ -3012,7 +3012,7 @@ select.form-input option {
   justify-content: center;
   gap: 8px;
   padding: 14px 24px;
-  background: #0ea5e9;
+  background: var(--primary);
   color: #ffffff;
   border: 1px solid #0ea5e9;
   border-radius: 16px;
@@ -3787,7 +3787,7 @@ select.form-input option {
 }
 .chat-send-btn {
   width: 40px; height: 40px; border-radius: 16px; flex-shrink: 0;
-  background: #0ea5e9;
+  background: var(--primary);
   border: 1px solid #0ea5e9; color: white; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
@@ -3809,7 +3809,7 @@ select.form-input option {
 }
 .mkt-tab:hover { background: rgba(255,255,255,0.08); color: #f0f2f5; }
 .mkt-tab.active {
-  background: #0ea5e9; border-color: #0ea5e9;
+  background: var(--primary); border-color: #0ea5e9;
   color: white; font-weight: 600;
   box-shadow: 0 0 12px rgba(14,165,233,0.3);
 }
@@ -3989,7 +3989,7 @@ select.form-input option {
   cursor: pointer;
 }
 .onboarding-dot.active {
-  background: #0ea5e9;
+  background: var(--primary);
   box-shadow: 0 0 10px rgba(14,165,233,0.5);
   width: 24px;
   border-radius: 30px;
@@ -4012,7 +4012,7 @@ select.form-input option {
   width: 72px;
   height: 72px;
   margin: 0 auto 20px;
-  background: linear-gradient(135deg, #0ea5e9, #0284c7);
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
   color: white;
   border-radius: 24px;
   display: flex;
@@ -4022,7 +4022,7 @@ select.form-input option {
   animation: logoPulse 2s ease-in-out infinite;
 }
 .onboarding-icon-agent {
-  background: linear-gradient(135deg, #0ea5e9, #0284c7);
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
 }
 .onboarding-icon-ai {
   background: linear-gradient(135deg, #7c3aed, #a78bfa);
@@ -4160,7 +4160,7 @@ select.form-input option {
   position: relative;
 }
 .onboarding-provider-radio.selected {
-  border-color: #0ea5e9;
+  border-color: var(--primary);
 }
 .onboarding-provider-radio.selected::after {
   content: '';
@@ -4170,7 +4170,7 @@ select.form-input option {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #0ea5e9;
+  background: var(--primary);
 }
 .onboarding-provider strong {
   display: block;
@@ -4370,7 +4370,7 @@ select.form-input option {
   display: flex;
   align-items: center;
   gap: 10px;
-  color: #0ea5e9;
+  color: var(--primary);
 }
 .gs-header-left h3 {
   font-size: 1rem;
@@ -4899,7 +4899,7 @@ select.form-input option {
 }
 .st-nav-item.active {
   color: #ffffff; font-weight: 600;
-  background: #0ea5e9;
+  background: var(--primary);
   box-shadow: 0 2px 12px rgba(14,165,233,0.3);
 }
 .st-nav-item.active::before { opacity: 0; }
@@ -5111,7 +5111,7 @@ select.form-input option {
 .tour-step-badge {
   display: inline-flex; align-items: center; justify-content: center;
   width: 24px; height: 24px; border-radius: 50%;
-  background: #0ea5e9;
+  background: var(--primary);
   color: #ffffff; font-weight: 700; font-size: 0.75rem;
   margin-bottom: 8px;
 }
@@ -5243,7 +5243,7 @@ select.form-input option {
   width: 48px; height: 48px;
   border-radius: 30px;
   flex-shrink: 0;
-  background: #0ea5e9;
+  background: var(--primary);
   border: 1px solid #0ea5e9;
   color: #ffffff;
   cursor: pointer;
@@ -5883,7 +5883,7 @@ select:focus {
 .rt-save-btn {
   display: inline-flex; align-items: center; gap: 8px;
   padding: 12px 28px; border-radius: 30px; border: none; cursor: pointer;
-  background: #0ea5e9;
+  background: var(--primary);
   color: #ffffff; font-size: .88rem; font-weight: 700; letter-spacing: .01em;
   box-shadow: 0 0 20px rgba(14,165,233,0.3), 0 4px 12px rgba(0,0,0,0.3);
   transition: transform .15s, box-shadow .15s, opacity .15s;
@@ -6598,7 +6598,7 @@ select:focus {
   border-radius: 50%; transition: transform 0.25s;
 }
 .bh-switch input:checked + .bh-slider {
-  background: #0ea5e9; border-color: #0ea5e9;
+  background: var(--primary); border-color: #0ea5e9;
 }
 .bh-switch input:checked + .bh-slider:before {
   background: #ffffff;
@@ -7180,8 +7180,8 @@ select:focus {
 .op-filter.active,
 .tab-btn.active,
 .mkt-tab.active {
-  background: #0098EA;
-  border-color: #0098EA;
+  background: var(--primary);
+  border-color: var(--primary);
   color: white;
   box-shadow: 0 0 12px rgba(0,152,234,0.3);
 }
@@ -7230,7 +7230,7 @@ select:focus {
 
 /* ── Toggle slider accent color update ── */
 .toggle-switch input:checked + .toggle-slider {
-  background: #0098EA;
+  background: var(--primary);
   box-shadow: 0 0 12px rgba(0,152,234,0.4);
 }
 
@@ -7242,7 +7242,7 @@ select:focus {
 .settings-field input:focus,
 .settings-field select:focus,
 .settings-field textarea:focus {
-  border-color: #0098EA;
+  border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(0,152,234,0.1);
 }
 input:focus, textarea:focus, select:focus {
@@ -7251,7 +7251,7 @@ input:focus, textarea:focus, select:focus {
 
 /* ── Slider thumb accent update ── */
 .form-slider::-webkit-slider-thumb {
-  background: #0098EA;
+  background: var(--primary);
   box-shadow: 0 0 10px rgba(0,152,234,0.4);
 }
 
@@ -7281,7 +7281,7 @@ input:focus, textarea:focus, select:focus {
 
 /* ── st-nav-item active Blink style ── */
 .st-nav-item.active {
-  color: #0098EA;
+  color: var(--primary);
   background: var(--accent-dim);
   box-shadow: none;
 }
