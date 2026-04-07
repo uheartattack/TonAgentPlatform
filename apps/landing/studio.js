@@ -13754,6 +13754,7 @@ async function loadBugDashboard() {
         _bugTabBtn('platform', isRu ? '⚙️ Платформа' : '⚙️ Platform') +
         _bugTabBtn('agents', isRu ? '🤖 Агенты' : '🤖 Agents') +
         _bugTabBtn('feedback', isRu ? '📝 Фидбек' : '📝 Feedback') +
+        _bugTabBtn('reports', isRu ? '📋 Отчёты' : '📋 Reports') +
       '</div></div>' +
     '<div id="bugs-content"><div style="text-align:center;padding:40px;color:var(--text-muted)">Loading...</div></div></div>';
   loadBugTab(_bugTab);
@@ -13801,12 +13802,89 @@ async function loadBugTab(tab) {
       (d.feedback || []).forEach(function(f) { h += '<div class="feedback-item" data-status="' + f.status + '" style="padding:14px;background:var(--bg-primary);border:1px solid var(--border);border-radius:10px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:6px"><div style="display:flex;align-items:center;gap:8px">' + (icons[f.type] || '❓') + ' <span style="font-size:.78rem;font-weight:600">#' + f.id + '</span><span style="font-size:.72rem;color:var(--text-muted)">@' + escHtml(f.username || String(f.user_id)) + '</span><span style="font-size:.68rem;padding:2px 8px;border-radius:4px;background:' + (colors[f.status] || '#666') + '20;color:' + (colors[f.status] || '#666') + ';font-weight:600">' + f.status + '</span></div><div style="display:flex;gap:4px"><button onclick="replyFeedback(' + f.id + ')" style="padding:3px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);font-size:.68rem;cursor:pointer">Reply</button><button onclick="resolveFeedback(' + f.id + ')" style="padding:3px 8px;border-radius:6px;border:1px solid rgba(16,185,129,0.3);background:rgba(16,185,129,0.1);color:#10b981;font-size:.68rem;cursor:pointer">Resolve</button></div></div><div style="font-size:.82rem;color:var(--text-primary);word-break:break-word;line-height:1.4">' + escHtml((f.message || '').slice(0, 300)) + '</div>' + (f.admin_reply ? '<div style="margin-top:8px;padding:8px 12px;background:rgba(16,185,129,0.05);border-left:3px solid #10b981;border-radius:0 8px 8px 0;font-size:.78rem;color:var(--text-secondary)">↳ ' + escHtml(f.admin_reply) + '</div>' : '') + '<div style="font-size:.68rem;color:var(--text-muted);margin-top:6px">' + _timeAgo(f.created_at) + (f.agent_id ? ' · Agent #' + f.agent_id : '') + '</div></div>'; });
       h += '</div>'; c.innerHTML = h;
     } catch(e) { c.innerHTML = '<p style="color:var(--danger)">' + e.message + '</p>'; }
+  } else if (tab === 'reports') {
+    try {
+      var d = await apiRequest('GET', '/api/admin/feedback');
+      var bugs = await apiRequest('GET', '/api/admin/bugs?status=open&limit=100');
+      var agentErrors = await apiRequest('GET', '/api/admin/agent-errors?days=30');
+
+      var h = '<div style="font-size:.82rem;font-weight:600;color:var(--text-primary);margin-bottom:16px">' + (isRu ? '📁 Структурированные отчёты' : '📁 Structured Reports') + '</div>';
+
+      var folders = [
+        { id: 'platform_crashes', icon: '💥', name: isRu ? 'Крэши платформы' : 'Platform Crashes', color: '#ef4444', items: (bugs.ok ? bugs.bugs : []).filter(function(b) { return b.source === 'uncaughtException' || b.source === 'unhandledRejection'; }) },
+        { id: 'tool_errors', icon: '🔧', name: isRu ? 'Ошибки инструментов' : 'Tool Errors', color: '#f59e0b', items: (bugs.ok ? bugs.bugs : []).filter(function(b) { return (b.source || '').startsWith('tool:'); }) },
+        { id: 'api_errors', icon: '🌐', name: isRu ? 'Ошибки API' : 'API Errors', color: '#6366f1', items: (agentErrors.ok ? (agentErrors.patterns || []).filter(function(p) { return p.message.toLowerCase().match(/api|fetch|429|500|timeout/); }) : []) },
+        { id: 'user_bugs', icon: '🐛', name: isRu ? 'Баг-репорты тестеров' : 'Tester Bug Reports', color: '#ef4444', items: (d.ok ? d.feedback : []).filter(function(f) { return f.type === 'bug'; }) },
+        { id: 'user_features', icon: '💡', name: isRu ? 'Запросы фич' : 'Feature Requests', color: '#8b5cf6', items: (d.ok ? d.feedback : []).filter(function(f) { return f.type === 'feature'; }) },
+        { id: 'user_support', icon: '🆘', name: isRu ? 'Тикеты саппорта' : 'Support Tickets', color: '#f59e0b', items: (d.ok ? d.feedback : []).filter(function(f) { return f.type === 'support'; }) },
+        { id: 'agent_crashes', icon: '🤖', name: isRu ? 'Крэши агентов' : 'Agent Crashes', color: '#ef4444', items: (agentErrors.ok ? (agentErrors.patterns || []).filter(function(p) { return p.message.toLowerCase().includes('crash'); }) : []) },
+      ];
+
+      h += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">';
+      folders.forEach(function(folder) {
+        var count = folder.items.length;
+        var newCount = folder.items.filter(function(i) { return (i.status === 'new' || i.status === 'open'); }).length;
+        h += '<div onclick="expandReportFolder(\'' + folder.id + '\')" style="padding:16px;background:var(--bg-primary);border:1px solid var(--border);border-radius:12px;cursor:pointer;transition:all .2s" onmouseenter="this.style.borderColor=\'' + folder.color + '40\';this.style.transform=\'translateY(-2px)\'" onmouseleave="this.style.borderColor=\'var(--border)\';this.style.transform=\'none\'">' +
+          '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">' +
+            '<div style="width:40px;height:40px;border-radius:10px;background:' + folder.color + '15;display:flex;align-items:center;justify-content:center;font-size:1.2rem">' + folder.icon + '</div>' +
+            '<div style="flex:1"><div style="font-size:.85rem;font-weight:600;color:var(--text-primary)">' + folder.name + '</div>' +
+            '<div style="font-size:.72rem;color:var(--text-muted)">' + count + ' ' + (isRu ? 'записей' : 'items') + (newCount > 0 ? ' · <span style="color:' + folder.color + '">' + newCount + ' new</span>' : '') + '</div></div>' +
+          '</div>' +
+          '<div style="height:4px;background:rgba(255,255,255,0.05);border-radius:2px;overflow:hidden"><div style="height:100%;width:' + Math.min(count * 5, 100) + '%;background:' + folder.color + ';border-radius:2px;transition:width .3s"></div></div>' +
+        '</div>';
+      });
+      h += '</div>';
+
+      h += '<div id="report-folder-content" style="margin-top:16px"></div>';
+
+      window._reportFolders = folders;
+
+      c.innerHTML = h;
+    } catch(e) { c.innerHTML = '<p style="color:var(--danger)">' + e.message + '</p>'; }
   }
 }
 async function updateBugStatus(id, s) { try { var d = await apiRequest('PUT', '/api/admin/bugs/' + id, { status: s }); if (d.ok) { toast('Updated', 'success'); loadBugTab('platform'); } else toast(d.error, 'error'); } catch(e) { toast(e.message, 'error'); } }
 function filterFeedback(s) { document.querySelectorAll('.feedback-item').forEach(function(el) { el.style.display = (s === 'all' || el.getAttribute('data-status') === s) ? '' : 'none'; }); }
 async function replyFeedback(id) { var r = prompt(currentLang === 'ru' ? 'Ответ:' : 'Reply:'); if (!r) return; try { var d = await apiRequest('PUT', '/api/admin/feedback/' + id, { adminReply: r, status: 'in_progress' }); if (d.ok) { toast('Replied', 'success'); loadBugTab('feedback'); } } catch(e) { toast(e.message, 'error'); } }
 async function resolveFeedback(id) { try { var d = await apiRequest('PUT', '/api/admin/feedback/' + id, { status: 'resolved' }); if (d.ok) { toast('Resolved', 'success'); loadBugTab('feedback'); } } catch(e) { toast(e.message, 'error'); } }
+function expandReportFolder(folderId) {
+  var container = document.getElementById('report-folder-content');
+  if (!container) return;
+  var folders = window._reportFolders || [];
+  var folder = folders.find(function(f) { return f.id === folderId; });
+  if (!folder || !folder.items.length) { container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted)">' + (currentLang === 'ru' ? 'Пусто' : 'Empty') + '</div>'; return; }
+
+  var isRu = currentLang === 'ru';
+  var h = '<div style="padding:16px;background:var(--bg-primary);border:1px solid var(--border);border-radius:12px">' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">' +
+      '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:1.1rem">' + folder.icon + '</span><span style="font-size:.9rem;font-weight:600;color:var(--text-primary)">' + folder.name + '</span><span style="font-size:.72rem;color:var(--text-muted)">(' + folder.items.length + ')</span></div>' +
+      '<button onclick="document.getElementById(\'report-folder-content\').innerHTML=\'\'" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:1rem">&times;</button>' +
+    '</div>';
+
+  h += '<div style="display:flex;flex-direction:column;gap:6px;max-height:400px;overflow-y:auto">';
+  folder.items.slice(0, 30).forEach(function(item, i) {
+    var msg = item.message || item.msg || '';
+    var status = item.status || 'open';
+    var who = item.username ? '@' + item.username : (item.source || '');
+    var when = item.created_at || item.last_seen || item.first_seen || '';
+    var statusColor = status === 'new' || status === 'open' ? '#3b82f6' : status === 'in_progress' || status === 'fixing' ? '#f59e0b' : status === 'resolved' || status === 'fixed' ? '#10b981' : '#6b7280';
+
+    h += '<div style="padding:10px 12px;background:var(--bg-secondary);border-radius:8px;border-left:3px solid ' + folder.color + '">' +
+      '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">' +
+        '<span style="font-size:.68rem;padding:1px 6px;border-radius:3px;background:' + statusColor + '20;color:' + statusColor + ';font-weight:600">' + status + '</span>' +
+        (who ? '<span style="font-size:.7rem;color:var(--text-muted)">' + escHtml(who) + '</span>' : '') +
+        (item.count ? '<span style="font-size:.68rem;color:#ef4444;font-weight:600">x' + item.count + '</span>' : '') +
+      '</div>' +
+      '<div style="font-size:.8rem;color:var(--text-primary);word-break:break-word">' + escHtml(msg.slice(0, 200)) + '</div>' +
+      (item.admin_reply ? '<div style="font-size:.72rem;color:#10b981;margin-top:3px">↳ ' + escHtml(item.admin_reply.slice(0, 100)) + '</div>' : '') +
+      (when ? '<div style="font-size:.65rem;color:var(--text-muted);margin-top:3px">' + _timeAgo(when) + '</div>' : '') +
+    '</div>';
+  });
+  h += '</div></div>';
+
+  container.innerHTML = h;
+  container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
 
 // ── Feedback FAB (floating action button) ──
 function initFeedbackFAB() {
