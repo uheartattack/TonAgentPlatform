@@ -183,6 +183,12 @@ function eqToRaw(addr: string): string {
   }
 }
 
+// Safe parseInt for nano→TON conversion (prevents NaN propagation)
+function nanoToTon(v: any, decimals = 4): string {
+  const n = parseInt(v);
+  return isNaN(n) ? '0' : (n / 1e9).toFixed(decimals);
+}
+
 // Duplicate content detector — prevent posting same content twice
 const _recentPostHashes = new Map<string, string[]>(); // key → last 5 content hashes
 function _hashContent(text: string): string {
@@ -1983,7 +1989,7 @@ export async function executeTool(
         if (tonApiKey) headers['Authorization'] = `Bearer ${tonApiKey}`;
         const res  = await fetch(`https://tonapi.io/v2/accounts/${encodeURIComponent(addr)}`, { headers, signal: AbortSignal.timeout(10000) });
         const data = await res.json() as any;
-        const bal  = data.balance ? (parseInt(data.balance) / 1e9).toFixed(4) : '0';
+        const bal  = data.balance ? nanoToTon(data.balance) : '0';
         return { address: addr, balance_ton: bal, status: data.status };
       } catch (e: any) {
         return { error: e.message };
@@ -2011,7 +2017,7 @@ export async function executeTool(
         const prices: number[] = [];
         for (const item of (data.nft_items || [])) {
           const s = item.sale;
-          if (s?.price?.value) prices.push(parseInt(s.price.value) / 1e9);
+          if (s?.price?.value) { const p = parseInt(s.price.value); if (!isNaN(p)) prices.push(p / 1e9); }
         }
         prices.sort((a, b) => a - b);
         const floor = prices[0] ?? null;
@@ -4186,7 +4192,7 @@ export async function executeTool(
         const data = await res.json() as any;
         return {
           address: data.address,
-          balance_ton: data.balance ? (parseInt(data.balance) / 1e9).toFixed(4) : '0',
+          balance_ton: data.balance ? nanoToTon(data.balance) : '0',
           status: data.status,
           name: data.name || null,
           icon: data.icon || null,
@@ -4220,7 +4226,7 @@ export async function executeTool(
               ton_transfer: {
                 sender: a.TonTransfer.sender?.address,
                 recipient: a.TonTransfer.recipient?.address,
-                amount_ton: (parseInt(a.TonTransfer.amount || '0') / 1e9).toFixed(4),
+                amount_ton: nanoToTon(a.TonTransfer.amount || '0'),
                 comment: a.TonTransfer.comment,
               },
             } : {}),
@@ -4279,7 +4285,7 @@ export async function executeTool(
           name: n.metadata?.name || 'Unknown',
           description: (n.metadata?.description || '').slice(0, 100),
           collection: n.collection ? { name: n.collection.name, address: n.collection.address } : null,
-          sale: n.sale ? { price_ton: (parseInt(n.sale.price?.value || '0') / 1e9).toFixed(2), marketplace: n.sale.market?.name } : null,
+          sale: n.sale ? { price_ton: nanoToTon(n.sale.price?.value || '0', 2), marketplace: n.sale.market?.name } : null,
           image: n.previews?.[0]?.url || n.metadata?.image,
         }));
         return { address: addr, count: nfts.length, nfts };
@@ -4352,8 +4358,8 @@ export async function executeTool(
           address: p.address,
           name: p.name,
           apy: p.apy,
-          min_stake: p.min_stake ? (parseInt(p.min_stake) / 1e9).toFixed(2) : null,
-          total_amount: p.total_amount ? (parseInt(p.total_amount) / 1e9).toFixed(0) : null,
+          min_stake: p.min_stake ? nanoToTon(p.min_stake, 2) : null,
+          total_amount: p.total_amount ? nanoToTon(p.total_amount, 0) : null,
           nominators_count: p.nominators_count,
           cycle_end: p.cycle_end,
           verified: p.verified,
@@ -4419,7 +4425,7 @@ export async function executeTool(
         const data = await res.json() as any;
         const validators = (data.validators || []).slice(0, 20).map((v: any) => ({
           address: v.address,
-          stake: v.stake ? (parseInt(v.stake) / 1e9).toFixed(0) + ' TON' : null,
+          stake: v.stake ? nanoToTon(v.stake, 0) + ' TON' : null,
           adnl_address: v.adnl_address,
         }));
         return { total: data.validators?.length || 0, top_validators: validators };
