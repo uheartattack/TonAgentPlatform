@@ -13083,7 +13083,7 @@ function loadGuidePage() {
       content += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-bottom:20px">';
       s.cards.forEach(function(c, ci) {
         var clr = _cardColors[ci % _cardColors.length];
-        content += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:22px;position:relative;overflow:hidden;transition:all .25s" ' +
+        content += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:20px;padding:22px;position:relative;overflow:hidden;transition:all .25s" ' +
           'onmouseenter="this.style.borderColor=\'' + clr + '40\';this.style.transform=\'translateY(-3px)\';this.style.boxShadow=\'0 8px 24px rgba(0,0,0,0.2), 0 0 0 1px ' + clr + '20\'" ' +
           'onmouseleave="this.style.borderColor=\'var(--border)\';this.style.transform=\'none\';this.style.boxShadow=\'none\'">' +
           '<div style="position:absolute;top:-20px;right:-20px;width:80px;height:80px;border-radius:50%;background:' + clr + '08;pointer-events:none"></div>' +
@@ -13143,15 +13143,15 @@ function loadGuidePage() {
       content += '<div style="margin-top:12px;display:grid;grid-template-columns:1fr;gap:10px">';
       s.details.forEach(function(d, idx) {
         var dc = _detColors[idx % _detColors.length];
-        content += '<details' + (idx < 1 ? ' open' : '') + ' class="guide-pill" style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;overflow:hidden;transition:all .2s">' +
-          '<summary style="padding:16px 20px;cursor:pointer;font-size:.92rem;font-weight:700;color:var(--text-primary);list-style:none;display:flex;align-items:center;gap:12px;user-select:none;transition:background .2s" onmouseenter="this.style.background=\'' + dc + '08\'" onmouseleave="this.style.background=\'transparent\'">' +
-            '<div style="width:28px;height:28px;min-width:28px;border-radius:8px;background:' + dc + '15;display:flex;align-items:center;justify-content:center">' +
+        content += '<details' + (idx < 1 ? ' open' : '') + ' class="guide-pill" style="background:var(--bg-primary);border:1px solid var(--border);border-radius:24px;overflow:hidden;transition:all .2s">' +
+          '<summary style="padding:14px 22px;cursor:pointer;font-size:.92rem;font-weight:700;color:var(--text-primary);list-style:none;display:flex;align-items:center;gap:12px;user-select:none;transition:background .2s;border-radius:24px" onmouseenter="this.style.background=\'' + dc + '08\'" onmouseleave="this.style.background=\'transparent\'">' +
+            '<div style="width:32px;height:32px;min-width:32px;border-radius:50%;background:' + dc + '15;display:flex;align-items:center;justify-content:center">' +
               '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="' + dc + '" stroke-width="2.5" style="transition:transform .2s"><polyline points="6 9 12 15 18 9"/></svg>' +
             '</div>' +
             '<span style="flex:1">' + d.q + '</span>' +
             '<span style="font-size:.68rem;color:var(--text-muted);opacity:.5">' + (idx + 1) + '/' + s.details.length + '</span>' +
           '</summary>' +
-          '<div style="padding:0 20px 18px 60px;font-size:.84rem;color:var(--text-secondary);line-height:1.7">' +
+          '<div style="padding:0 24px 18px 66px;font-size:.84rem;color:var(--text-secondary);line-height:1.7">' +
             _formatGuideText(d.a) +
           '</div>' +
         '</details>';
