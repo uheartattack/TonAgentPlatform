@@ -831,9 +831,9 @@ class ContactMemory {
               last_seen_at = NOW()
           `, [agentId, tgId, (c as any).username || null, (c as any).name || null, (c as any).chatCount || 1]).catch(() => {});
         }
-      } catch {}
+      } catch (e: any) { console.warn('[Contacts] DB save:', e.message); }
       this._dirty = false;
-    } catch {}
+    } catch (e: any) { console.warn('[Contacts] DB save:', e.message); }
   }
 
   async loadFromDb(agentId: number): Promise<void> {
@@ -870,7 +870,7 @@ class ContactMemory {
           this.chats.set(k, v as ChatDossier);
         }
       }
-    } catch {}
+    } catch (e: any) { console.warn('[Contacts] load:', e.message); }
   }
 }
 
@@ -1366,7 +1366,7 @@ class UserbotManager {
             await this.connectAgent(agentId, sess);
             console.log(`[UserbotMgr] Reconnected agent #${agentId}`);
           }
-        } catch {}
+        } catch (e: any) { console.warn('[HealthCheck] reconnect:', e.message); }
         continue;
       }
       try {
@@ -1380,7 +1380,7 @@ class UserbotManager {
         try {
           const sess = await this.loadSessionFromDB(agentId);
           if (sess) await this.connectAgent(agentId, sess);
-        } catch {}
+        } catch (e: any) { console.warn('[HealthCheck] reconnect:', e.message); }
       }
     }
   }
@@ -2454,7 +2454,7 @@ class UserbotManager {
         } else {
           console.error(`[UserbotMgr] ❌ processTgInboxMessage CRASHED:`, errMsg, procErr.stack?.slice(0, 300));
           // Log to DB for admin panel visibility
-          try { const { getAgentLogsRepository } = require('../db/schema-extensions'); await getAgentLogsRepository().insert({ agentId, userId: item.cfg?.userId || 0, level: 'error', message: `CRASH: ${errMsg}` }); } catch {}
+          try { const { getAgentLogsRepository } = require('../db/schema-extensions'); await getAgentLogsRepository().insert({ agentId, userId: item.cfg?.userId || 0, level: 'error', message: `CRASH: ${errMsg}` }); } catch (e2: any) { console.warn('[ErrorLog] meta-error:', e2.message); }
         }
       }
     }
@@ -3178,7 +3178,7 @@ RULES:
                 const retryParts = retryData.candidates?.[0]?.content?.parts || [];
                 aiText = retryParts.filter((p: any) => p.text).map((p: any) => p.text).join('\n').trim();
               }
-            } catch {}
+            } catch (e: any) { console.warn('[AI] retry failed:', e.message); }
             if (aiText) {
               console.log(`[UserbotMgr] ✅ Agent#${agentId} recovered text="${aiText.slice(0, 80)}"`);
             }
@@ -4325,7 +4325,7 @@ async function ubGetProfilePhotos(client: TelegramClient, userId: string | numbe
 async function ubCreateGroup(client: TelegramClient, title: string, userIds: (string | number)[]) {
   const users = [];
   for (const uid of userIds) {
-    try { users.push(await (client as any).getInputEntity(uid)); } catch {}
+    try { users.push(await (client as any).getInputEntity(uid)); } catch (e: any) { console.warn('[Group] entity resolve:', e.message); }
   }
   // If no valid users, add self
   if (users.length === 0) {
@@ -4356,7 +4356,7 @@ async function ubInviteToChannel(client: TelegramClient, chatId: string | number
   const channel = await (client as any).getInputEntity(chatId);
   const users = [];
   for (const uid of userIds) {
-    try { users.push(await (client as any).getInputEntity(uid)); } catch {}
+    try { users.push(await (client as any).getInputEntity(uid)); } catch (e: any) { console.warn('[Group] entity resolve:', e.message); }
   }
   if (users.length === 0) return { error: 'No valid users to invite' };
   await (client as any).invoke(new Api.channels.InviteToChannel({ channel, users }));

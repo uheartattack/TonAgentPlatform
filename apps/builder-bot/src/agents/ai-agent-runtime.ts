@@ -1879,7 +1879,7 @@ export async function executeTool(
         toolScopes = await loadToolScopes(stateRepo, params.agentId);
         if (params.context) (params.context as any)._toolScopes = toolScopes;
       }
-    } catch {}
+    } catch (e: any) { console.warn('[ToolScopes] load:', e.message); }
 
     // Check if tool is disabled
     const customCfg = toolScopes[name];
@@ -2182,7 +2182,7 @@ export async function executeTool(
           });
           const j = await r.json() as any;
           balanceTon = Number(j.balance || 0) / 1e9;
-        } catch {}
+        } catch (e: any) { console.warn('[buy_nft] balance check:', e.message); }
         if (balanceTon < priceTon + 0.05) {
           return {
             error: `Insufficient balance: ${balanceTon.toFixed(3)} TON, need ${(priceTon + 0.05).toFixed(3)} TON (price + 0.05 TON network fee)`,
@@ -2282,7 +2282,7 @@ export async function executeTool(
           });
           const j = await r.json() as any;
           balanceTon = Number(j.balance || 0) / 1e9;
-        } catch {}
+        } catch (e: any) { console.warn('[wallet] balance fetch:', e.message); }
         return { address: addr, balance_ton: balanceTon, status: 'ok', note: 'User must deposit TON to this address before agent can send transactions.' };
       } catch (e: any) {
         return { error: e.message };
@@ -2310,7 +2310,7 @@ export async function executeTool(
           await recordDailySpend(params.agentId, params.userId, amount);
           await logToDb(params.agentId, 'info', `[TX] Sent ${amount} TON to ${args.to}, hash=${(result as any).hash}`, params.userId);
           // Milestone: record important action in daily log
-          try { const { appendDailyLog } = await import('../services/agent-memory'); await appendDailyLog(params.agentId, `💸 Sent ${amount} TON → ${String(args.to).slice(0, 20)}... hash=${(result as any).hash}`); } catch {}
+          try { const { appendDailyLog } = await import('../services/agent-memory'); await appendDailyLog(params.agentId, `💸 Sent ${amount} TON → ${String(args.to).slice(0, 20)}... hash=${(result as any).hash}`); } catch (e: any) { console.warn('[DailyLog] tx append:', e.message); }
           return { ok: true, hash: (result as any).hash, note: `Sent ${amount} TON to ${args.to}` };
         }
         return { ok: false, error: (result as any).error };
@@ -2845,10 +2845,10 @@ export async function executeTool(
             text: `⏸ <b>Агент #${params.agentId} запросил остановку</b>\n\n📋 Причина: ${reason}\n\nАгент обнаружил проблему и остановился сам. Проверьте логи.`,
             agentId: params.agentId,
           });
-        } catch {}
+        } catch (e: any) { console.error('[Deactivate] notify failed:', e.message); }
         // Deactivate
         setTimeout(() => {
-          try { getAIAgentRuntime().deactivate(params.agentId); } catch {}
+          try { getAIAgentRuntime().deactivate(params.agentId); } catch (e: any) { console.error('[Deactivate] failed:', e.message); }
           import('../db').then(({ pool }) =>
             pool.query('UPDATE builder_bot.agents SET is_active = false WHERE id = $1', [params.agentId])
           ).catch(() => {});
@@ -4582,7 +4582,7 @@ export async function executeTool(
         await pool.query('UPDATE builder_bot.agents SET trigger_config=$1 WHERE id=$2', [JSON.stringify(tc), params.agentId]);
 
         logToDb(params.agentId, 'info', `[SELF-EVOLVE] Prompt updated: ${reason}`);
-        try { const { appendDailyLog } = await import('../services/agent-memory'); await appendDailyLog(params.agentId, `🧠 Prompt updated: ${reason}. New length: ${newPrompt.length} chars`); } catch {}
+        try { const { appendDailyLog } = await import('../services/agent-memory'); await appendDailyLog(params.agentId, `🧠 Prompt updated: ${reason}. New length: ${newPrompt.length} chars`); } catch (e: any) { console.warn('[DailyLog] evolution append:', e.message); }
         return { ok: true, message: 'Промпт обновлён. Новый промпт начнёт действовать со следующего тика.', prompt_length: newPrompt.length };
       } catch (e: any) { return { error: e.message }; }
     }
@@ -5962,7 +5962,7 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
         await logToDb(params.agentId, 'info', `[Blocklist] Message blocked: "${lastMsg.slice(0, 60)}"`, params.userId);
         return { toolCallCount: 0, error: 'BLOCKLIST_HIT' };
       }
-    } catch {}
+    } catch (e: any) { console.error('[Security] blocklist check failed:', e.message); }
   }
 
   // ── Session Reset Policy: clear history if policy triggers ──
@@ -7859,7 +7859,7 @@ If web_search returns nothing useful → say "не смог найти акту�
           console.log(`[AI runtime] Agent #${params.agentId} silent reply — suppressing`);
           finalContent = undefined;
         }
-      } catch {}
+      } catch (e: any) { console.warn('[Behavior] heartbeat/silent detection:', e.message); }
     }
 
     if (finalContent) {
@@ -7870,11 +7870,11 @@ If web_search returns nothing useful → say "не смог найти акту�
           const emoji = reactionEmojis[Math.floor(Math.random() * reactionEmojis.length)];
           const lastMsgId = (params.config._lastMessageId as number) || 0;
           if (lastMsgId && chatId) await tgReactMessage(chatId, lastMsgId, emoji).catch(() => {});
-        } catch {}
+        } catch (e: any) { console.warn('[Behavior] auto-react:', e.message); }
       }
 
       // ── Behavior: read receipts + typing delay ──
-      try { await applyBehaviorBeforeResponse(params, chatId); } catch {}
+      try { await applyBehaviorBeforeResponse(params, chatId); } catch (e: any) { console.warn('[Behavior] read receipts/typing:', e.message); }
 
       // ── Behavior: thinking phrase for complex responses ──
       if (bh.thinkingPhrases && finalContent.length > 300 && msgs.length > 0 && Math.random() < 0.4) {
@@ -7884,11 +7884,11 @@ If web_search returns nothing useful → say "не смог найти акту�
           await notifyUser(params.userId, phrase).catch(() => {});
           await new Promise(r => setTimeout(r, addVariance(1500, bh.randomVariance || 25)));
           if (chatId) await tgSetTyping(chatId).catch(() => {});
-        } catch {}
+        } catch (e: any) { console.warn('[Behavior] thinking phrase:', e.message); }
       }
 
       // ── Behavior: typing delay proportional to response length ──
-      try { await applyTypingDelay(finalContent, bh, chatId); } catch {}
+      try { await applyTypingDelay(finalContent, bh, chatId); } catch (e: any) { console.warn('[Behavior] typing delay:', e.message); }
 
       // ── Behavior: message splitting ──
       if (bh.messageSplitting && finalContent.length > 800) {
@@ -7933,7 +7933,7 @@ If web_search returns nothing useful → say "не смог найти акту�
               JSON.stringify({ category: 'feedback', title: 'User correction', content: lesson, ts: new Date().toISOString() }),
             );
             await logToDb(params.agentId, 'info', `[Learning] Saved feedback lesson: "${lastUserMsg.slice(0, 80)}"`, params.userId);
-          } catch {}
+          } catch (e: any) { console.warn('[Behavior] feedback save:', e.message); }
         }
       }
 
@@ -7965,8 +7965,8 @@ If web_search returns nothing useful → say "не смог найти акту�
                 await _stateRepo.delete(params.agentId, entry.key);
               }
             }
-          } catch {}
-        } catch {}
+          } catch (e: any) { console.warn('[History] save:', e.message); }
+        } catch (e: any) { console.warn('[History] save:', e.message); }
       }
     }
   }
@@ -8081,7 +8081,7 @@ If web_search returns nothing useful → say "не смог найти акту�
       console.warn(`[Evals] Agent #${params.agentId} flags: ${evalResult.flags.join(', ')} score=${evalResult.overallScore}`);
     }
     await checkDegradation(params.agentId, params.userId);
-  } catch {}
+  } catch (e: any) { console.warn('[Degradation] check:', e.message); }
 
   // ── Reflexive memory extraction: auto-save facts from conversation ──
   if (msgs.length > 0 && finalContent && params.context?.senderId) {
@@ -8195,7 +8195,7 @@ Rules:
     }
 
   } catch (e: any) {
-    // Silent fail — memory extraction is best-effort
+    console.warn('[Memory] extraction:', e.message);
   }
 }
 
@@ -8214,7 +8214,7 @@ export async function _extractAndSaveMemoryFromChat(
     const model = providerCfg.defaultModel;
     const params = { agentId, userId, config: {}, context: { senderId, senderName: msg.senderUsername || msg.senderFirstName || '' } } as any;
     await _extractAndSaveMemory(params, [msg.text || ''], responseText, ai, model);
-  } catch {}
+  } catch (e: any) { console.warn('[Memory] extraction:', e.message); }
 }
 
 // ── AI Agent Runtime: activate / deactivate ────────────────────────────────

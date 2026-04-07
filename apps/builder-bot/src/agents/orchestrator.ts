@@ -2232,7 +2232,7 @@ ${toolSections}
         const runResult = await this.runner.runAgent({ agentId, userId });
         if (runResult.success) restarted = true;
       }
-    } catch {}
+    } catch (e: any) { console.warn('[Orchestrator] restart after update:', e.message); }
 
     const restartNote = restarted ? '\n\n🔄 Агент перезапущен с обновлениями.' : '';
 
@@ -2572,7 +2572,7 @@ ${toolSections}
         const info = await this.fetchGetGemsCollection(ggAddr);
         return { address: ggAddr, resolvedName: info?.name || name };
       }
-    } catch {}
+    } catch (e: any) { console.warn('[NFT] collection resolve:', e.message); }
 
     // 3. TonAPI accounts search (ищем NFT-контракт по имени метаданных)
     try {
@@ -2610,7 +2610,7 @@ ${toolSections}
           }
         }
       }
-    } catch {}
+    } catch (e: any) { console.warn('[NFT] collection resolve:', e.message); }
 
     // 4. TonAPI collections search (top-100, строгое совпадение имени)
     try {
@@ -2636,7 +2636,7 @@ ${toolSections}
           }
         }
       }
-    } catch {}
+    } catch (e: any) { console.warn('[NFT] collection resolve:', e.message); }
 
     return null;
   }
@@ -2764,7 +2764,7 @@ ${toolSections}
         );
         const tonData = (await tonResp.json()) as any;
         tonUsdPrice = tonData?.['the-open-network']?.usd || 0;
-      } catch {}
+      } catch (e: any) { console.warn('[Price] TON/USD fetch:', e.message); }
 
       if (collectionData) {
         // Получаем активные листинги (для анализа ликвидности)
