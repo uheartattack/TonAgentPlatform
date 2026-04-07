@@ -13167,7 +13167,7 @@ function loadGuidePage() {
     }
 
     content += '</div>';
-    container.innerHTML = tabs + content;
+    container.innerHTML = '<div style="max-width:900px;margin:0 auto;padding:0 24px">' + tabs + content + '</div>';
   }
 
   window._switchGuideTab = function(id) {
