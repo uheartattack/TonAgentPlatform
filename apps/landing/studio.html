@@ -1900,6 +1900,39 @@
               </div>
             </div>
 
+            <!-- Notification Settings -->
+            <div class="panel" style="margin-top:16px">
+              <div class="panel-header">
+                <h3 class="panel-title" data-en="Notifications" data-ru="Уведомления">Notifications</h3>
+              </div>
+              <div style="padding:16px;display:flex;flex-direction:column;gap:14px">
+                <div>
+                  <label style="font-size:.78rem;color:var(--text-muted);display:block;margin-bottom:6px" data-en="Toast Duration" data-ru="Длительность уведомлений">Toast Duration</label>
+                  <div style="display:flex;align-items:center;gap:10px">
+                    <input type="range" id="notif-duration-slider" min="2" max="15" value="5" step="1" style="flex:1;accent-color:#0ea5e9" oninput="setNotifDuration(this.value)">
+                    <span id="notif-duration-value" style="font-size:.82rem;color:var(--text-primary);min-width:30px;text-align:right">5s</span>
+                  </div>
+                </div>
+                <div>
+                  <label style="font-size:.78rem;color:var(--text-muted);display:block;margin-bottom:6px" data-en="Auto-dismiss" data-ru="Авто-удаление">Auto-dismiss</label>
+                  <div style="display:flex;gap:8px;flex-wrap:wrap">
+                    <button class="notif-dismiss-btn" onclick="setNotifAutoDismiss(0)" style="padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:.78rem;cursor:pointer;transition:all .15s" data-en="Manual" data-ru="Вручную">Manual</button>
+                    <button class="notif-dismiss-btn active" onclick="setNotifAutoDismiss(5)" style="padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:.78rem;cursor:pointer;transition:all .15s" data-en="5 sec" data-ru="5 сек">5 sec</button>
+                    <button class="notif-dismiss-btn" onclick="setNotifAutoDismiss(10)" style="padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:.78rem;cursor:pointer;transition:all .15s" data-en="10 sec" data-ru="10 сек">10 sec</button>
+                    <button class="notif-dismiss-btn" onclick="setNotifAutoDismiss(30)" style="padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:.78rem;cursor:pointer;transition:all .15s" data-en="30 sec" data-ru="30 сек">30 sec</button>
+                  </div>
+                </div>
+                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:.86rem;color:var(--text-primary)">
+                  <input type="checkbox" id="notif-sound-toggle" style="accent-color:#0ea5e9;width:18px;height:18px" onchange="toggleNotifSound(this.checked)">
+                  <span data-en="Play sound on notifications" data-ru="Звук при уведомлениях">Sound on notifications</span>
+                </label>
+                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:.86rem;color:var(--text-primary)">
+                  <input type="checkbox" id="notif-badge-toggle" checked style="accent-color:#0ea5e9;width:18px;height:18px" onchange="toggleNotifBadge(this.checked)">
+                  <span data-en="Show badge on feedback button" data-ru="Показывать badge на кнопке фидбека">Show feedback badge</span>
+                </label>
+              </div>
+            </div>
+
             <!-- UI Settings -->
             <div class="panel" style="margin-top:16px">
               <div class="panel-header">

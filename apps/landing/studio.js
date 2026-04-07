@@ -149,7 +149,9 @@ function spawnParticleDissolution(el) {
 
 function toast(message, type, title, duration) {
   type = type || 'info';
-  duration = duration || 5000;
+  duration = duration || (typeof _notifDuration !== 'undefined' && _notifDuration > 0 ? _notifDuration : 5000);
+  if (typeof _notifDuration !== 'undefined' && _notifDuration === 0) duration = 999999; // manual dismiss
+  if (typeof _notifSound !== 'undefined' && _notifSound) try { _playNotifSound(); } catch {}
   var container = document.getElementById('toast-container');
   if (!container) return;
   var el = document.createElement('div');
@@ -13780,6 +13782,57 @@ function deleteMyAccount() {
   }).catch(function(e) { toast('Error: ' + (e.message||e), 'error'); });
 }
 
+// ── Notification Settings ──
+var _notifDuration = parseInt(localStorage.getItem('notif_duration') || '5') * 1000;
+var _notifSound = localStorage.getItem('notif_sound') === 'true';
+var _notifBadge = localStorage.getItem('notif_badge') !== 'false';
+
+function setNotifDuration(val) {
+  _notifDuration = parseInt(val) * 1000;
+  localStorage.setItem('notif_duration', val);
+  var el = document.getElementById('notif-duration-value');
+  if (el) el.textContent = val + 's';
+}
+
+function setNotifAutoDismiss(sec) {
+  if (sec === 0) { _notifDuration = 0; localStorage.setItem('notif_duration', '0'); }
+  else { _notifDuration = sec * 1000; localStorage.setItem('notif_duration', String(sec)); }
+  document.querySelectorAll('.notif-dismiss-btn').forEach(function(b) {
+    b.style.background = 'var(--bg-primary)'; b.style.borderColor = 'var(--border)'; b.style.color = 'var(--text-primary)';
+  });
+  var target = event && event.target; if (target) { target.style.background = 'rgba(14,165,233,0.15)'; target.style.borderColor = '#0ea5e9'; target.style.color = '#0ea5e9'; }
+  var slider = document.getElementById('notif-duration-slider');
+  var val = document.getElementById('notif-duration-value');
+  if (slider) slider.value = sec || 2;
+  if (val) val.textContent = sec ? sec + 's' : 'off';
+}
+
+function toggleNotifSound(on) {
+  _notifSound = on;
+  localStorage.setItem('notif_sound', on ? 'true' : 'false');
+  if (on) _playNotifSound();
+}
+
+function toggleNotifBadge(on) {
+  _notifBadge = on;
+  localStorage.setItem('notif_badge', on ? 'true' : 'false');
+  var badge = document.getElementById('feedback-badge');
+  if (badge && !on) badge.style.display = 'none';
+}
+
+function _playNotifSound() {
+  try {
+    var ctx = new (window.AudioContext || window.webkitAudioContext)();
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.frequency.value = 800; osc.type = 'sine';
+    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.3);
+  } catch {}
+}
+
 function setUIScale(val) {
   // Sync all scale displays
   var els = [document.getElementById('ui-scale-value'), document.getElementById('sidebar-scale-value')];
@@ -13814,6 +13867,13 @@ function setAccentColor(color) {
     document.documentElement.style.setProperty('--accent', accent);
     document.documentElement.style.setProperty('--primary', accent);
   }
+  // Restore notification settings
+  var nd = localStorage.getItem('notif_duration');
+  if (nd !== null) { _notifDuration = parseInt(nd) * 1000; var nds = document.getElementById('notif-duration-slider'); if (nds) nds.value = nd; var ndv = document.getElementById('notif-duration-value'); if (ndv) ndv.textContent = nd === '0' ? 'off' : nd + 's'; }
+  var ns = localStorage.getItem('notif_sound');
+  if (ns === 'true') { _notifSound = true; var nst = document.getElementById('notif-sound-toggle'); if (nst) nst.checked = true; }
+  var nb = localStorage.getItem('notif_badge');
+  if (nb === 'false') { _notifBadge = false; var nbt = document.getElementById('notif-badge-toggle'); if (nbt) nbt.checked = false; }
 })();
 
 // Load error consent checkbox state in profile
