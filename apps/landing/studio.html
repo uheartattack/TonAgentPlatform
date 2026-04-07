@@ -1922,6 +1922,23 @@
                     <button class="notif-dismiss-btn" onclick="setNotifAutoDismiss(30)" style="padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:.78rem;cursor:pointer;transition:all .15s" data-en="30 sec" data-ru="30 сек">30 sec</button>
                   </div>
                 </div>
+                <div>
+                  <label style="font-size:.78rem;color:var(--text-muted);display:block;margin-bottom:6px" data-en="Auto-delete history" data-ru="Авто-удаление истории">Auto-delete history</label>
+                  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px">
+                    <button class="notif-retain-btn" onclick="setNotifRetain('off')" style="padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:.78rem;cursor:pointer;transition:all .15s" data-en="Never" data-ru="Никогда">Never</button>
+                    <button class="notif-retain-btn" onclick="setNotifRetain('1d')" style="padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:.78rem;cursor:pointer;transition:all .15s" data-en="1 day" data-ru="1 день">1 day</button>
+                    <button class="notif-retain-btn" onclick="setNotifRetain('7d')" style="padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:.78rem;cursor:pointer;transition:all .15s" data-en="7 days" data-ru="7 дней">7 days</button>
+                    <button class="notif-retain-btn active" onclick="setNotifRetain('30d')" style="padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:.78rem;cursor:pointer;transition:all .15s" data-en="30 days" data-ru="30 дней">30 days</button>
+                    <button class="notif-retain-btn" onclick="setNotifRetain('custom')" style="padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:.78rem;cursor:pointer;transition:all .15s" data-en="Custom" data-ru="Своё">Custom</button>
+                  </div>
+                  <div id="notif-custom-retain" style="display:none;margin-top:6px">
+                    <div style="display:flex;align-items:center;gap:8px">
+                      <input type="number" id="notif-retain-days" min="1" max="365" value="14" style="width:70px;padding:6px 10px;background:var(--bg-primary);border:1px solid var(--border);border-radius:10px;color:var(--text-primary);font-size:.82rem;text-align:center">
+                      <span style="font-size:.78rem;color:var(--text-muted)" data-en="days" data-ru="дней">days</span>
+                      <button onclick="applyCustomRetain()" style="padding:6px 14px;border-radius:10px;border:none;background:var(--primary);color:white;font-size:.78rem;cursor:pointer" data-en="Apply" data-ru="Применить">Apply</button>
+                    </div>
+                  </div>
+                </div>
                 <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:.86rem;color:var(--text-primary)">
                   <input type="checkbox" id="notif-sound-toggle" style="accent-color:#0ea5e9;width:18px;height:18px" onchange="toggleNotifSound(this.checked)">
                   <span data-en="Play sound on notifications" data-ru="Звук при уведомлениях">Sound on notifications</span>
