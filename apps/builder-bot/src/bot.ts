@@ -116,12 +116,13 @@ function checkRateLimit(userId: number): boolean {
 }
 
 // Periodic cleanup of stale rate limit entries (every 5 min)
-setInterval(() => {
+const _rateLimitCleanupInterval = setInterval(() => {
   const now = Date.now();
   for (const [uid, entry] of _rateLimits) {
     if (now >= entry.resetAt) _rateLimits.delete(uid);
   }
 }, 5 * 60 * 1000);
+_rateLimitCleanupInterval.unref();
 
 // ============================================================
 // TON address validation (prefix + structural via @ton/core)
@@ -477,7 +478,11 @@ function getCachedOwner(agentId: number): number | null {
 }
 function setCachedOwner(agentId: number, ownerId: number) {
   _ownerCache.set(agentId, { ownerId, ts: Date.now() });
-  if (_ownerCache.size > 5000) _ownerCache.clear();
+  // Evict oldest half instead of clearing all (prevents cache stampede)
+  if (_ownerCache.size > 5000) {
+    const keys = Array.from(_ownerCache.keys());
+    for (let i = 0; i < 2500; i++) _ownerCache.delete(keys[i]);
+  }
 }
 
 // ============================================================
@@ -3245,8 +3250,13 @@ bot.action(/^aw_unblock:(\d+)$/, async (ctx) => {
 bot.action(/^aw_refresh:(\d+)$/, async (ctx) => {
   try {
     await ctx.answerCbQuery('🔄 Refreshing...');
+    const walletId = parseInt(ctx.match![1]);
+    if (isNaN(walletId)) { await safeReply(ctx, '❌ Invalid wallet ID'); return; }
     const { getAgenticWalletService } = await import('./services/agentic-wallet');
-    const bal = await getAgenticWalletService().refreshBalance(parseInt(ctx.match![1]));
+    // Ownership check: verify wallet belongs to user
+    const walletCheck = await getAgenticWalletService().getWallet(walletId, ctx.from!.id);
+    if (!walletCheck) { await safeReply(ctx, '❌ Кошелёк не найден'); return; }
+    const bal = await getAgenticWalletService().refreshBalance(walletId);
     await ctx.reply(`💰 Баланс: ${bal.toFixed(4)} TON`);
   } catch (e: any) { await safeReply(ctx, `❌ Ошибка обновления: ${e.message}`); }
 });
@@ -3257,7 +3267,15 @@ const pendingWalletLimit = new Map<number, { walletId: number; startTs: number }
 bot.action(/^aw_set_limit:(\d+)$/, async (ctx) => {
   await ctx.answerCbQuery();
   const userId = ctx.from!.id;
-  pendingWalletLimit.set(userId, { walletId: parseInt(ctx.match![1]), startTs: Date.now() });
+  const walletId = parseInt(ctx.match![1]);
+  if (isNaN(walletId)) return;
+  // Ownership check
+  try {
+    const { getAgenticWalletService } = await import('./services/agentic-wallet');
+    const w = await getAgenticWalletService().getWallet(walletId, userId);
+    if (!w) { await safeReply(ctx, '❌ Кошелёк не найден'); return; }
+  } catch { return; }
+  pendingWalletLimit.set(userId, { walletId, startTs: Date.now() });
   const ru = getUserLang(userId) === 'ru';
   await editOrReply(ctx,
     `📊 ${ru ? 'Введите новый дневной лимит в TON (например: 10):' : 'Enter new daily limit in TON (e.g. 10):'}`,
