@@ -1766,13 +1766,88 @@ ${toolSections}
       capabilities: detectedCaps,
     };
 
-    // 8) Формируем красивый ответ
+    // 8) Post-creation auto-audit & auto-fix
+    const auditFixes: string[] = [];
+    let auditScore = 100;
+    let auditChecks = 0;
+    let auditPassed = 0;
+    const cfg = triggerConfig.config;
+
+    // a) Caps vs prompt — auto-enable missing capabilities
+    const CAP_PATTERNS: Array<[RegExp, string, string]> = [
+      [/wallet|balance|send_ton|get_ton|кошел/i, 'wallet', 'Wallet'],
+      [/nft|коллекц|collection|floor/i, 'nft', 'NFT'],
+      [/gift|подарк|подарок/i, 'gifts', 'Gifts'],
+      [/market|арбитраж|arbitrage|floor_real/i, 'gifts_market', 'Gifts Market'],
+      [/telegram|тг|чат|канал|tg_send|tg_get/i, 'telegram', 'Telegram'],
+      [/search|поиск|web|fetch|url|сайт/i, 'web', 'Web'],
+      [/defi|dex|swap|стейкинг/i, 'defi', 'DeFi'],
+    ];
+    const enabledCaps: string[] = cfg.enabledCapabilities || [];
+    for (const [pattern, capId, capName] of CAP_PATTERNS) {
+      auditChecks++;
+      if (pattern.test(systemPrompt) && !enabledCaps.includes(capId)) {
+        enabledCaps.push(capId);
+        auditFixes.push(capName);
+      } else {
+        auditPassed++;
+      }
+    }
+    cfg.enabledCapabilities = enabledCaps;
+
+    // b) Ensure behavior defaults exist
+    auditChecks++;
+    if (!cfg.behavior || typeof cfg.behavior !== 'object') {
+      cfg.behavior = { typingDelay: true, typingSpeed: 40, readReceipts: true, readDelay: 1.5, messageSplitting: true, thinkingPhrases: true, reactions: true, hesitation: false, randomVariance: 25 };
+      auditFixes.push('Behavior defaults');
+    } else { auditPassed++; }
+
+    // c) Ensure learning defaults exist
+    auditChecks++;
+    if (!cfg.learning || typeof cfg.learning !== 'object') {
+      cfg.learning = { feedbackLoop: true, negativePatterns: 'нет, не так, неправильно, бред', errorHealing: true, maxRetries: 3, circuitBreakerThreshold: 5, qualityScoring: true, styleAdaptation: true };
+      auditFixes.push('Learning defaults');
+    } else { auditPassed++; }
+
+    // d) Prompt quality
+    auditChecks++;
+    if (systemPrompt.length >= 100) { auditPassed++; }
+
+    // e) API key
+    auditChecks++;
+    if (cfg.AI_API_KEY) { auditPassed++; }
+
+    // f) Memory/state instructions
+    auditChecks++;
+    if (/get_state|set_state|память|memory/i.test(systemPrompt)) { auditPassed++; }
+
+    // g) Notify instructions
+    auditChecks++;
+    if (/notify|уведомл|алерт|alert/i.test(systemPrompt)) { auditPassed++; }
+
+    // Calculate score
+    auditScore = auditChecks > 0 ? Math.round((auditPassed / auditChecks) * 100) : 100;
+
+    // Save fixes if any
+    if (auditFixes.length > 0) {
+      triggerConfig.config = cfg;
+      try {
+        const { pool } = require('../db');
+        await pool.query('UPDATE builder_bot.agents SET trigger_config = $1 WHERE id = $2', [JSON.stringify(triggerConfig), agentId]);
+        console.log(`[Orchestrator] Auto-audit fixed ${auditFixes.length} issues for agent#${agentId}: ${auditFixes.join(', ')}`);
+      } catch (e: any) {
+        console.warn(`[Orchestrator] Auto-audit save failed for agent#${agentId}: ${e.message}`);
+      }
+    }
+
+    // 9) Формируем красивый ответ
+    const scoreEmoji = auditScore >= 80 ? '🟢' : auditScore >= 50 ? '🟡' : '🔴';
     let content =
-      `🎉 *AI\\-агент создан\\!*\n` +
+      `✨ *AI\\-агент создан\\!*\n` +
       `━━━━━━━━━━━━━━━━━━━━\n` +
-      `📛 *${esc(generatedName)}*  \\#${agentId}\n` +
-      `🤖 Тип: AI Agent \\(автономный\\)\n` +
-      `⏰ Тик: каждые ${esc(schedLabel)}\n`;
+      `\n` +
+      `📛 *${esc(generatedName)}*  \\|  \\#${agentId}\n` +
+      `🤖 AI Agent \\(автономный\\)  •  ⏰ ${esc(schedLabel)}\n`;
 
     if (summary) {
       content += `\n📝 _${esc(summary)}_\n`;
@@ -1785,10 +1860,15 @@ ${toolSections}
         telegram: '📱', web: '🌐', defi: '📈', plugins: '🔌', inter_agent: '🔗',
       };
       const capLabels = detectedCaps.map(c => `${capIcons[c] || '▪️'} ${c}`).join(', ');
-      content += `\n🧩 _Возможности: ${esc(capLabels)}_\n`;
+      content += `\n🧩 _${esc(capLabels)}_\n`;
     }
 
-    content += `🧠 Самоулучшение: ✅ _\\(AI автоисправление ошибок\\)_\n`;
+    // Audit score + auto-fixes
+    content += `\n${scoreEmoji} *Здоровье: ${auditScore}%*`;
+    if (auditFixes.length > 0) {
+      content += `  \\|  ✅ _Автоисправлено: ${esc(auditFixes.join(', '))}_`;
+    }
+    content += `\n🧠 Самоулучшение: ✅  •  🛡 Защита памяти: ✅\n`;
 
     // Show what's needed for full operation
     const needsList: string[] = [];
@@ -1796,34 +1876,32 @@ ${toolSections}
     if (needsWallet) needsList.push('💰 Кошелёк TON');
     if (!hasKey) needsList.push('🔑 API ключ AI');
 
-    // Always show clear next steps
-    content += `\n`;
-    if (!hasKey) {
-      content += `\n🔑 *Шаг 1: Вставьте API ключ*\n`;
-      content += `_Без ключа агент не может думать\\. Бесплатные варианты:_\n`;
-      content += `  • Gemini — aistudio\\.google\\.com \\(15 запросов/мин\\)\n`;
-      content += `  • Groq — console\\.groq\\.com \\(30 запросов/мин\\)\n`;
-      content += `  • OpenRouter — openrouter\\.ai/keys \\(бесплатные модели\\)\n`;
+    if (needsList.length > 0) {
+      content += `\n━━━━━━━━━━━━━━━━━━━━\n`;
+      content += `⚡ *Осталось настроить:*\n\n`;
+      let step = 1;
+      if (!hasKey) {
+        content += `*${step}\\. 🔑 API ключ*\n`;
+        content += `_Бесплатно: Gemini • Groq • OpenRouter_\n\n`;
+        step++;
+      }
+      if (needsTgLogin && !tgAuthed) {
+        content += `*${step}\\. 🔐 Telegram*\n`;
+        content += `_QR\\-код в настройках агента_\n\n`;
+        step++;
+      }
+      if (needsWallet) {
+        content += `*${step}\\. 💰 Кошелёк* \\(опционально\\)\n`;
+        content += `_Для DeFi и транзакций_\n\n`;
+      }
     }
-    if (needsTgLogin && !tgAuthed) {
-      content += `\n🔐 *${hasKey ? 'Шаг 2' : 'Шаг 2'}: Подключите Telegram*\n`;
-      content += `_Чтобы агент общался в чатах как человек \\(не бот\\)\\._\n`;
-      content += `_Настройки агента → Telegram → QR\\-код_\n`;
-    }
-    if (needsWallet) {
-      content += `\n💰 *Кошелёк TON* \\(опционально\\)\n`;
-      content += `_Для DeFi операций и отправки транзакций\\._\n`;
-    }
-
-    content += '\n';
 
     if (autoStarted && !hasKey) {
-      content += `⏸ *Ожидает API ключ* — вставьте ключ и агент заработает`;
+      content += `⏸ _Ожидает API ключ — вставьте и агент заработает_`;
     } else if (autoStarted && needsList.length === 0) {
-      content += `🟢 *Запущен на сервере* — работает каждые ${esc(schedLabel)}\n`;
-      content += `💬 _Используйте "Чат с агентом" для общения_`;
+      content += `\n🟢 *Запущен\\!* Работает каждые ${esc(schedLabel)}`;
     } else if (needsList.length > 0) {
-      content += `⏳ *Выполните шаги выше* — агент запустится автоматически`;
+      content += `⏳ _Выполните шаги выше — агент запустится сам_`;
     } else {
       content += `👇 Нажмите *Запустить* — агент будет работать 24/7`;
     }

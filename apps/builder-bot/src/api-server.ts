@@ -1513,7 +1513,7 @@ export function startApiServer() {
 
       await pool.query(
         'UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2',
-        [JSON.stringify(tc), agentId, userId]
+        [JSON.stringify(tc), agentId]
       );
       res.json({ ok: true, capabilities: filtered });
     } catch (e: any) {
@@ -1665,7 +1665,7 @@ export function startApiServer() {
       if (typeof temperature === 'number') tc.config.AI_TEMPERATURE = temperature;
       if (typeof maxTokens === 'number') tc.config.AI_MAX_TOKENS = maxTokens;
       if (utilityModel && typeof utilityModel === 'string') tc.config.UTILITY_MODEL = utilityModel;
-      await pool.query('UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2', [JSON.stringify(tc), agentId, userId]);
+      await pool.query('UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2', [JSON.stringify(tc), agentId]);
       res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
@@ -1709,7 +1709,7 @@ export function startApiServer() {
       };
 
       await pool.query('UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2',
-        [JSON.stringify(tc), agentId, userId]);
+        [JSON.stringify(tc), agentId]);
 
       // Update in-memory config if agent is running
       try {
@@ -1812,7 +1812,7 @@ export function startApiServer() {
       if (memory_poisoning_protection !== undefined) tc.config.memory_poisoning_protection = memory_poisoning_protection;
 
       await pool.query('UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2',
-        [JSON.stringify(tc), agentId, userId]);
+        [JSON.stringify(tc), agentId]);
 
       // Also save as agent state for runtime access
       const stateRepo = getAgentStateRepository();
@@ -1919,7 +1919,7 @@ export function startApiServer() {
         tc.config.enabledCapabilities = wizardConfig.enabledCapabilities;
       }
 
-      await pool.query('UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2', [JSON.stringify(tc), agentId, userId]);
+      await pool.query('UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2', [JSON.stringify(tc), agentId]);
       res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
@@ -2104,7 +2104,7 @@ export function startApiServer() {
       const mnemonicPlain = mnemonic.join(' ');
       tc.config.WALLET_MNEMONIC = encryptMnemonic(mnemonicPlain);
       tc.config.WALLET_ADDRESS = address;
-      await pool.query('UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2', [JSON.stringify(tc), agentId, userId]);
+      await pool.query('UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2', [JSON.stringify(tc), agentId]);
       // Sync to agent_state for runtime consistency
       try {
         const { getAgentStateRepository } = await import('./db/schema-extensions');
