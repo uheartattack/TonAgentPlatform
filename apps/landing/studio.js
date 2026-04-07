@@ -13594,7 +13594,11 @@ function deleteMyAccount() {
 }
 
 function setUIScale(val) {
-  document.getElementById('ui-scale-value').textContent = val + '%';
+  // Sync all scale displays
+  var els = [document.getElementById('ui-scale-value'), document.getElementById('sidebar-scale-value')];
+  els.forEach(function(el) { if (el) el.textContent = val + '%'; });
+  var sliders = [document.getElementById('ui-scale-slider'), document.getElementById('sidebar-scale-slider')];
+  sliders.forEach(function(s) { if (s) s.value = val; });
   document.querySelector('.main-content').style.zoom = (val / 100);
   localStorage.setItem('ui_scale', val);
 }
@@ -13613,7 +13617,11 @@ function setAccentColor(color) {
 // Restore UI settings from localStorage
 (function restoreUISettings() {
   var scale = localStorage.getItem('ui_scale');
-  if (scale) { var mc = document.querySelector('.main-content'); if (mc) mc.style.zoom = (parseInt(scale) / 100); }
+  if (scale) {
+    var mc = document.querySelector('.main-content'); if (mc) mc.style.zoom = (parseInt(scale) / 100);
+    var ss = document.getElementById('sidebar-scale-slider'); if (ss) ss.value = scale;
+    var sv = document.getElementById('sidebar-scale-value'); if (sv) sv.textContent = scale + '%';
+  }
   var accent = localStorage.getItem('accent_color');
   if (accent) {
     document.documentElement.style.setProperty('--accent', accent);
@@ -13938,9 +13946,53 @@ function initFeedbackFAB() {
   fab.onmouseleave = function() { fab.style.transform = 'scale(1)'; fab.style.boxShadow = '0 4px 12px rgba(99,102,241,0.4)'; };
   fab.onclick = function() { openFeedbackModal(); };
   document.body.appendChild(fab);
+  // Check for unread replies periodically
+  checkFeedbackReplies();
+  setInterval(checkFeedbackReplies, 5 * 60 * 1000); // every 5 min
+}
+
+async function checkFeedbackReplies() {
+  try {
+    var data = await apiRequest('GET', '/api/feedback');
+    if (!data.ok || !data.feedback) return;
+    var lastSeen = parseInt(localStorage.getItem('feedback_replies_seen') || '0');
+    var newReplies = data.feedback.filter(function(f) {
+      return f.admin_reply && new Date(f.resolved_at || f.created_at).getTime() > lastSeen;
+    });
+    var fab = document.getElementById('feedback-fab');
+    if (!fab) return;
+    // Show/hide badge
+    var badge = document.getElementById('feedback-badge');
+    if (newReplies.length > 0) {
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.id = 'feedback-badge';
+        badge.style.cssText = 'position:absolute;top:-2px;right:-2px;background:#ef4444;color:white;font-size:.6rem;font-weight:700;min-width:16px;height:16px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 4px';
+        fab.style.position = 'fixed'; // ensure relative for badge
+        fab.appendChild(badge);
+      }
+      badge.textContent = newReplies.length;
+      // Show toast for first unseen reply
+      if (newReplies.length > 0 && !window._feedbackToastShown) {
+        window._feedbackToastShown = true;
+        var isRu = currentLang === 'ru';
+        toast(isRu ? 'You have ' + newReplies.length + ' new reply on your feedback' : 'You have ' + newReplies.length + ' reply on your feedback', 'info');
+      }
+    } else if (badge) {
+      badge.remove();
+    }
+  } catch {}
+}
+
+function markFeedbackSeen() {
+  localStorage.setItem('feedback_replies_seen', String(Date.now()));
+  var badge = document.getElementById('feedback-badge');
+  if (badge) badge.remove();
+  window._feedbackToastShown = false;
 }
 
 function openFeedbackModal() {
+  markFeedbackSeen();
   var existing = document.getElementById('feedback-modal');
   if (existing) existing.remove();
   var isRu = currentLang === 'ru';
