@@ -11080,23 +11080,42 @@ var _tourStep = 0;
 var _tourActive = false;
 var _tourResizeHandler = null;
 
-// Guided tour: sidebar tour → then redirect to profile with highlights
+// Guided tour: sidebar tour → then redirect to settings with spotlight on API key
 function startGuidedTour() {
-  // Override endTour to redirect to profile after
   var _origEnd = endTour;
-  var _tourDoneOnce = false;
+  var _done = false;
   endTour = function() {
     _origEnd();
     endTour = _origEnd;
-    if (!_tourDoneOnce) {
-      _tourDoneOnce = true;
-      // Go to profile and highlight setup fields
-      navigateTo('profile');
-      setTimeout(function() {
-        if (typeof highlightProfileSetup === 'function') highlightProfileSetup();
-        toast(currentLang === 'ru' ? 'Настройте API ключ в профиле' : 'Set up your API key in profile', 'info');
-      }, 600);
-    }
+    if (_done) return;
+    _done = true;
+    // Navigate to settings page
+    navigateTo('settings');
+    setTimeout(function() {
+      // Find the API key section and spotlight it
+      var keyInput = document.getElementById('ai-api-key-input');
+      var providerSel = document.getElementById('ai-provider-select');
+      var target = keyInput || providerSel;
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Beautiful pulsing spotlight on the field
+        target.style.transition = 'all .4s ease';
+        target.style.boxShadow = '0 0 0 4px rgba(14,165,233,0.4), 0 0 20px rgba(14,165,233,0.2)';
+        target.style.borderColor = '#0ea5e9';
+        if (keyInput) keyInput.placeholder = currentLang === 'ru' ? 'Вставьте API ключ...' : 'Paste API key...';
+        // Animate pulse
+        var _pulseCount = 0;
+        var _pulseInt = setInterval(function() {
+          _pulseCount++;
+          if (_pulseCount > 6) { clearInterval(_pulseInt); target.style.boxShadow = ''; target.style.borderColor = ''; return; }
+          target.style.boxShadow = _pulseCount % 2 === 0
+            ? '0 0 0 4px rgba(14,165,233,0.4), 0 0 20px rgba(14,165,233,0.2)'
+            : '0 0 0 6px rgba(14,165,233,0.6), 0 0 30px rgba(14,165,233,0.3)';
+        }, 800);
+      }
+      var isRu = currentLang === 'ru';
+      toast(isRu ? 'Настройте AI провайдер и API ключ' : 'Set up your AI provider and API key', 'info');
+    }, 800);
   };
   startTour();
 }
@@ -13003,16 +13022,20 @@ function loadGuidePage() {
       '</button>' +
     '</div>';
 
-    // Cards
+    // Cards — modern glass style
     if (s.cards) {
-      content += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:20px">';
-      s.cards.forEach(function(c) {
-        content += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:12px;padding:20px;transition:border-color .2s,transform .15s" ' +
-          'onmouseenter="this.style.borderColor=\'rgba(14,165,233,0.3)\';this.style.transform=\'translateY(-2px)\'" ' +
-          'onmouseleave="this.style.borderColor=\'var(--border)\';this.style.transform=\'none\'">' +
-          '<h4 style="margin:0 0 6px;font-size:.92rem;color:var(--text-primary)">' + c.title + '</h4>' +
-          '<p style="margin:0 0 12px;font-size:.82rem;color:var(--text-muted);line-height:1.5">' + c.desc + '</p>' +
-          (c.action ? '<button class="rt-save-btn" style="padding:6px 16px;font-size:.78rem" onclick="' + c.action + '">' + (c.btn || '→') + '</button>' : '') +
+      var _cardColors = ['#0ea5e9', '#8b5cf6', '#10b981', '#f59e0b'];
+      content += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-bottom:20px">';
+      s.cards.forEach(function(c, ci) {
+        var clr = _cardColors[ci % _cardColors.length];
+        content += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:22px;position:relative;overflow:hidden;transition:all .25s" ' +
+          'onmouseenter="this.style.borderColor=\'' + clr + '40\';this.style.transform=\'translateY(-3px)\';this.style.boxShadow=\'0 8px 24px rgba(0,0,0,0.2), 0 0 0 1px ' + clr + '20\'" ' +
+          'onmouseleave="this.style.borderColor=\'var(--border)\';this.style.transform=\'none\';this.style.boxShadow=\'none\'">' +
+          '<div style="position:absolute;top:-20px;right:-20px;width:80px;height:80px;border-radius:50%;background:' + clr + '08;pointer-events:none"></div>' +
+          '<div style="width:32px;height:32px;border-radius:8px;background:' + clr + '15;display:flex;align-items:center;justify-content:center;color:' + clr + ';margin-bottom:12px;font-size:.85rem;font-weight:700">' + (ci + 1) + '</div>' +
+          '<h4 style="margin:0 0 6px;font-size:.9rem;color:var(--text-primary);font-weight:600">' + c.title + '</h4>' +
+          '<p style="margin:0 0 14px;font-size:.78rem;color:var(--text-muted);line-height:1.5">' + c.desc + '</p>' +
+          (c.action ? '<button onclick="' + c.action + '" style="display:inline-flex;align-items:center;gap:6px;padding:7px 16px;border-radius:8px;border:none;background:' + clr + ';color:white;font-size:.76rem;font-weight:600;cursor:pointer;transition:all .2s" onmouseenter="this.style.opacity=\'.85\'" onmouseleave="this.style.opacity=\'1\'">' + (c.btn || '→') + ' <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg></button>' : '') +
         '</div>';
       });
       content += '</div>';
@@ -13028,13 +13051,15 @@ function loadGuidePage() {
       content += '</div>';
     }
 
-    // Grid (for tools)
+    // Grid — colorful tool badges
     if (s.grid) {
-      content += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-bottom:20px">';
-      s.grid.forEach(function(g) {
-        content += '<div style="display:flex;align-items:center;gap:8px;padding:12px;background:var(--bg-primary);border:1px solid var(--border);border-radius:10px">' +
-          '<span style="font-size:.65rem;font-weight:700;color:#0ea5e9;background:rgba(14,165,233,0.1);padding:3px 6px;border-radius:4px;font-family:monospace;letter-spacing:.5px">' + g.emoji + '</span>' +
-          '<span style="font-size:.84rem;color:var(--text-primary);font-weight:500">' + g.name + '</span>' +
+      var _gridColors = ['#0ea5e9','#8b5cf6','#ef4444','#10b981','#f59e0b','#ec4899','#6366f1','#14b8a6','#f97316','#06b6d4'];
+      content += '<div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:20px">';
+      s.grid.forEach(function(g, gi) {
+        var gc = _gridColors[gi % _gridColors.length];
+        content += '<div style="display:flex;align-items:center;gap:8px;padding:10px 16px;background:' + gc + '08;border:1px solid ' + gc + '25;border-radius:10px;transition:all .2s;cursor:default" onmouseenter="this.style.background=\'' + gc + '15\';this.style.transform=\'translateY(-1px)\'" onmouseleave="this.style.background=\'' + gc + '08\';this.style.transform=\'none\'">' +
+          '<span style="font-size:.65rem;font-weight:700;color:' + gc + ';background:' + gc + '15;padding:3px 7px;border-radius:4px;font-family:monospace;letter-spacing:.5px">' + g.emoji + '</span>' +
+          '<span style="font-size:.82rem;color:var(--text-primary);font-weight:500">' + g.name + '</span>' +
         '</div>';
       });
       content += '</div>';
@@ -13074,10 +13099,11 @@ function loadGuidePage() {
       content += '</div>';
     }
 
-    // Tip
+    // Tip — prominent card
     if (s.tip) {
-      content += '<div style="margin-top:16px;padding:14px 18px;background:rgba(14,165,233,0.06);border-left:3px solid #0ea5e9;border-radius:0 10px 10px 0;font-size:.84rem;color:var(--text-secondary)">' +
-        '<strong style="color:#0ea5e9">' + (isRu ? 'Совет: ' : 'Tip: ') + '</strong>' + s.tip + '</div>';
+      content += '<div style="margin-top:16px;padding:16px 20px;background:linear-gradient(135deg,rgba(14,165,233,0.08),rgba(99,102,241,0.05));border:1px solid rgba(14,165,233,0.15);border-radius:12px;font-size:.82rem;color:var(--text-secondary);line-height:1.5;display:flex;gap:12px;align-items:flex-start">' +
+        '<div style="width:28px;height:28px;min-width:28px;border-radius:8px;background:rgba(14,165,233,0.15);display:flex;align-items:center;justify-content:center;color:#0ea5e9;margin-top:1px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg></div>' +
+        '<div>' + s.tip + '</div></div>';
     }
 
     content += '</div>';
