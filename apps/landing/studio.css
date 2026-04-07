@@ -7865,3 +7865,154 @@ input[type="number"], textarea, select, .form-control,
   }
 }
 
+/* ══════════════════════════════════════════════════
+   TELEGRAM WEBVIEW FIXES (Android/iOS in-app browser)
+   ══════════════════════════════════════════════════ */
+
+/* Safe area for notch devices + Telegram header */
+html {
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+/* Prevent overscroll bounce (Telegram WebView issue) */
+html, body {
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Fix 100vh on mobile (Telegram toolbar eats space) */
+.sidebar, .main-content, #agent-settings-modal > div {
+  max-height: 100dvh;
+  max-height: -webkit-fill-available;
+}
+
+/* Small mobile — likely Telegram WebView */
+@media (max-width: 420px) {
+  /* Sidebar full screen overlay */
+  .sidebar {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* Main content no overflow */
+  .main-content {
+    overflow-x: hidden !important;
+    width: 100% !important;
+  }
+
+  /* Topbar compact */
+  .topbar {
+    padding: 6px 10px !important;
+    gap: 6px !important;
+  }
+  .topbar-search {
+    display: none !important;
+  }
+  .topbar-balance {
+    font-size: .75rem !important;
+  }
+
+  /* Page headers compact */
+  .page-header {
+    padding: 12px !important;
+    flex-direction: column !important;
+    gap: 8px !important;
+  }
+  .page-header h1, .page-title {
+    font-size: 1.1rem !important;
+  }
+  .page-header .page-subtitle {
+    font-size: .75rem !important;
+  }
+
+  /* Agent cards single column */
+  .agent-grid, .agents-grid, .metrics-grid {
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+
+  /* Settings modal full screen */
+  #agent-settings-modal {
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  #agent-settings-modal > div {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100dvh !important;
+    border-radius: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Settings nav tabs — scroll horizontal */
+  .st-nav {
+    overflow-x: auto !important;
+    flex-wrap: nowrap !important;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding: 0 8px !important;
+  }
+  .st-nav::-webkit-scrollbar { display: none; }
+  .st-nav-item {
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+    padding: 6px 8px !important;
+    font-size: .68rem !important;
+  }
+
+  /* Builder/constructor page */
+  .builder-canvas, .flow-canvas {
+    overflow: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Atlas chat */
+  #assistant-messages {
+    max-height: calc(100dvh - 180px) !important;
+  }
+  #assistant-input {
+    font-size: 16px !important; /* prevent iOS zoom on focus */
+  }
+
+  /* Forms — prevent zoom */
+  input, textarea, select {
+    font-size: 16px !important;
+  }
+
+  /* Feedback FAB — smaller + safe area */
+  #feedback-fab {
+    bottom: calc(12px + env(safe-area-inset-bottom)) !important;
+    right: 12px !important;
+    width: 40px !important;
+    height: 40px !important;
+  }
+
+  /* Feedback modal */
+  #feedback-modal > div {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    border-radius: 16px 16px 0 0 !important;
+    position: fixed !important;
+    bottom: 0 !important;
+    max-height: 80dvh !important;
+    overflow-y: auto !important;
+  }
+
+  /* Bug dashboard */
+  .bugs-dashboard {
+    padding: 12px !important;
+  }
+
+  /* Onboarding guide */
+  #agent-onboard-guide {
+    margin: 6px !important;
+    padding: 12px !important;
+  }
+
+  /* Profile section */
+  .sidebar-footer {
+    padding: 8px !important;
+  }
+}
+
