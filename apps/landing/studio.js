@@ -13744,7 +13744,7 @@ function loadPrivacyPage() {
 var _bugTab = 'platform';
 
 async function loadBugDashboard() {
-  var container = document.getElementById('main-content') || document.querySelector('.page-content');
+  var container = document.querySelector('.main-content') || document.querySelector('.page-content');
   if (!container) return;
   var isRu = currentLang === 'ru';
   container.innerHTML = '<div style="padding:24px;max-width:1200px;margin:0 auto">' +
@@ -13760,7 +13760,24 @@ async function loadBugDashboard() {
   loadBugTab(_bugTab);
 }
 function _bugTabBtn(id, label) { var a = _bugTab === id; return '<button onclick="switchBugTab(\'' + id + '\')" style="padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:.82rem;font-weight:600;transition:all .2s;' + (a ? 'background:var(--primary);color:white' : 'background:transparent;color:var(--text-muted)') + '">' + label + '</button>'; }
-function switchBugTab(t) { _bugTab = t; loadBugDashboard(); }
+function switchBugTab(t) {
+  _bugTab = t;
+  // If bugs-content exists, just reload tab content without full redraw
+  var bc = document.getElementById('bugs-content');
+  if (bc) {
+    bc.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted)">Loading...</div>';
+    // Update tab button styles
+    var btns = bc.parentElement.querySelectorAll('button');
+    btns.forEach(function(b) {
+      var isActive = b.textContent.toLowerCase().indexOf(t === 'platform' ? (currentLang === 'ru' ? 'платформ' : 'platform') : t === 'agents' ? (currentLang === 'ru' ? 'агент' : 'agents') : t === 'feedback' ? (currentLang === 'ru' ? 'фидбек' : 'feedback') : (currentLang === 'ru' ? 'отчёт' : 'report')) >= 0;
+      b.style.background = isActive ? 'var(--primary)' : 'transparent';
+      b.style.color = isActive ? 'white' : 'var(--text-muted)';
+    });
+    loadBugTab(t);
+  } else {
+    loadBugDashboard();
+  }
+}
 function _bugStatCard(icon, label, count, color) { return '<div style="padding:16px;background:var(--bg-primary);border:1px solid var(--border);border-radius:12px;text-align:center"><div style="font-size:1.5rem;margin-bottom:4px">' + icon + '</div><div style="font-size:1.4rem;font-weight:700;color:' + color + '">' + count + '</div><div style="font-size:.72rem;color:var(--text-muted);margin-top:2px">' + label + '</div></div>'; }
 function _timeAgo(d) { if (!d) return '—'; var ms = Date.now() - new Date(d).getTime(); var r = currentLang === 'ru'; if (ms < 60000) return r ? 'сейчас' : 'now'; if (ms < 3600000) return Math.floor(ms / 60000) + (r ? ' мин' : 'm'); if (ms < 86400000) return Math.floor(ms / 3600000) + (r ? ' ч' : 'h'); return Math.floor(ms / 86400000) + (r ? ' дн' : 'd'); }
 
