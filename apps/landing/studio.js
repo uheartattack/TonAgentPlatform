@@ -10886,7 +10886,7 @@ function toggleGuideSection(headerEl) {
 
 // ===== ONBOARDING SYSTEM =====
 var _onboardingStep = 0;
-var _onboardingTotal = 4;
+var _onboardingTotal = 3; // 3 steps: welcome, capabilities, setup hint
 var _onboardingProvider = 'platform';
 
 function checkOnboarding() {
@@ -10898,14 +10898,13 @@ function checkOnboarding() {
   modal.style.display = 'flex';
   renderOnboardingDots();
   showOnboardingSlide(0);
-  // personalize subtitle
   var subtitle = document.getElementById('onboarding-subtitle');
   if (subtitle) {
     var name = currentUser.first_name || currentUser.username || '';
     if (name) {
       subtitle.textContent = currentLang === 'ru'
-        ? name + ', добро пожаловать! Создавайте автономных AI-агентов, которые работают в Telegram и взаимодействуют с блокчейном TON — без кода.'
-        : name + ', welcome! Build autonomous AI agents that live inside Telegram and work with the TON blockchain — no coding required.';
+        ? name + ', добро пожаловать! Создавайте автономных AI-агентов для Telegram и TON — без кода.'
+        : name + ', welcome! Build autonomous AI agents for Telegram and TON — no coding required.';
     }
   }
 }
@@ -10968,9 +10967,11 @@ function onboardingPrev() {
 
 function onboardingSelectProvider(el, provider) {
   _onboardingProvider = provider;
-  var radios = el.closest('.onboarding-providers').querySelectorAll('.onboarding-provider-radio');
-  radios.forEach(function(r) { r.classList.remove('selected'); });
-  el.querySelector('.onboarding-provider-radio').classList.add('selected');
+  var radios = el.closest('.onboarding-providers');
+  if (radios) {
+    radios.querySelectorAll('.onboarding-provider-radio').forEach(function(r) { r.classList.remove('selected'); });
+    el.querySelector('.onboarding-provider-radio').classList.add('selected');
+  }
 }
 
 function onboardingAction(action) {
@@ -10979,15 +10980,38 @@ function onboardingAction(action) {
   else if (action === 'constructor') navigateTo('agents');
   else if (action === 'marketplace') navigateTo('marketplace');
   else if (action === 'guide') navigateTo('guide');
+  else if (action === 'profile') { navigateTo('profile'); setTimeout(highlightProfileSetup, 500); }
   else if (action === 'telegram') window.open('https://t.me/TonAgentPlatformBot', '_blank');
 }
 
 function finishOnboarding() {
   dismissOnboarding();
-  // If user selected a non-platform provider, navigate to settings so they can add key
-  if (_onboardingProvider && _onboardingProvider !== 'platform') {
-    navigateTo('settings');
-  }
+  // Always go to profile so user can set up API key
+  navigateTo('profile');
+  setTimeout(highlightProfileSetup, 600);
+}
+
+// Highlight empty/important fields in profile after onboarding
+function highlightProfileSetup() {
+  var fields = ['ai-provider-select', 'ai-api-key-input', 'ui-scale-slider'];
+  fields.forEach(function(id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    // Pulse animation
+    el.style.transition = 'box-shadow .3s, border-color .3s';
+    el.style.boxShadow = '0 0 0 3px rgba(0,152,234,0.3)';
+    el.style.borderColor = '#0098EA';
+    // Scroll first empty field into view
+    if (id === 'ai-api-key-input' && !el.value) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.setAttribute('placeholder', currentLang === 'ru' ? 'Вставьте API ключ сюда...' : 'Paste your API key here...');
+    }
+    // Remove highlight after 8s
+    setTimeout(function() {
+      el.style.boxShadow = '';
+      el.style.borderColor = '';
+    }, 8000);
+  });
 }
 
 function dismissOnboarding() {

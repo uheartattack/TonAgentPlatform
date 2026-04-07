@@ -2124,102 +2124,36 @@
             </div>
           </div>
 
-          <!-- Step 2: Create first agent -->
+          <!-- Step 2: What you can do -->
           <div class="onboarding-slide" id="onboarding-slide-1" style="display:none">
-            <div class="onboarding-icon onboarding-icon-agent">
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/><circle cx="12" cy="16" r="1"/></svg>
-            </div>
-            <h2 class="onboarding-title" data-en="Create Your First Agent" data-ru="Создайте первого агента">Create Your First Agent</h2>
-            <p class="onboarding-desc" data-en="Choose how you want to build your agent:" data-ru="Выберите способ создания агента:">Choose how you want to build your agent:</p>
-            <div class="onboarding-options">
-              <button class="onboarding-option-btn" onclick="onboardingAction('chat')">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                <div>
-                  <strong data-en="AI Chat" data-ru="AI Чат">AI Chat</strong>
-                  <span data-en="Describe what you need in plain language" data-ru="Опишите задачу простыми словами">Describe what you need in plain language</span>
-                </div>
-              </button>
-              <button class="onboarding-option-btn" onclick="onboardingAction('constructor')">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-                <div>
-                  <strong data-en="Constructor" data-ru="Конструктор">Constructor</strong>
-                  <span data-en="Build step-by-step with visual editor" data-ru="Пошаговая сборка в визуальном редакторе">Build step-by-step with visual editor</span>
-                </div>
-              </button>
-              <button class="onboarding-option-btn" onclick="onboardingAction('marketplace')">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 7v11a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7l-3-5z"/><line x1="3" y1="7" x2="21" y2="7"/><path d="M16 11a4 4 0 0 1-8 0"/></svg>
-                <div>
-                  <strong data-en="Marketplace" data-ru="Маркетплейс">Marketplace</strong>
-                  <span data-en="Install a ready-made agent template" data-ru="Установите готовый шаблон агента">Install a ready-made agent template</span>
-                </div>
-              </button>
-            </div>
-          </div>
-
-          <!-- Step 3: Set up AI provider -->
-          <div class="onboarding-slide" id="onboarding-slide-2" style="display:none">
             <div class="onboarding-icon onboarding-icon-ai">
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M12 2a4 4 0 0 1 4 4v2a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z"/><path d="M20 21v-2a4 4 0 0 0-3-3.87"/><path d="M4 21v-2a4 4 0 0 1 3-3.87"/><circle cx="12" cy="17" r="3"/></svg>
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2z"/></svg>
             </div>
-            <h2 class="onboarding-title" data-en="Set Up AI Provider" data-ru="Настройте AI провайдер">Set Up AI Provider</h2>
-            <p class="onboarding-desc" data-en="Your agents need an AI brain. Pick a provider or use the built-in one for free:" data-ru="Вашим агентам нужен AI. Выберите провайдера или используйте встроенный бесплатно:">Your agents need an AI brain. Pick a provider or use the built-in one for free:</p>
-            <div class="onboarding-providers">
-              <div class="onboarding-provider" onclick="onboardingSelectProvider(this, 'platform')">
-                <div class="onboarding-provider-radio selected"></div>
-                <div>
-                  <strong data-en="Platform AI (Free)" data-ru="Platform AI (Бесплатно)">Platform AI (Free)</strong>
-                  <span data-en="No API key needed — get started instantly" data-ru="Без API ключа — начните прямо сейчас">No API key needed — get started instantly</span>
-                </div>
-              </div>
-              <div class="onboarding-provider" onclick="onboardingSelectProvider(this, 'gemini')">
-                <div class="onboarding-provider-radio"></div>
-                <div>
-                  <strong>Google Gemini</strong>
-                  <span data-en="Fast and capable, generous free tier" data-ru="Быстрый и мощный, щедрый бесплатный план">Fast and capable, generous free tier</span>
-                </div>
-              </div>
-              <div class="onboarding-provider" onclick="onboardingSelectProvider(this, 'openai')">
-                <div class="onboarding-provider-radio"></div>
-                <div>
-                  <strong>OpenAI (GPT)</strong>
-                  <span data-en="Industry-leading models, paid API" data-ru="Лидирующие модели, платный API">Industry-leading models, paid API</span>
-                </div>
-              </div>
-              <div class="onboarding-provider" onclick="onboardingSelectProvider(this, 'anthropic')">
-                <div class="onboarding-provider-radio"></div>
-                <div>
-                  <strong>Anthropic (Claude)</strong>
-                  <span data-en="Advanced reasoning, paid API" data-ru="Продвинутые рассуждения, платный API">Advanced reasoning, paid API</span>
-                </div>
-              </div>
+            <h2 class="onboarding-title" data-en="What Agents Can Do" data-ru="Что умеют агенты">What Agents Can Do</h2>
+            <p class="onboarding-desc" data-en="Your AI agents work 24/7 and can:" data-ru="Ваши AI-агенты работают 24/7 и умеют:">Your AI agents work 24/7 and can:</p>
+            <div class="onboarding-features">
+              <div class="onboarding-feature"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span data-en="Chat in Telegram as a real person" data-ru="Общаться в Telegram как человек">Chat in Telegram as a real person</span></div>
+              <div class="onboarding-feature"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg><span data-en="Trade TON, DeFi, NFT, Gifts" data-ru="Торговать TON, DeFi, NFT, подарки">Trade TON, DeFi, NFT, Gifts</span></div>
+              <div class="onboarding-feature"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><span data-en="Search web, monitor prices, send alerts" data-ru="Искать в интернете, мониторить цены, слать алерты">Search web, monitor prices, alerts</span></div>
+              <div class="onboarding-feature"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44"/></svg><span data-en="Learn from feedback, self-improve" data-ru="Учиться на ошибках, самоулучшаться">Learn from feedback, self-improve</span></div>
             </div>
-            <p class="onboarding-hint" data-en="You can change this anytime in Settings." data-ru="Вы можете изменить это в Настройках.">You can change this anytime in Settings.</p>
           </div>
 
-          <!-- Step 4: Done -->
-          <div class="onboarding-slide" id="onboarding-slide-3" style="display:none">
-            <div class="onboarding-icon onboarding-icon-done">
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          <!-- Step 3: Setup → redirect to profile -->
+          <div class="onboarding-slide" id="onboarding-slide-2" style="display:none">
+            <div class="onboarding-icon onboarding-icon-agent">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09"/></svg>
             </div>
-            <h2 class="onboarding-title" data-en="You're All Set!" data-ru="Всё готово!">You're All Set!</h2>
-            <p class="onboarding-desc" data-en="Your platform is ready. Here are some helpful resources:" data-ru="Платформа готова к работе. Полезные ресурсы:">Your platform is ready. Here are some helpful resources:</p>
-            <div class="onboarding-resources">
-              <button class="onboarding-resource-btn" onclick="onboardingAction('guide')">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
-                <div>
-                  <strong data-en="Read the Guide" data-ru="Читать руководство">Read the Guide</strong>
-                  <span data-en="Learn everything about the platform" data-ru="Узнайте всё о платформе">Learn everything about the platform</span>
-                </div>
-              </button>
-              <button class="onboarding-resource-btn" onclick="onboardingAction('telegram')">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                <div>
-                  <strong data-en="Open Telegram Bot" data-ru="Открыть бота в Telegram">Open Telegram Bot</strong>
-                  <span data-en="Manage agents directly from Telegram" data-ru="Управляйте агентами прямо из Telegram">Manage agents directly from Telegram</span>
-                </div>
-              </button>
+            <h2 class="onboarding-title" data-en="One More Step" data-ru="Последний шаг">One More Step</h2>
+            <p class="onboarding-desc" data-en="Set up your AI provider key in Profile — without it agents can't think." data-ru="Настройте AI ключ в Профиле — без него агенты не могут думать.">Set up AI key in Profile.</p>
+            <div class="onboarding-features">
+              <div class="onboarding-feature" style="border:1px solid rgba(0,152,234,0.3);background:rgba(0,152,234,0.05);border-radius:10px;padding:10px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0098EA" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg><span data-en="Free keys: Gemini, Groq, OpenRouter" data-ru="Бесплатные ключи: Gemini, Groq, OpenRouter" style="color:var(--text-primary)">Free: Gemini, Groq, OpenRouter</span></div>
             </div>
+            <p class="onboarding-hint" data-en="Click Finish to open Profile with setup hints." data-ru="Нажмите Готово чтобы открыть Профиль с подсказками.">Click Finish to open Profile.</p>
           </div>
+
+          <!-- Step 4: removed (now 3 steps total) -->
+          <div class="onboarding-slide" id="onboarding-slide-3" style="display:none"></div>
 
           <!-- Navigation buttons -->
           <div class="onboarding-nav">
