@@ -396,7 +396,7 @@ interface PendingAgentCreation {
 const pendingCreations = new Map<number, PendingAgentCreation>();
 
 // Auto-cleanup stale pending states every 5 minutes (prevents stuck users)
-setInterval(() => {
+const _pendingCleanup = setInterval(() => {
   const now = Date.now();
   const TTL = 10 * 60 * 1000; // 10 minutes
   for (const [userId, pending] of pendingCreations) {
@@ -406,6 +406,7 @@ setInterval(() => {
     }
   }
 }, 5 * 60 * 1000);
+_pendingCleanup.unref();
 
 // ============================================================
 // State machine для запроса названия агента
@@ -804,7 +805,7 @@ function _getAllPendingMaps(): [string, Map<any, any> | Set<any>][] {
   ];
 }
 
-setInterval(() => {
+const _mapsCleanup = setInterval(() => {
   const now = Date.now();
   let cleaned = 0;
 
@@ -896,6 +897,7 @@ setInterval(() => {
     console.log(`[Cleanup] Cleared ${cleaned} stale pending entries`);
   }
 }, 5 * 60 * 1000); // every 5 minutes
+_mapsCleanup.unref();
 
 // ============================================================
 // Middleware — логирование
@@ -2196,7 +2198,7 @@ bot.action(/^setlang_(ru|en)$/, async (ctx) => {
       await showOnboardingStep(ctx, userId, lang);
       return;
     }
-  } catch {}
+  } catch (e: any) { console.warn('[Onboarding] check error:', e.message); }
 
   // Старый пользователь — обычный welcome
   await showWelcome(ctx as any, userId, name, lang);
@@ -2241,7 +2243,7 @@ bot.action(/^ob_provider:(.+)$/, async (ctx) => {
     const vars = ((await repo.getAll(userId)).user_variables as Record<string, any>) || {};
     vars.AI_PROVIDER = provider;
     await repo.set(userId, 'user_variables', vars);
-  } catch {}
+  } catch (e: any) { console.warn('[Settings] save provider error:', e.message); }
 
   await showOnboardingStep(ctx, userId, lang);
 });
@@ -3092,7 +3094,7 @@ bot.action('aw_refresh_all', async (ctx) => {
     // Re-show the menu with updated balances
     // Trigger the menu handler by calling the action directly
     await (ctx as any).match; // just to proceed
-  } catch {}
+  } catch (e: any) { console.warn('[Wallet] refresh all error:', e.message); }
   // Re-render menu
   try {
     const { getAgenticWalletService } = await import('./services/agentic-wallet');
@@ -3501,7 +3503,7 @@ bot.action(/^topup_tonconnect:(\d+)$/, async (ctx) => {
   if (result.success) {
     const txId = result.boc || comment;
     // DB dedup
-    try { const existing = await getBalanceTxRepository().getByTxHash(txId); if (existing) { await ctx.reply(ru ? '⚠️ Уже зачислено.' : '⚠️ Already credited.'); return; } } catch {}
+    try { const existing = await getBalanceTxRepository().getByTxHash(txId); if (existing) { await ctx.reply(ru ? '⚠️ Уже зачислено.' : '⚠️ Already credited.'); return; } } catch (e: any) { console.error('[CRITICAL] Dedup check failed:', e.message); }
     const p = await addUserBalance(userId, amountTon, { type: 'topup', description: 'TON Connect topup', txHash: txId });
     processedTopupTx.add(txId);
     pendingTopup.delete(userId);
@@ -3548,7 +3550,7 @@ bot.action('check_topup', async (ctx) => {
       await ctx.reply(ru ? '⚠️ Транзакция уже зачислена.' : '⚠️ Already credited.');
       return;
     }
-  } catch {}
+  } catch (e: any) { console.error('[CRITICAL] Star dedup check failed:', e.message); }
   if (processedTopupTx.has(result.txHash)) {
     await ctx.reply(ru ? '⚠️ Транзакция уже зачислена.' : '⚠️ Already credited.');
     return;
@@ -3624,7 +3626,7 @@ bot.action('withdraw_start', async (ctx) => {
       return;
     }
     // Сколько выводов ещё осталось — покажем в следующем шаге
-  } catch {}
+  } catch (e: any) { console.error('[CRITICAL] Cooldown check failed:', e.message); }
 
   if (profile.wallet_address) {
     // Уже привязан — сразу спрашиваем сумму
@@ -5070,7 +5072,7 @@ bot.on('callback_query', async (ctx) => {
         try {
           const { resolveApprovalWaiter } = await import('./agents/ai-agent-runtime');
           resolveApprovalWaiter(approvalId, isApprove ? 'approved' : 'rejected');
-        } catch {}
+        } catch (e: any) { console.warn('[Approval] resolve error:', e.message); }
       }
     } catch (e: any) {
       await editOrReply(ctx, `Ошибка: ${escHtml(e.message)}`, { parse_mode: 'HTML' });
@@ -5129,7 +5131,7 @@ bot.on('callback_query', async (ctx) => {
         delete profile.wallet_connected_at;
         await settingsRepo.set(userId, 'profile', profile);
       }
-    } catch {}
+    } catch (e: any) { console.warn('[TonConnect] disconnect cleanup:', e.message); }
     await ctx.reply('🔌 TON Connect отключён');
     return;
   }
@@ -6307,7 +6309,7 @@ bot.on('callback_query', async (ctx) => {
             if (s.key === '_conversation_history') continue; // fresh history
             await getAgentStateRepository().set(newAgentId, userId, s.key, s.value);
           }
-        } catch {}
+        } catch (e: any) { console.warn('[Clone] state copy error:', e.message); }
         await safeReply(ctx, `✅ Агент клонирован!\n\n📋 ${escHtml(cloneName)} #${newAgentId}\n\nВсе настройки, память и уроки скопированы.\nКошелёк создастся новый при первом запуске.`);
       } else {
         await safeReply(ctx, '❌ Ошибка клонирования');
@@ -7923,7 +7925,7 @@ bot.on(message('text'), async (ctx) => {
         const result = await sendPlatformTransaction(toAddr, amount, `withdraw:${userId}`);
         if (result.ok) {
           // Record txHash in ledger
-          try { await getBalanceTxRepository().record(userId, 'withdraw_confirmed', 0, 0, `txHash: ${result.txHash}`, result.txHash); } catch {}
+          try { await getBalanceTxRepository().record(userId, 'withdraw_confirmed', 0, 0, `txHash: ${result.txHash}`, result.txHash); } catch (e: any) { console.error('[CRITICAL] Withdrawal record failed:', e.message); }
           await safeReply(ctx,
             lang === 'ru'
               ? `${pe('check')} <b>Вывод выполнен!</b>\n\n` +
@@ -8191,7 +8193,7 @@ bot.on(message('text'), async (ctx) => {
           vars.AI_API_KEY = encryptApiKey(trimmed);
           vars.AI_PROVIDER = provider;
           await repo.set(userId, 'user_variables', vars);
-        } catch {}
+        } catch (e: any) { console.warn('[Settings] API key save error:', e.message); }
 
         await safeReply(ctx,
           `✅ <b>${ru ? 'Ключ проверен и сохранён!' : 'Key validated and saved!'}</b>\n` +
@@ -9276,7 +9278,7 @@ async function savePromptVersion(agentId: number, userId: number) {
     versions.push({ code: oldCode, savedAt: new Date().toISOString() });
     if (versions.length > 10) versions = versions.slice(-10); // keep last 10
     await stateRepo.set(agentId, userId, '_code_versions', versions);
-  } catch {}
+  } catch (e: any) { console.warn('[AutoRepair] version save:', e.message); }
 }
 
 async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
@@ -9609,7 +9611,7 @@ async function showTonConnect(ctx: Context) {
             userId,
             `✅ Кошелёк подключён!\n\n👛 ${w.walletName}\n📋 ${w.friendlyAddress}`,
           );
-        } catch {}
+        } catch (e: any) { console.warn('[TonConnect] profile save:', e.message); }
       }
     });
 
@@ -10043,7 +10045,7 @@ async function buyMarketplaceListing(ctx: Context, listingId: number, userId: nu
     const agentResult = await getDBTools().getAgent(listing.agentId, listing.sellerId);
     if (!agentResult.success || !agentResult.data) {
       // Mark listing as unavailable so others don't hit the same error
-      try { await getMarketplaceRepository().deactivateListing(listingId, listing.sellerId); } catch {}
+      try { await getMarketplaceRepository().deactivateListing(listingId, listing.sellerId); } catch (e: any) { console.warn('[Marketplace] deactivate listing:', e.message); }
       return editOrReply(ctx, '❌ Агент продавца не найден или удалён. Листинг деактивирован.', {});
     }
     const sourceAgent = agentResult.data;
