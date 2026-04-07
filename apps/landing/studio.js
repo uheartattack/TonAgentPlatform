@@ -12953,6 +12953,19 @@ function loadGuidePage() {
 
   function renderGuide() {
     var s = sections.find(function(x){ return x.id === _activeGuideTab; }) || sections[0];
+
+    // Interactive tour button
+    var tourBtn = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px">' +
+      '<div>' +
+        '<h2 style="margin:0;font-size:1.2rem;color:var(--text-primary)">' + (isRu ? 'Руководство' : 'Guide') + '</h2>' +
+        '<p style="margin:2px 0 0;font-size:.8rem;color:var(--text-muted)">' + (isRu ? 'Всё о платформе и агентах' : 'Everything about the platform') + '</p>' +
+      '</div>' +
+      '<button onclick="startTour()" style="display:flex;align-items:center;gap:8px;padding:10px 20px;border-radius:10px;border:none;background:linear-gradient(135deg,#0098EA,#0070B0);color:white;font-size:.82rem;font-weight:600;cursor:pointer;transition:all .2s;box-shadow:0 2px 8px rgba(0,152,234,0.3)" onmouseenter="this.style.transform=\'translateY(-1px)\'" onmouseleave="this.style.transform=\'none\'">' +
+        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>' +
+        (isRu ? 'Интерактивный тур' : 'Interactive Tour') +
+      '</button>' +
+    '</div>';
+
     // Tab bar
     var tabs = '<div style="display:flex;gap:2px;padding:4px;background:rgba(255,255,255,0.03);border-radius:12px;margin-bottom:24px;overflow-x:auto;-webkit-overflow-scrolling:touch">';
     sections.forEach(function(sec) {
@@ -13055,7 +13068,7 @@ function loadGuidePage() {
     }
 
     content += '</div>';
-    container.innerHTML = tabs + content;
+    container.innerHTML = tourBtn + tabs + content;
   }
 
   window._switchGuideTab = function(id) {
