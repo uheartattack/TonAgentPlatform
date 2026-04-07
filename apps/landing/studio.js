@@ -12624,6 +12624,7 @@ async function loadNotificationsPage() {
       '<button class="notif-filter" data-filter="warning" onclick="filterNotifications(\'warning\')">' + IC.warn + ' ' + (isRu ? 'Предупреждения' : 'Warnings') + '</button>' +
       '<button class="notif-filter" data-filter="success" onclick="filterNotifications(\'success\')">' + IC.check + ' ' + (isRu ? 'Успехи' : 'Successes') + '</button>' +
       '<button class="notif-filter" data-filter="info" onclick="filterNotifications(\'info\')">' + IC.info + ' ' + (isRu ? 'Инфо' : 'Info') + '</button>' +
+      '<button class="notif-filter" data-filter="feedback" onclick="filterNotifications(\'feedback\')">' + IC.chat + ' ' + (isRu ? 'Фидбек' : 'Feedback') + '</button>' +
     '</div>' +
     '<div id="notif-list" class="notif-list">' +
       '<div class="notif-loading">' + (isRu ? 'Загрузка...' : 'Loading...') + '</div>' +
@@ -12672,6 +12673,31 @@ async function loadNotificationsPage() {
         });
       }
     }
+
+    // Load feedback replies
+    try {
+      var fbData = await apiRequest('GET', '/api/feedback');
+      if (fbData.ok && fbData.feedback) {
+        fbData.feedback.forEach(function(f) {
+          if (f.admin_reply) {
+            notifications.push({
+              type: 'info', agent: isRu ? 'Саппорт' : 'Support', agentId: null,
+              title: (isRu ? 'Ответ на тикет #' : 'Reply to ticket #') + f.id,
+              message: f.admin_reply.slice(0, 200),
+              time: new Date(f.resolved_at || f.created_at).getTime(),
+            });
+          }
+          if (f.status === 'resolved') {
+            notifications.push({
+              type: 'success', agent: isRu ? 'Саппорт' : 'Support', agentId: null,
+              title: (isRu ? 'Тикет #' + f.id + ' решён' : 'Ticket #' + f.id + ' resolved'),
+              message: (isRu ? 'Ваш ' + f.type + '-репорт был рассмотрен.' : 'Your ' + f.type + ' report was reviewed.'),
+              time: new Date(f.resolved_at || f.created_at).getTime(),
+            });
+          }
+        });
+      }
+    } catch {}
 
     // Sort by time (newest first)
     notifications.sort(function(a, b) { return b.time - a.time; });
@@ -12735,7 +12761,9 @@ function filterNotifications(type) {
     b.classList.toggle('active', b.getAttribute('data-filter') === type);
   });
   var all = window._studioNotifications || [];
-  var filtered = type === 'all' ? all : all.filter(function(n) { return n.type === type; });
+  var filtered = type === 'all' ? all :
+    type === 'feedback' ? all.filter(function(n) { return n.agent === 'Support' || n.agent === 'Саппорт'; }) :
+    all.filter(function(n) { return n.type === type; });
   renderNotifications(filtered);
 }
 
