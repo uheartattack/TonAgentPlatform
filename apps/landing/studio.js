@@ -463,7 +463,7 @@ async function onTelegramAuth(result) {
   }
   authToken = data.token;
   localStorage.setItem('tg_token', authToken);
-  currentUser = { userId: data.userId, userIdStr: data.userIdStr || String(data.userId), username: data.username, first_name: data.firstName, photo_url: data.photoUrl || null, _isAdmin: data.isAdmin || false, _acceptedTos: data.acceptedTos || false };
+  currentUser = { userId: data.userId, userIdStr: data.userIdStr || String(data.userId), username: data.username, first_name: data.firstName, photo_url: data.photoUrl || null, _isAdmin: data.isAdmin || false, _isBeta: data.isBeta || false, _acceptedTos: data.acceptedTos || false };
   showApp();
   updateTopbar();
 }
@@ -615,6 +615,9 @@ function showApp() {
   initExtensions();
   initActivityStream().catch(console.error);   // async — DB-backed
   initOperations().catch(console.error);        // async — DB-backed
+
+  // Feedback floating action button
+  initFeedbackFAB();
 
   // Load topbar balance
   apiRequest('GET', '/api/balance').then(function(d) {
@@ -4635,7 +4638,7 @@ async function handleOAuthRedirect() {
   window.history.replaceState({}, '', window.location.pathname);
   authToken = data.token;
   localStorage.setItem('tg_token', authToken);
-  currentUser = { userId: data.userId, userIdStr: data.userIdStr || String(data.userId), username: data.username, first_name: data.firstName, photo_url: data.photoUrl || null, _isAdmin: data.isAdmin || false, _acceptedTos: data.acceptedTos || false };
+  currentUser = { userId: data.userId, userIdStr: data.userIdStr || String(data.userId), username: data.username, first_name: data.firstName, photo_url: data.photoUrl || null, _isAdmin: data.isAdmin || false, _isBeta: data.isBeta || false, _acceptedTos: data.acceptedTos || false };
   showApp();
   return true;
 }
@@ -4693,7 +4696,7 @@ async function checkExistingSession() {
   }
 
   if (data.ok) {
-    currentUser = { userId: data.userId, userIdStr: data.userIdStr || String(data.userId), username: data.username, first_name: data.firstName, photo_url: data.photoUrl || null, _isAdmin: data.isAdmin || false, _acceptedTos: data.acceptedTos || false };
+    currentUser = { userId: data.userId, userIdStr: data.userIdStr || String(data.userId), username: data.username, first_name: data.firstName, photo_url: data.photoUrl || null, _isAdmin: data.isAdmin || false, _isBeta: data.isBeta || false, _acceptedTos: data.acceptedTos || false };
     if (data.planId) currentUser._plan = { planId: data.planId, planName: data.planName, planIcon: data.planIcon };
     showApp();
   } else {
@@ -7036,6 +7039,17 @@ function updateSidebarPlanBadge(sub) {
   }
   badge.innerHTML = planIcon(sub.planIcon) + ' ' + (sub.planName || 'Free');
   badge.className = 'user-tier plan-badge-' + (sub.planId || 'free');
+  // Beta tester badge next to plan badge
+  if (sub.isBeta || (currentUser && currentUser._isBeta)) {
+    var betaEl = document.getElementById('user-beta-badge');
+    if (!betaEl) {
+      betaEl = document.createElement('span');
+      betaEl.id = 'user-beta-badge';
+      betaEl.style.cssText = 'display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:20px;background:rgba(168,85,247,0.1);border:1px solid rgba(168,85,247,0.3);color:#a855f7;font-size:.78rem;font-weight:600;margin-left:8px';
+      betaEl.textContent = '\uD83E\uDDEA Beta Tester';
+      badge.parentElement.appendChild(betaEl);
+    }
+  }
 }
 
 // Plans modal
@@ -13721,4 +13735,79 @@ function loadPrivacyPage() {
       : 'DPO: <a href="https://t.me/uheartattack" style="color:#0ea5e9">@uheartattack</a> | Support: <a href="https://t.me/TonAgentPlatformBot" style="color:#0ea5e9">@TonAgentPlatformBot</a>') +
 
   '</div>';
+}
+
+// ── Feedback FAB (floating action button) ──
+function initFeedbackFAB() {
+  if (document.getElementById('feedback-fab')) return;
+  var fab = document.createElement('button');
+  fab.id = 'feedback-fab';
+  fab.innerHTML = '\uD83D\uDC1B';
+  fab.title = currentLang === 'ru' ? 'Отправить фидбек' : 'Send feedback';
+  fab.style.cssText = 'position:fixed;bottom:24px;right:24px;width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:white;border:none;font-size:1.4rem;cursor:pointer;z-index:9999;box-shadow:0 4px 12px rgba(99,102,241,0.4);transition:all .2s;display:flex;align-items:center;justify-content:center';
+  fab.onmouseenter = function() { fab.style.transform = 'scale(1.1)'; fab.style.boxShadow = '0 6px 16px rgba(99,102,241,0.5)'; };
+  fab.onmouseleave = function() { fab.style.transform = 'scale(1)'; fab.style.boxShadow = '0 4px 12px rgba(99,102,241,0.4)'; };
+  fab.onclick = function() { openFeedbackModal(); };
+  document.body.appendChild(fab);
+}
+
+function openFeedbackModal() {
+  var existing = document.getElementById('feedback-modal');
+  if (existing) existing.remove();
+  var isRu = currentLang === 'ru';
+  var modal = document.createElement('div');
+  modal.id = 'feedback-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);z-index:10000;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = '<div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:16px;padding:28px;width:90%;max-width:480px;box-shadow:0 20px 60px rgba(0,0,0,0.5)">' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">' +
+      '<h3 style="margin:0;font-size:1.1rem;color:var(--text-primary)">' + (isRu ? '\uD83D\uDCDD Отправить фидбек' : '\uD83D\uDCDD Send Feedback') + '</h3>' +
+      '<button onclick="document.getElementById(\'feedback-modal\').remove()" style="background:none;border:none;color:var(--text-muted);font-size:1.2rem;cursor:pointer">&times;</button>' +
+    '</div>' +
+    '<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">' +
+      '<button class="fb-type-btn" data-type="bug" style="padding:8px 16px;border-radius:10px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);cursor:pointer;font-size:.85rem;transition:all .2s" onclick="selectFbType(this)">\uD83D\uDC1B ' + (isRu ? 'Баг' : 'Bug') + '</button>' +
+      '<button class="fb-type-btn" data-type="feature" style="padding:8px 16px;border-radius:10px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);cursor:pointer;font-size:.85rem;transition:all .2s" onclick="selectFbType(this)">\uD83D\uDCA1 ' + (isRu ? 'Фича' : 'Feature') + '</button>' +
+      '<button class="fb-type-btn" data-type="support" style="padding:8px 16px;border-radius:10px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);cursor:pointer;font-size:.85rem;transition:all .2s" onclick="selectFbType(this)">\uD83C\uDD98 ' + (isRu ? 'Саппорт' : 'Support') + '</button>' +
+      '<button class="fb-type-btn" data-type="general" style="padding:8px 16px;border-radius:10px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);cursor:pointer;font-size:.85rem;transition:all .2s" onclick="selectFbType(this)">\uD83D\uDCAC ' + (isRu ? 'Общее' : 'General') + '</button>' +
+    '</div>' +
+    '<textarea id="fb-message" placeholder="' + (isRu ? 'Опишите проблему или предложение...' : 'Describe the issue or suggestion...') + '" style="width:100%;height:120px;background:var(--bg-primary);border:1px solid var(--border);border-radius:10px;padding:12px;color:var(--text-primary);font-size:.88rem;resize:vertical;font-family:inherit;box-sizing:border-box"></textarea>' +
+    '<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px">' +
+      '<button onclick="document.getElementById(\'feedback-modal\').remove()" style="padding:10px 20px;border-radius:10px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-muted);cursor:pointer;font-size:.85rem">' + (isRu ? 'Отмена' : 'Cancel') + '</button>' +
+      '<button id="fb-submit-btn" onclick="submitFeedback()" style="padding:10px 24px;border-radius:10px;border:none;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:white;cursor:pointer;font-size:.85rem;font-weight:600">' + (isRu ? 'Отправить' : 'Send') + '</button>' +
+    '</div>' +
+  '</div>';
+  modal.onclick = function(e) { if (e.target === modal) modal.remove(); };
+  document.body.appendChild(modal);
+  // Pre-select bug type
+  var bugBtn = modal.querySelector('[data-type="bug"]');
+  if (bugBtn) selectFbType(bugBtn);
+}
+
+var _selectedFbType = 'bug';
+function selectFbType(btn) {
+  _selectedFbType = btn.getAttribute('data-type');
+  document.querySelectorAll('.fb-type-btn').forEach(function(b) {
+    b.style.background = 'var(--bg-primary)';
+    b.style.borderColor = 'var(--border)';
+  });
+  btn.style.background = 'rgba(99,102,241,0.15)';
+  btn.style.borderColor = '#6366f1';
+}
+
+async function submitFeedback() {
+  var msg = document.getElementById('fb-message');
+  if (!msg || !msg.value.trim()) { toast(currentLang === 'ru' ? 'Опишите проблему' : 'Describe the issue', 'error'); return; }
+  var btn = document.getElementById('fb-submit-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '...'; }
+  try {
+    var metadata = { page: window.location.pathname, agentId: _detailAgentId || null, userAgent: navigator.userAgent };
+    var data = await apiRequest('POST', '/api/feedback', { type: _selectedFbType, message: msg.value.trim(), agentId: _detailAgentId || undefined, metadata: metadata });
+    if (data.ok) {
+      toast(currentLang === 'ru' ? 'Feedback sent!' : 'Feedback sent!', 'success');
+      var modal = document.getElementById('feedback-modal');
+      if (modal) modal.remove();
+    } else {
+      toast(data.error || 'Error', 'error');
+    }
+  } catch(e) { toast(e.message, 'error'); }
+  if (btn) { btn.disabled = false; btn.textContent = currentLang === 'ru' ? 'Отправить' : 'Send'; }
 }
