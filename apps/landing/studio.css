@@ -7722,3 +7722,146 @@ input[type="number"], textarea, select, .form-control,
 #page-guide details > summary::marker { display: none; content: ""; }
 #page-guide details > summary:hover { background: rgba(14,165,233,0.04); }
 
+/* ══════════════════════════════════════════════════
+   MOBILE FIXES — Bug Dashboard, Feedback, Settings
+   ══════════════════════════════════════════════════ */
+
+/* Bug dashboard stat cards — 2 columns on mobile */
+@media (max-width: 768px) {
+  .bugs-dashboard [style*="grid-template-columns: repeat(4"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  /* Bug tab buttons — smaller on mobile */
+  .bugs-dashboard [style*="display:flex;gap:4px;background"] {
+    width: 100%;
+  }
+  .bugs-dashboard [style*="display:flex;gap:4px;background"] button {
+    padding: 6px 10px !important;
+    font-size: .72rem !important;
+  }
+
+  /* Agent settings modal — full screen on mobile */
+  #agent-settings-modal {
+    padding: 0 !important;
+  }
+  #agent-settings-modal > div {
+    border-radius: 0 !important;
+    height: 100vh !important;
+    max-height: none !important;
+  }
+
+  /* Settings tabs — horizontal scroll on mobile */
+  .st-nav {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex-wrap: nowrap !important;
+  }
+  .st-nav::-webkit-scrollbar { display: none; }
+  .st-nav-item {
+    white-space: nowrap;
+    flex-shrink: 0;
+    font-size: .72rem !important;
+    padding: 8px 10px !important;
+  }
+
+  /* Feedback FAB — smaller on mobile */
+  #feedback-fab {
+    width: 44px !important;
+    height: 44px !important;
+    bottom: 16px !important;
+    right: 16px !important;
+    font-size: 1.1rem !important;
+  }
+
+  /* Feedback modal — full width on mobile */
+  #feedback-modal > div {
+    width: 95% !important;
+    max-width: none !important;
+    margin: 12px !important;
+    padding: 20px !important;
+  }
+  #feedback-modal textarea {
+    height: 100px !important;
+  }
+
+  /* Feedback type buttons — wrap on mobile */
+  #feedback-modal [style*="display:flex;gap:8px;margin-bottom:16px"] {
+    gap: 6px !important;
+  }
+  #feedback-modal .fb-type-btn {
+    padding: 6px 12px !important;
+    font-size: .78rem !important;
+  }
+
+  /* Agent cards — stack on mobile */
+  .agent-card-enhanced {
+    padding: 12px !important;
+  }
+  .agent-card-actions {
+    flex-wrap: wrap;
+  }
+
+  /* Profile sections — full width */
+  .profile-section {
+    padding: 12px !important;
+  }
+
+  /* Atlas chat — full height on mobile */
+  #assistant-messages {
+    max-height: calc(100vh - 200px) !important;
+  }
+
+  /* Tour guide card — compact on mobile */
+  #agent-onboard-guide {
+    padding: 14px !important;
+    margin: 8px !important;
+  }
+  #agent-onboard-guide .guide-step {
+    padding: 8px 10px !important;
+  }
+
+  /* Topbar — compact */
+  .topbar {
+    padding: 8px 12px !important;
+  }
+  .topbar-title {
+    font-size: .85rem !important;
+  }
+
+  /* General page padding */
+  .page-content, .main-content > div {
+    padding: 12px !important;
+  }
+
+  /* Tables scroll horizontally */
+  table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Extra small phones */
+@media (max-width: 480px) {
+  .bugs-dashboard [style*="grid-template-columns"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+  }
+
+  /* Stack bug tab buttons vertically */
+  .bugs-dashboard h2 {
+    font-size: 1.1rem !important;
+  }
+
+  #feedback-modal > div {
+    padding: 16px !important;
+  }
+
+  /* Smaller stat cards */
+  .bugs-dashboard [style*="padding:16px;background:var(--bg-primary)"] {
+    padding: 10px !important;
+  }
+}
+
