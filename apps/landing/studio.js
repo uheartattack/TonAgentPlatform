@@ -6124,6 +6124,13 @@ function navigateTo(pageName) {
     pageEl.classList.add('active');
   }
 
+  // Restore page-header if leaving bug dashboard (it hides it)
+  // Restore page-header visibility (some custom pages may hide it)
+  if (pageName !== 'bugs') {
+    var _ph = document.querySelector('.page-header');
+    if (_ph) _ph.style.display = '';
+  }
+
   if (authToken && pageLoadFns[pageName]) {
     var _result = pageLoadFns[pageName]();
     if (_result && typeof _result.catch === 'function') _result.catch(console.error);
@@ -13744,7 +13751,7 @@ function loadPrivacyPage() {
 var _bugTab = 'platform';
 
 async function loadBugDashboard() {
-  var container = document.querySelector('.main-content') || document.querySelector('.page-content');
+  var container = document.getElementById('bugs-dashboard-root');
   if (!container) return;
   var isRu = currentLang === 'ru';
   container.innerHTML = '<div style="padding:24px;max-width:1200px;margin:0 auto">' +
