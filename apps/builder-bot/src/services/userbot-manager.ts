@@ -2423,6 +2423,7 @@ class UserbotManager {
         continue;
       }
 
+      let _typingInterval: any = null; // hoisted for finally cleanup
       try {
         // Auto-typing indicator (skip if behavior handles it)
         const _bhDispatch = item.cfg?.config?.behavior || {};
@@ -2796,6 +2797,8 @@ class UserbotManager {
         }
       } catch {}
       delete mergedConfig.execCode;
+      // Auto-upgrade old agents with platform defaults
+      try { const { normalizeAgentConfig } = require('../agents/sub-agents/runner'); mergedConfig = normalizeAgentConfig(mergedConfig); } catch {}
 
       const apiKey = mergedConfig.AI_API_KEY as string;
       const providerKey = (mergedConfig.AI_PROVIDER as string) || '';
@@ -3017,7 +3020,7 @@ RULES:
 
       // ── Pre-AI behavior: read receipts + start typing ──
       const _bhPre = mergedConfig.behavior || cfg.config?.behavior || {};
-      let _typingInterval: any = null;
+      _typingInterval = null; // reset (declared before try)
       if (_bhPre.readReceipts || _bhPre.typingDelay) {
         const { Api: _PreApi } = require('telegram/tl');
         const _readChatId = msg.chatId;

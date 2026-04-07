@@ -102,6 +102,54 @@ function parseIntervalMs(description: string, triggerConfig?: Record<string, any
 }
 
 /** Merge user variables + trigger config into a single config object (DRY helper) */
+/**
+ * Auto-upgrade agent config with platform defaults.
+ * Old agents created before smart defaults were added get
+ * behavior, learning, compaction, masking, flood protection etc.
+ * This runs on every load so agents always benefit from new platform features.
+ */
+export function normalizeAgentConfig(cfg: Record<string, any>): Record<string, any> {
+  // Behavior defaults
+  if (!cfg.behavior || typeof cfg.behavior !== 'object') {
+    cfg.behavior = {};
+  }
+  const bh = cfg.behavior;
+  if (bh.typingDelay === undefined) bh.typingDelay = true;
+  if (bh.typingSpeed === undefined) bh.typingSpeed = 40;
+  if (bh.readReceipts === undefined) bh.readReceipts = true;
+  if (bh.readDelay === undefined) bh.readDelay = 1.5;
+  if (bh.messageSplitting === undefined) bh.messageSplitting = true;
+  if (bh.thinkingPhrases === undefined) bh.thinkingPhrases = true;
+  if (bh.reactions === undefined) bh.reactions = true;
+  if (bh.randomVariance === undefined) bh.randomVariance = 25;
+
+  // Learning defaults
+  if (!cfg.learning || typeof cfg.learning !== 'object') {
+    cfg.learning = {};
+  }
+  const lr = cfg.learning;
+  if (lr.feedbackLoop === undefined) lr.feedbackLoop = true;
+  if (lr.errorHealing === undefined) lr.errorHealing = true;
+  if (lr.maxRetries === undefined) lr.maxRetries = 3;
+  if (lr.circuitBreakerThreshold === undefined) lr.circuitBreakerThreshold = 5;
+  if (lr.qualityScoring === undefined) lr.qualityScoring = true;
+  if (lr.styleAdaptation === undefined) lr.styleAdaptation = true;
+  if (!lr.negativePatterns) lr.negativePatterns = 'нет, не так, неправильно, бред, отстой, фигня';
+
+  // Memory & context management
+  if (cfg.compaction_strategy === undefined) cfg.compaction_strategy = 'structured';
+  if (cfg.masking_enabled === undefined) cfg.masking_enabled = true;
+  if (cfg.masking_keep_recent === undefined) cfg.masking_keep_recent = 8;
+  if (cfg.memory_poisoning_protection === undefined) cfg.memory_poisoning_protection = true;
+
+  // Rate limiting & safety
+  if (cfg.flood_cooldown_sec === undefined) cfg.flood_cooldown_sec = 30;
+  if (cfg.loop_max_responses === undefined) cfg.loop_max_responses = 8;
+  if (cfg.loop_window_sec === undefined) cfg.loop_window_sec = 300;
+
+  return cfg;
+}
+
 function mergeAgentConfig(
   userVars: Record<string, any>,
   triggerConfig: Record<string, any>,
@@ -112,7 +160,8 @@ function mergeAgentConfig(
   if (triggerConfig.execCode) merged.execCode = triggerConfig.execCode;
   // Pass telegram_session flag
   if (triggerConfig.telegram_session?.session) merged._hasTgSession = true;
-  return merged;
+  // Auto-upgrade with platform defaults
+  return normalizeAgentConfig(merged);
 }
 
 // ── Per-agent serial message queue — prevents concurrent processing crashes ──

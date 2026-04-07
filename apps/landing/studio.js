@@ -10436,9 +10436,8 @@ async function sendAssistantMessage() {
             var r = data.result;
             appendAssistantMsg('assistant', r.content || r.response || String(r), r.buttons);
             if (r.type === 'agent_created') {
-              loadAgents();
-              toast(currentLang === 'ru' ? 'Агент создан!' : 'Agent created!', 'success');
-              if (r.agentId) { openAgentDetail(r.agentId).then(function() { setTimeout(function(){ startAgentTour(true); }, 800); }); } else { navigateTo('operations'); }
+              console.log('[Atlas] agent_created, agentId=' + r.agentId);
+              handleAgentCreated(r.agentId);
             }
           } else { appendAssistantMsg('assistant', data.error || 'Error'); }
           atlasStreamed = true;
@@ -10504,9 +10503,7 @@ async function sendAssistantMessage() {
           var r2 = data2.result;
           appendAssistantMsg('assistant', r2.content || r2.response || String(r2), r2.buttons);
           if (r2.type === 'agent_created') {
-            loadAgents();
-            toast(currentLang === 'ru' ? 'Агент создан!' : 'Agent created!', 'success');
-            if (r2.agentId) { openAgentDetail(r2.agentId).then(function() { setTimeout(startAgentTour, 800); }); } else { navigateTo('operations'); }
+              handleAgentCreated(r2.agentId);
           }
         } else { appendAssistantMsg('assistant', data2.error || 'Error'); }
       }
@@ -10518,6 +10515,47 @@ async function sendAssistantMessage() {
   } finally {
     if (sendBtn) sendBtn.disabled = false;
   }
+}
+
+// ── Post-creation handler: audit + tour + animation ──
+function handleAgentCreated(agentId) {
+  loadAgents();
+  // Beautiful creation toast
+  var isRu = currentLang === 'ru';
+  toast(isRu ? '✨ Агент создан!' : '✨ Agent created!', 'success');
+  if (!agentId) { navigateTo('operations'); return; }
+
+  navigateTo('operations');
+  setTimeout(function() {
+    openAgentDetail(agentId).then(function() {
+      setTimeout(function() { startAgentTour(true); }, 1200);
+      // Run audit and show score badge in guide card
+      setTimeout(function() {
+        apiRequest('GET', '/api/agents/' + agentId + '/audit').then(function(auditData) {
+          if (!auditData || !auditData.ok) return;
+          var score = auditData.score || 0;
+          var fails = (auditData.issues || []).length;
+          var warns = (auditData.warnings || []).length;
+          // Add score badge to guide card
+          var guide = document.getElementById('agent-onboard-guide');
+          if (guide) {
+            var header = guide.querySelector('div > div:first-child > div:last-child');
+            if (header) {
+              var scoreColor = score >= 80 ? '#4ade80' : score >= 50 ? '#f59e0b' : '#ef4444';
+              var badge = document.createElement('div');
+              badge.style.cssText = 'display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;background:' + scoreColor + '15;border:1px solid ' + scoreColor + '30;font-size:.72rem;font-weight:600;color:' + scoreColor + ';margin-top:4px';
+              badge.innerHTML = '<span style="font-size:.8rem">' + (score >= 80 ? '&#9679;' : '&#9888;') + '</span> ' + (isRu ? 'Здоровье' : 'Health') + ': ' + score + '%';
+              header.appendChild(badge);
+            }
+          }
+          // Show toast if issues found
+          if (fails > 0) {
+            toast((isRu ? 'Аудит: ' + fails + ' проблем' : 'Audit: ' + fails + ' issues') + (warns > 0 ? ', ' + warns + ' warn' : ''), 'warning');
+          }
+        }).catch(function() {});
+      }, 2500);
+    });
+  }, 500);
 }
 
 function sendAssistantSuggestion(btn) {
@@ -10547,13 +10585,7 @@ async function sendAssistantCallback(callbackData, label) {
     if (data.ok && data.result) {
       appendAssistantMsg('assistant', data.result.content, data.result.buttons);
       if (data.result.type === 'agent_created') {
-        loadAgents();
-        toast(currentLang === 'ru' ? 'Агент создан!' : 'Agent created!', 'success');
-        if (data.result.agentId) {
-          openAgentDetail(data.result.agentId).then(function() { setTimeout(function(){ startAgentTour(true); }, 800); });
-        } else {
-          navigateTo('agents');
-        }
+        handleAgentCreated(data.result.agentId);
       }
     } else {
       appendAssistantMsg('assistant', data.error || 'Error');
@@ -11104,26 +11136,84 @@ var AGENT_TOUR_STEPS = [
   { target: '[data-tab="advanced"]', title: { en: 'Advanced settings', ru: 'Продвинутые настройки' }, desc: { en: 'For power users: tick interval, loop guard, flood protection, memory poisoning protection, context compaction. Good defaults already set.', ru: 'Для продвинутых: интервал тиков, защита от зацикливания, flood защита, защита памяти, компактинг контекста. Хорошие дефолты уже установлены.' }, position: 'right' },
 ];
 
+function _guideStep(num, title, desc, tabName) {
+  return '<div class="guide-step" onclick="dismissAgentGuide(); switchSettingsTab(\'' + tabName + '\')" style="display:flex;gap:12px;padding:12px 14px;border-radius:10px;cursor:pointer;transition:all .2s;background:rgba(255,255,255,0.03);border:1px solid transparent" onmouseenter="this.style.background=\'rgba(0,152,234,0.08)\';this.style.borderColor=\'rgba(0,152,234,0.25)\'" onmouseleave="this.style.background=\'rgba(255,255,255,0.03)\';this.style.borderColor=\'transparent\'">' +
+    '<div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#0098EA,#0070B0);color:#fff;display:flex;align-items:center;justify-content:center;font-size:.8rem;font-weight:700;flex-shrink:0">' + num + '</div>' +
+    '<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:.88rem;color:var(--text-primary);margin-bottom:2px">' + title + '</div>' +
+    '<div style="font-size:.78rem;color:var(--text-muted);line-height:1.4">' + desc + '</div></div>' +
+    '<div style="color:var(--text-muted);font-size:.9rem;display:flex;align-items:center;opacity:.5">&#8250;</div>' +
+  '</div>';
+}
+
+function dismissAgentGuide() {
+  var card = document.getElementById('agent-onboard-guide');
+  if (card) {
+    card.style.opacity = '0';
+    card.style.transform = 'translateY(-8px)';
+    setTimeout(function() { card.remove(); }, 250);
+  }
+  localStorage.setItem('agent_tour_completed', '1');
+}
+
 function startAgentTour(force) {
   if (!force && localStorage.getItem('agent_tour_completed') === '1') return;
-  _tourStep = 0;
-  _tourActive = true;
-  // Replace steps temporarily
-  var _origSteps = TOUR_STEPS;
-  TOUR_STEPS = AGENT_TOUR_STEPS;
-  var overlay = document.getElementById('tour-overlay');
-  if (overlay) { overlay.style.display = 'block'; overlay.classList.add('active'); }
-  _tourResizeHandler = function() { if (_tourActive) showTourStep(); };
-  window.addEventListener('resize', _tourResizeHandler);
-  // Override endTour to restore
-  var _origEnd = endTour;
-  endTour = function() {
-    _origEnd();
-    TOUR_STEPS = _origSteps;
-    endTour = _origEnd;
-    localStorage.setItem('agent_tour_completed', '1');
-  };
-  showTourStep();
+  // Wait for settings modal to be visible and soul tab rendered
+  var body = document.getElementById('agent-settings-body');
+  if (!body) { setTimeout(function() { startAgentTour(force); }, 500); return; }
+  // Don't duplicate
+  if (document.getElementById('agent-onboard-guide')) return;
+  var isRu = currentLang === 'ru';
+
+  var guideHtml = '<div id="agent-onboard-guide" style="margin-bottom:20px;padding:20px;background:linear-gradient(135deg,rgba(0,152,234,0.06),rgba(99,102,241,0.06));border:1px solid rgba(0,152,234,0.15);border-radius:14px;transition:all .25s ease">' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">' +
+      '<div style="display:flex;align-items:center;gap:10px">' +
+        '<div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#0098EA,#6366f1);display:flex;align-items:center;justify-content:center;font-size:1.2rem">&#127891;</div>' +
+        '<div><div style="font-weight:700;font-size:.95rem;color:var(--text-primary)">' + (isRu ? 'Настройка агента' : 'Agent Setup Guide') + '</div>' +
+        '<div style="font-size:.76rem;color:var(--text-muted)">' + (isRu ? 'Пройдите шаги чтобы агент заработал' : 'Complete these steps to get your agent running') + '</div></div>' +
+      '</div>' +
+      '<button onclick="dismissAgentGuide()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:1.1rem;padding:4px 6px;border-radius:6px;opacity:.5;transition:opacity .2s" onmouseenter="this.style.opacity=\'1\'" onmouseleave="this.style.opacity=\'.5\'">&times;</button>' +
+    '</div>' +
+    '<div style="display:flex;flex-direction:column;gap:4px">' +
+      _guideStep('1',
+        isRu ? 'AI Провайдер — мозг' : 'AI Provider — the brain',
+        isRu ? 'Вставьте API ключ. Бесплатно: Gemini, Groq, OpenRouter' : 'Paste your API key. Free: Gemini, Groq, OpenRouter',
+        'ai') +
+      _guideStep('2',
+        isRu ? 'Telegram — подключение' : 'Telegram — connection',
+        isRu ? 'QR-код для общения в чатах как человек' : 'QR code to chat in groups like a real person',
+        'telegram') +
+      _guideStep('3',
+        isRu ? 'Возможности — инструменты' : 'Capabilities — tools',
+        isRu ? 'Включите модули: Telegram, Wallet, Web, Gifts' : 'Enable modules: Telegram, Wallet, Web, Gifts',
+        'caps') +
+      _guideStep('4',
+        isRu ? 'Поведение — человечность' : 'Behavior — humanization',
+        isRu ? 'Задержки набора, реакции, стиль общения' : 'Typing delays, reactions, chat style',
+        'behavior') +
+      _guideStep('5',
+        isRu ? 'Обучение — самосовершенствование' : 'Learning — self-improvement',
+        isRu ? 'Учится на ошибках, адаптирует стиль' : 'Learns from mistakes, adapts style',
+        'learning') +
+    '</div>' +
+    '<div style="margin-top:14px;text-align:center">' +
+      '<button onclick="dismissAgentGuide(); switchSettingsTab(\'ai\')" style="background:linear-gradient(135deg,#0098EA,#0070B0);color:#fff;border:none;padding:10px 24px;border-radius:10px;font-size:.85rem;font-weight:600;cursor:pointer;transition:all .2s;box-shadow:0 2px 8px rgba(0,152,234,0.3)" onmouseenter="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 4px 12px rgba(0,152,234,0.4)\'" onmouseleave="this.style.transform=\'none\';this.style.boxShadow=\'0 2px 8px rgba(0,152,234,0.3)\'">' +
+        (isRu ? 'Начать с API ключа \u2192' : 'Start with API key \u2192') +
+      '</button>' +
+    '</div>' +
+  '</div>';
+
+  // Insert at the top of settings body content
+  body.insertAdjacentHTML('afterbegin', guideHtml);
+  // Animate in
+  var card = document.getElementById('agent-onboard-guide');
+  if (card) {
+    card.style.opacity = '0';
+    card.style.transform = 'translateY(-8px)';
+    requestAnimationFrame(function() {
+      card.style.opacity = '1';
+      card.style.transform = 'translateY(0)';
+    });
+  }
 }
 
 // Auto-show agent tour on first agent detail open
