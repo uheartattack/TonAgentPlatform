@@ -5324,6 +5324,18 @@ export function startApiServer() {
     res.sendFile(path.join(landingPath, 'index.html'));
   });
 
+  // ── Global error handler: catch unhandled route errors → platform_bugs ──
+  app.use((err: any, _req: any, res: any, _next: any) => {
+    const msg = err?.message || String(err);
+    console.error('[API Error]', msg);
+    try {
+      const { getBugTracker } = require('./db/schema-extensions');
+      const file = err?.stack?.match(/at\s+.*?\(?(src\/[^:)]+)/)?.[1] || 'api-server';
+      getBugTracker().recordBug('api:' + (_req?.route?.path || _req?.path || 'unknown'), msg, err?.stack?.slice(0, 500), file).catch(() => {});
+    } catch {}
+    if (!res.headersSent) res.status(500).json({ error: 'Internal server error' });
+  });
+
   // ── HTTP server + WebSocket ─────────────────────────────────
   const server = http.createServer(app);
 

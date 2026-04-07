@@ -399,6 +399,17 @@ export class AgentLogsRepository {
       details: entry.details ?? null,
       createdAt: new Date(),
     });
+    // Also record errors in platform_bugs for unified tracking
+    if (entry.level === 'error' || entry.level === 'fatal') {
+      try {
+        getBugTracker().recordBug(
+          `agent:${entry.agentId}`,
+          entry.message.slice(0, 1000),
+          undefined,
+          undefined
+        ).catch(() => {});
+      } catch {}
+    }
   }
 
   async getByAgent(agentId: number, limit = 30, offset = 0): Promise<Array<{

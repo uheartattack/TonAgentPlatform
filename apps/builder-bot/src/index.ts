@@ -139,9 +139,43 @@ async function main() {
   console.log();
 }
 
+// ── Global error interceptor: pipe console.error → platform_bugs ──
+const _origConsoleError = console.error.bind(console);
+let _bugTrackerReady = false;
+const _errorDedup = new Map<string, number>(); // prevent spam: hash → lastTs
+
+// Mark bug tracker as ready after DB init
+setTimeout(() => { _bugTrackerReady = true; }, 10000);
+
+console.error = function(...args: any[]) {
+  _origConsoleError(...args);
+  if (!_bugTrackerReady) return;
+  try {
+    const msg = args.map(a => typeof a === 'object' ? (a?.message || JSON.stringify(a)?.slice(0, 300)) : String(a)).join(' ').slice(0, 1000);
+    // Skip noisy/expected errors
+    if (/MNEMONIC mismatch|WalletContractV5R1|_cachedDialogs|setupListener.*authorized=false/i.test(msg)) return;
+    // Dedup: same error within 60s → skip
+    const key = msg.slice(0, 100);
+    const now = Date.now();
+    if (_errorDedup.get(key) && now - (_errorDedup.get(key) || 0) < 60000) return;
+    _errorDedup.set(key, now);
+    if (_errorDedup.size > 500) { const keys = Array.from(_errorDedup.keys()); for (let i = 0; i < 250; i++) _errorDedup.delete(keys[i]); }
+    // Determine source from stack or message
+    let source = 'console.error';
+    const stackMatch = new Error().stack?.match(/at\s+.*?\(?(src\/[^:)]+)/);
+    if (stackMatch) source = stackMatch[1];
+    else if (/\[UserbotMgr\]/.test(msg)) source = 'userbot-manager';
+    else if (/\[AI runtime\]|\[AI run\]/.test(msg)) source = 'ai-agent-runtime';
+    else if (/\[Orchestrator\]/.test(msg)) source = 'orchestrator';
+    else if (/CRASH:/.test(msg)) source = 'crash';
+    const { getBugTracker } = require('./db/schema-extensions');
+    getBugTracker().recordBug(source, msg, new Error().stack?.slice(0, 500)).catch(() => {});
+  } catch {}
+};
+
 // Обработка ошибок + автоматический трекинг в БД
 process.on('unhandledRejection', (error: any) => {
-  console.error('❌ Unhandled rejection:', error);
+  _origConsoleError('Unhandled rejection:', error);
   try {
     const { getBugTracker } = require('./db/schema-extensions');
     const msg = error?.message || String(error);
