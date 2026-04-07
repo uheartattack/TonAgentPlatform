@@ -12683,7 +12683,8 @@ async function loadNotificationsPage() {
       '</h2>' +
       '<p class="page-subtitle">' + (isRu ? 'Алерты, проблемы и рекомендации для ваших агентов' : 'Alerts, issues and recommendations for your agents') + '</p>' +
     '</div>' +
-    '<div class="notif-filters" style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">' +
+    '<div class="notif-filters" style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">' +
+      '<button onclick="clearAllNotifs()" style="margin-left:auto;padding:5px 12px;border-radius:20px;border:1px solid rgba(239,68,68,0.3);background:rgba(239,68,68,0.08);color:#ef4444;font-size:.72rem;cursor:pointer;transition:all .15s" onmouseenter="this.style.background=\'rgba(239,68,68,0.15)\'" onmouseleave="this.style.background=\'rgba(239,68,68,0.08)\'">' + (isRu ? 'Очистить все' : 'Clear all') + '</button>' +
       '<button class="notif-filter active" data-filter="all" onclick="filterNotifications(\'all\')">' + (isRu ? 'Все' : 'All') + '</button>' +
       '<button class="notif-filter" data-filter="error" onclick="filterNotifications(\'error\')">' + IC.x + ' ' + (isRu ? 'Ошибки' : 'Errors') + '</button>' +
       '<button class="notif-filter" data-filter="warning" onclick="filterNotifications(\'warning\')">' + IC.warn + ' ' + (isRu ? 'Предупреждения' : 'Warnings') + '</button>' +
@@ -12813,17 +12814,44 @@ function renderNotifications(notifications) {
     var actionBtn = n.action
       ? '<button class="notif-action-btn" onclick="handleNotifAction(\'' + n.action + '\')" style="border-color:' + typeColors[n.type] + ';color:' + typeColors[n.type] + '">' + (isRu ? 'Исправить' : 'Fix') + '</button>'
       : '';
-    return '<div class="notif-card" data-type="' + n.type + '" style="border-left:3px solid ' + typeColors[n.type] + ';background:' + typeBgs[n.type] + ';animation:notifSlideIn 0.3s ease ' + (i * 0.05) + 's both">' +
+    return '<div class="notif-card" data-type="' + n.type + '" data-idx="' + i + '" style="border-left:3px solid ' + typeColors[n.type] + ';background:' + typeBgs[n.type] + ';animation:notifSlideIn 0.3s ease ' + (i * 0.05) + 's both">' +
       '<div class="notif-card-header">' +
         '<span class="notif-icon">' + typeIcons[n.type] + '</span>' +
         '<span class="notif-title">' + escHtml(n.title) + '</span>' +
         '<span class="notif-agent">' + escHtml(n.agent) + '</span>' +
         '<span class="notif-time">' + ago + '</span>' +
+        '<button onclick="dismissNotif(this.closest(\'.notif-card\'))" style="background:none;border:none;color:var(--text-muted);cursor:pointer;padding:2px 4px;opacity:.4;transition:opacity .2s;margin-left:auto" onmouseenter="this.style.opacity=\'1\'" onmouseleave="this.style.opacity=\'.4\'">&times;</button>' +
       '</div>' +
       '<div class="notif-card-body">' + escHtml(n.message) + '</div>' +
       (actionBtn ? '<div class="notif-card-actions">' + actionBtn + '</div>' : '') +
     '</div>';
   }).join('');
+}
+
+function dismissNotif(card) {
+  if (!card) return;
+  card.style.transition = 'all .25s ease';
+  card.style.opacity = '0';
+  card.style.transform = 'translateX(30px)';
+  setTimeout(function() { card.remove(); }, 250);
+}
+
+function clearAllNotifs() {
+  var cards = document.querySelectorAll('.notif-card');
+  cards.forEach(function(c, i) {
+    setTimeout(function() {
+      c.style.transition = 'all .2s ease';
+      c.style.opacity = '0';
+      c.style.transform = 'scale(0.95)';
+      setTimeout(function() { c.remove(); }, 200);
+    }, i * 30);
+  });
+  setTimeout(function() {
+    var list = document.getElementById('notif-list');
+    if (list && !list.querySelector('.notif-card')) {
+      list.innerHTML = '<div class="notif-empty"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.5"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><div style="margin-top:12px;font-size:.9rem;color:var(--text-muted)">' + (currentLang === 'ru' ? 'Нет уведомлений' : 'No notifications') + '</div></div>';
+    }
+  }, cards.length * 30 + 300);
 }
 
 function filterNotifications(type) {
@@ -13326,13 +13354,13 @@ async function openVoiceCreate() {
 
 async function startVoiceRecording(forCreate) {
   if (!navigator.mediaDevices || !window.MediaRecorder) {
-    showToast('Ваш браузер не поддерживает запись голоса', 'error');
+    toast(currentLang === 'ru' ? 'Браузер не поддерживает запись голоса' : 'Browser does not support voice recording', 'error');
     return;
   }
   try {
     _voiceStream = await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch (e) {
-    showToast('Нет доступа к микрофону: ' + (e.message || e), 'error');
+    toast(currentLang === 'ru' ? 'Нет доступа к микрофону' : 'No microphone access', 'error');
     return;
   }
 
@@ -13386,9 +13414,9 @@ async function transcribeAndSend(blob, forCreate) {
   try {
     var fd = new FormData();
     fd.append('audio', blob, 'voice.webm');
-    var res = await fetch(API_BASE + '/api/voice/transcribe', {
+    var res = await fetch('/api/voice/transcribe', {
       method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + getToken() },
+      headers: { 'X-Auth-Token': authToken },
       body: fd
     });
     var data = await res.json();
