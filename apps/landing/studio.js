@@ -11080,6 +11080,27 @@ var _tourStep = 0;
 var _tourActive = false;
 var _tourResizeHandler = null;
 
+// Guided tour: sidebar tour → then redirect to profile with highlights
+function startGuidedTour() {
+  // Override endTour to redirect to profile after
+  var _origEnd = endTour;
+  var _tourDoneOnce = false;
+  endTour = function() {
+    _origEnd();
+    endTour = _origEnd;
+    if (!_tourDoneOnce) {
+      _tourDoneOnce = true;
+      // Go to profile and highlight setup fields
+      navigateTo('profile');
+      setTimeout(function() {
+        if (typeof highlightProfileSetup === 'function') highlightProfileSetup();
+        toast(currentLang === 'ru' ? 'Настройте API ключ в профиле' : 'Set up your API key in profile', 'info');
+      }, 600);
+    }
+  };
+  startTour();
+}
+
 function startTour() {
   _tourStep = 0;
   _tourActive = true;
@@ -12954,20 +12975,8 @@ function loadGuidePage() {
   function renderGuide() {
     var s = sections.find(function(x){ return x.id === _activeGuideTab; }) || sections[0];
 
-    // Interactive tour button
-    var tourBtn = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px">' +
-      '<div>' +
-        '<h2 style="margin:0;font-size:1.2rem;color:var(--text-primary)">' + (isRu ? 'Руководство' : 'Guide') + '</h2>' +
-        '<p style="margin:2px 0 0;font-size:.8rem;color:var(--text-muted)">' + (isRu ? 'Всё о платформе и агентах' : 'Everything about the platform') + '</p>' +
-      '</div>' +
-      '<button onclick="startTour()" style="display:flex;align-items:center;gap:8px;padding:10px 20px;border-radius:10px;border:none;background:linear-gradient(135deg,#0098EA,#0070B0);color:white;font-size:.82rem;font-weight:600;cursor:pointer;transition:all .2s;box-shadow:0 2px 8px rgba(0,152,234,0.3)" onmouseenter="this.style.transform=\'translateY(-1px)\'" onmouseleave="this.style.transform=\'none\'">' +
-        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>' +
-        (isRu ? 'Интерактивный тур' : 'Interactive Tour') +
-      '</button>' +
-    '</div>';
-
-    // Tab bar
-    var tabs = '<div style="display:flex;gap:2px;padding:4px;background:rgba(255,255,255,0.03);border-radius:12px;margin-bottom:24px;overflow-x:auto;-webkit-overflow-scrolling:touch">';
+    // Tab bar (compact, scrollable)
+    var tabs = '<div style="display:flex;gap:2px;padding:3px;background:rgba(255,255,255,0.03);border-radius:10px;margin-bottom:16px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none">';
     sections.forEach(function(sec) {
       var active = sec.id === _activeGuideTab;
       tabs += '<button onclick="_switchGuideTab(\'' + sec.id + '\')" style="' +
@@ -12980,14 +12989,18 @@ function loadGuidePage() {
     tabs += '</div>';
 
     // Content area
-    var content = '<div style="animation:fadeIn .3s ease">';
-    // Hero
-    content += '<div style="' + s.gradient + ';border-radius:16px;padding:32px 28px;margin-bottom:24px">' +
-      '<div style="display:flex;align-items:center;gap:14px;margin-bottom:12px">' +
-        '<div style="width:44px;height:44px;border-radius:12px;background:rgba(14,165,233,0.15);display:flex;align-items:center;justify-content:center;color:#0ea5e9">' + s.icon + '</div>' +
-        '<div><h2 style="margin:0;font-size:1.3rem;color:var(--text-primary)">' + s.title + '</h2>' +
-          '<p style="margin:2px 0 0;font-size:.88rem;color:var(--text-muted)">' + s.subtitle + '</p></div>' +
+    var content = '<div style="animation:tabContentFade .25s ease">';
+    // Compact hero
+    content += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">' +
+      '<div style="display:flex;align-items:center;gap:10px">' +
+        '<div style="width:36px;height:36px;border-radius:10px;' + s.gradient + ';display:flex;align-items:center;justify-content:center;color:#0ea5e9">' + s.icon + '</div>' +
+        '<div><h3 style="margin:0;font-size:1.05rem;color:var(--text-primary)">' + s.title + '</h3>' +
+          '<p style="margin:0;font-size:.76rem;color:var(--text-muted)">' + s.subtitle + '</p></div>' +
       '</div>' +
+      '<button onclick="startGuidedTour()" style="display:flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;border:1px solid rgba(14,165,233,0.3);background:rgba(14,165,233,0.08);color:#0ea5e9;font-size:.75rem;font-weight:600;cursor:pointer;transition:all .2s" onmouseenter="this.style.background=\'rgba(14,165,233,0.15)\'" onmouseleave="this.style.background=\'rgba(14,165,233,0.08)\'">' +
+        '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>' +
+        (isRu ? 'Тур' : 'Tour') +
+      '</button>' +
     '</div>';
 
     // Cards
@@ -13005,12 +13018,12 @@ function loadGuidePage() {
       content += '</div>';
     }
 
-    // Items list
+    // Items as compact chips
     if (s.items) {
-      content += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px;margin-bottom:20px">';
+      content += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px">';
       s.items.forEach(function(item) {
-        content += '<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--bg-primary);border:1px solid var(--border);border-radius:10px;font-size:.85rem;color:var(--text-secondary)">' +
-          '<div style="width:6px;height:6px;border-radius:50%;background:#0ea5e9;flex-shrink:0"></div>' + escHtml(item) + '</div>';
+        content += '<span style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:var(--bg-primary);border:1px solid var(--border);border-radius:20px;font-size:.78rem;color:var(--text-secondary);transition:all .15s;cursor:default" onmouseenter="this.style.borderColor=\'rgba(14,165,233,0.4)\';this.style.color=\'var(--text-primary)\'" onmouseleave="this.style.borderColor=\'var(--border)\';this.style.color=\'var(--text-secondary)\'">' +
+          '<span style="width:5px;height:5px;border-radius:50%;background:#0ea5e9;flex-shrink:0"></span>' + escHtml(item) + '</span>';
       });
       content += '</div>';
     }
@@ -13044,17 +13057,17 @@ function loadGuidePage() {
       content += '<button class="rt-save-btn" onclick="' + s.action.fn + '" style="margin-top:8px">' + s.action.label + ' →</button>';
     }
 
-    // Details (expandable Q&A sections)
+    // Details — first 2 open, rest collapsed
     if (s.details && s.details.length > 0) {
-      content += '<div style="margin-top:20px;display:flex;flex-direction:column;gap:8px">';
-      s.details.forEach(function(d) {
-        content += '<details style="background:var(--bg-primary);border:1px solid var(--border);border-radius:12px;overflow:hidden">' +
-          '<summary style="padding:14px 18px;cursor:pointer;font-size:.9rem;font-weight:600;color:var(--text-primary);list-style:none;display:flex;align-items:center;gap:10px;user-select:none">' +
-            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" stroke-width="2.5" style="flex-shrink:0;transition:transform .2s"><polyline points="6 9 12 15 18 9"/></svg>' +
+      content += '<div style="margin-top:12px;display:flex;flex-direction:column;gap:6px">';
+      s.details.forEach(function(d, idx) {
+        content += '<details' + (idx < 2 ? ' open' : '') + ' style="background:var(--bg-primary);border:1px solid var(--border);border-radius:10px;overflow:hidden">' +
+          '<summary style="padding:10px 14px;cursor:pointer;font-size:.84rem;font-weight:600;color:var(--text-primary);list-style:none;display:flex;align-items:center;gap:8px;user-select:none">' +
+            '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" stroke-width="2.5" style="flex-shrink:0;transition:transform .2s"><polyline points="6 9 12 15 18 9"/></svg>' +
             d.q +
           '</summary>' +
-          '<div style="padding:0 18px 16px;font-size:.85rem;color:var(--text-secondary);line-height:1.7;border-top:1px solid var(--border)">' +
-            '<div style="padding-top:12px">' + d.a + '</div>' +
+          '<div style="padding:0 14px 12px;font-size:.8rem;color:var(--text-secondary);line-height:1.65;border-top:1px solid var(--border)">' +
+            '<div style="padding-top:10px;white-space:pre-line">' + d.a.replace(/\n/g, '<br>') + '</div>' +
           '</div>' +
         '</details>';
       });
@@ -13068,7 +13081,7 @@ function loadGuidePage() {
     }
 
     content += '</div>';
-    container.innerHTML = tourBtn + tabs + content;
+    container.innerHTML = tabs + content;
   }
 
   window._switchGuideTab = function(id) {
