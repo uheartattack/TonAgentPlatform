@@ -250,6 +250,57 @@ export async function runMigrations(pool: Pool): Promise<void> {
     await client.query(`ALTER TABLE builder_bot.agents ADD COLUMN IF NOT EXISTS xp INTEGER DEFAULT 0`);
     await client.query(`ALTER TABLE builder_bot.agents ADD COLUMN IF NOT EXISTS level INTEGER DEFAULT 1`);
 
+    // ── Beta testers ──
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.beta_testers (
+        id SERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL UNIQUE,
+        username TEXT,
+        invite_code TEXT,
+        invited_by BIGINT,
+        status TEXT DEFAULT 'active',
+        plan_override TEXT DEFAULT 'beta',
+        features JSONB DEFAULT '[]'::jsonb,
+        feedback_count INT DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        expires_at TIMESTAMPTZ
+      )
+    `);
+
+    // ── Beta invite codes ──
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.beta_invite_codes (
+        code TEXT PRIMARY KEY,
+        created_by BIGINT NOT NULL,
+        max_uses INT DEFAULT 1,
+        used_count INT DEFAULT 0,
+        is_active BOOLEAN DEFAULT true,
+        note TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        expires_at TIMESTAMPTZ
+      )
+    `);
+
+    // ── Feedback / bug reports ──
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.feedback (
+        id SERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL,
+        username TEXT,
+        type TEXT NOT NULL,
+        message TEXT NOT NULL,
+        screenshot_file_id TEXT,
+        agent_id INT,
+        status TEXT DEFAULT 'new',
+        admin_reply TEXT,
+        metadata JSONB,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        resolved_at TIMESTAMPTZ
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_feedback_user ON builder_bot.feedback (user_id, created_at DESC)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_feedback_status ON builder_bot.feedback (status, created_at DESC)`);
+
     await client.query('COMMIT');
     console.log('✅ DB migrations applied (schema-extensions)');
   } catch (e) {

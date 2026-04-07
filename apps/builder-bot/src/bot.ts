@@ -688,6 +688,7 @@ interface PendingOnboarding {
   createdAt: number;
 }
 const pendingOnboarding = new Map<number, PendingOnboarding>(); // userId → state
+const pendingFeedback = new Map<number, { type: string; startTs: number }>(); // userId → feedback state
 
 // ============================================================
 // Определение «мусорного» ввода (ываыва, aaaa, qwerty и т.п.)
@@ -1312,6 +1313,41 @@ bot.command('start', async (ctx) => {
     // Не return — показываем обычное приветствие
   }
 
+  // Beta invite code deeplink: /start beta_XXXXXXXX
+  if (startPayload.startsWith('beta_') && startPayload !== 'beta_open') {
+    const code = startPayload.replace('beta_', '');
+    const { redeemBetaCode } = require('./payments');
+    const result = await redeemBetaCode(code, userId, ctx.from?.username);
+    if (result.ok) {
+      const ru = getUserLang(userId) === 'ru';
+      await safeReply(ctx, ru ? '🧪 Добро пожаловать в бета-тест!\n\nВаш план: Beta Tester (10 агентов, 50 генераций/мес)\n\nИспользуйте /feedback чтобы сообщить о багах.' : '🧪 Welcome to beta test!\n\nYour plan: Beta Tester (10 agents, 50 gens/month)\n\nUse /feedback to report bugs.');
+    } else {
+      await safeReply(ctx, `❌ ${result.error}`);
+    }
+    return;
+  }
+
+  // Open beta deeplink: /start beta_open
+  if (startPayload === 'beta_open') {
+    const { isBetaTester, addBetaTester } = require('./payments');
+    const ru = getUserLang(userId) === 'ru';
+    if (isBetaTester(userId)) {
+      await safeReply(ctx, ru ? '🧪 Вы уже бета-тестер!' : '🧪 You are already a beta tester!');
+      return;
+    }
+    // Check slot limit
+    const { pool } = require('./db');
+    const countRes = await pool.query(`SELECT COUNT(*) as cnt FROM builder_bot.beta_testers WHERE status = 'active'`);
+    const MAX_OPEN_BETA = 500;
+    if (parseInt(countRes.rows[0].cnt) >= MAX_OPEN_BETA) {
+      await safeReply(ctx, ru ? '😔 Бета-тест заполнен. Следите за обновлениями!' : '😔 Beta is full. Stay tuned for updates!');
+      return;
+    }
+    await addBetaTester(userId, ctx.from?.username, 'open_beta');
+    await safeReply(ctx, ru ? '🧪 Добро пожаловать в открытую бету!\n\nПлан: Beta Tester (10 агентов, 50 генераций/мес)\nИспользуйте /feedback для фидбека.' : '🧪 Welcome to open beta!\n\nPlan: Beta Tester\nUse /feedback for feedback.');
+    return;
+  }
+
   // ── Web studio auth via deeplink: /start webauth_TOKEN ──
   if (startPayload.startsWith('webauth_')) {
     const authToken = startPayload.replace('webauth_', '');
@@ -1355,6 +1391,135 @@ bot.command('start', async (ctx) => {
   await getMemoryManager().clearHistory(userId);
   const lang = existingLang || 'ru';
   await showWelcome(ctx, userId, name, lang);
+});
+
+// ============================================================
+// Beta & Feedback
+// ============================================================
+
+bot.command('beta', async (ctx) => {
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  const args = ctx.message.text.split(' ').slice(1).join(' ').trim();
+  if (!args) {
+    const { isBetaTester } = require('./payments');
+    if (isBetaTester(userId)) {
+      await safeReply(ctx, ru ? '🧪 Вы бета-тестер! Используйте /feedback для обратной связи.' : '🧪 You are a beta tester! Use /feedback for feedback.');
+    } else {
+      await safeReply(ctx, ru ? '🧪 Введите инвайт-код: /beta XXXXXX\nИли откройте t.me/TonAgentPlatformBot?start=beta_open' : '🧪 Enter invite code: /beta XXXXXX\nOr open t.me/TonAgentPlatformBot?start=beta_open');
+    }
+    return;
+  }
+  const { redeemBetaCode } = require('./payments');
+  const result = await redeemBetaCode(args, userId, ctx.from?.username);
+  if (result.ok) {
+    await safeReply(ctx, ru ? '🧪 Код активирован! Добро пожаловать в бета-тест!\nПлан: Beta Tester (10 агентов, 50 генераций/мес)' : '🧪 Code activated! Welcome to beta!\nPlan: Beta Tester (10 agents, 50 gens/month)');
+  } else {
+    await safeReply(ctx, `❌ ${result.error}`);
+  }
+});
+
+bot.command('feedback', async (ctx) => {
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  await safeReply(ctx, ru ? '📝 Выберите тип обращения:' : '📝 Choose feedback type:', {
+    reply_markup: { inline_keyboard: [
+      [
+        { text: '🐛 Баг', callback_data: 'fb_type:bug' },
+        { text: '💡 Фича', callback_data: 'fb_type:feature' },
+      ],
+      [
+        { text: '🆘 Саппорт', callback_data: 'fb_type:support' },
+        { text: '💬 Общее', callback_data: 'fb_type:general' },
+      ],
+    ] },
+  });
+});
+
+bot.action(/^fb_type:(.+)$/, async (ctx) => {
+  const userId = ctx.from!.id;
+  const type = ctx.match![1];
+  const ru = getUserLang(userId) === 'ru';
+  pendingFeedback.set(userId, { type, startTs: Date.now() });
+  await ctx.answerCbQuery();
+  const labels: Record<string, string> = { bug: '🐛 Баг-репорт', feature: '💡 Предложение', support: '🆘 Саппорт', general: '💬 Общее' };
+  await safeReply(ctx, ru ? `${labels[type] || type}\n\nОпишите проблему или предложение. Можно приложить скриншот.` : `${labels[type] || type}\n\nDescribe the issue. You can attach a screenshot.`);
+});
+
+bot.command('my_feedback', async (ctx) => {
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  try {
+    const { pool } = require('./db');
+    const res = await pool.query(
+      `SELECT id, type, message, status, admin_reply, created_at FROM builder_bot.feedback WHERE user_id = $1 ORDER BY created_at DESC LIMIT 10`,
+      [userId]
+    );
+    if (!res.rows.length) {
+      await safeReply(ctx, ru ? '📭 У вас нет тикетов.' : '📭 No tickets found.');
+      return;
+    }
+    const statusIcons: Record<string, string> = { new: '🔵', in_progress: '🟡', resolved: '🟢', closed: '⚪' };
+    const lines = res.rows.map((r: any) => {
+      const icon = statusIcons[r.status] || '⚪';
+      const date = new Date(r.created_at).toLocaleDateString('ru');
+      let line = `${icon} #${r.id} [${r.type}] ${date}\n${r.message.slice(0, 80)}`;
+      if (r.admin_reply) line += `\n↳ Ответ: ${r.admin_reply.slice(0, 60)}`;
+      return line;
+    });
+    await safeReply(ctx, (ru ? '📋 Ваши тикеты:\n\n' : '📋 Your tickets:\n\n') + lines.join('\n\n'));
+  } catch (e: any) { await safeReply(ctx, `❌ ${e.message}`); }
+});
+
+// ── Admin: generate beta codes ──
+bot.command('beta_code', async (ctx) => {
+  const userId = ctx.from!.id;
+  const { isPlatformAdmin, generateBetaCodes } = require('./payments');
+  if (!isPlatformAdmin(userId)) return;
+  const args = ctx.message.text.split(' ').slice(1);
+  const count = parseInt(args[0]) || 5;
+  const note = args.slice(1).join(' ') || undefined;
+  const codes = await generateBetaCodes(Math.min(count, 50), userId, note);
+  const links = codes.map((c: string) => `• \`${c}\` → t.me/TonAgentPlatformBot?start=beta_${c}`).join('\n');
+  await safeReply(ctx, `🧪 Сгенерировано ${codes.length} кодов:\n\n${links}`);
+});
+
+// ── Admin: add beta tester manually ──
+bot.command('beta_add', async (ctx) => {
+  const userId = ctx.from!.id;
+  const { isPlatformAdmin, addBetaTester } = require('./payments');
+  if (!isPlatformAdmin(userId)) return;
+  const target = ctx.message.text.split(' ')[1]?.trim();
+  if (!target) { await safeReply(ctx, 'Usage: /beta_add @username or /beta_add 123456789'); return; }
+  const targetId = parseInt(target.replace('@', ''));
+  if (isNaN(targetId)) { await safeReply(ctx, `Ищу @${target}...`); return; } // TODO: resolve username
+  await addBetaTester(targetId, target);
+  await safeReply(ctx, `✅ User ${target} added as beta tester`);
+});
+
+// ── Admin: list beta testers ──
+bot.command('beta_list', async (ctx) => {
+  const userId = ctx.from!.id;
+  const { isPlatformAdmin } = require('./payments');
+  if (!isPlatformAdmin(userId)) return;
+  const { pool } = require('./db');
+  const res = await pool.query(`SELECT user_id, username, status, invite_code, created_at FROM builder_bot.beta_testers ORDER BY created_at DESC LIMIT 30`);
+  if (!res.rows.length) { await safeReply(ctx, '📭 Нет тестеров'); return; }
+  const lines = res.rows.map((r: any) => `${r.status === 'active' ? '🟢' : '🔴'} ${r.username || r.user_id} (${r.invite_code || 'manual'}) ${new Date(r.created_at).toLocaleDateString('ru')}`);
+  await safeReply(ctx, `🧪 Beta testers (${res.rows.length}):\n\n${lines.join('\n')}`);
+});
+
+// ── Admin: feedback list ──
+bot.command('feedback_list', async (ctx) => {
+  const userId = ctx.from!.id;
+  const { isPlatformAdmin } = require('./payments');
+  if (!isPlatformAdmin(userId)) return;
+  const { pool } = require('./db');
+  const res = await pool.query(`SELECT id, user_id, username, type, message, status, created_at FROM builder_bot.feedback ORDER BY created_at DESC LIMIT 15`);
+  if (!res.rows.length) { await safeReply(ctx, '📭 Нет фидбека'); return; }
+  const statusIcons: Record<string, string> = { new: '🔵', in_progress: '🟡', resolved: '🟢', closed: '⚪' };
+  const lines = res.rows.map((r: any) => `${statusIcons[r.status] || '⚪'} #${r.id} [${r.type}] @${r.username || r.user_id}\n${r.message.slice(0, 100)}`);
+  await safeReply(ctx, `📋 Feedback (${res.rows.length}):\n\n${lines.join('\n\n')}`);
 });
 
 // ============================================================
@@ -7596,6 +7761,27 @@ bot.on(message('voice'), async (ctx) => {
   }
 });
 
+// ── Photo handler (feedback screenshots) ──
+bot.on(message('photo'), async (ctx) => {
+  const userId = ctx.from!.id;
+  const _fb = pendingFeedback.get(userId);
+  if (_fb && Date.now() - _fb.startTs < 10 * 60_000) {
+    pendingFeedback.delete(userId);
+    const caption = ctx.message.caption || '';
+    const photoId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
+    try {
+      const { pool } = require('./db');
+      await pool.query(
+        `INSERT INTO builder_bot.feedback (user_id, username, type, message, screenshot_file_id) VALUES ($1, $2, $3, $4, $5)`,
+        [userId, ctx.from?.username || '', _fb.type, caption || 'Screenshot attached', photoId]
+      );
+      const ru = getUserLang(userId) === 'ru';
+      await safeReply(ctx, ru ? '✅ Фидбек со скриншотом отправлен!' : '✅ Feedback with screenshot sent!');
+    } catch (e: any) { await safeReply(ctx, `❌ ${e.message}`); }
+    return;
+  }
+});
+
 bot.on(message('text'), async (ctx) => {
   if (!ctx.from) return;
   const text = ctx.message.text;
@@ -8359,6 +8545,28 @@ bot.on(message('text'), async (ctx) => {
     }
     return;
   }
+
+  // ── Pending feedback ──
+  const _fb = pendingFeedback.get(userId);
+  if (_fb && Date.now() - _fb.startTs < 10 * 60_000) {
+    pendingFeedback.delete(userId);
+    const ru = getUserLang(userId) === 'ru';
+    try {
+      const { pool } = require('./db');
+      await pool.query(
+        `INSERT INTO builder_bot.feedback (user_id, username, type, message) VALUES ($1, $2, $3, $4)`,
+        [userId, ctx.from?.username || '', _fb.type, text]
+      );
+      // Notify admins
+      const admins = await pool.query(`SELECT telegram_id FROM builder_bot.platform_admins`);
+      for (const a of admins.rows) {
+        try { await bot.telegram.sendMessage(a.telegram_id, `📝 Новый ${_fb.type}: ${text.slice(0, 200)}\nОт: @${ctx.from?.username || userId}`); } catch {}
+      }
+      await safeReply(ctx, ru ? '✅ Фидбек отправлен! Мы свяжемся с вами.' : '✅ Feedback sent! We will get back to you.');
+    } catch (e: any) { await safeReply(ctx, `❌ ${e.message}`); }
+    return;
+  }
+  if (_fb) pendingFeedback.delete(userId); // expired
 
   // ── Ожидаем запрос на редактирование агента ───────────────
   if (pendingEdits.has(userId)) {

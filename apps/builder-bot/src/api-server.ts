@@ -813,6 +813,8 @@ export function startApiServer() {
       telegramId,
       planId, planName, planIcon,
       isAdmin: isPlatformAdmin(session.userId) || isPlatformAdminByUsername(session.username || ''),
+      isBeta: (await import('./payments')).isBetaTester(session.userId),
+      betaFeatures: (await import('./payments')).isBetaTester(session.userId) ? ['all_tools', 'priority_support', 'early_access'] : [],
       acceptedTos: acceptedTos || false,
       acceptedErrors: acceptedErrors || false,
     });
@@ -925,6 +927,158 @@ export function startApiServer() {
       res.set('Content-Disposition', `attachment; filename="ton-agent-data-${userId}-${Date.now()}.json"`);
       res.send(JSON.stringify(exportData, null, 2));
     } catch (e: any) { res.json({ ok: false, error: e.message }); }
+  });
+
+  // ── POST /api/feedback — submit feedback ──
+  app.post('/api/feedback', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const session = (req as any).session;
+      const { type, message, agentId, metadata } = req.body;
+      if (!type || !message) { res.status(400).json({ error: 'type and message required' }); return; }
+      const validTypes = ['bug', 'feature', 'support', 'general'];
+      if (!validTypes.includes(type)) { res.status(400).json({ error: 'Invalid type. Use: ' + validTypes.join(', ') }); return; }
+      const result = await pool.query(
+        `INSERT INTO builder_bot.feedback (user_id, username, type, message, agent_id, metadata)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+        [userId, session?.username || '', type, message.slice(0, 5000), agentId || null, metadata ? JSON.stringify(metadata) : null]
+      );
+      // Notify admins via bot
+      try {
+        const { isPlatformAdmin } = await import('./payments');
+        const admins = await pool.query(`SELECT telegram_id FROM builder_bot.platform_admins`);
+        const botToken = process.env.BOT_TOKEN;
+        if (botToken) {
+          for (const a of admins.rows) {
+            fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ chat_id: a.telegram_id, text: `📝 New ${type}: ${message.slice(0, 200)}\nFrom: @${session?.username || userId}` }),
+            }).catch(() => {});
+          }
+        }
+      } catch {}
+      res.json({ ok: true, feedbackId: result.rows[0].id });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── GET /api/feedback — user's own feedback ──
+  app.get('/api/feedback', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const result = await pool.query(
+        `SELECT id, type, message, status, admin_reply, agent_id, created_at, resolved_at
+         FROM builder_bot.feedback WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50`,
+        [userId]
+      );
+      res.json({ ok: true, feedback: result.rows });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── GET /api/admin/feedback — all feedback (admin only) ──
+  app.get('/api/admin/feedback', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { isPlatformAdmin } = await import('./payments');
+      if (!isPlatformAdmin(userId)) { res.status(403).json({ error: 'Admin only' }); return; }
+      const status = req.query.status as string;
+      const type = req.query.type as string;
+      let q = `SELECT id, user_id, username, type, message, screenshot_file_id, agent_id, status, admin_reply, metadata, created_at, resolved_at FROM builder_bot.feedback`;
+      const params: any[] = [];
+      const conditions: string[] = [];
+      if (status) { params.push(status); conditions.push(`status = $${params.length}`); }
+      if (type) { params.push(type); conditions.push(`type = $${params.length}`); }
+      if (conditions.length) q += ' WHERE ' + conditions.join(' AND ');
+      q += ' ORDER BY created_at DESC LIMIT 100';
+      const result = await pool.query(q, params);
+      res.json({ ok: true, feedback: result.rows, total: result.rows.length });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── PUT /api/admin/feedback/:id — update feedback status / reply (admin only) ──
+  app.put('/api/admin/feedback/:id', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { isPlatformAdmin } = await import('./payments');
+      if (!isPlatformAdmin(userId)) { res.status(403).json({ error: 'Admin only' }); return; }
+      const feedbackId = parseInt(req.params.id);
+      if (isNaN(feedbackId)) { res.status(400).json({ error: 'Invalid ID' }); return; }
+      const { status, adminReply } = req.body;
+      const sets: string[] = [];
+      const params: any[] = [];
+      if (status) { params.push(status); sets.push(`status = $${params.length}`); }
+      if (adminReply) { params.push(adminReply); sets.push(`admin_reply = $${params.length}`); }
+      if (status === 'resolved' || status === 'closed') sets.push('resolved_at = NOW()');
+      if (!sets.length) { res.status(400).json({ error: 'Nothing to update' }); return; }
+      params.push(feedbackId);
+      await pool.query(`UPDATE builder_bot.feedback SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
+      // Notify user about reply
+      if (adminReply) {
+        const fb = await pool.query(`SELECT user_id FROM builder_bot.feedback WHERE id = $1`, [feedbackId]);
+        if (fb.rows[0]) {
+          const botToken = process.env.BOT_TOKEN;
+          if (botToken) {
+            fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ chat_id: fb.rows[0].user_id, text: `💬 Ответ на ваш тикет #${feedbackId}:\n\n${adminReply}` }),
+            }).catch(() => {});
+          }
+        }
+      }
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── POST /api/admin/beta/invite — generate invite codes (admin only) ──
+  app.post('/api/admin/beta/invite', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { isPlatformAdmin, generateBetaCodes } = await import('./payments');
+      if (!isPlatformAdmin(userId)) { res.status(403).json({ error: 'Admin only' }); return; }
+      const { count = 5, note, maxUses = 1 } = req.body;
+      const codes = await generateBetaCodes(Math.min(count, 100), userId, note, maxUses);
+      res.json({ ok: true, codes });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── GET /api/admin/beta/testers — list beta testers (admin only) ──
+  app.get('/api/admin/beta/testers', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { isPlatformAdmin } = await import('./payments');
+      if (!isPlatformAdmin(userId)) { res.status(403).json({ error: 'Admin only' }); return; }
+      const result = await pool.query(
+        `SELECT user_id, username, status, invite_code, invited_by, features, feedback_count, created_at, expires_at
+         FROM builder_bot.beta_testers ORDER BY created_at DESC`
+      );
+      const codes = await pool.query(`SELECT code, max_uses, used_count, is_active, note, created_at FROM builder_bot.beta_invite_codes ORDER BY created_at DESC LIMIT 50`);
+      res.json({ ok: true, testers: result.rows, codes: codes.rows });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── POST /api/admin/beta/add — manually add beta tester (admin only) ──
+  app.post('/api/admin/beta/add', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { isPlatformAdmin, addBetaTester } = await import('./payments');
+      if (!isPlatformAdmin(userId)) { res.status(403).json({ error: 'Admin only' }); return; }
+      const { targetUserId, username } = req.body;
+      if (!targetUserId) { res.status(400).json({ error: 'targetUserId required' }); return; }
+      const ok = await addBetaTester(Number(targetUserId), username, null, userId);
+      res.json({ ok });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── DELETE /api/admin/beta/:userId — revoke beta access (admin only) ──
+  app.delete('/api/admin/beta/:userId', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { isPlatformAdmin, removeBetaTester } = await import('./payments');
+      if (!isPlatformAdmin(userId)) { res.status(403).json({ error: 'Admin only' }); return; }
+      const targetId = parseInt(req.params.userId);
+      if (isNaN(targetId)) { res.status(400).json({ error: 'Invalid user ID' }); return; }
+      const ok = await removeBetaTester(targetId);
+      res.json({ ok });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
   // ── Shared avatar cache (used by /api/me/avatar AND /api/agents/:id/avatar) ──

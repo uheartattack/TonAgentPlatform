@@ -131,6 +131,26 @@ export const PLANS: Record<string, Plan> = {
       'Dedicated support',
     ],
   },
+  beta: {
+    id: 'beta',
+    name: 'Beta Tester',
+    icon: '🧪',
+    priceMonthTon: 0,
+    priceYearTon: 0,
+    maxAgents: 10,
+    maxActiveAgents: 5,
+    generationsPerMonth: 50,
+    pricePerGeneration: 0,
+    features: [
+      '10 agents',
+      '5 active simultaneously',
+      '50 AI generations/month',
+      'Free generations',
+      'Early access to new features',
+      'Priority support',
+      'Bug report system',
+    ],
+  },
 };
 
 // ── Адрес кошелька платформы (куда идут платежи) ───────────
@@ -149,6 +169,82 @@ export function isPlatformAdmin(userId: number): boolean {
 
 export function isPlatformAdminByUsername(username: string): boolean {
   return _platformAdminUsernames.has(username.toLowerCase().replace(/^@/, ''));
+}
+
+// ── Beta Testers (loaded from DB, cached in memory) ──────────
+let _betaTesterIds = new Set<number>();
+let _betaLoadedAt = 0;
+
+export function isBetaTester(userId: number): boolean {
+  return _betaTesterIds.has(userId);
+}
+
+export async function loadBetaTesters(): Promise<void> {
+  try {
+    const { pool } = require('./db');
+    const res = await pool.query(`SELECT user_id FROM builder_bot.beta_testers WHERE status = 'active'`);
+    _betaTesterIds = new Set(res.rows.map((r: any) => Number(r.user_id)));
+    _betaLoadedAt = Date.now();
+    console.log(`[Beta] Loaded ${_betaTesterIds.size} beta testers`);
+  } catch (e: any) {
+    console.warn('[Beta] Load failed:', e.message);
+  }
+}
+
+export async function addBetaTester(userId: number, username?: string, inviteCode?: string, invitedBy?: number): Promise<boolean> {
+  try {
+    const { pool } = require('./db');
+    await pool.query(
+      `INSERT INTO builder_bot.beta_testers (user_id, username, invite_code, invited_by) VALUES ($1, $2, $3, $4)
+       ON CONFLICT (user_id) DO UPDATE SET status = 'active', invite_code = COALESCE(EXCLUDED.invite_code, builder_bot.beta_testers.invite_code)`,
+      [userId, username || null, inviteCode || null, invitedBy || null]
+    );
+    _betaTesterIds.add(userId);
+    return true;
+  } catch (e: any) {
+    console.warn('[Beta] Add tester failed:', e.message);
+    return false;
+  }
+}
+
+export async function removeBetaTester(userId: number): Promise<boolean> {
+  try {
+    const { pool } = require('./db');
+    await pool.query(`UPDATE builder_bot.beta_testers SET status = 'revoked' WHERE user_id = $1`, [userId]);
+    _betaTesterIds.delete(userId);
+    return true;
+  } catch { return false; }
+}
+
+export async function generateBetaCodes(count: number, createdBy: number, note?: string, maxUses = 1): Promise<string[]> {
+  const { pool } = require('./db');
+  const codes: string[] = [];
+  for (let i = 0; i < count; i++) {
+    const code = 'BETA' + Array.from({ length: 6 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.random() * 32 | 0]).join('');
+    await pool.query(
+      `INSERT INTO builder_bot.beta_invite_codes (code, created_by, max_uses, note) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
+      [code, createdBy, maxUses, note || null]
+    );
+    codes.push(code);
+  }
+  return codes;
+}
+
+export async function redeemBetaCode(code: string, userId: number, username?: string): Promise<{ ok: boolean; error?: string }> {
+  const { pool } = require('./db');
+  // Check code validity
+  const res = await pool.query(`SELECT * FROM builder_bot.beta_invite_codes WHERE code = $1`, [code.toUpperCase()]);
+  if (!res.rows.length) return { ok: false, error: 'Invalid code' };
+  const inv = res.rows[0];
+  if (!inv.is_active) return { ok: false, error: 'Code deactivated' };
+  if (inv.used_count >= inv.max_uses) return { ok: false, error: 'Code fully used' };
+  if (inv.expires_at && new Date(inv.expires_at) < new Date()) return { ok: false, error: 'Code expired' };
+  // Already a tester?
+  if (isBetaTester(userId)) return { ok: false, error: 'Already a beta tester' };
+  // Activate
+  await pool.query(`UPDATE builder_bot.beta_invite_codes SET used_count = used_count + 1 WHERE code = $1`, [code.toUpperCase()]);
+  const added = await addBetaTester(userId, username, code.toUpperCase(), inv.created_by);
+  return added ? { ok: true } : { ok: false, error: 'DB error' };
 }
 
 export async function loadPlatformAdmins(): Promise<void> {
@@ -245,6 +341,8 @@ export async function initPayments(pool: Pool): Promise<void> {
     await loadUsedTxHashesFromDB();
     // Load platform admins
     await loadPlatformAdmins();
+    // Load beta testers
+    await loadBetaTesters();
   } catch (err) {
     console.error('[Payments] CRITICAL: DB migration failed:', err);
     throw err;
@@ -280,6 +378,16 @@ export async function getUserSubscription(userId: number): Promise<UserSubscript
     return {
       userId,
       planId: 'unlimited',
+      expiresAt: null,
+      isActive: true,
+      createdAt: new Date(0),
+    };
+  }
+  // Beta testers get beta plan (priority over paid plans)
+  if (isBetaTester(userId)) {
+    return {
+      userId,
+      planId: 'beta',
       expiresAt: null,
       isActive: true,
       createdAt: new Date(0),
