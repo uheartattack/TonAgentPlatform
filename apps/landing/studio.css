@@ -142,7 +142,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 0 30px rgba(14,165,233,0.35);
+  box-shadow: 0 0 30px var(--accent-glow);
 }
 
 .auth-logo .logo-icon.pulse {
@@ -572,7 +572,7 @@ body {
 
 .logo:hover .logo-icon {
   transform: scale(1.05);
-  box-shadow: 0 0 22px rgba(0,152,234,0.5);
+  box-shadow: 0 0 22px var(--accent-glow);
 }
 
 .logo-text {
