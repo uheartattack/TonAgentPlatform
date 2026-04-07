@@ -5937,13 +5937,15 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
     providerCfg = result.providerCfg;
   } catch (e: any) {
     if (e.message === 'NO_API_KEY') {
-      // Only notify ONCE per agent (not every tick)
-      const notifiedKey = `no_api_key_notified:${params.agentId}`;
-      if (!_onboardingNotified.has(notifiedKey)) {
-        _onboardingNotified.add(notifiedKey);
-        const errMsg = '🔑 API ключ не настроен. Агент приостановлен.\n\nДобавьте ключ: Профиль → API ключи, или откройте настройки агента в Студио.';
+      // Only notify ONCE per agent — persist in DB to survive restarts
+      const notifiedKey = `_no_api_key_notified`;
+      const _sr = getAgentStateRepository();
+      const already = await _sr.get(params.agentId, notifiedKey).catch(() => null);
+      if (!already) {
+        await _sr.set(params.agentId, params.userId, notifiedKey, 'true').catch(() => {});
+        const errMsg = 'API key not configured. Agent paused.\n\nAdd key: Profile → API keys, or agent settings in Studio.';
         if (params.onNotify) params.onNotify(errMsg);
-        await logToDb(params.agentId, 'warn', '[Onboarding] API key missing — agent paused, user notified once', params.userId);
+        await logToDb(params.agentId, 'warn', '[Onboarding] API key missing — agent paused, notified user', params.userId);
       }
       return { toolCallCount: 0, error: 'NO_API_KEY' };
     }
@@ -6010,6 +6012,22 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
     console.warn(`[CircuitBreaker] Agent #${params.agentId} skipped tick: ${cbMsg}`);
     await logToDb(params.agentId, 'warn', cbMsg, params.userId);
     return { toolCallCount: 0, error: cbMsg };
+  }
+
+  // ── Smart proactive tick throttle: avoid wasting tokens on empty ticks ──
+  if (msgs.length === 0) {
+    // Check when last proactive tick produced useful output
+    const _lastUsefulKey = '_last_useful_proactive_ts';
+    const _lastUsefulRaw = await _stateRepo.get(params.agentId, _lastUsefulKey).catch(() => null);
+    const _lastUsefulTs = _lastUsefulRaw?.value ? Number(_lastUsefulRaw.value) : 0;
+    const _timeSinceLast = Date.now() - _lastUsefulTs;
+    const _tickInterval = (params.config.tick_interval_sec || 600) * 1000;
+    // If last useful tick was < 2 intervals ago AND no heartbeat prompt → skip
+    // This prevents "nothing to do" ticks that just query empty state
+    if (_timeSinceLast < _tickInterval * 1.5 && _timeSinceLast > 0) {
+      // Recently did useful work, skip this proactive tick to save tokens
+      return { toolCallCount: 0, error: 'PROACTIVE_COOLDOWN' };
+    }
   }
 
   await logToDb(params.agentId, 'info', `[AI run] start, pendingMsgs=${msgs.length}`, params.userId);
@@ -7521,10 +7539,21 @@ If web_search returns nothing useful → say "не смог найти акту�
         }
       });
 
-      // If ALL calls were bad → fallback to plain text
+      // If ALL calls were bad → track + fallback to plain text
       if (validCalls.length === 0 && assistant.tool_calls.length > 0) {
-        console.warn(`[AI runtime] Agent #${params.agentId} ALL ${assistant.tool_calls.length} tool_calls malformed, falling back to plain text`);
-        await logToDb(params.agentId, 'warn', `[AI run] ALL_CALLS_MALFORMED (${assistant.tool_calls.length}) — fallback`, params.userId);
+        // Track malformed call count — if too many, stop wasting tokens
+        const _malKey = `_malformed_calls_count`;
+        const _malRaw = await _stateRepo.get(params.agentId, _malKey).catch(() => null);
+        const _malCount = (_malRaw?.value ? parseInt(String(_malRaw.value)) : 0) + 1;
+        await _stateRepo.set(params.agentId, params.userId, _malKey, String(_malCount)).catch(() => {});
+        if (_malCount > 10) {
+          // Too many malformed calls — AI consistently generates bad tool calls
+          // Skip fallback to save tokens, just log and break
+          await logToDb(params.agentId, 'error', `[AI run] ALL_CALLS_MALFORMED x${_malCount} — stopping to save tokens. Check system prompt.`, params.userId);
+          break;
+        }
+        console.warn(`[AI runtime] Agent #${params.agentId} ALL ${assistant.tool_calls.length} tool_calls malformed (total: ${_malCount}), falling back`);
+        await logToDb(params.agentId, 'warn', `[AI run] ALL_CALLS_MALFORMED (${assistant.tool_calls.length}) — fallback #${_malCount}`, params.userId);
         try {
           const fallback = await ai.chat.completions.create({
             model: (params.config.AI_MODEL as string) || process.env.AI_MODEL || defaultModel,
@@ -7972,6 +8001,11 @@ If web_search returns nothing useful → say "не смог найти акту�
   }
 
   await logToDb(params.agentId, 'info', `[AI run] done, tools=${totalToolCalls}, tokens=${totalTokensUsed}, notified=${notifyWasCalled}`, params.userId);
+
+  // ── Mark proactive tick as useful if it produced output ──
+  if (msgs.length === 0 && (totalToolCalls > 0 || notifyWasCalled)) {
+    _stateRepo.set(params.agentId, params.userId, '_last_useful_proactive_ts', String(Date.now())).catch(() => {});
+  }
 
   // ── Flush accumulated token usage to DB (every ~5 min) ──
   if (shouldFlushTokens(params.agentId)) {
