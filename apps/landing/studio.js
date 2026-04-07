@@ -12991,6 +12991,61 @@ function loadGuidePage() {
   // ── Render tabs + content ──
   var _activeGuideTab = sections[0].id;
 
+  // Rich text formatter for guide FAQ content
+  function _formatGuideText(raw) {
+    var lines = raw.split('\n');
+    var html = '';
+    var inList = false;
+    for (var li = 0; li < lines.length; li++) {
+      var line = lines[li];
+      var trimmed = line.trim();
+      if (!trimmed) {
+        if (inList) { html += '</div>'; inList = false; }
+        html += '<div style="height:8px"></div>';
+        continue;
+      }
+      // Bullet list: starts with - or •
+      if (/^[-•]\s/.test(trimmed)) {
+        if (!inList) { html += '<div style="display:flex;flex-direction:column;gap:4px;margin:6px 0 6px 4px">'; inList = true; }
+        var bullet = trimmed.replace(/^[-•]\s*/, '');
+        // Bold part before colon
+        bullet = bullet.replace(/^([^:—]+)([::—])/, '<span style="color:var(--text-primary);font-weight:600">$1</span>$2');
+        html += '<div style="display:flex;gap:8px;align-items:flex-start"><span style="color:#0ea5e9;font-size:.6rem;margin-top:5px;flex-shrink:0">&#9679;</span><span>' + bullet + '</span></div>';
+        continue;
+      }
+      if (inList) { html += '</div>'; inList = false; }
+      // Subheading: line ending with : and < 60 chars
+      if (/[::]\s*$/.test(trimmed) && trimmed.length < 60) {
+        html += '<div style="color:var(--text-primary);font-weight:600;font-size:.82rem;margin:10px 0 4px;padding-bottom:3px;border-bottom:1px solid rgba(255,255,255,0.05)">' + escHtml(trimmed) + '</div>';
+        continue;
+      }
+      // Heading-like: short line, all caps or starts with capital and no period
+      if (trimmed.length < 40 && /^[A-ZА-ЯЁ]/.test(trimmed) && !/\.\s*$/.test(trimmed) && !/^(Пример|Example|Совет|Tip)/i.test(trimmed)) {
+        html += '<div style="color:var(--text-primary);font-weight:600;font-size:.82rem;margin:8px 0 4px">' + escHtml(trimmed) + '</div>';
+        continue;
+      }
+      // Code-like: starts with function name, tool name, or has — separator
+      if (/^[a-z_]+\s*[—–-]/.test(trimmed)) {
+        var parts = trimmed.split(/\s*[—–-]\s*(.+)/);
+        html += '<div style="display:flex;gap:8px;align-items:flex-start;margin:3px 0 3px 4px"><code style="background:rgba(14,165,233,0.1);color:#0ea5e9;padding:1px 6px;border-radius:4px;font-size:.75rem;font-family:monospace;white-space:nowrap;flex-shrink:0">' + escHtml(parts[0]) + '</code><span>' + escHtml(parts[1] || '') + '</span></div>';
+        continue;
+      }
+      // URLs: make clickable
+      var processed = escHtml(trimmed).replace(/(https?:\/\/[^\s<]+|[a-z]+\.[a-z]+\.[a-z]+[^\s]*|aistudio\.google\.com|console\.groq\.com|openrouter\.ai[^\s]*)/gi, function(url) {
+        var href = url.startsWith('http') ? url : 'https://' + url;
+        return '<a href="' + href + '" target="_blank" style="color:#0ea5e9;text-decoration:none;border-bottom:1px dashed rgba(14,165,233,0.3)">' + url + '</a>';
+      });
+      // Quote blocks: lines starting with "
+      if (/^["«"]/.test(trimmed)) {
+        html += '<div style="border-left:2px solid rgba(14,165,233,0.3);padding-left:10px;margin:4px 0;font-style:italic;color:var(--text-muted)">' + processed + '</div>';
+        continue;
+      }
+      html += '<div style="margin:3px 0">' + processed + '</div>';
+    }
+    if (inList) html += '</div>';
+    return html;
+  }
+
   function renderGuide() {
     var s = sections.find(function(x){ return x.id === _activeGuideTab; }) || sections[0];
 
@@ -13082,7 +13137,7 @@ function loadGuidePage() {
       content += '<button class="rt-save-btn" onclick="' + s.action.fn + '" style="margin-top:8px">' + s.action.label + ' →</button>';
     }
 
-    // Details — first 2 open, rest collapsed
+    // Details — first 2 open, rich text formatting
     if (s.details && s.details.length > 0) {
       content += '<div style="margin-top:12px;display:flex;flex-direction:column;gap:6px">';
       s.details.forEach(function(d, idx) {
@@ -13092,7 +13147,7 @@ function loadGuidePage() {
             d.q +
           '</summary>' +
           '<div style="padding:0 14px 12px;font-size:.8rem;color:var(--text-secondary);line-height:1.65;border-top:1px solid var(--border)">' +
-            '<div style="padding-top:10px;white-space:pre-line">' + d.a.replace(/\n/g, '<br>') + '</div>' +
+            '<div style="padding-top:10px">' + _formatGuideText(d.a) + '</div>' +
           '</div>' +
         '</details>';
       });
