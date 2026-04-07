@@ -13137,17 +13137,22 @@ function loadGuidePage() {
       content += '<button class="rt-save-btn" onclick="' + s.action.fn + '" style="margin-top:8px">' + s.action.label + ' →</button>';
     }
 
-    // Details — first 2 open, rich text formatting
+    // Details — pill-style expandable cards
     if (s.details && s.details.length > 0) {
-      content += '<div style="margin-top:12px;display:flex;flex-direction:column;gap:6px">';
+      var _detColors = ['#0ea5e9','#8b5cf6','#10b981','#f59e0b','#ec4899','#6366f1','#ef4444','#14b8a6','#f97316','#06b6d4'];
+      content += '<div style="margin-top:12px;display:grid;grid-template-columns:1fr;gap:10px">';
       s.details.forEach(function(d, idx) {
-        content += '<details' + (idx < 2 ? ' open' : '') + ' style="background:var(--bg-primary);border:1px solid var(--border);border-radius:10px;overflow:hidden">' +
-          '<summary style="padding:10px 14px;cursor:pointer;font-size:.84rem;font-weight:600;color:var(--text-primary);list-style:none;display:flex;align-items:center;gap:8px;user-select:none">' +
-            '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" stroke-width="2.5" style="flex-shrink:0;transition:transform .2s"><polyline points="6 9 12 15 18 9"/></svg>' +
-            d.q +
+        var dc = _detColors[idx % _detColors.length];
+        content += '<details' + (idx < 1 ? ' open' : '') + ' class="guide-pill" style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;overflow:hidden;transition:all .2s">' +
+          '<summary style="padding:16px 20px;cursor:pointer;font-size:.92rem;font-weight:700;color:var(--text-primary);list-style:none;display:flex;align-items:center;gap:12px;user-select:none;transition:background .2s" onmouseenter="this.style.background=\'' + dc + '08\'" onmouseleave="this.style.background=\'transparent\'">' +
+            '<div style="width:28px;height:28px;min-width:28px;border-radius:8px;background:' + dc + '15;display:flex;align-items:center;justify-content:center">' +
+              '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="' + dc + '" stroke-width="2.5" style="transition:transform .2s"><polyline points="6 9 12 15 18 9"/></svg>' +
+            '</div>' +
+            '<span style="flex:1">' + d.q + '</span>' +
+            '<span style="font-size:.68rem;color:var(--text-muted);opacity:.5">' + (idx + 1) + '/' + s.details.length + '</span>' +
           '</summary>' +
-          '<div style="padding:0 14px 12px;font-size:.8rem;color:var(--text-secondary);line-height:1.65;border-top:1px solid var(--border)">' +
-            '<div style="padding-top:10px">' + _formatGuideText(d.a) + '</div>' +
+          '<div style="padding:0 20px 18px 60px;font-size:.84rem;color:var(--text-secondary);line-height:1.7">' +
+            _formatGuideText(d.a) +
           '</div>' +
         '</details>';
       });
