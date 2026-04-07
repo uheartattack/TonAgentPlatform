@@ -574,6 +574,23 @@ function showApp() {
     el.style.display = (currentUser && currentUser._isAdmin) ? '' : 'none';
   });
 
+  // Beta-only nav: accessible for beta testers + admins, grayed for others
+  var _hasBeta = currentUser && (currentUser._isBeta || currentUser._isAdmin);
+  document.querySelectorAll('.beta-only-nav').forEach(function(el) {
+    if (_hasBeta) {
+      el.style.opacity = '';
+      el.style.pointerEvents = '';
+      el.style.filter = '';
+    } else {
+      el.style.opacity = '0.4';
+      el.style.pointerEvents = 'none';
+      el.style.filter = 'grayscale(1)';
+      // Change badge color to gray
+      var badge = el.querySelector('.nav-badge');
+      if (badge) { badge.style.background = 'rgba(107,114,128,0.2)'; badge.style.color = '#6b7280'; }
+    }
+  });
+
   // Set plan badge from auth data immediately
   if (currentUser && currentUser._plan) {
     updateSidebarPlanBadge(currentUser._plan);
@@ -6126,6 +6143,12 @@ const _pageAliases = { 'agents': 'operations', 'my-agents': 'operations' };
 function navigateTo(pageName) {
   // Resolve aliases
   pageName = _pageAliases[pageName] || pageName;
+  // Block beta-only pages for non-beta users
+  var _betaPages = ['builder', 'wallets'];
+  if (_betaPages.indexOf(pageName) >= 0 && currentUser && !currentUser._isBeta && !currentUser._isAdmin) {
+    toast(currentLang === 'ru' ? 'Доступно только для бета-тестеров. Используйте /beta в боте.' : 'Beta testers only. Use /beta in the bot.', 'warning');
+    return;
+  }
   closePlansModal();
   document.querySelectorAll('.nav-item').forEach(nav => nav.classList.remove('active'));
   const navEl = document.querySelector(`.nav-item[data-page="${pageName}"]`);
