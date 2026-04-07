@@ -624,10 +624,10 @@ function showApp() {
     atlasBanner.style.cssText = 'margin:0 0 20px;padding:16px 20px;background:linear-gradient(135deg,var(--accent-dim),rgba(6,182,212,0.04));border:1px solid var(--accent-dim);border-radius:12px;display:flex;align-items:center;gap:14px;cursor:pointer';
     atlasBanner.onclick = function() { navigateTo('assistant'); };
     atlasBanner.innerHTML =
-      '<div style="width:40px;height:40px;border-radius:10px;background:rgba(14,165,233,0.12);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>' +
+      '<div style="width:40px;height:40px;border-radius:10px;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>' +
       '<div style="flex:1"><div style="font-size:.88rem;font-weight:600;color:var(--text-primary)">' + (currentLang === 'ru' ? 'Atlas — ваш AI-ассистент' : 'Atlas — your AI assistant') + '</div>' +
       '<div style="font-size:.78rem;color:var(--text-muted);margin-top:2px">' + (currentLang === 'ru' ? 'Создаёт агентов, настраивает, объясняет, проводит аудит. Просто опишите что нужно.' : 'Creates agents, configures, explains, audits. Just describe what you need.') + '</div></div>' +
-      '<div style="color:#0ea5e9;font-size:.82rem;font-weight:600;white-space:nowrap">' + (currentLang === 'ru' ? 'Открыть →' : 'Open →') + '</div>';
+      '<div style="color:var(--primary);font-size:.82rem;font-weight:600;white-space:nowrap">' + (currentLang === 'ru' ? 'Открыть →' : 'Open →') + '</div>';
     var overviewPage = document.getElementById('overview-page');
     var statsGrid = overviewPage?.querySelector('.stat-card')?.parentElement;
     if (statsGrid) statsGrid.parentElement?.insertBefore(atlasBanner, statsGrid);
@@ -1166,21 +1166,21 @@ function openAgentChat(agentId) {
     '<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);flex-shrink:0">' +
     '<button onclick="openAgentDetail(_detailAgentId)" style="background:none;border:none;color:var(--text-muted);cursor:pointer;padding:4px;border-radius:6px;display:flex;align-items:center" title="Back">' +
     '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button>' +
-    '<div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#0098EA,#005f9e);display:flex;align-items:center;justify-content:center">' +
+    '<div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--primary-dark));display:flex;align-items:center;justify-content:center">' +
     '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7H3a7 7 0 0 1 7-7h1V5.73C10.4 5.39 10 4.74 10 4a2 2 0 0 1 2-2z"/></svg></div>' +
     '<div><div style="font-weight:600;font-size:.9rem">Agent #' + agentId + '</div><div style="font-size:.72rem;color:#00ff88">● ' + (isRu ? 'онлайн' : 'online') + '</div></div>' +
     '</div>' +
     // Messages
     '<div id="agent-chat-messages" style="flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:2px">' +
     '<div style="text-align:center;padding:24px 0">' +
-    '<div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#0098EA22,#0098EA44);border:1px solid #0098EA44;display:flex;align-items:center;justify-content:center;margin:0 auto 12px">' +
-    '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0098EA" stroke-width="1.5"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7H3a7 7 0 0 1 7-7h1V5.73C10.4 5.39 10 4.74 10 4a2 2 0 0 1 2-2z"/></svg></div>' +
+    '<div style="width:48px;height:48px;border-radius:50%;background:var(--accent-dim);border:1px solid var(--accent-glow);display:flex;align-items:center;justify-content:center;margin:0 auto 12px">' +
+    '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="1.5"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7H3a7 7 0 0 1 7-7h1V5.73C10.4 5.39 10 4.74 10 4a2 2 0 0 1 2-2z"/></svg></div>' +
     '<div style="font-size:.85rem;color:var(--text-muted)">' + (isRu ? 'Агент готов к общению' : 'Agent is ready to chat') + '</div>' +
     '</div>' +
     '</div>' +
     // Input
     '<div style="padding:12px 16px;border-top:1px solid var(--border);flex-shrink:0">' +
-    '<div style="display:flex;gap:8px;align-items:flex-end;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:12px;padding:8px 8px 8px 14px;transition:border-color .2s" onfocus="this.style.borderColor=\'#0098EA\'" onblur="this.style.borderColor=\'\'">' +
+    '<div style="display:flex;gap:8px;align-items:flex-end;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:12px;padding:8px 8px 8px 14px;transition:border-color .2s" onfocus="this.style.borderColor=\'var(--primary)\'" onblur="this.style.borderColor=\'\'">' +
     '<textarea id="agent-chat-input" rows="1" placeholder="' + (isRu ? 'Сообщение...' : 'Message...') + '" ' +
     'style="flex:1;background:none;border:none;outline:none;resize:none;color:var(--text-primary);font-size:.875rem;line-height:1.5;max-height:120px;overflow-y:auto;font-family:inherit" ' +
     'onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();sendAgentChatMsg()}" ' +
@@ -1294,7 +1294,7 @@ function renderAgentChat(box) {
       textHtml = escHtml(m.text || '').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/`([^`]+)`/g, '<code style="background:rgba(0,152,234,0.15);padding:1px 5px;border-radius:3px;font-size:.8em">$1</code>').replace(/\n/g, '<br>');
     }
     var avatar = isUser ? '' :
-      '<div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#0098EA,#005f9e);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-right:8px">' +
+      '<div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--primary-dark));display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-right:8px">' +
       '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7H3a7 7 0 0 1 7-7h1V5.73C10.4 5.39 10 4.74 10 4a2 2 0 0 1 2-2z"/><path d="M7 14v3a5 5 0 0 0 10 0v-3"/></svg>' +
       '</div>';
     return '<div style="display:flex;justify-content:' + align + ';margin:8px 0;align-items:flex-end">' +
@@ -2710,7 +2710,7 @@ function switchSettingsTab(tab) {
       // Sub-tab: Daily logs
       '<div id="mem-panel-logs" style="display:none">' +
         '<div style="display:flex;justify-content:flex-end;margin-bottom:10px">' +
-          '<button class="rt-save-btn" onclick="clearAgentMemory(\'daily\')" style="background:rgba(14,165,233,0.1);color:#0ea5e9;font-size:.68rem;padding:4px 10px">' + (isRu ? 'Очистить логи' : 'Clear logs') + '</button>' +
+          '<button class="rt-save-btn" onclick="clearAgentMemory(\'daily\')" style="background:var(--accent-dim);color:var(--primary);font-size:.68rem;padding:4px 10px">' + (isRu ? 'Очистить логи' : 'Clear logs') + '</button>' +
         '</div>' +
         '<div id="mem-daily-logs" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px">' +
           '<div style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:1.5rem;font-size:.8rem">⟳</div>' +
@@ -11025,7 +11025,7 @@ function highlightProfileSetup() {
     // Pulse animation
     el.style.transition = 'box-shadow .3s, border-color .3s';
     el.style.boxShadow = '0 0 0 3px var(--accent-glow)';
-    el.style.borderColor = '#0098EA';
+    el.style.borderColor = 'var(--primary)';
     // Scroll first empty field into view
     if (id === 'ai-api-key-input' && !el.value) {
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -11126,7 +11126,7 @@ function startGuidedTour() {
         // Beautiful pulsing spotlight on the field
         target.style.transition = 'all .4s ease';
         target.style.boxShadow = '0 0 0 4px rgba(14,165,233,0.4), 0 0 20px rgba(14,165,233,0.2)';
-        target.style.borderColor = '#0ea5e9';
+        target.style.borderColor = 'var(--primary)';
         if (keyInput) keyInput.placeholder = currentLang === 'ru' ? 'Вставьте API ключ...' : 'Paste API key...';
         // Animate pulse
         var _pulseCount = 0;
@@ -11294,7 +11294,7 @@ function startAgentTour(force) {
   var guideHtml = '<div id="agent-onboard-guide" style="margin-bottom:20px;padding:20px;background:linear-gradient(135deg,rgba(0,152,234,0.06),rgba(99,102,241,0.06));border:1px solid rgba(0,152,234,0.15);border-radius:14px;transition:all .25s ease">' +
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">' +
       '<div style="display:flex;align-items:center;gap:10px">' +
-        '<div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#0098EA,#6366f1);display:flex;align-items:center;justify-content:center;font-size:1.2rem">&#127891;</div>' +
+        '<div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,var(--primary),var(--primary-dark));display:flex;align-items:center;justify-content:center;font-size:1.2rem">&#127891;</div>' +
         '<div><div style="font-weight:700;font-size:.95rem;color:var(--text-primary)">' + (isRu ? 'Настройка агента' : 'Agent Setup Guide') + '</div>' +
         '<div style="font-size:.76rem;color:var(--text-muted)">' + (isRu ? 'Пройдите шаги чтобы агент заработал' : 'Complete these steps to get your agent running') + '</div></div>' +
       '</div>' +
@@ -11368,7 +11368,7 @@ function showNetworkAgentPanel(node) {
   var toggleText = node.isActive ? (currentLang === 'ru' ? IC.pause + ' Стоп' : IC.pause + ' Stop') : (currentLang === 'ru' ? IC.rocket + ' Запустить' : IC.rocket + ' Start');
   var toggleClass = node.isActive ? 'btn-warning' : 'btn-success';
   var roleDisplay = node.roleLabel || node.role;
-  var roleBadgeColor = node.color || '#0098EA';
+  var roleBadgeColor = node.color || 'var(--primary)';
   panel.innerHTML = '<div class="nap-header">' +
     '<span style="display:flex;align-items:center;gap:8px"><span style="width:10px;height:10px;border-radius:50%;background:' + roleBadgeColor + ';box-shadow:0 0 8px ' + roleBadgeColor + '60;display:inline-block"></span>' + escHtml(node.name) + '</span>' +
     '<button onclick="this.closest(\'.network-agent-panel\').remove()" style="background:none;border:none;color:#666;font-size:1.1rem;cursor:pointer;padding:0 2px;line-height:1">&times;</button>' +
@@ -13040,7 +13040,7 @@ function loadGuidePage() {
         var bullet = trimmed.replace(/^[-•]\s*/, '');
         // Bold part before colon
         bullet = bullet.replace(/^([^:—]+)([::—])/, '<span style="color:var(--text-primary);font-weight:600">$1</span>$2');
-        html += '<div style="display:flex;gap:8px;align-items:flex-start"><span style="color:#0ea5e9;font-size:.6rem;margin-top:5px;flex-shrink:0">&#9679;</span><span>' + bullet + '</span></div>';
+        html += '<div style="display:flex;gap:8px;align-items:flex-start"><span style="color:var(--primary);font-size:.6rem;margin-top:5px;flex-shrink:0">&#9679;</span><span>' + bullet + '</span></div>';
         continue;
       }
       if (inList) { html += '</div>'; inList = false; }
@@ -13057,13 +13057,13 @@ function loadGuidePage() {
       // Code-like: starts with function name, tool name, or has — separator
       if (/^[a-z_]+\s*[—–-]/.test(trimmed)) {
         var parts = trimmed.split(/\s*[—–-]\s*(.+)/);
-        html += '<div style="display:flex;gap:8px;align-items:flex-start;margin:3px 0 3px 4px"><code style="background:rgba(14,165,233,0.1);color:#0ea5e9;padding:1px 6px;border-radius:4px;font-size:.75rem;font-family:monospace;white-space:nowrap;flex-shrink:0">' + escHtml(parts[0]) + '</code><span>' + escHtml(parts[1] || '') + '</span></div>';
+        html += '<div style="display:flex;gap:8px;align-items:flex-start;margin:3px 0 3px 4px"><code style="background:var(--accent-dim);color:var(--primary);padding:1px 6px;border-radius:4px;font-size:.75rem;font-family:monospace;white-space:nowrap;flex-shrink:0">' + escHtml(parts[0]) + '</code><span>' + escHtml(parts[1] || '') + '</span></div>';
         continue;
       }
       // URLs: make clickable
       var processed = escHtml(trimmed).replace(/(https?:\/\/[^\s<]+|[a-z]+\.[a-z]+\.[a-z]+[^\s]*|aistudio\.google\.com|console\.groq\.com|openrouter\.ai[^\s]*)/gi, function(url) {
         var href = url.startsWith('http') ? url : 'https://' + url;
-        return '<a href="' + href + '" target="_blank" style="color:#0ea5e9;text-decoration:none;border-bottom:1px dashed var(--accent-glow)">' + url + '</a>';
+        return '<a href="' + href + '" target="_blank" style="color:var(--primary);text-decoration:none;border-bottom:1px dashed var(--accent-glow)">' + url + '</a>';
       });
       // Quote blocks: lines starting with "
       if (/^["«"]/.test(trimmed)) {
@@ -13097,11 +13097,11 @@ function loadGuidePage() {
     // Compact hero
     content += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">' +
       '<div style="display:flex;align-items:center;gap:10px">' +
-        '<div style="width:36px;height:36px;border-radius:10px;' + s.gradient + ';display:flex;align-items:center;justify-content:center;color:#0ea5e9">' + s.icon + '</div>' +
+        '<div style="width:36px;height:36px;border-radius:10px;' + s.gradient + ';display:flex;align-items:center;justify-content:center;color:var(--primary)">' + s.icon + '</div>' +
         '<div><h3 style="margin:0;font-size:1.05rem;color:var(--text-primary)">' + s.title + '</h3>' +
           '<p style="margin:0;font-size:.76rem;color:var(--text-muted)">' + s.subtitle + '</p></div>' +
       '</div>' +
-      '<button onclick="startGuidedTour()" style="display:flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;border:1px solid var(--accent-glow);background:var(--accent-dim);color:#0ea5e9;font-size:.75rem;font-weight:600;cursor:pointer;transition:all .2s" onmouseenter="this.style.background=\'var(--accent-dim)\'" onmouseleave="this.style.background=\'var(--accent-dim)\'">' +
+      '<button onclick="startGuidedTour()" style="display:flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;border:1px solid var(--accent-glow);background:var(--accent-dim);color:var(--primary);font-size:.75rem;font-weight:600;cursor:pointer;transition:all .2s" onmouseenter="this.style.background=\'var(--accent-dim)\'" onmouseleave="this.style.background=\'var(--accent-dim)\'">' +
         '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>' +
         (isRu ? 'Тур' : 'Tour') +
       '</button>' +
@@ -13131,7 +13131,7 @@ function loadGuidePage() {
       content += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px">';
       s.items.forEach(function(item) {
         content += '<span style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:var(--bg-primary);border:1px solid var(--border);border-radius:20px;font-size:.78rem;color:var(--text-secondary);transition:all .15s;cursor:default" onmouseenter="this.style.borderColor=\'rgba(14,165,233,0.4)\';this.style.color=\'var(--text-primary)\'" onmouseleave="this.style.borderColor=\'var(--border)\';this.style.color=\'var(--text-secondary)\'">' +
-          '<span style="width:5px;height:5px;border-radius:50%;background:#0ea5e9;flex-shrink:0"></span>' + escHtml(item) + '</span>';
+          '<span style="width:5px;height:5px;border-radius:50%;background:var(--primary);flex-shrink:0"></span>' + escHtml(item) + '</span>';
       });
       content += '</div>';
     }
@@ -13155,7 +13155,7 @@ function loadGuidePage() {
       content += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;margin-bottom:20px">';
       s.shortcuts.forEach(function(sc) {
         content += '<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--bg-primary);border:1px solid var(--border);border-radius:10px">' +
-          '<kbd style="background:rgba(14,165,233,0.1);color:#0ea5e9;padding:4px 10px;border-radius:6px;font-size:.82rem;font-family:\'JetBrains Mono\',monospace;font-weight:600">' + sc.key + '</kbd>' +
+          '<kbd style="background:var(--accent-dim);color:var(--primary);padding:4px 10px;border-radius:6px;font-size:.82rem;font-family:\'JetBrains Mono\',monospace;font-weight:600">' + sc.key + '</kbd>' +
           '<span style="font-size:.84rem;color:var(--text-muted)">' + sc.desc + '</span>' +
         '</div>';
       });
@@ -13192,7 +13192,7 @@ function loadGuidePage() {
     // Tip — prominent card
     if (s.tip) {
       content += '<div style="margin-top:16px;padding:16px 20px;background:linear-gradient(135deg,var(--accent-dim),rgba(99,102,241,0.05));border:1px solid var(--accent-dim);border-radius:12px;font-size:.82rem;color:var(--text-secondary);line-height:1.5;display:flex;gap:12px;align-items:flex-start">' +
-        '<div style="width:28px;height:28px;min-width:28px;border-radius:8px;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;color:#0ea5e9;margin-top:1px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg></div>' +
+        '<div style="width:28px;height:28px;min-width:28px;border-radius:8px;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;color:var(--primary);margin-top:1px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg></div>' +
         '<div>' + s.tip + '</div></div>';
     }
 
@@ -13656,7 +13656,7 @@ function showTosPopup() {
 
       // Privacy section
       '<div style="background:var(--bg-primary,#141821);border:1px solid var(--border,#2a3040);border-radius:10px;padding:16px;margin-bottom:16px">' +
-        '<h3 style="margin:0 0 10px;font-size:.92rem;color:#0ea5e9;display:flex;align-items:center;gap:8px">' +
+        '<h3 style="margin:0 0 10px;font-size:.92rem;color:var(--primary);display:flex;align-items:center;gap:8px">' +
           '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> ' +
           (isRu ? 'Конфиденциальность переписок' : 'Conversation Privacy') +
         '</h3>' +
@@ -13683,14 +13683,14 @@ function showTosPopup() {
       // Checkboxes
       '<div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px">' +
         '<label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;font-size:.83rem;color:var(--text-primary,#fff)">' +
-          '<input type="checkbox" id="tos-accept-terms" style="accent-color:#0ea5e9;margin-top:2px;width:18px;height:18px;flex-shrink:0">' +
+          '<input type="checkbox" id="tos-accept-terms" style="accent-color:var(--primary);margin-top:2px;width:18px;height:18px;flex-shrink:0">' +
           '<span>' + (isRu
-            ? 'Я принимаю <a href="/terms" target="_blank" style="color:#0ea5e9;text-decoration:underline">пользовательское соглашение</a> и <a href="/privacy" target="_blank" style="color:#0ea5e9;text-decoration:underline">политику конфиденциальности</a>'
-            : 'I accept the <a href="/terms" target="_blank" style="color:#0ea5e9;text-decoration:underline">Terms of Service</a> and <a href="/privacy" target="_blank" style="color:#0ea5e9;text-decoration:underline">Privacy Policy</a>') +
+            ? 'Я принимаю <a href="/terms" target="_blank" style="color:var(--primary);text-decoration:underline">пользовательское соглашение</a> и <a href="/privacy" target="_blank" style="color:var(--primary);text-decoration:underline">политику конфиденциальности</a>'
+            : 'I accept the <a href="/terms" target="_blank" style="color:var(--primary);text-decoration:underline">Terms of Service</a> and <a href="/privacy" target="_blank" style="color:var(--primary);text-decoration:underline">Privacy Policy</a>') +
           '</span>' +
         '</label>' +
         '<label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;font-size:.83rem;color:var(--text-primary,#fff)">' +
-          '<input type="checkbox" id="tos-accept-errors" style="accent-color:#0ea5e9;margin-top:2px;width:18px;height:18px;flex-shrink:0">' +
+          '<input type="checkbox" id="tos-accept-errors" style="accent-color:var(--primary);margin-top:2px;width:18px;height:18px;flex-shrink:0">' +
           '<span>' + (isRu
             ? 'Я согласен на сбор технической информации об ошибках для улучшения сервиса'
             : 'I consent to the collection of technical error data to improve the service') +
@@ -13805,7 +13805,7 @@ function setNotifAutoDismiss(sec) {
   document.querySelectorAll('.notif-dismiss-btn').forEach(function(b) {
     b.style.background = 'var(--bg-primary)'; b.style.borderColor = 'var(--border)'; b.style.color = 'var(--text-primary)';
   });
-  var target = event && event.target; if (target) { target.style.background = 'var(--accent-dim)'; target.style.borderColor = '#0ea5e9'; target.style.color = '#0ea5e9'; }
+  var target = event && event.target; if (target) { target.style.background = 'var(--accent-dim)'; target.style.borderColor = 'var(--primary)'; target.style.color = 'var(--primary)'; }
   var slider = document.getElementById('notif-duration-slider');
   var val = document.getElementById('notif-duration-value');
   if (slider) slider.value = sec || 2;
@@ -13845,7 +13845,7 @@ function setNotifRetain(val) {
   document.querySelectorAll('.notif-retain-btn').forEach(function(b) {
     b.style.background = 'var(--bg-primary)'; b.style.borderColor = 'var(--border)'; b.style.color = 'var(--text-primary)';
   });
-  if (event && event.target) { event.target.style.background = 'var(--accent-dim)'; event.target.style.borderColor = '#0ea5e9'; event.target.style.color = '#0ea5e9'; }
+  if (event && event.target) { event.target.style.background = 'var(--accent-dim)'; event.target.style.borderColor = 'var(--primary)'; event.target.style.color = 'var(--primary)'; }
   var customEl = document.getElementById('notif-custom-retain');
   if (val === 'custom') {
     if (customEl) customEl.style.display = '';
@@ -14003,8 +14003,8 @@ function loadTermsPage() {
 
     _legalH(isRu ? '9. Контакты' : '9. Contact') +
     _legalP(isRu
-      ? 'По вопросам: <a href="https://t.me/TonAgentPlatformBot" style="color:#0ea5e9">@TonAgentPlatformBot</a> | <a href="https://t.me/tonagentplatform" style="color:#0ea5e9">@tonagentplatform</a>'
-      : 'Contact: <a href="https://t.me/TonAgentPlatformBot" style="color:#0ea5e9">@TonAgentPlatformBot</a> | <a href="https://t.me/tonagentplatform" style="color:#0ea5e9">@tonagentplatform</a>') +
+      ? 'По вопросам: <a href="https://t.me/TonAgentPlatformBot" style="color:var(--primary)">@TonAgentPlatformBot</a> | <a href="https://t.me/tonagentplatform" style="color:var(--primary)">@tonagentplatform</a>'
+      : 'Contact: <a href="https://t.me/TonAgentPlatformBot" style="color:var(--primary)">@TonAgentPlatformBot</a> | <a href="https://t.me/tonagentplatform" style="color:var(--primary)">@tonagentplatform</a>') +
 
   '</div>';
 }
@@ -14031,7 +14031,7 @@ function loadPrivacyPage() {
       : '<b>Technical information:</b> error types, timestamps, context (without message content) — only with your consent.') +
 
     _legalH(isRu ? '2. Переписки агентов' : '2. Agent Conversations') +
-    '<div style="padding:16px;background:rgba(14,165,233,0.06);border-left:3px solid #0ea5e9;border-radius:0 10px 10px 0;margin-bottom:16px">' +
+    '<div style="padding:16px;background:rgba(14,165,233,0.06);border-left:3px solid var(--primary);border-radius:0 10px 10px 0;margin-bottom:16px">' +
     _legalP(isRu
       ? '<b>Переписки ваших AI-агентов доступны только вам.</b> Платформа не читает, не анализирует и не передаёт третьим лицам содержимое переписок ваших агентов. Администраторы платформы имеют доступ только к технической информации: статус агента, количество сообщений, ошибки.'
       : '<b>Your AI agent conversations are accessible only to you.</b> The Platform does not read, analyze, or share the content of your agent conversations. Platform administrators only have access to technical information: agent status, message counts, errors.') +
@@ -14064,8 +14064,8 @@ function loadPrivacyPage() {
 
     _legalH(isRu ? '8. Контакты' : '8. Contact') +
     _legalP(isRu
-      ? 'DPO: <a href="https://t.me/uheartattack" style="color:#0ea5e9">@uheartattack</a> | Поддержка: <a href="https://t.me/TonAgentPlatformBot" style="color:#0ea5e9">@TonAgentPlatformBot</a>'
-      : 'DPO: <a href="https://t.me/uheartattack" style="color:#0ea5e9">@uheartattack</a> | Support: <a href="https://t.me/TonAgentPlatformBot" style="color:#0ea5e9">@TonAgentPlatformBot</a>') +
+      ? 'DPO: <a href="https://t.me/uheartattack" style="color:var(--primary)">@uheartattack</a> | Поддержка: <a href="https://t.me/TonAgentPlatformBot" style="color:var(--primary)">@TonAgentPlatformBot</a>'
+      : 'DPO: <a href="https://t.me/uheartattack" style="color:var(--primary)">@uheartattack</a> | Support: <a href="https://t.me/TonAgentPlatformBot" style="color:var(--primary)">@TonAgentPlatformBot</a>') +
 
   '</div>';
 }

@@ -7158,7 +7158,7 @@ select:focus {
 }
 
 /* ── Logo accent (overrides) ── */
-.logo-accent { color: #0098EA; }
+.logo-accent { color: var(--primary); }
 
 /* ── Alpha badge in sidebar ── */
 .alpha-badge {
