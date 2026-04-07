@@ -1011,15 +1011,33 @@ export function startApiServer() {
       if (!sets.length) { res.status(400).json({ error: 'Nothing to update' }); return; }
       params.push(feedbackId);
       await pool.query(`UPDATE builder_bot.feedback SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
-      // Notify user about reply
-      if (adminReply) {
-        const fb = await pool.query(`SELECT user_id FROM builder_bot.feedback WHERE id = $1`, [feedbackId]);
-        if (fb.rows[0]) {
+      // Notify user + award points on resolve
+      const fb = await pool.query(`SELECT user_id, type FROM builder_bot.feedback WHERE id = $1`, [feedbackId]);
+      if (fb.rows[0]) {
+        const fbUserId = fb.rows[0].user_id;
+        const fbType = fb.rows[0].type;
+        // Award resolve bonus points
+        if (status === 'resolved') {
+          try {
+            const { awardFeedbackPoints, isBetaTester } = await import('./payments');
+            if (isBetaTester(fbUserId)) {
+              const reward = await awardFeedbackPoints(fbUserId, fbType, true);
+              // Notify about reward
+              const botToken = process.env.BOT_TOKEN;
+              if (botToken && reward.reward) {
+                const rewardText = reward.reward === 'pro' ? '🎉 Апгрейд до Pro!' : reward.reward === 'unlimited' ? '💎 Апгрейд до Unlimited!' : reward.reward === 'bonus_gens' ? '🎁 +20 генераций!' : '';
+                if (rewardText) fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: fbUserId, text: `🏆 Тикет #${feedbackId} решён! +${reward.points} очков (всего: ${reward.total})\n${rewardText}` }) }).catch(() => {});
+              }
+            }
+          } catch {}
+        }
+        // Notify about admin reply
+        if (adminReply) {
           const botToken = process.env.BOT_TOKEN;
           if (botToken) {
             fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ chat_id: fb.rows[0].user_id, text: `💬 Ответ на ваш тикет #${feedbackId}:\n\n${adminReply}` }),
+              body: JSON.stringify({ chat_id: fbUserId, text: `💬 Ответ на ваш тикет #${feedbackId}:\n\n${adminReply}` }),
             }).catch(() => {});
           }
         }
@@ -1078,6 +1096,20 @@ export function startApiServer() {
       if (isNaN(targetId)) { res.status(400).json({ error: 'Invalid user ID' }); return; }
       const ok = await removeBetaTester(targetId);
       res.json({ ok });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── GET /api/beta/leaderboard — public leaderboard ──
+  app.get('/api/beta/leaderboard', async (_req: Request, res: Response) => {
+    try {
+      const { getBetaLeaderboard } = await import('./payments');
+      const lb = await getBetaLeaderboard(20);
+      const thresholds = [
+        { points: 50, reward: '+20 generations' },
+        { points: 100, reward: 'Pro plan upgrade' },
+        { points: 200, reward: 'Unlimited plan' },
+      ];
+      res.json({ ok: true, leaderboard: lb, thresholds });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 

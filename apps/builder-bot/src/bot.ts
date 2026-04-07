@@ -1522,6 +1522,28 @@ bot.command('feedback_list', async (ctx) => {
   await safeReply(ctx, `📋 Feedback (${res.rows.length}):\n\n${lines.join('\n\n')}`);
 });
 
+// ── Leaderboard — top beta testers by points ──
+bot.command('leaderboard', async (ctx) => {
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  try {
+    const { getBetaLeaderboard } = require('./payments');
+    const lb = await getBetaLeaderboard(15);
+    if (!lb.length) { await safeReply(ctx, ru ? '📊 Лидерборд пуст' : '📊 Leaderboard empty'); return; }
+    const medals = ['🥇', '🥈', '🥉'];
+    const lines = lb.map((r: any, i: number) => {
+      const medal = i < 3 ? medals[i] : `${i + 1}.`;
+      const planBadge = r.plan_override === 'unlimited' ? ' 💎' : r.plan_override === 'pro' ? ' ⭐' : '';
+      return `${medal} @${r.username || r.user_id} — ${r.feedback_count} pts${planBadge}`;
+    });
+    const header = ru ? '🏆 *Лидерборд бета\\-тестеров*\n━━━━━━━━━━━━━━━━━━━━\n' : '🏆 *Beta Tester Leaderboard*\n━━━━━━━━━━━━━━━━━━━━\n';
+    const thresholds = ru
+      ? '\n\n📌 _50 pts \\= \\+20 генераций_\n📌 _100 pts \\= Pro план_\n📌 _200 pts \\= Unlimited_'
+      : '\n\n📌 _50 pts \\= \\+20 gens_\n📌 _100 pts \\= Pro plan_\n📌 _200 pts \\= Unlimited_';
+    await safeReply(ctx, header + lines.map((l: string) => esc(l)).join('\n') + thresholds);
+  } catch (e: any) { await safeReply(ctx, `❌ ${e.message}`); }
+});
+
 // ============================================================
 // Команды
 // ============================================================
@@ -7776,7 +7798,16 @@ bot.on(message('photo'), async (ctx) => {
         [userId, ctx.from?.username || '', _fb.type, caption || 'Screenshot attached', photoId]
       );
       const ru = getUserLang(userId) === 'ru';
-      await safeReply(ctx, ru ? '✅ Фидбек со скриншотом отправлен!' : '✅ Feedback with screenshot sent!');
+      let rewardMsg = '';
+      try {
+        const { isBetaTester, awardFeedbackPoints } = require('./payments');
+        if (isBetaTester(userId)) {
+          const reward = await awardFeedbackPoints(userId, _fb.type);
+          rewardMsg = `\n🏆 +${reward.points} pts (total: ${reward.total})`;
+          if (reward.reward) rewardMsg += reward.reward === 'bonus_gens' ? '\n🎁 +20 gens!' : reward.reward === 'pro' ? '\n🎉 Pro!' : reward.reward === 'unlimited' ? '\n💎 Unlimited!' : '';
+        }
+      } catch {}
+      await safeReply(ctx, (ru ? '✅ Фидбек со скриншотом отправлен!' : '✅ Feedback with screenshot sent!') + rewardMsg);
     } catch (e: any) { await safeReply(ctx, `❌ ${e.message}`); }
     return;
   }
@@ -8562,7 +8593,19 @@ bot.on(message('text'), async (ctx) => {
       for (const a of admins.rows) {
         try { await bot.telegram.sendMessage(a.telegram_id, `📝 Новый ${_fb.type}: ${text.slice(0, 200)}\nОт: @${ctx.from?.username || userId}`); } catch {}
       }
-      await safeReply(ctx, ru ? '✅ Фидбек отправлен! Мы свяжемся с вами.' : '✅ Feedback sent! We will get back to you.');
+      // Award beta points
+      let rewardMsg = '';
+      try {
+        const { isBetaTester, awardFeedbackPoints } = require('./payments');
+        if (isBetaTester(userId)) {
+          const reward = await awardFeedbackPoints(userId, _fb.type);
+          rewardMsg = `\n🏆 +${reward.points} ${ru ? 'очков' : 'pts'} (${ru ? 'всего' : 'total'}: ${reward.total})`;
+          if (reward.reward === 'bonus_gens') rewardMsg += `\n🎁 ${ru ? 'Бонус: +20 генераций!' : 'Bonus: +20 generations!'}`;
+          if (reward.reward === 'pro') rewardMsg += `\n🎉 ${ru ? 'Апгрейд до Pro!' : 'Upgraded to Pro!'}`;
+          if (reward.reward === 'unlimited') rewardMsg += `\n💎 ${ru ? 'Апгрейд до Unlimited!' : 'Upgraded to Unlimited!'}`;
+        }
+      } catch {}
+      await safeReply(ctx, (ru ? '✅ Фидбек отправлен! Мы свяжемся с вами.' : '✅ Feedback sent! We will get back to you.') + rewardMsg);
     } catch (e: any) { await safeReply(ctx, `❌ ${e.message}`); }
     return;
   }

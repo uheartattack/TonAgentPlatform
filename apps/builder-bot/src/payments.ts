@@ -383,11 +383,17 @@ export async function getUserSubscription(userId: number): Promise<UserSubscript
       createdAt: new Date(0),
     };
   }
-  // Beta testers get beta plan (priority over paid plans)
+  // Beta testers get beta plan (or upgraded plan from rewards)
   if (isBetaTester(userId)) {
+    let betaPlan = 'beta';
+    try {
+      const { pool } = require('./db');
+      const bRes = await pool.query(`SELECT plan_override FROM builder_bot.beta_testers WHERE user_id = $1 AND status = 'active'`, [userId]);
+      if (bRes.rows[0]?.plan_override) betaPlan = bRes.rows[0].plan_override;
+    } catch {}
     return {
       userId,
-      planId: 'beta',
+      planId: betaPlan,
       expiresAt: null,
       isActive: true,
       createdAt: new Date(0),
@@ -532,6 +538,71 @@ export function trackGeneration(userId: number): void {
   } else {
     generationTracker.set(userId, { month, count: tracker.count + 1 });
   }
+}
+
+// ── Beta Rewards System ─────────────────────────────────────
+// Points: bug_submitted=5, feature_submitted=3, support_submitted=1, general_submitted=1
+// Resolved feedback gives bonus: bug_resolved=+10, feature_resolved=+5
+// Thresholds: 50pts → +20 gens, 100pts → Pro plan upgrade, 200pts → Unlimited
+
+const FEEDBACK_POINTS: Record<string, number> = { bug: 5, feature: 3, support: 1, general: 1 };
+const RESOLVE_BONUS: Record<string, number> = { bug: 10, feature: 5, support: 2, general: 1 };
+
+export async function awardFeedbackPoints(userId: number, feedbackType: string, resolved = false): Promise<{ points: number; total: number; reward?: string }> {
+  const pts = resolved ? (RESOLVE_BONUS[feedbackType] || 1) : (FEEDBACK_POINTS[feedbackType] || 1);
+  try {
+    const { pool } = require('./db');
+    // Update beta_testers feedback_count (used as points accumulator)
+    await pool.query(
+      `UPDATE builder_bot.beta_testers SET feedback_count = feedback_count + $1 WHERE user_id = $2`,
+      [pts, userId]
+    );
+    const res = await pool.query(`SELECT feedback_count FROM builder_bot.beta_testers WHERE user_id = $1`, [userId]);
+    const total = res.rows[0]?.feedback_count || 0;
+
+    // Check reward thresholds
+    let reward: string | undefined;
+    if (total >= 200) {
+      // Upgrade to Unlimited
+      await pool.query(
+        `UPDATE builder_bot.beta_testers SET plan_override = 'unlimited' WHERE user_id = $1 AND plan_override != 'unlimited'`,
+        [userId]
+      );
+      reward = 'unlimited';
+    } else if (total >= 100) {
+      // Upgrade to Pro
+      await pool.query(
+        `UPDATE builder_bot.beta_testers SET plan_override = 'pro' WHERE user_id = $1 AND plan_override NOT IN ('pro', 'unlimited')`,
+        [userId]
+      );
+      reward = 'pro';
+    } else if (total >= 50 && total - pts < 50) {
+      // Bonus: +20 generations (reduce used count)
+      const tracker = generationTracker.get(userId);
+      if (tracker) {
+        tracker.count = Math.max(0, tracker.count - 20);
+        generationTracker.set(userId, tracker);
+      }
+      reward = 'bonus_gens';
+    }
+
+    return { points: pts, total, reward };
+  } catch (e: any) {
+    console.warn('[BetaRewards] award error:', e.message);
+    return { points: pts, total: 0 };
+  }
+}
+
+export async function getBetaLeaderboard(limit = 20): Promise<Array<{ user_id: number; username: string; feedback_count: number; plan_override: string }>> {
+  try {
+    const { pool } = require('./db');
+    const res = await pool.query(
+      `SELECT user_id, username, feedback_count, plan_override FROM builder_bot.beta_testers
+       WHERE status = 'active' AND feedback_count > 0 ORDER BY feedback_count DESC LIMIT $1`,
+      [limit]
+    );
+    return res.rows;
+  } catch { return []; }
 }
 
 // ── Создать платёж — возвращает адрес + сумму для перевода ──
