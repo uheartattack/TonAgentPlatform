@@ -858,12 +858,19 @@ async function getAgentMeta(agentId: number): Promise<CachedAgentMeta | null> {
 // Context override for bot-chat messages (owner writes via bot, not userbot)
 const _pendingContext = new Map<number, Record<string, any>>();
 
+// Pattern 14: Continue vs spawn — freshContext=true clears conversation history for isolated tasks
 export function addMessageToAIAgent(agentId: number, text: string, context?: Record<string, any>): void {
   // Atomic check-and-set to prevent zombie messages for deactivated agents (M50)
   if (!_pendingMessages.has(agentId)) _pendingMessages.set(agentId, []);
   const msgs = _pendingMessages.get(agentId);
   if (msgs) msgs.push(text);
-  if (context) _pendingContext.set(agentId, context);
+  if (context) {
+    // freshContext: inter-agent tasks with low context overlap spawn with clean slate
+    if (context.freshContext) {
+      context._clearHistory = true;
+    }
+    _pendingContext.set(agentId, context);
+  }
   // Track contact (fire-and-forget) — only for real user messages with senderId
   if (context?.senderId && typeof context.senderId === 'number') {
     _upsertAgentContact(agentId, context).catch(() => {});
@@ -4679,8 +4686,9 @@ export async function executeTool(
           }
         }, 5 * 60 * 1000);
 
-        // Send message with request ID for response pairing
-        addMessageToAIAgent(targetId, `[От агента #${params.agentId} | request_id=${reqId}]: ${message}`);
+        // Pattern 13: Coordinator via task-notification XML — structured inter-agent messages
+        const xmlEnvelope = `<inter-agent-task from="${params.agentId}" from_name="${(params as any).agentName || ''}" request_id="${reqId}" priority="normal">\n${message}\n</inter-agent-task>`;
+        addMessageToAIAgent(targetId, xmlEnvelope);
         await logToDb(params.agentId, 'info', `[InterAgent] → #${targetId}: ${message.slice(0, 100)} (delivered, reqId=${reqId})`, params.userId);
 
         return {
@@ -6985,9 +6993,32 @@ If web_search returns nothing useful → say "не смог найти акту�
     } catch {}
   }
 
-  let messages: OpenAI.ChatCompletionMessageParam[] = [
-    { role: 'system',    content: systemPromptFull },
-  ];
+  // ── Pattern 10: SYSTEM_PROMPT_DYNAMIC_BOUNDARY ──
+  // Split system prompt into static (cacheable across turns) + dynamic (per-turn volatile).
+  // Anthropic/OpenAI can cache the static portion, saving prompt tokens on continuations.
+  // Dynamic sections: lessons, style hints, self-healing, plugins — change per turn.
+  const _dynamicIdx = systemPromptFull.indexOf('[LESSONS FROM PREVIOUS MISTAKES');
+  const _styleIdx = systemPromptFull.indexOf('[STYLE HINT]');
+  const _healIdx = systemPromptFull.indexOf('[SELF-HEALING MODE]');
+  const _dynStart = Math.min(
+    _dynamicIdx >= 0 ? _dynamicIdx : Infinity,
+    _styleIdx >= 0 ? _styleIdx : Infinity,
+    _healIdx >= 0 ? _healIdx : Infinity,
+  );
+  let messages: OpenAI.ChatCompletionMessageParam[];
+  if (_dynStart < Infinity) {
+    // Static part (cacheable) + dynamic part (volatile)
+    const staticPrompt = systemPromptFull.slice(0, _dynStart).trimEnd();
+    const dynamicPrompt = systemPromptFull.slice(_dynStart).trim();
+    messages = [
+      { role: 'system', content: staticPrompt },
+      { role: 'system', content: dynamicPrompt } as any,
+    ];
+  } else {
+    messages = [
+      { role: 'system', content: systemPromptFull },
+    ];
+  }
 
   // ── Load conversation history from previous runs ──
   try {
@@ -7644,8 +7675,14 @@ If web_search returns nothing useful → say "не смог найти акту�
     };
 
     // Execute in batches of TOOL_CONCURRENCY
-    // C9: Financial tools must run serially to prevent daily spend cap bypass via concurrent calls
-    const SERIAL_FINANCIAL_TOOLS = new Set(['send_ton', 'send_jetton', 'ton_send_boc', 'buy_catalog_gift', 'buy_resale_gift', 'list_gift_for_sale']);
+    // C9: Financial + state-mutating tools must run serially to prevent race conditions
+    const SERIAL_FINANCIAL_TOOLS = new Set([
+      'send_ton', 'send_jetton', 'ton_send_boc',
+      'buy_catalog_gift', 'buy_resale_gift', 'list_gift_for_sale',
+      'set_state', 'set_state_multi',       // state mutations must serialize
+      'tg_send_message', 'tg_reply',        // message ordering matters
+      'notify', 'notify_rich',              // notification ordering
+    ]);
     for (let i = 0; i < assistant.tool_calls.length; i += TOOL_CONCURRENCY) {
       // M51: Check if agent was deactivated before each batch
       if (!_activeHandles.has(params.agentId)) {

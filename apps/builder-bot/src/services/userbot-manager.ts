@@ -1100,7 +1100,10 @@ class UserbotManager {
         const sess = tc?.telegram_session;
         if (sess?.session) {
           try {
-            await this.connectAgent(agentId, sess.session);
+            // Decrypt session if encrypted (enc: prefix)
+            let sessionStr = sess.session;
+            try { const { decryptApiKey } = require('../crypto-utils'); sessionStr = decryptApiKey(sessionStr); } catch {}
+            await this.connectAgent(agentId, sessionStr);
             // Load persistent memory
             await getChatRing(agentId).loadFromDb(agentId).catch(() => {});
             await getContactMemory(agentId).loadFromDb(agentId).catch(() => {});
@@ -3365,6 +3368,18 @@ RULES:
             max_tokens: 2048,
             ...(openaiToolDefs ? { tools: openaiToolDefs, tool_choice: 'auto' } : {}),
           } as any);
+
+          // Track token usage
+          if (completion.usage) {
+            try {
+              const { trackTokenUsage } = require('../agents/ai-agent-runtime');
+              trackTokenUsage(agentId, {
+                inputTokens: completion.usage.prompt_tokens || 0,
+                outputTokens: completion.usage.completion_tokens || 0,
+                provider: (mergedConfig?.AI_PROVIDER as string) || 'default',
+              });
+            } catch {}
+          }
 
           const choice = completion.choices?.[0];
           if (!choice) break;
