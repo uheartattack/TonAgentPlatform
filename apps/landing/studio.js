@@ -64,6 +64,22 @@ const IC = {
   users: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
   plus: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
   arrowRight: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>',
+  bug: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2l1.88 1.88M14.12 3.88L16 2M9 7.13v-1a3 3 0 1 1 6 0v1M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6M6 13H2M22 13h-4M6 17l-1.5 1.5M18 17l1.5 1.5"/></svg>',
+  lifebuoy: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="4.93" y1="4.93" x2="9.17" y2="9.17"/><line x1="14.83" y1="14.83" x2="19.07" y2="19.07"/><line x1="14.83" y1="9.17" x2="19.07" y2="4.93"/><line x1="4.93" y1="19.07" x2="9.17" y2="14.83"/></svg>',
+  lightbulb: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>',
+  info: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
+  plug: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-5M9 8V2M15 8V2M18 8H6a2 2 0 0 0-2 2v2c0 4.42 3.58 8 8 8s8-3.58 8-8v-2a2 2 0 0 0-2-2z"/></svg>',
+  antenna: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12L7 2M22 12l-5-10M12 12v10M4.93 10h14.14"/></svg>',
+  lock: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>',
+  heart: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>',
+  folder: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
+  flask: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M12 3v7l-5.4 8.1a2 2 0 0 0 1.66 3.11h7.48a2 2 0 0 0 1.66-3.11L12 10V3"/></svg>',
+  trophy: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6M18 9h1.5a2.5 2.5 0 0 0 0-5H18M4 22h16M10 22V8.5M14 22V8.5"/><path d="M8 2h8v6a4 4 0 1 1-8 0V2z"/></svg>',
+  dot_red: '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#ef4444"></span>',
+  dot_blue: '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#3b82f6"></span>',
+  dot_gray: '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#6b7280"></span>',
+  settings: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+  question: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
 };
 
 // Map server-side plan emoji icons to SVG
@@ -951,32 +967,32 @@ function buildFlowDiagram(triggerType, agent) {
 
   if (triggerType === 'ai_agent') {
     nodes = [
-      { icon: '💬', label: isRu ? 'Сообщение' : 'Input', type: 'trigger' },
-      { icon: '🤖', label: isRu ? 'AI Модель' : 'AI Model', type: 'process' },
-      { icon: '🛠', label: isRu ? 'Инструменты' : 'Tools', type: 'tools' },
-      { icon: '📤', label: isRu ? 'Ответ' : 'Output', type: 'output' },
+      { icon: IC.chat, label: isRu ? 'Сообщение' : 'Input', type: 'trigger' },
+      { icon: IC.robot, label: isRu ? 'AI Модель' : 'AI Model', type: 'process' },
+      { icon: IC.wrench, label: isRu ? 'Инструменты' : 'Tools', type: 'tools' },
+      { icon: IC.upload, label: isRu ? 'Ответ' : 'Output', type: 'output' },
     ];
   } else if (triggerType === 'scheduled') {
     var interval = (agent.triggerConfig && agent.triggerConfig.interval) || (agent.trigger_config && agent.trigger_config.interval) || '';
     nodes = [
-      { icon: '⏰', label: interval || (isRu ? 'Расписание' : 'Schedule'), type: 'trigger' },
-      { icon: '📝', label: isRu ? 'Код' : 'Code Run', type: 'process' },
-      { icon: '🔌', label: isRu ? 'Плагины' : 'Plugins', type: 'tools' },
-      { icon: '📤', label: isRu ? 'Результат' : 'Result', type: 'output' },
+      { icon: IC.clock, label: interval || (isRu ? 'Расписание' : 'Schedule'), type: 'trigger' },
+      { icon: IC.clipboard, label: isRu ? 'Код' : 'Code Run', type: 'process' },
+      { icon: IC.plug, label: isRu ? 'Плагины' : 'Plugins', type: 'tools' },
+      { icon: IC.upload, label: isRu ? 'Результат' : 'Result', type: 'output' },
     ];
   } else if (triggerType === 'webhook') {
     nodes = [
-      { icon: '📡', label: 'Webhook', type: 'trigger' },
-      { icon: '📝', label: isRu ? 'Код' : 'Code Run', type: 'process' },
-      { icon: '🔌', label: isRu ? 'Плагины' : 'Plugins', type: 'tools' },
-      { icon: '🔁', label: isRu ? 'Ответ' : 'Response', type: 'output' },
+      { icon: IC.antenna, label: 'Webhook', type: 'trigger' },
+      { icon: IC.clipboard, label: isRu ? 'Код' : 'Code Run', type: 'process' },
+      { icon: IC.plug, label: isRu ? 'Плагины' : 'Plugins', type: 'tools' },
+      { icon: IC.loop, label: isRu ? 'Ответ' : 'Response', type: 'output' },
     ];
   } else {
     nodes = [
-      { icon: '▶', label: isRu ? 'Запуск' : 'Manual', type: 'trigger' },
-      { icon: '📝', label: isRu ? 'Код' : 'Code Run', type: 'process' },
-      { icon: '🔌', label: isRu ? 'Плагины' : 'Plugins', type: 'tools' },
-      { icon: '📤', label: isRu ? 'Результат' : 'Result', type: 'output' },
+      { icon: IC.play, label: isRu ? 'Запуск' : 'Manual', type: 'trigger' },
+      { icon: IC.clipboard, label: isRu ? 'Код' : 'Code Run', type: 'process' },
+      { icon: IC.plug, label: isRu ? 'Плагины' : 'Plugins', type: 'tools' },
+      { icon: IC.upload, label: isRu ? 'Результат' : 'Result', type: 'output' },
     ];
   }
 
@@ -2614,11 +2630,11 @@ function switchSettingsTab(tab) {
 
       // Sub-tab bar
       '<div style="display:flex;gap:4px;margin-bottom:16px;background:var(--bg-primary);border-radius:10px;padding:4px">' +
-        '<button id="mem-sub-contacts" class="mem-sub-btn active" onclick="switchMemSubTab(\'contacts\')" style="flex:1;padding:7px 10px;border-radius:7px;border:none;cursor:pointer;font-size:.78rem;font-weight:500;background:rgba(139,92,246,0.18);color:#8b5cf6;transition:all .2s">👤 ' + (isRu ? 'Контакты' : 'Contacts') + '</button>' +
-        '<button id="mem-sub-knowledge" class="mem-sub-btn" onclick="switchMemSubTab(\'knowledge\')" style="flex:1;padding:7px 10px;border-radius:7px;border:none;cursor:pointer;font-size:.78rem;font-weight:500;background:transparent;color:var(--text-muted);transition:all .2s">📚 ' + (isRu ? 'Факты' : 'Facts') + '</button>' +
-        '<button id="mem-sub-lessons" class="mem-sub-btn" onclick="switchMemSubTab(\'lessons\')" style="flex:1;padding:7px 10px;border-radius:7px;border:none;cursor:pointer;font-size:.78rem;font-weight:500;background:transparent;color:var(--text-muted);transition:all .2s">💡 ' + (isRu ? 'Уроки' : 'Lessons') + '</button>' +
-        '<button id="mem-sub-raw" class="mem-sub-btn" onclick="switchMemSubTab(\'raw\')" style="flex:1;padding:7px 10px;border-radius:7px;border:none;cursor:pointer;font-size:.78rem;font-weight:500;background:transparent;color:var(--text-muted);transition:all .2s">📝 ' + (isRu ? 'Память' : 'Raw') + '</button>' +
-        '<button id="mem-sub-logs" class="mem-sub-btn" onclick="switchMemSubTab(\'logs\')" style="flex:1;padding:7px 10px;border-radius:7px;border:none;cursor:pointer;font-size:.78rem;font-weight:500;background:transparent;color:var(--text-muted);transition:all .2s">📅 ' + (isRu ? 'Логи' : 'Logs') + '</button>' +
+        '<button id="mem-sub-contacts" class="mem-sub-btn active" onclick="switchMemSubTab(\'contacts\')" style="flex:1;padding:7px 10px;border-radius:7px;border:none;cursor:pointer;font-size:.78rem;font-weight:500;background:rgba(139,92,246,0.18);color:#8b5cf6;transition:all .2s">' + IC.user + ' ' + (isRu ? 'Контакты' : 'Contacts') + '</button>' +
+        '<button id="mem-sub-knowledge" class="mem-sub-btn" onclick="switchMemSubTab(\'knowledge\')" style="flex:1;padding:7px 10px;border-radius:7px;border:none;cursor:pointer;font-size:.78rem;font-weight:500;background:transparent;color:var(--text-muted);transition:all .2s">' + IC.book + ' ' + (isRu ? 'Факты' : 'Facts') + '</button>' +
+        '<button id="mem-sub-lessons" class="mem-sub-btn" onclick="switchMemSubTab(\'lessons\')" style="flex:1;padding:7px 10px;border-radius:7px;border:none;cursor:pointer;font-size:.78rem;font-weight:500;background:transparent;color:var(--text-muted);transition:all .2s">' + IC.lightbulb + ' ' + (isRu ? 'Уроки' : 'Lessons') + '</button>' +
+        '<button id="mem-sub-raw" class="mem-sub-btn" onclick="switchMemSubTab(\'raw\')" style="flex:1;padding:7px 10px;border-radius:7px;border:none;cursor:pointer;font-size:.78rem;font-weight:500;background:transparent;color:var(--text-muted);transition:all .2s">' + IC.clipboard + ' ' + (isRu ? 'Память' : 'Raw') + '</button>' +
+        '<button id="mem-sub-logs" class="mem-sub-btn" onclick="switchMemSubTab(\'logs\')" style="flex:1;padding:7px 10px;border-radius:7px;border:none;cursor:pointer;font-size:.78rem;font-weight:500;background:transparent;color:var(--text-muted);transition:all .2s">' + IC.clock + ' ' + (isRu ? 'Логи' : 'Logs') + '</button>' +
       '</div>' +
 
       // Sub-tab: Contacts
@@ -3115,9 +3131,9 @@ async function deleteTrigger(agentId, idx) {
 function renderSessionTab(body, hooks, agentId, isRu) {
   var cfg = hooks.session || { resetPolicy: 'none', idleMinutes: 60 };
   var policies = [
-    { val: 'none', icon: '♾', label: isRu ? 'Без сброса' : 'No reset', desc: isRu ? 'История копится бесконечно' : 'History accumulates forever' },
-    { val: 'daily', icon: '📅', label: isRu ? 'Ежедневно' : 'Daily', desc: isRu ? 'Очистка истории каждый день' : 'Clear history every day' },
-    { val: 'idle', icon: '⏰', label: isRu ? 'По бездействию' : 'On idle', desc: isRu ? 'Сброс после N минут тишины' : 'Reset after N minutes of silence' },
+    { val: 'none', icon: IC.infinity, label: isRu ? 'Без сброса' : 'No reset', desc: isRu ? 'История копится бесконечно' : 'History accumulates forever' },
+    { val: 'daily', icon: IC.clock, label: isRu ? 'Ежедневно' : 'Daily', desc: isRu ? 'Очистка истории каждый день' : 'Clear history every day' },
+    { val: 'idle', icon: IC.hourglass, label: isRu ? 'По бездействию' : 'On idle', desc: isRu ? 'Сброс после N минут тишины' : 'Reset after N minutes of silence' },
   ];
   var cards = policies.map(function(p) {
     var active = cfg.resetPolicy === p.val;
@@ -3165,7 +3181,7 @@ async function setSessionIdleMin(agentId, val) {
 
 function renderToolScopeTab(body, hooks, agentId, isRu) {
   var scopes = hooks.toolScopes || {};
-  var SCOPE_LABELS = { 'always': '🌐 ' + (isRu ? 'Везде' : 'All'), 'dm-only': '👤 ' + (isRu ? 'Личка' : 'DM'), 'group-only': '👥 ' + (isRu ? 'Группы' : 'Groups'), 'admin-only': '🔒 ' + (isRu ? 'Админ' : 'Admin') };
+  var SCOPE_LABELS = { 'always': IC.globe + ' ' + (isRu ? 'Везде' : 'All'), 'dm-only': IC.user + ' ' + (isRu ? 'Личка' : 'DM'), 'group-only': IC.users + ' ' + (isRu ? 'Группы' : 'Groups'), 'admin-only': IC.lock + ' ' + (isRu ? 'Админ' : 'Admin') };
   var TOOL_GROUPS = {
     'Financial': ['send_ton', 'send_jetton', 'buy_catalog_gift', 'buy_resale_gift', 'list_gift_for_sale', 'get_agent_wallet'],
     'Admin': ['tg_ban_user2', 'tg_kick_user2', 'tg_mute_user2', 'tg_delete_user_messages', 'tg_edit_admin2'],
@@ -5734,7 +5750,7 @@ async function loadTelegramSettings() {
 function renderChatPolicies() {
   var list = document.getElementById('chat-policies-list');
   if (!list) return;
-  var modeLabels = { active: '🟢 Active', open: '🔵 Open', 'mention-only': '🟡 Mention', disabled: '🔴 Off' };
+  var modeLabels = { active: IC.dot_green + ' Active', open: IC.dot_blue + ' Open', 'mention-only': IC.dot_pause + ' Mention', disabled: IC.dot_red + ' Off' };
   list.innerHTML = Object.keys(_chatPolicies).length === 0
     ? '<div style="color:var(--text-muted);font-size:12px">' + (currentLang === 'ru' ? 'Нет per-chat настроек. Агент сам добавит через set_chat_policy()' : 'No per-chat overrides. Agent manages via set_chat_policy()') + '</div>'
     : Object.entries(_chatPolicies).map(function(e) {
@@ -10544,7 +10560,7 @@ function handleAgentCreated(agentId) {
   loadAgents();
   // Beautiful creation toast
   var isRu = currentLang === 'ru';
-  toast(isRu ? '✨ Агент создан!' : '✨ Agent created!', 'success');
+  toast(isRu ? 'Агент создан!' : 'Agent created!', 'success');
   if (!agentId) { navigateTo('operations'); return; }
 
   navigateTo('operations');
@@ -12213,7 +12229,7 @@ function renderContacts(profiles) {
   var isRu = currentLang === 'ru';
   if (!profiles || profiles.length === 0) {
     grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:3rem;font-size:.82rem">' +
-      '👤 ' + (isRu ? 'Агент ещё не накопил информацию о контактах.<br><span style="font-size:.74rem;opacity:.7">Она появится автоматически в ходе разговоров.</span>' :
+      IC.user + ' ' + (isRu ? 'Агент ещё не накопил информацию о контактах.<br><span style="font-size:.74rem;opacity:.7">Она появится автоматически в ходе разговоров.</span>' :
       'Agent hasn\'t accumulated contact info yet.<br><span style="font-size:.74rem;opacity:.7">It will appear automatically as conversations progress.</span>') + '</div>';
     return;
   }
@@ -12256,7 +12272,7 @@ function renderLessons(lessons, goals, isRu) {
   var html = '';
 
   if (goals && goals.length > 0) {
-    html += '<div class="rt-section"><div class="rt-section-label">🎯 ' + (isRu ? 'Активные цели' : 'Active Goals') + '</div>' +
+    html += '<div class="rt-section"><div class="rt-section-label">' + IC.target + ' ' + (isRu ? 'Активные цели' : 'Active Goals') + '</div>' +
       '<div style="display:flex;flex-direction:column;gap:6px">';
     html += goals.filter(function(g){return g.status !== 'completed' && g.status !== 'cancelled';}).map(function(g) {
       var priorityColors = { critical: '#ef4444', high: '#f59e0b', medium: '#8b5cf6', low: '#64748b' };
@@ -12273,9 +12289,9 @@ function renderLessons(lessons, goals, isRu) {
   }
 
   if (lessons && lessons.length > 0) {
-    html += '<div class="rt-section"><div class="rt-section-label">💡 ' + (isRu ? 'Уроки и инсайты' : 'Lessons & Insights') + '</div>' +
+    html += '<div class="rt-section"><div class="rt-section-label">' + IC.lightbulb + ' ' + (isRu ? 'Уроки и инсайты' : 'Lessons & Insights') + '</div>' +
       '<div style="display:flex;flex-direction:column;gap:6px">';
-    var typeIcons = { error: '⚠️', feedback: '💬', discovery: '🔍', preference: '❤️', default: '💡' };
+    var typeIcons = { error: IC.warn, feedback: IC.chat, discovery: IC.search, preference: IC.heart, default: IC.lightbulb };
     html += lessons.slice().reverse().map(function(l) {
       var icon = typeIcons[l.type] || typeIcons.default;
       var text = l.text || l.lesson || String(l).slice(0, 200);
@@ -12292,7 +12308,7 @@ function renderLessons(lessons, goals, isRu) {
 
   if (!html) {
     html = '<div style="text-align:center;color:var(--text-muted);padding:3rem;font-size:.82rem">' +
-      '💡 ' + (isRu ? 'Уроков и целей пока нет.<br><span style="font-size:.74rem;opacity:.7">Они накапливаются автоматически в процессе работы агента.</span>' :
+      IC.lightbulb + ' ' + (isRu ? 'Уроков и целей пока нет.<br><span style="font-size:.74rem;opacity:.7">Они накапливаются автоматически в процессе работы агента.</span>' :
       'No lessons or goals yet.<br><span style="font-size:.74rem;opacity:.7">They accumulate automatically as the agent works.</span>') + '</div>';
   }
   el.innerHTML = html;
@@ -12580,10 +12596,10 @@ async function loadNotificationsPage() {
     '</div>' +
     '<div class="notif-filters" style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">' +
       '<button class="notif-filter active" data-filter="all" onclick="filterNotifications(\'all\')">' + (isRu ? 'Все' : 'All') + '</button>' +
-      '<button class="notif-filter" data-filter="error" onclick="filterNotifications(\'error\')">❌ ' + (isRu ? 'Ошибки' : 'Errors') + '</button>' +
-      '<button class="notif-filter" data-filter="warning" onclick="filterNotifications(\'warning\')">⚠️ ' + (isRu ? 'Предупреждения' : 'Warnings') + '</button>' +
-      '<button class="notif-filter" data-filter="success" onclick="filterNotifications(\'success\')">✅ ' + (isRu ? 'Успехи' : 'Successes') + '</button>' +
-      '<button class="notif-filter" data-filter="info" onclick="filterNotifications(\'info\')">ℹ️ ' + (isRu ? 'Инфо' : 'Info') + '</button>' +
+      '<button class="notif-filter" data-filter="error" onclick="filterNotifications(\'error\')">' + IC.x + ' ' + (isRu ? 'Ошибки' : 'Errors') + '</button>' +
+      '<button class="notif-filter" data-filter="warning" onclick="filterNotifications(\'warning\')">' + IC.warn + ' ' + (isRu ? 'Предупреждения' : 'Warnings') + '</button>' +
+      '<button class="notif-filter" data-filter="success" onclick="filterNotifications(\'success\')">' + IC.check + ' ' + (isRu ? 'Успехи' : 'Successes') + '</button>' +
+      '<button class="notif-filter" data-filter="info" onclick="filterNotifications(\'info\')">' + IC.info + ' ' + (isRu ? 'Инфо' : 'Info') + '</button>' +
     '</div>' +
     '<div id="notif-list" class="notif-list">' +
       '<div class="notif-loading">' + (isRu ? 'Загрузка...' : 'Loading...') + '</div>' +
@@ -12668,7 +12684,7 @@ function renderNotifications(notifications) {
     return;
   }
 
-  var typeIcons = { error: '❌', warning: '⚠️', success: '✅', info: 'ℹ️' };
+  var typeIcons = { error: IC.x, warning: IC.warn, success: IC.check, info: IC.info };
   var typeColors = { error: '#ef4444', warning: '#f59e0b', success: '#10b981', info: '#3b82f6' };
   var typeBgs = { error: 'rgba(239,68,68,0.08)', warning: 'rgba(245,158,11,0.08)', success: 'rgba(16,185,129,0.08)', info: 'rgba(59,130,246,0.08)' };
 
@@ -13057,16 +13073,16 @@ function loadGuidePage() {
     // Features grid
     '<h2 class="guide-section-title">' + (isRu ? '77 инструментов в 10 категориях' : '77 tools in 10 categories') + '</h2>' +
     '<div class="guide-features">' +
-      guideFeature('💬', isRu ? 'Сообщения' : 'Messages', isRu ? 'Отправка, ответы, пересылка, реакции, поиск, форматирование' : 'Send, reply, forward, react, search, format'),
-      guideFeature('📸', isRu ? 'Медиа' : 'Media', isRu ? 'Фото, голосовые, файлы, стикеры, GIF' : 'Photos, voice, files, stickers, GIFs'),
-      guideFeature('🛡', isRu ? 'Модерация' : 'Moderation', isRu ? 'Кик, бан, мьют, закрепить, опросы, инвайты' : 'Kick, ban, mute, pin, polls, invites'),
-      guideFeature('💎', isRu ? 'TON DeFi' : 'TON DeFi', isRu ? 'Баланс, свопы DeDust/STON.fi, жетоны, NFT' : 'Balance, swaps DeDust/STON.fi, jettons, NFTs'),
-      guideFeature('🎁', isRu ? 'Подарки' : 'Gifts', isRu ? 'Каталог, арбитраж, покупка, продажа, аналитика' : 'Catalog, arbitrage, buy, sell, analytics'),
-      guideFeature('🧠', isRu ? 'Память' : 'Memory', isRu ? 'Долгосрочная, ежедневные логи, поиск, компактинг' : 'Long-term, daily logs, search, compaction'),
-      guideFeature('👤', isRu ? 'Профиль' : 'Profile', isRu ? 'Аватарка, имя, био, stories' : 'Avatar, name, bio, stories'),
-      guideFeature('🌐', isRu ? 'Веб' : 'Web', isRu ? 'Поиск, загрузка страниц, HTTP запросы' : 'Search, fetch pages, HTTP requests'),
-      guideFeature('💰', isRu ? 'Кошелёк' : 'Wallet', isRu ? 'Отправка TON/жетонов, лимиты, atomic lock' : 'Send TON/jettons, limits, atomic lock'),
-      guideFeature('⏰', isRu ? 'Планирование' : 'Planning', isRu ? 'Расписание, задачи, уведомления, пробуждение' : 'Schedule, tasks, notifications, wake-up'),
+      guideFeature(IC.chat, isRu ? 'Сообщения' : 'Messages', isRu ? 'Отправка, ответы, пересылка, реакции, поиск, форматирование' : 'Send, reply, forward, react, search, format'),
+      guideFeature(IC.image, isRu ? 'Медиа' : 'Media', isRu ? 'Фото, голосовые, файлы, стикеры, GIF' : 'Photos, voice, files, stickers, GIFs'),
+      guideFeature(IC.shield, isRu ? 'Модерация' : 'Moderation', isRu ? 'Кик, бан, мьют, закрепить, опросы, инвайты' : 'Kick, ban, mute, pin, polls, invites'),
+      guideFeature(IC.gem, isRu ? 'TON DeFi' : 'TON DeFi', isRu ? 'Баланс, свопы DeDust/STON.fi, жетоны, NFT' : 'Balance, swaps DeDust/STON.fi, jettons, NFTs'),
+      guideFeature(IC.gift, isRu ? 'Подарки' : 'Gifts', isRu ? 'Каталог, арбитраж, покупка, продажа, аналитика' : 'Catalog, arbitrage, buy, sell, analytics'),
+      guideFeature(IC.brain, isRu ? 'Память' : 'Memory', isRu ? 'Долгосрочная, ежедневные логи, поиск, компактинг' : 'Long-term, daily logs, search, compaction'),
+      guideFeature(IC.user, isRu ? 'Профиль' : 'Profile', isRu ? 'Аватарка, имя, био, stories' : 'Avatar, name, bio, stories'),
+      guideFeature(IC.globe, isRu ? 'Веб' : 'Web', isRu ? 'Поиск, загрузка страниц, HTTP запросы' : 'Search, fetch pages, HTTP requests'),
+      guideFeature(IC.dollar, isRu ? 'Кошелёк' : 'Wallet', isRu ? 'Отправка TON/жетонов, лимиты, atomic lock' : 'Send TON/jettons, limits, atomic lock'),
+      guideFeature(IC.clock, isRu ? 'Планирование' : 'Planning', isRu ? 'Расписание, задачи, уведомления, пробуждение' : 'Schedule, tasks, notifications, wake-up'),
     '</div>' +
 
     // FAQ
@@ -13149,7 +13165,7 @@ async function startVoiceRecording(forCreate) {
   if (micBtn) micBtn.style.color = '#ef4444';
   if (micIcon) micIcon.style.display = 'none';
   if (stopIcon) stopIcon.style.display = '';
-  if (statusEl) { statusEl.style.display = 'block'; statusEl.textContent = '🔴 Запись... нажмите ещё раз чтобы остановить'; }
+  if (statusEl) { statusEl.style.display = 'block'; statusEl.innerHTML = IC.dot_red + ' ' + (currentLang === 'ru' ? 'Запись... нажмите ещё раз чтобы остановить' : 'Recording... press again to stop'); }
 
   // Auto-stop after 60s
   setTimeout(function() { if (_voiceRecording) stopVoiceRecording(); }, 60000);
@@ -13168,7 +13184,7 @@ function stopVoiceRecording() {
   if (micBtn) micBtn.style.color = '#94a3b8';
   if (micIcon) micIcon.style.display = '';
   if (stopIcon) stopIcon.style.display = 'none';
-  if (statusEl) { statusEl.textContent = '⏳ Распознаю речь...'; }
+  if (statusEl) { statusEl.innerHTML = IC.hourglass + ' ' + (currentLang === 'ru' ? 'Распознаю речь...' : 'Recognizing speech...'); }
 }
 
 async function transcribeAndSend(blob, forCreate) {
@@ -13317,10 +13333,10 @@ async function loadAgentChatHistory(chatId, chatName) {
         // Agent bubble — right side, accent color
         return '<div style="display:flex;justify-content:flex-end;align-items:flex-end;gap:8px">' +
           '<div style="max-width:70%;display:flex;flex-direction:column;align-items:flex-end">' +
-            '<div style="font-size:.7rem;color:var(--text-muted);margin-bottom:3px;padding-right:4px">' + (isRu ? '🤖 Агент' : '🤖 Agent') + '</div>' +
+            '<div style="font-size:.7rem;color:var(--text-muted);margin-bottom:3px;padding-right:4px">' + IC.robot + ' ' + (isRu ? 'Агент' : 'Agent') + '</div>' +
             '<div style="padding:9px 13px;border-radius:16px 16px 4px 16px;background:rgba(99,102,241,0.18);border:1px solid rgba(99,102,241,0.3);font-size:.82rem;color:var(--text-primary);line-height:1.55;word-break:break-word;white-space:pre-wrap">' + escHtml(m.text||'') + '</div>' +
           '</div>' +
-          '<div style="width:28px;height:28px;min-width:28px;border-radius:50%;background:#6366f1;display:flex;align-items:center;justify-content:center;font-size:.7rem">🤖</div>' +
+          '<div style="width:28px;height:28px;min-width:28px;border-radius:50%;background:#6366f1;display:flex;align-items:center;justify-content:center;font-size:.7rem">' + IC.robot + '</div>' +
         '</div>';
       } else {
         // User bubble — left side
@@ -13401,7 +13417,7 @@ async function loadAdminAgentsPage() {
       if (a.lastError) {
         tableHtml += '<tr style="border-bottom:1px solid var(--border)">' +
           '<td></td><td colspan="5" style="padding:4px 8px 10px;font-size:.74rem;color:#ef4444;font-family:\'JetBrains Mono\',monospace">' +
-            '⚠ ' + escHtml(String(a.lastError).slice(0, 200)) +
+            IC.warn + ' ' + escHtml(String(a.lastError).slice(0, 200)) +
           '</td></tr>';
       }
     });
@@ -13756,12 +13772,12 @@ async function loadBugDashboard() {
   var isRu = currentLang === 'ru';
   container.innerHTML = '<div style="padding:24px;max-width:1200px;margin:0 auto">' +
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px">' +
-      '<h2 style="margin:0;font-size:1.3rem;color:var(--text-primary)">' + (isRu ? '🐛 Баг-трекер' : '🐛 Bug Tracker') + '</h2>' +
+      '<h2 style="margin:0;font-size:1.3rem;color:var(--text-primary)">' + (isRu ? IC.bug + ' Баг-трекер' : IC.bug + ' Bug Tracker') + '</h2>' +
       '<div style="display:flex;gap:4px;background:var(--bg-primary);border-radius:10px;padding:3px;border:1px solid var(--border)">' +
-        _bugTabBtn('platform', isRu ? '⚙️ Платформа' : '⚙️ Platform') +
-        _bugTabBtn('agents', isRu ? '🤖 Агенты' : '🤖 Agents') +
-        _bugTabBtn('feedback', isRu ? '📝 Фидбек' : '📝 Feedback') +
-        _bugTabBtn('reports', isRu ? '📋 Отчёты' : '📋 Reports') +
+        _bugTabBtn('platform', isRu ? IC.settings + ' Платформа' : IC.settings + ' Platform') +
+        _bugTabBtn('agents', isRu ? IC.robot + ' Агенты' : IC.robot + ' Agents') +
+        _bugTabBtn('feedback', isRu ? IC.clipboard + ' Фидбек' : IC.clipboard + ' Feedback') +
+        _bugTabBtn('reports', isRu ? IC.folder + ' Отчёты' : IC.folder + ' Reports') +
       '</div></div>' +
     '<div id="bugs-content"><div style="text-align:center;padding:40px;color:var(--text-muted)">Loading...</div></div></div>';
   loadBugTab(_bugTab);
@@ -13795,10 +13811,10 @@ async function loadBugTab(tab) {
       var d = await apiRequest('GET', '/api/admin/bugs?status=open&limit=50');
       if (!d.ok) { c.innerHTML = '<p style="color:var(--danger)">' + escHtml(d.error || 'Error') + '</p>'; return; }
       var st = d.stats || {};
-      var h = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">' + _bugStatCard('🔴', isRu ? 'Открытые' : 'Open', st.open || 0, '#ef4444') + _bugStatCard('🟡', isRu ? 'В работе' : 'Fixing', st.fixing || 0, '#f59e0b') + _bugStatCard('🟢', isRu ? 'Исправлены' : 'Fixed', st.fixed || 0, '#10b981') + _bugStatCard('⚪', isRu ? 'Игнорируются' : 'Ignored', st.ignored || 0, '#6b7280') + '</div>';
+      var h = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">' + _bugStatCard(IC.dot_red, isRu ? 'Открытые' : 'Open', st.open || 0, '#ef4444') + _bugStatCard(IC.dot_pause, isRu ? 'В работе' : 'Fixing', st.fixing || 0, '#f59e0b') + _bugStatCard(IC.dot_green, isRu ? 'Исправлены' : 'Fixed', st.fixed || 0, '#10b981') + _bugStatCard(IC.dot_gray, isRu ? 'Игнорируются' : 'Ignored', st.ignored || 0, '#6b7280') + '</div>';
       if (d.sources && d.sources.length) { h += '<div style="margin-bottom:16px;padding:14px;background:var(--bg-primary);border:1px solid var(--border);border-radius:10px"><div style="font-size:.78rem;font-weight:600;color:var(--text-muted);margin-bottom:8px">' + (isRu ? 'ИСТОЧНИКИ' : 'SOURCES') + '</div>'; d.sources.forEach(function(s) { var pct = d.sources[0].total > 0 ? Math.round(s.total / d.sources[0].total * 100) : 0; h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span style="font-size:.78rem;color:var(--text-primary);min-width:180px">' + escHtml(s.source) + '</span><div style="flex:1;height:6px;background:rgba(255,255,255,0.05);border-radius:3px;overflow:hidden"><div style="height:100%;width:' + pct + '%;background:var(--primary);border-radius:3px"></div></div><span style="font-size:.72rem;color:var(--text-muted);min-width:32px;text-align:right">' + s.total + '</span></div>'; }); h += '</div>'; }
       h += '<div style="display:flex;flex-direction:column;gap:8px">';
-      if (!d.bugs.length) h += '<div style="text-align:center;padding:40px;color:var(--text-muted)">' + (isRu ? 'Нет открытых багов 🎉' : 'No open bugs 🎉') + '</div>';
+      if (!d.bugs.length) h += '<div style="text-align:center;padding:40px;color:var(--text-muted)">' + (isRu ? 'Нет открытых багов' : 'No open bugs') + '</div>';
       d.bugs.forEach(function(b) { h += '<div style="padding:14px;background:var(--bg-primary);border:1px solid var(--border);border-radius:10px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><div style="display:flex;align-items:center;gap:8px"><span style="font-size:.72rem;padding:2px 8px;border-radius:4px;background:rgba(239,68,68,0.1);color:#ef4444;font-weight:600">x' + b.count + '</span><span style="font-size:.76rem;color:var(--text-muted)">' + escHtml(b.source || '') + '</span></div><div style="display:flex;gap:4px"><button onclick="updateBugStatus(' + b.id + ',\'fixing\')" style="padding:3px 8px;border-radius:6px;border:1px solid rgba(245,158,11,0.3);background:rgba(245,158,11,0.1);color:#f59e0b;font-size:.68rem;cursor:pointer">Fix</button><button onclick="updateBugStatus(' + b.id + ',\'fixed\')" style="padding:3px 8px;border-radius:6px;border:1px solid rgba(16,185,129,0.3);background:rgba(16,185,129,0.1);color:#10b981;font-size:.68rem;cursor:pointer">Done</button><button onclick="updateBugStatus(' + b.id + ',\'ignored\')" style="padding:3px 8px;border-radius:6px;border:1px solid rgba(107,114,128,0.3);background:rgba(107,114,128,0.1);color:#6b7280;font-size:.68rem;cursor:pointer">Ign</button></div></div><div style="font-size:.82rem;color:var(--text-primary);word-break:break-word;line-height:1.4">' + escHtml((b.message || '').slice(0, 200)) + '</div>' + (b.file ? '<div style="font-size:.7rem;color:var(--text-muted);margin-top:4px;font-family:monospace">' + escHtml(b.file) + '</div>' : '') + '<div style="font-size:.68rem;color:var(--text-muted);margin-top:4px">First: ' + _timeAgo(b.first_seen) + ' · Last: ' + _timeAgo(b.last_seen) + '</div></div>'; });
       h += '</div>'; c.innerHTML = h;
     } catch(e) { c.innerHTML = '<p style="color:var(--danger)">' + e.message + '</p>'; }
@@ -13807,9 +13823,9 @@ async function loadBugTab(tab) {
       var d = await apiRequest('GET', '/api/admin/agent-errors?days=7');
       if (!d.ok) { c.innerHTML = '<p style="color:var(--danger)">' + escHtml(d.error || 'Error') + '</p>'; return; }
       var cats = d.categories || {};
-      var h = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">' + _bugStatCard('💥', 'Crash', cats.crash || 0, '#ef4444') + _bugStatCard('🔧', 'Tool', cats.tool_error || 0, '#f59e0b') + _bugStatCard('🌐', 'API', cats.api_error || 0, '#6366f1') + _bugStatCard('❓', isRu ? 'Другие' : 'Other', cats.other || 0, '#6b7280') + '</div>';
+      var h = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">' + _bugStatCard(IC.fire, 'Crash', cats.crash || 0, '#ef4444') + _bugStatCard(IC.wrench, 'Tool', cats.tool_error || 0, '#f59e0b') + _bugStatCard(IC.globe, 'API', cats.api_error || 0, '#6366f1') + _bugStatCard(IC.question, isRu ? 'Другие' : 'Other', cats.other || 0, '#6b7280') + '</div>';
       h += '<div style="font-size:.82rem;font-weight:600;color:var(--text-primary);margin-bottom:12px">' + (isRu ? 'Паттерны ошибок (7 дней)' : 'Error Patterns (7 days)') + '</div><div style="display:flex;flex-direction:column;gap:6px">';
-      if (!d.patterns || !d.patterns.length) h += '<div style="text-align:center;padding:40px;color:var(--text-muted)">' + (isRu ? 'Нет ошибок 🎉' : 'No errors 🎉') + '</div>';
+      if (!d.patterns || !d.patterns.length) h += '<div style="text-align:center;padding:40px;color:var(--text-muted)">' + (isRu ? 'Нет ошибок' : 'No errors') + '</div>';
       (d.patterns || []).forEach(function(p) { h += '<div style="padding:12px;background:var(--bg-primary);border:1px solid var(--border);border-radius:10px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span style="font-size:.72rem;padding:2px 8px;border-radius:4px;background:rgba(239,68,68,0.1);color:#ef4444;font-weight:600">x' + p.count + '</span><span style="font-size:.72rem;color:var(--text-muted)">' + p.agentCount + ' agents</span></div><div style="font-size:.8rem;color:var(--text-primary);word-break:break-word">' + escHtml(p.message.slice(0, 150)) + '</div></div>'; });
       h += '</div>'; c.innerHTML = h;
     } catch(e) { c.innerHTML = '<p style="color:var(--danger)">' + e.message + '</p>'; }
@@ -13818,12 +13834,12 @@ async function loadBugTab(tab) {
       var d = await apiRequest('GET', '/api/admin/feedback');
       if (!d.ok) { c.innerHTML = '<p style="color:var(--danger)">' + escHtml(d.error || 'Error') + '</p>'; return; }
       var sc = {}, tc = {}; (d.feedback || []).forEach(function(f) { sc[f.status] = (sc[f.status] || 0) + 1; tc[f.type] = (tc[f.type] || 0) + 1; });
-      var h = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">' + _bugStatCard('🐛', 'Bugs', tc.bug || 0, '#ef4444') + _bugStatCard('💡', 'Features', tc.feature || 0, '#6366f1') + _bugStatCard('🆘', 'Support', tc.support || 0, '#f59e0b') + _bugStatCard('💬', 'General', tc.general || 0, '#6b7280') + '</div>';
+      var h = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">' + _bugStatCard(IC.bug, 'Bugs', tc.bug || 0, '#ef4444') + _bugStatCard(IC.lightbulb, 'Features', tc.feature || 0, '#6366f1') + _bugStatCard(IC.lifebuoy, 'Support', tc.support || 0, '#f59e0b') + _bugStatCard(IC.chat, 'General', tc.general || 0, '#6b7280') + '</div>';
       h += '<div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap">';
-      ['all', 'new', 'in_progress', 'resolved', 'closed'].forEach(function(s) { var lbl = s === 'all' ? (isRu ? 'Все' : 'All') : s === 'new' ? '🔵 New' : s === 'in_progress' ? '🟡 WIP' : s === 'resolved' ? '🟢 Done' : '⚪ Closed'; h += '<button onclick="filterFeedback(\'' + s + '\')" style="padding:6px 14px;border-radius:8px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:.78rem;cursor:pointer">' + lbl + ' (' + (s === 'all' ? (d.feedback || []).length : (sc[s] || 0)) + ')</button>'; });
+      ['all', 'new', 'in_progress', 'resolved', 'closed'].forEach(function(s) { var lbl = s === 'all' ? (isRu ? 'Все' : 'All') : s === 'new' ? IC.dot_blue + ' New' : s === 'in_progress' ? IC.dot_pause + ' WIP' : s === 'resolved' ? IC.dot_green + ' Done' : IC.dot_gray + ' Closed'; h += '<button onclick="filterFeedback(\'' + s + '\')" style="padding:6px 14px;border-radius:8px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:.78rem;cursor:pointer">' + lbl + ' (' + (s === 'all' ? (d.feedback || []).length : (sc[s] || 0)) + ')</button>'; });
       h += '</div><div id="feedback-list" style="display:flex;flex-direction:column;gap:8px">';
-      var icons = { bug: '🐛', feature: '💡', support: '🆘', general: '💬' }; var colors = { new: '#3b82f6', in_progress: '#f59e0b', resolved: '#10b981', closed: '#6b7280' };
-      (d.feedback || []).forEach(function(f) { h += '<div class="feedback-item" data-status="' + f.status + '" style="padding:14px;background:var(--bg-primary);border:1px solid var(--border);border-radius:10px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:6px"><div style="display:flex;align-items:center;gap:8px">' + (icons[f.type] || '❓') + ' <span style="font-size:.78rem;font-weight:600">#' + f.id + '</span><span style="font-size:.72rem;color:var(--text-muted)">@' + escHtml(f.username || String(f.user_id)) + '</span><span style="font-size:.68rem;padding:2px 8px;border-radius:4px;background:' + (colors[f.status] || '#666') + '20;color:' + (colors[f.status] || '#666') + ';font-weight:600">' + f.status + '</span></div><div style="display:flex;gap:4px"><button onclick="replyFeedback(' + f.id + ')" style="padding:3px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);font-size:.68rem;cursor:pointer">Reply</button><button onclick="resolveFeedback(' + f.id + ')" style="padding:3px 8px;border-radius:6px;border:1px solid rgba(16,185,129,0.3);background:rgba(16,185,129,0.1);color:#10b981;font-size:.68rem;cursor:pointer">Resolve</button></div></div><div style="font-size:.82rem;color:var(--text-primary);word-break:break-word;line-height:1.4">' + escHtml((f.message || '').slice(0, 300)) + '</div>' + (f.admin_reply ? '<div style="margin-top:8px;padding:8px 12px;background:rgba(16,185,129,0.05);border-left:3px solid #10b981;border-radius:0 8px 8px 0;font-size:.78rem;color:var(--text-secondary)">↳ ' + escHtml(f.admin_reply) + '</div>' : '') + '<div style="font-size:.68rem;color:var(--text-muted);margin-top:6px">' + _timeAgo(f.created_at) + (f.agent_id ? ' · Agent #' + f.agent_id : '') + '</div></div>'; });
+      var icons = { bug: IC.bug, feature: IC.lightbulb, support: IC.lifebuoy, general: IC.chat }; var colors = { new: '#3b82f6', in_progress: '#f59e0b', resolved: '#10b981', closed: '#6b7280' };
+      (d.feedback || []).forEach(function(f) { h += '<div class="feedback-item" data-status="' + f.status + '" style="padding:14px;background:var(--bg-primary);border:1px solid var(--border);border-radius:10px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:6px"><div style="display:flex;align-items:center;gap:8px">' + (icons[f.type] || IC.question) + ' <span style="font-size:.78rem;font-weight:600">#' + f.id + '</span><span style="font-size:.72rem;color:var(--text-muted)">@' + escHtml(f.username || String(f.user_id)) + '</span><span style="font-size:.68rem;padding:2px 8px;border-radius:4px;background:' + (colors[f.status] || '#666') + '20;color:' + (colors[f.status] || '#666') + ';font-weight:600">' + f.status + '</span></div><div style="display:flex;gap:4px"><button onclick="replyFeedback(' + f.id + ')" style="padding:3px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);font-size:.68rem;cursor:pointer">Reply</button><button onclick="resolveFeedback(' + f.id + ')" style="padding:3px 8px;border-radius:6px;border:1px solid rgba(16,185,129,0.3);background:rgba(16,185,129,0.1);color:#10b981;font-size:.68rem;cursor:pointer">Resolve</button></div></div><div style="font-size:.82rem;color:var(--text-primary);word-break:break-word;line-height:1.4">' + escHtml((f.message || '').slice(0, 300)) + '</div>' + (f.admin_reply ? '<div style="margin-top:8px;padding:8px 12px;background:rgba(16,185,129,0.05);border-left:3px solid #10b981;border-radius:0 8px 8px 0;font-size:.78rem;color:var(--text-secondary)">↳ ' + escHtml(f.admin_reply) + '</div>' : '') + '<div style="font-size:.68rem;color:var(--text-muted);margin-top:6px">' + _timeAgo(f.created_at) + (f.agent_id ? ' · Agent #' + f.agent_id : '') + '</div></div>'; });
       h += '</div>'; c.innerHTML = h;
     } catch(e) { c.innerHTML = '<p style="color:var(--danger)">' + e.message + '</p>'; }
   } else if (tab === 'reports') {
@@ -13832,16 +13848,16 @@ async function loadBugTab(tab) {
       var bugs = await apiRequest('GET', '/api/admin/bugs?status=open&limit=100');
       var agentErrors = await apiRequest('GET', '/api/admin/agent-errors?days=30');
 
-      var h = '<div style="font-size:.82rem;font-weight:600;color:var(--text-primary);margin-bottom:16px">' + (isRu ? '📁 Структурированные отчёты' : '📁 Structured Reports') + '</div>';
+      var h = '<div style="font-size:.82rem;font-weight:600;color:var(--text-primary);margin-bottom:16px">' + (isRu ? IC.folder + ' Структурированные отчёты' : IC.folder + ' Structured Reports') + '</div>';
 
       var folders = [
-        { id: 'platform_crashes', icon: '💥', name: isRu ? 'Крэши платформы' : 'Platform Crashes', color: '#ef4444', items: (bugs.ok ? bugs.bugs : []).filter(function(b) { return b.source === 'uncaughtException' || b.source === 'unhandledRejection'; }) },
-        { id: 'tool_errors', icon: '🔧', name: isRu ? 'Ошибки инструментов' : 'Tool Errors', color: '#f59e0b', items: (bugs.ok ? bugs.bugs : []).filter(function(b) { return (b.source || '').startsWith('tool:'); }) },
-        { id: 'api_errors', icon: '🌐', name: isRu ? 'Ошибки API' : 'API Errors', color: '#6366f1', items: (agentErrors.ok ? (agentErrors.patterns || []).filter(function(p) { return p.message.toLowerCase().match(/api|fetch|429|500|timeout/); }) : []) },
-        { id: 'user_bugs', icon: '🐛', name: isRu ? 'Баг-репорты тестеров' : 'Tester Bug Reports', color: '#ef4444', items: (d.ok ? d.feedback : []).filter(function(f) { return f.type === 'bug'; }) },
-        { id: 'user_features', icon: '💡', name: isRu ? 'Запросы фич' : 'Feature Requests', color: '#8b5cf6', items: (d.ok ? d.feedback : []).filter(function(f) { return f.type === 'feature'; }) },
-        { id: 'user_support', icon: '🆘', name: isRu ? 'Тикеты саппорта' : 'Support Tickets', color: '#f59e0b', items: (d.ok ? d.feedback : []).filter(function(f) { return f.type === 'support'; }) },
-        { id: 'agent_crashes', icon: '🤖', name: isRu ? 'Крэши агентов' : 'Agent Crashes', color: '#ef4444', items: (agentErrors.ok ? (agentErrors.patterns || []).filter(function(p) { return p.message.toLowerCase().includes('crash'); }) : []) },
+        { id: 'platform_crashes', icon: IC.fire, name: isRu ? 'Крэши платформы' : 'Platform Crashes', color: '#ef4444', items: (bugs.ok ? bugs.bugs : []).filter(function(b) { return b.source === 'uncaughtException' || b.source === 'unhandledRejection'; }) },
+        { id: 'tool_errors', icon: IC.wrench, name: isRu ? 'Ошибки инструментов' : 'Tool Errors', color: '#f59e0b', items: (bugs.ok ? bugs.bugs : []).filter(function(b) { return (b.source || '').startsWith('tool:'); }) },
+        { id: 'api_errors', icon: IC.globe, name: isRu ? 'Ошибки API' : 'API Errors', color: '#6366f1', items: (agentErrors.ok ? (agentErrors.patterns || []).filter(function(p) { return p.message.toLowerCase().match(/api|fetch|429|500|timeout/); }) : []) },
+        { id: 'user_bugs', icon: IC.bug, name: isRu ? 'Баг-репорты тестеров' : 'Tester Bug Reports', color: '#ef4444', items: (d.ok ? d.feedback : []).filter(function(f) { return f.type === 'bug'; }) },
+        { id: 'user_features', icon: IC.lightbulb, name: isRu ? 'Запросы фич' : 'Feature Requests', color: '#8b5cf6', items: (d.ok ? d.feedback : []).filter(function(f) { return f.type === 'feature'; }) },
+        { id: 'user_support', icon: IC.lifebuoy, name: isRu ? 'Тикеты саппорта' : 'Support Tickets', color: '#f59e0b', items: (d.ok ? d.feedback : []).filter(function(f) { return f.type === 'support'; }) },
+        { id: 'agent_crashes', icon: IC.robot, name: isRu ? 'Крэши агентов' : 'Agent Crashes', color: '#ef4444', items: (agentErrors.ok ? (agentErrors.patterns || []).filter(function(p) { return p.message.toLowerCase().includes('crash'); }) : []) },
       ];
 
       h += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">';
@@ -13915,7 +13931,7 @@ function initFeedbackFAB() {
   if (document.getElementById('feedback-fab')) return;
   var fab = document.createElement('button');
   fab.id = 'feedback-fab';
-  fab.innerHTML = '\uD83D\uDC1B';
+  fab.innerHTML = IC.bug;
   fab.title = currentLang === 'ru' ? 'Отправить фидбек' : 'Send feedback';
   fab.style.cssText = 'position:fixed;bottom:24px;right:24px;width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:white;border:none;font-size:1.4rem;cursor:pointer;z-index:9999;box-shadow:0 4px 12px rgba(99,102,241,0.4);transition:all .2s;display:flex;align-items:center;justify-content:center';
   fab.onmouseenter = function() { fab.style.transform = 'scale(1.1)'; fab.style.boxShadow = '0 6px 16px rgba(99,102,241,0.5)'; };
@@ -13933,14 +13949,14 @@ function openFeedbackModal() {
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);z-index:10000;display:flex;align-items:center;justify-content:center';
   modal.innerHTML = '<div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:16px;padding:28px;width:90%;max-width:480px;box-shadow:0 20px 60px rgba(0,0,0,0.5)">' +
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">' +
-      '<h3 style="margin:0;font-size:1.1rem;color:var(--text-primary)">' + (isRu ? '\uD83D\uDCDD Отправить фидбек' : '\uD83D\uDCDD Send Feedback') + '</h3>' +
+      '<h3 style="margin:0;font-size:1.1rem;color:var(--text-primary)">' + IC.clipboard + ' ' + (isRu ? 'Отправить фидбек' : 'Send Feedback') + '</h3>' +
       '<button onclick="document.getElementById(\'feedback-modal\').remove()" style="background:none;border:none;color:var(--text-muted);font-size:1.2rem;cursor:pointer">&times;</button>' +
     '</div>' +
     '<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">' +
-      '<button class="fb-type-btn" data-type="bug" style="padding:8px 16px;border-radius:10px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);cursor:pointer;font-size:.85rem;transition:all .2s" onclick="selectFbType(this)">\uD83D\uDC1B ' + (isRu ? 'Баг' : 'Bug') + '</button>' +
-      '<button class="fb-type-btn" data-type="feature" style="padding:8px 16px;border-radius:10px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);cursor:pointer;font-size:.85rem;transition:all .2s" onclick="selectFbType(this)">\uD83D\uDCA1 ' + (isRu ? 'Фича' : 'Feature') + '</button>' +
-      '<button class="fb-type-btn" data-type="support" style="padding:8px 16px;border-radius:10px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);cursor:pointer;font-size:.85rem;transition:all .2s" onclick="selectFbType(this)">\uD83C\uDD98 ' + (isRu ? 'Саппорт' : 'Support') + '</button>' +
-      '<button class="fb-type-btn" data-type="general" style="padding:8px 16px;border-radius:10px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);cursor:pointer;font-size:.85rem;transition:all .2s" onclick="selectFbType(this)">\uD83D\uDCAC ' + (isRu ? 'Общее' : 'General') + '</button>' +
+      '<button class="fb-type-btn" data-type="bug" style="padding:8px 16px;border-radius:10px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);cursor:pointer;font-size:.85rem;transition:all .2s" onclick="selectFbType(this)">' + IC.bug + ' ' + (isRu ? 'Баг' : 'Bug') + '</button>' +
+      '<button class="fb-type-btn" data-type="feature" style="padding:8px 16px;border-radius:10px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);cursor:pointer;font-size:.85rem;transition:all .2s" onclick="selectFbType(this)">' + IC.lightbulb + ' ' + (isRu ? 'Фича' : 'Feature') + '</button>' +
+      '<button class="fb-type-btn" data-type="support" style="padding:8px 16px;border-radius:10px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);cursor:pointer;font-size:.85rem;transition:all .2s" onclick="selectFbType(this)">' + IC.lifebuoy + ' ' + (isRu ? 'Саппорт' : 'Support') + '</button>' +
+      '<button class="fb-type-btn" data-type="general" style="padding:8px 16px;border-radius:10px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);cursor:pointer;font-size:.85rem;transition:all .2s" onclick="selectFbType(this)">' + IC.chat + ' ' + (isRu ? 'Общее' : 'General') + '</button>' +
     '</div>' +
     '<textarea id="fb-message" placeholder="' + (isRu ? 'Опишите проблему или предложение...' : 'Describe the issue or suggestion...') + '" style="width:100%;height:120px;background:var(--bg-primary);border:1px solid var(--border);border-radius:10px;padding:12px;color:var(--text-primary);font-size:.88rem;resize:vertical;font-family:inherit;box-sizing:border-box"></textarea>' +
     '<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px">' +
