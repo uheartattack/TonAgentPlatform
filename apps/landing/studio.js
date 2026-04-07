@@ -621,7 +621,7 @@ function showApp() {
   if (!atlasBanner) {
     atlasBanner = document.createElement('div');
     atlasBanner.id = 'atlas-promo-banner';
-    atlasBanner.style.cssText = 'margin:0 0 20px;padding:16px 20px;background:linear-gradient(135deg,rgba(14,165,233,0.08),rgba(6,182,212,0.04));border:1px solid rgba(14,165,233,0.15);border-radius:12px;display:flex;align-items:center;gap:14px;cursor:pointer';
+    atlasBanner.style.cssText = 'margin:0 0 20px;padding:16px 20px;background:linear-gradient(135deg,var(--accent-dim),rgba(6,182,212,0.04));border:1px solid var(--accent-dim);border-radius:12px;display:flex;align-items:center;gap:14px;cursor:pointer';
     atlasBanner.onclick = function() { navigateTo('assistant'); };
     atlasBanner.innerHTML =
       '<div style="width:40px;height:40px;border-radius:10px;background:rgba(14,165,233,0.12);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>' +
@@ -1185,7 +1185,7 @@ function openAgentChat(agentId) {
     'style="flex:1;background:none;border:none;outline:none;resize:none;color:var(--text-primary);font-size:.875rem;line-height:1.5;max-height:120px;overflow-y:auto;font-family:inherit" ' +
     'onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();sendAgentChatMsg()}" ' +
     'oninput="this.style.height=\'auto\';this.style.height=Math.min(this.scrollHeight,120)+\'px\'"></textarea>' +
-    '<button id="agent-chat-send" onclick="sendAgentChatMsg()" style="width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,#0098EA,#006aad);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:opacity .2s" title="Send">' +
+    '<button id="agent-chat-send" onclick="sendAgentChatMsg()" style="width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,var(--primary),var(--primary-dark));border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:opacity .2s" title="Send">' +
     '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>' +
     '</button>' +
     '</div>' +
@@ -1283,7 +1283,7 @@ function renderAgentChat(box) {
     var isStream = m.streaming;
     var align = isUser ? 'flex-end' : 'flex-start';
     var bubbleBg = isUser
-      ? 'linear-gradient(135deg,#0098EA,#006aad)'
+      ? 'linear-gradient(135deg,var(--primary),var(--primary-dark))'
       : isErr ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.05)';
     var border = isErr ? '1px solid rgba(239,68,68,0.3)' : isStream ? '1px solid rgba(0,152,234,0.25)' : '1px solid rgba(255,255,255,0.06)';
     var textColor = isUser ? '#fff' : isErr ? '#f87171' : 'var(--text-primary)';
@@ -2534,8 +2534,8 @@ function switchSettingsTab(tab) {
       '<div class="rt-section">' +
         '<div class="rt-section-label">' + (isRu ? 'Управление' : 'Controls') + '</div>' +
         '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
-          '<button class="rt-save-btn" onclick="lifecycleAction(\'start\')" style="background:linear-gradient(135deg,#0ea5e9,#0284c7)">' + IC.play + ' ' + (isRu ? 'Запустить' : 'Start') + '</button>' +
-          '<button class="rt-save-btn" onclick="lifecycleAction(\'stop\')" style="background:linear-gradient(135deg,#0ea5e9,#0284c7)">' + IC.pause + ' ' + (isRu ? 'Остановить' : 'Stop') + '</button>' +
+          '<button class="rt-save-btn" onclick="lifecycleAction(\'start\')" style="background:linear-gradient(135deg,var(--primary),var(--primary-dark))">' + IC.play + ' ' + (isRu ? 'Запустить' : 'Start') + '</button>' +
+          '<button class="rt-save-btn" onclick="lifecycleAction(\'stop\')" style="background:linear-gradient(135deg,var(--primary),var(--primary-dark))">' + IC.pause + ' ' + (isRu ? 'Остановить' : 'Stop') + '</button>' +
           '<button class="rt-save-btn" onclick="lifecycleAction(\'restart\')" style="background:linear-gradient(135deg,#f59e0b,#d97706)">' + IC.refresh + ' ' + (isRu ? 'Перезапустить' : 'Restart') + '</button>' +
         '</div>' +
       '</div>' +
@@ -2702,7 +2702,7 @@ function switchSettingsTab(tab) {
           '<textarea id="mem-persistent-text" class="st-textarea" style="min-height:220px;font-family:\'JetBrains Mono\',monospace;font-size:.78rem;line-height:1.6" placeholder="' + (isRu ? 'Факты, события, предпочтения...' : 'Facts, events, preferences...') + '"></textarea>' +
           '<div style="display:flex;gap:8px;margin-top:8px">' +
             '<button class="rt-save-btn" onclick="saveMemoryPersistent()">' + IC.check + ' ' + (isRu ? 'Сохранить' : 'Save') + '</button>' +
-            '<button class="rt-save-btn" onclick="clearAgentMemory(\'persistent\')" style="background:linear-gradient(135deg,#0ea5e9,#0284c7)">' + (isRu ? 'Очистить' : 'Clear') + '</button>' +
+            '<button class="rt-save-btn" onclick="clearAgentMemory(\'persistent\')" style="background:linear-gradient(135deg,var(--primary),var(--primary-dark))">' + (isRu ? 'Очистить' : 'Clear') + '</button>' +
           '</div>' +
         '</div>' +
       '</div>' +
@@ -2922,7 +2922,7 @@ function switchSettingsTab(tab) {
         '<div class="rt-section-label">' + IC.bolt + ' ' + (isRu ? 'Действия' : 'Actions') + '</div>' +
         '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
           '<button class="rt-save-btn" style="background:linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%)" onclick="cloneAgentFromSettings()">' + IC.clipboard + ' ' + (isRu ? 'Клонировать агента' : 'Clone Agent') + '</button>' +
-          '<button class="rt-save-btn" style="background:linear-gradient(135deg,#0ea5e9 0%,#06b6d4 100%)" onclick="exportAgentJSON()">' + IC.download + ' ' + (isRu ? 'Экспорт JSON' : 'Export JSON') + '</button>' +
+          '<button class="rt-save-btn" style="background:linear-gradient(135deg,var(--primary),var(--primary-dark))" onclick="exportAgentJSON()">' + IC.download + ' ' + (isRu ? 'Экспорт JSON' : 'Export JSON') + '</button>' +
           '<label class="rt-save-btn" style="background:linear-gradient(135deg,#22c55e 0%,#16a34a 100%);cursor:pointer">' + IC.upload + ' ' + (isRu ? 'Импорт JSON' : 'Import JSON') + '<input type="file" accept=".json" style="display:none" onchange="importAgentJSON(this)"></label>' +
         '</div>' +
       '</div>' +
@@ -3498,7 +3498,7 @@ async function loadAgentTelegramTab(body, agentId) {
           (info.username ? '<div style="color:var(--text-primary);font-size:.9rem;font-weight:500;margin-bottom:4px">@' + escHtml(info.username) + '</div>' : '') +
           (maskedPhone ? '<div style="color:var(--text-muted);font-size:.8rem">' + escHtml(maskedPhone) + '</div>' : '') +
         '</div>' +
-        '<button class="rt-save-btn" style="background:linear-gradient(135deg,#0ea5e9 0%,#0284c7 100%);box-shadow:0 4px 16px rgba(14,165,233,0.3)" onclick="disconnectAgentTelegram(' + agentId + ')">' +
+        '<button class="rt-save-btn" style="background:linear-gradient(135deg,var(--primary),var(--primary-dark));box-shadow:0 4px 16px var(--accent-glow)" onclick="disconnectAgentTelegram(' + agentId + ')">' +
           IC.x + ' ' + (isRu ? 'Отключить аккаунт' : 'Disconnect Account') +
         '</button>' +
         '</div>';
@@ -11024,7 +11024,7 @@ function highlightProfileSetup() {
     if (!el) return;
     // Pulse animation
     el.style.transition = 'box-shadow .3s, border-color .3s';
-    el.style.boxShadow = '0 0 0 3px rgba(0,152,234,0.3)';
+    el.style.boxShadow = '0 0 0 3px var(--accent-glow)';
     el.style.borderColor = '#0098EA';
     // Scroll first empty field into view
     if (id === 'ai-api-key-input' && !el.value) {
@@ -11135,7 +11135,7 @@ function startGuidedTour() {
           if (_pulseCount > 6) { clearInterval(_pulseInt); target.style.boxShadow = ''; target.style.borderColor = ''; return; }
           target.style.boxShadow = _pulseCount % 2 === 0
             ? '0 0 0 4px rgba(14,165,233,0.4), 0 0 20px rgba(14,165,233,0.2)'
-            : '0 0 0 6px rgba(14,165,233,0.6), 0 0 30px rgba(14,165,233,0.3)';
+            : '0 0 0 6px rgba(14,165,233,0.6), 0 0 30px var(--accent-glow)';
         }, 800);
       }
       var isRu = currentLang === 'ru';
@@ -11265,7 +11265,7 @@ var AGENT_TOUR_STEPS = [
 
 function _guideStep(num, title, desc, tabName) {
   return '<div class="guide-step" onclick="dismissAgentGuide(); switchSettingsTab(\'' + tabName + '\')" style="display:flex;gap:12px;padding:12px 14px;border-radius:10px;cursor:pointer;transition:all .2s;background:rgba(255,255,255,0.03);border:1px solid transparent" onmouseenter="this.style.background=\'rgba(0,152,234,0.08)\';this.style.borderColor=\'rgba(0,152,234,0.25)\'" onmouseleave="this.style.background=\'rgba(255,255,255,0.03)\';this.style.borderColor=\'transparent\'">' +
-    '<div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#0098EA,#0070B0);color:#fff;display:flex;align-items:center;justify-content:center;font-size:.8rem;font-weight:700;flex-shrink:0">' + num + '</div>' +
+    '<div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:#fff;display:flex;align-items:center;justify-content:center;font-size:.8rem;font-weight:700;flex-shrink:0">' + num + '</div>' +
     '<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:.88rem;color:var(--text-primary);margin-bottom:2px">' + title + '</div>' +
     '<div style="font-size:.78rem;color:var(--text-muted);line-height:1.4">' + desc + '</div></div>' +
     '<div style="color:var(--text-muted);font-size:.9rem;display:flex;align-items:center;opacity:.5">&#8250;</div>' +
@@ -11323,7 +11323,7 @@ function startAgentTour(force) {
         'learning') +
     '</div>' +
     '<div style="margin-top:14px;text-align:center">' +
-      '<button onclick="dismissAgentGuide(); switchSettingsTab(\'ai\')" style="background:linear-gradient(135deg,#0098EA,#0070B0);color:#fff;border:none;padding:10px 24px;border-radius:10px;font-size:.85rem;font-weight:600;cursor:pointer;transition:all .2s;box-shadow:0 2px 8px rgba(0,152,234,0.3)" onmouseenter="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 4px 12px rgba(0,152,234,0.4)\'" onmouseleave="this.style.transform=\'none\';this.style.boxShadow=\'0 2px 8px rgba(0,152,234,0.3)\'">' +
+      '<button onclick="dismissAgentGuide(); switchSettingsTab(\'ai\')" style="background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:#fff;border:none;padding:10px 24px;border-radius:10px;font-size:.85rem;font-weight:600;cursor:pointer;transition:all .2s;box-shadow:0 2px 8px var(--accent-glow)" onmouseenter="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 4px 12px var(--accent-glow)\'" onmouseleave="this.style.transform=\'none\';this.style.boxShadow=\'0 2px 8px var(--accent-glow)\'">' +
         (isRu ? 'Начать с API ключа \u2192' : 'Start with API key \u2192') +
       '</button>' +
     '</div>' +
@@ -12875,7 +12875,7 @@ function loadGuidePage() {
     { id: 'start', icon: _ico('<circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/>'),
       title: isRu ? 'Быстрый старт' : 'Quick Start',
       subtitle: isRu ? 'Создайте первого агента за 2 минуты' : 'Create your first agent in 2 minutes',
-      gradient: 'linear-gradient(135deg, rgba(14,165,233,0.15), rgba(6,182,212,0.08))',
+      gradient: 'linear-gradient(135deg, var(--accent-dim), rgba(6,182,212,0.08))',
       cards: [
         { title: isRu ? 'Atlas AI (рекомендуется)' : 'Atlas AI (recommended)', desc: isRu ? 'Опишите задачу текстом — Atlas создаст агента, настроит промпт, выберет инструменты и запустит. Atlas знает все о платформе.' : 'Describe the task — Atlas creates the agent, sets up prompt, picks tools and launches it. Atlas knows everything about the platform.', action: 'navigateTo("assistant")', btn: isRu ? 'Открыть Atlas' : 'Open Atlas' },
         { title: isRu ? 'Визуальный конструктор' : 'Visual Constructor', desc: isRu ? 'Drag & drop блоки: триггер, действия, логика. Без кода. Подходит для сложных workflow с условиями и циклами.' : 'Drag & drop blocks: trigger, actions, logic. No code. Good for complex workflows with conditions and loops.', action: 'navigateTo("builder")', btn: isRu ? 'Открыть' : 'Open' },
@@ -12972,7 +12972,7 @@ function loadGuidePage() {
     { id: 'ton', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.7 10.3a2.41 2.41 0 0 0 0 3.41l7.59 7.59a2.41 2.41 0 0 0 3.41 0l7.59-7.59a2.41 2.41 0 0 0 0-3.41l-7.59-7.59a2.41 2.41 0 0 0-3.41 0z"/></svg>',
       title: 'TON Blockchain',
       subtitle: isRu ? 'Кошельки, свопы, NFT, жетоны' : 'Wallets, swaps, NFTs, jettons',
-      gradient: 'linear-gradient(135deg, rgba(14,165,233,0.15), rgba(2,132,199,0.08))',
+      gradient: 'linear-gradient(135deg, var(--accent-dim), rgba(2,132,199,0.08))',
       items: [isRu ? 'Баланс TON/жетонов' : 'TON/jetton balance', isRu ? 'Свопы через DeDust/STON.fi' : 'Swaps via DeDust/STON.fi', isRu ? 'NFT floor price + аналитика' : 'NFT floor price + analytics', isRu ? 'Отправка TON/жетонов' : 'Send TON/jettons', isRu ? 'Агентский кошелёк' : 'Agentic wallet'],
       details: isRu ? [
         { q: 'Кошелёк агента', a: 'Каждый агент может иметь свой TON кошелёк (Agentic Wallet). Создание:\n\n1. Кошельки (боковое меню) → Создать Root Wallet\n2. Настройки агента → Wallet → выбрать Agentic Wallet\n3. Установить дневной лимит расходов\n\nRoot Wallet — мастер-кошелёк. К нему привязываются суб-кошельки агентов. Мнемоника шифруется AES-256-GCM.' },
@@ -13063,11 +13063,11 @@ function loadGuidePage() {
       // URLs: make clickable
       var processed = escHtml(trimmed).replace(/(https?:\/\/[^\s<]+|[a-z]+\.[a-z]+\.[a-z]+[^\s]*|aistudio\.google\.com|console\.groq\.com|openrouter\.ai[^\s]*)/gi, function(url) {
         var href = url.startsWith('http') ? url : 'https://' + url;
-        return '<a href="' + href + '" target="_blank" style="color:#0ea5e9;text-decoration:none;border-bottom:1px dashed rgba(14,165,233,0.3)">' + url + '</a>';
+        return '<a href="' + href + '" target="_blank" style="color:#0ea5e9;text-decoration:none;border-bottom:1px dashed var(--accent-glow)">' + url + '</a>';
       });
       // Quote blocks: lines starting with "
       if (/^["«"]/.test(trimmed)) {
-        html += '<div style="border-left:2px solid rgba(14,165,233,0.3);padding-left:10px;margin:4px 0;font-style:italic;color:var(--text-muted)">' + processed + '</div>';
+        html += '<div style="border-left:2px solid var(--accent-glow);padding-left:10px;margin:4px 0;font-style:italic;color:var(--text-muted)">' + processed + '</div>';
         continue;
       }
       html += '<div style="margin:3px 0">' + processed + '</div>';
@@ -13086,8 +13086,8 @@ function loadGuidePage() {
       tabs += '<button onclick="_switchGuideTab(\'' + sec.id + '\')" style="' +
         'flex-shrink:0;display:flex;align-items:center;gap:6px;padding:10px 16px;border:none;border-radius:10px;cursor:pointer;' +
         'font-size:.82rem;font-weight:' + (active ? '600' : '400') + ';transition:all .2s;white-space:nowrap;' +
-        'background:' + (active ? 'rgba(14,165,233,0.15)' : 'transparent') + ';' +
-        'color:' + (active ? '#0ea5e9' : 'var(--text-muted)') + ';' +
+        'background:' + (active ? 'var(--accent-dim)' : 'transparent') + ';' +
+        'color:' + (active ? 'var(--primary)' : 'var(--text-muted)') + ';' +
         '">' + sec.icon + ' ' + sec.title + '</button>';
     });
     tabs += '</div>';
@@ -13101,7 +13101,7 @@ function loadGuidePage() {
         '<div><h3 style="margin:0;font-size:1.05rem;color:var(--text-primary)">' + s.title + '</h3>' +
           '<p style="margin:0;font-size:.76rem;color:var(--text-muted)">' + s.subtitle + '</p></div>' +
       '</div>' +
-      '<button onclick="startGuidedTour()" style="display:flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;border:1px solid rgba(14,165,233,0.3);background:rgba(14,165,233,0.08);color:#0ea5e9;font-size:.75rem;font-weight:600;cursor:pointer;transition:all .2s" onmouseenter="this.style.background=\'rgba(14,165,233,0.15)\'" onmouseleave="this.style.background=\'rgba(14,165,233,0.08)\'">' +
+      '<button onclick="startGuidedTour()" style="display:flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;border:1px solid var(--accent-glow);background:var(--accent-dim);color:#0ea5e9;font-size:.75rem;font-weight:600;cursor:pointer;transition:all .2s" onmouseenter="this.style.background=\'var(--accent-dim)\'" onmouseleave="this.style.background=\'var(--accent-dim)\'">' +
         '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>' +
         (isRu ? 'Тур' : 'Tour') +
       '</button>' +
@@ -13191,8 +13191,8 @@ function loadGuidePage() {
 
     // Tip — prominent card
     if (s.tip) {
-      content += '<div style="margin-top:16px;padding:16px 20px;background:linear-gradient(135deg,rgba(14,165,233,0.08),rgba(99,102,241,0.05));border:1px solid rgba(14,165,233,0.15);border-radius:12px;font-size:.82rem;color:var(--text-secondary);line-height:1.5;display:flex;gap:12px;align-items:flex-start">' +
-        '<div style="width:28px;height:28px;min-width:28px;border-radius:8px;background:rgba(14,165,233,0.15);display:flex;align-items:center;justify-content:center;color:#0ea5e9;margin-top:1px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg></div>' +
+      content += '<div style="margin-top:16px;padding:16px 20px;background:linear-gradient(135deg,var(--accent-dim),rgba(99,102,241,0.05));border:1px solid var(--accent-dim);border-radius:12px;font-size:.82rem;color:var(--text-secondary);line-height:1.5;display:flex;gap:12px;align-items:flex-start">' +
+        '<div style="width:28px;height:28px;min-width:28px;border-radius:8px;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;color:#0ea5e9;margin-top:1px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg></div>' +
         '<div>' + s.tip + '</div></div>';
     }
 
@@ -13647,7 +13647,7 @@ function showTosPopup() {
   overlay.innerHTML =
     '<div style="background:var(--bg-secondary,#1a1f2e);border:1px solid var(--border,#2a3040);border-radius:16px;max-width:520px;width:100%;max-height:85vh;overflow-y:auto;padding:32px">' +
       '<div style="text-align:center;margin-bottom:20px">' +
-        '<div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,#0ea5e9,#0284c7);display:inline-flex;align-items:center;justify-content:center;margin-bottom:12px">' +
+        '<div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,var(--primary),var(--primary-dark));display:inline-flex;align-items:center;justify-content:center;margin-bottom:12px">' +
           '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>' +
         '</div>' +
         '<h2 style="margin:0;font-size:1.3rem;color:var(--text-primary,#fff)">' + (isRu ? 'Пользовательское соглашение' : 'Terms of Service') + '</h2>' +
@@ -13805,7 +13805,7 @@ function setNotifAutoDismiss(sec) {
   document.querySelectorAll('.notif-dismiss-btn').forEach(function(b) {
     b.style.background = 'var(--bg-primary)'; b.style.borderColor = 'var(--border)'; b.style.color = 'var(--text-primary)';
   });
-  var target = event && event.target; if (target) { target.style.background = 'rgba(14,165,233,0.15)'; target.style.borderColor = '#0ea5e9'; target.style.color = '#0ea5e9'; }
+  var target = event && event.target; if (target) { target.style.background = 'var(--accent-dim)'; target.style.borderColor = '#0ea5e9'; target.style.color = '#0ea5e9'; }
   var slider = document.getElementById('notif-duration-slider');
   var val = document.getElementById('notif-duration-value');
   if (slider) slider.value = sec || 2;
@@ -13845,7 +13845,7 @@ function setNotifRetain(val) {
   document.querySelectorAll('.notif-retain-btn').forEach(function(b) {
     b.style.background = 'var(--bg-primary)'; b.style.borderColor = 'var(--border)'; b.style.color = 'var(--text-primary)';
   });
-  if (event && event.target) { event.target.style.background = 'rgba(14,165,233,0.15)'; event.target.style.borderColor = '#0ea5e9'; event.target.style.color = '#0ea5e9'; }
+  if (event && event.target) { event.target.style.background = 'var(--accent-dim)'; event.target.style.borderColor = '#0ea5e9'; event.target.style.color = '#0ea5e9'; }
   var customEl = document.getElementById('notif-custom-retain');
   if (val === 'custom') {
     if (customEl) customEl.style.display = '';
