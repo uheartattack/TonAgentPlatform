@@ -7702,10 +7702,16 @@ If web_search returns nothing useful → say "не смог найти акту�
         }
         await logToDb(params.agentId, 'info', `[tool_result] ${f.name} → ${logSummary}`, params.userId);
 
+        // Detect permanent permission errors — tell AI to stop retrying this chat
+        let resultContent = truncateToolOutput(JSON.stringify(result));
+        if (result?.error && /CHAT_ADMIN_REQUIRED|CHAT_WRITE_FORBIDDEN|USER_BANNED_IN_CHANNEL|CHANNEL_PRIVATE|USER_NOT_PARTICIPANT/i.test(result.error)) {
+          resultContent += '\n\n[SYSTEM: This is a PERMANENT permission error. Do NOT retry sending to this chat. The account lacks permissions. Move on to other tasks.]';
+        }
+
         return {
           role:         'tool' as const,
           tool_call_id: tc.id,
-          content:      truncateToolOutput(JSON.stringify(result)),
+          content:      resultContent,
         };
     };
 
@@ -8002,8 +8008,8 @@ If web_search returns nothing useful → say "не смог найти акту�
 
   await logToDb(params.agentId, 'info', `[AI run] done, tools=${totalToolCalls}, tokens=${totalTokensUsed}, notified=${notifyWasCalled}`, params.userId);
 
-  // ── Mark proactive tick as useful if it produced output ──
-  if (msgs.length === 0 && (totalToolCalls > 0 || notifyWasCalled)) {
+  // ── Mark proactive tick timestamp (prevents rapid empty ticks) ──
+  if (msgs.length === 0) {
     _stateRepo.set(params.agentId, params.userId, '_last_useful_proactive_ts', String(Date.now())).catch(() => {});
   }
 
