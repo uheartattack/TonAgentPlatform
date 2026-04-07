@@ -7891,7 +7891,177 @@ html, body {
   max-height: -webkit-fill-available;
 }
 
-/* Small mobile — likely Telegram WebView */
+/* ── MOBILE-FIRST COMPACT UI (not a PC copy) ── */
+@media (max-width: 768px) {
+  /* Compact topbar */
+  .studio-topbar {
+    height: 44px !important;
+    min-height: 44px !important;
+    padding: 0 12px !important;
+    gap: 8px !important;
+  }
+  .topbar-search { display: none !important; }
+
+  /* Compact page headers */
+  .page-header {
+    padding: 12px 16px !important;
+    position: relative !important;
+    /* Not sticky on mobile — saves vertical space */
+    position: static !important;
+  }
+  .page-title { font-size: 1.15rem !important; }
+  .page-subtitle { font-size: .72rem !important; }
+  .page-header .btn { padding: 6px 12px !important; font-size: .75rem !important; }
+
+  /* Compact agent cards */
+  .agent-card, .agent-card-enhanced {
+    padding: 10px 14px !important;
+    border-radius: 12px !important;
+    gap: 8px !important;
+  }
+  .agent-card-name { font-size: .88rem !important; }
+  .agent-card-desc { font-size: .72rem !important; }
+  .agent-card-actions button {
+    padding: 4px 10px !important;
+    font-size: .7rem !important;
+  }
+
+  /* Compact metrics */
+  .metrics-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+  }
+  .metric-card {
+    padding: 12px !important;
+    border-radius: 10px !important;
+  }
+  .metric-value { font-size: 1.3rem !important; }
+  .metric-label { font-size: .65rem !important; }
+
+  /* Compact settings tabs */
+  .st-nav {
+    overflow-x: auto !important;
+    flex-wrap: nowrap !important;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    gap: 2px !important;
+    padding: 4px 8px !important;
+  }
+  .st-nav::-webkit-scrollbar { display: none; }
+  .st-nav-item {
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+    padding: 6px 10px !important;
+    font-size: .7rem !important;
+    border-radius: 8px !important;
+  }
+
+  /* Settings modal — full screen */
+  #agent-settings-modal {
+    padding: 0 !important;
+  }
+  #agent-settings-modal > div,
+  .modal-content {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    border-radius: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Settings body compact */
+  .rt-page { padding: 12px !important; }
+  .rt-header { padding: 12px !important; gap: 10px !important; }
+  .rt-header h3 { font-size: .95rem !important; }
+  .rt-section { margin-bottom: 12px !important; }
+  .rt-section-label { font-size: .7rem !important; padding: 6px 0 !important; }
+  .st-textarea {
+    font-size: .8rem !important;
+    padding: 10px !important;
+    min-height: 120px !important;
+  }
+
+  /* Compact buttons everywhere */
+  .btn, .rt-save-btn {
+    padding: 8px 16px !important;
+    font-size: .78rem !important;
+    border-radius: 8px !important;
+  }
+
+  /* Atlas chat compact */
+  .assistant-msg-content { font-size: .82rem !important; line-height: 1.45 !important; }
+  #assistant-input {
+    font-size: 16px !important;
+    padding: 10px 14px !important;
+  }
+
+  /* Sidebar compact when open */
+  .sidebar.open {
+    width: 260px !important;
+  }
+  .nav-item {
+    padding: 8px 14px !important;
+    font-size: .82rem !important;
+    gap: 10px !important;
+  }
+  .nav-item svg { width: 16px !important; height: 16px !important; }
+  .sidebar-header {
+    padding: 12px 16px !important;
+  }
+  .sidebar-footer {
+    padding: 8px 12px !important;
+  }
+
+  /* Filter buttons compact */
+  .operations-filters button, .capabilities-filters button {
+    padding: 5px 10px !important;
+    font-size: .72rem !important;
+  }
+
+  /* Detail panel — full screen */
+  #agent-detail-panel {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* FAB position */
+  #feedback-fab {
+    width: 44px !important;
+    height: 44px !important;
+    bottom: 16px !important;
+    right: 16px !important;
+    font-size: 1rem !important;
+  }
+
+  /* Feedback modal — bottom sheet */
+  #feedback-modal > div {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    border-radius: 16px 16px 0 0 !important;
+    position: fixed !important;
+    bottom: 0 !important;
+    max-height: 75dvh !important;
+    overflow-y: auto !important;
+    padding: 20px !important;
+  }
+
+  /* Onboarding guide compact */
+  #agent-onboard-guide {
+    margin: 8px !important;
+    padding: 14px !important;
+  }
+
+  /* Tables horizontal scroll */
+  table, .data-table {
+    display: block !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Extra small — phones in TG WebView */
 @media (max-width: 420px) {
   /* Sidebar full screen overlay */
   .sidebar {
