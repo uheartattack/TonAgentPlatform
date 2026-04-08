@@ -1950,6 +1950,9 @@ function switchSettingsTab(tab) {
       { id: 'trader', name: 'Trader', icon: IC.trending, color: '#ef4444',
         desc: currentLang === 'ru' ? 'Трейдер' : 'Trader',
         effect: currentLang === 'ru' ? 'Торговля, арбитраж, P&L трекинг. Стоп-лоссы, позиционирование, дисциплина.' : 'Trading, arbitrage, P&L tracking. Stop-losses, position sizing, discipline.' },
+      { id: 'admin', name: 'Chat Admin', icon: IC.shield, color: '#f97316',
+        desc: currentLang === 'ru' ? 'Админ чата' : 'Chat Admin',
+        effect: currentLang === 'ru' ? 'Модерация, бан/мьют, антиспам, приветствие новичков, правила.' : 'Moderation, ban/mute, anti-spam, welcome newbies, rules enforcement.' },
     ];
     var isRu = currentLang === 'ru';
     var colorSwatches = ['#0098EA', '#3b82f6', '#6366f1', '#a855f7', '#ec4899', '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6', '#06b6d4', '#64748b'];
