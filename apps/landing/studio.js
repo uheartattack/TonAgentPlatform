@@ -702,6 +702,8 @@ async function loadMyStats() {
   // Model name from user settings
   var modelEl = document.querySelector('.model-name');
   if (modelEl && data.aiModel) modelEl.textContent = data.aiModel;
+  // Total agents count
+  animateCount(document.getElementById('agents-total-value'), data.agentsTotal || 0, 800);
 }
 
 // ===== PINNED AGENTS =====
