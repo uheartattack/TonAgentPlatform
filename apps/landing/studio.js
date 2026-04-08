@@ -1376,6 +1376,8 @@ function closeAgentSettings() {
   // Refresh agents list
   if (typeof loadAgents === 'function') loadAgents();
   if (typeof loadAgentsPage === 'function') loadAgentsPage();
+  // Reset URL to operations page
+  if (history.replaceState) history.replaceState(null, '', '/studio/operations');
 }
 
 
@@ -7101,8 +7103,8 @@ function updateSidebarPlanBadge(sub) {
     if (!betaEl) {
       betaEl = document.createElement('span');
       betaEl.id = 'user-beta-badge';
-      betaEl.style.cssText = 'display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:20px;background:rgba(168,85,247,0.1);border:1px solid rgba(168,85,247,0.3);color:#a855f7;font-size:.78rem;font-weight:600;margin-left:8px';
-      betaEl.textContent = '\uD83E\uDDEA Beta Tester';
+      betaEl.style.cssText = 'display:block;padding:2px 8px;border-radius:10px;background:rgba(168,85,247,0.12);color:#a855f7;font-size:.62rem;font-weight:600;margin-top:2px;letter-spacing:.3px';
+      betaEl.textContent = 'BETA TESTER';
       badge.parentElement.appendChild(betaEl);
     }
   }
