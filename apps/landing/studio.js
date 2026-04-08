@@ -1943,7 +1943,13 @@ function switchSettingsTab(tab) {
         effect: currentLang === 'ru' ? 'Уведомляет только при значимых изменениях (>5%). Не спамит. Краткий формат.' : 'Notifies only on significant changes (>5%). No spam. Brief format.' },
       { id: 'director', name: 'Director', icon: IC.crown, color: '#ffd700',
         desc: currentLang === 'ru' ? 'Директор' : 'Director',
-        effect: currentLang === 'ru' ? 'Управляет людьми и агентами. Получает assign_task, manage_agent, send_report, check_tasks.' : 'Manages people and agents. Gets assign_task, manage_agent, send_report, check_tasks.' },
+        effect: currentLang === 'ru' ? 'Управляет людьми и агентами. Стратегическое мышление, OKR, бюджеты.' : 'Manages people and agents. Strategic thinking, OKRs, budgets.' },
+      { id: 'creative', name: 'Creative', icon: IC.image, color: '#ec4899',
+        desc: currentLang === 'ru' ? 'Контент и SMM' : 'Content & SMM',
+        effect: currentLang === 'ru' ? 'Создаёт контент, ведёт каналы, адаптирует стиль. Проактивный постинг.' : 'Creates content, manages channels, adapts style. Proactive posting.' },
+      { id: 'trader', name: 'Trader', icon: IC.trending, color: '#ef4444',
+        desc: currentLang === 'ru' ? 'Трейдер' : 'Trader',
+        effect: currentLang === 'ru' ? 'Торговля, арбитраж, P&L трекинг. Стоп-лоссы, позиционирование, дисциплина.' : 'Trading, arbitrage, P&L tracking. Stop-losses, position sizing, discipline.' },
     ];
     var isRu = currentLang === 'ru';
     var colorSwatches = ['#0098EA', '#3b82f6', '#6366f1', '#a855f7', '#ec4899', '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6', '#06b6d4', '#64748b'];
