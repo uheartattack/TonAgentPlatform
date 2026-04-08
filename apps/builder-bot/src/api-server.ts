@@ -634,50 +634,9 @@ export function startApiServer() {
     next();
   });
 
-  // ── Gzip compression via express-compatible middleware ──
-  // Pre-compress static files on first request, serve from cache
-  const _gzipCache = new Map<string, { buf: Buffer; ts: number }>();
-  const GZIP_EXTENSIONS = new Set(['js', 'css', 'html', 'json', 'svg', 'txt']);
-  app.use((req: Request, res: Response, next: NextFunction) => {
-    const accept = req.headers['accept-encoding'] || '';
-    if (!accept.includes('gzip')) return next();
-    const ext = req.path.split('.').pop()?.toLowerCase() || '';
-    if (!GZIP_EXTENSIONS.has(ext)) return next();
-    // Check cache
-    const cached = _gzipCache.get(req.path);
-    if (cached && Date.now() - cached.ts < 300_000) { // 5 min cache
-      const contentTypes: Record<string, string> = { js: 'application/javascript', css: 'text/css', html: 'text/html', json: 'application/json', svg: 'image/svg+xml', txt: 'text/plain' };
-      res.setHeader('Content-Type', contentTypes[ext] || 'text/plain');
-      res.setHeader('Content-Encoding', 'gzip');
-      res.setHeader('Cache-Control', ext === 'js' || ext === 'css' ? 'public, max-age=300' : 'public, max-age=3600');
-      res.setHeader('Vary', 'Accept-Encoding');
-      return res.end(cached.buf);
-    }
-    // Read file, compress, cache
-    const filePath = path.join(path.resolve(__dirname, '../../../apps/landing'), req.path);
-    const fs = require('fs');
-    const zlib = require('zlib');
-    fs.readFile(filePath, (err: any, data: Buffer) => {
-      if (err) return next(); // file not found, let static handler deal with it
-      zlib.gzip(data, { level: 6 }, (zerr: any, compressed: Buffer) => {
-        if (zerr || !compressed) return next();
-        _gzipCache.set(req.path, { buf: compressed, ts: Date.now() });
-        // Evict old entries
-        if (_gzipCache.size > 50) {
-          const keys = Array.from(_gzipCache.keys());
-          for (let i = 0; i < 25; i++) _gzipCache.delete(keys[i]);
-        }
-        const contentTypes: Record<string, string> = { js: 'application/javascript', css: 'text/css', html: 'text/html', json: 'application/json', svg: 'image/svg+xml', txt: 'text/plain' };
-        res.setHeader('Content-Type', contentTypes[ext] || 'text/plain');
-        res.setHeader('Content-Encoding', 'gzip');
-        res.setHeader('Cache-Control', ext === 'js' || ext === 'css' ? 'public, max-age=300' : 'public, max-age=3600');
-        res.setHeader('Vary', 'Accept-Encoding');
-        res.end(compressed);
-      });
-    });
-  });
+  // Gzip handled by nginx — no Express middleware needed
 
-  // Статика лендинга (with cache headers, fallback for non-gzip clients)
+  // Статика лендинга (cache headers only, nginx serves files directly)
   const landingPath = path.resolve(__dirname, '../../../apps/landing');
   app.use(express.static(landingPath, {
     maxAge: '1h',           // cache static files for 1 hour
