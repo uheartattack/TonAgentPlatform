@@ -7217,10 +7217,7 @@ select:focus {
 }
 
 /* ── Wallet address Space Grotesk ── */
-.wallet-card-value {
-  font-family: 'Space Grotesk', 'Inter', sans-serif;
-  letter-spacing: -0.3px;
-}
+/* wallet-card-value: inherits Inter from body, consistent with metrics */
 
 /* ── btn-sm override to Blink spec ── */
 .btn-sm {
