@@ -2284,7 +2284,14 @@ class UserbotManager {
             if (lastSeen === 0 && msgs.length > 0 && newMsgs.length === 0) {
               this.supergroupLastMsgId.set(lastKey, msgs[msgs.length - 1].id);
             }
-          } catch (pe: any) { console.warn(`[UserbotMgr] poll-chat error @${shared.username} chat=${chatId}:`, pe?.message); }
+          } catch (pe: any) {
+            console.warn(`[UserbotMgr] poll-chat error @${shared.username} chat=${chatId}:`, pe?.message);
+            // Remove permanently invalid chats from polling to stop spam
+            if (pe?.message?.includes('CHANNEL_INVALID') || pe?.message?.includes('CHANNEL_PRIVATE') || pe?.message?.includes('Could not find the input entity')) {
+              shared.trackedChats?.delete(chatId);
+              console.warn(`[UserbotMgr] Removed invalid chat ${chatId} from polling`);
+            }
+          }
         }
       } catch (e: any) {
         console.warn(`[UserbotMgr] Poller error @${shared.username}: ${e.message}`);
