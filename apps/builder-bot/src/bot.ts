@@ -5185,23 +5185,27 @@ bot.on('callback_query', async (ctx) => {
   if (data.startsWith('set_role:')) {
     await ctx.answerCbQuery();
     const agentId = parseInt(data.split(':')[1]);
+    const ru = getUserLang(userId) === 'ru';
+    const roles = [
+      { id: 'worker', name: ru ? 'Исполнитель' : 'Worker', desc: ru ? 'Быстрый исполнитель задач' : 'Fast task executor' },
+      { id: 'specialist', name: ru ? 'Эксперт' : 'Specialist', desc: ru ? 'Глубокий анализ и экспертиза' : 'Deep analysis & expertise' },
+      { id: 'manager', name: ru ? 'Менеджер' : 'Manager', desc: ru ? 'Координация команды агентов' : 'Agent team coordination' },
+      { id: 'director', name: ru ? 'Директор' : 'Director', desc: ru ? 'Стратегия + управление людьми' : 'Strategy + human management' },
+      { id: 'monitor', name: ru ? 'Наблюдатель' : 'Monitor', desc: ru ? 'Мониторинг и алерты' : 'Monitoring & alerts' },
+      { id: 'creative', name: ru ? 'Креатив' : 'Creative', desc: ru ? 'Контент и SMM' : 'Content & social media' },
+      { id: 'trader', name: ru ? 'Трейдер' : 'Trader', desc: ru ? 'Торговля и P&L' : 'Trading & P&L' },
+    ];
+    const descText = roles.map(r => `<b>${r.name}</b> — ${r.desc}`).join('\n');
+    const roleButtons = [];
+    for (let i = 0; i < roles.length; i += 3) {
+      roleButtons.push(roles.slice(i, i + 3).map(r => ({ text: r.name, callback_data: `role_set:${agentId}:${r.id}` })));
+    }
+    roleButtons.push([{ text: `${peb('back')} ${ru ? 'Назад' : 'Back'}`, callback_data: `agent_menu:${agentId}` }]);
     await editOrReply(ctx,
-      `🎭 <b>Выберите роль для агента #${agentId}</b>\n\n` +
-      `🤖 <b>Worker</b> — стандартный агент, выполняет задачи\n` +
-      `📊 <b>Manager</b> — управляет процессами, координирует\n` +
-      `🧠 <b>Director</b> — может назначать задачи людям и управлять другими агентами`,
+      `${ru ? 'Выберите роль для агента' : 'Choose role for agent'} #${agentId}\n\n${descText}`,
       {
         parse_mode: 'HTML',
-        reply_markup: {
-          inline_keyboard: [
-            [
-              { text: '🤖 Worker', callback_data: `role_set:${agentId}:worker` },
-              { text: '📊 Manager', callback_data: `role_set:${agentId}:manager` },
-              { text: '🧠 Director', callback_data: `role_set:${agentId}:director` },
-            ],
-            [{ text: `${peb('back')} Назад`, callback_data: `agent_menu:${agentId}` }],
-          ],
-        },
+        reply_markup: { inline_keyboard: roleButtons },
       }
     );
     return;
@@ -5213,8 +5217,9 @@ bot.on('callback_query', async (ctx) => {
     const role = parts[2];
     try {
       await dbPool.query('UPDATE builder_bot.agents SET role = $1 WHERE id = $2 AND user_id = $3', [role, agentId, userId]);
-      const emoji = role === 'director' ? '🧠' : role === 'manager' ? '📊' : '🤖';
-      await editOrReply(ctx, `${emoji} Роль агента #${agentId} обновлена на <b>${role}</b>`, { parse_mode: 'HTML' });
+      const roleLabels: Record<string, string> = { worker: 'WRK', specialist: 'EXP', manager: 'MGR', director: 'DIR', monitor: 'MON', creative: 'CRT', trader: 'TRD' };
+      const rl = roleLabels[role] || role.toUpperCase();
+      await editOrReply(ctx, `[${rl}] Роль агента #${agentId} обновлена на <b>${role}</b>`, { parse_mode: 'HTML' });
     } catch (e: any) {
       await editOrReply(ctx, `❌ Ошибка: ${escHtml(e.message)}`, { parse_mode: 'HTML' });
     }
@@ -9589,8 +9594,10 @@ async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
         agentLevel = roleRes.rows[0].level || 1;
       }
     } catch {}
-    const roleEmoji = agentRole === 'director' ? '🧠' : agentRole === 'manager' ? '📊' : '🤖';
-    const roleName = agentRole === 'director' ? 'Director' : agentRole === 'manager' ? 'Manager' : 'Worker';
+    const roleLabelsMap: Record<string, string> = { worker: 'WRK', specialist: 'EXP', manager: 'MGR', director: 'DIR', monitor: 'MON', creative: 'CRT', trader: 'TRD' };
+    const roleNamesMap: Record<string, string> = { worker: 'Worker', specialist: 'Specialist', manager: 'Manager', director: 'Director', monitor: 'Monitor', creative: 'Creative', trader: 'Trader' };
+    const roleEmoji = `[${roleLabelsMap[agentRole] || 'WRK'}]`;
+    const roleName = roleNamesMap[agentRole] || 'Worker';
     const levelBar = '█'.repeat(Math.min(agentLevel, 10)) + '░'.repeat(Math.max(0, 10 - agentLevel));
 
     // ── Onboarding checklist: detect what's missing ──
