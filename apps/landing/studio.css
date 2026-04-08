@@ -1238,6 +1238,7 @@ body {
   border: 1px solid var(--border);
   border-radius: 30px;
   padding: 20px;
+  margin-bottom: 16px;
   transition: all var(--transition-fast);
 }
 
