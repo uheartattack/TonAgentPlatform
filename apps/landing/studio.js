@@ -6209,61 +6209,107 @@ function navigateTo(pageName) {
 }
 
 // ===== ANALYTICS PAGE =====
-let _analyticsLeaderboardSort = 'executions'; // 'executions' | 'success' | 'avgtime'
+var _analyticsDays = 7;
 
 async function loadAnalytics() {
-  const [statsData, exData, agentsData] = await Promise.all([
-    apiRequest('GET', '/api/stats/me'),
-    apiRequest('GET', '/api/executions?limit=500'),
-    apiRequest('GET', '/api/agents'),
-  ]);
+  var container = document.getElementById('analytics-page');
+  if (!container) return;
+  var isRu = currentLang === 'ru';
 
-  // Fill stat cards
-  const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-  if (statsData.ok) {
-    setEl('an-total-runs', statsData.totalRuns ?? '—');
-    setEl('an-success-rate', (statsData.successRate != null ? statsData.successRate + '%' : '—'));
-    setEl('an-last24h', statsData.last24hRuns ?? '—');
-    setEl('an-active-agents', statsData.agentsActive ?? '—');
-  }
-
-  const execs = (exData.ok && exData.executions) || [];
-  const agents = (agentsData.ok && agentsData.agents) || [];
-
-  // --- Bar chart: Executions over last 7 days ---
-  drawBarChart(execs);
-
-  // --- Donut chart: Success rate ---
-  drawDonutChart(execs);
-
-  // --- Agent leaderboard ---
-  renderLeaderboard(execs, agents);
-
-  // --- Execution history table ---
-  const tableEl = document.getElementById('analytics-executions-table');
-  if (!tableEl) return;
-  if (!execs.length) {
-    tableEl.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-muted)">' + t('no_executions') + '</div>';
+  // Fetch data from new API
+  var data;
+  try {
+    data = await apiRequest('GET', '/api/analytics?days=' + _analyticsDays);
+    if (!data.ok) throw new Error(data.error || 'Failed');
+  } catch(e) {
+    // Fallback: show error
+    var pc = container.querySelector('.page-content');
+    if (pc) pc.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted)">' + escHtml(e.message) + '</div>';
     return;
   }
 
-  const statusIcon = s => s === 'success' ? IC.check : s === 'running' ? IC.refresh : s === 'failed' ? IC.x : IC.hourglass;
-  tableEl.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:.85rem">' +
-    '<thead><tr style="border-bottom:1px solid var(--border);color:var(--text-muted)">' +
-    '<th style="text-align:left;padding:.6rem 1rem">Agent</th>' +
-    '<th style="text-align:left;padding:.6rem .5rem">Status</th>' +
-    '<th style="text-align:left;padding:.6rem .5rem">Duration</th>' +
-    '<th style="text-align:left;padding:.6rem .5rem">Time</th>' +
-    '</tr></thead><tbody>' +
-    execs.slice(0, 50).map(function(ex) {
-      return '<tr style="border-bottom:1px solid var(--border-subtle)">' +
-        '<td style="padding:.5rem 1rem;font-weight:500">#' + ex.agentId + '</td>' +
-        '<td style="padding:.5rem .5rem">' + statusIcon(ex.status) + ' ' + ex.status + '</td>' +
-        '<td style="padding:.5rem .5rem">' + (ex.durationMs ? (ex.durationMs / 1000).toFixed(1) + 's' : '—') + '</td>' +
-        '<td style="padding:.5rem .5rem;color:var(--text-muted)">' + new Date(ex.startedAt || ex.createdAt).toLocaleString() + '</td>' +
-        '</tr>';
-    }).join('') +
-    '</tbody></table>';
+  var s = data.summary || {};
+  var pc = container.querySelector('.page-content');
+  if (!pc) return;
+
+  var html = '';
+
+  // Period selector
+  html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:20px">';
+  [7, 14, 30].forEach(function(d) {
+    var active = _analyticsDays === d;
+    html += '<button onclick="_analyticsDays=' + d + ';loadAnalytics()" style="padding:6px 16px;border-radius:20px;border:1px solid ' + (active ? 'var(--primary)' : 'var(--border)') + ';background:' + (active ? 'var(--accent-dim)' : 'var(--bg-primary)') + ';color:' + (active ? 'var(--primary)' : 'var(--text-muted)') + ';font-size:.78rem;font-weight:600;cursor:pointer;transition:all .15s">' + d + (isRu ? ' дн' : 'd') + '</button>';
+  });
+  html += '</div>';
+
+  // Summary cards (2 rows of 4)
+  var cards = [
+    { label: isRu ? 'Запуски' : 'Runs', value: s.totalRuns || 0, color: 'var(--primary)' },
+    { label: isRu ? 'Успешность' : 'Success', value: (s.successRate || 0) + '%', color: '#22c55e' },
+    { label: isRu ? 'Ошибки' : 'Failed', value: s.totalFailed || 0, color: '#ef4444' },
+    { label: isRu ? 'Ср. время' : 'Avg Time', value: data.daily.length ? (data.daily.reduce(function(a,d){return a+d.avgMs},0)/data.daily.length/1000).toFixed(1)+'s' : '—', color: '#f59e0b' },
+    { label: isRu ? 'Токены' : 'Tokens', value: s.totalTokens > 1000 ? Math.round(s.totalTokens/1000)+'K' : (s.totalTokens || 0), color: '#8b5cf6' },
+    { label: isRu ? 'Агентов' : 'Agents', value: (data.agents || []).length, color: '#06b6d4' },
+    { label: isRu ? 'Лидер' : 'Top Agent', value: (data.agents && data.agents[0]) ? data.agents[0].name.slice(0,12) : '—', color: '#ec4899' },
+    { label: isRu ? 'Период' : 'Period', value: _analyticsDays + (isRu ? ' дн' : ' days'), color: 'var(--text-muted)' },
+  ];
+  html += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px">';
+  cards.forEach(function(c) {
+    html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:14px 16px">' +
+      '<div style="font-size:.68rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">' + c.label + '</div>' +
+      '<div style="font-size:1.3rem;font-weight:700;color:' + c.color + '">' + c.value + '</div></div>';
+  });
+  html += '</div>';
+
+  // Charts row (bar + donut)
+  html += '<div style="display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:20px">';
+  // Bar chart
+  html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:16px">' +
+    '<div style="font-size:.82rem;font-weight:600;color:var(--text-primary);margin-bottom:10px">' + (isRu ? 'Запуски по дням' : 'Daily Runs') + '</div>' +
+    '<canvas id="an-bar-chart" style="width:100%"></canvas></div>';
+  // Donut
+  html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:16px;display:flex;flex-direction:column;align-items:center">' +
+    '<div style="font-size:.82rem;font-weight:600;color:var(--text-primary);margin-bottom:10px;align-self:flex-start">' + (isRu ? 'Распределение' : 'Distribution') + '</div>' +
+    '<canvas id="an-donut-chart"></canvas>' +
+    '<div id="an-donut-legend" style="margin-top:10px;display:flex;gap:12px;flex-wrap:wrap;justify-content:center"></div></div>';
+  html += '</div>';
+
+  // Heatmap
+  html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:20px">' +
+    '<div style="font-size:.82rem;font-weight:600;color:var(--text-primary);margin-bottom:12px">' + (isRu ? 'Активность по часам' : 'Activity Heatmap') + '</div>' +
+    '<div id="an-heatmap" style="overflow-x:auto"></div></div>';
+
+  // Agent leaderboard + Top errors
+  html += '<div style="display:grid;grid-template-columns:3fr 2fr;gap:16px;margin-bottom:20px">';
+  html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:16px">' +
+    '<div style="font-size:.82rem;font-weight:600;color:var(--text-primary);margin-bottom:10px">' + (isRu ? 'Рейтинг агентов' : 'Agent Ranking') + '</div>' +
+    '<div id="analytics-leaderboard"></div></div>';
+  html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:16px">' +
+    '<div style="font-size:.82rem;font-weight:600;color:var(--text-primary);margin-bottom:10px">' + (isRu ? 'Частые ошибки' : 'Top Errors') + '</div>' +
+    '<div id="an-top-errors"></div></div>';
+  html += '</div>';
+
+  pc.innerHTML = html;
+
+  // Render charts
+  drawBarChart(data.daily.map(function(d) { return { startedAt: d.day, status: 'success', _success: d.success, _failed: d.failed, _total: d.total }; }));
+
+  // Donut from summary
+  var donutExecs = [];
+  for (var i = 0; i < (s.totalSuccess||0); i++) donutExecs.push({status:'success'});
+  for (var j = 0; j < (s.totalFailed||0); j++) donutExecs.push({status:'failed'});
+  var other = (s.totalRuns||0) - (s.totalSuccess||0) - (s.totalFailed||0);
+  for (var k = 0; k < other; k++) donutExecs.push({status:'other'});
+  drawDonutChart(donutExecs);
+
+  // Heatmap
+  renderHeatmap(data.heatmap || []);
+
+  // Leaderboard
+  renderLeaderboard([], data.agents || []);
+
+  // Top errors
+  renderTopErrors(data.topErrors || []);
 }
 
 // ===== BAR CHART: Executions over last 7 days =====
@@ -6461,83 +6507,82 @@ function drawDonutChart(execs) {
 function renderLeaderboard(execs, agents) {
   var el = document.getElementById('analytics-leaderboard');
   if (!el) return;
+  var isRu = currentLang === 'ru';
 
-  if (!execs.length) {
-    el.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-muted)">' + t('no_executions') + '</div>';
+  // agents is already aggregated from API
+  var rows = agents || [];
+  if (!rows.length) {
+    el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">' + (isRu ? 'Нет данных' : 'No data') + '</div>';
     return;
   }
 
-  // Build per-agent stats
-  var agentMap = {};
-  agents.forEach(function(a) {
-    agentMap[a.id] = a.name || ('Agent #' + a.id);
-  });
+  el.innerHTML = '<div style="display:flex;flex-direction:column;gap:6px">' +
+    rows.slice(0, 8).map(function(r, i) {
+      var pct = r.total > 0 ? Math.round(r.success / r.total * 100) : 0;
+      var barColor = pct >= 80 ? '#22c55e' : pct >= 50 ? '#f59e0b' : '#ef4444';
+      return '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg-secondary);border-radius:10px">' +
+        '<span style="width:22px;font-size:.75rem;font-weight:700;color:' + (i < 3 ? barColor : 'var(--text-muted)') + '">' + (i+1) + '</span>' +
+        '<span style="flex:1;font-size:.82rem;font-weight:500;color:var(--text-primary)">' + escHtml(r.name.slice(0,20)) + '</span>' +
+        '<span style="font-size:.72rem;color:var(--text-muted)">' + r.total + ' ' + (isRu ? 'зап.' : 'runs') + '</span>' +
+        '<span style="font-size:.72rem;color:' + barColor + ';font-weight:600;min-width:36px;text-align:right">' + pct + '%</span>' +
+        '<span style="font-size:.68rem;color:var(--text-muted);min-width:40px;text-align:right">' + (r.avgMs > 0 ? (r.avgMs/1000).toFixed(1)+'s' : '—') + '</span>' +
+      '</div>';
+    }).join('') + '</div>';
+}
 
-  var statsMap = {};
-  execs.forEach(function(ex) {
-    var aid = ex.agentId;
-    if (!statsMap[aid]) statsMap[aid] = { id: aid, name: agentMap[aid] || ('#' + aid), total: 0, success: 0, failed: 0, totalDuration: 0, durCount: 0 };
-    var s = statsMap[aid];
-    s.total++;
-    if (ex.status === 'success') s.success++;
-    if (ex.status === 'failed') s.failed++;
-    if (ex.durationMs) { s.totalDuration += ex.durationMs; s.durCount++; }
-  });
-
-  var rows = Object.values(statsMap);
-
-  // Sort
-  var sortKey = _analyticsLeaderboardSort;
-  if (sortKey === 'success') {
-    rows.sort(function(a, b) { return (b.total ? b.success / b.total : 0) - (a.total ? a.success / a.total : 0); });
-  } else if (sortKey === 'avgtime') {
-    rows.sort(function(a, b) { return (a.durCount ? a.totalDuration / a.durCount : 9e9) - (b.durCount ? b.totalDuration / b.durCount : 9e9); });
-  } else {
-    rows.sort(function(a, b) { return b.total - a.total; });
-  }
-
-  var maxTotal = rows.length ? rows[0].total : 1;
-  if (sortKey !== 'executions') maxTotal = rows.reduce(function(m, r) { return Math.max(m, r.total); }, 1);
-
+// ===== HEATMAP =====
+function renderHeatmap(heatData) {
+  var el = document.getElementById('an-heatmap');
+  if (!el) return;
   var isRu = currentLang === 'ru';
-  var tabs = [
-    { key: 'executions', label: isRu ? 'По запускам' : 'By Executions' },
-    { key: 'success', label: isRu ? 'По успешности' : 'By Success Rate' },
-    { key: 'avgtime', label: isRu ? 'По скорости' : 'By Avg Time' }
-  ];
+  var dayNames = isRu ? ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'] : ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-  var html = '<div class="leaderboard-tabs">';
-  tabs.forEach(function(tab) {
-    html += '<button class="leaderboard-tab' + (tab.key === sortKey ? ' active' : '') + '" onclick="_analyticsLeaderboardSort=\'' + tab.key + '\';loadAnalytics()">' + tab.label + '</button>';
+  // Build 7x24 grid
+  var grid = {};
+  var maxCount = 1;
+  heatData.forEach(function(h) {
+    var key = h.dow + ':' + h.hour;
+    grid[key] = h.count;
+    if (h.count > maxCount) maxCount = h.count;
   });
+
+  var html = '<div style="display:grid;grid-template-columns:40px repeat(24,1fr);gap:2px;font-size:.6rem">';
+  // Header row
+  html += '<div></div>';
+  for (var h = 0; h < 24; h++) {
+    html += '<div style="text-align:center;color:var(--text-muted);padding:2px 0">' + (h % 3 === 0 ? h + ':00' : '') + '</div>';
+  }
+  // Data rows
+  for (var d = 0; d < 7; d++) {
+    html += '<div style="color:var(--text-muted);display:flex;align-items:center;font-size:.65rem">' + dayNames[d] + '</div>';
+    for (var hh = 0; hh < 24; hh++) {
+      var count = grid[d + ':' + hh] || 0;
+      var intensity = count > 0 ? Math.max(0.15, count / maxCount) : 0;
+      var bg = count > 0 ? 'rgba(34,197,94,' + intensity.toFixed(2) + ')' : 'rgba(255,255,255,0.03)';
+      html += '<div style="aspect-ratio:1;border-radius:3px;background:' + bg + ';min-width:12px" title="' + dayNames[d] + ' ' + hh + ':00 — ' + count + ' runs"></div>';
+    }
+  }
   html += '</div>';
-
-  html += '<table class="leaderboard-table"><thead><tr>';
-  html += '<th>#</th>';
-  html += '<th>' + (isRu ? 'Агент' : 'Agent') + '</th>';
-  html += '<th>' + (isRu ? 'Запуски' : 'Runs') + '</th>';
-  html += '<th>' + (isRu ? 'Успех' : 'Success') + '</th>';
-  html += '<th>' + (isRu ? 'Ср. время' : 'Avg Time') + '</th>';
-  html += '</tr></thead><tbody>';
-
-  rows.slice(0, 10).forEach(function(r, i) {
-    var rankClass = i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : '';
-    var successPct = r.total ? Math.round((r.success / r.total) * 100) : 0;
-    var avgTime = r.durCount ? (r.totalDuration / r.durCount / 1000).toFixed(1) + 's' : '—';
-    var barPct = Math.round((r.total / maxTotal) * 100);
-    var barColor = successPct >= 80 ? '#2dcc70' : successPct >= 50 ? '#f5a623' : '#e74c3c';
-
-    html += '<tr>';
-    html += '<td><span class="leaderboard-rank ' + rankClass + '">' + (i + 1) + '</span></td>';
-    html += '<td style="font-weight:500">' + escHtml(r.name) + '</td>';
-    html += '<td>' + r.total + '<span class="leaderboard-bar-bg"><span class="leaderboard-bar-fill" style="width:' + barPct + '%;background:var(--primary)"></span></span></td>';
-    html += '<td><span style="color:' + barColor + '">' + successPct + '%</span> <span style="color:var(--text-muted);font-size:.75rem">(' + r.success + '/' + r.total + ')</span></td>';
-    html += '<td style="font-family:\'JetBrains Mono\',monospace;font-size:.8rem">' + avgTime + '</td>';
-    html += '</tr>';
-  });
-
-  html += '</tbody></table>';
   el.innerHTML = html;
+}
+
+// ===== TOP ERRORS =====
+function renderTopErrors(errors) {
+  var el = document.getElementById('an-top-errors');
+  if (!el) return;
+  var isRu = currentLang === 'ru';
+  if (!errors.length) {
+    el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">' + (isRu ? 'Нет ошибок' : 'No errors') + '</div>';
+    return;
+  }
+  el.innerHTML = errors.map(function(e) {
+    return '<div style="padding:10px 0;border-bottom:1px solid var(--border)">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">' +
+        '<span style="font-size:.72rem;padding:2px 8px;border-radius:4px;background:rgba(239,68,68,0.1);color:#ef4444;font-weight:600">x' + e.count + '</span>' +
+        '<span style="font-size:.65rem;color:var(--text-muted)">' + _timeAgo(e.last) + '</span>' +
+      '</div>' +
+      '<div style="font-size:.78rem;color:var(--text-secondary);word-break:break-word">' + escHtml(e.message) + '</div></div>';
+  }).join('');
 }
 
 // ===== PERSONA PAGE =====
@@ -12783,6 +12828,16 @@ async function loadNotificationsPage() {
       var cutoff = Date.now() - _notifRetainDays * 86400000;
       notifications = notifications.filter(function(n) { return n.time > cutoff; });
     }
+    // Filter out cleared + individually dismissed notifications
+    var _clearedAt = parseInt(localStorage.getItem('notifs_cleared_at') || '0');
+    if (_clearedAt > 0) {
+      notifications = notifications.filter(function(n) { return n.time > _clearedAt; });
+    }
+    var _dismissed = _getDismissedNotifs();
+    if (_dismissed.length > 0) {
+      var _dismissedSet = new Set(_dismissed);
+      notifications = notifications.filter(function(n) { return !_dismissedSet.has(n.title); });
+    }
     window._studioNotifications = notifications;
     renderNotifications(notifications);
 
@@ -12839,8 +12894,20 @@ function renderNotifications(notifications) {
   }).join('');
 }
 
+function _getDismissedNotifs() {
+  try { return JSON.parse(localStorage.getItem('dismissed_notifs') || '[]'); } catch { return []; }
+}
+
 function dismissNotif(card) {
   if (!card) return;
+  // Save to localStorage so it stays dismissed across tab switches
+  var title = card.querySelector('.notif-title');
+  if (title) {
+    var dismissed = _getDismissedNotifs();
+    dismissed.push(title.textContent);
+    if (dismissed.length > 200) dismissed = dismissed.slice(-100);
+    localStorage.setItem('dismissed_notifs', JSON.stringify(dismissed));
+  }
   card.style.transition = 'all .25s ease';
   card.style.opacity = '0';
   card.style.transform = 'translateX(30px)';
@@ -12848,6 +12915,8 @@ function dismissNotif(card) {
 }
 
 function clearAllNotifs() {
+  // Mark all as dismissed
+  localStorage.setItem('notifs_cleared_at', String(Date.now()));
   var cards = document.querySelectorAll('.notif-card');
   cards.forEach(function(c, i) {
     setTimeout(function() {
