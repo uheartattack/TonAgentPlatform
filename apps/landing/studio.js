@@ -4816,7 +4816,7 @@ async function startBotAuth() {
         '<div style="font-size:1.75rem;margin-bottom:10px">' + IC.phone + '</div>' +
         '<p style="color:var(--text-secondary);font-size:.9rem;margin-bottom:4px;font-weight:500">' + instrLabel + '</p>' +
         '<div style="display:flex;align-items:center;gap:8px;justify-content:center;margin:12px 0 16px">' +
-          '<code id="auth-code-text" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:8px 14px;font-size:.85rem;font-family:JetBrains Mono,monospace;color:#7dd3fc;letter-spacing:.5px;user-select:all;cursor:pointer" onclick="copyAuthCode()" title="Click to copy">' + escHtml(authCmd) + '</code>' +
+          '<code id="auth-code-text" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:8px 14px;font-size:.85rem;font-family:JetBrains Mono,monospace;color:var(--primary-light);letter-spacing:.5px;user-select:all;cursor:pointer" onclick="copyAuthCode()" title="Click to copy">' + escHtml(authCmd) + '</code>' +
           '<button id="auth-copy-btn" onclick="copyAuthCode()" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:8px;cursor:pointer;color:var(--text-secondary);display:flex;align-items:center" title="Copy">' + IC.clipboard + '</button>' +
         '</div>' +
         '<a href="' + escHtml(data.botLink) + '" target="_blank" style="display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 28px;background:linear-gradient(135deg,#2AABEE,#229ED9);color:#fff;border-radius:8px;font-size:.9375rem;font-weight:600;text-decoration:none;margin-bottom:8px;min-width:200px;box-shadow:0 2px 12px rgba(42,171,238,.3)">' + openLabel + '</a>' +
@@ -8395,7 +8395,7 @@ function showAtlasDeployStep() {
       '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:#94a3b8">' +
       '<span>' + IC.wrench + ' ' + d.nodeCount + ' блоков</span><span>' + IC.link + ' ' + d.edgeCount + ' связей</span></div>' +
       '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">' +
-      d.caps.map(function(c) { return '<span style="background:rgba(125,211,252,0.12);color:#7dd3fc;padding:3px 10px;border-radius:12px;font-size:12px">' + escHtml(c) + '</span>'; }).join('') +
+      d.caps.map(function(c) { return '<span style="background:var(--accent-dim);color:var(--primary-light);padding:3px 10px;border-radius:12px;font-size:12px">' + escHtml(c) + '</span>'; }).join('') +
       '</div>' +
       (d.warnings.length ? '<div style="margin-top:10px;font-size:12px;color:#fbbf24">' + d.warnings.map(escHtml).join('<br>') + '</div>' : '') +
       '</div>';
@@ -10419,9 +10419,9 @@ function appendAssistantMsg(role, content, buttons) {
     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     // Navigation links: [[page:pageName|Label]] → clickable links that navigate within studio
-    .replace(/\[\[page:(\w+)\|([^\]]+)\]\]/g, '<a href="#" class="assistant-nav-link" onclick="navigateTo(\'$1\');return false" style="color:#7dd3fc;text-decoration:underline;cursor:pointer">$2</a>')
+    .replace(/\[\[page:(\w+)\|([^\]]+)\]\]/g, '<a href="#" class="assistant-nav-link" onclick="navigateTo(\'$1\');return false" style="color:var(--primary-light);text-decoration:underline;cursor:pointer">$2</a>')
     // Standard markdown links: [text](url) → external links (only http/https)
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^)"']+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:#7dd3fc;text-decoration:underline">$1</a>')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)"']+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:var(--primary-light);text-decoration:underline">$1</a>')
     .replace(/\n/g, '<br>');
   if (role === 'assistant') {
     html = '<div class="assistant-msg-avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="assistant-msg-content">' + html;
@@ -10590,7 +10590,7 @@ async function sendAssistantMessage() {
                       atlasStreamEl.innerHTML = escHtml(atlasText)
                         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
                         .replace(/`([^`]+)`/g, '<code>$1</code>')
-                        .replace(/\[\[page:(\w+)\|([^\]]+)\]\]/g, '<a href="#" class="assistant-nav-link" onclick="navigateTo(\'$1\');return false" style="color:#7dd3fc;text-decoration:underline;cursor:pointer">$2</a>')
+                        .replace(/\[\[page:(\w+)\|([^\]]+)\]\]/g, '<a href="#" class="assistant-nav-link" onclick="navigateTo(\'$1\');return false" style="color:var(--primary-light);text-decoration:underline;cursor:pointer">$2</a>')
                         .replace(/\n/g, '<br>') + '<span class="chat-cursor">▋</span>';
                       if (atlasCtr) atlasCtr.scrollTop = atlasCtr.scrollHeight;
                     }
@@ -10600,7 +10600,7 @@ async function sendAssistantMessage() {
                       atlasStreamEl.innerHTML = escHtml(_final)
                         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
                         .replace(/`([^`]+)`/g, '<code>$1</code>')
-                        .replace(/\[\[page:(\w+)\|([^\]]+)\]\]/g, '<a href="#" class="assistant-nav-link" onclick="navigateTo(\'$1\');return false" style="color:#7dd3fc;text-decoration:underline;cursor:pointer">$2</a>')
+                        .replace(/\[\[page:(\w+)\|([^\]]+)\]\]/g, '<a href="#" class="assistant-nav-link" onclick="navigateTo(\'$1\');return false" style="color:var(--primary-light);text-decoration:underline;cursor:pointer">$2</a>')
                         .replace(/\n/g, '<br>');
                     }
                   } else if (atlasEvt === 'error') {

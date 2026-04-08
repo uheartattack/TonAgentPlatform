@@ -806,43 +806,42 @@ export function startApiServer() {
   // ── GET /api/me ───────────────────────────────────────────
   app.get('/api/me', requireAuth, async (req: Request, res: Response) => {
     const session = (req as any).session;
+    const userId = (req as any).userId as number; // real TG ID (resolved in requireAuth)
     // Also fetch subscription for sidebar badge
     let planId = 'free', planName = 'Free', planIcon = '🆓';
-    const isAdmin = isPlatformAdmin(session.userId) || isPlatformAdminByUsername(session.username || '');
+    const isAdmin = isPlatformAdmin(userId) || isPlatformAdminByUsername(session.username || '');
     try {
       if (isAdmin) {
         planId = 'unlimited'; planName = 'Unlimited'; planIcon = '💎';
       } else {
-        const sub = await getUserSubscription(session.userId);
+        const sub = await getUserSubscription(userId);
         const plan = PLANS[sub.planId] || PLANS.free;
         planId = plan.id; planName = plan.name; planIcon = plan.icon;
       }
     } catch {}
-    // Get real telegram_id from DB (may differ from user_id for users who changed TG accounts)
-    let telegramId = String(session.userId);
     let acceptedTos = false, acceptedErrors = false;
     try {
       const { pool } = await import('./db');
       const tgRow = await pool.query(
-        `SELECT telegram_id, accepted_tos, accepted_errors_sharing FROM builder_bot.web_sessions WHERE token = $1`,
+        `SELECT accepted_tos, accepted_errors_sharing FROM builder_bot.web_sessions WHERE token = $1`,
         [req.headers['x-auth-token']]
       );
-      if (tgRow.rows[0]?.telegram_id) telegramId = String(tgRow.rows[0].telegram_id);
       acceptedTos = tgRow.rows[0]?.accepted_tos === true;
       acceptedErrors = tgRow.rows[0]?.accepted_errors_sharing === true;
     } catch {}
+    const { isBetaTester } = await import('./payments');
     res.json({
       ok: true,
-      userId: session.userId,
-      userIdStr: String(session.userId),
+      userId,
+      userIdStr: String(userId),
       username: session.username,
       firstName: session.firstName,
       photoUrl: session.photoUrl || null,
-      telegramId,
+      telegramId: String(userId),
       planId, planName, planIcon,
-      isAdmin: isPlatformAdmin(session.userId) || isPlatformAdminByUsername(session.username || ''),
-      isBeta: (await import('./payments')).isBetaTester(session.userId),
-      betaFeatures: (await import('./payments')).isBetaTester(session.userId) ? ['all_tools', 'priority_support', 'early_access'] : [],
+      isAdmin,
+      isBeta: isBetaTester(userId),
+      betaFeatures: isBetaTester(userId) ? ['all_tools', 'priority_support', 'early_access'] : [],
       acceptedTos: acceptedTos || false,
       acceptedErrors: acceptedErrors || false,
     });
