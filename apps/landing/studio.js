@@ -11808,7 +11808,7 @@ function awRenderStats() {
   el.innerHTML = stats.map(function(s) {
     return '<div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px;padding:18px 20px">' +
       '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;color:var(--text-muted)">' + s.icon + '<span style="font-size:.75rem">' + s.label + '</span></div>' +
-      '<div style="font-size:1.4rem;font-weight:700;color:' + s.color + ';font-family:\'JetBrains Mono\',monospace">' + s.value + '</div></div>';
+      '<div style="font-size:1.4rem;font-weight:700;color:' + s.color + '">' + s.value + '</div></div>';
   }).join('');
 }
 
