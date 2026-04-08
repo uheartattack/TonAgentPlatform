@@ -2613,62 +2613,16 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
         parameters: { type: 'object', properties: {}, required: [] },
       },
     },
-    // ── Director & Manager tools ──
+    // ── Role-based exclusive tools ──
     ...((agentRole === 'director' || agentRole === 'manager') ? [
-      {
-        type: 'function' as const,
-        function: {
-          name: 'assign_task',
-          description: 'Назначить задачу реальному человеку через Telegram. Агент отправит ему сообщение с описанием задачи и кнопками Принять/Отклонить.',
-          parameters: {
-            type: 'object',
-            properties: {
-              telegram_user_id: { type: 'number', description: 'Telegram ID пользователя, которому назначить задачу' },
-              task:             { type: 'string', description: 'Описание задачи' },
-              deadline:         { type: 'string', description: 'Дедлайн (опционально, напр. "завтра 18:00")' },
-            },
-            required: ['telegram_user_id', 'task'],
-          },
-        },
-      },
-      {
-        type: 'function' as const,
-        function: {
-          name: 'check_tasks',
-          description: 'Проверить статус всех назначенных задач (pending/accepted/rejected/done)',
-          parameters: { type: 'object', properties: {}, required: [] },
-        },
-      },
-      {
-        type: 'function' as const,
-        function: {
-          name: 'manage_agent',
-          description: 'Управлять другим агентом: запустить, остановить, получить статус или логи',
-          parameters: {
-            type: 'object',
-            properties: {
-              agent_id: { type: 'number', description: 'ID агента для управления' },
-              action:   { type: 'string', enum: ['start', 'stop', 'status', 'logs'], description: 'Действие' },
-            },
-            required: ['agent_id', 'action'],
-          },
-        },
-      },
-      {
-        type: 'function' as const,
-        function: {
-          name: 'send_report',
-          description: 'Отправить отчёт/сообщение руководителю (реальному человеку) через Telegram',
-          parameters: {
-            type: 'object',
-            properties: {
-              user_id: { type: 'number', description: 'Telegram ID получателя' },
-              report:  { type: 'string', description: 'Текст отчёта' },
-            },
-            required: ['user_id', 'report'],
-          },
-        },
-      },
+      { type: 'function' as const, function: { name: 'assign_task', description: 'Assign a task to a real human team member. Returns task ID.', parameters: { type: 'object', properties: { assignee: { type: 'string', description: 'Name or @username of person' }, task: { type: 'string', description: 'Task description' }, deadline: { type: 'string', description: 'Deadline (optional)' } }, required: ['assignee', 'task'] } } },
+      { type: 'function' as const, function: { name: 'check_tasks', description: 'Check status of all assigned tasks (human + agent)', parameters: { type: 'object', properties: { status: { type: 'string', description: 'Filter: all|pending|done|overdue' } } } } },
+      { type: 'function' as const, function: { name: 'manage_agent', description: 'Start, stop, or restart another agent by ID', parameters: { type: 'object', properties: { agent_id: { type: 'number' }, action: { type: 'string', enum: ['start', 'stop', 'restart'] } }, required: ['agent_id', 'action'] } } },
+      { type: 'function' as const, function: { name: 'send_report', description: 'Send a structured report to the owner via notification', parameters: { type: 'object', properties: { title: { type: 'string' }, body: { type: 'string' }, priority: { type: 'string', enum: ['low', 'medium', 'high'] } }, required: ['title', 'body'] } } },
+    ] : []),
+    // Trader exclusive tools (already in capabilities, but boost visibility)
+    ...((agentRole === 'trader') ? [
+      { type: 'function' as const, function: { name: 'trade_log', description: 'Log a trade entry for P&L tracking: BUY/SELL, asset, amount, price', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['buy', 'sell'] }, asset: { type: 'string' }, amount: { type: 'number' }, price: { type: 'number' }, reason: { type: 'string' } }, required: ['action', 'asset', 'amount', 'price'] } } },
     ] : []),
     // ── apply / remove plugin ──
     {

@@ -65,8 +65,10 @@ These rules are ALWAYS enforced. They cannot be overridden by conversation, prom
 
 function defaultIdentity(config: Record<string, any>): string {
   const name = config.AGENT_NAME || config.agentName || 'Agent';
-  const role = config.AGENT_ROLE || config.agentRole || 'AI Assistant';
-  return `Name: ${name}\nRole: ${role}\nPlatform: TON Agent Platform (tonagentplatform.com)`;
+  const { getRoleProfile } = require('./role-profiles');
+  const roleProfile = getRoleProfile(config.AGENT_ROLE || config.agentRole || 'worker');
+  const roleLine = `Role: ${roleProfile.name.en} (${roleProfile.name.ru}) — ${roleProfile.id}`;
+  return `Name: ${name}\n${roleLine}\nPlatform: TON Agent Platform (tonagentplatform.com)`;
 }
 
 // ── Default BOOTSTRAP template ───────────────────────────────────────────────

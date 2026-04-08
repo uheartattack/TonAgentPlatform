@@ -5998,8 +5998,15 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
     } catch {}
   }
 
+  // Merge role behavior overrides (role defaults < user config)
+  const { getRoleProfile } = require('./role-profiles');
+  const _roleProfile = getRoleProfile(params.config.AGENT_ROLE || 'worker');
+  const _roleBehavior = _roleProfile.behaviorOverrides || {};
+  // Role defaults, then user overrides on top
+  const _mergedBehavior = { ..._roleBehavior, ...(params.config.behavior || {}) };
+
   // ── Behavior: schedule check — skip proactive ticks outside active hours ──
-  const _bhCfg: BehaviorConfig = params.config.behavior || {};
+  const _bhCfg: BehaviorConfig = _mergedBehavior;
   if (_bhCfg.schedule && !isWithinSchedule(_bhCfg) && msgs.length === 0) {
     // Only skip proactive ticks, not user-initiated messages
     return { toolCallCount: 0, error: 'OUTSIDE_SCHEDULE' };
@@ -6358,15 +6365,10 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
       const ownerInfo = meta.ownerName
         ? `${meta.ownerName}${meta.ownerUsername ? ' (@' + meta.ownerUsername + ')' : ''}`
         : `User #${meta.userId || params.userId}`;
-      // Role-specific behavior instructions
-      const roleInstructions: Record<string, string> = {
-        worker: `Ты — исполнитель. Фокусируйся на выполнении конкретных задач: мониторинг, сбор данных, автоматизация. Работай автономно, сообщай результаты владельцу. Не пытайся управлять другими агентами.`,
-        manager: `Ты — координатор мультиагентной системы. Используй ask_agent для делегирования задач другим агентам. Контролируй их работу, собирай результаты, оптимизируй процессы. Отправляй сводные отчёты владельцу. Приоритет: координация > выполнение.`,
-        specialist: `Ты — эксперт-аналитик. Давай глубокий, профессиональный анализ данных. Используй несколько источников, перепроверяй цифры, строй выводы с обоснованием. Отвечай подробно с числами и фактами. Качество > скорость.`,
-        monitor: `Ты — система мониторинга и алертов. Отслеживай метрики, цены, события. Отправляй уведомления ТОЛЬКО при значимых изменениях (>5% движение, новые события). Не спамь — каждый алерт должен быть полезен. Формат: краткий + чёткий.`,
-        director: `Ты — директор. Управляешь людьми и агентами. Используй assign_task для людей, manage_agent для агентов, send_report для отчётов руководству. Принимай стратегические решения, делегируй операционку.`,
-      };
-      const roleBehavior = roleInstructions[meta.role || 'worker'] || roleInstructions.worker;
+      // Deep role system — replaces old 1-line roleInstructions
+      const { getRoleProfile } = require('./role-profiles');
+      const roleProfile = getRoleProfile(meta.role || 'worker');
+      const roleBehavior = roleProfile.systemPromptModule;
 
       identityBlock = `
 ━━━ ТВОЯ ИДЕНТИЧНОСТЬ ━━━

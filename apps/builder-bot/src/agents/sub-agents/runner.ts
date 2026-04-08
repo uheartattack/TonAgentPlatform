@@ -147,6 +147,27 @@ export function normalizeAgentConfig(cfg: Record<string, any>): Record<string, a
   if (cfg.loop_max_responses === undefined) cfg.loop_max_responses = 8;
   if (cfg.loop_window_sec === undefined) cfg.loop_window_sec = 300;
 
+  // Role-aware defaults: role profile provides base config, user overrides on top
+  try {
+    const { getRoleProfile } = require('./role-profiles');
+    const roleId = cfg.AGENT_ROLE || cfg.agentRole || 'worker';
+    const profile = getRoleProfile(roleId);
+    // Behavior: role defaults < existing config (user wins)
+    if (profile.behaviorOverrides) {
+      const bh = cfg.behavior;
+      for (const [k, v] of Object.entries(profile.behaviorOverrides)) {
+        if (bh[k] === undefined) bh[k] = v;
+      }
+    }
+    // Learning: same merge pattern
+    if (profile.learningOverrides) {
+      const lr = cfg.learning;
+      for (const [k, v] of Object.entries(profile.learningOverrides)) {
+        if (lr[k] === undefined) lr[k] = v;
+      }
+    }
+  } catch {}
+
   return cfg;
 }
 
