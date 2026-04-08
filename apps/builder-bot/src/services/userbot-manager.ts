@@ -2286,10 +2286,31 @@ class UserbotManager {
             }
           } catch (pe: any) {
             console.warn(`[UserbotMgr] poll-chat error @${shared.username} chat=${chatId}:`, pe?.message);
-            // Remove permanently invalid chats from polling to stop spam
+            // Remove permanently invalid chats from polling + agent_state to stop spam
             if (pe?.message?.includes('CHANNEL_INVALID') || pe?.message?.includes('CHANNEL_PRIVATE') || pe?.message?.includes('Could not find the input entity')) {
-              shared.trackedChats?.delete(chatId);
-              console.warn(`[UserbotMgr] Removed invalid chat ${chatId} from polling`);
+              // Remove from active_chats in agent_state for ALL agents on this account
+              for (const aid of shared.agentIds) {
+                try {
+                  const { getAgentStateRepository: _getASR2 } = require('../db/schema-extensions');
+                  const sr2 = _getASR2();
+                  const stored2 = await sr2.get(aid, 'active_chats').catch(() => null);
+                  if (stored2) {
+                    const chats2: string[] = Array.isArray(stored2) ? stored2 : (typeof stored2 === 'string' ? JSON.parse(stored2) : []);
+                    const filtered = chats2.filter((c: string) => c !== chatId && c !== String(chatId));
+                    if (filtered.length !== chats2.length) {
+                      await sr2.set(aid, 0, 'active_chats', JSON.stringify(filtered)).catch(() => {});
+                    }
+                  }
+                } catch {}
+              }
+              // Also remove from in-memory activeChats
+              var idx = activeChats.indexOf(chatId);
+              if (idx >= 0) activeChats.splice(idx, 1);
+              console.warn(`[UserbotMgr] Removed invalid chat ${chatId} from polling + agent_state`);
+              // Notify agent owner
+              try {
+                const cfg = shared.agentIds[0] ? require('../db/schema-extensions').getAgentStateRepository() : null;
+              } catch {}
             }
           }
         }
