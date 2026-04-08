@@ -41,11 +41,12 @@ const sessions = new Map<string, { userId: number; username: string; firstName: 
 async function loadSessionsFromDB() {
   try {
     const res = await pool.query(
-      `SELECT token, user_id, username, first_name, photo_url, expires_at FROM builder_bot.web_sessions WHERE expires_at > NOW()`
+      `SELECT token, user_id, username, first_name, photo_url, expires_at, telegram_id FROM builder_bot.web_sessions WHERE expires_at > NOW()`
     );
     for (const r of res.rows) {
       sessions.set(r.token, {
         userId: Number(r.user_id),
+        telegramId: r.telegram_id ? Number(r.telegram_id) : undefined,
         username: r.username || '',
         firstName: r.first_name || '',
         photoUrl: r.photo_url || undefined,
@@ -285,7 +286,8 @@ function requireAuth(req: Request, res: Response, next: NextFunction): void {
   if (!token) { res.status(401).json({ error: 'Требуется заголовок X-Auth-Token' }); return; }
   const session = getSession(token);
   if (!session) { res.status(401).json({ error: 'Сессия не найдена или истекла — войдите заново' }); return; }
-  (req as any).userId = session.userId;
+  // Prefer telegram_id over OIDC user_id (OIDC returns different ID than real TG ID)
+  (req as any).userId = session.telegramId ? Number(session.telegramId) : session.userId;
   (req as any).session = session;
   next();
 }
@@ -736,10 +738,22 @@ export function startApiServer() {
       return;
     }
     const token = generateToken();
-    const sess = { userId: user.userId, username: user.username, firstName: user.firstName, expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000 };
+    // Try to resolve real Telegram ID from platform_admins or existing sessions
+    let realTgId: number | undefined;
+    try {
+      const existing = await pool.query(`SELECT telegram_id FROM builder_bot.web_sessions WHERE username = $1 AND telegram_id IS NOT NULL LIMIT 1`, [user.username]);
+      if (existing.rows[0]?.telegram_id) realTgId = Number(existing.rows[0].telegram_id);
+    } catch {}
+    if (!realTgId) {
+      try {
+        const admin = await pool.query(`SELECT telegram_id FROM builder_bot.platform_admins WHERE username = $1 LIMIT 1`, [user.username?.toLowerCase()]);
+        if (admin.rows[0]?.telegram_id) realTgId = Number(admin.rows[0].telegram_id);
+      } catch {}
+    }
+    const sess = { userId: user.userId, telegramId: realTgId, username: user.username, firstName: user.firstName, expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000 } as any;
     sessions.set(token, sess);
     persistSession(token, sess);
-    res.json({ ok: true, token, userId: user.userId, username: user.username, firstName: user.firstName, photoUrl: null });
+    res.json({ ok: true, token, userId: realTgId || user.userId, username: user.username, firstName: user.firstName, photoUrl: null });
   });
 
   // ── POST /api/auth/telegram-code — OIDC code exchange flow ──
