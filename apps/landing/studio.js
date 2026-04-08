@@ -6131,14 +6131,12 @@ document.addEventListener('DOMContentLoaded', () => {
   if (agentMatch) {
     var _routeAgentId = parseInt(agentMatch[1]);
     var _routeTab = agentMatch[2] || 'soul';
+    // Direct open — no intermediate navigation
     setTimeout(async function() {
       if (!authToken) return;
-      navigateTo('agents');
-      await new Promise(function(r){ setTimeout(r, 400); });
       await openAgentDetail(_routeAgentId);
-      await new Promise(function(r){ setTimeout(r, 300); });
-      switchSettingsTab(_routeTab);
-    }, 600);
+      if (_routeTab !== 'soul') switchSettingsTab(_routeTab);
+    }, 300);
   } else {
     var match = path.match(/\/studio\/(\w+)/);
     if (match && match[1]) {
