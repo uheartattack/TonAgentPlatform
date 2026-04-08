@@ -3065,11 +3065,10 @@ export function startApiServer() {
       const active = agents.filter((a: any) => a.isActive).length;
       const pluginStats = getPluginManager().getStats();
 
-      // Execution stats from history table
+      // Execution stats from history table (per-user)
       let totalRuns = 0;
       let successRate = 0;
       let last24hRuns = 0;
-      let uptimeSeconds = Math.floor(process.uptime());
       try {
         const stats = await getExecutionHistoryRepository().getStats(userId);
         totalRuns = stats.totalRuns;
@@ -3078,6 +3077,33 @@ export function startApiServer() {
           : 100;
         last24hRuns = stats.last24hRuns;
       } catch { /* repo not ready */ }
+
+      // Per-user uptime: time since oldest active agent started
+      let uptimeSeconds = 0;
+      if (active > 0) {
+        try {
+          const oldest = await pool.query(
+            `SELECT MIN(updated_at) as started FROM builder_bot.agents WHERE user_id = $1 AND is_active = true`,
+            [userId]
+          );
+          if (oldest.rows[0]?.started) {
+            uptimeSeconds = Math.floor((Date.now() - new Date(oldest.rows[0].started).getTime()) / 1000);
+          }
+        } catch {}
+      }
+
+      // Per-user AI model: from user_variables or first active agent
+      let aiModel = 'multi-provider';
+      try {
+        const repo = getUserSettingsRepository();
+        const settings = await repo.getAll(userId);
+        const uv = (settings.user_variables as Record<string, any>) || {};
+        if (uv.AI_MODEL) aiModel = uv.AI_MODEL;
+        else if (uv.AI_PROVIDER) {
+          const providerModels: Record<string, string> = { gemini: 'gemini-2.5-flash', anthropic: 'claude-haiku-4-5', openai: 'gpt-4o-mini', groq: 'llama-3.3-70b', deepseek: 'deepseek-chat' };
+          aiModel = providerModels[uv.AI_PROVIDER] || uv.AI_PROVIDER;
+        }
+      } catch {}
 
       // Per-user installed plugin count
       let userPluginsInstalled = pluginStats.installed;
@@ -3096,6 +3122,7 @@ export function startApiServer() {
         successRate,
         last24hRuns,
         uptimeSeconds,
+        aiModel,
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
