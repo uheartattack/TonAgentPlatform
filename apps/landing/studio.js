@@ -14270,9 +14270,9 @@ function initFeedbackFAB() {
   fab.id = 'feedback-fab';
   fab.innerHTML = IC.bug;
   fab.title = currentLang === 'ru' ? 'Отправить фидбек' : 'Send feedback';
-  fab.style.cssText = 'position:fixed;bottom:24px;right:24px;width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:white;border:none;font-size:1.4rem;cursor:pointer;z-index:9999;box-shadow:0 4px 12px rgba(99,102,241,0.4);transition:all .2s;display:flex;align-items:center;justify-content:center';
-  fab.onmouseenter = function() { fab.style.transform = 'scale(1.1)'; fab.style.boxShadow = '0 6px 16px rgba(99,102,241,0.5)'; };
-  fab.onmouseleave = function() { fab.style.transform = 'scale(1)'; fab.style.boxShadow = '0 4px 12px rgba(99,102,241,0.4)'; };
+  fab.style.cssText = 'position:fixed;bottom:24px;right:24px;width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:white;border:none;font-size:1.4rem;cursor:pointer;z-index:9999;box-shadow:0 4px 12px var(--accent-glow);transition:all .2s;display:flex;align-items:center;justify-content:center';
+  fab.onmouseenter = function() { fab.style.transform = 'scale(1.1)'; fab.style.boxShadow = '0 6px 16px var(--accent-glow)'; };
+  fab.onmouseleave = function() { fab.style.transform = 'scale(1)'; fab.style.boxShadow = '0 4px 12px var(--accent-glow)'; };
   fab.onclick = function() { openFeedbackModal(); };
   document.body.appendChild(fab);
   // Check for unread replies periodically
@@ -14342,7 +14342,7 @@ function openFeedbackModal() {
     '<textarea id="fb-message" placeholder="' + (isRu ? 'Опишите проблему или предложение...' : 'Describe the issue or suggestion...') + '" style="width:100%;height:120px;background:var(--bg-primary);border:1px solid var(--border);border-radius:10px;padding:12px;color:var(--text-primary);font-size:.88rem;resize:vertical;font-family:inherit;box-sizing:border-box"></textarea>' +
     '<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px">' +
       '<button onclick="document.getElementById(\'feedback-modal\').remove()" style="padding:10px 20px;border-radius:10px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-muted);cursor:pointer;font-size:.85rem">' + (isRu ? 'Отмена' : 'Cancel') + '</button>' +
-      '<button id="fb-submit-btn" onclick="submitFeedback()" style="padding:10px 24px;border-radius:10px;border:none;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:white;cursor:pointer;font-size:.85rem;font-weight:600">' + (isRu ? 'Отправить' : 'Send') + '</button>' +
+      '<button id="fb-submit-btn" onclick="submitFeedback()" style="padding:10px 24px;border-radius:10px;border:none;background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:white;cursor:pointer;font-size:.85rem;font-weight:600">' + (isRu ? 'Отправить' : 'Send') + '</button>' +
     '</div>' +
   '</div>';
   modal.onclick = function(e) { if (e.target === modal) modal.remove(); };
