@@ -7377,13 +7377,24 @@ If web_search returns nothing useful → say "не смог найти акту�
         // Context overflow recovery: trim harder and retry
         try {
           const { isContextOverflowError } = require('../constants/limits');
-          if (isContextOverflowError(e.message || '') && retry < 2) {
+          const is402 = e.status === 402 || e.statusCode === 402;
+          if ((isContextOverflowError(e.message || '') || (is402 && (e.message || '').toLowerCase().includes('token'))) && retry < 2) {
             console.warn(`[AI runtime] Agent #${params.agentId} context overflow — emergency trim & retry`);
             while (messages.length > 5) messages.splice(1, 1);
             compressOldToolResults(messages, 2);
-            // Only add trim notice if not already present (prevents accumulating multiple notices)
             const hasTrimNotice = messages.some((m: any) => typeof m.content === 'string' && m.content.includes('[Context was trimmed'));
             if (!hasTrimNotice) messages.push({ role: 'system' as any, content: '[Context was trimmed due to length. Some earlier tool results were removed.]' });
+            // Notify user once about context overflow
+            const _overflowKey = `_context_overflow_notified`;
+            const _sr2 = getAgentStateRepository();
+            const _owNotified = await _sr2.get(params.agentId, _overflowKey).catch(() => null);
+            if (!_owNotified) {
+              await _sr2.set(params.agentId, params.userId, _overflowKey, 'true').catch(() => {});
+              if (params.onNotify) {
+                params.onNotify('Context overflow: your agent\'s context exceeded the model limit. History was auto-trimmed. Consider using a model with larger context (Gemini 128K, Claude 200K) or shorter system prompt.').catch(() => {});
+              }
+              await logToDb(params.agentId, 'warn', '[Auto-fix] Context overflow — trimmed history, notified user', params.userId);
+            }
             continue;
           }
         } catch {}

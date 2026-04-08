@@ -158,6 +158,9 @@ const OVERFLOW_PATTERNS = [
   'token limit',
   'tokens exceeds',
   'content too large',
+  'prompt tokens limit exceeded',
+  'tokens limit exceeded',
+  'input too long',
 ];
 export function isContextOverflowError(msg: string): boolean {
   const lower = (msg || '').toLowerCase();
