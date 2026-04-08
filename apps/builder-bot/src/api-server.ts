@@ -2760,6 +2760,83 @@ export function startApiServer() {
     }
   });
 
+  // ── GET /api/analytics — deep analytics for dashboard ──
+  app.get('/api/analytics', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const days = Math.min(parseInt(req.query.days as string) || 7, 30);
+      const agentId = req.query.agentId ? parseInt(req.query.agentId as string) : null;
+
+      // Per-day execution stats
+      let dayQuery = `
+        SELECT date_trunc('day', started_at) as day,
+               COUNT(*) as total,
+               COUNT(*) FILTER(WHERE status='success') as success,
+               COUNT(*) FILTER(WHERE status='failed') as failed,
+               AVG(duration_ms) FILTER(WHERE duration_ms > 0) as avg_ms,
+               SUM(COALESCE((result_summary->>'tokensUsed')::int, 0)) as tokens
+        FROM builder_bot.execution_history
+        WHERE user_id = $1 AND started_at > NOW() - INTERVAL '${days} days'
+      `;
+      const params: any[] = [userId];
+      if (agentId) { params.push(agentId); dayQuery += ` AND agent_id = $${params.length}`; }
+      dayQuery += ` GROUP BY day ORDER BY day`;
+      const dayStats = await pool.query(dayQuery, params);
+
+      // Per-agent stats
+      let agentQuery = `
+        SELECT agent_id, COUNT(*) as total,
+               COUNT(*) FILTER(WHERE status='success') as success,
+               COUNT(*) FILTER(WHERE status='failed') as failed,
+               AVG(duration_ms) FILTER(WHERE duration_ms > 0) as avg_ms,
+               SUM(COALESCE((result_summary->>'tokensUsed')::int, 0)) as tokens,
+               MAX(started_at) as last_run
+        FROM builder_bot.execution_history
+        WHERE user_id = $1 AND started_at > NOW() - INTERVAL '${days} days'
+        GROUP BY agent_id ORDER BY total DESC LIMIT 20
+      `;
+      const agentStats = await pool.query(agentQuery, [userId]);
+
+      // Agent names
+      const agentNames: Record<number, string> = {};
+      const agentsRes = await pool.query(`SELECT id, name, role FROM builder_bot.agents WHERE user_id = $1`, [userId]);
+      agentsRes.rows.forEach((a: any) => { agentNames[a.id] = a.name || `Agent #${a.id}`; });
+
+      // Top errors
+      const errQuery = `
+        SELECT message, COUNT(*) as cnt, MAX(created_at) as last
+        FROM builder_bot.agent_logs
+        WHERE user_id = $1 AND level IN ('error','fatal') AND created_at > NOW() - INTERVAL '${days} days'
+        GROUP BY message ORDER BY cnt DESC LIMIT 10
+      `;
+      const topErrors = await pool.query(errQuery, [userId]);
+
+      // Hourly heatmap (last 7 days)
+      const heatQuery = `
+        SELECT EXTRACT(DOW FROM started_at)::int as dow, EXTRACT(HOUR FROM started_at)::int as hour, COUNT(*) as cnt
+        FROM builder_bot.execution_history
+        WHERE user_id = $1 AND started_at > NOW() - INTERVAL '7 days'
+        GROUP BY dow, hour
+      `;
+      const heatmap = await pool.query(heatQuery, [userId]);
+
+      // Total summary
+      const totalRuns = dayStats.rows.reduce((s: number, r: any) => s + parseInt(r.total), 0);
+      const totalSuccess = dayStats.rows.reduce((s: number, r: any) => s + parseInt(r.success), 0);
+      const totalFailed = dayStats.rows.reduce((s: number, r: any) => s + parseInt(r.failed), 0);
+      const totalTokens = dayStats.rows.reduce((s: number, r: any) => s + parseInt(r.tokens || 0), 0);
+
+      res.json({
+        ok: true,
+        summary: { totalRuns, totalSuccess, totalFailed, totalTokens, successRate: totalRuns > 0 ? Math.round(totalSuccess / totalRuns * 100) : 0, days },
+        daily: dayStats.rows.map((r: any) => ({ day: r.day, total: parseInt(r.total), success: parseInt(r.success), failed: parseInt(r.failed), avgMs: Math.round(parseFloat(r.avg_ms) || 0), tokens: parseInt(r.tokens || 0) })),
+        agents: agentStats.rows.map((r: any) => ({ id: r.agent_id, name: agentNames[r.agent_id] || `#${r.agent_id}`, total: parseInt(r.total), success: parseInt(r.success), failed: parseInt(r.failed), avgMs: Math.round(parseFloat(r.avg_ms) || 0), tokens: parseInt(r.tokens || 0), lastRun: r.last_run })),
+        topErrors: topErrors.rows.map((r: any) => ({ message: r.message?.slice(0, 150), count: parseInt(r.cnt), last: r.last })),
+        heatmap: heatmap.rows.map((r: any) => ({ dow: r.dow, hour: r.hour, count: parseInt(r.cnt) })),
+      });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // ── GET /api/plugins — список плагинов (user-aware если авторизован) ──
   app.get('/api/plugins', async (req: Request, res: Response) => {
     try {
