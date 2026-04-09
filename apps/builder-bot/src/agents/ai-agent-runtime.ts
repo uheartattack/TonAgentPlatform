@@ -842,13 +842,13 @@ async function getAgentMeta(agentId: number): Promise<CachedAgentMeta | null> {
   try {
     const { pool } = await import('../db');
     const res = await pool.query(
-      `SELECT a.name, a.description, a.created_at, a.user_id
+      `SELECT a.name, a.description, a.created_at, a.user_id, a.role
        FROM builder_bot.agents a
        WHERE a.id = $1`, [agentId]);
     if (!res.rows[0]) return null;
     const r = res.rows[0];
     const meta: CachedAgentMeta = {
-      name: r.name || '', description: r.description || '', role: 'worker',
+      name: r.name || '', description: r.description || '', role: r.role || 'worker',
       userId: String(r.user_id || ''), ownerName: '', ownerUsername: '',
       createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
       cachedAt: Date.now(),
@@ -7166,6 +7166,18 @@ If web_search returns nothing useful → say "не смог найти акту�
   } catch (ragErr: any) {
     console.warn(`[ToolRAG] Hybrid RAG failed, falling back to TF-IDF: ${ragErr.message?.slice(0, 100)}`);
     tools = selectRelevantTools(allToolDefs, userMsgText, params.systemPrompt, providerCfg.maxTools);
+  }
+  // Apply role-based tool weights — boost/nerf tools for this role
+  if (_roleProfile.toolWeights && Object.keys(_roleProfile.toolWeights).length > 0) {
+    const weights = _roleProfile.toolWeights;
+    // Sort tools by weight (higher = more relevant to role)
+    tools.sort((a: any, b: any) => {
+      const wA = weights[a.function?.name] || 1.0;
+      const wB = weights[b.function?.name] || 1.0;
+      return wB - wA; // higher weight first
+    });
+    // Remove tools with weight 0 (role explicitly blocks them)
+    tools = tools.filter((t: any) => (weights[t.function?.name] ?? 1.0) > 0);
   }
   const originalTools = [...tools]; // Save for restoration after 400-error retry
 
