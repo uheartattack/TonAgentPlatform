@@ -706,22 +706,48 @@ export function startApiServer() {
   });
 
   // ── POST /api/auth/telegram ───────────────────────────────
-  app.post('/api/auth/telegram', rateLimit(10, 60000, 'auth'), (req: Request, res: Response) => {
+  app.post('/api/auth/telegram', rateLimit(10, 60000, 'auth'), async (req: Request, res: Response) => {
     const data = req.body as Record<string, string>;
     if (!verifyTelegramAuth(data)) {
       res.status(401).json({ error: 'Invalid Telegram auth data' });
       return;
     }
     const userId = parseInt(data.id, 10);
+    // Reuse existing session if TOS accepted
+    try {
+      const existing = await pool.query(
+        `SELECT token FROM builder_bot.web_sessions WHERE user_id = $1 AND accepted_tos = true AND expires_at > NOW() ORDER BY expires_at DESC LIMIT 1`,
+        [userId]
+      );
+      if (existing.rows[0]?.token) {
+        const tok = existing.rows[0].token;
+        await pool.query(`UPDATE builder_bot.web_sessions SET expires_at = NOW() + INTERVAL '30 days' WHERE token = $1`, [tok]);
+        const s = getSession(tok);
+        if (s) { s.expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000; }
+        res.json({ ok: true, token: tok, userId, username: data.username, firstName: data.first_name });
+        return;
+      }
+    } catch {}
     const token = generateToken();
     const sess = {
       userId,
+      telegramId: userId,
       username: data.username || '',
       firstName: data.first_name || '',
       expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
     };
     sessions.set(token, sess);
     persistSession(token, sess);
+    // Copy TOS from older session if exists
+    try {
+      await pool.query(
+        `UPDATE builder_bot.web_sessions SET accepted_tos = sub.tos, accepted_errors_sharing = sub.err
+         FROM (SELECT accepted_tos as tos, accepted_errors_sharing as err FROM builder_bot.web_sessions
+               WHERE user_id = $1 AND accepted_tos = true LIMIT 1) sub
+         WHERE builder_bot.web_sessions.token = $2`,
+        [userId, token]
+      );
+    } catch {}
     res.json({ ok: true, token, userId, username: data.username, firstName: data.first_name });
   });
 
@@ -737,12 +763,24 @@ export function startApiServer() {
       res.status(401).json({ ok: false, error: 'Invalid or expired token' });
       return;
     }
-    const token = generateToken();
-    // Try to resolve real Telegram ID from platform_admins or existing sessions
+    // Reuse existing session if available (preserves accepted_tos, errors_sharing)
     let realTgId: number | undefined;
+    let existingToken: string | undefined;
     try {
-      const existing = await pool.query(`SELECT telegram_id FROM builder_bot.web_sessions WHERE username = $1 AND telegram_id IS NOT NULL LIMIT 1`, [user.username]);
-      if (existing.rows[0]?.telegram_id) realTgId = Number(existing.rows[0].telegram_id);
+      const existing = await pool.query(
+        `SELECT token, telegram_id, accepted_tos, accepted_errors_sharing FROM builder_bot.web_sessions
+         WHERE username = $1 AND expires_at > NOW() ORDER BY expires_at DESC LIMIT 1`,
+        [user.username]
+      );
+      if (existing.rows[0]) {
+        realTgId = existing.rows[0].telegram_id ? Number(existing.rows[0].telegram_id) : undefined;
+        // Reuse existing session to preserve TOS acceptance
+        if (existing.rows[0].accepted_tos) {
+          existingToken = existing.rows[0].token;
+          // Extend expiry
+          await pool.query(`UPDATE builder_bot.web_sessions SET expires_at = NOW() + INTERVAL '30 days' WHERE token = $1`, [existingToken]);
+        }
+      }
     } catch {}
     if (!realTgId) {
       try {
@@ -750,9 +788,32 @@ export function startApiServer() {
         if (admin.rows[0]?.telegram_id) realTgId = Number(admin.rows[0].telegram_id);
       } catch {}
     }
+    // If we found a valid session with TOS accepted, reuse it
+    if (existingToken) {
+      const existingSess = getSession(existingToken);
+      if (existingSess) {
+        existingSess.expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000;
+        res.json({ ok: true, token: existingToken, userId: realTgId || user.userId, username: user.username, firstName: user.firstName, photoUrl: null });
+        return;
+      }
+    }
+    // Otherwise create new session
+    const token = generateToken();
     const sess = { userId: user.userId, telegramId: realTgId, username: user.username, firstName: user.firstName, expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000 } as any;
     sessions.set(token, sess);
     persistSession(token, sess);
+    // Copy TOS from previous session if available
+    if (realTgId) {
+      try {
+        await pool.query(
+          `UPDATE builder_bot.web_sessions SET accepted_tos = sub.tos, accepted_errors_sharing = sub.err
+           FROM (SELECT accepted_tos as tos, accepted_errors_sharing as err FROM builder_bot.web_sessions
+                 WHERE username = $1 AND accepted_tos = true LIMIT 1) sub
+           WHERE builder_bot.web_sessions.token = $2`,
+          [user.username, token]
+        );
+      } catch {}
+    }
     res.json({ ok: true, token, userId: realTgId || user.userId, username: user.username, firstName: user.firstName, photoUrl: null });
   });
 
