@@ -109,7 +109,31 @@ function parseIntervalMs(description: string, triggerConfig?: Record<string, any
  * This runs on every load so agents always benefit from new platform features.
  */
 export function normalizeAgentConfig(cfg: Record<string, any>): Record<string, any> {
-  // Behavior defaults
+  // Apply role-based defaults first, then platform defaults, then user overrides
+  try {
+    const { getRoleProfile } = require('../agents/role-profiles');
+    const role = cfg.AGENT_ROLE || cfg.agentRole || 'worker';
+    const profile = getRoleProfile(role);
+    if (profile.behaviorOverrides) {
+      if (!cfg.behavior || typeof cfg.behavior !== 'object') cfg.behavior = {};
+      // Role defaults fill in missing values (user overrides take precedence)
+      for (const [k, v] of Object.entries(profile.behaviorOverrides)) {
+        if (cfg.behavior[k] === undefined) cfg.behavior[k] = v;
+      }
+    }
+    if (profile.learningOverrides) {
+      if (!cfg.learning || typeof cfg.learning !== 'object') cfg.learning = {};
+      for (const [k, v] of Object.entries(profile.learningOverrides)) {
+        if (cfg.learning[k] === undefined) cfg.learning[k] = v;
+      }
+    }
+    // Apply role max spend limit if not set
+    if (cfg.daily_spend_limit_ton === undefined && profile.maxSpendPerAction !== undefined) {
+      cfg.daily_spend_limit_ton = profile.maxSpendPerAction * 10; // daily = 10x per-action
+    }
+  } catch {}
+
+  // Behavior defaults (platform-wide, fill remaining gaps)
   if (!cfg.behavior || typeof cfg.behavior !== 'object') {
     cfg.behavior = {};
   }

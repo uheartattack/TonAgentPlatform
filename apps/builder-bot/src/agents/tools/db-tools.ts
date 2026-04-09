@@ -64,11 +64,22 @@ export class DBTools {
         })
         .returning();
 
-      // Set role based on trigger type (column not in Drizzle schema, use raw SQL)
+      // Smart role detection from description + code
       try {
-        const defaultRole = params.triggerType === 'ai_agent' ? 'specialist' : 'worker';
+        const desc = ((params.description || '') + ' ' + (params.code || '')).toLowerCase();
+        let autoRole = 'worker';
+        if (params.triggerType === 'ai_agent') {
+          if (/модератор|moderator|бан|ban|мьют|mute|антиспам|anti.?spam|admin|правила|rules/i.test(desc)) autoRole = 'admin';
+          else if (/трейд|trade|арбитраж|arbitrage|p&l|profit|buy.*sell|swap|defi/i.test(desc)) autoRole = 'trader';
+          else if (/мониторинг|monitor|алерт|alert|watch|отслежив|track|цена|price/i.test(desc)) autoRole = 'monitor';
+          else if (/контент|content|пост|post|канал|channel|smm|блог|blog|stories/i.test(desc)) autoRole = 'creative';
+          else if (/координат|coordinate|делегир|delegat|команд|team|manage|orchestrat/i.test(desc)) autoRole = 'manager';
+          else if (/стратег|strateg|директор|director|okr|kpi|бизнес|business/i.test(desc)) autoRole = 'director';
+          else if (/анали|analy|эксперт|expert|исследов|research|аудит|audit/i.test(desc)) autoRole = 'specialist';
+          else autoRole = 'worker';
+        }
         const { pool } = await import('../../db');
-        await pool.query('UPDATE builder_bot.agents SET role = $1 WHERE id = $2', [defaultRole, agent.id]);
+        await pool.query('UPDATE builder_bot.agents SET role = $1 WHERE id = $2', [autoRole, agent.id]);
       } catch {}
 
       // Логируем в память

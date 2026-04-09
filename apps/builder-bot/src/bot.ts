@@ -5194,6 +5194,7 @@ bot.on('callback_query', async (ctx) => {
       { id: 'monitor', name: ru ? 'Наблюдатель' : 'Monitor', desc: ru ? 'Мониторинг и алерты' : 'Monitoring & alerts' },
       { id: 'creative', name: ru ? 'Креатив' : 'Creative', desc: ru ? 'Контент и SMM' : 'Content & social media' },
       { id: 'trader', name: ru ? 'Трейдер' : 'Trader', desc: ru ? 'Торговля и P&L' : 'Trading & P&L' },
+      { id: 'admin', name: ru ? 'Админ чата' : 'Chat Admin', desc: ru ? 'Модерация, антиспам, правила' : 'Moderation, anti-spam, rules' },
     ];
     const descText = roles.map(r => `<b>${r.name}</b> — ${r.desc}`).join('\n');
     const roleButtons = [];
@@ -5217,7 +5218,7 @@ bot.on('callback_query', async (ctx) => {
     const role = parts[2];
     try {
       await dbPool.query('UPDATE builder_bot.agents SET role = $1 WHERE id = $2 AND user_id = $3', [role, agentId, userId]);
-      const roleLabels: Record<string, string> = { worker: 'WRK', specialist: 'EXP', manager: 'MGR', director: 'DIR', monitor: 'MON', creative: 'CRT', trader: 'TRD' };
+      const roleLabels: Record<string, string> = { worker: 'WRK', specialist: 'EXP', manager: 'MGR', director: 'DIR', monitor: 'MON', creative: 'CRT', trader: 'TRD', admin: 'ADM' };
       const rl = roleLabels[role] || role.toUpperCase();
       await editOrReply(ctx, `[${rl}] Роль агента #${agentId} обновлена на <b>${role}</b>`, { parse_mode: 'HTML' });
     } catch (e: any) {
@@ -9594,8 +9595,8 @@ async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
         agentLevel = roleRes.rows[0].level || 1;
       }
     } catch {}
-    const roleLabelsMap: Record<string, string> = { worker: 'WRK', specialist: 'EXP', manager: 'MGR', director: 'DIR', monitor: 'MON', creative: 'CRT', trader: 'TRD' };
-    const roleNamesMap: Record<string, string> = { worker: 'Worker', specialist: 'Specialist', manager: 'Manager', director: 'Director', monitor: 'Monitor', creative: 'Creative', trader: 'Trader' };
+    const roleLabelsMap: Record<string, string> = { worker: 'WRK', specialist: 'EXP', manager: 'MGR', director: 'DIR', monitor: 'MON', creative: 'CRT', trader: 'TRD', admin: 'ADM' };
+    const roleNamesMap: Record<string, string> = { worker: 'Worker', specialist: 'Specialist', manager: 'Manager', director: 'Director', monitor: 'Monitor', creative: 'Creative', trader: 'Trader', admin: 'Chat Admin' };
     const roleEmoji = `[${roleLabelsMap[agentRole] || 'WRK'}]`;
     const roleName = roleNamesMap[agentRole] || 'Worker';
     const levelBar = '█'.repeat(Math.min(agentLevel, 10)) + '░'.repeat(Math.max(0, 10 - agentLevel));
