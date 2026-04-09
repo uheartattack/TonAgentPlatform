@@ -132,8 +132,28 @@ interface AgentRunData {
 // При рестарте бота state восстанавливается из DB (см. runner.ts restoreActiveAgents).
 export const agentState: Map<number, Map<string, any>> = new Map();
 
-// Последняя ошибка для auto-repair (capped to prevent unbounded growth)
+// Последняя ошибка для auto-repair — SANITIZED (no API keys, limited size)
 export const agentLastErrors: Map<number, { error: string; code: string; timestamp: Date }> = new Map();
+
+/** Record agent error with sanitization — strips API keys, limits size */
+export function recordAgentError(agentId: number, error: string, code: string): void {
+  // Sanitize: remove potential API keys and secrets from error + code
+  const sanitize = (s: string) => s
+    .replace(/AIzaSy[A-Za-z0-9_-]{33}/g, 'AIza***')
+    .replace(/sk-[A-Za-z0-9]{20,}/g, 'sk-***')
+    .replace(/sk-ant-[A-Za-z0-9-]+/g, 'sk-ant-***')
+    .replace(/sk-or-[A-Za-z0-9-]+/g, 'sk-or-***')
+    .replace(/gsk_[A-Za-z0-9]+/g, 'gsk_***')
+    .replace(/[A-Za-z0-9]{24,}:[A-Za-z0-9_-]{35,}/g, '***BOT_TOKEN***') // Telegram bot tokens
+    .replace(/(?:mnemonic|seed|private.?key|secret)\s*[:=]\s*["']?[A-Za-z0-9 ]+["']?/gi, '***REDACTED***')
+    .slice(0, 500);
+  agentLastErrors.set(agentId, { error: sanitize(error), code: sanitize(code).slice(0, 1000), timestamp: new Date() });
+  // Cap size
+  if (agentLastErrors.size > 5000) {
+    const keys = Array.from(agentLastErrors.keys());
+    for (let i = 0; i < 2500; i++) agentLastErrors.delete(keys[i]);
+  }
+}
 
 // Lock set to prevent TOCTOU race in runAgent
 const _agentRunLock = new Set<number>();
@@ -1272,7 +1292,7 @@ ${code}
       const msg = error instanceof Error ? error.message : String(error);
       addLog('error', `Ошибка: ${msg}`);
       // Сохраняем для auto-repair
-      agentLastErrors.set(params.agentId, { error: msg, code, timestamp: new Date() });
+      recordAgentError(params.agentId, msg, code);
       return { success: false, error: msg };
     }
   }
@@ -1399,13 +1419,13 @@ ${code}
         this.runningAgents.set(params.agentId, runner);
       }
       if (result.error && !stopFlag.stopped) {
-        agentLastErrors.set(params.agentId, { error: result.error, code: params.code, timestamp: new Date() });
+        recordAgentError(params.agentId, result.error, params.code);
         params.onCrash?.(result.error);
       }
     }).catch(err => {
       const msg = err?.message || String(err);
       addLog('error', `Агент упал: ${msg}`);
-      agentLastErrors.set(params.agentId, { error: msg, code: params.code, timestamp: new Date() });
+      recordAgentError(params.agentId, msg, params.code);
       params.onCrash?.(msg);
     });
 

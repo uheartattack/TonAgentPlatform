@@ -22,8 +22,15 @@ const ALGORITHM = 'aes-256-gcm';
 
 function encryptMnemonic(plaintext: string): string {
   if (!ENCRYPTION_KEY) {
-    console.warn('[AgenticWallet] WALLET_ENCRYPTION_KEY not set — storing mnemonic unencrypted');
-    return plaintext;
+    // Fallback to ENCRYPTION_KEY or BOT_TOKEN hash — NEVER store plaintext
+    const fallback = process.env.ENCRYPTION_KEY || process.env.BOT_TOKEN;
+    if (!fallback) {
+      console.error('[SECURITY] Cannot encrypt mnemonic — no encryption key available!');
+      throw new Error('WALLET_ENCRYPTION_KEY, ENCRYPTION_KEY, or BOT_TOKEN required for mnemonic encryption');
+    }
+    console.warn('[AgenticWallet] Using fallback encryption key (set WALLET_ENCRYPTION_KEY for production)');
+    const { encryptApiKey } = require('../crypto-utils');
+    return 'enc_fallback:' + encryptApiKey(plaintext);
   }
   const salt = crypto.randomBytes(16);
   const key = crypto.scryptSync(ENCRYPTION_KEY, salt, 32);

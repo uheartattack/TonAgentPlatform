@@ -738,7 +738,7 @@ async function agent(context) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          query: 'query { collection(address: "' + collectionAddress + '") { floorPrice itemsCount } }'
+          query: 'query { collection(address: "' + collectionAddress.replace(/[^A-Za-z0-9:_-]/g, '') + '") { floorPrice itemsCount } }'
         })
       });
       

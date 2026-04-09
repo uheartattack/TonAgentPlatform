@@ -151,7 +151,9 @@ console.error = function(...args: any[]) {
   _origConsoleError(...args);
   if (!_bugTrackerReady) return;
   try {
-    const msg = args.map(a => typeof a === 'object' ? (a?.message || JSON.stringify(a)?.slice(0, 300)) : String(a)).join(' ').slice(0, 1000);
+    let msg = args.map(a => typeof a === 'object' ? (a?.message || JSON.stringify(a)?.slice(0, 300)) : String(a)).join(' ').slice(0, 1000);
+    // Sanitize secrets from error messages before storing in DB
+    msg = msg.replace(/AIzaSy[A-Za-z0-9_-]{33}/g, 'AIza***').replace(/sk-[A-Za-z0-9]{20,}/g, 'sk-***').replace(/sk-ant-[A-Za-z0-9-]+/g, 'sk-ant-***').replace(/gsk_[A-Za-z0-9]+/g, 'gsk_***').replace(/[A-Za-z0-9]{24,}:[A-Za-z0-9_-]{35,}/g, '***TOKEN***');
     // Skip noisy/expected errors
     if (/MNEMONIC mismatch|WalletContractV5R1|_cachedDialogs|setupListener.*authorized=false/i.test(msg)) return;
     // Dedup: same error within 60s → skip
