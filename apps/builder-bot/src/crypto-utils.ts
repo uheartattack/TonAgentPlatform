@@ -5,8 +5,12 @@ const _ENC_KEY: Buffer = (() => {
   const envKey = process.env.ENCRYPTION_KEY;
   if (envKey && envKey.length >= 32) return Buffer.from(envKey.slice(0, 32), 'utf8');
   if (envKey) return crypto.createHash('sha256').update(envKey).digest();
-  // Deterministic fallback from BOT_TOKEN so it survives restarts
-  return crypto.createHash('sha256').update(process.env.BOT_TOKEN || 'default-key').digest();
+  // Fallback from BOT_TOKEN — NOT ideal but better than hardcoded key
+  const botToken = process.env.BOT_TOKEN;
+  if (!botToken) {
+    console.error('[SECURITY] ENCRYPTION_KEY and BOT_TOKEN both missing! Encryption will use weak fallback.');
+  }
+  return crypto.createHash('sha256').update(botToken || crypto.randomBytes(32).toString('hex')).digest();
 })();
 
 /** Encrypt a plaintext API key using AES-256-GCM. Returns prefixed string "enc:...". */

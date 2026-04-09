@@ -1678,7 +1678,7 @@ class BugTrackerRepository {
     // Simple hash: source + first 100 chars of message (normalized)
     const normalized = message.replace(/\d+/g, 'N').replace(/[a-f0-9]{8,}/gi, 'HASH').slice(0, 100);
     const { createHash } = require('crypto');
-    return createHash('md5').update(`${source}:${normalized}`).digest('hex').slice(0, 16);
+    return createHash('sha256').update(`${source}:${normalized}`).digest('hex').slice(0, 16);
   }
 
   /** Record a bug — upsert: increment count if exists, create if new */

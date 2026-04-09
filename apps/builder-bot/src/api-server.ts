@@ -125,6 +125,11 @@ setInterval(() => {
   for (const [token, session] of sessions) {
     if (now > session.expiresAt) sessions.delete(token);
   }
+  // Cap sessions to prevent memory DoS
+  if (sessions.size > 50000) {
+    const sorted = [...sessions.entries()].sort((a, b) => a[1].expiresAt - b[1].expiresAt);
+    for (let i = 0; i < 10000; i++) sessions.delete(sorted[i][0]);
+  }
   // pendingBotAuth: использованные токены (userId получен) удаляем через 2 мин, брошенные через 15 мин
   for (const [token, auth] of pendingBotAuth) {
     const isCompleted = !auth.pending && auth.userId != null;
@@ -150,7 +155,7 @@ export function createSessionFromBot(userId: number, username: string, firstName
     username,
     firstName,
     photoUrl,
-    expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000, // 30 days (was 7)
+    expiresAt: Date.now() + 14 * 24 * 60 * 60 * 1000, // 30 days (was 7)
   };
   sessions.set(token, session);
   persistSession(token, session); // save to DB
@@ -697,7 +702,7 @@ export function startApiServer() {
       userId: pending.userId!,
       username: pending.username || '',
       firstName: pending.firstName || '',
-      expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+      expiresAt: Date.now() + 14 * 24 * 60 * 60 * 1000,
     };
     sessions.set(sessionToken, sess);
     persistSession(sessionToken, sess);
@@ -723,7 +728,7 @@ export function startApiServer() {
         const tok = existing.rows[0].token;
         await pool.query(`UPDATE builder_bot.web_sessions SET expires_at = NOW() + INTERVAL '30 days' WHERE token = $1`, [tok]);
         const s = getSession(tok);
-        if (s) { s.expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000; }
+        if (s) { s.expiresAt = Date.now() + 14 * 24 * 60 * 60 * 1000; }
         res.json({ ok: true, token: tok, userId, username: data.username, firstName: data.first_name });
         return;
       }
@@ -734,7 +739,7 @@ export function startApiServer() {
       telegramId: userId,
       username: data.username || '',
       firstName: data.first_name || '',
-      expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+      expiresAt: Date.now() + 14 * 24 * 60 * 60 * 1000,
     };
     sessions.set(token, sess);
     persistSession(token, sess);
@@ -792,14 +797,14 @@ export function startApiServer() {
     if (existingToken) {
       const existingSess = getSession(existingToken);
       if (existingSess) {
-        existingSess.expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000;
+        existingSess.expiresAt = Date.now() + 14 * 24 * 60 * 60 * 1000;
         res.json({ ok: true, token: existingToken, userId: realTgId || user.userId, username: user.username, firstName: user.firstName, photoUrl: null });
         return;
       }
     }
     // Otherwise create new session
     const token = generateToken();
-    const sess = { userId: user.userId, telegramId: realTgId, username: user.username, firstName: user.firstName, expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000 } as any;
+    const sess = { userId: user.userId, telegramId: realTgId, username: user.username, firstName: user.firstName, expiresAt: Date.now() + 14 * 24 * 60 * 60 * 1000 } as any;
     sessions.set(token, sess);
     persistSession(token, sess);
     // Copy TOS from previous session if available
@@ -854,7 +859,7 @@ export function startApiServer() {
         return;
       }
       const token = generateToken();
-      const sess = { userId: user.userId, username: user.username, firstName: user.firstName, photoUrl: user.photoUrl, expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000 };
+      const sess = { userId: user.userId, username: user.username, firstName: user.firstName, photoUrl: user.photoUrl, expiresAt: Date.now() + 14 * 24 * 60 * 60 * 1000 };
       sessions.set(token, sess);
       persistSession(token, sess);
       res.json({ ok: true, token, userId: user.userId, username: user.username, firstName: user.firstName, photoUrl: user.photoUrl });
