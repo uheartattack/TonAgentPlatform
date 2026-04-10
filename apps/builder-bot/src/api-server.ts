@@ -1233,6 +1233,28 @@ export function startApiServer() {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── GET /api/beta/tasks — weekly testing tasks ──
+  app.get('/api/beta/tasks', requireAuth, async (_req: Request, res: Response) => {
+    try {
+      // Hardcoded tasks — admin updates these. Later: move to DB
+      const tasks = [
+        { id: 'create_agent', title: { en: 'Create an AI agent', ru: 'Создать AI агента' }, desc: { en: 'Use Atlas chat or Constructor', ru: 'Через Atlas чат или конструктор' }, pts: 2, category: 'core' },
+        { id: 'connect_tg', title: { en: 'Connect Telegram', ru: 'Подключить Telegram' }, desc: { en: 'QR code in agent Settings → Telegram', ru: 'QR-код в настройках агента → Telegram' }, pts: 2, category: 'core' },
+        { id: 'set_api_key', title: { en: 'Set up AI provider', ru: 'Настроить AI провайдера' }, desc: { en: 'Settings → AI tab → paste API key', ru: 'Настройки → AI → вставить API ключ' }, pts: 1, category: 'core' },
+        { id: 'test_chat', title: { en: 'Chat with your agent', ru: 'Пообщаться с агентом' }, desc: { en: 'Send a message, check response quality', ru: 'Написать сообщение, проверить качество ответа' }, pts: 2, category: 'core' },
+        { id: 'change_role', title: { en: 'Change agent role', ru: 'Сменить роль агента' }, desc: { en: 'Try Worker, Specialist, Creative, Trader', ru: 'Попробовать Worker, Specialist, Creative, Trader' }, pts: 2, category: 'settings' },
+        { id: 'test_behavior', title: { en: 'Test behavior settings', ru: 'Протестировать поведение' }, desc: { en: 'Toggle typing delay, reactions, thinking phrases', ru: 'Включить/выключить задержку набора, реакции' }, pts: 1, category: 'settings' },
+        { id: 'test_capabilities', title: { en: 'Toggle capabilities', ru: 'Переключить возможности' }, desc: { en: 'Enable/disable tool modules', ru: 'Включить/выключить модули инструментов' }, pts: 1, category: 'settings' },
+        { id: 'report_bug', title: { en: 'Report a bug', ru: 'Сообщить о баге' }, desc: { en: 'Use bug button in Studio (bottom right)', ru: 'Кнопка жука в Studio (справа внизу)' }, pts: 2, category: 'feedback' },
+        { id: 'test_mobile', title: { en: 'Test on mobile', ru: 'Протестировать на мобильном' }, desc: { en: 'Open Studio in Telegram WebView', ru: 'Открыть Studio в Telegram WebView' }, pts: 3, category: 'advanced' },
+        { id: 'test_analytics', title: { en: 'Check analytics page', ru: 'Проверить аналитику' }, desc: { en: 'Run agent, then check Analytics tab', ru: 'Запустить агента, потом проверить аналитику' }, pts: 1, category: 'advanced' },
+        { id: 'test_multiagent', title: { en: 'Create 2+ agents', ru: 'Создать 2+ агента' }, desc: { en: 'Test multi-agent on same TG account', ru: 'Проверить мультиагент на одном TG аккаунте' }, pts: 3, category: 'advanced' },
+        { id: 'weekly_report', title: { en: 'Write weekly report', ru: 'Написать недельный отчёт' }, desc: { en: 'Detailed feedback >200 words via /feedback', ru: 'Подробный фидбек >200 слов через /feedback' }, pts: 5, category: 'feedback' },
+      ];
+      res.json({ ok: true, tasks });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // ── GET /api/beta/leaderboard — public leaderboard ──
   app.get('/api/beta/leaderboard', async (_req: Request, res: Response) => {
     try {
