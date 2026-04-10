@@ -552,6 +552,18 @@ export async function awardFeedbackPoints(userId: number, feedbackType: string, 
   let pts = resolved ? (RESOLVE_BONUS[feedbackType] || 1) : (FEEDBACK_POINTS[feedbackType] || 1);
   try {
     const { pool } = require('./db');
+    // Daily limit: max 5 bug reports, 3 features, 2 support per day (resolved bonuses bypass)
+    if (!resolved) {
+      const dailyLimits: Record<string, number> = { bug: 5, feature: 3, support: 2, general: 2, critical: 3 };
+      const limit = dailyLimits[feedbackType] || 3;
+      const todayCount = await pool.query(
+        `SELECT COUNT(*) as cnt FROM builder_bot.feedback WHERE user_id = $1 AND type = $2 AND created_at > NOW() - INTERVAL '24 hours'`,
+        [userId, feedbackType]
+      );
+      if (parseInt(todayCount.rows[0]?.cnt || '0') >= limit) {
+        return { points: 0, total: 0, reward: 'daily_limit' };
+      }
+    }
     // Apply role multiplier
     try {
       const roleRow = await pool.query(`SELECT tester_role FROM builder_bot.beta_testers WHERE user_id = $1`, [userId]);
@@ -693,10 +705,11 @@ export async function dailyCheckin(userId: number): Promise<{ ok: boolean; point
     if (!res.rows.length) return { ok: false, error: 'Not a beta tester' };
     const row = res.rows[0];
     const today = new Date().toISOString().slice(0, 10);
-    if (row.last_checkin === today) return { ok: false, error: 'Already checked in today' };
+    const lastCheckin = row.last_checkin ? new Date(row.last_checkin).toISOString().slice(0, 10) : null;
+    if (lastCheckin === today) return { ok: false, error: 'Already checked in today' };
     // Calculate streak
     const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-    const newStreak = row.last_checkin === yesterday ? (row.streak_days || 0) + 1 : 1;
+    const newStreak = lastCheckin === yesterday ? (row.streak_days || 0) + 1 : 1;
     await pool.query(
       `UPDATE builder_bot.beta_testers SET feedback_count = feedback_count + 1, daily_checkins = daily_checkins + 1, last_checkin = $1, streak_days = $2 WHERE user_id = $3`,
       [today, newStreak, userId]
@@ -714,7 +727,13 @@ export async function shopBuy(userId: number, itemId: string): Promise<{ ok: boo
     if (!res.rows.length) return { ok: false, error: 'Not a beta tester' };
     const available = (res.rows[0].feedback_count || 0) - (res.rows[0].spent_points || 0);
     if (available < item.cost) return { ok: false, error: `Need ${item.cost} pts, have ${available}` };
-    await pool.query(`UPDATE builder_bot.beta_testers SET spent_points = spent_points + $1 WHERE user_id = $2`, [item.cost, userId]);
+    // Atomic: only update if still enough points (prevents race condition)
+    const upd = await pool.query(
+      `UPDATE builder_bot.beta_testers SET spent_points = spent_points + $1
+       WHERE user_id = $2 AND (feedback_count - spent_points) >= $1 RETURNING spent_points`,
+      [item.cost, userId]
+    );
+    if (!upd.rows.length) return { ok: false, error: 'Insufficient points (concurrent purchase)' };
     // Apply effect
     if (item.type === 'gens' && item.value) {
       const tracker = generationTracker.get(userId);
