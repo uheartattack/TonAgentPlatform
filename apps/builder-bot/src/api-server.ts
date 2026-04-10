@@ -1192,6 +1192,38 @@ export function startApiServer() {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── GET /api/beta/stats — personal tester stats ──
+  app.get('/api/beta/stats', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { getTesterStats, TESTER_LEVELS, SHOP_ITEMS, ACHIEVEMENTS } = await import('./payments');
+      const stats = await getTesterStats(userId);
+      if (!stats) { res.json({ ok: false, error: 'Not a beta tester' }); return; }
+      res.json({ ok: true, ...stats, levels: TESTER_LEVELS, shopItems: SHOP_ITEMS, achievements: ACHIEVEMENTS.map(a => ({ id: a.id, name: a.name, nameRu: a.nameRu, desc: a.desc, unlocked: stats.achievements?.includes(a.id) || a.condition(stats) })) });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── POST /api/beta/checkin — daily check-in ──
+  app.post('/api/beta/checkin', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { dailyCheckin } = await import('./payments');
+      const result = await dailyCheckin(userId);
+      res.json({ ok: result.ok, points: result.points, streak: result.streak, error: result.error });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── POST /api/beta/shop/buy — purchase shop item ──
+  app.post('/api/beta/shop/buy', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { itemId } = req.body;
+      const { shopBuy } = await import('./payments');
+      const result = await shopBuy(userId, itemId);
+      res.json({ ok: result.ok, error: result.error });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // ── GET /api/beta/leaderboard — public leaderboard ──
   app.get('/api/beta/leaderboard', async (_req: Request, res: Response) => {
     try {

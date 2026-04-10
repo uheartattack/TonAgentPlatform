@@ -301,6 +301,20 @@ export async function runMigrations(pool: Pool): Promise<void> {
     await client.query(`CREATE INDEX IF NOT EXISTS idx_feedback_user ON builder_bot.feedback (user_id, created_at DESC)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_feedback_status ON builder_bot.feedback (status, created_at DESC)`);
 
+    // ── Beta testers extended columns ──
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS level INT DEFAULT 1`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS total_bugs INT DEFAULT 0`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS total_features INT DEFAULT 0`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS total_support INT DEFAULT 0`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS daily_checkins INT DEFAULT 0`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS streak_days INT DEFAULT 0`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS last_checkin DATE`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS referral_count INT DEFAULT 0`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS referred_by BIGINT`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS spent_points INT DEFAULT 0`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS tester_role TEXT DEFAULT 'tester'`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS achievements JSONB DEFAULT '[]'::jsonb`);
+
     await client.query('COMMIT');
     console.log('✅ DB migrations applied (schema-extensions)');
   } catch (e) {

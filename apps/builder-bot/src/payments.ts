@@ -605,6 +605,120 @@ export async function getBetaLeaderboard(limit = 20): Promise<Array<{ user_id: n
   } catch { return []; }
 }
 
+// ── Tester Economy: Levels, Shop, Checkin, Achievements ─────────
+
+export const TESTER_LEVELS = [
+  { level: 1, name: 'Newbie',  nameRu: 'Новичок',  minPts: 0,   maxAgents: 5,  gens: 30,  plan: 'beta' },
+  { level: 2, name: 'Tester',  nameRu: 'Тестер',   minPts: 20,  maxAgents: 7,  gens: 40,  plan: 'beta' },
+  { level: 3, name: 'Active',  nameRu: 'Активный',  minPts: 60,  maxAgents: 10, gens: 50,  plan: 'beta' },
+  { level: 4, name: 'Expert',  nameRu: 'Эксперт',   minPts: 150, maxAgents: 15, gens: 100, plan: 'pro' },
+  { level: 5, name: 'Master',  nameRu: 'Мастер',    minPts: 300, maxAgents: 20, gens: 150, plan: 'pro' },
+  { level: 6, name: 'Legend',  nameRu: 'Легенда',   minPts: 500, maxAgents: -1, gens: -1,  plan: 'unlimited' },
+];
+
+export const SHOP_ITEMS = [
+  { id: 'gens_10',        cost: 50,  name: '+10 Generations',    nameRu: '+10 Генераций',    type: 'gens', value: 10 },
+  { id: 'early_access',   cost: 100, name: 'Early Access',       nameRu: 'Ранний доступ',    type: 'status' },
+  { id: 'vote_x2',        cost: 150, name: 'Vote Power x2',      nameRu: 'Голос x2',         type: 'status' },
+  { id: 'custom_agent',   cost: 200, name: 'Custom Agent Setup',  nameRu: 'Настройка агента', type: 'service' },
+  { id: 'dev_call',       cost: 250, name: '1:1 with Developer',  nameRu: '1:1 с разработчиком', type: 'service' },
+  { id: 'credits_page',   cost: 300, name: 'Name in Credits',     nameRu: 'Имя в Credits',    type: 'status' },
+  { id: 'private_channel', cost: 400, name: 'Private Channel',    nameRu: 'Закрытый канал',   type: 'access' },
+  { id: 'sticker_pack',   cost: 30,  name: 'Sticker Pack',        nameRu: 'Стикерпак',        type: 'cosmetic' },
+];
+
+export const ACHIEVEMENTS = [
+  { id: 'first_bug',     name: 'First Blood',      nameRu: 'Первая кровь',     desc: 'Report your first bug', condition: (s: any) => s.total_bugs >= 1 },
+  { id: 'bugs_10',       name: 'Bug Hunter',        nameRu: 'Охотник за багами', desc: '10 bugs reported',       condition: (s: any) => s.total_bugs >= 10 },
+  { id: 'bugs_50',       name: 'Exterminator',      nameRu: 'Истребитель',       desc: '50 bugs reported',       condition: (s: any) => s.total_bugs >= 50 },
+  { id: 'features_5',    name: 'Visionary',         nameRu: 'Визионер',          desc: '5 features proposed',    condition: (s: any) => s.total_features >= 5 },
+  { id: 'features_impl', name: 'Architect',         nameRu: 'Архитектор',        desc: 'Your feature was implemented', condition: () => false }, // manual
+  { id: 'streak_7',      name: 'Consistent',        nameRu: 'Стабильный',        desc: '7-day streak',           condition: (s: any) => s.streak_days >= 7 },
+  { id: 'streak_30',     name: 'Devoted',           nameRu: 'Преданный',         desc: '30-day streak',          condition: (s: any) => s.streak_days >= 30 },
+  { id: 'level_expert',  name: 'Expert Badge',      nameRu: 'Эксперт',           desc: 'Reach Expert level',     condition: (s: any) => s.level >= 4 },
+  { id: 'level_legend',  name: 'Legendary',         nameRu: 'Легендарный',        desc: 'Reach Legend level',     condition: (s: any) => s.level >= 6 },
+  { id: 'mentor',        name: 'Mentor',            nameRu: 'Ментор',             desc: 'Help 3 newbies reach Lv.2', condition: () => false }, // manual
+  { id: 'referral_3',    name: 'Recruiter',         nameRu: 'Рекрутер',           desc: 'Refer 3 active testers', condition: (s: any) => s.referral_count >= 3 },
+];
+
+export function getTesterLevel(points: number): typeof TESTER_LEVELS[0] {
+  for (let i = TESTER_LEVELS.length - 1; i >= 0; i--) {
+    if (points >= TESTER_LEVELS[i].minPts) return TESTER_LEVELS[i];
+  }
+  return TESTER_LEVELS[0];
+}
+
+export function getNextLevel(points: number): typeof TESTER_LEVELS[0] | null {
+  const current = getTesterLevel(points);
+  const next = TESTER_LEVELS.find(l => l.level === current.level + 1);
+  return next || null;
+}
+
+export async function dailyCheckin(userId: number): Promise<{ ok: boolean; points?: number; streak?: number; error?: string }> {
+  try {
+    const { pool } = require('./db');
+    const res = await pool.query(`SELECT last_checkin, streak_days, feedback_count FROM builder_bot.beta_testers WHERE user_id = $1 AND status = 'active'`, [userId]);
+    if (!res.rows.length) return { ok: false, error: 'Not a beta tester' };
+    const row = res.rows[0];
+    const today = new Date().toISOString().slice(0, 10);
+    if (row.last_checkin === today) return { ok: false, error: 'Already checked in today' };
+    // Calculate streak
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    const newStreak = row.last_checkin === yesterday ? (row.streak_days || 0) + 1 : 1;
+    await pool.query(
+      `UPDATE builder_bot.beta_testers SET feedback_count = feedback_count + 1, daily_checkins = daily_checkins + 1, last_checkin = $1, streak_days = $2 WHERE user_id = $3`,
+      [today, newStreak, userId]
+    );
+    return { ok: true, points: 1, streak: newStreak };
+  } catch (e: any) { return { ok: false, error: e.message }; }
+}
+
+export async function shopBuy(userId: number, itemId: string): Promise<{ ok: boolean; error?: string }> {
+  const item = SHOP_ITEMS.find(i => i.id === itemId);
+  if (!item) return { ok: false, error: 'Item not found' };
+  try {
+    const { pool } = require('./db');
+    const res = await pool.query(`SELECT feedback_count, spent_points FROM builder_bot.beta_testers WHERE user_id = $1 AND status = 'active'`, [userId]);
+    if (!res.rows.length) return { ok: false, error: 'Not a beta tester' };
+    const available = (res.rows[0].feedback_count || 0) - (res.rows[0].spent_points || 0);
+    if (available < item.cost) return { ok: false, error: `Need ${item.cost} pts, have ${available}` };
+    await pool.query(`UPDATE builder_bot.beta_testers SET spent_points = spent_points + $1 WHERE user_id = $2`, [item.cost, userId]);
+    // Apply effect
+    if (item.type === 'gens' && item.value) {
+      const tracker = generationTracker.get(userId);
+      if (tracker) { tracker.count = Math.max(0, tracker.count - item.value); generationTracker.set(userId, tracker); }
+    }
+    return { ok: true };
+  } catch (e: any) { return { ok: false, error: e.message }; }
+}
+
+export async function getTesterStats(userId: number): Promise<any> {
+  try {
+    const { pool } = require('./db');
+    const res = await pool.query(
+      `SELECT feedback_count, spent_points, level, total_bugs, total_features, total_support, daily_checkins, streak_days, last_checkin, referral_count, tester_role, achievements, created_at
+       FROM builder_bot.beta_testers WHERE user_id = $1`,
+      [userId]
+    );
+    if (!res.rows.length) return null;
+    const s = res.rows[0];
+    const pts = s.feedback_count || 0;
+    const spent = s.spent_points || 0;
+    const lvl = getTesterLevel(pts);
+    const next = getNextLevel(pts);
+    return {
+      points: pts, available: pts - spent, spent,
+      level: lvl.level, levelName: lvl.name, levelNameRu: lvl.nameRu,
+      nextLevel: next ? { name: next.name, nameRu: next.nameRu, pointsNeeded: next.minPts - pts } : null,
+      totalBugs: s.total_bugs || 0, totalFeatures: s.total_features || 0, totalSupport: s.total_support || 0,
+      checkins: s.daily_checkins || 0, streak: s.streak_days || 0, lastCheckin: s.last_checkin,
+      referrals: s.referral_count || 0, role: s.tester_role || 'tester',
+      achievements: s.achievements || [],
+      joinedAt: s.created_at,
+    };
+  } catch { return null; }
+}
+
 // ── Создать платёж — возвращает адрес + сумму для перевода ──
 export function createPayment(
   userId: number,
