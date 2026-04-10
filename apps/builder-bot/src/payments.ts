@@ -541,12 +541,12 @@ export function trackGeneration(userId: number): void {
 }
 
 // ── Beta Rewards System ─────────────────────────────────────
-// Points: bug_submitted=5, feature_submitted=3, support_submitted=1, general_submitted=1
-// Resolved feedback gives bonus: bug_resolved=+10, feature_resolved=+5
-// Thresholds: 50pts → +20 gens, 100pts → Pro plan upgrade, 200pts → Unlimited
+// Points (tight economy): bug=2, feature=2, critical=15, support=1, general=1
+// Resolved bonus: bug=+5, feature=+10(implemented), critical=+15, support=+2
+// Daily limits: 5 bugs, 3 features, 3 critical, 2 support, 2 general
 
-const FEEDBACK_POINTS: Record<string, number> = { bug: 5, feature: 3, support: 1, general: 1 };
-const RESOLVE_BONUS: Record<string, number> = { bug: 10, feature: 5, support: 2, general: 1 };
+const FEEDBACK_POINTS: Record<string, number> = { bug: 2, feature: 2, support: 1, general: 1, critical: 15 };
+const RESOLVE_BONUS: Record<string, number> = { bug: 5, feature: 10, support: 2, general: 1, critical: 15 };
 
 export async function awardFeedbackPoints(userId: number, feedbackType: string, resolved = false): Promise<{ points: number; total: number; reward?: string }> {
   let pts = resolved ? (RESOLVE_BONUS[feedbackType] || 1) : (FEEDBACK_POINTS[feedbackType] || 1);
