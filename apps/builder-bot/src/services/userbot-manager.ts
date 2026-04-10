@@ -2626,6 +2626,7 @@ class UserbotManager {
     msg: TgInboxMessage,
     cfg: AgentMessageConfig,
   ): Promise<void> {
+    let _typingInterval: any = null; // declared at method level for finally cleanup
     console.log(`[UserbotMgr] 💬 processTgInboxMessage agent#${agentId} chat=${msg.chatId} userId=${cfg.userId}`);
     const client = await this.getClient(agentId);
     if (!client) { console.log(`[UserbotMgr] ❌ No client for agent#${agentId}`); return; }
