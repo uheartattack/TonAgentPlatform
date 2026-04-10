@@ -1432,6 +1432,9 @@ bot.command('feedback', async (ctx) => {
         { text: '🆘 Саппорт', callback_data: 'fb_type:support' },
         { text: '💬 Общее', callback_data: 'fb_type:general' },
       ],
+      [
+        { text: '💥 Critical (crash/security)', callback_data: 'fb_type:critical' },
+      ],
     ] },
   });
 });
@@ -1612,6 +1615,92 @@ bot.action(/^shop_buy:(.+)$/, async (ctx) => {
   } else {
     await safeReply(ctx, `${esc(result.error || 'Error')}`);
   }
+});
+
+// ── Admin: set tester role ──
+bot.command('setrole', async (ctx) => {
+  const userId = ctx.from!.id;
+  const { isPlatformAdmin } = require('./payments');
+  if (!isPlatformAdmin(userId)) return;
+  const args = ctx.message.text.split(' ').slice(1);
+  if (args.length < 2) { await safeReply(ctx, 'Usage: /setrole @username role\nRoles: qa_lead, feature_scout, community_helper, stress_tester, mobile_tester, mentor'); return; }
+  const target = args[0].replace('@', '');
+  const role = args[1];
+  const { setTesterRole, TESTER_ROLES } = require('./payments');
+  if (!TESTER_ROLES[role]) { await safeReply(ctx, 'Invalid role. Options: ' + Object.keys(TESTER_ROLES).join(', ')); return; }
+  // Find user by username
+  const { pool } = require('./db');
+  const res = await pool.query(`SELECT user_id FROM builder_bot.beta_testers WHERE username = $1`, [target.toLowerCase()]);
+  if (!res.rows.length) { await safeReply(ctx, 'Tester not found: @' + target); return; }
+  const ok = await setTesterRole(res.rows[0].user_id, role);
+  if (ok) {
+    await safeReply(ctx, `Role set: @${target} → ${TESTER_ROLES[role].name}`);
+    // Notify the tester
+    try { await bot.telegram.sendMessage(res.rows[0].user_id, `You've been assigned role: ${TESTER_ROLES[role].name}!`); } catch {}
+  } else {
+    await safeReply(ctx, 'Failed to set role');
+  }
+});
+
+// ── Admin: assign mentor ──
+bot.command('mentor', async (ctx) => {
+  const userId = ctx.from!.id;
+  const { isPlatformAdmin } = require('./payments');
+  if (!isPlatformAdmin(userId)) return;
+  const args = ctx.message.text.split(' ').slice(1);
+  if (args.length < 2) { await safeReply(ctx, 'Usage: /mentor @mentee @mentor'); return; }
+  const menteeUsername = args[0].replace('@', '');
+  const mentorUsername = args[1].replace('@', '');
+  const { pool } = require('./db');
+  const menteeRes = await pool.query(`SELECT user_id FROM builder_bot.beta_testers WHERE username = $1`, [menteeUsername.toLowerCase()]);
+  const mentorRes = await pool.query(`SELECT user_id FROM builder_bot.beta_testers WHERE username = $1`, [mentorUsername.toLowerCase()]);
+  if (!menteeRes.rows.length || !mentorRes.rows.length) { await safeReply(ctx, 'Users not found'); return; }
+  const { assignMentor } = require('./payments');
+  await assignMentor(menteeRes.rows[0].user_id, mentorRes.rows[0].user_id);
+  await safeReply(ctx, `Mentor assigned: @${menteeUsername} → mentor @${mentorUsername}`);
+});
+
+// ── /mymentor — who is my mentor ──
+bot.command('mymentor', async (ctx) => {
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  const { pool } = require('./db');
+  const res = await pool.query(`SELECT bt2.username as mentor FROM builder_bot.beta_testers bt1 JOIN builder_bot.beta_testers bt2 ON bt2.user_id = bt1.referred_by WHERE bt1.user_id = $1`, [userId]);
+  if (res.rows.length && res.rows[0].mentor) {
+    await safeReply(ctx, (ru ? 'Ваш ментор: @' : 'Your mentor: @') + res.rows[0].mentor);
+  } else {
+    await safeReply(ctx, ru ? 'Ментор не назначен.' : 'No mentor assigned.');
+  }
+});
+
+// ── Admin: spam penalty ──
+bot.command('spam', async (ctx) => {
+  const userId = ctx.from!.id;
+  const { isPlatformAdmin } = require('./payments');
+  if (!isPlatformAdmin(userId)) return;
+  const args = ctx.message.text.split(' ').slice(1);
+  if (!args[0]) { await safeReply(ctx, 'Usage: /spam @username'); return; }
+  const target = args[0].replace('@', '');
+  const { pool } = require('./db');
+  const res = await pool.query(`SELECT user_id FROM builder_bot.beta_testers WHERE username = $1`, [target.toLowerCase()]);
+  if (!res.rows.length) { await safeReply(ctx, 'Not found'); return; }
+  const { spamPenalty } = require('./payments');
+  await spamPenalty(res.rows[0].user_id);
+  await safeReply(ctx, `-1 point from @${target} (spam penalty)`);
+});
+
+// ── Admin: weekly top ──
+bot.command('weeklytop', async (ctx) => {
+  const userId = ctx.from!.id;
+  const { isPlatformAdmin, getWeeklyTop } = require('./payments');
+  if (!isPlatformAdmin(userId)) return;
+  const top = await getWeeklyTop(10);
+  if (!top.length) { await safeReply(ctx, 'No activity this week'); return; }
+  const lines = top.map((t: any, i: number) => {
+    const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i+1)+'.';
+    return `${medal} @${t.username || t.user_id} — ${t.week_activity} this week (${t.feedback_count} total)`;
+  });
+  await safeReply(ctx, `Weekly Top:\n\n${lines.join('\n')}`);
 });
 
 // ============================================================

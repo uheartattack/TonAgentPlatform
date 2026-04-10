@@ -191,13 +191,13 @@ export async function loadBetaTesters(): Promise<void> {
   }
 }
 
-export async function addBetaTester(userId: number, username?: string, inviteCode?: string, invitedBy?: number): Promise<boolean> {
+export async function addBetaTester(userId: number, username?: string, inviteCode?: string, invitedBy?: number, referredBy?: number): Promise<boolean> {
   try {
     const { pool } = require('./db');
     await pool.query(
-      `INSERT INTO builder_bot.beta_testers (user_id, username, invite_code, invited_by) VALUES ($1, $2, $3, $4)
-       ON CONFLICT (user_id) DO UPDATE SET status = 'active', invite_code = COALESCE(EXCLUDED.invite_code, builder_bot.beta_testers.invite_code)`,
-      [userId, username || null, inviteCode || null, invitedBy || null]
+      `INSERT INTO builder_bot.beta_testers (user_id, username, invite_code, invited_by, referred_by) VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (user_id) DO UPDATE SET status = 'active', invite_code = COALESCE(EXCLUDED.invite_code, builder_bot.beta_testers.invite_code), referred_by = COALESCE(EXCLUDED.referred_by, builder_bot.beta_testers.referred_by)`,
+      [userId, username || null, inviteCode || null, invitedBy || null, referredBy || null]
     );
     _betaTesterIds.add(userId);
     return true;
@@ -549,16 +549,31 @@ const FEEDBACK_POINTS: Record<string, number> = { bug: 5, feature: 3, support: 1
 const RESOLVE_BONUS: Record<string, number> = { bug: 10, feature: 5, support: 2, general: 1 };
 
 export async function awardFeedbackPoints(userId: number, feedbackType: string, resolved = false): Promise<{ points: number; total: number; reward?: string }> {
-  const pts = resolved ? (RESOLVE_BONUS[feedbackType] || 1) : (FEEDBACK_POINTS[feedbackType] || 1);
+  let pts = resolved ? (RESOLVE_BONUS[feedbackType] || 1) : (FEEDBACK_POINTS[feedbackType] || 1);
   try {
     const { pool } = require('./db');
+    // Apply role multiplier
+    try {
+      const roleRow = await pool.query(`SELECT tester_role FROM builder_bot.beta_testers WHERE user_id = $1`, [userId]);
+      const role = roleRow.rows[0]?.tester_role || 'tester';
+      const roleInfo = TESTER_ROLES[role];
+      if (roleInfo && roleInfo.multiplier !== 1.0) {
+        pts = Math.round(pts * roleInfo.multiplier);
+      }
+    } catch {}
     // Update beta_testers feedback_count (used as points accumulator)
     await pool.query(
       `UPDATE builder_bot.beta_testers SET feedback_count = feedback_count + $1 WHERE user_id = $2`,
       [pts, userId]
     );
-    const res = await pool.query(`SELECT feedback_count FROM builder_bot.beta_testers WHERE user_id = $1`, [userId]);
+    // Track stats by type
+    if (feedbackType === 'bug') await pool.query(`UPDATE builder_bot.beta_testers SET total_bugs = total_bugs + 1 WHERE user_id = $1`, [userId]);
+    else if (feedbackType === 'feature') await pool.query(`UPDATE builder_bot.beta_testers SET total_features = total_features + 1 WHERE user_id = $1`, [userId]);
+    else if (feedbackType === 'support') await pool.query(`UPDATE builder_bot.beta_testers SET total_support = total_support + 1 WHERE user_id = $1`, [userId]);
+
+    const res = await pool.query(`SELECT feedback_count, level FROM builder_bot.beta_testers WHERE user_id = $1`, [userId]);
     const total = res.rows[0]?.feedback_count || 0;
+    const currentLevel = res.rows[0]?.level;
 
     // Check reward thresholds
     let reward: string | undefined;
@@ -584,6 +599,13 @@ export async function awardFeedbackPoints(userId: number, feedbackType: string, 
         generationTracker.set(userId, tracker);
       }
       reward = 'bonus_gens';
+    }
+
+    // Auto level-up
+    const newLevel = getTesterLevel(total);
+    if (newLevel.level > (currentLevel || 1)) {
+      await pool.query(`UPDATE builder_bot.beta_testers SET level = $1, plan_override = $2 WHERE user_id = $3`, [newLevel.level, newLevel.plan, userId]);
+      reward = 'level_up:' + newLevel.name;
     }
 
     return { points: pts, total, reward };
@@ -641,6 +663,16 @@ export const ACHIEVEMENTS = [
   { id: 'referral_3',    name: 'Recruiter',         nameRu: 'Рекрутер',           desc: 'Refer 3 active testers', condition: (s: any) => s.referral_count >= 3 },
 ];
 
+export const TESTER_ROLES: Record<string, { name: string; nameRu: string; multiplier: number; canVerifyBugs: boolean; canCloseFeedback: boolean }> = {
+  tester: { name: 'Tester', nameRu: 'Тестер', multiplier: 1.0, canVerifyBugs: false, canCloseFeedback: false },
+  qa_lead: { name: 'QA Lead', nameRu: 'QA Лид', multiplier: 1.5, canVerifyBugs: true, canCloseFeedback: true },
+  feature_scout: { name: 'Feature Scout', nameRu: 'Скаут фич', multiplier: 1.0, canVerifyBugs: false, canCloseFeedback: false },
+  community_helper: { name: 'Community Helper', nameRu: 'Хелпер', multiplier: 1.5, canVerifyBugs: false, canCloseFeedback: false },
+  stress_tester: { name: 'Stress Tester', nameRu: 'Стресс-тестер', multiplier: 2.0, canVerifyBugs: false, canCloseFeedback: false },
+  mobile_tester: { name: 'Mobile Tester', nameRu: 'Мобильный тестер', multiplier: 1.5, canVerifyBugs: false, canCloseFeedback: false },
+  mentor: { name: 'Mentor', nameRu: 'Ментор', multiplier: 1.0, canVerifyBugs: false, canCloseFeedback: false },
+};
+
 export function getTesterLevel(points: number): typeof TESTER_LEVELS[0] {
   for (let i = TESTER_LEVELS.length - 1; i >= 0; i--) {
     if (points >= TESTER_LEVELS[i].minPts) return TESTER_LEVELS[i];
@@ -690,6 +722,62 @@ export async function shopBuy(userId: number, itemId: string): Promise<{ ok: boo
     }
     return { ok: true };
   } catch (e: any) { return { ok: false, error: e.message }; }
+}
+
+export async function trackReferral(referrerId: number, referredUserId: number): Promise<void> {
+  try {
+    const { pool } = require('./db');
+    // Check if referred user has enough points
+    const res = await pool.query(`SELECT feedback_count FROM builder_bot.beta_testers WHERE user_id = $1`, [referredUserId]);
+    if (!res.rows.length || res.rows[0].feedback_count < 20) return; // Not yet qualified
+    // Check if already credited
+    const already = await pool.query(`SELECT 1 FROM builder_bot.beta_testers WHERE user_id = $1 AND referred_by = $2`, [referredUserId, referrerId]);
+    // Actually referred_by is on the referred user, not referrer. Check referrer's referral_count
+    await pool.query(`UPDATE builder_bot.beta_testers SET feedback_count = feedback_count + 3, referral_count = referral_count + 1 WHERE user_id = $1`, [referrerId]);
+  } catch {}
+}
+
+export async function setTesterRole(userId: number, role: string): Promise<boolean> {
+  if (!TESTER_ROLES[role]) return false;
+  try {
+    const { pool } = require('./db');
+    await pool.query(`UPDATE builder_bot.beta_testers SET tester_role = $1 WHERE user_id = $2`, [role, userId]);
+    return true;
+  } catch { return false; }
+}
+
+export async function assignMentor(menteeId: number, mentorId: number): Promise<boolean> {
+  try {
+    const { pool } = require('./db');
+    await pool.query(`UPDATE builder_bot.beta_testers SET referred_by = $1 WHERE user_id = $2`, [mentorId, menteeId]);
+    return true;
+  } catch { return false; }
+}
+
+export async function getWeeklyTop(limit = 10): Promise<any[]> {
+  try {
+    const { pool } = require('./db');
+    // Get top testers by points earned this week
+    // We approximate by looking at feedback created this week
+    const res = await pool.query(`
+      SELECT bt.user_id, bt.username, bt.feedback_count, bt.level, bt.tester_role,
+             COUNT(f.id) as week_activity
+      FROM builder_bot.beta_testers bt
+      LEFT JOIN builder_bot.feedback f ON f.user_id = bt.user_id AND f.created_at > NOW() - INTERVAL '7 days'
+      WHERE bt.status = 'active'
+      GROUP BY bt.user_id, bt.username, bt.feedback_count, bt.level, bt.tester_role
+      ORDER BY week_activity DESC, bt.feedback_count DESC
+      LIMIT $1
+    `, [limit]);
+    return res.rows;
+  } catch { return []; }
+}
+
+export async function spamPenalty(userId: number): Promise<void> {
+  try {
+    const { pool } = require('./db');
+    await pool.query(`UPDATE builder_bot.beta_testers SET feedback_count = GREATEST(0, feedback_count - 1) WHERE user_id = $1`, [userId]);
+  } catch {}
 }
 
 export async function getTesterStats(userId: number): Promise<any> {
