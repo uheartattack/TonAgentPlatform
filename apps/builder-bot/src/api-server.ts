@@ -1116,7 +1116,7 @@ export function startApiServer() {
       // Notify user + award points on resolve
       const fb = await pool.query(`SELECT user_id, type FROM builder_bot.feedback WHERE id = $1`, [feedbackId]);
       if (fb.rows[0]) {
-        const fbUserId = fb.rows[0].user_id;
+        const fbUserId = Number(fb.rows[0].user_id); // BIGINT comes as string from pg
         const fbType = fb.rows[0].type;
         // Award resolve bonus points
         if (status === 'resolved') {
