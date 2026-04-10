@@ -14466,6 +14466,39 @@ async function loadTesterHub() {
   });
   html += '</div></div>';
 
+  // ── Testing Tasks ──
+  try {
+    var tasksData = await apiRequest('GET', '/api/beta/tasks');
+    if (tasksData.ok && tasksData.tasks) {
+      var cats = { core: isRu ? 'Основное' : 'Core', settings: isRu ? 'Настройки' : 'Settings', feedback: isRu ? 'Фидбек' : 'Feedback', advanced: isRu ? 'Продвинутое' : 'Advanced' };
+      html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:20px">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">' +
+          '<div style="font-size:.85rem;font-weight:600;color:var(--text-primary)">' + (isRu ? 'Задания' : 'Testing Tasks') + '</div>' +
+          '<div style="font-size:.68rem;color:var(--text-muted)">' + tasksData.tasks.length + ' ' + (isRu ? 'заданий' : 'tasks') + '</div>' +
+        '</div>';
+      var catOrder = ['core', 'settings', 'feedback', 'advanced'];
+      catOrder.forEach(function(cat) {
+        var catTasks = tasksData.tasks.filter(function(t) { return t.category === cat; });
+        if (!catTasks.length) return;
+        html += '<div style="font-size:.7rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin:10px 0 6px;padding-left:4px">' + (cats[cat] || cat) + '</div>';
+        catTasks.forEach(function(t) {
+          var done = localStorage.getItem('task_done_' + t.id) === '1';
+          html += '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;background:var(--bg-secondary);margin-bottom:4px;cursor:pointer;transition:all .15s;opacity:' + (done ? '0.5' : '1') + '" onclick="toggleTask(\'' + t.id + '\',this)" onmouseenter="this.style.background=\'var(--accent-dim)\'" onmouseleave="this.style.background=\'var(--bg-secondary)\'">' +
+            '<div style="width:20px;height:20px;border-radius:6px;border:2px solid ' + (done ? 'var(--primary)' : 'var(--border)') + ';background:' + (done ? 'var(--primary)' : 'transparent') + ';display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s">' +
+              (done ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>' : '') +
+            '</div>' +
+            '<div style="flex:1;min-width:0">' +
+              '<div style="font-size:.8rem;font-weight:500;color:var(--text-primary);' + (done ? 'text-decoration:line-through' : '') + '">' + escHtml(isRu ? t.title.ru : t.title.en) + '</div>' +
+              '<div style="font-size:.65rem;color:var(--text-muted)">' + escHtml(isRu ? t.desc.ru : t.desc.en) + '</div>' +
+            '</div>' +
+            '<div style="font-size:.68rem;color:var(--primary);font-weight:600;flex-shrink:0">+' + t.pts + '</div>' +
+          '</div>';
+        });
+      });
+      html += '</div>';
+    }
+  } catch {}
+
   // ── Activity summary ──
   html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:20px">' +
     '<div style="font-size:.85rem;font-weight:600;color:var(--text-primary);margin-bottom:12px">' + (isRu ? 'Активность' : 'Activity') + '</div>' +
@@ -14499,6 +14532,26 @@ async function testerCheckin() {
       toast(data.error || 'Error', 'warning');
     }
   } catch(e) { toast(e.message, 'error'); }
+}
+
+function toggleTask(taskId, el) {
+  var key = 'task_done_' + taskId;
+  var done = localStorage.getItem(key) === '1';
+  localStorage.setItem(key, done ? '0' : '1');
+  if (!done) {
+    el.style.opacity = '0.5';
+    var checkbox = el.querySelector('div:first-child');
+    if (checkbox) { checkbox.style.borderColor = 'var(--primary)'; checkbox.style.background = 'var(--primary)'; checkbox.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>'; }
+    var title = el.querySelector('div:nth-child(2) div:first-child');
+    if (title) title.style.textDecoration = 'line-through';
+    toast(currentLang === 'ru' ? 'Задание выполнено!' : 'Task completed!', 'success');
+  } else {
+    el.style.opacity = '1';
+    var checkbox = el.querySelector('div:first-child');
+    if (checkbox) { checkbox.style.borderColor = 'var(--border)'; checkbox.style.background = 'transparent'; checkbox.innerHTML = ''; }
+    var title = el.querySelector('div:nth-child(2) div:first-child');
+    if (title) title.style.textDecoration = 'none';
+  }
 }
 
 async function testerBuyItem(itemId) {
