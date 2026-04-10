@@ -14622,6 +14622,7 @@ function openFeedbackModal() {
       '<button class="fb-type-btn" data-type="feature" style="padding:8px 16px;border-radius:10px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);cursor:pointer;font-size:.85rem;transition:all .2s" onclick="selectFbType(this)">' + IC.lightbulb + ' ' + (isRu ? 'Фича' : 'Feature') + '</button>' +
       '<button class="fb-type-btn" data-type="support" style="padding:8px 16px;border-radius:10px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);cursor:pointer;font-size:.85rem;transition:all .2s" onclick="selectFbType(this)">' + IC.lifebuoy + ' ' + (isRu ? 'Саппорт' : 'Support') + '</button>' +
       '<button class="fb-type-btn" data-type="general" style="padding:8px 16px;border-radius:10px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);cursor:pointer;font-size:.85rem;transition:all .2s" onclick="selectFbType(this)">' + IC.chat + ' ' + (isRu ? 'Общее' : 'General') + '</button>' +
+      '<button class="fb-type-btn" data-type="critical" style="padding:8px 16px;border-radius:10px;border:1px solid rgba(239,68,68,0.3);background:rgba(239,68,68,0.08);color:#ef4444;cursor:pointer;font-size:.85rem;transition:all .2s" onclick="selectFbType(this)">' + IC.fire + ' ' + (isRu ? 'Critical' : 'Critical') + '</button>' +
     '</div>' +
     '<textarea id="fb-message" placeholder="' + (isRu ? 'Опишите проблему или предложение...' : 'Describe the issue or suggestion...') + '" style="width:100%;height:120px;background:var(--bg-primary);border:1px solid var(--border);border-radius:10px;padding:12px;color:var(--text-primary);font-size:.88rem;resize:vertical;font-family:inherit;box-sizing:border-box"></textarea>' +
     '<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px">' +
@@ -14656,7 +14657,8 @@ async function submitFeedback() {
     var metadata = { page: window.location.pathname, agentId: _detailAgentId || null, userAgent: navigator.userAgent };
     var data = await apiRequest('POST', '/api/feedback', { type: _selectedFbType, message: msg.value.trim(), agentId: _detailAgentId || undefined, metadata: metadata });
     if (data.ok) {
-      toast(currentLang === 'ru' ? 'Feedback sent!' : 'Feedback sent!', 'success');
+      var ptsMsg = data.pointsAwarded ? ' (+' + data.pointsAwarded + ' pts)' : '';
+      toast((currentLang === 'ru' ? 'Фидбек отправлен!' : 'Feedback sent!') + ptsMsg, 'success');
       var modal = document.getElementById('feedback-modal');
       if (modal) modal.remove();
     } else {
