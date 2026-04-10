@@ -14466,6 +14466,25 @@ async function loadTesterHub() {
   });
   html += '</div></div>';
 
+  // ── Activity summary ──
+  html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:20px">' +
+    '<div style="font-size:.85rem;font-weight:600;color:var(--text-primary);margin-bottom:12px">' + (isRu ? 'Активность' : 'Activity') + '</div>' +
+    '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">' +
+      '<div style="text-align:center;padding:12px;border-radius:10px;background:var(--bg-secondary)">' +
+        '<div style="font-size:1.1rem;font-weight:700;color:var(--text-primary)">' + s.checkins + '</div>' +
+        '<div style="font-size:.65rem;color:var(--text-muted)">' + (isRu ? 'Чекинов' : 'Check-ins') + '</div>' +
+      '</div>' +
+      '<div style="text-align:center;padding:12px;border-radius:10px;background:var(--bg-secondary)">' +
+        '<div style="font-size:1.1rem;font-weight:700;color:#f59e0b">' + s.streak + '</div>' +
+        '<div style="font-size:.65rem;color:var(--text-muted)">' + (isRu ? 'Дн. streak' : 'Day streak') + '</div>' +
+      '</div>' +
+      '<div style="text-align:center;padding:12px;border-radius:10px;background:var(--bg-secondary)">' +
+        '<div style="font-size:1.1rem;font-weight:700;color:var(--text-primary)">' + s.referrals + '</div>' +
+        '<div style="font-size:.65rem;color:var(--text-muted)">' + (isRu ? 'Рефералов' : 'Referrals') + '</div>' +
+      '</div>' +
+    '</div>' +
+  '</div>';
+
   html += '</div>';
   container.innerHTML = html;
 }
@@ -14509,6 +14528,40 @@ function initFeedbackFAB() {
   // Check for unread replies periodically
   checkFeedbackReplies();
   setInterval(checkFeedbackReplies, 5 * 60 * 1000); // every 5 min
+  setTimeout(checkTesterLevelUp, 3000);
+}
+
+// Check for level-up on page load
+async function checkTesterLevelUp() {
+  try {
+    var data = await apiRequest('GET', '/api/beta/stats');
+    if (!data.ok || !data.level) return;
+    var lastLevel = parseInt(localStorage.getItem('tester_level') || '0');
+    if (data.level > lastLevel && lastLevel > 0) {
+      // Level up!
+      showLevelUpModal(data.levelName, data.levelNameRu, data.level);
+    }
+    localStorage.setItem('tester_level', String(data.level));
+  } catch {}
+}
+
+function showLevelUpModal(nameEn, nameRu, level) {
+  var isRu = currentLang === 'ru';
+  var name = isRu ? nameRu : nameEn;
+  var colors = ['#6b7280', '#3b82f6', '#10b981', '#f59e0b', '#a855f7', '#ef4444'];
+  var color = colors[Math.min(level - 1, 5)];
+
+  var overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:20000;display:flex;align-items:center;justify-content:center;animation:fadeIn .3s';
+  overlay.innerHTML = '<div style="background:var(--bg-secondary);border:2px solid ' + color + ';border-radius:24px;padding:40px;text-align:center;max-width:400px;animation:slideUp .4s ease">' +
+    '<div style="width:80px;height:80px;border-radius:50%;background:' + color + '20;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:2rem;font-weight:800;color:' + color + '">' + level + '</div>' +
+    '<h2 style="margin:0 0 8px;font-size:1.4rem;color:var(--text-primary)">' + (isRu ? 'Новый уровень!' : 'Level Up!') + '</h2>' +
+    '<div style="font-size:1.1rem;font-weight:700;color:' + color + ';margin-bottom:16px">' + name + '</div>' +
+    '<p style="font-size:.85rem;color:var(--text-muted);margin-bottom:24px">' + (isRu ? 'Продолжайте тестировать — новые награды ждут!' : 'Keep testing — more rewards await!') + '</p>' +
+    '<button onclick="this.closest(\'div[style*=position:fixed]\').remove()" style="padding:10px 30px;border-radius:20px;border:none;background:' + color + ';color:white;font-size:.9rem;font-weight:600;cursor:pointer">' + (isRu ? 'Отлично!' : 'Awesome!') + '</button>' +
+  '</div>';
+  overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+  document.body.appendChild(overlay);
 }
 
 async function checkFeedbackReplies() {
