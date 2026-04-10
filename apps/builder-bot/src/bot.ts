@@ -1544,6 +1544,76 @@ bot.command('leaderboard', async (ctx) => {
   } catch (e: any) { await safeReply(ctx, `❌ ${e.message}`); }
 });
 
+// ── /checkin — daily check-in for +1 point ──
+bot.command('checkin', async (ctx) => {
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  const { dailyCheckin, isBetaTester } = require('./payments');
+  if (!isBetaTester(userId)) { await safeReply(ctx, ru ? 'Доступно только бета-тестерам.' : 'Beta testers only.'); return; }
+  const result = await dailyCheckin(userId);
+  if (result.ok) {
+    await safeReply(ctx, ru ? `+1 очко\\! Streak: ${result.streak} дн\\.` : `\\+1 point\\! Streak: ${result.streak} days`);
+  } else {
+    await safeReply(ctx, esc(result.error || 'Error'));
+  }
+});
+
+// ── /mystats — personal tester statistics ──
+bot.command('mystats', async (ctx) => {
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  const { getTesterStats } = require('./payments');
+  const stats = await getTesterStats(userId);
+  if (!stats) { await safeReply(ctx, ru ? 'Вы не бета\\-тестер\\.' : 'Not a beta tester\\.'); return; }
+  const progress = stats.nextLevel ? `${stats.points}/${stats.nextLevel.pointsNeeded + stats.points}` : 'MAX';
+  const lines = [
+    `*${esc(ru ? stats.levelNameRu : stats.levelName)}* Lv\\.${stats.level}`,
+    `${esc(progress)} ${ru ? 'очков' : 'pts'}${stats.nextLevel ? ' → ' + esc(ru ? stats.nextLevel.nameRu : stats.nextLevel.name) : ''}`,
+    '',
+    `${stats.totalBugs} ${ru ? 'багов' : 'bugs'} · ${stats.totalFeatures} ${ru ? 'фич' : 'features'} · ${stats.totalSupport} support`,
+    `${stats.checkins} ${ru ? 'чекинов' : 'checkins'} · ${stats.streak} ${ru ? 'дн streak' : 'day streak'}`,
+    `${stats.available} ${ru ? 'доступно' : 'available'} · ${stats.spent} ${ru ? 'потрачено' : 'spent'}`,
+  ];
+  if (stats.role !== 'tester') lines.push(`\n${ru ? 'Роль' : 'Role'}: *${esc(stats.role)}*`);
+  await safeReply(ctx, lines.join('\n'));
+});
+
+// ── /shop — tester rewards shop ──
+bot.command('shop', async (ctx) => {
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  const { SHOP_ITEMS, getTesterStats, isBetaTester } = require('./payments');
+  if (!isBetaTester(userId)) { await safeReply(ctx, ru ? 'Доступно только бета\\-тестерам\\.' : 'Beta testers only\\.'); return; }
+  const stats = await getTesterStats(userId);
+  const available = stats ? stats.available : 0;
+  const lines = SHOP_ITEMS.map((item: any) => {
+    const affordable = available >= item.cost;
+    return `${affordable ? '✅' : '🔒'} *${esc(ru ? item.nameRu : item.name)}* — ${item.cost} pts`;
+  });
+  const buttons = SHOP_ITEMS.filter((item: any) => available >= item.cost).slice(0, 6).map((item: any) => [
+    { text: `${ru ? item.nameRu : item.name} (${item.cost})`, callback_data: `shop_buy:${item.id}` }
+  ]);
+  if (buttons.length === 0) buttons.push([{ text: ru ? 'Копите очки' : 'Earn more points', callback_data: 'noop' }]);
+  await safeReply(ctx, `*${ru ? 'Магазин' : 'Shop'}* \\(${available} ${ru ? 'доступно' : 'available'}\\)\n\n${lines.join('\n')}`, {
+    reply_markup: { inline_keyboard: buttons },
+  });
+});
+
+bot.action(/^shop_buy:(.+)$/, async (ctx) => {
+  const userId = ctx.from!.id;
+  const itemId = ctx.match![1];
+  const ru = getUserLang(userId) === 'ru';
+  const { shopBuy, SHOP_ITEMS } = require('./payments');
+  await ctx.answerCbQuery();
+  const result = await shopBuy(userId, itemId);
+  if (result.ok) {
+    const item = SHOP_ITEMS.find((i: any) => i.id === itemId);
+    await safeReply(ctx, ru ? `Куплено: ${esc(item?.nameRu || itemId)}` : `Purchased: ${esc(item?.name || itemId)}`);
+  } else {
+    await safeReply(ctx, `${esc(result.error || 'Error')}`);
+  }
+});
+
 // ============================================================
 // Команды
 // ============================================================
