@@ -1029,13 +1029,22 @@ export function startApiServer() {
       const session = (req as any).session;
       const { type, message, agentId, metadata } = req.body;
       if (!type || !message) { res.status(400).json({ error: 'type and message required' }); return; }
-      const validTypes = ['bug', 'feature', 'support', 'general'];
+      const validTypes = ['bug', 'feature', 'support', 'general', 'critical'];
       if (!validTypes.includes(type)) { res.status(400).json({ error: 'Invalid type. Use: ' + validTypes.join(', ') }); return; }
       const result = await pool.query(
         `INSERT INTO builder_bot.feedback (user_id, username, type, message, agent_id, metadata)
          VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
         [userId, session?.username || '', type, message.slice(0, 5000), agentId || null, metadata ? JSON.stringify(metadata) : null]
       );
+      // Award beta tester points
+      let pointsAwarded = 0;
+      try {
+        const { isBetaTester, awardFeedbackPoints } = await import('./payments');
+        if (isBetaTester(userId)) {
+          const reward = await awardFeedbackPoints(userId, type);
+          pointsAwarded = reward.points;
+        }
+      } catch {}
       // Notify admins via bot
       try {
         const { isPlatformAdmin } = await import('./payments');
@@ -1050,7 +1059,7 @@ export function startApiServer() {
           }
         }
       } catch {}
-      res.json({ ok: true, feedbackId: result.rows[0].id });
+      res.json({ ok: true, feedbackId: result.rows[0].id, pointsAwarded });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
