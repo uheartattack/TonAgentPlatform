@@ -545,8 +545,8 @@ export function trackGeneration(userId: number): void {
 // Resolved bonus: bug=+5, feature=+10(implemented), critical=+15, support=+2
 // Daily limits: 5 bugs, 3 features, 3 critical, 2 support, 2 general
 
-const FEEDBACK_POINTS: Record<string, number> = { bug: 2, feature: 2, support: 1, general: 1, critical: 15 };
-const RESOLVE_BONUS: Record<string, number> = { bug: 5, feature: 10, support: 2, general: 1, critical: 15 };
+const FEEDBACK_POINTS: Record<string, number> = { bug: 2, feature: 2, support: 1, general: 1, critical: 5 };
+const RESOLVE_BONUS: Record<string, number> = { bug: 3, feature: 5, support: 1, general: 1, critical: 10 };
 
 export async function awardFeedbackPoints(userId: number, feedbackType: string, resolved = false): Promise<{ points: number; total: number; reward?: string }> {
   let pts = resolved ? (RESOLVE_BONUS[feedbackType] || 1) : (FEEDBACK_POINTS[feedbackType] || 1);
