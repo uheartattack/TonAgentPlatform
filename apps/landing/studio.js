@@ -4900,6 +4900,7 @@ const pageLoadFns = {
   'bugs':        () => loadBugDashboard(),
   'terms':       () => loadTermsPage(),
   'privacy':     () => loadPrivacyPage(),
+  'tester-hub':  () => loadTesterHub(),
 };
 
 // Stub functions for pages that don't have dedicated load logic yet
@@ -14341,6 +14342,156 @@ function expandReportFolder(folderId) {
 
   container.innerHTML = h;
   container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// ── Tester Hub page ──
+async function loadTesterHub() {
+  var container = document.getElementById('tester-hub-root');
+  if (!container) return;
+  var isRu = currentLang === 'ru';
+
+  container.innerHTML = '<div style="max-width:900px;margin:0 auto;padding:24px"><div style="text-align:center;padding:40px;color:var(--text-muted)">Loading...</div></div>';
+
+  var stats, lb;
+  try {
+    [stats, lb] = await Promise.all([
+      apiRequest('GET', '/api/beta/stats'),
+      apiRequest('GET', '/api/beta/leaderboard'),
+    ]);
+  } catch(e) {
+    container.innerHTML = '<div style="max-width:900px;margin:0 auto;padding:24px;text-align:center;color:var(--text-muted)">' + (isRu ? 'Недоступно. Станьте бета-тестером: /beta в боте.' : 'Not available. Become a beta tester: /beta in bot.') + '</div>';
+    return;
+  }
+
+  if (!stats.ok || !stats.level) {
+    container.innerHTML = '<div style="max-width:900px;margin:0 auto;padding:24px;text-align:center;color:var(--text-muted)">' + (isRu ? 'Вы не бета-тестер. Используйте /beta в боте.' : 'Not a beta tester. Use /beta in the bot.') + '</div>';
+    return;
+  }
+
+  var s = stats;
+  var nextPts = s.nextLevel ? s.nextLevel.pointsNeeded + s.points : s.points;
+  var pct = s.nextLevel ? Math.round((s.points / nextPts) * 100) : 100;
+  var levelColors = ['#6b7280', '#3b82f6', '#10b981', '#f59e0b', '#a855f7', '#ef4444'];
+  var lvlColor = levelColors[Math.min(s.level - 1, 5)];
+
+  var html = '<div style="max-width:900px;margin:0 auto;padding:24px">';
+
+  // Hero card
+  html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:20px;padding:24px;margin-bottom:20px;position:relative;overflow:hidden">' +
+    '<div style="position:absolute;top:-30px;right:-30px;width:120px;height:120px;border-radius:50%;background:' + lvlColor + '10;pointer-events:none"></div>' +
+    '<div style="display:flex;align-items:center;gap:16px;margin-bottom:16px">' +
+      '<div style="width:56px;height:56px;border-radius:50%;background:' + lvlColor + '20;display:flex;align-items:center;justify-content:center;font-size:1.5rem;font-weight:800;color:' + lvlColor + '">' + s.level + '</div>' +
+      '<div style="flex:1">' +
+        '<div style="font-size:1.15rem;font-weight:700;color:var(--text-primary)">' + escHtml(isRu ? s.levelNameRu : s.levelName) + '</div>' +
+        '<div style="font-size:.78rem;color:var(--text-muted)">' + s.points + ' ' + (isRu ? 'очков' : 'pts') + (s.nextLevel ? ' · ' + s.nextLevel.pointsNeeded + ' ' + (isRu ? 'до' : 'to') + ' ' + escHtml(isRu ? s.nextLevel.nameRu : s.nextLevel.name) : ' · MAX') + '</div>' +
+      '</div>' +
+      (s.streak > 0 ? '<div style="padding:6px 14px;border-radius:20px;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);color:#f59e0b;font-size:.75rem;font-weight:600">' + s.streak + ' ' + (isRu ? 'дн streak' : 'day streak') + '</div>' : '') +
+      (s.role !== 'tester' ? '<div style="padding:6px 14px;border-radius:20px;background:' + lvlColor + '15;border:1px solid ' + lvlColor + '30;color:' + lvlColor + ';font-size:.75rem;font-weight:600;text-transform:uppercase">' + escHtml(s.role) + '</div>' : '') +
+    '</div>' +
+    '<div style="height:8px;background:rgba(255,255,255,0.05);border-radius:4px;overflow:hidden">' +
+      '<div style="height:100%;width:' + pct + '%;background:linear-gradient(90deg,' + lvlColor + ',' + lvlColor + 'cc);border-radius:4px;transition:width .5s"></div>' +
+    '</div>' +
+    '<div style="display:flex;justify-content:space-between;margin-top:4px;font-size:.68rem;color:var(--text-muted)">' +
+      '<span>Lv.' + s.level + '</span><span>' + pct + '%</span>' + (s.nextLevel ? '<span>Lv.' + (s.level + 1) + '</span>' : '') +
+    '</div>' +
+    '<div style="margin-top:16px;text-align:center">' +
+      '<button onclick="testerCheckin()" style="padding:10px 24px;border-radius:20px;border:none;background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:white;font-size:.82rem;font-weight:600;cursor:pointer;transition:all .2s" onmouseenter="this.style.transform=\'translateY(-1px)\'" onmouseleave="this.style.transform=\'none\'">' + (isRu ? 'Daily Check-in (+1 очко)' : 'Daily Check-in (+1 pt)') + '</button>' +
+    '</div>' +
+  '</div>';
+
+  // Stat cards
+  var statCards = [
+    { label: isRu ? 'Всего очков' : 'Total Points', value: s.points, color: 'var(--primary)' },
+    { label: isRu ? 'Баги' : 'Bugs', value: s.totalBugs, color: '#ef4444' },
+    { label: isRu ? 'Фичи' : 'Features', value: s.totalFeatures, color: '#8b5cf6' },
+    { label: isRu ? 'Доступно' : 'Available', value: s.available, color: '#10b981' },
+  ];
+  html += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px">';
+  statCards.forEach(function(c) {
+    html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:14px 16px;text-align:center">' +
+      '<div style="font-size:1.3rem;font-weight:700;color:' + c.color + '">' + c.value + '</div>' +
+      '<div style="font-size:.68rem;color:var(--text-muted);margin-top:2px">' + c.label + '</div></div>';
+  });
+  html += '</div>';
+
+  // Leaderboard + Shop
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">';
+
+  // Leaderboard
+  html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:16px">' +
+    '<div style="font-size:.85rem;font-weight:600;color:var(--text-primary);margin-bottom:12px">' + (isRu ? 'Лидерборд' : 'Leaderboard') + '</div>';
+  var leaders = (lb.ok ? lb.leaderboard : []) || [];
+  if (leaders.length) {
+    var medals = ['#ffd700', '#c0c0c0', '#cd7f32'];
+    html += '<div style="display:flex;flex-direction:column;gap:6px">';
+    leaders.slice(0, 8).forEach(function(l, i) {
+      var medalColor = i < 3 ? medals[i] : 'var(--text-muted)';
+      html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;background:' + (i < 3 ? medalColor + '08' : 'transparent') + '">' +
+        '<span style="width:20px;font-size:.75rem;font-weight:700;color:' + medalColor + '">' + (i + 1) + '</span>' +
+        '<span style="flex:1;font-size:.8rem;color:var(--text-primary)">' + escHtml(l.username || 'User') + '</span>' +
+        '<span style="font-size:.72rem;color:var(--text-muted)">' + l.feedback_count + ' pts</span>' +
+      '</div>';
+    });
+    html += '</div>';
+  } else {
+    html += '<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:.82rem">' + (isRu ? 'Пока пусто' : 'Empty') + '</div>';
+  }
+  html += '</div>';
+
+  // Shop
+  html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:16px">' +
+    '<div style="font-size:.85rem;font-weight:600;color:var(--text-primary);margin-bottom:12px">' + (isRu ? 'Магазин' : 'Shop') + ' <span style="font-size:.72rem;color:var(--text-muted)">(' + s.available + ' ' + (isRu ? 'доступно' : 'available') + ')</span></div>';
+  html += '<div style="display:flex;flex-direction:column;gap:6px">';
+  (s.shopItems || []).forEach(function(item) {
+    var canBuy = s.available >= item.cost;
+    html += '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:10px;background:var(--bg-secondary);opacity:' + (canBuy ? '1' : '0.5') + '">' +
+      '<span style="flex:1;font-size:.78rem;color:var(--text-primary)">' + escHtml(isRu ? item.nameRu : item.name) + '</span>' +
+      '<span style="font-size:.72rem;color:var(--text-muted)">' + item.cost + ' pts</span>' +
+      (canBuy ? '<button onclick="testerBuyItem(\'' + item.id + '\')" style="padding:3px 10px;border-radius:6px;border:none;background:var(--primary);color:white;font-size:.68rem;cursor:pointer">' + (isRu ? 'Купить' : 'Buy') + '</button>' : '') +
+    '</div>';
+  });
+  html += '</div></div>';
+  html += '</div>';
+
+  // Achievements
+  html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:20px">' +
+    '<div style="font-size:.85rem;font-weight:600;color:var(--text-primary);margin-bottom:12px">' + (isRu ? 'Достижения' : 'Achievements') + '</div>' +
+    '<div style="display:flex;flex-wrap:wrap;gap:8px">';
+  (s.achievements_list || stats.achievements || []).forEach(function(a) {
+    var unlocked = a.unlocked;
+    html += '<div style="padding:8px 14px;border-radius:20px;border:1px solid ' + (unlocked ? 'var(--primary)' : 'var(--border)') + ';background:' + (unlocked ? 'var(--accent-dim)' : 'var(--bg-secondary)') + ';opacity:' + (unlocked ? '1' : '0.4') + '">' +
+      '<div style="font-size:.78rem;font-weight:600;color:' + (unlocked ? 'var(--primary)' : 'var(--text-muted)') + '">' + escHtml(isRu ? a.nameRu : a.name) + '</div>' +
+      '<div style="font-size:.62rem;color:var(--text-muted)">' + escHtml(a.desc) + '</div>' +
+    '</div>';
+  });
+  html += '</div></div>';
+
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+async function testerCheckin() {
+  try {
+    var data = await apiRequest('POST', '/api/beta/checkin');
+    if (data.ok) {
+      toast(currentLang === 'ru' ? '+1 очко! Streak: ' + data.streak + ' дн.' : '+1 pt! Streak: ' + data.streak + ' days', 'success');
+      loadTesterHub();
+    } else {
+      toast(data.error || 'Error', 'warning');
+    }
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function testerBuyItem(itemId) {
+  try {
+    var data = await apiRequest('POST', '/api/beta/shop/buy', { itemId: itemId });
+    if (data.ok) {
+      toast(currentLang === 'ru' ? 'Куплено!' : 'Purchased!', 'success');
+      loadTesterHub();
+    } else {
+      toast(data.error || 'Error', 'warning');
+    }
+  } catch(e) { toast(e.message, 'error'); }
 }
 
 // ── Feedback FAB (floating action button) ──
