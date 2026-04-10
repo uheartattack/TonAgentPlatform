@@ -1975,6 +1975,12 @@ class UserbotManager {
           const msgText = msg?.message || '';
           console.log(`[UserbotMgr] 📨 Event agent#${agentId}: from=${msgFrom} text="${msgText.slice(0, 50)}"`);
 
+          // Cache sender entity so we can reply later (fixes "Could not find input entity")
+          try {
+            if (msg._sender) await (client as any)._entityCache?.set(msg._sender);
+            else if (msgFrom && msgFrom !== '?') try { await (client as any).getEntity(Number(msgFrom) || msgFrom); } catch {}
+          } catch {}
+
           const parsed = await this.parseMessage(client, msg, selfId, selfUsername);
           if (!parsed) return;
           if (parsed.senderId === selfId) return;
@@ -2084,6 +2090,12 @@ class UserbotManager {
           if (msgFrom === selfId || msgFrom === shared.tgUserId) return;
 
           console.log(`[UserbotMgr] 📨 Account @${shared.username} event: from=${msgFrom} text="${(msg.message || '').slice(0, 50)}" agents=[${[...shared.agentIds].join(',')}]`);
+
+          // Cache sender entity for reply
+          try {
+            if (msg._sender) await (client as any)._entityCache?.set(msg._sender);
+            else if (msgFrom && msgFrom !== '?') try { await (client as any).getEntity(Number(msgFrom) || msgFrom); } catch {}
+          } catch {}
 
           const parsed = await this.parseMessage(client, msg, selfId, selfUsername);
           if (!parsed) return;
