@@ -2651,16 +2651,8 @@ class UserbotManager {
     }
 
     // ── Anti-loop: block if too many responses in time window (owner bypasses) ──
-    // cfg.userId is DB user_id, not TG id. Look up owner's TG id from users table.
-    let ownerTgId = _ownerTgIdCache.get(cfg.userId);
-    if (!ownerTgId) {
-      try {
-        const pool = getPool();
-        const r = await pool.query(`SELECT telegram_id FROM builder_bot.users WHERE id = $1`, [cfg.userId]);
-        ownerTgId = r.rows[0]?.telegram_id ? Number(r.rows[0].telegram_id) : 0;
-        _ownerTgIdCache.set(cfg.userId, ownerTgId);
-      } catch { ownerTgId = 0; }
-    }
+    // cfg.userId IS the telegram_id in our system (agents table stores TG user_id directly)
+    const ownerTgId = Number(cfg.userId) || 0;
     const isOwnerMsg = ownerTgId > 0 && msg.senderId === ownerTgId;
     // Read per-agent loop guard settings from config (falls back to defaults)
     const _loopMax = Number(cfg.config?.loop_max_responses) || undefined;

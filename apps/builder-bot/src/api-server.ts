@@ -1043,6 +1043,19 @@ export function startApiServer() {
         if (isBetaTester(userId)) {
           const reward = await awardFeedbackPoints(userId, type);
           pointsAwarded = reward.points;
+          // Announce level-up to beta group
+          if (reward.reward?.startsWith('level_up:')) {
+            const lvlName = reward.reward.replace('level_up:', '');
+            const name = session?.username ? `@${session.username}` : `User ${userId}`;
+            const botToken = process.env.BOT_TOKEN;
+            const groupId = process.env.BETA_GROUP_ID;
+            if (botToken && groupId) {
+              fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_id: groupId, text: `🎉 <b>${name}</b> достиг уровня <b>${lvlName}</b>! / reached level <b>${lvlName}</b>! 🚀`, parse_mode: 'HTML' }),
+              }).catch(() => {});
+            }
+          }
         }
       } catch {}
       // Notify admins via bot
@@ -1060,6 +1073,29 @@ export function startApiServer() {
         }
       } catch {}
       res.json({ ok: true, feedbackId: result.rows[0].id, pointsAwarded });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── GET /api/feedback/:id/screenshot — proxy screenshot from Telegram (no auth — image link) ──
+  app.get('/api/feedback/:id/screenshot', async (req: Request, res: Response) => {
+    try {
+      const feedbackId = parseInt(req.params.id);
+      const result = await pool.query(`SELECT screenshot_file_id FROM builder_bot.feedback WHERE id = $1`, [feedbackId]);
+      if (!result.rows[0]?.screenshot_file_id) { res.status(404).json({ error: 'No screenshot' }); return; }
+      const fileId = result.rows[0].screenshot_file_id;
+      const botToken = process.env.BOT_TOKEN;
+      if (!botToken) { res.status(500).json({ error: 'No bot token' }); return; }
+      // Get file path from Telegram
+      const fileInfo = await fetch(`https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`).then(r => r.json()) as any;
+      if (!fileInfo.ok) { res.status(404).json({ error: 'File not found' }); return; }
+      const filePath = fileInfo.result.file_path;
+      // Proxy the file
+      const fileUrl = `https://api.telegram.org/file/bot${botToken}/${filePath}`;
+      const fileRes = await fetch(fileUrl);
+      res.setHeader('Content-Type', fileRes.headers.get('content-type') || 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      const buffer = Buffer.from(await fileRes.arrayBuffer());
+      res.send(buffer);
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
@@ -1120,16 +1156,38 @@ export function startApiServer() {
         const fbType = fb.rows[0].type;
         // Award resolve bonus points
         if (status === 'resolved') {
+          const botToken = process.env.BOT_TOKEN;
           try {
             const { awardFeedbackPoints, isBetaTester } = await import('./payments');
             if (isBetaTester(fbUserId)) {
               const reward = await awardFeedbackPoints(fbUserId, fbType, true);
-              // Notify about reward
-              const botToken = process.env.BOT_TOKEN;
-              if (botToken && reward.reward) {
-                const rewardText = reward.reward === 'pro' ? '🎉 Апгрейд до Pro!' : reward.reward === 'unlimited' ? '💎 Апгрейд до Unlimited!' : reward.reward === 'bonus_gens' ? '🎁 +20 генераций!' : '';
-                if (rewardText) fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: fbUserId, text: `🏆 Тикет #${feedbackId} решён! +${reward.points} очков (всего: ${reward.total})\n${rewardText}` }) }).catch(() => {});
+              // Always notify user on resolve
+              if (botToken) {
+                let msg = `✅ Тикет #${feedbackId} решён!\n+${reward.xp} XP`;
+                if (reward.points > 0) msg += ` · +${reward.points} Points`;
+                if (reward.reward?.startsWith('level_up:')) {
+                  const parts = reward.reward.split(':');
+                  msg += `\n🎉 Level up: ${parts[1]}! +${parts[2] || 0} Points`;
+                  // Announce to group
+                  const groupId = process.env.BETA_GROUP_ID;
+                  if (groupId) {
+                    fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                      method: 'POST', headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ chat_id: groupId, text: `🎉 <b>User ${fbUserId}</b> reached level <b>${parts[1]}</b>! 🚀`, parse_mode: 'HTML' }),
+                    }).catch(() => {});
+                  }
+                }
+                fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                  method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ chat_id: fbUserId, text: msg }),
+                }).catch(() => {});
               }
+            } else if (botToken) {
+              // Non-beta user — still notify
+              fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_id: fbUserId, text: `✅ Тикет #${feedbackId} решён!` }),
+              }).catch(() => {});
             }
           } catch {}
         }
@@ -1139,7 +1197,7 @@ export function startApiServer() {
           if (botToken) {
             fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ chat_id: fbUserId, text: `💬 Ответ на ваш тикет #${feedbackId}:\n\n${adminReply}` }),
+              body: JSON.stringify({ chat_id: fbUserId, text: `💬 Ответ на тикет #${feedbackId}:\n\n${adminReply}` }),
             }).catch(() => {});
           }
         }
@@ -1172,6 +1230,27 @@ export function startApiServer() {
       );
       const codes = await pool.query(`SELECT code, max_uses, used_count, is_active, note, created_at FROM builder_bot.beta_invite_codes ORDER BY created_at DESC LIMIT 50`);
       res.json({ ok: true, testers: result.rows, codes: codes.rows });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── POST /api/admin/changelog — post changelog to TG group (admin only) ──
+  app.post('/api/admin/changelog', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { isPlatformAdmin } = await import('./payments');
+      if (!isPlatformAdmin(userId)) { res.status(403).json({ error: 'Admin only' }); return; }
+      const { text } = req.body;
+      const botToken = process.env.BOT_TOKEN;
+      const groupId = process.env.BETA_GROUP_ID;
+      const topicId = process.env.BETA_ANNOUNCEMENTS_TOPIC;
+      if (!botToken || !groupId) { res.status(400).json({ error: 'Group not configured' }); return; }
+      const opts: any = { chat_id: groupId, text, parse_mode: 'HTML' };
+      if (topicId) opts.message_thread_id = parseInt(topicId);
+      await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(opts),
+      });
+      res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 

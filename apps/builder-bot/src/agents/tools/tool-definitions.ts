@@ -12,7 +12,7 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
       type: 'function',
       function: {
         name: 'get_ton_balance',
-        description: 'Получить баланс TON кошелька',
+        description: 'Получить баланс TON кошелька агента. Используй для проверки баланса перед send_ton, stonfi_swap_execute, tonstakers_stake. Возвращает баланс в TON.',
         parameters: {
           type: 'object',
           properties: {
@@ -657,7 +657,7 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
       type: 'function',
       function: {
         name: 'web_search',
-        description: 'Поиск в интернете. Возвращает топ-5 результатов (заголовок, описание, URL).',
+        description: 'Поиск в интернете (Google). Возвращает топ-5 результатов. Используй для: актуальных цен, новостей, документации. Для получения содержимого страницы — используй fetch_url с URL из результатов.',
         parameters: {
           type: 'object',
           properties: {
@@ -681,12 +681,194 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
         },
       },
     },
+    // ── Tonstakers — liquid staking TON → tsTON ──────────────────
+    {
+      type: 'function',
+      function: {
+        name: 'tonstakers_info',
+        description: 'Информация о стейкинге Tonstakers: APY, TVL, курс tsTON/TON. Крупнейший liquid staking на TON (70M+ TON, 100K+ юзеров).',
+        parameters: { type: 'object', properties: {} },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tonstakers_balance',
+        description: 'Проверить баланс застейканных tsTON для кошелька.',
+        parameters: {
+          type: 'object',
+          properties: {
+            wallet_address: { type: 'string', description: 'Адрес TON кошелька' },
+          },
+          required: ['wallet_address'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tonstakers_stake',
+        description: 'Застейкать TON → получить tsTON (liquid staking, ~4.5% APY). Минимум 1 TON. ВАЖНО: спрашивай подтверждение!',
+        parameters: {
+          type: 'object',
+          properties: {
+            amount: { type: 'string', description: 'Сколько TON застейкать (мин. 1)' },
+          },
+          required: ['amount'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'tonstakers_unstake',
+        description: 'Анстейкнуть tsTON → получить TON обратно. Стандартный вывод (ждёт раунд).',
+        parameters: {
+          type: 'object',
+          properties: {
+            amount: { type: 'string', description: 'Сколько tsTON анстейкать' },
+          },
+          required: ['amount'],
+        },
+      },
+    },
+    // ── STON.fi DEX tools — swap TON ↔ jettons ───────────────────
+    {
+      type: 'function',
+      function: {
+        name: 'stonfi_swap_quote',
+        description: 'Получить котировку свапа на STON.fi DEX — сколько получишь и price impact. Используй ПЕРЕД stonfi_swap_execute чтобы показать юзеру что он получит. Также используй для проверки цен токенов (stonfi_price — упрощённая версия). Поддерживает TON, USDC, USDT и любые jettons.',
+        parameters: {
+          type: 'object',
+          properties: {
+            from: { type: 'string', description: 'Из чего свапаем: "TON", "USDC", "USDT" или адрес jetton' },
+            to: { type: 'string', description: 'Во что свапаем: "TON", "USDC", "USDT" или адрес jetton' },
+            amount: { type: 'string', description: 'Сколько отправляем (напр. "1.5")' },
+          },
+          required: ['from', 'to', 'amount'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'stonfi_swap_execute',
+        description: 'Выполнить свап на STON.fi DEX. Отправляет транзакцию из кошелька агента. ВАЖНО: всегда показывай котировку и спрашивай подтверждение!',
+        parameters: {
+          type: 'object',
+          properties: {
+            from: { type: 'string', description: 'Из чего: "TON", "USDC", "USDT" или адрес jetton' },
+            to: { type: 'string', description: 'Во что: "TON", "USDC", "USDT" или адрес jetton' },
+            amount: { type: 'string', description: 'Сколько отправляем' },
+          },
+          required: ['from', 'to', 'amount'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'stonfi_assets',
+        description: 'Список доступных активов на STON.fi DEX с ценами в USD.',
+        parameters: { type: 'object', properties: {} },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'stonfi_price',
+        description: 'Узнать цену свапа: сколько одного токена стоит в другом (напр. 1 TON = ? USDC).',
+        parameters: {
+          type: 'object',
+          properties: {
+            from: { type: 'string', description: 'Токен (TON, USDC, USDT или адрес)' },
+            to: { type: 'string', description: 'Токен для сравнения' },
+            amount: { type: 'string', description: 'Количество (по умолчанию 1)' },
+          },
+          required: ['from', 'to'],
+        },
+      },
+    },
+    // ── Bitrefill tools — gift cards, eSIM, mobile top-ups ────────
+    {
+      type: 'function',
+      function: {
+        name: 'bitrefill_search',
+        description: 'Поиск подарочных карт, eSIM и пополнений мобильного на Bitrefill (1500+ брендов: Amazon, Steam, Netflix, Spotify, Uber). Оплата криптой (USDC, Lightning). Цепочка: bitrefill_search → bitrefill_product (номиналы) → bitrefill_buy (покупка). Для покупки нужны средства на кошельке.',
+        parameters: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: 'Что ищем (напр. "Netflix", "Steam", "eSIM Turkey")' },
+            country: { type: 'string', description: 'Код страны ISO (US, RU, TR, DE). По умолчанию US.' },
+            type: { type: 'string', enum: ['giftcard', 'esim'], description: 'Тип: giftcard или esim' },
+          },
+          required: ['query'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'bitrefill_product',
+        description: 'Получить детали продукта Bitrefill — доступные номиналы, цены, инструкции по активации.',
+        parameters: {
+          type: 'object',
+          properties: {
+            product_id: { type: 'string', description: 'ID продукта из результатов поиска' },
+          },
+          required: ['product_id'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'bitrefill_buy',
+        description: 'Купить подарочную карту или eSIM на Bitrefill. Оплата USDC (Base), Lightning или балансом. ВАЖНО: всегда спрашивай подтверждение у владельца перед покупкой!',
+        parameters: {
+          type: 'object',
+          properties: {
+            product_id: { type: 'string', description: 'ID продукта' },
+            package_value: { type: 'string', description: 'Номинал (напр. "50", "1 Month", "1GB, 7 Days")' },
+            payment_method: { type: 'string', enum: ['lightning', 'usdc_base', 'balance'], description: 'Способ оплаты. По умолчанию lightning.' },
+          },
+          required: ['product_id', 'package_value'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'bitrefill_invoice',
+        description: 'Проверить статус заказа на Bitrefill по ID инвойса.',
+        parameters: {
+          type: 'object',
+          properties: {
+            invoice_id: { type: 'string', description: 'ID инвойса' },
+          },
+          required: ['invoice_id'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'bitrefill_orders',
+        description: 'Список последних заказов на Bitrefill.',
+        parameters: {
+          type: 'object',
+          properties: {
+            limit: { type: 'number', description: 'Макс. количество (по умолчанию 5)' },
+          },
+        },
+      },
+    },
     // ── Telegram Userbot tools (MTProto) ──────────────────────────
     {
       type: 'function',
       function: {
         name: 'tg_send_message',
-        description: 'Отправить сообщение через Telegram аккаунт (MTProto userbot). Работает с пользователями, группами, каналами.',
+        description: 'Отправить сообщение через подключённый Telegram аккаунт. Основной способ коммуникации. Поддерживает ответы (reply_to), форматирование. Для форматированных сообщений используй tg_send_formatted. Для медиа — tg_send_photo/tg_send_file. chat_id: @username, числовой ID, или ID из tg_get_dialogs.',
         parameters: {
           type: 'object',
           properties: {
@@ -1579,10 +1761,10 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
       type: 'function',
       function: {
         name: 'tg_transfer_collectible',
-        description: 'Передать коллекционный подарок другому пользователю.',
+        description: 'Передать коллекционный NFT-подарок (Star Gift) другому пользователю. Подарки — это коллекционные NFT в Telegram, у них есть slug (напр. FreshSocks-31961), цена в Stars, редкость, атрибуты. Используй tg_get_collectible_info чтобы узнать детали подарка перед передачей.',
         parameters: { type: 'object', properties: {
-          gift_id: { type: 'string', description: 'ID подарка' },
-          to_user: { type: 'string', description: 'ID или username получателя' },
+          gift_id: { type: 'string', description: 'Slug подарка (напр. FreshSocks-31961 из ссылки t.me/nft/FreshSocks-31961)' },
+          to_user: { type: 'string', description: 'ID или @username получателя' },
         }, required: ['gift_id', 'to_user'] },
       },
     },
@@ -1590,7 +1772,7 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
       type: 'function',
       function: {
         name: 'tg_set_gift_visibility',
-        description: 'Показать или скрыть подарок в профиле.',
+        description: 'Показать или скрыть коллекционный подарок в профиле Telegram. Скрытые подарки не видны другим пользователям.',
         parameters: { type: 'object', properties: {
           gift_id: { type: 'string', description: 'ID подарка' },
           visible: { type: 'boolean', description: 'true = показать, false = скрыть' },
@@ -1689,9 +1871,9 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
       type: 'function',
       function: {
         name: 'tg_get_collectible_info',
-        description: 'Получить детальную информацию о коллекционном подарке.',
+        description: 'Получить детальную информацию о Telegram Star Gift NFT — владелец, атрибуты, редкость, цена, история. Используй для: ссылок t.me/nft/SLUG, оценки стоимости, проверки подарка перед покупкой/передачей. Возвращает данные для tg_set_collectible_price и tg_send_gift_offer.',
         parameters: { type: 'object', properties: {
-          gift_id: { type: 'string', description: 'ID подарка (slug или numeric)' },
+          gift_id: { type: 'string', description: 'Slug подарка из ссылки t.me/nft/SLUG (напр. FreshSocks-31961) или числовой ID' },
         }, required: ['gift_id'] },
       },
     },
@@ -1699,9 +1881,9 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
       type: 'function',
       function: {
         name: 'tg_get_unique_gift_value',
-        description: 'Оценить стоимость уникального подарка на основе рынка.',
+        description: 'Оценить рыночную стоимость уникального Star Gift на основе редкости, атрибутов и текущих цен на маркетплейсе. Используй перед tg_set_collectible_price или tg_send_gift_offer чтобы не продешевить.',
         parameters: { type: 'object', properties: {
-          gift_id: { type: 'string', description: 'ID уникального подарка' },
+          gift_id: { type: 'string', description: 'Slug подарка (напр. FreshSocks-31961)' },
         }, required: ['gift_id'] },
       },
     },
@@ -1709,7 +1891,7 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
       type: 'function',
       function: {
         name: 'tg_set_collectible_price',
-        description: 'Установить цену перепродажи коллекционного подарка.',
+        description: 'Выставить коллекционный Star Gift на продажу за Stars или снять с продажи. Используй tg_get_unique_gift_value для оценки адекватной цены. 0 = снять с продажи.',
         parameters: { type: 'object', properties: {
           gift_id: { type: 'string', description: 'ID подарка' },
           price: { type: 'number', description: 'Цена в Stars (0 = снять с продажи)' },
@@ -1720,7 +1902,7 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
       type: 'function',
       function: {
         name: 'tg_send_gift_offer',
-        description: 'Предложить обмен подарками пользователю.',
+        description: 'Отправить предложение покупки/обмена уникального Star Gift его владельцу. Цена в Stars, срок действия 24ч. Сначала используй tg_get_collectible_info и tg_get_unique_gift_value чтобы оценить подарок.',
         parameters: { type: 'object', properties: {
           to_user: { type: 'string', description: 'Username или ID получателя' },
           my_gift_id: { type: 'string', description: 'ID моего подарка для обмена' },

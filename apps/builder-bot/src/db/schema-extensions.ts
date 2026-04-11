@@ -303,6 +303,7 @@ export async function runMigrations(pool: Pool): Promise<void> {
 
     // ── Beta testers extended columns ──
     await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS level INT DEFAULT 1`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS xp INT DEFAULT 0`);
     await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS total_bugs INT DEFAULT 0`);
     await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS total_features INT DEFAULT 0`);
     await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS total_support INT DEFAULT 0`);

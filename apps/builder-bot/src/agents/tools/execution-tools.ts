@@ -418,17 +418,39 @@ export class ExecutionTools {
         } catch {}
         return false;
       };
-      const safeFetch = (input: any, init?: any) => {
+      const safeFetch = async (input: any, init?: any) => {
         const url = typeof input === 'string' ? input : input?.url || String(input);
         if (_BLOCKED_RE.test(url) || /^file:/i.test(url) || /^ftp:/i.test(url)) {
-          return Promise.reject(new Error('Blocked: internal/local URLs are not allowed'));
+          throw new Error('Blocked: internal/local URLs are not allowed');
         }
-        try {
-          const parsed = new URL(url);
-          if (_isBlockedIp(parsed.hostname)) {
-            return Promise.reject(new Error('Blocked: internal/local URLs are not allowed'));
+        let parsed: URL;
+        try { parsed = new URL(url); } catch { throw new Error('Invalid URL'); }
+        if (_isBlockedIp(parsed.hostname)) {
+          throw new Error('Blocked: internal/local URLs are not allowed');
+        }
+        // DNS rebinding protection: resolve hostname → check resolved IP → fetch by IP with Host header
+        if (!/^\d+\.\d+\.\d+\.\d+$/.test(parsed.hostname) && parsed.hostname !== 'localhost') {
+          try {
+            const dns = require('dns');
+            const { promisify } = require('util');
+            const resolve4 = promisify(dns.resolve4);
+            const ips: string[] = await resolve4(parsed.hostname);
+            for (const ip of ips) {
+              if (/^(127\.|10\.|0\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.)/.test(ip)) {
+                throw new Error('Blocked: DNS resolved to internal IP');
+              }
+            }
+            // Fetch by resolved IP to prevent DNS rebinding (TOCTOU)
+            const resolvedUrl = new URL(url);
+            const origHost = resolvedUrl.host;
+            resolvedUrl.hostname = ips[0];
+            const fetchInit = { ...init, headers: { ...(init?.headers || {}), Host: origHost } };
+            return nativeFetch(resolvedUrl.toString(), fetchInit);
+          } catch (e: any) {
+            if (e.message.includes('Blocked')) throw e;
+            // DNS resolve failed — fall through to normal fetch
           }
-        } catch {}
+        }
         return nativeFetch(input, init);
       };
 
