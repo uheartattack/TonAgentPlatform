@@ -1761,10 +1761,10 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
       type: 'function',
       function: {
         name: 'tg_transfer_collectible',
-        description: 'Передать коллекционный NFT-подарок (Star Gift) другому пользователю. Подарки — это коллекционные NFT в Telegram, у них есть slug (напр. FreshSocks-31961), цена в Stars, редкость, атрибуты. Используй tg_get_collectible_info чтобы узнать детали подарка перед передачей.',
+        description: 'Передать коллекционный Star Gift NFT другому пользователю. Это НЕОБРАТИМОЕ действие — подарок уйдёт навсегда.\n\nПОТОК: tg_get_received_gifts() → найти подарок → tg_get_collectible_info(slug) → подтверждение у владельца → tg_transfer_collectible(slug, to_user).\n\nВАЖНО:\n- slug берётся из t.me/nft/SLUG ссылки или из tg_get_received_gifts\n- ВСЕГДА подтверждай с владельцем перед передачей (это необратимо!)\n- Если владелец даёт ссылку t.me/nft/X — X это slug, используй tg_get_collectible_info(X) сначала',
         parameters: { type: 'object', properties: {
-          gift_id: { type: 'string', description: 'Slug подарка (напр. FreshSocks-31961 из ссылки t.me/nft/FreshSocks-31961)' },
-          to_user: { type: 'string', description: 'ID или @username получателя' },
+          gift_id: { type: 'string', description: 'Slug подарка (напр. FreshSocks-31961). Извлекай из ссылки t.me/nft/FreshSocks-31961 или из tg_get_received_gifts' },
+          to_user: { type: 'string', description: 'Telegram user ID (числовой) или @username получателя' },
         }, required: ['gift_id', 'to_user'] },
       },
     },
@@ -1871,9 +1871,9 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
       type: 'function',
       function: {
         name: 'tg_get_collectible_info',
-        description: 'Получить детальную информацию о Telegram Star Gift NFT — владелец, атрибуты, редкость, цена, история. Используй для: ссылок t.me/nft/SLUG, оценки стоимости, проверки подарка перед покупкой/передачей. Возвращает данные для tg_set_collectible_price и tg_send_gift_offer.',
+        description: 'ПЕРВЫЙ ШАГ при любой работе с подарком. Получает ВСЮ информацию о Telegram Star Gift NFT: владелец, атрибуты (backdrop, symbol, pattern), редкость, текущая цена, доступность.\n\nКОГДА ВЫЗЫВАТЬ:\n- Пользователь прислал ссылку t.me/nft/SLUG → вызови с этим SLUG\n- Перед tg_transfer_collectible (проверить что подарок наш и узнать детали)\n- Перед tg_set_collectible_price (узнать текущую цену)\n- Перед tg_send_gift_offer (узнать владельца)\n\nСЛУГ: извлекай из ссылки t.me/nft/FreshSocks-31961 → slug = "FreshSocks-31961"\n\nВозвращает: owner_id, collection_name, attributes, floor_price, is_for_sale, rarity',
         parameters: { type: 'object', properties: {
-          gift_id: { type: 'string', description: 'Slug подарка из ссылки t.me/nft/SLUG (напр. FreshSocks-31961) или числовой ID' },
+          gift_id: { type: 'string', description: 'Slug подарка. Из ссылки t.me/nft/SLUG берётся часть после /nft/. Примеры: "FreshSocks-31961", "PlushPepe-5042", "LolPop-128"' },
         }, required: ['gift_id'] },
       },
     },
@@ -1881,9 +1881,9 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
       type: 'function',
       function: {
         name: 'tg_get_unique_gift_value',
-        description: 'Оценить рыночную стоимость уникального Star Gift на основе редкости, атрибутов и текущих цен на маркетплейсе. Используй перед tg_set_collectible_price или tg_send_gift_offer чтобы не продешевить.',
+        description: 'Оценить рыночную стоимость Star Gift NFT. Возвращает: floor_price, avg_price, last_sale, estimated_value.\n\nПОТОК ОЦЕНКИ: tg_get_collectible_info(slug) → tg_get_unique_gift_value(slug) → решение о цене\n\nИспользуй ПЕРЕД:\n- tg_set_collectible_price — чтобы не продешевить\n- tg_send_gift_offer — чтобы знать адекватную цену\n- Ответом на "сколько стоит мой подарок?"',
         parameters: { type: 'object', properties: {
-          gift_id: { type: 'string', description: 'Slug подарка (напр. FreshSocks-31961)' },
+          gift_id: { type: 'string', description: 'Slug подарка (напр. FreshSocks-31961). Из t.me/nft/SLUG берётся часть после /nft/' },
         }, required: ['gift_id'] },
       },
     },
@@ -1891,10 +1891,10 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
       type: 'function',
       function: {
         name: 'tg_set_collectible_price',
-        description: 'Выставить коллекционный Star Gift на продажу за Stars или снять с продажи. Используй tg_get_unique_gift_value для оценки адекватной цены. 0 = снять с продажи.',
+        description: 'Выставить свой Star Gift NFT на продажу за Stars или снять с продажи (price=0).\n\nПОТОК ПРОДАЖИ: tg_get_received_gifts() → tg_get_unique_gift_value(slug) → tg_set_collectible_price(slug, price)\n\nВАЖНО:\n- Подарок должен быть НАШИ (проверь через tg_get_received_gifts)\n- Сначала оцени через tg_get_unique_gift_value чтобы не продешевить\n- ВСЕГДА спрашивай подтверждение у владельца перед выставлением',
         parameters: { type: 'object', properties: {
-          gift_id: { type: 'string', description: 'ID подарка' },
-          price: { type: 'number', description: 'Цена в Stars (0 = снять с продажи)' },
+          gift_id: { type: 'string', description: 'Slug подарка (напр. FreshSocks-31961)' },
+          price: { type: 'number', description: 'Цена в Stars. 0 = снять с продажи' },
         }, required: ['gift_id', 'price'] },
       },
     },
@@ -1902,12 +1902,12 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
       type: 'function',
       function: {
         name: 'tg_send_gift_offer',
-        description: 'Отправить предложение покупки/обмена уникального Star Gift его владельцу. Цена в Stars, срок действия 24ч. Сначала используй tg_get_collectible_info и tg_get_unique_gift_value чтобы оценить подарок.',
+        description: 'Отправить предложение обмена Star Gift NFT его владельцу. Предлагаешь свой подарок в обмен на чужой.\n\nПОТОК ОБМЕНА:\n1. tg_get_collectible_info(want_slug) → узнать владельца и цену\n2. tg_get_received_gifts() → выбрать свой подарок для обмена\n3. tg_send_gift_offer(owner, my_slug, want_slug)\n\nВАЖНО: ВСЕГДА подтверждай с владельцем перед отправкой оффера',
         parameters: { type: 'object', properties: {
-          to_user: { type: 'string', description: 'Username или ID получателя' },
-          my_gift_id: { type: 'string', description: 'ID моего подарка для обмена' },
-          want_gift_id: { type: 'string', description: 'ID подарка который хочу получить' },
-          message: { type: 'string', description: 'Сообщение к офферу' },
+          to_user: { type: 'string', description: 'Username или числовой ID владельца нужного подарка' },
+          my_gift_id: { type: 'string', description: 'Slug МОЕГО подарка для обмена (из tg_get_received_gifts)' },
+          want_gift_id: { type: 'string', description: 'Slug подарка который хочу получить (из tg_get_collectible_info)' },
+          message: { type: 'string', description: 'Сообщение к офферу (опционально)' },
         }, required: ['to_user', 'my_gift_id'] },
       },
     },
@@ -2132,11 +2132,11 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
       type: 'function',
       function: {
         name: 'tg_send_gift',
-        description: 'Купить и отправить Star Gift пользователю. Стоит Stars. Сначала просмотри каталог через get_gift_catalog чтобы получить giftId. ВСЕГДА подтверждай подарок и стоимость с владельцем перед покупкой.',
+        description: 'Купить Star Gift из каталога и отправить пользователю. Стоит Stars (списываются с баланса).\n\nПОТОК: get_gift_catalog() → выбрать подарок → tg_send_gift(user, gift_id)\n\nЭТО НЕ для коллекционных NFT (t.me/nft/) — это покупка нового подарка из каталога.\nДля передачи СВОЕГО подарка используй tg_transfer_collectible.\nДля покупки с маркетплейса — buy_resale_gift или buy_market_gift.\n\nВАЖНО: ВСЕГДА подтверждай с владельцем перед покупкой (стоит Stars!)',
         parameters: { type: 'object', properties: {
-          user_id: { type: 'string', description: 'ID или @username получателя' },
-          gift_id: { type: 'string', description: 'ID подарка из каталога (get_gift_catalog)' },
-          message: { type: 'string', description: 'Сообщение с подарком (до 255 символов)' },
+          user_id: { type: 'string', description: 'Telegram user ID (числовой) или @username получателя' },
+          gift_id: { type: 'string', description: 'ID подарка из каталога (получить через get_gift_catalog)' },
+          message: { type: 'string', description: 'Сообщение с подарком (до 255 символов, опционально)' },
         }, required: ['user_id', 'gift_id'] },
       },
     },
@@ -2144,9 +2144,9 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
       type: 'function',
       function: {
         name: 'tg_get_received_gifts',
-        description: 'Получить Star Gifts пользователя. Показывает коллекционные подарки с slug (ссылки t.me/nft/slug), редкость, атрибуты. Когда владелец говорит "покажи МОИ подарки" — вызывай без user_id. Используй slug/msgId для tg_transfer_collectible и tg_set_collectible_price.',
+        description: 'Получить коллекцию Star Gift NFT пользователя. Возвращает список подарков с: slug (= ссылка t.me/nft/{slug}), collection_name, attributes, rarity, is_for_sale, msg_id.\n\nКОГДА ВЫЗЫВАТЬ:\n- "покажи мои подарки" → tg_get_received_gifts() (без user_id = свои)\n- "отправь мой подарок X" → tg_get_received_gifts() → найти подарок → tg_transfer_collectible\n- "продай мой подарок" → tg_get_received_gifts() → tg_get_unique_gift_value → tg_set_collectible_price\n- Нужен slug для любой операции с подарками\n\nВозвращённые slug используй в: tg_get_collectible_info, tg_transfer_collectible, tg_set_collectible_price, tg_get_unique_gift_value',
         parameters: { type: 'object', properties: {
-          user_id: { type: 'string', description: 'ID пользователя (опционально, по умолчанию — свои подарки)' },
+          user_id: { type: 'string', description: 'Telegram user ID (опционально). Без него = свои подарки' },
           limit: { type: 'number', description: 'Максимальное количество (по умолчанию 20)' },
         }, required: [] },
       },

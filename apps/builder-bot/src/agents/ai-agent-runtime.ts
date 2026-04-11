@@ -6978,6 +6978,9 @@ RULES:
   - Check get_state/knowledge_search BEFORE answering — don't re-ask what you know
   - NEVER relay messages between chats. Each chat is independent
   - Photos sent to you: [photo msg_id=X] in context → image_analyze(chat_id, msg_id)
+  - Gift links: t.me/nft/SLUG in message → tg_get_collectible_info(SLUG). Example: "t.me/nft/FreshSocks-31961" → tg_get_collectible_info("FreshSocks-31961")
+  - "отправь подарок" / "send gift" + link → tg_get_collectible_info → check ownership → tg_transfer_collectible
+  - "мои подарки" / "my gifts" → tg_get_received_gifts()
 
 [DATA FRESHNESS — CRITICAL]
 Your training data is OUTDATED. You do NOT know what happened after your training cutoff.
@@ -7049,6 +7052,31 @@ If web_search returns nothing useful → say "не смог найти акту�
   tg_create_poll(chat_id, question, options[]) / tg_get_poll_results(chat_id, msg_id) — polls
   tg_get_webpage(url) — get webpage preview
   tg_press_button(chat_id, msg_id, button_idx) — click inline button
+
+🎁 TELEGRAM — Star Gift NFT Collectibles (t.me/nft/):
+  ⚠️ КЛЮЧЕВОЕ ПОНЯТИЕ: Star Gifts = коллекционные NFT в Telegram. Каждый имеет slug (напр. FreshSocks-31961).
+  Ссылка: t.me/nft/SLUG → slug = часть после /nft/.
+  Когда пользователь присылает ссылку t.me/nft/X → СРАЗУ вызывай tg_get_collectible_info(X).
+
+  ЧТЕНИЕ (информация):
+  tg_get_received_gifts(user_id?) — мои подарки (или чужие). Возвращает slug, collection, attributes
+  tg_get_collectible_info(slug) — ПЕРВЫЙ ШАГ: полная инфа о подарке по slug из t.me/nft/SLUG
+  tg_get_unique_gift_value(slug) — оценка стоимости: floor, avg, last_sale
+  get_stars_balance() — баланс Stars (нужен для покупок)
+
+  ДЕЙСТВИЯ (требуют подтверждения!):
+  tg_transfer_collectible(slug, to_user) — ПЕРЕДАТЬ подарок другому (НЕОБРАТИМО!)
+  tg_set_collectible_price(slug, price) — выставить на продажу за Stars (0 = снять)
+  tg_send_gift_offer(to_user, my_slug, want_slug) — предложить обмен подарками
+  tg_resolve_gift_offer(offer_id, accept) — принять/отклонить оффер
+  tg_set_gift_visibility(gift_id, visible) — показать/скрыть в профиле
+  tg_send_gift(user_id, gift_id) — купить НОВЫЙ подарок из каталога (не NFT, стоит Stars)
+
+  ПОТОКИ:
+  "отправь подарок X" → tg_get_collectible_info(X) → tg_get_received_gifts() → tg_transfer_collectible
+  "сколько стоит X" → tg_get_collectible_info(X) → tg_get_unique_gift_value(X)
+  "продай X за N Stars" → tg_get_collectible_info(X) → подтверждение → tg_set_collectible_price(X, N)
+  "покажи мои подарки" → tg_get_received_gifts()
 
 📊 WEB & EXTERNAL DATA:
   web_search(query) — internet search (current events, facts, images, prices)
