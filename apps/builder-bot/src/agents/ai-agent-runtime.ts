@@ -3809,8 +3809,14 @@ export async function executeTool(
           // ── Profile extras ──
           case 'tg_set_personal_channel': return await tgSandbox.setPersonalChannel(args.channel_id);
           // ── Gift advanced ──
-          case 'tg_get_collectible_info': return await tgSandbox.getCollectibleInfo(args.gift_id);
-          case 'tg_get_unique_gift_value': return await tgSandbox.getUniqueGiftValue(args.gift_id);
+          case 'tg_get_collectible_info': {
+            const info = await tgSandbox.getCollectibleInfo(args.gift_id);
+            return { ...info, usage: 'Use tg_set_collectible_price(gift_id, price) to list for sale, tg_transfer_collectible(gift_id, to_user) to transfer, tg_send_gift_offer(to_user, my_gift_id) to propose trade.' };
+          }
+          case 'tg_get_unique_gift_value': {
+            const val = await tgSandbox.getUniqueGiftValue(args.gift_id);
+            return { ...val, usage: 'Use this value with tg_set_collectible_price to set a fair market price, or with tg_send_gift_offer to make an informed offer.' };
+          }
           case 'tg_set_collectible_price': return await tgSandbox.setCollectiblePrice(args.gift_id, args.price);
           case 'tg_send_gift_offer': return await tgSandbox.sendGiftOffer(args.to_user, args.my_gift_id, args.want_gift_id, args.message);
           case 'tg_resolve_gift_offer': return await tgSandbox.resolveGiftOffer(args.offer_id, args.accept);
@@ -5928,7 +5934,10 @@ async function executeGlobalTgTool(name: string, args: any): Promise<any> {
     case 'tg_get_my_profile': return await tgGetMyProfile();
     // ── Gift operations ──
     case 'tg_send_gift': return await tgSendGift(args.user_id, args.gift_id, args.message);
-    case 'tg_get_received_gifts': return await tgGetReceivedGifts(args.user_id, args.limit ?? 20);
+    case 'tg_get_received_gifts': {
+        const gifts = await tgGetReceivedGifts(args.user_id, args.limit ?? 20);
+        return { ...gifts, usage: 'For collectible gifts: use slug with tg_get_collectible_info(slug) for details, tg_transfer_collectible(slug, to_user) to send, tg_set_collectible_price(slug, price) to sell.' };
+      }
     // ── Enhanced media ──
     case 'tg_send_photo': { const id = await tgSendPhoto(args.chat_id, args.photo_url || args.url, args.caption); return { ok: true, message_id: id }; }
     case 'tg_send_voice': { const id = await tgSendVoice(args.chat_id, args.text); return { ok: true, message_id: id }; }
