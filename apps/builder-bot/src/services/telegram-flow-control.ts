@@ -330,14 +330,19 @@ export class MessageBatchDebouncer<T> {
 
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// ANTI-LOOP DETECTION
-// Prevents bot-to-bot conversation loops and excessive self-responses.
+// ANTI-LOOP DETECTION (signature-based, inspired by teleton-agent)
+// Detects when agent keeps calling same tools with same args = stall.
+// Also rate-limits to prevent flooding.
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const LOOP_WINDOW_MS = 300_000;  // 5 min window
-const LOOP_MAX_RESPONSES = 8;    // max responses per agent per chat per window
+const LOOP_WINDOW_MS = 300_000;     // 5 min window for rate limit
+const LOOP_MAX_RESPONSES = 30;      // hard rate limit per chat
+const STALL_HISTORY_SIZE = 10;      // track last N tool signatures
 
+// Rate limiter (time-based)
 const _loopTracker = new Map<string, number[]>();
+// Signature-based stall detector
+const _toolSignatures = new Map<string, string[]>();
 
 /** Check if agent can respond in this chat. Returns true if allowed. */
 export function loopGuardCheck(agentId: number, chatKey: string, maxResponses?: number, windowMs?: number): boolean {
@@ -352,7 +357,33 @@ export function loopGuardCheck(agentId: number, chatKey: string, maxResponses?: 
   return true;
 }
 
-/** Periodic cleanup of loop tracker. Auto-scheduled on module load. */
+/**
+ * Signature-based stall detection.
+ * Call after each AI iteration with the tool calls made.
+ * Returns true if agent is stalling (all calls are duplicates of previous).
+ */
+export function isStalling(agentId: number, toolCalls: Array<{ name: string; args?: any }>): boolean {
+  if (!toolCalls.length) return false;
+  const key = String(agentId);
+  const history = _toolSignatures.get(key) || [];
+
+  // Build signature for this iteration
+  const sigs = toolCalls.map(tc => `${tc.name}:${JSON.stringify(tc.args || {}).slice(0, 100)}`);
+  const allDuplicates = sigs.every(sig => history.includes(sig));
+
+  // Update history
+  const updated = [...history, ...sigs].slice(-STALL_HISTORY_SIZE);
+  _toolSignatures.set(key, updated);
+
+  return allDuplicates && history.length > 0;
+}
+
+/** Reset stall detector for an agent (call on new conversation/message). */
+export function resetStallDetector(agentId: number): void {
+  _toolSignatures.delete(String(agentId));
+}
+
+/** Periodic cleanup. */
 export function loopGuardCleanup(): void {
   const now = Date.now();
   for (const [key, times] of _loopTracker) {
@@ -360,9 +391,14 @@ export function loopGuardCleanup(): void {
     if (fresh.length === 0) _loopTracker.delete(key);
     else _loopTracker.set(key, fresh);
   }
+  // Clean up stale signature data
+  if (_toolSignatures.size > 5000) {
+    const keys = [..._toolSignatures.keys()];
+    for (let i = 0; i < 1000; i++) _toolSignatures.delete(keys[i]);
+  }
 }
 
-// Auto-schedule cleanup every 60s (prevents memory leak)
+// Auto-schedule cleanup every 60s
 const _loopCleanupTimer = setInterval(() => loopGuardCleanup(), 60_000);
 if (_loopCleanupTimer.unref) _loopCleanupTimer.unref();
 

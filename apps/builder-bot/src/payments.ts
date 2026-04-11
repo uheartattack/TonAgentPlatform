@@ -541,18 +541,35 @@ export function trackGeneration(userId: number): void {
 }
 
 // ── Beta Rewards System ─────────────────────────────────────
-// Points (tight economy): bug=2, feature=2, critical=15, support=1, general=1
-// Resolved bonus: bug=+5, feature=+10(implemented), critical=+15, support=+2
+// XP = earned for every action (permanent, determines level)
+// Points = earned only for achievements, level-ups, weekly top (spendable currency)
+//
+// XP rates: bug=5, feature=5, critical=20, support=2, general=1, checkin=1
+// Resolved bonus XP: bug=+10, feature=+15, critical=+30, support=+3
 // Daily limits: 5 bugs, 3 features, 3 critical, 2 support, 2 general
+//
+// Points sources:
+//   Level-up rewards: Lv2=10, Lv3=25, Lv4=50, Lv5=100, Lv6=200
+//   Achievements: 5-50 pts each
+//   Weekly top: 1st=30, 2nd=20, 3rd=10
+//   Bug resolved: +5 pts bonus
 
-const FEEDBACK_POINTS: Record<string, number> = { bug: 2, feature: 2, support: 1, general: 1, critical: 5 };
-const RESOLVE_BONUS: Record<string, number> = { bug: 3, feature: 5, support: 1, general: 1, critical: 10 };
+const FEEDBACK_XP: Record<string, number> = { bug: 5, feature: 5, support: 2, general: 1, critical: 20 };
+const RESOLVE_XP: Record<string, number> = { bug: 10, feature: 15, support: 3, general: 1, critical: 30 };
+const RESOLVE_POINTS: Record<string, number> = { bug: 5, feature: 10, support: 2, general: 1, critical: 15 };
+const LEVEL_UP_POINTS: Record<number, number> = { 2: 10, 3: 25, 4: 50, 5: 100, 6: 200 };
 
-export async function awardFeedbackPoints(userId: number, feedbackType: string, resolved = false): Promise<{ points: number; total: number; reward?: string }> {
-  let pts = resolved ? (RESOLVE_BONUS[feedbackType] || 1) : (FEEDBACK_POINTS[feedbackType] || 1);
+// Legacy aliases for backward compat
+const FEEDBACK_POINTS = FEEDBACK_XP;
+const RESOLVE_BONUS = RESOLVE_XP;
+
+export async function awardFeedbackPoints(userId: number, feedbackType: string, resolved = false): Promise<{ points: number; xp: number; total: number; reward?: string }> {
+  const xpAmount = resolved ? (RESOLVE_XP[feedbackType] || 1) : (FEEDBACK_XP[feedbackType] || 1);
+  let ptsAmount = resolved ? (RESOLVE_POINTS[feedbackType] || 0) : 0; // Points only on resolve
+  let xp = xpAmount;
   try {
     const { pool } = require('./db');
-    // Daily limit: max 5 bug reports, 3 features, 2 support per day (resolved bonuses bypass)
+    // Daily limit (resolved bonuses bypass)
     if (!resolved) {
       const dailyLimits: Record<string, number> = { bug: 5, feature: 3, support: 2, general: 2, critical: 3 };
       const limit = dailyLimits[feedbackType] || 3;
@@ -561,69 +578,51 @@ export async function awardFeedbackPoints(userId: number, feedbackType: string, 
         [userId, feedbackType]
       );
       if (parseInt(todayCount.rows[0]?.cnt || '0') >= limit) {
-        return { points: 0, total: 0, reward: 'daily_limit' };
+        return { points: 0, xp: 0, total: 0, reward: 'daily_limit' };
       }
     }
-    // Apply role multiplier
+    // Apply role multiplier to XP
     try {
       const roleRow = await pool.query(`SELECT tester_role FROM builder_bot.beta_testers WHERE user_id = $1`, [userId]);
       const role = roleRow.rows[0]?.tester_role || 'tester';
       const roleInfo = TESTER_ROLES[role];
       if (roleInfo && roleInfo.multiplier !== 1.0) {
-        pts = Math.round(pts * roleInfo.multiplier);
+        xp = Math.round(xp * roleInfo.multiplier);
       }
     } catch {}
-    // Update beta_testers feedback_count (used as points accumulator)
-    await pool.query(
-      `UPDATE builder_bot.beta_testers SET feedback_count = feedback_count + $1 WHERE user_id = $2`,
-      [pts, userId]
-    );
+    // Update: XP always, Points only if earned
+    if (ptsAmount > 0) {
+      await pool.query(`UPDATE builder_bot.beta_testers SET xp = xp + $1, feedback_count = feedback_count + $2 WHERE user_id = $3`, [xp, ptsAmount, userId]);
+    } else {
+      await pool.query(`UPDATE builder_bot.beta_testers SET xp = xp + $1 WHERE user_id = $2`, [xp, userId]);
+    }
     // Track stats by type
     if (feedbackType === 'bug') await pool.query(`UPDATE builder_bot.beta_testers SET total_bugs = total_bugs + 1 WHERE user_id = $1`, [userId]);
     else if (feedbackType === 'feature') await pool.query(`UPDATE builder_bot.beta_testers SET total_features = total_features + 1 WHERE user_id = $1`, [userId]);
     else if (feedbackType === 'support') await pool.query(`UPDATE builder_bot.beta_testers SET total_support = total_support + 1 WHERE user_id = $1`, [userId]);
 
-    const res = await pool.query(`SELECT feedback_count, level FROM builder_bot.beta_testers WHERE user_id = $1`, [userId]);
-    const total = res.rows[0]?.feedback_count || 0;
+    const res = await pool.query(`SELECT xp, feedback_count, level FROM builder_bot.beta_testers WHERE user_id = $1`, [userId]);
+    const total = res.rows[0]?.xp || 0;
     const currentLevel = res.rows[0]?.level;
 
-    // Check reward thresholds
     let reward: string | undefined;
-    if (total >= 200) {
-      // Upgrade to Unlimited
-      await pool.query(
-        `UPDATE builder_bot.beta_testers SET plan_override = 'unlimited' WHERE user_id = $1 AND plan_override != 'unlimited'`,
-        [userId]
-      );
-      reward = 'unlimited';
-    } else if (total >= 100) {
-      // Upgrade to Pro
-      await pool.query(
-        `UPDATE builder_bot.beta_testers SET plan_override = 'pro' WHERE user_id = $1 AND plan_override NOT IN ('pro', 'unlimited')`,
-        [userId]
-      );
-      reward = 'pro';
-    } else if (total >= 50 && total - pts < 50) {
-      // Bonus: +20 generations (reduce used count)
-      const tracker = generationTracker.get(userId);
-      if (tracker) {
-        tracker.count = Math.max(0, tracker.count - 20);
-        generationTracker.set(userId, tracker);
-      }
-      reward = 'bonus_gens';
-    }
 
-    // Auto level-up
+    // Auto level-up + award Points on level-up
     const newLevel = getTesterLevel(total);
     if (newLevel.level > (currentLevel || 1)) {
-      await pool.query(`UPDATE builder_bot.beta_testers SET level = $1, plan_override = $2 WHERE user_id = $3`, [newLevel.level, newLevel.plan, userId]);
-      reward = 'level_up:' + newLevel.name;
+      const levelPts = LEVEL_UP_POINTS[newLevel.level] || 0;
+      ptsAmount += levelPts;
+      await pool.query(
+        `UPDATE builder_bot.beta_testers SET level = $1, plan_override = $2, feedback_count = feedback_count + $3 WHERE user_id = $4`,
+        [newLevel.level, newLevel.plan, levelPts, userId]
+      );
+      reward = 'level_up:' + newLevel.name + ':' + levelPts;
     }
 
-    return { points: pts, total, reward };
+    return { points: ptsAmount, xp, total, reward };
   } catch (e: any) {
     console.warn('[BetaRewards] award error:', e.message);
-    return { points: pts, total: 0 };
+    return { points: 0, xp, total: 0 };
   }
 }
 
@@ -631,8 +630,8 @@ export async function getBetaLeaderboard(limit = 20): Promise<Array<{ user_id: n
   try {
     const { pool } = require('./db');
     const res = await pool.query(
-      `SELECT user_id, username, feedback_count, plan_override FROM builder_bot.beta_testers
-       WHERE status = 'active' AND feedback_count > 0 ORDER BY feedback_count DESC LIMIT $1`,
+      `SELECT user_id, username, xp, feedback_count, plan_override FROM builder_bot.beta_testers
+       WHERE status = 'active' AND xp > 0 ORDER BY xp DESC LIMIT $1`,
       [limit]
     );
     return res.rows;
@@ -642,23 +641,22 @@ export async function getBetaLeaderboard(limit = 20): Promise<Array<{ user_id: n
 // ── Tester Economy: Levels, Shop, Checkin, Achievements ─────────
 
 export const TESTER_LEVELS = [
-  { level: 1, name: 'Newbie',  nameRu: 'Новичок',  minPts: 0,   maxAgents: 5,  gens: 30,  plan: 'beta' },
-  { level: 2, name: 'Tester',  nameRu: 'Тестер',   minPts: 20,  maxAgents: 7,  gens: 40,  plan: 'beta' },
-  { level: 3, name: 'Active',  nameRu: 'Активный',  minPts: 60,  maxAgents: 10, gens: 50,  plan: 'beta' },
-  { level: 4, name: 'Expert',  nameRu: 'Эксперт',   minPts: 150, maxAgents: 15, gens: 100, plan: 'pro' },
-  { level: 5, name: 'Master',  nameRu: 'Мастер',    minPts: 300, maxAgents: 20, gens: 150, plan: 'pro' },
-  { level: 6, name: 'Legend',  nameRu: 'Легенда',   minPts: 500, maxAgents: -1, gens: -1,  plan: 'unlimited' },
+  { level: 1, name: 'Newbie',  nameRu: 'Новичок',  minPts: 0,    maxAgents: 5,  gens: 30,  plan: 'beta' },
+  { level: 2, name: 'Tester',  nameRu: 'Тестер',   minPts: 50,   maxAgents: 7,  gens: 40,  plan: 'beta' },
+  { level: 3, name: 'Active',  nameRu: 'Активный',  minPts: 150,  maxAgents: 10, gens: 50,  plan: 'beta' },
+  { level: 4, name: 'Expert',  nameRu: 'Эксперт',   minPts: 400,  maxAgents: 15, gens: 100, plan: 'pro' },
+  { level: 5, name: 'Master',  nameRu: 'Мастер',    minPts: 800,  maxAgents: 20, gens: 150, plan: 'pro' },
+  { level: 6, name: 'Legend',  nameRu: 'Легенда',   minPts: 1500, maxAgents: -1, gens: -1,  plan: 'unlimited' },
 ];
 
 export const SHOP_ITEMS = [
-  { id: 'gens_10',        cost: 50,  name: '+10 Generations',    nameRu: '+10 Генераций',    type: 'gens', value: 10 },
-  { id: 'early_access',   cost: 100, name: 'Early Access',       nameRu: 'Ранний доступ',    type: 'status' },
-  { id: 'vote_x2',        cost: 150, name: 'Vote Power x2',      nameRu: 'Голос x2',         type: 'status' },
-  { id: 'custom_agent',   cost: 200, name: 'Custom Agent Setup',  nameRu: 'Настройка агента', type: 'service' },
-  { id: 'dev_call',       cost: 250, name: '1:1 with Developer',  nameRu: '1:1 с разработчиком', type: 'service' },
-  { id: 'credits_page',   cost: 300, name: 'Name in Credits',     nameRu: 'Имя в Credits',    type: 'status' },
-  { id: 'private_channel', cost: 400, name: 'Private Channel',    nameRu: 'Закрытый канал',   type: 'access' },
-  { id: 'sticker_pack',   cost: 30,  name: 'Sticker Pack',        nameRu: 'Стикерпак',        type: 'cosmetic' },
+  { id: 'gens_10',        cost: 10,  name: '+10 Generations',     nameRu: '+10 Генераций',    type: 'gens', value: 10 },
+  { id: 'early_access',   cost: 20,  name: 'Early Access',        nameRu: 'Ранний доступ',    type: 'status' },
+  { id: 'vote_x2',        cost: 30,  name: 'Vote Power x2',       nameRu: 'Голос x2',         type: 'status' },
+  { id: 'custom_agent',   cost: 50,  name: 'Custom Agent Setup',  nameRu: 'Настройка агента', type: 'service' },
+  { id: 'dev_call',       cost: 75,  name: '1:1 with Developer',  nameRu: '1:1 с разработчиком', type: 'service' },
+  { id: 'credits_page',   cost: 100, name: 'Name in Credits',     nameRu: 'Имя в Credits',    type: 'status' },
+  { id: 'private_channel', cost: 150, name: 'Private Channel',    nameRu: 'Закрытый канал',   type: 'access' },
 ];
 
 export const ACHIEVEMENTS = [
@@ -711,35 +709,109 @@ export async function dailyCheckin(userId: number): Promise<{ ok: boolean; point
     const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
     const newStreak = lastCheckin === yesterday ? (row.streak_days || 0) + 1 : 1;
     await pool.query(
-      `UPDATE builder_bot.beta_testers SET feedback_count = feedback_count + 1, daily_checkins = daily_checkins + 1, last_checkin = $1, streak_days = $2 WHERE user_id = $3`,
+      `UPDATE builder_bot.beta_testers SET xp = xp + 1, daily_checkins = daily_checkins + 1, last_checkin = $1, streak_days = $2 WHERE user_id = $3`,
       [today, newStreak, userId]
     );
     return { ok: true, points: 1, streak: newStreak };
   } catch (e: any) { return { ok: false, error: e.message }; }
 }
 
-export async function shopBuy(userId: number, itemId: string): Promise<{ ok: boolean; error?: string }> {
+export async function shopBuy(userId: number, itemId: string): Promise<{ ok: boolean; error?: string; effect?: string }> {
   const item = SHOP_ITEMS.find(i => i.id === itemId);
   if (!item) return { ok: false, error: 'Item not found' };
   try {
     const { pool } = require('./db');
-    const res = await pool.query(`SELECT feedback_count, spent_points FROM builder_bot.beta_testers WHERE user_id = $1 AND status = 'active'`, [userId]);
+    const res = await pool.query(`SELECT feedback_count FROM builder_bot.beta_testers WHERE user_id = $1 AND status = 'active'`, [userId]);
     if (!res.rows.length) return { ok: false, error: 'Not a beta tester' };
-    const available = (res.rows[0].feedback_count || 0) - (res.rows[0].spent_points || 0);
-    if (available < item.cost) return { ok: false, error: `Need ${item.cost} pts, have ${available}` };
-    // Atomic: only update if still enough points (prevents race condition)
+    const balance = res.rows[0].feedback_count || 0;
+    if (balance < item.cost) return { ok: false, error: `Need ${item.cost} pts, have ${balance}` };
+    // Atomic: deduct points from balance (prevents race condition)
     const upd = await pool.query(
-      `UPDATE builder_bot.beta_testers SET spent_points = spent_points + $1
-       WHERE user_id = $2 AND (feedback_count - spent_points) >= $1 RETURNING spent_points`,
+      `UPDATE builder_bot.beta_testers SET feedback_count = feedback_count - $1
+       WHERE user_id = $2 AND feedback_count >= $1 RETURNING feedback_count`,
       [item.cost, userId]
     );
     if (!upd.rows.length) return { ok: false, error: 'Insufficient points (concurrent purchase)' };
-    // Apply effect
-    if (item.type === 'gens' && item.value) {
-      const tracker = generationTracker.get(userId);
-      if (tracker) { tracker.count = Math.max(0, tracker.count - item.value); generationTracker.set(userId, tracker); }
+    // Apply effect based on item type
+    let effect = '';
+    switch (item.id) {
+      case 'gens_10': {
+        // +10 generations: reduce used count
+        const tracker = generationTracker.get(userId);
+        if (tracker) { tracker.count = Math.max(0, tracker.count - (item.value || 10)); generationTracker.set(userId, tracker); }
+        effect = '+10 generations added';
+        break;
+      }
+      case 'early_access': {
+        // Mark user as early_access in features JSON
+        await pool.query(`UPDATE builder_bot.beta_testers SET features = features || '"early_access"'::jsonb WHERE user_id = $1 AND NOT features @> '"early_access"'`, [userId]);
+        effect = 'Early access enabled';
+        break;
+      }
+      case 'vote_x2': {
+        await pool.query(`UPDATE builder_bot.beta_testers SET features = features || '"vote_x2"'::jsonb WHERE user_id = $1 AND NOT features @> '"vote_x2"'`, [userId]);
+        effect = 'Vote power x2 enabled';
+        break;
+      }
+      case 'custom_agent': {
+        // Notify admins to set up custom agent
+        try {
+          const admins = await pool.query(`SELECT telegram_id FROM builder_bot.platform_admins`);
+          const botToken = process.env.BOT_TOKEN;
+          if (botToken) {
+            for (const a of admins.rows) {
+              fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_id: a.telegram_id, text: `🎯 Custom Agent request from user ${userId}. Set up their agent!` }),
+              }).catch(() => {});
+            }
+          }
+        } catch {}
+        effect = 'Request sent to admins';
+        break;
+      }
+      case 'dev_call': {
+        // Notify admins to schedule call
+        try {
+          const admins = await pool.query(`SELECT telegram_id FROM builder_bot.platform_admins`);
+          const botToken = process.env.BOT_TOKEN;
+          if (botToken) {
+            for (const a of admins.rows) {
+              fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_id: a.telegram_id, text: `📞 1:1 Call request from user ${userId}. Schedule a call!` }),
+              }).catch(() => {});
+            }
+          }
+        } catch {}
+        effect = 'Call request sent';
+        break;
+      }
+      case 'credits_page': {
+        await pool.query(`UPDATE builder_bot.beta_testers SET features = features || '"credits_page"'::jsonb WHERE user_id = $1 AND NOT features @> '"credits_page"'`, [userId]);
+        effect = 'Name added to credits';
+        break;
+      }
+      case 'private_channel': {
+        await pool.query(`UPDATE builder_bot.beta_testers SET features = features || '"private_channel"'::jsonb WHERE user_id = $1 AND NOT features @> '"private_channel"'`, [userId]);
+        // Notify admin to add to private channel
+        try {
+          const admins = await pool.query(`SELECT telegram_id FROM builder_bot.platform_admins`);
+          const botToken = process.env.BOT_TOKEN;
+          if (botToken) {
+            for (const a of admins.rows) {
+              fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_id: a.telegram_id, text: `🔑 Private Channel access purchased by user ${userId}. Add them!` }),
+              }).catch(() => {});
+            }
+          }
+        } catch {}
+        effect = 'Access request sent';
+        break;
+      }
     }
-    return { ok: true };
+    return { ok: true, effect };
   } catch (e: any) { return { ok: false, error: e.message }; }
 }
 
@@ -795,7 +867,7 @@ export async function getWeeklyTop(limit = 10): Promise<any[]> {
 export async function spamPenalty(userId: number): Promise<void> {
   try {
     const { pool } = require('./db');
-    await pool.query(`UPDATE builder_bot.beta_testers SET feedback_count = GREATEST(0, feedback_count - 1) WHERE user_id = $1`, [userId]);
+    await pool.query(`UPDATE builder_bot.beta_testers SET xp = GREATEST(0, xp - 3) WHERE user_id = $1`, [userId]);
   } catch {}
 }
 
@@ -803,20 +875,20 @@ export async function getTesterStats(userId: number): Promise<any> {
   try {
     const { pool } = require('./db');
     const res = await pool.query(
-      `SELECT feedback_count, spent_points, level, total_bugs, total_features, total_support, daily_checkins, streak_days, last_checkin, referral_count, tester_role, achievements, created_at
+      `SELECT xp, feedback_count, level, total_bugs, total_features, total_support, daily_checkins, streak_days, last_checkin, referral_count, tester_role, achievements, created_at
        FROM builder_bot.beta_testers WHERE user_id = $1`,
       [userId]
     );
     if (!res.rows.length) return null;
     const s = res.rows[0];
-    const pts = s.feedback_count || 0;
-    const spent = s.spent_points || 0;
-    const lvl = getTesterLevel(pts);
-    const next = getNextLevel(pts);
+    const xp = s.xp || 0;
+    const points = s.feedback_count || 0; // spendable balance
+    const lvl = getTesterLevel(xp);
+    const next = getNextLevel(xp);
     return {
-      points: pts, available: pts - spent, spent,
+      xp, points, available: points,
       level: lvl.level, levelName: lvl.name, levelNameRu: lvl.nameRu,
-      nextLevel: next ? { name: next.name, nameRu: next.nameRu, pointsNeeded: next.minPts - pts } : null,
+      nextLevel: next ? { name: next.name, nameRu: next.nameRu, pointsNeeded: next.minPts - xp } : null,
       totalBugs: s.total_bugs || 0, totalFeatures: s.total_features || 0, totalSupport: s.total_support || 0,
       checkins: s.daily_checkins || 0, streak: s.streak_days || 0, lastCheckin: s.last_checkin,
       referrals: s.referral_count || 0, role: s.tester_role || 'tester',

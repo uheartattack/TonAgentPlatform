@@ -40,10 +40,13 @@ setInterval(() => {
   }
 }, 30 * 60 * 1000).unref();
 
-// Platform AI — uses configured API key (Gemini, OpenAI, etc.)
+// Platform AI — dual provider: Anthropic (Opus/Sonnet) + Gemini (fallback)
 const PLATFORM_API_KEY = process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY || '';
 const PLATFORM_BASE_URL = process.env.OPENAI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai/';
 const openai = new OpenAI({ apiKey: PLATFORM_API_KEY, baseURL: PLATFORM_BASE_URL });
+
+// Note: CLAUDE_CODE_OAUTH_TOKEN only works via CLI subprocess, not direct API
+// Atlas uses: 1) Claude Code CLI (Opus/Sonnet via subscription) → 2) Gemini API (fallback)
 
 // ── Список моделей с fallback-цепочкой ──────────────────────
 // При ошибке одной — пробуем следующую
@@ -102,13 +105,19 @@ async function callWithFallback(
   const useClaudeCode = await checkClaudeCode();
   if (useClaudeCode) {
     try {
+      // Smart routing: Opus for complex tasks (agent creation, code, audit, long prompts)
+      // Sonnet for simple tasks (questions, navigation, short responses)
+      const lastMsg = messages[messages.length - 1]?.content || '';
+      const isComplex = maxTokens > 1024
+        || lastMsg.length > 300
+        || /creat|генер|аудит|audit|code|код|промпт|prompt|analyz|анализ|систем/i.test(lastMsg);
+      const model = isComplex ? 'claude-opus-4-6' : 'claude-sonnet-4-6';
       const result = await claudeCodeChat(messages, {
         maxTokens,
-        // Use Claude models — Claude Code CLI doesn't support Gemini
-        model: process.env.ATLAS_MODEL || 'claude-opus-4-6',
-        fallbackModel: 'claude-sonnet-4-6',
-        timeout: 90_000,
-        allowedTools: [], // No tools — just text completion
+        model,
+        fallbackModel: isComplex ? 'claude-sonnet-4-6' : 'claude-opus-4-6',
+        timeout: isComplex ? 120_000 : 60_000,
+        allowedTools: [],
       });
       console.log(`[Orchestrator] Claude Code responded (${result.model})`);
       return result;
@@ -123,9 +132,8 @@ async function callWithFallback(
     }
   }
 
-  // ── 2. Fallback: API models with chain ──
+  // ── 2. Fallback: Gemini API models with chain ──
   const isGeminiBase = (process.env.OPENAI_BASE_URL || '').includes('generativelanguage.googleapis.com');
-  // If using Gemini API, map Claude model names → Gemini equivalents
   const geminiMap: Record<string, string> = {
     'claude-opus-4-6': 'gemini-2.5-pro', 'kiro-claude-opus-4-6-agentic': 'gemini-2.5-pro',
     'claude-sonnet-4-5': 'gemini-2.5-flash', 'kiro-claude-sonnet-4-5': 'gemini-2.5-flash',

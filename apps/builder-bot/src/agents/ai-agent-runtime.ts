@@ -1103,6 +1103,9 @@ const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
     'tg_apply_boost',
   ],
   web:         ['web_search', 'fetch_url', 'http_fetch'],
+  bitrefill:   ['bitrefill_search', 'bitrefill_product', 'bitrefill_buy', 'bitrefill_invoice', 'bitrefill_orders'],
+  stonfi:      ['stonfi_swap_quote', 'stonfi_swap_execute', 'stonfi_assets', 'stonfi_price'],
+  tonstakers:  ['tonstakers_info', 'tonstakers_stake', 'tonstakers_unstake', 'tonstakers_balance'],
   state:       ['get_state', 'get_state_multi', 'set_state', 'list_state_keys', 'get_shared_state', 'set_shared_state'],
   events:      ['set_next_wake', 'subscribe_event', 'unsubscribe_event', 'emit_event', 'get_wake_info'],
   notify:      ['notify', 'notify_rich'],
@@ -1148,7 +1151,7 @@ export const TOOLSET_PROFILES: Record<string, { label: string; labelRu: string; 
   trading: {
     label: 'Trading — gifts + DeFi + blockchain',
     labelRu: 'Трейдинг — подарки + DeFi + блокчейн',
-    caps: ['telegram', 'state', 'notify', 'web', 'wallet', 'gifts', 'gifts_market', 'defi', 'blockchain', 'nft'],
+    caps: ['telegram', 'state', 'notify', 'web', 'wallet', 'gifts', 'gifts_market', 'defi', 'blockchain', 'nft', 'bitrefill', 'stonfi', 'tonstakers'],
   },
   full: {
     label: 'Full — everything enabled',
@@ -1164,6 +1167,11 @@ export const TOOLSET_PROFILES: Record<string, { label: string; labelRu: string; 
     label: 'Content — media + stories + channels',
     labelRu: 'Контент — медиа + сторис + каналы',
     caps: ['telegram', 'telegram_admin', 'telegram_stories', 'telegram_media', 'image', 'web', 'state', 'notify', 'workspace'],
+  },
+  shopping: {
+    label: 'Shopping — Bitrefill gift cards + crypto payments',
+    labelRu: 'Шоппинг — подарочные карты + крипто-платежи',
+    caps: ['telegram', 'state', 'notify', 'web', 'wallet', 'bitrefill'],
   },
 };
 
@@ -1334,6 +1342,12 @@ const CORE_TOOLS = new Set([
   'get_my_config', 'get_execution_stats', 'update_my_prompt', 'ask_agent', 'set_next_wake',
   // Contacts
   'add_contact_note', 'add_chat_note', 'get_contact_dossier', 'get_chat_dossier',
+  // STON.fi DEX
+  'stonfi_swap_quote', 'stonfi_swap_execute', 'stonfi_price',
+  // Tonstakers staking
+  'tonstakers_info', 'tonstakers_stake', 'tonstakers_unstake', 'tonstakers_balance',
+  // Bitrefill shopping
+  'bitrefill_search', 'bitrefill_product', 'bitrefill_buy',
 ]);
 
 // ── TF-IDF vectorizer (lightweight, in-process, no external deps) ──
@@ -2599,7 +2613,44 @@ export async function executeTool(
             const r = await fetch(`${base}/routing/plan?from=${args.from_token}&to=${args.to_token}&amount=${Math.floor(args.amount * 1e9)}`);
             return await r.json();
           }
-          return { error: 'dedust_swap requires wallet integration — use dedust_quote for quotes' };
+          // DeDust swap execute
+          if (toolName === 'dedust_swap') {
+            if (!args._confirmed) {
+              // Get quote first
+              const qr = await fetch(`${base}/routing/plan?from=${args.from_token || 'native'}&to=${args.to_token}&amount=${Math.floor((args.amount || 0) * 1e9)}`);
+              const quote = await qr.json();
+              return { ok: false, requires_confirmation: true, message: `Swap ${args.amount} via DeDust. Quote: ${JSON.stringify(quote).slice(0, 200)}`, quote };
+            }
+            const mnemonic = params.config?.WALLET_MNEMONIC as string;
+            if (!mnemonic) return { ok: false, error: 'No wallet mnemonic configured' };
+            try {
+              const { Factory, MAINNET_FACTORY_ADDR, Asset, PoolType, VaultNative, VaultJetton } = require('@dedust/sdk');
+              const { TonClient } = require('@ton/ton');
+              const { Address, toNano, internal } = require('@ton/core');
+              const { mnemonicToWalletKey } = require('@ton/crypto');
+              const { WalletContractV4 } = require('@ton/ton');
+              const keyPair = await mnemonicToWalletKey(mnemonic.split(' '));
+              const wallet = WalletContractV4.create({ publicKey: keyPair.publicKey, workchain: 0 });
+              const tonClient = new TonClient({ endpoint: 'https://toncenter.com/api/v2/jsonRPC' });
+              const walletContract = tonClient.open(wallet);
+              const factory = tonClient.open(Factory.createFromAddress(MAINNET_FACTORY_ADDR));
+              const fromIsNative = !args.from_token || args.from_token === 'native' || args.from_token === 'TON';
+              const toAddr = Address.parse(args.to_token);
+              const toAsset = Asset.jetton(toAddr);
+              const pool = tonClient.open(await factory.getPool(PoolType.VOLATILE, [Asset.native(), toAsset]));
+              const amountNano = toNano(String(args.amount));
+              if (fromIsNative) {
+                const vault = tonClient.open(await factory.getNativeVault());
+                const seqno = await walletContract.getSeqno();
+                await walletContract.sendTransfer({ seqno, secretKey: keyPair.secretKey, messages: [internal({
+                  to: vault.address, value: amountNano + toNano('0.25'),
+                  body: vault.createSwapPayload ? await (vault as any).createSwapPayload({ poolAddress: pool.address }) : undefined,
+                })] });
+                return { ok: true, swapped: args.amount, from: 'TON', to: args.to_token };
+              }
+              return { ok: false, error: 'Jetton→Jetton DeDust swap not yet implemented. Use stonfi_swap_execute.' };
+            } catch (e: any) { return { ok: false, error: e.message }; }
+          }
         }
         // TON DNS
         if (toolName.startsWith('dns_')) {
@@ -3275,6 +3326,174 @@ export async function executeTool(
       return { ok: true };
     }
 
+    // ── Tonstakers liquid staking tools ───────────────────────────
+    case 'tonstakers_info': {
+      try {
+        const { getStakingInfo } = require('../services/tonstakers');
+        const info = await getStakingInfo();
+        return { ok: true, ...info };
+      } catch (e: any) { return { ok: false, error: e.message }; }
+    }
+
+    case 'tonstakers_balance': {
+      const walletAddr = String(args.wallet_address || '');
+      try {
+        const { getStakedBalance } = require('../services/tonstakers');
+        const balance = await getStakedBalance(walletAddr);
+        return { ok: true, ...balance };
+      } catch (e: any) { return { ok: false, error: e.message }; }
+    }
+
+    case 'tonstakers_stake': {
+      const amount = String(args.amount || '');
+      if (!amount) return { ok: false, error: 'Amount required (min 1 TON)' };
+      if (!args._confirmed) {
+        const { getStakingInfo } = require('../services/tonstakers');
+        const info = await getStakingInfo();
+        return {
+          ok: false, requires_confirmation: true,
+          message: `Stake ${amount} TON → tsTON (APY: ${info.apy}%, rate: ${info.exchangeRate}). Confirm?`,
+        };
+      }
+      const mnemonic = params.config?.WALLET_MNEMONIC as string;
+      if (!mnemonic) return { ok: false, error: 'No wallet mnemonic configured' };
+      try {
+        const { stakeTon } = require('../services/tonstakers');
+        return await stakeTon(mnemonic, amount);
+      } catch (e: any) { return { ok: false, error: e.message }; }
+    }
+
+    case 'tonstakers_unstake': {
+      const amount = String(args.amount || '');
+      if (!amount) return { ok: false, error: 'Amount of tsTON required' };
+      if (!args._confirmed) {
+        return { ok: false, requires_confirmation: true, message: `Unstake ${amount} tsTON → TON. Confirm?` };
+      }
+      const mnemonic = params.config?.WALLET_MNEMONIC as string;
+      if (!mnemonic) return { ok: false, error: 'No wallet mnemonic configured' };
+      try {
+        const { unstakeTon } = require('../services/tonstakers');
+        return await unstakeTon(mnemonic, amount);
+      } catch (e: any) { return { ok: false, error: e.message }; }
+    }
+
+    // ── STON.fi DEX tools ────────────────────────────────────────
+    case 'stonfi_swap_quote': {
+      const from = String(args.from || 'TON');
+      const to = String(args.to || 'USDC');
+      const amount = String(args.amount || '1');
+      try {
+        const { simulateSwap } = require('../services/stonfi');
+        const quote = await simulateSwap(from, to, amount);
+        return { ok: true, ...quote };
+      } catch (e: any) { return { ok: false, error: e.message }; }
+    }
+
+    case 'stonfi_swap_execute': {
+      const from = String(args.from || 'TON');
+      const to = String(args.to || 'USDC');
+      const amount = String(args.amount || '');
+      if (!amount) return { ok: false, error: 'Amount required' };
+      // Require confirmation
+      if (!args._confirmed) {
+        try {
+          const { simulateSwap } = require('../services/stonfi');
+          const quote = await simulateSwap(from, to, amount);
+          return {
+            ok: false, requires_confirmation: true,
+            message: `Swap ${amount} ${quote.fromSymbol} → ~${quote.expectedAmount} ${quote.toSymbol} via STON.fi. Confirm?`,
+            quote,
+          };
+        } catch (e: any) { return { ok: false, error: e.message }; }
+      }
+      // Execute
+      const mnemonic = params.config?.WALLET_MNEMONIC as string;
+      if (!mnemonic) return { ok: false, error: 'No wallet mnemonic configured' };
+      try {
+        const { executeSwap } = require('../services/stonfi');
+        const result = await executeSwap(mnemonic, from, to, amount);
+        return result;
+      } catch (e: any) { return { ok: false, error: e.message }; }
+    }
+
+    case 'stonfi_assets': {
+      try {
+        const { getAssets } = require('../services/stonfi');
+        const assets = await getAssets();
+        return { ok: true, assets };
+      } catch (e: any) { return { ok: false, error: e.message }; }
+    }
+
+    case 'stonfi_price': {
+      const from = String(args.from || 'TON');
+      const to = String(args.to || 'USDC');
+      const amount = String(args.amount || '1');
+      try {
+        const { getSwapPrice } = require('../services/stonfi');
+        const price = await getSwapPrice(from, to, amount);
+        return { ok: true, price };
+      } catch (e: any) { return { ok: false, error: e.message }; }
+    }
+
+    // ── Bitrefill tools ──────────────────────────────────────────
+    case 'bitrefill_search': {
+      const query = String(args.query || '');
+      const country = String(args.country || 'US');
+      const type = args.type ? String(args.type) : undefined;
+      try {
+        const { searchProducts } = require('../services/bitrefill');
+        const products = await searchProducts(query, country, type);
+        return { ok: true, products };
+      } catch (e: any) { return { ok: false, error: e.message }; }
+    }
+
+    case 'bitrefill_product': {
+      const productId = String(args.product_id || '');
+      try {
+        const { getProductDetails } = require('../services/bitrefill');
+        const details = await getProductDetails(productId);
+        return { ok: true, ...details };
+      } catch (e: any) { return { ok: false, error: e.message }; }
+    }
+
+    case 'bitrefill_buy': {
+      const productId = String(args.product_id || '');
+      const packageValue = String(args.package_value || '');
+      const paymentMethod = (args.payment_method || 'lightning') as any;
+      // Require user confirmation for purchases
+      if (!args._confirmed) {
+        return {
+          ok: false,
+          requires_confirmation: true,
+          message: `Purchase ${productId} (${packageValue}) via ${paymentMethod}. Confirm?`,
+          action: 'bitrefill_buy',
+          args: { ...args, _confirmed: true },
+        };
+      }
+      try {
+        const { buyProduct } = require('../services/bitrefill');
+        const invoice = await buyProduct(productId, packageValue, paymentMethod);
+        return { ok: true, ...invoice };
+      } catch (e: any) { return { ok: false, error: e.message }; }
+    }
+
+    case 'bitrefill_invoice': {
+      const invoiceId = String(args.invoice_id || '');
+      try {
+        const { getInvoice } = require('../services/bitrefill');
+        const invoice = await getInvoice(invoiceId);
+        return { ok: true, ...invoice };
+      } catch (e: any) { return { ok: false, error: e.message }; }
+    }
+
+    case 'bitrefill_orders': {
+      try {
+        const { listOrders } = require('../services/bitrefill');
+        const orders = await listOrders(args.limit || 5);
+        return { ok: true, orders };
+      } catch (e: any) { return { ok: false, error: e.message }; }
+    }
+
     // ── Web tools ─────────────────────────────────────────────────
     case 'web_search': {
       const query = String(args.query || '');
@@ -3397,6 +3616,17 @@ export async function executeTool(
     case 'notify_rich': {
       const msg = String(args.message || '');
       const buttons = (args.buttons as any[]) || [];
+
+      // Rate limit: shared with notify — max 3 per 10 min per agent
+      const nrKey = `notify:${params.agentId}`;
+      const nrTimes = (_notifyRateLimit.get(nrKey) || []).filter((t: number) => Date.now() - t < 600_000);
+      if (nrTimes.length >= 3) {
+        console.warn(`[AI runtime] Agent #${params.agentId} notify_rich rate limited (${nrTimes.length}/3 per 10min)`);
+        return { ok: false, error: 'Rate limited: max 3 notifications per 10 minutes. Use set_state to store data instead of spamming notifications.' };
+      }
+      nrTimes.push(Date.now());
+      _notifyRateLimit.set(nrKey, nrTimes);
+
       _tickNotifyFlag.set(params.agentId, true); // mark: notify was called in this tick
       await notifyRich(params.userId, {
         text: msg,
@@ -7157,16 +7387,41 @@ If web_search returns nothing useful → say "не смог найти акту�
     console.warn(`[AI runtime] Plugin SDK load warning: ${e.message}`);
   }
 
-  // Tool RAG: hybrid embedding + keyword selection (async), falls back to TF-IDF
+  // Tool selection: include ALL tools from enabled capabilities (no RAG filtering for them).
+  // RAG only filters the overflow if total exceeds provider max.
   const userMsgText = msgs.join(' ');
   let tools: any[];
-  try {
-    const { selectToolsHybrid } = await import('../services/tool-rag');
-    tools = await selectToolsHybrid(allToolDefs, userMsgText, params.systemPrompt, providerCfg.maxTools, (params.config.AI_API_KEY as string) || process.env.PLATFORM_AI_KEY || '');
-  } catch (ragErr: any) {
-    console.warn(`[ToolRAG] Hybrid RAG failed, falling back to TF-IDF: ${ragErr.message?.slice(0, 100)}`);
-    tools = selectRelevantTools(allToolDefs, userMsgText, params.systemPrompt, providerCfg.maxTools);
+
+  // Collect names of tools from enabled capabilities — these are always included
+  const capToolNames = new Set<string>();
+  if (enabledCaps) {
+    for (const cap of enabledCaps) {
+      const capTools = CAPABILITY_TOOL_MAP[cap];
+      if (capTools) capTools.forEach(t => capToolNames.add(t));
+    }
   }
+  // Also include CORE_TOOLS
+  CORE_TOOLS.forEach(t => capToolNames.add(t));
+
+  // Split: forced tools (from caps) vs optional (the rest)
+  const forcedTools = allToolDefs.filter((t: any) => capToolNames.has(t.function?.name));
+  const optionalTools = allToolDefs.filter((t: any) => !capToolNames.has(t.function?.name));
+
+  // If forced tools already exceed max, just use forced tools
+  if (forcedTools.length >= providerCfg.maxTools) {
+    tools = forcedTools.slice(0, providerCfg.maxTools);
+  } else {
+    // Fill remaining slots with RAG-selected optional tools
+    const remainingSlots = providerCfg.maxTools - forcedTools.length;
+    let selectedOptional: any[] = [];
+    if (remainingSlots > 0 && optionalTools.length > 0) {
+      try {
+        selectedOptional = selectRelevantTools(optionalTools, userMsgText, params.systemPrompt, remainingSlots);
+      } catch { selectedOptional = optionalTools.slice(0, remainingSlots); }
+    }
+    tools = [...forcedTools, ...selectedOptional];
+  }
+  console.log(`[ToolRAG] ${forcedTools.length} forced + ${tools.length - forcedTools.length} RAG = ${tools.length}/${allToolDefs.length} tools`);
   // Apply role-based tool weights — boost/nerf tools for this role
   if (_roleProfile.toolWeights && Object.keys(_roleProfile.toolWeights).length > 0) {
     const weights = _roleProfile.toolWeights;
