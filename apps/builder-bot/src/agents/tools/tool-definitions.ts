@@ -271,7 +271,7 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
       type: 'function',
       function: {
         name: 'get_state',
-        description: 'Получить сохранённое состояние агента по ключу (постоянное хранилище)',
+        description: 'Прочитать данные из постоянного хранилища агента. Данные сохраняются между перезапусками. Используй для: настроек, счётчиков, списков, кэша. Пара к set_state. Для множественного чтения — get_state_multi.',
         parameters: {
           type: 'object',
           properties: {
@@ -299,7 +299,7 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
       type: 'function',
       function: {
         name: 'set_state',
-        description: 'Сохранить состояние агента (постоянное хранилище). Используй list_state_keys чтобы узнать какие ключи уже сохранены.',
+        description: 'Записать данные в постоянное хранилище. Сохраняется между перезапусками. Пара к get_state. value может быть строкой, числом или JSON. Используй вместо notify для данных которые не нужно показывать юзеру.',
         parameters: {
           type: 'object',
           properties: {
@@ -616,7 +616,7 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
       type: 'function',
       function: {
         name: 'notify',
-        description: 'Отправить уведомление пользователю в Telegram (простой текст)',
+        description: 'Отправить уведомление владельцу агента в Telegram. Макс 3 за 10 мин. Используй для важных алертов (цена изменилась, задача выполнена). Для данных — используй set_state. Для форматированных — notify_rich.',
         parameters: {
           type: 'object',
           properties: {
@@ -2132,11 +2132,11 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
       type: 'function',
       function: {
         name: 'tg_send_gift',
-        description: 'Отправить звёздный подарок пользователю. Требует звёзд на балансе.',
+        description: 'Купить и отправить Star Gift пользователю. Стоит Stars. Сначала просмотри каталог через get_gift_catalog чтобы получить giftId. ВСЕГДА подтверждай подарок и стоимость с владельцем перед покупкой.',
         parameters: { type: 'object', properties: {
-          user_id: { type: 'string', description: 'ID или username получателя подарка' },
-          gift_id: { type: 'string', description: 'ID подарка для отправки' },
-          message: { type: 'string', description: 'Сообщение с подарком (опционально)' },
+          user_id: { type: 'string', description: 'ID или @username получателя' },
+          gift_id: { type: 'string', description: 'ID подарка из каталога (get_gift_catalog)' },
+          message: { type: 'string', description: 'Сообщение с подарком (до 255 символов)' },
         }, required: ['user_id', 'gift_id'] },
       },
     },
@@ -2144,7 +2144,7 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
       type: 'function',
       function: {
         name: 'tg_get_received_gifts',
-        description: 'Получить список полученных звёздных подарков. Можно указать user_id для просмотра подарков другого пользователя.',
+        description: 'Получить Star Gifts пользователя. Показывает коллекционные подарки с slug (ссылки t.me/nft/slug), редкость, атрибуты. Когда владелец говорит "покажи МОИ подарки" — вызывай без user_id. Используй slug/msgId для tg_transfer_collectible и tg_set_collectible_price.',
         parameters: { type: 'object', properties: {
           user_id: { type: 'string', description: 'ID пользователя (опционально, по умолчанию — свои подарки)' },
           limit: { type: 'number', description: 'Максимальное количество (по умолчанию 20)' },
