@@ -1891,8 +1891,8 @@ async function showTesterProfile(ctx: any, userId: number, edit = false) {
      { text: ru ? 'Магазин' : 'Shop', icon_custom_emoji_id: CE.cart, callback_data: 'tg_shop' }],
     [{ text: ru ? 'Задания' : 'Tasks', icon_custom_emoji_id: CE.target, callback_data: 'tg_tasks' },
      { text: 'Check-in', icon_custom_emoji_id: CE.check, callback_data: 'tg_checkin' }],
-    [{ text: ru ? '🏅 Ачивки' : '🏅 Achievements', callback_data: 'tg_achievements' },
-     { text: ru ? '🎯 Квест' : '🎯 Quest', callback_data: 'tg_quest' }],
+    [{ text: ru ? 'Ачивки' : 'Achievements', icon_custom_emoji_id: CE.trophy, callback_data: 'tg_achievements' },
+     { text: ru ? 'Квест' : 'Quest', icon_custom_emoji_id: CE.target, callback_data: 'tg_quest' }],
     [{ text: ru ? '❓ FAQ' : '❓ FAQ', callback_data: 'tg_faq' },
      { text: ru ? 'Покинуть бету' : 'Leave Beta', icon_custom_emoji_id: CE.cross, callback_data: 'tg_leave_beta' }],
   ], edit);
