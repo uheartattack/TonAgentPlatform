@@ -657,6 +657,7 @@ export const SHOP_ITEMS = [
   { id: 'dev_call',       cost: 75,  name: '1:1 with Developer',  nameRu: '1:1 с разработчиком', type: 'service' },
   { id: 'credits_page',   cost: 100, name: 'Name in Credits',     nameRu: 'Имя в Credits',    type: 'status' },
   { id: 'private_channel', cost: 150, name: 'Private Channel',    nameRu: 'Закрытый канал',   type: 'access' },
+  { id: 'streak_freeze',  cost: 10,  name: 'Streak Freeze',       nameRu: 'Заморозка streak', type: 'streak_freeze' },
 ];
 
 export const ACHIEVEMENTS = [
@@ -808,6 +809,12 @@ export async function shopBuy(userId: number, itemId: string): Promise<{ ok: boo
           }
         } catch {}
         effect = 'Access request sent';
+        break;
+      }
+      case 'streak_freeze': {
+        // Save streak freeze — 1 per week, prevents streak reset on missed checkin
+        await pool.query(`UPDATE builder_bot.beta_testers SET features = features || '"streak_freeze"'::jsonb WHERE user_id = $1`, [userId]);
+        effect = 'Streak freeze active (1 skip allowed this week)';
         break;
       }
     }

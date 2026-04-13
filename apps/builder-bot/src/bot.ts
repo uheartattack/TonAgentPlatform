@@ -1877,6 +1877,15 @@ async function showTesterProfile(ctx: any, userId: number, edit = false) {
     }
   } catch {}
 
+  // Tester number
+  try {
+    const { pool: _tnPool } = require('./db');
+    const _tnRes = await _tnPool.query('SELECT tester_number FROM builder_bot.beta_testers WHERE user_id = $1', [userId]);
+    if (_tnRes.rows[0]?.tester_number) {
+      t += `\n\n${ce('star','⭐')} Beta Tester <b>#${String(_tnRes.rows[0].tester_number).padStart(4, '0')}</b>`;
+    }
+  } catch {}
+
   await testerReply(ctx, userId, t, [
     [{ text: ru ? 'Рейтинг' : 'Leaderboard', icon_custom_emoji_id: CE.trophy, callback_data: 'tg_leaderboard' },
      { text: ru ? 'Магазин' : 'Shop', icon_custom_emoji_id: CE.cart, callback_data: 'tg_shop' }],
@@ -1980,13 +1989,13 @@ bot.command('setrole', async (ctx) => {
   }
 });
 
-// ── Admin: assign mentor ──
-bot.command('mentor', async (ctx) => {
+// ── Admin: assign mentor (admin override) ──
+bot.command('mentor_assign', async (ctx) => {
   const userId = ctx.from!.id;
   const { isPlatformAdmin } = require('./payments');
   if (!isPlatformAdmin(userId)) return;
   const args = ctx.message.text.split(' ').slice(1);
-  if (args.length < 2) { await safeReply(ctx, 'Usage: /mentor @mentee @mentor'); return; }
+  if (args.length < 2) { await safeReply(ctx, 'Usage: /mentor_assign @mentee @mentor'); return; }
   const menteeUsername = args[0].replace('@', '');
   const mentorUsername = args[1].replace('@', '');
   const { pool } = require('./db');
@@ -3246,6 +3255,274 @@ bot.command('coverage', async (ctx) => {
   }
   text += `\n${ru ? '🔴 Непокрытые зоны дают x3 XP!' : '🔴 Uncovered zones give x3 XP!'}`;
   await safeReply(ctx, text, { parse_mode: 'HTML' });
+});
+
+// ── /squad — view my squad ──
+bot.command('squad', async (ctx) => {
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  const { pool } = require('./db');
+
+  const tester = await pool.query('SELECT squad_id FROM builder_bot.beta_testers WHERE user_id = $1', [userId]);
+  const squadId = tester.rows[0]?.squad_id;
+
+  if (!squadId) {
+    await safeReply(ctx, ru
+      ? `${ce('handshake','🤝')} <b>Команды</b>\n\nТы пока не в команде. Команды формируются автоматически в начале каждого ивента.`
+      : `${ce('handshake','🤝')} <b>Squads</b>\n\nYou're not in a squad yet. Squads are formed automatically at the start of each event.`,
+      { parse_mode: 'HTML' });
+    return;
+  }
+
+  const squad = await pool.query('SELECT * FROM builder_bot.beta_squads WHERE id = $1', [squadId]);
+  const members = await pool.query(
+    'SELECT user_id, username, xp FROM builder_bot.beta_testers WHERE squad_id = $1 ORDER BY xp DESC', [squadId]
+  );
+
+  let text = `${ce('handshake','🤝')} <b>${ru ? 'Команда' : 'Squad'}: ${escHtml(squad.rows[0]?.name || squadId)}</b>\n`;
+  text += `${ce('trophy','🏆')} ${ru ? 'Счёт' : 'Score'}: <b>${squad.rows[0]?.score || 0}</b>\n\n`;
+  text += `<b>${ru ? 'Участники' : 'Members'}:</b>\n`;
+  members.rows.forEach((m: any, i: number) => {
+    text += `${i + 1}. <a href="https://t.me/${escHtml(m.username || '')}">${escHtml(m.username ? '@' + m.username : String(m.user_id))}</a> — ${m.xp} XP\n`;
+  });
+
+  await safeReply(ctx, text, { parse_mode: 'HTML', disable_web_page_preview: true });
+});
+
+// ── Admin: /squad_form — auto-form squads from active testers ──
+bot.command('squad_form', async (ctx) => {
+  const userId = ctx.from!.id;
+  const { isPlatformAdmin } = require('./payments');
+  if (!isPlatformAdmin(userId)) return;
+  const { pool } = require('./db');
+  const ru = getUserLang(userId) === 'ru';
+
+  // Get all active testers without squad
+  const testers = await pool.query(
+    "SELECT user_id, username FROM builder_bot.beta_testers WHERE status = 'active' ORDER BY xp DESC"
+  );
+  if (testers.rows.length < 2) { await safeReply(ctx, 'Not enough testers'); return; }
+
+  const SQUAD_SIZE = 3;
+  const squads: any[][] = [];
+  const shuffled = [...testers.rows].sort(() => Math.random() - 0.5);
+
+  for (let i = 0; i < shuffled.length; i += SQUAD_SIZE) {
+    squads.push(shuffled.slice(i, i + SQUAD_SIZE));
+  }
+  // Merge last squad if too small
+  if (squads.length > 1 && squads[squads.length - 1].length < 2) {
+    squads[squads.length - 2].push(...squads.pop()!);
+  }
+
+  const names = ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot', 'Golf', 'Hotel'];
+  let text = `${ce('handshake','🤝')} <b>Squads formed!</b>\n\n`;
+
+  for (let i = 0; i < squads.length; i++) {
+    const squadId = `squad_${Date.now()}_${i}`;
+    const name = names[i] || `Squad ${i + 1}`;
+    await pool.query('INSERT INTO builder_bot.beta_squads (id, name) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING', [squadId, name]);
+    for (const m of squads[i]) {
+      await pool.query('UPDATE builder_bot.beta_testers SET squad_id = $1 WHERE user_id = $2', [squadId, m.user_id]);
+    }
+    text += `<b>${name}:</b> ${squads[i].map((m: any) => '@' + (m.username || m.user_id)).join(', ')}\n`;
+  }
+
+  await safeReply(ctx, text, { parse_mode: 'HTML' });
+  await postAnnouncement(text);
+});
+
+// ── /mentor — take a mentee ──
+bot.command('mentor', async (ctx) => {
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  const { pool } = require('./db');
+  const { getTesterLevel, isBetaTester } = require('./payments');
+
+  if (!isBetaTester(userId)) { await safeReply(ctx, ru ? 'Доступно только бета-тестерам.' : 'Beta testers only.'); return; }
+
+  const stats = await pool.query('SELECT xp, username FROM builder_bot.beta_testers WHERE user_id = $1', [userId]);
+  const level = getTesterLevel(stats.rows[0]?.xp || 0);
+
+  if (level.level < 4) {
+    await safeReply(ctx, ru
+      ? `${ce('lock','🔒')} Менторство доступно с уровня 4 (${ce('diamond','💎')} Expert). Ты сейчас на уровне ${level.level}.`
+      : `${ce('lock','🔒')} Mentorship requires level 4 (${ce('diamond','💎')} Expert). You're level ${level.level}.`,
+      { parse_mode: 'HTML' });
+    return;
+  }
+
+  // Check how many mentees already
+  const mentees = await pool.query('SELECT COUNT(*) as cnt FROM builder_bot.beta_testers WHERE mentor_id = $1', [userId]);
+  if (parseInt(mentees.rows[0].cnt) >= 3) {
+    await safeReply(ctx, ru ? 'У тебя уже 3 менти (максимум).' : 'You already have 3 mentees (max).');
+    return;
+  }
+
+  const args = (ctx.message.text || '').split(' ').slice(1).join(' ').trim();
+  if (!args) {
+    await safeReply(ctx, ru
+      ? `${ce('handshake','🤝')} <b>Менторство</b>\n\nИспользуй: /mentor @username\nТы берёшь новичка под крыло и получаешь 30% от его XP.\n\nМенти: ${mentees.rows[0].cnt}/3`
+      : `${ce('handshake','🤝')} <b>Mentorship</b>\n\nUsage: /mentor @username\nYou guide a newcomer and earn 30% of their XP.\n\nMentees: ${mentees.rows[0].cnt}/3`,
+      { parse_mode: 'HTML' });
+    return;
+  }
+
+  const targetUsername = args.replace('@', '').trim();
+  const target = await pool.query('SELECT user_id, mentor_id FROM builder_bot.beta_testers WHERE LOWER(username) = LOWER($1)', [targetUsername]);
+  if (!target.rows.length) { await safeReply(ctx, ru ? 'Тестер не найден.' : 'Tester not found.'); return; }
+  if (target.rows[0].mentor_id) { await safeReply(ctx, ru ? 'У этого тестера уже есть ментор.' : 'This tester already has a mentor.'); return; }
+  if (target.rows[0].user_id === userId) { await safeReply(ctx, ru ? 'Нельзя быть ментором самому себе.' : "Can't mentor yourself."); return; }
+
+  await pool.query('UPDATE builder_bot.beta_testers SET mentor_id = $1 WHERE user_id = $2', [userId, target.rows[0].user_id]);
+
+  await safeReply(ctx, ru
+    ? `${ce('check','✅')} Ты стал ментором для @${escHtml(targetUsername)}! Ты получаешь 30% от его XP.`
+    : `${ce('check','✅')} You're now mentoring @${escHtml(targetUsername)}! You earn 30% of their XP.`,
+    { parse_mode: 'HTML' });
+
+  // Notify mentee
+  try {
+    await bot.telegram.sendMessage(target.rows[0].user_id, ru
+      ? `${ce('handshake','🤝')} @${escHtml(stats.rows[0]?.username || String(userId))} стал твоим ментором! Обращайся к нему за помощью.`
+      : `${ce('handshake','🤝')} @${escHtml(stats.rows[0]?.username || String(userId))} is now your mentor! Reach out for help.`,
+      { parse_mode: 'HTML' });
+  } catch {}
+});
+
+// ── /verify — verify a bug report ──
+bot.command('verify', async (ctx) => {
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  const { isBetaTester } = require('./payments');
+  if (!isBetaTester(userId)) return;
+
+  const args = (ctx.message.text || '').split(' ');
+  const feedbackId = parseInt(args[1]);
+  const verdict = args[2]?.toLowerCase(); // 'yes' or 'no'
+
+  if (!feedbackId || !verdict || !['yes', 'no'].includes(verdict)) {
+    await safeReply(ctx, ru
+      ? `${ce('bug','🐛')} <b>Верификация багов</b>\n\nИспользуй:\n/verify 42 yes — подтвердить баг #42\n/verify 42 no — не воспроизводится\n\nЗа верификацию: +3 XP`
+      : `${ce('bug','🐛')} <b>Bug Verification</b>\n\nUsage:\n/verify 42 yes — confirm bug #42\n/verify 42 no — can't reproduce\n\nReward: +3 XP per verification`,
+      { parse_mode: 'HTML' });
+    return;
+  }
+
+  const { pool } = require('./db');
+  // Check bug exists
+  const bug = await pool.query('SELECT id, user_id FROM builder_bot.feedback WHERE id = $1', [feedbackId]);
+  if (!bug.rows.length) { await safeReply(ctx, ru ? 'Баг не найден.' : 'Bug not found.'); return; }
+  if (bug.rows[0].user_id === userId) { await safeReply(ctx, ru ? 'Нельзя верифицировать свой баг.' : "Can't verify your own bug."); return; }
+
+  // Check not already verified by this user
+  const existing = await pool.query(
+    'SELECT id FROM builder_bot.beta_bug_verifications WHERE feedback_id = $1 AND verifier_id = $2', [feedbackId, userId]
+  );
+  if (existing.rows.length) { await safeReply(ctx, ru ? 'Ты уже верифицировал этот баг.' : 'Already verified.'); return; }
+
+  const status = verdict === 'yes' ? 'confirmed' : 'denied';
+  await pool.query(
+    'INSERT INTO builder_bot.beta_bug_verifications (feedback_id, verifier_id, status) VALUES ($1, $2, $3)',
+    [feedbackId, userId, status]
+  );
+
+  // Award XP
+  try {
+    const { awardFeedbackPoints } = require('./payments');
+    await awardFeedbackPoints(userId, 'support'); // +2 XP for verification
+  } catch {}
+
+  // Check if 2 confirmations → mark bug as verified
+  const confirmCount = await pool.query(
+    "SELECT COUNT(*) as cnt FROM builder_bot.beta_bug_verifications WHERE feedback_id = $1 AND status = 'confirmed'",
+    [feedbackId]
+  );
+  if (parseInt(confirmCount.rows[0].cnt) >= 2) {
+    await pool.query("UPDATE builder_bot.feedback SET status = 'verified' WHERE id = $1", [feedbackId]);
+    // Bonus XP to original reporter
+    try {
+      const { awardFeedbackPoints } = require('./payments');
+      await awardFeedbackPoints(bug.rows[0].user_id, 'bug'); // +5 bonus
+    } catch {}
+  }
+
+  await safeReply(ctx, ru
+    ? `${ce('check','✅')} Баг #${feedbackId}: ${status === 'confirmed' ? 'подтверждён' : 'не воспроизводится'}. +2 XP`
+    : `${ce('check','✅')} Bug #${feedbackId}: ${status === 'confirmed' ? 'confirmed' : 'not reproduced'}. +2 XP`,
+    { parse_mode: 'HTML' });
+});
+
+// ── /unverified — list bugs needing verification ──
+bot.command('unverified', async (ctx) => {
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  const { pool } = require('./db');
+
+  const bugs = await pool.query(`
+    SELECT f.id, f.message, f.username, f.created_at,
+      (SELECT COUNT(*) FROM builder_bot.beta_bug_verifications v WHERE v.feedback_id = f.id) as verify_count
+    FROM builder_bot.feedback f
+    WHERE f.type = 'bug' AND f.status = 'new'
+    ORDER BY f.created_at DESC LIMIT 10
+  `);
+
+  if (!bugs.rows.length) { await safeReply(ctx, ru ? 'Нет багов для верификации.' : 'No bugs to verify.'); return; }
+
+  let text = `${ce('bug','🐛')} <b>${ru ? 'Баги для верификации' : 'Bugs to verify'}</b>\n\n`;
+  bugs.rows.forEach((b: any) => {
+    text += `#${b.id} @${escHtml(b.username || '?')} (${b.verify_count}/2 ${ce('check','✅')})\n${escHtml(b.message.slice(0, 80))}\n\u2192 /verify ${b.id} yes|no\n\n`;
+  });
+
+  await safeReply(ctx, text, { parse_mode: 'HTML' });
+});
+
+// ── /review — admin: review pending feedback ──
+bot.command('review', async (ctx) => {
+  const userId = ctx.from!.id;
+  const { isPlatformAdmin } = require('./payments');
+  if (!isPlatformAdmin(userId)) return;
+  const { pool } = require('./db');
+
+  const pending = await pool.query(
+    "SELECT id, user_id, username, type, message, created_at FROM builder_bot.feedback WHERE status = 'new' ORDER BY created_at ASC LIMIT 5"
+  );
+
+  if (!pending.rows.length) { await safeReply(ctx, `${ce('check','✅')} No pending feedback to review.`, { parse_mode: 'HTML' }); return; }
+
+  for (const fb of pending.rows) {
+    const text = `${ce('bug','🐛')} <b>#${fb.id}</b> [${fb.type}] @${escHtml(fb.username || fb.user_id)}\n\n${escHtml(fb.message.slice(0, 300))}`;
+    await ctx.reply(text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
+      [{ text: `${ce('check','✅')} Approve`, callback_data: `review_approve:${fb.id}` },
+       { text: `${ce('cross','❌')} Duplicate`, callback_data: `review_dup:${fb.id}` },
+       { text: '🗑 Spam', callback_data: `review_spam:${fb.id}` }],
+    ]}});
+  }
+});
+
+bot.action(/^review_(approve|dup|spam):(\d+)$/, async (ctx) => {
+  const action = ctx.match![1];
+  const fbId = parseInt(ctx.match![2]);
+  const { isPlatformAdmin } = require('./payments');
+  if (!isPlatformAdmin(ctx.from!.id)) { await ctx.answerCbQuery('Admin only'); return; }
+  await ctx.answerCbQuery();
+  const { pool } = require('./db');
+
+  if (action === 'approve') {
+    await pool.query("UPDATE builder_bot.feedback SET status = 'in_progress' WHERE id = $1", [fbId]);
+    await ctx.editMessageText(`${ce('check','✅')} #${fbId} approved`, { parse_mode: 'HTML' });
+  } else if (action === 'dup') {
+    await pool.query("UPDATE builder_bot.feedback SET status = 'closed', admin_reply = 'Duplicate' WHERE id = $1", [fbId]);
+    await ctx.editMessageText(`${ce('cross','❌')} #${fbId} marked as duplicate`, { parse_mode: 'HTML' });
+  } else if (action === 'spam') {
+    const fb = await pool.query('SELECT user_id FROM builder_bot.feedback WHERE id = $1', [fbId]);
+    await pool.query("UPDATE builder_bot.feedback SET status = 'closed', admin_reply = 'Spam' WHERE id = $1", [fbId]);
+    // Deduct XP
+    if (fb.rows[0]) {
+      await pool.query('UPDATE builder_bot.beta_testers SET xp = GREATEST(0, xp - 2) WHERE user_id = $1', [fb.rows[0].user_id]);
+    }
+    await ctx.editMessageText(`🗑 #${fbId} marked as spam (-2 XP)`);
+  }
 });
 
 // ============================================================
@@ -9594,6 +9871,19 @@ bot.on(message('photo'), async (ctx) => {
             rewardMsg += `\n🎉 Level up: ${lvlName}! +${lvlPts} Points`;
             const name = ctx.from?.username ? `@${ctx.from.username}` : (ctx.from?.first_name || 'Tester');
             announceToGroup(`${ce('party','🎉')} <b>${escHtml(name)}</b> достиг уровня <b>${escHtml(lvlName)}</b>! / reached level <b>${escHtml(lvlName)}</b>! ${ce('rocket','🚀')}`);
+            // Check and announce new achievements
+            try {
+              const { checkAchievements, loadUserStats, ACHIEVEMENTS } = require('./engagement');
+              const _achStats = await loadUserStats(userId);
+              const _newAch = await checkAchievements(userId, _achStats);
+              if (_newAch.length > 0) {
+                const achNames = _newAch.map((id: string) => {
+                  const a = ACHIEVEMENTS.find((a: any) => a.id === id);
+                  return a ? `${a.emoji} ${a.title}` : id;
+                }).join(', ');
+                announceToGroup(`${ce('sparkle','✨')} <b>${escHtml(name)}</b> ${getUserLang(userId) === 'ru' ? 'получил ачивку' : 'earned achievement'}: ${achNames}`);
+              }
+            } catch {}
             // Auto-update tag in group
             const { getTesterLevel } = require('./payments');
             const _newLvl = getTesterLevel(reward.xp + (reward.points || 0));
@@ -10459,6 +10749,27 @@ bot.on(message('text'), async (ctx) => {
     pendingFeedback.delete(userId);
     const title = _fb.title || 'Untitled';
     const fullMessage = `[${title}]\n\n${text}`;
+    // Check for duplicates
+    try {
+      const { checkDuplicate } = require('./engagement');
+      const { pool: _dp } = require('./db');
+      const dupResult = await checkDuplicate(_dp, fullMessage, _fb.type);
+      if (dupResult.isDuplicate && dupResult.confident) {
+        await safeReply(ctx, ru
+          ? `${ce('lock','🔒')} Похожий баг уже найден (#${dupResult.existingId}). 0 XP.`
+          : `${ce('lock','🔒')} Similar bug already reported (#${dupResult.existingId}). 0 XP.`,
+          { parse_mode: 'HTML' });
+        return;
+      }
+      if (dupResult.isDuplicate && !dupResult.confident) {
+        // Notify admin to review
+        try {
+          await bot.telegram.sendMessage(OWNER_ID_NUM,
+            `⚠️ Possible duplicate feedback from @${ctx.from?.username || userId}\nSimilarity: ${Math.round(dupResult.similarity * 100)}%\nExisting: #${dupResult.existingId}\n\nNew: ${fullMessage.slice(0, 200)}`,
+          );
+        } catch {}
+      }
+    } catch {}
     try {
       const { pool } = require('./db');
       await pool.query(
@@ -10483,6 +10794,19 @@ bot.on(message('text'), async (ctx) => {
             rewardMsg += `\n${ce('party','🎉')} Level up: ${parts[1]}! +${parts[2] || 0} Points`;
             const name = ctx.from?.username ? `@${ctx.from.username}` : (ctx.from?.first_name || 'Tester');
             announceToGroup(`${ce('party','🎉')} <b>${escHtml(name)}</b> достиг уровня <b>${escHtml(parts[1])}</b>! ${ce('rocket','🚀')}`);
+            // Check and announce new achievements
+            try {
+              const { checkAchievements: _chkAch2, loadUserStats: _ldStats2, ACHIEVEMENTS: _ACH2 } = require('./engagement');
+              const _achStats2 = await _ldStats2(userId);
+              const _newAch2 = await _chkAch2(userId, _achStats2);
+              if (_newAch2.length > 0) {
+                const achNames2 = _newAch2.map((id: string) => {
+                  const a = _ACH2.find((a: any) => a.id === id);
+                  return a ? `${a.emoji} ${a.title}` : id;
+                }).join(', ');
+                announceToGroup(`${ce('sparkle','✨')} <b>${escHtml(name)}</b> ${getUserLang(userId) === 'ru' ? 'получил ачивку' : 'earned achievement'}: ${achNames2}`);
+              }
+            } catch {}
             const { getTesterLevel: _gtl2 } = require('./payments');
             const _nlvl2 = _gtl2(reward.xp + (reward.points || 0));
             setTesterTag(userId, _nlvl2?.level || 1).catch(() => {});
