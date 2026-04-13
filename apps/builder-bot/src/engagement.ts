@@ -757,7 +757,7 @@ export function formatAchievementsMessage(earnedIds: string[], allAchievements: 
   msg += `${ru ? '\u041E\u0442\u043A\u0440\u044B\u0442\u043E' : 'Earned'}: ${earnedIds.length}/${allAchievements.filter(a => !a.secret).length}\n\n`;
 
   const tierOrder: Record<string, number> = { platinum: 0, gold: 1, silver: 2, bronze: 3 };
-  const tierEmoji: Record<string, string> = { platinum: '\u{1F48E}', gold: '\u{1F947}', silver: '\u{1F948}', bronze: '\u{1F949}' };
+  const tierEmoji: Record<string, string> = { platinum: ce('diamond','\u{1F48E}'), gold: ce('trophy','\u{1F947}'), silver: ce('coin','\u{1F948}'), bronze: ce('star','\u{1F949}') };
 
   // Show earned first, then locked
   const earned = allAchievements.filter(a => earnedIds.includes(a.id));
@@ -781,7 +781,7 @@ export function formatAchievementsMessage(earnedIds: string[], allAchievements: 
     msg += `<b>${ru ? '\u0417\u0430\u043A\u0440\u044B\u0442\u043E' : 'Locked'}:</b>\n`;
     for (const a of locked.slice(0, 15)) {
       const tIcon = a.tier ? (tierEmoji[a.tier] || '') + ' ' : '';
-      msg += `\u{1F512} ${tIcon}${ru ? a.titleRu : a.title} — ${ru ? a.descRu : a.desc}\n`;
+      msg += `${ce('lock','\u{1F512}')} ${tIcon}${ru ? a.titleRu : a.title} — ${ru ? a.descRu : a.desc}\n`;
     }
     if (locked.length > 15) {
       msg += `<i>...${ru ? '\u0438 \u0435\u0449\u0451' : 'and'} ${locked.length - 15} ${ru ? '\u0435\u0449\u0451' : 'more'}</i>\n`;
