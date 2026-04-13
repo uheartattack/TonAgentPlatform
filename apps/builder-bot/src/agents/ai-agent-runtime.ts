@@ -1037,12 +1037,13 @@ async function _oneOffChat(agentId: number): Promise<void> {
 }
 
 // ── Capability → Tool mapping ──────────────────────────────────────────────
-const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
+export const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
   wallet:      ['get_ton_balance', 'send_ton', 'send_jetton', 'get_agent_wallet'],
   nft:         ['get_nft_floor'],
   gifts:       ['get_gift_catalog', 'get_fragment_listings', 'appraise_gift', 'scan_arbitrage',
                 'buy_catalog_gift', 'buy_resale_gift', 'list_gift_for_sale', 'get_stars_balance',
-                'get_gift_upgrade_stats', 'analyze_gift_profitability', 'buy_market_gift'],
+                'get_gift_upgrade_stats', 'analyze_gift_profitability', 'buy_market_gift',
+                'get_gift_backdrops', 'get_gift_models', 'get_gift_metadata', 'get_all_gift_names'],
   gifts_market:['get_gift_floor_real', 'get_gift_sales_history', 'get_market_overview',
                 'get_price_list', 'scan_real_arbitrage', 'get_gift_aggregator', 'get_top_deals',
                 'get_backdrop_floors', 'get_user_portfolio', 'get_collection_offers',
@@ -1318,7 +1319,7 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
 
 // ── Tool RAG: TF-IDF embedding-based relevant tool selection ──────────────
 
-const CORE_TOOLS = new Set([
+export const CORE_TOOLS = new Set([
   // Telegram core
   'tg_send_message', 'tg_reply', 'tg_get_messages', 'tg_get_unread', 'tg_mark_read',
   'tg_react', 'tg_edit', 'tg_forward', 'tg_search_messages', 'tg_get_dialogs',
@@ -2058,7 +2059,20 @@ export async function executeTool(
     case 'appraise_gift': {
       try {
         return await gifts.appraiseGift(args.slug as string);
-      } catch (e: any) { return { ok: false, error: e.message?.slice(0, 200) || 'Failed to appraise gift' }; }
+      } catch (e: any) {
+        // Fallback to GiftAsset API if MTProto unavailable
+        if (e.message?.includes('авториз') || e.message?.includes('Userbot')) {
+          try {
+            const { getGiftAssetClient } = await import('../services/giftasset');
+            const ga = getGiftAssetClient();
+            const floors = await ga.getFloorPrices(args.slug as string);
+            return { slug: args.slug, source: 'GiftAsset', floors: floors.floors, min_floor: floors.minFloor, usage: 'Use get_gift_floor_real for floor prices' };
+          } catch (gaErr: any) {
+            return { ok: false, error: gaErr.message?.slice(0, 200) || 'GiftAsset fallback failed' };
+          }
+        }
+        return { ok: false, error: e.message?.slice(0, 200) || 'Failed to appraise gift' };
+      }
     }
 
     case 'scan_arbitrage': {
@@ -3905,6 +3919,38 @@ export async function executeTool(
         try { json = JSON.parse(text); } catch {}
         return { status: res.status, ok: res.ok, data: json ?? text.slice(0, 4000) };
       } catch (e: any) { return { error: e.message }; }
+    }
+
+    // ── Gift Metadata (api.changes.tg) ───────────────────────────
+    case 'get_gift_backdrops': {
+      try {
+        const { getBackdrops, findGiftName } = await import('../services/gift-metadata');
+        const giftName = await findGiftName(args.gift as string) || args.gift as string;
+        const backdrops = await getBackdrops(giftName);
+        return { gift: giftName, count: backdrops.length, backdrops: backdrops.map(b => ({ name: b.name, rarity_permille: b.rarityPermille, rarity_pct: (b.rarityPermille / 10).toFixed(1) + '%' })) };
+      } catch (e: any) { return { error: e.message?.slice(0, 200) }; }
+    }
+    case 'get_gift_models': {
+      try {
+        const { getModelsSorted, findGiftName } = await import('../services/gift-metadata');
+        const giftName = await findGiftName(args.gift as string) || args.gift as string;
+        const models = await getModelsSorted(giftName);
+        return { gift: giftName, count: models.length, models };
+      } catch (e: any) { return { error: e.message?.slice(0, 200) }; }
+    }
+    case 'get_gift_metadata': {
+      try {
+        const { getGiftInfo, findGiftName } = await import('../services/gift-metadata');
+        const giftName = await findGiftName(args.gift as string) || args.gift as string;
+        return await getGiftInfo(giftName);
+      } catch (e: any) { return { error: e.message?.slice(0, 200) }; }
+    }
+    case 'get_all_gift_names': {
+      try {
+        const { getAllGiftNames } = await import('../services/gift-metadata');
+        const names = await getAllGiftNames();
+        return { count: names.length, gifts: names };
+      } catch (e: any) { return { error: e.message?.slice(0, 200) }; }
     }
 
     // ── GiftAsset / SwiftGifts tools ──────────────────────────────
@@ -5873,6 +5919,26 @@ export async function executeTool(
         }
       } catch {}
 
+      // Try alias mapping — AI sometimes drops prefixes or uses wrong names
+      const TOOL_ALIASES: Record<string, string> = {
+        'get_unique_gift_value': 'tg_get_unique_gift_value',
+        'get_collectible_info': 'tg_get_collectible_info',
+        'transfer_collectible': 'tg_transfer_collectible',
+        'set_collectible_price': 'tg_set_collectible_price',
+        'send_gift_offer': 'tg_send_gift_offer',
+        'get_received_gifts': 'tg_get_received_gifts',
+        'resolve_gift_offer': 'tg_resolve_gift_offer',
+        'set_gift_visibility': 'tg_set_gift_visibility',
+        'send_gift': 'tg_send_gift',
+        'send_message': 'tg_send_message',
+        'get_messages': 'tg_get_messages',
+        'get_user_info': 'tg_get_user_info',
+      };
+      if (TOOL_ALIASES[name]) {
+        console.log(`[AI Runtime] Alias redirect: ${name} → ${TOOL_ALIASES[name]}`);
+        return executeTool(TOOL_ALIASES[name], args, params);
+      }
+
       console.warn(`[AI Runtime] Unknown tool called: ${name}, args: ${sanitizeForLog(JSON.stringify(args).slice(0, 200))}`);
       return { error: `Unknown tool: ${name}. Use list_plugins() or check available tools.` };
     }
@@ -7109,8 +7175,9 @@ If web_search returns nothing useful → say "не смог найти акту�
   get_market_health() — overall NFT market status
 
 🎁 GIFTS & MARKET:
+  ⚠️ ПРАВИЛО: "floor price подарка" = ВСЕГДА get_gift_floor_real(name). НЕ get_nft_floor, НЕ get_unique_gift_value, НЕ web_search!
   get_gift_catalog() — all available gifts
-  get_gift_floor_real(gift_name) — real-time floor price
+  get_gift_floor_real(gift_name) — ЕДИНСТВЕННЫЙ тул для floor price подарков (Plush Pepe, Lol Pop, Jelly Bunny и т.д.)
   get_gift_sales_history(gift_name) — recent sales
   get_gift_aggregator(gift_name, sort?, min_price?, max_price?) — listings from all markets
   get_market_overview() / get_market_activity() — market summary
@@ -7648,7 +7715,7 @@ If web_search returns nothing useful → say "не смог найти акту�
             return nameA.localeCompare(nameB);
           });
           // Gemini has ~30 tool limit; cap to prevent 400 "no body" errors
-          const maxTools = providerName.includes('gemini') || providerName.includes('google') ? 30 : 128;
+          const maxTools = 128;
           reqBody.tools = sortedTools.length > maxTools ? sortedTools.slice(0, maxTools) : sortedTools;
           reqBody.tool_choice = 'auto';
           // Anthropic token-efficient-tools beta: ~4.5% fewer tokens on tool-heavy calls
@@ -8443,6 +8510,17 @@ If web_search returns nothing useful → say "не смог найти акту�
   // ── Reflexive memory extraction: auto-save facts from conversation ──
   if (msgs.length > 0 && finalContent && params.context?.senderId) {
     _extractAndSaveMemory(params, msgs, finalContent, ai, defaultModel).catch(() => {});
+  }
+
+  // Strip raw code blocks from response (AI sometimes dumps tool results or code)
+  if (finalContent) {
+    finalContent = finalContent.replace(/```(?:json|python|javascript|typescript|js|ts|py)?\s*\n?[\s\S]*?\n?```\s*/g, '').trim();
+    // Strip inline code that looks like tool calls or variable assignments
+    finalContent = finalContent.replace(/^[a-z_]+\s*=\s*[a-z_]+\(.*\).*$/gm, '').trim();
+    finalContent = finalContent.replace(/^(?:if|for|while|def|print|return)\s.*$/gm, '').trim();
+    finalContent = finalContent.replace(/^(?:else|elif):?\s*$/gm, '').trim();
+    // Clean up multiple newlines left after stripping
+    finalContent = finalContent.replace(/\n{3,}/g, '\n\n').trim();
   }
 
   return { finalResponse: finalContent, toolCallCount: totalToolCalls };

@@ -1031,10 +1031,47 @@ export function startApiServer() {
       if (!type || !message) { res.status(400).json({ error: 'type and message required' }); return; }
       const validTypes = ['bug', 'feature', 'support', 'general', 'critical'];
       if (!validTypes.includes(type)) { res.status(400).json({ error: 'Invalid type. Use: ' + validTypes.join(', ') }); return; }
+      // Handle screenshot: base64 → save to tmp → send to bot chat → get file_id
+      let screenshotFileId: string | null = null;
+      const { screenshot } = req.body;
+      if (screenshot && typeof screenshot === 'string' && screenshot.startsWith('data:image/')) {
+        try {
+          const botToken = process.env.BOT_TOKEN;
+          const ownerId = process.env.OWNER_ID;
+          if (botToken && ownerId) {
+            const base64Data = screenshot.replace(/^data:image\/\w+;base64,/, '');
+            const imgBuffer = Buffer.from(base64Data, 'base64');
+            // Write to temp file, upload via curl-style multipart
+            const fs = await import('fs');
+            const path = await import('path');
+            const os = await import('os');
+            const tmpFile = path.join(os.tmpdir(), `fb-${Date.now()}.png`);
+            fs.writeFileSync(tmpFile, imgBuffer);
+            // Use child_process to call curl for multipart upload
+            const { execSync } = await import('child_process');
+            const curlOut = execSync(
+              `curl -s -X POST "https://api.telegram.org/bot${botToken}/sendPhoto" ` +
+              `-F "chat_id=${ownerId}" ` +
+              `-F "photo=@${tmpFile}" ` +
+              `-F "caption=[feedback-screenshot]" ` +
+              `-F "disable_notification=true"`,
+              { timeout: 15000 }
+            ).toString();
+            fs.unlinkSync(tmpFile);
+            const uploadRes = JSON.parse(curlOut);
+            if (uploadRes.ok && uploadRes.result?.photo) {
+              screenshotFileId = uploadRes.result.photo[uploadRes.result.photo.length - 1].file_id;
+            }
+          }
+        } catch (scrErr: any) {
+          console.warn('[Feedback] Screenshot upload failed:', scrErr?.message?.slice(0, 100));
+        }
+      }
+
       const result = await pool.query(
-        `INSERT INTO builder_bot.feedback (user_id, username, type, message, agent_id, metadata)
-         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-        [userId, session?.username || '', type, message.slice(0, 5000), agentId || null, metadata ? JSON.stringify(metadata) : null]
+        `INSERT INTO builder_bot.feedback (user_id, username, type, message, agent_id, metadata, screenshot_file_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+        [userId, session?.username || '', type, message.slice(0, 5000), agentId || null, metadata ? JSON.stringify(metadata) : null, screenshotFileId]
       );
       // Award beta tester points
       let pointsAwarded = 0;
@@ -1058,16 +1095,28 @@ export function startApiServer() {
           }
         }
       } catch {}
-      // Notify admins via bot
+      // Notify owner via bot with full details + screenshot
       try {
-        const { isPlatformAdmin } = await import('./payments');
-        const admins = await pool.query(`SELECT telegram_id FROM builder_bot.platform_admins`);
         const botToken = process.env.BOT_TOKEN;
-        if (botToken) {
-          for (const a of admins.rows) {
-            fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        const ownerId = process.env.OWNER_ID;
+        if (botToken && ownerId) {
+          const feedbackId = result.rows[0].id;
+          const typeIcons: Record<string, string> = { bug: '🐛', feature: '💡', support: '🆘', general: '💬', critical: '🔴' };
+          const icon = typeIcons[type] || '📝';
+          let text = `${icon} <b>Feedback #${feedbackId}</b> [${type.toUpperCase()}]\n`;
+          text += `<b>From:</b> @${session?.username || userId}\n`;
+          if (agentId) text += `<b>Agent:</b> #${agentId}\n`;
+          text += `\n${message.slice(0, 1000)}`;
+          if (screenshotFileId) {
+            // Send as photo with caption
+            await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ chat_id: a.telegram_id, text: `📝 New ${type}: ${message.slice(0, 200)}\nFrom: @${session?.username || userId}` }),
+              body: JSON.stringify({ chat_id: ownerId, photo: screenshotFileId, caption: text, parse_mode: 'HTML' }),
+            }).catch(() => {});
+          } else {
+            await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ chat_id: ownerId, text, parse_mode: 'HTML' }),
             }).catch(() => {});
           }
         }

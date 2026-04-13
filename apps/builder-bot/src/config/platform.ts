@@ -64,12 +64,12 @@ export const LIMITS = {
 
 // ── Context limits per provider ──
 export const PROVIDER_LIMITS: Record<string, { maxContextChars: number; maxTools: number }> = {
-  gemini:     { maxContextChars: 25_000, maxTools: 30 },
+  gemini:     { maxContextChars: 25_000, maxTools: 128 },
   anthropic:  { maxContextChars: 40_000, maxTools: 80 },
   openai:     { maxContextChars: 30_000, maxTools: 80 },
   groq:       { maxContextChars: 15_000, maxTools: 40 },
   deepseek:   { maxContextChars: 25_000, maxTools: 60 },
-  openrouter: { maxContextChars: 25_000, maxTools: 60 },
+  openrouter: { maxContextChars: 25_000, maxTools: 50 },
   together:   { maxContextChars: 15_000, maxTools: 40 },
 };
 

@@ -715,6 +715,7 @@ interface PendingOnboarding {
 }
 const pendingOnboarding = new Map<number, PendingOnboarding>(); // userId → state
 const pendingFeedback = new Map<number, { type: string; startTs: number; step: 'title' | 'body'; title?: string }>(); // userId → feedback state
+const _pendingBetaJoins = new Map<number, { code: string; username?: string; ts: number; zones?: string[] }>(); // userId → waiting to join group
 
 // ============================================================
 // Определение «мусорного» ввода (ываыва, aaaa, qwerty и т.п.)
@@ -1354,18 +1355,41 @@ bot.command('start', async (ctx) => {
   }
 
   // Beta invite code deeplink: /start beta_XXXXXXXX
+  // Flow: click link → validate code → onboarding → group link at the end → join group → THEN beta activates
   if (startPayload.startsWith('beta_') && startPayload !== 'beta_open') {
     const code = startPayload.replace('beta_', '');
-    const { redeemBetaCode } = require('./payments');
-    const result = await redeemBetaCode(code, userId, ctx.from?.username);
-    if (result.ok) {
-      const ru = getUserLang(userId) === 'ru';
-      const name = ctx.from?.username ? `@${ctx.from.username}` : (ctx.from?.first_name || 'New tester');
-      announceToGroup(`${ce('party','🎉')} <b>${escHtml(name)}</b> присоединился к бета-тесту! / joined the beta test!\n\nWelcome! ${ce('lab','🧪')}`);
-      await showNewTesterOnboarding(ctx, userId, ru);
-    } else {
-      await safeReply(ctx, `❌ ${result.error}`);
+    const ru = getUserLang(userId) === 'ru';
+    const { isBetaTester } = require('./payments');
+    if (isBetaTester(userId)) {
+      await safeReply(ctx, ru ? '🧪 Вы уже бета-тестер!' : '🧪 You are already a beta tester!');
+      return;
     }
+    // Validate code — check if valid and has uses left (don't redeem yet)
+    const { pool } = require('./db');
+    const codeRes = await pool.query(`SELECT * FROM builder_bot.beta_invite_codes WHERE code = $1`, [code.toUpperCase()]);
+    if (!codeRes.rows.length) { await safeReply(ctx, `❌ Invalid code`); return; }
+    const inv = codeRes.rows[0];
+    if (!inv.is_active || inv.used_count >= inv.max_uses || (inv.expires_at && new Date(inv.expires_at) < new Date())) {
+      let msg = `${ce('lock','🔒')} <b>${ru ? 'Места закончились' : 'No spots left'}</b>\n\n`;
+      msg += ru
+        ? 'К сожалению, все места в этой волне бета-теста уже заняты. Следите за обновлениями — мы откроем новые места позже!'
+        : 'Unfortunately, all spots in this beta wave are taken. Stay tuned — we\'ll open more spots soon!';
+      msg += `\n\n${ce('bell','🔔')} ${ru ? 'Подпишитесь на канал, чтобы не пропустить:' : 'Follow us to not miss out:'} @TonAgentPlatform`;
+      await safeReply(ctx, msg, { parse_mode: 'HTML' });
+      return;
+    }
+    // Reserve spot + store pending — beta activates only on group join
+    await pool.query(`UPDATE builder_bot.beta_invite_codes SET used_count = used_count + 1 WHERE code = $1`, [code.toUpperCase()]);
+    _pendingBetaJoins.set(userId, { code: code.toUpperCase(), username: ctx.from?.username, ts: Date.now() });
+    // Start onboarding — group link will be at the final step
+    await showNewTesterOnboarding(ctx, userId, ru);
+    // Cleanup if they never join group
+    setTimeout(async () => {
+      if (_pendingBetaJoins.has(userId)) {
+        _pendingBetaJoins.delete(userId);
+        console.log(`[Beta] Pending invite expired for ${userId}`);
+      }
+    }, 24 * 60 * 60 * 1000);
     return;
   }
 
@@ -1717,11 +1741,11 @@ async function testerReply(ctx: any, userId: number, text: string, buttons: any[
   const markup = { inline_keyboard: buttons.map((row: any[]) => row.map((b: any) => ({ ...b, callback_data: b.callback_data + ':' + userId }))) };
   if (edit && ctx.callbackQuery?.message) {
     try {
-      await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: markup });
+      await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: markup, disable_web_page_preview: true } as any);
       return;
     } catch {}
   }
-  await safeReply(ctx, text, { parse_mode: 'HTML', reply_markup: markup });
+  await safeReply(ctx, text, { parse_mode: 'HTML', reply_markup: markup, disable_web_page_preview: true } as any);
 }
 
 async function showTesterLeaderboard(ctx: any, userId: number, edit = false) {
@@ -1735,7 +1759,10 @@ async function showTesterLeaderboard(ctx: any, userId: number, edit = false) {
     const lines = lb.map((r: any, i: number) => {
       const medal = i < 3 ? medals[i] : `  ${i + 1}.`;
       const lvl = getTesterLevel(r.xp);
-      return `${medal}  <b>${escHtml(r.username ? '@' + r.username : String(r.user_id))}</b> — ${r.xp} XP  ${lvlCe[lvl.level] || '🌱'}`;
+      const nameDisplay = r.username
+        ? `<a href="https://t.me/${escHtml(r.username)}">@${escHtml(r.username)}</a>`
+        : `<code>${r.user_id}</code>`;
+      return `${medal}  <b>${nameDisplay}</b> — ${r.xp} XP  ${lvlCe[lvl.level] || '🌱'}`;
     });
     const text = `${ce('trophy','🏆')} <b>${ru ? 'Рейтинг' : 'Leaderboard'}</b>\n\n` + lines.join('\n');
     await testerReply(ctx, userId, text, [
@@ -1743,6 +1770,44 @@ async function showTesterLeaderboard(ctx: any, userId: number, edit = false) {
        { text: 'Check-in', icon_custom_emoji_id: CE.check, callback_data: 'tg_checkin' }],
     ], edit);
   } catch (e: any) { await safeReply(ctx, `${e.message}`); }
+}
+
+// ── Auto-tags: custom_title in beta group by level ──
+const LEVEL_TAGS: Record<number, string> = {
+  1: '🧪 Tester',
+  2: '⚡ Active',
+  3: '🔥 Pro',
+  4: '💎 Expert',
+  5: '👑 Master',
+  6: '🏆 Legend',
+};
+
+async function setTesterTag(userId: number, level: number) {
+  if (!BETA_GROUP_ID) return;
+  const tag = LEVEL_TAGS[level] || LEVEL_TAGS[1];
+  try {
+    // Promote with zero permissions (just to set custom_title)
+    await bot.telegram.promoteChatMember(BETA_GROUP_ID, userId, {
+      can_manage_chat: false,
+      can_change_info: false,
+      can_delete_messages: false,
+      can_invite_users: false,
+      can_restrict_members: false,
+      can_pin_messages: false,
+      can_promote_members: false,
+      can_manage_video_chats: false,
+      can_post_stories: false,
+      can_edit_stories: false,
+      can_delete_stories: false,
+    } as any);
+    await bot.telegram.setChatAdministratorCustomTitle(BETA_GROUP_ID, userId, tag);
+    console.log(`[Tags] Set "${tag}" for user ${userId}`);
+  } catch (e: any) {
+    // Silently fail — bot may not have promote rights or user already has higher role
+    if (!e.message?.includes('not enough rights') && !e.message?.includes('CHAT_ADMIN_REQUIRED')) {
+      console.warn(`[Tags] Failed to set tag for ${userId}:`, e.message?.slice(0, 80));
+    }
+  }
 }
 
 // ── /checkin — daily check-in for +1 point ──
@@ -1799,7 +1864,8 @@ async function showTesterProfile(ctx: any, userId: number, edit = false) {
      { text: ru ? 'Магазин' : 'Shop', icon_custom_emoji_id: CE.cart, callback_data: 'tg_shop' }],
     [{ text: ru ? 'Задания' : 'Tasks', icon_custom_emoji_id: CE.target, callback_data: 'tg_tasks' },
      { text: 'Check-in', icon_custom_emoji_id: CE.check, callback_data: 'tg_checkin' }],
-    [{ text: ru ? 'Покинуть бету' : 'Leave Beta', icon_custom_emoji_id: CE.cross, callback_data: 'tg_leave_beta' }],
+    [{ text: ru ? '❓ FAQ' : '❓ FAQ', callback_data: 'tg_faq' },
+     { text: ru ? 'Покинуть бету' : 'Leave Beta', icon_custom_emoji_id: CE.cross, callback_data: 'tg_leave_beta' }],
   ], edit);
 }
 
@@ -2139,6 +2205,30 @@ bot.command('invite', async (ctx) => {
   await safeReply(ctx, text, { parse_mode: 'HTML' });
 });
 
+// ── /invitebeta N — one shared beta code for N people (admin) ──
+// Creates 1 code with max_uses=N → one link, N people can use it
+// Each person who uses it goes through onboarding and gets a personal 1-use invite link at the end
+bot.command('invitebeta', async (ctx) => {
+  const userId = ctx.from!.id;
+  const { isPlatformAdmin, generateBetaCodes } = require('./payments');
+  if (!isPlatformAdmin(userId)) return;
+  const args = (ctx.message.text || '').replace(/^\/invitebeta\s*/i, '').trim();
+  const spots = Math.min(Math.max(parseInt(args) || 5, 1), 100);
+  try {
+    const codes = await generateBetaCodes(1, userId, `Shared beta (${spots} spots)`, spots);
+    if (!codes.length) { await safeReply(ctx, 'Error generating code'); return; }
+    const code = codes[0];
+    const link = `https://t.me/TonAgentPlatformBot?start=beta_${code}`;
+    let text = `${ce('key','🔑')} <b>Beta invite link</b>\n`;
+    text += `Spots: <b>${spots}</b>\n`;
+    text += `Code: <code>${code}</code>\n\n`;
+    text += `${ce('rocket','🚀')} Share this link:\n<code>${link}</code>`;
+    await safeReply(ctx, text, { parse_mode: 'HTML' });
+  } catch (e: any) {
+    await safeReply(ctx, `Error: ${e.message?.slice(0, 200)}`);
+  }
+});
+
 // ── /invites — list invite codes (admin) ──
 bot.command('invites', async (ctx) => {
   const userId = ctx.from!.id;
@@ -2388,6 +2478,9 @@ const PROD_ZONES = [
 ];
 
 async function getUserZones(userId: number): Promise<string[]> {
+  // During onboarding, zones are stored in memory
+  const pending = _pendingBetaJoins.get(userId);
+  if (pending?.zones) return pending.zones;
   try {
     const { pool } = require('./db');
     const r = await pool.query('SELECT production_zones FROM builder_bot.beta_testers WHERE user_id = $1', [userId]);
@@ -2411,13 +2504,12 @@ async function toggleUserZone(userId: number, zone: string): Promise<string[]> {
 async function showTesterRole(ctx: any, userId: number, edit = false) {
   const ru = getUserLang(userId) === 'ru';
   const { getTesterStats, TESTER_ROLES, isBetaTester } = require('./payments');
-  if (!isBetaTester(userId)) { await safeReply(ctx, ru ? 'Доступно только бета-тестерам.' : 'Beta testers only.'); return; }
+  if (!isBetaTester(userId) && !_pendingBetaJoins.has(userId)) { await safeReply(ctx, ru ? 'Доступно только бета-тестерам.' : 'Beta testers only.'); return; }
   const stats = await getTesterStats(userId);
-  if (!stats) return;
   const zones = await getUserZones(userId);
 
-  const roleInfo = TESTER_ROLES[stats.role];
-  const roleName = roleInfo ? (ru ? roleInfo.nameRu : roleInfo.name) : 'Tester';
+  const roleInfo = stats ? TESTER_ROLES[stats.role] : null;
+  const roleName = roleInfo ? (ru ? roleInfo.nameRu : roleInfo.name) : (ru ? 'Новичок' : 'Newbie');
   const mult = roleInfo?.multiplier > 1 ? ` ×${roleInfo.multiplier}` : '';
 
   let t = `${ce('star','⭐')} <b>${ru ? 'Статус' : 'Status'}:</b> ${escHtml(roleName)}${escHtml(mult)}\n\n`;
@@ -2485,7 +2577,7 @@ bot.action(/^zone_view:(\w+):(\d+)$/, async (ctx) => {
       ? { text: ru ? 'Убрать зону' : 'Remove zone', icon_custom_emoji_id: CE.cross, callback_data: `zone_confirm:${zoneId}:remove` }
       : { text: ru ? 'Выбрать зону' : 'Select zone', icon_custom_emoji_id: CE.check, callback_data: `zone_confirm:${zoneId}:add` }
     ],
-    [{ text: ru ? '← Назад' : '← Back', callback_data: 'tg_role' }],
+    [{ text: ru ? '← Назад' : '← Back', callback_data: _pendingBetaJoins.has(ownerId) ? 'ob_step4' : 'tg_role' }],
   ], true);
 });
 
@@ -2499,19 +2591,57 @@ bot.action(/^zone_confirm:(\w+):(add|remove):(\d+)$/, async (ctx) => {
   const ru = getUserLang(ownerId) === 'ru';
   const zone = PROD_ZONES.find(z => z.id === zoneId);
 
-  if (action === 'add') {
-    const { pool } = require('./db');
-    const current = await getUserZones(ownerId);
-    if (!current.includes(zoneId)) {
-      await pool.query('UPDATE builder_bot.beta_testers SET production_zones = array_append(production_zones, $1) WHERE user_id = $2', [zoneId, ownerId]);
-    }
+  const pending = _pendingBetaJoins.get(ownerId);
+  if (pending) {
+    // Store zones in memory during onboarding — apply when they join group
+    if (!pending.zones) pending.zones = [];
+    if (action === 'add' && !pending.zones.includes(zoneId)) pending.zones.push(zoneId);
+    if (action === 'remove') pending.zones = pending.zones.filter(z => z !== zoneId);
   } else {
-    const { pool } = require('./db');
-    await pool.query('UPDATE builder_bot.beta_testers SET production_zones = array_remove(production_zones, $1) WHERE user_id = $2', [zoneId, ownerId]);
+    if (action === 'add') {
+      const { pool } = require('./db');
+      const current = await getUserZones(ownerId);
+      if (!current.includes(zoneId)) {
+        await pool.query('UPDATE builder_bot.beta_testers SET production_zones = array_append(production_zones, $1) WHERE user_id = $2', [zoneId, ownerId]);
+      }
+    } else {
+      const { pool } = require('./db');
+      await pool.query('UPDATE builder_bot.beta_testers SET production_zones = array_remove(production_zones, $1) WHERE user_id = $2', [zoneId, ownerId]);
+    }
   }
 
-  // Show role page with updated zones
-  await showTesterRole(ctx, ownerId, true);
+  // If in onboarding → back to ob_step4, otherwise normal role page
+  if (_pendingBetaJoins.has(ownerId)) {
+    // Re-render onboarding step 4 (zones) with updated selection
+    const zones = await getUserZones(ownerId);
+    const zoneName = zone ? (ru ? zone.labelRu : zone.label) : zoneId;
+    const msg = action === 'add'
+      ? `${ce('check','✅')} ${zoneName} ${ru ? 'добавлена' : 'added'} (${zones.length}/3)`
+      : `${ce('cross','❌')} ${zoneName} ${ru ? 'убрана' : 'removed'}`;
+    await ctx.answerCbQuery(msg);
+
+    let t = ru
+      ? `${ce('target','🎯')} <b>Зоны тестирования</b>\n\n` +
+        (zones.length ? `<b>Выбрано:</b> ${zones.map(z => { const pz = PROD_ZONES.find(p => p.id === z); return pz ? (ru ? pz.labelRu : pz.label) : z; }).join(', ')}\n\n` : '') +
+        `Нажми на зону чтобы добавить/убрать:`
+      : `${ce('target','🎯')} <b>Testing zones</b>\n\n` +
+        (zones.length ? `<b>Selected:</b> ${zones.map(z => { const pz = PROD_ZONES.find(p => p.id === z); return pz ? pz.label : z; }).join(', ')}\n\n` : '') +
+        `Tap a zone to add/remove:`;
+    const zoneButtons: any[][] = [];
+    for (let i = 0; i < PROD_ZONES.length; i += 2) {
+      const row: any[] = [];
+      for (let j = i; j < Math.min(i + 2, PROD_ZONES.length); j++) {
+        const z = PROD_ZONES[j];
+        const sel = zones.includes(z.id) ? '● ' : '';
+        row.push({ text: `${sel}${ru ? z.labelRu : z.label}`, icon_custom_emoji_id: z.icon, callback_data: `zone_view:${z.id}` });
+      }
+      zoneButtons.push(row);
+    }
+    zoneButtons.push([{ text: ru ? 'Далее →' : 'Next →', callback_data: 'ob_step5' }]);
+    await testerReply(ctx, ownerId, t, zoneButtons, true);
+  } else {
+    await showTesterRole(ctx, ownerId, true);
+  }
 });
 
 // Back to role from zone detail
@@ -2525,24 +2655,36 @@ bot.action(/^tg_role:(\d+)$/, async (ctx) => {
 // ── Inline callback handlers for tester buttons ──
 // Pattern: tg_action:ownerUserId — only owner can press
 // ── New tester onboarding ──
+// ── Beta group join check — kick tester if they don't join within 24h ──
+function scheduleBetaGroupCheck(userId: number) {
+  if (!BETA_GROUP_ID) return;
+  const DELAY = 24 * 60 * 60 * 1000; // 24 hours
+  setTimeout(async () => {
+    try {
+      const member = await bot.telegram.getChatMember(BETA_GROUP_ID!, userId);
+      if (member.status === 'left' || member.status === 'kicked') {
+        // Not in group — revoke beta access
+        const { removeBetaTester } = require('./payments');
+        await removeBetaTester(userId);
+        const ru = getUserLang(userId) === 'ru';
+        try {
+          await bot.telegram.sendMessage(userId,
+            ru
+              ? `${ce('lock','🔒')} <b>Доступ к бета-тесту отозван</b>\n\nТы не зашёл в группу тестеров в течение 24 часов. Напиши @TonAgentPlatform если хочешь получить новое приглашение.`
+              : `${ce('lock','🔒')} <b>Beta access revoked</b>\n\nYou didn't join the testers group within 24 hours. DM @TonAgentPlatform if you'd like a new invite.`,
+            { parse_mode: 'HTML' }
+          );
+        } catch {}
+        console.log(`[Beta] Revoked tester ${userId} — didn't join group within 24h`);
+      }
+    } catch (e: any) {
+      console.warn(`[Beta] Group check failed for ${userId}:`, e.message?.slice(0, 100));
+    }
+  }, DELAY);
+}
+
 async function showNewTesterOnboarding(ctx: any, userId: number, ru: boolean) {
   const greeting = ctx.from?.first_name ? escHtml(ctx.from.first_name) : (ru ? 'тестер' : 'tester');
-
-  // Generate one-time group invite link
-  let groupInviteUrl = '';
-  if (BETA_GROUP_ID) {
-    try {
-      const link = await bot.telegram.createChatInviteLink(BETA_GROUP_ID, {
-        member_limit: 1,
-        expire_date: Math.floor(Date.now() / 1000) + 86400,
-        name: `tester-${userId}`,
-      });
-      groupInviteUrl = link.invite_link;
-      console.log(`[Onboarding] Created group invite for ${userId}: ${groupInviteUrl}`);
-    } catch (e: any) {
-      console.warn('[Onboarding] Group invite link failed:', e.message, '— grant bot can_invite_users in group');
-    }
-  }
 
   // ── Шаг 1: Приветствие + что это ──
   let t1 = `${ce('party','🎉')} <b>${ru ? 'Добро пожаловать' : 'Welcome'}, ${greeting}!</b>\n\n`;
@@ -2564,33 +2706,17 @@ async function showNewTesterOnboarding(ctx: any, userId: number, ru: boolean) {
       `· Buy gift cards with crypto (Bitrefill)\n` +
       `· Moderate chats, manage channels\n` +
       `· All no-code — describe the task, AI does the rest`;
-  await safeReply(ctx, t1, { parse_mode: 'HTML',
-    reply_markup: { inline_keyboard: [[{ text: ru ? 'Далее →' : 'Next →', callback_data: `ob_step2:${userId}` }]] },
-  });
+  await testerReply(ctx, userId, t1, [
+    [{ text: ru ? 'Далее →' : 'Next →', callback_data: 'ob_step2' }],
+  ]);
 }
 
-// ── Onboarding Step 2: Группа + топики ──
+// ── Onboarding Step 2: Группа + топики (info only, join link at the end) ──
 bot.action(/^ob_step2:(\d+)$/, async (ctx) => {
   const ownerId = parseInt(ctx.match![1]);
   if (ctx.from!.id !== ownerId) { await ctx.answerCbQuery('Not your button'); return; }
   await ctx.answerCbQuery();
   const ru = getUserLang(ownerId) === 'ru';
-
-  // Get group invite link from step 1 context or generate new
-  let groupInviteUrl = '';
-  if (BETA_GROUP_ID) {
-    try {
-      const link = await bot.telegram.createChatInviteLink(BETA_GROUP_ID, {
-        member_limit: 1,
-        expire_date: Math.floor(Date.now() / 1000) + 86400,
-        name: `tester-${ownerId}-s2`,
-      });
-      groupInviteUrl = link.invite_link;
-      console.log(`[Onboarding] Created group invite for ${ownerId}: ${groupInviteUrl}`);
-    } catch (e2: any) {
-      console.warn(`[Onboarding] Step2 group invite failed: ${e2.message}`);
-    }
-  }
 
   let t = ru
     ? `${ce('handshake','🤝')} <b>Группа тестеров</b>\n\n` +
@@ -2604,7 +2730,7 @@ bot.action(/^ob_step2:(\d+)$/, async (ctx) => {
       `<b>#Announcements</b> — обновления платформы\n` +
       `<b>#Support</b> — помощь\n` +
       `<b>#Off-topic</b> — флуд\n\n` +
-      `Все команды работают и в группе, и в ЛС бота.`
+      `Ссылка на группу будет в конце онбординга.`
     : `${ce('handshake','🤝')} <b>Testers Group</b>\n\n` +
       `We have a TG group with topics:\n\n` +
       `<b>#General</b> — chat, questions\n` +
@@ -2616,17 +2742,11 @@ bot.action(/^ob_step2:(\d+)$/, async (ctx) => {
       `<b>#Announcements</b> — platform updates\n` +
       `<b>#Support</b> — help\n` +
       `<b>#Off-topic</b> — random\n\n` +
-      `All commands work both in group and bot DM.`;
+      `Group invite link will be at the end of onboarding.`;
 
-  if (!groupInviteUrl) {
-    t += `\n\n${ru ? '📩 Попроси ссылку на группу у @despensive' : '📩 Ask @despensive for group invite link'}`;
-  }
-  const buttons: any[][] = [];
-  if (groupInviteUrl) {
-    buttons.push([{ text: ru ? '👥 Войти в группу' : '👥 Join Group', url: groupInviteUrl }]);
-  }
-  buttons.push([{ text: ru ? 'Далее →' : 'Next →', callback_data: `ob_step3:${ownerId}` }]);
-  await testerReply(ctx, ownerId, t, buttons, true);
+  await testerReply(ctx, ownerId, t, [
+    [{ text: ru ? 'Далее →' : 'Next →', callback_data: `ob_step3` }],
+  ], true);
 });
 
 // ── Onboarding Step 3: XP + Points система ──
@@ -2665,7 +2785,7 @@ bot.action(/^ob_step3:(\d+)$/, async (ctx) => {
       `Spend Points in the <b>shop</b>: generations, early access, 1:1 with developer.`;
 
   await testerReply(ctx, ownerId, t, [
-    [{ text: ru ? 'Далее →' : 'Next →', callback_data: `ob_step4:${ownerId}` }],
+    [{ text: ru ? 'Далее →' : 'Next →', callback_data: `ob_step4` }],
   ], true);
 });
 
@@ -2698,7 +2818,7 @@ bot.action(/^ob_step4:(\d+)$/, async (ctx) => {
     }
     zoneButtons.push(row);
   }
-  zoneButtons.push([{ text: ru ? 'Пропустить → Studio' : 'Skip → Studio', callback_data: `ob_step5:${ownerId}` }]);
+  zoneButtons.push([{ text: ru ? 'Пропустить → Studio' : 'Skip → Studio', callback_data: `ob_step5` }]);
 
   await testerReply(ctx, ownerId, t, zoneButtons, true);
 });
@@ -2736,11 +2856,30 @@ bot.action(/^ob_step5:(\d+)$/, async (ctx) => {
       `/leaderboard — tester rankings\n\n` +
       `${ce('fire','🔥')} Don't forget to /checkin every day!`;
 
-  await testerReply(ctx, ownerId, t, [
-    [{ text: ru ? 'Открыть Studio' : 'Open Studio', url: 'https://tonagentplatform.com/studio' }],
-    [{ text: ru ? 'Мой профиль' : 'My Profile', icon_custom_emoji_id: CE.crown, callback_data: 'tg_mystats' },
-     { text: 'Check-in', icon_custom_emoji_id: CE.check, callback_data: 'tg_checkin' }],
-  ], true);
+  // Generate group invite link for the final step
+  let groupInviteUrl = '';
+  if (BETA_GROUP_ID) {
+    try {
+      const link = await bot.telegram.createChatInviteLink(BETA_GROUP_ID, {
+        member_limit: 1,
+        expire_date: Math.floor(Date.now() / 1000) + 86400,
+        name: `tester-${ownerId}-final`,
+      });
+      groupInviteUrl = link.invite_link;
+    } catch {}
+  }
+
+  const buttons: any[][] = [];
+  if (groupInviteUrl) {
+    buttons.push([{ text: ru ? '👥 Войти в группу тестеров' : '👥 Join Testers Group', url: groupInviteUrl }]);
+  }
+  buttons.push([{ text: ru ? 'Открыть Studio' : 'Open Studio', url: 'https://tonagentplatform.com/studio' }]);
+  buttons.push([
+    { text: ru ? 'Мой профиль' : 'My Profile', icon_custom_emoji_id: CE.crown, callback_data: 'tg_mystats' },
+    { text: 'Check-in', icon_custom_emoji_id: CE.check, callback_data: 'tg_checkin' },
+  ]);
+
+  await testerReply(ctx, ownerId, t, buttons, true);
 });
 
 bot.action(/^tg_mystats:(\d+)$/, async (ctx) => {
@@ -2803,6 +2942,62 @@ bot.action(/^tg_feedback:(\d+)$/, async (ctx) => {
     : 'Use /feedback to create a bug report');
 });
 
+// ── FAQ ──
+bot.action(/^tg_faq:(\d+)$/, async (ctx) => {
+  const ownerId = parseInt(ctx.match![1]);
+  if (ctx.from!.id !== ownerId) { await ctx.answerCbQuery('Not your button'); return; }
+  await ctx.answerCbQuery();
+  const ru = getUserLang(ownerId) === 'ru';
+
+  let t = ru
+    ? `${ce('bulb','❓')} <b>FAQ — Частые вопросы</b>\n\n` +
+      `<b>Что такое XP?</b>\n` +
+      `Опыт за активность. Баг-репорт +5, фича +5, critical +20, чекин +1. Чем больше XP — тем выше уровень.\n\n` +
+      `<b>Что такое Points?</b>\n` +
+      `Валюта за достижения. Получаешь при:\n` +
+      `· Level-up: +10...+200 Points\n` +
+      `· Твой баг пофикшен: +5 Points\n` +
+      `· Твоя фича реализована: +10 Points\n` +
+      `Points тратишь в магазине (/shop).\n\n` +
+      `<b>Как заработать XP?</b>\n` +
+      `· /checkin каждый день (+1 XP)\n` +
+      `· /feedback — отправь баг или фичу\n` +
+      `· Выполняй задания (/tasks)\n\n` +
+      `<b>Уровни</b>\n` +
+      `${ce('seedling','🌱')} Новичок (0) → ${ce('lab','🧪')} Тестер (50) → ${ce('fire','⚡')} Активный (150) → ${ce('diamond','💎')} Эксперт (400) → ${ce('crown','👑')} Мастер (800) → ${ce('trophy','🏆')} Легенда (1500)\n\n` +
+      `<b>Что в магазине?</b>\n` +
+      `Генерации агентов, ранний доступ к фичам, 1:1 с разработчиком и другое.\n\n` +
+      `<b>Зоны тестирования?</b>\n` +
+      `Выбери 1-3 зоны (/role) — области платформы на которых фокусируешься. Помогает нам распределить задачи.\n\n` +
+      `<b>Нашёл баг?</b>\n` +
+      `/feedback → выбери тип → опиши + скриншот`
+    : `${ce('bulb','❓')} <b>FAQ</b>\n\n` +
+      `<b>What is XP?</b>\n` +
+      `Experience for activity. Bug +5, feature +5, critical +20, check-in +1. More XP = higher level.\n\n` +
+      `<b>What are Points?</b>\n` +
+      `Currency for achievements:\n` +
+      `· Level-up: +10...+200 Points\n` +
+      `· Your bug gets fixed: +5 Points\n` +
+      `· Your feature gets built: +10 Points\n` +
+      `Spend in shop (/shop).\n\n` +
+      `<b>How to earn XP?</b>\n` +
+      `· /checkin daily (+1 XP)\n` +
+      `· /feedback — submit bugs or features\n` +
+      `· Complete tasks (/tasks)\n\n` +
+      `<b>Levels</b>\n` +
+      `${ce('seedling','🌱')} Newbie (0) → ${ce('lab','🧪')} Tester (50) → ${ce('fire','⚡')} Active (150) → ${ce('diamond','💎')} Expert (400) → ${ce('crown','👑')} Master (800) → ${ce('trophy','🏆')} Legend (1500)\n\n` +
+      `<b>What's in the shop?</b>\n` +
+      `Agent generations, early access, 1:1 with developer, and more.\n\n` +
+      `<b>Testing zones?</b>\n` +
+      `Pick 1-3 zones (/role) to focus on. Helps distribute tasks.\n\n` +
+      `<b>Found a bug?</b>\n` +
+      `/feedback → pick type → describe + screenshot`;
+
+  await testerReply(ctx, ownerId, t, [
+    [{ text: ru ? 'Профиль' : 'Profile', icon_custom_emoji_id: CE.crown, callback_data: 'tg_mystats' }],
+  ], true);
+});
+
 // ── Leave beta: confirm ──
 bot.action(/^tg_leave_beta:(\d+)$/, async (ctx) => {
   const ownerId = parseInt(ctx.match![1]);
@@ -2842,10 +3037,16 @@ bot.action(/^tg_leave_confirm:(\d+)$/, async (ctx) => {
     // Immediately unban so they can rejoin later
     try { await bot.telegram.unbanChatMember(BETA_GROUP_ID, ownerId); } catch {}
   }
-  await safeReply(ctx, ru
-    ? `${ce('check','✅')} Ты покинул бету. Спасибо за тестирование!\n\nЕсли захочешь вернуться — попроси новый инвайт.`
-    : `${ce('check','✅')} You left the beta. Thanks for testing!\n\nIf you want to come back — ask for a new invite.`,
-    { parse_mode: 'HTML' });
+  // Send to DM, not to group (they just got kicked from group)
+  try {
+    await bot.telegram.sendMessage(ownerId, ru
+      ? `${ce('check','✅')} Ты покинул бету. Спасибо за тестирование!\n\nЕсли захочешь вернуться — попроси новый инвайт у @TonAgentPlatform.`
+      : `${ce('check','✅')} You left the beta. Thanks for testing!\n\nIf you want to come back — ask for a new invite from @TonAgentPlatform.`,
+      { parse_mode: 'HTML' });
+  } catch {
+    // Fallback to current chat if DM fails
+    await safeReply(ctx, ru ? '✅ Ты покинул бету.' : '✅ You left the beta.');
+  }
 });
 
 // ── /leavebeta command ──
@@ -8983,11 +9184,45 @@ bot.on(message('new_chat_members'), async (ctx) => {
       console.warn('[BetaGroup] Welcome failed:', e.message);
     }
 
-    // Auto-register as beta tester if not already
+    // Activate beta if they have a pending invite code
     try {
       const { isBetaTester, addBetaTester } = require('./payments');
       if (!isBetaTester(member.id)) {
-        await addBetaTester(member.id, member.username, 'group_join');
+        const pending = _pendingBetaJoins.get(member.id);
+        if (pending) {
+          // They joined the group — activate beta!
+          const pendingZones = pending.zones || [];
+          _pendingBetaJoins.delete(member.id);
+          await addBetaTester(member.id, member.username, pending.code);
+          // Set initial tag in group
+          setTesterTag(member.id, 1).catch(() => {});
+          // Apply zones selected during onboarding
+          if (pendingZones.length > 0) {
+            try {
+              const { pool } = require('./db');
+              await pool.query('UPDATE builder_bot.beta_testers SET production_zones = $1 WHERE user_id = $2', [pendingZones, member.id]);
+            } catch {}
+          }
+          // Send confirmation in DM
+          try {
+            const mName = member.first_name ? escHtml(member.first_name) : 'tester';
+            let t1 = `${ce('check','✅')} <b>${mName}, бета-тест активирован!</b>\n\n`;
+            t1 += `Ты в группе, всё готово. Используй команды:\n`;
+            t1 += `/mystats — профиль и прогресс\n`;
+            t1 += `/checkin — ежедневный чекин (+1 XP)\n`;
+            t1 += `/feedback — баг-репорт (+5 XP)\n`;
+            t1 += `/tasks — задания\n`;
+            t1 += `/shop — магазин наград\n\n`;
+            t1 += `${ce('fire','🔥')} Не забывай /checkin каждый день!`;
+            await bot.telegram.sendMessage(member.id, t1, { parse_mode: 'HTML',
+            });
+          } catch (obErr: any) {
+            console.warn(`[Beta] Onboarding DM failed for ${member.id}:`, obErr?.message?.slice(0, 80));
+          }
+          // Announce
+          announceToGroup(`${ce('party','🎉')} <b>${escHtml(name)}</b> присоединился к бета-тесту! / joined the beta test!\n\nWelcome! ${ce('lab','🧪')}`);
+        }
+        // No pending code = just joined group without beta link — ignore, don't auto-register
       }
     } catch {}
   }
@@ -9178,11 +9413,26 @@ bot.on(message('photo'), async (ctx) => {
             rewardMsg += `\n🎉 Level up: ${lvlName}! +${lvlPts} Points`;
             const name = ctx.from?.username ? `@${ctx.from.username}` : (ctx.from?.first_name || 'Tester');
             announceToGroup(`${ce('party','🎉')} <b>${escHtml(name)}</b> достиг уровня <b>${escHtml(lvlName)}</b>! / reached level <b>${escHtml(lvlName)}</b>! ${ce('rocket','🚀')}`);
+            // Auto-update tag in group
+            const { getTesterLevel } = require('./payments');
+            const _newLvl = getTesterLevel(reward.xp + (reward.points || 0));
+            setTesterTag(userId, _newLvl?.level || 1).catch(() => {});
           }
           if (reward.points > 0 && !reward.reward?.startsWith('level_up:')) rewardMsg += ` · +${reward.points} Points`;
         }
       } catch {}
-      await safeReply(ctx, (ru ? '✅ Фидбек со скриншотом отправлен!' : '✅ Feedback with screenshot sent!') + rewardMsg);
+      const title = _fb.title || caption || 'Screenshot';
+      let confirmText = ru
+        ? `${ce('check','✅')} <b>Тикет создан</b>\n\n<b>${escHtml(title)}</b>\nТип: ${_fb.type}\n📎 Скриншот${rewardMsg}`
+        : `${ce('check','✅')} <b>Ticket created</b>\n\n<b>${escHtml(title)}</b>\nType: ${_fb.type}\n📎 Screenshot${rewardMsg}`;
+      await safeReply(ctx, confirmText, { parse_mode: 'HTML' });
+      // Notify owner with screenshot
+      try {
+        const typeIcons: Record<string, string> = { bug: '🐛', feature: '💡', support: '🆘', general: '💬', critical: '🔴' };
+        const icon = typeIcons[_fb.type] || '📝';
+        const fbText = `${icon} <b>Feedback</b> [${_fb.type.toUpperCase()}]\n<b>From:</b> @${ctx.from?.username || userId}\n\n<b>${escHtml(title)}</b>\n${escHtml((caption || 'Screenshot attached').slice(0, 500))}`;
+        await bot.telegram.sendPhoto(OWNER_ID_NUM, photoId, { caption: fbText, parse_mode: 'HTML' });
+      } catch {}
     } catch (e: any) { await safeReply(ctx, `❌ ${e.message}`); }
     return;
   }
@@ -10034,15 +10284,12 @@ bot.on(message('text'), async (ctx) => {
         `INSERT INTO builder_bot.feedback (user_id, username, type, message) VALUES ($1, $2, $3, $4)`,
         [userId, ctx.from?.username || '', _fb.type, fullMessage]
       );
-      // Notify admins with structured format
+      // Notify owner with structured format
       const typeEmoji: Record<string, string> = { bug: '🐛', feature: '💡', critical: '🔥', support: '🤝', general: '💬' };
-      const admins = await pool.query(`SELECT telegram_id FROM builder_bot.platform_admins`);
-      for (const a of admins.rows) {
-        try { await bot.telegram.sendMessage(a.telegram_id,
-          `${typeEmoji[_fb.type] || '📝'} <b>${_fb.type.toUpperCase()}</b> от @${ctx.from?.username || userId}\n\n<b>${escHtml(title)}</b>\n${escHtml(text.slice(0, 300))}`,
-          { parse_mode: 'HTML' }
-        ); } catch {}
-      }
+      try { await bot.telegram.sendMessage(OWNER_ID_NUM,
+        `${typeEmoji[_fb.type] || '📝'} <b>Feedback</b> [${_fb.type.toUpperCase()}]\n<b>From:</b> @${ctx.from?.username || userId}\n\n<b>${escHtml(title)}</b>\n${escHtml(text.slice(0, 500))}`,
+        { parse_mode: 'HTML' }
+      ); } catch {}
       // Award XP
       let rewardMsg = '';
       try {
@@ -10055,6 +10302,9 @@ bot.on(message('text'), async (ctx) => {
             rewardMsg += `\n${ce('party','🎉')} Level up: ${parts[1]}! +${parts[2] || 0} Points`;
             const name = ctx.from?.username ? `@${ctx.from.username}` : (ctx.from?.first_name || 'Tester');
             announceToGroup(`${ce('party','🎉')} <b>${escHtml(name)}</b> достиг уровня <b>${escHtml(parts[1])}</b>! ${ce('rocket','🚀')}`);
+            const { getTesterLevel: _gtl2 } = require('./payments');
+            const _nlvl2 = _gtl2(reward.xp + (reward.points || 0));
+            setTesterTag(userId, _nlvl2?.level || 1).catch(() => {});
           }
           if (reward.points > 0 && !reward.reward?.startsWith('level_up:')) rewardMsg += ` · +${reward.points} Points`;
         }

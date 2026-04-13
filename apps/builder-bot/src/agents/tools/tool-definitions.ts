@@ -2181,16 +2181,55 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
         },
       },
     },
+    // ── Gift Metadata (api.changes.tg) — backdrops, models, patterns, rarity ──
+    {
+      type: 'function',
+      function: {
+        name: 'get_gift_backdrops',
+        description: 'Получить ВСЕ доступные бэкграунды (фоны) для подарка с редкостью. Используй когда юзер спрашивает про фоны/бэкдропы, или хочет купить подарок с конкретным фоном (Mystic Pearl, Platinum, Emerald и т.д.).',
+        parameters: { type: 'object', properties: {
+          gift: { type: 'string', description: 'Название подарка: "Hex Pot", "Plush Pepe", "Lol Pop" и т.д.' },
+        }, required: ['gift'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'get_gift_models',
+        description: 'Получить все модели (варианты) подарка отсортированные по редкости. Каждая модель — уникальная анимация.',
+        parameters: { type: 'object', properties: {
+          gift: { type: 'string', description: 'Название подарка' },
+        }, required: ['gift'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'get_gift_metadata',
+        description: 'Детальная информация о подарке: количество моделей, бэкдропов, паттернов, общая статистика.',
+        parameters: { type: 'object', properties: {
+          gift: { type: 'string', description: 'Название подарка' },
+        }, required: ['gift'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'get_all_gift_names',
+        description: 'Список ВСЕХ существующих Telegram Star Gift подарков (100+ коллекций). Используй если не знаешь точное название подарка.',
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+    },
     // ── GiftAsset / SwiftGifts market data tools ─────────────────
     {
       type: 'function',
       function: {
         name: 'get_gift_floor_real',
-        description: 'Получить РЕАЛЬНЫЕ floor prices подарка на маркетплейсах (GetGems, MRKT, Portals, Fragment и др.) через GiftAsset + SwiftGifts API',
+        description: 'FLOOR PRICE для Telegram Star Gift подарков (Plush Pepe, Lol Pop, Jelly Bunny, Cupid Charm, Fresh Socks и т.д.). Возвращает РЕАЛЬНЫЕ актуальные цены со всех маркетплейсов (GetGems, MRKT, Portals, Fragment). ЭТО ЕДИНСТВЕННЫЙ ПРАВИЛЬНЫЙ ТУЛДЛЯ "floor price" подарков. НЕ ИСПОЛЬЗУЙ get_nft_floor для подарков — он для NFT коллекций (TON Punks и т.д.), НЕ для Star Gifts.',
         parameters: {
           type: 'object',
           properties: {
-            slug: { type: 'string', description: 'Slug/название подарка (например: "Plush Pepe", "Lol Pop", "Cupid Charm")' },
+            slug: { type: 'string', description: 'Название подарка: "Plush Pepe", "Lol Pop", "Jelly Bunny", "Cupid Charm", "Fresh Socks", "Homemade Cake" и т.д.' },
           },
           required: ['slug'],
         },
