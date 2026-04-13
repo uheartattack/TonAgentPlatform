@@ -315,6 +315,121 @@ export async function runMigrations(pool: Pool): Promise<void> {
     await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS spent_points INT DEFAULT 0`);
     await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS tester_role TEXT DEFAULT 'tester'`);
     await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS achievements JSONB DEFAULT '[]'::jsonb`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS tester_number SERIAL`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS last_activity TIMESTAMPTZ DEFAULT NOW()`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS squad_id TEXT`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS mentor_id BIGINT`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS mute_pings BOOLEAN DEFAULT false`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS custom_tag TEXT`);
+
+    // ── Quest progress (onboarding + zone quests) ──
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.beta_quest_progress (
+        id SERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL,
+        quest_id TEXT NOT NULL,
+        step INT DEFAULT 0,
+        status TEXT DEFAULT 'active',
+        started_at TIMESTAMPTZ DEFAULT NOW(),
+        completed_at TIMESTAMPTZ,
+        UNIQUE(user_id, quest_id)
+      )
+    `);
+
+    // ── Task progress (zone tasks, daily quests) ──
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.beta_task_progress (
+        id SERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL,
+        task_id TEXT NOT NULL,
+        zone_id TEXT,
+        status TEXT DEFAULT 'pending',
+        proof TEXT,
+        xp_awarded INT DEFAULT 0,
+        completed_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(user_id, task_id)
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_task_progress_user ON builder_bot.beta_task_progress (user_id, zone_id)`);
+
+    // ── Achievements log ──
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.beta_achievements (
+        id SERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL,
+        achievement_id TEXT NOT NULL,
+        earned_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(user_id, achievement_id)
+      )
+    `);
+
+    // ── Bug verifications ──
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.beta_bug_verifications (
+        id SERIAL PRIMARY KEY,
+        feedback_id INT NOT NULL REFERENCES builder_bot.feedback(id),
+        verifier_id BIGINT NOT NULL,
+        status TEXT NOT NULL,
+        comment TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(feedback_id, verifier_id)
+      )
+    `);
+
+    // ── Squads ──
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.beta_squads (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        event_id TEXT,
+        score INT DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
+    // ── Internship applications ──
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.beta_internship_applications (
+        id SERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL UNIQUE,
+        username TEXT,
+        xp_at_apply INT DEFAULT 0,
+        motivation TEXT,
+        status TEXT DEFAULT 'pending',
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
+    // ── Test scenarios (admin-created) ──
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.beta_test_scenarios (
+        id SERIAL PRIMARY KEY,
+        title TEXT NOT NULL,
+        zone_id TEXT,
+        level INT DEFAULT 1,
+        xp_reward INT DEFAULT 20,
+        steps JSONB NOT NULL DEFAULT '[]',
+        expected TEXT,
+        created_by BIGINT,
+        status TEXT DEFAULT 'active',
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
+    // ── Weekly event state ──
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.beta_events (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        type TEXT,
+        start_date TIMESTAMPTZ,
+        end_date TIMESTAMPTZ,
+        status TEXT DEFAULT 'upcoming',
+        leaderboard JSONB DEFAULT '{}',
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
 
     await client.query('COMMIT');
     console.log('✅ DB migrations applied (schema-extensions)');

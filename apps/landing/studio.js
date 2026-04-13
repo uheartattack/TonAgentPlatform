@@ -14678,6 +14678,15 @@ function openFeedbackModal() {
       '<button class="fb-type-btn" data-type="critical" style="padding:8px 16px;border-radius:10px;border:1px solid rgba(239,68,68,0.3);background:rgba(239,68,68,0.08);color:#ef4444;cursor:pointer;font-size:.85rem;transition:all .2s" onclick="selectFbType(this)">' + IC.fire + ' ' + (isRu ? 'Critical' : 'Critical') + '</button>' +
     '</div>' +
     '<textarea id="fb-message" placeholder="' + (isRu ? 'Опишите проблему или предложение...' : 'Describe the issue or suggestion...') + '" style="width:100%;height:120px;background:var(--bg-primary);border:1px solid var(--border);border-radius:10px;padding:12px;color:var(--text-primary);font-size:.88rem;resize:vertical;font-family:inherit;box-sizing:border-box"></textarea>' +
+    '<div style="margin-top:12px;display:flex;align-items:center;gap:10px">' +
+      '<label for="fb-screenshot" style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:10px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-secondary);cursor:pointer;font-size:.83rem;transition:all .2s">' +
+        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>' +
+        (isRu ? 'Скриншот' : 'Screenshot') +
+      '</label>' +
+      '<input type="file" id="fb-screenshot" accept="image/*" style="display:none" onchange="previewFbScreenshot(this)">' +
+      '<span id="fb-screenshot-name" style="font-size:.8rem;color:var(--text-muted)"></span>' +
+      '<img id="fb-screenshot-preview" style="display:none;max-height:48px;border-radius:6px;border:1px solid var(--border)" />' +
+    '</div>' +
     '<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px">' +
       '<button onclick="document.getElementById(\'feedback-modal\').remove()" style="padding:10px 20px;border-radius:10px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-muted);cursor:pointer;font-size:.85rem">' + (isRu ? 'Отмена' : 'Cancel') + '</button>' +
       '<button id="fb-submit-btn" onclick="submitFeedback()" style="padding:10px 24px;border-radius:10px;border:none;background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:white;cursor:pointer;font-size:.85rem;font-weight:600">' + (isRu ? 'Отправить' : 'Send') + '</button>' +
@@ -14691,6 +14700,23 @@ function openFeedbackModal() {
 }
 
 var _selectedFbType = 'bug';
+var _fbScreenshotBase64 = null;
+
+function previewFbScreenshot(input) {
+  var file = input.files && input.files[0];
+  var nameEl = document.getElementById('fb-screenshot-name');
+  var previewEl = document.getElementById('fb-screenshot-preview');
+  if (!file) { _fbScreenshotBase64 = null; if (nameEl) nameEl.textContent = ''; if (previewEl) previewEl.style.display = 'none'; return; }
+  if (file.size > 5 * 1024 * 1024) { toast(currentLang === 'ru' ? 'Макс. 5 МБ' : 'Max 5 MB', 'error'); input.value = ''; return; }
+  if (nameEl) nameEl.textContent = file.name;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    _fbScreenshotBase64 = e.target.result;
+    if (previewEl) { previewEl.src = _fbScreenshotBase64; previewEl.style.display = 'block'; }
+  };
+  reader.readAsDataURL(file);
+}
+
 function selectFbType(btn) {
   _selectedFbType = btn.getAttribute('data-type');
   document.querySelectorAll('.fb-type-btn').forEach(function(b) {
@@ -14708,7 +14734,9 @@ async function submitFeedback() {
   if (btn) { btn.disabled = true; btn.textContent = '...'; }
   try {
     var metadata = { page: window.location.pathname, agentId: _detailAgentId || null, userAgent: navigator.userAgent };
-    var data = await apiRequest('POST', '/api/feedback', { type: _selectedFbType, message: msg.value.trim(), agentId: _detailAgentId || undefined, metadata: metadata });
+    var body = { type: _selectedFbType, message: msg.value.trim(), agentId: _detailAgentId || undefined, metadata: metadata };
+    if (_fbScreenshotBase64) body.screenshot = _fbScreenshotBase64;
+    var data = await apiRequest('POST', '/api/feedback', body);
     if (data.ok) {
       var ptsMsg = data.pointsAwarded ? ' (+' + data.pointsAwarded + ' pts)' : '';
       toast((currentLang === 'ru' ? 'Фидбек отправлен!' : 'Feedback sent!') + ptsMsg, 'success');

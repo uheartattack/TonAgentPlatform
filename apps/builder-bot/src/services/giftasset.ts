@@ -728,7 +728,7 @@ export class GiftAssetClient {
 
     // Always take minimum: live listing beats stale price-list data
     // Prices > 5000 TON are likely Stars values or API garbage — skip
-    const MAX_SANE_PRICE = 5000;
+    const MAX_SANE_PRICE = 50000;
     const setMin = (market: string, price: number) => {
       if (price > 0 && price <= MAX_SANE_PRICE && (!floors[market] || price < floors[market])) floors[market] = price;
     };
