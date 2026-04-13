@@ -1275,6 +1275,15 @@ async function showWelcome(ctx: Context, userId: number, name: string, lang: 'ru
       },
     }
   );
+  // Disclaimer
+  await ctx.reply(
+    lang === 'ru'
+      ? '⚠️ <b>Бот в активной разработке.</b> Для полного опыта используй Web Studio:'
+      : '⚠️ <b>Bot is in active development.</b> For the full experience use Web Studio:',
+    { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
+      [{ text: lang === 'ru' ? '🌐 Открыть Studio' : '🌐 Open Studio', url: 'https://tonagentplatform.com/studio' }],
+    ]}}
+  );
 }
 
 // ============================================================
@@ -1859,11 +1868,22 @@ async function showTesterProfile(ctx: any, userId: number, edit = false) {
   t += `${ce('fire','🔥')} ${stats.streak}d streak  ·  ${ce('coin','💰')} ${stats.points} ${ru ? 'очков' : 'pts'}`;
   if (stats.role !== 'tester') t += `\n\n${ce('star','⭐')} <b>${escHtml(roleName)}</b>${roleInfo?.multiplier > 1 ? '  ×' + roleInfo.multiplier : ''}`;
 
+  // Quest progress
+  try {
+    const { getQuestProgress } = require('./engagement');
+    const qp = await getQuestProgress(userId);
+    if (!qp.allComplete) {
+      t += `\n\n🎯 Quest: ${qp.completedCount}/${qp.totalSteps}`;
+    }
+  } catch {}
+
   await testerReply(ctx, userId, t, [
     [{ text: ru ? 'Рейтинг' : 'Leaderboard', icon_custom_emoji_id: CE.trophy, callback_data: 'tg_leaderboard' },
      { text: ru ? 'Магазин' : 'Shop', icon_custom_emoji_id: CE.cart, callback_data: 'tg_shop' }],
     [{ text: ru ? 'Задания' : 'Tasks', icon_custom_emoji_id: CE.target, callback_data: 'tg_tasks' },
      { text: 'Check-in', icon_custom_emoji_id: CE.check, callback_data: 'tg_checkin' }],
+    [{ text: ru ? '🏅 Ачивки' : '🏅 Achievements', callback_data: 'tg_achievements' },
+     { text: ru ? '🎯 Квест' : '🎯 Quest', callback_data: 'tg_quest' }],
     [{ text: ru ? '❓ FAQ' : '❓ FAQ', callback_data: 'tg_faq' },
      { text: ru ? 'Покинуть бету' : 'Leave Beta', icon_custom_emoji_id: CE.cross, callback_data: 'tg_leave_beta' }],
   ], edit);
@@ -2258,42 +2278,26 @@ bot.command('tasks', async (ctx) => {
 async function showTesterTasks(ctx: any, userId: number, edit = false) {
   const ru = getUserLang(userId) === 'ru';
   const { isBetaTester } = require('./payments');
-  if (!isBetaTester(userId)) { await safeReply(ctx, ru ? 'Доступно только бета-тестерам.' : 'Beta testers only.'); return; }
-
-  const tasks = [
-    { cat: ru ? 'Основное' : 'Core', items: [
-      ru ? 'Создать агента через AI Chat' : 'Create agent via AI Chat',
-      ru ? 'Подключить Telegram (QR)' : 'Connect Telegram (QR)',
-      ru ? 'Запустить агента, проверить ответ' : 'Start agent, check response',
-    ]},
-    { cat: ru ? 'Настройки' : 'Settings', items: [
-      ru ? 'Сменить роль агента' : 'Change agent role',
-      ru ? 'Настроить AI провайдер и ключ' : 'Set AI provider and key',
-      ru ? 'Проверить поведение' : 'Test behavior settings',
-    ]},
-    { cat: ru ? 'Продвинутое' : 'Advanced', items: [
-      ru ? 'Мульти-агент на одном аккаунте' : 'Multi-agent on one account',
-      ru ? 'Агент в групповом чате' : 'Agent in group chat',
-      ru ? 'Кошелёк и баланс' : 'Wallet and balance',
-    ]},
-    { cat: ru ? 'Стресс' : 'Stress', items: [
-      ru ? 'Длинный чат 100+ сообщений' : 'Long chat 100+ messages',
-      ru ? 'Спам-тест' : 'Spam test',
-      ru ? 'Агент без API ключа' : 'Agent with no API key',
-    ]},
-  ];
-
-  let text = `${ce('target','🎯')} <b>${ru ? 'Задания' : 'Tasks'}</b>\n\n`;
-  for (const cat of tasks) {
-    text += `<b>${escHtml(cat.cat)}</b>\n`;
-    for (const item of cat.items) text += `· ${escHtml(item)}\n`;
-    text += '\n';
+  if (!isBetaTester(userId) && !_pendingBetaJoins.has(userId)) {
+    await safeReply(ctx, ru ? 'Доступно только бета-тестерам.' : 'Beta testers only.'); return;
   }
-  text += ru ? '/feedback — сообщить о баге' : '/feedback — report a bug';
+
+  const { getTasksForUser, formatTasksMessage, getCompletedTasks } = require('./engagement');
+  const zones = await getUserZones(userId);
+  const { getTesterLevel } = require('./payments');
+  const { pool } = require('./db');
+  const statsRes = await pool.query('SELECT xp FROM builder_bot.beta_testers WHERE user_id = $1', [userId]);
+  const xp = statsRes.rows[0]?.xp || 0;
+  const level = getTesterLevel(xp)?.level || 1;
+
+  const tasks = getTasksForUser(userId, zones.length > 0 ? zones : ['core'], level);
+  const completed = await getCompletedTasks(userId);
+  const text = await formatTasksMessage(tasks, completed, ru);
 
   await testerReply(ctx, userId, text, [
-    [{ text: ru ? 'Профиль' : 'Profile', icon_custom_emoji_id: CE.crown, callback_data: 'tg_mystats' },
-     { text: ru ? 'Репорт' : 'Report', icon_custom_emoji_id: CE.bug, callback_data: 'tg_feedback' }],
+    [{ text: ru ? 'Квест' : 'Quest', callback_data: 'tg_quest' },
+     { text: ru ? 'Daily' : 'Daily', callback_data: 'tg_daily' }],
+    [{ text: ru ? 'Профиль' : 'Profile', icon_custom_emoji_id: CE.crown, callback_data: 'tg_mystats' }],
   ], edit);
 }
 
@@ -2998,6 +3002,52 @@ bot.action(/^tg_faq:(\d+)$/, async (ctx) => {
   ], true);
 });
 
+// ── Quest callback ──
+bot.action(/^tg_quest:(\d+)$/, async (ctx) => {
+  const ownerId = parseInt(ctx.match![1]);
+  if (ctx.from!.id !== ownerId) { await ctx.answerCbQuery('Not your button'); return; }
+  await ctx.answerCbQuery();
+  const ru = getUserLang(ownerId) === 'ru';
+  const { formatQuestMessage } = require('./engagement');
+  const text = await formatQuestMessage(ownerId, ru);
+  await testerReply(ctx, ownerId, text, [
+    [{ text: ru ? 'Задания' : 'Tasks', icon_custom_emoji_id: CE.target, callback_data: 'tg_tasks' },
+     { text: ru ? 'Профиль' : 'Profile', icon_custom_emoji_id: CE.crown, callback_data: 'tg_mystats' }],
+  ], true);
+});
+
+// ── Daily quest callback ──
+bot.action(/^tg_daily:(\d+)$/, async (ctx) => {
+  const ownerId = parseInt(ctx.match![1]);
+  if (ctx.from!.id !== ownerId) { await ctx.answerCbQuery('Not your button'); return; }
+  await ctx.answerCbQuery();
+  const ru = getUserLang(ownerId) === 'ru';
+  const { formatDailyQuestMessage } = require('./engagement');
+  const text = formatDailyQuestMessage(ru);
+  await testerReply(ctx, ownerId, text, [
+    [{ text: ru ? 'Задания' : 'Tasks', icon_custom_emoji_id: CE.target, callback_data: 'tg_tasks' },
+     { text: ru ? 'Профиль' : 'Profile', icon_custom_emoji_id: CE.crown, callback_data: 'tg_mystats' }],
+  ], true);
+});
+
+// ── Achievements callback ──
+bot.action(/^tg_achievements:(\d+)$/, async (ctx) => {
+  const ownerId = parseInt(ctx.match![1]);
+  if (ctx.from!.id !== ownerId) { await ctx.answerCbQuery('Not your button'); return; }
+  await ctx.answerCbQuery();
+  const ru = getUserLang(ownerId) === 'ru';
+  const { checkAchievements, formatAchievementsMessage, ACHIEVEMENTS, loadUserStats } = require('./engagement');
+  const stats = await loadUserStats(ownerId);
+  const earned = await checkAchievements(ownerId, stats);
+  const { pool } = require('./db');
+  const dbEarned = await pool.query('SELECT achievement_id FROM builder_bot.beta_achievements WHERE user_id = $1', [ownerId]);
+  const allEarned = [...new Set([...dbEarned.rows.map((r: any) => r.achievement_id), ...earned])];
+  const text = formatAchievementsMessage(allEarned, ACHIEVEMENTS, ru);
+  await testerReply(ctx, ownerId, text, [
+    [{ text: ru ? 'Профиль' : 'Profile', icon_custom_emoji_id: CE.crown, callback_data: 'tg_mystats' }],
+  ], true);
+});
+
 // ── Leave beta: confirm ──
 bot.action(/^tg_leave_beta:(\d+)$/, async (ctx) => {
   const ownerId = parseInt(ctx.match![1]);
@@ -3065,6 +3115,137 @@ bot.command('leavebeta', async (ctx) => {
        { text: ru ? 'Отмена' : 'Cancel', callback_data: `tg_mystats:${userId}` }],
     ]},
   });
+});
+
+// ── /quest — onboarding quest progress ──
+bot.command('quest', async (ctx) => {
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  const { formatQuestMessage } = require('./engagement');
+  const text = await formatQuestMessage(userId, ru);
+  await safeReply(ctx, text, { parse_mode: 'HTML', disable_web_page_preview: true });
+});
+
+// ── /daily — today's quest ──
+bot.command('daily', async (ctx) => {
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  const { formatDailyQuestMessage } = require('./engagement');
+  const text = formatDailyQuestMessage(ru);
+  await safeReply(ctx, text, { parse_mode: 'HTML' });
+});
+
+// ── /event — current weekly event ──
+bot.command('event', async (ctx) => {
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  const { formatEventMessage } = require('./engagement');
+  const text = formatEventMessage(ru);
+  await safeReply(ctx, text, { parse_mode: 'HTML' });
+});
+
+// ── /achievements — user's achievements ──
+bot.command('achievements', async (ctx) => {
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  const { checkAchievements, formatAchievementsMessage, ACHIEVEMENTS, loadUserStats } = require('./engagement');
+  const stats = await loadUserStats(userId);
+  const earned = await checkAchievements(userId, stats);
+  // Load already earned from DB
+  const { pool } = require('./db');
+  const dbEarned = await pool.query('SELECT achievement_id FROM builder_bot.beta_achievements WHERE user_id = $1', [userId]);
+  const allEarned = [...new Set([...dbEarned.rows.map((r: any) => r.achievement_id), ...earned])];
+  const text = formatAchievementsMessage(allEarned, ACHIEVEMENTS, ru);
+  await safeReply(ctx, text, { parse_mode: 'HTML' });
+});
+
+// ── /internship — internship info ──
+bot.command('internship', async (ctx) => {
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  const { formatInternshipInfo } = require('./engagement');
+  const text = formatInternshipInfo(ru);
+  await safeReply(ctx, text, { parse_mode: 'HTML', disable_web_page_preview: true,
+    reply_markup: { inline_keyboard: [
+      [{ text: ru ? '📝 Хочу участвовать' : '📝 Apply', callback_data: `intern_apply:${userId}` }],
+    ]},
+  });
+});
+
+// ── Internship apply callback ──
+bot.action(/^intern_apply:(\d+)$/, async (ctx) => {
+  const ownerId = parseInt(ctx.match![1]);
+  if (ctx.from!.id !== ownerId) { await ctx.answerCbQuery('Not your button'); return; }
+  await ctx.answerCbQuery();
+  const { pool } = require('./db');
+  const ru = getUserLang(ownerId) === 'ru';
+  try {
+    const existing = await pool.query('SELECT id FROM builder_bot.beta_internship_applications WHERE user_id = $1', [ownerId]);
+    if (existing.rows.length) {
+      await safeReply(ctx, ru ? '✅ Ты уже подал заявку!' : '✅ You already applied!');
+      return;
+    }
+    const stats = await pool.query('SELECT xp, username FROM builder_bot.beta_testers WHERE user_id = $1', [ownerId]);
+    await pool.query(
+      'INSERT INTO builder_bot.beta_internship_applications (user_id, username, xp_at_apply) VALUES ($1, $2, $3)',
+      [ownerId, stats.rows[0]?.username || '', stats.rows[0]?.xp || 0]
+    );
+    await safeReply(ctx, ru
+      ? '✅ Заявка отправлена! Мы свяжемся с тобой по итогам сезона.'
+      : '✅ Application sent! We\'ll contact you after the season ends.');
+    // Notify owner
+    await bot.telegram.sendMessage(OWNER_ID_NUM,
+      `📝 <b>Internship application</b>\nFrom: @${stats.rows[0]?.username || ownerId}\nXP: ${stats.rows[0]?.xp || 0}`,
+      { parse_mode: 'HTML' }
+    ).catch(() => {});
+  } catch (e: any) { await safeReply(ctx, `Error: ${e.message?.slice(0, 100)}`); }
+});
+
+// ── /intern_list — admin: list applications ──
+bot.command('intern_list', async (ctx) => {
+  const userId = ctx.from!.id;
+  const { isPlatformAdmin } = require('./payments');
+  if (!isPlatformAdmin(userId)) return;
+  const { pool } = require('./db');
+  const res = await pool.query('SELECT * FROM builder_bot.beta_internship_applications ORDER BY xp_at_apply DESC LIMIT 20');
+  if (!res.rows.length) { await safeReply(ctx, '📭 No applications yet'); return; }
+  let text = '📝 <b>Internship Applications</b>\n\n';
+  res.rows.forEach((r: any, i: number) => {
+    text += `${i + 1}. @${r.username || r.user_id} — ${r.xp_at_apply} XP (${r.status})\n`;
+  });
+  await safeReply(ctx, text, { parse_mode: 'HTML' });
+});
+
+// ── /coverage — test coverage map ──
+bot.command('coverage', async (ctx) => {
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  const { pool } = require('./db');
+  const { ZONE_TASKS } = require('./engagement');
+  // Count completed tasks per zone
+  const completed = await pool.query(
+    'SELECT zone_id, COUNT(*) as cnt FROM builder_bot.beta_task_progress WHERE status = $1 GROUP BY zone_id',
+    ['completed']
+  );
+  const zoneCounts: Record<string, number> = {};
+  completed.rows.forEach((r: any) => { zoneCounts[r.zone_id] = parseInt(r.cnt); });
+
+  // ZONE_TASKS is an array — count per zone
+  const zoneTaskCounts: Record<string, number> = {};
+  (ZONE_TASKS as any[]).forEach((t: any) => { zoneTaskCounts[t.zone] = (zoneTaskCounts[t.zone] || 0) + 1; });
+
+  const zoneNames: Record<string, string> = { core: '🔨 Core', defi: '💎 DeFi', gifts: '🎁 Gifts', telegram: '📱 Telegram', studio: '🌐 Studio', community: '👥 Community' };
+  let text = `📊 <b>${ru ? 'Карта покрытия' : 'Test Coverage'}</b>\n\n`;
+  for (const [zoneId, name] of Object.entries(zoneNames)) {
+    const total = zoneTaskCounts[zoneId] || 0;
+    const done = zoneCounts[zoneId] || 0;
+    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+    const bar = '●'.repeat(Math.round(pct / 10)) + '○'.repeat(10 - Math.round(pct / 10));
+    const multiplier = pct < 30 ? ' <b>x3 XP!</b>' : pct < 60 ? ' x2 XP' : '';
+    text += `${name}: ${bar} ${pct}% (${done}/${total})${multiplier}\n`;
+  }
+  text += `\n${ru ? '🔴 Непокрытые зоны дают x3 XP!' : '🔴 Uncovered zones give x3 XP!'}`;
+  await safeReply(ctx, text, { parse_mode: 'HTML' });
 });
 
 // ============================================================
@@ -12748,6 +12929,80 @@ bot.catch((err, ctx) => {
   ctx.reply('❌ Произошла ошибка. Попробуйте /start').catch(() => {});
 });
 
+// ── Daily Digest: post every day at 10:00 MSK (07:00 UTC) ──
+function scheduleDailyDigest() {
+  const now = new Date();
+  // Calculate ms until next 07:00 UTC (10:00 MSK)
+  const target = new Date(now);
+  target.setUTCHours(7, 0, 0, 0);
+  if (target <= now) target.setDate(target.getDate() + 1);
+  const msUntilTarget = target.getTime() - now.getTime();
+
+  setTimeout(async () => {
+    try {
+      const { generateDailyDigest } = require('./engagement');
+      const { pool } = require('./db');
+      const text = await generateDailyDigest(pool, true); // ru
+      await postAnnouncement(text);
+      console.log('[DailyDigest] Posted');
+    } catch (e: any) { console.warn('[DailyDigest] Error:', e.message); }
+    // Reschedule for next day
+    setInterval(async () => {
+      try {
+        const { generateDailyDigest } = require('./engagement');
+        const { pool } = require('./db');
+        const text = await generateDailyDigest(pool, true);
+        await postAnnouncement(text);
+        console.log('[DailyDigest] Posted');
+      } catch (e: any) { console.warn('[DailyDigest] Error:', e.message); }
+    }, 24 * 60 * 60 * 1000);
+  }, msUntilTarget);
+  console.log(`[DailyDigest] Scheduled in ${Math.round(msUntilTarget / 60000)} minutes`);
+}
+
+// ── Inactive Pings: check every 24h ──
+function scheduleInactivePings() {
+  setInterval(async () => {
+    try {
+      const { getInactiveTesters, formatInactivePing } = require('./engagement');
+      const { pool } = require('./db');
+      const inactive = await getInactiveTesters(pool, 3);
+      for (const t of inactive.slice(0, 10)) { // max 10 pings per day
+        try {
+          const ru = true; // default ru
+          const text = formatInactivePing(t.daysSinceActive, ru);
+          await bot.telegram.sendMessage(t.userId, text, { parse_mode: 'HTML' });
+        } catch {} // user may have blocked bot
+      }
+      if (inactive.length) console.log(`[InactivePing] Pinged ${Math.min(inactive.length, 10)} testers`);
+    } catch (e: any) { console.warn('[InactivePing] Error:', e.message); }
+  }, 24 * 60 * 60 * 1000);
+}
+
+// ── Weekly Hall of Fame + Decay ──
+function scheduleWeeklyTasks() {
+  setInterval(async () => {
+    const day = new Date().getDay();
+    if (day !== 1) return; // Only Mondays
+    try {
+      // Hall of Fame
+      const { generateHallOfFame, applyWeeklyDecay, getCurrentEvent, formatEventMessage } = require('./engagement');
+      const { pool } = require('./db');
+      const fame = await generateHallOfFame(pool, true);
+      await postAnnouncement(fame);
+      // Weekly decay
+      const affected = await applyWeeklyDecay(pool);
+      if (affected > 0) console.log(`[WeeklyDecay] ${affected} users lost XP`);
+      // Post new event if any
+      const event = getCurrentEvent();
+      if (event) {
+        const eventText = formatEventMessage(true);
+        await postAnnouncement(eventText);
+      }
+    } catch (e: any) { console.warn('[Weekly] Error:', e.message); }
+  }, 24 * 60 * 60 * 1000);
+}
+
 // ============================================================
 // Запуск
 // ============================================================
@@ -12790,6 +13045,12 @@ export async function startBot() {
   verifyPlatformWalletConfig().catch(e => console.warn('[Bot] verifyPlatformWalletConfig:', e?.message || e));
   // Auto-post changelog on deploy (delayed to ensure bot is ready)
   setTimeout(() => postChangelogOnDeploy().catch(e => console.warn('[Changelog]', e?.message)), 10000);
+  // Start engagement scheduled tasks
+  setTimeout(() => {
+    scheduleDailyDigest();
+    scheduleInactivePings();
+    scheduleWeeklyTasks();
+  }, 15000); // 15s after startup
   process.once('SIGINT', () => bot.stop('SIGINT'));
   process.once('SIGTERM', () => bot.stop('SIGTERM'));
 }
