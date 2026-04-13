@@ -1370,13 +1370,13 @@ bot.command('start', async (ctx) => {
     const ru = getUserLang(userId) === 'ru';
     const { isBetaTester } = require('./payments');
     if (isBetaTester(userId)) {
-      await safeReply(ctx, ru ? '🧪 Вы уже бета-тестер!' : '🧪 You are already a beta tester!');
+      await safeReply(ctx, ru ? `${ce('lab','🧪')} Вы уже бета-тестер!` : `${ce('lab','🧪')} You are already a beta tester!`);
       return;
     }
     // Validate code — check if valid and has uses left (don't redeem yet)
     const { pool } = require('./db');
     const codeRes = await pool.query(`SELECT * FROM builder_bot.beta_invite_codes WHERE code = $1`, [code.toUpperCase()]);
-    if (!codeRes.rows.length) { await safeReply(ctx, `❌ Invalid code`); return; }
+    if (!codeRes.rows.length) { await safeReply(ctx, `${ce('cross','❌')} Invalid code`); return; }
     const inv = codeRes.rows[0];
     if (!inv.is_active || inv.used_count >= inv.max_uses || (inv.expires_at && new Date(inv.expires_at) < new Date())) {
       let msg = `${ce('lock','🔒')} <b>${ru ? 'Места закончились' : 'No spots left'}</b>\n\n`;
@@ -1407,7 +1407,7 @@ bot.command('start', async (ctx) => {
     const { isBetaTester, addBetaTester } = require('./payments');
     const ru = getUserLang(userId) === 'ru';
     if (isBetaTester(userId)) {
-      await safeReply(ctx, ru ? '🧪 Вы уже бета-тестер!' : '🧪 You are already a beta tester!');
+      await safeReply(ctx, ru ? `${ce('lab','🧪')} Вы уже бета-тестер!` : `${ce('lab','🧪')} You are already a beta tester!`);
       return;
     }
     // Check slot limit
@@ -1448,7 +1448,7 @@ bot.command('start', async (ctx) => {
         { parse_mode: 'HTML' }
       );
     } else {
-      await ctx.reply('❌ Токен авторизации не найден или истёк. Обновите страницу дашборда.');
+      await ctx.reply(`${ce('cross','❌')} Токен авторизации не найден или истёк. Обновите страницу дашборда.`);
     }
     return;
   }
@@ -1459,7 +1459,7 @@ bot.command('start', async (ctx) => {
     if (!isNaN(listingId)) {
       const listing = await getMarketplaceRepository().getListing(listingId);
       if (!listing || !listing.isActive) {
-        await safeReply(ctx, '❌ Агент не найден или снят с продажи.', {});
+        await safeReply(ctx, `${ce('cross','❌')} Агент не найден или снят с продажи.`, {});
         return;
       }
       await showListingDetail(ctx, listingId, userId);
@@ -1483,18 +1483,18 @@ bot.command('beta', async (ctx) => {
   if (!args) {
     const { isBetaTester } = require('./payments');
     if (isBetaTester(userId)) {
-      await safeReply(ctx, ru ? '🧪 Вы бета-тестер! Используйте /feedback для обратной связи.' : '🧪 You are a beta tester! Use /feedback for feedback.');
+      await safeReply(ctx, ru ? `${ce('lab','🧪')} Вы бета-тестер! Используйте /feedback для обратной связи.` : `${ce('lab','🧪')} You are a beta tester! Use /feedback for feedback.`);
     } else {
-      await safeReply(ctx, ru ? '🧪 Введите инвайт-код: /beta XXXXXX\nИли откройте t.me/TonAgentPlatformBot?start=beta_open' : '🧪 Enter invite code: /beta XXXXXX\nOr open t.me/TonAgentPlatformBot?start=beta_open');
+      await safeReply(ctx, ru ? `${ce('lab','🧪')} Введите инвайт-код: /beta XXXXXX\nИли откройте t.me/TonAgentPlatformBot?start=beta_open` : `${ce('lab','🧪')} Enter invite code: /beta XXXXXX\nOr open t.me/TonAgentPlatformBot?start=beta_open`);
     }
     return;
   }
   const { redeemBetaCode } = require('./payments');
   const result = await redeemBetaCode(args, userId, ctx.from?.username);
   if (result.ok) {
-    await safeReply(ctx, ru ? '🧪 Код активирован! Добро пожаловать в бета-тест!\nПлан: Beta Tester (10 агентов, 50 генераций/мес)' : '🧪 Code activated! Welcome to beta!\nPlan: Beta Tester (10 agents, 50 gens/month)');
+    await safeReply(ctx, ru ? `${ce('lab','🧪')} Код активирован! Добро пожаловать в бета-тест!\nПлан: Beta Tester (10 агентов, 50 генераций/мес)` : `${ce('lab','🧪')} Code activated! Welcome to beta!\nPlan: Beta Tester (10 agents, 50 gens/month)`);
   } else {
-    await safeReply(ctx, `❌ ${result.error}`);
+    await safeReply(ctx, `${ce('cross','❌')} ${result.error}`);
   }
 });
 
@@ -1680,7 +1680,7 @@ bot.command('beta_code', async (ctx) => {
   const note = args.slice(1).join(' ') || undefined;
   const codes = await generateBetaCodes(Math.min(count, 50), userId, note);
   const links = codes.map((c: string) => `• \`${c}\` → t.me/TonAgentPlatformBot?start=beta_${c}`).join('\n');
-  await safeReply(ctx, `🧪 Сгенерировано ${codes.length} кодов:\n\n${links}`);
+  await safeReply(ctx, `${ce('lab','🧪')} Сгенерировано ${codes.length} кодов:\n\n${links}`);
 });
 
 // ── Admin: add beta tester manually ──
@@ -1693,7 +1693,7 @@ bot.command('beta_add', async (ctx) => {
   const targetId = parseInt(target.replace('@', ''));
   if (isNaN(targetId)) { await safeReply(ctx, `Ищу @${target}...`); return; } // TODO: resolve username
   await addBetaTester(targetId, target);
-  await safeReply(ctx, `✅ User ${target} added as beta tester`);
+  await safeReply(ctx, `${ce('check','✅')} User ${target} added as beta tester`);
 });
 
 // ── Admin: list beta testers ──
@@ -1705,7 +1705,7 @@ bot.command('beta_list', async (ctx) => {
   const res = await pool.query(`SELECT user_id, username, status, invite_code, created_at FROM builder_bot.beta_testers ORDER BY created_at DESC LIMIT 30`);
   if (!res.rows.length) { await safeReply(ctx, '📭 Нет тестеров'); return; }
   const lines = res.rows.map((r: any) => `${r.status === 'active' ? '🟢' : '🔴'} ${r.username || r.user_id} (${r.invite_code || 'manual'}) ${new Date(r.created_at).toLocaleDateString('ru')}`);
-  await safeReply(ctx, `🧪 Beta testers (${res.rows.length}):\n\n${lines.join('\n')}`);
+  await safeReply(ctx, `${ce('lab','🧪')} Beta testers (${res.rows.length}):\n\n${lines.join('\n')}`);
 });
 
 // ── Admin: feedback list ──
@@ -1873,7 +1873,7 @@ async function showTesterProfile(ctx: any, userId: number, edit = false) {
     const { getQuestProgress } = require('./engagement');
     const qp = await getQuestProgress(userId);
     if (!qp.allComplete) {
-      t += `\n\n🎯 Quest: ${qp.completedCount}/${qp.totalSteps}`;
+      t += `\n\n${ce('target','🎯')} Quest: ${qp.completedCount}/${qp.totalSteps}`;
     }
   } catch {}
 
@@ -2028,7 +2028,7 @@ bot.command('setgroup', async (ctx) => {
   const chatId = ctx.chat?.id;
   if (!chatId || ctx.chat?.type === 'private') { await safeReply(ctx, 'Use this command in the beta group chat'); return; }
   BETA_GROUP_ID = chatId;
-  await safeReply(ctx, `✅ Beta group set: ${chatId}`);
+  await safeReply(ctx, `${ce('check','✅')} Beta group set: ${chatId}`);
 });
 
 // ── Admin: set announcements topic ──
@@ -2039,7 +2039,7 @@ bot.command('settopic', async (ctx) => {
   const threadId = ctx.message?.message_thread_id;
   if (!threadId) { await safeReply(ctx, 'Use this command inside the Announcements topic'); return; }
   BETA_ANNOUNCEMENTS_TOPIC = threadId;
-  await safeReply(ctx, `✅ Announcements topic set: ${threadId}`);
+  await safeReply(ctx, `${ce('check','✅')} Announcements topic set: ${threadId}`);
 });
 
 // ── Admin: /announce — post changelog to Announcements topic ──
@@ -2058,11 +2058,11 @@ bot.command('announce', async (ctx) => {
     fs.writeFileSync('/tmp/.ton_agent_deploy_ver', String(_deployVersion));
     const changelog = await generateChangelog(log, _deployVersion);
     await postAnnouncement(changelog);
-    await safeReply(ctx, '✅ Changelog posted');
+    await safeReply(ctx, `${ce('check','✅')} Changelog posted`);
     return;
   }
   await postAnnouncement(text);
-  await safeReply(ctx, '✅ Posted to Announcements');
+  await safeReply(ctx, `${ce('check','✅')} Posted to Announcements`);
 });
 
 // ── Auto changelog from git/deploy ──
@@ -3104,7 +3104,7 @@ bot.action(/^tg_leave_confirm:(\d+)$/, async (ctx) => {
       { parse_mode: 'HTML' });
   } catch {
     // Fallback to current chat if DM fails
-    await safeReply(ctx, ru ? '✅ Ты покинул бету.' : '✅ You left the beta.');
+    await safeReply(ctx, ru ? `${ce('check','✅')} Ты покинул бету.` : `${ce('check','✅')} You left the beta.`);
   }
 });
 
@@ -3191,7 +3191,7 @@ bot.action(/^intern_apply:(\d+)$/, async (ctx) => {
   try {
     const existing = await pool.query('SELECT id FROM builder_bot.beta_internship_applications WHERE user_id = $1', [ownerId]);
     if (existing.rows.length) {
-      await safeReply(ctx, ru ? '✅ Ты уже подал заявку!' : '✅ You already applied!');
+      await safeReply(ctx, ru ? `${ce('check','✅')} Ты уже подал заявку!` : `${ce('check','✅')} You already applied!`);
       return;
     }
     const stats = await pool.query('SELECT xp, username FROM builder_bot.beta_testers WHERE user_id = $1', [ownerId]);
@@ -3218,7 +3218,7 @@ bot.command('intern_list', async (ctx) => {
   const { pool } = require('./db');
   const res = await pool.query('SELECT * FROM builder_bot.beta_internship_applications ORDER BY xp_at_apply DESC LIMIT 20');
   if (!res.rows.length) { await safeReply(ctx, '📭 No applications yet'); return; }
-  let text = '📝 <b>Internship Applications</b>\n\n';
+  let text = `${ce('pencil','📝')} <b>Internship Applications</b>\n\n`;
   res.rows.forEach((r: any, i: number) => {
     text += `${i + 1}. @${r.username || r.user_id} — ${r.xp_at_apply} XP (${r.status})\n`;
   });
@@ -3544,7 +3544,7 @@ bot.command('search', async (ctx) => {
   try {
     const result = await getDBTools().getUserAgents(userId);
     if (!result.success || !result.data?.length) {
-      await safeReply(ctx, '❌ У вас нет агентов.');
+      await safeReply(ctx, `${ce('cross','❌')} У вас нет агентов.`);
       return;
     }
     const matches = result.data.filter((a: any) =>
@@ -3567,7 +3567,7 @@ bot.command('search', async (ctx) => {
     );
   } catch (e: any) {
     console.error('Search error:', e);
-    await safeReply(ctx, '❌ Произошла ошибка при поиске. Попробуйте позже.');
+    await safeReply(ctx, `${ce('cross','❌')} Произошла ошибка при поиске. Попробуйте позже.`);
   }
 });
 
@@ -3690,7 +3690,7 @@ bot.command('portfolio', async (ctx) => {
       },
     });
   } catch {
-    await ctx.reply(lang === 'ru' ? '❌ Ошибка запроса к TonCenter' : '❌ TonCenter request failed');
+    await ctx.reply(lang === 'ru' ? `${ce('cross','❌')} Ошибка запроса к TonCenter` : `${ce('cross','❌')} TonCenter request failed`);
   }
 });
 
@@ -3713,15 +3713,15 @@ bot.command('ai', async (ctx) => {
   if (!ctx.from || !isPlatformAdmin(ctx.from.id)) return;
   const { getSelfImprovementSystem } = await import('./self-improvement');
   const sis = getSelfImprovementSystem();
-  if (!sis) { await ctx.reply('❌ Система не запущена'); return; }
+  if (!sis) { await ctx.reply(`${ce('cross','❌')} Система не запущена`); return; }
 
   const modes = sis.getModesStatus();
   const ideasCount = sis.getPendingIdeasCount();
   const ideas = sis.getPendingIdeas();
 
   let text = '🤖 <b>AI Режимы</b>\n\n';
-  text += `🔍 Улучшатель (авто 10мин): ${modes[0].enabled ? '✅' : '❌'}\n`;
-  text += `💡 Придумыватель (авто 30мин): ${modes[1].enabled ? '✅' : '❌'}\n`;
+  text += `🔍 Улучшатель (авто 10мин): ${modes[0].enabled ? ce('check','✅') : ce('cross','❌')}\n`;
+  text += `${ce('bulb','💡')} Придумыватель (авто 30мин): ${modes[1].enabled ? ce('check','✅') : ce('cross','❌')}\n`;
   text += `🔨 Реализатор (по кнопке): всегда готов\n`;
   text += `\n📋 Идей в очереди: <b>${ideasCount}</b>`;
   if (ideas.length) {
@@ -3773,7 +3773,7 @@ bot.command('plugin', async (ctx) => {
     const { getCustomPluginsRepository } = await import('./db/schema-extensions');
     const count = await getCustomPluginsRepository().countByUser(userId);
     if (count >= 10) {
-      await safeReply(ctx, '❌ Максимум 10 плагинов на аккаунт.', {});
+      await safeReply(ctx, `${ce('cross','❌')} Максимум 10 плагинов на аккаунт.`, {});
       return;
     }
     pendingPluginCreation.set(userId, { step: 'name' });
@@ -3783,10 +3783,10 @@ bot.command('plugin', async (ctx) => {
 
   if (sub === 'delete') {
     const name = args[1];
-    if (!name) { await safeReply(ctx, '❌ Укажите имя: /plugin delete имя', {}); return; }
+    if (!name) { await safeReply(ctx, `${ce('cross','❌')} Укажите имя: /plugin delete имя`, {}); return; }
     const { getCustomPluginsRepository } = await import('./db/schema-extensions');
     const ok = await getCustomPluginsRepository().remove(userId, name);
-    await safeReply(ctx, ok ? `✅ Плагин "${escHtml(name)}" удалён.` : '❌ Плагин не найден.', { parse_mode: 'HTML' });
+    await safeReply(ctx, ok ? `${ce('check','✅')} Плагин "${escHtml(name)}" удалён.` : `${ce('cross','❌')} Плагин не найден.`, { parse_mode: 'HTML' });
     return;
   }
 
@@ -3829,7 +3829,7 @@ bot.command('plugin_market', async (ctx) => {
   // Top plugins by installs
   const top = allPlugins.slice(0, 3);
   if (top.length > 0) {
-    text += `\n🔥 <b>${lang === 'ru' ? 'Популярные' : 'Popular'}:</b>\n`;
+    text += `\n${ce('fire','🔥')} <b>${lang === 'ru' ? 'Популярные' : 'Popular'}:</b>\n`;
     for (const p of top) {
       const price = p.priceStars > 0 ? `${p.priceStars} ⭐` : (lang === 'ru' ? 'Бесплатно' : 'Free');
       const stars = p.avgRating > 0 ? ` ${'⭐'.repeat(Math.round(p.avgRating))}` : '';
@@ -3980,14 +3980,14 @@ bot.command('gifts', async (ctx) => {
     let msg = `🎁 <b>Fragment Gifts — Floor Prices</b>\n${div()}\n\n`;
     for (const g of gifts) {
       msg += `${g.emoji} ${escHtml(g.name)}\n`;
-      msg += `  ${pe('coin')} Floor: <code>${g.floorStars} ⭐</code> ≈ <code>${g.floorTon.toFixed(3)} TON</code>\n`;
+      msg += `  ${pe('coin')} Floor: <code>${g.floorStars} ${ce('star','⭐')}</code> ≈ <code>${g.floorTon.toFixed(3)} TON</code>\n`;
       msg += `  📋 Listed: ${g.listed}+\n\n`;
     }
     msg += `\n<i>Обновлено: ${escHtml(new Date().toLocaleTimeString('ru-RU'))} UTC</i>`;
 
     await safeReply(ctx, msg, { parse_mode: 'HTML' });
   } catch (e: any) {
-    await safeReply(ctx, '❌ Ошибка получения данных: ' + (e.message || 'unknown'));
+    await safeReply(ctx, `${ce('cross','❌')} Ошибка получения данных: ` + (e.message || 'unknown'));
   }
 });
 
@@ -4042,27 +4042,27 @@ bot.command('config', async (ctx) => {
     const key = args[1]?.toUpperCase().replace(/[^A-Z0-9_]/g, '_');
     const value = args.slice(2).join(' ').trim();
     if (!key || !value) {
-      return safeReply(ctx, '❌ Использование: <code>/config set KEY значение</code>', { parse_mode: 'HTML' });
+      return safeReply(ctx, `${ce('cross','❌')} Использование: <code>/config set KEY значение</code>`, { parse_mode: 'HTML' });
     }
     const vars = await getVars();
     vars[key] = value;
     await saveVars(vars);
-    return safeReply(ctx, `✅ Переменная <code>${escHtml(key)}</code> сохранена`, { parse_mode: 'HTML' });
+    return safeReply(ctx, `${ce('check','✅')} Переменная <code>${escHtml(key)}</code> сохранена`, { parse_mode: 'HTML' });
   }
 
   if (sub === 'get') {
     const key = args[1]?.toUpperCase().replace(/[^A-Z0-9_]/g, '_');
-    if (!key) return safeReply(ctx, '❌ Укажите имя переменной', {});
+    if (!key) return safeReply(ctx, `${ce('cross','❌')} Укажите имя переменной`, {});
     const vars = await getVars();
-    if (!(key in vars)) return safeReply(ctx, `❌ Переменная <code>${escHtml(key)}</code> не найдена`, { parse_mode: 'HTML' });
+    if (!(key in vars)) return safeReply(ctx, `${ce('cross','❌')} Переменная <code>${escHtml(key)}</code> не найдена`, { parse_mode: 'HTML' });
     return safeReply(ctx, `<code>${escHtml(key)}</code> = <code>${escHtml(vars[key])}</code>`, { parse_mode: 'HTML' });
   }
 
   if (sub === 'del' || sub === 'delete' || sub === 'rm') {
     const key = args[1]?.toUpperCase().replace(/[^A-Z0-9_]/g, '_');
-    if (!key) return safeReply(ctx, '❌ Укажите имя переменной', {});
+    if (!key) return safeReply(ctx, `${ce('cross','❌')} Укажите имя переменной`, {});
     const vars = await getVars();
-    if (!(key in vars)) return safeReply(ctx, `❌ Переменная <code>${escHtml(key)}</code> не найдена`, { parse_mode: 'HTML' });
+    if (!(key in vars)) return safeReply(ctx, `${ce('cross','❌')} Переменная <code>${escHtml(key)}</code> не найдена`, { parse_mode: 'HTML' });
     delete vars[key];
     await saveVars(vars);
     return safeReply(ctx, `🗑️ Переменная <code>${escHtml(key)}</code> удалена`, { parse_mode: 'HTML' });
@@ -4096,7 +4096,7 @@ bot.command('mypurchases', async (ctx) => {
         { parse_mode: 'HTML' }
       );
     }
-    let text = `🛒 <b>Мои покупки (${purchases.length}):</b>\n\n`;
+    let text = `${ce('cart','🛒')} <b>Мои покупки (${purchases.length}):</b>\n\n`;
     purchases.slice(0, 10).forEach(p => {
       const type = p.type === 'free' ? '🆓' : p.type === 'rent' ? '📅' : '💰';
       text += `${type} Листинг #${p.listingId} → агент #${p.agentId}\n`;
@@ -4110,7 +4110,7 @@ bot.command('mypurchases', async (ctx) => {
     });
   } catch (e: any) {
     console.error('Command error:', e);
-    await safeReply(ctx, '❌ Произошла ошибка. Попробуйте позже.');
+    await safeReply(ctx, `${ce('cross','❌')} Произошла ошибка. Попробуйте позже.`);
   }
 });
 
@@ -4134,7 +4134,7 @@ bot.command('mylistings', async (ctx) => {
     await safeReply(ctx, text, { parse_mode: 'HTML' });
   } catch (e: any) {
     console.error('Listings error:', e);
-    await safeReply(ctx, '❌ Произошла ошибка. Попробуйте позже.');
+    await safeReply(ctx, `${ce('cross','❌')} Произошла ошибка. Попробуйте позже.`);
   }
 });
 
@@ -4178,12 +4178,12 @@ bot.command('send_agent', async (ctx) => {
   }
   const wallet = agentWallets.get(ctx.from.id);
   if (!wallet) {
-    await ctx.reply('❌ Нет кошелька агента. Создайте через /wallet');
+    await ctx.reply(`${ce('cross','❌')} Нет кошелька агента. Создайте через /wallet`);
     return;
   }
   const balance = await getWalletBalance(wallet.address);
   if (balance < amount + 0.01) {
-    await ctx.reply(`❌ Недостаточно TON. Баланс: ${balance.toFixed(4)} TON, нужно: ${(amount + 0.01).toFixed(4)} TON`);
+    await ctx.reply(`${ce('cross','❌')} Недостаточно TON. Баланс: ${balance.toFixed(4)} TON, нужно: ${(amount + 0.01).toFixed(4)} TON`);
     return;
   }
   await ctx.reply(`⏳ Отправляю ${amount} TON...`);
@@ -4196,7 +4196,7 @@ bot.command('send_agent', async (ctx) => {
       { parse_mode: 'HTML' }
     );
   } catch (e: any) {
-    await safeReply(ctx, `❌ Ошибка: ${e.message || 'unknown'}`);
+    await safeReply(ctx, `${ce('cross','❌')} Ошибка: ${e.message || 'unknown'}`);
   }
 });
 
@@ -4215,12 +4215,12 @@ bot.command('send', async (ctx) => {
   }
   const tonConn = getTonConnectManager();
   if (!tonConn.isConnected(ctx.from.id)) {
-    await ctx.reply('❌ TON кошелёк не подключён.\n\nПодключите через 💎 TON Connect → /connect');
+    await ctx.reply(`${ce('cross','❌')} TON кошелёк не подключён.\n\nПодключите через ${ce('diamond','💎')} TON Connect → /connect`);
     return;
   }
   const bal = await tonConn.getBalance(ctx.from.id);
   if (parseFloat(bal.ton) < amount + 0.05) {
-    await ctx.reply(`❌ Недостаточно TON.\nБаланс: ${bal.ton} TON\nНужно: ~${(amount + 0.05).toFixed(2)} TON (включая ~0.05 комиссию)`);
+    await ctx.reply(`${ce('cross','❌')} Недостаточно TON.\nБаланс: ${bal.ton} TON\nНужно: ~${(amount + 0.05).toFixed(2)} TON (включая ~0.05 комиссию)`);
     return;
   }
   await ctx.reply(`⏳ Запрашиваю подтверждение в Tonkeeper...\n\n💸 Отправляю: ${amount} TON → <code>${escHtml(to.slice(0, 24))}...</code>\n\n<i>Откройте Tonkeeper и подтвердите</i>`, { parse_mode: 'HTML' });
@@ -4236,12 +4236,12 @@ bot.command('send', async (ctx) => {
         { parse_mode: 'HTML' }
       );
     } else if (result.needsReconnect) {
-      await ctx.reply(`❌ ${result.error}\n\nНажмите 💎 TON Connect чтобы переподключиться.`);
+      await ctx.reply(`${ce('cross','❌')} ${result.error}\n\nНажмите ${ce('diamond','💎')} TON Connect чтобы переподключиться.`);
     } else {
-      await ctx.reply(`❌ ${result.error || 'Транзакция отменена'}`);
+      await ctx.reply(`${ce('cross','❌')} ${result.error || 'Транзакция отменена'}`);
     }
   } catch (e: any) {
-    await ctx.reply(`❌ Ошибка отправки: ${e.message || 'Неизвестная ошибка'}`);
+    await ctx.reply(`${ce('cross','❌')} Ошибка отправки: ${e.message || 'Неизвестная ошибка'}`);
   }
 });
 
@@ -4274,7 +4274,7 @@ bot.hears(/^\/start\s+webauth_([a-f0-9]+)$/i, async (ctx) => {
       { parse_mode: 'HTML' }
     );
   } else {
-    await ctx.reply('❌ Токен авторизации не найден или истёк. Обновите страницу студии и попробуйте снова.');
+    await ctx.reply(`${ce('cross','❌')} Токен авторизации не найден или истёк. Обновите страницу студии и попробуйте снова.`);
   }
 });
 
@@ -4601,10 +4601,10 @@ bot.command('approve_action', async (ctx) => {
       await safeReply(ctx, `Запрос #${approvalId} не найден или уже обработан.`, {});
       return;
     }
-    await safeReply(ctx, `✅ Действие #${approvalId} одобрено (${row.action_type}).`, {});
+    await safeReply(ctx, `${ce('check','✅')} Действие #${approvalId} одобрено (${row.action_type}).`, {});
   } catch (e: any) {
     console.error('Approve action error:', e);
-    await safeReply(ctx, '❌ Произошла ошибка. Попробуйте позже.', {});
+    await safeReply(ctx, `${ce('cross','❌')} Произошла ошибка. Попробуйте позже.`, {});
   }
 });
 
@@ -4623,10 +4623,10 @@ bot.command('reject_action', async (ctx) => {
       await safeReply(ctx, `Запрос #${approvalId} не найден или уже обработан.`, {});
       return;
     }
-    await safeReply(ctx, `❌ Действие #${approvalId} отклонено (${row.action_type}).`, {});
+    await safeReply(ctx, `${ce('cross','❌')} Действие #${approvalId} отклонено (${row.action_type}).`, {});
   } catch (e: any) {
     console.error('Reject action error:', e);
-    await safeReply(ctx, '❌ Произошла ошибка. Попробуйте позже.', {});
+    await safeReply(ctx, `${ce('cross','❌')} Произошла ошибка. Попробуйте позже.`, {});
   }
 });
 
@@ -4636,9 +4636,9 @@ bot.command('crew', async (ctx) => {
     const { listCrews } = require('./services/crew-system');
     const crews = await listCrews(ctx.from.id);
     if (!crews.length) {
-      return safeReply(ctx, '🤝 У вас пока нет команд агентов.\n\nСоздайте команду через AI: опишите задачу для нескольких агентов.');
+      return safeReply(ctx, `${ce('handshake','🤝')} У вас пока нет команд агентов.\n\nСоздайте команду через AI: опишите задачу для нескольких агентов.`);
     }
-    let text = '🤝 <b>Ваши команды агентов:</b>\n\n';
+    let text = `${ce('handshake','🤝')} <b>Ваши команды агентов:</b>\n\n`;
     for (const c of crews) {
       text += `🟢 <b>${escHtml(c.name)}</b> (ID: ${c.id})\n`;
       text += `   📋 ${escHtml(c.description?.slice(0, 60) || 'Без описания')}\n`;
@@ -4646,7 +4646,7 @@ bot.command('crew', async (ctx) => {
     }
     await safeReply(ctx, text, { parse_mode: 'HTML' });
   } catch (e: any) {
-    await safeReply(ctx, '❌ Ошибка: ' + e.message);
+    await safeReply(ctx, `${ce('cross','❌')} Ошибка: ` + e.message);
   }
 });
 
@@ -4655,9 +4655,9 @@ bot.command('agents_leaderboard', async (ctx) => {
   try {
     const { getLeaderboard } = require('./services/agent-reputation');
     const leaders = await getLeaderboard('rating', 'alltime', 10);
-    if (!leaders.length) return safeReply(ctx, '🏆 Таблица лидеров пока пуста.');
+    if (!leaders.length) return safeReply(ctx, `${ce('trophy','🏆')} Таблица лидеров пока пуста.`);
 
-    let text = '🏆 <b>Таблица лидеров агентов</b>\n\n';
+    let text = `${ce('trophy','🏆')} <b>Таблица лидеров агентов</b>\n\n`;
     const medals = ['🥇', '🥈', '🥉'];
     for (const entry of leaders) {
       const medal = medals[entry.rank - 1] || `${entry.rank}.`;
@@ -4666,7 +4666,7 @@ bot.command('agents_leaderboard', async (ctx) => {
     }
     await safeReply(ctx, text, { parse_mode: 'HTML' });
   } catch (e: any) {
-    await safeReply(ctx, '❌ ' + e.message);
+    await safeReply(ctx, `${ce('cross','❌')} ` + e.message);
   }
 });
 
@@ -4679,7 +4679,7 @@ bot.command('kya', async (ctx) => {
 
     const { getKYA } = require('./services/agent-reputation');
     const kya = await getKYA(agentId);
-    if (!kya) return safeReply(ctx, '❌ Агент не найден');
+    if (!kya) return safeReply(ctx, `${ce('cross','❌')} Агент не найден`);
 
     const tierEmoji: Record<string, string> = { unverified: '⬜', bronze: '🟫', silver: '⬛', gold: '🟨', platinum: '💎' };
 
@@ -4706,7 +4706,7 @@ bot.command('kya', async (ctx) => {
 
     await safeReply(ctx, text, { parse_mode: 'HTML' });
   } catch (e: any) {
-    await safeReply(ctx, '❌ ' + e.message);
+    await safeReply(ctx, `${ce('cross','❌')} ` + e.message);
   }
 });
 
@@ -4724,12 +4724,12 @@ bot.command('gdp', async (ctx) => {
     text += `⚡ Запусков за 24ч: <b>${c.executions24h || 0}</b>\n`;
     text += `📈 Запусков за 7д: <b>${c.executions7d || 0}</b>\n`;
     text += `📊 Всего запусков: <b>${c.executionsAll || 0}</b>\n`;
-    text += `💎 Объём TON: <b>${(c.tonVolumeAll || 0).toFixed?.(2) || 0}</b>\n`;
+    text += `${ce('diamond','💎')} Объём TON: <b>${(c.tonVolumeAll || 0).toFixed?.(2) || 0}</b>\n`;
     text += `📉 Рост: <b>${(c.growthRateExecs || 0) > 0 ? '+' : ''}${c.growthRateExecs || 0}%</b> запусков | <b>${(c.growthRateAgents || 0) > 0 ? '+' : ''}${c.growthRateAgents || 0}%</b> агентов\n`;
 
     await safeReply(ctx, text, { parse_mode: 'HTML' });
   } catch (e: any) {
-    await safeReply(ctx, '❌ ' + e.message);
+    await safeReply(ctx, `${ce('cross','❌')} ` + e.message);
   }
 });
 
@@ -4743,16 +4743,16 @@ bot.command('domain', async (ctx) => {
     if (args[0] === 'resolve' && args[1]) {
       const result = await resolveDomain(args[1]);
       if (result.ok) return safeReply(ctx, `🌐 <b>${escHtml(args[1])}</b>\n📍 ${escHtml(result.address)}`, { parse_mode: 'HTML' });
-      return safeReply(ctx, `❌ ${result.error}`);
+      return safeReply(ctx, `${ce('cross','❌')} ${result.error}`);
     }
 
     // /domain claim <agentId> <name>
     if (args[0] === 'claim' && args[1] && args[2]) {
       const agentId = parseInt(args[1]);
-      if (isNaN(agentId)) return safeReply(ctx, '❌ /domain claim <agent_id> <name>');
+      if (isNaN(agentId)) return safeReply(ctx, `${ce('cross','❌')} /domain claim <agent_id> <name>`);
       const result = await claimAgentDomain(agentId, userId, args[2]);
-      if (result.ok) return safeReply(ctx, `✅ Домен <b>${escHtml(args[2])}.ton</b> закреплён за агентом #${agentId}`, { parse_mode: 'HTML' });
-      return safeReply(ctx, `❌ ${result.error}`);
+      if (result.ok) return safeReply(ctx, `${ce('check','✅')} Домен <b>${escHtml(args[2])}.ton</b> закреплён за агентом #${agentId}`, { parse_mode: 'HTML' });
+      return safeReply(ctx, `${ce('cross','❌')} ${result.error}`);
     }
 
     // /domain — list user's domains
@@ -4766,7 +4766,7 @@ bot.command('domain', async (ctx) => {
     }
     await safeReply(ctx, text, { parse_mode: 'HTML' });
   } catch (e: any) {
-    await safeReply(ctx, '❌ ' + e.message);
+    await safeReply(ctx, `${ce('cross','❌')} ` + e.message);
   }
 });
 
@@ -4886,13 +4886,13 @@ bot.action('gifts_arbitrage', async (ctx) => {
       });
     } else {
       const top = opps.slice(0, 5).map((o: any) => `🎁 <b>${escHtml(o.giftName || o.slug)}</b>: ${o.buyPrice}⭐ → ${o.sellTon || o.sellPrice} TON (${o.profitPercent}%)`).join('\n');
-      await safeReply(ctx, `🔥 <b>${ru ? 'Арбитраж подарков' : 'Gift Arbitrage'}</b>\n\n${top}`, {
+      await safeReply(ctx, `${ce('fire','🔥')} <b>${ru ? 'Арбитраж подарков' : 'Gift Arbitrage'}</b>\n\n${top}`, {
         parse_mode: 'HTML',
         reply_markup: { inline_keyboard: [[{ text: `🤖 ${ru ? 'Создать агента' : 'Create agent'}`, callback_data: 'quick_gift_agent' }, { text: '🔄 Обновить', callback_data: 'gifts_arbitrage' }]] },
       });
     }
   } catch (e: any) {
-    await safeReply(ctx, `❌ ${e.message || 'unknown error'}`);
+    await safeReply(ctx, `${ce('cross','❌')} ${e.message || 'unknown error'}`);
   }
 });
 
@@ -4911,13 +4911,13 @@ bot.action('gifts_stars_balance', async (ctx) => {
   await ctx.answerCbQuery();
   const isAuth = await isAuthorized().catch(() => false);
   if (!isAuth) {
-    await ctx.reply('❌ Для просмотра баланса Stars нужна авторизация Telegram.\nИспользуйте /tglogin', {
+    await ctx.reply(`${ce('cross','❌')} Для просмотра баланса Stars нужна авторизация Telegram.\nИспользуйте /tglogin`, {
       reply_markup: { inline_keyboard: [[{ text: '🔑 /tglogin', callback_data: 'tg_login_start' }]] },
     });
     return;
   }
   const bal = await getTelegramGiftsService().getStarsBalance();
-  await ctx.reply(`⭐ <b>Баланс Stars:</b> ${JSON.stringify(bal)}`, { parse_mode: 'HTML' });
+  await ctx.reply(`${ce('star','⭐')} <b>Баланс Stars:</b> ${JSON.stringify(bal)}`, { parse_mode: 'HTML' });
 });
 
 bot.action('gifts_analyze', async (ctx) => {
@@ -5012,7 +5012,7 @@ bot.action('wallet_history', async (ctx) => {
       { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '⬅️ Кошелёк', callback_data: 'back_wallet' }]] } }
     );
   } catch (e: any) {
-    await ctx.reply('❌ ' + e.message);
+    await ctx.reply(`${ce('cross','❌')} ` + e.message);
   }
 });
 
@@ -5044,10 +5044,10 @@ bot.action('agentic_wallets_menu', async (ctx) => {
 
     if (rootWallet) {
       const addrShort = rootWallet.address.slice(0, 8) + '…' + rootWallet.address.slice(-6);
-      text += `👑 <b>Root Wallet:</b> <code>${escHtml(addrShort)}</code>\n`;
+      text += `${ce('crown','👑')} <b>Root Wallet:</b> <code>${escHtml(addrShort)}</code>\n`;
       text += `💰 ${ru ? 'Баланс:' : 'Balance:'} <b>${rootWallet.balanceTon.toFixed(4)} TON</b>\n\n`;
     } else {
-      text += `👑 <b>Root Wallet:</b> <i>${ru ? 'не настроен' : 'not set up'}</i>\n\n`;
+      text += `${ce('crown','👑')} <b>Root Wallet:</b> <i>${ru ? 'не настроен' : 'not set up'}</i>\n\n`;
     }
 
     text += `📊 <b>${ru ? 'Статистика' : 'Stats'}:</b>\n`;
@@ -5093,7 +5093,7 @@ bot.action('agentic_wallets_menu', async (ctx) => {
 
     await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } });
   } catch (e: any) {
-    await ctx.reply('❌ ' + String(e));
+    await ctx.reply(`${ce('cross','❌')} ` + String(e));
   }
 });
 
@@ -5129,10 +5129,10 @@ bot.action('aw_setup_root', async (ctx) => {
         ] } }
       );
     } else {
-      await ctx.reply(`❌ ${result.error || 'Setup failed'}`);
+      await ctx.reply(`${ce('cross','❌')} ${result.error || 'Setup failed'}`);
     }
   } catch (e: any) {
-    await ctx.reply('❌ ' + String(e));
+    await ctx.reply(`${ce('cross','❌')} ` + String(e));
   }
 });
 
@@ -5184,7 +5184,7 @@ bot.action('aw_deploy_sub', async (ctx) => {
   try {
     const agents = await getDBTools().getUserAgents(userId);
     if (!agents.data || agents.data.length === 0) {
-      await ctx.reply(ru ? '❌ У вас нет агентов. Создайте агента сначала.' : '❌ No agents found. Create an agent first.');
+      await ctx.reply(ru ? `${ce('cross','❌')} У вас нет агентов. Создайте агента сначала.` : `${ce('cross','❌')} No agents found. Create an agent first.`);
       return;
     }
 
@@ -5201,7 +5201,7 @@ bot.action('aw_deploy_sub', async (ctx) => {
     }
 
     if (kb.length === 0) {
-      await ctx.reply(ru ? '✅ Все агенты уже имеют кошельки!' : '✅ All agents already have wallets!');
+      await ctx.reply(ru ? `${ce('check','✅')} Все агенты уже имеют кошельки!` : `${ce('check','✅')} All agents already have wallets!`);
       return;
     }
 
@@ -5213,7 +5213,7 @@ bot.action('aw_deploy_sub', async (ctx) => {
       { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } }
     );
   } catch (e: any) {
-    await ctx.reply('❌ ' + String(e));
+    await ctx.reply(`${ce('cross','❌')} ` + String(e));
   }
 });
 
@@ -5245,10 +5245,10 @@ bot.action(/^aw_deploy_for:(\d+)$/, async (ctx) => {
         ] } }
       );
     } else {
-      await ctx.reply(`❌ ${result.error || 'Deploy failed'}`);
+      await ctx.reply(`${ce('cross','❌')} ${result.error || 'Deploy failed'}`);
     }
   } catch (e: any) {
-    await ctx.reply('❌ ' + String(e));
+    await ctx.reply(`${ce('cross','❌')} ` + String(e));
   }
 });
 
@@ -5278,7 +5278,7 @@ bot.action('aw_refresh_all', async (ctx) => {
 
     if (rootWallet) {
       const addrShort = rootWallet.address.slice(0, 8) + '…' + rootWallet.address.slice(-6);
-      text += `👑 <b>Root:</b> <code>${escHtml(addrShort)}</code> — ${rootWallet.balanceTon.toFixed(4)} TON\n\n`;
+      text += `${ce('crown','👑')} <b>Root:</b> <code>${escHtml(addrShort)}</code> — ${rootWallet.balanceTon.toFixed(4)} TON\n\n`;
     }
 
     text += `📊 ${ru ? 'Кошельков' : 'Wallets'}: <b>${stats.totalWallets}</b> | `;
@@ -5306,7 +5306,7 @@ bot.action('aw_refresh_all', async (ctx) => {
 
     await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } });
   } catch (e: any) {
-    await ctx.reply('❌ ' + String(e));
+    await ctx.reply(`${ce('cross','❌')} ` + String(e));
   }
 });
 
@@ -5341,7 +5341,7 @@ bot.action('aw_list_manage', async (ctx) => {
       { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } }
     );
   } catch (e: any) {
-    await ctx.reply('❌ ' + String(e));
+    await ctx.reply(`${ce('cross','❌')} ` + String(e));
   }
 });
 
@@ -5393,7 +5393,7 @@ bot.action(/^aw_manage:(\d+)$/, async (ctx) => {
 
     await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } });
   } catch (e: any) {
-    await ctx.reply('❌ ' + String(e));
+    await ctx.reply(`${ce('cross','❌')} ` + String(e));
   }
 });
 
@@ -5404,7 +5404,7 @@ bot.action(/^aw_block:(\d+)$/, async (ctx) => {
     const { getAgenticWalletService } = await import('./services/agentic-wallet');
     await getAgenticWalletService().setBlocked(parseInt(ctx.match![1]), ctx.from!.id, true);
     await ctx.reply('🔴 Кошелёк заблокирован. Агент не сможет тратить.');
-  } catch (e: any) { await safeReply(ctx, `❌ Ошибка: ${e.message}`); }
+  } catch (e: any) { await safeReply(ctx, `${ce('cross','❌')} Ошибка: ${e.message}`); }
 });
 
 bot.action(/^aw_unblock:(\d+)$/, async (ctx) => {
@@ -5413,7 +5413,7 @@ bot.action(/^aw_unblock:(\d+)$/, async (ctx) => {
     const { getAgenticWalletService } = await import('./services/agentic-wallet');
     await getAgenticWalletService().setBlocked(parseInt(ctx.match![1]), ctx.from!.id, false);
     await ctx.reply('🟢 Кошелёк разблокирован.');
-  } catch (e: any) { await safeReply(ctx, `❌ Ошибка: ${e.message}`); }
+  } catch (e: any) { await safeReply(ctx, `${ce('cross','❌')} Ошибка: ${e.message}`); }
 });
 
 // ── Refresh single wallet ──
@@ -5421,14 +5421,14 @@ bot.action(/^aw_refresh:(\d+)$/, async (ctx) => {
   try {
     await ctx.answerCbQuery('🔄 Refreshing...');
     const walletId = parseInt(ctx.match![1]);
-    if (isNaN(walletId)) { await safeReply(ctx, '❌ Invalid wallet ID'); return; }
+    if (isNaN(walletId)) { await safeReply(ctx, `${ce('cross','❌')} Invalid wallet ID`); return; }
     const { getAgenticWalletService } = await import('./services/agentic-wallet');
     // Ownership check: verify wallet belongs to user
     const walletCheck = await getAgenticWalletService().getWallet(walletId, ctx.from!.id);
-    if (!walletCheck) { await safeReply(ctx, '❌ Кошелёк не найден'); return; }
+    if (!walletCheck) { await safeReply(ctx, `${ce('cross','❌')} Кошелёк не найден`); return; }
     const bal = await getAgenticWalletService().refreshBalance(walletId);
     await ctx.reply(`💰 Баланс: ${bal.toFixed(4)} TON`);
-  } catch (e: any) { await safeReply(ctx, `❌ Ошибка обновления: ${e.message}`); }
+  } catch (e: any) { await safeReply(ctx, `${ce('cross','❌')} Ошибка обновления: ${e.message}`); }
 });
 
 // ── Set spend limit ──
@@ -5443,7 +5443,7 @@ bot.action(/^aw_set_limit:(\d+)$/, async (ctx) => {
   try {
     const { getAgenticWalletService } = await import('./services/agentic-wallet');
     const w = await getAgenticWalletService().getWallet(walletId, userId);
-    if (!w) { await safeReply(ctx, '❌ Кошелёк не найден'); return; }
+    if (!w) { await safeReply(ctx, `${ce('cross','❌')} Кошелёк не найден`); return; }
   } catch { return; }
   pendingWalletLimit.set(userId, { walletId, startTs: Date.now() });
   const ru = getUserLang(userId) === 'ru';
@@ -5470,7 +5470,7 @@ bot.action(/^aw_limit_quick:(\d+)$/, async (ctx) => {
   const { getAgenticWalletService } = await import('./services/agentic-wallet');
   await getAgenticWalletService().setSpendLimit(pending.walletId, userId, limitTon);
   pendingWalletLimit.delete(userId);
-  await ctx.reply(`✅ Лимит установлен: ${limitTon} TON/день`);
+  await ctx.reply(`${ce('check','✅')} Лимит установлен: ${limitTon} TON/день`);
 });
 
 // ── Transaction history ──
@@ -5507,7 +5507,7 @@ bot.action(/^aw_txs:(\d+)$/, async (ctx) => {
       [{ text: '◀️ Назад', callback_data: `aw_manage:${walletId}` }],
     ] } });
   } catch (e: any) {
-    await ctx.reply('❌ ' + String(e));
+    await ctx.reply(`${ce('cross','❌')} ` + String(e));
   }
 });
 
@@ -5544,8 +5544,8 @@ bot.action(/^aw_delete_confirm:(\d+)$/, async (ctx) => {
     await ctx.answerCbQuery('🗑 Deleting...');
     const { getAgenticWalletService } = await import('./services/agentic-wallet');
     await getAgenticWalletService().deleteWallet(parseInt(ctx.match![1]), ctx.from!.id);
-    await ctx.reply('✅ Кошелёк удалён.');
-  } catch (e: any) { await safeReply(ctx, `❌ Ошибка удаления: ${e.message}`); }
+    await ctx.reply(`${ce('check','✅')} Кошелёк удалён.`);
+  } catch (e: any) { await safeReply(ctx, `${ce('cross','❌')} Ошибка удаления: ${e.message}`); }
 });
 
 // ── Link agent to wallet ──
@@ -5568,7 +5568,7 @@ bot.action(/^aw_link_agent:(\d+)$/, async (ctx) => {
       { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } }
     );
   } catch (e: any) {
-    await ctx.reply('❌ ' + String(e));
+    await ctx.reply(`${ce('cross','❌')} ` + String(e));
   }
 });
 
@@ -5579,8 +5579,8 @@ bot.action(/^aw_assign:(\d+):(\d+)$/, async (ctx) => {
     const agentId = parseInt(ctx.match![2]);
     const { getAgenticWalletService } = await import('./services/agentic-wallet');
     await getAgenticWalletService().assignToAgent(walletId, ctx.from!.id, agentId || null);
-    await ctx.reply(agentId ? `✅ Кошелёк привязан к агенту #${agentId}` : '✅ Кошелёк отвязан от агента');
-  } catch (e: any) { await safeReply(ctx, `❌ Ошибка: ${e.message}`); }
+    await ctx.reply(agentId ? `${ce('check','✅')} Кошелёк привязан к агенту #${agentId}` : `${ce('check','✅')} Кошелёк отвязан от агента`);
+  } catch (e: any) { await safeReply(ctx, `${ce('cross','❌')} Ошибка: ${e.message}`); }
 });
 
 // ── Пополнение баланса ───────────────────────
@@ -5657,7 +5657,7 @@ bot.action(/^topup_tonconnect:(\d+)$/, async (ctx) => {
 
   const tonConn = getTonConnectManager();
   if (!tonConn.isConnected(userId)) {
-    await ctx.reply(ru ? '❌ Сначала подключите TON кошелёк через 💎 TON Connect' : '❌ Please connect your TON wallet via 💎 TON Connect first');
+    await ctx.reply(ru ? `${ce('cross','❌')} Сначала подключите TON кошелёк через ${ce('diamond','💎')} TON Connect` : `${ce('cross','❌')} Please connect your TON wallet via ${ce('diamond','💎')} TON Connect first`);
     return;
   }
 
@@ -5869,12 +5869,12 @@ bot.action('profile_api_keys', async (ctx) => {
     const apiKey = (vars.AI_API_KEY as string) || '';
     const maskedKey = apiKey ? apiKey.slice(0, 6) + '...' + apiKey.slice(-4) : (lang === 'ru' ? 'не задан' : 'not set');
 
-    let text = `🔑 <b>${lang === 'ru' ? 'Глобальные API ключи' : 'Global API Keys'}</b>\n${div()}\n\n`;
+    let text = `${ce('key','🔑')} <b>${lang === 'ru' ? 'Глобальные API ключи' : 'Global API Keys'}</b>\n${div()}\n\n`;
     text += lang === 'ru'
       ? 'Глобальный ключ используется всеми вашими AI агентами по умолчанию.\nКаждый агент может иметь свой ключ (через Настройки AI).\n\n'
       : 'Global key is used by all your AI agents by default.\nEach agent can override with its own key (via AI Settings).\n\n';
     text += `🤖 <b>${lang === 'ru' ? 'Провайдер:' : 'Provider:'}</b> ${escHtml(provider || (lang === 'ru' ? 'не задан' : 'not set'))}\n`;
-    text += `🔑 <b>${lang === 'ru' ? 'Ключ:' : 'Key:'}</b> <code>${escHtml(maskedKey)}</code>\n`;
+    text += `${ce('key','🔑')} <b>${lang === 'ru' ? 'Ключ:' : 'Key:'}</b> <code>${escHtml(maskedKey)}</code>\n`;
 
     const kb: any[][] = [
       [
@@ -5897,7 +5897,7 @@ bot.action('profile_api_keys', async (ctx) => {
 
     await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } });
   } catch (e: any) {
-    await ctx.reply('❌ ' + (e.message || String(e)));
+    await ctx.reply(`${ce('cross','❌')} ` + (e.message || String(e)));
   }
 });
 
@@ -5921,10 +5921,10 @@ bot.action(/^global_provider:(.+)$/, async (ctx) => {
         { parse_mode: 'HTML' }
       );
     } else {
-      await safeReply(ctx, `✅ ${lang === 'ru' ? 'Провайдер изменён на' : 'Provider changed to'} <b>${escHtml(provider)}</b>`, { parse_mode: 'HTML' });
+      await safeReply(ctx, `${ce('check','✅')} ${lang === 'ru' ? 'Провайдер изменён на' : 'Provider changed to'} <b>${escHtml(provider)}</b>`, { parse_mode: 'HTML' });
     }
   } catch (e: any) {
-    await ctx.reply('❌ ' + (e.message || String(e)));
+    await ctx.reply(`${ce('cross','❌')} ` + (e.message || String(e)));
   }
 });
 
@@ -5938,9 +5938,9 @@ bot.action('global_key_clear', async (ctx) => {
     delete vars.AI_API_KEY;
     delete vars.AI_PROVIDER;
     await repo.set(userId, 'user_variables', vars);
-    await safeReply(ctx, `✅ ${lang === 'ru' ? 'Глобальный API ключ удалён.' : 'Global API key removed.'}`, { parse_mode: 'HTML' });
+    await safeReply(ctx, `${ce('check','✅')} ${lang === 'ru' ? 'Глобальный API ключ удалён.' : 'Global API key removed.'}`, { parse_mode: 'HTML' });
   } catch (e: any) {
-    await ctx.reply('❌ ' + (e.message || String(e)));
+    await ctx.reply(`${ce('cross','❌')} ` + (e.message || String(e)));
   }
 });
 
@@ -5967,7 +5967,7 @@ bot.action('skip_agent_name', async (ctx) => {
   const userId = ctx.from.id;
   const pna = pendingNameAsk.get(userId);
   if (!pna) {
-    await ctx.editMessageText('❌ Сессия устарела. Напишите задачу снова.').catch(() => {});
+    await ctx.editMessageText(`${ce('cross','❌')} Сессия устарела. Напишите задачу снова.`).catch(() => {});
     return;
   }
   pendingNameAsk.delete(userId);
@@ -5979,14 +5979,14 @@ bot.action('skip_agent_name', async (ctx) => {
     await sendResult(ctx, result);
   } catch (err) {
     anim.stop(); anim.deleteMsg();
-    await ctx.reply('❌ Ошибка создания агента. Попробуйте ещё раз.').catch(() => {});
+    await ctx.reply(`${ce('cross','❌')} Ошибка создания агента. Попробуйте ещё раз.`).catch(() => {});
   }
 });
 
 bot.action('cancel_name_ask', async (ctx) => {
   await ctx.answerCbQuery();
   pendingNameAsk.delete(ctx.from.id);
-  await ctx.editMessageText('❌ Создание агента отменено. Напишите задачу снова когда будете готовы.').catch(() => {});
+  await ctx.editMessageText(`${ce('cross','❌')} Создание агента отменено. Напишите задачу снова когда будете готовы.`).catch(() => {});
 });
 
 // ============================================================
@@ -6009,7 +6009,7 @@ bot.action(/^agent_chat:(\d+)$/, async (ctx) => {
   // Verify agent belongs to user
   const agentRes = await getDBTools().getAgent(agentId, userId);
   if (!agentRes.success || !agentRes.data) {
-    await ctx.reply('❌ Агент не найден');
+    await ctx.reply(`${ce('cross','❌')} Агент не найден`);
     return;
   }
 
@@ -6045,13 +6045,13 @@ bot.action(/^agent_schedule:(.+)$/, async (ctx) => {
 
   if (choice === 'cancel') {
     pendingCreations.delete(userId);
-    await ctx.editMessageText('❌ Создание агента отменено. Напишите задачу снова когда будете готовы.').catch(() => {});
+    await ctx.editMessageText(`${ce('cross','❌')} Создание агента отменено. Напишите задачу снова когда будете готовы.`).catch(() => {});
     return;
   }
 
   const pending = pendingCreations.get(userId);
   if (!pending) {
-    await ctx.editMessageText('❌ Сессия создания устарела. Напишите задачу снова.').catch(() => {});
+    await ctx.editMessageText(`${ce('cross','❌')} Сессия создания устарела. Напишите задачу снова.`).catch(() => {});
     return;
   }
 
@@ -6082,7 +6082,7 @@ bot.action(/^agent_schedule:(.+)$/, async (ctx) => {
     anim.stop();
     anim.deleteMsg();
     console.error('[bot] agent_schedule create error:', err);
-    await ctx.reply('❌ Ошибка создания агента. Попробуйте ещё раз.').catch(() => {});
+    await ctx.reply(`${ce('cross','❌')} Ошибка создания агента. Попробуйте ещё раз.`).catch(() => {});
   }
 });
 
@@ -6098,7 +6098,7 @@ bot.action(/^agent_analytics:(\d+)$/, async (ctx) => {
   const ru = getUserLang(userId) === 'ru';
   try {
     const ownerCheck = await getDBTools().getAgent(agentId, userId);
-    if (!ownerCheck.success || !ownerCheck.data) { await ctx.reply('❌'); return; }
+    if (!ownerCheck.success || !ownerCheck.data) { await ctx.reply(`${ce('cross','❌')}`); return; }
 
     // Pull logs stats
     const logsRes = await dbPool.query(`
@@ -6134,13 +6134,13 @@ bot.action(/^agent_analytics:(\d+)$/, async (ctx) => {
     let text = ru
       ? `📊 <b>Аналитика агента #${agentId}</b> (7 дней)\n\n`
       : `📊 <b>Agent #${agentId} Analytics</b> (7 days)\n\n`;
-    text += `📝 ${ru ? 'Логов' : 'Logs'}: <b>${s.total || 0}</b>\n`;
+    text += `${ce('pencil','📝')} ${ru ? 'Логов' : 'Logs'}: <b>${s.total || 0}</b>\n`;
     text += `🔧 ${ru ? 'Вызовов инструментов' : 'Tool calls'}: <b>${s.tool_calls || 0}</b>\n`;
-    text += `❌ ${ru ? 'Ошибок' : 'Errors'}: <b>${s.errors || 0}</b>\n`;
+    text += `${ce('cross','❌')} ${ru ? 'Ошибок' : 'Errors'}: <b>${s.errors || 0}</b>\n`;
     if (Object.keys(execMap).length > 0) {
       text += `\n⚙️ ${ru ? 'Запуски' : 'Executions'}:\n`;
       for (const [st, cnt] of Object.entries(execMap)) {
-        const icon = st === 'success' ? '✅' : st === 'error' ? '❌' : '⏳';
+        const icon = st === 'success' ? `${ce('check','✅')}` : st === 'error' ? `${ce('cross','❌')}` : '⏳';
         text += `  ${icon} ${st}: ${cnt}\n`;
       }
     }
@@ -6156,7 +6156,7 @@ bot.action(/^agent_analytics:(\d+)$/, async (ctx) => {
       [{ text: `◀️ ${ru ? 'Назад' : 'Back'}`, callback_data: `agent_menu:${agentId}` }]
     ]}});
   } catch (e: any) {
-    await ctx.reply('❌ ' + e.message);
+    await ctx.reply(`${ce('cross','❌')} ` + e.message);
   }
 });
 
@@ -6168,7 +6168,7 @@ bot.action(/^agent_tasks:(\d+)$/, async (ctx) => {
   const ru = getUserLang(userId) === 'ru';
   try {
     const ownerCheck = await getDBTools().getAgent(agentId, userId);
-    if (!ownerCheck.success || !ownerCheck.data) { await ctx.reply('❌'); return; }
+    if (!ownerCheck.success || !ownerCheck.data) { await ctx.reply(`${ce('cross','❌')}`); return; }
 
     const tasksRes = await dbPool.query(`
       SELECT id, description, status, priority, created_at, scheduled_for
@@ -6196,7 +6196,7 @@ bot.action(/^agent_tasks:(\d+)$/, async (ctx) => {
       [{ text: `◀️ ${ru ? 'Назад' : 'Back'}`, callback_data: `agent_menu:${agentId}` }]
     ]}});
   } catch (e: any) {
-    await ctx.reply('❌ ' + e.message);
+    await ctx.reply(`${ce('cross','❌')} ` + e.message);
   }
 });
 
@@ -6208,7 +6208,7 @@ bot.action(/^agent_tokens:(\d+)$/, async (ctx) => {
   const ru = getUserLang(userId) === 'ru';
   try {
     const ownerCheck = await getDBTools().getAgent(agentId, userId);
-    if (!ownerCheck.success || !ownerCheck.data) { await ctx.reply('❌'); return; }
+    if (!ownerCheck.success || !ownerCheck.data) { await ctx.reply(`${ce('cross','❌')}`); return; }
 
     // Try token_usage table, fall back to log count
     const tokenRes = await dbPool.query(`
@@ -6258,7 +6258,7 @@ bot.action(/^agent_tokens:(\d+)$/, async (ctx) => {
       [{ text: `◀️ ${ru ? 'Назад' : 'Back'}`, callback_data: `agent_menu:${agentId}` }]
     ]}});
   } catch (e: any) {
-    await ctx.reply('❌ ' + e.message);
+    await ctx.reply(`${ce('cross','❌')} ` + e.message);
   }
 });
 
@@ -6270,7 +6270,7 @@ bot.action(/^agent_contacts:(\d+)$/, async (ctx) => {
   const ru = getUserLang(userId) === 'ru';
   try {
     const ownerCheck = await getDBTools().getAgent(agentId, userId);
-    if (!ownerCheck.success || !ownerCheck.data) { await ctx.reply('❌'); return; }
+    if (!ownerCheck.success || !ownerCheck.data) { await ctx.reply(`${ce('cross','❌')}`); return; }
 
     // Pull from tg_users or agent_state contacts
     const contactsRes = await dbPool.query(`
@@ -6318,7 +6318,7 @@ bot.action(/^agent_contacts:(\d+)$/, async (ctx) => {
       [{ text: `◀️ ${ru ? 'Назад' : 'Back'}`, callback_data: `agent_menu:${agentId}` }]
     ]}});
   } catch (e: any) {
-    await ctx.reply('❌ ' + e.message);
+    await ctx.reply(`${ce('cross','❌')} ` + e.message);
   }
 });
 
@@ -6354,14 +6354,14 @@ bot.action(/^agent_memory:(\d+)$/, async (ctx) => {
     text += `  💬 Досье чатов: ${cats.chatDossiers}\n`;
     text += `  🟢 Engagement: ${cats.engagement}\n`;
     text += `  🧬 Эволюций: ${stats.evolutionCount}\n`;
-    text += `  📝 Сессий: ${stats.sessionsCount}\n`;
+    text += `  ${ce('pencil','📝')} Сессий: ${stats.sessionsCount}\n`;
     text += `  📅 Дневников: ${stats.dailyLogsCount}\n`;
     text += `\n⚙️ <b>Настройки:</b>\n`;
-    text += `  Воспоминания: ${settings.enableMemories ? '✅' : '❌'} (макс ${settings.maxMemories})\n`;
-    text += `  Уроки: ${settings.enableLessons ? '✅' : '❌'} (макс ${settings.maxLessons})\n`;
-    text += `  База знаний: ${settings.enableKnowledge ? '✅' : '❌'} (макс ${settings.maxKnowledge})\n`;
-    text += `  Контакты: ${settings.enableContacts ? '✅' : '❌'} (макс ${settings.maxContacts})\n`;
-    text += `  Эволюция: ${settings.enableEvolution ? '✅' : '❌'} (каждые ${settings.evolveInterval} взаимодействий)\n`;
+    text += `  Воспоминания: ${settings.enableMemories ? ce('check','✅') : ce('cross','❌')} (макс ${settings.maxMemories})\n`;
+    text += `  Уроки: ${settings.enableLessons ? ce('check','✅') : ce('cross','❌')} (макс ${settings.maxLessons})\n`;
+    text += `  База знаний: ${settings.enableKnowledge ? ce('check','✅') : ce('cross','❌')} (макс ${settings.maxKnowledge})\n`;
+    text += `  Контакты: ${settings.enableContacts ? ce('check','✅') : ce('cross','❌')} (макс ${settings.maxContacts})\n`;
+    text += `  Эволюция: ${settings.enableEvolution ? ce('check','✅') : ce('cross','❌')} (каждые ${settings.evolveInterval} взаимодействий)\n`;
     text += `  TTL памяти: ${settings.memoryTTLDays > 0 ? settings.memoryTTLDays + ' дней' : '∞'}\n`;
     text += `  Бюджет контекста: ${settings.maxContextTokens} токенов\n`;
     text += `  Приоритет: ${settings.priorityCategories.join(' → ')}\n`;
@@ -6487,7 +6487,7 @@ bot.action(/^mem_compress:(\d+)$/, async (ctx) => {
 
     let text = '🗜️ Результат сжатия:\n';
     if (result.compressed > 0) {
-      text += `✅ ${result.compressed} записей → ${result.consolidated} консолидированных`;
+      text += `${ce('check','✅')} ${result.compressed} записей → ${result.consolidated} консолидированных`;
     } else {
       text += 'Недостаточно записей для сжатия (нужно >10)';
     }
@@ -6583,7 +6583,7 @@ bot.action(/^mem_toggle:(\d+):(\w+)$/, async (ctx) => {
     const current = await getMemorySettings(agentId);
     const newVal = !(current as any)[key];
     await setMemorySettings(agentId, ctx.from.id, { [key]: newVal } as any);
-    await ctx.answerCbQuery(`${key}: ${newVal ? '✅ Вкл' : '❌ Выкл'}`);
+    await ctx.answerCbQuery(`${key}: ${newVal ? ce('check','✅') + ' Вкл' : ce('cross','❌') + ' Выкл'}`);
     // Re-render settings
     const s = await getMemorySettings(agentId);
     const toggleBtn = (label: string, k: string, value: boolean) => ({
@@ -6867,7 +6867,7 @@ bot.on('callback_query', async (ctx) => {
     const pmLang = getUserLang(userId);
     const pmResult = await installPlugin(userId, pmLid);
     if (pmResult.ok) {
-      await ctx.answerCbQuery(pmLang === 'ru' ? '✅ Плагин установлен!' : '✅ Plugin installed!');
+      await ctx.answerCbQuery(pmLang === 'ru' ? `${ce('check','✅')} Плагин установлен!` : `${ce('check','✅')} Plugin installed!`);
       const pmP = await getPluginListing(pmLid);
       await editOrReply(ctx,
         `✅ <b>${pmLang === 'ru' ? 'Плагин установлен' : 'Plugin Installed'}</b>\n\n` +
@@ -6879,7 +6879,7 @@ bot.on('callback_query', async (ctx) => {
         ] } }
       );
     } else {
-      await ctx.answerCbQuery(`❌ ${pmResult.error || 'Error'}`, { show_alert: true });
+      await ctx.answerCbQuery(`${ce('cross','❌')} ${pmResult.error || 'Error'}`, { show_alert: true });
     }
     return;
   }
@@ -6888,7 +6888,7 @@ bot.on('callback_query', async (ctx) => {
     const pmLid = parseInt(data.split(':')[1]);
     const pmLang = getUserLang(userId);
     const pmOk = await uninstallPlugin(userId, pmLid);
-    await ctx.answerCbQuery(pmOk ? (pmLang === 'ru' ? '✅ Удалено' : '✅ Uninstalled') : '❌ Error');
+    await ctx.answerCbQuery(pmOk ? (pmLang === 'ru' ? `${ce('check','✅')} Удалено` : `${ce('check','✅')} Uninstalled`) : `${ce('cross','❌')} Error`);
     const pmMyPlugins = await getMarketplaceUserPlugins(userId);
     let pmText = `📦 <b>${pmLang === 'ru' ? 'Мои плагины' : 'My Plugins'} (${pmMyPlugins.length}):</b>\n\n`;
     if (pmMyPlugins.length === 0) {
@@ -6917,7 +6917,7 @@ bot.on('callback_query', async (ctx) => {
     if (pmOk) {
       await ctx.answerCbQuery(`${pmLang === 'ru' ? 'Оценка' : 'Rated'}: ${'⭐'.repeat(pmRatingVal)}`);
     } else {
-      await ctx.answerCbQuery(pmLang === 'ru' ? '❌ Установите плагин, чтобы оценить' : '❌ Install plugin to rate', { show_alert: true });
+      await ctx.answerCbQuery(pmLang === 'ru' ? `${ce('cross','❌')} Установите плагин, чтобы оценить` : `${ce('cross','❌')} Install plugin to rate`, { show_alert: true });
     }
     return;
   }
@@ -6994,7 +6994,7 @@ bot.on('callback_query', async (ctx) => {
     const agentId = parseInt(data.split(':')[1]);
     const agentResult = await getDBTools().getAgent(agentId, userId);
     if (!agentResult.success || !agentResult.data) {
-      await ctx.reply('❌ Агент не найден или не принадлежит вам');
+      await ctx.reply(`${ce('cross','❌')} Агент не найден или не принадлежит вам`);
       return;
     }
     const aName = escHtml(agentResult.data.name || `Агент #${agentId}`);
@@ -7033,7 +7033,7 @@ bot.on('callback_query', async (ctx) => {
     const priceNano = parseInt(parts[2]);
     const agentResult = await getDBTools().getAgent(agentId, userId);
     if (!agentResult.success || !agentResult.data) {
-      await ctx.reply('❌ Агент не найден или не принадлежит вам');
+      await ctx.reply(`${ce('cross','❌')} Агент не найден или не принадлежит вам`);
       return;
     }
     const aName = agentResult.data.name || `Агент #${agentId}`;
@@ -7067,7 +7067,7 @@ bot.on('callback_query', async (ctx) => {
     const priceNano = parseInt(parts[2]);
     const agentResult = await getDBTools().getAgent(agentId, userId);
     if (!agentResult.success || !agentResult.data) {
-      await ctx.reply('❌ Агент не найден');
+      await ctx.reply(`${ce('cross','❌')} Агент не найден`);
       return;
     }
     const name = agentResult.data.name || `Агент #${agentId}`;
@@ -7127,7 +7127,7 @@ bot.on('callback_query', async (ctx) => {
       );
       return;
     }
-    let text = `🛒 <b>Мои покупки (${purchases.length}):</b>\n\n`;
+    let text = `${ce('cart','🛒')} <b>Мои покупки (${purchases.length}):</b>\n\n`;
     purchases.slice(0, 10).forEach((p: any) => {
       const type = p.type === 'free' ? '🆓' : p.type === 'rent' ? '📅' : '💰';
       text += `${type} Листинг #${p.listingId} → агент #${p.agentId}\n`;
@@ -7273,7 +7273,7 @@ bot.on('callback_query', async (ctx) => {
     await ctx.answerCbQuery('Загружаю...');
     const tonConn = getTonConnectManager();
     const hist = await tonConn.getTransactions(userId, 10);
-    if (!hist.ok) { await ctx.reply(`❌ ${hist.error}`); return; }
+    if (!hist.ok) { await ctx.reply(`${ce('cross','❌')} ${hist.error}`); return; }
     const txs = hist.txs || [];
     if (!txs.length) { await ctx.reply('📭 История транзакций пуста'); return; }
     let txt = `${pe('clipboard')} <b>История транзакций</b>\n\n`;
@@ -7312,7 +7312,7 @@ bot.on('callback_query', async (ctx) => {
   if (data === 'ton_get_link') {
     await ctx.answerCbQuery();
     const link = tonConnectLinks.get(userId) || '';
-    if (!link) { await ctx.reply('❌ Ссылка устарела, нажмите 💎 TON Connect снова'); return; }
+    if (!link) { await ctx.reply(`${ce('cross','❌')} Ссылка устарела, нажмите ${ce('diamond','💎')} TON Connect снова`); return; }
     await ctx.reply(`🔗 Ссылка для подключения (откройте в браузере или скопируйте):\n\n${link}`, { link_preview_options: { is_disabled: true } });
     return;
   }
@@ -7394,7 +7394,7 @@ bot.on('callback_query', async (ctx) => {
           [{ text: `◀️ ${ru ? 'К плагинам' : 'Plugins'}`, callback_data: 'plugins' }],
         ]}}
       );
-    } catch (e: any) { await safeReply(ctx, `❌ ${e.message || 'error'}`); }
+    } catch (e: any) { await safeReply(ctx, `${ce('cross','❌')} ${e.message || 'error'}`); }
     return;
   }
   if (data.startsWith('plugin_uninstall:')) {
@@ -7408,10 +7408,10 @@ bot.on('callback_query', async (ctx) => {
       await settingsRepo.set(userId, 'installed_plugins', JSON.stringify(updated));
       getPluginManager().uninstallPlugin(pid);
       const ru = getUserLang(userId) === 'ru';
-      await ctx.reply(ru ? `✅ Плагин удалён` : `✅ Plugin removed`, {
+      await ctx.reply(ru ? `${ce('check','✅')} Плагин удалён` : `${ce('check','✅')} Plugin removed`, {
         reply_markup: { inline_keyboard: [[{ text: `◀️ ${ru ? 'К плагинам' : 'Plugins'}`, callback_data: 'plugins' }]] }
       });
-    } catch (e: any) { await safeReply(ctx, `❌ ${e.message || 'error'}`); }
+    } catch (e: any) { await safeReply(ctx, `${ce('cross','❌')} ${e.message || 'error'}`); }
     return;
   }
 
@@ -7421,7 +7421,7 @@ bot.on('callback_query', async (ctx) => {
     await ctx.answerCbQuery();
     const tplKey = data.slice('workflow_template:'.length);
     const tplIdx = _resolveWorkflowTemplateIndex(tplKey);
-    if (tplIdx < 0) { await safeReply(ctx, '❌ Шаблон не найден'); return; }
+    if (tplIdx < 0) { await safeReply(ctx, `${ce('cross','❌')} Шаблон не найден`); return; }
     await showWorkflowTemplate(ctx, tplIdx);
     return;
   }
@@ -7429,7 +7429,7 @@ bot.on('callback_query', async (ctx) => {
     await ctx.answerCbQuery('Создаю workflow...');
     const tplKey = data.slice('workflow_create_from:'.length);
     const tplIdx = _resolveWorkflowTemplateIndex(tplKey);
-    if (tplIdx < 0) { await safeReply(ctx, '❌ Шаблон не найден'); return; }
+    if (tplIdx < 0) { await safeReply(ctx, `${ce('cross','❌')} Шаблон не найден`); return; }
     await createWorkflowFromTemplate(ctx, userId, tplIdx);
     return;
   }
@@ -7476,7 +7476,7 @@ bot.on('callback_query', async (ctx) => {
         await sendResult(ctx, result);
       } catch (err) {
         anim.stop(); anim.deleteMsg();
-        await ctx.reply('❌ Ошибка создания агента. Попробуйте ещё раз.').catch(() => {});
+        await ctx.reply(`${ce('cross','❌')} Ошибка создания агента. Попробуйте ещё раз.`).catch(() => {});
       }
     }
     return;
@@ -7547,7 +7547,7 @@ bot.on('callback_query', async (ctx) => {
 
   // ── 🎯 Goals display ──
   if (data.startsWith('show_goals:')) {
-    await ctx.answerCbQuery('🎯');
+    await ctx.answerCbQuery(`${ce('target','🎯')}`);
     const agentId = parseInt(data.split(':')[1]);
     try {
       const stateRepo = getAgentStateRepository();
@@ -7561,7 +7561,7 @@ bot.on('callback_query', async (ctx) => {
       const active = goals.filter(g => g.status === 'active');
       const completed = goals.filter(g => g.status === 'completed');
 
-      let text = `🎯 <b>Цели агента #${agentId}</b>\n\n`;
+      let text = `${ce('target','🎯')} <b>Цели агента #${agentId}</b>\n\n`;
       if (active.length > 0) {
         text += `<b>Активные (${active.length}):</b>\n`;
         for (const g of active) {
@@ -7572,7 +7572,7 @@ bot.on('callback_query', async (ctx) => {
       if (completed.length > 0) {
         text += `\n<b>Выполненные (${completed.length}):</b>\n`;
         for (const g of completed.slice(-5)) {
-          text += `✅ ${escHtml(g.goal)}\n`;
+          text += `${ce('check','✅')} ${escHtml(g.goal)}\n`;
         }
       }
       if (goals.length === 0) text += '<i>Агент ещё не сформировал цели. Они появятся после нескольких тиков.</i>';
@@ -7715,7 +7715,7 @@ bot.on('callback_query', async (ctx) => {
     try {
       const agentResult = await getDBTools().getAgent(agentId, userId);
       if (!agentResult.success || !agentResult.data) {
-        await ctx.reply(`❌ Агент #${agentId} не найден`);
+        await ctx.reply(`${ce('cross','❌')} Агент #${agentId} не найден`);
         return;
       }
       const pauseResult = await getRunnerAgent().pauseAgent(agentId, userId);
@@ -7747,7 +7747,7 @@ bot.on('callback_query', async (ctx) => {
     const listingId = parseInt(data.split(':')[1]);
     try {
       const listing = await getMarketplaceRepository().getListing(listingId);
-      if (!listing) { await ctx.reply('❌ Листинг не найден'); return; }
+      if (!listing) { await ctx.reply(`${ce('cross','❌')} Листинг не найден`); return; }
       const priceTon = listing.price / 1e9;
 
       await ctx.reply('🔍 Проверяю транзакцию...');
@@ -7756,7 +7756,7 @@ bot.on('callback_query', async (ctx) => {
       if (verify.found && verify.txHash) {
         // Payment confirmed — create agent copy for buyer
         const agentResult = await getDBTools().getAgent(listing.agentId, listing.sellerId);
-        if (!agentResult.success || !agentResult.data) { await ctx.reply('❌ Агент продавца не найден'); return; }
+        if (!agentResult.success || !agentResult.data) { await ctx.reply(`${ce('cross','❌')} Агент продавца не найден`); return; }
         const src = agentResult.data;
         const newAgent = await getDBTools().createAgent({
           userId,
@@ -7787,7 +7787,7 @@ bot.on('callback_query', async (ctx) => {
             }
           );
         } else {
-          await ctx.reply(`❌ Ошибка создания агента: ${escHtml(newAgent.error || '')}`);
+          await ctx.reply(`${ce('cross','❌')} Ошибка создания агента: ${escHtml(newAgent.error || '')}`);
         }
       } else {
         await safeReply(ctx,
@@ -7816,10 +7816,10 @@ bot.on('callback_query', async (ctx) => {
     await ctx.answerCbQuery('🔧 Анализирую ошибку...');
     const agentId = parseInt(data.split(':')[1]);
     const lastErr = agentLastErrors.get(agentId);
-    if (!lastErr) { await ctx.reply('✅ Последних ошибок нет — агент работает нормально.'); return; }
+    if (!lastErr) { await ctx.reply(`${ce('check','✅')} Последних ошибок нет — агент работает нормально.`); return; }
 
     const agentResult = await getDBTools().getAgent(agentId, userId);
-    if (!agentResult.success || !agentResult.data) { await ctx.reply('❌ Агент не найден'); return; }
+    if (!agentResult.success || !agentResult.data) { await ctx.reply(`${ce('cross','❌')} Агент не найден`); return; }
 
     const statusMsg = await ctx.reply(
       `${pe('wrench')} <b>AI Автопочинка</b>\n\n🔍 Анализирую ошибку...\n<code>▓▓░░░</code> 40%`,
@@ -7880,11 +7880,11 @@ bot.on('callback_query', async (ctx) => {
     await ctx.answerCbQuery('Применяю...');
     const agentId = parseInt(data.split(':')[1]);
     const fixedCode = pendingRepairs.get(`${userId}:${agentId}`);
-    if (!fixedCode) { await ctx.reply('❌ Фикс устарел, запустите автопочинку снова.'); return; }
+    if (!fixedCode) { await ctx.reply(`${ce('cross','❌')} Фикс устарел, запустите автопочинку снова.`); return; }
 
     await savePromptVersion(agentId, userId);
     const updateResult = await getDBTools().updateAgentCode(agentId, userId, fixedCode);
-    if (!updateResult.success) { await ctx.reply(`❌ Не удалось обновить код: ${updateResult.error}`); return; }
+    if (!updateResult.success) { await ctx.reply(`${ce('cross','❌')} Не удалось обновить код: ${updateResult.error}`); return; }
 
     pendingRepairs.delete(`${userId}:${agentId}`);
     agentLastErrors.delete(agentId); // Сбрасываем ошибку
@@ -7908,7 +7908,7 @@ bot.on('callback_query', async (ctx) => {
     const agentId = parseInt(data.split(':')[1]);
     const codeResult = await getDBTools().getAgentCode(agentId, userId);
     if (!codeResult.success || !codeResult.data) {
-      await ctx.reply('❌ Код не найден');
+      await ctx.reply(`${ce('cross','❌')} Код не найден`);
       return;
     }
     const code = codeResult.data;
@@ -7927,7 +7927,7 @@ bot.on('callback_query', async (ctx) => {
     const agentId = parseInt(data.split(':')[1]);
     const codeResult = await getDBTools().getAgentCode(agentId, userId);
     if (!codeResult.success || !codeResult.data) {
-      await ctx.reply('❌ Код агента не найден'); return;
+      await ctx.reply(`${ce('cross','❌')} Код агента не найден`); return;
     }
     const code = codeResult.data;
 
@@ -8116,7 +8116,7 @@ bot.on('callback_query', async (ctx) => {
 
       await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } });
     } catch (e) {
-      await ctx.reply('❌ ' + String(e));
+      await ctx.reply(`${ce('cross','❌')} ` + String(e));
     }
     return;
   }
@@ -8141,11 +8141,11 @@ bot.on('callback_query', async (ctx) => {
         tc.config.WALLET_MNEMONIC = wallet.mnemonic;
         await dbPool.query('UPDATE builder_bot.agents SET trigger_config=$1 WHERE id=$2', [JSON.stringify(tc), agentId]);
       }
-      await safeReply(ctx, `✅ ${ru ? 'Кошелёк создан!' : 'Wallet created!'}\n\n<code>${escHtml(wallet.address)}</code>`, { parse_mode: 'HTML' });
+      await safeReply(ctx, `${ce('check','✅')} ${ru ? 'Кошелёк создан!' : 'Wallet created!'}\n\n<code>${escHtml(wallet.address)}</code>`, { parse_mode: 'HTML' });
       // Show wallet details
       await showAgentMenu(ctx, agentId, userId);
     } catch (e) {
-      await ctx.reply('❌ ' + String(e));
+      await ctx.reply(`${ce('cross','❌')} ` + String(e));
     }
     return;
   }
@@ -8169,13 +8169,13 @@ bot.on('callback_query', async (ctx) => {
           tc.config.WALLET_ADDRESS = result.wallet.address;
           await dbPool.query('UPDATE builder_bot.agents SET trigger_config=$1 WHERE id=$2', [JSON.stringify(tc), agentId]);
         }
-        await safeReply(ctx, `✅ ${ru ? 'Agentic Wallet привязан!' : 'Agentic Wallet linked!'}\n\n<code>${escHtml(result.wallet.address)}</code>\n📊 ${ru ? 'Лимит' : 'Limit'}: ${result.wallet.spendLimitTon} TON/${ru ? 'день' : 'day'}`, { parse_mode: 'HTML' });
+        await safeReply(ctx, `${ce('check','✅')} ${ru ? 'Agentic Wallet привязан!' : 'Agentic Wallet linked!'}\n\n<code>${escHtml(result.wallet.address)}</code>\n📊 ${ru ? 'Лимит' : 'Limit'}: ${result.wallet.spendLimitTon} TON/${ru ? 'день' : 'day'}`, { parse_mode: 'HTML' });
         await showAgentMenu(ctx, agentId, userId);
       } else {
-        await ctx.reply('❌ ' + (result.error || 'Deploy failed'));
+        await ctx.reply(`${ce('cross','❌')} ` + (result.error || 'Deploy failed'));
       }
     } catch (e) {
-      await ctx.reply('❌ ' + String(e));
+      await ctx.reply(`${ce('cross','❌')} ` + String(e));
     }
     return;
   }
@@ -8190,7 +8190,7 @@ bot.on('callback_query', async (ctx) => {
       // Create root wallet first
       const rootResult = await getAgenticWalletService().setupRootWallet(userId);
       if (!rootResult.success) {
-        await ctx.reply(`❌ ${ru ? 'Ошибка создания Root Wallet' : 'Root Wallet creation failed'}: ${rootResult.error || 'unknown'}`);
+        await ctx.reply(`${ce('cross','❌')} ${ru ? 'Ошибка создания Root Wallet' : 'Root Wallet creation failed'}: ${rootResult.error || 'unknown'}`);
         return;
       }
       // Then deploy sub-wallet for agent
@@ -8214,10 +8214,10 @@ bot.on('callback_query', async (ctx) => {
           { parse_mode: 'HTML' });
         await showAgentMenu(ctx, agentId, userId);
       } else {
-        await ctx.reply('❌ Sub-wallet: ' + (subResult.error || 'Deploy failed'));
+        await ctx.reply(`${ce('cross','❌')} Sub-wallet: ` + (subResult.error || 'Deploy failed'));
       }
     } catch (e) {
-      await ctx.reply('❌ ' + String(e));
+      await ctx.reply(`${ce('cross','❌')} ` + String(e));
     }
     return;
   }
@@ -8232,14 +8232,14 @@ bot.on('callback_query', async (ctx) => {
     try {
       const { getAgenticWalletService } = await import('./services/agentic-wallet');
       const wallet = await getAgenticWalletService().getWalletById(walletId);
-      if (!wallet) { await ctx.reply('❌ Wallet not found'); return; }
+      if (!wallet) { await ctx.reply(`${ce('cross','❌')} Wallet not found`); return; }
       const newBlocked = !wallet.isBlocked;
       await getAgenticWalletService().setBlocked(walletId, userId, newBlocked);
       await safeReply(ctx, newBlocked
         ? `🔴 ${ru ? 'Кошелёк заблокирован' : 'Wallet blocked'}`
         : `🟢 ${ru ? 'Кошелёк разблокирован' : 'Wallet unblocked'}`);
     } catch (e) {
-      await ctx.reply('❌ ' + String(e));
+      await ctx.reply(`${ce('cross','❌')} ` + String(e));
     }
     return;
   }
@@ -8462,7 +8462,7 @@ bot.on('callback_query', async (ctx) => {
     const agentId = parseInt(data.split(':')[1]);
     try {
       const src = await getDBTools().getAgent(agentId, userId);
-      if (!src.data) { await safeReply(ctx, '❌ Агент не найден'); return; }
+      if (!src.data) { await safeReply(ctx, `${ce('cross','❌')} Агент не найден`); return; }
       const a = src.data;
       const cloneName = `${a.name || 'Agent'} (clone)`.slice(0, 100);
       const result = await getDBTools().createAgent({
@@ -8484,12 +8484,12 @@ bot.on('callback_query', async (ctx) => {
             await getAgentStateRepository().set(newAgentId, userId, s.key, s.value);
           }
         } catch (e: any) { console.warn('[Clone] state copy error:', e.message); }
-        await safeReply(ctx, `✅ Агент клонирован!\n\n📋 ${escHtml(cloneName)} #${newAgentId}\n\nВсе настройки, память и уроки скопированы.\nКошелёк создастся новый при первом запуске.`);
+        await safeReply(ctx, `${ce('check','✅')} Агент клонирован!\n\n📋 ${escHtml(cloneName)} #${newAgentId}\n\nВсе настройки, память и уроки скопированы.\nКошелёк создастся новый при первом запуске.`);
       } else {
-        await safeReply(ctx, '❌ Ошибка клонирования');
+        await safeReply(ctx, `${ce('cross','❌')} Ошибка клонирования`);
       }
     } catch (e: any) {
-      await safeReply(ctx, `❌ Ошибка: ${e.message}`);
+      await safeReply(ctx, `${ce('cross','❌')} Ошибка: ${e.message}`);
     }
     return;
   }
@@ -8527,7 +8527,7 @@ bot.on('callback_query', async (ctx) => {
         { parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } }
       );
     } catch (e: any) {
-      await safeReply(ctx, `❌ Ошибка: ${e.message}`);
+      await safeReply(ctx, `${ce('cross','❌')} Ошибка: ${e.message}`);
     }
     return;
   }
@@ -8551,7 +8551,7 @@ bot.on('callback_query', async (ctx) => {
       await savePromptVersion(agentId, userId);
       const updateResult = await getDBTools().updateAgentCode(agentId, userId, version.code);
       if (updateResult.success) {
-        await ctx.answerCbQuery('✅ Восстановлено!');
+        await ctx.answerCbQuery(`${ce('check','✅')} Восстановлено!`);
         const d = new Date(version.savedAt);
         await safeReply(ctx,
           `✅ Промпт восстановлен из версии от ${d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}\n\nЗапустите агента чтобы проверить.`,
@@ -8561,12 +8561,12 @@ bot.on('callback_query', async (ctx) => {
           ]] } }
         );
       } else {
-        await ctx.answerCbQuery('❌ Ошибка');
-        await safeReply(ctx, `❌ Не удалось восстановить: ${updateResult.error}`);
+        await ctx.answerCbQuery(`${ce('cross','❌')} Ошибка`);
+        await safeReply(ctx, `${ce('cross','❌')} Не удалось восстановить: ${updateResult.error}`);
       }
     } catch (e: any) {
-      await ctx.answerCbQuery('❌ Ошибка');
-      await safeReply(ctx, `❌ Ошибка: ${e.message}`);
+      await ctx.answerCbQuery(`${ce('cross','❌')} Ошибка`);
+      await safeReply(ctx, `${ce('cross','❌')} Ошибка: ${e.message}`);
     }
     return;
   }
@@ -8604,7 +8604,7 @@ bot.on('callback_query', async (ctx) => {
     // Останавливаем агента если он запущен
     await getRunnerAgent().pauseAgent(agentId, userId).catch(e => console.warn('[Bot] pauseAgent on delete:', e?.message || e));
     const result = await getDBTools().deleteAgent(agentId, userId);
-    await ctx.reply(result.success ? `🗑 Агент #${agentId} удалён` : `❌ Ошибка: ${result.error}`);
+    await ctx.reply(result.success ? `🗑 Агент #${agentId} удалён` : `${ce('cross','❌')} Ошибка: ${result.error}`);
     if (result.success) {
       // Clean up bot-level Maps that reference deleted agentId
       pendingRepairs.delete(`${userId}:${agentId}`);
@@ -8639,10 +8639,10 @@ bot.on('callback_query', async (ctx) => {
     const found = MODEL_LIST.find(m => m.id === modelId);
     if (found) {
       setUserModel(userId, modelId);
-      await ctx.answerCbQuery(`✅ Модель: ${found.label}`);
+      await ctx.answerCbQuery(`${ce('check','✅')} Модель: ${found.label}`);
       await showModelSelector(ctx);
     } else {
-      await ctx.answerCbQuery('❌ Неизвестная модель');
+      await ctx.answerCbQuery(`${ce('cross','❌')} Неизвестная модель`);
     }
     return;
   }
@@ -8686,12 +8686,12 @@ bot.on('callback_query', async (ctx) => {
       const planId = parts[2];
       const period = parts[3] as 'month' | 'year';
       const plan = PLANS[planId];
-      if (!plan) { await ctx.reply('❌ План не найден'); return; }
+      if (!plan) { await ctx.reply(`${ce('cross','❌')} План не найден`); return; }
       const amount = period === 'year' ? plan.priceYearTon : plan.priceMonthTon;
       const deducted = await atomicBalanceDeduct(userId, amount, { type: 'spend', description: `Подписка ${plan.name} (${period})` });
       if (!deducted) {
         const profile = await getUserProfile(userId);
-        await ctx.reply(`❌ Недостаточно средств. Баланс: ${(profile.balance_ton || 0).toFixed(2)} TON, нужно: ${amount} TON`);
+        await ctx.reply(`${ce('cross','❌')} Недостаточно средств. Баланс: ${(profile.balance_ton || 0).toFixed(2)} TON, нужно: ${amount} TON`);
         return;
       }
       // Activate plan
@@ -8700,7 +8700,7 @@ bot.on('callback_query', async (ctx) => {
         const confirmed = await confirmPayment(userId, `balance:${Date.now()}`);
         if (confirmed.success && confirmed.plan) {
           const expStr = confirmed.expiresAt ? confirmed.expiresAt.toLocaleDateString('ru-RU') : '∞';
-          await ctx.reply(`🎉 Оплачено с баланса! ${confirmed.plan.icon} ${confirmed.plan.name} активирован до ${expStr}`);
+          await ctx.reply(`${ce('party','🎉')} Оплачено с баланса! ${confirmed.plan.icon} ${confirmed.plan.name} активирован до ${expStr}`);
           await showSubscription(ctx);
         }
       }
@@ -8716,11 +8716,11 @@ bot.on('callback_query', async (ctx) => {
       const deducted = await atomicBalanceDeduct(userId, priceGen, { type: 'spend', description: 'Генерация AI агента' });
       if (!deducted) {
         const profile = await getUserProfile(userId);
-        await ctx.reply(`❌ Недостаточно средств. Баланс: ${(profile.balance_ton || 0).toFixed(2)} TON, нужно: ${priceGen} TON`);
+        await ctx.reply(`${ce('cross','❌')} Недостаточно средств. Баланс: ${(profile.balance_ton || 0).toFixed(2)} TON, нужно: ${priceGen} TON`);
         return;
       }
       trackGeneration(userId);
-      await ctx.reply('✅ Оплачено с баланса! Генерирую агента...');
+      await ctx.reply(`${ce('check','✅')} Оплачено с баланса! Генерирую агента...`);
       await ctx.sendChatAction('typing');
       const agentResult = await getOrchestrator().processMessage(userId, description);
       await sendResult(ctx, agentResult);
@@ -8731,19 +8731,19 @@ bot.on('callback_query', async (ctx) => {
       // Marketplace purchase from balance — atomic check+deduct
       const listingId = parseInt(parts[2]);
       const listing = await getMarketplaceRepository().getListing(listingId);
-      if (!listing) { await ctx.reply('❌ Листинг не найден'); return; }
+      if (!listing) { await ctx.reply(`${ce('cross','❌')} Листинг не найден`); return; }
       const priceTon = listing.isFree ? 0 : listing.price / 1e9;
       if (priceTon > 0) {
         const deducted = await atomicBalanceDeduct(userId, priceTon, { type: 'spend', description: `Покупка агента: ${listing.name}` });
         if (!deducted) {
           const profile = await getUserProfile(userId);
-          await ctx.reply(`❌ Недостаточно средств. Баланс: ${(profile.balance_ton || 0).toFixed(2)} TON, нужно: ${priceTon.toFixed(2)} TON`);
+          await ctx.reply(`${ce('cross','❌')} Недостаточно средств. Баланс: ${(profile.balance_ton || 0).toFixed(2)} TON, нужно: ${priceTon.toFixed(2)} TON`);
           return;
         }
       }
       // Create agent copy for buyer (same logic as free purchase)
       const agentResult = await getDBTools().getAgent(listing.agentId, listing.sellerId);
-      if (!agentResult.success || !agentResult.data) { await ctx.reply('❌ Агент не найден'); return; }
+      if (!agentResult.success || !agentResult.data) { await ctx.reply(`${ce('cross','❌')} Агент не найден`); return; }
       const src = agentResult.data;
       const newAgent = await getDBTools().createAgent({
         userId, name: src.name, description: src.description || '',
@@ -8752,7 +8752,7 @@ bot.on('callback_query', async (ctx) => {
       });
       if (newAgent.success) {
         await getMarketplaceRepository().createPurchase({ listingId, buyerId: userId, sellerId: listing.sellerId, agentId: listing.agentId, type: listing.isFree ? "free" : "buy", pricePaid: priceTon * 1e9, txHash: `balance:${Date.now()}` });
-        await ctx.reply(`✅ Агент "${escHtml(listing.name)}" куплен с баланса и добавлен в ваш список!`, { parse_mode: 'HTML' });
+        await ctx.reply(`${ce('check','✅')} Агент "${escHtml(listing.name)}" куплен с баланса и добавлен в ваш список!`, { parse_mode: 'HTML' });
       }
       return;
     }
@@ -8768,12 +8768,12 @@ bot.on('callback_query', async (ctx) => {
     if (!pending) {
       // Создаём новый платёж
       const payment = createPayment(userId, planId, period as 'month' | 'year');
-      if ('error' in payment) { await ctx.reply(`❌ ${payment.error}`); return; }
+      if ('error' in payment) { await ctx.reply(`${ce('cross','❌')} ${payment.error}`); return; }
     }
     const p = getPendingPayment(userId)!;
     const tonConn = getTonConnectManager();
     if (!tonConn.isConnected(userId)) {
-      await ctx.reply('❌ Сначала подключите TON кошелёк через 💎 TON Connect');
+      await ctx.reply(`${ce('cross','❌')} Сначала подключите TON кошелёк через ${ce('diamond','💎')} TON Connect`);
       return;
     }
     await ctx.reply('📤 Запрашиваю подтверждение в Tonkeeper...');
@@ -8784,11 +8784,11 @@ bot.on('callback_query', async (ctx) => {
       const confirmed = await confirmPayment(userId, result.boc);
       if (confirmed.success && confirmed.plan) {
         const expStr = confirmed.expiresAt ? confirmed.expiresAt.toLocaleDateString('ru-RU') : '∞';
-        await ctx.reply(`🎉 Оплата прошла! ${confirmed.plan.icon} ${confirmed.plan.name} активирован до ${expStr}`);
+        await ctx.reply(`${ce('party','🎉')} Оплата прошла! ${confirmed.plan.icon} ${confirmed.plan.name} активирован до ${expStr}`);
         await showSubscription(ctx);
       }
     } else {
-      await ctx.reply(`❌ Ошибка транзакции: ${result.error || 'пользователь отменил'}\n\nМожете оплатить вручную.`);
+      await ctx.reply(`${ce('cross','❌')} Ошибка транзакции: ${result.error || 'пользователь отменил'}\n\nМожете оплатить вручную.`);
     }
     return;
   }
@@ -8812,7 +8812,7 @@ bot.on('callback_query', async (ctx) => {
 
     const bal = await tonConn.getBalance(userId);
     if (parseFloat(bal.ton) < priceGen + 0.05) {
-      await ctx.reply(`❌ Недостаточно TON.\nБаланс: ${bal.ton} TON\nНужно: ${priceGen + 0.05} TON`);
+      await ctx.reply(`${ce('cross','❌')} Недостаточно TON.\nБаланс: ${bal.ton} TON\nНужно: ${priceGen + 0.05} TON`);
       return;
     }
 
@@ -8823,12 +8823,12 @@ bot.on('callback_query', async (ctx) => {
 
     if (result.success) {
       trackGeneration(userId);
-      await ctx.reply(`✅ Оплачено! Генерирую агента...`);
+      await ctx.reply(`${ce('check','✅')} Оплачено! Генерирую агента...`);
       await ctx.sendChatAction('typing');
       const agentResult = await getOrchestrator().processMessage(userId, description);
       await sendResult(ctx, agentResult);
     } else {
-      await ctx.reply(`❌ Оплата не прошла: ${result.error || 'отменено'}`);
+      await ctx.reply(`${ce('cross','❌')} Оплата не прошла: ${result.error || 'отменено'}`);
     }
     return;
   }
@@ -8840,7 +8840,7 @@ bot.on('callback_query', async (ctx) => {
     try {
       const lang = getUserLang(userId);
       const agentData = await getDBTools().getAgent(agentId, userId);
-      if (!agentData.success || !agentData.data) { await ctx.reply('❌'); return; }
+      if (!agentData.success || !agentData.data) { await ctx.reply(`${ce('cross','❌')}`); return; }
       const a = agentData.data;
       const cfg = (typeof a.triggerConfig === 'object' ? a.triggerConfig : {}) as Record<string, any>;
       const nestedCfg = (cfg.config || {}) as Record<string, any>;
@@ -8860,7 +8860,7 @@ bot.on('callback_query', async (ctx) => {
 
       let text = `⚙️ <b>${lang === 'ru' ? 'Настройки AI' : 'AI Settings'}</b>\n${div()}\n\n`;
       text += `🤖 <b>${lang === 'ru' ? 'Провайдер:' : 'Provider:'}</b> ${escHtml(provider)}\n`;
-      text += `🔑 <b>${lang === 'ru' ? 'API ключ:' : 'API Key:'}</b> <code>${escHtml(maskedKey)}</code>`;
+      text += `${ce('key','🔑')} <b>${lang === 'ru' ? 'API ключ:' : 'API Key:'}</b> <code>${escHtml(maskedKey)}</code>`;
       if (keySource) text += ` <i>(${keySource})</i>`;
       text += '\n';
       if (model) text += `🧠 <b>${lang === 'ru' ? 'Модель:' : 'Model:'}</b> ${escHtml(model)}\n`;
@@ -8889,7 +8889,7 @@ bot.on('callback_query', async (ctx) => {
         ? (lang === 'ru' ? '🧠 Самоулучшение: ВКЛ' : '🧠 Self-improve: ON')
         : (lang === 'ru' ? '🧠 Самоулучшение: ВЫКЛ' : '🧠 Self-improve: OFF');
       kb.push([{ text: siLabel, callback_data: `toggle_self_improve:${agentId}` }]);
-      text += `\n🧠 <b>${lang === 'ru' ? 'Самоулучшение:' : 'Self-improvement:'}</b> ${selfImproveOn ? '✅' : '❌'}\n`;
+      text += `\n🧠 <b>${lang === 'ru' ? 'Самоулучшение:' : 'Self-improvement:'}</b> ${selfImproveOn ? ce('check','✅') : ce('cross','❌')}\n`;
       text += `<i>${lang === 'ru' ? 'AI анализирует ошибки и автоматически исправляет агента' : 'AI analyzes errors and auto-fixes agent'}</i>\n`;
       if (selfImproveOn && !apiKey) {
         text += `⚠️ <i>${lang === 'ru' ? 'API ключ не настроен! Добавьте в Профиль → API ключи' : 'No API key! Add in Profile → API keys'}</i>\n`;
@@ -8898,7 +8898,7 @@ bot.on('callback_query', async (ctx) => {
 
       await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } });
     } catch (e: any) {
-      await ctx.reply('❌ ' + (e.message || String(e)));
+      await ctx.reply(`${ce('cross','❌')} ` + (e.message || String(e)));
     }
     return;
   }
@@ -8909,7 +8909,7 @@ bot.on('callback_query', async (ctx) => {
     await ctx.answerCbQuery();
     try {
       const agentData = await getDBTools().getAgent(agentId, userId);
-      if (!agentData.success || !agentData.data) { await ctx.reply('❌'); return; }
+      if (!agentData.success || !agentData.data) { await ctx.reply(`${ce('cross','❌')}`); return; }
       const tc = (typeof agentData.data.triggerConfig === 'object' ? agentData.data.triggerConfig : {}) as Record<string, any>;
       if (!tc.config) tc.config = {};
       const current = tc.config.self_improvement_enabled !== false;
@@ -8926,7 +8926,7 @@ bot.on('callback_query', async (ctx) => {
           : (lang === 'ru' ? '🧠 Самоулучшение выключено.' : '🧠 Self-improvement disabled.')
       );
     } catch (e: any) {
-      await ctx.reply('❌ ' + (e.message || ''));
+      await ctx.reply(`${ce('cross','❌')} ` + (e.message || ''));
     }
     return;
   }
@@ -8939,17 +8939,17 @@ bot.on('callback_query', async (ctx) => {
     await ctx.answerCbQuery();
     try {
       const agentData = await getDBTools().getAgent(agentId, userId);
-      if (!agentData.success || !agentData.data) { await ctx.reply('❌'); return; }
+      if (!agentData.success || !agentData.data) { await ctx.reply(`${ce('cross','❌')}`); return; }
       const cfg = (typeof agentData.data.triggerConfig === 'object' ? agentData.data.triggerConfig : {}) as Record<string, any>;
       const nestedCfg = cfg.config || {};
       const newConfig = { ...cfg, config: { ...nestedCfg, AI_PROVIDER: provider } };
       await dbPool.query('UPDATE builder_bot.agents SET trigger_config=$1 WHERE id=$2 AND user_id=$3', [JSON.stringify(newConfig), agentId, userId]);
       const lang = getUserLang(userId);
-      await safeReply(ctx, `✅ ${lang === 'ru' ? 'Провайдер изменён на' : 'Provider changed to'} <b>${escHtml(provider)}</b>`, { parse_mode: 'HTML' });
+      await safeReply(ctx, `${ce('check','✅')} ${lang === 'ru' ? 'Провайдер изменён на' : 'Provider changed to'} <b>${escHtml(provider)}</b>`, { parse_mode: 'HTML' });
       // Перерисовать настройки
       await showAgentMenu(ctx, agentId, userId);
     } catch (e: any) {
-      await ctx.reply('❌ ' + (e.message || String(e)));
+      await ctx.reply(`${ce('cross','❌')} ` + (e.message || String(e)));
     }
     return;
   }
@@ -8960,17 +8960,17 @@ bot.on('callback_query', async (ctx) => {
     await ctx.answerCbQuery();
     try {
       const agentData = await getDBTools().getAgent(agentId, userId);
-      if (!agentData.success || !agentData.data) { await ctx.reply('❌'); return; }
+      if (!agentData.success || !agentData.data) { await ctx.reply(`${ce('cross','❌')}`); return; }
       const cfg = (typeof agentData.data.triggerConfig === 'object' ? agentData.data.triggerConfig : {}) as Record<string, any>;
       const nestedCfg = { ...(cfg.config || {}) };
       delete nestedCfg.AI_API_KEY;
       const newConfig = { ...cfg, config: nestedCfg };
       await dbPool.query('UPDATE builder_bot.agents SET trigger_config=$1 WHERE id=$2 AND user_id=$3', [JSON.stringify(newConfig), agentId, userId]);
       const lang = getUserLang(userId);
-      await safeReply(ctx, `✅ ${lang === 'ru' ? 'Ключ агента удалён. Теперь используется глобальный ключ.' : 'Agent key removed. Using global key now.'}`, { parse_mode: 'HTML' });
+      await safeReply(ctx, `${ce('check','✅')} ${lang === 'ru' ? 'Ключ агента удалён. Теперь используется глобальный ключ.' : 'Agent key removed. Using global key now.'}`, { parse_mode: 'HTML' });
       await showAgentMenu(ctx, agentId, userId);
     } catch (e: any) {
-      await ctx.reply('❌ ' + (e.message || String(e)));
+      await ctx.reply(`${ce('cross','❌')} ` + (e.message || String(e)));
     }
     return;
   }
@@ -8983,7 +8983,7 @@ bot.on('callback_query', async (ctx) => {
     await ctx.answerCbQuery();
     try {
       const agentData = await getDBTools().getAgent(agentId, userId);
-      if (!agentData.success || !agentData.data) { await ctx.reply('❌'); return; }
+      if (!agentData.success || !agentData.data) { await ctx.reply(`${ce('cross','❌')}`); return; }
       const tc = (typeof agentData.data.triggerConfig === 'object' ? agentData.data.triggerConfig : {}) as Record<string, any>;
       if (!tc.config) tc.config = {};
       const caps: string[] = tc.config.enabledCapabilities || [];
@@ -8993,14 +8993,14 @@ bot.on('callback_query', async (ctx) => {
       await dbPool.query('UPDATE builder_bot.agents SET trigger_config=$1 WHERE id=$2 AND user_id=$3', [JSON.stringify(tc), agentId, userId]);
       await showCapabilitiesMenu(ctx, agentId, caps);
     } catch (e: any) {
-      await ctx.reply('❌ ' + (e.message || String(e)));
+      await ctx.reply(`${ce('cross','❌')} ` + (e.message || String(e)));
     }
     return;
   }
 
   if (data.startsWith('agent_cap_done:')) {
     const agentId = parseInt(data.split(':')[1], 10);
-    await ctx.answerCbQuery('✅ Сохранено');
+    await ctx.answerCbQuery(`${ce('check','✅')} Сохранено`);
     await showAgentMenu(ctx, agentId, userId);
     return;
   }
@@ -9010,14 +9010,14 @@ bot.on('callback_query', async (ctx) => {
     await ctx.answerCbQuery();
     try {
       const agentData = await getDBTools().getAgent(agentId, userId);
-      if (!agentData.success || !agentData.data) { await ctx.reply('❌'); return; }
+      if (!agentData.success || !agentData.data) { await ctx.reply(`${ce('cross','❌')}`); return; }
       const tc = (typeof agentData.data.triggerConfig === 'object' ? agentData.data.triggerConfig : {}) as Record<string, any>;
       if (!tc.config) tc.config = {};
       tc.config.enabledCapabilities = [];
       await dbPool.query('UPDATE builder_bot.agents SET trigger_config=$1 WHERE id=$2 AND user_id=$3', [JSON.stringify(tc), agentId, userId]);
       await showCapabilitiesMenu(ctx, agentId, []);
     } catch (e: any) {
-      await ctx.reply('❌ ' + (e.message || String(e)));
+      await ctx.reply(`${ce('cross','❌')} ` + (e.message || String(e)));
     }
     return;
   }
@@ -9027,12 +9027,12 @@ bot.on('callback_query', async (ctx) => {
     await ctx.answerCbQuery();
     try {
       const agentData = await getDBTools().getAgent(agentId, userId);
-      if (!agentData.success || !agentData.data) { await ctx.reply('❌'); return; }
+      if (!agentData.success || !agentData.data) { await ctx.reply(`${ce('cross','❌')}`); return; }
       const tc = (typeof agentData.data.triggerConfig === 'object' ? agentData.data.triggerConfig : {}) as Record<string, any>;
       const caps: string[] = tc.config?.enabledCapabilities || [];
       await showCapabilitiesMenu(ctx, agentId, caps);
     } catch (e: any) {
-      await ctx.reply('❌ ' + (e.message || String(e)));
+      await ctx.reply(`${ce('cross','❌')} ` + (e.message || String(e)));
     }
     return;
   }
@@ -9050,7 +9050,7 @@ bot.on('callback_query', async (ctx) => {
       const bl = await loadBlocklist(stateRepo, agentId);
       const ru = getUserLang(userId) === 'ru';
       let text = `🚫 <b>${ru ? 'Блоклист' : 'Blocklist'}</b> #${agentId}\n`;
-      text += `${ru ? 'Статус' : 'Status'}: ${bl.enabled ? '✅ Вкл' : '⬜ Выкл'}\n\n`;
+      text += `${ru ? 'Статус' : 'Status'}: ${bl.enabled ? ce('check','✅') + ' Вкл' : '⬜ Выкл'}\n\n`;
       if (bl.keywords.length > 0) {
         text += `${ru ? 'Слова' : 'Keywords'}: <code>${escHtml(bl.keywords.join(', '))}</code>\n`;
       } else {
@@ -9081,7 +9081,7 @@ bot.on('callback_query', async (ctx) => {
       const cbData = `hooks_blocklist:${agentId}`;
       (ctx as any).callbackQuery.data = cbData;
       // Inline re-invoke by falling through to next tick
-      await ctx.reply(bl.enabled ? '✅ Блоклист включён' : '⬜ Блоклист выключен');
+      await ctx.reply(bl.enabled ? `${ce('check','✅')} Блоклист включён` : '⬜ Блоклист выключен');
     } catch (e: any) { await ctx.reply('❌ ' + (e.message || '').slice(0, 100)); }
     return;
   }
@@ -9116,14 +9116,14 @@ bot.on('callback_query', async (ctx) => {
       const stateRepo = getAgentStateRepository();
       const triggers = await loadTriggers(stateRepo, agentId);
       const ru = getUserLang(userId) === 'ru';
-      let text = `🎯 <b>${ru ? 'Контекстные триггеры' : 'Context Triggers'}</b> #${agentId}\n\n`;
+      let text = `${ce('target','🎯')} <b>${ru ? 'Контекстные триггеры' : 'Context Triggers'}</b> #${agentId}\n\n`;
       if (triggers.length === 0) {
         text += ru
           ? '<i>Нет триггеров. Триггеры инжектят дополнительный контекст когда в сообщении встречается ключевое слово.</i>'
           : '<i>No triggers. Triggers inject additional context when a keyword is found in a message.</i>';
       } else {
         triggers.forEach((t: any, i: number) => {
-          text += `${t.enabled ? '✅' : '⬜'} <b>${escHtml(t.keyword)}</b>\n`;
+          text += `${t.enabled ? ce('check','✅') : '⬜'} <b>${escHtml(t.keyword)}</b>\n`;
           text += `   → <i>${escHtml(t.context.slice(0, 80))}</i>\n\n`;
         });
       }
@@ -9143,7 +9143,7 @@ bot.on('callback_query', async (ctx) => {
     const agentId = parseInt(data.split(':')[1], 10);
     await ctx.answerCbQuery();
     pendingTriggerAdd.set(userId, { agentId, step: 'keyword' });
-    await ctx.reply('🎯 Отправьте ключевое слово для триггера:', { parse_mode: 'HTML' });
+    await ctx.reply(`${ce('target','🎯')} Отправьте ключевое слово для триггера:`, { parse_mode: 'HTML' });
     return;
   }
 
@@ -9197,7 +9197,7 @@ bot.on('callback_query', async (ctx) => {
       if (policy === 'idle' && !cfg.idleMinutes) cfg.idleMinutes = 60;
       await saveSessionConfig(stateRepo, agentId, userId, cfg);
       const labels: Record<string, string> = { none: '♾ Без сброса', daily: '📅 Ежедневно', idle: '⏰ По бездействию' };
-      await ctx.reply(`✅ Политика сессии: ${labels[policy]}`);
+      await ctx.reply(`${ce('check','✅')} Политика сессии: ${labels[policy]}`);
     } catch (e: any) { await ctx.reply('❌ ' + (e.message || '').slice(0, 100)); }
     return;
   }
@@ -9242,7 +9242,7 @@ bot.on('callback_query', async (ctx) => {
       complete2FAFns.delete(userId);
       if (['qr_waiting', 'qr_password'].includes(pendingTgAuth.get(userId) ?? '')) pendingTgAuth.delete(userId);
       if (result.ok) {
-        bot.telegram.sendMessage(userId, '🎉 <b>Telegram авторизован!</b>', { parse_mode: 'HTML' }).catch(() => {});
+        bot.telegram.sendMessage(userId, `${ce('party','🎉')} <b>Telegram авторизован!</b>`, { parse_mode: 'HTML' }).catch(() => {});
         const setupQR2 = pendingAgentSetup.get(userId);
         if (setupQR2) {
           setupQR2.tgAuthed = true;
@@ -9290,7 +9290,7 @@ bot.on('callback_query', async (ctx) => {
         setTimeout(async () => { try { await showSetupStep(ctx, userId); } catch {} }, 1000);
       }
     } catch (e: any) {
-      await ctx.reply('❌ ' + (e.message || String(e)));
+      await ctx.reply(`${ce('cross','❌')} ` + (e.message || String(e)));
     }
     return;
   }
@@ -9355,7 +9355,7 @@ bot.on('callback_query', async (ctx) => {
       );
       await showAgentMenu(ctx, agentId, userId);
     } catch (e: any) {
-      await ctx.reply('❌ ' + (e.message || String(e)));
+      await ctx.reply(`${ce('cross','❌')} ` + (e.message || String(e)));
     }
     return;
   }
@@ -9384,7 +9384,7 @@ bot.on('callback_query', async (ctx) => {
       // Авторизован — показываем инфо
       const agentRes = await getDBTools().getAgent(agentId, userId);
       const a = agentRes.data;
-      if (!a) { await ctx.reply('❌ Агент не найден'); return; }
+      if (!a) { await ctx.reply(`${ce('cross','❌')} Агент не найден`); return; }
       const isActive = a.isActive;
       await editOrReply(ctx,
         `🧑‍💻 <b>Telegram Userbot Mode</b>\n\n` +
@@ -9407,7 +9407,7 @@ bot.on('callback_query', async (ctx) => {
         ] } }
       );
     } catch (e: any) {
-      await ctx.reply('❌ ' + (e.message || String(e)));
+      await ctx.reply(`${ce('cross','❌')} ` + (e.message || String(e)));
     }
     return;
   }
@@ -9417,7 +9417,7 @@ bot.on('callback_query', async (ctx) => {
     if (!isPlatformAdmin(userId)) { await ctx.answerCbQuery('⛔ Только админ'); return; }
     const { getSelfImprovementSystem } = await import('./self-improvement');
     const sis = getSelfImprovementSystem();
-    if (!sis) { await ctx.answerCbQuery('❌ Система не запущена'); return; }
+    if (!sis) { await ctx.answerCbQuery(`${ce('cross','❌')} Система не запущена`); return; }
 
     const mode = data.split(':')[1];
     const labels: Record<string, string> = { improver: '🔍 Улучшатель', ideator: '💡 Придумыватель', implementor: '🔨 Реализатор' };
@@ -9425,14 +9425,14 @@ bot.on('callback_query', async (ctx) => {
 
     if (data.startsWith('ai_toggle:')) {
       const nowEnabled = sis.toggleMode(mode);
-      await ctx.answerCbQuery(`${label}: ${nowEnabled ? '✅ ВКЛ' : '❌ ВЫКЛ'}`);
+      await ctx.answerCbQuery(`${label}: ${nowEnabled ? ce('check','✅') + ' ВКЛ' : ce('cross','❌') + ' ВЫКЛ'}`);
 
       // Update message with new state
       const modes = sis.getModesStatus();
       const ideasCount = sis.getPendingIdeasCount();
       let text = '🤖 <b>AI Режимы</b>\n\n';
-      text += `🔍 Улучшатель (авто 10мин): ${modes[0].enabled ? '✅' : '❌'}\n`;
-      text += `💡 Придумыватель (авто 30мин): ${modes[1].enabled ? '✅' : '❌'}\n`;
+      text += `🔍 Улучшатель (авто 10мин): ${modes[0].enabled ? ce('check','✅') : ce('cross','❌')}\n`;
+      text += `${ce('bulb','💡')} Придумыватель (авто 30мин): ${modes[1].enabled ? ce('check','✅') : ce('cross','❌')}\n`;
       text += `🔨 Реализатор (по кнопке): всегда готов\n`;
       text += `\n📋 Идей в очереди: <b>${ideasCount}</b>`;
 
@@ -9479,9 +9479,9 @@ bot.on('callback_query', async (ctx) => {
         } else if (result === 'already_running') {
           await ctx.reply(`⚠️ Уже запущен, подождите.`).catch(() => {});
         } else if (result === 'claude_unavailable') {
-          await ctx.reply(`❌ Claude Code недоступен.`).catch(() => {});
+          await ctx.reply(`${ce('cross','❌')} Claude Code недоступен.`).catch(() => {});
         } else {
-          await ctx.reply(`❌ ${result}`).catch(() => {});
+          await ctx.reply(`${ce('cross','❌')} ${result}`).catch(() => {});
         }
       }).catch(e => console.warn('[Bot] triggerMode error:', e?.message || e));
     }
@@ -9493,7 +9493,7 @@ bot.on('callback_query', async (ctx) => {
     if (!isPlatformAdmin(userId)) { await ctx.answerCbQuery('⛔ Только админ'); return; }
     const { getSelfImprovementSystem } = await import('./self-improvement');
     const sis = getSelfImprovementSystem();
-    if (!sis) { await ctx.answerCbQuery('❌'); return; }
+    if (!sis) { await ctx.answerCbQuery(`${ce('cross','❌')}`); return; }
 
     const index = parseInt(data.split(':')[1]);
     const ideas = sis.getPendingIdeas();
@@ -9510,9 +9510,9 @@ bot.on('callback_query', async (ctx) => {
       } else if (result === 'already_running') {
         await ctx.reply(`⚠️ Уже запущен, подождите.`).catch(() => {});
       } else if (result === 'bad_index') {
-        await ctx.reply(`❌ Идея уже была реализована или удалена.`).catch(() => {});
+        await ctx.reply(`${ce('cross','❌')} Идея уже была реализована или удалена.`).catch(() => {});
       } else {
-        await ctx.reply(`❌ ${result}`).catch(() => {});
+        await ctx.reply(`${ce('cross','❌')} ${result}`).catch(() => {});
       }
     }).catch(e => console.warn('[Bot] implementIdea error:', e?.message || e));
     return;
@@ -9538,7 +9538,7 @@ bot.on('callback_query', async (ctx) => {
     if (!isPlatformAdmin(userId)) { await ctx.answerCbQuery('⛔ Только админ'); return; }
     const { getSelfImprovementSystem } = await import('./self-improvement');
     const sis = getSelfImprovementSystem();
-    if (!sis) { await ctx.answerCbQuery('❌'); return; }
+    if (!sis) { await ctx.answerCbQuery(`${ce('cross','❌')}`); return; }
     const index = parseInt(data.split(':')[1]);
     sis.dropIdea(index);
     await ctx.answerCbQuery('🗑 Идея удалена');
@@ -9553,7 +9553,7 @@ bot.on('callback_query', async (ctx) => {
     try {
       const { getSelfImprovementSystem } = await import('./self-improvement');
       const sis = getSelfImprovementSystem();
-      if (!sis) { await ctx.answerCbQuery('❌ Система не запущена'); return; }
+      if (!sis) { await ctx.answerCbQuery(`${ce('cross','❌')} Система не запущена`); return; }
       if (action === 'proposal_approve') {
         await ctx.answerCbQuery('⏳ Применяю...');
         await sis.approveProposal(proposalId);
@@ -9581,7 +9581,7 @@ bot.on('callback_query', async (ctx) => {
         );
       }
     } catch (e: any) {
-      await ctx.reply('❌ Ошибка: ' + escHtml(e.message || String(e)), { parse_mode: 'HTML' });
+      await ctx.reply(`${ce('cross','❌')} Ошибка: ` + escHtml(e.message || String(e)), { parse_mode: 'HTML' });
     }
     return;
   }
@@ -9594,7 +9594,7 @@ bot.on('callback_query', async (ctx) => {
     await sendResult(ctx, result);
   } catch (err) {
     console.error('Callback orchestrator error:', err);
-    await ctx.reply('❌ Ошибка. Попробуйте ещё раз.');
+    await ctx.reply(`${ce('cross','❌')} Ошибка. Попробуйте ещё раз.`);
   }
 });
 
@@ -9904,7 +9904,7 @@ bot.on(message('photo'), async (ctx) => {
         const fbText = `${icon} <b>Feedback</b> [${_fb.type.toUpperCase()}]\n<b>From:</b> @${ctx.from?.username || userId}\n\n<b>${escHtml(title)}</b>\n${escHtml((caption || 'Screenshot attached').slice(0, 500))}`;
         await bot.telegram.sendPhoto(OWNER_ID_NUM, photoId, { caption: fbText, parse_mode: 'HTML' });
       } catch {}
-    } catch (e: any) { await safeReply(ctx, `❌ ${e.message}`); }
+    } catch (e: any) { await safeReply(ctx, `${ce('cross','❌')} ${e.message}`); }
     return;
   }
 });
@@ -9933,7 +9933,7 @@ bot.on(message('text'), async (ctx) => {
   if (pendingUserIdea.has(userId)) {
     if (trimmed.toLowerCase() === 'стоп' || trimmed.toLowerCase() === 'stop') {
       pendingUserIdea.delete(userId);
-      await ctx.reply('✅ Отменено.');
+      await ctx.reply(`${ce('check','✅')} Отменено.`);
       return;
     }
     pendingUserIdea.delete(userId);
@@ -9942,7 +9942,7 @@ bot.on(message('text'), async (ctx) => {
 
     const { getSelfImprovementSystem } = await import('./self-improvement');
     const sis = getSelfImprovementSystem();
-    if (!sis) { await ctx.reply('❌ Система не запущена'); return; }
+    if (!sis) { await ctx.reply(`${ce('cross','❌')} Система не запущена`); return; }
 
     // Run in background
     sis.submitUserIdea(trimmed).then(async (result) => {
@@ -9951,7 +9951,7 @@ bot.on(message('text'), async (ctx) => {
       } else if (result === 'already_running') {
         await ctx.reply('⚠️ Уже запущен, подождите.').catch(() => {});
       } else {
-        await ctx.reply(`❌ ${result}`).catch(() => {});
+        await ctx.reply(`${ce('cross','❌')} ${result}`).catch(() => {});
       }
     }).catch(e => console.warn('[Bot] submitUserIdea error:', e?.message || e));
     return;
@@ -9963,7 +9963,7 @@ bot.on(message('text'), async (ctx) => {
 
     if (trimmed.toLowerCase() === 'стоп' || trimmed.toLowerCase() === 'stop') {
       pendingProposalDiscuss.delete(userId);
-      await ctx.reply('✅ Вышли из обсуждения.');
+      await ctx.reply(`${ce('check','✅')} Вышли из обсуждения.`);
       return;
     }
 
@@ -9974,7 +9974,7 @@ bot.on(message('text'), async (ctx) => {
       const proposal = await getAIProposalsRepository().getById(proposalId);
       if (!proposal) {
         pendingProposalDiscuss.delete(userId);
-        await ctx.reply('❌ Proposal не найден.');
+        await ctx.reply(`${ce('cross','❌')} Proposal не найден.`);
         return;
       }
 
@@ -10010,7 +10010,7 @@ bot.on(message('text'), async (ctx) => {
       const newKws = trimmed.split(',').map((s: string) => s.trim()).filter((s: string) => s.length > 0);
       bl.keywords = [...new Set([...bl.keywords, ...newKws])];
       await saveBlocklist(stateRepo, agentId, userId, bl);
-      await ctx.reply(`✅ Добавлено ${newKws.length} слов(а). Всего: ${bl.keywords.length}\n<code>${escHtml(bl.keywords.join(', '))}</code>`, { parse_mode: 'HTML' });
+      await ctx.reply(`${ce('check','✅')} Добавлено ${newKws.length} слов(а). Всего: ${bl.keywords.length}\n<code>${escHtml(bl.keywords.join(', '))}</code>`, { parse_mode: 'HTML' });
     } catch (e: any) { await ctx.reply('❌ ' + (e.message || '').slice(0, 100)); }
     return;
   }
@@ -10021,7 +10021,7 @@ bot.on(message('text'), async (ctx) => {
     if (state.step === 'keyword') {
       state.keyword = trimmed;
       state.step = 'context';
-      await ctx.reply(`🎯 Ключевое слово: <b>${escHtml(trimmed)}</b>\n\nТеперь отправьте контекст который нужно инжектить когда это слово встречается:`, { parse_mode: 'HTML' });
+      await ctx.reply(`${ce('target','🎯')} Ключевое слово: <b>${escHtml(trimmed)}</b>\n\nТеперь отправьте контекст который нужно инжектить когда это слово встречается:`, { parse_mode: 'HTML' });
       return;
     }
     if (state.step === 'context') {
@@ -10050,7 +10050,7 @@ bot.on(message('text'), async (ctx) => {
 
     if (trimmed === '/stop_chat' || trimmed.toLowerCase() === 'стоп' || trimmed.toLowerCase() === '/stopchat') {
       pendingAgentChats.delete(userId);
-      await ctx.reply(lang === 'ru' ? '✅ Вышли из чата с агентом.' : '✅ Exited agent chat.');
+      await ctx.reply(lang === 'ru' ? `${ce('check','✅')} Вышли из чата с агентом.` : `${ce('check','✅')} Exited agent chat.`);
       return;
     }
 
@@ -10058,7 +10058,7 @@ bot.on(message('text'), async (ctx) => {
     const agentRes = await getDBTools().getAgent(agentId, userId);
     if (!agentRes.success || !agentRes.data) {
       pendingAgentChats.delete(userId);
-      await ctx.reply('❌ Агент не найден. Чат закрыт.');
+      await ctx.reply(`${ce('cross','❌')} Агент не найден. Чат закрыт.`);
       return;
     }
     const a = agentRes.data;
@@ -10098,7 +10098,7 @@ bot.on(message('text'), async (ctx) => {
           await savePromptVersion(agentId, userId);
           const updateResult = await getDBTools().updateAgentCode(agentId, userId, result.newCode);
           if (updateResult.success) {
-            await ctx.reply(result.reply + '\n\n✅ <i>Код агента обновлён платформой.</i>', { parse_mode: 'HTML' });
+            await ctx.reply(result.reply + `\n\n${ce('check','✅')} <i>Код агента обновлён платформой.</i>`, { parse_mode: 'HTML' });
           } else {
             await ctx.reply(result.reply + '\n\n⚠️ <i>Не удалось сохранить код: ' + escHtml(updateResult.error || 'ошибка') + '</i>', { parse_mode: 'HTML' });
           }
@@ -10130,7 +10130,7 @@ bot.on(message('text'), async (ctx) => {
 
     if (trimmed.toLowerCase() === '/cancel' || trimmed.toLowerCase() === 'отмена') {
       pendingWithdrawal.delete(userId);
-      await ctx.reply(lang === 'ru' ? '❌ Вывод отменён.' : '❌ Withdrawal cancelled.');
+      await ctx.reply(lang === 'ru' ? `${ce('cross','❌')} Вывод отменён.` : `${ce('cross','❌')} Withdrawal cancelled.`);
       return;
     }
 
@@ -10171,7 +10171,7 @@ bot.on(message('text'), async (ctx) => {
       const amount = parseFloat(trimmed.replace(',', '.'));
       const networkFee = 0.05;
       if (isNaN(amount) || amount <= 0) {
-        await ctx.reply(lang === 'ru' ? '❌ Введите корректную сумму (например: 1.5)' : '❌ Enter a valid amount (e.g. 1.5)');
+        await ctx.reply(lang === 'ru' ? `${ce('cross','❌')} Введите корректную сумму (например: 1.5)` : `${ce('cross','❌')} Enter a valid amount (e.g. 1.5)`);
         return;
       }
 
@@ -10223,7 +10223,7 @@ bot.on(message('text'), async (ctx) => {
         deductedProfile = profile;
       } catch (txErr) {
         await wdClient.query('ROLLBACK').catch(() => {});
-        await ctx.reply(lang === 'ru' ? '❌ Ошибка обработки. Попробуйте снова.' : '❌ Processing error. Please try again.');
+        await ctx.reply(lang === 'ru' ? `${ce('cross','❌')} Ошибка обработки. Попробуйте снова.` : `${ce('cross','❌')} Processing error. Please try again.`);
         return;
       } finally {
         wdClient.release();
@@ -10288,7 +10288,7 @@ bot.on(message('text'), async (ctx) => {
       clearAuthState(userId);
       cancelQRLogin(); // stop QR event listener if active
       complete2FAFns.delete(userId);
-      await ctx.reply('❌ Авторизация отменена.');
+      await ctx.reply(`${ce('cross','❌')} Авторизация отменена.`);
       return;
     }
 
@@ -10298,7 +10298,7 @@ bot.on(message('text'), async (ctx) => {
         const result = await authSendPhone(userId, trimmed);
         if (result.type === 'already_authorized') {
           pendingTgAuth.delete(userId);
-          await ctx.reply('✅ Уже авторизован! Используй /gifts для данных Fragment.');
+          await ctx.reply(`${ce('check','✅')} Уже авторизован! Используй /gifts для данных Fragment.`);
         } else {
           pendingTgAuth.set(userId, 'code');
           await safeReply(ctx,
@@ -10311,7 +10311,7 @@ bot.on(message('text'), async (ctx) => {
         }
       } catch (e: any) {
         pendingTgAuth.delete(userId);
-        await ctx.reply('❌ Ошибка: ' + e.message + '\n\nПопробуй снова: /tglogin');
+        await ctx.reply(`${ce('cross','❌')} Ошибка: ` + e.message + '\n\nПопробуй снова: /tglogin');
       }
       return;
     }
@@ -10348,9 +10348,9 @@ bot.on(message('text'), async (ctx) => {
           );
         } else if (errMsg === 'INVALID') {
           // Wrong code — let them retry
-          await ctx.reply('❌ Неверный код. Проверь и введи ещё раз (или /cancel для отмены):');
+          await ctx.reply(`${ce('cross','❌')} Неверный код. Проверь и введи ещё раз (или /cancel для отмены):`);
         } else {
-          await ctx.reply('❌ Ошибка: ' + errMsg + '\n\nПопробуй /tglogin заново.');
+          await ctx.reply(`${ce('cross','❌')} Ошибка: ` + errMsg + '\n\nПопробуй /tglogin заново.');
           pendingTgAuth.delete(userId);
         }
       }
@@ -10371,7 +10371,7 @@ bot.on(message('text'), async (ctx) => {
         const setupPw = pendingAgentSetup.get(userId);
         if (setupPw) { setupPw.tgAuthed = true; setupPw.currentStep++; setTimeout(() => showSetupStep(ctx, userId).catch(() => {}), 1000); }
       } catch (e: any) {
-        await ctx.reply('❌ Неверный пароль 2FA: ' + e.message + '\n\nПопробуй снова или /cancel');
+        await ctx.reply(`${ce('cross','❌')} Неверный пароль 2FA: ` + e.message + '\n\nПопробуй снова или /cancel');
       }
       return;
     }
@@ -10389,7 +10389,7 @@ bot.on(message('text'), async (ctx) => {
       const complete2FA = complete2FAFns.get(userId);
       if (!complete2FA) {
         pendingTgAuth.delete(userId);
-        await ctx.reply('❌ Сессия истекла. Начни заново: /tglogin');
+        await ctx.reply(`${ce('cross','❌')} Сессия истекла. Начни заново: /tglogin`);
         return;
       }
       await ctx.sendChatAction('typing');
@@ -10401,11 +10401,11 @@ bot.on(message('text'), async (ctx) => {
       } else if (result.error?.includes('Неверный пароль')) {
         // Wrong password — restore fn so user can retry
         complete2FAFns.set(userId, complete2FA);
-        await ctx.reply('❌ Неверный пароль. Попробуй ещё раз:\n\n<i>/cancel для отмены</i>', { parse_mode: 'HTML' });
+        await ctx.reply(`${ce('cross','❌')} Неверный пароль. Попробуй ещё раз:\n\n<i>/cancel для отмены</i>`, { parse_mode: 'HTML' });
       } else {
         pendingTgAuth.delete(userId);
         complete2FAFns.delete(userId);
-        await ctx.reply(`❌ Ошибка: ${escHtml(result.error || 'unknown')}\n\nПопробуй /tglogin заново.`, { parse_mode: 'HTML' });
+        await ctx.reply(`${ce('cross','❌')} Ошибка: ${escHtml(result.error || 'unknown')}\n\nПопробуй /tglogin заново.`, { parse_mode: 'HTML' });
       }
       return;
     }
@@ -10415,20 +10415,20 @@ bot.on(message('text'), async (ctx) => {
   if (pendingRenames.has(userId)) {
     const agentId = pendingRenames.get(userId)!;
     if (trimmed.length < 1 || trimmed.length > 60) {
-      await ctx.reply('❌ Название должно быть от 1 до 60 символов. Попробуйте снова.');
+      await ctx.reply(`${ce('cross','❌')} Название должно быть от 1 до 60 символов. Попробуйте снова.`);
       return;
     }
     pendingRenames.delete(userId);
     try {
       const result = await getDBTools().updateAgent(agentId, userId, { name: trimmed });
       if (result.success) {
-        await safeReply(ctx, `✅ <b>${escHtml(trimmed)}</b>  #${agentId}\n<i>Название обновлено</i>`, { parse_mode: 'HTML' });
+        await safeReply(ctx, `${ce('check','✅')} <b>${escHtml(trimmed)}</b>  #${agentId}\n<i>Название обновлено</i>`, { parse_mode: 'HTML' });
         await showAgentMenu(ctx, agentId, userId);
       } else {
-        await ctx.reply(`❌ Ошибка переименования: ${result.error || 'Неизвестная ошибка'}`);
+        await ctx.reply(`${ce('cross','❌')} Ошибка переименования: ${result.error || 'Неизвестная ошибка'}`);
       }
     } catch (e: any) {
-      await safeReply(ctx, `❌ Ошибка: ${e.message || 'unknown'}`);
+      await safeReply(ctx, `${ce('cross','❌')} Ошибка: ${e.message || 'unknown'}`);
     }
     return;
   }
@@ -10439,12 +10439,12 @@ bot.on(message('text'), async (ctx) => {
     if (state.step === 'name') {
       const name = trimmed.replace(/[^a-zA-Z0-9_\-]/g, '');
       if (name.length < 2 || name.length > 30) {
-        await safeReply(ctx, '❌ Имя должно быть 2-30 символов (буквы, цифры, _, -).', {});
+        await safeReply(ctx, `${ce('cross','❌')} Имя должно быть 2-30 символов (буквы, цифры, _, -).`, {});
         return;
       }
       state.name = name;
       state.step = 'description';
-      await safeReply(ctx, `✅ Имя: <b>${escHtml(name)}</b>\n\nТеперь введите краткое описание плагина:`, { parse_mode: 'HTML' });
+      await safeReply(ctx, `${ce('check','✅')} Имя: <b>${escHtml(name)}</b>\n\nТеперь введите краткое описание плагина:`, { parse_mode: 'HTML' });
       return;
     }
     if (state.step === 'description') {
@@ -10463,14 +10463,14 @@ bot.on(message('text'), async (ctx) => {
       pendingPluginCreation.delete(userId);
       const code = trimmed;
       if (code.length > 5120) {
-        await safeReply(ctx, '❌ Код слишком большой (макс 5KB).', {});
+        await safeReply(ctx, `${ce('cross','❌')} Код слишком большой (макс 5KB).`, {});
         return;
       }
       // Basic security check
       const dangerous = ['process.', 'require(', 'child_process', '__dirname', '__filename', 'global.', 'eval(', 'globalThis', 'Function(', 'import(', 'global[', 'Proxy', 'Reflect', 'constructor'];
       const found = dangerous.find(d => code.includes(d));
       if (found) {
-        await safeReply(ctx, `❌ Код содержит запрещённую конструкцию: <code>${escHtml(found)}</code>`, { parse_mode: 'HTML' });
+        await safeReply(ctx, `${ce('cross','❌')} Код содержит запрещённую конструкцию: <code>${escHtml(found)}</code>`, { parse_mode: 'HTML' });
         return;
       }
       try {
@@ -10483,7 +10483,7 @@ bot.on(message('text'), async (ctx) => {
         );
       } catch (e: any) {
         console.error('Plugin creation error:', e);
-        await safeReply(ctx, '❌ Произошла ошибка при создании плагина. Попробуйте позже.');
+        await safeReply(ctx, `${ce('cross','❌')} Произошла ошибка при создании плагина. Попробуйте позже.`);
       }
       return;
     }
@@ -10571,14 +10571,14 @@ bot.on(message('text'), async (ctx) => {
       const { getAgenticWalletService } = await import('./services/agentic-wallet');
       if (pending.type === 'address') {
         if (!isValidTonAddress(trimmed)) {
-          await safeReply(ctx, '❌ Неверный формат адреса. Ожидается EQ... или UQ...', {});
+          await safeReply(ctx, `${ce('cross','❌')} Неверный формат адреса. Ожидается EQ... или UQ...`, {});
           return;
         }
         const result = await getAgenticWalletService().setupRootWallet(userId, { address: trimmed });
         if (result.success) {
-          await safeReply(ctx, `✅ Root wallet импортирован!\n📍 <code>${escHtml(trimmed)}</code>`, { parse_mode: 'HTML' });
+          await safeReply(ctx, `${ce('check','✅')} Root wallet импортирован!\n📍 <code>${escHtml(trimmed)}</code>`, { parse_mode: 'HTML' });
         } else {
-          await safeReply(ctx, `❌ ${result.error}`, {});
+          await safeReply(ctx, `${ce('cross','❌')} ${result.error}`, {});
         }
       } else {
         // Mnemonic — delete user message for security
@@ -10587,18 +10587,18 @@ bot.on(message('text'), async (ctx) => {
         }
         const words = trimmed.split(/\s+/);
         if (words.length !== 24) {
-          await safeReply(ctx, '❌ Мнемоника должна содержать 24 слова.', {});
+          await safeReply(ctx, `${ce('cross','❌')} Мнемоника должна содержать 24 слова.`, {});
           return;
         }
         const result = await getAgenticWalletService().setupRootWallet(userId, { mnemonic: trimmed });
         if (result.success && result.wallet) {
-          await safeReply(ctx, `✅ Root wallet импортирован!\n📍 <code>${escHtml(result.wallet.address)}</code>\n\n⚠️ Ваше сообщение с мнемоникой удалено из безопасности.`, { parse_mode: 'HTML' });
+          await safeReply(ctx, `${ce('check','✅')} Root wallet импортирован!\n📍 <code>${escHtml(result.wallet.address)}</code>\n\n⚠️ Ваше сообщение с мнемоникой удалено из безопасности.`, { parse_mode: 'HTML' });
         } else {
-          await safeReply(ctx, `❌ ${result.error}`, {});
+          await safeReply(ctx, `${ce('cross','❌')} ${result.error}`, {});
         }
       }
     } catch (e: any) {
-      await safeReply(ctx, '❌ ' + String(e), {});
+      await safeReply(ctx, `${ce('cross','❌')} ` + String(e), {});
     }
     return;
   }
@@ -10611,7 +10611,7 @@ bot.on(message('text'), async (ctx) => {
       await getAgenticWalletService().setLabel(pending.walletId, userId, trimmed.slice(0, 50));
       await safeReply(ctx, `✅ Имя кошелька изменено на: ${trimmed.slice(0, 50)}`, {});
     } catch (e: any) {
-      await safeReply(ctx, '❌ ' + String(e), {});
+      await safeReply(ctx, `${ce('cross','❌')} ` + String(e), {});
     }
     return;
   }
@@ -10620,16 +10620,16 @@ bot.on(message('text'), async (ctx) => {
     const pending = pendingWalletLimit.get(userId)!;
     const limitNum = parseFloat(trimmed);
     if (isNaN(limitNum) || limitNum <= 0) {
-      await safeReply(ctx, '❌ Введите число больше 0.', {});
+      await safeReply(ctx, `${ce('cross','❌')} Введите число больше 0.`, {});
       return;
     }
     pendingWalletLimit.delete(userId);
     try {
       const { getAgenticWalletService } = await import('./services/agentic-wallet');
       await getAgenticWalletService().setSpendLimit(pending.walletId, userId, limitNum);
-      await safeReply(ctx, `✅ Лимит установлен: ${limitNum} TON/день`, {});
+      await safeReply(ctx, `${ce('check','✅')} Лимит установлен: ${limitNum} TON/день`, {});
     } catch (e: any) {
-      await safeReply(ctx, '❌ ' + String(e), {});
+      await safeReply(ctx, `${ce('cross','❌')} ` + String(e), {});
     }
     return;
   }
@@ -10671,7 +10671,7 @@ bot.on(message('text'), async (ctx) => {
       const setupApiW = pendingAgentSetup.get(userId);
       if (setupApiW) { setupApiW.hasApiKey = true; setupApiW.currentStep++; setTimeout(() => showSetupStep(ctx, userId).catch(() => {}), 1000); }
     } catch (e: any) {
-      await ctx.reply('❌ ' + (e.message || String(e)));
+      await ctx.reply(`${ce('cross','❌')} ` + (e.message || String(e)));
     }
     return;
   }
@@ -10818,7 +10818,7 @@ bot.on(message('text'), async (ctx) => {
         ? `${ce('check','✅')} <b>Тикет создан</b>\n\n<b>${escHtml(title)}</b>\nТип: ${_fb.type}${rewardMsg}`
         : `${ce('check','✅')} <b>Ticket created</b>\n\n<b>${escHtml(title)}</b>\nType: ${_fb.type}${rewardMsg}`;
       await safeReply(ctx, confirmText, { parse_mode: 'HTML' });
-    } catch (e: any) { await safeReply(ctx, `❌ ${e.message}`); }
+    } catch (e: any) { await safeReply(ctx, `${ce('cross','❌')} ${e.message}`); }
     return;
   }
   if (_fb) pendingFeedback.delete(userId); // expired
@@ -10833,7 +10833,7 @@ bot.on(message('text'), async (ctx) => {
     }
     const agentResult = await getDBTools().getAgent(agentId, userId);
     if (!agentResult.success || !agentResult.data) {
-      await ctx.reply('❌ Агент не найден'); return;
+      await ctx.reply(`${ce('cross','❌')} Агент не найден`); return;
     }
 
     // ── Smart config-change detection (no code regeneration needed) ───
@@ -10924,7 +10924,7 @@ bot.on(message('text'), async (ctx) => {
         );
       } catch (e: any) {
         console.error('Config update error:', e);
-        await safeReply(ctx, '❌ Произошла ошибка при обновлении конфигурации. Попробуйте позже.');
+        await safeReply(ctx, `${ce('cross','❌')} Произошла ошибка при обновлении конфигурации. Попробуйте позже.`);
       }
       return;
     }
@@ -10939,7 +10939,7 @@ bot.on(message('text'), async (ctx) => {
       });
       anim.stop();
       if (!fixResult.success || !fixResult.data) {
-        await safeReply(ctx, `❌ AI не смог изменить код: ${escHtml(fixResult.error || 'Unknown')}`, { parse_mode: 'HTML' });
+        await safeReply(ctx, `${ce('cross','❌')} AI не смог изменить код: ${escHtml(fixResult.error || 'Unknown')}`, { parse_mode: 'HTML' });
         return;
       }
       await savePromptVersion(agentId, userId);
@@ -10962,12 +10962,12 @@ bot.on(message('text'), async (ctx) => {
           }
         );
       } else {
-        await safeReply(ctx, `❌ Не удалось сохранить: ${escHtml(saveResult.error || 'Unknown')}`);
+        await safeReply(ctx, `${ce('cross','❌')} Не удалось сохранить: ${escHtml(saveResult.error || 'Unknown')}`);
       }
     } catch (err: any) {
       anim.stop();
       console.error('Agent edit error:', err);
-      await safeReply(ctx, '❌ Произошла ошибка при редактировании. Попробуйте позже.');
+      await safeReply(ctx, `${ce('cross','❌')} Произошла ошибка при редактировании. Попробуйте позже.`);
     }
     return;
   }
@@ -10996,7 +10996,7 @@ bot.on(message('text'), async (ctx) => {
           state.collected[currentKey] = trimmed;
           state.remaining.shift();
         } else {
-          await ctx.reply(lang === 'ru' ? '❌ Введите значение или нажмите «Пропустить»' : '❌ Enter a value or tap Skip');
+          await ctx.reply(lang === 'ru' ? `${ce('cross','❌')} Введите значение или нажмите «Пропустить»` : `${ce('cross','❌')} Enter a value or tap Skip`);
           return;
         }
         await promptNextTemplateVar(ctx, userId, state);
@@ -11017,7 +11017,7 @@ bot.on(message('text'), async (ctx) => {
         await doPublishAgent(ctx, userId, pp.agentId, pp.price, trimmed.slice(0, 60));
       } catch (e: any) {
         console.error(`[bot] doPublishAgent failed:`, e.message);
-        await ctx.reply('❌ Ошибка публикации. Попробуйте ещё раз.').catch(() => {});
+        await ctx.reply(`${ce('cross','❌')} Ошибка публикации. Попробуйте ещё раз.`).catch(() => {});
       }
       return;
     }
@@ -11057,7 +11057,7 @@ bot.on(message('text'), async (ctx) => {
       await sendResult(ctx, result);
     } catch (err) {
       anim.stop(); anim.deleteMsg();
-      await ctx.reply('❌ Ошибка создания агента. Попробуйте ещё раз.').catch(() => {});
+      await ctx.reply(`${ce('cross','❌')} Ошибка создания агента. Попробуйте ещё раз.`).catch(() => {});
     }
     return;
   }
@@ -11127,7 +11127,7 @@ bot.on(message('text'), async (ctx) => {
     } catch (err) {
       clearInterval(typingTimer);
       console.error('Text handler error:', err);
-      await ctx.reply('❌ Ошибка. Попробуйте ещё раз или /start');
+      await ctx.reply(`${ce('cross','❌')} Ошибка. Попробуйте ещё раз или /start`);
     }
     return;
   }
@@ -11141,7 +11141,7 @@ bot.on(message('text'), async (ctx) => {
     anim?.stop();
     anim?.deleteMsg();
     console.error('Text handler error:', err);
-    await ctx.reply('❌ Ошибка. Попробуйте ещё раз или /start');
+    await ctx.reply(`${ce('cross','❌')} Ошибка. Попробуйте ещё раз или /start`);
   }
 });
 
@@ -11163,7 +11163,7 @@ async function sendResult(ctx: Context, result: {
     if (!userId) return;
     const t = allAgentTemplates.find(x => x.id === result.wizardTemplateId);
     if (!t) {
-      await safeReply(ctx, '❌ Шаблон не найден', { parse_mode: 'HTML' });
+      await safeReply(ctx, `${ce('cross','❌')} Шаблон не найден`, { parse_mode: 'HTML' });
       return;
     }
     const prefilled = result.wizardPrefilled || {};
@@ -11342,7 +11342,7 @@ async function runAgentDirect(ctx: Context, agentId: number, userId: number) {
   // Получаем агента из БД
   const agentResult = await getDBTools().getAgent(agentId, userId);
   if (!agentResult.success || !agentResult.data) {
-    await ctx.reply(`❌ Агент #${agentId} не найден или принадлежит другому пользователю`);
+    await ctx.reply(`${ce('cross','❌')} Агент #${agentId} не найден или принадлежит другому пользователю`);
     return;
   }
   const agent = agentResult.data;
@@ -11403,7 +11403,7 @@ async function runAgentDirect(ctx: Context, agentId: number, userId: number) {
 
     if (!runResult.success) {
       // Редактируем сообщение вместо нового (умное редактирование - задача 1)
-      const errText = `❌ <b>Ошибка запуска</b>\n\n${escHtml(runResult.error || 'Неизвестная ошибка')}`;
+      const errText = `${ce('cross','❌')} <b>Ошибка запуска</b>\n\n${escHtml(runResult.error || 'Неизвестная ошибка')}`;
       if (statusMsg) {
         await ctx.telegram.editMessageText(ctx.chat!.id, statusMsg.message_id, undefined, errText, { parse_mode: 'HTML' }).catch(() => ctx.reply(errText.replace(/<[^>]+>/g, '')));
       }
@@ -11471,13 +11471,13 @@ async function runAgentDirect(ctx: Context, agentId: number, userId: number) {
               resultText += `${escHtml(String(rawResult).slice(0, 400))}\n`;
             }
           } else {
-            resultText += `\n<i>✅ Агент выполнен успешно</i>\n`;
+            resultText += `\n<i>${ce('check','✅')} Агент выполнен успешно</i>\n`;
           }
         } else {
-          resultText += `\n❌ <b>Ошибка:</b> ${escHtml(exec.error || 'Unknown')}`;
+          resultText += `\n${ce('cross','❌')} <b>Ошибка:</b> ${escHtml(exec.error || 'Unknown')}`;
         }
         if (exec.logs?.length > 0) {
-          resultText += `\n📝 <b>Логи (${exec.logs.length}):</b>\n`;
+          resultText += `\n${ce('pencil','📝')} <b>Логи (${exec.logs.length}):</b>\n`;
           exec.logs.slice(-5).forEach(log => {
             const icon = log.level === 'error' ? '❌' : log.level === 'warn' ? '⚠️' : '✅';
             resultText += `${icon} ${escHtml(String(log.message).slice(0, 100))}\n`;
@@ -11500,9 +11500,9 @@ async function runAgentDirect(ctx: Context, agentId: number, userId: number) {
   } catch (err: any) {
     const errMsg = err?.message || 'Неизвестная ошибка';
     if (statusMsg) {
-      await ctx.telegram.editMessageText(ctx.chat!.id, statusMsg.message_id, undefined, `❌ Ошибка: ${errMsg}`).catch(() => {});
+      await ctx.telegram.editMessageText(ctx.chat!.id, statusMsg.message_id, undefined, `${ce('cross','❌')} Ошибка: ${errMsg}`).catch(() => {});
     } else {
-      await ctx.reply(`❌ Ошибка запуска: ${errMsg}`);
+      await ctx.reply(`${ce('cross','❌')} Ошибка запуска: ${errMsg}`);
     }
   }
 }
@@ -11561,7 +11561,7 @@ async function showAgentLogs(ctx: Context, agentId: number, userId: number) {
       },
     });
   } catch (err) {
-    await ctx.reply('❌ Ошибка загрузки логов');
+    await ctx.reply(`${ce('cross','❌')} Ошибка загрузки логов`);
   }
 }
 
@@ -11631,7 +11631,7 @@ async function showAgentsList(ctx: Context, userId: number) {
     await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: btns } });
   } catch (err) {
     console.error('showAgentsList error:', err);
-    await ctx.reply('❌ Ошибка загрузки агентов. Попробуйте /start');
+    await ctx.reply(`${ce('cross','❌')} Ошибка загрузки агентов. Попробуйте /start`);
   }
 }
 
@@ -11689,7 +11689,7 @@ async function showCapabilitiesMenu(ctx: Context, agentId: number, enabledCaps: 
   let text = `🧩 <b>${ru ? 'Возможности агента' : 'Agent Capabilities'}</b> #${agentId}\n`;
   text += `${div()}\n`;
   if (allCaps) {
-    text += ru ? '<i>✅ Все возможности включены</i>\n' : '<i>✅ All capabilities enabled</i>\n';
+    text += ru ? `<i>${ce('check','✅')} Все возможности включены</i>\n` : `<i>${ce('check','✅')} All capabilities enabled</i>\n`;
   } else {
     text += ru
       ? `<i>Включено: ${enabledCaps.length} из ${totalCaps}</i>\n`
@@ -11748,7 +11748,7 @@ async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
   try {
     const lang = getUserLang(userId);
     const r = await getDBTools().getAgent(agentId, userId);
-    if (!r.success || !r.data) { await ctx.reply('❌ ' + (lang === 'ru' ? 'Агент не найден' : 'Agent not found')); return; }
+    if (!r.success || !r.data) { await ctx.reply(`${ce('cross','❌')} ` + (lang === 'ru' ? 'Агент не найден' : 'Agent not found')); return; }
     const a = r.data;
     setCachedOwner(agentId, userId);
     const name = escHtml((a.name || '').slice(0, 60));
@@ -11999,7 +11999,7 @@ async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
 
     await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } });
   } catch (err) {
-    await ctx.reply('❌ ' + 'Error loading agent');
+    await ctx.reply(`${ce('cross','❌')} ` + 'Error loading agent');
   }
 }
 
@@ -12186,7 +12186,7 @@ async function showMarketplaceAll(ctx: Context) {
 async function showMarketplaceCategory(ctx: Context, category: AgentTemplate['category']) {
   const lang = getUserLang(ctx.from?.id || 0);
   const templates = allAgentTemplates.filter(t => t.category === category);
-  if (!templates.length) { await ctx.reply('❌ ' + (lang === 'ru' ? 'Агенты не найдены' : 'Agents not found'), { reply_markup: { inline_keyboard: [[{ text: `${peb('back')} ${lang === 'ru' ? 'Назад' : 'Back'}`, callback_data: 'marketplace' }]] } }); return; }
+  if (!templates.length) { await ctx.reply(`${ce('cross','❌')} ` + (lang === 'ru' ? 'Агенты не найдены' : 'Agents not found'), { reply_markup: { inline_keyboard: [[{ text: `${peb('back')} ${lang === 'ru' ? 'Назад' : 'Back'}`, callback_data: 'marketplace' }]] } }); return; }
 
   const catMeta: Record<string, { icon: string; name: string }> = {
     ton:        { icon: peb('diamond'),  name: lang === 'ru' ? 'TON блокчейн' : 'TON Blockchain' },
@@ -12209,7 +12209,7 @@ async function showMarketplaceCategory(ctx: Context, category: AgentTemplate['ca
 async function showTemplateDetails(ctx: Context, templateId: string) {
   const lang = getUserLang(ctx.from?.id || 0);
   const t = allAgentTemplates.find(x => x.id === templateId);
-  if (!t) { await ctx.reply('❌ ' + (lang === 'ru' ? 'Шаблон не найден' : 'Template not found')); return; }
+  if (!t) { await ctx.reply(`${ce('cross','❌')} ` + (lang === 'ru' ? 'Шаблон не найден' : 'Template not found')); return; }
 
   const triggerIcon = t.triggerType === 'scheduled' ? peb('calendar') : t.triggerType === 'webhook' ? peb('link') : peb('bolt');
   const triggerLabel = t.triggerType === 'scheduled'
@@ -12257,7 +12257,7 @@ async function showTemplateDetails(ctx: Context, templateId: string) {
 
 async function createAgentFromTemplate(ctx: Context, templateId: string, userId: number) {
   const t = allAgentTemplates.find(x => x.id === templateId);
-  if (!t) { await ctx.reply('❌ Шаблон не найден'); return; }
+  if (!t) { await ctx.reply(`${ce('cross','❌')} Шаблон не найден`); return; }
 
   // If template has configurable placeholders → run variable wizard first
   if (t.placeholders.length > 0) {
@@ -12288,7 +12288,7 @@ async function createAgentFromTemplate(ctx: Context, templateId: string, userId:
 
 async function doCreateAgentFromTemplate(ctx: Context, templateId: string, userId: number, vars: Record<string, string>) {
   const t = allAgentTemplates.find(x => x.id === templateId);
-  if (!t) { await ctx.reply('❌ Шаблон не найден'); return; }
+  if (!t) { await ctx.reply(`${ce('cross','❌')} Шаблон не найден`); return; }
 
   await ctx.sendChatAction('typing');
   const name = t.id + '_' + Date.now().toString(36).slice(-4);
@@ -12311,7 +12311,7 @@ async function doCreateAgentFromTemplate(ctx: Context, templateId: string, userI
     isActive: false,
   });
 
-  if (!result.success) { await ctx.reply(`❌ Ошибка: ${result.error}`); return; }
+  if (!result.success) { await ctx.reply(`${ce('cross','❌')} Ошибка: ${result.error}`); return; }
   const agent = result.data!;
 
   const lang = getUserLang(userId);
@@ -12620,7 +12620,7 @@ async function startPublishFlow(ctx: Context, userId: number) {
       { parse_mode: 'HTML', reply_markup: { inline_keyboard: rows } }
     );
   } catch (e: any) {
-    await safeReply(ctx, `❌ Ошибка: ${e.message || 'unknown'}`);
+    await safeReply(ctx, `${ce('cross','❌')} Ошибка: ${e.message || 'unknown'}`);
   }
 }
 
@@ -12632,7 +12632,7 @@ async function doPublishAgent(ctx: Context, userId: number, agentId: number, pri
   try {
     const agentResult = await getDBTools().getAgent(agentId, userId);
     if (!agentResult.success || !agentResult.data) {
-      await ctx.reply('❌ Агент не найден или не принадлежит вам');
+      await ctx.reply(`${ce('cross','❌')} Агент не найден или не принадлежит вам`);
       return;
     }
     const agent = agentResult.data;
@@ -12664,7 +12664,7 @@ async function doPublishAgent(ctx: Context, userId: number, agentId: number, pri
       }
     );
   } catch (e: any) {
-    await safeReply(ctx, `❌ Ошибка публикации: ${escHtml(e.message || 'Неизвестная ошибка')}`, { parse_mode: 'HTML' });
+    await safeReply(ctx, `${ce('cross','❌')} Ошибка публикации: ${escHtml(e.message || 'Неизвестная ошибка')}`, { parse_mode: 'HTML' });
   }
 }
 
@@ -12732,7 +12732,7 @@ async function showAllPlugins(ctx: Context) {
   const plugins = getPluginManager().getAllPlugins();
   let text = `🔌 <b>Все плагины (${escHtml(plugins.length)}):</b>\n\n`;
   plugins.forEach((p, i) => {
-    text += `${i + 1}. ${p.isInstalled ? '✅' : '⬜'} <b>${escHtml(p.name)}</b> ${p.price > 0 ? `(${escHtml(p.price)} TON)` : '(free)'}\n`;
+    text += `${i + 1}. ${p.isInstalled ? ce('check','✅') : '⬜'} <b>${escHtml(p.name)}</b> ${p.price > 0 ? `(${escHtml(p.price)} TON)` : '(free)'}\n`;
     text += `   ${escHtml(p.description.slice(0, 150))}...\n`;
   });
   const btns = plugins.map(p => [{ text: p.name, callback_data: `plugin:${p.id}` }]);
@@ -12744,7 +12744,7 @@ async function showPluginDetails(ctx: Context, pluginId: string) {
   const userId = ctx.from?.id || 0;
   const ru = getUserLang(userId) === 'ru';
   const plugin = getPluginManager().getPlugin(pluginId);
-  if (!plugin) { await ctx.reply('❌ Плагин не найден'); return; }
+  if (!plugin) { await ctx.reply(`${ce('cross','❌')} Плагин не найден`); return; }
 
   // Проверяем установку из DB
   let isInstalled = false;
@@ -12840,7 +12840,7 @@ async function showWorkflows(ctx: Context, userId: number) {
 async function showWorkflowTemplate(ctx: Context, idx: number) {
   const templates = getWorkflowEngine().getWorkflowTemplates();
   const t = templates[idx];
-  if (!t) { await ctx.reply('❌ Шаблон не найден'); return; }
+  if (!t) { await ctx.reply(`${ce('cross','❌')} Шаблон не найден`); return; }
 
   const text =
     `⚡ <b>${escHtml(t.name)}</b>\n\n${escHtml(t.description)}\n\n` +
@@ -12860,7 +12860,7 @@ async function createWorkflowFromTemplate(ctx: Context, userId: number, idx: num
   const engine = getWorkflowEngine();
   const templates = engine.getWorkflowTemplates();
   const t = templates[idx];
-  if (!t) { await ctx.reply('❌ Шаблон не найден'); return; }
+  if (!t) { await ctx.reply(`${ce('cross','❌')} Шаблон не найден`); return; }
 
   const nodes = t.nodes.map((n, i) => ({ ...n, agentId: i + 1 }));
   const result = await engine.createWorkflow(userId, t.name, t.description, nodes);
@@ -12871,7 +12871,7 @@ async function createWorkflowFromTemplate(ctx: Context, userId: number, idx: num
       { parse_mode: 'HTML' }
     );
   } else {
-    await ctx.reply(`❌ Ошибка: ${result.error}`);
+    await ctx.reply(`${ce('cross','❌')} Ошибка: ${result.error}`);
   }
 }
 
@@ -12904,7 +12904,7 @@ async function showStats(ctx: Context, userId: number) {
     text += `TON Connect: ${pe('check')} ${escHtml(wallet.walletName)}\n`;
     text += `${lang === 'ru' ? 'Адрес' : 'Address'}: <code>${escHtml(wallet.friendlyAddress)}</code>\n`;
   } else {
-    text += `TON Connect: ❌ ${lang === 'ru' ? 'не подключён' : 'not connected'}\n`;
+    text += `TON Connect: ${ce('cross','❌')} ${lang === 'ru' ? 'не подключён' : 'not connected'}\n`;
   }
 
   if (agentBalance !== null) {
@@ -12970,7 +12970,7 @@ async function showModelSelector(ctx: Context) {
     if ((m as any).recommended) tags.push(lang === 'ru' ? '⭐ рекомендована' : '⭐ recommended');
     if ((m as any).fast) tags.push(lang === 'ru' ? '⚡ быстрая' : '⚡ fast');
     const tagStr = tags.length ? ` — <i>${escHtml(tags.join(', '))}</i>` : '';
-    text += `${isCurrent ? '▶️' : '  '} ${escHtml(m.icon)} ${escHtml(m.label)}${isCurrent ? ' ✅' : ''}${tagStr}\n`;
+    text += `${isCurrent ? '▶️' : '  '} ${escHtml(m.icon)} ${escHtml(m.label)}${isCurrent ? ' ' + ce('check','✅') : ''}${tagStr}\n`;
   });
 
   const btns = MODEL_LIST.map(m => [{
@@ -13076,7 +13076,7 @@ async function showPaymentInvoice(ctx: Context, planId: string, period: 'month' 
   const payment = createPayment(userId, planId, period);
 
   if ('error' in payment) {
-    await ctx.reply(`❌ ${payment.error}`);
+    await ctx.reply(`${ce('cross','❌')} ${payment.error}`);
     return;
   }
 
@@ -13132,7 +13132,7 @@ async function checkPaymentStatus(ctx: Context) {
   const pending = getPendingPayment(userId);
 
   if (!pending) {
-    await ctx.reply('❌ Нет ожидающего платежа. Создайте новый через /plans');
+    await ctx.reply(`${ce('cross','❌')} Нет ожидающего платежа. Создайте новый через /plans`);
     return;
   }
 
@@ -13250,7 +13250,7 @@ async function showHelp(ctx: Context) {
 // ============================================================
 bot.catch((err, ctx) => {
   console.error('Bot error:', err);
-  ctx.reply('❌ Произошла ошибка. Попробуйте /start').catch(() => {});
+  ctx.reply(`${ce('cross','❌')} Произошла ошибка. Попробуйте /start`).catch(() => {});
 });
 
 // ── Daily Digest: post every day at 10:00 MSK (07:00 UTC) ──
