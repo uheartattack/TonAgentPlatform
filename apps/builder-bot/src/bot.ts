@@ -89,15 +89,37 @@ const OWNER_ID_NUM = parseInt(process.env.OWNER_ID || '0');
 let BETA_GROUP_ID: number | null = null;
 try { BETA_GROUP_ID = parseInt(process.env.BETA_GROUP_ID || '') || null; } catch {}
 
-// Topic IDs for beta group (set via /settopic command)
+// Topic IDs for beta group
 let BETA_ANNOUNCEMENTS_TOPIC: number | null = null;
 try { BETA_ANNOUNCEMENTS_TOPIC = parseInt(process.env.BETA_ANNOUNCEMENTS_TOPIC || '') || null; } catch {}
+
+// Named topic IDs for specific branches
+const TOPIC_IDS = {
+  announcements: 11,
+  daily_quest: 573,
+  events: 576,
+  squads: 579,
+  content: 582,
+  internship: 585,
+};
 
 // Announce to beta group (safe — silently fails if no group configured)
 async function announceToGroup(text: string, options?: any) {
   if (!BETA_GROUP_ID) return;
   try { await bot.telegram.sendMessage(BETA_GROUP_ID, text, { parse_mode: 'HTML', ...options }); } catch (e: any) {
     console.warn('[BetaGroup] announce failed:', e.message);
+  }
+}
+
+// Post to a specific topic in beta group
+async function postToTopic(topicId: number, text: string) {
+  if (!BETA_GROUP_ID) return;
+  try {
+    await bot.telegram.sendMessage(BETA_GROUP_ID, text, {
+      parse_mode: 'HTML', message_thread_id: topicId, disable_web_page_preview: true,
+    });
+  } catch (e: any) {
+    console.warn(`[BetaGroup] topic ${topicId} post failed:`, e.message?.slice(0, 80));
   }
 }
 
@@ -1849,7 +1871,12 @@ bot.command('checkin', async (ctx) => {
       [{ text: ru ? 'Профиль' : 'Profile', icon_custom_emoji_id: CE.crown, callback_data: 'tg_mystats' }],
     ]);
   } else {
-    await safeReply(ctx, result.error || 'Error');
+    const stats = await getTesterStats(userId);
+    const streak = stats?.streak_days || 0;
+    await safeReply(ctx, ru
+      ? `${ce('check','✅')} Ты уже чекинился сегодня!\n\n${ce('fire','🔥')} Серия: <b>${streak} дней</b>\nСледующий чекин завтра.`
+      : `${ce('check','✅')} Already checked in today!\n\n${ce('fire','🔥')} Streak: <b>${streak} days</b>\nNext check-in tomorrow.`,
+      { parse_mode: 'HTML' });
   }
 });
 
@@ -13364,7 +13391,7 @@ function scheduleDailyDigest() {
       const { generateDailyDigest } = require('./engagement');
       const { pool } = require('./db');
       const text = await generateDailyDigest(pool, true); // ru
-      await postAnnouncement(text);
+      await postToTopic(TOPIC_IDS.daily_quest, text);
       console.log('[DailyDigest] Posted');
     } catch (e: any) { console.warn('[DailyDigest] Error:', e.message); }
     // Reschedule for next day
@@ -13418,7 +13445,7 @@ function scheduleWeeklyTasks() {
       const event = getCurrentEvent();
       if (event) {
         const eventText = formatEventMessage(true);
-        await postAnnouncement(eventText);
+        await postToTopic(TOPIC_IDS.events, eventText);
       }
     } catch (e: any) { console.warn('[Weekly] Error:', e.message); }
   }, 24 * 60 * 60 * 1000);
@@ -13482,7 +13509,7 @@ export async function startBot() {
         setTimeout(async () => {
           try {
             const text = formatEventMessage(true);
-            await postAnnouncement(text);
+            await postToTopic(TOPIC_IDS.events, text);
             console.log('[Events] Posted event:', event.titleRu || event.title);
           } catch {}
         }, 20000);

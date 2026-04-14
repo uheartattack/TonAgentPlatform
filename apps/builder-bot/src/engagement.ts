@@ -197,7 +197,7 @@ export async function advanceQuest(userId: number): Promise<{ advanced: boolean;
       if (allRequiredDone) {
         return { advanced: true, completed: true };
       }
-      return { advanced: true, newStep: step.id };
+      return { advanced: true, newStep: step.titleRu || step.title };
     }
   }
   return { advanced: false };
