@@ -590,6 +590,16 @@ export async function awardFeedbackPoints(userId: number, feedbackType: string, 
         xp = Math.round(xp * roleInfo.multiplier);
       }
     } catch {}
+    // Apply streak multiplier
+    try {
+      const { getStreakMultiplier } = require('./engagement');
+      const streakRes = await pool.query('SELECT streak_days FROM builder_bot.beta_testers WHERE user_id = $1', [userId]);
+      const streakDays = streakRes.rows[0]?.streak_days || 0;
+      const multiplier = getStreakMultiplier(streakDays);
+      if (multiplier > 1) {
+        xp = Math.round(xp * multiplier);
+      }
+    } catch {}
     // Update: XP always, Points only if earned
     if (ptsAmount > 0) {
       await pool.query(`UPDATE builder_bot.beta_testers SET xp = xp + $1, feedback_count = feedback_count + $2 WHERE user_id = $3`, [xp, ptsAmount, userId]);
