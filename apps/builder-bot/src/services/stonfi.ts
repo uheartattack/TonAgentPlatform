@@ -10,7 +10,11 @@ import { Address, internal, beginCell, toNano } from '@ton/core';
 import { mnemonicToWalletKey } from '@ton/crypto';
 import { WalletContractV4 } from '@ton/ton';
 
-const TONAPI_ENDPOINT = 'https://toncenter.com/api/v2/jsonRPC';
+function getToncenterEndpoint(): string {
+  const apiKey = process.env.TONCENTER_API_KEY || '';
+  const base = 'https://toncenter.com/api/v2/jsonRPC';
+  return apiKey ? `${base}?api_key=${apiKey}` : base;
+}
 const TON_ADDRESS = 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c'; // native TON
 const USDC_ADDRESS = 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs'; // USDC on TON
 const USDT_ADDRESS = 'EQBynBO23ywHy_CgarY9NK9FTz0yDsG82PtcbSTQgGoXwiuA'; // USDT on TON
@@ -125,12 +129,12 @@ export async function executeSwap(
     // 2. Prepare wallet
     const keyPair = await mnemonicToWalletKey(mnemonic.split(' '));
     const wallet = WalletContractV4.create({ publicKey: keyPair.publicKey, workchain: 0 });
-    const tonClient = new TonClient({ endpoint: TONAPI_ENDPOINT });
+    const tonClient = new TonClient({ endpoint: getToncenterEndpoint() });
     const walletContract = tonClient.open(wallet);
     const seqno = await walletContract.getSeqno();
 
     // 3. Build swap transaction via STON.fi SDK
-    const stonClient = new StonClient({ endpoint: TONAPI_ENDPOINT });
+    const stonClient = new StonClient({ endpoint: getToncenterEndpoint() });
     const simulationResult = await stonApi.simulateSwap({
       offerAddress: fromAddress === 'TON' ? TON_ADDRESS : fromAddress,
       askAddress: toAddress === 'TON' ? TON_ADDRESS :
@@ -184,7 +188,18 @@ export async function executeSwap(
       });
     }
 
-    // 4. Send transaction
+    // 4. Check balance before sending
+    const balance = await tonClient.getBalance(wallet.address);
+    const requiredNano = BigInt(swapParams.value.toString());
+    const gasReserve = BigInt('100000000'); // 0.1 TON for gas
+    if (balance < requiredNano + gasReserve) {
+      return {
+        ok: false,
+        error: `Недостаточно TON. Нужно: ${Number(requiredNano + gasReserve) / 1e9} TON, есть: ${Number(balance) / 1e9} TON. Пополни кошелёк: ${wallet.address.toString()}`,
+      };
+    }
+
+    // 5. Send transaction
     await walletContract.sendTransfer({
       seqno,
       secretKey: keyPair.secretKey,
@@ -195,9 +210,18 @@ export async function executeSwap(
       })],
     });
 
-    return { ok: true, quote };
+    return {
+      ok: true,
+      quote,
+      txHash: `seqno:${seqno} from ${wallet.address.toString().slice(0, 8)}...`,
+    };
   } catch (e: any) {
-    return { ok: false, error: e.message };
+    const msg = e.message || String(e);
+    // Better error messages
+    if (msg.includes('seqno')) return { ok: false, error: 'Ошибка seqno кошелька. Попробуй через минуту.' };
+    if (msg.includes('router')) return { ok: false, error: 'STON.fi не нашёл пул для этой пары токенов.' };
+    if (msg.includes('slippage')) return { ok: false, error: 'Slippage слишком низкий. Попробуй 0.02 или 0.05.' };
+    return { ok: false, error: msg };
   }
 }
 

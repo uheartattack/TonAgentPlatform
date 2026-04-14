@@ -13499,7 +13499,7 @@ export async function startBot() {
     scheduleInactivePings();
     scheduleWeeklyTasks();
   }, 15000); // 15s after startup
-  // Post current event if not already posted today
+  // Post current event ONLY on first start of the event day (dedupe via DB)
   try {
     const { getCurrentEvent, formatEventMessage } = require('./engagement');
     const event = getCurrentEvent();
@@ -13508,10 +13508,27 @@ export async function startBot() {
       if (event.start === today) {
         setTimeout(async () => {
           try {
+            const { pool } = require('./db');
+            // Check if this event was already posted
+            const posted = await pool.query(
+              `SELECT status FROM builder_bot.beta_events WHERE id = $1`,
+              [event.id]
+            );
+            if (posted.rows.length > 0 && posted.rows[0].status === 'posted') {
+              console.log('[Events] Already posted:', event.id);
+              return;
+            }
             const text = formatEventMessage(true);
             await postToTopic(TOPIC_IDS.events, text);
+            // Mark as posted
+            await pool.query(
+              `INSERT INTO builder_bot.beta_events (id, title, type, start_date, end_date, status)
+               VALUES ($1, $2, $3, $4, $5, 'posted')
+               ON CONFLICT (id) DO UPDATE SET status = 'posted'`,
+              [event.id, event.titleRu || event.title, event.type, event.start, event.end]
+            );
             console.log('[Events] Posted event:', event.titleRu || event.title);
-          } catch {}
+          } catch (e: any) { console.warn('[Events] Post failed:', e.message?.slice(0, 80)); }
         }, 20000);
       }
     }

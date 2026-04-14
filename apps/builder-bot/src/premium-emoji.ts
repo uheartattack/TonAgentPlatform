@@ -13,7 +13,7 @@
 // ── Карта ID премиум эмодзи ────────────────────────────────────────────────
 export const PREMIUM_EMOJI_IDS: Record<string, { id: string; fallback: string }> = {
   // Специальный разделитель (премиум анимированный)
-  divider:  { id: '5217516491540305835', fallback: '〰️' },
+  divider:  { id: '5382360493161725288', fallback: '\u2796' },
   robot:    { id: '6030400221232501136', fallback: '🤖' },
   plus:     { id: '5882207227997066107', fallback: '➕' },
   store:    { id: '5920332557466997677', fallback: '🏪' },
