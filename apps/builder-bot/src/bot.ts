@@ -1783,38 +1783,44 @@ async function showTesterLeaderboard(ctx: any, userId: number, edit = false) {
 
 // ── Auto-tags: custom_title in beta group by level ──
 const LEVEL_TAGS: Record<number, string> = {
-  1: '🧪 Tester',
-  2: '⚡ Active',
-  3: '🔥 Pro',
-  4: '💎 Expert',
-  5: '👑 Master',
-  6: '🏆 Legend',
+  1: 'Tester',
+  2: 'Active',
+  3: 'Pro',
+  4: 'Expert',
+  5: 'Master',
+  6: 'Legend',
 };
 
 async function setTesterTag(userId: number, level: number) {
   if (!BETA_GROUP_ID) return;
   const tag = LEVEL_TAGS[level] || LEVEL_TAGS[1];
   try {
-    // Promote with zero permissions (just to set custom_title)
-    await bot.telegram.promoteChatMember(BETA_GROUP_ID, userId, {
-      can_manage_chat: false,
-      can_change_info: false,
-      can_delete_messages: false,
-      can_invite_users: false,
-      can_restrict_members: false,
-      can_pin_messages: false,
-      can_promote_members: false,
-      can_manage_video_chats: false,
-      can_post_stories: false,
-      can_edit_stories: false,
-      can_delete_stories: false,
-    } as any);
-    await bot.telegram.setChatAdministratorCustomTitle(BETA_GROUP_ID, userId, tag);
-    console.log(`[Tags] Set "${tag}" for user ${userId}`);
+    // Bot API 9.5: setChatMemberTag — sets tag for regular member (no admin needed)
+    // Requires bot to have can_manage_tags right
+    const res = await fetch(`https://api.telegram.org/bot${process.env.BOT_TOKEN}/setChatMemberTag`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: BETA_GROUP_ID, user_id: userId, tag }),
+    }).then(r => r.json()) as any;
+    if (res.ok) {
+      console.log(`[Tags] Set "${tag}" for user ${userId}`);
+    } else {
+      // Fallback: try old method (promoteChatMember + setChatAdministratorCustomTitle)
+      if (res.description?.includes('TAG') || res.description?.includes('method')) {
+        await bot.telegram.promoteChatMember(BETA_GROUP_ID, userId, {
+          can_manage_chat: true, can_change_info: false, can_delete_messages: false,
+          can_invite_users: false, can_restrict_members: false, can_pin_messages: false,
+          can_promote_members: false, can_manage_video_chats: false,
+        } as any);
+        await bot.telegram.setChatAdministratorCustomTitle(BETA_GROUP_ID, userId, tag);
+        console.log(`[Tags] Set "${tag}" for user ${userId} (fallback)`);
+      } else {
+        console.warn(`[Tags] setChatMemberTag failed for ${userId}: ${res.description}`);
+      }
+    }
   } catch (e: any) {
-    // Silently fail — bot may not have promote rights or user already has higher role
-    if (!e.message?.includes('not enough rights') && !e.message?.includes('CHAT_ADMIN_REQUIRED')) {
-      console.warn(`[Tags] Failed to set tag for ${userId}:`, e.message?.slice(0, 80));
+    if (!e.message?.includes('not enough rights')) {
+      console.warn(`[Tags] Failed for ${userId}:`, e.message?.slice(0, 80));
     }
   }
 }
@@ -1830,8 +1836,16 @@ bot.command('checkin', async (ctx) => {
     const stats = await getTesterStats(userId);
     const streak = result.streak || 0;
     const icon = streak >= 14 ? ce('fire','🔥') + ce('fire','🔥') : streak >= 7 ? ce('fire','🔥') : ce('check','✅');
-    const t = `${icon} <b>+1</b>  ·  streak <b>${streak}d</b>  ·  ${ce('coin','💰')} <b>${stats?.available || 0}</b>`;
-    await testerReply(ctx, userId, t, [
+    let rewardMsg = `${icon} <b>+1</b>  ·  streak <b>${streak}d</b>  ·  ${ce('coin','💰')} <b>${stats?.available || 0}</b>`;
+    // After successful checkin, advance onboarding quest
+    try {
+      const { advanceQuest } = require('./engagement');
+      const qResult = await advanceQuest(userId);
+      if (qResult.advanced) {
+        rewardMsg += `\n${ce('rocket','🚀')} Quest: ${qResult.newStep || 'completed!'}`;
+      }
+    } catch {}
+    await testerReply(ctx, userId, rewardMsg, [
       [{ text: ru ? 'Профиль' : 'Profile', icon_custom_emoji_id: CE.crown, callback_data: 'tg_mystats' }],
     ]);
   } else {
@@ -2936,8 +2950,16 @@ bot.action(/^tg_checkin:(\d+)$/, async (ctx) => {
     const stats = await getTesterStats(userId);
     const streak = result.streak || 0;
     const icon = streak >= 7 ? ce('fire','🔥') + ce('fire','🔥') : ce('fire','🔥');
-    const t = `${ce('check','✅')} <b>+1</b>  ·  ${icon} streak <b>${streak}</b>  ·  ${ce('coin','💰')} <b>${stats?.available || 0}</b>`;
-    await testerReply(ctx, userId, t, [
+    let rewardMsg = `${ce('check','✅')} <b>+1</b>  ·  ${icon} streak <b>${streak}</b>  ·  ${ce('coin','💰')} <b>${stats?.available || 0}</b>`;
+    // After successful checkin, advance onboarding quest
+    try {
+      const { advanceQuest } = require('./engagement');
+      const qResult = await advanceQuest(userId);
+      if (qResult.advanced) {
+        rewardMsg += `\n${ce('rocket','🚀')} Quest: ${qResult.newStep || 'completed!'}`;
+      }
+    } catch {}
+    await testerReply(ctx, userId, rewardMsg, [
       [{ text: ru ? 'Профиль' : 'Profile', icon_custom_emoji_id: CE.crown, callback_data: 'tg_mystats' }],
     ], true);
   } else {
@@ -3432,6 +3454,19 @@ bot.command('verify', async (ctx) => {
     const { awardFeedbackPoints } = require('./payments');
     await awardFeedbackPoints(userId, 'support'); // +2 XP for verification
   } catch {}
+  // Check achievements after verification XP
+  try {
+    const { checkAchievements, loadUserStats, ACHIEVEMENTS } = require('./engagement');
+    const _vStats = await loadUserStats(userId);
+    const _vAch = await checkAchievements(userId, _vStats);
+    if (_vAch.length > 0) {
+      const achName = ACHIEVEMENTS.find((a: any) => a.id === _vAch[0]);
+      if (achName) {
+        const name = ctx.from?.username ? `@${ctx.from.username}` : (ctx.from?.first_name || 'Tester');
+        announceToGroup(`${ce('sparkle','✨')} <b>${escHtml(name)}</b> ${ru ? 'получил ачивку' : 'earned achievement'}: ${achName.emoji} ${ru ? achName.titleRu : achName.title}`);
+      }
+    }
+  } catch {}
 
   // Check if 2 confirmations → mark bug as verified
   const confirmCount = await pool.query(
@@ -3444,6 +3479,18 @@ bot.command('verify', async (ctx) => {
     try {
       const { awardFeedbackPoints } = require('./payments');
       await awardFeedbackPoints(bug.rows[0].user_id, 'bug'); // +5 bonus
+    } catch {}
+    // Check achievements for original reporter after bonus
+    try {
+      const { checkAchievements: _chkAchR, loadUserStats: _ldStatsR, ACHIEVEMENTS: _ACHR } = require('./engagement');
+      const _rStats = await _ldStatsR(bug.rows[0].user_id);
+      const _rAch = await _chkAchR(bug.rows[0].user_id, _rStats);
+      if (_rAch.length > 0) {
+        const achName = _ACHR.find((a: any) => a.id === _rAch[0]);
+        if (achName) {
+          announceToGroup(`${ce('sparkle','✨')} ${getUserLang(bug.rows[0].user_id) === 'ru' ? 'получил ачивку' : 'earned achievement'}: ${achName.emoji} ${achName.title}`);
+        }
+      }
     } catch {}
   }
 
@@ -9851,6 +9898,13 @@ bot.on(message('photo'), async (ctx) => {
     pendingFeedback.delete(userId);
     const caption = ctx.message.caption || '';
     const photoId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
+    // Quality score bonus (screenshot = true)
+    let qualityBonus = 0;
+    try {
+      const { calculateQualityScore } = require('./engagement');
+      const qs = calculateQualityScore(caption, true);
+      qualityBonus = qs.bonusXP;
+    } catch {}
     try {
       const { pool } = require('./db');
       await pool.query(
@@ -9891,6 +9945,19 @@ bot.on(message('photo'), async (ctx) => {
           }
           if (reward.points > 0 && !reward.reward?.startsWith('level_up:')) rewardMsg += ` · +${reward.points} Points`;
         }
+      } catch {}
+      // Quality bonus XP
+      if (qualityBonus > 0) {
+        try {
+          const { pool: _qp } = require('./db');
+          await _qp.query('UPDATE builder_bot.beta_testers SET xp = xp + $1 WHERE user_id = $2', [qualityBonus, userId]);
+          rewardMsg += ` +${qualityBonus} quality`;
+        } catch {}
+      }
+      // Advance onboarding quest after feedback
+      try {
+        const { advanceQuest } = require('./engagement');
+        await advanceQuest(userId);
       } catch {}
       const title = _fb.title || caption || 'Screenshot';
       let confirmText = ru
@@ -10697,6 +10764,16 @@ bot.on(message('text'), async (ctx) => {
               const reward = await awardFeedbackPoints(fbUserId, fb.rows[0].type, true);
               let msg = `${ce('check','✅')} <b>${getUserLang(userId) === 'ru' ? 'Тикет' : 'Ticket'} #${ticketId} resolved</b>\n+${reward.xp} XP`;
               if (reward.points > 0) msg += ` · +${reward.points} Points`;
+              // Check achievements after resolve bonus
+              try {
+                const { checkAchievements: _chkAchRes, loadUserStats: _ldStatsRes, ACHIEVEMENTS: _ACHRes } = require('./engagement');
+                const _resStats = await _ldStatsRes(fbUserId);
+                const _resAch = await _chkAchRes(fbUserId, _resStats);
+                if (_resAch.length > 0) {
+                  const achName = _ACHRes.find((a: any) => a.id === _resAch[0]);
+                  if (achName) msg += `\n${ce('trophy','🏆')} ${achName.emoji} ${achName.title}`;
+                }
+              } catch {}
               try { await bot.telegram.sendMessage(fbUserId, msg, { parse_mode: 'HTML' }); } catch {}
             }
           }
@@ -10770,6 +10847,13 @@ bot.on(message('text'), async (ctx) => {
         } catch {}
       }
     } catch {}
+    // Quality score bonus
+    let qualityBonus = 0;
+    try {
+      const { calculateQualityScore } = require('./engagement');
+      const qs = calculateQualityScore(fullMessage, false);
+      qualityBonus = qs.bonusXP;
+    } catch {}
     try {
       const { pool } = require('./db');
       await pool.query(
@@ -10813,6 +10897,19 @@ bot.on(message('text'), async (ctx) => {
           }
           if (reward.points > 0 && !reward.reward?.startsWith('level_up:')) rewardMsg += ` · +${reward.points} Points`;
         }
+      } catch {}
+      // Quality bonus XP
+      if (qualityBonus > 0) {
+        try {
+          const { pool: _qp } = require('./db');
+          await _qp.query('UPDATE builder_bot.beta_testers SET xp = xp + $1 WHERE user_id = $2', [qualityBonus, userId]);
+          rewardMsg += ` +${qualityBonus} quality`;
+        } catch {}
+      }
+      // Advance onboarding quest after feedback
+      try {
+        const { advanceQuest } = require('./engagement');
+        await advanceQuest(userId);
       } catch {}
       let confirmText = ru
         ? `${ce('check','✅')} <b>Тикет создан</b>\n\n<b>${escHtml(title)}</b>\nТип: ${_fb.type}${rewardMsg}`
@@ -13375,6 +13472,23 @@ export async function startBot() {
     scheduleInactivePings();
     scheduleWeeklyTasks();
   }, 15000); // 15s after startup
+  // Post current event if not already posted today
+  try {
+    const { getCurrentEvent, formatEventMessage } = require('./engagement');
+    const event = getCurrentEvent();
+    if (event) {
+      const today = new Date().toISOString().slice(0, 10);
+      if (event.start === today) {
+        setTimeout(async () => {
+          try {
+            const text = formatEventMessage(true);
+            await postAnnouncement(text);
+            console.log('[Events] Posted event:', event.titleRu || event.title);
+          } catch {}
+        }, 20000);
+      }
+    }
+  } catch {}
   process.once('SIGINT', () => bot.stop('SIGINT'));
   process.once('SIGTERM', () => bot.stop('SIGTERM'));
 }
