@@ -40,6 +40,7 @@ const CE: Record<string, string> = {
   target:  '5350460637182993292',
   cart:    '5431499171045581032',
   sparkle: '5472164874886846699',
+  divider: '5382360493161725288',
 };
 
 function ce(name: string, fb: string): string {
@@ -328,8 +329,8 @@ export interface WeeklyEvent {
 export const WEEKLY_EVENTS: WeeklyEvent[] = [
   {
     id: 'break_it_1',
-    title: '\u{1F528} Break It Week',
-    titleRu: '\u{1F528} \u041D\u0435\u0434\u0435\u043B\u044F \u0411\u0430\u0433\u043E\u0432',
+    title: 'Break It Week',
+    titleRu: '\u041D\u0435\u0434\u0435\u043B\u044F \u0411\u0430\u0433\u043E\u0432',
     start: '2026-04-14',
     end: '2026-04-20',
     type: 'bugs',
@@ -338,8 +339,8 @@ export const WEEKLY_EVENTS: WeeklyEvent[] = [
   },
   {
     id: 'agent_challenge_1',
-    title: '\u{1F916} Agent Challenge',
-    titleRu: '\u{1F916} \u0421\u043E\u0437\u0434\u0430\u0439 \u0410\u0433\u0435\u043D\u0442\u0430',
+    title: 'Agent Challenge',
+    titleRu: '\u0421\u043E\u0437\u0434\u0430\u0439 \u0410\u0433\u0435\u043D\u0442\u0430',
     start: '2026-04-21',
     end: '2026-04-27',
     type: 'agents',
@@ -348,8 +349,8 @@ export const WEEKLY_EVENTS: WeeklyEvent[] = [
   },
   {
     id: 'content_week_1',
-    title: '\u{1F4E2} Content Week',
-    titleRu: '\u{1F4E2} \u041D\u0435\u0434\u0435\u043B\u044F \u041A\u043E\u043D\u0442\u0435\u043D\u0442\u0430',
+    title: 'Content Week',
+    titleRu: '\u041D\u0435\u0434\u0435\u043B\u044F \u041A\u043E\u043D\u0442\u0435\u043D\u0442\u0430',
     start: '2026-04-28',
     end: '2026-05-04',
     type: 'content',
@@ -358,8 +359,8 @@ export const WEEKLY_EVENTS: WeeklyEvent[] = [
   },
   {
     id: 'finals_1',
-    title: '\u{1F3C6} Finals',
-    titleRu: '\u{1F3C6} \u0424\u0438\u043D\u0430\u043B \u0421\u0435\u0437\u043E\u043D\u0430',
+    title: 'Finals',
+    titleRu: '\u0424\u0438\u043D\u0430\u043B \u0421\u0435\u0437\u043E\u043D\u0430',
     start: '2026-05-05',
     end: '2026-05-11',
     type: 'finals',
@@ -386,20 +387,95 @@ export function formatEventMessage(ru: boolean): string {
   const diffHours = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60)));
 
   const timer = diffDays > 0
-    ? `${diffDays}${ru ? 'д' : 'd'}`
-    : `${diffHours}${ru ? 'ч' : 'h'}`;
+    ? `${diffDays} ${ru ? 'дней' : 'days'}`
+    : `${diffHours} ${ru ? 'часов' : 'hours'}`;
 
-  let msg = `${ce('fire', '\u{1F525}')} <b>${ru ? evt.titleRu : evt.title}</b>\n\n`;
-  msg += `${ru ? '\u0414\u0430\u0442\u044B' : 'Dates'}: ${evt.start} \u2014 ${evt.end}\n`;
-  msg += `\u23F3 ${ru ? '\u041E\u0441\u0442\u0430\u043B\u043E\u0441\u044C' : 'Remaining'}: <b>${timer}</b>\n\n`;
+  // Event icons by type (all animated)
+  const typeIcons: Record<string, string> = {
+    bugs: ce('bug', '\u{1F41B}'),
+    agents: ce('rocket', '\u{1F680}'),
+    content: ce('megaphone', '\u{1F4E2}'),
+    finals: ce('crown', '\u{1F451}'),
+  };
+  const icon = typeIcons[evt.type] || ce('fire', '\u{1F525}');
+
+  // Event descriptions by type — rich formatting
+  const descriptions: Record<string, { ru: string; en: string }> = {
+    bugs: {
+      ru: '<i>Найди как можно больше багов. Каждый баг-репорт приносит удвоенный опыт. Чем подробнее — тем больше бонус.</i>\n\n' +
+          `${ce('target', '\u{1F3AF}')} <b>Как участвовать:</b>\n` +
+          `  ${ce('check', '\u2705')} \u0422\u0435\u0441\u0442\u0438\u0440\u0443\u0439 \u043B\u044E\u0431\u0443\u044E \u0437\u043E\u043D\u0443 \u043F\u043B\u0430\u0442\u0444\u043E\u0440\u043C\u044B\n` +
+          `  ${ce('check', '\u2705')} \u041D\u0430\u0448\u0451\u043B \u0431\u0430\u0433 \u2014 /feedback \u0432 \u0431\u043E\u0442\u0435\n` +
+          `  ${ce('check', '\u2705')} \u041F\u0440\u0438\u043B\u043E\u0436\u0438 \u0441\u043A\u0440\u0438\u043D\u0448\u043E\u0442 <i>(+3 XP)</i>\n` +
+          `  ${ce('check', '\u2705')} \u041E\u043F\u0438\u0448\u0438 \u0448\u0430\u0433\u0438 \u0432\u043E\u0441\u043F\u0440\u043E\u0438\u0437\u0432\u0435\u0434\u0435\u043D\u0438\u044F <i>(+3 XP)</i>\n\n` +
+          `${ce('bulb', '\u{1F4A1}')} <b>\u041F\u043E\u0434\u0441\u043A\u0430\u0437\u043A\u0430:</b> <i>\u041F\u0440\u043E\u0432\u0435\u0440\u044F\u0439 edge cases \u2014 \u043F\u0443\u0441\u0442\u044B\u0435 \u043F\u043E\u043B\u044F, \u0434\u043B\u0438\u043D\u043D\u044B\u0435 \u0442\u0435\u043A\u0441\u0442\u044B, \u0441\u043F\u0435\u0446\u0441\u0438\u043C\u0432\u043E\u043B\u044B, \u043E\u0434\u043D\u043E\u0432\u0440\u0435\u043C\u0435\u043D\u043D\u044B\u0435 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u044F.</i>`,
+      en: '<i>Find as many bugs as you can. Every bug report earns double XP. The more detailed — the bigger the bonus.</i>\n\n' +
+          `${ce('target', '\u{1F3AF}')} <b>How to participate:</b>\n` +
+          `  ${ce('check', '\u2705')} Test any platform zone\n` +
+          `  ${ce('check', '\u2705')} Found a bug \u2014 /feedback in bot\n` +
+          `  ${ce('check', '\u2705')} Attach screenshot <i>(+3 XP)</i>\n` +
+          `  ${ce('check', '\u2705')} Describe reproduction steps <i>(+3 XP)</i>\n\n` +
+          `${ce('bulb', '\u{1F4A1}')} <b>Tip:</b> <i>Check edge cases \u2014 empty fields, long text, special chars, simultaneous actions.</i>`,
+    },
+    agents: {
+      ru: '<i>\u0421\u043E\u0437\u0434\u0430\u0439 \u0441\u0430\u043C\u043E\u0433\u043E \u043F\u043E\u043B\u0435\u0437\u043D\u043E\u0433\u043E, \u043A\u0440\u0435\u0430\u0442\u0438\u0432\u043D\u043E\u0433\u043E \u0438\u043B\u0438 \u0431\u0435\u0437\u0443\u043C\u043D\u043E\u0433\u043E \u0430\u0433\u0435\u043D\u0442\u0430. \u041B\u0443\u0447\u0448\u0438\u0445 \u0432\u044B\u0431\u0435\u0440\u0435\u043C \u0433\u043E\u043B\u043E\u0441\u043E\u0432\u0430\u043D\u0438\u0435\u043C.</i>\n\n' +
+          `${ce('target', '\u{1F3AF}')} <b>\u041A\u0430\u043A \u0443\u0447\u0430\u0441\u0442\u0432\u043E\u0432\u0430\u0442\u044C:</b>\n` +
+          `  ${ce('check', '\u2705')} \u0421\u043E\u0437\u0434\u0430\u0439 \u0430\u0433\u0435\u043D\u0442\u0430 \u0447\u0435\u0440\u0435\u0437 \u0431\u043E\u0442\u0430 \u0438\u043B\u0438 Studio\n` +
+          `  ${ce('check', '\u2705')} \u041F\u0440\u043E\u0442\u0435\u0441\u0442\u0438\u0440\u0443\u0439, \u0443\u0431\u0435\u0434\u0438\u0441\u044C \u0447\u0442\u043E \u0440\u0430\u0431\u043E\u0442\u0430\u0435\u0442\n` +
+          `  ${ce('check', '\u2705')} \u041F\u043E\u043A\u0430\u0436\u0438 \u0432 \u0433\u0440\u0443\u043F\u043F\u0435 \u0447\u0442\u043E \u043E\u043D \u0443\u043C\u0435\u0435\u0442\n` +
+          `  ${ce('check', '\u2705')} \u0413\u043E\u043B\u043E\u0441\u0443\u0439 \u0437\u0430 \u0447\u0443\u0436\u0438\u0445 \u0430\u0433\u0435\u043D\u0442\u043E\u0432`,
+      en: '<i>Create the most useful, creative or crazy agent. Best ones chosen by group vote.</i>\n\n' +
+          `${ce('target', '\u{1F3AF}')} <b>How to participate:</b>\n` +
+          `  ${ce('check', '\u2705')} Create an agent via bot or Studio\n` +
+          `  ${ce('check', '\u2705')} Test it, make sure it works\n` +
+          `  ${ce('check', '\u2705')} Show the group what it can do\n` +
+          `  ${ce('check', '\u2705')} Vote for others' agents`,
+    },
+    content: {
+      ru: '<i>\u0421\u043E\u0437\u0434\u0430\u0439 \u043A\u043E\u043D\u0442\u0435\u043D\u0442 \u043F\u0440\u043E \u043F\u043B\u0430\u0442\u0444\u043E\u0440\u043C\u0443 \u2014 \u043F\u043E\u0441\u0442, \u0432\u0438\u0434\u0435\u043E, \u0433\u0430\u0439\u0434. \u041B\u0443\u0447\u0448\u0438\u0439 \u043A\u043E\u043D\u0442\u0435\u043D\u0442 \u043F\u043E\u043B\u0443\u0447\u0438\u0442 \u043C\u0430\u043A\u0441\u0438\u043C\u0443\u043C \u043E\u0447\u043A\u043E\u0432.</i>\n\n' +
+          `${ce('target', '\u{1F3AF}')} <b>\u041A\u0430\u043A \u0443\u0447\u0430\u0441\u0442\u0432\u043E\u0432\u0430\u0442\u044C:</b>\n` +
+          `  ${ce('check', '\u2705')} \u041D\u0430\u043F\u0438\u0448\u0438 \u043F\u043E\u0441\u0442 / \u0441\u043D\u0438\u043C\u0438 \u0432\u0438\u0434\u0435\u043E / \u0441\u043E\u0437\u0434\u0430\u0439 \u0433\u0430\u0439\u0434\n` +
+          `  ${ce('check', '\u2705')} \u0421\u043A\u0438\u043D\u044C \u0441\u0441\u044B\u043B\u043A\u0443 \u0432 #Content\n` +
+          `  ${ce('check', '\u2705')} \u041A\u0430\u0436\u0434\u0430\u044F \u043F\u0443\u0431\u043B\u0438\u043A\u0430\u0446\u0438\u044F: <b>+30 XP</b>`,
+      en: '<i>Create content about the platform \u2014 post, video, guide. Best content gets max points.</i>\n\n' +
+          `${ce('target', '\u{1F3AF}')} <b>How to participate:</b>\n` +
+          `  ${ce('check', '\u2705')} Write a post / shoot a video / create a guide\n` +
+          `  ${ce('check', '\u2705')} Share link in #Content\n` +
+          `  ${ce('check', '\u2705')} Each publication: <b>+30 XP</b>`,
+    },
+    finals: {
+      ru: '<i>\u041F\u043E\u0434\u0432\u0435\u0434\u0435\u043D\u0438\u0435 \u0438\u0442\u043E\u0433\u043E\u0432 \u043F\u0435\u0440\u0432\u043E\u0433\u043E \u0441\u0435\u0437\u043E\u043D\u0430. \u0422\u043E\u043F-3 \u0442\u0435\u0441\u0442\u0435\u0440\u0430 \u043F\u043E\u043B\u0443\u0447\u0430\u0442 \u043F\u0440\u0438\u0433\u043B\u0430\u0448\u0435\u043D\u0438\u0435 \u043D\u0430 \u0441\u0442\u0430\u0436\u0438\u0440\u043E\u0432\u043A\u0443.</i>\n\n' +
+          `${ce('target', '\u{1F3AF}')} <b>\u0427\u0442\u043E \u0443\u0447\u0438\u0442\u044B\u0432\u0430\u0435\u0442\u0441\u044F:</b>\n` +
+          `  ${ce('diamond', '\u{1F48E}')} \u041E\u0431\u0449\u0438\u0439 XP \u0437\u0430 \u0432\u0435\u0441\u044C \u0441\u0435\u0437\u043E\u043D\n` +
+          `  ${ce('diamond', '\u{1F48E}')} \u0423\u0447\u0430\u0441\u0442\u0438\u0435 \u0432\u043E \u0432\u0441\u0435\u0445 4 \u0438\u0432\u0435\u043D\u0442\u0430\u0445\n` +
+          `  ${ce('diamond', '\u{1F48E}')} \u041A\u043E\u043B\u0438\u0447\u0435\u0441\u0442\u0432\u043E \u0437\u043E\u043D <i>(\u043C\u0438\u043D\u0438\u043C\u0443\u043C 3)</i>\n` +
+          `  ${ce('diamond', '\u{1F48E}')} \u0421\u0435\u0440\u0438\u044F \u0447\u0435\u043A\u0438\u043D\u043E\u0432\n` +
+          `  ${ce('diamond', '\u{1F48E}')} \u041A\u0430\u0447\u0435\u0441\u0442\u0432\u043E \u0444\u0438\u0434\u0431\u0435\u043A\u0430`,
+      en: '<i>Season 1 finals. Top 3 testers by XP get internship invitation.</i>\n\n' +
+          `${ce('target', '\u{1F3AF}')} <b>What counts:</b>\n` +
+          `  ${ce('diamond', '\u{1F48E}')} Total XP for the season\n` +
+          `  ${ce('diamond', '\u{1F48E}')} Participation in all 4 events\n` +
+          `  ${ce('diamond', '\u{1F48E}')} Number of zones <i>(min 3)</i>\n` +
+          `  ${ce('diamond', '\u{1F48E}')} Check-in streak\n` +
+          `  ${ce('diamond', '\u{1F48E}')} Feedback quality`,
+    },
+  };
+
+  const desc = descriptions[evt.type] || descriptions.bugs;
+
+  let msg = `${icon} <b>${ru ? evt.titleRu : evt.title}</b>\n\n`;
+  msg += `${ru ? desc.ru : desc.en}\n\n`;
+  msg += `${ce('divider','\u2796')}${ce('divider','\u2796')}${ce('divider','\u2796')}${ce('divider','\u2796')}${ce('divider','\u2796')}\n`;
+  msg += `${ce('diamond', '\u{1F48E}')} <b>${ru ? '\u0414\u0430\u0442\u044B' : 'Dates'}:</b> ${evt.start} \u2014 ${evt.end}\n`;
+  msg += `${ce('rocket', '\u{1F680}')} <b>${ru ? '\u041E\u0441\u0442\u0430\u043B\u043E\u0441\u044C' : 'Remaining'}:</b> ${timer}\n`;
 
   if (evt.bonusMultiplier) {
-    msg += `${ce('sparkle', '\u2728')} ${ru ? '\u0411\u043E\u043D\u0443\u0441' : 'Bonus'}: x${evt.bonusMultiplier} XP ${ru ? '\u0437\u0430 \u0431\u0430\u0433\u0438' : 'for bugs'}\n`;
+    msg += `${ce('sparkle', '\u2728')} <b>${ru ? '\u0411\u043E\u043D\u0443\u0441' : 'Bonus'}:</b> <code>x${evt.bonusMultiplier} XP</code> ${ru ? '\u0437\u0430 \u043A\u0430\u0436\u0434\u044B\u0439 \u0431\u0430\u0433' : 'per bug'}\n`;
   }
   if (evt.bonusXP) {
-    msg += `${ce('coin', '\u{1FA99}')} ${ru ? '\u0411\u043E\u043D\u0443\u0441' : 'Bonus'}: +${evt.bonusXP} XP\n`;
+    msg += `${ce('coin', '\u{1FA99}')} <b>${ru ? '\u0411\u043E\u043D\u0443\u0441' : 'Bonus'}:</b> <code>+${evt.bonusXP} XP</code>\n`;
   }
-  msg += `${ce('trophy', '\u{1F3C6}')} ${ru ? '\u041D\u0430\u0433\u0440\u0430\u0434\u0430' : 'Reward'}: <b>${escHtml(evt.reward)}</b>\n`;
+  msg += `${ce('trophy', '\u{1F3C6}')} <b>${ru ? '\u041D\u0430\u0433\u0440\u0430\u0434\u0430' : 'Reward'}:</b> <code>${escHtml(evt.reward)}</code>`;
 
   return msg;
 }
