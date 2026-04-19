@@ -1479,6 +1479,173 @@ export function startApiServer() {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // Tester Hub Rewards API — share of 10% platform revenue pool
+  // See docs/TESTER_REWARDS.md for canonical terms
+  // ═══════════════════════════════════════════════════════════════════════
+
+  // ── GET /api/tester/rewards-config — public constants ──
+  app.get('/api/tester/rewards-config', async (_req: Request, res: Response) => {
+    try {
+      const R = await import('./rewards');
+      const { TESTER_LEVELS } = await import('./payments');
+      res.json({
+        ok: true,
+        poolPercent: R.POOL_PERCENT,
+        poolYears: R.POOL_YEARS,
+        poolFloorPercent: R.POOL_FLOOR_PERCENT,
+        inactiveMonthsDecay: R.INACTIVE_MONTHS_DECAY,
+        refBonusL1: R.REF_BONUS_L1,
+        refBonusL2: R.REF_BONUS_L2,
+        refSpendPercent: R.REF_SPEND_PERCENT,
+        firstSnapshotDate: R.FIRST_SNAPSHOT_DATE,
+        levels: TESTER_LEVELS.map((l: any) => ({
+          level: l.level, name: l.name, nameRu: l.nameRu,
+          minPts: l.minPts, multiplier: l.snapshotMultiplier,
+          plan: l.plan, lifetimeFree: l.lifetimeFree,
+          namedOnWall: l.namedOnWall, priorityFeatures: l.priorityFeatures,
+        })),
+      });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── GET /api/tester/profile — current user's reward row ──
+  app.get('/api/tester/profile', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const R = await import('./rewards');
+      await R.markActive(pool, userId);
+      const summary = await R.computeRewardTable(pool);
+      const mine = summary.rows.find(r => r.userId === userId);
+      if (!mine) { res.json({ ok: false, error: 'Not a beta tester yet' }); return; }
+      // Projected payout at hypothetical 10K TON/yr gross
+      const projectedAnnualTon = R.estimateAnnualPayoutTon(mine, summary.totalEffectiveXp, 10_000);
+      res.json({
+        ok: true,
+        profile: mine,
+        totalEffectiveXp: summary.totalEffectiveXp,
+        testerCount: summary.testerCount,
+        sharePercent: summary.totalEffectiveXp > 0 ? (mine.effectiveXp / summary.totalEffectiveXp) * 100 : 0,
+        projectedAnnualTonAt10k: projectedAnnualTon,
+        firstSnapshotDate: R.FIRST_SNAPSHOT_DATE,
+      });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── GET /api/tester/leaderboard — top by effective XP ──
+  app.get('/api/tester/leaderboard', async (req: Request, res: Response) => {
+    try {
+      const limit = Math.min(parseInt(String(req.query.limit || '50')) || 50, 200);
+      const R = await import('./rewards');
+      const summary = await R.computeRewardTable(pool);
+      const top = summary.rows.slice(0, limit);
+      res.json({
+        ok: true,
+        totalEffectiveXp: summary.totalEffectiveXp,
+        testerCount: summary.testerCount,
+        leaderboard: top,
+      });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── GET /api/tester/snapshots — history for current user (or ?user_id=N for admin) ──
+  app.get('/api/tester/snapshots', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const me = (req as any).userId as number;
+      const { isPlatformAdmin } = await import('./payments');
+      let targetId = me;
+      const q = req.query.user_id;
+      if (q) {
+        const want = Number(q);
+        if (Number.isFinite(want) && want !== me) {
+          if (!isPlatformAdmin(me)) { res.status(403).json({ error: 'Cannot view other users' }); return; }
+          targetId = want;
+        }
+      }
+      const r = await pool.query(`
+        SELECT snapshot_date, xp, level, multiplier, effective_xp, total_referrals
+        FROM builder_bot.beta_snapshots
+        WHERE user_id = $1
+        ORDER BY snapshot_date DESC
+        LIMIT 36
+      `, [targetId]);
+      res.json({ ok: true, snapshots: r.rows });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── GET /api/tester/founders — PUBLIC (Expert+ level testers wall for landing) ──
+  app.get('/api/tester/founders', async (_req: Request, res: Response) => {
+    try {
+      // Expert = level 4 (minPts 400); show only non-banned testers
+      const r = await pool.query(`
+        SELECT bt.user_id, bt.username, bt.xp, bt.level, bt.tester_number, bt.created_at
+        FROM builder_bot.beta_testers bt
+        WHERE bt.status = 'active' AND COALESCE(bt.xp, 0) >= 400
+        ORDER BY bt.xp DESC, bt.tester_number ASC
+        LIMIT 200
+      `);
+      const founders = r.rows.map((row: any) => ({
+        userId: Number(row.user_id),
+        username: row.username || null,
+        xp: Number(row.xp || 0),
+        level: Number(row.level || 1),
+        testerNumber: row.tester_number ? Number(row.tester_number) : null,
+        joinedAt: row.created_at,
+      }));
+      res.json({ ok: true, founders, count: founders.length });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── GET /api/tester/ref-link — my ref code + URL + earnings ──
+  app.get('/api/tester/ref-link', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const R = await import('./rewards');
+      const code = R.refCodeForUser(userId);
+      const earnings = await R.getRefearnings(pool, userId);
+      const botUsername = process.env.BOT_USERNAME || 'TonAgentPlatformBot';
+      const url = `https://t.me/${botUsername}?start=ref_${code}`;
+      res.json({
+        ok: true,
+        code,
+        url,
+        refCount: earnings.refCount,
+        totalRefEarningsTon: earnings.totalTon,
+        bonusL1: R.REF_BONUS_L1,
+        bonusL2: R.REF_BONUS_L2,
+        spendPercent: R.REF_SPEND_PERCENT,
+      });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── POST /api/tester/payout-wallet — set TON wallet for quarterly payout ──
+  app.post('/api/tester/payout-wallet', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const wallet = String(req.body?.wallet || '').trim();
+      // TON address validation (bounceable/non-bounceable base64url or raw 0:hex)
+      const isValid = /^[EU]Q[A-Za-z0-9_-]{46}$/.test(wallet) || /^0:[0-9a-fA-F]{64}$/.test(wallet);
+      if (!isValid) { res.status(400).json({ error: 'Invalid TON wallet address' }); return; }
+      await pool.query(
+        `UPDATE builder_bot.beta_testers SET payout_wallet = $2 WHERE user_id = $1`,
+        [userId, wallet]
+      );
+      res.json({ ok: true, wallet });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── GET /api/tester/payout-wallet — current payout wallet ──
+  app.get('/api/tester/payout-wallet', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const r = await pool.query(
+        `SELECT payout_wallet FROM builder_bot.beta_testers WHERE user_id = $1`,
+        [userId]
+      );
+      res.json({ ok: true, wallet: r.rows[0]?.payout_wallet || null });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // ── GET /api/admin/bugs — platform bugs dashboard (admin only) ──
   app.get('/api/admin/bugs', requireAuth, async (req: Request, res: Response) => {
     try {

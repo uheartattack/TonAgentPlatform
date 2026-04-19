@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="logo.svg">
+<title>Founding Testers — TON Agent Platform</title>
+<meta name="description" content="Wall of Founding Testers — the first 200 Expert+ level beta testers who shaped TON Agent Platform.">
+<meta property="og:title" content="Founding Testers — TON Agent Platform">
+<meta property="og:description" content="The first Expert+ level beta testers who shaped the platform.">
+<meta property="og:url" content="https://tonagentplatform.com/founders.html">
+<meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',sans-serif;background:#0a0a0f;color:#e6e6f0;min-height:100vh;padding:40px 20px}
+.container{max-width:1100px;margin:0 auto}
+.header{text-align:center;margin-bottom:60px}
+.back{display:inline-flex;align-items:center;gap:6px;color:#8a8aa0;text-decoration:none;font-size:14px;margin-bottom:24px;transition:color .2s}
+.back:hover{color:#00aaff}
+.title{font-size:clamp(32px,5vw,56px);font-weight:800;background:linear-gradient(135deg,#00aaff 0%,#0088cc 50%,#8b5cf6 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:16px}
+.subtitle{font-size:18px;color:#8a8aa0;max-width:600px;margin:0 auto;line-height:1.6}
+.stats{display:flex;justify-content:center;gap:40px;margin-top:32px;flex-wrap:wrap}
+.stat{text-align:center}
+.stat-num{font-size:32px;font-weight:800;color:#00aaff}
+.stat-label{font-size:13px;color:#8a8aa0;text-transform:uppercase;letter-spacing:1px;margin-top:4px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px}
+.card{background:linear-gradient(135deg,rgba(0,170,255,0.04),rgba(139,92,246,0.04));border:1px solid rgba(255,255,255,0.06);border-radius:16px;padding:20px;transition:all .3s;position:relative;overflow:hidden}
+.card:hover{border-color:rgba(0,170,255,0.3);transform:translateY(-2px)}
+.card.legend{background:linear-gradient(135deg,rgba(245,158,11,0.08),rgba(239,68,68,0.08));border-color:rgba(245,158,11,0.3)}
+.card.master{background:linear-gradient(135deg,rgba(139,92,246,0.08),rgba(236,72,153,0.08));border-color:rgba(139,92,246,0.3)}
+.card.expert{background:linear-gradient(135deg,rgba(0,170,255,0.06),rgba(16,185,129,0.06));border-color:rgba(16,185,129,0.3)}
+.card-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px}
+.username{font-size:18px;font-weight:700;color:#fff}
+.num{font-size:12px;color:#8a8aa0;font-family:monospace}
+.level-pill{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px}
+.lvl-4{background:rgba(16,185,129,0.15);color:#10b981}
+.lvl-5{background:rgba(139,92,246,0.15);color:#a78bfa}
+.lvl-6{background:rgba(245,158,11,0.15);color:#fbbf24}
+.xp{font-size:13px;color:#8a8aa0;margin-top:8px}
+.xp b{color:#e6e6f0;font-weight:600}
+.joined{font-size:11px;color:#6a6a80;margin-top:6px}
+.empty{text-align:center;padding:80px 20px;color:#6a6a80;font-size:16px;grid-column:1/-1}
+.loader{display:inline-block;width:24px;height:24px;border:3px solid rgba(0,170,255,0.2);border-top-color:#00aaff;border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.footer{text-align:center;margin-top:60px;padding-top:40px;border-top:1px solid rgba(255,255,255,0.05);color:#6a6a80;font-size:13px;line-height:1.8}
+.footer a{color:#00aaff;text-decoration:none}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <a href="/" class="back">← Back to home</a>
+    <h1 class="title">🏆 Founding Testers</h1>
+    <p class="subtitle">The first Expert-level (400+&nbsp;XP) beta testers who helped shape TON Agent Platform. Their usernames are immortalized here.</p>
+    <div class="stats">
+      <div class="stat"><div class="stat-num" id="totalCount">—</div><div class="stat-label">Founders</div></div>
+      <div class="stat"><div class="stat-num" id="legendCount">—</div><div class="stat-label">Legends</div></div>
+      <div class="stat"><div class="stat-num" id="masterCount">—</div><div class="stat-label">Masters</div></div>
+      <div class="stat"><div class="stat-num" id="expertCount">—</div><div class="stat-label">Experts</div></div>
+    </div>
+  </div>
+
+  <div class="grid" id="grid">
+    <div class="empty"><div class="loader"></div><div style="margin-top:12px">Loading founders...</div></div>
+  </div>
+
+  <div class="footer">
+    <p>Founders earn a proportional share of <b>10% of gross platform revenue</b> for the first 2 years.</p>
+    <p style="margin-top:8px">Read the <a href="https://github.com/spendollars/TonAgentPlatform/blob/main/apps/builder-bot/docs/TESTER_REWARDS.md">full rewards spec</a> or open <a href="https://t.me/TonAgentPlatformBot?start=founders">@TonAgentPlatformBot</a> to join the beta.</p>
+  </div>
+</div>
+
+<script>
+const LEVEL_NAMES = { 4: 'Expert', 5: 'Master', 6: 'Legend' };
+const LEVEL_EMOJI = { 4: '💎', 5: '👑', 6: '🏆' };
+
+function escapeHtml(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c])}
+function fmtDate(s){try{return new Date(s).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}catch{return ''}}
+
+async function load(){
+  try{
+    const r = await fetch('/api/tester/founders');
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'Failed');
+    const founders = (j.founders || []).sort((a,b) => b.xp - a.xp);
+
+    const counts = { 4: 0, 5: 0, 6: 0 };
+    founders.forEach(f => { if (counts[f.level] !== undefined) counts[f.level]++ });
+    document.getElementById('totalCount').textContent = founders.length;
+    document.getElementById('legendCount').textContent = counts[6];
+    document.getElementById('masterCount').textContent = counts[5];
+    document.getElementById('expertCount').textContent = counts[4];
+
+    const grid = document.getElementById('grid');
+    if (founders.length === 0) {
+      grid.innerHTML = '<div class="empty">No founders yet — be the first to reach Expert level!</div>';
+      return;
+    }
+    grid.innerHTML = founders.map(f => {
+      const name = f.username ? '@' + escapeHtml(f.username) : 'Tester #' + (f.testerNumber || f.userId);
+      const cls = f.level >= 6 ? 'legend' : f.level >= 5 ? 'master' : 'expert';
+      const lvlName = LEVEL_NAMES[f.level] || '—';
+      const emoji = LEVEL_EMOJI[f.level] || '⭐';
+      const num = f.testerNumber ? '#' + String(f.testerNumber).padStart(4,'0') : '';
+      return `
+        <div class="card ${cls}">
+          <div class="card-head">
+            <div>
+              <div class="username">${name}</div>
+              ${num ? `<div class="num">${num}</div>` : ''}
+            </div>
+            <div class="level-pill lvl-${f.level}">${emoji} ${lvlName}</div>
+          </div>
+          <div class="xp"><b>${f.xp.toLocaleString()}</b> XP</div>
+          <div class="joined">Joined ${fmtDate(f.joinedAt)}</div>
+        </div>
+      `;
+    }).join('');
+  } catch(e) {
+    document.getElementById('grid').innerHTML = `<div class="empty">Failed to load: ${escapeHtml(e.message)}</div>`;
+  }
+}
+load();
+</script>
+</body>
+</html>
