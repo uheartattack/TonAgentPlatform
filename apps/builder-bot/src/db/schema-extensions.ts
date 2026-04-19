@@ -73,6 +73,36 @@ export const userSettingsTable = builderSchema.table('user_settings', {
 // ─────────────────────────────────────────────────────────────────────────────
 // DDL: CREATE TABLE IF NOT EXISTS + индексы (idempotent, запускается при старте)
 // ─────────────────────────────────────────────────────────────────────────────
+/**
+ * Best-effort retention cleanup for high-volume log tables.
+ * Deletes rows older than the cutoff. Idempotent, safe to run repeatedly.
+ * Intended to be invoked once a day from the main process.
+ */
+export async function runLogRetention(pool: Pool): Promise<void> {
+  const tables: Array<{ table: string; days: number }> = [
+    { table: 'agent_logs',        days: 30 },
+    { table: 'execution_history', days: 90 },
+    { table: 'agent_audit_log',   days: 180 },
+  ];
+  for (const { table, days } of tables) {
+    try {
+      // Check table exists first — some are created by later migrations.
+      const exists = await pool.query(
+        `SELECT to_regclass('builder_bot.${table}') IS NOT NULL AS exists`
+      );
+      if (!exists.rows[0]?.exists) continue;
+      const res = await pool.query(
+        `DELETE FROM builder_bot.${table} WHERE created_at < NOW() - INTERVAL '${days} days'`
+      );
+      if (res.rowCount && res.rowCount > 0) {
+        console.log(`[Retention] Pruned ${res.rowCount} rows from ${table} (older than ${days}d)`);
+      }
+    } catch (e: any) {
+      console.warn(`[Retention] ${table} cleanup failed: ${e.message}`);
+    }
+  }
+}
+
 export async function runMigrations(pool: Pool): Promise<void> {
   const client = await pool.connect();
   try {
@@ -92,6 +122,20 @@ export async function runMigrations(pool: Pool): Promise<void> {
         updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
         CONSTRAINT agent_state_unique UNIQUE (agent_id, key)
       )
+    `);
+    // Hot indexes — UNIQUE(agent_id, key) serves exact lookups, but batch scans
+    // and prefix-key searches need dedicated indexes.
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS agent_state_user_id_idx
+        ON builder_bot.agent_state (user_id)
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS agent_state_agent_key_prefix_idx
+        ON builder_bot.agent_state (agent_id, key text_pattern_ops)
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS agent_state_updated_at_idx
+        ON builder_bot.agent_state (updated_at DESC)
     `);
 
     // agent_logs
@@ -462,6 +506,20 @@ export class AgentStateRepository {
   }
 
   async set(agentId: number, userId: number, key: string, value: any): Promise<void> {
+    // Defensive cap — a runaway tool writing multi-MB into state makes queries slow.
+    // 512KB is ample for conversation history, settings, and caches. Exceeding it
+    // usually signals a bug (e.g. stringifying a huge response).
+    try {
+      const serialized = typeof value === 'string' ? value : JSON.stringify(value ?? null);
+      if (serialized.length > 512 * 1024) {
+        console.warn(`[AgentState] Oversized value for agent#${agentId} key="${key}": ${serialized.length} bytes — truncating to 512KB`);
+        value = typeof value === 'string'
+          ? serialized.slice(0, 512 * 1024)
+          : { _truncated: true, _original_size: serialized.length, preview: serialized.slice(0, 10_000) };
+      }
+    } catch {
+      // if JSON.stringify throws (circular), let the insert fail with a clearer error below
+    }
     await this.db
       .insert(agentStateTable)
       .values({ agentId, userId, key, value, updatedAt: new Date() })
@@ -469,6 +527,28 @@ export class AgentStateRepository {
         target: [agentStateTable.agentId, agentStateTable.key],
         set: { value, updatedAt: new Date() },
       });
+  }
+
+  /**
+   * Atomically increment a numeric value stored as JSONB `{ "value": "<number>" }`.
+   * Closes read-modify-write race: two concurrent `total_ton_spent += X` calls
+   * would otherwise read the same base and overwrite each other.
+   * Returns the new value after the increment.
+   */
+  async incrementNumeric(agentId: number, userId: number, key: string, delta: number): Promise<number> {
+    if (!isFinite(delta)) throw new Error(`incrementNumeric: delta must be finite (got ${delta})`);
+    const { rows } = await (this.db as any).execute(sql`
+      INSERT INTO builder_bot.agent_state (agent_id, user_id, key, value, updated_at)
+      VALUES (${agentId}, ${userId}, ${key}, jsonb_build_object('value', ${String(delta)}), NOW())
+      ON CONFLICT (agent_id, key) DO UPDATE
+        SET value = jsonb_build_object(
+              'value',
+              ((COALESCE((agent_state.value->>'value'), '0'))::numeric + ${String(delta)}::numeric)::text
+            ),
+            updated_at = NOW()
+      RETURNING (value->>'value')::numeric AS new_val
+    `);
+    return Number(rows?.[0]?.new_val ?? 0);
   }
 
   async getAll(agentId: number): Promise<Array<{ key: string; value: any }>> {
@@ -1510,6 +1590,48 @@ export class AgentDailySpendRepository {
   async canSpend(agentId: number, amountNano: bigint, limitNano: bigint): Promise<boolean> {
     const spent = await this.getSpent(agentId);
     return spent + amountNano <= limitNano;
+  }
+
+  /**
+   * Atomically reserve spend: checks limit AND increments in a single SQL statement.
+   * Returns new total if reservation succeeded, or null if limit would be exceeded.
+   * Prevents race conditions where two concurrent calls both see "under limit" and then both record.
+   */
+  async tryReserveSpend(
+    agentId: number,
+    userId: number,
+    amountNano: bigint,
+    limitNano: bigint
+  ): Promise<{ ok: boolean; spentNano: bigint }> {
+    const today = this.today();
+    const amount = amountNano.toString();
+    const limit = limitNano.toString();
+    // Single atomic statement: INSERT or UPDATE only if spent + amount <= limit
+    const { rows } = await (this.db as any).execute(sql`
+      INSERT INTO builder_bot.agent_daily_spend (agent_id, user_id, spend_date, spent_nano)
+      VALUES (${agentId}, ${userId}, ${today}, ${amount}::numeric)
+      ON CONFLICT (agent_id, spend_date) DO UPDATE
+        SET spent_nano = agent_daily_spend.spent_nano + ${amount}::numeric
+        WHERE agent_daily_spend.spent_nano + ${amount}::numeric <= ${limit}::numeric
+      RETURNING spent_nano
+    `);
+    if (!rows || rows.length === 0) {
+      // Row exists but the WHERE clause blocked the update → limit would be exceeded
+      const spent = await this.getSpent(agentId);
+      return { ok: false, spentNano: spent };
+    }
+    return { ok: true, spentNano: BigInt(rows[0].spent_nano) };
+  }
+
+  /** Rollback a reservation if the downstream tx fails. */
+  async rollbackSpend(agentId: number, amountNano: bigint): Promise<void> {
+    const today = this.today();
+    const amount = amountNano.toString();
+    await (this.db as any).execute(sql`
+      UPDATE builder_bot.agent_daily_spend
+         SET spent_nano = GREATEST(0, spent_nano - ${amount}::numeric)
+       WHERE agent_id = ${agentId} AND spend_date = ${today}
+    `);
   }
 }
 
