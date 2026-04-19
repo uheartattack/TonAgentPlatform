@@ -20,6 +20,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Pool } from 'pg';
 import { Telegraf, Context } from 'telegraf';
+
+/** Escape HTML special chars so agent-provided names can't inject markup when
+ *  a message is sent with parse_mode='HTML'. */
+function escapeHtml(s: string | number | null | undefined): string {
+  const str = String(s ?? '');
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
 import {
   getAIProposalsRepository,
   AIProposal,
@@ -1552,8 +1559,8 @@ ${currentCode.slice(0, 4000)}
       if (userId) {
         await this.notifyUser(userId,
           `🔧 <b>Агент авто-починен</b>\n\n` +
-          `<b>#${agentId} ${agentName}</b>\n` +
-          `Ошибка (${errorCount}x): <code>${errorMsg.slice(0, 150)}</code>\n\n` +
+          `<b>#${agentId} ${escapeHtml(agentName)}</b>\n` +
+          `Ошибка (${errorCount}x): <code>${escapeHtml(errorMsg.slice(0, 150))}</code>\n\n` +
           `✅ AI исправил код агента автоматически.\n` +
           `<i>Следующий запуск покажет результат.</i>`,
           [[{ text: '📋 Логи', callback_data: `agent_logs:${agentId}` },
@@ -1563,8 +1570,8 @@ ${currentCode.slice(0, 4000)}
       // Also notify platform owner
       await this.notifyOwner(
         `🔧 <b>Агент авто-починен</b>\n\n` +
-        `<b>#${agentId} ${agentName}</b> (user ${userId})\n` +
-        `Ошибка (${errorCount}x): <code>${errorMsg.slice(0, 150)}</code>\n` +
+        `<b>#${agentId} ${escapeHtml(agentName)}</b> (user ${userId})\n` +
+        `Ошибка (${errorCount}x): <code>${escapeHtml(errorMsg.slice(0, 150))}</code>\n` +
         `✅ Repaired via ${ccAvailable ? 'Claude Code' : (userAI !== this.ai ? 'User API' : 'Platform AI')}`
       );
 

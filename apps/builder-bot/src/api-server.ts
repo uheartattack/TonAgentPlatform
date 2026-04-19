@@ -25,6 +25,7 @@ import { verifyTopupTransaction, PLATFORM_WALLET, getUserSubscription, getUserPl
 import { sendPlatformTransaction } from './services/TonConnect';
 import { config as platformConfig } from './config';
 import { encryptMnemonic, decryptMnemonic } from './services/agentic-wallet';
+import { invalidateAgentCaches } from './agents/ai-agent-runtime';
 
 const PORT = parseInt(process.env.API_PORT || '3001', 10);
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
@@ -125,10 +126,22 @@ setInterval(() => {
   for (const [token, session] of sessions) {
     if (now > session.expiresAt) sessions.delete(token);
   }
-  // Cap sessions to prevent memory DoS
+  // Cap sessions to prevent memory DoS.
+  // Previous version did O(n log n) sort on 50k entries — that's a CPU DoS vector.
+  // Now: single pass O(n), delete entries expiring in the next N hours
+  // (oldest-first, best-effort) until we're under the cap.
   if (sessions.size > 50000) {
-    const sorted = [...sessions.entries()].sort((a, b) => a[1].expiresAt - b[1].expiresAt);
-    for (let i = 0; i < 10000; i++) sessions.delete(sorted[i][0]);
+    const target = 40000;
+    const toEvict = sessions.size - target;
+    let evicted = 0;
+    // Map iteration is insertion order in V8 — older entries come first,
+    // which correlates (roughly) with earlier expiry. Good enough without sort.
+    for (const token of sessions.keys()) {
+      if (evicted >= toEvict) break;
+      sessions.delete(token);
+      evicted++;
+    }
+    console.warn(`[Sessions] Evicted ${evicted} oldest sessions (size was ${sessions.size + evicted})`);
   }
   // pendingBotAuth: использованные токены (userId получен) удаляем через 2 мин, брошенные через 15 мин
   for (const [token, auth] of pendingBotAuth) {
@@ -169,10 +182,10 @@ function verifyTelegramAuth(data: Record<string, string>): boolean {
   const { hash, ...fields } = data;
   if (!hash) return false;
 
-  // Проверяем срок (max 24 часа, не принимаем токены из будущего)
+  // Проверяем срок (max 24 часа; допускаем 60s clock skew в будущее)
   const authDate = parseInt(fields.auth_date || '0', 10);
   const nowSec = Math.floor(Date.now() / 1000);
-  if (isNaN(authDate) || authDate <= 0 || nowSec - authDate > 86400 || authDate - nowSec > 300) return false;
+  if (isNaN(authDate) || authDate <= 0 || nowSec - authDate > 86400 || authDate - nowSec > 60) return false;
 
   // Строим data-check-string
   const checkString = Object.keys(fields)
@@ -613,29 +626,74 @@ export function startApiServer() {
   setInterval(cleanupExpiredSessions, 3600_000).unref();
 
   const app = express();
+
+  // ── Standard error helper: logs full detail, returns generic message ──
+  // Use this instead of `res.json({ error: e.message })` so DB schema, stack
+  // traces, and internal paths don't leak to clients.
+  function sendError(res: Response, status: number, e: unknown, context?: string): void {
+    const msg = (e as any)?.message || String(e);
+    const stack = (e as any)?.stack || '';
+    console.error(`[API${context ? ':' + context : ''}] ${msg.slice(0, 200)}`, stack.slice(0, 500));
+    res.status(status).json({
+      ok: false,
+      error: status >= 500 ? 'Internal server error' : msg.slice(0, 200),
+    });
+  }
+  (app as any)._sendError = sendError;
+
+  // ── Slow loris mitigation ──
+  // Kill a socket that hasn't finished sending its body within 30s.
+  // Pair this with express body-parser's limit to close both slow-send and big-body attacks.
+  app.use((req, _res, next) => {
+    req.socket.setTimeout(30_000);
+    req.socket.once('timeout', () => {
+      try { req.socket.destroy(); } catch {}
+    });
+    next();
+  });
+
   app.use(express.json({ limit: '1mb' })); // Limit request body size
 
   // ── Security headers ──
-  app.use((_req, res, next) => {
+  app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('X-XSS-Protection', '1; mode=block');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    // HSTS (1 year) — browsers won't downgrade to HTTP
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    // CSP — restrict script/style sources. `unsafe-inline` is required for
+    // the current landing; tighten once all scripts are externalized.
+    if (req.path.startsWith('/api/')) {
+      // For API responses, use a strict CSP
+      res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
+    }
     next();
   });
 
-  // CORS — allow platform domain + localhost for dev
-  const ALLOWED_ORIGINS = ['https://tonagentplatform.com', 'https://tonagentplatform.ru'];
-  const DEFAULT_ORIGIN = 'https://tonagentplatform.ru';
+  // CORS — strict whitelist. Unknown origins get NO Access-Control-Allow-Origin
+  // header (browser blocks response). Previous behaviour of falling back to a
+  // default origin made CORS-CSRF possible when credentials were sent.
+  const ALLOWED_ORIGINS = [
+    'https://tonagentplatform.com',
+    'https://tonagentplatform.ru',
+    ...(process.env.EXTRA_CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean),
+  ];
   app.use((req: Request, res: Response, next: NextFunction) => {
     const origin = req.headers.origin || '';
+    // Same-origin / no Origin header → no CORS header needed
     if (origin && ALLOWED_ORIGINS.includes(origin)) {
       res.header('Access-Control-Allow-Origin', origin);
-    } else {
-      // Server-to-server, same-origin, or unknown origin — allow primary domain
-      res.header('Access-Control-Allow-Origin', DEFAULT_ORIGIN);
+      res.header('Vary', 'Origin');
+    } else if (origin) {
+      // Explicitly reject unknown origins on preflight
+      if (req.method === 'OPTIONS') {
+        console.warn(`[CORS] Rejected preflight from unknown origin: ${origin}`);
+        res.sendStatus(403);
+        return;
+      }
     }
-    res.header('Access-Control-Allow-Headers', 'Content-Type, X-Auth-Token');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, X-Auth-Token, Authorization');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
     if (req.method === 'OPTIONS') { res.sendStatus(200); return; }
     next();
@@ -967,9 +1025,11 @@ export function startApiServer() {
       await pool.query(`DELETE FROM builder_bot.agents WHERE user_id = $1`, [userId]);
       await pool.query(`DELETE FROM builder_bot.agentic_wallets WHERE user_id = $1`, [userId]);
       await pool.query(`DELETE FROM builder_bot.user_settings WHERE user_id = $1`, [userId]);
+      await pool.query(`DELETE FROM builder_bot.user_variables WHERE user_id = $1`, [userId]).catch(() => {});
       await pool.query(`DELETE FROM builder_bot.subscriptions WHERE user_id = $1`, [userId]);
       await pool.query(`DELETE FROM builder_bot.balance_transactions WHERE user_id = $1`, [userId]);
       await pool.query(`DELETE FROM builder_bot.user_balance WHERE user_id = $1`, [userId]);
+      await pool.query(`DELETE FROM builder_bot.ton_connect_sessions WHERE user_id = $1`, [userId]).catch(() => {});
       // Additional tables for complete GDPR deletion
       await pool.query(`DELETE FROM builder_bot.user_plugins WHERE user_id = $1`, [userId]).catch(() => {});
       await pool.query(`DELETE FROM builder_bot.user_custom_plugins WHERE user_id = $1`, [userId]).catch(() => {});
@@ -1005,14 +1065,36 @@ export function startApiServer() {
       const sub = (await pool.query(`SELECT plan_id, expires_at, is_active FROM builder_bot.subscriptions WHERE user_id = $1`, [userId])).rows;
       const balance = (await pool.query(`SELECT type, amount_ton, description, created_at FROM builder_bot.balance_transactions WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100`, [userId])).rows;
 
+      // Redact secret-looking content from agent prompts (users sometimes stash
+      // API keys in comments)
+      const redactCode = (s: string) =>
+        (s || '')
+          .replace(/(sk-ant-[\w-]{6})[\w-]{14,}/g, '$1***')
+          .replace(/(sk-proj-[\w-]{6})[\w-]{14,}/g, '$1***')
+          .replace(/(AIzaSy[\w-]{6})[\w-]{20,}/g, '$1***')
+          .replace(/(gsk_[\w]{6})[\w]{14,}/g, '$1***')
+          .replace(/\b([a-z]{3,8}\s+){11,23}[a-z]{3,8}\b/gi, '[MNEMONIC_REDACTED]')
+          .replace(/\b(api|access)[-_]?(key|token)\s*[:=]\s*["']?[A-Za-z0-9_\-+/=]{16,}/gi, '$1_$2=[REDACTED]');
+
+      // Strict whitelist for settings: drop anything containing secret/mnemonic/api/key/token
+      const safeSettings = settings.filter((s: any) => {
+        const k = String(s.key || '').toLowerCase();
+        if (/mnemonic|secret|api[_-]?key|token|password|session/i.test(k)) return false;
+        return true;
+      });
+
       const exportData = {
         exportDate: new Date().toISOString(),
         platform: 'TON Agent Platform',
         account: { userId, username: session.username, firstName: session.firstName },
         subscription: sub[0] || { planId: 'free' },
-        agents: agents.map((a: any) => ({ id: a.id, name: a.name, description: a.description, type: a.trigger_type, active: a.is_active, created: a.created_at })),
+        agents: agents.map((a: any) => ({
+          id: a.id, name: a.name, description: a.description,
+          type: a.trigger_type, active: a.is_active, created: a.created_at,
+          code: redactCode(a.code || ''),
+        })),
         wallets: wallets.map((w: any) => ({ address: w.address, type: w.wallet_type, label: w.label })),
-        settings: settings.filter((s: any) => !s.key.includes('mnemonic') && !s.key.includes('secret')), // exclude secrets
+        settings: safeSettings,
         transactions: balance,
       };
 
@@ -1727,6 +1809,20 @@ export function startApiServer() {
         res.status(400).json({ ok: false, error: 'Description must be at least 8 characters' });
         return;
       }
+      if (description.length > 10_000) {
+        res.status(400).json({ ok: false, error: 'Description too long (max 10k chars)' });
+        return;
+      }
+      // Hard cap on agent count per user — prevents agent farm DoS and runaway AI spend
+      try {
+        const cnt = await pool.query('SELECT COUNT(*)::int AS n FROM builder_bot.agents WHERE user_id = $1', [userId]);
+        const currentCount = cnt.rows[0]?.n ?? 0;
+        const HARD_CAP = parseInt(process.env.MAX_AGENTS_PER_USER || '100', 10);
+        if (currentCount >= HARD_CAP) {
+          res.status(429).json({ ok: false, error: `Agent limit reached (${HARD_CAP}). Delete unused agents first.` });
+          return;
+        }
+      } catch (e: any) { console.warn('[Agents] hard-cap check failed:', e.message); }
       const { getOrchestrator } = await import('./agents/orchestrator');
       const result = await getOrchestrator().handleCreateAgent(userId, description.trim());
       if (result.type === 'agent_created' && (result as any).agentId) {
@@ -1827,13 +1923,40 @@ export function startApiServer() {
       }
       const validTriggers = ['ai_agent', 'scheduled', 'webhook', 'manual'];
       const resolvedTrigger = validTriggers.includes(triggerType) ? triggerType : 'ai_agent';
+
+      // Sanitize imported trigger_config: refuse secret-bearing keys.
+      // Otherwise an attacker can craft an export JSON that pre-seeds someone else's
+      // wallet mnemonic / API keys into the victim's agent (social engineering target
+      // downloads "community template" and unknowingly uses attacker's wallet).
+      let safeTc: any = {};
+      try {
+        const tc = typeof triggerConfig === 'object' && triggerConfig !== null ? triggerConfig : {};
+        safeTc = JSON.parse(JSON.stringify(tc));
+        const sizeBytes = JSON.stringify(safeTc).length;
+        if (sizeBytes > 100_000) {
+          res.status(400).json({ ok: false, error: 'triggerConfig too large (>100KB)' });
+          return;
+        }
+        if (safeTc.config && typeof safeTc.config === 'object') {
+          for (const k of Object.keys(safeTc.config)) {
+            if (/mnemonic|api_key|secret|token|telegram_session|wallet_address|wallet_type/i.test(k)) {
+              delete safeTc.config[k];
+            }
+          }
+        }
+        for (const k of Object.keys(safeTc)) {
+          if (k === '__proto__' || k === 'constructor' || k === 'prototype') delete safeTc[k];
+          if (/session|secret|token/i.test(k)) delete safeTc[k];
+        }
+      } catch { safeTc = {}; }
+
       const created = await getDBTools().createAgent({
         userId,
         name: name.trim().slice(0, 60),
         description: (description || '').slice(0, 500),
         code: code.slice(0, 50000),
         triggerType: resolvedTrigger,
-        triggerConfig: typeof triggerConfig === 'object' ? triggerConfig : {},
+        triggerConfig: safeTc,
         isActive: false,
       });
       if (!created.success || !created.data) {
@@ -2044,6 +2167,7 @@ export function startApiServer() {
 
       // Direct SQL update for name
       await pool.query('UPDATE builder_bot.agents SET name = $1, updated_at = NOW() WHERE id = $2', [name.trim(), agentId]);
+      invalidateAgentCaches(agentId);
       res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -2084,6 +2208,7 @@ export function startApiServer() {
         'UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2',
         [JSON.stringify(tc), agentId]
       );
+      invalidateAgentCaches(agentId);
       res.json({ ok: true, capabilities: filtered });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -2189,6 +2314,7 @@ export function startApiServer() {
       if (typeof code !== 'string' || code.length > 50000) { res.status(400).json({ error: 'Invalid code' }); return; }
       // Update both agents.code AND trigger_config.code (runtime reads trigger_config)
       await pool.query('UPDATE builder_bot.agents SET code = $1, updated_at = NOW() WHERE id = $2', [code, agentId]);
+      invalidateAgentCaches(agentId);
       try {
         await pool.query(
           `UPDATE builder_bot.agents SET trigger_config = jsonb_set(COALESCE(trigger_config::jsonb, '{}'::jsonb), '{code}', to_jsonb($1::text)) WHERE id = $2`,
@@ -2210,6 +2336,7 @@ export function startApiServer() {
       const { description } = req.body || {};
       if (typeof description !== 'string' || description.length > 2000) { res.status(400).json({ error: 'Invalid description' }); return; }
       await pool.query('UPDATE builder_bot.agents SET description = $1, updated_at = NOW() WHERE id = $2', [description, agentId]);
+      invalidateAgentCaches(agentId);
       res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
@@ -2251,6 +2378,7 @@ export function startApiServer() {
       const validRoles = ['worker', 'manager', 'specialist', 'monitor', 'director'];
       if (!validRoles.includes(role)) { res.status(400).json({ error: 'Invalid role' }); return; }
       await pool.query('UPDATE builder_bot.agents SET role = $1, updated_at = NOW() WHERE id = $2', [role, agentId]);
+      invalidateAgentCaches(agentId);
       res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
@@ -2686,6 +2814,8 @@ export function startApiServer() {
   });
 
   // ── GET /api/agents/:id/mnemonic — Get wallet mnemonic (owner only) ──
+  // Returns decrypted seed phrase. Endpoint is rate-limited (5/min), owner-gated,
+  // and audit-logged. Response headers instruct browsers not to cache.
   app.get('/api/agents/:id/mnemonic', requireAuth, rateLimit(5, 60000, 'mnemonic'), async (req: Request, res: Response) => {
     try {
       const userId = (req as any).userId as number;
@@ -2712,7 +2842,23 @@ export function startApiServer() {
       try { mnemonic = decryptMnemonic(mnemonic); } catch (e: any) {
         console.warn('[WalletAPI] decryptMnemonic failed:', e.message);
       }
-      res.json({ ok: true, mnemonic });
+
+      // Audit trail — sensitive access must be traceable
+      try {
+        await pool.query(
+          `INSERT INTO builder_bot.agent_logs (agent_id, user_id, level, message)
+           VALUES ($1, $2, 'warn', $3)`,
+          [agentId, userId, `[SECURITY] Mnemonic export requested from IP ${req.ip} UA="${(req.headers['user-agent'] || '').slice(0, 80)}"`]
+        );
+      } catch (e: any) { console.warn('[WalletAPI] audit log failed:', e.message); }
+
+      // Prevent caching — the mnemonic must not land in browser cache, proxies, or CDN.
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+
+      res.json({ ok: true, mnemonic, warning: 'Anyone with this seed phrase controls the agent wallet. Do NOT share, screenshot, or paste into untrusted tools.' });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
@@ -3193,20 +3339,45 @@ export function startApiServer() {
 
   // ── POST /api/settings — обновить настройки (deep-merge per key) ──
   // Body: { key: string, value: any } или { settings: Record<string, any> }
+  const SETTINGS_KEY_ALLOW_RE = /^[a-zA-Z0-9_.\-:]{1,64}$/;
+  const SETTINGS_VALUE_MAX_BYTES = 256 * 1024; // 256KB per value
+  const SETTINGS_MAX_KEYS_PER_CALL = 20;
+  const SETTINGS_BLOCKED_KEYS = new Set([
+    'is_admin', 'plan_id', 'balance', 'user_id', 'session',
+    'admin', 'role', 'permissions',
+    '__proto__', 'constructor', 'prototype',
+  ]);
+  function validateSettingPair(k: any, v: any): string | null {
+    if (typeof k !== 'string' || !SETTINGS_KEY_ALLOW_RE.test(k)) return `Invalid key "${String(k).slice(0, 40)}"`;
+    if (SETTINGS_BLOCKED_KEYS.has(k.toLowerCase())) return `Key "${k}" is reserved`;
+    try {
+      const size = JSON.stringify(v ?? null).length;
+      if (size > SETTINGS_VALUE_MAX_BYTES) return `Value for "${k}" too large (${size} > ${SETTINGS_VALUE_MAX_BYTES})`;
+    } catch { return `Value for "${k}" is not JSON-serializable`; }
+    return null;
+  }
+
   app.post('/api/settings', requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = (req as any).userId as number;
       const body = req.body as any;
 
       if (body.key && body.value !== undefined) {
-        // Single key update
+        const err = validateSettingPair(body.key, body.value);
+        if (err) { res.status(400).json({ error: err }); return; }
         await getUserSettingsRepository().set(userId, body.key, body.value);
-      } else if (body.settings && typeof body.settings === 'object') {
-        // Batch update: multiple keys
+      } else if (body.settings && typeof body.settings === 'object' && !Array.isArray(body.settings)) {
+        const entries = Object.entries(body.settings);
+        if (entries.length > SETTINGS_MAX_KEYS_PER_CALL) {
+          res.status(400).json({ error: `Too many keys (max ${SETTINGS_MAX_KEYS_PER_CALL} per call)` });
+          return;
+        }
+        for (const [k, v] of entries) {
+          const err = validateSettingPair(k, v);
+          if (err) { res.status(400).json({ error: err }); return; }
+        }
         await Promise.all(
-          Object.entries(body.settings).map(([k, v]) =>
-            getUserSettingsRepository().set(userId, k, v)
-          )
+          entries.map(([k, v]) => getUserSettingsRepository().set(userId, k, v))
         );
       } else {
         res.status(400).json({ error: 'Body must have {key, value} or {settings: {...}}' });
@@ -3216,7 +3387,8 @@ export function startApiServer() {
       const updated = await getUserSettingsRepository().getAll(userId);
       res.json({ ok: true, settings: updated });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      console.error('[Settings] update error:', e.message);
+      res.status(500).json({ error: 'Internal error' });
     }
   });
 
@@ -3529,7 +3701,8 @@ export function startApiServer() {
       // Проверяем что агент принадлежит пользователю
       const agentResult = await getAgentForUser(agentId, req);
       if (!agentResult.success || !agentResult.data) {
-        return res.status(403).json({ ok: false, error: 'Agent not found or not yours' });
+        // Generic 404 for both "missing" and "not owned" — prevents enumeration
+        return res.status(404).json({ ok: false, error: 'Agent not found' });
       }
       const listing = await getMarketplaceRepository().createListing({
         agentId, sellerId: userId, name, description: description || '',
@@ -4359,12 +4532,31 @@ export function startApiServer() {
         return res.status(404).json({ ok: false, error: 'Listing not found' });
       }
       const agentId = listingRes.rows[0].agent_id;
-      // Create a copy of the agent for the user
+      // Create a SANITIZED copy (strip secrets from seller)
+      const src = await pool.query(
+        'SELECT name, description, trigger_type, trigger_config FROM builder_bot.agents WHERE id = $1',
+        [agentId]
+      );
+      if (!src.rows[0]) return res.status(404).json({ ok: false, error: 'Source not found' });
+      let clonedTc: any = {};
+      try {
+        const rawTc = typeof src.rows[0].trigger_config === 'string' ? JSON.parse(src.rows[0].trigger_config) : (src.rows[0].trigger_config || {});
+        clonedTc = JSON.parse(JSON.stringify(rawTc));
+        if (clonedTc.config && typeof clonedTc.config === 'object') {
+          for (const k of Object.keys(clonedTc.config)) {
+            if (/mnemonic|api_key|secret|token|wallet_address|telegram_session|wallet_type/i.test(k)) {
+              delete clonedTc.config[k];
+            }
+          }
+        }
+        for (const k of Object.keys(clonedTc)) {
+          if (/session|secret|token/i.test(k)) delete clonedTc[k];
+        }
+      } catch {}
       const result = await pool.query(
         `INSERT INTO builder_bot.agents (user_id, name, description, trigger_type, trigger_config, is_active)
-         SELECT $1, name, description, trigger_type, trigger_config, false
-         FROM builder_bot.agents WHERE id = $2 RETURNING id`,
-        [userId, agentId]
+         VALUES ($1, $2, $3, $4, $5, false) RETURNING id`,
+        [userId, src.rows[0].name, src.rows[0].description, src.rows[0].trigger_type, JSON.stringify(clonedTc)]
       );
       const newId = result.rows[0]?.id;
       res.json({ ok: true, agentId: newId });
@@ -4453,13 +4645,47 @@ export function startApiServer() {
         }
       }
 
-      // Clone agent for buyer
+      // Clone agent for buyer — CRITICAL: strip all seller-owned secrets.
+      // If we SELECT trigger_config verbatim, seller's WALLET_MNEMONIC and API keys
+      // land in buyer's agent — immediate wallet takeover + key theft.
+      const sellerAgent = await pool.query(
+        `SELECT name, description, trigger_type, trigger_config, code
+         FROM builder_bot.agents WHERE id = $1`,
+        [listing.agentId]
+      );
+      if (!sellerAgent.rows[0]) {
+        res.status(404).json({ ok: false, error: 'Listing source agent not found' });
+        return;
+      }
+      const srcRow = sellerAgent.rows[0];
+      let clonedTc: any = {};
+      try {
+        const rawTc = typeof srcRow.trigger_config === 'string' ? JSON.parse(srcRow.trigger_config) : (srcRow.trigger_config || {});
+        // Deep-clone but sanitize config — keep structure (schedule, capabilities, intervals)
+        // but drop any secret-bearing keys. Also regenerate webhook secrets.
+        clonedTc = JSON.parse(JSON.stringify(rawTc));
+        if (clonedTc.config && typeof clonedTc.config === 'object') {
+          const SECRET_KEYS = ['WALLET_MNEMONIC', 'WALLET_ADDRESS', 'AI_API_KEY', 'TONAPI_KEY',
+                               'TELEGRAM_SESSION', 'telegram_session', 'OPENAI_API_KEY',
+                               'ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'GROQ_API_KEY',
+                               'AGENTIC_OPERATOR_MNEMONIC', 'AGENTIC_WALLET_ADDRESS', 'WALLET_TYPE'];
+          for (const k of Object.keys(clonedTc.config)) {
+            if (SECRET_KEYS.includes(k) || /mnemonic|api_key|secret|token/i.test(k)) {
+              delete clonedTc.config[k];
+            }
+          }
+        }
+        // Drop top-level telegram_session / webhook secrets / any "*_session" fields
+        for (const k of Object.keys(clonedTc)) {
+          if (/session|secret|token/i.test(k)) delete clonedTc[k];
+        }
+      } catch (e: any) { console.warn('[Marketplace] clone sanitize failed:', e.message); }
+
       const cloneRes = await pool.query(
         `INSERT INTO builder_bot.agents (user_id, name, description, trigger_type, trigger_config, code, is_active)
-         SELECT $1, name, description, trigger_type, trigger_config, code, false
-         FROM builder_bot.agents WHERE id = $2
+         VALUES ($1, $2, $3, $4, $5, $6, false)
          RETURNING id`,
-        [userId, listing.agentId]
+        [userId, srcRow.name, srcRow.description, srcRow.trigger_type, JSON.stringify(clonedTc), srcRow.code]
       );
       const newAgentId = cloneRes.rows[0]?.id;
 
@@ -4793,20 +5019,21 @@ export function startApiServer() {
       const result = await getAgenticWalletService().deploySubWallet(
         (req as any).userId, Number(agentId), label
       );
-      // Update agent's WALLET_ADDRESS to use the agentic wallet
+      // Record the agentic sub-wallet WITHOUT touching wallet_address/wallet_mnemonic.
+      // Those keys are used by walletFromMnemonic() for signing and MUST stay a matched pair.
+      // Sub-wallet info goes into a separate key (agentic_wallet_address) + trigger_config.AGENTIC_WALLET_ADDRESS.
       if (result.success && result.wallet?.address && agentId) {
         try {
           const agentRow = await pool.query('SELECT trigger_config FROM builder_bot.agents WHERE id=$1 AND user_id=$2', [Number(agentId), (req as any).userId]);
           if (agentRow.rows[0]) {
             const tc = agentRow.rows[0].trigger_config || {};
             if (!tc.config) tc.config = {};
-            tc.config.WALLET_ADDRESS = result.wallet.address;
+            tc.config.AGENTIC_WALLET_ADDRESS = result.wallet.address;
             tc.config.WALLET_TYPE = 'agentic';
-            // Don't overwrite mnemonic — agentic wallet derives from root
             await pool.query('UPDATE builder_bot.agents SET trigger_config=$1 WHERE id=$2', [JSON.stringify(tc), Number(agentId)]);
-            // Also update agent_state
+            invalidateAgentCaches(Number(agentId));
             const { getAgentStateRepository } = await import('./db/schema-extensions');
-            await getAgentStateRepository().set(Number(agentId), (req as any).userId, 'wallet_address', result.wallet.address);
+            await getAgentStateRepository().set(Number(agentId), (req as any).userId, 'agentic_wallet_address', result.wallet.address);
           }
         } catch (e: any) { console.warn('[AgenticWallet] Failed to update agent config:', e.message); }
       }
@@ -5744,7 +5971,21 @@ export function startApiServer() {
       socket.destroy();
       return;
     }
-    const token = url.searchParams.get('token') || '';
+    // Prefer token from Sec-WebSocket-Protocol subprotocol header (doesn't leak
+    // to server logs / Referer). Fall back to query-string token for legacy
+    // clients, but warn so we can retire that path.
+    const proto = String(req.headers['sec-websocket-protocol'] || '');
+    let token = '';
+    if (proto) {
+      // Subprotocol format: "auth.<token>" or bare token
+      const parts = proto.split(',').map(s => s.trim());
+      const authPart = parts.find(p => p.startsWith('auth.'));
+      token = authPart ? authPart.slice(5) : (parts[0] || '');
+    }
+    if (!token) {
+      token = url.searchParams.get('token') || '';
+      if (token) console.warn('[WS] Token received via URL query — deprecated, use Sec-WebSocket-Protocol auth.<token>');
+    }
     const session = getSession(token);
     if (!session) {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
@@ -5757,10 +5998,18 @@ export function startApiServer() {
     });
   });
 
+  const WS_MAX_PER_USER = 10;
   wss.on('connection', (ws: WebSocket) => {
     const userId: number = (ws as any)._userId;
     if (!wsClients.has(userId)) wsClients.set(userId, new Set());
-    wsClients.get(userId)!.add(ws);
+    const set = wsClients.get(userId)!;
+    // Cap per-user connections to prevent fan-out DoS on broadcast events
+    if (set.size >= WS_MAX_PER_USER) {
+      console.warn(`[WS] User ${userId} exceeded ${WS_MAX_PER_USER} concurrent connections — closing new socket`);
+      try { ws.close(1008, 'Too many connections'); } catch {}
+      return;
+    }
+    set.add(ws);
 
     ws.on('close', () => {
       const set = wsClients.get(userId);

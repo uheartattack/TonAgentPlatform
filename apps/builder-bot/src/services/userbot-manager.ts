@@ -1359,7 +1359,21 @@ class UserbotManager {
   // ── Health check ────────────────────────────────────────────────────
 
   private async healthCheck(): Promise<void> {
+    // Idle clients (not used for >6 hours) are disconnected to bound memory.
+    // Each MTProto client holds ~1-2MB; without this we leak on agents that go silent.
+    const IDLE_TIMEOUT_MS = 6 * 60 * 60 * 1000;
+    const now = Date.now();
     for (const [agentId, ac] of this.clients) {
+      // 1. Evict idle: disconnect but keep session in DB so next message triggers reconnect
+      if (ac.connected && (now - (ac.lastUsed || 0)) > IDLE_TIMEOUT_MS) {
+        try {
+          console.log(`[UserbotMgr] Evicting idle client agent #${agentId} (idle ${Math.round((now - ac.lastUsed) / 60000)}min)`);
+          await ac.client.disconnect().catch(() => {});
+          ac.connected = false;
+          this.clients.delete(agentId);
+        } catch {}
+        continue;
+      }
       if (!ac.connected) {
         try {
           const sess = await this.loadSessionFromDB(agentId);
@@ -1763,16 +1777,62 @@ class UserbotManager {
     return { status: state.status, qrUrl: state.qrUrl, expiresIn: state.expiresIn, error: state.error };
   }
 
+  // Per-agent counter of invalid login attempts (phone code / 2FA).
+  // After 5 failed attempts within the window, block submissions for 5 minutes.
+  private _loginFailCount = new Map<number, { count: number; resetAt: number }>();
+  private _checkLoginThrottle(agentId: number): { ok: boolean; error?: string } {
+    const now = Date.now();
+    const entry = this._loginFailCount.get(agentId);
+    if (entry && entry.resetAt > now && entry.count >= 5) {
+      const waitSec = Math.ceil((entry.resetAt - now) / 1000);
+      return { ok: false, error: `Too many failed login attempts. Wait ${waitSec}s and try again.` };
+    }
+    return { ok: true };
+  }
+  private _recordLoginFailure(agentId: number): void {
+    const now = Date.now();
+    const WINDOW_MS = 5 * 60_000;
+    const existing = this._loginFailCount.get(agentId);
+    if (!existing || existing.resetAt < now) {
+      this._loginFailCount.set(agentId, { count: 1, resetAt: now + WINDOW_MS });
+    } else {
+      existing.count++;
+      existing.resetAt = now + WINDOW_MS;
+    }
+  }
+  private _resetLoginFailures(agentId: number): void {
+    this._loginFailCount.delete(agentId);
+  }
+
   async submitCode(agentId: number, code: string): Promise<{ ok: boolean; error?: string }> {
+    const throttle = this._checkLoginThrottle(agentId);
+    if (!throttle.ok) return throttle;
     const state = this.authStates.get(agentId);
     if (!state?.submitCode) return { ok: false, error: 'No code submission pending' };
-    return state.submitCode(code);
+    // Basic format check — Telegram codes are 5-6 digits
+    if (!/^\d{4,7}$/.test(String(code || ''))) {
+      this._recordLoginFailure(agentId);
+      return { ok: false, error: 'Invalid code format (expect 5-6 digits)' };
+    }
+    const result = await state.submitCode(code);
+    if (!result.ok) this._recordLoginFailure(agentId);
+    else this._resetLoginFailures(agentId);
+    return result;
   }
 
   async submit2FAPassword(agentId: number, password: string): Promise<{ ok: boolean; error?: string }> {
+    const throttle = this._checkLoginThrottle(agentId);
+    if (!throttle.ok) return throttle;
     const state = this.authStates.get(agentId);
     if (!state?.complete2FA) return { ok: false, error: 'No 2FA pending' };
-    return state.complete2FA(password);
+    if (!password || password.length < 1) {
+      this._recordLoginFailure(agentId);
+      return { ok: false, error: 'Empty 2FA password' };
+    }
+    const result = await state.complete2FA(password);
+    if (!result.ok) this._recordLoginFailure(agentId);
+    else this._resetLoginFailures(agentId);
+    return result;
   }
 
   get activeCount(): number { return this.clients.size; }
@@ -2950,7 +3010,7 @@ ${PRE_SEARCH_PLACEHOLDER}
 8. АКТУАЛЬНОСТЬ: твои знания УСТАРЕЛИ. Для ЛЮБЫХ фактов (продукты, цены, даты) — СНАЧАЛА web_search, потом отвечай. ИСКЛЮЧЕНИЕ: для подарков/gifts используй специализированные тулы (см. правило 11).
 11. ПОДАРКИ/GIFTS: "floor price подарка" = get_gift_floor_real(name). "оценить подарок" = tg_get_unique_gift_value(slug). "мои подарки" = tg_get_received_gifts(). "инфо по ссылке t.me/nft/X" = tg_get_collectible_info(X). НИКОГДА не используй web_search и get_nft_floor для Telegram подарков.
 
-ПОКУПКА ПОДАРКОВ: "купи X" → get_gift_backdrops(если фон указан) → get_gift_aggregator(gift, sort:"price_asc") → фильтр по маркету/бэкдропу → get_ton_balance → buy_market_gift(tx_contract, tx_payload, price_ton). tx_payload/tx_contract БЕРУТСЯ из get_gift_aggregator результата, НЕ СПРАШИВАЙ их у владельца.
+ПОКУПКА ПОДАРКОВ: "купи X" → ВСЕГДА smart_buy_gift({gift:"X", max_price_ton:Y, backdrop:"Z", marketplace:"portals"}). Это ОДИН тул, который сам делает всё: свой адрес, баланс, поиск по всем маркетам, фильтр, ранжирование, комиссии, газ. Первый вызов вернёт кандидатов (status:"choose_one" или "awaiting_confirm") — покажи владельцу топ-3 и спроси какой. Второй вызов с {candidate_index:N, confirm_purchase:true} — покупает. Если status:"insufficient_funds" — скажи адрес и сколько TON не хватает. НИКОГДА не выдумывай адрес, НИКОГДА не используй buy_market_gift напрямую (это низкоуровневый). Если фон/маркет не указаны — не указывай их (бери любой дешёвый).
 
 УТОЧНЕНИЕ: если не понял или неясно — УТОЧНИ у владельца, не выдумывай. Один вопрос > неправильный ответ.
 
