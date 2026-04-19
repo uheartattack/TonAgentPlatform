@@ -26,6 +26,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css?v=20260310">
+  <link rel="stylesheet" href="perf-fixes.css?v=1">
 </head>
 <body>
   <!-- Language Switcher -->
@@ -1419,51 +1420,86 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   </script>
 
-  <!-- Hero premium interactions: magnetic primary + 3D phone parallax + scroll parallax -->
+  <!-- Hero premium interactions: magnetic primary + 3D phone parallax + scroll parallax
+       Optimized: rAF throttle, disabled on touch/reduced-motion, IntersectionObserver early-exit -->
   <script>
   (function(){
-    // Magnetic pull on primary hero CTA
-    var magnets = document.querySelectorAll('.hero-buttons .btn-primary');
-    magnets.forEach(function(btn){
-      var strength = 0.25, max = 10;
-      btn.addEventListener('mousemove', function(e){
-        var r = btn.getBoundingClientRect();
-        var x = (e.clientX - r.left - r.width/2) * strength;
-        var y = (e.clientY - r.top - r.height/2) * strength;
-        x = Math.max(-max, Math.min(max, x));
-        y = Math.max(-max, Math.min(max, y));
-        btn.style.transform = 'translate(' + x + 'px,' + y + 'px)';
-      });
-      btn.addEventListener('mouseleave', function(){ btn.style.transform = ''; });
-    });
+    // Bail on touch/reduced-motion — saves major CPU on mobile
+    var isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+    var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (isTouch || reduceMotion) return;
 
-    // 3D phone parallax on mousemove over hero
     var hero = document.querySelector('.hero');
     var phone = document.querySelector('.phone-mockup');
-    if (hero && phone){
-      var baseRY = -8, baseRX = 6;
-      hero.addEventListener('mousemove', function(e){
-        var r = hero.getBoundingClientRect();
-        var px = (e.clientX - r.left) / r.width - 0.5;   // -.5..+.5
-        var py = (e.clientY - r.top) / r.height - 0.5;
-        var ry = baseRY + (-px * 10);
-        var rx = baseRX + (py * 8);
-        phone.style.transform = 'rotateY(' + ry + 'deg) rotateX(' + rx + 'deg) translateZ(0)';
-      });
-      hero.addEventListener('mouseleave', function(){
-        phone.style.transform = '';
-      });
+    var btnPrimary = document.querySelector('.hero-buttons .btn-primary');
+    if (!hero) return;
+
+    // rAF throttle state — one handler per animation frame max
+    var pendingMouse = false, lastMouseEvent = null;
+    var pendingScroll = false;
+    var heroVisible = true;
+
+    // Early-exit when hero is off-screen (stop processing events)
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(function(entries){
+        heroVisible = entries[0].isIntersecting;
+      }).observe(hero);
     }
 
-    // Scroll parallax on phone + mesh
-    var heroEl = hero;
-    function onScroll(){
-      if (!heroEl) return;
-      var y = window.scrollY;
-      if (y > window.innerHeight) return;
-      if (phone) phone.style.translate = '0 ' + (y * 0.15) + 'px';
+    function handleMouse() {
+      pendingMouse = false;
+      if (!lastMouseEvent || !heroVisible) return;
+      var e = lastMouseEvent;
+
+      // Magnetic CTA — only pull when cursor is close (cuts irrelevant work)
+      if (btnPrimary) {
+        var r = btnPrimary.getBoundingClientRect();
+        var dx = e.clientX - (r.left + r.width/2);
+        var dy = e.clientY - (r.top + r.height/2);
+        if (Math.abs(dx) < 180 && Math.abs(dy) < 120) {
+          var x = Math.max(-8, Math.min(8, dx * 0.22));
+          var y = Math.max(-8, Math.min(8, dy * 0.22));
+          btnPrimary.style.transform = 'translate3d(' + x + 'px,' + y + 'px,0)';
+        } else if (btnPrimary.style.transform) {
+          btnPrimary.style.transform = '';
+        }
+      }
+
+      // 3D phone parallax
+      if (phone) {
+        var hr = hero.getBoundingClientRect();
+        var px = (e.clientX - hr.left) / hr.width - 0.5;
+        var py = (e.clientY - hr.top) / hr.height - 0.5;
+        phone.style.transform =
+          'perspective(1000px) rotateY(' + (-8 - px * 10) + 'deg) rotateX(' + (6 + py * 8) + 'deg) translateZ(0)';
+      }
     }
-    window.addEventListener('scroll', onScroll, { passive: true });
+
+    hero.addEventListener('mousemove', function(e){
+      lastMouseEvent = e;
+      if (pendingMouse) return;
+      pendingMouse = true;
+      requestAnimationFrame(handleMouse);
+    }, { passive: true });
+
+    hero.addEventListener('mouseleave', function(){
+      if (phone) phone.style.transform = '';
+      if (btnPrimary) btnPrimary.style.transform = '';
+      lastMouseEvent = null;
+    });
+
+    // Scroll parallax on phone — rAF throttled, early-exit past viewport
+    function handleScroll() {
+      pendingScroll = false;
+      var y = window.scrollY;
+      if (y > window.innerHeight || !phone) return;
+      phone.style.setProperty('--scroll-y', (y * 0.12) + 'px');
+    }
+    window.addEventListener('scroll', function(){
+      if (pendingScroll) return;
+      pendingScroll = true;
+      requestAnimationFrame(handleScroll);
+    }, { passive: true });
   })();
   </script>
 </body>
