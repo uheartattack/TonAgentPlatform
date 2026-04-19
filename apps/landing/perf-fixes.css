@@ -44,14 +44,15 @@
 }
 
 /* ── 3. GPU layer promotion for animated elements — key trick.
-   Makes transforms run on GPU compositor, not CPU. ─────────────────── */
+   Makes transforms run on GPU compositor, not CPU.
+   NOTE: .pricing-card.popular::before is EXCLUDED — it uses
+   `animation: spin` that rotates transform, setting translateZ(0)
+   here would override and freeze the animation. ─────────────────── */
 .hero,
 .hero-buttons .btn-primary,
 .phone-mockup,
 .phone,
 .gradient-text,
-.pricing-card.popular::before,
-.pricing-card.popular::after,
 .pulse-dot,
 .scroll-rocket,
 .btn-primary::after {
@@ -59,6 +60,11 @@
   transform: translateZ(0);
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
+}
+/* Ring promoted via will-change ONLY (no transform override) */
+.pricing-card.popular::before {
+  will-change: transform;
+  backface-visibility: hidden;
 }
 
 /* ── 4. content-visibility: auto on off-screen sections.
@@ -74,14 +80,8 @@ footer {
 /* ── 5. Keep shimmer lively — original 10s feels right.
    Only slow down if user prefers less motion (handled below). ──────── */
 
-/* ── 6. Pricing popular rotating ring stays at original 16s — that's
-   the crown-jewel effect the user loves. GPU-promoted above, so it's
-   basically free to keep running. ───────────────────────────────── */
-.pricing-card.popular::before,
-.pricing-card.popular::after {
-  will-change: transform, filter;
-  transform: translateZ(0);
-}
+/* ── 6. Pricing popular rotating ring — do NOT set transform here,
+   the `animation: spin` needs to own transform completely. ────────── */
 
 /* ── 7. Don't animate box-shadow (expensive) on mousemove transforms.
    Only transform changes, so other props skip transition. ──────────── */
