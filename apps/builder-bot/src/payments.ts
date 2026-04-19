@@ -661,13 +661,15 @@ export async function getBetaLeaderboard(limit = 20): Promise<Array<{ user_id: n
 // lifetimeFree — бесплатный доступ к premium навсегда (когда появится платный план).
 // namedOnWall — имя в секции "Founding Testers" на лендинге.
 // priorityFeatures — новые фичи на N дней раньше остальных.
+// Снапшот-множитель — более щадящий. С ×10 у Legend концентрация 70%+ пула.
+// С ×3 Legend всё ещё топ (36%), но Master/Expert/Active получают значимую долю.
 export const TESTER_LEVELS = [
-  { level: 1, name: 'Newbie',  nameRu: 'Новичок',   minPts: 0,    maxAgents: 5,  gens: 30,  plan: 'beta',       snapshotMultiplier: 1,  lifetimeFree: false, namedOnWall: false, priorityFeatures: 0  },
-  { level: 2, name: 'Tester',  nameRu: 'Тестер',    minPts: 50,   maxAgents: 7,  gens: 40,  plan: 'beta',       snapshotMultiplier: 1,  lifetimeFree: false, namedOnWall: false, priorityFeatures: 0  },
-  { level: 3, name: 'Active',  nameRu: 'Активный',  minPts: 150,  maxAgents: 10, gens: 50,  plan: 'beta',       snapshotMultiplier: 2,  lifetimeFree: false, namedOnWall: false, priorityFeatures: 3  },
-  { level: 4, name: 'Expert',  nameRu: 'Эксперт',   minPts: 400,  maxAgents: 15, gens: 100, plan: 'pro',        snapshotMultiplier: 3,  lifetimeFree: false, namedOnWall: true,  priorityFeatures: 7  },
-  { level: 5, name: 'Master',  nameRu: 'Мастер',    minPts: 800,  maxAgents: 20, gens: 150, plan: 'pro',        snapshotMultiplier: 5,  lifetimeFree: true,  namedOnWall: true,  priorityFeatures: 14 },
-  { level: 6, name: 'Legend',  nameRu: 'Легенда',   minPts: 1500, maxAgents: -1, gens: -1,  plan: 'unlimited',  snapshotMultiplier: 10, lifetimeFree: true,  namedOnWall: true,  priorityFeatures: 30 },
+  { level: 1, name: 'Newbie',  nameRu: 'Новичок',   minPts: 0,    maxAgents: 5,  gens: 30,  plan: 'beta',       snapshotMultiplier: 1,   lifetimeFree: false, namedOnWall: false, priorityFeatures: 0  },
+  { level: 2, name: 'Tester',  nameRu: 'Тестер',    minPts: 50,   maxAgents: 7,  gens: 40,  plan: 'beta',       snapshotMultiplier: 1,   lifetimeFree: false, namedOnWall: false, priorityFeatures: 0  },
+  { level: 3, name: 'Active',  nameRu: 'Активный',  minPts: 150,  maxAgents: 10, gens: 50,  plan: 'beta',       snapshotMultiplier: 1.2, lifetimeFree: false, namedOnWall: false, priorityFeatures: 3  },
+  { level: 4, name: 'Expert',  nameRu: 'Эксперт',   minPts: 400,  maxAgents: 15, gens: 100, plan: 'pro',        snapshotMultiplier: 1.5, lifetimeFree: false, namedOnWall: true,  priorityFeatures: 7  },
+  { level: 5, name: 'Master',  nameRu: 'Мастер',    minPts: 800,  maxAgents: 20, gens: 150, plan: 'pro',        snapshotMultiplier: 2,   lifetimeFree: true,  namedOnWall: true,  priorityFeatures: 14 },
+  { level: 6, name: 'Legend',  nameRu: 'Легенда',   minPts: 1500, maxAgents: -1, gens: -1,  plan: 'unlimited',  snapshotMultiplier: 3,   lifetimeFree: true,  namedOnWall: true,  priorityFeatures: 30 },
 ];
 
 export const SHOP_ITEMS = [

@@ -310,6 +310,66 @@ export async function runMigrations(pool: Pool): Promise<void> {
         expires_at TIMESTAMPTZ
       )
     `);
+    // Rewards-related columns added idempotently
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS multiplier_override NUMERIC(4,2)`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMPTZ DEFAULT NOW()`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS ref_code TEXT`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS payout_wallet TEXT`);
+    await client.query(`CREATE INDEX IF NOT EXISTS beta_testers_ref_code_idx ON builder_bot.beta_testers (ref_code)`);
+
+    // ── Beta snapshots: monthly freeze of {user_id, xp, level, multiplier} ──
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.beta_snapshots (
+        id SERIAL PRIMARY KEY,
+        snapshot_date DATE NOT NULL,
+        user_id BIGINT NOT NULL,
+        username TEXT,
+        xp INT NOT NULL DEFAULT 0,
+        level INT NOT NULL DEFAULT 1,
+        multiplier NUMERIC(4,2) NOT NULL DEFAULT 1.0,
+        effective_xp NUMERIC(12,2) NOT NULL DEFAULT 0,
+        total_referrals INT NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(snapshot_date, user_id)
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS beta_snapshots_date_idx ON builder_bot.beta_snapshots (snapshot_date DESC)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS beta_snapshots_user_idx ON builder_bot.beta_snapshots (user_id, snapshot_date DESC)`);
+
+    // ── Beta referrals: who invited whom + depth (1 = direct, 2 = grandparent) ──
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.beta_referrals (
+        id SERIAL PRIMARY KEY,
+        referrer_id BIGINT NOT NULL,
+        referee_id BIGINT NOT NULL UNIQUE,
+        depth INT NOT NULL DEFAULT 1,
+        xp_bonus_awarded INT DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS beta_referrals_referrer_idx ON builder_bot.beta_referrals (referrer_id)`);
+
+    // ── Beta ref spend: 10% of each referee's future spend credited to referrer ──
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.beta_ref_spend (
+        id SERIAL PRIMARY KEY,
+        referrer_id BIGINT NOT NULL,
+        referee_id BIGINT NOT NULL,
+        amount_ton NUMERIC(16,9) NOT NULL,
+        source TEXT,
+        recorded_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS beta_ref_spend_referrer_idx ON builder_bot.beta_ref_spend (referrer_id, recorded_at DESC)`);
+
+    // ── Beta weekly digest log: avoid posting twice in the same ISO week ──
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.beta_weekly_digest (
+        iso_week TEXT PRIMARY KEY,
+        posted_at TIMESTAMPTZ DEFAULT NOW(),
+        top_users JSONB
+      )
+    `);
 
     // ── Beta invite codes ──
     await client.query(`

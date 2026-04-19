@@ -1318,6 +1318,49 @@ bot.command('start', async (ctx) => {
   // ── Parse deeplink payload ──
   const startPayload = ctx.message.text.split(' ')[1] || '';
 
+  // ── Referral deeplink: /start ref_XYZ → bind referrer before anything else ──
+  // We record the link BEFORE language setup so it works even for first-time users.
+  if (startPayload.startsWith('ref_')) {
+    try {
+      const { userIdFromRefCode, recordReferral, awardReferralBonuses, markActive } = await import('./rewards');
+      const referrerId = userIdFromRefCode(startPayload);
+      if (referrerId && referrerId !== userId) {
+        const { pool } = await import('./db');
+        // Ensure referee has a beta_testers row (create if first-time)
+        await pool.query(
+          `INSERT INTO builder_bot.beta_testers (user_id, username, status) VALUES ($1, $2, 'active')
+           ON CONFLICT (user_id) DO NOTHING`,
+          [userId, ctx.from?.username || null]
+        );
+        const isNew = await recordReferral(pool, referrerId, userId);
+        if (isNew) {
+          const awarded = await awardReferralBonuses(pool, userId);
+          await markActive(pool, referrerId);
+          // Notify the referrer in DM
+          try {
+            await bot.telegram.sendMessage(referrerId,
+              `${ce('party','🎉')} Твой реферал @${ctx.from?.username || userId} только что зашёл!\n\n` +
+              `${ce('coin','💰')} +20 XP тебе\n` +
+              `${ce('handshake','🤝')} 10% с его будущих трат — твои\n\n` +
+              `Проверить: /mystats`,
+              { parse_mode: 'HTML' }
+            ).catch(() => {});
+          } catch {}
+          if (awarded.l2) {
+            try {
+              await bot.telegram.sendMessage(awarded.l2,
+                `${ce('sparkle','✨')} +5 XP — твой реферал привёл своего друга (2-й уровень реферала).`,
+                { parse_mode: 'HTML' }
+              ).catch(() => {});
+            } catch {}
+          }
+          console.log(`[Referral] user ${userId} referred by ${referrerId}${awarded.l2 ? ` (L2: ${awarded.l2})` : ''}`);
+        }
+      }
+    } catch (e: any) { console.warn('[Referral] deeplink error:', e?.message); }
+    // Fall through — proceed with normal /start flow after binding
+  }
+
   // ── Первый старт: выбор языка ──
   const existingLang = await loadUserLang(userId);
   if (!existingLang && !startPayload) {
@@ -1909,12 +1952,14 @@ async function showTesterProfile(ctx: any, userId: number, edit = false) {
   t += `${ce('fire','🔥')} ${stats.streak}d streak  ·  ${ce('coin','💰')} ${stats.points} ${ru ? 'очков' : 'pts'}`;
   if (stats.role !== 'tester') t += `\n\n${ce('star','⭐')} <b>${escHtml(roleName)}</b>${roleInfo?.multiplier > 1 ? '  ×' + roleInfo.multiplier : ''}`;
 
-  // Quest progress
+  // Quest progress — не показываем если полей нет (иначе «Quest: undefined/undefined»)
   try {
     const { getQuestProgress } = require('./engagement');
     const qp = await getQuestProgress(userId);
-    if (!qp.allComplete) {
-      t += `\n\n${ce('target','🎯')} Quest: ${qp.completedCount}/${qp.totalSteps}`;
+    const done = Number(qp?.completedCount ?? qp?.completed ?? NaN);
+    const total = Number(qp?.totalSteps ?? qp?.total ?? NaN);
+    if (qp && !qp.allComplete && Number.isFinite(done) && Number.isFinite(total) && total > 0) {
+      t += `\n\n${ce('target','🎯')} Quest: ${done}/${total}`;
     }
   } catch {}
 
@@ -1927,15 +1972,29 @@ async function showTesterProfile(ctx: any, userId: number, edit = false) {
     }
   } catch {}
 
+  // Referral link + earnings
+  try {
+    const { pool: _refPool } = require('./db');
+    const { refCodeForUser, getRefearnings } = require('./rewards');
+    const refCode = refCodeForUser(userId);
+    const botUser = (await ctx.telegram.getMe()).username;
+    const refUrl = `https://t.me/${botUser}?start=${refCode}`;
+    const ref = await getRefearnings(_refPool, userId);
+    t += ru
+      ? `\n\n${ce('handshake','🤝')} <b>Реф-ссылка</b>\n<code>${refUrl}</code>\nПриведено: <b>${ref.refCount}</b> · Заработано: <b>${ref.totalTon.toFixed(3)} TON</b>`
+      : `\n\n${ce('handshake','🤝')} <b>Ref link</b>\n<code>${refUrl}</code>\nInvited: <b>${ref.refCount}</b> · Earned: <b>${ref.totalTon.toFixed(3)} TON</b>`;
+  } catch {}
+
   await testerReply(ctx, userId, t, [
-    [{ text: ru ? 'Рейтинг' : 'Leaderboard', icon_custom_emoji_id: CE.trophy, callback_data: 'tg_leaderboard' },
-     { text: ru ? 'Магазин' : 'Shop', icon_custom_emoji_id: CE.cart, callback_data: 'tg_shop' }],
+    [{ text: ru ? 'Уровни' : 'Levels', icon_custom_emoji_id: CE.crown, callback_data: 'tg_levels' },
+     { text: ru ? 'Рейтинг' : 'Leaderboard', icon_custom_emoji_id: CE.trophy, callback_data: 'tg_leaderboard' }],
     [{ text: ru ? 'Задания' : 'Tasks', icon_custom_emoji_id: CE.target, callback_data: 'tg_tasks' },
      { text: 'Check-in', icon_custom_emoji_id: CE.check, callback_data: 'tg_checkin' }],
     [{ text: ru ? 'Ачивки' : 'Achievements', icon_custom_emoji_id: CE.trophy, callback_data: 'tg_achievements' },
      { text: ru ? 'Квест' : 'Quest', icon_custom_emoji_id: CE.target, callback_data: 'tg_quest' }],
-    [{ text: ru ? '❓ FAQ' : '❓ FAQ', callback_data: 'tg_faq' },
-     { text: ru ? 'Покинуть бету' : 'Leave Beta', icon_custom_emoji_id: CE.cross, callback_data: 'tg_leave_beta' }],
+    [{ text: ru ? 'Магазин' : 'Shop', icon_custom_emoji_id: CE.cart, callback_data: 'tg_shop' },
+     { text: ru ? '❓ FAQ' : '❓ FAQ', callback_data: 'tg_faq' }],
+    [{ text: ru ? 'Покинуть бету' : 'Leave Beta', icon_custom_emoji_id: CE.cross, callback_data: 'tg_leave_beta' }],
   ], edit);
 }
 
@@ -2949,6 +3008,13 @@ bot.action(/^tg_mystats:(\d+)$/, async (ctx) => {
   await showTesterProfile(ctx, ownerId, true);
 });
 
+bot.action(/^tg_levels:(\d+)$/, async (ctx) => {
+  const ownerId = parseInt(ctx.match![1]);
+  if (ctx.from!.id !== ownerId) { await ctx.answerCbQuery('Not your button'); return; }
+  await ctx.answerCbQuery();
+  await renderLevelsView(ctx, ownerId, true);
+});
+
 bot.action(/^tg_leaderboard:(\d+)$/, async (ctx) => {
   const ownerId = parseInt(ctx.match![1]);
   if (ctx.from!.id !== ownerId) { await ctx.answerCbQuery('Not your button'); return; }
@@ -3637,76 +3703,225 @@ bot.command(['onboarding', 'tutorial', 'обучение', 'гайд', 'guide'],
 // ── /levels, /level, /уровни — показать шкалу уровней с конвертируемыми бенефитами ──
 // Отвечает на «что за XP и нах это надо» — связываем каждый уровень с реальной выгодой
 // (snapshot multiplier, lifetime free, Founding Testers wall, early access).
-bot.command(['levels', 'level', 'уровни', 'уровень'], async (ctx) => {
-  const userId = ctx.from?.id;
-  if (!userId) return;
+async function renderLevelsView(ctx: any, userId: number, edit: boolean): Promise<void> {
   const ru = ((userLanguages.get(userId) as 'ru' | 'en') || 'ru') === 'ru';
   try {
-    const { TESTER_LEVELS } = await import('./payments');
-    // Read current points (XP) from beta_testers table
-    let currentPts = 0;
-    try {
-      const { dbPool: pool } = await import('./db-pool');
-      const r = await (pool as any).query('SELECT points FROM builder_bot.beta_testers WHERE user_id = $1', [userId]);
-      currentPts = Number(r.rows[0]?.points || 0);
-    } catch {
-      try {
-        const { pool } = await import('./db');
-        const r = await pool.query('SELECT points FROM builder_bot.beta_testers WHERE user_id = $1', [userId]);
-        currentPts = Number(r.rows[0]?.points || 0);
-      } catch {}
-    }
+    const { TESTER_LEVELS, getTesterStats } = await import('./payments');
+    // Single source of truth — те же stats что в /mystats.
+    // Раньше мы читали `points` (spendable balance) вместо `xp` (total accumulated),
+    // из-за чего Master с 1161 XP показывался как Newbie (0 points).
+    const stats = await getTesterStats(userId).catch(() => null);
+    const currentPts = Number(stats?.xp ?? 0);
     const current = [...TESTER_LEVELS].reverse().find((l: any) => currentPts >= l.minPts) || TESTER_LEVELS[0];
     const next = TESTER_LEVELS.find((l: any) => l.minPts > currentPts);
 
-    const tagEmoji = ['🧪', '⚡', '🔥', '💎', '👑', '🏆'];
+    // Premium animated emoji per level — все ключи из CE-карты bot.ts
+    const lvlCe: Record<number, string> = {
+      1: ce('seedling', '🌱'),
+      2: ce('lab',      '🧪'),
+      3: ce('fire',     '🔥'),
+      4: ce('diamond',  '💎'),
+      5: ce('crown',    '👑'),
+      6: ce('trophy',   '🏆'),
+    };
+    const curIcon = lvlCe[current.level] || ce('seedling', '🌱');
     let msg = ru
-      ? `<b>Твой уровень:</b> ${tagEmoji[current.level - 1] || '🧪'} <b>${escHtml(current.nameRu)}</b> (Level ${current.level})\n`
-      : `<b>Your level:</b> ${tagEmoji[current.level - 1] || '🧪'} <b>${escHtml(current.name)}</b> (Level ${current.level})\n`;
-    msg += `<b>XP:</b> ${currentPts}`;
+      ? `<b>Твой уровень:</b> ${curIcon} <b>${escHtml(current.nameRu)}</b> (Level ${current.level})\n`
+      : `<b>Your level:</b> ${curIcon} <b>${escHtml(current.name)}</b> (Level ${current.level})\n`;
+    msg += `<b>${ce('coin', '🪙')} XP:</b> ${currentPts}`;
     if (next) msg += ru ? ` / ${next.minPts} (до ${escHtml(next.nameRu)})\n\n` : ` / ${next.minPts} (to ${escHtml(next.name)})\n\n`;
     else msg += ru ? ` <i>(максимум достигнут)</i>\n\n` : ` <i>(max reached)</i>\n\n`;
 
-    msg += ru ? `<b>Что даёт каждый уровень:</b>\n\n` : `<b>What each level unlocks:</b>\n\n`;
+    msg += ru ? `<b>${ce('star', '⭐')} Что даёт каждый уровень:</b>\n` : `<b>${ce('star', '⭐')} What each level unlocks:</b>\n`;
+    // Таблица уровней в expandable blockquote — свёрнуто по умолчанию, раскрывается кликом
+    msg += `<blockquote expandable>`;
+    const levelLines: string[] = [];
     for (const L of TESTER_LEVELS) {
-      const emoji = tagEmoji[L.level - 1] || '•';
+      const icon = lvlCe[L.level] || '•';
       const mark = L.level === current.level ? ' ← ' + (ru ? 'ты здесь' : 'you') : '';
       const name = ru ? L.nameRu : L.name;
-      msg += `${emoji} <b>${escHtml(name)}</b> · ${L.minPts} XP${mark}\n`;
       const perks: string[] = [];
-      perks.push(ru ? `Агентов: ${L.maxAgents === -1 ? '∞' : L.maxAgents}` : `Agents: ${L.maxAgents === -1 ? '∞' : L.maxAgents}`);
-      perks.push(ru ? `Генераций: ${L.gens === -1 ? '∞' : L.gens}` : `Generations: ${L.gens === -1 ? '∞' : L.gens}`);
-      perks.push(ru ? `Snapshot ×${(L as any).snapshotMultiplier || 1}` : `Snapshot ×${(L as any).snapshotMultiplier || 1}`);
-      if ((L as any).priorityFeatures > 0) perks.push(ru ? `Новые фичи раньше на ${(L as any).priorityFeatures}д` : `Features ${(L as any).priorityFeatures}d early`);
-      if ((L as any).namedOnWall) perks.push(ru ? 'Имя на Founding Testers wall' : 'Name on Founding Testers wall');
-      if ((L as any).lifetimeFree) perks.push(ru ? 'Lifetime free premium' : 'Lifetime free premium');
-      msg += `   <i>${perks.join(' · ')}</i>\n\n`;
+      perks.push(`${ce('bulb',    '🤖')} ${L.maxAgents === -1 ? '∞' : L.maxAgents}`);
+      perks.push(`${ce('sparkle', '✨')} ${L.gens === -1 ? '∞' : L.gens}`);
+      perks.push(`${ce('gold',    '📸')} ×${(L as any).snapshotMultiplier || 1}`);
+      if ((L as any).priorityFeatures > 0) perks.push(ru ? `${ce('rocket', '🚀')} раньше на ${(L as any).priorityFeatures}д` : `${ce('rocket', '🚀')} ${(L as any).priorityFeatures}d early`);
+      if ((L as any).namedOnWall) perks.push(`${ce('crown', '👑')} Founding Testers`);
+      if ((L as any).lifetimeFree) perks.push(`${ce('key', '🔓')} Lifetime free`);
+      levelLines.push(`${icon} <b>${escHtml(name)}</b> · ${L.minPts} XP${mark}\n   <i>${perks.join(' · ')}</i>`);
     }
+    msg += levelLines.join('\n\n');
+    msg += `</blockquote>\n\n`;
 
     msg += ru
-      ? `<b>Как получить XP:</b>\n` +
-        `· /daily — задание дня (+15–40 XP)\n` +
-        `· /quest — твой текущий квест\n` +
-        `· /tasks — задачи по зонам\n` +
-        `· Опиши баг в чате → я даю XP вручную\n` +
-        `· Предложи фичу → +5–20 XP если возьму\n\n` +
-        `<i>Snapshot фиксируется автоматически — когда появится монетизация/airdrop, твой уровень умножит долю.</i>`
-      : `<b>How to earn XP:</b>\n` +
-        `· /daily — daily quest (+15–40 XP)\n` +
-        `· /quest — your current quest\n` +
-        `· /tasks — zone tasks\n` +
-        `· Report bug in chat → I award XP manually\n` +
-        `· Suggest a feature → +5–20 XP if accepted\n\n` +
-        `<i>Snapshot is tracked automatically — when monetization/airdrop arrives, your level multiplies your share.</i>`;
+      ? `<b>${ce('rocket', '🚀')} Как получить XP:</b>\n` +
+        `${ce('target', '🎯')} /daily — задание дня (+15–40 XP)\n` +
+        `${ce('game',   '📋')} /quest — твой текущий квест\n` +
+        `${ce('check',  '✅')} /tasks — задачи по зонам\n` +
+        `${ce('bug',    '🐛')} Опиши баг в чате → +5–10 XP вручную\n` +
+        `${ce('bulb',   '💡')} Предложи фичу → +5–20 XP если возьму\n\n` +
+        `<b>${ce('coin', '💰')} Revenue share:</b>\n` +
+        `<blockquote expandable>` +
+        `10% от gross revenue платформы на 2 года с момента старта монетизации.\n\n` +
+        `Формула: твой пай = пул × (твой XP × твой ×) / сумма(XP × × всех)\n\n` +
+        `Пример — платформа делает <b>10 000 TON/год</b>, пул = <b>1 000 TON/год</b>:\n` +
+        `${ce('trophy','🏆')} Legend: ~360 TON/год\n` +
+        `${ce('crown','👑')} Master: ~160 TON/год\n` +
+        `${ce('diamond','💎')} Expert: ~60 TON/год\n` +
+        `${ce('fire','🔥')} Active: ~19 TON/год\n` +
+        `${ce('lab','🧪')} Tester: ~5 TON/год\n\n` +
+        `Выплата — каждый квартал на твой TON-кошелёк. Неактивен 6 мес → множитель падает до ×1.\n` +
+        `Условия могут меняться с 30-дневным уведомлением, но не ниже 5%.` +
+        `</blockquote>`
+      : `<b>${ce('rocket', '🚀')} How to earn XP:</b>\n` +
+        `${ce('target', '🎯')} /daily — daily quest (+15–40 XP)\n` +
+        `${ce('game',   '📋')} /quest — your current quest\n` +
+        `${ce('check',  '✅')} /tasks — zone tasks\n` +
+        `${ce('bug',    '🐛')} Report bug in chat → +5–10 XP manual\n` +
+        `${ce('bulb',   '💡')} Suggest a feature → +5–20 XP if accepted\n\n` +
+        `<b>${ce('coin', '💰')} Revenue share:</b>\n` +
+        `<blockquote expandable>` +
+        `10% of gross platform revenue for 2 years from monetization start.\n\n` +
+        `Formula: your share = pool × (your XP × your ×) / total(XP × × of all)\n\n` +
+        `Example — platform earns <b>10,000 TON/yr</b>, pool = <b>1,000 TON/yr</b>:\n` +
+        `${ce('trophy','🏆')} Legend: ~360 TON/yr\n` +
+        `${ce('crown','👑')} Master: ~160 TON/yr\n` +
+        `${ce('diamond','💎')} Expert: ~60 TON/yr\n` +
+        `${ce('fire','🔥')} Active: ~19 TON/yr\n` +
+        `${ce('lab','🧪')} Tester: ~5 TON/yr\n\n` +
+        `Payout quarterly to your TON wallet. Inactive 6 months → multiplier drops to ×1.\n` +
+        `Terms can change with 30-day notice, but not below 5%.` +
+        `</blockquote>`;
+
+    // Buttons с премиум анимированным icon_custom_emoji_id — как в /mystats
+    // (Telegram Premium поддерживает это в InlineKeyboardButton).
+    const buttons: any[] = [
+      [
+        { text: ru ? 'Квест'  : 'Quest',       icon_custom_emoji_id: CE.target,  callback_data: 'levels:quest' },
+        { text: ru ? 'Задачи' : 'Tasks',       icon_custom_emoji_id: CE.check,   callback_data: 'levels:tasks' },
+      ],
+      [
+        { text: ru ? 'Рейтинг' : 'Leaderboard', icon_custom_emoji_id: CE.trophy, callback_data: 'levels:leaderboard' },
+        { text: ru ? 'Чекин'   : 'Check-in',    icon_custom_emoji_id: CE.fire,   callback_data: 'levels:checkin' },
+      ],
+    ];
+    const extra: any = { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons }, disable_web_page_preview: true };
+    if (edit) {
+      try { await ctx.editMessageText(msg, extra); return; } catch {}
+    }
+    await safeReply(ctx, msg, extra);
+  } catch (e: any) {
+    console.warn('[renderLevelsView] error:', e?.message);
+    try { await ctx.reply('Ошибка при загрузке уровней.'); } catch {}
+  }
+}
+
+bot.command(['levels', 'level', 'уровни', 'уровень'], async (ctx) => {
+  const userId = ctx.from?.id;
+  if (!userId) return;
+  await renderLevelsView(ctx, userId, false);
+});
+
+// ── /rewards /награды — show revenue share math for this specific user ──
+bot.command(['rewards', 'награды', 'revenue', 'share', 'pool'], async (ctx) => {
+  const userId = ctx.from?.id;
+  if (!userId) return;
+  const ru = getUserLang(userId) === 'ru';
+  try {
+    const { pool } = await import('./db');
+    const { computeRewardTable, formatRewardsSummary, getRefearnings, refCodeForUser } = await import('./rewards');
+    const summary = await computeRewardTable(pool);
+    const myRow = summary.rows.find(r => r.userId === userId) || null;
+    let text = formatRewardsSummary(myRow, summary.totalEffectiveXp, summary.testerCount, ru);
+
+    // Add referral earnings section
+    const ref = await getRefearnings(pool, userId);
+    const refCode = refCodeForUser(userId);
+    const botUser = (await ctx.telegram.getMe()).username;
+    const refUrl = `https://t.me/${botUser}?start=${refCode}`;
+    text += ru
+      ? `\n\n<b>${ce('handshake', '🤝')} Рефералы</b>\n` +
+        `Приведено: <b>${ref.refCount}</b> · Заработано: <b>${ref.totalTon.toFixed(3)} TON</b>\n` +
+        `Твоя реф-ссылка: <code>${refUrl}</code>\n` +
+        `<i>Каждый приведённый = +20 XP + 10% с его трат навсегда.</i>`
+      : `\n\n<b>${ce('handshake', '🤝')} Referrals</b>\n` +
+        `Invited: <b>${ref.refCount}</b> · Earned: <b>${ref.totalTon.toFixed(3)} TON</b>\n` +
+        `Your ref link: <code>${refUrl}</code>\n` +
+        `<i>Each referral = +20 XP + 10% of their future spend forever.</i>`;
 
     const buttons: any[] = [
-      [{ text: ru ? '📋 Текущий квест' : '📋 Current quest', callback_data: 'show_quest' }],
-      [{ text: ru ? '🎯 Задачи' : '🎯 Tasks', callback_data: 'show_tasks' }, { text: ru ? '📊 Лидерборд' : '📊 Leaderboard', callback_data: 'show_leaderboard' }],
+      [
+        { text: ru ? 'Уровни' : 'Levels', icon_custom_emoji_id: CE.crown, callback_data: 'rewards:levels' },
+        { text: ru ? 'Рейтинг' : 'Leaderboard', icon_custom_emoji_id: CE.trophy, callback_data: 'rewards:leaderboard' },
+      ],
+      [
+        { text: ru ? 'Копировать реф' : 'Copy ref link', url: refUrl },
+      ],
     ];
-    await safeReply(ctx, msg, { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } });
+    await safeReply(ctx, text, { parse_mode: 'HTML', disable_web_page_preview: true, reply_markup: { inline_keyboard: buttons } });
   } catch (e: any) {
-    console.warn('[/levels] error:', e?.message);
-    try { await ctx.reply('Ошибка при загрузке уровней.'); } catch {}
+    console.warn('[/rewards] error:', e?.message);
+    try { await ctx.reply('Ошибка при расчёте rewards.'); } catch {}
+  }
+});
+
+bot.action(/^rewards:(levels|leaderboard)$/, async (ctx) => {
+  const userId = ctx.from?.id;
+  if (!userId) return;
+  const action = (ctx.match as any)[1] as 'levels' | 'leaderboard';
+  try { await ctx.answerCbQuery(); } catch {}
+  if (action === 'levels') await renderLevelsView(ctx, userId, true);
+  else await showTesterLeaderboard(ctx, userId, true);
+});
+
+// ── Callback handlers for /levels inline buttons ──
+// Редактируем текущее сообщение вместо отправки нового + «◀ Назад» возвращает к /levels.
+bot.action(/^levels:(quest|tasks|leaderboard|checkin|back)$/, async (ctx) => {
+  const userId = ctx.from?.id;
+  if (!userId) return;
+  const ru = getUserLang(userId) === 'ru';
+  const action = (ctx.match as any)[1] as 'quest' | 'tasks' | 'leaderboard' | 'checkin' | 'back';
+  try { await ctx.answerCbQuery(); } catch {}
+  const backBtn = { text: ru ? 'К уровням' : 'To levels', icon_custom_emoji_id: CE.back || CE.refresh, callback_data: 'levels:back' };
+  try {
+    if (action === 'back') {
+      await renderLevelsView(ctx, userId, true);
+      return;
+    }
+
+    let text = '';
+    const keyboard: any[] = [[backBtn]];
+
+    if (action === 'quest') {
+      const { formatQuestMessage } = require('./engagement');
+      text = await formatQuestMessage(userId, ru);
+    } else if (action === 'tasks') {
+      const { formatTasksMessage } = require('./engagement');
+      try {
+        const t = typeof formatTasksMessage === 'function' ? await formatTasksMessage(userId, ru) : null;
+        text = t || (ru ? `${ce('target', '🎯')} Задачи по зонам — отправь команду /tasks` : `${ce('target', '🎯')} Zone tasks — send /tasks`);
+      } catch {
+        text = ru ? `${ce('target', '🎯')} Используй /tasks чтобы увидеть задачи по зонам.` : `${ce('target', '🎯')} Use /tasks to see zone tasks.`;
+      }
+    } else if (action === 'leaderboard') {
+      await showTesterLeaderboard(ctx, userId, true);
+      return;
+    } else if (action === 'checkin') {
+      text = ru
+        ? `${ce('fire', '🔥')} Отправь команду <code>/checkin</code> чтобы зафиксировать сегодняшнюю серию и получить XP.`
+        : `${ce('fire', '🔥')} Send <code>/checkin</code> to register today's streak and earn XP.`;
+    }
+
+    try {
+      await ctx.editMessageText(text, {
+        parse_mode: 'HTML',
+        disable_web_page_preview: true,
+        reply_markup: { inline_keyboard: keyboard },
+      } as any);
+    } catch {
+      await safeReply(ctx, text, { parse_mode: 'HTML', disable_web_page_preview: true, reply_markup: { inline_keyboard: keyboard } });
+    }
+  } catch (e: any) {
+    console.warn(`[levels:${action}] error:`, e?.message);
   }
 });
 
@@ -10073,10 +10288,17 @@ bot.on(message('photo'), async (ctx) => {
                 announceToGroup(`${ce('sparkle','✨')} <b>${escHtml(name)}</b> ${getUserLang(userId) === 'ru' ? 'получил ачивку' : 'earned achievement'}: ${achNames}`);
               }
             } catch {}
-            // Auto-update tag in group
-            const { getTesterLevel } = require('./payments');
-            const _newLvl = getTesterLevel(reward.xp + (reward.points || 0));
-            setTesterTag(userId, _newLvl?.level || 1).catch(() => {});
+            // Auto-update tag in group — level is determined by cumulative XP only,
+            // NOT points (points = spendable balance, can decrease on purchases).
+            // Prefer total XP from DB; fall back to reward.xp if read fails.
+            try {
+              const { getTesterLevel } = require('./payments');
+              const { pool: _tagPool } = require('./db');
+              const _xpRes = await _tagPool.query('SELECT xp FROM builder_bot.beta_testers WHERE user_id = $1', [userId]);
+              const _totalXp = Number(_xpRes.rows[0]?.xp ?? reward.xp ?? 0);
+              const _newLvl = getTesterLevel(_totalXp);
+              setTesterTag(userId, _newLvl?.level || 1).catch(() => {});
+            } catch {}
           }
           if (reward.points > 0 && !reward.reward?.startsWith('level_up:')) rewardMsg += ` · +${reward.points} Points`;
         }
@@ -13615,6 +13837,20 @@ export async function startBot() {
     scheduleDailyDigest();
     scheduleInactivePings();
     scheduleWeeklyTasks();
+    // Rewards crons: Hall of Week (Fri 20:00 MSK), Monthly Snapshot (1st 00:00),
+    // Inactive decay (every 12h).
+    try {
+      const { startRewardsCrons } = require('./rewards-crons');
+      const groupId = parseInt(process.env.BETA_GROUP_ID || '0', 10);
+      const weeklyTopicId = process.env.BETA_WEEKLY_TOPIC_ID
+        ? parseInt(process.env.BETA_WEEKLY_TOPIC_ID, 10)
+        : (TOPIC_IDS as any)?.announcements || undefined;
+      if (groupId) {
+        startRewardsCrons(bot, dbPool, groupId, weeklyTopicId);
+      } else {
+        console.warn('[Rewards] BETA_GROUP_ID not set — Hall of Week + Snapshot crons disabled');
+      }
+    } catch (e: any) { console.warn('[Rewards] cron init:', e?.message); }
   }, 15000); // 15s after startup
   // Post current event ONLY on first start of the event day (dedupe via DB)
   try {
