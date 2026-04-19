@@ -164,10 +164,12 @@ let _adminsLoadedAt = 0;
 
 export function isPlatformAdmin(userId: number): boolean {
   if (userId === OWNER_ID && OWNER_ID > 0) return true;
+  _ensureAdminsFresh();
   return _platformAdminIds.has(userId);
 }
 
 export function isPlatformAdminByUsername(username: string): boolean {
+  _ensureAdminsFresh();
   return _platformAdminUsernames.has(username.toLowerCase().replace(/^@/, ''));
 }
 
@@ -218,9 +220,14 @@ export async function removeBetaTester(userId: number): Promise<boolean> {
 
 export async function generateBetaCodes(count: number, createdBy: number, note?: string, maxUses = 1): Promise<string[]> {
   const { pool } = require('./db');
+  const crypto = require('crypto');
+  const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 32 chars — one byte = one char with modulo
   const codes: string[] = [];
   for (let i = 0; i < count; i++) {
-    const code = 'BETA' + Array.from({ length: 6 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.random() * 32 | 0]).join('');
+    // Crypto-strong code (32^6 ≈ 1B possibilities — not brute-forceable at rate-limited endpoints)
+    const bytes = crypto.randomBytes(6);
+    let code = 'BETA';
+    for (let j = 0; j < 6; j++) code += ALPHABET[bytes[j] & 0x1f]; // & 31 = 0..31, perfect unbiased for 32-char alphabet
     await pool.query(
       `INSERT INTO builder_bot.beta_invite_codes (code, created_by, max_uses, note) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
       [code, createdBy, maxUses, note || null]
@@ -650,13 +657,17 @@ export async function getBetaLeaderboard(limit = 20): Promise<Array<{ user_id: n
 
 // ── Tester Economy: Levels, Shop, Checkin, Achievements ─────────
 
+// snapshotMultiplier — коэффициент доли в будущем snapshot'е (airdrop/revenue share).
+// lifetimeFree — бесплатный доступ к premium навсегда (когда появится платный план).
+// namedOnWall — имя в секции "Founding Testers" на лендинге.
+// priorityFeatures — новые фичи на N дней раньше остальных.
 export const TESTER_LEVELS = [
-  { level: 1, name: 'Newbie',  nameRu: 'Новичок',  minPts: 0,    maxAgents: 5,  gens: 30,  plan: 'beta' },
-  { level: 2, name: 'Tester',  nameRu: 'Тестер',   minPts: 50,   maxAgents: 7,  gens: 40,  plan: 'beta' },
-  { level: 3, name: 'Active',  nameRu: 'Активный',  minPts: 150,  maxAgents: 10, gens: 50,  plan: 'beta' },
-  { level: 4, name: 'Expert',  nameRu: 'Эксперт',   minPts: 400,  maxAgents: 15, gens: 100, plan: 'pro' },
-  { level: 5, name: 'Master',  nameRu: 'Мастер',    minPts: 800,  maxAgents: 20, gens: 150, plan: 'pro' },
-  { level: 6, name: 'Legend',  nameRu: 'Легенда',   minPts: 1500, maxAgents: -1, gens: -1,  plan: 'unlimited' },
+  { level: 1, name: 'Newbie',  nameRu: 'Новичок',   minPts: 0,    maxAgents: 5,  gens: 30,  plan: 'beta',       snapshotMultiplier: 1,  lifetimeFree: false, namedOnWall: false, priorityFeatures: 0  },
+  { level: 2, name: 'Tester',  nameRu: 'Тестер',    minPts: 50,   maxAgents: 7,  gens: 40,  plan: 'beta',       snapshotMultiplier: 1,  lifetimeFree: false, namedOnWall: false, priorityFeatures: 0  },
+  { level: 3, name: 'Active',  nameRu: 'Активный',  minPts: 150,  maxAgents: 10, gens: 50,  plan: 'beta',       snapshotMultiplier: 2,  lifetimeFree: false, namedOnWall: false, priorityFeatures: 3  },
+  { level: 4, name: 'Expert',  nameRu: 'Эксперт',   minPts: 400,  maxAgents: 15, gens: 100, plan: 'pro',        snapshotMultiplier: 3,  lifetimeFree: false, namedOnWall: true,  priorityFeatures: 7  },
+  { level: 5, name: 'Master',  nameRu: 'Мастер',    minPts: 800,  maxAgents: 20, gens: 150, plan: 'pro',        snapshotMultiplier: 5,  lifetimeFree: true,  namedOnWall: true,  priorityFeatures: 14 },
+  { level: 6, name: 'Legend',  nameRu: 'Легенда',   minPts: 1500, maxAgents: -1, gens: -1,  plan: 'unlimited',  snapshotMultiplier: 10, lifetimeFree: true,  namedOnWall: true,  priorityFeatures: 30 },
 ];
 
 export const SHOP_ITEMS = [
@@ -972,7 +983,17 @@ export async function confirmPayment(
 
   const plan = PLANS[pending.planId];
   const now = new Date();
-  const expiresAt = new Date(now);
+  // Preserve remaining time: if the user already has an active subscription,
+  // extend from its current expiry (not from today) — otherwise a topup made
+  // mid-month would silently shorten the paid period.
+  let baseDate = now;
+  try {
+    const existing = await getUserSubscription(userId);
+    if (existing && existing.isActive && existing.expiresAt && existing.expiresAt > now) {
+      baseDate = new Date(existing.expiresAt);
+    }
+  } catch {}
+  const expiresAt = new Date(baseDate);
   if (pending.period === 'year') {
     expiresAt.setFullYear(expiresAt.getFullYear() + 1);
   } else {
