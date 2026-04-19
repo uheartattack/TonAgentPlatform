@@ -174,8 +174,30 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
     {
       type: 'function',
       function: {
+        name: 'smart_buy_gift',
+        description: 'УМНАЯ ПОКУПКА ПОДАРКА. Один тул — вся цепочка автоматически: проверка кошелька, поиск на всех маркетах, расчёт комиссий, выбор лучшего варианта, проверка баланса, покупка. Используй ВСЕГДА когда юзер просит купить подарок — НЕ нужно вызывать get_gift_aggregator/get_ton_balance/buy_market_gift по отдельности. Минимум один фильтр обязателен (gift / backdrop / marketplace / max_price_ton). Если юзер сказал "купи NFT с фоном X" без имени — передай {backdrop: "X"}. Если "купи любой подарок на портале до 5 тон" → {marketplace: "portals", max_price_ton: 5}. Поток: 1) Первый вызов с фильтрами → топ-5 кандидатов. 2) Покажи юзеру, спроси. 3) Второй вызов с {candidate_index, confirm_purchase: true} → покупка.',
+        parameters: {
+          type: 'object',
+          properties: {
+            gift:           { type: 'string', description: 'Название подарка (опц): "Hex Pot", "Plush Pepe", "Lol Pop"' },
+            max_price_ton:  { type: 'number', description: 'Максимальный бюджет в TON (с учётом комиссий и газа)' },
+            backdrop:       { type: 'string', description: 'Конкретный фон/бэкдроп (опц): "Mystic Pearl", "Black"' },
+            model:          { type: 'string', description: 'Конкретная модель (опц)' },
+            marketplace:    { type: 'string', description: 'Конкретный маркет (опц): "portals" | "mrkt" | "getgems" | "tonnel" | "fragment"' },
+            recipient:      { type: 'string', description: 'Получатель (опц): @username или telegram user ID' },
+            auto_select:    { type: 'boolean', description: 'true = сразу купить самый дешёвый без подтверждения юзера' },
+            candidate_index: { type: 'number', description: 'Индекс варианта из предыдущего ответа (для второго вызова)' },
+            confirm_purchase: { type: 'boolean', description: 'true = выполнить покупку выбранного варианта' },
+          },
+          required: [],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
         name: 'buy_market_gift',
-        description: 'Купить подарок на маркете используя tx_payload из get_gift_aggregator. Отправляет транзакцию с кошелька агента. Требует: можно_купить=true (can_buy_now=true в листинге). ИСПОЛЬЗУЙ ТОЛЬКО когда get_gift_aggregator вернул item с tx_payload и tx_contract.',
+        description: 'НИЗКОУРОВНЕВАЯ покупка через прямой tx_payload. Используй ТОЛЬКО если smart_buy_gift не подходит. ВСЕГДА предпочитай smart_buy_gift для покупок.',
         parameters: {
           type: 'object',
           properties: {

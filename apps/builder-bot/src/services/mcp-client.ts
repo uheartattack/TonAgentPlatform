@@ -20,6 +20,49 @@ export interface MCPTool {
 
 const serverConnections = new Map<string, MCPConnection>();
 
+/**
+ * Validate an MCP server URL before connecting.
+ * Rejects localhost, private IP ranges, non-http(s) protocols.
+ * Without this, a malicious agent config could point MCP at an internal
+ * service (metadata server, Redis, postgres admin UI, etc.) and exfiltrate
+ * or manipulate data via the agent.
+ */
+function validateMcpUrl(rawUrl: string): { ok: boolean; error?: string } {
+  let parsed: URL;
+  try { parsed = new URL(rawUrl); } catch { return { ok: false, error: `Invalid URL: ${rawUrl}` }; }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    return { ok: false, error: `Protocol "${parsed.protocol}" not allowed — use http(s)` };
+  }
+  const host = parsed.hostname.toLowerCase();
+  // Localhost / loopback
+  if (host === 'localhost' || host === '0.0.0.0' || host.endsWith('.local') || host.endsWith('.internal')) {
+    return { ok: false, error: `Local/internal host rejected: ${host}` };
+  }
+  // Metadata endpoints
+  if (host === 'metadata.google.internal' || host === '169.254.169.254') {
+    return { ok: false, error: `Metadata endpoint rejected: ${host}` };
+  }
+  // IPv4 private ranges
+  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (ipv4) {
+    const [a, b] = ipv4.slice(1).map(Number);
+    if (
+      a === 10 ||
+      a === 127 ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      a === 0 ||
+      a >= 224
+    ) return { ok: false, error: `Private/reserved IP rejected: ${host}` };
+  }
+  // IPv6 loopback / link-local / ULA
+  if (/^(::1|::|fc[0-9a-f]{2}:|fd[0-9a-f]{2}:|fe80:)/i.test(host)) {
+    return { ok: false, error: `Private/reserved IPv6 rejected: ${host}` };
+  }
+  return { ok: true };
+}
+
 class MCPConnection {
   private tools: MCPTool[] = [];
   private connected = false;
@@ -27,6 +70,12 @@ class MCPConnection {
   constructor(private config: MCPServerConfig) {}
 
   async connect(): Promise<void> {
+    const v = validateMcpUrl(this.config.url);
+    if (!v.ok) {
+      console.warn(`[MCP] Rejected MCP server ${this.config.id}: ${v.error}`);
+      this.connected = false;
+      return;
+    }
     try {
       // Fetch available tools from MCP server
       const resp = await fetch(`${this.config.url}/tools/list`, {
@@ -50,6 +99,7 @@ class MCPConnection {
 
   async callTool(toolName: string, args: any): Promise<any> {
     if (!this.connected) await this.connect();
+    if (!this.connected) throw new Error(`MCP server ${this.config.id} is not connected (rejected or unreachable)`);
 
     const resp = await fetch(`${this.config.url}/tools/call`, {
       method: 'POST',

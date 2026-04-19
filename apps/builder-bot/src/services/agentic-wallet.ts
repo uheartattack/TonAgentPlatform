@@ -42,8 +42,24 @@ function encryptMnemonic(plaintext: string): string {
   return `enc:${salt.toString('hex')}:${iv.toString('hex')}:${tag}:${encrypted}`;
 }
 
+/**
+ * Counter of legacy-plaintext mnemonics encountered during runtime — used to surface
+ * migration hint to operator. Not a metric, just a one-time warning signal.
+ */
+let _legacyPlaintextWarned = false;
+
 function decryptMnemonic(stored: string): string {
-  if (!stored.startsWith('enc:')) return stored; // legacy unencrypted
+  if (!stored.startsWith('enc:')) {
+    // Legacy unencrypted mnemonic in DB. Return as-is but warn operator so they
+    // schedule a migration. Once all agents are re-saved via encryptMnemonic()
+    // (happens on any wallet_mnemonic write), this branch stops firing.
+    if (!_legacyPlaintextWarned && stored && stored.split(' ').length >= 12) {
+      _legacyPlaintextWarned = true;
+      console.warn('[Wallet] PLAINTEXT mnemonic detected in DB (legacy). ' +
+        'It will be re-encrypted on next wallet operation. Consider running scripts/migrate-plaintext-mnemonics.js');
+    }
+    return stored;
+  }
   if (!ENCRYPTION_KEY) throw new Error('WALLET_ENCRYPTION_KEY required to decrypt mnemonic');
   const parts = stored.split(':');
   // New format: enc:salt:iv:tag:ciphertext (5 parts)

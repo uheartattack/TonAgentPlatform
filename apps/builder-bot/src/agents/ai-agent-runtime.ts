@@ -113,7 +113,11 @@ function sanitizeForLog(obj: any): string {
   .replace(/\b([a-z]{3,8}\s+){11,23}[a-z]{3,8}\b/gi, '[MNEMONIC_REDACTED]') // 12-24 word seed phrases
   .replace(/\b(0x)?[0-9a-fA-F]{64}\b/g, (m) => m.slice(0, 10) + '***[KEY_REDACTED]') // 64-char hex private keys
   .replace(/postgres(ql)?:\/\/[^\s"']+/gi, 'postgres://***[DB_REDACTED]') // DB connection strings
-  .replace(/\b\d{10,13}:[A-Za-z0-9_-]{35}\b/g, '***[BOT_TOKEN_REDACTED]'); // Telegram bot tokens
+  .replace(/\b\d{10,13}:[A-Za-z0-9_-]{35}\b/g, '***[BOT_TOKEN_REDACTED]') // Telegram bot tokens
+  // API keys in URL query strings (Gemini, Toncenter, etc. put keys in URLs)
+  .replace(/([?&](api_key|apikey|key|token)=)[^&\s"']+/gi, '$1***[URL_KEY_REDACTED]')
+  // Authorization headers in logged requests
+  .replace(/(authorization['":\s]+)(Bearer\s+)?[A-Za-z0-9._\-+/=]{16,}/gi, '$1***[AUTH_REDACTED]');
 }
 
 // ── Human-in-the-Loop: ask_user_confirmation pending responses ───────────────
@@ -140,18 +144,27 @@ const CHANNEL_POST_COOLDOWN = 30 * 60 * 1000; // 30 minutes between posts to sam
 // ── Circuit Breaker — stop spamming API on repeated errors ────────────────
 const _circuitBreakers = new Map<number, { failCount: number; lastFail: number; isOpen: boolean }>();
 const CB_THRESHOLD = 5;           // failures before opening
-const CB_RESET_MS  = 10 * 60_000; // 10 minutes auto-reset
+const CB_BASE_RESET_MS = 2 * 60_000;  // 2 min base
+const CB_MAX_RESET_MS  = 30 * 60_000; // 30 min cap
+
+/** Adaptive reset time: grows with consecutive failure count, capped at 30 min.
+ *  Add deterministic jitter per agent so all breakers don't retry at the same instant. */
+function cbResetMs(agentId: number, failCount: number): number {
+  const base = Math.min(CB_MAX_RESET_MS, CB_BASE_RESET_MS * Math.max(1, failCount - CB_THRESHOLD + 1));
+  const jitter = (agentId % 30) * 1000; // 0..29s
+  return base + jitter;
+}
 
 function cbCheck(agentId: number): { blocked: boolean; retryInMinutes?: number } {
   const cb = _circuitBreakers.get(agentId);
   if (!cb || !cb.isOpen) return { blocked: false };
   const elapsed = Date.now() - cb.lastFail;
-  if (elapsed >= CB_RESET_MS) {
-    // Auto-reset after cooldown
+  const resetAt = cbResetMs(agentId, cb.failCount);
+  if (elapsed >= resetAt) {
     _circuitBreakers.delete(agentId);
     return { blocked: false };
   }
-  return { blocked: true, retryInMinutes: Math.ceil((CB_RESET_MS - elapsed) / 60_000) };
+  return { blocked: true, retryInMinutes: Math.ceil((resetAt - elapsed) / 60_000) };
 }
 
 function cbRecordFailure(agentId: number): void {
@@ -160,7 +173,8 @@ function cbRecordFailure(agentId: number): void {
   cb.lastFail = Date.now();
   if (cb.failCount >= CB_THRESHOLD) {
     cb.isOpen = true;
-    console.warn(`[CircuitBreaker] Agent #${agentId} OPEN after ${cb.failCount} consecutive failures. Will auto-reset in 10 min.`);
+    const resetMin = Math.ceil(cbResetMs(agentId, cb.failCount) / 60_000);
+    console.warn(`[CircuitBreaker] Agent #${agentId} OPEN (${cb.failCount} consecutive failures). Retry in ${resetMin} min.`);
   }
   _circuitBreakers.set(agentId, cb);
 }
@@ -442,13 +456,20 @@ interface ToolCall {
 
 interface ProviderCfg { baseURL: string; defaultModel: string; maxContextChars: number; maxTools: number; }
 
-function resolveProvider(provider: string): ProviderCfg {
+function resolveProvider(provider: string, overrideMaxTools?: number): ProviderCfg {
   const { MODELS, PROVIDER_URLS, PROVIDER_LIMITS } = require('../config/platform');
   const p = (provider || '').toLowerCase();
   const resolve = (key: string): ProviderCfg => ({
     baseURL: PROVIDER_URLS[key], defaultModel: MODELS[key],
     maxContextChars: PROVIDER_LIMITS[key]?.maxContextChars || 25_000,
-    maxTools: PROVIDER_LIMITS[key]?.maxTools || 60,
+    // Respect user's explicit MAX_TOOLS override (for paid tiers) but never exceed
+    // a hard safety ceiling of 128 (Anthropic's advertised limit).
+    maxTools: Math.min(
+      128,
+      (typeof overrideMaxTools === 'number' && overrideMaxTools > 0)
+        ? overrideMaxTools
+        : (PROVIDER_LIMITS[key]?.maxTools || 60)
+    ),
   });
   if (p.includes('gemini') || p.includes('google'))   return resolve('gemini');
   if (p.includes('claude-code') || p === 'platform')  return resolve('anthropic');
@@ -467,12 +488,36 @@ function getAIClient(config: Record<string, any>): { client: OpenAI; defaultMode
   const apiKey = decryptApiKey(rawKey);
   const provider = (config.AI_PROVIDER as string) || '';
 
-  if (!apiKey) throw new Error('NO_API_KEY');
+  if (!apiKey) {
+    // Fallback to platform-provided proxy key if configured.
+    // Without this, any agent without a personal key simply refuses to run.
+    const platKey   = process.env.PLATFORM_AI_KEY || '';
+    const platURL   = process.env.PLATFORM_AI_URL || '';
+    const platModel = process.env.PLATFORM_AI_MODEL || 'gpt-4o-mini';
+    if (platKey && platURL) {
+      console.log(`[AI] Using platform fallback (no user key configured)`);
+      const providerCfg: ProviderCfg = { ...resolveProvider(''), baseURL: platURL, defaultModel: platModel };
+      return {
+        client: new OpenAI({ baseURL: platURL, apiKey: platKey }),
+        defaultModel: platModel,
+        providerCfg,
+      };
+    }
+    throw new Error('NO_API_KEY');
+  }
 
-  const providerCfg = resolveProvider(provider);
+  const overrideTools = Number(config.MAX_TOOLS || 0) || undefined;
+  const providerCfg = resolveProvider(provider, overrideTools);
   const finalURL = (config.AI_BASE_URL as string) || providerCfg.baseURL;
   // Use explicitly configured model if set, otherwise provider default
   const defaultModel = (config.AI_MODEL as string) || providerCfg.defaultModel;
+  // Warn on deprecated models — claude-3 is EOL, mixtral may OOM agents with long history
+  if (/claude-3-(sonnet|haiku|opus)/.test(defaultModel)) {
+    console.warn(`[AI] Deprecated model "${defaultModel}". Switch to claude-haiku-4-5-20251001 or claude-sonnet-4.`);
+  }
+  if (defaultModel === 'mixtral-8x7b-32768') {
+    console.warn(`[AI] Mixtral on Groq often OOM for agents with long history. Consider llama-3.3-70b-versatile.`);
+  }
   // Anthropic API requires version header + prompt caching beta
   const isAnthropic = providerCfg.baseURL.includes('anthropic.com') || apiKey.startsWith('sk-ant');
   const extraHeaders = isAnthropic
@@ -834,7 +879,29 @@ interface CachedAgentMeta {
   cachedAt: number;
 }
 const _agentMetaCache = new Map<number, CachedAgentMeta>();
-const META_CACHE_TTL = 60_000; // 60 seconds
+const META_CACHE_TTL = 15_000; // 15s — lower TTL bounds staleness after config changes
+
+/**
+ * Explicitly invalidate cached meta + runtime-cached configs for an agent.
+ * MUST be called whenever agents.trigger_config / agent_state / users table changes
+ * (wallet rotation, prompt edit, agent-settings change, dashboard update).
+ * Without this, stale data persists for up to 60s, causing bugs like the
+ * April 2026 wallet_address/wallet_mnemonic desync.
+ */
+export function invalidateAgentCaches(agentId: number): void {
+  _agentMetaCache.delete(agentId);
+  try {
+    const umMod = require('../services/userbot-manager');
+    // userbot-manager stores an in-memory agent config map; drop the entry so next
+    // message reload reads fresh trigger_config from DB.
+    umMod._agentMsgConfigs?.delete?.(agentId);
+  } catch {}
+  try {
+    const exec = require('./tools/execution-tools');
+    // runner module holds an AgentRunData cache per agent; invalidate it too.
+    exec._agentRunData?.delete?.(agentId);
+  } catch {}
+}
 
 async function getAgentMeta(agentId: number): Promise<CachedAgentMeta | null> {
   const cached = _agentMetaCache.get(agentId);
@@ -1043,6 +1110,7 @@ export const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
   gifts:       ['get_gift_catalog', 'get_fragment_listings', 'appraise_gift', 'scan_arbitrage',
                 'buy_catalog_gift', 'buy_resale_gift', 'list_gift_for_sale', 'get_stars_balance',
                 'get_gift_upgrade_stats', 'analyze_gift_profitability', 'buy_market_gift',
+                'smart_buy_gift',
                 'get_gift_backdrops', 'get_gift_models', 'get_gift_metadata', 'get_all_gift_names'],
   gifts_market:['get_gift_floor_real', 'get_gift_sales_history', 'get_market_overview',
                 'get_price_list', 'scan_real_arbitrage', 'get_gift_aggregator', 'get_top_deals',
@@ -1349,6 +1417,8 @@ export const CORE_TOOLS = new Set([
   'tonstakers_info', 'tonstakers_stake', 'tonstakers_unstake', 'tonstakers_balance',
   // Bitrefill shopping
   'bitrefill_search', 'bitrefill_product', 'bitrefill_buy',
+  // Gift purchase (always available — high-level autonomous purchase)
+  'smart_buy_gift',
 ]);
 
 // ── TF-IDF vectorizer (lightweight, in-process, no external deps) ──
@@ -1523,6 +1593,7 @@ export function selectRelevantTools(allTools: any[], message: string, systemProm
     }
 
     // 4. Intent-based boosts (high priority)
+    if (intents.buyGift && /smart_buy_gift/.test(name)) score += 500; // smart_buy_gift first — wraps everything
     if (intents.buyGift && /buy_market|buy_resale|buy_catalog|aggregator|backdrop/.test(name)) score += 200;
     if (intents.priceCheck && /floor_real|price|appraise|unique_gift_value|aggregator/.test(name)) score += 150;
     if (intents.sellGift && /set_collectible_price|list_gift_for_sale|sell/.test(name)) score += 150;
@@ -1546,12 +1617,27 @@ export function selectRelevantTools(allTools: any[], message: string, systemProm
     return { tool: t, score };
   });
 
+  // Fallback: if 0 intents matched, agents still need basic tools.
+  // Without this, all non-core tools score 0 and we pick arbitrary ones.
+  const anyIntentMatched = Object.values(intents).some(Boolean);
+  if (!anyIntentMatched) {
+    console.warn(`[ToolRAG] No intent matched for query "${(message || '').slice(0, 60)}..." — applying baseline boost`);
+    for (const s of scored) {
+      const n = s.tool.function?.name || '';
+      // Always-useful basics: state, notify, web search, send message
+      if (/^(remember|recall|knowledge_|get_state|set_state|notify|notify_rich|web_search|fetch_url|tg_send_message|tg_reply|tg_get_messages|set_next_wake)$/.test(n)) {
+        s.score += 50;
+      }
+    }
+  }
+
   scored.sort((a, b) => b.score - a.score);
   const selected = scored.slice(0, maxTools).map(s => s.tool);
 
   // Log top-5 for debugging
   const top5 = scored.slice(0, 5).map(s => `${s.tool.function?.name}(${s.score})`).join(', ');
-  console.log(`[ToolRAG] ${selected.length}/${allTools.length} selected. Top-5: ${top5}`);
+  const matchedIntents = Object.entries(intents).filter(([, v]) => v).map(([k]) => k).join(',') || 'none';
+  console.log(`[ToolRAG] ${selected.length}/${allTools.length} selected. Intents: [${matchedIntents}]. Top-5: ${top5}`);
 
   return selected;
 }
@@ -1567,7 +1653,33 @@ const DATA_BEARING_TOOLS = new Set([
   'get_state', 'knowledge_search', 'web_search', 'get_gift_floor_real',
   'get_price_list', 'get_market_overview', 'get_gift_sales_history',
   'get_gift_aggregator', 'fetch_url', 'tg_get_messages', 'tg_get_unread',
+  // Wallet/TX tools — critical identifiers must survive compaction
+  'get_agent_wallet', 'get_ton_balance', 'smart_buy_gift', 'buy_market_gift',
+  'send_ton', 'send_jetton', 'stonfi_swap_execute', 'stonfi_swap_quote',
 ]);
+
+/**
+ * Fields that MUST be preserved verbatim in the compact summary because they
+ * are referenced downstream (e.g. wallet addresses, tx hashes, tx payloads).
+ * Losing these forces the agent to make redundant tool calls.
+ */
+const CRITICAL_FIELDS = [
+  'wallet_address', 'address', 'tx_hash', 'hash', 'tx_payload', 'tx_contract',
+  'mnemonic', 'seqno', 'balance_ton', 'candidate_index', 'status',
+];
+
+function extractCriticalSnippets(parsed: any): string {
+  if (!parsed || typeof parsed !== 'object') return '';
+  const out: string[] = [];
+  for (const k of CRITICAL_FIELDS) {
+    if (k in parsed) {
+      let v = parsed[k];
+      if (typeof v === 'string' && v.length > 120) v = v.slice(0, 120) + '...';
+      out.push(`${k}=${JSON.stringify(v)}`);
+    }
+  }
+  return out.join(' ');
+}
 
 function resolveToolName(msg: any, messages: any[]): string {
   if (msg.name) return msg.name;
@@ -1604,9 +1716,12 @@ function buildToolSummary(toolName: string, content: string): string {
 
   // Build brief OK summary
   let brief = '';
+  let critical = '';
   try {
     const parsed = JSON.parse(content);
     if (typeof parsed === 'object' && parsed !== null) {
+      // Preserve critical identifiers verbatim (wallet_address, tx_hash, tx_payload...)
+      critical = extractCriticalSnippets(parsed);
       const summaryField = parsed.summary || parsed.message || parsed.data?.summary;
       if (summaryField && typeof summaryField === 'string') {
         brief = summaryField.slice(0, summaryMaxLen);
@@ -1629,7 +1744,9 @@ function buildToolSummary(toolName: string, content: string): string {
     brief = content.slice(0, summaryMaxLen).replace(/\n/g, ' ');
   }
 
-  return `[Tool: ${toolName} — OK, ${brief}]`;
+  return critical
+    ? `[Tool: ${toolName} — OK, ${brief} | ${critical}]`
+    : `[Tool: ${toolName} — OK, ${brief}]`;
 }
 
 function compressOldToolResults(
@@ -1862,16 +1979,26 @@ function recordDailySpendMem(agentId: number, amountTon: number): void {
   }
 }
 
+/** Absolute safety ceiling on daily spend limit — prevents BigInt/Number overflow
+ *  when a user sets an outrageously large limit through the dashboard. */
+const DAILY_SPEND_HARD_CAP_TON = 10_000;
+
 // ── Daily spend cap enforcement (DB-backed) ────────────────────────────────
 async function checkDailySpendCap(agentId: number, userId: number, amountTon: number): Promise<string | null> {
   try {
+    if (!isFinite(amountTon) || amountTon < 0) {
+      return `Invalid amount ${amountTon}`;
+    }
     const { getAgentDailySpendRepository } = await import('../db/schema-extensions');
     const spendRepo = getAgentDailySpendRepository();
     const amountNano = BigInt(Math.round(amountTon * 1e9));
     // Check agent-specific limit from state, or use default
     const stateRepo = getAgentStateRepository();
     const customLimit = unwrapState(await stateRepo.get(agentId, 'daily_spend_limit_ton').catch(() => null));
-    const limitTon = customLimit ? Number(customLimit) || DAILY_SPEND_LIMIT_TON : DAILY_SPEND_LIMIT_TON;
+    let limitTon = customLimit ? Number(customLimit) || DAILY_SPEND_LIMIT_TON : DAILY_SPEND_LIMIT_TON;
+    // Clamp to sane ceiling to avoid BigInt/Number overflow
+    if (!isFinite(limitTon) || limitTon < 0) limitTon = DAILY_SPEND_LIMIT_TON;
+    if (limitTon > DAILY_SPEND_HARD_CAP_TON) limitTon = DAILY_SPEND_HARD_CAP_TON;
     const limitNano = BigInt(Math.round(limitTon * 1e9));
     const canSpend = await spendRepo.canSpend(agentId, amountNano, limitNano);
     if (!canSpend) {
@@ -1897,10 +2024,94 @@ async function recordDailySpend(agentId: number, userId: number, amountTon: numb
   }
 }
 
+/**
+ * Atomically reserve spend BEFORE executing the TX. Returns null on success,
+ * or an error message if limit would be exceeded. If the subsequent TX fails,
+ * caller MUST call rollbackDailySpend() to release the reservation.
+ * This closes the race window where two concurrent calls both pass the check
+ * and then both record, exceeding the cap.
+ */
+async function tryReserveDailySpend(
+  agentId: number,
+  userId: number,
+  amountTon: number
+): Promise<string | null> {
+  try {
+    const { getAgentDailySpendRepository } = await import('../db/schema-extensions');
+    const spendRepo = getAgentDailySpendRepository();
+    const stateRepo = getAgentStateRepository();
+    const customLimit = unwrapState(await stateRepo.get(agentId, 'daily_spend_limit_ton').catch(() => null));
+    const limitTon = customLimit ? Number(customLimit) || DAILY_SPEND_LIMIT_TON : DAILY_SPEND_LIMIT_TON;
+    const amountNano = BigInt(Math.round(amountTon * 1e9));
+    const limitNano = BigInt(Math.round(limitTon * 1e9));
+    const result = await spendRepo.tryReserveSpend(agentId, userId, amountNano, limitNano);
+    if (!result.ok) {
+      const spentTon = Number(result.spentNano) / 1e9;
+      return `Daily spend limit reached: ${spentTon.toFixed(2)}/${limitTon} TON spent today. Try again tomorrow or ask user to increase limit.`;
+    }
+    // Mirror into memory fast-path for UI queries
+    recordDailySpendMem(agentId, amountTon);
+    return null;
+  } catch (e: any) {
+    console.warn(`[DailySpend] reserve failed for agent #${agentId}: ${e.message}`);
+    return `Daily spend check failed (DB error). Transaction blocked for safety. Retry later.`; // fail-closed
+  }
+}
+
+async function rollbackDailySpend(agentId: number, amountTon: number): Promise<void> {
+  try {
+    const { getAgentDailySpendRepository } = await import('../db/schema-extensions');
+    const spendRepo = getAgentDailySpendRepository();
+    const amountNano = BigInt(Math.round(amountTon * 1e9));
+    await spendRepo.rollbackSpend(agentId, amountNano);
+    // Also rollback in-memory mirror
+    const today = new Date().toISOString().slice(0, 10);
+    const entry = _dailySpendMem.get(agentId);
+    if (entry && entry.date === today) {
+      entry.total = Math.max(0, entry.total - amountTon);
+    }
+  } catch (e: any) {
+    console.warn(`[DailySpend] rollback failed for agent #${agentId}: ${e.message}`);
+  }
+}
+
 /** Unwrap stateRepo.get() result: handles both {value: string} and raw string returns */
 function unwrapState(val: any): string | null {
   if (val && typeof val === 'object' && 'value' in val) return val.value;
   return val ?? null;
+}
+
+/**
+ * Keys that must NOT be readable/writable via get_state/set_state tools.
+ * These store credentials and must be accessed only through dedicated,
+ * hardened code paths (get_agent_wallet, AI client loader, etc.).
+ */
+const PROTECTED_STATE_KEYS = new Set([
+  'wallet_mnemonic',
+  'wallet_secret',
+  'root_wallet_mnemonic',
+  'agentic_operator_mnemonic',
+  'api_key',
+  'telegram_session',
+]);
+function isProtectedStateKey(key: string): boolean {
+  const lower = key.toLowerCase();
+  if (PROTECTED_STATE_KEYS.has(lower)) return true;
+  if (lower.startsWith('__')) return true; // block __proto__, __defineGetter__, etc.
+  if (lower.endsWith('_mnemonic') || lower.endsWith('_private_key') || lower.endsWith('_api_key')) return true;
+  return false;
+}
+/**
+ * Validate a state key string: must be safe characters, length-bounded, and
+ * free of prototype-pollution patterns.
+ */
+function validateStateKey(raw: any): { ok: true; value: string } | { ok: false; error: string } {
+  if (typeof raw !== 'string') return { ok: false, error: 'key must be a string' };
+  if (raw.length === 0 || raw.length > 256) return { ok: false, error: 'key length must be 1-256 chars' };
+  // Allow alphanumerics, underscore, dash, dot, colon (chat IDs use colons)
+  if (!/^[a-zA-Z0-9_\-.:@]+$/.test(raw)) return { ok: false, error: 'key contains invalid chars (allowed: a-zA-Z0-9_-.:@)' };
+  if (raw === '__proto__' || raw === 'constructor' || raw === 'prototype') return { ok: false, error: 'reserved key' };
+  return { ok: true, value: raw };
 }
 
 export async function executeTool(
@@ -1910,6 +2121,23 @@ export async function executeTool(
 ): Promise<any> {
   const gifts  = getTelegramGiftsService();
   const stateRepo = getAgentStateRepository();
+
+  // ── Defensive arg-size cap: a hallucinating LLM can generate 100KB+ of args.
+  // Oversized payloads waste context, slow logging, and fill DB. Truncate string
+  // values to 16KB; reject object args over 64KB total.
+  try {
+    const argsSize = JSON.stringify(args ?? {}).length;
+    if (argsSize > 64 * 1024) {
+      console.warn(`[Tool] Agent #${params.agentId} ${name} args oversized (${argsSize} bytes) — rejected`);
+      return { error: `Tool args too large (${Math.round(argsSize/1024)}KB > 64KB limit). Reduce parameters and retry.` };
+    }
+    for (const k of Object.keys(args || {})) {
+      const v = (args as any)[k];
+      if (typeof v === 'string' && v.length > 16_384) {
+        (args as any)[k] = v.slice(0, 16_384) + '...[truncated]';
+      }
+    }
+  } catch {}
 
   // ── Tool rate limiting ──
   if (!checkToolRateLimit(params.agentId, name)) {
@@ -1923,7 +2151,13 @@ export async function executeTool(
     const chatId = params.context?.chatId;
     const senderId = params.context?.senderId;
     const isGroup = chatId ? String(chatId).startsWith('-') : false;
-    const isOwner = !senderId || String(senderId) === String(params.userId);
+    // IMPORTANT: require explicit match. Falling back to owner=true when
+    // senderId is absent would let anonymous/service messages pass admin gates.
+    // No context = internal/scheduled tick = trusted as owner; but any presence
+    // of senderId requires strict match.
+    const isOwner = senderId != null
+      ? String(senderId) === String(params.userId)
+      : !params.context?.chatId; // no sender + no chat = internal tick, safe
 
     // Load custom scopes (cached per-tick via params.context._toolScopes)
     let toolScopes: Record<string, ToolScopeConfig> = {};
@@ -1952,7 +2186,7 @@ export async function executeTool(
   }
 
   // ── Atomic lock for financial operations (prevents double-spend) ──
-  const FINANCIAL_OPS = new Set(['send_ton', 'send_jetton', 'ton_send_boc', 'buy_catalog_gift', 'buy_resale_gift', 'buy_market_gift', 'list_gift_for_sale']);
+  const FINANCIAL_OPS = new Set(['send_ton', 'send_jetton', 'ton_send_boc', 'buy_catalog_gift', 'buy_resale_gift', 'buy_market_gift', 'smart_buy_gift', 'list_gift_for_sale']);
   const _isFinancialOp = FINANCIAL_OPS.has(name);
   if (_isFinancialOp) {
     const activeOp = getActiveOp(params.agentId);
@@ -1973,18 +2207,14 @@ export async function executeTool(
   if (name === 'send_ton' || name === 'send_jetton') {
     const amount = Number(args.amount) || 0;
     const amountTon = name === 'send_ton' ? amount : 0.05; // jetton tx costs ~0.05 TON gas
-    // Fast in-memory pre-check (10 TON default, catches rapid bursts without DB round-trip)
+    // Fast in-memory pre-check only (advisory). The authoritative atomic reserve happens
+    // inside each TX-sending handler (send_ton, send_jetton, buy_market_gift, smart_buy_gift)
+    // to prevent race conditions between check and record.
     const memCheck = checkDailySpendLimitMem(params.agentId, amountTon);
     if (!memCheck.allowed) {
       const msg = `Daily spend limit (fast check): ${memCheck.spent.toFixed(2)}/${memCheck.limit} TON spent today. Wait until tomorrow.`;
       await logToDb(params.agentId, 'warn', `[DailySpend] Blocked ${name}: ${msg}`, params.userId);
       return { error: msg };
-    }
-    // DB-backed check (authoritative, supports custom limits)
-    const capErr = await checkDailySpendCap(params.agentId, params.userId, amountTon);
-    if (capErr) {
-      await logToDb(params.agentId, 'warn', `[DailySpend] Blocked ${name}: ${capErr}`, params.userId);
-      return { error: capErr };
     }
   }
 
@@ -2038,14 +2268,40 @@ export async function executeTool(
   switch (name) {
     case 'get_ton_balance': {
       try {
-        const addr = args.address as string;
+        let addr = (args.address as string || '').trim();
+        // Auto-fill: if no address, use agent's own wallet from state
+        if (!addr) {
+          const ownAddr = unwrapState(await stateRepo.get(params.agentId, 'wallet_address').catch(() => null));
+          if (ownAddr) addr = String(ownAddr);
+        }
+        if (!addr) {
+          return { error: 'address is required. Use get_agent_wallet() FIRST to get YOUR wallet address, then pass it here.' };
+        }
+        // Validate format
+        if (!/^(EQ|UQ)[A-Za-z0-9_-]{46}$/.test(addr) && !/^(0|-1):[0-9a-fA-F]{64}$/.test(addr)) {
+          return { error: `Invalid address "${addr.slice(0, 20)}...". Format: EQ.../UQ... (48 chars) or 0:hex/−1:hex (66 chars). Use get_agent_wallet() to get YOUR address — DO NOT make up addresses.` };
+        }
+        // Sanity check: if caller passed an address that differs from agent's own wallet, warn in the result
+        const ownWallet = unwrapState(await stateRepo.get(params.agentId, 'wallet_address').catch(() => null));
+        const addrMismatch = ownWallet && String(ownWallet) !== addr;
         const tonApiKey = params.config.TONAPI_KEY || process.env.TONAPI_KEY || '';
         const headers: Record<string, string> = {};
         if (tonApiKey) headers['Authorization'] = `Bearer ${tonApiKey}`;
         const res  = await fetch(`https://tonapi.io/v2/accounts/${encodeURIComponent(addr)}`, { headers, signal: AbortSignal.timeout(10000) });
         const data = await res.json() as any;
+        if (data.error) {
+          if (String(data.error).includes("can't decode")) {
+            return { error: `Address "${addr.slice(0, 20)}..." не существует в сети TON. Это выдуманный адрес? Вызови get_agent_wallet() чтобы получить СВОЙ настоящий адрес кошелька.` };
+          }
+          return { error: data.error };
+        }
         const bal  = data.balance ? nanoToTon(data.balance) : '0';
-        return { address: addr, balance_ton: bal, status: data.status };
+        const result: any = { address: addr, balance_ton: bal, status: data.status };
+        if (addrMismatch) {
+          result.warning = `Этот адрес НЕ твой. Твой собственный кошелёк: ${ownWallet}. Для операций с балансом агента используй свой адрес.`;
+          result.agent_own_wallet = ownWallet;
+        }
+        return result;
       } catch (e: any) {
         return { error: e.message };
       }
@@ -2231,17 +2487,13 @@ export async function executeTool(
         const priceTon = Number(args.price_ton);
         if (!priceTon || priceTon <= 0) return { error: 'price_ton must be > 0' };
 
-        // Daily spend cap check (same as send_ton)
+        // Fast in-memory pre-check (advisory)
         const memCheck = checkDailySpendLimitMem(params.agentId, priceTon);
         if (!memCheck.allowed) {
           return { error: `Daily spend limit (fast check): ${memCheck.spent.toFixed(2)}/${memCheck.limit} TON spent today. Wait until tomorrow.` };
         }
-        const capErr = await checkDailySpendCap(params.agentId, params.userId, priceTon);
-        if (capErr) {
-          return { error: capErr };
-        }
 
-        // Check balance before sending
+        // Check balance before reserving
         let balanceTon = 0;
         try {
           const r = await fetch(`https://tonapi.io/v2/accounts/${encodeURIComponent(walletAddr)}`, {
@@ -2260,6 +2512,10 @@ export async function executeTool(
           };
         }
 
+        // Atomic spend reservation BEFORE signing
+        const reserveErr = await tryReserveDailySpend(params.agentId, params.userId, priceTon);
+        if (reserveErr) return { error: reserveErr };
+
         const { walletFromMnemonic, sendAgentTransactionWithCell } = await import('../services/TonConnect');
         const wallet = await walletFromMnemonic(walletMn, 'v4r2');
         const result = await sendAgentTransactionWithCell(
@@ -2271,16 +2527,317 @@ export async function executeTool(
 
         if ((result as any)?.ok) {
           const giftName = String(args.gift_name || 'подарок');
-          recordDailySpendMem(params.agentId, priceTon);
-          await recordDailySpend(params.agentId, params.userId, priceTon);
-          const totalSpent = Number(unwrapState(await stateRepo.get(params.agentId, 'total_ton_spent')) || 0) + priceTon;
-          await stateRepo.set(params.agentId, params.userId, 'total_ton_spent', String(totalSpent));
+          await stateRepo.incrementNumeric(params.agentId, params.userId, 'total_ton_spent', priceTon);
           await notifyUser(params.userId, `✅ Куплен ${giftName} за ${priceTon} TON! Tx: ${(result as any).hash}`);
           return { ok: true, hash: (result as any).hash, price_ton: priceTon, gift: giftName };
         }
+        // TX failed — release the reservation
+        await rollbackDailySpend(params.agentId, priceTon);
         return { ok: false, error: (result as any).error || 'Transaction failed' };
       } catch (e: any) {
+        try { if (args.price_ton) await rollbackDailySpend(params.agentId, Number(args.price_ton)); } catch {}
         return { error: e.message };
+      }
+    }
+
+    case 'smart_buy_gift': {
+      // High-level autonomous gift purchase: aggregator → score → balance → execute
+      try {
+        const giftName = String(args.gift || '').trim();
+        const maxPrice = args.max_price_ton != null ? Number(args.max_price_ton) : null;
+        // Reject negative, NaN, Infinity, zero, and dust prices
+        if (maxPrice !== null && (!isFinite(maxPrice) || maxPrice < 0.001)) {
+          return { error: `Invalid max_price_ton ${args.max_price_ton}. Must be a finite positive number ≥ 0.001 TON.` };
+        }
+        const backdrop = args.backdrop ? String(args.backdrop) : null;
+        const model = args.model ? String(args.model) : null;
+        const marketplace = args.marketplace ? String(args.marketplace).toLowerCase() : null;
+        // At least one filter must be present so aggregator returns something reasonable
+        if (!giftName && !backdrop && !model && !marketplace && !maxPrice) {
+          return { error: 'Specify at least one filter: gift name, backdrop, model, marketplace, or max_price_ton.' };
+        }
+        const candidateIndex = args.candidate_index !== undefined ? Number(args.candidate_index) : null;
+        const confirm = args.confirm_purchase === true;
+        const recipient = args.recipient ? String(args.recipient) : null;
+
+        // ── STEP 1: Wallet & balance ──
+        let walletAddr = unwrapState(await stateRepo.get(params.agentId, 'wallet_address'));
+        let walletMn = unwrapState(await stateRepo.get(params.agentId, 'wallet_mnemonic'));
+        if (!walletAddr || !walletMn) {
+          // Try config fallback
+          walletAddr = (params.config?.WALLET_ADDRESS as string) || walletAddr;
+          walletMn = (params.config?.WALLET_MNEMONIC as string) || walletMn;
+        }
+        if (!walletAddr || !walletMn) {
+          return {
+            status: 'no_wallet',
+            error: 'Wallet not created. Call get_agent_wallet first.',
+            action: 'Tell user to call get_agent_wallet to create a wallet.',
+          };
+        }
+
+        // Get balance
+        let balanceTon = 0;
+        try {
+          const r = await fetch(`https://tonapi.io/v2/accounts/${encodeURIComponent(walletAddr)}`, {
+            headers: { Authorization: `Bearer ${process.env.TONAPI_KEY || ''}` },
+            signal: AbortSignal.timeout(10000),
+          });
+          const j = await r.json() as any;
+          balanceTon = Number(j.balance || 0) / 1e9;
+        } catch {}
+
+        // ── STEP 2: Search candidates via SwiftGifts aggregator ──
+        const { getGiftAssetClient } = await import('../services/giftasset');
+        const { normalizeMarketplace } = await import('../constants/limits');
+        const ga = getGiftAssetClient();
+        const markets = marketplace
+          ? [normalizeMarketplace(marketplace) || marketplace]
+          : ['tonnel', 'portals', 'Mrkt'];  // SwiftGifts supports these; getgems/fragment on-chain are queried separately
+
+        // params.userId in this codebase is already a telegram_id (agents.user_id stores tg_id directly).
+        // SwiftGifts requires a real Telegram user ID for tx payload generation.
+        const receiverTgId = Number(params.userId) || 0;
+
+        // Build list of gift names to query. If user specified a name, just that; else probe top popular gifts.
+        let namesToQuery: string[] = [];
+        if (giftName) {
+          namesToQuery = [giftName];
+        } else {
+          try {
+            const { getAllGiftNames } = await import('../services/gift-metadata');
+            const allNames = await getAllGiftNames();
+            namesToQuery = allNames.slice(0, 25);
+          } catch {
+            // Fallback: popular gifts (api.changes.tg sometimes unreachable from prod)
+            namesToQuery = [
+              'Hex Pot', 'Plush Pepe', 'Lol Pop', 'Jelly Bunny', 'Durov\'s Cap',
+              'Jester Hat', 'Loot Bag', 'Signet Ring', 'Precious Peach', 'Ion Gem',
+              'Nail Bracelet', 'Scared Cat', 'Swag Bag', 'Easter Egg', 'Snow Globe',
+              'Heart Locket', 'Heroic Helmet', 'Vintage Cigar', 'Cookie Heart',
+              'Spy Agaric', 'Flying Broom', 'Love Potion', 'Toy Bear', 'Winter Wreath',
+            ];
+          }
+        }
+
+        const rawItems: any[] = [];
+        console.log(`[smart_buy_gift] agent#${params.agentId} querying ${namesToQuery.length} names with receiver=${receiverTgId} backdrop=${backdrop || 'any'} markets=${markets.join(',')} maxPrice=${maxPrice || 'any'}`);
+        const queries = await Promise.allSettled(
+          namesToQuery.map((n) =>
+            ga.swAggregate({
+              name: n,
+              model: model || 'All',
+              symbol: 'All',
+              backdrop: backdrop || 'All',
+              number: null,
+              fromPrice: null,
+              toPrice: maxPrice || null,
+              market: markets as any,
+              receiver: receiverTgId,
+            })
+          )
+        );
+        let okCount = 0;
+        let errCount = 0;
+        let firstError = '';
+        for (let i = 0; i < queries.length; i++) {
+          const q = queries[i];
+          if (q.status === 'fulfilled' && q.value && (q.value as any).items) {
+            const its = (q.value as any).items;
+            okCount++;
+            if (its.length > 0) rawItems.push(...its);
+          } else if (q.status === 'rejected') {
+            errCount++;
+            if (!firstError) firstError = String((q as any).reason?.message || q.reason).slice(0, 150);
+          }
+        }
+        console.log(`[smart_buy_gift] agent#${params.agentId} result: ok=${okCount}, err=${errCount}, items=${rawItems.length}, firstError="${firstError}"`);
+
+        // Normalize SwiftGifts response → unified shape used by rest of handler
+        const items = rawItems.map((it: any) => ({
+          title: it.title || it.name,
+          provider: it.provider,
+          price_ton: Number(it.price || it.price_ton || 0),
+          backdrop: it.attributes?.backdrop?.value || it.backdrop || null,
+          backdrop_rarity_pct: it.attributes?.backdrop?.rarity || it.backdrop_rarity_pct || '50',
+          model: it.attributes?.model?.value || it.model || null,
+          model_rarity_pct: it.attributes?.model?.rarity || it.model_rarity_pct || '50',
+          symbol: it.attributes?.symbol?.value || it.symbol || null,
+          number: it.number,
+          slug: it.slug,
+          link: it.link,
+          can_buy_now: !!(it.options?.payload || it.tx_payload),
+          tx_payload: it.options?.payload || it.tx_payload,
+          tx_contract: it.options?.contract || it.tx_contract,
+        }));
+        if (items.length === 0) {
+          const filters = [
+            giftName && `gift="${giftName}"`,
+            backdrop && `backdrop="${backdrop}"`,
+            model && `model="${model}"`,
+            marketplace && `marketplace="${marketplace}"`,
+            maxPrice && `до ${maxPrice} TON`,
+          ].filter(Boolean).join(', ');
+          return {
+            status: 'not_found',
+            error: `Не найдено листингов с фильтрами: ${filters || '(без фильтров)'}.`,
+            suggestion: 'Попробуй убрать часть фильтров или поднять max_price_ton. Для фона — попробуй get_gift_backdrops(gift_name).',
+          };
+        }
+
+        // ── STEP 3: Filter & rank ──
+        let fees: Record<string, number> = {};
+        try { fees = await ga.getProvidersFee(); } catch {}
+        const { GAS_TON, MARKETPLACE_FEE_DEFAULT } = await import('../constants/limits');
+
+        const candidates = items
+          .filter((item: any) => item.can_buy_now && item.tx_payload && item.tx_contract)
+          .map((item: any) => {
+            const provider = String(item.provider || '').toLowerCase();
+            const feePct = fees[provider] ?? MARKETPLACE_FEE_DEFAULT[provider] ?? 3;
+            const totalCost = item.price_ton * (1 + feePct / 100) + GAS_TON;
+            // Rarity score: lower percentage = rarer = higher score
+            const backdropRarity = parseFloat(String(item.backdrop_rarity_pct || '50').replace('%', '')) || 50;
+            const modelRarity = parseFloat(String(item.model_rarity_pct || '50').replace('%', '')) || 50;
+            const rarityScore = Math.round((100 - backdropRarity) * 0.5 + (100 - modelRarity) * 0.5);
+            return { ...item, total_cost: totalCost, fee_pct: feePct, rarity_score: rarityScore };
+          })
+          .filter((c: any) => maxPrice ? c.total_cost <= maxPrice : true)
+          .sort((a: any, b: any) => a.total_cost - b.total_cost)
+          .slice(0, 5);
+
+        if (candidates.length === 0) {
+          return {
+            status: 'no_affordable',
+            error: `Нет вариантов в пределах ${maxPrice || balanceTon} TON. Самый дешёвый: ${items[0]?.price_ton || '?'} TON.`,
+            cheapest: items[0]?.price_ton || null,
+          };
+        }
+
+        // ── STEP 4: Decision ──
+        // If confirming a specific candidate
+        if (confirm && candidateIndex !== null && candidates[candidateIndex]) {
+          const chosen = candidates[candidateIndex];
+
+          // Balance check
+          if (balanceTon < chosen.total_cost) {
+            return {
+              status: 'insufficient_funds',
+              wallet_address: walletAddr,
+              balance_ton: balanceTon,
+              needed_ton: chosen.total_cost.toFixed(3),
+              shortfall_ton: (chosen.total_cost - balanceTon).toFixed(3),
+              chosen_item: { title: chosen.title, provider: chosen.provider, price_ton: chosen.price_ton },
+              action: `Не хватает TON. Нужно перевести ${(chosen.total_cost - balanceTon).toFixed(3)} TON на ${walletAddr}, потом повтори покупку.`,
+            };
+          }
+
+          // Fast memory pre-check
+          const memCheck = checkDailySpendLimitMem(params.agentId, chosen.price_ton);
+          if (!memCheck.allowed) {
+            return { status: 'daily_limit', error: `Дневной лимит: ${memCheck.spent.toFixed(2)}/${memCheck.limit} TON потрачено сегодня.` };
+          }
+          // Atomic reservation BEFORE signing
+          const reserveErr = await tryReserveDailySpend(params.agentId, params.userId, chosen.price_ton);
+          if (reserveErr) return { status: 'daily_limit', error: reserveErr };
+
+          // Execute
+          const { walletFromMnemonic, sendAgentTransactionWithCell } = await import('../services/TonConnect');
+          const wallet = await walletFromMnemonic(walletMn, 'v4r2');
+          const result = await sendAgentTransactionWithCell(
+            wallet,
+            String(chosen.tx_contract),
+            chosen.price_ton + 0.01,
+            String(chosen.tx_payload)
+          );
+
+          if ((result as any)?.ok) {
+            await stateRepo.incrementNumeric(params.agentId, params.userId, 'total_ton_spent', chosen.price_ton);
+            return {
+              status: 'purchased',
+              tx_hash: (result as any).hash,
+              gift: chosen.title || giftName,
+              provider: chosen.provider,
+              paid_ton: chosen.price_ton,
+              total_cost_ton: chosen.total_cost.toFixed(3),
+              recipient: recipient || null,
+              next_action: recipient
+                ? `Спроси юзера: переслать подарок ${recipient} или оставить на агенте? Используй tg_transfer_collectible если подтвердит.`
+                : 'Спроси юзера: оставить подарок на агенте или перевести? Если перевести — попроси указать @username или ID получателя.',
+            };
+          }
+          // TX failed — release reservation
+          await rollbackDailySpend(params.agentId, chosen.price_ton);
+          return { status: 'tx_failed', error: (result as any).error || 'Transaction failed' };
+        }
+
+        // ── STEP 5: Return candidates for user choice ──
+        const candidatesView = candidates.map((c: any, i: number) => ({
+          index: i,
+          title: c.title || `${giftName} #${c.number || '?'}`,
+          provider: c.provider,
+          price_ton: c.price_ton,
+          fee_pct: c.fee_pct,
+          total_cost_ton: c.total_cost.toFixed(3),
+          backdrop: c.backdrop || '?',
+          backdrop_rarity_pct: c.backdrop_rarity_pct || '?',
+          model: c.model || '?',
+          model_rarity_pct: c.model_rarity_pct || '?',
+          rarity_score: c.rarity_score,
+          link: c.link || null,
+        }));
+
+        // Insufficient balance for all? Show options
+        const minCost = candidates[0].total_cost;
+        if (balanceTon < minCost) {
+          return {
+            status: 'insufficient_funds',
+            wallet_address: walletAddr,
+            balance_ton: balanceTon,
+            cheapest_total_cost_ton: minCost.toFixed(3),
+            shortfall_ton: (minCost - balanceTon).toFixed(3),
+            candidates: candidatesView,
+            action: `Не хватает TON. Минимум: ${minCost.toFixed(3)} TON (с учётом комиссии и газа). Скажи юзеру адрес ${walletAddr} и сумму ${(minCost - balanceTon).toFixed(3)} TON. Если есть TON Connect — предложи подписать перевод. После пополнения вызови smart_buy_gift снова с confirm_purchase: true и candidate_index.`,
+          };
+        }
+
+        // Single candidate auto-select option
+        if (args.auto_select === true) {
+          // Inline execution — use first candidate
+          const chosen = candidates[0];
+          // Atomic reservation BEFORE signing
+          const reserveErr = await tryReserveDailySpend(params.agentId, params.userId, chosen.price_ton);
+          if (reserveErr) return { status: 'daily_limit', error: reserveErr };
+          const { walletFromMnemonic, sendAgentTransactionWithCell } = await import('../services/TonConnect');
+          const wallet = await walletFromMnemonic(walletMn, 'v4r2');
+          const result = await sendAgentTransactionWithCell(
+            wallet, String(chosen.tx_contract), chosen.price_ton + 0.01, String(chosen.tx_payload)
+          );
+          if ((result as any)?.ok) {
+            return {
+              status: 'purchased',
+              tx_hash: (result as any).hash,
+              gift: chosen.title || giftName,
+              provider: chosen.provider,
+              paid_ton: chosen.price_ton,
+            };
+          }
+          // TX failed — release reservation
+          await rollbackDailySpend(params.agentId, chosen.price_ton);
+          return { status: 'tx_failed', error: (result as any).error };
+        }
+
+        return {
+          status: candidates.length === 1 ? 'awaiting_confirm' : 'choose_one',
+          balance_ton: balanceTon,
+          wallet_address: walletAddr,
+          candidates: candidatesView,
+          action: candidates.length === 1
+            ? `Покажи юзеру вариант: "${candidatesView[0].title} на ${candidatesView[0].provider} за ${candidatesView[0].total_cost_ton} TON". Спроси подтверждение. Если ОК → вызови smart_buy_gift снова с confirm_purchase: true и candidate_index: 0.`
+            : `Покажи юзеру топ-${candidates.length} вариантов кратко (название, маркет, цена, редкость). Спроси какой выбрать. Получив ответ → вызови smart_buy_gift с candidate_index: N и confirm_purchase: true.`,
+        };
+      } catch (e: any) {
+        return { status: 'error', error: e.message };
       }
     }
 
@@ -2360,29 +2917,34 @@ export async function executeTool(
     case 'send_ton': {
       try {
         const amount = Number(args.amount);
-        if (isNaN(amount) || amount <= 0) return { error: 'Invalid amount' };
+        // Reject NaN, Infinity, negative, zero, and dust-tiny amounts.
+        if (!isFinite(amount) || amount <= 0 || amount < 0.000001) {
+          return { error: `Invalid amount ${args.amount}. Must be a finite positive number ≥ 0.000001 TON.` };
+        }
         if (amount > HIGH_VALUE_TX_LIMIT_TON) {
           return { error: `Safety: transaction of ${amount} TON exceeds limit (${HIGH_VALUE_TX_LIMIT_TON} TON). Reduce amount or contact platform admin.` };
         }
         const walletAddr = unwrapState(await stateRepo.get(params.agentId, 'wallet_address'));
         const walletMn   = unwrapState(await stateRepo.get(params.agentId, 'wallet_mnemonic'));
         if (!walletAddr || !walletMn) return { error: 'Agent wallet not created. Call get_agent_wallet first.' };
+        // Atomic spend reservation BEFORE signing tx
+        const reserveErr = await tryReserveDailySpend(params.agentId, params.userId, amount);
+        if (reserveErr) return { error: reserveErr };
         const { walletFromMnemonic, sendAgentTransaction } = await import('../services/TonConnect');
         const wallet = await walletFromMnemonic(walletMn, 'v4r2');
         const result = await sendAgentTransaction(wallet, String(args.to), amount, String(args.comment || ''));
         if ((result as any)?.ok) {
-          // Track spend (state + daily cap + in-memory)
-          recordDailySpendMem(params.agentId, amount);
-          const totalSpent = Number(unwrapState(await stateRepo.get(params.agentId, 'total_ton_spent')) || 0) + amount;
-          await stateRepo.set(params.agentId, params.userId, 'total_ton_spent', String(totalSpent));
-          await recordDailySpend(params.agentId, params.userId, amount);
+          await stateRepo.incrementNumeric(params.agentId, params.userId, 'total_ton_spent', amount);
           await logToDb(params.agentId, 'info', `[TX] Sent ${amount} TON to ${args.to}, hash=${(result as any).hash}`, params.userId);
-          // Milestone: record important action in daily log
           try { const { appendDailyLog } = await import('../services/agent-memory'); await appendDailyLog(params.agentId, `💸 Sent ${amount} TON → ${String(args.to).slice(0, 20)}... hash=${(result as any).hash}`); } catch (e: any) { console.warn('[DailyLog] tx append:', e.message); }
           return { ok: true, hash: (result as any).hash, note: `Sent ${amount} TON to ${args.to}` };
         }
+        // TX failed — release the reservation
+        await rollbackDailySpend(params.agentId, amount);
         return { ok: false, error: (result as any).error };
       } catch (e: any) {
+        // Exception after reservation — try to rollback best-effort
+        try { await rollbackDailySpend(params.agentId, Number(args.amount) || 0); } catch {}
         return { error: e.message };
       }
     }
@@ -2392,10 +2954,20 @@ export async function executeTool(
         const walletMn = unwrapState(await stateRepo.get(params.agentId, 'wallet_mnemonic'));
         const walletAddr = unwrapState(await stateRepo.get(params.agentId, 'wallet_address'));
         if (!walletAddr || !walletMn) return { error: 'Agent wallet not created. Call get_agent_wallet first.' };
-        const jettonMaster = String(args.jetton_master);
-        const toAddr = String(args.to);
-        const amount = String(args.amount);
-        if (!amount || BigInt(amount) <= 0n) return { error: 'Invalid amount' };
+        const jettonMaster = String(args.jetton_master || '');
+        const toAddr = String(args.to || '');
+        if (!jettonMaster) return { error: 'jetton_master address required' };
+        if (!toAddr) return { error: 'to address required' };
+        const amount = String(args.amount || '');
+        // Validate amount is a positive integer BigInt BEFORE calling BigInt() — BigInt()
+        // throws SyntaxError on "abc", "", "1.5" which would crash the tool.
+        if (!/^\d+$/.test(amount) || amount === '0') {
+          return { error: `Invalid amount "${args.amount}" — must be positive integer in jetton nano-units (no decimals).` };
+        }
+        const amountBig = BigInt(amount);
+        if (amountBig <= 0n) return { error: 'Invalid amount' };
+        // Upper bound — 2^63 fits Coins encoding in TON
+        if (amountBig > BigInt('9223372036854775807')) return { error: 'Amount exceeds jetton Coins limit (2^63-1)' };
 
         // Get agent's jetton wallet address via TonAPI
         const tonApiKey = params.config.TONAPI_KEY || process.env.TONAPI_KEY || '';
@@ -2426,7 +2998,7 @@ export async function executeTool(
         const jettonTransferBody = beginCell()
           .storeUint(0xf8a7ea5, 32)     // op: jetton transfer
           .storeUint(0, 64)              // query_id
-          .storeCoins(BigInt(amount))     // amount in jetton nano
+          .storeCoins(amountBig)          // amount in jetton nano (validated above)
           .storeAddress(Address.parse(toAddr))  // destination
           .storeAddress(Address.parse(walletAddr)) // response_destination (excess back to sender)
           .storeBit(false)               // no custom_payload
@@ -2580,18 +3152,28 @@ export async function executeTool(
 
     case 'get_state': {
       try {
-        const row = await stateRepo.get(params.agentId, args.key as string);
-        return { key: args.key, value: row ?? null };
+        const key = validateStateKey(args.key);
+        if (!key.ok) return { error: key.error };
+        if (isProtectedStateKey(key.value)) return { error: `Reading "${key.value}" via get_state is denied (use get_agent_wallet for wallet data).` };
+        const row = await stateRepo.get(params.agentId, key.value);
+        return { key: key.value, value: row ?? null };
       } catch { return { key: args.key, value: null }; }
     }
 
     case 'get_state_multi': {
       try {
-        const keys = args.keys as string[];
-        if (!Array.isArray(keys) || keys.length === 0) return { error: 'keys must be a non-empty array' };
-        const rows = await stateRepo.getMulti(params.agentId, keys);
+        if (!Array.isArray(args.keys) || args.keys.length === 0) return { error: 'keys must be a non-empty array' };
+        if (args.keys.length > 50) return { error: 'Too many keys (max 50)' };
+        const validKeys: string[] = [];
+        for (const k of args.keys) {
+          const v = validateStateKey(k);
+          if (!v.ok) return { error: v.error };
+          if (isProtectedStateKey(v.value)) return { error: `Reading "${v.value}" is denied.` };
+          validKeys.push(v.value);
+        }
+        const rows = await stateRepo.getMulti(params.agentId, validKeys);
         const result: Record<string, any> = {};
-        for (const k of keys) result[k] = null; // default all to null
+        for (const k of validKeys) result[k] = null;
         for (const row of rows) result[row.key] = row.value;
         return { values: result };
       } catch (e: any) { return { error: e.message }; }
@@ -2599,8 +3181,11 @@ export async function executeTool(
 
     case 'set_state': {
       try {
-        await stateRepo.set(params.agentId, params.userId, args.key as string, args.value);
-        return { ok: true, key: args.key };
+        const key = validateStateKey(args.key);
+        if (!key.ok) return { ok: false, error: key.error };
+        if (isProtectedStateKey(key.value)) return { ok: false, error: `Writing "${key.value}" via set_state is denied.` };
+        await stateRepo.set(params.agentId, params.userId, key.value, args.value);
+        return { ok: true, key: key.value };
       } catch (e: any) {
         return { ok: false, error: e.message };
       }
@@ -3466,6 +4051,19 @@ export async function executeTool(
       try {
         const { executeSwap } = require('../services/stonfi');
         const result = await executeSwap(mnemonic, from, to, amount);
+        // Fallback to DeDust if STON.fi couldn't route this pair
+        if (!(result as any)?.ok && /router|no pool|not found/i.test(String((result as any)?.error || ''))) {
+          console.warn(`[stonfi_swap] No route on STON.fi — falling back to DeDust for ${from}→${to}`);
+          try {
+            const base = 'https://api.dedust.io/v2';
+            const fromTok = from === 'TON' ? 'native' : from;
+            const qr = await fetch(`${base}/routing/plan?from=${fromTok}&to=${to}&amount=${Math.floor(Number(amount) * 1e9)}`);
+            const quote = await qr.json() as any;
+            return { ok: false, fallback: 'dedust', quote, note: 'STON.fi had no route for this pair. DeDust quote returned — retry with dedust_swap if it looks good.' };
+          } catch (dedErr: any) {
+            return { ok: false, error: `STON.fi: ${(result as any).error}. DeDust fallback also failed: ${dedErr.message}` };
+          }
+        }
         return result;
       } catch (e: any) { return { ok: false, error: e.message }; }
     }
@@ -3794,16 +4392,41 @@ export async function executeTool(
           }
           case 'tg_get_message_by_id': { const msg = await tgSandbox.getMessageById(args.chat_id, args.message_id); return msg || { error: 'Message not found' }; }
           case 'tg_get_unread': return await tgSandbox.getUnread(args.limit ?? 10);
-          case 'tg_send_file': { const id = await tgSandbox.sendFile(args.chat_id, args.file_url, args.caption); return { ok: true, message_id: id }; }
+          case 'tg_send_file': {
+            if (args.file_url) {
+              const v = await validateUrlSSRF(String(args.file_url));
+              if (v.error) return { error: `Rejected file_url: ${v.error}` };
+            }
+            const id = await tgSandbox.sendFile(args.chat_id, args.file_url, args.caption); return { ok: true, message_id: id };
+          }
           case 'tg_copy_media': { const id = await tgSandbox.copyMedia(args.from_chat_id, args.message_id, args.to_chat_id, args.caption); return { ok: true, message_id: id }; }
           case 'tg_get_media_info': return await tgSandbox.getMediaInfo(args.chat_id, args.message_id);
           // ── New extended tools ──
           case 'tg_delete_message': return await tgSandbox.deleteMsg(args.chat_id, args.message_ids);
           case 'tg_create_poll': return await tgSandbox.createPoll(args.chat_id, args.question, args.options, args.anonymous !== false, args.multiple_choice || false);
-          case 'tg_kick_user': return await tgSandbox.kickUser(args.chat_id, args.user_id);
-          case 'tg_ban_user': return await tgSandbox.banUser(args.chat_id, args.user_id, args.duration_sec || 0);
-          case 'tg_unban_user': return await tgSandbox.unbanUser(args.chat_id, args.user_id);
-          case 'tg_mute_user': return await tgSandbox.muteUser(args.chat_id, args.user_id, args.duration_sec || 3600);
+          case 'tg_kick_user':
+          case 'tg_ban_user':
+          case 'tg_unban_user':
+          case 'tg_mute_user': {
+            // Guard: verify the agent's own Telegram user is an admin in target chat.
+            // Without this the MTProto call throws CHAT_ADMIN_REQUIRED, but we want
+            // a clearer error + prevent spamming the target chat with failed bans.
+            try {
+              const admins = await tgSandbox.getAdmins(args.chat_id).catch(() => null);
+              if (Array.isArray(admins)) {
+                const me = await tgSandbox.getMe?.().catch(() => null);
+                const myId = me?.id ? String(me.id) : null;
+                const amAdmin = myId && admins.some((a: any) => String(a.id) === myId || String(a.user?.id) === myId);
+                if (!amAdmin) {
+                  return { error: `Cannot perform "${name}": agent is not an admin in chat ${args.chat_id}. Ask chat owner to promote the agent first.` };
+                }
+              }
+            } catch {}
+            if (name === 'tg_kick_user')  return await tgSandbox.kickUser(args.chat_id, args.user_id);
+            if (name === 'tg_ban_user')   return await tgSandbox.banUser(args.chat_id, args.user_id, args.duration_sec || 0);
+            if (name === 'tg_unban_user') return await tgSandbox.unbanUser(args.chat_id, args.user_id);
+            return await tgSandbox.muteUser(args.chat_id, args.user_id, args.duration_sec || 3600);
+          }
           case 'tg_get_admins': return await tgSandbox.getAdmins(args.chat_id);
           case 'tg_set_admin': return await tgSandbox.setAdmin(args.chat_id, args.user_id, args.rights);
           case 'tg_create_invite_link': return await tgSandbox.createInviteLink(args.chat_id);
@@ -3811,7 +4434,13 @@ export async function executeTool(
           case 'tg_schedule_message': return await tgSandbox.scheduleMessage(args.chat_id, args.text, args.send_at);
           case 'tg_set_chat_title': return await tgSandbox.setChatTitle(args.chat_id, args.title);
           case 'tg_set_chat_about': return await tgSandbox.setChatAbout(args.chat_id, args.about);
-          case 'tg_set_chat_photo': return await tgSandbox.setChatPhoto(args.chat_id, args.photo_url);
+          case 'tg_set_chat_photo': {
+            if (args.photo_url) {
+              const v = await validateUrlSSRF(String(args.photo_url));
+              if (v.error) return { error: `Rejected photo_url: ${v.error}` };
+            }
+            return await tgSandbox.setChatPhoto(args.chat_id, args.photo_url);
+          }
           case 'tg_create_group': return await tgSandbox.createGroup(args.title, args.user_ids || []);
           case 'tg_create_channel': return await tgSandbox.createChannel(args.title, args.about || '', args.megagroup || false);
           case 'tg_invite_users': return await tgSandbox.inviteToChannel(args.chat_id, args.user_ids);
@@ -5011,22 +5640,31 @@ export async function executeTool(
         const callerIdStr = String(params.agentId);
         const targetIdStr = String(targetId);
         // Check if adding caller→target would create a cycle (A→B→...→A)
+        // AND enforce a hard depth cap to prevent A→B→C→...→Z amplification attacks
+        // where a malicious prompt chains many agents to burn tokens/API calls.
+        const MAX_ASK_DEPTH = 4;
         {
           const visited = new Set<string>();
-          const stack = [targetIdStr];
+          const stack: Array<{ node: string; depth: number }> = [{ node: targetIdStr, depth: 1 }];
           let hasCycle = false;
+          let maxDepth = 0;
           while (stack.length > 0) {
-            const node = stack.pop()!;
+            const { node, depth } = stack.pop()!;
+            if (depth > maxDepth) maxDepth = depth;
             if (node === callerIdStr) { hasCycle = true; break; }
             if (visited.has(node)) continue;
             visited.add(node);
             const waitingFor = _pendingAsks.get(node);
             if (waitingFor) {
-              for (const dep of waitingFor) stack.push(String(dep));
+              for (const dep of waitingFor) stack.push({ node: String(dep), depth: depth + 1 });
             }
           }
           if (hasCycle) {
             return { error: 'Circular dependency detected: would create deadlock', delivered: false };
+          }
+          if (maxDepth >= MAX_ASK_DEPTH) {
+            await logToDb(params.agentId, 'warn', `[ask_agent] depth cap hit (${maxDepth}) — chain blocked`, params.userId);
+            return { error: `ask_agent chain depth ${maxDepth} exceeds max ${MAX_ASK_DEPTH}. Refactor into direct tools.`, delivered: false };
           }
         }
 
@@ -5285,6 +5923,13 @@ export async function executeTool(
       const content = args.content as string;
       const tags = (args.tags as string) || '';
       if (!title || !content) return { error: 'title и content обязательны' };
+      // Prevent DoS via oversized knowledge entries
+      if (content.length > 50_000) {
+        return { error: `content too large (${content.length} chars, max 50000). Split into multiple entries.` };
+      }
+      if (title.length > 200) {
+        return { error: `title too long (max 200 chars)` };
+      }
       const id = `kb:${cat}:${Date.now()}`;
       const entry = { title, content, category: cat, tags: tags.split(',').map((t: string) => t.trim()).filter(Boolean), createdAt: new Date().toISOString() };
       await getAgentStateRepository().set(params.agentId, params.userId, id, JSON.stringify(entry));
@@ -7078,19 +7723,31 @@ You MUST follow these rules AT ALL TIMES:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ━━━ PURCHASE FLOW (для покупок подарков) ━━━
-Когда владелец просит купить подарок — делай САМ, не спрашивай tx_payload/tx_contract.
+Когда владелец просит купить подарок — ВСЕГДА используй smart_buy_gift (один тул делает всю работу).
 
-Обязательный поток:
-  1. get_gift_backdrops(gift) — если указан фон/бэкдроп, проверь его существование
-  2. get_gift_aggregator(gift, sort:"price_asc") — найди листинги на всех маркетах
-  3. Отфильтруй по маркетплейсу (portals/mrkt/getgems/tonnel) и бэкдропу
-  4. get_ton_balance(your_wallet) — проверь что TON хватает
-  5. Если не хватает → скажи владельцу сколько перевести на твой кошелёк
-  6. Если хватает → кратко подтверди выбор у владельца (название, фон, цена)
-  7. buy_market_gift(tx_contract, tx_payload, price_ton) — отправь транзакцию
-  8. Уведоми владельца с tx_hash
+Поток (2 вызова):
 
-tx_payload и tx_contract берутся ИЗ get_gift_aggregator результата (item.tx_contract, item.tx_payload). НЕ СПРАШИВАЙ их у владельца.
+ВЫЗОВ 1 — поиск:
+  smart_buy_gift({ gift: "Hex Pot", max_price_ton: 100, backdrop: "Mystic Pearl" (опционально), marketplace: "portals" (опционально) })
+
+  Возвращает один из статусов:
+  - choose_one — массив candidates, покажи юзеру топ-3 (название, маркет, цена, редкость), спроси какой
+  - awaiting_confirm — 1 вариант, покажи и попроси подтверждение
+  - insufficient_funds — кошелёк пуст, скажи адрес и сколько надо
+  - not_found — варианты не найдены, предложи убрать фильтры
+  - no_affordable — слишком дорого, скажи минимальную цену
+
+ВЫЗОВ 2 — покупка (после подтверждения юзера):
+  smart_buy_gift({ gift: "Hex Pot", candidate_index: 0, confirm_purchase: true })
+
+  Возвращает: purchased (с tx_hash) или tx_failed (с ошибкой)
+
+После покупки спроси юзера: оставить подарок на агенте или перевести (tg_transfer_collectible).
+
+ВАЖНО:
+- НЕ ВЫЗЫВАЙ get_gift_aggregator/get_ton_balance/buy_market_gift отдельно — smart_buy_gift делает это всё.
+- Если юзер просит "любой подарок" / "сам выбери" — добавь auto_select: true
+- НИКОГДА не выдумывай адреса кошельков — smart_buy_gift сам получает их.
 
 ━━━ CLARIFICATION RULE (если не понял) ━━━
 Если не уверен что хочет владелец — УТОЧНИ, не выдумывай:
@@ -7484,8 +8141,23 @@ If web_search returns nothing useful → say "не смог найти акту�
   try {
     const histRaw = await getAgentStateRepository().get(params.agentId, '_conversation_history').catch(() => null);
     const histStr = typeof histRaw === 'object' && histRaw?.value !== undefined ? histRaw.value : histRaw;
+    let history: Array<{ role: string; content: string }> = [];
     if (histStr) {
-      const history: Array<{ role: string; content: string }> = typeof histStr === 'string' ? JSON.parse(histStr) : histStr;
+      try {
+        history = typeof histStr === 'string' ? JSON.parse(histStr) : histStr;
+      } catch (parseErr: any) {
+        console.warn(`[AI runtime] Agent #${params.agentId} conversation history JSON corrupted — attempting backup restore: ${parseErr?.message?.slice(0, 80)}`);
+        // Attempt restore from backup
+        try {
+          const bkpRaw = await getAgentStateRepository().get(params.agentId, '_conversation_history_backup').catch(() => null);
+          const bkpStr = typeof bkpRaw === 'object' && bkpRaw?.value !== undefined ? bkpRaw.value : bkpRaw;
+          if (bkpStr) history = typeof bkpStr === 'string' ? JSON.parse(bkpStr) : bkpStr;
+        } catch { history = []; }
+      }
+    }
+    // Ensure history is an array (defensive: DB might contain object/string/null)
+    if (!Array.isArray(history)) history = [];
+    if (history.length > 0) {
       // Inject history trimmed by character count (max 50K chars total)
       const MAX_HISTORY_CHARS = 50_000;
       let histChars = 0;
@@ -7843,6 +8515,45 @@ If web_search returns nothing useful → say "не смог найти акту�
           const delay = (retry + 1) * 5000; // 5s, 10s
           console.log(`[AI runtime] Agent #${params.agentId} 429 rate limit, retry ${retry + 1}/3 in ${delay}ms`);
           await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+        // 413 Payload Too Large — can mean either per-request size (compact history fixes)
+        // or per-minute TPM exhaustion (Groq free llama-3.3-70b: 12K TPM). For TPM case
+        // we need to shrink TOOLS too, because tools alone can exceed 12K tokens.
+        const is413 = e.status === 413 || e.statusCode === 413
+          || e.message?.includes('413')
+          || /request too large|payload too large|tokens per minute|content too large|tokens per minute \(tpm\)|tpm/i.test(e.message || '');
+        const isTpmError = /tokens per minute|tpm|rate_limit_exceeded/i.test(e.message || '');
+        if (is413 && retry < 2) {
+          if (isTpmError && tools.length > 10) {
+            // TPM limit — reduce tool count AND compact history. Halve tools,
+            // keep core tools (which we always prioritize in selectRelevantTools).
+            const newLen = Math.max(8, Math.floor(tools.length * 0.5));
+            console.warn(`[AI runtime] Agent #${params.agentId} 413 TPM — halving tools ${tools.length}→${newLen} and compacting`);
+            tools = tools.slice(0, newLen);
+          } else {
+            console.warn(`[AI runtime] Agent #${params.agentId} 413 payload too large — compacting and retrying`);
+          }
+          // Keep only system msg + last user msg + last tool_use/tool_result
+          while (messages.length > 3) messages.splice(1, 1);
+          compressOldToolResults(messages, 1);
+          const hasTrimNotice = messages.some((m: any) => typeof m.content === 'string' && m.content.includes('[Context was trimmed'));
+          if (!hasTrimNotice) {
+            messages.push({ role: 'system' as any, content: '[Context was aggressively trimmed due to 413 payload-too-large. Older history removed.]' });
+          }
+          // Surface a one-time hint in agent_logs so owner sees it in dashboard
+          try {
+            const hintKey = '_tpm_413_notified';
+            const already = await getAgentStateRepository().get(params.agentId, hintKey).catch(() => null);
+            if (!already && isTpmError) {
+              await getAgentStateRepository().set(params.agentId, params.userId, hintKey, 'true').catch(() => {});
+              await logToDb(params.agentId, 'warn', `[Provider] 413 TPM hit on ${providerName || 'default'}. See /docs/PROVIDER_LIMITS.md — consider larger interval, fewer tools, or tier upgrade.`, params.userId);
+              if (params.onNotify) {
+                params.onNotify(`⚠️ AI-провайдер вернул 413 (tokens per minute). Уменьшил кол-во tools автоматически. Для стабильности увеличь интервал агента или переключись на Gemini/DeepSeek.`).catch(() => {});
+              }
+            }
+          } catch {}
+          await new Promise(r => setTimeout(r, 2000));
           continue;
         }
         // Context overflow recovery: trim harder and retry
