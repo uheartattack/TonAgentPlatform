@@ -13,9 +13,29 @@ const _filterTc = (s: string): boolean => {
   _suppressTcStack = false;
   return false;
 };
-console.log   = (...args: any[]) => { if (!_filterTc(String(args[0]))) _origLog(...args); };
-console.warn  = (...args: any[]) => { if (!_filterTc(String(args[0]))) _origWarn(...args); };
-console.error = (...args: any[]) => { if (!_filterTc(String(args[0]))) _origError(...args); };
+
+// ── Global secret redaction: safety net for logs that bypass sanitizeForLog() ──
+// Patterns cover API keys (OpenAI/Anthropic/Gemini/Groq/Bearer), URL-query keys,
+// mnemonics, private keys, DB strings, Telegram tokens.
+const _redact = (s: string): string => {
+  if (!s || s.length > 100_000) return s; // cheap guard against ReDoS
+  return s
+    .replace(/\b(AIzaSy[\w-]{6})[\w-]{20,}/g, '$1***')
+    .replace(/\b(sk-ant-[\w-]{6})[\w-]{14,}/g, '$1***')
+    .replace(/\b(sk-proj-[\w-]{6})[\w-]{14,}/g, '$1***')
+    .replace(/\b(gsk_[\w]{6})[\w]{14,}/g, '$1***')
+    .replace(/\b(sk-or-[\w-]{6})[\w-]{14,}/g, '$1***')
+    .replace(/\b(Bearer\s+)[A-Za-z0-9._\-+/=]{16,}/g, '$1***[REDACTED]')
+    .replace(/([?&](api_key|apikey|access_token|token)=)[^&\s"']+/gi, '$1***')
+    .replace(/\b([a-z]{3,8}\s+){11,23}[a-z]{3,8}\b/gi, '[MNEMONIC_REDACTED]')
+    .replace(/\b\d{10,13}:[A-Za-z0-9_-]{35}\b/g, '***[BOT_TOKEN]')
+    .replace(/postgres(ql)?:\/\/[^\s"']+/gi, 'postgres://***[DB]');
+};
+const _safeArgs = (args: any[]) => args.map(a => typeof a === 'string' ? _redact(a) : a);
+
+console.log   = (...args: any[]) => { if (!_filterTc(String(args[0]))) _origLog(..._safeArgs(args)); };
+console.warn  = (...args: any[]) => { if (!_filterTc(String(args[0]))) _origWarn(..._safeArgs(args)); };
+console.error = (...args: any[]) => { if (!_filterTc(String(args[0]))) _origError(..._safeArgs(args)); };
 
 import { initDatabase, pool } from './db';
 import { startBot, getBotInstance } from './bot';
@@ -31,6 +51,7 @@ import {
   initAgentTasksRepository,
   initAgentApprovalsRepository,
   runAIProposalsMigrations,
+  runLogRetention,
 } from './db/schema-extensions';
 import { initPayments } from './payments';
 import { startPendingStateTTLCleanup } from './state';
@@ -105,6 +126,17 @@ async function main() {
   initAgentApprovalsRepository(pool);
   await runAIProposalsMigrations(pool);
 
+  // Schedule daily log retention cleanup (delete agent_logs > 30d, execution_history > 90d)
+  // First run after 5 min so startup isn't blocked, then every 24h.
+  const _retentionFirst = setTimeout(() => {
+    runLogRetention(pool).catch((e) => console.warn('[Retention] first run failed:', e?.message));
+  }, 5 * 60_000);
+  (_retentionFirst as any).unref?.();
+  const _retentionInterval = setInterval(() => {
+    runLogRetention(pool).catch((e) => console.warn('[Retention] periodic run failed:', e?.message));
+  }, 24 * 60 * 60_000);
+  (_retentionInterval as any).unref?.();
+
   // Инициализация Agentic Wallets
   try {
     const { getAgenticWalletService } = require('./services/agentic-wallet');
@@ -175,28 +207,51 @@ console.error = function(...args: any[]) {
   } catch {}
 };
 
+// Rate-limit identical bug reports so an error loop doesn't flood the DB.
+const _bugSeen = new Map<string, number>();
+const BUG_DEDUP_WINDOW_MS = 60_000; // suppress identical error within 60s
+function _shouldReportBug(fingerprint: string): boolean {
+  const now = Date.now();
+  const last = _bugSeen.get(fingerprint) || 0;
+  if (now - last < BUG_DEDUP_WINDOW_MS) return false;
+  _bugSeen.set(fingerprint, now);
+  // Keep map bounded
+  if (_bugSeen.size > 500) {
+    const cutoff = now - BUG_DEDUP_WINDOW_MS * 4;
+    for (const [k, v] of _bugSeen) if (v < cutoff) _bugSeen.delete(k);
+  }
+  return true;
+}
+
 // Обработка ошибок + автоматический трекинг в БД
 process.on('unhandledRejection', (error: any) => {
   _origConsoleError('Unhandled rejection:', error);
   try {
-    const { getBugTracker } = require('./db/schema-extensions');
-    const msg = error?.message || String(error);
-    const stack = error?.stack?.slice(0, 500) || '';
+    const msg = (error?.message || String(error || '')).slice(0, 500);
+    const stack = (error?.stack || '').slice(0, 800);
     const file = stack.match(/at\s+.*?\(?(src\/[^:)]+)/)?.[1] || undefined;
-    getBugTracker().recordBug('unhandledRejection', msg, stack, file).catch(() => {});
+    const fingerprint = `rej:${msg.slice(0, 80)}:${file || ''}`;
+    if (_shouldReportBug(fingerprint)) {
+      const { getBugTracker } = require('./db/schema-extensions');
+      getBugTracker().recordBug('unhandledRejection', _redact(msg), _redact(stack), file).catch(() => {});
+    }
   } catch {}
 });
 
 process.on('uncaughtException', (error: any) => {
   console.error('❌ Uncaught exception:', error);
   try {
-    const { getBugTracker } = require('./db/schema-extensions');
-    const msg = error?.message || String(error);
-    const stack = error?.stack?.slice(0, 500) || '';
+    const msg = (error?.message || String(error || '')).slice(0, 500);
+    const stack = (error?.stack || '').slice(0, 800);
     const file = stack.match(/at\s+.*?\(?(src\/[^:)]+)/)?.[1] || undefined;
-    getBugTracker().recordBug('uncaughtException', msg, stack, file).catch(() => {});
+    const fingerprint = `exc:${msg.slice(0, 80)}:${file || ''}`;
+    if (_shouldReportBug(fingerprint)) {
+      const { getBugTracker } = require('./db/schema-extensions');
+      getBugTracker().recordBug('uncaughtException', _redact(msg), _redact(stack), file).catch(() => {});
+    }
   } catch {}
-  process.exit(1);
+  // Give the async recordBug a moment to flush, then exit.
+  setTimeout(() => process.exit(1), 300).unref?.();
 });
 
 // Graceful shutdown with full cleanup
@@ -206,8 +261,8 @@ async function gracefulShutdown(signal: string) {
   _shuttingDown = true;
   console.log(`\n👋 ${signal} — shutting down gracefully...`);
 
-  // Force exit after 10s
-  const forceTimer = setTimeout(() => { console.error('⚠️ Forced exit'); process.exit(1); }, 10000);
+  // Force exit after 30s (was 10s — too aggressive for agents finishing a TX)
+  const forceTimer = setTimeout(() => { console.error('⚠️ Forced exit — shutdown took >30s'); process.exit(1); }, 30_000);
   (forceTimer as any).unref?.();
 
   // 1. Stop all AI agents (kills MCP subprocesses, clears intervals)

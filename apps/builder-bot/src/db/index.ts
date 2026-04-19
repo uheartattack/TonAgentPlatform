@@ -20,6 +20,11 @@ import {
 } from './schema-extensions';
 
 // Конфигурация PostgreSQL
+// max=30 accommodates agent-restart bursts (restoreActiveAgents may issue
+// dozens of concurrent queries); default pg max=10 caused connection starvation.
+// idleTimeoutMillis closes idle conns after 30s so we don't hold them forever.
+// statement_timeout caps any single query at 15s to prevent hung queries from
+// blocking the pool.
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
   port: parseInt(process.env.DB_PORT || '5432'),
@@ -27,6 +32,15 @@ const pool = new Pool({
   password: process.env.DB_PASSWORD || 'password',
   database: process.env.DB_NAME || 'builder_bot',
   ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
+  max: parseInt(process.env.DB_POOL_MAX || '30', 10),
+  min: 2,
+  idleTimeoutMillis: 30_000,
+  connectionTimeoutMillis: 10_000,
+  statement_timeout: 15_000,
+} as any);
+// Never crash the process on a stray connection-error event from pg
+pool.on('error', (err) => {
+  console.error('[DB] Unexpected idle client error:', err.message);
 });
 
 // Инициализация Drizzle
