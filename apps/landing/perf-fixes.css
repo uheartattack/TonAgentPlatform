@@ -69,14 +69,16 @@ footer {
   contain-intrinsic-size: auto 800px;
 }
 
-/* ── 5. Shimmer on gradient-text: slow down to reduce repaint cost ──── */
-.gradient-text {
-  animation-duration: 14s !important;
-}
+/* ── 5. Keep shimmer lively — original 10s feels right.
+   Only slow down if user prefers less motion (handled below). ──────── */
 
-/* ── 6. Pricing popular rotating ring: slower = fewer repaints ──────── */
-.pricing-card.popular::before {
-  animation-duration: 22s !important;
+/* ── 6. Pricing popular rotating ring stays at original 16s — that's
+   the crown-jewel effect the user loves. GPU-promoted above, so it's
+   basically free to keep running. ───────────────────────────────── */
+.pricing-card.popular::before,
+.pricing-card.popular::after {
+  will-change: transform, filter;
+  transform: translateZ(0);
 }
 
 /* ── 7. Don't animate box-shadow (expensive) on mousemove transforms.
