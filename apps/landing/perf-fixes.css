@@ -62,8 +62,10 @@
 }
 
 /* ── 4. content-visibility: auto on off-screen sections.
-   Browser skips rendering until near viewport. Biggest initial paint win. */
-section:not(.hero),
+   Browser skips rendering until near viewport. Biggest initial paint win.
+   EXCEPTION: #pricing — content-visibility freezes the spinning ring
+   animation until the section scrolls into view, looks dead. ────── */
+section:not(.hero):not(#pricing),
 footer {
   content-visibility: auto;
   contain-intrinsic-size: auto 800px;
@@ -114,13 +116,28 @@ footer {
   }
 }
 
-/* ── 10. Contain layout/paint/style to prevent cascading recalcs ───── */
+/* ── 10. Contain layout/paint/style to prevent cascading recalcs.
+   NOTE: pricing-card EXCLUDED — its popular-badge sits at top:-12px
+   and its ::before ring is at inset:-2px (both OUTSIDE the box).
+   `contain: paint` would clip them. Only `style` is safe there. ────── */
 .hero,
 .hero-stats,
 .phone-mockup,
-.feature-card, .pricing-card, .plugin-card, .dev-stage, .team-card,
+.feature-card, .plugin-card, .dev-stage, .team-card,
 .faq-item, .demo-card, .cap-card, .security-card {
   contain: layout paint style;
+}
+.pricing-card {
+  contain: style;  /* no layout/paint — ring & badge must overflow */
+  overflow: visible !important;
+}
+.pricing-card.popular {
+  overflow: visible !important;
+}
+/* Also: pricing-grid parent must not clip */
+.pricing-grid {
+  overflow: visible !important;
+  padding-top: 20px;  /* breathing room for the badge */
 }
 
 /* ── 11. Text-rendering optimization for big hero titles ─────────── */
