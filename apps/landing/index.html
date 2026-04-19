@@ -27,6 +27,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css?v=20260310">
   <link rel="stylesheet" href="perf-fixes.css?v=8">
+  <link rel="stylesheet" href="phone-enhance.css?v=1">
 </head>
 <body>
   <!-- Language Switcher -->
@@ -1420,13 +1421,11 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   </script>
 
-  <!-- Hero premium interactions: magnetic primary + 3D phone parallax + scroll parallax
-       Works on BOTH desktop (mouse) and mobile (touch/scroll/tilt). rAF throttled. -->
+  <!-- Hero premium interactions v3: CSS-var driven 3D phone + magnetic CTA + scroll parallax
+       JS only updates --mx/--my CSS variables; CSS handles all transforms/glare/shadow.
+       Ultra-cheap on GPU, no inline transform overwrites. -->
   <script>
   (function(){
-    var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (reduceMotion) return;
-
     var hero = document.querySelector('.hero');
     var phone = document.querySelector('.phone-mockup');
     var btnPrimary = document.querySelector('.hero-buttons .btn-primary');
@@ -1435,33 +1434,33 @@ document.addEventListener('DOMContentLoaded', () => {
     var isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
     var heroVisible = true;
     var pendingFrame = false;
-    var targetRX = 6, targetRY = -8;      // desired rotation (lerp target)
-    var currentRX = 6, currentRY = -8;    // current rendered rotation
-    var btnTX = 0, btnTY = 0;             // magnetic CTA offsets
+    var tmx = 0.5, tmy = 0.5;                  // target mouse position (0..1)
+    var cmx = 0.5, cmy = 0.5;                  // current (lerped)
+    var btnTX = 0, btnTY = 0;                  // magnetic CTA offsets
 
-    // Skip processing when hero off-screen
     if ('IntersectionObserver' in window) {
       new IntersectionObserver(function(e){ heroVisible = e[0].isIntersecting; }).observe(hero);
     }
 
-    // Continuous rAF loop — smoothly lerps current → target (feels silky)
     function render() {
       pendingFrame = false;
       if (!heroVisible) return;
 
-      // Lerp for smooth motion (0.12 = fast follow, 0.05 = lazy)
-      currentRX += (targetRX - currentRX) * 0.12;
-      currentRY += (targetRY - currentRY) * 0.12;
+      // Silky lerp (0.10 — premium feel, not jittery)
+      cmx += (tmx - cmx) * 0.10;
+      cmy += (tmy - cmy) * 0.10;
 
-      phone.style.transform =
-        'perspective(1200px) rotateY(' + currentRY.toFixed(2) + 'deg) rotateX(' + currentRX.toFixed(2) + 'deg) translate3d(0,' + scrollY + 'px,0)';
+      // Update CSS vars on hero — cheap, no reflow
+      hero.style.setProperty('--mx', cmx.toFixed(3));
+      hero.style.setProperty('--my', cmy.toFixed(3));
 
+      // Magnetic CTA — transform (separate from phone)
       if (btnPrimary) {
         btnPrimary.style.transform = 'translate3d(' + btnTX.toFixed(1) + 'px,' + btnTY.toFixed(1) + 'px,0)';
       }
 
-      // Keep animating while not at rest (avoids one-frame jitter when mouse stops)
-      if (Math.abs(currentRX - targetRX) > 0.05 || Math.abs(currentRY - targetRY) > 0.05) {
+      // Continue loop while not at rest
+      if (Math.abs(cmx - tmx) > 0.002 || Math.abs(cmy - tmy) > 0.002) {
         schedule();
       }
     }
@@ -1471,29 +1470,18 @@ document.addEventListener('DOMContentLoaded', () => {
       requestAnimationFrame(render);
     }
 
-    var scrollY = 0;
-    function onScroll() {
-      var y = window.scrollY;
-      if (y > window.innerHeight * 1.5) return;
-      scrollY = y * 0.12;
-      schedule();
-    }
-    window.addEventListener('scroll', onScroll, { passive: true });
-
-    // Desktop: mousemove over hero
+    // Desktop mouse
     if (!isTouch) {
       hero.addEventListener('mousemove', function(e){
-        var hr = hero.getBoundingClientRect();
-        var px = (e.clientX - hr.left) / hr.width - 0.5;
-        var py = (e.clientY - hr.top) / hr.height - 0.5;
-        targetRY = -8 - px * 10;
-        targetRX = 6 + py * 8;
+        var r = hero.getBoundingClientRect();
+        tmx = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+        tmy = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height));
+        hero.classList.add('hero-hover');
 
-        // Magnetic CTA — only if cursor near button
         if (btnPrimary) {
-          var r = btnPrimary.getBoundingClientRect();
-          var dx = e.clientX - (r.left + r.width/2);
-          var dy = e.clientY - (r.top + r.height/2);
+          var br = btnPrimary.getBoundingClientRect();
+          var dx = e.clientX - (br.left + br.width/2);
+          var dy = e.clientY - (br.top + br.height/2);
           if (Math.abs(dx) < 180 && Math.abs(dy) < 120) {
             btnTX = Math.max(-8, Math.min(8, dx * 0.22));
             btnTY = Math.max(-8, Math.min(8, dy * 0.22));
@@ -1505,64 +1493,48 @@ document.addEventListener('DOMContentLoaded', () => {
       }, { passive: true });
 
       hero.addEventListener('mouseleave', function(){
-        targetRX = 6; targetRY = -8; btnTX = 0; btnTY = 0;
+        tmx = 0.5; tmy = 0.5;
+        btnTX = 0; btnTY = 0;
+        hero.classList.remove('hero-hover');
         schedule();
       });
     }
 
-    // Mobile: touch drag on hero — same 3D effect with finger
+    // Touch: drag finger over hero to tilt phone
     if (isTouch) {
       hero.addEventListener('touchmove', function(e){
         if (!e.touches[0]) return;
-        var hr = hero.getBoundingClientRect();
+        var r = hero.getBoundingClientRect();
         var t = e.touches[0];
-        var px = (t.clientX - hr.left) / hr.width - 0.5;
-        var py = (t.clientY - hr.top) / hr.height - 0.5;
-        targetRY = -8 - px * 12;
-        targetRX = 6 + py * 10;
+        tmx = Math.max(0, Math.min(1, (t.clientX - r.left) / r.width));
+        tmy = Math.max(0, Math.min(1, (t.clientY - r.top) / r.height));
+        hero.classList.add('hero-hover');
         schedule();
       }, { passive: true });
 
       hero.addEventListener('touchend', function(){
-        targetRX = 6; targetRY = -8;
+        tmx = 0.5; tmy = 0.5;
+        hero.classList.remove('hero-hover');
         schedule();
       });
 
-      // Device-orientation tilt — phone follows device tilt when user holds phone
+      // Device orientation — phone tilts when you physically tilt phone
       if (window.DeviceOrientationEvent) {
         var oriCooldown = 0;
         window.addEventListener('deviceorientation', function(e){
           var now = performance.now();
-          if (now - oriCooldown < 50) return;  // throttle to 20 Hz
+          if (now - oriCooldown < 50) return;
           oriCooldown = now;
-          if (e.beta == null || e.gamma == null) return;
-          // gamma: left/right tilt (-90..90), beta: front/back (-180..180)
-          var g = Math.max(-15, Math.min(15, e.gamma));
-          var b = Math.max(-15, Math.min(15, e.beta - 45));  // subtract reading angle
-          targetRY = -8 - g * 0.6;
-          targetRX = 6 + b * 0.3;
+          if (e.gamma == null || e.beta == null) return;
+          var g = Math.max(-20, Math.min(20, e.gamma)) / 40 + 0.5;   // -20..20 → 0..1
+          var b = Math.max(-20, Math.min(20, e.beta - 45)) / 40 + 0.5;
+          tmx = g; tmy = b;
           schedule();
         }, { passive: true });
       }
-
-      // Subtle idle animation — phone slowly breathes when user not interacting
-      var idlePhase = 0;
-      function idleLoop() {
-        idlePhase += 0.01;
-        if (document.hidden || !heroVisible) {
-          setTimeout(idleLoop, 200);
-          return;
-        }
-        // Only apply when no active touch input
-        targetRY = -8 - Math.sin(idlePhase) * 1.5;
-        targetRX = 6 + Math.cos(idlePhase * 0.7) * 1;
-        schedule();
-        setTimeout(idleLoop, 60);
-      }
-      setTimeout(idleLoop, 1000);
     }
 
-    schedule();  // initial paint
+    schedule();  // initial render
   })();
   </script>
 </body>

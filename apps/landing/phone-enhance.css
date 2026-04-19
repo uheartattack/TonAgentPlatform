@@ -1,0 +1,183 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   Phone mockup — premium 3D enhancement
+   JS only updates --mx / --my (cursor position 0..1).
+   CSS does all the magic: rotation, glare, rim light, dynamic shadow.
+   Cheap on GPU: single transform + one radial gradient overlay.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.hero {
+  /* Default: center (no tilt) */
+  --mx: 0.5;
+  --my: 0.5;
+  --tilt-active: 0;  /* 1 when cursor over hero, 0 when leaving — for blend easing */
+}
+
+/* ── 1. 3D rotation driven by CSS vars ──────────────────────────────── */
+.phone-mockup {
+  /* Override styles.css baseline + JS inline transform — now fully var-driven */
+  transform: none !important;
+  perspective: 1400px;
+  transform-style: preserve-3d;
+  /* Single GPU-friendly transform that reads live cursor position */
+  --ry: calc((var(--mx) - 0.5) * -14deg);
+  --rx: calc((0.5 - var(--my)) * 10deg);
+  transition: none;  /* Smooth motion handled by JS lerp via var updates */
+}
+
+.phone-mockup > .phone {
+  transform:
+    rotateY(var(--ry, 0deg))
+    rotateX(var(--rx, 0deg))
+    translateZ(60px);
+  transform-style: preserve-3d;
+  transition: box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+
+/* ── 2. Phone body — enhanced depth (rim light + deeper shadow) ─────── */
+.phone {
+  /* Preserve original gradient bg, add rim highlight + edge depth */
+  box-shadow:
+    /* Top rim highlight — simulates light from top-left */
+    0 0 0 0.5px rgba(255, 255, 255, 0.12) inset,
+    0 1.5px 0 rgba(255, 255, 255, 0.14) inset,
+    /* Inner screen cavity */
+    0 0 0 1px rgba(0, 0, 0, 0.4) inset,
+    /* Side edge shadow (depth) */
+    -3px 0 0 rgba(0, 0, 0, 0.5),
+    3px 0 0 rgba(0, 0, 0, 0.3),
+    /* Ambient drop */
+    0 30px 60px rgba(0, 0, 0, 0.55),
+    0 60px 120px rgba(0, 0, 0, 0.35),
+    /* Brand glow beneath (responds to tilt) */
+    0 calc(30px + var(--my) * 40px) 80px rgba(0, 168, 255, 0.22),
+    0 calc(50px + var(--my) * 40px) 100px rgba(139, 92, 246, 0.14)
+    !important;
+}
+
+/* ── 3. Screen glare — radial highlight that FOLLOWS the cursor ─────── */
+.phone-screen {
+  position: relative;
+}
+.phone-screen::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 10;
+  background: radial-gradient(
+    circle at calc(var(--mx, 0.5) * 100%) calc(var(--my, 0.5) * 100%),
+    rgba(255, 255, 255, 0.14) 0%,
+    rgba(255, 255, 255, 0.06) 18%,
+    transparent 45%
+  );
+  mix-blend-mode: screen;
+  opacity: 0.85;
+  transition: opacity 0.3s ease-out;
+}
+
+/* ── 4. Rim light on top edge of phone bezel (static, subtle) ─────── */
+.phone::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 14%;
+  right: 14%;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.4) 50%,
+    transparent 100%
+  );
+  border-radius: 50%;
+  filter: blur(0.5px);
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* ── 5. Edge highlights on tilt — right side catches light when
+   phone tilts left (mx > 0.5), and vice-versa. ───────────────────── */
+.phone::after {
+  content: '';
+  position: absolute;
+  top: 8%;
+  bottom: 8%;
+  right: 0;
+  width: 2px;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(255, 255, 255, calc(0.08 + (var(--mx, 0.5) - 0.5) * 0.4)) 50%,
+    transparent 100%
+  );
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 5;
+  filter: blur(0.5px);
+}
+
+/* ── 6. Floating ambient shadow underneath (soft, follows tilt) ──── */
+.phone-mockup::after {
+  content: '';
+  position: absolute;
+  left: 5%;
+  right: 5%;
+  bottom: -30px;
+  height: 40px;
+  background: radial-gradient(ellipse at center,
+    rgba(0, 168, 255, 0.28),
+    rgba(139, 92, 246, 0.18) 40%,
+    transparent 70%
+  );
+  filter: blur(30px);
+  transform:
+    translateX(calc((var(--mx, 0.5) - 0.5) * 40px))
+    scaleX(calc(1 + (var(--my, 0.5) - 0.5) * 0.3))
+    scaleY(calc(1 - (var(--my, 0.5) - 0.5) * 0.3));
+  opacity: 0.9;
+  pointer-events: none;
+  z-index: -1;
+  will-change: transform;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── 7. Idle float animation when cursor away from hero.
+   Kicks in via JS removing .hero-active class (uses CSS vars so JS
+   can override by just setting --mx/--my). ────────────────────────── */
+@keyframes phone-idle-breath {
+  0%, 100% { --mx: 0.5; --my: 0.5; }
+  25%      { --mx: 0.52; --my: 0.48; }
+  50%      { --mx: 0.5;  --my: 0.52; }
+  75%      { --mx: 0.48; --my: 0.5;  }
+}
+/* Enable when not actively hovered */
+@property --mx { syntax: '<number>'; initial-value: 0.5; inherits: true; }
+@property --my { syntax: '<number>'; initial-value: 0.5; inherits: true; }
+
+.hero:not(.hero-hover) {
+  animation: phone-idle-breath 8s ease-in-out infinite;
+}
+
+/* ── 8. Touch devices get the same via JS DeviceOrientation + drag.
+   Mobile: reduce tilt range to avoid dramatic moves ───────────────── */
+@media (max-width: 768px) {
+  .phone-mockup {
+    --ry: calc((var(--mx) - 0.5) * -8deg);
+    --rx: calc((0.5 - var(--my)) * 6deg);
+  }
+  .phone::after { display: none; }  /* side rim harder to see, skip */
+}
+
+/* ── 9. Respect reduced-motion but keep static 3D look ──────────── */
+@media (prefers-reduced-motion: reduce) {
+  .hero {
+    animation: none !important;
+    --mx: 0.5;
+    --my: 0.5;
+  }
+  .phone-mockup > .phone {
+    transform: rotateY(-8deg) rotateX(6deg) translateZ(60px);
+  }
+}
