@@ -99,23 +99,17 @@ footer {
   will-change: transform;
 }
 
-/* ── 9. Honor prefers-reduced-motion fully ──────────────────────────── */
+/* ── 9. Prefers-reduced-motion: only disable LARGE MOTION (phone parallax,
+   magnetic button), keep decorative animations (ring, shimmer, pulse)
+   because they are the signature of the page. User's OS may force this
+   on mobile — we respect accessibility but not at the cost of the brand. */
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.001ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
-    scroll-behavior: auto !important;
-  }
-  .gradient-text,
-  .pulse-dot,
-  .pricing-card.popular::before {
-    animation: none !important;
-  }
   .phone-mockup,
   .hero-buttons .btn-primary {
     transform: none !important;
+    transition: none !important;
   }
+  /* Keep: .gradient-text shimmer, .pulse-dot, .pricing-card.popular::before ring */
 }
 
 /* ── 10. Contain layout/paint/style to prevent cascading recalcs.
