@@ -80,35 +80,10 @@ footer {
 /* ── 5. Keep shimmer lively — original 10s feels right.
    Only slow down if user prefers less motion (handled below). ──────── */
 
-/* ── 6. Pricing popular rotating ring — rotate the CONIC GRADIENT ANGLE,
-   not the whole box (rotating the box makes it look like a giant spinning
-   rhombus instead of a crisp border ring). Uses @property + CSS var. ─── */
-@property --ring-angle {
-  syntax: '<angle>';
-  initial-value: 120deg;
-  inherits: false;
-}
-.pricing-card.popular::before {
-  /* override original animation that rotated the box */
-  transform: none !important;
-  animation: ring-spin 16s linear infinite !important;
-  background: conic-gradient(
-    from var(--ring-angle),
-    rgba(0, 168, 255, 0.9),
-    rgba(139, 92, 246, 0.9),
-    rgba(0, 168, 255, 0.9)
-  ) !important;
-}
-@keyframes ring-spin {
-  to { --ring-angle: 480deg; }  /* 120 + 360 — continues from original start */
-}
-/* Fallback for browsers without @property support (Safari <16.4):
-   show a static gradient ring, still looks like a proper border. */
-@supports not (background: conic-gradient(from 0deg, red, blue)) {
-  .pricing-card.popular::before {
-    animation: none !important;
-  }
-}
+/* ── 6. Pricing popular rotating ring — KEEP original `animation: spin`
+   from styles.css which rotates the whole box. That creates the big
+   spinning rhombus/diamond halo effect that looks signature and cool.
+   Don't override animation or transform here. ────────────────────── */
 
 /* ── 7. Don't animate box-shadow (expensive) on mousemove transforms.
    Only transform changes, so other props skip transition. ──────────── */
