@@ -15,9 +15,11 @@ function getToncenterEndpoint(): string {
   const base = 'https://toncenter.com/api/v2/jsonRPC';
   return apiKey ? `${base}?api_key=${apiKey}` : base;
 }
-const TON_ADDRESS = 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c'; // native TON
-const USDC_ADDRESS = 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs'; // USDC on TON
-const USDT_ADDRESS = 'EQBynBO23ywHy_CgarY9NK9FTz0yDsG82PtcbSTQgGoXwiuA'; // USDT on TON
+// Canonical TON addresses — override via env for upgrades / new deployments.
+// Last verified: 2026-04-14. If Tether/Circle redeploys, update .env without redeploying code.
+const TON_ADDRESS  = process.env.TON_NATIVE_ADDRESS  || 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c';
+const USDC_ADDRESS = process.env.USDC_JETTON_ADDRESS || 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs';
+const USDT_ADDRESS = process.env.USDT_JETTON_ADDRESS || 'EQBynBO23ywHy_CgarY9NK9FTz0yDsG82PtcbSTQgGoXwiuA';
 
 const stonApi = new StonApiClient();
 
