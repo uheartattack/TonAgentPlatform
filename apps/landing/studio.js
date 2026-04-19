@@ -14518,8 +14518,168 @@ async function loadTesterHub() {
     '</div>' +
   '</div>';
 
+  // ── Revenue Share (10% pool / 2yr) ── placeholder, filled async below ──
+  html += '<div id="tester-rewards-block"></div>';
+
   html += '</div>';
   container.innerHTML = html;
+
+  // Load rewards data asynchronously (doesn't block main UI)
+  loadTesterRewardsBlock(isRu).catch(function(e){ console.error('[TesterHub rewards]', e); });
+}
+
+async function loadTesterRewardsBlock(isRu) {
+  var block = document.getElementById('tester-rewards-block');
+  if (!block) return;
+  var profile, refLink, walletRes, snapshots;
+  try {
+    [profile, refLink, walletRes, snapshots] = await Promise.all([
+      apiRequest('GET', '/api/tester/profile'),
+      apiRequest('GET', '/api/tester/ref-link'),
+      apiRequest('GET', '/api/tester/payout-wallet'),
+      apiRequest('GET', '/api/tester/snapshots'),
+    ]);
+  } catch(e) {
+    block.innerHTML = '';
+    return;
+  }
+  var html = '';
+  var fmt = function(n, d){ return Number(n||0).toLocaleString('en-US', { maximumFractionDigits: d||0 }); };
+
+  // ═══ Revenue share hero ═══
+  if (profile && profile.ok) {
+    var p = profile.profile;
+    var sharePct = (profile.sharePercent || 0);
+    var projTon = profile.projectedAnnualTonAt10k || 0;
+    html += '<div style="background:linear-gradient(135deg,rgba(0,170,255,0.06),rgba(139,92,246,0.06));border:1px solid rgba(0,170,255,0.2);border-radius:16px;padding:20px;margin-bottom:20px">' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">' +
+        '<span style="font-size:1.2rem">💰</span>' +
+        '<div style="font-size:.95rem;font-weight:700;color:var(--text-primary)">' + (isRu ? 'Доля в 10% пуле' : 'Revenue share (10% pool)') + '</div>' +
+        '<span style="padding:3px 8px;border-radius:10px;background:rgba(0,170,255,0.15);color:#00aaff;font-size:.62rem;font-weight:700;text-transform:uppercase">2 yr</span>' +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px">' +
+        '<div style="text-align:center;padding:14px 10px;background:var(--bg-secondary);border-radius:12px">' +
+          '<div style="font-size:1.5rem;font-weight:800;color:#00aaff">' + sharePct.toFixed(2) + '%</div>' +
+          '<div style="font-size:.65rem;color:var(--text-muted);margin-top:4px">' + (isRu ? 'Твоя доля' : 'Your share') + '</div>' +
+        '</div>' +
+        '<div style="text-align:center;padding:14px 10px;background:var(--bg-secondary);border-radius:12px">' +
+          '<div style="font-size:1.5rem;font-weight:800;color:#a78bfa">×' + p.effectiveMultiplier + '</div>' +
+          '<div style="font-size:.65rem;color:var(--text-muted);margin-top:4px">' + (isRu ? 'Множитель' : 'Multiplier') + (p.effectiveMultiplier < p.baseMultiplier ? ' ⚠️' : '') + '</div>' +
+        '</div>' +
+        '<div style="text-align:center;padding:14px 10px;background:var(--bg-secondary);border-radius:12px">' +
+          '<div style="font-size:1.5rem;font-weight:800;color:#fbbf24">' + fmt(projTon, 1) + '</div>' +
+          '<div style="font-size:.65rem;color:var(--text-muted);margin-top:4px">TON/' + (isRu ? 'год*' : 'yr*') + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div style="display:flex;justify-content:space-between;font-size:.72rem;color:var(--text-muted);padding-top:10px;border-top:1px solid var(--border)">' +
+        '<span>' + (isRu ? 'Effective XP:' : 'Effective XP:') + ' <b style="color:var(--text-primary)">' + fmt(p.effectiveXp) + '</b></span>' +
+        '<span>' + (isRu ? 'Всего в пуле:' : 'Pool total:') + ' <b style="color:var(--text-primary)">' + fmt(profile.totalEffectiveXp) + '</b></span>' +
+        '<span>' + (isRu ? 'Тестеров:' : 'Testers:') + ' <b style="color:var(--text-primary)">' + profile.testerCount + '</b></span>' +
+      '</div>' +
+      '<div style="margin-top:10px;font-size:.65rem;color:var(--text-muted);line-height:1.5">' +
+        '*' + (isRu ? 'Прогноз при 10 000 TON годовой выручки. Первый снапшот: ' : 'Projected at 10,000 TON/yr gross. First snapshot: ') + profile.firstSnapshotDate + '. ' +
+        (isRu ? 'Выплаты квартально на TON-кошелёк.' : 'Quarterly payout to TON wallet.') +
+      '</div>' +
+    '</div>';
+  }
+
+  // ═══ Referral link ═══
+  if (refLink && refLink.ok) {
+    html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:20px">' +
+      '<div style="font-size:.85rem;font-weight:700;color:var(--text-primary);margin-bottom:6px">🎟 ' + (isRu ? 'Реферальная ссылка' : 'Referral link') + '</div>' +
+      '<div style="font-size:.72rem;color:var(--text-muted);margin-bottom:12px">' +
+        (isRu ? 'Друг регится → +20 XP тебе. Его реферал → +5 XP. 10% его трат — навсегда.' : 'Friend joins → +20 XP. Their referral → +5 XP. 10% of their spend — forever.') +
+      '</div>' +
+      '<div style="display:flex;gap:8px;margin-bottom:12px">' +
+        '<input id="ref-link-input" readonly value="' + escHtml(refLink.url) + '" style="flex:1;padding:9px 12px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;color:var(--text-primary);font-family:monospace;font-size:.72rem;outline:none">' +
+        '<button onclick="copyTesterRefLink()" style="padding:9px 16px;border:none;background:var(--primary);color:white;border-radius:10px;font-size:.75rem;font-weight:600;cursor:pointer">' + (isRu ? 'Копировать' : 'Copy') + '</button>' +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">' +
+        '<div style="padding:10px;background:var(--bg-secondary);border-radius:10px;text-align:center">' +
+          '<div style="font-size:1.15rem;font-weight:700;color:#00aaff">' + refLink.refCount + '</div>' +
+          '<div style="font-size:.62rem;color:var(--text-muted)">' + (isRu ? 'Приглашено' : 'Referred') + '</div>' +
+        '</div>' +
+        '<div style="padding:10px;background:var(--bg-secondary);border-radius:10px;text-align:center">' +
+          '<div style="font-size:1.15rem;font-weight:700;color:#fbbf24">' + fmt(refLink.totalRefEarningsTon, 2) + ' TON</div>' +
+          '<div style="font-size:.62rem;color:var(--text-muted)">' + (isRu ? 'Заработано' : 'Earned') + '</div>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }
+
+  // ═══ Payout wallet ═══
+  var currentWallet = (walletRes && walletRes.ok) ? (walletRes.wallet || '') : '';
+  html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:20px">' +
+    '<div style="font-size:.85rem;font-weight:700;color:var(--text-primary);margin-bottom:6px">💳 ' + (isRu ? 'Кошелёк для выплат' : 'Payout wallet') + '</div>' +
+    '<div style="font-size:.72rem;color:var(--text-muted);margin-bottom:12px">' +
+      (isRu ? 'TON-адрес для квартальных выплат. Можно изменить до даты выплаты.' : 'TON address for quarterly payouts. Can be changed before payout date.') +
+    '</div>' +
+    '<div style="display:flex;gap:8px">' +
+      '<input id="payout-wallet-input" placeholder="UQ... / EQ... / 0:hex" value="' + escHtml(currentWallet) + '" style="flex:1;padding:9px 12px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;color:var(--text-primary);font-family:monospace;font-size:.72rem;outline:none">' +
+      '<button onclick="saveTesterPayoutWallet()" style="padding:9px 16px;border:none;background:var(--primary);color:white;border-radius:10px;font-size:.75rem;font-weight:600;cursor:pointer">' + (isRu ? 'Сохранить' : 'Save') + '</button>' +
+    '</div>' +
+    '<div id="payout-wallet-msg" style="font-size:.7rem;margin-top:8px"></div>' +
+  '</div>';
+
+  // ═══ Snapshots history ═══
+  if (snapshots && snapshots.ok && snapshots.snapshots && snapshots.snapshots.length) {
+    html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:20px">' +
+      '<div style="font-size:.85rem;font-weight:700;color:var(--text-primary);margin-bottom:12px">📸 ' + (isRu ? 'История снапшотов' : 'Snapshot history') + '</div>';
+    html += '<div style="display:grid;grid-template-columns:1fr 50px 70px 60px 80px;gap:8px;font-size:.62rem;color:var(--text-muted);text-transform:uppercase;padding:0 8px 8px;border-bottom:1px solid var(--border);margin-bottom:6px">' +
+      '<span>' + (isRu ? 'Дата' : 'Date') + '</span><span>Lv</span><span>XP</span><span>×</span><span style="text-align:right">Eff</span>' +
+    '</div>';
+    snapshots.snapshots.slice(0, 12).forEach(function(sn){
+      var d = new Date(sn.snapshot_date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'});
+      html += '<div style="display:grid;grid-template-columns:1fr 50px 70px 60px 80px;gap:8px;font-size:.75rem;padding:7px 8px;border-radius:8px;align-items:center">' +
+        '<span style="color:var(--text-muted)">' + d + '</span>' +
+        '<span style="color:var(--text-primary);font-weight:600">' + sn.level + '</span>' +
+        '<span style="color:var(--text-primary)">' + fmt(sn.xp) + '</span>' +
+        '<span style="color:var(--text-muted)">×' + sn.multiplier + '</span>' +
+        '<span style="text-align:right;color:#00aaff;font-weight:600">' + fmt(sn.effective_xp) + '</span>' +
+      '</div>';
+    });
+    html += '</div>';
+  } else {
+    html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:20px;text-align:center;color:var(--text-muted);font-size:.78rem">' +
+      '📸 ' + (isRu ? 'Снапшотов пока нет. Первый: 1 мая 2026, 00:00 MSK' : 'No snapshots yet. First: 1 May 2026, 00:00 MSK') +
+    '</div>';
+  }
+
+  // ═══ Founders wall link ═══
+  html += '<div style="text-align:center;margin-bottom:16px">' +
+    '<a href="/founders.html" target="_blank" style="display:inline-block;padding:10px 20px;border-radius:20px;background:rgba(251,191,36,0.1);color:#fbbf24;border:1px solid rgba(251,191,36,0.3);font-size:.78rem;font-weight:600;text-decoration:none">🏆 ' + (isRu ? 'Founders Wall' : 'Founders Wall') + '</a>' +
+  '</div>';
+
+  block.innerHTML = html;
+}
+
+function copyTesterRefLink() {
+  var inp = document.getElementById('ref-link-input');
+  if (!inp) return;
+  inp.select();
+  try {
+    navigator.clipboard.writeText(inp.value);
+    toast(currentLang === 'ru' ? 'Скопировано!' : 'Copied!', 'success');
+  } catch(e) { toast('Copy failed', 'error'); }
+}
+
+async function saveTesterPayoutWallet() {
+  var inp = document.getElementById('payout-wallet-input');
+  var msgEl = document.getElementById('payout-wallet-msg');
+  if (!inp) return;
+  var wallet = (inp.value || '').trim();
+  if (!wallet) { if (msgEl) { msgEl.style.color='#ef4444'; msgEl.textContent='Empty'; } return; }
+  try {
+    var data = await apiRequest('POST', '/api/tester/payout-wallet', { wallet: wallet });
+    if (data.ok) {
+      if (msgEl) { msgEl.style.color='#10b981'; msgEl.textContent = currentLang === 'ru' ? '✓ Сохранено' : '✓ Saved'; }
+      toast(currentLang === 'ru' ? 'Кошелёк сохранён' : 'Wallet saved', 'success');
+    } else {
+      if (msgEl) { msgEl.style.color='#ef4444'; msgEl.textContent = data.error || 'Failed'; }
+    }
+  } catch(e) {
+    if (msgEl) { msgEl.style.color='#ef4444'; msgEl.textContent = e.message; }
+  }
 }
 
 async function testerCheckin() {
