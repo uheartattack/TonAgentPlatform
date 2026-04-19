@@ -822,7 +822,7 @@ function clearAllPendingStates(userId: number): void {
 // Periodic cleanup of pending Maps to prevent memory leaks
 // ============================================================
 const _pendingTimestamps = new Map<string, number>(); // "mapName:key" → first-seen timestamp
-const PENDING_TTL = 30 * 60 * 1000; // 30 minutes
+const PENDING_TTL = 15 * 60 * 1000; // 15 minutes — wizard flows auto-expire
 
 // All pending Maps/Sets to auto-track (built lazily to avoid TDZ issues with later declarations)
 function _getAllPendingMaps(): [string, Map<any, any> | Set<any>][] {
@@ -2127,7 +2127,13 @@ async function postChangelogOnDeploy() {
     fs.writeFileSync(LAST_DEPLOY_FILE, currentHash);
     if (!lastHash) return; // First deploy — save hash, don't post
 
-    // Get commits since last deploy
+    // Strict hex-only validation before interpolating into shell command
+    const isValidHash = (h: string) => /^[a-f0-9]{7,40}$/.test(h);
+    if (!isValidHash(lastHash) || !isValidHash(currentHash)) {
+      console.warn('[Changelog] Invalid hash format — aborting changelog autopost');
+      return;
+    }
+    // Get commits since last deploy — both hashes validated hex above
     const log = execSync(`cd /app && git log --oneline ${lastHash}..${currentHash} 2>/dev/null || git log --oneline -5`, { encoding: 'utf8', timeout: 5000 }).trim();
     if (!log) return;
 
@@ -3606,6 +3612,103 @@ bot.command('help', (ctx) => showHelp(ctx));
 bot.command('list', (ctx) => showAgentsList(ctx, ctx.from.id));
 bot.command('marketplace', (ctx) => showMarketplace(ctx));
 bot.command('connect', (ctx) => showTonConnect(ctx));
+
+// ── /cancel — escape hatch from any wizard flow ──
+bot.command(['cancel', 'abort', 'стоп', 'отмена'], async (ctx) => {
+  const userId = ctx.from?.id;
+  if (!userId) return;
+  clearAllPendingStates(userId);
+  try { await ctx.reply('Отменено. Все незавершённые wizard\'ы сброшены.'); } catch {}
+});
+
+// ── /onboarding — BETA-tester onboarding (explanation of branches/zones/program) ──
+// По фидбеку от @darni: "можно обучение и онбординг по шагам снова пройти".
+// Запускает объяснение бета-программы: ветки тестирования, зоны, квесты, XP, уровни,
+// что это даёт. Любой юзер может перепройти в любой момент.
+bot.command(['onboarding', 'tutorial', 'обучение', 'гайд', 'guide'], async (ctx) => {
+  const userId = ctx.from?.id;
+  if (!userId) return;
+  const lang = (userLanguages.get(userId) as 'ru' | 'en') || 'ru';
+  clearAllPendingStates(userId);
+  try { await showNewTesterOnboarding(ctx, userId, lang === 'ru'); }
+  catch (e: any) { console.warn('[Onboarding restart] error:', e?.message); }
+});
+
+// ── /levels, /level, /уровни — показать шкалу уровней с конвертируемыми бенефитами ──
+// Отвечает на «что за XP и нах это надо» — связываем каждый уровень с реальной выгодой
+// (snapshot multiplier, lifetime free, Founding Testers wall, early access).
+bot.command(['levels', 'level', 'уровни', 'уровень'], async (ctx) => {
+  const userId = ctx.from?.id;
+  if (!userId) return;
+  const ru = ((userLanguages.get(userId) as 'ru' | 'en') || 'ru') === 'ru';
+  try {
+    const { TESTER_LEVELS } = await import('./payments');
+    // Read current points (XP) from beta_testers table
+    let currentPts = 0;
+    try {
+      const { dbPool: pool } = await import('./db-pool');
+      const r = await (pool as any).query('SELECT points FROM builder_bot.beta_testers WHERE user_id = $1', [userId]);
+      currentPts = Number(r.rows[0]?.points || 0);
+    } catch {
+      try {
+        const { pool } = await import('./db');
+        const r = await pool.query('SELECT points FROM builder_bot.beta_testers WHERE user_id = $1', [userId]);
+        currentPts = Number(r.rows[0]?.points || 0);
+      } catch {}
+    }
+    const current = [...TESTER_LEVELS].reverse().find((l: any) => currentPts >= l.minPts) || TESTER_LEVELS[0];
+    const next = TESTER_LEVELS.find((l: any) => l.minPts > currentPts);
+
+    const tagEmoji = ['🧪', '⚡', '🔥', '💎', '👑', '🏆'];
+    let msg = ru
+      ? `<b>Твой уровень:</b> ${tagEmoji[current.level - 1] || '🧪'} <b>${escHtml(current.nameRu)}</b> (Level ${current.level})\n`
+      : `<b>Your level:</b> ${tagEmoji[current.level - 1] || '🧪'} <b>${escHtml(current.name)}</b> (Level ${current.level})\n`;
+    msg += `<b>XP:</b> ${currentPts}`;
+    if (next) msg += ru ? ` / ${next.minPts} (до ${escHtml(next.nameRu)})\n\n` : ` / ${next.minPts} (to ${escHtml(next.name)})\n\n`;
+    else msg += ru ? ` <i>(максимум достигнут)</i>\n\n` : ` <i>(max reached)</i>\n\n`;
+
+    msg += ru ? `<b>Что даёт каждый уровень:</b>\n\n` : `<b>What each level unlocks:</b>\n\n`;
+    for (const L of TESTER_LEVELS) {
+      const emoji = tagEmoji[L.level - 1] || '•';
+      const mark = L.level === current.level ? ' ← ' + (ru ? 'ты здесь' : 'you') : '';
+      const name = ru ? L.nameRu : L.name;
+      msg += `${emoji} <b>${escHtml(name)}</b> · ${L.minPts} XP${mark}\n`;
+      const perks: string[] = [];
+      perks.push(ru ? `Агентов: ${L.maxAgents === -1 ? '∞' : L.maxAgents}` : `Agents: ${L.maxAgents === -1 ? '∞' : L.maxAgents}`);
+      perks.push(ru ? `Генераций: ${L.gens === -1 ? '∞' : L.gens}` : `Generations: ${L.gens === -1 ? '∞' : L.gens}`);
+      perks.push(ru ? `Snapshot ×${(L as any).snapshotMultiplier || 1}` : `Snapshot ×${(L as any).snapshotMultiplier || 1}`);
+      if ((L as any).priorityFeatures > 0) perks.push(ru ? `Новые фичи раньше на ${(L as any).priorityFeatures}д` : `Features ${(L as any).priorityFeatures}d early`);
+      if ((L as any).namedOnWall) perks.push(ru ? 'Имя на Founding Testers wall' : 'Name on Founding Testers wall');
+      if ((L as any).lifetimeFree) perks.push(ru ? 'Lifetime free premium' : 'Lifetime free premium');
+      msg += `   <i>${perks.join(' · ')}</i>\n\n`;
+    }
+
+    msg += ru
+      ? `<b>Как получить XP:</b>\n` +
+        `· /daily — задание дня (+15–40 XP)\n` +
+        `· /quest — твой текущий квест\n` +
+        `· /tasks — задачи по зонам\n` +
+        `· Опиши баг в чате → я даю XP вручную\n` +
+        `· Предложи фичу → +5–20 XP если возьму\n\n` +
+        `<i>Snapshot фиксируется автоматически — когда появится монетизация/airdrop, твой уровень умножит долю.</i>`
+      : `<b>How to earn XP:</b>\n` +
+        `· /daily — daily quest (+15–40 XP)\n` +
+        `· /quest — your current quest\n` +
+        `· /tasks — zone tasks\n` +
+        `· Report bug in chat → I award XP manually\n` +
+        `· Suggest a feature → +5–20 XP if accepted\n\n` +
+        `<i>Snapshot is tracked automatically — when monetization/airdrop arrives, your level multiplies your share.</i>`;
+
+    const buttons: any[] = [
+      [{ text: ru ? '📋 Текущий квест' : '📋 Current quest', callback_data: 'show_quest' }],
+      [{ text: ru ? '🎯 Задачи' : '🎯 Tasks', callback_data: 'show_tasks' }, { text: ru ? '📊 Лидерборд' : '📊 Leaderboard', callback_data: 'show_leaderboard' }],
+    ];
+    await safeReply(ctx, msg, { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } });
+  } catch (e: any) {
+    console.warn('[/levels] error:', e?.message);
+    try { await ctx.reply('Ошибка при загрузке уровней.'); } catch {}
+  }
+});
 
 // ── /search — поиск агентов по имени/описанию ──
 bot.command('search', async (ctx) => {
@@ -9836,16 +9939,21 @@ bot.on(message('voice'), async (ctx) => {
         formData.append('model', 'whisper-1');
         formData.append('language', lang === 'ru' ? 'ru' : 'en');
 
+        // 20s hard timeout — Whisper can hang, and a stuck upstream should not
+        // leave the user without a response.
         const whisperResp = await fetch(whisperBaseUrl + '/v1/audio/transcriptions', {
           method: 'POST',
           headers: { 'Authorization': 'Bearer ' + whisperApiKey },
           body: formData as any,
+          signal: AbortSignal.timeout(20000),
         });
         if (whisperResp.ok) {
           const wj = await whisperResp.json() as any;
           transcribedText = wj.text || '';
         }
-      } catch {}
+      } catch (e: any) {
+        console.warn('[Voice] Whisper transcription failed:', e?.message || e);
+      }
     }
 
     if (!transcribedText || transcribedText.length < 3) {
@@ -13311,6 +13419,8 @@ async function showHelp(ctx: Context) {
       `Агент создаётся автоматически и запускается на нашем сервере — <b>ничего устанавливать не нужно</b>.\n\n` +
       `${pe('clipboard')} <b>Команды</b>\n\n` +
       `/start — главное меню\n` +
+      `/onboarding — обучение по бета-программе (ветки, зоны, XP)\n` +
+      `/levels — мой уровень + что даёт каждый (snapshot, lifetime free, wall)\n` +
       `/list — мои агенты\n` +
       `/run ID — запустить агента (пример: /run 3)\n` +
       `/config — мои переменные (ключи, адреса)\n` +
@@ -13319,7 +13429,8 @@ async function showHelp(ctx: Context) {
       `/plans — тарифы и оплата\n` +
       `/connect — подключить TON кошелёк (Tonkeeper)\n` +
       `/wallet — агентский кошелёк (без мобильного приложения)\n` +
-      `/marketplace — готовые шаблоны агентов\n\n` +
+      `/marketplace — готовые шаблоны агентов\n` +
+      `/cancel — сбросить любой незавершённый мастер\n\n` +
       `${pe('sparkles')} <b>Что умеют агенты</b>\n\n` +
       `• Работать с <b>любыми</b> публичными API\n` +
       `• Мониторить TON-кошельки и цены\n` +
@@ -13335,6 +13446,8 @@ async function showHelp(ctx: Context) {
       `Agent is created automatically and runs on our server — <b>nothing to install</b>.\n\n` +
       `${pe('clipboard')} <b>Commands</b>\n\n` +
       `/start — main menu\n` +
+      `/onboarding — beta program tour (branches, zones, XP)\n` +
+      `/levels — my level + what each unlocks (snapshot, lifetime free, wall)\n` +
       `/list — my agents\n` +
       `/run ID — run agent (example: /run 3)\n` +
       `/config — my variables (keys, addresses)\n` +
@@ -13343,7 +13456,8 @@ async function showHelp(ctx: Context) {
       `/plans — pricing\n` +
       `/connect — connect TON wallet (Tonkeeper)\n` +
       `/wallet — agent wallet (no mobile app needed)\n` +
-      `/marketplace — ready-made agent templates\n\n` +
+      `/marketplace — ready-made agent templates\n` +
+      `/cancel — cancel any pending wizard\n\n` +
       `${pe('sparkles')} <b>What agents can do</b>\n\n` +
       `• Work with <b>any</b> public API\n` +
       `• Monitor TON wallets and prices\n` +
@@ -13395,7 +13509,7 @@ function scheduleDailyDigest() {
       console.log('[DailyDigest] Posted');
     } catch (e: any) { console.warn('[DailyDigest] Error:', e.message); }
     // Reschedule for next day
-    setInterval(async () => {
+    const dailyTimer = setInterval(async () => {
       try {
         const { generateDailyDigest } = require('./engagement');
         const { pool } = require('./db');
@@ -13404,13 +13518,14 @@ function scheduleDailyDigest() {
         console.log('[DailyDigest] Posted');
       } catch (e: any) { console.warn('[DailyDigest] Error:', e.message); }
     }, 24 * 60 * 60 * 1000);
+    (dailyTimer as any).unref?.();
   }, msUntilTarget);
   console.log(`[DailyDigest] Scheduled in ${Math.round(msUntilTarget / 60000)} minutes`);
 }
 
 // ── Inactive Pings: check every 24h ──
 function scheduleInactivePings() {
-  setInterval(async () => {
+  const t = setInterval(async () => {
     try {
       const { getInactiveTesters, formatInactivePing } = require('./engagement');
       const { pool } = require('./db');
@@ -13425,11 +13540,12 @@ function scheduleInactivePings() {
       if (inactive.length) console.log(`[InactivePing] Pinged ${Math.min(inactive.length, 10)} testers`);
     } catch (e: any) { console.warn('[InactivePing] Error:', e.message); }
   }, 24 * 60 * 60 * 1000);
+  (t as any).unref?.();
 }
 
 // ── Weekly Hall of Fame + Decay ──
 function scheduleWeeklyTasks() {
-  setInterval(async () => {
+  const wt = setInterval(async () => {
     const day = new Date().getDay();
     if (day !== 1) return; // Only Mondays
     try {
@@ -13449,6 +13565,7 @@ function scheduleWeeklyTasks() {
       }
     } catch (e: any) { console.warn('[Weekly] Error:', e.message); }
   }, 24 * 60 * 60 * 1000);
+  (wt as any).unref?.();
 }
 
 // ============================================================

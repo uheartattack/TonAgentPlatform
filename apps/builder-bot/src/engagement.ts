@@ -287,17 +287,34 @@ export const DAILY_QUESTS: Record<number, DailyQuestDay> = {
   },
 };
 
-export function getDailyQuest(dayOfWeek?: number): DailyQuestDay {
-  const dow = dayOfWeek ?? new Date().getDay();
+/**
+ * Get day-of-week in the user's local timezone (if set in user_settings.timezone)
+ * or default to Moscow time (MSK — engagement system baseline).
+ * Without this, users in different timezones see different daily quests mid-day.
+ */
+function getDayOfWeekInTimezone(tz: string = 'Europe/Moscow'): number {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' }).formatToParts(new Date());
+    const day = parts.find(p => p.type === 'weekday')?.value || '';
+    // Map short weekday → 0-6 (Sun..Sat) to match legacy getDay() contract
+    const map: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+    return map[day] ?? new Date().getDay();
+  } catch {
+    return new Date().getDay();
+  }
+}
+
+export function getDailyQuest(dayOfWeek?: number, tz?: string): DailyQuestDay {
+  const dow = dayOfWeek ?? getDayOfWeekInTimezone(tz);
   return DAILY_QUESTS[dow] || DAILY_QUESTS[0];
 }
 
-export function formatDailyQuestMessage(ru: boolean, dayOfWeek?: number): string {
-  const quest = getDailyQuest(dayOfWeek);
+export function formatDailyQuestMessage(ru: boolean, dayOfWeek?: number, tz?: string): string {
+  const quest = getDailyQuest(dayOfWeek, tz);
   const dayNames = ru
     ? ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота']
     : ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const dow = dayOfWeek ?? new Date().getDay();
+  const dow = dayOfWeek ?? getDayOfWeekInTimezone(tz);
 
   let msg = `${ce('target', '\u{1F3AF}')} <b>${ru ? 'Ежедневный квест' : 'Daily Quest'}</b> — ${dayNames[dow]}\n\n`;
   msg += `${ce('star', '\u2B50')} <b>${ru ? 'Стандарт' : 'Standard'}:</b>\n`;

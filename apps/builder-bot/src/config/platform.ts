@@ -63,14 +63,19 @@ export const LIMITS = {
 };
 
 // ── Context limits per provider ──
+// April 2026 FREE-tier safe values. See docs/PROVIDER_LIMITS.md for full breakdown.
+// Each provider's TPM determines safe tool count: tools ≈ 300 tokens each.
+// Groq free = 12K TPM → 40 tools × 300 = 12K tokens consumed just by tools = 413.
+// User upgrades (Groq Dev, Anthropic tier 2+, OpenAI tier 1+) can override via
+// agent.trigger_config.config.MAX_TOOLS (respected in buildPromptForLoop).
 export const PROVIDER_LIMITS: Record<string, { maxContextChars: number; maxTools: number }> = {
-  gemini:     { maxContextChars: 25_000, maxTools: 128 },
-  anthropic:  { maxContextChars: 40_000, maxTools: 80 },
-  openai:     { maxContextChars: 30_000, maxTools: 80 },
-  groq:       { maxContextChars: 15_000, maxTools: 40 },
-  deepseek:   { maxContextChars: 25_000, maxTools: 60 },
-  openrouter: { maxContextChars: 25_000, maxTools: 50 },
-  together:   { maxContextChars: 15_000, maxTools: 40 },
+  gemini:     { maxContextChars: 40_000, maxTools: 60  },  // 250K TPM free, plenty
+  anthropic:  { maxContextChars: 40_000, maxTools: 128 },  // paid only, 30K-800K ITPM
+  openai:     { maxContextChars: 30_000, maxTools: 80  },  // tier-1 500K TPM
+  groq:       { maxContextChars: 8_000,  maxTools: 15  },  // 12K TPM free (llama-3.3-70b)
+  deepseek:   { maxContextChars: 25_000, maxTools: 60  },  // 1M TPM, 60 RPM bottleneck
+  openrouter: { maxContextChars: 20_000, maxTools: 40  },  // 20 RPM free, 50-1000 RPD
+  together:   { maxContextChars: 15_000, maxTools: 30  },  // dynamic 60 RPM baseline
 };
 
 // ── Platform AI (fallback when user has no key) ──

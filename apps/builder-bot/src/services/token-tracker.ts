@@ -291,6 +291,8 @@ export function startAutoFlush(intervalMs: number = 5 * 60 * 1000): void {
       console.error('[TokenTracker] Auto-flush error:', err.message);
     }
   }, intervalMs);
+  // unref so shutdown doesn't wait 5 min for the next tick
+  (_flushInterval as any).unref?.();
   console.log(`[TokenTracker] Auto-flush started (every ${Math.round(intervalMs / 1000)}s)`);
 }
 

@@ -1914,6 +1914,20 @@ ${toolSections}
       content += `👇 Нажмите *Запустить* — агент будет работать 24/7`;
     }
 
+    // Provider-specific warnings (free-tier TPM/RPM reality check)
+    try {
+      const { getProviderWarnings } = await import('../constants/limits');
+      const intervalMs = Number((tc?.config?.intervalMs ?? tc?.intervalMs) || 0);
+      const toolCount = Array.isArray(tc?.config?.enabledCapabilities)
+        ? tc.config.enabledCapabilities.length * 10 // rough estimate: ~10 tools per capability
+        : 40;
+      const warns = getProviderWarnings(String(tc?.config?.AI_PROVIDER || ''), intervalMs, toolCount);
+      if (warns.length > 0) {
+        content += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+        for (const w of warns) content += `${esc(w)}\n`;
+      }
+    } catch {}
+
     await getMemoryManager().addMessage(userId, 'assistant', content, {
       type: 'agent_created',
       agentId,

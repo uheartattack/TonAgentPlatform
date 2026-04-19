@@ -232,15 +232,60 @@ export class DBTools {
         return existing as unknown as ToolResult<void>;
       }
 
-      await this.db
-        .delete(agents)
-        .where(and(
-          eq(agents.id, agentId),
-          eq(agents.userId, userId)
-        ));
+      // Explicit cascade — FK constraints don't exist, so we must manually prune
+      // child tables or orphan rows accumulate. Wrap in transaction for atomicity.
+      const { pool } = await import('../../db');
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        // Verify ownership inside the transaction
+        const check = await client.query(
+          'SELECT id FROM builder_bot.agents WHERE id = $1 AND user_id = $2 FOR UPDATE',
+          [agentId, userId]
+        );
+        if (check.rowCount === 0) {
+          await client.query('ROLLBACK');
+          return { success: false, error: 'Agent not found or not owned by user' };
+        }
+        // Child tables to clean up (best-effort; missing tables are ignored)
+        const childTables = [
+          'agent_state',
+          'agent_logs',
+          'execution_history',
+          'agent_daily_spend',
+          'agent_tasks',
+          'agent_approvals',
+          'agent_audit_log',
+          'agent_evals',
+          'ai_proposals',
+        ];
+        for (const t of childTables) {
+          try {
+            await client.query(`DELETE FROM builder_bot.${t} WHERE agent_id = $1`, [agentId]);
+          } catch (e: any) {
+            // Table might not exist in all deployments — log and continue
+            if (!/relation.*does not exist/i.test(e.message)) {
+              console.warn(`[deleteAgent] cleanup ${t}: ${e.message}`);
+            }
+          }
+        }
+        // Finally, delete the agent itself
+        await client.query('DELETE FROM builder_bot.agents WHERE id = $1 AND user_id = $2', [agentId, userId]);
+        await client.query('COMMIT');
+      } catch (e: any) {
+        await client.query('ROLLBACK').catch(() => {});
+        throw e;
+      } finally {
+        client.release();
+      }
 
       // Clean up in-memory state for the deleted agent
       pruneAgentMemory(agentId);
+      // Invalidate runtime caches if the runtime exports it
+      try {
+        const { invalidateAgentCaches } = await import('../ai-agent-runtime');
+        invalidateAgentCaches(agentId);
+      } catch {}
 
       // Логируем в память
       await getMemoryManager().addMessage(

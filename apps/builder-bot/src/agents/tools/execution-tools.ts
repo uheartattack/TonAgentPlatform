@@ -206,6 +206,7 @@ export class ExecutionTools {
         console.warn('[ExecutionTools] Periodic cleanup error:', e instanceof Error ? e.message : e);
       }
     }, 10 * 60 * 1000); // 10 minutes
+    (this._cleanupTimer as any).unref?.();
   }
 
   // Запустить агента
