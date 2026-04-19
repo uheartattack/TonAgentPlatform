@@ -1,44 +1,50 @@
 /* ═══════════════════════════════════════════════════════════════════════
-   Performance fixes — loads after styles.css
-   Reduces GPU load from blur/backdrop-filter/animations without killing
-   the premium look.
+   Performance fixes v2 — keep all effects, reduce their GPU/CPU cost.
+   Loaded after styles.css.
    ═══════════════════════════════════════════════════════════════════════ */
 
-/* ── Reduce backdrop-filter blur (16px → 10px is almost imperceptible
-   but ~30-40% cheaper on mobile GPUs) ───────────────────────────────── */
+/* ── 1. Reduce backdrop-filter radius (14-16px → 10px).
+   Visually near-identical, ~30% cheaper on all GPUs. ─────────────────── */
 .lang-switcher,
 .glass, .ds-glass, .card, .feature-card, .pricing-card, .cap-card,
 .plugin-card, .dev-stage, .team-card, .mission-section, .faq-item,
 .demo-card, .security-card, .example-panel, .cap-counters,
 .team-stats, .hero-stats,
 .tab, .plugin-badge {
-  backdrop-filter: blur(8px) saturate(130%) !important;
-  -webkit-backdrop-filter: blur(8px) saturate(130%) !important;
+  backdrop-filter: blur(10px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(10px) saturate(140%) !important;
 }
 
-/* ── Kill the most expensive blurs (80px, 50px ambient) on non-high-end
-   devices. Keep a softer version on desktop. ─────────────────────────── */
-@media (max-width: 900px), (prefers-reduced-motion: reduce) {
-  [style*="blur(80px)"], [class*="ambient"], .demo-chat-wrap::before,
-  .pricing-card.popular::after {
-    filter: none !important;
-    opacity: 0 !important;
+/* On mobile GPUs (<640px), dial it down further — still has the effect */
+@media (max-width: 640px) {
+  .lang-switcher,
+  .glass, .ds-glass, .card, .feature-card, .pricing-card, .cap-card,
+  .plugin-card, .dev-stage, .team-card, .mission-section, .faq-item,
+  .demo-card, .security-card, .example-panel, .cap-counters,
+  .team-stats, .hero-stats,
+  .tab, .plugin-badge {
+    backdrop-filter: blur(6px) saturate(130%) !important;
+    -webkit-backdrop-filter: blur(6px) saturate(130%) !important;
   }
 }
 
-/* Desktop: keep ambients but cap at 40px instead of 80px */
+/* ── 2. Ambient blurs (80px, 50px) — cap at 40px on desktop, 20px on
+   mobile. The visual difference is minimal, the cost savings huge. ──── */
 @media (min-width: 901px) {
-  /* Lines matching 50-80px blur filters in styles.css */
-  body::after,
-  .hero::before,
-  .hero::after,
-  .demo-chat-wrap::before,
-  .pricing-card.popular::after {
-    filter: blur(40px) !important;
+  body::after, .hero::before, .hero::after,
+  .demo-chat-wrap::before, .pricing-card.popular::after {
+    filter: blur(40px) saturate(110%) !important;
+  }
+}
+@media (max-width: 900px) {
+  body::after, .hero::before, .hero::after,
+  .demo-chat-wrap::before, .pricing-card.popular::after {
+    filter: blur(20px) saturate(110%) !important;
   }
 }
 
-/* ── GPU layer promotion for animated elements (prevents repaint) ───── */
+/* ── 3. GPU layer promotion for animated elements — key trick.
+   Makes transforms run on GPU compositor, not CPU. ─────────────────── */
 .hero,
 .hero-buttons .btn-primary,
 .phone-mockup,
@@ -47,43 +53,47 @@
 .pricing-card.popular::before,
 .pricing-card.popular::after,
 .pulse-dot,
-.scroll-rocket {
+.scroll-rocket,
+.btn-primary::after {
   will-change: transform;
   transform: translateZ(0);
   backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
-/* ── Content-visibility for off-screen sections (browser skips render
-   until near-viewport). Cuts initial paint dramatically. ──────────── */
-section:not(.hero) {
+/* ── 4. content-visibility: auto on off-screen sections.
+   Browser skips rendering until near viewport. Biggest initial paint win. */
+section:not(.hero),
+footer {
   content-visibility: auto;
   contain-intrinsic-size: auto 800px;
 }
 
-/* ── Pause rotating conic-gradient on pricing when not visible ─────── */
-@keyframes spin { to { transform: rotate(360deg); } }
-.pricing-card.popular::before {
-  animation-play-state: running;
-}
-@media (max-width: 900px) {
-  .pricing-card.popular::before {
-    animation: none !important;
-  }
-}
-
-/* ── Shimmer on gradient-text: slow down to reduce repaints ───────── */
+/* ── 5. Shimmer on gradient-text: slow down to reduce repaint cost ──── */
 .gradient-text {
-  animation-duration: 16s !important;
+  animation-duration: 14s !important;
 }
 
-/* ── Prevent layout shift / remove transitions on transform during
-   mousemove (inline JS sets transform directly) ─────────────────── */
+/* ── 6. Pricing popular rotating ring: slower = fewer repaints ──────── */
+.pricing-card.popular::before {
+  animation-duration: 22s !important;
+}
+
+/* ── 7. Don't animate box-shadow (expensive) on mousemove transforms.
+   Only transform changes, so other props skip transition. ──────────── */
 .hero-buttons .btn-primary,
 .phone-mockup {
-  transition-property: box-shadow, background, border-color !important;
+  transition-property: box-shadow, background, border-color, filter !important;
+  transition-duration: 0.3s !important;
 }
 
-/* ── Reduced-motion honor ─────────────────────────────────────────── */
+/* ── 8. Prefer GPU for card hover lifts (uses translate instead of top) ─ */
+.plugin-card, .dev-stage, .team-card, .feature-card, .pricing-card,
+.cap-card, .mission-section, .security-card, .demo-card {
+  will-change: transform;
+}
+
+/* ── 9. Honor prefers-reduced-motion fully ──────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.001ms !important;
@@ -91,30 +101,42 @@ section:not(.hero) {
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
-  .gradient-text { animation: none !important; }
-  .pulse-dot { animation: none !important; }
-  .pricing-card.popular::before { animation: none !important; }
-  .phone-mockup { transform: none !important; }
-  .hero-buttons .btn-primary { transform: none !important; }
-}
-
-/* ── Mobile: simplify further ─────────────────────────────────────── */
-@media (max-width: 640px) {
-  /* Backdrop filter is VERY expensive on mobile — remove on non-hero cards */
-  .plugin-card, .dev-stage, .team-card, .mission-section,
-  .faq-item, .security-card, .cap-card, .demo-card {
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-    background: rgba(18, 20, 31, 0.8) !important;
+  .gradient-text,
+  .pulse-dot,
+  .pricing-card.popular::before {
+    animation: none !important;
   }
-
-  /* Kill hover-only animations */
-  .phone-mockup, .hero-buttons .btn-primary {
+  .phone-mockup,
+  .hero-buttons .btn-primary {
     transform: none !important;
   }
 }
 
-/* ── Smaller paint area for fixed global gradient ─────────────────── */
-body::before {
-  contain: strict;
+/* ── 10. Contain layout/paint/style to prevent cascading recalcs ───── */
+.hero,
+.hero-stats,
+.phone-mockup,
+.feature-card, .pricing-card, .plugin-card, .dev-stage, .team-card,
+.faq-item, .demo-card, .cap-card, .security-card {
+  contain: layout paint style;
+}
+
+/* ── 11. Text-rendering optimization for big hero titles ─────────── */
+.hero-title, h1 {
+  text-rendering: optimizeSpeed;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── 12. Subtle idle float on phone for mobile (via CSS keyframe) ──
+   Applied only when JS hasn't set a transform yet (touch idle state). */
+@media (hover: none) {
+  @keyframes phone-idle-float {
+    0%, 100% { transform: perspective(1200px) rotateY(-8deg) rotateX(6deg) translate3d(0,0,0); }
+    50%      { transform: perspective(1200px) rotateY(-9.5deg) rotateX(5deg) translate3d(0,-4px,0); }
+  }
+  /* Only apply when no inline style override active */
+  .phone-mockup:not([style*="transform"]) {
+    animation: phone-idle-float 8s ease-in-out infinite;
+  }
 }
