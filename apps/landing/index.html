@@ -25,8 +25,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20260309">
-  <link rel="stylesheet" href="design-system.css?v=1">
+  <link rel="stylesheet" href="styles.css?v=20260310">
 </head>
 <body>
   <!-- Language Switcher -->
@@ -1418,6 +1417,54 @@ document.addEventListener('DOMContentLoaded', () => {
     var r = document.getElementById('scrollRocket');
     if (r) r.classList.toggle('visible', window.scrollY > 400);
   });
+  </script>
+
+  <!-- Hero premium interactions: magnetic primary + 3D phone parallax + scroll parallax -->
+  <script>
+  (function(){
+    // Magnetic pull on primary hero CTA
+    var magnets = document.querySelectorAll('.hero-buttons .btn-primary');
+    magnets.forEach(function(btn){
+      var strength = 0.25, max = 10;
+      btn.addEventListener('mousemove', function(e){
+        var r = btn.getBoundingClientRect();
+        var x = (e.clientX - r.left - r.width/2) * strength;
+        var y = (e.clientY - r.top - r.height/2) * strength;
+        x = Math.max(-max, Math.min(max, x));
+        y = Math.max(-max, Math.min(max, y));
+        btn.style.transform = 'translate(' + x + 'px,' + y + 'px)';
+      });
+      btn.addEventListener('mouseleave', function(){ btn.style.transform = ''; });
+    });
+
+    // 3D phone parallax on mousemove over hero
+    var hero = document.querySelector('.hero');
+    var phone = document.querySelector('.phone-mockup');
+    if (hero && phone){
+      var baseRY = -8, baseRX = 6;
+      hero.addEventListener('mousemove', function(e){
+        var r = hero.getBoundingClientRect();
+        var px = (e.clientX - r.left) / r.width - 0.5;   // -.5..+.5
+        var py = (e.clientY - r.top) / r.height - 0.5;
+        var ry = baseRY + (-px * 10);
+        var rx = baseRX + (py * 8);
+        phone.style.transform = 'rotateY(' + ry + 'deg) rotateX(' + rx + 'deg) translateZ(0)';
+      });
+      hero.addEventListener('mouseleave', function(){
+        phone.style.transform = '';
+      });
+    }
+
+    // Scroll parallax on phone + mesh
+    var heroEl = hero;
+    function onScroll(){
+      if (!heroEl) return;
+      var y = window.scrollY;
+      if (y > window.innerHeight) return;
+      if (phone) phone.style.translate = '0 ' + (y * 0.15) + 'px';
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+  })();
   </script>
 </body>
 </html>
