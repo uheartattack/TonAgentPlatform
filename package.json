@@ -1,6 +1,6 @@
 {
   "name": "ton-agent-platform",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "description": "Autonomous AI agents for the TON blockchain — built in Telegram, no code required",
   "author": "TON Agent Platform <support@tonagentplatform.com>",
