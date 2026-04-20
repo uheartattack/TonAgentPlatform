@@ -9,7 +9,7 @@
 
 <br>
 
-[![TON Hackathon](https://img.shields.io/badge/TON_Hackathon_2026-Agent_Infrastructure-0098EA?style=for-the-badge&logoColor=white)](https://identityhub.app/contests/ai-hackathon?submission=cmmnwv6sg001b01oboxo8f57r)
+[![TON Hackathon Winner](https://img.shields.io/badge/TON_Hackathon_2026-Winner_🏆-FFD700?style=for-the-badge&logoColor=white)](https://identityhub.app/contests/ai-hackathon?submission=cmmnwv6sg001b01oboxo8f57r)
 [![TON Grant Winner](https://img.shields.io/badge/TON_Grant-Winner_🏆-FFD700?style=for-the-badge)](https://identityhub.app/contests/agent-tooling-fast-grants?submission=cmlz5smqj000101p7wao32nfd)
 
 <br>
@@ -23,7 +23,7 @@
 
 <br>
 
-[**🤖 Запустить бота**](https://t.me/TonAgentPlatformBot) &nbsp;·&nbsp; [**🎨 Открыть Studio**](https://tonagentplatform.com/studio.html) &nbsp;·&nbsp; [**🌐 Сайт**](https://tonagentplatform.com) &nbsp;·&nbsp; [**📢 Канал**](https://t.me/TONAgentPlatform)
+[**🤖 Запустить бота**](https://t.me/TonAgentPlatformBot) &nbsp;·&nbsp; [**🎨 Открыть Studio**](https://tonagentplatform.com/studio.html) &nbsp;·&nbsp; [**🏆 Tester Hub**](https://tonagentplatform.com/tester-hub.html) &nbsp;·&nbsp; [**👑 Founders**](https://tonagentplatform.com/founders.html) &nbsp;·&nbsp; [**🌐 Сайт**](https://tonagentplatform.com) &nbsp;·&nbsp; [**📢 Канал**](https://t.me/TONAgentPlatform)
 
 <br>
 
@@ -86,6 +86,8 @@ Each agent gets its own TON wallet, can trade gifts, interact with DeFi, operate
 | 🔬 | **Agent Evals** | Авто-оценка качества, алерты деградации |
 | 📚 | **База знаний** | Загрузка документов, индексация, FTS-поиск |
 | 🔐 | **Безопасность** | Sandbox, SSRF, anti-loop, op-lock |
+| 🏆 | **Tester Hub** | 10% выручки → тестерам на 2 года |
+| 🎟️ | **Реферальная система** | +20 XP за друга + 10% его трат навсегда |
 
 </td>
 <td width="50%">
@@ -104,6 +106,8 @@ Each agent gets its own TON wallet, can trade gifts, interact with DeFi, operate
 | 🔬 | **Agent Evals** | Auto quality scoring, degradation alerts |
 | 📚 | **Knowledge Base** | Upload docs, chunk & index, FTS search |
 | 🔐 | **Security** | Sandbox, SSRF, anti-loop, op-lock |
+| 🏆 | **Tester Hub** | 10% revenue → testers for 2 years |
+| 🎟️ | **Referral System** | +20 XP per friend + 10% of their spend forever |
 
 </td>
 </tr>
@@ -318,6 +322,10 @@ Telegram → [@TonAgentPlatformBot](https://t.me/TonAgentPlatformBot) → `/star
 - [x] 12 плагинов + 22 шаблона + маркетплейс
 - [x] Голосовые команды
 - [x] TON Connect v2
+- [x] **Tester Hub** — 10% revenue share / 2 года / квартальные выплаты
+- [x] **Реферальная система** (2 уровня + 10% от трат рефералов)
+- [x] **Premium landing redesign** (glassmorphism, 3D, mesh gradients)
+- [ ] Первый snapshot тестеров (1 мая 2026)
 - [ ] Telegram Mini App
 - [ ] On-chain реестр агентов
 - [ ] DAO + платформенный токен
