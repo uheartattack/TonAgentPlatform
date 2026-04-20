@@ -186,9 +186,49 @@ h1{font-size:clamp(24px,4vw,36px);font-weight:800;background:linear-gradient(135
 </div>
 
 <script>
-const token = localStorage.getItem('tg_token');
+// Multi-source auth token lookup: localStorage → cookie → Telegram WebApp
+function getCookieVal(name) {
+  var m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+  return m ? decodeURIComponent(m[1]) : null;
+}
+let token = localStorage.getItem('tg_token') || getCookieVal('tg_token');
+
+// If opened inside Telegram WebApp, try to auth via initData (auto-login)
+if (!token && window.Telegram && window.Telegram.WebApp) {
+  const initData = window.Telegram.WebApp.initData;
+  if (initData) {
+    // Fire auto-auth request (non-blocking; user sees loader meanwhile)
+    fetch('/api/auth/telegram-webapp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ initData }),
+    }).then(r => r.json()).then(data => {
+      if (data.ok && data.token) {
+        localStorage.setItem('tg_token', data.token);
+        location.reload();
+      }
+    }).catch(() => {});
+  }
+}
+
+// Auto-redirect to Studio if no token — user logs in there, then returns
+const AUTO_REDIRECT_MS = 4000;
 if (!token) {
   document.getElementById('loginGate').style.display = 'block';
+  let cd = AUTO_REDIRECT_MS / 1000;
+  const cdEl = document.createElement('div');
+  cdEl.style.cssText = 'margin-top:14px;color:#8a8aa0;font-size:13px';
+  cdEl.textContent = 'Redirecting to Studio in ' + cd + 's...';
+  document.querySelector('.login-box').appendChild(cdEl);
+  const interval = setInterval(() => {
+    cd--;
+    if (cd <= 0) {
+      clearInterval(interval);
+      location.href = '/studio.html';
+    } else {
+      cdEl.textContent = 'Redirecting to Studio in ' + cd + 's...';
+    }
+  }, 1000);
 } else {
   document.getElementById('mainWrap').style.display = 'block';
   boot();
