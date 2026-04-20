@@ -3289,6 +3289,48 @@ bot.command('achievements', async (ctx) => {
   await safeReply(ctx, text, { parse_mode: 'HTML' });
 });
 
+// ── /founders — public wall of Expert+ testers ──
+bot.command('founders', async (ctx) => {
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  try {
+    const { pool } = require('./db');
+    const r = await pool.query(`
+      SELECT user_id, username, xp, level, tester_number, created_at
+      FROM builder_bot.beta_testers
+      WHERE status = 'active' AND COALESCE(xp, 0) >= 400
+      ORDER BY xp DESC, tester_number ASC NULLS LAST
+      LIMIT 50
+    `);
+    const rows = r.rows;
+    if (rows.length === 0) {
+      await safeReply(ctx, ru
+        ? `🏆 <b>Founding Testers</b>\n\nПока никто не достиг уровня Expert (400 XP).\n\nПервый snapshot — <b>1 мая 2026</b>. Те кто достигнет Expert+ до этой даты попадут на вечную стену founders.\n\n🔗 <a href="https://tonagentplatform.com/founders.html">tonagentplatform.com/founders</a>`
+        : `🏆 <b>Founding Testers</b>\n\nNo one has reached Expert level (400 XP) yet.\n\nFirst snapshot — <b>May 1, 2026</b>. Those who reach Expert+ by then will be on the permanent founders wall.\n\n🔗 <a href="https://tonagentplatform.com/founders.html">tonagentplatform.com/founders</a>`,
+        { parse_mode: 'HTML', disable_web_page_preview: true });
+      return;
+    }
+    const levelEmoji: Record<number, string> = { 4: '💎', 5: '👑', 6: '🏆' };
+    const levelName: Record<number, string> = { 4: 'Expert', 5: 'Master', 6: 'Legend' };
+    let text = ru
+      ? `🏆 <b>Founding Testers</b> (Expert+)\n<i>Первые тестеры платформы — их имена навсегда.</i>\n\n`
+      : `🏆 <b>Founding Testers</b> (Expert+)\n<i>First testers — their names forever.</i>\n\n`;
+    rows.forEach((row: any, i: number) => {
+      const num = row.tester_number ? `#${String(row.tester_number).padStart(4, '0')}` : '';
+      const name = row.username ? `@${row.username}` : `id${row.user_id}`;
+      const emoji = levelEmoji[row.level] || '⭐';
+      const lvl = levelName[row.level] || `Lv.${row.level}`;
+      text += `${i + 1}. ${emoji} <b>${name}</b> ${num} — ${lvl} · ${row.xp} XP\n`;
+    });
+    text += `\n📊 Всего ${rows.length} ${ru ? 'фаундеров' : 'founders'}\n`;
+    text += `🔗 <a href="https://tonagentplatform.com/founders.html">tonagentplatform.com/founders</a>`;
+    await safeReply(ctx, text, { parse_mode: 'HTML', disable_web_page_preview: true });
+  } catch (e: any) {
+    console.error('[/founders]', e?.message);
+    await safeReply(ctx, ru ? 'Ошибка загрузки списка' : 'Failed to load');
+  }
+});
+
 // ── /internship — internship info ──
 bot.command('internship', async (ctx) => {
   const userId = ctx.from!.id;
