@@ -79,3 +79,9 @@ staging/
 *PLAN*.md
 *GRANT*.md
 package-lock.json
+
+# Landing design artifacts (not source of truth)
+apps/landing/_backup_*/
+apps/landing/_design-context*/
+apps/landing/_design-export/
+apps/landing/*.zip
