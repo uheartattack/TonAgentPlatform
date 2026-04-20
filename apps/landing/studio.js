@@ -14694,24 +14694,60 @@ async function testerCheckin() {
   } catch(e) { toast(e.message, 'error'); }
 }
 
+// Task click shows submission instructions — NOT a fake checkmark.
+// Real completion happens via /feedback in the bot with [task:ID] tag,
+// then admin verification. Clicking here never awards XP or changes server state.
 function toggleTask(taskId, el) {
-  var key = 'task_done_' + taskId;
-  var done = localStorage.getItem(key) === '1';
-  localStorage.setItem(key, done ? '0' : '1');
-  if (!done) {
-    el.style.opacity = '0.5';
-    var checkbox = el.querySelector('div:first-child');
-    if (checkbox) { checkbox.style.borderColor = 'var(--primary)'; checkbox.style.background = 'var(--primary)'; checkbox.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>'; }
-    var title = el.querySelector('div:nth-child(2) div:first-child');
-    if (title) title.style.textDecoration = 'line-through';
-    toast(currentLang === 'ru' ? 'Задание выполнено!' : 'Task completed!', 'success');
-  } else {
-    el.style.opacity = '1';
-    var checkbox = el.querySelector('div:first-child');
-    if (checkbox) { checkbox.style.borderColor = 'var(--border)'; checkbox.style.background = 'transparent'; checkbox.innerHTML = ''; }
-    var title = el.querySelector('div:nth-child(2) div:first-child');
-    if (title) title.style.textDecoration = 'none';
-  }
+  var isRu = currentLang === 'ru';
+  var botUrl = 'https://t.me/TonAgentPlatformBot?start=task_' + encodeURIComponent(taskId);
+  var title = isRu ? 'Как сдать задание' : 'How to submit';
+  var body = isRu
+    ? '<p style="margin-bottom:14px;color:var(--text-muted);line-height:1.6">'
+      + 'Галочки здесь <b>ничего не зачисляют</b>. XP начисляется только после проверки админом.</p>'
+      + '<ol style="margin:0 0 18px 20px;line-height:1.8;color:var(--text-primary)">'
+      + '<li>Выполни задание</li>'
+      + '<li>Открой <b>@TonAgentPlatformBot</b></li>'
+      + '<li>Отправь <code>/feedback</code> со скриншотом</li>'
+      + '<li>В тексте укажи тег <code>[task:' + escHtml(taskId) + ']</code></li>'
+      + '<li>Админ проверит и начислит XP</li>'
+      + '</ol>'
+      + '<div style="padding:10px 14px;background:var(--bg-secondary);border-radius:10px;font-size:.78rem;color:var(--text-muted);margin-bottom:18px">'
+      + '💡 <b>ID задания:</b> <code>' + escHtml(taskId) + '</code><br>'
+      + 'Скопируй и укажи в сообщении фидбека.</div>'
+    : '<p style="margin-bottom:14px;color:var(--text-muted);line-height:1.6">'
+      + 'Checkmarks here <b>award nothing</b>. XP is credited only after admin verification.</p>'
+      + '<ol style="margin:0 0 18px 20px;line-height:1.8;color:var(--text-primary)">'
+      + '<li>Complete the task</li>'
+      + '<li>Open <b>@TonAgentPlatformBot</b></li>'
+      + '<li>Send <code>/feedback</code> with a screenshot</li>'
+      + '<li>Include the tag <code>[task:' + escHtml(taskId) + ']</code></li>'
+      + '<li>Admin will review and credit XP</li>'
+      + '</ol>'
+      + '<div style="padding:10px 14px;background:var(--bg-secondary);border-radius:10px;font-size:.78rem;color:var(--text-muted);margin-bottom:18px">'
+      + '💡 <b>Task ID:</b> <code>' + escHtml(taskId) + '</code><br>'
+      + 'Copy this and mention it in your feedback message.</div>';
+
+  // Simple modal — uses existing styles if available, otherwise inline
+  var existing = document.getElementById('task-submit-modal');
+  if (existing) existing.remove();
+
+  var modal = document.createElement('div');
+  modal.id = 'task-submit-modal';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.6);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:20px;animation:ds-fade-in .2s ease-out';
+  modal.innerHTML = '<div style="max-width:460px;width:100%;background:var(--bg-primary);border:1px solid var(--border);border-radius:16px;padding:24px;box-shadow:0 32px 80px rgba(0,0,0,0.5)">'
+    + '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">'
+    + '<h3 style="margin:0;font-size:1.1rem;font-weight:700;color:var(--text-primary)">' + title + '</h3>'
+    + '<button onclick="document.getElementById(\'task-submit-modal\').remove()" style="background:none;border:none;color:var(--text-muted);font-size:1.5rem;cursor:pointer;padding:0;line-height:1">&times;</button>'
+    + '</div>'
+    + body
+    + '<div style="display:flex;gap:10px">'
+    + '<a href="' + botUrl + '" target="_blank" style="flex:1;padding:12px;background:linear-gradient(135deg,var(--primary),var(--accent));color:white;border-radius:10px;font-size:.82rem;font-weight:600;text-decoration:none;text-align:center">'
+    + (isRu ? 'Открыть бота' : 'Open bot') + ' →</a>'
+    + '<button onclick="navigator.clipboard.writeText(\'[task:' + taskId + ']\');toast(\'' + (isRu ? 'Скопировано' : 'Copied') + '\',\'success\')" style="padding:12px 18px;background:rgba(255,255,255,0.05);color:var(--text-primary);border:1px solid var(--border);border-radius:10px;font-size:.82rem;font-weight:600;cursor:pointer">'
+    + (isRu ? 'Копировать тег' : 'Copy tag') + '</button>'
+    + '</div></div>';
+  modal.onclick = function(e){ if (e.target === modal) modal.remove(); };
+  document.body.appendChild(modal);
 }
 
 async function testerBuyItem(itemId) {
