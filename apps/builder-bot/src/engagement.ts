@@ -322,7 +322,25 @@ export function formatDailyQuestMessage(ru: boolean, dayOfWeek?: number, tz?: st
   msg += `${ce('coin', '\u{1FA99}')} +${quest.standard.xp} XP\n\n`;
   msg += `${ce('fire', '\u{1F525}')} <b>${ru ? 'Хардкор' : 'Hardcore'}:</b>\n`;
   msg += `${ru ? quest.hardcore.title : quest.hardcore.titleEn}\n`;
-  msg += `${ce('coin', '\u{1FA99}')} +${quest.hardcore.xp} XP\n`;
+  msg += `${ce('coin', '\u{1FA99}')} +${quest.hardcore.xp} XP\n\n`;
+  msg += `━━━━━━━━━━━━━━━\n`;
+  msg += ru
+    ? `${ce('camera', '\u{1F4F8}')} <b>Как сдать квест:</b>\n`
+      + `1. Выполни задание\n`
+      + `2. Отправь <code>/feedback</code> со скрином\n`
+      + `3. В тексте укажи тип:\n`
+      + `   • <code>[daily-standard]</code> — стандарт\n`
+      + `   • <code>[daily-hardcore]</code> — хардкор\n`
+      + `4. Админ проверит → XP начислится\n\n`
+      + `<i>Без тега [daily-*] XP за квест не начислится, только базовый за фидбек.</i>`
+    : `${ce('camera', '\u{1F4F8}')} <b>How to submit:</b>\n`
+      + `1. Complete the task\n`
+      + `2. Send <code>/feedback</code> with a screenshot\n`
+      + `3. Include the type tag in text:\n`
+      + `   • <code>[daily-standard]</code> — standard\n`
+      + `   • <code>[daily-hardcore]</code> — hardcore\n`
+      + `4. Admin reviews → XP credited\n\n`
+      + `<i>Without [daily-*] tag only base feedback XP is credited, not the quest reward.</i>`;
 
   return msg;
 }
@@ -620,14 +638,29 @@ export async function formatTasksMessage(tasks: ZoneTask[], completedIds: string
       const icon = done ? ce('check', '\u2705') : '\u{25CB}';
       const title = ru ? t.title : t.titleEn;
       const xpStr = done ? `<s>+${t.xp}</s>` : `+${t.xp}`;
-      msg += `  ${icon} [L${t.level}] ${escHtml(title)} ${xpStr}\n`;
+      msg += `  ${icon} [L${t.level}] ${escHtml(title)} ${xpStr} <code>${t.id}</code>\n`;
     }
     msg += '\n';
   }
 
   const doneCount = tasks.filter(t => completedIds.includes(t.id)).length;
   const totalXP = tasks.filter(t => completedIds.includes(t.id)).reduce((sum, t) => sum + t.xp, 0);
-  msg += `${ce('coin', '\u{1FA99}')} ${ru ? 'Выполнено' : 'Completed'}: ${doneCount}/${tasks.length} | XP: ${totalXP}`;
+  msg += `${ce('coin', '\u{1FA99}')} ${ru ? 'Выполнено' : 'Completed'}: ${doneCount}/${tasks.length} | XP: ${totalXP}\n\n`;
+
+  msg += `━━━━━━━━━━━━━━━\n`;
+  msg += ru
+    ? `${ce('camera', '\u{1F4F8}')} <b>Как сдать задание:</b>\n`
+      + `1. Выполни задачу (её ID справа — <code>core_1a</code>, <code>defi_2b</code>, ...)\n`
+      + `2. Отправь <code>/feedback</code> со скриншотом\n`
+      + `3. В тексте укажи тег <code>[task:ID]</code> — например <code>[task:core_1a]</code>\n`
+      + `4. Админ проверит и начислит XP за задачу\n\n`
+      + `<i>Автопроверяемые задачи (автовыполнение через действия в боте) — засчитываются без ручной сдачи.</i>`
+    : `${ce('camera', '\u{1F4F8}')} <b>How to submit:</b>\n`
+      + `1. Complete the task (ID on the right — <code>core_1a</code>, <code>defi_2b</code>, ...)\n`
+      + `2. Send <code>/feedback</code> with a screenshot\n`
+      + `3. Include the tag <code>[task:ID]</code> in text — e.g. <code>[task:core_1a]</code>\n`
+      + `4. Admin reviews and credits XP\n\n`
+      + `<i>Auto-verified tasks are credited automatically via in-bot actions.</i>`;
 
   return msg;
 }

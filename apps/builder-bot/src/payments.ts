@@ -561,8 +561,12 @@ export function trackGeneration(userId: number): void {
 //   Weekly top: 1st=30, 2nd=20, 3rd=10
 //   Bug resolved: +5 pts bonus
 
-const FEEDBACK_XP: Record<string, number> = { bug: 5, feature: 5, support: 2, general: 1, critical: 20 };
-const RESOLVE_XP: Record<string, number> = { bug: 10, feature: 15, support: 3, general: 1, critical: 30 };
+// On submit — bug/feature/critical give only 1 XP (proof of submission);
+// real XP lands only AFTER admin verification to prevent spam/low-quality reports.
+// Support/general get the normal amount at submit (they're not "verify-gated").
+const FEEDBACK_XP: Record<string, number> = { bug: 1, feature: 1, support: 2, general: 1, critical: 1 };
+// On verify (admin marks as valid/reproduced) — full reward is credited.
+const RESOLVE_XP: Record<string, number> = { bug: 15, feature: 20, support: 3, general: 1, critical: 50 };
 const RESOLVE_POINTS: Record<string, number> = { bug: 5, feature: 10, support: 2, general: 1, critical: 15 };
 const LEVEL_UP_POINTS: Record<number, number> = { 2: 10, 3: 25, 4: 50, 5: 100, 6: 200 };
 
