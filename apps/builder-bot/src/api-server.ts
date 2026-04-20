@@ -1177,7 +1177,7 @@ export function startApiServer() {
           }
         }
       } catch {}
-      // Notify owner via bot with full details + screenshot
+      // Notify owner via bot with full details + screenshot + approve-task buttons
       try {
         const botToken = process.env.BOT_TOKEN;
         const ownerId = process.env.OWNER_ID;
@@ -1189,16 +1189,49 @@ export function startApiServer() {
           text += `<b>From:</b> @${session?.username || userId}\n`;
           if (agentId) text += `<b>Agent:</b> #${agentId}\n`;
           text += `\n${message.slice(0, 1000)}`;
+
+          // Parse [task:ID] / [daily-*] tags and build approve-keyboard
+          let replyMarkup: any = undefined;
+          try {
+            const { parseTaskTags } = await import('./engagement');
+            const tags = parseTaskTags(message);
+            const rows: any[] = [];
+            if (tags.validTasks.length > 0) {
+              text += `\n\n<b>📋 Detected tasks:</b>`;
+              for (const t of tags.validTasks) {
+                text += `\n  • <code>${t.id}</code> [L${t.level} ${t.zone}] +${t.xp} XP`;
+                rows.push([{ text: `✅ Approve ${t.id} (+${t.xp} XP)`, callback_data: `approve_task:${feedbackId}:${userId}:${t.id}` }]);
+              }
+            }
+            if (tags.invalidTaskIds.length > 0) {
+              text += `\n\n⚠️ <b>Unknown tasks:</b> ${tags.invalidTaskIds.map(x => `<code>${x}</code>`).join(', ')}`;
+            }
+            if (tags.dailyLevel) {
+              const lvl = tags.dailyLevel;
+              text += `\n\n<b>🎯 Daily:</b> ${lvl}`;
+              rows.push([{ text: `✅ Approve daily-${lvl}`, callback_data: `approve_daily:${feedbackId}:${userId}:${lvl}` }]);
+            }
+            if (type === 'bug' || type === 'feature' || type === 'critical') {
+              rows.push([{ text: `🏆 Mark ${type} as resolved`, callback_data: `fb_resolve:${feedbackId}` }]);
+            }
+            if (rows.length > 0) replyMarkup = { inline_keyboard: rows };
+          } catch (e) { /* no tags, no buttons */ }
+
+          const payload: any = { chat_id: ownerId, parse_mode: 'HTML' };
+          if (replyMarkup) payload.reply_markup = replyMarkup;
+
           if (screenshotFileId) {
-            // Send as photo with caption
+            payload.photo = screenshotFileId;
+            payload.caption = text;
             await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ chat_id: ownerId, photo: screenshotFileId, caption: text, parse_mode: 'HTML' }),
+              body: JSON.stringify(payload),
             }).catch(() => {});
           } else {
+            payload.text = text;
             await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ chat_id: ownerId, text, parse_mode: 'HTML' }),
+              body: JSON.stringify(payload),
             }).catch(() => {});
           }
         }
