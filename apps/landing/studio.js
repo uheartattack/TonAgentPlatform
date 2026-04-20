@@ -14466,38 +14466,73 @@ async function loadTesterHub() {
   });
   html += '</div></div>';
 
-  // ── Testing Tasks ──
+  // ── Testing Tasks (real ZONE_TASKS from server + DB-backed completed list) ──
   try {
     var tasksData = await apiRequest('GET', '/api/beta/tasks');
     if (tasksData.ok && tasksData.tasks) {
-      var cats = { core: isRu ? 'Основное' : 'Core', settings: isRu ? 'Настройки' : 'Settings', feedback: isRu ? 'Фидбек' : 'Feedback', advanced: isRu ? 'Продвинутое' : 'Advanced' };
+      var zoneNames = {
+        core:      { ru: 'Ядро платформы',    en: 'Core Platform' },
+        defi:      { ru: 'DeFi',              en: 'DeFi' },
+        gifts:     { ru: 'Подарки & NFT',     en: 'Gifts & NFT' },
+        telegram:  { ru: 'Telegram & UI',     en: 'Telegram & UI' },
+        studio:    { ru: 'Studio & API',      en: 'Studio & API' },
+        community: { ru: 'Комьюнити',         en: 'Community' },
+      };
+      var zoneIcons = { core: '🔧', defi: '💱', gifts: '🎁', telegram: '📱', studio: '🎨', community: '👥' };
+      var completed = (tasksData.completed || []);
+      var doneCount = tasksData.tasks.filter(function(t){ return completed.indexOf(t.id) >= 0; }).length;
+      var totalXp = tasksData.tasks.filter(function(t){ return completed.indexOf(t.id) >= 0; }).reduce(function(s,t){ return s + (t.xp||0); }, 0);
+
       html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:20px">' +
-        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">' +
-          '<div style="font-size:.85rem;font-weight:600;color:var(--text-primary)">' + (isRu ? 'Задания' : 'Testing Tasks') + '</div>' +
-          '<div style="font-size:.68rem;color:var(--text-muted)">' + tasksData.tasks.length + ' ' + (isRu ? 'заданий' : 'tasks') + '</div>' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:6px">' +
+          '<div style="font-size:.95rem;font-weight:700;color:var(--text-primary)">🧪 ' + (isRu ? 'Задания тестирования' : 'Testing Tasks') + '</div>' +
+          '<div style="font-size:.7rem;color:var(--text-muted)">' +
+            (isRu ? 'Выполнено' : 'Done') + ' <b style="color:var(--primary)">' + doneCount + '/' + tasksData.tasks.length + '</b>' +
+            ' · <b style="color:#fbbf24">+' + totalXp + ' XP</b>' +
+          '</div>' +
+        '</div>' +
+        '<div style="font-size:.7rem;color:var(--text-muted);margin-bottom:14px;padding:8px 12px;background:var(--bg-secondary);border-radius:8px;line-height:1.5">' +
+          '💡 ' + (isRu
+            ? 'Клик по заданию — инструкция как сдать. <b>Галочки показывают реальный статус из БД</b> — проверенный админом.'
+            : 'Click a task — you see how to submit. <b>Checkmarks reflect real DB status</b> — after admin verification.') +
         '</div>';
-      var catOrder = ['core', 'settings', 'feedback', 'advanced'];
-      catOrder.forEach(function(cat) {
-        var catTasks = tasksData.tasks.filter(function(t) { return t.category === cat; });
-        if (!catTasks.length) return;
-        html += '<div style="font-size:.7rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin:10px 0 6px;padding-left:4px">' + (cats[cat] || cat) + '</div>';
-        catTasks.forEach(function(t) {
-          var done = localStorage.getItem('task_done_' + t.id) === '1';
-          html += '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;background:var(--bg-secondary);margin-bottom:4px;cursor:pointer;transition:all .15s;opacity:' + (done ? '0.5' : '1') + '" onclick="toggleTask(\'' + t.id + '\',this)" onmouseenter="this.style.background=\'var(--accent-dim)\'" onmouseleave="this.style.background=\'var(--bg-secondary)\'">' +
-            '<div style="width:20px;height:20px;border-radius:6px;border:2px solid ' + (done ? 'var(--primary)' : 'var(--border)') + ';background:' + (done ? 'var(--primary)' : 'transparent') + ';display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s">' +
+
+      // Group tasks by zone (real 6 zones from engagement.ts)
+      var grouped = {};
+      tasksData.tasks.forEach(function(t){
+        if (!grouped[t.zone]) grouped[t.zone] = [];
+        grouped[t.zone].push(t);
+      });
+      var zoneOrder = ['core', 'defi', 'gifts', 'telegram', 'studio', 'community'];
+      zoneOrder.forEach(function(zone){
+        if (!grouped[zone] || !grouped[zone].length) return;
+        var zn = zoneNames[zone] || { ru: zone, en: zone };
+        var icon = zoneIcons[zone] || '📌';
+        html += '<div style="font-size:.72rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin:14px 0 6px;padding-left:4px">' +
+          icon + ' ' + (isRu ? zn.ru : zn.en) + '</div>';
+        // Sort tasks by level within zone
+        grouped[zone].sort(function(a,b){ return (a.level||1) - (b.level||1); });
+        grouped[zone].forEach(function(t){
+          var done = completed.indexOf(t.id) >= 0;
+          var autoCheck = !!t.autoCheck;
+          var lvlBadge = '<span style="display:inline-block;padding:1px 6px;border-radius:4px;background:rgba(139,92,246,0.12);color:#a78bfa;font-size:.6rem;font-weight:600;margin-right:6px">L' + (t.level||1) + '</span>';
+          var autoBadge = autoCheck ? '<span style="display:inline-block;padding:1px 5px;border-radius:4px;background:rgba(16,185,129,0.12);color:#10b981;font-size:.55rem;font-weight:600;margin-left:4px" title="' + (isRu ? 'авто-проверка' : 'auto-check') + '">AUTO</span>' : '';
+          var title = escHtml(isRu ? t.title : (t.titleEn || t.title));
+          html += '<div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;background:var(--bg-secondary);margin-bottom:4px;cursor:pointer;transition:all .15s;opacity:' + (done ? '0.55' : '1') + '" onclick="toggleTask(\'' + t.id + '\',this)" onmouseenter="this.style.background=\'var(--accent-dim)\'" onmouseleave="this.style.background=\'var(--bg-secondary)\'">' +
+            '<div style="width:20px;height:20px;border-radius:6px;border:2px solid ' + (done ? '#10b981' : 'var(--border)') + ';background:' + (done ? '#10b981' : 'transparent') + ';display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s">' +
               (done ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>' : '') +
             '</div>' +
             '<div style="flex:1;min-width:0">' +
-              '<div style="font-size:.8rem;font-weight:500;color:var(--text-primary);' + (done ? 'text-decoration:line-through' : '') + '">' + escHtml(isRu ? t.title.ru : t.title.en) + '</div>' +
-              '<div style="font-size:.65rem;color:var(--text-muted)">' + escHtml(isRu ? t.desc.ru : t.desc.en) + '</div>' +
+              '<div style="font-size:.8rem;font-weight:500;color:var(--text-primary);' + (done ? 'text-decoration:line-through' : '') + '">' + lvlBadge + title + autoBadge + '</div>' +
+              '<div style="font-size:.6rem;color:var(--text-muted);font-family:monospace;margin-top:2px">' + t.id + '</div>' +
             '</div>' +
-            '<div style="font-size:.68rem;color:var(--primary);font-weight:600;flex-shrink:0">+' + t.pts + '</div>' +
+            '<div style="font-size:.72rem;color:#fbbf24;font-weight:700;flex-shrink:0">+' + t.xp + ' XP</div>' +
           '</div>';
         });
       });
       html += '</div>';
     }
-  } catch {}
+  } catch (e) { console.warn('[tasks]', e); }
 
   // ── Activity summary ──
   html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:20px">' +
