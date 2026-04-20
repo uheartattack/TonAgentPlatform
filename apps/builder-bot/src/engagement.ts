@@ -1644,6 +1644,109 @@ export async function getCompletedTasks(userId: number): Promise<string[]> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// TASK TAG PARSER — looks for [task:ID] and [daily-standard|hardcore] in feedback
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface TagMatch {
+  taskIds: string[];            // raw task IDs found in text
+  validTasks: ZoneTask[];       // task IDs that match real ZONE_TASKS
+  invalidTaskIds: string[];     // task IDs in text but not in ZONE_TASKS
+  dailyLevel?: 'standard' | 'hardcore';
+}
+
+export function parseTaskTags(text: string): TagMatch {
+  if (!text) return { taskIds: [], validTasks: [], invalidTaskIds: [] };
+
+  const taskIds = new Set<string>();
+  const taskRegex = /\[task[:\s]+([a-z0-9_-]+)\]/gi;
+  let m: RegExpExecArray | null;
+  while ((m = taskRegex.exec(text)) !== null) {
+    taskIds.add(m[1].toLowerCase());
+  }
+
+  const validTasks: ZoneTask[] = [];
+  const invalidTaskIds: string[] = [];
+  for (const id of taskIds) {
+    const task = ZONE_TASKS.find(t => t.id === id);
+    if (task) validTasks.push(task);
+    else invalidTaskIds.push(id);
+  }
+
+  let dailyLevel: 'standard' | 'hardcore' | undefined;
+  if (/\[daily[-_\s]?hardcore\]/i.test(text)) dailyLevel = 'hardcore';
+  else if (/\[daily[-_\s]?standard\]/i.test(text)) dailyLevel = 'standard';
+
+  return {
+    taskIds: [...taskIds],
+    validTasks,
+    invalidTaskIds,
+    dailyLevel,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// APPROVE task / daily from admin feedback — awards XP + marks completed
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export async function approveTaskFromFeedback(
+  userId: number,
+  taskId: string,
+): Promise<{ ok: boolean; xp: number; reason?: string; task?: ZoneTask }> {
+  const task = ZONE_TASKS.find(t => t.id === taskId);
+  if (!task) return { ok: false, xp: 0, reason: 'Task not found in ZONE_TASKS' };
+
+  // Check if already completed
+  const completed = await getCompletedTasks(userId);
+  if (completed.includes(taskId)) {
+    return { ok: false, xp: 0, reason: 'Already completed', task };
+  }
+
+  const marked = await markTaskCompleted(userId, taskId);
+  if (!marked) return { ok: false, xp: 0, reason: 'markTaskCompleted failed', task };
+
+  // Award XP
+  const pool = getPool();
+  try {
+    await pool.query(
+      `UPDATE builder_bot.beta_testers SET xp = COALESCE(xp, 0) + $2, last_active_at = NOW() WHERE user_id = $1`,
+      [userId, task.xp],
+    );
+  } catch (e) {
+    return { ok: false, xp: 0, reason: 'DB update failed', task };
+  }
+
+  return { ok: true, xp: task.xp, task };
+}
+
+export async function approveDailyFromFeedback(
+  userId: number,
+  level: 'standard' | 'hardcore',
+  isoDate?: string,
+): Promise<{ ok: boolean; xp: number; reason?: string; questTitle?: string }> {
+  const quest = getDailyQuest();
+  const xp = level === 'hardcore' ? quest.hardcore.xp : quest.standard.xp;
+  const title = level === 'hardcore' ? quest.hardcore.title : quest.standard.title;
+  const dateStr = isoDate || new Date().toISOString().slice(0, 10);
+  const dailyTaskId = `daily_${dateStr}_${level}`;
+
+  // Prevent double-awarding — use markTaskCompleted with synthetic id
+  const marked = await markTaskCompleted(userId, dailyTaskId);
+  if (!marked) return { ok: false, xp: 0, reason: 'Already awarded for this day', questTitle: title };
+
+  const pool = getPool();
+  try {
+    await pool.query(
+      `UPDATE builder_bot.beta_testers SET xp = COALESCE(xp, 0) + $2, last_active_at = NOW() WHERE user_id = $1`,
+      [userId, xp],
+    );
+  } catch {
+    return { ok: false, xp: 0, reason: 'DB update failed', questTitle: title };
+  }
+
+  return { ok: true, xp, questTitle: title };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // UTILITY: Update streak
 // ═══════════════════════════════════════════════════════════════════════════════
 

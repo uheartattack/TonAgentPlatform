@@ -3553,6 +3553,163 @@ bot.command('mentor', async (ctx) => {
   } catch {}
 });
 
+// ══════════════════════════════════════════════════════════════════════════
+// Admin approve-task callbacks — triggered from feedback notify inline buttons
+// Format: approve_task:FEEDBACK_ID:USER_ID:TASK_ID
+// Format: approve_daily:FEEDBACK_ID:USER_ID:standard|hardcore
+// Format: fb_resolve:FEEDBACK_ID  (marks as resolved + awards RESOLVE_XP)
+// ══════════════════════════════════════════════════════════════════════════
+
+bot.action(/^approve_task:(\d+):(\d+):([a-z0-9_-]+)$/, async (ctx) => {
+  try {
+    const adminId = ctx.from!.id;
+    const { isPlatformAdmin } = require('./payments');
+    if (!isPlatformAdmin(adminId)) { await ctx.answerCbQuery('Admin only'); return; }
+
+    const feedbackId = parseInt(ctx.match![1]);
+    const userId = parseInt(ctx.match![2]);
+    const taskId = ctx.match![3];
+
+    const { approveTaskFromFeedback } = require('./engagement');
+    const result = await approveTaskFromFeedback(userId, taskId);
+
+    if (!result.ok) {
+      await ctx.answerCbQuery(`⚠️ ${result.reason || 'Failed'}`, { show_alert: true });
+      return;
+    }
+
+    await ctx.answerCbQuery(`✅ +${result.xp} XP awarded to user ${userId} for ${taskId}`);
+
+    // DM the user
+    try {
+      const zoneLabels: any = { core: 'Core', defi: 'DeFi', gifts: 'Gifts & NFT', telegram: 'Telegram', studio: 'Studio', community: 'Community' };
+      const zone = zoneLabels[result.task.zone] || result.task.zone;
+      await bot.telegram.sendMessage(userId,
+        `🏆 <b>Задача засчитана!</b>\n\n` +
+        `📋 <code>${taskId}</code>\n` +
+        `🎯 ${result.task.title}\n` +
+        `📁 ${zone} · L${result.task.level}\n` +
+        `💰 <b>+${result.xp} XP</b>\n\n` +
+        `Проверено админом. XP зачислен. Продолжай в том же духе! 🚀`,
+        { parse_mode: 'HTML' });
+    } catch {}
+
+    // Update the original admin message with strikethrough / checkmark
+    try {
+      const msg = ctx.update.callback_query.message as any;
+      const original = msg.caption || msg.text || '';
+      const updated = original + `\n\n✅ <b>Approved:</b> ${taskId} (+${result.xp} XP)`;
+      const editFn = msg.caption ? 'editMessageCaption' : 'editMessageText';
+      await (ctx as any)[editFn](updated, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [] } });
+    } catch {}
+
+    // Mark feedback status
+    try {
+      const { pool } = require('./db');
+      await pool.query(
+        `UPDATE builder_bot.feedback SET status = 'resolved', resolved_at = NOW() WHERE id = $1`,
+        [feedbackId]);
+    } catch {}
+  } catch (e: any) {
+    console.error('[approve_task]', e?.message);
+    await ctx.answerCbQuery(`Error: ${e?.message || 'unknown'}`, { show_alert: true });
+  }
+});
+
+bot.action(/^approve_daily:(\d+):(\d+):(standard|hardcore)$/, async (ctx) => {
+  try {
+    const adminId = ctx.from!.id;
+    const { isPlatformAdmin } = require('./payments');
+    if (!isPlatformAdmin(adminId)) { await ctx.answerCbQuery('Admin only'); return; }
+
+    const feedbackId = parseInt(ctx.match![1]);
+    const userId = parseInt(ctx.match![2]);
+    const level = ctx.match![3] as 'standard' | 'hardcore';
+
+    const { approveDailyFromFeedback } = require('./engagement');
+    const result = await approveDailyFromFeedback(userId, level);
+
+    if (!result.ok) {
+      await ctx.answerCbQuery(`⚠️ ${result.reason || 'Failed'}`, { show_alert: true });
+      return;
+    }
+
+    await ctx.answerCbQuery(`✅ +${result.xp} XP for daily-${level}`);
+
+    try {
+      await bot.telegram.sendMessage(userId,
+        `🎯 <b>Daily квест засчитан!</b>\n\n` +
+        `Уровень: <b>${level === 'hardcore' ? '🔥 Хардкор' : '⭐ Стандарт'}</b>\n` +
+        `💰 <b>+${result.xp} XP</b>\n\n` +
+        `Проверено админом. Спасибо за выполнение! 🚀`,
+        { parse_mode: 'HTML' });
+    } catch {}
+
+    try {
+      const msg = ctx.update.callback_query.message as any;
+      const original = msg.caption || msg.text || '';
+      const updated = original + `\n\n✅ <b>Approved:</b> daily-${level} (+${result.xp} XP)`;
+      const editFn = msg.caption ? 'editMessageCaption' : 'editMessageText';
+      await (ctx as any)[editFn](updated, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [] } });
+    } catch {}
+
+    try {
+      const { pool } = require('./db');
+      await pool.query(
+        `UPDATE builder_bot.feedback SET status = 'resolved', resolved_at = NOW() WHERE id = $1`,
+        [feedbackId]);
+    } catch {}
+  } catch (e: any) {
+    console.error('[approve_daily]', e?.message);
+    await ctx.answerCbQuery(`Error: ${e?.message || 'unknown'}`, { show_alert: true });
+  }
+});
+
+bot.action(/^fb_resolve:(\d+)$/, async (ctx) => {
+  try {
+    const adminId = ctx.from!.id;
+    const { isPlatformAdmin } = require('./payments');
+    if (!isPlatformAdmin(adminId)) { await ctx.answerCbQuery('Admin only'); return; }
+
+    const feedbackId = parseInt(ctx.match![1]);
+    const { pool } = require('./db');
+    const fb = await pool.query(
+      `SELECT user_id, type, status FROM builder_bot.feedback WHERE id = $1`,
+      [feedbackId]);
+    if (!fb.rows[0]) { await ctx.answerCbQuery('Feedback not found'); return; }
+    if (fb.rows[0].status === 'resolved') { await ctx.answerCbQuery('Already resolved'); return; }
+
+    const { awardFeedbackPoints, isBetaTester } = require('./payments');
+    let xpMsg = '';
+    if (isBetaTester(fb.rows[0].user_id)) {
+      const reward = await awardFeedbackPoints(fb.rows[0].user_id, fb.rows[0].type, true);
+      xpMsg = `+${reward.xp} XP`;
+    }
+
+    await pool.query(
+      `UPDATE builder_bot.feedback SET status = 'resolved', resolved_at = NOW() WHERE id = $1`,
+      [feedbackId]);
+
+    await ctx.answerCbQuery(`✅ Resolved ${xpMsg}`);
+
+    try {
+      await bot.telegram.sendMessage(fb.rows[0].user_id,
+        `🏆 Твой ${fb.rows[0].type} подтверждён админом! ${xpMsg}`);
+    } catch {}
+
+    try {
+      const msg = ctx.update.callback_query.message as any;
+      const original = msg.caption || msg.text || '';
+      const updated = original + `\n\n✅ <b>Resolved</b> ${xpMsg}`;
+      const editFn = msg.caption ? 'editMessageCaption' : 'editMessageText';
+      await (ctx as any)[editFn](updated, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [] } });
+    } catch {}
+  } catch (e: any) {
+    console.error('[fb_resolve]', e?.message);
+    await ctx.answerCbQuery(`Error: ${e?.message || 'unknown'}`, { show_alert: true });
+  }
+});
+
 // ── /verify — verify a bug report ──
 bot.command('verify', async (ctx) => {
   const userId = ctx.from!.id;
