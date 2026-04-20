@@ -23,7 +23,7 @@
 
 <br>
 
-[**🤖 Запустить бота**](https://t.me/TonAgentPlatformBot) &nbsp;·&nbsp; [**🎨 Открыть Studio**](https://tonagentplatform.com/studio.html) &nbsp;·&nbsp; [**🏆 Tester Hub**](https://tonagentplatform.com/tester-hub.html) &nbsp;·&nbsp; [**👑 Founders**](https://tonagentplatform.com/founders.html) &nbsp;·&nbsp; [**🌐 Сайт**](https://tonagentplatform.com) &nbsp;·&nbsp; [**📢 Канал**](https://t.me/TONAgentPlatform)
+[**🤖 Запустить бота**](https://t.me/TonAgentPlatformBot) &nbsp;·&nbsp; [**🎨 Открыть Studio**](https://tonagentplatform.com/studio.html) &nbsp;·&nbsp; [**🌐 Сайт**](https://tonagentplatform.com) &nbsp;·&nbsp; [**📢 Канал**](https://t.me/TONAgentPlatform)
 
 <br>
 
@@ -86,7 +86,7 @@ Each agent gets its own TON wallet, can trade gifts, interact with DeFi, operate
 | 🔬 | **Agent Evals** | Авто-оценка качества, алерты деградации |
 | 📚 | **База знаний** | Загрузка документов, индексация, FTS-поиск |
 | 🔐 | **Безопасность** | Sandbox, SSRF, anti-loop, op-lock |
-| 🏆 | **Tester Hub** | 10% выручки → тестерам на 2 года |
+| 🏆 | **Beta Program** | Приватная для избранных — `/beta` в боте |
 | 🎟️ | **Реферальная система** | +20 XP за друга + 10% его трат навсегда |
 
 </td>
@@ -106,7 +106,7 @@ Each agent gets its own TON wallet, can trade gifts, interact with DeFi, operate
 | 🔬 | **Agent Evals** | Auto quality scoring, degradation alerts |
 | 📚 | **Knowledge Base** | Upload docs, chunk & index, FTS search |
 | 🔐 | **Security** | Sandbox, SSRF, anti-loop, op-lock |
-| 🏆 | **Tester Hub** | 10% revenue → testers for 2 years |
+| 🏆 | **Beta Program** | Invite-only — `/beta` in bot |
 | 🎟️ | **Referral System** | +20 XP per friend + 10% of their spend forever |
 
 </td>
