@@ -1721,6 +1721,95 @@ export function startApiServer() {
   });
 
   // ═══════════════════════════════════════════════════════════════════════
+  // Agent Export / Import / Share API
+  // ═══════════════════════════════════════════════════════════════════════
+
+  // GET /api/agents/:id/export?format=json|md — download agent as file
+  app.get('/api/agents/:id/export', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const agentId = parseInt(req.params.id);
+      if (!Number.isFinite(agentId)) { res.status(400).json({ error: 'Invalid agent id' }); return; }
+      const format = (String(req.query.format || 'json').toLowerCase() === 'md') ? 'md' : 'json';
+      const { exportAgent } = await import('./services/agent-export');
+      const result = await exportAgent(agentId, userId, format as 'json' | 'md');
+      if (!result.ok) { res.status(result.error === 'Not your agent' ? 403 : 404).json({ error: result.error }); return; }
+      const safeName = String(result.payload.agent.name).replace(/[^a-z0-9-_]/gi, '_').slice(0, 40) || 'agent';
+      if (format === 'md') {
+        res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="${safeName}.md"`);
+        res.send(result.content);
+      } else {
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Disposition', `attachment; filename="${safeName}.json"`);
+        res.send(result.content);
+      }
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/agents/:id/share — create public share link
+  app.post('/api/agents/:id/share', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const agentId = parseInt(req.params.id);
+      if (!Number.isFinite(agentId)) { res.status(400).json({ error: 'Invalid agent id' }); return; }
+      const { expiresIn, isPublic } = req.body || {};
+      const { createShareLink } = await import('./services/agent-export');
+      const result = await createShareLink(agentId, userId, {
+        expiresIn: ['day', 'week', 'month', 'never'].includes(expiresIn) ? expiresIn : undefined,
+        isPublic: isPublic !== false,
+      });
+      if (!result.ok) { res.status(400).json({ error: result.error }); return; }
+      res.json({ ok: true, shareId: result.shareId, url: result.url });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/share/:shareId — PUBLIC preview endpoint (no auth)
+  app.get('/api/share/:shareId', async (req: Request, res: Response) => {
+    try {
+      const shareId = String(req.params.shareId || '').slice(0, 64);
+      if (!shareId) { res.status(400).json({ error: 'Invalid share id' }); return; }
+      const { getShare } = await import('./services/agent-export');
+      const result = await getShare(shareId);
+      if (!result.ok) { res.status(404).json({ error: result.error }); return; }
+      // Strip potentially sensitive fields from public preview
+      res.json({
+        ok: true,
+        agent: {
+          name: result.payload.agent.name,
+          description: result.payload.agent.description,
+          trigger_type: result.payload.agent.trigger_type,
+          capabilities: result.payload.capabilities,
+          requiredKeys: result.payload.requiredKeys,
+          exportedAt: result.payload.exportedAt,
+        },
+        viewCount: result.viewCount,
+        shareId,
+      });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/agents/import-shared — import from JSON payload or share id (v2)
+  // (name chosen to avoid collision with existing /api/agents/import file-upload route)
+  app.post('/api/agents/import-shared', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { payload, shareId, overrideConfig } = req.body || {};
+      const { importAgent, importFromShare } = await import('./services/agent-export');
+      let result;
+      if (shareId) {
+        result = await importFromShare(String(shareId).slice(0, 64), userId, overrideConfig);
+      } else if (payload) {
+        result = await importAgent(userId, payload, overrideConfig);
+      } else {
+        res.status(400).json({ error: 'Provide either shareId or payload' }); return;
+      }
+      if (!result.ok) { res.status(400).json({ error: result.error }); return; }
+      res.json({ ok: true, agentId: result.agentId });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
   // Agent Evaluations API — LLM-as-a-Judge quality scores
   // ═══════════════════════════════════════════════════════════════════════
 
