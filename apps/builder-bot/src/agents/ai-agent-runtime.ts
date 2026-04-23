@@ -9407,6 +9407,32 @@ If web_search returns nothing useful → say "не смог найти акту�
     finalContent = finalContent.replace(/\n{3,}/g, '\n\n').trim();
   }
 
+  // ── Async evaluation (LLM-as-a-judge) — sampled, non-blocking ──
+  // Fires in background after response is sent. Never blocks user.
+  if (finalContent && msgs.length > 0) {
+    try {
+      const { shouldEvaluate, evaluateResponse } = await import('../services/agent-evaluator');
+      // Allow per-agent sample rate override
+      const sampleRate = typeof params.config?.eval_sample_rate === 'number'
+        ? Math.max(0, Math.min(1, params.config.eval_sample_rate)) : 0.10;
+      if (sampleRate > 0 && shouldEvaluate(sampleRate)) {
+        const userMsg = msgs[msgs.length - 1] || msgs[0] || '';
+        const toolNames = (params as any).__toolNamesUsed as string[] | undefined;
+        // Fire-and-forget
+        evaluateResponse({
+          agentId: params.agentId,
+          userId: params.userId,
+          runId: (params.context as any)?.runId,
+          userMessage: userMsg,
+          agentResponse: finalContent,
+          toolCalls: toolNames,
+          judgeClient: ai,
+          judgeModel: defaultModel,
+        }).catch(() => {});
+      }
+    } catch {}
+  }
+
   return { finalResponse: finalContent, toolCallCount: totalToolCalls };
 }
 

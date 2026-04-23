@@ -1720,6 +1720,48 @@ export function startApiServer() {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // Agent Evaluations API — LLM-as-a-Judge quality scores
+  // ═══════════════════════════════════════════════════════════════════════
+
+  // GET /api/agents/:id/evaluations — recent evaluations
+  app.get('/api/agents/:id/evaluations', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const agentId = parseInt(req.params.id);
+      if (!Number.isFinite(agentId)) { res.status(400).json({ error: 'Invalid agent id' }); return; }
+      const own = await pool.query(
+        `SELECT 1 FROM builder_bot.agents WHERE id = $1 AND user_id = $2`,
+        [agentId, userId],
+      );
+      if (!own.rows[0]) { res.status(403).json({ error: 'Not your agent' }); return; }
+      const limit = Math.min(parseInt(String(req.query.limit || '50')) || 50, 200);
+      const { getEvaluations } = await import('./services/agent-evaluator');
+      const evaluations = await getEvaluations(agentId, limit);
+      res.json({ ok: true, evaluations });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/agents/:id/quality-stats — aggregated quality metrics + 7d trend
+  app.get('/api/agents/:id/quality-stats', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const agentId = parseInt(req.params.id);
+      if (!Number.isFinite(agentId)) { res.status(400).json({ error: 'Invalid agent id' }); return; }
+      const own = await pool.query(
+        `SELECT 1 FROM builder_bot.agents WHERE id = $1 AND user_id = $2`,
+        [agentId, userId],
+      );
+      if (!own.rows[0]) { res.status(403).json({ error: 'Not your agent' }); return; }
+      const { getQualityStats, checkDegradation } = await import('./services/agent-evaluator');
+      const [stats, degradation] = await Promise.all([
+        getQualityStats(agentId),
+        checkDegradation(agentId),
+      ]);
+      res.json({ ok: true, stats, degradation });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // GET /api/agents/:id/traces/:runId — full span list for a run
   app.get('/api/agents/:id/traces/:runId', requireAuth, async (req: Request, res: Response) => {
     try {
