@@ -7564,6 +7564,18 @@ ${roleBehavior}
     proactiveBlock = await buildProactiveContext(params.agentId);
   } catch {}
 
+  // ── Structured 3-layer memory (short-term / user facts / system facts) ──
+  // "Помнит что только что сделали, но не путается" — short-term living only within session,
+  // user facts stay stable per-user, system facts are agent's learned knowledge base.
+  let structuredMemoryBlock = '';
+  try {
+    const { buildStructuredMemory, formatStructuredMemoryForPrompt } = await import('../services/structured-memory');
+    const sm = await buildStructuredMemory(params.agentId, params.userId);
+    structuredMemoryBlock = formatStructuredMemoryForPrompt(sm);
+  } catch (e: any) {
+    console.warn(`[AI runtime] structured memory failed for #${params.agentId}:`, e?.message);
+  }
+
   // ── Self-evolution check (every ~50 interactions) ──
   try {
     const { checkEvolutionNeeded, evolvePrompt } = await import('../services/agent-memory');
@@ -7611,7 +7623,7 @@ ${roleBehavior}
   const contextMsg = `[Контекст агента]
 Текущая дата: ${_dateStr}, ${_timeStr} (МСК)
 Год: ${_now.getFullYear()}${identityBlock}${walletBlock}${memoriesBlock}${lessonsBlock}${goalsBlock}${eventsBlock}${statsBlock}
-Конфиг: ${configSummary || '(пусто)'}${pluginHint}${interAgentHint}${memoryDigest}${chatContextBlock}${userContextBlock}${proactiveBlock}${_triggerContext}
+Конфиг: ${configSummary || '(пусто)'}${pluginHint}${interAgentHint}${memoryDigest}${chatContextBlock}${userContextBlock}${proactiveBlock}${structuredMemoryBlock}${_triggerContext}
 ${GIFT_SYSTEM_KNOWLEDGE}${modeHint}
 ⚠️ HUMAN-IN-THE-LOOP: Опасные действия (send_ton, buy_*, list_gift_for_sale, ton_send_boc) требуют подтверждения пользователя. Если отклонено — НЕ ПОВТОРЯЙ.
 
