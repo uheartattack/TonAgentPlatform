@@ -166,6 +166,19 @@ async function main() {
     console.log('🤖 Self-improvement system active');
   }
 
+  // Eager-create agent observability tables so every new agent gets them ready
+  try {
+    const { getSystemFacts } = await import('./services/structured-memory');
+    await getSystemFacts(0, 1);  // touch → ensureSystemFactsTable
+    const { listRecentRuns } = await import('./services/agent-traces');
+    await listRecentRuns(0, 1);  // touch → ensureTable (traces)
+    const { getEvaluations } = await import('./services/agent-evaluator');
+    await getEvaluations(0, 1);  // touch → ensureTable (evaluations)
+    console.log('📊 Observability tables ready (traces + evaluations + system_facts)');
+  } catch (e: any) {
+    console.warn('[Observability] eager init failed:', e?.message);
+  }
+
   console.log();
   console.log('🎯 Platform ready!');
   console.log();
