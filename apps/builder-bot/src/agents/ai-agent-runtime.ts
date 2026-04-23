@@ -1263,21 +1263,52 @@ async function callWithFallback(
   ai: OpenAI,
   reqBody: any,
   provider: string,
+  tracing?: { agentId: number; runId: string },
 ): Promise<any> {
   const originalModel = reqBody.model;
   const fallbacks = MODEL_FALLBACKS[provider] || [];
 
+  // Wrap in trace span if tracing context provided
+  let _spanId: string | undefined;
+  if (tracing) {
+    const { startSpan } = await import('../services/agent-traces');
+    const msgCount = Array.isArray(reqBody.messages) ? reqBody.messages.length : 0;
+    const toolCount = Array.isArray(reqBody.tools) ? reqBody.tools.length : 0;
+    _spanId = startSpan(tracing.agentId, tracing.runId, 'ai', reqBody.model || provider, {
+      args: { provider, model: reqBody.model, msgCount, toolCount },
+    });
+  }
+  const _finishSpan = async (ok: boolean, result?: any, error?: string) => {
+    if (!_spanId) return;
+    const { endSpan } = await import('../services/agent-traces');
+    const usage = result?.usage;
+    endSpan(_spanId, {
+      ok,
+      error,
+      tokensIn: usage?.prompt_tokens,
+      tokensOut: usage?.completion_tokens,
+      model: result?.model || reqBody.model,
+      result: result?.choices?.[0]?.message?.content ? String(result.choices[0].message.content).slice(0, 200) : undefined,
+    });
+  };
+
   try {
-    return await ai.chat.completions.create(reqBody);
+    const r = await ai.chat.completions.create(reqBody);
+    await _finishSpan(true, r);
+    return r;
   } catch (e: any) {
     // Credential refresh on 401 (teleton-agent pattern) — retry once
     const is401 = e.status === 401 || e.message?.includes('Unauthorized') || e.message?.includes('invalid_api_key');
     if (is401) {
       console.warn(`[AI runtime] 401 auth error for ${provider}, retrying once...`);
-      try { return await ai.chat.completions.create(reqBody); } catch { /* fall through */ }
+      try {
+        const r = await ai.chat.completions.create(reqBody);
+        await _finishSpan(true, r);
+        return r;
+      } catch { /* fall through */ }
     }
     const is404 = e.status === 404 || e.message?.includes('model_not_found') || e.message?.includes('not found');
-    if (!is404 || fallbacks.length === 0) throw e;
+    if (!is404 || fallbacks.length === 0) { await _finishSpan(false, undefined, e?.message); throw e; }
 
     // Try fallbacks
     for (const fb of fallbacks) {
@@ -1285,14 +1316,18 @@ async function callWithFallback(
       try {
         console.log(`[AI runtime] Model ${originalModel} failed, trying fallback: ${fb}`);
         reqBody.model = fb;
-        return await ai.chat.completions.create(reqBody);
+        const r = await ai.chat.completions.create(reqBody);
+        await _finishSpan(true, r);
+        return r;
       } catch (fbErr: any) {
         if (fbErr.status === 404 || fbErr.message?.includes('not found')) continue;
+        await _finishSpan(false, undefined, fbErr?.message);
         throw fbErr; // non-404 error, propagate
       }
     }
     // All fallbacks failed, throw original error
     reqBody.model = originalModel;
+    await _finishSpan(false, undefined, e?.message);
     throw e;
   }
 }
@@ -2115,6 +2150,22 @@ function validateStateKey(raw: any): { ok: true; value: string } | { ok: false; 
 }
 
 export async function executeTool(
+  name: string,
+  args: Record<string, any>,
+  params: AIAgentTickParams,
+): Promise<any> {
+  // Trace wrapper — only instruments when params.context.runId is present
+  const _runId: string | undefined = (params as any)?.context?.runId;
+  if (_runId) {
+    const { withSpan } = await import('../services/agent-traces');
+    return withSpan(params.agentId, _runId, 'tool', name, async () => {
+      return _executeToolInner(name, args, params);
+    }, args);
+  }
+  return _executeToolInner(name, args, params);
+}
+
+async function _executeToolInner(
   name: string,
   args: Record<string, any>,
   params: AIAgentTickParams,
@@ -6949,6 +7000,15 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
   toolCallCount: number;
   error?: string;
 }> {
+  // Trace: start a new run for this tick. All tool calls + AI calls within
+  // this tick will be grouped under this runId for Studio timeline view.
+  try {
+    const { startRun } = await import('../services/agent-traces');
+    const runId = startRun(params.agentId);
+    if (!params.context) params.context = {};
+    (params.context as any).runId = runId;
+  } catch {}
+
   let ai: OpenAI;
   let defaultModel: string;
   let providerCfg: ProviderCfg = resolveProvider('');
@@ -8507,7 +8567,8 @@ If web_search returns nothing useful → say "не смог найти акту�
             reqBody.betas = ['token-efficient-tools-2026-03-28'];
           }
         }
-        response = await callWithFallback(ai, reqBody, providerName);
+        response = await callWithFallback(ai, reqBody, providerName,
+          (params.context as any)?.runId ? { agentId: params.agentId, runId: (params.context as any).runId } : undefined);
         lastErr = null;
         cbRecordSuccess(params.agentId); // circuit breaker: reset on success
         break; // success

@@ -1697,6 +1697,49 @@ export function startApiServer() {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // Agent Traces API — timeline of agent execution (tool calls + AI calls)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  // GET /api/agents/:id/traces — list recent runs with stats
+  app.get('/api/agents/:id/traces', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const agentId = parseInt(req.params.id);
+      if (!Number.isFinite(agentId)) { res.status(400).json({ error: 'Invalid agent id' }); return; }
+      // Authz: only owner or shared
+      const own = await pool.query(
+        `SELECT 1 FROM builder_bot.agents WHERE id = $1 AND user_id = $2`,
+        [agentId, userId],
+      );
+      if (!own.rows[0]) { res.status(403).json({ error: 'Not your agent' }); return; }
+      const limit = Math.min(parseInt(String(req.query.limit || '20')) || 20, 100);
+      const { listRecentRuns } = await import('./services/agent-traces');
+      const runs = await listRecentRuns(agentId, limit);
+      res.json({ ok: true, runs });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/agents/:id/traces/:runId — full span list for a run
+  app.get('/api/agents/:id/traces/:runId', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const agentId = parseInt(req.params.id);
+      const runId = String(req.params.runId || '');
+      if (!Number.isFinite(agentId) || !runId) { res.status(400).json({ error: 'Invalid params' }); return; }
+      const own = await pool.query(
+        `SELECT 1 FROM builder_bot.agents WHERE id = $1 AND user_id = $2`,
+        [agentId, userId],
+      );
+      if (!own.rows[0]) { res.status(403).json({ error: 'Not your agent' }); return; }
+      const { getRunSpans } = await import('./services/agent-traces');
+      const spans = await getRunSpans(runId);
+      // Sanity: all spans must belong to this agent
+      const safe = spans.filter(s => s.agentId === agentId);
+      res.json({ ok: true, spans: safe });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // ── GET /api/admin/bugs — platform bugs dashboard (admin only) ──
   app.get('/api/admin/bugs', requireAuth, async (req: Request, res: Response) => {
     try {
