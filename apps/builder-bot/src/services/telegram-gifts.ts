@@ -48,6 +48,7 @@ export interface ArbitrageOpportunity {
 // ── Gift catalog cache (5 min TTL) ────────────────────────────────
 
 let _catalogCache: { gifts: TgCatalogGift[]; expiresAt: number } | null = null;
+let _catalogInFlight: Promise<TgCatalogGift[]> | null = null;
 
 // ── Main Service ──────────────────────────────────────────────────
 
