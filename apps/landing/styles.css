@@ -299,6 +299,12 @@ main, section, footer, .lang-switcher, .scroll-rocket{position:relative;z-index:
   color:var(--text-strong);margin-bottom:28px;
   text-wrap:balance;font-weight:900;
 }
+/* Russian text is ~20-25% wider per phrase (Cyrillic + longer words) —
+   reduce font-size so "Создай AI-агента" fits on one line, not four.
+   Targeted via html[lang="ru"] which is set by script.js setLang(). */
+html[lang="ru"] .hero-title{
+  font-size:clamp(44px,6.6vw,104px);
+}
 /* thin words */
 .hero-title > span:not(.gradient-text):not(.accent-text){
   font-weight:300;color:var(--text-muted);
