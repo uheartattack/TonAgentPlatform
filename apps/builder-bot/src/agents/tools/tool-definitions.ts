@@ -11,6 +11,88 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
     {
       type: 'function',
       function: {
+        name: 'task_create',
+        description: 'Add a durable task to your task graph (persists across ticks). Use for multi-step work where order matters. Set blocked_by to enforce dependencies (DAG). Auto-cascades: when a task hits status=completed, its ID is removed from every dependent.',
+        parameters: {
+          type: 'object',
+          properties: {
+            subject: { type: 'string', description: '1-line task subject (max 500 chars)' },
+            details: { type: 'string', description: 'Optional details/notes (max 4000 chars)' },
+            blocked_by: { type: 'array', items: { type: 'number' }, description: 'IDs of tasks that must complete first' },
+            owner: { type: 'string', description: 'Optional owner label (e.g. agent role)' },
+            priority: { type: 'number', description: '1-10 (default 5, higher = more urgent)' },
+          },
+          required: ['subject'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'task_update',
+        description: 'Update an existing task in the graph. Setting status=completed auto-unblocks dependents.',
+        parameters: {
+          type: 'object',
+          properties: {
+            id: { type: 'number' },
+            status: { type: 'string', enum: ['pending', 'in_progress', 'completed', 'failed', 'cancelled'] },
+            result: { type: 'string', description: 'Optional final result/notes (max 4000 chars)' },
+            details: { type: 'string' },
+            priority: { type: 'number' },
+          },
+          required: ['id'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'task_list',
+        description: 'List tasks in your graph. Filter by status. Pass only_actionable=true to get pending tasks with no blockers (ready to work on).',
+        parameters: {
+          type: 'object',
+          properties: {
+            status: { type: 'string' },
+            only_actionable: { type: 'boolean' },
+          },
+          required: [],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'task_get',
+        description: 'Get full details of a task by ID.',
+        parameters: { type: 'object', properties: { id: { type: 'number' } }, required: ['id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'compact',
+        description: 'Request context compression on the next iteration. Older tool results will be replaced with placeholders to free token budget. Use when you see your own context filling up with stale tool outputs.',
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'task',
+        description: 'Delegate a focused subtask to a fresh-context SUBAGENT. The child runs with empty messages (no context pollution), drops the `task` tool itself (no recursion), drops on-chain + cross-agent tools, runs up to 3 iterations, and returns ONLY the final summary text (you do NOT see its tool-call history). Use for: "research X", "validate Y", "summarize Z" — anything that would otherwise bloat your own context. Max 4000 chars in description.',
+        parameters: {
+          type: 'object',
+          properties: {
+            description: { type: 'string', description: 'Clear, self-contained task description. Subagent has no inherited context — spell out what to do.' },
+            role: { type: 'string', description: 'Optional role hint for the subagent (e.g. "researcher", "validator"). Max 80 chars.' },
+          },
+          required: ['description'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
         name: 'todo_write',
         description: 'Create or update an in-memory checklist for the CURRENT task/session. Use for any multi-step work (3+ subtasks). Statuses: pending | in_progress | completed. Constraint: AT MOST ONE in_progress at a time. The system will auto-remind you to update the list every 3 rounds if items remain open. Best practice: mark as in_progress BEFORE starting the step, completed IMMEDIATELY after. Discards on tick completion.',
         parameters: {

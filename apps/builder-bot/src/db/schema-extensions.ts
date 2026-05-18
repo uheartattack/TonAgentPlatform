@@ -1537,6 +1537,37 @@ export async function runAIProposalsMigrations(pool: Pool): Promise<void> {
         ON builder_bot.agent_skills (agent_id) WHERE enabled = TRUE
     `);
 
+    // ─── Task Graph (learn-claude-code s07 pattern) ──────────────────────────
+    // Durable DAG of work items per agent. Each task can declare `blocked_by`
+    // = array of task IDs that must complete first. When a task hits status
+    // 'completed', its ID is removed from every dependent's blocked_by.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.agent_task_graph (
+        id          SERIAL PRIMARY KEY,
+        agent_id    INTEGER NOT NULL,
+        subject     TEXT NOT NULL,
+        details     TEXT,
+        status      VARCHAR(20) NOT NULL DEFAULT 'pending',
+        blocked_by  INTEGER[] NOT NULL DEFAULT '{}',
+        owner       VARCHAR(80),
+        priority    INTEGER NOT NULL DEFAULT 5,
+        result      TEXT,
+        created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+        completed_at TIMESTAMP,
+        CONSTRAINT agent_task_graph_status_chk
+          CHECK (status IN ('pending', 'in_progress', 'completed', 'failed', 'cancelled'))
+      )
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS agent_task_graph_agent_status_idx
+        ON builder_bot.agent_task_graph (agent_id, status)
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS agent_task_graph_blocked_by_idx
+        ON builder_bot.agent_task_graph USING gin (blocked_by)
+    `);
+
     await client.query('COMMIT');
     console.log('✅ AI proposals + daily spend + audit/approvals/skills/shared/bugs + agentic_wallets + agent-skills (agentskills.io) migrations applied');
   } catch (e) {
