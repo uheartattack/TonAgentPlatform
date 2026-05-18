@@ -1,0 +1,187 @@
+/* ════════════════════════════════════════════════════════════════════════════
+   Studio Theme Sync — match landing palette
+   Loaded AFTER studio.css to override TON-blue (#0098EA) with the new
+   electric-blue + purple brand from landing styles.css.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* override TON-blue with landing's vibrant primary + add purple accent */
+  --accent: #00a8ff;
+  --accent-dim: rgba(0, 168, 255, 0.15);
+  --accent-glow: rgba(0, 168, 255, 0.32);
+  --primary: #00a8ff;
+  --primary-light: #3bc6ff;
+  --primary-dark: #0088cc;
+  --accent-light: #3bc6ff;
+  --accent-dark: #0088cc;
+
+  /* new purple accent — wasn't in original studio palette */
+  --purple: #8b5cf6;
+  --purple-light: #b184ff;
+  --purple-dim: rgba(139, 92, 246, 0.15);
+
+  /* deeper navy backgrounds — match landing */
+  --bg-primary: #0a0b14;
+  --bg-secondary: #12141f;
+  --bg-elev-3: #1e2030;
+
+  /* whiter text — match landing */
+  --text-primary: #f5f7ff;
+  --text-strong: #ffffff;
+  --text-muted: #9097b0;
+  --text-dim: #5d6380;
+
+  /* softer borders */
+  --border: rgba(255, 255, 255, 0.07);
+  --border-hover: rgba(0, 168, 255, 0.28);
+
+  /* shadows + glows */
+  --shadow-glow: 0 0 50px var(--accent-dim);
+  --glow-sm: 0 0 20px var(--accent-dim);
+  --glow-md: 0 0 40px var(--accent-dim);
+  --glow-lg: 0 0 70px var(--accent-glow);
+
+  /* unified brand gradient — same as landing */
+  --grad: linear-gradient(135deg, #00a8ff 0%, #6a8dff 50%, #8b5cf6 100%);
+  --grad-soft: linear-gradient(135deg, rgba(0, 168, 255, 0.16), rgba(139, 92, 246, 0.16));
+}
+
+/* ── Body background — radial ambient like landing ─────────────── */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(900px 600px at 80% -5%, rgba(139, 92, 246, 0.14), transparent 55%),
+    radial-gradient(900px 600px at 5% 5%, rgba(0, 168, 255, 0.14), transparent 55%),
+    linear-gradient(180deg, #07080f 0%, #0a0b14 30%, #0a0b14 70%, #07080f 100%);
+}
+
+/* keep all content above the ambient layer */
+.app-shell, .nav-sidebar, .main-content, .modal, .drawer, .toast,
+header, main, section, footer {
+  position: relative;
+  z-index: 2;
+}
+
+/* ── Primary buttons → use landing gradient instead of flat blue ─ */
+.btn-primary,
+button.btn-primary,
+.action-btn.primary,
+.cta-button {
+  background: var(--grad) !important;
+  color: #fff !important;
+  border: none !important;
+  box-shadow: 0 4px 16px rgba(0, 168, 255, 0.25) !important;
+  transition: all 0.25s cubic-bezier(0.2, 0.7, 0.2, 1) !important;
+}
+.btn-primary:hover,
+button.btn-primary:hover,
+.action-btn.primary:hover,
+.cta-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 32px rgba(0, 168, 255, 0.4), 0 0 32px rgba(139, 92, 246, 0.25) !important;
+}
+
+/* ── Nav sidebar active item — gradient accent bar ─────────────── */
+.nav-item.active,
+.nav-item[aria-current="page"] {
+  background: linear-gradient(90deg, rgba(0, 168, 255, 0.12), rgba(139, 92, 246, 0.04)) !important;
+  color: var(--primary-light) !important;
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+/* ── Cards / metric cards → glassmorphism like landing ─────────── */
+.card,
+.metric-card,
+.feature-card,
+.dashboard-card,
+.stat-card {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0.005)) !important;
+  backdrop-filter: blur(12px) saturate(150%);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
+  border: 1px solid var(--border) !important;
+  transition: all 0.25s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.card:hover,
+.metric-card:hover,
+.feature-card:hover,
+.dashboard-card:hover,
+.stat-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(0, 168, 255, 0.28) !important;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.4), 0 0 24px rgba(0, 168, 255, 0.15) !important;
+}
+
+/* ── Inputs → match landing focus style ────────────────────────── */
+input[type="text"]:not(.lang-input),
+input[type="email"],
+input[type="password"],
+input[type="number"],
+input[type="search"],
+input[type="url"],
+textarea,
+select {
+  background: var(--bg-secondary) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--text-primary) !important;
+  transition: all 0.2s ease;
+}
+input[type="text"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus,
+input[type="number"]:focus,
+input[type="search"]:focus,
+input[type="url"]:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 3px rgba(0, 168, 255, 0.12) !important;
+  outline: none !important;
+}
+
+/* ── Gradient text utility — same as landing ───────────────────── */
+.gradient-text,
+.text-gradient,
+.title-gradient {
+  background: linear-gradient(120deg, #e9efff 0%, #7ab8ff 28%, #b69bff 62%, #e9efff 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* ── Tester Hub level pills — purple accent for high tiers ─────── */
+.level-pill.lvl-4 { background: rgba(0, 168, 255, 0.15); color: #3bc6ff; }
+.level-pill.lvl-5 { background: rgba(139, 92, 246, 0.15); color: #b184ff; }
+.level-pill.lvl-6 { background: rgba(251, 191, 36, 0.15); color: #fbbf24; }
+
+/* ── Scrollbar — gradient thumb like landing ───────────────────── */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--primary), var(--purple));
+  border-radius: 8px;
+  border: 2px solid var(--bg-primary);
+}
+
+/* ── Toast / modal — backdrop blur + glass ─────────────────────── */
+.toast,
+.modal-content,
+.dialog-content,
+.drawer-content {
+  backdrop-filter: blur(16px) saturate(150%) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(150%) !important;
+  border: 1px solid var(--border) !important;
+}
+
+/* ── Reduced motion ─────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}

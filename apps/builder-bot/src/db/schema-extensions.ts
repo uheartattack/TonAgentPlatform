@@ -1486,8 +1486,59 @@ export async function runAIProposalsMigrations(pool: Pool): Promise<void> {
       CREATE UNIQUE INDEX IF NOT EXISTS idx_aw_address ON builder_bot.agentic_wallets(address)
     `);
 
+    // ─── Agent Skills (agentskills.io spec) — runtime + user-authored ─────────
+    // Built-in skills live on disk (apps/builder-bot/src/skills/<name>/SKILL.md)
+    // and are NOT in this table. User and imported skills ARE in this table.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.skills (
+        id              SERIAL PRIMARY KEY,
+        name            VARCHAR(64) NOT NULL,
+        description     TEXT NOT NULL,
+        body            TEXT NOT NULL,
+        license         VARCHAR(255),
+        compatibility   VARCHAR(500),
+        metadata        JSONB NOT NULL DEFAULT '{}',
+        allowed_tools   TEXT,
+        source          VARCHAR(20) NOT NULL,
+        owner_user_id   BIGINT,
+        source_url      VARCHAR(500),
+        is_public       BOOLEAN NOT NULL DEFAULT FALSE,
+        version         VARCHAR(20) NOT NULL DEFAULT '1.0',
+        created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+        CONSTRAINT skills_source_chk CHECK (source IN ('user','imported','builtin_override')),
+        CONSTRAINT skills_name_owner_unique UNIQUE (name, owner_user_id)
+      )
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS skills_owner_idx
+        ON builder_bot.skills (owner_user_id)
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS skills_public_idx
+        ON builder_bot.skills (is_public, name) WHERE is_public = TRUE
+    `);
+
+    // Per-agent skill enable/disable. For built-in skills, only `skill_name`
+    // is set (resolves from filesystem via skill-registry). For user/imported
+    // skills, both `skill_name` and `skill_id` are set.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.agent_skills (
+        agent_id    INTEGER NOT NULL,
+        skill_name  VARCHAR(64) NOT NULL,
+        skill_id    INTEGER REFERENCES builder_bot.skills(id) ON DELETE CASCADE,
+        enabled     BOOLEAN NOT NULL DEFAULT TRUE,
+        added_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (agent_id, skill_name)
+      )
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS agent_skills_enabled_idx
+        ON builder_bot.agent_skills (agent_id) WHERE enabled = TRUE
+    `);
+
     await client.query('COMMIT');
-    console.log('✅ AI proposals + daily spend + audit/approvals/skills/shared/bugs + agentic_wallets migrations applied');
+    console.log('✅ AI proposals + daily spend + audit/approvals/skills/shared/bugs + agentic_wallets + agent-skills (agentskills.io) migrations applied');
   } catch (e) {
     await client.query('ROLLBACK');
     console.error('❌ AI proposals migration failed:', e);

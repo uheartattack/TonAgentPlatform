@@ -247,7 +247,9 @@ export class DBTools {
           await client.query('ROLLBACK');
           return { success: false, error: 'Agent not found or not owned by user' };
         }
-        // Child tables to clean up (best-effort; missing tables are ignored)
+        // Child tables to clean up (best-effort; missing tables are ignored).
+        // Keep this in sync with `SELECT table_name FROM information_schema.columns
+        // WHERE table_schema='builder_bot' AND column_name='agent_id'`.
         const childTables = [
           'agent_state',
           'agent_logs',
@@ -258,6 +260,29 @@ export class DBTools {
           'agent_audit_log',
           'agent_evals',
           'ai_proposals',
+          // Newer observability tables
+          'agent_traces',
+          'agent_evaluations',
+          'agent_system_facts',
+          // Memory / session / dossier tables
+          'agent_sessions',
+          'agent_daily_logs',
+          'agent_contacts',
+          'agent_domains',
+          'agent_journal',
+          'agent_reviews',
+          'agent_skill_tree',
+          'agent_token_usage',
+          // Wallets & marketplace
+          'agentic_wallets',
+          'marketplace_listings',
+          'marketplace_purchases',
+          'shared_agents',
+          'trust_scores',
+          // Sharing / export
+          'agent_shares',
+          // Feedback referencing agent_id
+          'feedback',
         ];
         for (const t of childTables) {
           try {

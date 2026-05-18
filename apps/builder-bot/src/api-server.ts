@@ -305,6 +305,11 @@ function requireAuth(req: Request, res: Response, next: NextFunction): void {
   const session = getSession(token);
   if (!session) { res.status(401).json({ error: 'Сессия не найдена или истекла — войдите заново' }); return; }
   // Prefer telegram_id over OIDC user_id (OIDC returns different ID than real TG ID)
+  // IMPORTANT: Telegram IDs can exceed 2^53 (Number.MAX_SAFE_INTEGER) — keep
+  // a string copy as `userIdStr` so the original digits survive for display.
+  // The Number form stays for legacy DB/PG queries (PG accepts either; precision
+  // is only lost on display, real ops should switch to userIdStr over time).
+  (req as any).userIdStr = session.telegramId ? String(session.telegramId) : String(session.userId);
   (req as any).userId = session.telegramId ? Number(session.telegramId) : session.userId;
   (req as any).session = session;
   next();
@@ -954,14 +959,17 @@ export function startApiServer() {
       acceptedErrors = tgRow.rows[0]?.accepted_errors_sharing === true;
     } catch {}
     const { isBetaTester } = await import('./payments');
+    // Use the precision-preserving string set by requireAuth, not String(userId)
+    // which would lose the last 3-4 digits on Telegram IDs > 2^53.
+    const userIdStrSafe = (req as any).userIdStr || String(userId);
     res.json({
       ok: true,
       userId,
-      userIdStr: String(userId),
+      userIdStr: userIdStrSafe,
       username: session.username,
       firstName: session.firstName,
       photoUrl: session.photoUrl || null,
-      telegramId: String(userId),
+      telegramId: userIdStrSafe,
       planId, planName, planIcon,
       isAdmin,
       isBeta: isBetaTester(userId),
@@ -2537,6 +2545,199 @@ export function startApiServer() {
       // Delete from DB
       const r = await getDBTools().deleteAgent(agentId, userId);
       res.json({ ok: r.success, error: r.error });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // AGENT SKILLS (agentskills.io spec) — discovery, CRUD, per-agent toggle
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // ── GET /api/skills — list all skills available to the current user ──
+  app.get('/api/skills', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { listSkillsForAgent } = await import('./services/skill-registry');
+      // agentId 0 sentinel means "no agent context" — returns user's full skill universe
+      const skills = await listSkillsForAgent(0, userId);
+      res.json({ skills });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── GET /api/skills/:name — load full SKILL.md body ──
+  app.get('/api/skills/:name', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const name = String(req.params.name || '').trim();
+      if (!name) { res.status(400).json({ error: 'name required' }); return; }
+      const { loadSkillFull } = await import('./services/skill-registry');
+      const skill = await loadSkillFull(name, 0, userId);
+      if (!skill) { res.status(404).json({ error: 'Skill not found' }); return; }
+      res.json({ skill });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── POST /api/skills — create or update a user-authored skill ──
+  app.post('/api/skills', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { skillMd, isPublic, sourceUrl, isImported } = req.body || {};
+      if (!skillMd || typeof skillMd !== 'string') {
+        res.status(400).json({ error: 'skillMd (full SKILL.md string) is required' }); return;
+      }
+      if (skillMd.length > 100_000) {
+        res.status(400).json({ error: 'SKILL.md exceeds 100KB limit' }); return;
+      }
+      // Validate import URL against host whitelist
+      if (isImported && sourceUrl) {
+        const { validateImportUrl } = await import('./services/skill-registry');
+        const urlCheck = validateImportUrl(sourceUrl);
+        if (!urlCheck.ok) { res.status(400).json({ error: urlCheck.error }); return; }
+      }
+      const { parseSkillMd, saveUserSkill } = await import('./services/skill-registry');
+      const parsed = parseSkillMd(skillMd);
+      if (!parsed.ok) { res.status(400).json({ error: parsed.error }); return; }
+      const result = await saveUserSkill({
+        userId,
+        name: parsed.fm.name,
+        description: parsed.fm.description,
+        body: parsed.body,
+        license: parsed.fm.license,
+        compatibility: parsed.fm.compatibility,
+        metadata: parsed.fm.metadata,
+        allowedTools: parsed.fm['allowed-tools']?.split(/\s+/).filter(Boolean),
+        isPublic: !!isPublic,
+        sourceUrl: typeof sourceUrl === 'string' ? sourceUrl.slice(0, 500) : undefined,
+        isImported: !!isImported,
+      });
+      if (!result.ok) { res.status(400).json({ error: result.error }); return; }
+      res.json({ ok: true, id: result.id, name: parsed.fm.name });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── POST /api/skills/:name/publish — toggle is_public on a user-owned skill ──
+  // Required because we don't want users to send the full SKILL.md body just
+  // to flip a flag. Re-runs safety scan when publishing (defense in depth).
+  app.post('/api/skills/:name/publish', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const name = String(req.params.name || '').trim();
+      const { isPublic } = req.body || {};
+      if (typeof isPublic !== 'boolean') {
+        res.status(400).json({ error: 'isPublic (boolean) required' }); return;
+      }
+      const { pool } = require('./db');
+      // Verify ownership + load body
+      const skillRow = await pool.query(
+        `SELECT id, body, description, source FROM builder_bot.skills
+          WHERE name = $1 AND owner_user_id = $2`,
+        [name, userId],
+      );
+      if (!skillRow.rows[0]) {
+        res.status(404).json({ error: 'Skill not found or not owned by you' }); return;
+      }
+      // Imported skills CANNOT be published — must be re-created as user's own
+      if (skillRow.rows[0].source === 'imported') {
+        res.status(403).json({ error: 'Imported skills cannot be published directly. Copy the body to a new skill of your own first.' }); return;
+      }
+      // Re-scan before publishing (body could have been edited)
+      if (isPublic) {
+        const { scanSkillBody } = await import('./services/skill-registry');
+        const bodyScan = scanSkillBody(skillRow.rows[0].body);
+        if (!bodyScan.safe) {
+          res.status(400).json({
+            error: `Safety scan failed: ${bodyScan.threats.slice(0, 3).join('; ')}`,
+          }); return;
+        }
+        const descScan = scanSkillBody(skillRow.rows[0].description);
+        if (!descScan.safe) {
+          res.status(400).json({
+            error: `Description failed safety scan: ${descScan.threats[0]}`,
+          }); return;
+        }
+      }
+      await pool.query(
+        `UPDATE builder_bot.skills SET is_public = $1, updated_at = NOW() WHERE id = $2`,
+        [isPublic, skillRow.rows[0].id],
+      );
+      res.json({ ok: true, isPublic });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── DELETE /api/skills/:name — delete a user-owned skill ──
+  app.delete('/api/skills/:name', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const name = String(req.params.name || '').trim();
+      const { deleteUserSkill } = await import('./services/skill-registry');
+      const ok = await deleteUserSkill(userId, name);
+      if (!ok) { res.status(404).json({ error: 'Skill not found or not owned by you' }); return; }
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── GET /api/agents/:id/skills — list skills for this agent (with enabled flag) ──
+  app.get('/api/agents/:id/skills', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const agentId = parseInt(req.params.id as string, 10);
+      if (isNaN(agentId)) { res.status(400).json({ error: 'Invalid agent ID' }); return; }
+      const agentCheck = await getAgentForUser(agentId, req);
+      if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
+
+      const { listSkillsForAgent } = await import('./services/skill-registry');
+      // listSkillsForAgent already filters out disabled — for the UI we also
+      // want to show disabled ones (with a flag). So we union: enabled list +
+      // disabled list from agent_skills.
+      const enabled = await listSkillsForAgent(agentId, userId);
+      const { pool } = require('./db');
+      const disRes = await pool.query(
+        `SELECT skill_name FROM builder_bot.agent_skills
+          WHERE agent_id = $1 AND enabled = FALSE`,
+        [agentId],
+      );
+      const disabledSet = new Set<string>(disRes.rows.map((r: any) => r.skill_name));
+      // Also need to include disabled skills (which are absent from `enabled`).
+      // Re-fetch full universe with no filter:
+      const allWithFilter = await listSkillsForAgent(0, userId);
+      // Mark each with enabled flag
+      const result = allWithFilter.map(s => ({
+        ...s,
+        enabled: !disabledSet.has(s.name),
+      }));
+      // Voiding unused vars for lint; enabled used implicitly
+      void enabled;
+      res.json({ skills: result });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── POST /api/agents/:id/skills/:name/toggle — enable/disable a skill ──
+  app.post('/api/agents/:id/skills/:name/toggle', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const agentId = parseInt(req.params.id as string, 10);
+      const name = String(req.params.name || '').trim();
+      const { enabled } = req.body || {};
+      if (isNaN(agentId) || !name) { res.status(400).json({ error: 'agent id + skill name required' }); return; }
+      if (typeof enabled !== 'boolean') { res.status(400).json({ error: 'enabled (boolean) required' }); return; }
+      const agentCheck = await getAgentForUser(agentId, req);
+      if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
+
+      const { setAgentSkillEnabled } = await import('./services/skill-registry');
+      await setAgentSkillEnabled(agentId, name, enabled);
+      res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

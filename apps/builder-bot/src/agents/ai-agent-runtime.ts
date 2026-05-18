@@ -456,21 +456,28 @@ interface ToolCall {
 
 interface ProviderCfg { baseURL: string; defaultModel: string; maxContextChars: number; maxTools: number; }
 
-function resolveProvider(provider: string, overrideMaxTools?: number): ProviderCfg {
+function resolveProvider(provider: string, overrideMaxTools?: number, providerTier?: string): ProviderCfg {
   const { MODELS, PROVIDER_URLS, PROVIDER_LIMITS } = require('../config/platform');
   const p = (provider || '').toLowerCase();
-  const resolve = (key: string): ProviderCfg => ({
-    baseURL: PROVIDER_URLS[key], defaultModel: MODELS[key],
-    maxContextChars: PROVIDER_LIMITS[key]?.maxContextChars || 25_000,
-    // Respect user's explicit MAX_TOOLS override (for paid tiers) but never exceed
-    // a hard safety ceiling of 128 (Anthropic's advertised limit).
-    maxTools: Math.min(
-      128,
-      (typeof overrideMaxTools === 'number' && overrideMaxTools > 0)
-        ? overrideMaxTools
-        : (PROVIDER_LIMITS[key]?.maxTools || 60)
-    ),
-  });
+  const isPaidTier = (providerTier || '').toLowerCase() === 'paid';
+  const resolve = (key: string): ProviderCfg => {
+    const safeDefault = PROVIDER_LIMITS[key]?.maxTools || 60;
+    // For FREE tier (default), cap any user MAX_TOOLS override to the
+    // provider's known-safe value. This stops users from shooting themselves
+    // in the foot — e.g. setting MAX_TOOLS=60 on Groq free (12K TPM) which
+    // returns 429 indefinitely.
+    //
+    // For PAID tier (user explicitly sets PROVIDER_TIER=paid), respect the
+    // override up to the absolute ceiling of 128.
+    const resolved = (typeof overrideMaxTools === 'number' && overrideMaxTools > 0)
+      ? (isPaidTier ? Math.min(128, overrideMaxTools) : Math.min(safeDefault, overrideMaxTools))
+      : safeDefault;
+    return {
+      baseURL: PROVIDER_URLS[key], defaultModel: MODELS[key],
+      maxContextChars: PROVIDER_LIMITS[key]?.maxContextChars || 25_000,
+      maxTools: resolved,
+    };
+  };
   if (p.includes('gemini') || p.includes('google'))   return resolve('gemini');
   if (p.includes('claude-code') || p === 'platform')  return resolve('anthropic');
   if (p.includes('anthropic') || p.includes('claude')) return resolve('anthropic');
@@ -507,7 +514,10 @@ function getAIClient(config: Record<string, any>): { client: OpenAI; defaultMode
   }
 
   const overrideTools = Number(config.MAX_TOOLS || 0) || undefined;
-  const providerCfg = resolveProvider(provider, overrideTools);
+  // PROVIDER_TIER='paid' lets users unlock MAX_TOOLS up to 128 (e.g. Groq Dev
+  // tier, Anthropic tier 2+). Default is 'free' which caps to PROVIDER_LIMITS.
+  const providerTier = (config.PROVIDER_TIER as string) || 'free';
+  const providerCfg = resolveProvider(provider, overrideTools, providerTier);
   const finalURL = (config.AI_BASE_URL as string) || providerCfg.baseURL;
   // Use explicitly configured model if set, otherwise provider default
   const defaultModel = (config.AI_MODEL as string) || providerCfg.defaultModel;
@@ -930,6 +940,21 @@ async function getAgentMeta(agentId: number): Promise<CachedAgentMeta | null> {
 
 // Context override for bot-chat messages (owner writes via bot, not userbot)
 const _pendingContext = new Map<number, Record<string, any>>();
+
+// ── TodoManager (learn-claude-code s03 pattern) ─────────────────────────────
+// Per-agent in-memory checklist. Lifecycle = single run. Cleared on tick completion.
+// FSM constraint: at most ONE in_progress at a time. Nag reminder after 3 rounds
+// without a todo_write call.
+interface AgentTodo { content: string; activeForm: string; status: 'pending' | 'in_progress' | 'completed'; }
+interface TodoState { todos: AgentTodo[]; roundsSinceCall: number; }
+const _agentTodos = new Map<number, TodoState>();
+
+export function clearAgentTodos(agentId: number): void {
+  _agentTodos.delete(agentId);
+}
+export function getAgentTodos(agentId: number): AgentTodo[] {
+  return _agentTodos.get(agentId)?.todos || [];
+}
 
 // Pattern 14: Continue vs spawn — freshContext=true clears conversation history for isolated tasks
 export function addMessageToAIAgent(agentId: number, text: string, context?: Record<string, any>): void {
@@ -1409,6 +1434,12 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
      'ask_user_confirmation',
      // Self-memory management (always available)
      'memory_stats', 'clear_memory_category', 'compress_memories', 'browse_memory', 'run_memory_maintenance', 'get_memory_settings', 'update_memory_settings',
+     // Agent Skills (progressive disclosure — agentskills.io spec)
+     'read_skill', 'list_skill_references', 'read_skill_reference',
+     // Deep self-introspection (intrinsic agent self-knowledge)
+     'get_my_full_state',
+     // In-memory checklist for multi-step tasks (learn-claude-code s03)
+     'todo_write', 'todo_read',
     ].forEach(t => allowed.add(t));
     // Always allow MCP tools if ton_mcp capability is enabled
     if (enabledCapabilities.includes('ton_mcp') && mcpTools) {
@@ -3201,6 +3232,230 @@ async function _executeToolInner(
       } catch (e: any) { return { error: e.message }; }
     }
 
+    // ── TodoWrite (learn-claude-code s03 pattern) — agent's own checklist ──
+    case 'todo_write': {
+      try {
+        const inputTodos = Array.isArray(args.todos) ? args.todos : [];
+        if (inputTodos.length === 0) {
+          return { ok: false, error: 'todos array required (non-empty)' };
+        }
+        // Validate FSM constraint: at most one in_progress
+        const inProgressCount = inputTodos.filter((t: any) => t?.status === 'in_progress').length;
+        if (inProgressCount > 1) {
+          return { ok: false, error: 'Only ONE todo can be in_progress at a time. Mark others as pending or completed first.' };
+        }
+        // Normalize + validate each
+        const normalized: AgentTodo[] = [];
+        for (const raw of inputTodos) {
+          const content = String(raw?.content || '').trim();
+          const activeForm = String(raw?.activeForm || content).trim();
+          const status = ['pending', 'in_progress', 'completed'].includes(raw?.status) ? raw.status : 'pending';
+          if (!content) continue;
+          normalized.push({ content: content.slice(0, 300), activeForm: activeForm.slice(0, 300), status });
+        }
+        if (normalized.length === 0) {
+          return { ok: false, error: 'No valid todos in payload (each needs non-empty content)' };
+        }
+        if (normalized.length > 30) {
+          return { ok: false, error: 'Too many todos (max 30). Split into multiple sessions.' };
+        }
+        // Update state, reset reminder counter
+        _agentTodos.set(params.agentId, { todos: normalized, roundsSinceCall: 0 });
+        // Pretty summary for the LLM's confirmation
+        const summary = normalized
+          .map(t => `  ${t.status === 'completed' ? '✓' : t.status === 'in_progress' ? '◐' : '○'} ${t.content}`)
+          .join('\n');
+        return {
+          ok: true,
+          count: normalized.length,
+          summary,
+          in_progress: normalized.find(t => t.status === 'in_progress')?.content || null,
+        };
+      } catch (e: any) {
+        return { ok: false, error: e?.message || 'todo_write failed' };
+      }
+    }
+
+    case 'todo_read': {
+      const state = _agentTodos.get(params.agentId);
+      if (!state || state.todos.length === 0) return { todos: [], message: 'No todos in this session yet. Call todo_write to start a checklist.' };
+      return { todos: state.todos, count: state.todos.length };
+    }
+
+    // ── Deep introspection — full agent self-knowledge on demand ──
+    case 'get_my_full_state': {
+      try {
+        const out: Record<string, any> = {};
+
+        // Agent meta (name, role, level, xp)
+        const metaRow = await (await import('../db')).pool.query(
+          `SELECT id, name, role, level, xp, is_active, description, created_at, last_active_at
+             FROM builder_bot.agents WHERE id = $1`,
+          [params.agentId],
+        );
+        out.identity = metaRow.rows[0] || null;
+
+        // Config snapshot (redact secrets)
+        const cfgSnap: Record<string, any> = {};
+        for (const [k, v] of Object.entries(params.config || {})) {
+          if (/key|mnemonic|secret|password|token/i.test(k)) {
+            cfgSnap[k] = typeof v === 'string' && v.length > 0 ? `***${String(v).slice(-4)}` : '(unset)';
+          } else {
+            cfgSnap[k] = v;
+          }
+        }
+        out.config = cfgSnap;
+
+        // Enabled capabilities + computed tool list
+        const enabledCaps = (params.config.enabledCapabilities as string[]) || Object.keys(CAPABILITY_TOOL_MAP);
+        out.capabilities = {
+          enabled: enabledCaps,
+          tools_by_capability: Object.fromEntries(
+            enabledCaps.map(c => [c, CAPABILITY_TOOL_MAP[c] || []])
+          ),
+          total_tool_count: enabledCaps.reduce((s, c) => s + (CAPABILITY_TOOL_MAP[c]?.length || 0), 0),
+        };
+
+        // Skills enabled (and which are disabled per agent_skills table)
+        try {
+          const { listSkillsForAgent } = await import('../services/skill-registry');
+          const enabledSkills = await listSkillsForAgent(params.agentId, params.userId);
+          out.skills = {
+            enabled: enabledSkills.map(s => ({ name: s.name, source: s.source, description: s.description })),
+            total_enabled: enabledSkills.length,
+          };
+        } catch { out.skills = { error: 'skill-registry unavailable' }; }
+
+        // Wallet
+        try {
+          const walletAddr = params.config?.WALLET_ADDRESS as string;
+          if (walletAddr) {
+            const balRes = await fetch(`https://tonapi.io/v2/blockchain/accounts/${encodeURIComponent(walletAddr)}`).catch(() => null);
+            if (balRes && balRes.ok) {
+              const data = await balRes.json() as any;
+              out.wallet = {
+                address: walletAddr,
+                type: params.config.WALLET_TYPE || 'unknown',
+                balance_nano: data?.balance || 0,
+                balance_ton: data?.balance ? (Number(data.balance) / 1e9).toFixed(4) : '0',
+                status: data?.status,
+              };
+            } else { out.wallet = { address: walletAddr, type: params.config.WALLET_TYPE }; }
+          } else { out.wallet = null; }
+        } catch { out.wallet = { error: 'tonapi unreachable' }; }
+
+        // Plugins
+        try {
+          const { pool } = await import('../db');
+          const pluginRes = await pool.query(
+            `SELECT plugin_id, enabled, installed_at FROM builder_bot.user_plugins WHERE user_id = $1`,
+            [params.userId],
+          );
+          out.plugins = pluginRes.rows;
+        } catch { out.plugins = []; }
+
+        // Active goals
+        try {
+          const { pool } = await import('../db');
+          const goalsRes = await pool.query(
+            `SELECT value FROM builder_bot.agent_state WHERE agent_id = $1 AND key = '_active_goals'`,
+            [params.agentId],
+          );
+          const goalsRaw = goalsRes.rows[0]?.value;
+          out.goals = goalsRaw ? (typeof goalsRaw === 'string' ? JSON.parse(goalsRaw) : goalsRaw) : [];
+        } catch { out.goals = []; }
+
+        // Recent lessons (top 5)
+        try {
+          const { pool } = await import('../db');
+          const lessonRes = await pool.query(
+            `SELECT key, value, updated_at FROM builder_bot.agent_state
+              WHERE agent_id = $1 AND key LIKE 'lesson_%'
+              ORDER BY updated_at DESC LIMIT 5`,
+            [params.agentId],
+          );
+          out.recent_lessons = lessonRes.rows;
+        } catch { out.recent_lessons = []; }
+
+        // MCP servers
+        try {
+          const { listMCPServers } = await import('../services/mcp-client');
+          out.mcp_servers = listMCPServers();
+        } catch { out.mcp_servers = []; }
+
+        // Tick stats
+        try {
+          const { pool } = await import('../db');
+          const statsRes = await pool.query(
+            `SELECT COUNT(*) FILTER (WHERE status='ok') as success,
+                    COUNT(*) FILTER (WHERE status='error') as failed,
+                    MAX(finished_at) as last_run
+               FROM builder_bot.execution_history WHERE agent_id = $1 AND started_at > NOW() - INTERVAL '24 hours'`,
+            [params.agentId],
+          );
+          out.stats_24h = statsRes.rows[0];
+        } catch { out.stats_24h = null; }
+
+        // Auto-pause status
+        try {
+          const { pool } = await import('../db');
+          const pauseRes = await pool.query(
+            `SELECT key, value FROM builder_bot.agent_state
+              WHERE agent_id = $1 AND (key = '_paused_reason' OR key LIKE '_err_counter_%')`,
+            [params.agentId],
+          );
+          out.auto_pause = pauseRes.rows.reduce((acc: any, r: any) => {
+            acc[r.key] = r.value;
+            return acc;
+          }, {});
+        } catch { out.auto_pause = {}; }
+
+        return out;
+      } catch (e: any) {
+        return { error: e?.message || 'get_my_full_state failed' };
+      }
+    }
+
+    // ── Agent Skills (progressive disclosure — agentskills.io spec) ──
+    case 'read_skill': {
+      try {
+        const skillName = String(args.name || '').trim();
+        if (!skillName) return { error: 'name is required' };
+        const { loadSkillFull } = await import('../services/skill-registry');
+        const skill = await loadSkillFull(skillName, params.agentId, params.userId);
+        if (!skill) return { error: `Skill "${skillName}" not found. See the [AGENT SKILLS] block in your system prompt for available skills.` };
+        return {
+          name: skill.name,
+          description: skill.description,
+          version: skill.version || '1.0',
+          compatibility: skill.compatibility,
+          body: skill.body,
+        };
+      } catch (e: any) { return { error: e?.message || 'read_skill failed' }; }
+    }
+
+    case 'list_skill_references': {
+      try {
+        const skillName = String(args.name || '').trim();
+        if (!skillName) return { error: 'name is required' };
+        const { listSkillReferences } = await import('../services/skill-registry');
+        const files = await listSkillReferences(skillName);
+        return { name: skillName, references: files };
+      } catch (e: any) { return { error: e?.message || 'list_skill_references failed' }; }
+    }
+
+    case 'read_skill_reference': {
+      try {
+        const skillName = String(args.name || '').trim();
+        const refPath = String(args.ref || '').trim();
+        if (!skillName || !refPath) return { error: 'name and ref are required' };
+        const { loadSkillReference } = await import('../services/skill-registry');
+        const content = await loadSkillReference(skillName, refPath);
+        if (content === null) return { error: `Reference "${refPath}" not found in skill "${skillName}".` };
+        return { name: skillName, ref: refPath, content };
+      } catch (e: any) { return { error: e?.message || 'read_skill_reference failed' }; }
+    }
+
     case 'get_state': {
       try {
         const key = validateStateKey(args.key);
@@ -3358,7 +3613,57 @@ async function _executeToolInner(
             const r = await fetch(`https://tonapi.io/v2/dns/auctions?limit=${args.limit || 20}`);
             return await r.json();
           }
-          return { error: `${toolName} requires wallet integration (not yet implemented). Use dns_check/dns_resolve/dns_auctions for queries.` };
+          // ── Wallet-modifying DNS ops (require WALLET_MNEMONIC + user confirmation) ──
+          const dnsMnemonic = params.config?.WALLET_MNEMONIC as string;
+          if (!dnsMnemonic) return { ok: false, error: 'No wallet mnemonic configured for DNS write ops' };
+
+          // Human-in-the-loop confirmation for all wallet-touching DNS ops
+          if (!args._confirmed) {
+            const summary = toolName === 'dns_bid' || toolName === 'dns_start_auction'
+              ? `Bid ${args.amount_ton || args.initial_bid_ton} TON on .ton domain "${args.domain}"`
+              : toolName === 'dns_link'
+                ? `Link .ton domain "${args.domain}" → wallet ${args.target_address}`
+                : toolName === 'dns_unlink'
+                  ? `Clear "${args.category || 'wallet'}" record on .ton "${args.domain}"`
+                  : toolName === 'dns_set_site'
+                    ? `Set TON Site (ADNL ${(args.adnl || '').slice(0, 12)}…) on "${args.domain}"`
+                    : `DNS op ${toolName} on "${args.domain}"`;
+            return { ok: false, requires_confirmation: true, message: summary };
+          }
+
+          const dnsOps = await import('../services/ton-dns-ops');
+
+          if (toolName === 'dns_bid') {
+            return await dnsOps.bidOnDomain({
+              mnemonic: dnsMnemonic, domain: args.domain,
+              amountTon: Number(args.amount_ton) || 0,
+            });
+          }
+          if (toolName === 'dns_start_auction') {
+            return await dnsOps.startAuction({
+              mnemonic: dnsMnemonic, domain: args.domain,
+              initialBidTon: Number(args.initial_bid_ton || args.amount_ton) || 0,
+            });
+          }
+          if (toolName === 'dns_link') {
+            return await dnsOps.setDnsRecord({
+              mnemonic: dnsMnemonic, domain: args.domain,
+              category: 'wallet', value: args.target_address,
+            });
+          }
+          if (toolName === 'dns_unlink') {
+            return await dnsOps.clearDnsRecord({
+              mnemonic: dnsMnemonic, domain: args.domain,
+              category: args.category || 'wallet',
+            });
+          }
+          if (toolName === 'dns_set_site') {
+            return await dnsOps.setDnsRecord({
+              mnemonic: dnsMnemonic, domain: args.domain,
+              category: 'site', value: args.adnl,
+            });
+          }
+          return { error: `Unknown DNS tool: ${toolName}` };
         }
         // Payment verification
         if (toolName === 'verify_payment') {
@@ -7019,16 +7324,15 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
     providerCfg = result.providerCfg;
   } catch (e: any) {
     if (e.message === 'NO_API_KEY') {
-      // Only notify ONCE per agent — persist in DB to survive restarts
-      const notifiedKey = `_no_api_key_notified`;
-      const _sr = getAgentStateRepository();
-      const already = await _sr.get(params.agentId, notifiedKey).catch(() => null);
-      if (!already) {
-        await _sr.set(params.agentId, params.userId, notifiedKey, 'true').catch(() => {});
-        const errMsg = 'API key not configured. Agent paused.\n\nAdd key: Profile → API keys, or agent settings in Studio.';
-        if (params.onNotify) params.onNotify(errMsg);
-        await logToDb(params.agentId, 'warn', '[Onboarding] API key missing — agent paused, notified user', params.userId);
+      // Auto-pause immediately — no point retrying without a key.
+      // Sends DM with instructions, sets is_active=false. Idempotent if already paused.
+      try {
+        const { recordErrorMaybePause } = await import('../services/agent-auto-pause');
+        await recordErrorMaybePause(params.agentId, params.userId, 'NO_API_KEY');
+      } catch (pe: any) {
+        console.warn(`[AI runtime] auto-pause NO_API_KEY failed for #${params.agentId}:`, pe?.message);
       }
+      await logToDb(params.agentId, 'warn', '[AutoPause] API key missing — agent paused', params.userId).catch(() => {});
       return { toolCallCount: 0, error: 'NO_API_KEY' };
     }
     throw e;
@@ -7252,7 +7556,87 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
   if (cfg.daily_spend_limit_ton) selfAwareness.push(`Лимит: ${cfg.daily_spend_limit_ton} TON/день`);
   // Self-improvement
   selfAwareness.push(`Самоулучшение: ${cfg.self_improvement_enabled !== false ? 'вкл' : 'выкл'}`);
-  // Platform info
+
+  // ── Intrinsic self-knowledge: skills, tools, plugins, goals, memory state ──
+  // The agent "just knows" what it has — no need to call introspection tools
+  // for routine awareness. This is computed once per tick at low cost.
+  try {
+    // Skills: count enabled + names of top-3 most-relevant for this agent
+    const { listSkillsForAgent } = await import('../services/skill-registry');
+    const enabledSkills = await listSkillsForAgent(params.agentId, params.userId);
+    if (enabledSkills.length > 0) {
+      const names = enabledSkills.map(s => s.name).join(', ');
+      selfAwareness.push(`Скиллы (${enabledSkills.length}): ${names}`);
+      selfAwareness.push(`  → Полное описание скилла грузи через read_skill(name) когда задача попадает в его домен.`);
+    }
+  } catch {}
+
+  try {
+    // Tools: total count + breakdown by category (don't list each — too verbose)
+    const allCaps = caps && caps.length > 0 ? caps : Object.keys(CAPABILITY_TOOL_MAP);
+    const toolCount = allCaps.reduce((sum, c) => sum + (CAPABILITY_TOOL_MAP[c]?.length || 0), 0);
+    if (toolCount > 0) {
+      selfAwareness.push(`Инструменты: ~${toolCount} доступно (по категориям capabilities). Полный список — list_state_keys/get_my_config.`);
+    }
+  } catch {}
+
+  try {
+    // Plugins installed for THIS agent
+    const { pool: _pluginPool } = await import('../db');
+    const pluginRes = await _pluginPool.query(
+      `SELECT plugin_id FROM builder_bot.user_plugins WHERE user_id = $1`,
+      [params.userId],
+    );
+    if (pluginRes.rows.length > 0) {
+      const pluginIds = pluginRes.rows.map((r: any) => r.plugin_id).slice(0, 8).join(', ');
+      selfAwareness.push(`Плагины пользователя (${pluginRes.rows.length}): ${pluginIds}${pluginRes.rows.length > 8 ? '…' : ''}`);
+    }
+  } catch {}
+
+  try {
+    // Active goals (top 3)
+    const { pool: _goalsPool } = await import('../db');
+    const goalsRes = await _goalsPool.query(
+      `SELECT value FROM builder_bot.agent_state WHERE agent_id = $1 AND key = '_active_goals' LIMIT 1`,
+      [params.agentId],
+    );
+    if (goalsRes.rows[0]) {
+      const goalsRaw = goalsRes.rows[0].value;
+      const goals = typeof goalsRaw === 'string' ? JSON.parse(goalsRaw) : goalsRaw;
+      if (Array.isArray(goals) && goals.length > 0) {
+        const top3 = goals.slice(0, 3).map((g: any) => g.text || g.title || g).join(' | ');
+        selfAwareness.push(`Активные цели (${goals.length}): ${top3}`);
+      }
+    }
+  } catch {}
+
+  try {
+    // Memory state summary (counts by category)
+    const { pool: _memPool } = await import('../db');
+    const memRes = await _memPool.query(
+      `SELECT key, COUNT(*) as cnt FROM builder_bot.agent_state
+        WHERE agent_id = $1 AND (key LIKE 'memory_%' OR key LIKE 'lesson_%' OR key LIKE 'goal_%')
+        GROUP BY substring(key from '^[^_]+_')`,
+      [params.agentId],
+    );
+    if (memRes.rows.length > 0) {
+      const breakdown = memRes.rows.map((r: any) => `${r.key.replace(/_$/, '')}=${r.cnt}`).join(', ');
+      selfAwareness.push(`Память: ${breakdown}`);
+    }
+  } catch {}
+
+  try {
+    // Connected MCP servers (if any)
+    const { listMCPServers } = await import('../services/mcp-client');
+    const mcpServers = listMCPServers();
+    const connected = mcpServers.filter(s => s.connected);
+    if (connected.length > 0) {
+      const summary = connected.slice(0, 5).map(s => `${s.name}(${s.tools}t)`).join(', ');
+      selfAwareness.push(`MCP серверы: ${summary}${connected.length > 5 ? '…' : ''}`);
+    }
+  } catch {}
+
+  // Platform info (kept last as ground anchor)
   selfAwareness.push(`Платформа: TON Agent Platform (tonagentplatform.com) | Бот: @TonAgentPlatformBot`);
 
   const configSummary = selfAwareness.join('\n');
@@ -7275,10 +7659,27 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
     }
   } catch {}
 
-  // ── Gift system knowledge (ONLY for agents with gifts capabilities) ─────────
-  const _caps = (params.config.enabledCapabilities as string[]) || null;
-  const hasGiftCaps = !_caps || _caps.some(c => c.includes('gift') || c === 'gifts' || c === 'gifts_market');
-  const GIFT_SYSTEM_KNOWLEDGE = !hasGiftCaps ? '' : `
+  // ── Agent Skills inventory (progressive disclosure, agentskills.io spec) ────
+  // Replaces the legacy GIFT_SYSTEM_KNOWLEDGE always-on prompt block. The
+  // inventory lists name + 1-line description of every skill. The agent
+  // loads the full SKILL.md via the read_skill tool only when a task matches.
+  //
+  // This saves ~5k tokens per system prompt vs. the old all-on injection,
+  // AND fixes the gift tool-selection problem (knowledge is now scoped to
+  // the gift skill instead of bleeding into every agent).
+  let skillsInventoryBlock = '';
+  try {
+    const { buildSkillsInventory } = await import('../services/skill-registry');
+    skillsInventoryBlock = await buildSkillsInventory(params.agentId, params.userId);
+  } catch (e: any) {
+    console.warn('[Runtime] buildSkillsInventory failed:', e?.message);
+  }
+
+  // Legacy inline knowledge — kept commented as fallback reference.
+  // To restore: set hasGiftCaps + uncomment. Do NOT enable without good reason —
+  // the skill-based loading is far cleaner.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const GIFT_SYSTEM_KNOWLEDGE_LEGACY = false ? `
 [TELEGRAM GIFTS KNOWLEDGE BASE]
 🚨 ГЛАВНОЕ ПРАВИЛО:
 Для ЛЮБЫХ вопросов о подарках (Lol Pop, Jelly Bunny, Heart Locket, Plush Pepe, и любое другое название коллекции подарков):
@@ -7418,7 +7819,7 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
 2. Если can_buy_now=true → buy_market_gift(tx_contract, tx_payload, price_ton, gift_name)
 3. Если can_buy_now=false → notify_rich() с link для ручной покупки
 4. Если ничего не найдено → завершить молча
-[END GIFT KNOWLEDGE]`;
+[END GIFT KNOWLEDGE]` : '';
 
   // Chat mode vs monitoring mode instructions
   const modeHint = msgs.length > 0
@@ -7684,7 +8085,7 @@ ${roleBehavior}
 Текущая дата: ${_dateStr}, ${_timeStr} (МСК)
 Год: ${_now.getFullYear()}${identityBlock}${walletBlock}${memoriesBlock}${lessonsBlock}${goalsBlock}${eventsBlock}${statsBlock}
 Конфиг: ${configSummary || '(пусто)'}${pluginHint}${interAgentHint}${memoryDigest}${chatContextBlock}${userContextBlock}${proactiveBlock}${structuredMemoryBlock}${_triggerContext}
-${GIFT_SYSTEM_KNOWLEDGE}${modeHint}
+${skillsInventoryBlock}${modeHint}
 ⚠️ HUMAN-IN-THE-LOOP: Опасные действия (send_ton, buy_*, list_gift_for_sale, ton_send_boc) требуют подтверждения пользователя. Если отклонено — НЕ ПОВТОРЯЙ.
 
 🧠 ПРОТОКОЛ ПАМЯТИ — ОБЯЗАТЕЛЬНОЕ ПОВЕДЕНИЕ:
@@ -8479,6 +8880,24 @@ If web_search returns nothing useful → say "не смог найти акту�
     } else if (iter === MAX_ITERS - 3 && MAX_ITERS >= 4) {
       messages.push({ role: 'user', content: '[SYSTEM: Budget warning — 2 iterations remaining. Be efficient.]' } as any);
     }
+    // ── TodoWrite nag reminder (learn-claude-code s03 pattern) ──
+    // If the agent hasn't called todo_write in N rounds and has IN-PROGRESS
+    // work outstanding, inject a reminder. Helps prevent agent drift mid-task.
+    const todoState = _agentTodos.get(params.agentId);
+    if (todoState) {
+      todoState.roundsSinceCall++;
+      const hasOpenWork = todoState.todos.some(t => t.status !== 'completed');
+      if (hasOpenWork && todoState.roundsSinceCall >= 3) {
+        const summary = todoState.todos
+          .map(t => `  ${t.status === 'completed' ? '✓' : t.status === 'in_progress' ? '◐' : '○'} ${t.content}`)
+          .join('\n');
+        messages.push({
+          role: 'user',
+          content: `<reminder>Your todo list has open items — update it via todo_write. Current state:\n${summary}</reminder>`,
+        } as any);
+        todoState.roundsSinceCall = 0;  // reset so reminder fires every 3 rounds, not every 1
+      }
+    }
     // Re-estimate tokens each iteration (messages grow with tool results)
     estTokens = estimateTokens(messages, tools);
     if (estTokens > 100_000) {
@@ -8663,6 +9082,20 @@ If web_search returns nothing useful → say "не смог найти акту�
         cbRecordFailure(params.agentId); // circuit breaker: track failure
         const errMsg = `AI call failed: ${e.message}`;
         await logToDb(params.agentId, 'error', errMsg);
+        // Auto-pause on persistent permanent errors (key/credits/TPM)
+        try {
+          const { recordErrorMaybePause } = await import('../services/agent-auto-pause');
+          const status = e.status || e.statusCode;
+          const msg = (e.message || '').toLowerCase();
+          if (status === 401 || msg.includes('invalid_api_key') || msg.includes('invalid api key') || msg.includes('expired_api_key')) {
+            await recordErrorMaybePause(params.agentId, params.userId, 'INVALID_API_KEY', e.message);
+          } else if (status === 402 || msg.includes('insufficient credit') || msg.includes('insufficient_credits')) {
+            await recordErrorMaybePause(params.agentId, params.userId, 'INSUFFICIENT_CREDITS', e.message);
+          } else if (status === 413 || status === 429 || msg.includes('tokens per minute') || msg.includes('tpm') || msg.includes('rate_limit_exceeded') || msg.includes('429')) {
+            // 429 from Groq/OpenAI/Anthropic — almost always TPM/RPM rate limit
+            await recordErrorMaybePause(params.agentId, params.userId, 'TPM_EXCEEDED', e.message);
+          }
+        } catch (pe: any) { console.warn(`[AI runtime] auto-pause check failed:`, pe?.message); }
         if (execId) try { await getExecutionHistoryRepository().finish(execId, 'error', 0, errMsg); } catch (e2: any) { console.warn('[ExecTracker] finish:', e2.message); }
         return { toolCallCount: totalToolCalls, error: errMsg };
       }
@@ -8673,6 +9106,19 @@ If web_search returns nothing useful → say "не смог найти акту�
       cbRecordFailure(params.agentId); // circuit breaker: track failure
       const errMsg = `AI call failed after retries: ${lastErr.message}`;
       await logToDb(params.agentId, 'error', errMsg);
+      // Same auto-pause check for retry-exhausted errors
+      try {
+        const { recordErrorMaybePause } = await import('../services/agent-auto-pause');
+        const status = lastErr.status || lastErr.statusCode;
+        const msg = (lastErr.message || '').toLowerCase();
+        if (status === 401 || msg.includes('invalid_api_key') || msg.includes('invalid api key') || msg.includes('expired_api_key')) {
+          await recordErrorMaybePause(params.agentId, params.userId, 'INVALID_API_KEY', lastErr.message);
+        } else if (status === 402 || msg.includes('insufficient credit')) {
+          await recordErrorMaybePause(params.agentId, params.userId, 'INSUFFICIENT_CREDITS', lastErr.message);
+        } else if (status === 413 || msg.includes('tokens per minute') || msg.includes('tpm')) {
+          await recordErrorMaybePause(params.agentId, params.userId, 'TPM_EXCEEDED', lastErr.message);
+        }
+      } catch {}
       if (execId) try { await getExecutionHistoryRepository().finish(execId, 'error', 0, errMsg); } catch (e2: any) { console.warn('[ExecTracker] finish:', e2.message); }
       return { toolCallCount: totalToolCalls, error: errMsg };
     }
@@ -9406,6 +9852,24 @@ If web_search returns nothing useful → say "не смог найти акту�
     // Clean up multiple newlines left after stripping
     finalContent = finalContent.replace(/\n{3,}/g, '\n\n').trim();
   }
+
+  // Successful response → wipe all auto-pause error counters
+  if (finalContent) {
+    try {
+      const { recordSuccess } = await import('../services/agent-auto-pause');
+      recordSuccess(params.agentId).catch(() => {});
+    } catch {}
+  }
+
+  // Clear in-memory todos at tick boundary (TodoWrite is per-run, not persistent)
+  // Only clear if no in_progress items — that signals incomplete work, keep state
+  // so the next message in this conversation can resume.
+  try {
+    const todoState = _agentTodos.get(params.agentId);
+    if (todoState && !todoState.todos.some(t => t.status === 'in_progress')) {
+      _agentTodos.delete(params.agentId);
+    }
+  } catch {}
 
   // ── Async evaluation (LLM-as-a-judge) — sampled, non-blocking ──
   // Fires in background after response is sent. Never blocks user.

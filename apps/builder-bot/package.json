@@ -1,6 +1,6 @@
 {
   "name": "@ton-agent/builder-bot",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "TON Agent Platform Builder Bot",
   "main": "dist/index.js",
   "scripts": {

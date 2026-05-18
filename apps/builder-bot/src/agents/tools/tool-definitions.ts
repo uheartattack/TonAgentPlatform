@@ -11,6 +11,91 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
     {
       type: 'function',
       function: {
+        name: 'todo_write',
+        description: 'Create or update an in-memory checklist for the CURRENT task/session. Use for any multi-step work (3+ subtasks). Statuses: pending | in_progress | completed. Constraint: AT MOST ONE in_progress at a time. The system will auto-remind you to update the list every 3 rounds if items remain open. Best practice: mark as in_progress BEFORE starting the step, completed IMMEDIATELY after. Discards on tick completion.',
+        parameters: {
+          type: 'object',
+          properties: {
+            todos: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  content: { type: 'string', description: 'Imperative form: "Fetch gift prices", "Send TON to addr"' },
+                  activeForm: { type: 'string', description: 'Present continuous: "Fetching gift prices", "Sending TON"' },
+                  status: { type: 'string', enum: ['pending', 'in_progress', 'completed'] },
+                },
+                required: ['content', 'status'],
+              },
+              description: 'Full replacement list (not delta). Send the entire updated checklist each call.',
+            },
+          },
+          required: ['todos'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'todo_read',
+        description: 'Read your current in-memory checklist. Use to remember what step you are on if context was compacted.',
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'get_my_full_state',
+        description: 'Deep self-introspection: returns complete agent state — identity (name/role/level/XP), config (with secrets masked), capabilities + their tool lists, enabled skills, wallet+balance, plugins, active goals, recent lessons, MCP servers, 24h tick stats, auto-pause counters. Use when the user asks "what can you do", "what do you have", "what is your config", "are you OK", or when YOU need to verify your own setup before taking a complex action. No args.',
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'read_skill',
+        description: 'Load full instructions for one of the agent skills listed in the system prompt inventory (gifts, nft, defi, ton-wallet, fragment, telegram-stars, web3-monitor, acton, tolk, func2tolk, ton-blockchain). MANDATORY before picking tools for a domain task — skills contain the correct tool-selection rules. Returns the SKILL.md body (markdown). Spec: https://agentskills.io',
+        parameters: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'Skill name (e.g. "gifts"). Must match a name from the [AGENT SKILLS] inventory block in the system prompt.' },
+          },
+          required: ['name'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'list_skill_references',
+        description: 'List supplementary reference files bundled with a skill. Use after read_skill if the body mentions references/ folder. Returns array of filenames; pair with read_skill_reference to load one.',
+        parameters: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'Skill name' },
+          },
+          required: ['name'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'read_skill_reference',
+        description: 'Read a specific reference file from a skill. Use only after list_skill_references shows the file exists.',
+        parameters: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'Skill name' },
+            ref: { type: 'string', description: 'Reference filename (no path traversal allowed)' },
+          },
+          required: ['name', 'ref'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
         name: 'get_ton_balance',
         description: 'Получить баланс TON кошелька агента. Используй для проверки баланса перед send_ton, stonfi_swap_execute, tonstakers_stake. Возвращает баланс в TON.',
         parameters: {
