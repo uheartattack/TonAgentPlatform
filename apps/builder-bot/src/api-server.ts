@@ -4977,9 +4977,15 @@ export function startApiServer() {
         ? clientHistory.slice(-8).map((m: any) => ({ role: (m.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant', content: String(m.content || m.text || '') }))
         : hist.slice(-8);
 
-      // Atlas streaming: use Anthropic native SDK if key available, else Gemini via OpenAI-compat
+      // Atlas streaming: use Anthropic native SDK only if we have a REAL API key
+      // (sk-ant-api...). OAuth tokens (sk-ant-oat...) work only with Claude Code
+      // CLI, not the public messages endpoint — they return 401 invalid_x_api_key.
+      // Fall through to Gemini (free 250K TPM) in that case.
       const _anthropicKey = process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_CODE_OAUTH_TOKEN || '';
-      const _useAnthropic = !!_anthropicKey && _anthropicKey.startsWith('sk-ant-');
+      const _useAnthropic = /^sk-ant-api/.test(_anthropicKey);
+      if (_anthropicKey && !_useAnthropic) {
+        console.warn(`[Atlas] Anthropic-shaped key found but it's an OAuth token (sk-ant-oat...) — falling back to Gemini. Set ANTHROPIC_API_KEY=sk-ant-api... to enable native Claude.`);
+      }
       const OpenAI = (await import('openai')).default;
       let client: any;
       let model: string;
