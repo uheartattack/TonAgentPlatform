@@ -4957,16 +4957,61 @@ export function startApiServer() {
     try {
       const now = new Date();
       const dateStr = now.toLocaleDateString('ru-RU', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
+
+      // ── Build factual platform inventory so Atlas STOPS hallucinating ────
+      // Pull the live data: real capability keys, real skill names, real templates.
+      // Anything Atlas can mention should appear here verbatim.
+      let realCaps = '';
+      let realSkills = '';
+      let realTemplates = '';
+      try {
+        const { CAPABILITY_TOOL_MAP, TOOLSET_PROFILES } = await import('./agents/ai-agent-runtime');
+        realCaps = Object.keys(CAPABILITY_TOOL_MAP).sort().join(', ');
+        const profiles = Object.entries(TOOLSET_PROFILES || {}).map(([k, v]: any) => `${k}: ${v.labelRu || v.label}`);
+        if (profiles.length) realCaps += `\n  Готовые наборы (TOOLSET_PROFILES): ${profiles.join(' | ')}`;
+      } catch {}
+      try {
+        const { listSkillsForAgent } = await import('./services/skill-registry');
+        const skills = await listSkillsForAgent(0, userId);
+        realSkills = skills.map(s => `${s.name}: ${s.description.slice(0, 70)}`).join('\n  ');
+      } catch {}
+      try {
+        const { agentTemplates } = await import('./agent-templates');
+        if (Array.isArray(agentTemplates)) {
+          realTemplates = `${agentTemplates.length} шаблонов: ` +
+            agentTemplates.slice(0, 12).map((t: any) => t.id || t.name).filter(Boolean).join(', ');
+        }
+      } catch {}
+
       const systemPrompt = [
         'Ты — Atlas, главный AI-ассистент TON Agent Platform.',
         `Сегодня: ${dateStr}.`,
-        'Ты знаешь ВСЁ о платформе и можешь помочь с любым вопросом:',
-        '- Создание агентов: скажи "создай агента [описание задачи]"',
-        '- Настройки: 17 вкладок (Code, AI, Capabilities, Routing, Behavior, Learning, Memory, Security, Advanced и др.)',
-        '- AI провайдеры: Gemini (бесплатный), Groq (бесплатный), OpenRouter (бесплатные модели), Claude, GPT',
-        '- Capabilities: telegram, wallet, gifts_market, web, defi, image_gen, memory, notify + 20 других модулей',
-        '- TON: баланс, транзакции, свопы DeDust/STON.fi, NFT, подарки',
-        'Отвечай кратко и по делу. Говори на языке пользователя. Всегда предлагай конкретные действия.',
+        '',
+        '🚨 ПРАВИЛА АНТИ-ГАЛЛЮЦИНАЦИЙ — ОБЯЗАТЕЛЬНО:',
+        '• ВСЕГДА используй ТОЛЬКО те имена capabilities, скиллов, шаблонов, провайдеров которые указаны НИЖЕ.',
+        '• НИКОГДА не выдумывай имена типа "TON_Storage", "Code_interpreter", "Calendar" — таких НЕТ.',
+        '• Если пользователь спрашивает «есть ли X» — ищи X в списке. Если нет → честно скажи «такого нет, но есть Y которое делает похожее».',
+        '• Если не уверен — скажи «не помню точно, посмотрите в Studio → Capabilities» а НЕ придумывай.',
+        '',
+        '📦 РЕАЛЬНЫЕ CAPABILITIES (точные ID, регистр важен):',
+        realCaps || 'telegram, wallet, gifts, nft, defi, web, image, memory, notify',
+        '',
+        '🧠 РЕАЛЬНЫЕ SKILLS (agentskills.io spec, всего ' + (realSkills.split('\n').length) + '):',
+        '  ' + (realSkills || '(не загружены)'),
+        '',
+        '📋 РЕАЛЬНЫЕ ШАБЛОНЫ:',
+        '  ' + (realTemplates || '(не загружены)'),
+        '',
+        '🤖 РЕАЛЬНЫЕ AI ПРОВАЙДЕРЫ (7): gemini, anthropic, openai, groq, deepseek, openrouter, together. Платформенный fallback: Atlas через Gemini 2.5 Flash.',
+        '',
+        '🛠 ЧТО МОЖНО ДЕЛАТЬ:',
+        '• Создавать агентов: скажи "создай агента [описание]"',
+        '• Управлять кошельками (TON V4R2 или Agentic Wallets через @ton/mcp@alpha)',
+        '• Торговать подарками (GiftAsset/SwiftGifts), NFT (TonAPI), DeFi (STON.fi/DeDust)',
+        '• Импортировать/публиковать скиллы из GitHub (agentskills.io формат)',
+        '• Работать в Telegram как настоящий юзер (MTProto через /tglogin)',
+        '',
+        'Отвечай кратко и по делу. Говори на языке пользователя. Когда перечисляешь возможности — бери имена ИЗ СПИСКА ВЫШЕ.',
         context ? `\nКонтекст: страница="${(context as any).page}", агент=${(context as any).agentId || 'нет'}` : '',
       ].filter(Boolean).join('\n');
 
@@ -5043,7 +5088,7 @@ export function startApiServer() {
                 model: tryModel,
                 system: systemPrompt,
                 messages: nonSystemMsgs,
-                max_tokens: 1024,
+                max_tokens: 4096,
               });
               for await (const event of stream as any) {
                 if (event.type === 'content_block_delta' && event.delta?.text) {
@@ -5052,7 +5097,7 @@ export function startApiServer() {
                 }
               }
             } else {
-              const stream = await client.chat.completions.create({ model: tryModel, stream: true, messages, max_tokens: 1024 });
+              const stream = await client.chat.completions.create({ model: tryModel, stream: true, messages, max_tokens: 4096 });
               for await (const chunk of stream as any) {
                 const delta = chunk.choices?.[0]?.delta?.content;
                 if (delta) { fullText += delta; sendEvent('chunk', { text: delta }); }
