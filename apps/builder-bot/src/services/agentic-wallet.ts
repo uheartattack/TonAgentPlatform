@@ -1,13 +1,17 @@
 /**
  * agentic-wallet.ts — Agentic Wallets Service
  *
- * Интеграция с @ton/mcp agentic wallets:
- * - Root wallet = кошелёк юзера (master key)
- * - Sub-wallets = NFT-based кошельки для агентов (operator key)
- * - On-chain контроль: юзер может заблокировать/вывести в любой момент
+ * Official TON Foundation standard (agents.ton.org):
+ *   • Root wallet  — user's master key. Funds, mints sub-wallets, freezes, revokes.
+ *   • Sub-wallets  — NFT-based per-agent wallets with operator key. Bound to root.
+ *   • On-chain enforcement of daily limits, freeze/revoke. No off-chain trust required.
  *
- * Использует @ton/mcp в registry-mode для управления кошельками.
- * Fallback на legacy V4R2 если agentic не настроен.
+ * Default behavior:
+ *   1. setupRootWallet → try @ton/mcp@alpha (deploy_agentic_root) first.
+ *   2. deploySubWallet → try @ton/mcp@alpha (deploy_agentic_subwallet) first.
+ *   3. V4R2 used ONLY as fallback when MCP unreachable (graceful degradation).
+ *
+ * Upgraded May 2026 to use @ton/mcp@alpha v0.1.15 per agents.ton.org spec.
  */
 
 import crypto from 'crypto';
@@ -303,7 +307,53 @@ class AgenticWalletService {
         return { success: true, wallet: record };
       }
 
-      // Generate V4R2 wallet as root (self-custody, no external redirect)
+      // ── PRIMARY PATH: try TON Agentic Wallets via @ton/mcp@alpha ─────────
+      // agents.ton.org architecture: master/root wallet mints NFT sub-wallets,
+      // on-chain enforced limits, freeze/revoke. Significantly safer for
+      // autonomous agents than a raw V4R2.
+      try {
+        const { mnemonicNew, mnemonicToWalletKey } = require('@ton/crypto');
+        const masterWords = await mnemonicNew(24);
+        const masterKey = await mnemonicToWalletKey(masterWords);
+        const masterMnemonic = masterWords.join(' ');
+
+        const mcp = await this.ensureMcp(masterMnemonic);
+        if (mcp && (mcp.hasTool('deploy_agentic_root') || mcp.hasTool('deploy_agentic_wallet') || mcp.hasTool('deploy_root_wallet'))) {
+          const toolName = mcp.hasTool('deploy_agentic_root') ? 'deploy_agentic_root'
+                         : mcp.hasTool('deploy_root_wallet')   ? 'deploy_root_wallet'
+                         : 'deploy_agentic_wallet';
+          const result = await mcp.callTool(toolName, {
+            masterPublicKey: masterKey.publicKey.toString('hex'),
+            label: 'Agentic Root',
+            amountTon: '0.1',
+          });
+          const rootAddr = result.address || result.rootAddress;
+          if (rootAddr) {
+            const record = await this.createWalletRecord(userId, {
+              walletType: 'root',
+              address: rootAddr,
+              label: 'Agentic Root (agents.ton.org)',
+              operatorKey: masterKey.publicKey.toString('hex'),
+            });
+            // Encrypted master mnemonic in user_settings — same key path as legacy
+            await pool.query(
+              `INSERT INTO builder_bot.user_settings (user_id, key, value) VALUES ($1, 'root_wallet_mnemonic', $2)
+               ON CONFLICT ON CONSTRAINT user_settings_unique DO UPDATE SET value = $2, updated_at = NOW()`,
+              [userId, encryptMnemonic(masterMnemonic)]
+            );
+            console.log(`[AgenticWallet] Root deployed via MCP (${toolName}) for user ${userId}: ${rootAddr}`);
+            return { success: true, wallet: record };
+          }
+        }
+        console.warn('[AgenticWallet] MCP available but no deploy_agentic_root tool — falling back to V4R2');
+      } catch (e: any) {
+        console.warn('[AgenticWallet] Agentic root deploy via MCP failed, falling back to V4R2:', e?.message);
+      }
+
+      // ── FALLBACK: legacy V4R2 (self-custody, no external redirect) ──────
+      // Only reached if @ton/mcp@alpha is unavailable or doesn't expose the
+      // root-deploy tool. The user still gets a working wallet — just without
+      // the master/operator separation and on-chain limits.
       const { generateAgentWallet } = require('./TonConnect');
       const newWallet = await generateAgentWallet();
       // Safely convert address to string (Address object may be frozen)
@@ -314,7 +364,7 @@ class AgenticWalletService {
       const record = await this.createWalletRecord(userId, {
         walletType: 'root',
         address: walletAddress,
-        label: 'Root Wallet (V4R2)',
+        label: 'Root Wallet (V4R2 fallback)',
         operatorKey: newWallet.publicKey ? Buffer.from(newWallet.publicKey).toString('hex') : undefined,
       });
 

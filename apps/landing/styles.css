@@ -314,12 +314,7 @@ main, section, footer, .lang-switcher, .scroll-rocket{position:relative;z-index:
   position:relative;display:inline-block;
   text-shadow:0 0 40px rgba(0,168,255,.5);
 }
-.hero-title .accent-text::after{
-  content:"";position:absolute;left:6%;right:6%;bottom:-.04em;height:4px;
-  background:var(--grad);border-radius:4px;
-  box-shadow:0 0 16px rgba(0,168,255,.6);
-  transform-origin:left;animation:underline-draw 1.6s var(--ease) .4s backwards;
-}
+/* underline removed per design — accent-text now relies on glow only */
 @keyframes underline-draw{from{transform:scaleX(0)}to{transform:scaleX(1)}}
 
 .hero-subtitle{

@@ -308,7 +308,7 @@ async function loadHealthMetrics() {
   html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px;margin-bottom:28px">';
   var healthCards = [
     { label: isRu ? 'Статус' : 'Status', value: 'Healthy', color: '#22c55e', icon: IC.checkCircle },
-    { label: isRu ? 'Аптайм' : 'Uptime', value: statsData.ok && statsData.uptimeSeconds ? Math.floor(statsData.uptimeSeconds/3600)+'h '+Math.floor((statsData.uptimeSeconds%3600)/60)+'m' : '—', color: '#0098ea', icon: IC.clock },
+    { label: isRu ? 'Аптайм' : 'Uptime', value: statsData.ok && statsData.uptimeSeconds ? Math.floor(statsData.uptimeSeconds/3600)+'h '+Math.floor((statsData.uptimeSeconds%3600)/60)+'m' : '—', color: '#00a8ff', icon: IC.clock },
     { label: isRu ? 'Агентов активно' : 'Active Agents', value: (statsData.ok ? statsData.agentsActive : 0) || '0', color: '#8b5cf6', icon: IC.robot },
     { label: isRu ? 'Запусков за 24ч' : 'Runs (24h)', value: (statsData.ok ? statsData.last24hRuns : 0) || '0', color: '#f5a623', icon: IC.bolt },
   ];

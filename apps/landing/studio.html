@@ -7,7 +7,7 @@
   <link rel="icon" type="image/svg+xml" href="logo.svg">
   <link rel="shortcut icon" href="logo.svg">
   <title>TON Agent Studio</title>
-  <link rel="preload" href="/studio.js?v=20260420c" as="script">
+  <link rel="preload" href="/studio.js?v=20260518d" as="script">
   <link rel="preload" href="/studio.css?v=20260420" as="style">
   <link rel="preload" href="/design-system.css?v=20260420" as="style">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -15,6 +15,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="studio.css?v=20260420">
   <link rel="stylesheet" href="design-system.css?v=20260420">
+  <link rel="stylesheet" href="studio-theme-sync.css?v=20260518">
   <!-- Telegram widget loaded in body where button should appear -->
 </head>
 <body>
@@ -24,8 +25,8 @@
       <div class="auth-left">
         <div class="auth-left-content">
           <div class="auth-brand">
-            <div class="auth-brand-icon">
-              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            <div class="auth-brand-icon" style="background:transparent;border-radius:50%;box-shadow:0 6px 20px rgba(0,168,255,.4),0 0 40px rgba(139,92,246,.3)">
+              <img src="/logo.svg?v=20260518" width="56" height="56" alt="TON Agent" style="display:block">
             </div>
             <h1>TON Agent Studio</h1>
           </div>
@@ -61,8 +62,8 @@
         <div class="auth-right-content">
           <div class="auth-box">
             <div class="auth-logo">
-              <div class="auth-logo-icon">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+              <div class="auth-logo-icon" style="background:transparent;border-radius:50%;box-shadow:0 8px 28px rgba(0,168,255,.38),0 0 48px rgba(139,92,246,.25)">
+                <img src="/logo.svg?v=20260518" width="64" height="64" alt="TON Agent" style="display:block">
               </div>
             </div>
             <h2 data-en="Welcome" data-ru="Добро пожаловать">Welcome</h2>
@@ -102,10 +103,8 @@
     <aside class="sidebar">
       <div class="sidebar-header">
         <a href="/studio" class="logo" onclick="event.preventDefault();navigateTo('overview')">
-          <div class="logo-icon">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5">
-              <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
-            </svg>
+          <div class="logo-icon" style="background:transparent;border-radius:50%;box-shadow:0 0 14px rgba(0,168,255,.45),0 0 28px rgba(139,92,246,.25);overflow:visible;width:38px;height:38px">
+            <img src="/logo.svg?v=20260518" width="34" height="34" alt="TON Agent" style="display:block">
           </div>
           <div class="logo-text">
             <span class="logo-title">TON Agent <span class="logo-accent">Studio</span></span>
@@ -129,6 +128,11 @@
               <a href="#" class="nav-item" data-page="marketplace" onclick="navigateTo('marketplace')">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
                 <span data-en="Marketplace" data-ru="Маркетплейс">Marketplace</span>
+              </a>
+              <a href="#" class="nav-item" data-page="skills" onclick="navigateTo('skills')" title="Agent Skills (agentskills.io)">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18 9l-4.1 1.4L12 15l-1.9-4.6L6 9l4.1-1.4z"/><path d="M19 14l.95 2.3L22 17l-2.05.7L19 20l-.95-2.3L16 17l2.05-.7z"/><path d="M5 5l.7 1.7L7.5 7.5l-1.8.8L5 10l-.7-1.7L2.5 7.5l1.8-.8z"/></svg>
+                <span data-en="Skills" data-ru="Скиллы">Skills</span>
+                <span class="nav-badge accent">NEW</span>
               </a>
               <a href="#" class="nav-item" data-page="assistant" onclick="navigateTo('assistant')">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
@@ -285,7 +289,7 @@
       </div>
       <div class="topbar-right">
         <div class="topbar-balance" id="topbar-balance-wrap">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+          <svg width="14" height="14" viewBox="0 0 56 56" fill="currentColor" aria-label="TON"><path d="M28 0C12.536 0 0 12.536 0 28s12.536 28 28 28 28-12.536 28-28S43.464 0 28 0zm9.96 18.06h-19.92c-1.61 0-2.6 1.74-1.79 3.14L26.81 39c.51.88 1.78.88 2.29 0L40 21.2c.81-1.4-.18-3.14-1.79-3.14H37.96zM26.71 21.5v15.04l-2.84-4.92-7.74-9.36c-.31-.36-.05-.76.36-.76h10.22zM31.13 21.5h10.22c.41 0 .67.4.36.76l-7.74 9.36-2.84 4.92V21.5z"/></svg>
           <span>Balance: <strong id="topbar-ton-balance">0</strong> TON</span>
         </div>
         <div class="topbar-divider"></div>
@@ -2014,7 +2018,7 @@
             </div>
             <div class="network-stats-divider"></div>
             <div class="network-stats-item">
-              <span class="network-stats-value" id="net-stat-edges" style="color:#0098EA">0</span>
+              <span class="network-stats-value" id="net-stat-edges" style="color:#00a8ff">0</span>
               <span class="network-stats-label" data-en="Links" data-ru="Связи">Links</span>
             </div>
           </div>
@@ -2043,7 +2047,7 @@
             <div class="nleg-item"><span class="nleg-dot" style="background:#a855f7;box-shadow:0 0 6px #a855f7"></span><span data-en="Manager" data-ru="Менеджер">Manager</span></div>
             <div class="nleg-item"><span class="nleg-dot" style="background:#10b981;box-shadow:0 0 6px #10b981"></span><span data-en="Specialist" data-ru="Специалист">Specialist</span></div>
             <div class="nleg-item"><span class="nleg-dot" style="background:#f59e0b;box-shadow:0 0 6px #f59e0b"></span><span data-en="Monitor" data-ru="Монитор">Monitor</span></div>
-            <div class="nleg-item"><span class="nleg-dot" style="background:#0098EA;box-shadow:0 0 6px #0098EA"></span><span data-en="Worker" data-ru="Воркер">Worker</span></div>
+            <div class="nleg-item"><span class="nleg-dot" style="background:#00a8ff;box-shadow:0 0 6px #00a8ff"></span><span data-en="Worker" data-ru="Воркер">Worker</span></div>
             <div class="nleg-item"><span class="nleg-dot" style="background:#555"></span><span data-en="Paused" data-ru="Пауза">Paused</span></div>
           </div>
 
@@ -2149,6 +2153,37 @@
         </div>
       </div>
 
+      <!-- Skills Page (agentskills.io) -->
+      <div id="skills-page" class="page">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title" data-en="Agent Skills" data-ru="Скиллы агентов">Agent Skills</h1>
+            <p class="page-subtitle" data-en="Reusable knowledge bundles loaded on demand. Spec: agentskills.io" data-ru="Переиспользуемые наборы знаний — грузятся по требованию. Спека: agentskills.io">Reusable knowledge bundles loaded on demand</p>
+          </div>
+          <div class="header-actions">
+            <button class="btn btn-ghost" onclick="openImportSkillModal()" title="Import from GitHub URL">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              <span data-en="Import" data-ru="Импорт">Import</span>
+            </button>
+            <button class="btn btn-primary" onclick="openCreateSkillModal()">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              <span data-en="New Skill" data-ru="Новый скилл">New Skill</span>
+            </button>
+          </div>
+        </div>
+        <div class="page-content">
+          <div class="marketplace-tabs" id="skills-tabs">
+            <button class="mkt-tab active" onclick="filterSkills('all')" data-cat="all" data-en="All" data-ru="Все">All</button>
+            <button class="mkt-tab" onclick="filterSkills('builtin')" data-cat="builtin" data-en="Built-in" data-ru="Встроенные">Built-in</button>
+            <button class="mkt-tab" onclick="filterSkills('user')" data-cat="user" data-en="Mine" data-ru="Мои">Mine</button>
+            <button class="mkt-tab" onclick="filterSkills('imported')" data-cat="imported" data-en="Public" data-ru="Публичные">Public</button>
+          </div>
+          <div id="skills-grid" class="marketplace-grid">
+            <div class="loading-placeholder" data-en="Loading skills..." data-ru="Загрузка скиллов...">Loading skills...</div>
+          </div>
+        </div>
+      </div>
+
       <!-- Guide Page -->
       <div id="notifications-page" class="page">
         <div class="page-content" id="page-notifications"></div>
@@ -2177,8 +2212,8 @@
 
           <!-- Step 1: Welcome -->
           <div class="onboarding-slide" id="onboarding-slide-0">
-            <div class="onboarding-icon">
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            <div class="onboarding-icon" style="background:transparent;border-radius:50%;box-shadow:0 10px 32px rgba(0,168,255,.4),0 0 56px rgba(139,92,246,.3)">
+              <img src="/logo.svg?v=20260518" width="72" height="72" alt="TON Agent" style="display:block">
             </div>
             <h2 class="onboarding-title" data-en="Welcome to TON Agent!" data-ru="Добро пожаловать!">Welcome to TON Agent!</h2>
             <p class="onboarding-desc" id="onboarding-subtitle" data-en="Build autonomous AI agents that live inside Telegram and work with the TON blockchain — no coding required." data-ru="Создавайте автономных AI-агентов, которые работают в Telegram и взаимодействуют с блокчейном TON — без кода.">Build autonomous AI agents that live inside Telegram and work with the TON blockchain — no coding required.</p>
@@ -2216,7 +2251,7 @@
             <h2 class="onboarding-title" data-en="One More Step" data-ru="Последний шаг">One More Step</h2>
             <p class="onboarding-desc" data-en="Set up your AI provider key in Profile — without it agents can't think." data-ru="Настройте AI ключ в Профиле — без него агенты не могут думать.">Set up AI key in Profile.</p>
             <div class="onboarding-features">
-              <div class="onboarding-feature" style="border:1px solid rgba(0,152,234,0.3);background:rgba(0,152,234,0.05);border-radius:10px;padding:10px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0098EA" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg><span data-en="Free keys: Gemini, Groq, OpenRouter" data-ru="Бесплатные ключи: Gemini, Groq, OpenRouter" style="color:var(--text-primary)">Free: Gemini, Groq, OpenRouter</span></div>
+              <div class="onboarding-feature" style="border:1px solid rgba(0,168,255,0.3);background:rgba(0,168,255,0.05);border-radius:10px;padding:10px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00a8ff" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg><span data-en="Free keys: Gemini, Groq, OpenRouter" data-ru="Бесплатные ключи: Gemini, Groq, OpenRouter" style="color:var(--text-primary)">Free: Gemini, Groq, OpenRouter</span></div>
             </div>
             <p class="onboarding-hint" data-en="Click Finish to open Profile with setup hints." data-ru="Нажмите Готово чтобы открыть Профиль с подсказками.">Click Finish to open Profile.</p>
           </div>
@@ -2478,6 +2513,7 @@
           </div>
           <div class="st-nav-group"><div class="st-nav-label" data-en="Data" data-ru="Данные">Data</div>
             <button class="st-nav-item" onclick="switchSettingsTab('memory')" data-tab="memory"><div class="st-nav-icon" style="background:rgba(139,92,246,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div><span data-en="Memory" data-ru="Память">Memory</span></button>
+            <button class="st-nav-item" onclick="switchSettingsTab('skills')" data-tab="skills"><div class="st-nav-icon" style="background:rgba(0,168,255,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00a8ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18 9l-4.1 1.4L12 15l-1.9-4.6L6 9l4.1-1.4z"/><path d="M19 14l.95 2.3L22 17l-2.05.7L19 20l-.95-2.3L16 17l2.05-.7z"/></svg></div><span data-en="Skills" data-ru="Скиллы">Skills</span></button>
             <button class="st-nav-item" onclick="switchSettingsTab('tasks')" data-tab="tasks"><div class="st-nav-icon" style="background:rgba(34,197,94,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div><span data-en="Tasks" data-ru="Задачи">Tasks</span></button>
           </div>
           <div class="st-nav-group"><div class="st-nav-label" data-en="Other" data-ru="Прочее">Other</div>
@@ -2569,6 +2605,6 @@
   </div>
 
   <script src="https://unpkg.com/@tonconnect/ui@2/dist/tonconnect-ui.min.js"></script>
-  <script src="studio.js?v=20260420c"></script>
+  <script src="studio.js?v=20260518"></script>
 </body>
 </html>

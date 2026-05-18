@@ -541,7 +541,14 @@ function showApp() {
   document.getElementById('auth-screen').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
 
-  // Check ToS acceptance — show popup if not accepted
+  // Check ToS acceptance — show popup if not accepted.
+  // Trust localStorage cache: once user clicked Accept on this device, never ask
+  // again here even if /api/me reply is delayed or token rotated.
+  try {
+    if (localStorage.getItem('tos_accepted') === '1' && currentUser) {
+      currentUser._acceptedTos = true;
+    }
+  } catch (_e) {}
   if (currentUser && !currentUser._acceptedTos) {
     showTosPopup();
   }
@@ -1793,10 +1800,10 @@ function switchSettingsTab(tab) {
       { id: 'inter_agent', name: 'Inter-Agent', icon: IC.forward, color: '#a855f7',
         desc: isRu ? 'Общение между агентами. Делегирование задач другим агентам' : 'Inter-agent communication. Delegate tasks to other agents',
         tools: ['send_to_agent'] },
-      { id: 'blockchain', name: 'Blockchain', icon: IC.link, color: '#0098ea',
+      { id: 'blockchain', name: 'Blockchain', icon: IC.link, color: '#00a8ff',
         desc: isRu ? 'Чтение данных блокчейна TON. Транзакции, контракты, адреса' : 'Read TON blockchain data. Transactions, contracts, addresses',
         tools: ['get_account_info'] },
-      { id: 'ton_mcp', name: 'TON MCP', icon: IC.link, color: '#0098ea',
+      { id: 'ton_mcp', name: 'TON MCP', icon: IC.link, color: '#00a8ff',
         desc: isRu ? 'TON MCP сервер. Расширенные операции с блокчейном TON' : 'TON MCP server. Advanced TON blockchain operations',
         tools: ['ton_mcp'] },
       { id: 'discord', name: 'Discord', icon: IC.chat, color: '#5865f2',
@@ -1931,7 +1938,7 @@ function switchSettingsTab(tab) {
   } else if (tab === 'role') {
     var currentRole = a.role || 'worker';
     var customRole = (config.config && config.config.customRole) || {};
-    var agentColor = (config.config && config.config.agentColor) || '#0098EA';
+    var agentColor = (config.config && config.config.agentColor) || '#00a8ff';
     var roles = [
       { id: 'worker', name: 'Worker', icon: IC.wrench, color: '#3b82f6',
         desc: currentLang === 'ru' ? 'Исполнитель задач' : 'Task executor',
@@ -1959,7 +1966,7 @@ function switchSettingsTab(tab) {
         effect: currentLang === 'ru' ? 'Модерация, бан/мьют, антиспам, приветствие новичков, правила.' : 'Moderation, ban/mute, anti-spam, welcome newbies, rules enforcement.' },
     ];
     var isRu = currentLang === 'ru';
-    var colorSwatches = ['#0098EA', '#3b82f6', '#6366f1', '#a855f7', '#ec4899', '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6', '#06b6d4', '#64748b'];
+    var colorSwatches = ['#00a8ff', '#3b82f6', '#6366f1', '#8b5cf6', '#a855f7', '#ec4899', '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6', '#06b6d4'];
     body.innerHTML =
       '<div class="rt-page">' +
       '<div class="rt-header">' +
@@ -2733,6 +2740,29 @@ function switchSettingsTab(tab) {
       '</div>';
     loadMemoryData();
     loadProfilesData();
+
+  } else if (tab === 'skills') {
+    var isRu = currentLang === 'ru';
+    body.innerHTML =
+      '<div class="rt-page">' +
+      '<div class="rt-header">' +
+        '<div class="rt-header-icon" style="background:rgba(0,168,255,0.12);color:#00a8ff">' +
+          '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18 9l-4.1 1.4L12 15l-1.9-4.6L6 9l4.1-1.4z"/><path d="M19 14l.95 2.3L22 17l-2.05.7L19 20l-.95-2.3L16 17l2.05-.7z"/></svg>' +
+        '</div>' +
+        '<div class="rt-header-text">' +
+          '<h3>' + (isRu ? 'Скиллы агента' : 'Agent Skills') + '</h3>' +
+          '<p>' + (isRu
+            ? 'Включи/выключи скиллы для этого агента. Скилл = пакет знаний+правил выбора инструментов. Спека: agentskills.io'
+            : 'Enable/disable skills for this agent. Skill = bundle of knowledge + tool-selection rules. Spec: agentskills.io') + '</p>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-section">' +
+        '<div id="agent-skills-list" style="display:flex;flex-direction:column;gap:8px">' +
+          '<div class="loading-placeholder">' + (isRu ? 'Загрузка...' : 'Loading...') + '</div>' +
+        '</div>' +
+      '</div>' +
+      '</div>';
+    loadAgentSkills(_detailAgentId);
 
   } else if (tab === 'tasks') {
     var isRu = currentLang === 'ru';
@@ -3968,7 +3998,7 @@ async function saveCustomRole() {
   if (!_detailAgentId) return;
   var roleName = (document.getElementById('custom-role-name') || {}).value || '';
   var roleDesc = (document.getElementById('custom-role-desc') || {}).value || '';
-  var agentColor = (document.getElementById('agent-color-picker') || {}).value || '#0098EA';
+  var agentColor = (document.getElementById('agent-color-picker') || {}).value || '#00a8ff';
   // Save directly to agent trigger_config via config endpoint
   var data = await apiRequest('POST', '/api/agents/' + _detailAgentId + '/config', {
     customRole: { name: roleName.trim(), description: roleDesc.trim() },
@@ -4329,7 +4359,7 @@ function renderAgentsPage() {
       '<span class="agent-desc">' + escHtml((a.description || '').slice(0, 120)) + '</span>' +
       '</div>' +
       '<div class="agent-card-meta">' +
-      '<span class="agent-role-badge role-' + role + '" style="background:' + ({worker:'rgba(0,152,234,0.15)',manager:'rgba(155,89,182,0.15)',specialist:'rgba(230,126,34,0.15)',monitor:'rgba(46,204,113,0.15)'}[role] || 'rgba(0,152,234,0.15)') + ';color:' + ({worker:'#0098EA',manager:'#9b59b6',specialist:'#e67e22',monitor:'#2ecc71'}[role] || '#0098EA') + '">' + role + '</span>' +
+      '<span class="agent-role-badge role-' + role + '" style="background:' + ({worker:'rgba(0,168,255,0.15)',manager:'rgba(139,92,246,0.15)',specialist:'rgba(230,126,34,0.15)',monitor:'rgba(46,204,113,0.15)'}[role] || 'rgba(0,168,255,0.15)') + ';color:' + ({worker:'#00a8ff',manager:'#8b5cf6',specialist:'#e67e22',monitor:'#2ecc71'}[role] || '#00a8ff') + '">' + role + '</span>' +
       '<span class="agent-level">' + t('lv') + lvl + '</span>' +
       (lastActiveStr ? '<span class="agent-last-active" title="' + (currentLang === 'ru' ? 'Последняя активность' : 'Last active') + '">' + IC.clock + ' ' + lastActiveStr + '</span>' : '') +
       (toolCalls > 0 ? '<span class="agent-tool-calls" title="' + (currentLang === 'ru' ? 'Вызовов инструментов' : 'Tool calls') + '">' + IC.wrench + ' ' + toolCalls + '</span>' : '') +
@@ -4564,6 +4594,11 @@ function logout() {
   authToken = null;
   currentUser = null;
   localStorage.removeItem('tg_token');
+  // Clear TOS cache so a different user signing in on this device sees the popup
+  try {
+    localStorage.removeItem('tos_accepted');
+    localStorage.removeItem('tos_accepted_errors');
+  } catch (_e) {}
   document.getElementById('auth-screen').classList.remove('hidden');
   document.getElementById('app').classList.add('hidden');
   // Re-initialize auth screen so login button appears immediately
@@ -4892,6 +4927,7 @@ const pageLoadFns = {
   network:     () => loadNetworkMap(),
   builder:     () => initFlowBuilder(),
   marketplace: () => loadMarketplace(),
+  skills:      () => loadSkillsPage(),
   assistant:   () => loadAssistantPage(),
   guide:         () => loadGuidePage(),
   notifications: () => loadNotificationsPage(),
@@ -6376,7 +6412,7 @@ function drawBarChart(execs) {
   }
 
   // Bars
-  var colors = { success: '#2dcc70', failed: '#e74c3c', other: '#0098EA' };
+  var colors = { success: '#2dcc70', failed: '#e74c3c', other: '#00a8ff' };
   for (var b = 0; b < 7; b++) {
     var day = days[b];
     var total = day.success + day.failed + day.other;
@@ -6450,7 +6486,7 @@ function drawDonutChart(execs) {
   var slices = [
     { label: currentLang === 'ru' ? 'Успешно' : 'Success', val: counts.success, color: '#2dcc70' },
     { label: currentLang === 'ru' ? 'Ошибки' : 'Failed', val: counts.failed, color: '#e74c3c' },
-    { label: currentLang === 'ru' ? 'Прочее' : 'Other', val: counts.other, color: '#0098EA' }
+    { label: currentLang === 'ru' ? 'Прочее' : 'Other', val: counts.other, color: '#00a8ff' }
   ];
 
   var cx = size / 2, cy = size / 2, outerR = 85, innerR = 55;
@@ -9564,7 +9600,7 @@ async function loadNetworkMap() {
   var W = dims.w, H = dims.h;
 
   // Build nodes
-  var roleColors = { director: '#ffd700', manager: '#a855f7', specialist: '#10b981', monitor: '#f59e0b', worker: '#0098EA' };
+  var roleColors = { director: '#ffd700', manager: '#8b5cf6', specialist: '#10b981', monitor: '#f59e0b', worker: '#00a8ff' };
   var roleLabels = { director: 'DIR', manager: 'MGR', specialist: 'SPEC', monitor: 'MON', worker: 'WRK' };
 
   _networkNodes = agents.map(function(a, i) {
@@ -9574,7 +9610,7 @@ async function loadNetworkMap() {
     var radius = role === 'director' ? 40 + level * 2 + baseBoost : role === 'manager' ? 34 + level * 2 + baseBoost : role === 'specialist' ? 30 + level + baseBoost : role === 'monitor' ? 28 + level + baseBoost : 24 + Math.min(level, 5) + baseBoost;
     var trigCfg = {}; try { var _t2 = a.trigger_config || a.triggerConfig || {}; trigCfg = typeof _t2 === 'string' ? JSON.parse(_t2) : _t2; } catch(e) {}
     var customColor = (trigCfg.config && trigCfg.config.agentColor) || '';
-    var color = !a.isActive ? '#6b7280' : (customColor || roleColors[role] || '#0098EA');
+    var color = !a.isActive ? '#6b7280' : (customColor || roleColors[role] || '#00a8ff');
     var customRoleName = (trigCfg.config && trigCfg.config.customRole && trigCfg.config.customRole.name) || '';
     var roleLabel = customRoleName || roleLabels[role] || role.toUpperCase().slice(0, 4);
     var angle = (i / agents.length) * Math.PI * 2;
@@ -13838,6 +13874,9 @@ async function acceptTos() {
     var acceptErrors = errCb ? errCb.checked : false;
     await apiRequest('POST', '/api/me/accept-tos', { acceptTos: true, acceptErrors: acceptErrors });
     if (currentUser) currentUser._acceptedTos = true;
+    // Persist locally — survive page reload even if server lookup is slow
+    try { localStorage.setItem('tos_accepted', '1'); } catch (_e) {}
+    try { localStorage.setItem('tos_accepted_errors', acceptErrors ? '1' : '0'); } catch (_e) {}
     var overlay = document.getElementById('tos-overlay');
     if (overlay) overlay.remove();
     toast(currentLang === 'ru' ? 'Спасибо! Добро пожаловать.' : 'Thank you! Welcome.', 'success');
@@ -14978,4 +15017,270 @@ async function submitFeedback() {
     }
   } catch(e) { toast(e.message, 'error'); }
   if (btn) { btn.disabled = false; btn.textContent = currentLang === 'ru' ? 'Отправить' : 'Send'; }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AGENT SKILLS (agentskills.io) — Studio UI
+// ═══════════════════════════════════════════════════════════════════════════
+
+var _skillsCache = [];
+var _skillsFilter = 'all';
+
+async function loadSkillsPage() {
+  var grid = document.getElementById('skills-grid');
+  if (!grid) return;
+  grid.innerHTML = '<div class="loading-placeholder">' + (currentLang === 'ru' ? 'Загрузка...' : 'Loading...') + '</div>';
+  try {
+    var data = await apiRequest('GET', '/api/skills');
+    _skillsCache = (data && data.skills) || [];
+    renderSkills();
+  } catch (e) {
+    grid.innerHTML = '<div class="empty-state"><p>' + escHtml(e.message || 'Error') + '</p></div>';
+  }
+}
+
+function filterSkills(cat) {
+  _skillsFilter = cat;
+  document.querySelectorAll('#skills-tabs .mkt-tab').forEach(function(b) {
+    b.classList.toggle('active', b.getAttribute('data-cat') === cat);
+  });
+  renderSkills();
+}
+
+function renderSkills() {
+  var grid = document.getElementById('skills-grid');
+  if (!grid) return;
+  var filtered = _skillsCache.filter(function(s) {
+    if (_skillsFilter === 'all') return true;
+    return s.source === _skillsFilter;
+  });
+  if (filtered.length === 0) {
+    grid.innerHTML = '<div class="empty-state"><p>' +
+      (currentLang === 'ru' ? 'Нет скиллов' : 'No skills') + '</p></div>';
+    return;
+  }
+  var html = filtered.map(function(s) {
+    var badgeColor = s.source === 'builtin' ? '#00a8ff' :
+                     s.source === 'user' ? '#22c55e' : '#8b5cf6';
+    var badgeLabel = s.source === 'builtin' ? 'BUILT-IN' :
+                     s.source === 'user' ? 'MINE' : 'PUBLIC';
+    var cat = (s.category || s.metadata && s.metadata.category || '').toUpperCase();
+    var ver = s.version || '1.0';
+    return '' +
+      '<div class="marketplace-card skill-card" onclick="openSkillDetail(' + JSON.stringify(s.name) + ')" style="cursor:pointer">' +
+        '<div class="mkt-card-header" style="display:flex;justify-content:space-between;align-items:center;gap:8px">' +
+          '<strong style="font-size:1rem">' + escHtml(s.name) + '</strong>' +
+          '<span style="background:' + badgeColor + '22;color:' + badgeColor + ';padding:2px 8px;border-radius:6px;font-size:.65rem;font-weight:700">' + badgeLabel + '</span>' +
+        '</div>' +
+        '<div class="mkt-card-desc" style="margin-top:8px;font-size:.85rem;color:var(--text-muted);min-height:60px">' +
+          escHtml((s.description || '').slice(0, 220)) +
+        '</div>' +
+        '<div class="mkt-card-footer" style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:.7rem;color:var(--text-dim)">' +
+          '<span>' + (cat ? cat + ' · ' : '') + 'v' + escHtml(ver) + '</span>' +
+          (s.compatibility ? '<span title="' + escHtml(s.compatibility) + '" style="color:var(--warning)">⚠ deps</span>' : '') +
+        '</div>' +
+      '</div>';
+  }).join('');
+  grid.innerHTML = html;
+}
+
+async function openSkillDetail(name) {
+  try {
+    var data = await apiRequest('GET', '/api/skills/' + encodeURIComponent(name));
+    if (!data || !data.skill) { toast('Skill not found', 'error'); return; }
+    var s = data.skill;
+    var isOwn = s.source === 'user';
+    // For owner-skills: get current is_public from cache (loaded by listSkillsForAgent)
+    var skillMeta = (_skillsCache || []).find(function(x) { return x.name === name; }) || {};
+    var isPublic = !!skillMeta.is_public;  // may be undefined initially
+    var publishBtn = isOwn
+      ? '<button class="btn btn-ghost btn-sm" onclick="toggleSkillPublish(' + JSON.stringify(name) + ', ' + (!isPublic) + ')">' +
+        (isPublic
+          ? (currentLang === 'ru' ? '🔒 Сделать приватным' : '🔒 Make Private')
+          : (currentLang === 'ru' ? '🌍 Опубликовать' : '🌍 Publish')) +
+        '</button>'
+      : '';
+    var deleteBtn = isOwn
+      ? '<button class="btn btn-ghost btn-sm" style="color:var(--error)" onclick="deleteSkill(' + JSON.stringify(name) + ')">' +
+        (currentLang === 'ru' ? 'Удалить' : 'Delete') + '</button>'
+      : '';
+    var body =
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">' +
+        '<span class="badge" style="background:rgba(0,168,255,.15);color:#00a8ff;padding:3px 8px;border-radius:6px;font-size:.7rem">' + s.source.toUpperCase() + '</span>' +
+        '<span class="badge" style="background:rgba(139,92,246,.15);color:#8b5cf6;padding:3px 8px;border-radius:6px;font-size:.7rem">v' + escHtml(s.version || '1.0') + '</span>' +
+        (s.license ? '<span class="badge" style="background:rgba(34,197,94,.15);color:#22c55e;padding:3px 8px;border-radius:6px;font-size:.7rem">' + escHtml(s.license.slice(0, 30)) + '</span>' : '') +
+      '</div>' +
+      '<p style="color:var(--text-muted);margin-bottom:16px">' + escHtml(s.description) + '</p>' +
+      (s.compatibility ? '<div style="background:rgba(245,158,11,.08);border-left:3px solid #f59e0b;padding:8px 12px;margin-bottom:12px;font-size:.85rem"><b>⚠ Requires:</b> ' + escHtml(s.compatibility) + '</div>' : '') +
+      '<pre style="background:var(--bg-secondary);padding:12px;border-radius:8px;max-height:50vh;overflow:auto;font-size:.8rem;white-space:pre-wrap;font-family:Inter,sans-serif">' + escHtml(s.body) + '</pre>';
+    var footer =
+      '<button class="btn btn-ghost" onclick="closeModal()">' + (currentLang === 'ru' ? 'Закрыть' : 'Close') + '</button>' +
+      publishBtn + deleteBtn;
+    openModal(escHtml(name), body, footer);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function toggleSkillPublish(name, makePublic) {
+  try {
+    var data = await apiRequest('POST', '/api/skills/' + encodeURIComponent(name) + '/publish', { isPublic: makePublic });
+    if (data && data.ok) {
+      toast(
+        makePublic
+          ? (currentLang === 'ru' ? 'Скилл опубликован' : 'Skill published')
+          : (currentLang === 'ru' ? 'Скилл скрыт' : 'Skill unpublished'),
+        'success'
+      );
+      closeModal();
+      loadSkillsPage();
+    } else {
+      toast((data && data.error) || 'Error', 'error');
+    }
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function deleteSkill(name) {
+  if (!confirm((currentLang === 'ru' ? 'Удалить скилл ' : 'Delete skill ') + '"' + name + '"?')) return;
+  try {
+    await apiRequest('DELETE', '/api/skills/' + encodeURIComponent(name));
+    toast(currentLang === 'ru' ? 'Удалено' : 'Deleted', 'success');
+    closeModal();
+    loadSkillsPage();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function openCreateSkillModal() {
+  var template = '---\nname: my-skill\ndescription: What it does and when to use it. Be specific about keywords that should trigger this skill.\nmetadata:\n  category: custom\n  version: "1.0"\n---\n\n# My Skill\n\nReplace this body with your skill instructions.\n\n## When to use\n\n- Trigger condition 1\n- Trigger condition 2\n\n## Tool selection\n\n- Use: ...\n- Don\'t use: ...\n';
+  var body =
+    '<p style="color:var(--text-muted);font-size:.85rem;margin-bottom:12px">' +
+      (currentLang === 'ru'
+        ? 'SKILL.md в формате <a href="https://agentskills.io/specification" target="_blank" style="color:var(--primary)">agentskills.io</a> — YAML frontmatter + Markdown тело.'
+        : 'SKILL.md per <a href="https://agentskills.io/specification" target="_blank" style="color:var(--primary)">agentskills.io</a> spec — YAML frontmatter + Markdown body.') +
+    '</p>' +
+    '<label style="display:flex;align-items:center;gap:6px;font-size:.85rem;margin-bottom:8px">' +
+      '<input type="checkbox" id="skill-public-cb"> ' +
+      (currentLang === 'ru' ? 'Опубликовать в маркетплейс (доступно всем)' : 'Publish to marketplace (visible to all users)') +
+    '</label>' +
+    '<textarea id="skill-md-input" style="width:100%;min-height:380px;font-family:JetBrains Mono,monospace;font-size:.8rem;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text-primary)">' + escHtml(template) + '</textarea>';
+  var footer =
+    '<button class="btn btn-ghost" onclick="closeModal()">' + (currentLang === 'ru' ? 'Отмена' : 'Cancel') + '</button>' +
+    '<button class="btn btn-primary" onclick="saveNewSkill()">' + (currentLang === 'ru' ? 'Сохранить' : 'Save') + '</button>';
+  openModal(currentLang === 'ru' ? 'Новый скилл' : 'New Skill', body, footer);
+}
+
+async function saveNewSkill() {
+  var skillMd = (document.getElementById('skill-md-input') || {}).value || '';
+  var isPublic = (document.getElementById('skill-public-cb') || {}).checked || false;
+  if (skillMd.trim().length < 20) { toast('SKILL.md too short', 'error'); return; }
+  try {
+    var data = await apiRequest('POST', '/api/skills', { skillMd: skillMd, isPublic: isPublic });
+    if (data && data.ok) {
+      toast(currentLang === 'ru' ? 'Сохранено' : 'Saved', 'success');
+      closeModal();
+      loadSkillsPage();
+    } else {
+      toast((data && data.error) || 'Error', 'error');
+    }
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function openImportSkillModal() {
+  var body =
+    '<p style="color:var(--text-muted);font-size:.85rem;margin-bottom:12px">' +
+      (currentLang === 'ru'
+        ? 'Вставь raw URL к SKILL.md на GitHub (raw.githubusercontent.com/...)'
+        : 'Paste raw URL to a SKILL.md on GitHub (raw.githubusercontent.com/...)') +
+    '</p>' +
+    '<input type="text" id="skill-import-url" placeholder="https://raw.githubusercontent.com/..." ' +
+    'style="width:100%;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text-primary);font-family:JetBrains Mono,monospace;font-size:.8rem">';
+  var footer =
+    '<button class="btn btn-ghost" onclick="closeModal()">' + (currentLang === 'ru' ? 'Отмена' : 'Cancel') + '</button>' +
+    '<button class="btn btn-primary" onclick="importSkillFromUrl()">' + (currentLang === 'ru' ? 'Импортировать' : 'Import') + '</button>';
+  openModal(currentLang === 'ru' ? 'Импорт скилла' : 'Import Skill', body, footer);
+}
+
+// ── Per-agent skill toggle (agent settings → Skills tab) ───────────────────
+
+async function loadAgentSkills(agentId) {
+  var container = document.getElementById('agent-skills-list');
+  if (!container) return;
+  try {
+    var data = await apiRequest('GET', '/api/agents/' + agentId + '/skills');
+    var skills = (data && data.skills) || [];
+    if (skills.length === 0) {
+      container.innerHTML = '<div class="empty-state" style="padding:24px"><p>' +
+        (currentLang === 'ru' ? 'Скиллов пока нет' : 'No skills yet') + '</p></div>';
+      return;
+    }
+    container.innerHTML = skills.map(function(s) {
+      var src = s.source === 'builtin' ? 'BUILT-IN' : (s.source === 'user' ? 'MINE' : 'PUBLIC');
+      var srcColor = s.source === 'builtin' ? '#00a8ff' : (s.source === 'user' ? '#22c55e' : '#8b5cf6');
+      return '' +
+        '<div class="skill-toggle-row" style="display:flex;align-items:flex-start;gap:14px;padding:12px 14px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px">' +
+          '<label class="switch" style="position:relative;display:inline-block;width:42px;height:22px;flex-shrink:0;margin-top:2px">' +
+            '<input type="checkbox" ' + (s.enabled ? 'checked' : '') +
+              ' onchange="toggleAgentSkill(' + _detailAgentId + ', ' + JSON.stringify(s.name) + ', this.checked)"' +
+              ' style="opacity:0;width:0;height:0">' +
+            '<span class="switch-slider" style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:' + (s.enabled ? 'linear-gradient(135deg,#00a8ff,#8b5cf6)' : '#374151') + ';transition:.25s;border-radius:22px">' +
+              '<span style="position:absolute;height:18px;width:18px;left:' + (s.enabled ? '22px' : '2px') + ';bottom:2px;background:white;transition:.25s;border-radius:50%"></span>' +
+            '</span>' +
+          '</label>' +
+          '<div style="flex:1;min-width:0">' +
+            '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">' +
+              '<strong style="font-size:.9rem">' + escHtml(s.name) + '</strong>' +
+              '<span style="background:' + srcColor + '22;color:' + srcColor + ';padding:1px 6px;border-radius:4px;font-size:.6rem;font-weight:700">' + src + '</span>' +
+              (s.version ? '<span style="font-size:.65rem;color:var(--text-dim)">v' + escHtml(s.version) + '</span>' : '') +
+            '</div>' +
+            '<div style="font-size:.78rem;color:var(--text-muted);line-height:1.4">' + escHtml((s.description || '').slice(0, 200)) + '</div>' +
+          '</div>' +
+          '<button class="btn btn-ghost btn-sm" onclick="openSkillDetail(' + JSON.stringify(s.name) + ')" style="flex-shrink:0">' +
+            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>' +
+          '</button>' +
+        '</div>';
+    }).join('');
+  } catch (e) {
+    container.innerHTML = '<div class="empty-state"><p>' + escHtml(e.message || 'Error') + '</p></div>';
+  }
+}
+
+async function toggleAgentSkill(agentId, skillName, enabled) {
+  try {
+    await apiRequest('POST', '/api/agents/' + agentId + '/skills/' + encodeURIComponent(skillName) + '/toggle', { enabled: enabled });
+    toast(
+      enabled ? (currentLang === 'ru' ? 'Скилл включён' : 'Skill enabled')
+              : (currentLang === 'ru' ? 'Скилл выключен' : 'Skill disabled'),
+      'success'
+    );
+    // Reload list to refresh visual state
+    loadAgentSkills(agentId);
+  } catch (e) {
+    toast(e.message || 'Error', 'error');
+    // Revert visual state on error
+    loadAgentSkills(agentId);
+  }
+}
+
+async function importSkillFromUrl() {
+  var url = ((document.getElementById('skill-import-url') || {}).value || '').trim();
+  if (!url.startsWith('https://')) { toast('URL must start with https://', 'error'); return; }
+  if (!url.includes('raw.githubusercontent.com')) {
+    if (!confirm('URL не выглядит как raw GitHub. Продолжить?')) return;
+  }
+  try {
+    var res = await fetch(url);
+    if (!res.ok) { toast('Fetch failed: ' + res.status, 'error'); return; }
+    var skillMd = await res.text();
+    if (skillMd.length > 100000) { toast('SKILL.md too large (>100KB)', 'error'); return; }
+    var data = await apiRequest('POST', '/api/skills', {
+      skillMd: skillMd,
+      isImported: true,
+      sourceUrl: url,
+    });
+    if (data && data.ok) {
+      toast(currentLang === 'ru' ? 'Импортировано' : 'Imported', 'success');
+      closeModal();
+      loadSkillsPage();
+    } else {
+      toast((data && data.error) || 'Error', 'error');
+    }
+  } catch (e) { toast(e.message, 'error'); }
 }

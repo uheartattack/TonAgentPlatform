@@ -76,6 +76,8 @@ Each agent gets its own TON wallet, can trade gifts, interact with DeFi, operate
 
 | | Возможность | Описание |
 |:-|:------------|:---------|
+| 🧠 | **Agent Skills (v2.2)** | Стандарт agentskills.io от Anthropic — стоим в линейке с Claude Code и Cursor |
+| 💎 | **Agentic Wallets (v2.2)** | Официальный TON Foundation стандарт agents.ton.org: on-chain freeze/revoke, лимиты в контракте |
 | 🎙️ | **Голосовое создание** | Надиктуй задачу — агент готов за 10 сек |
 | 🤖 | **7 AI-провайдеров** | Gemini, GPT-4o, Claude, Groq, DeepSeek... |
 | 🛠️ | **311 инструментов** | TON, подарки, NFT, DeFi, веб, Telegram |
@@ -85,7 +87,7 @@ Each agent gets its own TON wallet, can trade gifts, interact with DeFi, operate
 | 📊 | **Studio Dashboard** | 29 вкладок: настройки, графики, задачи |
 | 🔬 | **Agent Evals** | Авто-оценка качества, алерты деградации |
 | 📚 | **База знаний** | Загрузка документов, индексация, FTS-поиск |
-| 🔐 | **Безопасность** | Sandbox, SSRF, anti-loop, op-lock |
+| 🔐 | **Безопасность** | Sandbox, SSRF, anti-loop, op-lock, prompt-injection scanner |
 | 🏆 | **Beta Program** | Приватная — `/beta` в боте · [стена славы](https://tonagentplatform.com/founders.html) |
 | 🎟️ | **Реферальная система** | +20 XP за друга + 10% его трат навсегда |
 
@@ -96,6 +98,8 @@ Each agent gets its own TON wallet, can trade gifts, interact with DeFi, operate
 
 | | Feature | Description |
 |:-|:--------|:------------|
+| 🧠 | **Agent Skills (v2.2)** | agentskills.io standard from Anthropic — listed alongside Claude Code and Cursor |
+| 💎 | **Agentic Wallets (v2.2)** | Official TON Foundation agents.ton.org spec: on-chain freeze/revoke, limits in contract |
 | 🎙️ | **Voice Creation** | Speak your task — agent ready in 10 sec |
 | 🤖 | **7 AI Providers** | Gemini, GPT-4o, Claude, Groq, DeepSeek... |
 | 🛠️ | **311 Tools** | TON, gifts, NFTs, DeFi, web, Telegram |
@@ -105,7 +109,7 @@ Each agent gets its own TON wallet, can trade gifts, interact with DeFi, operate
 | 📊 | **Studio Dashboard** | 29 settings tabs: charts, tokens, tasks |
 | 🔬 | **Agent Evals** | Auto quality scoring, degradation alerts |
 | 📚 | **Knowledge Base** | Upload docs, chunk & index, FTS search |
-| 🔐 | **Security** | Sandbox, SSRF, anti-loop, op-lock |
+| 🔐 | **Security** | Sandbox, SSRF, anti-loop, op-lock, prompt-injection scanner |
 | 🏆 | **Beta Program** | Invite-only — `/beta` in bot · [hall of fame](https://tonagentplatform.com/founders.html) |
 | 🎟️ | **Referral System** | +20 XP per friend + 10% of their spend forever |
 
@@ -284,13 +288,15 @@ Telegram → [@TonAgentPlatformBot](https://t.me/TonAgentPlatformBot) → `/star
 | Слой / Layer | Технология |
 |:-------------|:-----------|
 | **Bot Framework** | Telegraf v4 |
-| **Language** | TypeScript 5.x (strict) |
+| **Language** | TypeScript 5.x |
 | **AI Providers** | Gemini 2.5, Claude, GPT-4o, Groq, DeepSeek, OpenRouter, Together |
+| **Skill Runtime** | agentskills.io spec (progressive disclosure, 12 built-in skills) |
 | **Database** | PostgreSQL 15 + Drizzle ORM |
-| **Sandbox** | Node.js VM (isolated, SSRF-protected) |
-| **TON** | @ton/core · @ton/ton · @ton/crypto · TonAPI v2 |
+| **Sandbox** | Node.js VM (isolated, SSRF-protected) + AES-256-GCM mnemonic encryption |
+| **TON** | @ton/core · @ton/ton · @ton/crypto · @ton/mcp@alpha (agents.ton.org) · TonAPI v2 |
 | **Telegram** | GramJS MTProto + Telegraf |
 | **Gift APIs** | GiftAsset + SwiftGifts (rate-limited, cached) |
+| **MCP** | @modelcontextprotocol/sdk (stdio + SSE transports) |
 | **Infra** | Docker Compose + nginx + PM2 + Let's Encrypt |
 
 ---
@@ -312,23 +318,49 @@ Telegram → [@TonAgentPlatformBot](https://t.me/TonAgentPlatformBot) → `/star
 
 ## 📈 Дорожная карта &nbsp;|&nbsp; Roadmap
 
-- [x] AI-first создание агентов (текст + голос)
-- [x] 7 AI-провайдеров с fallback-цепочкой
-- [x] 311 инструментов агента
-- [x] Telegram Userbot (MTProto)
-- [x] GiftAsset + SwiftGifts реальные цены
-- [x] Studio Dashboard (29 вкладок)
-- [x] Память, задачи, трекинг токенов
-- [x] 12 плагинов + 22 шаблона + маркетплейс
-- [x] Голосовые команды
-- [x] TON Connect v2
-- [x] **Tester Hub** — 10% revenue share / 2 года / квартальные выплаты
-- [x] **Реферальная система** (2 уровня + 10% от трат рефералов)
-- [x] **Premium landing redesign** (glassmorphism, 3D, mesh gradients)
-- [ ] Первый snapshot тестеров (1 мая 2026)
-- [ ] Telegram Mini App
-- [ ] On-chain реестр агентов
-- [ ] DAO + платформенный токен
+### ✅ v2.2 — Skills Release (May 2026)
+- Agent Skills runtime (agentskills.io spec) — 12 встроенных скиллов
+- Agentic Wallets (agents.ton.org) — официальный TON-стандарт
+- TON DNS полностью (bid, auction, link, set_site)
+- Self-awareness: `get_my_full_state()` тул для глубокого интроспекта
+- TodoWrite для длинных задач (паттерн Claude Code)
+- Skill safety scanner + URL whitelist на импорт
+- Auto-pause агентов при битых ключах / rate-limit
+
+### ✅ Уже работает в проде
+- AI-first создание агентов (текст + голос)
+- 7 AI-провайдеров с fallback-цепочкой
+- 311 инструментов агента
+- Telegram Userbot (MTProto via GramJS)
+- GiftAsset + SwiftGifts реальные цены
+- Studio Dashboard (30+ вкладок)
+- 12 плагинов + 22 шаблона + маркетплейс
+- Tester Hub: 10% revenue share / 2 года / квартальные выплаты
+- Реферальная система (2 уровня + 10% от трат рефералов)
+- Premium landing (glassmorphism, mesh gradients, electric blue + purple)
+
+### 🔜 v2.3 — Memory & Workflow (Q2 2026)
+- [ ] **Hybrid SQLite RAG memory** — локальные ONNX embeddings + sqlite-vec + FTS5. Агент помнит контекст разговоров без вызовов API
+- [ ] **Visual Workflow Builder** — drag-and-drop конструктор пайплайнов для агентов (flagship фича релиза)
+- [ ] **Multi-agent task graph** — DAG зависимостей между агентами, кооперация через mailbox
+- [ ] **Context compression** — 3-слойная компрессия (micro/auto/manual). Длинные сессии без overflow
+- [ ] **Edit with AI** — рефакторинг агента через диалог: «сделай его агрессивнее на арбитраже»
+- [ ] **MCP server management UI** — добавление внешних MCP-серверов через Studio
+
+### 🔜 v2.4 — Marketplace & Scale (Q3 2026)
+- [ ] **Skill marketplace publishing** с TON-выплатами авторам скиллов
+- [ ] **Agent marketplace TON payouts** — авто-расчёт через TON ESCROW
+- [ ] **Tester Hub первый snapshot** (1 мая 2026)
+- [ ] **Telegram Mini App** — нативный UI вместо Studio в браузере
+- [ ] **Tool Gateway (enterprise)** — Rust+Envoy data plane по паттерну Plano
+- [ ] **Planning-before-execution** — обязательный план перед опасными действиями (Cedar policy gating)
+
+### 🔜 v3.0 — Autonomous Network (H2 2026)
+- [ ] **On-chain agent registry** — публичный TON-контракт со всеми deployed агентами
+- [ ] **Agent reputation система** — on-chain rating на основе success/failure ratio
+- [ ] **Federated agents** — кросс-машинная кооперация (paттерн claude-flow/Ruflo)
+- [ ] **Autonomous teammates** — агенты сами берут таски с board, без оператора (s11 из claude-code)
+- [ ] **Background tasks daemon** — параллельная subprocess-обработка с drain queue
 
 ---
 
