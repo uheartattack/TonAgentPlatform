@@ -144,7 +144,7 @@ class AgenticMcpBridge {
 
     this.transport = new StdioClientTransport({
       command: 'npx',
-      args: ['-y', '@ton/mcp@alpha'],
+      args: ['-y', '@ton/mcp@0.1.15-alpha.15'],  // pinned; was @alpha (rolling)
       env,
     });
 

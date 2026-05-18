@@ -1440,6 +1440,12 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
      'get_my_full_state',
      // In-memory checklist for multi-step tasks (learn-claude-code s03)
      'todo_write', 'todo_read',
+     // Subagent delegation with fresh context (learn-claude-code s04)
+     'task',
+     // Durable task graph with DAG dependencies (learn-claude-code s07)
+     'task_create', 'task_update', 'task_list', 'task_get',
+     // Manual context compression (learn-claude-code s06)
+     'compact',
     ].forEach(t => allowed.add(t));
     // Always allow MCP tools if ton_mcp capability is enabled
     if (enabledCapabilities.includes('ton_mcp') && mcpTools) {
@@ -3230,6 +3236,161 @@ async function _executeToolInner(
           min_ask_units: data.min_ask_units,
         };
       } catch (e: any) { return { error: e.message }; }
+    }
+
+    // ── Task Graph (learn-claude-code s07) — durable DAG of subtasks ──
+    case 'task_create': {
+      try {
+        const subject = String(args.subject || '').trim();
+        if (!subject) return { ok: false, error: 'subject required' };
+        if (subject.length > 500) return { ok: false, error: 'subject too long (>500 chars)' };
+        const details = args.details ? String(args.details).slice(0, 4000) : null;
+        const blockedBy = Array.isArray(args.blocked_by) ? args.blocked_by.map(Number).filter(n => Number.isFinite(n)) : [];
+        const owner = args.owner ? String(args.owner).slice(0, 80) : null;
+        const priority = Number.isFinite(args.priority) ? Math.max(1, Math.min(10, Number(args.priority))) : 5;
+        const { pool } = await import('../db');
+        const res = await pool.query(
+          `INSERT INTO builder_bot.agent_task_graph (agent_id, subject, details, blocked_by, owner, priority)
+           VALUES ($1, $2, $3, $4::int[], $5, $6) RETURNING id, status`,
+          [params.agentId, subject, details, blockedBy, owner, priority],
+        );
+        return { ok: true, id: res.rows[0].id, status: res.rows[0].status };
+      } catch (e: any) { return { ok: false, error: e?.message?.slice(0, 200) }; }
+    }
+
+    case 'task_update': {
+      try {
+        const id = Number(args.id);
+        if (!Number.isFinite(id) || id <= 0) return { ok: false, error: 'id required (positive integer)' };
+        const updates: string[] = [];
+        const vals: any[] = [];
+        let i = 1;
+        if (args.status !== undefined) {
+          const s = String(args.status);
+          if (!['pending','in_progress','completed','failed','cancelled'].includes(s)) {
+            return { ok: false, error: 'status must be pending|in_progress|completed|failed|cancelled' };
+          }
+          updates.push(`status = $${i++}`); vals.push(s);
+          if (s === 'completed') updates.push(`completed_at = NOW()`);
+        }
+        if (args.result !== undefined) { updates.push(`result = $${i++}`); vals.push(String(args.result).slice(0, 4000)); }
+        if (args.details !== undefined) { updates.push(`details = $${i++}`); vals.push(String(args.details).slice(0, 4000)); }
+        if (args.priority !== undefined) {
+          const p = Math.max(1, Math.min(10, Number(args.priority)));
+          updates.push(`priority = $${i++}`); vals.push(p);
+        }
+        if (updates.length === 0) return { ok: false, error: 'no fields to update' };
+        updates.push(`updated_at = NOW()`);
+        vals.push(id, params.agentId);
+        const { pool } = await import('../db');
+        const upd = await pool.query(
+          `UPDATE builder_bot.agent_task_graph SET ${updates.join(', ')}
+            WHERE id = $${i++} AND agent_id = $${i++}
+            RETURNING id, status, blocked_by`,
+          vals,
+        );
+        if (!upd.rows[0]) return { ok: false, error: 'task not found or not owned by this agent' };
+        // Auto-cascade: if task completed, unblock dependents
+        let unblocked = 0;
+        if (upd.rows[0].status === 'completed') {
+          const cascade = await pool.query(
+            `UPDATE builder_bot.agent_task_graph
+                SET blocked_by = array_remove(blocked_by, $1),
+                    updated_at = NOW()
+              WHERE agent_id = $2 AND $1 = ANY(blocked_by)
+              RETURNING id`,
+            [id, params.agentId],
+          );
+          unblocked = cascade.rowCount || 0;
+        }
+        return { ok: true, id, status: upd.rows[0].status, unblocked };
+      } catch (e: any) { return { ok: false, error: e?.message?.slice(0, 200) }; }
+    }
+
+    case 'task_list': {
+      try {
+        const statusFilter = args.status ? String(args.status) : null;
+        const onlyActionable = args.only_actionable === true;
+        const { pool } = await import('../db');
+        let q = `SELECT id, subject, status, blocked_by, owner, priority, completed_at, updated_at
+                   FROM builder_bot.agent_task_graph WHERE agent_id = $1`;
+        const vals: any[] = [params.agentId];
+        if (statusFilter) { q += ` AND status = $2`; vals.push(statusFilter); }
+        if (onlyActionable) {
+          q += ` AND status = 'pending' AND cardinality(blocked_by) = 0`;
+        }
+        q += ` ORDER BY priority DESC, created_at ASC LIMIT 50`;
+        const res = await pool.query(q, vals);
+        return { ok: true, count: res.rows.length, tasks: res.rows };
+      } catch (e: any) { return { ok: false, error: e?.message?.slice(0, 200) }; }
+    }
+
+    case 'task_get': {
+      try {
+        const id = Number(args.id);
+        if (!Number.isFinite(id) || id <= 0) return { ok: false, error: 'id required' };
+        const { pool } = await import('../db');
+        const res = await pool.query(
+          `SELECT * FROM builder_bot.agent_task_graph WHERE id = $1 AND agent_id = $2`,
+          [id, params.agentId],
+        );
+        if (!res.rows[0]) return { ok: false, error: 'task not found' };
+        return { ok: true, task: res.rows[0] };
+      } catch (e: any) { return { ok: false, error: e?.message?.slice(0, 200) }; }
+    }
+
+    // ── Manual context compression (learn-claude-code s06) ──
+    case 'compact': {
+      try {
+        // Caller-initiated trim: drop old tool_results, keep system + last 5 messages.
+        // The actual compression happens in-loop via compactMessages; this tool just
+        // signals "do it now" by setting a flag the runtime reads on next iter.
+        const stateRepo = getAgentStateRepository();
+        await stateRepo.set(params.agentId, params.userId, '_compact_requested', 'true').catch(() => {});
+        return { ok: true, message: 'Compression requested. Older tool results will be replaced with placeholders on the next iteration.' };
+      } catch (e: any) { return { ok: false, error: e?.message?.slice(0, 200) }; }
+    }
+
+    // ── Subagent task delegation (learn-claude-code s04) ──
+    // Spawn a fresh-context child loop. Child has no recursion (no `task` tool),
+    // no on-chain ops, no cross-agent calls. Parent gets only the final summary.
+    case 'task': {
+      try {
+        const description = String(args.description || '').trim();
+        if (!description) return { ok: false, error: 'description required' };
+        if (description.length > 4000) return { ok: false, error: 'description too long (>4000 chars)' };
+        const role = args.role ? String(args.role).slice(0, 80) : undefined;
+
+        const { runSubagent } = await import('./subagent');
+        const { client: aiClient, defaultModel } = getAIClient(params.config);
+        // Use parent's tools BUT we'll filter in runSubagent
+        const parentTools = await buildToolDefinitions(
+          (params as any).agentRole || undefined,
+          (params.config.enabledCapabilities as string[]) || null,
+        );
+
+        const result = await runSubagent({
+          description,
+          role,
+          client: aiClient,
+          model: defaultModel,
+          parentTools,
+          // Dispatch back to executeTool, but mark the call as a subagent call
+          // so we don't double-instrument tracing
+          toolDispatch: (name: string, sargs: Record<string, any>) =>
+            _executeToolInner(name, sargs, { ...params, context: { ...params.context, _isSubagent: true } as any }),
+        });
+
+        return {
+          ok: result.ok,
+          summary: result.summary,
+          iterations: result.iterations,
+          tool_calls_used: result.toolCallCount,
+          ...(result.error ? { error: result.error } : {}),
+        };
+      } catch (e: any) {
+        return { ok: false, error: e?.message || 'task failed' };
+      }
     }
 
     // ── TodoWrite (learn-claude-code s03 pattern) — agent's own checklist ──
@@ -8873,12 +9034,45 @@ If web_search returns nothing useful → say "не смог найти акту�
   let estTokens = estimateTokens(messages);
   console.log(`[AI runtime] Agent #${params.agentId} AI call: model=${usedModel} baseURL=${sanitizeForLog((ai as any).baseURL || '')} tools=${tools.length}(of ${allToolDefs.length}) msgs=${messages.length} ~${estTokens}tok`);
 
+  // Read `compact` flag once at loop start (not per-iter — DB overhead)
+  let compactRequested = false;
+  try {
+    const _flag = await getAgentStateRepository().get(params.agentId, '_compact_requested').catch(() => null);
+    if (_flag) {
+      compactRequested = true;
+      await getAgentStateRepository().set(params.agentId, params.userId, '_compact_requested', '').catch(() => {});
+    }
+  } catch {}
+
   for (let iter = 0; iter < MAX_ITERS; iter++) {
     // ── Iteration budget pressure warnings (hermes-agent pattern) ──
     if (iter === MAX_ITERS - 2) {
       messages.push({ role: 'user', content: '[SYSTEM: You have 1 iteration left. Wrap up your work and provide a final response.]' } as any);
     } else if (iter === MAX_ITERS - 3 && MAX_ITERS >= 4) {
       messages.push({ role: 'user', content: '[SYSTEM: Budget warning — 2 iterations remaining. Be efficient.]' } as any);
+    }
+    // ── Context compression — micro layer (learn-claude-code s06) ──
+    // After iteration 2, replace tool_results from iterations [0..iter-2] with
+    // short placeholders. Saves token budget on long multi-tool turns where
+    // raw tool outputs aren't needed downstream. The AI's reasoning chain is
+    // preserved (assistant + tool_use), only the bulky results get compacted.
+    //
+    // Also reacts to the `compact` tool (case 'compact' sets _compact_requested).
+    if (iter > 2 || compactRequested) {
+      const cutoff = compactRequested ? messages.length - 4 : messages.length - 8;
+      let compacted = 0;
+      for (let j = 0; j < cutoff; j++) {
+        const m = messages[j] as any;
+        if (m?.role === 'tool' && typeof m.content === 'string' && m.content.length > 200) {
+          const orig = m.content;
+          m.content = `[Previous tool result, ${orig.length} chars, compacted on iter ${iter}]`;
+          compacted++;
+        }
+      }
+      if (compacted > 0) {
+        console.log(`[AI runtime] Agent #${params.agentId} micro-compacted ${compacted} stale tool results (iter ${iter})`);
+        if (compactRequested) compactRequested = false; // single-shot
+      }
     }
     // ── TodoWrite nag reminder (learn-claude-code s03 pattern) ──
     // If the agent hasn't called todo_write in N rounds and has IN-PROGRESS

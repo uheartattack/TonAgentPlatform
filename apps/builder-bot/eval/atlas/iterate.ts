@@ -83,15 +83,15 @@ async function proposeRule(failure: FailedTest): Promise<string> {
     apiKey: process.env.OPENAI_API_KEY || '',
     baseURL: process.env.OPENAI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai/',
   });
-  const teacher = await client.chat.completions.create({
+  const reqBody = {
     model: process.env.ATLAS_TEACHER_MODEL || 'gemini-2.5-flash',
     messages: [
       {
-        role: 'system',
+        role: 'system' as const,
         content: 'Ты — корректор для другой AI системы (Atlas). Твоя задача: посмотреть на провалившийся тест и сгенерировать ОДНО короткое правило (1-2 предложения, до 200 символов), которое предотвратит эту ошибку в будущем. Правило должно быть КОНКРЕТНЫМ и МЕХАНИЧЕСКИМ ("когда X, всегда Y / никогда не Z"). НЕ давай общих советов. НЕ повторяй очевидное. Просто правило, ничего больше.',
       },
       {
-        role: 'user',
+        role: 'user' as const,
         content:
           `Тест "${failure.id}" (категория ${failure.category}) провалился.\n\n` +
           `ВОПРОС:\n${failure.question}\n\n` +
@@ -102,10 +102,24 @@ async function proposeRule(failure: FailedTest): Promise<string> {
     ],
     max_tokens: 300,
     temperature: 0.2,
-  });
-  const text = teacher.choices?.[0]?.message?.content?.trim() || '';
-  // Sanitize: single line, max 200 chars, no quotes/backticks
-  return text.replace(/[\r\n]+/g, ' ').replace(/["`]/g, '').trim().slice(0, 200);
+  };
+  // Retry on 429 with exponential backoff (shared Gemini quota with prod Atlas)
+  let lastErr: any = null;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const teacher = await client.chat.completions.create(reqBody);
+      const text = teacher.choices?.[0]?.message?.content?.trim() || '';
+      return text.replace(/[\r\n]+/g, ' ').replace(/["`]/g, '').trim().slice(0, 200);
+    } catch (e: any) {
+      lastErr = e;
+      const is429 = e?.status === 429 || (e?.message || '').includes('429');
+      if (!is429 || attempt === 3) throw e;
+      const delay = (20 + attempt * 40) * 1000;       // 20s, 60s, 100s
+      console.log(`[teacher 429] retry in ${delay/1000}s (attempt ${attempt + 1}/4)`);
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+  throw lastErr;
 }
 
 function appendRule(rule: string, testId: string): void {

@@ -2529,6 +2529,147 @@ export function startApiServer() {
   });
 
   // ── DELETE /api/agents/:id — удалить агента ──────────────
+  // ── GET /api/agents/:id/todos — read agent's in-memory checklist ──
+  // Surfaces TodoWrite (s03 pattern) state to Studio so the user can see
+  // what the agent is working on in real time.
+  app.get('/api/agents/:id/todos', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const agentId = parseInt(req.params.id as string, 10);
+      if (isNaN(agentId)) { res.status(400).json({ error: 'invalid agent id' }); return; }
+      const agentCheck = await getAgentForUser(agentId, req);
+      if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'agent not found' }); return; }
+      const { getAgentTodos } = await import('./agents/ai-agent-runtime');
+      const todos = getAgentTodos(agentId);
+      res.json({ ok: true, count: todos.length, todos });
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message });
+    }
+  });
+
+  // ── POST /api/agents/:id/edit-with-ai — natural-language agent editing ──
+  // User describes the change ("сделай его агрессивнее на арбитраже"), AI
+  // returns a structured proposal: new system prompt + optional capability/
+  // config changes. Returns a diff for the user to approve before applying.
+  app.post('/api/agents/:id/edit-with-ai', requireAuth, rateLimit(10, 60_000, 'edit-with-ai'), async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const agentId = parseInt(req.params.id as string, 10);
+      const { instruction, apply } = req.body || {};
+      if (isNaN(agentId)) { res.status(400).json({ error: 'invalid agent id' }); return; }
+      if (typeof instruction !== 'string' || instruction.trim().length < 5) {
+        res.status(400).json({ error: 'instruction required (min 5 chars)' }); return;
+      }
+      if (instruction.length > 2000) {
+        res.status(400).json({ error: 'instruction too long (>2000 chars)' }); return;
+      }
+      const agentCheck = await getAgentForUser(agentId, req);
+      if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'agent not found' }); return; }
+      const agent: any = agentCheck.data;
+
+      // Load full current state for the AI to reference
+      let triggerCfg: any = {};
+      try { triggerCfg = typeof agent.trigger_config === 'string' ? JSON.parse(agent.trigger_config) : (agent.trigger_config || {}); } catch {}
+      const cfg = triggerCfg.config || {};
+      const enabledCaps = cfg.enabledCapabilities || [];
+
+      const OpenAI = (await import('openai')).default;
+      const client = new OpenAI({
+        apiKey: process.env.OPENAI_API_KEY || '',
+        baseURL: process.env.OPENAI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai/',
+      });
+      const editorSystem = [
+        'Ты — AI-редактор агентов TON Agent Platform. Юзер просит модифицировать СУЩЕСТВУЮЩЕГО агента.',
+        'Верни СТРОГО валидный JSON со следующей структурой (никакого markdown / комментариев / лишнего):',
+        '{',
+        '  "summary": "1-2 строки что меняется",',
+        '  "new_code": "...полный новый system prompt...",  // если меняешь',
+        '  "add_capabilities": ["..."],   // capability IDs из списка',
+        '  "remove_capabilities": ["..."],',
+        '  "config_changes": { "tick_interval_sec": 300, ... },  // числовые/строковые',
+        '  "warnings": ["..."]            // если что-то рискованно',
+        '}',
+        'НЕ изменяй то о чём юзер НЕ просил. Минимальный diff. Если запрос невозможен — поле "warnings" объясни почему и оставь остальные поля пустыми.',
+      ].join('\n');
+
+      const userContext = [
+        `Текущее имя: ${agent.name}`,
+        `Текущая роль: ${agent.role || 'worker'}`,
+        `Текущий system prompt (code):`,
+        '```',
+        String(agent.code || '').slice(0, 4000),
+        '```',
+        `Включённые capabilities: ${enabledCaps.join(', ') || '(default — все)'}`,
+        `Текущий config: ${JSON.stringify(cfg, (k, v) => /key|mnemonic|secret/i.test(k) ? '***' : v).slice(0, 2000)}`,
+        ``,
+        `Запрос юзера: ${instruction}`,
+      ].join('\n');
+
+      const aiResp = await client.chat.completions.create({
+        model: 'gemini-2.5-flash',
+        messages: [
+          { role: 'system', content: editorSystem },
+          { role: 'user', content: userContext },
+        ],
+        max_tokens: 4096,
+        temperature: 0.2,
+        response_format: { type: 'json_object' } as any,
+      });
+      const raw = aiResp.choices?.[0]?.message?.content || '{}';
+      let proposal: any;
+      try { proposal = JSON.parse(raw); }
+      catch { proposal = { summary: 'Не удалось распарсить ответ AI', raw: raw.slice(0, 500) }; }
+
+      // Build human-readable diff
+      const diff: any = {
+        summary: proposal.summary || '',
+        warnings: proposal.warnings || [],
+      };
+      if (proposal.new_code && proposal.new_code !== agent.code) {
+        diff.code_changed = true;
+        diff.old_code_len = (agent.code || '').length;
+        diff.new_code_len = proposal.new_code.length;
+        diff.new_code = proposal.new_code;
+      }
+      if (proposal.add_capabilities?.length) diff.add_capabilities = proposal.add_capabilities;
+      if (proposal.remove_capabilities?.length) diff.remove_capabilities = proposal.remove_capabilities;
+      if (proposal.config_changes && Object.keys(proposal.config_changes).length) {
+        diff.config_changes = proposal.config_changes;
+      }
+
+      // If apply=true, persist immediately. Otherwise return the diff for UI to display.
+      if (apply === true) {
+        const { pool } = require('./db');
+        if (diff.new_code) {
+          await pool.query(`UPDATE builder_bot.agents SET code = $1, updated_at = NOW() WHERE id = $2`, [diff.new_code, agentId]);
+        }
+        if (diff.add_capabilities || diff.remove_capabilities || diff.config_changes) {
+          const newCfg = { ...cfg };
+          let caps = [...(enabledCaps as string[])];
+          if (diff.add_capabilities) caps = Array.from(new Set([...caps, ...diff.add_capabilities]));
+          if (diff.remove_capabilities) caps = caps.filter(c => !diff.remove_capabilities.includes(c));
+          if (diff.add_capabilities || diff.remove_capabilities) newCfg.enabledCapabilities = caps;
+          if (diff.config_changes) Object.assign(newCfg, diff.config_changes);
+          const newTriggerCfg = { ...triggerCfg, config: newCfg };
+          await pool.query(
+            `UPDATE builder_bot.agents SET trigger_config = $1::jsonb, updated_at = NOW() WHERE id = $2`,
+            [JSON.stringify(newTriggerCfg), agentId],
+          );
+        }
+        // Invalidate any cached config
+        try {
+          const { invalidateAgentCaches } = await import('./agents/ai-agent-runtime');
+          invalidateAgentCaches(agentId);
+        } catch {}
+        res.json({ ok: true, applied: true, diff });
+        return;
+      }
+
+      res.json({ ok: true, applied: false, diff });
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message || 'edit-with-ai failed' });
+    }
+  });
+
   app.delete('/api/agents/:id', requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = (req as any).userId as number;
