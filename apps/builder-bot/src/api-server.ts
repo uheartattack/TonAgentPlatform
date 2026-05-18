@@ -5018,12 +5018,23 @@ export function startApiServer() {
           { role: 'user', content: message },
         ];
         let fullText = '';
-        // Model fallback chain for rate limits / errors
+        // Model fallback chain — spans multiple Gemini families to dodge
+        // per-family rate limits (2.5-flash, 2.0-flash, 2.0-flash-lite,
+        // 1.5-flash, and 1.5-flash-8b each have their own quota counters).
         const modelChain = useNativeAnthropic
           ? [model, 'claude-haiku-4-5-20251001']
-          : [model, 'gemini-2.5-flash', 'gemini-2.0-flash'];
+          : [
+              model,
+              'gemini-2.5-flash',
+              'gemini-2.0-flash',
+              'gemini-2.0-flash-lite',
+              'gemini-1.5-flash',
+              'gemini-1.5-flash-8b',
+            ].filter((m, i, arr) => arr.indexOf(m) === i); // de-dupe
         const nonSystemMsgs = messages.filter(m => m.role !== 'system');
 
+        let allRateLimited = false;
+        let exhaustedAt: string[] = [];
         for (const tryModel of modelChain) {
           try {
             if (useNativeAnthropic) {
@@ -5051,11 +5062,22 @@ export function startApiServer() {
             const errMsg = modelErr?.message || '';
             if (errMsg.includes('429') || errMsg.includes('rate_limit') || errMsg.includes('overloaded') || errMsg.includes('529')) {
               console.warn(`[Atlas] ${tryModel} rate limited, trying next...`);
+              exhaustedAt.push(tryModel);
+              allRateLimited = exhaustedAt.length === modelChain.length;
               continue; // try next model
             }
             throw modelErr; // non-retryable — rethrow
           }
         }
+
+        // If every model in the chain hit 429 and produced no output, tell the
+        // user explicitly. Otherwise the UI just sits with a typing indicator.
+        if (!fullText && allRateLimited) {
+          const fallbackMsg = '⏳ Все AI-провайдеры сейчас перегружены (429 rate limit). Попробуй через 1-2 минуты — квота восстановится.';
+          sendEvent('chunk', { text: fallbackMsg });
+          fullText = fallbackMsg;
+        }
+
         hist.push({ role: 'user', content: message });
         hist.push({ role: 'assistant', content: fullText });
         if (hist.length > 40) hist.splice(0, hist.length - 40);
