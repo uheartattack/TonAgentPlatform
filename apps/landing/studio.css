@@ -7688,28 +7688,35 @@ input[type="number"], textarea, select, .form-control,
 /* ── Minimalist sidebar final polish ── */
 .sidebar-nav { padding: 8px 4px; }
 
-/* Nav badges (NEW, numbers) — белый/серый вместо синего */
+/* Nav badges (BETA, ADM, NEW, numbers) — follow accent palette */
 .nav-badge {
-  background: rgba(255,255,255,0.12) !important;
-  color: rgba(255,255,255,0.7) !important;
+  background: var(--accent-dim, rgba(0, 168, 255, 0.15));
+  color: var(--primary-light, var(--primary, #3bc6ff));
   font-size: 10px;
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: 0.4px;
   padding: 1px 6px;
   border-radius: 100px;
   margin-left: auto;
 }
-.nav-badge.red {
-  background: rgba(239,68,68,0.2) !important;
-  color: #f87171 !important;
+/* Variant: accent (default for BETA/ADM/NEW) — same as base, kept for back-compat */
+.nav-badge.accent {
+  background: var(--accent-dim, rgba(0, 168, 255, 0.15));
+  color: var(--primary-light, var(--primary, #3bc6ff));
+}
+.nav-badge.red,
+.nav-badge.alert {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
 }
 
-/* NEW tag */
+/* NEW tag — accent-colored */
 .nav-new {
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.5px;
-  color: rgba(255,255,255,0.5) !important;
-  background: rgba(255,255,255,0.08) !important;
+  color: var(--primary-light, var(--primary, #3bc6ff));
+  background: var(--accent-dim, rgba(0, 168, 255, 0.15));
   padding: 1px 5px;
   border-radius: 100px;
   margin-left: auto;
