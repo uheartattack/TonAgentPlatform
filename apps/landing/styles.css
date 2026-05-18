@@ -293,7 +293,8 @@ main, section, footer, .lang-switcher, .scroll-rocket{position:relative;z-index:
 
 /* ───── HERO TITLE — mixed-weight typography ───── */
 .hero-title{
-  font-size:clamp(56px,8.4vw,132px);line-height:.95;
+  font-size:clamp(56px,8.4vw,132px);
+  line-height:1.04;  /* was .95 — too tight, descenders (g/y/p) in "Agent" got clipped by "for TON in" */
   letter-spacing:-0.042em;
   color:var(--text-strong);margin-bottom:28px;
   text-wrap:balance;font-weight:900;
