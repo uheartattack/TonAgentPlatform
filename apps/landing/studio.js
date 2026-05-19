@@ -14025,11 +14025,17 @@ function setUIScale(val) {
   var sliders = [document.getElementById('ui-scale-slider'), document.getElementById('sidebar-scale-slider')];
   sliders.forEach(function(s) { if (s) s.value = val; });
   var z = (val / 100);
-  // Apply zoom to BOTH the main content area AND the fixed sidebar
-  // (previously only .main-content was scaled, so the sidebar stayed at 100%
-  //  no matter where the slider was — that's the bug user reported).
+  // Apply zoom to:
+  //   - main content area
+  //   - sidebar HEADER (logo)
+  //   - sidebar NAV (menu items)
+  //  but NOT to sidebar-footer — the footer holds the scale slider itself,
+  //  and if it zoomed, the slider would walk away from under the user's
+  //  cursor while dragging. The footer stays at native scale, so the lang
+  //  buttons + slider + logout are stable controls regardless of UI zoom.
   var mc = document.querySelector('.main-content'); if (mc) mc.style.zoom = z;
-  var sb = document.querySelector('.sidebar'); if (sb) sb.style.zoom = z;
+  var sh = document.querySelector('.sidebar-header'); if (sh) sh.style.zoom = z;
+  var sn = document.querySelector('.sidebar-nav'); if (sn) sn.style.zoom = z;
   localStorage.setItem('ui_scale', val);
 }
 
@@ -14064,7 +14070,9 @@ function setAccentColor(color) {
   if (scale) {
     var z = parseInt(scale) / 100;
     var mc = document.querySelector('.main-content'); if (mc) mc.style.zoom = z;
-    var sb = document.querySelector('.sidebar'); if (sb) sb.style.zoom = z;
+    // Sidebar zoom — header + nav only, footer stays native (slider lives there)
+    var sh = document.querySelector('.sidebar-header'); if (sh) sh.style.zoom = z;
+    var sn = document.querySelector('.sidebar-nav'); if (sn) sn.style.zoom = z;
     var ss = document.getElementById('sidebar-scale-slider'); if (ss) ss.value = scale;
     var sv = document.getElementById('sidebar-scale-value'); if (sv) sv.textContent = scale + '%';
   }

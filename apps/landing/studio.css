@@ -746,7 +746,7 @@ body {
 
 /* Sidebar Footer */
 .sidebar-footer {
-  padding: 12px;
+  padding: 12px 12px 20px;  /* extra bottom padding so footer doesn't hug the floor when nav is zoomed-down */
   border-top: 1px solid rgba(255,255,255,0.07);
 }
 
