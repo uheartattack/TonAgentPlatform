@@ -8756,6 +8756,8 @@ ${msgs.length > 0 ? (() => {
 })() : ''}${_preSearchResults ? `\n\n[AUTO-SEARCH RESULTS — platform pre-fetched these for you]:\n${_preSearchResults}` : ''}`;
 
   // Inject safety rules + plugin skillDocs
+  // Note: Identity anchor moved to prompt-builder.ts (top of system prompt).
+  // SAFETY_RULES below is appended at the end as guardrails.
   const SAFETY_RULES = `
 ━━━ SAFETY & ETHICS RULES ━━━
 You MUST follow these rules AT ALL TIMES:
