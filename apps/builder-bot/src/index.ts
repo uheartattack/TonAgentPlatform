@@ -190,6 +190,16 @@ async function main() {
     console.warn('[BgServices] startup failed:', e?.message);
   }
 
+  // Reconnect previously-known MCP servers so agents that depend on them
+  // don't see a cold start. Fire-and-forget; failures are logged inside.
+  try {
+    const { pool } = await import('./db');
+    const { rehydrateMCPServers } = await import('./services/mcp-registry');
+    rehydrateMCPServers(pool).catch(e => console.warn('[MCP] rehydrate error:', e?.message));
+  } catch (e: any) {
+    console.warn('[MCP] rehydrate skipped:', e?.message);
+  }
+
   console.log();
   console.log('🎯 Platform ready!');
   console.log();

@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.3.1] — 2026-05-19 — "MCP & Edit-with-AI"
+
+### Added
+- **MCP server management UI** — `mcp_servers` + `agent_mcp_servers` tables,
+  full CRUD via REST (`GET/POST/DELETE /api/mcp-servers`, `POST
+  /api/mcp-servers/:id/test`, `GET /api/mcp-servers/:id/tools`). Studio gets
+  a top-level "MCP Servers" page + per-agent "MCP" tab to enable/disable
+  user-added servers. Tools from enabled servers are appended to that
+  agent's tool schema at tick time.
+- **Auto-reconnect on boot** — every `status='connected'` row is rehydrated
+  through `mcp-client.ts`. Failures flip `status='error'` with the message
+  cached in `last_error` so the user sees it in the UI.
+- **Edit with AI** — `POST /api/agents/:id/edit-with-ai` rewrites a
+  field (`code` = Soul / system prompt, or `description`) per a
+  natural-language instruction using the same Gemini fallback chain as
+  Atlas. UI: button on the Soul tab → modal → side-by-side diff → Apply.
+
+### Security
+- MCP URL validator: localhost, private IPs (RFC 1918), link-local,
+  metadata endpoints, ULA/IPv6-loopback rejected before connect.
+- MCP bearer tokens encrypted at rest (AES-256-GCM, same key resolver as
+  wallet mnemonics) and never returned in list responses.
+
+---
+
 ## [2.3.0] — 2026-05-19 — "Memory & Coordination"
 
 The cognition stack. Agents now remember things across sessions, talk to each

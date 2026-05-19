@@ -2880,6 +2880,202 @@ export function startApiServer() {
     }
   });
 
+  // ════════════════════════════════════════════════════════════════════════
+  // MCP (Model Context Protocol) — user-managed remote tool endpoints
+  // ════════════════════════════════════════════════════════════════════════
+
+  // GET /api/mcp-servers — list current user's MCP servers
+  app.get('/api/mcp-servers', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const reg = await import('./services/mcp-registry');
+      const rows = await reg.listUserMCPServers(pool, userId);
+      res.json({ ok: true, count: rows.length, items: rows });
+    } catch (e: any) { res.status(500).json({ error: e?.message }); }
+  });
+
+  // POST /api/mcp-servers — create a new MCP server entry. Body: { name, url, apiKey?, transport? }
+  app.post('/api/mcp-servers', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { name, url, apiKey, transport } = (req.body || {}) as any;
+      if (!name || !url) { res.status(400).json({ error: 'name and url are required' }); return; }
+      if (String(url).length > 1024 || String(name).length > 120) { res.status(400).json({ error: 'name/url too long' }); return; }
+      const reg = await import('./services/mcp-registry');
+      const row = await reg.createMCPServer(pool, userId, {
+        name: String(name).trim(),
+        url: String(url).trim(),
+        apiKey: apiKey ? String(apiKey) : undefined,
+        transport: transport ? String(transport) : 'sse',
+      });
+      // Test it right away (best-effort, don't fail the create on test failure)
+      const tested = await reg.testMCPServer(pool, userId, row.id).catch(() => ({ status: 'error', tools: 0 } as any));
+      res.json({ ok: true, server: { ...row, status: tested.status, tools_count: tested.tools } });
+    } catch (e: any) { res.status(500).json({ error: e?.message }); }
+  });
+
+  // DELETE /api/mcp-servers/:id
+  app.delete('/api/mcp-servers/:id', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) { res.status(400).json({ error: 'invalid id' }); return; }
+      const reg = await import('./services/mcp-registry');
+      const ok = await reg.deleteMCPServer(pool, userId, id);
+      if (!ok) { res.status(404).json({ error: 'MCP server not found' }); return; }
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ error: e?.message }); }
+  });
+
+  // POST /api/mcp-servers/:id/test — reconnect + report status/tools
+  app.post('/api/mcp-servers/:id/test', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) { res.status(400).json({ error: 'invalid id' }); return; }
+      const reg = await import('./services/mcp-registry');
+      const result = await reg.testMCPServer(pool, userId, id);
+      res.json({ ok: true, ...result });
+    } catch (e: any) { res.status(500).json({ error: e?.message }); }
+  });
+
+  // GET /api/mcp-servers/:id/tools — full tool list (name + description)
+  app.get('/api/mcp-servers/:id/tools', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) { res.status(400).json({ error: 'invalid id' }); return; }
+      const reg = await import('./services/mcp-registry');
+      const tools = await reg.getServerTools(pool, userId, id);
+      res.json({ ok: true, count: tools.length, tools: tools.map(t => ({ name: t.name, description: t.description })) });
+    } catch (e: any) { res.status(500).json({ error: e?.message }); }
+  });
+
+  // GET /api/agents/:id/mcp-servers — list MCP servers enabled for an agent
+  app.get('/api/agents/:id/mcp-servers', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const agentId = Number(req.params.id);
+      if (!Number.isFinite(agentId)) { res.status(400).json({ error: 'invalid id' }); return; }
+      const owns = await pool.query(`SELECT 1 FROM builder_bot.agents WHERE id=$1 AND user_id=$2`, [agentId, userId]);
+      if (owns.rowCount === 0) { res.status(404).json({ error: 'Agent not found' }); return; }
+      const reg = await import('./services/mcp-registry');
+      const items = await reg.listAgentMCPServers(pool, agentId);
+      res.json({ ok: true, count: items.length, items });
+    } catch (e: any) { res.status(500).json({ error: e?.message }); }
+  });
+
+  // PUT /api/agents/:agentId/mcp-servers/:serverId — body { enabled: bool }
+  app.put('/api/agents/:agentId/mcp-servers/:serverId', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const agentId = Number(req.params.agentId);
+      const serverId = Number(req.params.serverId);
+      if (!Number.isFinite(agentId) || !Number.isFinite(serverId)) { res.status(400).json({ error: 'invalid id' }); return; }
+      const enabled = !!(req.body && req.body.enabled);
+      const owns = await pool.query(`SELECT 1 FROM builder_bot.agents WHERE id=$1 AND user_id=$2`, [agentId, userId]);
+      if (owns.rowCount === 0) { res.status(404).json({ error: 'Agent not found' }); return; }
+      const reg = await import('./services/mcp-registry');
+      const ok = await reg.setAgentMCPServer(pool, userId, agentId, serverId, enabled);
+      if (!ok) { res.status(404).json({ error: 'MCP server not found' }); return; }
+      res.json({ ok: true, enabled });
+    } catch (e: any) { res.status(500).json({ error: e?.message }); }
+  });
+
+  // ════════════════════════════════════════════════════════════════════════
+  // EDIT WITH AI — refactor agent's system prompt via a natural-language
+  // instruction. Uses the same Gemini fallback chain as Atlas.
+  // ════════════════════════════════════════════════════════════════════════
+  app.post('/api/agents/:id/edit-with-ai', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const agentId = Number(req.params.id);
+      if (!Number.isFinite(agentId)) { res.status(400).json({ error: 'invalid id' }); return; }
+      const instruction = String((req.body || {}).instruction || '').trim();
+      const field = String((req.body || {}).field || 'code'); // 'code' (system prompt) | 'description'
+      if (!instruction) { res.status(400).json({ error: 'instruction is required' }); return; }
+      if (instruction.length > 2000) { res.status(400).json({ error: 'instruction too long (max 2000 chars)' }); return; }
+      if (!['code', 'description'].includes(field)) { res.status(400).json({ error: 'field must be "code" or "description"' }); return; }
+
+      const owns = await pool.query(
+        `SELECT id, name, description, code, role FROM builder_bot.agents WHERE id=$1 AND user_id=$2`,
+        [agentId, userId],
+      );
+      if (owns.rowCount === 0) { res.status(404).json({ error: 'Agent not found' }); return; }
+      const agent = owns.rows[0];
+      const currentValue = String(agent[field] || '');
+
+      // System prompt for the edit-LLM
+      const editorSystem = `You are an expert AI prompt engineer refactoring the ${field === 'code' ? 'system prompt (Soul)' : 'description'} of a Telegram + TON agent.
+
+The agent is named "${agent.name}" with role "${agent.role || 'generalist'}".
+
+You receive:
+- The CURRENT ${field} text (Russian or English).
+- A user INSTRUCTION describing how to change it.
+
+Output ONLY the new ${field} text — no commentary, no markdown fences, no "Here's the updated…" preamble. Preserve language (RU stays RU, EN stays EN). Preserve structure where reasonable. Apply the instruction precisely. If the instruction is vague, make a minimal, conservative change.`;
+
+      const userMsg = `CURRENT ${field.toUpperCase()}:\n\n${currentValue || '(empty)'}\n\n---\n\nINSTRUCTION:\n${instruction}\n\n---\n\nNEW ${field.toUpperCase()}:`;
+
+      // Use the same Gemini fallback chain as Atlas
+      const OpenAI = (await import('openai')).default;
+      const PLATFORM_API_KEY = process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY || '';
+      if (!PLATFORM_API_KEY) { res.status(503).json({ error: 'AI key not configured' }); return; }
+      const client = new OpenAI({
+        apiKey: PLATFORM_API_KEY,
+        baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+      });
+      const MODEL_CHAIN = [
+        'gemini-2.5-flash',
+        'gemini-2.0-flash',
+        'gemini-2.0-flash-lite',
+        'gemini-1.5-flash',
+        'gemini-1.5-flash-8b',
+      ];
+      let newValue = '', usedModel = '';
+      let lastErr: any;
+      for (const model of MODEL_CHAIN) {
+        try {
+          const r = await client.chat.completions.create({
+            model,
+            messages: [
+              { role: 'system', content: editorSystem },
+              { role: 'user', content: userMsg },
+            ],
+            max_tokens: 4096,
+            temperature: 0.4,
+          });
+          newValue = (r.choices?.[0]?.message?.content || '').trim();
+          if (newValue) { usedModel = model; break; }
+        } catch (e: any) {
+          lastErr = e;
+          const msg = String(e?.message || '');
+          // Retry on 429 / 503 / overloaded; bail on real errors
+          if (!/429|503|overload|exhausted|rate.?limit/i.test(msg)) break;
+        }
+      }
+      if (!newValue) {
+        res.status(502).json({ error: `AI edit failed: ${lastErr?.message?.slice(0, 200) || 'no output'}` });
+        return;
+      }
+
+      // Strip markdown fences if AI ignored instructions
+      newValue = newValue.replace(/^```[a-z]*\n/i, '').replace(/\n```\s*$/, '').trim();
+
+      res.json({
+        ok: true,
+        field,
+        original: currentValue,
+        proposed: newValue,
+        model: usedModel,
+        // Client decides whether to apply via the existing PUT /api/agents/:id/{code|description}
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message });
+    }
+  });
+
   // ── DELETE /api/skills/:name — delete a user-owned skill ──
   app.delete('/api/skills/:name', requireAuth, async (req: Request, res: Response) => {
     try {
