@@ -73,14 +73,12 @@ export const PROVIDER_LIMITS: Record<string, { maxContextChars: number; maxTools
   }])
 );
 
-// ── Platform AI (fallback when user has no key) ──
-// Uses Anthropic CLI OAuth token (CLAUDE_CODE_OAUTH_TOKEN) → Anthropic API
-// Override via PLATFORM_AI_URL / PLATFORM_AI_KEY / PLATFORM_AI_MODEL
-export const PLATFORM_AI = {
-  url:   process.env.PLATFORM_AI_URL   || 'https://api.anthropic.com/v1',
-  key:   process.env.PLATFORM_AI_KEY   || process.env.CLAUDE_CODE_OAUTH_TOKEN || '',
-  model: process.env.PLATFORM_AI_MODEL || 'claude-opus-4-6',
-};
+// v2.3.5: PLATFORM_AI was a fallback so any agent without a personal API
+// key could still run on the platform's own Gemini/Anthropic quota. Removed
+// because it created an open-ended cost subsidy. Each user runs strictly on
+// their own AI_API_KEY now. Atlas (the platform assistant) still uses the
+// platform's keys directly via process.env.OPENAI_API_KEY / OPENROUTER_API_KEY
+// — that's a platform service, not a user-agent runtime.
 
 // ── Freshness detection patterns (for auto web_search) ──
 export const FRESHNESS_PATTERNS = /последн|актуальн|новей|свеж|latest|newest|current|сколько стоит|цена|price|какой год|what year|фото|фотк|photo|picture|image|картинк/i;

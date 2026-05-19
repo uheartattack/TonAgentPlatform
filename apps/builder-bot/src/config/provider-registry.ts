@@ -317,7 +317,6 @@ export const PROVIDER_REGISTRY: Record<ProviderId, ProviderMetadata> = {
 
 /**
  * Resolve a provider's metadata; throws if id is unknown.
- * Pass `'platform'` to get a sentinel that resolves to whatever PLATFORM_AI uses.
  */
 export function getProvider(id: string): ProviderMetadata {
   const meta = (PROVIDER_REGISTRY as any)[id];

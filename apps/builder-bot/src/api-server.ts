@@ -3703,16 +3703,15 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
         openrouter: { baseURL: 'https://openrouter.ai/api/v1/', model: 'google/gemini-2.5-flash' },
       };
       const providerCfg = PROVIDER_MAP[provider] || { baseURL: 'https://api.openai.com/v1/', model: 'gpt-4o-mini' };
-      // Platform fallback: use OPENAI_API_KEY / OPENAI_BASE_URL / CLAUDE_MODEL (same as orchestrator)
-      const platformKey = process.env.PLATFORM_AI_KEY || process.env.OPENAI_API_KEY || '';
-      const platformURL = process.env.PLATFORM_AI_URL || process.env.OPENAI_BASE_URL || providerCfg.baseURL;
-      const platformModel = process.env.PLATFORM_AI_MODEL || process.env.CLAUDE_MODEL || 'gemini-2.0-flash';
-      const finalKey = apiKey || platformKey;
-      const finalURL = apiKey ? providerCfg.baseURL : platformURL;
-      const model = (cfg.AI_MODEL as string) || (apiKey ? providerCfg.model : platformModel);
+      // v2.3.5: only user's own key. No platform fallback for chat-with-agent.
+      if (!apiKey) {
+        res.status(402).json({ error: 'NO_API_KEY: Add your AI API key in agent settings or global settings to chat with this agent.' });
+        return;
+      }
+      const model = (cfg.AI_MODEL as string) || providerCfg.model;
 
       const OpenAI = (await import('openai')).default;
-      const client = new OpenAI({ baseURL: finalURL, apiKey: finalKey || 'no-key' });
+      const client = new OpenAI({ baseURL: providerCfg.baseURL, apiKey });
 
       // ── Build studio-friendly system prompt ─────────────────────────────
       const now = new Date();

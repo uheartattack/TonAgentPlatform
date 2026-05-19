@@ -1127,7 +1127,7 @@ async function showOnboardingStep(ctx: Context, userId: number, lang: 'ru' | 'en
       parse_mode: 'HTML',
       reply_markup: {
         inline_keyboard: [
-          [{ text: ru ? '⏩ Пропустить (без своего ключа)' : '⏩ Skip (use platform key)', callback_data: 'ob_skip_key' }],
+          [{ text: ru ? '⏩ Пропустить (агент не запустится без ключа)' : '⏩ Skip (agent won\'t run until you add a key)', callback_data: 'ob_skip_key' }],
           [{ text: ru ? '◀️ Назад к провайдерам' : '◀️ Back to providers', callback_data: 'ob_back_provider' }],
         ],
       },
@@ -12418,7 +12418,8 @@ async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
       const uvRes = await dbPool.query('SELECT value FROM builder_bot.user_variables WHERE user_id=$1 AND key=$2', [userId, 'AI_API_KEY']);
       hasGlobalKey = !!(uvRes.rows[0]?.value);
     } catch {}
-    const aiKeyOk = hasApiKey || hasGlobalKey || !!(process.env.PLATFORM_AI_KEY);
+    // v2.3.5: only user's own key counts. No platform fallback.
+    const aiKeyOk = hasApiKey || hasGlobalKey;
 
     let hasTgAuth = false;
     try {
