@@ -42,6 +42,9 @@ function getAIClient(config: Record<string, any>): { client: OpenAI; model: stri
   const model = (config.AI_MODEL as string) || prov.defaultModel;
 
   if (!baseURL) throw new Error('Missing AI credentials: no baseURL resolved');
+  if (!apiKey || typeof apiKey !== 'string' || apiKey.length < 8) {
+    throw new Error('Missing AI credentials: empty / invalid apiKey (set AI_API_KEY in agent config or use platform fallback)');
+  }
 
   // Warn if user has a native Anthropic key but we're routing through OpenRouter
   if (apiKey.startsWith('sk-ant-') && baseURL.includes('openrouter.ai')) {

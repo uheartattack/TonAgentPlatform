@@ -1249,10 +1249,17 @@ export function startApiServer() {
   });
 
   // ── GET /api/feedback/:id/screenshot — proxy screenshot from Telegram (no auth — image link) ──
-  app.get('/api/feedback/:id/screenshot', async (req: Request, res: Response) => {
+  app.get('/api/feedback/:id/screenshot', requireAuth, async (req: Request, res: Response) => {
     try {
       const feedbackId = parseInt(req.params.id);
-      const result = await pool.query(`SELECT screenshot_file_id FROM builder_bot.feedback WHERE id = $1`, [feedbackId]);
+      const userId = (req as any).userId as number;
+      // Only the original reporter OR admin can fetch screenshots
+      const isAdmin = String(userId) === String(process.env.OWNER_ID || '');
+      const ownerCheck = isAdmin
+        ? `SELECT screenshot_file_id FROM builder_bot.feedback WHERE id = $1`
+        : `SELECT screenshot_file_id FROM builder_bot.feedback WHERE id = $1 AND user_id = $2`;
+      const args = isAdmin ? [feedbackId] : [feedbackId, userId];
+      const result = await pool.query(ownerCheck, args);
       if (!result.rows[0]?.screenshot_file_id) { res.status(404).json({ error: 'No screenshot' }); return; }
       const fileId = result.rows[0].screenshot_file_id;
       const botToken = process.env.BOT_TOKEN;

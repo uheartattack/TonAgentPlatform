@@ -211,6 +211,12 @@ async function sendBoc(boc: string): Promise<{ ok: boolean; hash?: string; error
       headers: { 'Content-Type': 'application/json', ...(TONCENTER_KEY ? { 'X-API-Key': TONCENTER_KEY } : {}) },
       body: JSON.stringify({ boc }),
     });
+    if (!res.ok) {
+      // Toncenter returned a non-2xx status — don't trust the body shape
+      let detail = '';
+      try { detail = (await res.text()).slice(0, 200); } catch {}
+      return { ok: false, error: `Toncenter HTTP ${res.status}: ${detail}` };
+    }
     const data = await res.json() as any;
     if (data.ok) return { ok: true, hash: data.result?.hash || 'sent' };
     return { ok: false, error: data.error || 'Unknown error' };
