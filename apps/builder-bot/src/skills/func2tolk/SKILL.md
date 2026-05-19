@@ -21,18 +21,31 @@ Do NOT migrate:
 - Production contracts under active load — too risky for marginal benefit.
 - Tiny one-off contracts (< 50 LOC) — translation overhead exceeds savings.
 
+## Use the official converter first
+
+TON provides an automated **`func2tolk`** converter (per the official Tolk
+docs at `docs.ton.org/blockchain-basics/tolk/overview`). It produces a
+**conservative lift** that compiles but is NOT idiomatic Tolk.
+
+Workflow:
+1. Run the converter on your `.fc` file → produces `.tolk`.
+2. The output preserves FunC semantics (manual `loadUint` chains, etc.).
+3. Manually refactor toward idiomatic Tolk: `struct` storage, `type` union
+   for messages, `lazy` for deferred deserialization, `match` for routing.
+4. Acton supports **mixed `.fc` + `.tolk`** in one project during migration.
+
 ## Syntax mapping (quick reference)
 
-| FunC                          | Tolk                            |
-| ----------------------------- | ------------------------------- |
-| `int balance`                 | `var balance: int`              |
-| `(int, slice)` return         | `(int, slice)` (same)           |
-| `~load_uint(s, 64)`           | `s.loadUint(64)`                |
-| `~store_uint(b, x, 64)`       | `b.storeUint(x, 64)`            |
-| `throw_unless(n, cond)`       | `throw_unless(n, cond)` (same)  |
-| `inline` modifier             | `@inline` annotation            |
-| `() get_balance() method_id`  | `get fun getBalance(): int`     |
-| `cell get_data()`             | `getContractData(): cell`       |
+| FunC                          | Tolk (literal lift)             | Tolk (idiomatic)                  |
+| ----------------------------- | ------------------------------- | --------------------------------- |
+| `int balance`                 | `var balance: int`              | `var balance: coins`              |
+| `(int, slice)` return         | `(int, slice)`                  | `struct Result { x: int; y: slice }` |
+| `~load_uint(s, 64)`           | `s.loadUint(64)`                | use `lazy struct.load()` instead  |
+| `~store_uint(b, x, 64)`       | `b.storeUint(x, 64)`            | declarative `storeCell(struct)`   |
+| `throw_unless(n, cond)`       | `throw_unless(n, cond)` (same)  | `assert (cond) { throw n }`       |
+| `inline` modifier             | `@inline` annotation            | usually unnecessary               |
+| `() get_balance() method_id`  | `get fun getBalance(): int`     | same                              |
+| op-code dispatch by `if/else` | same                            | `type Msg = A \| B; match (msg)`  |
 
 ## Gas-equivalence preservation
 
