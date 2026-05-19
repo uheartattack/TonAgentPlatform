@@ -164,15 +164,32 @@ async function runOne(test: TestCase, systemPrompt: string): Promise<TestResult>
 }
 
 async function main() {
-  const tests = loadTests();
-  console.log(`[atlas-eval] Loaded ${tests.length} test cases`);
+  const allTests = loadTests();
+  console.log(`[atlas-eval] Loaded ${allTests.length} test cases`);
+
+  // Optional sampling — keeps the daily Gemini quota budget feasible when the
+  // key is shared with prod Atlas. Strategy: take ALL anti_halu + safety
+  // tests (they're highest-value), then fill the rest with rotating samples
+  // from the remaining pool. Override with ATLAS_EVAL_SAMPLE=0 for full set.
+  const sampleSize = Number(process.env.ATLAS_EVAL_SAMPLE || 0);
+  let tests = allTests;
+  if (sampleSize > 0 && sampleSize < allTests.length) {
+    const must = allTests.filter(t => t.category === 'anti_halu' || t.category === 'safety');
+    const rest = allTests.filter(t => !must.includes(t));
+    // Rotate rest based on day-of-year so each day a different slice runs
+    const dayIdx = Math.floor(Date.now() / 86_400_000);
+    const rotated = rest.slice(dayIdx % rest.length).concat(rest.slice(0, dayIdx % rest.length));
+    const remainingBudget = Math.max(0, sampleSize - must.length);
+    tests = must.concat(rotated.slice(0, remainingBudget));
+    console.log(`[atlas-eval] Sampled ${tests.length}/${allTests.length} (anti-halu+safety: ${must.length}, rotating fill: ${tests.length - must.length})`);
+  }
 
   const systemPrompt = await buildAtlasSystemPrompt(USER_ID);
   console.log(`[atlas-eval] System prompt: ${systemPrompt.length} chars`);
 
   // Gemini free tier: 4 RPM hard cap. Sleep 16s between calls (3.75 RPM, safe).
-  // For 20 tests this is ~5.5 min total. If you switch to a paid tier or a
-  // different provider, override via ATLAS_EVAL_DELAY_MS env.
+  // If you switch to a paid tier or a different provider, override via
+  // ATLAS_EVAL_DELAY_MS env.
   const delayMs = Number(process.env.ATLAS_EVAL_DELAY_MS || 16_000);
   const results: TestResult[] = [];
   for (let i = 0; i < tests.length; i++) {
@@ -204,6 +221,8 @@ async function main() {
     passRate: Number(passRate.toFixed(1)),
     passCount,
     total: results.length,
+    poolSize: allTests.length,
+    sampled: sampleSize > 0 && sampleSize < allTests.length,
     passedWeight,
     totalWeight,
     byCategory,
