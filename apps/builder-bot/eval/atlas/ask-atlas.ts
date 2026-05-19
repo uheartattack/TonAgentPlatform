@@ -52,20 +52,36 @@ async function main() {
   const userId = Number(process.env.ATLAS_EVAL_USER_ID || 0);
   const systemPrompt = await buildAtlasSystemPrompt(userId);
 
-  const client = new OpenAI({
+  const geminiClient = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY || '',
     baseURL: process.env.OPENAI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai/',
   });
+  const orKey = process.env.OPENROUTER_API_KEY || '';
+  const orClient = orKey ? new OpenAI({
+    apiKey: orKey,
+    baseURL: 'https://openrouter.ai/api/v1',
+    defaultHeaders: { 'HTTP-Referer': 'https://tonagentplatform.com', 'X-Title': 'TON Agent Platform — Atlas eval' },
+  }) : null;
 
-  // Same model chain Atlas uses in prod (drops deprecated 1.5-*)
-  const MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'];
+  // Same model chain Atlas uses in prod. OpenRouter free tier appended so
+  // training survives Google outages.
+  const MODELS = [
+    { model: 'gemini-2.5-flash',                            client: geminiClient },
+    { model: 'gemini-2.0-flash',                            client: geminiClient },
+    { model: 'gemini-2.0-flash-lite',                       client: geminiClient },
+    ...(orClient ? [
+      { model: 'deepseek/deepseek-chat-v3-0324:free',       client: orClient },
+      { model: 'meta-llama/llama-3.3-70b-instruct:free',    client: orClient },
+      { model: 'qwen/qwen-2.5-72b-instruct:free',           client: orClient },
+    ] : []),
+  ];
   let response = '';
   let usedModel = '';
   let lastErr: any;
-  for (const model of MODELS) {
+  for (const entry of MODELS) {
     try {
-      const r = await client.chat.completions.create({
-        model,
+      const r = await entry.client.chat.completions.create({
+        model: entry.model,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: question },
@@ -74,7 +90,7 @@ async function main() {
         temperature: 0.3,
       });
       response = r.choices?.[0]?.message?.content || '';
-      if (response) { usedModel = model; break; }
+      if (response) { usedModel = entry.model; break; }
     } catch (e: any) {
       lastErr = e;
       const msg = String(e?.message || '');
