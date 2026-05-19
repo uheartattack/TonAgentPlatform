@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.3.4] — 2026-05-19 — "Bot API 10.0 + Multimodal Mega"
+
+12 new tools landed in one shot — half of them adopting fresh Telegram Bot
+API 10.0 / 9.6 / 9.5 / 9.4 endpoints (May 2026 releases), half multimodal.
+
+### Added — Multimodal
+- **`image_analyze_batch(urls, prompt)`** — up to 16 images in ONE Gemini
+  call. Use for NFT comparison, product picking, photo-set summarization.
+  16× cheaper than 16 sequential `image_analyze` calls.
+- **`video_analyze(url, prompt)`** — Gemini multimodal on mp4/webm. Returns
+  scene description with time codes.
+- **`chart_render(type, datasets, labels?, title?)`** — PNG charts via
+  QuickChart.io (no API key required). Line / bar / pie / doughnut / radar
+  / scatter / candlestick. Returns a public URL the agent can send via
+  `tg_send_file`.
+- **`tts_reply(text, voice?)`** — Gemini TTS. Agent replies as voice
+  message. Voices: Kore (default), Puck, Charon, Aoede, Fenrir.
+
+### Added — Telegram Bot API 10.0 (May 8, 2026)
+- **`tg_send_live_photo`** — Live Photos (photo + short video, iPhone-style).
+- **`tg_delete_reaction(chat_id, message_id, user_id?)`** — moderation.
+- **`tg_delete_all_reactions(chat_id, message_id)`** — wipe all reactions.
+- **`tg_send_to_bot(@username, text)`** — bot-to-bot messaging via username.
+  Both bots must enable bot-to-bot communication.
+
+### Added — Telegram Bot API 9.4 (Feb 9, 2026)
+- **`tg_set_my_profile_photo(photo_url)`** — agent changes its own avatar.
+- **`tg_remove_my_profile_photo()`** — wipe avatar.
+- **`tg_get_user_profile_audios(user_id, limit?)`** — list audios from a
+  user's profile (e.g. voice business card).
+
+### Added — Telegram Bot API 9.5 (Mar 1, 2026)
+- **`tg_set_chat_member_tag(chat_id, user_id, tag)`** — colored "role" tags
+  for chat members (e.g. "VIP", "Модератор").
+
+### Added — Telegram Bot API 9.6 / 10.0 (advanced polls)
+- **`tg_create_poll_v2`** — advanced poll/quiz. New fields:
+  `correct_option_ids` (MULTIPLE correct answers for quizzes!),
+  `description`, `allows_revoting`, `shuffle_options`,
+  `hide_results_until_closes`, `allow_adding_options`, `members_only`,
+  `country_codes`, `open_period` (auto-close up to 30 days).
+
+### New capability categories
+- `audio` — `audio_transcribe`, `tts_reply`
+- `video` — `video_analyze`
+- `chart` — `chart_render`
+
+### Files
+- New: `services/multimodal-tools.ts` (4 tools)
+- New: `services/bot-api-10.ts` (9 tools)
+- Updated: `agents/tools/tool-definitions.ts` (+12 schemas)
+- Updated: `agents/ai-agent-runtime.ts` (+12 case handlers, capability map)
+
+---
+
 ## [2.3.3] — 2026-05-19 — "Vision, Voice & Polish"
 
 ### Added
