@@ -1272,6 +1272,7 @@ export const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
   payments:    ['verify_payment'],
   image:       ['image_download', 'image_resize', 'image_crop', 'image_add_text', 'image_filter',
                 'image_convert', 'image_info', 'image_composite', 'image_create_text', 'image_analyze'],
+  audio:       ['audio_transcribe'],
   ton_mcp:     [], // dynamic — MCP tools discovered at runtime and injected via mcpTools param
   workspace:   ['file_write', 'file_read', 'file_list', 'file_delete', 'file_append', 'workspace_info'],
   mcp:         ['mcp_connect', 'mcp_list_servers', 'mcp_list_tools', 'mcp_call', 'mcp_disconnect'],
@@ -6811,6 +6812,44 @@ async function _executeToolInner(
       } catch (e: any) { return { error: e.message }; }
     }
 
+    case 'audio_transcribe': {
+      try {
+        const { transcribeAudio, transcribeAudioFromUrl } = await import('../services/transcribe');
+        const lang = (args.lang === 'ru' || args.lang === 'en') ? args.lang : 'auto';
+        const timeoutMs = Math.max(2_000, Math.min(60_000, Number(args.timeout_ms) || 20_000));
+
+        let result;
+        if (args.url) {
+          result = await transcribeAudioFromUrl(String(args.url), {
+            lang,
+            format: args.format,
+            timeoutMs,
+          });
+        } else if (args.base64) {
+          let buf: Buffer;
+          try { buf = Buffer.from(String(args.base64), 'base64'); }
+          catch { return { ok: false, error: 'Invalid base64' }; }
+          if (buf.length === 0) return { ok: false, error: 'Empty audio buffer' };
+          if (buf.length > 25 * 1024 * 1024) return { ok: false, error: 'Audio too large (>25MB)' };
+          result = await transcribeAudio({
+            audio: buf,
+            format: (args.format || 'ogg') as any,
+            lang,
+            timeoutMs,
+          });
+        } else {
+          return { ok: false, error: 'Pass either url or base64' };
+        }
+
+        if (result.ok) {
+          return { ok: true, text: result.text, provider: result.provider, attempts: result.attempts };
+        }
+        return { ok: false, error: result.error || 'transcription failed', attempts: result.attempts };
+      } catch (e: any) {
+        return { ok: false, error: e?.message?.slice(0, 200) || 'audio_transcribe failed' };
+      }
+    }
+
     case 'image_analyze': {
       try {
         const { downloadImage } = await import('../services/image-service');
@@ -10822,6 +10861,13 @@ export class AIAgentRuntime {
         targets.delete(agentId);
         if (targets.size === 0) _pendingAsks.delete(key);
       });
+      // v2.3.3: previously-leaking per-agent Maps that deactivate forgot
+      _pendingContext.delete(agentId);
+      _agentTodos.delete(agentId);
+      _agentMetaCache.delete(agentId);
+      // _toolRateLimits keyed by "agentId:toolGroup" — sweep by prefix
+      const toolRlKeys = [..._toolRateLimits.keys()].filter(k => k.startsWith(agentId + ':'));
+      for (const k of toolRlKeys) _toolRateLimits.delete(k);
       // Clean up pending confirmations for this agent
       for (const [askId, pending] of _pendingConfirmations) {
         if (pending.agentId === agentId) {
