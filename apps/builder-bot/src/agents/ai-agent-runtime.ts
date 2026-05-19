@@ -1229,6 +1229,9 @@ export const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
                 'tg_send_live_photo', 'tg_delete_reaction', 'tg_delete_all_reactions',
                 'tg_send_to_bot', 'tg_set_my_profile_photo', 'tg_remove_my_profile_photo',
                 'tg_get_user_profile_audios', 'tg_set_chat_member_tag', 'tg_create_poll_v2',
+                'tg_send_live_location',
+                // Aliases for naming consistency
+                'tg_list_folders', 'tg_list_topics', 'tg_post_story', 'tg_view_stories',
 ],
   telegram_admin: [
     'tg_create_channel2', 'tg_edit_channel_title', 'tg_edit_channel_about',
@@ -6909,6 +6912,21 @@ async function _executeToolInner(
         return await sendPollV2(args as any);
       } catch (e: any) { return { ok: false, error: e?.message?.slice(0, 200) }; }
     }
+    case 'tg_send_live_location': {
+      try {
+        const { sendLiveLocation } = await import('../services/bot-api-10');
+        return await sendLiveLocation(args.chat_id, args.lat, args.lng, args.live_period, {
+          heading: args.heading,
+          horizontal_accuracy: args.horizontal_accuracy,
+          proximity_alert_radius: args.proximity_alert_radius,
+        });
+      } catch (e: any) { return { ok: false, error: e?.message?.slice(0, 200) }; }
+    }
+    // ── Aliases for naming consistency (agents kept calling these names) ──
+    case 'tg_list_folders':  return await executeTool('tg_get_folders', args, params);
+    case 'tg_list_topics':   return await executeTool('tg_get_forum_topics', args, params);
+    case 'tg_post_story':    return await executeTool('tg_send_story', args, params);
+    case 'tg_view_stories':  return await executeTool('tg_get_peer_stories', args, params);
 
     case 'audio_transcribe': {
       try {

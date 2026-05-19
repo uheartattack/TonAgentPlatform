@@ -1740,6 +1740,22 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
     {
       type: 'function',
       function: {
+        name: 'tg_send_live_location',
+        description: 'Отправить LIVE-геолокацию в чат (обновляемая в течение N секунд). Возвращает message_id чтобы потом обновлять через tg_edit_live_location.',
+        parameters: { type: 'object', properties: {
+          chat_id: { type: 'string', description: 'ID чата' },
+          lat: { type: 'number', description: 'Широта' },
+          lng: { type: 'number', description: 'Долгота' },
+          live_period: { type: 'number', description: 'Сколько секунд транслировать (60-86400, т.е. до 24ч)' },
+          heading: { type: 'number', description: 'Направление 1-360° (опц.)' },
+          horizontal_accuracy: { type: 'number', description: 'Точность в метрах (0-1500, опц.)' },
+          proximity_alert_radius: { type: 'number', description: 'Радиус proximity-алерта в метрах (опц.)' },
+        }, required: ['chat_id', 'lat', 'lng', 'live_period'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
         name: 'tg_get_history_count',
         description: 'Получить количество сообщений в чате.',
         parameters: { type: 'object', properties: {
