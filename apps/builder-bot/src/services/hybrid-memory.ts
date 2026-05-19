@@ -3,7 +3,9 @@
  * HYBRID MEMORY — vector + FTS + RRF fusion (teleton-agent / deer-flow pattern)
  *
  * Stores compressed semantic memory chunks per agent.
- *   • Vector retrieval: Gemini `text-embedding-004` (768-dim).
+ *   • Vector retrieval: pluggable backend (see embedding-backends.ts).
+ *     Default Gemini `text-embedding-004` (768d). Alternative ONNX
+ *     `Xenova/all-MiniLM-L6-v2` (384d) for zero-API-cost / offline.
  *     Stored as JSONB array. Cosine similarity computed in JS (sufficient
  *     for ≲5K memories per agent — switch to pgvector later if needed).
  *   • Keyword retrieval: Postgres `tsvector` generated column + GIN index.
@@ -14,34 +16,20 @@
  * (always-on in CORE_TOOLS). The runtime also auto-saves tick summaries
  * here when the auto-compression layer fires.
  *
- * No native dependencies. Uses the user's existing Gemini key OR the
- * platform Gemini fallback. If neither is available, falls back to FTS-only.
+ * If the configured backend has no key / model fails to load, falls back
+ * gracefully to FTS-only retrieval (keyword match still works).
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
-import OpenAI from 'openai';
+import { embed } from './embedding-backends';
 
-const EMBEDDING_MODEL = process.env.HYBRID_EMBED_MODEL || 'text-embedding-004';
-const EMBEDDING_DIM = 768;
 const RRF_K = 60;                       // standard RRF constant
 const DEFAULT_TOP_K = 8;
-const MAX_CHUNK_CHARS = 4000;            // single memory cap
-
-let _embedClient: OpenAI | null = null;
-function getEmbedClient(): OpenAI | null {
-  if (_embedClient) return _embedClient;
-  // Prefer dedicated embed key, else fall back to OPENAI_API_KEY (which on
-  // our prod is the Gemini key — generativelanguage.googleapis.com).
-  const key = process.env.HYBRID_EMBED_KEY || process.env.OPENAI_API_KEY || '';
-  const base = process.env.HYBRID_EMBED_URL || process.env.OPENAI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai/';
-  if (!key) return null;
-  _embedClient = new OpenAI({ apiKey: key, baseURL: base });
-  return _embedClient;
-}
 
 /**
  * Cheap cosine similarity (JS).
- * Assumes both vectors are non-zero and same length.
+ * Returns 0 on dim mismatch so memories embedded with a prior backend
+ * don't pollute the new backend's results — they just degrade to FTS-only.
  */
 function cosineSim(a: number[], b: number[]): number {
   if (!a || !b || a.length !== b.length) return 0;
@@ -53,27 +41,6 @@ function cosineSim(a: number[], b: number[]): number {
   }
   const denom = Math.sqrt(na) * Math.sqrt(nb);
   return denom > 0 ? dot / denom : 0;
-}
-
-/**
- * Embed a single text via Gemini's OpenAI-compat endpoint.
- * Returns null on any failure (caller falls back to FTS-only).
- */
-async function embed(text: string): Promise<number[] | null> {
-  const client = getEmbedClient();
-  if (!client) return null;
-  const truncated = text.slice(0, MAX_CHUNK_CHARS);
-  try {
-    const r = await client.embeddings.create({
-      model: EMBEDDING_MODEL,
-      input: truncated,
-    });
-    const v = r.data?.[0]?.embedding;
-    return Array.isArray(v) ? (v as number[]) : null;
-  } catch (e: any) {
-    console.warn(`[HybridMemory] embed failed: ${e?.message?.slice(0, 100)}`);
-    return null;
-  }
 }
 
 export interface SavedMemory {
