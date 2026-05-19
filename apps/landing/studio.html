@@ -7,7 +7,7 @@
   <link rel="icon" type="image/svg+xml" href="logo.svg">
   <link rel="shortcut icon" href="logo.svg">
   <title>TON Agent Studio</title>
-  <link rel="preload" href="/studio.js?v=20260519c" as="script">
+  <link rel="preload" href="/studio.js?v=20260519d" as="script">
   <link rel="preload" href="/studio.css?v=20260420" as="style">
   <link rel="preload" href="/design-system.css?v=20260420" as="style">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -251,12 +251,11 @@
             <span class="user-tier" id="user-plan-badge">Free Tier</span>
           </div>
         </div>
-        <div style="display:flex;align-items:center;gap:6px;padding:4px 14px">
-          <button class="lang-btn active" data-lang="en" onclick="switchLang('en')" style="flex:1">EN</button>
-          <button class="lang-btn" data-lang="ru" onclick="switchLang('ru')" style="flex:1">RU</button>
-          <div style="width:1px;height:16px;background:var(--border);margin:0 2px"></div>
-          <input type="range" id="sidebar-scale-slider" min="80" max="120" value="100" step="5" style="width:50px;accent-color:var(--primary)" oninput="setUIScale(this.value)">
-          <span id="sidebar-scale-value" style="font-size:.6rem;color:var(--text-muted);min-width:24px">100%</span>
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 14px;flex-wrap:wrap">
+          <button class="lang-btn active" data-lang="en" onclick="switchLang('en')" style="flex:0 0 auto;min-width:38px">EN</button>
+          <button class="lang-btn" data-lang="ru" onclick="switchLang('ru')" style="flex:0 0 auto;min-width:38px">RU</button>
+          <input type="range" id="sidebar-scale-slider" min="80" max="120" value="100" step="5" style="flex:1;min-width:80px;accent-color:var(--primary)" oninput="setUIScale(this.value)">
+          <span id="sidebar-scale-value" style="font-size:.65rem;color:var(--text-muted);min-width:30px;text-align:right">100%</span>
         </div>
         <button class="logout-btn" onclick="logout()" style="padding:7px;font-size:.75rem">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
