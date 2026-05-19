@@ -513,18 +513,128 @@ function updateTopbar() {
   }
 }
 
+// Omnisearch — single bar that searches agents, nav pages, skills, settings.
+// Index is built on demand from in-memory state. Dropdown shows top 8 matches
+// grouped by source. Click to navigate. Esc / outside-click to close.
+
+var _omniIndex = null;     // [{title, sub, type, action}]
+var _omniDropdown = null;
+
+function buildOmniIndex() {
+  var items = [];
+  // Nav pages — read from sidebar nav-item buttons (single source of truth)
+  document.querySelectorAll('.nav-item[data-page]').forEach(function(a) {
+    var label = a.querySelector('span')?.textContent?.trim() || a.getAttribute('data-page');
+    var page = a.getAttribute('data-page');
+    items.push({ title: label, sub: 'Page', type: 'page', action: function() { navigateTo(page); } });
+  });
+  // User's agents — from cached list (loaded on operations page)
+  try {
+    if (Array.isArray(window._agentsList)) {
+      window._agentsList.forEach(function(ag) {
+        items.push({
+          title: '#' + ag.id + ' ' + (ag.name || 'unnamed'),
+          sub: 'Agent · ' + (ag.role || 'worker'),
+          type: 'agent',
+          action: function() { navigateTo('operations'); setTimeout(function() { if (typeof openAgentDetail === 'function') openAgentDetail(ag.id); }, 200); }
+        });
+      });
+    }
+  } catch {}
+  // Skills — from cached list (loaded on skills page)
+  try {
+    if (Array.isArray(window._skillsCache)) {
+      window._skillsCache.forEach(function(s) {
+        items.push({
+          title: s.name,
+          sub: 'Skill · ' + (s.source || 'builtin'),
+          type: 'skill',
+          action: function() { navigateTo('skills'); setTimeout(function() { if (typeof openSkillDetail === 'function') openSkillDetail(s.name); }, 200); }
+        });
+      });
+    }
+  } catch {}
+  // Quick settings shortcuts
+  ['Profile', 'AI Keys', 'Wallet', 'Plugins', 'Templates', 'Marketplace', 'Logs'].forEach(function(s) {
+    var lower = s.toLowerCase().replace(/ /g, '-');
+    items.push({ title: s, sub: 'Quick action', type: 'shortcut', action: function() {
+      if (lower === 'profile') navigateTo('profile');
+      else if (lower === 'ai-keys') { navigateTo('profile'); setTimeout(function() { if (typeof openApiKeysModal === 'function') openApiKeysModal(); }, 300); }
+      else if (lower === 'wallet') navigateTo('wallet');
+      else if (lower === 'plugins') navigateTo('marketplace');
+      else if (lower === 'templates') navigateTo('marketplace');
+      else if (lower === 'marketplace') navigateTo('marketplace');
+      else if (lower === 'logs') navigateTo('activity');
+    } });
+  });
+  return items;
+}
+
+function closeOmni() {
+  if (_omniDropdown && _omniDropdown.parentNode) _omniDropdown.parentNode.removeChild(_omniDropdown);
+  _omniDropdown = null;
+  document.removeEventListener('click', _omniOutsideClick, true);
+  document.removeEventListener('keydown', _omniKey);
+}
+function _omniOutsideClick(e) {
+  if (!_omniDropdown) return;
+  if (_omniDropdown.contains(e.target)) return;
+  var input = document.getElementById('topbar-search-input');
+  if (input && input.contains(e.target)) return;
+  closeOmni();
+}
+function _omniKey(e) { if (e.key === 'Escape') closeOmni(); }
+
 function handleTopbarSearch(val) {
-  // Route search to active page's search handler
-  if (!val || val.length < 2) return;
-  var active = document.querySelector('.nav-item.active');
-  var page = active ? active.getAttribute('data-page') : '';
-  if (page === 'operations') {
-    var f = document.getElementById('agent-search-input');
-    if (f) { f.value = val; filterAgents(val); }
-  } else if (page === 'marketplace') {
-    var m = document.getElementById('marketplace-search');
-    if (m) { m.value = val; filterMarketplace(val); }
+  var q = (val || '').trim().toLowerCase();
+  if (q.length === 0) { closeOmni(); return; }
+  // Refresh index every keystroke — cheap (~50 items) and ensures fresh agent list
+  _omniIndex = buildOmniIndex();
+  var matches = _omniIndex.filter(function(it) {
+    return it.title.toLowerCase().includes(q) || it.sub.toLowerCase().includes(q);
+  }).slice(0, 8);
+  // Render dropdown
+  if (!_omniDropdown) {
+    _omniDropdown = document.createElement('div');
+    _omniDropdown.id = 'omni-dropdown';
+    _omniDropdown.style.cssText = 'position:absolute;top:46px;left:0;right:0;background:var(--bg-elev-2,#12141f);border:1px solid var(--border);border-radius:12px;box-shadow:0 16px 48px rgba(0,0,0,.5),0 0 0 1px rgba(0,168,255,.15);z-index:9999;max-height:60vh;overflow-y:auto;backdrop-filter:blur(16px) saturate(150%)';
+    var wrap = document.querySelector('.topbar-search');
+    if (wrap) { wrap.style.position = 'relative'; wrap.appendChild(_omniDropdown); }
+    document.addEventListener('click', _omniOutsideClick, true);
+    document.addEventListener('keydown', _omniKey);
   }
+  if (matches.length === 0) {
+    _omniDropdown.innerHTML = '<div style="padding:18px;text-align:center;color:var(--text-muted);font-size:.85rem">' +
+      (currentLang === 'ru' ? 'Ничего не найдено' : 'No matches') + '</div>';
+    return;
+  }
+  var typeColors = { page: '#00a8ff', agent: '#22c55e', skill: '#8b5cf6', shortcut: '#f59e0b' };
+  var typeIcons = {
+    page: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
+    agent: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>',
+    skill: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>',
+    shortcut: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
+  };
+  _omniDropdown.innerHTML = matches.map(function(m, i) {
+    var color = typeColors[m.type] || '#888';
+    return '<div class="omni-item" data-idx="' + i + '" style="padding:10px 14px;display:flex;align-items:center;gap:10px;cursor:pointer;border-bottom:1px solid var(--border)" ' +
+      'onmouseover="this.style.background=\'rgba(0,168,255,.08)\'" onmouseout="this.style.background=\'\'">' +
+      '<span style="color:' + color + ';display:inline-flex;flex-shrink:0">' + (typeIcons[m.type] || '') + '</span>' +
+      '<div style="flex:1;min-width:0">' +
+        '<div style="font-size:.88rem;color:var(--text-primary);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + escHtml(m.title) + '</div>' +
+        '<div style="font-size:.7rem;color:var(--text-muted)">' + escHtml(m.sub) + '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+  // Wire clicks
+  _omniDropdown.querySelectorAll('.omni-item').forEach(function(el, idx) {
+    el.addEventListener('click', function() {
+      try { matches[idx].action(); } catch (e) { console.error(e); }
+      var input = document.getElementById('topbar-search-input');
+      if (input) input.value = '';
+      closeOmni();
+    });
+  });
 }
 
 // Legacy: old widget callback (keep for backwards compat)
