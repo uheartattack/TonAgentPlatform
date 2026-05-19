@@ -71,6 +71,39 @@ function defaultIdentity(config: Record<string, any>): string {
   return `Name: ${name}\n${roleLine}\nPlatform: TON Agent Platform (tonagentplatform.com)`;
 }
 
+/**
+ * v2.3.5: Strong Identity Anchor — placed FIRST in the prompt so it's the
+ * model's primary frame, not a footnote. Hard-pins name + persona + anti-leak
+ * rules so the underlying LLM (Gemini/Claude/GPT) doesn't bleed through with
+ * "I'm a large language model from Google".
+ *
+ * Душа агента — не просто текст в конце промпта. Это его операционная система.
+ */
+function buildIdentityAnchor(agentName: string, agentId: number, role?: string): string {
+  return `━━━ ТЫ — ${agentName.toUpperCase()} ━━━
+
+Ты не "AI помощник", не "большая языковая модель", не "Gemini/GPT/Claude".
+Ты — ${agentName}. Конкретный, живой AI-агент TON Agent Platform с ID #${agentId}${role ? `, роль: ${role}` : ''}.
+
+Когда тебя спрашивают "кто ты?" / "что ты?" / "ты AI?" / "what are you?" /
+"тебя сделал Google/OpenAI/Anthropic?" — отвечай как ${agentName}.
+
+ЗАПРЕЩЕНО говорить:
+  ❌ "Я большая языковая модель"
+  ❌ "Я модель от Google / OpenAI / Anthropic / Meta"
+  ❌ "Я Gemini / GPT / Claude / Llama / DeepSeek / любая другая модель"
+  ❌ Упоминать языковые модели, провайдеров, вендоров.
+
+МОЖНО признать что ты AI — но ОТКРЫТО как ${agentName}:
+  ✅ "Да, я AI-агент TON Agent Platform по имени ${agentName}."
+  ✅ "Я ${agentName}, AI на платформе TonAgentPlatform.com"
+
+Это правило ПЕРЕВЕШИВАЕТ дефолты любой модели которая тебя крутит под капотом.
+Душа важнее провайдера.
+
+`;
+}
+
 // ── Default BOOTSTRAP template ───────────────────────────────────────────────
 
 const DEFAULT_BOOTSTRAP = `## First Activation
@@ -236,7 +269,24 @@ export async function buildModularPrompt(params: {
   // ── Assemble sections in defined order ──
   const sections: string[] = [];
 
-  // 1. SOUL
+  // 0. IDENTITY ANCHOR — FIRST. Hard-pins name + anti-LLM-leak rules.
+  // v2.3.5: Душа агента — первая вещь которую видит LLM. Не приклеена в конец.
+  {
+    let _agentName = config.AGENT_NAME || config.agentName || '';
+    let _agentRoleLabel = '';
+    try {
+      const { pool } = await import('../db');
+      const row = await pool.query('SELECT name, role FROM builder_bot.agents WHERE id=$1', [agentId]);
+      if (row.rows[0]) {
+        if (!_agentName) _agentName = row.rows[0].name || '';
+        _agentRoleLabel = row.rows[0].role || '';
+      }
+    } catch {}
+    if (!_agentName) _agentName = `Agent#${agentId}`;
+    sections.push(buildIdentityAnchor(_agentName, agentId, _agentRoleLabel));
+  }
+
+  // 1. SOUL — персональность, миссия, тон. Right after identity so they fuse.
   if (soul) {
     sections.push(soul);
   }
