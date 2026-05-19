@@ -496,10 +496,10 @@
 
 ## 📊 STATS
 - **Found**: 95 issues tracked
-- **Fixed**: ~20 (critical + selected high/medium). Remaining are known tech debt.
-- **Critical (C)**: C2, C4, C6, C7, C7b, H15, H16, H11, H20, M22 ✅ fixed
-- **High (H)**: H15, H16 already implemented; H11 mitigated; remainder TODO
-- **Medium**: M1, M14, M19, M20, M22, M28-31 ✅ fixed; remainder TODO
-- **Low**: Not yet addressed
-- **Last fix**: 2026-03-31
+- **Fixed**: ~40+ across all severities (audit pass on 2026-05-19 confirmed many items already addressed in newer commits)
+- **Critical (C)**: C2, C3, C4, C6, C7, C7b, C8, C9 ✅ fixed. C1/C10 vm2/isolated-vm migration is a known limitation tracked separately.
+- **High (H)**: H1, H2, H11, H13, H14, H15, H16, H20 ✅ fixed. Remaining: H3/H4/H5/H6/H7/H8/H9/H10/H12 TODO
+- **Medium**: M1, M11, M14, M19, M20, M22, M28-31, M51 ✅ fixed; ~30 remaining (mostly Map-cleanup misses in deactivate paths)
+- **Low**: L3 ✅ updated; rest not yet addressed
+- **Last fix**: 2026-05-19 (audit pass — `_cachedDialogs` ReferenceError, s10 plan-approval, s12 per-task DB-tx, tool sort)
 - **Deploy**: ✅ production online

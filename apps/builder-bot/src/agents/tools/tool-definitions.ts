@@ -3661,6 +3661,23 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
       },
     },
 
+    // ── s10 protocol: plan-approval HitL ─────────────────────────────
+    {
+      type: 'function',
+      function: {
+        name: 'ask_for_plan_approval',
+        description: 'Отправить юзеру черновик мульти-шагового плана действий, дождаться одобрения. Юзер может: одобрить как есть ("да"), отклонить ("нет"), или дать правки ("правки: <текст>"). Возвращает { approved, with_edits, edits, user_reply }. Используй когда план опасен / нетривиален / тратит ресурсы.',
+        parameters: {
+          type: 'object',
+          properties: {
+            plan: { type: 'string', description: 'Текст плана (numbered list, до 4000 символов)' },
+            timeout_seconds: { type: 'number', description: 'Таймаут (30-900 сек, по умолчанию 300)' },
+          },
+          required: ['plan'],
+        },
+      },
+    },
+
     // ── Image Generation ─────────────────────────────────────────────
     {
       type: 'function',
