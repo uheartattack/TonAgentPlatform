@@ -200,6 +200,17 @@ async function main() {
     console.warn('[MCP] rehydrate skipped:', e?.message);
   }
 
+  // Pre-warm local embedding model if EMBEDDING_BACKEND=local — saves the
+  // ~3-10s model-load latency on first recall_hybrid call. Fire-and-forget.
+  if (process.env.EMBEDDING_BACKEND === 'local') {
+    try {
+      const { prewarmEmbedding } = await import('./services/embedding-backends');
+      prewarmEmbedding().catch(e => console.warn('[Embed/Local] prewarm error:', e?.message));
+    } catch (e: any) {
+      console.warn('[Embed/Local] prewarm skipped:', e?.message);
+    }
+  }
+
   console.log();
   console.log('🎯 Platform ready!');
   console.log();
