@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.3.3] — 2026-05-19 — "Vision, Voice & Polish"
+
+### Added
+- **`audio_transcribe` tool** — first-class agent tool for converting audio
+  (URL or base64) to text. Tries Gemini multimodal first (cheap + fast),
+  falls back to OpenAI Whisper. Returns `{ ok, text, provider, attempts }`
+  so the agent sees WHY it failed instead of an empty string. New
+  capability `audio` in `CAPABILITY_TOOL_MAP`.
+- **`services/transcribe.ts`** — reusable transcribe utility. Replaces the
+  inline duplicate logic in `bot.ts` voice handler and `api-server.ts`
+  POST /api/voice/transcribe.
+
+### Fixed
+- **Voice transcription "tihko ne robit"** — root cause was silent fallback:
+  Gemini error swallowed, then Whisper attempt re-used a Gemini key (since
+  OPENAI_API_KEY on prod is actually the Gemini key) which Whisper refused.
+  New service surfaces the cause (`Gemini HTTP 429 ... | Whisper: OPENAI_API_KEY
+  is not a real sk- key`). User now sees a useful hint in the Telegram reply
+  ("need Gemini or OpenAI key in settings") instead of a dead-end message.
+- **Map cleanup misses on deactivate** — `_pendingContext`, `_agentTodos`,
+  `_agentMetaCache`, `_toolRateLimits` were leaking entries for deactivated
+  agents. Now properly swept by deactivate(agentId).
+
+### Infrastructure
+- **PM2 systemd hook** — `systemctl enable pm2-root` set up on prod.
+  `pm2 save` persisted the current process list. Server reboot → bot
+  auto-starts. Was missing since v2.0.
+
+---
+
 ## [2.3.2] — 2026-05-19 — "Providers, Patterns & Local Memory"
 
 Big internal upgrade. Substrate-level work that doesn't add visible new

@@ -10293,87 +10293,36 @@ bot.on(message('voice'), async (ctx) => {
     if (!resp.ok) throw new Error('Failed to download voice');
     const audioBuffer = Buffer.from(await resp.arrayBuffer());
 
-    // 2) Транскрипция: сначала Gemini (multimodal audio), fallback OpenAI Whisper
-    const base64Audio = audioBuffer.toString('base64');
-    const whisperBaseUrl = process.env.OPENAI_BASE_URL?.replace('/v1', '') || 'https://api.openai.com';
-    const whisperApiKey = process.env.OPENAI_API_KEY || '';
-
-    // Подтягиваем Gemini ключ пользователя из глобальных настроек
+    // 2) Транскрипция через services/transcribe.ts — единая точка для Gemini → Whisper фолбэка
+    // Подтягиваем юзерский Gemini ключ если он провайдер Gemini
     let userGeminiKey = process.env.GEMINI_API_KEY || '';
     try {
       const repo = getUserSettingsRepository();
       const allSettings = await repo.getAll(userId);
       const uv = (allSettings.user_variables as Record<string, any>) || {};
-      // Если у юзера есть ключ и провайдер Gemini
-      // Decrypt API key before use (stored encrypted via encryptApiKey)
       const _rawUserKey = uv.AI_API_KEY ? (() => { try { const { decryptApiKey } = require('./crypto-utils'); return decryptApiKey(uv.AI_API_KEY); } catch { return uv.AI_API_KEY; } })() : '';
-      if (_rawUserKey && /AIzaSy/i.test(_rawUserKey)) {
-        userGeminiKey = _rawUserKey;
-      } else if (_rawUserKey && (uv.AI_PROVIDER || '').toLowerCase().includes('gemini')) {
-        userGeminiKey = _rawUserKey;
-      }
+      if (_rawUserKey && /AIzaSy/i.test(_rawUserKey)) userGeminiKey = _rawUserKey;
+      else if (_rawUserKey && (uv.AI_PROVIDER || '').toLowerCase().includes('gemini')) userGeminiKey = _rawUserKey;
     } catch {}
 
-    let transcribedText = '';
+    const { transcribeAudio } = await import('./services/transcribe');
+    const tr = await transcribeAudio({
+      audio: audioBuffer,
+      format: 'ogg',
+      lang: lang === 'ru' ? 'ru' : 'en',
+      geminiKey: userGeminiKey,
+    });
+    const transcribedText = tr.text;
 
-    // Попытка 1: Gemini multimodal (поддерживает audio напрямую)
-    try {
-      const geminiKey = userGeminiKey;
-      if (geminiKey) {
-        const geminiResp = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + geminiKey,
-          },
-          body: JSON.stringify({
-            model: 'gemini-2.5-flash',
-            messages: [{
-              role: 'user',
-              content: [
-                { type: 'text', text: 'Транскрибируй это голосовое сообщение. Верни ТОЛЬКО текст, без пояснений и кавычек.' },
-                { type: 'input_audio', input_audio: { data: base64Audio, format: 'ogg' } },
-              ],
-            }],
-            max_tokens: 500,
-          }),
-        });
-        if (geminiResp.ok) {
-          const gj = await geminiResp.json() as any;
-          transcribedText = gj.choices?.[0]?.message?.content?.trim() || '';
-        }
-      }
-    } catch {}
-
-    // Попытка 2: OpenAI Whisper API (если есть OpenAI ключ)
-    if (!transcribedText && whisperApiKey) {
-      try {
-        const formData = new FormData();
-        formData.append('file', new Blob([audioBuffer], { type: 'audio/ogg' }), 'voice.ogg');
-        formData.append('model', 'whisper-1');
-        formData.append('language', lang === 'ru' ? 'ru' : 'en');
-
-        // 20s hard timeout — Whisper can hang, and a stuck upstream should not
-        // leave the user without a response.
-        const whisperResp = await fetch(whisperBaseUrl + '/v1/audio/transcriptions', {
-          method: 'POST',
-          headers: { 'Authorization': 'Bearer ' + whisperApiKey },
-          body: formData as any,
-          signal: AbortSignal.timeout(20000),
-        });
-        if (whisperResp.ok) {
-          const wj = await whisperResp.json() as any;
-          transcribedText = wj.text || '';
-        }
-      } catch (e: any) {
-        console.warn('[Voice] Whisper transcription failed:', e?.message || e);
-      }
-    }
-
-    if (!transcribedText || transcribedText.length < 3) {
+    if (!tr.ok || !transcribedText || transcribedText.length < 3) {
+      // Surface WHY it failed (previously silent) — and log to ops
+      console.warn(`[Voice] Transcribe failed for user ${userId}: ${tr.error}`);
+      const hint = tr.error?.includes('No GEMINI') || tr.error?.includes('No OPENAI')
+        ? (lang === 'ru' ? ' (нужен Gemini или OpenAI ключ в настройках)' : ' (need Gemini or OpenAI key in settings)')
+        : '';
       await ctx.reply(lang === 'ru'
-        ? '🎤 Не удалось распознать голосовое сообщение. Попробуйте ещё раз или напишите текстом.'
-        : '🎤 Could not transcribe voice message. Try again or type your request.'
+        ? `🎤 Не удалось распознать голосовое сообщение${hint}. Попробуйте ещё раз или напишите текстом.`
+        : `🎤 Could not transcribe voice message${hint}. Try again or type your request.`
       );
       return;
     }

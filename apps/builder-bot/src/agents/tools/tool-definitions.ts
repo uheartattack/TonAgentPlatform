@@ -3493,6 +3493,26 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
       },
     },
 
+    // ── Audio: transcribe voice / podcast / call recording ──
+    {
+      type: 'function' as const,
+      function: {
+        name: 'audio_transcribe',
+        description: 'Транскрибировать аудио в текст. Принимает URL (mp3/ogg/wav/m4a/webm) или base64. Пробует Gemini multimodal (быстро/дёшево), потом OpenAI Whisper как fallback. Возвращает текст + какой провайдер сработал + причину если провалилось.',
+        parameters: {
+          type: 'object',
+          properties: {
+            url: { type: 'string', description: 'URL аудиофайла (mp3/ogg/wav/m4a/webm). ИЛИ передай base64.' },
+            base64: { type: 'string', description: 'Аудио base64-кодированное (если нет URL). Формат указывай в format.' },
+            format: { type: 'string', description: 'Формат: ogg/mp3/wav/m4a/webm. Если URL — авто-определится.' },
+            lang: { type: 'string', description: 'Подсказка языка: ru, en, auto (по умолчанию auto)' },
+            timeout_ms: { type: 'number', description: 'Таймаут на одну попытку (по умолчанию 20000)' },
+          },
+          required: [],
+        },
+      },
+    },
+
     // ── Workspace (file management) tools ──────────────────────────────────
     {
       type: 'function',
