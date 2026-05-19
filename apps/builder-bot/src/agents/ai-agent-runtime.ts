@@ -1212,7 +1212,7 @@ export const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
   defi:        ['dex_get_prices', 'dex_swap_simulate',
                 'stonfi_swap', 'stonfi_quote', 'stonfi_search', 'stonfi_trending', 'stonfi_pools',
                 'dedust_swap', 'dedust_quote', 'dedust_pools', 'dedust_prices', 'dedust_token_info'],
-  dns:         ['dns_check', 'dns_resolve', 'dns_auctions', 'dns_bid', 'dns_link', 'dns_unlink', 'dns_set_site', 'dns_start_auction'],
+  dns:         ['dns_check', 'dns_resolve', 'dns_auctions', 'dns_bid', 'dns_link', 'dns_unlink', 'dns_set_site', 'dns_start_auction', 'dns_get_my_domains', 'dns_get_auction', 'dns_transfer'],
   payments:    ['verify_payment'],
   image:       ['image_download', 'image_resize', 'image_crop', 'image_add_text', 'image_filter',
                 'image_convert', 'image_info', 'image_composite', 'image_create_text', 'image_analyze'],
@@ -3800,6 +3800,7 @@ async function _executeToolInner(
     case 'stonfi_swap': case 'stonfi_quote': case 'stonfi_search': case 'stonfi_trending': case 'stonfi_pools':
     case 'dedust_swap': case 'dedust_quote': case 'dedust_pools': case 'dedust_prices': case 'dedust_token_info':
     case 'dns_check': case 'dns_resolve': case 'dns_auctions': case 'dns_start_auction': case 'dns_bid': case 'dns_link': case 'dns_unlink': case 'dns_set_site':
+    case 'dns_get_my_domains': case 'dns_get_auction': case 'dns_transfer':
     case 'verify_payment': {
       try {
         const toolName = name;
@@ -3899,6 +3900,24 @@ async function _executeToolInner(
             const r = await fetch(`https://tonapi.io/v2/dns/auctions?limit=${args.limit || 20}`);
             return await r.json();
           }
+          // ── Read-only domain inspectors (no wallet needed) ──
+          if (toolName === 'dns_get_auction') {
+            const dnsOps = await import('../services/ton-dns-ops');
+            return await dnsOps.getAuctionInfo({ domain: args.domain });
+          }
+          if (toolName === 'dns_get_my_domains') {
+            const dnsOps = await import('../services/ton-dns-ops');
+            // Resolve wallet: arg.wallet > params.config.wallet_address > agent's solo wallet
+            let wallet = args.wallet as string | undefined;
+            if (!wallet) {
+              try {
+                const state = await getAgentStateRepository().get(params.agentId, 'wallet_address').catch(() => null);
+                wallet = unwrapState(state) as string | undefined;
+              } catch {}
+            }
+            if (!wallet) return { ok: false, error: 'No wallet address available — pass wallet arg or set agent wallet' };
+            return await dnsOps.listMyDomains({ wallet });
+          }
           // ── Wallet-modifying DNS ops (require WALLET_MNEMONIC + user confirmation) ──
           const dnsMnemonic = params.config?.WALLET_MNEMONIC as string;
           if (!dnsMnemonic) return { ok: false, error: 'No wallet mnemonic configured for DNS write ops' };
@@ -3913,7 +3932,9 @@ async function _executeToolInner(
                   ? `Clear "${args.category || 'wallet'}" record on .ton "${args.domain}"`
                   : toolName === 'dns_set_site'
                     ? `Set TON Site (ADNL ${(args.adnl || '').slice(0, 12)}…) on "${args.domain}"`
-                    : `DNS op ${toolName} on "${args.domain}"`;
+                    : toolName === 'dns_transfer'
+                      ? `TRANSFER .ton domain "${args.domain}" → new owner ${args.new_owner} (irreversible!)`
+                      : `DNS op ${toolName} on "${args.domain}"`;
             return { ok: false, requires_confirmation: true, message: summary };
           }
 
@@ -3947,6 +3968,14 @@ async function _executeToolInner(
             return await dnsOps.setDnsRecord({
               mnemonic: dnsMnemonic, domain: args.domain,
               category: 'site', value: args.adnl,
+            });
+          }
+          if (toolName === 'dns_transfer') {
+            return await dnsOps.transferDomain({
+              mnemonic: dnsMnemonic,
+              domain: args.domain,
+              new_owner: args.new_owner,
+              forward_amount_ton: args.forward_amount_ton,
             });
           }
           return { error: `Unknown DNS tool: ${toolName}` };

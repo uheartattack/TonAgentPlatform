@@ -229,6 +229,137 @@ export async function setDnsRecord(params: {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Tools added to surpass Teleton's 8 — bringing TAP's TON DNS suite to 11.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const OP_NFT_TRANSFER = 0x5fcc3d14;
+
+/**
+ * List all .ton domains currently owned by a wallet.
+ * Queries TonAPI for NFTs whose collection is the DNS root.
+ *
+ * Returns: { ok, domains: [{ domain, nft_address, expires_at? }] }
+ */
+export async function listMyDomains(params: { wallet: string }): Promise<{
+  ok: boolean; count?: number; domains?: Array<{ domain: string; nft_address: string; expires_at?: number }>; error?: string;
+}> {
+  try {
+    const url = `https://tonapi.io/v2/accounts/${encodeURIComponent(params.wallet)}/nfts?collection=${DNS_ROOT}&limit=100`;
+    const r = await fetch(url);
+    if (!r.ok) return { ok: false, error: `TonAPI ${r.status}` };
+    const data = await r.json() as any;
+    const items = (data.nft_items || []) as any[];
+    const domains = items
+      .map(it => {
+        const dnsName = it?.dns || it?.metadata?.name || '';
+        const name = String(dnsName).replace(/\.ton$/, '').trim();
+        if (!name) return null;
+        // expires_at appears in some TonAPI responses under metadata.attributes
+        const expAttr = (it?.metadata?.attributes || []).find((a: any) => /expir|until/i.test(a?.trait_type || ''));
+        const expSeconds = expAttr ? Number(expAttr.value) || undefined : undefined;
+        return { domain: `${name}.ton`, nft_address: it.address, expires_at: expSeconds };
+      })
+      .filter(Boolean) as Array<{ domain: string; nft_address: string; expires_at?: number }>;
+    return { ok: true, count: domains.length, domains };
+  } catch (e: any) {
+    return { ok: false, error: e?.message?.slice(0, 200) || 'listMyDomains failed' };
+  }
+}
+
+/**
+ * Get auction state for a single .ton domain via its NFT contract's
+ * `get_auction_info` get-method (callable read-only).
+ *
+ * Returns: { ok, active, max_bid_address?, max_bid_ton?, auction_end_unix? }.
+ */
+export async function getAuctionInfo(params: { domain: string }): Promise<{
+  ok: boolean; active?: boolean; max_bid_address?: string; max_bid_ton?: number;
+  auction_end_unix?: number; min_next_bid_ton?: number; error?: string;
+}> {
+  const nftAddr = await getDomainNftAddress(params.domain);
+  if (!nftAddr) return { ok: false, error: `Domain ${params.domain} not found` };
+  try {
+    // Use TonAPI's /v2/blockchain/accounts/:addr/methods/get_auction_info — cheap, no API key needed
+    const r = await fetch(`https://tonapi.io/v2/blockchain/accounts/${encodeURIComponent(nftAddr)}/methods/get_auction_info`);
+    if (!r.ok) {
+      // No auction running on this domain (get-method missing or returned exit code != 0)
+      return { ok: true, active: false };
+    }
+    const data = await r.json() as any;
+    if (data?.exit_code !== 0 && data?.success !== true) return { ok: true, active: false };
+    const stack = data.stack || [];
+    // Stack order per TON DNS NFT spec: max_bid_address, max_bid_amount, max_bid_at, auction_end_time
+    const parseSlice = (s: any) => s?.cell || s?.slice || null;
+    const parseNum  = (s: any) => Number(s?.num ?? s?.number ?? 0);
+    const maxBidAddrCell = parseSlice(stack[0]);
+    const maxBidAmount  = parseNum(stack[1]);
+    const auctionEnd    = parseNum(stack[3]);
+    const tonAmount = maxBidAmount > 0 ? maxBidAmount / 1e9 : 0;
+    // Min next bid is current + 5% per TON DNS auction rules
+    const minNextBid = tonAmount > 0 ? Math.ceil(tonAmount * 1.05 * 100) / 100 : undefined;
+    return {
+      ok: true,
+      active: auctionEnd * 1000 > Date.now(),
+      max_bid_ton: tonAmount > 0 ? tonAmount : undefined,
+      auction_end_unix: auctionEnd || undefined,
+      min_next_bid_ton: minNextBid,
+      // Address rendering left to caller — cell parse is non-trivial without @ton/core round-trip
+      max_bid_address: maxBidAddrCell ? String(maxBidAddrCell).slice(0, 80) : undefined,
+    };
+  } catch (e: any) {
+    return { ok: false, error: e?.message?.slice(0, 200) || 'getAuctionInfo failed' };
+  }
+}
+
+/**
+ * Transfer a .ton domain to a new owner address. Sends an NFT-transfer
+ * op (0x5fcc3d14) to the domain's NFT contract. Irreversible — make sure
+ * the caller has confirmed.
+ *
+ * Returns: { ok, tx_sent } on success.
+ */
+export async function transferDomain(params: {
+  mnemonic: string;
+  domain: string;
+  new_owner: string;       // raw or EQ-form TON address
+  forward_amount_ton?: number;  // optional notification amount
+}): Promise<{ ok: boolean; tx_sent?: boolean; error?: string }> {
+  const nftAddr = await getDomainNftAddress(params.domain);
+  if (!nftAddr) return { ok: false, error: `Domain ${params.domain} not found` };
+  let newOwner: Address;
+  try { newOwner = Address.parse(params.new_owner); }
+  catch { return { ok: false, error: `Invalid new_owner address` }; }
+  try {
+    const fwd = toNano(String(Math.max(0.001, Math.min(0.1, params.forward_amount_ton ?? 0.001))));
+    const body = beginCell()
+      .storeUint(OP_NFT_TRANSFER, 32)
+      .storeUint(Date.now() & 0xffffffff, 64)   // query_id
+      .storeAddress(newOwner)                   // new_owner
+      .storeAddress(newOwner)                   // response_destination (refund)
+      .storeBit(0)                              // no custom_payload
+      .storeCoins(fwd)                          // forward_amount
+      .storeBit(0)                              // no forward_payload (inline)
+      .endCell();
+
+    const { walletContract, keyPair } = await openWallet(params.mnemonic);
+    const seqno = await walletContract.getSeqno();
+    await walletContract.sendTransfer({
+      seqno,
+      secretKey: keyPair.secretKey,
+      messages: [internal({
+        to: Address.parse(nftAddr),
+        value: toNano('0.1'),     // gas budget — TON DNS transfer typically uses ~0.07
+        bounce: true,
+        body,
+      })],
+    });
+    return { ok: true, tx_sent: true };
+  } catch (e: any) {
+    return { ok: false, error: e?.message?.slice(0, 200) || 'transferDomain failed' };
+  }
+}
+
 /**
  * Clears a DNS record (sets it to empty).
  * Sends the same change_dns_record op but with a null ref.
