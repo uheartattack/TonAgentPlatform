@@ -7,7 +7,7 @@
   <link rel="icon" type="image/svg+xml" href="logo.svg">
   <link rel="shortcut icon" href="logo.svg">
   <title>TON Agent Studio</title>
-  <link rel="preload" href="/studio.js?v=20260518f" as="script">
+  <link rel="preload" href="/studio.js?v=20260519a" as="script">
   <link rel="preload" href="/studio.css?v=20260420" as="style">
   <link rel="preload" href="/design-system.css?v=20260420" as="style">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -25,8 +25,8 @@
       <div class="auth-left">
         <div class="auth-left-content">
           <div class="auth-brand">
-            <div class="auth-brand-icon" style="background:transparent;border-radius:50%;box-shadow:0 6px 20px rgba(0,168,255,.4),0 0 40px rgba(139,92,246,.3)">
-              <img src="/logo.svg?v=20260518" width="56" height="56" alt="TON Agent" style="display:block">
+            <div class="auth-brand-icon" style="background:transparent;border-radius:0;box-shadow:none;overflow:visible">
+              <img src="/logo.svg?v=20260518" width="56" height="56" alt="TON Agent" style="display:block;filter:drop-shadow(0 0 8px rgba(0,168,255,.65)) drop-shadow(0 0 20px rgba(0,168,255,.4)) drop-shadow(0 0 38px rgba(139,92,246,.32))">
             </div>
             <h1>TON Agent Studio</h1>
           </div>
@@ -62,8 +62,8 @@
         <div class="auth-right-content">
           <div class="auth-box">
             <div class="auth-logo">
-              <div class="auth-logo-icon" style="background:transparent;border-radius:50%;box-shadow:0 8px 28px rgba(0,168,255,.38),0 0 48px rgba(139,92,246,.25)">
-                <img src="/logo.svg?v=20260518" width="64" height="64" alt="TON Agent" style="display:block">
+              <div class="auth-logo-icon" style="background:transparent;border-radius:0;box-shadow:none;overflow:visible">
+                <img src="/logo.svg?v=20260518" width="64" height="64" alt="TON Agent" style="display:block;filter:drop-shadow(0 0 10px rgba(0,168,255,.6)) drop-shadow(0 0 24px rgba(0,168,255,.35)) drop-shadow(0 0 44px rgba(139,92,246,.28))">
               </div>
             </div>
             <h2 data-en="Welcome" data-ru="Добро пожаловать">Welcome</h2>
@@ -103,8 +103,10 @@
     <aside class="sidebar">
       <div class="sidebar-header">
         <a href="/studio" class="logo" onclick="event.preventDefault();navigateTo('overview')">
-          <div class="logo-icon" style="background:transparent;border-radius:50%;box-shadow:0 0 14px rgba(0,168,255,.45),0 0 28px rgba(139,92,246,.25);overflow:visible;width:38px;height:38px">
-            <img src="/logo.svg?v=20260518" width="34" height="34" alt="TON Agent" style="display:block">
+          <div class="logo-icon" style="background:transparent;border-radius:0;overflow:visible;width:34px;height:34px;box-shadow:none">
+            <!-- Glow now lives on the IMG via drop-shadow → wraps the alpha channel
+                 of the letter+plane+orbit shape itself, not a square/circle container. -->
+            <img src="/logo.svg?v=20260518" width="34" height="34" alt="TON Agent" style="display:block;filter:drop-shadow(0 0 4px rgba(0,168,255,.7)) drop-shadow(0 0 10px rgba(0,168,255,.45)) drop-shadow(0 0 18px rgba(139,92,246,.3))">
           </div>
           <div class="logo-text">
             <span class="logo-title">TON Agent <span class="logo-accent">Studio</span></span>
@@ -2211,8 +2213,8 @@
 
           <!-- Step 1: Welcome -->
           <div class="onboarding-slide" id="onboarding-slide-0">
-            <div class="onboarding-icon" style="background:transparent;border-radius:50%;box-shadow:0 10px 32px rgba(0,168,255,.4),0 0 56px rgba(139,92,246,.3)">
-              <img src="/logo.svg?v=20260518" width="72" height="72" alt="TON Agent" style="display:block">
+            <div class="onboarding-icon" style="background:transparent;border-radius:0;box-shadow:none;overflow:visible">
+              <img src="/logo.svg?v=20260518" width="72" height="72" alt="TON Agent" style="display:block;filter:drop-shadow(0 0 12px rgba(0,168,255,.6)) drop-shadow(0 0 28px rgba(0,168,255,.35)) drop-shadow(0 0 52px rgba(139,92,246,.3))">
             </div>
             <h2 class="onboarding-title" data-en="Welcome to TON Agent!" data-ru="Добро пожаловать!">Welcome to TON Agent!</h2>
             <p class="onboarding-desc" id="onboarding-subtitle" data-en="Build autonomous AI agents that live inside Telegram and work with the TON blockchain — no coding required." data-ru="Создавайте автономных AI-агентов, которые работают в Telegram и взаимодействуют с блокчейном TON — без кода.">Build autonomous AI agents that live inside Telegram and work with the TON blockchain — no coding required.</p>
