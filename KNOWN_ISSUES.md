@@ -445,9 +445,9 @@
 - **Описание**: 'builder_bot' hardcoded в DDL. Не injection risk (не от юзера), но не гибко
 - **Fix**: Вынести в константу
 
-### L3. claude-code-bridge.ts:83 — неинформативная ошибка
+### L3. anthropic-cli-bridge.ts:83 — неинформативная ошибка
 - **Статус**: ⏳ LOW PRIORITY
-- **Описание**: findClaudeCli() не логирует какие пути проверены
+- **Описание**: findCli() не логирует какие пути проверены
 - **Fix**: Логировать каждый проверенный путь
 
 ### L4. index.ts:88 — silent require catch

@@ -12,7 +12,7 @@ import { allAgentTemplates, AgentTemplate } from '../agent-templates';
 import { detectTriggerFromDescription } from './sub-agents/creator';
 import { getUserSettingsRepository } from '../db/schema-extensions';
 import { getSkillDocsForCodeGeneration } from '../plugins-system';
-import { claudeCodeChat, isClaudeCodeAvailable } from '../ai-code-bridge';
+import { anthropicCliChat, isAnthropicCliAvailable } from '../anthropic-cli-bridge';
 
 // ── MarkdownV2 escaping (shared with bot.ts) ───────────────────────────────
 function esc(text: string | number | null | undefined): string {
@@ -46,7 +46,7 @@ const PLATFORM_BASE_URL = process.env.OPENAI_BASE_URL || 'https://generativelang
 const openai = new OpenAI({ apiKey: PLATFORM_API_KEY, baseURL: PLATFORM_BASE_URL });
 
 // Note: CLAUDE_CODE_OAUTH_TOKEN only works via CLI subprocess, not direct API
-// Atlas uses: 1) Claude Code CLI (Opus/Sonnet via subscription) → 2) Gemini API (fallback)
+// Atlas uses: 1) Anthropic CLI (Opus/Sonnet via subscription) → 2) Gemini API (fallback)
 
 // ── Список моделей с fallback-цепочкой ──────────────────────
 // При ошибке одной — пробуем следующую
@@ -76,34 +76,34 @@ export function setUserModel(userId: number, model: ModelId) {
   userModels.set(userId, model);
 }
 
-// ── Claude Code availability cache ──────────────────────────
-let _claudeCodeAvailable: boolean | null = null;
-let _claudeCodeCheckTime = 0;
+// ── Anthropic CLI availability cache ──────────────────────────
+let _anthropicCliAvailable: boolean | null = null;
+let _anthropicCliCheckTime = 0;
 
-async function checkClaudeCode(): Promise<boolean> {
+async function checkAnthropicCli(): Promise<boolean> {
   const now = Date.now();
   // Re-check every 5 minutes
-  if (_claudeCodeAvailable !== null && now - _claudeCodeCheckTime < 300_000) {
-    return _claudeCodeAvailable;
+  if (_anthropicCliAvailable !== null && now - _anthropicCliCheckTime < 300_000) {
+    return _anthropicCliAvailable;
   }
-  _claudeCodeAvailable = await isClaudeCodeAvailable();
-  _claudeCodeCheckTime = now;
-  if (_claudeCodeAvailable) {
-    console.log('[Orchestrator] ✅ Claude Code CLI detected — using subscription');
+  _anthropicCliAvailable = await isAnthropicCliAvailable();
+  _anthropicCliCheckTime = now;
+  if (_anthropicCliAvailable) {
+    console.log('[Orchestrator] ✅ Anthropic CLI detected — using subscription');
   }
-  return _claudeCodeAvailable;
+  return _anthropicCliAvailable;
 }
 
-// ── Запрос с авто-fallback: Claude Code → API models ────────
+// ── Запрос с авто-fallback: Anthropic CLI → API models ────────
 async function callWithFallback(
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
   userId: number,
   maxTokens = 1024,
 ): Promise<{ text: string; model: string }> {
 
-  // ── 1. Try Claude Code CLI first (uses subscription, free) ──
-  const useClaudeCode = await checkClaudeCode();
-  if (useClaudeCode) {
+  // ── 1. Try Anthropic CLI first (uses subscription, free) ──
+  const useAnthropicCli = await checkAnthropicCli();
+  if (useAnthropicCli) {
     try {
       // Smart routing: Opus for complex tasks (agent creation, code, audit, long prompts)
       // Sonnet for simple tasks (questions, navigation, short responses)
@@ -112,22 +112,22 @@ async function callWithFallback(
         || lastMsg.length > 300
         || /creat|генер|аудит|audit|code|код|промпт|prompt|analyz|анализ|систем/i.test(lastMsg);
       const model = isComplex ? 'claude-opus-4-6' : 'claude-sonnet-4-6';
-      const result = await claudeCodeChat(messages, {
+      const result = await anthropicCliChat(messages, {
         maxTokens,
         model,
         fallbackModel: isComplex ? 'claude-sonnet-4-6' : 'claude-opus-4-6',
         timeout: isComplex ? 120_000 : 60_000,
         allowedTools: [],
       });
-      console.log(`[Orchestrator] Claude Code responded (${result.model})`);
+      console.log(`[Orchestrator] Anthropic CLI responded (${result.model})`);
       return result;
     } catch (err: any) {
       const msg = err?.message || String(err);
-      console.warn(`[Orchestrator] Claude Code failed: ${msg.slice(0, 120)}, falling back to API...`);
-      // If auth issue — disable Claude Code for this session
+      console.warn(`[Orchestrator] Anthropic CLI failed: ${msg.slice(0, 120)}, falling back to API...`);
+      // If auth issue — disable Anthropic CLI for this session
       if (msg.includes('AUTH_REQUIRED') || msg.includes('not logged in') || msg.includes('OAuth') || msg.includes('401')) {
-        _claudeCodeAvailable = false;
-        console.warn(`[Orchestrator] Claude Code auth issue detected — disabling CLI for this session`);
+        _anthropicCliAvailable = false;
+        console.warn(`[Orchestrator] Anthropic CLI auth issue detected — disabling CLI for this session`);
       }
     }
   }
@@ -1085,7 +1085,7 @@ ${studioContext?.source === 'studio' ? `
 
       let questionsToAsk = fallbackQuestions;
 
-      // Пытаемся получить умные вопросы от AI (через Claude Code → API fallback)
+      // Пытаемся получить умные вопросы от AI (через Anthropic CLI → API fallback)
       try {
         const clarifyResult = await callWithFallback([
             {
@@ -1185,7 +1185,7 @@ ${studioContext?.source === 'studio' ? `
       console.warn('[Orchestrator] Failed to load user settings:', e.message);
     }
 
-    // 3) Генерируем system prompt через Claude Code (OAuth) → fallback: API
+    // 3) Генерируем system prompt через Anthropic CLI (OAuth) → fallback: API
     let systemPrompt: string;
     let generatedName = agentName || '';
     let summary = '';

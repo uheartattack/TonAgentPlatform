@@ -16,7 +16,7 @@ export const MODELS = {
   gemini:         process.env.GEMINI_MODEL         || 'gemini-2.5-flash',
   geminiPro:      process.env.GEMINI_PRO_MODEL      || 'gemini-2.5-pro',
   geminiLite:     process.env.GEMINI_LITE_MODEL     || 'gemini-2.5-flash-lite',
-  // Anthropic (Claude Code OAuth token — direct api.anthropic.com)
+  // Anthropic (Anthropic CLI OAuth token — direct api.anthropic.com)
   claude:         process.env.CLAUDE_MODEL          || 'claude-opus-4-6',
   claudeSmart:    process.env.CLAUDE_SMART_MODEL    || 'claude-opus-4-6',
   // OpenAI
@@ -79,7 +79,7 @@ export const PROVIDER_LIMITS: Record<string, { maxContextChars: number; maxTools
 };
 
 // ── Platform AI (fallback when user has no key) ──
-// Uses Claude Code OAuth token (CLAUDE_CODE_OAUTH_TOKEN) → Anthropic API
+// Uses Anthropic CLI OAuth token (CLAUDE_CODE_OAUTH_TOKEN) → Anthropic API
 // Override via PLATFORM_AI_URL / PLATFORM_AI_KEY / PLATFORM_AI_MODEL
 export const PLATFORM_AI = {
   url:   process.env.PLATFORM_AI_URL   || 'https://api.anthropic.com/v1',

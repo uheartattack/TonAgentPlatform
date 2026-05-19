@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Vendor-neutral orientation file (per [agentsmd.org](https://agentsmd.org)) for AI coding agents working in this repository.
 
 ## Common commands
 
@@ -92,7 +92,7 @@ When wiring a new failure mode, add the case to `recordErrorMaybePause()` calls 
 
 ### Atlas (Studio AI assistant)
 - `POST /api/chat/stream` in `src/api-server.ts` (~line 4913). This is the chat the user sees on `studio.html/assistant`. NOT the agent runtime — Atlas is the platform's own AI helping the user manage things.
-- **Auth routing**: only `/^sk-ant-api/` keys go to the native Anthropic SDK path. `sk-ant-oat...` (Claude Code OAuth tokens) are explicitly rejected — they return 401 on `api.anthropic.com/v1/messages`. Everything else (incl. OAuth tokens and no-Anthropic-key) falls through to Gemini via OpenAI-compat at `generativelanguage.googleapis.com`.
+- **Auth routing**: only `/^sk-ant-api/` keys go to the native Anthropic SDK path. `sk-ant-oat...` OAuth tokens are explicitly rejected — they return 401 on `api.anthropic.com/v1/messages`. Everything else (incl. OAuth tokens and no-Anthropic-key) falls through to Gemini via OpenAI-compat at `generativelanguage.googleapis.com`.
 - **Anti-hallucination pattern**: the system prompt is BUILT AT REQUEST TIME by importing live data (`CAPABILITY_TOOL_MAP` keys, `listSkillsForAgent()`, `agentTemplates`) and injecting it under a "📦 РЕАЛЬНЫЕ CAPABILITIES" header with anti-hallucination rules. Without this, Atlas invented names like `TON_Storage`, `Code_interpreter`, `Calendar`. **Mirror this pattern for any new "tell the user what we can do" surface.**
 - **Anthropic SDK quirk**: Anthropic's API does NOT speak OpenAI's `/chat/completions` schema. When `useNativeAnthropic = true` the code MUST use `client.messages.stream({ model, system, messages, max_tokens })` — never `client.chat.completions.create()`. Streaming events are `content_block_delta` with `delta.text`.
 - Model fallback chain: native Anthropic → `[ATLAS_MODEL, claude-haiku-4-5-20251001]`. Gemini path → `[gemini-2.5-flash, gemini-2.0-flash]`. Rate-limit (429/529) falls to next model; non-retryable errors propagate.

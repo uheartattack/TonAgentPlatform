@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════
- * BACKGROUND TASKS DAEMON (learn-claude-code s08)
+ * BACKGROUND TASKS DAEMON (session 08 pattern)
  *
  * In-memory queue of "fire at time T" jobs per agent. When the daemon ticks
  * (every 30s) it scans for due jobs and either:

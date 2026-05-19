@@ -76,7 +76,7 @@ Each agent gets its own TON wallet, can trade gifts, interact with DeFi, operate
 
 | | Возможность | Описание |
 |:-|:------------|:---------|
-| 🧠 | **Agent Skills (v2.2)** | Стандарт agentskills.io от Anthropic — стоим в линейке с Claude Code и Cursor |
+| 🧠 | **Agent Skills (v2.2)** | Стандарт agentskills.io от Anthropic — прогрессивная подгрузка инструкций |
 | 💎 | **Agentic Wallets (v2.2)** | Официальный TON Foundation стандарт agents.ton.org: on-chain freeze/revoke, лимиты в контракте |
 | 🎙️ | **Голосовое создание** | Надиктуй задачу — агент готов за 10 сек |
 | 🤖 | **7 AI-провайдеров** | Gemini, GPT-4o, Claude, Groq, DeepSeek... |
@@ -98,7 +98,7 @@ Each agent gets its own TON wallet, can trade gifts, interact with DeFi, operate
 
 | | Feature | Description |
 |:-|:--------|:------------|
-| 🧠 | **Agent Skills (v2.2)** | agentskills.io standard from Anthropic — listed alongside Claude Code and Cursor |
+| 🧠 | **Agent Skills (v2.2)** | agentskills.io standard from Anthropic — progressive instruction loading |
 | 💎 | **Agentic Wallets (v2.2)** | Official TON Foundation agents.ton.org spec: on-chain freeze/revoke, limits in contract |
 | 🎙️ | **Voice Creation** | Speak your task — agent ready in 10 sec |
 | 🤖 | **7 AI Providers** | Gemini, GPT-4o, Claude, Groq, DeepSeek... |
@@ -323,7 +323,7 @@ Telegram → [@TonAgentPlatformBot](https://t.me/TonAgentPlatformBot) → `/star
 - Agentic Wallets (agents.ton.org) — официальный TON-стандарт
 - TON DNS полностью (bid, auction, link, set_site)
 - Self-awareness: `get_my_full_state()` тул для глубокого интроспекта
-- TodoWrite для длинных задач (паттерн Claude Code)
+- TodoWrite для длинных задач — встроенный чеклист с FSM
 - Skill safety scanner + URL whitelist на импорт
 - Auto-pause агентов при битых ключах / rate-limit
 
@@ -339,12 +339,16 @@ Telegram → [@TonAgentPlatformBot](https://t.me/TonAgentPlatformBot) → `/star
 - Реферальная система (2 уровня + 10% от трат рефералов)
 - Premium landing (glassmorphism, mesh gradients, electric blue + purple)
 
-### 🔜 v2.3 — Memory & Workflow (Q2 2026)
-- [ ] **Hybrid SQLite RAG memory** — локальные ONNX embeddings + sqlite-vec + FTS5. Агент помнит контекст разговоров без вызовов API
-- [ ] **Visual Workflow Builder** — drag-and-drop конструктор пайплайнов для агентов (flagship фича релиза)
-- [ ] **Multi-agent task graph** — DAG зависимостей между агентами, кооперация через mailbox
-- [ ] **Context compression** — 3-слойная компрессия (micro/auto/manual). Длинные сессии без overflow
-- [ ] **Edit with AI** — рефакторинг агента через диалог: «сделай его агрессивнее на арбитраже»
+### ✅ v2.3 — Memory & Coordination (May 2026)
+- ✅ **Hybrid RAG memory** — Gemini text-embedding-004 (768d) + Postgres tsvector + RRF fusion. Агент помнит сессии и ищет по смыслу
+- ✅ **Auto context compression** — 3-слойная (micro/auto/emergency). Длинные сессии без overflow
+- ✅ **Multi-agent task graph** — DAG зависимостей + автономный claim (s11)
+- ✅ **Durable mailboxes** — асинхронные сообщения между агентами (s09), переживают рестарт
+- ✅ **Background tasks daemon** — `bg_schedule()` и пробуждение по расписанию (s08)
+- ✅ **TON Pay invoices** — прямые `ton://transfer` платежи + on-chain верификация через TonAPI
+- ✅ **Tool Gateway** — rate-limit + prompt-injection scan + audit log на каждый tool-call
+- [ ] **Visual Workflow Builder** — drag-and-drop пайплайны (перенесено в v2.4)
+- [ ] **Edit with AI** — рефакторинг агента через диалог
 - [ ] **MCP server management UI** — добавление внешних MCP-серверов через Studio
 
 ### 🔜 v2.4 — Marketplace & Scale (Q3 2026)
@@ -359,7 +363,7 @@ Telegram → [@TonAgentPlatformBot](https://t.me/TonAgentPlatformBot) → `/star
 - [ ] **On-chain agent registry** — публичный TON-контракт со всеми deployed агентами
 - [ ] **Agent reputation система** — on-chain rating на основе success/failure ratio
 - [ ] **Federated agents** — кросс-машинная кооперация (paттерн claude-flow/Ruflo)
-- [ ] **Autonomous teammates** — агенты сами берут таски с board, без оператора (s11 из claude-code)
+- [ ] **Autonomous teammates** — агенты сами берут таски с board, без оператора
 - [ ] **Background tasks daemon** — параллельная subprocess-обработка с drain queue
 
 ---

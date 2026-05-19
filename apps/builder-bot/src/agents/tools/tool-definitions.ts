@@ -152,7 +152,7 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
       type: 'function',
       function: {
         name: 'bg_schedule',
-        description: 'Schedule a background task to wake you up at a future time (learn-claude-code s08). Persists across bot restarts. Use for: "remind me in 1 hour to recheck X", "every morning at 9 run analysis Y".',
+        description: 'Schedule a background task to wake you up at a future time (session 08 pattern). Persists across bot restarts. Use for: "remind me in 1 hour to recheck X", "every morning at 9 run analysis Y".',
         parameters: {
           type: 'object',
           properties: {
