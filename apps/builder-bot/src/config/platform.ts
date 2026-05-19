@@ -33,15 +33,12 @@ export const MODELS = {
 };
 
 // ── AI Provider base URLs ──
-export const PROVIDER_URLS = {
-  gemini:     'https://generativelanguage.googleapis.com/v1beta/openai/',
-  anthropic:  'https://api.anthropic.com/v1',
-  openai:     'https://api.openai.com/v1',
-  groq:       'https://api.groq.com/openai/v1',
-  deepseek:   'https://api.deepseek.com/v1',
-  openrouter: 'https://openrouter.ai/api/v1',
-  together:   'https://api.together.xyz/v1',
-};
+// Now derived from src/config/provider-registry.ts (single source of truth).
+// This object kept for backwards compatibility with existing callers.
+import { PROVIDER_REGISTRY as _PR } from './provider-registry';
+export const PROVIDER_URLS: Record<string, string> = Object.fromEntries(
+  Object.entries(_PR).map(([id, p]) => [id, p.baseURL])
+);
 
 // ── API versions ──
 export const API_VERSIONS = {
@@ -68,15 +65,13 @@ export const LIMITS = {
 // Groq free = 12K TPM → 40 tools × 300 = 12K tokens consumed just by tools = 413.
 // User upgrades (Groq Dev, Anthropic tier 2+, OpenAI tier 1+) can override via
 // agent.trigger_config.config.MAX_TOOLS (respected in buildPromptForLoop).
-export const PROVIDER_LIMITS: Record<string, { maxContextChars: number; maxTools: number }> = {
-  gemini:     { maxContextChars: 40_000, maxTools: 60  },  // 250K TPM free, plenty
-  anthropic:  { maxContextChars: 40_000, maxTools: 128 },  // paid only, 30K-800K ITPM
-  openai:     { maxContextChars: 30_000, maxTools: 80  },  // tier-1 500K TPM
-  groq:       { maxContextChars: 8_000,  maxTools: 15  },  // 12K TPM free (llama-3.3-70b)
-  deepseek:   { maxContextChars: 25_000, maxTools: 60  },  // 1M TPM, 60 RPM bottleneck
-  openrouter: { maxContextChars: 20_000, maxTools: 40  },  // 20 RPM free, 50-1000 RPD
-  together:   { maxContextChars: 15_000, maxTools: 30  },  // dynamic 60 RPM baseline
-};
+// Derived from provider-registry (toolLimit null → 128 for safety in legacy callers)
+export const PROVIDER_LIMITS: Record<string, { maxContextChars: number; maxTools: number }> = Object.fromEntries(
+  Object.entries(_PR).map(([id, p]) => [id, {
+    maxContextChars: p.maxContextChars,
+    maxTools: p.toolLimit ?? 128,
+  }])
+);
 
 // ── Platform AI (fallback when user has no key) ──
 // Uses Anthropic CLI OAuth token (CLAUDE_CODE_OAUTH_TOKEN) → Anthropic API

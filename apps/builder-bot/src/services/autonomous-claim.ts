@@ -84,11 +84,16 @@ async function tick(): Promise<void> {
 
         _activeClaimsByAgent.set(agent.id, (_activeClaimsByAgent.get(agent.id) || 0) + 1);
 
-        // Wake the agent with a synthetic message
+        // Wake the agent with a synthetic message (wrapped as task-notification XML)
         addMessageToAIAgent(
           agent.id,
           `[Autonomous task #${t.id} claimed] ${t.subject}\n\nWork on this. When done, call task_update(${t.id}, status='completed', result='...').`,
-          { _autonomous_task_id: t.id, _autonomous_priority: t.priority },
+          {
+            _taskNotification: true,
+            _taskNotificationKind: 'autonomous_claim',
+            _autonomous_task_id: t.id,
+            _autonomous_priority: t.priority,
+          },
         );
         console.log(`[AutonomousClaim] Agent #${agent.id} claimed task #${t.id} "${t.subject.slice(0, 60)}"`);
       }

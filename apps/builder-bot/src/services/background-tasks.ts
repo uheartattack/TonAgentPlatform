@@ -201,11 +201,11 @@ async function tick(): Promise<void> {
         // Direct tool execution path
         await runDirect(job);
       } else {
-        // Wake-agent path: inject a synthetic user message
+        // Wake-agent path: inject a synthetic user message (wrapped as task-notification)
         addMessageToAIAgent(
           job.agentId,
           `[Background task fired] ${job.description}`,
-          { _bg_job_id: job.id, _bg_task: true },
+          { _taskNotification: true, _taskNotificationKind: 'bg_task', _bg_job_id: job.id, _bg_task: true },
         );
       }
       _jobs.delete(job.id);

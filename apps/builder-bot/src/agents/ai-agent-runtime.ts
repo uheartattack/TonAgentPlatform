@@ -956,15 +956,61 @@ export function getAgentTodos(agentId: number): AgentTodo[] {
   return _agentTodos.get(agentId)?.todos || [];
 }
 
-// Pattern 14: Continue vs spawn — freshContext=true clears conversation history for isolated tasks
+// Pattern #13 (Claude Code leak): synthetic events (mailbox, bg-task wakeup,
+// autonomous claim, subagent result) wrap in <task-notification> XML so the
+// agent's prompt can distinguish them from real user messages. Real human
+// chat input is NEVER wrapped — it stays plain text.
+function wrapAsTaskNotification(text: string, ctx: Record<string, any>): string {
+  const kind = String(ctx._taskNotificationKind || 'event');
+  const attrs: string[] = [`kind="${kind.replace(/"/g, '&quot;')}"`];
+  if (ctx._autonomous_task_id) attrs.push(`task_id="${ctx._autonomous_task_id}"`);
+  if (ctx._mailbox_from) attrs.push(`from_agent="${ctx._mailbox_from}"`);
+  if (ctx._bg_job_id) attrs.push(`job_id="${ctx._bg_job_id}"`);
+  if (ctx._subagent_id) attrs.push(`subagent="${ctx._subagent_id}"`);
+  return `<task-notification ${attrs.join(' ')}>\n${text}\n</task-notification>`;
+}
+
+// Pattern #14: Continue vs spawn — freshContext=true clears conversation
+// history. We also AUTO-DECIDE based on context overlap when freshContext
+// isn't explicitly set: if the incoming text shares <20% n-gram overlap with
+// the last user message, treat as a context shift and clear history.
+function _shouldAutoSpawnFreshContext(agentId: number, newText: string): boolean {
+  try {
+    const recent = _pendingMessages.get(agentId);
+    if (!recent || recent.length === 0) return false;
+    const lastUserMsg = recent[recent.length - 1] || '';
+    if (lastUserMsg.length < 30 || newText.length < 30) return false;
+    // Cheap n-gram overlap: count shared 4-char trigrams
+    const grams = (s: string): Set<string> => {
+      const out = new Set<string>();
+      const lo = s.toLowerCase();
+      for (let i = 0; i + 4 <= lo.length; i++) out.add(lo.slice(i, i + 4));
+      return out;
+    };
+    const a = grams(lastUserMsg);
+    const b = grams(newText);
+    if (a.size === 0 || b.size === 0) return false;
+    let shared = 0;
+    for (const g of b) if (a.has(g)) shared++;
+    const overlap = shared / Math.min(a.size, b.size);
+    return overlap < 0.2;
+  } catch { return false; }
+}
+
 export function addMessageToAIAgent(agentId: number, text: string, context?: Record<string, any>): void {
   // Atomic check-and-set to prevent zombie messages for deactivated agents (M50)
   if (!_pendingMessages.has(agentId)) _pendingMessages.set(agentId, []);
   const msgs = _pendingMessages.get(agentId);
-  if (msgs) msgs.push(text);
+  // Wrap synthetic events in <task-notification> XML so the agent can
+  // distinguish them from real user input
+  let payload = text;
+  if (context?._taskNotification) {
+    payload = wrapAsTaskNotification(text, context);
+  }
+  if (msgs) msgs.push(payload);
   if (context) {
-    // freshContext: inter-agent tasks with low context overlap spawn with clean slate
-    if (context.freshContext) {
+    // Explicit freshContext OR auto-detected low overlap → spawn fresh
+    if (context.freshContext || _shouldAutoSpawnFreshContext(agentId, text)) {
       context._clearHistory = true;
     }
     _pendingContext.set(agentId, context);
@@ -1056,7 +1102,17 @@ function popMessages(agentId: number): string[] {
   // Reset to empty array instead of delete to avoid race: if a message arrives
   // between .get() and .delete(), it would be silently lost.
   _pendingMessages.set(agentId, []);
-  return msgs;
+  // Pattern #11 (Claude Code leak): command priority queue — now > next > later.
+  // Real user input (plain text) goes BEFORE synthetic task-notifications
+  // (XML-wrapped), so users never get starved by background events firing
+  // at the same tick boundary. FIFO is preserved within each priority tier.
+  const userMsgs: string[] = [];
+  const sysMsgs: string[] = [];
+  for (const m of msgs) {
+    if (typeof m === 'string' && m.startsWith('<task-notification')) sysMsgs.push(m);
+    else userMsgs.push(m);
+  }
+  return [...userMsgs, ...sysMsgs];
 }
 
 // ── Active AI agent handles ────────────────────────────────────────────────
@@ -9698,6 +9754,17 @@ If web_search returns nothing useful → say "не смог найти акту�
     // ── Resume on max_tokens: push continuation prompt and keep going ──
     const finishReasonRaw = (choice.finish_reason || '').toString();
     if (finishReasonRaw === 'max_tokens' || finishReasonRaw === 'length') {
+      // Pattern #6 (Claude Code leak): diminishing-returns stop.
+      // If the last continuation produced <500 new chars after ≥3
+      // continuations, the model is stuck and just emitting filler.
+      // Stop instead of burning more tokens.
+      const newChars = (assistant?.content || '').length;
+      if (continuationCount >= 3 && newChars < 500) {
+        console.log(`[AI runtime] Agent #${params.agentId} continuation diminishing returns — stopping (cont=${continuationCount}, newChars=${newChars})`);
+        // Treat as a soft stop: fall through to final-response path
+        finalContent = assistant?.content || finalContent || '';
+        break;
+      }
       messages.push(assistant);
       messages.push({ role: 'user', content: '[Continue directly from where you stopped. No apology, no recap.]' } as any);
       continuationCount++;
