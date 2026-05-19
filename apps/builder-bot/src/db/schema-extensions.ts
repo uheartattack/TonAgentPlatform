@@ -1568,8 +1568,78 @@ export async function runAIProposalsMigrations(pool: Pool): Promise<void> {
         ON builder_bot.agent_task_graph USING gin (blocked_by)
     `);
 
+    // ─── Hybrid RAG memory (vector + FTS5-style + RRF fusion) ───────────────
+    // Stores compressed semantic memory chunks per agent. Vector column uses
+    // a JSONB array (no pgvector extension required — fine up to ~5K entries
+    // per agent, cosine sim computed in app code). FTS via Postgres tsvector
+    // generated column. Hybrid retrieval = RRF over both rankings in JS.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.agent_memory_vec (
+        id           SERIAL PRIMARY KEY,
+        agent_id     INTEGER NOT NULL,
+        content      TEXT NOT NULL,
+        embedding    JSONB,
+        metadata     JSONB NOT NULL DEFAULT '{}',
+        source       VARCHAR(50),
+        importance   REAL NOT NULL DEFAULT 0.5,
+        created_at   TIMESTAMP NOT NULL DEFAULT NOW(),
+        content_tsv  tsvector GENERATED ALWAYS AS (to_tsvector('simple', content)) STORED
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS agent_memory_vec_agent_idx ON builder_bot.agent_memory_vec (agent_id, created_at DESC)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS agent_memory_vec_tsv_idx ON builder_bot.agent_memory_vec USING gin (content_tsv)`);
+
+    // ─── Persistent transcripts (s06 auto-compression target) ────────────────
+    // When a tick's message log gets too long, summarize first half via cheap
+    // LLM and persist the summary here so future runs can recall.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.agent_transcripts (
+        id           SERIAL PRIMARY KEY,
+        agent_id     INTEGER NOT NULL,
+        summary      TEXT NOT NULL,
+        msg_count    INTEGER NOT NULL,
+        token_estimate INTEGER,
+        created_at   TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS agent_transcripts_agent_idx ON builder_bot.agent_transcripts (agent_id, created_at DESC)`);
+
+    // ─── Mailboxes (s09 pattern) — durable inter-agent messaging ───────────
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.agent_mailbox (
+        id           SERIAL PRIMARY KEY,
+        from_agent_id INTEGER NOT NULL,
+        to_agent_id   INTEGER NOT NULL,
+        subject       VARCHAR(200),
+        body          TEXT NOT NULL,
+        metadata      JSONB NOT NULL DEFAULT '{}',
+        read_at       TIMESTAMP,
+        created_at    TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS agent_mailbox_to_unread_idx ON builder_bot.agent_mailbox (to_agent_id, created_at DESC) WHERE read_at IS NULL`);
+
+    // ─── Skill purchases (TON Pay marketplace) ──────────────────────────────
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.skill_purchases (
+        id            SERIAL PRIMARY KEY,
+        skill_id      INTEGER NOT NULL,
+        skill_name    VARCHAR(64) NOT NULL,
+        buyer_user_id BIGINT NOT NULL,
+        seller_user_id BIGINT NOT NULL,
+        price_ton     NUMERIC(20,9) NOT NULL,
+        invoice_id    VARCHAR(120),
+        tx_hash       VARCHAR(120),
+        status        VARCHAR(20) NOT NULL DEFAULT 'pending',
+        created_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+        paid_at       TIMESTAMP,
+        CONSTRAINT skill_purchases_status_chk CHECK (status IN ('pending','paid','expired','refunded','failed'))
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS skill_purchases_buyer_idx ON builder_bot.skill_purchases (buyer_user_id, created_at DESC)`);
+
     await client.query('COMMIT');
-    console.log('✅ AI proposals + daily spend + audit/approvals/skills/shared/bugs + agentic_wallets + agent-skills (agentskills.io) migrations applied');
+    console.log('✅ AI proposals + daily spend + audit/approvals/skills/shared/bugs + agentic_wallets + agent-skills + hybrid-memory + transcripts + mailbox + ton-pay migrations applied');
   } catch (e) {
     await client.query('ROLLBACK');
     console.error('❌ AI proposals migration failed:', e);

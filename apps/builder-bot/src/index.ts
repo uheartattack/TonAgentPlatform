@@ -179,6 +179,17 @@ async function main() {
     console.warn('[Observability] eager init failed:', e?.message);
   }
 
+  // Boot v2.3-wip background services. Each is opt-in per agent — these
+  // imports just start the poll loops; no work happens until an agent has
+  // configured autonomous=true / bg jobs / etc.
+  try {
+    await import('./services/background-tasks');     // s08 daemon
+    await import('./services/autonomous-claim');     // s11 task_graph poller
+    console.log('🔁 Background services up (bg-tasks + autonomous-claim)');
+  } catch (e: any) {
+    console.warn('[BgServices] startup failed:', e?.message);
+  }
+
   console.log();
   console.log('🎯 Platform ready!');
   console.log();

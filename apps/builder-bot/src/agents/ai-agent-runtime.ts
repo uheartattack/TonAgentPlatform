@@ -1446,6 +1446,12 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
      'task_create', 'task_update', 'task_list', 'task_get',
      // Manual context compression (learn-claude-code s06)
      'compact',
+     // Hybrid RAG memory (teleton-agent / deer-flow pattern)
+     'remember_hybrid', 'recall_hybrid', 'memory_count_hybrid',
+     // Mailboxes (learn-claude-code s09)
+     'mailbox_send', 'mailbox_read',
+     // Background tasks (learn-claude-code s08)
+     'bg_schedule', 'bg_list',
     ].forEach(t => allowed.add(t));
     // Always allow MCP tools if ton_mcp capability is enabled
     if (enabledCapabilities.includes('ton_mcp') && mcpTools) {
@@ -3238,6 +3244,118 @@ async function _executeToolInner(
       } catch (e: any) { return { error: e.message }; }
     }
 
+    // ── Hybrid RAG memory (teleton-agent / deer-flow pattern) ───────────────
+    case 'remember_hybrid': {
+      try {
+        const content = String(args.content || '').trim();
+        if (!content) return { ok: false, error: 'content required' };
+        const { saveMemory } = await import('../services/hybrid-memory');
+        const saved = await saveMemory({
+          agentId: params.agentId,
+          content,
+          source: args.source ? String(args.source).slice(0, 50) : 'agent',
+          importance: typeof args.importance === 'number' ? args.importance : 0.5,
+          metadata: typeof args.metadata === 'object' ? args.metadata : {},
+        });
+        if (!saved) return { ok: false, error: 'failed to save' };
+        return { ok: true, id: saved.id, importance: saved.importance };
+      } catch (e: any) { return { ok: false, error: e?.message }; }
+    }
+    case 'recall_hybrid': {
+      try {
+        const query = String(args.query || '').trim();
+        if (!query) return { ok: false, error: 'query required' };
+        const { recallMemory } = await import('../services/hybrid-memory');
+        const memories = await recallMemory({
+          agentId: params.agentId,
+          query,
+          topK: Math.min(20, Math.max(1, Number(args.top_k) || 8)),
+          minImportance: Number(args.min_importance) || 0,
+        });
+        return { ok: true, count: memories.length, memories };
+      } catch (e: any) { return { ok: false, error: e?.message }; }
+    }
+    case 'memory_count_hybrid': {
+      try {
+        const { countMemories } = await import('../services/hybrid-memory');
+        const n = await countMemories(params.agentId);
+        return { ok: true, count: n };
+      } catch (e: any) { return { ok: false, error: e?.message }; }
+    }
+
+    // ── Mailboxes (learn-claude-code s09) — durable inter-agent messages ──
+    case 'mailbox_send': {
+      try {
+        const toId = Number(args.to_agent_id);
+        const body = String(args.body || '').trim();
+        if (!Number.isFinite(toId) || toId <= 0) return { ok: false, error: 'to_agent_id required' };
+        if (!body) return { ok: false, error: 'body required' };
+        if (body.length > 8000) return { ok: false, error: 'body too long (>8000 chars)' };
+        const { pool } = await import('../db');
+        // Verify recipient exists AND belongs to the same user (security)
+        const owner = await pool.query(
+          `SELECT user_id FROM builder_bot.agents WHERE id = $1`, [toId],
+        );
+        if (!owner.rows[0]) return { ok: false, error: 'recipient agent not found' };
+        if (String(owner.rows[0].user_id) !== String(params.userId)) {
+          return { ok: false, error: 'cannot message agents outside your account' };
+        }
+        const res = await pool.query(
+          `INSERT INTO builder_bot.agent_mailbox
+             (from_agent_id, to_agent_id, subject, body, metadata)
+           VALUES ($1, $2, $3, $4, $5::jsonb) RETURNING id`,
+          [params.agentId, toId, args.subject ? String(args.subject).slice(0, 200) : null, body, JSON.stringify(args.metadata || {})],
+        );
+        return { ok: true, id: res.rows[0].id };
+      } catch (e: any) { return { ok: false, error: e?.message }; }
+    }
+    case 'mailbox_read': {
+      try {
+        const onlyUnread = args.only_unread !== false;     // default true
+        const limit = Math.min(50, Math.max(1, Number(args.limit) || 10));
+        const { pool } = await import('../db');
+        let q = `SELECT id, from_agent_id, subject, body, metadata, read_at, created_at
+                   FROM builder_bot.agent_mailbox
+                  WHERE to_agent_id = $1`;
+        if (onlyUnread) q += ` AND read_at IS NULL`;
+        q += ` ORDER BY created_at DESC LIMIT ${limit}`;
+        const res = await pool.query(q, [params.agentId]);
+        // Mark read after fetching (if onlyUnread mode)
+        if (onlyUnread && res.rows.length > 0) {
+          const ids = res.rows.map((r: any) => r.id);
+          await pool.query(
+            `UPDATE builder_bot.agent_mailbox SET read_at = NOW() WHERE id = ANY($1::int[])`,
+            [ids],
+          );
+        }
+        return { ok: true, count: res.rows.length, messages: res.rows };
+      } catch (e: any) { return { ok: false, error: e?.message }; }
+    }
+
+    // ── Background tasks (learn-claude-code s08) ──
+    case 'bg_schedule': {
+      try {
+        const description = String(args.description || '').trim();
+        if (!description) return { ok: false, error: 'description required' };
+        const delayMs = Math.max(1000, Math.min(86_400_000, Number(args.delay_ms) || 30_000));
+        const _bg = await import('../services/background-tasks');
+        const job = _bg.scheduleBackgroundTask({
+          agentId: params.agentId,
+          userId: params.userId,
+          description,
+          runAt: new Date(Date.now() + delayMs),
+        });
+        return { ok: true, id: job.id, run_at: job.runAt.toISOString() };
+      } catch (e: any) { return { ok: false, error: e?.message }; }
+    }
+    case 'bg_list': {
+      try {
+        const _bg = await import('../services/background-tasks');
+        const jobs = _bg.listBackgroundTasks(params.agentId);
+        return { ok: true, count: jobs.length, jobs };
+      } catch (e: any) { return { ok: false, error: e?.message }; }
+    }
+
     // ── Task Graph (learn-claude-code s07) — durable DAG of subtasks ──
     case 'task_create': {
       try {
@@ -3302,6 +3420,13 @@ async function _executeToolInner(
             [id, params.agentId],
           );
           unblocked = cascade.rowCount || 0;
+        }
+        // Release autonomous-claim slot if this was an autonomous task
+        if (['completed', 'failed', 'cancelled'].includes(upd.rows[0].status)) {
+          try {
+            const { releaseClaim } = await import('../services/autonomous-claim');
+            releaseClaim(params.agentId);
+          } catch {}
         }
         return { ok: true, id, status: upd.rows[0].status, unblocked };
       } catch (e: any) { return { ok: false, error: e?.message?.slice(0, 200) }; }
@@ -9043,6 +9168,100 @@ If web_search returns nothing useful → say "не смог найти акту�
       await getAgentStateRepository().set(params.agentId, params.userId, '_compact_requested', '').catch(() => {});
     }
   } catch {}
+
+  // ── AUTO-COMPRESSION (learn-claude-code s06 full layer) ─────────────────
+  // Trigger BEFORE the loop starts if the existing message history is large:
+  //   • messages.length > 30, OR
+  //   • estTokens > 60_000
+  // Strategy:
+  //   1. Keep system prompt + last 5 messages verbatim.
+  //   2. Run a cheap utility-model summary on the middle slice.
+  //   3. Persist summary to builder_bot.agent_transcripts (long-term recall).
+  //   4. Optionally also save as hybrid-memory chunk for semantic retrieval.
+  //   5. Replace middle slice in `messages` with a single system msg pointing
+  //      to the summary.
+  //
+  // This is the AUTO layer; the MICRO layer (replace stale tool_results with
+  // placeholders) still runs per-iter inside the loop below.
+  const AUTO_COMPACT_MSG_THRESHOLD = 30;
+  const AUTO_COMPACT_TOK_THRESHOLD = 60_000;
+  if (
+    !compactRequested &&
+    (messages.length > AUTO_COMPACT_MSG_THRESHOLD || estTokens > AUTO_COMPACT_TOK_THRESHOLD)
+  ) {
+    try {
+      const keepTail = 5;
+      const keepHead = 1;   // system prompt
+      if (messages.length > keepHead + keepTail + 2) {
+        const middle = messages.slice(keepHead, messages.length - keepTail);
+        const middleText = middle.map((m: any) => {
+          const role = m.role || '?';
+          const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content || '').slice(0, 400);
+          return `[${role}] ${content}`;
+        }).join('\n').slice(0, 30_000);
+
+        // Cheap utility model for summarization
+        const { resolveUtilityProvider, getUtilityAIClient } = await import('./ai-agent-runtime');
+        const utilCfg = resolveUtilityProvider(providerName);
+        const { client: utilClient, model: utilModel } = getUtilityAIClient({ AI_PROVIDER: providerName });
+        let summary = '';
+        try {
+          const resp = await utilClient.chat.completions.create({
+            model: utilModel,
+            messages: [
+              { role: 'system', content: 'You compress agent conversation transcripts. Output ONE compact summary (max 800 chars, single language as input). Include: user intents, decisions, tool calls + results (brief), open items. No prose, no headings — dense bullets.' },
+              { role: 'user', content: middleText },
+            ],
+            max_tokens: 500,
+            temperature: 0.2,
+          });
+          summary = String(resp.choices?.[0]?.message?.content || '').trim();
+          void utilCfg; // referenced for side-effects
+        } catch (e: any) {
+          console.warn(`[AutoCompact] summary failed: ${e?.message?.slice(0, 120)}`);
+        }
+
+        if (summary) {
+          const compressedTokens = estimateTokens([{ role: 'system', content: summary }] as any);
+          // Persist to agent_transcripts (long-term query target)
+          try {
+            const { pool } = await import('../db');
+            await pool.query(
+              `INSERT INTO builder_bot.agent_transcripts (agent_id, summary, msg_count, token_estimate)
+               VALUES ($1, $2, $3, $4)`,
+              [params.agentId, summary, middle.length, estTokens],
+            );
+          } catch (e: any) { console.warn(`[AutoCompact] persist transcript failed: ${e?.message}`); }
+
+          // Also save into hybrid-memory for semantic recall later
+          try {
+            const { saveMemory } = await import('../services/hybrid-memory');
+            await saveMemory({
+              agentId: params.agentId,
+              content: summary,
+              source: 'auto-compact',
+              importance: 0.5,
+              metadata: { msg_count: middle.length, compressed_at: new Date().toISOString() },
+            });
+          } catch {}
+
+          // Replace middle slice in `messages` with a single placeholder system msg
+          const placeholder = {
+            role: 'system' as const,
+            content: `[Auto-compacted ${middle.length} earlier messages | saved to agent_transcripts. Recap:]\n${summary}`,
+          };
+          const head = messages.slice(0, keepHead);
+          const tail = messages.slice(messages.length - keepTail);
+          messages.splice(0, messages.length, ...head, placeholder, ...tail);
+          const newEst = estimateTokens(messages);
+          console.log(`[AutoCompact] Agent #${params.agentId} compressed ${middle.length} msgs (${estTokens} → ${newEst} tokens, summary ${compressedTokens} tok)`);
+          estTokens = newEst;
+        }
+      }
+    } catch (e: any) {
+      console.warn(`[AutoCompact] failed: ${e?.message}`);
+    }
+  }
 
   for (let iter = 0; iter < MAX_ITERS; iter++) {
     // ── Iteration budget pressure warnings (hermes-agent pattern) ──
