@@ -60,7 +60,7 @@ async function main() {
   const orClient = orKey ? new OpenAI({
     apiKey: orKey,
     baseURL: 'https://openrouter.ai/api/v1',
-    defaultHeaders: { 'HTTP-Referer': 'https://tonagentplatform.com', 'X-Title': 'TON Agent Platform — Atlas eval' },
+    defaultHeaders: { 'HTTP-Referer': 'https://tonagentplatform.com', 'X-Title': 'TON Agent Platform - Atlas eval' },
   }) : null;
 
   // Same model chain Atlas uses in prod. OpenRouter free tier appended so
@@ -70,9 +70,9 @@ async function main() {
     { model: 'gemini-2.0-flash',                            client: geminiClient },
     { model: 'gemini-2.0-flash-lite',                       client: geminiClient },
     ...(orClient ? [
-      { model: 'deepseek/deepseek-chat-v3-0324:free',       client: orClient },
-      { model: 'meta-llama/llama-3.3-70b-instruct:free',    client: orClient },
-      { model: 'qwen/qwen-2.5-72b-instruct:free',           client: orClient },
+      { model: 'deepseek/deepseek-v4-flash:free',                 client: orClient },
+      { model: 'meta-llama/llama-3.3-70b-instruct:free',          client: orClient },
+      { model: 'nousresearch/hermes-3-llama-3.1-405b:free',       client: orClient },
     ] : []),
   ];
   let response = '';

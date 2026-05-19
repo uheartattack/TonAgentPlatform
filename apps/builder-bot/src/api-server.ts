@@ -3035,7 +3035,7 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
         'gemini-2.0-flash',
         'gemini-2.0-flash-lite',
         ...(_orKey ? [
-          'openrouter::deepseek/deepseek-chat-v3-0324:free',
+          'openrouter::deepseek/deepseek-v4-flash:free',
           'openrouter::meta-llama/llama-3.3-70b-instruct:free',
         ] : []),
       ];
@@ -3043,7 +3043,7 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
       const getOR = () => _orClient ||= new OpenAI({
         apiKey: _orKey,
         baseURL: 'https://openrouter.ai/api/v1',
-        defaultHeaders: { 'HTTP-Referer': 'https://tonagentplatform.com', 'X-Title': 'TON Agent Platform — Edit-with-AI' },
+        defaultHeaders: { 'HTTP-Referer': 'https://tonagentplatform.com', 'X-Title': 'TON Agent Platform - Edit-with-AI' },
       });
       let newValue = '', usedModel = '';
       let lastErr: any;
@@ -5442,9 +5442,9 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
         // outages.
         const _openrouterKey = process.env.OPENROUTER_API_KEY || '';
         const openrouterModels = _openrouterKey ? [
-          'openrouter::deepseek/deepseek-chat-v3-0324:free',
+          'openrouter::deepseek/deepseek-v4-flash:free',
           'openrouter::meta-llama/llama-3.3-70b-instruct:free',
-          'openrouter::qwen/qwen-2.5-72b-instruct:free',
+          'openrouter::nousresearch/hermes-3-llama-3.1-405b:free',
         ] : [];
         const modelChain = useNativeAnthropic
           ? [model, 'claude-haiku-4-5-20251001']
@@ -5467,7 +5467,7 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
             baseURL: 'https://openrouter.ai/api/v1',
             defaultHeaders: {
               'HTTP-Referer': 'https://tonagentplatform.com',
-              'X-Title': 'TON Agent Platform — Atlas',
+              'X-Title': 'TON Agent Platform - Atlas',
             },
           });
           return _openrouterClient;
