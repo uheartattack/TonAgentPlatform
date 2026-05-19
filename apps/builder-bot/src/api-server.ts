@@ -3026,12 +3026,12 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
         apiKey: PLATFORM_API_KEY,
         baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
       });
+      // Gemini families with separate quota counters. 1.5-* deprecated by Google
+      // and now returns 404 — removed.
       const MODEL_CHAIN = [
         'gemini-2.5-flash',
         'gemini-2.0-flash',
         'gemini-2.0-flash-lite',
-        'gemini-1.5-flash',
-        'gemini-1.5-flash-8b',
       ];
       let newValue = '', usedModel = '';
       let lastErr: any;
@@ -3051,8 +3051,9 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
         } catch (e: any) {
           lastErr = e;
           const msg = String(e?.message || '');
-          // Retry on 429 / 503 / overloaded; bail on real errors
-          if (!/429|503|overload|exhausted|rate.?limit/i.test(msg)) break;
+          // Retry on 429 / 503 / overload / 404 (deprecated/unknown model) /
+          // 403. Bail only on auth-shape errors (401/invalid_key).
+          if (/401|invalid_api_key|unauthorized/i.test(msg)) break;
         }
       }
       if (!newValue) {
@@ -5431,8 +5432,7 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
               'gemini-2.5-flash',
               'gemini-2.0-flash',
               'gemini-2.0-flash-lite',
-              'gemini-1.5-flash',
-              'gemini-1.5-flash-8b',
+              // Google deprecated gemini-1.5-* — they now return 404, removed.
             ].filter((m, i, arr) => arr.indexOf(m) === i); // de-dupe
         const nonSystemMsgs = messages.filter(m => m.role !== 'system');
 
@@ -5463,20 +5463,37 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
             break; // success — exit chain
           } catch (modelErr: any) {
             const errMsg = modelErr?.message || '';
-            if (errMsg.includes('429') || errMsg.includes('rate_limit') || errMsg.includes('overloaded') || errMsg.includes('529')) {
-              console.warn(`[Atlas] ${tryModel} rate limited, trying next...`);
+            // Retryable: rate limits, transient errors, AND 404 (deprecated
+            // / unknown model — Google sometimes EOLs Gemini families with
+            // no announcement, e.g. 1.5-flash returning 404 after May 2026).
+            const retryable = errMsg.includes('429')
+              || errMsg.includes('rate_limit')
+              || errMsg.includes('overloaded')
+              || errMsg.includes('529')
+              || errMsg.includes('503')
+              || errMsg.includes('404')
+              || errMsg.includes('not_found')
+              || errMsg.includes('not found');
+            if (retryable) {
+              console.warn(`[Atlas] ${tryModel} failed (${errMsg.slice(0, 80)}), trying next...`);
               exhaustedAt.push(tryModel);
               allRateLimited = exhaustedAt.length === modelChain.length;
               continue; // try next model
             }
-            throw modelErr; // non-retryable — rethrow
+            // Hard auth failure — log and treat as exhausted (don't leak raw error to UI)
+            console.error(`[Atlas] ${tryModel} non-retryable error: ${errMsg.slice(0, 200)}`);
+            exhaustedAt.push(tryModel);
+            allRateLimited = exhaustedAt.length === modelChain.length;
+            continue;
           }
         }
 
-        // If every model in the chain hit 429 and produced no output, tell the
+        // If every model in the chain failed and produced no output, tell the
         // user explicitly. Otherwise the UI just sits with a typing indicator.
-        if (!fullText && allRateLimited) {
-          const fallbackMsg = '⏳ Все AI-провайдеры сейчас перегружены (429 rate limit). Попробуй через 1-2 минуты — квота восстановится.';
+        if (!fullText && exhaustedAt.length > 0) {
+          const fallbackMsg = allRateLimited
+            ? '⏳ Все AI-провайдеры сейчас перегружены (квота истощена). Попробуй через несколько минут.'
+            : '⚠️ AI временно недоступен. Попробуй ещё раз через минуту.';
           sendEvent('chunk', { text: fallbackMsg });
           fullText = fallbackMsg;
         }
