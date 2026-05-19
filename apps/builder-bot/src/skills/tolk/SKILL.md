@@ -1,143 +1,194 @@
 ---
 name: tolk
-description: Tolk — the modern strongly-typed smart contract language for TON. Use when writing, reading, or debugging Tolk contracts. Covers typed storage, message schemas, gas optimization, and the standard library. Read BEFORE choosing tools — Tolk is NOT FunC; syntax and idioms differ significantly. If the user has a FunC file, read `func2tolk` first.
-license: Adapted from https://github.com/ton-blockchain/acton-contracts (Apache 2.0)
-compatibility: Designed for Tolk language as compiled by Acton CLI. Tolk version pinning is in Acton.toml.
+description: Tolk — the recommended language for TON smart contracts (replaces FunC). Statically typed, declarative cell layouts, automatic serialization via `lazy`, pattern-matched message handling via `match`, contract ABI/TS-wrappers/source-maps generated from the `contract` declaration. Use when writing, reading, or debugging Tolk contracts. Compiles via Acton toolchain to Fift → TVM. Read BEFORE picking tools — syntax is NOT FunC.
+license: Reflects official TON Foundation docs (docs.ton.org/blockchain-basics/tolk). Local skill content under TAP proprietary license.
+compatibility: Requires Acton toolchain for compile/test/deploy. IDE: JetBrains plugin, VS Code extension, or any LSP client (Vim/Neovim/Helix) via ton-language-server.
 metadata:
   category: ton-dev
-  version: "1.0"
-  upstream: https://docs.ton.org/develop/dapps/tolk
+  version: "2.0"
+  upstream: https://docs.ton.org/blockchain-basics/tolk/overview
 ---
 
-# Tolk — TON's Typed Contract Language
+# Tolk — TON's typed contract language
 
-## Why Tolk over FunC
+## Why Tolk (and why NOT FunC for new code)
 
-- **Static types**: storage layout, message bodies, return types — all
-  checked at compile time.
-- **Familiar syntax**: TypeScript-like, easier to learn.
-- **Better tooling**: LSP support, formatter, mutation testing.
-- **Gas-aware**: compiler hints for hot paths.
+Official position: Tolk is the **recommended** language for TON smart contracts.
+FunC is now legacy. Reasons Tolk wins:
 
-## Minimal contract
+- **Static types** for storage layouts, message bodies, return values — compile-time checked.
+- **Declarative data structures** — `struct` + `type` define the wire format once; serialize/deserialize is automatic.
+- **`lazy` deserialization** — skip fields you don't read on this code path; saves gas.
+- **`match` expressions** — pattern-match on union message types, exhaustively.
+- **`contract` keyword** drives codegen: ABI export, TypeScript wrapper, source maps for debugger.
+- **TypeScript-like syntax** — easier to read than stack-based FunC.
+
+## Minimal contract — modern Tolk
+
+```tolk
+// Storage struct
+struct Storage {
+    counter: uint32;
+    owner: address;
+}
+
+// Message variants — union type
+struct CounterIncrement { by: uint32; }
+struct CounterReset { newOwner: address; }
+type AllowedMessage = CounterIncrement | CounterReset;
+
+// Contract declaration — drives ABI/TS-wrapper codegen
+contract Counter {
+    storage: Storage;
+    incomingMessages: AllowedMessage;
+}
+
+// Main internal-message entry point
+fun onInternalMessage(in: InMessage) {
+    val msg = lazy AllowedMessage.fromSlice(in.body);
+    match (msg) {
+        CounterIncrement => {
+            val storage = lazy Storage.load();
+            storage.counter += msg.by;
+            storage.save();
+        }
+        CounterReset => {
+            val storage = lazy Storage.load();
+            storage.counter = 0;
+            storage.owner = msg.newOwner;
+            storage.save();
+        }
+    }
+}
+
+// Get-method (read-only RPC)
+get fun currentCounter(): uint32 {
+    val storage = lazy Storage.load();
+    return storage.counter;
+}
+```
+
+This is the **canonical pattern** (per docs.ton.org). Notice:
+- `val` for immutable bindings (use `var` for mutable).
+- `lazy` on `Storage.load()` and `AllowedMessage.fromSlice()` — deferred
+  parsing; fields are only decoded when accessed.
+- `match` exhaustively dispatches across union variants.
+- `get fun` declares an externally callable get-method (read-only).
+- No manual `beginParse` / `loadUint(64)` chains — `lazy` + the struct
+  definition handle that.
+
+## Key concepts
+
+### `lazy` — deferred deserialization
+
+```tolk
+val msg = lazy AllowedMessage.fromSlice(in.body);
+```
+
+The slice is NOT fully parsed up front. Fields are decoded only when read.
+On hot paths where only the discriminator is needed (to route via `match`),
+this skips parsing the rest of the body → measurable gas savings.
+
+Always prefer `lazy` for inbound messages unless you'll definitely read
+every field.
+
+### Union types via `type ... = A | B | C`
+
+```tolk
+type AllowedMessage = CounterIncrement | CounterReset | Withdraw;
+```
+
+Each variant is a struct. The compiler synthesizes a `op` (opcode)
+discriminator from the wire layout and routes correctly.
+
+### `match` — exhaustive pattern matching
+
+```tolk
+match (msg) {
+    CounterIncrement => { /* msg fields accessible here */ }
+    CounterReset => { /* … */ }
+    Withdraw => { /* … */ }
+}
+```
+
+If you forget a variant, the compiler refuses to build. If you handle an
+impossible variant, it warns. This eliminates the entire class of
+"forgot to handle op=0xXXX" bugs that plague FunC.
+
+### `contract Counter { … }` declaration
+
+Replaces FunC's implicit "this file is a contract". Drives:
+- **ABI export** — JSON describing all message types + get-methods.
+- **TypeScript wrapper** — auto-generated `class Counter { ... }` for dApp side.
+- **Source maps** — debugger can step through `.tolk` lines in TVM emulator.
+
+## Standard library
+
+Lives in the Acton repo (`ton-blockchain.github.io/acton/docs/tolk_standard_library/overview`).
+Imports look like:
 
 ```tolk
 import "@stdlib/common";
-
-global storage: cell;
-
-@inline
-fun loadStorage(): (int, slice) {
-    val s = storage.beginParse();
-    return (s.loadUint(64), s.loadRef());
-}
-
-@inline
-fun saveStorage(seqno: int, owner: slice) {
-    storage = beginCell()
-        .storeUint(seqno, 64)
-        .storeSlice(owner)
-        .endCell();
-}
-
-fun onInternalMessage(msgBody: slice) {
-    val (seqno, owner) = loadStorage();
-    // ... handle message ...
-    saveStorage(seqno + 1, owner);
-}
+import "@stdlib/jetton";
 ```
 
-## Type system
+Covers: cell ops, addresses, math, jetton helpers, NFT helpers, time,
+signatures.
 
-| Tolk type     | Meaning                          | Cost                  |
-| ------------- | -------------------------------- | --------------------- |
-| `int`         | 257-bit integer                  | 1 cell slot           |
-| `slice`       | TVM slice (parsed cell)          | reference             |
-| `cell`        | TVM cell (raw)                   | reference             |
-| `builder`     | Mutable cell builder             | reference             |
-| `tuple<T>`    | Stack tuple                      | runtime tuple         |
-| `(T1, T2)`    | Multi-return                     | stack-only            |
+## Tooling
 
-There are no booleans — use `int` with 0/-1 (TVM convention; -1 = true).
+| Need                       | Tool                                                         |
+| -------------------------- | ------------------------------------------------------------ |
+| Compile                    | `acton build` (via Acton CLI; see `acton` skill)            |
+| IDE — JetBrains            | TON / Tolk plugin                                            |
+| IDE — VS Code              | TON / Tolk extension                                         |
+| IDE — Vim / Neovim / Helix | LSP via `github.com/ton-blockchain/ton-language-server`      |
+| Gas benchmarks             | `github.com/ton-blockchain/tolk-bench`                       |
+| Migration from FunC        | `func2tolk` converter (see `func2tolk` skill)                |
+| Tests                      | Acton test runner, integration with TVM emulator             |
 
-## Message schemas
+## Migration from FunC
 
-Declare message structures with `struct`:
+Official path:
+1. Run the FunC → Tolk converter on the existing `.fc` file.
+2. Review the generated `.tolk` — the converter is conservative; some
+   patterns require manual rewrite into idiomatic `struct` + `lazy` + `match`.
+3. Compile both versions, compare gas profile via `tolk-bench`.
+4. Acton supports mixed `.fc` + `.tolk` in one project during migration.
 
-```tolk
-struct TransferMessage {
-    op: uint32;
-    queryId: uint64;
-    amount: coins;
-    recipient: address;
-}
+For details see the `func2tolk` skill or the official "Tolk vs FunC" guide.
 
-fun parseTransfer(s: slice): TransferMessage {
-    return TransferMessage.fromSlice(s);
-}
-```
+## Performance / gas
 
-This is type-safe and self-documenting; you no longer hand-parse `loadUint`
-chains.
+- `lazy` deserialization is a meaningful win when message bodies are large
+  but only some fields are read on the hot path.
+- Get-methods that read few storage fields benefit from `lazy Storage.load()`.
+- The compiler is smart about inlining; `@inline` annotations are usually
+  unnecessary in Tolk (were needed in FunC for hot helpers).
+- Real numbers live in `tolk-bench` repo.
 
-## Common patterns
+## Common pitfalls (NOT in upstream docs but stuff agents will hit)
 
-### Op-code dispatch
-
-```tolk
-fun onInternalMessage(msgBody: slice) {
-    if (msgBody.isEmpty()) return;
-    val op = msgBody.loadUint(32);
-
-    if (op == OP_TRANSFER) {
-        handleTransfer(msgBody);
-    } else if (op == OP_MINT) {
-        handleMint(msgBody);
-    } else {
-        // Bounce unknown op
-        throw_unless(0xffff, false);
-    }
-}
-```
-
-### Throwing with codes
-
-```tolk
-throw_unless(ERR_INSUFFICIENT_BALANCE, balance >= amount);
-throw_if(ERR_DOUBLE_INIT, isInitialized);
-```
-
-Define `ERR_*` constants at module top.
-
-## Gas optimization
-
-- Use `@inline` for small helpers (saves CALL overhead).
-- Use `@inline_ref` for helpers used in cold paths (reduces code size).
-- Avoid `tuple` operations in hot loops — they cost more than `(T1, T2)`.
-- Cache `storage` parse: don't `loadStorage()` twice in the same message.
-
-## Testing
-
-Acton runs Tolk contracts in a TVM emulator. Tests live in `tests/*.spec.ts`:
-
-```ts
-import { compile, getCode } from '@acton/test';
-
-it('transfers ownership', async () => {
-    const contract = await compile('contracts/main.tolk');
-    const { result } = await contract.send({ op: OP_TRANSFER, ... });
-    expect(result.exitCode).toBe(0);
-});
-```
-
-## When NOT to use Tolk
-
-- Quick prototyping → FunC is still smaller for trivial contracts.
-- Existing FunC codebase → migrate gradually via the `func2tolk` skill.
-- Pure deployment scripts (no contract code) → use `acton` skill directly.
+- **`lazy` + writes**: `lazy Storage.load()` returns a handle. Writing to its
+  fields and calling `.save()` works, BUT only fields you actually wrote get
+  re-serialized; unread fields stay as in the original slice. If you want to
+  re-emit everything, force-read each field first or skip `lazy`.
+- **`match` is exhaustive**: you cannot have a "default" arm without
+  explicitly enumerating all union members. Add a catch-all variant to the
+  union if you need fallback behavior.
+- **`contract` keyword is required** for ABI/TS-wrapper generation. If you
+  see "no ABI emitted" from Acton, you forgot it.
+- **Booleans**: TVM has none. Tolk maps `bool` to `int` (0 = false, -1 = true).
+  Don't compare `bool` to numeric literals other than 0 / -1.
+- **No floating-point**: keep TON amounts in `nanoCoins` (uint128). Use
+  fixed-point integer math for fractional logic.
 
 ## See also
 
-- `acton` skill — CLI and project layout.
-- `func2tolk` skill — migrate FunC to Tolk.
-- `ton-blockchain` skill — runtime semantics.
+- `acton` skill — CLI, build, deploy, project layout.
+- `func2tolk` skill — migrate FunC contracts.
+- `ton-blockchain` skill — runtime model, message semantics, TIPs.
+- Official Tolk overview: `docs.ton.org/blockchain-basics/tolk/overview`
+- Tolk language server: `github.com/ton-blockchain/ton-language-server`
+- Tolk gas benchmarks: `github.com/ton-blockchain/tolk-bench`
+- Standard library docs: `ton-blockchain.github.io/acton/docs/tolk_standard_library/overview`
