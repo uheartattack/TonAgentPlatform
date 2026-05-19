@@ -7,6 +7,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.3.2] — 2026-05-19 — "Providers, Patterns & Local Memory"
+
+Big internal upgrade. Substrate-level work that doesn't add visible new
+features for end users, but unlocks meaningfully better cost, latency,
+and reach.
+
+### Added
+- **9 new AI providers** (7 → 16 total): xAI Grok, Moonshot Kimi, Mistral
+  AI, Cerebras, Z.AI GLM, MiniMax, HuggingFace Inference, Cocoon (TON
+  decentralized), Local (Ollama/vLLM/LM Studio).
+- **Single provider registry** — `src/config/provider-registry.ts` with rich
+  metadata per provider: baseURL, defaultModel, utilityModel (cheap for
+  housekeeping), toolLimit, maxContextChars, authHeader, envVar, keyPrefix,
+  keyHint, consoleUrl. `PROVIDER_URLS`/`PROVIDER_LIMITS` in `platform.ts`
+  are now derived from this.
+- **OpenRouter fallback chain** — when Gemini quota is exhausted, Atlas
+  chat, Edit-with-AI, and the eval helper fall over to OpenRouter free
+  models (DeepSeek-v4-flash, Llama-3.3-70b, Hermes-3-405b).
+- **Pluggable embedding backend** — `EMBEDDING_BACKEND=local` switches
+  Hybrid RAG memory from Gemini `text-embedding-004` (768d API) to local
+  ONNX `Xenova/all-MiniLM-L6-v2` (384d in-process). Zero API cost,
+  offline-capable. Default stays `gemini`.
+- **MCP server stdio transport** — `mcp-client.ts` can now spawn child
+  processes (e.g. `npx -y @notion/mcp`) in addition to SSE. Env hardened
+  (`buildSafeEnv()` whitelists PATH/HOME/USER/LANG/TZ + MCP_*, blocks
+  LD_PRELOAD / NODE_OPTIONS / LD_LIBRARY_PATH injection). Tools
+  auto-namespaced as `mcp_<server>_<tool>`.
+- **+3 TON DNS tools** (8 → 11 total): `dns_get_my_domains` (list owned),
+  `dns_get_auction` (live auction state, min next bid), `dns_transfer`
+  (NFT-transfer ownership, gated by HitL confirmation).
+- **s10 plan-approval HitL** — new `ask_for_plan_approval` tool. Agent
+  drafts a multi-step plan, user replies `да`/`нет`/`правки: <edits>`.
+  Always available via CORE_TOOLS.
+- **s12 per-task DB-tx isolation** — `task_update` + auto-cascade now
+  wrapped in `BEGIN`/`COMMIT`. Prevents dirty reads when concurrent
+  autonomous-claim + manual-edit race on `blocked_by` arrays.
+- **Claude Code leaked-architecture patterns** (4 more shipped, brings
+  total to 11/16):
+  - #6 token-budget diminishing-returns stop (kills stuck continuations)
+  - #10 SYSTEM_PROMPT_DYNAMIC_BOUNDARY cache-split for Anthropic
+    (`cache_control: ephemeral` on the static prefix)
+  - #11 command priority queue (real user input ordered before
+    `<task-notification>`-wrapped synthetic events)
+  - #13 `<task-notification>` XML wrapper around synthetic wake-ups
+    (autonomous claim, bg-tasks, mailbox) so the agent distinguishes
+    them from real user messages
+  - #14 auto-spawn fresh context when incoming message has <20% 4-gram
+    overlap with the last user message
+
+### Changed
+- **Alphabetic sort of `tools[]`** right before every LLM API call —
+  byte-stable tool block raises prompt-cache hit rate on Anthropic /
+  OpenAI / OpenRouter. Cheap O(N log N) on ~60 tools per call.
+- Atlas tool-error UX: when ALL models in the fallback chain fail,
+  send a friendly «⏳ AI временно недоступен» chunk instead of leaking
+  the raw exception (`404 status code (no body)`).
+
+### Fixed
+- **Atlas 404** — Google deprecated `gemini-1.5-flash` /
+  `gemini-1.5-flash-8b`, they now return 404. Removed from fallback chain
+  in both Atlas chat and Edit-with-AI. 404 / not_found now retryable.
+- **`_cachedDialogs is not defined`** in UserbotMgr channel-subscription
+  init — variable was const-scoped inside one try block, referenced in a
+  later one. Lifted declaration.
+- **TonConnect.ts** — `await res.json()` after Toncenter call without
+  `res.ok` check could parse a non-2xx error body as success shape. Now
+  returns `Toncenter HTTP <code>: <detail>` on failure.
+- **universal-agent-chat.ts** — `new OpenAI({ apiKey })` no longer
+  proceeds with an empty / <8-char apiKey; throws explicit error early.
+- **`/api/feedback/:id/screenshot`** — added `requireAuth` + owner check
+  (or admin via `OWNER_ID`). Previously any caller could enumerate beta
+  feedback screenshots by ID.
+
+### Security
+- MCP env hardening (see Added). User MCP configs can no longer set
+  `LD_PRELOAD` / `NODE_OPTIONS` etc to inject code into the parent bot.
+
+---
+
 ## [2.3.1] — 2026-05-19 — "MCP & Edit-with-AI"
 
 ### Added
