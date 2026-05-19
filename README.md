@@ -348,8 +348,8 @@ Telegram → [@TonAgentPlatformBot](https://t.me/TonAgentPlatformBot) → `/star
 - ✅ **TON Pay invoices** — прямые `ton://transfer` платежи + on-chain верификация через TonAPI
 - ✅ **Tool Gateway** — rate-limit + prompt-injection scan + audit log на каждый tool-call
 - [ ] **Visual Workflow Builder** — drag-and-drop пайплайны (перенесено в v2.4)
-- [ ] **Edit with AI** — рефакторинг агента через диалог
-- [ ] **MCP server management UI** — добавление внешних MCP-серверов через Studio
+- ✅ **Edit with AI (v2.3.1)** — рефакторинг агента через диалог: Soul tab → кнопка Edit with AI → AI рерайтит system prompt → side-by-side diff → Apply
+- ✅ **MCP server management UI (v2.3.1)** — добавление внешних MCP-серверов через Studio + per-agent toggle
 
 ### 🔜 v2.4 — Marketplace & Scale (Q3 2026)
 - [ ] **Skill marketplace publishing** с TON-выплатами авторам скиллов

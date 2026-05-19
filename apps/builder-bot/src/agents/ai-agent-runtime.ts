@@ -1219,7 +1219,7 @@ export const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
   ton_mcp:     [], // dynamic — MCP tools discovered at runtime and injected via mcpTools param
   workspace:   ['file_write', 'file_read', 'file_list', 'file_delete', 'file_append', 'workspace_info'],
   mcp:         ['mcp_connect', 'mcp_list_servers', 'mcp_list_tools', 'mcp_call', 'mcp_disconnect'],
-  confirmation:['ask_user_confirmation'],
+  confirmation:['ask_user_confirmation', 'ask_for_plan_approval'],
   image_gen:   ['generate_image'],
   email:       ['send_email'],
   self_memory: ['memory_stats', 'clear_memory_category', 'compress_memories', 'browse_memory', 'run_memory_maintenance', 'get_memory_settings', 'update_memory_settings', 'session_search', 'memory_read'],
@@ -1431,7 +1431,7 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
      // Event-driven (agent decides when to wake up)
      'set_next_wake', 'subscribe_event', 'unsubscribe_event', 'emit_event', 'get_wake_info',
      // Human-in-the-loop confirmation (always available)
-     'ask_user_confirmation',
+     'ask_user_confirmation', 'ask_for_plan_approval',
      // Self-memory management (always available)
      'memory_stats', 'clear_memory_category', 'compress_memories', 'browse_memory', 'run_memory_maintenance', 'get_memory_settings', 'update_memory_settings',
      // Agent Skills (progressive disclosure — agentskills.io spec)
@@ -3400,35 +3400,50 @@ async function _executeToolInner(
         if (updates.length === 0) return { ok: false, error: 'no fields to update' };
         updates.push(`updated_at = NOW()`);
         vals.push(id, params.agentId);
+        // s12 isolation: wrap UPDATE + cascade in one transaction so two
+        // concurrent task_update calls (e.g. autonomous claim + manual edit)
+        // can't dirty-read each other's blocked_by arrays.
         const { pool } = await import('../db');
-        const upd = await pool.query(
-          `UPDATE builder_bot.agent_task_graph SET ${updates.join(', ')}
-            WHERE id = $${i++} AND agent_id = $${i++}
-            RETURNING id, status, blocked_by`,
-          vals,
-        );
-        if (!upd.rows[0]) return { ok: false, error: 'task not found or not owned by this agent' };
-        // Auto-cascade: if task completed, unblock dependents
+        const client = await pool.connect();
         let unblocked = 0;
-        if (upd.rows[0].status === 'completed') {
-          const cascade = await pool.query(
-            `UPDATE builder_bot.agent_task_graph
-                SET blocked_by = array_remove(blocked_by, $1),
-                    updated_at = NOW()
-              WHERE agent_id = $2 AND $1 = ANY(blocked_by)
-              RETURNING id`,
-            [id, params.agentId],
+        let updatedStatus = '';
+        try {
+          await client.query('BEGIN');
+          const upd = await client.query(
+            `UPDATE builder_bot.agent_task_graph SET ${updates.join(', ')}
+              WHERE id = $${i++} AND agent_id = $${i++}
+              RETURNING id, status, blocked_by`,
+            vals,
           );
-          unblocked = cascade.rowCount || 0;
+          if (!upd.rows[0]) { await client.query('ROLLBACK'); return { ok: false, error: 'task not found or not owned by this agent' }; }
+          updatedStatus = upd.rows[0].status;
+          // Auto-cascade: if task completed, unblock dependents
+          if (updatedStatus === 'completed') {
+            const cascade = await client.query(
+              `UPDATE builder_bot.agent_task_graph
+                  SET blocked_by = array_remove(blocked_by, $1),
+                      updated_at = NOW()
+                WHERE agent_id = $2 AND $1 = ANY(blocked_by)
+                RETURNING id`,
+              [id, params.agentId],
+            );
+            unblocked = cascade.rowCount || 0;
+          }
+          await client.query('COMMIT');
+        } catch (e) {
+          try { await client.query('ROLLBACK'); } catch {}
+          throw e;
+        } finally {
+          client.release();
         }
         // Release autonomous-claim slot if this was an autonomous task
-        if (['completed', 'failed', 'cancelled'].includes(upd.rows[0].status)) {
+        if (['completed', 'failed', 'cancelled'].includes(updatedStatus)) {
           try {
             const { releaseClaim } = await import('../services/autonomous-claim');
             releaseClaim(params.agentId);
           } catch {}
         }
-        return { ok: true, id, status: upd.rows[0].status, unblocked };
+        return { ok: true, id, status: updatedStatus, unblocked };
       } catch (e: any) { return { ok: false, error: e?.message?.slice(0, 200) }; }
     }
 
@@ -7002,6 +7017,53 @@ async function _executeToolInner(
       }
     }
 
+    // ── s10 protocol: plan-approval HitL ──
+    // Agent drafts a multi-step plan, user approves before agent executes.
+    // Distinct from ask_user_confirmation (yes/no) in that the agent can
+    // optionally apply user-suggested edits before proceeding.
+    case 'ask_for_plan_approval': {
+      try {
+        const plan = String(args.plan || '').trim();
+        if (!plan) return { error: 'plan is required' };
+        if (plan.length > 4000) return { error: 'plan too long (max 4000 chars)' };
+        const timeoutSec = Math.min(Math.max(Number(args.timeout_seconds) || 300, 30), 900);
+        const askId = `plan_${params.agentId}_${++_confirmationCounter}`;
+
+        const planHeader = '📋 Агент #' + params.agentId + ' предлагает план действий:';
+        const instructions = '\n\n✅ Напиши *да* / *yes* — одобряю как есть\n✏️ Напиши *правки: <текст>* — план с твоими правками\n❌ Напиши *нет* / *no* — отмена';
+        await notifyUser(params.userId, planHeader + '\n\n```\n' + plan + '\n```' + instructions);
+
+        const userReply = await new Promise<string>((resolve) => {
+          const timer = setTimeout(() => {
+            _pendingConfirmations.delete(askId);
+            resolve('__timeout__');
+          }, timeoutSec * 1000);
+          _pendingConfirmations.set(askId, { resolve, timer, userId: params.userId, agentId: params.agentId });
+        });
+
+        if (userReply === '__timeout__') {
+          return { approved: false, reason: 'timeout', message: `Не получил подтверждения за ${timeoutSec}с` };
+        }
+
+        const lower = userReply.trim().toLowerCase();
+        const noPatterns = ['нет', 'no', 'отмена', 'cancel', 'stop', 'стоп', 'отмени', 'не'];
+        if (noPatterns.some(p => lower === p || lower.startsWith(p + ' ') || lower.startsWith(p + ','))) {
+          return { approved: false, reason: 'rejected', user_reply: userReply };
+        }
+        // Edit pattern: "правки:" / "edits:" / "fix:"
+        const editMatch = userReply.match(/^\s*(?:правк[аи]|edits?|fix|изменения)\s*[:\-—]\s*(.+)/is);
+        if (editMatch) {
+          return { approved: true, with_edits: true, edits: editMatch[1].trim(), original_plan: plan, user_reply: userReply };
+        }
+        // Anything else affirmative-looking = approved as-is
+        const yesPatterns = ['да', 'yes', 'ок', 'ok', 'го', 'давай', '+', 'approve', 'apply', 'согласен'];
+        const approved = yesPatterns.some(p => lower === p || lower.startsWith(p + ' ') || lower.startsWith(p + ',')) || lower.length < 5;
+        return { approved, with_edits: false, user_reply: userReply };
+      } catch (e: any) {
+        return { error: e.message };
+      }
+    }
+
     // ── Image Generation ─────────────────────────────────────────────
     case 'generate_image': {
       try {
@@ -9205,6 +9267,18 @@ If web_search returns nothing useful → say "не смог найти акту�
   if (isSimpleQuery && cheapModel && usedModel === cheapModel) {
     console.log(`[AI runtime] Agent #${params.agentId} smart-routed to cheap model: ${cheapModel}`);
   }
+
+  // ── Prompt-cache opt: alphabetic sort of tool list ──
+  // Sorting tools by name before each API call makes the tool block
+  // byte-stable across turns. Providers with prefix-prompt-caching
+  // (Anthropic, OpenAI, OpenRouter) get higher hit rates → lower cost +
+  // lower latency. Pattern from Claude Code leak. Cheap: O(N log N) on
+  // typically ≤60 tools.
+  tools.sort((a: any, b: any) => {
+    const an = (a.function?.name || a.name || '');
+    const bn = (b.function?.name || b.name || '');
+    return an < bn ? -1 : an > bn ? 1 : 0;
+  });
 
   let estTokens = estimateTokens(messages);
   console.log(`[AI runtime] Agent #${params.agentId} AI call: model=${usedModel} baseURL=${sanitizeForLog((ai as any).baseURL || '')} tools=${tools.length}(of ${allToolDefs.length}) msgs=${messages.length} ~${estTokens}tok`);

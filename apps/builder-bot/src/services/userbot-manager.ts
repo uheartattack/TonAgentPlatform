@@ -1268,8 +1268,9 @@ class UserbotManager {
     }
 
     // CRITICAL: Initialize GramJS update loop + entity cache (AFTER client is in map)
+    let _cachedDialogs: any[] = [];
     try {
-      const _cachedDialogs = await client.getDialogs({ limit: 200 });
+      _cachedDialogs = await client.getDialogs({ limit: 200 });
       console.log(`[UserbotMgr] getDialogs(200) done for agent #${agentId} — entity cache populated`);
     } catch (e: any) {
       console.warn(`[UserbotMgr] getDialogs() warning for agent #${agentId}:`, e.message);
