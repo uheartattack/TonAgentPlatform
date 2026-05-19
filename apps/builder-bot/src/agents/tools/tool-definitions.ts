@@ -3493,6 +3493,217 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
       },
     },
 
+    // ── Multimodal (v2.3.4) — multi-image vision, video, charts, TTS ──
+    {
+      type: 'function' as const,
+      function: {
+        name: 'image_analyze_batch',
+        description: 'Анализирует до 16 картинок ОДНИМ Gemini-вызовом. Используй для сравнения: "какая из этих NFT редчайшая", "какой товар лучше выглядит". В разы дешевле чем 16 image_analyze.',
+        parameters: {
+          type: 'object',
+          properties: {
+            urls: { type: 'array', items: { type: 'string' }, description: 'URL картинок (до 16)' },
+            prompt: { type: 'string', description: 'Что спросить про эти картинки (по умолчанию: сравни)' },
+          },
+          required: ['urls'],
+        },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'video_analyze',
+        description: 'Анализирует видео (mp4/webm) через Gemini multimodal. Описывает что происходит, ключевые моменты с тайм-кодами. Видео должно быть по URL.',
+        parameters: {
+          type: 'object',
+          properties: {
+            url: { type: 'string', description: 'URL видео (mp4/webm)' },
+            prompt: { type: 'string', description: 'Что спросить про видео' },
+          },
+          required: ['url'],
+        },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'chart_render',
+        description: 'Рисует PNG-график через QuickChart. Возвращает URL картинки которую можно отправить через tg_send_file. Поддерживает line/bar/pie/doughnut/radar/scatter/candlestick.',
+        parameters: {
+          type: 'object',
+          properties: {
+            type: { type: 'string', description: 'line/bar/pie/doughnut/radar/scatter/candlestick' },
+            labels: { type: 'array', items: { type: 'string' }, description: 'Подписи по X (для line/bar)' },
+            datasets: { type: 'array', description: 'Массив { label, data: [числа или {x,y}], backgroundColor?, borderColor? }' },
+            title: { type: 'string', description: 'Заголовок графика' },
+            width: { type: 'number', description: 'Ширина PNG (по умолчанию 800)' },
+            height: { type: 'number', description: 'Высота PNG (по умолчанию 500)' },
+          },
+          required: ['type', 'datasets'],
+        },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'tts_reply',
+        description: 'Преобразует текст в речь через Gemini TTS. Возвращает audio base64 (wav). Можно потом отправить в TG как voice message.',
+        parameters: {
+          type: 'object',
+          properties: {
+            text: { type: 'string', description: 'Текст для озвучки (до 4000 символов)' },
+            voice: { type: 'string', description: 'Голос: Kore (default), Puck, Charon, Aoede, Fenrir' },
+          },
+          required: ['text'],
+        },
+      },
+    },
+
+    // ── Bot API 10.0 (May 2026) — Live Photos, reaction moderation, bot-to-bot ──
+    {
+      type: 'function' as const,
+      function: {
+        name: 'tg_send_live_photo',
+        description: 'Отправляет Live Photo (фото + короткое видео, формат iPhone). НОВИНКА Bot API 10.0. Photo и video — оба URL.',
+        parameters: {
+          type: 'object',
+          properties: {
+            chat_id: { type: 'string', description: 'ID чата или @username' },
+            photo_url: { type: 'string', description: 'URL фото (jpg/png)' },
+            video_url: { type: 'string', description: 'URL короткого видео (mp4)' },
+            caption: { type: 'string', description: 'Подпись (опционально)' },
+          },
+          required: ['chat_id', 'photo_url', 'video_url'],
+        },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'tg_delete_reaction',
+        description: 'Удаляет реакцию с сообщения. Без user_id — удаляет реакцию бота. Bot API 10.0.',
+        parameters: {
+          type: 'object',
+          properties: {
+            chat_id: { type: 'string', description: 'ID чата' },
+            message_id: { type: 'number', description: 'ID сообщения' },
+            user_id: { type: 'number', description: 'ID юзера чью реакцию удалить (опц.)' },
+          },
+          required: ['chat_id', 'message_id'],
+        },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'tg_delete_all_reactions',
+        description: 'Удаляет ВСЕ реакции с сообщения. Для модерации. Bot API 10.0.',
+        parameters: {
+          type: 'object',
+          properties: {
+            chat_id: { type: 'string', description: 'ID чата' },
+            message_id: { type: 'number', description: 'ID сообщения' },
+          },
+          required: ['chat_id', 'message_id'],
+        },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'tg_send_to_bot',
+        description: 'Отправить сообщение другому боту через @username. Оба бота должны включить bot-to-bot communication. Bot API 10.0.',
+        parameters: {
+          type: 'object',
+          properties: {
+            bot_username: { type: 'string', description: '@username другого бота' },
+            text: { type: 'string', description: 'Текст сообщения' },
+          },
+          required: ['bot_username', 'text'],
+        },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'tg_set_my_profile_photo',
+        description: 'Установить аватарку бота из URL. Bot API 9.4.',
+        parameters: {
+          type: 'object',
+          properties: { photo_url: { type: 'string', description: 'URL картинки' } },
+          required: ['photo_url'],
+        },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'tg_remove_my_profile_photo',
+        description: 'Удалить текущую аватарку бота. Bot API 9.4.',
+        parameters: { type: 'object', properties: {} },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'tg_get_user_profile_audios',
+        description: 'Получить список аудио из профиля пользователя (например голосовая визитка). Bot API 9.4.',
+        parameters: {
+          type: 'object',
+          properties: {
+            user_id: { type: 'number', description: 'ID пользователя' },
+            limit: { type: 'number', description: 'Максимум аудио (1-100, по умолчанию 20)' },
+          },
+          required: ['user_id'],
+        },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'tg_set_chat_member_tag',
+        description: 'Назначить тег (цветной "роль") участнику чата. Например "VIP", "Модератор". Bot API 9.5.',
+        parameters: {
+          type: 'object',
+          properties: {
+            chat_id: { type: 'string', description: 'ID чата' },
+            user_id: { type: 'number', description: 'ID пользователя' },
+            tag: { type: 'string', description: 'Текст тега (до 40 символов)' },
+          },
+          required: ['chat_id', 'user_id', 'tag'],
+        },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'tg_create_poll_v2',
+        description: 'Создать продвинутый опрос или квиз. Bot API 9.6/10.0: поддержка multiple correct answers, description, allows_revoting, shuffle_options, hide_results_until_closes, members_only, country_codes.',
+        parameters: {
+          type: 'object',
+          properties: {
+            chat_id: { type: 'string', description: 'ID чата' },
+            question: { type: 'string', description: 'Вопрос' },
+            options: { type: 'array', items: { type: 'string' }, description: 'Варианты ответов (1-12)' },
+            type: { type: 'string', description: '"regular" (default) или "quiz"' },
+            correct_option_ids: { type: 'array', items: { type: 'number' }, description: 'Для quiz — индексы правильных (МАССИВ, может быть несколько)' },
+            explanation: { type: 'string', description: 'Объяснение для quiz' },
+            description: { type: 'string', description: 'Описание опроса (до 400 символов)' },
+            is_anonymous: { type: 'boolean', description: 'Анонимный (default: true)' },
+            allows_multiple_answers: { type: 'boolean', description: 'Можно выбрать несколько вариантов' },
+            allows_revoting: { type: 'boolean', description: 'Можно изменить голос' },
+            shuffle_options: { type: 'boolean', description: 'Перемешать варианты' },
+            hide_results_until_closes: { type: 'boolean', description: 'Скрыть результаты до закрытия' },
+            allow_adding_options: { type: 'boolean', description: 'Юзеры могут добавлять свои варианты' },
+            members_only: { type: 'boolean', description: 'Только для участников канала' },
+            country_codes: { type: 'array', items: { type: 'string' }, description: 'Список ISO-кодов стран кому видно' },
+            open_period: { type: 'number', description: 'Автозакрытие через N секунд (макс 2628000)' },
+          },
+          required: ['chat_id', 'question', 'options'],
+        },
+      },
+    },
+
     // ── Audio: transcribe voice / podcast / call recording ──
     {
       type: 'function' as const,

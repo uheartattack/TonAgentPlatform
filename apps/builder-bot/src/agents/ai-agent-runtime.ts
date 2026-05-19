@@ -1225,6 +1225,10 @@ export const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
                 'tg_search_gifs', 'tg_set_personal_channel',
                 'tg_get_collectible_info', 'tg_get_unique_gift_value', 'tg_set_collectible_price',
                 'tg_send_gift_offer', 'tg_resolve_gift_offer',
+                // v2.3.4 — Bot API 10.0 / 9.6 / 9.5 / 9.4 additions
+                'tg_send_live_photo', 'tg_delete_reaction', 'tg_delete_all_reactions',
+                'tg_send_to_bot', 'tg_set_my_profile_photo', 'tg_remove_my_profile_photo',
+                'tg_get_user_profile_audios', 'tg_set_chat_member_tag', 'tg_create_poll_v2',
 ],
   telegram_admin: [
     'tg_create_channel2', 'tg_edit_channel_title', 'tg_edit_channel_about',
@@ -1271,8 +1275,11 @@ export const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
   dns:         ['dns_check', 'dns_resolve', 'dns_auctions', 'dns_bid', 'dns_link', 'dns_unlink', 'dns_set_site', 'dns_start_auction', 'dns_get_my_domains', 'dns_get_auction', 'dns_transfer'],
   payments:    ['verify_payment'],
   image:       ['image_download', 'image_resize', 'image_crop', 'image_add_text', 'image_filter',
-                'image_convert', 'image_info', 'image_composite', 'image_create_text', 'image_analyze'],
-  audio:       ['audio_transcribe'],
+                'image_convert', 'image_info', 'image_composite', 'image_create_text', 'image_analyze',
+                'image_analyze_batch'],
+  audio:       ['audio_transcribe', 'tts_reply'],
+  video:       ['video_analyze'],
+  chart:       ['chart_render'],
   ton_mcp:     [], // dynamic — MCP tools discovered at runtime and injected via mcpTools param
   workspace:   ['file_write', 'file_read', 'file_list', 'file_delete', 'file_append', 'workspace_info'],
   mcp:         ['mcp_connect', 'mcp_list_servers', 'mcp_list_tools', 'mcp_call', 'mcp_disconnect'],
@@ -6810,6 +6817,97 @@ async function _executeToolInner(
         );
         return { path: p };
       } catch (e: any) { return { error: e.message }; }
+    }
+
+    // ── v2.3.4: Multimodal mega ────────────────────────────────────────────
+    case 'image_analyze_batch': {
+      try {
+        const { analyzeBatch } = await import('../services/multimodal-tools');
+        const r = await analyzeBatch({ urls: args.urls, prompt: args.prompt, model: args.model });
+        return r;
+      } catch (e: any) { return { ok: false, error: e?.message?.slice(0, 200) }; }
+    }
+    case 'video_analyze': {
+      try {
+        const { analyzeVideo } = await import('../services/multimodal-tools');
+        return await analyzeVideo({ url: args.url, prompt: args.prompt, model: args.model });
+      } catch (e: any) { return { ok: false, error: e?.message?.slice(0, 200) }; }
+    }
+    case 'chart_render': {
+      try {
+        const { renderChart } = await import('../services/multimodal-tools');
+        return await renderChart({
+          type: args.type,
+          labels: args.labels,
+          datasets: args.datasets,
+          title: args.title,
+          width: args.width,
+          height: args.height,
+          backgroundColor: args.background_color,
+        });
+      } catch (e: any) { return { ok: false, error: e?.message?.slice(0, 200) }; }
+    }
+    case 'tts_reply': {
+      try {
+        const { textToSpeech } = await import('../services/multimodal-tools');
+        return await textToSpeech({ text: args.text, voice: args.voice, model: args.model });
+      } catch (e: any) { return { ok: false, error: e?.message?.slice(0, 200) }; }
+    }
+
+    // ── v2.3.4: Bot API 10.0 / 9.6 / 9.5 / 9.4 new endpoints ───────────────
+    case 'tg_send_live_photo': {
+      try {
+        const { sendLivePhoto } = await import('../services/bot-api-10');
+        return await sendLivePhoto(args.chat_id, args.photo_url, args.video_url, args.caption);
+      } catch (e: any) { return { ok: false, error: e?.message?.slice(0, 200) }; }
+    }
+    case 'tg_delete_reaction': {
+      try {
+        const { deleteMessageReaction } = await import('../services/bot-api-10');
+        return await deleteMessageReaction(args.chat_id, args.message_id, args.user_id);
+      } catch (e: any) { return { ok: false, error: e?.message?.slice(0, 200) }; }
+    }
+    case 'tg_delete_all_reactions': {
+      try {
+        const { deleteAllMessageReactions } = await import('../services/bot-api-10');
+        return await deleteAllMessageReactions(args.chat_id, args.message_id);
+      } catch (e: any) { return { ok: false, error: e?.message?.slice(0, 200) }; }
+    }
+    case 'tg_send_to_bot': {
+      try {
+        const { sendMessageToBot } = await import('../services/bot-api-10');
+        return await sendMessageToBot(args.bot_username, args.text);
+      } catch (e: any) { return { ok: false, error: e?.message?.slice(0, 200) }; }
+    }
+    case 'tg_set_my_profile_photo': {
+      try {
+        const { setMyProfilePhoto } = await import('../services/bot-api-10');
+        return await setMyProfilePhoto(args.photo_url);
+      } catch (e: any) { return { ok: false, error: e?.message?.slice(0, 200) }; }
+    }
+    case 'tg_remove_my_profile_photo': {
+      try {
+        const { removeMyProfilePhoto } = await import('../services/bot-api-10');
+        return await removeMyProfilePhoto();
+      } catch (e: any) { return { ok: false, error: e?.message?.slice(0, 200) }; }
+    }
+    case 'tg_get_user_profile_audios': {
+      try {
+        const { getUserProfileAudios } = await import('../services/bot-api-10');
+        return await getUserProfileAudios(args.user_id, args.offset, args.limit);
+      } catch (e: any) { return { ok: false, error: e?.message?.slice(0, 200) }; }
+    }
+    case 'tg_set_chat_member_tag': {
+      try {
+        const { setChatMemberTag } = await import('../services/bot-api-10');
+        return await setChatMemberTag(args.chat_id, args.user_id, args.tag);
+      } catch (e: any) { return { ok: false, error: e?.message?.slice(0, 200) }; }
+    }
+    case 'tg_create_poll_v2': {
+      try {
+        const { sendPollV2 } = await import('../services/bot-api-10');
+        return await sendPollV2(args as any);
+      } catch (e: any) { return { ok: false, error: e?.message?.slice(0, 200) }; }
     }
 
     case 'audio_transcribe': {
