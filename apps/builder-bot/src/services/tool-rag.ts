@@ -43,9 +43,9 @@ let _lastEmbedApiKey = '';
 
 /** Get embedding via native Gemini REST API (not OpenAI compat) */
 async function embed(text: string, apiKey?: string): Promise<number[] | null> {
-  // Use PLATFORM_AI_KEY, GEMINI_API_KEY, or OPENAI_API_KEY if Gemini base URL
-  const isGeminiBase = (process.env.OPENAI_BASE_URL || '').includes('generativelanguage.googleapis.com');
-  const key = apiKey || process.env.PLATFORM_AI_KEY || process.env.GEMINI_API_KEY || (isGeminiBase ? process.env.OPENAI_API_KEY : '') || '';
+  // Embeddings use the USER's own key only. No platform fallback — we don't
+  // subsidize random users' Gemini quota. If user didn't pass key → null.
+  const key = apiKey || '';
   if (!key || key === 'none') return null;
   try {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=${key}`;
@@ -69,9 +69,9 @@ async function embed(text: string, apiKey?: string): Promise<number[] | null> {
 /** Batch embed via native Gemini REST API */
 async function embedBatch(texts: string[], apiKey?: string): Promise<(number[] | null)[]> {
   if (texts.length === 0) return [];
-  // Use PLATFORM_AI_KEY, GEMINI_API_KEY, or OPENAI_API_KEY if Gemini base URL
-  const isGeminiBase = (process.env.OPENAI_BASE_URL || '').includes('generativelanguage.googleapis.com');
-  const key = apiKey || process.env.PLATFORM_AI_KEY || process.env.GEMINI_API_KEY || (isGeminiBase ? process.env.OPENAI_API_KEY : '') || '';
+  // Embeddings use the USER's own key only. No platform fallback — we don't
+  // subsidize random users' Gemini quota. If user didn't pass key → null.
+  const key = apiKey || '';
   if (!key || key === 'none') return texts.map(() => null);
   try {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:batchEmbedContents?key=${key}`;

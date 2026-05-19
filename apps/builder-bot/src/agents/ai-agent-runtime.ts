@@ -496,20 +496,9 @@ function getAIClient(config: Record<string, any>): { client: OpenAI; defaultMode
   const provider = (config.AI_PROVIDER as string) || '';
 
   if (!apiKey) {
-    // Fallback to platform-provided proxy key if configured.
-    // Without this, any agent without a personal key simply refuses to run.
-    const platKey   = process.env.PLATFORM_AI_KEY || '';
-    const platURL   = process.env.PLATFORM_AI_URL || '';
-    const platModel = process.env.PLATFORM_AI_MODEL || 'gpt-4o-mini';
-    if (platKey && platURL) {
-      console.log(`[AI] Using platform fallback (no user key configured)`);
-      const providerCfg: ProviderCfg = { ...resolveProvider(''), baseURL: platURL, defaultModel: platModel };
-      return {
-        client: new OpenAI({ baseURL: platURL, apiKey: platKey }),
-        defaultModel: platModel,
-        providerCfg,
-      };
-    }
+    // v2.3.5: NO platform fallback for user agents. Each user runs on their
+    // own API key — we don't subsidize random users' Gemini quota.
+    // Auto-pause will catch this and DM the owner with NO_API_KEY reason.
     throw new Error('NO_API_KEY');
   }
 
@@ -10304,7 +10293,8 @@ If web_search returns nothing useful → say "не смог найти акту�
       allToolDefs = buildToolDefinitions(agentRole, updatedCaps, mcpToolDefs);
       try {
         const { selectToolsHybrid } = await import('../services/tool-rag');
-        tools = await selectToolsHybrid(allToolDefs, userMsgText, params.systemPrompt, providerCfg.maxTools, (params.config.AI_API_KEY as string) || process.env.PLATFORM_AI_KEY || '');
+        // User's own AI_API_KEY only — no platform fallback for embeddings.
+        tools = await selectToolsHybrid(allToolDefs, userMsgText, params.systemPrompt, providerCfg.maxTools, (params.config.AI_API_KEY as string) || '');
       } catch {
         tools = selectRelevantTools(allToolDefs, userMsgText, params.systemPrompt, providerCfg.maxTools);
       }
