@@ -308,15 +308,77 @@ export async function tgReplyMessage(chatId: string | number, replyToMsgId: numb
 }
 
 /** Send reaction (emoji) to a message */
-export async function tgReactMessage(chatId: string | number, messageId: number, emoji: string): Promise<void> {
+/**
+ * Send reaction(s) to a message.
+ *
+ * `emoji` can be:
+ *  • a single Unicode emoji: "🔥", "❤️"
+ *  • a custom (premium) emoji: "custom:5443038326535608566" or just the
+ *    document ID string "5443038326535608566"
+ *  • a comma-separated mix: "🔥,custom:5443..." → sent as multi-reaction
+ *  • an empty string "" → CLEARS the reaction
+ *
+ * `big: true` plays the full-screen animation. `add_to_recent: true` adds
+ * the emoji to the user's recent reactions panel.
+ *
+ * Returns nothing on success; throws with a meaningful message on failure
+ * (REACTION_INVALID / CHAT_RESTRICTED / etc.) so the agent can recover.
+ */
+export async function tgReactMessage(
+  chatId: string | number,
+  messageId: number,
+  emoji: string,
+  opts?: { big?: boolean; addToRecent?: boolean },
+): Promise<{ ok: true; cleared?: boolean }> {
   await rateLimitTgCall();
   const client = await getFragmentClient();
   const peer = await (client as any).getInputEntity(chatId);
-  await (client as any).invoke(new Api.messages.SendReaction({
-    peer,
-    msgId: messageId,
-    reaction: [new Api.ReactionEmoji({ emoticon: emoji })],
-  }));
+
+  // Parse emoji string into reaction array. Empty → clear.
+  const parts = (emoji || '').split(',').map(s => s.trim()).filter(Boolean);
+  const reactions: any[] = [];
+  for (const part of parts) {
+    // Premium custom emoji: "custom:<id>" or pure numeric id (≥18 digits is a document ID)
+    if (part.startsWith('custom:')) {
+      const docId = part.slice('custom:'.length).trim();
+      if (!/^\d+$/.test(docId)) {
+        throw new Error(`Invalid custom emoji ID "${docId}" — expected numeric document ID`);
+      }
+      reactions.push(new Api.ReactionCustomEmoji({ documentId: BigInt(docId) as any }));
+    } else if (/^\d{15,}$/.test(part)) {
+      // Bare numeric ≥15 digits — heuristic for custom-emoji document ID
+      reactions.push(new Api.ReactionCustomEmoji({ documentId: BigInt(part) as any }));
+    } else {
+      reactions.push(new Api.ReactionEmoji({ emoticon: part }));
+    }
+  }
+
+  try {
+    await (client as any).invoke(new Api.messages.SendReaction({
+      peer,
+      msgId: messageId,
+      reaction: reactions,            // empty array = clear all reactions from this user
+      big: opts?.big !== false,        // default true — play animation
+      addToRecent: opts?.addToRecent !== false, // default true
+    }));
+    return reactions.length === 0 ? { ok: true, cleared: true } : { ok: true };
+  } catch (e: any) {
+    const msg = String(e?.errorMessage || e?.message || e);
+    // Translate common Telegram RPC errors to actionable messages
+    if (/REACTION_INVALID/i.test(msg)) {
+      throw new Error(`Reaction "${emoji}" not allowed in this chat (channel may have a custom reaction whitelist).`);
+    }
+    if (/CHAT_RESTRICTED|CHAT_WRITE_FORBIDDEN/i.test(msg)) {
+      throw new Error(`Cannot react: account is restricted in this chat.`);
+    }
+    if (/MESSAGE_ID_INVALID/i.test(msg)) {
+      throw new Error(`Message ${messageId} not found or already deleted.`);
+    }
+    if (/USER_BANNED_IN_CHANNEL/i.test(msg)) {
+      throw new Error(`Cannot react: account is banned from this channel.`);
+    }
+    throw e;
+  }
 }
 
 /** Edit own message */

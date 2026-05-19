@@ -94,6 +94,23 @@ export async function setChatMemberTag(chatId: string | number, userId: number, 
   });
 }
 
+// ── Live location (existed in Bot API for a while, never exposed as a tool here) ──
+export async function sendLiveLocation(
+  chatId: string | number, lat: number, lng: number, livePeriod: number,
+  opts?: { heading?: number; horizontal_accuracy?: number; proximity_alert_radius?: number },
+) {
+  const body: any = {
+    chat_id: chatId,
+    latitude: lat,
+    longitude: lng,
+    live_period: Math.min(86400, Math.max(60, livePeriod)),
+  };
+  if (opts?.heading) body.heading = Math.min(360, Math.max(1, opts.heading));
+  if (opts?.horizontal_accuracy) body.horizontal_accuracy = Math.min(1500, Math.max(0, opts.horizontal_accuracy));
+  if (opts?.proximity_alert_radius) body.proximity_alert_radius = opts.proximity_alert_radius;
+  return await tgCall('sendLocation', body);
+}
+
 // ── Bot API 9.6 / 10.0: Advanced polls + quizzes ───────────────────────
 export interface SendPollV2Input {
   chat_id: string | number;
