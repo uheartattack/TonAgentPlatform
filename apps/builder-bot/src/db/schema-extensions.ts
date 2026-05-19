@@ -1638,8 +1638,40 @@ export async function runAIProposalsMigrations(pool: Pool): Promise<void> {
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS skill_purchases_buyer_idx ON builder_bot.skill_purchases (buyer_user_id, created_at DESC)`);
 
+    // ─── MCP Servers (user-owned remote tool endpoints) ─────────────────────
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.mcp_servers (
+        id              SERIAL PRIMARY KEY,
+        user_id         BIGINT NOT NULL,
+        name            VARCHAR(120) NOT NULL,
+        url             TEXT NOT NULL,
+        api_key_enc     TEXT,
+        transport       VARCHAR(20) NOT NULL DEFAULT 'sse',
+        status          VARCHAR(20) NOT NULL DEFAULT 'pending',
+        last_error      TEXT,
+        tools_count     INTEGER NOT NULL DEFAULT 0,
+        last_tested_at  TIMESTAMP,
+        created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+        CONSTRAINT mcp_servers_status_chk CHECK (status IN ('pending','connected','error','disabled'))
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS mcp_servers_user_idx ON builder_bot.mcp_servers (user_id, created_at DESC)`);
+
+    // Per-agent enable/disable of user's MCP servers (default: NOT enabled —
+    // only rows here count as "this agent uses MCP server X")
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.agent_mcp_servers (
+        id            SERIAL PRIMARY KEY,
+        agent_id      INTEGER NOT NULL,
+        mcp_server_id INTEGER NOT NULL,
+        created_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+        CONSTRAINT agent_mcp_servers_uniq UNIQUE (agent_id, mcp_server_id)
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS agent_mcp_servers_agent_idx ON builder_bot.agent_mcp_servers (agent_id)`);
+
     await client.query('COMMIT');
-    console.log('✅ AI proposals + daily spend + audit/approvals/skills/shared/bugs + agentic_wallets + agent-skills + hybrid-memory + transcripts + mailbox + ton-pay migrations applied');
+    console.log('✅ AI proposals + daily spend + audit/approvals/skills/shared/bugs + agentic_wallets + agent-skills + hybrid-memory + transcripts + mailbox + ton-pay + mcp migrations applied');
   } catch (e) {
     await client.query('ROLLBACK');
     console.error('❌ AI proposals migration failed:', e);

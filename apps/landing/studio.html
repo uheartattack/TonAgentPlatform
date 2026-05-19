@@ -7,7 +7,7 @@
   <link rel="icon" type="image/svg+xml" href="logo.svg">
   <link rel="shortcut icon" href="logo.svg">
   <title>TON Agent Studio</title>
-  <link rel="preload" href="/studio.js?v=20260519e" as="script">
+  <link rel="preload" href="/studio.js?v=20260519m" as="script">
   <link rel="preload" href="/studio.css?v=20260420" as="style">
   <link rel="preload" href="/design-system.css?v=20260420" as="style">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -134,6 +134,11 @@
               <a href="#" class="nav-item" data-page="skills" onclick="navigateTo('skills')" title="Agent Skills (agentskills.io)">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18 9l-4.1 1.4L12 15l-1.9-4.6L6 9l4.1-1.4z"/><path d="M19 14l.95 2.3L22 17l-2.05.7L19 20l-.95-2.3L16 17l2.05-.7z"/><path d="M5 5l.7 1.7L7.5 7.5l-1.8.8L5 10l-.7-1.7L2.5 7.5l1.8-.8z"/></svg>
                 <span data-en="Skills" data-ru="Скиллы">Skills</span>
+                <span class="nav-badge accent">NEW</span>
+              </a>
+              <a href="#" class="nav-item" data-page="mcp-servers" onclick="navigateTo('mcp-servers')" title="External MCP servers (Model Context Protocol)">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/><circle cx="7" cy="10" r="1.2"/><circle cx="12" cy="10" r="1.2"/><circle cx="17" cy="10" r="1.2"/></svg>
+                <span data-en="MCP Servers" data-ru="MCP-серверы">MCP Servers</span>
                 <span class="nav-badge accent">NEW</span>
               </a>
               <a href="#" class="nav-item" data-page="assistant" onclick="navigateTo('assistant')">
@@ -2185,6 +2190,27 @@
         </div>
       </div>
 
+      <!-- MCP Servers Page (Model Context Protocol — external tool endpoints) -->
+      <div id="mcp-servers-page" class="page">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title" data-en="MCP Servers" data-ru="MCP-серверы">MCP Servers</h1>
+            <p class="page-subtitle" data-en="External tool endpoints (Model Context Protocol). Connect Notion, Linear, GitHub, your own MCP servers — and enable them per-agent." data-ru="Внешние инструменты по протоколу MCP. Подключи Notion, Linear, GitHub или свой MCP-сервер — и включи их у нужных агентов.">External tool endpoints</p>
+          </div>
+          <div class="header-actions">
+            <button class="btn btn-primary" onclick="openMCPAddModal()">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              <span data-en="Add Server" data-ru="Добавить сервер">Add Server</span>
+            </button>
+          </div>
+        </div>
+        <div class="page-content">
+          <div id="mcp-servers-grid" class="marketplace-grid">
+            <div class="loading-placeholder" data-en="Loading MCP servers..." data-ru="Загрузка MCP-серверов...">Loading MCP servers...</div>
+          </div>
+        </div>
+      </div>
+
       <!-- Guide Page -->
       <div id="notifications-page" class="page">
         <div class="page-content" id="page-notifications"></div>
@@ -2515,6 +2541,7 @@
           <div class="st-nav-group"><div class="st-nav-label" data-en="Data" data-ru="Данные">Data</div>
             <button class="st-nav-item" onclick="switchSettingsTab('memory')" data-tab="memory"><div class="st-nav-icon" style="background:rgba(139,92,246,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div><span data-en="Memory" data-ru="Память">Memory</span></button>
             <button class="st-nav-item" onclick="switchSettingsTab('skills')" data-tab="skills"><div class="st-nav-icon" style="background:rgba(0,168,255,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00a8ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18 9l-4.1 1.4L12 15l-1.9-4.6L6 9l4.1-1.4z"/><path d="M19 14l.95 2.3L22 17l-2.05.7L19 20l-.95-2.3L16 17l2.05-.7z"/></svg></div><span data-en="Skills" data-ru="Скиллы">Skills</span></button>
+            <button class="st-nav-item" onclick="switchSettingsTab('mcp')" data-tab="mcp"><div class="st-nav-icon" style="background:rgba(139,92,246,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/><circle cx="7" cy="10" r="1.2"/><circle cx="12" cy="10" r="1.2"/><circle cx="17" cy="10" r="1.2"/></svg></div><span data-en="MCP" data-ru="MCP">MCP</span></button>
             <button class="st-nav-item" onclick="switchSettingsTab('tasks')" data-tab="tasks"><div class="st-nav-icon" style="background:rgba(34,197,94,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div><span data-en="Tasks" data-ru="Задачи">Tasks</span></button>
           </div>
           <div class="st-nav-group"><div class="st-nav-label" data-en="Other" data-ru="Прочее">Other</div>
@@ -2606,6 +2633,6 @@
   </div>
 
   <script src="https://unpkg.com/@tonconnect/ui@2/dist/tonconnect-ui.min.js"></script>
-  <script src="studio.js?v=20260518"></script>
+  <script src="studio.js?v=20260519m"></script>
 </body>
 </html>

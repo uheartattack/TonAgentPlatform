@@ -1575,8 +1575,14 @@ function switchSettingsTab(tab) {
       '</div>' +
       '<div class="rt-actions">' +
         '<button class="rt-save-btn" onclick="saveSettingsPrompt()">' + IC.check + ' ' + (isRu ? 'Сохранить' : 'Save Soul') + '</button>' +
+        '<button class="rt-save-btn" style="background:linear-gradient(135deg,#8b5cf6,#00a8ff)" onclick="openEditWithAIModal(\'code\')" title="' + (isRu ? 'Опиши изменение — AI перепишет' : 'Describe the change — AI rewrites') + '">' +
+          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M12 3l1.9 4.6L18 9l-4.1 1.4L12 15l-1.9-4.6L6 9l4.1-1.4z"/><path d="M19 14l.95 2.3L22 17l-2.05.7L19 20l-.95-2.3L16 17l2.05-.7z"/></svg>' +
+          (isRu ? 'Edit with AI' : 'Edit with AI') +
+        '</button>' +
       '</div>' +
       '</div>';
+  } else if (tab === 'mcp') {
+    renderAgentMCPTab(body, a);
   } else if (tab === 'security') {
     var isRu = currentLang === 'ru';
     body.innerHTML =
@@ -5038,6 +5044,7 @@ const pageLoadFns = {
   builder:     () => initFlowBuilder(),
   marketplace: () => loadMarketplace(),
   skills:      () => loadSkillsPage(),
+  'mcp-servers': () => loadMCPServersPage(),
   assistant:   () => loadAssistantPage(),
   guide:         () => loadGuidePage(),
   notifications: () => loadNotificationsPage(),
@@ -15404,6 +15411,351 @@ async function importSkillFromUrl() {
       toast(currentLang === 'ru' ? 'Импортировано' : 'Imported', 'success');
       closeModal();
       loadSkillsPage();
+    } else {
+      toast((data && data.error) || 'Error', 'error');
+    }
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MCP Servers — Studio UI (page + per-agent tab)
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function loadMCPServersPage() {
+  const grid = document.getElementById('mcp-servers-grid');
+  if (!grid) return;
+  const isRu = currentLang === 'ru';
+  grid.innerHTML = '<div class="loading-placeholder">' + (isRu ? 'Загрузка...' : 'Loading...') + '</div>';
+  try {
+    const data = await apiRequest('/api/mcp-servers');
+    if (!data || !data.ok) {
+      grid.innerHTML = '<div class="empty-state">' + (isRu ? 'Не удалось загрузить' : 'Failed to load') + '</div>';
+      return;
+    }
+    if (!data.items.length) {
+      grid.innerHTML = '<div class="empty-state" style="padding:48px 24px;text-align:center">' +
+        '<div style="font-size:48px;margin-bottom:12px">🔌</div>' +
+        '<h3 style="margin:0 0 8px;color:var(--text-primary)">' + (isRu ? 'Нет MCP-серверов' : 'No MCP servers yet') + '</h3>' +
+        '<p style="color:var(--text-muted);max-width:480px;margin:0 auto 16px">' +
+          (isRu
+            ? 'MCP (Model Context Protocol) — стандарт от Anthropic для подключения внешних инструментов. Notion, Linear, GitHub, твой свой сервер — всё подключается через URL.'
+            : 'MCP (Model Context Protocol) is Anthropic\'s standard for plugging external tools into an AI agent. Notion, Linear, GitHub, your own server — all via URL.') +
+        '</p>' +
+        '<button class="btn btn-primary" onclick="openMCPAddModal()">+ ' + (isRu ? 'Добавить сервер' : 'Add Server') + '</button>' +
+      '</div>';
+      return;
+    }
+    grid.innerHTML = data.items.map(renderMCPServerCard).join('');
+  } catch (e) {
+    grid.innerHTML = '<div class="empty-state">' + (e.message || 'Error') + '</div>';
+  }
+}
+
+function renderMCPServerCard(s) {
+  const isRu = currentLang === 'ru';
+  const status = s.status || 'pending';
+  const statusColor = {
+    'connected': '#10b981',
+    'pending':   '#f59e0b',
+    'error':     '#ef4444',
+    'disabled':  '#64748b',
+  }[status] || '#64748b';
+  const statusLabel = {
+    'connected': isRu ? 'Подключен' : 'Connected',
+    'pending':   isRu ? 'Ожидание' : 'Pending',
+    'error':     isRu ? 'Ошибка' : 'Error',
+    'disabled':  isRu ? 'Отключен' : 'Disabled',
+  }[status] || status;
+  const lastErr = s.last_error
+    ? '<div style="margin-top:8px;padding:8px 10px;background:rgba(239,68,68,0.08);border-radius:6px;font-size:.75rem;color:#ef4444;word-break:break-word">' + escHtml(String(s.last_error).slice(0, 200)) + '</div>'
+    : '';
+  return '<div class="card" style="padding:16px;border:1px solid var(--border);border-radius:10px">' +
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">' +
+      '<div style="flex:1;min-width:0">' +
+        '<div style="font-weight:600;font-size:1rem;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(s.name) + '</div>' +
+        '<div style="font-size:.75rem;color:var(--text-muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:\'JetBrains Mono\',monospace">' + escHtml(s.url) + '</div>' +
+      '</div>' +
+      '<div style="display:flex;align-items:center;gap:6px;font-size:.7rem;font-weight:600;color:' + statusColor + ';white-space:nowrap">' +
+        '<span style="width:8px;height:8px;border-radius:50%;background:' + statusColor + '"></span>' +
+        statusLabel +
+      '</div>' +
+    '</div>' +
+    '<div style="display:flex;gap:14px;margin-top:10px;font-size:.78rem;color:var(--text-secondary)">' +
+      '<span>🔧 ' + (s.tools_count || 0) + ' ' + (isRu ? 'тулов' : 'tools') + '</span>' +
+      '<span>📡 ' + (s.transport || 'sse').toUpperCase() + '</span>' +
+    '</div>' +
+    lastErr +
+    '<div style="display:flex;gap:8px;margin-top:12px">' +
+      '<button class="btn btn-ghost" style="flex:1" onclick="testMCPServer(' + s.id + ')">' + (isRu ? 'Тест' : 'Test') + '</button>' +
+      '<button class="btn btn-ghost" style="flex:1" onclick="viewMCPTools(' + s.id + ', \'' + escHtml(s.name).replace(/'/g, "\\'") + '\')">' + (isRu ? 'Тулы' : 'Tools') + '</button>' +
+      '<button class="btn btn-ghost" style="color:#ef4444" onclick="deleteMCPServer(' + s.id + ', \'' + escHtml(s.name).replace(/'/g, "\\'") + '\')">' + (isRu ? 'Удалить' : 'Delete') + '</button>' +
+    '</div>' +
+  '</div>';
+}
+
+function openMCPAddModal() {
+  const isRu = currentLang === 'ru';
+  const body =
+    '<div style="display:flex;flex-direction:column;gap:14px">' +
+      '<div>' +
+        '<label class="form-label">' + (isRu ? 'Название' : 'Name') + '</label>' +
+        '<input id="mcp-add-name" class="form-input" maxlength="120" placeholder="' + (isRu ? 'Мой Notion' : 'My Notion') + '">' +
+      '</div>' +
+      '<div>' +
+        '<label class="form-label">URL</label>' +
+        '<input id="mcp-add-url" class="form-input" maxlength="1024" placeholder="https://mcp.example.com">' +
+        '<div style="font-size:.7rem;color:var(--text-muted);margin-top:4px">' +
+          (isRu ? 'Endpoint MCP-сервера. Локальные IP / приватные сети заблокированы.' : 'MCP server endpoint. Localhost / private IPs blocked.') +
+        '</div>' +
+      '</div>' +
+      '<div>' +
+        '<label class="form-label">' + (isRu ? 'API-ключ (опционально)' : 'API key (optional)') + '</label>' +
+        '<input id="mcp-add-key" class="form-input" type="password" placeholder="Bearer token">' +
+      '</div>' +
+    '</div>';
+  const footer =
+    '<button class="btn btn-ghost" onclick="closeModal()">' + (isRu ? 'Отмена' : 'Cancel') + '</button>' +
+    '<button class="btn btn-primary" onclick="submitMCPAdd()">' + (isRu ? 'Подключить' : 'Connect') + '</button>';
+  openModal(isRu ? 'Добавить MCP-сервер' : 'Add MCP Server', body, footer);
+}
+
+async function submitMCPAdd() {
+  const name = (document.getElementById('mcp-add-name').value || '').trim();
+  const url  = (document.getElementById('mcp-add-url').value  || '').trim();
+  const key  = (document.getElementById('mcp-add-key').value  || '').trim();
+  if (!name || !url) { toast(currentLang === 'ru' ? 'Имя и URL обязательны' : 'Name and URL required', 'error'); return; }
+  try {
+    const data = await apiRequest('/api/mcp-servers', { method: 'POST', body: JSON.stringify({ name, url, apiKey: key || undefined }) });
+    if (data && data.ok) {
+      toast(currentLang === 'ru' ? 'Подключено' : 'Connected', 'success');
+      closeModal();
+      loadMCPServersPage();
+    } else {
+      toast((data && data.error) || 'Error', 'error');
+    }
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function testMCPServer(id) {
+  try {
+    const data = await apiRequest('/api/mcp-servers/' + id + '/test', { method: 'POST' });
+    if (data && data.ok) {
+      toast((currentLang === 'ru' ? 'Статус: ' : 'Status: ') + data.status + ' · ' + data.tools + ' tools', data.status === 'connected' ? 'success' : 'error');
+      loadMCPServersPage();
+    } else {
+      toast((data && data.error) || 'Error', 'error');
+    }
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function viewMCPTools(id, name) {
+  const isRu = currentLang === 'ru';
+  openModal(name + ' — ' + (isRu ? 'инструменты' : 'tools'), '<div style="text-align:center;padding:20px">' + (isRu ? 'Загрузка...' : 'Loading...') + '</div>', '<button class="btn btn-ghost" onclick="closeModal()">' + (isRu ? 'Закрыть' : 'Close') + '</button>');
+  try {
+    const data = await apiRequest('/api/mcp-servers/' + id + '/tools');
+    const modal = document.getElementById('generic-modal');
+    if (!modal) return;
+    const body = modal.querySelector('.modal-body, .studio-dialog-body, [class*="body"]');
+    if (!body) return;
+    if (!data || !data.ok || !data.tools.length) {
+      body.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted)">' + (isRu ? 'Нет инструментов' : 'No tools') + '</div>';
+      return;
+    }
+    body.innerHTML = '<div style="max-height:60vh;overflow:auto;display:flex;flex-direction:column;gap:8px">' +
+      data.tools.map(t =>
+        '<div style="padding:10px 12px;border:1px solid var(--border);border-radius:8px">' +
+          '<div style="font-weight:600;font-family:\'JetBrains Mono\',monospace;font-size:.85rem;color:var(--text-primary)">' + escHtml(t.name) + '</div>' +
+          (t.description ? '<div style="font-size:.75rem;color:var(--text-muted);margin-top:4px">' + escHtml(t.description) + '</div>' : '') +
+        '</div>'
+      ).join('') +
+    '</div>';
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function deleteMCPServer(id, name) {
+  const isRu = currentLang === 'ru';
+  if (!confirm((isRu ? 'Удалить MCP-сервер "' : 'Delete MCP server "') + name + '"?')) return;
+  try {
+    const data = await apiRequest('/api/mcp-servers/' + id, { method: 'DELETE' });
+    if (data && data.ok) {
+      toast(isRu ? 'Удалено' : 'Deleted', 'success');
+      loadMCPServersPage();
+    } else {
+      toast((data && data.error) || 'Error', 'error');
+    }
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ── Per-agent MCP tab inside agent settings ───────────────────────────────
+
+async function renderAgentMCPTab(body, agent) {
+  const isRu = currentLang === 'ru';
+  body.innerHTML =
+    '<div class="rt-page">' +
+      '<div class="rt-header">' +
+        '<div class="rt-header-icon" style="background:rgba(139,92,246,0.12);color:#8b5cf6">' +
+          '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>' +
+        '</div>' +
+        '<div class="rt-header-text">' +
+          '<h3>MCP ' + (isRu ? 'серверы' : 'servers') + '</h3>' +
+          '<p>' + (isRu ? 'Включи MCP-серверы, доступные этому агенту. Управление списком — на странице MCP Servers слева.' : 'Enable MCP servers for this agent. Manage the global list on the MCP Servers page.') + '</p>' +
+        '</div>' +
+      '</div>' +
+      '<div id="agent-mcp-list" class="rt-section"><div style="color:var(--text-muted);text-align:center;padding:20px">' + (isRu ? 'Загрузка...' : 'Loading...') + '</div></div>' +
+    '</div>';
+
+  try {
+    const [allRes, agentRes] = await Promise.all([
+      apiRequest('/api/mcp-servers'),
+      apiRequest('/api/agents/' + agent.id + '/mcp-servers'),
+    ]);
+    const all = (allRes && allRes.items) || [];
+    const enabled = new Set(((agentRes && agentRes.items) || []).map(x => x.id));
+    const list = document.getElementById('agent-mcp-list');
+    if (!list) return;
+    if (!all.length) {
+      list.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-muted)">' +
+        (isRu ? 'У тебя нет MCP-серверов. ' : 'You have no MCP servers yet. ') +
+        '<a href="#" onclick="event.preventDefault();navigateTo(\'mcp-servers\')">' + (isRu ? 'Добавить' : 'Add one') + '</a>' +
+      '</div>';
+      return;
+    }
+    list.innerHTML = all.map(s => {
+      const on = enabled.has(s.id);
+      const statusColor = s.status === 'connected' ? '#10b981' : '#ef4444';
+      return '<label style="display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;cursor:pointer">' +
+        '<input type="checkbox" ' + (on ? 'checked' : '') + ' onchange="toggleAgentMCP(' + agent.id + ',' + s.id + ',this.checked)" style="width:18px;height:18px;cursor:pointer">' +
+        '<div style="flex:1;min-width:0">' +
+          '<div style="font-weight:600">' + escHtml(s.name) + ' <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:' + statusColor + ';margin-left:4px"></span></div>' +
+          '<div style="font-size:.72rem;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(s.url) + ' · ' + (s.tools_count || 0) + ' tools</div>' +
+        '</div>' +
+      '</label>';
+    }).join('');
+  } catch (e) {
+    const list = document.getElementById('agent-mcp-list');
+    if (list) list.innerHTML = '<div style="color:#ef4444;padding:12px">' + escHtml(e.message) + '</div>';
+  }
+}
+
+async function toggleAgentMCP(agentId, serverId, enabled) {
+  try {
+    const data = await apiRequest('/api/agents/' + agentId + '/mcp-servers/' + serverId, {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    });
+    if (!data || !data.ok) toast((data && data.error) || 'Error', 'error');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EDIT WITH AI — AI rewrites the agent's Soul (system prompt) per instruction
+// ═══════════════════════════════════════════════════════════════════════════
+
+function openEditWithAIModal(field) {
+  const isRu = currentLang === 'ru';
+  const f = field || 'code';
+  const titleText = f === 'description'
+    ? (isRu ? 'Edit Description with AI' : 'Edit Description with AI')
+    : (isRu ? 'Edit Soul with AI' : 'Edit Soul with AI');
+  const body =
+    '<div style="display:flex;flex-direction:column;gap:14px">' +
+      '<div style="font-size:.85rem;color:var(--text-secondary);line-height:1.55">' +
+        (isRu
+          ? 'Опиши, как нужно изменить агента — AI перепишет текст. Сравнишь результат с оригиналом и решишь, применять ли.'
+          : 'Describe how the agent should change — AI rewrites the text. You\'ll diff the result against the original and decide whether to apply.') +
+      '</div>' +
+      '<div>' +
+        '<label class="form-label">' + (isRu ? 'Инструкция' : 'Instruction') + '</label>' +
+        '<textarea id="edit-ai-instruction" class="form-input" rows="4" maxlength="2000" placeholder="' +
+          escHtml(isRu
+            ? 'Сделай его агрессивнее на арбитраже. Добавь правило: не торговать ночью.'
+            : 'Make it more aggressive on arbitrage. Add rule: do not trade at night.') + '"></textarea>' +
+      '</div>' +
+      '<input type="hidden" id="edit-ai-field" value="' + f + '">' +
+    '</div>';
+  const footer =
+    '<button class="btn btn-ghost" onclick="closeModal()">' + (isRu ? 'Отмена' : 'Cancel') + '</button>' +
+    '<button class="btn btn-primary" onclick="submitEditWithAI()" id="edit-ai-go-btn">' +
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M12 3l1.9 4.6L18 9l-4.1 1.4L12 15l-1.9-4.6L6 9l4.1-1.4z"/></svg>' +
+      (isRu ? 'Сгенерировать' : 'Generate') +
+    '</button>';
+  openModal(titleText, body, footer);
+}
+
+async function submitEditWithAI() {
+  const isRu = currentLang === 'ru';
+  const instruction = (document.getElementById('edit-ai-instruction') || {}).value || '';
+  const field = (document.getElementById('edit-ai-field') || {}).value || 'code';
+  if (!instruction.trim()) { toast(isRu ? 'Введи инструкцию' : 'Enter an instruction', 'error'); return; }
+  if (!_detailAgentData || !_detailAgentData.id) { toast(isRu ? 'Агент не выбран' : 'No agent', 'error'); return; }
+  const btn = document.getElementById('edit-ai-go-btn');
+  if (btn) { btn.disabled = true; btn.innerHTML = (isRu ? 'Думаю…' : 'Thinking…'); }
+  try {
+    const data = await apiRequest('/api/agents/' + _detailAgentData.id + '/edit-with-ai', {
+      method: 'POST',
+      body: JSON.stringify({ instruction: instruction.trim(), field }),
+    });
+    if (!data || !data.ok) {
+      toast((data && data.error) || 'Error', 'error');
+      if (btn) { btn.disabled = false; btn.innerHTML = (isRu ? 'Сгенерировать' : 'Generate'); }
+      return;
+    }
+    showEditWithAIDiff(data.original || '', data.proposed || '', data.field, data.model || '');
+  } catch (e) {
+    toast(e.message, 'error');
+    if (btn) { btn.disabled = false; btn.innerHTML = (isRu ? 'Сгенерировать' : 'Generate'); }
+  }
+}
+
+function showEditWithAIDiff(original, proposed, field, model) {
+  const isRu = currentLang === 'ru';
+  const body =
+    '<div style="display:flex;flex-direction:column;gap:10px">' +
+      '<div style="font-size:.78rem;color:var(--text-muted)">' +
+        (isRu ? 'Сравнение (модель: ' : 'Comparison (model: ') + escHtml(model) + ')' +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;max-height:55vh">' +
+        '<div style="display:flex;flex-direction:column;min-height:0">' +
+          '<div style="font-size:.7rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;margin-bottom:4px">' + (isRu ? 'Было' : 'Original') + '</div>' +
+          '<textarea readonly style="flex:1;min-height:280px;font-family:\'JetBrains Mono\',monospace;font-size:.78rem;padding:10px;border:1px solid var(--border);border-radius:8px;background:rgba(255,255,255,0.02);color:var(--text-secondary);resize:none">' +
+            escHtml(original) +
+          '</textarea>' +
+        '</div>' +
+        '<div style="display:flex;flex-direction:column;min-height:0">' +
+          '<div style="font-size:.7rem;font-weight:600;color:#00a8ff;text-transform:uppercase;margin-bottom:4px">' + (isRu ? 'Станет' : 'Proposed') + '</div>' +
+          '<textarea id="edit-ai-proposed" style="flex:1;min-height:280px;font-family:\'JetBrains Mono\',monospace;font-size:.78rem;padding:10px;border:1px solid rgba(0,168,255,0.4);border-radius:8px;background:rgba(0,168,255,0.04);color:var(--text-primary);resize:none">' +
+            escHtml(proposed) +
+          '</textarea>' +
+        '</div>' +
+      '</div>' +
+      '<div style="font-size:.72rem;color:var(--text-muted)">' +
+        (isRu ? 'Можно отредактировать правую колонку перед применением.' : 'You can edit the right column before applying.') +
+      '</div>' +
+    '</div>';
+  const footer =
+    '<button class="btn btn-ghost" onclick="closeModal()">' + (isRu ? 'Отмена' : 'Cancel') + '</button>' +
+    '<button class="btn btn-primary" onclick="applyEditWithAI(\'' + field + '\')">' +
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg>' +
+      (isRu ? 'Применить' : 'Apply') +
+    '</button>';
+  openModal(isRu ? 'Предпросмотр изменения' : 'Preview Change', body, footer);
+}
+
+async function applyEditWithAI(field) {
+  const isRu = currentLang === 'ru';
+  const proposed = (document.getElementById('edit-ai-proposed') || {}).value || '';
+  if (!proposed.trim()) { toast(isRu ? 'Пусто' : 'Empty', 'error'); return; }
+  if (!_detailAgentData || !_detailAgentData.id) return;
+  try {
+    const path = '/api/agents/' + _detailAgentData.id + '/' + (field === 'description' ? 'description' : 'code');
+    const data = await apiRequest(path, { method: 'PUT', body: JSON.stringify({ [field]: proposed }) });
+    if (data && (data.ok || data.success || data.id)) {
+      toast(isRu ? 'Применено' : 'Applied', 'success');
+      // Update local cache + textarea if visible
+      if (_detailAgentData) _detailAgentData[field] = proposed;
+      const ta = document.getElementById(field === 'code' ? 'edit-prompt-textarea' : 'edit-description-textarea');
+      if (ta) ta.value = proposed;
+      closeModal();
     } else {
       toast((data && data.error) || 'Error', 'error');
     }

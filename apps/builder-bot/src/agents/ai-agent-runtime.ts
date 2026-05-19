@@ -9005,6 +9005,27 @@ If web_search returns nothing useful → say "не смог найти акту�
     }
   }
 
+  // ── Append user-added external MCP servers enabled for this agent ──
+  try {
+    const { pool } = await import('../db');
+    const reg = await import('../services/mcp-registry');
+    const userMcpTools = await reg.getEnabledMCPToolsForAgent(pool, params.agentId);
+    if (userMcpTools.length > 0) {
+      const asOpenAI = userMcpTools.map(t => ({
+        type: 'function' as const,
+        function: {
+          name: t.name,
+          description: t.description || `MCP tool: ${t.name}`,
+          parameters: t.inputSchema || { type: 'object', properties: {} },
+        },
+      }));
+      mcpToolDefs = [...mcpToolDefs, ...(asOpenAI as any)];
+      console.log(`[MCP] Agent #${params.agentId} +${userMcpTools.length} external MCP tools`);
+    }
+  } catch (e: any) {
+    console.warn(`[MCP] external MCP fetch for agent #${params.agentId}: ${e?.message}`);
+  }
+
   let allToolDefs = buildToolDefinitions(agentRole, enabledCaps, mcpToolDefs);
 
   // ── Plugin SDK: load plugins and append their tool definitions ──
