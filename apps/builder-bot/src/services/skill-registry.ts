@@ -24,7 +24,7 @@
  *   - imported  → builder_bot.skills table with source_url  (marketplace) [Phase 4]
  *
  * Spec: https://agentskills.io/specification
- * Pattern adopted by: Claude Code, Cursor, GitHub Copilot, Goose, Letta,
+ * Pattern adopted by: Anthropic CLI, Cursor, GitHub Copilot, Goose, Letta,
  *                     Gemini CLI, OpenHands, OpenAI Codex, VS Code (30+ tools)
  * ═══════════════════════════════════════════════════════════════════════════
  */

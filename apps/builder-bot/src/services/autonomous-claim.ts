@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════
- * AUTONOMOUS CLAIM (learn-claude-code s11 pattern)
+ * AUTONOMOUS CLAIM (session 11 pattern pattern)
  *
  * Periodically scans `builder_bot.agent_task_graph` for actionable tasks
  * (status='pending' AND blocked_by=[] AND owner is null OR matches an

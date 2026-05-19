@@ -10070,7 +10070,7 @@ bot.on('callback_query', async (ctx) => {
         } else if (result === 'already_running') {
           await ctx.reply(`⚠️ Уже запущен, подождите.`).catch(() => {});
         } else if (result === 'claude_unavailable') {
-          await ctx.reply(`${ce('cross','❌')} Claude Code недоступен.`).catch(() => {});
+          await ctx.reply(`${ce('cross','❌')} AI-движок недоступен.`).catch(() => {});
         } else {
           await ctx.reply(`${ce('cross','❌')} ${result}`).catch(() => {});
         }
@@ -10601,9 +10601,9 @@ bot.on(message('text'), async (ctx) => {
         return;
       }
 
-      // Ask Claude Code about the proposal with user's question
-      const { claudeCodeChat } = await import('./ai-code-bridge');
-      const result = await claudeCodeChat([
+      // Ask Anthropic CLI about the proposal with user's question
+      const { anthropicCliChat } = await import('./anthropic-cli-bridge');
+      const result = await anthropicCliChat([
         { role: 'user', content:
           `Ты — AI Product Engineer платформы TON Agent Platform.\n\n` +
           `Владелец обсуждает с тобой фичу:\n` +

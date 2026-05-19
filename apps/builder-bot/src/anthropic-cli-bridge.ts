@@ -1,10 +1,10 @@
 /**
- * Claude Code Bridge — uses the local Claude Code CLI (ccd-cli) for AI completions.
- * This uses the user's Claude Code subscription (Max/Pro) instead of API keys.
+ * Anthropic CLI Bridge — uses the local Anthropic CLI (anthropic CLI) for AI completions.
+ * This uses the user's Anthropic CLI subscription (Max/Pro) instead of API keys.
  * Auto-detects the CLI binary location and handles token refresh transparently.
  *
  * Usage:
- *   const result = await claudeCodeComplete(systemPrompt, userMessage, { maxTokens: 4096 });
+ *   const result = await anthropicCliComplete(systemPrompt, userMessage, { maxTokens: 4096 });
  *   console.log(result.text);
  */
 
@@ -20,7 +20,7 @@ const CLAUDE_CLI_PATHS = [
   '/usr/local/bin/claude',
   '/usr/bin/claude',
   // Remote connection CLI (may not support OAuth token)
-  path.join(process.env.HOME || '/root', '.claude', 'remote', 'ccd-cli'),
+  path.join(process.env.HOME || '/root', '.claude', 'remote', 'anthropic CLI'),
   // npx fallback (slowest)
   'npx',
 ];
@@ -33,29 +33,29 @@ function findClaudeCli(): string | null {
   for (const p of CLAUDE_CLI_PATHS) {
     if (p === 'npx') {
       // npx is always available but slow — use as last resort
-      console.log(`[ClaudeCodeBridge] Falling back to npx (no binary found at explicit paths)`);
+      console.log(`[AnthropicCLI] Falling back to npx (no binary found at explicit paths)`);
       _cachedCliPath = 'npx';
       return _cachedCliPath;
     }
     try {
       if (fs.existsSync(p) && fs.statSync(p).isFile()) {
         _cachedCliPath = p;
-        console.log(`[ClaudeCodeBridge] Found CLI at: ${p}`);
+        console.log(`[AnthropicCLI] Found CLI at: ${p}`);
         return p;
       }
-      console.log(`[ClaudeCodeBridge] Checked path (not found): ${p}`);
+      console.log(`[AnthropicCLI] Checked path (not found): ${p}`);
     } catch (e: any) {
-      console.log(`[ClaudeCodeBridge] Checked path (error): ${p} — ${e.message}`);
+      console.log(`[AnthropicCLI] Checked path (error): ${p} — ${e.message}`);
     }
   }
 
-  console.warn('[ClaudeCodeBridge] No Claude Code CLI found in paths:', CLAUDE_CLI_PATHS.join(', '));
+  console.warn('[AnthropicCLI] No Anthropic CLI found in paths:', CLAUDE_CLI_PATHS.join(', '));
   return null;
 }
 
 // ── Completion interface ─────────────────────────────────────────────────────
 
-export interface ClaudeCodeOptions {
+export interface AnthropicCliOptions {
   maxTokens?: number;
   model?: string;
   fallbackModel?: string;
@@ -66,7 +66,7 @@ export interface ClaudeCodeOptions {
   allowedTools?: string[];
 }
 
-export interface ClaudeCodeResult {
+export interface AnthropicCliResult {
   text: string;
   model: string;
   inputTokens: number;
@@ -77,13 +77,13 @@ export interface ClaudeCodeResult {
 }
 
 /**
- * Execute a Claude Code completion using the local CLI.
+ * Execute a Anthropic CLI completion using the local CLI.
  * Uses the user's Claude subscription — no API key needed.
  */
-export async function claudeCodeComplete(
+export async function anthropicCliComplete(
   prompt: string,
-  options: ClaudeCodeOptions = {},
-): Promise<ClaudeCodeResult> {
+  options: AnthropicCliOptions = {},
+): Promise<AnthropicCliResult> {
   const cliPath = findClaudeCli();
   if (!cliPath) {
     throw new Error('CLAUDE_CLI_NOT_FOUND');
@@ -142,10 +142,10 @@ export async function claudeCodeComplete(
     // Write prompt to temp file — don't add '-' flag, just pipe to stdin
     tempFile = path.join(os.tmpdir(), `claude-prompt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.txt`);
     fs.writeFileSync(tempFile, prompt, 'utf8');
-    console.log(`[ClaudeCodeBridge] Long prompt (${prompt.length} chars) → temp file: ${tempFile}`);
+    console.log(`[AnthropicCLI] Long prompt (${prompt.length} chars) → temp file: ${tempFile}`);
   }
 
-  return new Promise<ClaudeCodeResult>((resolve, reject) => {
+  return new Promise<AnthropicCliResult>((resolve, reject) => {
     const startTime = Date.now();
     let stdout = '';
     let stderr = '';
@@ -189,7 +189,7 @@ export async function claudeCodeComplete(
 
     // Safety timeout — kill process if it runs too long
     const safetyTimer = setTimeout(() => {
-      console.warn(`[ClaudeCodeBridge] Safety timeout (${timeout}ms) — killing CLI process`);
+      console.warn(`[AnthropicCLI] Safety timeout (${timeout}ms) — killing CLI process`);
       proc.kill('SIGKILL');
     }, timeout);
 
@@ -216,14 +216,14 @@ export async function claudeCodeComplete(
 
       // Debug: log raw output for troubleshooting
       if (stdout.length < 100 || !stdout.trim()) {
-        console.warn(`[ClaudeCodeBridge] Raw stdout (${stdout.length} chars): ${stdout.slice(0, 500)}`);
-        console.warn(`[ClaudeCodeBridge] Raw stderr (${stderr.length} chars): ${stderr.slice(0, 500)}`);
+        console.warn(`[AnthropicCLI] Raw stdout (${stdout.length} chars): ${stdout.slice(0, 500)}`);
+        console.warn(`[AnthropicCLI] Raw stderr (${stderr.length} chars): ${stderr.slice(0, 500)}`);
       }
 
       // Even on non-zero exit, stdout may contain valid JSON with result
       if (code !== 0) {
-        console.warn(`[ClaudeCodeBridge] Non-zero exit=${code}, stdout=${stdout.slice(0, 400)}, stderr=${stderr.slice(0, 200)}`);
-        // Try parsing stdout as JSON first — Claude Code sometimes exits non-zero but has a valid response
+        console.warn(`[AnthropicCLI] Non-zero exit=${code}, stdout=${stdout.slice(0, 400)}, stderr=${stderr.slice(0, 200)}`);
+        // Try parsing stdout as JSON first — Anthropic CLI sometimes exits non-zero but has a valid response
         try {
           const parsed = JSON.parse(stdout);
           // If result has real content and isn't an auth/config error, treat as valid
@@ -261,26 +261,26 @@ export async function claudeCodeComplete(
       try {
         // Parse JSON output
         const result = JSON.parse(stdout);
-        console.log(`[ClaudeCodeBridge] Parsed JSON: is_error=${result.is_error}, result_type=${typeof result.result}, result_len=${(result.result || '').length}, cost=$${result.total_cost_usd || 0}, model_keys=${Object.keys(result.modelUsage || {}).join(',')}, stop=${result.stop_reason}, subtype=${result.subtype}`);
+        console.log(`[AnthropicCLI] Parsed JSON: is_error=${result.is_error}, result_type=${typeof result.result}, result_len=${(result.result || '').length}, cost=$${result.total_cost_usd || 0}, model_keys=${Object.keys(result.modelUsage || {}).join(',')}, stop=${result.stop_reason}, subtype=${result.subtype}`);
         if ((result.result || '').length === 0) {
-          console.log(`[ClaudeCodeBridge] Empty result! Full JSON keys: ${Object.keys(result).join(',')}`);
-          console.log(`[ClaudeCodeBridge] result field raw: ${JSON.stringify(result.result)}`);
+          console.log(`[AnthropicCLI] Empty result! Full JSON keys: ${Object.keys(result).join(',')}`);
+          console.log(`[AnthropicCLI] result field raw: ${JSON.stringify(result.result)}`);
           // Check if there's text content elsewhere
-          if (result.text) console.log(`[ClaudeCodeBridge] Found text field: ${String(result.text).slice(0, 200)}`);
-          if (result.content) console.log(`[ClaudeCodeBridge] Found content field: ${JSON.stringify(result.content).slice(0, 200)}`);
-          if (result.output) console.log(`[ClaudeCodeBridge] Found output field: ${String(result.output).slice(0, 200)}`);
+          if (result.text) console.log(`[AnthropicCLI] Found text field: ${String(result.text).slice(0, 200)}`);
+          if (result.content) console.log(`[AnthropicCLI] Found content field: ${JSON.stringify(result.content).slice(0, 200)}`);
+          if (result.output) console.log(`[AnthropicCLI] Found output field: ${String(result.output).slice(0, 200)}`);
         }
 
-        // Claude Code CLI v2 JSON format:
+        // Anthropic CLI v2 JSON format:
         // { type: "result", subtype: "success", is_error: bool, result: string,
         //   total_cost_usd: number, usage: { input_tokens, output_tokens },
         //   modelUsage: { "model-name": { inputTokens, outputTokens, costUSD } },
         //   session_id: string, duration_ms: number }
         if (result.is_error) {
-          console.warn(`[ClaudeCodeBridge] is_error=true, result: ${(result.result || '').slice(0, 300)}`);
+          console.warn(`[AnthropicCLI] is_error=true, result: ${(result.result || '').slice(0, 300)}`);
           // If result contains actual text content (not just an error), treat as success
           if (result.result && result.result.length > 50 && result.subtype === 'success') {
-            console.log(`[ClaudeCodeBridge] Treating is_error+success as valid response`);
+            console.log(`[AnthropicCLI] Treating is_error+success as valid response`);
             // Fall through to success handler
           } else {
             reject(new Error(result.result || 'Unknown Claude error'));
@@ -331,9 +331,9 @@ export async function claudeCodeComplete(
 }
 
 /**
- * Check if Claude Code CLI is available and authenticated.
+ * Check if Anthropic CLI is available and authenticated.
  */
-export async function isClaudeCodeAvailable(): Promise<boolean> {
+export async function isAnthropicCliAvailable(): Promise<boolean> {
   const cli = findClaudeCli();
   if (!cli || cli === 'npx') return false;
 
@@ -343,7 +343,7 @@ export async function isClaudeCodeAvailable(): Promise<boolean> {
       let out = '';
       proc.stdout.on('data', (d: Buffer) => { out += d.toString(); });
       proc.on('close', (code) => {
-        resolve(code === 0 && out.includes('Claude Code'));
+        resolve(code === 0 && out.includes('Anthropic CLI'));
       });
       proc.on('error', () => resolve(false));
     });
@@ -354,11 +354,11 @@ export async function isClaudeCodeAvailable(): Promise<boolean> {
 
 /**
  * Convenience wrapper for chat-completion style usage.
- * Maps the familiar messages format to Claude Code CLI.
+ * Maps the familiar messages format to Anthropic CLI.
  */
-export async function claudeCodeChat(
+export async function anthropicCliChat(
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
-  options: ClaudeCodeOptions = {},
+  options: AnthropicCliOptions = {},
 ): Promise<{ text: string; model: string }> {
   // Extract system prompt
   const systemMessages = messages.filter(m => m.role === 'system');
@@ -370,7 +370,7 @@ export async function claudeCodeChat(
     return m.content;
   }).join('\n\n');
 
-  const result = await claudeCodeComplete(userPrompt, {
+  const result = await anthropicCliComplete(userPrompt, {
     ...options,
     systemPrompt: systemPrompt || options.systemPrompt,
   });

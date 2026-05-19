@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════
- * SUBAGENT — fresh-context child loop (learn-claude-code s04 pattern)
+ * SUBAGENT — fresh-context child loop (session 04 pattern pattern)
  *
  * When the parent agent calls task(description), we spawn a SUBAGENT:
  *   • Fresh `messages: []` — no inherited context bloat
@@ -13,7 +13,7 @@
  * Used to keep parent's context clean when delegating a focused subtask
  * (e.g. "research X", "validate Y", "summarize Z").
  *
- * Spec inspiration: learn-claude-code session 4.
+ * Spec inspiration: session 4 pattern.
  * ═══════════════════════════════════════════════════════════════════════════
  */
 

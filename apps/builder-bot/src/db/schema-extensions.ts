@@ -1537,7 +1537,7 @@ export async function runAIProposalsMigrations(pool: Pool): Promise<void> {
         ON builder_bot.agent_skills (agent_id) WHERE enabled = TRUE
     `);
 
-    // ─── Task Graph (learn-claude-code s07 pattern) ──────────────────────────
+    // ─── Task Graph (session 07 pattern pattern) ──────────────────────────
     // Durable DAG of work items per agent. Each task can declare `blocked_by`
     // = array of task IDs that must complete first. When a task hits status
     // 'completed', its ID is removed from every dependent's blocked_by.

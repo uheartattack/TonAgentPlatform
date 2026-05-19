@@ -479,7 +479,7 @@ function resolveProvider(provider: string, overrideMaxTools?: number, providerTi
     };
   };
   if (p.includes('gemini') || p.includes('google'))   return resolve('gemini');
-  if (p.includes('claude-code') || p === 'platform')  return resolve('anthropic');
+  if (p.includes('anthropic-cli') || p === 'platform')  return resolve('anthropic');
   if (p.includes('anthropic') || p.includes('claude')) return resolve('anthropic');
   if (p.includes('groq'))        return resolve('groq');
   if (p.includes('deepseek'))    return resolve('deepseek');
@@ -941,7 +941,7 @@ async function getAgentMeta(agentId: number): Promise<CachedAgentMeta | null> {
 // Context override for bot-chat messages (owner writes via bot, not userbot)
 const _pendingContext = new Map<number, Record<string, any>>();
 
-// ── TodoManager (learn-claude-code s03 pattern) ─────────────────────────────
+// ── TodoManager (session 03 pattern pattern) ─────────────────────────────
 // Per-agent in-memory checklist. Lifecycle = single run. Cleared on tick completion.
 // FSM constraint: at most ONE in_progress at a time. Nag reminder after 3 rounds
 // without a todo_write call.
@@ -1438,19 +1438,19 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
      'read_skill', 'list_skill_references', 'read_skill_reference',
      // Deep self-introspection (intrinsic agent self-knowledge)
      'get_my_full_state',
-     // In-memory checklist for multi-step tasks (learn-claude-code s03)
+     // In-memory checklist for multi-step tasks (session 03 pattern)
      'todo_write', 'todo_read',
-     // Subagent delegation with fresh context (learn-claude-code s04)
+     // Subagent delegation with fresh context (session 04 pattern)
      'task',
-     // Durable task graph with DAG dependencies (learn-claude-code s07)
+     // Durable task graph with DAG dependencies (session 07 pattern)
      'task_create', 'task_update', 'task_list', 'task_get',
-     // Manual context compression (learn-claude-code s06)
+     // Manual context compression (session 06 pattern)
      'compact',
      // Hybrid RAG memory (teleton-agent / deer-flow pattern)
      'remember_hybrid', 'recall_hybrid', 'memory_count_hybrid',
-     // Mailboxes (learn-claude-code s09)
+     // Mailboxes (session 09 pattern)
      'mailbox_send', 'mailbox_read',
-     // Background tasks (learn-claude-code s08)
+     // Background tasks (session 08 pattern)
      'bg_schedule', 'bg_list',
     ].forEach(t => allowed.add(t));
     // Always allow MCP tools if ton_mcp capability is enabled
@@ -3283,7 +3283,7 @@ async function _executeToolInner(
       } catch (e: any) { return { ok: false, error: e?.message }; }
     }
 
-    // ── Mailboxes (learn-claude-code s09) — durable inter-agent messages ──
+    // ── Mailboxes (session 09 pattern) — durable inter-agent messages ──
     case 'mailbox_send': {
       try {
         const toId = Number(args.to_agent_id);
@@ -3332,7 +3332,7 @@ async function _executeToolInner(
       } catch (e: any) { return { ok: false, error: e?.message }; }
     }
 
-    // ── Background tasks (learn-claude-code s08) ──
+    // ── Background tasks (session 08 pattern) ──
     case 'bg_schedule': {
       try {
         const description = String(args.description || '').trim();
@@ -3356,7 +3356,7 @@ async function _executeToolInner(
       } catch (e: any) { return { ok: false, error: e?.message }; }
     }
 
-    // ── Task Graph (learn-claude-code s07) — durable DAG of subtasks ──
+    // ── Task Graph (session 07 pattern) — durable DAG of subtasks ──
     case 'task_create': {
       try {
         const subject = String(args.subject || '').trim();
@@ -3464,7 +3464,7 @@ async function _executeToolInner(
       } catch (e: any) { return { ok: false, error: e?.message?.slice(0, 200) }; }
     }
 
-    // ── Manual context compression (learn-claude-code s06) ──
+    // ── Manual context compression (session 06 pattern) ──
     case 'compact': {
       try {
         // Caller-initiated trim: drop old tool_results, keep system + last 5 messages.
@@ -3476,7 +3476,7 @@ async function _executeToolInner(
       } catch (e: any) { return { ok: false, error: e?.message?.slice(0, 200) }; }
     }
 
-    // ── Subagent task delegation (learn-claude-code s04) ──
+    // ── Subagent task delegation (session 04 pattern) ──
     // Spawn a fresh-context child loop. Child has no recursion (no `task` tool),
     // no on-chain ops, no cross-agent calls. Parent gets only the final summary.
     case 'task': {
@@ -3518,7 +3518,7 @@ async function _executeToolInner(
       }
     }
 
-    // ── TodoWrite (learn-claude-code s03 pattern) — agent's own checklist ──
+    // ── TodoWrite (session 03 pattern pattern) — agent's own checklist ──
     case 'todo_write': {
       try {
         const inputTodos = Array.isArray(args.todos) ? args.todos : [];
@@ -9169,7 +9169,7 @@ If web_search returns nothing useful → say "не смог найти акту�
     }
   } catch {}
 
-  // ── AUTO-COMPRESSION (learn-claude-code s06 full layer) ─────────────────
+  // ── AUTO-COMPRESSION (session 06 pattern full layer) ─────────────────
   // Trigger BEFORE the loop starts if the existing message history is large:
   //   • messages.length > 30, OR
   //   • estTokens > 60_000
@@ -9270,7 +9270,7 @@ If web_search returns nothing useful → say "не смог найти акту�
     } else if (iter === MAX_ITERS - 3 && MAX_ITERS >= 4) {
       messages.push({ role: 'user', content: '[SYSTEM: Budget warning — 2 iterations remaining. Be efficient.]' } as any);
     }
-    // ── Context compression — micro layer (learn-claude-code s06) ──
+    // ── Context compression — micro layer (session 06 pattern) ──
     // After iteration 2, replace tool_results from iterations [0..iter-2] with
     // short placeholders. Saves token budget on long multi-tool turns where
     // raw tool outputs aren't needed downstream. The AI's reasoning chain is
@@ -9293,7 +9293,7 @@ If web_search returns nothing useful → say "не смог найти акту�
         if (compactRequested) compactRequested = false; // single-shot
       }
     }
-    // ── TodoWrite nag reminder (learn-claude-code s03 pattern) ──
+    // ── TodoWrite nag reminder (session 03 pattern pattern) ──
     // If the agent hasn't called todo_write in N rounds and has IN-PROGRESS
     // work outstanding, inject a reminder. Helps prevent agent drift mid-task.
     const todoState = _agentTodos.get(params.agentId);

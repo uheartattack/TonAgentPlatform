@@ -5173,7 +5173,7 @@ export function startApiServer() {
         : hist.slice(-8);
 
       // Atlas streaming: use Anthropic native SDK only if we have a REAL API key
-      // (sk-ant-api...). OAuth tokens (sk-ant-oat...) work only with Claude Code
+      // (sk-ant-api...). OAuth tokens (sk-ant-oat...) work only with Anthropic CLI
       // CLI, not the public messages endpoint — they return 401 invalid_x_api_key.
       // Fall through to Gemini (free 250K TPM) in that case.
       const _anthropicKey = process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_CODE_OAUTH_TOKEN || '';

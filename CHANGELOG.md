@@ -7,11 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.3.0] — 2026-05-19 — "Memory & Coordination"
+
+The cognition stack. Agents now remember things across sessions, talk to each
+other through durable mailboxes, schedule themselves into the future, pick up
+work autonomously, take TON payments directly, and route every tool call
+through a rate-limited audit gateway.
+
+### Added
+- **Hybrid RAG memory** — `agent_memory_vec` table with Gemini
+  `text-embedding-004` (768d) vectors + Postgres `tsvector` FTS + RRF
+  fusion (k=60). New tools: `remember_hybrid`, `recall_hybrid`,
+  `memory_count_hybrid`. Cosine similarity computed in JS (no `pgvector`
+  required) — fine up to ~5K memories per agent.
+- **Auto context compression** — when message log exceeds 30 entries or
+  estimated 60K tokens, the runtime LLM-summarizes the older half and
+  replaces it with a compact recap block. Hard 100K token emergency trim
+  still in place. Plus a per-iteration micro layer that strips large
+  tool-result bodies once the iteration is finished.
+- **Durable mailboxes** — `agent_mailbox` table for inter-agent messages
+  that survive restart. Tools: `mailbox_send(toAgentId, subject, body)`,
+  `mailbox_read(limit)`. Read pointer per agent, unread index.
+- **Background task daemon** — `bg_schedule(at, action)` and `bg_list()`
+  tools. Two run modes per job: (a) wake the agent with a synthetic
+  message at the target time, or (b) execute a tool directly. Queue
+  persisted in `agent_state._bg_jobs`, hydrated on boot, ticks every 30s.
+- **Autonomous task claiming** — agents with
+  `trigger_config.config.autonomous = true` poll `agent_task_graph`
+  every 60s for actionable tasks (pending + no blockers), claim atomically
+  (UPDATE ... WHERE status='pending'), and wake themselves with a
+  synthetic "take task #N" message. Max 3 parallel claims per agent.
+- **TON Pay invoices** — `services/ton-pay.ts` generates `ton://transfer`
+  URLs with unique memo, then verifies on-chain via TonAPI. 15-minute TTL,
+  99% amount tolerance (gas absorption). API endpoints:
+  `POST /api/skills/:name/buy`, `GET /api/skills/purchases/:invoiceId`,
+  `GET /api/me/purchases`. `skill_purchases` table records every paid
+  install.
+- **Tool Gateway** — `services/tool-gateway.ts` middleware: per-(agent,
+  tool) sliding-window rate limits, prompt-injection scan on high-risk
+  tool args (`send_ton`, `buy_market_gift`, `mailbox_send`, etc.),
+  fire-and-forget audit log to `agent_audit_log`. `gatewayInvoke()`
+  wrapper combines all three.
+
+### Changed
+- Schema: 4 new tables (`agent_memory_vec`, `agent_transcripts`,
+  `agent_mailbox`, `skill_purchases`) — all created idempotently in
+  `ensureBetaSchemaExtensions()` at boot.
+
+### Fixed
+- PM2 process recovery procedure persisted via `pm2 save` so the bot
+  comes back automatically on server reboot.
+- Atlas fallback chain expanded to 6 different Gemini families to avoid
+  all-3-models-429-from-same-quota lockup.
+
+---
+
 ## [2.2.0] — 2026-05-18 — "Skills Release"
 
 The biggest architecture update since launch. TAP joins the **Agent Skills
-Compatible** runtime line — alongside Claude Code, Cursor, GitHub Copilot,
-Goose, OpenHands and 25+ other products.
+Compatible** runtime line — full agentskills.io spec support with progressive
+disclosure, safety scanner, and 12 built-in skills.
 
 ### Added
 - **Agent Skills runtime** — full [agentskills.io](https://agentskills.io)
@@ -37,7 +92,6 @@ Goose, OpenHands and 25+ other products.
   goals + lessons + MCP + stats + pause status, secrets masked).
 - **TodoWrite mechanism** — in-memory checklist with FSM constraint
   (only one `in_progress`) + nag reminder after 3 rounds without updates.
-  Adapted from `learn-claude-code` session 3.
 - **Skill safety scanner** — detects prompt-injection signatures,
   credential leaks, code-execution patterns, data-exfiltration intent
   in skill bodies. HIGH-severity matches block publishing.
@@ -46,7 +100,6 @@ Goose, OpenHands and 25+ other products.
 - **Studio Skills tab** — list view with built-in/mine/public filters,
   per-agent enable/disable, markdown editor for creation, import-from-URL.
 - **Studio Skills sub-tab** in agent settings (per-agent toggle UI).
-- **`CLAUDE.md`** — orientation file for future Claude Code sessions.
 
 ### Changed
 - AI provider 401 / 402 / 429 / 413 errors now auto-pause agents after
