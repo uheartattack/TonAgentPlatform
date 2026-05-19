@@ -78,6 +78,102 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
     {
       type: 'function',
       function: {
+        name: 'remember_hybrid',
+        description: 'Save a long-term memory chunk with hybrid retrieval (vector + keyword + RRF fusion). Use for: durable facts, lessons learned, summaries, user preferences. Gets embedded automatically via Gemini text-embedding-004 (768d). Searchable via recall_hybrid.',
+        parameters: {
+          type: 'object',
+          properties: {
+            content: { type: 'string', description: 'The memory text (max 4000 chars)' },
+            source: { type: 'string', description: 'Origin tag: "agent" | "user" | "tool" | "auto-compact" etc.' },
+            importance: { type: 'number', description: '0..1 weight, default 0.5. Higher = more relevant in recall filtering.' },
+            metadata: { type: 'object', description: 'Arbitrary JSON metadata.' },
+          },
+          required: ['content'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'recall_hybrid',
+        description: 'Hybrid-retrieve memories relevant to a query. Combines vector cosine similarity (semantic) with Postgres tsvector keyword match, fused via Reciprocal Rank Fusion. Returns top-K with score + which branch matched (vector / keyword / both).',
+        parameters: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: 'Natural-language query — what to find' },
+            top_k: { type: 'number', description: '1..20 (default 8)' },
+            min_importance: { type: 'number', description: 'Filter: ignore memories below this importance (0..1)' },
+          },
+          required: ['query'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'memory_count_hybrid',
+        description: 'How many hybrid-RAG memories are stored for this agent.',
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'mailbox_send',
+        description: 'Send a durable message to another of your agents (s09 pattern). Recipient must belong to the same user (security). Persists in builder_bot.agent_mailbox; recipient receives on next tick via mailbox_read.',
+        parameters: {
+          type: 'object',
+          properties: {
+            to_agent_id: { type: 'number', description: 'Recipient agent ID (must be yours)' },
+            subject: { type: 'string', description: 'Short subject (max 200 chars)' },
+            body: { type: 'string', description: 'Message body (max 8000 chars)' },
+            metadata: { type: 'object' },
+          },
+          required: ['to_agent_id', 'body'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'mailbox_read',
+        description: 'Read messages from your inbox. Default: only unread, latest 10. Marks fetched messages as read.',
+        parameters: {
+          type: 'object',
+          properties: {
+            only_unread: { type: 'boolean', description: 'Default true' },
+            limit: { type: 'number', description: '1..50, default 10' },
+          },
+          required: [],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'bg_schedule',
+        description: 'Schedule a background task to wake you up at a future time (learn-claude-code s08). Persists across bot restarts. Use for: "remind me in 1 hour to recheck X", "every morning at 9 run analysis Y".',
+        parameters: {
+          type: 'object',
+          properties: {
+            description: { type: 'string', description: 'What to do when the task fires (max 500 chars)' },
+            delay_ms: { type: 'number', description: 'Milliseconds from now (min 1000, max 86400000)' },
+          },
+          required: ['description', 'delay_ms'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'bg_list',
+        description: 'List your pending background tasks (scheduled but not yet fired).',
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
         name: 'task',
         description: 'Delegate a focused subtask to a fresh-context SUBAGENT. The child runs with empty messages (no context pollution), drops the `task` tool itself (no recursion), drops on-chain + cross-agent tools, runs up to 3 iterations, and returns ONLY the final summary text (you do NOT see its tool-call history). Use for: "research X", "validate Y", "summarize Z" — anything that would otherwise bloat your own context. Max 4000 chars in description.',
         parameters: {

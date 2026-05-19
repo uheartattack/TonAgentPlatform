@@ -2814,6 +2814,72 @@ export function startApiServer() {
     }
   });
 
+  // ── TON Pay: marketplace purchase flow ──────────────────────────────────
+  // POST /api/skills/:name/buy → create TON Pay invoice
+  app.post('/api/skills/:name/buy', requireAuth, rateLimit(20, 60_000, 'skill-buy'), async (req: Request, res: Response) => {
+    try {
+      const buyerUserId = (req as any).userId as number;
+      const name = String(req.params.name || '').trim();
+      const { pool } = require('./db');
+      const sk = await pool.query(
+        `SELECT s.id, s.name, s.owner_user_id, s.is_public, s.metadata
+           FROM builder_bot.skills s
+          WHERE s.name = $1 AND s.is_public = TRUE
+          LIMIT 1`,
+        [name],
+      );
+      if (!sk.rows[0]) { res.status(404).json({ error: 'skill not found or not public' }); return; }
+      const skill = sk.rows[0];
+      if (skill.owner_user_id === buyerUserId) {
+        res.status(400).json({ error: 'cannot buy your own skill' }); return;
+      }
+      const priceTon = Number(skill.metadata?.price_ton) || 0;
+      if (priceTon <= 0) { res.status(400).json({ error: 'skill is free or has no price' }); return; }
+      // Look up seller wallet
+      const ws = await pool.query(
+        `SELECT value FROM builder_bot.user_settings WHERE user_id = $1 AND key = 'wallet_address' LIMIT 1`,
+        [skill.owner_user_id],
+      );
+      const sellerAddress = ws.rows[0]?.value;
+      if (!sellerAddress) { res.status(409).json({ error: 'seller has no payout wallet configured' }); return; }
+      const { createInvoice } = await import('./services/ton-pay');
+      const inv = await createInvoice({
+        skillId: skill.id,
+        skillName: skill.name,
+        buyerUserId,
+        sellerUserId: skill.owner_user_id,
+        sellerAddress,
+        priceTon,
+      });
+      res.json({ ok: true, invoice: inv });
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message });
+    }
+  });
+
+  // GET /api/skills/purchases/:invoiceId → poll status (frontend calls every ~10s)
+  app.get('/api/skills/purchases/:invoiceId', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { verifyInvoice } = await import('./services/ton-pay');
+      const status = await verifyInvoice(String(req.params.invoiceId));
+      res.json({ ok: true, ...status });
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message });
+    }
+  });
+
+  // GET /api/me/purchases → list all user's skill purchases
+  app.get('/api/me/purchases', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { listPurchases } = await import('./services/ton-pay');
+      const items = await listPurchases(userId);
+      res.json({ ok: true, count: items.length, items });
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message });
+    }
+  });
+
   // ── DELETE /api/skills/:name — delete a user-owned skill ──
   app.delete('/api/skills/:name', requireAuth, async (req: Request, res: Response) => {
     try {
