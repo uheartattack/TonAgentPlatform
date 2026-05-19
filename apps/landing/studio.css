@@ -68,7 +68,7 @@
   --transition-base: 0.22s cubic-bezier(0.4,0,0.2,1);
   --transition-slow: 0.4s cubic-bezier(0.4,0,0.2,1);
 
-  --sidebar-width: 248px;
+  --sidebar-width: 272px;
 }
 
 /* ===== RESET & BASE ===== */
@@ -638,10 +638,10 @@ body {
 
 .nav-label {
   display: block;
-  padding: 18px 10px 6px;
-  font-size: 9px;
+  padding: 20px 10px 8px;
+  font-size: 10.5px;     /* was 9px — too small at 100% zoom */
   font-weight: 700;
-  color: rgba(255,255,255,0.2);
+  color: rgba(255,255,255,0.28);
   text-transform: uppercase;
   letter-spacing: 1.4px;
 }
@@ -649,13 +649,13 @@ body {
 .nav-item {
   display: flex;
   align-items: center;
-  gap: 11px;
-  padding: 11px 14px;
+  gap: 12px;
+  padding: 12px 14px;
   margin: 2px 0;
   border-radius: 12px;
-  color: rgba(255,255,255,0.5);
+  color: rgba(255,255,255,0.6);
   text-decoration: none;
-  font-size: 0.825rem;
+  font-size: 0.95rem;    /* was .825rem — too small at 100% zoom */
   font-weight: 500;
   transition: all 0.15s ease;
   position: relative;
@@ -673,10 +673,10 @@ body {
 }
 
 .nav-item svg {
-  opacity: 0.45;
+  opacity: 0.55;
   flex-shrink: 0;
-  width: 16px;
-  height: 16px;
+  width: 19px;        /* was 16px — too small at 100% zoom */
+  height: 19px;
   transition: opacity 0.15s;
 }
 .nav-item:hover svg { opacity: 0.85; }

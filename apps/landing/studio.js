@@ -14024,7 +14024,12 @@ function setUIScale(val) {
   els.forEach(function(el) { if (el) el.textContent = val + '%'; });
   var sliders = [document.getElementById('ui-scale-slider'), document.getElementById('sidebar-scale-slider')];
   sliders.forEach(function(s) { if (s) s.value = val; });
-  document.querySelector('.main-content').style.zoom = (val / 100);
+  var z = (val / 100);
+  // Apply zoom to BOTH the main content area AND the fixed sidebar
+  // (previously only .main-content was scaled, so the sidebar stayed at 100%
+  //  no matter where the slider was — that's the bug user reported).
+  var mc = document.querySelector('.main-content'); if (mc) mc.style.zoom = z;
+  var sb = document.querySelector('.sidebar'); if (sb) sb.style.zoom = z;
   localStorage.setItem('ui_scale', val);
 }
 
@@ -14057,7 +14062,9 @@ function setAccentColor(color) {
 (function restoreUISettings() {
   var scale = localStorage.getItem('ui_scale');
   if (scale) {
-    var mc = document.querySelector('.main-content'); if (mc) mc.style.zoom = (parseInt(scale) / 100);
+    var z = parseInt(scale) / 100;
+    var mc = document.querySelector('.main-content'); if (mc) mc.style.zoom = z;
+    var sb = document.querySelector('.sidebar'); if (sb) sb.style.zoom = z;
     var ss = document.getElementById('sidebar-scale-slider'); if (ss) ss.value = scale;
     var sv = document.getElementById('sidebar-scale-value'); if (sv) sv.textContent = scale + '%';
   }
