@@ -107,37 +107,54 @@ function scoreResponse(test: TestCase, response: string): { passed: boolean; fai
   return { passed: failures.length === 0, failures };
 }
 
-async function callGemini(systemPrompt: string, userMessage: string): Promise<string> {
-  const client = new OpenAI({
+// Provider chain. Same approach as production Atlas: try Gemini families
+// first, then fall over to OpenRouter free models on persistent quota issues.
+async function callAtlas(systemPrompt: string, userMessage: string): Promise<string> {
+  const geminiClient = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY || '',
     baseURL: process.env.OPENAI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai/',
   });
-  const reqBody = {
-    model: process.env.ATLAS_EVAL_MODEL || 'gemini-2.5-flash',
-    messages: [
-      { role: 'system', content: systemPrompt } as const,
-      { role: 'user', content: userMessage } as const,
-    ],
-    max_tokens: 4096,
-    temperature: 0.3,
-  };
-  // Retry on 429 with exponential backoff (we share Gemini quota with prod Atlas)
+  const orKey = process.env.OPENROUTER_API_KEY || '';
+  const orClient = orKey ? new OpenAI({
+    apiKey: orKey,
+    baseURL: 'https://openrouter.ai/api/v1',
+    defaultHeaders: { 'HTTP-Referer': 'https://tonagentplatform.com', 'X-Title': 'TON Agent Platform - Atlas eval' },
+  }) : null;
+
+  const chain: Array<{ client: OpenAI; model: string }> = [
+    { client: geminiClient, model: process.env.ATLAS_EVAL_MODEL || 'gemini-2.5-flash' },
+    { client: geminiClient, model: 'gemini-2.0-flash' },
+    { client: geminiClient, model: 'gemini-2.0-flash-lite' },
+    ...(orClient ? [
+      { client: orClient, model: 'deepseek/deepseek-v4-flash:free' },
+      { client: orClient, model: 'meta-llama/llama-3.3-70b-instruct:free' },
+      { client: orClient, model: 'nousresearch/hermes-3-llama-3.1-405b:free' },
+    ] : []),
+  ];
+
   let lastErr: any = null;
-  for (let attempt = 0; attempt < 4; attempt++) {
+  for (const { client, model } of chain) {
     try {
-      const resp = await client.chat.completions.create(reqBody);
-      return resp.choices?.[0]?.message?.content || '';
+      const resp = await client.chat.completions.create({
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt } as const,
+          { role: 'user', content: userMessage } as const,
+        ],
+        max_tokens: 4096,
+        temperature: 0.3,
+      });
+      const out = resp.choices?.[0]?.message?.content || '';
+      if (out) return out;
     } catch (e: any) {
       lastErr = e;
-      const msg = e?.message || '';
-      const is429 = e?.status === 429 || msg.includes('429') || msg.includes('rate');
-      if (!is429 || attempt === 3) throw e;
-      const delay = (15 + attempt * 30) * 1000;       // 15s, 45s, 75s
-      process.stdout.write(`[429 backoff ${delay/1000}s] `);
-      await new Promise(r => setTimeout(r, delay));
+      const msg = String(e?.message || '');
+      // Bail only on auth-shape errors. Otherwise try next model.
+      if (/401|invalid_api_key|unauthorized/i.test(msg)) break;
+      process.stdout.write(`[skip ${model.split('/').pop()}] `);
     }
   }
-  throw lastErr;
+  throw lastErr || new Error('all models exhausted');
 }
 
 async function runOne(test: TestCase, systemPrompt: string): Promise<TestResult> {
@@ -145,7 +162,7 @@ async function runOne(test: TestCase, systemPrompt: string): Promise<TestResult>
   let response = '';
   let scored: { passed: boolean; failures: string[] };
   try {
-    response = await callGemini(systemPrompt, test.question);
+    response = await callAtlas(systemPrompt, test.question);
     scored = scoreResponse(test, response);
   } catch (e: any) {
     response = `[ERROR] ${e?.message || e}`;
@@ -187,10 +204,10 @@ async function main() {
   const systemPrompt = await buildAtlasSystemPrompt(USER_ID);
   console.log(`[atlas-eval] System prompt: ${systemPrompt.length} chars`);
 
-  // Gemini free tier: 4 RPM hard cap. Sleep 16s between calls (3.75 RPM, safe).
-  // If you switch to a paid tier or a different provider, override via
-  // ATLAS_EVAL_DELAY_MS env.
-  const delayMs = Number(process.env.ATLAS_EVAL_DELAY_MS || 16_000);
+  // Inter-call delay. Gemini free was 4 RPM (16s). With OpenRouter in the
+  // chain we can go faster — 5s gives ample headroom for both providers.
+  // Override via ATLAS_EVAL_DELAY_MS env.
+  const delayMs = Number(process.env.ATLAS_EVAL_DELAY_MS || 5_000);
   const results: TestResult[] = [];
   for (let i = 0; i < tests.length; i++) {
     const test = tests[i];
