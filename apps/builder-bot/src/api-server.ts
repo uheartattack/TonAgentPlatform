@@ -3027,18 +3027,32 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
         baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
       });
       // Gemini families with separate quota counters. 1.5-* deprecated by Google
-      // and now returns 404 — removed.
+      // and now returns 404 — removed. OpenRouter free tier appended as the
+      // final fallback so the edit survives a full Google outage.
+      const _orKey = process.env.OPENROUTER_API_KEY || '';
       const MODEL_CHAIN = [
         'gemini-2.5-flash',
         'gemini-2.0-flash',
         'gemini-2.0-flash-lite',
+        ...(_orKey ? [
+          'openrouter::deepseek/deepseek-chat-v3-0324:free',
+          'openrouter::meta-llama/llama-3.3-70b-instruct:free',
+        ] : []),
       ];
+      let _orClient: any = null;
+      const getOR = () => _orClient ||= new OpenAI({
+        apiKey: _orKey,
+        baseURL: 'https://openrouter.ai/api/v1',
+        defaultHeaders: { 'HTTP-Referer': 'https://tonagentplatform.com', 'X-Title': 'TON Agent Platform — Edit-with-AI' },
+      });
       let newValue = '', usedModel = '';
       let lastErr: any;
       for (const model of MODEL_CHAIN) {
         try {
-          const r = await client.chat.completions.create({
-            model,
+          const useClient = model.startsWith('openrouter::') ? getOR() : client;
+          const realModel = model.startsWith('openrouter::') ? model.slice('openrouter::'.length) : model;
+          const r = await useClient.chat.completions.create({
+            model: realModel,
             messages: [
               { role: 'system', content: editorSystem },
               { role: 'user', content: userMsg },
@@ -3051,8 +3065,7 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
         } catch (e: any) {
           lastErr = e;
           const msg = String(e?.message || '');
-          // Retry on 429 / 503 / overload / 404 (deprecated/unknown model) /
-          // 403. Bail only on auth-shape errors (401/invalid_key).
+          // Retry on transient errors. Bail only on auth-shape errors.
           if (/401|invalid_api_key|unauthorized/i.test(msg)) break;
         }
       }
@@ -5422,9 +5435,17 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
           { role: 'user', content: message },
         ];
         let fullText = '';
-        // Model fallback chain — spans multiple Gemini families to dodge
-        // per-family rate limits (2.5-flash, 2.0-flash, 2.0-flash-lite,
-        // 1.5-flash, and 1.5-flash-8b each have their own quota counters).
+        // Model fallback chain. Within Gemini we span families to dodge
+        // per-family quota counters. Beyond Gemini we fall over to
+        // OpenRouter when OPENROUTER_API_KEY is set — uses different
+        // providers (DeepSeek, Llama) entirely, so it survives Google quota
+        // outages.
+        const _openrouterKey = process.env.OPENROUTER_API_KEY || '';
+        const openrouterModels = _openrouterKey ? [
+          'openrouter::deepseek/deepseek-chat-v3-0324:free',
+          'openrouter::meta-llama/llama-3.3-70b-instruct:free',
+          'openrouter::qwen/qwen-2.5-72b-instruct:free',
+        ] : [];
         const modelChain = useNativeAnthropic
           ? [model, 'claude-haiku-4-5-20251001']
           : [
@@ -5433,8 +5454,24 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
               'gemini-2.0-flash',
               'gemini-2.0-flash-lite',
               // Google deprecated gemini-1.5-* — they now return 404, removed.
+              ...openrouterModels,
             ].filter((m, i, arr) => arr.indexOf(m) === i); // de-dupe
         const nonSystemMsgs = messages.filter(m => m.role !== 'system');
+
+        // Lazy-build the OpenRouter client only if we'll need it
+        let _openrouterClient: any = null;
+        const getOpenRouterClient = () => {
+          if (_openrouterClient) return _openrouterClient;
+          _openrouterClient = new OpenAI({
+            apiKey: _openrouterKey,
+            baseURL: 'https://openrouter.ai/api/v1',
+            defaultHeaders: {
+              'HTTP-Referer': 'https://tonagentplatform.com',
+              'X-Title': 'TON Agent Platform — Atlas',
+            },
+          });
+          return _openrouterClient;
+        };
 
         let allRateLimited = false;
         let exhaustedAt: string[] = [];
@@ -5452,6 +5489,14 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
                   fullText += event.delta.text;
                   sendEvent('chunk', { text: event.delta.text });
                 }
+              }
+            } else if (tryModel.startsWith('openrouter::')) {
+              const realModel = tryModel.slice('openrouter::'.length);
+              const orClient = getOpenRouterClient();
+              const stream = await orClient.chat.completions.create({ model: realModel, stream: true, messages, max_tokens: 4096 });
+              for await (const chunk of stream as any) {
+                const delta = chunk.choices?.[0]?.delta?.content;
+                if (delta) { fullText += delta; sendEvent('chunk', { text: delta }); }
               }
             } else {
               const stream = await client.chat.completions.create({ model: tryModel, stream: true, messages, max_tokens: 4096 });
