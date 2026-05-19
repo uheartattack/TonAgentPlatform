@@ -5478,9 +5478,26 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
         for (const tryModel of modelChain) {
           try {
             if (useNativeAnthropic) {
+              // Pattern #10 (Claude Code leak): SYSTEM_PROMPT_DYNAMIC_BOUNDARY.
+              // Static prefix (capability map, skills, rules) gets
+              // cache_control: ephemeral → Anthropic caches for ~5 min →
+              // subsequent turns charge 10% rate on this block. The dynamic
+              // tail (live agents list, recent failures) stays uncached.
+              const BOUNDARY = '\n\n<!-- DYNAMIC -->\n\n';
+              const boundaryIdx = systemPrompt.indexOf(BOUNDARY);
+              const systemBlocks = boundaryIdx > 0
+                ? [
+                    { type: 'text' as const, text: systemPrompt.slice(0, boundaryIdx), cache_control: { type: 'ephemeral' as const } },
+                    { type: 'text' as const, text: systemPrompt.slice(boundaryIdx + BOUNDARY.length) },
+                  ]
+                : [
+                    // No explicit boundary marker — cache the whole prompt (it's
+                    // already mostly static; even partial cache hits help).
+                    { type: 'text' as const, text: systemPrompt, cache_control: { type: 'ephemeral' as const } },
+                  ];
               const stream = client.messages.stream({
                 model: tryModel,
-                system: systemPrompt,
+                system: systemBlocks as any,
                 messages: nonSystemMsgs,
                 max_tokens: 4096,
               });

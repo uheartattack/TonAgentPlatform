@@ -104,14 +104,25 @@ export async function buildAtlasSystemPrompt(userId: number, context?: AtlasCont
     '• Работать в Telegram как настоящий юзер (MTProto через /tglogin)',
     '',
     'Отвечай кратко и по делу. Говори на языке пользователя. Когда перечисляешь возможности — бери имена ИЗ СПИСКА ВЫШЕ.',
-    context ? `\nКонтекст: страница="${context.page}", агент=${context.agentId || 'нет'}` : '',
   ];
 
+  // Learned rules are part of the (mostly) static prefix — they only change a
+  // few times per day during training loop iterations. Cache-friendly.
   if (learnedRules) {
     lines.push('');
     lines.push('━━━ LEARNED RULES (training loop) ━━━');
     lines.push(learnedRules);
     lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  }
+
+  // Pattern #10 — explicit boundary between cacheable static prefix and
+  // per-request dynamic tail. Anthropic SDK path splits on this marker
+  // and applies cache_control: ephemeral to the prefix only.
+  lines.push('\n\n<!-- DYNAMIC -->\n\n');
+
+  // Dynamic tail — changes per request (page context, agent target, etc.)
+  if (context) {
+    lines.push(`Контекст: страница="${context.page}", агент=${context.agentId || 'нет'}`);
   }
 
   return lines.filter(Boolean).join('\n');
