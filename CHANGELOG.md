@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.3.5] — 2026-05-20 — "Payouts unblocked"
+
+Hot-fix release. Studio Admin → Payouts / Withdrawals was broken end-to-end:
+the owner couldn't see pending payouts, couldn't trigger Tonkeeper signing,
+and user-initiated withdrawals crashed with `relation does not exist`.
+
+### Fixed
+- **`requireOwner` auth gate**: now also matches `session.telegramId`, not
+  only `session.userId`. OIDC logins store userId as the OIDC sub
+  (12-digit), telegramId as the real TG id — without the fallback the owner
+  never authed past `/api/admin/payouts/*` even with correct `OWNER_ID`.
+- **`/api/admin/withdrawals/pending` 500**: the `builder_bot.withdrawal_requests`
+  table was created lazily inside POST `/api/withdraw`, so the admin GET
+  hit a missing relation until any user requested a withdrawal. Table now
+  pre-created on prod; DDL stays inline for fresh installs.
+- **TonConnect "Подключи Tonkeeper в Профиле" toast**: admin payout/withdraw
+  sign buttons read `window._tonConnect` (never set) instead of the
+  module-scoped `_tonConnectUI`. Plus `_tonConnectUI` was only initialised
+  when the user opened Profile; opening Admin first left it `null`. Both
+  handlers now lazy-`initTonConnect()` and open the wallet-pick modal in
+  place when not yet connected.
+
+---
+
 ## [2.3.4] — 2026-05-19 — "Bot API 10.0 + Multimodal Mega"
 
 12 new tools landed in one shot — half of them adopting fresh Telegram Bot
