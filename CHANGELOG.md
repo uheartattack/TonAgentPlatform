@@ -152,8 +152,7 @@ and reach.
 - **s12 per-task DB-tx isolation** — `task_update` + auto-cascade now
   wrapped in `BEGIN`/`COMMIT`. Prevents dirty reads when concurrent
   autonomous-claim + manual-edit race on `blocked_by` arrays.
-- **Claude Code leaked-architecture patterns** (4 more shipped, brings
-  total to 11/16):
+- **Leaked-architecture patterns** (4 more shipped, brings total to 11/16):
   - #6 token-budget diminishing-returns stop (kills stuck continuations)
   - #10 SYSTEM_PROMPT_DYNAMIC_BOUNDARY cache-split for Anthropic
     (`cache_control: ephemeral` on the static prefix)
