@@ -251,9 +251,16 @@ export async function getCrew(crewId: string, userId: number): Promise<CrewDefin
   return res.rows[0] ? rowToCrew(res.rows[0]) : null;
 }
 
-/** Get crew without ownership check — used internally for nested-crew traversal */
-async function getCrewInternal(crewId: string): Promise<CrewDefinition | null> {
-  const res = await pool().query(`SELECT * FROM builder_bot.crews WHERE id = $1`, [crewId]);
+/**
+ * Get crew for nested traversal. SECURITY: still scopes by ownerUserId so a
+ * crew can't reference another user's crew via nestedCrewId (cross-tenant
+ * leak). The owner is the user who triggered the root execution.
+ */
+async function getCrewForNested(crewId: string, ownerUserId: number): Promise<CrewDefinition | null> {
+  const res = await pool().query(
+    `SELECT * FROM builder_bot.crews WHERE id = $1 AND user_id = $2`,
+    [crewId, ownerUserId],
+  );
   return res.rows[0] ? rowToCrew(res.rows[0]) : null;
 }
 
@@ -463,8 +470,8 @@ async function invokeMember(
     if (env.ancestry.length >= MAX_NESTED_DEPTH) {
       throw new Error(`Max nested-crew depth ${MAX_NESTED_DEPTH} exceeded`);
     }
-    const nested = await getCrewInternal(member.nestedCrewId);
-    if (!nested) throw new Error(`Nested crew ${member.nestedCrewId} not found`);
+    const nested = await getCrewForNested(member.nestedCrewId, env.userId);
+    if (!nested) throw new Error(`Nested crew ${member.nestedCrewId} not found or not owned by you`);
     const subStepResults: Record<string, any> = {};
     const subEnv: ExecEnv = {
       runAgent: env.runAgent,

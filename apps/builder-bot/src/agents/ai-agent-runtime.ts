@@ -7847,8 +7847,49 @@ async function executeFlowCode(execCode: string, params: AIAgentTickParams): Pro
     return r;
   };
 
+  // Emergency kill switch — disable arbitrary code execution platform-wide.
+  if (process.env.AGENT_CODE_EXEC_DISABLED === '1') {
+    const msg = '[flow-exec] Agent code execution is disabled by AGENT_CODE_EXEC_DISABLED';
+    await logToDb(params.agentId, 'warn', msg, params.userId);
+    return { success: false, error: 'agent code execution disabled' };
+  }
+
+  // Pre-execution audit trail — every code run is attributable.
+  await logToDb(
+    params.agentId,
+    'info',
+    `[flow-exec] running ${execCode.length}b code (user ${params.userId})`,
+    params.userId,
+  ).catch(() => {});
+
+  // Lightweight static scan for the most common Node `vm` escape patterns.
+  // Blocks the canonical `this.constructor.constructor(...)` chain and a few
+  // other well-known breakouts. NOT a security boundary — Node `vm` is
+  // explicitly NOT a sandbox per docs — but it lifts the cost of casual abuse
+  // and gives us a tripwire in logs.
+  const SUSPICIOUS = [
+    /\bconstructor\s*\.\s*constructor\b/,         // .constructor.constructor
+    /\bprocess\b/,                                // global process access
+    /\b__proto__\b/,                              // proto walking
+    /\bObject\.getPrototypeOf\b/,                 // alternative proto walk
+    /\bFunction\s*\(/,                            // Function() constructor
+    /\beval\s*\(/,                                // eval()
+    /\bglobalThis\b/,                             // global escape
+    /\bimport\s*\(/,                              // dynamic import
+  ];
+  for (const re of SUSPICIOUS) {
+    if (re.test(execCode)) {
+      const msg = `[flow-exec] BLOCKED suspicious pattern ${re} in code (agent #${params.agentId}, user ${params.userId})`;
+      await logToDb(params.agentId, 'error', msg, params.userId);
+      console.warn(msg);
+      return { success: false, error: 'code blocked by safety scanner' };
+    }
+  }
+
   try {
-    // Execute flow code in hardened vm sandbox (replaces deprecated vm2)
+    // Execute flow code in vm sandbox. Node's `vm` is NOT a security
+    // boundary — the safety scanner above blocks known escapes; this layer
+    // adds prototype freezing and removes obvious globals.
     const nodeVm = require('node:vm');
     const flowSandbox = {
       getBalance, notify, webSearch, fetchUrl, getState, setState, sendTon, sleep, callTool,
@@ -7862,7 +7903,17 @@ async function executeFlowCode(execCode: string, params: AIAgentTickParams): Pro
       name: 'flow-sandbox',
       codeGeneration: { strings: false, wasm: false },
     });
-    try { nodeVm.runInContext(`[Object,Array,Function,String,Number,Boolean,RegExp,Promise,Map,Set].forEach(C=>{if(C.prototype)Object.freeze(C.prototype)});Object.defineProperty(Error.prototype,'constructor',{configurable:false,writable:false})`, flowCtx); } catch {}
+    try {
+      nodeVm.runInContext(
+        `[Object,Array,Function,String,Number,Boolean,RegExp,Promise,Map,Set,Error]` +
+        `.forEach(C => { if (C && C.prototype) Object.freeze(C.prototype); Object.freeze(C); });` +
+        // Block .constructor walk on every primitive — last-ditch wall.
+        `[{}, [], '', 0, true, /x/, new Map(), new Set(), new Error()].forEach(o => {` +
+        `  try { Object.defineProperty(Object.getPrototypeOf(o), 'constructor', { configurable: false, writable: false, value: undefined }); } catch (_) {}` +
+        `});`,
+        flowCtx,
+      );
+    } catch {}
     const wrappedCode = `(async () => { ${execCode} })()`;
     const flowScript = new nodeVm.Script(wrappedCode, { filename: 'flow.js' });
     await flowScript.runInContext(flowCtx, { timeout: 30000, breakOnSigint: true });
