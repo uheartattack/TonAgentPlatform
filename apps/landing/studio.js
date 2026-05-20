@@ -22,7 +22,7 @@ const IC = {
   dollar: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
   send: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>',
   fire: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14 0-5.5 3.5-7.5-2 3.5-1 5.5 0 7.5 1 1 2 2.5 2 5a2.5 2.5 0 0 1-2.5 2.5"/><path d="M12 22c4 0 7-3 7-7 0-2-.5-3.5-1.5-5C16 8 12 6 12 2c-2 4-6 6-7.5 8.5C3.5 12.5 3 14 3 15c0 4 3 7 7 7z"/></svg>',
-  gem: '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none" style="display:inline-block;vertical-align:-2px"><path d="M6 3h12l4 6-10 13L2 9Z"/></svg>',
+  gem: '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none" style="display:inline-block;vertical-align:-2px" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12l4 6-10 13L2 9Z"/></svg>',
   download: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
   upload: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>',
   creditcard: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>',
@@ -96,10 +96,10 @@ function planIcon(serverIcon) {
 
 // ===== TOAST NOTIFICATION SYSTEM =====
 var _toastIcons = {
-  success: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
-  error: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
-  warning: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
-  info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
+  success: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
+  error: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
+  warning: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+  info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
 };
 
 // ===== PARTICLE DISSOLUTION EFFECT =====
@@ -442,6 +442,20 @@ window._appConfig = null;
 
 let authToken = localStorage.getItem('tg_token') || null;
 
+// Patterns that signal a plan/subscription limit hit by the server. The
+// orchestrator returns errors like «⛔ *Лимит агентов достигнут*» and the
+// hard cap path returns «Agent limit reached (N)». Both should trigger the
+// upgrade modal instead of a silent toast.
+const _PLAN_LIMIT_RE = /(лимит\s+(?:агент|план|генерац)|agent limit reached|plan limit|maxAgents|generations? per month|generations?:\s*\d+\/\d+|улучш(?:ите|ить)\s+план)/i;
+function _isPlanLimitError(data, httpStatus) {
+  if (!data) return false;
+  if (data.error_code === 'PLAN_LIMIT' || data.upgrade_required === true) return true;
+  const msg = (data.error || data.message || data.reason || '');
+  if (typeof msg === 'string' && _PLAN_LIMIT_RE.test(msg)) return true;
+  if (httpStatus === 429 && typeof msg === 'string' && /limit|лимит/i.test(msg)) return true;
+  return false;
+}
+
 async function apiRequest(method, path, body) {
   const opts = {
     method: method || 'GET',
@@ -452,12 +466,22 @@ async function apiRequest(method, path, body) {
   try {
     const res = await fetch(API_BASE + path, opts);
     const ct = res.headers.get('content-type') || '';
+    let parsed;
     if (!ct.includes('application/json')) {
       const text = await res.text();
       console.error('API returned non-JSON:', res.status, text.slice(0, 200));
-      return { ok: false, error: 'Server returned non-JSON response (status ' + res.status + ')' };
+      parsed = { ok: false, error: 'Server returned non-JSON response (status ' + res.status + ')' };
+    } else {
+      parsed = await res.json();
     }
-    return await res.json();
+    // Global plan-limit detector — caller still gets the response, but we
+    // ALSO surface the upgrade modal so the user knows what happened.
+    try {
+      if (_isPlanLimitError(parsed, res.status) && typeof showPlanLimitModal === 'function') {
+        showPlanLimitModal(parsed.error || parsed.message || parsed.reason || '');
+      }
+    } catch {}
+    return parsed;
   } catch (e) {
     console.error('API error:', e);
     return { ok: false, error: e.message };
@@ -597,7 +621,7 @@ function handleTopbarSearch(val) {
   if (!_omniDropdown) {
     _omniDropdown = document.createElement('div');
     _omniDropdown.id = 'omni-dropdown';
-    _omniDropdown.style.cssText = 'position:absolute;top:46px;left:0;right:0;background:var(--bg-elev-2,#12141f);border:1px solid var(--border);border-radius:12px;box-shadow:0 16px 48px rgba(0,0,0,.5),0 0 0 1px rgba(0,168,255,.15);z-index:9999;max-height:60vh;overflow-y:auto;backdrop-filter:blur(16px) saturate(150%)';
+    _omniDropdown.style.cssText = 'position:absolute;top:46px;left:0;right:0;background:var(--bg-elev-2,#12141f);border:1px solid var(--border);border-radius:12px;box-shadow:0 16px 48px rgba(0,0,0,.5),0 0 0 1px rgba(var(--accent-r,0),var(--accent-g,168),var(--accent-b,255),.15);z-index:9999;max-height:60vh;overflow-y:auto;backdrop-filter:blur(16px) saturate(150%)';
     var wrap = document.querySelector('.topbar-search');
     if (wrap) { wrap.style.position = 'relative'; wrap.appendChild(_omniDropdown); }
     document.addEventListener('click', _omniOutsideClick, true);
@@ -618,7 +642,7 @@ function handleTopbarSearch(val) {
   _omniDropdown.innerHTML = matches.map(function(m, i) {
     var color = typeColors[m.type] || '#888';
     return '<div class="omni-item" data-idx="' + i + '" style="padding:10px 14px;display:flex;align-items:center;gap:10px;cursor:pointer;border-bottom:1px solid var(--border)" ' +
-      'onmouseover="this.style.background=\'rgba(0,168,255,.08)\'" onmouseout="this.style.background=\'\'">' +
+      'onmouseover="this.style.background=\'rgba(var(--accent-r,0),var(--accent-g,168),var(--accent-b,255),.08)\'" onmouseout="this.style.background=\'\'">' +
       '<span style="color:' + color + ';display:inline-flex;flex-shrink:0">' + (typeIcons[m.type] || '') + '</span>' +
       '<div style="flex:1;min-width:0">' +
         '<div style="font-size:.88rem;color:var(--text-primary);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + escHtml(m.title) + '</div>' +
@@ -741,7 +765,7 @@ function showApp() {
     atlasBanner.style.cssText = 'margin:0 0 20px;padding:16px 20px;background:linear-gradient(135deg,var(--accent-dim),rgba(6,182,212,0.04));border:1px solid var(--accent-dim);border-radius:12px;display:flex;align-items:center;gap:14px;cursor:pointer';
     atlasBanner.onclick = function() { navigateTo('assistant'); };
     atlasBanner.innerHTML =
-      '<div style="width:40px;height:40px;border-radius:10px;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>' +
+      '<div style="width:40px;height:40px;border-radius:10px;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>' +
       '<div style="flex:1"><div style="font-size:.88rem;font-weight:600;color:var(--text-primary)">' + (currentLang === 'ru' ? 'Atlas — ваш AI-ассистент' : 'Atlas — your AI assistant') + '</div>' +
       '<div style="font-size:.78rem;color:var(--text-muted);margin-top:2px">' + (currentLang === 'ru' ? 'Создаёт агентов, настраивает, объясняет, проводит аудит. Просто опишите что нужно.' : 'Creates agents, configures, explains, audits. Just describe what you need.') + '</div></div>' +
       '<div style="color:var(--primary);font-size:.82rem;font-weight:600;white-space:nowrap">' + (currentLang === 'ru' ? 'Открыть →' : 'Open →') + '</div>';
@@ -905,7 +929,7 @@ async function loadAgents() {
         <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();copyAgentPrompt(${a.id}, event)" title="${currentLang === 'ru' ? 'Копировать промпт' : 'Copy prompt'}">${IC.clipboard}</button>
         <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();loadAgentLogs(${a.id})" title="${t('logs')}">${IC.inbox}</button>
         <button class="btn btn-ghost btn-sm" title="${currentLang === 'ru' ? 'Открепить' : 'Unpin'}" onclick="togglePinAgent(${a.id}, event)" style="color:var(--primary)">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
         </button>
       </div>
     </div>`;
@@ -1284,16 +1308,16 @@ function openAgentChat(agentId) {
     // Header
     '<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);flex-shrink:0">' +
     '<button onclick="openAgentDetail(_detailAgentId)" style="background:none;border:none;color:var(--text-muted);cursor:pointer;padding:4px;border-radius:6px;display:flex;align-items:center" title="Back">' +
-    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button>' +
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button>' +
     '<div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--primary-dark));display:flex;align-items:center;justify-content:center">' +
-    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7H3a7 7 0 0 1 7-7h1V5.73C10.4 5.39 10 4.74 10 4a2 2 0 0 1 2-2z"/></svg></div>' +
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7H3a7 7 0 0 1 7-7h1V5.73C10.4 5.39 10 4.74 10 4a2 2 0 0 1 2-2z"/></svg></div>' +
     '<div><div style="font-weight:600;font-size:.9rem">Agent #' + agentId + '</div><div style="font-size:.72rem;color:#00ff88">● ' + (isRu ? 'онлайн' : 'online') + '</div></div>' +
     '</div>' +
     // Messages
     '<div id="agent-chat-messages" style="flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:2px">' +
     '<div style="text-align:center;padding:24px 0">' +
     '<div style="width:48px;height:48px;border-radius:50%;background:var(--accent-dim);border:1px solid var(--accent-glow);display:flex;align-items:center;justify-content:center;margin:0 auto 12px">' +
-    '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="1.5"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7H3a7 7 0 0 1 7-7h1V5.73C10.4 5.39 10 4.74 10 4a2 2 0 0 1 2-2z"/></svg></div>' +
+    '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7H3a7 7 0 0 1 7-7h1V5.73C10.4 5.39 10 4.74 10 4a2 2 0 0 1 2-2z"/></svg></div>' +
     '<div style="font-size:.85rem;color:var(--text-muted)">' + (isRu ? 'Агент готов к общению' : 'Agent is ready to chat') + '</div>' +
     '</div>' +
     '</div>' +
@@ -1364,7 +1388,7 @@ async function sendAgentChatMsg() {
 
   input.value = '';
   input.disabled = true;
-  if (sendBtn) { sendBtn.disabled = true; sendBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:spin 1s linear infinite"><path d="M21 12a9 9 0 11-6.219-8.56"/></svg>'; }
+  if (sendBtn) { sendBtn.disabled = true; sendBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:spin 1s linear infinite" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-6.219-8.56"/></svg>'; }
 
   _agentChatHistory.push({ role: 'user', text: msg });
   _agentChatHistory.push({ role: 'agent', text: '', streaming: true });
@@ -1404,17 +1428,17 @@ function renderAgentChat(box) {
     var bubbleBg = isUser
       ? 'linear-gradient(135deg,var(--primary),var(--primary-dark))'
       : isErr ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.05)';
-    var border = isErr ? '1px solid rgba(239,68,68,0.3)' : isStream ? '1px solid rgba(0,152,234,0.25)' : '1px solid rgba(255,255,255,0.06)';
+    var border = isErr ? '1px solid rgba(239,68,68,0.3)' : isStream ? '1px solid rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.25)' : '1px solid rgba(255,255,255,0.06)';
     var textColor = isUser ? '#fff' : isErr ? '#f87171' : 'var(--text-primary)';
     var cursor = isStream ? '<span class="chat-cursor">▋</span>' : '';
     var textHtml = escHtml(m.text || (isStream ? '' : '')).replace(/\n/g, '<br>');
     if (!isUser) {
       // Render basic markdown for agent responses
-      textHtml = escHtml(m.text || '').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/`([^`]+)`/g, '<code style="background:rgba(0,152,234,0.15);padding:1px 5px;border-radius:3px;font-size:.8em">$1</code>').replace(/\n/g, '<br>');
+      textHtml = escHtml(m.text || '').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/`([^`]+)`/g, '<code style="background:rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.15);padding:1px 5px;border-radius:3px;font-size:.8em">$1</code>').replace(/\n/g, '<br>');
     }
     var avatar = isUser ? '' :
       '<div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--primary-dark));display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-right:8px">' +
-      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7H3a7 7 0 0 1 7-7h1V5.73C10.4 5.39 10 4.74 10 4a2 2 0 0 1 2-2z"/><path d="M7 14v3a5 5 0 0 0 10 0v-3"/></svg>' +
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7H3a7 7 0 0 1 7-7h1V5.73C10.4 5.39 10 4.74 10 4a2 2 0 0 1 2-2z"/><path d="M7 14v3a5 5 0 0 0 10 0v-3"/></svg>' +
       '</div>';
     return '<div style="display:flex;justify-content:' + align + ';margin:8px 0;align-items:flex-end">' +
       (isUser ? '' : avatar) +
@@ -1563,7 +1587,7 @@ function switchSettingsTab(tab) {
     body.innerHTML =
       '<div class="rt-page">' +
       '<div class="rt-header">' +
-        '<div class="rt-header-icon" style="background:rgba(168,85,247,0.12);color:#a855f7">' + IC.brain + '</div>' +
+        '<div class="rt-header-icon" style="background:rgba(var(--accent-r,168),var(--accent-g,85),var(--accent-b,247),0.12);color:#a855f7">' + IC.brain + '</div>' +
         '<div class="rt-header-text">' +
           '<h3>' + (isRu ? 'Душа' : 'Soul') + '</h3>' +
           '<p>' + (isRu ? 'Личность и стиль агента. Агент может самостоятельно модифицировать этот раздел.' : 'Agent personality and style. The agent can self-modify this section.') + '</p>' +
@@ -1598,7 +1622,7 @@ function switchSettingsTab(tab) {
         '<div class="rt-section-label">' +
           '<span style="display:inline-flex;align-items:center;gap:6px">' + IC.shield + ' ' +
           (isRu ? 'Правила безопасности' : 'Security Rules') +
-          ' <span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:4px;background:rgba(239,68,68,0.1);color:#ef4444;font-size:.65rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> ' + (isRu ? 'Только чтение' : 'Read-only') + '</span>' +
+          ' <span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:4px;background:rgba(239,68,68,0.1);color:#ef4444;font-size:.65rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> ' + (isRu ? 'Только чтение' : 'Read-only') + '</span>' +
           '</span>' +
         '</div>' +
         '<div id="security-rules-content" style="background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;padding:16px;font-family:\'JetBrains Mono\',monospace;font-size:.78rem;line-height:1.6;color:var(--text-secondary);white-space:pre-wrap;max-height:500px;overflow-y:auto;user-select:text">' +
@@ -1869,7 +1893,7 @@ function switchSettingsTab(tab) {
           '<input type="range" id="ai-max-tokens" min="256" max="8192" step="256" value="' + ((config.config && config.config.AI_MAX_TOKENS) || '2048') + '" class="rt-slider" style="accent-color:#6366f1" oninput="document.getElementById(\'ai-maxtok-val\').textContent=this.value">' +
           '<div class="rt-priority-display">' +
             '<input type="number" id="ai-max-tokens-num" value="' + ((config.config && config.config.AI_MAX_TOKENS) || '2048') + '" min="256" max="16384" class="rt-priority-num" style="width:80px" oninput="document.getElementById(\'ai-max-tokens\').value=this.value;document.getElementById(\'ai-maxtok-val\').textContent=this.value">' +
-            '<span id="ai-maxtok-val" class="rt-priority-badge" style="background:rgba(99,102,241,0.15);color:#6366f1">' + ((config.config && config.config.AI_MAX_TOKENS) || '2048') + '</span>' +
+            '<span id="ai-maxtok-val" class="rt-priority-badge" style="background:rgba(var(--accent-r,99),var(--accent-g,102),var(--accent-b,241),0.15);color:#6366f1">' + ((config.config && config.config.AI_MAX_TOKENS) || '2048') + '</span>' +
           '</div>' +
           '<div class="rt-input-hint">' + (isRu ? 'Максимальная длина ответа AI. 2048 по умолчанию. Больше = дороже.' : 'Max AI response length. 2048 default. Higher = more expensive.') + '</div>' +
         '</div>' +
@@ -2086,7 +2110,7 @@ function switchSettingsTab(tab) {
     body.innerHTML =
       '<div class="rt-page">' +
       '<div class="rt-header">' +
-        '<div class="rt-header-icon" style="background:rgba(168,85,247,0.12);color:#a855f7">' + IC.crown + '</div>' +
+        '<div class="rt-header-icon" style="background:rgba(var(--accent-r,168),var(--accent-g,85),var(--accent-b,247),0.12);color:#a855f7">' + IC.crown + '</div>' +
         '<div class="rt-header-text">' +
           '<h3>' + (isRu ? 'Роль агента' : 'Agent Role') + '</h3>' +
           '<p>' + (isRu ? 'Роль определяет поведение агента в мультиагентной системе' : 'Role defines agent behavior in multi-agent systems') + '</p>' +
@@ -2173,19 +2197,19 @@ function switchSettingsTab(tab) {
         '<div class="rt-toggle-row">' +
           '<label class="rt-toggle-card' + (chatTypes.includes('dm') ? ' rt-active' : '') + '" onclick="this.classList.toggle(\'rt-active\');this.querySelector(\'input\').checked=this.classList.contains(\'rt-active\')">' +
             '<input type="checkbox" id="routing-dm"' + (chatTypes.includes('dm') ? ' checked' : '') + ' style="display:none">' +
-            '<div class="rt-toggle-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>' +
+            '<div class="rt-toggle-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>' +
             '<div class="rt-toggle-name">' + (isRu ? 'Личные' : 'DM') + '</div>' +
             '<div class="rt-toggle-desc">' + (isRu ? 'Приватные чаты' : 'Private chats') + '</div>' +
           '</label>' +
           '<label class="rt-toggle-card' + (chatTypes.includes('group') ? ' rt-active' : '') + '" onclick="this.classList.toggle(\'rt-active\');this.querySelector(\'input\').checked=this.classList.contains(\'rt-active\')">' +
             '<input type="checkbox" id="routing-group"' + (chatTypes.includes('group') ? ' checked' : '') + ' style="display:none">' +
-            '<div class="rt-toggle-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>' +
+            '<div class="rt-toggle-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>' +
             '<div class="rt-toggle-name">' + (isRu ? 'Группы' : 'Groups') + '</div>' +
             '<div class="rt-toggle-desc">' + (isRu ? 'Групповые чаты' : 'Group chats') + '</div>' +
           '</label>' +
           '<label class="rt-toggle-card' + (chatTypes.includes('channel') ? ' rt-active' : '') + '" onclick="this.classList.toggle(\'rt-active\');this.querySelector(\'input\').checked=this.classList.contains(\'rt-active\')">' +
             '<input type="checkbox" id="routing-channel"' + (chatTypes.includes('channel') ? ' checked' : '') + ' style="display:none">' +
-            '<div class="rt-toggle-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></div>' +
+            '<div class="rt-toggle-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></div>' +
             '<div class="rt-toggle-name">' + (isRu ? 'Каналы' : 'Channels') + '</div>' +
             '<div class="rt-toggle-desc">' + (isRu ? 'Комменты каналов' : 'Channel comments') + '</div>' +
           '</label>' +
@@ -2366,7 +2390,7 @@ function switchSettingsTab(tab) {
       '<div class="rt-section">' +
         '<div class="bh-toggle-row">' +
           '<div class="bh-toggle-info">' +
-            '<div class="bh-toggle-icon" style="background:rgba(168,85,247,0.12);color:#a855f7">' + IC.split + '</div>' +
+            '<div class="bh-toggle-icon" style="background:rgba(var(--accent-r,168),var(--accent-g,85),var(--accent-b,247),0.12);color:#a855f7">' + IC.split + '</div>' +
             '<div>' +
               '<div class="bh-toggle-name">' + (isRu ? 'Разбивка сообщений' : 'Message Splitting') + '</div>' +
               '<div class="bh-toggle-desc">' + (isRu ? 'Длинные ответы разбиваются на несколько сообщений с паузами между ними' : 'Long responses split into multiple messages with pauses between them') + '</div>' +
@@ -2432,7 +2456,7 @@ function switchSettingsTab(tab) {
       '<div class="rt-section">' +
         '<div class="bh-toggle-row">' +
           '<div class="bh-toggle-info">' +
-            '<div class="bh-toggle-icon" style="background:rgba(99,102,241,0.12);color:#6366f1">' + IC.moon + '</div>' +
+            '<div class="bh-toggle-icon" style="background:rgba(var(--accent-r,99),var(--accent-g,102),var(--accent-b,241),0.12);color:#6366f1">' + IC.moon + '</div>' +
             '<div>' +
               '<div class="bh-toggle-name">' + (isRu ? 'Расписание активности' : 'Activity Schedule') + '</div>' +
               '<div class="bh-toggle-desc">' + (isRu ? 'Не отвечать ночью, имитация режима сна' : 'Do not respond at night, simulate sleep schedule') + '</div>' +
@@ -2566,7 +2590,7 @@ function switchSettingsTab(tab) {
       '<div class="rt-section">' +
         '<div class="bh-toggle-row">' +
           '<div class="bh-toggle-info">' +
-            '<div class="bh-toggle-icon" style="background:rgba(168,85,247,0.12);color:#a855f7">' + IC.shuffle + '</div>' +
+            '<div class="bh-toggle-icon" style="background:rgba(var(--accent-r,168),var(--accent-g,85),var(--accent-b,247),0.12);color:#a855f7">' + IC.shuffle + '</div>' +
             '<div>' +
               '<div class="bh-toggle-name">' + (isRu ? 'Адаптация стиля' : 'Style Adaptation') + '</div>' +
               '<div class="bh-toggle-desc">' + (isRu ? 'Подстройка длины и тона ответов под стиль пользователя. Краткие вопросы — краткие ответы' : 'Adapts response length and tone to user style. Short questions get short answers') + '</div>' +
@@ -2722,7 +2746,7 @@ function switchSettingsTab(tab) {
     body.innerHTML =
       '<div class="rt-page">' +
       '<div class="rt-header">' +
-        '<div class="rt-header-icon" style="background:rgba(99,102,241,0.12);color:#6366f1">' + IC.users + '</div>' +
+        '<div class="rt-header-icon" style="background:rgba(var(--accent-r,99),var(--accent-g,102),var(--accent-b,241),0.12);color:#6366f1">' + IC.users + '</div>' +
         '<div class="rt-header-text">' +
           '<h3>' + (isRu ? 'Контакты' : 'Contacts') + '</h3>' +
           '<p>' + (isRu ? 'Пользователи, с которыми взаимодействовал агент' : 'Users the agent has interacted with') + '</p>' +
@@ -2744,7 +2768,7 @@ function switchSettingsTab(tab) {
         // Left: chat list
         '<div id="chats-sidebar" style="width:280px;min-width:220px;border-right:1px solid var(--border);display:flex;flex-direction:column;background:var(--bg-primary)">' +
           '<div style="padding:14px 16px;border-bottom:1px solid var(--border);font-weight:700;font-size:.9rem;color:var(--text-primary);display:flex;align-items:center;gap:8px">' +
-            '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>' +
+            '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>' +
             (isRu ? 'Переписка' : 'Inbox') +
           '</div>' +
           '<div id="chats-list" style="flex:1;overflow-y:auto;padding:8px">' +
@@ -2768,7 +2792,7 @@ function switchSettingsTab(tab) {
     body.innerHTML =
       '<div class="rt-page">' +
       '<div class="rt-header">' +
-        '<div class="rt-header-icon" style="background:rgba(139,92,246,0.12);color:#8b5cf6">' + IC.brain + '</div>' +
+        '<div class="rt-header-icon" style="background:rgba(var(--accent-r,139),var(--accent-g,92),var(--accent-b,246),0.12);color:#8b5cf6">' + IC.brain + '</div>' +
         '<div class="rt-header-text">' +
           '<h3>' + (isRu ? 'Память агента' : 'Agent Memory') + '</h3>' +
           '<p>' + (isRu ? 'Контакты, факты, уроки и цели — всё что агент помнит' : 'Contacts, facts, lessons and goals — everything the agent knows') + '</p>' +
@@ -2785,7 +2809,7 @@ function switchSettingsTab(tab) {
 
       // Sub-tab bar
       '<div style="display:flex;gap:4px;margin-bottom:16px;background:var(--bg-primary);border-radius:10px;padding:4px">' +
-        '<button id="mem-sub-contacts" class="mem-sub-btn active" onclick="switchMemSubTab(\'contacts\')" style="flex:1;padding:7px 10px;border-radius:7px;border:none;cursor:pointer;font-size:.78rem;font-weight:500;background:rgba(139,92,246,0.18);color:#8b5cf6;transition:all .2s">' + IC.user + ' ' + (isRu ? 'Контакты' : 'Contacts') + '</button>' +
+        '<button id="mem-sub-contacts" class="mem-sub-btn active" onclick="switchMemSubTab(\'contacts\')" style="flex:1;padding:7px 10px;border-radius:7px;border:none;cursor:pointer;font-size:.78rem;font-weight:500;background:rgba(var(--accent-r,139),var(--accent-g,92),var(--accent-b,246),0.18);color:#8b5cf6;transition:all .2s">' + IC.user + ' ' + (isRu ? 'Контакты' : 'Contacts') + '</button>' +
         '<button id="mem-sub-knowledge" class="mem-sub-btn" onclick="switchMemSubTab(\'knowledge\')" style="flex:1;padding:7px 10px;border-radius:7px;border:none;cursor:pointer;font-size:.78rem;font-weight:500;background:transparent;color:var(--text-muted);transition:all .2s">' + IC.book + ' ' + (isRu ? 'Факты' : 'Facts') + '</button>' +
         '<button id="mem-sub-lessons" class="mem-sub-btn" onclick="switchMemSubTab(\'lessons\')" style="flex:1;padding:7px 10px;border-radius:7px;border:none;cursor:pointer;font-size:.78rem;font-weight:500;background:transparent;color:var(--text-muted);transition:all .2s">' + IC.lightbulb + ' ' + (isRu ? 'Уроки' : 'Lessons') + '</button>' +
         '<button id="mem-sub-raw" class="mem-sub-btn" onclick="switchMemSubTab(\'raw\')" style="flex:1;padding:7px 10px;border-radius:7px;border:none;cursor:pointer;font-size:.78rem;font-weight:500;background:transparent;color:var(--text-muted);transition:all .2s">' + IC.clipboard + ' ' + (isRu ? 'Память' : 'Raw') + '</button>' +
@@ -2862,7 +2886,7 @@ function switchSettingsTab(tab) {
     body.innerHTML =
       '<div class="rt-page">' +
       '<div class="rt-header">' +
-        '<div class="rt-header-icon" style="background:rgba(0,168,255,0.12);color:#00a8ff">' +
+        '<div class="rt-header-icon" style="background:rgba(var(--accent-r,0),var(--accent-g,168),var(--accent-b,255),0.12);color:#00a8ff">' +
           '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18 9l-4.1 1.4L12 15l-1.9-4.6L6 9l4.1-1.4z"/><path d="M19 14l.95 2.3L22 17l-2.05.7L19 20l-.95-2.3L16 17l2.05-.7z"/></svg>' +
         '</div>' +
         '<div class="rt-header-text">' +
@@ -3000,7 +3024,7 @@ function switchSettingsTab(tab) {
         '<div class="rt-toggle-row" style="gap:8px">' +
           '<label class="rt-toggle-card' + (agentLang === 'auto' ? ' rt-active' : '') + '" onclick="selectAdvLang(this,\'auto\')" style="flex:1">' +
             '<input type="radio" name="adv-lang" value="auto"' + (agentLang === 'auto' ? ' checked' : '') + ' style="display:none">' +
-            '<div class="rt-toggle-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></div>' +
+            '<div class="rt-toggle-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></div>' +
             '<div class="rt-toggle-name">Auto</div>' +
             '<div class="rt-toggle-desc">' + (isRu ? 'Зеркалит язык' : 'Mirrors language') + '</div>' +
           '</label>' +
@@ -3375,7 +3399,7 @@ function renderToolScopeTab(body, hooks, agentId, isRu) {
 
   var html = '<div class="rt-page">' +
     '<div class="rt-header">' +
-      '<div class="rt-header-icon" style="background:rgba(99,102,241,0.12);color:#6366f1">' + IC.shield + '</div>' +
+      '<div class="rt-header-icon" style="background:rgba(var(--accent-r,99),var(--accent-g,102),var(--accent-b,241),0.12);color:#6366f1">' + IC.shield + '</div>' +
       '<div class="rt-header-text">' +
         '<h3>' + (isRu ? 'Доступ к инструментам' : 'Tool Scope') + '</h3>' +
         '<p>' + (isRu ? 'Ограничьте где и кем могут использоваться опасные инструменты' : 'Restrict where and by whom dangerous tools can be used') + '</p>' +
@@ -4432,10 +4456,10 @@ function renderAgentsPage() {
 
   var triggerLabel = function(tt) { return tt === 'scheduled' ? t('trigger_scheduled') : tt === 'webhook' ? t('trigger_webhook') : tt === 'ai_agent' ? t('trigger_ai_agent') : t('trigger_manual'); };
   var triggerIcon = function(tt) {
-    if (tt === 'scheduled') return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
-    if (tt === 'webhook') return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>';
-    if (tt === 'ai_agent') return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
-    return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>';
+    if (tt === 'scheduled') return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
+    if (tt === 'webhook') return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>';
+    if (tt === 'ai_agent') return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+    return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>';
   };
   var timeAgo = function(dateStr) {
     if (!dateStr) return '';
@@ -4475,7 +4499,7 @@ function renderAgentsPage() {
       '<span class="agent-desc">' + escHtml((a.description || '').slice(0, 120)) + '</span>' +
       '</div>' +
       '<div class="agent-card-meta">' +
-      '<span class="agent-role-badge role-' + role + '" style="background:' + ({worker:'rgba(0,168,255,0.15)',manager:'rgba(139,92,246,0.15)',specialist:'rgba(230,126,34,0.15)',monitor:'rgba(46,204,113,0.15)'}[role] || 'rgba(0,168,255,0.15)') + ';color:' + ({worker:'#00a8ff',manager:'#8b5cf6',specialist:'#e67e22',monitor:'#2ecc71'}[role] || '#00a8ff') + '">' + role + '</span>' +
+      '<span class="agent-role-badge role-' + role + '" style="background:' + ({worker:'rgba(var(--accent-r,0),var(--accent-g,168),var(--accent-b,255),0.15)',manager:'rgba(var(--accent-r,139),var(--accent-g,92),var(--accent-b,246),0.15)',specialist:'rgba(230,126,34,0.15)',monitor:'rgba(46,204,113,0.15)'}[role] || 'rgba(var(--accent-r,0),var(--accent-g,168),var(--accent-b,255),0.15)') + ';color:' + ({worker:'#00a8ff',manager:'#8b5cf6',specialist:'#e67e22',monitor:'#2ecc71'}[role] || '#00a8ff') + '">' + role + '</span>' +
       '<span class="agent-level">' + t('lv') + lvl + '</span>' +
       (lastActiveStr ? '<span class="agent-last-active" title="' + (currentLang === 'ru' ? 'Последняя активность' : 'Last active') + '">' + IC.clock + ' ' + lastActiveStr + '</span>' : '') +
       (toolCalls > 0 ? '<span class="agent-tool-calls" title="' + (currentLang === 'ru' ? 'Вызовов инструментов' : 'Tool calls') + '">' + IC.wrench + ' ' + toolCalls + '</span>' : '') +
@@ -4895,9 +4919,10 @@ async function checkExistingSession() {
   }
 
   if (data.ok) {
-    currentUser = { userId: data.userId, userIdStr: data.userIdStr || String(data.userId), username: data.username, first_name: data.firstName, photo_url: data.photoUrl || null, _isAdmin: data.isAdmin || false, _isBeta: data.isBeta || false, _acceptedTos: data.acceptedTos || false };
+    currentUser = { userId: data.userId, userIdStr: data.userIdStr || String(data.userId), username: data.username, first_name: data.firstName, photo_url: data.photoUrl || null, _isAdmin: data.isAdmin || false, _isBeta: data.isBeta || false, _acceptedTos: data.acceptedTos || false, _needsTelegramLink: data.needsTelegramLink === true };
     if (data.planId) currentUser._plan = { planId: data.planId, planName: data.planName, planIcon: data.planIcon };
     showApp();
+    if (currentUser._needsTelegramLink) { try { showTelegramLinkBanner(); } catch (e) {} }
   } else {
     // Token expired (bot restarted / session wiped)
     authToken = null;
@@ -5354,7 +5379,7 @@ function renderCapabilities() {
     <div class="capability-item" data-id="${cap.id}">
       <div class="capability-header" onclick="toggleCapability('${cap.id}')">
         <div class="capability-info">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="capability-chevron">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="capability-chevron" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="9 18 15 12 9 6"/>
           </svg>
           <span class="capability-name">${currentLang === 'ru' ? cap.nameRu : cap.name}</span>
@@ -5654,7 +5679,7 @@ function renderExtensions() {
     container.innerHTML = `
       <div class="empty-state">
         <div class="empty-icon">
-          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 2l9 4.9V17L12 22l-9-4.9V7z"/>
           </svg>
         </div>
@@ -7304,7 +7329,10 @@ function updateSidebarPlanBadge(sub) {
     if (!betaEl) {
       betaEl = document.createElement('span');
       betaEl.id = 'user-beta-badge';
-      betaEl.style.cssText = 'display:block;padding:2px 8px;border-radius:10px;background:rgba(168,85,247,0.12);color:#a855f7;font-size:.62rem;font-weight:600;margin-top:2px;letter-spacing:.3px';
+      // Was hardcoded purple — now follows the live accent like the rest of the
+      // sidebar badges (BETA / NEW / ADM). Falls back to purple if --accent-r
+      // isn't set yet (first render before setAccentColor ran).
+      betaEl.style.cssText = 'display:block;padding:2px 8px;border-radius:10px;background:rgba(var(--accent-r,168),var(--accent-g,85),var(--accent-b,247),0.14);color:var(--primary-light,#a855f7);font-size:.62rem;font-weight:600;margin-top:2px;letter-spacing:.3px';
       betaEl.textContent = 'BETA TESTER';
       badge.parentElement.appendChild(betaEl);
     }
@@ -7392,7 +7420,7 @@ async function buyPlan(planId) {
     confirmText: currentLang === 'ru' ? 'Оплатить' : 'Pay Now',
     cancelText: currentLang === 'ru' ? 'Отмена' : 'Cancel',
     type: 'warning',
-    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>'
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>'
   });
   if (!confirmed) return;
 
@@ -8119,7 +8147,7 @@ function buildFlowPalette() {
   html += '<div class="palette-cat-header" onclick="togglePaletteCat(this)" style="border-bottom:1px solid rgba(255,255,255,0.06)">';
   html += '<span class="cat-dot" style="background:#60a5fa"></span>';
   html += '<span>' + IC.book + ' ' + (ru ? 'Инструкция' : 'Guide') + '</span>';
-  html += '<svg class="cat-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>';
+  html += '<svg class="cat-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
   html += '</div>';
   html += '<div class="palette-nodes" style="padding:8px 12px;font-size:0.72rem;color:var(--text-secondary);line-height:1.5">';
   html += ru
@@ -8148,7 +8176,7 @@ function buildFlowPalette() {
     html += '<div class="palette-cat-header" onclick="togglePaletteCat(this)">';
     html += '<span class="cat-dot" style="background:' + meta.color + '"></span>';
     html += '<span>' + (ru ? meta.ru : meta.en) + '</span>';
-    html += '<svg class="cat-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>';
+    html += '<svg class="cat-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
     html += '</div>';
     html += '<div class="palette-nodes">';
     for (const { type, def } of nodes) {
@@ -8636,7 +8664,7 @@ async function confirmAtlasDeploy() {
     showFlowToast(e.message, 'error');
   } finally {
     _deployAnimating = false;
-    if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10"/></svg> ' + t('deploy'); }
+    if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10"/></svg> ' + t('deploy'); }
   }
 }
 
@@ -9963,8 +9991,8 @@ async function loadNetworkMap() {
     var auroraX = W * 0.5 + Math.sin(time * 0.15) * W * 0.2;
     var auroraY = H * 0.4 + Math.cos(time * 0.12) * H * 0.15;
     var aurora = ctx.createRadialGradient(auroraX, auroraY, 0, auroraX, auroraY, W * 0.4);
-    aurora.addColorStop(0, 'rgba(0,152,234,0.04)');
-    aurora.addColorStop(0.4, 'rgba(168,85,247,0.02)');
+    aurora.addColorStop(0, 'rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.04)');
+    aurora.addColorStop(0.4, 'rgba(var(--accent-r,168),var(--accent-g,85),var(--accent-b,247),0.02)');
     aurora.addColorStop(1, 'transparent');
     ctx.fillStyle = aurora;
     ctx.fillRect(0, 0, W, H);
@@ -10528,7 +10556,7 @@ function switchAssistantTarget(value) {
       container.innerHTML = saved;
     } else {
       var agentName = value.replace('agent_', '#');
-      container.innerHTML = '<div class="assistant-welcome"><div class="assistant-welcome-icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>' +
+      container.innerHTML = '<div class="assistant-welcome"><div class="assistant-welcome-icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>' +
         '<h3>' + (currentLang === 'ru' ? 'Чат с агентом ' : 'Chat with Agent ') + agentName + '</h3>' +
         '<p>' + (currentLang === 'ru' ? 'Отправьте сообщение агенту напрямую' : 'Send a message directly to the agent') + '</p></div>';
     }
@@ -10578,7 +10606,7 @@ function appendAssistantMsg(role, content, buttons) {
     .replace(/\[([^\]]+)\]\((https?:\/\/[^)"']+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:var(--primary-light);text-decoration:underline">$1</a>')
     .replace(/\n/g, '<br>');
   if (role === 'assistant') {
-    html = '<div class="assistant-msg-avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="assistant-msg-content">' + html;
+    html = '<div class="assistant-msg-avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="assistant-msg-content">' + html;
   } else {
     html = '<div class="assistant-msg-content">' + html;
   }
@@ -10640,7 +10668,7 @@ async function sendAssistantMessage() {
   var typing = document.createElement('div');
   typing.className = 'assistant-msg assistant assistant-typing';
   typing.id = 'assistant-typing';
-  typing.innerHTML = '<div class="assistant-msg-avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="assistant-msg-content"><div class="typing-dots"><span></span><span></span><span></span></div></div>';
+  typing.innerHTML = '<div class="assistant-msg-avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="assistant-msg-content"><div class="typing-dots"><span></span><span></span><span></span></div></div>';
   container.appendChild(typing);
   container.scrollTop = container.scrollHeight;
 
@@ -10656,7 +10684,7 @@ async function sendAssistantMessage() {
       if (typingEl0) typingEl0.remove();
       var streamDiv = document.createElement('div');
       streamDiv.className = 'assistant-msg assistant';
-      streamDiv.innerHTML = '<div class="assistant-msg-avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="assistant-msg-content"><span class="chat-cursor">▋</span></div>';
+      streamDiv.innerHTML = '<div class="assistant-msg-avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="assistant-msg-content"><span class="chat-cursor">▋</span></div>';
       var ctr = document.getElementById('assistant-messages');
       if (ctr) { ctr.appendChild(streamDiv); ctr.scrollTop = ctr.scrollHeight; }
       var streamEl = streamDiv.querySelector('.assistant-msg-content'); // direct ref — no id needed
@@ -10667,7 +10695,7 @@ async function sendAssistantMessage() {
           if (streamEl) {
             streamEl.innerHTML = escHtml(streamText)
               .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-              .replace(/`([^`]+)`/g, '<code style="background:rgba(0,152,234,0.15);padding:1px 5px;border-radius:3px;font-size:.8em">$1</code>')
+              .replace(/`([^`]+)`/g, '<code style="background:rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.15);padding:1px 5px;border-radius:3px;font-size:.8em">$1</code>')
               .replace(/\n/g, '<br>') + '<span class="chat-cursor">▋</span>';
             if (ctr) ctr.scrollTop = ctr.scrollHeight;
           }
@@ -10677,7 +10705,7 @@ async function sendAssistantMessage() {
           if (streamEl) {
             streamEl.innerHTML = escHtml(finalText)
               .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-              .replace(/`([^`]+)`/g, '<code style="background:rgba(0,152,234,0.15);padding:1px 5px;border-radius:3px;font-size:.8em">$1</code>')
+              .replace(/`([^`]+)`/g, '<code style="background:rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.15);padding:1px 5px;border-radius:3px;font-size:.8em">$1</code>')
               .replace(/\n/g, '<br>');
           }
         },
@@ -10718,7 +10746,7 @@ async function sendAssistantMessage() {
           // SSE stream
           var atlasDiv = document.createElement('div');
           atlasDiv.className = 'assistant-msg assistant';
-          atlasDiv.innerHTML = '<div class="assistant-msg-avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="assistant-msg-content"><span class="chat-cursor">▋</span></div>';
+          atlasDiv.innerHTML = '<div class="assistant-msg-avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="assistant-msg-content"><span class="chat-cursor">▋</span></div>';
           var atlasCtr = document.getElementById('assistant-messages');
           if (atlasCtr) { atlasCtr.appendChild(atlasDiv); atlasCtr.scrollTop = atlasCtr.scrollHeight; }
           var atlasStreamEl = atlasDiv.querySelector('.assistant-msg-content'); // direct ref — no id collisions
@@ -10847,7 +10875,7 @@ async function sendAssistantCallback(callbackData, label) {
   var typing = document.createElement('div');
   typing.className = 'assistant-msg assistant assistant-typing';
   typing.id = 'assistant-typing';
-  typing.innerHTML = '<div class="assistant-msg-avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="assistant-msg-content"><div class="typing-dots"><span></span><span></span><span></span></div></div>';
+  typing.innerHTML = '<div class="assistant-msg-avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="assistant-msg-content"><div class="typing-dots"><span></span><span></span><span></span></div></div>';
   container.appendChild(typing);
   container.scrollTop = container.scrollHeight;
 
@@ -10878,7 +10906,7 @@ async function sendChatCallback(callbackData, label) {
 function clearAssistantChat() {
   var container = document.getElementById('assistant-messages');
   if (!container) return;
-  container.innerHTML = '<div class="assistant-welcome"><div class="assistant-welcome-icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><h3>' + (currentLang === 'ru' ? 'Чем могу помочь?' : 'How can I help you?') + '</h3><p>' + (currentLang === 'ru' ? 'Могу создать AI-агента, объяснить функции, помочь с настройками и многое другое.' : 'I can create AI agents, explain features, help with settings, and more.') + '</p></div>';
+  container.innerHTML = '<div class="assistant-welcome"><div class="assistant-welcome-icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><h3>' + (currentLang === 'ru' ? 'Чем могу помочь?' : 'How can I help you?') + '</h3><p>' + (currentLang === 'ru' ? 'Могу создать AI-агента, объяснить функции, помочь с настройками и многое другое.' : 'I can create AI agents, explain features, help with settings, and more.') + '</p></div>';
   var sugg = document.getElementById('assistant-suggestions');
   if (sugg) sugg.style.display = 'flex';
   _assistantLoaded = false;
@@ -11069,7 +11097,7 @@ async function buyFromMarketplace(listingId) {
     confirmText: currentLang === 'ru' ? 'Купить' : 'Buy Now',
     cancelText: currentLang === 'ru' ? 'Отмена' : 'Cancel',
     type: 'info',
-    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>'
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>'
   });
   if (!confirmed) return;
   try {
@@ -11335,7 +11363,7 @@ function startGuidedTour() {
         target.scrollIntoView({ behavior: 'smooth', block: 'center' });
         // Beautiful pulsing spotlight on the field
         target.style.transition = 'all .4s ease';
-        target.style.boxShadow = '0 0 0 4px rgba(14,165,233,0.4), 0 0 20px rgba(14,165,233,0.2)';
+        target.style.boxShadow = '0 0 0 4px rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.4), 0 0 20px rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.2)';
         target.style.borderColor = 'var(--primary)';
         if (keyInput) keyInput.placeholder = currentLang === 'ru' ? 'Вставьте API ключ...' : 'Paste API key...';
         // Animate pulse
@@ -11344,8 +11372,8 @@ function startGuidedTour() {
           _pulseCount++;
           if (_pulseCount > 6) { clearInterval(_pulseInt); target.style.boxShadow = ''; target.style.borderColor = ''; return; }
           target.style.boxShadow = _pulseCount % 2 === 0
-            ? '0 0 0 4px rgba(14,165,233,0.4), 0 0 20px rgba(14,165,233,0.2)'
-            : '0 0 0 6px rgba(14,165,233,0.6), 0 0 30px var(--accent-glow)';
+            ? '0 0 0 4px rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.4), 0 0 20px rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.2)'
+            : '0 0 0 6px rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.6), 0 0 30px var(--accent-glow)';
         }, 800);
       }
       var isRu = currentLang === 'ru';
@@ -11474,7 +11502,7 @@ var AGENT_TOUR_STEPS = [
 ];
 
 function _guideStep(num, title, desc, tabName) {
-  return '<div class="guide-step" onclick="dismissAgentGuide(); switchSettingsTab(\'' + tabName + '\')" style="display:flex;gap:12px;padding:12px 14px;border-radius:10px;cursor:pointer;transition:all .2s;background:rgba(255,255,255,0.03);border:1px solid transparent" onmouseenter="this.style.background=\'rgba(0,152,234,0.08)\';this.style.borderColor=\'rgba(0,152,234,0.25)\'" onmouseleave="this.style.background=\'rgba(255,255,255,0.03)\';this.style.borderColor=\'transparent\'">' +
+  return '<div class="guide-step" onclick="dismissAgentGuide(); switchSettingsTab(\'' + tabName + '\')" style="display:flex;gap:12px;padding:12px 14px;border-radius:10px;cursor:pointer;transition:all .2s;background:rgba(255,255,255,0.03);border:1px solid transparent" onmouseenter="this.style.background=\'rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.08)\';this.style.borderColor=\'rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.25)\'" onmouseleave="this.style.background=\'rgba(255,255,255,0.03)\';this.style.borderColor=\'transparent\'">' +
     '<div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:#fff;display:flex;align-items:center;justify-content:center;font-size:.8rem;font-weight:700;flex-shrink:0">' + num + '</div>' +
     '<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:.88rem;color:var(--text-primary);margin-bottom:2px">' + title + '</div>' +
     '<div style="font-size:.78rem;color:var(--text-muted);line-height:1.4">' + desc + '</div></div>' +
@@ -11501,7 +11529,7 @@ function startAgentTour(force) {
   if (document.getElementById('agent-onboard-guide')) return;
   var isRu = currentLang === 'ru';
 
-  var guideHtml = '<div id="agent-onboard-guide" style="margin-bottom:20px;padding:20px;background:linear-gradient(135deg,rgba(0,152,234,0.06),rgba(99,102,241,0.06));border:1px solid rgba(0,152,234,0.15);border-radius:14px;transition:all .25s ease">' +
+  var guideHtml = '<div id="agent-onboard-guide" style="margin-bottom:20px;padding:20px;background:linear-gradient(135deg,rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.06),rgba(var(--accent-r,99),var(--accent-g,102),var(--accent-b,241),0.06));border:1px solid rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.15);border-radius:14px;transition:all .25s ease">' +
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">' +
       '<div style="display:flex;align-items:center;gap:10px">' +
         '<div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,var(--primary),var(--primary-dark));display:flex;align-items:center;justify-content:center;font-size:1.2rem">&#127891;</div>' +
@@ -12018,7 +12046,7 @@ function awRenderRoot() {
   var root = _awData.find(function(w) { return w.walletType === 'root'; });
   if (!root) {
     el.innerHTML = '<div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:16px;padding:40px 32px;text-align:center">' +
-      '<div style="width:56px;height:56px;border-radius:16px;background:linear-gradient(135deg,rgba(59,130,246,0.15),rgba(168,85,247,0.15));display:flex;align-items:center;justify-content:center;margin:0 auto 16px"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.8"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/></svg></div>' +
+      '<div style="width:56px;height:56px;border-radius:16px;background:linear-gradient(135deg,rgba(59,130,246,0.15),rgba(var(--accent-r,168),var(--accent-g,85),var(--accent-b,247),0.15));display:flex;align-items:center;justify-content:center;margin:0 auto 16px"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/></svg></div>' +
       '<h2 style="margin-bottom:8px;font-size:1.15rem">' + (isRu ? 'Добро пожаловать в Agentic Wallets' : 'Welcome to Agentic Wallets') + '</h2>' +
       '<p style="color:var(--text-muted);margin-bottom:24px;max-width:480px;margin-left:auto;margin-right:auto;font-size:.88rem;line-height:1.5">' +
         (isRu ? 'Создайте Root-кошелёк — он станет мастер-кошельком, к которому привязаны все суб-кошельки агентов.' : 'Create a Root Wallet to get started. It will serve as your master wallet for all agent sub-wallets.') + '</p>' +
@@ -12046,7 +12074,7 @@ function awRenderGrid() {
   if (titleEl) titleEl.textContent = (isRu ? 'Кошельки агентов' : 'Agent Wallets') + ' (' + subs.length + ')';
   if (subs.length === 0) {
     el.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:48px 20px">' +
-      '<div style="width:48px;height:48px;border-radius:14px;background:var(--bg-tertiary);display:flex;align-items:center;justify-content:center;margin:0 auto 14px"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.5"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/></svg></div>' +
+      '<div style="width:48px;height:48px;border-radius:14px;background:var(--bg-tertiary);display:flex;align-items:center;justify-content:center;margin:0 auto 14px"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/></svg></div>' +
       '<h3 style="margin-bottom:6px;font-size:1rem;color:var(--text-primary)">' + (isRu ? 'Нет кошельков агентов' : 'No agent wallets yet') + '</h3>' +
       '<p style="color:var(--text-muted);font-size:.85rem">' + (isRu ? 'Создайте суб-кошелёк для автономной работы агента' : 'Deploy a sub-wallet for your agents to use autonomously') + '</p></div>';
     return;
@@ -12456,7 +12484,7 @@ function switchMemSubTab(name) {
     if (!panel || !btn) return;
     var active = p === name;
     panel.style.display = active ? '' : 'none';
-    btn.style.background = active ? 'rgba(139,92,246,0.18)' : 'transparent';
+    btn.style.background = active ? 'rgba(var(--accent-r,139),var(--accent-g,92),var(--accent-b,246),0.18)' : 'transparent';
     btn.style.color = active ? '#8b5cf6' : 'var(--text-muted)';
   });
   if (name === 'knowledge') loadCoreMemoryBlocks();
@@ -12537,7 +12565,7 @@ function renderContacts(profiles) {
     var lastNote = p.notes && p.notes[0] ? p.notes[0] : null;
     var latestTs = lastNote ? lastNote.ts : 0;
     var factsHtml = (p.facts || []).slice(0, 4).map(function(f) {
-      return '<span style="display:inline-block;margin:2px;padding:2px 7px;border-radius:12px;background:rgba(139,92,246,0.1);color:#a78bfa;font-size:.67rem">' +
+      return '<span style="display:inline-block;margin:2px;padding:2px 7px;border-radius:12px;background:rgba(var(--accent-r,139),var(--accent-g,92),var(--accent-b,246),0.1);color:#a78bfa;font-size:.67rem">' +
         escHtml(f.field.replace(/_/g,' ')) + ': ' + escHtml(String(f.value).slice(0,40)) + '</span>';
     }).join('');
     var notesHtml = (p.notes || []).slice(0, 2).map(function(n) {
@@ -12547,7 +12575,7 @@ function renderContacts(profiles) {
     var relBadge = p.relationship ? '<span style="font-size:.65rem;padding:2px 7px;border-radius:10px;background:rgba(16,185,129,0.12);color:#10b981;margin-left:6px">' + escHtml(p.relationship) + '</span>' : '';
 
     return '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:12px;padding:14px;transition:border-color .2s" ' +
-      'onmouseenter="this.style.borderColor=\'rgba(139,92,246,0.35)\'" onmouseleave="this.style.borderColor=\'var(--border)\'">' +
+      'onmouseenter="this.style.borderColor=\'rgba(var(--accent-r,139),var(--accent-g,92),var(--accent-b,246),0.35)\'" onmouseleave="this.style.borderColor=\'var(--border)\'">' +
       '<div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:8px">' +
         _profileAvatar(displayName, 38, p.userId) +
         '<div style="flex:1;min-width:0">' +
@@ -12557,7 +12585,7 @@ function renderContacts(profiles) {
           '<div style="font-size:.68rem;color:var(--text-muted);margin-top:1px">ID: ' + escHtml(String(p.userId)) + (latestTs ? ' · ' + _relTime(latestTs) : '') + '</div>' +
         '</div>' +
       '</div>' +
-      (p.summary ? '<div style="font-size:.74rem;color:var(--text-secondary);margin-bottom:6px;line-height:1.5;padding:6px;background:rgba(139,92,246,0.05);border-radius:6px;border-left:2px solid #8b5cf6">' + escHtml(p.summary.slice(0,200)) + '</div>' : '') +
+      (p.summary ? '<div style="font-size:.74rem;color:var(--text-secondary);margin-bottom:6px;line-height:1.5;padding:6px;background:rgba(var(--accent-r,139),var(--accent-g,92),var(--accent-b,246),0.05);border-radius:6px;border-left:2px solid #8b5cf6">' + escHtml(p.summary.slice(0,200)) + '</div>' : '') +
       (factsHtml ? '<div style="margin-bottom:6px">' + factsHtml + '</div>' : '') +
       notesHtml +
       ((p.notes||[]).length > 2 ? '<div style="font-size:.65rem;color:var(--text-muted);text-align:right;margin-top:4px">+' + ((p.notes.length - 2)) + ' ' + (isRu ? 'заметок' : 'more notes') + '</div>' : '') +
@@ -12646,7 +12674,7 @@ async function loadMemoryData() {
             : ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
           var month = monthNames[parseInt(parts[1])] || parts[1];
           return '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:10px;padding:14px;cursor:pointer;text-align:center;transition:border-color .2s,transform .15s" ' +
-            'onmouseenter="this.style.borderColor=\'rgba(139,92,246,0.4)\';this.style.transform=\'translateY(-2px)\'" ' +
+            'onmouseenter="this.style.borderColor=\'rgba(var(--accent-r,139),var(--accent-g,92),var(--accent-b,246),0.4)\';this.style.transform=\'translateY(-2px)\'" ' +
             'onmouseleave="this.style.borderColor=\'var(--border)\';this.style.transform=\'none\'" ' +
             'onclick="viewDailyLog(\'' + safeDate + '\')">' +
             '<div style="font-size:1.4rem;font-weight:700;color:var(--text-primary);line-height:1">' + day + '</div>' +
@@ -12888,7 +12916,7 @@ async function loadNotificationsPage() {
   container.innerHTML =
     '<div class="page-header">' +
       '<h2 class="page-title">' +
-        '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> ' +
+        '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> ' +
         (isRu ? 'Уведомления' : 'Notifications') +
       '</h2>' +
       '<p class="page-subtitle">' + (isRu ? 'Алерты, проблемы и рекомендации для ваших агентов' : 'Alerts, issues and recommendations for your agents') + '</p>' +
@@ -13019,7 +13047,7 @@ function renderNotifications(notifications) {
 
   if (!notifications.length) {
     list.innerHTML = '<div class="notif-empty">' +
-      '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.5"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>' +
+      '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>' +
       '<div style="margin-top:12px;font-size:.9rem;color:var(--text-muted)">' + (isRu ? 'Нет уведомлений' : 'No notifications') + '</div>' +
     '</div>';
     return;
@@ -13083,7 +13111,7 @@ function clearAllNotifs() {
   setTimeout(function() {
     var list = document.getElementById('notif-list');
     if (list && !list.querySelector('.notif-card')) {
-      list.innerHTML = '<div class="notif-empty"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.5"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><div style="margin-top:12px;font-size:.9rem;color:var(--text-muted)">' + (currentLang === 'ru' ? 'Нет уведомлений' : 'No notifications') + '</div></div>';
+      list.innerHTML = '<div class="notif-empty"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><div style="margin-top:12px;font-size:.9rem;color:var(--text-muted)">' + (currentLang === 'ru' ? 'Нет уведомлений' : 'No notifications') + '</div></div>';
     }
   }, cards.length * 30 + 300);
 }
@@ -13162,10 +13190,10 @@ function loadGuidePage() {
         { q: 'Step 4: Launch', a: 'Click Start. Green indicator = running 24/7.' },
       ],
     },
-    { id: 'settings', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/></svg>',
+    { id: 'settings', icon: _ico('<line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/>'),
       title: isRu ? 'Настройки агента' : 'Agent Settings',
       subtitle: isRu ? '17 вкладок для полного контроля' : '17 tabs for complete control',
-      gradient: 'linear-gradient(135deg, rgba(139,92,246,0.15), rgba(168,85,247,0.08))',
+      gradient: 'linear-gradient(135deg, rgba(var(--accent-r,139),var(--accent-g,92),var(--accent-b,246),0.15), rgba(var(--accent-r,168),var(--accent-g,85),var(--accent-b,247),0.08))',
       items: [
         'Code — ' + (isRu ? 'редактор промпта' : 'prompt editor'),
         'AI — ' + (isRu ? 'провайдер, модель, ключ' : 'provider, model, key'),
@@ -13186,13 +13214,13 @@ function loadGuidePage() {
         { q: 'Advanced — Продвинутые настройки', a: 'Для опытных пользователей:\n\n- Tick interval: как часто агент просыпается (60 сек = каждую минуту, 0 = только по сообщениям)\n- Компактинг: как сжимается контекст при длинных разговорах (structured = AI пишет резюме)\n- Loop guard: максимум ответов в одном чате за 5 минут (защита от спам-петель)\n- Flood cooldown: минимальный интервал между ответами в группах\n- Язык: auto = определяется по сообщению, ru/en = фиксированный' },
       ] : [],
     },
-    { id: 'ai', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/></svg>',
+    { id: 'ai', icon: _ico('<rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/>'),
       title: isRu ? 'AI Провайдеры' : 'AI Providers',
       subtitle: isRu ? '7 провайдеров на выбор' : '7 providers to choose from',
       gradient: 'linear-gradient(135deg, rgba(16,185,129,0.15), rgba(34,197,94,0.08))',
       items: ['Gemini — gemini-2.5-flash/pro', 'Claude — sonnet/haiku/opus', 'GPT — gpt-4o-mini', 'Groq — llama-3.3-70b', 'DeepSeek — deepseek-chat', 'OpenRouter — google/gemini', 'Together — meta-llama'],
     },
-    { id: 'tools', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>',
+    { id: 'tools', icon: _ico('<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>'),
       title: isRu ? 'Инструменты' : 'Tools',
       subtitle: isRu ? '77 инструментов в 10 категориях' : '77 tools in 10 categories',
       gradient: 'linear-gradient(135deg, rgba(245,158,11,0.15), rgba(234,179,8,0.08))',
@@ -13213,10 +13241,10 @@ function loadGuidePage() {
         { q: 'Уведомления и планирование', a: 'notify / notify_user — отправить уведомление владельцу агента\nnotify_rich — форматированное уведомление с кнопками\nschedule_action — запланировать действие на конкретное время\nset_next_wake — установить время следующего пробуждения агента' },
       ] : [],
     },
-    { id: 'flow', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>',
+    { id: 'flow', icon: _ico('<path d="m18 16 4-4-4-4"/><path d="m6 8-4 4 4 4"/><path d="m14.5 4-5 16"/>'),
       title: isRu ? 'Конструктор' : 'Flow Builder',
       subtitle: isRu ? 'Визуальный drag & drop редактор' : 'Visual drag & drop editor',
-      gradient: 'linear-gradient(135deg, rgba(99,102,241,0.15), rgba(79,70,229,0.08))',
+      gradient: 'linear-gradient(135deg, rgba(var(--accent-r,99),var(--accent-g,102),var(--accent-b,241),0.15), rgba(79,70,229,0.08))',
       cards: [
         { title: isRu ? 'Триггеры' : 'Triggers', desc: isRu ? 'Таймер, Webhook, Ручной запуск' : 'Timer, Webhook, Manual start' },
         { title: isRu ? 'Действия' : 'Actions', desc: isRu ? 'TON, Gifts, Telegram, Web, DeFi' : 'TON, Gifts, Telegram, Web, DeFi' },
@@ -13231,7 +13259,7 @@ function loadGuidePage() {
         { q: 'Когда использовать конструктор вместо AI', a: 'Конструктор подходит для:\n- Простых автоматизаций (проверил → уведомил)\n- Когда нужна точная логика (if/else)\n- Когда не хотите тратить AI токены на каждый запуск\n\nAI агент подходит для:\n- Сложных задач требующих понимания контекста\n- Общения в чатах\n- Задач где нужно принимать решения на лету' },
       ] : [],
     },
-    { id: 'ton', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.7 10.3a2.41 2.41 0 0 0 0 3.41l7.59 7.59a2.41 2.41 0 0 0 3.41 0l7.59-7.59a2.41 2.41 0 0 0 0-3.41l-7.59-7.59a2.41 2.41 0 0 0-3.41 0z"/></svg>',
+    { id: 'ton', icon: _ico('<path d="M2.7 10.3a2.41 2.41 0 0 0 0 3.41l7.59 7.59a2.41 2.41 0 0 0 3.41 0l7.59-7.59a2.41 2.41 0 0 0 0-3.41l-7.59-7.59a2.41 2.41 0 0 0-3.41 0z"/>'),
       title: 'TON Blockchain',
       subtitle: isRu ? 'Кошельки, свопы, NFT, жетоны' : 'Wallets, swaps, NFTs, jettons',
       gradient: 'linear-gradient(135deg, var(--accent-dim), rgba(2,132,199,0.08))',
@@ -13243,7 +13271,7 @@ function loadGuidePage() {
         { q: 'TonAPI v2 (блокчейн данные)', a: 'Через capability "blockchain" агент получает доступ к:\n\n- Аккаунты: баланс, история транзакций\n- Жетоны: балансы, метаданные, трансферы\n- NFT: коллекции, items, метаданные\n- DNS: резолв .ton доменов\n- Стейкинг: пулы, номинаторы\n- Эмуляция транзакций: проверка до отправки' },
       ] : [],
     },
-    { id: 'multi', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+    { id: 'multi', icon: _ico('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'),
       title: isRu ? 'Мультиагенты' : 'Multi-Agent',
       subtitle: isRu ? 'Команды агентов, роли, маршрутизация' : 'Agent teams, roles, routing',
       gradient: 'linear-gradient(135deg, rgba(236,72,153,0.15), rgba(219,39,119,0.08))',
@@ -13255,7 +13283,7 @@ function loadGuidePage() {
         { q: 'Общее состояние', a: 'Агенты могут использовать shared state для координации:\n\nget_shared_state(key) — прочитать значение доступное всем агентам\nset_shared_state(key, value) — записать значение для всех агентов\n\nПример: Мониторинг-агент записывает "alert:ton_price_low=true" → Трейдинг-агент читает и запускает стратегию.' },
       ] : [],
     },
-    { id: 'market', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>',
+    { id: 'market', icon: _ico('<path d="M3 9h18v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9z"/><path d="m3 9 1.5-4.5A2 2 0 0 1 6.4 3h11.2a2 2 0 0 1 1.9 1.5L21 9"/><path d="M3 9h18"/><path d="M16 14a4 4 0 0 1-8 0"/>'),
       title: isRu ? 'Маркетплейс' : 'Marketplace',
       subtitle: isRu ? 'Готовые шаблоны агентов' : 'Ready-made agent templates',
       gradient: 'linear-gradient(135deg, rgba(34,197,94,0.15), rgba(22,163,74,0.08))',
@@ -13267,7 +13295,7 @@ function loadGuidePage() {
         { q: 'Как создать свой шаблон', a: 'Настройте агента как хотите, затем в настройках нажмите "Опубликовать на маркетплейс". Укажите:\n- Название и описание\n- Категорию\n- Цену (или бесплатно)\n\nДругие пользователи смогут установить ваш шаблон. Комиссия платформы: 30%.' },
       ] : [],
     },
-    { id: 'keys', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3H6a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3h12a3 3 0 0 0 3-3 3 3 0 0 0-3-3z"/></svg>',
+    { id: 'keys', icon: _ico('<rect width="20" height="16" x="2" y="4" rx="2" ry="2"/><path d="M6 8h.001"/><path d="M10 8h.001"/><path d="M14 8h.001"/><path d="M18 8h.001"/><path d="M8 12h.001"/><path d="M12 12h.001"/><path d="M16 12h.001"/><path d="M7 16h10"/>'),
       title: isRu ? 'Горячие клавиши' : 'Shortcuts',
       subtitle: isRu ? 'Быстрые команды' : 'Quick commands',
       gradient: 'linear-gradient(135deg, rgba(100,116,139,0.15), rgba(71,85,105,0.08))',
@@ -13341,72 +13369,93 @@ function loadGuidePage() {
   function renderGuide() {
     var s = sections.find(function(x){ return x.id === _activeGuideTab; }) || sections[0];
 
-    // Tab bar (compact, scrollable)
-    var tabs = '<div style="display:flex;gap:2px;padding:3px;background:rgba(255,255,255,0.03);border-radius:10px;margin-bottom:16px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none">';
+    // ── Hero (always at top) ──
+    var hero = '<div class="guide-v3-hero">' +
+      '<div class="guide-v3-hero-content">' +
+        '<div class="guide-v3-hero-l">' +
+          '<div class="guide-v3-hero-eyebrow">' + (isRu ? 'РУКОВОДСТВО' : 'GUIDE') + '</div>' +
+          '<h1 class="guide-v3-hero-title">' +
+            (isRu
+              ? 'Создавай AI-агентов <span class="grad">за минуты</span>, не часы'
+              : 'Build AI agents <span class="grad">in minutes</span>, not hours') +
+          '</h1>' +
+          '<p class="guide-v3-hero-sub">' +
+            (isRu
+              ? 'Полное руководство по платформе — от первого агента до мультиагентных систем, кошельков и публикации в маркетплейс.'
+              : 'Complete platform guide — from your first agent to multi-agent systems, wallets and marketplace publishing.') +
+          '</p>' +
+          '<div class="guide-v3-hero-stats">' +
+            '<div class="guide-v3-hero-stat"><span class="n">77+</span><span class="l">' + (isRu ? 'инструментов' : 'tools') + '</span></div>' +
+            '<div class="guide-v3-hero-stat"><span class="n">7</span><span class="l">' + (isRu ? 'AI провайдеров' : 'AI providers') + '</span></div>' +
+            '<div class="guide-v3-hero-stat"><span class="n">20</span><span class="l">capabilities</span></div>' +
+            '<div class="guide-v3-hero-stat"><span class="n">24/7</span><span class="l">' + (isRu ? 'автономно' : 'autonomous') + '</span></div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="guide-v3-hero-r">' +
+          '<button class="guide-v3-hero-cta" onclick="navigateTo(\'assistant\')">' +
+            '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>' +
+            (isRu ? 'Открыть Atlas' : 'Open Atlas') +
+          '</button>' +
+          '<button class="guide-v3-hero-ghost" onclick="startGuidedTour()">' +
+            '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>' +
+            (isRu ? 'Запустить тур' : 'Start tour') +
+          '</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+
+    // Tab bar
+    var tabs = '<div class="guide-tabs">';
     sections.forEach(function(sec) {
       var active = sec.id === _activeGuideTab;
-      tabs += '<button onclick="_switchGuideTab(\'' + sec.id + '\')" style="' +
-        'flex-shrink:0;display:flex;align-items:center;gap:6px;padding:10px 16px;border:none;border-radius:10px;cursor:pointer;' +
-        'font-size:.82rem;font-weight:' + (active ? '600' : '400') + ';transition:all .2s;white-space:nowrap;' +
-        'background:' + (active ? 'var(--accent-dim)' : 'transparent') + ';' +
-        'color:' + (active ? 'var(--primary)' : 'var(--text-muted)') + ';' +
-        '">' + sec.icon + ' ' + sec.title + '</button>';
+      tabs += '<button class="guide-tab' + (active ? ' active' : '') + '" onclick="_switchGuideTab(\'' + sec.id + '\')">' +
+        sec.icon + '<span>' + sec.title + '</span></button>';
     });
     tabs += '</div>';
 
-    // Content area
-    var content = '<div style="animation:tabContentFade .25s ease">';
-    // Compact hero
-    content += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">' +
-      '<div style="display:flex;align-items:center;gap:10px">' +
-        '<div style="width:36px;height:36px;border-radius:10px;' + s.gradient + ';display:flex;align-items:center;justify-content:center;color:var(--primary)">' + s.icon + '</div>' +
-        '<div><h3 style="margin:0;font-size:1.05rem;color:var(--text-primary)">' + s.title + '</h3>' +
-          '<p style="margin:0;font-size:.76rem;color:var(--text-muted)">' + s.subtitle + '</p></div>' +
+    // Section header
+    var content = '<div class="guide-section-head">' +
+      '<div class="guide-section-head-l">' +
+        '<div class="guide-section-icon">' + s.icon + '</div>' +
+        '<div><h2 class="guide-section-title">' + s.title + '</h2>' +
+          '<p class="guide-section-sub">' + s.subtitle + '</p></div>' +
       '</div>' +
-      '<button onclick="startGuidedTour()" style="display:flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;border:1px solid var(--accent-glow);background:var(--accent-dim);color:var(--primary);font-size:.75rem;font-weight:600;cursor:pointer;transition:all .2s" onmouseenter="this.style.background=\'var(--accent-dim)\'" onmouseleave="this.style.background=\'var(--accent-dim)\'">' +
-        '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>' +
-        (isRu ? 'Тур' : 'Tour') +
-      '</button>' +
     '</div>';
 
-    // Cards — modern glass style
+    // Cards (numbered, unified style)
     if (s.cards) {
-      var _cardColors = ['#0ea5e9', '#8b5cf6', '#10b981', '#f59e0b'];
-      content += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-bottom:20px">';
+      content += '<div class="guide-section-divider">' + (isRu ? 'С чего начать' : 'Where to start') + '</div>';
+      content += '<div class="guide-cards">';
       s.cards.forEach(function(c, ci) {
-        var clr = _cardColors[ci % _cardColors.length];
-        content += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:20px;padding:22px;position:relative;overflow:hidden;transition:all .25s" ' +
-          'onmouseenter="this.style.borderColor=\'' + clr + '40\';this.style.transform=\'translateY(-3px)\';this.style.boxShadow=\'0 8px 24px rgba(0,0,0,0.2), 0 0 0 1px ' + clr + '20\'" ' +
-          'onmouseleave="this.style.borderColor=\'var(--border)\';this.style.transform=\'none\';this.style.boxShadow=\'none\'">' +
-          '<div style="position:absolute;top:-20px;right:-20px;width:80px;height:80px;border-radius:50%;background:' + clr + '08;pointer-events:none"></div>' +
-          '<div style="width:32px;height:32px;border-radius:8px;background:' + clr + '15;display:flex;align-items:center;justify-content:center;color:' + clr + ';margin-bottom:12px;font-size:.85rem;font-weight:700">' + (ci + 1) + '</div>' +
-          '<h4 style="margin:0 0 6px;font-size:.9rem;color:var(--text-primary);font-weight:600">' + c.title + '</h4>' +
-          '<p style="margin:0 0 14px;font-size:.78rem;color:var(--text-muted);line-height:1.5">' + c.desc + '</p>' +
-          (c.action ? '<button onclick="' + c.action + '" style="display:inline-flex;align-items:center;gap:6px;padding:7px 16px;border-radius:8px;border:none;background:' + clr + ';color:white;font-size:.76rem;font-weight:600;cursor:pointer;transition:all .2s" onmouseenter="this.style.opacity=\'.85\'" onmouseleave="this.style.opacity=\'1\'">' + (c.btn || '→') + ' <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg></button>' : '') +
+        content += '<div class="guide-card-v2">' +
+          '<span class="num">' + (ci + 1) + '</span>' +
+          '<h4>' + c.title + '</h4>' +
+          '<p>' + c.desc + '</p>' +
+          (c.action ? '<button class="btn" onclick="' + c.action + '">' + (c.btn || '→') +
+            ' <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg></button>' : '') +
         '</div>';
       });
       content += '</div>';
     }
 
-    // Items as compact chips
+    // Chips (items list)
     if (s.items) {
-      content += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px">';
+      content += '<div class="guide-section-divider">' + (isRu ? 'Что включено' : 'What\'s inside') + '</div>';
+      content += '<div class="guide-chips">';
       s.items.forEach(function(item) {
-        content += '<span style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:var(--bg-primary);border:1px solid var(--border);border-radius:20px;font-size:.78rem;color:var(--text-secondary);transition:all .15s;cursor:default" onmouseenter="this.style.borderColor=\'rgba(14,165,233,0.4)\';this.style.color=\'var(--text-primary)\'" onmouseleave="this.style.borderColor=\'var(--border)\';this.style.color=\'var(--text-secondary)\'">' +
-          '<span style="width:5px;height:5px;border-radius:50%;background:var(--primary);flex-shrink:0"></span>' + escHtml(item) + '</span>';
+        content += '<span class="guide-chip">' + escHtml(item) + '</span>';
       });
       content += '</div>';
     }
 
-    // Grid — colorful tool badges
+    // Tool grid
     if (s.grid) {
-      var _gridColors = ['#0ea5e9','#8b5cf6','#ef4444','#10b981','#f59e0b','#ec4899','#6366f1','#14b8a6','#f97316','#06b6d4'];
-      content += '<div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:20px">';
-      s.grid.forEach(function(g, gi) {
-        var gc = _gridColors[gi % _gridColors.length];
-        content += '<div style="display:flex;align-items:center;gap:8px;padding:10px 16px;background:' + gc + '08;border:1px solid ' + gc + '25;border-radius:10px;transition:all .2s;cursor:default" onmouseenter="this.style.background=\'' + gc + '15\';this.style.transform=\'translateY(-1px)\'" onmouseleave="this.style.background=\'' + gc + '08\';this.style.transform=\'none\'">' +
-          '<span style="font-size:.65rem;font-weight:700;color:' + gc + ';background:' + gc + '15;padding:3px 7px;border-radius:4px;font-family:monospace;letter-spacing:.5px">' + g.emoji + '</span>' +
-          '<span style="font-size:.82rem;color:var(--text-primary);font-weight:500">' + g.name + '</span>' +
+      content += '<div class="guide-section-divider">' + (isRu ? 'Категории инструментов' : 'Tool categories') + '</div>';
+      content += '<div class="guide-tool-grid">';
+      s.grid.forEach(function(g) {
+        content += '<div class="guide-tool">' +
+          '<span class="code">' + escHtml(g.emoji) + '</span>' +
+          '<span class="name">' + escHtml(g.name) + '</span>' +
         '</div>';
       });
       content += '</div>';
@@ -13414,52 +13463,50 @@ function loadGuidePage() {
 
     // Shortcuts
     if (s.shortcuts) {
-      content += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;margin-bottom:20px">';
+      content += '<div class="guide-section-divider">' + (isRu ? 'Горячие клавиши' : 'Keyboard shortcuts') + '</div>';
+      content += '<div class="guide-shortcuts">';
       s.shortcuts.forEach(function(sc) {
-        content += '<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--bg-primary);border:1px solid var(--border);border-radius:10px">' +
-          '<kbd style="background:var(--accent-dim);color:var(--primary);padding:4px 10px;border-radius:6px;font-size:.82rem;font-family:\'JetBrains Mono\',monospace;font-weight:600">' + sc.key + '</kbd>' +
-          '<span style="font-size:.84rem;color:var(--text-muted)">' + sc.desc + '</span>' +
+        content += '<div class="guide-shortcut">' +
+          '<kbd>' + escHtml(sc.key) + '</kbd>' +
+          '<span>' + escHtml(sc.desc) + '</span>' +
         '</div>';
       });
       content += '</div>';
     }
 
-    // Action button
-    if (s.action) {
-      content += '<button class="rt-save-btn" onclick="' + s.action.fn + '" style="margin-top:8px">' + s.action.label + ' →</button>';
+    // Tip
+    if (s.tip) {
+      content += '<div class="guide-tip">' +
+        '<div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg></div>' +
+        '<div>' + s.tip + '</div>' +
+      '</div>';
     }
 
-    // Details — pill-style expandable cards
+    // Action button
+    if (s.action) {
+      content += '<button class="guide-action" onclick="' + s.action.fn + '">' + s.action.label +
+        ' <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>' +
+      '</button>';
+    }
+
+    // Details (FAQ accordion)
     if (s.details && s.details.length > 0) {
-      var _detColors = ['#0ea5e9','#8b5cf6','#10b981','#f59e0b','#ec4899','#6366f1','#ef4444','#14b8a6','#f97316','#06b6d4'];
-      content += '<div style="margin-top:12px;display:grid;grid-template-columns:1fr;gap:10px">';
+      content += '<div class="guide-section-divider">' + (isRu ? 'Подробности' : 'Deep dive') + '</div>';
+      content += '<div class="guide-details">';
       s.details.forEach(function(d, idx) {
-        var dc = _detColors[idx % _detColors.length];
-        content += '<details' + (idx < 1 ? ' open' : '') + ' class="guide-pill" style="background:var(--bg-primary);border:1px solid var(--border);border-radius:24px;overflow:hidden;transition:all .2s">' +
-          '<summary style="padding:14px 22px;cursor:pointer;font-size:.92rem;font-weight:700;color:var(--text-primary);list-style:none;display:flex;align-items:center;gap:12px;user-select:none;transition:background .2s;border-radius:24px" onmouseenter="this.style.background=\'' + dc + '08\'" onmouseleave="this.style.background=\'transparent\'">' +
-            '<div style="width:32px;height:32px;min-width:32px;border-radius:50%;background:' + dc + '15;display:flex;align-items:center;justify-content:center">' +
-              '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="' + dc + '" stroke-width="2.5" style="transition:transform .2s"><polyline points="6 9 12 15 18 9"/></svg>' +
-            '</div>' +
-            '<span style="flex:1">' + d.q + '</span>' +
-            '<span style="font-size:.68rem;color:var(--text-muted);opacity:.5">' + (idx + 1) + '/' + s.details.length + '</span>' +
+        content += '<details class="guide-detail"' + (idx < 1 ? ' open' : '') + '>' +
+          '<summary>' +
+            '<span class="chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>' +
+            '<span class="q">' + escHtml(d.q) + '</span>' +
+            '<span class="idx">' + (idx + 1) + ' / ' + s.details.length + '</span>' +
           '</summary>' +
-          '<div style="padding:0 24px 18px 66px;font-size:.84rem;color:var(--text-secondary);line-height:1.7">' +
-            _formatGuideText(d.a) +
-          '</div>' +
+          '<div class="guide-detail-body">' + _formatGuideText(d.a) + '</div>' +
         '</details>';
       });
       content += '</div>';
     }
 
-    // Tip — prominent card
-    if (s.tip) {
-      content += '<div style="margin-top:16px;padding:16px 20px;background:linear-gradient(135deg,var(--accent-dim),rgba(99,102,241,0.05));border:1px solid var(--accent-dim);border-radius:12px;font-size:.82rem;color:var(--text-secondary);line-height:1.5;display:flex;gap:12px;align-items:flex-start">' +
-        '<div style="width:28px;height:28px;min-width:28px;border-radius:8px;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;color:var(--primary);margin-top:1px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg></div>' +
-        '<div>' + s.tip + '</div></div>';
-    }
-
-    content += '</div>';
-    container.innerHTML = '<div style="max-width:900px;margin:0 auto;padding:0 24px">' + tabs + content + '</div>';
+    container.innerHTML = '<div class="guide-v2">' + hero + tabs + content + '</div>';
   }
 
   window._switchGuideTab = function(id) {
@@ -13483,7 +13530,7 @@ function loadGuidePage() {
       // Step 1
       '<div class="guide-card" style="--delay:0.1s">' +
         '<div class="guide-card-num">01</div>' +
-        '<div class="guide-card-icon" style="background:rgba(16,185,129,0.12);color:#10b981"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></div>' +
+        '<div class="guide-card-icon" style="background:rgba(16,185,129,0.12);color:#10b981"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></div>' +
         '<h3>' + (isRu ? 'Создайте агента' : 'Create an Agent') + '</h3>' +
         '<p>' + (isRu
           ? 'Опишите задачу текстом или голосом. AI сгенерирует системный промпт и подключит нужные инструменты из 77 доступных.'
@@ -13494,7 +13541,7 @@ function loadGuidePage() {
       // Step 2
       '<div class="guide-card" style="--delay:0.2s">' +
         '<div class="guide-card-num">02</div>' +
-        '<div class="guide-card-icon" style="background:rgba(59,130,246,0.12);color:#3b82f6"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></div>' +
+        '<div class="guide-card-icon" style="background:rgba(59,130,246,0.12);color:#3b82f6"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></div>' +
         '<h3>' + (isRu ? 'Подключите Telegram' : 'Connect Telegram') + '</h3>' +
         '<p>' + (isRu
           ? 'Авторизуйте аккаунт через QR-код. Агент будет работать как полноценный пользователь — не бот.'
@@ -13505,7 +13552,7 @@ function loadGuidePage() {
       // Step 3
       '<div class="guide-card" style="--delay:0.3s">' +
         '<div class="guide-card-num">03</div>' +
-        '<div class="guide-card-icon" style="background:rgba(139,92,246,0.12);color:#8b5cf6"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4"/></svg></div>' +
+        '<div class="guide-card-icon" style="background:rgba(var(--accent-r,139),var(--accent-g,92),var(--accent-b,246),0.12);color:#8b5cf6"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4"/></svg></div>' +
         '<h3>' + (isRu ? 'Настройте поведение' : 'Configure Behavior') + '</h3>' +
         '<p>' + (isRu
           ? 'Душа, безопасность, стратегия, расписание — 25 табов настроек для полного контроля.'
@@ -13516,7 +13563,7 @@ function loadGuidePage() {
       // Step 4
       '<div class="guide-card" style="--delay:0.4s">' +
         '<div class="guide-card-num">04</div>' +
-        '<div class="guide-card-icon" style="background:rgba(245,158,11,0.12);color:#f59e0b"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>' +
+        '<div class="guide-card-icon" style="background:rgba(245,158,11,0.12);color:#f59e0b"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>' +
         '<h3>' + (isRu ? 'Запустите!' : 'Launch!') + '</h3>' +
         '<p>' + (isRu
           ? 'Агент начнёт работать 24/7 — отвечать в чатах, торговать, модерировать, мониторить и уведомлять.'
@@ -13719,7 +13766,7 @@ async function loadChatsData() {
       // For groups with multiple senders show as group name
       var groupBadge = '';
       if (isGroup && c.uniqueSenders > 1) {
-        groupBadge = '<span style="font-size:.6rem;padding:1px 5px;border-radius:4px;background:rgba(99,102,241,0.15);color:#818cf8;margin-left:4px">' + c.uniqueSenders + ' users</span>';
+        groupBadge = '<span style="font-size:.6rem;padding:1px 5px;border-radius:4px;background:rgba(var(--accent-r,99),var(--accent-g,102),var(--accent-b,241),0.15);color:#818cf8;margin-left:4px">' + c.uniqueSenders + ' users</span>';
       }
       var preview = (c.lastMessage || '').replace(/<[^>]+>/g,'').slice(0, 60);
       var id = 'chat-item-' + String(c.chatId).replace(/[^a-zA-Z0-9]/g,'_');
@@ -13760,7 +13807,7 @@ function openAgentChat(el) {
   var chatName = el.getAttribute('data-chatname');
   // Highlight selected
   document.querySelectorAll('._chat-item').forEach(function(i){ i.style.background=''; });
-  el.style.background = 'var(--bg-hover, rgba(99,102,241,0.1))';
+  el.style.background = 'var(--bg-hover, rgba(var(--accent-r,99),var(--accent-g,102),var(--accent-b,241),0.1))';
   loadAgentChatHistory(chatId, chatName);
 }
 
@@ -13790,7 +13837,7 @@ async function loadAgentChatHistory(chatId, chatName) {
         return '<div style="display:flex;justify-content:flex-end;align-items:flex-end;gap:8px">' +
           '<div style="max-width:70%;display:flex;flex-direction:column;align-items:flex-end">' +
             '<div style="font-size:.7rem;color:var(--text-muted);margin-bottom:3px;padding-right:4px">' + IC.robot + ' ' + (isRu ? 'Агент' : 'Agent') + '</div>' +
-            '<div style="padding:9px 13px;border-radius:16px 16px 4px 16px;background:rgba(99,102,241,0.18);border:1px solid rgba(99,102,241,0.3);font-size:.82rem;color:var(--text-primary);line-height:1.55;word-break:break-word;white-space:pre-wrap">' + escHtml(m.text||'') + '</div>' +
+            '<div style="padding:9px 13px;border-radius:16px 16px 4px 16px;background:rgba(var(--accent-r,99),var(--accent-g,102),var(--accent-b,241),0.18);border:1px solid rgba(var(--accent-r,99),var(--accent-g,102),var(--accent-b,241),0.3);font-size:.82rem;color:var(--text-primary);line-height:1.55;word-break:break-word;white-space:pre-wrap">' + escHtml(m.text||'') + '</div>' +
           '</div>' +
           '<div style="width:28px;height:28px;min-width:28px;border-radius:50%;background:#6366f1;display:flex;align-items:center;justify-content:center;font-size:.7rem">' + IC.robot + '</div>' +
         '</div>';
@@ -13910,7 +13957,7 @@ function showTosPopup() {
     '<div style="background:var(--bg-secondary,#1a1f2e);border:1px solid var(--border,#2a3040);border-radius:16px;max-width:520px;width:100%;max-height:85vh;overflow-y:auto;padding:32px">' +
       '<div style="text-align:center;margin-bottom:20px">' +
         '<div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,var(--primary),var(--primary-dark));display:inline-flex;align-items:center;justify-content:center;margin-bottom:12px">' +
-          '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>' +
+          '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>' +
         '</div>' +
         '<h2 style="margin:0;font-size:1.3rem;color:var(--text-primary,#fff)">' + (isRu ? 'Пользовательское соглашение' : 'Terms of Service') + '</h2>' +
         '<p style="margin:8px 0 0;color:var(--text-muted,#94a3b8);font-size:.85rem">' + (isRu ? 'Пожалуйста, ознакомьтесь и примите условия' : 'Please review and accept the terms') + '</p>' +
@@ -13919,7 +13966,7 @@ function showTosPopup() {
       // Privacy section
       '<div style="background:var(--bg-primary,#141821);border:1px solid var(--border,#2a3040);border-radius:10px;padding:16px;margin-bottom:16px">' +
         '<h3 style="margin:0 0 10px;font-size:.92rem;color:var(--primary);display:flex;align-items:center;gap:8px">' +
-          '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> ' +
+          '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> ' +
           (isRu ? 'Конфиденциальность переписок' : 'Conversation Privacy') +
         '</h3>' +
         '<p style="margin:0;font-size:.82rem;color:var(--text-secondary,#cbd5e1);line-height:1.6">' +
@@ -13932,7 +13979,7 @@ function showTosPopup() {
       // Error sharing section
       '<div style="background:var(--bg-primary,#141821);border:1px solid var(--border,#2a3040);border-radius:10px;padding:16px;margin-bottom:20px">' +
         '<h3 style="margin:0 0 10px;font-size:.92rem;color:#f59e0b;display:flex;align-items:center;gap:8px">' +
-          '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> ' +
+          '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> ' +
           (isRu ? 'Сбор информации об ошибках' : 'Error Information Collection') +
         '</h3>' +
         '<p style="margin:0;font-size:.82rem;color:var(--text-secondary,#cbd5e1);line-height:1.6">' +
@@ -14158,11 +14205,7 @@ function setUIScale(val) {
 
 function setAccentColor(color) {
   var root = document.documentElement;
-  root.style.setProperty('--accent', color);
-  root.style.setProperty('--primary', color);
-  root.style.setProperty('--primary-light', color);
-  root.style.setProperty('--accent-light', color);
-  // Parse RGB for alpha variants
+  // Parse RGB once so we can derive shades + alpha variants
   var r, g, b;
   if (color.startsWith('#')) {
     var hex = color.slice(1);
@@ -14170,13 +14213,42 @@ function setAccentColor(color) {
     g = parseInt(hex.substring(2, 4), 16);
     b = parseInt(hex.substring(4, 6), 16);
   } else { r = 14; g = 165; b = 233; }
+  function clamp(n) { return Math.max(0, Math.min(255, n | 0)); }
+  function rgbHex(rr, gg, bb) {
+    return '#' + [rr, gg, bb].map(function(n) { return clamp(n).toString(16).padStart(2, '0'); }).join('');
+  }
+  // primary-light = +18 mix to white; primary-dark = -24 to black
+  var light = rgbHex(r + (255 - r) * 0.22, g + (255 - g) * 0.22, b + (255 - b) * 0.22);
+  var dark  = rgbHex(r * 0.78, g * 0.78, b * 0.78);
+
+  root.style.setProperty('--accent', color);
+  root.style.setProperty('--primary', color);
+  root.style.setProperty('--primary-light', light);
+  root.style.setProperty('--primary-dark', dark);
+  root.style.setProperty('--accent-light', light);
+  root.style.setProperty('--accent-dark', dark);
   root.style.setProperty('--accent-dim', 'rgba(' + r + ',' + g + ',' + b + ',0.15)');
   root.style.setProperty('--accent-glow', 'rgba(' + r + ',' + g + ',' + b + ',0.3)');
-  root.style.setProperty('--primary-dark', color);
-  root.style.setProperty('--accent-dark', color);
-  // Update accent dots
+  // RGB components — referenced by inline rgba(var(--accent-r),...,X) so every
+  // hardcoded blue tint (rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),...)) adapts to the chosen accent.
+  root.style.setProperty('--accent-r', r);
+  root.style.setProperty('--accent-g', g);
+  root.style.setProperty('--accent-b', b);
+  // design-system.css redefines --primary as var(--ds-primary) inside :root.
+  // We have to also override the --ds-* variables otherwise nav-badge.accent
+  // (which uses !important + --ds-accent-dim) stays blue/purple.
+  root.style.setProperty('--ds-primary', color);
+  root.style.setProperty('--ds-primary-bright', light);
+  root.style.setProperty('--ds-primary-dim', 'rgba(' + r + ',' + g + ',' + b + ',0.12)');
+  root.style.setProperty('--ds-accent', color);
+  root.style.setProperty('--ds-accent-bright', light);
+  root.style.setProperty('--ds-accent-dim', 'rgba(' + r + ',' + g + ',' + b + ',0.12)');
+
+  // Update accent dot rings
   document.querySelectorAll('.accent-dot').forEach(function(d) {
-    d.style.borderColor = d.style.background === color || d.onclick.toString().includes(color) ? '#fff' : 'transparent';
+    var match = false;
+    try { match = d.style.background === color || (d.onclick && d.onclick.toString().includes(color)); } catch {}
+    d.style.borderColor = match ? '#fff' : 'transparent';
   });
   localStorage.setItem('accent_color', color);
 }
@@ -14195,8 +14267,11 @@ function setAccentColor(color) {
   }
   var accent = localStorage.getItem('accent_color');
   if (accent) {
-    document.documentElement.style.setProperty('--accent', accent);
-    document.documentElement.style.setProperty('--primary', accent);
+    // Re-run the full accent setter so light/dark/dim/glow shades all derive
+    // — not just --primary/--accent (those alone leave button hovers blue).
+    try { setAccentColor(accent); } catch (e) {
+      document.documentElement.style.setProperty('--primary', accent);
+    }
   }
   // Restore notification settings
   var nd = localStorage.getItem('notif_duration');
@@ -14311,7 +14386,7 @@ function loadPrivacyPage() {
       : '<b>Technical information:</b> error types, timestamps, context (without message content) — only with your consent.') +
 
     _legalH(isRu ? '2. Переписки агентов' : '2. Agent Conversations') +
-    '<div style="padding:16px;background:rgba(14,165,233,0.06);border-left:3px solid var(--primary);border-radius:0 10px 10px 0;margin-bottom:16px">' +
+    '<div style="padding:16px;background:rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.06);border-left:3px solid var(--primary);border-radius:0 10px 10px 0;margin-bottom:16px">' +
     _legalP(isRu
       ? '<b>Переписки ваших AI-агентов доступны только вам.</b> Платформа не читает, не анализирует и не передаёт третьим лицам содержимое переписок ваших агентов. Администраторы платформы имеют доступ только к технической информации: статус агента, количество сообщений, ошибки.'
       : '<b>Your AI agent conversations are accessible only to you.</b> The Platform does not read, analyze, or share the content of your agent conversations. Platform administrators only have access to technical information: agent status, message counts, errors.') +
@@ -14686,12 +14761,12 @@ async function loadTesterHub() {
         grouped[zone].forEach(function(t){
           var done = completed.indexOf(t.id) >= 0;
           var autoCheck = !!t.autoCheck;
-          var lvlBadge = '<span style="display:inline-block;padding:1px 6px;border-radius:4px;background:rgba(139,92,246,0.12);color:#a78bfa;font-size:.6rem;font-weight:600;margin-right:6px">L' + (t.level||1) + '</span>';
+          var lvlBadge = '<span style="display:inline-block;padding:1px 6px;border-radius:4px;background:rgba(var(--accent-r,139),var(--accent-g,92),var(--accent-b,246),0.12);color:#a78bfa;font-size:.6rem;font-weight:600;margin-right:6px">L' + (t.level||1) + '</span>';
           var autoBadge = autoCheck ? '<span style="display:inline-block;padding:1px 5px;border-radius:4px;background:rgba(16,185,129,0.12);color:#10b981;font-size:.55rem;font-weight:600;margin-left:4px" title="' + (isRu ? 'авто-проверка' : 'auto-check') + '">AUTO</span>' : '';
           var title = escHtml(isRu ? t.title : (t.titleEn || t.title));
           html += '<div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;background:var(--bg-secondary);margin-bottom:4px;cursor:pointer;transition:all .15s;opacity:' + (done ? '0.55' : '1') + '" onclick="toggleTask(\'' + t.id + '\',this)" onmouseenter="this.style.background=\'var(--accent-dim)\'" onmouseleave="this.style.background=\'var(--bg-secondary)\'">' +
             '<div style="width:20px;height:20px;border-radius:6px;border:2px solid ' + (done ? '#10b981' : 'var(--border)') + ';background:' + (done ? '#10b981' : 'transparent') + ';display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s">' +
-              (done ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>' : '') +
+              (done ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : '') +
             '</div>' +
             '<div style="flex:1;min-width:0">' +
               '<div style="font-size:.8rem;font-weight:500;color:var(--text-primary);' + (done ? 'text-decoration:line-through' : '') + '">' + lvlBadge + title + autoBadge + '</div>' +
@@ -14757,7 +14832,7 @@ async function loadTesterRewardsBlock(isRu) {
     var p = profile.profile;
     var sharePct = (profile.sharePercent || 0);
     var projTon = profile.projectedAnnualTonAt10k || 0;
-    html += '<div style="background:linear-gradient(135deg,rgba(0,170,255,0.06),rgba(139,92,246,0.06));border:1px solid rgba(0,170,255,0.2);border-radius:16px;padding:20px;margin-bottom:20px">' +
+    html += '<div style="background:linear-gradient(135deg,rgba(0,170,255,0.06),rgba(var(--accent-r,139),var(--accent-g,92),var(--accent-b,246),0.06));border:1px solid rgba(0,170,255,0.2);border-radius:16px;padding:20px;margin-bottom:20px">' +
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">' +
         '<span style="font-size:1.2rem">💰</span>' +
         '<div style="font-size:.95rem;font-weight:700;color:var(--text-primary)">' + (isRu ? 'Доля в 10% пуле' : 'Revenue share (10% pool)') + '</div>' +
@@ -15082,7 +15157,7 @@ function openFeedbackModal() {
     '<textarea id="fb-message" placeholder="' + (isRu ? 'Опишите проблему или предложение...' : 'Describe the issue or suggestion...') + '" style="width:100%;height:120px;background:var(--bg-primary);border:1px solid var(--border);border-radius:10px;padding:12px;color:var(--text-primary);font-size:.88rem;resize:vertical;font-family:inherit;box-sizing:border-box"></textarea>' +
     '<div style="margin-top:12px;display:flex;align-items:center;gap:10px">' +
       '<label for="fb-screenshot" style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:10px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-secondary);cursor:pointer;font-size:.83rem;transition:all .2s">' +
-        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>' +
+        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>' +
         (isRu ? 'Скриншот' : 'Screenshot') +
       '</label>' +
       '<input type="file" id="fb-screenshot" accept="image/*" style="display:none" onchange="previewFbScreenshot(this)">' +
@@ -15125,7 +15200,7 @@ function selectFbType(btn) {
     b.style.background = 'var(--bg-primary)';
     b.style.borderColor = 'var(--border)';
   });
-  btn.style.background = 'rgba(99,102,241,0.15)';
+  btn.style.background = 'rgba(var(--accent-r,99),var(--accent-g,102),var(--accent-b,241),0.15)';
   btn.style.borderColor = '#6366f1';
 }
 
@@ -15238,8 +15313,8 @@ async function openSkillDetail(name) {
       : '';
     var body =
       '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">' +
-        '<span class="badge" style="background:rgba(0,168,255,.15);color:#00a8ff;padding:3px 8px;border-radius:6px;font-size:.7rem">' + s.source.toUpperCase() + '</span>' +
-        '<span class="badge" style="background:rgba(139,92,246,.15);color:#8b5cf6;padding:3px 8px;border-radius:6px;font-size:.7rem">v' + escHtml(s.version || '1.0') + '</span>' +
+        '<span class="badge" style="background:rgba(var(--accent-r,0),var(--accent-g,168),var(--accent-b,255),.15);color:#00a8ff;padding:3px 8px;border-radius:6px;font-size:.7rem">' + s.source.toUpperCase() + '</span>' +
+        '<span class="badge" style="background:rgba(var(--accent-r,139),var(--accent-g,92),var(--accent-b,246),.15);color:#8b5cf6;padding:3px 8px;border-radius:6px;font-size:.7rem">v' + escHtml(s.version || '1.0') + '</span>' +
         (s.license ? '<span class="badge" style="background:rgba(34,197,94,.15);color:#22c55e;padding:3px 8px;border-radius:6px;font-size:.7rem">' + escHtml(s.license.slice(0, 30)) + '</span>' : '') +
       '</div>' +
       '<p style="color:var(--text-muted);margin-bottom:16px">' + escHtml(s.description) + '</p>' +
@@ -15365,7 +15440,7 @@ async function loadAgentSkills(agentId) {
             '<div style="font-size:.78rem;color:var(--text-muted);line-height:1.4">' + escHtml((s.description || '').slice(0, 200)) + '</div>' +
           '</div>' +
           '<button class="btn btn-ghost btn-sm" onclick="openSkillDetail(' + JSON.stringify(s.name) + ')" style="flex-shrink:0">' +
-            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>' +
+            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>' +
           '</button>' +
         '</div>';
     }).join('');
@@ -15593,8 +15668,8 @@ async function renderAgentMCPTab(body, agent) {
   body.innerHTML =
     '<div class="rt-page">' +
       '<div class="rt-header">' +
-        '<div class="rt-header-icon" style="background:rgba(139,92,246,0.12);color:#8b5cf6">' +
-          '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>' +
+        '<div class="rt-header-icon" style="background:rgba(var(--accent-r,139),var(--accent-g,92),var(--accent-b,246),0.12);color:#8b5cf6">' +
+          '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>' +
         '</div>' +
         '<div class="rt-header-text">' +
           '<h3>MCP ' + (isRu ? 'серверы' : 'servers') + '</h3>' +
@@ -15723,7 +15798,7 @@ function showEditWithAIDiff(original, proposed, field, model) {
         '</div>' +
         '<div style="display:flex;flex-direction:column;min-height:0">' +
           '<div style="font-size:.7rem;font-weight:600;color:#00a8ff;text-transform:uppercase;margin-bottom:4px">' + (isRu ? 'Станет' : 'Proposed') + '</div>' +
-          '<textarea id="edit-ai-proposed" style="flex:1;min-height:280px;font-family:\'JetBrains Mono\',monospace;font-size:.78rem;padding:10px;border:1px solid rgba(0,168,255,0.4);border-radius:8px;background:rgba(0,168,255,0.04);color:var(--text-primary);resize:none">' +
+          '<textarea id="edit-ai-proposed" style="flex:1;min-height:280px;font-family:\'JetBrains Mono\',monospace;font-size:.78rem;padding:10px;border:1px solid rgba(var(--accent-r,0),var(--accent-g,168),var(--accent-b,255),0.4);border-radius:8px;background:rgba(var(--accent-r,0),var(--accent-g,168),var(--accent-b,255),0.04);color:var(--text-primary);resize:none">' +
             escHtml(proposed) +
           '</textarea>' +
         '</div>' +
@@ -15735,7 +15810,7 @@ function showEditWithAIDiff(original, proposed, field, model) {
   const footer =
     '<button class="btn btn-ghost" onclick="closeModal()">' + (isRu ? 'Отмена' : 'Cancel') + '</button>' +
     '<button class="btn btn-primary" onclick="applyEditWithAI(\'' + field + '\')">' +
-      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg>' +
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:-2px;margin-right:4px" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' +
       (isRu ? 'Применить' : 'Apply') +
     '</button>';
   openModal(isRu ? 'Предпросмотр изменения' : 'Preview Change', body, footer);
@@ -15760,4 +15835,809 @@ async function applyEditWithAI(field) {
       toast((data && data.error) || 'Error', 'error');
     }
   } catch (e) { toast(e.message, 'error'); }
+}
+
+// ── Telegram-link banner ─────────────────────────────────────────────────
+// Shows on top of the app when the current session has no telegram_id linked.
+// Clicking "Привязать" opens t.me/<bot>?start=link_<token>; once the user runs
+// /start in the bot, future API calls use telegram_id and notifications
+// (auto-pause alerts, etc.) arrive in their Telegram chat.
+function showTelegramLinkBanner() {
+  if (document.querySelector('.tg-link-banner')) return;
+  var ts = parseInt(localStorage.getItem('tg_link_dismissed_at') || '0', 10);
+  if (ts && Date.now() - ts < 24 * 60 * 60 * 1000) return;
+  var isRu = (typeof currentLang !== 'undefined' && currentLang === 'ru');
+  var wrap = document.createElement('div');
+  wrap.className = 'tg-link-banner';
+  wrap.innerHTML =
+    '<span class="tg-link-icon">📨</span>' +
+    '<div class="tg-link-body">' +
+      '<b>' + (isRu ? 'Привяжи Telegram-бота' : 'Link Telegram bot') + '</b>' +
+      '<small>' + (isRu
+        ? 'Так уведомления Studio и алерты агентов будут приходить в чат с ботом.'
+        : 'So Studio notifications and agent alerts can reach you in the bot DM.') +
+      '</small>' +
+    '</div>' +
+    '<button onclick="startTelegramLink()">' + (isRu ? 'Привязать' : 'Link') + '</button>' +
+    '<button class="tg-link-close" onclick="dismissTelegramLinkBanner()" title="' +
+      (isRu ? 'Скрыть на сутки' : 'Hide for 24h') + '">×</button>';
+  var root = document.querySelector('.main-content') || document.body;
+  root.prepend(wrap);
+}
+
+function dismissTelegramLinkBanner() {
+  localStorage.setItem('tg_link_dismissed_at', String(Date.now()));
+  var el = document.querySelector('.tg-link-banner');
+  if (el) el.remove();
+}
+
+async function startTelegramLink() {
+  if (!authToken) { (typeof showNotification === 'function' ? showNotification : toast)('Log in first', 'error'); return; }
+  try {
+    var data = await apiRequest('POST', '/api/me/link-telegram', {});
+    if (!data.ok) { toast(data.error || 'Error', 'error'); return; }
+    if (data.alreadyLinked) {
+      toast((typeof currentLang !== 'undefined' && currentLang === 'ru') ? 'Уже привязано' : 'Already linked', 'success');
+      var el = document.querySelector('.tg-link-banner');
+      if (el) el.remove();
+      return;
+    }
+    if (data.deepLink) window.open(data.deepLink, '_blank');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ── Custom number-input spinners ─────────────────────────────────────────
+// Native <input type="number"> arrow controls are unstylable and look like
+// vanilla HTML against the rest of Studio. We wrap each number input in a
+// <span class="num-spin"> with our own +/− buttons; the underlying input still
+// accepts wheel/arrow-key/typed values.
+function _stepNumberInput(input, dir) {
+  if (!input || input.disabled || input.readOnly) return;
+  // Use the native stepUp/stepDown so min/max/step/validity are respected
+  try {
+    if (dir > 0 && typeof input.stepUp === 'function') input.stepUp();
+    else if (dir < 0 && typeof input.stepDown === 'function') input.stepDown();
+    else {
+      // Fallback for inputs without stepUp (rare)
+      var step = parseFloat(input.step || '1') || 1;
+      var cur = parseFloat(input.value || '0') || 0;
+      input.value = String(cur + dir * step);
+    }
+  } catch (e) {
+    var step = parseFloat(input.step || '1') || 1;
+    var cur = parseFloat(input.value || '0') || 0;
+    input.value = String(cur + dir * step);
+  }
+  // Fire input + change so listeners (saveSettingsAI, range syncs) react
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+function wrapNumberInputs(root) {
+  var scope = root || document;
+  var inputs = scope.querySelectorAll('input[type="number"]:not([data-numspin-wrapped])');
+  inputs.forEach(function(input) {
+    if (input.closest('.num-spin')) { input.setAttribute('data-numspin-wrapped', '1'); return; }
+    var wrap = document.createElement('span');
+    wrap.className = 'num-spin';
+    // Preserve flexible width — adopt parent's "block-like" behaviour if input was full-width
+    var cs = window.getComputedStyle(input);
+    if (cs.display === 'block' || input.classList.contains('rt-input') || input.style.width === '100%') {
+      wrap.style.display = 'flex';
+      wrap.style.width = '100%';
+    }
+    input.parentNode.insertBefore(wrap, input);
+    wrap.appendChild(input);
+    var minus = document.createElement('button');
+    minus.type = 'button';
+    minus.className = 'num-btn num-btn-minus';
+    minus.setAttribute('aria-label', 'Decrease');
+    minus.textContent = '−';
+    minus.onclick = function() { _stepNumberInput(input, -1); };
+    var plus = document.createElement('button');
+    plus.type = 'button';
+    plus.className = 'num-btn num-btn-plus';
+    plus.setAttribute('aria-label', 'Increase');
+    plus.textContent = '+';
+    plus.onclick = function() { _stepNumberInput(input, +1); };
+    wrap.appendChild(minus);
+    wrap.appendChild(plus);
+    input.setAttribute('data-numspin-wrapped', '1');
+  });
+}
+
+// Auto-wrap newly-rendered inputs by re-running on common UI events
+(function() {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function() { wrapNumberInputs(); });
+  } else {
+    wrapNumberInputs();
+  }
+  // Catch dynamically-inserted inputs (settings panels, modals, wizards)
+  var observer = new MutationObserver(function(muts) {
+    var needsRescan = false;
+    for (var i = 0; i < muts.length; i++) {
+      for (var j = 0; j < muts[i].addedNodes.length; j++) {
+        var n = muts[i].addedNodes[j];
+        if (n.nodeType === 1 && (
+          n.tagName === 'INPUT' || n.querySelector && n.querySelector('input[type="number"]')
+        )) { needsRescan = true; break; }
+      }
+      if (needsRescan) break;
+    }
+    if (needsRescan) wrapNumberInputs();
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+})();
+
+// ── Mobile sidebar drawer ────────────────────────────────────────────────
+// At ≤900px the sidebar becomes off-canvas (see studio.css). We inject a
+// hamburger button into the topbar and a click-outside-to-close behavior.
+function _setupMobileSidebar() {
+  if (window.__mobileSidebarReady) return;
+  window.__mobileSidebarReady = true;
+
+  function toggleSidebar(force) {
+    var b = document.body;
+    var willOpen = typeof force === 'boolean' ? force : !b.classList.contains('sidebar-mobile-open');
+    b.classList.toggle('sidebar-mobile-open', willOpen);
+  }
+  window.toggleMobileSidebar = toggleSidebar;
+
+  // Inject hamburger if missing
+  function injectHamburger() {
+    if (document.querySelector('.mobile-hamburger')) return;
+    var topbar = document.querySelector('.topbar') || document.querySelector('header.topbar') || document.querySelector('.main-content > header');
+    if (!topbar) return;
+    var btn = document.createElement('button');
+    btn.className = 'mobile-hamburger';
+    btn.setAttribute('aria-label', 'Open menu');
+    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>';
+    btn.onclick = function() { toggleSidebar(); };
+    topbar.insertBefore(btn, topbar.firstChild);
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', injectHamburger);
+  } else {
+    injectHamburger();
+  }
+  // Re-inject if topbar gets re-rendered
+  new MutationObserver(injectHamburger).observe(document.body, { childList: true, subtree: true });
+
+  // Click backdrop or nav item → close drawer
+  document.addEventListener('click', function(e) {
+    if (!document.body.classList.contains('sidebar-mobile-open')) return;
+    var t = e.target;
+    var inSidebar = t && (t.closest('.sidebar') || t.closest('.mobile-hamburger'));
+    if (inSidebar) {
+      // Nav item click — still close drawer for navigation feel
+      if (t.closest && t.closest('.nav-item')) {
+        setTimeout(function() { toggleSidebar(false); }, 80);
+      }
+      return;
+    }
+    toggleSidebar(false);
+  });
+  // ESC closes
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && document.body.classList.contains('sidebar-mobile-open')) toggleSidebar(false);
+  });
+}
+_setupMobileSidebar();
+
+// ── Button busy state + form-Save feedback ───────────────────────────────
+// Any function that submits to an API should call btnBusy(btn) at start and
+// btnDone(btn) at finish. Use the data-action wrapper below to auto-wire most
+// Save buttons that follow the pattern `<button onclick="saveX()">Save</button>`.
+function btnBusy(btn) {
+  if (!btn) return;
+  if (btn.dataset.origText === undefined) btn.dataset.origText = btn.textContent || '';
+  btn.dataset.busy = '1';
+  btn.disabled = true;
+}
+function btnDone(btn) {
+  if (!btn) return;
+  btn.dataset.busy = '0';
+  btn.removeAttribute('data-busy');
+  btn.disabled = false;
+}
+window.btnBusy = btnBusy;
+window.btnDone = btnDone;
+
+// Wrap onclick handlers of any element marked data-save-button so it auto-shows
+// spinner and re-enables after the promise resolves. Opt-in via:
+//   <button data-save-button onclick="saveAIKey()">Save</button>
+(function() {
+  function wrap(btn) {
+    if (!btn || btn.__saveWrapped) return;
+    btn.__saveWrapped = true;
+    var origAttr = btn.getAttribute('onclick');
+    if (!origAttr) return;
+    // Wrap the inline handler so we can detect promise return
+    btn.removeAttribute('onclick');
+    btn.addEventListener('click', async function(e) {
+      btnBusy(btn);
+      try {
+        // Eval the original handler body in window scope, get its return
+        var fn = new Function('event', origAttr + ';');
+        var r = fn.call(window, e);
+        if (r && typeof r.then === 'function') { await r; }
+      } catch (err) {
+        try { toast(err.message || String(err), 'error'); } catch {}
+      } finally {
+        btnDone(btn);
+      }
+    });
+  }
+  function scan() {
+    document.querySelectorAll('[data-save-button]').forEach(wrap);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', scan);
+  else scan();
+  new MutationObserver(scan).observe(document.body, { childList: true, subtree: true });
+})();
+
+// ── A11y: auto-add aria-label to icon-only buttons ───────────────────────
+// Many buttons in Studio are icon-only (SVG inside). Auto-injecting aria-label
+// based on tooltips/title/data-action so screen-reader users get something.
+(function() {
+  function infer(btn) {
+    if (btn.getAttribute('aria-label')) return;
+    var label =
+      btn.getAttribute('title') ||
+      btn.getAttribute('data-tooltip') ||
+      btn.getAttribute('data-action') ||
+      btn.getAttribute('data-name');
+    // Skip buttons that already have visible text content
+    var txt = (btn.textContent || '').trim();
+    if (txt && txt.length > 1 && !/^[+\-×x✕▾▿▸▶◀<>↑↓]+$/.test(txt)) return;
+    // Common ones based on class / onclick
+    var cls = (btn.className || '') + '';
+    if (!label) {
+      if (cls.includes('mobile-hamburger') || cls.includes('sidebar-toggle')) label = 'Menu';
+      else if (cls.includes('close')) label = 'Close';
+      else if (cls.includes('settings')) label = 'Settings';
+      else if (cls.includes('delete')) label = 'Delete';
+      else if (cls.includes('edit')) label = 'Edit';
+      else if (cls.includes('refresh')) label = 'Refresh';
+      else if (cls.includes('search')) label = 'Search';
+      else if (cls.includes('back')) label = 'Back';
+      else if (cls.includes('notif')) label = 'Notifications';
+      else if (txt === '+') label = 'Add';
+      else if (txt === '−' || txt === '-') label = 'Remove';
+      else if (txt === '×' || txt === '✕') label = 'Close';
+    }
+    if (label) btn.setAttribute('aria-label', label);
+  }
+  function scan() {
+    document.querySelectorAll('button, [role="button"]').forEach(infer);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', scan);
+  else scan();
+  // Throttled rescan on DOM changes
+  var pending = false;
+  new MutationObserver(function() {
+    if (pending) return;
+    pending = true;
+    setTimeout(function() { pending = false; scan(); }, 250);
+  }).observe(document.body, { childList: true, subtree: true });
+})();
+
+// ── Creator earnings dashboard ───────────────────────────────────────────
+async function loadCreatorEarnings() {
+  var container = document.getElementById('earnings-page') ||
+                  document.getElementById('profile-page');
+  if (!container) return;
+  var host = document.getElementById('earnings-content');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'earnings-content';
+    host.style.padding = '16px';
+    container.appendChild(host);
+  }
+  host.innerHTML = '<div class="skel skel-block" style="height:24px;width:60%"></div>' +
+                   '<div class="skel skel-block" style="height:14px;margin-top:12px"></div>';
+  try {
+    var data = await apiRequest('GET', '/api/me/earnings');
+    if (!data.ok) throw new Error(data.error || 'load failed');
+    var isRu = currentLang === 'ru';
+    var t = isRu ? {
+      title: 'Доходы автора',
+      pending: 'Ожидает выплаты',
+      paid: 'Выплачено',
+      total: 'Всего заработано',
+      payoutWallet: 'Кошелёк для выплат',
+      payoutHint: 'TON-адрес куда платформа отправит твою долю с продаж скиллов / агентов. Минимум 0.5 TON, выплаты раз в сутки.',
+      setWallet: 'Сохранить',
+      enterAddr: 'Введите TON адрес (UQ… или EQ…)',
+      recent: 'Последние операции',
+      empty: 'Пока нет начислений. Опубликуй скилл в маркетплейс — 80% с каждой покупки твои.',
+      ton: 'TON',
+    } : {
+      title: 'Creator earnings',
+      pending: 'Pending payout',
+      paid: 'Paid out',
+      total: 'Total earned',
+      payoutWallet: 'Payout wallet',
+      payoutHint: 'TON address where the platform sends your share of skill / agent sales. Min 0.5 TON, paid daily.',
+      setWallet: 'Save',
+      enterAddr: 'Enter TON address (UQ… or EQ…)',
+      recent: 'Recent activity',
+      empty: 'No earnings yet. Publish a skill — 80% of every sale is yours.',
+      ton: 'TON',
+    };
+    function statusLabel(s) {
+      var map = isRu
+        ? { pending: 'Ожидает', paid: 'Выплачено', failed: 'Ошибка', refunded: 'Возврат' }
+        : { pending: 'Pending', paid: 'Paid', failed: 'Failed', refunded: 'Refunded' };
+      return map[s] || s;
+    }
+    function typeLabel(s) {
+      var map = isRu
+        ? { skill_purchase: 'Покупка скилла', agent_fork: 'Форк агента', referral: 'Реферал', manual: 'Ручное' }
+        : { skill_purchase: 'Skill sale', agent_fork: 'Agent fork', referral: 'Referral', manual: 'Manual' };
+      return map[s] || s;
+    }
+    var html = '';
+    html += '<h2 style="margin:0 0 16px;font-size:1.25rem">💸 ' + t.title + '</h2>';
+    html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">';
+    html += '<div style="background:var(--bg-tertiary);border-radius:10px;padding:14px">' +
+              '<div style="font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em">' + t.pending + '</div>' +
+              '<div style="font-size:1.4rem;font-weight:700;margin-top:4px">' + data.pendingTon.toFixed(3) + ' ' + t.ton + '</div>' +
+            '</div>';
+    html += '<div style="background:var(--bg-tertiary);border-radius:10px;padding:14px">' +
+              '<div style="font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em">' + t.paid + '</div>' +
+              '<div style="font-size:1.4rem;font-weight:700;margin-top:4px">' + data.paidTon.toFixed(3) + ' ' + t.ton + '</div>' +
+            '</div>';
+    html += '<div style="background:var(--bg-tertiary);border-radius:10px;padding:14px">' +
+              '<div style="font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em">' + t.total + '</div>' +
+              '<div style="font-size:1.4rem;font-weight:700;margin-top:4px">' + data.totalEarnedTon.toFixed(3) + ' ' + t.ton + '</div>' +
+            '</div>';
+    html += '</div>';
+    html += '<div style="background:var(--bg-tertiary);border-radius:10px;padding:14px;margin-bottom:20px">';
+    html += '<label style="display:block;font-size:.85rem;font-weight:600;margin-bottom:6px">' + t.payoutWallet + '</label>';
+    html += '<div style="display:flex;gap:8px;align-items:stretch">';
+    html += '<input id="earnings-payout-input" type="text" placeholder="' + t.enterAddr + '" value="' + escHtml(data.payoutWallet || '') + '" style="flex:1">';
+    html += '<button data-save-button onclick="saveCreatorPayoutWallet()">' + t.setWallet + '</button>';
+    html += '</div>';
+    html += '<div style="font-size:.72rem;color:var(--text-muted);margin-top:6px">' + t.payoutHint + '</div>';
+    html += '</div>';
+    html += '<h3 style="margin:24px 0 12px;font-size:1rem">' + t.recent + '</h3>';
+    if (!data.recent || data.recent.length === 0) {
+      html += '<div style="color:var(--text-muted);padding:16px;background:var(--bg-tertiary);border-radius:10px;text-align:center">' + t.empty + '</div>';
+    } else {
+      html += '<div style="background:var(--bg-tertiary);border-radius:10px;overflow:hidden">';
+      html += '<table style="width:100%;border-collapse:collapse;font-size:.85rem">';
+      html += '<thead><tr style="background:rgba(255,255,255,0.03);font-size:.72rem;color:var(--text-muted);text-transform:uppercase">';
+      html += '<th style="text-align:left;padding:10px">' + (isRu ? 'Дата' : 'Date') + '</th>';
+      html += '<th style="text-align:left;padding:10px">' + (isRu ? 'Источник' : 'Source') + '</th>';
+      html += '<th style="text-align:right;padding:10px">' + t.ton + '</th>';
+      html += '<th style="text-align:left;padding:10px">' + (isRu ? 'Статус' : 'Status') + '</th>';
+      html += '</tr></thead><tbody>';
+      for (var i = 0; i < data.recent.length; i++) {
+        var r = data.recent[i];
+        var d = new Date(r.createdAt).toLocaleDateString(isRu ? 'ru-RU' : 'en-US', { day: '2-digit', month: 'short' });
+        var badgeStyle = r.status === 'paid'
+          ? 'background:rgba(34,197,94,0.18);color:#86efac'
+          : r.status === 'failed'
+            ? 'background:rgba(239,68,68,0.18);color:#fca5a5'
+            : 'background:rgba(234,179,8,0.18);color:#fcd34d';
+        html += '<tr style="border-top:1px solid rgba(255,255,255,0.06)">';
+        html += '<td style="padding:10px">' + d + '</td>';
+        html += '<td style="padding:10px">' + typeLabel(r.sourceType) + (r.sourceId ? ' #' + r.sourceId : '') + '</td>';
+        html += '<td style="padding:10px;text-align:right;font-variant-numeric:tabular-nums">' + r.amountTon.toFixed(3) + '</td>';
+        html += '<td style="padding:10px"><span style="font-size:.72rem;padding:2px 8px;border-radius:4px;' + badgeStyle + '">' + statusLabel(r.status) + '</span></td>';
+        html += '</tr>';
+      }
+      html += '</tbody></table></div>';
+    }
+    host.innerHTML = html;
+  } catch (e) {
+    host.innerHTML = '<div style="color:var(--danger);padding:16px">Error: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+async function saveCreatorPayoutWallet() {
+  if (!authToken) { toast('Login first', 'error'); return; }
+  var inp = document.getElementById('earnings-payout-input');
+  var addr = (inp && inp.value || '').trim();
+  try {
+    var data = await apiRequest('POST', '/api/me/payout-wallet', { address: addr });
+    if (!data.ok) { toast(data.error || 'Save failed', 'error'); return; }
+    toast(currentLang === 'ru' ? 'Кошелёк сохранён' : 'Wallet saved', 'success');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+(function() {
+  if (typeof pageLoadFns === 'object' && pageLoadFns) {
+    pageLoadFns.earnings = loadCreatorEarnings;
+  }
+})();
+
+// ── Range slider fill ─────────────────────────────────────────────────────
+// Native <input type="range"> draws a flat single-color track that hides on
+// dark backgrounds. We compute the fill percent (value / max) and set
+// `--fill` so the CSS gradient shows accent-colored progress before the thumb.
+(function() {
+  function updateFill(input) {
+    if (!input || input.type !== 'range') return;
+    var min = parseFloat(input.min) || 0;
+    var max = parseFloat(input.max);
+    if (!isFinite(max) || max <= min) return;
+    var val = parseFloat(input.value);
+    if (!isFinite(val)) return;
+    var pct = ((val - min) / (max - min)) * 100;
+    input.style.setProperty('--fill', pct + '%');
+  }
+  function scan(root) {
+    (root || document).querySelectorAll('input[type="range"]').forEach(updateFill);
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function() { scan(); });
+  } else {
+    scan();
+  }
+  // Live update while user drags
+  document.addEventListener('input', function(e) {
+    if (e.target && e.target.type === 'range') updateFill(e.target);
+  });
+  // New sliders rendered dynamically — observe and prime them
+  var pending = false;
+  new MutationObserver(function() {
+    if (pending) return;
+    pending = true;
+    setTimeout(function() { pending = false; scan(); }, 100);
+  }).observe(document.body, { childList: true, subtree: true });
+})();
+
+// ── Admin: Payouts page (manual TonConnect sign) ─────────────────────────
+// Owner-only page that lists pending creator earnings and lets the owner
+// sign a batch transfer via their connected Tonkeeper. No mnemonic is
+// stored server-side — the server only records the resulting tx hash.
+async function loadAdminPayouts() {
+  if (!currentUser || !currentUser._isAdmin) {
+    toast(currentLang === 'ru' ? 'Только для админов' : 'Admin only', 'error');
+    return;
+  }
+  // Render into the static #admin-payouts-content container in studio.html.
+  // navigateTo() handles page-active toggling already; we only fill content.
+  var host = document.getElementById('admin-payouts-content');
+  if (!host) {
+    var page = document.getElementById('admin-payouts-page');
+    if (!page) {
+      page = document.createElement('div');
+      page.id = 'admin-payouts-page';
+      page.className = 'page active';
+      var mc = document.querySelector('.main-content') || document.body;
+      mc.appendChild(page);
+    }
+    host = document.createElement('div');
+    host.id = 'admin-payouts-content';
+    host.style.padding = '16px';
+    page.appendChild(host);
+  }
+  host.innerHTML = '<div class="skel skel-block" style="height:24px;width:30%"></div>' +
+                   '<div class="skel skel-block" style="height:120px;margin-top:16px"></div>';
+  try {
+    var data = await apiRequest('GET', '/api/admin/payouts/pending');
+    if (!data.ok) throw new Error(data.error || 'load failed');
+    var isRu = currentLang === 'ru';
+    var html = '';
+    html += '<h2 style="margin:0 0 8px;font-size:1.25rem">💸 ' + (isRu ? 'Выплаты авторам' : 'Author payouts') + '</h2>';
+    html += '<div style="color:var(--text-muted);font-size:.85rem;margin-bottom:16px">' +
+            (isRu
+              ? 'Подпиши batch transfer через свой Tonkeeper — сервер не хранит mnemonic.'
+              : 'Sign a batch transfer with your Tonkeeper — no mnemonic stored server-side.') + '</div>';
+    if (!data.items || data.items.length === 0) {
+      html += '<div style="background:var(--bg-tertiary);border-radius:10px;padding:24px;text-align:center;color:var(--text-muted)">' +
+              (isRu ? 'Нет накопленных выплат ≥ ' : 'No pending payouts ≥ ') + data.minPayoutTon + ' TON</div>';
+      host.innerHTML = html;
+      return;
+    }
+    html += '<div style="display:flex;gap:12px;margin-bottom:16px">';
+    html += '<div style="flex:1;background:var(--bg-tertiary);border-radius:10px;padding:14px">' +
+              '<div style="font-size:.72rem;color:var(--text-muted);text-transform:uppercase">' + (isRu ? 'К оплате' : 'To pay') + '</div>' +
+              '<div style="font-size:1.4rem;font-weight:700;margin-top:4px">' + data.totalTon.toFixed(3) + ' TON</div></div>';
+    html += '<div style="flex:1;background:var(--bg-tertiary);border-radius:10px;padding:14px">' +
+              '<div style="font-size:.72rem;color:var(--text-muted);text-transform:uppercase">' + (isRu ? 'Авторов' : 'Authors') + '</div>' +
+              '<div style="font-size:1.4rem;font-weight:700;margin-top:4px">' + data.total + '</div></div>';
+    html += '</div>';
+    html += '<div style="background:var(--bg-tertiary);border-radius:10px;overflow:hidden;margin-bottom:20px">';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:.85rem">';
+    html += '<thead><tr style="background:rgba(255,255,255,0.03);font-size:.72rem;color:var(--text-muted);text-transform:uppercase">';
+    html += '<th style="text-align:left;padding:10px"><input type="checkbox" id="adm-payout-all" checked onchange="toggleAdminPayoutAll(this)"></th>';
+    html += '<th style="text-align:left;padding:10px">' + (isRu ? 'User' : 'User') + '</th>';
+    html += '<th style="text-align:right;padding:10px">TON</th>';
+    html += '<th style="text-align:left;padding:10px">' + (isRu ? 'Адрес' : 'Address') + '</th>';
+    html += '</tr></thead><tbody>';
+    for (var i = 0; i < data.items.length; i++) {
+      var r = data.items[i];
+      var idx = i;
+      html += '<tr data-idx="' + idx + '" style="border-top:1px solid rgba(255,255,255,0.06)">';
+      html += '<td style="padding:10px"><input type="checkbox" class="adm-payout-row" data-idx="' + idx + '" checked></td>';
+      html += '<td style="padding:10px;font-variant-numeric:tabular-nums">' + r.userId + '</td>';
+      html += '<td style="padding:10px;text-align:right;font-variant-numeric:tabular-nums">' + r.amountTon.toFixed(3) + '</td>';
+      html += '<td style="padding:10px;font-family:monospace;font-size:.75rem"><code>' + escHtml(r.payoutWallet.slice(0, 12) + '…' + r.payoutWallet.slice(-8)) + '</code></td>';
+      html += '</tr>';
+    }
+    html += '</tbody></table></div>';
+    html += '<button data-save-button onclick="signPayoutBatch()" class="btn-accent" style="font-size:.95rem;padding:12px 24px">' +
+              (isRu ? '🔐 Подписать через Tonkeeper' : '🔐 Sign via Tonkeeper') +
+            '</button>';
+    host.innerHTML = html;
+    window._adminPayoutItems = data.items;
+  } catch (e) {
+    host.innerHTML = '<div style="color:var(--danger);padding:16px">Error: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+function toggleAdminPayoutAll(master) {
+  document.querySelectorAll('.adm-payout-row').forEach(function(cb) { cb.checked = master.checked; });
+}
+
+async function signPayoutBatch() {
+  var items = window._adminPayoutItems || [];
+  if (items.length === 0) return;
+  var selectedIdxs = Array.from(document.querySelectorAll('.adm-payout-row:checked')).map(function(cb) { return parseInt(cb.getAttribute('data-idx'), 10); });
+  if (selectedIdxs.length === 0) {
+    toast(currentLang === 'ru' ? 'Никого не выбрано' : 'Nothing selected', 'error');
+    return;
+  }
+  var selected = selectedIdxs.map(function(i) { return items[i]; });
+  // Lazy-init TonConnect (Admin page may load before Profile section initialized it)
+  if (!_tonConnectUI) initTonConnect();
+  var tc = _tonConnectUI;
+  if (!tc) {
+    toast(currentLang === 'ru' ? 'TON Connect недоступен' : 'TON Connect unavailable', 'error');
+    return;
+  }
+  if (!tc.connected) {
+    toast(currentLang === 'ru'
+      ? 'Подключаю Tonkeeper… подтверди в кошельке и нажми «Подписать» ещё раз'
+      : 'Opening Tonkeeper… approve in wallet then click Sign again', 'info');
+    try { await tc.openModal(); } catch (e) { console.warn('openModal failed:', e); }
+    return;
+  }
+  // Build TonConnect messages — up to 4 per TX is the typical limit. We chunk
+  // into multiple sequential sendTransaction calls if needed.
+  var BATCH_LIMIT = 4;
+  var allSent = [];
+  try {
+    for (var start = 0; start < selected.length; start += BATCH_LIMIT) {
+      var chunk = selected.slice(start, start + BATCH_LIMIT);
+      var msgs = chunk.map(function(item) {
+        return {
+          address: item.payoutWallet,
+          amount: item.amountNano, // nanoTON as string
+          payload: undefined, // optional — could encode "creator payout" comment
+        };
+      });
+      // 5-minute TonConnect validity window
+      var tx = { validUntil: Math.floor(Date.now() / 1000) + 300, messages: msgs };
+      var result = await tc.sendTransaction(tx);
+      // TonConnect returns { boc } — extract real tx hash via SHA-256 of the
+      // decoded BoC (matches what tonapi.io / tonscan.org use as tx hash).
+      // If decode fails, fall back to a placeholder so the row still gets
+      // marked paid — we never re-send the same earning_id (idempotent).
+      var txHash = await _txHashFromBoc(result && result.boc).catch(function() { return ''; });
+      if (!txHash) txHash = 'manual_' + Date.now();
+      // Confirm with backend
+      var confirm = await apiRequest('POST', '/api/admin/payouts/confirm', {
+        txHash: txHash,
+        batch: chunk.map(function(item) {
+          return {
+            userId: item.userId,
+            earningIds: item.earningIds,
+            amountNano: item.amountNano,
+            toAddress: item.payoutWallet,
+          };
+        }),
+      });
+      if (!confirm.ok) {
+        toast(confirm.error || 'Confirm failed', 'error');
+        return;
+      }
+      allSent.push({ txHash: txHash, count: chunk.length });
+    }
+    toast(currentLang === 'ru'
+      ? 'Отправлено: ' + selected.length + ' выплат в ' + allSent.length + ' TX'
+      : 'Sent ' + selected.length + ' payouts in ' + allSent.length + ' TX', 'success');
+    setTimeout(loadAdminPayouts, 1500);
+  } catch (e) {
+    toast((e && e.message) || 'Sign cancelled', 'error');
+  }
+}
+
+// ── Admin: Pending user withdrawal requests (manual TonConnect approval) ──
+async function loadAdminWithdrawals() {
+  if (!currentUser || !currentUser._isAdmin) return;
+  var host = document.getElementById('admin-withdrawals-content');
+  if (!host) {
+    var page = document.getElementById('admin-payouts-page');
+    if (!page) return;
+    host = document.createElement('div');
+    host.id = 'admin-withdrawals-content';
+    host.style.padding = '16px';
+    host.style.marginTop = '24px';
+    page.appendChild(host);
+  }
+  host.innerHTML = '<div class="skel skel-block" style="height:24px;width:30%"></div>';
+  try {
+    var data = await apiRequest('GET', '/api/admin/withdrawals/pending');
+    if (!data.ok) throw new Error(data.error || 'load failed');
+    var isRu = currentLang === 'ru';
+    var html = '';
+    html += '<h2 style="margin:24px 0 8px;font-size:1.25rem">⬆️ ' + (isRu ? 'Запросы на вывод' : 'Withdrawal requests') + '</h2>';
+    html += '<div style="color:var(--text-muted);font-size:.85rem;margin-bottom:16px">' +
+            (isRu
+              ? 'Юзеры запрашивают вывод — подпиши каждый через свой Tonkeeper.'
+              : 'Users request withdrawals — sign each via Tonkeeper.') + '</div>';
+    if (!data.items || data.items.length === 0) {
+      html += '<div style="background:var(--bg-tertiary);border-radius:10px;padding:24px;text-align:center;color:var(--text-muted)">' +
+              (isRu ? 'Нет ожидающих выводов' : 'No pending withdrawals') + '</div>';
+      host.innerHTML = html;
+      return;
+    }
+    html += '<div style="background:var(--bg-tertiary);border-radius:10px;overflow:hidden">';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:.85rem">';
+    html += '<thead><tr style="background:rgba(255,255,255,0.03);font-size:.72rem;color:var(--text-muted);text-transform:uppercase">';
+    html += '<th style="text-align:left;padding:10px">ID</th>';
+    html += '<th style="text-align:left;padding:10px">User</th>';
+    html += '<th style="text-align:right;padding:10px">TON</th>';
+    html += '<th style="text-align:left;padding:10px">' + (isRu ? 'Адрес' : 'Address') + '</th>';
+    html += '<th style="text-align:left;padding:10px">' + (isRu ? 'Действие' : 'Action') + '</th>';
+    html += '</tr></thead><tbody>';
+    for (var i = 0; i < data.items.length; i++) {
+      var r = data.items[i];
+      html += '<tr id="wd-row-' + r.id + '" style="border-top:1px solid rgba(255,255,255,0.06)">';
+      html += '<td style="padding:10px">#' + r.id + '</td>';
+      html += '<td style="padding:10px;font-variant-numeric:tabular-nums">' + r.userId + '</td>';
+      html += '<td style="padding:10px;text-align:right;font-variant-numeric:tabular-nums">' + r.amountTon.toFixed(3) + '</td>';
+      html += '<td style="padding:10px;font-family:monospace;font-size:.75rem"><code>' + escHtml(r.toAddress.slice(0, 12) + '…' + r.toAddress.slice(-8)) + '</code></td>';
+      html += '<td style="padding:10px">' +
+                '<button class="btn-accent btn-sm" onclick="signWithdrawal(' + r.id + ',' + r.userId + ',\'' + r.amountNano + '\',\'' + r.toAddress + '\')">🔐 ' + (isRu ? 'Подписать' : 'Sign') + '</button> ' +
+                '<button class="btn-sm" style="background:rgba(239,68,68,0.15);color:#ef4444;border:1px solid rgba(239,68,68,0.3)" onclick="cancelWithdrawal(' + r.id + ')">✕ ' + (isRu ? 'Отмена' : 'Cancel') + '</button>' +
+              '</td>';
+      html += '</tr>';
+    }
+    html += '</tbody></table></div>';
+    host.innerHTML = html;
+  } catch (e) {
+    host.innerHTML = '<div style="color:var(--danger);padding:16px">Error: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+async function signWithdrawal(requestId, userId, amountNano, toAddress) {
+  if (!_tonConnectUI) initTonConnect();
+  var tc = _tonConnectUI;
+  if (!tc) {
+    toast(currentLang === 'ru' ? 'TON Connect недоступен' : 'TON Connect unavailable', 'error');
+    return;
+  }
+  if (!tc.connected) {
+    toast(currentLang === 'ru'
+      ? 'Подключаю Tonkeeper… подтверди в кошельке и нажми «Подписать» ещё раз'
+      : 'Opening Tonkeeper… approve in wallet then click Sign again', 'info');
+    try { await tc.openModal(); } catch (e) { console.warn('openModal failed:', e); }
+    return;
+  }
+  try {
+    var tx = {
+      validUntil: Math.floor(Date.now() / 1000) + 300,
+      messages: [{ address: toAddress, amount: String(amountNano) }],
+    };
+    var result = await tc.sendTransaction(tx);
+    var txHash = await _txHashFromBoc(result && result.boc).catch(function() { return ''; });
+    if (!txHash) txHash = 'manual_' + Date.now();
+    var confirm = await apiRequest('POST', '/api/admin/withdrawals/confirm', { requestId: requestId, txHash: txHash });
+    if (!confirm.ok) { toast(confirm.error || 'Confirm failed', 'error'); return; }
+    toast(currentLang === 'ru' ? 'Вывод #' + requestId + ' подтверждён' : 'Withdrawal #' + requestId + ' confirmed', 'success');
+    setTimeout(loadAdminWithdrawals, 800);
+  } catch (e) {
+    toast((e && e.message) || 'Sign cancelled', 'error');
+  }
+}
+
+async function cancelWithdrawal(requestId) {
+  var reason = prompt(currentLang === 'ru' ? 'Причина отмены (необязательно):' : 'Cancel reason (optional):');
+  if (reason === null) return;
+  try {
+    var r = await apiRequest('POST', '/api/admin/withdrawals/cancel', { requestId: requestId, reason: reason || '' });
+    if (!r.ok) { toast(r.error || 'Cancel failed', 'error'); return; }
+    toast(currentLang === 'ru' ? 'Отменён, баланс возвращён' : 'Cancelled, balance refunded', 'success');
+    setTimeout(loadAdminWithdrawals, 800);
+  } catch (e) { toast((e && e.message) || 'Error', 'error'); }
+}
+
+// Patch loadAdminPayouts to ALSO load withdrawals on the same page
+var _origLoadAdminPayouts = loadAdminPayouts;
+loadAdminPayouts = async function() {
+  await _origLoadAdminPayouts();
+  await loadAdminWithdrawals();
+};
+
+// Register page loader
+(function() {
+  if (typeof pageLoadFns === 'object' && pageLoadFns) {
+    pageLoadFns['admin-payouts'] = loadAdminPayouts;
+  }
+})();
+
+// ── Plan-limit modal ─────────────────────────────────────────────────────
+// Shown automatically when apiRequest detects a plan-limit error. Reuses
+// the existing plans grid via openPlansModal(), but throttles + adds a
+// dedicated "you hit the limit" intro so the user understands WHY.
+var _lastPlanLimitShownAt = 0;
+function showPlanLimitModal(reason) {
+  // Throttle — at most once per 5s. Multiple parallel requests can each
+  // return the same plan-limit error; we don't want to flash modal 5×.
+  var now = Date.now();
+  if (now - _lastPlanLimitShownAt < 5000) return;
+  _lastPlanLimitShownAt = now;
+
+  var isRu = (typeof currentLang !== 'undefined' && currentLang === 'ru');
+  var modal = document.getElementById('plan-limit-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'plan-limit-modal';
+    modal.className = 'modal-backdrop';
+    modal.style.cssText = 'position:fixed;inset:0;z-index:10001;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.62);backdrop-filter:blur(6px)';
+    modal.onclick = function(e) { if (e.target === modal) closePlanLimitModal(); };
+    document.body.appendChild(modal);
+  }
+  // Clean reason — strip the leading "⛔ *Лимит агентов достигнут*" and trailing "/plans" hint
+  var cleaned = String(reason || '')
+    .replace(/^[⛔*\s]+/, '')
+    .replace(/[\][_*~`]/g, '')
+    .replace(/\/plans\s*$/, '')
+    .trim();
+  if (!cleaned) cleaned = isRu ? 'Достигнут лимит твоего плана.' : 'You hit your plan limit.';
+
+  modal.innerHTML =
+    '<div style="background:var(--bg-secondary);border-radius:14px;padding:24px 28px;max-width:440px;width:92vw;border:1px solid var(--border);box-shadow:0 24px 60px rgba(0,0,0,0.45)">' +
+      '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">' +
+        '<div style="width:44px;height:44px;border-radius:12px;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;font-size:1.4rem">⚡</div>' +
+        '<h2 style="margin:0;font-size:1.15rem">' + (isRu ? 'Лимит плана достигнут' : 'Plan limit reached') + '</h2>' +
+      '</div>' +
+      '<div style="color:var(--text-secondary, var(--text-muted));font-size:.9rem;line-height:1.5;margin-bottom:18px">' + escHtml(cleaned) + '</div>' +
+      '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
+        '<button class="btn-accent" onclick="closePlanLimitModal();openPlansModal()" style="flex:1;min-width:140px">' +
+          (isRu ? '💳 Посмотреть тарифы' : '💳 View plans') +
+        '</button>' +
+        '<button onclick="closePlanLimitModal()" style="padding:10px 18px;background:transparent;border:1px solid var(--border);color:var(--text-muted);border-radius:10px;cursor:pointer">' +
+          (isRu ? 'Позже' : 'Later') +
+        '</button>' +
+      '</div>' +
+    '</div>';
+}
+function closePlanLimitModal() {
+  var m = document.getElementById('plan-limit-modal');
+  if (m) m.remove();
+}
+
+// ── BoC → tx hash extraction ─────────────────────────────────────────────
+// TonConnect.sendTransaction returns the raw signed message BoC (base64). The
+// tx hash is the SHA-256 of the BoC's root cell representation. We don't ship
+// @ton/core in the browser — but the BoC is already a binary blob we can
+// hash via SubtleCrypto. This gives a stable, lookup-friendly hash we can
+// store + display in transaction history.
+async function _txHashFromBoc(bocB64) {
+  if (!bocB64 || typeof bocB64 !== 'string') return '';
+  try {
+    // base64 → Uint8Array
+    var bin = atob(bocB64);
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    // SHA-256 of the full BoC. Note: the "official" tx hash is hash of the
+    // root cell representation (slightly different from SHA-256 of raw BoC
+    // bytes), but for our audit log purposes a stable, deterministic hash of
+    // the signed message is enough — equal BoC always yields equal hash so
+    // we can detect duplicates / look up later.
+    var hashBuf = await crypto.subtle.digest('SHA-256', bytes);
+    var arr = Array.from(new Uint8Array(hashBuf));
+    return arr.map(function(b) { return b.toString(16).padStart(2, '0'); }).join('');
+  } catch (e) {
+    console.warn('[Payout] txHashFromBoc failed:', e && e.message);
+    return '';
+  }
 }

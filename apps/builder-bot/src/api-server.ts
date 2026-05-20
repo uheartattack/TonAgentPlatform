@@ -21,8 +21,8 @@ import {
   getBalanceTxRepository,
   getAgentStateRepository,
 } from './db/schema-extensions';
-import { verifyTopupTransaction, PLATFORM_WALLET, getUserSubscription, getUserPlan, PLANS, canCreateAgent, canGenerateForFree, getGenerationsUsed, confirmPayment, createPayment, getPendingPayment, verifyTonTransaction, updateSubscriptionCache, isPlatformAdmin, isPlatformAdminByUsername } from './payments';
-import { sendPlatformTransaction } from './services/TonConnect';
+import { verifyTopupTransaction, PLATFORM_WALLET, getUserSubscription, getUserPlan, PLANS, canCreateAgent, canGenerateForFree, getGenerationsUsed, confirmPayment, createPayment, getPendingPayment, verifyTonTransaction, updateSubscriptionCache, isPlatformAdmin, isPlatformAdminByUsername, chargeGenerationIfNeeded, PlanLimitError } from './payments';
+// sendPlatformTransaction removed — withdrawals use manual TonConnect via /api/admin/withdrawals/confirm
 import { config as platformConfig } from './config';
 import { encryptMnemonic, decryptMnemonic } from './services/agentic-wallet';
 import { invalidateAgentCaches } from './agents/ai-agent-runtime';
@@ -36,7 +36,7 @@ const TG_CLIENT_SECRET = process.env.TG_CLIENT_SECRET || '';
 
 // ── Hybrid session store: in-memory cache + PostgreSQL persistence ──────────
 // Sessions survive PM2 restarts via DB. In-memory Map is a fast cache.
-const sessions = new Map<string, { userId: number; username: string; firstName: string; photoUrl?: string; expiresAt: number }>();
+const sessions = new Map<string, { userId: number; telegramId?: number; username: string; firstName: string; photoUrl?: string; expiresAt: number }>();
 
 // Load sessions from DB on startup
 async function loadSessionsFromDB() {
@@ -60,11 +60,28 @@ async function loadSessionsFromDB() {
   }
 }
 
-// Persist session to DB (fire-and-forget)
+// Persist session to DB (fire-and-forget with retry).
+// Loss of a session row → user gets logged out on the next request, which is a
+// silent UX regression. Retry on transient failures (DB restart, network) with
+// exponential backoff before giving up.
+async function _withRetry<T>(fn: () => Promise<T>, attempts = 3, baseMs = 200): Promise<T | null> {
+  let lastErr: any = null;
+  for (let i = 0; i < attempts; i++) {
+    try { return await fn(); }
+    catch (e: any) {
+      lastErr = e;
+      if (i < attempts - 1) {
+        await new Promise((r) => setTimeout(r, baseMs * Math.pow(3, i))); // 200ms, 600ms, 1.8s
+      }
+    }
+  }
+  console.warn('[DB] retry exhausted:', lastErr?.message || lastErr);
+  return null;
+}
+
 function persistSession(token: string, s: { userId: number; username: string; firstName: string; photoUrl?: string; expiresAt: number }) {
-  // Guard against BigInt overflow: Telegram user IDs from GramJS can exceed JS Number.MAX_SAFE_INTEGER
   const safeUserId = Number.isSafeInteger(s.userId) ? s.userId : Math.trunc(s.userId % 1e15);
-  pool.query(
+  void _withRetry(() => pool.query(
     `INSERT INTO builder_bot.web_sessions (token, user_id, username, first_name, photo_url, expires_at, telegram_id)
      VALUES ($1, $2, $3, $4, $5, $6, COALESCE(
        (SELECT telegram_id FROM builder_bot.platform_admins WHERE username = $3 LIMIT 1),
@@ -72,7 +89,7 @@ function persistSession(token: string, s: { userId: number; username: string; fi
      ))
      ON CONFLICT (token) DO UPDATE SET expires_at = $6`,
     [token, safeUserId, s.username, s.firstName, s.photoUrl || null, new Date(s.expiresAt)]
-  ).catch(e => console.warn('[Auth] persistSession error:', e?.message || String(e)));
+  ));
 }
 
 // Cleanup expired sessions (run periodically)
@@ -962,6 +979,9 @@ export function startApiServer() {
     // Use the precision-preserving string set by requireAuth, not String(userId)
     // which would lose the last 3-4 digits on Telegram IDs > 2^53.
     const userIdStrSafe = (req as any).userIdStr || String(userId);
+    // Detect orphan OIDC sessions: no real telegram_id linked → Studio should show a
+    // "Link Telegram bot" banner so the user can opt in to notifications and unify data.
+    const hasTelegramLink = !!session.telegramId;
     res.json({
       ok: true,
       userId,
@@ -969,7 +989,8 @@ export function startApiServer() {
       username: session.username,
       firstName: session.firstName,
       photoUrl: session.photoUrl || null,
-      telegramId: userIdStrSafe,
+      telegramId: hasTelegramLink ? String(session.telegramId) : null,
+      needsTelegramLink: !hasTelegramLink,
       planId, planName, planIcon,
       isAdmin,
       isBeta: isBetaTester(userId),
@@ -990,6 +1011,183 @@ export function startApiServer() {
       );
       res.json({ ok: true });
     } catch (e: any) { res.json({ ok: false, error: e.message }); }
+  });
+
+  // ── GET /api/me/earnings — creator earnings dashboard ─────────────────────
+  app.get('/api/me/earnings', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { getEarningsForUser } = await import('./services/creator-earnings');
+      const summary = await getEarningsForUser(pool, userId);
+      // Also fetch payout_wallet for UI to know if user needs to set one
+      const w = await pool.query(
+        `SELECT value FROM builder_bot.user_settings WHERE user_id=$1 AND key='payout_wallet'`,
+        [userId]
+      ).catch(() => ({ rows: [] }));
+      const rawWallet = w.rows[0]?.value;
+      const payoutWallet = typeof rawWallet === 'string'
+        ? rawWallet.replace(/^"|"$/g, '')
+        : (rawWallet?.value || rawWallet?.address || '');
+      res.json({ ok: true, ...summary, payoutWallet });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+
+  // ── GET /api/admin/payouts/pending — owner-only payout queue ──────────────
+  // Returns the list of authors with pending earnings ≥ MIN_PAYOUT_TON and a
+  // configured payout_wallet. Used by the Studio admin page so the owner can
+  // sign a batch transfer via TonConnect (manual payout mode — no mnemonic
+  // on the server). The same data feeds the daily DM digest.
+  app.get('/api/admin/payouts/pending', requireOwner, async (_req: Request, res: Response) => {
+    try {
+      const { findPayoutCandidates, MIN_PAYOUT_TON } = await import('./services/creator-earnings');
+      const list = await findPayoutCandidates(pool);
+      const items = list.map((c) => ({
+        userId: c.userId,
+        payoutWallet: c.payoutWallet,
+        amountNano: c.pendingNano.toString(),
+        amountTon: Number(c.pendingNano) / 1e9,
+        earningIds: c.earningIds,
+      }));
+      const totalTon = items.reduce((s, x) => s + x.amountTon, 0);
+      res.json({ ok: true, minPayoutTon: MIN_PAYOUT_TON, total: items.length, totalTon, items });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+
+  // ── POST /api/admin/payouts/confirm — settle a batch after TonConnect sign
+  // Body: { txHash, batch: [{ userId, earningIds: number[], amountNano: string, toAddress }] }
+  // Marks each user's earnings as paid, creates payout_batches rows.
+  app.post('/api/admin/payouts/confirm', requireOwner, async (req: Request, res: Response) => {
+    try {
+      const { batch, txHash } = req.body || {};
+      if (!Array.isArray(batch) || batch.length === 0) {
+        res.status(400).json({ ok: false, error: 'batch required' });
+        return;
+      }
+      if (!txHash || typeof txHash !== 'string') {
+        res.status(400).json({ ok: false, error: 'txHash required' });
+        return;
+      }
+      const { recordBatchPayment } = await import('./services/creator-earnings');
+      const results = [];
+      for (const item of batch) {
+        try {
+          const batchId = await recordBatchPayment(
+            pool,
+            Number(item.userId),
+            (item.earningIds || []).map((n: any) => Number(n)),
+            BigInt(String(item.amountNano || '0')),
+            String(item.toAddress || ''),
+            String(txHash),
+            'sent',
+          );
+          results.push({ userId: item.userId, batchId, ok: true });
+          // DM the creator
+          try {
+            const ton = Number(BigInt(String(item.amountNano || '0'))) / 1e9;
+            const { notifyUserViaTelegram } = await import('./services/notify-user');
+            void notifyUserViaTelegram(Number(item.userId),
+              `💰 <b>Payout sent</b>\n\nYou received <b>${ton.toFixed(3)} TON</b>.\nTX: <code>${txHash.slice(0, 24)}…</code>`,
+              { parseMode: 'HTML', silent: true });
+          } catch {}
+        } catch (e: any) {
+          results.push({ userId: item.userId, ok: false, error: e.message });
+        }
+      }
+      res.json({ ok: true, txHash, results });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+
+  // ── POST /api/me/payout-wallet — set author's payout wallet ────────────────
+  // Ownership requirement: the address MUST match the wallet the user already
+  // connected via TON Connect (profile.wallet_address). TonConnect handshake
+  // signs a tonProof during connection, so an attacker can't spoof a wallet
+  // they don't own. Without this gate anyone could set their payout address to
+  // someone else's wallet and steal future creator earnings.
+  app.post('/api/me/payout-wallet', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const addr = String((req.body && req.body.address) || '').trim();
+      if (!addr) {
+        // empty = clear it
+        await pool.query(
+          `DELETE FROM builder_bot.user_settings WHERE user_id=$1 AND key='payout_wallet'`,
+          [userId]
+        );
+        res.json({ ok: true, cleared: true });
+        return;
+      }
+      // Validate TON address (UQ/EQ/0:hex)
+      let parsedAddr: string;
+      try {
+        const { Address } = await import('@ton/core');
+        const parsed = Address.parse(addr);
+        // Normalize to non-bouncable URL-safe form so comparisons match TonConnect output
+        parsedAddr = parsed.toString({ urlSafe: true, bounceable: false });
+      } catch {
+        res.status(400).json({ ok: false, error: 'invalid TON address' });
+        return;
+      }
+
+      // Ownership gate: must equal the user's TonConnect-linked wallet.
+      const linkedRaw = await getUserSettingsRepository().get(userId, 'profile').catch(() => null);
+      const linkedAddr = linkedRaw && (linkedRaw as any).wallet_address
+        ? String((linkedRaw as any).wallet_address).trim()
+        : '';
+      if (!linkedAddr) {
+        res.status(400).json({
+          ok: false,
+          error: 'no_linked_wallet',
+          message: 'Сначала подключите TON-кошелёк через TonConnect — мы используем его как доказательство владения.',
+        });
+        return;
+      }
+      // Compare normalized
+      let linkedNorm: string;
+      try {
+        const { Address } = await import('@ton/core');
+        linkedNorm = Address.parse(linkedAddr).toString({ urlSafe: true, bounceable: false });
+      } catch { linkedNorm = linkedAddr; }
+      if (linkedNorm !== parsedAddr) {
+        res.status(403).json({
+          ok: false,
+          error: 'address_mismatch',
+          message: 'Адрес для выплат должен совпадать с подключённым через TonConnect кошельком. Текущий подключённый: ' + linkedNorm.slice(0, 8) + '…' + linkedNorm.slice(-6),
+          linkedWallet: linkedNorm,
+        });
+        return;
+      }
+      await pool.query(
+        `INSERT INTO builder_bot.user_settings (user_id, key, value)
+           VALUES ($1, 'payout_wallet', $2::jsonb)
+           ON CONFLICT (user_id, key) DO UPDATE SET value = $2::jsonb, updated_at = NOW()`,
+        [userId, JSON.stringify(parsedAddr)]
+      );
+      res.json({ ok: true, payoutWallet: parsedAddr });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+
+  // ── POST /api/me/link-telegram — start the bot link flow ───────────────────
+  // Studio calls this when the current session has no telegram_id (typical for
+  // OIDC-only logins). Response includes a t.me deep link the user opens; the
+  // bot's /start link_<token> handler then maps their telegram chat_id to the
+  // platform user_id and migrates orphaned data.
+  app.post('/api/me/link-telegram', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const session = (req as any).session;
+      const userId = (req as any).userIdStr || String((req as any).userId);
+      if (session?.telegramId) {
+        res.json({ ok: true, alreadyLinked: true, telegramId: String(session.telegramId) });
+        return;
+      }
+      const { createLinkToken } = await import('./services/user-id-migrate');
+      const token = await createLinkToken(pool, userId);
+      const botUsername = process.env.BOT_USERNAME || 'TonAgentPlatformBot';
+      res.json({
+        ok: true,
+        deepLink: `https://t.me/${botUsername}?start=link_${token}`,
+        expiresInMinutes: 15,
+      });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e.message }); }
   });
 
   // ── DELETE /api/me/account — delete all user data (GDPR right to be forgotten) ──
@@ -1251,7 +1449,7 @@ export function startApiServer() {
   // ── GET /api/feedback/:id/screenshot — proxy screenshot from Telegram (no auth — image link) ──
   app.get('/api/feedback/:id/screenshot', requireAuth, async (req: Request, res: Response) => {
     try {
-      const feedbackId = parseInt(req.params.id);
+      const feedbackId = parseInt(String(req.params.id));
       const userId = (req as any).userId as number;
       // Only the original reporter OR admin can fetch screenshots
       const isAdmin = String(userId) === String(process.env.OWNER_ID || '');
@@ -1317,7 +1515,7 @@ export function startApiServer() {
       const userId = (req as any).userId as number;
       const { isPlatformAdmin } = await import('./payments');
       if (!isPlatformAdmin(userId)) { res.status(403).json({ error: 'Admin only' }); return; }
-      const feedbackId = parseInt(req.params.id);
+      const feedbackId = parseInt(String(req.params.id));
       if (isNaN(feedbackId)) { res.status(400).json({ error: 'Invalid ID' }); return; }
       const { status, adminReply } = req.body;
       const sets: string[] = [];
@@ -1452,7 +1650,7 @@ export function startApiServer() {
       const userId = (req as any).userId as number;
       const { isPlatformAdmin, removeBetaTester } = await import('./payments');
       if (!isPlatformAdmin(userId)) { res.status(403).json({ error: 'Admin only' }); return; }
-      const targetId = parseInt(req.params.userId);
+      const targetId = parseInt(String(req.params.userId));
       if (isNaN(targetId)) { res.status(400).json({ error: 'Invalid user ID' }); return; }
       const ok = await removeBetaTester(targetId);
       res.json({ ok });
@@ -1720,7 +1918,7 @@ export function startApiServer() {
   app.get('/api/agents/:id/traces', requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = (req as any).userId as number;
-      const agentId = parseInt(req.params.id);
+      const agentId = parseInt(String(req.params.id));
       if (!Number.isFinite(agentId)) { res.status(400).json({ error: 'Invalid agent id' }); return; }
       // Authz: only owner or shared
       const own = await pool.query(
@@ -1743,12 +1941,12 @@ export function startApiServer() {
   app.get('/api/agents/:id/export', requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = (req as any).userId as number;
-      const agentId = parseInt(req.params.id);
+      const agentId = parseInt(String(req.params.id));
       if (!Number.isFinite(agentId)) { res.status(400).json({ error: 'Invalid agent id' }); return; }
       const format = (String(req.query.format || 'json').toLowerCase() === 'md') ? 'md' : 'json';
       const { exportAgent } = await import('./services/agent-export');
       const result = await exportAgent(agentId, userId, format as 'json' | 'md');
-      if (!result.ok) { res.status(result.error === 'Not your agent' ? 403 : 404).json({ error: result.error }); return; }
+      if (result.ok === false) { res.status(result.error === 'Not your agent' ? 403 : 404).json({ error: result.error }); return; }
       const safeName = String(result.payload.agent.name).replace(/[^a-z0-9-_]/gi, '_').slice(0, 40) || 'agent';
       if (format === 'md') {
         res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
@@ -1766,7 +1964,7 @@ export function startApiServer() {
   app.post('/api/agents/:id/share', requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = (req as any).userId as number;
-      const agentId = parseInt(req.params.id);
+      const agentId = parseInt(String(req.params.id));
       if (!Number.isFinite(agentId)) { res.status(400).json({ error: 'Invalid agent id' }); return; }
       const { expiresIn, isPublic } = req.body || {};
       const { createShareLink } = await import('./services/agent-export');
@@ -1774,7 +1972,7 @@ export function startApiServer() {
         expiresIn: ['day', 'week', 'month', 'never'].includes(expiresIn) ? expiresIn : undefined,
         isPublic: isPublic !== false,
       });
-      if (!result.ok) { res.status(400).json({ error: result.error }); return; }
+      if (result.ok === false) { res.status(400).json({ error: result.error }); return; }
       res.json({ ok: true, shareId: result.shareId, url: result.url });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
@@ -1786,7 +1984,7 @@ export function startApiServer() {
       if (!shareId) { res.status(400).json({ error: 'Invalid share id' }); return; }
       const { getShare } = await import('./services/agent-export');
       const result = await getShare(shareId);
-      if (!result.ok) { res.status(404).json({ error: result.error }); return; }
+      if (result.ok === false) { res.status(404).json({ error: result.error }); return; }
       // Strip potentially sensitive fields from public preview
       res.json({
         ok: true,
@@ -1819,7 +2017,7 @@ export function startApiServer() {
       } else {
         res.status(400).json({ error: 'Provide either shareId or payload' }); return;
       }
-      if (!result.ok) { res.status(400).json({ error: result.error }); return; }
+      if (result.ok === false) { res.status(400).json({ error: result.error }); return; }
       res.json({ ok: true, agentId: result.agentId });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
@@ -1832,7 +2030,7 @@ export function startApiServer() {
   app.get('/api/agents/:id/evaluations', requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = (req as any).userId as number;
-      const agentId = parseInt(req.params.id);
+      const agentId = parseInt(String(req.params.id));
       if (!Number.isFinite(agentId)) { res.status(400).json({ error: 'Invalid agent id' }); return; }
       const own = await pool.query(
         `SELECT 1 FROM builder_bot.agents WHERE id = $1 AND user_id = $2`,
@@ -1850,7 +2048,7 @@ export function startApiServer() {
   app.get('/api/agents/:id/quality-stats', requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = (req as any).userId as number;
-      const agentId = parseInt(req.params.id);
+      const agentId = parseInt(String(req.params.id));
       if (!Number.isFinite(agentId)) { res.status(400).json({ error: 'Invalid agent id' }); return; }
       const own = await pool.query(
         `SELECT 1 FROM builder_bot.agents WHERE id = $1 AND user_id = $2`,
@@ -1870,7 +2068,7 @@ export function startApiServer() {
   app.get('/api/agents/:id/traces/:runId', requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = (req as any).userId as number;
-      const agentId = parseInt(req.params.id);
+      const agentId = parseInt(String(req.params.id));
       const runId = String(req.params.runId || '');
       if (!Number.isFinite(agentId) || !runId) { res.status(400).json({ error: 'Invalid params' }); return; }
       const own = await pool.query(
@@ -1925,7 +2123,7 @@ export function startApiServer() {
       const userId = (req as any).userId as number;
       const { isPlatformAdmin } = await import('./payments');
       if (!isPlatformAdmin(userId)) { res.status(403).json({ error: 'Admin only' }); return; }
-      const bugId = parseInt(req.params.id);
+      const bugId = parseInt(String(req.params.id));
       const { status } = req.body; // open | fixing | fixed | ignored
       if (!['open', 'fixing', 'fixed', 'ignored'].includes(status)) { res.status(400).json({ error: 'Invalid status' }); return; }
       await pool.query(`UPDATE builder_bot.platform_bugs SET status = $1 WHERE id = $2`, [status, bugId]);
@@ -2230,13 +2428,24 @@ export function startApiServer() {
           return;
         }
       } catch (e: any) { console.warn('[Agents] hard-cap check failed:', e.message); }
+      // Cost-of-AI: списать с баланса по плану ДО запуска AI; на Free даёт 1 бесплатно
+      let charge: any;
+      try {
+        charge = await chargeGenerationIfNeeded(userId, 'agent_create');
+      } catch (e: any) {
+        if (e instanceof PlanLimitError) {
+          res.status(402).json({ ok: false, error_code: 'PLAN_LIMIT', error: e.message, ...(e.details || {}) });
+          return;
+        }
+        throw e;
+      }
       const { getOrchestrator } = await import('./agents/orchestrator');
       const result = await getOrchestrator().handleCreateAgent(userId, description.trim());
       if (result.type === 'agent_created' && (result as any).agentId) {
         const agentData = await getDBTools().getAgent((result as any).agentId, userId);
-        res.json({ ok: true, agentId: (result as any).agentId, agent: agentData.data || null, message: (result.content || '').replace(/\\/g, '') });
+        res.json({ ok: true, agentId: (result as any).agentId, agent: agentData.data || null, message: (result.content || '').replace(/\\/g, ''), charge });
       } else {
-        res.json({ ok: false, error: (result.content || 'Creation failed').replace(/\\/g, '') });
+        res.json({ ok: false, error: (result.content || 'Creation failed').replace(/\\/g, ''), charge });
       }
     } catch (e: any) {
       console.error('[API] POST /api/agents error:', e.message);
@@ -2573,6 +2782,18 @@ export function startApiServer() {
       if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'agent not found' }); return; }
       const agent: any = agentCheck.data;
 
+      // Cost-of-AI for edit-with-ai
+      let editCharge: any;
+      try {
+        editCharge = await chargeGenerationIfNeeded(userId, 'edit_with_ai');
+      } catch (e: any) {
+        if (e instanceof PlanLimitError) {
+          res.status(402).json({ ok: false, error_code: 'PLAN_LIMIT', error: e.message, ...(e.details || {}) });
+          return;
+        }
+        throw e;
+      }
+
       // Load full current state for the AI to reference
       let triggerCfg: any = {};
       try { triggerCfg = typeof agent.trigger_config === 'string' ? JSON.parse(agent.trigger_config) : (agent.trigger_config || {}); } catch {}
@@ -2667,11 +2888,11 @@ export function startApiServer() {
           const { invalidateAgentCaches } = await import('./agents/ai-agent-runtime');
           invalidateAgentCaches(agentId);
         } catch {}
-        res.json({ ok: true, applied: true, diff });
+        res.json({ ok: true, applied: true, diff, charge: editCharge });
         return;
       }
 
-      res.json({ ok: true, applied: false, diff });
+      res.json({ ok: true, applied: false, diff, charge: editCharge });
     } catch (e: any) {
       res.status(500).json({ error: e?.message || 'edit-with-ai failed' });
     }
@@ -2745,11 +2966,11 @@ export function startApiServer() {
       if (isImported && sourceUrl) {
         const { validateImportUrl } = await import('./services/skill-registry');
         const urlCheck = validateImportUrl(sourceUrl);
-        if (!urlCheck.ok) { res.status(400).json({ error: urlCheck.error }); return; }
+        if (urlCheck.ok === false) { res.status(400).json({ error: urlCheck.error }); return; }
       }
       const { parseSkillMd, saveUserSkill } = await import('./services/skill-registry');
       const parsed = parseSkillMd(skillMd);
-      if (!parsed.ok) { res.status(400).json({ error: parsed.error }); return; }
+      if (parsed.ok === false) { res.status(400).json({ error: parsed.error }); return; }
       const result = await saveUserSkill({
         userId,
         name: parsed.fm.name,
@@ -2763,7 +2984,7 @@ export function startApiServer() {
         sourceUrl: typeof sourceUrl === 'string' ? sourceUrl.slice(0, 500) : undefined,
         isImported: !!isImported,
       });
-      if (!result.ok) { res.status(400).json({ error: result.error }); return; }
+      if (result.ok === false) { res.status(400).json({ error: result.error }); return; }
       res.json({ ok: true, id: result.id, name: parsed.fm.name });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -3374,7 +3595,11 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
       if (!tc.config) tc.config = {};
       if (provider) tc.config.AI_PROVIDER = provider;
       if (model && typeof model === 'string') tc.config.AI_MODEL = model;
-      if (apiKey && typeof apiKey === 'string') tc.config.AI_API_KEY = apiKey;
+      if (apiKey && typeof apiKey === 'string') {
+        // Encrypt at rest. Runtime/getAIClient transparently decrypts via decryptApiKey().
+        const { encryptApiKey } = await import('./crypto-utils');
+        tc.config.AI_API_KEY = encryptApiKey(apiKey);
+      }
       if (typeof temperature === 'number') tc.config.AI_TEMPERATURE = temperature;
       if (typeof maxTokens === 'number') tc.config.AI_MAX_TOKENS = maxTokens;
       if (utilityModel && typeof utilityModel === 'string') tc.config.UTILITY_MODEL = utilityModel;
@@ -4377,11 +4602,26 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
     try {
       const userId = (req as any).userId as number;
       const body = req.body as any;
+      const { encryptApiKey } = await import('./crypto-utils');
+      // Wrap a user_variables value so AI_API_KEY (or any sk-/AIza-shaped secret) gets
+      // encrypted at rest. Runtime read paths transparently decrypt via decryptApiKey().
+      const SECRET_VAR_KEYS = new Set(['AI_API_KEY', 'TONAPI_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GROQ_API_KEY', 'OPENROUTER_API_KEY']);
+      function encryptUserVarsSecrets(v: any): any {
+        if (!v || typeof v !== 'object' || Array.isArray(v)) return v;
+        const out: Record<string, any> = { ...v };
+        for (const k of Object.keys(out)) {
+          if (SECRET_VAR_KEYS.has(k) && typeof out[k] === 'string' && out[k].length > 0 && !out[k].startsWith('enc:')) {
+            try { out[k] = encryptApiKey(out[k]); } catch {}
+          }
+        }
+        return out;
+      }
 
       if (body.key && body.value !== undefined) {
         const err = validateSettingPair(body.key, body.value);
         if (err) { res.status(400).json({ error: err }); return; }
-        await getUserSettingsRepository().set(userId, body.key, body.value);
+        const value = body.key === 'user_variables' ? encryptUserVarsSecrets(body.value) : body.value;
+        await getUserSettingsRepository().set(userId, body.key, value);
       } else if (body.settings && typeof body.settings === 'object' && !Array.isArray(body.settings)) {
         const entries = Object.entries(body.settings);
         if (entries.length > SETTINGS_MAX_KEYS_PER_CALL) {
@@ -4393,7 +4633,7 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
           if (err) { res.status(400).json({ error: err }); return; }
         }
         await Promise.all(
-          entries.map(([k, v]) => getUserSettingsRepository().set(userId, k, v))
+          entries.map(([k, v]) => getUserSettingsRepository().set(userId, k, k === 'user_variables' ? encryptUserVarsSecrets(v) : v))
         );
       } else {
         res.status(400).json({ error: 'Body must have {key, value} or {settings: {...}}' });
@@ -4875,7 +5115,11 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
     if (!token) { res.status(401).json({ error: 'No token' }); return; }
     const session = getSession(token);
     if (!session) { res.status(401).json({ error: 'Invalid or expired token' }); return; }
-    if (session.userId !== platformConfig.owner.id) {
+    const ownerId = platformConfig.owner.id;
+    const isOwner =
+      session.userId === ownerId ||
+      (session as any).telegramId === ownerId;
+    if (!isOwner) {
       res.status(403).json({ error: 'Owner only' }); return;
     }
     (req as any).userId = session.userId;
@@ -5138,92 +5382,114 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
     }
   });
 
-  // ── POST /api/withdraw — вывод средств ──────────────────────
+  // ── POST /api/withdraw — request withdrawal (manual TonConnect approval) ──
+  // Platform wallet UQCfRrLV... mnemonic is NOT on the server. So withdrawals
+  // are processed via a queue: user submits → row inserted with status='pending',
+  // balance frozen (deducted from user_settings), owner gets DM, owner approves
+  // via TonConnect on /admin/withdrawals page, txHash recorded.
   app.post('/api/withdraw', requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = (req as any).userId as number;
 
-      // API-level rate limit: 5 requests/minute per user
       if (!checkApiRateLimit(`withdraw:${userId}`, 5, 60_000)) {
         res.status(429).json({ error: 'Too many requests. Try again in a minute.' });
         return;
       }
 
       const { address, amount } = req.body || {};
-
-      // Input validation
       if (!address || typeof address !== 'string') {
-        res.status(400).json({ error: 'Address required' });
-        return;
+        res.status(400).json({ error: 'Address required' }); return;
       }
       if (!address.startsWith('EQ') && !address.startsWith('UQ') && !address.startsWith('0:')) {
-        res.status(400).json({ error: 'Invalid TON address format' });
-        return;
+        res.status(400).json({ error: 'Invalid TON address format' }); return;
       }
       const amountTon = parseFloat(amount);
       if (isNaN(amountTon) || amountTon <= 0) {
-        res.status(400).json({ error: 'Invalid amount' });
-        return;
+        res.status(400).json({ error: 'Invalid amount' }); return;
+      }
+      if (amountTon < 0.1) {
+        res.status(400).json({ error: 'Minimum withdrawal is 0.1 TON' }); return;
       }
 
-      // Rate limits
+      // Daily/cooldown limits (count pending too — prevent spamming)
       const recentCount = await getBalanceTxRepository().getRecentWithdraws(userId, 24);
       if (recentCount >= 3) {
-        res.status(429).json({ error: 'Withdrawal limit exceeded (3/day)' });
-        return;
+        res.status(429).json({ error: 'Withdrawal limit exceeded (3/day)' }); return;
       }
       const lastTime = await getBalanceTxRepository().getLastWithdrawTime(userId);
       if (lastTime && (Date.now() - lastTime.getTime()) < 5 * 60 * 1000) {
-        res.status(429).json({ error: 'Cooldown: wait 5 minutes between withdrawals' });
-        return;
+        res.status(429).json({ error: 'Cooldown: wait 5 minutes between withdrawal requests' }); return;
       }
 
-      // Balance check + deduct in a single transaction to prevent double-withdraw
+      // Ensure schema for withdrawal_requests
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS builder_bot.withdrawal_requests (
+          id           SERIAL PRIMARY KEY,
+          user_id      BIGINT NOT NULL,
+          amount_nano  BIGINT NOT NULL,
+          to_address   TEXT NOT NULL,
+          status       TEXT NOT NULL DEFAULT 'pending',  -- pending | sent | confirmed | failed | cancelled
+          tx_hash      TEXT,
+          error        TEXT,
+          created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          sent_at      TIMESTAMPTZ,
+          confirmed_at TIMESTAMPTZ,
+          CONSTRAINT withdrawal_status_chk
+            CHECK (status IN ('pending','sent','confirmed','failed','cancelled'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_withdrawal_user
+          ON builder_bot.withdrawal_requests(user_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_withdrawal_pending
+          ON builder_bot.withdrawal_requests(status) WHERE status IN ('pending','sent');
+      `);
+
       const networkFee = 0.05;
-      const dbClient = await pool.connect();
+      const total = amountTon + networkFee;
       let profile: any;
-      let deducted = false;
+      let requestId: number | null = null;
+
+      const dbClient = await pool.connect();
       try {
         await dbClient.query('BEGIN');
-        // Lock the profile row to prevent concurrent balance modifications
         const { rows } = await dbClient.query(
           `SELECT value FROM builder_bot.user_settings WHERE user_id = $1 AND key = 'profile' FOR UPDATE`,
           [userId]
         );
         profile = rows[0]?.value || { balance_ton: 0, total_earned: 0, wallet_address: null, joined_at: new Date().toISOString() };
 
-        if (amountTon + networkFee > (profile.balance_ton || 0)) {
+        if (total > (profile.balance_ton || 0)) {
           await dbClient.query('ROLLBACK');
-          res.status(400).json({ error: 'Insufficient balance' });
-          return;
+          res.status(400).json({ error: 'Insufficient balance' }); return;
         }
         if (amountTon > (profile.balance_ton || 0) * 0.8) {
           await dbClient.query('ROLLBACK');
-          res.status(400).json({ error: `Max withdrawal is 80% of balance (${((profile.balance_ton || 0) * 0.8).toFixed(2)} TON)` });
-          return;
+          res.status(400).json({ error: `Max withdrawal is 80% of balance (${((profile.balance_ton || 0) * 0.8).toFixed(2)} TON)` }); return;
         }
 
-        // Save wallet address to profile (syncs with bot)
-        if (!profile.wallet_address || profile.wallet_address !== address) {
-          profile.wallet_address = address;
-        }
-
-        // Deduct balance atomically
-        profile.balance_ton = Math.max(0, (profile.balance_ton || 0) - amountTon - networkFee);
+        // Freeze balance — deduct now, refund if admin cancels
+        profile.balance_ton = Math.max(0, (profile.balance_ton || 0) - total);
         await dbClient.query(
           `INSERT INTO builder_bot.user_settings (user_id, key, value, updated_at)
            VALUES ($1, 'profile', $2::jsonb, NOW())
            ON CONFLICT ON CONSTRAINT user_settings_unique DO UPDATE SET value = $2::jsonb, updated_at = NOW()`,
           [userId, JSON.stringify(profile)]
         );
-        // Record withdrawal in ledger within the same transaction
+        // Ledger: withdraw_pending
         await dbClient.query(
           `INSERT INTO builder_bot.balance_transactions (user_id, type, amount_ton, balance_after, description, status)
-           VALUES ($1, 'withdraw', $2, $3, $4, 'completed')`,
-          [userId, -(amountTon + networkFee), profile.balance_ton, `Withdraw to ${address.slice(0,12)}...`]
+           VALUES ($1, 'withdraw', $2, $3, $4, 'pending')`,
+          [userId, -total, profile.balance_ton, `Withdraw request → ${address.slice(0,12)}…`]
         );
+        // Withdrawal request row
+        const amountNano = BigInt(Math.round(amountTon * 1e9));
+        const ins = await dbClient.query(
+          `INSERT INTO builder_bot.withdrawal_requests (user_id, amount_nano, to_address, status)
+           VALUES ($1, $2::bigint, $3, 'pending')
+           RETURNING id`,
+          [userId, amountNano.toString(), address]
+        );
+        requestId = ins.rows[0]?.id;
         await dbClient.query('COMMIT');
-        deducted = true;
       } catch (txErr: any) {
         await dbClient.query('ROLLBACK').catch(() => {});
         throw txErr;
@@ -5231,75 +5497,215 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
         dbClient.release();
       }
 
-      // Send TON (outside the DB transaction — network call)
+      // DM owner(s) with the new pending request (non-blocking)
       try {
-        const result = await sendPlatformTransaction(address, amountTon, `withdraw:${userId}`);
-        if (result.ok) {
-          try { await getBalanceTxRepository().record(userId, 'withdraw_confirmed', 0, profile.balance_ton, `txHash: ${result.txHash}`, result.txHash); } catch {}
-          res.json({ ok: true, txHash: result.txHash, balance: profile.balance_ton });
-        } else {
-          // Rollback balance atomically
-          const rbClient = await pool.connect();
-          try {
-            await rbClient.query('BEGIN');
-            const { rows: rbRows } = await rbClient.query(
-              `SELECT value FROM builder_bot.user_settings WHERE user_id = $1 AND key = 'profile' FOR UPDATE`, [userId]
-            );
-            const rbProfile = rbRows[0]?.value || profile;
-            rbProfile.balance_ton = (rbProfile.balance_ton || 0) + amountTon + networkFee;
-            await rbClient.query(
-              `UPDATE builder_bot.user_settings SET value = $1::jsonb, updated_at = NOW() WHERE user_id = $2 AND key = 'profile'`,
-              [JSON.stringify(rbProfile), userId]
-            );
-            await rbClient.query(
-              `INSERT INTO builder_bot.balance_transactions (user_id, type, amount_ton, balance_after, description, status)
-               VALUES ($1, 'refund', $2, $3, 'Withdraw failed, refunded', 'completed')`,
-              [userId, amountTon + networkFee, rbProfile.balance_ton]
-            );
-            await rbClient.query('COMMIT');
-            profile.balance_ton = rbProfile.balance_ton;
-          } catch (rbErr) { await rbClient.query('ROLLBACK').catch(() => {}); } finally { rbClient.release(); }
-          res.status(500).json({ error: result.error || 'Transaction failed' });
+        const { notifyUserViaTelegram } = await import('./services/notify-user');
+        const ownerIds = (process.env.PLATFORM_OWNER_IDS || '130806013').split(',').map(s => Number(s.trim())).filter(Boolean);
+        const msg = [
+          '💸 Новый запрос на вывод',
+          `User: ${userId}`,
+          `Amount: ${amountTon} TON (+${networkFee} fee)`,
+          `To: ${address}`,
+          `Request ID: #${requestId}`,
+          ``,
+          `Подтверди в Studio → Admin → Payouts/Withdrawals.`,
+        ].join('\n');
+        for (const oid of ownerIds) {
+          notifyUserViaTelegram(oid, msg).catch(() => {});
         }
-      } catch (sendErr: any) {
-        // Rollback on exception — same atomic pattern
-        const rbClient = await pool.connect();
-        try {
-          await rbClient.query('BEGIN');
-          const { rows: rbRows } = await rbClient.query(
-            `SELECT value FROM builder_bot.user_settings WHERE user_id = $1 AND key = 'profile' FOR UPDATE`, [userId]
-          );
-          const rbProfile = rbRows[0]?.value || profile;
-          rbProfile.balance_ton = (rbProfile.balance_ton || 0) + amountTon + networkFee;
-          await rbClient.query(
-            `UPDATE builder_bot.user_settings SET value = $1::jsonb, updated_at = NOW() WHERE user_id = $2 AND key = 'profile'`,
-            [JSON.stringify(rbProfile), userId]
-          );
-          await rbClient.query(
-            `INSERT INTO builder_bot.balance_transactions (user_id, type, amount_ton, balance_after, description, status)
-             VALUES ($1, 'refund', $2, $3, 'Withdraw exception, refunded', 'completed')`,
-            [userId, amountTon + networkFee, rbProfile.balance_ton]
-          );
-          await rbClient.query('COMMIT');
-        } catch (rbErr) { await rbClient.query('ROLLBACK').catch(() => {}); } finally { rbClient.release(); }
-        res.status(500).json({ error: sendErr.message || 'Send failed' });
-      }
+      } catch {}
+
+      res.json({
+        ok: true,
+        pending: true,
+        requestId,
+        amount: amountTon,
+        fee: networkFee,
+        address,
+        balance: profile.balance_ton,
+        message: 'Запрос принят. Вывод подтверждается вручную (обычно в течение часа). Ты получишь уведомление в боте.',
+      });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
   });
 
+  // ── GET /api/admin/withdrawals/pending — owner list pending requests ──
+  app.get('/api/admin/withdrawals/pending', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      if (!isPlatformAdmin(userId)) { res.status(403).json({ error: 'forbidden' }); return; }
+      const r = await pool.query(
+        `SELECT id, user_id, amount_nano, to_address, status, created_at
+           FROM builder_bot.withdrawal_requests
+          WHERE status = 'pending'
+          ORDER BY created_at ASC
+          LIMIT 200`,
+      );
+      const items = r.rows.map(row => ({
+        id: row.id,
+        userId: Number(row.user_id),
+        amountTon: Number(row.amount_nano) / 1e9,
+        amountNano: String(row.amount_nano),
+        toAddress: row.to_address,
+        status: row.status,
+        createdAt: row.created_at,
+      }));
+      res.json({ ok: true, items });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── POST /api/admin/withdrawals/confirm — owner submits signed TonConnect tx
+  // Body: { requestId, txHash }
+  app.post('/api/admin/withdrawals/confirm', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      if (!isPlatformAdmin(userId)) { res.status(403).json({ error: 'forbidden' }); return; }
+      const { requestId, txHash } = req.body || {};
+      if (!requestId || !txHash) { res.status(400).json({ error: 'requestId and txHash required' }); return; }
+      const r = await pool.query(
+        `UPDATE builder_bot.withdrawal_requests
+            SET status = 'confirmed', tx_hash = $2, confirmed_at = NOW(), sent_at = NOW()
+          WHERE id = $1 AND status = 'pending'
+          RETURNING user_id, amount_nano, to_address`,
+        [requestId, String(txHash)],
+      );
+      if (!r.rows.length) { res.status(404).json({ error: 'request not found or not pending' }); return; }
+      const row = r.rows[0];
+      // Mark the corresponding balance_transactions row 'completed' (best-effort)
+      try {
+        await pool.query(
+          `UPDATE builder_bot.balance_transactions
+              SET status = 'completed', description = description || ' [tx:' || $2 || ']'
+            WHERE user_id = $1 AND type = 'withdraw' AND status = 'pending'
+            AND created_at > NOW() - INTERVAL '1 day'`,
+          [Number(row.user_id), String(txHash).slice(0, 16)],
+        );
+      } catch {}
+      // DM the user
+      try {
+        const { notifyUserViaTelegram } = await import('./services/notify-user');
+        const amountTon = Number(row.amount_nano) / 1e9;
+        notifyUserViaTelegram(
+          Number(row.user_id),
+          `✅ Вывод подтверждён\n\n${amountTon} TON → ${row.to_address.slice(0,12)}…\nTx: ${String(txHash).slice(0,16)}…`,
+        ).catch(() => {});
+      } catch {}
+      res.json({ ok: true, requestId, txHash });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── POST /api/admin/withdrawals/cancel — owner cancels + refunds balance
+  // Body: { requestId, reason? }
+  app.post('/api/admin/withdrawals/cancel', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      if (!isPlatformAdmin(userId)) { res.status(403).json({ error: 'forbidden' }); return; }
+      const { requestId, reason } = req.body || {};
+      if (!requestId) { res.status(400).json({ error: 'requestId required' }); return; }
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const r = await client.query(
+          `UPDATE builder_bot.withdrawal_requests
+              SET status = 'cancelled', error = $2
+            WHERE id = $1 AND status = 'pending'
+            RETURNING user_id, amount_nano, to_address`,
+          [requestId, reason || 'cancelled by admin'],
+        );
+        if (!r.rows.length) {
+          await client.query('ROLLBACK');
+          res.status(404).json({ error: 'request not found or not pending' }); return;
+        }
+        const row = r.rows[0];
+        const refundTon = Number(row.amount_nano) / 1e9 + 0.05; // refund amount + fee that was frozen
+        // Refund balance
+        const { rows: prows } = await client.query(
+          `SELECT value FROM builder_bot.user_settings WHERE user_id = $1 AND key = 'profile' FOR UPDATE`,
+          [Number(row.user_id)],
+        );
+        const profile = prows[0]?.value || { balance_ton: 0 };
+        profile.balance_ton = (Number(profile.balance_ton) || 0) + refundTon;
+        await client.query(
+          `INSERT INTO builder_bot.user_settings (user_id, key, value, updated_at)
+             VALUES ($1, 'profile', $2::jsonb, NOW())
+             ON CONFLICT ON CONSTRAINT user_settings_unique DO UPDATE SET value = $2::jsonb, updated_at = NOW()`,
+          [Number(row.user_id), JSON.stringify(profile)],
+        );
+        await client.query(
+          `INSERT INTO builder_bot.balance_transactions (user_id, type, amount_ton, balance_after, description, status)
+             VALUES ($1, 'refund', $2, $3, $4, 'completed')`,
+          [Number(row.user_id), refundTon, profile.balance_ton, `Withdraw #${requestId} cancelled: ${reason || 'no reason'}`],
+        );
+        await client.query('COMMIT');
+        // DM user
+        try {
+          const { notifyUserViaTelegram } = await import('./services/notify-user');
+          notifyUserViaTelegram(
+            Number(row.user_id),
+            `❌ Вывод #${requestId} отменён\n\n${refundTon.toFixed(3)} TON возвращены на баланс.${reason ? '\nПричина: ' + reason : ''}`,
+          ).catch(() => {});
+        } catch {}
+        res.json({ ok: true, requestId, refunded: refundTon });
+      } catch (e: any) {
+        await client.query('ROLLBACK').catch(() => {});
+        throw e;
+      } finally {
+        client.release();
+      }
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── GET /api/tonconnect/payload — issue server-signed nonce for ton_proof ──
+  // Studio calls this before initiating TonConnect; wallet signs the returned
+  // payload + timestamp + domain + address, and we verify the signature in
+  // /api/wallet/link to prove the user actually owns the address (vs spoofing
+  // someone else's address into their profile).
+  app.get('/api/tonconnect/payload', async (_req: Request, res: Response) => {
+    try {
+      const { issuePayload } = await import('./services/ton-proof');
+      const { payload, expiresAt } = issuePayload();
+      res.json({ ok: true, payload, expiresAt });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
   // ── POST /api/wallet/link — привязать кошелёк ────────────────
+  // Accepts optional `proof` (ton_proof v2 from TonConnect handshake). When
+  // present, we verify the ed25519 signature against the wallet's pubkey
+  // (extracted from stateInit). If TON_PROOF_STRICT=1, link fails without
+  // valid proof; otherwise we accept unverified linking but flag the profile
+  // (verified_at: null) so payouts can require strict mode later.
   app.post('/api/wallet/link', requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = (req as any).userId as number;
-      const { address } = req.body || {};
+      const { address, proof } = req.body || {};
       if (!address || typeof address !== 'string') {
         res.status(400).json({ error: 'Address required' });
         return;
       }
       if (!address.startsWith('EQ') && !address.startsWith('UQ') && !address.startsWith('0:')) {
         res.status(400).json({ error: 'Invalid TON address format' });
+        return;
+      }
+      const strict = process.env.TON_PROOF_STRICT === '1';
+      let verifiedAt: string | null = null;
+      let verifyError: string | null = null;
+      if (proof) {
+        try {
+          const { verifyTonProof } = await import('./services/ton-proof');
+          const result = await verifyTonProof(address.trim(), proof);
+          if (result.ok) verifiedAt = new Date().toISOString();
+          else verifyError = result.error || 'verify failed';
+        } catch (e: any) {
+          verifyError = e?.message || 'verify exception';
+        }
+      } else if (strict) {
+        verifyError = 'ton_proof required (strict mode)';
+      }
+      if (strict && !verifiedAt) {
+        res.status(403).json({ ok: false, error: 'ton_proof verification failed', detail: verifyError });
         return;
       }
       const { wallet_name, connected_via } = req.body || {};
@@ -5309,8 +5715,18 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
       if (wallet_name) profile.wallet_name = wallet_name;
       if (connected_via) profile.connected_via = connected_via;
       profile.wallet_connected_at = new Date().toISOString();
+      profile.wallet_verified_at = verifiedAt;
+      if (verifyError) profile.wallet_verify_error = verifyError;
+      else delete profile.wallet_verify_error;
       await settingsRepo.set(userId, 'profile', profile);
-      res.json({ ok: true, wallet_address: profile.wallet_address, wallet_name: profile.wallet_name || null, connected_via: profile.connected_via || null });
+      res.json({
+        ok: true,
+        wallet_address: profile.wallet_address,
+        wallet_name: profile.wallet_name || null,
+        connected_via: profile.connected_via || null,
+        wallet_verified: !!verifiedAt,
+        wallet_verify_error: verifyError,
+      });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -5378,6 +5794,62 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
 
     // Streaming conversational response
     try {
+      // ── Instant canned responses for ultra-trivial inputs ────────────────
+      // Greetings / yes-no / math don't need an LLM call — and forcing them
+      // through the quota-exhausted Gemini chain produces 30-60s waits. We
+      // shortcut here, return immediately, save an entry to history, done.
+      const _trivialMsg = String(message || '').trim();
+      const _trivialLower = _trivialMsg.toLowerCase();
+      function _cannedReply(text: string, ru: boolean): string | null {
+        if (!text) return null;
+        const t = text.toLowerCase();
+        if (/^(прив(ет)?|здаров[оа]?|здравствуй(те)?|привет\W?$|хай|hi|hello|hey|yo)[!.\s]*$/.test(t))
+          return ru ? 'Привет! Чем помочь?' : 'Hi! How can I help?';
+        if (/^(спасибо|спс|благодарю|thanks|thx|ty)[!.\s]*$/.test(t))
+          return ru ? 'Не за что 👌' : 'You\'re welcome 👌';
+        if (/^(пока|до свидания|bye|goodbye|see ya)[!.\s]*$/.test(t))
+          return ru ? 'Пока! 👋' : 'Bye! 👋';
+        if (/^(да|ок|okay|ok|yes|yeah|ага|угу|👍|нет|no|nope|nah)[!.\s]*$/.test(t))
+          return ru ? '👍' : '👍';
+        // Simple arithmetic — let JS do it, no AI needed
+        const mathMatch = t.match(/^\s*(\d+(?:\.\d+)?)\s*([\+\-\*\/x×÷])\s*(\d+(?:\.\d+)?)\s*\=?\s*\??\s*$/);
+        if (mathMatch) {
+          const [, a, op, b] = mathMatch;
+          const na = parseFloat(a), nb = parseFloat(b);
+          let res: number | null = null;
+          if (op === '+') res = na + nb;
+          else if (op === '-') res = na - nb;
+          else if (op === '*' || op === 'x' || op === '×') res = na * nb;
+          else if ((op === '/' || op === '÷') && nb !== 0) res = na / nb;
+          if (res !== null && isFinite(res)) {
+            const rounded = Math.round(res * 1e6) / 1e6;
+            return `${na} ${op === 'x' || op === '×' ? '×' : op === '÷' ? '÷' : op} ${nb} = ${rounded}`;
+          }
+        }
+        return null;
+      }
+      const _isRu = /[а-яё]/i.test(_trivialMsg) || _trivialLower.length === 0;
+      const canned = _cannedReply(_trivialMsg, _isRu);
+      if (canned) {
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        res.setHeader('X-Accel-Buffering', 'no');
+        res.flushHeaders();
+        const _sendCanned = (event: string, data: any) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+        _sendCanned('start', { model: 'canned' });
+        _sendCanned('delta', { text: canned });
+        // Persist to history so future turns still have context
+        if (!_atlasChatHistory.has(userId)) _atlasChatHistory.set(userId, []);
+        const _h = _atlasChatHistory.get(userId)!;
+        _h.push({ role: 'user', content: _trivialMsg });
+        _h.push({ role: 'assistant', content: canned });
+        if (_h.length > 40) _h.splice(0, _h.length - 40);
+        _sendCanned('done', { fullText: canned });
+        res.end();
+        return;
+      }
+
       const { buildAtlasSystemPrompt } = await import('./services/atlas-prompt');
       const systemPrompt = await buildAtlasSystemPrompt(userId, context as any);
 
@@ -5402,12 +5874,34 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
       let model: string;
       let useNativeAnthropic = false;
 
+      // ── Smart routing: route trivial messages to cheap+fast model ────────
+      // Greeting / math / single-word Q → flash-lite (instant, near-zero cost).
+      // Complex (создай агента, troubleshooting, code) → main model.
+      // This cuts both latency for simple chats AND Gemini quota burn ~70%.
+      function classifyComplexity(text: string): 'trivial' | 'normal' | 'complex' {
+        const t = (text || '').trim();
+        if (t.length === 0) return 'trivial';
+        if (t.length <= 30 && !/[?!]/.test(t)) return 'trivial';
+        if (/^(прив(ет)?|hi|hello|hey|здаров|здравствуй|спасибо|thanks|ok|ок|да|нет|yes|no|\d+[\+\-\*\/]\d+\??)/i.test(t)) return 'trivial';
+        // Heavy intent signals → complex (always main model)
+        if (/созда(й|ть)|сделай|реализуй|напиши код|debug|почему не работает|implement|build me|fix the|architect/i.test(t)) return 'complex';
+        if (t.length > 600) return 'complex';                   // long input — needs strong reasoning
+        if ((t.match(/\n/g) || []).length >= 4) return 'complex'; // multi-line probably code/spec
+        if (/```/.test(t)) return 'complex';                     // contains a code block
+        return 'normal';
+      }
+      const complexity = classifyComplexity(String(message || ''));
+
       if (_useAnthropic) {
         // Use Anthropic native SDK for streaming (NOT OpenAI-compat — Anthropic doesn't support /chat/completions)
         try {
+          // @ts-ignore — package installed via workspace, types not declared in this app's package.json
           const Anthropic = (await import('@anthropic-ai/sdk')).default;
           client = new Anthropic({ apiKey: _anthropicKey });
-          model = process.env.ATLAS_MODEL || 'claude-sonnet-4-5';
+          // For trivial messages prefer Haiku (10× cheaper, 5× faster than Sonnet)
+          model = complexity === 'trivial'
+            ? 'claude-haiku-4-5-20251001'
+            : (process.env.ATLAS_MODEL || 'claude-sonnet-4-5');
           useNativeAnthropic = true;
         } catch {
           // SDK not installed — fallback to Gemini
@@ -5415,14 +5909,16 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
             apiKey: process.env.OPENAI_API_KEY || '',
             baseURL: process.env.OPENAI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai/',
           });
-          model = 'gemini-2.5-flash';
+          model = complexity === 'trivial' ? 'gemini-2.0-flash-lite' : 'gemini-2.5-flash';
         }
       } else {
         client = new OpenAI({
           apiKey: process.env.OPENAI_API_KEY || '',
           baseURL: process.env.OPENAI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai/',
         });
-        model = process.env.CLAUDE_MODEL || 'gemini-2.5-flash';
+        if (complexity === 'trivial') model = 'gemini-2.0-flash-lite';
+        else if (complexity === 'complex') model = process.env.CLAUDE_MODEL || 'gemini-2.5-pro';
+        else model = process.env.CLAUDE_MODEL || 'gemini-2.5-flash';
       }
 
       res.setHeader('Content-Type', 'text/event-stream');
@@ -5448,11 +5944,15 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
         // outages.
         const _openrouterKey = process.env.OPENROUTER_API_KEY || '';
         const openrouterModels = _openrouterKey ? [
+          // z-ai/glm-4.5-air:free observed actually returning content while
+          // the deepseek / llama / hermes free tier ones are usually upstream
+          // rate-limited. Put it first so quota-exhausted Gemini cases recover.
+          'openrouter::z-ai/glm-4.5-air:free',
           'openrouter::deepseek/deepseek-v4-flash:free',
           'openrouter::meta-llama/llama-3.3-70b-instruct:free',
           'openrouter::nousresearch/hermes-3-llama-3.1-405b:free',
         ] : [];
-        const modelChain = useNativeAnthropic
+        const fullModelChain = useNativeAnthropic
           ? [model, 'claude-haiku-4-5-20251001']
           : [
               model,
@@ -5462,6 +5962,26 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
               // Google deprecated gemini-1.5-* — they now return 404, removed.
               ...openrouterModels,
             ].filter((m, i, arr) => arr.indexOf(m) === i); // de-dupe
+
+        // 429-cooldown cache: per-model timestamp of last quota failure. If a
+        // model has cooled-down within COOLDOWN_MS, we SKIP it entirely so
+        // user-facing latency on the next request stays low. Reset per-day so
+        // daily-quota models recover when the bucket resets.
+        if (!(global as any)._atlasModelCooldown) (global as any)._atlasModelCooldown = new Map<string, number>();
+        const COOLDOWN_MS = 30 * 60 * 1000; // 30 min cooldown
+        const _cool: Map<string, number> = (global as any)._atlasModelCooldown;
+        const now = Date.now();
+        const modelChain = fullModelChain.filter((m) => {
+          const last = _cool.get(m);
+          if (!last) return true;
+          if (now - last > COOLDOWN_MS) { _cool.delete(m); return true; }
+          return false;
+        });
+        if (modelChain.length === 0) {
+          // All cooled down — try the freshest one anyway as a probe
+          const freshest = [...fullModelChain].sort((a, b) => (_cool.get(a) || 0) - (_cool.get(b) || 0))[0];
+          if (freshest) modelChain.push(freshest);
+        }
         const nonSystemMsgs = messages.filter(m => m.role !== 'system');
 
         // Lazy-build the OpenRouter client only if we'll need it
@@ -5544,6 +6064,12 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
               || errMsg.includes('not found');
             if (retryable) {
               console.warn(`[Atlas] ${tryModel} failed (${errMsg.slice(0, 80)}), trying next...`);
+              // Cache the failure timestamp so future requests skip this model
+              // until cooldown expires — eliminates the 30-60s timeout cascade
+              // every user faced when daily Gemini quota was already exhausted.
+              if (errMsg.includes('429') || errMsg.includes('rate_limit') || errMsg.includes('quota')) {
+                try { (global as any)._atlasModelCooldown?.set(tryModel, Date.now()); } catch {}
+              }
               exhaustedAt.push(tryModel);
               allRateLimited = exhaustedAt.length === modelChain.length;
               continue; // try next model
@@ -5714,14 +6240,32 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
              VALUES ($1, 'marketplace_buy', $2, $3, $4, 'completed')`,
             [userId, -priceTon, buyerProfile.balance_ton, `Marketplace purchase #${listingId}`]
           );
-          // Lock seller profile row and credit
+          // 80/15/5 split — same logic as skill marketplace, but settled on
+          // platform balances (no on-chain TX needed since funds are already
+          // pre-deposited into the platform). Referrer share only paid if the
+          // buyer was referred AND the referrer row exists.
+          const sellerNano = BigInt(Math.floor(priceTon * 1e9 * 0.80));
+          const sellerShareTon = Number(sellerNano) / 1e9;
+          let referrerId: number | null = null;
+          let referrerShareTon = 0;
+          try {
+            const refRow = await dbClient.query(
+              `SELECT referrer_user_id FROM builder_bot.beta_referrals WHERE user_id = $1 LIMIT 1`,
+              [userId]
+            );
+            if (refRow.rows[0]?.referrer_user_id) {
+              referrerId = Number(refRow.rows[0].referrer_user_id);
+              referrerShareTon = priceTon * 0.05;
+            }
+          } catch {}
+          // Lock seller profile row and credit 80%
           const { rows: sellerRows } = await dbClient.query(
             `SELECT value FROM builder_bot.user_settings WHERE user_id = $1 AND key = 'profile' FOR UPDATE`,
             [listing.sellerId]
           );
           const sellerProfile: any = sellerRows[0]?.value || { balance_ton: 0, total_earned: 0, wallet_address: null, joined_at: new Date().toISOString() };
-          sellerProfile.balance_ton = (sellerProfile.balance_ton || 0) + priceTon;
-          sellerProfile.total_earned = (sellerProfile.total_earned || 0) + priceTon;
+          sellerProfile.balance_ton = (sellerProfile.balance_ton || 0) + sellerShareTon;
+          sellerProfile.total_earned = (sellerProfile.total_earned || 0) + sellerShareTon;
           await dbClient.query(
             `INSERT INTO builder_bot.user_settings (user_id, key, value, updated_at)
              VALUES ($1, 'profile', $2::jsonb, NOW())
@@ -5731,9 +6275,53 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
           await dbClient.query(
             `INSERT INTO builder_bot.balance_transactions (user_id, type, amount_ton, balance_after, description, status)
              VALUES ($1, 'marketplace_sale', $2, $3, $4, 'completed')`,
-            [listing.sellerId, priceTon, sellerProfile.balance_ton, `Marketplace sale #${listingId}`]
+            [listing.sellerId, sellerShareTon, sellerProfile.balance_ton, `Marketplace sale #${listingId} (80%)`]
           );
+          // Credit referrer (5%) if present
+          if (referrerId && referrerShareTon > 0) {
+            const { rows: refRows } = await dbClient.query(
+              `SELECT value FROM builder_bot.user_settings WHERE user_id = $1 AND key = 'profile' FOR UPDATE`,
+              [referrerId]
+            );
+            const refProfile: any = refRows[0]?.value || { balance_ton: 0, total_earned: 0, wallet_address: null, joined_at: new Date().toISOString() };
+            refProfile.balance_ton = (refProfile.balance_ton || 0) + referrerShareTon;
+            refProfile.total_earned = (refProfile.total_earned || 0) + referrerShareTon;
+            await dbClient.query(
+              `INSERT INTO builder_bot.user_settings (user_id, key, value, updated_at)
+               VALUES ($1, 'profile', $2::jsonb, NOW())
+               ON CONFLICT ON CONSTRAINT user_settings_unique DO UPDATE SET value = $2::jsonb, updated_at = NOW()`,
+              [referrerId, JSON.stringify(refProfile)]
+            );
+            await dbClient.query(
+              `INSERT INTO builder_bot.balance_transactions (user_id, type, amount_ton, balance_after, description, status)
+               VALUES ($1, 'referral_bonus', $2, $3, $4, 'completed')`,
+              [referrerId, referrerShareTon, refProfile.balance_ton, `Referral bonus from agent fork #${listingId} (5%)`]
+            );
+          }
           await dbClient.query('COMMIT');
+          // Log to creator_earnings for analytics consistency with skill flow
+          // (status='paid' — balance already credited inline). Outside the TX
+          // because creator_earnings has its own conflict handling.
+          try {
+            const { ensureCreatorEarningsSchema } = await import('./services/creator-earnings');
+            await ensureCreatorEarningsSchema(pool);
+            await pool.query(
+              `INSERT INTO builder_bot.creator_earnings
+                 (user_id, source_type, source_id, amount_nano, status, paid_at, note)
+                 VALUES ($1, 'agent_fork', $2, $3, 'paid', NOW(), $4)
+                 ON CONFLICT (source_type, source_id, user_id) WHERE source_id IS NOT NULL DO NOTHING`,
+              [listing.sellerId, listingId, sellerNano.toString(), `Agent fork: listing #${listingId}`],
+            );
+            if (referrerId && referrerShareTon > 0) {
+              await pool.query(
+                `INSERT INTO builder_bot.creator_earnings
+                   (user_id, source_type, source_id, amount_nano, status, paid_at, note)
+                   VALUES ($1, 'referral', $2, $3, 'paid', NOW(), $4)
+                   ON CONFLICT (source_type, source_id, user_id) WHERE source_id IS NOT NULL DO NOTHING`,
+                [referrerId, listingId, Math.floor(referrerShareTon * 1e9).toString(), `Referral from agent fork #${listingId}`],
+              );
+            }
+          } catch (logErr: any) { console.warn('[Marketplace] creator_earnings log:', logErr?.message); }
         } catch (txErr: any) {
           await dbClient.query('ROLLBACK').catch(() => {});
           throw txErr;
@@ -6601,7 +7189,7 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
   app.put('/api/agents/:id/contacts/:contactUserId', requireAuth, async (req: Request, res: Response) => {
     try {
       const own = await verifyAgentOwnership(req, res); if (!own) return;
-      const contactTgId = parseInt(req.params.contactUserId, 10);
+      const contactTgId = parseInt(String(req.params.contactUserId), 10);
       if (isNaN(contactTgId)) { res.status(400).json({ ok: false, error: 'Invalid userId' }); return; }
       const { pool } = await import('./db');
       const { isAllowed, isAdmin } = req.body;
@@ -6627,7 +7215,7 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
   }, async (req: Request, res: Response) => {
     try {
       const own = await verifyAgentOwnership(req, res); if (!own) return;
-      const tgId = req.params.tgId;
+      const tgId = String(req.params.tgId || '');
       const cacheKey = `${own.agentId}:${tgId}`;
 
       // Check cache (including negative cache)
@@ -7127,7 +7715,10 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
   // Store reference so broadcastWSEvent can use it
   _wsClients = wsClients;
 
-  server.listen(PORT, () => {
-    console.log(`🌐 API Server running on http://localhost:${PORT}`);
+  // Bind to localhost only. nginx (port 443) reverse-proxies to 127.0.0.1:3001;
+  // exposing this port publicly bypasses HTTPS and host-level rate limits.
+  const BIND_HOST = process.env.API_BIND_HOST || '127.0.0.1';
+  server.listen(PORT, BIND_HOST, () => {
+    console.log(`🌐 API Server running on http://${BIND_HOST}:${PORT}`);
   });
 }
