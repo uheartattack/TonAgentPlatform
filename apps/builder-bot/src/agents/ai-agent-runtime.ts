@@ -7867,18 +7867,30 @@ async function executeFlowCode(execCode: string, params: AIAgentTickParams): Pro
   // other well-known breakouts. NOT a security boundary — Node `vm` is
   // explicitly NOT a sandbox per docs — but it lifts the cost of casual abuse
   // and gives us a tripwire in logs.
+  // Strip string literals + comments before scanning so the scanner doesn't
+  // false-positive on the word "process" inside a comment or string. Doesn't
+  // need to be a perfect parser — only used to lower noise.
+  function _stripLiteralsAndComments(src: string): string {
+    let out = src;
+    out = out.replace(/\/\/[^\n]*/g, '');                  // // line comments
+    out = out.replace(/\/\*[\s\S]*?\*\//g, '');             // /* block */
+    out = out.replace(/(['"`])(?:\\.|(?!\1)[^\\])*\1/g, '""'); // string literals
+    return out;
+  }
+  const _codeStripped = _stripLiteralsAndComments(execCode);
+
   const SUSPICIOUS = [
     /\bconstructor\s*\.\s*constructor\b/,         // .constructor.constructor
-    /\bprocess\b/,                                // global process access
+    /\bprocess\s*\./,                             // process.X access (any prop)
     /\b__proto__\b/,                              // proto walking
-    /\bObject\.getPrototypeOf\b/,                 // alternative proto walk
+    /\bObject\s*\.\s*getPrototypeOf\b/,           // alternative proto walk
     /\bFunction\s*\(/,                            // Function() constructor
     /\beval\s*\(/,                                // eval()
     /\bglobalThis\b/,                             // global escape
     /\bimport\s*\(/,                              // dynamic import
   ];
   for (const re of SUSPICIOUS) {
-    if (re.test(execCode)) {
+    if (re.test(_codeStripped)) {
       const msg = `[flow-exec] BLOCKED suspicious pattern ${re} in code (agent #${params.agentId}, user ${params.userId})`;
       await logToDb(params.agentId, 'error', msg, params.userId);
       console.warn(msg);
