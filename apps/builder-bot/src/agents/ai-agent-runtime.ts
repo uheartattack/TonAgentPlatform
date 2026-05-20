@@ -945,10 +945,10 @@ export function getAgentTodos(agentId: number): AgentTodo[] {
   return _agentTodos.get(agentId)?.todos || [];
 }
 
-// Pattern #13 (Claude Code leak): synthetic events (mailbox, bg-task wakeup,
-// autonomous claim, subagent result) wrap in <task-notification> XML so the
-// agent's prompt can distinguish them from real user messages. Real human
-// chat input is NEVER wrapped — it stays plain text.
+// Pattern #13: synthetic events (mailbox, bg-task wakeup, autonomous claim,
+// subagent result) wrap in <task-notification> XML so the agent's prompt can
+// distinguish them from real user messages. Real human chat input is NEVER
+// wrapped — it stays plain text.
 function wrapAsTaskNotification(text: string, ctx: Record<string, any>): string {
   const kind = String(ctx._taskNotificationKind || 'event');
   const attrs: string[] = [`kind="${kind.replace(/"/g, '&quot;')}"`];
@@ -1091,7 +1091,7 @@ function popMessages(agentId: number): string[] {
   // Reset to empty array instead of delete to avoid race: if a message arrives
   // between .get() and .delete(), it would be silently lost.
   _pendingMessages.set(agentId, []);
-  // Pattern #11 (Claude Code leak): command priority queue — now > next > later.
+  // Pattern #11: command priority queue — now > next > later.
   // Real user input (plain text) goes BEFORE synthetic task-notifications
   // (XML-wrapped), so users never get starved by background events firing
   // at the same tick boundary. FIFO is preserved within each priority tier.
@@ -9474,8 +9474,7 @@ If web_search returns nothing useful → say "не смог найти акту�
   // Sorting tools by name before each API call makes the tool block
   // byte-stable across turns. Providers with prefix-prompt-caching
   // (Anthropic, OpenAI, OpenRouter) get higher hit rates → lower cost +
-  // lower latency. Pattern from Claude Code leak. Cheap: O(N log N) on
-  // typically ≤60 tools.
+  // lower latency. Cheap: O(N log N) on typically ≤60 tools.
   tools.sort((a: any, b: any) => {
     const an = (a.function?.name || a.name || '');
     const bn = (b.function?.name || b.name || '');
@@ -9900,7 +9899,7 @@ If web_search returns nothing useful → say "не смог найти акту�
     // ── Resume on max_tokens: push continuation prompt and keep going ──
     const finishReasonRaw = (choice.finish_reason || '').toString();
     if (finishReasonRaw === 'max_tokens' || finishReasonRaw === 'length') {
-      // Pattern #6 (Claude Code leak): diminishing-returns stop.
+      // Pattern #6: diminishing-returns stop.
       // If the last continuation produced <500 new chars after ≥3
       // continuations, the model is stuck and just emitting filler.
       // Stop instead of burning more tokens.

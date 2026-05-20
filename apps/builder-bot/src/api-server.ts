@@ -6004,7 +6004,7 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
         for (const tryModel of modelChain) {
           try {
             if (useNativeAnthropic) {
-              // Pattern #10 (Claude Code leak): SYSTEM_PROMPT_DYNAMIC_BOUNDARY.
+              // Pattern #10: SYSTEM_PROMPT_DYNAMIC_BOUNDARY.
               // Static prefix (capability map, skills, rules) gets
               // cache_control: ephemeral → Anthropic caches for ~5 min →
               // subsequent turns charge 10% rate on this block. The dynamic
@@ -7603,6 +7603,107 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
       const cp = await import('./services/chat-permissions');
       await cp.resetChat(own.agentId, String(req.params.chatId));
       res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // CREWS — multi-agent networks with nested sub-crews + manager flow
+  // ═══════════════════════════════════════════════════════════════════════
+
+  app.get('/api/crews', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { listCrews } = await import('./services/crew-system');
+      const crews = await listCrews(userId);
+      res.json({ ok: true, crews });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+
+  app.post('/api/crews', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { name, description, agents, flow } = req.body || {};
+      if (!name || !Array.isArray(agents) || !flow) {
+        res.status(400).json({ ok: false, error: 'name, agents[], flow required' }); return;
+      }
+      const { createCrew } = await import('./services/crew-system');
+      const id = await createCrew({ userId, name, description, agents, flow });
+      res.json({ ok: true, id });
+    } catch (e: any) { res.status(400).json({ ok: false, error: e.message }); }
+  });
+
+  app.get('/api/crews/:id', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { getCrew } = await import('./services/crew-system');
+      const crew = await getCrew(String(req.params['id']), userId);
+      if (!crew) { res.status(404).json({ ok: false, error: 'crew not found' }); return; }
+      res.json({ ok: true, crew });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+
+  app.put('/api/crews/:id', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { updateCrew } = await import('./services/crew-system');
+      const ok = await updateCrew(String(req.params['id']), userId, req.body || {});
+      if (!ok) { res.status(404).json({ ok: false, error: 'crew not found or no changes' }); return; }
+      res.json({ ok: true });
+    } catch (e: any) { res.status(400).json({ ok: false, error: e.message }); }
+  });
+
+  app.delete('/api/crews/:id', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { deleteCrew } = await import('./services/crew-system');
+      const ok = await deleteCrew(String(req.params['id']), userId);
+      if (!ok) { res.status(404).json({ ok: false, error: 'crew not found' }); return; }
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+
+  // POST /api/crews/:id/execute — run a crew with provided input
+  app.post('/api/crews/:id/execute', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { executeCrew, buildDefaultRunAgent } = await import('./services/crew-system');
+      // Owner check happens in the loadAgent SQL: only agents belonging to the
+      // requesting user can be invoked by their crews.
+      const runAgent = buildDefaultRunAgent(async (agentId, uid) => {
+        const r = await pool.query(
+          `SELECT name, description, code, role, trigger_config
+             FROM builder_bot.agents
+            WHERE id = $1 AND user_id = $2`,
+          [agentId, uid],
+        );
+        if (!r.rows[0]) return null;
+        const row = r.rows[0];
+        const tc = typeof row.trigger_config === 'string'
+          ? (() => { try { return JSON.parse(row.trigger_config); } catch { return {}; } })()
+          : (row.trigger_config || {});
+        return {
+          name:        row.name,
+          description: row.description,
+          code:        row.code || '',
+          agentType:   row.role || 'worker',
+          config:      tc,
+        };
+      });
+      const input = req.body?.input ?? '';
+      const exec = await executeCrew(String(req.params['id']), userId, input, runAgent);
+      res.json({ ok: true, execution: exec });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+
+  app.get('/api/crews/:id/executions', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { getCrew, getCrewExecutions } = await import('./services/crew-system');
+      const crew = await getCrew(String(req.params['id']), userId);
+      if (!crew) { res.status(404).json({ ok: false, error: 'crew not found' }); return; }
+      const limit = Math.min(100, Number(req.query['limit']) || 20);
+      const items = await getCrewExecutions(String(req.params['id']), limit);
+      res.json({ ok: true, items });
     } catch (e: any) { res.status(500).json({ ok: false, error: e.message }); }
   });
 
