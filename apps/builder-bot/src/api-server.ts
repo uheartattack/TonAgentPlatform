@@ -663,6 +663,39 @@ export function startApiServer() {
   }
   (app as any)._sendError = sendError;
 
+  // ── Hydration helper for /api/auth/* responses ──
+  // /api/me returns isBeta / isAdmin / acceptedTos so the frontend can decide
+  // whether to render the beta badge, admin tabs, or the ToS modal on first
+  // paint. The three /api/auth/* endpoints used to omit those flags, which
+  // meant currentUser._isBeta defaulted to false right after login and the
+  // BETA TESTER badge only appeared on the next F5 (when /api/me ran). This
+  // helper makes the auth payload match /api/me so badges hydrate instantly.
+  async function hydrateAuthFlags(
+    tgUserId: number,
+    username: string | undefined,
+    sessionToken: string,
+  ): Promise<{ isAdmin: boolean; isBeta: boolean; acceptedTos: boolean; acceptedErrors: boolean }> {
+    const isAdmin = isPlatformAdmin(tgUserId) || isPlatformAdminByUsername(username || '');
+    let isBeta = false;
+    try {
+      const { isBetaTester } = await import('./payments');
+      isBeta = isBetaTester(tgUserId);
+    } catch {}
+    let acceptedTos = false;
+    let acceptedErrors = false;
+    try {
+      const r = await pool.query(
+        `SELECT accepted_tos, accepted_errors_sharing
+           FROM builder_bot.web_sessions
+          WHERE token = $1`,
+        [sessionToken]
+      );
+      acceptedTos = r.rows[0]?.accepted_tos === true;
+      acceptedErrors = r.rows[0]?.accepted_errors_sharing === true;
+    } catch {}
+    return { isAdmin, isBeta, acceptedTos, acceptedErrors };
+  }
+
   // ── Slow loris mitigation ──
   // Kill a socket that hasn't finished sending its body within 30s.
   // Pair this with express body-parser's limit to close both slow-send and big-body attacks.
@@ -771,15 +804,19 @@ export function startApiServer() {
   });
 
   // ── GET /api/auth/check/:token — polling (pending → approved) ──
-  app.get('/api/auth/check/:token', (req: Request, res: Response) => {
+  app.get('/api/auth/check/:token', async (req: Request, res: Response) => {
     const authToken = req.params.token as string;
     const pending = pendingBotAuth.get(authToken);
     if (!pending) { res.json({ ok: false, status: 'not_found' }); return; }
     if (pending.pending) { res.json({ ok: true, status: 'pending' }); return; }
-    // Approved — создаём настоящую session
+    // Approved — создаём настоящую session.
+    // The user just typed /start in the bot, so we KNOW their Telegram ID — store
+    // it on the in-memory session so /api/me reports needsTelegramLink=false right
+    // away (otherwise the "Link Telegram bot" banner flashes until the page reload).
     const sessionToken = generateToken();
     const sess = {
       userId: pending.userId!,
+      telegramId: pending.userId!,
       username: pending.username || '',
       firstName: pending.firstName || '',
       expiresAt: Date.now() + 14 * 24 * 60 * 60 * 1000,
@@ -787,7 +824,57 @@ export function startApiServer() {
     sessions.set(sessionToken, sess);
     persistSession(sessionToken, sess);
     pendingBotAuth.delete(authToken);
-    res.json({ ok: true, status: 'approved', token: sessionToken, userId: pending.userId, firstName: pending.firstName, username: pending.username });
+
+    // Inherit accepted_tos / accepted_errors_sharing from any prior session of this user
+    // so the ToS modal doesn't pop up on every bot-login.
+    let acceptedTos = false;
+    let acceptedErrors = false;
+    try {
+      const prior = await pool.query(
+        `SELECT accepted_tos, accepted_errors_sharing
+           FROM builder_bot.web_sessions
+          WHERE user_id = $1 AND accepted_tos = true
+          ORDER BY expires_at DESC LIMIT 1`,
+        [pending.userId]
+      );
+      if (prior.rows[0]) {
+        acceptedTos = prior.rows[0].accepted_tos === true;
+        acceptedErrors = prior.rows[0].accepted_errors_sharing === true;
+        if (acceptedTos) {
+          await pool.query(
+            `UPDATE builder_bot.web_sessions
+                SET accepted_tos = $2, accepted_errors_sharing = $3
+              WHERE token = $1`,
+            [sessionToken, acceptedTos, acceptedErrors]
+          );
+        }
+      }
+    } catch { /* table missing or first-ever login — leave defaults */ }
+
+    // Compute admin / beta flags so the frontend can hydrate currentUser fully
+    // and skip the "Link Telegram bot" / ToS prompts that would otherwise flash.
+    const isAdmin = isPlatformAdmin(pending.userId!) || isPlatformAdminByUsername(pending.username || '');
+    let isBeta = false;
+    try {
+      const { isBetaTester } = await import('./payments');
+      isBeta = isBetaTester(pending.userId!);
+    } catch {}
+
+    res.json({
+      ok: true,
+      status: 'approved',
+      token: sessionToken,
+      userId: pending.userId,
+      userIdStr: String(pending.userId),
+      firstName: pending.firstName,
+      username: pending.username,
+      telegramId: String(pending.userId),
+      needsTelegramLink: false,
+      isAdmin,
+      isBeta,
+      acceptedTos,
+      acceptedErrors,
+    });
   });
 
   // ── POST /api/auth/telegram ───────────────────────────────
@@ -809,7 +896,8 @@ export function startApiServer() {
         await pool.query(`UPDATE builder_bot.web_sessions SET expires_at = NOW() + INTERVAL '30 days' WHERE token = $1`, [tok]);
         const s = getSession(tok);
         if (s) { s.expiresAt = Date.now() + 14 * 24 * 60 * 60 * 1000; }
-        res.json({ ok: true, token: tok, userId, username: data.username, firstName: data.first_name });
+        const flags = await hydrateAuthFlags(userId, data.username, tok);
+        res.json({ ok: true, token: tok, userId, username: data.username, firstName: data.first_name, ...flags });
         return;
       }
     } catch {}
@@ -833,7 +921,8 @@ export function startApiServer() {
         [userId, token]
       );
     } catch {}
-    res.json({ ok: true, token, userId, username: data.username, firstName: data.first_name });
+    const flags = await hydrateAuthFlags(userId, data.username, token);
+    res.json({ ok: true, token, userId, username: data.username, firstName: data.first_name, ...flags });
   });
 
   // ── POST /api/auth/telegram-oidc — new Telegram Login SDK (JWT) ──
@@ -878,7 +967,9 @@ export function startApiServer() {
       const existingSess = getSession(existingToken);
       if (existingSess) {
         existingSess.expiresAt = Date.now() + 14 * 24 * 60 * 60 * 1000;
-        res.json({ ok: true, token: existingToken, userId: realTgId || user.userId, username: user.username, firstName: user.firstName, photoUrl: null });
+        const tgId = realTgId || user.userId;
+        const flags = await hydrateAuthFlags(tgId, user.username, existingToken);
+        res.json({ ok: true, token: existingToken, userId: tgId, username: user.username, firstName: user.firstName, photoUrl: null, ...flags });
         return;
       }
     }
@@ -899,7 +990,9 @@ export function startApiServer() {
         );
       } catch {}
     }
-    res.json({ ok: true, token, userId: realTgId || user.userId, username: user.username, firstName: user.firstName, photoUrl: null });
+    const tgId = realTgId || user.userId;
+    const flags = await hydrateAuthFlags(tgId, user.username, token);
+    res.json({ ok: true, token, userId: tgId, username: user.username, firstName: user.firstName, photoUrl: null, ...flags });
   });
 
   // ── POST /api/auth/telegram-code — OIDC code exchange flow ──
@@ -942,7 +1035,8 @@ export function startApiServer() {
       const sess = { userId: user.userId, username: user.username, firstName: user.firstName, photoUrl: user.photoUrl, expiresAt: Date.now() + 14 * 24 * 60 * 60 * 1000 };
       sessions.set(token, sess);
       persistSession(token, sess);
-      res.json({ ok: true, token, userId: user.userId, username: user.username, firstName: user.firstName, photoUrl: user.photoUrl });
+      const flags = await hydrateAuthFlags(user.userId, user.username, token);
+      res.json({ ok: true, token, userId: user.userId, username: user.username, firstName: user.firstName, photoUrl: user.photoUrl, ...flags });
     } catch (e: any) {
       console.error('Code exchange error:', e);
       res.status(500).json({ ok: false, error: e.message });
@@ -4796,6 +4890,7 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
       let activeAgents = 0;
       let totalUsers = 0;
       let agentsCreated = 0;
+      let totalExecutions = 0;
 
       try {
         const result = await pool.query<{
@@ -4817,6 +4912,13 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
         }
       } catch { /* DB not ready — return zeros */ }
 
+      try {
+        const er = await pool.query<{ c: string }>(
+          `SELECT COUNT(*) AS c FROM builder_bot.execution_history`
+        );
+        totalExecutions = parseInt(er.rows[0]?.c, 10) || 0;
+      } catch { /* table missing — keep zero */ }
+
       res.json({
         ok: true,
         plugins:          pluginStats.total,
@@ -4824,6 +4926,7 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
         activeAgents,
         totalUsers,
         agentsCreated,
+        totalExecutions,
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
