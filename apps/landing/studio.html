@@ -1994,13 +1994,14 @@
                   </div>
                 </div>
                 <div>
-                  <label style="font-size:.78rem;color:var(--text-muted);display:block;margin-bottom:6px" data-en="Accent Color" data-ru="Акцентный цвет">Accent Color</label>
-                  <div style="display:flex;gap:8px" id="accent-color-picker">
-                    <div onclick="setAccentColor('#0ea5e9')" style="width:28px;height:28px;border-radius:50%;background:#0ea5e9;cursor:pointer;border:2px solid transparent" class="accent-dot active"></div>
-                    <div onclick="setAccentColor('#8b5cf6')" style="width:28px;height:28px;border-radius:50%;background:#8b5cf6;cursor:pointer;border:2px solid transparent" class="accent-dot"></div>
-                    <div onclick="setAccentColor('#10b981')" style="width:28px;height:28px;border-radius:50%;background:#10b981;cursor:pointer;border:2px solid transparent" class="accent-dot"></div>
-                    <div onclick="setAccentColor('#f59e0b')" style="width:28px;height:28px;border-radius:50%;background:#f59e0b;cursor:pointer;border:2px solid transparent" class="accent-dot"></div>
-                    <div onclick="setAccentColor('#ef4444')" style="width:28px;height:28px;border-radius:50%;background:#ef4444;cursor:pointer;border:2px solid transparent" class="accent-dot"></div>
+                  <label style="font-size:.78rem;color:var(--text-muted);display:block;margin-bottom:6px" data-en="Accent Gradient" data-ru="Акцентный градиент">Accent Gradient</label>
+                  <div style="display:flex;gap:10px;flex-wrap:wrap" id="accent-preset-picker">
+                    <div onclick="setAccentPreset('aurora')"  class="accent-preset" data-preset="aurora"  style="--p-primary:#0098EA;--p-accent2:#a855f7" title="Aurora — TON blue × purple"><span class="lbl">Aurora</span></div>
+                    <div onclick="setAccentPreset('cyber')"   class="accent-preset" data-preset="cyber"   style="--p-primary:#06b6d4;--p-accent2:#ec4899" title="Cyber — cyan × magenta"><span class="lbl">Cyber</span></div>
+                    <div onclick="setAccentPreset('plasma')"  class="accent-preset" data-preset="plasma"  style="--p-primary:#a855f7;--p-accent2:#ec4899" title="Plasma — purple × pink"><span class="lbl">Plasma</span></div>
+                    <div onclick="setAccentPreset('emerald')" class="accent-preset" data-preset="emerald" style="--p-primary:#10b981;--p-accent2:#14b8a6" title="Emerald — emerald × teal"><span class="lbl">Emerald</span></div>
+                    <div onclick="setAccentPreset('sunset')"  class="accent-preset" data-preset="sunset"  style="--p-primary:#f59e0b;--p-accent2:#ef4444" title="Sunset — amber × red"><span class="lbl">Sunset</span></div>
+                    <div onclick="setAccentPreset('mono')"    class="accent-preset" data-preset="mono"    style="--p-primary:#0ea5e9;--p-accent2:#6366f1" title="Mono — sky × indigo"><span class="lbl">Mono</span></div>
                   </div>
                 </div>
               </div>
