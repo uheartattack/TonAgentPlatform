@@ -422,15 +422,18 @@ function t(k) { const e = _tr[k]; return e ? (e[currentLang] || e.en || k) : k; 
 function animateCount(el, target, duration = 800, suffix = '') {
   if (!el) return;
   const start = performance.now();
-  const from = parseInt(el.textContent) || 0;
-  const to = typeof target === 'number' ? target : parseInt(target) || 0;
-  if (from === to) { el.textContent = to + suffix; return; }
+  const from = parseInt(el.textContent.replace(/[\s,]/g, '')) || 0;
+  const to = typeof target === 'number' ? target : parseInt(String(target).replace(/[\s,]/g, '')) || 0;
+  // Group digits so large numbers read "9 973" / "10 126" instead of "9973" / "10126".
+  // Suffix-bearing values (e.g. "25%") skip grouping so the % stays glued.
+  const fmt = (n) => suffix ? (n + suffix) : n.toLocaleString(currentLang === 'ru' ? 'ru-RU' : 'en-US');
+  if (from === to) { el.textContent = fmt(to); return; }
   const update = (now) => {
     const elapsed = now - start;
     const progress = Math.min(elapsed / duration, 1);
     // easeOutQuart
     const eased = 1 - Math.pow(1 - progress, 4);
-    el.textContent = Math.round(from + (to - from) * eased) + suffix;
+    el.textContent = fmt(Math.round(from + (to - from) * eased));
     if (progress < 1) requestAnimationFrame(update);
   };
   requestAnimationFrame(update);
@@ -756,9 +759,24 @@ function showApp() {
     }
     var greetEl = document.getElementById('overview-greeting-text');
     if (greetEl && name) {
-      greetEl.textContent = greeting + ', ' + name;
+      // Wrap the user's name in .grad so it picks up the active accent
+      // gradient — matches the Claude-Design hero ("Добрый день, spend $").
+      greetEl.innerHTML = greeting + ', <span class="grad">' + escHtml(name) + '</span>';
       greetEl.removeAttribute('data-en');
       greetEl.removeAttribute('data-ru');
+    }
+    // Inject the LIVE eyebrow once — gives the hero its "● Live · 23 мая" cue.
+    var headerL = greetEl ? greetEl.parentElement : null;
+    if (headerL && !headerL.querySelector('.eyebrow')) {
+      var eb = document.createElement('span');
+      eb.className = 'eyebrow';
+      var months = currentLang === 'ru'
+        ? ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря']
+        : ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      var now = new Date();
+      eb.textContent = 'Live · ' + now.getDate() + ' ' + months[now.getMonth()] + ' ' + now.getFullYear();
+      eb.style.marginBottom = '14px';
+      headerL.insertBefore(eb, headerL.firstChild);
     }
   }
 
@@ -5266,9 +5284,24 @@ function loadOverview() {
     }
     var greetEl = document.getElementById('overview-greeting-text');
     if (greetEl && name) {
-      greetEl.textContent = greeting + ', ' + name;
+      // Wrap the user's name in .grad so it picks up the active accent
+      // gradient — matches the Claude-Design hero ("Добрый день, spend $").
+      greetEl.innerHTML = greeting + ', <span class="grad">' + escHtml(name) + '</span>';
       greetEl.removeAttribute('data-en');
       greetEl.removeAttribute('data-ru');
+    }
+    // Inject the LIVE eyebrow once — gives the hero its "● Live · 23 мая" cue.
+    var headerL = greetEl ? greetEl.parentElement : null;
+    if (headerL && !headerL.querySelector('.eyebrow')) {
+      var eb = document.createElement('span');
+      eb.className = 'eyebrow';
+      var months = currentLang === 'ru'
+        ? ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря']
+        : ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      var now = new Date();
+      eb.textContent = 'Live · ' + now.getDate() + ' ' + months[now.getMonth()] + ' ' + now.getFullYear();
+      eb.style.marginBottom = '14px';
+      headerL.insertBefore(eb, headerL.firstChild);
     }
   }
 }
