@@ -1,5 +1,8 @@
 // ===== LANGUAGE SYSTEM =====
-let currentLang = localStorage.getItem('lang') || 'en';
+// Language is shared with the main landing — `preferredLang` is the master key
+// (written by /index.html), `lang` is the legacy Studio-only key.
+// Read order: preferredLang → lang → 'en' (English is the default everywhere).
+let currentLang = localStorage.getItem('preferredLang') || localStorage.getItem('lang') || 'en';
 
 // ===== SVG ICON CONSTANTS =====
 const IC = {
@@ -259,7 +262,9 @@ function _resolveDialog(val) {
 
 function switchLang(lang) {
   currentLang = lang;
+  // Keep both keys in sync so the main landing picks up the change too.
   localStorage.setItem('lang', lang);
+  localStorage.setItem('preferredLang', lang);
 
   // Update buttons
   document.querySelectorAll('.lang-btn').forEach(btn => {
@@ -4795,12 +4800,26 @@ async function initAuth() {
   };
   holder.appendChild(loginBtn);
 
-  // "or via bot" fallback link
-  var alt = document.createElement('div');
-  alt.style.cssText = 'margin-top:6px;text-align:center';
-  alt.innerHTML = '<span style="color:var(--text-muted);font-size:.72rem;cursor:pointer;opacity:.6" onclick="showBotAuthButton()">' +
-    (currentLang === 'ru' ? 'или через бота' : 'or via bot') + '</span>';
-  holder.appendChild(alt);
+  // ── "or" divider + secondary "Sign in via bot" button ──────────────────
+  var divider = document.createElement('div');
+  divider.className = 'auth-or-divider';
+  divider.innerHTML = '<span>' + (currentLang === 'ru' ? 'или' : 'or') + '</span>';
+  holder.appendChild(divider);
+
+  var botBtn = document.createElement('button');
+  botBtn.type = 'button';
+  botBtn.className = 'auth-bot-btn';
+  botBtn.onclick = function () { startBotAuthDirect(botBtn); };
+  botBtn.innerHTML =
+    '<span class="auth-bot-btn-icon"><i data-lucide="bot"></i></span>' +
+    '<span class="auth-bot-btn-text">' +
+      '<strong>' + (currentLang === 'ru' ? 'Войти через бота' : 'Sign in via bot') + '</strong>' +
+      '<small>' + (currentLang === 'ru' ? 'Без Telegram-входа · @TonAgentPlatformBot' : 'No Telegram login · @TonAgentPlatformBot') + '</small>' +
+    '</span>' +
+    '<span class="auth-bot-btn-arrow"><i data-lucide="chevron-right"></i></span>';
+  holder.appendChild(botBtn);
+  // Re-render Lucide so the newly-injected <i data-lucide> nodes become real SVGs.
+  renderAuthLucideIcons();
 
   // Load Telegram Login SDK
   if (!document.querySelector('script[src*="telegram-login.js"]')) {
@@ -4809,6 +4828,155 @@ async function initAuth() {
     script.src = 'https://oauth.telegram.org/js/telegram-login.js?3';
     document.head.appendChild(script);
   }
+
+  // Render Lucide icons and start auto-refreshing live stats
+  renderAuthLucideIcons();
+  startAuthStatsAutoRefresh();
+
+  // Pre-fetch the bot deeplink so the first click on "Sign in via bot"
+  // opens Telegram immediately (no extra step / popup blocker issues).
+  prefetchBotAuth();
+}
+
+// ── Auth screen: Lucide icons + live stats ────────────────────────────────
+function renderAuthLucideIcons() {
+  var tryRender = function () {
+    if (window.lucide && typeof window.lucide.createIcons === 'function') {
+      try { window.lucide.createIcons(); } catch (_) {}
+      return true;
+    }
+    return false;
+  };
+  if (tryRender()) return;
+  var attempts = 0;
+  var iv = setInterval(function () {
+    attempts++;
+    if (tryRender() || attempts > 40) clearInterval(iv);
+  }, 100);
+}
+
+var _authStatsAnimating = {};
+function animateAuthStat(id, target) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  var current = parseInt(el.getAttribute('data-target') || '0', 10) || 0;
+  if (current === target) return;
+  el.setAttribute('data-target', String(target));
+  if (_authStatsAnimating[id]) cancelAnimationFrame(_authStatsAnimating[id]);
+  var start = current;
+  var t0 = performance.now();
+  var dur = 900;
+  var step = function (t) {
+    var p = Math.min(1, (t - t0) / dur);
+    var eased = 1 - Math.pow(1 - p, 3);
+    var val = Math.round(start + (target - start) * eased);
+    el.textContent = val >= 1000 ? (val >= 1000000 ? (val / 1000000).toFixed(1) + 'M' : (val / 1000).toFixed(val < 10000 ? 1 : 0) + 'K') : String(val);
+    if (p < 1) _authStatsAnimating[id] = requestAnimationFrame(step);
+    else delete _authStatsAnimating[id];
+  };
+  _authStatsAnimating[id] = requestAnimationFrame(step);
+}
+
+// Bot-auth deeplink prefetch so the first click acts as a direct Telegram redirect.
+var _botAuthPrefetch = null;
+async function prefetchBotAuth() {
+  if (_botAuthPrefetch) return;
+  try {
+    const data = await apiRequest('GET', '/api/auth/request');
+    if (data && data.ok) {
+      _botAuthPrefetch = { authToken: data.authToken, botLink: data.botLink };
+    }
+  } catch (_) { /* offline — startBotAuthDirect will refetch on click */ }
+}
+
+async function startBotAuthDirect(btn) {
+  // Mark the button as busy so the user gets immediate feedback.
+  var setBusy = function (label) {
+    if (!btn) return;
+    var sub = btn.querySelector('.auth-bot-btn-text small');
+    if (sub && label) sub.textContent = label;
+    btn.classList.add('is-loading');
+  };
+  var waitLabel = currentLang === 'ru' ? 'Открываю Telegram… ждём подтверждения' : 'Opening Telegram… waiting for confirmation';
+
+  var data = _botAuthPrefetch;
+  if (!data) {
+    setBusy(currentLang === 'ru' ? 'Подключаемся…' : 'Connecting…');
+    try {
+      var resp = await apiRequest('GET', '/api/auth/request');
+      if (resp && resp.ok) data = { authToken: resp.authToken, botLink: resp.botLink };
+    } catch (_) {}
+    if (!data) {
+      if (btn) btn.classList.remove('is-loading');
+      toast(currentLang === 'ru' ? 'Не удалось подключиться к боту' : 'Failed to reach bot', 'error');
+      return;
+    }
+    _botAuthPrefetch = data;
+  }
+
+  // Open Telegram in a new tab. window.open right after a real click is allowed.
+  var w = window.open(data.botLink, '_blank', 'noopener');
+  if (!w) {
+    // Popup blocked — fall back to same-tab navigation.
+    window.location.href = data.botLink;
+  }
+  setBusy(waitLabel);
+  beginBotAuthPolling(data.authToken);
+}
+
+function beginBotAuthPolling(token) {
+  if (_botAuthPolling) clearInterval(_botAuthPolling);
+  _botAuthToken = token;
+  _botAuthPolling = setInterval(async () => {
+    try {
+      const check = await apiRequest('GET', '/api/auth/check/' + token);
+      if (check.status === 'approved') {
+        clearInterval(_botAuthPolling);
+        _botAuthPolling = null;
+        authToken = check.token;
+        localStorage.setItem('tg_token', authToken);
+        // Hydrate currentUser with the same shape Telegram-auth uses
+        // so ToS / beta / admin gates don't flash on first paint.
+        currentUser = {
+          userId: check.userId,
+          userIdStr: check.userIdStr || String(check.userId),
+          username: check.username || '',
+          first_name: check.firstName || '',
+          photo_url: check.photoUrl || null,
+          _isAdmin: check.isAdmin || false,
+          _isBeta: check.isBeta || false,
+          _acceptedTos: check.acceptedTos || false,
+          _needsTelegramLink: false,
+        };
+        showApp();
+      } else if (!check.ok || check.status === 'not_found') {
+        clearInterval(_botAuthPolling);
+        _botAuthPolling = null;
+        // Token expired — drop the prefetch so the next click refetches a fresh one.
+        _botAuthPrefetch = null;
+        var btn = document.querySelector('.auth-bot-btn');
+        if (btn) btn.classList.remove('is-loading');
+      }
+    } catch (_) { /* network blip — keep polling */ }
+  }, 2000);
+}
+
+var _authStatsTimer = null;
+async function loadAuthStatsOnce() {
+  try {
+    var r = await fetch(API_BASE + '/api/stats', { cache: 'no-store' });
+    var d = await r.json();
+    if (!d || !d.ok) return;
+    animateAuthStat('auth-stat-agents', d.agentsCreated || 0);
+    animateAuthStat('auth-stat-active', d.activeAgents || 0);
+    animateAuthStat('auth-stat-users', d.totalUsers || 0);
+    animateAuthStat('auth-stat-execs', d.totalExecutions || 0);
+  } catch (_) { /* offline / API down — leave previous values */ }
+}
+function startAuthStatsAutoRefresh() {
+  loadAuthStatsOnce();
+  if (_authStatsTimer) clearInterval(_authStatsTimer);
+  _authStatsTimer = setInterval(loadAuthStatsOnce, 30000);
 }
 
 // Handle OAuth redirect: ?code=XXX&state=YYY
@@ -14253,6 +14421,38 @@ function setAccentColor(color) {
   localStorage.setItem('accent_color', color);
 }
 
+// ── Gradient accent preset switcher ──
+// Each preset defines --primary + --accent-2 + the rgb breakdown so every
+// rgba(var(--accent-r/g/b),...) and rgba(var(--accent2-r/g/b),...) flips
+// in sync. CSS rules live in studio.css under :root[data-accent="..."].
+// design-system.css uses a parallel --ds-* token namespace — we mirror the
+// resolved values into those after the dataset change so legacy nav-badges
+// follow the preset too.
+function setAccentPreset(name) {
+  if (typeof name !== 'string') return;
+  var root = document.documentElement;
+  root.dataset.accent = name;
+  // Pull the resolved primary/dim out of the new preset for legacy --ds-*.
+  var cs = getComputedStyle(root);
+  var primary      = (cs.getPropertyValue('--primary') || '').trim();
+  var primaryLight = (cs.getPropertyValue('--primary-light') || '').trim();
+  var dim          = (cs.getPropertyValue('--accent-dim') || '').trim();
+  if (primary) {
+    root.style.setProperty('--ds-primary', primary);
+    root.style.setProperty('--ds-primary-bright', primaryLight || primary);
+    root.style.setProperty('--ds-primary-dim', dim || 'rgba(0,152,234,0.12)');
+    root.style.setProperty('--ds-accent', primary);
+    root.style.setProperty('--ds-accent-bright', primaryLight || primary);
+    root.style.setProperty('--ds-accent-dim', dim || 'rgba(0,152,234,0.12)');
+  }
+  // Highlight the active tile.
+  document.querySelectorAll('.accent-preset').forEach(function(el) {
+    el.classList.toggle('active', el.dataset.preset === name);
+  });
+  localStorage.setItem('accent_preset', name);
+}
+window.setAccentPreset = setAccentPreset;
+
 // Restore UI settings from localStorage
 (function restoreUISettings() {
   var scale = localStorage.getItem('ui_scale');
@@ -14265,14 +14465,22 @@ function setAccentColor(color) {
     var ss = document.getElementById('sidebar-scale-slider'); if (ss) ss.value = scale;
     var sv = document.getElementById('sidebar-scale-value'); if (sv) sv.textContent = scale + '%';
   }
-  var accent = localStorage.getItem('accent_color');
-  if (accent) {
-    // Re-run the full accent setter so light/dark/dim/glow shades all derive
-    // — not just --primary/--accent (those alone leave button hovers blue).
-    try { setAccentColor(accent); } catch (e) {
-      document.documentElement.style.setProperty('--primary', accent);
-    }
+  // Gradient preset takes precedence over the legacy single-colour accent.
+  // Order of resolution: explicit saved preset → legacy single-colour mapped
+  // to closest preset → default Aurora (so the picker tile lights up).
+  var preset = localStorage.getItem('accent_preset');
+  if (!preset) {
+    var legacyAccent = (localStorage.getItem('accent_color') || '').toLowerCase();
+    var legacyMap = {
+      '#0ea5e9': 'mono',
+      '#8b5cf6': 'plasma',
+      '#10b981': 'emerald',
+      '#f59e0b': 'sunset',
+      '#ef4444': 'sunset',
+    };
+    preset = legacyMap[legacyAccent] || 'aurora';
   }
+  try { setAccentPreset(preset); } catch (e) {}
   // Restore notification settings
   var nd = localStorage.getItem('notif_duration');
   if (nd !== null) { _notifDuration = parseInt(nd) * 1000; var nds = document.getElementById('notif-duration-slider'); if (nds) nds.value = nd; var ndv = document.getElementById('notif-duration-value'); if (ndv) ndv.textContent = nd === '0' ? 'off' : nd + 's'; }
