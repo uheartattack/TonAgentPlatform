@@ -7368,7 +7368,7 @@ select:focus {
   padding: 14px 24px;
   border-radius: 12px;
   border: none;
-  background: linear-gradient(135deg, var(--primary), #6366f1);
+  background: linear-gradient(135deg, var(--primary), var(--accent-2));
   color: white;
   font-size: 14px;
   font-weight: 600;
@@ -7458,7 +7458,7 @@ select:focus {
 .guide-tab:active { transform: scale(0.97); }
 .guide-tab.active {
   color: white;
-  background: linear-gradient(135deg, var(--primary), #6366f1);
+  background: linear-gradient(135deg, var(--primary), var(--accent-2));
   border-color: rgba(255,255,255,0.14);
   font-weight: 600;
   box-shadow:
@@ -7826,7 +7826,7 @@ select:focus {
 }
 .guide-detail[open] summary .chev {
   transform: rotate(180deg);
-  background: linear-gradient(135deg, var(--primary), #6366f1);
+  background: linear-gradient(135deg, var(--primary), var(--accent-2));
   color: white;
 }
 .guide-detail summary .q { flex: 1; min-width: 0; }
@@ -7888,7 +7888,7 @@ select:focus {
   height: 36px;
   min-width: 36px;
   border-radius: 11px;
-  background: linear-gradient(135deg, var(--primary), #6366f1);
+  background: linear-gradient(135deg, var(--primary), var(--accent-2));
   color: white;
   display: flex;
   align-items: center;
@@ -10271,7 +10271,7 @@ button[data-busy="1"]::after, .btn-busy::after {
 .pill-tab:hover { color: var(--text-primary); background: rgba(255,255,255,0.04); }
 .pill-tab.active {
   color: white;
-  background: linear-gradient(135deg, var(--primary), #6366f1);
+  background: linear-gradient(135deg, var(--primary), var(--accent-2));
   border-color: rgba(255,255,255,0.14);
   font-weight: 600;
   box-shadow:
@@ -10872,6 +10872,457 @@ button[data-busy="1"]::after, .btn-busy::after {
   border-radius: 50%;
   background: var(--green);
   box-shadow: 0 0 8px var(--green);
+}
+
+/* Page chrome — give Marketplace/Skills/MCP/Notifications/Guide a
+   proper gutter so the headline doesn't crash into the sidebar / right
+   edge. Scoped so pages with their own internal padding stay intact. */
+#marketplace-page,
+#skills-page,
+#mcp-servers-page,
+#notifications-page,
+#guide-page,
+#operations-page {
+  padding: 32px 40px 80px;
+}
+@media (max-width: 900px) {
+  #marketplace-page,
+  #skills-page,
+  #mcp-servers-page,
+  #notifications-page,
+  #guide-page,
+  #operations-page {
+    padding: 24px 20px 60px;
+  }
+}
+
+/* Operations stat-row + filters + agent cards */
+#operations-page .stat-grid {
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+#operations-page .agents-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+#operations-page .pill-tabs.operations-filters {
+  display: inline-flex;
+}
+
+/* Status — chip-pill (used in agent rows + detail header) */
+#operations-page .agent-status,
+#overview-page .agent-status,
+.agent-card-enhanced .agent-status,
+.agent-card .agent-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 11px 4px 9px;
+  border-radius: 100px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-family: 'Inter', system-ui, sans-serif;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.03);
+  min-width: 0 !important;
+  width: max-content;
+}
+.agent-status .status-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+}
+.agent-status.active {
+  color: var(--green);
+  background: rgba(34,197,94,0.12);
+  border-color: rgba(34,197,94,0.28);
+}
+.agent-status.paused {
+  color: var(--amber);
+  background: rgba(245,158,11,0.12);
+  border-color: rgba(245,158,11,0.28);
+}
+.agent-status.error {
+  color: var(--red);
+  background: rgba(239,68,68,0.12);
+  border-color: rgba(239,68,68,0.28);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Generic page-head (small variant of hero — used on pages that
+   don't need the full hero block: Marketplace, Skills, MCP, etc.)
+   ───────────────────────────────────────────────────────────── */
+.page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+.page-head .page-title {
+  font-size: 28px; font-weight: 700; letter-spacing: -0.02em;
+  line-height: 1.15; margin: 8px 0 6px;
+}
+.page-head .page-title .grad {
+  background: linear-gradient(135deg, var(--primary), var(--accent-2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.page-head .page-sub { color: var(--text-secondary); font-size: 13.5px; margin: 0; }
+.page-head .page-actions { display: flex; gap: 10px; flex-shrink: 0; }
+
+/* Marketplace / Skills — apply the page-head visual to existing pages
+   and convert .marketplace-tabs to pill-tabs spacing while keeping the
+   .mkt-tab JS hooks intact (we doubled the class on each button). */
+#marketplace-page .marketplace-tabs,
+#skills-page .marketplace-tabs,
+#mcp-servers-page .marketplace-tabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 5px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.025), transparent),
+    var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.18);
+  margin-bottom: 24px;
+}
+#marketplace-page .marketplace-tabs .mkt-tab,
+#skills-page .marketplace-tabs .mkt-tab,
+#mcp-servers-page .marketplace-tabs .mkt-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-muted);
+  font: 500 12.5px/1 'Inter', system-ui, sans-serif;
+  cursor: pointer;
+  transition: all .2s var(--ease);
+  white-space: nowrap;
+}
+#marketplace-page .marketplace-tabs .mkt-tab:hover,
+#skills-page .marketplace-tabs .mkt-tab:hover,
+#mcp-servers-page .marketplace-tabs .mkt-tab:hover {
+  color: var(--text-primary);
+  background: rgba(255,255,255,0.04);
+}
+#marketplace-page .marketplace-tabs .mkt-tab.active,
+#skills-page .marketplace-tabs .mkt-tab.active,
+#mcp-servers-page .marketplace-tabs .mkt-tab.active {
+  color: white;
+  background: linear-gradient(135deg, var(--primary), var(--accent-2));
+  border-color: rgba(255,255,255,0.14);
+  font-weight: 600;
+  box-shadow:
+    0 6px 18px rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.36),
+    inset 0 1px 0 rgba(255,255,255,0.18);
+}
+
+/* Marketplace grid layout */
+#marketplace-page .marketplace-grid,
+#skills-page .marketplace-grid,
+#mcp-servers-page .marketplace-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 20px;
+}
+
+/* Marketplace cards — gradient top-line, dim radial, lift on hover */
+#marketplace-page .marketplace-card,
+#skills-page .marketplace-card,
+#mcp-servers-page .marketplace-card {
+  position: relative;
+  isolation: isolate;
+  background:
+    linear-gradient(180deg, rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.035), transparent 60%),
+    var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 26px 24px 22px;
+  overflow: hidden;
+  transition: border-color .25s var(--ease), transform .25s var(--ease), box-shadow .25s var(--ease);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+#marketplace-page .marketplace-card::before,
+#skills-page .marketplace-card::before,
+#mcp-servers-page .marketplace-card::before {
+  content: "";
+  position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, var(--primary), var(--accent-2));
+  opacity: 0.45;
+  transition: opacity .25s;
+}
+#marketplace-page .marketplace-card::after,
+#skills-page .marketplace-card::after,
+#mcp-servers-page .marketplace-card::after {
+  content: "";
+  position: absolute; top: -50px; right: -50px;
+  width: 160px; height: 160px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.08), transparent 65%);
+  filter: blur(20px);
+  pointer-events: none;
+  z-index: -1;
+}
+#marketplace-page .marketplace-card:hover,
+#skills-page .marketplace-card:hover,
+#mcp-servers-page .marketplace-card:hover {
+  border-color: rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.32);
+  transform: translateY(-3px);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.25),
+              0 0 0 1px rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.10);
+}
+#marketplace-page .marketplace-card:hover::before,
+#skills-page .marketplace-card:hover::before,
+#mcp-servers-page .marketplace-card:hover::before { opacity: 1; }
+#marketplace-page .marketplace-card h4,
+#skills-page .marketplace-card h4,
+#mcp-servers-page .marketplace-card h4 {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 8px;
+  letter-spacing: -0.01em;
+}
+#marketplace-page .marketplace-card p,
+#skills-page .marketplace-card p,
+#mcp-servers-page .marketplace-card p {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  margin: 0;
+  flex: 1;
+}
+#marketplace-page .mkt-card-header,
+#skills-page .mkt-card-header,
+#mcp-servers-page .mkt-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+#marketplace-page .mkt-card-category,
+#skills-page .mkt-card-category,
+#mcp-servers-page .mkt-card-category {
+  display: inline-flex; align-items: center;
+  padding: 4px 10px;
+  border-radius: 100px;
+  background: var(--accent-dim);
+  border: 1px solid rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.25);
+  color: var(--primary);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+#marketplace-page .mkt-card-price,
+#skills-page .mkt-card-price,
+#mcp-servers-page .mkt-card-price {
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--green);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+#marketplace-page .marketplace-card .btn,
+#skills-page .marketplace-card .btn,
+#mcp-servers-page .marketplace-card .btn {
+  justify-content: center;
+}
+
+/* Buttons — promote primary to a full gradient and tighten secondary
+   so accent colours flow through every CTA on the site. */
+.btn-primary {
+  background: linear-gradient(135deg, var(--primary), var(--accent-2)) !important;
+  color: #fff !important;
+  border: 1px solid rgba(255,255,255,0.14) !important;
+  box-shadow:
+    0 8px 22px rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.32),
+    inset 0 1px 0 rgba(255,255,255,0.18) !important;
+}
+.btn-primary:hover {
+  background: linear-gradient(135deg, var(--primary-light, var(--primary)), var(--accent-2)) !important;
+  border-color: rgba(255,255,255,0.22) !important;
+  box-shadow:
+    0 12px 32px rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.45),
+    inset 0 1px 0 rgba(255,255,255,0.24) !important;
+  transform: translateY(-1px);
+}
+.btn-secondary {
+  background: rgba(255,255,255,0.03) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border) !important;
+}
+.btn-secondary:hover {
+  border-color: rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.35) !important;
+  background: var(--accent-dim) !important;
+  color: var(--primary) !important;
+}
+
+/* Chip / pill — small inline label (used in marketplace cards now) */
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 11px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  transition: border-color .15s, color .15s;
+}
+.chip::before {
+  content: ""; width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--primary);
+}
+.chip.green::before { background: var(--green); }
+.chip.amber::before { background: var(--amber); }
+.chip.red::before { background: var(--red); }
+.chip.purple::before { background: var(--accent-2); }
+.chip.muted::before { background: var(--text-muted); }
+.chip:hover {
+  border-color: rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.4);
+  color: var(--text-primary);
+}
+
+/* Stats row inside marketplace card foot */
+#marketplace-page .mkt-card-stats,
+#skills-page .mkt-card-stats,
+#mcp-servers-page .mkt-card-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+}
+
+/* Pill-tab count badge inside marketplace tabs (Все 142, etc.) */
+#marketplace-page .marketplace-tabs .mkt-tab .count,
+#skills-page .marketplace-tabs .mkt-tab .count,
+#mcp-servers-page .marketplace-tabs .mkt-tab .count {
+  display: inline-block;
+  margin-left: 7px;
+  padding: 1px 7px;
+  border-radius: 100px;
+  background: rgba(255,255,255,0.10);
+  color: inherit;
+  font-size: 10.5px;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+#marketplace-page .marketplace-tabs .mkt-tab.active .count,
+#skills-page .marketplace-tabs .mkt-tab.active .count,
+#mcp-servers-page .marketplace-tabs .mkt-tab.active .count {
+  background: rgba(255,255,255,0.22);
+}
+
+/* Marketplace card — identity row (avatar + name + author) */
+#marketplace-page .mkt-card-identity,
+#skills-page .mkt-card-identity,
+#mcp-servers-page .mkt-card-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+#marketplace-page .mkt-card-avatar,
+#skills-page .mkt-card-avatar,
+#mcp-servers-page .mkt-card-avatar {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  overflow: hidden;
+}
+#marketplace-page .mkt-card-avatar.has-img,
+#skills-page .mkt-card-avatar.has-img,
+#mcp-servers-page .mkt-card-avatar.has-img {
+  background: transparent;
+  border: 1px solid var(--border);
+  padding: 0;
+}
+#marketplace-page .mkt-card-name-block,
+#skills-page .mkt-card-name-block,
+#mcp-servers-page .mkt-card-name-block {
+  min-width: 0;
+  flex: 1;
+}
+#marketplace-page .marketplace-card .mkt-card-name-block h4,
+#skills-page .marketplace-card .mkt-card-name-block h4,
+#mcp-servers-page .marketplace-card .mkt-card-name-block h4 {
+  margin: 0 0 3px;
+  font-size: 16px;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+#marketplace-page .mkt-card-author,
+#skills-page .mkt-card-author,
+#mcp-servers-page .mkt-card-author {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+#marketplace-page .mkt-card-price.ton,
+#skills-page .mkt-card-price.ton,
+#mcp-servers-page .mkt-card-price.ton {
+  color: var(--primary);
+}
+#marketplace-page .mkt-card-foot,
+#skills-page .mkt-card-foot,
+#mcp-servers-page .mkt-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 6px;
+}
+#marketplace-page .mkt-card-stat,
+#skills-page .mkt-card-stat,
+#mcp-servers-page .mkt-card-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-weight: 500;
+}
+#marketplace-page .mkt-card-foot .btn,
+#skills-page .mkt-card-foot .btn,
+#mcp-servers-page .mkt-card-foot .btn {
+  width: auto;
+  padding: 10px 18px;
+  font-size: 13px;
+}
+#marketplace-page .mkt-card-category,
+#skills-page .mkt-card-category,
+#mcp-servers-page .mkt-card-category {
+  font-size: 10.5px;
+  padding: 5px 12px;
+}
+#marketplace-page .mkt-card-price,
+#skills-page .mkt-card-price,
+#mcp-servers-page .mkt-card-price {
+  font-size: 13px;
 }
 
 /* Settings — gradient preset picker tiles */
