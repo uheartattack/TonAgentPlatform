@@ -10572,6 +10572,308 @@ button[data-busy="1"]::after, .btn-busy::after {
 /* Page-title gradient accent (heading words) */
 .page-title .grad { background: linear-gradient(135deg, var(--primary), var(--accent-2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
 
+/* ─────────────────────────────────────────────────────────────
+   Dashboard / panels visual upgrade — existing class hooks
+   (.metric-card, .panel, .metric-value, .agent-card, .studio-grid)
+   inherit the new .stat / .card visual without touching HTML or
+   the JS that populates the IDs inside. Only colour/border/radius
+   /shadow tokens, no layout swaps.
+   ───────────────────────────────────────────────────────────── */
+
+/* Dashboard page header → look like a hero banner (no HTML changes,
+   just dress up #overview-page .page-header with gradient bg + grid).
+   The greeting JS already injects "Добрый день, name" into .page-title;
+   we add a gradient accent + eyebrow + soft glow on the wrapper. */
+#overview-page .page-header {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+  padding: 40px 36px 36px;
+  border-radius: 22px;
+  margin-bottom: 28px;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.22), transparent 55%),
+    radial-gradient(circle at 100% 120%, rgba(var(--accent2-r,168),var(--accent2-g,85),var(--accent2-b,247),0.16), transparent 55%),
+    linear-gradient(135deg, rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.05), rgba(var(--accent2-r,168),var(--accent2-g,85),var(--accent2-b,247),0.03));
+  border: 1px solid rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.18);
+  overflow: hidden;
+}
+#overview-page .page-header::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.06) 1px, transparent 1px);
+  background-size: 32px 32px;
+  mask-image: radial-gradient(ellipse at top right, black, transparent 70%);
+  -webkit-mask-image: radial-gradient(ellipse at top right, black, transparent 70%);
+  pointer-events: none;
+  opacity: 0.55;
+}
+#overview-page .page-header > * { position: relative; z-index: 1; }
+#overview-page .page-header .page-title {
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+  margin: 0 0 8px;
+}
+#overview-page .page-header .page-subtitle {
+  color: var(--text-secondary);
+  font-size: 14px;
+  max-width: 600px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* KPI tiles — make them look like .stat with gradient numerals */
+.metric-card {
+  position: relative;
+  padding: 22px 22px 20px;
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.015), transparent 50%),
+    var(--bg-secondary);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  transition: border-color .25s var(--ease), transform .25s var(--ease), box-shadow .25s var(--ease);
+}
+.metric-card::before {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, var(--primary), var(--accent-2));
+  opacity: 0.45;
+}
+.metric-card:hover {
+  border-color: rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.32);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.25),
+              0 0 0 1px rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.10);
+}
+.metric-card .metric-glow { display: none; }
+.metric-card .metric-icon {
+  width: 38px; height: 38px;
+  border-radius: 11px;
+  display: grid; place-items: center;
+  background: linear-gradient(135deg, var(--accent-dim), rgba(var(--accent2-r,168),var(--accent2-g,85),var(--accent2-b,247),0.12));
+  border: 1px solid rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.22);
+  color: var(--primary);
+  margin-bottom: 12px;
+}
+.metric-card .metric-icon svg { width: 18px; height: 18px; }
+.metric-card .metric-label {
+  display: block;
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.metric-card .metric-value {
+  display: block;
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  background: linear-gradient(135deg, var(--primary), var(--accent-2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  color: transparent;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+.metric-card .metric-change {
+  display: block;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 6px;
+}
+.metric-card.success .metric-value {
+  background: linear-gradient(135deg, var(--green), #34d399);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+.metric-card.success .metric-icon {
+  background: rgba(34,197,94,0.10);
+  border-color: rgba(34,197,94,0.28);
+  color: var(--green);
+}
+
+/* Panels — make them look like .card.flat */
+.panel {
+  position: relative;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 0;
+  overflow: hidden;
+}
+.panel .panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--border);
+}
+.panel .panel-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.panel .panel-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 100px;
+  background: var(--accent-dim);
+  border: 1px solid rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.28);
+  color: var(--primary);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+.panel .panel-status.active { background: rgba(34,197,94,0.12); border-color: rgba(34,197,94,0.28); color: var(--green); }
+.panel .agents-list,
+.panel .memory-items,
+.panel > div:not(.panel-header) { padding: 18px 22px; }
+
+/* ─────────────────────────────────────────────────────────────
+   Overview-page redesign overrides — scope to #overview-page so
+   global .card / .select / .input rules in other pages stay intact.
+   ───────────────────────────────────────────────────────────── */
+#overview-page .card {
+  padding: 26px 24px;
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.035), transparent 60%),
+    var(--bg-secondary);
+}
+#overview-page .card.flat { padding: 0; background: var(--bg-secondary); }
+#overview-page .card.flat::before, #overview-page .card.flat::after { display: none; }
+#overview-page .card .section-head { margin-bottom: 18px; }
+#overview-page .card .section-head h3,
+#overview-page .card.flat .section-head h3 {
+  display: inline-flex; align-items: center; gap: 10px;
+  margin: 0;
+  font-size: 16px; font-weight: 700;
+  color: var(--text-primary);
+}
+#overview-page .card .col.gap-16 > div + div { margin-top: 16px; }
+#overview-page .card .col.gap-14 > div + div { margin-top: 14px; }
+
+/* Forms inside #overview-page — Claude Design "dark input" look */
+#overview-page .field-label,
+#overview-page .card label[data-en] {
+  display: block;
+  font-size: 10.5px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+#overview-page .input,
+#overview-page .form-input,
+#overview-page .select,
+#overview-page .form-select,
+#overview-page .textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 11px;
+  background: rgba(255,255,255,0.025);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  font: 13px/1.5 'Inter', system-ui, -apple-system, sans-serif;
+  outline: none;
+  transition: border-color .15s, background .15s;
+  appearance: none;
+  -webkit-appearance: none;
+}
+#overview-page .input:focus,
+#overview-page .form-input:focus,
+#overview-page .select:focus,
+#overview-page .form-select:focus,
+#overview-page .textarea:focus {
+  border-color: rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.45);
+  background: rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.04);
+}
+#overview-page .form-slider { width: 100%; accent-color: var(--primary); }
+#overview-page .progress { height: 6px; background: rgba(255,255,255,0.05); }
+#overview-page .progress > span {
+  display: block;
+  height: 100%;
+  border-radius: 100px;
+  background: linear-gradient(90deg, var(--primary), var(--accent-2));
+  box-shadow: 0 0 12px rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.35);
+}
+#overview-page .progress.green > span {
+  background: linear-gradient(90deg, var(--green), #34d399);
+  box-shadow: 0 0 12px rgba(34,197,94,0.3);
+}
+
+/* Telegram Integration block — same card chrome, internal form spacing */
+#overview-page .card .telegram-config { display: flex; flex-direction: column; gap: 16px; }
+#overview-page .card .config-row,
+#overview-page .card .form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+#overview-page .card .form-group { display: flex; flex-direction: column; }
+#overview-page .card .form-group label {
+  display: block;
+  font-size: 10.5px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+#overview-page .card .toggle-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+#overview-page .card .toggle-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+#overview-page .card .toggle-info { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+#overview-page .card .toggle-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+#overview-page .card .toggle-desc { font-size: 11.5px; color: var(--text-muted); line-height: 1.4; }
+#overview-page .card .connection-badge.connected {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 11px;
+  border-radius: 100px;
+  background: rgba(34,197,94,0.12);
+  border: 1px solid rgba(34,197,94,0.28);
+  color: var(--green);
+  font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.13em; text-transform: uppercase;
+}
+#overview-page .card .connection-badge .pulse-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
+}
+
 /* Settings — gradient preset picker tiles */
 .accent-preset {
   position: relative;
