@@ -11187,18 +11187,85 @@ function renderMarketplaceGrid() {
       '<p style="color:var(--text-muted)">' + (currentLang === 'ru' ? 'Пока ничего нет' : 'Nothing here yet') + '</p></div>';
     return;
   }
+  // After loading "all" — aggregate per-category counts and stamp them on
+  // the .mkt-tab buttons (Все 142 · Мониторинг 38 · DeFi 24 · …).
+  if (_marketplaceFilter === 'all') {
+    var counts = { all: _marketplaceListings.length };
+    _marketplaceListings.forEach(function(l) {
+      var c = (l.category || 'other').toLowerCase();
+      counts[c] = (counts[c] || 0) + 1;
+    });
+    document.querySelectorAll('#marketplace-tabs .mkt-tab').forEach(function(t) {
+      var cat = t.getAttribute('data-cat');
+      // Strip an existing count if any
+      var existing = t.querySelector('.count'); if (existing) existing.remove();
+      if (cat && counts[cat] != null) {
+        var c = document.createElement('span');
+        c.className = 'count';
+        c.textContent = counts[cat].toLocaleString(currentLang === 'ru' ? 'ru-RU' : 'en-US');
+        t.appendChild(c);
+      }
+    });
+  }
+
+  function fmtCompact(n) {
+    n = Number(n || 0);
+    if (n >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'K';
+    return String(n);
+  }
+
+  var catTone = { nft: 'purple', defi: 'green', monitoring: '', gifts: 'amber', utility: '', other: 'amber' };
+
   grid.innerHTML = _marketplaceListings.map(function(l) {
+    var name = l.name || (currentLang === 'ru' ? 'Без названия' : 'Untitled');
+    // Avatar placeholder — flat icon, no auto-generated letter. Will be
+    // replaced by an uploaded image once agent.avatarUrl ships.
+    var avatarInner = l.avatarUrl
+      ? '<img src="' + escHtml(l.avatarUrl) + '" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">'
+      : '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
     var priceText = l.isFree ? (currentLang === 'ru' ? 'Бесплатно' : 'Free') : ((Number(l.price || 0) / 1e9).toFixed(2) + ' TON');
+    var priceClass = l.isFree ? 'mkt-card-price green' : 'mkt-card-price ton';
+    var author = l.sellerUsername ? '@' + escHtml(l.sellerUsername)
+               : l.sellerName ? escHtml(l.sellerName)
+               : (currentLang === 'ru' ? 'аноним' : 'anonymous');
+    var byLbl = currentLang === 'ru' ? 'от ' : 'by ';
+    var installs = Number(l.totalSales || l.total_sales || 0);
+    var runs = Number(l.totalRuns || l.total_runs || 0);
+    var cat = (l.category || 'other').toLowerCase();
+    var tone = catTone[cat] || '';
+    var btnLabel = l.isFree
+      ? (currentLang === 'ru' ? 'Установить' : 'Install')
+      : (currentLang === 'ru' ? 'Купить' : 'Buy');
+    var btnIcon = l.isFree
+      ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'
+      : '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 8v8"/></svg>';
     return '<div class="marketplace-card" onclick="openMarketplaceDetail(' + l.id + ')" style="cursor:pointer">' +
       '<div class="mkt-card-header">' +
-        '<span class="mkt-card-category">' + escHtml(l.category || 'other') + '</span>' +
-        '<span class="mkt-card-price">' + priceText + '</span>' +
+        '<span class="chip ' + tone + '">' + escHtml((l.category || 'other').toUpperCase()) + '</span>' +
+        '<span class="' + priceClass + '">' + priceText + '</span>' +
       '</div>' +
-      '<h4>' + escHtml(l.name) + '</h4>' +
-      '<p>' + escHtml((l.description || '').slice(0, 140)) + '</p>' +
-      '<div style="display:flex;gap:8px">' +
-        '<button class="btn btn-primary btn-sm" onclick="event.stopPropagation();buyFromMarketplace(' + l.id + ')" style="flex:1">' +
-          (l.isFree ? (currentLang === 'ru' ? IC.download + ' Установить' : IC.download + ' Install') : (currentLang === 'ru' ? IC.creditcard + ' Купить' : IC.creditcard + ' Buy')) +
+      '<div class="mkt-card-identity">' +
+        '<div class="mkt-card-avatar' + (l.avatarUrl ? ' has-img' : '') + '">' + avatarInner + '</div>' +
+        '<div class="mkt-card-name-block">' +
+          '<h4>' + escHtml(name) + '</h4>' +
+          '<div class="mkt-card-author">' + byLbl + author + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<p>' + escHtml((l.description || '').slice(0, 200)) + '</p>' +
+      '<div class="mkt-card-foot">' +
+        '<div class="mkt-card-stats">' +
+          '<span class="mkt-card-stat" title="' + (currentLang === 'ru' ? 'установок' : 'installs') + '">' +
+            '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>' +
+            fmtCompact(installs) +
+          '</span>' +
+          (runs > 0 ? '<span class="mkt-card-stat" title="' + (currentLang === 'ru' ? 'запусков' : 'runs') + '">' +
+            '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>' +
+            fmtCompact(runs) +
+          '</span>' : '') +
+        '</div>' +
+        '<button class="btn btn-primary" onclick="event.stopPropagation();buyFromMarketplace(' + l.id + ')">' +
+          btnIcon + ' ' + btnLabel +
         '</button>' +
       '</div>' +
     '</div>';

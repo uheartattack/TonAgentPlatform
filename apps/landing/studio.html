@@ -880,60 +880,74 @@
       </div>
 
       <!-- Operations Page -->
-      <div id="operations-page" class="page">
-        <div class="page-header">
+      <div id="operations-page" class="page fade-in">
+        <div class="page-head">
           <div>
-            <h1 class="page-title" data-en="My Agents" data-ru="Мои агенты">My Agents</h1>
-            <p class="page-subtitle" data-en="Manage and monitor your AI agents" data-ru="Управляйте своими AI-агентами">Manage and monitor your AI agents</p>
+            <span class="eyebrow" data-en="My Agents" data-ru="Мои агенты">My Agents</span>
+            <h1 class="page-title">
+              <span data-en="Your AI" data-ru="Ваши">Your AI</span>
+              <span class="grad" data-en="agents" data-ru="агенты">agents</span>
+            </h1>
+            <p class="page-sub" data-en="Manage, monitor and orchestrate every agent you've created" data-ru="Управляйте, мониторьте и оркеструйте каждого созданного агента">Manage and monitor your AI agents</p>
           </div>
-          <div style="display:flex;gap:.5rem;align-items:center">
-            <span class="agents-count-label" id="agents-page-count" style="color:var(--text-muted);font-size:.85rem"></span>
-            <label class="btn btn-ghost" style="cursor:pointer" title="Import agent from JSON">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <div class="page-actions">
+            <span class="agents-count-label" id="agents-page-count" style="color:var(--text-muted);font-size:.85rem;align-self:center;margin-right:4px"></span>
+            <label class="btn btn-secondary" style="cursor:pointer" title="Import agent from JSON">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
               <span data-en="Import" data-ru="Импорт">Import</span>
               <input type="file" accept=".json" style="display:none" onchange="importAgentFromMainView(this)">
             </label>
-            <div style="position:relative;display:inline-block">
-              <button class="btn btn-primary" onclick="navigateTo('assistant')">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                <span data-en="Create Agent" data-ru="Создать агента">Create Agent</span>
-              </button>
-            </div>
+            <button class="btn btn-primary" onclick="navigateTo('assistant')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              <span data-en="Create Agent" data-ru="Создать агента">Create Agent</span>
+            </button>
           </div>
         </div>
         <div class="page-content">
-          <!-- Stat cards row (Blink style) -->
-          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:1.25rem" id="agents-stat-row">
-            <div style="background:#0f1629;border:1px solid rgba(255,255,255,0.07);border-radius:14px;padding:18px 20px">
-              <div style="font-size:.72rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px" data-en="Total Agents" data-ru="Всего агентов">Total Agents</div>
-              <div id="stat-total-agents" style="font-size:1.7rem;font-weight:700;color:#f1f5f9;line-height:1">0</div>
+          <!-- Stat cards row -->
+          <div class="stat-grid" id="agents-stat-row" style="margin-bottom:24px">
+            <div class="stat">
+              <div class="stat-head">
+                <div class="stat-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/></svg></div>
+                <div class="stat-label" data-en="Total Agents" data-ru="Всего агентов">Total Agents</div>
+              </div>
+              <div class="stat-value plain" id="stat-total-agents">0</div>
             </div>
-            <div style="background:#0f1629;border:1px solid rgba(255,255,255,0.07);border-radius:14px;padding:18px 20px">
-              <div style="font-size:.72rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px" data-en="Active" data-ru="Активных">Active</div>
-              <div id="stat-active-agents" style="font-size:1.7rem;font-weight:700;color:#10b981;line-height:1">0</div>
+            <div class="stat">
+              <div class="stat-head">
+                <div class="stat-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
+                <div class="stat-label" data-en="Active" data-ru="Активных">Active</div>
+              </div>
+              <div class="stat-value green" id="stat-active-agents">0</div>
             </div>
-            <div style="background:#0f1629;border:1px solid rgba(255,255,255,0.07);border-radius:14px;padding:18px 20px">
-              <div style="font-size:.72rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px" data-en="Paused" data-ru="На паузе">Paused</div>
-              <div id="stat-paused-agents" style="font-size:1.7rem;font-weight:700;color:#f59e0b;line-height:1">0</div>
+            <div class="stat">
+              <div class="stat-head">
+                <div class="stat-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></div>
+                <div class="stat-label" data-en="Paused" data-ru="На паузе">Paused</div>
+              </div>
+              <div class="stat-value amber" id="stat-paused-agents">0</div>
             </div>
-            <div style="background:#0f1629;border:1px solid rgba(255,255,255,0.07);border-radius:14px;padding:18px 20px">
-              <div style="font-size:.72rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px" data-en="AI Agents" data-ru="AI-агентов">AI Agents</div>
-              <div id="stat-ai-agents" style="font-size:1.7rem;font-weight:700;color:#0ea5e9;line-height:1">0</div>
+            <div class="stat">
+              <div class="stat-head">
+                <div class="stat-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"/></svg></div>
+                <div class="stat-label" data-en="AI Agents" data-ru="AI-агентов">AI Agents</div>
+              </div>
+              <div class="stat-value" id="stat-ai-agents">0</div>
             </div>
           </div>
           <!-- Agent filters -->
-          <div class="operations-filters" style="margin-bottom:1rem">
-            <button class="op-filter active" onclick="filterAgentsPage('all')">
+          <div class="pill-tabs operations-filters" style="margin-bottom:20px">
+            <button class="pill-tab op-filter active" onclick="filterAgentsPage('all')">
               <span data-en="All" data-ru="Все">All</span>
-              <span class="filter-badge" id="agents-filter-all">0</span>
+              <span class="count filter-badge" id="agents-filter-all">0</span>
             </button>
-            <button class="op-filter" onclick="filterAgentsPage('active')">
+            <button class="pill-tab op-filter" onclick="filterAgentsPage('active')">
               <span data-en="Active" data-ru="Активные">Active</span>
-              <span class="filter-badge" id="agents-filter-active">0</span>
+              <span class="count filter-badge" id="agents-filter-active">0</span>
             </button>
-            <button class="op-filter" onclick="filterAgentsPage('paused')">
+            <button class="pill-tab op-filter" onclick="filterAgentsPage('paused')">
               <span data-en="Paused" data-ru="Неактивные">Paused</span>
-              <span class="filter-badge" id="agents-filter-paused">0</span>
+              <span class="count filter-badge" id="agents-filter-paused">0</span>
             </button>
           </div>
           <!-- Agent list (full page) -->
@@ -941,11 +955,14 @@
             <div class="loading-placeholder" data-en="Loading agents..." data-ru="Загрузка агентов...">Loading agents...</div>
           </div>
           <!-- Execution History -->
-          <div class="panel" style="margin-top:1.5rem">
-            <div class="panel-header">
-              <h3 class="panel-title" data-en="Recent Runs" data-ru="Последние запуски">Recent Runs</h3>
+          <div class="card flat" style="margin-top:24px;padding:0;overflow:hidden">
+            <div class="section-head" style="padding:22px 24px 16px;margin-bottom:0;border-bottom:1px solid var(--border)">
+              <h3>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                <span data-en="Recent Runs" data-ru="Последние запуски">Recent Runs</span>
+              </h3>
             </div>
-            <div class="operations-list" id="operations-list"></div>
+            <div class="operations-list" id="operations-list" style="padding:18px 22px"></div>
           </div>
         </div>
       </div>
@@ -2096,29 +2113,37 @@
       </div>
 
       <!-- Marketplace Page -->
-      <div id="marketplace-page" class="page">
-        <div class="page-header">
+      <div id="marketplace-page" class="page fade-in">
+        <div class="page-head">
           <div>
-            <h1 class="page-title" data-en="Agent Marketplace" data-ru="Маркетплейс агентов">Agent Marketplace</h1>
-            <p class="page-subtitle" data-en="Browse, install and publish agent templates" data-ru="Обзор, установка и публикация шаблонов агентов">Browse, install and publish agent templates</p>
+            <span class="eyebrow" data-en="Marketplace" data-ru="Маркетплейс">Marketplace</span>
+            <h1 class="page-title">
+              <span data-en="Marketplace of" data-ru="Маркетплейс">Marketplace</span>
+              <span class="grad" data-en="agents" data-ru="агентов">agents</span>
+            </h1>
+            <p class="page-sub" data-en="Browse, install and publish agent templates" data-ru="Обзор, установка и публикация шаблонов агентов">Browse, install and publish agent templates</p>
           </div>
-          <div class="header-actions">
+          <div class="page-actions">
+            <button class="btn btn-secondary" onclick="(function(){var t=document.getElementById('marketplace-tabs');if(t)t.scrollIntoView({behavior:'smooth'});})()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+              <span data-en="Filters" data-ru="Фильтры">Filters</span>
+            </button>
             <button class="btn btn-primary" onclick="openPublishModal()">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
               <span data-en="Publish Agent" data-ru="Опубликовать">Publish Agent</span>
             </button>
           </div>
         </div>
         <div class="page-content">
-          <div class="marketplace-tabs" id="marketplace-tabs">
-            <button class="mkt-tab active" onclick="filterMarketplace('all')" data-cat="all" data-en="All" data-ru="Все">All</button>
-            <button class="mkt-tab" onclick="filterMarketplace('monitoring')" data-cat="monitoring" data-en="Monitoring" data-ru="Мониторинг">Monitoring</button>
-            <button class="mkt-tab" onclick="filterMarketplace('defi')" data-cat="defi">DeFi</button>
-            <button class="mkt-tab" onclick="filterMarketplace('nft')" data-cat="nft">NFT</button>
-            <button class="mkt-tab" onclick="filterMarketplace('gifts')" data-cat="gifts" data-en="Gifts" data-ru="Подарки">Gifts</button>
-            <button class="mkt-tab" onclick="filterMarketplace('utility')" data-cat="utility" data-en="Utility" data-ru="Утилиты">Utility</button>
-            <button class="mkt-tab" onclick="filterMarketplace('my')" data-cat="my" data-en="My Listings" data-ru="Мои">My Listings</button>
-            <button class="mkt-tab" onclick="filterMarketplace('purchased')" data-cat="purchased" data-en="Purchased" data-ru="Купленные">Purchased</button>
+          <div class="pill-tabs marketplace-tabs" id="marketplace-tabs">
+            <button class="pill-tab mkt-tab active" onclick="filterMarketplace('all')" data-cat="all" data-en="All" data-ru="Все">All</button>
+            <button class="pill-tab mkt-tab" onclick="filterMarketplace('monitoring')" data-cat="monitoring" data-en="Monitoring" data-ru="Мониторинг">Monitoring</button>
+            <button class="pill-tab mkt-tab" onclick="filterMarketplace('defi')" data-cat="defi">DeFi</button>
+            <button class="pill-tab mkt-tab" onclick="filterMarketplace('nft')" data-cat="nft">NFT</button>
+            <button class="pill-tab mkt-tab" onclick="filterMarketplace('gifts')" data-cat="gifts" data-en="Gifts" data-ru="Подарки">Gifts</button>
+            <button class="pill-tab mkt-tab" onclick="filterMarketplace('utility')" data-cat="utility" data-en="Utility" data-ru="Утилиты">Utility</button>
+            <button class="pill-tab mkt-tab" onclick="filterMarketplace('my')" data-cat="my" data-en="My Listings" data-ru="Мои">My Listings</button>
+            <button class="pill-tab mkt-tab" onclick="filterMarketplace('purchased')" data-cat="purchased" data-en="Purchased" data-ru="Купленные">Purchased</button>
           </div>
           <div id="marketplace-grid" class="marketplace-grid">
             <div class="loading-placeholder" data-en="Loading marketplace..." data-ru="Загрузка маркетплейса...">Loading marketplace...</div>
