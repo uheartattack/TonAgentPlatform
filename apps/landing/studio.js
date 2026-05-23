@@ -422,18 +422,15 @@ function t(k) { const e = _tr[k]; return e ? (e[currentLang] || e.en || k) : k; 
 function animateCount(el, target, duration = 800, suffix = '') {
   if (!el) return;
   const start = performance.now();
-  const from = parseInt(el.textContent.replace(/[\s,]/g, '')) || 0;
-  const to = typeof target === 'number' ? target : parseInt(String(target).replace(/[\s,]/g, '')) || 0;
-  // Group digits so large numbers read "9 973" / "10 126" instead of "9973" / "10126".
-  // Suffix-bearing values (e.g. "25%") skip grouping so the % stays glued.
-  const fmt = (n) => suffix ? (n + suffix) : n.toLocaleString(currentLang === 'ru' ? 'ru-RU' : 'en-US');
-  if (from === to) { el.textContent = fmt(to); return; }
+  const from = parseInt(el.textContent) || 0;
+  const to = typeof target === 'number' ? target : parseInt(target) || 0;
+  if (from === to) { el.textContent = to + suffix; return; }
   const update = (now) => {
     const elapsed = now - start;
     const progress = Math.min(elapsed / duration, 1);
     // easeOutQuart
     const eased = 1 - Math.pow(1 - progress, 4);
-    el.textContent = fmt(Math.round(from + (to - from) * eased));
+    el.textContent = Math.round(from + (to - from) * eased) + suffix;
     if (progress < 1) requestAnimationFrame(update);
   };
   requestAnimationFrame(update);
@@ -759,24 +756,9 @@ function showApp() {
     }
     var greetEl = document.getElementById('overview-greeting-text');
     if (greetEl && name) {
-      // Wrap the user's name in .grad so it picks up the active accent
-      // gradient — matches the Claude-Design hero ("Добрый день, spend $").
-      greetEl.innerHTML = greeting + ', <span class="grad">' + escHtml(name) + '</span>';
+      greetEl.textContent = greeting + ', ' + name;
       greetEl.removeAttribute('data-en');
       greetEl.removeAttribute('data-ru');
-    }
-    // Inject the LIVE eyebrow once — gives the hero its "● Live · 23 мая" cue.
-    var headerL = greetEl ? greetEl.parentElement : null;
-    if (headerL && !headerL.querySelector('.eyebrow')) {
-      var eb = document.createElement('span');
-      eb.className = 'eyebrow';
-      var months = currentLang === 'ru'
-        ? ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря']
-        : ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-      var now = new Date();
-      eb.textContent = 'Live · ' + now.getDate() + ' ' + months[now.getMonth()] + ' ' + now.getFullYear();
-      eb.style.marginBottom = '14px';
-      headerL.insertBefore(eb, headerL.firstChild);
     }
   }
 
@@ -5284,24 +5266,9 @@ function loadOverview() {
     }
     var greetEl = document.getElementById('overview-greeting-text');
     if (greetEl && name) {
-      // Wrap the user's name in .grad so it picks up the active accent
-      // gradient — matches the Claude-Design hero ("Добрый день, spend $").
-      greetEl.innerHTML = greeting + ', <span class="grad">' + escHtml(name) + '</span>';
+      greetEl.textContent = greeting + ', ' + name;
       greetEl.removeAttribute('data-en');
       greetEl.removeAttribute('data-ru');
-    }
-    // Inject the LIVE eyebrow once — gives the hero its "● Live · 23 мая" cue.
-    var headerL = greetEl ? greetEl.parentElement : null;
-    if (headerL && !headerL.querySelector('.eyebrow')) {
-      var eb = document.createElement('span');
-      eb.className = 'eyebrow';
-      var months = currentLang === 'ru'
-        ? ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря']
-        : ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-      var now = new Date();
-      eb.textContent = 'Live · ' + now.getDate() + ' ' + months[now.getMonth()] + ' ' + now.getFullYear();
-      eb.style.marginBottom = '14px';
-      headerL.insertBefore(eb, headerL.firstChild);
     }
   }
 }
@@ -11187,85 +11154,18 @@ function renderMarketplaceGrid() {
       '<p style="color:var(--text-muted)">' + (currentLang === 'ru' ? 'Пока ничего нет' : 'Nothing here yet') + '</p></div>';
     return;
   }
-  // After loading "all" — aggregate per-category counts and stamp them on
-  // the .mkt-tab buttons (Все 142 · Мониторинг 38 · DeFi 24 · …).
-  if (_marketplaceFilter === 'all') {
-    var counts = { all: _marketplaceListings.length };
-    _marketplaceListings.forEach(function(l) {
-      var c = (l.category || 'other').toLowerCase();
-      counts[c] = (counts[c] || 0) + 1;
-    });
-    document.querySelectorAll('#marketplace-tabs .mkt-tab').forEach(function(t) {
-      var cat = t.getAttribute('data-cat');
-      // Strip an existing count if any
-      var existing = t.querySelector('.count'); if (existing) existing.remove();
-      if (cat && counts[cat] != null) {
-        var c = document.createElement('span');
-        c.className = 'count';
-        c.textContent = counts[cat].toLocaleString(currentLang === 'ru' ? 'ru-RU' : 'en-US');
-        t.appendChild(c);
-      }
-    });
-  }
-
-  function fmtCompact(n) {
-    n = Number(n || 0);
-    if (n >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
-    if (n >= 1e3) return (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'K';
-    return String(n);
-  }
-
-  var catTone = { nft: 'purple', defi: 'green', monitoring: '', gifts: 'amber', utility: '', other: 'amber' };
-
   grid.innerHTML = _marketplaceListings.map(function(l) {
-    var name = l.name || (currentLang === 'ru' ? 'Без названия' : 'Untitled');
-    // Avatar placeholder — flat icon, no auto-generated letter. Will be
-    // replaced by an uploaded image once agent.avatarUrl ships.
-    var avatarInner = l.avatarUrl
-      ? '<img src="' + escHtml(l.avatarUrl) + '" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">'
-      : '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
     var priceText = l.isFree ? (currentLang === 'ru' ? 'Бесплатно' : 'Free') : ((Number(l.price || 0) / 1e9).toFixed(2) + ' TON');
-    var priceClass = l.isFree ? 'mkt-card-price green' : 'mkt-card-price ton';
-    var author = l.sellerUsername ? '@' + escHtml(l.sellerUsername)
-               : l.sellerName ? escHtml(l.sellerName)
-               : (currentLang === 'ru' ? 'аноним' : 'anonymous');
-    var byLbl = currentLang === 'ru' ? 'от ' : 'by ';
-    var installs = Number(l.totalSales || l.total_sales || 0);
-    var runs = Number(l.totalRuns || l.total_runs || 0);
-    var cat = (l.category || 'other').toLowerCase();
-    var tone = catTone[cat] || '';
-    var btnLabel = l.isFree
-      ? (currentLang === 'ru' ? 'Установить' : 'Install')
-      : (currentLang === 'ru' ? 'Купить' : 'Buy');
-    var btnIcon = l.isFree
-      ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'
-      : '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 8v8"/></svg>';
     return '<div class="marketplace-card" onclick="openMarketplaceDetail(' + l.id + ')" style="cursor:pointer">' +
       '<div class="mkt-card-header">' +
-        '<span class="chip ' + tone + '">' + escHtml((l.category || 'other').toUpperCase()) + '</span>' +
-        '<span class="' + priceClass + '">' + priceText + '</span>' +
+        '<span class="mkt-card-category">' + escHtml(l.category || 'other') + '</span>' +
+        '<span class="mkt-card-price">' + priceText + '</span>' +
       '</div>' +
-      '<div class="mkt-card-identity">' +
-        '<div class="mkt-card-avatar' + (l.avatarUrl ? ' has-img' : '') + '">' + avatarInner + '</div>' +
-        '<div class="mkt-card-name-block">' +
-          '<h4>' + escHtml(name) + '</h4>' +
-          '<div class="mkt-card-author">' + byLbl + author + '</div>' +
-        '</div>' +
-      '</div>' +
-      '<p>' + escHtml((l.description || '').slice(0, 200)) + '</p>' +
-      '<div class="mkt-card-foot">' +
-        '<div class="mkt-card-stats">' +
-          '<span class="mkt-card-stat" title="' + (currentLang === 'ru' ? 'установок' : 'installs') + '">' +
-            '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>' +
-            fmtCompact(installs) +
-          '</span>' +
-          (runs > 0 ? '<span class="mkt-card-stat" title="' + (currentLang === 'ru' ? 'запусков' : 'runs') + '">' +
-            '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>' +
-            fmtCompact(runs) +
-          '</span>' : '') +
-        '</div>' +
-        '<button class="btn btn-primary" onclick="event.stopPropagation();buyFromMarketplace(' + l.id + ')">' +
-          btnIcon + ' ' + btnLabel +
+      '<h4>' + escHtml(l.name) + '</h4>' +
+      '<p>' + escHtml((l.description || '').slice(0, 140)) + '</p>' +
+      '<div style="display:flex;gap:8px">' +
+        '<button class="btn btn-primary btn-sm" onclick="event.stopPropagation();buyFromMarketplace(' + l.id + ')" style="flex:1">' +
+          (l.isFree ? (currentLang === 'ru' ? IC.download + ' Установить' : IC.download + ' Install') : (currentLang === 'ru' ? IC.creditcard + ' Купить' : IC.creditcard + ' Buy')) +
         '</button>' +
       '</div>' +
     '</div>';
@@ -14521,38 +14421,6 @@ function setAccentColor(color) {
   localStorage.setItem('accent_color', color);
 }
 
-// ── Gradient accent preset switcher ──
-// Each preset defines --primary + --accent-2 + the rgb breakdown so every
-// rgba(var(--accent-r/g/b),...) and rgba(var(--accent2-r/g/b),...) flips
-// in sync. CSS rules live in studio.css under :root[data-accent="..."].
-// design-system.css uses a parallel --ds-* token namespace — we mirror the
-// resolved values into those after the dataset change so legacy nav-badges
-// follow the preset too.
-function setAccentPreset(name) {
-  if (typeof name !== 'string') return;
-  var root = document.documentElement;
-  root.dataset.accent = name;
-  // Pull the resolved primary/dim out of the new preset for legacy --ds-*.
-  var cs = getComputedStyle(root);
-  var primary      = (cs.getPropertyValue('--primary') || '').trim();
-  var primaryLight = (cs.getPropertyValue('--primary-light') || '').trim();
-  var dim          = (cs.getPropertyValue('--accent-dim') || '').trim();
-  if (primary) {
-    root.style.setProperty('--ds-primary', primary);
-    root.style.setProperty('--ds-primary-bright', primaryLight || primary);
-    root.style.setProperty('--ds-primary-dim', dim || 'rgba(0,152,234,0.12)');
-    root.style.setProperty('--ds-accent', primary);
-    root.style.setProperty('--ds-accent-bright', primaryLight || primary);
-    root.style.setProperty('--ds-accent-dim', dim || 'rgba(0,152,234,0.12)');
-  }
-  // Highlight the active tile.
-  document.querySelectorAll('.accent-preset').forEach(function(el) {
-    el.classList.toggle('active', el.dataset.preset === name);
-  });
-  localStorage.setItem('accent_preset', name);
-}
-window.setAccentPreset = setAccentPreset;
-
 // Restore UI settings from localStorage
 (function restoreUISettings() {
   var scale = localStorage.getItem('ui_scale');
@@ -14565,22 +14433,14 @@ window.setAccentPreset = setAccentPreset;
     var ss = document.getElementById('sidebar-scale-slider'); if (ss) ss.value = scale;
     var sv = document.getElementById('sidebar-scale-value'); if (sv) sv.textContent = scale + '%';
   }
-  // Gradient preset takes precedence over the legacy single-colour accent.
-  // Order of resolution: explicit saved preset → legacy single-colour mapped
-  // to closest preset → default Aurora (so the picker tile lights up).
-  var preset = localStorage.getItem('accent_preset');
-  if (!preset) {
-    var legacyAccent = (localStorage.getItem('accent_color') || '').toLowerCase();
-    var legacyMap = {
-      '#0ea5e9': 'mono',
-      '#8b5cf6': 'plasma',
-      '#10b981': 'emerald',
-      '#f59e0b': 'sunset',
-      '#ef4444': 'sunset',
-    };
-    preset = legacyMap[legacyAccent] || 'aurora';
+  var accent = localStorage.getItem('accent_color');
+  if (accent) {
+    // Re-run the full accent setter so light/dark/dim/glow shades all derive
+    // — not just --primary/--accent (those alone leave button hovers blue).
+    try { setAccentColor(accent); } catch (e) {
+      document.documentElement.style.setProperty('--primary', accent);
+    }
   }
-  try { setAccentPreset(preset); } catch (e) {}
   // Restore notification settings
   var nd = localStorage.getItem('notif_duration');
   if (nd !== null) { _notifDuration = parseInt(nd) * 1000; var nds = document.getElementById('notif-duration-slider'); if (nds) nds.value = nd; var ndv = document.getElementById('notif-duration-value'); if (ndv) ndv.textContent = nd === '0' ? 'off' : nd + 's'; }
