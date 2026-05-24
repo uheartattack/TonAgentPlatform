@@ -4186,9 +4186,48 @@ async function setAgentRoleFromSettings(role) {
   var data = await apiRequest('PUT', '/api/agents/' + _detailAgentId + '/role', { role: role });
   if (data.ok) {
     toast(currentLang === 'ru' ? 'Роль: ' + role : 'Role: ' + role, 'success');
-    _detailAgentData.role = role;
+    // Sync role across EVERY local cache so the user doesn't see stale role
+    // on Network / My Agents / Overview while DB says something else.
+    syncAgentRoleAcrossCaches(_detailAgentId, role);
     switchSettingsTab('role');
   } else toast(data.error || 'Error', 'error');
+}
+
+// One-stop role sync: writes the new role into every local cache the UI reads
+// from and triggers a re-render of currently-visible pages. Without this,
+// Network keeps the old role (cached at loadNetworkMap time), My Agents keeps
+// its own (_agentsPageData / _agentsCache), and the user sees 3 different
+// roles in 3 places for the same agent.
+function syncAgentRoleAcrossCaches(agentId, newRole) {
+  try {
+    if (_detailAgentData && _detailAgentData.id === agentId) _detailAgentData.role = newRole;
+    if (Array.isArray(_agentsCache)) {
+      var a1 = _agentsCache.find(function(x) { return x.id === agentId; });
+      if (a1) a1.role = newRole;
+    }
+    if (Array.isArray(_agentsPageData)) {
+      var a2 = _agentsPageData.find(function(x) { return x.id === agentId; });
+      if (a2) a2.role = newRole;
+    }
+    if (Array.isArray(_networkNodes)) {
+      var n = _networkNodes.find(function(x) { return x.id === agentId; });
+      if (n) {
+        n.role = newRole;
+        // Role colour map mirror of role-profiles.ts built-ins
+        var rc = { director: '#ffd700', manager: '#8b5cf6', specialist: '#10b981', monitor: '#f59e0b', creative: '#ec4899', trader: '#ef4444', admin: '#f97316', worker: '#00a8ff' };
+        if (rc[newRole]) n.color = n.isActive ? rc[newRole] : '#6b7280';
+        var rl = { director: 'DIR', manager: 'MGR', specialist: 'SPEC', monitor: 'MON', creative: 'CRE', trader: 'TRD', admin: 'ADM', worker: 'WRK' };
+        if (rl[newRole]) n.roleLabel = rl[newRole];
+      }
+    }
+  } catch (e) { console.warn('[syncAgentRole]', e); }
+  // Trigger visible-page re-render so the change appears without manual refresh
+  try {
+    var visible = function(id) { var el = document.getElementById(id); return el && el.classList.contains('active'); };
+    if (visible('operations-page') && typeof renderAgentsPage === 'function') renderAgentsPage();
+    if (visible('overview-page') && typeof loadAgents === 'function') loadAgents();
+    if (visible('network-page') && typeof loadNetworkMap === 'function') loadNetworkMap();
+  } catch {}
 }
 
 async function saveCustomRole() {
