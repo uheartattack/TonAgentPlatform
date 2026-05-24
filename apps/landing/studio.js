@@ -4499,6 +4499,15 @@ function renderAgentsPage() {
   var agents = _agentsPageData;
   if (_agentsPageFilter === 'active') agents = agents.filter(function(a) { return a.isActive; });
   else if (_agentsPageFilter === 'paused') agents = agents.filter(function(a) { return !a.isActive; });
+  // Pinned agents (favorites) go first. Within each group keep the original
+  // ordering (most-recently-updated from the API), so frequently-used pinned
+  // ones stay top regardless of date.
+  var _pinnedIds = new Set(getPinnedAgents());
+  agents = agents.slice().sort(function(a, b) {
+    var pA = _pinnedIds.has(a.id) ? 1 : 0;
+    var pB = _pinnedIds.has(b.id) ? 1 : 0;
+    return pB - pA; // pinned (1) first
+  });
 
   if (!agents.length) {
     var msg = _agentsPageFilter === 'all'
