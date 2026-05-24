@@ -2204,10 +2204,18 @@ function switchSettingsTab(tab) {
           '<code id="agent-color-hex" style="font-size:.78rem;color:var(--text-muted);margin-left:4px">' + escHtml(agentColor) + '</code>' +
         '</div>' +
       '</div>' +
+      '<hr class="st-role-divider">' +
+      // ── Mission & Action Scope (Sprint 7) ──
+      '<div class="rt-section" id="ms-section-' + a.id + '">' +
+        '<div class="rt-section-label">🎯 ' + (isRu ? 'Миссия и scope' : 'Mission & Scope') + '</div>' +
+        '<div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">' +
+          (isRu ? 'Загрузка…' : 'Loading…') + '</div></div>' +
       '<div class="rt-actions">' +
-        '<button class="rt-save-btn" onclick="saveCustomRole()">' + IC.check + ' ' + (isRu ? 'Сохранить' : 'Save') + '</button>' +
+        '<button class="rt-save-btn" onclick="saveCustomRole()">' + IC.check + ' ' + (isRu ? 'Сохранить роль' : 'Save role') + '</button>' +
       '</div>' +
       '</div>';
+    // Async-load goal+scope into the section
+    setTimeout(function() { loadAgentGoalScope(a.id, currentRole); }, 40);
     // Fetch + render custom roles into the slot (async — fires after body.innerHTML)
     setTimeout(function() {
       loadCustomRolesIntoSlot(currentRole);
@@ -10265,6 +10273,79 @@ function openAllowanceModal(crewId, memberAgentId, memberName, currentAllowance)
       toast(r.error || 'Error', 'error');
     }
   };
+}
+
+// Sprint 7 — Agent goal+scope editor + auto-suggest defaults per role.
+// Built-in role → smart defaults (creative posts in channels, monitor alerts owner,
+// trader does its trades silently, etc). User can override anytime.
+const ROLE_SCOPE_DEFAULTS = {
+  creative:  { respond_to_dms: false, respond_to_groups: false, respond_to_channels: true,  hint_goal: 'Веду канал — N постов в день про <тему>' },
+  trader:    { respond_to_dms: false, respond_to_groups: false, respond_to_channels: false, hint_goal: 'Торгую <актив> на <бирже> с дневным лимитом X TON' },
+  monitor:   { respond_to_dms: true,  respond_to_groups: false, respond_to_channels: false, hint_goal: 'Слежу за <метрика> и алерчу владельца при отклонении >X%' },
+  admin:     { respond_to_dms: false, respond_to_groups: true,  respond_to_channels: false, hint_goal: 'Модерирую группу @<group> — баню спам, приветствую новых' },
+  specialist:{ respond_to_dms: true,  respond_to_groups: true,  respond_to_channels: false, hint_goal: 'Эксперт по <тема> — отвечаю на вопросы пользователей' },
+  manager:   { respond_to_dms: true,  respond_to_groups: true,  respond_to_channels: false, hint_goal: 'Координирую команду по задаче <цель>' },
+  director:  { respond_to_dms: true,  respond_to_groups: true,  respond_to_channels: true,  hint_goal: 'Управляю командой и стратегией' },
+  worker:    { respond_to_dms: true,  respond_to_groups: false, respond_to_channels: false, hint_goal: 'Выполняю задачи владельца' },
+};
+
+async function loadAgentGoalScope(agentId, currentRole) {
+  const el = document.getElementById('ms-section-' + agentId);
+  if (!el) return;
+  const isRu = currentLang === 'ru';
+  let data;
+  try { data = await apiRequest('GET', '/api/agents/' + agentId); } catch (e) { el.innerHTML = '<div style="color:var(--danger)">' + e + '</div>'; return; }
+  if (!data || !data.ok) { el.innerHTML = '<div style="color:var(--danger)">' + (data && data.error || 'Failed') + '</div>'; return; }
+  const ag = data.agent || {};
+  const goal = ag.goal || '';
+  const scope = (ag.actionScope && typeof ag.actionScope === 'object') ? ag.actionScope : (ag.action_scope || {});
+  // Smart defaults for empty scope — pull from role map (without overwriting user values)
+  const defaults = ROLE_SCOPE_DEFAULTS[currentRole] || ROLE_SCOPE_DEFAULTS.worker;
+  const dms = scope.respond_to_dms !== undefined ? !!scope.respond_to_dms : defaults.respond_to_dms;
+  const grp = scope.respond_to_groups !== undefined ? !!scope.respond_to_groups : defaults.respond_to_groups;
+  const ch  = scope.respond_to_channels !== undefined ? !!scope.respond_to_channels : defaults.respond_to_channels;
+  const primary = scope.primary_channel || '';
+  const allowed = Array.isArray(scope.allowed_chats) ? scope.allowed_chats.join(', ') : '';
+  el.innerHTML =
+    '<div class="rt-section-label">🎯 ' + (isRu ? 'Миссия и scope' : 'Mission & Scope') + '</div>' +
+    '<div style="display:flex;flex-direction:column;gap:10px">' +
+      '<label><div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Миссия (одной строкой)' : 'Mission (one line)') + '</div>' +
+        '<textarea id="ms-goal-' + agentId + '" class="rt-input" style="width:100%;min-height:46px" placeholder="' + escHtml(defaults.hint_goal) + '">' + escHtml(goal) + '</textarea></label>' +
+      '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">' +
+        '<label style="display:flex;align-items:center;gap:6px;padding:8px;background:var(--bg-tertiary);border-radius:8px;cursor:pointer;font-size:12px">' +
+          '<input type="checkbox" id="ms-dms-' + agentId + '"' + (dms ? ' checked' : '') + '> 💬 DM</label>' +
+        '<label style="display:flex;align-items:center;gap:6px;padding:8px;background:var(--bg-tertiary);border-radius:8px;cursor:pointer;font-size:12px">' +
+          '<input type="checkbox" id="ms-grp-' + agentId + '"' + (grp ? ' checked' : '') + '> 👥 ' + (isRu ? 'Группы' : 'Groups') + '</label>' +
+        '<label style="display:flex;align-items:center;gap:6px;padding:8px;background:var(--bg-tertiary);border-radius:8px;cursor:pointer;font-size:12px">' +
+          '<input type="checkbox" id="ms-ch-' + agentId + '"' + (ch ? ' checked' : '') + '> 📢 ' + (isRu ? 'Каналы' : 'Channels') + '</label>' +
+      '</div>' +
+      '<label><div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">📢 ' + (isRu ? 'Основной канал' : 'Primary channel') + '</div>' +
+        '<input id="ms-primary-' + agentId + '" class="rt-input" style="width:100%" placeholder="@channelname" value="' + escHtml(primary) + '"></label>' +
+      '<label><div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">✅ ' + (isRu ? 'Whitelist чатов (опц., через запятую)' : 'Allowed chats (opt., comma-sep)') + '</div>' +
+        '<input id="ms-allowed-' + agentId + '" class="rt-input" style="width:100%" placeholder="-1001545063905, @groupname" value="' + escHtml(allowed) + '">' +
+        '<div style="font-size:10px;color:var(--text-muted);margin-top:4px">' + (isRu ? 'Если задано — агент реагирует ТОЛЬКО в этих чатах.' : 'If set — agent only acts in these chats.') + '</div></label>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end">' +
+        '<button class="btn" onclick="loadAgentGoalScope(' + agentId + ',\'' + currentRole + '\')">↻ ' + (isRu ? 'Сброс' : 'Reset') + '</button>' +
+        '<button class="btn btn-primary" onclick="saveAgentGoalScope(' + agentId + ')">💾 ' + (isRu ? 'Сохранить миссию' : 'Save mission') + '</button>' +
+      '</div>' +
+    '</div>';
+}
+
+async function saveAgentGoalScope(agentId) {
+  const isRu = currentLang === 'ru';
+  const goal = (document.getElementById('ms-goal-' + agentId).value || '').trim();
+  const scope = {
+    respond_to_dms:      document.getElementById('ms-dms-' + agentId).checked,
+    respond_to_groups:   document.getElementById('ms-grp-' + agentId).checked,
+    respond_to_channels: document.getElementById('ms-ch-' + agentId).checked,
+    primary_channel:     (document.getElementById('ms-primary-' + agentId).value || '').trim(),
+    allowed_chats:       (document.getElementById('ms-allowed-' + agentId).value || '').split(',').map(s => s.trim()).filter(Boolean),
+  };
+  if (!scope.primary_channel) delete scope.primary_channel;
+  if (scope.allowed_chats.length === 0) delete scope.allowed_chats;
+  const r = await apiRequest('PUT', '/api/agents/' + agentId + '/goal-scope', { goal: goal || null, action_scope: scope });
+  if (r.ok) toast(isRu ? 'Миссия сохранена' : 'Mission saved', 'success');
+  else toast(r.error || 'Error', 'error');
 }
 
 // Atlas role interview: user clicks "Create" on a <role-suggest> action card.

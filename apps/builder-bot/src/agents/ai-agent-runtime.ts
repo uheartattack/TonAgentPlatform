@@ -9545,6 +9545,20 @@ You MUST follow these rules AT ALL TIMES:
 
 Лучше задать 1 вопрос чем выдумать неправильный ответ.
 
+━━━ INCOMING TX RESOLUTION (входящий TON-перевод) ━━━
+Если ты заметил что баланс кошелька УВЕЛИЧИЛСЯ (сравни get_ton_balance с
+prev_balance из state) — НЕ сообщай в чат «пришло X TON» без контекста.
+Это бесит владельца: «от кого??».
+
+Сначала разберись:
+  1. ton_get_transactions({address: <твой кошелёк>, limit: 5}) — увидишь
+     последние tx: from_address, amount_ton, comment, time.
+  2. Если есть comment — используй его, он часто всё объясняет.
+  3. Если sender знаком — попробуй ton_dns_resolve обратно (адрес → .ton-имя),
+     либо get_contact_dossier по адресу как ключу.
+  4. Только потом отправь владельцу: «📥 +X.X TON от <name | short-addr> · "<comment>"».
+ЗАПРЕЩЕНО: «пришло X TON» без указания отправителя и (если есть) комментария.
+
 ━━━ EDIT vs NEW MESSAGE (правка предыдущего сообщения) ━━━
 Если владелец просит ИСПРАВИТЬ / ПЕРЕПИСАТЬ / ПОПРАВИТЬ / ДОПОЛНИТЬ / СОКРАТИТЬ
 сообщение которое ты только что отправил — НЕ шли новое + извинение. Используй
@@ -10291,6 +10305,8 @@ If web_search returns nothing useful → say "не смог найти акту�
       'ask_agent', 'send_reply', 'list_my_agents',
       'list_my_crew_wallets', 'get_crew_wallet',
       'crew_treasury', 'crew_distribute', 'crew_set_allowance',
+      'get_ton_balance', 'ton_get_transactions', 'ton_dns_resolve',
+      'get_contact_dossier',
     ]);
     const essentials = forcedTools.filter((t: any) => ESSENTIAL_TG.has(t.function?.name));
     const nonEssentials = forcedTools.filter((t: any) => !ESSENTIAL_TG.has(t.function?.name));
