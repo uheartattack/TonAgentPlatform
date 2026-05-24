@@ -2572,19 +2572,11 @@ class UserbotManager {
 
       let _typingInterval: any = null; // hoisted for finally cleanup
       try {
-        // Auto-typing indicator (skip if behavior handles it)
-        const _bhDispatch = item.cfg?.config?.behavior || {};
-        if (!_bhDispatch.readReceipts && !_bhDispatch.typingDelay) {
-        try {
-          const ac = this.clients.get(agentId) || Array.from(this.accountClients.values())[0];
-          if (ac?.client?.connected) {
-            await ac.client.invoke(new Api.messages.SetTyping({
-              peer: await ac.client.getInputEntity(item.msg.chatId as any),
-              action: new Api.SendMessageTypingAction(),
-            }));
-          }
-        } catch {}
-        } // end if !behavior
+        // Sprint 8 — removed default auto-typing here. Typing now starts ONLY
+        // in processTgInboxMessage's pre-send block, after the AI produced
+        // actual text. Earlier this block fired typing the moment a message
+        // arrived (before/while reading) which made users see 'печатает…'
+        // basically always.
 
         // Process with timeout (90s max)
         await Promise.race([
