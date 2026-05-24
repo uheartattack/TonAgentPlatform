@@ -1881,6 +1881,13 @@
             <button class="btn-action" onclick="awShowDeployModal()" data-en="+ New Wallet" data-ru="+ Новый кошелёк">+ New Wallet</button>
           </div>
           <div id="aw-wallets-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px"></div>
+
+          <!-- Crew Wallets (Sprint 6) — shared wallets for crew teams -->
+          <div style="display:flex;justify-content:space-between;align-items:center;margin:32px 0 16px 0">
+            <h2 style="font-size:1.1rem;font-weight:600" data-en="Crew Wallets" data-ru="Кошельки команд">Кошельки команд</h2>
+            <a class="btn-action" href="#" onclick="navigateTo('network');return false" style="font-size:.78rem;padding:6px 12px;text-decoration:none">→ <span data-en="Manage crews" data-ru="Управлять командами">Управлять командами</span></a>
+          </div>
+          <div id="aw-crew-wallets-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px"></div>
         </div>
       </div>
 

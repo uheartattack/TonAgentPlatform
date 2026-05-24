@@ -13000,6 +13000,85 @@ async function loadWalletsPage() {
     _awStats = data.stats || {};
   } catch (e) { _awData = []; _awStats = {}; }
   awRenderStats(); awRenderRoot(); awRenderGrid();
+  // Crew wallets — fetched separately so one failing endpoint doesn't break the other section
+  awLoadAndRenderCrewWallets().catch(function(err) { console.warn('[Wallets] crew wallets load failed:', err); });
+}
+
+// Pulls user's crews, then in parallel fetches each crew's wallet info.
+// Renders into #aw-crew-wallets-grid with same visual language as agent wallets.
+async function awLoadAndRenderCrewWallets() {
+  var gridEl = document.getElementById('aw-crew-wallets-grid');
+  if (!gridEl) return;
+  var isRu = currentLang === 'ru';
+  gridEl.innerHTML = '<div style="grid-column:1/-1;color:var(--text-muted);padding:20px;text-align:center;font-size:.85rem">' + (isRu ? 'Загрузка…' : 'Loading…') + '</div>';
+  var crewsResp;
+  try { crewsResp = await apiRequest('GET', '/api/crews'); }
+  catch (e) { gridEl.innerHTML = '<div style="grid-column:1/-1;color:var(--danger);padding:20px;text-align:center">' + escHtml(String(e)) + '</div>'; return; }
+  var crews = (crewsResp && crewsResp.ok ? crewsResp.crews : []) || [];
+  if (crews.length === 0) {
+    gridEl.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px 20px">' +
+      '<div style="width:48px;height:48px;border-radius:14px;background:var(--bg-tertiary);display:flex;align-items:center;justify-content:center;margin:0 auto 14px"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg></div>' +
+      '<h3 style="margin-bottom:6px;font-size:1rem;color:var(--text-primary)">' + (isRu ? 'Нет команд' : 'No crews yet') + '</h3>' +
+      '<p style="color:var(--text-muted);font-size:.85rem">' + (isRu ? 'Создай команду из агентов и общий TON-кошелёк для неё.' : 'Bundle agents into a crew, then deploy a shared TON wallet.') + '</p>' +
+      '<a class="btn-action" href="#" onclick="navigateTo(\'network\');return false" style="margin-top:14px;text-decoration:none;display:inline-flex;background:var(--accent)">→ ' + (isRu ? 'Перейти в Сеть агентов' : 'Open Network') + '</a></div>';
+    return;
+  }
+  // Fetch each wallet in parallel (best-effort — missing wallets show "create" CTA)
+  var walletInfos = await Promise.all(crews.map(function(c) {
+    return apiRequest('GET', '/api/crews/' + c.id + '/wallet').then(function(r) { return r && r.ok ? r.wallet : null; }).catch(function() { return null; });
+  }));
+  gridEl.innerHTML = crews.map(function(c, i) {
+    var w = walletInfos[i];
+    var memberCount = (c.agent_ids || []).length;
+    var mgrText = c.manager_agent_id ? ' · 👑 #' + c.manager_agent_id : '';
+    if (!w) {
+      // No wallet yet → show CTA
+      return '<div style="background:var(--bg-secondary);border:1px dashed var(--border);border-radius:14px;padding:20px">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">' +
+          '<span style="font-weight:600;font-size:.92rem">' + escHtml(c.name) + '</span>' +
+          '<span style="font-size:.7rem;color:var(--text-muted)">#' + c.id + '</span></div>' +
+        '<div style="font-size:.75rem;color:var(--text-muted);margin-bottom:14px">' + memberCount + ' ' + (isRu ? 'агентов' : 'agents') + mgrText + '</div>' +
+        '<div style="font-size:.85rem;color:var(--text-muted);margin-bottom:12px">' + (isRu ? 'Нет общего кошелька' : 'No shared wallet') + '</div>' +
+        '<button class="btn-action" onclick="awCreateCrewWalletInline(' + c.id + ', this)" style="background:var(--accent);font-size:.78rem;padding:6px 12px;width:100%;justify-content:center">+ ' + (isRu ? 'Создать кошелёк' : 'Create wallet') + '</button>' +
+      '</div>';
+    }
+    var addrShort = w.address.slice(0, 8) + '...' + w.address.slice(-6);
+    var bal = (w.balanceTon != null) ? w.balanceTon.toFixed(4) : '—';
+    var spent = (w.monthSpendTon || 0).toFixed(4);
+    var budget = Number(w.budgetTonMonth) || 0;
+    var spentPct = budget > 0 ? Math.min(100, (w.monthSpendTon || 0) / budget * 100) : 0;
+    var barColor = spentPct > 90 ? '#ef4444' : spentPct > 60 ? '#eab308' : '#22c55e';
+    return '<div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:14px;padding:20px;transition:all .2s" onmouseover="this.style.borderColor=\'rgba(168,85,247,0.4)\'" onmouseout="this.style.borderColor=\'var(--border)\'">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' +
+        '<span style="font-weight:600;font-size:.92rem;display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#a855f7"></span>' + escHtml(c.name) + '</span>' +
+        '<span style="font-size:.7rem;color:var(--text-muted)">#' + c.id + ' · ' + memberCount + ' agents' + mgrText + '</span></div>' +
+      '<code style="font-size:.76rem;color:var(--text-muted);cursor:pointer;display:block;margin-bottom:12px" onclick="navigator.clipboard.writeText(\'' + escJsAttr(w.address) + '\');toast(\'Copied!\',\'success\')">' + escHtml(addrShort) + '</code>' +
+      '<div style="font-size:1.15rem;font-weight:700;font-family:\'JetBrains Mono\',monospace;color:#22c55e;margin-bottom:12px">' + bal + ' <span style="font-size:.75rem;opacity:.5">TON</span></div>' +
+      (budget > 0
+        ? '<div style="margin-bottom:14px"><div style="font-size:.72rem;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Этот месяц' : 'This month') + ': ' + spent + ' / ' + budget + ' TON</div>' +
+          '<div style="height:6px;background:var(--bg-tertiary);border-radius:3px;overflow:hidden"><div style="height:100%;width:' + spentPct + '%;background:' + barColor + '"></div></div></div>'
+        : '<div style="font-size:.72rem;color:var(--text-muted);margin-bottom:14px">' + (isRu ? 'Без лимита бюджета' : 'No budget cap') + ' · ' + spent + ' TON ' + (isRu ? 'в этом месяце' : 'this month') + '</div>') +
+      '<div style="display:flex;gap:6px">' +
+        '<button class="btn-action" style="font-size:.72rem;padding:5px 10px;flex:1" onclick="viewCrewWalletLog(' + c.id + ')">📜 ' + (isRu ? 'Лог' : 'Log') + '</button>' +
+        '<a class="btn-action" href="https://tonviewer.com/' + w.address + '" target="_blank" style="font-size:.72rem;padding:5px 10px;text-decoration:none;flex:1;justify-content:center">🔍 Tonviewer</a>' +
+        '<button class="btn-action" style="font-size:.72rem;padding:5px 10px" onclick="viewCrewDetails(' + c.id + ')" title="' + (isRu ? 'Управление командой' : 'Manage crew') + '">⚙</button>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+async function awCreateCrewWalletInline(crewId, btnEl) {
+  var isRu = currentLang === 'ru';
+  if (!confirm(isRu ? 'Создать общий кошелёк для команды? Мнемоника хранится зашифрованной на сервере.' : 'Create shared wallet for this crew? Mnemonic stays encrypted server-side.')) return;
+  if (btnEl) { btnEl.disabled = true; btnEl.textContent = isRu ? 'Создаём…' : 'Creating…'; }
+  var r = await apiRequest('POST', '/api/crews/' + crewId + '/wallet');
+  if (r.ok) {
+    toast(isRu ? 'Кошелёк создан' : 'Wallet created', 'success');
+    awLoadAndRenderCrewWallets();
+  } else {
+    toast(r.error || 'Error', 'error');
+    if (btnEl) { btnEl.disabled = false; btnEl.textContent = '+ ' + (isRu ? 'Создать кошелёк' : 'Create wallet'); }
+  }
 }
 
 function awRenderStats() {
