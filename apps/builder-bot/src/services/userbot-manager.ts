@@ -990,6 +990,16 @@ interface AgentMessageConfig {
   chatPolicies?: Record<string, 'active' | 'open' | 'mention-only' | 'disabled'>; // per-chat override
   config: Record<string, any>; // AI config (provider, key, model)
   routingRules?: AgentRoutingRule; // for multi-agent routing on shared account
+  // Sprint 7 — Agent goal + action scope. Honoured BEFORE routing score check so
+  // a "creative" agent with primary_channel=@X stops responding to DMs/groups.
+  goal?: string;
+  actionScope?: {
+    respond_to_dms?: boolean;            // default true unless explicitly false
+    respond_to_groups?: boolean;         // default true
+    respond_to_channels?: boolean;       // default true
+    allowed_chats?: (string | number)[]; // if non-empty: whitelist (chatId or @handle)
+    primary_channel?: string;            // where the agent mostly posts (info for prompt)
+  };
 }
 export const _agentMsgConfigs = new Map<number, AgentMessageConfig>();
 const _agentConfigLoadedAt = new Map<number, number>(); // agentId → timestamp
@@ -2187,6 +2197,33 @@ class UserbotManager {
                 cfg = await this.loadAgentMsgConfigFromDB(aid, selfId, selfUsername);
                 if (!cfg) continue;
               }
+              // Sprint 7 — Action scope check BEFORE scoring. If the agent's role
+              // says "I publish to a channel" (respond_to_dms=false), silently
+              // skip DM events so it doesn't accidentally reply private to owner.
+              const scope = cfg.actionScope;
+              if (scope) {
+                const inDm = !p.isGroup && !p.isChannel;
+                if (inDm && scope.respond_to_dms === false) {
+                  console.log(`[UserbotMgr] 🚫 Scope skip agent#${aid} DM (respond_to_dms=false) chat=${p.chatId}`);
+                  continue;
+                }
+                if (p.isGroup && scope.respond_to_groups === false) {
+                  console.log(`[UserbotMgr] 🚫 Scope skip agent#${aid} group (respond_to_groups=false) chat=${p.chatId}`);
+                  continue;
+                }
+                if (p.isChannel && scope.respond_to_channels === false) {
+                  console.log(`[UserbotMgr] 🚫 Scope skip agent#${aid} channel (respond_to_channels=false) chat=${p.chatId}`);
+                  continue;
+                }
+                if (Array.isArray(scope.allowed_chats) && scope.allowed_chats.length > 0) {
+                  const chatIdStr = String(p.chatId);
+                  const allowed = scope.allowed_chats.some(c => String(c) === chatIdStr || String(c).toLowerCase() === ('@' + (p.chatUsername || '').toLowerCase()));
+                  if (!allowed) {
+                    console.log(`[UserbotMgr] 🚫 Scope skip agent#${aid} chat=${p.chatId} not in allowed_chats`);
+                    continue;
+                  }
+                }
+              }
               const score = matchScore(p, cfg.routingRules, cfg);
               if (score > 0) {
                 candidates.push({ agentId: aid, score, cfg });
@@ -2405,12 +2442,15 @@ class UserbotManager {
     try {
       const pool = getPool();
       const dbRes = await pool.query(
-        `SELECT user_id, trigger_config FROM builder_bot.agents WHERE id = $1`,
+        `SELECT user_id, trigger_config, goal, action_scope FROM builder_bot.agents WHERE id = $1`,
         [agentId]
       );
       if (dbRes.rows.length === 0) return null;
       const row = dbRes.rows[0];
       const tc = typeof row.trigger_config === 'string' ? JSON.parse(row.trigger_config) : row.trigger_config;
+      const scope = (row.action_scope && typeof row.action_scope === 'object' && !Array.isArray(row.action_scope))
+        ? row.action_scope
+        : (tc?.config?.action_scope || {}); // fallback to legacy storage in trigger_config
       const cfg: AgentMessageConfig = {
         agentId,
         userId: Number(row.user_id),
@@ -2422,6 +2462,8 @@ class UserbotManager {
         chatPolicies: tc?.config?.chatPolicies || {},
         config: tc?.config || {},
         routingRules: tc?.config?.routingRules,
+        goal: row.goal || tc?.config?.goal || undefined,
+        actionScope: Object.keys(scope || {}).length > 0 ? scope : undefined,
       };
       _agentMsgConfigs.set(agentId, cfg);
       _agentConfigLoadedAt.set(agentId, Date.now());

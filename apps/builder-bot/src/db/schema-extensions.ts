@@ -1635,6 +1635,20 @@ export async function runAIProposalsMigrations(pool: Pool): Promise<void> {
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS crew_wallet_log_crew_idx ON builder_bot.crew_wallet_log (crew_id, created_at DESC)`);
 
+    // ─── Agent goal + action scope (Sprint 7 — purpose-driven agents) ──
+    // goal = one-sentence mission ("publish 1-2 posts/day in @channel about TON DeFi")
+    // action_scope = where the agent operates. Routing/userbot-mgr silently skips
+    // events that fall outside scope so a creative agent stops replying to DMs.
+    await client.query(`
+      ALTER TABLE builder_bot.agents
+        ADD COLUMN IF NOT EXISTS goal TEXT,
+        ADD COLUMN IF NOT EXISTS action_scope JSONB NOT NULL DEFAULT '{}'::jsonb
+    `);
+    await client.query(`
+      ALTER TABLE builder_bot.crews
+        ADD COLUMN IF NOT EXISTS goal TEXT
+    `);
+
     // ─── Crew member allowances (Sprint 6b — wallet tiers) ───────────────
     // Per-(crew, member) row that caps how much TON the member can receive from
     // the crew treasury in a calendar month. Set by treasurer (crew.manager_agent_id

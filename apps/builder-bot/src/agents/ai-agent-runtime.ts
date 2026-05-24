@@ -9896,6 +9896,39 @@ If web_search returns nothing useful → say "не смог найти акту�
     systemPromptFull = params.systemPrompt + '\n' + SAFETY_RULES;
   }
 
+  // ── Agent goal + action scope (Sprint 7 — purpose-driven agents) ──
+  // Goal = one-sentence mission. Scope = where the agent is allowed to act.
+  // Both injected in static prefix so they stay in prompt cache between ticks.
+  try {
+    const { pool: _pp } = await import('../db');
+    const _agr = await _pp.query<{ goal: string | null; action_scope: any }>(
+      `SELECT goal, action_scope FROM builder_bot.agents WHERE id = $1`,
+      [params.agentId],
+    );
+    if (_agr.rows[0]) {
+      const g = _agr.rows[0].goal;
+      const sc = _agr.rows[0].action_scope || {};
+      const lines: string[] = [];
+      if (g) {
+        lines.push('', '━━━ AGENT GOAL — твоя личная миссия ━━━', g.trim(), '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      }
+      if (sc && typeof sc === 'object' && Object.keys(sc).length > 0) {
+        lines.push('', '━━━ ACTION SCOPE — где ты работаешь ━━━');
+        if (sc.primary_channel) lines.push(`📢 Основной канал публикаций: ${sc.primary_channel}`);
+        if (Array.isArray(sc.allowed_chats) && sc.allowed_chats.length > 0) {
+          lines.push(`✅ Разрешённые чаты (whitelist): ${sc.allowed_chats.join(', ')}`);
+          lines.push(`   Любые сообщения из ДРУГИХ чатов — НЕ отвечай.`);
+        }
+        if (sc.respond_to_dms === false) lines.push(`🚫 DM-сообщения: НЕ отвечать (твоя цель — публикации, а не личная переписка).`);
+        if (sc.respond_to_groups === false) lines.push(`🚫 Групповые чаты: НЕ отвечать.`);
+        if (sc.respond_to_channels === false) lines.push(`🚫 Каналы: НЕ публиковать.`);
+        lines.push(`Если получаешь сообщение вне scope — игнорируй и продолжай свою основную миссию.`);
+        lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      }
+      if (lines.length > 0) systemPromptFull += '\n' + lines.join('\n');
+    }
+  } catch (e: any) { console.warn('[GoalScope] inject failed:', e?.message); }
+
   // ── Crew awareness — inject team info if this agent belongs to any crew ──
   // Static info (changes only when user reorganizes crews), so it sits in the
   // cacheable prefix of the prompt — does NOT go into the [LESSONS / STYLE]
@@ -9903,11 +9936,11 @@ If web_search returns nothing useful → say "не смог найти акту�
   try {
     const { pool } = await import('../db');
     const crewRes = await pool.query<{
-      id: number; name: string; description: string | null;
+      id: number; name: string; description: string | null; goal: string | null;
       agent_ids: number[]; manager_agent_id: number | null;
       state_namespace: string | null; budget_ton_month: string;
     }>(
-      `SELECT id, name, description, agent_ids, manager_agent_id, state_namespace, budget_ton_month
+      `SELECT id, name, description, goal, agent_ids, manager_agent_id, state_namespace, budget_ton_month
          FROM builder_bot.crews
         WHERE user_id = $1 AND is_active = true AND $2 = ANY(agent_ids)`,
       [params.userId, params.agentId],
@@ -9929,6 +9962,7 @@ If web_search returns nothing useful → say "не смог найти акту�
         const myInfo = byId.get(params.agentId);
         crewLines.push('');
         crewLines.push(`👥 Команда #${c.id} «${c.name}»${c.description ? ': ' + c.description : ''}`);
+        if (c.goal) crewLines.push(`   🎯 Цель команды: ${c.goal}`);
         crewLines.push(`   Твоя должность: ${isManager ? '👑 МЕНЕДЖЕР (делегируешь задачи остальным через ask_agent)' : (myInfo?.role || 'worker') + ' (исполнитель)'}`);
         const others = (c.agent_ids || []).filter(id => id !== params.agentId);
         if (others.length > 0) {

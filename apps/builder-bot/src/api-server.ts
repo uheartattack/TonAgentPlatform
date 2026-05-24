@@ -3761,6 +3761,68 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── PUT /api/agents/:id/goal-scope — Set agent's mission + where it operates ──
+  // Body: { goal?: string|null, action_scope?: {respond_to_dms?, respond_to_groups?,
+  //   respond_to_channels?, allowed_chats?[], primary_channel?} }
+  app.put('/api/agents/:id/goal-scope', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const agentId = parseInt(req.params.id as string, 10);
+      const own = await pool.query(`SELECT id FROM builder_bot.agents WHERE id = $1 AND user_id = $2`, [agentId, userId]);
+      if (!own.rows[0]) { res.status(404).json({ error: 'Agent not found' }); return; }
+      const b = req.body || {};
+      const sets: string[] = []; const vals: any[] = []; let i = 1;
+      if (b.goal !== undefined) { sets.push(`goal = $${i++}`); vals.push(b.goal == null ? null : String(b.goal).slice(0, 2000)); }
+      if (b.action_scope !== undefined) {
+        if (b.action_scope == null) { sets.push(`action_scope = '{}'::jsonb`); }
+        else {
+          // Normalise
+          const s = b.action_scope as any;
+          const clean: any = {};
+          if (typeof s.respond_to_dms === 'boolean') clean.respond_to_dms = s.respond_to_dms;
+          if (typeof s.respond_to_groups === 'boolean') clean.respond_to_groups = s.respond_to_groups;
+          if (typeof s.respond_to_channels === 'boolean') clean.respond_to_channels = s.respond_to_channels;
+          if (Array.isArray(s.allowed_chats)) clean.allowed_chats = s.allowed_chats.slice(0, 50).map((x: any) => String(x).slice(0, 64));
+          if (s.primary_channel) clean.primary_channel = String(s.primary_channel).slice(0, 128);
+          sets.push(`action_scope = $${i++}::jsonb`); vals.push(JSON.stringify(clean));
+        }
+      }
+      if (sets.length === 0) { res.status(400).json({ error: 'Nothing to update' }); return; }
+      sets.push(`updated_at = NOW()`);
+      vals.push(agentId);
+      await pool.query(`UPDATE builder_bot.agents SET ${sets.join(', ')} WHERE id = $${i}`, vals);
+      // Invalidate runtime + userbot caches so next tick / next msg uses fresh scope
+      try {
+        const { getAIAgentRuntime } = await import('./agents/ai-agent-runtime');
+        getAIAgentRuntime().invalidateAgentConfig(agentId);
+      } catch {}
+      try {
+        const { _agentMsgConfigs } = await import('./services/userbot-manager');
+        _agentMsgConfigs.delete(agentId);
+      } catch {}
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── PUT /api/crews/:id/goal — Set crew's collective mission ──
+  app.put('/api/crews/:id/goal', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const id = parseInt(req.params.id as string, 10);
+      const own = await pool.query(`SELECT id, agent_ids FROM builder_bot.crews WHERE id = $1 AND user_id = $2`, [id, userId]);
+      if (!own.rows[0]) { res.status(404).json({ error: 'Crew not found' }); return; }
+      const goal = req.body?.goal == null ? null : String(req.body.goal).slice(0, 2000);
+      await pool.query(`UPDATE builder_bot.crews SET goal = $1, updated_at = NOW() WHERE id = $2`, [goal, id]);
+      // Invalidate every active member's runtime config so the new goal lands on next tick
+      try {
+        const { getAIAgentRuntime } = await import('./agents/ai-agent-runtime');
+        const rt = getAIAgentRuntime();
+        (own.rows[0].agent_ids || []).forEach((aid: number) => rt.invalidateAgentConfig(aid));
+      } catch {}
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // ── PUT /api/agents/:id/role — Change agent role (built-in or custom:<id>) ──
   app.put('/api/agents/:id/role', requireAuth, async (req: Request, res: Response) => {
     try {

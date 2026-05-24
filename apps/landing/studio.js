@@ -10565,6 +10565,9 @@ async function viewCrewDetails(crewId) {
       '</div>' +
       '<label style="display:block;margin-bottom:14px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Описание' : 'Description') + '</div>' +
         '<textarea id="cd-desc" class="rt-input" style="width:100%;min-height:60px;line-height:1.5">' + escHtml(c.description || '') + '</textarea></label>' +
+      '<label style="display:block;margin-bottom:14px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">🎯 ' + (isRu ? 'Главная цель команды (миссия)' : 'Crew mission goal') + '</div>' +
+        '<textarea id="cd-goal" class="rt-input" style="width:100%;min-height:50px;line-height:1.4" placeholder="' + (isRu ? 'Напр.: захватить top-5 ниши NFT-арбитража в TON' : 'e.g. dominate top-5 of TON NFT arbitrage') + '">' + escHtml(c.goal || '') + '</textarea>' +
+        '<div style="font-size:10px;color:var(--text-muted);margin-top:4px">' + (isRu ? 'Будет инжектиться в system prompt каждого члена команды как контекст.' : 'Injected into every member\'s system prompt.') + '</div></label>' +
       // ── Members (editable) ──
       '<div style="margin-bottom:14px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b>' + (isRu ? 'Участники' : 'Members') + '</b>' +
         '<span style="font-size:11px;color:var(--text-muted)">' + (isRu ? 'отметь нужных' : 'check to include') + '</span></div>' +
@@ -10672,10 +10675,16 @@ async function viewCrewDetails(crewId) {
     const manager = parseInt(document.getElementById('cd-manager').value || '0', 10) || null;
     const budget = parseFloat(document.getElementById('cd-budget').value || '0') || 0;
     const isActive = document.getElementById('cd-active').checked;
+    const goalEl = document.getElementById('cd-goal');
+    const goal = goalEl ? (goalEl.value || '').trim() : '';
     if (!name || memberIds.length === 0) { toast(isRu ? 'Название и минимум 1 участник' : 'Name and at least one member required', 'warning'); return; }
     if (manager && !memberIds.includes(manager)) memberIds.push(manager);
     const payload = { name, description: desc, agent_ids: memberIds, manager_agent_id: manager, budget_ton_month: budget, is_active: isActive };
     const r = await apiRequest('PUT', '/api/crews/' + c.id, payload);
+    // Goal lives on its own endpoint (separate concern + invalidates each member)
+    if (r.ok && goal !== (c.goal || '')) {
+      await apiRequest('PUT', '/api/crews/' + c.id + '/goal', { goal });
+    }
     if (r.ok) {
       toast(isRu ? 'Сохранено' : 'Saved', 'success');
       overlay.remove();
