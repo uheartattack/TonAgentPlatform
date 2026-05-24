@@ -1611,6 +1611,30 @@ export async function runAIProposalsMigrations(pool: Pool): Promise<void> {
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS crew_executions_crew_idx ON builder_bot.crew_executions (crew_id, started_at DESC)`);
 
+    // ─── Crew wallet (shared TON wallet for all members of the crew) ─────
+    await client.query(`
+      ALTER TABLE builder_bot.crews
+        ADD COLUMN IF NOT EXISTS wallet_address    VARCHAR(80),
+        ADD COLUMN IF NOT EXISTS wallet_mnemonic   TEXT,
+        ADD COLUMN IF NOT EXISTS wallet_workchain  INTEGER DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS wallet_created_at TIMESTAMP
+    `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.crew_wallet_log (
+        id            SERIAL PRIMARY KEY,
+        crew_id       INTEGER NOT NULL REFERENCES builder_bot.crews(id) ON DELETE CASCADE,
+        agent_id      INTEGER NOT NULL,
+        user_id       BIGINT NOT NULL,
+        direction     VARCHAR(8) NOT NULL CHECK (direction IN ('out','in','fee')),
+        amount_ton    NUMERIC(20, 9) NOT NULL,
+        destination   VARCHAR(80),
+        tx_hash       VARCHAR(120),
+        comment       TEXT,
+        created_at    TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS crew_wallet_log_crew_idx ON builder_bot.crew_wallet_log (crew_id, created_at DESC)`);
+
     // ─── Composite tools — agents compose macros from N tools (Sprint 5b) ──
     // Each row is a per-agent "macro": name + description + ordered steps.
     // Runtime exposes them as regular tools so the LLM picks them like any other.

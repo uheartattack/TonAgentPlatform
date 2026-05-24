@@ -4080,6 +4080,48 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── Crew wallets — shared TON wallet for all crew members (Sprint 6) ──
+
+  // POST /api/crews/:id/wallet — create wallet for the crew (idempotent)
+  app.post('/api/crews/:id/wallet', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const id = parseInt(req.params.id, 10);
+      const own = await pool.query(`SELECT id FROM builder_bot.crews WHERE id = $1 AND user_id = $2`, [id, userId]);
+      if (!own.rows[0]) { res.status(404).json({ error: 'Crew not found' }); return; }
+      const { createCrewWallet } = await import('./services/crew-wallet');
+      const r = await createCrewWallet(id, userId);
+      res.json({ ok: true, address: r.address, isNew: r.isNew });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/crews/:id/wallet — wallet info (address, balance, month spend, budget)
+  app.get('/api/crews/:id/wallet', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const id = parseInt(req.params.id, 10);
+      const own = await pool.query(`SELECT id FROM builder_bot.crews WHERE id = $1 AND user_id = $2`, [id, userId]);
+      if (!own.rows[0]) { res.status(404).json({ error: 'Crew not found' }); return; }
+      const { getCrewWallet } = await import('./services/crew-wallet');
+      const w = await getCrewWallet(id);
+      if (!w) { res.json({ ok: true, wallet: null }); return; }
+      res.json({ ok: true, wallet: w });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/crews/:id/wallet/log — recent transactions from crew_wallet_log
+  app.get('/api/crews/:id/wallet/log', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const id = parseInt(req.params.id, 10);
+      const own = await pool.query(`SELECT id FROM builder_bot.crews WHERE id = $1 AND user_id = $2`, [id, userId]);
+      if (!own.rows[0]) { res.status(404).json({ error: 'Crew not found' }); return; }
+      const { getCrewWalletLog } = await import('./services/crew-wallet');
+      const log = await getCrewWalletLog(id, Math.min(200, Number(req.query.limit) || 50));
+      res.json({ ok: true, log });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // GET /api/crews/:id/executions — history
   app.get('/api/crews/:id/executions', requireAuth, async (req: Request, res: Response) => {
     try {

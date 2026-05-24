@@ -1715,6 +1715,8 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
      'bg_schedule', 'bg_list',
      // Composite tools (Sprint 5b — agent builds its own macros)
      'compose_tool', 'list_composites', 'delete_composite',
+     // Crew wallets (Sprint 6 — shared TON wallet across the crew)
+     'list_my_crew_wallets', 'get_crew_wallet', 'crew_send_ton',
     ].forEach(t => allowed.add(t));
     // Always allow MCP tools if ton_mcp capability is enabled
     if (enabledCapabilities.includes('ton_mcp') && mcpTools) {
@@ -6810,6 +6812,47 @@ async function _executeToolInner(
             timer,
           });
         });
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'list_my_crew_wallets': {
+      try {
+        const { getAgentCrews } = await import('../services/crew-wallet');
+        const list = await getAgentCrews(params.agentId, params.userId);
+        return { crews: list, hint: list.some(c => !c.hasWallet) ? 'Some crews have no wallet yet — owner can create via Studio.' : undefined };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'get_crew_wallet': {
+      try {
+        const crewId = Number(args.crew_id);
+        if (!Number.isFinite(crewId)) return { error: 'crew_id required' };
+        const { getAgentCrews, getCrewWallet } = await import('../services/crew-wallet');
+        const myCrews = await getAgentCrews(params.agentId, params.userId);
+        if (!myCrews.some(c => c.id === crewId)) return { error: `You're not a member of crew #${crewId}` };
+        const w = await getCrewWallet(crewId);
+        if (!w) return { error: `Crew #${crewId} has no wallet yet` };
+        return { wallet: w };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'crew_send_ton': {
+      try {
+        const crewId = Number(args.crew_id);
+        const amount = Number(args.amount);
+        const to = String(args.to || '').trim();
+        const comment = args.comment ? String(args.comment).slice(0, 400) : '';
+        if (!Number.isFinite(crewId) || !Number.isFinite(amount) || amount <= 0 || !to) {
+          return { error: 'crew_id, to, amount (>0) required' };
+        }
+        if (amount > HIGH_VALUE_TX_LIMIT_TON) return { error: `Amount ${amount} TON exceeds platform safety cap (${HIGH_VALUE_TX_LIMIT_TON} TON)` };
+        const { sendFromCrewWallet } = await import('../services/crew-wallet');
+        const r = await sendFromCrewWallet(crewId, params.agentId, to, amount, comment);
+        if (r.ok) {
+          await logToDb(params.agentId, 'info', `[CrewTX] crew #${crewId} sent ${amount} TON → ${to.slice(0, 20)}... hash=${r.hash}`, params.userId);
+          return { ok: true, hash: r.hash, note: `Crew #${crewId} sent ${amount} TON to ${to}` };
+        }
+        return { error: r.error };
       } catch (e: any) { return { error: e.message }; }
     }
 

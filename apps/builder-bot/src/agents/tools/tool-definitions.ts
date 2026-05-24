@@ -3135,6 +3135,46 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
         },
       },
     },
+    // ── Crew wallets (Sprint 6) — shared TON wallet of crews this agent belongs to ──
+    {
+      type: 'function',
+      function: {
+        name: 'list_my_crew_wallets',
+        description: 'List crews this agent belongs to and whether each has a wallet. Use before crew_send_ton to find a crew_id.',
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'get_crew_wallet',
+        description: 'Get crew wallet info: address, current balance, this month\'s spend, monthly budget. Spend caps apply for crew_send_ton (your role.maxSpendPerAction + crew.budget_ton_month).',
+        parameters: {
+          type: 'object',
+          properties: {
+            crew_id: { type: 'number', description: 'Crew ID. Use list_my_crew_wallets to find it.' },
+          },
+          required: ['crew_id'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'crew_send_ton',
+        description: 'Send TON from the crew wallet (shared by all members). Subject to BOTH your role.maxSpendPerAction (per-tx) AND crew.budget_ton_month (monthly cap across all members). Logged in the crew_wallet_log for full audit.',
+        parameters: {
+          type: 'object',
+          properties: {
+            crew_id: { type: 'number' },
+            to:      { type: 'string', description: 'Destination TON address' },
+            amount:  { type: 'number', description: 'Amount in TON' },
+            comment: { type: 'string', description: 'Optional payload comment (visible on-chain)' },
+          },
+          required: ['crew_id', 'to', 'amount'],
+        },
+      },
+    },
     // ── Composite tools (Sprint 5b) — agent composes its own macros ──
     {
       type: 'function',

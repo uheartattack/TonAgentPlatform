@@ -2133,33 +2133,36 @@ function switchSettingsTab(tab) {
     var currentRole = a.role || 'worker';
     var customRole = (config.config && config.config.customRole) || {};
     var agentColor = (config.config && config.config.agentColor) || '#00a8ff';
+    var isRu = currentLang === 'ru';
+    // Built-in role cards (cached locally — built-ins don't change between
+    // sessions). Custom roles are fetched async below and rendered into
+    // #st-custom-roles-slot.
     var roles = [
       { id: 'worker', name: 'Worker', icon: IC.wrench, color: '#3b82f6',
-        desc: currentLang === 'ru' ? 'Исполнитель задач' : 'Task executor',
-        effect: currentLang === 'ru' ? 'Фокус на мониторинге, сборе данных и автоматизации. Работает автономно.' : 'Focus on monitoring, data collection, automation. Works autonomously.' },
+        desc: isRu ? 'Исполнитель задач' : 'Task executor',
+        effect: isRu ? 'Быстро выполняет, не делегирует. Spend cap 5 TON.' : 'Fast executor, no delegation. Spend cap 5 TON.' },
       { id: 'manager', name: 'Manager', icon: IC.crown, color: '#a855f7',
-        desc: currentLang === 'ru' ? 'Координатор агентов' : 'Agent coordinator',
-        effect: currentLang === 'ru' ? 'Делегирует задачи другим агентам. Получает manage_agent + assign_task инструменты.' : 'Delegates to other agents. Gets manage_agent + assign_task tools.' },
+        desc: isRu ? 'Координатор агентов' : 'Agent coordinator',
+        effect: isRu ? 'Делегирует через ask_agent. Может создавать composite tools.' : 'Delegates via ask_agent. Can compose tools.' },
       { id: 'specialist', name: 'Specialist', icon: IC.star, color: '#22c55e',
-        desc: currentLang === 'ru' ? 'Эксперт-аналитик' : 'Expert analyst',
-        effect: currentLang === 'ru' ? 'Глубокий профессиональный анализ. Перепроверяет данные, строит обоснованные выводы.' : 'Deep professional analysis. Cross-checks data, builds justified conclusions.' },
+        desc: isRu ? 'Эксперт-аналитик' : 'Expert analyst',
+        effect: isRu ? 'Глубокий анализ, перекрёстная проверка данных.' : 'Deep analysis, cross-checks data.' },
       { id: 'monitor', name: 'Monitor', icon: IC.bell, color: '#f97316',
-        desc: currentLang === 'ru' ? 'Система алертов' : 'Alert system',
-        effect: currentLang === 'ru' ? 'Уведомляет только при значимых изменениях (>5%). Не спамит. Краткий формат.' : 'Notifies only on significant changes (>5%). No spam. Brief format.' },
+        desc: isRu ? 'Система алертов' : 'Alert system',
+        effect: isRu ? 'Только мониторинг. Spend cap = 0. Никаких финансов.' : 'Monitoring only. Spend cap = 0. No finance.' },
       { id: 'director', name: 'Director', icon: IC.crown, color: '#ffd700',
-        desc: currentLang === 'ru' ? 'Директор' : 'Director',
-        effect: currentLang === 'ru' ? 'Управляет людьми и агентами. Стратегическое мышление, OKR, бюджеты.' : 'Manages people and agents. Strategic thinking, OKRs, budgets.' },
+        desc: isRu ? 'Директор' : 'Director',
+        effect: isRu ? 'Управляет агентами и людьми. Высокий бюджет (50 TON).' : 'Manages agents + humans. High budget (50 TON).' },
       { id: 'creative', name: 'Creative', icon: IC.image, color: '#ec4899',
-        desc: currentLang === 'ru' ? 'Контент и SMM' : 'Content & SMM',
-        effect: currentLang === 'ru' ? 'Создаёт контент, ведёт каналы, адаптирует стиль. Проактивный постинг.' : 'Creates content, manages channels, adapts style. Proactive posting.' },
+        desc: isRu ? 'Контент и SMM' : 'Content & SMM',
+        effect: isRu ? 'Проактивный постинг, адаптация стиля.' : 'Proactive posting, style adaptation.' },
       { id: 'trader', name: 'Trader', icon: IC.trending, color: '#ef4444',
-        desc: currentLang === 'ru' ? 'Трейдер' : 'Trader',
-        effect: currentLang === 'ru' ? 'Торговля, арбитраж, P&L трекинг. Стоп-лоссы, позиционирование, дисциплина.' : 'Trading, arbitrage, P&L tracking. Stop-losses, position sizing, discipline.' },
+        desc: isRu ? 'Трейдер' : 'Trader',
+        effect: isRu ? 'Торговля + arbitrage. P&L tracking, stop-loss.' : 'Trading + arbitrage. P&L tracking, stop-loss.' },
       { id: 'admin', name: 'Chat Admin', icon: IC.shield, color: '#f97316',
-        desc: currentLang === 'ru' ? 'Админ чата' : 'Chat Admin',
-        effect: currentLang === 'ru' ? 'Модерация, бан/мьют, антиспам, приветствие новичков, правила.' : 'Moderation, ban/mute, anti-spam, welcome newbies, rules enforcement.' },
+        desc: isRu ? 'Админ чата' : 'Chat Admin',
+        effect: isRu ? 'Модерация. Финансы запрещены.' : 'Moderation. No financial ops.' },
     ];
-    var isRu = currentLang === 'ru';
     var colorSwatches = ['#00a8ff', '#3b82f6', '#6366f1', '#8b5cf6', '#a855f7', '#ec4899', '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6', '#06b6d4'];
     body.innerHTML =
       '<div class="rt-page">' +
@@ -2184,20 +2187,13 @@ function switchSettingsTab(tab) {
         '</div>';
       }).join('') +
       '</div>' +
-      '<hr class="st-role-divider">' +
-      '<div class="rt-section">' +
-        '<div class="rt-section-label">' + IC.wrench + ' ' + (isRu ? 'Кастомная роль' : 'Custom Role') + '</div>' +
-        '<div class="rt-row-2">' +
-          '<div class="rt-input-wrap">' +
-            '<input type="text" id="custom-role-name" class="rt-input" value="' + escHtml(customRole.name || '') + '" placeholder="' + (isRu ? 'Напр. Аналитик' : 'E.g. Analyst') + '">' +
-            '<div class="rt-input-hint">' + (isRu ? 'Название роли' : 'Role name') + '</div>' +
-          '</div>' +
-          '<div class="rt-input-wrap">' +
-            '<input type="text" id="custom-role-desc" class="rt-input" value="' + escHtml(customRole.description || '') + '" placeholder="' + (isRu ? 'Что делает этот агент' : 'What this agent does') + '">' +
-            '<div class="rt-input-hint">' + (isRu ? 'Описание роли' : 'Role description') + '</div>' +
-          '</div>' +
-        '</div>' +
+      // Custom roles slot — filled async after /api/roles fetch below
+      '<div id="st-custom-roles-slot" style="margin-top:14px"></div>' +
+      '<div style="margin-top:10px;display:flex;gap:8px">' +
+        '<button class="btn" onclick="openCreateCustomRoleModal()" style="padding:8px 14px;font-size:13px">+ ' + (isRu ? 'Создать роль' : 'New role') + '</button>' +
+        '<span style="font-size:11px;color:var(--text-muted);align-self:center">' + (isRu ? 'или попроси Atlas в чате' : 'or ask Atlas in chat') + '</span>' +
       '</div>' +
+      '<hr class="st-role-divider">' +
       '<div class="rt-section">' +
         '<div class="rt-section-label">' + IC.gem + ' ' + (isRu ? 'Цвет агента' : 'Agent Color') + '</div>' +
         '<div class="st-color-row">' +
@@ -2212,6 +2208,10 @@ function switchSettingsTab(tab) {
         '<button class="rt-save-btn" onclick="saveCustomRole()">' + IC.check + ' ' + (isRu ? 'Сохранить' : 'Save') + '</button>' +
       '</div>' +
       '</div>';
+    // Fetch + render custom roles into the slot (async — fires after body.innerHTML)
+    setTimeout(function() {
+      loadCustomRolesIntoSlot(currentRole);
+    }, 30);
     // Wire up color hex display
     setTimeout(function() {
       var cp = document.getElementById('agent-color-picker');
@@ -10192,6 +10192,105 @@ async function acceptAtlasRoleSuggest(suggestKey, btnEl) {
   }
 }
 
+// Render the user's custom roles inside the Role tab's slot. Highlights the
+// currently-selected role, exposes edit/delete actions. Built-ins are rendered
+// inline (cached in roles array), customs are dynamic.
+async function loadCustomRolesIntoSlot(currentRole) {
+  const slot = document.getElementById('st-custom-roles-slot');
+  if (!slot) return;
+  const isRu = currentLang === 'ru';
+  try {
+    const d = await apiRequest('GET', '/api/roles');
+    const customs = (d.ok ? (d.roles || []).filter(r => r.isCustom) : []);
+    if (customs.length === 0) {
+      slot.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:8px;border:1px dashed var(--border);border-radius:8px;text-align:center">' +
+        (isRu ? 'Кастомных ролей нет. Создай через кнопку ниже или попроси Atlas.' : 'No custom roles. Create one below or ask Atlas.') + '</div>';
+      return;
+    }
+    slot.innerHTML = '<div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">' +
+      (isRu ? 'Кастомные роли' : 'Custom roles') + '</div>' +
+      '<div class="st-role-grid">' +
+      customs.map(function(r) {
+        var sel = r.id === currentRole;
+        var name = (r.name && (r.name[currentLang] || r.name.ru || r.name.en)) || r.roleName || 'Custom';
+        var meta = (r.autonomyLevel || 'medium') + ' · ' + (r.maxSpendPerAction || 0) + ' TON';
+        return '<div class="st-role-card' + (sel ? ' st-role-active' : '') + '" onclick="selectRoleCard(this,\'' + r.id + '\')">' +
+          '<div class="st-role-icon" style="background:' + (r.color || '#64748b') + '18;color:' + (r.color || '#64748b') + '">' + IC.gem + '</div>' +
+          '<div class="st-role-info">' +
+            '<div class="st-role-name">' + escHtml(name) + ' <span style="font-size:9px;background:rgba(168,85,247,0.18);color:#a855f7;padding:1px 5px;border-radius:4px;margin-left:4px">CUSTOM</span></div>' +
+            '<div class="st-role-desc">' + escHtml(meta) + '</div>' +
+            '<div style="margin-top:4px;display:flex;gap:4px"><button onclick="event.stopPropagation();deleteCustomRole(\'' + r.id + '\')" style="font-size:10px;padding:2px 6px;border:1px solid var(--border);background:transparent;color:var(--danger);border-radius:4px;cursor:pointer">×</button></div>' +
+          '</div>' +
+          '<div class="st-role-check">' + IC.check + '</div>' +
+        '</div>';
+      }).join('') +
+      '</div>';
+  } catch (e) {
+    slot.innerHTML = '<div style="font-size:11px;color:var(--danger)">' + escHtml(String(e)) + '</div>';
+  }
+}
+
+async function deleteCustomRole(roleId) {
+  const isRu = currentLang === 'ru';
+  if (!confirm(isRu ? 'Удалить кастомную роль? Агенты на этой роли вернутся к worker.' : 'Delete this custom role? Agents using it will fall back to worker.')) return;
+  const r = await apiRequest('DELETE', '/api/roles/' + encodeURIComponent(roleId));
+  if (r.ok) { toast(isRu ? 'Удалено' : 'Deleted', 'success'); loadCustomRolesIntoSlot(null); }
+  else toast(r.error || 'Error', 'error');
+}
+
+function openCreateCustomRoleModal() {
+  const isRu = currentLang === 'ru';
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML =
+    '<div style="background:var(--bg-secondary);border-radius:14px;padding:24px;max-width:560px;width:100%;max-height:90vh;overflow:auto">' +
+      '<h2 style="margin:0 0 4px 0">' + (isRu ? 'Новая кастомная роль' : 'New custom role') + '</h2>' +
+      '<div style="font-size:11px;color:var(--text-muted);margin-bottom:14px">' + (isRu ? 'Совет: для сложных ролей попроси Atlas в чате — он соберёт всё через мини-интервью.' : 'Tip: for complex roles ask Atlas in chat — it builds them via mini-interview.') + '</div>' +
+      _customRoleField('crole-name', 'role_name', isRu ? 'ID роли (kebab-case)' : 'Role ID (kebab-case)', 'gift-arbitrageur', 'text') +
+      _customRoleField('crole-display', 'display_name', isRu ? 'Название' : 'Display name', isRu ? 'Арбитражник подарков' : 'Gift arbitrageur', 'text') +
+      '<label style="display:block;margin-bottom:10px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Системный промпт (что делает + правила)' : 'System prompt (what it does + rules)') + '</div>' +
+        '<textarea id="crole-prompt" class="rt-input" style="width:100%;min-height:120px;font-family:monospace;font-size:11px" placeholder="[ROLE: ...]\\nMINDSET: ...\\nPRIORITIES: ...\\nAUTONOMY: ...\\nERROR HANDLING: ..."></textarea></label>' +
+      '<div style="display:flex;gap:8px;margin-bottom:10px">' +
+        '<label style="flex:1"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Автономия' : 'Autonomy') + '</div>' +
+          '<select id="crole-autonomy" class="rt-input" style="width:100%"><option value="full">full</option><option value="high">high</option><option value="medium" selected>medium</option><option value="low">low</option></select></label>' +
+        '<label style="flex:1"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Max spend / op (TON)' : 'Max spend/op (TON)') + '</div>' +
+          '<input id="crole-spend" type="number" step="0.01" min="0" value="0" class="rt-input" style="width:100%"></label>' +
+      '</div>' +
+      '<label style="display:block;margin-bottom:10px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Capabilities (через запятую)' : 'Capabilities (comma-sep)') + '</div>' +
+        '<input id="crole-caps" type="text" class="rt-input" style="width:100%" placeholder="telegram, state, notify, web"></label>' +
+      '<label style="display:block;margin-bottom:14px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Цвет' : 'Color') + '</div>' +
+        '<input id="crole-color" type="color" value="#a855f7" style="width:60px;height:32px;border:1px solid var(--border);border-radius:6px"></label>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end">' +
+        '<button class="btn" onclick="this.closest(\'div[style*=fixed]\').remove()">' + (isRu ? 'Отмена' : 'Cancel') + '</button>' +
+        '<button class="btn btn-primary" id="crole-save">' + (isRu ? 'Создать' : 'Create') + '</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+  document.getElementById('crole-save').onclick = async function() {
+    const payload = {
+      role_name: (document.getElementById('crole-name').value || '').trim(),
+      display_name: (document.getElementById('crole-display').value || '').trim(),
+      system_prompt_module: (document.getElementById('crole-prompt').value || '').trim(),
+      autonomy_level: document.getElementById('crole-autonomy').value,
+      max_spend_per_action_ton: parseFloat(document.getElementById('crole-spend').value) || 0,
+      default_capabilities: (document.getElementById('crole-caps').value || '').split(',').map(s => s.trim()).filter(Boolean),
+      color: document.getElementById('crole-color').value,
+      created_via: 'manual',
+    };
+    if (!payload.role_name || !payload.display_name || !payload.system_prompt_module) {
+      toast(isRu ? 'Заполни ID, название и системный промпт' : 'Fill ID, display name and system prompt', 'warning'); return;
+    }
+    const r = await apiRequest('POST', '/api/roles', payload);
+    if (r.ok) { toast(isRu ? 'Роль создана' : 'Role created', 'success'); overlay.remove(); loadCustomRolesIntoSlot(null); }
+    else toast(r.error || 'Error', 'error');
+  };
+}
+
+function _customRoleField(id, _key, label, placeholder, type) {
+  return '<label style="display:block;margin-bottom:10px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + label + '</div>' +
+    '<input id="' + id + '" type="' + type + '" class="rt-input" style="width:100%" placeholder="' + placeholder + '"></label>';
+}
+
 // Atlas crew interview: user clicks "Create" on a <crew-suggest> action card.
 // We send the JSON Atlas built straight to /api/crews — same validation as the
 // regular Studio modal flow.
@@ -10253,6 +10352,12 @@ async function viewCrewDetails(crewId) {
   const d = await apiRequest('GET', '/api/crews/' + crewId);
   if (!d.ok) { toast(d.error || 'Error', 'error'); return; }
   const c = d.crew;
+  // Pull wallet info in parallel — non-fatal if missing
+  let walletInfo = null;
+  try {
+    const wr = await apiRequest('GET', '/api/crews/' + crewId + '/wallet');
+    if (wr.ok) walletInfo = wr.wallet;
+  } catch (_e) {}
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
   overlay.innerHTML =
@@ -10268,10 +10373,60 @@ async function viewCrewDetails(crewId) {
           ? '<div style="font-size:12px;color:var(--text-muted);margin-top:4px">' + (isRu ? 'пока пусто' : 'none yet') + '</div>'
           : '<ul style="margin:6px 0 0 18px">' + d.recent_executions.map(function(e) { return '<li>#' + e.id + ' · ' + e.status + ' · ' + new Date(e.started_at).toLocaleString() + (e.trigger ? ' — ' + escHtml(e.trigger.slice(0, 60)) : '') + '</li>'; }).join('') + '</ul>') +
       '</div>' +
+      // ── Crew wallet section ──
+      '<div style="margin-bottom:14px;padding:12px;background:rgba(0,168,255,0.06);border:1px solid rgba(0,168,255,0.18);border-radius:10px">' +
+        '<b>' + (isRu ? '💼 Кошелёк команды' : '💼 Crew wallet') + '</b>' +
+        (walletInfo
+          ? '<div style="margin-top:8px"><div style="font-family:monospace;font-size:11px;color:var(--text-secondary);word-break:break-all">' + escHtml(walletInfo.address) + '</div>' +
+            '<div style="margin-top:6px;display:flex;gap:14px;font-size:12px">' +
+              '<div><span style="color:var(--text-muted)">' + (isRu ? 'Баланс' : 'Balance') + ':</span> <b>' + (walletInfo.balanceTon != null ? walletInfo.balanceTon.toFixed(4) + ' TON' : '—') + '</b></div>' +
+              '<div><span style="color:var(--text-muted)">' + (isRu ? 'В этом месяце' : 'This month') + ':</span> ' + (walletInfo.monthSpendTon || 0).toFixed(4) + ' / ' + (walletInfo.budgetTonMonth || 0) + ' TON</div>' +
+            '</div>' +
+            '<div style="margin-top:8px;display:flex;gap:6px">' +
+              '<button class="btn" onclick="navigator.clipboard.writeText(\'' + walletInfo.address + '\').then(()=>toast(\'Скопирован\',\'success\'))" style="font-size:11px;padding:4px 10px">📋 ' + (isRu ? 'Копировать' : 'Copy') + '</button>' +
+              '<button class="btn" onclick="viewCrewWalletLog(' + c.id + ')" style="font-size:11px;padding:4px 10px">📜 ' + (isRu ? 'История' : 'Log') + '</button>' +
+              '<a class="btn" href="https://tonviewer.com/' + walletInfo.address + '" target="_blank" style="font-size:11px;padding:4px 10px;text-decoration:none">🔍 Tonviewer</a>' +
+            '</div></div>'
+          : '<div style="margin-top:6px;font-size:12px;color:var(--text-muted)">' + (isRu ? 'У команды ещё нет общего кошелька.' : 'No shared wallet yet.') + '</div>' +
+            '<button class="btn btn-primary" onclick="createCrewWallet(' + c.id + ', this)" style="margin-top:8px;font-size:12px;padding:6px 14px">+ ' + (isRu ? 'Создать кошелёк' : 'Create wallet') + '</button>'
+        ) +
+      '</div>' +
       '<div style="display:flex;gap:8px;justify-content:flex-end">' +
         '<button class="btn" onclick="this.closest(\'div[style*=fixed]\').remove()">' + (isRu ? 'Закрыть' : 'Close') + '</button>' +
       '</div>' +
     '</div>';
+  document.body.appendChild(overlay);
+}
+
+async function createCrewWallet(crewId, btnEl) {
+  const isRu = currentLang === 'ru';
+  if (!confirm(isRu ? 'Создать общий TON-кошелёк для команды? Мнемоника хранится зашифрованной на сервере.' : 'Create shared TON wallet for the crew? Mnemonic is stored encrypted server-side.')) return;
+  if (btnEl) { btnEl.disabled = true; btnEl.textContent = isRu ? 'Создаём…' : 'Creating…'; }
+  const r = await apiRequest('POST', '/api/crews/' + crewId + '/wallet');
+  if (r.ok) {
+    toast(isRu ? 'Кошелёк создан: ' + r.address.slice(0, 12) + '…' : 'Wallet created: ' + r.address.slice(0, 12) + '…', 'success');
+    document.querySelectorAll('div[style*="fixed"]').forEach(el => el.remove());
+    viewCrewDetails(crewId);
+  } else {
+    toast(r.error || 'Error', 'error');
+    if (btnEl) { btnEl.disabled = false; btnEl.textContent = isRu ? '+ Создать кошелёк' : '+ Create wallet'; }
+  }
+}
+
+async function viewCrewWalletLog(crewId) {
+  const isRu = currentLang === 'ru';
+  const r = await apiRequest('GET', '/api/crews/' + crewId + '/wallet/log?limit=30');
+  if (!r.ok) { toast(r.error || 'Error', 'error'); return; }
+  const log = r.log || [];
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML = '<div style="background:var(--bg-secondary);border-radius:14px;padding:20px;max-width:600px;width:100%;max-height:80vh;overflow:auto">' +
+    '<h3 style="margin:0 0 12px 0">' + (isRu ? 'История кошелька' : 'Wallet log') + '</h3>' +
+    (log.length === 0
+      ? '<div style="color:var(--text-muted);text-align:center;padding:20px">' + (isRu ? 'Пока пусто' : 'Empty') + '</div>'
+      : '<table style="width:100%;font-size:12px"><tr style="color:var(--text-muted);text-align:left"><th>' + (isRu ? 'Когда' : 'When') + '</th><th>' + (isRu ? 'Кто' : 'Who') + '</th><th>' + (isRu ? 'Куда' : 'To') + '</th><th>TON</th><th>tx</th></tr>' +
+        log.map(l => '<tr><td>' + new Date(l.created_at).toLocaleString() + '</td><td>#' + l.agent_id + '</td><td style="font-family:monospace">' + escHtml(String(l.destination || '').slice(0, 14)) + '…</td><td>' + Number(l.amount_ton).toFixed(4) + '</td><td>' + (l.tx_hash ? '<a href="https://tonviewer.com/transaction/' + l.tx_hash + '" target="_blank" style="color:var(--primary)">↗</a>' : '—') + '</td></tr>').join('') + '</table>') +
+    '<div style="display:flex;justify-content:flex-end;margin-top:14px"><button class="btn" onclick="this.closest(\'div[style*=fixed]\').remove()">' + (isRu ? 'Закрыть' : 'Close') + '</button></div></div>';
   document.body.appendChild(overlay);
 }
 
