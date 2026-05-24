@@ -2680,6 +2680,32 @@ export function startApiServer() {
     }
   });
 
+  // ── GET /api/agents/network-edges — aggregated mailbox traffic ─────────
+  // Returns [{from, to, count, last_at}] for the user's agents over the last
+  // N days. Drives the Network map's "communication" edges (separate from
+  // crew-membership edges). Capped to top 50 most-active pairs.
+  app.get('/api/agents/network-edges', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const days = Math.min(30, Math.max(1, parseInt(String(req.query.days || '7'), 10) || 7));
+      const r = await pool.query(
+        `SELECT m.from_agent_id AS "from", m.to_agent_id AS "to",
+                COUNT(*)::int AS count,
+                MAX(m.created_at) AS last_at
+           FROM builder_bot.agent_mailbox m
+           JOIN builder_bot.agents a1 ON a1.id = m.from_agent_id
+           JOIN builder_bot.agents a2 ON a2.id = m.to_agent_id
+          WHERE a1.user_id = $1 AND a2.user_id = $1
+            AND m.created_at >= NOW() - ($2::int || ' days')::interval
+          GROUP BY m.from_agent_id, m.to_agent_id
+          ORDER BY count DESC
+          LIMIT 50`,
+        [userId, days],
+      );
+      res.json({ ok: true, edges: r.rows });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // ── GET /api/agents/:id ───────────────────────────────────
   app.get('/api/agents/:id', requireAuth, async (req: Request, res: Response) => {
     try {

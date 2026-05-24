@@ -12,13 +12,18 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
       type: 'function',
       function: {
         name: 'task_create',
-        description: 'Add a durable task to your task graph (persists across ticks). Use for multi-step work where order matters. Set blocked_by to enforce dependencies (DAG). Auto-cascades: when a task hits status=completed, its ID is removed from every dependent.',
+        description: 'Add a durable task to your task graph (persists across ticks). Use for multi-step work where order matters. Set blocked_by to enforce dependencies on YOUR OWN tasks; use external_deps to wait on tasks owned by OTHER agents in the same user (cross-agent DAG). Auto-cascades: when any task hits status=completed, runtime removes it from every dependent\'s blocked_by AND external_deps.',
         parameters: {
           type: 'object',
           properties: {
             subject: { type: 'string', description: '1-line task subject (max 500 chars)' },
             details: { type: 'string', description: 'Optional details/notes (max 4000 chars)' },
-            blocked_by: { type: 'array', items: { type: 'number' }, description: 'IDs of tasks that must complete first' },
+            blocked_by: { type: 'array', items: { type: 'number' }, description: 'IDs of YOUR tasks that must complete first' },
+            external_deps: {
+              type: 'array',
+              description: 'Cross-agent deps. Wait on tasks owned by other agents of the same user. Format: [{agent_id, task_id}, ...]',
+              items: { type: 'object', properties: { agent_id: { type: 'number' }, task_id: { type: 'number' } }, required: ['agent_id', 'task_id'] },
+            },
             owner: { type: 'string', description: 'Optional owner label (e.g. agent role)' },
             priority: { type: 'number', description: '1-10 (default 5, higher = more urgent)' },
           },

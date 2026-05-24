@@ -3627,13 +3627,21 @@ async function _executeToolInner(
         const blockedBy = Array.isArray(args.blocked_by) ? args.blocked_by.map(Number).filter(n => Number.isFinite(n)) : [];
         const owner = args.owner ? String(args.owner).slice(0, 80) : null;
         const priority = Number.isFinite(args.priority) ? Math.max(1, Math.min(10, Number(args.priority))) : 5;
+        // external_deps: array of {agent_id, task_id} — cross-agent task graph
+        // dependencies. Worker can wait on tasks owned by OTHER agents in the
+        // same user's roster. Completion cascade in task_update prunes these.
+        const externalDeps = Array.isArray(args.external_deps)
+          ? args.external_deps
+              .filter((d: any) => d && Number.isFinite(d.agent_id) && Number.isFinite(d.task_id))
+              .map((d: any) => ({ agent_id: Number(d.agent_id), task_id: Number(d.task_id) }))
+          : [];
         const { pool } = await import('../db');
         const res = await pool.query(
-          `INSERT INTO builder_bot.agent_task_graph (agent_id, subject, details, blocked_by, owner, priority)
-           VALUES ($1, $2, $3, $4::int[], $5, $6) RETURNING id, status`,
-          [params.agentId, subject, details, blockedBy, owner, priority],
+          `INSERT INTO builder_bot.agent_task_graph (agent_id, subject, details, blocked_by, owner, priority, external_deps)
+           VALUES ($1, $2, $3, $4::int[], $5, $6, $7::jsonb) RETURNING id, status`,
+          [params.agentId, subject, details, blockedBy, owner, priority, JSON.stringify(externalDeps)],
         );
-        return { ok: true, id: res.rows[0].id, status: res.rows[0].status };
+        return { ok: true, id: res.rows[0].id, status: res.rows[0].status, external_deps_count: externalDeps.length };
       } catch (e: any) { return { ok: false, error: e?.message?.slice(0, 200) }; }
     }
 
@@ -3689,6 +3697,27 @@ async function _executeToolInner(
               [id, params.agentId],
             );
             unblocked = cascade.rowCount || 0;
+
+            // Cross-agent cascade: any task in any agent's graph whose
+            // external_deps contains {agent_id, task_id} matching the one we
+            // just completed should have that dep removed (and unblocked if
+            // it was its last dependency). This is the cross-agent half of
+            // the task-graph DAG — schema column added in Sprint 4.
+            const depKey = JSON.stringify([{ agent_id: params.agentId, task_id: id }]);
+            const xcascade = await client.query(
+              `UPDATE builder_bot.agent_task_graph
+                  SET external_deps = COALESCE((
+                        SELECT jsonb_agg(d) FROM jsonb_array_elements(external_deps) d
+                         WHERE NOT (d->>'agent_id' = $1::text AND d->>'task_id' = $2::text)
+                      ), '[]'::jsonb),
+                      updated_at = NOW()
+                WHERE external_deps @> $3::jsonb
+                RETURNING id, agent_id`,
+              [String(params.agentId), String(id), depKey],
+            );
+            if (xcascade.rowCount && xcascade.rowCount > 0) {
+              console.log(`[TaskGraph] Completed task #${id} (agent #${params.agentId}) — unblocked ${xcascade.rowCount} cross-agent dependent(s)`);
+            }
           }
           await client.query('COMMIT');
         } catch (e) {

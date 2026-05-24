@@ -10268,10 +10268,11 @@ async function loadNetworkMap() {
   var zoomLbl = document.getElementById('net-zoom-label');
   if (zoomLbl) zoomLbl.textContent = '100%';
 
-  // Pull agents + crews in parallel — crews drive real edges in the graph below.
-  // Crews failure must NOT break agent rendering — agents are the primary content.
+  // Pull agents + crews + mailbox traffic in parallel — crews give cluster edges,
+  // mailbox gives communication edges. Either failing must not break rendering.
   let agents = [];
   let crews = [];
+  let mailboxEdges = [];
   try {
     const data = await apiRequest('GET', '/api/agents');
     agents = (data && data.ok ? data.agents : []) || [];
@@ -10283,6 +10284,12 @@ async function loadNetworkMap() {
     crews = (crewsResp && crewsResp.ok ? crewsResp.crews : []) || [];
   } catch (e) {
     console.warn('[NetworkMap] /api/crews failed (non-fatal):', e);
+  }
+  try {
+    const mxResp = await apiRequest('GET', '/api/agents/network-edges?days=7');
+    mailboxEdges = (mxResp && mxResp.ok ? mxResp.edges : []) || [];
+  } catch (e) {
+    console.warn('[NetworkMap] /api/agents/network-edges failed (non-fatal):', e);
   }
   _networkCrews = crews;
 
@@ -10396,6 +10403,19 @@ async function loadNetworkMap() {
       seenEdges.add(key);
       edges.push({ from: d, to: n, kind: 'director', color: '#ffd700' });
     });
+  });
+
+  // Mailbox traffic — real inter-agent communication over the last 7 days.
+  // Renders as a thin grey edge (lighter than crew/director edges) so the
+  // crew-cluster pattern stays the visual focus but you can see who actually
+  // talks to whom. Edge thickness scales loosely with message count.
+  mailboxEdges.forEach(function(m) {
+    var fromN = nodeById[m.from], toN = nodeById[m.to];
+    if (!fromN || !toN || fromN === toN) return;
+    var key = m.from + ':' + m.to;
+    if (seenEdges.has(key)) return;
+    seenEdges.add(key);
+    edges.push({ from: fromN, to: toN, kind: 'mail', color: '#94a3b8', count: m.count });
   });
 
   // Track per-agent crew membership for hover-highlight + node tint
@@ -10604,12 +10624,15 @@ async function loadNetworkMap() {
     ctx.fillRect(0, 0, W, H);
 
     // Nebula aurora glow
+    // Canvas gradients DON'T accept CSS variables — use literal rgba (the accent
+    // colours were inlined here; they used to come from --accent-r/g/b but that
+    // syntax silently broke addColorStop and killed the whole animate() loop).
     var auroraX = W * 0.5 + Math.sin(time * 0.15) * W * 0.2;
     var auroraY = H * 0.4 + Math.cos(time * 0.12) * H * 0.15;
     var aurora = ctx.createRadialGradient(auroraX, auroraY, 0, auroraX, auroraY, W * 0.4);
-    aurora.addColorStop(0, 'rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.04)');
-    aurora.addColorStop(0.4, 'rgba(var(--accent-r,168),var(--accent-g,85),var(--accent-b,247),0.02)');
-    aurora.addColorStop(1, 'transparent');
+    aurora.addColorStop(0, 'rgba(0,152,234,0.04)');
+    aurora.addColorStop(0.4, 'rgba(168,85,247,0.02)');
+    aurora.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = aurora;
     ctx.fillRect(0, 0, W, H);
 
