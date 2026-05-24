@@ -10261,17 +10261,33 @@ async function loadNetworkMap() {
   // Cancel previous animation
   if (_networkAnimId) { cancelAnimationFrame(_networkAnimId); _networkAnimId = null; }
 
-  // Pull agents + crews in parallel — crews drive real edges in the graph below
-  const [data, crewsResp] = await Promise.all([
-    apiRequest('GET', '/api/agents'),
-    apiRequest('GET', '/api/crews').catch(() => ({ ok: false, crews: [] })),
-  ]);
-  const agents = (data.ok ? data.agents : []) || [];
-  const crews = (crewsResp.ok ? crewsResp.crews : []) || [];
-  _networkCrews = crews; // expose for hover-highlight + crew CRUD
+  // Reset viewport on every load — otherwise leftover zoom/pan from a previous
+  // visit makes nodes appear off-screen ("карта пустая" symptom).
+  _networkZoom = 1.0;
+  _networkPan = { x: 0, y: 0 };
+  var zoomLbl = document.getElementById('net-zoom-label');
+  if (zoomLbl) zoomLbl.textContent = '100%';
+
+  // Pull agents + crews in parallel — crews drive real edges in the graph below.
+  // Crews failure must NOT break agent rendering — agents are the primary content.
+  let agents = [];
+  let crews = [];
+  try {
+    const data = await apiRequest('GET', '/api/agents');
+    agents = (data && data.ok ? data.agents : []) || [];
+  } catch (e) {
+    console.error('[NetworkMap] /api/agents failed:', e);
+  }
+  try {
+    const crewsResp = await apiRequest('GET', '/api/crews');
+    crews = (crewsResp && crewsResp.ok ? crewsResp.crews : []) || [];
+  } catch (e) {
+    console.warn('[NetworkMap] /api/crews failed (non-fatal):', e);
+  }
+  _networkCrews = crews;
 
   // Render the crews floating panel (was a separate sidebar tab before)
-  renderNetworkCrewsPanel(crews);
+  try { renderNetworkCrewsPanel(crews); } catch (e) { console.warn('[NetworkMap] renderNetworkCrewsPanel:', e); }
 
   // Update stats
   var elTotal = document.getElementById('net-stat-total');
@@ -10648,6 +10664,7 @@ async function loadNetworkMap() {
     }
     // Spring forces on edges
     edges.forEach(function(e) {
+      if (!e || !e.from || !e.to) return; // defensive — bad edge would NaN out physics
       var dx = e.to.x - e.from.x, dy = e.to.y - e.from.y;
       var dist = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
       var spring = 0.006;
@@ -10670,6 +10687,7 @@ async function loadNetworkMap() {
 
     // === Draw edges (curved bezier) ===
     edges.forEach(function(e, idx) {
+      if (!e || !e.from || !e.to) return; // skip malformed
       var fx = e.from.x, fy = e.from.y, tx = e.to.x, ty = e.to.y;
       var mx = (fx + tx) / 2, my = (fy + ty) / 2;
       // Perpendicular offset for curve
@@ -10725,7 +10743,11 @@ async function loadNetworkMap() {
       var r = n.radius + pulse;
 
       var matchesSearch = !_networkSearchQuery || n.name.toLowerCase().includes(_networkSearchQuery.toLowerCase());
-      var alpha = matchesSearch ? 1.0 : 0.12;
+      // Crew hover: if user hovers a crew in the side panel, fade non-members
+      // and add a thick outer ring to members.
+      var inHoveredCrew = _networkHoverCrewId != null && Array.isArray(n.crewIds) && n.crewIds.indexOf(_networkHoverCrewId) >= 0;
+      var fadeForHover = _networkHoverCrewId != null && !inHoveredCrew ? 0.18 : 1.0;
+      var alpha = (matchesSearch ? 1.0 : 0.12) * fadeForHover;
 
       ctx.save();
       ctx.globalAlpha = alpha;
@@ -10768,6 +10790,20 @@ async function loadNetworkMap() {
       ctx.strokeStyle = n.color + (matchesSearch && _networkSearchQuery ? 'ff' : 'dd');
       ctx.lineWidth = matchesSearch && _networkSearchQuery ? 3 : 2.2;
       ctx.stroke();
+
+      // Crew-hover ring — thick outer ring in crew color when hovering its panel item
+      if (inHoveredCrew) {
+        var hoverCrew = _networkCrews.find(function(cc) { return cc.id === _networkHoverCrewId; });
+        var hoverColor = (hoverCrew && hoverCrew._color) || n.color;
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, r + 8, 0, Math.PI * 2);
+        ctx.strokeStyle = hoverColor;
+        ctx.lineWidth = 3;
+        ctx.setLineDash([4, 4]);
+        ctx.lineDashOffset = -time * 30;
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
 
       // Search highlight ring
       if (matchesSearch && _networkSearchQuery) {
