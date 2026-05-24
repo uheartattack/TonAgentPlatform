@@ -1910,8 +1910,11 @@ function switchSettingsTab(tab) {
       '<div class="rt-section">' +
         '<div class="rt-section-label">' + IC.link + ' API Key</div>' +
         '<div class="rt-input-wrap">' +
+          // Mask priority: per-agent (sk-or-… for OpenRouter, sk-ant-… for Anthropic etc)
+          // → user-level (from settings page) → neutral bullets. Don't show a Gemini-looking
+          // "AIzaSy…" placeholder when the actual key is from a different provider.
           (hasKey
-            ? '<input type="text" id="ai-key-input" class="rt-input" value="' + (_aiKeyMaskUser || 'AIzaSy••••••••••••XXXX') + '" data-masked="1" onfocus="if(this.dataset.masked===\'1\'){this.value=\'\';this.type=\'password\';this.dataset.masked=\'0\';}">'
+            ? '<input type="text" id="ai-key-input" class="rt-input" value="' + ((_detailAgentData && _detailAgentData.aiApiKeyMasked) || _aiKeyMaskUser || '••••••••••••••••') + '" data-masked="1" onfocus="if(this.dataset.masked===\'1\'){this.value=\'\';this.type=\'password\';this.dataset.masked=\'0\';}">'
             : '<input type="password" id="ai-key-input" class="rt-input" placeholder="' + (currentProv ? currentProv.keyPrefix : 'API key') + '">'
           ) +
           '<div class="rt-input-hint">' +

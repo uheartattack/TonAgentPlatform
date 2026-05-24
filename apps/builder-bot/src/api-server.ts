@@ -2689,6 +2689,22 @@ export function startApiServer() {
       const isAdmin = isPlatformAdmin(userId) || isPlatformAdminByUsername(session?.username || '');
       const r = isAdmin ? await getDBTools().getAgent(agentId) : await getAgentForUser(agentId, req);
       if (!r.success || !r.data) { res.status(404).json({ error: 'Agent not found' }); return; }
+      // Attach a masked version of per-agent AI_API_KEY (decrypt → first6…last4) so the
+      // Studio "AI" tab can show a recognisable mask (e.g. "sk-or-…wxyz") instead of a
+      // misleading user-level mask or a generic AIzaSy placeholder.
+      try {
+        const agent: any = r.data;
+        const tc = typeof agent.triggerConfig === 'string' ? JSON.parse(agent.triggerConfig) : (agent.triggerConfig || {});
+        const cfg = tc?.config;
+        const raw = cfg && typeof cfg.AI_API_KEY === 'string' ? cfg.AI_API_KEY : '';
+        if (raw) {
+          const { decryptApiKey } = await import('./crypto-utils');
+          let plain = raw;
+          try { plain = decryptApiKey(raw); } catch {}
+          const masked = plain.length <= 10 ? '••••' : `${plain.slice(0, 6)}…${plain.slice(-4)}`;
+          agent.aiApiKeyMasked = masked;
+        }
+      } catch {}
       res.json({ ok: true, agent: r.data });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -3698,6 +3714,14 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
       if (typeof maxTokens === 'number') tc.config.AI_MAX_TOKENS = maxTokens;
       if (utilityModel && typeof utilityModel === 'string') tc.config.UTILITY_MODEL = utilityModel;
       await pool.query('UPDATE builder_bot.agents SET trigger_config = $1, updated_at = NOW() WHERE id = $2', [JSON.stringify(tc), agentId]);
+      // If the agent is currently running, mark its in-memory config dirty so the
+      // next tick reloads — without this the agent keeps calling the previous provider.
+      try {
+        const { getAIAgentRuntime } = await import('./agents/ai-agent-runtime');
+        getAIAgentRuntime().invalidateAgentConfig(agentId);
+      } catch (e: any) {
+        console.warn('[provider] invalidateAgentConfig failed:', e?.message || e);
+      }
       res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
