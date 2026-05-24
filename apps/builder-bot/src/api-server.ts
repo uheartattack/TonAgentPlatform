@@ -4109,6 +4109,65 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
+  // GET /api/crews/:id/treasury — tier view (members + wallets + allowances)
+  // Treasurer sees full crew; member sees only own row.
+  app.get('/api/crews/:id/treasury', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const id = parseInt(req.params.id, 10);
+      const callerAgentId = parseInt(String(req.query.as_agent || '0'), 10) || null;
+      const own = await pool.query(`SELECT id, manager_agent_id, agent_ids FROM builder_bot.crews WHERE id = $1 AND user_id = $2`, [id, userId]);
+      if (!own.rows[0]) { res.status(404).json({ error: 'Crew not found' }); return; }
+      // If as_agent not provided, default to manager_agent_id so user sees full view
+      const effectiveAgent = callerAgentId || own.rows[0].manager_agent_id || (own.rows[0].agent_ids || [])[0];
+      if (!effectiveAgent) { res.json({ ok: true, view: { error: 'Crew has no members' } }); return; }
+      const { getCrewTreasuryView } = await import('./services/crew-wallet');
+      const view = await getCrewTreasuryView(id, effectiveAgent);
+      res.json({ ok: true, view });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/crews/:id/distribute — treasurer sends TON from crew wallet to member's personal wallet
+  // Body: { as_agent: number, to_agent_id: number, amount_ton: number, comment?: string }
+  app.post('/api/crews/:id/distribute', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const id = parseInt(req.params.id, 10);
+      const own = await pool.query(`SELECT id, manager_agent_id FROM builder_bot.crews WHERE id = $1 AND user_id = $2`, [id, userId]);
+      if (!own.rows[0]) { res.status(404).json({ error: 'Crew not found' }); return; }
+      const callerAgentId = Number(req.body?.as_agent) || own.rows[0].manager_agent_id;
+      if (!callerAgentId) { res.status(400).json({ error: 'as_agent required (or set crew.manager_agent_id)' }); return; }
+      const toAgentId = Number(req.body?.to_agent_id);
+      const amount = Number(req.body?.amount_ton);
+      const comment = String(req.body?.comment || '').slice(0, 400);
+      if (!toAgentId || !Number.isFinite(amount) || amount <= 0) { res.status(400).json({ error: 'to_agent_id + amount_ton (>0) required' }); return; }
+      const { distributeToMember } = await import('./services/crew-wallet');
+      const r = await distributeToMember(id, callerAgentId, toAgentId, amount, comment);
+      if (!r.ok) { res.status(400).json({ error: r.error }); return; }
+      res.json({ ok: true, hash: r.hash, remaining_allowance_ton: r.remainingAllowanceTon });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // PUT /api/crews/:id/members/:agentId/allowance — set monthly allowance
+  // Body: { as_agent: number, monthly_allowance_ton: number }
+  app.put('/api/crews/:id/members/:agentId/allowance', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const id = parseInt(req.params.id, 10);
+      const memberAgentId = parseInt(req.params.agentId, 10);
+      const own = await pool.query(`SELECT id, manager_agent_id FROM builder_bot.crews WHERE id = $1 AND user_id = $2`, [id, userId]);
+      if (!own.rows[0]) { res.status(404).json({ error: 'Crew not found' }); return; }
+      const callerAgentId = Number(req.body?.as_agent) || own.rows[0].manager_agent_id;
+      if (!callerAgentId) { res.status(400).json({ error: 'as_agent required' }); return; }
+      const amount = Number(req.body?.monthly_allowance_ton);
+      if (!Number.isFinite(amount) || amount < 0) { res.status(400).json({ error: 'monthly_allowance_ton must be >= 0' }); return; }
+      const { setMemberAllowance } = await import('./services/crew-wallet');
+      const r = await setMemberAllowance(id, callerAgentId, memberAgentId, amount);
+      if (!r.ok) { res.status(400).json({ error: r.error }); return; }
+      res.json({ ok: true, row: r.row });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // GET /api/crews/:id/wallet/log — recent transactions from crew_wallet_log
   app.get('/api/crews/:id/wallet/log', requireAuth, async (req: Request, res: Response) => {
     try {

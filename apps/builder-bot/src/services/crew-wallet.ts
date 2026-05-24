@@ -198,6 +198,151 @@ export async function sendFromCrewWallet(
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// SPRINT 6b — Wallet TIER permissions + distribute to members
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Treasurer = crew.manager_agent_id, OR any director-role member in crew.agent_ids.
+ *  Member = any agent in crew.agent_ids that is not the treasurer.
+ *  Returns 'treasurer' | 'member' | 'outsider' relative to this crew. */
+export async function getCrewWalletRole(crewId: number, agentId: number): Promise<'treasurer' | 'member' | 'outsider'> {
+  const r = await pool.query(
+    `SELECT c.manager_agent_id, c.agent_ids, a.role
+       FROM builder_bot.crews c
+       LEFT JOIN builder_bot.agents a ON a.id = $2
+      WHERE c.id = $1`,
+    [crewId, agentId],
+  );
+  if (!r.rows[0]) return 'outsider';
+  const row = r.rows[0];
+  const isMember = Array.isArray(row.agent_ids) && row.agent_ids.includes(agentId);
+  if (!isMember) return 'outsider';
+  const isManager = row.manager_agent_id === agentId;
+  const isDirector = (row.role || '').startsWith('director');
+  if (isManager || isDirector) return 'treasurer';
+  return 'member';
+}
+
+/** Set/update monthly allowance for a crew member. Treasurer-only. */
+export async function setMemberAllowance(
+  crewId: number, callerAgentId: number, memberAgentId: number, monthlyAllowanceTon: number,
+): Promise<{ ok: boolean; error?: string; row?: any }> {
+  const callerRole = await getCrewWalletRole(crewId, callerAgentId);
+  if (callerRole !== 'treasurer') return { ok: false, error: `Only treasurer can set allowances (you are: ${callerRole})` };
+  const memberRole = await getCrewWalletRole(crewId, memberAgentId);
+  if (memberRole === 'outsider') return { ok: false, error: `Agent #${memberAgentId} is not a member of crew #${crewId}` };
+  if (monthlyAllowanceTon < 0) return { ok: false, error: 'monthly_allowance_ton must be >= 0' };
+  const r = await pool.query(
+    `INSERT INTO builder_bot.crew_member_allowances (crew_id, agent_id, monthly_allowance_ton)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (crew_id, agent_id) DO UPDATE SET monthly_allowance_ton = $3, updated_at = NOW()
+     RETURNING *`,
+    [crewId, memberAgentId, monthlyAllowanceTon],
+  );
+  return { ok: true, row: r.rows[0] };
+}
+
+/** Distribute TON from crew treasury to a member's personal wallet.
+ *  Treasurer-only. Capped by member's monthly allowance (rolling calendar month). */
+export async function distributeToMember(
+  crewId: number, callerAgentId: number, memberAgentId: number, amountTon: number, comment?: string,
+): Promise<{ ok: boolean; error?: string; hash?: string; remainingAllowanceTon?: number }> {
+  if (!Number.isFinite(amountTon) || amountTon <= 0) return { ok: false, error: 'amount_ton must be > 0' };
+  const callerRole = await getCrewWalletRole(crewId, callerAgentId);
+  if (callerRole !== 'treasurer') return { ok: false, error: `Only treasurer can distribute (you are: ${callerRole})` };
+  const memberRole = await getCrewWalletRole(crewId, memberAgentId);
+  if (memberRole === 'outsider') return { ok: false, error: `Agent #${memberAgentId} not in crew #${crewId}` };
+  const wRes = await pool.query(
+    `SELECT address FROM builder_bot.agentic_wallets WHERE agent_id = $1 AND wallet_type = 'sub' ORDER BY created_at DESC LIMIT 1`,
+    [memberAgentId],
+  );
+  if (!wRes.rows[0]) {
+    return { ok: false, error: `Member #${memberAgentId} has no personal wallet. They need to deploy one first via Studio → Wallets.` };
+  }
+  const memberAddress: string = wRes.rows[0].address;
+  const monthKey = new Date().toISOString().slice(0, 7);
+  await pool.query(
+    `INSERT INTO builder_bot.crew_member_allowances (crew_id, agent_id) VALUES ($1, $2)
+     ON CONFLICT (crew_id, agent_id) DO NOTHING`,
+    [crewId, memberAgentId],
+  );
+  await pool.query(
+    `UPDATE builder_bot.crew_member_allowances
+        SET current_month_received_ton = 0, current_month_key = $1, updated_at = NOW()
+      WHERE crew_id = $2 AND agent_id = $3 AND current_month_key <> $1`,
+    [monthKey, crewId, memberAgentId],
+  );
+  const allow = await pool.query(
+    `SELECT monthly_allowance_ton, current_month_received_ton
+       FROM builder_bot.crew_member_allowances WHERE crew_id = $1 AND agent_id = $2`,
+    [crewId, memberAgentId],
+  );
+  const cap = Number(allow.rows[0].monthly_allowance_ton);
+  const used = Number(allow.rows[0].current_month_received_ton);
+  if (cap > 0 && used + amountTon > cap) {
+    return { ok: false, error: `Would exceed member's monthly allowance (used ${used.toFixed(4)} + ${amountTon} > cap ${cap} TON). Raise allowance via crew_set_allowance.` };
+  }
+  const sendResult = await sendFromCrewWallet(crewId, callerAgentId, memberAddress, amountTon, comment || `Distribute to agent #${memberAgentId}`);
+  if (!sendResult.ok) return { ok: false, error: sendResult.error };
+  await pool.query(
+    `UPDATE builder_bot.crew_member_allowances
+        SET current_month_received_ton = current_month_received_ton + $1,
+            last_distribution_at = NOW(),
+            last_distribution_amount_ton = $1,
+            updated_at = NOW()
+      WHERE crew_id = $2 AND agent_id = $3`,
+    [amountTon, crewId, memberAgentId],
+  );
+  return { ok: true, hash: sendResult.hash, remainingAllowanceTon: cap > 0 ? cap - used - amountTon : undefined };
+}
+
+/** Treasury overview for a crew. Treasurer sees everything; member sees own row only. */
+export async function getCrewTreasuryView(crewId: number, callerAgentId: number): Promise<any> {
+  const role = await getCrewWalletRole(crewId, callerAgentId);
+  if (role === 'outsider') return { error: `You are not a member of crew #${crewId}` };
+  const crew = await pool.query(`SELECT id, name, agent_ids, manager_agent_id, budget_ton_month FROM builder_bot.crews WHERE id = $1`, [crewId]);
+  if (!crew.rows[0]) return { error: 'Crew not found' };
+  const c = crew.rows[0];
+  const wallet = await getCrewWallet(crewId);
+  const monthKey = new Date().toISOString().slice(0, 7);
+  const memberIds: number[] = role === 'treasurer' ? (c.agent_ids || []) : [callerAgentId];
+  const m = await pool.query<{ id: number; name: string; role: string; is_active: boolean }>(
+    `SELECT id, name, role, is_active FROM builder_bot.agents WHERE id = ANY($1::int[])`,
+    [memberIds],
+  );
+  const w = await pool.query<{ agent_id: number; address: string }>(
+    `SELECT DISTINCT ON (agent_id) agent_id, address
+       FROM builder_bot.agentic_wallets
+      WHERE agent_id = ANY($1::int[]) AND wallet_type = 'sub'
+      ORDER BY agent_id, created_at DESC`,
+    [memberIds],
+  );
+  const a = await pool.query<{ agent_id: number; monthly_allowance_ton: string; current_month_received_ton: string; current_month_key: string }>(
+    `SELECT agent_id, monthly_allowance_ton, current_month_received_ton, current_month_key
+       FROM builder_bot.crew_member_allowances WHERE crew_id = $1 AND agent_id = ANY($2::int[])`,
+    [crewId, memberIds],
+  );
+  const walletByAgent = new Map(w.rows.map(r => [r.agent_id, r.address]));
+  const allowByAgent = new Map(a.rows.map(r => [r.agent_id, r]));
+  const members = m.rows.map(mr => {
+    const al = allowByAgent.get(mr.id);
+    const sameMonth = al && al.current_month_key === monthKey;
+    return {
+      agent_id: mr.id, name: mr.name, role: mr.role || 'worker', is_active: mr.is_active,
+      is_treasurer: mr.id === c.manager_agent_id || (mr.role || '').startsWith('director'),
+      personal_wallet: walletByAgent.get(mr.id) || null,
+      monthly_allowance_ton: al ? Number(al.monthly_allowance_ton) : 0,
+      current_month_received_ton: sameMonth ? Number(al.current_month_received_ton) : 0,
+    };
+  });
+  return {
+    crew: { id: c.id, name: c.name, manager_agent_id: c.manager_agent_id, budget_ton_month: Number(c.budget_ton_month) || 0 },
+    caller_role: role,
+    crew_wallet: wallet,
+    members,
+  };
+}
+
 /** List which crews this agent belongs to (helper for tool discovery). */
 export async function getAgentCrews(agentId: number, userId: number): Promise<Array<{ id: number; name: string; hasWallet: boolean }>> {
   const r = await pool.query(

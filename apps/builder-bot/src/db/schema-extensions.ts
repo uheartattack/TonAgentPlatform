@@ -1635,6 +1635,28 @@ export async function runAIProposalsMigrations(pool: Pool): Promise<void> {
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS crew_wallet_log_crew_idx ON builder_bot.crew_wallet_log (crew_id, created_at DESC)`);
 
+    // ─── Crew member allowances (Sprint 6b — wallet tiers) ───────────────
+    // Per-(crew, member) row that caps how much TON the member can receive from
+    // the crew treasury in a calendar month. Set by treasurer (crew.manager_agent_id
+    // or a director-role agent in the crew). Distribute handler refuses when
+    // current_month_received + delta > monthly_allowance_ton.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.crew_member_allowances (
+        id                          SERIAL PRIMARY KEY,
+        crew_id                     INTEGER NOT NULL REFERENCES builder_bot.crews(id) ON DELETE CASCADE,
+        agent_id                    INTEGER NOT NULL,
+        monthly_allowance_ton       NUMERIC(20, 9) NOT NULL DEFAULT 0,
+        current_month_received_ton  NUMERIC(20, 9) NOT NULL DEFAULT 0,
+        current_month_key           VARCHAR(7) NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM'),
+        last_distribution_at        TIMESTAMP,
+        last_distribution_amount_ton NUMERIC(20, 9),
+        created_at                  TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at                  TIMESTAMP NOT NULL DEFAULT NOW(),
+        UNIQUE (crew_id, agent_id)
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS crew_member_allowances_crew_idx ON builder_bot.crew_member_allowances (crew_id)`);
+
     // ─── Composite tools — agents compose macros from N tools (Sprint 5b) ──
     // Each row is a per-agent "macro": name + description + ordered steps.
     // Runtime exposes them as regular tools so the LLM picks them like any other.

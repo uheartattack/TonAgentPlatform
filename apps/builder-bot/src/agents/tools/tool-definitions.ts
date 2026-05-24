@@ -3175,6 +3175,52 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
         },
       },
     },
+    // ── Crew wallet tier tools (Sprint 6b) — only treasurer can distribute/set ──
+    {
+      type: 'function',
+      function: {
+        name: 'crew_treasury',
+        description: 'Get crew treasury overview: crew wallet balance, monthly budget, and per-member info (personal wallet, monthly allowance, current month received). Treasurer sees all members; member sees only own row.',
+        parameters: {
+          type: 'object',
+          properties: { crew_id: { type: 'number' } },
+          required: ['crew_id'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'crew_distribute',
+        description: 'TREASURER ONLY. Send TON from crew shared wallet to a member\'s personal wallet. Capped by that member\'s monthly_allowance. Errors with explanation if you are not the treasurer or amount exceeds allowance.',
+        parameters: {
+          type: 'object',
+          properties: {
+            crew_id:     { type: 'number' },
+            to_agent_id: { type: 'number', description: 'member id (must be in crew.agent_ids and have a personal wallet)' },
+            amount_ton:  { type: 'number', description: 'amount in TON (>0)' },
+            comment:     { type: 'string', description: 'optional comment for the tx + audit log' },
+          },
+          required: ['crew_id', 'to_agent_id', 'amount_ton'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'crew_set_allowance',
+        description: 'TREASURER ONLY. Set a member\'s monthly allowance for crew wallet distributions (in TON). 0 = no cap meaningless (blocks all). Resets every calendar month.',
+        parameters: {
+          type: 'object',
+          properties: {
+            crew_id:               { type: 'number' },
+            member_agent_id:       { type: 'number' },
+            monthly_allowance_ton: { type: 'number' },
+          },
+          required: ['crew_id', 'member_agent_id', 'monthly_allowance_ton'],
+        },
+      },
+    },
     // ── Composite tools (Sprint 5b) — agent composes its own macros ──
     {
       type: 'function',

@@ -6856,6 +6856,47 @@ async function _executeToolInner(
       } catch (e: any) { return { error: e.message }; }
     }
 
+    case 'crew_treasury': {
+      try {
+        const crewId = Number(args.crew_id);
+        if (!Number.isFinite(crewId)) return { error: 'crew_id required' };
+        const { getCrewTreasuryView } = await import('../services/crew-wallet');
+        return await getCrewTreasuryView(crewId, params.agentId);
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'crew_distribute': {
+      try {
+        const crewId = Number(args.crew_id);
+        const toAgentId = Number(args.to_agent_id);
+        const amount = Number(args.amount_ton);
+        const comment = String(args.comment || '');
+        if (!Number.isFinite(crewId) || !Number.isFinite(toAgentId) || !Number.isFinite(amount) || amount <= 0) {
+          return { error: 'crew_id, to_agent_id, amount_ton (>0) required' };
+        }
+        const { distributeToMember } = await import('../services/crew-wallet');
+        const r = await distributeToMember(crewId, params.agentId, toAgentId, amount, comment);
+        if (!r.ok) return { error: r.error };
+        await logToDb(params.agentId, 'info', `[CrewWallet] distributed ${amount} TON crew#${crewId} → agent#${toAgentId} hash=${r.hash}`, params.userId);
+        return { ok: true, hash: r.hash, remaining_allowance_ton: r.remainingAllowanceTon };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'crew_set_allowance': {
+      try {
+        const crewId = Number(args.crew_id);
+        const memberAgentId = Number(args.member_agent_id);
+        const monthly = Number(args.monthly_allowance_ton);
+        if (!Number.isFinite(crewId) || !Number.isFinite(memberAgentId) || !Number.isFinite(monthly) || monthly < 0) {
+          return { error: 'crew_id, member_agent_id, monthly_allowance_ton (>=0) required' };
+        }
+        const { setMemberAllowance } = await import('../services/crew-wallet');
+        const r = await setMemberAllowance(crewId, params.agentId, memberAgentId, monthly);
+        if (!r.ok) return { error: r.error };
+        return { ok: true, row: r.row };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
     case 'compose_tool': {
       // Role check — workers can't compose (they execute, don't design). Specialists/managers/directors can.
       try {
@@ -10214,6 +10255,7 @@ If web_search returns nothing useful → say "не смог найти акту�
       'compact', 'set_next_wake', 'subscribe_event', 'mailbox_send', 'mailbox_read',
       'ask_agent', 'send_reply', 'list_my_agents',
       'list_my_crew_wallets', 'get_crew_wallet',
+      'crew_treasury', 'crew_distribute', 'crew_set_allowance',
     ]);
     const essentials = forcedTools.filter((t: any) => ESSENTIAL_TG.has(t.function?.name));
     const nonEssentials = forcedTools.filter((t: any) => !ESSENTIAL_TG.has(t.function?.name));

@@ -10195,6 +10195,78 @@ async function openCreateCrewModal() {
   };
 }
 
+// Crew wallet tier: treasurer distributes TON from crew treasury to a member
+function openDistributeModal(crewId, memberAgentId, memberName, monthlyAllowance, monthReceived) {
+  const isRu = currentLang === 'ru';
+  const remaining = Math.max(0, monthlyAllowance - monthReceived);
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:10001;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML =
+    '<div style="background:var(--bg-secondary);border-radius:12px;padding:20px;max-width:380px;width:100%">' +
+      '<h3 style="margin:0 0 4px 0">' + (isRu ? 'Распределить' : 'Distribute') + ' → #' + memberAgentId + '</h3>' +
+      '<div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">' + escHtml(memberName) + '</div>' +
+      (monthlyAllowance > 0
+        ? '<div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">' + (isRu ? 'осталось в этом месяце' : 'remaining this month') + ': ' + remaining.toFixed(4) + ' / ' + monthlyAllowance + ' TON</div>'
+        : '<div style="font-size:11px;color:var(--danger);margin-bottom:10px">⚠ ' + (isRu ? 'Лимит = 0. Сначала задай лимит участнику.' : 'Allowance = 0. Set member allowance first.') + '</div>') +
+      '<label style="display:block;margin-bottom:10px"><div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Сумма (TON)' : 'Amount (TON)') + '</div>' +
+        '<input id="dist-amt" type="number" step="0.0001" min="0" class="rt-input" style="width:100%" ' + (monthlyAllowance > 0 ? '' : 'disabled') + '></label>' +
+      '<label style="display:block;margin-bottom:12px"><div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Комментарий (опц.)' : 'Comment (opt.)') + '</div>' +
+        '<input id="dist-cmt" class="rt-input" style="width:100%" placeholder="' + (isRu ? 'за выполненную задачу' : 'for task completion') + '"></label>' +
+      '<div style="display:flex;gap:6px;justify-content:flex-end">' +
+        '<button class="btn" onclick="this.closest(\'div[style*=fixed]\').remove()">' + (isRu ? 'Отмена' : 'Cancel') + '</button>' +
+        '<button class="btn btn-primary" id="dist-go" ' + (monthlyAllowance > 0 ? '' : 'disabled') + '>▸ ' + (isRu ? 'Отправить' : 'Send') + '</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+  const goBtn = document.getElementById('dist-go');
+  if (goBtn) goBtn.onclick = async function() {
+    const amount = parseFloat(document.getElementById('dist-amt').value || '0');
+    const cmt = document.getElementById('dist-cmt').value || '';
+    if (!amount || amount <= 0) { toast(isRu ? 'Введи сумму' : 'Enter amount', 'warning'); return; }
+    goBtn.disabled = true; goBtn.textContent = isRu ? 'Отправка…' : 'Sending…';
+    const r = await apiRequest('POST', '/api/crews/' + crewId + '/distribute', { to_agent_id: memberAgentId, amount_ton: amount, comment: cmt });
+    if (r.ok) {
+      toast((isRu ? 'Отправлено ' : 'Sent ') + amount + ' TON' + (r.hash ? ' (' + r.hash.slice(0, 8) + '…)' : ''), 'success');
+      overlay.remove();
+      // Reopen crew details to refresh tier view
+      viewCrewDetails(crewId);
+    } else {
+      toast(r.error || 'Error', 'error');
+      goBtn.disabled = false; goBtn.textContent = '▸ ' + (isRu ? 'Отправить' : 'Send');
+    }
+  };
+}
+
+function openAllowanceModal(crewId, memberAgentId, memberName, currentAllowance) {
+  const isRu = currentLang === 'ru';
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:10001;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML =
+    '<div style="background:var(--bg-secondary);border-radius:12px;padding:20px;max-width:360px;width:100%">' +
+      '<h3 style="margin:0 0 4px 0">' + (isRu ? 'Месячный лимит' : 'Monthly allowance') + ' → #' + memberAgentId + '</h3>' +
+      '<div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">' + escHtml(memberName) + '</div>' +
+      '<label style="display:block;margin-bottom:12px"><div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Сколько TON в месяц может получить из общей казны' : 'How much TON per month from crew treasury') + '</div>' +
+        '<input id="all-amt" type="number" step="0.01" min="0" class="rt-input" style="width:100%" value="' + currentAllowance + '"></label>' +
+      '<div style="display:flex;gap:6px;justify-content:flex-end">' +
+        '<button class="btn" onclick="this.closest(\'div[style*=fixed]\').remove()">' + (isRu ? 'Отмена' : 'Cancel') + '</button>' +
+        '<button class="btn btn-primary" id="all-go">' + (isRu ? 'Сохранить' : 'Save') + '</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+  document.getElementById('all-go').onclick = async function() {
+    const amount = parseFloat(document.getElementById('all-amt').value || '0');
+    if (amount < 0) { toast(isRu ? 'Лимит >= 0' : 'Allowance >= 0', 'warning'); return; }
+    const r = await apiRequest('PUT', '/api/crews/' + crewId + '/members/' + memberAgentId + '/allowance', { monthly_allowance_ton: amount });
+    if (r.ok) {
+      toast(isRu ? 'Лимит сохранён' : 'Allowance saved', 'success');
+      overlay.remove();
+      viewCrewDetails(crewId);
+    } else {
+      toast(r.error || 'Error', 'error');
+    }
+  };
+}
+
 // Atlas role interview: user clicks "Create" on a <role-suggest> action card.
 async function acceptAtlasRoleSuggest(suggestKey, btnEl) {
   const isRu = currentLang === 'ru';
@@ -10537,12 +10609,61 @@ async function viewCrewDetails(crewId) {
             '<button class="btn btn-primary" onclick="createCrewWallet(' + c.id + ', this)" style="margin-top:8px;font-size:12px;padding:6px 14px">+ ' + (isRu ? 'Создать кошелёк' : 'Create wallet') + '</button>'
         ) +
       '</div>' +
+      // ── Treasury tier section: per-member personal wallets + allowance + distribute ──
+      '<div id="cd-treasury-' + c.id + '" style="margin-bottom:14px">' +
+        '<div style="font-size:12px;color:var(--text-muted)">' + (isRu ? 'Загрузка иерархии кошельков…' : 'Loading wallet tier…') + '</div>' +
+      '</div>' +
       '<div style="display:flex;gap:8px;justify-content:flex-end">' +
         '<button class="btn" onclick="this.closest(\'div[style*=fixed]\').remove()">' + (isRu ? 'Закрыть' : 'Close') + '</button>' +
         '<button class="btn btn-primary" id="cd-save-' + c.id + '">💾 ' + (isRu ? 'Сохранить' : 'Save') + '</button>' +
       '</div>' +
     '</div>';
   document.body.appendChild(overlay);
+
+  // Async-load wallet tier (treasury view) — per-member wallets + allowances + distribute
+  (async function() {
+    const tEl = document.getElementById('cd-treasury-' + c.id);
+    if (!tEl) return;
+    try {
+      const tr = await apiRequest('GET', '/api/crews/' + c.id + '/treasury');
+      if (!tr.ok || !tr.view || tr.view.error) {
+        tEl.innerHTML = '<div style="font-size:12px;color:var(--text-muted)">' + escHtml((tr.view && tr.view.error) || 'No treasury data') + '</div>';
+        return;
+      }
+      const v = tr.view;
+      const isTreasurer = v.caller_role === 'treasurer';
+      let h = '<div style="padding:12px;background:rgba(168,85,247,0.06);border:1px solid rgba(168,85,247,0.20);border-radius:10px">' +
+        '<b>' + (isRu ? '🏦 Иерархия кошельков' : '🏦 Wallet tier') + '</b> ' +
+        '<span style="font-size:11px;color:var(--text-muted)">(' + (isTreasurer ? (isRu ? 'ты казначей' : 'you are treasurer') : (isRu ? 'ты участник' : 'member')) + ')</span>' +
+        '<div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">';
+      v.members.forEach(function(m) {
+        const wAddr = m.personal_wallet ? (m.personal_wallet.slice(0, 6) + '…' + m.personal_wallet.slice(-4)) : null;
+        const pct = m.monthly_allowance_ton > 0 ? Math.min(100, m.current_month_received_ton / m.monthly_allowance_ton * 100) : 0;
+        const barColor = pct > 90 ? '#ef4444' : pct > 60 ? '#eab308' : '#22c55e';
+        h += '<div style="padding:8px 10px;background:var(--bg-tertiary);border-radius:8px;font-size:12px">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">' +
+            '<span>' + (m.is_treasurer ? '👑 ' : '') + '#' + m.agent_id + ' ' + escHtml(m.name) + ' <span style="color:var(--text-muted)">(' + m.role + ')</span></span>' +
+            (wAddr ? '<code style="font-size:10px;color:var(--text-muted)">' + wAddr + '</code>' : '<span style="font-size:10px;color:var(--danger)">' + (isRu ? 'нет кошелька' : 'no wallet') + '</span>') +
+          '</div>' +
+          (m.monthly_allowance_ton > 0
+            ? '<div style="font-size:10.5px;color:var(--text-muted);margin-bottom:3px">' + (isRu ? 'получил в этом месяце' : 'received this month') + ': ' + m.current_month_received_ton.toFixed(4) + ' / ' + m.monthly_allowance_ton + ' TON</div>' +
+              '<div style="height:4px;background:var(--bg-secondary);border-radius:2px;overflow:hidden"><div style="height:100%;width:' + pct + '%;background:' + barColor + '"></div></div>'
+            : '<div style="font-size:10.5px;color:var(--text-muted)">' + (isRu ? 'лимит не задан' : 'no allowance set') + (m.is_treasurer ? '' : ' · ' + (isRu ? 'не получит распределение' : 'cannot receive distributions')) + '</div>') +
+          (isTreasurer && !m.is_treasurer
+            ? '<div style="display:flex;gap:4px;margin-top:6px">' +
+                '<button class="btn" style="font-size:10.5px;padding:3px 8px" onclick="openDistributeModal(' + c.id + ',' + m.agent_id + ',\'' + escJsAttr(m.name) + '\',' + m.monthly_allowance_ton + ',' + m.current_month_received_ton + ')" ' + (m.personal_wallet ? '' : 'disabled') + '>▸ ' + (isRu ? 'Отправить' : 'Send') + '</button>' +
+                '<button class="btn" style="font-size:10.5px;padding:3px 8px" onclick="openAllowanceModal(' + c.id + ',' + m.agent_id + ',\'' + escJsAttr(m.name) + '\',' + m.monthly_allowance_ton + ')">⚙ ' + (isRu ? 'Лимит' : 'Limit') + '</button>' +
+              '</div>'
+            : '') +
+        '</div>';
+      });
+      h += '</div></div>';
+      tEl.innerHTML = h;
+    } catch (e) {
+      tEl.innerHTML = '<div style="font-size:12px;color:var(--danger)">' + escHtml(String(e)) + '</div>';
+    }
+  })();
+
   // Save handler — inline edits, PUT /api/crews/:id with the full diff
   document.getElementById('cd-save-' + c.id).onclick = async function() {
     const name = (document.getElementById('cd-name').value || '').trim();
