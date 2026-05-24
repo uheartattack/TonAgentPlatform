@@ -9618,6 +9618,69 @@ If web_search returns nothing useful → say "не смог найти акту�
     systemPromptFull = params.systemPrompt + '\n' + SAFETY_RULES;
   }
 
+  // ── Crew awareness — inject team info if this agent belongs to any crew ──
+  // Static info (changes only when user reorganizes crews), so it sits in the
+  // cacheable prefix of the prompt — does NOT go into the [LESSONS / STYLE]
+  // dynamic tail. Helps the agent understand its delegation/communication role.
+  try {
+    const { pool } = await import('../db');
+    const crewRes = await pool.query<{
+      id: number; name: string; description: string | null;
+      agent_ids: number[]; manager_agent_id: number | null;
+      state_namespace: string | null; budget_ton_month: string;
+    }>(
+      `SELECT id, name, description, agent_ids, manager_agent_id, state_namespace, budget_ton_month
+         FROM builder_bot.crews
+        WHERE user_id = $1 AND is_active = true AND $2 = ANY(agent_ids)`,
+      [params.userId, params.agentId],
+    );
+    if (crewRes.rows.length > 0) {
+      // Resolve all member agent names + roles in one query
+      const allMemberIds = new Set<number>();
+      crewRes.rows.forEach(c => (c.agent_ids || []).forEach(id => allMemberIds.add(id)));
+      const memberRes = await pool.query<{ id: number; name: string; role: string; is_active: boolean }>(
+        `SELECT id, name, role, is_active FROM builder_bot.agents WHERE id = ANY($1::int[])`,
+        [Array.from(allMemberIds)],
+      );
+      const byId = new Map<number, { name: string; role: string; is_active: boolean }>();
+      memberRes.rows.forEach(m => byId.set(m.id, { name: m.name, role: m.role || 'worker', is_active: m.is_active }));
+
+      const crewLines: string[] = ['', '━━━ COMMAND CONTEXT — твои команды (crews) ━━━'];
+      for (const c of crewRes.rows) {
+        const isManager = c.manager_agent_id === params.agentId;
+        const myInfo = byId.get(params.agentId);
+        crewLines.push('');
+        crewLines.push(`👥 Команда #${c.id} «${c.name}»${c.description ? ': ' + c.description : ''}`);
+        crewLines.push(`   Твоя должность: ${isManager ? '👑 МЕНЕДЖЕР (делегируешь задачи остальным через ask_agent)' : (myInfo?.role || 'worker') + ' (исполнитель)'}`);
+        const others = (c.agent_ids || []).filter(id => id !== params.agentId);
+        if (others.length > 0) {
+          crewLines.push(`   Остальные участники (${others.length}):`);
+          for (const oid of others) {
+            const m = byId.get(oid);
+            if (!m) continue;
+            const tag = c.manager_agent_id === oid ? ' 👑 менеджер' : '';
+            const status = m.is_active ? '' : ' [на паузе]';
+            crewLines.push(`     • #${oid} «${m.name}» — ${m.role}${tag}${status}`);
+          }
+        }
+        if (c.state_namespace) {
+          crewLines.push(`   Общий state namespace: "${c.state_namespace}" (используй для совместных данных через set_state/get_state)`);
+        }
+        const budget = Number(c.budget_ton_month) || 0;
+        if (budget > 0) crewLines.push(`   Бюджет команды: ${budget} TON/мес (общий лимит расходов)`);
+        if (isManager && others.length > 0) {
+          crewLines.push(`   Как менеджер: декомпозируй задачи и делегируй через ask_agent(agent_id, message, wait_ms=300000) — это вернёт результат worker'а через send_reply.`);
+        } else if (others.length > 0) {
+          crewLines.push(`   Как worker: жди заданий через <inter-agent-task>. Когда получишь — обработай и ответь через send_reply(request_id, response).`);
+        }
+      }
+      crewLines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      systemPromptFull += '\n' + crewLines.join('\n');
+    }
+  } catch (e: any) {
+    console.warn(`[CrewPrompt] inject failed (non-fatal): ${e?.message?.slice(0, 100)}`);
+  }
+
   // ── Learning: inject feedback lessons + style adaptation into system prompt ──
   const _lrCfg: LearningConfig = params.config.learning || {};
   if (_lrCfg.feedbackLoop || _lrCfg.styleAdaptation) {
