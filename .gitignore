@@ -88,3 +88,27 @@ apps/landing/_backup_*/
 apps/landing/_design-context*/
 apps/landing/_design-export/
 apps/landing/*.zip
+
+# Personal team docs — NEVER commit (kept local-only)
+TEAM.md
+NOTES.md
+SESSION_LOG.md
+BACKLOG.md
+ROADMAP.md
+CHECKLIST.md
+HACKATHON_PLAN.md
+general-coding-session.md
+old-session-tonkeeper.md
+
+# Local dev-session transcripts — contain SSH commands, DB creds, etc.
+general-coding-session.md
+
+# Personal / internal docs — keep local, never commit
+AGENTS.md
+CLAUDE.md
+KNOWN_ISSUES.md
+HACKATHON_PLAN.md
+CHECKLIST.md
+old-session-tonkeeper.md
+.claude/skills/tap-context/
+.claude/skills/tonapi/
