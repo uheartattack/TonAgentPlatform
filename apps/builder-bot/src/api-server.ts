@@ -3804,6 +3804,64 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── POST /api/atlas/refine — generic text polish via Atlas-shaped prompt ──
+  // Body: { kind: 'crew_description' | 'crew_goal' | 'role_prompt' | 'agent_goal', raw: string, lang?: 'ru'|'en' }
+  // Returns: { ok: true, refined: string }
+  // Used by Studio modals so user gets professionally-written copy when typing
+  // raw input. Cheap model — utility-fast, ~1-2s round trip.
+  app.post('/api/atlas/refine', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const kind = String(req.body?.kind || '').slice(0, 32);
+      const raw = String(req.body?.raw || '').trim();
+      const lang = (req.body?.lang === 'en' ? 'en' : 'ru') as 'en' | 'ru';
+      if (!raw) { res.status(400).json({ error: 'raw text required' }); return; }
+      if (raw.length > 2000) { res.status(400).json({ error: 'raw too long (max 2000 chars)' }); return; }
+
+      const guidance: Record<string, { ru: string; en: string }> = {
+        crew_description: {
+          ru: 'Перепиши описание команды агентов в 1-2 предложения: что делает, кому полезно. Лаконично, без воды и маркетинга. Только улучшенный текст, без кавычек и пояснений.',
+          en: 'Rewrite the crew description in 1-2 sentences: what it does, who benefits. Concise, no fluff. Output the improved text only.',
+        },
+        crew_goal: {
+          ru: 'Перепиши главную цель команды как одну строку-миссию: глагол + конкретный результат + метрика если возможно. Без воды. Только текст.',
+          en: 'Rewrite the crew mission as one line: verb + concrete outcome + metric if possible. No fluff. Output text only.',
+        },
+        role_prompt: {
+          ru: 'Перепиши системный промпт роли агента: MINDSET, PRIORITIES (нумерованный список), COMMUNICATION, DECISIONS, AUTONOMY, ERROR HANDLING. Структурированно как ROLE-блок. Только текст промпта.',
+          en: 'Rewrite the agent role system prompt with: MINDSET, PRIORITIES (numbered), COMMUNICATION, DECISIONS, AUTONOMY, ERROR HANDLING. Output prompt text only.',
+        },
+        agent_goal: {
+          ru: 'Перепиши личную цель агента одной строкой: что делает + где + как часто/сколько. Без воды.',
+          en: 'Rewrite the agent goal as one line: what it does + where + how often/how much. No fluff.',
+        },
+      };
+      const g = guidance[kind] || guidance.crew_description;
+      const instruction = g[lang];
+
+      const OpenAI = (await import('openai')).default;
+      const apiKey = process.env.OPENAI_API_KEY || '';
+      const baseURL = process.env.OPENAI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai/';
+      const client = new OpenAI({ apiKey, baseURL });
+      const model = 'gemini-2.0-flash-lite';
+      try {
+        const r = await client.chat.completions.create({
+          model, max_tokens: 400,
+          messages: [
+            { role: 'system', content: instruction },
+            { role: 'user', content: raw },
+          ],
+        });
+        const refined = (r.choices?.[0]?.message?.content || '').trim()
+          .replace(/^["'«»]+|["'«»]+$/g, '')
+          .slice(0, 2000);
+        if (!refined) { res.json({ ok: true, refined: raw }); return; }
+        res.json({ ok: true, refined, model });
+      } catch (modelErr: any) {
+        res.json({ ok: true, refined: raw, model_error: modelErr?.message || 'model error' });
+      }
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // ── PUT /api/crews/:id/goal — Set crew's collective mission ──
   app.put('/api/crews/:id/goal', requireAuth, async (req: Request, res: Response) => {
     try {

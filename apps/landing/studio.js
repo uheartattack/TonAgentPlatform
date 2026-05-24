@@ -10197,7 +10197,12 @@ async function openCreateCrewModal() {
     const budget = parseFloat(document.getElementById('crew-budget').value || '0') || 0;
     if (!name || memberIds.length === 0) { toast(isRu ? 'Название и минимум 1 участник' : 'Name and at least one member required', 'warning'); return; }
     if (manager && !memberIds.includes(manager)) memberIds.push(manager);
-    const r = await apiRequest('POST', '/api/crews', { name, description: desc, agent_ids: memberIds, manager_agent_id: manager, budget_ton_month: budget });
+    // Sprint 9 — Atlas polish description before create
+    let polishedDesc = desc;
+    if (desc && desc.length >= 8) {
+      polishedDesc = await atlasRefine('crew_description', desc, isRu ? 'Atlas улучшает описание команды…' : 'Atlas polishing description…');
+    }
+    const r = await apiRequest('POST', '/api/crews', { name, description: polishedDesc, agent_ids: memberIds, manager_agent_id: manager, budget_ton_month: budget });
     if (r.ok) { toast(isRu ? 'Команда создана' : 'Crew created', 'success'); overlay.remove(); loadCrewsPage(); }
     else toast(r.error || 'Error', 'error');
   };
@@ -10273,6 +10278,54 @@ function openAllowanceModal(crewId, memberAgentId, memberName, currentAllowance)
       toast(r.error || 'Error', 'error');
     }
   };
+}
+
+// Sprint 9 — generic "Atlas думает…" overlay shown during any LLM generation.
+// Reusable so role/crew/composite create flows all get the same UX.
+function showAtlasSpinner(label) {
+  const isRu = currentLang === 'ru';
+  let el = document.getElementById('_atlas-spin-overlay');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = '_atlas-spin-overlay';
+    el.style.cssText = 'position:fixed;inset:0;background:rgba(8,11,20,0.72);backdrop-filter:blur(4px);z-index:99999;display:flex;align-items:center;justify-content:center;font-family:Inter,system-ui;animation:fadeIn .2s ease';
+    el.innerHTML =
+      '<style id="_atlas-spin-style">@keyframes _aSpin{to{transform:rotate(360deg)}}@keyframes _aDot{0%,80%,100%{opacity:.2}40%{opacity:1}}@keyframes fadeIn{from{opacity:0}to{opacity:1}}</style>' +
+      '<div style="background:linear-gradient(135deg,rgba(168,85,247,0.10),rgba(0,168,255,0.10));border:1px solid rgba(168,85,247,0.30);border-radius:18px;padding:32px 40px;text-align:center;max-width:420px">' +
+        '<div style="width:48px;height:48px;border:3px solid rgba(168,85,247,0.18);border-top-color:#a855f7;border-radius:50%;margin:0 auto 16px;animation:_aSpin 1s linear infinite"></div>' +
+        '<div id="_atlas-spin-label" style="font-size:14px;color:var(--text-primary);font-weight:600">' + (isRu ? 'Atlas думает' : 'Atlas thinking') + '</div>' +
+        '<div style="margin-top:8px;font-size:12px;color:var(--text-muted)">' +
+          '<span style="animation:_aDot 1.4s infinite;display:inline-block">●</span> ' +
+          '<span style="animation:_aDot 1.4s infinite .2s;display:inline-block">●</span> ' +
+          '<span style="animation:_aDot 1.4s infinite .4s;display:inline-block">●</span>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(el);
+  }
+  const lbl = document.getElementById('_atlas-spin-label');
+  if (lbl) lbl.textContent = label || (isRu ? 'Atlas думает' : 'Atlas thinking');
+}
+function hideAtlasSpinner() {
+  const el = document.getElementById('_atlas-spin-overlay');
+  if (el) el.remove();
+}
+async function withAtlasSpinner(label, fn) {
+  showAtlasSpinner(label);
+  try { return await fn(); }
+  finally { hideAtlasSpinner(); }
+}
+// Atlas /api/atlas/refine wrapper — used by crew/role/agent description fields
+// to upgrade raw user text. If refine fails (network/model err), returns raw
+// unchanged so save always succeeds.
+async function atlasRefine(kind, raw, label) {
+  const trimmed = (raw || '').trim();
+  if (!trimmed || trimmed.length < 8) return raw; // too short to bother
+  return await withAtlasSpinner(label || (currentLang === 'ru' ? 'Atlas улучшает текст…' : 'Atlas polishing…'), async () => {
+    try {
+      const r = await apiRequest('POST', '/api/atlas/refine', { kind, raw: trimmed, lang: currentLang });
+      return (r && r.ok && r.refined) ? r.refined : raw;
+    } catch (_e) { return raw; }
+  });
 }
 
 // Sprint 7 — Agent goal+scope editor + auto-suggest defaults per role.
@@ -10760,11 +10813,22 @@ async function viewCrewDetails(crewId) {
     const goal = goalEl ? (goalEl.value || '').trim() : '';
     if (!name || memberIds.length === 0) { toast(isRu ? 'Название и минимум 1 участник' : 'Name and at least one member required', 'warning'); return; }
     if (manager && !memberIds.includes(manager)) memberIds.push(manager);
-    const payload = { name, description: desc, agent_ids: memberIds, manager_agent_id: manager, budget_ton_month: budget, is_active: isActive };
+    // Sprint 9 — let Atlas improve raw user text BEFORE save (description + goal).
+    // Only if user changed it from prior — no point re-polishing same string.
+    let polishedDesc = desc;
+    let polishedGoal = goal;
+    const descChanged = desc !== (c.description || '');
+    const goalChanged = goal !== (c.goal || '');
+    if (descChanged && desc.length >= 8) {
+      polishedDesc = await atlasRefine('crew_description', desc, isRu ? 'Atlas улучшает описание команды…' : 'Atlas polishing crew description…');
+    }
+    if (goalChanged && goal.length >= 8) {
+      polishedGoal = await atlasRefine('crew_goal', goal, isRu ? 'Atlas формулирует миссию…' : 'Atlas crafting mission…');
+    }
+    const payload = { name, description: polishedDesc, agent_ids: memberIds, manager_agent_id: manager, budget_ton_month: budget, is_active: isActive };
     const r = await apiRequest('PUT', '/api/crews/' + c.id, payload);
-    // Goal lives on its own endpoint (separate concern + invalidates each member)
-    if (r.ok && goal !== (c.goal || '')) {
-      await apiRequest('PUT', '/api/crews/' + c.id + '/goal', { goal });
+    if (r.ok && polishedGoal !== (c.goal || '')) {
+      await apiRequest('PUT', '/api/crews/' + c.id + '/goal', { goal: polishedGoal });
     }
     if (r.ok) {
       toast(isRu ? 'Сохранено' : 'Saved', 'success');
