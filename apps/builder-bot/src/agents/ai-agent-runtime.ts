@@ -7069,7 +7069,8 @@ async function _executeToolInner(
           name: 'code-exec-sandbox',
           codeGeneration: { strings: false, wasm: false },
         });
-        try { nodeVm.runInContext(`[Object,Array,Function,String,Number,Boolean,RegExp,Promise,Map,Set].forEach(C=>{if(C.prototype)Object.freeze(C.prototype)})`, ctx); } catch {}
+        // NB: do NOT freeze prototypes — Node's vm shares intrinsics with the host
+        // realm, so freeze leaks out and breaks @ton/core Address + other libs.
         const script = new nodeVm.Script(`(function(){${code}\n})()`, { filename: 'code-exec.js' });
         const out = script.runInContext(ctx, { timeout: timeoutMs, breakOnSigint: true });
         let outStr: string;
@@ -7133,8 +7134,8 @@ async function _executeToolInner(
           name: 'plugin-sandbox',
           codeGeneration: { strings: false, wasm: false },
         });
-        // Freeze prototypes to block constructor-chain escape
-        try { nodeVm.runInContext(`[Object,Array,Function,String,Number,Boolean,RegExp,Promise,Map,Set].forEach(C=>{if(C.prototype)Object.freeze(C.prototype)});Object.defineProperty(Error.prototype,'constructor',{configurable:false,writable:false})`, pluginCtx); } catch {}
+        // NB: do NOT freeze prototypes — Node's vm shares intrinsics with the host
+        // realm, so freeze leaks out and breaks @ton/core Address + other libs.
         const pluginScript = new nodeVm.Script(`(function(){${plugin.code}})()`, { filename: 'plugin.js' });
         const result = pluginScript.runInContext(pluginCtx, { timeout: 10000, breakOnSigint: true });
         await getCustomPluginsRepository().incrementExecCount(params.userId, pluginName);

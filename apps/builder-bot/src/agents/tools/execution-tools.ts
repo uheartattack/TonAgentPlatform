@@ -1245,24 +1245,12 @@ export class ExecutionTools {
         codeGeneration: { strings: false, wasm: false },
       });
 
-      // Harden sandbox: freeze prototypes to prevent prototype pollution escapes
-      // This blocks the main vm escape vector: sandbox.constructor.constructor('return this')()
-      try {
-        vm.runInContext(`
-          'use strict';
-          // Block constructor traversal (main vm escape vector)
-          Object.defineProperty(Object.prototype, 'constructor', { configurable: false, writable: false });
-          // Freeze core prototypes
-          [Object, Array, Function, String, Number, Boolean, RegExp, Promise, Map, Set].forEach(C => {
-            if (C.prototype) Object.freeze(C.prototype);
-          });
-          Object.defineProperty(Error.prototype, 'constructor', { configurable: false, writable: false });
-          // Block access to process/globalThis via constructor chain
-          (function() {
-            try { delete this.constructor; } catch {}
-          })();
-        `, vmContext);
-      } catch {}
+      // NOTE: previous code did Object.freeze(Object.prototype) etc. via runInContext.
+      // Node's `vm` module shares intrinsics with the host realm — freeze leaks out
+      // and breaks any library that mutates its own objects (e.g. @ton/core Address →
+      // "Cannot assign to read only property 'toString' of object '#<Address>'").
+      // The freeze attempt is removed; constructor-chain escape is mitigated by
+      // sandbox having no `process` / `globalThis` exposed + codeGeneration disabled.
 
       // Sanitize: fix literal newlines inside string literals (common AI codegen mistake)
       // e.g. 'text\nmore' with real \n → 'text\\nmore' → prevents SyntaxError
