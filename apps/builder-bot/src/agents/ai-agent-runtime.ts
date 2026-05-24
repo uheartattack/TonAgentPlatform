@@ -142,10 +142,16 @@ const _channelPostTimes = new Map<string, number>();
 const CHANNEL_POST_COOLDOWN = 30 * 60 * 1000; // 30 minutes between posts to same chat
 
 // ── Circuit Breaker — stop spamming API on repeated errors ────────────────
+//
+// In-memory primary store + lazy write-through to agent_state for restart-survival.
+// Performance: read/check is O(1) Map lookup. Writes (failure/success) async-persist
+// without blocking the hot path. On runtime init we backfill the Map from agent_state.
 const _circuitBreakers = new Map<number, { failCount: number; lastFail: number; isOpen: boolean }>();
 const CB_THRESHOLD = 5;           // failures before opening
 const CB_BASE_RESET_MS = 2 * 60_000;  // 2 min base
 const CB_MAX_RESET_MS  = 30 * 60_000; // 30 min cap
+const CB_STATE_KEY = '_cb_state'; // agent_state key for persistence
+let _cbLoaded = false;            // backfill happens once per process
 
 /** Adaptive reset time: grows with consecutive failure count, capped at 30 min.
  *  Add deterministic jitter per agent so all breakers don't retry at the same instant. */
@@ -155,13 +161,65 @@ function cbResetMs(agentId: number, failCount: number): number {
   return base + jitter;
 }
 
+/** One-shot backfill from agent_state on first cbCheck call after process start.
+ *  Survives restart so a flapping provider doesn't get hammered again immediately. */
+async function _cbBackfill(): Promise<void> {
+  if (_cbLoaded) return;
+  _cbLoaded = true;
+  try {
+    const pool = await _getSharedStatePool();
+    const res = await pool.query(
+      `SELECT agent_id, value FROM builder_bot.agent_state WHERE key = $1`,
+      [CB_STATE_KEY],
+    );
+    for (const row of res.rows) {
+      try {
+        const v = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
+        if (v && typeof v.failCount === 'number' && typeof v.lastFail === 'number') {
+          _circuitBreakers.set(Number(row.agent_id), {
+            failCount: v.failCount, lastFail: v.lastFail, isOpen: !!v.isOpen,
+          });
+        }
+      } catch {}
+    }
+    if (res.rows.length > 0) console.log(`[CircuitBreaker] Backfilled ${res.rows.length} CB state(s) from agent_state`);
+  } catch (e: any) {
+    console.warn(`[CircuitBreaker] backfill failed (non-fatal):`, e?.message);
+  }
+}
+
+async function _cbPersist(agentId: number, state: { failCount: number; lastFail: number; isOpen: boolean } | null): Promise<void> {
+  try {
+    const pool = await _getSharedStatePool();
+    if (!state) {
+      await pool.query(`DELETE FROM builder_bot.agent_state WHERE agent_id = $1 AND key = $2`, [agentId, CB_STATE_KEY]);
+      return;
+    }
+    // Need user_id for the NOT NULL column — look it up.
+    const ownerRes = await pool.query(`SELECT user_id FROM builder_bot.agents WHERE id = $1`, [agentId]);
+    if (!ownerRes.rows[0]) return;
+    const ownerId = ownerRes.rows[0].user_id;
+    await pool.query(
+      `INSERT INTO builder_bot.agent_state (agent_id, user_id, key, value, updated_at)
+       VALUES ($1, $2, $3, $4::jsonb, NOW())
+       ON CONFLICT (agent_id, key) DO UPDATE SET value = $4::jsonb, updated_at = NOW()`,
+      [agentId, ownerId, CB_STATE_KEY, JSON.stringify(state)],
+    );
+  } catch (e: any) {
+    console.warn(`[CircuitBreaker] persist failed for #${agentId}:`, e?.message);
+  }
+}
+
 function cbCheck(agentId: number): { blocked: boolean; retryInMinutes?: number } {
+  // Lazy backfill on first call (non-blocking — first tick may miss but next will be correct)
+  if (!_cbLoaded) _cbBackfill().catch(() => {});
   const cb = _circuitBreakers.get(agentId);
   if (!cb || !cb.isOpen) return { blocked: false };
   const elapsed = Date.now() - cb.lastFail;
   const resetAt = cbResetMs(agentId, cb.failCount);
   if (elapsed >= resetAt) {
     _circuitBreakers.delete(agentId);
+    _cbPersist(agentId, null).catch(() => {});
     return { blocked: false };
   }
   return { blocked: true, retryInMinutes: Math.ceil((resetAt - elapsed) / 60_000) };
@@ -171,16 +229,22 @@ function cbRecordFailure(agentId: number): void {
   const cb = _circuitBreakers.get(agentId) || { failCount: 0, lastFail: 0, isOpen: false };
   cb.failCount++;
   cb.lastFail = Date.now();
+  const wasOpen = cb.isOpen;
   if (cb.failCount >= CB_THRESHOLD) {
     cb.isOpen = true;
     const resetMin = Math.ceil(cbResetMs(agentId, cb.failCount) / 60_000);
     console.warn(`[CircuitBreaker] Agent #${agentId} OPEN (${cb.failCount} consecutive failures). Retry in ${resetMin} min.`);
   }
   _circuitBreakers.set(agentId, cb);
+  // Persist when state transitions to OPEN, or every time once open so lastFail is current
+  if (cb.isOpen || !wasOpen) _cbPersist(agentId, cb).catch(() => {});
 }
 
 function cbRecordSuccess(agentId: number): void {
-  if (_circuitBreakers.has(agentId)) _circuitBreakers.delete(agentId);
+  if (_circuitBreakers.has(agentId)) {
+    _circuitBreakers.delete(agentId);
+    _cbPersist(agentId, null).catch(() => {});
+  }
 }
 
 // ── EQ/UQ address to raw format converter (for TonAPI) ──────────────────────
@@ -1360,7 +1424,35 @@ const MODEL_FALLBACKS: Record<string, string[]> = {
   together:  ['meta-llama/Llama-3.3-70B-Instruct-Turbo'],
 };
 
-/** Try model, fallback on 404/model_not_found */
+// ── Cross-provider fallback infrastructure ──────────────────────────────────
+// Per-model cooldown: when a model returns 429/402, skip it for N minutes so
+// the next agent tick goes straight to the next provider instead of waiting
+// for the rate-limit reset (mirrors Atlas's chain in api-server.ts:6184-6223).
+const _agentModelCooldown = new Map<string, number>(); // `${provider}::${model}` → lastFailTs
+const PROVIDER_COOLDOWN_MS = 30 * 60 * 1000; // 30 min
+
+function _cooldownKey(provider: string, model: string): string { return `${provider}::${model}`; }
+function _isCooledDown(provider: string, model: string): boolean {
+  const last = _agentModelCooldown.get(_cooldownKey(provider, model));
+  if (!last) return false;
+  if (Date.now() - last > PROVIDER_COOLDOWN_MS) { _agentModelCooldown.delete(_cooldownKey(provider, model)); return false; }
+  return true;
+}
+function _markCooledDown(provider: string, model: string): void {
+  _agentModelCooldown.set(_cooldownKey(provider, model), Date.now());
+}
+
+/** OpenRouter free chain used as platform-wide fallback when primary provider fails on
+ *  transient/cross-provider-retryable errors. Mirrors Atlas's choice — z-ai first, then
+ *  DeepSeek/Llama/Hermes — these usually have spare capacity when Gemini/Anthropic die. */
+const OPENROUTER_FALLBACK_MODELS = [
+  'z-ai/glm-4.5-air:free',
+  'deepseek/deepseek-v4-flash:free',
+  'meta-llama/llama-3.3-70b-instruct:free',
+  'nousresearch/hermes-3-llama-3.1-405b:free',
+];
+
+/** Try model, fallback on 404/model_not_found, then cross-provider on transient errors */
 async function callWithFallback(
   ai: OpenAI,
   reqBody: any,
@@ -1394,44 +1486,119 @@ async function callWithFallback(
     });
   };
 
-  try {
-    const r = await ai.chat.completions.create(reqBody);
-    await _finishSpan(true, r);
-    return r;
-  } catch (e: any) {
-    // Credential refresh on 401 (teleton-agent pattern) — retry once
-    const is401 = e.status === 401 || e.message?.includes('Unauthorized') || e.message?.includes('invalid_api_key');
-    if (is401) {
-      console.warn(`[AI runtime] 401 auth error for ${provider}, retrying once...`);
-      try {
-        const r = await ai.chat.completions.create(reqBody);
-        await _finishSpan(true, r);
-        return r;
-      } catch { /* fall through */ }
-    }
-    const is404 = e.status === 404 || e.message?.includes('model_not_found') || e.message?.includes('not found');
-    if (!is404 || fallbacks.length === 0) { await _finishSpan(false, undefined, e?.message); throw e; }
-
-    // Try fallbacks
-    for (const fb of fallbacks) {
-      if (fb === originalModel) continue;
-      try {
-        console.log(`[AI runtime] Model ${originalModel} failed, trying fallback: ${fb}`);
-        reqBody.model = fb;
-        const r = await ai.chat.completions.create(reqBody);
-        await _finishSpan(true, r);
-        return r;
-      } catch (fbErr: any) {
-        if (fbErr.status === 404 || fbErr.message?.includes('not found')) continue;
-        await _finishSpan(false, undefined, fbErr?.message);
-        throw fbErr; // non-404 error, propagate
+  // Skip primary model if it's in cooldown — fast path to fallback chain
+  if (_isCooledDown(provider, originalModel)) {
+    console.log(`[AI runtime] ${provider}::${originalModel} in cooldown, skipping to fallback`);
+  } else {
+    try {
+      const r = await ai.chat.completions.create(reqBody);
+      await _finishSpan(true, r);
+      return r;
+    } catch (e: any) {
+      // Credential refresh on 401 (teleton-agent pattern) — retry once
+      const is401 = e.status === 401 || e.message?.includes('Unauthorized') || e.message?.includes('invalid_api_key');
+      if (is401) {
+        console.warn(`[AI runtime] 401 auth error for ${provider}, retrying once...`);
+        try {
+          const r = await ai.chat.completions.create(reqBody);
+          await _finishSpan(true, r);
+          return r;
+        } catch { /* fall through */ }
       }
+      // Classify error to decide fallback strategy
+      const { classifyError } = await import('./error-classifier');
+      const cls = classifyError(e);
+
+      const is404 = cls.status === 404;
+      // Mark current model in cooldown if this was a transient/quota issue
+      if (cls.transient || cls.status === 402) {
+        _markCooledDown(provider, originalModel);
+      }
+
+      // Same-provider model fallback (only on 404)
+      if (is404 && fallbacks.length > 0) {
+        for (const fb of fallbacks) {
+          if (fb === originalModel) continue;
+          if (_isCooledDown(provider, fb)) continue;
+          try {
+            console.log(`[AI runtime] Model ${originalModel} 404, trying same-provider fallback: ${fb}`);
+            reqBody.model = fb;
+            const r = await ai.chat.completions.create(reqBody);
+            await _finishSpan(true, r);
+            return r;
+          } catch (fbErr: any) {
+            if (fbErr.status === 404 || fbErr.message?.includes('not found')) continue;
+            // Non-404 in fallback — let cross-provider take over
+            break;
+          }
+        }
+        reqBody.model = originalModel;
+      }
+
+      // Cross-provider fallback — use platform OPENROUTER_API_KEY when available
+      // and the error class allows it (429/402/5xx/network). Don't try for permanent
+      // user-action errors (401, 413 context overflow).
+      if (cls.crossProviderRetryable) {
+        const openrouterKey = process.env.OPENROUTER_API_KEY || '';
+        if (openrouterKey && provider !== 'openrouter') {
+          console.log(`[AI runtime] ${provider} failed (${cls.description}), trying OpenRouter fallback`);
+          const orResult = await _tryOpenRouterFallback(openrouterKey, reqBody, tracing?.agentId);
+          if (orResult) {
+            await _finishSpan(true, orResult);
+            return orResult;
+          }
+        }
+      }
+
+      reqBody.model = originalModel;
+      await _finishSpan(false, undefined, e?.message);
+      throw e;
     }
-    // All fallbacks failed, throw original error
-    reqBody.model = originalModel;
-    await _finishSpan(false, undefined, e?.message);
-    throw e;
   }
+
+  // Primary was in cooldown — go straight to cross-provider fallback
+  const openrouterKey = process.env.OPENROUTER_API_KEY || '';
+  if (openrouterKey && provider !== 'openrouter') {
+    const orResult = await _tryOpenRouterFallback(openrouterKey, reqBody, tracing?.agentId);
+    if (orResult) {
+      await _finishSpan(true, orResult);
+      return orResult;
+    }
+  }
+  // Cooldown still active and no fallback — throw a synthetic error so the caller
+  // doesn't think nothing happened.
+  const err: any = new Error(`Primary provider ${provider}::${originalModel} cooled down and no fallback available`);
+  err.status = 429;
+  await _finishSpan(false, undefined, err.message);
+  throw err;
+}
+
+/** Try the OpenRouter free chain with the platform key. Returns response or null on failure. */
+async function _tryOpenRouterFallback(openrouterKey: string, reqBody: any, agentId?: number): Promise<any | null> {
+  // Lazy-build a transient OpenRouter client (separate from agent's primary client)
+  const orClient = new OpenAI({
+    baseURL: 'https://openrouter.ai/api/v1',
+    apiKey: openrouterKey,
+    defaultHeaders: {
+      'HTTP-Referer': process.env.OPENROUTER_REFERER || 'https://tonagentplatform.com',
+      'X-Title': process.env.OPENROUTER_TITLE || 'TON Agent Platform',
+    },
+  });
+  for (const model of OPENROUTER_FALLBACK_MODELS) {
+    if (_isCooledDown('openrouter-fallback', model)) continue;
+    const orReq = { ...reqBody, model };
+    try {
+      console.log(`[AI runtime] OpenRouter fallback try: ${model}${agentId ? ` (agent #${agentId})` : ''}`);
+      const r = await orClient.chat.completions.create(orReq);
+      console.log(`[AI runtime] OpenRouter fallback OK on ${model}`);
+      return r;
+    } catch (orErr: any) {
+      _markCooledDown('openrouter-fallback', model);
+      console.warn(`[AI runtime] OpenRouter fallback ${model} failed: ${orErr?.status || ''} ${orErr?.message?.slice(0, 100)}`);
+      continue;
+    }
+  }
+  return null;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -9907,17 +10074,13 @@ If web_search returns nothing useful → say "не смог найти акту�
         const errMsg = `AI call failed: ${e.message}`;
         await logToDb(params.agentId, 'error', errMsg);
         // Auto-pause on persistent permanent errors (key/credits/TPM)
+        // Uses centralised classifier — was three near-duplicate if-else blocks before.
         try {
-          const { recordErrorMaybePause } = await import('../services/agent-auto-pause');
-          const status = e.status || e.statusCode;
-          const msg = (e.message || '').toLowerCase();
-          if (status === 401 || msg.includes('invalid_api_key') || msg.includes('invalid api key') || msg.includes('expired_api_key')) {
-            await recordErrorMaybePause(params.agentId, params.userId, 'INVALID_API_KEY', e.message);
-          } else if (status === 402 || msg.includes('insufficient credit') || msg.includes('insufficient_credits')) {
-            await recordErrorMaybePause(params.agentId, params.userId, 'INSUFFICIENT_CREDITS', e.message);
-          } else if (status === 413 || status === 429 || msg.includes('tokens per minute') || msg.includes('tpm') || msg.includes('rate_limit_exceeded') || msg.includes('429')) {
-            // 429 from Groq/OpenAI/Anthropic — almost always TPM/RPM rate limit
-            await recordErrorMaybePause(params.agentId, params.userId, 'TPM_EXCEEDED', e.message);
+          const { classifyError } = await import('./error-classifier');
+          const cls = classifyError(e);
+          if (cls.pauseReason) {
+            const { recordErrorMaybePause } = await import('../services/agent-auto-pause');
+            await recordErrorMaybePause(params.agentId, params.userId, cls.pauseReason, e.message);
           }
         } catch (pe: any) { console.warn(`[AI runtime] auto-pause check failed:`, pe?.message); }
         if (execId) try { await getExecutionHistoryRepository().finish(execId, 'error', 0, errMsg); } catch (e2: any) { console.warn('[ExecTracker] finish:', e2.message); }
@@ -9930,17 +10093,13 @@ If web_search returns nothing useful → say "не смог найти акту�
       cbRecordFailure(params.agentId); // circuit breaker: track failure
       const errMsg = `AI call failed after retries: ${lastErr.message}`;
       await logToDb(params.agentId, 'error', errMsg);
-      // Same auto-pause check for retry-exhausted errors
+      // Same auto-pause check for retry-exhausted errors (via classifier)
       try {
-        const { recordErrorMaybePause } = await import('../services/agent-auto-pause');
-        const status = lastErr.status || lastErr.statusCode;
-        const msg = (lastErr.message || '').toLowerCase();
-        if (status === 401 || msg.includes('invalid_api_key') || msg.includes('invalid api key') || msg.includes('expired_api_key')) {
-          await recordErrorMaybePause(params.agentId, params.userId, 'INVALID_API_KEY', lastErr.message);
-        } else if (status === 402 || msg.includes('insufficient credit')) {
-          await recordErrorMaybePause(params.agentId, params.userId, 'INSUFFICIENT_CREDITS', lastErr.message);
-        } else if (status === 413 || msg.includes('tokens per minute') || msg.includes('tpm')) {
-          await recordErrorMaybePause(params.agentId, params.userId, 'TPM_EXCEEDED', lastErr.message);
+        const { classifyError } = await import('./error-classifier');
+        const cls = classifyError(lastErr);
+        if (cls.pauseReason) {
+          const { recordErrorMaybePause } = await import('../services/agent-auto-pause');
+          await recordErrorMaybePause(params.agentId, params.userId, cls.pauseReason, lastErr.message);
         }
       } catch {}
       if (execId) try { await getExecutionHistoryRepository().finish(execId, 'error', 0, errMsg); } catch (e2: any) { console.warn('[ExecTracker] finish:', e2.message); }

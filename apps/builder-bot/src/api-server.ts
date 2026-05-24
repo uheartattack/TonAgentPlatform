@@ -3722,6 +3722,15 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
       } catch (e: any) {
         console.warn('[provider] invalidateAgentConfig failed:', e?.message || e);
       }
+      // If a fresh API key was provided, also auto-resume this agent if it was paused
+      // for credential reasons. Fire-and-forget so API stays snappy.
+      if (apiKey) {
+        import('./services/agent-resume').then(({ resumeAfterKeyUpdate }) => {
+          resumeAfterKeyUpdate(userId, { agentId }).then(r => {
+            if (r.resumedAgentIds.length > 0) console.log(`[provider] Resumed agent #${agentId} after per-agent key update`);
+          }).catch(() => {});
+        }).catch(() => {});
+      }
       res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
@@ -4785,6 +4794,7 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
       // If user_variables changed (incl. AI_PROVIDER / AI_API_KEY), tell the runtime
       // to refresh frozen configs on the next tick — otherwise active agents keep
       // calling the old provider until bot restart.
+      // Also auto-resume any agents paused for credential reasons — fresh key likely fixes them.
       if (userVarsChanged) {
         try {
           const { getAIAgentRuntime } = await import('./agents/ai-agent-runtime');
@@ -4792,6 +4802,12 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
         } catch (e: any) {
           console.warn('[Settings] invalidateUserConfig failed:', e?.message || e);
         }
+        // Fire-and-forget — don't block the API response on Telegram DM / runner ops
+        import('./services/agent-resume').then(({ resumeAfterKeyUpdate }) => {
+          resumeAfterKeyUpdate(userId).then(r => {
+            if (r.resumedAgentIds.length > 0) console.log(`[Settings] Resumed ${r.resumedAgentIds.length} agent(s) after user_variables update`);
+          }).catch(() => {});
+        }).catch(() => {});
       }
 
       const updated = await getUserSettingsRepository().getAll(userId);
