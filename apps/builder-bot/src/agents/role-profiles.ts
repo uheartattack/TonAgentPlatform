@@ -1,6 +1,15 @@
 /**
  * Deep Agent Role Profiles — each role = complete "operating system" for the agent.
  * Defines mindset, priorities, communication style, tools, autonomy, error handling.
+ *
+ * Sprint 5 (real-role-integration) adds ENFORCED fields:
+ *   • toolWhitelist  — if set, only these tools are exposed (overrides capability map)
+ *   • toolBlacklist  — these tools are stripped from the agent's tool list
+ *   • tickIntervalMs — role-specific scheduler cadence
+ *   • defaultModel   — role-suggested AI_MODEL (used only if agent has no override)
+ *   • requireApprovalAboveTon — financial actions above this TON value need user OK
+ * These are checked in ai-agent-runtime.ts hot path, so role isn't just a label
+ * any more — flipping role actually changes the agent's runtime behavior.
  */
 
 export interface RoleProfile {
@@ -11,10 +20,16 @@ export interface RoleProfile {
   behaviorOverrides: Record<string, any>;
   learningOverrides: Record<string, any>;
   toolWeights: Record<string, number>; // 1.0 = normal, 2.0 = boosted, 0.5 = deprioritized
+  toolWhitelist?: string[];       // tool names; if set, ONLY these allowed
+  toolBlacklist?: string[];       // tool names; these stripped from exposed tool list
   autonomyLevel: 'full' | 'high' | 'medium' | 'low';
-  maxSpendPerAction: number; // TON, 0 = no financial ops
+  maxSpendPerAction: number;      // TON, 0 = no financial ops at all (hard cap)
+  requireApprovalAboveTon?: number; // ask owner via ask_user_confirmation above this value
+  tickIntervalMs?: number;        // override scheduler cadence (ms), undefined = use agent default
+  defaultModel?: string;          // suggested AI_MODEL when agent.AI_MODEL is empty
   responseStyleHints: string;
   defaultCapabilities: string[];
+  isCustom?: boolean;             // true when sourced from agent_custom_roles table
 }
 
 export const ROLE_PROFILES: Record<string, RoleProfile> = {
@@ -590,12 +605,64 @@ ERROR HANDLING:
   },
 };
 
-/** Get role profile by ID, falls back to worker */
+/** Sync getter for built-in roles. Custom roles need getRoleProfileAsync (DB hit).
+ *  Falls back to worker if id is unknown. */
 export function getRoleProfile(roleId: string): RoleProfile {
   return ROLE_PROFILES[roleId] || ROLE_PROFILES.worker;
 }
 
-/** Get all role IDs */
+/** Async getter that resolves both built-in and `custom:<n>` profiles from DB.
+ *  Used by ai-agent-runtime's prompt builder + tool filter + spend-cap check. */
+export async function getRoleProfileAsync(roleId: string, userId?: number): Promise<RoleProfile> {
+  if (!roleId) return ROLE_PROFILES.worker;
+  if (!roleId.startsWith('custom:')) return ROLE_PROFILES[roleId] || ROLE_PROFILES.worker;
+  // Custom role: id like "custom:42" — look up in agent_custom_roles
+  const numericId = Number(roleId.slice('custom:'.length));
+  if (!Number.isFinite(numericId)) return ROLE_PROFILES.worker;
+  try {
+    const { pool } = await import('../db');
+    const where = userId != null
+      ? `WHERE id = $1 AND (user_id = $2 OR user_id IS NULL)`
+      : `WHERE id = $1`;
+    const args: any[] = userId != null ? [numericId, userId] : [numericId];
+    const r = await pool.query(
+      `SELECT id, user_id, role_name, display_name, system_prompt_module,
+              tool_whitelist, tool_blacklist, tool_weights,
+              autonomy_level, max_spend_per_action_ton, require_approval_above_ton,
+              tick_interval_ms, default_model,
+              default_capabilities, response_style_hints, behavior_overrides,
+              learning_overrides, color
+         FROM builder_bot.agent_custom_roles ${where} LIMIT 1`,
+      args,
+    );
+    if (!r.rows[0]) return ROLE_PROFILES.worker;
+    const row: any = r.rows[0];
+    return {
+      id: `custom:${row.id}`,
+      name: { en: row.display_name, ru: row.display_name },
+      color: row.color || '#64748b',
+      systemPromptModule: row.system_prompt_module || '',
+      behaviorOverrides: row.behavior_overrides || {},
+      learningOverrides: row.learning_overrides || {},
+      toolWeights: row.tool_weights || {},
+      toolWhitelist: Array.isArray(row.tool_whitelist) ? row.tool_whitelist : undefined,
+      toolBlacklist: Array.isArray(row.tool_blacklist) ? row.tool_blacklist : undefined,
+      autonomyLevel: (['full', 'high', 'medium', 'low'].includes(row.autonomy_level) ? row.autonomy_level : 'medium') as any,
+      maxSpendPerAction: Number(row.max_spend_per_action_ton) || 0,
+      requireApprovalAboveTon: row.require_approval_above_ton != null ? Number(row.require_approval_above_ton) : undefined,
+      tickIntervalMs: row.tick_interval_ms != null ? Number(row.tick_interval_ms) : undefined,
+      defaultModel: row.default_model || undefined,
+      responseStyleHints: row.response_style_hints || '',
+      defaultCapabilities: Array.isArray(row.default_capabilities) ? row.default_capabilities : [],
+      isCustom: true,
+    };
+  } catch (e: any) {
+    console.warn(`[RoleProfile] custom role lookup failed for ${roleId}:`, e?.message);
+    return ROLE_PROFILES.worker;
+  }
+}
+
+/** Get all built-in role IDs */
 export function getAllRoleIds(): string[] {
   return Object.keys(ROLE_PROFILES);
 }

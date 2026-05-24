@@ -1611,6 +1611,59 @@ export async function runAIProposalsMigrations(pool: Pool): Promise<void> {
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS crew_executions_crew_idx ON builder_bot.crew_executions (crew_id, started_at DESC)`);
 
+    // ─── Composite tools — agents compose macros from N tools (Sprint 5b) ──
+    // Each row is a per-agent "macro": name + description + ordered steps.
+    // Runtime exposes them as regular tools so the LLM picks them like any other.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.agent_composite_tools (
+        id          SERIAL PRIMARY KEY,
+        agent_id    INTEGER NOT NULL,
+        user_id     BIGINT NOT NULL,
+        name        VARCHAR(80) NOT NULL,
+        description TEXT NOT NULL,
+        params_schema JSONB NOT NULL DEFAULT '{}'::jsonb,
+        steps       JSONB NOT NULL,
+        exec_count  INTEGER NOT NULL DEFAULT 0,
+        last_used_at TIMESTAMP,
+        created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+        UNIQUE (agent_id, name)
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS agent_composite_tools_agent_idx ON builder_bot.agent_composite_tools (agent_id)`);
+
+    // ─── Custom agent roles (Sprint 5 — real role integration) ────────────
+    // Built-in roles live in code (role-profiles.ts). Users can also create
+    // their own roles via Atlas/Studio — those land here. Referenced by
+    // agents.role as "custom:<id>".
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.agent_custom_roles (
+        id                        SERIAL PRIMARY KEY,
+        user_id                   BIGINT,
+        role_name                 VARCHAR(64) NOT NULL,
+        display_name              VARCHAR(128) NOT NULL,
+        color                     VARCHAR(16) DEFAULT '#64748b',
+        system_prompt_module      TEXT NOT NULL,
+        behavior_overrides        JSONB NOT NULL DEFAULT '{}'::jsonb,
+        learning_overrides        JSONB NOT NULL DEFAULT '{}'::jsonb,
+        tool_weights              JSONB NOT NULL DEFAULT '{}'::jsonb,
+        tool_whitelist            JSONB,
+        tool_blacklist            JSONB,
+        autonomy_level            VARCHAR(10) NOT NULL DEFAULT 'medium'
+                                  CHECK (autonomy_level IN ('full','high','medium','low')),
+        max_spend_per_action_ton  NUMERIC(20, 9) NOT NULL DEFAULT 0,
+        require_approval_above_ton NUMERIC(20, 9),
+        tick_interval_ms          INTEGER,
+        default_model             VARCHAR(128),
+        default_capabilities      JSONB NOT NULL DEFAULT '[]'::jsonb,
+        response_style_hints      TEXT,
+        created_via               VARCHAR(20) DEFAULT 'manual',
+        created_at                TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at                TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS agent_custom_roles_user_idx ON builder_bot.agent_custom_roles (user_id)`);
+
     // ─── CRON subscriptions for event-bus ──────────────────────────────────
     // Lets agents schedule recurring tick triggers (e.g. "daily at 9 UTC").
     // Stored here so the schedule survives bot restart.

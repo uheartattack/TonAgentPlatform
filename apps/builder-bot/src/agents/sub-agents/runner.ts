@@ -314,7 +314,20 @@ export class RunnerAgent {
         // === AI AGENT MODE: agent.code = system prompt, AI decides tools ===
         const userVarsAI    = await loadUserVariables(params.userId);
         const mergedConfigAI = mergeAgentConfig(userVarsAI, triggerConfig);
-        const ms             = intervalMs || 5 * 60_000; // default 5 min
+        // Role-based tick interval: monitor roles want fast polling, creative roles
+        // want slow cadence. Order: user explicit > role default > 5 min fallback.
+        let roleTickMs: number | undefined;
+        try {
+          const { getRoleProfileAsync } = await import('../role-profiles');
+          const rp = await getRoleProfileAsync(
+            mergedConfigAI.AGENT_ROLE || agent.role || 'worker',
+            params.userId,
+          );
+          if (rp.tickIntervalMs && Number.isFinite(rp.tickIntervalMs)) {
+            roleTickMs = Math.max(30_000, Math.min(86_400_000, Number(rp.tickIntervalMs)));
+          }
+        } catch {}
+        const ms             = intervalMs || roleTickMs || 5 * 60_000; // default 5 min
 
         const aiRuntime = getAIAgentRuntime();
         const dbTools = this.dbTools;

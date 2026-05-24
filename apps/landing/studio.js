@@ -10146,6 +10146,52 @@ async function openCreateCrewModal() {
   };
 }
 
+// Atlas role interview: user clicks "Create" on a <role-suggest> action card.
+async function acceptAtlasRoleSuggest(suggestKey, btnEl) {
+  const isRu = currentLang === 'ru';
+  const s = window[suggestKey];
+  if (!s) { toast(isRu ? 'Предложение устарело' : 'Suggestion expired', 'warning'); return; }
+  if (btnEl) { btnEl.disabled = true; btnEl.textContent = isRu ? 'Создаём…' : 'Creating…'; }
+  try {
+    const payload = {
+      role_name: String(s.role_name || '').slice(0, 64),
+      display_name: String(s.display_name || s.role_name || 'Custom role').slice(0, 128),
+      color: s.color || '#a855f7',
+      system_prompt_module: String(s.system_prompt_module || ''),
+      tool_whitelist: Array.isArray(s.tool_whitelist) ? s.tool_whitelist : null,
+      tool_blacklist: Array.isArray(s.tool_blacklist) ? s.tool_blacklist : null,
+      tool_weights: s.tool_weights || {},
+      autonomy_level: ['full', 'high', 'medium', 'low'].includes(s.autonomy_level) ? s.autonomy_level : 'medium',
+      max_spend_per_action_ton: Number(s.max_spend_per_action_ton) || 0,
+      require_approval_above_ton: s.require_approval_above_ton != null ? Number(s.require_approval_above_ton) : null,
+      tick_interval_ms: s.tick_interval_ms != null ? Number(s.tick_interval_ms) : null,
+      default_model: s.default_model || null,
+      default_capabilities: Array.isArray(s.default_capabilities) ? s.default_capabilities : [],
+      response_style_hints: s.response_style_hints || null,
+      behavior_overrides: s.behavior_overrides || {},
+      learning_overrides: s.learning_overrides || {},
+      created_via: 'atlas',
+    };
+    const r = await apiRequest('POST', '/api/roles', payload);
+    if (r.ok) {
+      toast(isRu ? 'Роль создана: ' + r.role.id : 'Role created: ' + r.role.id, 'success');
+      if (btnEl) {
+        btnEl.textContent = '✓ ' + r.role.id;
+        btnEl.style.background = 'rgba(34,197,94,0.2)';
+        btnEl.style.color = '#22c55e';
+      }
+    } else {
+      toast(r.error || 'Error', 'error');
+      if (btnEl) { btnEl.disabled = false; btnEl.textContent = isRu ? '▶ Создать роль' : '▶ Create role'; }
+    }
+  } catch (e) {
+    toast(String(e), 'error');
+    if (btnEl) { btnEl.disabled = false; btnEl.textContent = isRu ? '▶ Создать роль' : '▶ Create role'; }
+  } finally {
+    delete window[suggestKey];
+  }
+}
+
 // Atlas crew interview: user clicks "Create" on a <crew-suggest> action card.
 // We send the JSON Atlas built straight to /api/crews — same validation as the
 // regular Studio modal flow.
@@ -11438,12 +11484,18 @@ async function sendAssistantMessage() {
                   } else if (atlasEvt === 'done') {
                     if (atlasStreamEl) {
                       var _final = atlasText || _p.fullText || '…';
-                      // Atlas crew interview output: extract <crew-suggest>{json}</crew-suggest>
-                      // marker, render as an inline "Create crew" action button.
+                      // Atlas interview outputs: extract <crew-suggest>{json}</crew-suggest>
+                      // OR <role-suggest>{json}</role-suggest> markers and render as inline
+                      // "Create" action buttons.
                       var _crewSuggest = null;
                       _final = _final.replace(/<crew-suggest>([\s\S]*?)<\/crew-suggest>/g, function(_m, body) {
                         try { _crewSuggest = JSON.parse(body.trim()); } catch (_je) { _crewSuggest = null; }
                         return ''; // strip marker from visible text
+                      });
+                      var _roleSuggest = null;
+                      _final = _final.replace(/<role-suggest>([\s\S]*?)<\/role-suggest>/g, function(_m, body) {
+                        try { _roleSuggest = JSON.parse(body.trim()); } catch (_je) { _roleSuggest = null; }
+                        return '';
                       });
                       atlasStreamEl.innerHTML = escHtml(_final.trim())
                         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
@@ -11464,6 +11516,23 @@ async function sendAssistantMessage() {
                           '<button class="btn" style="font-size:12px;padding:6px 12px;margin-left:6px" onclick="this.closest(\'div\').remove()">Отмена</button>' +
                           '</div>';
                         atlasStreamEl.insertAdjacentHTML('beforeend', _actionHtml);
+                      }
+                      if (_roleSuggest && _roleSuggest.role_name && _roleSuggest.system_prompt_module) {
+                        var _rKey = '_atlasRoleSuggest_' + Date.now();
+                        window[_rKey] = _roleSuggest;
+                        var _rColor = _roleSuggest.color || '#a855f7';
+                        var _rMeta = (_roleSuggest.autonomy_level || 'medium') + ' · spend≤' + (Number(_roleSuggest.max_spend_per_action_ton) || 0) + ' TON';
+                        if (_roleSuggest.tick_interval_ms) _rMeta += ' · tick ' + Math.round(Number(_roleSuggest.tick_interval_ms) / 1000) + 's';
+                        var _capsList = (Array.isArray(_roleSuggest.default_capabilities) ? _roleSuggest.default_capabilities : []).slice(0, 6).join(', ');
+                        var _roleHtml = '<div style="margin-top:10px;padding:10px;background:rgba(168,85,247,0.08);border:1px solid rgba(168,85,247,0.30);border-radius:10px">' +
+                          '<div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">Atlas предлагает создать роль</div>' +
+                          '<div style="font-weight:600;margin-bottom:2px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + _rColor + ';margin-right:6px;vertical-align:middle"></span>' + escHtml(String(_roleSuggest.display_name || _roleSuggest.role_name)) + '</div>' +
+                          '<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">' + _rMeta + '</div>' +
+                          (_capsList ? '<div style="font-size:11px;color:var(--text-secondary);margin-bottom:8px">capabilities: ' + escHtml(_capsList) + '</div>' : '') +
+                          '<button class="btn btn-primary" style="font-size:12px;padding:6px 14px" onclick="acceptAtlasRoleSuggest(\'' + _rKey + '\', this)">▶ Создать роль</button>' +
+                          '<button class="btn" style="font-size:12px;padding:6px 12px;margin-left:6px" onclick="this.closest(\'div\').remove()">Отмена</button>' +
+                          '</div>';
+                        atlasStreamEl.insertAdjacentHTML('beforeend', _roleHtml);
                       }
                     }
                   } else if (atlasEvt === 'error') {

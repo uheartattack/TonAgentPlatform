@@ -88,6 +88,20 @@ export async function buildAtlasSystemPrompt(userId: number, context?: AtlasCont
       : cr.rows.map(c => `#${c.id} «${c.name}» members=[${(c.agent_ids || []).join(',')}]${c.manager_agent_id ? ' mgr=#' + c.manager_agent_id : ''}`).join('\n  ');
   } catch { /* user agents/crews section empty */ }
 
+  // ── User's custom roles (so Atlas can avoid duplicates + reference them) ──
+  let userCustomRoles = '';
+  try {
+    const { pool } = await import('../db');
+    const r = await pool.query<{ id: number; role_name: string; display_name: string; autonomy_level: string }>(
+      `SELECT id, role_name, display_name, autonomy_level
+         FROM builder_bot.agent_custom_roles WHERE user_id = $1 ORDER BY id`,
+      [userId],
+    );
+    userCustomRoles = r.rows.length === 0
+      ? '(пока нет — можешь предложить создать)'
+      : r.rows.map(c => `custom:${c.id} «${c.display_name}» (${c.role_name}, ${c.autonomy_level})`).join('\n  ');
+  } catch { /* skip */ }
+
   // ── Learned rules (training-loop-edited) ─────────────────────────────────
   let learnedRules = '';
   try {
@@ -144,6 +158,27 @@ export async function buildAtlasSystemPrompt(userId: number, context?: AtlasCont
     '',
     'manager_agent_id может быть null если команда равноправная. agent_ids — только ID из списка выше. После этого блока — короткий призыв нажать кнопку «Создать» (Studio покажет её юзеру).',
     'НЕ создавай команду без подтверждения юзера на каждом шаге. НЕ выдумывай ID агентов которых нет в списке.',
+    '',
+    '🎭 КАСТОМНЫЕ РОЛИ ПОЛЬЗОВАТЕЛЯ (можно назначать агентам):',
+    '  ' + userCustomRoles,
+    '',
+    '═══ СОЗДАНИЕ КАСТОМНОЙ РОЛИ ═══',
+    'Встроенные роли (worker, specialist, manager, director, monitor, creative, trader, admin) — это "ОС агента": они РЕАЛЬНО меняют поведение — лимиты трат, какие tools доступны, как часто tick, какую модель использовать.',
+    '',
+    'Если пользователь хочет уникальную роль («сделай роль для арбитражника подарков», «нужна роль модератор-психолог»), проведи МИНИ-ИНТЕРВЬЮ — задавай ПО ОЧЕРЕДИ:',
+    '  1. Имя роли (kebab-case, например "gift-arbitrageur") + читаемое название.',
+    '  2. Что делает эта роль? Главная задача + стиль работы (быстро/детально/спокойно).',
+    '  3. autonomy_level: full (без подтверждений), high (только дорогое подтверждать), medium (всё дорогое спрашивать), low (каждое действие).',
+    '  4. max_spend_per_action_ton: сколько TON макс за одну транзакцию. 0 = роли запрещены финансы.',
+    '  5. Какие capabilities нужны (telegram, gifts, wallet, web, ...)? — выбери из реального списка выше.',
+    '  6. Какие конкретные tools блокировать или разрешать (tool_whitelist/blacklist)? Опционально.',
+    '  7. tick_interval_ms — как часто tick (60000 = минута, 300000 = 5 мин, 3600000 = час). Опц.',
+    '',
+    'Затем верни ОДНУ summary-фразу + блок:',
+    '<role-suggest>{"role_name":"gift-arbitrageur","display_name":"Арбитражник подарков","color":"#a855f7","system_prompt_module":"[ROLE: ...]\\n...полный модуль системного промпта (mindset, priorities, decisions, autonomy, error handling)...","autonomy_level":"high","max_spend_per_action_ton":2,"require_approval_above_ton":1,"tick_interval_ms":300000,"default_capabilities":["gifts","gifts_market","wallet","state","notify"],"tool_whitelist":null,"tool_blacklist":null,"response_style_hints":"Краткий, бизнесовый стиль","behavior_overrides":{"typingDelay":false}}</role-suggest>',
+    '',
+    'system_prompt_module ОБЯЗАТЕЛЬНО формируй как полноценный ROLE-блок (mindset, priorities, communication, decisions, autonomy, error handling), не пустой. Color — hex.',
+    'НЕ выдумывай несуществующие capabilities. НЕ предлагай создать роль которая уже есть с таким же role_name.',
     '',
     'Отвечай кратко и по делу. Говори на языке пользователя. Когда перечисляешь возможности — бери имена ИЗ СПИСКА ВЫШЕ.',
   ];

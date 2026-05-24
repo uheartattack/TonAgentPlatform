@@ -1713,6 +1713,8 @@ export function buildToolDefinitions(agentRole?: string, enabledCapabilities?: s
      'mailbox_send', 'mailbox_read',
      // Background tasks (session 08 pattern)
      'bg_schedule', 'bg_list',
+     // Composite tools (Sprint 5b — agent builds its own macros)
+     'compose_tool', 'list_composites', 'delete_composite',
     ].forEach(t => allowed.add(t));
     // Always allow MCP tools if ton_mcp capability is enabled
     if (enabledCapabilities.includes('ton_mcp') && mcpTools) {
@@ -2620,6 +2622,68 @@ async function _executeToolInner(
     }
   }
 
+  // Composite tools intercept: if `name` matches an agent_composite_tools row,
+  // execute its step sequence using recursive executeTool calls. Each step's
+  // result is stored in stepResults[N] for {step.N.field} placeholder substitution.
+  // Bail out early to skip the giant switch below.
+  try {
+    const { pool: _cmpPool } = await import('../db');
+    const _cmpHit = await _cmpPool.query(
+      `SELECT id, steps FROM builder_bot.agent_composite_tools WHERE agent_id = $1 AND name = $2 LIMIT 1`,
+      [params.agentId, name],
+    );
+    if (_cmpHit.rows[0]) {
+      const steps: any[] = _cmpHit.rows[0].steps || [];
+      const stepResults: any[] = [];
+      function resolvePlaceholders(v: any): any {
+        if (typeof v === 'string') {
+          return v.replace(/\{step\.(\d+)\.([\w]+)\}/g, (_m, idxStr, field) => {
+            const r = stepResults[Number(idxStr)];
+            if (r && typeof r === 'object' && field in r) return String(r[field]);
+            return _m;
+          }).replace(/\{param\.([\w]+)\}/g, (_m, pname) => {
+            if (args && pname in args) return String((args as any)[pname]);
+            return _m;
+          });
+        }
+        if (Array.isArray(v)) return v.map(resolvePlaceholders);
+        if (v && typeof v === 'object') {
+          const o: any = {};
+          for (const k of Object.keys(v)) o[k] = resolvePlaceholders(v[k]);
+          return o;
+        }
+        return v;
+      }
+      for (let i = 0; i < steps.length; i++) {
+        const s = steps[i];
+        if (!s || typeof s.tool !== 'string') { stepResults.push({ error: 'step shape invalid' }); continue; }
+        if (s.tool === name) { stepResults.push({ error: 'composite recursion blocked' }); break; }
+        const resolvedArgs = resolvePlaceholders(s.args || {});
+        try {
+          const out = await executeTool(s.tool, resolvedArgs, params);
+          stepResults.push(out);
+          // If a step errors, stop the chain so we don't keep referencing bogus data
+          if (out && typeof out === 'object' && out.error) {
+            console.warn(`[Composite] Agent #${params.agentId} ${name} step ${i} (${s.tool}) failed: ${String(out.error).slice(0, 120)}`);
+            break;
+          }
+        } catch (e: any) {
+          stepResults.push({ error: e?.message || 'step exception' });
+          break;
+        }
+      }
+      // Update stats — fire and forget
+      _cmpPool.query(
+        `UPDATE builder_bot.agent_composite_tools SET exec_count = exec_count + 1, last_used_at = NOW() WHERE id = $1`,
+        [_cmpHit.rows[0].id],
+      ).catch(() => {});
+      return { ok: true, composite: name, steps: stepResults };
+    }
+  } catch (e: any) {
+    // Composite dispatch must not crash regular tool flow
+    console.warn(`[Composite] dispatch warning for ${name}:`, e?.message);
+  }
+
   switch (name) {
     case 'get_ton_balance': {
       try {
@@ -3278,6 +3342,24 @@ async function _executeToolInner(
         }
         if (amount > HIGH_VALUE_TX_LIMIT_TON) {
           return { error: `Safety: transaction of ${amount} TON exceeds limit (${HIGH_VALUE_TX_LIMIT_TON} TON). Reduce amount or contact platform admin.` };
+        }
+        // Role-based spend cap — enforced, not a hint. maxSpendPerAction=0
+        // means the role can't do financial ops at all (e.g. monitor, admin).
+        const _roleCap = await (async () => {
+          try {
+            const { getRoleProfileAsync } = await import('./role-profiles');
+            const rp = await getRoleProfileAsync(params.config.AGENT_ROLE || 'worker', params.userId);
+            return { cap: Number(rp.maxSpendPerAction) || 0, requireApproval: rp.requireApprovalAboveTon, roleId: rp.id };
+          } catch { return { cap: HIGH_VALUE_TX_LIMIT_TON, requireApproval: undefined, roleId: 'worker' }; }
+        })();
+        if (_roleCap.cap === 0) {
+          return { error: `Role "${_roleCap.roleId}" has no financial permissions (maxSpendPerAction=0). Change agent role or transfer manually.` };
+        }
+        if (amount > _roleCap.cap) {
+          return { error: `Role "${_roleCap.roleId}" max spend per action is ${_roleCap.cap} TON; got ${amount}. Reduce amount or use a role with higher limit.` };
+        }
+        if (_roleCap.requireApproval != null && amount > _roleCap.requireApproval) {
+          return { error: `Amount ${amount} TON exceeds role's approval threshold (${_roleCap.requireApproval}). Use ask_user_confirmation tool first to get owner OK.` };
         }
         const walletAddr = unwrapState(await stateRepo.get(params.agentId, 'wallet_address'));
         const walletMn   = unwrapState(await stateRepo.get(params.agentId, 'wallet_mnemonic'));
@@ -6731,6 +6813,65 @@ async function _executeToolInner(
       } catch (e: any) { return { error: e.message }; }
     }
 
+    case 'compose_tool': {
+      // Role check — workers can't compose (they execute, don't design). Specialists/managers/directors can.
+      try {
+        const { getRoleProfileAsync } = await import('./role-profiles');
+        const rp = await getRoleProfileAsync(params.config.AGENT_ROLE || 'worker', params.userId);
+        if (rp.autonomyLevel === 'low' || rp.id === 'worker') {
+          return { error: `Role "${rp.id}" cannot compose new tools (low autonomy). Use existing tools directly, or ask owner to assign a higher-autonomy role.` };
+        }
+      } catch {}
+      const name = String(args.name || '').trim();
+      const description = String(args.description || '').trim();
+      const steps = Array.isArray(args.steps) ? args.steps : [];
+      if (!/^[a-z][a-z0-9_-]{1,59}$/i.test(name)) return { error: 'name must be 2-60 chars, [a-zA-Z0-9_-], starting with a letter' };
+      if (!description || description.length > 400) return { error: 'description required, max 400 chars' };
+      if (steps.length === 0 || steps.length > 10) return { error: 'steps required, max 10 per composite' };
+      // Prevent recursion + reserved names
+      const RESERVED = new Set(['compose_tool', 'list_composites', 'delete_composite']);
+      if (RESERVED.has(name)) return { error: `name "${name}" is reserved` };
+      for (const s of steps) {
+        if (!s || typeof s.tool !== 'string') return { error: 'each step must have a string "tool"' };
+        if (s.tool === name) return { error: 'composite cannot call itself' };
+        if (RESERVED.has(s.tool)) return { error: `step tool "${s.tool}" is not callable from a composite` };
+      }
+      try {
+        const { pool } = await import('../db');
+        await pool.query(
+          `INSERT INTO builder_bot.agent_composite_tools (agent_id, user_id, name, description, params_schema, steps)
+           VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)
+           ON CONFLICT (agent_id, name) DO UPDATE SET description = $4, params_schema = $5::jsonb, steps = $6::jsonb, updated_at = NOW()`,
+          [params.agentId, params.userId, name, description, JSON.stringify(args.params_schema || {}), JSON.stringify(steps)],
+        );
+        // Invalidate live config so the next tick rebuilds tools and exposes the new macro
+        try { getAIAgentRuntime().invalidateAgentConfig(params.agentId); } catch {}
+        return { ok: true, name, steps_count: steps.length, hint: 'Will appear in your toolset starting next tick' };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'list_composites': {
+      try {
+        const { pool } = await import('../db');
+        const r = await pool.query(
+          `SELECT name, description, jsonb_array_length(steps) AS steps_count, exec_count, last_used_at, created_at
+             FROM builder_bot.agent_composite_tools WHERE agent_id = $1 ORDER BY name`,
+          [params.agentId],
+        );
+        return { composites: r.rows };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'delete_composite': {
+      try {
+        const { pool } = await import('../db');
+        const r = await pool.query(`DELETE FROM builder_bot.agent_composite_tools WHERE agent_id = $1 AND name = $2 RETURNING id`, [params.agentId, args.name]);
+        if (r.rows.length === 0) return { error: `composite "${args.name}" not found` };
+        try { getAIAgentRuntime().invalidateAgentConfig(params.agentId); } catch {}
+        return { ok: true };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
     case 'search_and_summarize': {
       // Wraps web_search + fetch_url + utility-model summary in one tool so agents
       // don't have to orchestrate the three-step research dance themselves.
@@ -8470,8 +8611,9 @@ export async function runAIAgentTick(params: AIAgentTickParams): Promise<{
   }
 
   // Merge role behavior overrides (role defaults < user config)
-  const { getRoleProfile } = require('./role-profiles');
-  const _roleProfile = getRoleProfile(params.config.AGENT_ROLE || 'worker');
+  // Use async resolver so custom roles (id like "custom:42") are pulled from DB.
+  const { getRoleProfileAsync } = await import('./role-profiles');
+  const _roleProfile = await getRoleProfileAsync(params.config.AGENT_ROLE || 'worker', params.userId);
   const _roleBehavior = _roleProfile.behaviorOverrides || {};
   // Role defaults, then user overrides on top
   const _mergedBehavior = { ..._roleBehavior, ...(params.config.behavior || {}) };
@@ -9907,6 +10049,40 @@ If web_search returns nothing useful → say "не смог найти акту�
     console.warn(`[AI runtime] Plugin SDK load warning: ${e.message}`);
   }
 
+  // ── Composite tools — agent's own macros from compose_tool. Each row gets
+  // converted to a regular tool definition so the LLM sees + calls it like
+  // any built-in. Handler dispatch happens in the executeTool default branch.
+  try {
+    const { pool: _cmpPool } = await import('../db');
+    const _cmpRes = await _cmpPool.query(
+      `SELECT name, description, params_schema FROM builder_bot.agent_composite_tools WHERE agent_id = $1`,
+      [params.agentId],
+    );
+    if (_cmpRes.rows.length > 0) {
+      for (const c of _cmpRes.rows) {
+        const ps = (c.params_schema && typeof c.params_schema === 'object') ? c.params_schema : {};
+        const properties: Record<string, any> = {};
+        const required: string[] = [];
+        for (const [pname, pdef] of Object.entries(ps)) {
+          const d = pdef as any;
+          properties[pname] = { type: d?.type || 'string', description: d?.description || '' };
+          if (d?.required) required.push(pname);
+        }
+        allToolDefs.push({
+          type: 'function',
+          function: {
+            name: c.name,
+            description: `🔗 [composite] ${c.description}`,
+            parameters: { type: 'object', properties, required },
+          },
+        } as any);
+      }
+      console.log(`[AI runtime] Agent #${params.agentId} +${_cmpRes.rows.length} composite tools`);
+    }
+  } catch (e: any) {
+    console.warn(`[AI runtime] composite tools fetch warning: ${e.message}`);
+  }
+
   // Tool selection: include ALL tools from enabled capabilities (no RAG filtering for them).
   // RAG only filters the overflow if total exceeds provider max.
   const userMsgText = msgs.join(' ');
@@ -9953,6 +10129,22 @@ If web_search returns nothing useful → say "не смог найти акту�
     });
     // Remove tools with weight 0 (role explicitly blocks them)
     tools = tools.filter((t: any) => (weights[t.function?.name] ?? 1.0) > 0);
+  }
+  // Hard role enforcement — was just "weights are guidelines" before, now it's binding.
+  // toolBlacklist always strips. toolWhitelist (when set) replaces the tool set with
+  // only-allowed names. Empty whitelist means "everything blocked" by design — so we
+  // skip it when length===0 to keep that an opt-in misconfiguration.
+  if (Array.isArray(_roleProfile.toolBlacklist) && _roleProfile.toolBlacklist.length > 0) {
+    const blocked = new Set(_roleProfile.toolBlacklist);
+    const before = tools.length;
+    tools = tools.filter((t: any) => !blocked.has(t.function?.name));
+    if (tools.length !== before) console.log(`[RoleEnforce] Agent #${params.agentId} role=${_roleProfile.id} stripped ${before - tools.length} blacklisted tools`);
+  }
+  if (Array.isArray(_roleProfile.toolWhitelist) && _roleProfile.toolWhitelist.length > 0) {
+    const allowed = new Set(_roleProfile.toolWhitelist);
+    const before = tools.length;
+    tools = tools.filter((t: any) => allowed.has(t.function?.name));
+    console.log(`[RoleEnforce] Agent #${params.agentId} role=${_roleProfile.id} whitelist kept ${tools.length}/${before} tools`);
   }
   const originalTools = [...tools]; // Save for restoration after 400-error retry
 

@@ -3761,7 +3761,7 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
-  // ── PUT /api/agents/:id/role — Change agent role ──
+  // ── PUT /api/agents/:id/role — Change agent role (built-in or custom:<id>) ──
   app.put('/api/agents/:id/role', requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = (req as any).userId as number;
@@ -3770,10 +3770,162 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
       const agentCheck = await getAgentForUser(agentId, req);
       if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'Agent not found' }); return; }
       const { role } = req.body || {};
-      const validRoles = ['worker', 'manager', 'specialist', 'monitor', 'director'];
-      if (!validRoles.includes(role)) { res.status(400).json({ error: 'Invalid role' }); return; }
+      // Built-in roles + "custom:<numeric_id>" for user-defined roles
+      const BUILT_IN_ROLES = ['worker', 'manager', 'specialist', 'monitor', 'director', 'creative', 'trader', 'admin'];
+      let isValid = BUILT_IN_ROLES.includes(role);
+      if (!isValid && typeof role === 'string' && role.startsWith('custom:')) {
+        const cid = Number(role.slice('custom:'.length));
+        if (Number.isFinite(cid)) {
+          // Verify the custom role exists and belongs to this user (or is global)
+          const cr = await pool.query(
+            `SELECT id FROM builder_bot.agent_custom_roles WHERE id = $1 AND (user_id = $2 OR user_id IS NULL)`,
+            [cid, userId],
+          );
+          isValid = cr.rows.length > 0;
+        }
+      }
+      if (!isValid) { res.status(400).json({ error: 'Invalid role (use built-in id or "custom:<id>" of your own custom role)' }); return; }
       await pool.query('UPDATE builder_bot.agents SET role = $1, updated_at = NOW() WHERE id = $2', [role, agentId]);
       invalidateAgentCaches(agentId);
+      // Also invalidate the live runtime config so the next tick picks up the new role profile
+      try {
+        const { getAIAgentRuntime } = await import('./agents/ai-agent-runtime');
+        getAIAgentRuntime().invalidateAgentConfig(agentId);
+      } catch {}
+      res.json({ ok: true, role });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // CUSTOM ROLES — user-defined agent role profiles (Sprint 5)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  // GET /api/roles — list built-in + this user's custom roles
+  app.get('/api/roles', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { ROLE_PROFILES } = await import('./agents/role-profiles');
+      const builtIn = Object.values(ROLE_PROFILES).map((p: any) => ({
+        id: p.id, name: p.name, color: p.color, autonomyLevel: p.autonomyLevel,
+        maxSpendPerAction: p.maxSpendPerAction, defaultCapabilities: p.defaultCapabilities,
+        isCustom: false,
+      }));
+      const cr = await pool.query(
+        `SELECT id, role_name, display_name, color, autonomy_level, max_spend_per_action_ton,
+                default_capabilities, tick_interval_ms, default_model, created_via, created_at
+           FROM builder_bot.agent_custom_roles
+          WHERE user_id = $1 OR user_id IS NULL
+          ORDER BY created_at DESC`,
+        [userId],
+      );
+      const custom = cr.rows.map((r: any) => ({
+        id: `custom:${r.id}`, name: { en: r.display_name, ru: r.display_name },
+        color: r.color, autonomyLevel: r.autonomy_level,
+        maxSpendPerAction: Number(r.max_spend_per_action_ton),
+        defaultCapabilities: r.default_capabilities || [],
+        tickIntervalMs: r.tick_interval_ms, defaultModel: r.default_model,
+        roleName: r.role_name, createdVia: r.created_via, isCustom: true,
+      }));
+      res.json({ ok: true, roles: [...builtIn, ...custom] });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/roles — create custom role
+  // Body: { role_name, display_name, color?, system_prompt_module, tool_whitelist?,
+  //         tool_blacklist?, tool_weights?, autonomy_level?, max_spend_per_action_ton?,
+  //         require_approval_above_ton?, tick_interval_ms?, default_model?,
+  //         default_capabilities?, response_style_hints?, behavior_overrides?,
+  //         learning_overrides?, created_via? }
+  app.post('/api/roles', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const b = req.body || {};
+      if (!b.role_name || !b.display_name || !b.system_prompt_module) {
+        res.status(400).json({ error: 'role_name, display_name, system_prompt_module required' });
+        return;
+      }
+      if (!/^[a-z][a-z0-9_-]{1,40}$/.test(String(b.role_name))) {
+        res.status(400).json({ error: 'role_name must be kebab-case, 2-41 chars, [a-z0-9_-]' });
+        return;
+      }
+      const autonomy = ['full', 'high', 'medium', 'low'].includes(b.autonomy_level) ? b.autonomy_level : 'medium';
+      const r = await pool.query(
+        `INSERT INTO builder_bot.agent_custom_roles
+           (user_id, role_name, display_name, color, system_prompt_module,
+            behavior_overrides, learning_overrides, tool_weights,
+            tool_whitelist, tool_blacklist, autonomy_level,
+            max_spend_per_action_ton, require_approval_above_ton,
+            tick_interval_ms, default_model, default_capabilities,
+            response_style_hints, created_via)
+         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb,
+                 $9::jsonb, $10::jsonb, $11, $12, $13, $14, $15, $16::jsonb, $17, $18)
+         RETURNING id, role_name, display_name`,
+        [
+          userId, b.role_name, String(b.display_name).slice(0, 128),
+          b.color || '#64748b', String(b.system_prompt_module).slice(0, 8000),
+          JSON.stringify(b.behavior_overrides || {}), JSON.stringify(b.learning_overrides || {}),
+          JSON.stringify(b.tool_weights || {}),
+          Array.isArray(b.tool_whitelist) ? JSON.stringify(b.tool_whitelist) : null,
+          Array.isArray(b.tool_blacklist) ? JSON.stringify(b.tool_blacklist) : null,
+          autonomy,
+          Number(b.max_spend_per_action_ton) || 0,
+          b.require_approval_above_ton != null ? Number(b.require_approval_above_ton) : null,
+          b.tick_interval_ms != null ? Math.max(30_000, Math.min(86_400_000, Number(b.tick_interval_ms))) : null,
+          b.default_model || null,
+          JSON.stringify(Array.isArray(b.default_capabilities) ? b.default_capabilities : []),
+          b.response_style_hints || null,
+          b.created_via || 'manual',
+        ],
+      );
+      res.json({ ok: true, role: { ...r.rows[0], id: `custom:${r.rows[0].id}` } });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // PUT /api/roles/:id — update custom role
+  app.put('/api/roles/:id', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const id = parseInt(String(req.params.id).replace(/^custom:/, ''), 10);
+      if (!Number.isFinite(id)) { res.status(400).json({ error: 'Invalid role id' }); return; }
+      const own = await pool.query(`SELECT id FROM builder_bot.agent_custom_roles WHERE id = $1 AND user_id = $2`, [id, userId]);
+      if (!own.rows[0]) { res.status(404).json({ error: 'Custom role not found' }); return; }
+      const b = req.body || {};
+      const fields: string[] = []; const vals: any[] = []; let i = 1;
+      const stringFields = ['role_name', 'display_name', 'color', 'system_prompt_module', 'default_model', 'response_style_hints'];
+      for (const f of stringFields) if (b[f] !== undefined) { fields.push(`${f} = $${i++}`); vals.push(b[f]); }
+      const jsonFields = ['behavior_overrides', 'learning_overrides', 'tool_weights', 'tool_whitelist', 'tool_blacklist', 'default_capabilities'];
+      for (const f of jsonFields) if (b[f] !== undefined) { fields.push(`${f} = $${i++}::jsonb`); vals.push(JSON.stringify(b[f])); }
+      if (b.autonomy_level !== undefined && ['full', 'high', 'medium', 'low'].includes(b.autonomy_level)) {
+        fields.push(`autonomy_level = $${i++}`); vals.push(b.autonomy_level);
+      }
+      if (b.max_spend_per_action_ton !== undefined) { fields.push(`max_spend_per_action_ton = $${i++}`); vals.push(Number(b.max_spend_per_action_ton) || 0); }
+      if (b.require_approval_above_ton !== undefined) { fields.push(`require_approval_above_ton = $${i++}`); vals.push(b.require_approval_above_ton != null ? Number(b.require_approval_above_ton) : null); }
+      if (b.tick_interval_ms !== undefined) { fields.push(`tick_interval_ms = $${i++}`); vals.push(b.tick_interval_ms != null ? Number(b.tick_interval_ms) : null); }
+      if (fields.length === 0) { res.status(400).json({ error: 'nothing to update' }); return; }
+      fields.push(`updated_at = NOW()`);
+      vals.push(id);
+      const r = await pool.query(`UPDATE builder_bot.agent_custom_roles SET ${fields.join(', ')} WHERE id = $${i} RETURNING *`, vals);
+      // Invalidate every agent currently using this role
+      try {
+        const { getAIAgentRuntime } = await import('./agents/ai-agent-runtime');
+        const usingThis = await pool.query(`SELECT id FROM builder_bot.agents WHERE role = $1`, [`custom:${id}`]);
+        const rt = getAIAgentRuntime();
+        usingThis.rows.forEach((row: any) => rt.invalidateAgentConfig(row.id));
+      } catch {}
+      res.json({ ok: true, role: { ...r.rows[0], id: `custom:${r.rows[0].id}` } });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // DELETE /api/roles/:id — delete custom role (agents using it fall back to worker)
+  app.delete('/api/roles/:id', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const id = parseInt(String(req.params.id).replace(/^custom:/, ''), 10);
+      if (!Number.isFinite(id)) { res.status(400).json({ error: 'Invalid role id' }); return; }
+      // Reassign agents that use this role to plain worker
+      await pool.query(`UPDATE builder_bot.agents SET role = 'worker' WHERE role = $1 AND user_id = $2`, [`custom:${id}`, userId]);
+      const r = await pool.query(`DELETE FROM builder_bot.agent_custom_roles WHERE id = $1 AND user_id = $2 RETURNING id`, [id, userId]);
+      if (r.rows.length === 0) { res.status(404).json({ error: 'Custom role not found' }); return; }
       res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });

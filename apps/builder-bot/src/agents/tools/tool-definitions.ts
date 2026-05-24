@@ -3135,6 +3135,54 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
         },
       },
     },
+    // ── Composite tools (Sprint 5b) — agent composes its own macros ──
+    {
+      type: 'function',
+      function: {
+        name: 'compose_tool',
+        description: 'Create a new tool by combining multiple existing tool calls into one ordered sequence (macro). Useful when a workflow always runs the same N tools — saves tokens + reduces error surface. The new tool will appear in your toolset on the next tick. Steps can reference previous step results via "{step.N.field}" syntax (e.g. step 0 returns {hash}, step 1 args can be {"comment":"tx {step.0.hash}"}).',
+        parameters: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'Tool name (kebab/snake-case, 2-60 chars, no spaces). Will appear as a regular tool.' },
+            description: { type: 'string', description: 'Human-readable description of what this macro does (1-200 chars). The LLM uses this to decide when to call it.' },
+            steps: {
+              type: 'array',
+              description: 'Ordered list of {tool, args} to execute. Use "{step.N.field}" inside args to pipe data forward.',
+              items: {
+                type: 'object',
+                properties: {
+                  tool: { type: 'string', description: 'Existing tool name to call' },
+                  args: { type: 'object', description: 'Arguments for that tool. String values may contain {step.N.field} placeholders' },
+                },
+                required: ['tool'],
+              },
+            },
+            params_schema: {
+              type: 'object',
+              description: 'Optional: schema for parameters the composite tool accepts itself. Each param can be referenced in steps via "{param.NAME}". Format: {NAME: {type: "string"|"number"|"boolean", description: "..."}}',
+            },
+          },
+          required: ['name', 'description', 'steps'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'list_composites',
+        description: 'List all composite (macro) tools you have created.',
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'delete_composite',
+        description: 'Remove one of your composite tools by name.',
+        parameters: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] },
+      },
+    },
     // ── Skills boost: web search with auto-summarize, CRON scheduling, code execution ──
     {
       type: 'function',
