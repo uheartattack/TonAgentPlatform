@@ -4662,10 +4662,31 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
   });
 
   // ── GET /api/settings — настройки пользователя ──
+  // Возвращает `user_variables` как есть (значения SECRET_VAR_KEYS — зашифрованные "enc:..."),
+  // плюс отдельное поле `user_variables_masked` с дешифрованными и замаскированными ключами
+  // (например "sk-pro...wxyz") — для безопасного отображения в UI без round-trip потери значения.
   app.get('/api/settings', requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = (req as any).userId as number;
-      const settings = await getUserSettingsRepository().getAll(userId);
+      const settings: Record<string, any> = await getUserSettingsRepository().getAll(userId);
+
+      const uv = settings?.user_variables;
+      const uvObj = (uv && typeof uv === 'string') ? (() => { try { return JSON.parse(uv); } catch { return null; } })() : uv;
+      if (uvObj && typeof uvObj === 'object' && !Array.isArray(uvObj)) {
+        const SECRET_VAR_KEYS = new Set(['AI_API_KEY', 'TONAPI_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GROQ_API_KEY', 'OPENROUTER_API_KEY']);
+        const { decryptApiKey } = await import('./crypto-utils');
+        const masked: Record<string, string> = {};
+        for (const k of Object.keys(uvObj)) {
+          if (!SECRET_VAR_KEYS.has(k)) continue;
+          const v = uvObj[k];
+          if (typeof v !== 'string' || v.length === 0) continue;
+          let plain = v;
+          try { plain = decryptApiKey(v); } catch { /* keep as-is */ }
+          masked[k] = plain.length <= 10 ? '••••' : `${plain.slice(0, 6)}…${plain.slice(-4)}`;
+        }
+        if (Object.keys(masked).length > 0) settings.user_variables_masked = masked;
+      }
+
       res.json({ ok: true, settings });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -4711,11 +4732,13 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
         return out;
       }
 
+      let userVarsChanged = false;
       if (body.key && body.value !== undefined) {
         const err = validateSettingPair(body.key, body.value);
         if (err) { res.status(400).json({ error: err }); return; }
         const value = body.key === 'user_variables' ? encryptUserVarsSecrets(body.value) : body.value;
         await getUserSettingsRepository().set(userId, body.key, value);
+        if (body.key === 'user_variables') userVarsChanged = true;
       } else if (body.settings && typeof body.settings === 'object' && !Array.isArray(body.settings)) {
         const entries = Object.entries(body.settings);
         if (entries.length > SETTINGS_MAX_KEYS_PER_CALL) {
@@ -4729,9 +4752,22 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
         await Promise.all(
           entries.map(([k, v]) => getUserSettingsRepository().set(userId, k, k === 'user_variables' ? encryptUserVarsSecrets(v) : v))
         );
+        if (entries.some(([k]) => k === 'user_variables')) userVarsChanged = true;
       } else {
         res.status(400).json({ error: 'Body must have {key, value} or {settings: {...}}' });
         return;
+      }
+
+      // If user_variables changed (incl. AI_PROVIDER / AI_API_KEY), tell the runtime
+      // to refresh frozen configs on the next tick — otherwise active agents keep
+      // calling the old provider until bot restart.
+      if (userVarsChanged) {
+        try {
+          const { getAIAgentRuntime } = await import('./agents/ai-agent-runtime');
+          getAIAgentRuntime().invalidateUserConfig(userId);
+        } catch (e: any) {
+          console.warn('[Settings] invalidateUserConfig failed:', e?.message || e);
+        }
       }
 
       const updated = await getUserSettingsRepository().getAll(userId);
@@ -4990,6 +5026,48 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
         userPluginsInstalled = userPlugins.length;
       } catch { /* repo not ready */ }
 
+      // Compute week-over-week / day-over-day trend deltas so the
+      // overview cards can render the "↑ +12.4% к прошлой неделе"
+      // hints. We only include a field when its baseline window has
+      // data — otherwise frontend hides the trend.
+      let totalRunsTrend:    number | null = null;
+      let last24hRunsTrend:  number | null = null;
+      let successRateTrend:  number | null = null;
+      let agentsTotalTrend:  number | null = null;
+      try {
+        const trendQ = await pool.query(
+          `SELECT
+             COUNT(*) FILTER (WHERE started_at >= NOW() - INTERVAL '7 days')                                        AS runs_week,
+             COUNT(*) FILTER (WHERE started_at >= NOW() - INTERVAL '14 days' AND started_at < NOW() - INTERVAL '7 days') AS runs_prev_week,
+             COUNT(*) FILTER (WHERE started_at >= NOW() - INTERVAL '24 hours')                                        AS runs_24h,
+             COUNT(*) FILTER (WHERE started_at >= NOW() - INTERVAL '48 hours' AND started_at < NOW() - INTERVAL '24 hours') AS runs_prev_24h,
+             COUNT(*) FILTER (WHERE status = 'success' AND started_at >= NOW() - INTERVAL '24 hours')                  AS ok_24h,
+             COUNT(*) FILTER (WHERE status = 'success' AND started_at >= NOW() - INTERVAL '48 hours' AND started_at < NOW() - INTERVAL '24 hours') AS ok_prev_24h
+           FROM builder_bot.execution_history WHERE user_id = $1`,
+          [userId]
+        );
+        const t = trendQ.rows[0] || {};
+        const wk = Number(t.runs_week || 0), pwk = Number(t.runs_prev_week || 0);
+        if (pwk > 0) totalRunsTrend = ((wk - pwk) / pwk) * 100;
+        const d = Number(t.runs_24h || 0), pd = Number(t.runs_prev_24h || 0);
+        if (pd > 0) last24hRunsTrend = ((d - pd) / pd) * 100;
+        const okT = d > 0 ? (Number(t.ok_24h || 0) / d) * 100 : null;
+        const okY = pd > 0 ? (Number(t.ok_prev_24h || 0) / pd) * 100 : null;
+        if (okT != null && okY != null) successRateTrend = okT - okY;
+      } catch { /* table absent / column mismatch — leave trends null */ }
+      try {
+        const agentsTrendQ = await pool.query(
+          `SELECT
+             COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days')                                          AS this_week,
+             COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '14 days' AND created_at < NOW() - INTERVAL '7 days') AS prev_week
+           FROM builder_bot.agents WHERE user_id = $1`,
+          [userId]
+        );
+        const aw = Number(agentsTrendQ.rows[0]?.this_week || 0);
+        const apw = Number(agentsTrendQ.rows[0]?.prev_week || 0);
+        if (apw > 0) agentsTotalTrend = ((aw - apw) / apw) * 100;
+      } catch {}
+
       res.json({
         ok: true,
         agentsTotal:       agents.length,
@@ -5001,6 +5079,12 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
         last24hRuns,
         uptimeSeconds,
         aiModel,
+        // Trend deltas (percent change). Null when the baseline window
+        // has no data — frontend hides the row in that case.
+        totalRunsTrend,
+        last24hRunsTrend,
+        successRateTrend,
+        agentsTotalTrend,
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message });

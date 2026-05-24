@@ -517,12 +517,27 @@ function getAIClient(config: Record<string, any>): { client: OpenAI; defaultMode
   if (defaultModel === 'mixtral-8x7b-32768') {
     console.warn(`[AI] Mixtral on Groq often OOM for agents with long history. Consider llama-3.3-70b-versatile.`);
   }
-  // Anthropic API requires version header + prompt caching beta
-  const isAnthropic = providerCfg.baseURL.includes('anthropic.com') || apiKey.startsWith('sk-ant');
-  const extraHeaders = isAnthropic
-    ? { 'anthropic-version': '2023-06-01', 'anthropic-beta': 'prompt-caching-2024-07-31' }
-    : {};
+  const extraHeaders = buildProviderHeaders(finalURL, apiKey);
   return { client: new OpenAI({ baseURL: finalURL, apiKey, defaultHeaders: extraHeaders }), defaultModel, providerCfg: { ...providerCfg, defaultModel } };
+}
+
+// Provider-specific defaultHeaders. Centralised so all OpenAI-SDK clients (main + utility)
+// stay consistent. Adds:
+//   - Anthropic: version + prompt-caching beta
+//   - OpenRouter: HTTP-Referer + X-Title (attribution; required by OpenRouter ToS for
+//     production traffic, can affect rate-limit pooling and tier routing)
+function buildProviderHeaders(baseURL: string, apiKey: string): Record<string, string> {
+  const url = (baseURL || '').toLowerCase();
+  const headers: Record<string, string> = {};
+  if (url.includes('anthropic.com') || apiKey.startsWith('sk-ant')) {
+    headers['anthropic-version'] = '2023-06-01';
+    headers['anthropic-beta'] = 'prompt-caching-2024-07-31';
+  }
+  if (url.includes('openrouter.ai')) {
+    headers['HTTP-Referer'] = process.env.OPENROUTER_REFERER || 'https://tonagentplatform.com';
+    headers['X-Title'] = process.env.OPENROUTER_TITLE || 'TON Agent Platform';
+  }
+  return headers;
 }
 
 // ── Dual model: utility (lighter/cheaper) model for summarization, vision, transcription ──
@@ -573,13 +588,13 @@ export function getUtilityAIClient(config: Record<string, any>): { client: OpenA
   if (utilityModel) {
     const { baseURL } = resolveProvider(provider);
     const finalURL = (config.AI_BASE_URL as string) || baseURL;
-    return { client: new OpenAI({ baseURL: finalURL, apiKey }), model: utilityModel };
+    return { client: new OpenAI({ baseURL: finalURL, apiKey, defaultHeaders: buildProviderHeaders(finalURL, apiKey) }), model: utilityModel };
   }
 
   // Otherwise use provider's default lite model
   const utilCfg = resolveUtilityProvider(provider);
   const finalURL = (config.AI_BASE_URL as string) || utilCfg.baseURL;
-  return { client: new OpenAI({ baseURL: finalURL, apiKey }), model: utilCfg.model };
+  return { client: new OpenAI({ baseURL: finalURL, apiKey, defaultHeaders: buildProviderHeaders(finalURL, apiKey) }), model: utilCfg.model };
 }
 
 // ── Markdown → HTML converter (for AI-generated text) ─────────────────────
@@ -1113,6 +1128,12 @@ interface ActiveHandle {
   firstTickTimer?: NodeJS.Timeout;
   setupListenerActive?: boolean;
   consecutiveErrors: number;  // Circuit breaker: deactivate after MAX_CONSECUTIVE_ERRORS
+  // Mutable config snapshot — was frozen via closure (bug). Now lives on the handle
+  // so invalidateUserConfig() can swap it without restarting the agent.
+  userId: number;
+  config: Record<string, any>;
+  reloadConfig?: () => Promise<Record<string, any>>; // optional, called when configDirty
+  configDirty: boolean;
 }
 
 const MAX_CONSECUTIVE_ERRORS = 5; // Deactivate agent after 5 consecutive tick failures
@@ -9591,7 +9612,9 @@ If web_search returns nothing useful → say "не смог найти акту�
         // Cheap utility model for summarization
         const { resolveUtilityProvider, getUtilityAIClient } = await import('./ai-agent-runtime');
         const utilCfg = resolveUtilityProvider(providerName);
-        const { client: utilClient, model: utilModel } = getUtilityAIClient({ AI_PROVIDER: providerName });
+        // Pass full agent config (AI_API_KEY, AI_BASE_URL, UTILITY_MODEL, ...) — passing
+        // only AI_PROVIDER would throw NO_API_KEY and silently kill memory summarization.
+        const { client: utilClient, model: utilModel } = getUtilityAIClient({ ...params.config, AI_PROVIDER: providerName });
         let summary = '';
         try {
           const resp = await utilClient.chat.completions.create({
@@ -10851,6 +10874,7 @@ export class AIAgentRuntime {
     config:       Record<string, any>;
     intervalMs:   number;
     onNotify:     (msg: string) => Promise<void>;
+    reloadConfig?: () => Promise<Record<string, any>>; // optional: fetch fresh config from DB when invalidated
   }): Promise<void> {
     // Stop existing handle if any
     this.deactivate(opts.agentId);
@@ -10860,17 +10884,34 @@ export class AIAgentRuntime {
       interval: null as any, // will be set below after setInterval
       tickRunning: false,
       consecutiveErrors: 0,
+      userId: opts.userId,
+      config: opts.config,
+      reloadConfig: opts.reloadConfig,
+      configDirty: false,
       tick: async () => {
         if (entry.tickRunning) { return; } // skip overlapping tick
         entry.tickRunning = true;
         try {
+          // Refresh config from DB if invalidated (e.g. user changed AI_PROVIDER in Studio).
+          // Without this the tick closure would keep using the stale snapshot captured at activate().
+          if (entry.configDirty && entry.reloadConfig) {
+            try {
+              const fresh = await entry.reloadConfig();
+              entry.config = fresh;
+              entry.configDirty = false;
+              console.log(`[AI runtime] Agent #${opts.agentId} config refreshed (user_settings changed)`);
+            } catch (e: any) {
+              // Don't crash the tick — keep stale config but log the failure so it's visible
+              console.warn(`[AI runtime] Agent #${opts.agentId} reloadConfig failed, keeping stale: ${e?.message || e}`);
+            }
+          }
           const pending = popMessages(opts.agentId);
           const pendingCtx = popPendingContext(opts.agentId);
           await runAIAgentTick({
             agentId:        opts.agentId,
             userId:         opts.userId,
             systemPrompt:   opts.systemPrompt,
-            config:         opts.config,
+            config:         entry.config,
             pendingMessages: pending,
             context:        pendingCtx,
             onNotify:       opts.onNotify,
@@ -10992,6 +11033,27 @@ export class AIAgentRuntime {
     setupListener(0);
 
     console.log(`[AI runtime] Agent #${opts.agentId} activated, interval=${opts.intervalMs}ms`);
+  }
+
+  // Mark cached config dirty for all active agents of a given user. The next tick
+  // will re-fetch via the handle's `reloadConfig` callback (set by runner.activate).
+  // Called from POST /api/settings when key=user_variables changes.
+  invalidateUserConfig(userId: number): number {
+    let n = 0;
+    _activeHandles.forEach((h) => {
+      if (h.userId === userId) { h.configDirty = true; n++; }
+    });
+    if (n > 0) console.log(`[AI runtime] invalidateUserConfig(${userId}) — marked ${n} agent(s) dirty`);
+    return n;
+  }
+
+  // Same for a single agent (used when trigger_config of one agent changes).
+  invalidateAgentConfig(agentId: number): boolean {
+    const h = _activeHandles.get(agentId);
+    if (!h) return false;
+    h.configDirty = true;
+    console.log(`[AI runtime] invalidateAgentConfig(#${agentId}) — marked dirty`);
+    return true;
   }
 
   // Деактивировать AI-агента

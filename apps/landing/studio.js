@@ -756,9 +756,22 @@ function showApp() {
     }
     var greetEl = document.getElementById('overview-greeting-text');
     if (greetEl && name) {
-      greetEl.textContent = greeting + ', ' + name;
+      greetEl.innerHTML = greeting + ', <span class="grad">' + escHtml(name) + '</span>';
       greetEl.removeAttribute('data-en');
       greetEl.removeAttribute('data-ru');
+    }
+    // Inject Live eyebrow above the title once.
+    var headerL = greetEl ? greetEl.parentElement : null;
+    if (headerL && !headerL.querySelector('.eyebrow')) {
+      var eb = document.createElement('span');
+      eb.className = 'eyebrow';
+      var months = currentLang === 'ru'
+        ? ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря']
+        : ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      var now = new Date();
+      eb.textContent = 'Live · ' + now.getDate() + ' ' + months[now.getMonth()] + ' ' + now.getFullYear();
+      eb.style.cssText = 'margin-bottom:14px;display:inline-flex';
+      headerL.insertBefore(eb, headerL.firstChild);
     }
   }
 
@@ -850,6 +863,31 @@ async function loadMyStats() {
   if (modelEl && data.aiModel) modelEl.textContent = data.aiModel;
   // Total agents count
   animateCount(document.getElementById('agents-total-value'), data.agentsTotal || 0, 800);
+
+  // Trend lines under stat values — only rendered when the API returns
+  // a delta for that metric. Hidden otherwise (no fake data).
+  function setTrend(metric, delta, suffixLabel) {
+    var card = document.querySelector('.metric-card[data-metric="' + metric + '"]');
+    if (!card) return;
+    var el = card.querySelector('.metric-trend');
+    if (delta == null || isNaN(delta)) { if (el) el.remove(); return; }
+    if (!el) {
+      el = document.createElement('div');
+      el.className = 'metric-trend';
+      card.appendChild(el);
+    }
+    var up = delta >= 0;
+    var sign = up ? '↑' : '↓';
+    var pct = Math.abs(delta).toFixed(1) + '%';
+    el.className = 'metric-trend ' + (up ? 'up' : 'down');
+    el.innerHTML = '<span class="arr">' + sign + '</span><span class="val">' + (up ? '+' : '−') + pct + '</span>' +
+      (suffixLabel ? '<span class="sfx"> ' + suffixLabel + '</span>' : '');
+  }
+  var ru = currentLang === 'ru';
+  setTrend('runs',         data.totalRunsTrend,        ru ? 'к прошлой неделе' : 'vs last week');
+  setTrend('success',      data.successRateTrend,      ru ? 'сегодня' : 'today');
+  setTrend('last24h',      data.last24hRunsTrend,      ru ? 'сегодня' : 'today');
+  setTrend('agents-total', data.agentsTotalTrend,      ru ? 'за неделю' : 'this week');
 }
 
 // ===== PINNED AGENTS =====
@@ -1864,10 +1902,18 @@ function switchSettingsTab(tab) {
       '</div>' +
 
       // API Key
+      // When a key is already saved we show a masked sample as the input VALUE
+      // (type=text so the bullets render literally — "AIzaSy…HAG4"). On focus we
+      // clear the value AND switch to type=password so a fresh user-typed key is
+      // hidden as it's entered. saveSettingsAI() ignores any value that still
+      // contains the bullet character — only a fresh user-typed key is sent up.
       '<div class="rt-section">' +
         '<div class="rt-section-label">' + IC.link + ' API Key</div>' +
         '<div class="rt-input-wrap">' +
-          '<input type="password" id="ai-key-input" class="rt-input" placeholder="' + (hasKey ? '••••••••••••' : (currentProv ? currentProv.keyPrefix : 'API key')) + '">' +
+          (hasKey
+            ? '<input type="text" id="ai-key-input" class="rt-input" value="' + (_aiKeyMaskUser || 'AIzaSy••••••••••••XXXX') + '" data-masked="1" onfocus="if(this.dataset.masked===\'1\'){this.value=\'\';this.type=\'password\';this.dataset.masked=\'0\';}">'
+            : '<input type="password" id="ai-key-input" class="rt-input" placeholder="' + (currentProv ? currentProv.keyPrefix : 'API key') + '">'
+          ) +
           '<div class="rt-input-hint">' +
             (hasKey
               ? '<span style="color:#22c55e">' + IC.check + '</span> ' + (isRu ? 'Ключ установлен. Оставьте пустым чтобы не менять.' : 'Key is set. Leave empty to keep.')
@@ -3985,6 +4031,9 @@ async function saveSettingsAI() {
   var provider = document.getElementById('ai-provider-select').value;
   var model = document.getElementById('ai-model-input').value.trim();
   var apiKey = document.getElementById('ai-key-input').value.trim();
+  // Ignore the masked-sample we show by default ("AIzaSy••••XXXX"). Only send when
+  // the user actually typed a new key (no bullet character).
+  if (apiKey && apiKey.indexOf('•') !== -1) apiKey = '';
   var utilityModel = (document.getElementById('ai-utility-model-input') || {}).value || '';
   utilityModel = utilityModel.trim();
   var temperature = (document.getElementById('ai-temperature') || {}).value;
@@ -4735,19 +4784,59 @@ async function refreshData() {
   if (icon) icon.style.animation = '';
 }
 
-function logout() {
+// Actual sign-out routine — clears tokens/cache and re-shows the auth screen.
+// Renamed from the historical `logout` so we can wrap it with a confirmation
+// prompt (the old sidebar button was too easy to mis-click).
+function _performLogout() {
   authToken = null;
   currentUser = null;
   localStorage.removeItem('tg_token');
-  // Clear TOS cache so a different user signing in on this device sees the popup
   try {
     localStorage.removeItem('tos_accepted');
     localStorage.removeItem('tos_accepted_errors');
   } catch (_e) {}
   document.getElementById('auth-screen').classList.remove('hidden');
   document.getElementById('app').classList.add('hidden');
-  // Re-initialize auth screen so login button appears immediately
   initAuth();
+}
+
+// Public sign-out — shows a styled confirmation modal first. Kept under
+// the legacy `logout` name so old onclick handlers keep working.
+function logout() {
+  var existing = document.getElementById('logout-confirm-modal');
+  if (existing) { existing.remove(); }
+  var ru = currentLang === 'ru';
+  var modal = document.createElement('div');
+  modal.id = 'logout-confirm-modal';
+  modal.className = 'logout-confirm-modal';
+  modal.innerHTML =
+    '<div class="logout-confirm-backdrop"></div>' +
+    '<div class="logout-confirm-card" role="dialog" aria-modal="true" aria-labelledby="logout-confirm-title">' +
+      '<div class="logout-confirm-icon">' +
+        '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>' +
+      '</div>' +
+      '<h3 id="logout-confirm-title" class="logout-confirm-title">' + (ru ? 'Выйти из аккаунта?' : 'Sign out?') + '</h3>' +
+      '<p class="logout-confirm-sub">' + (ru
+        ? 'Вы выйдете на этом устройстве. Агенты продолжат работать на платформе.'
+        : 'You\'ll be signed out on this device. Your agents keep running on the platform.') + '</p>' +
+      '<div class="logout-confirm-actions">' +
+        '<button class="btn btn-secondary" id="logout-confirm-cancel">' + (ru ? 'Отмена' : 'Cancel') + '</button>' +
+        '<button class="logout-btn-profile" id="logout-confirm-ok">' +
+          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>' +
+          (ru ? 'Выйти' : 'Sign out') +
+        '</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(modal);
+  var close = function() { modal.remove(); document.removeEventListener('keydown', onKey); };
+  var onKey = function(e) { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  modal.querySelector('.logout-confirm-backdrop').addEventListener('click', close);
+  modal.querySelector('#logout-confirm-cancel').addEventListener('click', close);
+  modal.querySelector('#logout-confirm-ok').addEventListener('click', function() {
+    close();
+    _performLogout();
+  });
 }
 
 // ── Auth initialization ──────────────────────────────────────────────────────
@@ -5266,9 +5355,39 @@ function loadOverview() {
     }
     var greetEl = document.getElementById('overview-greeting-text');
     if (greetEl && name) {
-      greetEl.textContent = greeting + ', ' + name;
+      greetEl.innerHTML = greeting + ', <span class="grad">' + escHtml(name) + '</span>';
       greetEl.removeAttribute('data-en');
       greetEl.removeAttribute('data-ru');
+    }
+    // Live eyebrow above the greeting + extended subtitle ("N агентов
+    // активны…"). Both inserted once per page-load.
+    var headerL = greetEl ? greetEl.parentElement : null;
+    if (headerL && !headerL.querySelector('.eyebrow')) {
+      var eb = document.createElement('span');
+      eb.className = 'eyebrow';
+      var months = currentLang === 'ru'
+        ? ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря']
+        : ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      var now = new Date();
+      eb.textContent = 'Live · ' + now.getDate() + ' ' + months[now.getMonth()] + ' ' + now.getFullYear();
+      eb.style.cssText = 'margin-bottom:14px;display:inline-flex';
+      headerL.insertBefore(eb, headerL.firstChild);
+    }
+    // Extend subtitle with live stats once /api/stats/me resolves.
+    var subEl = headerL ? headerL.querySelector('.page-subtitle') : null;
+    if (subEl && !subEl.dataset.stretched) {
+      apiRequest('GET', '/api/stats/me').then(function(d) {
+        if (!d || !d.ok) return;
+        var active = d.agentsActive || 0;
+        var avg = d.avgResponseSec || d.avgResponse || null;
+        var ru = currentLang === 'ru';
+        var tail = ru
+          ? (active + ' агент' + (active === 1 ? '' : (active < 5 ? 'а' : 'ов')) + ' активн' + (active === 1 ? 'ы' : 'ы'))
+          : (active + ' agent' + (active === 1 ? '' : 's') + ' active');
+        if (avg) tail += ru ? ', среднее время отклика ' + avg.toFixed(1) + 'с' : ', avg response ' + avg.toFixed(1) + 's';
+        subEl.textContent = subEl.textContent.replace(/[.·]+\s*$/, '').trim() + '. ' + tail + '.';
+        subEl.dataset.stretched = '1';
+      }).catch(function(){});
     }
   }
 }
@@ -6367,10 +6486,17 @@ function onAIProviderChange() {
   }
 }
 
+// Cached user-level mask (e.g. "AIzaSy…HAG4"). Set by loadAIKey, read by agent
+// detail "AI" tab so the input shows a recognisable mask instead of generic bullets.
+let _aiKeyMaskUser = '';
+
 async function loadAIKey() {
   try {
     const data = await apiRequest('GET', '/api/settings');
     if (!data.ok || !data.settings) return;
+    if (data.settings.user_variables_masked && data.settings.user_variables_masked.AI_API_KEY) {
+      _aiKeyMaskUser = data.settings.user_variables_masked.AI_API_KEY;
+    }
     const uv = data.settings.user_variables;
     if (!uv) return;
     const vars = typeof uv === 'string' ? JSON.parse(uv) : uv;
@@ -6389,7 +6515,16 @@ async function loadAIKey() {
     const input = document.getElementById('ai-api-key-input');
     if (input && hasKey) {
       input.value = '';
-      input.placeholder = vars.AI_API_KEY.slice(0, 6) + '...' + vars.AI_API_KEY.slice(-4);
+      // Бэкенд даёт безопасную маску в user_variables_masked (например "sk-pro…wxyz").
+      // Фоллбек на дефолтный placeholder если масок нет или это legacy plain-text без маски.
+      const mask = data.settings.user_variables_masked && data.settings.user_variables_masked.AI_API_KEY;
+      if (mask) {
+        input.placeholder = mask;
+      } else if (typeof vars.AI_API_KEY === 'string' && !vars.AI_API_KEY.startsWith('enc:') && vars.AI_API_KEY.length > 10) {
+        input.placeholder = vars.AI_API_KEY.slice(0, 6) + '…' + vars.AI_API_KEY.slice(-4);
+      } else {
+        input.placeholder = currentLang === 'ru' ? '•••••••• (ключ сохранён)' : '•••••••• (key saved)';
+      }
     }
   } catch {}
 }
@@ -7402,11 +7537,21 @@ function updateOverviewUsage(sub) {
   function setBar(labelId, barId, used, max) {
     var el = document.getElementById(labelId);
     var bar = document.getElementById(barId);
-    if (el) el.textContent = used + ' / ' + (max === -1 ? '∞' : max);
+    // Treat -1, null, undefined, Infinity, 0 (when used > 0) as "Unlimited".
+    var unlimited = (max === -1 || max == null || !isFinite(max));
+    if (el) el.textContent = (used || 0) + ' / ' + (unlimited ? '∞' : max);
     if (bar) {
-      if (max === -1) { bar.style.width = '100%'; bar.style.background = 'linear-gradient(90deg,#4ade80,#22d3ee)'; }
-      else if (max === 0) bar.style.width = '0%';
-      else bar.style.width = Math.min(100, (used / max) * 100) + '%';
+      // Drop any inline background so the CSS rule (.memory-progress green
+      // gradient) wins. Width 100% on unlimited = fully painted bar.
+      bar.style.background = '';
+      bar.classList.remove('warning');
+      if (unlimited)       bar.style.width = '100%';
+      else if (max === 0)  bar.style.width = '0%';
+      else {
+        var pct = Math.min(100, (used / max) * 100);
+        bar.style.width = pct + '%';
+        if (pct >= 90) bar.classList.add('warning');
+      }
     }
   }
   setBar('ov-agents-usage', 'ov-agents-bar', sub.agentsUsed || 0, sub.maxAgents);
@@ -7489,22 +7634,32 @@ function updateSidebarPlanBadge(sub) {
     }, 1000);
     return;
   }
+  // Plan pill keeps only the tier (◆ Unlimited / 🚀 Pro / 🆓 Free).
+  // Beta-tester role is rendered as a small uppercase caption ABOVE the
+  // plan pill — separate token so it survives plan upgrades/downgrades.
+  var isBeta = sub.isBeta || (currentUser && currentUser._isBeta);
   badge.innerHTML = planIcon(sub.planIcon) + ' ' + (sub.planName || 'Free');
   badge.className = 'user-tier plan-badge-' + (sub.planId || 'free');
-  // Beta tester badge next to plan badge
-  if (sub.isBeta || (currentUser && currentUser._isBeta)) {
-    var betaEl = document.getElementById('user-beta-badge');
-    if (!betaEl) {
-      betaEl = document.createElement('span');
-      betaEl.id = 'user-beta-badge';
-      // Was hardcoded purple — now follows the live accent like the rest of the
-      // sidebar badges (BETA / NEW / ADM). Falls back to purple if --accent-r
-      // isn't set yet (first render before setAccentColor ran).
-      betaEl.style.cssText = 'display:block;padding:2px 8px;border-radius:10px;background:rgba(var(--accent-r,168),var(--accent-g,85),var(--accent-b,247),0.14);color:var(--primary-light,#a855f7);font-size:.62rem;font-weight:600;margin-top:2px;letter-spacing:.3px';
-      betaEl.textContent = 'BETA TESTER';
-      badge.parentElement.appendChild(betaEl);
+
+  // Render / remove the micro "Beta tester" caption.
+  var details = badge.parentElement;
+  var betaCaption = document.getElementById('user-beta-caption');
+  if (isBeta) {
+    if (!betaCaption) {
+      betaCaption = document.createElement('span');
+      betaCaption.id = 'user-beta-caption';
+      betaCaption.className = 'user-beta-caption';
+      betaCaption.textContent = currentLang === 'ru' ? 'Бета-тестер' : 'Beta tester';
+      details.insertBefore(betaCaption, badge);
+    } else {
+      betaCaption.textContent = currentLang === 'ru' ? 'Бета-тестер' : 'Beta tester';
     }
+  } else if (betaCaption) {
+    betaCaption.remove();
   }
+  // Remove the legacy standalone beta pill if a prior render created it.
+  var stale = document.getElementById('user-beta-badge');
+  if (stale) stale.remove();
 }
 
 // Plans modal
@@ -11154,18 +11309,93 @@ function renderMarketplaceGrid() {
       '<p style="color:var(--text-muted)">' + (currentLang === 'ru' ? 'Пока ничего нет' : 'Nothing here yet') + '</p></div>';
     return;
   }
+
+  // Stamp per-category counts on the filter pill-tabs when looking at
+  // the "all" view (so users see "Все 142 · Мониторинг 38 …").
+  if (_marketplaceFilter === 'all') {
+    var counts = { all: _marketplaceListings.length };
+    _marketplaceListings.forEach(function(l) {
+      var c = (l.category || 'other').toLowerCase();
+      counts[c] = (counts[c] || 0) + 1;
+    });
+    document.querySelectorAll('#marketplace-tabs .mkt-tab').forEach(function(t) {
+      var cat = t.getAttribute('data-cat');
+      var existing = t.querySelector('.count'); if (existing) existing.remove();
+      if (cat && counts[cat] != null) {
+        var c = document.createElement('span');
+        c.className = 'count';
+        c.textContent = counts[cat].toLocaleString(currentLang === 'ru' ? 'ru-RU' : 'en-US');
+        t.appendChild(c);
+      }
+    });
+    // Also update the page-head subtitle "· N публикаций"
+    var sub = document.querySelector('#marketplace-page .page-sub, #marketplace-page .page-subtitle');
+    if (sub) {
+      var totalCnt = _marketplaceListings.length;
+      var ru = currentLang === 'ru';
+      var unit = ru
+        ? (totalCnt % 10 === 1 && totalCnt % 100 !== 11 ? 'публикация' : (totalCnt % 10 >= 2 && totalCnt % 10 <= 4 && (totalCnt % 100 < 10 || totalCnt % 100 >= 20) ? 'публикации' : 'публикаций'))
+        : (totalCnt === 1 ? 'listing' : 'listings');
+      sub.textContent = (sub.textContent || '').replace(/\s·\s*\d.*$/, '').trim() + ' · ' + totalCnt + ' ' + unit;
+    }
+  }
+
+  function fmtCompact(n) {
+    n = Number(n || 0);
+    if (n >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'K';
+    return String(n);
+  }
+  var catTone = { nft: 'purple', defi: 'green', gifts: 'amber', other: 'amber' };
+
   grid.innerHTML = _marketplaceListings.map(function(l) {
+    var name = l.name || (currentLang === 'ru' ? 'Без названия' : 'Untitled');
+    var initial = (name.trim().charAt(0) || '?').toUpperCase();
+    var avatarInner = l.avatarUrl
+      ? '<img src="' + escHtml(l.avatarUrl) + '" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">'
+      : escHtml(initial);
     var priceText = l.isFree ? (currentLang === 'ru' ? 'Бесплатно' : 'Free') : ((Number(l.price || 0) / 1e9).toFixed(2) + ' TON');
+    var priceClass = l.isFree ? 'mkt-card-price green' : 'mkt-card-price ton';
+    var author = l.sellerUsername ? '@' + escHtml(l.sellerUsername)
+               : l.sellerName ? escHtml(l.sellerName)
+               : (currentLang === 'ru' ? 'аноним' : 'anonymous');
+    var byLbl = currentLang === 'ru' ? 'от ' : 'by ';
+    var installs = Number(l.totalSales || l.total_sales || 0);
+    var runs = Number(l.totalRuns || l.total_runs || 0);
+    var cat = (l.category || 'other').toLowerCase();
+    var tone = catTone[cat] || '';
+    var btnLabel = l.isFree
+      ? (currentLang === 'ru' ? 'Установить' : 'Install')
+      : (currentLang === 'ru' ? 'Купить' : 'Buy');
+    var btnIcon = l.isFree
+      ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'
+      : '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 8v8"/></svg>';
     return '<div class="marketplace-card" onclick="openMarketplaceDetail(' + l.id + ')" style="cursor:pointer">' +
       '<div class="mkt-card-header">' +
-        '<span class="mkt-card-category">' + escHtml(l.category || 'other') + '</span>' +
-        '<span class="mkt-card-price">' + priceText + '</span>' +
+        '<span class="chip ' + tone + '">' + escHtml((l.category || 'other').toUpperCase()) + '</span>' +
+        '<span class="' + priceClass + '">' + priceText + '</span>' +
       '</div>' +
-      '<h4>' + escHtml(l.name) + '</h4>' +
-      '<p>' + escHtml((l.description || '').slice(0, 140)) + '</p>' +
-      '<div style="display:flex;gap:8px">' +
-        '<button class="btn btn-primary btn-sm" onclick="event.stopPropagation();buyFromMarketplace(' + l.id + ')" style="flex:1">' +
-          (l.isFree ? (currentLang === 'ru' ? IC.download + ' Установить' : IC.download + ' Install') : (currentLang === 'ru' ? IC.creditcard + ' Купить' : IC.creditcard + ' Buy')) +
+      '<div class="mkt-card-identity">' +
+        '<div class="mkt-card-avatar' + (l.avatarUrl ? ' has-img' : '') + '">' + avatarInner + '</div>' +
+        '<div class="mkt-card-name-block">' +
+          '<h4>' + escHtml(name) + '</h4>' +
+          '<div class="mkt-card-author">' + byLbl + author + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<p>' + escHtml((l.description || '').slice(0, 200)) + '</p>' +
+      '<div class="mkt-card-foot">' +
+        '<div class="mkt-card-stats">' +
+          '<span class="mkt-card-stat" title="' + (currentLang === 'ru' ? 'установок' : 'installs') + '">' +
+            '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>' +
+            fmtCompact(installs) +
+          '</span>' +
+          (runs > 0 ? '<span class="mkt-card-stat" title="' + (currentLang === 'ru' ? 'запусков' : 'runs') + '">' +
+            '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>' +
+            fmtCompact(runs) +
+          '</span>' : '') +
+        '</div>' +
+        '<button class="btn btn-primary" onclick="event.stopPropagation();buyFromMarketplace(' + l.id + ')">' +
+          btnIcon + ' ' + btnLabel +
         '</button>' +
       '</div>' +
     '</div>';
@@ -14421,6 +14651,33 @@ function setAccentColor(color) {
   localStorage.setItem('accent_color', color);
 }
 
+// ── Gradient accent preset switcher ──
+// Flips both --primary and --accent-2 via :root[data-accent="..."] rules
+// defined in studio-skin.css. Mirrors the resolved values into the legacy
+// --ds-* tokens so design-system.css badges follow along.
+function setAccentPreset(name) {
+  if (typeof name !== 'string') return;
+  var root = document.documentElement;
+  root.dataset.accent = name;
+  var cs = getComputedStyle(root);
+  var primary      = (cs.getPropertyValue('--primary') || '').trim();
+  var primaryLight = (cs.getPropertyValue('--primary-light') || '').trim();
+  var dim          = (cs.getPropertyValue('--accent-dim') || '').trim();
+  if (primary) {
+    root.style.setProperty('--ds-primary', primary);
+    root.style.setProperty('--ds-primary-bright', primaryLight || primary);
+    root.style.setProperty('--ds-primary-dim', dim || 'rgba(0,152,234,0.12)');
+    root.style.setProperty('--ds-accent', primary);
+    root.style.setProperty('--ds-accent-bright', primaryLight || primary);
+    root.style.setProperty('--ds-accent-dim', dim || 'rgba(0,152,234,0.12)');
+  }
+  document.querySelectorAll('.accent-preset').forEach(function(el) {
+    el.classList.toggle('active', el.dataset.preset === name);
+  });
+  localStorage.setItem('accent_preset', name);
+}
+window.setAccentPreset = setAccentPreset;
+
 // Restore UI settings from localStorage
 (function restoreUISettings() {
   var scale = localStorage.getItem('ui_scale');
@@ -14433,14 +14690,14 @@ function setAccentColor(color) {
     var ss = document.getElementById('sidebar-scale-slider'); if (ss) ss.value = scale;
     var sv = document.getElementById('sidebar-scale-value'); if (sv) sv.textContent = scale + '%';
   }
-  var accent = localStorage.getItem('accent_color');
-  if (accent) {
-    // Re-run the full accent setter so light/dark/dim/glow shades all derive
-    // — not just --primary/--accent (those alone leave button hovers blue).
-    try { setAccentColor(accent); } catch (e) {
-      document.documentElement.style.setProperty('--primary', accent);
-    }
+  // Gradient preset has priority; fall back to legacy single-colour accent.
+  var preset = localStorage.getItem('accent_preset');
+  if (!preset) {
+    var legacy = (localStorage.getItem('accent_color') || '').toLowerCase();
+    var map = { '#0ea5e9': 'mono', '#8b5cf6': 'plasma', '#10b981': 'emerald', '#f59e0b': 'sunset', '#ef4444': 'sunset' };
+    preset = map[legacy] || 'aurora';
   }
+  try { setAccentPreset(preset); } catch (e) {}
   // Restore notification settings
   var nd = localStorage.getItem('notif_duration');
   if (nd !== null) { _notifDuration = parseInt(nd) * 1000; var nds = document.getElementById('notif-duration-slider'); if (nds) nds.value = nd; var ndv = document.getElementById('notif-duration-value'); if (ndv) ndv.textContent = nd === '0' ? 'off' : nd + 's'; }

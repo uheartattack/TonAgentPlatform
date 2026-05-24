@@ -317,6 +317,7 @@ export class RunnerAgent {
         const ms             = intervalMs || 5 * 60_000; // default 5 min
 
         const aiRuntime = getAIAgentRuntime();
+        const dbTools = this.dbTools;
         await aiRuntime.activate({
           agentId:      params.agentId,
           userId:       params.userId,
@@ -324,6 +325,15 @@ export class RunnerAgent {
           config:       mergedConfigAI,
           intervalMs:   ms,
           onNotify:     (msg) => notifyUser(params.userId, msg),
+          // Called by runtime when invalidateUserConfig/invalidateAgentConfig was triggered.
+          // Re-reads user_variables AND trigger_config so a Studio change to either takes
+          // effect on the next tick without restarting the bot.
+          reloadConfig: async () => {
+            const freshVars = await loadUserVariables(params.userId);
+            const freshAgent = await dbTools.getAgent(params.agentId, params.userId);
+            const freshTrigger = (freshAgent?.data?.triggerConfig as Record<string, any>) || (freshAgent?.triggerConfig as Record<string, any>) || {};
+            return mergeAgentConfig(freshVars, freshTrigger);
+          },
         });
 
         // Activate in DB
