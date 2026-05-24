@@ -5339,6 +5339,7 @@ const pageLoadFns = {
   'terms':       () => loadTermsPage(),
   'privacy':     () => loadPrivacyPage(),
   'tester-hub':  () => loadTesterHub(),
+  crews:         () => loadCrewsPage(),
 };
 
 // Stub functions for pages that don't have dedicated load logic yet
@@ -10007,6 +10008,149 @@ function _netScreenToWorld(sx, sy, W, H) {
     x: (sx - W / 2) / _networkZoom + W / 2 - _networkPan.x,
     y: (sy - H / 2) / _networkZoom + H / 2 - _networkPan.y
   };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CREWS PAGE (Sprint 4 — multi-agent teams)
+// ═══════════════════════════════════════════════════════════════════════════
+async function loadCrewsPage() {
+  const listEl = document.getElementById('crews-list');
+  if (!listEl) return;
+  const isRu = currentLang === 'ru';
+  try {
+    const d = await apiRequest('GET', '/api/crews');
+    if (!d.ok) throw new Error(d.error || 'Failed');
+    const crews = d.crews || [];
+    if (crews.length === 0) {
+      listEl.innerHTML = '<div style="grid-column:1/-1;padding:60px;text-align:center;color:var(--text-muted)">' +
+        '<div style="font-size:48px;margin-bottom:12px">👥</div>' +
+        '<div style="font-size:18px;margin-bottom:8px">' + (isRu ? 'Команд ещё нет' : 'No crews yet') + '</div>' +
+        '<div style="font-size:13px">' + (isRu ? 'Создай команду чтобы группировать агентов с общим бюджетом и состоянием. Менеджер делегирует задачи воркерам через ask_agent.' : 'Create a crew to bundle agents with shared budget + state. The manager delegates work to workers via ask_agent.') + '</div>' +
+        '</div>';
+      return;
+    }
+    listEl.innerHTML = crews.map(function(c) {
+      const memberCount = (c.agent_ids || []).length;
+      const mgr = c.manager_agent_id ? ' • <span style="color:var(--primary)">manager #' + c.manager_agent_id + '</span>' : '';
+      const status = c.is_active ? '<span style="color:#22c55e">●</span>' : '<span style="color:#666">●</span>';
+      return '<div class="card" style="padding:18px;border:1px solid var(--border);border-radius:12px;background:var(--bg-secondary)">' +
+        '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px">' +
+          '<div>' +
+            '<div style="font-weight:600;font-size:16px">' + status + ' ' + escHtml(c.name) + '</div>' +
+            '<div style="font-size:12px;color:var(--text-muted);margin-top:4px">' + memberCount + ' ' + (isRu ? 'агентов' : 'agents') + mgr + '</div>' +
+          '</div>' +
+          '<div style="font-size:11px;color:var(--text-muted)">#' + c.id + '</div>' +
+        '</div>' +
+        (c.description ? '<div style="font-size:13px;color:var(--text-secondary);margin:8px 0;line-height:1.4">' + escHtml(c.description) + '</div>' : '') +
+        '<div style="font-size:12px;color:var(--text-muted);margin-top:8px">' +
+          '<span>' + (isRu ? 'Бюджет' : 'Budget') + ': ' + (Number(c.budget_ton_month) || 0).toFixed(2) + ' TON/мес</span>' +
+          ' · <span>' + (isRu ? 'Запусков' : 'Runs') + ': ' + (c.execution_count || 0) + '</span>' +
+        '</div>' +
+        '<div style="display:flex;gap:6px;margin-top:12px">' +
+          '<button onclick="runCrew(' + c.id + ')" class="btn btn-primary" style="flex:1;font-size:12px;padding:6px 12px">▶ ' + (isRu ? 'Запустить' : 'Run') + '</button>' +
+          '<button onclick="viewCrewDetails(' + c.id + ')" class="btn" style="font-size:12px;padding:6px 12px">' + (isRu ? 'Детали' : 'Details') + '</button>' +
+          '<button onclick="deleteCrew(' + c.id + ')" class="btn" style="font-size:12px;padding:6px 10px;color:var(--danger)">×</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  } catch (e) {
+    listEl.innerHTML = '<div style="grid-column:1/-1;padding:40px;text-align:center;color:var(--danger)">' + escHtml(e.message) + '</div>';
+  }
+}
+
+async function openCreateCrewModal() {
+  const isRu = currentLang === 'ru';
+  // Fetch user's agents to populate member checkboxes
+  const ad = await apiRequest('GET', '/api/agents');
+  const agents = (ad.agents || []).filter(a => a.id);
+  if (agents.length < 2) {
+    toast(isRu ? 'Для команды нужно минимум 2 агента' : 'Need at least 2 agents to form a crew', 'warning');
+    return;
+  }
+  // Lightweight inline modal — no extra dependencies
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML =
+    '<div style="background:var(--bg-secondary);border-radius:14px;padding:24px;max-width:480px;width:100%;max-height:90vh;overflow:auto">' +
+      '<h2 style="margin:0 0 16px 0">' + (isRu ? 'Новая команда' : 'New crew') + '</h2>' +
+      '<label style="display:block;margin-bottom:12px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Название' : 'Name') + '</div>' +
+        '<input id="crew-name" class="rt-input" style="width:100%" placeholder="' + (isRu ? 'Например: Trading Crew' : 'e.g. Trading Crew') + '"></label>' +
+      '<label style="display:block;margin-bottom:12px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Описание' : 'Description') + '</div>' +
+        '<textarea id="crew-desc" class="rt-input" style="width:100%;min-height:60px" placeholder="' + (isRu ? 'Что делает эта команда' : 'What this crew does') + '"></textarea></label>' +
+      '<div style="margin-bottom:12px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:6px">' + (isRu ? 'Участники' : 'Members') + '</div>' +
+        '<div id="crew-members-list" style="max-height:200px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px">' +
+          agents.map(function(a) {
+            return '<label style="display:flex;align-items:center;gap:8px;padding:4px 0"><input type="checkbox" class="crew-member-cb" value="' + a.id + '"> #' + a.id + ' ' + escHtml(a.name) + ' <span style="font-size:11px;color:var(--text-muted)">(' + (a.role || 'worker') + ')</span></label>';
+          }).join('') +
+        '</div></div>' +
+      '<label style="display:block;margin-bottom:12px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Менеджер (опц.) — будет делегировать через ask_agent' : 'Manager (opt.) — will delegate via ask_agent') + '</div>' +
+        '<select id="crew-manager" class="rt-input" style="width:100%"><option value="">— ' + (isRu ? 'нет' : 'none') + ' —</option>' +
+          agents.map(function(a) { return '<option value="' + a.id + '">#' + a.id + ' ' + escHtml(a.name) + '</option>'; }).join('') +
+        '</select></label>' +
+      '<label style="display:block;margin-bottom:16px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Бюджет TON/месяц' : 'Budget TON/month') + '</div>' +
+        '<input id="crew-budget" type="number" step="0.01" class="rt-input" style="width:100%" value="0"></label>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end">' +
+        '<button class="btn" onclick="this.closest(\'div[style*=fixed]\').remove()">' + (isRu ? 'Отмена' : 'Cancel') + '</button>' +
+        '<button class="btn btn-primary" id="crew-create-btn">' + (isRu ? 'Создать' : 'Create') + '</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+  document.getElementById('crew-create-btn').onclick = async function() {
+    const name = (document.getElementById('crew-name').value || '').trim();
+    const desc = (document.getElementById('crew-desc').value || '').trim();
+    const memberIds = Array.from(document.querySelectorAll('.crew-member-cb:checked')).map(c => parseInt(c.value, 10));
+    const manager = parseInt(document.getElementById('crew-manager').value || '0', 10) || null;
+    const budget = parseFloat(document.getElementById('crew-budget').value || '0') || 0;
+    if (!name || memberIds.length === 0) { toast(isRu ? 'Название и минимум 1 участник' : 'Name and at least one member required', 'warning'); return; }
+    if (manager && !memberIds.includes(manager)) memberIds.push(manager);
+    const r = await apiRequest('POST', '/api/crews', { name, description: desc, agent_ids: memberIds, manager_agent_id: manager, budget_ton_month: budget });
+    if (r.ok) { toast(isRu ? 'Команда создана' : 'Crew created', 'success'); overlay.remove(); loadCrewsPage(); }
+    else toast(r.error || 'Error', 'error');
+  };
+}
+
+async function runCrew(crewId) {
+  const isRu = currentLang === 'ru';
+  const trigger = prompt(isRu ? 'Задача для команды:' : 'Task for the crew:', '');
+  if (!trigger) return;
+  const r = await apiRequest('POST', '/api/crews/' + crewId + '/run', { trigger });
+  if (r.ok) toast((isRu ? 'Команда запущена, execution #' : 'Crew kicked off, execution #') + r.execution_id, 'success');
+  else toast(r.error || 'Error', 'error');
+}
+
+async function deleteCrew(crewId) {
+  const isRu = currentLang === 'ru';
+  if (!confirm(isRu ? 'Удалить команду?' : 'Delete crew?')) return;
+  const r = await apiRequest('DELETE', '/api/crews/' + crewId);
+  if (r.ok) { toast(isRu ? 'Удалено' : 'Deleted', 'success'); loadCrewsPage(); }
+  else toast(r.error || 'Error', 'error');
+}
+
+async function viewCrewDetails(crewId) {
+  const isRu = currentLang === 'ru';
+  const d = await apiRequest('GET', '/api/crews/' + crewId);
+  if (!d.ok) { toast(d.error || 'Error', 'error'); return; }
+  const c = d.crew;
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML =
+    '<div style="background:var(--bg-secondary);border-radius:14px;padding:24px;max-width:560px;width:100%;max-height:90vh;overflow:auto">' +
+      '<h2 style="margin:0 0 4px 0">' + escHtml(c.name) + '</h2>' +
+      '<div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">#' + c.id + ' · ' + (c.is_active ? (isRu ? 'активна' : 'active') : (isRu ? 'на паузе' : 'paused')) + '</div>' +
+      (c.description ? '<div style="margin-bottom:14px;line-height:1.5">' + escHtml(c.description) + '</div>' : '') +
+      '<div style="margin-bottom:14px"><b>' + (isRu ? 'Участники' : 'Members') + '</b><ul style="margin:6px 0 0 18px">' +
+        (d.members || []).map(function(m) { return '<li>#' + m.id + ' ' + escHtml(m.name) + ' <span style="font-size:11px;color:var(--text-muted)">(' + (m.role || 'worker') + (m.is_active ? ', active' : ', stopped') + ')</span>' + (c.manager_agent_id === m.id ? ' <span style="color:var(--primary)">👑 manager</span>' : '') + '</li>'; }).join('') +
+      '</ul></div>' +
+      '<div style="margin-bottom:14px"><b>' + (isRu ? 'Последние запуски' : 'Recent executions') + '</b>' +
+        ((d.recent_executions || []).length === 0
+          ? '<div style="font-size:12px;color:var(--text-muted);margin-top:4px">' + (isRu ? 'пока пусто' : 'none yet') + '</div>'
+          : '<ul style="margin:6px 0 0 18px">' + d.recent_executions.map(function(e) { return '<li>#' + e.id + ' · ' + e.status + ' · ' + new Date(e.started_at).toLocaleString() + (e.trigger ? ' — ' + escHtml(e.trigger.slice(0, 60)) : '') + '</li>'; }).join('') + '</ul>') +
+      '</div>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end">' +
+        '<button class="btn" onclick="this.closest(\'div[style*=fixed]\').remove()">' + (isRu ? 'Закрыть' : 'Close') + '</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(overlay);
 }
 
 async function loadNetworkMap() {

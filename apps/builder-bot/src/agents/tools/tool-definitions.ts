@@ -3130,6 +3130,73 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
         },
       },
     },
+    // ── Skills boost: web search with auto-summarize, CRON scheduling, code execution ──
+    {
+      type: 'function',
+      function: {
+        name: 'search_and_summarize',
+        description: 'One-shot research tool: runs web_search, fetches the top result, and returns a brief summary with citations. Use this instead of separate web_search + fetch_url + manual summarize.',
+        parameters: {
+          type: 'object',
+          properties: {
+            query:       { type: 'string', description: 'Search query in natural language' },
+            max_results: { type: 'number', description: 'How many results to fetch and summarize (default 3, max 5)' },
+          },
+          required: ['query'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'subscribe_cron',
+        description: 'Schedule recurring agent tick triggers using a 5-field cron expression (minute hour day-of-month month day-of-week). Examples: "0 9 * * *" = daily at 9:00, "*/30 * * * *" = every 30 minutes, "0 0 * * MON" = every Monday at midnight. Survives bot restart. Use unsubscribe_cron to stop.',
+        parameters: {
+          type: 'object',
+          properties: {
+            cron_expr: { type: 'string', description: 'Cron expression (5 fields). Time in UTC.' },
+            reason:    { type: 'string', description: 'Why this schedule — shown when the tick fires.' },
+          },
+          required: ['cron_expr', 'reason'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'unsubscribe_cron',
+        description: 'Cancel one or all CRON subscriptions for this agent.',
+        parameters: {
+          type: 'object',
+          properties: {
+            id: { type: 'number', description: 'Specific subscription id to cancel. Omit to cancel ALL.' },
+          },
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'list_cron',
+        description: 'List active CRON schedules for this agent.',
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'code_exec',
+        description: 'Execute a small JS snippet in a hardened sandbox (no network, no filesystem, no require). Returns the value of the last expression. Use for arithmetic, JSON shaping, light data processing. Max 5s, max 64KB output.',
+        parameters: {
+          type: 'object',
+          properties: {
+            code:    { type: 'string', description: 'JavaScript code. Last expression value is returned.' },
+            timeout: { type: 'number', description: 'Optional timeout in ms (default 5000, max 10000)' },
+          },
+          required: ['code'],
+        },
+      },
+    },
     // ── Custom plugins tools ──
     {
       type: 'function',

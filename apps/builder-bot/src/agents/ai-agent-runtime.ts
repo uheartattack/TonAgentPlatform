@@ -6702,6 +6702,133 @@ async function _executeToolInner(
       } catch (e: any) { return { error: e.message }; }
     }
 
+    case 'search_and_summarize': {
+      // Wraps web_search + fetch_url + utility-model summary in one tool so agents
+      // don't have to orchestrate the three-step research dance themselves.
+      const query = String(args.query || '').trim();
+      if (!query) return { error: 'query required' };
+      const maxResults = Math.min(5, Math.max(1, Number(args.max_results) || 3));
+      try {
+        // Reuse web_search internals
+        const apiKey = process.env.GOOGLE_API_KEY || process.env.GOOGLE_SEARCH_KEY;
+        const cseId = process.env.GOOGLE_CSE_ID;
+        if (!apiKey || !cseId) return { error: 'web search not configured (GOOGLE_API_KEY + GOOGLE_CSE_ID env required)' };
+        const searchUrl = `https://www.googleapis.com/customsearch/v1?key=${apiKey}&cx=${cseId}&q=${encodeURIComponent(query)}&num=${maxResults}`;
+        const sres = await fetch(searchUrl).then(r => r.json() as any).catch((e: any) => ({ error: e?.message }));
+        const items = (sres?.items || []).slice(0, maxResults);
+        if (items.length === 0) return { results: [], summary: 'No results found.' };
+        // Fetch each URL in parallel (short timeout)
+        const fetchOne = async (item: any) => {
+          try {
+            const ctrl = new AbortController();
+            const t = setTimeout(() => ctrl.abort(), 8000);
+            const r = await fetch(item.link, { signal: ctrl.signal as any, headers: { 'User-Agent': 'Mozilla/5.0 TON Agent Platform' } });
+            clearTimeout(t);
+            const html = await r.text();
+            // Strip HTML tags crudely
+            const text = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+              .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+              .replace(/<[^>]+>/g, ' ')
+              .replace(/\s+/g, ' ').trim().slice(0, 3000);
+            return { url: item.link, title: item.title, text };
+          } catch (e: any) { return { url: item.link, title: item.title, text: '', error: e?.message }; }
+        };
+        const fetched = await Promise.all(items.map(fetchOne));
+        // Summarize via utility client (cheap model)
+        let summary = fetched.filter(f => f.text).map(f => `[${f.title}] ${f.text.slice(0, 400)}`).join('\n\n').slice(0, 2000);
+        try {
+          const { client: utilClient, model: utilModel } = getUtilityAIClient(params.config);
+          const sumResp = await utilClient.chat.completions.create({
+            model: utilModel, max_tokens: 350,
+            messages: [
+              { role: 'system', content: 'Summarize the search results into 3-5 dense bullet points. Cite source titles in [brackets]. Be factual, no fluff.' },
+              { role: 'user', content: `Query: ${query}\n\nResults:\n${summary}` },
+            ],
+          });
+          summary = sumResp.choices?.[0]?.message?.content || summary;
+        } catch (sumErr: any) {
+          // Summary failed — return raw text as fallback
+          console.warn(`[search_and_summarize] summary model failed:`, sumErr?.message);
+        }
+        return {
+          query, summary,
+          sources: fetched.map(f => ({ title: f.title, url: f.url })),
+        };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'subscribe_cron': {
+      const cronExpr = String(args.cron_expr || '').trim();
+      const reason = String(args.reason || '').slice(0, 200);
+      if (!cronExpr || !reason) return { error: 'cron_expr and reason required' };
+      // Basic 5-field validator — no parser library, just shape check.
+      if (!/^(\S+\s+){4}\S+$/.test(cronExpr)) return { error: 'cron_expr must be 5 space-separated fields (min hour dom mon dow)' };
+      try {
+        const { pool } = await import('../db');
+        const { computeNextFireUTC } = await import('../services/cron-ticker');
+        const nextFire = computeNextFireUTC(cronExpr, new Date());
+        const r = await pool.query(
+          `INSERT INTO builder_bot.agent_cron_subscriptions
+             (agent_id, user_id, cron_expr, reason, next_fire_at, is_active)
+           VALUES ($1, $2, $3, $4, $5, true) RETURNING id, next_fire_at`,
+          [params.agentId, params.userId, cronExpr, reason, nextFire],
+        );
+        return { ok: true, id: r.rows[0].id, cron_expr: cronExpr, next_fire_at: r.rows[0].next_fire_at, reason };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'unsubscribe_cron': {
+      try {
+        const { pool } = await import('../db');
+        if (args.id) {
+          await pool.query(`UPDATE builder_bot.agent_cron_subscriptions SET is_active = false WHERE id = $1 AND agent_id = $2`, [args.id, params.agentId]);
+          return { ok: true, cancelled: 1 };
+        }
+        const r = await pool.query(`UPDATE builder_bot.agent_cron_subscriptions SET is_active = false WHERE agent_id = $1 AND is_active = true RETURNING id`, [params.agentId]);
+        return { ok: true, cancelled: r.rows.length };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'list_cron': {
+      try {
+        const { pool } = await import('../db');
+        const r = await pool.query(`SELECT id, cron_expr, reason, next_fire_at, last_fired_at FROM builder_bot.agent_cron_subscriptions WHERE agent_id = $1 AND is_active = true ORDER BY id`, [params.agentId]);
+        return { subscriptions: r.rows };
+      } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'code_exec': {
+      const code = String(args.code || '');
+      const timeoutMs = Math.min(10_000, Math.max(100, Number(args.timeout) || 5000));
+      if (!code) return { error: 'code required' };
+      try {
+        const nodeVm = await import('node:vm');
+        const sandbox: any = {
+          JSON, Math, Date, parseInt, parseFloat, isNaN, isFinite,
+          Promise, Array, Object, String: globalThis.String, Number: globalThis.Number,
+          Boolean: globalThis.Boolean, RegExp, Error, Map, Set,
+          console: { log: (..._a: any[]) => {}, error: (..._a: any[]) => {}, warn: (..._a: any[]) => {} },
+          fetch: undefined, require: undefined, process: undefined, global: undefined,
+          setTimeout: () => { throw new Error('setTimeout disabled in code_exec'); },
+        };
+        const ctx = nodeVm.createContext(sandbox, {
+          name: 'code-exec-sandbox',
+          codeGeneration: { strings: false, wasm: false },
+        });
+        try { nodeVm.runInContext(`[Object,Array,Function,String,Number,Boolean,RegExp,Promise,Map,Set].forEach(C=>{if(C.prototype)Object.freeze(C.prototype)})`, ctx); } catch {}
+        const script = new nodeVm.Script(`(function(){${code}\n})()`, { filename: 'code-exec.js' });
+        const out = script.runInContext(ctx, { timeout: timeoutMs, breakOnSigint: true });
+        let outStr: string;
+        if (out === undefined) outStr = 'undefined';
+        else if (typeof out === 'object') { try { outStr = JSON.stringify(out, null, 2); } catch { outStr = String(out); } }
+        else outStr = String(out);
+        if (outStr.length > 64 * 1024) outStr = outStr.slice(0, 64 * 1024) + '\n…[truncated]';
+        return { ok: true, result: outStr };
+      } catch (e: any) {
+        return { error: `code_exec failed: ${e?.message || e}`.slice(0, 500) };
+      }
+    }
+
     case 'send_reply': {
       // Worker replies to a manager that's waiting on ask_agent(wait_ms>0).
       // request_id comes from the <inter-agent-task> envelope the worker saw.
@@ -11167,6 +11294,15 @@ export class AIAgentRuntime {
           }
           const pending = popMessages(opts.agentId);
           const pendingCtx = popPendingContext(opts.agentId);
+          // Detect <inter-agent-task> with wait_ms>0 in pending — if worker doesn't
+          // call send_reply during tick, we auto-reply afterwards so manager never
+          // hangs to timeout when the LLM just forgot the tool.
+          let _pendingReqId: string | null = null;
+          for (const m of pending) {
+            const match = String(m).match(/<inter-agent-task[^>]*request_id="([^"]+)"[^>]*wait_ms="(\d+)"/);
+            if (match && Number(match[2]) > 0) { _pendingReqId = match[1]; break; }
+          }
+          if (_pendingReqId) _activeRequestId.set(opts.agentId, _pendingReqId);
           await runAIAgentTick({
             agentId:        opts.agentId,
             userId:         opts.userId,
@@ -11177,6 +11313,19 @@ export class AIAgentRuntime {
             onNotify:       opts.onNotify,
           });
           entry.consecutiveErrors = 0; // Reset on success
+          // Auto-reply fallback: if a wait-mode request was being handled and worker
+          // didn't call send_reply, resolve the manager's promise with a generic ack
+          // so it doesn't hang for the full timeout.
+          if (_pendingReqId && _pendingAskPromises.has(_pendingReqId)) {
+            const askEntry = _pendingAskPromises.get(_pendingReqId)!;
+            console.log(`[AI runtime] Agent #${opts.agentId} forgot send_reply for ${_pendingReqId} — auto-replying`);
+            askEntry.resolve({
+              request_id: _pendingReqId,
+              response: `[auto-reply] Agent #${opts.agentId} processed the request but didn't call send_reply explicitly. Tick completed without explicit response.`,
+              from_agent_id: opts.agentId,
+            });
+            _activeRequestId.delete(opts.agentId);
+          }
         } catch (e: any) {
           entry.consecutiveErrors++;
           console.error(`[AI runtime] tick error agent #${opts.agentId} (${entry.consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}):`, e?.message || e);

@@ -13,7 +13,57 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <!-- Pre-CSS bootstrap: apply saved accent + lang BEFORE any stylesheet
+       loads, so the first paint already shows the right gradient theme
+       AND already-translated text. Avoids the Aurora→Sunset flash AND
+       the English→Russian text flash on every reload. -->
+  <script>
+    (function(){
+      try {
+        var p = localStorage.getItem('accent_preset');
+        if (!p) {
+          var legacy = (localStorage.getItem('accent_color') || '').toLowerCase();
+          var map = { '#0ea5e9':'mono','#8b5cf6':'plasma','#10b981':'emerald','#f59e0b':'sunset','#ef4444':'sunset' };
+          p = map[legacy] || 'aurora';
+        }
+        document.documentElement.dataset.accent = p;
+      } catch(_e) {}
+      try {
+        var lang = localStorage.getItem('tg_lang') || localStorage.getItem('lang') || 'ru';
+        document.documentElement.lang = lang;
+        // Streaming translate: as soon as data-ru elements appear in the
+        // DOM (during HTML parsing), rewrite their textContent. No mask,
+        // no visibility hidden — page is interactive immediately.
+        if (lang === 'ru' && typeof MutationObserver !== 'undefined') {
+          var translated = new WeakSet();
+          var translate = function(el) {
+            if (!el || translated.has(el)) return;
+            var ru = el.getAttribute && el.getAttribute('data-ru');
+            if (ru != null) { el.textContent = ru; translated.add(el); }
+          };
+          new MutationObserver(function(muts) {
+            for (var i = 0; i < muts.length; i++) {
+              var added = muts[i].addedNodes;
+              for (var j = 0; j < added.length; j++) {
+                var n = added[j];
+                if (n.nodeType !== 1) continue;
+                if (n.hasAttribute('data-ru')) translate(n);
+                if (n.querySelectorAll) n.querySelectorAll('[data-ru]').forEach(translate);
+              }
+            }
+          }).observe(document.documentElement, { childList: true, subtree: true });
+          // Sweep any elements already parsed before observer attached.
+          document.querySelectorAll && document.querySelectorAll('[data-ru]').forEach(translate);
+        }
+      } catch(_e) {}
+    })();
+  </script>
   <link rel="stylesheet" href="studio.css?v=20260521j">
+  <!-- Claude Design tokens + 6 gradient presets + visual primitives -->
+  <link rel="stylesheet" href="design-tokens.css?v=20260524">
+  <link rel="stylesheet" href="design-themes.css?v=20260524">
+  <link rel="stylesheet" href="design-app.css?v=20260524">
+  <link rel="stylesheet" href="studio-skin.css?v=20260524s">
   <link rel="stylesheet" href="design-system.css?v=20260520z">
   <link rel="stylesheet" href="studio-theme-sync.css?v=20260518">
   <!-- Lucide icons (loaded async; auth-screen calls lucide.createIcons() when ready) -->
@@ -126,217 +176,185 @@
       <div class="bg-orb orb-3"></div>
     </div>
     
-    <!-- Sidebar -->
-    <aside class="sidebar">
-      <div class="sidebar-header">
-        <a href="/studio" class="logo" onclick="event.preventDefault();navigateTo('overview')">
-          <div class="logo-icon" style="background:transparent;border-radius:0;overflow:visible;width:34px;height:34px;box-shadow:none">
-            <!-- Glow now lives on the IMG via drop-shadow → wraps the alpha channel
-                 of the letter+plane+orbit shape itself, not a square/circle container. -->
-            <img src="/logo.svg?v=20260518" width="34" height="34" alt="TON Agent" style="display:block;filter:drop-shadow(0 0 4px rgba(0,168,255,.7)) drop-shadow(0 0 10px rgba(0,168,255,.45)) drop-shadow(0 0 18px rgba(139,92,246,.3))">
-          </div>
-          <div class="logo-text">
-            <span class="logo-title">TON Agent <span class="logo-accent">Studio</span></span>
-            <span class="logo-subtitle">AI Agent Builder</span>
-          </div>
-        </a>
-      </div>
-      
-          <nav class="sidebar-nav">
-            <div class="nav-section">
-              <span class="nav-label" data-en="Main" data-ru="Главное">Main</span>
-              <a href="#" class="nav-item active" data-page="overview" onclick="navigateTo('overview')">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-                <span data-en="Overview" data-ru="Обзор">Overview</span>
-              </a>
-              <a href="#" class="nav-item beta-only-nav" data-page="builder" onclick="navigateTo('builder')">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m14.5 4-9 9-2.5 6 6-2.5 9-9-3.5-3.5z"/><path d="m17 7 2 2"/><path d="m13 11 6 6"/></svg>
-                <span data-en="Constructor" data-ru="Конструктор">Constructor</span>
-                <span class="nav-badge accent">BETA</span>
-              </a>
-              <a href="#" class="nav-item" data-page="marketplace" onclick="navigateTo('marketplace')">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"/><path d="M2 7h20"/><path d="M22 7v3a2 2 0 0 1-4 0v0a2 2 0 0 1-4 0v0a2 2 0 0 1-4 0v0a2 2 0 0 1-4 0v0a2 2 0 0 1-4 0V7"/></svg>
-                <span data-en="Marketplace" data-ru="Маркетплейс">Marketplace</span>
-              </a>
-              <a href="#" class="nav-item" data-page="skills" onclick="navigateTo('skills')" title="Agent Skills (agentskills.io)">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18 9l-4.1 1.4L12 15l-1.9-4.6L6 9l4.1-1.4z"/><path d="M19 14l.95 2.3L22 17l-2.05.7L19 20l-.95-2.3L16 17l2.05-.7z"/><path d="M5 5l.7 1.7L7.5 7.5l-1.8.8L5 10l-.7-1.7L2.5 7.5l1.8-.8z"/></svg>
-                <span data-en="Skills" data-ru="Скиллы">Skills</span>
-                <span class="nav-badge accent">NEW</span>
-              </a>
-              <a href="#" class="nav-item" data-page="mcp-servers" onclick="navigateTo('mcp-servers')" title="External MCP servers (Model Context Protocol)">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/><circle cx="7" cy="10" r="1.2"/><circle cx="12" cy="10" r="1.2"/><circle cx="17" cy="10" r="1.2"/></svg>
-                <span data-en="MCP Servers" data-ru="MCP-серверы">MCP Servers</span>
-                <span class="nav-badge accent">NEW</span>
-              </a>
-              <a href="#" class="nav-item" data-page="assistant" onclick="navigateTo('assistant')">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                <span data-en="AI Assistant" data-ru="AI Ассистент">AI Assistant</span>
-              </a>
-            </div>
-
-            <div class="nav-section">
-              <span class="nav-label" data-en="Agents" data-ru="Агенты">Agents</span>
-              <a href="#" class="nav-item" data-page="operations" onclick="navigateTo('operations')">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></svg>
-                <span data-en="My Agents" data-ru="Мои агенты">My Agents</span>
-                <span class="nav-badge alert" id="nav-agents-badge">3</span>
-              </a>
-              <a href="#" class="nav-item" data-page="network" onclick="navigateTo('network')">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-                <span data-en="Agent Network" data-ru="Сеть агентов">Agent Network</span>
-              </a>
-              <a href="#" class="nav-item" data-page="analytics" onclick="navigateTo('analytics')">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-                <span data-en="Analytics" data-ru="Аналитика">Analytics</span>
-              </a>
-              <a href="#" class="nav-item admin-only-nav" data-page="admin-agents" onclick="navigateTo('admin-agents')" style="display:none">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                <span data-en="All Agents" data-ru="Все агенты">All Agents</span>
-                <span class="nav-badge accent">ADM</span>
-              </a>
-              <a href="#" class="nav-item admin-only-nav" data-page="admin-payouts" onclick="navigateTo('admin-payouts')" style="display:none">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-                <span data-en="Payouts" data-ru="Выплаты">Payouts</span>
-                <span class="nav-badge accent">ADM</span>
-              </a>
-              <!-- Bug Tracker moved to Account section -->
-              <a href="#" class="nav-item beta-only-nav" data-page="wallets" onclick="navigateTo('wallets')">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
-                <span data-en="Wallets" data-ru="Кошельки">Wallets</span>
-                <span class="nav-badge accent">BETA</span>
-              </a>
-              <a href="#" class="nav-item" data-page="activity" onclick="navigateTo('activity')">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-                <span data-en="Activity" data-ru="Активность">Activity</span>
-                <span class="status-pulse"></span>
-              </a>
-              <!-- Notifications moved to Account section -->
-              <a href="#" class="nav-item beta-only-nav" data-page="tester-hub" onclick="navigateTo('tester-hub')">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-                <span data-en="Tester Hub" data-ru="Тестер Хаб">Tester Hub</span>
-                <span class="nav-badge accent">BETA</span>
-              </a>
-            </div>
-
-            <div class="nav-section nav-section-collapsible" id="nav-configure">
-              <span class="nav-label nav-label-toggle" onclick="toggleNavSection('nav-configure')">
-                <span data-en="Configure" data-ru="Настройка">Configure</span>
-                <svg class="nav-collapse-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-              </span>
-              <div class="nav-section-items">
-                <a href="#" class="nav-item" data-page="persona" onclick="navigateTo('persona')">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                  <span data-en="Persona" data-ru="Персона">Persona</span>
-                </a>
-                <a href="#" class="nav-item" data-page="knowledge" onclick="navigateTo('knowledge')">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-                  <span data-en="Knowledge" data-ru="База знаний">Knowledge</span>
-                </a>
-                <a href="#" class="nav-item" data-page="capabilities" onclick="navigateTo('capabilities')">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-                  <span data-en="Capabilities" data-ru="Возможности">Capabilities</span>
-                  <span class="nav-badge" id="nav-capabilities-badge">0</span>
-                </a>
-                <a href="#" class="nav-item" data-page="extensions" onclick="navigateTo('extensions')">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v6m0 12v2M4.93 4.93l4.24 4.24m5.66 5.66l4.24 4.24M2 12h6m12 0h2M4.93 19.07l4.24-4.24m5.66-5.66l4.24-4.24"/></svg>
-                  <span data-en="Extensions" data-ru="Расширения">Extensions</span>
-                </a>
-                <a href="#" class="nav-item" data-page="connectors" onclick="navigateTo('connectors')">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                  <span data-en="Connectors" data-ru="Коннекторы">Connectors</span>
-                </a>
-              </div>
-            </div>
-
-            <div class="nav-section">
-              <span class="nav-label" data-en="Account" data-ru="Аккаунт">Account</span>
-              <a href="#" class="nav-item" data-page="wallet" onclick="navigateTo('wallet')">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0 0 4h15a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5"/><path d="M3 5v14a2 2 0 0 0 2 2h15a2 2 0 0 0 2-2v-2"/><path d="M18 12a.5.5 0 0 0 0 1"/></svg>
-                <span data-en="Wallet" data-ru="Кошелёк">Wallet</span>
-              </a>
-              <a href="#" class="nav-item" data-page="settings" onclick="navigateTo('settings')">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                <span data-en="Settings" data-ru="Настройки">Settings</span>
-              </a>
-              <a href="#" class="nav-item" data-page="guide" onclick="navigateTo('guide')">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                <span data-en="Guide" data-ru="Инструкции">Guide</span>
-              </a>
-              <a href="#" class="nav-item" data-page="notifications" onclick="navigateTo('notifications')">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-                <span data-en="Notifications" data-ru="Уведомления">Notifications</span>
-                <span class="nav-badge alert" id="nav-notif-badge" style="display:none">0</span>
-              </a>
-              <a href="#" class="nav-item admin-only-nav" data-page="bugs" onclick="navigateTo('bugs')" style="display:none">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2l1.88 1.88M14.12 3.88L16 2M9 7.13v-1a3.003 3.003 0 1 1 6 0v1M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6M6 13H2M22 13h-4M6 17l-1.5 1.5M18 17l1.5 1.5"/></svg>
-                <span data-en="Bug Tracker" data-ru="Баг-трекер">Bug Tracker</span>
-                <span class="nav-badge accent">ADM</span>
-              </a>
-            </div>
-          </nav>
-      
-      <div class="sidebar-footer">
-        <div class="user-card" style="cursor:pointer" title="Profile" onclick="navigateTo('profile')">
-          <img id="user-avatar" src="" alt="" class="user-avatar-img hidden">
-          <div class="user-avatar-fallback hidden" id="user-avatar-fallback">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
-            </svg>
-          </div>
-          <div class="user-details">
-            <span class="user-name" id="user-name">User</span>
-            <span class="user-tier" id="user-plan-badge">Free Tier</span>
+    
+    <!-- Claude Design shell: sticky <aside> + <main> with topbar (lives inside #app which is already display:grid) -->
+      <aside class="sidebar">
+        <div class="brand" onclick="navigateTo('overview')" style="cursor:pointer">
+          <div class="brand-logo">A</div>
+          <div>
+            <div class="brand-name">TON <span class="accent">Agent Studio</span></div>
+            <div class="brand-sub" data-en="AI Agent Builder" data-ru="AI-конструктор агентов">AI Agent Builder</div>
           </div>
         </div>
-        <div style="display:flex;align-items:center;gap:8px;padding:6px 14px;flex-wrap:wrap">
-          <button class="lang-btn active" data-lang="en" onclick="switchLang('en')" style="flex:0 0 auto;min-width:38px">EN</button>
-          <button class="lang-btn" data-lang="ru" onclick="switchLang('ru')" style="flex:0 0 auto;min-width:38px">RU</button>
-          <input type="range" id="sidebar-scale-slider" min="80" max="120" value="100" step="5" style="flex:1;min-width:80px;accent-color:var(--primary)" oninput="setUIScale(this.value)">
-          <span id="sidebar-scale-value" style="font-size:.65rem;color:var(--text-muted);min-width:30px;text-align:right">100%</span>
-        </div>
-        <button class="logout-btn" onclick="logout()" style="padding:7px;font-size:.75rem">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/>
-            <line x1="21" y1="12" x2="9" y2="12"/>
-          </svg>
-          <span data-en="Sign Out" data-ru="Выйти">Sign Out</span>
-        </button>
-        <div style="display:flex;gap:8px;justify-content:center;padding:6px 0 2px;flex-wrap:wrap">
-          <a href="#" onclick="event.preventDefault();navigateTo('terms')" style="font-size:.65rem;color:var(--text-muted);text-decoration:none;opacity:.6" data-en="Terms" data-ru="Условия">Terms</a>
-          <span style="font-size:.65rem;color:var(--text-muted);opacity:.3">·</span>
-          <a href="#" onclick="event.preventDefault();navigateTo('privacy')" style="font-size:.65rem;color:var(--text-muted);text-decoration:none;opacity:.6" data-en="Privacy" data-ru="Конфиденциальность">Privacy</a>
-        </div>
-      </div>
-    </aside>
 
-    <!-- Mobile Hamburger -->
-    <button class="sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/>
-      </svg>
-    </button>
-    <div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleSidebar()"></div>
+        <div class="nav-scroll">
+          <!-- Main -->
+          <div class="nav-group">
+            <div class="nav-group-title" data-en="Main" data-ru="Главное">Главное</div>
+            <div class="nav-item" data-page="overview" onclick="navigateTo('overview')">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+              <span data-en="Overview" data-ru="Обзор">Обзор</span>
+            </div>
+            <div class="nav-item" data-page="builder" onclick="navigateTo('builder')">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m14.5 4-9 9-2.5 6 6-2.5 9-9-3.5-3.5z"/><path d="m17 7 2 2"/><path d="m13 11 6 6"/></svg>
+              <span data-en="Constructor" data-ru="Конструктор">Конструктор</span>
+              <span class="badge">BETA</span>
+            </div>
+            <div class="nav-item" data-page="marketplace" onclick="navigateTo('marketplace')">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"/><path d="M2 7h20"/></svg>
+              <span data-en="Marketplace" data-ru="Маркетплейс">Маркетплейс</span>
+            </div>
+            <div class="nav-item" data-page="skills" onclick="navigateTo('skills')">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18 9l-4.1 1.4L12 15l-1.9-4.6L6 9l4.1-1.4z"/></svg>
+              <span data-en="Skills" data-ru="Скиллы">Скиллы</span>
+              <span class="badge">NEW</span>
+            </div>
+            <div class="nav-item" data-page="mcp-servers" onclick="navigateTo('mcp-servers')">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+              <span data-en="MCP Servers" data-ru="MCP-серверы">MCP-серверы</span>
+              <span class="badge">NEW</span>
+            </div>
+            <div class="nav-item" data-page="assistant" onclick="navigateTo('assistant')">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              <span data-en="AI Assistant" data-ru="AI Ассистент">AI Ассистент</span>
+            </div>
+          </div>
 
-    <!-- Main Wrapper -->
-    <div class="main-wrapper">
-    <!-- Topbar -->
-    <div class="studio-topbar" id="studio-topbar">
-      <div class="topbar-search">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-        <input type="text" id="topbar-search-input" class="topbar-search-input" placeholder="Search agents, tools, settings..." data-ru-placeholder="Поиск агентов, инструментов..." oninput="handleTopbarSearch(this.value)">
-      </div>
-      <div class="topbar-right">
-        <div class="topbar-balance" id="topbar-balance-wrap">
-          <!-- TON diamond — official brand glyph at readable 18px -->
-          <svg width="18" height="18" viewBox="0 0 56 56" fill="currentColor" aria-label="TON"><path d="M28 0C12.536 0 0 12.536 0 28s12.536 28 28 28 28-12.536 28-28S43.464 0 28 0zm9.96 18.06h-19.92c-1.61 0-2.6 1.74-1.79 3.14L26.81 39c.51.88 1.78.88 2.29 0L40 21.2c.81-1.4-.18-3.14-1.79-3.14H37.96zM26.71 21.5v15.04l-2.84-4.92-7.74-9.36c-.31-.36-.05-.76.36-.76h10.22zM31.13 21.5h10.22c.41 0 .67.4.36.76l-7.74 9.36-2.84 4.92V21.5z"/></svg>
-          <span><span style="color:var(--text-muted);font-weight:400">Balance</span> <strong id="topbar-ton-balance">0</strong> <span style="color:var(--text-muted);font-size:.85em">TON</span></span>
+          <!-- Agents -->
+          <div class="nav-group">
+            <div class="nav-group-title" data-en="Agents" data-ru="Агенты">Агенты</div>
+            <div class="nav-item" data-page="operations" onclick="navigateTo('operations')">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+              <span data-en="My Agents" data-ru="Мои агенты">Мои агенты</span>
+              <span class="badge" id="nav-agents-badge">0</span>
+            </div>
+            <div class="nav-item" data-page="network" onclick="navigateTo('network')">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/></svg>
+              <span data-en="Network" data-ru="Сеть агентов">Сеть агентов</span>
+            </div>
+            <div class="nav-item" data-page="crews" onclick="navigateTo('crews')">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              <span data-en="Crews" data-ru="Команды">Команды</span>
+              <span class="badge">NEW</span>
+            </div>
+            <div class="nav-item" data-page="analytics" onclick="navigateTo('analytics')">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+              <span data-en="Analytics" data-ru="Аналитика">Аналитика</span>
+            </div>
+            <div class="nav-item admin-only-nav" data-page="admin-agents" onclick="navigateTo('admin-agents')" style="display:none">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              <span data-en="All Agents" data-ru="Все агенты">Все агенты</span>
+              <span class="badge">ADM</span>
+            </div>
+            <div class="nav-item admin-only-nav" data-page="admin-payouts" onclick="navigateTo('admin-payouts')" style="display:none">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+              <span data-en="Payouts" data-ru="Выплаты">Выплаты</span>
+              <span class="badge">ADM</span>
+            </div>
+            <div class="nav-item" data-page="wallets" onclick="navigateTo('wallets')">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
+              <span data-en="Wallets" data-ru="Кошельки">Кошельки</span>
+              <span class="badge">BETA</span>
+            </div>
+            <div class="nav-item" data-page="activity" onclick="navigateTo('activity')">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+              <span data-en="Activity" data-ru="Активность">Активность</span>
+              <span class="dot"></span>
+            </div>
+            <div class="nav-item" data-page="tester-hub" onclick="navigateTo('tester-hub')">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+              <span data-en="Tester Hub" data-ru="Тестер Хаб">Тестер Хаб</span>
+              <span class="badge">BETA</span>
+            </div>
+          </div>
+
+          <!-- Configure -->
+          <div class="nav-group">
+            <div class="nav-group-title" data-en="Configure" data-ru="Настройка">Настройка</div>
+            <div class="nav-item" data-page="persona" onclick="navigateTo('persona')">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              <span data-en="Persona" data-ru="Персона">Персона</span>
+            </div>
+            <div class="nav-item" data-page="knowledge" onclick="navigateTo('knowledge')">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+              <span data-en="Knowledge" data-ru="База знаний">База знаний</span>
+            </div>
+            <div class="nav-item" data-page="capabilities" onclick="navigateTo('capabilities')">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              <span data-en="Capabilities" data-ru="Возможности">Возможности</span>
+              <span class="badge" id="nav-capabilities-badge">0</span>
+            </div>
+            <div class="nav-item" data-page="extensions" onclick="navigateTo('extensions')">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v6m0 12v2M4.93 4.93l4.24 4.24m5.66 5.66l4.24 4.24M2 12h6m12 0h2M4.93 19.07l4.24-4.24m5.66-5.66l4.24-4.24"/></svg>
+              <span data-en="Extensions" data-ru="Расширения">Расширения</span>
+            </div>
+          </div>
+
+          <!-- Account -->
+          <div class="nav-group">
+            <div class="nav-group-title" data-en="Account" data-ru="Аккаунт">Аккаунт</div>
+            <div class="nav-item" data-page="guide" onclick="navigateTo('guide')">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              <span data-en="Guide" data-ru="Инструкции">Инструкции</span>
+            </div>
+            <div class="nav-item" data-page="notifications" onclick="navigateTo('notifications')">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+              <span data-en="Notifications" data-ru="Уведомления">Уведомления</span>
+              <span class="badge red" id="nav-notif-badge" style="display:none">0</span>
+            </div>
+            <div class="nav-item admin-only-nav" data-page="bugs" onclick="navigateTo('bugs')" style="display:none">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2l1.88 1.88M14.12 3.88L16 2M9 7.13v-1a3.003 3.003 0 1 1 6 0v1M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6"/></svg>
+              <span data-en="Bug Tracker" data-ru="Баг-трекер">Баг-трекер</span>
+              <span class="badge">ADM</span>
+            </div>
+          </div>
         </div>
-        <div class="topbar-divider"></div>
-        <div class="topbar-avatar" id="topbar-avatar-badge" onclick="navigateTo('profile')">T</div>
-      </div>
-    </div>
-    <!-- Main Content -->
-    <main class="main-content">
+
+        <div class="nav-foot">
+          <div class="user-card" onclick="navigateTo('profile')" style="cursor:pointer">
+            <div class="user-avatar"></div>
+            <div style="flex:1;min-width:0">
+              <span class="user-beta-caption" id="user-beta-caption-anchor" style="display:none"></span>
+              <div class="user-name" id="user-name">User</div>
+              <div class="user-tier" id="user-plan-badge">Free</div>
+            </div>
+          </div>
+          <div class="row" style="margin-top:12px;justify-content:space-between;padding:0 4px">
+            <div class="row gap-4">
+              <button class="lang-btn active" data-lang="en" onclick="switchLang('en')" style="padding:5px 10px;font-size:11px">EN</button>
+              <button class="lang-btn" data-lang="ru" onclick="switchLang('ru')" style="padding:5px 10px;font-size:11px">RU</button>
+            </div>
+            <span class="muted mono" style="font-size:10.5px">v2.4.1</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:8px;padding:0 4px">
+            <input type="range" id="sidebar-scale-slider" min="80" max="120" value="100" step="5" style="flex:1;accent-color:var(--primary)" oninput="setUIScale(this.value)">
+            <span id="sidebar-scale-value" class="mono" style="font-size:11px;color:var(--text-secondary);min-width:34px;text-align:right">100%</span>
+          </div>
+        </div>
+      </aside>
+
+      <main>
+        <div class="topbar">
+          <div class="search">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="muted"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input id="topbar-search-input" placeholder="Search agents, tools, settings…">
+            <span class="kbd">⌘K</span>
+          </div>
+          <div class="row gap-14">
+            <button class="btn btn-secondary btn-icon" onclick="navigateTo('notifications')" title="Notifications">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            </button>
+            <div class="balance-pill" onclick="navigateTo('wallet')" style="cursor:pointer">
+              <div class="coin">◆</div>
+              <em data-en="Balance" data-ru="Баланс">Баланс</em>
+              <strong id="topbar-balance-value">0.00</strong>
+              <span class="ton">TON</span>
+            </div>
+            <div class="avatar-btn" onclick="navigateTo('profile')" style="cursor:pointer"></div>
+          </div>
+        </div>
+
+
       <!-- Overview Page -->
       <div id="overview-page" class="page active">
         <div class="page-header">
@@ -1008,6 +1026,30 @@
           </button>
         </div>
         <div class="page-content">
+          <!-- Profile hub tabs — same navigation lives on profile/settings/wallet/connectors -->
+          <div class="pill-tabs profile-hub-tabs" data-active="settings" style="margin-bottom:24px;flex-wrap:wrap">
+            <button class="pill-tab" data-tab="profile"    onclick="navigateTo('profile')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              <span data-en="Account" data-ru="Аккаунт">Account</span>
+            </button>
+            <button class="pill-tab" data-tab="settings"   onclick="navigateTo('settings')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              <span data-en="AI Keys" data-ru="AI ключи">AI Keys</span>
+            </button>
+            <button class="pill-tab" data-tab="wallet"     onclick="navigateTo('wallet')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
+              <span data-en="Wallet" data-ru="Кошелёк">Wallet</span>
+            </button>
+            <button class="pill-tab" data-tab="connectors" onclick="navigateTo('connectors')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              <span data-en="Connectors" data-ru="Коннекторы">Connectors</span>
+            </button>
+            <button class="pill-tab" data-tab="notifications" onclick="navigateTo('notifications')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+              <span data-en="Notifications" data-ru="Уведомления">Notifications</span>
+            </button>
+          </div>
+
           <div class="settings-grid">
             <div class="settings-section">
               <h3 class="section-title" data-en="AI API Key" data-ru="AI API Ключ">AI API Key</h3>
@@ -1418,6 +1460,30 @@
           </div>
         </div>
         <div class="page-content">
+          <!-- Profile hub tabs — same navigation lives on profile/settings/wallet/connectors -->
+          <div class="pill-tabs profile-hub-tabs" data-active="connectors" style="margin-bottom:24px;flex-wrap:wrap">
+            <button class="pill-tab" data-tab="profile"    onclick="navigateTo('profile')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              <span data-en="Account" data-ru="Аккаунт">Account</span>
+            </button>
+            <button class="pill-tab" data-tab="settings"   onclick="navigateTo('settings')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              <span data-en="AI Keys" data-ru="AI ключи">AI Keys</span>
+            </button>
+            <button class="pill-tab" data-tab="wallet"     onclick="navigateTo('wallet')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
+              <span data-en="Wallet" data-ru="Кошелёк">Wallet</span>
+            </button>
+            <button class="pill-tab" data-tab="connectors" onclick="navigateTo('connectors')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              <span data-en="Connectors" data-ru="Коннекторы">Connectors</span>
+            </button>
+            <button class="pill-tab" data-tab="notifications" onclick="navigateTo('notifications')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+              <span data-en="Notifications" data-ru="Уведомления">Notifications</span>
+            </button>
+          </div>
+
           <!-- Connector cards -->
           <div class="settings-grid" id="connectors-grid">
             <!-- Discord -->
@@ -1517,6 +1583,30 @@
           </div>
         </div>
         <div class="page-content">
+          <!-- Profile hub tabs — same navigation lives on profile/settings/wallet/connectors -->
+          <div class="pill-tabs profile-hub-tabs" data-active="wallet" style="margin-bottom:24px;flex-wrap:wrap">
+            <button class="pill-tab" data-tab="profile"    onclick="navigateTo('profile')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              <span data-en="Account" data-ru="Аккаунт">Account</span>
+            </button>
+            <button class="pill-tab" data-tab="settings"   onclick="navigateTo('settings')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              <span data-en="AI Keys" data-ru="AI ключи">AI Keys</span>
+            </button>
+            <button class="pill-tab" data-tab="wallet"     onclick="navigateTo('wallet')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
+              <span data-en="Wallet" data-ru="Кошелёк">Wallet</span>
+            </button>
+            <button class="pill-tab" data-tab="connectors" onclick="navigateTo('connectors')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              <span data-en="Connectors" data-ru="Коннекторы">Connectors</span>
+            </button>
+            <button class="pill-tab" data-tab="notifications" onclick="navigateTo('notifications')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+              <span data-en="Notifications" data-ru="Уведомления">Notifications</span>
+            </button>
+          </div>
+
           <!-- Balance Cards -->
           <div class="wallet-cards">
             <div class="wallet-balance-card">
@@ -1808,6 +1898,30 @@
           </div>
         </div>
         <div class="page-content">
+          <!-- Profile hub tabs — same navigation lives on profile/settings/wallet/connectors -->
+          <div class="pill-tabs profile-hub-tabs" data-active="profile" style="margin-bottom:24px;flex-wrap:wrap">
+            <button class="pill-tab" data-tab="profile"    onclick="navigateTo('profile')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              <span data-en="Account" data-ru="Аккаунт">Account</span>
+            </button>
+            <button class="pill-tab" data-tab="settings"   onclick="navigateTo('settings')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              <span data-en="AI Keys" data-ru="AI ключи">AI Keys</span>
+            </button>
+            <button class="pill-tab" data-tab="wallet"     onclick="navigateTo('wallet')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
+              <span data-en="Wallet" data-ru="Кошелёк">Wallet</span>
+            </button>
+            <button class="pill-tab" data-tab="connectors" onclick="navigateTo('connectors')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              <span data-en="Connectors" data-ru="Коннекторы">Connectors</span>
+            </button>
+            <button class="pill-tab" data-tab="notifications" onclick="navigateTo('notifications')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+              <span data-en="Notifications" data-ru="Уведомления">Notifications</span>
+            </button>
+          </div>
+
           <!-- Subscription banner (full width) -->
           <div class="settings-card" style="margin-bottom:1.25rem">
             <div style="padding:1rem;display:flex;flex-direction:column;gap:.75rem">
@@ -1994,17 +2108,44 @@
                   </div>
                 </div>
                 <div>
-                  <label style="font-size:.78rem;color:var(--text-muted);display:block;margin-bottom:6px" data-en="Accent Color" data-ru="Акцентный цвет">Accent Color</label>
-                  <div style="display:flex;gap:8px" id="accent-color-picker">
-                    <div onclick="setAccentColor('#0ea5e9')" style="width:28px;height:28px;border-radius:50%;background:#0ea5e9;cursor:pointer;border:2px solid transparent" class="accent-dot active"></div>
-                    <div onclick="setAccentColor('#8b5cf6')" style="width:28px;height:28px;border-radius:50%;background:#8b5cf6;cursor:pointer;border:2px solid transparent" class="accent-dot"></div>
-                    <div onclick="setAccentColor('#10b981')" style="width:28px;height:28px;border-radius:50%;background:#10b981;cursor:pointer;border:2px solid transparent" class="accent-dot"></div>
-                    <div onclick="setAccentColor('#f59e0b')" style="width:28px;height:28px;border-radius:50%;background:#f59e0b;cursor:pointer;border:2px solid transparent" class="accent-dot"></div>
-                    <div onclick="setAccentColor('#ef4444')" style="width:28px;height:28px;border-radius:50%;background:#ef4444;cursor:pointer;border:2px solid transparent" class="accent-dot"></div>
+                  <label style="font-size:.78rem;color:var(--text-muted);display:block;margin-bottom:8px" data-en="Accent Gradient" data-ru="Акцентный градиент">Accent Gradient</label>
+                  <div style="display:flex;gap:10px;flex-wrap:wrap" id="accent-preset-picker">
+                    <div onclick="setAccentPreset('aurora')"  class="accent-preset" data-preset="aurora"  style="--p-primary:#0098EA;--p-accent2:#a855f7" title="Aurora — TON blue × purple"><span class="lbl">Aurora</span></div>
+                    <div onclick="setAccentPreset('cyber')"   class="accent-preset" data-preset="cyber"   style="--p-primary:#06b6d4;--p-accent2:#ec4899" title="Cyber — cyan × magenta"><span class="lbl">Cyber</span></div>
+                    <div onclick="setAccentPreset('plasma')"  class="accent-preset" data-preset="plasma"  style="--p-primary:#a855f7;--p-accent2:#ec4899" title="Plasma — purple × pink"><span class="lbl">Plasma</span></div>
+                    <div onclick="setAccentPreset('emerald')" class="accent-preset" data-preset="emerald" style="--p-primary:#10b981;--p-accent2:#14b8a6" title="Emerald — emerald × teal"><span class="lbl">Emerald</span></div>
+                    <div onclick="setAccentPreset('sunset')"  class="accent-preset" data-preset="sunset"  style="--p-primary:#f59e0b;--p-accent2:#ef4444" title="Sunset — amber × red"><span class="lbl">Sunset</span></div>
+                    <div onclick="setAccentPreset('mono')"    class="accent-preset" data-preset="mono"    style="--p-primary:#0ea5e9;--p-accent2:#6366f1" title="Mono — sky × indigo"><span class="lbl">Mono</span></div>
                   </div>
                 </div>
               </div>
             </div>
+          </div>
+        
+          <!-- Sign-out — moved here from sidebar so it's not a misclick away -->
+          <div style="margin-top:32px;padding-top:24px;border-top:1px solid var(--border, rgba(255,255,255,0.07));display:flex;flex-direction:column;gap:8px;align-items:flex-start">
+            <span style="font-size:10.5px;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-muted);font-weight:700" data-en="Account" data-ru="Аккаунт">Аккаунт</span>
+            <p style="color:var(--text-secondary);font-size:13px;margin:0 0 4px;line-height:1.55" data-en="You'll be signed out on this device. Your agents keep running on the platform." data-ru="Вы выйдете из аккаунта на этом устройстве. Агенты продолжат работать на платформе.">Вы выйдете из аккаунта на этом устройстве. Агенты продолжат работать на платформе.</p>
+            <button class="logout-btn-profile" onclick="logout()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+              <span data-en="Sign Out" data-ru="Выйти">Выйти из аккаунта</span>
+            </button>
+          </div>
+</div>
+      </div>
+
+      <!-- Crews Page (Sprint 4 — multi-agent teams) -->
+      <div id="crews-page" class="page">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title" data-en="Crews" data-ru="Команды">Команды</h1>
+            <p class="page-subtitle" data-en="Bundle agents into teams with shared budget + state. Optional manager delegates to workers." data-ru="Группа агентов с общим бюджетом и состоянием. Менеджер может делегировать задачи воркерам через ask_agent.">Группа агентов с общим бюджетом и состоянием.</p>
+          </div>
+          <button class="btn btn-primary" onclick="openCreateCrewModal()">+ <span data-en="New Crew" data-ru="Новая команда">Новая команда</span></button>
+        </div>
+        <div class="page-content">
+          <div id="crews-list" style="display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(340px,1fr))">
+            <div style="padding:40px;text-align:center;color:var(--text-muted)">Загрузка…</div>
           </div>
         </div>
       </div>
@@ -2214,15 +2355,47 @@
 
       <!-- Guide Page -->
       <div id="notifications-page" class="page">
-        <div class="page-content" id="page-notifications"></div>
+        <div class="page-content" id="page-notifications">
+          <!-- Profile hub tabs — same navigation lives on profile/settings/wallet/connectors -->
+          <div class="pill-tabs profile-hub-tabs" data-active="notifications" style="margin-bottom:24px;flex-wrap:wrap">
+            <button class="pill-tab" data-tab="profile"    onclick="navigateTo('profile')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              <span data-en="Account" data-ru="Аккаунт">Account</span>
+            </button>
+            <button class="pill-tab" data-tab="settings"   onclick="navigateTo('settings')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              <span data-en="AI Keys" data-ru="AI ключи">AI Keys</span>
+            </button>
+            <button class="pill-tab" data-tab="wallet"     onclick="navigateTo('wallet')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
+              <span data-en="Wallet" data-ru="Кошелёк">Wallet</span>
+            </button>
+            <button class="pill-tab" data-tab="connectors" onclick="navigateTo('connectors')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              <span data-en="Connectors" data-ru="Коннекторы">Connectors</span>
+            </button>
+            <button class="pill-tab" data-tab="notifications" onclick="navigateTo('notifications')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+              <span data-en="Notifications" data-ru="Уведомления">Notifications</span>
+            </button>
+          </div>
+</div>
       </div>
 
       <div id="guide-page" class="page">
         <div id="page-guide" style="width:100%;padding-top:20px"></div>
       </div>
 
-    </main>
-    </div><!-- /main-wrapper -->
+    
+      </main>
+
+      <!-- Floating action: change accent gradient (opens Settings → Appearance) -->
+      <button class="fab" onclick="navigateTo('settings')" title="Сменить тему">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>
+      </button>
+    <!-- Mobile sidebar overlay (kept; activated by old toggleSidebar()) -->
+    <div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleSidebar()"></div>
+<!-- /main-wrapper -->
   </div>
 
       <!-- Onboarding Welcome Modal -->

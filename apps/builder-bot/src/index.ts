@@ -185,7 +185,9 @@ async function main() {
   try {
     await import('./services/background-tasks');     // s08 daemon
     await import('./services/autonomous-claim');     // s11 task_graph poller
-    console.log('🔁 Background services up (bg-tasks + autonomous-claim)');
+    const { startCronTicker } = await import('./services/cron-ticker');
+    startCronTicker();
+    console.log('🔁 Background services up (bg-tasks + autonomous-claim + cron-ticker)');
   } catch (e: any) {
     console.warn('[BgServices] startup failed:', e?.message);
   }

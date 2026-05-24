@@ -1568,6 +1568,67 @@ export async function runAIProposalsMigrations(pool: Pool): Promise<void> {
         ON builder_bot.agent_task_graph USING gin (blocked_by)
     `);
 
+    // ─── Cross-agent task dependencies ─────────────────────────────────────
+    // Lets agent A's task depend on agent B's task (manager-flow pattern).
+    // Format: [{agent_id, task_id}, ...]. Checked alongside blocked_by during
+    // status='completed' cascade in task_update handler.
+    await client.query(`
+      ALTER TABLE builder_bot.agent_task_graph
+        ADD COLUMN IF NOT EXISTS external_deps JSONB NOT NULL DEFAULT '[]'::jsonb
+    `);
+
+    // ─── Crews (multi-agent teams) ─────────────────────────────────────────
+    // A crew bundles N agents under one budget + shared state namespace + an
+    // optional manager (the supervisor that ask_agent's the others).
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.crews (
+        id                SERIAL PRIMARY KEY,
+        user_id           BIGINT NOT NULL,
+        name              VARCHAR(128) NOT NULL,
+        description       TEXT,
+        agent_ids         INTEGER[] NOT NULL DEFAULT '{}',
+        manager_agent_id  INTEGER,
+        state_namespace   VARCHAR(80),
+        budget_ton_month  NUMERIC(20, 9) NOT NULL DEFAULT 0,
+        is_active         BOOLEAN NOT NULL DEFAULT true,
+        created_at        TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at        TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS crews_user_idx ON builder_bot.crews (user_id, is_active)`);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.crew_executions (
+        id            SERIAL PRIMARY KEY,
+        crew_id       INTEGER NOT NULL REFERENCES builder_bot.crews(id) ON DELETE CASCADE,
+        started_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+        completed_at  TIMESTAMP,
+        status        VARCHAR(20) NOT NULL DEFAULT 'running',
+        trigger       TEXT,
+        result        JSONB,
+        final_output  TEXT,
+        CONSTRAINT crew_executions_status_chk CHECK (status IN ('running', 'completed', 'failed', 'cancelled'))
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS crew_executions_crew_idx ON builder_bot.crew_executions (crew_id, started_at DESC)`);
+
+    // ─── CRON subscriptions for event-bus ──────────────────────────────────
+    // Lets agents schedule recurring tick triggers (e.g. "daily at 9 UTC").
+    // Stored here so the schedule survives bot restart.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.agent_cron_subscriptions (
+        id              SERIAL PRIMARY KEY,
+        agent_id        INTEGER NOT NULL,
+        user_id         BIGINT NOT NULL,
+        cron_expr       VARCHAR(80) NOT NULL,
+        reason          TEXT,
+        is_active       BOOLEAN NOT NULL DEFAULT true,
+        last_fired_at   TIMESTAMP,
+        next_fire_at    TIMESTAMP,
+        created_at      TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS agent_cron_next_fire_idx ON builder_bot.agent_cron_subscriptions (next_fire_at) WHERE is_active = true`);
+
     // ─── Hybrid RAG memory (vector + FTS5-style + RRF fusion) ───────────────
     // Stores compressed semantic memory chunks per agent. Vector column uses
     // a JSONB array (no pgvector extension required — fine up to ~5K entries

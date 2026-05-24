@@ -3752,6 +3752,168 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // CREWS — multi-agent teams (Sprint 4)
+  // A crew bundles N agents under shared budget + state namespace. Optional
+  // manager_agent_id designates the supervisor that ask_agent's the others.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  // GET /api/crews — list user's crews
+  app.get('/api/crews', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const r = await pool.query(
+        `SELECT c.*, (
+            SELECT COUNT(*) FROM builder_bot.crew_executions e WHERE e.crew_id = c.id
+         ) AS execution_count
+         FROM builder_bot.crews c
+        WHERE c.user_id = $1
+        ORDER BY c.created_at DESC`,
+        [userId],
+      );
+      res.json({ ok: true, crews: r.rows });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/crews — create
+  // Body: { name, description?, agent_ids: number[], manager_agent_id?, budget_ton_month? }
+  app.post('/api/crews', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const { name, description, agent_ids, manager_agent_id, budget_ton_month } = req.body || {};
+      if (!name || !Array.isArray(agent_ids) || agent_ids.length === 0) {
+        res.status(400).json({ error: 'name and agent_ids (non-empty array) required' });
+        return;
+      }
+      // Verify all agents belong to this user
+      const own = await pool.query(`SELECT id FROM builder_bot.agents WHERE user_id = $1 AND id = ANY($2::int[])`, [userId, agent_ids]);
+      if (own.rows.length !== agent_ids.length) {
+        res.status(400).json({ error: 'one or more agent_ids do not belong to you' });
+        return;
+      }
+      if (manager_agent_id && !agent_ids.includes(manager_agent_id)) {
+        res.status(400).json({ error: 'manager_agent_id must be one of agent_ids' });
+        return;
+      }
+      const ns = `crew:${userId}:${Date.now().toString(36)}`;
+      const r = await pool.query(
+        `INSERT INTO builder_bot.crews (user_id, name, description, agent_ids, manager_agent_id, state_namespace, budget_ton_month)
+         VALUES ($1, $2, $3, $4::int[], $5, $6, $7) RETURNING *`,
+        [userId, String(name).slice(0, 128), description || null, agent_ids, manager_agent_id || null, ns, Number(budget_ton_month) || 0],
+      );
+      res.json({ ok: true, crew: r.rows[0] });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/crews/:id — details + member status
+  app.get('/api/crews/:id', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const id = parseInt(req.params.id, 10);
+      const cr = await pool.query(`SELECT * FROM builder_bot.crews WHERE id = $1 AND user_id = $2`, [id, userId]);
+      if (!cr.rows[0]) { res.status(404).json({ error: 'Crew not found' }); return; }
+      const crew = cr.rows[0];
+      const members = await pool.query(
+        `SELECT id, name, role, is_active FROM builder_bot.agents WHERE id = ANY($1::int[]) ORDER BY id`,
+        [crew.agent_ids],
+      );
+      const lastExec = await pool.query(
+        `SELECT * FROM builder_bot.crew_executions WHERE crew_id = $1 ORDER BY started_at DESC LIMIT 5`,
+        [id],
+      );
+      res.json({ ok: true, crew, members: members.rows, recent_executions: lastExec.rows });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // PUT /api/crews/:id — update (name, description, agent_ids, manager, budget)
+  app.put('/api/crews/:id', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const id = parseInt(req.params.id, 10);
+      const exists = await pool.query(`SELECT id FROM builder_bot.crews WHERE id = $1 AND user_id = $2`, [id, userId]);
+      if (!exists.rows[0]) { res.status(404).json({ error: 'Crew not found' }); return; }
+      const fields: string[] = []; const values: any[] = []; let i = 1;
+      const b = req.body || {};
+      if (b.name !== undefined) { fields.push(`name = $${i++}`); values.push(String(b.name).slice(0, 128)); }
+      if (b.description !== undefined) { fields.push(`description = $${i++}`); values.push(b.description || null); }
+      if (b.agent_ids !== undefined) {
+        if (!Array.isArray(b.agent_ids)) { res.status(400).json({ error: 'agent_ids must be array' }); return; }
+        const own = await pool.query(`SELECT id FROM builder_bot.agents WHERE user_id = $1 AND id = ANY($2::int[])`, [userId, b.agent_ids]);
+        if (own.rows.length !== b.agent_ids.length) { res.status(400).json({ error: 'one or more agent_ids do not belong to you' }); return; }
+        fields.push(`agent_ids = $${i++}::int[]`); values.push(b.agent_ids);
+      }
+      if (b.manager_agent_id !== undefined) { fields.push(`manager_agent_id = $${i++}`); values.push(b.manager_agent_id || null); }
+      if (b.budget_ton_month !== undefined) { fields.push(`budget_ton_month = $${i++}`); values.push(Number(b.budget_ton_month) || 0); }
+      if (b.is_active !== undefined) { fields.push(`is_active = $${i++}`); values.push(!!b.is_active); }
+      if (fields.length === 0) { res.status(400).json({ error: 'nothing to update' }); return; }
+      fields.push(`updated_at = NOW()`);
+      values.push(id);
+      const r = await pool.query(`UPDATE builder_bot.crews SET ${fields.join(', ')} WHERE id = $${i} RETURNING *`, values);
+      res.json({ ok: true, crew: r.rows[0] });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // DELETE /api/crews/:id
+  app.delete('/api/crews/:id', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const id = parseInt(req.params.id, 10);
+      const r = await pool.query(`DELETE FROM builder_bot.crews WHERE id = $1 AND user_id = $2 RETURNING id`, [id, userId]);
+      if (r.rows.length === 0) { res.status(404).json({ error: 'Crew not found' }); return; }
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/crews/:id/run — kick off all members (or just the manager if set)
+  // Body: { trigger?: string }
+  app.post('/api/crews/:id/run', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const id = parseInt(req.params.id, 10);
+      const cr = await pool.query(`SELECT * FROM builder_bot.crews WHERE id = $1 AND user_id = $2`, [id, userId]);
+      if (!cr.rows[0]) { res.status(404).json({ error: 'Crew not found' }); return; }
+      const crew = cr.rows[0];
+      if (!crew.is_active) { res.status(400).json({ error: 'Crew is inactive' }); return; }
+      const trigger = req.body?.trigger || 'Manual run from Studio';
+      // Create execution row
+      const exec = await pool.query(
+        `INSERT INTO builder_bot.crew_executions (crew_id, trigger, status) VALUES ($1, $2, 'running') RETURNING *`,
+        [id, trigger],
+      );
+      // If manager set — only kick the manager; it will ask_agent the workers itself.
+      // Otherwise broadcast to all members in parallel.
+      const targets = crew.manager_agent_id ? [crew.manager_agent_id] : crew.agent_ids;
+      try {
+        const { getRunnerAgent } = await import('./agents/sub-agents/runner');
+        const { addMessageToAIAgent } = await import('./agents/ai-agent-runtime');
+        for (const agentId of targets) {
+          await getRunnerAgent().runAgent({ agentId, userId }).catch(() => {});
+          // Inject the trigger as a pending message
+          try {
+            addMessageToAIAgent(agentId, `[CREW_RUN crew_id=${id} exec_id=${exec.rows[0].id}] ${trigger}`);
+          } catch {}
+        }
+      } catch (e: any) {
+        await pool.query(`UPDATE builder_bot.crew_executions SET status = 'failed', completed_at = NOW(), result = $1::jsonb WHERE id = $2`, [JSON.stringify({ error: e?.message }), exec.rows[0].id]);
+        res.status(500).json({ error: e.message });
+        return;
+      }
+      res.json({ ok: true, execution_id: exec.rows[0].id, targets });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/crews/:id/executions — history
+  app.get('/api/crews/:id/executions', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const id = parseInt(req.params.id, 10);
+      const cr = await pool.query(`SELECT id FROM builder_bot.crews WHERE id = $1 AND user_id = $2`, [id, userId]);
+      if (!cr.rows[0]) { res.status(404).json({ error: 'Crew not found' }); return; }
+      const r = await pool.query(`SELECT * FROM builder_bot.crew_executions WHERE crew_id = $1 ORDER BY started_at DESC LIMIT 50`, [id]);
+      res.json({ ok: true, executions: r.rows });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // ── PUT /api/agents/:id/routing — Update agent routing rules (for multi-agent shared accounts) ──
   app.put('/api/agents/:id/routing', requireAuth, async (req: Request, res: Response) => {
     try {
