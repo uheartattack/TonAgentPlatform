@@ -10467,29 +10467,57 @@ async function deleteCrew(crewId) {
 
 async function viewCrewDetails(crewId) {
   const isRu = currentLang === 'ru';
-  const d = await apiRequest('GET', '/api/crews/' + crewId);
+  // Pull crew + agents + wallet in parallel so the modal is editable in one shot
+  const [d, agentsResp, walletResp] = await Promise.all([
+    apiRequest('GET', '/api/crews/' + crewId),
+    apiRequest('GET', '/api/agents').catch(() => ({ ok: false, agents: [] })),
+    apiRequest('GET', '/api/crews/' + crewId + '/wallet').catch(() => ({ ok: false })),
+  ]);
   if (!d.ok) { toast(d.error || 'Error', 'error'); return; }
   const c = d.crew;
-  // Pull wallet info in parallel — non-fatal if missing
-  let walletInfo = null;
-  try {
-    const wr = await apiRequest('GET', '/api/crews/' + crewId + '/wallet');
-    if (wr.ok) walletInfo = wr.wallet;
-  } catch (_e) {}
+  const allAgents = ((agentsResp && agentsResp.agents) || []).filter(a => a.id);
+  const memberSet = new Set(c.agent_ids || []);
+  let walletInfo = (walletResp && walletResp.ok) ? walletResp.wallet : null;
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
   overlay.innerHTML =
     '<div style="background:var(--bg-secondary);border-radius:14px;padding:24px;max-width:560px;width:100%;max-height:90vh;overflow:auto">' +
-      '<h2 style="margin:0 0 4px 0">' + escHtml(c.name) + '</h2>' +
-      '<div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">#' + c.id + ' · ' + (c.is_active ? (isRu ? 'активна' : 'active') : (isRu ? 'на паузе' : 'paused')) + '</div>' +
-      (c.description ? '<div style="margin-bottom:14px;line-height:1.5">' + escHtml(c.description) + '</div>' : '') +
-      '<div style="margin-bottom:14px"><b>' + (isRu ? 'Участники' : 'Members') + '</b><ul style="margin:6px 0 0 18px">' +
-        (d.members || []).map(function(m) { return '<li>#' + m.id + ' ' + escHtml(m.name) + ' <span style="font-size:11px;color:var(--text-muted)">(' + (m.role || 'worker') + (m.is_active ? ', active' : ', stopped') + ')</span>' + (c.manager_agent_id === m.id ? ' <span style="color:var(--primary)">👑 manager</span>' : '') + '</li>'; }).join('') +
-      '</ul></div>' +
+      '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:14px">' +
+        '<div style="flex:1">' +
+          '<input id="cd-name" class="rt-input" style="width:100%;font-size:18px;font-weight:600;background:transparent;border:1px dashed var(--border);padding:6px 8px" value="' + escHtml(c.name) + '">' +
+          '<div style="font-size:12px;color:var(--text-muted);margin-top:6px">#' + c.id + '</div>' +
+        '</div>' +
+        '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted);margin-left:12px;cursor:pointer">' +
+          '<input type="checkbox" id="cd-active"' + (c.is_active ? ' checked' : '') + '> ' + (isRu ? 'активна' : 'active') +
+        '</label>' +
+      '</div>' +
+      '<label style="display:block;margin-bottom:14px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Описание' : 'Description') + '</div>' +
+        '<textarea id="cd-desc" class="rt-input" style="width:100%;min-height:60px;line-height:1.5">' + escHtml(c.description || '') + '</textarea></label>' +
+      // ── Members (editable) ──
+      '<div style="margin-bottom:14px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b>' + (isRu ? 'Участники' : 'Members') + '</b>' +
+        '<span style="font-size:11px;color:var(--text-muted)">' + (isRu ? 'отметь нужных' : 'check to include') + '</span></div>' +
+        '<div style="max-height:180px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px">' +
+          allAgents.map(function(a) {
+            const checked = memberSet.has(a.id) ? ' checked' : '';
+            const mgrBadge = c.manager_agent_id === a.id ? ' <span style="color:var(--primary);font-size:11px">👑 manager</span>' : '';
+            const status = a.isActive ? '🟢' : '⚪';
+            return '<label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px"><input type="checkbox" class="cd-member-cb" value="' + a.id + '"' + checked + '> ' + status + ' #' + a.id + ' ' + escHtml(a.name) + ' <span style="font-size:11px;color:var(--text-muted)">(' + (a.role || 'worker') + ')</span>' + mgrBadge + '</label>';
+          }).join('') +
+        '</div></div>' +
+      // ── Manager + budget — inline row ──
+      '<div style="display:flex;gap:8px;margin-bottom:14px">' +
+        '<label style="flex:1"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Менеджер' : 'Manager') + '</div>' +
+          '<select id="cd-manager" class="rt-input" style="width:100%"><option value="">— ' + (isRu ? 'нет' : 'none') + ' —</option>' +
+            allAgents.map(function(a) { const sel = a.id === c.manager_agent_id ? ' selected' : ''; return '<option value="' + a.id + '"' + sel + '>#' + a.id + ' ' + escHtml(a.name) + '</option>'; }).join('') +
+          '</select></label>' +
+        '<label style="flex:1"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Бюджет TON/мес' : 'Budget TON/month') + '</div>' +
+          '<input id="cd-budget" type="number" step="0.01" min="0" class="rt-input" style="width:100%" value="' + (Number(c.budget_ton_month) || 0) + '"></label>' +
+      '</div>' +
+      // ── Recent executions (read-only) ──
       '<div style="margin-bottom:14px"><b>' + (isRu ? 'Последние запуски' : 'Recent executions') + '</b>' +
         ((d.recent_executions || []).length === 0
           ? '<div style="font-size:12px;color:var(--text-muted);margin-top:4px">' + (isRu ? 'пока пусто' : 'none yet') + '</div>'
-          : '<ul style="margin:6px 0 0 18px">' + d.recent_executions.map(function(e) { return '<li>#' + e.id + ' · ' + e.status + ' · ' + new Date(e.started_at).toLocaleString() + (e.trigger ? ' — ' + escHtml(e.trigger.slice(0, 60)) : '') + '</li>'; }).join('') + '</ul>') +
+          : '<ul style="margin:6px 0 0 18px;font-size:12px">' + d.recent_executions.map(function(e) { return '<li>#' + e.id + ' · ' + e.status + ' · ' + new Date(e.started_at).toLocaleString() + (e.trigger ? ' — ' + escHtml(e.trigger.slice(0, 60)) : '') + '</li>'; }).join('') + '</ul>') +
       '</div>' +
       // ── Crew wallet section ──
       '<div style="margin-bottom:14px;padding:12px;background:rgba(0,168,255,0.06);border:1px solid rgba(0,168,255,0.18);border-radius:10px">' +
@@ -10510,11 +10538,33 @@ async function viewCrewDetails(crewId) {
         ) +
       '</div>' +
       '<div style="display:flex;gap:8px;justify-content:flex-end">' +
-        '<button class="btn" onclick="openEditCrewModal(' + c.id + ');this.closest(\'div[style*=fixed]\').remove()">✎ ' + (isRu ? 'Изменить' : 'Edit') + '</button>' +
         '<button class="btn" onclick="this.closest(\'div[style*=fixed]\').remove()">' + (isRu ? 'Закрыть' : 'Close') + '</button>' +
+        '<button class="btn btn-primary" id="cd-save-' + c.id + '">💾 ' + (isRu ? 'Сохранить' : 'Save') + '</button>' +
       '</div>' +
     '</div>';
   document.body.appendChild(overlay);
+  // Save handler — inline edits, PUT /api/crews/:id with the full diff
+  document.getElementById('cd-save-' + c.id).onclick = async function() {
+    const name = (document.getElementById('cd-name').value || '').trim();
+    const desc = (document.getElementById('cd-desc').value || '').trim();
+    const memberIds = Array.from(document.querySelectorAll('.cd-member-cb:checked')).map(cb => parseInt(cb.value, 10));
+    const manager = parseInt(document.getElementById('cd-manager').value || '0', 10) || null;
+    const budget = parseFloat(document.getElementById('cd-budget').value || '0') || 0;
+    const isActive = document.getElementById('cd-active').checked;
+    if (!name || memberIds.length === 0) { toast(isRu ? 'Название и минимум 1 участник' : 'Name and at least one member required', 'warning'); return; }
+    if (manager && !memberIds.includes(manager)) memberIds.push(manager);
+    const payload = { name, description: desc, agent_ids: memberIds, manager_agent_id: manager, budget_ton_month: budget, is_active: isActive };
+    const r = await apiRequest('PUT', '/api/crews/' + c.id, payload);
+    if (r.ok) {
+      toast(isRu ? 'Сохранено' : 'Saved', 'success');
+      overlay.remove();
+      try { if (document.getElementById('network-page').classList.contains('active') && typeof loadNetworkMap === 'function') loadNetworkMap(); } catch {}
+      try { if (typeof loadCrewsPage === 'function') loadCrewsPage(); } catch {}
+      try { if (typeof awLoadAndRenderCrewWallets === 'function') awLoadAndRenderCrewWallets(); } catch {}
+    } else {
+      toast(r.error || 'Error', 'error');
+    }
+  };
 }
 
 async function createCrewWallet(crewId, btnEl) {
