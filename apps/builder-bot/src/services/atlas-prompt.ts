@@ -67,6 +67,27 @@ export async function buildAtlasSystemPrompt(userId: number, context?: AtlasCont
     }
   } catch { /* templates section empty */ }
 
+  // ── User's agents + crews (so Atlas can suggest crew composition) ─────
+  let userAgentsList = '';
+  let userCrewsList = '';
+  try {
+    const { pool } = await import('../db');
+    const ar = await pool.query<{ id: number; name: string; role: string; is_active: boolean }>(
+      `SELECT id, name, role, is_active FROM builder_bot.agents WHERE user_id = $1 ORDER BY id`,
+      [userId],
+    );
+    userAgentsList = ar.rows.length === 0
+      ? '(нет агентов — предложи юзеру сначала создать)'
+      : ar.rows.map(a => `#${a.id} «${a.name}» role=${a.role || 'worker'} ${a.is_active ? '🟢' : '⚪'}`).join('\n  ');
+    const cr = await pool.query<{ id: number; name: string; agent_ids: number[]; manager_agent_id: number | null }>(
+      `SELECT id, name, agent_ids, manager_agent_id FROM builder_bot.crews WHERE user_id = $1 AND is_active = true ORDER BY id`,
+      [userId],
+    );
+    userCrewsList = cr.rows.length === 0
+      ? '(команд нет)'
+      : cr.rows.map(c => `#${c.id} «${c.name}» members=[${(c.agent_ids || []).join(',')}]${c.manager_agent_id ? ' mgr=#' + c.manager_agent_id : ''}`).join('\n  ');
+  } catch { /* user agents/crews section empty */ }
+
   // ── Learned rules (training-loop-edited) ─────────────────────────────────
   let learnedRules = '';
   try {
@@ -98,10 +119,31 @@ export async function buildAtlasSystemPrompt(userId: number, context?: AtlasCont
     '',
     '🛠 ЧТО МОЖНО ДЕЛАТЬ:',
     '• Создавать агентов: скажи "создай агента [описание]"',
+    '• Создавать команды агентов (crews) — см. ниже',
     '• Управлять кошельками (TON V4R2 или Agentic Wallets через @ton/mcp@alpha)',
     '• Торговать подарками (GiftAsset/SwiftGifts), NFT (TonAPI), DeFi (STON.fi/DeDust)',
     '• Импортировать/публиковать скиллы из GitHub (agentskills.io формат)',
     '• Работать в Telegram как настоящий юзер (MTProto через /tglogin)',
+    '',
+    '👥 АГЕНТЫ ПОЛЬЗОВАТЕЛЯ (используй ИХ ID при предложении команды):',
+    '  ' + userAgentsList,
+    '',
+    '🤝 ТЕКУЩИЕ КОМАНДЫ ПОЛЬЗОВАТЕЛЯ:',
+    '  ' + userCrewsList,
+    '',
+    '═══ СОЗДАНИЕ КОМАНДЫ (CREW) ═══',
+    'Если юзер хочет создать команду из агентов («сделай команду», «объедини агентов», «нужна команда чтобы…»), проведи МИНИ-ИНТЕРВЬЮ:',
+    '  1. Какая цель/задача команды? (что она делает в целом)',
+    '  2. Каких агентов включить? (предложи 2-3 ID из списка выше что подходят по роли)',
+    '  3. Будет ли менеджер (один из агентов делегирует остальным через ask_agent) или равноправная команда?',
+    '  4. Бюджет TON/месяц (опц., по умолчанию 0).',
+    '',
+    'НЕ ЗАДАВАЙ ВСЕ 4 ВОПРОСА СРАЗУ — задавай по очереди, давая юзеру отвечать. Когда все 4 ответа есть, верни ОДНУ summary-фразу + специальный блок:',
+    '',
+    '<crew-suggest>{"name":"короткое имя","description":"одной строкой что делает","agent_ids":[1,2,3],"manager_agent_id":2,"budget_ton_month":0}</crew-suggest>',
+    '',
+    'manager_agent_id может быть null если команда равноправная. agent_ids — только ID из списка выше. После этого блока — короткий призыв нажать кнопку «Создать» (Studio покажет её юзеру).',
+    'НЕ создавай команду без подтверждения юзера на каждом шаге. НЕ выдумывай ID агентов которых нет в списке.',
     '',
     'Отвечай кратко и по делу. Говори на языке пользователя. Когда перечисляешь возможности — бери имена ИЗ СПИСКА ВЫШЕ.',
   ];

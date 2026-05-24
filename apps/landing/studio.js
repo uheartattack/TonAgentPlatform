@@ -9973,6 +9973,43 @@ function initFlowBuilder() {
 let _networkAnimId = null;
 let _networkNodes = [];
 let _networkEdges = [];
+let _networkCrews = []; // raw crews payload — drives the floating panel + edge generation
+let _networkHoverCrewId = null; // hover-highlight: set by panel mouseenter/leave
+
+function renderNetworkCrewsPanel(crews) {
+  const listEl = document.getElementById('ncrews-list');
+  const countEl = document.getElementById('ncrews-count');
+  if (countEl) countEl.textContent = (crews || []).length;
+  if (!listEl) return;
+  const isRu = currentLang === 'ru';
+  if (!crews || crews.length === 0) {
+    listEl.innerHTML = ''; // CSS :empty::after handles "no crews" placeholder
+    return;
+  }
+  listEl.innerHTML = crews.map(function(c) {
+    const dot = c._color || '#00a8ff';
+    const memberCount = (c.agent_ids || []).length;
+    const mgr = c.manager_agent_id ? ' · 👑 #' + c.manager_agent_id : '';
+    return '<div class="ncrews-item" data-crew-id="' + c.id + '" onmouseenter="_setNetworkCrewHover(' + c.id + ')" onmouseleave="_setNetworkCrewHover(null)">' +
+      '<div class="ncrews-item-name"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + dot + ';margin-right:6px;vertical-align:middle"></span>' + escHtml(c.name) + '</div>' +
+      '<div class="ncrews-item-meta">' + memberCount + ' ' + (isRu ? 'участн.' : 'members') + mgr + '</div>' +
+      '<div class="ncrews-item-actions">' +
+        '<button class="ncrews-run" onclick="event.stopPropagation();runCrew(' + c.id + ')">▶</button>' +
+        '<button onclick="event.stopPropagation();viewCrewDetails(' + c.id + ')">' + (isRu ? 'детали' : 'info') + '</button>' +
+        '<button onclick="event.stopPropagation();deleteCrew(' + c.id + ')" style="color:var(--danger)">×</button>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function _setNetworkCrewHover(crewId) {
+  _networkHoverCrewId = crewId;
+  // Update item highlight in the panel
+  document.querySelectorAll('.ncrews-item').forEach(function(el) {
+    if (Number(el.dataset.crewId) === crewId) el.classList.add('ncrews-hover');
+    else el.classList.remove('ncrews-hover');
+  });
+}
 let _networkDragNode = null;
 let _networkDragOffset = { dx: 0, dy: 0 };
 let _networkMouse = { x: 0, y: 0 };
@@ -10109,6 +10146,45 @@ async function openCreateCrewModal() {
   };
 }
 
+// Atlas crew interview: user clicks "Create" on a <crew-suggest> action card.
+// We send the JSON Atlas built straight to /api/crews — same validation as the
+// regular Studio modal flow.
+async function acceptAtlasCrewSuggest(suggestKey, btnEl) {
+  const isRu = currentLang === 'ru';
+  const suggest = window[suggestKey];
+  if (!suggest) { toast(isRu ? 'Предложение устарело' : 'Suggestion expired', 'warning'); return; }
+  if (btnEl) { btnEl.disabled = true; btnEl.textContent = isRu ? 'Создаём…' : 'Creating…'; }
+  try {
+    const payload = {
+      name: String(suggest.name || 'Crew').slice(0, 128),
+      description: String(suggest.description || '').slice(0, 500),
+      agent_ids: Array.isArray(suggest.agent_ids) ? suggest.agent_ids.map(Number).filter(Boolean) : [],
+      manager_agent_id: suggest.manager_agent_id ? Number(suggest.manager_agent_id) : null,
+      budget_ton_month: Number(suggest.budget_ton_month) || 0,
+    };
+    const r = await apiRequest('POST', '/api/crews', payload);
+    if (r.ok) {
+      toast(isRu ? 'Команда создана' : 'Crew created', 'success');
+      if (btnEl) {
+        btnEl.textContent = '✓ #' + r.crew.id;
+        btnEl.style.background = 'rgba(34,197,94,0.2)';
+        btnEl.style.color = '#22c55e';
+      }
+      // If we're currently on the network page, refresh it so the new crew appears
+      const np = document.getElementById('network-page');
+      if (np && np.classList.contains('active')) loadNetworkMap();
+    } else {
+      toast(r.error || 'Error', 'error');
+      if (btnEl) { btnEl.disabled = false; btnEl.textContent = isRu ? '▶ Создать команду' : '▶ Create crew'; }
+    }
+  } catch (e) {
+    toast(String(e), 'error');
+    if (btnEl) { btnEl.disabled = false; btnEl.textContent = isRu ? '▶ Создать команду' : '▶ Create crew'; }
+  } finally {
+    delete window[suggestKey];
+  }
+}
+
 async function runCrew(crewId) {
   const isRu = currentLang === 'ru';
   const trigger = prompt(isRu ? 'Задача для команды:' : 'Task for the crew:', '');
@@ -10185,8 +10261,17 @@ async function loadNetworkMap() {
   // Cancel previous animation
   if (_networkAnimId) { cancelAnimationFrame(_networkAnimId); _networkAnimId = null; }
 
-  const data = await apiRequest('GET', '/api/agents');
+  // Pull agents + crews in parallel — crews drive real edges in the graph below
+  const [data, crewsResp] = await Promise.all([
+    apiRequest('GET', '/api/agents'),
+    apiRequest('GET', '/api/crews').catch(() => ({ ok: false, crews: [] })),
+  ]);
   const agents = (data.ok ? data.agents : []) || [];
+  const crews = (crewsResp.ok ? crewsResp.crews : []) || [];
+  _networkCrews = crews; // expose for hover-highlight + crew CRUD
+
+  // Render the crews floating panel (was a separate sidebar tab before)
+  renderNetworkCrewsPanel(crews);
 
   // Update stats
   var elTotal = document.getElementById('net-stat-total');
@@ -10243,29 +10328,74 @@ async function loadNetworkMap() {
     };
   });
 
-  // Build edges
+  // Build edges from REAL data — was "fake cycle for visual interest" before.
+  // Edge sources, in priority order:
+  //   1. Crew memberships: every crew → connect manager to each worker (or
+  //      ring among members if no manager). Edge kind='crew', tinted to crew color.
+  //   2. Role hierarchy: director → ALL of their agents (visual hierarchy hint)
+  //   3. Same-role-pair grouping is INTENTIONALLY skipped — no more fake links.
+  // Edges are deduped by (from,to) so a worker that's in two crews keeps a
+  // single line per source.
   var edges = [];
-  var directors = _networkNodes.filter(function(n) { return n.role === 'director'; });
-  var managers = _networkNodes.filter(function(n) { return n.role === 'manager'; });
-  var workers = _networkNodes.filter(function(n) { return n.role === 'worker'; });
+  var seenEdges = new Set(); // 'fromId:toId' to dedupe
+  var nodeById = {};
+  _networkNodes.forEach(function(n) { nodeById[n.id] = n; });
 
+  // Stable color-per-crew for tinting edges + nodes
+  var crewColors = ['#00a8ff', '#a855f7', '#22c55e', '#f59e0b', '#ec4899', '#06b6d4', '#84cc16', '#f97316'];
+  crews.forEach(function(c, cIdx) {
+    c._color = crewColors[cIdx % crewColors.length];
+    var memberIds = (c.agent_ids || []).filter(function(id) { return nodeById[id]; });
+    if (memberIds.length < 2) return;
+    var managerNode = c.manager_agent_id ? nodeById[c.manager_agent_id] : null;
+    if (managerNode) {
+      // Manager → each worker
+      memberIds.forEach(function(mid) {
+        if (mid === managerNode.id) return;
+        var key = managerNode.id + ':' + mid;
+        if (seenEdges.has(key)) return;
+        seenEdges.add(key);
+        edges.push({ from: managerNode, to: nodeById[mid], kind: 'crew-manage', color: c._color, crewId: c.id });
+      });
+    } else {
+      // No manager — ring among members so the cluster is visible without a centre
+      for (var i = 0; i < memberIds.length; i++) {
+        var a = memberIds[i], b = memberIds[(i + 1) % memberIds.length];
+        if (a === b) continue;
+        var key = a + ':' + b;
+        if (seenEdges.has(key)) continue;
+        seenEdges.add(key);
+        edges.push({ from: nodeById[a], to: nodeById[b], kind: 'crew-ring', color: c._color, crewId: c.id });
+      }
+    }
+  });
+
+  // Role hierarchy on top of crews — director → all, but only if not already linked
+  var directors = _networkNodes.filter(function(n) { return n.role === 'director'; });
   directors.forEach(function(d) {
     _networkNodes.forEach(function(n) {
-      if (n.id !== d.id) edges.push({ from: d, to: n });
+      if (n.id === d.id) return;
+      var key = d.id + ':' + n.id;
+      if (seenEdges.has(key)) return;
+      seenEdges.add(key);
+      edges.push({ from: d, to: n, kind: 'director', color: '#ffd700' });
     });
   });
-  managers.forEach(function(m) {
-    workers.forEach(function(w) { edges.push({ from: m, to: w }); });
+
+  // Track per-agent crew membership for hover-highlight + node tint
+  _networkNodes.forEach(function(n) {
+    n.crewIds = [];
+    n.crewColor = null;
   });
-  if (!directors.length && !managers.length && _networkNodes.length > 1) {
-    for (var i = 0; i < _networkNodes.length - 1; i++) {
-      edges.push({ from: _networkNodes[i], to: _networkNodes[i + 1] });
-    }
-    // Close the loop for visual interest
-    if (_networkNodes.length > 2) {
-      edges.push({ from: _networkNodes[_networkNodes.length - 1], to: _networkNodes[0] });
-    }
-  }
+  crews.forEach(function(c) {
+    (c.agent_ids || []).forEach(function(id) {
+      var node = nodeById[id];
+      if (!node) return;
+      node.crewIds.push(c.id);
+      if (!node.crewColor) node.crewColor = c._color;
+    });
+  });
+
   _networkEdges = edges;
   if (elEdges) elEdges.textContent = edges.length;
 
@@ -11249,11 +11379,33 @@ async function sendAssistantMessage() {
                   } else if (atlasEvt === 'done') {
                     if (atlasStreamEl) {
                       var _final = atlasText || _p.fullText || '…';
-                      atlasStreamEl.innerHTML = escHtml(_final)
+                      // Atlas crew interview output: extract <crew-suggest>{json}</crew-suggest>
+                      // marker, render as an inline "Create crew" action button.
+                      var _crewSuggest = null;
+                      _final = _final.replace(/<crew-suggest>([\s\S]*?)<\/crew-suggest>/g, function(_m, body) {
+                        try { _crewSuggest = JSON.parse(body.trim()); } catch (_je) { _crewSuggest = null; }
+                        return ''; // strip marker from visible text
+                      });
+                      atlasStreamEl.innerHTML = escHtml(_final.trim())
                         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
                         .replace(/`([^`]+)`/g, '<code>$1</code>')
                         .replace(/\[\[page:(\w+)\|([^\]]+)\]\]/g, '<a href="#" class="assistant-nav-link" onclick="navigateTo(\'$1\');return false" style="color:var(--primary-light);text-decoration:underline;cursor:pointer">$2</a>')
                         .replace(/\n/g, '<br>');
+                      if (_crewSuggest && Array.isArray(_crewSuggest.agent_ids) && _crewSuggest.agent_ids.length > 0) {
+                        var _btnId = 'crew-sug-btn-' + Date.now();
+                        var _suggestKey = '_atlasCrewSuggest_' + Date.now();
+                        window[_suggestKey] = _crewSuggest;
+                        var _meta = (_crewSuggest.agent_ids || []).length + ' агентов' + (_crewSuggest.manager_agent_id ? ' · менеджер #' + _crewSuggest.manager_agent_id : '');
+                        var _actionHtml = '<div style="margin-top:10px;padding:10px;background:rgba(0,168,255,0.08);border:1px solid rgba(0,168,255,0.28);border-radius:10px">' +
+                          '<div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">Atlas предлагает создать команду</div>' +
+                          '<div style="font-weight:600;margin-bottom:2px">' + escHtml(String(_crewSuggest.name || 'Crew')) + '</div>' +
+                          '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">' + escHtml(String(_crewSuggest.description || '')) + '</div>' +
+                          '<div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">' + _meta + '</div>' +
+                          '<button id="' + _btnId + '" class="btn btn-primary" style="font-size:12px;padding:6px 14px" onclick="acceptAtlasCrewSuggest(\'' + _suggestKey + '\', this)">▶ Создать команду</button>' +
+                          '<button class="btn" style="font-size:12px;padding:6px 12px;margin-left:6px" onclick="this.closest(\'div\').remove()">Отмена</button>' +
+                          '</div>';
+                        atlasStreamEl.insertAdjacentHTML('beforeend', _actionHtml);
+                      }
                     }
                   } else if (atlasEvt === 'error') {
                     if (atlasStreamEl) atlasStreamEl.textContent = _p.message || 'Error';

@@ -10080,3 +10080,130 @@ button[data-busy="1"]::after, .btn-busy::after {
   box-shadow: 0 8px 20px rgba(0,0,0,0.22);
 }
 
+/* ── Network: Crews floating panel ────────────────────────────────────── */
+.network-crews-panel {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 260px;
+  max-height: calc(100vh - 200px);
+  display: flex;
+  flex-direction: column;
+  background: rgba(10,15,28,0.78);
+  border: 1px solid rgba(200,220,255,0.12);
+  border-radius: 14px;
+  backdrop-filter: blur(16px);
+  z-index: 8;
+  overflow: hidden;
+}
+.ncrews-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(200,220,255,0.08);
+}
+.ncrews-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+.ncrews-count {
+  background: rgba(255,255,255,0.08);
+  color: var(--text-secondary);
+  padding: 1px 7px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.ncrews-create-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: rgba(0,168,255,0.18);
+  color: #00a8ff;
+  border: 1px solid rgba(0,168,255,0.32);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .15s var(--ease);
+}
+.ncrews-create-btn:hover { background: rgba(0,168,255,0.28); }
+.ncrews-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ncrews-list:empty::after {
+  content: 'Нет команд. Создай через +';
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 18px 8px;
+  text-align: center;
+  display: block;
+}
+.ncrews-item {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(200,220,255,0.08);
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: background .15s var(--ease), border-color .15s var(--ease);
+}
+.ncrews-item:hover {
+  background: rgba(0,168,255,0.06);
+  border-color: rgba(0,168,255,0.22);
+}
+.ncrews-item.ncrews-hover {
+  border-color: rgba(0,168,255,0.5);
+  background: rgba(0,168,255,0.10);
+}
+.ncrews-item-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ncrews-item-meta {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  display: flex;
+  gap: 6px;
+}
+.ncrews-item-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+.ncrews-item-actions button {
+  flex: 1;
+  font-size: 10.5px;
+  padding: 3px 6px;
+  border-radius: 5px;
+  border: 1px solid rgba(200,220,255,0.12);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.ncrews-item-actions button.ncrews-run {
+  background: rgba(34,197,94,0.12);
+  border-color: rgba(34,197,94,0.3);
+  color: #22c55e;
+}
+.ncrews-item-actions button:hover { background: rgba(255,255,255,0.06); }
+
