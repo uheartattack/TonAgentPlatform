@@ -38,8 +38,11 @@ Thumbs.db
 # TypeScript
 *.tsbuildinfo
 
-# Claude AI session files
-.claude/
+# Claude AI session files — block all except shared config
+.claude/*
+!.claude/skills/
+!.claude/launch.json
+!.claude/settings.json
 
 # Null/garbage files
 **/nul
