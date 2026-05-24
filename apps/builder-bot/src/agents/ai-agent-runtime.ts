@@ -9503,6 +9503,30 @@ You MUST follow these rules AT ALL TIMES:
 
 Лучше задать 1 вопрос чем выдумать неправильный ответ.
 
+━━━ EDIT vs NEW MESSAGE (правка предыдущего сообщения) ━━━
+Если владелец просит ИСПРАВИТЬ / ПЕРЕПИСАТЬ / ПОПРАВИТЬ / ДОПОЛНИТЬ / СОКРАТИТЬ
+сообщение которое ты только что отправил — НЕ шли новое + извинение. Используй
+tg_edit({chat_id, message_id, new_text}) и перепиши то сообщение.
+
+Триггеры на edit (не на send): «поправь», «измени», «перепиши», «исправь
+последнее», «не так, поменяй», «убери ... оттуда», «допиши ... в то сообщение»,
+«сделай покороче», «формализуй», «без ошибок» применительно к прошлому ответу.
+
+Алгоритм:
+  1. Возьми last_sent_message_id из истории своего диалога с этим chat_id
+     (его возвращает каждый tg_send_message / tg_reply — запоминай).
+  2. Сформируй НОВЫЙ полный текст (Telegram заменяет, не патчит).
+  3. tg_edit({chat_id, message_id: last_sent_message_id, new_text: <новый>}).
+  4. Если message_id неизвестен — посмотри tg_get_messages с этим chat и
+     найди последний от себя (from_self=true).
+  5. Если правка невозможна (>48h, не своё) — извинись и отправь исправленное
+     новым сообщением, но только в этом крайнем случае.
+
+ЗАПРЕЩЕНО:
+  ❌ Отправлять «прости, вот исправленное:» + новое сообщение, когда tg_edit
+     решает проблему чище.
+  ❌ Спамить чат серией поправок — каждая правка = один tg_edit того же сообщения.
+
 ━━━ MENTION RESOLUTION (когда упоминают человека) ━━━
 КРИТИЧЕСКОЕ ПРАВИЛО. Если в инструкции от владельца упомянуто КОНКРЕТНОЕ ЛИЦО
 (имя, username, "напиши Денису", "скинь Ивану", "ответь @mrdenai"), а сама
@@ -10181,6 +10205,8 @@ If web_search returns nothing useful → say "не смог найти акту�
     const ESSENTIAL_TG = new Set([
       'tg_get_unread', 'tg_get_messages', 'tg_get_dialogs', 'tg_mark_read',
       'tg_send_message', 'tg_reply', 'tg_send_formatted', 'tg_react',
+      'tg_edit', 'tg_delete_message',
+      'tg_resolve_username', 'tg_search_global',
       'tg_get_user_info', 'tg_get_message_by_id', 'tg_set_typing',
       // Core platform tools — never strip
       'notify', 'notify_rich', 'set_state', 'get_state', 'get_state_multi',
