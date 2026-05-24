@@ -941,14 +941,26 @@ setInterval(() => {
 // Per-chat serial processing queue with backpressure (max 10 concurrent chats)
 const _chatQueue = new ChatProcessingQueue(10);
 
-// Per-agent priority queue — processes messages sequentially with priority ordering
+// Per-chat lane queue (Sprint 8) — processes messages serially per (agent, chat)
+// AND in parallel across different chats. Fixes "падает на параллельных запросах"
+// because a slow tick in chat A no longer blocks chat B's messages.
 interface QueueItem {
   chatKey: string;
+  agentId: number;     // duplicated for log readability
   msg: TgInboxMessage;
   cfg: AgentMessageConfig;
-  priority: number; // 0=owner, 1=DM, 2=group
+  priority: number; // 0=owner, 1=DM, 2=group (used for tie-break within same date)
   enqueuedAt: number;
 }
+// One lane per (agentId, chatId). chatKey = `${agentId}:${chatId}`.
+const _chatLanes = new Map<string, { queue: QueueItem[]; processing: boolean }>();
+// Global semaphore so the bot doesn't try to run 200 chats at once.
+const _activeLanes = new Set<string>();
+const MAX_PARALLEL_LANES = 10;
+const _laneWaitQueue: string[] = []; // FIFO of lanes waiting for a slot
+
+// Legacy per-agent queue map (kept for shutdown cleanup paths). Empty in
+// Sprint-8 lane-based dispatch but the reference is still touched elsewhere.
 const _agentQueues = new Map<number, { queue: QueueItem[]; processing: boolean }>();
 // Global send rate limiter (25 msg/sec, 20 per group/min)
 const _sendLimiter = new SendRateLimiter(25, 20);
@@ -2522,43 +2534,76 @@ class UserbotManager {
 
   private _doDispatch(agentId: number, msg: TgInboxMessage, cfg: AgentMessageConfig, chatKey: string, priority: number): void {
     const _ownerTg = _ownerTgIdCache.get(cfg.userId) || cfg.userId;
-    const isOwner = msg.senderId && (String(msg.senderId) === String(_ownerTg) || String(msg.senderId) === String(cfg.userId));
-    // Get or create per-agent queue
-    let agentQ = _agentQueues.get(agentId);
-    if (!agentQ) {
-      agentQ = { queue: [], processing: false };
-      _agentQueues.set(agentId, agentQ);
+    const isOwner = !!(msg.senderId && (String(msg.senderId) === String(_ownerTg) || String(msg.senderId) === String(cfg.userId)));
+    // Get or create per-CHAT lane (not per-agent)
+    let lane = _chatLanes.get(chatKey);
+    if (!lane) {
+      lane = { queue: [], processing: false };
+      _chatLanes.set(chatKey, lane);
     }
 
-    // Backpressure: drop if queue too long (keep owner messages always)
-    if (agentQ.queue.length >= 20 && !isOwner) {
-      console.warn(`[UserbotMgr] ⚠️ Queue full for agent#${agentId} (${agentQ.queue.length}), dropping msg from chat=${msg.chatId}`);
+    // Backpressure: drop if THIS lane is too long (keep owner messages always).
+    // Was per-agent (20 across all chats) — now per-chat (8 per lane), which is
+    // both more accurate AND can't be DoS'd by one chat blocking the rest.
+    if (lane.queue.length >= 8 && !isOwner) {
+      console.warn(`[Lane ${chatKey}] ⚠️ lane full (${lane.queue.length}), dropping msg from sender=${msg.senderId}`);
       return;
     }
 
-    console.log(`[UserbotMgr] 🚀 Dispatching to agent#${agentId} chat=${msg.chatId} prio=${priority} queued=${agentQ.queue.length}`);
-
-    // Insert into priority queue (lower number = higher priority)
-    const item = { chatKey, msg, cfg, priority, enqueuedAt: Date.now() };
+    const item: QueueItem = { chatKey, agentId, msg, cfg, priority, enqueuedAt: Date.now() };
+    // Sort order inside a lane = by msg.date ASC (chronological — "приоритет по времени"
+    // как просил пользователь). Owner messages get a soft bump: same date treats
+    // them as slightly earlier so they're served first in a tie.
+    const itemSort = (msg.date || 0) - (isOwner ? 0.001 : 0);
     let inserted = false;
-    for (let i = 0; i < agentQ.queue.length; i++) {
-      if (priority < agentQ.queue[i].priority) {
-        agentQ.queue.splice(i, 0, item);
+    for (let i = 0; i < lane.queue.length; i++) {
+      const otherSort = (lane.queue[i].msg.date || 0) - (lane.queue[i].priority === 0 ? 0.001 : 0);
+      if (itemSort < otherSort) {
+        lane.queue.splice(i, 0, item);
         inserted = true;
         break;
       }
     }
-    if (!inserted) agentQ.queue.push(item);
+    if (!inserted) lane.queue.push(item);
 
-    // Start processing if not already running
-    this._processAgentQueue(agentId);
+    console.log(`[Lane ${chatKey}] 🚀 enqueued (depth=${lane.queue.length}, msgDate=${msg.date}, owner=${isOwner}, active=${_activeLanes.size}/${MAX_PARALLEL_LANES})`);
+    this._scheduleLane(chatKey);
   }
 
-  /** Process agent queue sequentially — one message at a time per agent */
-  private async _processAgentQueue(agentId: number): Promise<void> {
-    const agentQ = _agentQueues.get(agentId);
-    if (!agentQ || agentQ.processing) return;
-    agentQ.processing = true;
+  /** Try to start a lane respecting the global parallelism cap. */
+  private _scheduleLane(chatKey: string): void {
+    const lane = _chatLanes.get(chatKey);
+    if (!lane || lane.processing || lane.queue.length === 0) return;
+    if (_activeLanes.size >= MAX_PARALLEL_LANES) {
+      if (!_laneWaitQueue.includes(chatKey)) {
+        _laneWaitQueue.push(chatKey);
+        console.log(`[Lane ${chatKey}] ⏸ waiting for slot (${_activeLanes.size}/${MAX_PARALLEL_LANES} active, wait-queue=${_laneWaitQueue.length})`);
+      }
+      return;
+    }
+    _activeLanes.add(chatKey);
+    this._processChatLane(chatKey).finally(() => {
+      _activeLanes.delete(chatKey);
+      // Wake the next waiting lane
+      const next = _laneWaitQueue.shift();
+      if (next) {
+        console.log(`[Lane ${next}] ▶ slot freed — starting (was waiting)`);
+        this._scheduleLane(next);
+      }
+    });
+  }
+
+  /** Process ONE chat lane sequentially. Lanes run in parallel across chats. */
+  private async _processChatLane(chatKey: string): Promise<void> {
+    const lane = _chatLanes.get(chatKey);
+    if (!lane || lane.processing) return;
+    lane.processing = true;
+    const laneStart = Date.now();
+    let processed = 0;
+    // Legacy alias to keep _typingInterval cleanup below referring to `agentQ`
+    // without rewriting the entire block — minimum-diff.
+    const agentQ = lane;
+    const agentId = agentQ.queue[0]?.agentId || 0;
 
     while (agentQ.queue.length > 0) {
       const item = agentQ.queue.shift()!;
@@ -2579,10 +2624,14 @@ class UserbotManager {
         // basically always.
 
         // Process with timeout (90s max)
+        const _itemStart = Date.now();
+        console.log(`[Lane ${chatKey}] ▶ processing msg sender=${item.msg.senderId} ts=${item.msg.date} text="${(item.msg.text || '').slice(0, 40)}"`);
         await Promise.race([
           this.processTgInboxMessage(agentId, item.msg, item.cfg),
           new Promise<void>((_, reject) => setTimeout(() => reject(new Error('TIMEOUT_90s')), 90_000)),
         ]);
+        processed++;
+        console.log(`[Lane ${chatKey}] ✓ msg done in ${Date.now() - _itemStart}ms (remaining in lane: ${agentQ.queue.length})`);
       } catch (procErr: any) {
         const errMsg = procErr.message || '';
         if (errMsg.includes('TIMEOUT_90s')) {
@@ -2596,8 +2645,8 @@ class UserbotManager {
     }
 
     agentQ.processing = false;
-    // Cleanup empty queues
-    if (agentQ.queue.length === 0) _agentQueues.delete(agentId);
+    if (agentQ.queue.length === 0) _chatLanes.delete(chatKey);
+    console.log(`[Lane ${chatKey}] ✓ done processed=${processed} took=${Date.now() - laneStart}ms remaining=${agentQ.queue.length} active=${_activeLanes.size}`);
   }
 
   /** Disable message listener */
