@@ -1082,6 +1082,10 @@ function _shouldAutoSpawnFreshContext(agentId: number, newText: string): boolean
   } catch { return false; }
 }
 
+function escAttrSafe(s: string): string {
+  return String(s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!).slice(0, 80);
+}
+
 export function addMessageToAIAgent(agentId: number, text: string, context?: Record<string, any>): void {
   // Atomic check-and-set to prevent zombie messages for deactivated agents (M50)
   if (!_pendingMessages.has(agentId)) _pendingMessages.set(agentId, []);
@@ -1091,6 +1095,22 @@ export function addMessageToAIAgent(agentId: number, text: string, context?: Rec
   let payload = text;
   if (context?._taskNotification) {
     payload = wrapAsTaskNotification(text, context);
+  } else if (context?.chatId) {
+    // Sprint 8 — tag every real user message with chat + sender + msg_id so:
+    //  (a) messages from two different CHATS aren't mixed into one reply
+    //  (b) messages from two different PEOPLE in the same GROUP chat are
+    //      treated as separate subdialogs (User A asking X ≠ User B asking Y)
+    //  (c) agent can tg_reply({chat_id, reply_to_id}) instead of plain send,
+    //      so the answer is threaded under the right person's message.
+    const attrs = [
+      `chat_id="${context.chatId}"`,
+      context.senderId != null ? `sender_id="${context.senderId}"` : '',
+      context.messageId != null ? `msg_id="${context.messageId}"` : '',
+      context.senderFirstName ? `sender="${escAttrSafe(String(context.senderFirstName))}"` : '',
+      context.senderUsername ? `username="@${escAttrSafe(String(context.senderUsername))}"` : '',
+      context.isGroup ? 'kind="group"' : (context.isChannel ? 'kind="channel"' : 'kind="dm"'),
+    ].filter(Boolean).join(' ');
+    payload = `<chat-msg ${attrs}>\n${text}\n</chat-msg>`;
   }
   if (msgs) msgs.push(payload);
   if (context) {
@@ -2722,6 +2742,51 @@ async function _executeToolInner(
           result.warning = `Этот адрес НЕ твой. Твой собственный кошелёк: ${ownWallet}. Для операций с балансом агента используй свой адрес.`;
           result.agent_own_wallet = ownWallet;
         }
+        // ── Auto-attach recent_inbound when balance grew vs prev_balance ──
+        // Sprint 8: agent literally cannot say "5 TON came, from whom?" — sender
+        // info is already in the tool result. We store last-seen balance per
+        // (agent, address) in agent_state and on diff fetch last 5 incoming txs.
+        try {
+          if (!addrMismatch) {
+            const _prevKey = `_last_balance_${addr.slice(0, 12)}`;
+            const _prevRaw = unwrapState(await stateRepo.get(params.agentId, _prevKey).catch(() => null));
+            const _prev = Number(_prevRaw);
+            const _curr = Number(bal);
+            if (Number.isFinite(_prev) && Number.isFinite(_curr) && _curr > _prev + 1e-6) {
+              const _delta = +(_curr - _prev).toFixed(9);
+              // Pull last 10 transactions, filter to inbound (in_msg.source set)
+              try {
+                const txRes = await fetch(`https://tonapi.io/v2/blockchain/accounts/${encodeURIComponent(addr)}/transactions?limit=10`, { headers, signal: AbortSignal.timeout(8000) });
+                const txData = await txRes.json() as any;
+                const inbound: any[] = [];
+                for (const t of (txData.transactions || [])) {
+                  const src = t.in_msg?.source?.address;
+                  const valueNano = Number(t.in_msg?.value || 0);
+                  if (!src || valueNano <= 0) continue;
+                  const amount = +(valueNano / 1e9).toFixed(9);
+                  const senderShort = src.length > 12 ? src.slice(0, 6) + '…' + src.slice(-4) : src;
+                  const comment = t.in_msg?.decoded_body?.text || t.in_msg?.message_content?.decoded?.comment || '';
+                  inbound.push({
+                    from: src,
+                    from_short: senderShort,
+                    amount_ton: amount,
+                    comment: comment || null,
+                    hash: t.hash,
+                    utime: t.utime,
+                  });
+                  if (inbound.length >= 5) break;
+                }
+                result.balance_increased_by_ton = _delta;
+                result.recent_inbound = inbound;
+                result.note_to_self = `Баланс вырос на ${_delta} TON. Перед уведомлением владельца обязательно укажи отправителя и (если есть) комментарий из recent_inbound[0].`;
+              } catch (txErr: any) {
+                console.warn(`[GetBalance] tx fetch for delta failed: ${txErr?.message}`);
+              }
+            }
+            // Always persist current balance for next-time diff (best-effort)
+            await stateRepo.set(params.agentId, params.userId, _prevKey, String(_curr)).catch(() => {});
+          }
+        } catch {}
         return result;
       } catch (e: any) {
         return { error: e.message };
@@ -9544,6 +9609,33 @@ You MUST follow these rules AT ALL TIMES:
   • Не знаешь какой тул вызвать → спроси владельца что конкретно сделать
 
 Лучше задать 1 вопрос чем выдумать неправильный ответ.
+
+━━━ MULTI-CHAT + MULTI-USER ISOLATION ━━━
+КАЖДОЕ входящее сообщение приходит обёрнутым в:
+  <chat-msg chat_id="225874730" sender_id="8527603278" msg_id="42"
+            sender="Ivan" username="@ivan" kind="dm">
+  текст сообщения
+  </chat-msg>
+
+ЖЁСТКИЙ АЛГОРИТМ перед каждым ответом:
+  1. Посмотри на chat_id + sender_id того сообщения которому отвечаешь.
+  2. **Контекст разговора уникален по паре (chat_id, sender_id).** В группе разные
+     люди = разные subdialog'и: User A задал вопрос про X, User B задал про Y —
+     это ДВА разных диалога даже если они в одном chat_id.
+  3. Reply MUST идти в тот же chat_id, и желательно через
+     tg_reply({chat_id, reply_to_id: <msg_id из тега>, text: ...}) чтобы ответ
+     был "threaded" под конкретное сообщение конкретного человека.
+  4. Если в одном тике пришло несколько <chat-msg> с разными chat_id ИЛИ разными
+     sender_id — обработай КАЖДЫЙ отдельно. Не сливай их в один ответ.
+  5. История разговора с user X в chat Y НЕ применима к user Z в том же chat Y —
+     это другой человек, у него своя нить.
+  6. Sender info (sender, username) — обращайся к человеку по имени.
+
+ЗАПРЕЩЕНО:
+  ❌ Отвечать на сообщение из chat=B текстом про разговор из chat=A.
+  ❌ В групповом чате продолжать тему user A когда пишет user B — это разные люди.
+  ❌ Игнорировать chat_id в теге и слать "куда придётся".
+  ❌ Использовать tg_send_message без явного chat_id из тега того сообщения.
 
 ━━━ INCOMING TX RESOLUTION (входящий TON-перевод) ━━━
 Если ты заметил что баланс кошелька УВЕЛИЧИЛСЯ (сравни get_ton_balance с

@@ -3245,10 +3245,15 @@ RULES:
       await proactiveAIWait(agentId);
       console.log(`[UserbotMgr] 📡 Agent#${agentId} AI: provider=${prov.id} tools=${geminiTools.length}(of ${allTools.length})`);
 
-      // ── Pre-AI behavior: read receipts + start typing ──
+      // ── Pre-AI behavior: read receipts ONLY (typing moved to pre-send block) ──
+      // Sprint 8 fix: typing during AI thinking/tool calls confused users —
+      // they saw "печатает…" while agent was just READING the message. Typing
+      // is now started ONLY in the pre-send block below, after AI produced
+      // actual text to deliver. Read-receipt still fires here so users see
+      // "✓✓ seen" promptly.
       const _bhPre = mergedConfig.behavior || cfg.config?.behavior || {};
       _typingInterval = null; // reset (declared before try)
-      if (_bhPre.readReceipts || _bhPre.typingDelay) {
+      if (false && _bhPre.readReceipts) {
         const { Api: _PreApi } = require('telegram/tl');
         const _readChatId = msg.chatId;
         // Read delay → mark as read
@@ -3890,13 +3895,24 @@ RULES:
               } catch {}
             }
           }
-          // Stop typing refresh interval
-          if (_typingInterval) { clearInterval(_typingInterval); _typingInterval = null; }
-
           // ── Apply humanization behavior before sending ──
           const _bh = mergedConfig.behavior || cfg.config?.behavior || {};
           const _addVar = (v: number, pct: number) => Math.max(100, Math.round(v * (1 + (Math.random() - 0.5) * ((pct || 25) / 50))));
           const { Api } = require('telegram/tl');
+
+          // Sprint 8 — start typing NOW (AI produced text, we're about to send).
+          // Refresh every 4s because Telegram clears chat-action after ~5s.
+          // Cleared right before the actual .sendMessage call below.
+          if (_bh.typingDelay !== false) {
+            try {
+              const _peer = typeof chatTarget === 'number' ? chatTarget : (chatTarget?.id || msg.chatId);
+              const _sendTyping = async () => {
+                try { await (client as any).invoke(new Api.messages.SetTyping({ peer: _peer, action: new Api.SendMessageTypingAction() })); } catch {}
+              };
+              await _sendTyping();
+              _typingInterval = setInterval(_sendTyping, 4000);
+            } catch {}
+          }
 
           // 1. Read receipts already done before AI call (async)
 
