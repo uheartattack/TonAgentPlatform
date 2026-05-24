@@ -713,6 +713,23 @@ function formatElapsed(ms: number): string {
 // ── Deadlock detection: tracks which agents each agent is waiting on ─────────
 const _pendingAsks = new Map<string, Set<number>>(); // agentId (string) → set of target agent IDs it's waiting for
 
+// ── Request/Response pairing for ask_agent(wait_ms>0): manager Promise awaits worker's send_reply
+// Keyed by reqId. Cleared by send_reply (success) or timeout (failure).
+interface AskPromiseEntry {
+  resolve: (response: { request_id: string; response: string; from_agent_id: number; timed_out?: boolean }) => void;
+  callerAgentId: number;
+  targetAgentId: number;
+  startedAt: number;
+  timer: NodeJS.Timeout;
+}
+const _pendingAskPromises = new Map<string, AskPromiseEntry>();
+
+// ── Track which request_id the agent is currently handling (set on tick start
+// when a <inter-agent-task> pending message is seen). Used by the auto-reply
+// fallback at end of tick — if worker didn't call send_reply manually, runtime
+// auto-replies with the last assistant text.
+const _activeRequestId = new Map<number, string>(); // agentId → reqId being handled this tick
+
 // ── Per-agent web request rate limiter (anti-scraping) ──────────────────────
 const _webRequestCounts = new Map<number, { count: number; resetAt: number }>();
 const WEB_REQUESTS_PER_RUN = 10; // max web_search + fetch_url per run
@@ -1342,7 +1359,7 @@ export const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
   notify:      ['notify', 'notify_rich'],
   plugins:     ['list_plugins', 'suggest_plugin', 'run_custom_plugin', 'list_custom_plugins',
                 'apply_plugin', 'remove_plugin'],
-  inter_agent: ['list_my_agents', 'ask_agent', 'assign_task', 'check_tasks', 'manage_agent', 'send_report'],
+  inter_agent: ['list_my_agents', 'ask_agent', 'send_reply', 'assign_task', 'check_tasks', 'manage_agent', 'send_report'],
   blockchain:  ['ton_get_account', 'ton_get_transactions', 'ton_get_jettons', 'ton_get_nfts',
                 'ton_run_method', 'ton_get_rates', 'ton_dns_resolve', 'ton_get_staking_pools',
                 'ton_emulate_tx', 'ton_send_boc', 'ton_get_validators', 'ton_parse_address'],
@@ -6543,6 +6560,9 @@ async function _executeToolInner(
     case 'ask_agent': {
       const targetId = args.agent_id as number;
       const message = args.message as string;
+      // wait_ms: if > 0, manager BLOCKS until worker calls send_reply (or timeout).
+      // Defaults to 0 (fire-and-forget) for backwards compat.
+      const waitMs = Math.min(5 * 60_000, Math.max(0, Number(args.wait_ms) || 0));
       if (!targetId || !message) return { error: 'Нужны agent_id и message' };
 
       // Check inter-agent permission via agent state
@@ -6614,19 +6634,100 @@ async function _executeToolInner(
           }
         }, 5 * 60 * 1000);
 
-        // Pattern 13: Coordinator via task-notification XML — structured inter-agent messages
-        const xmlEnvelope = `<inter-agent-task from="${params.agentId}" from_name="${(params as any).agentName || ''}" request_id="${reqId}" priority="normal">\n${message}\n</inter-agent-task>`;
+        // Pattern 13: Coordinator via task-notification XML — structured inter-agent messages.
+        // If wait_ms > 0, append explicit instructions so worker knows to call send_reply.
+        const waitNote = waitMs > 0
+          ? `\n\n⚠️ ВАЖНО: инициатор ЖДЁТ ответа. Когда выполнишь задачу — обязательно вызови send_reply(request_id="${reqId}", response="<краткий результат>"). Иначе инициатор получит timeout.`
+          : '';
+        const xmlEnvelope = `<inter-agent-task from="${params.agentId}" from_name="${(params as any).agentName || ''}" request_id="${reqId}" priority="normal" wait_ms="${waitMs}">\n${message}${waitNote}\n</inter-agent-task>`;
         addMessageToAIAgent(targetId, xmlEnvelope);
-        await logToDb(params.agentId, 'info', `[InterAgent] → #${targetId}: ${message.slice(0, 100)} (delivered, reqId=${reqId})`, params.userId);
+        await logToDb(params.agentId, 'info', `[InterAgent] → #${targetId}: ${message.slice(0, 100)} (delivered, reqId=${reqId}, wait_ms=${waitMs})`, params.userId);
 
-        return {
-          success: true,
-          delivered: true,
-          agent_id: targetId,
-          request_id: reqId,
-          message: `Сообщение отправлено агенту #${targetId} «${targetAgent.data.name || ''}». Доставлено.`,
-        };
+        // Trigger an immediate tick on the target so the manager doesn't have to wait
+        // for the next scheduled tick — important for low-latency manager flows.
+        try { runImmediateTick(targetId); } catch {}
+
+        // ── Fire-and-forget branch (default) — return immediately ──
+        if (waitMs === 0) {
+          return {
+            success: true,
+            delivered: true,
+            agent_id: targetId,
+            request_id: reqId,
+            message: `Сообщение отправлено агенту #${targetId} «${targetAgent.data.name || ''}». Доставлено (не ждём ответа).`,
+          };
+        }
+
+        // ── Wait-for-reply branch — block until worker calls send_reply OR timeout ──
+        return await new Promise<any>((resolve) => {
+          const timer = setTimeout(() => {
+            const entry = _pendingAskPromises.get(reqId);
+            if (entry) {
+              _pendingAskPromises.delete(reqId);
+              // Cleanup pendingAsks too
+              const pending = _pendingAsks.get(callerIdStr);
+              if (pending) { pending.delete(targetId); if (pending.size === 0) _pendingAsks.delete(callerIdStr); }
+              logToDb(params.agentId, 'warn', `[InterAgent] reqId=${reqId} timeout after ${waitMs}ms — no send_reply from #${targetId}`, params.userId).catch(() => {});
+              resolve({
+                success: false,
+                delivered: true,
+                timed_out: true,
+                agent_id: targetId,
+                request_id: reqId,
+                error: `No reply from agent #${targetId} within ${waitMs}ms. The target agent may be busy or didn't call send_reply.`,
+              });
+            }
+          }, waitMs);
+          _pendingAskPromises.set(reqId, {
+            resolve: (response) => {
+              clearTimeout(timer);
+              _pendingAskPromises.delete(reqId);
+              const pending = _pendingAsks.get(callerIdStr);
+              if (pending) { pending.delete(targetId); if (pending.size === 0) _pendingAsks.delete(callerIdStr); }
+              resolve({
+                success: true,
+                delivered: true,
+                agent_id: targetId,
+                request_id: reqId,
+                response: response.response,
+                timed_out: !!response.timed_out,
+              });
+            },
+            callerAgentId: params.agentId,
+            targetAgentId: targetId,
+            startedAt: Date.now(),
+            timer,
+          });
+        });
       } catch (e: any) { return { error: e.message }; }
+    }
+
+    case 'send_reply': {
+      // Worker replies to a manager that's waiting on ask_agent(wait_ms>0).
+      // request_id comes from the <inter-agent-task> envelope the worker saw.
+      const requestId = args.request_id as string;
+      const response = args.response as string;
+      if (!requestId || typeof response !== 'string') return { error: 'request_id and response required' };
+      const entry = _pendingAskPromises.get(requestId);
+      if (!entry) {
+        return { error: `No manager waiting for reply on request_id=${requestId}. Either timed out, already replied, or fire-and-forget.`, delivered: false };
+      }
+      // Audit trail — also store in mailbox so it shows up in the manager's history
+      try {
+        const { pool } = await import('../db');
+        await pool.query(
+          `INSERT INTO builder_bot.agent_mailbox
+             (from_agent_id, to_agent_id, subject, body, metadata)
+           VALUES ($1, $2, $3, $4, $5::jsonb)`,
+          [params.agentId, entry.callerAgentId, `Reply to request ${requestId}`, response.slice(0, 4000),
+            JSON.stringify({ kind: 'reply', request_id: requestId, latency_ms: Date.now() - entry.startedAt })],
+        );
+      } catch {}
+      entry.resolve({ request_id: requestId, response, from_agent_id: params.agentId });
+      // Cancel any auto-reply that the runtime might fire after this tick
+      _activeRequestId.delete(params.agentId);
+      await logToDb(params.agentId, 'info', `[InterAgent] ← reply for reqId=${requestId} (${response.length} chars)`, params.userId);
+      return { success: true, request_id: requestId, delivered: true };
     }
 
     case 'run_custom_plugin': {

@@ -3103,14 +3103,30 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
       type: 'function',
       function: {
         name: 'ask_agent',
-        description: 'Отправить сообщение другому агенту пользователя. Агент ответит на следующем тике. Используй только если пользователь разрешил межагентную коммуникацию.',
+        description: 'Отправить задачу другому агенту того же пользователя. По умолчанию fire-and-forget — возвращает сразу. Если нужно ДОЖДАТЬСЯ результата (manager → worker pattern), укажи wait_ms > 0 — тогда вернётся объект {response: "..."} с ответом worker\'а. Worker должен вызвать send_reply(request_id, response). Используй только если разрешено межагентное общение.',
         parameters: {
           type: 'object',
           properties: {
             agent_id: { type: 'number', description: 'ID агента которому отправляем сообщение' },
-            message:  { type: 'string', description: 'Текст сообщения агенту' },
+            message:  { type: 'string', description: 'Текст задачи агенту' },
+            wait_ms:  { type: 'number', description: 'Опционально: сколько мс ждать ответ через send_reply. 0 = fire-and-forget (по умолчанию), >0 = блокирующий вызов с timeout. Максимум 300000 (5 мин).' },
           },
           required: ['agent_id', 'message'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'send_reply',
+        description: 'Ответить инициатору которые вызвал ask_agent(wait_ms>0). Используется когда видишь <inter-agent-task> с request_id и атрибутом wait_ms>0 — инициатор блокирующе ждёт твоего ответа. Без send_reply он получит timeout.',
+        parameters: {
+          type: 'object',
+          properties: {
+            request_id: { type: 'string', description: 'request_id из тега <inter-agent-task>' },
+            response:   { type: 'string', description: 'Результат работы (что ты сделал, что нашёл, выводы). Будет передан manager\'у как строка.' },
+          },
+          required: ['request_id', 'response'],
         },
       },
     },
