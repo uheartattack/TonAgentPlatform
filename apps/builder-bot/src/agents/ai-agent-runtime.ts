@@ -10146,9 +10146,29 @@ If web_search returns nothing useful → say "не смог найти акту�
   const forcedTools = allToolDefs.filter((t: any) => capToolNames.has(t.function?.name));
   const optionalTools = allToolDefs.filter((t: any) => !capToolNames.has(t.function?.name));
 
-  // If forced tools already exceed max, just use forced tools
+  // If forced tools already exceed max, just use forced tools — but FIRST
+  // prioritize the always-needed essentials (read/reply/notify) so they survive
+  // the slice. Otherwise a 7-capability agent (telegram+gifts+state+wallet…)
+  // ends up with tg_send_gif but no tg_get_unread — and silently stops replying.
   if (forcedTools.length >= providerCfg.maxTools) {
-    tools = forcedTools.slice(0, providerCfg.maxTools);
+    const ESSENTIAL_TG = new Set([
+      'tg_get_unread', 'tg_get_messages', 'tg_get_dialogs', 'tg_mark_read',
+      'tg_send_message', 'tg_reply', 'tg_send_formatted', 'tg_react',
+      'tg_get_user_info', 'tg_get_message_by_id', 'tg_set_typing',
+      // Core platform tools — never strip
+      'notify', 'notify_rich', 'set_state', 'get_state', 'get_state_multi',
+      'task_create', 'task_update', 'task_list', 'task_get',
+      'compact', 'set_next_wake', 'subscribe_event', 'mailbox_send', 'mailbox_read',
+      'ask_agent', 'send_reply', 'list_my_agents',
+      'list_my_crew_wallets', 'get_crew_wallet',
+    ]);
+    const essentials = forcedTools.filter((t: any) => ESSENTIAL_TG.has(t.function?.name));
+    const nonEssentials = forcedTools.filter((t: any) => !ESSENTIAL_TG.has(t.function?.name));
+    const remaining = Math.max(0, providerCfg.maxTools - essentials.length);
+    tools = [...essentials, ...nonEssentials.slice(0, remaining)];
+    if (essentials.length > 0) {
+      console.log(`[ToolRAG] essentials-first: ${essentials.length} pinned + ${tools.length - essentials.length} other = ${tools.length}/${providerCfg.maxTools}`);
+    }
   } else {
     // Fill remaining slots with RAG-selected optional tools
     const remainingSlots = providerCfg.maxTools - forcedTools.length;
