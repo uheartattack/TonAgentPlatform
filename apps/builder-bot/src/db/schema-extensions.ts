@@ -1606,8 +1606,16 @@ export async function runAIProposalsMigrations(pool: Pool): Promise<void> {
         trigger       TEXT,
         result        JSONB,
         final_output  TEXT,
+        member_statuses JSONB NOT NULL DEFAULT '[]'::jsonb,
         CONSTRAINT crew_executions_status_chk CHECK (status IN ('running', 'completed', 'failed', 'cancelled'))
       )
+    `);
+    // Live monitor — per-member progress snapshot updated during the run.
+    // Format: [{step_index, agent_id, member_label, role, status, started_at,
+    //   finished_at, error, output_preview}]
+    await client.query(`
+      ALTER TABLE builder_bot.crew_executions
+        ADD COLUMN IF NOT EXISTS member_statuses JSONB NOT NULL DEFAULT '[]'::jsonb
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS crew_executions_crew_idx ON builder_bot.crew_executions (crew_id, started_at DESC)`);
 
@@ -1773,10 +1781,13 @@ export async function runAIProposalsMigrations(pool: Pool): Promise<void> {
         summary      TEXT NOT NULL,
         msg_count    INTEGER NOT NULL,
         token_estimate INTEGER,
+        chat_id      BIGINT,
         created_at   TIMESTAMP NOT NULL DEFAULT NOW()
       )
     `);
+    await client.query(`ALTER TABLE builder_bot.agent_transcripts ADD COLUMN IF NOT EXISTS chat_id BIGINT`);
     await client.query(`CREATE INDEX IF NOT EXISTS agent_transcripts_agent_idx ON builder_bot.agent_transcripts (agent_id, created_at DESC)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS agent_transcripts_chat_idx ON builder_bot.agent_transcripts (agent_id, chat_id, created_at DESC)`);
 
     // ─── Mailboxes (s09 pattern) — durable inter-agent messaging ───────────
     await client.query(`

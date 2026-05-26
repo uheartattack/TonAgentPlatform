@@ -113,11 +113,29 @@ export async function recallMemory(params: {
   query: string;
   topK?: number;
   minImportance?: number;
+  /**
+   * Optional chat scope. When provided, only memories whose
+   * `metadata.chat_id` equals chatId — OR memories with no chat_id at all
+   * (legacy / cross-chat globals) — are considered. Prevents cross-chat
+   * context bleed when one agent serves multiple chats/users.
+   */
+  chatId?: number | string | null;
 }): Promise<RetrievedMemory[]> {
   const q = String(params.query || '').trim();
   if (!q) return [];
   const topK = Math.min(50, Math.max(1, params.topK ?? DEFAULT_TOP_K));
   const minImp = params.minImportance ?? 0;
+
+  // Normalize chatId → string (matches how JSON stores numeric chat ids
+  // when read back via metadata->>'chat_id'). null/undefined disables the
+  // filter so callers without chat context get global recall behavior.
+  const chatScope: string | null = (() => {
+    if (params.chatId == null) return null;
+    try {
+      const s = String(params.chatId).trim();
+      return s ? s : null;
+    } catch { return null; }
+  })();
 
   const { pool } = await import('../db');
 
@@ -131,9 +149,12 @@ export async function recallMemory(params: {
         WHERE agent_id = $1
           AND content_tsv @@ plainto_tsquery('simple', $2)
           AND importance >= $3
+          AND ($4::text IS NULL
+               OR metadata->>'chat_id' IS NULL
+               OR metadata->>'chat_id' = $4)
         ORDER BY rank DESC
         LIMIT 50`,
-      [params.agentId, q, minImp],
+      [params.agentId, q, minImp, chatScope],
     );
     ftsRows = ftsRes.rows;
   } catch (e: any) {
@@ -150,8 +171,11 @@ export async function recallMemory(params: {
       const all = await pool.query(
         `SELECT id, content, source, importance, metadata, created_at, embedding
            FROM builder_bot.agent_memory_vec
-          WHERE agent_id = $1 AND embedding IS NOT NULL AND importance >= $2`,
-        [params.agentId, minImp],
+          WHERE agent_id = $1 AND embedding IS NOT NULL AND importance >= $2
+            AND ($3::text IS NULL
+                 OR metadata->>'chat_id' IS NULL
+                 OR metadata->>'chat_id' = $3)`,
+        [params.agentId, minImp, chatScope],
       );
       const scored = all.rows.map((r: any) => {
         let emb: number[] = [];

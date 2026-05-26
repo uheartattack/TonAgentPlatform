@@ -84,7 +84,7 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
       type: 'function',
       function: {
         name: 'remember_hybrid',
-        description: 'Save a long-term memory chunk with hybrid retrieval (vector + keyword + RRF fusion). Use for: durable facts, lessons learned, summaries, user preferences. Gets embedded automatically via Gemini text-embedding-004 (768d). Searchable via recall_hybrid.',
+        description: 'Save a long-term memory chunk with hybrid retrieval (vector + keyword + RRF fusion). Use for: durable facts, lessons learned, summaries, user preferences. Gets embedded automatically via Gemini text-embedding-004 (768d). By default the memory is scoped to the CURRENT chat — pass scope="global" for cross-chat facts (e.g. user preferences that apply everywhere). Searchable via recall_hybrid.',
         parameters: {
           type: 'object',
           properties: {
@@ -92,6 +92,7 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
             source: { type: 'string', description: 'Origin tag: "agent" | "user" | "tool" | "auto-compact" etc.' },
             importance: { type: 'number', description: '0..1 weight, default 0.5. Higher = more relevant in recall filtering.' },
             metadata: { type: 'object', description: 'Arbitrary JSON metadata.' },
+            scope: { type: 'string', enum: ['chat', 'global'], description: 'Default "chat" → memory is tagged with current chat_id so it only surfaces back in this chat. Use "global" only for facts that should apply across every conversation.' },
           },
           required: ['content'],
         },
@@ -101,13 +102,15 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
       type: 'function',
       function: {
         name: 'recall_hybrid',
-        description: 'Hybrid-retrieve memories relevant to a query. Combines vector cosine similarity (semantic) with Postgres tsvector keyword match, fused via Reciprocal Rank Fusion. Returns top-K with score + which branch matched (vector / keyword / both).',
+        description: 'Hybrid-retrieve memories relevant to a query. Combines vector cosine similarity (semantic) with Postgres tsvector keyword match, fused via Reciprocal Rank Fusion. Returns top-K with score + which branch matched (vector / keyword / both). By default scoped to the CURRENT chat (plus global memories with no chat tag) — pass scope="global" to search across all chats.',
         parameters: {
           type: 'object',
           properties: {
             query: { type: 'string', description: 'Natural-language query — what to find' },
             top_k: { type: 'number', description: '1..20 (default 8)' },
             min_importance: { type: 'number', description: 'Filter: ignore memories below this importance (0..1)' },
+            scope: { type: 'string', enum: ['chat', 'global'], description: 'Default "chat" → only memories tagged with current chat_id (or untagged globals). Use "global" to recall from every chat (e.g. "what does the user prefer overall").' },
+            chat_id: { description: 'Override chat scope by explicitly searching another chat\'s memories (numeric or string).' },
           },
           required: ['query'],
         },

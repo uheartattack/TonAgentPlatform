@@ -114,8 +114,10 @@ export const pendingBotAuth = new Map<string, {
 let _wsClients: Map<number, Set<WebSocket>> | null = null;
 
 export interface WSEvent {
-  type: 'agent_started' | 'agent_stopped' | 'agent_tick' | 'agent_error';
-  agentId: number;
+  type: 'agent_started' | 'agent_stopped' | 'agent_tick' | 'agent_error'
+      | 'agent_updated' | 'crew_updated' | 'crew_execution_progress';
+  agentId?: number;
+  crewId?: number;
   agentName?: string;
   data?: any;
   timestamp: number;
@@ -130,6 +132,26 @@ export function broadcastWSEvent(userId: number, event: WSEvent): void {
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(msg);
     }
+  });
+}
+
+/** Emit an agent.updated event so other Studio tabs sync role/name/active/goal */
+export function broadcastAgentUpdate(userId: number, agentId: number, patch: Record<string, any>): void {
+  broadcastWSEvent(userId, {
+    type: 'agent_updated',
+    agentId,
+    data: patch,
+    timestamp: Date.now(),
+  });
+}
+
+/** Emit crew.updated so a second tab repaints crew lists/network */
+export function broadcastCrewUpdate(userId: number, crewId: number, patch: Record<string, any>): void {
+  broadcastWSEvent(userId, {
+    type: 'crew_updated',
+    crewId,
+    data: patch,
+    timestamp: Date.now(),
   });
 }
 
@@ -781,6 +803,11 @@ export function startApiServer() {
       landingUrl: LANDING_URL,
       manifestUrl: `${LANDING_URL}/tonconnect-manifest.json`,
       tgClientId: TG_CLIENT_ID ? parseInt(TG_CLIENT_ID) : undefined,
+      // TG Analytics SDK token from builders.ton.org — public anyway (SDK runs
+      // client-side and Telegram analytics validates per-event). Keeping it
+      // env-loaded so the value never enters git history.
+      tgAnalyticsToken: process.env.TG_ANALYTICS_TOKEN || null,
+      tgAnalyticsAppName: 'ton_agent_platform',
     });
   });
 
@@ -923,6 +950,77 @@ export function startApiServer() {
     } catch {}
     const flags = await hydrateAuthFlags(userId, data.username, token);
     res.json({ ok: true, token, userId, username: data.username, firstName: data.first_name, ...flags });
+  });
+
+  // ── POST /api/auth/tg-webapp — Mini App auto-login via initData ──
+  // Telegram WebApp ships every Mini App with signed user data in `initData`.
+  // We verify the signature against our bot token (per Telegram spec) and
+  // create a session — no login widget needed inside the Mini App.
+  app.post('/api/auth/tg-webapp', rateLimit(20, 60000, 'auth-webapp'), async (req: Request, res: Response) => {
+    try {
+      const initData = String((req.body || {}).initData || '');
+      if (!initData) { res.status(400).json({ ok: false, error: 'initData required' }); return; }
+      const botToken = process.env.BOT_TOKEN || '';
+      if (!botToken) { res.status(503).json({ ok: false, error: 'bot not configured' }); return; }
+
+      // Parse + verify per https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
+      const crypto = await import('crypto');
+      const params = new URLSearchParams(initData);
+      const hash = params.get('hash') || '';
+      params.delete('hash');
+      const dataCheckString = Array.from(params.entries())
+        .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+        .map(([k, v]) => `${k}=${v}`)
+        .join('\n');
+      const secretKey = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest();
+      const computedHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
+      if (computedHash !== hash) {
+        res.status(401).json({ ok: false, error: 'invalid initData signature' });
+        return;
+      }
+      // Reject auth_date older than 1 day — protects against replay
+      const authDate = parseInt(params.get('auth_date') || '0', 10);
+      if (!authDate || Date.now() / 1000 - authDate > 86400) {
+        res.status(401).json({ ok: false, error: 'initData expired' });
+        return;
+      }
+      let user: any = {};
+      try { user = JSON.parse(params.get('user') || '{}'); } catch {}
+      if (!user.id) { res.status(400).json({ ok: false, error: 'no user in initData' }); return; }
+
+      const userId = Number(user.id);
+      // Reuse existing session if exists, like /api/auth/telegram does
+      try {
+        const existing = await pool.query(
+          `SELECT token FROM builder_bot.web_sessions WHERE user_id = $1 AND accepted_tos = true AND expires_at > NOW() ORDER BY expires_at DESC LIMIT 1`,
+          [userId],
+        );
+        if (existing.rows[0]?.token) {
+          const tok = existing.rows[0].token;
+          await pool.query(`UPDATE builder_bot.web_sessions SET expires_at = NOW() + INTERVAL '30 days' WHERE token = $1`, [tok]);
+          const s = getSession(tok);
+          if (s) { s.expiresAt = Date.now() + 14 * 24 * 60 * 60 * 1000; }
+          const flags = await hydrateAuthFlags(userId, user.username, tok);
+          res.json({ ok: true, token: tok, userId, username: user.username, firstName: user.first_name, photoUrl: user.photo_url, ...flags });
+          return;
+        }
+      } catch {}
+      const token = generateToken();
+      const sess = {
+        userId,
+        telegramId: userId,
+        username: user.username || '',
+        firstName: user.first_name || '',
+        expiresAt: Date.now() + 14 * 24 * 60 * 60 * 1000,
+      };
+      sessions.set(token, sess);
+      persistSession(token, sess);
+      const flags = await hydrateAuthFlags(userId, user.username, token);
+      res.json({ ok: true, token, userId, username: user.username, firstName: user.first_name, photoUrl: user.photo_url, ...flags });
+    } catch (e: any) {
+      console.error('[tg-webapp auth]', e?.message);
+      res.status(500).json({ ok: false, error: e?.message || 'auth failed' });
+    }
   });
 
   // ── POST /api/auth/telegram-oidc — new Telegram Login SDK (JWT) ──
@@ -2440,6 +2538,107 @@ export function startApiServer() {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── GET /api/health/agents ────────────────────────────────────────────
+  // Per-agent health snapshot for the dashboard:
+  //   {id, name, role, is_active, paused_reason, last_tick_at, last_tick_age_sec,
+  //    error_rate_24h (0..1), error_count_24h, tick_count_24h, spend_mtd_usd,
+  //    spend_today_usd, provider, model}
+  app.get('/api/health/agents', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const now = new Date();
+      const mtdStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+      const today = now.toISOString().slice(0, 10);
+      const since24h = new Date(now.getTime() - 24 * 3600 * 1000).toISOString();
+
+      // 1) Agents list (user-owned)
+      const agentsRes = await pool.query(
+        `SELECT id, name, role, is_active, trigger_config FROM builder_bot.agents WHERE user_id = $1 ORDER BY id`,
+        [userId],
+      );
+      const agents = agentsRes.rows;
+      if (agents.length === 0) { res.json({ ok: true, agents: [] }); return; }
+      const agentIds = agents.map((a: any) => a.id);
+
+      // 2) Aggregate spend MTD + today from agent_token_usage
+      const spendRes = await pool.query(
+        `SELECT agent_id,
+                COALESCE(SUM(estimated_cost), 0)::numeric AS mtd,
+                COALESCE(SUM(estimated_cost) FILTER (WHERE date = $2::date), 0)::numeric AS today
+         FROM builder_bot.agent_token_usage
+         WHERE agent_id = ANY($1::int[]) AND date >= $3::date
+         GROUP BY agent_id`,
+        [agentIds, today, mtdStart],
+      );
+      const spendMap = new Map<number, { mtd: number; today: number }>();
+      spendRes.rows.forEach((r: any) => spendMap.set(r.agent_id, {
+        mtd: Number(r.mtd) || 0, today: Number(r.today) || 0,
+      }));
+
+      // 3) Aggregate logs in last 24h: total count + error count + last_tick_at
+      const logRes = await pool.query(
+        `SELECT agent_id,
+                COUNT(*) AS total,
+                COUNT(*) FILTER (WHERE level IN ('error','warn')) AS errs,
+                MAX(created_at) AS last_log
+         FROM builder_bot.agent_logs
+         WHERE agent_id = ANY($1::int[]) AND created_at >= $2::timestamp
+         GROUP BY agent_id`,
+        [agentIds, since24h],
+      );
+      const logMap = new Map<number, { total: number; errs: number; lastLog: string | null }>();
+      logRes.rows.forEach((r: any) => logMap.set(r.agent_id, {
+        total: Number(r.total) || 0,
+        errs: Number(r.errs) || 0,
+        lastLog: r.last_log || null,
+      }));
+
+      // 4) Paused reason from agent_state (key=_paused_reason)
+      const stateRes = await pool.query(
+        `SELECT agent_id, value FROM builder_bot.agent_state
+         WHERE agent_id = ANY($1::int[]) AND key = '_paused_reason'`,
+        [agentIds],
+      );
+      const pausedMap = new Map<number, string>();
+      stateRes.rows.forEach((r: any) => {
+        if (r.value) pausedMap.set(r.agent_id, String(r.value));
+      });
+
+      const out = agents.map((a: any) => {
+        const tc = typeof a.trigger_config === 'string'
+          ? (() => { try { return JSON.parse(a.trigger_config); } catch { return {}; } })()
+          : (a.trigger_config || {});
+        const cfg = tc.config || tc || {};
+        const spend = spendMap.get(a.id) || { mtd: 0, today: 0 };
+        const logs = logMap.get(a.id) || { total: 0, errs: 0, lastLog: null };
+        const errorRate = logs.total > 0 ? logs.errs / logs.total : 0;
+        const lastTickAgeSec = logs.lastLog
+          ? Math.floor((Date.now() - new Date(logs.lastLog).getTime()) / 1000)
+          : null;
+        return {
+          id: a.id,
+          name: a.name,
+          role: a.role || 'worker',
+          is_active: !!a.is_active,
+          paused_reason: pausedMap.get(a.id) || null,
+          provider: cfg.AI_PROVIDER || cfg.aiProvider || null,
+          model: cfg.AI_MODEL || cfg.aiModel || null,
+          last_tick_at: logs.lastLog,
+          last_tick_age_sec: lastTickAgeSec,
+          tick_count_24h: logs.total,
+          error_count_24h: logs.errs,
+          error_rate_24h: Number(errorRate.toFixed(3)),
+          spend_today_usd: Number(spend.today.toFixed(4)),
+          spend_mtd_usd: Number(spend.mtd.toFixed(4)),
+        };
+      });
+      res.json({ ok: true, agents: out, generated_at: new Date().toISOString() });
+    } catch (e: any) {
+      console.error('[GET /api/health/agents]', e);
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
   // ── GET /api/agents ───────────────────────────────────────
   app.get('/api/agents', requireAuth, async (req: Request, res: Response) => {
     try {
@@ -2796,6 +2995,7 @@ export function startApiServer() {
         runUserId = agentRow.rows[0]?.user_id || userId;
       }
       const r = await getRunnerAgent().runAgent({ agentId, userId: runUserId });
+      if (r.success) broadcastAgentUpdate(runUserId, agentId, { is_active: true });
       res.json({ ok: r.success, data: r.data, error: r.error });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -2815,6 +3015,7 @@ export function startApiServer() {
         stopUserId = agentRow.rows[0]?.user_id || userId;
       }
       const r = await getRunnerAgent().pauseAgent(agentId, stopUserId);
+      if (r.success) broadcastAgentUpdate(stopUserId, agentId, { is_active: false });
       res.json({ ok: r.success, error: r.error });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -2898,141 +3099,13 @@ export function startApiServer() {
     }
   });
 
-  // ── POST /api/agents/:id/edit-with-ai — natural-language agent editing ──
-  // User describes the change ("сделай его агрессивнее на арбитраже"), AI
-  // returns a structured proposal: new system prompt + optional capability/
-  // config changes. Returns a diff for the user to approve before applying.
-  app.post('/api/agents/:id/edit-with-ai', requireAuth, rateLimit(10, 60_000, 'edit-with-ai'), async (req: Request, res: Response) => {
-    try {
-      const userId = (req as any).userId as number;
-      const agentId = parseInt(req.params.id as string, 10);
-      const { instruction, apply } = req.body || {};
-      if (isNaN(agentId)) { res.status(400).json({ error: 'invalid agent id' }); return; }
-      if (typeof instruction !== 'string' || instruction.trim().length < 5) {
-        res.status(400).json({ error: 'instruction required (min 5 chars)' }); return;
-      }
-      if (instruction.length > 2000) {
-        res.status(400).json({ error: 'instruction too long (>2000 chars)' }); return;
-      }
-      const agentCheck = await getAgentForUser(agentId, req);
-      if (!agentCheck.success || !agentCheck.data) { res.status(404).json({ error: 'agent not found' }); return; }
-      const agent: any = agentCheck.data;
-
-      // Cost-of-AI for edit-with-ai
-      let editCharge: any;
-      try {
-        editCharge = await chargeGenerationIfNeeded(userId, 'edit_with_ai');
-      } catch (e: any) {
-        if (e instanceof PlanLimitError) {
-          res.status(402).json({ ok: false, error_code: 'PLAN_LIMIT', error: e.message, ...(e.details || {}) });
-          return;
-        }
-        throw e;
-      }
-
-      // Load full current state for the AI to reference
-      let triggerCfg: any = {};
-      try { triggerCfg = typeof agent.trigger_config === 'string' ? JSON.parse(agent.trigger_config) : (agent.trigger_config || {}); } catch {}
-      const cfg = triggerCfg.config || {};
-      const enabledCaps = cfg.enabledCapabilities || [];
-
-      const OpenAI = (await import('openai')).default;
-      const client = new OpenAI({
-        apiKey: process.env.OPENAI_API_KEY || '',
-        baseURL: process.env.OPENAI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai/',
-      });
-      const editorSystem = [
-        'Ты — AI-редактор агентов TON Agent Platform. Юзер просит модифицировать СУЩЕСТВУЮЩЕГО агента.',
-        'Верни СТРОГО валидный JSON со следующей структурой (никакого markdown / комментариев / лишнего):',
-        '{',
-        '  "summary": "1-2 строки что меняется",',
-        '  "new_code": "...полный новый system prompt...",  // если меняешь',
-        '  "add_capabilities": ["..."],   // capability IDs из списка',
-        '  "remove_capabilities": ["..."],',
-        '  "config_changes": { "tick_interval_sec": 300, ... },  // числовые/строковые',
-        '  "warnings": ["..."]            // если что-то рискованно',
-        '}',
-        'НЕ изменяй то о чём юзер НЕ просил. Минимальный diff. Если запрос невозможен — поле "warnings" объясни почему и оставь остальные поля пустыми.',
-      ].join('\n');
-
-      const userContext = [
-        `Текущее имя: ${agent.name}`,
-        `Текущая роль: ${agent.role || 'worker'}`,
-        `Текущий system prompt (code):`,
-        '```',
-        String(agent.code || '').slice(0, 4000),
-        '```',
-        `Включённые capabilities: ${enabledCaps.join(', ') || '(default — все)'}`,
-        `Текущий config: ${JSON.stringify(cfg, (k, v) => /key|mnemonic|secret/i.test(k) ? '***' : v).slice(0, 2000)}`,
-        ``,
-        `Запрос юзера: ${instruction}`,
-      ].join('\n');
-
-      const aiResp = await client.chat.completions.create({
-        model: 'gemini-2.5-flash',
-        messages: [
-          { role: 'system', content: editorSystem },
-          { role: 'user', content: userContext },
-        ],
-        max_tokens: 4096,
-        temperature: 0.2,
-        response_format: { type: 'json_object' } as any,
-      });
-      const raw = aiResp.choices?.[0]?.message?.content || '{}';
-      let proposal: any;
-      try { proposal = JSON.parse(raw); }
-      catch { proposal = { summary: 'Не удалось распарсить ответ AI', raw: raw.slice(0, 500) }; }
-
-      // Build human-readable diff
-      const diff: any = {
-        summary: proposal.summary || '',
-        warnings: proposal.warnings || [],
-      };
-      if (proposal.new_code && proposal.new_code !== agent.code) {
-        diff.code_changed = true;
-        diff.old_code_len = (agent.code || '').length;
-        diff.new_code_len = proposal.new_code.length;
-        diff.new_code = proposal.new_code;
-      }
-      if (proposal.add_capabilities?.length) diff.add_capabilities = proposal.add_capabilities;
-      if (proposal.remove_capabilities?.length) diff.remove_capabilities = proposal.remove_capabilities;
-      if (proposal.config_changes && Object.keys(proposal.config_changes).length) {
-        diff.config_changes = proposal.config_changes;
-      }
-
-      // If apply=true, persist immediately. Otherwise return the diff for UI to display.
-      if (apply === true) {
-        const { pool } = require('./db');
-        if (diff.new_code) {
-          await pool.query(`UPDATE builder_bot.agents SET code = $1, updated_at = NOW() WHERE id = $2`, [diff.new_code, agentId]);
-        }
-        if (diff.add_capabilities || diff.remove_capabilities || diff.config_changes) {
-          const newCfg = { ...cfg };
-          let caps = [...(enabledCaps as string[])];
-          if (diff.add_capabilities) caps = Array.from(new Set([...caps, ...diff.add_capabilities]));
-          if (diff.remove_capabilities) caps = caps.filter(c => !diff.remove_capabilities.includes(c));
-          if (diff.add_capabilities || diff.remove_capabilities) newCfg.enabledCapabilities = caps;
-          if (diff.config_changes) Object.assign(newCfg, diff.config_changes);
-          const newTriggerCfg = { ...triggerCfg, config: newCfg };
-          await pool.query(
-            `UPDATE builder_bot.agents SET trigger_config = $1::jsonb, updated_at = NOW() WHERE id = $2`,
-            [JSON.stringify(newTriggerCfg), agentId],
-          );
-        }
-        // Invalidate any cached config
-        try {
-          const { invalidateAgentCaches } = await import('./agents/ai-agent-runtime');
-          invalidateAgentCaches(agentId);
-        } catch {}
-        res.json({ ok: true, applied: true, diff, charge: editCharge });
-        return;
-      }
-
-      res.json({ ok: true, applied: false, diff, charge: editCharge });
-    } catch (e: any) {
-      res.status(500).json({ error: e?.message || 'edit-with-ai failed' });
-    }
-  });
+  // (Legacy POST /api/agents/:id/edit-with-ai removed 2026-05-26 — it was an
+  // older variant that used a single model with no fallback chain, returned
+  // a different JSON shape than the client expects, and was registered BEFORE
+  // the rewritten handler below at line ~3481. Express picks first-registered,
+  // so the old one was always serving — and 500'ing whenever its single model
+  // hit a 429. The new handler with full fallback chain and client-compatible
+  // {original, proposed, field, model} response is the only one now.)
 
   app.delete('/api/agents/:id', requireAuth, async (req: Request, res: Response) => {
     try {
@@ -3390,18 +3463,26 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
         apiKey: PLATFORM_API_KEY,
         baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
       });
-      // Gemini families with separate quota counters. 1.5-* deprecated by Google
-      // and now returns 404 — removed. OpenRouter free tier appended as the
-      // final fallback so the edit survives a full Google outage.
+      // STRUCTURED OUTPUT chain (edit-with-ai) — needs strict JSON mode.
+      // Llama/GLM free tier IGNORE `response_format: json_object`, so we keep
+      // them OUT of this chain. Use only models with verified native JSON.
       const _orKey = process.env.OPENROUTER_API_KEY || '';
       const MODEL_CHAIN = [
-        'gemini-2.5-flash',
-        'gemini-2.0-flash',
-        'gemini-2.0-flash-lite',
+        'gemini-2.0-flash-lite',                              // Google direct, free quota first
         ...(_orKey ? [
-          'openrouter::deepseek/deepseek-v4-flash:free',
-          'openrouter::meta-llama/llama-3.3-70b-instruct:free',
+          'openrouter::deepseek/deepseek-v4-flash:free',     // verified strict JSON support
+          'openrouter::google/gemini-2.0-flash-exp:free',    // Google's own free, JSON mode works
         ] : []),
+        'gemini-2.0-flash',
+        'gemini-2.5-flash',
+        ...(_orKey ? [
+          'openrouter::google/gemini-2.0-flash-lite-001',
+          'openrouter::openai/gpt-5-nano',
+          'openrouter::deepseek/deepseek-chat-v3',
+        ] : []),
+        // NOTE: NOT included — llama-3.3-70b:free, glm-4.5-air:free,
+        // deepseek-r1:free (reasoning leaks). They handle plain chat fine but
+        // silently produce non-JSON for `response_format: json_object`.
       ];
       let _orClient: any = null;
       const getOR = () => _orClient ||= new OpenAI({
@@ -3409,32 +3490,50 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
         baseURL: 'https://openrouter.ai/api/v1',
         defaultHeaders: { 'HTTP-Referer': 'https://tonagentplatform.com', 'X-Title': 'TON Agent Platform - Edit-with-AI' },
       });
+      console.log(`[edit-with-ai] user=${userId} field=${field} instruction="${instruction.slice(0, 60)}" chain=${MODEL_CHAIN.length}models`);
       let newValue = '', usedModel = '';
       let lastErr: any;
+      let rateLimitedCount = 0;
+      let attemptedCount = 0;
+      const tryModelOnce = async (model: string) => {
+        const useClient = model.startsWith('openrouter::') ? getOR() : client;
+        const realModel = model.startsWith('openrouter::') ? model.slice('openrouter::'.length) : model;
+        const r = await useClient.chat.completions.create({
+          model: realModel,
+          messages: [
+            { role: 'system', content: editorSystem },
+            { role: 'user', content: userMsg },
+          ],
+          max_tokens: 4096,
+          temperature: 0.4,
+        });
+        return (r.choices?.[0]?.message?.content || '').trim();
+      };
       for (const model of MODEL_CHAIN) {
         try {
-          const useClient = model.startsWith('openrouter::') ? getOR() : client;
-          const realModel = model.startsWith('openrouter::') ? model.slice('openrouter::'.length) : model;
-          const r = await useClient.chat.completions.create({
-            model: realModel,
-            messages: [
-              { role: 'system', content: editorSystem },
-              { role: 'user', content: userMsg },
-            ],
-            max_tokens: 4096,
-            temperature: 0.4,
-          });
-          newValue = (r.choices?.[0]?.message?.content || '').trim();
-          if (newValue) { usedModel = model; break; }
+          attemptedCount++;
+          console.log(`[edit-with-ai]   try ${attemptedCount}/${MODEL_CHAIN.length}: ${model}`);
+          const out = await tryModelOnce(model);
+          if (out) { newValue = out; usedModel = model; console.log(`[edit-with-ai]   ✓ got ${out.length} chars from ${model}`); break; }
+          else console.log(`[edit-with-ai]   ⚠ ${model} returned empty`);
         } catch (e: any) {
           lastErr = e;
           const msg = String(e?.message || '');
+          console.log(`[edit-with-ai]   ✗ ${model} → ${msg.slice(0, 120)}`);
+          if (/429|rate.?limit|quota|too.?many/i.test(msg)) rateLimitedCount++;
           // Retry on transient errors. Bail only on auth-shape errors.
           if (/401|invalid_api_key|unauthorized/i.test(msg)) break;
         }
       }
+      console.log(`[edit-with-ai] done: success=${!!newValue} model=${usedModel} attempted=${attemptedCount} rateLimited=${rateLimitedCount}`);
       if (!newValue) {
-        res.status(502).json({ error: `AI edit failed: ${lastErr?.message?.slice(0, 200) || 'no output'}` });
+        // Human-friendly fallback. Distinguish rate-limit (transient — user
+        // can retry in a minute) from hard errors (auth/network/etc).
+        const allRateLimited = rateLimitedCount > 0 && rateLimitedCount === attemptedCount;
+        const friendly = allRateLimited
+          ? 'Все AI-модели сейчас перегружены (лимит запросов исчерпан). Подожди 1-2 минуты и попробуй ещё раз.'
+          : `AI временно недоступен. Подробности: ${lastErr?.message?.slice(0, 200) || 'no output'}`;
+        res.status(allRateLimited ? 429 : 502).json({ ok: false, error: friendly, retry_after_sec: allRateLimited ? 60 : null });
         return;
       }
 
@@ -3542,6 +3641,7 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
       // Direct SQL update for name
       await pool.query('UPDATE builder_bot.agents SET name = $1, updated_at = NOW() WHERE id = $2', [name.trim(), agentId]);
       invalidateAgentCaches(agentId);
+      broadcastAgentUpdate(userId, agentId, { name: name.trim() });
       res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -3711,6 +3811,7 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
       if (typeof description !== 'string' || description.length > 2000) { res.status(400).json({ error: 'Invalid description' }); return; }
       await pool.query('UPDATE builder_bot.agents SET description = $1, updated_at = NOW() WHERE id = $2', [description, agentId]);
       invalidateAgentCaches(agentId);
+      broadcastAgentUpdate(userId, agentId, { description });
       res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
@@ -3800,6 +3901,10 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
         const { _agentMsgConfigs } = await import('./services/userbot-manager');
         _agentMsgConfigs.delete(agentId);
       } catch {}
+      broadcastAgentUpdate(userId, agentId, {
+        ...(b.goal !== undefined ? { goal: b.goal } : {}),
+        ...(b.action_scope !== undefined ? { action_scope: b.action_scope } : {}),
+      });
       res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
@@ -3912,6 +4017,7 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
         const { getAIAgentRuntime } = await import('./agents/ai-agent-runtime');
         getAIAgentRuntime().invalidateAgentConfig(agentId);
       } catch {}
+      broadcastAgentUpdate(userId, agentId, { role });
       res.json({ ok: true, role });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
@@ -4147,6 +4253,7 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
       fields.push(`updated_at = NOW()`);
       values.push(id);
       const r = await pool.query(`UPDATE builder_bot.crews SET ${fields.join(', ')} WHERE id = $${i} RETURNING *`, values);
+      broadcastCrewUpdate(userId, id, r.rows[0]);
       res.json({ ok: true, crew: r.rows[0] });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
@@ -4162,43 +4269,10 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
-  // POST /api/crews/:id/run — kick off all members (or just the manager if set)
-  // Body: { trigger?: string }
-  app.post('/api/crews/:id/run', requireAuth, async (req: Request, res: Response) => {
-    try {
-      const userId = (req as any).userId as number;
-      const id = parseInt(req.params.id, 10);
-      const cr = await pool.query(`SELECT * FROM builder_bot.crews WHERE id = $1 AND user_id = $2`, [id, userId]);
-      if (!cr.rows[0]) { res.status(404).json({ error: 'Crew not found' }); return; }
-      const crew = cr.rows[0];
-      if (!crew.is_active) { res.status(400).json({ error: 'Crew is inactive' }); return; }
-      const trigger = req.body?.trigger || 'Manual run from Studio';
-      // Create execution row
-      const exec = await pool.query(
-        `INSERT INTO builder_bot.crew_executions (crew_id, trigger, status) VALUES ($1, $2, 'running') RETURNING *`,
-        [id, trigger],
-      );
-      // If manager set — only kick the manager; it will ask_agent the workers itself.
-      // Otherwise broadcast to all members in parallel.
-      const targets = crew.manager_agent_id ? [crew.manager_agent_id] : crew.agent_ids;
-      try {
-        const { getRunnerAgent } = await import('./agents/sub-agents/runner');
-        const { addMessageToAIAgent } = await import('./agents/ai-agent-runtime');
-        for (const agentId of targets) {
-          await getRunnerAgent().runAgent({ agentId, userId }).catch(() => {});
-          // Inject the trigger as a pending message
-          try {
-            addMessageToAIAgent(agentId, `[CREW_RUN crew_id=${id} exec_id=${exec.rows[0].id}] ${trigger}`);
-          } catch {}
-        }
-      } catch (e: any) {
-        await pool.query(`UPDATE builder_bot.crew_executions SET status = 'failed', completed_at = NOW(), result = $1::jsonb WHERE id = $2`, [JSON.stringify({ error: e?.message }), exec.rows[0].id]);
-        res.status(500).json({ error: e.message });
-        return;
-      }
-      res.json({ ok: true, execution_id: exec.rows[0].id, targets });
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
-  });
+  // (Legacy POST /api/crews/:id/run was replaced — see the live-monitor version
+  //  defined below which actually walks agent_ids[] sequentially and persists
+  //  per-member status. The old impl pushed messages into AI agent inboxes
+  //  but never reflected progress.)
 
   // ── Crew wallets — shared TON wallet for all crew members (Sprint 6) ──
 
@@ -6717,13 +6791,18 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
           model = complexity === 'trivial' ? 'gemini-2.0-flash-lite' : 'gemini-2.5-flash';
         }
       } else {
+        // SURVIVAL MODE (Sava chose 2026-05-26): prefer free-tier models first,
+        // fall back to paid only when 429s exhaust the free quota. The actual
+        // free routing happens in the OpenRouter fallback chain below — what
+        // we set HERE is just the FIRST model to try (Google direct, no OR fee).
+        // Use the cheap tier for everything except explicit `complex`.
         client = new OpenAI({
           apiKey: process.env.OPENAI_API_KEY || '',
           baseURL: process.env.OPENAI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai/',
         });
-        if (complexity === 'trivial') model = 'gemini-2.0-flash-lite';
-        else if (complexity === 'complex') model = process.env.CLAUDE_MODEL || 'gemini-2.5-pro';
-        else model = process.env.CLAUDE_MODEL || 'gemini-2.5-flash';
+        if (complexity === 'trivial') model = process.env.ATLAS_TRIVIAL_MODEL || 'gemini-2.0-flash-lite';
+        else if (complexity === 'complex') model = process.env.CLAUDE_MODEL || 'gemini-2.5-flash';
+        else model = process.env.ATLAS_MEDIUM_MODEL || process.env.CLAUDE_MODEL || 'gemini-2.0-flash-lite';
       }
 
       res.setHeader('Content-Type', 'text/event-stream');
@@ -6759,24 +6838,34 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
         // providers (DeepSeek, Llama) entirely, so it survives Google quota
         // outages.
         const _openrouterKey = process.env.OPENROUTER_API_KEY || '';
-        const openrouterModels = _openrouterKey ? [
-          // z-ai/glm-4.5-air:free observed actually returning content while
-          // the deepseek / llama / hermes free tier ones are usually upstream
-          // rate-limited. Put it first so quota-exhausted Gemini cases recover.
-          'openrouter::z-ai/glm-4.5-air:free',
-          'openrouter::deepseek/deepseek-v4-flash:free',
-          'openrouter::meta-llama/llama-3.3-70b-instruct:free',
-          'openrouter::nousresearch/hermes-3-llama-3.1-405b:free',
+        // SURVIVAL MODE chain (chosen 2026-05-26): try EVERY free-tier model
+        // before spending a single cent on paid. Each :free model has its own
+        // 50 req/day bucket — Sava's daily Atlas usage rarely exceeds that for
+        // any single one, so cycling through them effectively gives ~150-200
+        // free req/day. Paid models only kick in when the whole free pool is
+        // 429'd or down.
+        const openrouterFree = _openrouterKey ? [
+          'openrouter::deepseek/deepseek-v4-flash:free',           // popular, decent Russian
+          'openrouter::z-ai/glm-4.5-air:free',                     // usually returns content
+          'openrouter::meta-llama/llama-3.3-70b-instruct:free',    // tier-2 Russian
+          'openrouter::deepseek/deepseek-r1:free',                 // reasoning, slower TTFT
+          'openrouter::google/gemini-2.0-flash-exp:free',          // Google free experimental
+        ] : [];
+        // Paid OpenRouter — costs real money, used ONLY when free pool dies.
+        const openrouterPaid = _openrouterKey ? [
+          'openrouter::google/gemini-2.0-flash-lite-001',   // $0.075/$0.30
+          'openrouter::openai/gpt-5-nano',                  // $0.05/$0.40
+          'openrouter::deepseek/deepseek-chat-v3',          // $0.21/$0.79 — heavy fallback
         ] : [];
         const fullModelChain = useNativeAnthropic
           ? [model, 'claude-haiku-4-5-20251001']
           : [
-              model,
-              'gemini-2.5-flash',
+              model,                    // first try via Google direct (free quota if available)
+              ...openrouterFree,        // cycle through OpenRouter free pool (5 models × 50 req/day each)
+              'gemini-2.0-flash-lite',  // Google direct retry on cheap tier
               'gemini-2.0-flash',
-              'gemini-2.0-flash-lite',
-              // Google deprecated gemini-1.5-* — they now return 404, removed.
-              ...openrouterModels,
+              'gemini-2.5-flash',
+              ...openrouterPaid,        // paid OpenRouter only when above all fail
             ].filter((m, i, arr) => arr.indexOf(m) === i); // de-dupe
 
         // 429-cooldown cache: per-model timestamp of last quota failure. If a
@@ -6931,6 +7020,34 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
             ? 'Извини, не могу показать секретные данные.'
             : 'Sorry, I can\'t share that.';
           try { sendEvent('chunk', { text: fullText, _replacement: true }); } catch {}
+        }
+
+        // Marker JSON validator — catches free models that emit `<crew-suggest>`
+        // with broken JSON inside. We don't silently fix the JSON (risky), we
+        // tag the marker so the frontend hides the action card and shows a
+        // "regenerate" prompt instead of a 💥 crash on `JSON.parse`.
+        const _markerTypes = ['crew-suggest', 'role-suggest', 'composite-suggest'];
+        const _badMarkers: Array<{ type: string; reason: string }> = [];
+        for (const mt of _markerTypes) {
+          const re = new RegExp(`<${mt}>([\\s\\S]*?)<\\/${mt}>`, 'g');
+          let match;
+          while ((match = re.exec(fullText)) !== null) {
+            const inner = (match[1] || '').trim();
+            try {
+              const parsed = JSON.parse(inner);
+              if (!parsed || typeof parsed !== 'object') throw new Error('not an object');
+            } catch (jsErr: any) {
+              _badMarkers.push({ type: mt, reason: jsErr?.message?.slice(0, 80) || 'parse error' });
+              // Replace the broken marker with a sentinel one so the frontend
+              // can render an inline "retry" affordance instead of crashing.
+              fullText = fullText.replace(match[0], `<${mt}-invalid reason="${(jsErr?.message || '').replace(/"/g, "'").slice(0, 80)}"></${mt}-invalid>`);
+            }
+          }
+        }
+        if (_badMarkers.length > 0) {
+          console.warn(`[Atlas/validator] ${_badMarkers.length} bad marker(s) from model: ${_badMarkers.map(b => `${b.type}(${b.reason})`).join(', ')}`);
+          // Inform frontend so it shows "modelnet ?: retry" affordance
+          try { sendEvent('marker_warning', { bad: _badMarkers }); } catch {}
         }
 
         hist.push({ role: 'user', content: message });
@@ -8448,6 +8565,85 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
   });
 
   // ═══════════════════════════════════════════════════════════════════════
+  // COMPOSITE TOOLS — agent-owned macros chaining N tools
+  // ═══════════════════════════════════════════════════════════════════════
+
+  // GET /api/agents/:id/composites — list this agent's composite tools
+  app.get('/api/agents/:id/composites', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
+      const r = await pool.query(
+        `SELECT id, name, description, params_schema, steps, exec_count, last_used_at, created_at, updated_at
+           FROM builder_bot.agent_composite_tools
+          WHERE agent_id = $1
+          ORDER BY name`,
+        [own.agentId],
+      );
+      res.json({ ok: true, composites: r.rows });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+
+  // POST /api/agents/:id/composites — create or update one
+  // Body: { name, description, params_schema?, steps: [{tool, args}, ...] }
+  app.post('/api/agents/:id/composites', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
+      const b = req.body || {};
+      const name = String(b.name || '').trim();
+      const description = String(b.description || '').trim();
+      const paramsSchema = (b.params_schema && typeof b.params_schema === 'object') ? b.params_schema : {};
+      const steps = Array.isArray(b.steps) ? b.steps : null;
+      if (!name || !/^[a-zA-Z][a-zA-Z0-9_]{1,79}$/.test(name)) {
+        res.status(400).json({ ok: false, error: 'name must be 2-80 chars [a-zA-Z0-9_], starting with a letter' });
+        return;
+      }
+      if (!description || description.length > 500) {
+        res.status(400).json({ ok: false, error: 'description required (max 500 chars)' });
+        return;
+      }
+      if (!steps || steps.length < 1 || steps.length > 20) {
+        res.status(400).json({ ok: false, error: 'steps[] required (1-20 items)' });
+        return;
+      }
+      for (const [i, s] of steps.entries()) {
+        if (!s || typeof s !== 'object' || !s.tool || typeof s.tool !== 'string') {
+          res.status(400).json({ ok: false, error: `step ${i}: missing/invalid 'tool' field` });
+          return;
+        }
+        if (s.args !== undefined && typeof s.args !== 'object') {
+          res.status(400).json({ ok: false, error: `step ${i}: 'args' must be object` });
+          return;
+        }
+      }
+      const r = await pool.query(
+        `INSERT INTO builder_bot.agent_composite_tools (agent_id, user_id, name, description, params_schema, steps)
+         VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)
+         ON CONFLICT (agent_id, name) DO UPDATE SET
+           description = EXCLUDED.description,
+           params_schema = EXCLUDED.params_schema,
+           steps = EXCLUDED.steps,
+           updated_at = NOW()
+         RETURNING id, name`,
+        [own.agentId, own.userId, name, description, JSON.stringify(paramsSchema), JSON.stringify(steps)],
+      );
+      res.json({ ok: true, id: r.rows[0].id, name: r.rows[0].name });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+
+  // DELETE /api/agents/:id/composites/:name
+  app.delete('/api/agents/:id/composites/:name', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
+      const r = await pool.query(
+        `DELETE FROM builder_bot.agent_composite_tools WHERE agent_id = $1 AND name = $2 RETURNING id`,
+        [own.agentId, String(req.params['name'])],
+      );
+      if (r.rows.length === 0) { res.status(404).json({ ok: false, error: 'composite not found' }); return; }
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
   // CREWS — multi-agent networks with nested sub-crews + manager flow
   // ═══════════════════════════════════════════════════════════════════════
 
@@ -8545,6 +8741,166 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
       const limit = Math.min(100, Number(req.query['limit']) || 20);
       const items = await getCrewExecutions(String(req.params['id']), limit);
       res.json({ ok: true, items });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Crew SIMPLE EXECUTOR — sequential walk through agent_ids[] with live
+  // member_statuses snapshot. Uses the integer-schema crews/crew_executions
+  // tables (the only ones actually in prod). The richer crew-system.ts engine
+  // expects a separate TEXT-id schema and is not wired to anything yet.
+  // ──────────────────────────────────────────────────────────────────────────
+
+  // POST /api/crews/:id/run — kick off async run, returns execId immediately.
+  // UI then polls GET /api/crews/:id/executions/:execId every ~500ms.
+  app.post('/api/crews/:id/run', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const crewId = Number(req.params['id']);
+      if (!Number.isFinite(crewId)) { res.status(400).json({ ok: false, error: 'bad crew id' }); return; }
+      const input = String(req.body?.input || req.body?.task || '').slice(0, 4000);
+      const crewRow = await pool.query(
+        `SELECT * FROM builder_bot.crews WHERE id = $1 AND user_id = $2`,
+        [crewId, userId],
+      );
+      if (!crewRow.rows[0]) { res.status(404).json({ ok: false, error: 'crew not found' }); return; }
+      const crew = crewRow.rows[0];
+      const memberIds: number[] = Array.isArray(crew.agent_ids) ? crew.agent_ids : [];
+      if (memberIds.length === 0) { res.status(400).json({ ok: false, error: 'crew has no members' }); return; }
+
+      // Look up names for richer member_statuses[].member_label
+      const agentsRes = await pool.query(
+        `SELECT id, name, role FROM builder_bot.agents WHERE id = ANY($1::int[]) AND user_id = $2`,
+        [memberIds, userId],
+      );
+      const agentMap = new Map<number, any>();
+      agentsRes.rows.forEach((r: any) => agentMap.set(r.id, r));
+
+      const memberStatuses = memberIds.map((aid, idx) => ({
+        step_index: idx,
+        agent_id: aid,
+        member_label: agentMap.get(aid)?.name || `agent_${aid}`,
+        role: agentMap.get(aid)?.role || 'worker',
+        status: 'pending' as const,
+        started_at: null as string | null,
+        finished_at: null as string | null,
+        error: null as string | null,
+        output_preview: null as string | null,
+      }));
+
+      const execIns = await pool.query(
+        `INSERT INTO builder_bot.crew_executions (crew_id, status, trigger)
+         VALUES ($1, 'running', $2) RETURNING id`,
+        [crewId, input || null],
+      );
+      const execId: number = execIns.rows[0].id;
+      // member_statuses initially seeded via separate UPDATE — uses generated col
+      await pool.query(
+        `UPDATE builder_bot.crew_executions SET member_statuses = $2::jsonb WHERE id = $1`,
+        [execId, JSON.stringify(memberStatuses)],
+      );
+
+      // Fire-and-forget runner — sequential walk through members
+      void (async () => {
+        const { runAgentTickForCrew } = await import('./services/crew-runner-simple');
+        let prev: any = input;
+        for (let i = 0; i < memberIds.length; i++) {
+          memberStatuses[i].status = 'running';
+          memberStatuses[i].started_at = new Date().toISOString();
+          await pool.query(
+            `UPDATE builder_bot.crew_executions SET member_statuses = $2::jsonb WHERE id = $1`,
+            [execId, JSON.stringify(memberStatuses)],
+          );
+          try {
+            const out = await runAgentTickForCrew(memberIds[i], userId, prev, {
+              crewId, crewName: crew.name, stepIndex: i, totalSteps: memberIds.length,
+              crewGoal: crew.goal || null,
+            });
+            memberStatuses[i].status = 'completed';
+            memberStatuses[i].finished_at = new Date().toISOString();
+            const preview = typeof out === 'string' ? out : JSON.stringify(out);
+            memberStatuses[i].output_preview = preview ? preview.slice(0, 400) : null;
+            prev = out;
+          } catch (e: any) {
+            memberStatuses[i].status = 'failed';
+            memberStatuses[i].finished_at = new Date().toISOString();
+            memberStatuses[i].error = e?.message || String(e);
+            await pool.query(
+              `UPDATE builder_bot.crew_executions SET member_statuses = $2::jsonb,
+                 status = 'failed', completed_at = NOW(), result = $3::jsonb WHERE id = $1`,
+              [execId, JSON.stringify(memberStatuses), JSON.stringify({ error: e?.message, failed_step: i })],
+            );
+            return;
+          }
+          await pool.query(
+            `UPDATE builder_bot.crew_executions SET member_statuses = $2::jsonb WHERE id = $1`,
+            [execId, JSON.stringify(memberStatuses)],
+          );
+        }
+        await pool.query(
+          `UPDATE builder_bot.crew_executions
+           SET member_statuses = $2::jsonb, status = 'completed', completed_at = NOW(),
+               result = $3::jsonb, final_output = $4
+           WHERE id = $1`,
+          [execId, JSON.stringify(memberStatuses), JSON.stringify({ output: prev }),
+           typeof prev === 'string' ? prev.slice(0, 8000) : JSON.stringify(prev).slice(0, 8000)],
+        );
+      })().catch((e) => {
+        console.error('[CrewRun] async runner crashed:', e?.message);
+        pool.query(
+          `UPDATE builder_bot.crew_executions SET status = 'failed', completed_at = NOW(), result = $2::jsonb WHERE id = $1`,
+          [execId, JSON.stringify({ error: e?.message || String(e) })],
+        ).catch(() => {});
+      });
+
+      res.json({ ok: true, execId });
+    } catch (e: any) {
+      console.error('[POST /api/crews/:id/run]', e);
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  // GET /api/crews/:id/executions/:execId — poll one execution (used by live monitor)
+  app.get('/api/crews/:id/executions/:execId', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const crewId = Number(req.params['id']);
+      const execId = Number(req.params['execId']);
+      if (!Number.isFinite(crewId) || !Number.isFinite(execId)) {
+        res.status(400).json({ ok: false, error: 'bad id' });
+        return;
+      }
+      // Verify ownership via crew
+      const own = await pool.query(
+        `SELECT 1 FROM builder_bot.crews WHERE id = $1 AND user_id = $2`,
+        [crewId, userId],
+      );
+      if (!own.rows[0]) { res.status(404).json({ ok: false, error: 'crew not found' }); return; }
+      const r = await pool.query(
+        `SELECT id, crew_id, status, started_at, completed_at, trigger, member_statuses,
+                result, final_output
+         FROM builder_bot.crew_executions WHERE id = $1 AND crew_id = $2`,
+        [execId, crewId],
+      );
+      if (!r.rows[0]) { res.status(404).json({ ok: false, error: 'execution not found' }); return; }
+      const row = r.rows[0];
+      const ms = typeof row.member_statuses === 'string'
+        ? (() => { try { return JSON.parse(row.member_statuses); } catch { return []; } })()
+        : (row.member_statuses || []);
+      res.json({
+        ok: true,
+        execution: {
+          id: row.id,
+          crewId: row.crew_id,
+          status: row.status,
+          startedAt: row.started_at,
+          completedAt: row.completed_at,
+          trigger: row.trigger,
+          memberStatuses: ms,
+          result: row.result,
+          finalOutput: row.final_output,
+        },
+      });
     } catch (e: any) { res.status(500).json({ ok: false, error: e.message }); }
   });
 

@@ -3660,15 +3660,31 @@ async function _executeToolInner(
         const content = String(args.content || '').trim();
         if (!content) return { ok: false, error: 'content required' };
         const { saveMemory } = await import('../services/hybrid-memory');
+        // Default-scope the memory to the current chat unless the agent
+        // explicitly asks for a global memory (scope: 'global'). Keeps
+        // chat-specific facts from leaking into other conversations.
+        const scopeArg = String(args.scope || '').trim().toLowerCase();
+        const baseMeta = (typeof args.metadata === 'object' && args.metadata) ? { ...args.metadata } : {};
+        if (scopeArg !== 'global' && baseMeta.chat_id == null) {
+          const ctxChat = (params as any)?.context?.chatId;
+          if (ctxChat != null) {
+            baseMeta.chat_id = typeof ctxChat === 'bigint' ? String(ctxChat) : ctxChat;
+          }
+        }
         const saved = await saveMemory({
           agentId: params.agentId,
           content,
           source: args.source ? String(args.source).slice(0, 50) : 'agent',
           importance: typeof args.importance === 'number' ? args.importance : 0.5,
-          metadata: typeof args.metadata === 'object' ? args.metadata : {},
+          metadata: baseMeta,
         });
         if (!saved) return { ok: false, error: 'failed to save' };
-        return { ok: true, id: saved.id, importance: saved.importance };
+        return {
+          ok: true,
+          id: saved.id,
+          importance: saved.importance,
+          scope: baseMeta.chat_id != null ? `chat:${baseMeta.chat_id}` : 'global',
+        };
       } catch (e: any) { return { ok: false, error: e?.message }; }
     }
     case 'recall_hybrid': {
@@ -3676,13 +3692,32 @@ async function _executeToolInner(
         const query = String(args.query || '').trim();
         if (!query) return { ok: false, error: 'query required' };
         const { recallMemory } = await import('../services/hybrid-memory');
+        // Default-scope recall to the current chat to prevent cross-chat
+        // bleed. Agent can opt out by passing `scope: 'global'` (e.g. when
+        // searching across all conversations).
+        const scopeArg = String(args.scope || '').trim().toLowerCase();
+        let chatScope: number | string | null = null;
+        if (scopeArg !== 'global') {
+          const ctxChat = (params as any)?.context?.chatId;
+          if (ctxChat != null) chatScope = ctxChat;
+        }
+        // Explicit chat_id override (numeric or string) takes priority
+        if (args.chat_id != null && args.chat_id !== '') {
+          chatScope = args.chat_id;
+        }
         const memories = await recallMemory({
           agentId: params.agentId,
           query,
           topK: Math.min(20, Math.max(1, Number(args.top_k) || 8)),
           minImportance: Number(args.min_importance) || 0,
+          chatId: chatScope,
         });
-        return { ok: true, count: memories.length, memories };
+        return {
+          ok: true,
+          count: memories.length,
+          scope: chatScope == null ? 'global' : `chat:${chatScope}`,
+          memories,
+        };
       } catch (e: any) { return { ok: false, error: e?.message }; }
     }
     case 'memory_count_hybrid': {
@@ -9637,6 +9672,17 @@ You MUST follow these rules AT ALL TIMES:
   ❌ Игнорировать chat_id в теге и слать "куда придётся".
   ❌ Использовать tg_send_message без явного chat_id из тега того сообщения.
 
+ПАМЯТЬ ПО ЧАТАМ (remember_hybrid / recall_hybrid):
+  • По умолчанию память **scoped к текущему chat_id**. recall_hybrid вернёт
+    только заметки из этого чата (+ те, что помечены как global).
+  • Auto-compact summaries тоже теперь привязаны к chat_id — прошлый «диалог
+    с Ваней в DM» НЕ всплывёт в группе.
+  • Если хочешь сохранить факт навсегда «про этого человека везде» —
+    remember_hybrid({content, scope:"global"}).
+  • Если ищешь «что я вообще знаю про user X» по всем чатам —
+    recall_hybrid({query, scope:"global"}).
+  • НЕ используй scope:"global" по умолчанию — это шумит.
+
 ━━━ INCOMING TX RESOLUTION (входящий TON-перевод) ━━━
 Если ты заметил что баланс кошелька УВЕЛИЧИЛСЯ (сравни get_ton_balance с
 prev_balance из state) — НЕ сообщай в чат «пришло X TON» без контекста.
@@ -10614,13 +10660,24 @@ If web_search returns nothing useful → say "не смог найти акту�
 
         if (summary) {
           const compressedTokens = estimateTokens([{ role: 'system', content: summary }] as any);
+          // chat_id from tick context — scope this summary to the chat it was
+          // produced in, so recall/reads can filter per-chat (avoids cross-chat
+          // context bleed when one agent serves multiple chats/users).
+          const _chatIdScope: number | null = (() => {
+            const raw = (params as any)?.context?.chatId;
+            if (raw == null) return null;
+            try {
+              const n = typeof raw === 'bigint' ? Number(raw) : Number(raw);
+              return Number.isFinite(n) ? n : null;
+            } catch { return null; }
+          })();
           // Persist to agent_transcripts (long-term query target)
           try {
             const { pool } = await import('../db');
             await pool.query(
-              `INSERT INTO builder_bot.agent_transcripts (agent_id, summary, msg_count, token_estimate)
-               VALUES ($1, $2, $3, $4)`,
-              [params.agentId, summary, middle.length, estTokens],
+              `INSERT INTO builder_bot.agent_transcripts (agent_id, summary, msg_count, token_estimate, chat_id)
+               VALUES ($1, $2, $3, $4, $5)`,
+              [params.agentId, summary, middle.length, estTokens, _chatIdScope],
             );
           } catch (e: any) { console.warn(`[AutoCompact] persist transcript failed: ${e?.message}`); }
 
@@ -10632,7 +10689,11 @@ If web_search returns nothing useful → say "не смог найти акту�
               content: summary,
               source: 'auto-compact',
               importance: 0.5,
-              metadata: { msg_count: middle.length, compressed_at: new Date().toISOString() },
+              metadata: {
+                msg_count: middle.length,
+                compressed_at: new Date().toISOString(),
+                ...(_chatIdScope != null ? { chat_id: _chatIdScope } : {}),
+              },
             });
           } catch {}
 

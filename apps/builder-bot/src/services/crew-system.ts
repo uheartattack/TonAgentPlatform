@@ -87,6 +87,7 @@ export interface CrewExecution {
   output: any;
   status: 'running' | 'completed' | 'failed';
   stepResults: Record<string, any>;
+  memberStatuses?: MemberStatus[];
   error?: string;
   startedAt: Date;
   finishedAt: Date | null;
@@ -199,10 +200,20 @@ export async function initCrewSystem(pgPool: Pool): Promise<void> {
       output        JSONB,
       status        TEXT NOT NULL DEFAULT 'running',
       step_results  JSONB NOT NULL DEFAULT '{}',
+      member_statuses JSONB NOT NULL DEFAULT '[]',
       error         TEXT,
       started_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       finished_at   TIMESTAMPTZ
     );
+  `);
+  // Live monitor: member_statuses[] = [{step_index, member_label, agent_id,
+  //   nested_crew_id?, role, status: 'pending'|'running'|'completed'|'failed',
+  //   started_at?, finished_at?, error?, output_preview?}]
+  // Updated in-place during execution so /api/crews/:id/executions/:execId
+  // can poll progress live.
+  await pgPool.query(`
+    ALTER TABLE builder_bot.crew_executions
+      ADD COLUMN IF NOT EXISTS member_statuses JSONB NOT NULL DEFAULT '[]'
   `);
   await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_crews_user ON builder_bot.crews (user_id);`);
   await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_crew_exec_crew ON builder_bot.crew_executions (crew_id);`);
@@ -335,6 +346,7 @@ export async function getCrewExecutions(crewId: string, limit: number = 20): Pro
 }
 
 function rowToExec(r: any): CrewExecution {
+  const parseMaybeJson = (v: any) => typeof v === 'string' ? (() => { try { return JSON.parse(v); } catch { return v; } })() : v;
   return {
     id: r.id,
     crewId: r.crew_id,
@@ -342,11 +354,20 @@ function rowToExec(r: any): CrewExecution {
     input: r.input,
     output: r.output,
     status: r.status,
-    stepResults: typeof r.step_results === 'string' ? JSON.parse(r.step_results) : r.step_results,
+    stepResults: parseMaybeJson(r.step_results) || {},
+    memberStatuses: parseMaybeJson(r.member_statuses) || [],
     error: r.error,
     startedAt: r.started_at,
     finishedAt: r.finished_at,
   };
+}
+
+export async function getCrewExecution(execId: string, userId: number): Promise<CrewExecution | null> {
+  const res = await pool().query(
+    `SELECT * FROM builder_bot.crew_executions WHERE id = $1 AND user_id = $2`,
+    [execId, userId],
+  );
+  return res.rows[0] ? rowToExec(res.rows[0]) : null;
 }
 
 async function insertExecution(exec: {
@@ -375,6 +396,116 @@ async function finishExecution(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// LIVE PROGRESS TRACKER
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Each `executeCrew` run gets one ProgressTracker. invokeMember calls
+// .markStarted(stepIndex, member) and .markFinished(stepIndex, result|error).
+// Tracker batches writes (throttle ~300ms) so a parallel flow of 10 agents
+// produces ~1 SQL UPDATE per burst, not 20.
+// ───────────────────────────────────────────────────────────────────────────
+
+export interface MemberStatus {
+  step_index: number;
+  member_label: string;
+  agent_id?: number | null;
+  nested_crew_id?: string | null;
+  role: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  started_at?: string;
+  finished_at?: string;
+  error?: string | null;
+  output_preview?: string | null;
+}
+
+class ProgressTracker {
+  private statuses = new Map<number, MemberStatus>();
+  private flushTimer: NodeJS.Timeout | null = null;
+  private dirty = false;
+  private throttleMs = 300;
+
+  constructor(private execId: string) {}
+
+  seedFromCrew(crew: CrewDefinition): void {
+    crew.agents.forEach((m, i) => {
+      this.statuses.set(i, {
+        step_index: i,
+        member_label: m.label || (m.nestedCrewId ? `nested:${m.nestedCrewId.slice(0, 8)}` : `agent_${i}`),
+        agent_id: m.agentId ?? null,
+        nested_crew_id: m.nestedCrewId ?? null,
+        role: m.role,
+        status: 'pending',
+      });
+    });
+    this.dirty = true;
+    this.scheduleFlush();
+  }
+
+  markStarted(stepIndex: number, member: CrewMember): void {
+    const existing = this.statuses.get(stepIndex) || {
+      step_index: stepIndex,
+      member_label: member.label || `agent_${stepIndex}`,
+      agent_id: member.agentId ?? null,
+      nested_crew_id: member.nestedCrewId ?? null,
+      role: member.role,
+      status: 'pending',
+    };
+    existing.status = 'running';
+    existing.started_at = new Date().toISOString();
+    existing.error = null;
+    this.statuses.set(stepIndex, existing);
+    this.dirty = true;
+    this.scheduleFlush();
+  }
+
+  markFinished(stepIndex: number, result: any, error?: string | null): void {
+    const existing = this.statuses.get(stepIndex);
+    if (!existing) return;
+    existing.status = error ? 'failed' : 'completed';
+    existing.finished_at = new Date().toISOString();
+    existing.error = error || null;
+    if (!error) {
+      // Short preview so UI can show "what did agent return"
+      try {
+        const s = typeof result === 'string' ? result : JSON.stringify(result);
+        existing.output_preview = s ? s.slice(0, 400) : null;
+      } catch { existing.output_preview = null; }
+    }
+    this.statuses.set(stepIndex, existing);
+    this.dirty = true;
+    this.scheduleFlush();
+  }
+
+  private scheduleFlush(): void {
+    if (this.flushTimer) return;
+    this.flushTimer = setTimeout(() => {
+      this.flushTimer = null;
+      void this.flush();
+    }, this.throttleMs);
+  }
+
+  async flush(): Promise<void> {
+    if (!this.dirty) return;
+    this.dirty = false;
+    const arr = Array.from(this.statuses.values()).sort((a, b) => a.step_index - b.step_index);
+    try {
+      await pool().query(
+        `UPDATE builder_bot.crew_executions SET member_statuses = $2 WHERE id = $1`,
+        [this.execId, JSON.stringify(arr)],
+      );
+    } catch (e: any) {
+      console.warn(`[CrewProgress] flush failed: ${e?.message}`);
+    }
+  }
+
+  async flushFinal(): Promise<void> {
+    if (this.flushTimer) { clearTimeout(this.flushTimer); this.flushTimer = null; }
+    this.dirty = true;
+    await this.flush();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // EXECUTION ENGINE
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -386,6 +517,8 @@ interface ExecEnv {
   ancestry: string[];
   /** Top-level user. Owner-scoped operations use this. */
   userId: number;
+  /** Live status tracker — null for nested crews (top-level only). */
+  tracker?: ProgressTracker | null;
 }
 
 export async function executeCrew(
@@ -393,24 +526,32 @@ export async function executeCrew(
   userId: number,
   input: any,
   runAgent: RunAgentFn,
+  opts?: { execId?: string },
 ): Promise<CrewExecution> {
   const crew = await getCrew(crewId, userId);
   if (!crew) throw new Error(`Crew ${crewId} not found`);
 
-  const execId = randomUUID();
-  await insertExecution({ id: execId, crewId, userId, input });
+  const execId = opts?.execId || randomUUID();
+  // If the caller pre-inserted the exec row (async API), skip the insert.
+  if (!opts?.execId) {
+    await insertExecution({ id: execId, crewId, userId, input });
+  }
 
   const stepResults: Record<string, any> = {};
   let finalOutput: any = null;
   let error: string | undefined;
-  const env: ExecEnv = { runAgent, ancestry: [crewId], userId };
+  const tracker = new ProgressTracker(execId);
+  tracker.seedFromCrew(crew);
+  const env: ExecEnv = { runAgent, ancestry: [crewId], userId, tracker };
 
   try {
     finalOutput = await runCrewByDef(crew, input, stepResults, env);
+    await tracker.flushFinal();
     await finishExecution(execId, 'completed', finalOutput, stepResults);
   } catch (err: any) {
     error = err?.message || String(err);
     finalOutput = { error };
+    await tracker.flushFinal();
     await finishExecution(execId, 'failed', finalOutput, stepResults, error);
   }
 
@@ -443,8 +584,29 @@ async function runCrewByDef(
   }
 }
 
-/** Invoke a crew member — dispatches to agent or nested crew. */
+/** Invoke a crew member — dispatches to agent or nested crew.
+ *  Wraps with ProgressTracker so live monitor sees status transitions. */
 async function invokeMember(
+  crew: CrewDefinition,
+  member: CrewMember,
+  stepIndex: number,
+  input: any,
+  subtask: string | undefined,
+  env: ExecEnv,
+): Promise<any> {
+  if (env.tracker) env.tracker.markStarted(stepIndex, member);
+  try {
+    const out = await _invokeMemberInner(crew, member, stepIndex, input, subtask, env);
+    if (env.tracker) env.tracker.markFinished(stepIndex, out, null);
+    return out;
+  } catch (err: any) {
+    const msg = err?.message || String(err);
+    if (env.tracker) env.tracker.markFinished(stepIndex, null, msg);
+    throw err;
+  }
+}
+
+async function _invokeMemberInner(
   crew: CrewDefinition,
   member: CrewMember,
   stepIndex: number,
@@ -477,6 +639,10 @@ async function invokeMember(
       runAgent: env.runAgent,
       ancestry: env.ancestry.concat(member.nestedCrewId),
       userId: env.userId,
+      // Nested crews run with their own indices — top-level tracker would
+      // collide. Skip tracking inside nested for now (parent step still
+      // shows running/completed at the nested-crew level).
+      tracker: null,
     };
     // Subtask becomes the input for the nested crew so manager-style delegation
     // propagates through sub-networks naturally.
