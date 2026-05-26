@@ -1,0 +1,545 @@
+/* ============================================================
+   gen-aura.css
+   A unified "generation loading" system for TAP.
+   Five surfaces, one visual language.
+
+   Palette (shared DNA across all variants):
+     --aura-1  #a855f7  violet
+     --aura-2  #0098ea  TON blue
+     --aura-3  #22d3ee  cyan
+     --aura-4  #f472b6  pink
+
+   Everything below animates only transform / opacity /
+   background-position, so 30+ concurrent instances stay 60fps.
+   ============================================================ */
+
+:root {
+  --aura-1: #a855f7;
+  --aura-2: #0098ea;
+  --aura-3: #22d3ee;
+  --aura-4: #f472b6;
+  --aura-bg: #080b14;
+
+  /* Canonical conic + linear gradients used everywhere */
+  --aura-conic: conic-gradient(
+    from 0deg,
+    var(--aura-1),
+    var(--aura-2),
+    var(--aura-3),
+    var(--aura-4),
+    var(--aura-1)
+  );
+  --aura-linear: linear-gradient(
+    90deg,
+    var(--aura-1),
+    var(--aura-2),
+    var(--aura-3),
+    var(--aura-4),
+    var(--aura-1)
+  );
+
+  /* Canonical timings */
+  --aura-spin: 4s;
+  --aura-sweep: 1.8s;
+  --aura-text-flow: 3s;
+}
+
+/* ============================================================
+   1) FULLSCREEN OVERLAY
+   ------------------------------------------------------------
+   .gen-aura-overlay        backdrop (blurred, click-blocking)
+     .gen-aura-overlay__card  glass card
+       .gen-aura-overlay__orb 72px orb
+       .gen-aura-text         gradient text label
+       .gen-aura-overlay__dots 3 pulsing dots
+   ============================================================ */
+
+.gen-aura-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  background: color-mix(in oklab, var(--aura-bg) 70%, transparent);
+  backdrop-filter: blur(18px) saturate(120%);
+  -webkit-backdrop-filter: blur(18px) saturate(120%);
+  animation: aura-fade-in 220ms ease-out both;
+}
+
+.gen-aura-overlay__card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+  padding: 56px 72px 48px;
+  min-width: 360px;
+  border-radius: 24px;
+  background: linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.045),
+      rgba(255, 255, 255, 0.015)
+    ),
+    rgba(12, 16, 28, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.06) inset,
+    0 30px 80px -20px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(168, 85, 247, 0.05);
+}
+
+/* Soft aurora wash bleeding from behind the card */
+.gen-aura-overlay__card::before {
+  content: "";
+  position: absolute;
+  inset: -40px;
+  border-radius: 40px;
+  background:
+    radial-gradient(40% 60% at 30% 30%, rgba(168, 85, 247, 0.25), transparent 70%),
+    radial-gradient(40% 60% at 70% 70%, rgba(34, 211, 238, 0.2), transparent 70%),
+    radial-gradient(50% 50% at 50% 50%, rgba(244, 114, 182, 0.12), transparent 70%);
+  filter: blur(30px);
+  z-index: -1;
+  opacity: 0.9;
+  animation: aura-aurora-drift 9s ease-in-out infinite alternate;
+}
+
+.gen-aura-overlay__orb {
+  width: 72px;
+  height: 72px;
+  position: relative;
+  border-radius: 50%;
+  /* The orb itself: layered radial highlight + spinning conic */
+  background:
+    radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.55), transparent 38%),
+    radial-gradient(circle at 70% 75%, rgba(0, 0, 0, 0.35), transparent 55%),
+    var(--aura-conic);
+  animation: aura-spin var(--aura-spin) linear infinite;
+  /* Soft outer glow halo */
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+    0 0 24px rgba(168, 85, 247, 0.45),
+    0 0 48px rgba(34, 211, 238, 0.3),
+    0 0 80px rgba(244, 114, 182, 0.18);
+}
+
+/* Counter-spinning inner core for a "lensed" feel */
+.gen-aura-overlay__orb::after {
+  content: "";
+  position: absolute;
+  inset: 14px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 40% 35%, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0) 55%),
+    var(--aura-conic);
+  filter: blur(2px);
+  animation: aura-spin-reverse calc(var(--aura-spin) * 1.5) linear infinite;
+  opacity: 0.6;
+}
+
+.gen-aura-overlay__dots {
+  display: flex;
+  gap: 8px;
+}
+.gen-aura-overlay__dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.75);
+  animation: aura-dot-pulse 1.4s ease-in-out infinite;
+}
+.gen-aura-overlay__dots span:nth-child(2) { animation-delay: 0.18s; }
+.gen-aura-overlay__dots span:nth-child(3) { animation-delay: 0.36s; }
+
+/* ============================================================
+   2) INLINE HALO
+   ------------------------------------------------------------
+   Wrap any focusable element with .gen-aura-inline.
+   Two layers:
+     ::before → crisp 1px conic ring (mask-composite)
+     ::after  → blurred conic glow behind it
+   ============================================================ */
+
+.gen-aura-inline {
+  position: relative;
+  isolation: isolate;
+  border-radius: 10px; /* inherits to pseudos via inherit */
+}
+
+.gen-aura-inline::before,
+.gen-aura-inline::after {
+  content: "";
+  position: absolute;
+  border-radius: inherit;
+  pointer-events: none;
+  animation: aura-spin var(--aura-spin) linear infinite;
+}
+
+/* The crisp ring sitting tight on the element */
+.gen-aura-inline::before {
+  inset: -1.5px;
+  padding: 1.5px;
+  background: var(--aura-conic);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  z-index: 0;
+}
+
+/* The soft halo behind */
+.gen-aura-inline::after {
+  inset: -10px;
+  background: var(--aura-conic);
+  filter: blur(14px);
+  opacity: 0.55;
+  z-index: -1;
+}
+
+/* ============================================================
+   3) SKELETON SHIMMER
+   ------------------------------------------------------------
+   Three stacked bars (90% / 70% / 50%) sweeping a tinted
+   gradient L→R. Generic dark base, branded sweep.
+   ============================================================ */
+
+.gen-aura-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.gen-aura-skeleton__bar {
+  position: relative;
+  height: 12px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  overflow: hidden;
+}
+.gen-aura-skeleton__bar:nth-child(1) { width: 90%; }
+.gen-aura-skeleton__bar:nth-child(2) { width: 70%; }
+.gen-aura-skeleton__bar:nth-child(3) { width: 50%; }
+
+.gen-aura-skeleton__bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(168, 85, 247, 0.35) 25%,
+    rgba(34, 211, 238, 0.45) 50%,
+    rgba(244, 114, 182, 0.3) 75%,
+    transparent 100%
+  );
+  transform: translate3d(-100%, 0, 0);
+  animation: aura-shimmer var(--aura-sweep) ease-in-out infinite;
+}
+
+/* Stagger the bars so the sweep cascades */
+.gen-aura-skeleton__bar:nth-child(2)::after { animation-delay: 0.12s; }
+.gen-aura-skeleton__bar:nth-child(3)::after { animation-delay: 0.24s; }
+
+/* ============================================================
+   4) ANIMATED GRADIENT TEXT
+   ============================================================ */
+
+.gen-aura-text {
+  background: var(--aura-linear);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+          background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: aura-text-flow var(--aura-text-flow) linear infinite;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+}
+
+/* ============================================================
+   5) STANDALONE ORB — 28px compact spinner
+   ============================================================ */
+
+.gen-aura-orb {
+  display: inline-block;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  position: relative;
+  background:
+    radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.5), transparent 40%),
+    radial-gradient(circle at 70% 75%, rgba(0, 0, 0, 0.35), transparent 55%),
+    var(--aura-conic);
+  animation: aura-spin var(--aura-spin) linear infinite;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+    0 0 10px rgba(168, 85, 247, 0.4),
+    0 0 20px rgba(34, 211, 238, 0.22);
+  vertical-align: middle;
+}
+.gen-aura-orb::after {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 40% 35%, rgba(255, 255, 255, 0.7), transparent 55%),
+    var(--aura-conic);
+  filter: blur(1.2px);
+  animation: aura-spin-reverse calc(var(--aura-spin) * 1.5) linear infinite;
+  opacity: 0.55;
+}
+
+/* Size variants */
+.gen-aura-orb--sm { width: 16px; height: 16px; }
+.gen-aura-orb--sm::after { inset: 3px; }
+.gen-aura-orb--lg { width: 40px; height: 40px; }
+.gen-aura-orb--lg::after { inset: 7px; }
+
+/* ============================================================
+   KEYFRAMES — the entire system runs on five of them.
+   ============================================================ */
+
+@keyframes aura-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes aura-spin-reverse {
+  to { transform: rotate(-360deg); }
+}
+@keyframes aura-shimmer {
+  0%   { transform: translate3d(-100%, 0, 0); }
+  100% { transform: translate3d(100%, 0, 0); }
+}
+@keyframes aura-text-flow {
+  from { background-position: 0% 50%; }
+  to   { background-position: -200% 50%; }
+}
+@keyframes aura-dot-pulse {
+  0%, 100% { opacity: 0.25; transform: translateY(0); }
+  50%      { opacity: 1;    transform: translateY(-2px); }
+}
+@keyframes aura-aurora-drift {
+  0%   { transform: translate(-4%, -2%) scale(1);   }
+  100% { transform: translate(4%, 3%)  scale(1.06); }
+}
+@keyframes aura-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ============================================================
+   ACCESSIBILITY — slow everything 8x, never stop.
+   ============================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  .gen-aura-overlay__orb,
+  .gen-aura-overlay__orb::after,
+  .gen-aura-inline::before,
+  .gen-aura-inline::after,
+  .gen-aura-orb,
+  .gen-aura-orb::after {
+    animation-duration: calc(var(--aura-spin) * 8) !important;
+  }
+  .gen-aura-skeleton__bar::after {
+    animation-duration: calc(var(--aura-sweep) * 8) !important;
+  }
+  .gen-aura-text {
+    animation-duration: calc(var(--aura-text-flow) * 8) !important;
+  }
+  .gen-aura-overlay__dots span {
+    animation-duration: calc(1.4s * 8) !important;
+  }
+  .gen-aura-overlay__card::before {
+    animation-duration: calc(9s * 8) !important;
+  }
+}
+
+/* ============================================================
+   TAP BRIDGE — connect gen-aura to existing TAP loading patterns
+   so we don't have to touch every <div> in studio.html / .js.
+   These selectors are PRECISE so they don't catch unrelated UI.
+   ============================================================ */
+
+/* 1. Auth screen spinner ("Loading authentication...") */
+.auth-loading-placeholder .auth-spinner {
+  width: 28px !important;
+  height: 28px !important;
+  border: none !important;
+  border-radius: 50% !important;
+  background:
+    radial-gradient(circle at 32% 28%, rgba(255,255,255,0.5), transparent 40%),
+    radial-gradient(circle at 70% 75%, rgba(0,0,0,0.35), transparent 55%),
+    var(--aura-conic) !important;
+  animation: aura-spin var(--aura-spin) linear infinite !important;
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,0.08) inset,
+    0 0 10px rgba(168,85,247,0.4),
+    0 0 20px rgba(34,211,238,0.22) !important;
+  position: relative;
+}
+.auth-loading-placeholder .auth-spinner::after {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 40% 35%, rgba(255,255,255,0.7), transparent 55%),
+    var(--aura-conic);
+  filter: blur(1.2px);
+  animation: aura-spin-reverse calc(var(--aura-spin) * 1.5) linear infinite;
+  opacity: 0.55;
+}
+.auth-loading-placeholder span:not(.auth-spinner) {
+  background: var(--aura-linear);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+          background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: aura-text-flow var(--aura-text-flow) linear infinite;
+}
+
+/* 2. Generic .spinner / .loading-spinner used throughout */
+.spinner:not(.auth-spinner),
+.loading-spinner,
+.btn-spinner {
+  width: 18px;
+  height: 18px;
+  border: none !important;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 32% 28%, rgba(255,255,255,0.5), transparent 40%),
+    var(--aura-conic);
+  animation: aura-spin var(--aura-spin) linear infinite !important;
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,0.08) inset,
+    0 0 8px rgba(168,85,247,0.35);
+}
+
+/* 3. Atlas "thinking" / streaming text — typing indicator,
+      "generating", "analyzing", "creating" etc. */
+.thinking-text,
+.streaming-indicator,
+.atlas-thinking,
+.generating-text,
+[data-aura-text] {
+  background: var(--aura-linear);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+          background-clip: text;
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
+  animation: aura-text-flow var(--aura-text-flow) linear infinite;
+  font-weight: 500;
+}
+
+/* 4. Buttons in "loading" state — generate aura ring around them */
+button.loading,
+button[data-loading="true"],
+button[aria-busy="true"],
+.btn.is-loading,
+.tap-btn[data-loading="true"] {
+  position: relative;
+  isolation: isolate;
+}
+button.loading::before,
+button[data-loading="true"]::before,
+button[aria-busy="true"]::before,
+.btn.is-loading::before,
+.tap-btn[data-loading="true"]::before {
+  content: "";
+  position: absolute;
+  inset: -1.5px;
+  padding: 1.5px;
+  border-radius: inherit;
+  background: var(--aura-conic);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  animation: aura-spin var(--aura-spin) linear infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+button.loading::after,
+button[data-loading="true"]::after,
+button[aria-busy="true"]::after,
+.btn.is-loading::after,
+.tap-btn[data-loading="true"]::after {
+  content: "";
+  position: absolute;
+  inset: -10px;
+  border-radius: inherit;
+  background: var(--aura-conic);
+  filter: blur(14px);
+  opacity: 0.4;
+  animation: aura-spin var(--aura-spin) linear infinite;
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* 5. Skeleton placeholders — bridge our existing .skeleton class */
+.skeleton:not(.gen-aura-skeleton),
+.placeholder-shimmer,
+.loading-placeholder {
+  position: relative;
+  background: rgba(255,255,255,0.04) !important;
+  overflow: hidden;
+}
+.skeleton:not(.gen-aura-skeleton)::after,
+.placeholder-shimmer::after,
+.loading-placeholder::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(168,85,247,0.25) 25%,
+    rgba(34,211,238,0.35) 50%,
+    rgba(244,114,182,0.2) 75%,
+    transparent 100%
+  );
+  transform: translate3d(-100%, 0, 0);
+  animation: aura-shimmer var(--aura-sweep) ease-in-out infinite;
+}
+
+/* 6. Atlas / chat streaming cursor (▋ at end of reply) */
+.chat-stream-cursor,
+.streaming-cursor,
+.atlas-cursor,
+.chat-cursor {
+  display: inline-block;
+  width: 8px;
+  height: 1em;
+  background: var(--aura-linear);
+  background-size: 200% 100%;
+  vertical-align: -2px;
+  border-radius: 1px;
+  animation: aura-text-flow var(--aura-text-flow) linear infinite;
+  margin-left: 2px;
+  color: transparent !important;
+  -webkit-background-clip: padding-box;
+          background-clip: padding-box;
+  text-indent: -9999px;
+  overflow: hidden;
+}
+
+/* 7. Empty-state spinner cards (e.g. "Loading agents...") */
+.empty-state[data-loading="true"] .empty-icon,
+.loading-state-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 32% 28%, rgba(255,255,255,0.5), transparent 40%),
+    var(--aura-conic);
+  animation: aura-spin var(--aura-spin) linear infinite;
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,0.08) inset,
+    0 0 14px rgba(168,85,247,0.4),
+    0 0 24px rgba(34,211,238,0.2);
+}

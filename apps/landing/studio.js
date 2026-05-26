@@ -5254,6 +5254,7 @@ async function initAuth() {
         };
         console.log('[TGMiniApp] auto-login OK, user=' + r.userId);
         showApp();
+        try { window.__tgHideLoading && window.__tgHideLoading(); } catch(_){}
         return; // never show auth screen inside Mini App
       } else {
         console.warn('[TGMiniApp] auto-login failed:', r && r.error);
@@ -5262,6 +5263,8 @@ async function initAuth() {
       console.warn('[TGMiniApp] auto-login error:', e && e.message);
     }
   }
+  // Auth-screen path also needs to clear the loading overlay
+  try { window.__tgHideLoading && window.__tgHideLoading(); } catch(_){}
 
   // Show auth screen (it starts hidden to avoid language flash)
   const authScreenEl = document.getElementById('auth-screen');
@@ -19140,6 +19143,23 @@ function _tapApplyMotion(root) {
     i.classList.add('tap-input__field-bridge');
     i.setAttribute('data-tap', '1');
   });
+
+  // 8. AURA AUTO-TAGGING — wire gen-aura to common loading patterns that
+  //    don't already have the bridge selectors.
+  //    Patterns:
+  //      - text nodes saying "Loading…" / "Загрузка…" / "Generating…" /
+  //        "Создаю…" / "Atlas thinking" → wrap with .gen-aura-text
+  //      - empty page placeholders (empty-state with no content) → mark
+  //        their icon with .loading-state-icon
+  var AURA_RX = /^(loading|загрузка|generating|создаю|создание|atlas (думает|thinking)|думаю|анализ|analyzing|обработка|processing|deploying|деплой|sending|отправка|saving|сохранение)[\s.…]*$/i;
+  root.querySelectorAll('*:not(script):not(style):not([data-aura-tagged])').forEach(function(el) {
+    if (el.children.length > 0) return;                      // leaf nodes only
+    var txt = (el.textContent || '').trim();
+    if (txt.length > 0 && txt.length < 32 && AURA_RX.test(txt)) {
+      el.classList.add('gen-aura-text');
+      el.setAttribute('data-aura-tagged', '1');
+    }
+  });
 }
 
 // Click ripple — delegated, works on anything with [data-ripple]
@@ -19327,3 +19347,358 @@ if (document.readyState === 'loading') {
 } else {
   _tapInitBootstrap();
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TELEGRAM MINI APP — Phase 3 native-feel bootstrap
+// ----------------------------------------------------------------------------
+// Auto-wires BackButton + HapticFeedback across the entire Studio:
+//   • Modal stack — whenever any modal overlay becomes visible, BackButton
+//     shows and pops the top modal on tap; hides when stack empties.
+//   • Toast haptics — success toasts → notification('success'),
+//     error → notification('error'), warning → notification('warning').
+//   • Universal click haptics — light tick on any button-like control press.
+//   • Sidebar drawer — hamburger toggle for Mini App on small viewport.
+// Runs only when window.__tgAuthHelper exists (i.e. inside Telegram).
+// ═══════════════════════════════════════════════════════════════════════════
+(function _tapMiniAppPhase3() {
+  if (!window.__tgAuthHelper) return; // not in TG WebView
+
+  var tg = window.__tgAuthHelper;
+  var MODAL_SELECTOR = [
+    '.modal-overlay',
+    '.modal-backdrop',
+    '.studio-dialog-backdrop',
+    '.agent-settings-modal',
+    '.onboarding-modal',
+    '#generic-modal',
+    '#agent-settings-modal',
+    '#wizard-modal',
+    '#wallet-link-modal',
+    '#flow-group-modal',
+    '#atlas-deploy-modal',
+    '#plans-modal',
+    '#topup-modal',
+    '#withdraw-modal',
+    '#logs-modal',
+    '#delete-agent-modal',
+    '#mkt-detail-modal',
+    '#publish-modal',
+  ].join(',');
+
+  // Stack of modals currently visible. BackButton always closes top.
+  var modalStack = [];
+
+  function _findCloseTrigger(modal) {
+    // Order matters — pick the most specific close button first.
+    var candidates = [
+      modal.querySelector('.modal-close'),
+      modal.querySelector('.modal-close-btn'),
+      modal.querySelector('[data-close]'),
+      modal.querySelector('[onclick*="close"]'),
+    ];
+    for (var i = 0; i < candidates.length; i++) {
+      if (candidates[i]) return candidates[i];
+    }
+    return null;
+  }
+
+  function _isVisible(el) {
+    if (!el || !el.style) return false;
+    if (el.style.display === 'none') return false;
+    if (el.classList && el.classList.contains('hidden')) return false;
+    var cs = getComputedStyle(el);
+    return cs.display !== 'none' && cs.visibility !== 'hidden' && cs.opacity !== '0';
+  }
+
+  function _closeTop() {
+    var top = modalStack[modalStack.length - 1];
+    if (!top) { tg.hideBackButton(); return; }
+    tg.hapticImpact('light');
+    var trigger = _findCloseTrigger(top);
+    if (trigger) {
+      try { trigger.click(); }
+      catch (e) { top.style.display = 'none'; }
+    } else {
+      // Fallback: force hide
+      top.style.display = 'none';
+    }
+    // Stack will be updated by the next visibility-poll tick.
+  }
+
+  // BackButton handler installed once — calls whatever is on top of stack
+  // (modal stack, or agent settings handler if registered separately).
+  tg.showBackButton(_closeTop);
+  tg.hideBackButton(); // start hidden
+
+  function _refreshModalStack() {
+    var visibleNow = [];
+    document.querySelectorAll(MODAL_SELECTOR).forEach(function(m) {
+      if (_isVisible(m)) visibleNow.push(m);
+    });
+    // Detect open/close transitions
+    var prevIds = modalStack.map(function(m) { return m; });
+    var newOpens = visibleNow.filter(function(m) { return prevIds.indexOf(m) === -1; });
+    var newCloses = prevIds.filter(function(m) { return visibleNow.indexOf(m) === -1; });
+    if (newOpens.length) tg.hapticImpact('medium');
+    if (newCloses.length) tg.hapticImpact('light');
+    modalStack = visibleNow;
+    if (modalStack.length > 0) {
+      try { window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.BackButton && window.Telegram.WebApp.BackButton.show(); } catch(e){}
+    } else {
+      try { window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.BackButton && window.Telegram.WebApp.BackButton.hide(); } catch(e){}
+    }
+  }
+
+  // Modal observer — watch all known modal containers for style/class mutations
+  var modalObs = new MutationObserver(function(muts) {
+    // Debounce one tick — avoid thrashing during animation start
+    if (_refreshModalStack._scheduled) return;
+    _refreshModalStack._scheduled = true;
+    requestAnimationFrame(function() {
+      _refreshModalStack._scheduled = false;
+      _refreshModalStack();
+    });
+  });
+  // Observe the whole body — many modals are toggled via inline style="display"
+  modalObs.observe(document.body, {
+    attributes: true,
+    attributeFilter: ['style', 'class'],
+    subtree: true,
+  });
+  _refreshModalStack(); // initial pass
+
+  // ── Universal click haptics ──────────────────────────────────────────────
+  // Light tick on any actionable control. Skip if inside [data-ripple]
+  // (already handled by the ripple delegate above to avoid double-tick).
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest && e.target.closest(
+      'button, .btn, .tap-btn, .rt-save-btn, .rt-btn, .btn-action, .nav-item, .tap-nav-item, [role="button"], .agent-card, .agent-card-enhanced'
+    );
+    if (!btn) return;
+    if (btn.closest('[data-ripple]')) return; // ripple handler did it
+    if (btn.hasAttribute('data-no-haptic')) return;
+    try { tg.hapticImpact('light'); } catch (_) {}
+  }, true);
+
+  // ── Toast haptics ────────────────────────────────────────────────────────
+  // Observe #toast-container for new toasts and fire appropriate notification.
+  var toastObs = new MutationObserver(function(muts) {
+    muts.forEach(function(m) {
+      m.addedNodes && m.addedNodes.forEach(function(n) {
+        if (n.nodeType !== 1) return;
+        if (!n.classList) return;
+        if (n.classList.contains('toast-success') || n.classList.contains('tap-toast--success')) {
+          try { tg.hapticNotification('success'); } catch (_) {}
+        } else if (n.classList.contains('toast-error') || n.classList.contains('tap-toast--error')) {
+          try { tg.hapticNotification('error'); } catch (_) {}
+        } else if (n.classList.contains('toast-warning') || n.classList.contains('tap-toast--warning')) {
+          try { tg.hapticNotification('warning'); } catch (_) {}
+        }
+      });
+    });
+  });
+  var toastContainer = document.getElementById('toast-container');
+  if (toastContainer) {
+    toastObs.observe(toastContainer, { childList: true });
+  } else {
+    // Container may be created lazily — wait once for body mutations
+    var bodyObs = new MutationObserver(function() {
+      var c = document.getElementById('toast-container');
+      if (c) {
+        toastObs.observe(c, { childList: true });
+        bodyObs.disconnect();
+      }
+    });
+    bodyObs.observe(document.body, { childList: true, subtree: true });
+  }
+
+  // ── Sidebar hamburger drawer ─────────────────────────────────────────────
+  // On Mini App small viewport, the sidebar is hidden by default (CSS).
+  // Inject a hamburger button into the topbar that toggles body.sidebar-open.
+  // Tap outside the open drawer closes it.
+  function _installDrawerToggle() {
+    if (document.getElementById('tap-drawer-toggle')) return;
+    var topbar = document.querySelector('.topbar');
+    if (!topbar) return;
+    if (window.innerWidth > 600) return; // desktop — let CSS rules govern
+    // Skip if page already has a native hamburger — avoids the duplicate-button
+    // bug where our injected button + existing .mobile-hamburger sit side-by-side.
+    if (document.querySelector('.mobile-hamburger, .topbar-hamburger, [data-hamburger]')) return;
+    var btn = document.createElement('button');
+    btn.id = 'tap-drawer-toggle';
+    btn.type = 'button';
+    btn.setAttribute('aria-label', 'Open menu');
+    btn.style.cssText = 'background:transparent;border:none;color:var(--text-primary,#e7ecf3);width:40px;height:40px;display:inline-flex;align-items:center;justify-content:center;border-radius:10px;cursor:pointer;margin-right:6px;flex:0 0 40px;';
+    btn.innerHTML = '<i data-lucide="menu" style="width:22px;height:22px;stroke-width:2"></i>';
+    btn.onclick = function(e) {
+      e.stopPropagation();
+      document.body.classList.toggle('sidebar-open');
+      try { tg.hapticImpact('light'); } catch (_) {}
+    };
+    topbar.insertBefore(btn, topbar.firstChild);
+    try { if (window.lucide && lucide.createIcons) lucide.createIcons(); } catch(_){}
+  }
+  function _closeDrawerOnOutside(e) {
+    if (!document.body.classList.contains('sidebar-open')) return;
+    var sidebar = document.querySelector('.sidebar');
+    var toggle = document.getElementById('tap-drawer-toggle');
+    if (!sidebar) return;
+    if (sidebar.contains(e.target)) return;
+    if (toggle && toggle.contains(e.target)) return;
+    document.body.classList.remove('sidebar-open');
+    try { tg.hapticImpact('light'); } catch (_) {}
+  }
+  // Also close drawer when user picks a nav item — avoid stale drawer state.
+  document.addEventListener('click', function(e) {
+    if (!document.body.classList.contains('sidebar-open')) return;
+    var navItem = e.target.closest && e.target.closest('.sidebar .nav-item, .sidebar a, .sidebar [data-page-nav]');
+    if (!navItem) return;
+    setTimeout(function() {
+      document.body.classList.remove('sidebar-open');
+    }, 120);
+  });
+  document.addEventListener('click', _closeDrawerOnOutside, true);
+  // Install drawer toggle once DOM is ready
+  function _whenReady(fn) {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn);
+    else fn();
+  }
+  _whenReady(_installDrawerToggle);
+  // Reinstall on resize (if user rotates phone between portrait/landscape)
+  window.addEventListener('resize', function() {
+    var existing = document.getElementById('tap-drawer-toggle');
+    if (window.innerWidth > 600 && existing) existing.remove();
+    if (window.innerWidth <= 600 && !existing) _installDrawerToggle();
+  });
+
+  // ── MainButton smart-bind ────────────────────────────────────────────────
+  // Page-level primary CTAs: when a page has a clearly-marked primary action
+  // (data-main-action attribute, or .rt-save-btn that's currently visible),
+  // forward it to TG's native MainButton. The MainButton lives at the bottom
+  // of the WebView and feels native vs a floating in-page button on mobile.
+  function _refreshMainButton() {
+    if (window.innerWidth > 600) {
+      try { tg.hideMainButton(); } catch (_) {}
+      return;
+    }
+    // Look for the most prominent visible primary CTA in the viewport.
+    // STRICT: only respect elements that EXPLICITLY opt in via data-* attribute.
+    // Pulling random .rt-save-btn was a false-positive trap — many pages have
+    // save buttons in non-primary contexts (e.g. Export Data row in profile).
+    var candidates = Array.from(document.querySelectorAll(
+      '[data-main-action]:not([style*="display:none"]):not(.hidden), ' +
+      '[data-mini-main]:not([style*="display:none"]):not(.hidden)'
+    )).filter(_isVisible);
+    if (!candidates.length) {
+      try { tg.hideMainButton(); } catch (_) {}
+      return;
+    }
+    var primary = candidates[0];
+    var label = primary.getAttribute('data-main-label') ||
+                (primary.textContent || '').trim().slice(0, 32) ||
+                'Continue';
+    try {
+      tg.setMainButton(label, function() {
+        try { tg.hapticImpact('medium'); } catch (_) {}
+        primary.click();
+      });
+    } catch (_) {}
+  }
+  // Refresh on page change + on body mutations (modals open/close, etc.)
+  var mainBtnObs = new MutationObserver(function() {
+    if (_refreshMainButton._scheduled) return;
+    _refreshMainButton._scheduled = true;
+    requestAnimationFrame(function() {
+      _refreshMainButton._scheduled = false;
+      _refreshMainButton();
+    });
+  });
+  mainBtnObs.observe(document.body, {
+    attributes: true,
+    attributeFilter: ['style', 'class', 'data-page'],
+    subtree: true,
+  });
+  _whenReady(_refreshMainButton);
+
+  console.log('[TGMiniApp] Phase 3 native-feel bootstrap ready (BackButton, MainButton, Haptic, Drawer)');
+
+  // ── SIDEBAR FOOTER: inject ToS / Privacy / About links to fill bottom space
+  function _injectSidebarFooterLinks() {
+    var navFoot = document.querySelector('.sidebar .nav-foot');
+    if (!navFoot) return;
+    if (navFoot.querySelector('[data-tap-footer-links]')) return;
+    var box = document.createElement('div');
+    box.setAttribute('data-tap-footer-links', '1');
+    box.style.cssText =
+      'display:flex;flex-wrap:wrap;gap:6px 12px;justify-content:center;' +
+      'padding:10px 4px 4px;margin-top:8px;' +
+      'border-top:1px solid rgba(255,255,255,0.05);' +
+      'font-size:10.5px;line-height:1.4;';
+    var items = [
+      { label: 'Terms',    href: '/terms' },
+      { label: 'Privacy',  href: '/privacy' },
+      { label: 'About',    href: '/about' },
+      { label: 'Docs',     href: '/docs' },
+      { label: 'Support',  href: 'https://t.me/TonAgentPlatformBot' },
+    ];
+    items.forEach(function(it) {
+      var a = document.createElement('a');
+      a.href = it.href;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.textContent = it.label;
+      a.style.cssText = 'color:var(--text-muted,rgba(255,255,255,0.45));text-decoration:none;font-weight:500;';
+      a.onmouseover = function(){ a.style.color = 'var(--text-primary,#e7ecf3)'; };
+      a.onmouseout  = function(){ a.style.color = 'var(--text-muted,rgba(255,255,255,0.45))'; };
+      a.onclick = function(e) {
+        if (window.__tgAuthHelper && window.__tgAuthHelper.openLink) {
+          e.preventDefault();
+          window.__tgAuthHelper.openLink(it.href.startsWith('http') ? it.href : window.location.origin + it.href);
+        }
+        try { tg.hapticImpact('light'); } catch(_) {}
+      };
+      box.appendChild(a);
+    });
+    navFoot.appendChild(box);
+  }
+  _whenReady(_injectSidebarFooterLinks);
+  // Re-inject if the sidebar is re-rendered
+  new MutationObserver(_injectSidebarFooterLinks).observe(document.body, { childList: true, subtree: true });
+
+  // ── LOADING OVERLAY: gen-aura full-screen during initial Mini App auth
+  function _showGenAuraLoading(label) {
+    if (document.getElementById('tg-gen-loading')) return;
+    var overlay = document.createElement('div');
+    overlay.id = 'tg-gen-loading';
+    overlay.className = 'gen-aura-overlay';
+    overlay.innerHTML =
+      '<div class="gen-aura-overlay__card">' +
+        '<div class="gen-aura-overlay__orb"></div>' +
+        '<div class="gen-aura-text" style="font-size:15px">' + (label || 'Loading Studio') + '</div>' +
+        '<div class="gen-aura-overlay__dots"><span></span><span></span><span></span></div>' +
+      '</div>';
+    document.body.appendChild(overlay);
+  }
+  function _hideGenAuraLoading() {
+    var overlay = document.getElementById('tg-gen-loading');
+    if (!overlay) return;
+    overlay.style.transition = 'opacity 260ms ease-out';
+    overlay.style.opacity = '0';
+    setTimeout(function() { try { overlay.remove(); } catch(_){} }, 280);
+  }
+  window.__tgShowLoading = _showGenAuraLoading;
+  window.__tgHideLoading = _hideGenAuraLoading;
+  // Show immediately on Mini App entry; hidden once auth completes (initAuth
+  // detects window.__tgHideLoading and calls it after showApp).
+  _showGenAuraLoading('Loading Studio');
+  // Safety: if for some reason initAuth never calls hide (e.g. auth fails),
+  // pull it off after 8 seconds so the user isn't stuck behind the overlay.
+  setTimeout(function() {
+    var overlay = document.getElementById('tg-gen-loading');
+    if (overlay && document.body.classList.contains('sidebar-open') === false) {
+      // Heuristic: if app is visible, kill the overlay
+      var app = document.getElementById('app');
+      if (app && !app.classList.contains('hidden')) _hideGenAuraLoading();
+    }
+  }, 8000);
+})();

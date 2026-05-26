@@ -1871,33 +1871,143 @@ html[data-tg-app="1"] body {
   background: var(--bg-primary, var(--tg-bg, #080b14)) !important;
 }
 
-/* Sidebar in Mini App: hide on small width, leave content full-bleed.
-   Studio sidebar is desktop-first — in TG WebView it would steal half
-   the screen. Convert to drawer triggered by hamburger / built-in back. */
-@media (max-width: 600px) {
-  html[data-tg-app="1"] .sidebar,
-  html[data-tg-app="1"] aside.sidebar {
-    position: fixed !important;
-    left: 0; top: 0;
-    bottom: 0;
-    width: 84vw !important;
-    max-width: 320px !important;
-    transform: translateX(-100%);
-    transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
-    z-index: 9000;
-    box-shadow: 8px 0 32px rgba(0,0,0,0.5);
-  }
-  html[data-tg-app="1"] body.sidebar-open .sidebar {
-    transform: translateX(0);
-  }
-  html[data-tg-app="1"] main {
-    margin-left: 0 !important;
-    padding-left: 12px !important;
-    padding-right: 12px !important;
-  }
-  html[data-tg-app="1"] .topbar {
-    padding: 8px 12px !important;
-  }
+/* Sidebar in Mini App: ALWAYS off-canvas drawer when in TG WebView,
+   regardless of viewport (Telegram desktop also uses WebView with funky
+   viewport reporting). High z-index + distinct background so it doesn't
+   blend with backdrop. */
+html[data-tg-app="1"] body aside.sidebar,
+html[data-tg-app="1"] body .sidebar {
+  position: fixed !important;
+  left: 0 !important;
+  /* Compact floating drawer — doesn't take full height, sits in upper-mid */
+  top: calc(56px + env(safe-area-inset-top)) !important;
+  bottom: auto !important;
+  width: 84vw !important;
+  max-width: 320px !important;
+  height: auto !important;
+  max-height: min(640px, calc(100vh - 120px - env(safe-area-inset-bottom))) !important;
+  border-radius: 0 16px 16px 0 !important;
+  /* Frosted glass: semi-transparent dark + blur of content behind */
+  background:
+    linear-gradient(180deg, rgba(19, 24, 38, 0.78) 0%, rgba(10, 14, 28, 0.85) 100%) !important;
+  backdrop-filter: blur(18px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(140%) !important;
+  border-right: 1px solid rgba(168, 85, 247, 0.22) !important;
+  box-shadow:
+    8px 0 32px rgba(0, 0, 0, 0.6),
+    0 0 60px rgba(168, 85, 247, 0.12) inset !important;
+  transform: translateX(-100%) !important;
+  transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1) !important;
+  z-index: 10000 !important;
+  overflow-y: auto !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  /* Distribute: logo top, nav middle (grows), profile/etc bottom */
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: space-between !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+/* Logo / brand row — flush top, no margin */
+html[data-tg-app="1"] body .sidebar > .brand,
+html[data-tg-app="1"] body .sidebar > .sidebar-header,
+html[data-tg-app="1"] body .sidebar > .logo {
+  flex: 0 0 auto !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
+/* Nav block — takes remaining space, scrolls if too many tabs */
+html[data-tg-app="1"] body .sidebar > .sidebar-nav,
+html[data-tg-app="1"] body .sidebar > .nav-list,
+html[data-tg-app="1"] body .sidebar > nav,
+html[data-tg-app="1"] body .sidebar > .nav-scroll {
+  flex: 1 1 auto !important;
+  overflow-y: auto !important;
+  min-height: 0 !important;
+}
+/* Profile / language / footer — pinned bottom, flush */
+html[data-tg-app="1"] body .sidebar > .sidebar-footer,
+html[data-tg-app="1"] body .sidebar > .sidebar-bottom,
+html[data-tg-app="1"] body .sidebar > .user-section,
+html[data-tg-app="1"] body .sidebar > :last-child {
+  flex: 0 0 auto !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
+html[data-tg-app="1"] body.sidebar-open aside.sidebar,
+html[data-tg-app="1"] body.sidebar-open .sidebar,
+html[data-tg-app="1"] body.sidebar-mobile-open aside.sidebar,
+html[data-tg-app="1"] body.sidebar-mobile-open .sidebar {
+  transform: translateX(0) !important;
+}
+
+/* Kill pointer-events on the LEGACY backdrop from studio.css (z-index 95).
+   It used to swallow taps even though sidebar was on top visually. Now taps
+   pass through to whatever's beneath, and the JS outside-click handler
+   makes the close decision based on event.target. */
+html[data-tg-app="1"] body.sidebar-open::after,
+html[data-tg-app="1"] body.sidebar-mobile-open::after {
+  pointer-events: none !important;
+}
+
+/* Sidebar children — ensure clicks reach them, never get swallowed by backdrop.
+   Explicit pointer-events + relative positioning gives them their own
+   stacking context above the global backdrop. */
+html[data-tg-app="1"] body .sidebar > *,
+html[data-tg-app="1"] body .sidebar .nav-item,
+html[data-tg-app="1"] body .sidebar .sidebar-header,
+html[data-tg-app="1"] body .sidebar .sidebar-nav,
+html[data-tg-app="1"] body .sidebar a,
+html[data-tg-app="1"] body .sidebar button,
+html[data-tg-app="1"] body .sidebar [onclick] {
+  position: relative !important;
+  z-index: 2 !important;
+  pointer-events: auto !important;
+}
+
+/* Sidebar inner spacing — push nav down so it's not glued to the very top,
+   give nav-items real touch height, breathing room at bottom for FAB / safe-area */
+html[data-tg-app="1"] body .sidebar .sidebar-header {
+  padding-top: 12px !important;
+  padding-bottom: 12px !important;
+  margin-bottom: 8px !important;
+}
+html[data-tg-app="1"] body .sidebar .sidebar-nav,
+html[data-tg-app="1"] body .sidebar .nav-list,
+html[data-tg-app="1"] body .sidebar nav {
+  padding: 8px 10px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 4px !important;
+}
+html[data-tg-app="1"] body .sidebar .nav-item {
+  min-height: 46px !important;
+  padding: 11px 14px !important;
+  border-radius: 10px !important;
+  font-size: 14.5px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  cursor: pointer !important;
+  -webkit-tap-highlight-color: transparent !important;
+}
+html[data-tg-app="1"] body .sidebar .nav-item.active,
+html[data-tg-app="1"] body .sidebar .nav-item.is-active {
+  background: rgba(168, 85, 247, 0.15) !important;
+  border-left: 3px solid var(--aura-1, #a855f7) !important;
+}
+/* Bottom padding inside sidebar so last nav-item isn't flush with phone bottom */
+html[data-tg-app="1"] body .sidebar {
+  padding-bottom: max(20px, env(safe-area-inset-bottom)) !important;
+}
+html[data-tg-app="1"] main {
+  margin-left: 0 !important;
+  padding-left: 12px !important;
+  padding-right: 12px !important;
+}
+html[data-tg-app="1"] .topbar {
+  padding: 8px 12px !important;
 }
 
 /* Bigger touch targets in Mini App — Apple's HIG says 44pt minimum */
@@ -1960,5 +2070,686 @@ html[data-tg-app="1"] body {
   /* Agent settings modal already covers full screen; keep it edge-to-edge */
   html[data-tg-app="1"] #agent-settings-modal {
     border-radius: 0 !important;
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   MOBILE MINI APP — Phase 4.5 PROPER MOBILE PASS
+   ------------------------------------------------------------
+   Activated on small viewport regardless of TG context (also helps desktop
+   resize-tested view). On TG WebView (html[data-tg-app="1"]) some rules get
+   stricter via the !important to win over inline styles & legacy CSS.
+   ════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 640px) {
+
+  /* ── iOS SAFE AREAS ────────────────────────────────────────────────────
+     Phones with notches / dynamic island clip top, gesture-handle clips bottom.
+     env(safe-area-inset-*) is the proper iOS way to get those distances. */
+  html[data-tg-app="1"] body { padding-top: env(safe-area-inset-top); }
+  html[data-tg-app="1"] .topbar {
+    padding-top: max(8px, env(safe-area-inset-top)) !important;
+  }
+  html[data-tg-app="1"] .modal-content,
+  html[data-tg-app="1"] .studio-dialog,
+  html[data-tg-app="1"] .tap-modal {
+    padding-bottom: max(16px, env(safe-area-inset-bottom)) !important;
+  }
+
+  /* ── CHECKBOXES — proper square, centered, big enough for fingers ──────
+     The fix: explicit width/height/border-radius, flex centering for the ::before
+     checkmark (clip-path on a flexed pseudo can drift on mobile WebKit). */
+  input[type="checkbox"]:not(.toggle-switch input):not(.switch input):not(.tg-cb-skip) {
+    width: 22px !important;
+    height: 22px !important;
+    min-width: 22px !important;       /* avoid flex shrink in cramped rows */
+    border-radius: 6px !important;
+    border-width: 2px !important;
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    background: var(--bg-tertiary, rgba(255,255,255,0.04)) !important;
+    border-color: var(--border, rgba(255,255,255,0.18)) !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer !important;
+    transition: background 120ms, border-color 120ms, transform 80ms !important;
+    flex-shrink: 0 !important;
+    margin: 0 !important;
+    vertical-align: middle !important;
+    position: relative !important;
+  }
+  input[type="checkbox"]:not(.toggle-switch input):not(.switch input)::before {
+    content: "" !important;
+    width: 12px !important;
+    height: 12px !important;
+    transform: scale(0) !important;
+    transition: transform 120ms cubic-bezier(0.22, 1.5, 0.36, 1) !important;
+    background: #ffffff !important;
+    box-shadow: none !important;
+    clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%) !important;
+  }
+  input[type="checkbox"]:not(.toggle-switch input):not(.switch input):checked {
+    background: var(--accent, #0098ea) !important;
+    border-color: var(--accent, #0098ea) !important;
+  }
+  input[type="checkbox"]:not(.toggle-switch input):not(.switch input):checked::before {
+    transform: scale(1) !important;
+  }
+  input[type="checkbox"]:not(.toggle-switch input):not(.switch input):active {
+    transform: scale(0.92) !important;
+  }
+
+  /* ── RADIO BUTTONS — same finger-friendly sizing ───────────────────────  */
+  input[type="radio"] {
+    width: 22px !important;
+    height: 22px !important;
+    min-width: 22px !important;
+    border-width: 2px !important;
+    flex-shrink: 0 !important;
+  }
+  input[type="radio"]:checked::before {
+    width: 10px !important;
+    height: 10px !important;
+  }
+
+  /* ── IOS-STYLE TOGGLES — proper sizing, no double-circle bug ───────────
+     The "two overlapping circles" optical bug happens when the slider track
+     has a glow shadow that bleeds past the knob. Fix: drop the shadow on
+     checked state, give the knob a single clean shadow. */
+  .toggle-switch,
+  .switch {
+    width: 48px !important;
+    height: 28px !important;
+    flex-shrink: 0 !important;
+  }
+  .toggle-slider,
+  .switch .slider {
+    border-radius: 14px !important;
+    box-shadow: none !important;
+    transition: background 180ms !important;
+  }
+  .toggle-slider::before,
+  .switch .slider::before {
+    width: 22px !important;
+    height: 22px !important;
+    bottom: 3px !important;
+    left: 3px !important;
+    border-radius: 50% !important;
+    background: #ffffff !important;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.25), 0 0 1px rgba(0,0,0,0.1) !important;
+    transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1) !important;
+  }
+  .toggle-switch input:checked + .toggle-slider,
+  .switch input:checked + .slider {
+    background: var(--accent, #0098ea) !important;
+    box-shadow: none !important;
+  }
+  .toggle-switch input:checked + .toggle-slider::before,
+  .switch input:checked + .slider::before {
+    transform: translateX(20px) !important;
+  }
+
+  /* ── FORM ROWS — proper label-on-left / control-on-right alignment ─────
+     Common pattern: <div class="row"><label>X</label><toggle/></div> ends up
+     vertically misaligned because labels grow taller than 28px toggles. */
+  .settings-row,
+  .form-row,
+  .toggle-row,
+  .st-row,
+  [class*="-setting-row"] {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 12px !important;
+    min-height: 48px !important;
+    padding: 8px 0 !important;
+  }
+  /* Labels: allow wrap, keep control fixed-width */
+  .settings-row > label:first-child,
+  .form-row > label:first-child,
+  .toggle-row > label:first-child {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    font-size: 14px !important;
+    line-height: 1.35 !important;
+    margin: 0 !important;
+  }
+  .settings-row > .toggle-switch,
+  .form-row > .toggle-switch,
+  .toggle-row > .toggle-switch {
+    flex: 0 0 auto !important;
+  }
+
+  /* ── BUTTONS — proper minimum sizing, no awkward thin buttons ──────────  */
+  .btn, .tap-btn, .rt-save-btn, .btn-action, .rt-btn,
+  button.btn, button.tap-btn {
+    min-height: 44px !important;
+    padding: 10px 18px !important;
+    font-size: 15px !important;
+    border-radius: 12px !important;
+  }
+  .btn-sm, .btn.btn-sm {
+    min-height: 36px !important;
+    padding: 6px 12px !important;
+    font-size: 13px !important;
+  }
+
+  /* ── INPUT FIELDS — bigger font to disable iOS zoom-on-focus ──────────
+     iOS Safari zooms in when input font-size < 16px. Lock it at 16px. */
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"],
+  input[type="search"],
+  input[type="url"],
+  input[type="tel"],
+  textarea,
+  select {
+    font-size: 16px !important;
+    min-height: 44px !important;
+    padding: 10px 14px !important;
+    border-radius: 10px !important;
+  }
+  textarea {
+    min-height: 80px !important;
+    line-height: 1.4 !important;
+  }
+
+  /* ── TOPBAR — compact, no overflow ─────────────────────────────────────  */
+  .topbar {
+    gap: 8px !important;
+    padding: 8px 12px !important;
+    min-height: 56px !important;
+  }
+  .topbar .user-avatar,
+  .topbar .avatar-btn,
+  #topbar-avatar-badge {
+    width: 36px !important;
+    height: 36px !important;
+    flex: 0 0 36px !important;
+    font-size: 14px !important;
+  }
+
+  /* ── CARDS / TILES — proper mobile padding ─────────────────────────────  */
+  .agent-card,
+  .agent-card-enhanced,
+  .ap-card,
+  .stat-card,
+  .feature-card,
+  .skill-card {
+    padding: 14px !important;
+    border-radius: 14px !important;
+  }
+  .agent-card-enhanced .agent-name,
+  .agent-card .agent-name {
+    font-size: 15px !important;
+    line-height: 1.3 !important;
+  }
+
+  /* ── TABS — scrollable horizontal nav on small screens ─────────────────  */
+  .st-nav,
+  .tab-nav,
+  .tabs-nav,
+  [class*="-tab-nav"] {
+    overflow-x: auto !important;
+    scroll-snap-type: x mandatory !important;
+    -webkit-overflow-scrolling: touch !important;
+    scrollbar-width: none !important;
+    flex-wrap: nowrap !important;
+    padding-bottom: 4px !important;
+  }
+  .st-nav::-webkit-scrollbar,
+  .tab-nav::-webkit-scrollbar,
+  .tabs-nav::-webkit-scrollbar { display: none !important; }
+  .st-nav > *,
+  .tab-nav > *,
+  .tabs-nav > * {
+    scroll-snap-align: start !important;
+    flex: 0 0 auto !important;
+  }
+
+  /* ── MODALS — bottom sheet with drag-handle for affordance ──────────────  */
+  html[data-tg-app="1"] .modal-content::before,
+  html[data-tg-app="1"] .studio-dialog::before,
+  html[data-tg-app="1"] .tap-modal::before {
+    content: "";
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255,255,255,0.25);
+    pointer-events: none;
+  }
+  html[data-tg-app="1"] .modal-content,
+  html[data-tg-app="1"] .studio-dialog,
+  html[data-tg-app="1"] .tap-modal {
+    position: relative !important;
+    padding-top: 24px !important;
+  }
+  /* Tighten modal close X — was floating awkwardly on small modals */
+  .modal-close,
+  .modal-close-btn {
+    width: 36px !important;
+    height: 36px !important;
+    font-size: 20px !important;
+    border-radius: 50% !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  /* ── BALANCE / STAT PILLS — wrap, no horizontal overflow ────────────────  */
+  .balance-pill,
+  .stat-pill,
+  .tap-pill {
+    font-size: 13px !important;
+    padding: 6px 10px !important;
+    border-radius: 999px !important;
+    max-width: 100% !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  /* ── PAGE HEADERS — tighter ─────────────────────────────────────────────  */
+  .page-header h1,
+  .page-title {
+    font-size: 22px !important;
+    line-height: 1.2 !important;
+    margin-bottom: 4px !important;
+  }
+  .page-subtitle,
+  .page-header .subtitle {
+    font-size: 13px !important;
+    line-height: 1.4 !important;
+  }
+
+  /* ── NO BACKDROP overlay — content behind sidebar stays clear.
+     Blur lives ON THE SIDEBAR ITSELF (frosted glass) so only what's
+     behind the sidebar gets the blur effect, not the entire screen. */
+  html[data-tg-app="1"] body.sidebar-open::after,
+  html[data-tg-app="1"] body.sidebar-mobile-open::after {
+    display: none !important;
+  }
+  @keyframes tap-fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+  /* ── HORIZONTAL OVERFLOW guard — fixes "крив" alignment on phones ──────
+     Many pages have content blocks > viewport width that cause horizontal
+     scroll which jitters all alignment. Force body container max-width. */
+  html[data-tg-app="1"] body,
+  html[data-tg-app="1"] main {
+    max-width: 100vw !important;
+    overflow-x: hidden !important;
+  }
+  html[data-tg-app="1"] .page,
+  html[data-tg-app="1"] .page-content,
+  html[data-tg-app="1"] .content-wrap {
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+    box-sizing: border-box !important;
+  }
+  /* Tables and code blocks that overflow get their OWN scroll, not body-wide */
+  html[data-tg-app="1"] table,
+  html[data-tg-app="1"] pre {
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    display: block !important;
+  }
+
+  /* ── GLOBAL ALIGNMENT NUKE ─────────────────────────────────────────────
+     "Всё съезжано" usually = mixed box-sizing + width:100% with padding +
+     stale inline margins. We force border-box everywhere + reset margins
+     on top-level containers + neutralize negative-margin "bleed" hacks. */
+  html[data-tg-app="1"] *,
+  html[data-tg-app="1"] *::before,
+  html[data-tg-app="1"] *::after {
+    box-sizing: border-box !important;
+  }
+  html[data-tg-app="1"] main > *,
+  html[data-tg-app="1"] .page > *,
+  html[data-tg-app="1"] .page-content > *,
+  html[data-tg-app="1"] .content-wrap > * {
+    max-width: 100% !important;
+  }
+  /* Defeat negative-margin layouts (-12px, -16px, -20px gutters) that work
+     on desktop but pop content past the screen edge on phones. */
+  html[data-tg-app="1"] [class*="-gutter"],
+  html[data-tg-app="1"] [style*="margin-left:-"],
+  html[data-tg-app="1"] [style*="margin-right:-"] {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+  /* Common offending grid patterns: percentage-width children with gap */
+  html[data-tg-app="1"] .row,
+  html[data-tg-app="1"] .grid,
+  html[data-tg-app="1"] [class*="-grid"] {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    width: 100% !important;
+  }
+
+  /* ── TABS ALIGNMENT — extra strict ────────────────────────────────────
+     Tabs panels often inherit padding from a desktop-only parent that
+     was assumed to have inline display. Force them to a clean column. */
+  html[data-tg-app="1"] .tab-content,
+  html[data-tg-app="1"] .tab-panel,
+  html[data-tg-app="1"] .st-tab-content,
+  html[data-tg-app="1"] [role="tabpanel"] {
+    width: 100% !important;
+    padding: 12px 0 !important;
+    margin: 0 !important;
+    box-sizing: border-box !important;
+  }
+  html[data-tg-app="1"] .tab-content > *,
+  html[data-tg-app="1"] .tab-panel > *,
+  html[data-tg-app="1"] .st-tab-content > * {
+    max-width: 100% !important;
+  }
+  /* Active tab indicator under each tab — make it cleanly aligned */
+  html[data-tg-app="1"] .st-nav .nav-item.active,
+  html[data-tg-app="1"] .tab-nav .nav-item.active,
+  html[data-tg-app="1"] .tabs-nav .nav-item.active {
+    position: relative !important;
+  }
+  html[data-tg-app="1"] .st-nav .nav-item,
+  html[data-tg-app="1"] .tab-nav .nav-item,
+  html[data-tg-app="1"] .tabs-nav .nav-item {
+    padding: 10px 14px !important;
+    font-size: 14px !important;
+    white-space: nowrap !important;
+  }
+
+  /* ── INFO / DETAIL ROWS — key/value pairs ─────────────────────────────
+     Pattern: <div class="info-row"><span class="label">X</span><span class="value">Y</span></div>
+     Often breaks on mobile because .value contains long addresses. */
+  html[data-tg-app="1"] .info-row,
+  html[data-tg-app="1"] .detail-row,
+  html[data-tg-app="1"] .kv-row,
+  html[data-tg-app="1"] [class*="-info-row"] {
+    display: flex !important;
+    align-items: flex-start !important;
+    justify-content: space-between !important;
+    gap: 10px !important;
+    padding: 8px 0 !important;
+    min-height: 36px !important;
+    width: 100% !important;
+  }
+  html[data-tg-app="1"] .info-row > .label,
+  html[data-tg-app="1"] .info-row > .key,
+  html[data-tg-app="1"] .detail-row > .label,
+  html[data-tg-app="1"] .kv-row > .key {
+    flex: 0 0 auto !important;
+    font-size: 13px !important;
+    color: var(--text-secondary, rgba(255,255,255,0.6)) !important;
+  }
+  html[data-tg-app="1"] .info-row > .value,
+  html[data-tg-app="1"] .info-row > .val,
+  html[data-tg-app="1"] .detail-row > .value,
+  html[data-tg-app="1"] .kv-row > .value {
+    flex: 1 1 auto !important;
+    text-align: right !important;
+    font-size: 13px !important;
+    word-break: break-all !important;
+    min-width: 0 !important;
+  }
+  /* Wallet addresses + tx hashes — ellipsize with monospace */
+  html[data-tg-app="1"] .address,
+  html[data-tg-app="1"] code.addr,
+  html[data-tg-app="1"] [data-address] {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace !important;
+    font-size: 12px !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    max-width: 140px !important;
+    display: inline-block !important;
+    vertical-align: middle !important;
+  }
+
+  /* ── DROPDOWNS / SELECTS — proper picker on mobile ────────────────────  */
+  html[data-tg-app="1"] select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23a8b4c7' stroke-width='1.5' fill='none'/%3E%3C/svg%3E") !important;
+    background-repeat: no-repeat !important;
+    background-position: right 14px center !important;
+    padding-right: 36px !important;
+    appearance: none !important;
+    -webkit-appearance: none !important;
+  }
+
+  /* ── ROW WITH BUTTON ON RIGHT — common pattern that misaligns ─────────  */
+  html[data-tg-app="1"] .row-with-action,
+  html[data-tg-app="1"] [class*="-action-row"] {
+    display: flex !important;
+    align-items: center !important;
+    gap: 10px !important;
+    width: 100% !important;
+  }
+  html[data-tg-app="1"] .row-with-action > :first-child {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+  }
+
+  /* ── KBD shortcut hints (⌘K, Ctrl+K etc) — useless on phone ─────────── */
+  html[data-tg-app="1"] .kbd,
+  html[data-tg-app="1"] kbd,
+  html[data-tg-app="1"] .shortcut-hint,
+  html[data-tg-app="1"] .search .kbd { display: none !important; }
+
+  /* ── TOPBAR row layout — single line, search center, actions right ─── */
+  html[data-tg-app="1"] .topbar {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    gap: 8px !important;
+  }
+  html[data-tg-app="1"] .topbar .search {
+    flex: 1 1 0 !important;       /* share space — don't grab 100% */
+    min-width: 0 !important;
+    max-width: none !important;
+  }
+  html[data-tg-app="1"] .topbar .search input {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+  /* Actions row (bell + balance + avatar) — pinned right, never wrapped */
+  html[data-tg-app="1"] .topbar .row,
+  html[data-tg-app="1"] .topbar > div:last-child {
+    flex: 0 0 auto !important;
+    margin-left: auto !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+  }
+  /* Hamburger first, search second, actions last — order via flex order */
+  html[data-tg-app="1"] #tap-drawer-toggle { order: 0 !important; }
+  html[data-tg-app="1"] .topbar .search   { order: 1 !important; }
+  html[data-tg-app="1"] .topbar .row,
+  html[data-tg-app="1"] .topbar > div:last-child { order: 2 !important; }
+
+  /* ── METRICS GRID — 2-col on desktop becomes 1-col on phone ───────── */
+  html[data-tg-app="1"] .metrics-grid,
+  html[data-tg-app="1"] .stats-grid,
+  html[data-tg-app="1"] [class*="-stats-grid"] {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+    width: 100% !important;
+  }
+
+  /* ── METRIC CARD — horizontal layout: icon on left, text wraps right ── */
+  html[data-tg-app="1"] .metric-card,
+  html[data-tg-app="1"] .stat-card {
+    padding: 14px 16px !important;
+    border-radius: 14px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+    display: grid !important;
+    grid-template-columns: 44px 1fr auto !important;
+    grid-template-areas:
+      "icon title value"
+      "icon label value" !important;
+    column-gap: 12px !important;
+    row-gap: 2px !important;
+    align-items: center !important;
+  }
+  html[data-tg-app="1"] .metric-card > .metric-icon,
+  html[data-tg-app="1"] .metric-card > .stat-icon,
+  html[data-tg-app="1"] .stat-card > .stat-icon {
+    grid-area: icon !important;
+    width: 40px !important;
+    height: 40px !important;
+    flex: 0 0 40px !important;
+    margin: 0 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+  html[data-tg-app="1"] .metric-card > .metric-icon svg,
+  html[data-tg-app="1"] .metric-card > .stat-icon svg {
+    width: 20px !important;
+    height: 20px !important;
+  }
+  html[data-tg-app="1"] .metric-card .metric-label,
+  html[data-tg-app="1"] .metric-card .metric-title,
+  html[data-tg-app="1"] .stat-card .stat-label {
+    grid-area: title !important;
+    font-size: 11px !important;
+    line-height: 1.2 !important;
+    letter-spacing: 0.04em !important;
+    text-transform: uppercase !important;
+    color: var(--text-secondary, rgba(255,255,255,0.6)) !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+  html[data-tg-app="1"] .metric-card .metric-sub,
+  html[data-tg-app="1"] .metric-card .metric-hint,
+  html[data-tg-app="1"] .stat-card .stat-sub {
+    grid-area: label !important;
+    font-size: 12px !important;
+    line-height: 1.3 !important;
+    color: var(--text-muted, rgba(255,255,255,0.45)) !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+  html[data-tg-app="1"] .metric-card .metric-value,
+  html[data-tg-app="1"] .stat-card .stat-value {
+    grid-area: value !important;
+    font-size: 22px !important;
+    font-weight: 700 !important;
+    line-height: 1 !important;
+    white-space: nowrap !important;
+    text-align: right !important;
+  }
+  /* Kill the decorative "glow" + colored top-border bar on mobile — pure noise */
+  html[data-tg-app="1"] .metric-card::before,
+  html[data-tg-app="1"] .metric-card .metric-glow {
+    display: none !important;
+  }
+
+  /* ── PAGE HEADER — actions wrap below title, not get cut off ──────── */
+  html[data-tg-app="1"] .page-header {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 12px !important;
+  }
+  html[data-tg-app="1"] .page-header > div:first-child {
+    width: 100% !important;
+  }
+  html[data-tg-app="1"] .header-actions {
+    display: flex !important;
+    gap: 8px !important;
+    width: 100% !important;
+    flex-wrap: wrap !important;
+  }
+  html[data-tg-app="1"] .header-actions > .btn,
+  html[data-tg-app="1"] .header-actions > div {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+  }
+  html[data-tg-app="1"] .header-actions .btn {
+    justify-content: center !important;
+    white-space: nowrap !important;
+  }
+
+  /* ── HIDE useless theme-palette FAB (.fab) in TG mode ──────────────
+     Telegram already controls theme; this button just opens settings
+     and visually clashes with the bug-report FAB underneath it. */
+  html[data-tg-app="1"] .fab,
+  html[data-tg-app="1"] button.fab {
+    display: none !important;
+  }
+
+  /* ── PAGE-HEADER cut-off content (subtitle "Статус системы...") ────── */
+  html[data-tg-app="1"] .page-subtitle {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    max-width: 100% !important;
+  }
+
+  /* ── ROOT CAUSE: studio-skin.css forces `.app` to a 268px-sidebar +
+     1fr-main grid. When the sidebar is taken out of flow (position:fixed
+     for the Mini App drawer), <main> falls into the 268px column and the
+     1fr column sits empty — that's the "пол экрана пусто" bug.
+     Collapse the grid to a single column so <main> takes full width. */
+  html[data-tg-app="1"] #app,
+  html[data-tg-app="1"] .app {
+    display: block !important;
+    grid-template-columns: 1fr !important;
+    width: 100% !important;
+    max-width: 100vw !important;
+  }
+  /* Force <main> to span full width regardless of grid placement */
+  html[data-tg-app="1"] main,
+  html[data-tg-app="1"] .main-wrapper,
+  html[data-tg-app="1"] .main-content {
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
+    max-width: 100vw !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    box-sizing: border-box !important;
+  }
+  /* All inner wrappers: full width */
+  html[data-tg-app="1"] .page,
+  html[data-tg-app="1"] .page.active,
+  html[data-tg-app="1"] .page-content,
+  html[data-tg-app="1"] .page-header,
+  html[data-tg-app="1"] .topbar {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    box-sizing: border-box !important;
+  }
+  /* Inner header cards (welcome card "Добрый вечер ...") also full width */
+  html[data-tg-app="1"] .page-header > *,
+  html[data-tg-app="1"] .page-content > * {
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+  /* Specifically: the overview greeting / welcome panel */
+  html[data-tg-app="1"] .overview-greeting,
+  html[data-tg-app="1"] .welcome-card,
+  html[data-tg-app="1"] .dashboard-card,
+  html[data-tg-app="1"] [class*="welcome"] {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* ── DUPLICATE HAMBURGER guard — at most one menu trigger visible ─── */
+  html[data-tg-app="1"] .topbar .mobile-hamburger ~ #tap-drawer-toggle,
+  html[data-tg-app="1"] #tap-drawer-toggle ~ .mobile-hamburger {
+    display: none !important;
+  }
+  /* When BOTH happen to be in DOM (race condition), prefer the native one */
+  html[data-tg-app="1"] .topbar:has(.mobile-hamburger) #tap-drawer-toggle {
+    display: none !important;
   }
 }
