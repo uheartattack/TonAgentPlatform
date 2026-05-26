@@ -1,0 +1,256 @@
+/* TON Agent Studio — Design Tokens & Guide-v3 visual primitives.
+   This is the language Claude Design should follow.
+   All colours are CSS variables — никакого хардкода. */
+
+:root {
+  /* ── Surfaces ── */
+  --base:        #070B12;
+  --surface:     #0C1118;
+  --elevated:    #111825;
+  --elevated2:   #162030;
+  --bg-primary:  #070B12;
+  --bg-secondary:#0C1118;
+  --bg-tertiary: #111825;
+  --bg-card:     #111825;
+
+  /* ── Accents ── */
+  --accent:        #0098EA;   /* primary blue */
+  --accent-2:      #a855f7;   /* purple companion */
+  --primary:       #0098EA;
+  --primary-light: #33b5f5;
+  --primary-dark:  #0077bb;
+  --accent-light:  #33b5f5;
+  --accent-dark:   #0077bb;
+  --accent-dim:    rgba(0,152,234,0.15);
+  --accent-glow:   rgba(0,152,234,0.30);
+  /* runtime overrides set --accent-r/--accent-g/--accent-b so the user can
+     pick a different accent in Settings; new code MUST use the rgba(var(...))
+     pattern below, not flat hex. */
+
+  /* ── Text ── */
+  --text-primary:   #E8EDF5;
+  --text-secondary: #6B7A96;
+  --text-muted:     #3D4F6B;
+
+  /* ── Semantic ── */
+  --green:  #22C55E;
+  --red:    #EF4444;
+  --amber:  #F59E0B;
+
+  /* ── Borders / shadow ── */
+  --border:        rgba(255,255,255,0.07);
+  --border-subtle: rgba(255,255,255,0.04);
+  --border-hover:  var(--accent-glow);
+
+  --shadow-sm:    0 1px 2px  rgba(0,0,0,0.5);
+  --shadow-md:    0 4px 6px -1px rgba(0,0,0,0.6);
+  --shadow-lg:    0 10px 15px -3px rgba(0,0,0,0.7);
+  --shadow-glow:  0 0 50px var(--accent-dim);
+  --glow-sm:      0 0 20px var(--accent-dim);
+  --glow-md:      0 0 40px var(--accent-dim);
+  --glow-lg:      0 0 70px var(--accent-glow);
+
+  --ease: cubic-bezier(0.4,0,0.2,1);
+}
+
+/* ──────────────────────────────────────────────────────────────
+   Guide-v3 visual language — the look I want everywhere.
+   ────────────────────────────────────────────────────────────── */
+
+/* HERO BANNER — only on pages that already had a hero. Don't add elsewhere. */
+.hero {
+  position: relative;
+  padding: 48px 40px;
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 0% 0%,   rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.25), transparent 50%),
+    radial-gradient(circle at 100% 100%, rgba(var(--accent2-r,168),var(--accent2-g,85),var(--accent2-b,247),0.18), transparent 50%),
+    linear-gradient(135deg, rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.06), rgba(var(--accent2-r,168),var(--accent2-g,85),var(--accent2-b,247),0.04));
+  border: 1px solid rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.18);
+  overflow: hidden;
+}
+
+/* EYEBROW BADGE — small uppercase pill with pulsing dot */
+.eyebrow {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 12px;
+  border-radius: 100px;
+  background: var(--accent-dim);
+  border: 1px solid rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.3);
+  color: var(--primary);
+  font-size: 11px; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase;
+}
+.eyebrow::before {
+  content: ""; width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+  box-shadow: 0 0 8px var(--primary);
+}
+
+/* GRADIENT-ACCENT WORD — wrap a span around the key word in headings */
+.grad {
+  background: linear-gradient(135deg, var(--primary), var(--accent-2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* PILL TAB BAR — sub-navigation inside a page */
+.pill-tabs {
+  display: flex; gap: 4px;
+  padding: 6px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.025), transparent),
+    var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.18);
+}
+.pill-tab {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 12px 18px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px; font-weight: 500;
+  cursor: pointer;
+  transition: color .2s var(--ease), background .2s var(--ease), border-color .2s var(--ease);
+}
+.pill-tab:hover {
+  color: var(--text-primary);
+  background: rgba(255,255,255,0.04);
+  border-color: rgba(255,255,255,0.07);
+}
+.pill-tab.active {
+  color: white;
+  background: linear-gradient(135deg, var(--primary), #6366f1);
+  border-color: rgba(255,255,255,0.14);
+  font-weight: 600;
+  box-shadow:
+    0 8px 20px rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.4),
+    0 2px 4px rgba(0,0,0,0.25),
+    inset 0 1px 0 rgba(255,255,255,0.18);
+}
+
+/* CARD — soft accent top-line + dim radial behind + lift on hover */
+.card {
+  position: relative;
+  isolation: isolate;
+  background:
+    linear-gradient(180deg, rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.04), transparent 60%),
+    var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 28px 24px 24px;
+  transition: border-color .25s var(--ease), transform .25s var(--ease), box-shadow .25s var(--ease);
+  overflow: hidden;
+}
+.card::before {
+  content: "";
+  position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, var(--primary), var(--accent-2));
+  opacity: 0.5; transition: opacity .25s;
+}
+.card::after {
+  content: "";
+  position: absolute; top: -40px; right: -40px;
+  width: 140px; height: 140px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.08), transparent 65%);
+  filter: blur(20px); pointer-events: none; z-index: -1;
+}
+.card:hover {
+  border-color: rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.4);
+  transform: translateY(-3px);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.25),
+              0 0 0 1px rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.10);
+}
+.card:hover::before { opacity: 1; }
+
+/* NUMBERED-CARD ACCENT — large rounded square with the step number */
+.card .num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--accent-dim), rgba(var(--accent2-r,168),var(--accent2-g,85),var(--accent2-b,247),0.15));
+  border: 1px solid rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.25);
+  color: var(--primary);
+  font-size: 18px; font-weight: 800;
+  margin-bottom: 8px;
+}
+
+/* CHIP / PILL — small inline label */
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 13px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  transition: border-color .15s, color .15s;
+}
+.chip::before {
+  content: ""; width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--primary);
+}
+.chip:hover {
+  border-color: rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.4);
+  color: var(--text-primary);
+}
+
+/* SECTION DIVIDER — uppercase eyebrow with horizontal rules */
+.section-divider {
+  display: flex; align-items: center; gap: 14px;
+  margin: 32px 0 18px;
+  font-size: 12px; font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* TIP / INFO BOX */
+.tip {
+  display: flex; gap: 14px;
+  padding: 16px 18px;
+  background: linear-gradient(135deg, rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.06), rgba(var(--accent2-r,168),var(--accent2-g,85),var(--accent2-b,247),0.04));
+  border: 1px solid rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.18);
+  border-radius: 14px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+/* CTA / GHOST BUTTONS */
+.btn-cta {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 14px 24px;
+  border-radius: 12px;
+  border: none;
+  background: linear-gradient(135deg, var(--primary), #6366f1);
+  color: white;
+  font-size: 14px; font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.3);
+  transition: transform .15s, box-shadow .15s;
+}
+.btn-cta:hover { transform: translateY(-2px); }
+
+.btn-ghost {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 10px 18px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(0,0,0,0.2);
+  color: var(--text-primary);
+  font-size: 12px; font-weight: 600;
+  cursor: pointer;
+}
+.btn-ghost:hover {
+  border-color: var(--primary);
+  background: var(--accent-dim);
+  color: var(--primary);
+}

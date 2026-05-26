@@ -462,6 +462,25 @@ function _isPlanLimitError(data, httpStatus) {
 }
 
 async function apiRequest(method, path, body) {
+  // Back-compat shim: a few call sites use the fetch-style sig
+  //   apiRequest('/api/foo', { method: 'POST', body: JSON.stringify({...}) })
+  // instead of the canonical
+  //   apiRequest('POST', '/api/foo', {...})
+  // Detect by first arg starting with '/' and 2nd arg being a plain options
+  // object — normalise before doing anything else, so all downstream code sees
+  // the canonical shape.
+  if (typeof method === 'string' && method.startsWith('/')) {
+    const _path = method;
+    const _opts = (path && typeof path === 'object') ? path : {};
+    method = _opts.method || 'GET';
+    if (_opts.body !== undefined) {
+      try { body = typeof _opts.body === 'string' ? JSON.parse(_opts.body) : _opts.body; }
+      catch { body = _opts.body; }
+    } else {
+      body = undefined;
+    }
+    path = _path;
+  }
   const opts = {
     method: method || 'GET',
     headers: { 'Content-Type': 'application/json' },
@@ -516,24 +535,47 @@ async function onTelegramAuth(result) {
 }
 
 function updateTopbar() {
-  // Avatar — try real TG photo
-  var av = document.getElementById('topbar-avatar-badge');
-  if (av && currentUser) {
-    var name = currentUser.first_name || currentUser.username || 'U';
-    av.title = name;
-    if (authToken) {
-      var topImg = new Image();
-      topImg.onload = function() {
-        av.textContent = '';
-        av.style.backgroundImage = 'url(' + topImg.src + ')';
-        av.style.backgroundSize = 'cover';
-        av.style.backgroundPosition = 'center';
-      };
-      topImg.onerror = function() { av.textContent = name.charAt(0).toUpperCase(); };
-      topImg.src = '/api/me/avatar?t=' + encodeURIComponent(authToken);
-    } else {
-      av.textContent = name.charAt(0).toUpperCase();
-    }
+  if (!currentUser) return;
+  var name = currentUser.first_name || currentUser.username || 'U';
+  var initial = name.charAt(0).toUpperCase();
+  // Apply photo / initial fallback to EVERY user-avatar element on the page.
+  // Hits sidebar bottom .user-avatar, topbar #topbar-avatar-badge, .avatar-btn
+  // and any element with [data-user-avatar].
+  var sel = '#topbar-avatar-badge, .user-avatar, .avatar-btn, [data-user-avatar]';
+  var nodes = document.querySelectorAll(sel);
+  if (!nodes.length) return;
+  // Reusable: paint initial + accent-gradient as fallback
+  var paintInitial = function(el) {
+    el.textContent = initial;
+    el.style.color = '#fff';
+    el.style.fontWeight = '700';
+    el.style.fontSize = (el.offsetWidth >= 40 ? '16px' : '13px');
+    el.style.display = 'flex';
+    el.style.alignItems = 'center';
+    el.style.justifyContent = 'center';
+    el.style.backgroundImage =
+      'linear-gradient(135deg, rgb(var(--accent-r), var(--accent-g), var(--accent-b)),' +
+      ' rgb(var(--accent2-r), var(--accent2-g), var(--accent2-b)))';
+    el.style.backgroundSize = '';
+    el.style.backgroundPosition = '';
+  };
+  // Try loading photo once, share result across all targets
+  if (authToken) {
+    var photoUrl = '/api/me/avatar?t=' + encodeURIComponent(authToken);
+    var probe = new Image();
+    probe.onload = function() {
+      nodes.forEach(function(el) {
+        el.textContent = '';
+        el.title = name;
+        el.style.backgroundImage = 'url(' + probe.src + ')';
+        el.style.backgroundSize = 'cover';
+        el.style.backgroundPosition = 'center';
+      });
+    };
+    probe.onerror = function() { nodes.forEach(paintInitial); };
+    probe.src = photoUrl;
+  } else {
+    nodes.forEach(paintInitial);
   }
   // Balance from wallet data if available
   var balEl = document.getElementById('topbar-ton-balance');
@@ -1159,10 +1201,270 @@ function renderAgentDetail() {
   html += '<div class="token-stat"><div class="token-stat-label">' + (currentLang === 'ru' ? 'Запросов' : 'Requests') + '</div><div class="token-stat-value amber" id="ts-reqs">—</div></div>';
   html += '</div></div>';
 
+  // ── Composite Tools (agent's own macros) ─────────────────────────────────
+  html += '<div class="agent-detail-section" id="agent-composites-section">';
+  html += '<div class="agent-detail-section-title" style="display:flex;justify-content:space-between;align-items:center">' +
+    '<span>🛠 ' + (currentLang === 'ru' ? 'Композитные тулзы (макросы)' : 'Composite Tools (macros)') + '</span>' +
+    '<button class="btn btn-sm" onclick="openCompositeToolEditor(' + a.id + ')" style="font-size:11px;padding:3px 10px">+ ' + (currentLang === 'ru' ? 'Создать' : 'Create') + '</button>' +
+  '</div>';
+  html += '<div id="agent-composites-list" style="margin-top:8px;font-size:12px;color:var(--text-muted)">' + (currentLang === 'ru' ? 'Загрузка…' : 'Loading…') + '</div>';
+  html += '</div>';
+
+  // ── MCP Servers (external tool providers) ────────────────────────────────
+  html += '<div class="agent-detail-section" id="agent-mcp-section">';
+  html += '<div class="agent-detail-section-title" style="display:flex;justify-content:space-between;align-items:center">' +
+    '<span>🔌 ' + (currentLang === 'ru' ? 'MCP серверы (внешние тулзы)' : 'MCP Servers (external tools)') + '</span>' +
+    '<a href="/studio/mcp-servers" class="btn btn-sm" style="font-size:11px;padding:3px 10px;text-decoration:none">⚙ ' + (currentLang === 'ru' ? 'Управление' : 'Manage') + '</a>' +
+  '</div>';
+  html += '<div id="agent-mcp-list" style="margin-top:8px;font-size:12px;color:var(--text-muted)">' + (currentLang === 'ru' ? 'Загрузка…' : 'Loading…') + '</div>';
+  html += '</div>';
+
   body.innerHTML = html;
 
   // Load token stats async (don't block render)
   loadAgentTokenStats(a.id);
+  // Load composites async
+  loadAgentComposites(a.id);
+  // Load MCP servers async
+  loadAgentMCPServers(a.id);
+}
+
+// ─── MCP Servers — UI in agent detail ─────────────────────────────────────
+// Shows ALL user-owned MCP servers (so you can attach a new one inline) +
+// per-server checkbox for "enabled on this agent". Enabled rows are expanded
+// with the live tool list pulled from the live MCP connection.
+async function loadAgentMCPServers(agentId) {
+  const isRu = currentLang === 'ru';
+  const el = document.getElementById('agent-mcp-list');
+  if (!el) return;
+  showGenAuraSkeleton(el, 3);
+  // Fetch in parallel: all user servers + agent-enabled subset
+  let allRes, enabledRes;
+  try {
+    [allRes, enabledRes] = await Promise.all([
+      apiRequest('GET', '/api/mcp-servers'),
+      apiRequest('GET', '/api/agents/' + agentId + '/mcp-servers'),
+    ]);
+  } catch (e) {
+    el.innerHTML = '<div style="color:var(--danger)">' + escHtml(String(e)) + '</div>';
+    return;
+  }
+  if (!allRes || !allRes.ok) { el.innerHTML = '<div style="color:var(--danger)">' + escHtml((allRes && allRes.error) || 'error') + '</div>'; return; }
+  const all = allRes.items || allRes.servers || [];
+  const enabledIds = new Set((enabledRes && enabledRes.items || []).map(s => s.id));
+
+  if (all.length === 0) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--text-muted);font-style:italic">' +
+      (isRu ? 'У тебя нет MCP серверов. ' : 'No MCP servers yet. ') +
+      '<a href="/studio/mcp-servers" style="color:var(--primary)">' +
+      (isRu ? 'Добавь первый' : 'Add one') + ' →</a></div>';
+    return;
+  }
+
+  const statusBadge = (s) => {
+    const colors = {
+      connected: { bg: 'rgba(34,197,94,0.15)',  fg: '#22c55e', icon: '🟢', label: isRu ? 'подкл.' : 'connected' },
+      pending:   { bg: 'rgba(59,130,246,0.15)', fg: '#3b82f6', icon: '⏳', label: isRu ? 'pending' : 'pending'  },
+      error:     { bg: 'rgba(239,68,68,0.15)',  fg: '#ef4444', icon: '⚠',  label: isRu ? 'ошибка'  : 'error'    },
+      disabled:  { bg: 'rgba(148,163,184,0.15)',fg: '#94a3b8', icon: '⚪', label: isRu ? 'выкл.'   : 'disabled' },
+    }[s.status] || { bg: 'rgba(148,163,184,0.12)', fg: '#94a3b8', icon: '?', label: s.status || 'unknown' };
+    return '<span style="font-size:10px;padding:2px 7px;background:' + colors.bg + ';color:' + colors.fg + ';border-radius:9px;font-weight:500">' + colors.icon + ' ' + colors.label + '</span>';
+  };
+
+  el.innerHTML = all.map(function(s) {
+    const isEnabled = enabledIds.has(s.id);
+    const detailsId = 'mcp-tools-' + agentId + '-' + s.id;
+    return '<div style="padding:10px 12px;background:var(--bg-tertiary);border-radius:8px;margin-bottom:6px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">' +
+        '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex:1;min-width:0">' +
+          '<input type="checkbox" ' + (isEnabled ? 'checked' : '') + ' onchange="toggleAgentMCPServer(' + agentId + ',' + s.id + ',this.checked,this)">' +
+          '<div style="min-width:0;flex:1">' +
+            '<div style="font-weight:600;font-size:13px;display:flex;align-items:center;gap:6px">' +
+              escHtml(s.name) + ' ' + statusBadge(s) +
+              '<span style="font-size:10.5px;color:var(--text-muted);font-weight:400">· ' + (s.tools_count || 0) + ' ' + (isRu ? 'тулз' : 'tools') + '</span>' +
+            '</div>' +
+            '<div style="font-size:10.5px;color:var(--text-muted);margin-top:2px;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(s.url) + '</div>' +
+          '</div>' +
+        '</label>' +
+        (isEnabled
+          ? '<button class="btn btn-sm" style="font-size:10.5px;padding:3px 8px" onclick="toggleMCPToolsExpand(' + agentId + ',' + s.id + ')">' + (isRu ? 'Тулзы' : 'Tools') + ' ▾</button>'
+          : '') +
+      '</div>' +
+      (isEnabled ? '<div id="' + detailsId + '" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)"></div>' : '') +
+    '</div>';
+  }).join('');
+}
+
+async function toggleAgentMCPServer(agentId, serverId, enabled, checkboxEl) {
+  const isRu = currentLang === 'ru';
+  if (checkboxEl) checkboxEl.disabled = true;
+  try {
+    const r = await apiRequest('PUT', '/api/agents/' + agentId + '/mcp-servers/' + serverId, { enabled });
+    if (r.ok) {
+      toast(enabled
+        ? (isRu ? 'Подключено к агенту' : 'Attached to agent')
+        : (isRu ? 'Отключено' : 'Detached'), 'success');
+      // Repaint to refresh the per-server tool drawer + invalidate runtime cache
+      loadAgentMCPServers(agentId);
+    } else {
+      toast(r.error || 'Error', 'error');
+      if (checkboxEl) checkboxEl.checked = !enabled;
+    }
+  } catch (e) {
+    toast(String(e), 'error');
+    if (checkboxEl) checkboxEl.checked = !enabled;
+  } finally {
+    if (checkboxEl) checkboxEl.disabled = false;
+  }
+}
+
+async function toggleMCPToolsExpand(agentId, serverId) {
+  const isRu = currentLang === 'ru';
+  const detailsId = 'mcp-tools-' + agentId + '-' + serverId;
+  const drawer = document.getElementById(detailsId);
+  if (!drawer) return;
+  const isOpen = drawer.style.display === 'block';
+  if (isOpen) { drawer.style.display = 'none'; return; }
+  drawer.style.display = 'block';
+  drawer.innerHTML = '<div style="font-size:11px;color:var(--text-muted)">' + (isRu ? 'Загрузка тулз…' : 'Loading tools…') + '</div>';
+  let r;
+  try { r = await apiRequest('GET', '/api/mcp-servers/' + serverId + '/tools'); }
+  catch (e) { drawer.innerHTML = '<div style="color:var(--danger);font-size:11px">' + escHtml(String(e)) + '</div>'; return; }
+  if (!r || !r.ok) {
+    drawer.innerHTML = '<div style="color:var(--danger);font-size:11px">' + escHtml((r && r.error) || 'error') + '</div>';
+    return;
+  }
+  const tools = r.tools || [];
+  if (tools.length === 0) {
+    drawer.innerHTML = '<div style="font-size:11px;color:var(--text-muted);font-style:italic">' +
+      (isRu ? 'Сервер не вернул ни одной тулзы (возможно offline или needs re-test).' : 'Server returned no tools (offline or needs re-test).') +
+      '</div>';
+    return;
+  }
+  drawer.innerHTML =
+    '<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">' +
+      (isRu ? 'Эти тулзы доступны агенту:' : 'These tools are exposed to the agent:') +
+    '</div>' +
+    '<div style="display:grid;grid-template-columns:1fr;gap:4px;max-height:240px;overflow:auto">' +
+      tools.map(t =>
+        '<div style="padding:6px 8px;background:var(--bg-secondary);border-radius:6px;font-size:11px">' +
+          '<div style="font-family:monospace;font-weight:600;color:var(--text-primary)">' + escHtml(t.name) + '</div>' +
+          (t.description ? '<div style="color:var(--text-muted);margin-top:2px;line-height:1.35">' + escHtml(t.description.slice(0, 200)) + (t.description.length > 200 ? '…' : '') + '</div>' : '') +
+        '</div>',
+      ).join('') +
+    '</div>';
+}
+
+// ─── Composite Tools — UI ─────────────────────────────────────────────────
+async function loadAgentComposites(agentId) {
+  const isRu = currentLang === 'ru';
+  const el = document.getElementById('agent-composites-list');
+  if (!el) return;
+  showGenAuraSkeleton(el, 3);
+  let r;
+  try { r = await apiRequest('GET', '/api/agents/' + agentId + '/composites'); }
+  catch (e) { el.innerHTML = '<div style="color:var(--danger)">' + escHtml(String(e)) + '</div>'; return; }
+  if (!r.ok) { el.innerHTML = '<div style="color:var(--danger)">' + escHtml(r.error || 'error') + '</div>'; return; }
+  const items = r.composites || [];
+  if (items.length === 0) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--text-muted);font-style:italic">' +
+      (isRu ? 'Нет композитов. Создай макрос — агент сам сможет вызывать его как обычную тулзу.' : 'No composites yet. Define one — the agent picks it like any other tool.') +
+      '</div>';
+    return;
+  }
+  el.innerHTML = items.map(function(c) {
+    const stepsArr = Array.isArray(c.steps) ? c.steps : (typeof c.steps === 'string' ? JSON.parse(c.steps) : []);
+    return '<div style="padding:10px 12px;background:var(--bg-tertiary);border-radius:8px;margin-bottom:6px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:start">' +
+        '<div style="flex:1">' +
+          '<div style="font-weight:600;font-size:13px;font-family:monospace">' + escHtml(c.name) + ' <span style="color:var(--text-muted);font-weight:400;font-size:11px">(' + stepsArr.length + ' ' + (isRu ? 'шагов' : 'steps') + ', exec ' + (c.exec_count || 0) + 'x)</span></div>' +
+          '<div style="font-size:12px;color:var(--text-secondary);margin-top:3px">' + escHtml(c.description || '') + '</div>' +
+          '<div style="font-size:10.5px;color:var(--text-muted);margin-top:4px;font-family:monospace">' +
+            stepsArr.map(function(s, i) { return (i + 1) + '. ' + escHtml(s.tool || '?'); }).join(' → ') +
+          '</div>' +
+        '</div>' +
+        '<div style="display:flex;gap:4px;margin-left:8px">' +
+          '<button class="btn btn-sm" style="font-size:10.5px;padding:3px 8px" onclick="openCompositeToolEditor(' + agentId + ',\'' + escJsAttr(c.name) + '\')">✎</button>' +
+          '<button class="btn btn-sm" style="font-size:10.5px;padding:3px 8px;color:#ef4444" onclick="deleteComposite(' + agentId + ',\'' + escJsAttr(c.name) + '\')">×</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+async function deleteComposite(agentId, name) {
+  const isRu = currentLang === 'ru';
+  if (!confirm(isRu ? ('Удалить композит "' + name + '"?') : ('Delete composite "' + name + '"?'))) return;
+  const r = await apiRequest('DELETE', '/api/agents/' + agentId + '/composites/' + encodeURIComponent(name));
+  if (r.ok) {
+    toast(isRu ? 'Удалено' : 'Deleted', 'success');
+    loadAgentComposites(agentId);
+  } else {
+    toast(r.error || 'Error', 'error');
+  }
+}
+
+async function openCompositeToolEditor(agentId, existingName) {
+  const isRu = currentLang === 'ru';
+  // Load existing composite (if editing) so user sees current steps
+  let existing = null;
+  if (existingName) {
+    const r = await apiRequest('GET', '/api/agents/' + agentId + '/composites');
+    if (r.ok) existing = (r.composites || []).find(c => c.name === existingName);
+  }
+  const initialSteps = existing
+    ? (typeof existing.steps === 'string' ? existing.steps : JSON.stringify(existing.steps, null, 2))
+    : '[\n  {"tool": "ton_get_balance", "args": {"address": "{param.wallet}"}},\n  {"tool": "tg_send_message", "args": {"chat_id": "{param.chat_id}", "text": "Balance: {step.0.balance_ton} TON"}}\n]';
+  const initialSchema = existing
+    ? (typeof existing.params_schema === 'string' ? existing.params_schema : JSON.stringify(existing.params_schema, null, 2))
+    : '{\n  "wallet": "string — TON address to check",\n  "chat_id": "string — where to send result"\n}';
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML =
+    '<div style="background:var(--bg-secondary);border-radius:14px;padding:24px;max-width:680px;width:100%;max-height:90vh;overflow:auto">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">' +
+        '<b style="font-size:16px">🛠 ' + (existing ? (isRu ? 'Редактировать макрос' : 'Edit macro') : (isRu ? 'Создать макрос' : 'Create macro')) + '</b>' +
+        '<button class="btn" onclick="this.closest(\'div[style*=fixed]\').remove()" style="background:transparent;padding:4px 10px">×</button>' +
+      '</div>' +
+      '<label style="display:block;margin-bottom:10px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Имя (snake_case)' : 'Name (snake_case)') + '</div>' +
+        '<input id="ct-name" class="rt-input" style="width:100%;font-family:monospace" value="' + escHtml(existing ? existing.name : '') + '" placeholder="check_wallet_and_notify"' + (existing ? ' readonly' : '') + '></label>' +
+      '<label style="display:block;margin-bottom:10px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Описание (что делает)' : 'Description (what it does)') + '</div>' +
+        '<textarea id="ct-desc" class="rt-input" style="width:100%;min-height:50px">' + escHtml(existing ? existing.description : '') + '</textarea></label>' +
+      '<label style="display:block;margin-bottom:10px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Параметры (JSON)' : 'Params schema (JSON)') + '</div>' +
+        '<textarea id="ct-params" class="rt-input" style="width:100%;min-height:80px;font-family:monospace;font-size:12px">' + escHtml(initialSchema) + '</textarea>' +
+        '<div style="font-size:10px;color:var(--text-muted);margin-top:2px">{"param_name": "type — description"}</div></label>' +
+      '<label style="display:block;margin-bottom:14px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Шаги (JSON-массив)' : 'Steps (JSON array)') + '</div>' +
+        '<textarea id="ct-steps" class="rt-input" style="width:100%;min-height:160px;font-family:monospace;font-size:12px">' + escHtml(initialSteps) + '</textarea>' +
+        '<div style="font-size:10px;color:var(--text-muted);margin-top:2px">{"tool": "...", "args": {...}}. Используй {param.X} для входных значений и {step.N.поле} для выхода прошлого шага.</div></label>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end">' +
+        '<button class="btn" onclick="this.closest(\'div[style*=fixed]\').remove()">' + (isRu ? 'Отмена' : 'Cancel') + '</button>' +
+        '<button class="btn btn-primary" id="ct-save">💾 ' + (isRu ? 'Сохранить' : 'Save') + '</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+
+  document.getElementById('ct-save').onclick = async function() {
+    const name = (document.getElementById('ct-name').value || '').trim();
+    const description = (document.getElementById('ct-desc').value || '').trim();
+    if (!name || !/^[a-zA-Z][a-zA-Z0-9_]{1,79}$/.test(name)) { toast(isRu ? 'Имя: a-z, 0-9, _ (с буквы)' : 'Name: a-z, 0-9, _ (start with letter)', 'warning'); return; }
+    if (!description) { toast(isRu ? 'Опиши что делает' : 'Add description', 'warning'); return; }
+    let params_schema = {};
+    try { params_schema = JSON.parse(document.getElementById('ct-params').value || '{}'); }
+    catch (e) { toast(isRu ? 'Невалидный JSON в Params' : 'Bad JSON in Params', 'error'); return; }
+    let steps;
+    try { steps = JSON.parse(document.getElementById('ct-steps').value || '[]'); }
+    catch (e) { toast(isRu ? 'Невалидный JSON в Steps' : 'Bad JSON in Steps', 'error'); return; }
+    if (!Array.isArray(steps) || steps.length === 0) { toast(isRu ? 'Нужен хотя бы 1 шаг' : 'At least 1 step required', 'warning'); return; }
+    const r = await apiRequest('POST', '/api/agents/' + agentId + '/composites', { name, description, params_schema, steps });
+    if (r.ok) {
+      toast(isRu ? 'Сохранено' : 'Saved', 'success');
+      overlay.remove();
+      loadAgentComposites(agentId);
+    } else {
+      toast(r.error || 'Error', 'error');
+    }
+  };
 }
 
 /** Build visual flow diagram HTML for an agent */
@@ -1501,6 +1803,21 @@ function openAgentSettings() {
   if (!modal) return;
   modal.style.display = '';
   var a = _detailAgentData;
+  // Tag the modal with the agent's provider so every tap-* component inside
+  // (.rt-save-btn, .tap-btn, .tap-card, .tap-pill) picks up provider tint
+  // via the --tint var override defined in tap-motion.css.
+  try {
+    var prov = (typeof _tapDetectProvider === 'function') ? _tapDetectProvider(a) : null;
+    if (prov) modal.setAttribute('data-provider', prov);
+    else      modal.removeAttribute('data-provider');
+  } catch (e) {}
+  // TG Mini App — show hardware BackButton; tapping it closes settings
+  try {
+    if (window.__tgAuthHelper) {
+      window.__tgAuthHelper.showBackButton(function() { closeAgentSettings(); });
+      window.__tgAuthHelper.hapticImpact('light');
+    }
+  } catch (e) {}
   var nameEl = document.getElementById('agent-settings-name');
   if (nameEl) nameEl.textContent = (a.name || 'Unnamed').replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F000}-\u{1FFFF}]/gu, '').trim();
   var statusEl = document.getElementById('agent-settings-status');
@@ -1551,6 +1868,8 @@ function openAgentSettings() {
 function closeAgentSettings() {
   var modal = document.getElementById('agent-settings-modal');
   if (!modal) return;
+  // TG Mini App — hide BackButton when leaving settings
+  try { if (window.__tgAuthHelper) window.__tgAuthHelper.hideBackButton(); } catch (e) {}
   modal.classList.add('closing');
   setTimeout(function() {
     modal.style.display = 'none';
@@ -4909,6 +5228,41 @@ async function initAuth() {
     if (cfg && cfg.ok) window._appConfig = cfg;
   } catch (_) {}
 
+  // 1b. TELEGRAM MINI APP AUTO-LOGIN — if we're running inside TG WebView,
+  //     skip the auth screen entirely. Telegram signed our user data; we
+  //     just verify it server-side and create a session.
+  if (window.__tgAuthHelper && window.__tgAuthHelper.initData) {
+    try {
+      const r = await fetch(API_BASE + '/api/auth/tg-webapp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ initData: window.__tgAuthHelper.initData }),
+      }).then(r => r.json());
+      if (r && r.ok && r.token) {
+        authToken = r.token;
+        try { localStorage.setItem('tg_token', authToken); } catch(_){}
+        currentUser = {
+          userId: r.userId,
+          userIdStr: r.userIdStr || String(r.userId),
+          username: r.username || '',
+          first_name: r.firstName || '',
+          photo_url: r.photoUrl || null,
+          _isAdmin: r.isAdmin || false,
+          _isBeta: r.isBeta || false,
+          _acceptedTos: r.acceptedTos || false,
+          _needsTelegramLink: false,
+        };
+        console.log('[TGMiniApp] auto-login OK, user=' + r.userId);
+        showApp();
+        return; // never show auth screen inside Mini App
+      } else {
+        console.warn('[TGMiniApp] auto-login failed:', r && r.error);
+      }
+    } catch (e) {
+      console.warn('[TGMiniApp] auto-login error:', e && e.message);
+    }
+  }
+
   // Show auth screen (it starts hidden to avoid language flash)
   const authScreenEl = document.getElementById('auth-screen');
   if (authScreenEl) authScreenEl.classList.remove('hidden');
@@ -5371,6 +5725,7 @@ checkExistingSession();
 const pageLoadFns = {
   overview:    () => loadOverview(),
   analytics:   () => loadAnalytics(),
+  health:      () => loadHealthPage(),
   persona:     () => loadPersona(),
   knowledge:   () => loadKnowledge(),
   capabilities:() => initCapabilities(),
@@ -6752,6 +7107,81 @@ function navigateTo(pageName) {
 
 // ===== ANALYTICS PAGE =====
 var _analyticsDays = 7;
+
+// ─── Health Dashboard ─────────────────────────────────────────────────────
+async function loadHealthPage() {
+  const isRu = currentLang === 'ru';
+  const list = document.getElementById('health-agents-list');
+  const summary = document.getElementById('health-summary');
+  if (!list) return;
+  showGenAuraSkeleton(list, 5);
+  if (summary) summary.innerHTML = '';
+  let r;
+  try { r = await apiRequest('GET', '/api/health/agents'); }
+  catch (e) { list.innerHTML = '<div style="color:var(--danger);padding:20px">' + escHtml(String(e)) + '</div>'; return; }
+  if (!r.ok) { list.innerHTML = '<div style="color:var(--danger);padding:20px">' + escHtml(r.error || 'error') + '</div>'; return; }
+  const agents = r.agents || [];
+  if (agents.length === 0) {
+    list.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:40px">' + (isRu ? 'Нет агентов' : 'No agents yet') + '</div>';
+    return;
+  }
+  // Summary cards
+  const totalAgents = agents.length;
+  const activeCount = agents.filter(a => a.is_active).length;
+  const pausedCount = agents.filter(a => !a.is_active && a.paused_reason).length;
+  const totalSpendMtd = agents.reduce((s, a) => s + (a.spend_mtd_usd || 0), 0);
+  const totalErrs24h = agents.reduce((s, a) => s + (a.error_count_24h || 0), 0);
+  if (summary) {
+    summary.innerHTML = [
+      ['🤖', isRu ? 'Агентов' : 'Agents', totalAgents, ''],
+      ['🟢', isRu ? 'Активны' : 'Active', activeCount, ''],
+      ['⏸', isRu ? 'На паузе' : 'Paused', pausedCount, pausedCount > 0 ? '#eab308' : ''],
+      ['⚠', isRu ? 'Ошибок 24ч' : 'Errors 24h', totalErrs24h, totalErrs24h > 0 ? '#ef4444' : ''],
+      ['💸', isRu ? 'Расход MTD' : 'Spend MTD', '$' + totalSpendMtd.toFixed(2), ''],
+    ].map(([icon, label, val, color]) =>
+      '<div style="padding:14px 16px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px">' +
+        '<div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">' + icon + ' ' + label + '</div>' +
+        '<div style="font-size:20px;font-weight:600' + (color ? ';color:' + color : '') + '">' + val + '</div>' +
+      '</div>',
+    ).join('');
+  }
+  // Per-agent rows — sortable by error_rate, then last_tick_age
+  agents.sort((a, b) => {
+    if ((b.error_rate_24h || 0) !== (a.error_rate_24h || 0)) return (b.error_rate_24h || 0) - (a.error_rate_24h || 0);
+    return (a.last_tick_age_sec ?? Infinity) - (b.last_tick_age_sec ?? Infinity);
+  });
+  const fmtAge = (s) => {
+    if (s == null) return isRu ? 'нет данных' : 'no data';
+    if (s < 60) return s + 's';
+    if (s < 3600) return Math.floor(s / 60) + 'min';
+    if (s < 86400) return Math.floor(s / 3600) + 'h';
+    return Math.floor(s / 86400) + 'd';
+  };
+  list.innerHTML = agents.map(a => {
+    const errPct = Math.round((a.error_rate_24h || 0) * 100);
+    const errColor = errPct > 30 ? '#ef4444' : errPct > 10 ? '#eab308' : '#22c55e';
+    const statusBadge = a.paused_reason
+      ? '<span style="font-size:11px;padding:2px 8px;background:rgba(234,179,8,0.15);color:#eab308;border-radius:10px">⏸ ' + escHtml(a.paused_reason) + '</span>'
+      : a.is_active
+        ? '<span style="font-size:11px;padding:2px 8px;background:rgba(34,197,94,0.15);color:#22c55e;border-radius:10px">🟢 active</span>'
+        : '<span style="font-size:11px;padding:2px 8px;background:rgba(148,163,184,0.15);color:#94a3b8;border-radius:10px">⚪ inactive</span>';
+    const ageStr = fmtAge(a.last_tick_age_sec);
+    const ageColor = a.last_tick_age_sec == null ? 'var(--text-muted)'
+      : a.last_tick_age_sec < 600 ? '#22c55e'
+      : a.last_tick_age_sec < 3600 ? '#eab308'
+      : '#94a3b8';
+    return '<div style="padding:14px 16px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr;gap:14px;align-items:center">' +
+      '<div>' +
+        '<div style="font-weight:600;font-size:14px"><a href="/studio/agent/' + a.id + '" style="color:var(--text-primary);text-decoration:none">#' + a.id + ' ' + escHtml(a.name) + '</a></div>' +
+        '<div style="font-size:11px;color:var(--text-muted);margin-top:3px">' + escHtml(a.role || 'worker') + (a.provider ? ' · ' + escHtml(a.provider) : '') + (a.model ? ' / ' + escHtml(a.model) : '') + '</div>' +
+      '</div>' +
+      '<div>' + statusBadge + '</div>' +
+      '<div style="font-size:12px"><div style="color:var(--text-muted);font-size:10px">' + (isRu ? 'последняя активность' : 'last activity') + '</div><div style="color:' + ageColor + ';font-weight:500">' + ageStr + '</div></div>' +
+      '<div style="font-size:12px"><div style="color:var(--text-muted);font-size:10px">' + (isRu ? 'ошибки 24ч' : 'errors 24h') + '</div><div style="color:' + errColor + ';font-weight:500">' + a.error_count_24h + ' / ' + a.tick_count_24h + ' (' + errPct + '%)</div></div>' +
+      '<div style="font-size:12px"><div style="color:var(--text-muted);font-size:10px">' + (isRu ? 'расход' : 'spend') + '</div><div style="font-weight:500">$' + (a.spend_mtd_usd || 0).toFixed(3) + ' <span style="color:var(--text-muted);font-size:10px">MTD</span></div></div>' +
+    '</div>';
+  }).join('');
+}
 
 async function loadAnalytics() {
   var container = document.getElementById('analytics-page');
@@ -10280,40 +10710,103 @@ function openAllowanceModal(crewId, memberAgentId, memberName, currentAllowance)
   };
 }
 
-// Sprint 9 — generic "Atlas думает…" overlay shown during any LLM generation.
-// Reusable so role/crew/composite create flows all get the same UX.
-function showAtlasSpinner(label) {
+// ─── Generation Aura — beautiful unified loading animations ───────────────
+// Replaces previous bare "Atlas думает…" spinner. Powered by studio-gen-aura.css.
+//
+// Three modes:
+//   showGenAura(label, sub?)      — fullscreen overlay with rotating aurora orb
+//   showGenAuraInline(el, opts?)  — wraps a button/input with rotating conic glow
+//   showGenAuraSkeleton(el, lines)— renders shimmer bars inside element (chat msgs)
+//
+// Hide with hideGenAura() / hideGenAuraInline(el) / clearing element.
+
+const _GEN_AURA_LABELS = {
+  ru: { thinking: 'Atlas думает', generating: 'Генерируем агента', polishing: 'Atlas улучшает текст', streaming: 'Atlas отвечает', loading: 'Загрузка' },
+  en: { thinking: 'Atlas thinking', generating: 'Generating agent',   polishing: 'Atlas polishing text', streaming: 'Atlas streaming',  loading: 'Loading'    },
+};
+
+function _genAuraEl() { return document.getElementById('_gen-aura-overlay'); }
+
+function showGenAura(label, sub) {
   const isRu = currentLang === 'ru';
-  let el = document.getElementById('_atlas-spin-overlay');
+  const L = _GEN_AURA_LABELS[isRu ? 'ru' : 'en'];
+  label = label || L.thinking;
+  sub   = sub   || ''; // optional second-line status (e.g. "calling gemini-2.0-flash-lite…")
+  let el = _genAuraEl();
   if (!el) {
     el = document.createElement('div');
-    el.id = '_atlas-spin-overlay';
-    el.style.cssText = 'position:fixed;inset:0;background:rgba(8,11,20,0.72);backdrop-filter:blur(4px);z-index:99999;display:flex;align-items:center;justify-content:center;font-family:Inter,system-ui;animation:fadeIn .2s ease';
+    el.id = '_gen-aura-overlay';
+    el.className = 'gen-aura-overlay';
     el.innerHTML =
-      '<style id="_atlas-spin-style">@keyframes _aSpin{to{transform:rotate(360deg)}}@keyframes _aDot{0%,80%,100%{opacity:.2}40%{opacity:1}}@keyframes fadeIn{from{opacity:0}to{opacity:1}}</style>' +
-      '<div style="background:linear-gradient(135deg,rgba(168,85,247,0.10),rgba(0,168,255,0.10));border:1px solid rgba(168,85,247,0.30);border-radius:18px;padding:32px 40px;text-align:center;max-width:420px">' +
-        '<div style="width:48px;height:48px;border:3px solid rgba(168,85,247,0.18);border-top-color:#a855f7;border-radius:50%;margin:0 auto 16px;animation:_aSpin 1s linear infinite"></div>' +
-        '<div id="_atlas-spin-label" style="font-size:14px;color:var(--text-primary);font-weight:600">' + (isRu ? 'Atlas думает' : 'Atlas thinking') + '</div>' +
-        '<div style="margin-top:8px;font-size:12px;color:var(--text-muted)">' +
-          '<span style="animation:_aDot 1.4s infinite;display:inline-block">●</span> ' +
-          '<span style="animation:_aDot 1.4s infinite .2s;display:inline-block">●</span> ' +
-          '<span style="animation:_aDot 1.4s infinite .4s;display:inline-block">●</span>' +
-        '</div>' +
+      '<div class="gen-aura-overlay__card">' +
+        '<div class="gen-aura-overlay__orb"></div>' +
+        '<div class="gen-aura-text" id="_gen-aura-label" style="font-size:15px"></div>' +
+        '<div class="gen-aura-overlay__sub" id="_gen-aura-sub"></div>' +
+        '<div class="gen-aura-overlay__dots"><span></span><span></span><span></span></div>' +
       '</div>';
     document.body.appendChild(el);
   }
-  const lbl = document.getElementById('_atlas-spin-label');
-  if (lbl) lbl.textContent = label || (isRu ? 'Atlas думает' : 'Atlas thinking');
+  const labelEl = document.getElementById('_gen-aura-label');
+  const subEl   = document.getElementById('_gen-aura-sub');
+  if (labelEl) labelEl.textContent = label;
+  if (subEl)   subEl.textContent   = sub;
 }
-function hideAtlasSpinner() {
-  const el = document.getElementById('_atlas-spin-overlay');
-  if (el) el.remove();
+
+function setGenAuraSub(sub) {
+  const subEl = document.getElementById('_gen-aura-sub');
+  if (subEl) subEl.textContent = sub || '';
 }
-async function withAtlasSpinner(label, fn) {
-  showAtlasSpinner(label);
+
+function hideGenAura() {
+  const el = _genAuraEl();
+  if (el) {
+    el.style.transition = 'opacity .2s';
+    el.style.opacity = '0';
+    setTimeout(() => el.remove(), 200);
+  }
+}
+
+async function withGenAura(label, fn, sub) {
+  showGenAura(label, sub);
   try { return await fn(); }
-  finally { hideAtlasSpinner(); }
+  finally { hideGenAura(); }
 }
+
+// Inline aura — paints a rotating gradient halo around any element while a
+// task runs. Useful for inputs/buttons that are mid-action without blocking
+// the page. opts.strong=true makes the halo more vivid.
+function showGenAuraInline(el, opts) {
+  if (!el) return;
+  el.classList.add('gen-aura-inline');
+  if (opts && opts.strong) el.classList.add('gen-aura-strong');
+}
+function hideGenAuraInline(el) {
+  if (!el) return;
+  el.classList.remove('gen-aura-inline');
+  el.classList.remove('gen-aura-strong');
+}
+async function withGenAuraInline(el, fn, opts) {
+  showGenAuraInline(el, opts);
+  try { return await fn(); }
+  finally { hideGenAuraInline(el); }
+}
+
+// Skeleton shimmer — wraps an element with .gen-aura-skeleton container and N
+// .gen-aura-skeleton__bar children. Widths cascade 90/70/50% via nth-child.
+// Stagger sweep cascades 120ms per bar (handled by CSS).
+function showGenAuraSkeleton(el, lines) {
+  if (!el) return;
+  const n = Math.max(1, Math.min(8, Number(lines) || 3));
+  let html = '<div class="gen-aura-skeleton">';
+  for (let i = 0; i < n; i++) html += '<div class="gen-aura-skeleton__bar"></div>';
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+// Back-compat aliases — existing code paths continue to work, just look prettier.
+function showAtlasSpinner(label) { return showGenAura(label); }
+function hideAtlasSpinner() { return hideGenAura(); }
+async function withAtlasSpinner(label, fn) { return withGenAura(label, fn); }
 // Atlas /api/atlas/refine wrapper — used by crew/role/agent description fields
 // to upgrade raw user text. If refine fails (network/model err), returns raw
 // unchanged so save always succeeds.
@@ -10726,7 +11219,20 @@ async function viewCrewDetails(crewId) {
       '<div style="margin-bottom:14px"><b>' + (isRu ? 'Последние запуски' : 'Recent executions') + '</b>' +
         ((d.recent_executions || []).length === 0
           ? '<div style="font-size:12px;color:var(--text-muted);margin-top:4px">' + (isRu ? 'пока пусто' : 'none yet') + '</div>'
-          : '<ul style="margin:6px 0 0 18px;font-size:12px">' + d.recent_executions.map(function(e) { return '<li>#' + e.id + ' · ' + e.status + ' · ' + new Date(e.started_at).toLocaleString() + (e.trigger ? ' — ' + escHtml(e.trigger.slice(0, 60)) : '') + '</li>'; }).join('') + '</ul>') +
+          : '<ul style="margin:6px 0 0 18px;font-size:12px">' + d.recent_executions.map(function(e) {
+              return '<li><a href="#" onclick="event.preventDefault();openCrewExecutionMonitor(' + c.id + ',' + e.id + ');return false;" style="color:var(--primary)">#' + e.id + '</a> · ' +
+                e.status + ' · ' + new Date(e.started_at).toLocaleString() +
+                (e.trigger ? ' — ' + escHtml(String(e.trigger).slice(0, 60)) : '') + '</li>';
+            }).join('') + '</ul>') +
+      '</div>' +
+      // ── Run crew (NEW) ──
+      '<div style="margin-bottom:14px;padding:12px;background:rgba(34,197,94,0.06);border:1px solid rgba(34,197,94,0.20);border-radius:10px">' +
+        '<b>▶ ' + (isRu ? 'Запустить команду' : 'Run crew') + '</b>' +
+        '<div style="display:flex;gap:6px;margin-top:8px">' +
+          '<input id="cd-run-input-' + c.id + '" class="rt-input" style="flex:1" placeholder="' + (isRu ? 'Задача для команды (например: «найди и купи NFT за < 5 TON»)' : 'Task for the crew') + '">' +
+          '<button class="btn btn-primary" id="cd-run-btn-' + c.id + '" style="white-space:nowrap;font-size:12px;padding:6px 14px">▶ ' + (isRu ? 'Запустить' : 'Run') + '</button>' +
+        '</div>' +
+        '<div style="font-size:10px;color:var(--text-muted);margin-top:4px">' + (isRu ? 'Агенты команды выполняют задачу по очереди. Откроется монитор прогресса.' : 'Crew members run sequentially. A live progress monitor will open.') + '</div>' +
       '</div>' +
       // ── Crew wallet section ──
       '<div style="margin-bottom:14px;padding:12px;background:rgba(0,168,255,0.06);border:1px solid rgba(0,168,255,0.18);border-radius:10px">' +
@@ -10801,6 +11307,28 @@ async function viewCrewDetails(crewId) {
     }
   })();
 
+  // Run handler — POST /api/crews/:id/run then open live monitor
+  const runBtn = document.getElementById('cd-run-btn-' + c.id);
+  if (runBtn) {
+    runBtn.onclick = async function() {
+      const inputEl = document.getElementById('cd-run-input-' + c.id);
+      const task = (inputEl && inputEl.value || '').trim();
+      if (!task) { toast(isRu ? 'Введи задачу' : 'Enter a task', 'warning'); return; }
+      runBtn.disabled = true;
+      runBtn.textContent = isRu ? 'Стартуем…' : 'Starting…';
+      try {
+        const r = await apiRequest('POST', '/api/crews/' + c.id + '/run', { input: task });
+        if (!r.ok) { toast(r.error || 'Error', 'error'); return; }
+        // Close details modal, open live monitor
+        overlay.remove();
+        openCrewExecutionMonitor(c.id, r.execId);
+      } finally {
+        runBtn.disabled = false;
+        runBtn.textContent = '▶ ' + (isRu ? 'Запустить' : 'Run');
+      }
+    };
+  }
+
   // Save handler — inline edits, PUT /api/crews/:id with the full diff
   document.getElementById('cd-save-' + c.id).onclick = async function() {
     const name = (document.getElementById('cd-name').value || '').trim();
@@ -10840,6 +11368,118 @@ async function viewCrewDetails(crewId) {
       toast(r.error || 'Error', 'error');
     }
   };
+}
+
+// ─── Live crew execution monitor ──────────────────────────────────────────
+// Opens a modal that polls /api/crews/:crewId/executions/:execId every 600ms
+// until status != 'running' (or user closes). Shows per-member status with
+// colored pills + output_preview + timings.
+async function openCrewExecutionMonitor(crewId, execId) {
+  const isRu = currentLang === 'ru';
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML =
+    '<div style="background:var(--bg-secondary);border-radius:14px;padding:24px;max-width:680px;width:100%;max-height:90vh;overflow:auto">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">' +
+        '<div><b style="font-size:16px">▶ ' + (isRu ? 'Запуск команды' : 'Crew run') + '</b>' +
+          '<div style="font-size:11px;color:var(--text-muted);margin-top:2px">crew #' + crewId + ' · exec #' + execId + '</div>' +
+        '</div>' +
+        '<div id="cem-overall-status" class="gen-aura-text" style="font-size:13px;padding:6px 12px;background:rgba(59,130,246,0.10);border-radius:20px;font-weight:600">⏳ ' + (isRu ? 'выполняется…' : 'running…') + '</div>' +
+      '</div>' +
+      '<div id="cem-members" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px"><div class="gen-aura-skeleton"><div class="gen-aura-skeleton__bar"></div><div class="gen-aura-skeleton__bar"></div><div class="gen-aura-skeleton__bar"></div></div></div>' +
+      '<div id="cem-final" style="display:none;padding:12px;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.20);border-radius:10px;margin-bottom:14px"></div>' +
+      '<div style="display:flex;justify-content:flex-end">' +
+        '<button class="btn" onclick="this.closest(\'div[style*=fixed]\').remove()">' + (isRu ? 'Закрыть' : 'Close') + '</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+
+  let stopped = false;
+  const stopPoll = () => { stopped = true; };
+  // Stop poll when modal is removed (close button, ESC, etc.)
+  const obs = new MutationObserver(() => {
+    if (!document.body.contains(overlay)) { stopPoll(); obs.disconnect(); }
+  });
+  obs.observe(document.body, { childList: true });
+
+  const renderMembers = function(members) {
+    const isRu = currentLang === 'ru';
+    const cont = document.getElementById('cem-members');
+    if (!cont) return;
+    if (!members || members.length === 0) {
+      cont.innerHTML = '<div style="color:var(--text-muted);font-size:12px">' + (isRu ? 'нет участников' : 'no members') + '</div>';
+      return;
+    }
+    cont.innerHTML = members.map(function(m) {
+      const statusColor = {
+        pending:   { bg: 'rgba(148,163,184,0.12)', fg: '#94a3b8', icon: '⏸',  label: isRu ? 'ждёт'      : 'pending', cls: '' },
+        running:   { bg: 'rgba(59,130,246,0.15)',  fg: '#3b82f6', icon: '⏳', label: isRu ? 'работает'  : 'running', cls: 'gen-aura-text' },
+        completed: { bg: 'rgba(34,197,94,0.15)',   fg: '#22c55e', icon: '✓',  label: isRu ? 'готово'    : 'done',    cls: '' },
+        failed:    { bg: 'rgba(239,68,68,0.15)',   fg: '#ef4444', icon: '✗',  label: isRu ? 'ошибка'    : 'failed',  cls: '' },
+      }[m.status] || { bg: 'rgba(148,163,184,0.12)', fg: '#94a3b8', icon: '?', label: m.status, cls: '' };
+      const dur = (m.started_at && m.finished_at)
+        ? Math.round((new Date(m.finished_at) - new Date(m.started_at)) / 100) / 10 + 's'
+        : (m.started_at ? Math.round((Date.now() - new Date(m.started_at)) / 100) / 10 + 's' : '—');
+      return '<div style="padding:10px 12px;background:var(--bg-tertiary);border-radius:8px;border-left:3px solid ' + statusColor.fg + '">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">' +
+          '<div style="font-size:13px"><b>#' + (m.step_index + 1) + '</b> · ' + escHtml(m.member_label || 'agent_' + m.agent_id) +
+            ' <span style="font-size:11px;color:var(--text-muted)">(' + escHtml(m.role || 'worker') + ')</span>' +
+          '</div>' +
+          '<div style="display:flex;align-items:center;gap:8px">' +
+            '<span style="font-size:10px;color:var(--text-muted);font-family:monospace">' + dur + '</span>' +
+            '<span class="' + statusColor.cls + '" style="font-size:11px;padding:2px 8px;background:' + statusColor.bg + (statusColor.cls ? '' : ';color:' + statusColor.fg) + ';border-radius:10px;font-weight:600">' + statusColor.icon + ' ' + statusColor.label + '</span>' +
+          '</div>' +
+        '</div>' +
+        (m.error
+          ? '<div style="font-size:11px;color:#ef4444;background:rgba(239,68,68,0.08);padding:6px 8px;border-radius:6px;margin-top:4px;font-family:monospace">⚠ ' + escHtml(m.error) + '</div>'
+          : '') +
+        (m.output_preview
+          ? '<div style="font-size:11px;color:var(--text-secondary);background:rgba(255,255,255,0.03);padding:6px 8px;border-radius:6px;margin-top:4px;max-height:80px;overflow:auto;white-space:pre-wrap">' + escHtml(m.output_preview) + '</div>'
+          : '') +
+      '</div>';
+    }).join('');
+  };
+
+  // Poll loop
+  const poll = async function() {
+    if (stopped) return;
+    let r;
+    try { r = await apiRequest('GET', '/api/crews/' + crewId + '/executions/' + execId); }
+    catch (e) { setTimeout(poll, 1200); return; }
+    if (stopped) return;
+    if (!r || !r.ok) {
+      const el = document.getElementById('cem-overall-status');
+      if (el) { el.textContent = '✗ ' + (r && r.error ? r.error : 'error'); el.style.background = 'rgba(239,68,68,0.15)'; el.style.color = '#ef4444'; }
+      return;
+    }
+    const exec = r.execution;
+    renderMembers(exec.memberStatuses || []);
+    const statusEl = document.getElementById('cem-overall-status');
+    if (exec.status === 'running') {
+      if (statusEl) statusEl.textContent = '⏳ ' + (isRu ? 'выполняется…' : 'running…');
+      setTimeout(poll, 600);
+    } else {
+      // Finished — show final block
+      if (statusEl) {
+        if (exec.status === 'completed') {
+          statusEl.textContent = '✓ ' + (isRu ? 'готово' : 'completed');
+          statusEl.style.background = 'rgba(34,197,94,0.15)';
+          statusEl.style.color = '#22c55e';
+        } else {
+          statusEl.textContent = '✗ ' + (exec.status || 'failed');
+          statusEl.style.background = 'rgba(239,68,68,0.15)';
+          statusEl.style.color = '#ef4444';
+        }
+      }
+      const finalEl = document.getElementById('cem-final');
+      if (finalEl && exec.finalOutput) {
+        finalEl.style.display = 'block';
+        finalEl.innerHTML = '<div style="font-size:12px;font-weight:600;margin-bottom:6px">🏁 ' + (isRu ? 'Итог' : 'Final output') + '</div>' +
+          '<div style="font-size:12px;white-space:pre-wrap;max-height:200px;overflow:auto">' + escHtml(exec.finalOutput) + '</div>';
+      }
+    }
+  };
+  poll();
 }
 
 async function createCrewWallet(crewId, btnEl) {
@@ -13320,8 +13960,69 @@ console.log('TON Agent Platform Dashboard v2.0 loaded successfully!');
   }
 
   function handleWSEvent(evt) {
+    // ── crew_updated: another tab edited a crew (rename, members, manager etc.) ──
+    if (evt.type === 'crew_updated' && evt.crewId) {
+      try {
+        // If Network page is visible — repaint
+        var np = document.getElementById('network-page');
+        if (np && np.classList.contains('active') && typeof loadNetworkMap === 'function') loadNetworkMap();
+      } catch {}
+      try { if (typeof loadCrewsPage === 'function') loadCrewsPage(); } catch {}
+      try { if (typeof awLoadAndRenderCrewWallets === 'function') awLoadAndRenderCrewWallets(); } catch {}
+      return;
+    }
     var agentId = evt.agentId;
     if (!agentId) return;
+
+    // ── agent_updated: another tab changed role/name/active/goal/description ──
+    if (evt.type === 'agent_updated') {
+      var patch = evt.data || {};
+      // 1) Live caches
+      try {
+        if (_agentsCache) {
+          var a1 = _agentsCache.find(function(a) { return a.id === agentId; });
+          if (a1) {
+            if (patch.name !== undefined) a1.name = patch.name;
+            if (patch.role !== undefined) a1.role = patch.role;
+            if (patch.is_active !== undefined) a1.isActive = !!patch.is_active;
+            if (patch.description !== undefined) a1.description = patch.description;
+            if (patch.goal !== undefined) a1.goal = patch.goal;
+            if (patch.action_scope !== undefined) a1.action_scope = patch.action_scope;
+          }
+        }
+      } catch {}
+      try {
+        if (typeof _networkNodes !== 'undefined' && _networkNodes && _networkNodes.forEach) {
+          _networkNodes.forEach(function(n) {
+            if (n && n.id === agentId) {
+              if (patch.name !== undefined) n.label = patch.name;
+              if (patch.role !== undefined) n.role = patch.role;
+              if (patch.is_active !== undefined) n.is_active = !!patch.is_active;
+            }
+          });
+        }
+      } catch {}
+      try {
+        if (typeof _detailAgentData !== 'undefined' && _detailAgentData && _detailAgentData.id === agentId) {
+          Object.keys(patch).forEach(function(k) { _detailAgentData[k] = patch[k]; });
+        }
+      } catch {}
+      // 2) Cheapest repaint — call existing list renderers if their pages are visible
+      try {
+        var aPage = document.getElementById('agents-page');
+        if (aPage && aPage.classList.contains('active') && typeof renderAgentsPage === 'function') renderAgentsPage();
+      } catch {}
+      try {
+        var nPage = document.getElementById('network-page');
+        if (nPage && nPage.classList.contains('active') && typeof loadNetworkMap === 'function') loadNetworkMap();
+      } catch {}
+      try {
+        if (typeof syncAgentRoleAcrossCaches === 'function' && patch.role !== undefined) {
+          syncAgentRoleAcrossCaches(agentId, patch.role);
+        }
+      } catch {}
+      // Don't return — also let it fall through to the status-pill update path below
+    }
 
     // Update _agentsCache in-place
     if (_agentsCache) {
@@ -13329,6 +14030,9 @@ console.log('TON Agent Platform Dashboard v2.0 loaded successfully!');
       if (agent) {
         if (evt.type === 'agent_started') agent.isActive = true;
         else if (evt.type === 'agent_stopped') agent.isActive = false;
+        else if (evt.type === 'agent_updated' && evt.data && typeof evt.data.is_active === 'boolean') {
+          agent.isActive = evt.data.is_active;
+        }
       }
     }
 
@@ -17206,8 +17910,12 @@ async function renderAgentMCPTab(body, agent) {
           '<p>' + (isRu ? 'Включи MCP-серверы, доступные этому агенту. Управление списком — на странице MCP Servers слева.' : 'Enable MCP servers for this agent. Manage the global list on the MCP Servers page.') + '</p>' +
         '</div>' +
       '</div>' +
-      '<div id="agent-mcp-list" class="rt-section"><div style="color:var(--text-muted);text-align:center;padding:20px">' + (isRu ? 'Загрузка...' : 'Loading...') + '</div></div>' +
+      '<div id="agent-mcp-list" class="rt-section"></div>' +
     '</div>';
+
+  // Shimmer placeholder while we fetch
+  const listEarly = document.getElementById('agent-mcp-list');
+  if (listEarly) showGenAuraSkeleton(listEarly, 4);
 
   try {
     const [allRes, agentRes] = await Promise.all([
@@ -17295,11 +18003,16 @@ async function submitEditWithAI() {
   if (!_detailAgentData || !_detailAgentData.id) { toast(isRu ? 'Агент не выбран' : 'No agent', 'error'); return; }
   const btn = document.getElementById('edit-ai-go-btn');
   if (btn) { btn.disabled = true; btn.innerHTML = (isRu ? 'Думаю…' : 'Thinking…'); }
+  showGenAura(
+    isRu ? 'Atlas переписывает агента' : 'Atlas rewriting agent',
+    isRu ? ('инструкция: ' + instruction.trim().slice(0, 60) + (instruction.length > 60 ? '…' : '')) : ('prompt: ' + instruction.trim().slice(0, 60) + (instruction.length > 60 ? '…' : '')),
+  );
   try {
     const data = await apiRequest('/api/agents/' + _detailAgentData.id + '/edit-with-ai', {
       method: 'POST',
       body: JSON.stringify({ instruction: instruction.trim(), field }),
     });
+    hideGenAura();
     if (!data || !data.ok) {
       toast((data && data.error) || 'Error', 'error');
       if (btn) { btn.disabled = false; btn.innerHTML = (isRu ? 'Сгенерировать' : 'Generate'); }
@@ -17307,34 +18020,111 @@ async function submitEditWithAI() {
     }
     showEditWithAIDiff(data.original || '', data.proposed || '', data.field, data.model || '');
   } catch (e) {
+    hideGenAura();
     toast(e.message, 'error');
     if (btn) { btn.disabled = false; btn.innerHTML = (isRu ? 'Сгенерировать' : 'Generate'); }
   }
 }
 
+// ─── Word-level diff (LCS) — used by Edit-with-AI preview ─────────────────
+// Returns {left, right} where each is an array of [type, token] ops.
+//   left:  'eq' | 'del' (removed in proposed)
+//   right: 'eq' | 'add' (added in proposed)
+// Tokenizes on word/whitespace boundaries so the diff is human-readable at
+// word granularity rather than character-level noise.
+function _wordDiff(a, b) {
+  const tokenize = function(s) { return s.match(/\S+|\s+/g) || []; };
+  const aw = tokenize(a);
+  const bw = tokenize(b);
+  const m = aw.length, n = bw.length;
+  // Cap LCS table size — 1000x1000 = 1M cells, fine; bigger → bail
+  if (m * n > 4_000_000) {
+    return { left: aw.map(t => ['eq', t]), right: bw.map(t => ['eq', t]), _truncated: true };
+  }
+  const dp = new Array(m + 1);
+  for (let i = 0; i <= m; i++) dp[i] = new Int32Array(n + 1);
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = aw[i-1] === bw[j-1] ? dp[i-1][j-1] + 1 : Math.max(dp[i-1][j], dp[i][j-1]);
+    }
+  }
+  const left = [], right = [];
+  let i = m, j = n;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && aw[i-1] === bw[j-1]) {
+      left.unshift(['eq', aw[i-1]]);
+      right.unshift(['eq', bw[j-1]]);
+      i--; j--;
+    } else if (j > 0 && (i === 0 || dp[i][j-1] >= dp[i-1][j])) {
+      right.unshift(['add', bw[j-1]]);
+      j--;
+    } else {
+      left.unshift(['del', aw[i-1]]);
+      i--;
+    }
+  }
+  return { left, right };
+}
+
+function _renderDiffSide(ops, side) {
+  return ops.map(function(op) {
+    const type = op[0], tok = op[1];
+    if (type === 'eq') return escHtml(tok);
+    // Highlight: del = red on red, add = green on green
+    if (side === 'left') {
+      return '<span style="background:rgba(239,68,68,0.22);color:#fca5a5;border-radius:2px;text-decoration:line-through;text-decoration-color:rgba(239,68,68,0.6)">' + escHtml(tok) + '</span>';
+    }
+    return '<span style="background:rgba(34,197,94,0.22);color:#86efac;border-radius:2px;font-weight:500">' + escHtml(tok) + '</span>';
+  }).join('');
+}
+
 function showEditWithAIDiff(original, proposed, field, model) {
   const isRu = currentLang === 'ru';
+  const diff = _wordDiff(original || '', proposed || '');
+  const leftHtml = _renderDiffSide(diff.left, 'left');
+  const rightHtml = _renderDiffSide(diff.right, 'right');
+  // Count changes for header summary
+  const delCount = diff.left.filter(o => o[0] === 'del').length;
+  const addCount = diff.right.filter(o => o[0] === 'add').length;
+  const diffSummary = diff._truncated
+    ? (isRu ? '⚠ Текст слишком большой — diff отключён' : '⚠ Text too long — diff disabled')
+    : '<span style="color:#ef4444">−' + delCount + '</span> · <span style="color:#22c55e">+' + addCount + '</span>';
+
+  // Shared style for the diff panes — pre-wrap preserves whitespace, scrolls
+  // vertically, contentEditable on right so user can tweak before applying.
+  const paneBase = 'flex:1;min-height:280px;max-height:55vh;overflow:auto;font-family:\'JetBrains Mono\',monospace;font-size:.78rem;padding:10px;border-radius:8px;white-space:pre-wrap;word-break:break-word;line-height:1.5';
+
   const body =
     '<div style="display:flex;flex-direction:column;gap:10px">' +
-      '<div style="font-size:.78rem;color:var(--text-muted)">' +
-        (isRu ? 'Сравнение (модель: ' : 'Comparison (model: ') + escHtml(model) + ')' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px">' +
+        '<div style="font-size:.78rem;color:var(--text-muted)">' +
+          (isRu ? 'Сравнение (модель: ' : 'Comparison (model: ') + escHtml(model) + ')' +
+        '</div>' +
+        '<div style="font-size:.78rem;font-family:\'JetBrains Mono\',monospace">' + diffSummary + '</div>' +
       '</div>' +
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;max-height:55vh">' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:stretch">' +
         '<div style="display:flex;flex-direction:column;min-height:0">' +
           '<div style="font-size:.7rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;margin-bottom:4px">' + (isRu ? 'Было' : 'Original') + '</div>' +
-          '<textarea readonly style="flex:1;min-height:280px;font-family:\'JetBrains Mono\',monospace;font-size:.78rem;padding:10px;border:1px solid var(--border);border-radius:8px;background:rgba(255,255,255,0.02);color:var(--text-secondary);resize:none">' +
-            escHtml(original) +
-          '</textarea>' +
+          '<div id="edit-ai-original-view" style="' + paneBase + ';border:1px solid var(--border);background:rgba(255,255,255,0.02);color:var(--text-secondary)">' +
+            leftHtml +
+          '</div>' +
         '</div>' +
         '<div style="display:flex;flex-direction:column;min-height:0">' +
-          '<div style="font-size:.7rem;font-weight:600;color:#00a8ff;text-transform:uppercase;margin-bottom:4px">' + (isRu ? 'Станет' : 'Proposed') + '</div>' +
-          '<textarea id="edit-ai-proposed" style="flex:1;min-height:280px;font-family:\'JetBrains Mono\',monospace;font-size:.78rem;padding:10px;border:1px solid rgba(var(--accent-r,0),var(--accent-g,168),var(--accent-b,255),0.4);border-radius:8px;background:rgba(var(--accent-r,0),var(--accent-g,168),var(--accent-b,255),0.04);color:var(--text-primary);resize:none">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">' +
+            '<div style="font-size:.7rem;font-weight:600;color:#00a8ff;text-transform:uppercase">' + (isRu ? 'Станет' : 'Proposed') + '</div>' +
+            '<button onclick="_eaiToggleEdit()" id="edit-ai-toggle-btn" style="font-size:.65rem;padding:2px 8px;border-radius:4px;background:rgba(var(--accent-r,0),var(--accent-g,168),var(--accent-b,255),0.10);color:#00a8ff;border:1px solid rgba(var(--accent-r,0),var(--accent-g,168),var(--accent-b,255),0.3);cursor:pointer">' + (isRu ? '✎ Редактировать' : '✎ Edit') + '</button>' +
+          '</div>' +
+          '<div id="edit-ai-proposed-view" style="' + paneBase + ';border:1px solid rgba(var(--accent-r,0),var(--accent-g,168),var(--accent-b,255),0.4);background:rgba(var(--accent-r,0),var(--accent-g,168),var(--accent-b,255),0.04);color:var(--text-primary)">' +
+            rightHtml +
+          '</div>' +
+          // Hidden raw text — toggle swaps between this textarea and the highlighted view
+          '<textarea id="edit-ai-proposed" style="display:none;' + paneBase + ';border:1px solid rgba(var(--accent-r,0),var(--accent-g,168),var(--accent-b,255),0.4);background:rgba(var(--accent-r,0),var(--accent-g,168),var(--accent-b,255),0.04);color:var(--text-primary);resize:none;outline:none">' +
             escHtml(proposed) +
           '</textarea>' +
         '</div>' +
       '</div>' +
       '<div style="font-size:.72rem;color:var(--text-muted)">' +
-        (isRu ? 'Можно отредактировать правую колонку перед применением.' : 'You can edit the right column before applying.') +
+        (isRu ? '🟢 зелёным — добавлено · 🔴 красным — удалено · нажми «Редактировать» чтобы править перед применением.' : '🟢 green — added · 🔴 red — removed · click «Edit» to tweak before applying.') +
       '</div>' +
     '</div>';
   const footer =
@@ -17344,6 +18134,31 @@ function showEditWithAIDiff(original, proposed, field, model) {
       (isRu ? 'Применить' : 'Apply') +
     '</button>';
   openModal(isRu ? 'Предпросмотр изменения' : 'Preview Change', body, footer);
+}
+
+// Toggle between highlighted diff view (default) and raw editable textarea.
+function _eaiToggleEdit() {
+  const view = document.getElementById('edit-ai-proposed-view');
+  const ta   = document.getElementById('edit-ai-proposed');
+  const btn  = document.getElementById('edit-ai-toggle-btn');
+  if (!view || !ta || !btn) return;
+  const isRu = currentLang === 'ru';
+  const showingDiff = view.style.display !== 'none';
+  if (showingDiff) {
+    // Switch to editable raw text
+    view.style.display = 'none';
+    ta.style.display = '';
+    ta.focus();
+    btn.innerHTML = isRu ? '👁 Diff' : '👁 Diff';
+  } else {
+    // User finished editing → re-render diff against current original (we kept it)
+    // Simplest: hide textarea, show static view (which is stale if user edited).
+    // For now just swap visibility back without re-diffing — the textarea value
+    // is what applyEditWithAI() reads anyway.
+    view.style.display = '';
+    ta.style.display = 'none';
+    btn.innerHTML = isRu ? '✎ Редактировать' : '✎ Edit';
+  }
 }
 
 async function applyEditWithAI(field) {
@@ -18170,4 +18985,345 @@ async function _txHashFromBoc(bocB64) {
     console.warn('[Payout] txHashFromBoc failed:', e && e.message);
     return '';
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TAP MOTION BOOTSTRAP — wires tap-motion.css classes onto existing DOM.
+// Runs after initial load AND after every rerender via MutationObserver, so
+// dynamically-added cards / buttons / nav items also get the new styles.
+// Non-invasive: ADDS classes alongside existing ones (.btn-primary stays).
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Map an agent's AI provider to data-provider value (tap-motion.css supports
+// 10 providers; fall back to none if we don't recognize).
+function _tapDetectProvider(agent) {
+  if (!agent) return null;
+  var cfg = {};
+  try {
+    var tc = agent.trigger_config || agent.triggerConfig || {};
+    cfg = typeof tc === 'string' ? JSON.parse(tc) : tc;
+    cfg = cfg.config || cfg;
+  } catch (e) {}
+  var p = String(cfg.AI_PROVIDER || cfg.aiProvider || '').toLowerCase();
+  if (!p) return null;
+  if (p.indexOf('anthropic') >= 0 || p.indexOf('claude') >= 0)   return 'anthropic';
+  if (p.indexOf('openai') >= 0   || p.indexOf('gpt') >= 0)        return 'openai';
+  if (p.indexOf('gemini') >= 0   || p.indexOf('google') >= 0)     return 'gemini';
+  if (p.indexOf('groq') >= 0)                                     return 'groq';
+  if (p.indexOf('deepseek') >= 0)                                 return 'deepseek';
+  if (p.indexOf('openrouter') >= 0)                               return 'openrouter';
+  if (p.indexOf('together') >= 0)                                 return 'together';
+  if (p.indexOf('xai') >= 0      || p.indexOf('grok') >= 0)       return 'xai';
+  if (p.indexOf('mistral') >= 0)                                  return 'mistral';
+  if (p.indexOf('cohere') >= 0)                                   return 'cohere';
+  return null;
+}
+
+function _tapApplyMotion(root) {
+  root = root || document.body;
+  if (!root || !root.querySelectorAll) return;
+
+  // 1. Buttons — add tap-btn + variant + data-ripple. We pick by existing
+  //    .btn-primary / .btn-ghost / .btn-warning / .btn-danger / .btn-success
+  //    classes and add the matching tap variant ALONGSIDE (no removal).
+  root.querySelectorAll('.btn-primary:not([data-tap])').forEach(function(b) {
+    b.classList.add('tap-btn', 'tap-btn--primary');
+    b.setAttribute('data-ripple', '');
+    b.setAttribute('data-tap', '1');
+  });
+  root.querySelectorAll('.btn-ghost:not([data-tap])').forEach(function(b) {
+    b.classList.add('tap-btn', 'tap-btn--ghost');
+    b.setAttribute('data-ripple', '');
+    b.setAttribute('data-tap', '1');
+  });
+  root.querySelectorAll('.btn-warning:not([data-tap]), .btn-danger:not([data-tap])').forEach(function(b) {
+    b.classList.add('tap-btn', 'tap-btn--danger');
+    b.setAttribute('data-ripple', '');
+    b.setAttribute('data-tap', '1');
+  });
+  // Plain .btn (no variant) → ghost
+  root.querySelectorAll('.btn:not(.btn-primary):not(.btn-ghost):not(.btn-warning):not(.btn-danger):not(.btn-success):not([data-tap])').forEach(function(b) {
+    b.classList.add('tap-btn', 'tap-btn--ghost');
+    b.setAttribute('data-ripple', '');
+    b.setAttribute('data-tap', '1');
+  });
+  root.querySelectorAll('.btn-success:not([data-tap])').forEach(function(b) {
+    b.classList.add('tap-btn', 'tap-btn--primary');
+    b.setAttribute('data-ripple', '');
+    b.setAttribute('data-tap', '1');
+  });
+  // Studio-specific button variants — only data-ripple, NO tap-btn class.
+  // .rt-save-btn has its own complete style from Claude Design (in tap-motion.css)
+  // and adding .tap-btn would let .tap-btn::after / .tap-btn--primary background
+  // override the radial halo and glass surface. Just ripple is enough.
+  root.querySelectorAll('.rt-save-btn:not([data-tap]), .btn-action:not([data-tap]), .rt-btn:not([data-tap])').forEach(function(b) {
+    b.setAttribute('data-ripple', '');
+    b.setAttribute('data-tap', '1');
+  });
+  // (Previously here we set inline position/isolation/overflow on every
+  // .tap-btn — that broke horizontal scroll on Settings tabs because the
+  // tab buttons inherited overflow:visible. The .rt-save-btn CSS now does
+  // isolation itself via its own rule, so the JS poke isn't needed.)
+
+  // 2. Sidebar nav items
+  root.querySelectorAll('.nav-item:not([data-tap])').forEach(function(n) {
+    n.classList.add('tap-nav-item');
+    if (n.classList.contains('active')) n.classList.add('is-active');
+    n.setAttribute('data-tap', '1');
+  });
+  // Keep .is-active in sync with .active
+  document.querySelectorAll('.nav-item').forEach(function(n) {
+    var on = n.classList.contains('active');
+    n.classList.toggle('is-active', on);
+  });
+  // Sync body[data-page] so page-scoped CSS can target the current view
+  // without relying on :has() (which matches hidden display:none pages too).
+  try {
+    var activePage = document.querySelector('.page.active');
+    if (activePage && activePage.id) {
+      document.body.dataset.page = activePage.id.replace(/-page$/, '');
+    }
+  } catch (e) {}
+
+  // 3. Agent cards → data-provider tint
+  var agents = (typeof _agentsCache !== 'undefined' && _agentsCache) ? _agentsCache : [];
+  root.querySelectorAll('.agent-card-enhanced[data-id], .agent-card[data-id], .ap-card[data-id]').forEach(function(card) {
+    if (card.hasAttribute('data-provider-applied')) return;
+    var id = Number(card.getAttribute('data-id'));
+    var a = agents.find ? agents.find(function(x) { return x.id === id; }) : null;
+    var prov = _tapDetectProvider(a);
+    if (prov) card.setAttribute('data-provider', prov);
+    card.setAttribute('data-provider-applied', '1');
+  });
+
+  // 4. Status pills — convert .agent-status .active/.paused/.error to tap-pill
+  root.querySelectorAll('.agent-status:not([data-tap])').forEach(function(s) {
+    s.classList.add('tap-pill');
+    if (s.classList.contains('active'))      s.classList.add('tap-pill--running');
+    else if (s.classList.contains('paused')) s.classList.add('tap-pill--paused');
+    else if (s.classList.contains('error'))  s.classList.add('tap-pill--error');
+    else                                     s.classList.add('tap-pill--idle');
+    // Wrap the dot in __dot class if not already
+    var dot = s.querySelector('.status-dot');
+    if (dot && !dot.classList.contains('tap-pill__dot')) dot.classList.add('tap-pill__dot');
+    s.setAttribute('data-tap', '1');
+  });
+
+  // 5. Toasts — our toast() puts .toast.toast-{success|error|warning|info}
+  //    in #toast-container. Decorate so tap-motion CSS overrides apply.
+  root.querySelectorAll('.toast:not([data-tap])').forEach(function(t) {
+    t.classList.add('tap-toast');
+    if (t.classList.contains('toast-success'))      t.classList.add('tap-toast--success');
+    else if (t.classList.contains('toast-error'))   t.classList.add('tap-toast--error');
+    else if (t.classList.contains('toast-warning')) t.classList.add('tap-toast--warning');
+    else                                            t.classList.add('tap-toast--info');
+    t.setAttribute('data-tap', '1');
+  });
+
+  // 6. Modals — our openModal() uses #generic-modal + .studio-dialog.
+  //    Tag the backdrop + card so tap-modal styling kicks in.
+  root.querySelectorAll('#generic-modal:not([data-tap]), .studio-dialog-backdrop:not([data-tap]), [id$="-modal"]:not([data-tap])').forEach(function(m) {
+    if (m.tagName === 'DIV' && getComputedStyle(m).position === 'fixed') {
+      m.classList.add('tap-modal-backdrop');
+    }
+    m.setAttribute('data-tap', '1');
+  });
+  root.querySelectorAll('.modal-content:not([data-tap]), .studio-dialog:not([data-tap]), .generic-modal-content:not([data-tap])').forEach(function(c) {
+    c.classList.add('tap-modal');
+    c.setAttribute('data-tap', '1');
+  });
+
+  // 7. Inputs — our .rt-input / .form-input / .st-textarea are bare <input>.
+  //    Tap-motion needs wrapping in a .tap-input div, but that's invasive.
+  //    Cheap alternative: add focus-ring via bridge CSS (defined in CSS file).
+  root.querySelectorAll('input.rt-input:not([data-tap]), input.form-input:not([data-tap]), textarea.rt-input:not([data-tap]), textarea.form-input:not([data-tap]), textarea.st-textarea:not([data-tap])').forEach(function(i) {
+    i.classList.add('tap-input__field-bridge');
+    i.setAttribute('data-tap', '1');
+  });
+}
+
+// Click ripple — delegated, works on anything with [data-ripple]
+document.addEventListener('click', function(e) {
+  var btn = e.target.closest && e.target.closest('[data-ripple]');
+  if (!btn) return;
+  // TG Mini App haptic — light tick on every button press
+  try { if (window.__tgAuthHelper) window.__tgAuthHelper.hapticImpact('light'); } catch(e){}
+  // Make sure host has position:relative + overflow:hidden so ripple stays inside
+  var cs = getComputedStyle(btn);
+  if (cs.position === 'static') btn.style.position = 'relative';
+  if (cs.overflow !== 'hidden') btn.style.overflow = 'hidden';
+  var rect = btn.getBoundingClientRect();
+  var r = document.createElement('span');
+  r.className = 'tap-btn__ripple';
+  r.style.left = (e.clientX - rect.left) + 'px';
+  r.style.top  = (e.clientY - rect.top)  + 'px';
+  var size = Math.min(180, Math.max(rect.width, rect.height));
+  r.style.width = r.style.height = size + 'px';
+  btn.appendChild(r);
+  setTimeout(function() { r.remove(); }, 500);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EMOJI → LUCIDE SVG replacement.
+// Walk text nodes, replace listed emoji glyphs with <i data-lucide="…"></i>
+// which Lucide library renders as crisp SVG (currentColor-tinted).
+// Skip inputs/textareas/contentEditable/code/pre/svg to avoid corrupting
+// user data or AI responses.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const _TAP_EMOJI_MAP = {
+  '✅': 'check',          '✔': 'check',         '✓': 'check',
+  '❌': 'x',              '✖': 'x',
+  '⚠️': 'triangle-alert', '⚠': 'triangle-alert',
+  '🔥': 'flame',
+  '💼': 'briefcase',
+  '🎯': 'target',
+  '🛠️': 'wrench',         '🛠': 'wrench',
+  '📋': 'clipboard',
+  '🔍': 'search',
+  '⚙️': 'settings',       '⚙': 'settings',
+  '▶️': 'play',           '▶': 'play',
+  '⏸️': 'pause',          '⏸': 'pause',
+  '⏳': 'hourglass',       '⌛': 'hourglass',
+  '📦': 'package',
+  '💡': 'lightbulb',
+  '🚀': 'rocket',
+  '🤖': 'bot',
+  '👤': 'user',
+  '👥': 'users',
+  '💰': 'coins',          '💵': 'banknote',
+  '📊': 'bar-chart-3',    '📈': 'trending-up',  '📉': 'trending-down',
+  '🔗': 'link',
+  '📝': 'pencil-line',    '✏️': 'pencil',       '✏': 'pencil',
+  '🗑️': 'trash-2',        '🗑': 'trash-2',
+  '⭐': 'star',           '🌟': 'sparkles',
+  '💾': 'save',
+  '🔔': 'bell',           '🔕': 'bell-off',
+  '📩': 'mail',           '📧': 'mail',         '✉️': 'mail',
+  '🛡️': 'shield',         '🛡': 'shield',
+  '🔑': 'key',            '🗝️': 'key',
+  '🏠': 'home',
+  '📌': 'pin',
+  '🆔': 'id-card',
+  '💎': 'gem',
+  '⚡': 'zap',            '⚡️': 'zap',
+  '🎨': 'palette',
+  '📁': 'folder',         '📂': 'folder-open',
+  '➕': 'plus',           '➖': 'minus',
+  '✨': 'sparkles',
+  '🎁': 'gift',
+  '📜': 'scroll-text',
+  '🌐': 'globe',
+  '🔄': 'refresh-cw',     '🔁': 'repeat',
+  '📥': 'download',       '📤': 'upload',
+  '🏆': 'trophy',
+  '🆕': 'sparkles',
+  '🟢': '__dot-green',
+  '🔴': '__dot-red',
+  '🟡': '__dot-yellow',
+  '🔵': '__dot-blue',
+  '🟣': '__dot-purple',
+  '⚪': '__dot-gray',
+  '⚫': '__dot-black',
+  '🎙️': 'mic',            '🎙': 'mic',
+  '📷': 'camera',
+  '🔧': 'wrench',
+  '🚦': 'traffic-cone',
+  '🤝': 'handshake',
+  '👑': 'crown',
+  '🧠': 'brain',
+  '🌍': 'globe',          '🌎': 'globe',        '🌏': 'globe',
+  '📞': 'phone',
+  '🔒': 'lock',           '🔓': 'lock-open',
+};
+
+// Pre-build a single regex matching all keys, longest-first to handle
+// variant selectors (e.g. ✏️ before ✏).
+const _TAP_EMOJI_REGEX = (function() {
+  const keys = Object.keys(_TAP_EMOJI_MAP).sort((a, b) => b.length - a.length);
+  return new RegExp('(' + keys.map(e => e.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')).join('|') + ')', 'gu');
+})();
+
+function _tapDotSvg(color) {
+  return '<svg width="10" height="10" viewBox="0 0 24 24" fill="' + color + '" stroke="none" style="vertical-align:middle;display:inline-block;flex:none"><circle cx="12" cy="12" r="6"/></svg>';
+}
+const _TAP_DOT_COLORS = {
+  green: '#22c55e', red: '#ef4444', yellow: '#eab308', blue: '#3b82f6',
+  purple: '#a855f7', gray: '#94a3b8', black: '#475569',
+};
+
+function _tapBuildIconHtml(emoji) {
+  const name = _TAP_EMOJI_MAP[emoji];
+  if (!name) return emoji; // keep original
+  if (name.startsWith('__dot-')) {
+    const color = _TAP_DOT_COLORS[name.slice(6)] || '#94a3b8';
+    return _tapDotSvg(color);
+  }
+  return '<i data-lucide="' + name + '" class="tap-icon" style="width:1em;height:1em;vertical-align:-2px;display:inline-block;stroke-width:2"></i>';
+}
+
+function _tapReplaceEmojisIn(root) {
+  if (!root || !root.querySelectorAll) return;
+  // Skip these containers entirely
+  const skipSel = 'script,style,textarea,input,code,pre,svg,[contenteditable=""],[contenteditable="true"],.no-emoji-replace,[data-no-emoji],.tap-icon';
+  const skipMatches = function(n) {
+    let p = n.parentNode;
+    while (p && p.nodeType === 1) {
+      if (p.matches && p.matches(skipSel)) return true;
+      p = p.parentNode;
+    }
+    return false;
+  };
+  // Collect text nodes that need replacement
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: function(n) {
+      if (!n.nodeValue) return NodeFilter.FILTER_REJECT;
+      if (skipMatches(n))  return NodeFilter.FILTER_REJECT;
+      _TAP_EMOJI_REGEX.lastIndex = 0;
+      return _TAP_EMOJI_REGEX.test(n.nodeValue) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+    }
+  });
+  const targets = [];
+  let node;
+  while ((node = walker.nextNode())) targets.push(node);
+  targets.forEach(function(textNode) {
+    const html = textNode.nodeValue.replace(_TAP_EMOJI_REGEX, function(emoji) {
+      return _tapBuildIconHtml(emoji);
+    });
+    const tmp = document.createElement('span');
+    tmp.className = 'tap-icon-wrap';
+    tmp.innerHTML = html;
+    textNode.parentNode.replaceChild(tmp, textNode);
+  });
+  // Tell Lucide to render any new <i data-lucide> we inserted
+  try { if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons(); } catch (e) {}
+}
+
+// Hook into _tapApplyMotion so DOM mutations also re-process emojis
+const _tap_origApplyMotion = _tapApplyMotion;
+_tapApplyMotion = function(root) {
+  _tap_origApplyMotion(root);
+  try { _tapReplaceEmojisIn(root || document.body); } catch (e) { console.warn('[tap-emoji]', e); }
+};
+
+// Run once on DOMContentLoaded, then keep up with DOM mutations
+function _tapInitBootstrap() {
+  _tapApplyMotion(document.body);
+  try {
+    var obs = new MutationObserver(function(muts) {
+      // Debounce: schedule single application per animation frame
+      if (_tapInitBootstrap._scheduled) return;
+      _tapInitBootstrap._scheduled = true;
+      requestAnimationFrame(function() {
+        _tapInitBootstrap._scheduled = false;
+        _tapApplyMotion(document.body);
+      });
+    });
+    obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+  } catch (e) { console.warn('[tap-motion] observer failed:', e && e.message); }
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _tapInitBootstrap);
+} else {
+  _tapInitBootstrap();
 }
