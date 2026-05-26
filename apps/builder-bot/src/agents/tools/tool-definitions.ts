@@ -533,6 +533,58 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
     {
       type: 'function',
       function: {
+        name: 'jetton_deploy',
+        description: 'Задеплоить новый Jetton (мемкоин/токен) на TON. Агент становится админом и может потом минтить новые токены, передавать админство юзеру или замораживать supply. Газ ~0.15 TON. ВАЖНО: перед деплоем сообщи юзеру параметры (name, symbol, decimals, image) и получи подтверждение. Для тестов используй network=testnet.',
+        parameters: {
+          type: 'object',
+          properties: {
+            name:        { type: 'string', description: 'Полное имя токена ("My Meme Coin")' },
+            symbol:      { type: 'string', description: 'Символ 3-10 знаков ("MEME")' },
+            decimals:    { type: 'integer', description: 'Знаков после запятой (стандарт 9, мемкоины часто 9)', default: 9 },
+            description: { type: 'string', description: 'Описание токена (опционально)' },
+            image:       { type: 'string', description: 'URL логотипа (HTTPS, PNG/JPG 256×256+, или data:image/...)' },
+            network:     { type: 'string', enum: ['mainnet', 'testnet'], description: 'Сеть для деплоя. mainnet=боевая, testnet=тесты', default: 'mainnet' },
+          },
+          required: ['name', 'symbol'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'jetton_mint',
+        description: 'Заминтить (выпустить новые) Jetton-токены на заданный адрес. Может вызвать ТОЛЬКО админ контракта (агент, если он деплоил). Газ ~0.08 TON.',
+        parameters: {
+          type: 'object',
+          properties: {
+            jetton_master: { type: 'string', description: 'Адрес Jetton Master контракта (из jetton_deploy результата)' },
+            to:            { type: 'string', description: 'Адрес получателя (EQ.../UQ...)' },
+            amount:        { type: 'string', description: 'Кол-во в нано-единицах. Для decimals=9: 1 токен = 1000000000. 1 миллиард мемкоина = "1000000000000000000".' },
+            network:       { type: 'string', enum: ['mainnet', 'testnet'], default: 'mainnet' },
+          },
+          required: ['jetton_master', 'to', 'amount'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'jetton_change_admin',
+        description: 'Передать админство Jetton-контракта другому адресу (например юзеру или null-адресу EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c чтобы заморозить supply навсегда). Может вызвать только текущий админ.',
+        parameters: {
+          type: 'object',
+          properties: {
+            jetton_master: { type: 'string', description: 'Адрес Jetton Master контракта' },
+            new_admin:     { type: 'string', description: 'Новый админ (EQ.../UQ...) либо нулевой адрес для отказа от админства' },
+            network:       { type: 'string', enum: ['mainnet', 'testnet'], default: 'mainnet' },
+          },
+          required: ['jetton_master', 'new_admin'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
         name: 'dex_get_prices',
         description: 'Получить цены токенов на DeDust DEX (USD). Можно искать по символу.',
         parameters: {

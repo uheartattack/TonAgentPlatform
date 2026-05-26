@@ -1298,6 +1298,7 @@ async function _oneOffChat(agentId: number): Promise<void> {
 // ── Capability → Tool mapping ──────────────────────────────────────────────
 export const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
   wallet:      ['get_ton_balance', 'send_ton', 'send_jetton', 'get_agent_wallet'],
+  jetton_mint: ['jetton_deploy', 'jetton_mint', 'jetton_change_admin'],
   nft:         ['get_nft_floor'],
   gifts:       ['get_gift_catalog', 'get_fragment_listings', 'appraise_gift', 'scan_arbitrage',
                 'buy_catalog_gift', 'buy_resale_gift', 'list_gift_for_sale', 'get_stars_balance',
@@ -1423,7 +1424,7 @@ export const TOOLSET_PROFILES: Record<string, { label: string; labelRu: string; 
   trading: {
     label: 'Trading — gifts + DeFi + blockchain',
     labelRu: 'Трейдинг — подарки + DeFi + блокчейн',
-    caps: ['telegram', 'state', 'notify', 'web', 'wallet', 'gifts', 'gifts_market', 'defi', 'blockchain', 'nft', 'bitrefill', 'stonfi', 'tonstakers'],
+    caps: ['telegram', 'state', 'notify', 'web', 'wallet', 'jetton_mint', 'gifts', 'gifts_market', 'defi', 'blockchain', 'nft', 'bitrefill', 'stonfi', 'tonstakers'],
   },
   full: {
     label: 'Full — everything enabled',
@@ -3540,6 +3541,111 @@ async function _executeToolInner(
 
         await logToDb(params.agentId, 'info', `[TX] Sent jetton ${jettonMaster} amount=${amount} to ${toAddr}`, params.userId);
         return { ok: true, note: `Jetton transfer sent: ${amount} of ${jettonMaster} to ${toAddr}` };
+      } catch (e: any) {
+        return { error: e.message };
+      }
+    }
+
+    case 'jetton_deploy': {
+      try {
+        const walletMn = unwrapState(await stateRepo.get(params.agentId, 'wallet_mnemonic'));
+        if (!walletMn) return { error: 'Agent wallet not created. Call get_agent_wallet first.' };
+
+        const name = String(args.name || '').trim();
+        const symbol = String(args.symbol || '').trim().toUpperCase();
+        if (!name || name.length > 64) return { error: 'name required, 1-64 chars' };
+        if (!symbol || !/^[A-Z0-9_]{2,12}$/.test(symbol)) return { error: 'symbol must be 2-12 chars, uppercase/digits/underscore' };
+        const decimals = Math.max(0, Math.min(18, Number(args.decimals ?? 9)));
+        const network = (String(args.network || 'mainnet').toLowerCase() === 'testnet') ? 'testnet' : 'mainnet';
+        const image = args.image ? String(args.image) : undefined;
+        const description = args.description ? String(args.description).slice(0, 500) : undefined;
+
+        const { deployJetton } = await import('../services/jetton-minter');
+        const tonApiKey = params.config.TONAPI_KEY || process.env.TONAPI_KEY || '';
+        const res = await deployJetton({
+          mnemonic: walletMn,
+          metadata: { name, symbol, decimals, description, image },
+          network: network as 'mainnet' | 'testnet',
+          tonapiKey: tonApiKey,
+        });
+        if (!res.ok) return { error: res.error };
+
+        await logToDb(params.agentId, 'info', `[JETTON] Deployed ${symbol} (${name}) at ${res.jettonMaster} on ${network}`, params.userId);
+        // Save reference so the agent can find it later without re-deriving
+        try {
+          await stateRepo.set(params.agentId, `jetton:${symbol}:master`, res.jettonMaster, params.userId);
+          await stateRepo.set(params.agentId, `jetton:${symbol}:network`, network, params.userId);
+        } catch {}
+        return {
+          ok: true,
+          jetton_master: res.jettonMaster,
+          network: res.network,
+          symbol,
+          name,
+          decimals,
+          note: `Jetton ${symbol} deployed at ${res.jettonMaster} on ${network}. Agent is admin — can mint via jetton_mint. Wait ~30s for blockchain confirmation before first mint.`,
+        };
+      } catch (e: any) {
+        return { error: e.message };
+      }
+    }
+
+    case 'jetton_mint': {
+      try {
+        const walletMn = unwrapState(await stateRepo.get(params.agentId, 'wallet_mnemonic'));
+        if (!walletMn) return { error: 'Agent wallet not created. Call get_agent_wallet first.' };
+
+        const jettonMaster = String(args.jetton_master || '').trim();
+        const toAddr = String(args.to || '').trim();
+        const amount = String(args.amount || '').trim();
+        const network = (String(args.network || 'mainnet').toLowerCase() === 'testnet') ? 'testnet' : 'mainnet';
+        if (!jettonMaster) return { error: 'jetton_master required' };
+        if (!toAddr) return { error: 'to address required' };
+        if (!/^\d+$/.test(amount) || amount === '0') return { error: 'amount must be positive integer in nano-units' };
+
+        const { mintJetton } = await import('../services/jetton-minter');
+        const tonApiKey = params.config.TONAPI_KEY || process.env.TONAPI_KEY || '';
+        const res = await mintJetton({
+          mnemonic: walletMn,
+          jettonMaster,
+          to: toAddr,
+          amount,
+          network: network as 'mainnet' | 'testnet',
+          tonapiKey: tonApiKey,
+        });
+        if (!res.ok) return { error: res.error };
+
+        await logToDb(params.agentId, 'info', `[JETTON] Minted ${amount} of ${jettonMaster} to ${toAddr} on ${network}`, params.userId);
+        return { ok: true, note: `Minted ${amount} (nano) of ${jettonMaster} to ${toAddr} on ${network}` };
+      } catch (e: any) {
+        return { error: e.message };
+      }
+    }
+
+    case 'jetton_change_admin': {
+      try {
+        const walletMn = unwrapState(await stateRepo.get(params.agentId, 'wallet_mnemonic'));
+        if (!walletMn) return { error: 'Agent wallet not created. Call get_agent_wallet first.' };
+
+        const jettonMaster = String(args.jetton_master || '').trim();
+        const newAdmin = String(args.new_admin || '').trim();
+        const network = (String(args.network || 'mainnet').toLowerCase() === 'testnet') ? 'testnet' : 'mainnet';
+        if (!jettonMaster) return { error: 'jetton_master required' };
+        if (!newAdmin) return { error: 'new_admin required' };
+
+        const { changeJettonAdmin } = await import('../services/jetton-minter');
+        const tonApiKey = params.config.TONAPI_KEY || process.env.TONAPI_KEY || '';
+        const res = await changeJettonAdmin({
+          mnemonic: walletMn,
+          jettonMaster,
+          newAdmin,
+          network: network as 'mainnet' | 'testnet',
+          tonapiKey: tonApiKey,
+        });
+        if (!res.ok) return { error: res.error };
+
+        await logToDb(params.agentId, 'info', `[JETTON] Admin of ${jettonMaster} changed to ${newAdmin} on ${network}`, params.userId);
+        return { ok: true, note: `Admin of ${jettonMaster} changed to ${newAdmin}. If newAdmin is a null address, supply is now frozen forever.` };
       } catch (e: any) {
         return { error: e.message };
       }

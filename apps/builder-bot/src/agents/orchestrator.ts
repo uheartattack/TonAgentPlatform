@@ -1568,7 +1568,7 @@ ${toolSections}
     // 4) Собираем triggerConfig для ai_agent — ВСЕ capabilities по дефолту (как у лучших агентов)
     // Полный список из CAPABILITY_TOOL_MAP в ai-agent-runtime.ts (не импортируем — circular dep)
     const ALL_CAPABILITIES = [
-      'wallet', 'nft', 'gifts', 'gifts_market',
+      'wallet', 'jetton_mint', 'nft', 'gifts', 'gifts_market',
       'telegram', 'telegram_admin', 'telegram_stories', 'telegram_forums',
       'telegram_analytics', 'telegram_media', 'telegram_discovery', 'telegram_premium',
       'web', 'state', 'events', 'notify', 'plugins', 'inter_agent',

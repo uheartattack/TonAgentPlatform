@@ -35,7 +35,7 @@ import { allAgentTemplates, type AgentTemplate } from './agent-templates';
 import { TOOLSET_PROFILES } from './agents/ai-agent-runtime';
 // Полный список capabilities (копия из CAPABILITY_TOOL_MAP ключей, без circular dep проблем)
 const ALL_CAPABILITIES_FULL = [
-  'wallet', 'nft', 'gifts', 'gifts_market',
+  'wallet', 'jetton_mint', 'nft', 'gifts', 'gifts_market',
   'telegram', 'telegram_admin', 'telegram_stories', 'telegram_forums',
   'telegram_analytics', 'telegram_media', 'telegram_discovery', 'telegram_premium',
   'web', 'state', 'events', 'notify', 'plugins', 'inter_agent',
