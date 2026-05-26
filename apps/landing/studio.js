@@ -19622,7 +19622,11 @@ if (document.readyState === 'loading') {
 
   console.log('[TGMiniApp] Phase 3 native-feel bootstrap ready (BackButton, MainButton, Haptic, Drawer)');
 
-  // ── SIDEBAR FOOTER: inject ToS / Privacy / About links to fill bottom space
+  // ── SIDEBAR FOOTER: inject ToS / Privacy / Docs links to fill bottom space.
+  // Inside Mini App: use internal navigateTo() — keeps user in TG.
+  // Outside TG: use t.me deep-link with ?startapp=<page> so the link routes
+  // into Telegram and lands on the right Studio page (start_param handled
+  // by the IIFE in studio.html).
   function _injectSidebarFooterLinks() {
     var navFoot = document.querySelector('.sidebar .nav-foot');
     if (!navFoot) return;
@@ -19635,15 +19639,19 @@ if (document.readyState === 'loading') {
       'border-top:1px solid rgba(255,255,255,0.05);' +
       'font-size:10.5px;line-height:1.4;';
     var items = [
-      { label: 'Terms',    href: '/terms' },
-      { label: 'Privacy',  href: '/privacy' },
-      { label: 'About',    href: '/about' },
-      { label: 'Docs',     href: '/docs' },
-      { label: 'Support',  href: 'https://t.me/TonAgentPlatformBot' },
+      { label: 'Terms',   page: 'terms' },
+      { label: 'Privacy', page: 'privacy' },
+      { label: 'Docs',    page: 'guide' },
+      { label: 'About',   page: 'overview' },
+      { label: 'Support', tg: 'TonAgentPlatformBot' },
     ];
+    var BOT_SHORT = 'TonAgentPlatformBot/studio';   // t.me/<bot>/<shortname>
     items.forEach(function(it) {
       var a = document.createElement('a');
-      a.href = it.href;
+      var deepLink = it.tg
+        ? 'https://t.me/' + it.tg
+        : 'https://t.me/' + BOT_SHORT + '?startapp=' + encodeURIComponent(it.page);
+      a.href = deepLink;
       a.target = '_blank';
       a.rel = 'noopener';
       a.textContent = it.label;
@@ -19651,11 +19659,21 @@ if (document.readyState === 'loading') {
       a.onmouseover = function(){ a.style.color = 'var(--text-primary,#e7ecf3)'; };
       a.onmouseout  = function(){ a.style.color = 'var(--text-muted,rgba(255,255,255,0.45))'; };
       a.onclick = function(e) {
-        if (window.__tgAuthHelper && window.__tgAuthHelper.openLink) {
-          e.preventDefault();
-          window.__tgAuthHelper.openLink(it.href.startsWith('http') ? it.href : window.location.origin + it.href);
-        }
         try { tg.hapticImpact('light'); } catch(_) {}
+        // Inside Mini App: navigate internally, no link redirect
+        if (window.__tgAuthHelper && it.page && typeof navigateTo === 'function') {
+          e.preventDefault();
+          navigateTo(it.page);
+          // Close drawer after nav so user sees the page
+          document.body.classList.remove('sidebar-open');
+          document.body.classList.remove('sidebar-mobile-open');
+          return;
+        }
+        // External: route through TG so it opens in Telegram, not browser
+        if (window.__tgAuthHelper && window.__tgAuthHelper.openTelegramLink) {
+          e.preventDefault();
+          window.__tgAuthHelper.openTelegramLink(deepLink);
+        }
       };
       box.appendChild(a);
     });

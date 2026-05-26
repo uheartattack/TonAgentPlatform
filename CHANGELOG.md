@@ -7,6 +7,114 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.4.0] — 2026-05-27 — "Telegram Mini App + Jetton Launchpad"
+
+The Studio is now a real Telegram Mini App, and any user-built agent can
+deploy + mint its own TEP-74 jetton. Big mobile / UX pass on top.
+
+### Added — Telegram Mini App
+- **Auto-login via initData** — opened from `@TonAgentPlatformBot` menu
+  button, Studio skips the OIDC flow entirely. Server endpoint
+  `POST /api/auth/tg-webapp` verifies the HMAC-SHA256 initData signature
+  (per Telegram spec) and reuses existing sessions; rejects auth_date
+  older than 1 day to block replay.
+- **Native chrome integration** — TG BackButton auto-shows/hides per modal
+  stack (17 modal types covered). MainButton smart-binds explicit
+  `[data-main-action]` CTAs on mobile. HapticFeedback wired to every
+  interactive control plus toast notifications.
+- **Theme sync** — `themeParams` from Telegram flows into CSS vars;
+  switching light/dark inside TG immediately re-themes Studio.
+- **Viewport handling** — `--tg-vh` tracks `viewportStableHeight`, reflows
+  on keyboard appearance.
+- **Deep links** — `t.me/<bot>/studio?startapp=<page>` routes inside the
+  Mini App via `start_param`. Sidebar footer links use this so external
+  shares land in TG, not the browser.
+- **TG Analytics SDK** — `@telegram-apps/analytics` token-driven, sends
+  DAU / sessions / events to `builders.ton.org` (app registered as
+  ton_agent_platform).
+
+### Added — Jetton Launchpad (`jetton_mint` capability)
+- **`jetton_deploy(name, symbol, decimals, image, description, network)`** —
+  deploys a TEP-74 mintable jetton; the agent's wallet becomes admin.
+  Built on `@ton-community/assets-sdk` (canonical audited contracts).
+  On-chain TEP-64 metadata so no IPFS hosting required.
+- **`jetton_mint(jetton_master, to, amount, network)`** — mints into any
+  wallet (admin only).
+- **`jetton_change_admin(jetton_master, new_admin, network)`** — transfer
+  admin to a user or null-address to freeze supply ("rug-proof" memecoins).
+- **Capability added to Trading toolset preset.** New `jetton-mint` skill
+  teaches the 3-phase flow (confirm → deploy → wait → mint → optionally
+  freeze) with ask_user_confirmation gates.
+- **Network parameter** switches mainnet ↔ testnet; supports the 5,000
+  testnet TON grant for safe dev cycles.
+- **Resilient transport** — when orbs ton-access v4 pool is unhealthy
+  (observed testnet-v4 80h stale), service automatically falls back to
+  toncenter v2 via API key.
+
+### Added — Studio design system
+- **`tap-motion.css`** — full visual rewrite: glow buttons with conic-ring
+  + halo, provider-tinted agent cards, generation aura, levitating logo,
+  animated `.tap-pill` status pills, drop-in `.tap-modal` glassmorphism,
+  focus rings on inputs.
+- **`gen-aura.css`** — unified loading system: 5 surfaces (fullscreen
+  overlay, inline halo, skeleton shimmer, animated gradient text,
+  standalone 28px orb with 16/40 variants), shared palette + 5 keyframes,
+  60fps with 30+ concurrent instances. `prefers-reduced-motion` honored
+  via 8× slow-down. TAP BRIDGE rules auto-paint `.auth-spinner`,
+  `.spinner`, `.skeleton`, `.chat-cursor`, etc.
+- **Logo refresh** — new transparent TAP wordmark.
+
+### Added — Mobile polish
+- **Single-column layout** — `.app` grid collapses to a single column in
+  Mini App mode (fixes the "right half empty" bug).
+- **Frosted-glass sidebar drawer** — `position: fixed` with
+  `backdrop-filter: blur(18px) saturate(140%)`, 84vw / max 320px,
+  rounded right edge, max-height clamped. Logo top, nav middle, profile +
+  language + scale + footer-links bottom via
+  `justify-content: space-between`.
+- **Footer ToS strip** — Terms / Privacy / Docs / About / Support links
+  injected into the sidebar, routed via deep-links so they stay inside
+  Telegram.
+- **22px checkboxes / 48×28 iOS-style toggles / 44px touch targets / 16px
+  inputs** — no iOS focus-zoom, no double-knob glow glitches.
+- **Bottom-sheet modals** — `≤640px` modals slide up from the bottom with
+  drag-handle, full safe-area-bottom support.
+- **Tabs horizontal scroll-snap** — overflow tabs are swipable, scrollbar
+  hidden.
+- **Metric cards reflow** — desktop 4-col grid → mobile 1-col horizontal
+  layout, value pinned right.
+- **Decorative `.fab` hidden** — TG controls theme, the palette button was
+  overlapping the bug-report fab.
+
+### Added — Atlas survival mode
+- **Cost rework** — Google Gemini 2.5-flash bumped to $0.30 / $2.50
+  (8× the old rate). New chain: `2.0-flash-lite → 2.0-flash → 2.5-flash →
+  OpenRouter paid → :free`. ~80% savings.
+- **Marker validator** — catches malformed `<crew-suggest>` /
+  `<role-suggest>` / `<composite-suggest>` JSON from free models, tags as
+  `-invalid` so the Studio frontend doesn't crash.
+
+### Fixed
+- **Duplicate hamburger** in the mobile topbar.
+- **Backdrop swallowing taps** on sidebar nav-items — `pointer-events` and
+  z-index hierarchy reworked.
+- **MainButton false positives** — bind now requires explicit
+  `[data-main-action]` / `[data-mini-main]` attribute.
+- **Cache-buster split** — preload + script tag bumped in lockstep.
+
+### Files
+- New: `apps/landing/gen-aura.css`, `apps/landing/logo-tap.svg`,
+  `apps/landing/tap-motion.css`,
+  `apps/builder-bot/src/services/jetton-minter.ts`,
+  `apps/builder-bot/src/skills/jetton-mint/SKILL.md`,
+  `apps/builder-bot/scripts/test-jetton-mint.ts`
+- Updated: `apps/landing/studio.html`, `apps/landing/studio.js`,
+  `apps/builder-bot/src/agents/ai-agent-runtime.ts`,
+  `apps/builder-bot/src/agents/tools/tool-definitions.ts`
+- New dep: `@ton-community/assets-sdk@^0.0.5`
+
+---
+
 ## [2.3.6] — 2026-05-20 — "Crew network + hardening pass"
 
 ### Added — Crew network

@@ -7,7 +7,7 @@
   <link rel="icon" type="image/svg+xml" href="logo.svg">
   <link rel="shortcut icon" href="logo.svg">
   <title>TON Agent Studio</title>
-  <link rel="preload" href="/studio.js?v=20260527a2" as="script">
+  <link rel="preload" href="/studio.js?v=20260527a3" as="script">
   <link rel="preload" href="/studio.css?v=20260526s11" as="style">
   <link rel="preload" href="/design-system.css?v=20260520z" as="style">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -114,6 +114,27 @@
         };
         applyViewport();
         tg.onEvent && tg.onEvent('viewportChanged', applyViewport);
+
+        // Deep-link routing: t.me/<bot>/studio?startapp=<page> opens here
+        // with initDataUnsafe.start_param = <page>. Defer until the app is
+        // shown — navigateTo() only exists after studio.js loads.
+        try {
+          var sp = tg.initDataUnsafe && tg.initDataUnsafe.start_param;
+          if (sp && /^[a-z0-9_-]{1,32}$/i.test(sp)) {
+            window.__tgStartParam = sp;
+            // Wait for showApp() to flip auth screen off, then route
+            var _routeRetry = 0;
+            var _route = function() {
+              _routeRetry++;
+              if (typeof window.navigateTo === 'function' && document.getElementById(sp + '-page')) {
+                try { window.navigateTo(sp); } catch(e){}
+                return;
+              }
+              if (_routeRetry < 40) setTimeout(_route, 250); // up to 10s
+            };
+            setTimeout(_route, 400);
+          }
+        } catch (e) {}
 
         // Expose for studio.js
         window.__tgAuthHelper = {
@@ -2952,6 +2973,6 @@
   </div>
 
   <script src="https://unpkg.com/@tonconnect/ui@2/dist/tonconnect-ui.min.js"></script>
-  <script src="studio.js?v=20260527a2"></script>
+  <script src="studio.js?v=20260527a3"></script>
 </body>
 </html>
