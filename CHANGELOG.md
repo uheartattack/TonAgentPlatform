@@ -7,6 +7,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.4.1] — 2026-05-27 — "Self-Tuning Agents + Studio Settings Pass"
+
+Agents now learn from every run, build their own playbooks, and tune their
+own skill prompts under owner supervision. Studio gets a full settings
+reorg, accent themes, and a real Mini App drawer.
+
+### Added — Agent auto-learning
+- **`agent_lessons` table** — hybrid RAG (FTS + JSONB embeddings + recency)
+  with importance + usage_count ranking, per-agent cap 200. Top-6 relevant
+  lessons injected into system prompt on every tick.
+- **`agent_strategies` table** — Atlas-drafted playbooks generated from 3+
+  related lessons, owner can toggle / delete; active strategies appended
+  to system prompt via `StrategyEngine.buildPromptBlock()`.
+- **Post-tick lesson extraction** — runs only when something interesting
+  happened (tool calls or content > 40 chars), rate-limited 30 min per
+  agent, opt-out via `agents.utility_model` marker.
+- **Cost rule baked in** — every extraction call uses the USER's API key.
+  Platform never pays for user-agent learning; only Atlas spends platform
+  budget.
+- **API** — `GET/POST/DELETE /api/agents/:id/lessons`, `/lessons/search`,
+  strategies CRUD + generate, utility-model getter/setter,
+  `POST /api/agents/:id/atlas/enrich` (one-shot gated platform-key enrich).
+
+### Added — SkillOpt loop
+- **`skill_versions` table** + `SkillOptimizer` service implementing
+  Rollout → Reflect → Edit → Gate (Microsoft SkillOpt approach). Bounded
+  EditOps (max 5 per pass), candidate accepted iff `score > baseline + 0.05`.
+- **Auto-generated synthetic queries** from each SKILL.md by Atlas — no
+  manual query authoring required.
+- **`/admin-skills` page** in Studio — 13 built-in skills as cards with
+  version count, top scores, expandable history, "Optimize" button that
+  warns about cost before triggering.
+
+### Added — Memory cleanup
+- **Nightly cron** across all per-agent tables: `agent_memory_vec` capped
+  at 5000/agent with cosine-dedup > 0.95 on top-200 by recency,
+  `agent_lessons` cap 200/agent + drop unused-old (60d), `agent_contacts`
+  idle 180d, `agent_mailbox` read 30d, `agent_transcripts` 90d.
+- **Auto-replay of rejected SkillOpt drafts** > 14d old — logs as audit
+  candidates only (does not auto-burn budget).
+- **`memory_cleanup_log` table** + `/admin-cleanup` page showing pruned /
+  deduped counts per pass, JSON breakdown, manual "Run now" trigger.
+
+### Added — Studio Settings pass
+- **8 numbered settings cards** — 01 AI Key, 02 Telegram, 03 Accent Theme,
+  04 Security, 05 Notifications, 06 Privacy & Data, 07 Language, 08 UI
+  Scale. Profile reduced to Account info + Stats + Danger Zone + Sign Out.
+- **Pill-tab "AI Keys" → "Settings"** with gear icon; Notifications + lang
+  + scale removed from sidebar.
+- **Accent themes** — 6 gradient presets (Aurora / Cyber / Plasma /
+  Emerald / Sunset / Mono) via `html[data-accent="..."]`, persisted to
+  localStorage, restored on load. New `accent-themes.css` adds
+  preset-card / num-cube / eyebrow / tap-settings-card primitives.
+- **Beautiful delete-account modal** replacing the native `prompt()` —
+  requires typing "DELETE", tap-motion-styled.
+
+### Fixed — Mini App mobile
+- **"Empty half-screen" bug** — `studio-skin.css` forced `.app` into
+  `grid-template-columns: 268px 1fr`, but the TG sidebar is now
+  `position: fixed`. New override:
+  `html[data-tg-app="1"] .app { display: block !important }`.
+- **Drawer sidebar** — frosted-glass (`backdrop-filter: blur(18px)`),
+  z-index 10000, distinct gradient bg, click-through to children via
+  `position: relative; z-index: 2; pointer-events: auto`.
+- **Duplicate hamburger** removed (floating `.fab` palette button hidden
+  in TG mode).
+- **BackButton stack** for 17 modal types, **MainButton smart-bind** to
+  `[data-main-action]` CTAs, **HapticFeedback** on every interactive.
+- **Deep-links** — `t.me/<bot>/studio?startapp=<page>` for ToS / Docs
+  links, routed via `start_param`.
+
+### Fixed — Owner-only 403
+- `requireOwner` middleware now reads `PLATFORM_OWNER_IDS` env array
+  (comma-separated) in addition to the single `OWNER_ID`, enabling
+  multi-owner admin access without redeploys.
+
+---
+
 ## [2.4.0] — 2026-05-27 — "Telegram Mini App + Jetton Launchpad"
 
 The Studio is now a real Telegram Mini App, and any user-built agent can
