@@ -14,16 +14,18 @@
 
 <br>
 
+[![Latest Release](https://img.shields.io/badge/Latest-v2.4.1_Self--Tuning_Agents-0098EA?style=flat-square)](https://github.com/uheartattack/TonAgentPlatform/releases/tag/v2.4.1)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Node.js](https://img.shields.io/badge/Node.js-20+-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-4169E1?style=flat-square&logo=postgresql&logoColor=white)](https://www.postgresql.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-22c55e?style=flat-square)](LICENSE)
 [![Status](https://img.shields.io/badge/Status-Live_🟢-22c55e?style=flat-square)](https://tonagentplatform.com)
 [![Telegram](https://img.shields.io/badge/Bot-@TonAgentPlatformBot-2CA5E0?style=flat-square&logo=telegram&logoColor=white)](https://t.me/TonAgentPlatformBot)
+[![Mini App](https://img.shields.io/badge/Telegram-Mini_App_📱-2CA5E0?style=flat-square&logo=telegram&logoColor=white)](https://t.me/TonAgentPlatformBot/studio)
 
 <br>
 
-[**🤖 Запустить бота**](https://t.me/TonAgentPlatformBot) &nbsp;·&nbsp; [**🎨 Открыть Studio**](https://tonagentplatform.com/studio.html) &nbsp;·&nbsp; [**👑 Founders Wall**](https://tonagentplatform.com/founders.html) &nbsp;·&nbsp; [**🌐 Сайт**](https://tonagentplatform.com) &nbsp;·&nbsp; [**📢 Канал**](https://t.me/TONAgentPlatform)
+[**🤖 Запустить бота**](https://t.me/TonAgentPlatformBot) &nbsp;·&nbsp; [**📱 Open Mini App**](https://t.me/TonAgentPlatformBot/studio) &nbsp;·&nbsp; [**🎨 Web Studio**](https://tonagentplatform.com/studio.html) &nbsp;·&nbsp; [**👑 Founders Wall**](https://tonagentplatform.com/founders.html) &nbsp;·&nbsp; [**📢 Канал**](https://t.me/TONAgentPlatform)
 
 <br>
 
@@ -76,15 +78,19 @@ Each agent gets its own TON wallet, can trade gifts, interact with DeFi, operate
 
 | | Возможность | Описание |
 |:-|:------------|:---------|
+| 🎓 | **Self-Tuning Agents (v2.4.1)** | Агенты учатся на каждом запуске: lessons + Atlas-стратегии + SkillOpt автотюнинг промптов |
+| 📱 | **Telegram Mini App (v2.4)** | Studio открывается прямо в TG: initData auto-login, BackButton/MainButton/Haptic, frosted-glass drawer |
+| 🪙 | **Jetton Launchpad (v2.4)** | `jetton_deploy` + `jetton_mint` + `jetton_freeze` — TEP-74 минтабельные жетоны в один тул-кол |
 | 🧠 | **Agent Skills (v2.2)** | Стандарт agentskills.io от Anthropic — прогрессивная подгрузка инструкций |
 | 💎 | **Agentic Wallets (v2.2)** | Официальный TON Foundation стандарт agents.ton.org: on-chain freeze/revoke, лимиты в контракте |
 | 🎙️ | **Голосовое создание** | Надиктуй задачу — агент готов за 10 сек |
-| 🤖 | **7 AI-провайдеров** | Gemini, GPT-4o, Claude, Groq, DeepSeek... |
-| 🛠️ | **311 инструментов** | TON, подарки, NFT, DeFi, веб, Telegram |
+| 🤖 | **7 AI-провайдеров** | Gemini, GPT-4o, Claude, Groq, DeepSeek, OpenRouter, Together |
+| 🛠️ | **314 инструментов** | TON, жетоны, подарки, NFT, DeFi, веб, Telegram |
 | 🎁 | **Маркетплейс подарков** | Реальные цены, арбитраж, авто-торговля |
 | 📱 | **MTProto Userbot** | Агент = настоящий Telegram-пользователь |
-| 🧠 | **Память агента** | Персистентная + FTS-поиск + дневные логи |
-| 📊 | **Studio Dashboard** | 29 вкладок: настройки, графики, задачи |
+| 🧠 | **Hybrid RAG память** | Embeddings + FTS + recency + автоматический cosine-dedup |
+| 📊 | **Studio Dashboard** | 30+ вкладок: Soul, Memory, Tasks, Wallet + 8 пронумерованных карточек настроек |
+| 🎨 | **6 Accent Themes** | Aurora / Cyber / Plasma / Emerald / Sunset / Mono — переключаются мгновенно |
 | 🔬 | **Agent Evals** | Авто-оценка качества, алерты деградации |
 | 📚 | **База знаний** | Загрузка документов, индексация, FTS-поиск |
 | 🔐 | **Безопасность** | Sandbox, SSRF, anti-loop, op-lock, prompt-injection scanner |
@@ -98,15 +104,19 @@ Each agent gets its own TON wallet, can trade gifts, interact with DeFi, operate
 
 | | Feature | Description |
 |:-|:--------|:------------|
+| 🎓 | **Self-Tuning Agents (v2.4.1)** | Agents learn from every run: lessons + Atlas-drafted strategies + SkillOpt auto-tuning |
+| 📱 | **Telegram Mini App (v2.4)** | Studio runs inside TG: initData auto-login, BackButton/MainButton/Haptic, frosted-glass drawer |
+| 🪙 | **Jetton Launchpad (v2.4)** | `jetton_deploy` + `jetton_mint` + `jetton_freeze` — TEP-74 mintable jettons in one tool call |
 | 🧠 | **Agent Skills (v2.2)** | agentskills.io standard from Anthropic — progressive instruction loading |
 | 💎 | **Agentic Wallets (v2.2)** | Official TON Foundation agents.ton.org spec: on-chain freeze/revoke, limits in contract |
 | 🎙️ | **Voice Creation** | Speak your task — agent ready in 10 sec |
-| 🤖 | **7 AI Providers** | Gemini, GPT-4o, Claude, Groq, DeepSeek... |
-| 🛠️ | **311 Tools** | TON, gifts, NFTs, DeFi, web, Telegram |
+| 🤖 | **7 AI Providers** | Gemini, GPT-4o, Claude, Groq, DeepSeek, OpenRouter, Together |
+| 🛠️ | **314 Tools** | TON, jettons, gifts, NFTs, DeFi, web, Telegram |
 | 🎁 | **Gift Marketplace** | Real-time pricing, arbitrage, auto-trading |
 | 📱 | **MTProto Userbot** | Agent operates as a real Telegram user |
-| 🧠 | **Agent Memory** | Persistent + FTS search + daily logs |
-| 📊 | **Studio Dashboard** | 29 settings tabs: charts, tokens, tasks |
+| 🧠 | **Hybrid RAG Memory** | Embeddings + FTS + recency + automatic cosine-dedup |
+| 📊 | **Studio Dashboard** | 30+ tabs: Soul, Memory, Tasks, Wallet + 8 numbered settings cards |
+| 🎨 | **6 Accent Themes** | Aurora / Cyber / Plasma / Emerald / Sunset / Mono — instant switch |
 | 🔬 | **Agent Evals** | Auto quality scoring, degradation alerts |
 | 📚 | **Knowledge Base** | Upload docs, chunk & index, FTS search |
 | 🔐 | **Security** | Sandbox, SSRF, anti-loop, op-lock, prompt-injection scanner |
@@ -124,7 +134,8 @@ Each agent gets its own TON wallet, can trade gifts, interact with DeFi, operate
 ```mermaid
 graph TB
     subgraph Clients["Clients"]
-        TG[Telegram]
+        TG[Telegram Bot]
+        MiniApp[TG Mini App]
         Web[Web Studio]
     end
 
@@ -132,23 +143,31 @@ graph TB
         Bot[Telegraf Bot]
         API[REST API]
         Orch[AI Orchestrator]
+        Atlas[Atlas AI Assistant]
     end
 
     subgraph Runtime["Agent Runtime"]
         Creator[Creator]
-        AIRuntime[AI Runtime - 311 tools - 5-iter loop]
+        AIRuntime[AI Runtime - 314 tools - 5-iter loop]
         Lifecycle[Lifecycle FSM]
+    end
+
+    subgraph Learning["Self-Tuning Loop (v2.4.1)"]
+        Lessons[Lessons Store - FTS+RRF]
+        Strategies[Strategy Engine - Atlas playbooks]
+        SkillOpt[SkillOpt - Rollout/Reflect/Edit/Gate]
+        Cleanup[Memory Cleanup Cron]
     end
 
     subgraph Data["Data"]
         DB[(PostgreSQL)]
-        Memory[Memory + FTS]
+        Memory[Hybrid RAG Memory]
         Tasks[Task Queue DAG]
         Tokens[Token Tracker]
     end
 
     subgraph Integrations["Integrations"]
-        TON[TON Blockchain]
+        TON[TON Blockchain + Jettons]
         Gifts[GiftAsset + SwiftGifts]
         Userbot[GramJS MTProto]
         AI{7 AI Providers}
@@ -156,14 +175,21 @@ graph TB
     end
 
     TG --> Bot --> Orch
+    MiniApp --> API
     Web --> API --> Orch
+    Atlas --> API
     Orch --> Creator & AIRuntime
     AIRuntime --> TON & Gifts & Userbot & AI & Plugins
     AIRuntime --> Memory & Tasks & Tokens --> DB
+    AIRuntime -.tick.-> Lessons
+    Lessons --> Strategies
+    Atlas -.drafts.-> Strategies & SkillOpt
+    Cleanup -.nightly.-> Memory & Lessons & SkillOpt
     Lifecycle -.-> AIRuntime
 
     style Core fill:#0d1117,stroke:#0098EA,stroke-width:2px,color:#fff
     style Runtime fill:#0d1117,stroke:#f59e0b,stroke-width:2px,color:#fff
+    style Learning fill:#0d1117,stroke:#a855f7,stroke-width:2px,color:#fff
     style Data fill:#0d1117,stroke:#10b981,stroke-width:2px,color:#fff
     style Integrations fill:#0d1117,stroke:#8b5cf6,stroke-width:2px,color:#fff
     style Clients fill:#0d1117,stroke:#ec4899,stroke-width:2px,color:#fff
@@ -171,14 +197,15 @@ graph TB
 
 ---
 
-## 🛠️ Инструменты агента &nbsp;|&nbsp; Agent Tools (311)
+## 🛠️ Инструменты агента &nbsp;|&nbsp; Agent Tools (314)
 
-> **Note:** 311 includes all tool variants and aliases. ~80 core tools with unique business logic + ~230 Telegram API method wrappers.
+> **Note:** 314 includes all tool variants and aliases. ~83 core tools with unique business logic + ~230 Telegram API method wrappers.
 
 | Категория | Примеры | # |
 |:----------|:--------|:-:|
 | 📡 **Telegram Userbot** | `tg_send_message` `tg_get_messages` `tg_join_channel` `tg_search_messages` `tg_react` `tg_create_poll` `tg_send_gift` `tg_get_members` `tg_ban_user` `tg_create_channel` | 91 |
 | 💎 **TON Blockchain** | `get_ton_balance` `send_ton` `send_jetton` `get_agent_wallet` `ton_get_account` `ton_get_nfts` `ton_get_transactions` `ton_get_jettons` `ton_get_rates` `ton_emulate_tx` | 11 |
+| 🪙 **Jetton Launchpad** *(new in v2.4)* | `jetton_deploy` `jetton_mint` `jetton_freeze` `jetton_burn` | 4 |
 | 🎁 **Gift Marketplace** | `get_gift_floor_real` `scan_real_arbitrage` `buy_catalog_gift` `buy_resale_gift` `get_price_list` `get_user_portfolio` `get_market_overview` `get_gift_sales_history` `find_underpriced_gifts` | 39 |
 | 💱 **DeFi (DeDust + STON.fi)** | `dedust_swap` `dedust_quote` `dedust_pools` `stonfi_swap` `stonfi_quote` `stonfi_trending` `dex_get_prices` `dex_swap_simulate` | 16 |
 | 🧠 **Memory & Knowledge** | `remember` `recall` `browse_memory` `knowledge_save` `knowledge_search` `knowledge_list` `memory_stats` `compress_memories` `run_memory_maintenance` | 20 |
@@ -228,12 +255,14 @@ graph TB
 - 🤖 **AI Settings** — провайдер, модель, ключ
 - ♻️ **Lifecycle** — статус, аптайм, старт/стоп
 - 📊 **Token Usage** — расход, бюджет, графики
-- 🧠 **Memory** — редактор + FTS-поиск
+- 🧠 **Memory** *(v2.4.1)* — lessons + стратегии + utility model
 - 📋 **Tasks** — задачи с зависимостями (DAG)
 - 👥 **Contacts** — история и права юзеров
 - 📡 **Telegram** — авторизация MTProto (QR)
 - 💎 **Wallet** — TON-кошелёк агента
 - 💬 **Chat** — история и тест-диалог
+- ⚙️ **Settings** *(v2.4.1)* — 8 пронумерованных карточек, 6 accent-тем
+- 👑 **Admin → Skills / Cleanup** — SkillOpt + memory cleanup log (owner-only)
 
 </td>
 <td width="50%" valign="top">
@@ -247,12 +276,14 @@ graph TB
 - 🤖 **AI Settings** — provider, model, API key
 - ♻️ **Lifecycle** — status, uptime, start/stop
 - 📊 **Token Usage** — consumption, budget, charts
-- 🧠 **Memory** — persistent editor + FTS search
+- 🧠 **Memory** *(v2.4.1)* — lessons + strategies + utility model
 - 📋 **Tasks** — task queue with DAG dependencies
 - 👥 **Contacts** — user history and permissions
 - 📡 **Telegram** — MTProto auth (QR login)
 - 💎 **Wallet** — agent's TON wallet
 - 💬 **Chat** — conversation history + test dialog
+- ⚙️ **Settings** *(v2.4.1)* — 8 numbered cards, 6 accent themes
+- 👑 **Admin → Skills / Cleanup** — SkillOpt + memory cleanup log (owner-only)
 
 </td>
 </tr>
@@ -279,7 +310,7 @@ docker compose -f infrastructure/docker-compose.prod.yml up -d
 pnpm --filter builder-bot dev
 ```
 
-Telegram → [@TonAgentPlatformBot](https://t.me/TonAgentPlatformBot) → `/start`
+Telegram → [@TonAgentPlatformBot](https://t.me/TonAgentPlatformBot) → `/start` &nbsp;·&nbsp; или Mini App: [t.me/TonAgentPlatformBot/studio](https://t.me/TonAgentPlatformBot/studio)
 
 ---
 
@@ -289,12 +320,15 @@ Telegram → [@TonAgentPlatformBot](https://t.me/TonAgentPlatformBot) → `/star
 |:-------------|:-----------|
 | **Bot Framework** | Telegraf v4 |
 | **Language** | TypeScript 5.x |
-| **AI Providers** | Gemini 2.5, Claude, GPT-4o, Groq, DeepSeek, OpenRouter, Together |
-| **Skill Runtime** | agentskills.io spec (progressive disclosure, 12 built-in skills) |
+| **AI Providers** | Gemini 2.5/2.0, Claude, GPT-4o, Groq, DeepSeek, OpenRouter, Together |
+| **Skill Runtime** | agentskills.io spec (progressive disclosure, 13 built-in skills) |
+| **Auto-Tuning** | SkillOpt (Microsoft) — Rollout → Reflect → Edit → Gate, bounded EditOps |
+| **Memory** | Hybrid RAG: Gemini text-embedding-004 (768d) + Postgres tsvector + RRF + cosine-dedup |
 | **Database** | PostgreSQL 15 + Drizzle ORM |
 | **Sandbox** | Node.js VM (isolated, SSRF-protected) + AES-256-GCM mnemonic encryption |
-| **TON** | @ton/core · @ton/ton · @ton/crypto · @ton/mcp@alpha (agents.ton.org) · TonAPI v2 |
-| **Telegram** | GramJS MTProto + Telegraf |
+| **TON** | @ton/core · @ton/ton · @ton/crypto · @ton/mcp@alpha (agents.ton.org) · @ton-community/assets-sdk · TonAPI v2 |
+| **Telegram** | GramJS MTProto + Telegraf + Telegram WebApp SDK |
+| **Mini App** | initData HMAC-SHA256 auth · BackButton/MainButton/HapticFeedback · `start_param` deep-links · @telegram-apps/analytics |
 | **Gift APIs** | GiftAsset + SwiftGifts (rate-limited, cached) |
 | **MCP** | @modelcontextprotocol/sdk (stdio + SSE transports) |
 | **Infra** | Docker Compose + nginx + PM2 + Let's Encrypt |
@@ -318,53 +352,77 @@ Telegram → [@TonAgentPlatformBot](https://t.me/TonAgentPlatformBot) → `/star
 
 ## 📈 Дорожная карта &nbsp;|&nbsp; Roadmap
 
+### ✅ v2.4.1 — Self-Tuning Agents (May 2026) 🆕
+- ✅ **Agent auto-learning** — `agent_lessons` (FTS + RRF), top-6 урок injected в system prompt
+- ✅ **Strategy Engine** — Atlas-нарисованные playbook'и из 3+ уроков, owner toggleable
+- ✅ **SkillOpt loop** — Microsoft's Rollout → Reflect → Edit → Gate автотюнинг SKILL.md
+- ✅ **Memory cleanup cron** — caps + cosine-dedup > 0.95 + auto-replay rejected drafts
+- ✅ **8 пронумерованных Settings cards** — AI Key, TG, Accent Theme, Security, Notif, Privacy, Lang, UI Scale
+- ✅ **6 Accent Themes** — Aurora, Cyber, Plasma, Emerald, Sunset, Mono
+- ✅ **Admin UI** — `/admin-skills` (Optimize button) + `/admin-cleanup` (timeline dashboard)
+- ✅ **Cost firewall** — auto-learning использует ТОЛЬКО user's API key; платформа платит только за Atlas
+
+### ✅ v2.4 — Mini App + Jetton Launchpad (May 2026)
+- ✅ **Telegram Mini App** — initData HMAC auth, BackButton/MainButton/HapticFeedback, frosted-glass drawer
+- ✅ **Atlas AI Assistant** — copilot в Studio, advanced model fallback (6 Gemini families)
+- ✅ **Jetton Launchpad** — `jetton_deploy` + `jetton_mint` + `jetton_freeze` + `jetton_burn` (TEP-74 канонические контракты)
+- ✅ **TON Proof auth** — wallet-based login для Mini App
+- ✅ **Cron services** — durable scheduler с реальными интервалами
+- ✅ **gen-aura loading** — анимированный design system для async-операций
+- ✅ **Atlas survival mode** — cross-provider fallback chain
+
+### ✅ v2.3 — Memory & Coordination (May 2026)
+- ✅ **Hybrid RAG memory** — Gemini text-embedding-004 (768d) + Postgres tsvector + RRF fusion
+- ✅ **Auto context compression** — 3-слойная (micro/auto/emergency)
+- ✅ **Multi-agent task graph** — DAG зависимостей + автономный claim
+- ✅ **Durable mailboxes** — асинхронные сообщения между агентами, переживают рестарт
+- ✅ **Background tasks daemon** — `bg_schedule()` и пробуждение по расписанию
+- ✅ **TON Pay invoices** — прямые `ton://transfer` платежи + on-chain верификация
+- ✅ **Tool Gateway** — rate-limit + prompt-injection scan + audit log на каждый tool-call
+- ✅ **Edit with AI (v2.3.1)** — AI рерайтит system prompt → side-by-side diff → Apply
+- ✅ **MCP server management UI (v2.3.1)** — добавление внешних MCP-серверов через Studio
+
 ### ✅ v2.2 — Skills Release (May 2026)
-- Agent Skills runtime (agentskills.io spec) — 12 встроенных скиллов
-- Agentic Wallets (agents.ton.org) — официальный TON-стандарт
-- TON DNS полностью (bid, auction, link, set_site)
-- Self-awareness: `get_my_full_state()` тул для глубокого интроспекта
-- TodoWrite для длинных задач — встроенный чеклист с FSM
-- Skill safety scanner + URL whitelist на импорт
-- Auto-pause агентов при битых ключах / rate-limit
+- ✅ Agent Skills runtime (agentskills.io spec) — 13 встроенных скиллов
+- ✅ Agentic Wallets (agents.ton.org) — официальный TON-стандарт
+- ✅ TON DNS полностью (bid, auction, link, set_site)
+- ✅ Self-awareness: `get_my_full_state()` тул
+- ✅ TodoWrite для длинных задач — встроенный чеклист с FSM
+- ✅ Skill safety scanner + URL whitelist на импорт
+- ✅ Auto-pause агентов при битых ключах / rate-limit
+
+### 🔜 v2.5 — Marketplace & Visual Builder (Q3 2026)
+- [ ] **Visual Workflow Builder** — drag-and-drop пайплайны
+- [ ] **Skill marketplace publishing** с TON-выплатами авторам скиллов
+- [ ] **Agent marketplace TON payouts** — авто-расчёт через TON ESCROW
+- [ ] **Tester Hub первый snapshot** (1 мая 2026)
+- [ ] **Public catalog listing** на builders.ton.org
+- [ ] **Planning-before-execution** — обязательный план перед опасными действиями (Cedar policy gating)
+
+### 🔜 v2.6 — Enterprise Tool Gateway (Q4 2026)
+- [ ] **Tool Gateway (enterprise)** — Rust+Envoy data plane по паттерну Plano
+- [ ] **Lessons-to-eval pipeline** — auto-promote повторяющиеся уроки в evals
+- [ ] **Per-agent token budgets** — hard caps + сезонные лимиты
+- [ ] **Multi-step SkillOpt** — N-итерационный optimize loop с auto-rollback
+
+### 🔜 v3.0 — Autonomous Network (H1 2027)
+- [ ] **On-chain agent registry** — публичный TON-контракт со всеми deployed агентами
+- [ ] **Agent reputation система** — on-chain rating на основе success/failure ratio
+- [ ] **Federated agents** — кросс-машинная кооперация (паттерн claude-flow/Ruflo)
+- [ ] **Autonomous teammates** — агенты сами берут таски с board, без оператора
+- [ ] **Background subprocess daemon** — параллельная обработка с drain queue
 
 ### ✅ Уже работает в проде
 - AI-first создание агентов (текст + голос)
 - 7 AI-провайдеров с fallback-цепочкой
-- 311 инструментов агента
-- Telegram Userbot (MTProto via GramJS)
+- 314 инструментов агента
+- Telegram Userbot (MTProto via GramJS) + Telegram Mini App
 - GiftAsset + SwiftGifts реальные цены
-- Studio Dashboard (30+ вкладок)
+- Studio Dashboard (30+ вкладок) + Atlas AI assistant
 - 12 плагинов + 22 шаблона + маркетплейс
 - Tester Hub: 10% revenue share / 2 года / квартальные выплаты
 - Реферальная система (2 уровня + 10% от трат рефералов)
-- Premium landing (glassmorphism, mesh gradients, electric blue + purple)
-
-### ✅ v2.3 — Memory & Coordination (May 2026)
-- ✅ **Hybrid RAG memory** — Gemini text-embedding-004 (768d) + Postgres tsvector + RRF fusion. Агент помнит сессии и ищет по смыслу
-- ✅ **Auto context compression** — 3-слойная (micro/auto/emergency). Длинные сессии без overflow
-- ✅ **Multi-agent task graph** — DAG зависимостей + автономный claim (s11)
-- ✅ **Durable mailboxes** — асинхронные сообщения между агентами (s09), переживают рестарт
-- ✅ **Background tasks daemon** — `bg_schedule()` и пробуждение по расписанию (s08)
-- ✅ **TON Pay invoices** — прямые `ton://transfer` платежи + on-chain верификация через TonAPI
-- ✅ **Tool Gateway** — rate-limit + prompt-injection scan + audit log на каждый tool-call
-- [ ] **Visual Workflow Builder** — drag-and-drop пайплайны (перенесено в v2.4)
-- ✅ **Edit with AI (v2.3.1)** — рефакторинг агента через диалог: Soul tab → кнопка Edit with AI → AI рерайтит system prompt → side-by-side diff → Apply
-- ✅ **MCP server management UI (v2.3.1)** — добавление внешних MCP-серверов через Studio + per-agent toggle
-
-### 🔜 v2.4 — Marketplace & Scale (Q3 2026)
-- [ ] **Skill marketplace publishing** с TON-выплатами авторам скиллов
-- [ ] **Agent marketplace TON payouts** — авто-расчёт через TON ESCROW
-- [ ] **Tester Hub первый snapshot** (1 мая 2026)
-- [ ] **Telegram Mini App** — нативный UI вместо Studio в браузере
-- [ ] **Tool Gateway (enterprise)** — Rust+Envoy data plane по паттерну Plano
-- [ ] **Planning-before-execution** — обязательный план перед опасными действиями (Cedar policy gating)
-
-### 🔜 v3.0 — Autonomous Network (H2 2026)
-- [ ] **On-chain agent registry** — публичный TON-контракт со всеми deployed агентами
-- [ ] **Agent reputation система** — on-chain rating на основе success/failure ratio
-- [ ] **Federated agents** — кросс-машинная кооперация (paттерн claude-flow/Ruflo)
-- [ ] **Autonomous teammates** — агенты сами берут таски с board, без оператора
-- [ ] **Background tasks daemon** — параллельная subprocess-обработка с drain queue
+- Premium landing (glassmorphism, mesh gradients) + 6 accent themes
 
 ---
 
@@ -373,20 +431,29 @@ Telegram → [@TonAgentPlatformBot](https://t.me/TonAgentPlatformBot) → `/star
 ```
 ton-agent-platform/
 ├── apps/
-│   ├── builder-bot/            # Основное приложение / Main app
+│   ├── builder-bot/                    # Основное приложение / Main app
 │   │   ├── src/
-│   │   │   ├── agents/         # AI runtime, orchestrator, runner, tools
-│   │   │   ├── services/       # Lifecycle, memory, tasks, tokens, hooks
-│   │   │   ├── api-server.ts   # REST API (80+ endpoints)
-│   │   │   ├── bot.ts          # Telegram bot handlers
-│   │   │   └── db/             # PostgreSQL schema + Drizzle ORM
-│   │   └── plugins/            # 12 installable plugins
-│   └── landing/                # Web Studio
-│       ├── studio.html
-│       ├── studio.js           # ~11K lines of Studio logic
-│       └── studio.css
-├── infrastructure/             # Docker Compose, nginx
-└── packages/                   # Shared packages
+│   │   │   ├── agents/                 # AI runtime, orchestrator, runner, tools
+│   │   │   ├── services/               # Lifecycle, memory, tasks, tokens, hooks
+│   │   │   │   ├── lessons-store.ts    # Auto-learning (v2.4.1)
+│   │   │   │   ├── strategy-engine.ts  # Atlas playbooks (v2.4.1)
+│   │   │   │   ├── skill-optimizer.ts  # SkillOpt loop (v2.4.1)
+│   │   │   │   ├── memory-cleanup.ts   # Nightly cron (v2.4.1)
+│   │   │   │   └── atlas-prompt.ts     # Atlas AI assistant
+│   │   │   ├── skills/                 # 13 built-in Agent Skills
+│   │   │   ├── api-server.ts           # REST API (90+ endpoints)
+│   │   │   ├── bot.ts                  # Telegram bot handlers
+│   │   │   └── db/                     # PostgreSQL schema + Drizzle ORM
+│   │   ├── eval/atlas/                 # Atlas evals (run-evals + iterate)
+│   │   └── plugins/                    # 12 installable plugins
+│   └── landing/                        # Web Studio + Mini App
+│       ├── studio.html                 # 8-card Settings + Admin pages
+│       ├── studio.js                   # ~12K lines of Studio logic
+│       ├── studio.css
+│       ├── tap-motion.css              # ~74 KB design system
+│       └── accent-themes.css           # 6 accent presets
+├── infrastructure/                     # Docker Compose, nginx
+└── packages/                           # Shared packages
 ```
 
 ---
