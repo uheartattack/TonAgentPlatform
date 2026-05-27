@@ -14000,6 +14000,15 @@ export async function startBot() {
         console.warn('[Rewards] BETA_GROUP_ID not set — Hall of Week + Snapshot crons disabled');
       }
     } catch (e: any) { console.warn('[Rewards] cron init:', e?.message); }
+
+    // Memory cleanup cron — Phase 4. Runs once on startup (+5min) then daily.
+    // Zero cost (SQL only). Prunes agent_memory_vec / agent_lessons / contacts /
+    // mailbox / transcripts per per-agent caps + recency rules.
+    try {
+      const { startMemoryCleanupCron } = require('./services/memory-cleanup');
+      startMemoryCleanupCron(dbPool);
+      console.log('[MemoryCleanup] daily cron armed (first pass in 5 min)');
+    } catch (e: any) { console.warn('[MemoryCleanup] cron init:', e?.message); }
   }, 15000); // 15s after startup
   // Post current event ONLY on first start of the event day (dedupe via DB)
   try {

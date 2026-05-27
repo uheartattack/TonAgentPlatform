@@ -1804,6 +1804,100 @@ export async function runAIProposalsMigrations(pool: Pool): Promise<void> {
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS agent_mailbox_to_unread_idx ON builder_bot.agent_mailbox (to_agent_id, created_at DESC) WHERE read_at IS NULL`);
 
+    // ─── Agent lessons — durable retention of "what I learned from this run"
+    // Populated by post-run lesson-extractor (cheap LLM summarizes outcome
+    // of a tick / chat / tool sequence) AND by the agent itself via the
+    // `learn` tool. Retrieved on similar tasks by hybrid lexical+semantic
+    // search; pruned by importance × recency. Embeddings stored as JSONB
+    // for cosine sim in app code.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.agent_lessons (
+        id           SERIAL PRIMARY KEY,
+        agent_id     INTEGER NOT NULL,
+        topic        VARCHAR(120),
+        lesson       TEXT NOT NULL,
+        context      TEXT,
+        outcome      VARCHAR(20) NOT NULL DEFAULT 'mixed',
+        importance   REAL NOT NULL DEFAULT 0.5,
+        usage_count  INTEGER NOT NULL DEFAULT 0,
+        last_used_at TIMESTAMP,
+        embedding    JSONB,
+        metadata     JSONB NOT NULL DEFAULT '{}',
+        created_at   TIMESTAMP NOT NULL DEFAULT NOW(),
+        content_tsv  tsvector GENERATED ALWAYS AS (to_tsvector('simple', lesson || ' ' || COALESCE(topic, ''))) STORED
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS agent_lessons_agent_idx ON builder_bot.agent_lessons (agent_id, importance DESC, created_at DESC)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS agent_lessons_topic_idx ON builder_bot.agent_lessons (agent_id, topic)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS agent_lessons_tsv_idx ON builder_bot.agent_lessons USING gin (content_tsv)`);
+
+    // ─── Agent strategies — high-level reusable playbooks Atlas generates.
+    // Unlike lessons (atomic facts), a strategy describes HOW to approach a
+    // class of tasks: ordered steps, decision rules, fallbacks. Active
+    // strategies are injected into the agent system prompt at run time;
+    // success_rate accumulates over executions.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.agent_strategies (
+        id           SERIAL PRIMARY KEY,
+        agent_id     INTEGER NOT NULL,
+        title        VARCHAR(180) NOT NULL,
+        scenario     TEXT,
+        playbook     TEXT NOT NULL,
+        active       BOOLEAN NOT NULL DEFAULT TRUE,
+        source       VARCHAR(40) NOT NULL DEFAULT 'atlas',
+        success_count INTEGER NOT NULL DEFAULT 0,
+        fail_count   INTEGER NOT NULL DEFAULT 0,
+        last_used_at TIMESTAMP,
+        metadata     JSONB NOT NULL DEFAULT '{}',
+        created_at   TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at   TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS agent_strategies_agent_idx ON builder_bot.agent_strategies (agent_id, active, updated_at DESC)`);
+
+    // Per-agent utility model + Atlas enrichment marker on the agents table
+    // (idempotent ADD COLUMN — safe to re-run on existing schema)
+    await client.query(`ALTER TABLE builder_bot.agents ADD COLUMN IF NOT EXISTS utility_model VARCHAR(120)`);
+    await client.query(`ALTER TABLE builder_bot.agents ADD COLUMN IF NOT EXISTS atlas_enriched_at TIMESTAMP`);
+
+    // ─── SkillOpt: versioned built-in SKILL.md ──────────────────────────────
+    // The on-disk SKILL.md is v1 (baseline). Each optimizer pass writes a new
+    // row with proposed edits, the eval_score, and whether it was accepted by
+    // the validation gate. Active version = highest accepted version_num.
+    // Rejected rows kept as negative training signal for the next pass.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.skill_versions (
+        id           SERIAL PRIMARY KEY,
+        skill_name   VARCHAR(80) NOT NULL,
+        version_num  INTEGER NOT NULL,
+        body         TEXT NOT NULL,
+        parent_id    INTEGER REFERENCES builder_bot.skill_versions(id) ON DELETE SET NULL,
+        eval_score   REAL,
+        baseline_score REAL,
+        accepted     BOOLEAN NOT NULL DEFAULT FALSE,
+        diff_summary TEXT,
+        edit_ops     JSONB NOT NULL DEFAULT '[]',
+        rationale    TEXT,
+        run_metadata JSONB NOT NULL DEFAULT '{}',
+        created_at   TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS skill_versions_name_idx ON builder_bot.skill_versions (skill_name, version_num DESC)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS skill_versions_accepted_idx ON builder_bot.skill_versions (skill_name, accepted, created_at DESC)`);
+
+    // ─── Memory cleanup audit log (Phase 4) ─────────────────────────────────
+    // Track each nightly cleanup pass: what was pruned, deduped, by which rule
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.memory_cleanup_log (
+        id           SERIAL PRIMARY KEY,
+        agent_id     INTEGER,
+        kind         VARCHAR(40) NOT NULL,
+        stats        JSONB NOT NULL DEFAULT '{}',
+        created_at   TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS memory_cleanup_kind_idx ON builder_bot.memory_cleanup_log (kind, created_at DESC)`);
+
     // ─── Skill purchases (TON Pay marketplace) ──────────────────────────────
     await client.query(`
       CREATE TABLE IF NOT EXISTS builder_bot.skill_purchases (

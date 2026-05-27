@@ -10154,6 +10154,31 @@ If web_search returns nothing useful → say "не смог найти акту�
     systemPromptFull = params.systemPrompt + '\n' + SAFETY_RULES;
   }
 
+  // ── Inject active strategies + top recent lessons (Phase 1 auto-learning) ──
+  // Strategies: high-level playbooks (one-line summary per active strategy).
+  // Lessons: 6 most-relevant entries (FTS-ranked by recent user message if any,
+  // otherwise top by importance × recency). Both are dynamic — placed after
+  // the cache-split boundary so they don't bust the prompt cache.
+  try {
+    const { pool: _lpPool } = await import('../db');
+    const { StrategyEngine } = await import('../services/strategy-engine');
+    const { LessonsStore } = await import('../services/lessons-store');
+    const strategyBlock = await new StrategyEngine(_lpPool).buildPromptBlock(params.agentId);
+    if (strategyBlock) systemPromptFull += '\n\n' + strategyBlock;
+
+    const queryHint = (msgs && msgs.length > 0) ? msgs[msgs.length - 1].slice(0, 240) : '';
+    const lessons = await new LessonsStore(_lpPool).getRelevant(params.agentId, queryHint, 6);
+    if (lessons.length > 0) {
+      const lessonLines = lessons.map((l: any) => {
+        const tag = l.topic ? '[' + l.topic + ']' : '';
+        return '• ' + tag + ' ' + l.lesson;
+      }).join('\n');
+      systemPromptFull += '\n\n## Lessons you have learned (apply if relevant):\n' + lessonLines;
+    }
+  } catch (e: any) {
+    console.warn('[Lessons/Strategy] inject:', e?.message);
+  }
+
   // ── Agent goal + action scope (Sprint 7 — purpose-driven agents) ──
   // Goal = one-sentence mission. Scope = where the agent is allowed to act.
   // Both injected in static prefix so they stay in prompt cache between ticks.
@@ -11872,7 +11897,130 @@ If web_search returns nothing useful → say "не смог найти акту�
     } catch {}
   }
 
+  // ── Lesson extraction — "voluntarily mandatory" utility model + rate-limit
+  // Resolution: agent.utility_model (user override) → providerCfg.utilityModel
+  // (provider's recommended cheap variant from the registry) → skip.
+  // Special value 'off' / 'none' / '' in agent.utility_model = explicit OPT-OUT
+  // (background features disabled, never call any LLM).
+  if (
+    (totalToolCalls > 0 || (finalContent && finalContent.length > 40)) &&
+    _shouldExtractNow(params.agentId)
+  ) {
+    const utilityModel = await _resolveUtilityModel(params.agentId, providerCfg);
+    if (utilityModel) {
+      _markExtractTime(params.agentId);
+      _extractLessonsFromTick(params, finalContent, totalToolCalls, ai, utilityModel).catch(e => {
+        console.warn('[Lessons] extract failed:', e?.message);
+      });
+    }
+  }
+
   return { finalResponse: finalContent, toolCallCount: totalToolCalls };
+}
+
+// ── Utility-model resolution + rate limit ──────────────────────────────────
+const _lastExtractByAgent = new Map<number, number>();
+const _utilityModelCache = new Map<number, { value: string | null; until: number }>();
+const EXTRACT_COOLDOWN_MS = 30 * 60 * 1000;   // 30 min between extracts per agent
+const OPT_OUT_MARKERS = new Set(['off', 'none', 'disabled', '-']);
+
+/**
+ * Resolve the utility (weak/cheap) model for background features.
+ *   1. agent.utility_model explicitly set     → use it
+ *      …unless it equals one of OPT_OUT_MARKERS — then background OFF
+ *   2. providerCfg.utilityModel (registry)    → use it (cheap variant)
+ *   3. Otherwise                              → providerCfg.defaultModel
+ *      (extraction runs on the user's main expensive model — UI is expected
+ *       to display a red warning so this isn't silent)
+ *
+ * "Voluntarily mandatory": the platform never silently skips learning; it
+ * either runs on a cheap default OR on the user's main model with a visible
+ * warning until they configure a utility_model.
+ */
+async function _resolveUtilityModel(agentId: number, providerCfg: ProviderCfg): Promise<string | null> {
+  const now = Date.now();
+  const cached = _utilityModelCache.get(agentId);
+  let userOverride: string | null = null;
+  if (cached && cached.until > now) {
+    userOverride = cached.value;
+  } else {
+    try {
+      const { pool } = await import('../db');
+      const r = await pool.query<{ utility_model: string | null }>(
+        `SELECT utility_model FROM builder_bot.agents WHERE id = $1`,
+        [agentId],
+      );
+      userOverride = (r.rows[0]?.utility_model || '').trim() || null;
+      _utilityModelCache.set(agentId, { value: userOverride, until: now + 60_000 });
+    } catch { userOverride = null; }
+  }
+  if (userOverride) {
+    if (OPT_OUT_MARKERS.has(userOverride.toLowerCase())) return null;   // explicit opt-out only
+    return userOverride;
+  }
+  // Cheap registry variant if available, else fall back to MAIN model (UI warns)
+  return (providerCfg as any).utilityModel || providerCfg.defaultModel || null;
+}
+function _shouldExtractNow(agentId: number): boolean {
+  const last = _lastExtractByAgent.get(agentId) || 0;
+  return Date.now() - last > EXTRACT_COOLDOWN_MS;
+}
+function _markExtractTime(agentId: number): void {
+  _lastExtractByAgent.set(agentId, Date.now());
+}
+export function _invalidateUtilityModelCache(agentId: number): void {
+  _utilityModelCache.delete(agentId);
+}
+
+// ── Lessons extraction (post-tick, async, opt-in only) ─────────────────────
+async function _extractLessonsFromTick(
+  params: AIAgentTickParams,
+  finalContent: string | undefined,
+  toolCallCount: number,
+  ai: OpenAI,
+  providerCfg: ProviderCfg,
+): Promise<void> {
+  try {
+    const { LessonsStore } = await import('../services/lessons-store');
+    const { pool } = await import('../db');
+    const store = new LessonsStore(pool);
+    // Use the cheapest model in the provider chain (utilityModel), NOT the
+    // main model the user pays for inference. Falls back to defaultModel
+    // if the provider doesn't declare a utility variant.
+    const model = (providerCfg as any).utilityModel || providerCfg.defaultModel;
+
+    // Build a short trace — fall back to finalContent only if trace events
+    // aren't easily reachable (avoids creating a hard dep on private trace API)
+    var trace = '';
+    if (finalContent) trace += '\n[reply] ' + finalContent.slice(0, 400);
+    if (toolCallCount) trace += '\n[stats] tool_calls=' + toolCallCount;
+    if (trace.trim().length < 20) return;
+
+    const lessons = await LessonsStore.extractFromRun({
+      trace,
+      llmCall: async (prompt: string) => {
+        const r = await ai.chat.completions.create({
+          model,
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.3,
+          max_tokens: 400,
+        });
+        return r.choices[0]?.message?.content || '';
+      },
+    });
+    for (const l of lessons) {
+      await store.save({
+        agent_id: params.agentId,
+        topic: l.topic,
+        lesson: l.lesson,
+        outcome: l.outcome,
+        importance: l.importance,
+        metadata: { source: 'tick-auto', model, tool_calls: toolCallCount },
+      });
+    }
+  } catch (e: any) {
+    console.warn('[Lessons] _extractLessonsFromTick:', e?.message);
+  }
 }
 
 // ── Reflexive memory: lightweight post-response fact extraction ──────────────

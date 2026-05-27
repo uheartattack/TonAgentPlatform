@@ -2735,8 +2735,27 @@ export function startApiServer() {
       const { getOrchestrator } = await import('./agents/orchestrator');
       const result = await getOrchestrator().handleCreateAgent(userId, description.trim());
       if (result.type === 'agent_created' && (result as any).agentId) {
-        const agentData = await getDBTools().getAgent((result as any).agentId, userId);
-        res.json({ ok: true, agentId: (result as any).agentId, agent: agentData.data || null, message: (result.content || '').replace(/\\/g, ''), charge });
+        const newAgentId = (result as any).agentId;
+        const agentData = await getDBTools().getAgent(newAgentId, userId);
+
+        // Fire-and-forget Atlas enrichment — one cheap call on platform key
+        // that drafts an initial strategy + utility_model hint. Skipped if
+        // already enriched (idempotency gate in the endpoint itself).
+        setImmediate(async () => {
+          try {
+            const atlasKey = process.env.ATLAS_API_KEY || process.env.GEMINI_API_KEY || process.env.OPENROUTER_API_KEY;
+            if (!atlasKey) return;
+            const { default: fetchFn } = await import('node-fetch');
+            const port = process.env.API_PORT || '3000';
+            await fetchFn('http://127.0.0.1:' + port + '/api/agents/' + newAgentId + '/atlas/enrich', {
+              method: 'POST',
+              headers: { 'x-auth-token': req.headers['x-auth-token'] as string || '', 'Content-Type': 'application/json' },
+              body: '{}',
+            }).catch(() => {});
+          } catch {}
+        });
+
+        res.json({ ok: true, agentId: newAgentId, agent: agentData.data || null, message: (result.content || '').replace(/\\/g, ''), charge });
       } else {
         res.json({ ok: false, error: (result.content || 'Creation failed').replace(/\\/g, ''), charge });
       }
@@ -5972,15 +5991,21 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
   });
 
   // ── Owner-only middleware ──────────────────────────────────────────
+  // Accepts the primary platformConfig.owner.id AND any extra IDs listed
+  // in PLATFORM_OWNER_IDS env (comma-separated). Lets a co-owner / second
+  // device sign payouts without losing the single-OWNER_ID source of truth
+  // for the rest of the codebase.
   function requireOwner(req: Request, res: Response, next: NextFunction): void {
     const token = req.headers['x-auth-token'] as string || req.query.token as string;
     if (!token) { res.status(401).json({ error: 'No token' }); return; }
     const session = getSession(token);
     if (!session) { res.status(401).json({ error: 'Invalid or expired token' }); return; }
-    const ownerId = platformConfig.owner.id;
-    const isOwner =
-      session.userId === ownerId ||
-      (session as any).telegramId === ownerId;
+    const primary = platformConfig.owner.id;
+    const extra = (process.env.PLATFORM_OWNER_IDS || '')
+      .split(',').map(s => Number(s.trim())).filter(Boolean);
+    const ownerIds = new Set<number>([primary, ...extra]);
+    const sessTg = (session as any).telegramId;
+    const isOwner = ownerIds.has(session.userId) || (sessTg && ownerIds.has(sessTg));
     if (!isOwner) {
       res.status(403).json({ error: 'Owner only' }); return;
     }
@@ -7986,6 +8011,437 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
       const content = await ms.readDailyLog(own.agentId, req.params.date as string);
       res.json({ ok: true, content });
     } catch (e: any) { console.error('[API]', e.message?.slice(0, 200)); res.status(500).json({ ok: false, error: 'Internal error' }); }
+  });
+
+  // ── Lessons API — list / get-relevant / delete / manual add ──────────────
+  app.get('/api/agents/:id/lessons', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
+      const { LessonsStore } = await import('./services/lessons-store');
+      const limit = Math.min(200, parseInt((req.query.limit as string) || '50', 10));
+      const items = await new LessonsStore(pool).listByAgent(own.agentId, limit);
+      res.json({ ok: true, items });
+    } catch (e: any) { console.error('[API lessons]', e.message?.slice(0,200)); res.status(500).json({ ok:false, error: 'Internal error' }); }
+  });
+  app.get('/api/agents/:id/lessons/search', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
+      const { LessonsStore } = await import('./services/lessons-store');
+      const q = String(req.query.q || '').slice(0, 300);
+      const items = await new LessonsStore(pool).getRelevant(own.agentId, q, 12);
+      res.json({ ok: true, items });
+    } catch (e: any) { console.error('[API lessons search]', e.message?.slice(0,200)); res.status(500).json({ ok:false, error: 'Internal error' }); }
+  });
+  app.post('/api/agents/:id/lessons', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
+      const { LessonsStore } = await import('./services/lessons-store');
+      const body = req.body || {};
+      if (!body.lesson || typeof body.lesson !== 'string') { res.status(400).json({ ok:false, error:'lesson required' }); return; }
+      const id = await new LessonsStore(pool).save({
+        agent_id: own.agentId,
+        topic: body.topic ? String(body.topic).slice(0,80) : null,
+        lesson: String(body.lesson).slice(0,500),
+        outcome: ['success','failure','mixed','caution'].includes(body.outcome) ? body.outcome : 'mixed',
+        importance: typeof body.importance === 'number' ? Math.max(0, Math.min(1, body.importance)) : 0.5,
+        metadata: { source: 'user' },
+      });
+      res.json({ ok: true, id });
+    } catch (e: any) { console.error('[API lesson add]', e.message?.slice(0,200)); res.status(500).json({ ok:false, error: 'Internal error' }); }
+  });
+  app.delete('/api/agents/:id/lessons/:lessonId', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
+      const { LessonsStore } = await import('./services/lessons-store');
+      const ok = await new LessonsStore(pool).delete(own.agentId, parseInt(req.params.lessonId, 10));
+      res.json({ ok });
+    } catch (e: any) { console.error('[API lesson del]', e.message?.slice(0,200)); res.status(500).json({ ok:false, error: 'Internal error' }); }
+  });
+
+  // ── Strategies API — list / generate (Atlas) / toggle / delete ───────────
+  app.get('/api/agents/:id/strategies', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
+      const { StrategyEngine } = await import('./services/strategy-engine');
+      const items = await new StrategyEngine(pool).listAll(own.agentId, 50);
+      res.json({ ok: true, items });
+    } catch (e: any) { console.error('[API strategies]', e.message?.slice(0,200)); res.status(500).json({ ok:false, error: 'Internal error' }); }
+  });
+  app.post('/api/agents/:id/strategies/generate', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
+      const { StrategyEngine } = await import('./services/strategy-engine');
+      const { LessonsStore } = await import('./services/lessons-store');
+      const lessons = await new LessonsStore(pool).listByAgent(own.agentId, 25);
+      if (lessons.length < 3) { res.json({ ok:false, error: 'Need at least 3 lessons before Atlas can draft a strategy.' }); return; }
+
+      // Pick the cheapest available LLM (Atlas survival chain)
+      const userCfg: any = await getUserSettingsRepository().getAll(own.userId).catch(() => ({}));
+      const { resolveProvider } = await import('./agents/ai-agent-runtime');
+      const provCfg = resolveProvider(userCfg.AI_PROVIDER || 'gemini');
+      const key = userCfg[provCfg.envVar] || userCfg.AI_API_KEY;
+      if (!key) { res.status(400).json({ ok:false, error: 'No AI key configured' }); return; }
+      const ai = new (require('openai').default)({ baseURL: provCfg.baseURL, apiKey: key });
+
+      const agentRow = await pool.query<{ name: string; description: string | null }>(
+        `SELECT name, description FROM builder_bot.agents WHERE id = $1`, [own.agentId]
+      );
+      const draft = await StrategyEngine.generateFromLessons({
+        agentId: own.agentId,
+        lessons,
+        agentName: agentRow.rows[0]?.name,
+        agentDescription: agentRow.rows[0]?.description || undefined,
+        llmCall: async (prompt: string) => {
+          const r = await ai.chat.completions.create({
+            model: provCfg.utilityModel || provCfg.defaultModel,
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.5, max_tokens: 600,
+          });
+          return r.choices[0]?.message?.content || '';
+        },
+      });
+      if (!draft) { res.json({ ok:false, error: 'No coherent strategy emerged from these lessons.' }); return; }
+      const id = await new StrategyEngine(pool).save(draft);
+      res.json({ ok: true, id, strategy: draft });
+    } catch (e: any) { console.error('[API strat gen]', e.message?.slice(0,200)); res.status(500).json({ ok:false, error: 'Internal error' }); }
+  });
+  app.post('/api/agents/:id/strategies/:sid/toggle', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
+      const { StrategyEngine } = await import('./services/strategy-engine');
+      const ok = await new StrategyEngine(pool).toggleActive(own.agentId, parseInt(req.params.sid, 10), !!req.body?.active);
+      res.json({ ok });
+    } catch (e: any) { console.error('[API strat toggle]', e.message?.slice(0,200)); res.status(500).json({ ok:false, error: 'Internal error' }); }
+  });
+  app.delete('/api/agents/:id/strategies/:sid', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
+      const { StrategyEngine } = await import('./services/strategy-engine');
+      const ok = await new StrategyEngine(pool).delete(own.agentId, parseInt(req.params.sid, 10));
+      res.json({ ok });
+    } catch (e: any) { console.error('[API strat del]', e.message?.slice(0,200)); res.status(500).json({ ok:false, error: 'Internal error' }); }
+  });
+
+  // ── Atlas enrich — one-shot, platform-paid (Atlas is the ONE exception
+  //    where the platform key is used; everywhere else stays on user keys).
+  //    Reads agent.description + agent.code, produces:
+  //      • one initial strategy in agent_strategies
+  //      • a utility_model recommendation (NOT applied — user must opt in)
+  //    Gated by agents.atlas_enriched_at IS NULL to prevent re-spending.
+  app.post('/api/agents/:id/atlas/enrich', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
+      const r = await pool.query<{ name: string; description: string | null; code: string | null; atlas_enriched_at: Date | null }>(
+        `SELECT name, description, code, atlas_enriched_at FROM builder_bot.agents WHERE id = $1`,
+        [own.agentId],
+      );
+      const row = r.rows[0];
+      if (!row) { res.status(404).json({ ok: false, error: 'Agent not found' }); return; }
+      if (row.atlas_enriched_at) {
+        res.json({ ok: false, error: 'Already enriched', enriched_at: row.atlas_enriched_at });
+        return;
+      }
+
+      // Platform Atlas key — resolve provider-aware so the model + baseURL
+      // match the available key. NEVER falls back to user keys.
+      let atlasKey = '';
+      let atlasModel = process.env.ATLAS_UTILITY_MODEL || '';
+      let atlasBase = process.env.ATLAS_BASE_URL || '';
+      if (process.env.ATLAS_API_KEY) {
+        atlasKey = process.env.ATLAS_API_KEY;
+        atlasModel = atlasModel || 'gemini-2.0-flash-lite';
+        atlasBase = atlasBase || 'https://generativelanguage.googleapis.com/v1beta/openai';
+      } else if (process.env.GEMINI_API_KEY) {
+        atlasKey = process.env.GEMINI_API_KEY;
+        atlasModel = atlasModel || 'gemini-2.0-flash-lite';
+        atlasBase = atlasBase || 'https://generativelanguage.googleapis.com/v1beta/openai';
+      } else if (process.env.OPENROUTER_API_KEY) {
+        atlasKey = process.env.OPENROUTER_API_KEY;
+        atlasModel = atlasModel || 'google/gemini-2.0-flash-lite-001';
+        atlasBase = atlasBase || 'https://openrouter.ai/api/v1';
+      } else if (process.env.OPENAI_API_KEY && /^AIzaSy/.test(process.env.OPENAI_API_KEY)) {
+        // Platform stores Gemini key in OPENAI_API_KEY slot (legacy from v2.0)
+        atlasKey = process.env.OPENAI_API_KEY;
+        atlasModel = atlasModel || 'gemini-2.0-flash-lite';
+        atlasBase = atlasBase || 'https://generativelanguage.googleapis.com/v1beta/openai';
+      }
+      if (!atlasKey) { res.status(503).json({ ok: false, error: 'Atlas backend unavailable' }); return; }
+
+      const ai = new (require('openai').default)({ baseURL: atlasBase, apiKey: atlasKey });
+
+      const prompt =
+        'You are Atlas, the agent designer. The user just created an agent. Read its description + system prompt and emit ONE concrete playbook for the agent to follow when it boots, plus a cheap-utility-model recommendation.\n\n' +
+        'AGENT NAME: ' + (row.name || '') + '\n' +
+        'AGENT DESCRIPTION: ' + (row.description || '') + '\n' +
+        'AGENT SYSTEM PROMPT:\n' + (row.code || '').slice(0, 3000) + '\n\n' +
+        'OUTPUT — strict JSON, no prose:\n' +
+        '{\n' +
+        '  "strategy": {\n' +
+        '    "title": "<short imperative, ≤80 chars>",\n' +
+        '    "scenario": "<when this strategy applies, ≤200 chars>",\n' +
+        '    "playbook": "<5-7 ordered markdown bullets>"\n' +
+        '  },\n' +
+        '  "utility_model_hint": "<a cheap model id appropriate for this agent\'s tasks, e.g. gemini-2.0-flash-lite or deepseek/deepseek-chat:free>",\n' +
+        '  "heartbeat_hint_min": <integer minutes between proactive ticks, or null>\n' +
+        '}';
+
+      let raw = '';
+      try {
+        const resp = await ai.chat.completions.create({
+          model: atlasModel,
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.4, max_tokens: 700,
+        });
+        raw = resp.choices[0]?.message?.content || '';
+      } catch (e: any) {
+        res.status(502).json({ ok: false, error: 'Atlas LLM error: ' + (e?.message || 'unknown') });
+        return;
+      }
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) { res.json({ ok: false, error: 'Atlas returned no JSON' }); return; }
+      let parsed: any;
+      try { parsed = JSON.parse(jsonMatch[0]); }
+      catch { res.json({ ok: false, error: 'Atlas JSON parse failed' }); return; }
+
+      let strategyId: number | null = null;
+      if (parsed?.strategy?.title && parsed?.strategy?.playbook) {
+        const { StrategyEngine } = await import('./services/strategy-engine');
+        strategyId = await new StrategyEngine(pool).save({
+          agent_id: own.agentId,
+          title: String(parsed.strategy.title).slice(0, 180),
+          scenario: parsed.strategy.scenario ? String(parsed.strategy.scenario).slice(0, 500) : null,
+          playbook: String(parsed.strategy.playbook).slice(0, 2000),
+          source: 'atlas-init',
+          active: true,
+        });
+      }
+      await pool.query(
+        `UPDATE builder_bot.agents SET atlas_enriched_at = NOW() WHERE id = $1`,
+        [own.agentId],
+      );
+      res.json({
+        ok: true,
+        strategy_id: strategyId,
+        utility_model_hint: parsed?.utility_model_hint ? String(parsed.utility_model_hint).slice(0,120) : null,
+        heartbeat_hint_min: typeof parsed?.heartbeat_hint_min === 'number' ? parsed.heartbeat_hint_min : null,
+      });
+    } catch (e: any) { console.error('[API atlas enrich]', e.message?.slice(0,200)); res.status(500).json({ ok:false, error: 'Internal error' }); }
+  });
+
+  // ── Utility model selector — user can set / clear / opt-out ──────────────
+  app.post('/api/agents/:id/utility-model', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
+      const raw = String((req.body || {}).utility_model || '').trim().slice(0, 120);
+      const value = raw || null;
+      await pool.query(`UPDATE builder_bot.agents SET utility_model = $2 WHERE id = $1`, [own.agentId, value]);
+      // Bust the in-memory cache so the next tick picks it up immediately
+      try {
+        const rt = await import('./agents/ai-agent-runtime');
+        (rt as any)._invalidateUtilityModelCache?.(own.agentId);
+      } catch {}
+      res.json({ ok: true, utility_model: value });
+    } catch (e: any) { console.error('[API utility model]', e.message?.slice(0,200)); res.status(500).json({ ok:false, error: 'Internal error' }); }
+  });
+  app.get('/api/agents/:id/utility-model', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const own = await verifyAgentOwnership(req, res); if (!own) return;
+      const r = await pool.query<{ utility_model: string | null }>(
+        `SELECT utility_model FROM builder_bot.agents WHERE id = $1`, [own.agentId],
+      );
+      res.json({ ok: true, utility_model: r.rows[0]?.utility_model || null });
+    } catch (e: any) { console.error('[API utility model get]', e.message?.slice(0,200)); res.status(500).json({ ok:false, error: 'Internal error' }); }
+  });
+
+  // ── SkillOpt admin — Phase 3 — owner-only (platform Atlas pays) ──────────
+  app.get('/api/admin/skills/:name/versions', requireOwner, async (req: Request, res: Response) => {
+    try {
+      const { SkillOptimizer } = await import('./services/skill-optimizer');
+      const versions = await new SkillOptimizer(pool).listVersions(req.params.name, 20);
+      res.json({ ok: true, versions });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
+  });
+  app.post('/api/admin/skills/:name/optimize', requireOwner, async (req: Request, res: Response) => {
+    try {
+      const skillName = req.params.name;
+      const body = req.body || {};
+      let baselineBody: string = String(body.baseline_body || '').slice(0, 50000);
+      let queries: Array<{ query: string; expected?: string }> = Array.isArray(body.queries) ? body.queries.slice(0, 20) : [];
+
+      // Auto-load baseline from on-disk SKILL.md if not provided
+      if (!baselineBody) {
+        try {
+          const fs = await import('fs/promises');
+          const path = await import('path');
+          const skillPath = path.join(__dirname, '..', 'src', 'skills', skillName, 'SKILL.md');
+          baselineBody = await fs.readFile(skillPath, 'utf8');
+        } catch {
+          res.status(400).json({ ok: false, error: 'baseline_body required and SKILL.md not found on disk for "' + skillName + '"' });
+          return;
+        }
+      }
+
+      // Resolve platform Atlas key (same chain as enrich endpoint)
+      let atlasKey = process.env.ATLAS_API_KEY || process.env.GEMINI_API_KEY || process.env.OPENROUTER_API_KEY || '';
+      let atlasBase = process.env.ATLAS_BASE_URL || '';
+      let atlasModel = process.env.ATLAS_UTILITY_MODEL || '';
+      if (!atlasBase || !atlasModel) {
+        if (process.env.OPENROUTER_API_KEY === atlasKey) {
+          atlasBase = atlasBase || 'https://openrouter.ai/api/v1';
+          atlasModel = atlasModel || 'google/gemini-2.0-flash-lite-001';
+        } else if (process.env.OPENAI_API_KEY && /^AIzaSy/.test(process.env.OPENAI_API_KEY)) {
+          atlasKey = atlasKey || process.env.OPENAI_API_KEY;
+          atlasBase = atlasBase || 'https://generativelanguage.googleapis.com/v1beta/openai';
+          atlasModel = atlasModel || 'gemini-2.0-flash-lite';
+        } else {
+          atlasBase = atlasBase || 'https://generativelanguage.googleapis.com/v1beta/openai';
+          atlasModel = atlasModel || 'gemini-2.0-flash-lite';
+        }
+      }
+      if (!atlasKey) { res.status(503).json({ ok: false, error: 'Atlas backend unavailable' }); return; }
+
+      const ai = new (require('openai').default)({ baseURL: atlasBase, apiKey: atlasKey });
+      const { SkillOptimizer } = await import('./services/skill-optimizer');
+      const optimizer = new SkillOptimizer(pool);
+      const active = await optimizer.getActiveBody(skillName, baselineBody);
+
+      // Auto-generate synthetic queries if caller didn't provide them
+      if (queries.length < 3 || body.auto_generate_queries === true) {
+        try {
+          const genPrompt =
+            'You are reading the SKILL.md document below. Generate 6 diverse synthetic user queries an agent equipped with this skill might receive. For each, include a short "expected" answer or behaviour. Output strict JSON, no prose:\n\n' +
+            '[{"query":"...","expected":"..."}, ...]\n\n' +
+            '=== SKILL ===\n' + active.body.slice(0, 6000);
+          const r = await ai.chat.completions.create({
+            model: atlasModel,
+            messages: [{ role: 'user', content: genPrompt }],
+            temperature: 0.7, max_tokens: 1200,
+          });
+          const raw = r.choices[0]?.message?.content || '';
+          const m = raw.match(/\[[\s\S]*\]/);
+          if (m) {
+            const parsed = JSON.parse(m[0]);
+            if (Array.isArray(parsed)) {
+              const auto = parsed.filter((x: any) => x && typeof x.query === 'string').slice(0, 8).map((x: any) => ({
+                query: String(x.query).slice(0, 500),
+                expected: x.expected ? String(x.expected).slice(0, 500) : undefined,
+              }));
+              queries = queries.concat(auto);
+            }
+          }
+        } catch (e: any) { console.warn('[SkillOpt] query gen failed:', e?.message); }
+      }
+      if (queries.length < 3) { res.status(400).json({ ok: false, error: 'need ≥3 rollout queries (auto-gen failed)' }); return; }
+
+      // Inline helpers — runQueryAgainstSkill + scoreOutput both use platform Atlas key
+      const runQuery = async (skill: string, q: string): Promise<string> => {
+        const sys = 'You are an AI agent that follows this SKILL document strictly. Answer the user query using only what the SKILL says is possible. If the SKILL doesn\'t cover it, say so.\n\n=== SKILL ===\n' + skill;
+        const r = await ai.chat.completions.create({
+          model: atlasModel,
+          messages: [{ role: 'system', content: sys }, { role: 'user', content: q }],
+          temperature: 0.2, max_tokens: 400,
+        });
+        return r.choices[0]?.message?.content || '';
+      };
+      const score = async (query: string, expected: string | undefined, output: string) => {
+        const prompt =
+          'Score how well the output answers the query. Return ONLY a number 0-1 (two decimals max), then optional notes on a new line.\n\n' +
+          'QUERY: ' + query + '\n' +
+          (expected ? 'EXPECTED: ' + expected + '\n' : '') +
+          'OUTPUT: ' + output;
+        const r = await ai.chat.completions.create({
+          model: atlasModel,
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.0, max_tokens: 150,
+        });
+        const raw = r.choices[0]?.message?.content || '0';
+        const m = raw.match(/(0\.\d+|1\.0|0|1)/);
+        const sc = m ? parseFloat(m[1]) : 0;
+        const notes = raw.split('\n').slice(1).join(' ').trim().slice(0, 200);
+        return { score: sc, notes };
+      };
+
+      // Step 1 — baseline rollout
+      const baseline = await SkillOptimizer.rollout({
+        skillName, skillBody: active.body, queries,
+        runQueryAgainstSkill: runQuery, scoreOutput: score,
+      });
+
+      // Step 2 — reflect (propose edits)
+      const { ops, rationale } = await SkillOptimizer.reflect({
+        skillName, skillBody: active.body, rollouts: baseline.results,
+        llmCall: async (prompt: string) => {
+          const r = await ai.chat.completions.create({
+            model: atlasModel,
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.3, max_tokens: 1500,
+          });
+          return r.choices[0]?.message?.content || '';
+        },
+      });
+      if (ops.length === 0) {
+        res.json({ ok: true, status: 'no-edits-proposed', baseline_score: baseline.avgScore, rationale });
+        return;
+      }
+
+      // Step 3 — apply edits
+      const { body: candidateBody, appliedCount, skipped } = SkillOptimizer.applyEdits(active.body, ops);
+      if (appliedCount === 0) {
+        res.json({ ok: true, status: 'no-edits-applied', baseline_score: baseline.avgScore, skipped, rationale });
+        return;
+      }
+
+      // Step 4 — gate (rollout candidate, accept if beats baseline by margin)
+      const candidate = await SkillOptimizer.rollout({
+        skillName, skillBody: candidateBody, queries,
+        runQueryAgainstSkill: runQuery, scoreOutput: score,
+      });
+      const accept = SkillOptimizer.shouldAccept(baseline.avgScore, candidate.avgScore);
+
+      const versionId = await optimizer.saveDraft({
+        skill_name: skillName,
+        version_num: active.version_num + 1,
+        body: candidateBody,
+        parent_id: active.id,
+        eval_score: candidate.avgScore,
+        baseline_score: baseline.avgScore,
+        accepted: accept,
+        diff_summary: SkillOptimizer.diffSummary(ops),
+        edit_ops: ops,
+        rationale,
+        run_metadata: { applied: appliedCount, skipped, queries: queries.length },
+      });
+
+      res.json({
+        ok: true,
+        status: accept ? 'accepted' : 'rejected',
+        version_id: versionId,
+        version_num: active.version_num + 1,
+        baseline_score: baseline.avgScore,
+        candidate_score: candidate.avgScore,
+        delta: candidate.avgScore - baseline.avgScore,
+        ops_applied: appliedCount,
+        rationale,
+      });
+    } catch (e: any) { console.error('[API skill optimize]', e?.message?.slice(0,200)); res.status(500).json({ ok: false, error: e?.message || 'Internal error' }); }
+  });
+
+  // ── Memory cleanup admin — Phase 4 — owner-only ──────────────────────────
+  app.post('/api/admin/memory-cleanup/run', requireOwner, async (_req: Request, res: Response) => {
+    try {
+      const { MemoryCleanup } = await import('./services/memory-cleanup');
+      const stats = await new MemoryCleanup(pool).runFullPass();
+      res.json({ ok: true, stats });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
+  });
+  app.get('/api/admin/memory-cleanup/log', requireOwner, async (_req: Request, res: Response) => {
+    try {
+      const r = await pool.query(
+        `SELECT id, kind, stats, created_at FROM builder_bot.memory_cleanup_log
+         ORDER BY created_at DESC LIMIT 20`,
+      );
+      res.json({ ok: true, items: r.rows });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
   });
 
   app.delete('/api/agents/:id/memory', requireAuth, async (req: Request, res: Response) => {
