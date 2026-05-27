@@ -7,8 +7,8 @@
   <link rel="icon" type="image/svg+xml" href="logo.svg">
   <link rel="shortcut icon" href="logo.svg">
   <title>TON Agent Studio</title>
-  <link rel="preload" href="/studio.js?v=20260527a3" as="script">
-  <link rel="preload" href="/studio.css?v=20260526s11" as="style">
+  <link rel="preload" href="/studio.js?v=20260527e1" as="script">
+  <link rel="preload" href="/studio.css?v=20260527c1" as="style">
   <link rel="preload" href="/design-system.css?v=20260520z" as="style">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -58,17 +58,18 @@
       } catch(_e) {}
     })();
   </script>
-  <link rel="stylesheet" href="studio.css?v=20260526s11">
+  <link rel="stylesheet" href="studio.css?v=20260527c1">
   <!-- Claude Design tokens + 6 gradient presets + visual primitives -->
   <link rel="stylesheet" href="design-tokens.css?v=20260524">
   <link rel="stylesheet" href="design-themes.css?v=20260524">
   <link rel="stylesheet" href="design-app.css?v=20260524">
   <link rel="stylesheet" href="studio-skin.css?v=20260524s">
   <link rel="stylesheet" href="studio-gen-aura.css?v=20260526x1">
+  <link rel="stylesheet" href="accent-themes.css?v=20260527b2">
   <link rel="stylesheet" href="design-system.css?v=20260520z">
   <link rel="stylesheet" href="studio-theme-sync.css?v=20260518">
   <!-- tap-motion MUST be last so it overrides earlier .btn / .nav-item / etc. -->
-  <link rel="stylesheet" href="tap-motion.css?v=20260527a2">
+  <link rel="stylesheet" href="tap-motion.css?v=20260527a5">
   <!-- Telegram WebApp SDK — gives us window.Telegram.WebApp with theme,
        BackButton, MainButton, HapticFeedback, initData, viewportHeight.
        Loaded synchronously so Studio code can detect Mini App context on
@@ -378,6 +379,16 @@
               <span data-en="Payouts" data-ru="Выплаты">Выплаты</span>
               <span class="badge">ADM</span>
             </div>
+            <div class="nav-item admin-only-nav" data-page="admin-skills" onclick="navigateTo('admin-skills')" style="display:none">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              <span data-en="SkillOpt" data-ru="SkillOpt">SkillOpt</span>
+              <span class="badge">ADM</span>
+            </div>
+            <div class="nav-item admin-only-nav" data-page="admin-cleanup" onclick="navigateTo('admin-cleanup')" style="display:none">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+              <span data-en="Memory Cleanup" data-ru="Очистка памяти">Очистка</span>
+              <span class="badge">ADM</span>
+            </div>
             <div class="nav-item" data-page="wallets" onclick="navigateTo('wallets')">
               <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
               <span data-en="Wallets" data-ru="Кошельки">Кошельки</span>
@@ -424,10 +435,13 @@
               <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
               <span data-en="Guide" data-ru="Инструкции">Инструкции</span>
             </div>
-            <div class="nav-item" data-page="notifications" onclick="navigateTo('notifications')">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-              <span data-en="Notifications" data-ru="Уведомления">Уведомления</span>
-              <span class="badge red" id="nav-notif-badge" style="display:none">0</span>
+            <div class="nav-item" data-page="settings" onclick="navigateTo('settings')">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              <span data-en="Settings" data-ru="Настройки">Настройки</span>
+            </div>
+            <div class="nav-item" data-page="profile" onclick="navigateTo('profile')">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              <span data-en="Profile" data-ru="Профиль">Профиль</span>
             </div>
             <div class="nav-item admin-only-nav" data-page="bugs" onclick="navigateTo('bugs')" style="display:none">
               <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2l1.88 1.88M14.12 3.88L16 2M9 7.13v-1a3.003 3.003 0 1 1 6 0v1M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6"/></svg>
@@ -446,16 +460,8 @@
               <div class="user-tier" id="user-plan-badge">Free</div>
             </div>
           </div>
-          <div class="row" style="margin-top:12px;justify-content:space-between;padding:0 4px">
-            <div class="row gap-4">
-              <button class="lang-btn active" data-lang="en" onclick="switchLang('en')" style="padding:5px 10px;font-size:11px">EN</button>
-              <button class="lang-btn" data-lang="ru" onclick="switchLang('ru')" style="padding:5px 10px;font-size:11px">RU</button>
-            </div>
+          <div class="row" style="margin-top:12px;justify-content:flex-end;padding:0 4px">
             <span class="muted mono" style="font-size:10.5px">v2.4.1</span>
-          </div>
-          <div style="display:flex;align-items:center;gap:8px;margin-top:8px;padding:0 4px">
-            <input type="range" id="sidebar-scale-slider" min="80" max="120" value="100" step="5" style="flex:1;accent-color:var(--primary)" oninput="setUIScale(this.value)">
-            <span id="sidebar-scale-value" class="mono" style="font-size:11px;color:var(--text-secondary);min-width:34px;text-align:right">100%</span>
           </div>
         </div>
       </aside>
@@ -1160,8 +1166,8 @@
               <span data-en="Account" data-ru="Аккаунт">Account</span>
             </button>
             <button class="pill-tab" data-tab="settings"   onclick="navigateTo('settings')">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-              <span data-en="AI Keys" data-ru="AI ключи">AI Keys</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              <span data-en="Settings" data-ru="Настройки">Settings</span>
             </button>
             <button class="pill-tab" data-tab="wallet"     onclick="navigateTo('wallet')">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
@@ -1177,52 +1183,56 @@
             </button>
           </div>
 
-          <div class="settings-grid">
-            <div class="settings-section">
-              <h3 class="section-title" data-en="AI API Key" data-ru="AI API Ключ">AI API Key</h3>
-              <div class="settings-card">
-                <p style="color:var(--text-secondary);font-size:.85rem;margin-bottom:14px" data-en="Your agents need an AI key to think. Choose provider and enter your key." data-ru="Вашим агентам нужен AI ключ для работы. Выберите провайдера и введите ключ.">Your agents need an AI key to think. Choose provider and enter your key.</p>
-                <div class="credential-item" style="margin-bottom:12px">
-                  <div class="credential-info">
-                    <span class="credential-name" data-en="Provider" data-ru="Провайдер">Provider</span>
-                  </div>
-                  <select id="ai-provider-select" class="form-input" style="max-width:260px" onchange="onAIProviderChange()">
-                    <option value="gemini">Gemini (Google)</option>
-                    <option value="openai">OpenAI</option>
-                    <option value="anthropic">Anthropic</option>
-                    <option value="groq">Groq</option>
-                    <option value="deepseek">DeepSeek</option>
-                    <option value="openrouter">OpenRouter</option>
-                    <option value="together">Together AI</option>
-                  </select>
-                </div>
-                <div class="credential-item" style="margin-bottom:12px">
-                  <div class="credential-info">
-                    <span class="credential-name">API Key</span>
-                    <span class="credential-status" id="ai-key-status" style="display:none" data-en="Saved" data-ru="Сохранён">Saved</span>
-                  </div>
-                  <div class="input-group">
-                    <input type="password" class="form-input" id="ai-api-key-input" placeholder="sk-... / AIza... / gsk_...">
-                    <button class="btn btn-ghost btn-sm" onclick="togglePassword(this)" data-en="Show" data-ru="Показать">Show</button>
-                  </div>
-                </div>
-                <div style="display:flex;gap:8px;align-items:center">
-                  <button class="btn btn-primary btn-sm" onclick="saveAIKey()">
-                    <span data-en="Save Key" data-ru="Сохранить ключ">Save Key</span>
-                  </button>
-                  <button class="btn btn-ghost btn-sm" onclick="clearAIKey()" style="color:var(--danger)">
-                    <span data-en="Clear" data-ru="Очистить">Clear</span>
-                  </button>
-                  <span id="ai-key-msg" style="font-size:.78rem;color:var(--success);display:none"></span>
-                </div>
-                <p style="color:var(--text-muted);font-size:.72rem;margin-top:10px" data-en="Key is stored encrypted and synced with your Telegram bot settings." data-ru="Ключ хранится зашифрованно и синхронизируется с настройками бота.">Key is stored encrypted and synced with your Telegram bot settings.</p>
+          <div class="settings-grid tap-settings-grid">
+            <!-- 01 — AI API Key — wrapped in new tap-settings-card shell -->
+            <div class="tap-settings-card">
+              <div class="tap-settings-card__head">
+                <h3>
+                  <span class="num-cube" style="width:30px;height:30px;font-size:12px">01</span>
+                  <span data-en="AI API Key" data-ru="AI API Ключ">AI API Key</span>
+                </h3>
+                <span class="eyebrow green" id="ai-key-status" style="display:none">● <span data-en="Saved" data-ru="Сохранён">Saved</span></span>
+              </div>
+              <p class="tap-settings-card__desc" data-en="Your agents need an AI key to think. Choose provider and enter your key — it's encrypted and synced with bot settings." data-ru="Вашим агентам нужен AI ключ для работы. Выберите провайдера и введите ключ — он шифруется и синхронизируется с настройками бота.">Your agents need an AI key to think.</p>
+              <label class="tap-field-label" data-en="Provider" data-ru="Провайдер">Provider</label>
+              <select id="ai-provider-select" class="form-input" style="margin-bottom:14px;width:100%" onchange="onAIProviderChange()">
+                <option value="gemini">Gemini (Google)</option>
+                <option value="openai">OpenAI</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="groq">Groq</option>
+                <option value="deepseek">DeepSeek</option>
+                <option value="openrouter">OpenRouter</option>
+                <option value="together">Together AI</option>
+              </select>
+              <label class="tap-field-label">API Key</label>
+              <div class="input-group" style="margin-bottom:14px">
+                <input type="password" class="form-input" id="ai-api-key-input" placeholder="sk-... / AIza... / gsk_..." style="flex:1;font-family:ui-monospace,SF Mono,Menlo,monospace">
+                <button class="btn btn-ghost btn-sm" onclick="togglePassword(this)" data-en="Show" data-ru="Показать">Show</button>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <button class="btn btn-primary btn-sm" onclick="saveAIKey()">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                  <span data-en="Save Key" data-ru="Сохранить ключ">Save Key</span>
+                </button>
+                <button class="btn btn-ghost btn-sm" onclick="clearAIKey()" style="color:var(--danger)">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                  <span data-en="Clear" data-ru="Очистить">Clear</span>
+                </button>
+                <span id="ai-key-msg" style="font-size:.78rem;color:var(--success);display:none"></span>
               </div>
             </div>
             
-            <div class="settings-section">
-              <h3 class="section-title" data-en="Telegram Account" data-ru="Telegram аккаунт">Telegram Account</h3>
-              <div class="settings-card">
-                <p style="color:var(--text-secondary);font-size:.85rem;margin-bottom:14px" data-en="Connect any Telegram account. Your agents will act as this user via MTProto." data-ru="Подключите любой Telegram аккаунт. Ваши агенты будут действовать от его имени через MTProto.">Connect any Telegram account. Your agents will act as this user via MTProto.</p>
+            <!-- 02 — Telegram Account — wrapped in new card shell -->
+            <div class="tap-settings-card">
+              <div class="tap-settings-card__head">
+                <h3>
+                  <span class="num-cube" style="width:30px;height:30px;font-size:12px">02</span>
+                  <span data-en="Telegram Account" data-ru="Telegram аккаунт">Telegram Account</span>
+                </h3>
+                <span class="eyebrow amber" id="tg-not-connected-badge">● <span data-en="Not connected" data-ru="Не подключён">Not connected</span></span>
+              </div>
+              <p class="tap-settings-card__desc" data-en="Connect any Telegram account. Your agents will act as this user via MTProto. Session persists locally." data-ru="Подключите любой Telegram аккаунт. Ваши агенты будут действовать от его имени через MTProto. Сессия сохраняется локально.">Connect any Telegram account.</p>
+              <div data-tg-section="1"><!-- TG connect controls -->
 
                 <div id="tg-auth-status" style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
                   <span class="connection-badge" id="tg-connection-badge" style="display:none">
@@ -1264,33 +1274,299 @@
               </div>
             </div>
 
-            <div class="settings-section">
-              <h3 class="section-title" data-en="Security" data-ru="Безопасность">Security</h3>
-              <div class="settings-card">
-                <div class="setting-item">
-                  <div class="setting-info">
-                    <span class="setting-name" data-en="Audit Logging" data-ru="Логирование">Audit Logging</span>
-                    <span class="setting-desc" data-en="Record all agent actions for review" data-ru="Записывать все действия агента">Record all agent actions for review</span>
+            <!-- 03 — Accent theme picker (NEW) — 6 gradient presets -->
+            <div class="tap-settings-card" style="grid-column:1/-1">
+              <div class="tap-settings-card__head">
+                <h3>
+                  <span class="num-cube" style="width:30px;height:30px;font-size:12px">03</span>
+                  <span data-en="Accent Theme" data-ru="Тема акцентов">Accent Theme</span>
+                </h3>
+                <span class="muted" style="font-size:12px">
+                  <span data-en="Current:" data-ru="Текущий:">Current:</span>
+                  <span class="primary" id="accent-current-name" style="font-weight:700">Aurora</span>
+                </span>
+              </div>
+              <p class="tap-settings-card__desc" data-en="Each preset overrides --primary and --accent-2 together. Changes hero, cards, chips, tabs and all glow effects across the app." data-ru="Каждый пресет переопределяет --primary и --accent-2 одновременно. Меняет hero, cards, chips, tabs и все glow-эффекты во всём приложении.">Each preset overrides --primary and --accent-2 together.</p>
+              <div class="accent-presets-grid" id="accent-presets-grid">
+                <!-- Cards injected via JS for theming consistency. Fallback HTML below. -->
+                <div class="preset-card" data-accent-id="aurora" data-accent="aurora" onclick="setAccentTheme('aurora')">
+                  <div class="preset-swatch">
+                    <div class="ps-large" style="background:linear-gradient(135deg,#0098EA,#a855f7)"></div>
+                    <div class="ps-small ps-1" style="background:#0098EA"></div>
+                    <div class="ps-small ps-2" style="background:#a855f7"></div>
                   </div>
-                  <label class="toggle-switch"><input type="checkbox" id="sec-logging" checked onchange="saveSecuritySettings()"><span class="toggle-slider"></span></label>
+                  <div style="display:flex;justify-content:space-between;align-items:flex-start">
+                    <div>
+                      <div class="preset-name">Aurora</div>
+                      <div class="preset-desc">TON blue × purple</div>
+                    </div>
+                    <span class="accent-tick" style="display:none;color:var(--primary)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                  </div>
                 </div>
-                <div class="setting-item">
-                  <div class="setting-info">
-                    <span class="setting-name" data-en="Confirm Sensitive Actions" data-ru="Подтверждать действия">Confirm Sensitive Actions</span>
-                    <span class="setting-desc" data-en="Ask before executing critical operations" data-ru="Спрашивать перед критическими операциями">Ask before executing critical operations</span>
+                <div class="preset-card" data-accent-id="cyber" data-accent="cyber" onclick="setAccentTheme('cyber')">
+                  <div class="preset-swatch">
+                    <div class="ps-large" style="background:linear-gradient(135deg,#06b6d4,#ec4899)"></div>
+                    <div class="ps-small ps-1" style="background:#06b6d4"></div>
+                    <div class="ps-small ps-2" style="background:#ec4899"></div>
                   </div>
-                  <label class="toggle-switch"><input type="checkbox" id="sec-confirm" checked onchange="saveSecuritySettings()"><span class="toggle-slider"></span></label>
+                  <div style="display:flex;justify-content:space-between;align-items:flex-start">
+                    <div>
+                      <div class="preset-name">Cyber</div>
+                      <div class="preset-desc">cyan × magenta</div>
+                    </div>
+                    <span class="accent-tick" style="display:none;color:var(--primary)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                  </div>
                 </div>
-                <div class="setting-item">
-                  <div class="setting-info">
-                    <span class="setting-name" data-en="Rate Limiting" data-ru="Ограничение запросов">Rate Limiting</span>
-                    <span class="setting-desc" data-en="Limit requests per minute" data-ru="Ограничить запросы в минуту">Limit requests per minute</span>
+                <div class="preset-card" data-accent-id="plasma" data-accent="plasma" onclick="setAccentTheme('plasma')">
+                  <div class="preset-swatch">
+                    <div class="ps-large" style="background:linear-gradient(135deg,#a855f7,#ec4899)"></div>
+                    <div class="ps-small ps-1" style="background:#a855f7"></div>
+                    <div class="ps-small ps-2" style="background:#ec4899"></div>
                   </div>
-                  <label class="toggle-switch"><input type="checkbox" id="sec-rate-limit" checked onchange="saveSecuritySettings()"><span class="toggle-slider"></span></label>
+                  <div style="display:flex;justify-content:space-between;align-items:flex-start">
+                    <div>
+                      <div class="preset-name">Plasma</div>
+                      <div class="preset-desc">purple × pink</div>
+                    </div>
+                    <span class="accent-tick" style="display:none;color:var(--primary)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                  </div>
+                </div>
+                <div class="preset-card" data-accent-id="emerald" data-accent="emerald" onclick="setAccentTheme('emerald')">
+                  <div class="preset-swatch">
+                    <div class="ps-large" style="background:linear-gradient(135deg,#10b981,#14b8a6)"></div>
+                    <div class="ps-small ps-1" style="background:#10b981"></div>
+                    <div class="ps-small ps-2" style="background:#14b8a6"></div>
+                  </div>
+                  <div style="display:flex;justify-content:space-between;align-items:flex-start">
+                    <div>
+                      <div class="preset-name">Emerald</div>
+                      <div class="preset-desc">emerald × teal</div>
+                    </div>
+                    <span class="accent-tick" style="display:none;color:var(--primary)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                  </div>
+                </div>
+                <div class="preset-card" data-accent-id="sunset" data-accent="sunset" onclick="setAccentTheme('sunset')">
+                  <div class="preset-swatch">
+                    <div class="ps-large" style="background:linear-gradient(135deg,#f59e0b,#ef4444)"></div>
+                    <div class="ps-small ps-1" style="background:#f59e0b"></div>
+                    <div class="ps-small ps-2" style="background:#ef4444"></div>
+                  </div>
+                  <div style="display:flex;justify-content:space-between;align-items:flex-start">
+                    <div>
+                      <div class="preset-name">Sunset</div>
+                      <div class="preset-desc">amber × red</div>
+                    </div>
+                    <span class="accent-tick" style="display:none;color:var(--primary)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                  </div>
+                </div>
+                <div class="preset-card" data-accent-id="mono" data-accent="mono" onclick="setAccentTheme('mono')">
+                  <div class="preset-swatch">
+                    <div class="ps-large" style="background:linear-gradient(135deg,#0ea5e9,#6366f1)"></div>
+                    <div class="ps-small ps-1" style="background:#0ea5e9"></div>
+                    <div class="ps-small ps-2" style="background:#6366f1"></div>
+                  </div>
+                  <div style="display:flex;justify-content:space-between;align-items:flex-start">
+                    <div>
+                      <div class="preset-name">Mono</div>
+                      <div class="preset-desc">sky × indigo</div>
+                    </div>
+                    <span class="accent-tick" style="display:none;color:var(--primary)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                  </div>
                 </div>
               </div>
             </div>
+
+            <!-- 04 — Security — wrapped in new card -->
+            <div class="tap-settings-card" style="grid-column:1/-1">
+              <div class="tap-settings-card__head">
+                <h3>
+                  <span class="num-cube" style="width:30px;height:30px;font-size:12px">04</span>
+                  <span data-en="Security" data-ru="Безопасность">Security</span>
+                </h3>
+                <span class="eyebrow green">WCAG AA</span>
+              </div>
+              <div class="tap-toggle-row">
+                <div>
+                  <div class="tap-toggle-row__title" data-en="Audit Logging" data-ru="Логирование">Audit Logging</div>
+                  <div class="tap-toggle-row__desc" data-en="Record all agent actions for review" data-ru="Записывать все действия агента">Record all agent actions for review</div>
+                </div>
+                <label class="toggle-switch"><input type="checkbox" id="sec-logging" checked onchange="saveSecuritySettings()"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="tap-toggle-row">
+                <div>
+                  <div class="tap-toggle-row__title" data-en="Confirm Sensitive Actions" data-ru="Подтверждать действия">Confirm Sensitive Actions</div>
+                  <div class="tap-toggle-row__desc" data-en="Ask before executing critical operations" data-ru="Спрашивать перед критическими операциями">Ask before executing critical operations</div>
+                </div>
+                <label class="toggle-switch"><input type="checkbox" id="sec-confirm" checked onchange="saveSecuritySettings()"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="tap-toggle-row">
+                <div>
+                  <div class="tap-toggle-row__title" data-en="Auto-end sessions" data-ru="Авто-завершение сессий">Auto-end sessions</div>
+                  <div class="tap-toggle-row__desc" data-en="Close inactive sessions after 30 minutes" data-ru="Закрывать неактивные сессии через 30 минут">Close inactive sessions after 30 minutes</div>
+                </div>
+                <label class="toggle-switch"><input type="checkbox" id="sec-autoend" onchange="saveSecuritySettings()"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="tap-toggle-row">
+                <div>
+                  <div class="tap-toggle-row__title" data-en="2FA via Telegram" data-ru="Двухфакторная аутентификация">2FA via Telegram</div>
+                  <div class="tap-toggle-row__desc" data-en="Via Telegram for critical actions" data-ru="Через Telegram при критических действиях">Via Telegram for critical actions</div>
+                </div>
+                <label class="toggle-switch"><input type="checkbox" id="sec-2fa" checked onchange="saveSecuritySettings()"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="tap-toggle-row">
+                <div>
+                  <div class="tap-toggle-row__title" data-en="Rate Limiting" data-ru="Ограничение запросов">Rate Limiting</div>
+                  <div class="tap-toggle-row__desc" data-en="Limit requests per minute" data-ru="Ограничить запросы в минуту">Limit requests per minute</div>
+                </div>
+                <label class="toggle-switch"><input type="checkbox" id="sec-rate-limit" checked onchange="saveSecuritySettings()"><span class="toggle-slider"></span></label>
+              </div>
+            </div>
+
+            <!-- 05 — Notification Settings (moved from Profile; not the feed itself, just preferences) -->
+            <div class="tap-settings-card" style="grid-column:1/-1">
+              <div class="tap-settings-card__head">
+                <h3>
+                  <span class="num-cube" style="width:30px;height:30px;font-size:12px">05</span>
+                  <span data-en="Notification Settings" data-ru="Настройки уведомлений">Notification Settings</span>
+                </h3>
+              </div>
+              <p class="tap-settings-card__desc" data-en="Toast duration, sound, auto-dismiss, retention. The notification feed itself lives under Notifications in the sidebar." data-ru="Длительность, звук, авто-скрытие, хранение. Сам список уведомлений — в сайдбаре «Уведомления».">Toast duration, sound, auto-dismiss, retention.</p>
+              <div style="display:flex;flex-direction:column;gap:18px">
+                <div>
+                  <label class="tap-field-label" data-en="Toast Duration" data-ru="Длительность тостов">Toast Duration</label>
+                  <div style="display:flex;align-items:center;gap:12px">
+                    <input type="range" id="notif-duration-slider" min="2" max="15" value="5" step="1" style="flex:1;accent-color:var(--primary)" oninput="setNotifDuration(this.value)">
+                    <span id="notif-duration-value" style="font-size:13px;color:var(--text-primary);min-width:35px;text-align:right;font-family:ui-monospace,monospace">5s</span>
+                  </div>
+                </div>
+                <div>
+                  <label class="tap-field-label" data-en="Auto-dismiss after" data-ru="Авто-скрытие через">Auto-dismiss after</label>
+                  <div style="display:flex;gap:8px;flex-wrap:wrap">
+                    <button class="notif-dismiss-btn" onclick="setNotifAutoDismiss(0)" style="padding:7px 14px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--text-primary);font-size:12.5px;cursor:pointer;transition:all .15s" data-en="Manual" data-ru="Вручную">Manual</button>
+                    <button class="notif-dismiss-btn active" onclick="setNotifAutoDismiss(5)" style="padding:7px 14px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--text-primary);font-size:12.5px;cursor:pointer;transition:all .15s" data-en="5 sec" data-ru="5 сек">5 sec</button>
+                    <button class="notif-dismiss-btn" onclick="setNotifAutoDismiss(10)" style="padding:7px 14px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--text-primary);font-size:12.5px;cursor:pointer;transition:all .15s" data-en="10 sec" data-ru="10 сек">10 sec</button>
+                    <button class="notif-dismiss-btn" onclick="setNotifAutoDismiss(30)" style="padding:7px 14px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--text-primary);font-size:12.5px;cursor:pointer;transition:all .15s" data-en="30 sec" data-ru="30 сек">30 sec</button>
+                  </div>
+                </div>
+                <div>
+                  <label class="tap-field-label" data-en="Auto-delete history" data-ru="Авто-удаление истории">Auto-delete history</label>
+                  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px">
+                    <button class="notif-retain-btn" onclick="setNotifRetain('off')" style="padding:7px 14px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--text-primary);font-size:12.5px;cursor:pointer;transition:all .15s" data-en="Never" data-ru="Никогда">Never</button>
+                    <button class="notif-retain-btn" onclick="setNotifRetain('1d')" style="padding:7px 14px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--text-primary);font-size:12.5px;cursor:pointer;transition:all .15s" data-en="1 day" data-ru="1 день">1 day</button>
+                    <button class="notif-retain-btn" onclick="setNotifRetain('7d')" style="padding:7px 14px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--text-primary);font-size:12.5px;cursor:pointer;transition:all .15s" data-en="7 days" data-ru="7 дней">7 days</button>
+                    <button class="notif-retain-btn active" onclick="setNotifRetain('30d')" style="padding:7px 14px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--text-primary);font-size:12.5px;cursor:pointer;transition:all .15s" data-en="30 days" data-ru="30 дней">30 days</button>
+                    <button class="notif-retain-btn" onclick="setNotifRetain('custom')" style="padding:7px 14px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--text-primary);font-size:12.5px;cursor:pointer;transition:all .15s" data-en="Custom" data-ru="Своё">Custom</button>
+                  </div>
+                  <div id="notif-custom-retain" style="display:none;margin-top:8px">
+                    <div style="display:flex;align-items:center;gap:8px">
+                      <input type="number" id="notif-retain-days" min="1" max="365" value="14" style="width:70px;padding:7px 10px;background:var(--bg-primary);border:1px solid var(--border);border-radius:10px;color:var(--text-primary);font-size:13px;text-align:center">
+                      <span style="font-size:12.5px;color:var(--text-muted)" data-en="days" data-ru="дней">days</span>
+                      <button onclick="applyCustomRetain()" style="padding:7px 14px;border-radius:10px;border:none;background:var(--primary);color:white;font-size:12.5px;cursor:pointer" data-en="Apply" data-ru="Применить">Apply</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="tap-toggle-row" style="border-bottom:none;padding:8px 0">
+                  <div>
+                    <div class="tap-toggle-row__title" data-en="Sound on notifications" data-ru="Звук при уведомлениях">Sound on notifications</div>
+                    <div class="tap-toggle-row__desc" data-en="Play a soft tick when a new toast appears" data-ru="Лёгкий клик при появлении нового toast'а">Play a soft tick when a new toast appears</div>
+                  </div>
+                  <label class="toggle-switch"><input type="checkbox" id="notif-sound-toggle" onchange="toggleNotifSound(this.checked)"><span class="toggle-slider"></span></label>
+                </div>
+                <div class="tap-toggle-row" style="border-bottom:none;padding:8px 0">
+                  <div>
+                    <div class="tap-toggle-row__title" data-en="Feedback badge" data-ru="Бейдж фидбэка">Feedback badge</div>
+                    <div class="tap-toggle-row__desc" data-en="Show counter on the feedback button" data-ru="Показывать счётчик на кнопке фидбэка">Show counter on the feedback button</div>
+                  </div>
+                  <label class="toggle-switch"><input type="checkbox" id="notif-badge-toggle" checked onchange="toggleNotifBadge(this.checked)"><span class="toggle-slider"></span></label>
+                </div>
+              </div>
+            </div>
+
+            <!-- 06 — Privacy & Data (moved from Profile) -->
+            <div class="tap-settings-card">
+              <div class="tap-settings-card__head">
+                <h3>
+                  <span class="num-cube" style="width:30px;height:30px;font-size:12px">06</span>
+                  <span data-en="Privacy &amp; Data" data-ru="Приватность и данные">Privacy &amp; Data</span>
+                </h3>
+              </div>
+              <p class="tap-settings-card__desc" data-en="Control what we collect and export everything you own." data-ru="Управляйте сбором данных и выгружайте всё что нам принадлежит вам.">Control what we collect and export everything.</p>
+              <div class="tap-toggle-row" style="border-bottom:none;padding:8px 0">
+                <div>
+                  <div class="tap-toggle-row__title" data-en="Share error reports" data-ru="Делиться отчётами об ошибках">Share error reports</div>
+                  <div class="tap-toggle-row__desc" data-en="Help us improve by sending anonymous crash data" data-ru="Помогите улучшить платформу анонимными отчётами">Help us improve by sending anonymous crash data</div>
+                </div>
+                <label class="toggle-switch"><input type="checkbox" id="profile-error-consent" onchange="toggleErrorConsent(this.checked)"><span class="toggle-slider"></span></label>
+              </div>
+              <div style="margin-top:12px">
+                <button class="btn btn-secondary btn-sm" onclick="exportMyData()">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  <span data-en="Export My Data" data-ru="Скачать мои данные">Export My Data</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- 07 — Language -->
+            <div class="tap-settings-card">
+              <div class="tap-settings-card__head">
+                <h3>
+                  <span class="num-cube" style="width:30px;height:30px;font-size:12px">07</span>
+                  <span data-en="Language" data-ru="Язык интерфейса">Language</span>
+                </h3>
+              </div>
+              <p class="tap-settings-card__desc" data-en="Interface language. Agents reply in the language they are configured for, not this one." data-ru="Язык интерфейса. Агенты отвечают на своём языке настройки, не этом.">Interface language only — agents reply on their own setting.</p>
+              <div style="display:flex;gap:8px">
+                <button class="lang-btn active" data-lang="en" onclick="switchLang('en')" style="padding:10px 18px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text-primary);font-size:13px;font-weight:600;cursor:pointer;flex:1">English</button>
+                <button class="lang-btn" data-lang="ru" onclick="switchLang('ru')" style="padding:10px 18px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text-primary);font-size:13px;font-weight:600;cursor:pointer;flex:1">Русский</button>
+              </div>
+            </div>
+
+            <!-- 08 — UI Scale (moved from sidebar) -->
+            <div class="tap-settings-card" style="grid-column:1/-1">
+              <div class="tap-settings-card__head">
+                <h3>
+                  <span class="num-cube" style="width:30px;height:30px;font-size:12px">08</span>
+                  <span data-en="UI Scale" data-ru="Масштаб интерфейса">UI Scale</span>
+                </h3>
+                <span class="muted" style="font-size:12px"><span id="settings-ui-scale-value" style="font-family:ui-monospace,monospace;font-weight:700;color:var(--primary)">100%</span></span>
+              </div>
+              <p class="tap-settings-card__desc" data-en="Scale the whole interface from 80% to 120%. Persists across sessions." data-ru="Масштаб всего интерфейса от 80% до 120%. Сохраняется между сессиями.">Scale 80–120% across the app.</p>
+              <input type="range" id="ui-scale-slider" min="80" max="120" value="100" step="5" style="width:100%;accent-color:var(--primary)" oninput="setUIScale(this.value)">
+              <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);margin-top:6px;font-family:ui-monospace,monospace">
+                <span>80%</span><span>100%</span><span>120%</span>
+              </div>
+            </div>
           </div>
+        </div>
+      </div>
+
+      <!-- Admin: SkillOpt (Phase 3) -->
+      <div id="admin-skills-page" class="page">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title" data-en="SkillOpt" data-ru="SkillOpt">SkillOpt</h1>
+            <p class="page-subtitle" data-en="Auto-optimize built-in SKILL.md via Rollout → Reflect → Edit → Gate loop. Platform Atlas pays." data-ru="Авто-оптимизация встроенных SKILL.md через Rollout → Reflect → Edit → Gate. Платит платформа.">Auto-optimize built-in SKILL.md via the 4-step loop.</p>
+          </div>
+        </div>
+        <div id="admin-skills-content" style="padding:24px;max-width:1200px;margin:0 auto">
+          <div style="text-align:center;color:var(--text-muted);padding:2rem">Loading…</div>
+        </div>
+      </div>
+
+      <!-- Admin: Memory cleanup audit (Phase 4) -->
+      <div id="admin-cleanup-page" class="page">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title" data-en="Memory Cleanup" data-ru="Очистка памяти">Memory Cleanup</h1>
+            <p class="page-subtitle" data-en="Nightly maintenance log + manual trigger. Zero LLM cost." data-ru="Лог ежедневной очистки + ручной запуск. Без LLM-расходов.">Nightly maintenance log + manual trigger.</p>
+          </div>
+          <button class="btn btn-primary" onclick="runMemoryCleanupNow()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            <span data-en="Run now" data-ru="Запустить">Run now</span>
+          </button>
+        </div>
+        <div id="admin-cleanup-content" style="padding:24px;max-width:1200px;margin:0 auto">
+          <div style="text-align:center;color:var(--text-muted);padding:2rem">Loading…</div>
         </div>
       </div>
 
@@ -1617,8 +1893,8 @@
               <span data-en="Account" data-ru="Аккаунт">Account</span>
             </button>
             <button class="pill-tab" data-tab="settings"   onclick="navigateTo('settings')">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-              <span data-en="AI Keys" data-ru="AI ключи">AI Keys</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              <span data-en="Settings" data-ru="Настройки">Settings</span>
             </button>
             <button class="pill-tab" data-tab="wallet"     onclick="navigateTo('wallet')">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
@@ -1740,8 +2016,8 @@
               <span data-en="Account" data-ru="Аккаунт">Account</span>
             </button>
             <button class="pill-tab" data-tab="settings"   onclick="navigateTo('settings')">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-              <span data-en="AI Keys" data-ru="AI ключи">AI Keys</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              <span data-en="Settings" data-ru="Настройки">Settings</span>
             </button>
             <button class="pill-tab" data-tab="wallet"     onclick="navigateTo('wallet')">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
@@ -2062,8 +2338,8 @@
               <span data-en="Account" data-ru="Аккаунт">Account</span>
             </button>
             <button class="pill-tab" data-tab="settings"   onclick="navigateTo('settings')">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-              <span data-en="AI Keys" data-ru="AI ключи">AI Keys</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              <span data-en="Settings" data-ru="Настройки">Settings</span>
             </button>
             <button class="pill-tab" data-tab="wallet"     onclick="navigateTo('wallet')">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
@@ -2173,109 +2449,23 @@
               </div>
             </div>
           </div>
+          <!-- Danger Zone — Export + Delete account (everything else moved to Settings) -->
           <div class="panel" style="margin-top:1.5rem;border:1px solid rgba(220,53,69,.3)">
             <div class="panel-header">
               <h3 class="panel-title" style="color:#dc3545" data-en="Danger Zone" data-ru="Опасная зона">Danger Zone</h3>
             </div>
-            <!-- Privacy & Data Section -->
-            <div class="panel" style="margin-top:20px">
-              <div class="panel-header">
-                <h3 class="panel-title" data-en="Privacy & Data" data-ru="Конфиденциальность и данные">Privacy & Data</h3>
+            <div style="padding:16px;display:flex;flex-direction:column;gap:14px">
+              <div style="display:flex;gap:10px;flex-wrap:wrap">
+                <button class="btn btn-secondary btn-sm" onclick="exportMyData()">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  <span data-en="Export My Data" data-ru="Скачать мои данные">Export My Data</span>
+                </button>
+                <button class="btn btn-sm" style="background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;border:none" onclick="deleteMyAccount()">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                  <span data-en="Delete Account" data-ru="Удалить аккаунт">Delete Account</span>
+                </button>
               </div>
-              <div style="padding:16px;display:flex;flex-direction:column;gap:12px">
-                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:.86rem;color:var(--text-primary)">
-                  <input type="checkbox" id="profile-error-consent" style="accent-color:#0ea5e9;width:18px;height:18px" onchange="toggleErrorConsent(this.checked)">
-                  <span data-en="Share error reports to improve the platform" data-ru="Делиться отчётами об ошибках для улучшения платформы">Share error reports</span>
-                </label>
-                <div style="display:flex;gap:10px;flex-wrap:wrap">
-                  <button class="rt-save-btn" style="padding:8px 18px;font-size:.8rem" onclick="exportMyData()">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                    <span data-en="Export My Data" data-ru="Скачать мои данные">Export My Data</span>
-                  </button>
-                  <button class="rt-save-btn" style="padding:8px 18px;font-size:.8rem;background:linear-gradient(135deg,#dc2626,#b91c1c)" onclick="deleteMyAccount()">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                    <span data-en="Delete Account" data-ru="Удалить аккаунт">Delete Account</span>
-                  </button>
-                </div>
-                <p style="font-size:.72rem;color:var(--text-muted);margin:0" data-en="Deleting your account permanently removes all agents, data, wallets, and sessions." data-ru="Удаление аккаунта навсегда удаляет всех агентов, данные, кошельки и сессии.">Deleting removes everything.</p>
-              </div>
-            </div>
-
-            <!-- Notification Settings -->
-            <div class="panel" style="margin-top:16px">
-              <div class="panel-header">
-                <h3 class="panel-title" data-en="Notifications" data-ru="Уведомления">Notifications</h3>
-              </div>
-              <div style="padding:16px;display:flex;flex-direction:column;gap:14px">
-                <div>
-                  <label style="font-size:.78rem;color:var(--text-muted);display:block;margin-bottom:6px" data-en="Toast Duration" data-ru="Длительность уведомлений">Toast Duration</label>
-                  <div style="display:flex;align-items:center;gap:10px">
-                    <input type="range" id="notif-duration-slider" min="2" max="15" value="5" step="1" style="flex:1;accent-color:#0ea5e9" oninput="setNotifDuration(this.value)">
-                    <span id="notif-duration-value" style="font-size:.82rem;color:var(--text-primary);min-width:30px;text-align:right">5s</span>
-                  </div>
-                </div>
-                <div>
-                  <label style="font-size:.78rem;color:var(--text-muted);display:block;margin-bottom:6px" data-en="Auto-dismiss" data-ru="Авто-удаление">Auto-dismiss</label>
-                  <div style="display:flex;gap:8px;flex-wrap:wrap">
-                    <button class="notif-dismiss-btn" onclick="setNotifAutoDismiss(0)" style="padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:.78rem;cursor:pointer;transition:all .15s" data-en="Manual" data-ru="Вручную">Manual</button>
-                    <button class="notif-dismiss-btn active" onclick="setNotifAutoDismiss(5)" style="padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:.78rem;cursor:pointer;transition:all .15s" data-en="5 sec" data-ru="5 сек">5 sec</button>
-                    <button class="notif-dismiss-btn" onclick="setNotifAutoDismiss(10)" style="padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:.78rem;cursor:pointer;transition:all .15s" data-en="10 sec" data-ru="10 сек">10 sec</button>
-                    <button class="notif-dismiss-btn" onclick="setNotifAutoDismiss(30)" style="padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:.78rem;cursor:pointer;transition:all .15s" data-en="30 sec" data-ru="30 сек">30 sec</button>
-                  </div>
-                </div>
-                <div>
-                  <label style="font-size:.78rem;color:var(--text-muted);display:block;margin-bottom:6px" data-en="Auto-delete history" data-ru="Авто-удаление истории">Auto-delete history</label>
-                  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px">
-                    <button class="notif-retain-btn" onclick="setNotifRetain('off')" style="padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:.78rem;cursor:pointer;transition:all .15s" data-en="Never" data-ru="Никогда">Never</button>
-                    <button class="notif-retain-btn" onclick="setNotifRetain('1d')" style="padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:.78rem;cursor:pointer;transition:all .15s" data-en="1 day" data-ru="1 день">1 day</button>
-                    <button class="notif-retain-btn" onclick="setNotifRetain('7d')" style="padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:.78rem;cursor:pointer;transition:all .15s" data-en="7 days" data-ru="7 дней">7 days</button>
-                    <button class="notif-retain-btn active" onclick="setNotifRetain('30d')" style="padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:.78rem;cursor:pointer;transition:all .15s" data-en="30 days" data-ru="30 дней">30 days</button>
-                    <button class="notif-retain-btn" onclick="setNotifRetain('custom')" style="padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:.78rem;cursor:pointer;transition:all .15s" data-en="Custom" data-ru="Своё">Custom</button>
-                  </div>
-                  <div id="notif-custom-retain" style="display:none;margin-top:6px">
-                    <div style="display:flex;align-items:center;gap:8px">
-                      <input type="number" id="notif-retain-days" min="1" max="365" value="14" style="width:70px;padding:6px 10px;background:var(--bg-primary);border:1px solid var(--border);border-radius:10px;color:var(--text-primary);font-size:.82rem;text-align:center">
-                      <span style="font-size:.78rem;color:var(--text-muted)" data-en="days" data-ru="дней">days</span>
-                      <button onclick="applyCustomRetain()" style="padding:6px 14px;border-radius:10px;border:none;background:var(--primary);color:white;font-size:.78rem;cursor:pointer" data-en="Apply" data-ru="Применить">Apply</button>
-                    </div>
-                  </div>
-                </div>
-                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:.86rem;color:var(--text-primary)">
-                  <input type="checkbox" id="notif-sound-toggle" style="accent-color:#0ea5e9;width:18px;height:18px" onchange="toggleNotifSound(this.checked)">
-                  <span data-en="Play sound on notifications" data-ru="Звук при уведомлениях">Sound on notifications</span>
-                </label>
-                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:.86rem;color:var(--text-primary)">
-                  <input type="checkbox" id="notif-badge-toggle" checked style="accent-color:#0ea5e9;width:18px;height:18px" onchange="toggleNotifBadge(this.checked)">
-                  <span data-en="Show badge on feedback button" data-ru="Показывать badge на кнопке фидбека">Show feedback badge</span>
-                </label>
-              </div>
-            </div>
-
-            <!-- UI Settings -->
-            <div class="panel" style="margin-top:16px">
-              <div class="panel-header">
-                <h3 class="panel-title" data-en="Interface" data-ru="Интерфейс">Interface</h3>
-              </div>
-              <div style="padding:16px;display:flex;flex-direction:column;gap:14px">
-                <div>
-                  <label style="font-size:.78rem;color:var(--text-muted);display:block;margin-bottom:6px" data-en="UI Scale" data-ru="Масштаб интерфейса">UI Scale</label>
-                  <div style="display:flex;align-items:center;gap:10px">
-                    <input type="range" id="ui-scale-slider" min="80" max="120" value="100" step="5" style="flex:1;accent-color:#0ea5e9" oninput="setUIScale(this.value)">
-                    <span id="ui-scale-value" style="font-size:.82rem;color:var(--text-primary);min-width:35px;text-align:right">100%</span>
-                  </div>
-                </div>
-                <div>
-                  <label style="font-size:.78rem;color:var(--text-muted);display:block;margin-bottom:8px" data-en="Accent Gradient" data-ru="Акцентный градиент">Accent Gradient</label>
-                  <div style="display:flex;gap:10px;flex-wrap:wrap" id="accent-preset-picker">
-                    <div onclick="setAccentPreset('aurora')"  class="accent-preset" data-preset="aurora"  style="--p-primary:#0098EA;--p-accent2:#a855f7" title="Aurora — TON blue × purple"><span class="lbl">Aurora</span></div>
-                    <div onclick="setAccentPreset('cyber')"   class="accent-preset" data-preset="cyber"   style="--p-primary:#06b6d4;--p-accent2:#ec4899" title="Cyber — cyan × magenta"><span class="lbl">Cyber</span></div>
-                    <div onclick="setAccentPreset('plasma')"  class="accent-preset" data-preset="plasma"  style="--p-primary:#a855f7;--p-accent2:#ec4899" title="Plasma — purple × pink"><span class="lbl">Plasma</span></div>
-                    <div onclick="setAccentPreset('emerald')" class="accent-preset" data-preset="emerald" style="--p-primary:#10b981;--p-accent2:#14b8a6" title="Emerald — emerald × teal"><span class="lbl">Emerald</span></div>
-                    <div onclick="setAccentPreset('sunset')"  class="accent-preset" data-preset="sunset"  style="--p-primary:#f59e0b;--p-accent2:#ef4444" title="Sunset — amber × red"><span class="lbl">Sunset</span></div>
-                    <div onclick="setAccentPreset('mono')"    class="accent-preset" data-preset="mono"    style="--p-primary:#0ea5e9;--p-accent2:#6366f1" title="Mono — sky × indigo"><span class="lbl">Mono</span></div>
-                  </div>
-                </div>
-              </div>
+              <p style="font-size:.72rem;color:var(--text-muted);margin:0;line-height:1.5" data-en="Deleting your account permanently removes all agents, data, wallets, and sessions." data-ru="Удаление аккаунта навсегда удаляет всех агентов, данные, кошельки и сессии.">Deleting your account permanently removes all agents, data, wallets, and sessions.</p>
             </div>
           </div>
         
@@ -2533,8 +2723,8 @@
               <span data-en="Account" data-ru="Аккаунт">Account</span>
             </button>
             <button class="pill-tab" data-tab="settings"   onclick="navigateTo('settings')">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-              <span data-en="AI Keys" data-ru="AI ключи">AI Keys</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              <span data-en="Settings" data-ru="Настройки">Settings</span>
             </button>
             <button class="pill-tab" data-tab="wallet"     onclick="navigateTo('wallet')">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
@@ -2860,6 +3050,7 @@
           <div class="st-nav-group"><div class="st-nav-label" data-en="Behavior" data-ru="Поведение">Behavior</div>
             <button class="st-nav-item" onclick="switchSettingsTab('behavior')" data-tab="behavior"><div class="st-nav-icon" style="background:rgba(236,72,153,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ec4899" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div><span data-en="Humanization" data-ru="Человечность">Humanization</span></button>
             <button class="st-nav-item" onclick="switchSettingsTab('learning')" data-tab="learning"><div class="st-nav-icon" style="background:rgba(16,185,129,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></div><span data-en="Learning" data-ru="Обучение">Learning</span></button>
+            <button class="st-nav-item" onclick="switchSettingsTab('memory')" data-tab="memory"><div class="st-nav-icon" style="background:rgba(168,85,247,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2z"/></svg></div><span data-en="Memory" data-ru="Память">Memory</span></button>
           </div>
           <div class="st-nav-group"><div class="st-nav-label" data-en="Hooks" data-ru="Хуки">Hooks</div>
             <button class="st-nav-item" onclick="switchSettingsTab('blocklist')" data-tab="blocklist"><div class="st-nav-icon" style="background:rgba(239,68,68,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg></div><span data-en="Blocklist" data-ru="Блоклист">Blocklist</span></button>
@@ -2973,6 +3164,6 @@
   </div>
 
   <script src="https://unpkg.com/@tonconnect/ui@2/dist/tonconnect-ui.min.js"></script>
-  <script src="studio.js?v=20260527a3"></script>
+  <script src="studio.js?v=20260527e1"></script>
 </body>
 </html>

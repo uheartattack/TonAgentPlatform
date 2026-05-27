@@ -1920,6 +1920,199 @@ async function refreshAgentDetail() {
   } catch(e) { console.error('refreshAgentDetail error', e); }
 }
 
+// ── Agent → Memory tab: lessons + strategies + utility model ────────────────
+async function renderAgentMemoryTab(body, agentId) {
+  var isRu = (typeof currentLang !== 'undefined' && currentLang === 'ru');
+  try {
+    var [lessonsRes, strategiesRes, utilRes] = await Promise.all([
+      apiRequest('GET', '/api/agents/' + agentId + '/lessons?limit=20').catch(() => ({ ok: false })),
+      apiRequest('GET', '/api/agents/' + agentId + '/strategies').catch(() => ({ ok: false })),
+      apiRequest('GET', '/api/agents/' + agentId + '/utility-model').catch(() => ({ ok: false })),
+    ]);
+    var lessons = (lessonsRes && lessonsRes.items) || [];
+    var strategies = (strategiesRes && strategiesRes.items) || [];
+    var utility = (utilRes && utilRes.utility_model) || null;
+    var utilOptedOut = utility && ['off','none','disabled','-'].indexOf(String(utility).toLowerCase()) >= 0;
+
+    var html = '<div class="rt-page">';
+    // Header
+    html +=
+      '<div class="rt-header">' +
+        '<div class="rt-header-icon" style="background:rgba(168,85,247,0.12);color:#a855f7">' +
+          '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2z"/></svg>' +
+        '</div>' +
+        '<div class="rt-header-text">' +
+          '<h3>' + (isRu ? 'Память агента' : 'Agent Memory') + '</h3>' +
+          '<p>' + (isRu
+            ? 'Уроки которые агент извлёк сам + стратегии-плейбуки. Все LLM-вызовы — за счёт ВАШЕГО API-ключа.'
+            : 'Lessons the agent self-extracted + strategy playbooks. All LLM calls run on YOUR API key.') + '</p>' +
+        '</div>' +
+      '</div>';
+
+    // Utility-model section (the "voluntarily-mandatory" cheap model)
+    html += '<div class="rt-section">';
+    html += '<div class="rt-section-label">' +
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>' +
+      (isRu ? 'Утилитарная (дешёвая) модель' : 'Utility (cheap) model') +
+      '</div>';
+    if (!utility) {
+      html +=
+        '<div style="padding:12px 14px;margin-bottom:10px;border-radius:10px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);color:#f87171;font-size:13px;line-height:1.5">' +
+          '<strong>' + (isRu ? 'ВНИМАНИЕ:' : 'WARNING:') + '</strong> ' +
+          (isRu
+            ? 'утилитарная модель не указана — авто-обучение работает на ВАШЕЙ основной (дорогой) модели через ваш API-ключ. Укажите дешёвую (напр. gemini-2.0-flash-lite) или впишите <code>off</code> чтобы отключить.'
+            : 'utility model is not set — auto-learning runs on YOUR main (expensive) model via your API key. Set a cheap one (e.g. gemini-2.0-flash-lite) or type <code>off</code> to disable.') +
+        '</div>';
+    } else if (utilOptedOut) {
+      html +=
+        '<div style="padding:10px 14px;margin-bottom:10px;border-radius:10px;background:rgba(100,116,139,0.08);border:1px solid rgba(100,116,139,0.2);color:var(--text-secondary);font-size:13px">' +
+          (isRu ? 'Авто-обучение отключено. Поставьте имя модели чтобы включить.' : 'Auto-learning disabled. Type a model name to enable.') +
+        '</div>';
+    } else {
+      html +=
+        '<div style="padding:10px 14px;margin-bottom:10px;border-radius:10px;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);color:#22c55e;font-size:13px">' +
+          (isRu ? 'Авто-обучение работает на: ' : 'Auto-learning runs on: ') + '<code style="font-family:ui-monospace,monospace;color:#fff;background:rgba(255,255,255,0.05);padding:2px 6px;border-radius:4px">' + escHtml(utility) + '</code>' +
+        '</div>';
+    }
+    html +=
+      '<div style="display:flex;gap:8px;align-items:center">' +
+        '<input type="text" id="mem-util-input" class="form-input" placeholder="gemini-2.0-flash-lite / off" value="' + escHtml(utility || '') + '" style="flex:1;font-family:ui-monospace,SF Mono,Menlo,monospace;font-size:13px">' +
+        '<button class="rt-save-btn" onclick="saveAgentUtilityModel(' + agentId + ')">' + (isRu ? 'Сохранить' : 'Save') + '</button>' +
+      '</div>';
+    html += '<p style="font-size:11.5px;color:var(--text-muted);margin-top:8px;line-height:1.5">' +
+      (isRu
+        ? 'Эта модель используется ТОЛЬКО для фоновых задач (lesson extract, transcript summary). Основные ответы агента остаются на вашей основной модели.'
+        : 'This model runs ONLY background tasks (lesson extract, transcript summary). Main agent replies stay on your main model.') +
+      '</p>';
+    html += '</div>';
+
+    // Strategies section
+    html += '<div class="rt-section">';
+    html += '<div class="rt-section-label">' +
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>' +
+      (isRu ? 'Стратегии' : 'Strategies') +
+      ' <span style="margin-left:6px;font-weight:500;color:var(--text-muted);text-transform:none;letter-spacing:0">(' + strategies.length + ')</span>' +
+      '<button class="rt-save-btn" style="margin-left:auto;padding:6px 12px;font-size:12px" onclick="generateAgentStrategy(' + agentId + ')">' +
+        (isRu ? '+ Сгенерировать (Atlas)' : '+ Generate (Atlas)') +
+      '</button>' +
+      '</div>';
+    if (strategies.length === 0) {
+      html += '<p style="color:var(--text-muted);font-size:13px;padding:14px 4px">' +
+        (isRu ? 'Стратегий пока нет. Atlas сгенерирует одну после 3+ выученных уроков, либо нажмите кнопку выше.' : 'No strategies yet. Atlas will draft one after 3+ lessons, or click the button above.') +
+        '</p>';
+    } else {
+      html += '<div style="display:flex;flex-direction:column;gap:10px">';
+      strategies.forEach(function(s) {
+        var winRate = (s.success_count || 0) + (s.fail_count || 0) > 0
+          ? Math.round((s.success_count || 0) / ((s.success_count || 0) + (s.fail_count || 0)) * 100)
+          : null;
+        html += '<div style="padding:12px 14px;border-radius:10px;border:1px solid var(--border, rgba(255,255,255,0.08));background:rgba(255,255,255,0.02)">' +
+          '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:6px">' +
+            '<div style="flex:1;min-width:0">' +
+              '<div style="font-weight:600;font-size:14px;color:var(--text-primary);margin-bottom:2px">' + escHtml(s.title) + '</div>' +
+              (s.scenario ? '<div style="font-size:12px;color:var(--text-secondary);font-style:italic">' + escHtml(s.scenario) + '</div>' : '') +
+            '</div>' +
+            '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0">' +
+              (winRate !== null ? '<span style="font-size:11px;color:' + (winRate >= 70 ? '#22c55e' : winRate >= 40 ? '#f59e0b' : '#ef4444') + ';font-family:ui-monospace,monospace;font-weight:600">' + winRate + '%</span>' : '') +
+              '<label class="toggle-switch" style="transform:scale(0.8)"><input type="checkbox" ' + (s.active ? 'checked' : '') + ' onchange="toggleAgentStrategy(' + agentId + ',' + s.id + ',this.checked)"><span class="toggle-slider"></span></label>' +
+              '<button onclick="deleteAgentStrategy(' + agentId + ',' + s.id + ')" style="background:transparent;border:none;color:var(--text-muted);cursor:pointer;padding:4px" title="Delete">' +
+                '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>' +
+              '</button>' +
+            '</div>' +
+          '</div>' +
+          '<details style="margin-top:6px"><summary style="font-size:12px;color:var(--text-muted);cursor:pointer;user-select:none">' + (isRu ? 'Плейбук' : 'Playbook') + '</summary>' +
+            '<pre style="margin:6px 0 0;padding:10px;background:rgba(0,0,0,0.25);border-radius:6px;font-size:12px;color:var(--text-primary);white-space:pre-wrap;font-family:ui-monospace,monospace;line-height:1.5">' + escHtml(s.playbook) + '</pre>' +
+          '</details>' +
+          '<div style="display:flex;gap:14px;font-size:11px;color:var(--text-muted);margin-top:8px;font-family:ui-monospace,monospace">' +
+            '<span style="color:#22c55e">✓ ' + (s.success_count || 0) + '</span>' +
+            '<span style="color:#ef4444">✗ ' + (s.fail_count || 0) + '</span>' +
+            '<span style="margin-left:auto">' + (s.source || 'atlas') + '</span>' +
+          '</div>' +
+        '</div>';
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+
+    // Lessons section
+    html += '<div class="rt-section">';
+    html += '<div class="rt-section-label">' +
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>' +
+      (isRu ? 'Уроки' : 'Lessons') +
+      ' <span style="margin-left:6px;font-weight:500;color:var(--text-muted);text-transform:none;letter-spacing:0">(' + lessons.length + ')</span>' +
+      '</div>';
+    if (lessons.length === 0) {
+      html += '<p style="color:var(--text-muted);font-size:13px;padding:14px 4px">' +
+        (isRu ? 'Уроков пока нет. Они появятся автоматически после нескольких тиков агента, если включена утилитарная модель.' : 'No lessons yet. They will appear after a few agent ticks once a utility model is set.') +
+        '</p>';
+    } else {
+      html += '<div style="display:flex;flex-direction:column;gap:6px">';
+      lessons.forEach(function(l) {
+        var outcomeColor = l.outcome === 'success' ? '#22c55e' : l.outcome === 'failure' ? '#ef4444' : l.outcome === 'caution' ? '#f59e0b' : 'var(--text-muted)';
+        var imp = Math.round((l.importance || 0.5) * 100);
+        html += '<div style="padding:10px 12px;border-radius:8px;background:rgba(255,255,255,0.02);border:1px solid var(--border, rgba(255,255,255,0.06));font-size:13px;display:flex;gap:10px;align-items:flex-start">' +
+          '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + outcomeColor + ';margin-top:6px;flex-shrink:0"></span>' +
+          '<div style="flex:1;min-width:0">' +
+            (l.topic ? '<span style="font-size:10.5px;color:var(--primary);font-family:ui-monospace,monospace;text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-right:6px">' + escHtml(l.topic) + '</span>' : '') +
+            '<span>' + escHtml(l.lesson) + '</span>' +
+          '</div>' +
+          '<span style="font-size:10.5px;color:var(--text-muted);font-family:ui-monospace,monospace;flex-shrink:0">' + imp + '%</span>' +
+          '<button onclick="deleteAgentLesson(' + agentId + ',' + l.id + ')" style="background:transparent;border:none;color:var(--text-muted);cursor:pointer;padding:2px;flex-shrink:0" title="Delete">' +
+            '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>' +
+          '</button>' +
+        '</div>';
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+    html += '</div>';
+    body.innerHTML = html;
+  } catch (e) {
+    body.innerHTML = '<div style="padding:2rem;color:#ef4444">Error: ' + escHtml(e.message || String(e)) + '</div>';
+  }
+}
+
+// Helpers wired from the Memory tab
+async function saveAgentUtilityModel(agentId) {
+  var input = document.getElementById('mem-util-input');
+  if (!input) return;
+  var value = input.value.trim();
+  try {
+    var r = await apiRequest('POST', '/api/agents/' + agentId + '/utility-model', { utility_model: value });
+    if (r && r.ok) {
+      toast(currentLang === 'ru' ? 'Сохранено' : 'Saved', 'success');
+      renderAgentMemoryTab(document.getElementById('agent-settings-body'), agentId);
+    } else { toast(r && r.error || 'Error', 'error'); }
+  } catch (e) { toast('Error: ' + (e.message || e), 'error'); }
+}
+async function generateAgentStrategy(agentId) {
+  try {
+    toast(currentLang === 'ru' ? 'Atlas думает…' : 'Atlas thinking…', 'info');
+    var r = await apiRequest('POST', '/api/agents/' + agentId + '/strategies/generate', {});
+    if (r && r.ok) {
+      toast(currentLang === 'ru' ? 'Стратегия создана' : 'Strategy created', 'success');
+      renderAgentMemoryTab(document.getElementById('agent-settings-body'), agentId);
+    } else { toast(r && r.error || 'Generation failed', 'error'); }
+  } catch (e) { toast('Error: ' + (e.message || e), 'error'); }
+}
+async function toggleAgentStrategy(agentId, sid, active) {
+  try { await apiRequest('POST', '/api/agents/' + agentId + '/strategies/' + sid + '/toggle', { active: active }); }
+  catch (e) { toast('Error: ' + (e.message || e), 'error'); }
+}
+async function deleteAgentStrategy(agentId, sid) {
+  if (!confirm(currentLang === 'ru' ? 'Удалить стратегию?' : 'Delete strategy?')) return;
+  try {
+    await apiRequest('DELETE', '/api/agents/' + agentId + '/strategies/' + sid);
+    renderAgentMemoryTab(document.getElementById('agent-settings-body'), agentId);
+  } catch (e) { toast('Error: ' + (e.message || e), 'error'); }
+}
+async function deleteAgentLesson(agentId, lessonId) {
+  try {
+    await apiRequest('DELETE', '/api/agents/' + agentId + '/lessons/' + lessonId);
+    renderAgentMemoryTab(document.getElementById('agent-settings-body'), agentId);
+  } catch (e) { toast('Error: ' + (e.message || e), 'error'); }
+}
+
 function switchSettingsTab(tab) {
   _settingsTab = tab;
   // Update tab buttons
@@ -3020,6 +3213,9 @@ function switchSettingsTab(tab) {
   } else if (tab === 'telegram') {
     body.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--text-muted)">Loading...</div>';
     loadAgentTelegramTab(body, _detailAgentId);
+  } else if (tab === 'memory') {
+    body.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--text-muted)">Loading…</div>';
+    renderAgentMemoryTab(body, _detailAgentId);
   } else if (tab === 'evals') {
     var isRu = currentLang === 'ru';
     body.innerHTML =
@@ -5749,6 +5945,8 @@ const pageLoadFns = {
   notifications: () => loadNotificationsPage(),
   wallets:       () => loadWalletsPage(),
   'admin-agents':() => loadAdminAgentsPage(),
+  'admin-skills':() => loadAdminSkillsPage(),
+  'admin-cleanup':() => loadAdminCleanupPage(),
   'bugs':        () => loadBugDashboard(),
   'terms':       () => loadTermsPage(),
   'privacy':     () => loadPrivacyPage(),
@@ -13348,6 +13546,18 @@ function dismissOnboarding() {
   var modal = document.getElementById('onboarding-modal');
   if (modal) modal.style.display = 'none';
   localStorage.setItem('onboarding_completed', '1');
+  // Chain into the interactive tour for first-time users so they actually
+  // see the spotlight walkthrough instead of having to find it in Guide.
+  // tour_seen flag prevents re-triggering on subsequent logins / re-opens.
+  try {
+    if (!localStorage.getItem('tour_seen') && typeof startGuidedTour === 'function') {
+      // Defer one tick — let the modal close-transition finish first
+      setTimeout(function() {
+        try { startGuidedTour(); } catch(e) { console.warn('[tour] start failed', e); }
+        localStorage.setItem('tour_seen', '1');
+      }, 320);
+    }
+  } catch(_) {}
 }
 
 // ===== GETTING STARTED TRACKER =====
@@ -16296,17 +16506,89 @@ async function exportMyData() {
 
 function deleteMyAccount() {
   var isRu = currentLang === 'ru';
-  var msg = isRu
-    ? 'Это действие НЕОБРАТИМО. Будут удалены:\n\n• Все агенты и их данные\n• Все кошельки\n• История транзакций\n• Telegram сессии\n• Подписка\n\nВведите DELETE для подтверждения:'
-    : 'This action is IRREVERSIBLE. Will be deleted:\n\n• All agents and data\n• All wallets\n• Transaction history\n• Telegram sessions\n• Subscription\n\nType DELETE to confirm:';
-  var input = prompt(msg);
-  if (input !== 'DELETE') { toast(isRu ? 'Отменено' : 'Cancelled', 'info'); return; }
-  apiRequest('DELETE', '/api/me/account', { confirmation: 'DELETE' }).then(function(d) {
-    if (d.ok) {
-      toast(isRu ? 'Аккаунт удалён' : 'Account deleted', 'success');
-      setTimeout(function() { logout(); }, 1500);
-    } else { toast(d.error || 'Error', 'error'); }
-  }).catch(function(e) { toast('Error: ' + (e.message||e), 'error'); });
+  // Build a tap-motion styled confirm modal instead of the ugly native prompt().
+  // User must type "DELETE" exactly — Confirm button stays disabled until then.
+  var existing = document.getElementById('tap-delete-account-modal');
+  if (existing) existing.remove();
+  var bullets = (isRu
+    ? ['Все агенты и их данные', 'Все кошельки', 'История транзакций', 'Telegram сессии', 'Подписка']
+    : ['All agents and data', 'All wallets', 'Transaction history', 'Telegram sessions', 'Subscription'])
+    .map(function(t) { return '<li style="padding:4px 0;color:var(--text-secondary,rgba(255,255,255,0.65))">' + t + '</li>'; }).join('');
+
+  var modal = document.createElement('div');
+  modal.id = 'tap-delete-account-modal';
+  modal.className = 'modal-overlay tap-modal-backdrop';
+  modal.setAttribute('data-tap', '1');
+  modal.style.cssText = 'display:flex;position:fixed;inset:0;z-index:10001;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);animation:tap-fade-in 200ms ease-out;';
+  modal.innerHTML =
+    '<div class="modal-content tap-modal" data-tap="1" style="position:relative;max-width:440px;width:90%;border-radius:18px;border:1px solid rgba(239,68,68,0.35);background:linear-gradient(180deg,rgba(35,12,14,0.96) 0%,rgba(20,8,10,0.98) 100%);box-shadow:0 30px 80px -20px rgba(0,0,0,0.7),0 0 0 1px rgba(239,68,68,0.08),0 0 60px rgba(239,68,68,0.18);padding:28px 28px 24px;backdrop-filter:blur(20px) saturate(140%);-webkit-backdrop-filter:blur(20px) saturate(140%);">' +
+      '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">' +
+        '<div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#ef4444,#b91c1c);display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 6px 18px rgba(220,38,38,0.4)">' +
+          '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>' +
+        '</div>' +
+        '<div>' +
+          '<div style="font-size:18px;font-weight:700;color:#fff;line-height:1.2">' + (isRu ? 'Удалить аккаунт?' : 'Delete account?') + '</div>' +
+          '<div style="font-size:12.5px;color:#f87171;font-weight:600;margin-top:2px;letter-spacing:0.02em">' + (isRu ? 'ЭТО ДЕЙСТВИЕ НЕОБРАТИМО' : 'THIS IS IRREVERSIBLE') + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div style="font-size:13.5px;color:var(--text-primary,#e7ecf3);margin-bottom:10px;line-height:1.5">' + (isRu ? 'Будут удалены:' : 'Will be deleted:') + '</div>' +
+      '<ul style="margin:0 0 18px 0;padding-left:22px;font-size:13px;line-height:1.5">' + bullets + '</ul>' +
+      '<label style="display:block;font-size:12.5px;color:var(--text-secondary,rgba(255,255,255,0.6));margin-bottom:8px;letter-spacing:0.01em">' + (isRu ? 'Введите DELETE заглавными для подтверждения' : 'Type DELETE in caps to confirm') + '</label>' +
+      '<input id="tap-delete-input" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="DELETE" style="width:100%;padding:11px 14px;font-size:15px;font-family:ui-monospace,SF Mono,Menlo,monospace;letter-spacing:0.08em;color:#fff;background:rgba(255,255,255,0.04);border:1.5px solid rgba(255,255,255,0.12);border-radius:10px;outline:none;transition:border-color 160ms,box-shadow 160ms;box-sizing:border-box">' +
+      '<div style="display:flex;gap:10px;margin-top:18px;justify-content:flex-end">' +
+        '<button id="tap-delete-cancel" class="btn btn-secondary" style="padding:10px 18px;font-size:14px;border-radius:10px;cursor:pointer;background:rgba(255,255,255,0.06);color:var(--text-primary,#e7ecf3);border:1px solid rgba(255,255,255,0.1)">' + (isRu ? 'Отмена' : 'Cancel') + '</button>' +
+        '<button id="tap-delete-confirm" class="btn btn-danger" disabled style="padding:10px 20px;font-size:14px;font-weight:600;border-radius:10px;cursor:not-allowed;background:linear-gradient(135deg,#dc2626,#991b1b);color:#fff;border:none;opacity:0.45;transition:opacity 160ms,box-shadow 160ms">' + (isRu ? 'Удалить навсегда' : 'Delete forever') + '</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(modal);
+
+  var input = modal.querySelector('#tap-delete-input');
+  var btnConfirm = modal.querySelector('#tap-delete-confirm');
+  var btnCancel = modal.querySelector('#tap-delete-cancel');
+  setTimeout(function() { try { input.focus(); } catch(_){} }, 80);
+
+  function close() { try { modal.remove(); } catch(_){} }
+
+  input.addEventListener('input', function() {
+    var ok = input.value === 'DELETE';
+    btnConfirm.disabled = !ok;
+    btnConfirm.style.opacity = ok ? '1' : '0.45';
+    btnConfirm.style.cursor = ok ? 'pointer' : 'not-allowed';
+    btnConfirm.style.boxShadow = ok ? '0 6px 18px rgba(220,38,38,0.45), 0 0 0 1.5px rgba(239,68,68,0.4) inset' : '';
+    // focus ring on the input
+    input.style.borderColor = ok ? 'rgba(239,68,68,0.7)' : 'rgba(255,255,255,0.12)';
+    input.style.boxShadow = ok ? '0 0 0 3px rgba(239,68,68,0.15)' : 'none';
+  });
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') { close(); }
+    if (e.key === 'Enter' && !btnConfirm.disabled) { btnConfirm.click(); }
+  });
+  btnCancel.addEventListener('click', close);
+  modal.addEventListener('click', function(e) { if (e.target === modal) close(); });
+
+  btnConfirm.addEventListener('click', function() {
+    if (btnConfirm.disabled) return;
+    btnConfirm.disabled = true;
+    btnConfirm.style.opacity = '0.6';
+    btnConfirm.textContent = isRu ? 'Удаляю…' : 'Deleting…';
+    apiRequest('DELETE', '/api/me/account', { confirmation: 'DELETE' }).then(function(d) {
+      if (d.ok) {
+        toast(isRu ? 'Аккаунт удалён' : 'Account deleted', 'success');
+        close();
+        setTimeout(function() { logout(); }, 1500);
+      } else {
+        toast(d.error || 'Error', 'error');
+        btnConfirm.disabled = false;
+        btnConfirm.style.opacity = '1';
+        btnConfirm.textContent = isRu ? 'Удалить навсегда' : 'Delete forever';
+      }
+    }).catch(function(e) {
+      toast('Error: ' + (e.message||e), 'error');
+      btnConfirm.disabled = false;
+      btnConfirm.style.opacity = '1';
+      btnConfirm.textContent = isRu ? 'Удалить навсегда' : 'Delete forever';
+    });
+  });
 }
 
 // ── Notification Settings ──
@@ -18638,6 +18920,147 @@ async function saveCreatorPayoutWallet() {
   }).observe(document.body, { childList: true, subtree: true });
 })();
 
+// ── Admin: SkillOpt page — list built-in skills + per-skill version history
+//    + "Optimize" trigger that auto-generates queries and runs the 4-step loop.
+const BUILT_IN_SKILLS = [
+  'gifts', 'nft', 'defi', 'ton-wallet', 'fragment', 'telegram-stars',
+  'web3-monitor', 'acton', 'ton-blockchain', 'agentic-wallets',
+  'tolk', 'func2tolk', 'jetton-mint',
+];
+async function loadAdminSkillsPage() {
+  if (!currentUser || !currentUser._isAdmin) { toast('Owner only', 'error'); return; }
+  const box = document.getElementById('admin-skills-content');
+  if (!box) return;
+  box.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--text-muted)">Loading skill versions…</div>';
+
+  // Fetch versions for each skill in parallel
+  const rows = await Promise.all(BUILT_IN_SKILLS.map(async (name) => {
+    try {
+      const r = await apiRequest('GET', '/api/admin/skills/' + encodeURIComponent(name) + '/versions');
+      const versions = (r && r.versions) || [];
+      const activeVer = versions.find(v => v.accepted);
+      const latest = versions[0];
+      return { name, versions, activeVer, latest };
+    } catch { return { name, versions: [], activeVer: null, latest: null }; }
+  }));
+
+  let html = '<div style="display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(340px,1fr))">';
+  rows.forEach(r => {
+    const acc = r.activeVer ? r.activeVer.version_num : 0;
+    const totalVer = r.versions.length;
+    const lastScore = r.latest && typeof r.latest.eval_score === 'number'
+      ? (r.latest.eval_score * 100).toFixed(1) + '%' : '—';
+    const baseScore = r.latest && typeof r.latest.baseline_score === 'number'
+      ? (r.latest.baseline_score * 100).toFixed(1) + '%' : '—';
+    const deltaColor = r.latest && r.latest.accepted ? '#22c55e' : '#ef4444';
+    html += '<div class="settings-card" style="padding:16px 18px;border-radius:12px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">' +
+        '<div><div style="font-weight:700;font-size:15px;color:var(--text-primary)">' + escHtml(r.name) + '</div>' +
+        '<div style="font-size:11.5px;color:var(--text-muted);margin-top:3px">active v' + acc + ' · ' + totalVer + ' total</div></div>' +
+        '<button class="btn btn-secondary btn-sm" onclick="optimizeSkill(\'' + r.name + '\')">' +
+          '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>' +
+          ' Optimize' +
+        '</button>' +
+      '</div>' +
+      '<div style="font-size:12px;color:var(--text-secondary);font-family:ui-monospace,monospace;display:flex;gap:14px">' +
+        '<span>last: <b style="color:' + deltaColor + '">' + lastScore + '</b></span>' +
+        '<span style="color:var(--text-muted)">base: ' + baseScore + '</span>' +
+      '</div>' +
+      (r.versions.length > 0
+        ? '<details style="margin-top:10px"><summary style="font-size:12px;color:var(--primary);cursor:pointer">history</summary>' +
+            '<div style="margin-top:8px;display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto">' +
+              r.versions.map(v => {
+                const sc = typeof v.eval_score === 'number' ? (v.eval_score * 100).toFixed(0) + '%' : '—';
+                const acceptedTag = v.accepted ? '<span style="color:#22c55e;font-weight:700">✓</span>' : '<span style="color:#ef4444">✗</span>';
+                return '<div style="padding:6px 8px;border-radius:6px;background:rgba(255,255,255,0.02);font-size:11.5px;font-family:ui-monospace,monospace;display:flex;gap:10px;align-items:center">' +
+                  acceptedTag +
+                  '<span style="color:var(--text-secondary)">v' + v.version_num + '</span>' +
+                  '<span>' + sc + '</span>' +
+                  '<span style="color:var(--text-muted);flex:1;text-align:right">' + new Date(v.created_at).toLocaleDateString() + '</span>' +
+                  '</div>';
+              }).join('') +
+            '</div>' +
+          '</details>'
+        : '') +
+      '</div>';
+  });
+  html += '</div>';
+  box.innerHTML = html;
+}
+async function optimizeSkill(skillName) {
+  if (!confirm('Run SkillOpt pass for "' + skillName + '"? Atlas will burn ~$0.05-0.20 on the platform key.')) return;
+  const box = document.getElementById('admin-skills-content');
+  toast('Atlas thinking — this takes 30-90 seconds…', 'info');
+  try {
+    const r = await apiRequest('POST', '/api/admin/skills/' + encodeURIComponent(skillName) + '/optimize', {
+      auto_generate_queries: true,
+    });
+    if (r && r.ok) {
+      const delta = typeof r.delta === 'number' ? (r.delta * 100).toFixed(1) + '%' : '?';
+      toast(r.status + ': base=' + ((r.baseline_score || 0) * 100).toFixed(1) + '% → cand=' + ((r.candidate_score || 0) * 100).toFixed(1) + '% Δ' + delta, r.status === 'accepted' ? 'success' : 'warning');
+      loadAdminSkillsPage();
+    } else { toast(r && r.error || 'Failed', 'error'); }
+  } catch (e) { toast('Error: ' + (e.message || e), 'error'); }
+}
+
+// ── Admin: Memory Cleanup page — audit log + manual trigger ──────────────
+async function loadAdminCleanupPage() {
+  if (!currentUser || !currentUser._isAdmin) { toast('Owner only', 'error'); return; }
+  const box = document.getElementById('admin-cleanup-content');
+  if (!box) return;
+  box.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--text-muted)">Loading log…</div>';
+  try {
+    const r = await apiRequest('GET', '/api/admin/memory-cleanup/log');
+    const items = (r && r.items) || [];
+    if (items.length === 0) {
+      box.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--text-muted);font-size:14px">No cleanup runs yet. First pass fires 5 min after bot start.</div>';
+      return;
+    }
+    let html = '<div style="display:flex;flex-direction:column;gap:10px">';
+    items.forEach(item => {
+      const s = item.stats || {};
+      const totalPruned =
+        (s.agent_memory_vec?.pruned || 0) +
+        (s.agent_lessons?.pruned || 0) +
+        (s.agent_contacts?.pruned || 0) +
+        (s.agent_mailbox?.pruned || 0) +
+        (s.agent_transcripts?.pruned || 0);
+      const totalDeduped = s.agent_memory_vec?.deduped || 0;
+      html += '<div class="settings-card" style="padding:14px 18px;border-radius:10px">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">' +
+          '<div>' +
+            '<div style="font-weight:600;font-size:13px;color:var(--text-primary)">' + escHtml(item.kind || 'unknown') + '</div>' +
+            '<div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;font-family:ui-monospace,monospace">' + new Date(item.created_at).toLocaleString() + ' · ' + (s.duration_ms || 0) + 'ms</div>' +
+          '</div>' +
+          '<div style="font-family:ui-monospace,monospace;font-size:13px;display:flex;gap:14px">' +
+            '<span style="color:#ef4444">−' + totalPruned + '</span>' +
+            (totalDeduped ? '<span style="color:#f59e0b">∼' + totalDeduped + '</span>' : '') +
+          '</div>' +
+        '</div>' +
+        '<details><summary style="cursor:pointer;font-size:12px;color:var(--primary)">breakdown</summary>' +
+          '<pre style="margin:6px 0 0;padding:8px 10px;background:rgba(0,0,0,0.25);border-radius:6px;font-size:11px;color:var(--text-secondary);font-family:ui-monospace,monospace">' +
+            escHtml(JSON.stringify(s, null, 2)) +
+          '</pre>' +
+        '</details>' +
+        '</div>';
+    });
+    html += '</div>';
+    box.innerHTML = html;
+  } catch (e) { box.innerHTML = '<div style="padding:2rem;color:#ef4444">Error: ' + escHtml(e.message || String(e)) + '</div>'; }
+}
+async function runMemoryCleanupNow() {
+  if (!confirm('Run memory cleanup pass now? Zero LLM cost, but may take a few seconds.')) return;
+  toast(currentLang === 'ru' ? 'Очистка запущена…' : 'Cleanup running…', 'info');
+  try {
+    const r = await apiRequest('POST', '/api/admin/memory-cleanup/run', {});
+    if (r && r.ok) {
+      const s = r.stats || {};
+      toast('Done in ' + (s.duration_ms || 0) + 'ms', 'success');
+      loadAdminCleanupPage();
+    } else { toast(r && r.error || 'Failed', 'error'); }
+  } catch (e) { toast('Error: ' + (e.message || e), 'error'); }
+}
+
 // ── Admin: Payouts page (manual TonConnect sign) ─────────────────────────
 // Owner-only page that lists pending creator earnings and lets the owner
 // sign a batch transfer via their connected Tonkeeper. No mnemonic is
@@ -19347,6 +19770,54 @@ if (document.readyState === 'loading') {
 } else {
   _tapInitBootstrap();
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ACCENT THEME PICKER — global, works on PC + Mini App alike.
+// Sets html[data-accent="..."] which the accent-themes.css rules use
+// to swap --primary / --accent-2 / their RGB components together.
+// ═══════════════════════════════════════════════════════════════════════════
+var ACCENT_THEMES = {
+  aurora:  { name: 'Aurora',  desc: 'TON blue × purple' },
+  cyber:   { name: 'Cyber',   desc: 'cyan × magenta' },
+  plasma:  { name: 'Plasma',  desc: 'purple × pink' },
+  emerald: { name: 'Emerald', desc: 'emerald × teal' },
+  sunset:  { name: 'Sunset',  desc: 'amber × red' },
+  mono:    { name: 'Mono',    desc: 'sky × indigo' },
+};
+window.setAccentTheme = function(themeId) {
+  if (!ACCENT_THEMES[themeId]) return;
+  document.documentElement.dataset.accent = themeId;
+  try { localStorage.setItem('accent_theme', themeId); } catch(_){}
+  document.querySelectorAll('.preset-card[data-accent-id]').forEach(function(c) {
+    var active = c.dataset.accentId === themeId;
+    c.classList.toggle('active', active);
+    var tick = c.querySelector('.accent-tick');
+    if (tick) tick.style.display = active ? 'inline-flex' : 'none';
+  });
+  var label = document.getElementById('accent-current-name');
+  if (label) label.textContent = ACCENT_THEMES[themeId].name;
+  try { if (window.__tgAuthHelper) window.__tgAuthHelper.hapticImpact('light'); } catch(_) {}
+};
+(function _restoreAccentTheme() {
+  var saved = null;
+  try { saved = localStorage.getItem('accent_theme'); } catch(_){}
+  var theme = (saved && ACCENT_THEMES[saved]) ? saved : 'aurora';
+  document.documentElement.dataset.accent = theme;
+  // Defer active-card highlight until settings page is in DOM
+  var tries = 0;
+  function markActive() {
+    if (document.querySelector('.preset-card[data-accent-id]')) {
+      window.setAccentTheme(theme);
+      return;
+    }
+    if (tries++ < 40) setTimeout(markActive, 250);
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', markActive);
+  } else {
+    markActive();
+  }
+})();
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TELEGRAM MINI APP — Phase 3 native-feel bootstrap

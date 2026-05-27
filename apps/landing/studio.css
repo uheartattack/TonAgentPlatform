@@ -8460,8 +8460,19 @@ input:focus, textarea:focus, select:focus {
 .sidebar-nav::-webkit-scrollbar-thumb { background: var(--elevated2); border-radius: 2px; }
 
 /* ── agent-settings-body scrollbar ── */
-.agent-settings-body::-webkit-scrollbar { width: 4px; }
-.agent-settings-body::-webkit-scrollbar-thumb { background: var(--elevated2); border-radius: 30px; }
+.agent-settings-body::-webkit-scrollbar { width: 10px; background: rgba(255,255,255,0.02); }
+.agent-settings-body::-webkit-scrollbar-thumb {
+  background: rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.35);
+  border-radius: 20px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+  min-height: 40px;
+}
+.agent-settings-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.55);
+  background-clip: content-box;
+}
+.agent-settings-body { scrollbar-color: rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.45) transparent; scrollbar-width: thin; }
 
 /* End Blink Design System additions */
 
