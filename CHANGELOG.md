@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.4.2] — 2026-06-08 — "STON.fi Omniston Cross-Chain (Wave 2)"
+
+An AI-callable cross-chain layer built on STON.fi Omniston. Any agent can now
+quote and prepare stablecoin bridges between TON and EVM chains — the user
+signs in their own wallet, with no platform-held keys.
+
+### Added — Omniston cross-chain
+- **`services/omniston.ts`** — Omniston SDK (v1beta8) wrapper: asset registry,
+  `quoteCrossChain()` (RFQ over WebSocket), `prepareBridgePayload()`
+  (TonConnect payload / EVM transaction request), `listSupportedRoutes()`,
+  and `pingOmniston()` health check.
+- **3 agent tools** — `omniston_routes`, `omniston_quote`, and
+  `omniston_bridge_prepare`, wired into the runtime and the `omniston`
+  capability slot.
+- **Supported pairs** — USD₮ (TON) ↔ USDC (Base) / pUSD (Polygon) /
+  USD₮ (Ethereum) / USD₮ (BNB Chain). Stablecoin↔stablecoin only.
+- **`OMNISTON_SANDBOX` env toggle** — production `wss://omni-ws.ston.fi` by
+  default; sandbox WebSocket when set.
+- **`defi` skill → v1.1** — cross-chain guidance: same-chain vs cross-chain
+  tool selection, the quote → confirm → prepare flow, and sandbox/slippage
+  safety notes.
+
+### Notes
+- No platform-held keys — payloads are returned for the user to sign
+  (TonConnect for TON, MetaMask / WalletConnect for EVM).
+- Built for the STON.fi Vibe Coding Hackathon Cohort 2.
+
+---
+
 ## [2.4.1] — 2026-05-27 — "Self-Tuning Agents + Studio Settings Pass"
 
 Agents now learn from every run, build their own playbooks, and tune their

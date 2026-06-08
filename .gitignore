@@ -112,3 +112,40 @@ CHECKLIST.md
 old-session-tonkeeper.md
 .claude/skills/tap-context/
 .claude/skills/tonapi/
+
+# ── Local tooling & junk — keep the public repo clean ──────────────────
+# Python patch/codegen scripts (local tooling, not project source)
+*.py
+
+# Loose root-level scripts & artifacts (real code lives in apps/ + packages/)
+/analytics.js
+/pitch-deck.js
+/pitch-script.js
+/pitch-script-3min.js
+/create-pitch-deck.js
+/create-pitch-script.js
+/product-slide.js
+/discord-manager.ts
+/x-manager.ts
+/execution-tools.ts
+/schema_teleton.ts
+/deploy-patches.sh
+/studio.html
+/studio.js
+/spheres_solution.html
+
+# Local working dirs (research, audits, screenshots, backups, deploy staging)
+backups/
+tmp-deploy/
+tmp-chat/
+tmp-*/
+dashboard_audit/
+design-screenshots/
+teleton-research/
+
+# Eval output + loose text artifacts
+eval-results-*.json
+*_insert.txt
+cap_labels*.txt
+logo-ton-b64.txt
+nul_

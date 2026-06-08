@@ -14,7 +14,8 @@
 
 <br>
 
-[![Latest Release](https://img.shields.io/badge/Latest-v2.4.1_Self--Tuning_Agents-0098EA?style=flat-square)](https://github.com/uheartattack/TonAgentPlatform/releases/tag/v2.4.1)
+[![Latest Release](https://img.shields.io/badge/Latest-v2.4.2_Omniston_Cross--Chain-0098EA?style=flat-square)](https://github.com/uheartattack/TonAgentPlatform/releases/tag/v2.4.2)
+[![STON.fi Omniston](https://img.shields.io/badge/STON.fi-Omniston_v1beta8-0098EA?style=flat-square)](https://omniston.ston.fi)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Node.js](https://img.shields.io/badge/Node.js-20+-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-4169E1?style=flat-square&logo=postgresql&logoColor=white)](https://www.postgresql.org)
@@ -78,6 +79,7 @@ Each agent gets its own TON wallet, can trade gifts, interact with DeFi, operate
 
 | | Возможность | Описание |
 |:-|:------------|:---------|
+| 🌉 | **Omniston Cross-Chain (v2.4.2)** | Кросс-чейн бридж стейблов TON ↔ Base / Polygon / Ethereum / BNB через STON.fi Omniston (SDK v1beta8). Агент котирует и готовит payload — юзер подписывает в своём кошельке |
 | 🎓 | **Self-Tuning Agents (v2.4.1)** | Агенты учатся на каждом запуске: lessons + Atlas-стратегии + SkillOpt автотюнинг промптов |
 | 📱 | **Telegram Mini App (v2.4)** | Studio открывается прямо в TG: initData auto-login, BackButton/MainButton/Haptic, frosted-glass drawer |
 | 🪙 | **Jetton Launchpad (v2.4)** | `jetton_deploy` + `jetton_mint` + `jetton_freeze` — TEP-74 минтабельные жетоны в один тул-кол |
@@ -85,7 +87,7 @@ Each agent gets its own TON wallet, can trade gifts, interact with DeFi, operate
 | 💎 | **Agentic Wallets (v2.2)** | Официальный TON Foundation стандарт agents.ton.org: on-chain freeze/revoke, лимиты в контракте |
 | 🎙️ | **Голосовое создание** | Надиктуй задачу — агент готов за 10 сек |
 | 🤖 | **7 AI-провайдеров** | Gemini, GPT-4o, Claude, Groq, DeepSeek, OpenRouter, Together |
-| 🛠️ | **314 инструментов** | TON, жетоны, подарки, NFT, DeFi, веб, Telegram |
+| 🛠️ | **317 инструментов** | TON, жетоны, подарки, NFT, DeFi, веб, Telegram |
 | 🎁 | **Маркетплейс подарков** | Реальные цены, арбитраж, авто-торговля |
 | 📱 | **MTProto Userbot** | Агент = настоящий Telegram-пользователь |
 | 🧠 | **Hybrid RAG память** | Embeddings + FTS + recency + автоматический cosine-dedup |
@@ -104,6 +106,7 @@ Each agent gets its own TON wallet, can trade gifts, interact with DeFi, operate
 
 | | Feature | Description |
 |:-|:--------|:------------|
+| 🌉 | **Omniston Cross-Chain (v2.4.2)** | Cross-chain stablecoin bridge TON ↔ Base / Polygon / Ethereum / BNB via STON.fi Omniston (SDK v1beta8). Agent quotes & prepares the payload — user signs in their own wallet |
 | 🎓 | **Self-Tuning Agents (v2.4.1)** | Agents learn from every run: lessons + Atlas-drafted strategies + SkillOpt auto-tuning |
 | 📱 | **Telegram Mini App (v2.4)** | Studio runs inside TG: initData auto-login, BackButton/MainButton/Haptic, frosted-glass drawer |
 | 🪙 | **Jetton Launchpad (v2.4)** | `jetton_deploy` + `jetton_mint` + `jetton_freeze` — TEP-74 mintable jettons in one tool call |
@@ -111,7 +114,7 @@ Each agent gets its own TON wallet, can trade gifts, interact with DeFi, operate
 | 💎 | **Agentic Wallets (v2.2)** | Official TON Foundation agents.ton.org spec: on-chain freeze/revoke, limits in contract |
 | 🎙️ | **Voice Creation** | Speak your task — agent ready in 10 sec |
 | 🤖 | **7 AI Providers** | Gemini, GPT-4o, Claude, Groq, DeepSeek, OpenRouter, Together |
-| 🛠️ | **314 Tools** | TON, jettons, gifts, NFTs, DeFi, web, Telegram |
+| 🛠️ | **317 Tools** | TON, jettons, gifts, NFTs, DeFi, web, Telegram |
 | 🎁 | **Gift Marketplace** | Real-time pricing, arbitrage, auto-trading |
 | 📱 | **MTProto Userbot** | Agent operates as a real Telegram user |
 | 🧠 | **Hybrid RAG Memory** | Embeddings + FTS + recency + automatic cosine-dedup |
@@ -148,7 +151,7 @@ graph TB
 
     subgraph Runtime["Agent Runtime"]
         Creator[Creator]
-        AIRuntime[AI Runtime - 314 tools - 5-iter loop]
+        AIRuntime[AI Runtime - 317 tools - 5-iter loop]
         Lifecycle[Lifecycle FSM]
     end
 
@@ -168,6 +171,7 @@ graph TB
 
     subgraph Integrations["Integrations"]
         TON[TON Blockchain + Jettons]
+        Omniston[STON.fi Omniston Cross-Chain]
         Gifts[GiftAsset + SwiftGifts]
         Userbot[GramJS MTProto]
         AI{7 AI Providers}
@@ -179,7 +183,7 @@ graph TB
     Web --> API --> Orch
     Atlas --> API
     Orch --> Creator & AIRuntime
-    AIRuntime --> TON & Gifts & Userbot & AI & Plugins
+    AIRuntime --> TON & Omniston & Gifts & Userbot & AI & Plugins
     AIRuntime --> Memory & Tasks & Tokens --> DB
     AIRuntime -.tick.-> Lessons
     Lessons --> Strategies
@@ -197,9 +201,9 @@ graph TB
 
 ---
 
-## 🛠️ Инструменты агента &nbsp;|&nbsp; Agent Tools (314)
+## 🛠️ Инструменты агента &nbsp;|&nbsp; Agent Tools (317)
 
-> **Note:** 314 includes all tool variants and aliases. ~83 core tools with unique business logic + ~230 Telegram API method wrappers.
+> **Note:** 317 includes all tool variants and aliases. ~86 core tools with unique business logic + ~230 Telegram API method wrappers.
 
 | Категория | Примеры | # |
 |:----------|:--------|:-:|
@@ -207,7 +211,8 @@ graph TB
 | 💎 **TON Blockchain** | `get_ton_balance` `send_ton` `send_jetton` `get_agent_wallet` `ton_get_account` `ton_get_nfts` `ton_get_transactions` `ton_get_jettons` `ton_get_rates` `ton_emulate_tx` | 11 |
 | 🪙 **Jetton Launchpad** *(new in v2.4)* | `jetton_deploy` `jetton_mint` `jetton_freeze` `jetton_burn` | 4 |
 | 🎁 **Gift Marketplace** | `get_gift_floor_real` `scan_real_arbitrage` `buy_catalog_gift` `buy_resale_gift` `get_price_list` `get_user_portfolio` `get_market_overview` `get_gift_sales_history` `find_underpriced_gifts` | 39 |
-| 💱 **DeFi (DeDust + STON.fi)** | `dedust_swap` `dedust_quote` `dedust_pools` `stonfi_swap` `stonfi_quote` `stonfi_trending` `dex_get_prices` `dex_swap_simulate` | 16 |
+| 💱 **DeFi — same-chain (DeDust + STON.fi)** | `stonfi_swap_quote` `stonfi_swap_execute` `stonfi_price` `stonfi_assets` `stonfi_search` `stonfi_trending` `stonfi_pools` `dedust_swap` `dedust_quote` `dex_get_prices` `dex_swap_simulate` | 16 |
+| 🌉 **Cross-Chain (STON.fi Omniston)** *(new in v2.4.2)* | `omniston_routes` `omniston_quote` `omniston_bridge_prepare` | 3 |
 | 🧠 **Memory & Knowledge** | `remember` `recall` `browse_memory` `knowledge_save` `knowledge_search` `knowledge_list` `memory_stats` `compress_memories` `run_memory_maintenance` | 20 |
 | 🖼️ **Image Generation** | `generate_image` `image_analyze` `image_resize` `image_crop` `image_filter` `image_composite` `image_add_text` `image_convert` `image_download` | 10 |
 | 🔗 **State & Notifications** | `get_state` `set_state` `get_shared_state` `set_shared_state` `list_state_keys` `notify` `notify_rich` | 7 |
@@ -226,7 +231,7 @@ graph TB
 | Плагин | Категория | Описание |
 |:-------|:---------|:---------|
 | **DeDust DEX** | DeFi | Свапы, пулы / Swaps, liquidity pools |
-| **STON.fi DEX** | DeFi | AMM свапы / AMM swaps, analytics |
+| **STON.fi DEX** | DeFi | AMM свапы + Omniston кросс-чейн / AMM swaps + Omniston cross-chain |
 | **EVAA Lending** | DeFi | Кредитование / Lending on EVAA Protocol |
 | **TonAPI Pro** | Data | Кошельки, NFT / Wallets, NFTs, txs |
 | **CoinGecko** | Data | Крипто-цены / Crypto prices real-time |
@@ -327,6 +332,7 @@ Telegram → [@TonAgentPlatformBot](https://t.me/TonAgentPlatformBot) → `/star
 | **Database** | PostgreSQL 15 + Drizzle ORM |
 | **Sandbox** | Node.js VM (isolated, SSRF-protected) + AES-256-GCM mnemonic encryption |
 | **TON** | @ton/core · @ton/ton · @ton/crypto · @ton/mcp@alpha (agents.ton.org) · @ton-community/assets-sdk · TonAPI v2 |
+| **STON.fi** | @ston-fi/sdk + @ston-fi/api (same-chain DEX) · @ston-fi/omniston-sdk **v1beta8** (cross-chain RFQ + bridge payloads over `wss://omni-ws.ston.fi`) |
 | **Telegram** | GramJS MTProto + Telegraf + Telegram WebApp SDK |
 | **Mini App** | initData HMAC-SHA256 auth · BackButton/MainButton/HapticFeedback · `start_param` deep-links · @telegram-apps/analytics |
 | **Gift APIs** | GiftAsset + SwiftGifts (rate-limited, cached) |
@@ -352,7 +358,15 @@ Telegram → [@TonAgentPlatformBot](https://t.me/TonAgentPlatformBot) → `/star
 
 ## 📈 Дорожная карта &nbsp;|&nbsp; Roadmap
 
-### ✅ v2.4.1 — Self-Tuning Agents (May 2026) 🆕
+### ✅ v2.4.2 — STON.fi Omniston Cross-Chain (June 2026) 🆕
+- ✅ **Omniston cross-chain layer** — `services/omniston.ts` на базе @ston-fi/omniston-sdk **v1beta8**
+- ✅ **3 агентских тула** — `omniston_routes` / `omniston_quote` (RFQ over WebSocket) / `omniston_bridge_prepare`
+- ✅ **Стейбл-бриджи** — USD₮ (TON) ↔ USDC (Base) / pUSD (Polygon) / USD₮ (Ethereum) / USD₮ (BNB Chain)
+- ✅ **No platform keys** — агент готовит payload, юзер подписывает сам (TonConnect / MetaMask)
+- ✅ **`OMNISTON_SANDBOX` toggle** — prod `wss://omni-ws.ston.fi` по умолчанию, sandbox по флагу
+- ✅ **`defi` skill → v1.1** — гайд same-chain vs cross-chain + quote→confirm→prepare flow
+
+### ✅ v2.4.1 — Self-Tuning Agents (May 2026)
 - ✅ **Agent auto-learning** — `agent_lessons` (FTS + RRF), top-6 урок injected в system prompt
 - ✅ **Strategy Engine** — Atlas-нарисованные playbook'и из 3+ уроков, owner toggleable
 - ✅ **SkillOpt loop** — Microsoft's Rollout → Reflect → Edit → Gate автотюнинг SKILL.md
@@ -415,7 +429,7 @@ Telegram → [@TonAgentPlatformBot](https://t.me/TonAgentPlatformBot) → `/star
 ### ✅ Уже работает в проде
 - AI-first создание агентов (текст + голос)
 - 7 AI-провайдеров с fallback-цепочкой
-- 314 инструментов агента
+- 317 инструментов агента
 - Telegram Userbot (MTProto via GramJS) + Telegram Mini App
 - GiftAsset + SwiftGifts реальные цены
 - Studio Dashboard (30+ вкладок) + Atlas AI assistant
@@ -439,6 +453,7 @@ ton-agent-platform/
 │   │   │   │   ├── strategy-engine.ts  # Atlas playbooks (v2.4.1)
 │   │   │   │   ├── skill-optimizer.ts  # SkillOpt loop (v2.4.1)
 │   │   │   │   ├── memory-cleanup.ts   # Nightly cron (v2.4.1)
+│   │   │   │   ├── omniston.ts         # STON.fi Omniston cross-chain (v2.4.2)
 │   │   │   │   └── atlas-prompt.ts     # Atlas AI assistant
 │   │   │   ├── skills/                 # 13 built-in Agent Skills
 │   │   │   ├── api-server.ts           # REST API (90+ endpoints)
