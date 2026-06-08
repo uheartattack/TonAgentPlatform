@@ -1374,6 +1374,7 @@ export const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
   web:         ['web_search', 'fetch_url', 'http_fetch'],
   bitrefill:   ['bitrefill_search', 'bitrefill_product', 'bitrefill_buy', 'bitrefill_invoice', 'bitrefill_orders'],
   stonfi:      ['stonfi_swap_quote', 'stonfi_swap_execute', 'stonfi_assets', 'stonfi_price'],
+  omniston:    ['omniston_quote', 'omniston_routes', 'omniston_bridge_prepare'],
   tonstakers:  ['tonstakers_info', 'tonstakers_stake', 'tonstakers_unstake', 'tonstakers_balance'],
   state:       ['get_state', 'get_state_multi', 'set_state', 'list_state_keys', 'get_shared_state', 'set_shared_state'],
   events:      ['set_next_wake', 'subscribe_event', 'unsubscribe_event', 'emit_event', 'get_wake_info'],
@@ -1775,8 +1776,9 @@ export const CORE_TOOLS = new Set([
   'get_my_config', 'get_execution_stats', 'update_my_prompt', 'ask_agent', 'set_next_wake',
   // Contacts
   'add_contact_note', 'add_chat_note', 'get_contact_dossier', 'get_chat_dossier',
-  // STON.fi DEX
+  // STON.fi DEX (same-chain) + Omniston cross-chain
   'stonfi_swap_quote', 'stonfi_swap_execute', 'stonfi_price',
+  'omniston_quote', 'omniston_routes', 'omniston_bridge_prepare',
   // Tonstakers staking
   'tonstakers_info', 'tonstakers_stake', 'tonstakers_unstake', 'tonstakers_balance',
   // Bitrefill shopping
@@ -5350,6 +5352,76 @@ async function _executeToolInner(
         const { getSwapPrice } = require('../services/stonfi');
         const price = await getSwapPrice(from, to, amount);
         return { ok: true, price };
+      } catch (e: any) { return { ok: false, error: e.message }; }
+    }
+
+    // ── STON.fi Omniston — cross-chain (Hackathon Wave 2) ────────
+    case 'omniston_quote': {
+      const from = String(args.from || '');
+      const to = String(args.to || '');
+      const amount = String(args.amount || '');
+      const slippagePips = args.slippage_pips ? Number(args.slippage_pips) : undefined;
+      if (!from || !to || !amount) return { ok: false, error: 'from, to, amount required' };
+      try {
+        const { quoteCrossChain } = require('../services/omniston');
+        const q = await quoteCrossChain({ fromAsset: from, toAsset: to, amount, slippagePips });
+        if (!q.ok) return q;
+        return {
+          ok: true,
+          quote_id: q.quoteId,
+          from: `${q.fromAsset?.symbol} (${q.fromAsset?.chain})`,
+          to: `${q.toAsset?.symbol} (${q.toAsset?.chain})`,
+          input_amount: amount,
+          output_amount: q.outputHuman,
+          rate: q.rate,
+          valid_until_ts: q.validUntilTs,
+        };
+      } catch (e: any) { return { ok: false, error: e.message }; }
+    }
+
+    case 'omniston_routes': {
+      try {
+        const { listSupportedRoutes } = require('../services/omniston');
+        const routes = listSupportedRoutes();
+        return {
+          ok: true,
+          count: routes.length,
+          routes: routes.map((r: any) => ({
+            from: `${r.fromSpec.symbol}/${r.fromSpec.chain}`,
+            to:   `${r.toSpec.symbol}/${r.toSpec.chain}`,
+            key:  `${r.from} → ${r.to}`,
+          })),
+        };
+      } catch (e: any) { return { ok: false, error: e.message }; }
+    }
+
+    case 'omniston_bridge_prepare': {
+      const quoteId = String(args.quote_id || '');
+      const ownerSrcAddress = String(args.owner_src_address || '');
+      const traderDstAddress = String(args.trader_dst_address || '');
+      const srcChain = String(args.src_chain || '');
+      const dstChain = String(args.dst_chain || '');
+      if (!quoteId || !ownerSrcAddress || !traderDstAddress || !srcChain || !dstChain) {
+        return { ok: false, error: 'quote_id, owner_src_address, trader_dst_address, src_chain, dst_chain — все required' };
+      }
+      try {
+        const { prepareBridgePayload } = require('../services/omniston');
+        const p = await prepareBridgePayload({
+          quoteId, ownerSrcAddress, traderDstAddress,
+          srcChain: srcChain as any, dstChain: dstChain as any,
+        });
+        if (!p.ok) return p;
+        // Surface a user-friendly summary; the front-end can pick up
+        // tonConnectPayload / evmTransactionRequest from the raw result.
+        return {
+          ok: true,
+          next_step: srcChain === 'ton'
+            ? 'Юзер подписывает через TonConnect — tonConnectPayload готов.'
+            : 'Юзер подписывает в MetaMask / WalletConnect — evmTransactionRequest готов.',
+          tonConnectPayload: p.tonConnectPayload,
+          evmTransactionRequest: p.evmTransactionRequest,
+          serialized_order_details: p.serializedOrderDetails,
+        };
       } catch (e: any) { return { ok: false, error: e.message }; }
     }
 

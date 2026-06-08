@@ -1134,6 +1134,51 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
         },
       },
     },
+    // ── STON.fi Omniston — CROSS-CHAIN swaps (TON ↔ EVM stables) ──
+    {
+      type: 'function',
+      function: {
+        name: 'omniston_quote',
+        description: 'Получить cross-chain котировку через STON.fi Omniston. Поддерживает TON ↔ Polygon (pUSD) / Base (USDC) / Ethereum (USDT) / BNB (USDT). ИСПОЛЬЗУЙ когда юзер просит "переведи / бриджни / отправь стейблы между сетями". Сначала всегда показывай котировку перед omniston_bridge_prepare.',
+        parameters: {
+          type: 'object',
+          properties: {
+            from: { type: 'string', description: 'Откуда: "ton:usdt", "polygon:pusd", "base:usdc", "ethereum:usdt", "bnb:usdt" или просто "USDT polygon" / "USDC base"' },
+            to:   { type: 'string', description: 'Куда — те же варианты' },
+            amount: { type: 'string', description: 'Сумма в человекочитаемом виде, напр. "10.5"' },
+            slippage_pips: { type: 'number', description: 'Допустимое проскальзывание, 100 = 0.1%, 1000 = 1%. По умолчанию 100.' },
+          },
+          required: ['from', 'to', 'amount'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'omniston_routes',
+        description: 'Список всех поддерживаемых cross-chain маршрутов на STON.fi Omniston. Используй когда юзер спрашивает "что можно бриджить".',
+        parameters: { type: 'object', properties: {} },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'omniston_bridge_prepare',
+        description: 'Подготовить транзакцию для cross-chain свапа (после omniston_quote). Возвращает payload который юзер должен подписать в своём кошельке (TonConnect для TON-стороны, MetaMask для EVM-стороны). Сервер НЕ хранит ключи. Обязательно используй quote_id из предыдущего omniston_quote.',
+        parameters: {
+          type: 'object',
+          properties: {
+            quote_id: { type: 'string', description: 'ID котировки из omniston_quote' },
+            owner_src_address: { type: 'string', description: 'Кошелёк-источник (UQ… для TON, 0x… для EVM)' },
+            trader_dst_address: { type: 'string', description: 'Адрес-получатель на другой стороне' },
+            src_chain: { type: 'string', enum: ['ton','polygon','ethereum','base','bnb'], description: 'Сеть-источник' },
+            dst_chain: { type: 'string', enum: ['ton','polygon','ethereum','base','bnb'], description: 'Сеть-получатель' },
+          },
+          required: ['quote_id', 'owner_src_address', 'trader_dst_address', 'src_chain', 'dst_chain'],
+        },
+      },
+    },
+
     // ── Bitrefill tools — gift cards, eSIM, mobile top-ups ────────
     {
       type: 'function',
