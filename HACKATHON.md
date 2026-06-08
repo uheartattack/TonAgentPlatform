@@ -1,10 +1,12 @@
 # TON Agent Platform — STON.fi Vibe Coding Hackathon, Wave 2
 
 **Cohort:** Vibe Coding Hackathon Cohort 2 (June 2026)
-**Submission deadline:** 8 June 2026, 08:00 UTC
+**Submission deadline:** 8 June 2026, **09:00 UTC**
+**Pitch day:** 8 June 2026, 15:00 UTC (we submit in writing, no live pitch)
 **Team:** spend $ + @uheartattack
-**Submission form:** https://identityhub.app/contests/stonfi-vibecoding-hackathon-cohort-2
+**Submission form:** https://identityhub.app/contests/stonfi-vibecoding-hackathon-cohort-2/submit?trackId=cmp59nxuw01fo01ntoxddo7iq
 **Live URL:** https://tonagentplatform.com
+**Repo (public):** https://github.com/uheartattack/TonAgentPlatform
 **Telegram:** [@TonAgentPlatformBot](https://t.me/TonAgentPlatformBot)
 
 ---
@@ -146,6 +148,20 @@ cross-chain flows, not replaces them.
 ## Demo
 
 Video and live URL submitted via the contest form.
+
+## Submission checklist
+
+- [x] Functional app with TON integration (live, bot + Studio)
+- [x] STON.fi track deliverable — Omniston cross-chain agent tools, dated
+      4–8 June commits (not a pre-existing repo)
+- [x] Public GitHub repo: https://github.com/uheartattack/TonAgentPlatform
+- [x] Live production URL: https://tonagentplatform.com
+- [x] Written project description (this file, English)
+- [ ] **Demo video 60–90 s** (mainnet, small amount, English subtitles)
+- [ ] **Submit the contest form** before 8 June 09:00 UTC
+- [ ] (optional) X/Twitter post tagging `@ston_fi`
+      — `#VibeCodingWithSTONfi #TONBuilders #HackathonLife`
+- [ ] (optional) Mira track — promo clip via Seedance/Mira = second prize shot
 
 ## License
 
