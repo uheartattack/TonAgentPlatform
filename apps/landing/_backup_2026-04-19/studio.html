@@ -1,0 +1,2572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <base href="/">
+  <link rel="icon" type="image/svg+xml" href="logo.svg">
+  <link rel="shortcut icon" href="logo.svg">
+  <title>TON Agent Studio</title>
+  <link rel="preload" href="/studio.js?v=52" as="script">
+  <link rel="preload" href="/studio.css?v=51" as="style">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="studio.css?v=51">
+  <!-- Telegram widget loaded in body where button should appear -->
+</head>
+<body>
+  <!-- Auth Screen -->
+  <div id="auth-screen" class="auth-screen hidden">
+    <div class="auth-split">
+      <div class="auth-left">
+        <div class="auth-left-content">
+          <div class="auth-brand">
+            <div class="auth-brand-icon">
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            </div>
+            <h1>TON Agent Studio</h1>
+          </div>
+          <p class="auth-tagline" data-en="Build autonomous AI agents for TON blockchain in minutes" data-ru="Создавайте автономных AI-агентов для блокчейна TON за минуты">Build autonomous AI agents for TON blockchain in minutes</p>
+          <div class="auth-features">
+            <div class="auth-feature-item">
+              <div class="auth-feature-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></div>
+              <div><strong data-en="65+ Built-in Tools" data-ru="65+ инструментов">65+ Built-in Tools</strong><span data-en="TON, DeFi, NFT, Telegram, Web" data-ru="TON, DeFi, NFT, Telegram, Web">TON, DeFi, NFT, Telegram, Web</span></div>
+            </div>
+            <div class="auth-feature-item">
+              <div class="auth-feature-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2z"/></svg></div>
+              <div><strong data-en="7 AI Providers" data-ru="7 AI-провайдеров">7 AI Providers</strong><span data-en="GPT, Claude, Gemini, DeepSeek, Groq" data-ru="GPT, Claude, Gemini, DeepSeek, Groq">GPT, Claude, Gemini, DeepSeek, Groq</span></div>
+            </div>
+            <div class="auth-feature-item">
+              <div class="auth-feature-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+              <div><strong data-en="Visual Constructor" data-ru="Визуальный конструктор">Visual Constructor</strong><span data-en="Drag & drop flow builder, no code" data-ru="Drag & drop, без кода">Drag & drop flow builder, no code</span></div>
+            </div>
+            <div class="auth-feature-item">
+              <div class="auth-feature-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
+              <div><strong data-en="Free to Start" data-ru="Бесплатный старт">Free to Start</strong><span data-en="No credit card, works with your AI key" data-ru="Без карты, работает с вашим AI ключом">No credit card, works with your AI key</span></div>
+            </div>
+          </div>
+          <div class="auth-social-proof">
+            <div class="auth-stat"><span class="auth-stat-num">1200+</span><small data-en="Agents Created" data-ru="Агентов создано">Agents Created</small></div>
+            <div class="auth-stat-divider"></div>
+            <div class="auth-stat"><span class="auth-stat-num">500+</span><small data-en="Active Users" data-ru="Пользователей">Active Users</small></div>
+            <div class="auth-stat-divider"></div>
+            <div class="auth-stat"><span class="auth-stat-num">$0</span><small data-en="To Get Started" data-ru="Для старта">To Get Started</small></div>
+          </div>
+        </div>
+      </div>
+      <div class="auth-right">
+        <div class="auth-right-content">
+          <div class="auth-box">
+            <div class="auth-logo">
+              <div class="auth-logo-icon">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+              </div>
+            </div>
+            <h2 data-en="Welcome" data-ru="Добро пожаловать">Welcome</h2>
+            <p class="auth-subtitle" data-en="Sign in to access your AI agents" data-ru="Войдите чтобы управлять AI-агентами">Sign in to access your AI agents</p>
+            <div id="telegram-login-container" class="tg-login-wrap">
+              <div class="auth-loading-placeholder">
+                <div class="auth-spinner"></div>
+                <span data-en="Loading authentication..." data-ru="Загрузка авторизации...">Loading authentication...</span>
+              </div>
+            </div>
+            <p id="session-expired-hint" style="display:none;color:var(--warning);font-size:.8rem;margin-top:8px" data-en="Session expired. Please sign in again." data-ru="Сессия истекла. Войдите снова.">Session expired. Please sign in again.</p>
+            <p id="https-hint" style="display:none;font-size:.75rem;margin-top:12px;color:var(--text-muted)">
+              ⓘ <span data-en="Telegram Login requires HTTPS." data-ru="Telegram Login требует HTTPS.">Telegram Login requires HTTPS.</span>
+              <a href="" id="https-link" style="color:var(--primary)">Switch to HTTPS →</a>
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="auth-bg">
+      <div class="auth-bg-orb auth-bg-orb-1"></div>
+      <div class="auth-bg-orb auth-bg-orb-2"></div>
+      <div class="auth-bg-orb auth-bg-orb-3"></div>
+    </div>
+  </div>
+
+  <!-- Main App -->
+  <div id="app" class="app hidden">
+    <!-- Animated Background -->
+    <div class="bg-mesh">
+      <div class="bg-orb orb-1"></div>
+      <div class="bg-orb orb-2"></div>
+      <div class="bg-orb orb-3"></div>
+    </div>
+    
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <a href="/studio" class="logo" onclick="event.preventDefault();navigateTo('overview')">
+          <div class="logo-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5">
+              <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+            </svg>
+          </div>
+          <div class="logo-text">
+            <span class="logo-title">TON Agent <span class="logo-accent">Studio</span></span>
+            <span class="logo-subtitle">AI Agent Builder</span>
+          </div>
+        </a>
+      </div>
+      
+          <nav class="sidebar-nav">
+            <div class="nav-section">
+              <span class="nav-label" data-en="Main" data-ru="Главное">Main</span>
+              <a href="#" class="nav-item active" data-page="overview" onclick="navigateTo('overview')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                <span data-en="Overview" data-ru="Обзор">Overview</span>
+              </a>
+              <a href="#" class="nav-item beta-only-nav" data-page="builder" onclick="navigateTo('builder')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+                <span data-en="Constructor" data-ru="Конструктор">Constructor</span>
+                <span class="nav-badge accent">BETA</span>
+              </a>
+              <a href="#" class="nav-item" data-page="marketplace" onclick="navigateTo('marketplace')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+                <span data-en="Marketplace" data-ru="Маркетплейс">Marketplace</span>
+              </a>
+              <a href="#" class="nav-item" data-page="assistant" onclick="navigateTo('assistant')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                <span data-en="AI Assistant" data-ru="AI Ассистент">AI Assistant</span>
+              </a>
+            </div>
+
+            <div class="nav-section">
+              <span class="nav-label" data-en="Agents" data-ru="Агенты">Agents</span>
+              <a href="#" class="nav-item" data-page="operations" onclick="navigateTo('operations')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/></svg>
+                <span data-en="My Agents" data-ru="Мои агенты">My Agents</span>
+                <span class="nav-badge alert" id="nav-agents-badge">3</span>
+              </a>
+              <a href="#" class="nav-item" data-page="network" onclick="navigateTo('network')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                <span data-en="Agent Network" data-ru="Сеть агентов">Agent Network</span>
+              </a>
+              <a href="#" class="nav-item" data-page="analytics" onclick="navigateTo('analytics')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                <span data-en="Analytics" data-ru="Аналитика">Analytics</span>
+              </a>
+              <a href="#" class="nav-item admin-only-nav" data-page="admin-agents" onclick="navigateTo('admin-agents')" style="display:none">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                <span data-en="All Agents" data-ru="Все агенты">All Agents</span>
+                <span class="nav-badge accent">ADM</span>
+              </a>
+              <!-- Bug Tracker moved to Account section -->
+              <a href="#" class="nav-item beta-only-nav" data-page="wallets" onclick="navigateTo('wallets')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/></svg>
+                <span data-en="Wallets" data-ru="Кошельки">Wallets</span>
+                <span class="nav-badge accent">BETA</span>
+              </a>
+              <a href="#" class="nav-item" data-page="activity" onclick="navigateTo('activity')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                <span data-en="Activity" data-ru="Активность">Activity</span>
+                <span class="status-pulse"></span>
+              </a>
+              <!-- Notifications moved to Account section -->
+              <a href="#" class="nav-item beta-only-nav" data-page="tester-hub" onclick="navigateTo('tester-hub')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                <span data-en="Tester Hub" data-ru="Тестер Хаб">Tester Hub</span>
+                <span class="nav-badge accent">BETA</span>
+              </a>
+            </div>
+
+            <div class="nav-section nav-section-collapsible" id="nav-configure">
+              <span class="nav-label nav-label-toggle" onclick="toggleNavSection('nav-configure')">
+                <span data-en="Configure" data-ru="Настройка">Configure</span>
+                <svg class="nav-collapse-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+              </span>
+              <div class="nav-section-items">
+                <a href="#" class="nav-item" data-page="persona" onclick="navigateTo('persona')">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                  <span data-en="Persona" data-ru="Персона">Persona</span>
+                </a>
+                <a href="#" class="nav-item" data-page="knowledge" onclick="navigateTo('knowledge')">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                  <span data-en="Knowledge" data-ru="База знаний">Knowledge</span>
+                </a>
+                <a href="#" class="nav-item" data-page="capabilities" onclick="navigateTo('capabilities')">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                  <span data-en="Capabilities" data-ru="Возможности">Capabilities</span>
+                  <span class="nav-badge" id="nav-capabilities-badge">0</span>
+                </a>
+                <a href="#" class="nav-item" data-page="extensions" onclick="navigateTo('extensions')">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v6m0 12v2M4.93 4.93l4.24 4.24m5.66 5.66l4.24 4.24M2 12h6m12 0h2M4.93 19.07l4.24-4.24m5.66-5.66l4.24-4.24"/></svg>
+                  <span data-en="Extensions" data-ru="Расширения">Extensions</span>
+                </a>
+                <a href="#" class="nav-item" data-page="connectors" onclick="navigateTo('connectors')">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                  <span data-en="Connectors" data-ru="Коннекторы">Connectors</span>
+                </a>
+              </div>
+            </div>
+
+            <div class="nav-section">
+              <span class="nav-label" data-en="Account" data-ru="Аккаунт">Account</span>
+              <a href="#" class="nav-item" data-page="wallet" onclick="navigateTo('wallet')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                <span data-en="Wallet" data-ru="Кошелёк">Wallet</span>
+              </a>
+              <a href="#" class="nav-item" data-page="settings" onclick="navigateTo('settings')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                <span data-en="Settings" data-ru="Настройки">Settings</span>
+              </a>
+              <a href="#" class="nav-item" data-page="guide" onclick="navigateTo('guide')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                <span data-en="Guide" data-ru="Инструкции">Guide</span>
+              </a>
+              <a href="#" class="nav-item" data-page="notifications" onclick="navigateTo('notifications')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                <span data-en="Notifications" data-ru="Уведомления">Notifications</span>
+                <span class="nav-badge alert" id="nav-notif-badge" style="display:none">0</span>
+              </a>
+              <a href="#" class="nav-item admin-only-nav" data-page="bugs" onclick="navigateTo('bugs')" style="display:none">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 2l1.88 1.88M14.12 3.88L16 2M9 7.13v-1a3.003 3.003 0 1 1 6 0v1M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6M6 13H2M22 13h-4M6 17l-1.5 1.5M18 17l1.5 1.5"/></svg>
+                <span data-en="Bug Tracker" data-ru="Баг-трекер">Bug Tracker</span>
+                <span class="nav-badge accent">ADM</span>
+              </a>
+            </div>
+          </nav>
+      
+      <div class="sidebar-footer">
+        <div class="user-card" style="cursor:pointer" title="Profile" onclick="navigateTo('profile')">
+          <img id="user-avatar" src="" alt="" class="user-avatar-img hidden">
+          <div class="user-avatar-fallback hidden" id="user-avatar-fallback">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+            </svg>
+          </div>
+          <div class="user-details">
+            <span class="user-name" id="user-name">User</span>
+            <span class="user-tier" id="user-plan-badge">Free Tier</span>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;padding:4px 14px">
+          <button class="lang-btn active" data-lang="en" onclick="switchLang('en')" style="flex:1">EN</button>
+          <button class="lang-btn" data-lang="ru" onclick="switchLang('ru')" style="flex:1">RU</button>
+          <div style="width:1px;height:16px;background:var(--border);margin:0 2px"></div>
+          <input type="range" id="sidebar-scale-slider" min="80" max="120" value="100" step="5" style="width:50px;accent-color:var(--primary)" oninput="setUIScale(this.value)">
+          <span id="sidebar-scale-value" style="font-size:.6rem;color:var(--text-muted);min-width:24px">100%</span>
+        </div>
+        <button class="logout-btn" onclick="logout()" style="padding:7px;font-size:.75rem">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/>
+            <line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+          <span data-en="Sign Out" data-ru="Выйти">Sign Out</span>
+        </button>
+        <div style="display:flex;gap:8px;justify-content:center;padding:6px 0 2px;flex-wrap:wrap">
+          <a href="#" onclick="event.preventDefault();navigateTo('terms')" style="font-size:.65rem;color:var(--text-muted);text-decoration:none;opacity:.6" data-en="Terms" data-ru="Условия">Terms</a>
+          <span style="font-size:.65rem;color:var(--text-muted);opacity:.3">·</span>
+          <a href="#" onclick="event.preventDefault();navigateTo('privacy')" style="font-size:.65rem;color:var(--text-muted);text-decoration:none;opacity:.6" data-en="Privacy" data-ru="Конфиденциальность">Privacy</a>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Mobile Hamburger -->
+    <button class="sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/>
+      </svg>
+    </button>
+    <div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleSidebar()"></div>
+
+    <!-- Main Wrapper -->
+    <div class="main-wrapper">
+    <!-- Topbar -->
+    <div class="studio-topbar" id="studio-topbar">
+      <div class="topbar-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <input type="text" id="topbar-search-input" class="topbar-search-input" placeholder="Search agents, tools, settings..." data-ru-placeholder="Поиск агентов, инструментов..." oninput="handleTopbarSearch(this.value)">
+      </div>
+      <div class="topbar-right">
+        <div class="topbar-balance" id="topbar-balance-wrap">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+          <span>Balance: <strong id="topbar-ton-balance">0</strong> TON</span>
+        </div>
+        <div class="topbar-divider"></div>
+        <div class="topbar-avatar" id="topbar-avatar-badge" onclick="navigateTo('profile')">T</div>
+      </div>
+    </div>
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- Overview Page -->
+      <div id="overview-page" class="page active">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title" id="overview-greeting-text" data-en="Overview" data-ru="Обзор">Overview</h1>
+            <p class="page-subtitle" data-en="Real-time system status and performance metrics" data-ru="Статус системы и метрики в реальном времени">Real-time system status and performance metrics</p>
+          </div>
+          <div class="header-actions">
+            <button class="btn btn-ghost" id="refresh-btn" onclick="refreshData()">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="refresh-icon">
+                <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+              </svg>
+              <span data-en="Refresh" data-ru="Обновить">Refresh</span>
+            </button>
+            <div style="position:relative;display:inline-block">
+              <button class="btn btn-primary" onclick="navigateTo('assistant')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                <span data-en="Create Agent" data-ru="Создать агента">Create Agent</span>
+              </button>
+              <div id="create-agent-dropdown" class="create-agent-dropdown" style="display:none">
+                <div class="create-option" onclick="openDashboardChat(); hideCreateMenu()" style="border-left:3px solid #7dd3fc;background:rgba(125,211,252,0.05)">
+                  <span class="create-option-icon" style="color:#7dd3fc"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+                  <div>
+                    <strong data-en="⚡ AI Assistant (Recommended)" data-ru="⚡ AI Ассистент (Рекомендуется)">⚡ AI Ассистент (Рекомендуется)</strong>
+                    <p data-en="Describe what you need — Atlas will create the perfect agent" data-ru="Опишите что нужно — Atlas создаст идеального агента">Опишите что нужно — Atlas создаст идеального агента</p>
+                  </div>
+                </div>
+                <div class="create-option" onclick="openVoiceCreate(); hideCreateMenu()" style="border-left:3px solid #a78bfa;background:rgba(167,139,250,0.05)">
+                  <span class="create-option-icon" style="color:#a78bfa"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></span>
+                  <div>
+                    <strong data-en="🎤 Voice (speak your idea)" data-ru="🎤 Голосом (расскажи идею)">🎤 Голосом (расскажи идею)</strong>
+                    <p data-en="Record your agent description by voice" data-ru="Запишите описание агента голосом">Запишите описание агента голосом</p>
+                  </div>
+                </div>
+                <div class="create-option" onclick="navigateTo('builder'); hideCreateMenu()">
+                  <span class="create-option-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></span>
+                  <div>
+                    <strong data-en="Constructor" data-ru="Конструктор">Constructor</strong>
+                    <p data-en="Visual flow builder with drag & drop" data-ru="Визуальный конструктор с drag & drop">Visual flow builder with drag & drop</p>
+                  </div>
+                </div>
+                <a class="create-option" href="https://t.me/TonAgentPlatformBot" target="_blank" onclick="hideCreateMenu()">
+                  <span class="create-option-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg></span>
+                  <div>
+                    <strong>Telegram Bot</strong>
+                    <p>@TonAgentPlatformBot</p>
+                  </div>
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="page-content">
+          <!-- Getting Started Panel -->
+          <div id="getting-started-panel" style="display:none" class="getting-started-panel">
+            <div class="gs-header">
+              <div class="gs-header-left">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                <h3 data-en="Getting Started" data-ru="Начало работы">Getting Started</h3>
+              </div>
+              <button class="btn btn-ghost btn-sm" onclick="dismissGettingStarted()" title="Dismiss">&times;</button>
+            </div>
+            <div class="gs-steps">
+              <div class="gs-step" id="gs-step-ai" onclick="navigateTo('settings')">
+                <div class="gs-step-check" id="gs-check-ai"></div>
+                <div class="gs-step-info">
+                  <strong data-en="Set up AI key" data-ru="Настроить AI ключ">Set up AI key</strong>
+                  <span data-en="Settings → AI Provider" data-ru="Настройки → AI Провайдер">Settings → AI Provider</span>
+                </div>
+              </div>
+              <div class="gs-step" id="gs-step-agent" onclick="navigateTo('builder')">
+                <div class="gs-step-check" id="gs-check-agent"></div>
+                <div class="gs-step-info">
+                  <strong data-en="Create first agent" data-ru="Создать агента">Create first agent</strong>
+                  <span data-en="Constructor or AI Chat" data-ru="Конструктор или AI Чат">Constructor or AI Chat</span>
+                </div>
+              </div>
+              <div class="gs-step" id="gs-step-marketplace" onclick="navigateTo('marketplace')">
+                <div class="gs-step-check" id="gs-check-marketplace"></div>
+                <div class="gs-step-info">
+                  <strong data-en="Browse Marketplace" data-ru="Маркетплейс">Browse Marketplace</strong>
+                  <span data-en="Ready-made templates" data-ru="Готовые шаблоны">Ready-made templates</span>
+                </div>
+              </div>
+              <div class="gs-step" id="gs-step-guide" onclick="navigateTo('guide')">
+                <div class="gs-step-check" id="gs-check-guide"></div>
+                <div class="gs-step-info">
+                  <strong data-en="Read the Guide" data-ru="Прочитать гайд">Read the Guide</strong>
+                  <span data-en="Platform overview" data-ru="Обзор платформы">Platform overview</span>
+                </div>
+              </div>
+            </div>
+            <div class="gs-progress">
+              <div class="gs-progress-bar" id="gs-progress-bar" style="width:0%"></div>
+            </div>
+            <span class="gs-progress-text" id="gs-progress-text">0/4</span>
+          </div>
+
+          <!-- Metrics Grid -->
+          <div class="metrics-grid">
+            <div class="metric-card primary" data-metric="uptime">
+              <div class="metric-glow"></div>
+              <div class="metric-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                </svg>
+              </div>
+              <div class="metric-content">
+                <span class="metric-label" data-en="Agent Uptime" data-ru="Время работы">Agent Uptime</span>
+                <span class="metric-value" id="uptime-value">0m</span>
+                <span class="metric-change neutral" data-en="your agents" data-ru="ваших агентов">your agents</span>
+              </div>
+            </div>
+            
+            <div class="metric-card secondary" data-metric="model">
+              <div class="metric-glow"></div>
+              <div class="metric-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"/>
+                </svg>
+              </div>
+              <div class="metric-content">
+                <span class="metric-label" data-en="AI Model" data-ru="AI Модель">AI Model</span>
+                <span class="metric-value model-name" id="model-name-value">—</span>
+                <span class="metric-change neutral" id="model-version-value" data-en="your default" data-ru="по умолчанию">your default</span>
+              </div>
+            </div>
+            
+            <div class="metric-card accent" data-metric="sessions">
+              <div class="metric-glow"></div>
+              <div class="metric-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                </svg>
+              </div>
+              <div class="metric-content">
+                <span class="metric-label" data-en="Active Sessions" data-ru="Активные сессии">Active Sessions</span>
+                <span class="metric-value" id="sessions-value">0</span>
+                <span class="metric-change neutral" id="sessions-sub" data-en="active now" data-ru="активных">active now</span>
+              </div>
+            </div>
+            
+            <div class="metric-card success" data-metric="tools">
+              <div class="metric-glow"></div>
+              <div class="metric-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+                </svg>
+              </div>
+              <div class="metric-content">
+                <span class="metric-label" data-en="Capabilities" data-ru="Возможности">Capabilities</span>
+                <span class="metric-value" id="tools-value">0</span>
+                <span class="metric-change neutral" data-en="tools" data-ru="инструментов">tools</span>
+              </div>
+            </div>
+
+            <div class="metric-card primary" data-metric="runs">
+              <div class="metric-glow"></div>
+              <div class="metric-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                </svg>
+              </div>
+              <div class="metric-content">
+                <span class="metric-label" data-en="Total Runs" data-ru="Всего запусков">Total Runs</span>
+                <span class="metric-value" id="runs-value">—</span>
+                <span class="metric-change neutral" data-en="all time" data-ru="за всё время">all time</span>
+              </div>
+            </div>
+
+            <div class="metric-card accent" data-metric="success">
+              <div class="metric-glow"></div>
+              <div class="metric-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                  <polyline points="22 4 12 14.01 9 11.01"/>
+                </svg>
+              </div>
+              <div class="metric-content">
+                <span class="metric-label" data-en="Success Rate" data-ru="Успешность">Success Rate</span>
+                <span class="metric-value" id="success-rate-value">—</span>
+                <span class="metric-change neutral">%</span>
+              </div>
+            </div>
+
+            <div class="metric-card secondary" data-metric="last24h">
+              <div class="metric-glow"></div>
+              <div class="metric-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                  <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/>
+                  <line x1="3" y1="10" x2="21" y2="10"/>
+                </svg>
+              </div>
+              <div class="metric-content">
+                <span class="metric-label" data-en="Last 24h Runs" data-ru="Запусков за 24ч">Last 24h Runs</span>
+                <span class="metric-value" id="last24h-value">—</span>
+                <span class="metric-change neutral" data-en="today" data-ru="сегодня">today</span>
+              </div>
+            </div>
+
+            <div class="metric-card accent" data-metric="agents-total">
+              <div class="metric-glow"></div>
+              <div class="metric-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/>
+                </svg>
+              </div>
+              <div class="metric-content">
+                <span class="metric-label" data-en="Total Agents" data-ru="Всего агентов">Total Agents</span>
+                <span class="metric-value" id="agents-total-value">0</span>
+                <span class="metric-change neutral" data-en="created" data-ru="создано">created</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- My Agents (compact overview) -->
+          <div class="panel" id="agents-panel">
+            <div class="panel-header">
+              <h3 class="panel-title" data-en="My Agents" data-ru="Мои агенты">My Agents</h3>
+              <button class="btn btn-ghost btn-sm" onclick="navigateTo('operations')" data-en="View All" data-ru="Все агенты">View All →</button>
+            </div>
+            <div id="agents-list" class="agents-list" style="max-height:280px;overflow-y:auto">
+              <div class="loading-placeholder" data-en="Loading agents..." data-ru="Загрузка агентов...">Loading agents...</div>
+            </div>
+          </div>
+
+          <!-- Studio Grid -->
+          <div class="studio-grid">
+            <!-- Plan & Usage -->
+            <div class="panel memory-panel">
+              <div class="panel-header">
+                <h3 class="panel-title" data-en="Plan & Usage" data-ru="План и лимиты">Plan & Usage</h3>
+                <span class="panel-status active" id="overview-plan-badge">Free</span>
+              </div>
+              <div class="memory-items">
+                <div class="memory-item">
+                  <div class="memory-icon blue">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/></svg>
+                  </div>
+                  <div class="memory-info">
+                    <span class="memory-label" data-en="Agents" data-ru="Агенты">Agents</span>
+                    <span class="memory-value" id="ov-agents-usage">0 / 3</span>
+                  </div>
+                  <div class="memory-bar"><div class="memory-progress" id="ov-agents-bar" style="width:0%"></div></div>
+                </div>
+                <div class="memory-item">
+                  <div class="memory-icon cyan">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  </div>
+                  <div class="memory-info">
+                    <span class="memory-label" data-en="Active" data-ru="Активные">Active</span>
+                    <span class="memory-value" id="ov-active-usage">0 / 1</span>
+                  </div>
+                  <div class="memory-bar"><div class="memory-progress" id="ov-active-bar" style="width:0%"></div></div>
+                </div>
+                <div class="memory-item">
+                  <div class="memory-icon purple">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"/></svg>
+                  </div>
+                  <div class="memory-info">
+                    <span class="memory-label" data-en="AI Generations" data-ru="AI генерации">AI Generations</span>
+                    <span class="memory-value" id="ov-gen-usage">0 / 0</span>
+                  </div>
+                  <div class="memory-bar"><div class="memory-progress" id="ov-gen-bar" style="width:0%"></div></div>
+                </div>
+              </div>
+              <div style="padding:0 1rem .75rem;text-align:right">
+                <button class="btn btn-ghost btn-sm" onclick="openPlansModal()" style="font-size:.75rem" data-en="Upgrade Plan" data-ru="Улучшить план">Upgrade Plan →</button>
+              </div>
+            </div>
+            
+            <!-- Agent Configuration -->
+            <div class="panel config-panel">
+              <div class="panel-header">
+                <h3 class="panel-title" data-en="Agent Configuration" data-ru="Конфигурация агента">Agent Configuration</h3>
+                <button class="btn btn-ghost btn-sm" onclick="saveAgentConfig()" title="Save configuration">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                    <polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+                  </svg>
+                </button>
+              </div>
+              <div class="config-form">
+                <div class="form-row">
+                  <div class="form-group">
+                    <label data-en="AI Provider" data-ru="AI Провайдер">AI Provider</label>
+                    <select class="form-select">
+                      <option>Anthropic (Claude)</option>
+                      <option>OpenAI (GPT)</option>
+                      <option>Google (Gemini)</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label data-en="Model Version" data-ru="Версия модели">Model Version</label>
+                    <select class="form-select">
+                      <option>Claude 3.5 Sonnet</option>
+                      <option>Claude 3 Opus</option>
+                      <option>Claude 3 Haiku</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="form-row three">
+                  <div class="form-group">
+                    <label data-en="Creativity" data-ru="Креативность">Creativity</label>
+                    <div class="slider-group">
+                      <input type="range" class="form-slider" id="slider-creativity" min="0" max="2" step="0.1" value="0.7" oninput="updateSliderDisplay(this)">
+                      <span class="slider-value">0.7</span>
+                    </div>
+                  </div>
+                  <div class="form-group">
+                    <label data-en="Max Tokens" data-ru="Макс. токенов">Max Tokens</label>
+                    <input type="number" class="form-input" value="4096">
+                  </div>
+                  <div class="form-group">
+                    <label data-en="Iterations" data-ru="Итерации">Iterations</label>
+                    <input type="number" class="form-input" value="5" min="1" max="20">
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Smart Tools Selection -->
+          <div class="panel">
+            <div class="panel-header">
+              <div>
+                <h3 class="panel-title" data-en="Smart Tools Selection" data-ru="Умный выбор инструментов">Smart Tools Selection</h3>
+                <p class="panel-desc" data-en="AI automatically selects the most relevant capabilities for each request" data-ru="AI автоматически выбирает наиболее релевантные возможности для каждого запроса">AI automatically selects the most relevant capabilities for each request</p>
+              </div>
+              <label class="toggle-switch large">
+                <input type="checkbox" checked>
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div class="smart-tools-info">
+              <div class="smart-item">
+                <span class="smart-label" data-en="Vector Index" data-ru="Векторный индекс">Vector Index</span>
+                <span class="smart-value status-ok" data-en="Ready" data-ru="Готов">Ready</span>
+              </div>
+              <div class="smart-item">
+                <span class="smart-label" data-en="Top-K Results" data-ru="Top-K результатов">Top-K Results</span>
+                <select class="form-select mini">
+                  <option>25</option>
+                  <option>50</option>
+                  <option>100</option>
+                </select>
+              </div>
+              <div class="smart-item">
+                <span class="smart-label" data-en="Indexed Capabilities" data-ru="Индексировано">Indexed Capabilities</span>
+                <span class="smart-value">127</span>
+              </div>
+              <div class="smart-item">
+                <span class="smart-label" data-en="Last Update" data-ru="Последнее обновление">Last Update</span>
+                <span class="smart-value">2m ago</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Telegram Integration -->
+          <div class="panel">
+            <div class="panel-header">
+              <h3 class="panel-title" data-en="Telegram Integration" data-ru="Интеграция Telegram">Telegram Integration</h3>
+              <span class="connection-badge connected">
+                <span class="pulse-dot"></span>
+                <span data-en="Connected" data-ru="Подключено">Connected</span>
+              </span>
+            </div>
+            <div class="telegram-config">
+              <div class="config-row">
+                <div class="form-group">
+                  <label data-en="Direct Messages" data-ru="Личные сообщения">Direct Messages</label>
+                  <select class="form-select" id="tg-dm-mode" onchange="saveTelegramSettings()">
+                    <option value="open" data-en="Open to all" data-ru="Открыты для всех">Open to all</option>
+                    <option value="whitelist" data-en="Whitelist only" data-ru="Только из белого списка">Whitelist only</option>
+                    <option value="blacklist" data-en="Blacklist mode" data-ru="Режим чёрного списка">Blacklist mode</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label data-en="Group Chats" data-ru="Групповые чаты">Group Chats</label>
+                  <select class="form-select" id="tg-group-mode" onchange="saveTelegramSettings()">
+                    <option value="allowlist" data-en="Allowlist only" data-ru="Только из списка">Allowlist only</option>
+                    <option value="mention-only" data-en="Mention only" data-ru="Только по упоминанию">Mention only</option>
+                    <option value="open" data-en="Open" data-ru="Открыты">Open</option>
+                    <option value="active" data-en="Active — agent decides to reply" data-ru="Активный — агент сам решает отвечать">Active (AI decides)</option>
+                    <option value="disabled" data-en="Disabled" data-ru="Отключены">Disabled</option>
+                  </select>
+                </div>
+              </div>
+              <div class="toggle-grid">
+                <div class="toggle-card">
+                  <div class="toggle-info">
+                    <span class="toggle-title" data-en="Require Mention" data-ru="Требовать упоминание">Require Mention</span>
+                    <span class="toggle-desc" data-en="Only respond when mentioned in groups" data-ru="Отвечать только при упоминании в группах">Only respond when mentioned in groups</span>
+                  </div>
+                  <label class="toggle-switch"><input type="checkbox" id="tg-require-mention" checked onchange="saveTelegramSettings()"><span class="toggle-slider"></span></label>
+                </div>
+                <div class="toggle-card">
+                  <div class="toggle-info">
+                    <span class="toggle-title" data-en="Typing Indicator" data-ru="Индикатор печати">Typing Indicator</span>
+                    <span class="toggle-desc" data-en="Show 'typing...' while processing" data-ru="Показывать 'печатает...' при обработке">Show 'typing...' while processing</span>
+                  </div>
+                  <label class="toggle-switch"><input type="checkbox" id="tg-typing" checked onchange="saveTelegramSettings()"><span class="toggle-slider"></span></label>
+                </div>
+                <div class="toggle-card">
+                  <div class="toggle-info">
+                    <span class="toggle-title" data-en="Auto-reply" data-ru="Автоответ">Auto-reply</span>
+                    <span class="toggle-desc" data-en="Respond without manual trigger" data-ru="Отвечать без ручного триггера">Respond without manual trigger</span>
+                  </div>
+                  <label class="toggle-switch"><input type="checkbox" id="tg-auto-reply" onchange="saveTelegramSettings()"><span class="toggle-slider"></span></label>
+                </div>
+              </div>
+              <div class="form-group debounce-group">
+                <label data-en="Response Delay (ms)" data-ru="Задержка ответа (мс)">Response Delay (ms)</label>
+                <div class="slider-group">
+                  <input type="range" class="form-slider" id="slider-response-delay" min="0" max="5000" step="100" value="1500" oninput="updateSliderDisplay(this)" onchange="saveTelegramSettings()">
+                  <span class="slider-value">1500ms</span>
+                </div>
+              </div>
+              <!-- Per-chat policies -->
+              <div class="form-group" style="margin-top:12px">
+                <label data-en="Per-Chat Mode Override" data-ru="Режим по чатам">Per-Chat Mode Override</label>
+                <p style="font-size:12px;color:var(--text-muted);margin:4px 0 8px" data-en="Agent can manage this via set_chat_policy() tool. You can also add manually:" data-ru="Агент сам управляет через set_chat_policy(). Можно добавить вручную:">Agent can manage this via set_chat_policy() tool. You can also add manually:</p>
+                <div id="chat-policies-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px"></div>
+                <div style="display:flex;gap:6px">
+                  <input type="text" class="form-input" id="chat-policy-id" placeholder="Chat ID / @username" style="flex:1">
+                  <select class="form-select" id="chat-policy-mode" style="width:140px">
+                    <option value="active">Active</option>
+                    <option value="open">Open</option>
+                    <option value="mention-only">Mention only</option>
+                    <option value="disabled">Disabled</option>
+                  </select>
+                  <button class="btn btn-sm btn-primary" onclick="addChatPolicy()" style="white-space:nowrap">+</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Capabilities Page -->
+      <div id="capabilities-page" class="page">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title" data-en="Capabilities" data-ru="Возможности">Capabilities</h1>
+            <p class="page-subtitle" data-en="127 built-in tools across 16 capability groups" data-ru="127 встроенных инструментов в 16 группах">127 built-in tools across 16 capability groups</p>
+          </div>
+          <div class="search-box">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+            </svg>
+            <input type="text" id="capabilities-search" placeholder="Search capabilities..." oninput="searchCapabilities(this.value)">
+          </div>
+        </div>
+        <div class="page-content">
+          <div class="capabilities-filters">
+            <button class="filter-chip active" data-filter="all" onclick="filterCapabilities('all')">
+              <span data-en="All" data-ru="Все">All</span>
+              <span class="chip-count">16</span>
+            </button>
+            <button class="filter-chip" data-filter="active" onclick="filterCapabilities('active')">
+              <span data-en="Active" data-ru="Активные">Active</span>
+              <span class="chip-count">14</span>
+            </button>
+            <button class="filter-chip" data-filter="inactive" onclick="filterCapabilities('inactive')">
+              <span data-en="Inactive" data-ru="Неактивные">Inactive</span>
+              <span class="chip-count">2</span>
+            </button>
+          </div>
+          <div class="capabilities-list" id="capabilities-list"></div>
+        </div>
+      </div>
+      
+      <!-- Extensions Page -->
+      <div id="extensions-page" class="page">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title" data-en="Extensions" data-ru="Расширения">Extensions</h1>
+            <p class="page-subtitle" data-en="Enhance your agent with community plugins" data-ru="Улучшите агента с помощью плагинов сообщества">Enhance your agent with community plugins</p>
+          </div>
+          <div class="search-box">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+            </svg>
+            <input type="text" id="extensions-search" placeholder="Search extensions..." oninput="searchExtensions(this.value)">
+          </div>
+        </div>
+        <div class="page-content">
+          <div class="extensions-tabs">
+            <button class="tab-btn active" data-tab="installed" onclick="switchExtensionsTab('installed')">
+              <span data-en="Installed" data-ru="Установлено">Installed</span>
+              <span class="tab-count" id="installed-count">2</span>
+            </button>
+            <button class="tab-btn" data-tab="marketplace" onclick="switchExtensionsTab('marketplace')">
+              <span data-en="Marketplace" data-ru="Маркетплейс">Marketplace</span>
+              <span class="tab-count new">12</span>
+            </button>
+            <button class="tab-btn" data-tab="updates" onclick="switchExtensionsTab('updates')">
+              <span data-en="Updates" data-ru="Обновления">Updates</span>
+              <span class="tab-count alert">1</span>
+            </button>
+          </div>
+          <div id="extensions-content"></div>
+        </div>
+      </div>
+      
+      <!-- Activity Stream Page -->
+      <div id="activity-page" class="page">
+        <div class="page-header">
+          <div class="header-left">
+            <h1 class="page-title" data-en="Activity Stream" data-ru="Поток активности">Activity Stream</h1>
+            <div class="live-indicator">
+              <span class="pulse-ring"></span>
+              <span class="pulse-dot"></span>
+              <span data-en="Live" data-ru="В прямом эфире">Live</span>
+            </div>
+          </div>
+          <div class="header-actions">
+            <button class="btn btn-ghost" onclick="clearActivity()">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+              </svg>
+              <span data-en="Clear" data-ru="Очистить">Clear</span>
+            </button>
+            <div class="filter-dropdown">
+              <button class="btn btn-ghost">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+                </svg>
+                <span data-en="Filter" data-ru="Фильтр">Filter</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="page-content">
+          <div class="activity-stream" id="activity-stream"></div>
+        </div>
+      </div>
+      
+      <!-- AI Assistant Page -->
+      <div id="assistant-page" class="page">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title" data-en="AI Assistant" data-ru="AI Ассистент">AI Assistant</h1>
+            <p class="page-subtitle" data-en="Create agents, get help, and manage your platform with AI" data-ru="Создавайте агентов, получайте помощь и управляйте платформой с ИИ">Create agents, get help, and manage your platform with AI</p>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <select id="assistant-target-select" class="assistant-target-select" onchange="switchAssistantTarget(this.value)">
+              <option value="atlas" data-en="Atlas (Platform AI)" data-ru="Atlas (ИИ платформы)">Atlas (Platform AI)</option>
+            </select>
+            <button class="btn btn-ghost btn-sm" onclick="clearAssistantChat()">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+              <span data-en="Clear Chat" data-ru="Очистить чат">Clear Chat</span>
+            </button>
+          </div>
+        </div>
+        <div class="page-content assistant-page-content">
+          <div class="assistant-layout">
+            <!-- Main Chat Area -->
+            <div class="assistant-chat-area">
+              <div class="assistant-messages" id="assistant-messages">
+                <div class="assistant-welcome">
+                  <div class="assistant-welcome-icon">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                  </div>
+                  <h3 data-en="How can I help you?" data-ru="Чем могу помочь?">How can I help you?</h3>
+                  <p data-en="I can create AI agents, explain features, help with settings, and more. Just ask!" data-ru="Могу создать AI-агента, объяснить функции, помочь с настройками и многое другое. Просто спросите!">I can create AI agents, explain features, help with settings, and more. Just ask!</p>
+                </div>
+              </div>
+              <div class="assistant-suggestions" id="assistant-suggestions">
+                <button class="assistant-suggestion-btn" onclick="sendAssistantSuggestion(this)" data-en="Create a DeFi monitoring agent" data-ru="Создай агента для мониторинга DeFi">Create a DeFi monitoring agent</button>
+                <button class="assistant-suggestion-btn" onclick="sendAssistantSuggestion(this)" data-en="How do I set up an API key?" data-ru="Как настроить API ключ?">How do I set up an API key?</button>
+                <button class="assistant-suggestion-btn" onclick="sendAssistantSuggestion(this)" data-en="Show me marketplace templates" data-ru="Покажи шаблоны маркетплейса">Show me marketplace templates</button>
+                <button class="assistant-suggestion-btn" onclick="sendAssistantSuggestion(this)" data-en="Create a gift arbitrage bot" data-ru="Создай бота для арбитража подарков">Create a gift arbitrage bot</button>
+              </div>
+              <div class="assistant-input-area">
+                <textarea id="assistant-input" rows="1"
+                  data-placeholder-en="Describe an agent or ask anything..."
+                  data-placeholder-ru="Опишите агента или задайте вопрос..."
+                  placeholder="Describe an agent or ask anything..."
+                  onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendAssistantMessage()}"
+                  oninput="autoResizeTextarea(this)"></textarea>
+                <button class="assistant-send-btn" onclick="sendAssistantMessage()" id="assistant-send-btn">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                </button>
+              </div>
+            </div>
+            <!-- Sidebar capabilities panel -->
+            <div class="assistant-sidebar">
+              <div class="assistant-capabilities">
+                <h4 data-en="Capabilities" data-ru="Возможности">Capabilities</h4>
+                <div class="assistant-cap-item">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/></svg>
+                  <span data-en="Create & configure agents" data-ru="Создание и настройка агентов">Create & configure agents</span>
+                </div>
+                <div class="assistant-cap-item">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+                  <span data-en="Flow builder assistance" data-ru="Помощь с конструктором">Flow builder assistance</span>
+                </div>
+                <div class="assistant-cap-item">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+                  <span data-en="Marketplace recommendations" data-ru="Рекомендации маркетплейса">Marketplace recommendations</span>
+                </div>
+                <div class="assistant-cap-item">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                  <span data-en="Platform guidance & tips" data-ru="Советы по платформе">Platform guidance & tips</span>
+                </div>
+                <div class="assistant-cap-item">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                  <span data-en="TON & wallet help" data-ru="Помощь с TON и кошельком">TON & wallet help</span>
+                </div>
+              </div>
+              <div class="assistant-capabilities" style="margin-top:16px">
+                <h4 data-en="Synced with Telegram" data-ru="Синхронизация с Telegram">Synced with Telegram</h4>
+                <p style="font-size:0.78rem;color:var(--text-muted);margin:0;line-height:1.5" data-en="Your chat history syncs between Studio and Telegram bot. Agents created here appear in both." data-ru="История чата синхронизируется между Студией и Telegram ботом. Агенты, созданные здесь, появляются в обоих.">Your chat history syncs between Studio and Telegram bot.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Operations Page -->
+      <div id="operations-page" class="page">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title" data-en="My Agents" data-ru="Мои агенты">My Agents</h1>
+            <p class="page-subtitle" data-en="Manage and monitor your AI agents" data-ru="Управляйте своими AI-агентами">Manage and monitor your AI agents</p>
+          </div>
+          <div style="display:flex;gap:.5rem;align-items:center">
+            <span class="agents-count-label" id="agents-page-count" style="color:var(--text-muted);font-size:.85rem"></span>
+            <label class="btn btn-ghost" style="cursor:pointer" title="Import agent from JSON">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <span data-en="Import" data-ru="Импорт">Import</span>
+              <input type="file" accept=".json" style="display:none" onchange="importAgentFromMainView(this)">
+            </label>
+            <div style="position:relative;display:inline-block">
+              <button class="btn btn-primary" onclick="navigateTo('assistant')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                <span data-en="Create Agent" data-ru="Создать агента">Create Agent</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="page-content">
+          <!-- Stat cards row (Blink style) -->
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:1.25rem" id="agents-stat-row">
+            <div style="background:#0f1629;border:1px solid rgba(255,255,255,0.07);border-radius:14px;padding:18px 20px">
+              <div style="font-size:.72rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px" data-en="Total Agents" data-ru="Всего агентов">Total Agents</div>
+              <div id="stat-total-agents" style="font-size:1.7rem;font-weight:700;color:#f1f5f9;line-height:1">0</div>
+            </div>
+            <div style="background:#0f1629;border:1px solid rgba(255,255,255,0.07);border-radius:14px;padding:18px 20px">
+              <div style="font-size:.72rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px" data-en="Active" data-ru="Активных">Active</div>
+              <div id="stat-active-agents" style="font-size:1.7rem;font-weight:700;color:#10b981;line-height:1">0</div>
+            </div>
+            <div style="background:#0f1629;border:1px solid rgba(255,255,255,0.07);border-radius:14px;padding:18px 20px">
+              <div style="font-size:.72rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px" data-en="Paused" data-ru="На паузе">Paused</div>
+              <div id="stat-paused-agents" style="font-size:1.7rem;font-weight:700;color:#f59e0b;line-height:1">0</div>
+            </div>
+            <div style="background:#0f1629;border:1px solid rgba(255,255,255,0.07);border-radius:14px;padding:18px 20px">
+              <div style="font-size:.72rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px" data-en="AI Agents" data-ru="AI-агентов">AI Agents</div>
+              <div id="stat-ai-agents" style="font-size:1.7rem;font-weight:700;color:#0ea5e9;line-height:1">0</div>
+            </div>
+          </div>
+          <!-- Agent filters -->
+          <div class="operations-filters" style="margin-bottom:1rem">
+            <button class="op-filter active" onclick="filterAgentsPage('all')">
+              <span data-en="All" data-ru="Все">All</span>
+              <span class="filter-badge" id="agents-filter-all">0</span>
+            </button>
+            <button class="op-filter" onclick="filterAgentsPage('active')">
+              <span data-en="Active" data-ru="Активные">Active</span>
+              <span class="filter-badge" id="agents-filter-active">0</span>
+            </button>
+            <button class="op-filter" onclick="filterAgentsPage('paused')">
+              <span data-en="Paused" data-ru="Неактивные">Paused</span>
+              <span class="filter-badge" id="agents-filter-paused">0</span>
+            </button>
+          </div>
+          <!-- Agent list (full page) -->
+          <div id="agents-page-list" class="agents-list">
+            <div class="loading-placeholder" data-en="Loading agents..." data-ru="Загрузка агентов...">Loading agents...</div>
+          </div>
+          <!-- Execution History -->
+          <div class="panel" style="margin-top:1.5rem">
+            <div class="panel-header">
+              <h3 class="panel-title" data-en="Recent Runs" data-ru="Последние запуски">Recent Runs</h3>
+            </div>
+            <div class="operations-list" id="operations-list"></div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Settings Page -->
+      <div id="terms-page" class="page">
+        <div id="terms-content" style="max-width:800px;padding:20px"></div>
+      </div>
+      <div id="privacy-page" class="page">
+        <div id="privacy-content" style="max-width:800px;padding:20px"></div>
+      </div>
+
+      <div id="settings-page" class="page">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title" data-en="Settings" data-ru="Настройки">Settings</h1>
+            <p class="page-subtitle" data-en="Configure your agent and platform preferences" data-ru="Настройте агента и предпочтения платформы">Configure your agent and platform preferences</p>
+          </div>
+          <button class="btn btn-primary" onclick="saveSettings()">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+              <polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+            </svg>
+            <span data-en="Save Changes" data-ru="Сохранить">Save Changes</span>
+          </button>
+        </div>
+        <div class="page-content">
+          <div class="settings-grid">
+            <div class="settings-section">
+              <h3 class="section-title" data-en="AI API Key" data-ru="AI API Ключ">AI API Key</h3>
+              <div class="settings-card">
+                <p style="color:var(--text-secondary);font-size:.85rem;margin-bottom:14px" data-en="Your agents need an AI key to think. Choose provider and enter your key." data-ru="Вашим агентам нужен AI ключ для работы. Выберите провайдера и введите ключ.">Your agents need an AI key to think. Choose provider and enter your key.</p>
+                <div class="credential-item" style="margin-bottom:12px">
+                  <div class="credential-info">
+                    <span class="credential-name" data-en="Provider" data-ru="Провайдер">Provider</span>
+                  </div>
+                  <select id="ai-provider-select" class="form-input" style="max-width:260px" onchange="onAIProviderChange()">
+                    <option value="gemini">Gemini (Google)</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="anthropic">Anthropic</option>
+                    <option value="groq">Groq</option>
+                    <option value="deepseek">DeepSeek</option>
+                    <option value="openrouter">OpenRouter</option>
+                    <option value="together">Together AI</option>
+                  </select>
+                </div>
+                <div class="credential-item" style="margin-bottom:12px">
+                  <div class="credential-info">
+                    <span class="credential-name">API Key</span>
+                    <span class="credential-status" id="ai-key-status" style="display:none" data-en="Saved" data-ru="Сохранён">Saved</span>
+                  </div>
+                  <div class="input-group">
+                    <input type="password" class="form-input" id="ai-api-key-input" placeholder="sk-... / AIza... / gsk_...">
+                    <button class="btn btn-ghost btn-sm" onclick="togglePassword(this)" data-en="Show" data-ru="Показать">Show</button>
+                  </div>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center">
+                  <button class="btn btn-primary btn-sm" onclick="saveAIKey()">
+                    <span data-en="Save Key" data-ru="Сохранить ключ">Save Key</span>
+                  </button>
+                  <button class="btn btn-ghost btn-sm" onclick="clearAIKey()" style="color:var(--danger)">
+                    <span data-en="Clear" data-ru="Очистить">Clear</span>
+                  </button>
+                  <span id="ai-key-msg" style="font-size:.78rem;color:var(--success);display:none"></span>
+                </div>
+                <p style="color:var(--text-muted);font-size:.72rem;margin-top:10px" data-en="Key is stored encrypted and synced with your Telegram bot settings." data-ru="Ключ хранится зашифрованно и синхронизируется с настройками бота.">Key is stored encrypted and synced with your Telegram bot settings.</p>
+              </div>
+            </div>
+            
+            <div class="settings-section">
+              <h3 class="section-title" data-en="Telegram Account" data-ru="Telegram аккаунт">Telegram Account</h3>
+              <div class="settings-card">
+                <p style="color:var(--text-secondary);font-size:.85rem;margin-bottom:14px" data-en="Connect any Telegram account. Your agents will act as this user via MTProto." data-ru="Подключите любой Telegram аккаунт. Ваши агенты будут действовать от его имени через MTProto.">Connect any Telegram account. Your agents will act as this user via MTProto.</p>
+
+                <div id="tg-auth-status" style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+                  <span class="connection-badge" id="tg-connection-badge" style="display:none">
+                    <span class="pulse-dot"></span>
+                    <span id="tg-status-text">Connected</span>
+                  </span>
+                  <span id="tg-account-info" style="font-size:.85rem;color:var(--text-secondary)"></span>
+                </div>
+
+                <!-- QR Container -->
+                <div id="tg-qr-container" style="display:none;text-align:center;padding:20px 0">
+                  <div id="tg-qr-image" style="display:inline-block;padding:16px;background:#fff;border-radius:12px;margin-bottom:12px">
+                    <canvas id="tg-qr-canvas" width="256" height="256"></canvas>
+                  </div>
+                  <p style="color:var(--text-secondary);font-size:.82rem" data-en="Open Telegram → Settings → Devices → Link Desktop Device" data-ru="Откройте Telegram → Настройки → Устройства → Подключить устройство">Open Telegram → Settings → Devices → Link Desktop Device</p>
+                  <p id="tg-qr-timer" style="color:var(--text-muted);font-size:.75rem;margin-top:4px"></p>
+                </div>
+
+                <!-- 2FA Container -->
+                <div id="tg-2fa-container" style="display:none;margin-bottom:16px">
+                  <p style="color:var(--warning);font-size:.85rem;margin-bottom:8px" data-en="Account has 2FA. Enter cloud password:" data-ru="Аккаунт с 2FA. Введите облачный пароль:">Account has 2FA. Enter cloud password:</p>
+                  <div class="input-group" style="max-width:300px">
+                    <input type="password" class="form-input" id="tg-2fa-password" placeholder="Cloud password">
+                    <button class="btn btn-primary btn-sm" onclick="submitTg2FA()" data-en="Submit" data-ru="Отправить">Submit</button>
+                  </div>
+                  <p id="tg-2fa-error" style="color:var(--danger);font-size:.78rem;margin-top:6px;display:none"></p>
+                </div>
+
+                <div style="display:flex;gap:8px;align-items:center">
+                  <button class="btn btn-primary btn-sm" id="tg-connect-btn" onclick="startTelegramAuth()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2L2 13l7 2 2 7z"/></svg>
+                    <span data-en="Connect Telegram" data-ru="Подключить Telegram">Connect Telegram</span>
+                  </button>
+                  <button class="btn btn-ghost btn-sm" id="tg-disconnect-btn" onclick="disconnectTelegram()" style="display:none;color:var(--danger)">
+                    <span data-en="Disconnect" data-ru="Отключить">Disconnect</span>
+                  </button>
+                </div>
+                <p style="color:var(--text-muted);font-size:.72rem;margin-top:10px" data-en="Session persists. Agents use this account for messaging, channel management, and more." data-ru="Сессия сохраняется. Агенты используют этот аккаунт для сообщений, каналов и т.д.">Session persists. Agents use this account for messaging, channel management, and more.</p>
+              </div>
+            </div>
+
+            <div class="settings-section">
+              <h3 class="section-title" data-en="Security" data-ru="Безопасность">Security</h3>
+              <div class="settings-card">
+                <div class="setting-item">
+                  <div class="setting-info">
+                    <span class="setting-name" data-en="Audit Logging" data-ru="Логирование">Audit Logging</span>
+                    <span class="setting-desc" data-en="Record all agent actions for review" data-ru="Записывать все действия агента">Record all agent actions for review</span>
+                  </div>
+                  <label class="toggle-switch"><input type="checkbox" id="sec-logging" checked onchange="saveSecuritySettings()"><span class="toggle-slider"></span></label>
+                </div>
+                <div class="setting-item">
+                  <div class="setting-info">
+                    <span class="setting-name" data-en="Confirm Sensitive Actions" data-ru="Подтверждать действия">Confirm Sensitive Actions</span>
+                    <span class="setting-desc" data-en="Ask before executing critical operations" data-ru="Спрашивать перед критическими операциями">Ask before executing critical operations</span>
+                  </div>
+                  <label class="toggle-switch"><input type="checkbox" id="sec-confirm" checked onchange="saveSecuritySettings()"><span class="toggle-slider"></span></label>
+                </div>
+                <div class="setting-item">
+                  <div class="setting-info">
+                    <span class="setting-name" data-en="Rate Limiting" data-ru="Ограничение запросов">Rate Limiting</span>
+                    <span class="setting-desc" data-en="Limit requests per minute" data-ru="Ограничить запросы в минуту">Limit requests per minute</span>
+                  </div>
+                  <label class="toggle-switch"><input type="checkbox" id="sec-rate-limit" checked onchange="saveSecuritySettings()"><span class="toggle-slider"></span></label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Analytics Page -->
+      <div id="admin-agents-page" class="page">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title" data-en="All Platform Agents" data-ru="Все агенты платформы">All Platform Agents</h1>
+            <p class="page-subtitle" data-en="Admin panel — start/stop agents, view errors" data-ru="Админ-панель — запуск/остановка агентов, просмотр ошибок">Admin panel</p>
+          </div>
+        </div>
+        <div id="admin-agents-content" style="padding:20px">
+          <div style="text-align:center;color:var(--text-muted);padding:2rem">Loading...</div>
+        </div>
+      </div>
+
+      <!-- Bug Tracker Page (Admin) -->
+      <div id="bugs-page" class="page">
+        <div id="bugs-dashboard-root" style="padding:24px;max-width:1200px;margin:0 auto">
+          <div style="text-align:center;color:var(--text-muted);padding:2rem">Loading...</div>
+        </div>
+      </div>
+
+      <!-- Tester Hub Page (Beta testers) -->
+      <div id="tester-hub-page" class="page">
+        <div id="tester-hub-root" style="padding:0">
+          <div style="text-align:center;color:var(--text-muted);padding:2rem">Loading...</div>
+        </div>
+      </div>
+
+      <div id="analytics-page" class="page">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title" data-en="Analytics" data-ru="Аналитика">Analytics</h1>
+            <p class="page-subtitle" data-en="Execution statistics and agent performance" data-ru="Статистика выполнения и производительность агентов">Execution statistics and agent performance</p>
+          </div>
+          <button class="btn btn-ghost" onclick="loadAnalytics()">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="refresh-icon">
+              <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+            </svg>
+            <span data-en="Refresh" data-ru="Обновить">Refresh</span>
+          </button>
+        </div>
+        <div class="page-content">
+          <div class="metrics-grid" id="analytics-stats-grid">
+            <div class="metric-card primary">
+              <div class="metric-glow"></div>
+              <div class="metric-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
+              <div class="metric-content">
+                <span class="metric-label" data-en="Total Runs" data-ru="Всего запусков">Total Runs</span>
+                <span class="metric-value" id="an-total-runs">—</span>
+              </div>
+            </div>
+            <div class="metric-card accent">
+              <div class="metric-glow"></div>
+              <div class="metric-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div>
+              <div class="metric-content">
+                <span class="metric-label" data-en="Success Rate" data-ru="Успешность">Success Rate</span>
+                <span class="metric-value" id="an-success-rate">—</span>
+              </div>
+            </div>
+            <div class="metric-card secondary">
+              <div class="metric-glow"></div>
+              <div class="metric-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+              <div class="metric-content">
+                <span class="metric-label" data-en="Last 24h" data-ru="За 24ч">Last 24h</span>
+                <span class="metric-value" id="an-last24h">—</span>
+              </div>
+            </div>
+            <div class="metric-card success">
+              <div class="metric-glow"></div>
+              <div class="metric-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+              <div class="metric-content">
+                <span class="metric-label" data-en="Active Agents" data-ru="Активных агентов">Active Agents</span>
+                <span class="metric-value" id="an-active-agents">—</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Charts Row -->
+          <div class="analytics-charts-row">
+            <div class="panel analytics-chart-panel">
+              <div class="panel-header">
+                <h3 class="panel-title" data-en="Executions (Last 7 Days)" data-ru="Выполнения (7 дней)">Executions (Last 7 Days)</h3>
+              </div>
+              <div class="analytics-chart-wrap">
+                <canvas id="an-bar-chart" width="520" height="220"></canvas>
+              </div>
+            </div>
+            <div class="panel analytics-chart-panel">
+              <div class="panel-header">
+                <h3 class="panel-title" data-en="Success Rate" data-ru="Успешность">Success Rate</h3>
+              </div>
+              <div class="analytics-chart-wrap analytics-donut-wrap">
+                <canvas id="an-donut-chart" width="220" height="220"></canvas>
+                <div id="an-donut-legend" class="analytics-donut-legend"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Agent Leaderboard -->
+          <div class="panel" style="margin-top:1.5rem">
+            <div class="panel-header">
+              <h3 class="panel-title" data-en="Agent Leaderboard" data-ru="Рейтинг агентов">Agent Leaderboard</h3>
+            </div>
+            <div id="analytics-leaderboard">
+              <div class="loading-placeholder" data-en="Loading..." data-ru="Загрузка...">Loading...</div>
+            </div>
+          </div>
+
+          <!-- Execution History -->
+          <div class="panel" style="margin-top:1.5rem">
+            <div class="panel-header">
+              <h3 class="panel-title" data-en="Execution History" data-ru="История выполнения">Execution History</h3>
+            </div>
+            <div id="analytics-executions-table">
+              <div class="loading-placeholder" data-en="Loading..." data-ru="Загрузка...">Loading...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Persona Page -->
+      <div id="persona-page" class="page">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title" data-en="Persona" data-ru="Персона">Persona</h1>
+            <p class="page-subtitle" data-en="AI personality and language settings for your agents" data-ru="Настройки AI-персоны и языка для ваших агентов">AI personality and language settings for your agents</p>
+          </div>
+          <button class="btn btn-primary" onclick="savePersona()">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+              <polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+            </svg>
+            <span data-en="Save Persona" data-ru="Сохранить">Save Persona</span>
+          </button>
+        </div>
+        <div class="page-content">
+          <div class="settings-grid">
+            <div class="settings-section">
+              <h3 class="section-title" data-en="AI Model" data-ru="AI Модель">AI Model</h3>
+              <div class="settings-card">
+                <div class="setting-item" style="display:flex;flex-direction:column;gap:.75rem;padding:1rem 0">
+                  <label style="display:flex;flex-direction:column;gap:.4rem">
+                    <span class="setting-name" data-en="Model" data-ru="Модель">Model</span>
+                    <select class="form-input" id="persona-model">
+                      <option value="gemini-2.5-flash">Gemini 2.5 Flash (default)</option>
+                      <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+                      <option value="gpt-4o">GPT-4o</option>
+                      <option value="gpt-4o-mini">GPT-4o Mini</option>
+                      <option value="claude-3-5-sonnet">Claude 3.5 Sonnet</option>
+                    </select>
+                  </label>
+                  <label style="display:flex;flex-direction:column;gap:.4rem">
+                    <span class="setting-name" data-en="Response Language" data-ru="Язык ответов">Response Language</span>
+                    <select class="form-input" id="persona-language">
+                      <option value="auto">Auto-detect</option>
+                      <option value="ru">Русский</option>
+                      <option value="en">English</option>
+                    </select>
+                  </label>
+                  <label style="display:flex;flex-direction:column;gap:.4rem">
+                    <span class="setting-name" data-en="Tone" data-ru="Тон">Tone</span>
+                    <select class="form-input" id="persona-tone">
+                      <option value="professional">Professional</option>
+                      <option value="friendly">Friendly</option>
+                      <option value="technical">Technical</option>
+                      <option value="concise">Concise</option>
+                    </select>
+                  </label>
+                  <label style="display:flex;flex-direction:column;gap:.4rem">
+                    <span class="setting-name" data-en="Persona Name" data-ru="Имя персоны">Persona Name</span>
+                    <input type="text" class="form-input" id="persona-name" placeholder="e.g. TradeBot, DeFi Watcher...">
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div class="settings-section">
+              <h3 class="section-title" data-en="Custom Instructions" data-ru="Инструкции для AI">Custom Instructions</h3>
+              <div class="settings-card">
+                <div class="setting-item" style="padding:1rem 0">
+                  <span class="setting-desc" data-en="These instructions are prepended to every agent creation prompt." data-ru="Эти инструкции добавляются к каждому запросу создания агента.">These instructions are prepended to every agent creation prompt.</span>
+                  <textarea class="form-input" id="persona-instructions" rows="6" style="margin-top:.75rem;width:100%;resize:vertical" placeholder="e.g. Always use USDT prices. Notify in Russian."></textarea>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Knowledge Base Page -->
+      <div id="knowledge-page" class="page">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title" data-en="Knowledge Base" data-ru="База знаний">Knowledge Base</h1>
+            <p class="page-subtitle" data-en="Documents and facts injected into agent context" data-ru="Документы и факты, инжектируемые в контекст агентов">Documents and facts injected into agent context</p>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary" onclick="showAddKnowledge()">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              <span data-en="Add Text" data-ru="Добавить текст">Add Text</span>
+            </button>
+            <label class="btn btn-secondary" style="cursor:pointer">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <span data-en="Upload File" data-ru="Загрузить файл">Upload File</span>
+              <input type="file" id="kb-file-input" accept=".txt,.md,.json,.csv,.pdf" style="display:none" onchange="uploadKnowledgeFile(this)">
+            </label>
+          </div>
+        </div>
+        <div class="page-content">
+          <!-- Stats -->
+          <div id="kb-stats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:1.5rem"></div>
+
+          <!-- Search -->
+          <div class="panel" style="margin-bottom:1.5rem">
+            <div style="padding:.75rem 1rem;display:flex;gap:8px">
+              <input type="text" class="form-input" id="kb-search" style="flex:1" placeholder="Search knowledge base..." onkeydown="if(event.key==='Enter')searchKnowledge()">
+              <button class="btn btn-secondary" onclick="searchKnowledge()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              </button>
+            </div>
+            <div id="kb-search-results" style="display:none"></div>
+          </div>
+
+          <!-- Add form (hidden by default) -->
+          <div id="knowledge-add-form" class="panel" style="display:none;margin-bottom:1.5rem">
+            <div class="panel-header">
+              <h3 class="panel-title" data-en="New Entry" data-ru="Новая запись">New Entry</h3>
+            </div>
+            <div style="padding:1rem;display:flex;flex-direction:column;gap:.75rem">
+              <input type="text" class="form-input" id="kb-title" placeholder="Title (e.g. My Exchange API)">
+              <select class="form-input" id="kb-category" style="width:200px">
+                <option value="general">General</option>
+                <option value="api">API / Integration</option>
+                <option value="trading">Trading Rules</option>
+                <option value="contacts">Contacts / People</option>
+                <option value="faq">FAQ / Knowledge</option>
+                <option value="config">Config / Settings</option>
+              </select>
+              <textarea class="form-input" id="kb-content" rows="6" style="resize:vertical" placeholder="Content..."></textarea>
+              <div style="display:flex;gap:.75rem;align-items:center">
+                <button class="btn btn-primary" onclick="saveKnowledgeEntry()">
+                  <span data-en="Save" data-ru="Сохранить">Save</span>
+                </button>
+                <button class="btn btn-ghost" onclick="document.getElementById('knowledge-add-form').style.display='none'">
+                  <span data-en="Cancel" data-ru="Отмена">Cancel</span>
+                </button>
+                <span id="kb-char-count" style="margin-left:auto;font-size:.72rem;color:var(--text-muted)"></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Filter tabs -->
+          <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm kb-filter active" data-filter="all" onclick="filterKnowledge('all', this)">All</button>
+            <button class="btn btn-ghost btn-sm kb-filter" data-filter="general" onclick="filterKnowledge('general', this)">General</button>
+            <button class="btn btn-ghost btn-sm kb-filter" data-filter="api" onclick="filterKnowledge('api', this)">API</button>
+            <button class="btn btn-ghost btn-sm kb-filter" data-filter="trading" onclick="filterKnowledge('trading', this)">Trading</button>
+            <button class="btn btn-ghost btn-sm kb-filter" data-filter="contacts" onclick="filterKnowledge('contacts', this)">Contacts</button>
+            <button class="btn btn-ghost btn-sm kb-filter" data-filter="faq" onclick="filterKnowledge('faq', this)">FAQ</button>
+            <button class="btn btn-ghost btn-sm kb-filter" data-filter="config" onclick="filterKnowledge('config', this)">Config</button>
+          </div>
+
+          <div id="knowledge-list" class="panel">
+            <div id="knowledge-entries">
+              <div class="loading-placeholder" data-en="Loading..." data-ru="Загрузка...">Loading...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Connectors Page -->
+      <div id="connectors-page" class="page">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title" data-en="Connectors" data-ru="Коннекторы">Connectors</h1>
+            <p class="page-subtitle" data-en="External service integrations and personal variables" data-ru="Интеграции с внешними сервисами и личные переменные">External service integrations and personal variables</p>
+          </div>
+        </div>
+        <div class="page-content">
+          <!-- Connector cards -->
+          <div class="settings-grid" id="connectors-grid">
+            <!-- Discord -->
+            <div class="settings-section">
+              <h3 class="section-title">Discord Webhook</h3>
+              <div class="settings-card">
+                <div style="padding:1rem;display:flex;flex-direction:column;gap:.75rem">
+                  <div style="display:flex;align-items:center;gap:.5rem">
+                    <span class="credential-status" id="discord-status">Disconnected</span>
+                  </div>
+                  <input type="url" class="form-input" id="discord-webhook" placeholder="https://discord.com/api/webhooks/...">
+                  <div style="display:flex;gap:.5rem">
+                    <button class="btn btn-primary btn-sm" onclick="saveConnector('discord', {webhookUrl: document.getElementById('discord-webhook').value})">
+                      <span data-en="Save" data-ru="Сохранить">Save</span>
+                    </button>
+                    <button class="btn btn-ghost btn-sm" onclick="testConnector('discord')">
+                      <span data-en="Test" data-ru="Тест">Test</span>
+                    </button>
+                    <button class="btn btn-ghost btn-sm" onclick="removeConnector('discord')">
+                      <span data-en="Remove" data-ru="Удалить">Remove</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- Slack -->
+            <div class="settings-section">
+              <h3 class="section-title">Slack Webhook</h3>
+              <div class="settings-card">
+                <div style="padding:1rem;display:flex;flex-direction:column;gap:.75rem">
+                  <div style="display:flex;align-items:center;gap:.5rem">
+                    <span class="credential-status" id="slack-status">Disconnected</span>
+                  </div>
+                  <input type="url" class="form-input" id="slack-webhook" placeholder="https://hooks.slack.com/services/...">
+                  <div style="display:flex;gap:.5rem">
+                    <button class="btn btn-primary btn-sm" onclick="saveConnector('slack', {webhookUrl: document.getElementById('slack-webhook').value})">
+                      <span data-en="Save" data-ru="Сохранить">Save</span>
+                    </button>
+                    <button class="btn btn-ghost btn-sm" onclick="removeConnector('slack')">
+                      <span data-en="Remove" data-ru="Удалить">Remove</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- Custom Webhook -->
+            <div class="settings-section">
+              <h3 class="section-title" data-en="Custom Webhook" data-ru="Свой Webhook">Custom Webhook</h3>
+              <div class="settings-card">
+                <div style="padding:1rem;display:flex;flex-direction:column;gap:.75rem">
+                  <span class="credential-status" id="custom-webhook-status">Disconnected</span>
+                  <input type="url" class="form-input" id="custom-webhook-url" placeholder="https://your-server.com/webhook">
+                  <div style="display:flex;gap:.5rem">
+                    <button class="btn btn-primary btn-sm" onclick="saveConnector('custom_webhook', {url: document.getElementById('custom-webhook-url').value})">
+                      <span data-en="Save" data-ru="Сохранить">Save</span>
+                    </button>
+                    <button class="btn btn-ghost btn-sm" onclick="removeConnector('custom_webhook')">
+                      <span data-en="Remove" data-ru="Удалить">Remove</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- My Variables -->
+          <div class="panel" style="margin-top:2rem">
+            <div class="panel-header">
+              <h3 class="panel-title" data-en="My Variables" data-ru="Мои переменные">My Variables</h3>
+              <button class="btn btn-primary btn-sm" onclick="showAddVariable()">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                <span data-en="Add Variable" data-ru="Добавить">Add Variable</span>
+              </button>
+            </div>
+            <div style="padding:.5rem 1rem 1rem;font-size:.85rem;color:var(--text-muted)" data-en="Variables auto-injected into all agents as context.config.VAR_NAME" data-ru="Переменные автоматически доступны в агентах как context.config.VAR_NAME">Variables auto-injected into all agents as context.config.VAR_NAME</div>
+            <div id="add-variable-form" style="display:none;padding:0 1rem 1rem;gap:.5rem;flex-wrap:wrap">
+              <input type="text" class="form-input" id="var-key" placeholder="VAR_NAME" style="flex:1;min-width:140px;text-transform:uppercase">
+              <input type="text" class="form-input" id="var-value" placeholder="value" style="flex:2;min-width:200px">
+              <button class="btn btn-primary btn-sm" onclick="saveVariable()">
+                <span data-en="Save" data-ru="Сохранить">Save</span>
+              </button>
+              <button class="btn btn-ghost btn-sm" onclick="document.getElementById('add-variable-form').style.display='none'">✕</button>
+            </div>
+            <div id="variables-list" style="padding:0 1rem 1rem">
+              <div class="loading-placeholder" data-en="Loading..." data-ru="Загрузка...">Loading...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Wallet Page -->
+      <div id="wallet-page" class="page">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title" data-en="Wallet" data-ru="Кошелёк">Wallet</h1>
+            <p class="page-subtitle" data-en="Manage your TON balance, top up and withdraw" data-ru="Управляйте балансом TON, пополняйте и выводите">Manage your TON balance, top up and withdraw</p>
+          </div>
+        </div>
+        <div class="page-content">
+          <!-- Balance Cards -->
+          <div class="wallet-cards">
+            <div class="wallet-balance-card">
+              <div class="wallet-card-icon">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/>
+                </svg>
+              </div>
+              <div class="wallet-card-label" data-en="Balance" data-ru="Баланс">Balance</div>
+              <div class="wallet-card-value" id="wallet-balance">0.00 <span class="wallet-currency">TON</span></div>
+              <div class="wallet-card-sub" id="wallet-balance-usd"></div>
+            </div>
+            <div class="wallet-balance-card earned">
+              <div class="wallet-card-icon">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>
+                </svg>
+              </div>
+              <div class="wallet-card-label" data-en="Total Earned" data-ru="Всего заработано">Total Earned</div>
+              <div class="wallet-card-value" id="wallet-earned">0.00 <span class="wallet-currency">TON</span></div>
+            </div>
+            <div class="wallet-balance-card address">
+              <div class="wallet-card-icon">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/>
+                </svg>
+              </div>
+              <div class="wallet-card-label" data-en="Platform Wallet" data-ru="Кошелёк платформы">Platform Wallet</div>
+              <div class="wallet-card-value" style="font-size:1rem;font-weight:600;color:var(--primary)" id="wallet-platform-dns">agentplatform.ton</div>
+              <div class="wallet-card-sub wallet-address-val" id="wallet-platform-addr" title="Click to copy" onclick="copyWalletAddress()" style="cursor:pointer;font-size:.7rem;color:var(--text-secondary);word-break:break-all;opacity:.7">—</div>
+            </div>
+          </div>
+
+          <!-- Linked Wallet — TON Connect -->
+          <div id="wallet-link-panel" class="panel" style="margin-bottom:20px;padding:16px 20px">
+            <!-- State: Not connected -->
+            <div id="wallet-disconnected" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+              <div style="display:flex;align-items:center;gap:12px;min-width:0">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" style="flex-shrink:0">
+                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                </svg>
+                <div style="min-width:0">
+                  <div style="font-size:.78rem;color:var(--text-secondary)" data-en="Your Wallet" data-ru="Ваш кошелёк">Your Wallet</div>
+                  <div style="font-size:.85rem;color:var(--text-tertiary)" data-en="Not connected" data-ru="Не подключён">Not connected</div>
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+                <button class="btn btn-primary btn-sm" onclick="connectTonWallet()" style="display:flex;align-items:center;gap:6px">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                  <span data-en="Connect" data-ru="Подключить">Connect</span>
+                </button>
+                <button class="btn btn-ghost btn-sm" onclick="linkWalletPrompt()" style="font-size:.75rem;opacity:.7" data-en="Manual" data-ru="Вручную">Manual</button>
+              </div>
+            </div>
+            <!-- State: Connected -->
+            <div id="wallet-connected" style="display:none;align-items:center;justify-content:space-between;gap:12px">
+              <div style="display:flex;align-items:center;gap:12px;min-width:0">
+                <div style="width:36px;height:36px;border-radius:10px;background:rgba(0,136,204,.15);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0088cc" stroke-width="2"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4h-4z"/></svg>
+                </div>
+                <div style="min-width:0">
+                  <div style="display:flex;align-items:center;gap:6px">
+                    <span id="wallet-connected-name" style="font-size:.82rem;font-weight:600;color:var(--primary)"></span>
+                    <span style="font-size:.65rem;padding:2px 6px;border-radius:4px;background:rgba(16,185,129,.15);color:#10b981" data-en="Connected" data-ru="Подключён">Connected</span>
+                  </div>
+                  <div id="wallet-connected-addr" style="font-size:.82rem;font-family:'JetBrains Mono',monospace;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
+                </div>
+              </div>
+              <button class="btn btn-ghost btn-sm" onclick="disconnectTonWallet()" style="color:var(--danger);flex-shrink:0" data-en="Disconnect" data-ru="Отключить">Disconnect</button>
+            </div>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="wallet-actions">
+            <button class="btn-wallet-action topup" onclick="openTopupModal()">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              <span data-en="Top Up" data-ru="Пополнить">Top Up</span>
+            </button>
+            <button class="btn-wallet-action withdraw" onclick="openWithdrawModal()">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
+              </svg>
+              <span data-en="Withdraw" data-ru="Вывести">Withdraw</span>
+            </button>
+          </div>
+
+          <!-- Transaction History -->
+          <div class="panel wallet-history-panel">
+            <div class="panel-header">
+              <h3 class="panel-title" data-en="Transaction History" data-ru="История транзакций">Transaction History</h3>
+              <div class="wallet-history-filters">
+                <button class="wallet-filter-btn active" data-type="all" onclick="filterTransactions('all')" data-en="All" data-ru="Все">All</button>
+                <button class="wallet-filter-btn" data-type="topup" onclick="filterTransactions('topup')" data-en="Top Up" data-ru="Пополнения">Top Up</button>
+                <button class="wallet-filter-btn" data-type="withdraw" onclick="filterTransactions('withdraw')" data-en="Withdraw" data-ru="Выводы">Withdraw</button>
+                <button class="wallet-filter-btn" data-type="spend" onclick="filterTransactions('spend')" data-en="Spend" data-ru="Расходы">Spend</button>
+              </div>
+            </div>
+            <div id="wallet-transactions-list" class="wallet-transactions">
+              <div class="loading-placeholder" data-en="Loading transactions..." data-ru="Загрузка транзакций...">Loading transactions...</div>
+            </div>
+            <div class="wallet-pagination" id="wallet-pagination" style="display:none">
+              <button class="btn-pagination" id="wallet-prev-btn" onclick="walletPrevPage()" disabled data-en="Previous" data-ru="Назад">Previous</button>
+              <span class="wallet-page-info" id="wallet-page-info">1 / 1</span>
+              <button class="btn-pagination" id="wallet-next-btn" onclick="walletNextPage()" data-en="Next" data-ru="Далее">Next</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Top Up Modal -->
+      <div class="modal-overlay" id="topup-modal" style="display:none" onclick="if(event.target===this)closeTopupModal()">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2 data-en="Top Up Balance" data-ru="Пополнение баланса">Top Up Balance</h2>
+            <button class="modal-close" onclick="closeTopupModal()">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div class="topup-steps">
+              <div class="topup-step">
+                <div class="step-number">1</div>
+                <div class="step-content">
+                  <p data-en="Send TON to the platform wallet:" data-ru="Отправьте TON на кошелёк платформы:">Send TON to the platform wallet:</p>
+                  <div style="font-weight:600;font-size:1.1rem;color:var(--primary);margin-bottom:6px">agentplatform.ton</div>
+                  <div class="topup-address-box" id="topup-address" onclick="copyTopupAddress()" title="Click to copy" style="font-size:.82rem;opacity:.8">—</div>
+                </div>
+              </div>
+              <div class="topup-step">
+                <div class="step-number">2</div>
+                <div class="step-content">
+                  <p data-en="Use this comment in your transaction:" data-ru="Укажите этот комментарий в транзакции:">Use this comment in your transaction:</p>
+                  <div class="topup-comment-box" id="topup-comment" onclick="copyTopupComment()" title="Click to copy">—</div>
+                </div>
+              </div>
+              <div class="topup-step">
+                <div class="step-number">3</div>
+                <div class="step-content">
+                  <p data-en="Or use a deep link to open your wallet app:" data-ru="Или используйте ссылку для открытия кошелька:">Or use a deep link to open your wallet app:</p>
+                  <div class="topup-deeplinks">
+                    <a class="btn-deeplink" id="topup-deeplink-1" href="#" target="_blank">
+                      <span>1 TON</span>
+                    </a>
+                    <a class="btn-deeplink" id="topup-deeplink-5" href="#" target="_blank">
+                      <span>5 TON</span>
+                    </a>
+                    <a class="btn-deeplink" id="topup-deeplink-10" href="#" target="_blank">
+                      <span>10 TON</span>
+                    </a>
+                  </div>
+                </div>
+              </div>
+              <div class="topup-step">
+                <div class="step-number">4</div>
+                <div class="step-content">
+                  <p data-en="After sending, click to verify:" data-ru="После отправки нажмите для проверки:">After sending, click to verify:</p>
+                  <button class="btn-check-topup" id="btn-check-topup" onclick="checkTopup()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                      <polyline points="22 4 12 14.01 9 11.01"/>
+                    </svg>
+                    <span data-en="I sent it — verify" data-ru="Я отправил — проверить">I sent it — verify</span>
+                  </button>
+                  <div id="topup-result" class="topup-result" style="display:none"></div>
+                </div>
+              </div>
+            </div>
+            <div class="topup-qr-section">
+              <p class="topup-qr-label" data-en="Scan QR to pay" data-ru="Сканируйте QR для оплаты">Scan QR to pay</p>
+              <div class="topup-qr" id="topup-qr">
+                <img id="topup-qr-img" src="" alt="QR Code" style="width:180px;height:180px;border-radius:12px;background:#fff;display:none">
+              </div>
+              <p class="topup-note" data-en="Min: 0.1 TON | Fee: 0 TON" data-ru="Мин: 0.1 TON | Комиссия: 0 TON">Min: 0.1 TON | Fee: 0 TON</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Withdraw Modal -->
+      <div class="modal-overlay" id="withdraw-modal" style="display:none" onclick="if(event.target===this)closeWithdrawModal()">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2 data-en="Withdraw TON" data-ru="Вывод TON">Withdraw TON</h2>
+            <button class="modal-close" onclick="closeWithdrawModal()">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div class="withdraw-form">
+              <div class="form-group">
+                <label data-en="Recipient Address" data-ru="Адрес получателя">Recipient Address</label>
+                <input type="text" id="withdraw-address" class="form-input" placeholder="EQ... or UQ..." data-placeholder-en="EQ... or UQ..." data-placeholder-ru="EQ... или UQ...">
+              </div>
+              <div class="form-group">
+                <label data-en="Amount (TON)" data-ru="Сумма (TON)">Amount (TON)</label>
+                <div class="withdraw-amount-row">
+                  <input type="number" id="withdraw-amount" class="form-input" step="0.01" min="0.1" placeholder="0.00">
+                  <button class="btn-max" onclick="setMaxWithdraw()" data-en="MAX" data-ru="МАКС">MAX</button>
+                </div>
+              </div>
+              <div class="withdraw-info">
+                <div class="withdraw-info-row">
+                  <span data-en="Available balance:" data-ru="Доступный баланс:">Available balance:</span>
+                  <span id="withdraw-available">0.00 TON</span>
+                </div>
+                <div class="withdraw-info-row">
+                  <span data-en="Network fee:" data-ru="Комиссия сети:">Network fee:</span>
+                  <span>0.05 TON</span>
+                </div>
+                <div class="withdraw-info-row total">
+                  <span data-en="You will receive:" data-ru="Вы получите:">You will receive:</span>
+                  <span id="withdraw-receive">0.00 TON</span>
+                </div>
+              </div>
+              <div id="withdraw-error" class="withdraw-error" style="display:none"></div>
+              <button class="btn-withdraw-submit" id="btn-withdraw-submit" onclick="submitWithdraw()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
+                </svg>
+                <span data-en="Withdraw" data-ru="Вывести">Withdraw</span>
+              </button>
+              <div id="withdraw-result" class="withdraw-result" style="display:none"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Logs Modal -->
+      <div class="modal-overlay" id="logs-modal" style="display:none" onclick="if(event.target===this)closeLogsModal()">
+        <div class="modal-content logs-modal-content">
+          <div class="modal-header">
+            <h2 id="logs-modal-title">Logs</h2>
+            <div style="display:flex;gap:8px;align-items:center">
+              <button class="btn btn-ghost btn-sm" onclick="refreshLogs()" title="Refresh"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button>
+              <button class="modal-close" onclick="closeLogsModal()">&times;</button>
+            </div>
+          </div>
+          <div class="modal-body logs-modal-body" id="logs-modal-body"></div>
+        </div>
+      </div>
+
+      <!-- Delete Agent Modal -->
+      <div class="modal-overlay" id="delete-agent-modal" style="display:none" onclick="if(event.target===this)closeDeleteModal()">
+        <div class="modal-content delete-modal-content">
+          <div class="modal-header">
+            <h2 id="delete-modal-title" data-en="Delete Agent" data-ru="Удалить агента">Delete Agent</h2>
+            <button class="modal-close" onclick="closeDeleteModal()">×</button>
+          </div>
+          <div class="modal-body" style="text-align:center;padding:24px">
+            <div class="delete-icon-wrap"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
+            <p data-en="Delete agent" data-ru="Удалить агента">Delete agent</p>
+            <p><strong id="delete-agent-name"></strong></p>
+            <p class="delete-warning" data-en="This action cannot be undone. The agent and all its data will be permanently removed." data-ru="Это действие нельзя отменить. Агент и все его данные будут удалены навсегда.">This action cannot be undone.</p>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-ghost" onclick="closeDeleteModal()" data-en="Cancel" data-ru="Отмена">Cancel</button>
+            <button class="btn btn-danger" id="delete-confirm-btn" onclick="confirmDeleteAgent()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> <span data-en="Delete" data-ru="Удалить">Delete</span></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Agentic Wallets Page -->
+      <div id="wallets-page" class="page">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title" data-en="Agentic Wallets" data-ru="Agentic Кошельки">Agentic Wallets</h1>
+            <p class="page-subtitle" data-en="Self-custody wallets for your AI agents. Root wallet controls all sub-wallets on-chain." data-ru="Self-custody кошельки для AI-агентов. Root-кошелёк контролирует все суб-кошельки on-chain.">Self-custody wallets for your AI agents</p>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn-action" onclick="awRefreshAll()" id="aw-refresh-btn" data-en="Refresh All" data-ru="Обновить всё">Refresh All</button>
+          </div>
+        </div>
+        <div class="page-content">
+          <div id="aw-stats-row" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:24px"></div>
+          <div id="aw-root-section" style="margin-bottom:24px"></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <h2 id="aw-wallets-title" style="font-size:1.1rem;font-weight:600" data-en="Agent Wallets" data-ru="Кошельки агентов">Agent Wallets</h2>
+            <button class="btn-action" onclick="awShowDeployModal()" data-en="+ New Wallet" data-ru="+ Новый кошелёк">+ New Wallet</button>
+          </div>
+          <div id="aw-wallets-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px"></div>
+        </div>
+      </div>
+
+      <!-- Profile Page -->
+      <div id="profile-page" class="page">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title" data-en="Profile" data-ru="Профиль">Profile</h1>
+            <p class="page-subtitle" data-en="Your account information and statistics" data-ru="Информация об аккаунте и статистика">Your account information and statistics</p>
+          </div>
+        </div>
+        <div class="page-content">
+          <!-- Subscription banner (full width) -->
+          <div class="settings-card" style="margin-bottom:1.25rem">
+            <div style="padding:1rem;display:flex;flex-direction:column;gap:.75rem">
+              <div class="sub-plan-banner" id="profile-plan-banner">
+                <div class="sub-plan-info">
+                  <span class="sub-plan-icon" id="profile-plan-icon"></span>
+                  <div>
+                    <div class="sub-plan-name" id="profile-plan-name">Free</div>
+                    <div class="sub-plan-expires" id="profile-plan-expires" data-en="No expiry" data-ru="Бессрочно">No expiry</div>
+                  </div>
+                </div>
+                <button class="btn btn-sm btn-accent" onclick="openPlansModal()" data-en="Upgrade" data-ru="Улучшить">Upgrade</button>
+              </div>
+              <div class="sub-usage-grid">
+                <div class="sub-usage-item">
+                  <div class="sub-usage-label"><span data-en="Agents" data-ru="Агенты">Agents</span> <span id="profile-agents-usage">0 / 3</span></div>
+                  <div class="sub-usage-bar"><div class="sub-usage-fill" id="profile-agents-bar" style="width:0%"></div></div>
+                </div>
+                <div class="sub-usage-item">
+                  <div class="sub-usage-label"><span data-en="Active" data-ru="Активные">Active</span> <span id="profile-active-usage">0 / 1</span></div>
+                  <div class="sub-usage-bar"><div class="sub-usage-fill" id="profile-active-bar" style="width:0%"></div></div>
+                </div>
+                <div class="sub-usage-item">
+                  <div class="sub-usage-label"><span data-en="AI Generations" data-ru="AI генерации">AI Generations</span> <span id="profile-gen-usage">0 / 0</span></div>
+                  <div class="sub-usage-bar"><div class="sub-usage-fill" id="profile-gen-bar" style="width:0%"></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-grid">
+            <div class="settings-section">
+              <h3 class="section-title" data-en="Account" data-ru="Аккаунт">Account</h3>
+              <div class="settings-card">
+                <div style="padding:1rem;display:flex;align-items:center;gap:1rem">
+                  <div style="width:64px;height:64px;border-radius:50%;overflow:hidden;background:var(--bg-tertiary);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                    <img id="profile-avatar" src="" alt="" style="width:100%;height:100%;object-fit:cover;display:none">
+                    <svg id="profile-avatar-fallback" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                  </div>
+                  <div>
+                    <div style="font-weight:600;font-size:1.1rem" id="profile-name">—</div>
+                    <div style="color:var(--text-muted);font-size:.9rem" id="profile-username">—</div>
+                    <div style="color:var(--text-muted);font-size:.8rem;margin-top:.2rem">ID: <span id="profile-id">—</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="settings-section">
+              <h3 class="section-title" data-en="Balance" data-ru="Баланс">Balance</h3>
+              <div class="settings-card">
+                <div style="padding:1rem;display:flex;flex-direction:column;gap:.6rem">
+                  <div style="display:flex;justify-content:space-between">
+                    <span class="setting-name" data-en="Balance" data-ru="Баланс">Balance</span>
+                    <span id="profile-balance" style="font-weight:700;color:#0088CC">—</span>
+                  </div>
+                  <div style="display:flex;justify-content:space-between">
+                    <span class="setting-name" data-en="Total Earned" data-ru="Всего заработано">Total Earned</span>
+                    <span id="profile-earned" style="font-weight:600;color:#4ade80">—</span>
+                  </div>
+                  <div style="display:flex;justify-content:space-between">
+                    <span class="setting-name" data-en="Linked Wallet" data-ru="Привязанный кошелёк">Linked Wallet</span>
+                    <span id="profile-wallet" style="font-weight:500;font-size:.85rem;font-family:monospace;color:var(--text-muted)">—</span>
+                  </div>
+                  <div style="display:flex;gap:.5rem;margin-top:.25rem">
+                    <button class="btn btn-sm btn-primary" onclick="navigateTo('wallet')" data-en="Manage Wallet" data-ru="Управление кошельком">Manage Wallet</button>
+                    <button class="btn btn-sm btn-outline" onclick="openPlansModal()" data-en="View Plans" data-ru="Тарифы">View Plans</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="settings-section">
+              <h3 class="section-title" data-en="Statistics" data-ru="Статистика">Statistics</h3>
+              <div class="settings-card">
+                <div style="padding:1rem;display:flex;flex-direction:column;gap:.6rem">
+                  <div style="display:flex;justify-content:space-between">
+                    <span class="setting-name" data-en="Total Agents" data-ru="Всего агентов">Total Agents</span>
+                    <span id="profile-total-agents" style="font-weight:600">—</span>
+                  </div>
+                  <div style="display:flex;justify-content:space-between">
+                    <span class="setting-name" data-en="Active Agents" data-ru="Активных агентов">Active Agents</span>
+                    <span id="profile-active-agents" style="font-weight:600">—</span>
+                  </div>
+                  <div style="display:flex;justify-content:space-between">
+                    <span class="setting-name" data-en="Total Runs" data-ru="Всего запусков">Total Runs</span>
+                    <span id="profile-total-runs" style="font-weight:600">—</span>
+                  </div>
+                  <div style="display:flex;justify-content:space-between">
+                    <span class="setting-name" data-en="Success Rate" data-ru="Успешность">Success Rate</span>
+                    <span id="profile-success-rate" style="font-weight:600">—</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="panel" style="margin-top:1.5rem;border:1px solid rgba(220,53,69,.3)">
+            <div class="panel-header">
+              <h3 class="panel-title" style="color:#dc3545" data-en="Danger Zone" data-ru="Опасная зона">Danger Zone</h3>
+            </div>
+            <!-- Privacy & Data Section -->
+            <div class="panel" style="margin-top:20px">
+              <div class="panel-header">
+                <h3 class="panel-title" data-en="Privacy & Data" data-ru="Конфиденциальность и данные">Privacy & Data</h3>
+              </div>
+              <div style="padding:16px;display:flex;flex-direction:column;gap:12px">
+                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:.86rem;color:var(--text-primary)">
+                  <input type="checkbox" id="profile-error-consent" style="accent-color:#0ea5e9;width:18px;height:18px" onchange="toggleErrorConsent(this.checked)">
+                  <span data-en="Share error reports to improve the platform" data-ru="Делиться отчётами об ошибках для улучшения платформы">Share error reports</span>
+                </label>
+                <div style="display:flex;gap:10px;flex-wrap:wrap">
+                  <button class="rt-save-btn" style="padding:8px 18px;font-size:.8rem" onclick="exportMyData()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    <span data-en="Export My Data" data-ru="Скачать мои данные">Export My Data</span>
+                  </button>
+                  <button class="rt-save-btn" style="padding:8px 18px;font-size:.8rem;background:linear-gradient(135deg,#dc2626,#b91c1c)" onclick="deleteMyAccount()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    <span data-en="Delete Account" data-ru="Удалить аккаунт">Delete Account</span>
+                  </button>
+                </div>
+                <p style="font-size:.72rem;color:var(--text-muted);margin:0" data-en="Deleting your account permanently removes all agents, data, wallets, and sessions." data-ru="Удаление аккаунта навсегда удаляет всех агентов, данные, кошельки и сессии.">Deleting removes everything.</p>
+              </div>
+            </div>
+
+            <!-- Notification Settings -->
+            <div class="panel" style="margin-top:16px">
+              <div class="panel-header">
+                <h3 class="panel-title" data-en="Notifications" data-ru="Уведомления">Notifications</h3>
+              </div>
+              <div style="padding:16px;display:flex;flex-direction:column;gap:14px">
+                <div>
+                  <label style="font-size:.78rem;color:var(--text-muted);display:block;margin-bottom:6px" data-en="Toast Duration" data-ru="Длительность уведомлений">Toast Duration</label>
+                  <div style="display:flex;align-items:center;gap:10px">
+                    <input type="range" id="notif-duration-slider" min="2" max="15" value="5" step="1" style="flex:1;accent-color:#0ea5e9" oninput="setNotifDuration(this.value)">
+                    <span id="notif-duration-value" style="font-size:.82rem;color:var(--text-primary);min-width:30px;text-align:right">5s</span>
+                  </div>
+                </div>
+                <div>
+                  <label style="font-size:.78rem;color:var(--text-muted);display:block;margin-bottom:6px" data-en="Auto-dismiss" data-ru="Авто-удаление">Auto-dismiss</label>
+                  <div style="display:flex;gap:8px;flex-wrap:wrap">
+                    <button class="notif-dismiss-btn" onclick="setNotifAutoDismiss(0)" style="padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:.78rem;cursor:pointer;transition:all .15s" data-en="Manual" data-ru="Вручную">Manual</button>
+                    <button class="notif-dismiss-btn active" onclick="setNotifAutoDismiss(5)" style="padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:.78rem;cursor:pointer;transition:all .15s" data-en="5 sec" data-ru="5 сек">5 sec</button>
+                    <button class="notif-dismiss-btn" onclick="setNotifAutoDismiss(10)" style="padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:.78rem;cursor:pointer;transition:all .15s" data-en="10 sec" data-ru="10 сек">10 sec</button>
+                    <button class="notif-dismiss-btn" onclick="setNotifAutoDismiss(30)" style="padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:.78rem;cursor:pointer;transition:all .15s" data-en="30 sec" data-ru="30 сек">30 sec</button>
+                  </div>
+                </div>
+                <div>
+                  <label style="font-size:.78rem;color:var(--text-muted);display:block;margin-bottom:6px" data-en="Auto-delete history" data-ru="Авто-удаление истории">Auto-delete history</label>
+                  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px">
+                    <button class="notif-retain-btn" onclick="setNotifRetain('off')" style="padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:.78rem;cursor:pointer;transition:all .15s" data-en="Never" data-ru="Никогда">Never</button>
+                    <button class="notif-retain-btn" onclick="setNotifRetain('1d')" style="padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:.78rem;cursor:pointer;transition:all .15s" data-en="1 day" data-ru="1 день">1 day</button>
+                    <button class="notif-retain-btn" onclick="setNotifRetain('7d')" style="padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:.78rem;cursor:pointer;transition:all .15s" data-en="7 days" data-ru="7 дней">7 days</button>
+                    <button class="notif-retain-btn active" onclick="setNotifRetain('30d')" style="padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:.78rem;cursor:pointer;transition:all .15s" data-en="30 days" data-ru="30 дней">30 days</button>
+                    <button class="notif-retain-btn" onclick="setNotifRetain('custom')" style="padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:.78rem;cursor:pointer;transition:all .15s" data-en="Custom" data-ru="Своё">Custom</button>
+                  </div>
+                  <div id="notif-custom-retain" style="display:none;margin-top:6px">
+                    <div style="display:flex;align-items:center;gap:8px">
+                      <input type="number" id="notif-retain-days" min="1" max="365" value="14" style="width:70px;padding:6px 10px;background:var(--bg-primary);border:1px solid var(--border);border-radius:10px;color:var(--text-primary);font-size:.82rem;text-align:center">
+                      <span style="font-size:.78rem;color:var(--text-muted)" data-en="days" data-ru="дней">days</span>
+                      <button onclick="applyCustomRetain()" style="padding:6px 14px;border-radius:10px;border:none;background:var(--primary);color:white;font-size:.78rem;cursor:pointer" data-en="Apply" data-ru="Применить">Apply</button>
+                    </div>
+                  </div>
+                </div>
+                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:.86rem;color:var(--text-primary)">
+                  <input type="checkbox" id="notif-sound-toggle" style="accent-color:#0ea5e9;width:18px;height:18px" onchange="toggleNotifSound(this.checked)">
+                  <span data-en="Play sound on notifications" data-ru="Звук при уведомлениях">Sound on notifications</span>
+                </label>
+                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:.86rem;color:var(--text-primary)">
+                  <input type="checkbox" id="notif-badge-toggle" checked style="accent-color:#0ea5e9;width:18px;height:18px" onchange="toggleNotifBadge(this.checked)">
+                  <span data-en="Show badge on feedback button" data-ru="Показывать badge на кнопке фидбека">Show feedback badge</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- UI Settings -->
+            <div class="panel" style="margin-top:16px">
+              <div class="panel-header">
+                <h3 class="panel-title" data-en="Interface" data-ru="Интерфейс">Interface</h3>
+              </div>
+              <div style="padding:16px;display:flex;flex-direction:column;gap:14px">
+                <div>
+                  <label style="font-size:.78rem;color:var(--text-muted);display:block;margin-bottom:6px" data-en="UI Scale" data-ru="Масштаб интерфейса">UI Scale</label>
+                  <div style="display:flex;align-items:center;gap:10px">
+                    <input type="range" id="ui-scale-slider" min="80" max="120" value="100" step="5" style="flex:1;accent-color:#0ea5e9" oninput="setUIScale(this.value)">
+                    <span id="ui-scale-value" style="font-size:.82rem;color:var(--text-primary);min-width:35px;text-align:right">100%</span>
+                  </div>
+                </div>
+                <div>
+                  <label style="font-size:.78rem;color:var(--text-muted);display:block;margin-bottom:6px" data-en="Accent Color" data-ru="Акцентный цвет">Accent Color</label>
+                  <div style="display:flex;gap:8px" id="accent-color-picker">
+                    <div onclick="setAccentColor('#0ea5e9')" style="width:28px;height:28px;border-radius:50%;background:#0ea5e9;cursor:pointer;border:2px solid transparent" class="accent-dot active"></div>
+                    <div onclick="setAccentColor('#8b5cf6')" style="width:28px;height:28px;border-radius:50%;background:#8b5cf6;cursor:pointer;border:2px solid transparent" class="accent-dot"></div>
+                    <div onclick="setAccentColor('#10b981')" style="width:28px;height:28px;border-radius:50%;background:#10b981;cursor:pointer;border:2px solid transparent" class="accent-dot"></div>
+                    <div onclick="setAccentColor('#f59e0b')" style="width:28px;height:28px;border-radius:50%;background:#f59e0b;cursor:pointer;border:2px solid transparent" class="accent-dot"></div>
+                    <div onclick="setAccentColor('#ef4444')" style="width:28px;height:28px;border-radius:50%;background:#ef4444;cursor:pointer;border:2px solid transparent" class="accent-dot"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Network Map Page -->
+      <div id="network-page" class="page">
+        <div class="network-fullscreen-wrap">
+          <!-- Floating Stats Bar -->
+          <div class="network-stats-bar">
+            <div class="network-stats-item">
+              <span class="network-stats-value" id="net-stat-total">0</span>
+              <span class="network-stats-label" data-en="Agents" data-ru="Агенты">Agents</span>
+            </div>
+            <div class="network-stats-divider"></div>
+            <div class="network-stats-item">
+              <span class="network-stats-value" id="net-stat-active" style="color:#10b981">0</span>
+              <span class="network-stats-label" data-en="Active" data-ru="Активные">Active</span>
+            </div>
+            <div class="network-stats-divider"></div>
+            <div class="network-stats-item">
+              <span class="network-stats-value" id="net-stat-edges" style="color:#0098EA">0</span>
+              <span class="network-stats-label" data-en="Links" data-ru="Связи">Links</span>
+            </div>
+          </div>
+
+          <!-- Floating Search -->
+          <div class="network-search-float">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" id="network-search-input" placeholder="Search agents..." oninput="filterNetworkNodes(this.value)" data-en-placeholder="Search agents..." data-ru-placeholder="Поиск агентов..." />
+          </div>
+
+          <!-- Canvas -->
+          <canvas id="agent-network-canvas"></canvas>
+
+          <!-- Tooltip -->
+          <div id="network-tooltip" class="network-tooltip-v2"></div>
+
+          <!-- Trash Zone -->
+          <div id="network-trash-zone" class="network-trash-zone">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+            <span data-en="Drop to delete" data-ru="Бросьте для удаления">Drop to delete</span>
+          </div>
+
+          <!-- Floating Legend -->
+          <div class="network-legend-float">
+            <div class="nleg-item"><span class="nleg-dot" style="background:#ffd700;box-shadow:0 0 6px #ffd700"></span><span data-en="Director" data-ru="Директор">Director</span></div>
+            <div class="nleg-item"><span class="nleg-dot" style="background:#a855f7;box-shadow:0 0 6px #a855f7"></span><span data-en="Manager" data-ru="Менеджер">Manager</span></div>
+            <div class="nleg-item"><span class="nleg-dot" style="background:#10b981;box-shadow:0 0 6px #10b981"></span><span data-en="Specialist" data-ru="Специалист">Specialist</span></div>
+            <div class="nleg-item"><span class="nleg-dot" style="background:#f59e0b;box-shadow:0 0 6px #f59e0b"></span><span data-en="Monitor" data-ru="Монитор">Monitor</span></div>
+            <div class="nleg-item"><span class="nleg-dot" style="background:#0098EA;box-shadow:0 0 6px #0098EA"></span><span data-en="Worker" data-ru="Воркер">Worker</span></div>
+            <div class="nleg-item"><span class="nleg-dot" style="background:#555"></span><span data-en="Paused" data-ru="Пауза">Paused</span></div>
+          </div>
+
+          <!-- Zoom Controls -->
+          <div class="network-zoom-controls">
+            <button class="nzoom-btn" onclick="networkZoomIn()" title="Zoom in">+</button>
+            <span class="nzoom-level" id="net-zoom-label">100%</span>
+            <button class="nzoom-btn" onclick="networkZoomOut()" title="Zoom out">&minus;</button>
+            <button class="nzoom-btn nzoom-reset" onclick="networkZoomReset()" title="Reset view">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Flow Builder Page -->
+      <div id="builder-page" class="page">
+        <div class="flow-builder">
+          <!-- Top Bar -->
+          <div class="flow-topbar">
+            <button class="btn btn-ghost btn-sm" onclick="navigateTo('overview')">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+              <span data-en="Back" data-ru="Назад">Back</span>
+            </button>
+            <div class="flow-topbar-center">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 17h7"/><path d="M17.5 14v7"/></svg>
+              <span data-en="Flow Builder" data-ru="Конструктор">Flow Builder</span>
+            </div>
+            <div class="flow-topbar-right">
+              <button class="btn btn-ghost btn-sm flow-undo-btn" id="flow-undo-btn" onclick="flowUndo()" disabled title="Undo (Ctrl+Z)">↩</button>
+              <button class="btn btn-ghost btn-sm flow-redo-btn" id="flow-redo-btn" onclick="flowRedo()" disabled title="Redo (Ctrl+Shift+Z)">↪</button>
+              <input type="text" id="flow-agent-name" class="flow-name-input" placeholder="Agent name..." data-placeholder-en="Agent name..." data-placeholder-ru="Имя агента..." style="max-width:140px">
+              <input type="text" id="flow-agent-desc" class="flow-name-input" placeholder="What should it do?" data-placeholder-en="What should it do?" data-placeholder-ru="Что должен делать?" style="flex:1;min-width:120px">
+              <button class="btn btn-primary btn-sm" id="flow-deploy-btn" onclick="deployFlow()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10"/></svg>
+                <span data-en="Deploy" data-ru="Запуск">Deploy</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 3-Column Layout -->
+          <div class="flow-body">
+            <!-- Palette -->
+            <div class="flow-palette" id="flow-palette">
+              <div id="flow-palette-content"></div>
+            </div>
+
+            <!-- Canvas -->
+            <div class="flow-canvas-wrap">
+              <canvas id="flow-canvas"></canvas>
+              <div id="flow-tooltip" class="flow-tooltip"></div>
+              <!-- Zoom controls -->
+              <div class="flow-zoom-controls">
+                <button class="flow-zoom-btn" onclick="flowZoomIn()" title="Zoom in">+</button>
+                <span class="flow-zoom-label" id="flow-zoom-label">100%</span>
+                <button class="flow-zoom-btn" onclick="flowZoomOut()" title="Zoom out">−</button>
+                <button class="flow-zoom-btn flow-zoom-fit" onclick="flowZoomFit()" title="Fit all">⊞</button>
+                <button class="flow-zoom-btn flow-zoom-reset" onclick="flowZoomReset()" title="Reset">1:1</button>
+              </div>
+            </div>
+
+            <!-- Config Panel -->
+            <div class="flow-config" id="flow-config">
+              <div class="flow-config-header">
+                <h3 data-en="Settings" data-ru="Настройки">Settings</h3>
+              </div>
+              <div id="flow-config-body" class="flow-config-body">
+                <p class="flow-config-empty" data-en="Click a node to configure" data-ru="Кликните на ноду для настройки">Click a node to configure</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Marketplace Page -->
+      <div id="marketplace-page" class="page">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title" data-en="Agent Marketplace" data-ru="Маркетплейс агентов">Agent Marketplace</h1>
+            <p class="page-subtitle" data-en="Browse, install and publish agent templates" data-ru="Обзор, установка и публикация шаблонов агентов">Browse, install and publish agent templates</p>
+          </div>
+          <div class="header-actions">
+            <button class="btn btn-primary" onclick="openPublishModal()">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <span data-en="Publish Agent" data-ru="Опубликовать">Publish Agent</span>
+            </button>
+          </div>
+        </div>
+        <div class="page-content">
+          <div class="marketplace-tabs" id="marketplace-tabs">
+            <button class="mkt-tab active" onclick="filterMarketplace('all')" data-cat="all" data-en="All" data-ru="Все">All</button>
+            <button class="mkt-tab" onclick="filterMarketplace('monitoring')" data-cat="monitoring" data-en="Monitoring" data-ru="Мониторинг">Monitoring</button>
+            <button class="mkt-tab" onclick="filterMarketplace('defi')" data-cat="defi">DeFi</button>
+            <button class="mkt-tab" onclick="filterMarketplace('nft')" data-cat="nft">NFT</button>
+            <button class="mkt-tab" onclick="filterMarketplace('gifts')" data-cat="gifts" data-en="Gifts" data-ru="Подарки">Gifts</button>
+            <button class="mkt-tab" onclick="filterMarketplace('utility')" data-cat="utility" data-en="Utility" data-ru="Утилиты">Utility</button>
+            <button class="mkt-tab" onclick="filterMarketplace('my')" data-cat="my" data-en="My Listings" data-ru="Мои">My Listings</button>
+            <button class="mkt-tab" onclick="filterMarketplace('purchased')" data-cat="purchased" data-en="Purchased" data-ru="Купленные">Purchased</button>
+          </div>
+          <div id="marketplace-grid" class="marketplace-grid">
+            <div class="loading-placeholder" data-en="Loading marketplace..." data-ru="Загрузка маркетплейса...">Loading marketplace...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Guide Page -->
+      <div id="notifications-page" class="page">
+        <div class="page-content" id="page-notifications"></div>
+      </div>
+
+      <div id="guide-page" class="page">
+        <div class="page-header">
+          <h1 class="page-title" data-en="Platform Guide" data-ru="Руководство">Platform Guide</h1>
+          <p class="page-subtitle" data-en="Complete guide to TON Agent Platform — from basics to advanced" data-ru="Полное руководство по TON Agent Platform — от основ до продвинутых функций">Complete guide</p>
+        </div>
+        <div id="page-guide" style="width:100%"></div>
+      </div>
+
+    </main>
+    </div><!-- /main-wrapper -->
+  </div>
+
+      <!-- Onboarding Welcome Modal -->
+      <div id="onboarding-modal" class="onboarding-modal" style="display:none">
+        <div class="onboarding-backdrop" onclick="dismissOnboarding()"></div>
+        <div class="onboarding-card">
+          <button class="onboarding-close" onclick="dismissOnboarding()">&times;</button>
+
+          <!-- Step indicators -->
+          <div class="onboarding-dots" id="onboarding-dots"></div>
+
+          <!-- Step 1: Welcome -->
+          <div class="onboarding-slide" id="onboarding-slide-0">
+            <div class="onboarding-icon">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            </div>
+            <h2 class="onboarding-title" data-en="Welcome to TON Agent!" data-ru="Добро пожаловать!">Welcome to TON Agent!</h2>
+            <p class="onboarding-desc" id="onboarding-subtitle" data-en="Build autonomous AI agents that live inside Telegram and work with the TON blockchain — no coding required." data-ru="Создавайте автономных AI-агентов, которые работают в Telegram и взаимодействуют с блокчейном TON — без кода.">Build autonomous AI agents that live inside Telegram and work with the TON blockchain — no coding required.</p>
+            <div class="onboarding-features">
+              <div class="onboarding-feature"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span data-en="AI-powered agents" data-ru="AI-агенты">AI-powered agents</span></div>
+              <div class="onboarding-feature"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg><span data-en="TON blockchain integration" data-ru="Интеграция с TON">TON blockchain integration</span></div>
+              <div class="onboarding-feature"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span data-en="24/7 autonomous operation" data-ru="Работа 24/7 автономно">24/7 autonomous operation</span></div>
+            </div>
+            <div class="onboarding-disclaimer">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              <span data-en="Super-Alpha version. Things may break, features may change. Use at your own risk!" data-ru="Супер-альфа версия. Что-то может сломаться, функции могут измениться. Используйте на свой страх и риск!">Super-Alpha version. Things may break, features may change. Use at your own risk!</span>
+            </div>
+          </div>
+
+          <!-- Step 2: What you can do -->
+          <div class="onboarding-slide" id="onboarding-slide-1" style="display:none">
+            <div class="onboarding-icon onboarding-icon-ai">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2z"/></svg>
+            </div>
+            <h2 class="onboarding-title" data-en="What Agents Can Do" data-ru="Что умеют агенты">What Agents Can Do</h2>
+            <p class="onboarding-desc" data-en="Your AI agents work 24/7 and can:" data-ru="Ваши AI-агенты работают 24/7 и умеют:">Your AI agents work 24/7 and can:</p>
+            <div class="onboarding-features">
+              <div class="onboarding-feature"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span data-en="Chat in Telegram as a real person" data-ru="Общаться в Telegram как человек">Chat in Telegram as a real person</span></div>
+              <div class="onboarding-feature"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg><span data-en="Trade TON, DeFi, NFT, Gifts" data-ru="Торговать TON, DeFi, NFT, подарки">Trade TON, DeFi, NFT, Gifts</span></div>
+              <div class="onboarding-feature"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><span data-en="Search web, monitor prices, send alerts" data-ru="Искать в интернете, мониторить цены, слать алерты">Search web, monitor prices, alerts</span></div>
+              <div class="onboarding-feature"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44"/></svg><span data-en="Learn from feedback, self-improve" data-ru="Учиться на ошибках, самоулучшаться">Learn from feedback, self-improve</span></div>
+            </div>
+          </div>
+
+          <!-- Step 3: Setup → redirect to profile -->
+          <div class="onboarding-slide" id="onboarding-slide-2" style="display:none">
+            <div class="onboarding-icon onboarding-icon-agent">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09"/></svg>
+            </div>
+            <h2 class="onboarding-title" data-en="One More Step" data-ru="Последний шаг">One More Step</h2>
+            <p class="onboarding-desc" data-en="Set up your AI provider key in Profile — without it agents can't think." data-ru="Настройте AI ключ в Профиле — без него агенты не могут думать.">Set up AI key in Profile.</p>
+            <div class="onboarding-features">
+              <div class="onboarding-feature" style="border:1px solid rgba(0,152,234,0.3);background:rgba(0,152,234,0.05);border-radius:10px;padding:10px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0098EA" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg><span data-en="Free keys: Gemini, Groq, OpenRouter" data-ru="Бесплатные ключи: Gemini, Groq, OpenRouter" style="color:var(--text-primary)">Free: Gemini, Groq, OpenRouter</span></div>
+            </div>
+            <p class="onboarding-hint" data-en="Click Finish to open Profile with setup hints." data-ru="Нажмите Готово чтобы открыть Профиль с подсказками.">Click Finish to open Profile.</p>
+          </div>
+
+          <!-- Step 4: removed (now 3 steps total) -->
+          <div class="onboarding-slide" id="onboarding-slide-3" style="display:none"></div>
+
+          <!-- Navigation buttons -->
+          <div class="onboarding-nav">
+            <button class="btn btn-ghost onboarding-skip-btn" onclick="dismissOnboarding()">
+              <span data-en="Skip" data-ru="Пропустить">Skip</span>
+            </button>
+            <div class="onboarding-nav-right">
+              <button class="btn btn-ghost btn-sm onboarding-back-btn" id="onboarding-back-btn" onclick="onboardingPrev()" style="display:none">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                <span data-en="Back" data-ru="Назад">Back</span>
+              </button>
+              <button class="btn btn-primary onboarding-next-btn" id="onboarding-next-btn" onclick="onboardingNext()">
+                <span id="onboarding-next-label" data-en="Get Started" data-ru="Начать">Get Started</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tour Overlay -->
+      <div id="tour-overlay" class="tour-overlay" style="display:none">
+        <div class="tour-spotlight" id="tour-spotlight"></div>
+        <div class="tour-tooltip" id="tour-tooltip">
+          <div class="tour-tooltip-content" id="tour-tooltip-content"></div>
+          <div class="tour-tooltip-footer">
+            <span id="tour-step-counter" class="tour-step-counter"></span>
+            <div class="tour-tooltip-btns">
+              <button class="btn btn-ghost btn-sm" onclick="endTour()" data-en="Skip" data-ru="Пропустить">Skip</button>
+              <button class="btn btn-primary btn-sm" id="tour-next-btn" onclick="nextTourStep()" data-en="Next" data-ru="Далее">Next</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Marketplace Detail Modal -->
+      <div id="mkt-detail-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+        <div class="mkt-detail-card" id="mkt-detail-card">
+          <button class="modal-close-btn" onclick="document.getElementById('mkt-detail-modal').style.display='none'">&times;</button>
+          <div id="mkt-detail-content"></div>
+        </div>
+      </div>
+
+      <!-- Publish Agent Modal -->
+      <div id="publish-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+        <div class="publish-card">
+          <button class="modal-close-btn" onclick="document.getElementById('publish-modal').style.display='none'">&times;</button>
+          <h3 data-en="Publish Agent to Marketplace" data-ru="Опубликовать на Маркетплейсе">Publish Agent to Marketplace</h3>
+          <div class="form-group">
+            <label data-en="Select Agent" data-ru="Выберите агента">Select Agent</label>
+            <select id="publish-agent-select" class="form-select"></select>
+          </div>
+          <div class="form-group">
+            <label data-en="Name" data-ru="Название">Name</label>
+            <input type="text" id="publish-name" class="form-input" placeholder="My Agent Template">
+          </div>
+          <div class="form-group">
+            <label data-en="Description" data-ru="Описание">Description</label>
+            <textarea id="publish-desc" class="form-input" rows="3" placeholder="What does this agent do?"></textarea>
+          </div>
+          <div class="form-row" style="display:flex;gap:12px">
+            <div class="form-group" style="flex:1">
+              <label data-en="Category" data-ru="Категория">Category</label>
+              <select id="publish-category" class="form-select">
+                <option value="monitoring">Monitoring</option>
+                <option value="defi">DeFi</option>
+                <option value="nft">NFT</option>
+                <option value="gifts">Gifts</option>
+                <option value="utility">Utility</option>
+              </select>
+            </div>
+            <div class="form-group" style="flex:1">
+              <label data-en="Price (TON)" data-ru="Цена (TON)">Price (TON)</label>
+              <input type="number" id="publish-price" class="form-input" placeholder="0 = Free" min="0" step="0.1" value="0">
+            </div>
+          </div>
+          <button class="btn btn-primary" onclick="submitPublish()" style="width:100%;margin-top:12px">
+            <span data-en="Publish" data-ru="Опубликовать">Publish</span>
+          </button>
+        </div>
+      </div>
+
+  <!-- Chat Widget -->
+  <div id="chat-widget" class="chat-widget" style="display:none">
+    <div class="chat-header">
+      <div class="chat-header-left">
+        <span class="chat-header-dot"></span>
+        <span data-en="AI Assistant" data-ru="AI Ассистент">AI Assistant</span>
+      </div>
+      <button class="chat-close-btn" onclick="closeChatWidget()">&times;</button>
+    </div>
+    <div class="chat-messages" id="chat-messages">
+      <div class="chat-msg assistant">
+        <span data-en="Hi! I'm your AI assistant. I can create agents, help with the constructor, marketplace — ask me anything!" data-ru="Привет! Я ваш AI-ассистент. Могу создавать агентов, помочь с конструктором, маркетплейсом — спрашивайте!">Hi! I'm your AI assistant. Ask me anything!</span>
+      </div>
+    </div>
+    <div class="chat-input-area">
+      <textarea id="chat-input" rows="1"
+        data-placeholder-en="Ask anything or describe an agent..."
+        data-placeholder-ru="Задайте вопрос или опишите агента..."
+        placeholder="Ask anything or describe an agent..."
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChatMessage()}"></textarea>
+      <button class="chat-voice-btn" id="chat-voice-btn" onclick="toggleVoiceInput()" title="Voice input" style="background:none;border:none;cursor:pointer;padding:6px;border-radius:8px;color:#94a3b8;transition:all 0.2s;flex-shrink:0" onmouseenter="this.style.color='#7dd3fc'" onmouseleave="this.style.color=_voiceRecording?'#ef4444':'#94a3b8'">
+        <svg id="voice-icon-mic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+        <svg id="voice-icon-stop" width="18" height="18" viewBox="0 0 24 24" fill="#ef4444" stroke="#ef4444" stroke-width="2" style="display:none"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+      </button>
+      <button class="chat-send-btn" onclick="sendChatMessage()" id="chat-send-btn">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+      </button>
+    </div>
+    <div id="voice-status" style="display:none;font-size:11px;color:#94a3b8;padding:4px 12px;text-align:center"></div>
+  </div>
+  <button id="chat-fab" class="chat-fab" onclick="toggleChatWidget()" title="AI Assistant">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+  </button>
+
+  <!-- Atlas Deploy Modal -->
+  <div id="atlas-deploy-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeAtlasDeploy()">
+    <div class="modal-content" style="max-width:480px;border:1px solid rgba(125,211,252,0.2);background:linear-gradient(135deg,#0f172a 0%,#1e293b 100%)">
+      <div class="modal-header" style="border-bottom:1px solid rgba(125,211,252,0.1)">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#7dd3fc,#3b82f6);display:flex;align-items:center;justify-content:center;color:white"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg></div>
+          <div>
+            <h3 style="margin:0;font-size:16px;color:#f1f5f9">Atlas Deploy</h3>
+            <p style="margin:0;font-size:12px;color:#64748b">Pre-flight check</p>
+          </div>
+        </div>
+        <button class="modal-close" onclick="closeAtlasDeploy()">&times;</button>
+      </div>
+      <div class="modal-body" style="padding:20px">
+        <div id="atlas-deploy-summary" style="margin-bottom:16px"></div>
+        <div id="atlas-deploy-question" style="margin-bottom:16px"></div>
+        <div id="atlas-deploy-options" style="display:flex;flex-direction:column;gap:8px"></div>
+      </div>
+      <div id="atlas-deploy-footer" style="padding:12px 20px;border-top:1px solid rgba(125,211,252,0.1);display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-ghost" onclick="closeAtlasDeploy()">Отмена</button>
+        <button class="btn btn-primary" id="atlas-deploy-go" onclick="confirmAtlasDeploy()" style="display:none">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10"/></svg>
+          Deploy
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Plans Modal -->
+  <div id="plans-modal" class="modal-backdrop" style="display:none" onclick="if(event.target===this)closePlansModal()">
+    <div class="plans-modal-card">
+      <div class="plans-modal-header">
+        <h2 data-en="Choose Your Plan" data-ru="Выберите тариф">Choose Your Plan</h2>
+        <button class="modal-close" onclick="closePlansModal()">&times;</button>
+      </div>
+      <div class="plans-period-toggle">
+        <button class="period-btn active" onclick="switchPlanPeriod('month')" id="period-month-btn" data-en="Monthly" data-ru="Месяц">Monthly</button>
+        <button class="period-btn" onclick="switchPlanPeriod('year')" id="period-year-btn" data-en="Annual -20%" data-ru="Год -20%">Annual -20%</button>
+      </div>
+      <div class="plans-grid" id="plans-grid">
+        <!-- Filled by JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Studio Dialog (universal confirm/prompt/alert) -->
+  <div id="studio-dialog" class="studio-dialog-backdrop" style="display:none"></div>
+
+  <!-- Agent Detail Slide-over Panel -->
+  <div id="agent-detail-panel" class="agent-detail-backdrop" style="display:none" onclick="if(event.target===this)closeAgentDetail()">
+    <div class="agent-detail-slide">
+      <div class="agent-detail-header">
+        <div class="agent-detail-title-row">
+          <div id="agent-detail-status" class="agent-status active"><span class="status-dot"></span><span>Active</span></div>
+          <button class="modal-close" onclick="closeAgentDetail()">&times;</button>
+        </div>
+        <div class="agent-detail-name-row">
+          <h2 id="agent-detail-name" class="agent-detail-name" contenteditable="false" spellcheck="false"></h2>
+          <button class="btn btn-ghost btn-sm" id="agent-detail-rename-btn" onclick="toggleAgentRename()" title="Rename">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+          </button>
+        </div>
+        <p id="agent-detail-desc" class="agent-detail-desc"></p>
+      </div>
+      <div class="agent-detail-body" id="agent-detail-body">
+        <!-- Filled by JS -->
+      </div>
+      <div class="agent-detail-footer">
+        <button class="btn btn-success btn-sm" id="agent-detail-toggle-btn" onclick="toggleAgentFromDetail()">Run</button>
+        <button class="btn btn-primary btn-sm" onclick="openAgentChat(_detailAgentId)">Chat</button>
+        <button class="btn btn-ghost btn-sm" onclick="loadAgentLogs(_detailAgentId)">Logs</button>
+        <button class="btn btn-sm" style="background:var(--bg-tertiary);border:1px solid var(--border)" onclick="openAgentSettings()">Settings</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="deleteAgentFromDetail()">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Full-screen Agent Settings Modal -->
+  <div id="agent-settings-modal" class="agent-settings-modal" style="display:none">
+    <div class="agent-settings-container">
+      <div class="agent-settings-header">
+        <div class="agent-settings-title">
+          <div class="st-header-left">
+            <h2 id="agent-settings-name">Agent Settings</h2>
+            <span id="agent-settings-status" class="agent-status paused"><span class="status-dot"></span><span>Paused</span></span>
+          </div>
+          <div class="st-header-actions">
+            <button class="st-btn st-btn-run" id="st-toggle-btn" onclick="toggleAgentFromSettings()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg><span data-en="Run" data-ru="Запуск">Run</span></button>
+            <button class="st-btn st-btn-chat" onclick="switchSettingsTab('chat')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span data-en="Chat" data-ru="Чат">Chat</span></button>
+            <button class="st-btn st-btn-logs" onclick="switchSettingsTab('audit')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg><span data-en="Logs" data-ru="Логи">Logs</span></button>
+            <button class="st-btn st-btn-clone" onclick="cloneAgentFromSettings()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span data-en="Clone" data-ru="Клон">Clone</span></button>
+            <button class="st-btn st-btn-delete" onclick="deleteAgentFromSettings()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg><span data-en="Delete" data-ru="Удалить">Delete</span></button>
+            <div class="st-btn-divider"></div>
+            <button class="st-btn st-btn-close" onclick="closeAgentSettings()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+          </div>
+        </div>
+      </div>
+      <div class="st-split">
+        <nav class="st-sidebar" id="agent-settings-tabs">
+          <div class="st-nav-group"><div class="st-nav-label" data-en="Soul" data-ru="Душа">Soul</div>
+            <button class="st-nav-item active" onclick="switchSettingsTab('soul')" data-tab="soul"><div class="st-nav-icon" style="background:rgba(168,85,247,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2z"/></svg></div><span data-en="Soul" data-ru="Душа">Soul</span></button>
+            <button class="st-nav-item" onclick="switchSettingsTab('security')" data-tab="security"><div class="st-nav-icon" style="background:rgba(239,68,68,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="1.8"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div><span data-en="Security" data-ru="Безопасность">Security</span></button>
+            <button class="st-nav-item" onclick="switchSettingsTab('strategy')" data-tab="strategy"><div class="st-nav-icon" style="background:rgba(16,163,127,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10a37f" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></div><span data-en="Strategy" data-ru="Стратегия">Strategy</span></button>
+            <button class="st-nav-item" onclick="switchSettingsTab('heartbeat')" data-tab="heartbeat"><div class="st-nav-icon" style="background:rgba(236,72,153,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ec4899" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div><span data-en="Heartbeat" data-ru="Пульс">Heartbeat</span></button>
+          </div>
+          <div class="st-nav-group"><div class="st-nav-label" data-en="General" data-ru="Основное">General</div>
+            <button class="st-nav-item" onclick="switchSettingsTab('info')" data-tab="info"><div class="st-nav-icon" style="background:rgba(34,197,94,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></div><span data-en="Info" data-ru="Информация">Info</span></button>
+            <button class="st-nav-item" onclick="switchSettingsTab('role')" data-tab="role"><div class="st-nav-icon" style="background:rgba(245,158,11,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div><span data-en="Role" data-ru="Роль">Role</span></button>
+          </div>
+          <div class="st-nav-group"><div class="st-nav-label" data-en="AI" data-ru="Интеллект">AI</div>
+            <button class="st-nav-item" onclick="switchSettingsTab('ai')" data-tab="ai"><div class="st-nav-icon" style="background:rgba(16,163,127,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10a37f" stroke-width="2"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2z"/></svg></div><span data-en="Model" data-ru="Модель">Model</span></button>
+            <button class="st-nav-item" onclick="switchSettingsTab('caps')" data-tab="caps"><div class="st-nav-icon" style="background:rgba(234,179,8,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></div><span data-en="Tools" data-ru="Инструменты">Tools</span></button>
+          </div>
+          <div class="st-nav-group"><div class="st-nav-label" data-en="Behavior" data-ru="Поведение">Behavior</div>
+            <button class="st-nav-item" onclick="switchSettingsTab('behavior')" data-tab="behavior"><div class="st-nav-icon" style="background:rgba(236,72,153,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ec4899" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div><span data-en="Humanization" data-ru="Человечность">Humanization</span></button>
+            <button class="st-nav-item" onclick="switchSettingsTab('learning')" data-tab="learning"><div class="st-nav-icon" style="background:rgba(16,185,129,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></div><span data-en="Learning" data-ru="Обучение">Learning</span></button>
+          </div>
+          <div class="st-nav-group"><div class="st-nav-label" data-en="Hooks" data-ru="Хуки">Hooks</div>
+            <button class="st-nav-item" onclick="switchSettingsTab('blocklist')" data-tab="blocklist"><div class="st-nav-icon" style="background:rgba(239,68,68,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg></div><span data-en="Blocklist" data-ru="Блоклист">Blocklist</span></button>
+            <button class="st-nav-item" onclick="switchSettingsTab('triggers')" data-tab="triggers"><div class="st-nav-icon" style="background:rgba(245,158,11,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div><span data-en="Triggers" data-ru="Триггеры">Triggers</span></button>
+            <button class="st-nav-item" onclick="switchSettingsTab('session')" data-tab="session"><div class="st-nav-icon" style="background:rgba(16,185,129,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></div><span data-en="Session" data-ru="Сессия">Session</span></button>
+            <button class="st-nav-item" onclick="switchSettingsTab('toolscope')" data-tab="toolscope"><div class="st-nav-icon" style="background:rgba(99,102,241,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></div><span data-en="Tool Scope" data-ru="Доступ">Tool Scope</span></button>
+          </div>
+          <div class="st-nav-group"><div class="st-nav-label" data-en="Connect" data-ru="Подключения">Connect</div>
+            <button class="st-nav-item" onclick="switchSettingsTab('telegram')" data-tab="telegram"><div class="st-nav-icon" style="background:rgba(59,130,246,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></div><span>Telegram</span></button>
+            <button class="st-nav-item" onclick="switchSettingsTab('routing')" data-tab="routing"><div class="st-nav-icon" style="background:rgba(99,102,241,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg></div><span data-en="Routing" data-ru="Маршрут">Routing</span></button>
+            <button class="st-nav-item" onclick="switchSettingsTab('wallet')" data-tab="wallet"><div class="st-nav-icon" style="background:rgba(245,158,11,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><span data-en="Wallet" data-ru="Кошелёк">Wallet</span></button>
+          </div>
+          <div class="st-nav-group"><div class="st-nav-label" data-en="Monitoring" data-ru="Мониторинг">Monitoring</div>
+            <button class="st-nav-item" onclick="switchSettingsTab('lifecycle')" data-tab="lifecycle"><div class="st-nav-icon" style="background:rgba(16,185,129,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div><span data-en="Lifecycle" data-ru="Жизненный цикл">Lifecycle</span></button>
+            <button class="st-nav-item" onclick="switchSettingsTab('tokens')" data-tab="tokens"><div class="st-nav-icon" style="background:rgba(245,158,11,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><span data-en="Token Usage" data-ru="Расход токенов">Token Usage</span></button>
+            <button class="st-nav-item" onclick="switchSettingsTab('contacts')" data-tab="contacts"><div class="st-nav-icon" style="background:rgba(99,102,241,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div><span data-en="Contacts" data-ru="Контакты">Contacts</span></button>
+            <button class="st-nav-item" onclick="switchSettingsTab('chats')" data-tab="chats"><div class="st-nav-icon" style="background:rgba(59,130,246,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><span data-en="Inbox" data-ru="Переписка">Переписка</span></button>
+          </div>
+          <div class="st-nav-group"><div class="st-nav-label" data-en="Data" data-ru="Данные">Data</div>
+            <button class="st-nav-item" onclick="switchSettingsTab('memory')" data-tab="memory"><div class="st-nav-icon" style="background:rgba(139,92,246,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div><span data-en="Memory" data-ru="Память">Memory</span></button>
+            <button class="st-nav-item" onclick="switchSettingsTab('tasks')" data-tab="tasks"><div class="st-nav-icon" style="background:rgba(34,197,94,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div><span data-en="Tasks" data-ru="Задачи">Tasks</span></button>
+          </div>
+          <div class="st-nav-group"><div class="st-nav-label" data-en="Other" data-ru="Прочее">Other</div>
+            <button class="st-nav-item" onclick="switchSettingsTab('chat')" data-tab="chat"><div class="st-nav-icon" style="background:rgba(59,130,246,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><span data-en="Chat" data-ru="Чат">Chat</span></button>
+            <button class="st-nav-item" onclick="switchSettingsTab('evals')" data-tab="evals"><div class="st-nav-icon" style="background:rgba(16,185,129,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div><span data-en="Evals" data-ru="Оценки">Evals</span></button>
+            <button class="st-nav-item" onclick="switchSettingsTab('audit')" data-tab="audit"><div class="st-nav-icon" style="background:rgba(100,116,139,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div><span data-en="Audit" data-ru="Аудит">Audit</span></button>
+            <button class="st-nav-item" onclick="switchSettingsTab('advanced')" data-tab="advanced"><div class="st-nav-icon" style="background:rgba(100,116,139,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></div><span data-en="Advanced" data-ru="Дополнительно">Advanced</span></button>
+          </div>
+        </nav>
+        <div class="agent-settings-body" id="agent-settings-body">
+          <!-- Filled by JS -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Agent Creation Wizard Modal -->
+  <div id="wizard-modal" class="studio-dialog-backdrop" style="display:none" onclick="if(event.target===this)closeWizard()">
+    <div class="studio-dialog" style="max-width:520px;width:95%">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:20px 24px;border-bottom:1px solid var(--border)">
+        <div>
+          <h2 id="wizard-title" style="margin:0;font-size:1.1rem"></h2>
+          <div id="wizard-steps" style="display:flex;gap:6px;margin-top:8px"></div>
+        </div>
+        <button class="modal-close" onclick="closeWizard()">&times;</button>
+      </div>
+      <div id="wizard-body" style="padding:20px 24px;max-height:60vh;overflow-y:auto"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 24px;border-top:1px solid var(--border)">
+        <button class="btn btn-ghost btn-sm" id="wizard-back-btn" onclick="wizardBack()" style="display:none" data-en="Back" data-ru="Назад">Back</button>
+        <span id="wizard-step-label" style="font-size:.78rem;color:var(--text-muted)"></span>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost btn-sm" onclick="closeWizard()" data-en="Skip" data-ru="Пропустить">Skip</button>
+          <button class="btn btn-primary btn-sm" id="wizard-next-btn" onclick="wizardNext()" data-en="Next" data-ru="Далее">Next</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Wallet Address Input Modal -->
+  <div id="wallet-link-modal" class="studio-dialog-backdrop" style="display:none" onclick="if(event.target===this)closeWalletLinkModal()">
+    <div class="studio-dialog">
+      <div class="studio-dialog-header">
+        <div class="studio-dialog-icon icon-info">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/></svg>
+        </div>
+        <span class="studio-dialog-title" data-en="Link TON Wallet" data-ru="Привязать кошелёк">Link TON Wallet</span>
+      </div>
+      <div class="studio-dialog-body">
+        <p data-en="Enter your TON wallet address to receive payments and interact with the blockchain." data-ru="Введите адрес вашего TON-кошелька для получения платежей и взаимодействия с блокчейном.">Enter your TON wallet address to receive payments and interact with the blockchain.</p>
+        <input type="text" id="wallet-link-input" class="studio-dialog-input" placeholder="EQ... / UQ... / 0:..." spellcheck="false" autocomplete="off" onkeydown="if(event.key==='Enter')submitWalletLink()">
+      </div>
+      <div class="studio-dialog-footer">
+        <button class="btn btn-ghost" onclick="closeWalletLinkModal()" data-en="Cancel" data-ru="Отмена">Cancel</button>
+        <button class="btn btn-primary" onclick="submitWalletLink()" data-en="Link Wallet" data-ru="Привязать">Link Wallet</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Flow Group Name Modal -->
+  <div id="flow-group-modal" class="studio-dialog-backdrop" style="display:none" onclick="if(event.target===this)closeFlowGroupModal()">
+    <div class="studio-dialog">
+      <div class="studio-dialog-header">
+        <div class="studio-dialog-icon icon-info">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        </div>
+        <span class="studio-dialog-title" data-en="Create Function Group" data-ru="Создать группу">Create Function Group</span>
+      </div>
+      <div class="studio-dialog-body">
+        <p data-en="Name the function group for selected nodes." data-ru="Назовите группу функций для выбранных нод.">Name the function group for selected nodes.</p>
+        <input type="text" id="flow-group-name-input" class="studio-dialog-input" placeholder="Function name..." spellcheck="false" autocomplete="off" onkeydown="if(event.key==='Enter')submitFlowGroupName()">
+      </div>
+      <div class="studio-dialog-footer">
+        <button class="btn btn-ghost" onclick="closeFlowGroupModal()" data-en="Cancel" data-ru="Отмена">Cancel</button>
+        <button class="btn btn-primary" onclick="submitFlowGroupName()" data-en="Create" data-ru="Создать">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Generic Modal -->
+  <div id="generic-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal()">
+    <div class="modal-content" style="max-width:520px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h3 id="generic-modal-title" style="margin:0;font-size:1.1rem"></h3>
+        <button onclick="closeModal()" style="background:none;border:none;color:var(--text-muted);font-size:1.4rem;cursor:pointer;padding:0;line-height:1">&times;</button>
+      </div>
+      <div id="generic-modal-body"></div>
+      <div id="generic-modal-footer" style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px;flex-wrap:wrap"></div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/@tonconnect/ui@2/dist/tonconnect-ui.min.js"></script>
+  <script src="studio.js?v=52"></script>
+</body>
+</html>

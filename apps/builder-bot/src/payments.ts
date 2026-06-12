@@ -64,14 +64,15 @@ export const PLANS: Record<string, Plan> = {
     priceYearTon: 0,
     maxAgents: 3,
     maxActiveAgents: 1,
-    generationsPerMonth: 0,       // нет включённых — платно
-    pricePerGeneration: 10,       // 10 TON за генерацию
+    generationsPerMonth: 1,       // 1 free generation, then pay-per-use
+    pricePerGeneration: 1,        // 1 TON per extra generation
     features: [
       '3 agents',
       '1 active simultaneously',
+      '1 free AI generation',
+      '1 TON per extra generation',
       'All trigger types',
       'Marketplace access',
-      '10 TON per AI generation',
     ],
   },
   starter: {
@@ -80,15 +81,15 @@ export const PLANS: Record<string, Plan> = {
     icon: '⚡',
     priceMonthTon: 5,
     priceYearTon: 48,
-    maxAgents: 15,
-    maxActiveAgents: 3,
-    generationsPerMonth: 30,
-    pricePerGeneration: 3,
+    maxAgents: 7,
+    maxActiveAgents: 2,
+    generationsPerMonth: 15,
+    pricePerGeneration: 1,
     features: [
-      '15 agents',
-      '3 active simultaneously',
-      '30 AI generations/mo',
-      '3 TON per extra generation',
+      '7 agents',
+      '2 active simultaneously',
+      '15 AI generations/mo',
+      '1 TON per extra generation',
       'All trigger types',
       'Priority AI queue',
     ],
@@ -97,16 +98,16 @@ export const PLANS: Record<string, Plan> = {
     id: 'pro',
     name: 'Pro',
     icon: '🚀',
-    priceMonthTon: 15,
-    priceYearTon: 144,
-    maxAgents: 100,
-    maxActiveAgents: 20,
-    generationsPerMonth: 150,
+    priceMonthTon: 10,
+    priceYearTon: 96,
+    maxAgents: 15,
+    maxActiveAgents: 5,
+    generationsPerMonth: 40,
     pricePerGeneration: 1,
     features: [
-      '100 agents',
-      '20 active simultaneously',
-      '150 AI generations/mo',
+      '15 agents',
+      '5 active simultaneously',
+      '40 AI generations/mo',
       '1 TON per extra generation',
       'All trigger types + API',
       'Priority support',
@@ -131,11 +132,158 @@ export const PLANS: Record<string, Plan> = {
       'Dedicated support',
     ],
   },
+  beta: {
+    id: 'beta',
+    name: 'Beta Tester',
+    icon: '🧪',
+    priceMonthTon: 0,
+    priceYearTon: 0,
+    maxAgents: 10,
+    maxActiveAgents: 5,
+    generationsPerMonth: 50,
+    pricePerGeneration: 0,
+    features: [
+      '10 agents',
+      '5 active simultaneously',
+      '50 AI generations/month',
+      'Free generations',
+      'Early access to new features',
+      'Priority support',
+      'Bug report system',
+    ],
+  },
 };
 
 // ── Адрес кошелька платформы (куда идут платежи) ───────────
 export const PLATFORM_WALLET = process.env.PLATFORM_WALLET_ADDRESS || 'UQCfRrLVr7MeGbVw4x1XgZ42ZUS7tdf2sEYSyRvmoEB4y_dh';
 const OWNER_ID = parseInt(process.env.OWNER_ID || '0');
+
+// ── Platform Admins (loaded from DB, cached in memory) ─────
+let _platformAdminIds = new Set<number>();
+let _platformAdminUsernames = new Set<string>();
+let _adminsLoadedAt = 0;
+
+export function isPlatformAdmin(userId: number): boolean {
+  if (userId === OWNER_ID && OWNER_ID > 0) return true;
+  _ensureAdminsFresh();
+  return _platformAdminIds.has(userId);
+}
+
+export function isPlatformAdminByUsername(username: string): boolean {
+  _ensureAdminsFresh();
+  return _platformAdminUsernames.has(username.toLowerCase().replace(/^@/, ''));
+}
+
+// ── Beta Testers (loaded from DB, cached in memory) ──────────
+let _betaTesterIds = new Set<number>();
+let _betaLoadedAt = 0;
+
+export function isBetaTester(userId: number): boolean {
+  return _betaTesterIds.has(userId);
+}
+
+export async function loadBetaTesters(): Promise<void> {
+  try {
+    const { pool } = require('./db');
+    const res = await pool.query(`SELECT user_id FROM builder_bot.beta_testers WHERE status = 'active'`);
+    _betaTesterIds = new Set(res.rows.map((r: any) => Number(r.user_id)));
+    _betaLoadedAt = Date.now();
+    console.log(`[Beta] Loaded ${_betaTesterIds.size} beta testers`);
+  } catch (e: any) {
+    console.warn('[Beta] Load failed:', e.message);
+  }
+}
+
+export async function addBetaTester(userId: number, username?: string, inviteCode?: string, invitedBy?: number, referredBy?: number): Promise<boolean> {
+  try {
+    const { pool } = require('./db');
+    await pool.query(
+      `INSERT INTO builder_bot.beta_testers (user_id, username, invite_code, invited_by, referred_by) VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (user_id) DO UPDATE SET status = 'active', invite_code = COALESCE(EXCLUDED.invite_code, builder_bot.beta_testers.invite_code), referred_by = COALESCE(EXCLUDED.referred_by, builder_bot.beta_testers.referred_by)`,
+      [userId, username || null, inviteCode || null, invitedBy || null, referredBy || null]
+    );
+    _betaTesterIds.add(userId);
+    return true;
+  } catch (e: any) {
+    console.warn('[Beta] Add tester failed:', e.message);
+    return false;
+  }
+}
+
+export async function removeBetaTester(userId: number): Promise<boolean> {
+  try {
+    const { pool } = require('./db');
+    await pool.query(`UPDATE builder_bot.beta_testers SET status = 'revoked' WHERE user_id = $1`, [userId]);
+    _betaTesterIds.delete(userId);
+    return true;
+  } catch { return false; }
+}
+
+export async function generateBetaCodes(count: number, createdBy: number, note?: string, maxUses = 1): Promise<string[]> {
+  const { pool } = require('./db');
+  const crypto = require('crypto');
+  const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 32 chars — one byte = one char with modulo
+  const codes: string[] = [];
+  for (let i = 0; i < count; i++) {
+    // Crypto-strong code (32^6 ≈ 1B possibilities — not brute-forceable at rate-limited endpoints)
+    const bytes = crypto.randomBytes(6);
+    let code = 'BETA';
+    for (let j = 0; j < 6; j++) code += ALPHABET[bytes[j] & 0x1f]; // & 31 = 0..31, perfect unbiased for 32-char alphabet
+    await pool.query(
+      `INSERT INTO builder_bot.beta_invite_codes (code, created_by, max_uses, note) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
+      [code, createdBy, maxUses, note || null]
+    );
+    codes.push(code);
+  }
+  return codes;
+}
+
+export async function redeemBetaCode(code: string, userId: number, username?: string): Promise<{ ok: boolean; error?: string }> {
+  const { pool } = require('./db');
+  // Check code validity
+  const res = await pool.query(`SELECT * FROM builder_bot.beta_invite_codes WHERE code = $1`, [code.toUpperCase()]);
+  if (!res.rows.length) return { ok: false, error: 'Invalid code' };
+  const inv = res.rows[0];
+  if (!inv.is_active) return { ok: false, error: 'Code deactivated' };
+  if (inv.used_count >= inv.max_uses) return { ok: false, error: 'Code fully used' };
+  if (inv.expires_at && new Date(inv.expires_at) < new Date()) return { ok: false, error: 'Code expired' };
+  // Already a tester?
+  if (isBetaTester(userId)) return { ok: false, error: 'Already a beta tester' };
+  // Activate
+  await pool.query(`UPDATE builder_bot.beta_invite_codes SET used_count = used_count + 1 WHERE code = $1`, [code.toUpperCase()]);
+  const added = await addBetaTester(userId, username, code.toUpperCase(), inv.created_by);
+  return added ? { ok: true } : { ok: false, error: 'DB error' };
+}
+
+export async function loadPlatformAdmins(): Promise<void> {
+  if (!_pool) return;
+  try {
+    const r = await _pool.query(`SELECT telegram_id, username, alt_ids FROM builder_bot.platform_admins`);
+    const idSet = new Set<number>();
+    const nameSet = new Set<string>();
+    for (const row of r.rows) {
+      idSet.add(Number(row.telegram_id));
+      if (row.username) nameSet.add(row.username.toLowerCase());
+      // Also add alternative IDs (for users with changing TG IDs)
+      if (Array.isArray(row.alt_ids)) {
+        for (const aid of row.alt_ids) idSet.add(Number(aid));
+      }
+    }
+    _platformAdminIds = idSet;
+    _platformAdminUsernames = nameSet;
+    _adminsLoadedAt = Date.now();
+    if (idSet.size > 0) console.log(`[Payments] Loaded ${r.rows.length} platform admins (${idSet.size} IDs)`);
+  } catch (e: any) {
+    console.error('[Payments] Failed to load platform admins:', e.message?.slice(0, 80));
+  }
+}
+
+// Refresh admins every 10 minutes
+function _ensureAdminsFresh(): void {
+  if (Date.now() - _adminsLoadedAt > 10 * 60_000) {
+    loadPlatformAdmins().catch(() => {});
+  }
+}
 
 // ── Интерфейсы ─────────────────────────────────────────────
 export interface UserSubscription {
@@ -160,8 +308,9 @@ const subscriptions = new TTLMap<number, UserSubscription>(60 * 60 * 1000, 10000
 const pendingPayments = new TTLMap<number, PendingPayment>(30 * 60 * 1000, 5000);            // 30 min TTL
 const generationTracker = new TTLMap<number, { month: string; count: number }>(31 * 24 * 60 * 60 * 1000, 10000); // 31 days TTL (monthly limit)
 
-// Защита от double-spend: использованные tx хеши (TTL 24h)
-const usedTxHashes = new TTLMap<string, true>(24 * 60 * 60 * 1000, 50000);
+// Защита от double-spend: использованные tx хеши (TTL 32 дня — покрывает полный цикл billing)
+// In-memory cache is rebuilt from DB on startup via loadUsedTxHashesFromDB()
+const usedTxHashes = new TTLMap<string, true>(32 * 24 * 60 * 60 * 1000, 100000);
 
 // ── Инициализация БД таблицы ────────────────────────────────
 let _pool: Pool | null = null;
@@ -191,20 +340,68 @@ export async function initPayments(pool: Pool): Promise<void> {
         created_at TIMESTAMP NOT NULL DEFAULT NOW(),
         confirmed_at TIMESTAMP
       );
+      CREATE TABLE IF NOT EXISTS builder_bot.used_tx_hashes (
+        tx_hash TEXT PRIMARY KEY,
+        used_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
     `);
+    // Load recent tx hashes (last 32 days) into in-memory cache to survive restarts
+    await loadUsedTxHashesFromDB();
+    // Load platform admins
+    await loadPlatformAdmins();
+    // Load beta testers
+    await loadBetaTesters();
   } catch (err) {
     console.error('[Payments] CRITICAL: DB migration failed:', err);
     throw err;
   }
 }
 
+async function loadUsedTxHashesFromDB(): Promise<void> {
+  if (!_pool) return;
+  try {
+    const r = await _pool.query(
+      `SELECT tx_hash FROM builder_bot.used_tx_hashes WHERE used_at > NOW() - INTERVAL '32 days'`
+    );
+    for (const row of r.rows) usedTxHashes.set(row.tx_hash, true);
+    if (r.rows.length > 0) console.log(`[Payments] Loaded ${r.rows.length} used tx hashes from DB`);
+  } catch (e) {
+    console.error('[Payments] Failed to load used tx hashes from DB:', (e as any).message);
+  }
+}
+
+async function persistTxHash(txHash: string): Promise<void> {
+  if (!_pool) return;
+  _pool.query(
+    `INSERT INTO builder_bot.used_tx_hashes(tx_hash) VALUES($1) ON CONFLICT DO NOTHING`,
+    [txHash]
+  ).catch((e: any) => console.error('[Payments] Failed to persist tx hash:', e.message));
+}
+
 // ── Получить подписку пользователя ─────────────────────────
 export async function getUserSubscription(userId: number): Promise<UserSubscription> {
-  // Owner всегда Unlimited
-  if (userId === OWNER_ID) {
+  // Platform admins always get Unlimited
+  _ensureAdminsFresh();
+  if (isPlatformAdmin(userId)) {
     return {
       userId,
       planId: 'unlimited',
+      expiresAt: null,
+      isActive: true,
+      createdAt: new Date(0),
+    };
+  }
+  // Beta testers get beta plan (or upgraded plan from rewards)
+  if (isBetaTester(userId)) {
+    let betaPlan = 'beta';
+    try {
+      const { pool } = require('./db');
+      const bRes = await pool.query(`SELECT plan_override FROM builder_bot.beta_testers WHERE user_id = $1 AND status = 'active'`, [userId]);
+      if (bRes.rows[0]?.plan_override) betaPlan = bRes.rows[0].plan_override;
+    } catch {}
+    return {
+      userId,
+      planId: betaPlan,
       expiresAt: null,
       isActive: true,
       createdAt: new Date(0),
@@ -351,6 +548,485 @@ export function trackGeneration(userId: number): void {
   }
 }
 
+// ── Charge an AI generation: deduct from balance if free tier exhausted ──
+// Atomic: lock the user's profile row, check balance, deduct + log + track.
+// Throws `PLAN_LIMIT` Error if free tier is exhausted AND balance can't cover.
+//
+// Returns:
+//   { paid: 0, free: true, balanceAfter }    — used a free quota slot
+//   { paid: priceTon, free: false, balanceAfter, txId } — deducted from balance
+//
+// Use this at EVERY AI-generation entry point (agent creation, edit-with-AI,
+// Atlas chat, etc.) so the Free tier really IS 1 generation, not infinite.
+export class PlanLimitError extends Error {
+  code = 'PLAN_LIMIT';
+  details: any;
+  constructor(message: string, details: any) {
+    super(message);
+    this.details = details;
+  }
+}
+
+export async function chargeGenerationIfNeeded(userId: number, reason: string = 'ai_generation'): Promise<{
+  paid: number;
+  free: boolean;
+  balanceAfter?: number;
+  plan: Plan;
+}> {
+  const check = await canGenerateForFree(userId);
+  if (check.allowed) {
+    trackGeneration(userId);
+    return { paid: 0, free: true, plan: check.plan };
+  }
+  const price = check.pricePerGeneration;
+  if (price <= 0) {
+    // pricePerGeneration === 0 but allowed === false → hard limit (rare; treat as PLAN_LIMIT)
+    throw new PlanLimitError(
+      `Достигнут лимит генераций плана ${check.plan.icon} ${check.plan.name}: ${check.usedThisMonth}/${check.limitPerMonth} за этот месяц.`,
+      {
+        code: 'PLAN_LIMIT',
+        upgrade_required: true,
+        plan: check.plan.id,
+        used: check.usedThisMonth,
+        limit: check.limitPerMonth,
+      },
+    );
+  }
+  // Atomic deduction
+  const { pool } = require('./db');
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      `SELECT value FROM builder_bot.user_settings WHERE user_id = $1 AND key = 'profile' FOR UPDATE`,
+      [userId],
+    );
+    const profile: any = rows[0]?.value || { balance_ton: 0, total_earned: 0, joined_at: new Date().toISOString() };
+    const balance = Number(profile.balance_ton) || 0;
+    if (balance < price) {
+      await client.query('ROLLBACK');
+      throw new PlanLimitError(
+        `Недостаточно баланса. Нужно ${price} TON, у тебя ${balance.toFixed(3)} TON. Пополни баланс или апгрейдни план.`,
+        {
+          code: 'PLAN_LIMIT',
+          upgrade_required: true,
+          plan: check.plan.id,
+          used: check.usedThisMonth,
+          limit: check.limitPerMonth,
+          required_ton: price,
+          balance_ton: balance,
+        },
+      );
+    }
+    profile.balance_ton = Math.max(0, balance - price);
+    await client.query(
+      `INSERT INTO builder_bot.user_settings (user_id, key, value, updated_at)
+         VALUES ($1, 'profile', $2::jsonb, NOW())
+         ON CONFLICT ON CONSTRAINT user_settings_unique DO UPDATE SET value = $2::jsonb, updated_at = NOW()`,
+      [userId, JSON.stringify(profile)],
+    );
+    await client.query(
+      `INSERT INTO builder_bot.balance_transactions (user_id, type, amount_ton, balance_after, description, status)
+         VALUES ($1, 'ai_generation', $2, $3, $4, 'completed')`,
+      [userId, -price, profile.balance_ton, `AI generation (${reason}) — plan ${check.plan.name}`],
+    );
+    await client.query('COMMIT');
+    trackGeneration(userId);
+    return { paid: price, free: false, balanceAfter: profile.balance_ton, plan: check.plan };
+  } catch (e: any) {
+    await client.query('ROLLBACK').catch(() => {});
+    if (e instanceof PlanLimitError) throw e;
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+// ── Beta Rewards System ─────────────────────────────────────
+// XP = earned for every action (permanent, determines level)
+// Points = earned only for achievements, level-ups, weekly top (spendable currency)
+//
+// XP rates: bug=5, feature=5, critical=20, support=2, general=1, checkin=1
+// Resolved bonus XP: bug=+10, feature=+15, critical=+30, support=+3
+// Daily limits: 5 bugs, 3 features, 3 critical, 2 support, 2 general
+//
+// Points sources:
+//   Level-up rewards: Lv2=10, Lv3=25, Lv4=50, Lv5=100, Lv6=200
+//   Achievements: 5-50 pts each
+//   Weekly top: 1st=30, 2nd=20, 3rd=10
+//   Bug resolved: +5 pts bonus
+
+// On submit — bug/feature/critical give only 1 XP (proof of submission);
+// real XP lands only AFTER admin verification to prevent spam/low-quality reports.
+// Support/general get the normal amount at submit (they're not "verify-gated").
+const FEEDBACK_XP: Record<string, number> = { bug: 1, feature: 1, support: 2, general: 1, critical: 1 };
+// On verify (admin marks as valid/reproduced) — full reward is credited.
+const RESOLVE_XP: Record<string, number> = { bug: 15, feature: 20, support: 3, general: 1, critical: 50 };
+const RESOLVE_POINTS: Record<string, number> = { bug: 5, feature: 10, support: 2, general: 1, critical: 15 };
+const LEVEL_UP_POINTS: Record<number, number> = { 2: 10, 3: 25, 4: 50, 5: 100, 6: 200 };
+
+// Legacy aliases for backward compat
+const FEEDBACK_POINTS = FEEDBACK_XP;
+const RESOLVE_BONUS = RESOLVE_XP;
+
+export async function awardFeedbackPoints(userId: number, feedbackType: string, resolved = false): Promise<{ points: number; xp: number; total: number; reward?: string }> {
+  const xpAmount = resolved ? (RESOLVE_XP[feedbackType] || 1) : (FEEDBACK_XP[feedbackType] || 1);
+  let ptsAmount = resolved ? (RESOLVE_POINTS[feedbackType] || 0) : 0; // Points only on resolve
+  let xp = xpAmount;
+  try {
+    const { pool } = require('./db');
+    // Daily limit (resolved bonuses bypass)
+    if (!resolved) {
+      const dailyLimits: Record<string, number> = { bug: 5, feature: 3, support: 2, general: 2, critical: 3 };
+      const limit = dailyLimits[feedbackType] || 3;
+      const todayCount = await pool.query(
+        `SELECT COUNT(*) as cnt FROM builder_bot.feedback WHERE user_id = $1 AND type = $2 AND created_at > NOW() - INTERVAL '24 hours'`,
+        [userId, feedbackType]
+      );
+      if (parseInt(todayCount.rows[0]?.cnt || '0') >= limit) {
+        return { points: 0, xp: 0, total: 0, reward: 'daily_limit' };
+      }
+    }
+    // Apply role multiplier to XP
+    try {
+      const roleRow = await pool.query(`SELECT tester_role FROM builder_bot.beta_testers WHERE user_id = $1`, [userId]);
+      const role = roleRow.rows[0]?.tester_role || 'tester';
+      const roleInfo = TESTER_ROLES[role];
+      if (roleInfo && roleInfo.multiplier !== 1.0) {
+        xp = Math.round(xp * roleInfo.multiplier);
+      }
+    } catch {}
+    // Apply streak multiplier
+    try {
+      const { getStreakMultiplier } = require('./engagement');
+      const streakRes = await pool.query('SELECT streak_days FROM builder_bot.beta_testers WHERE user_id = $1', [userId]);
+      const streakDays = streakRes.rows[0]?.streak_days || 0;
+      const multiplier = getStreakMultiplier(streakDays);
+      if (multiplier > 1) {
+        xp = Math.round(xp * multiplier);
+      }
+    } catch {}
+    // Update: XP always, Points only if earned
+    if (ptsAmount > 0) {
+      await pool.query(`UPDATE builder_bot.beta_testers SET xp = xp + $1, feedback_count = feedback_count + $2 WHERE user_id = $3`, [xp, ptsAmount, userId]);
+    } else {
+      await pool.query(`UPDATE builder_bot.beta_testers SET xp = xp + $1 WHERE user_id = $2`, [xp, userId]);
+    }
+    // Track stats by type
+    if (feedbackType === 'bug') await pool.query(`UPDATE builder_bot.beta_testers SET total_bugs = total_bugs + 1 WHERE user_id = $1`, [userId]);
+    else if (feedbackType === 'feature') await pool.query(`UPDATE builder_bot.beta_testers SET total_features = total_features + 1 WHERE user_id = $1`, [userId]);
+    else if (feedbackType === 'support') await pool.query(`UPDATE builder_bot.beta_testers SET total_support = total_support + 1 WHERE user_id = $1`, [userId]);
+
+    const res = await pool.query(`SELECT xp, feedback_count, level FROM builder_bot.beta_testers WHERE user_id = $1`, [userId]);
+    const total = res.rows[0]?.xp || 0;
+    const currentLevel = res.rows[0]?.level;
+
+    let reward: string | undefined;
+
+    // Auto level-up + award Points on level-up
+    const newLevel = getTesterLevel(total);
+    if (newLevel.level > (currentLevel || 1)) {
+      const levelPts = LEVEL_UP_POINTS[newLevel.level] || 0;
+      ptsAmount += levelPts;
+      await pool.query(
+        `UPDATE builder_bot.beta_testers SET level = $1, plan_override = $2, feedback_count = feedback_count + $3 WHERE user_id = $4`,
+        [newLevel.level, newLevel.plan, levelPts, userId]
+      );
+      reward = 'level_up:' + newLevel.name + ':' + levelPts;
+    }
+
+    return { points: ptsAmount, xp, total, reward };
+  } catch (e: any) {
+    console.warn('[BetaRewards] award error:', e.message);
+    return { points: 0, xp, total: 0 };
+  }
+}
+
+export async function getBetaLeaderboard(limit = 20): Promise<Array<{ user_id: number; username: string; feedback_count: number; plan_override: string }>> {
+  try {
+    const { pool } = require('./db');
+    const res = await pool.query(
+      `SELECT user_id, username, xp, feedback_count, plan_override FROM builder_bot.beta_testers
+       WHERE status = 'active' AND xp > 0 ORDER BY xp DESC LIMIT $1`,
+      [limit]
+    );
+    return res.rows;
+  } catch { return []; }
+}
+
+// ── Tester Economy: Levels, Shop, Checkin, Achievements ─────────
+
+// snapshotMultiplier — коэффициент доли в будущем snapshot'е (airdrop/revenue share).
+// lifetimeFree — бесплатный доступ к premium навсегда (когда появится платный план).
+// namedOnWall — имя в секции "Founding Testers" на лендинге.
+// priorityFeatures — новые фичи на N дней раньше остальных.
+// Снапшот-множитель — более щадящий. С ×10 у Legend концентрация 70%+ пула.
+// С ×3 Legend всё ещё топ (36%), но Master/Expert/Active получают значимую долю.
+export const TESTER_LEVELS = [
+  { level: 1, name: 'Newbie',  nameRu: 'Новичок',   minPts: 0,    maxAgents: 5,  gens: 30,  plan: 'beta',       snapshotMultiplier: 1,   lifetimeFree: false, namedOnWall: false, priorityFeatures: 0  },
+  { level: 2, name: 'Tester',  nameRu: 'Тестер',    minPts: 50,   maxAgents: 7,  gens: 40,  plan: 'beta',       snapshotMultiplier: 1,   lifetimeFree: false, namedOnWall: false, priorityFeatures: 0  },
+  { level: 3, name: 'Active',  nameRu: 'Активный',  minPts: 150,  maxAgents: 10, gens: 50,  plan: 'beta',       snapshotMultiplier: 1.2, lifetimeFree: false, namedOnWall: false, priorityFeatures: 3  },
+  { level: 4, name: 'Expert',  nameRu: 'Эксперт',   minPts: 400,  maxAgents: 15, gens: 100, plan: 'pro',        snapshotMultiplier: 1.5, lifetimeFree: false, namedOnWall: true,  priorityFeatures: 7  },
+  { level: 5, name: 'Master',  nameRu: 'Мастер',    minPts: 800,  maxAgents: 20, gens: 150, plan: 'pro',        snapshotMultiplier: 2,   lifetimeFree: true,  namedOnWall: true,  priorityFeatures: 14 },
+  { level: 6, name: 'Legend',  nameRu: 'Легенда',   minPts: 1500, maxAgents: -1, gens: -1,  plan: 'unlimited',  snapshotMultiplier: 3,   lifetimeFree: true,  namedOnWall: true,  priorityFeatures: 30 },
+];
+
+export const SHOP_ITEMS = [
+  { id: 'gens_10',        cost: 10,  name: '+10 Generations',     nameRu: '+10 Генераций',    type: 'gens', value: 10 },
+  { id: 'early_access',   cost: 20,  name: 'Early Access',        nameRu: 'Ранний доступ',    type: 'status' },
+  { id: 'vote_x2',        cost: 30,  name: 'Vote Power x2',       nameRu: 'Голос x2',         type: 'status' },
+  { id: 'custom_agent',   cost: 50,  name: 'Custom Agent Setup',  nameRu: 'Настройка агента', type: 'service' },
+  { id: 'dev_call',       cost: 75,  name: '1:1 with Developer',  nameRu: '1:1 с разработчиком', type: 'service' },
+  { id: 'credits_page',   cost: 100, name: 'Name in Credits',     nameRu: 'Имя в Credits',    type: 'status' },
+  { id: 'private_channel', cost: 150, name: 'Private Channel',    nameRu: 'Закрытый канал',   type: 'access' },
+  { id: 'streak_freeze',  cost: 10,  name: 'Streak Freeze',       nameRu: 'Заморозка streak', type: 'streak_freeze' },
+];
+
+export const ACHIEVEMENTS = [
+  { id: 'first_bug',     name: 'First Blood',      nameRu: 'Первая кровь',     desc: 'Report your first bug', condition: (s: any) => s.total_bugs >= 1 },
+  { id: 'bugs_10',       name: 'Bug Hunter',        nameRu: 'Охотник за багами', desc: '10 bugs reported',       condition: (s: any) => s.total_bugs >= 10 },
+  { id: 'bugs_50',       name: 'Exterminator',      nameRu: 'Истребитель',       desc: '50 bugs reported',       condition: (s: any) => s.total_bugs >= 50 },
+  { id: 'features_5',    name: 'Visionary',         nameRu: 'Визионер',          desc: '5 features proposed',    condition: (s: any) => s.total_features >= 5 },
+  { id: 'features_impl', name: 'Architect',         nameRu: 'Архитектор',        desc: 'Your feature was implemented', condition: () => false }, // manual
+  { id: 'streak_7',      name: 'Consistent',        nameRu: 'Стабильный',        desc: '7-day streak',           condition: (s: any) => s.streak_days >= 7 },
+  { id: 'streak_30',     name: 'Devoted',           nameRu: 'Преданный',         desc: '30-day streak',          condition: (s: any) => s.streak_days >= 30 },
+  { id: 'level_expert',  name: 'Expert Badge',      nameRu: 'Эксперт',           desc: 'Reach Expert level',     condition: (s: any) => s.level >= 4 },
+  { id: 'level_legend',  name: 'Legendary',         nameRu: 'Легендарный',        desc: 'Reach Legend level',     condition: (s: any) => s.level >= 6 },
+  { id: 'mentor',        name: 'Mentor',            nameRu: 'Ментор',             desc: 'Help 3 newbies reach Lv.2', condition: () => false }, // manual
+  { id: 'referral_3',    name: 'Recruiter',         nameRu: 'Рекрутер',           desc: 'Refer 3 active testers', condition: (s: any) => s.referral_count >= 3 },
+];
+
+export const TESTER_ROLES: Record<string, { name: string; nameRu: string; multiplier: number; canVerifyBugs: boolean; canCloseFeedback: boolean }> = {
+  tester: { name: 'Tester', nameRu: 'Тестер', multiplier: 1.0, canVerifyBugs: false, canCloseFeedback: false },
+  qa_lead: { name: 'QA Lead', nameRu: 'QA Лид', multiplier: 1.5, canVerifyBugs: true, canCloseFeedback: true },
+  feature_scout: { name: 'Feature Scout', nameRu: 'Скаут фич', multiplier: 1.0, canVerifyBugs: false, canCloseFeedback: false },
+  community_helper: { name: 'Community Helper', nameRu: 'Хелпер', multiplier: 1.5, canVerifyBugs: false, canCloseFeedback: false },
+  stress_tester: { name: 'Stress Tester', nameRu: 'Стресс-тестер', multiplier: 2.0, canVerifyBugs: false, canCloseFeedback: false },
+  mobile_tester: { name: 'Mobile Tester', nameRu: 'Мобильный тестер', multiplier: 1.5, canVerifyBugs: false, canCloseFeedback: false },
+  mentor: { name: 'Mentor', nameRu: 'Ментор', multiplier: 1.0, canVerifyBugs: false, canCloseFeedback: false },
+};
+
+export function getTesterLevel(points: number): typeof TESTER_LEVELS[0] {
+  for (let i = TESTER_LEVELS.length - 1; i >= 0; i--) {
+    if (points >= TESTER_LEVELS[i].minPts) return TESTER_LEVELS[i];
+  }
+  return TESTER_LEVELS[0];
+}
+
+export function getNextLevel(points: number): typeof TESTER_LEVELS[0] | null {
+  const current = getTesterLevel(points);
+  const next = TESTER_LEVELS.find(l => l.level === current.level + 1);
+  return next || null;
+}
+
+export async function dailyCheckin(userId: number): Promise<{ ok: boolean; points?: number; streak?: number; error?: string }> {
+  try {
+    const { pool } = require('./db');
+    const res = await pool.query(`SELECT last_checkin, streak_days, feedback_count FROM builder_bot.beta_testers WHERE user_id = $1 AND status = 'active'`, [userId]);
+    if (!res.rows.length) return { ok: false, error: 'Not a beta tester' };
+    const row = res.rows[0];
+    const today = new Date().toISOString().slice(0, 10);
+    const lastCheckin = row.last_checkin ? new Date(row.last_checkin).toISOString().slice(0, 10) : null;
+    if (lastCheckin === today) return { ok: false, error: 'Already checked in today' };
+    // Calculate streak
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    const newStreak = lastCheckin === yesterday ? (row.streak_days || 0) + 1 : 1;
+    await pool.query(
+      `UPDATE builder_bot.beta_testers SET xp = xp + 1, daily_checkins = daily_checkins + 1, last_checkin = $1, streak_days = $2 WHERE user_id = $3`,
+      [today, newStreak, userId]
+    );
+    return { ok: true, points: 1, streak: newStreak };
+  } catch (e: any) { return { ok: false, error: e.message }; }
+}
+
+export async function shopBuy(userId: number, itemId: string): Promise<{ ok: boolean; error?: string; effect?: string }> {
+  const item = SHOP_ITEMS.find(i => i.id === itemId);
+  if (!item) return { ok: false, error: 'Item not found' };
+  try {
+    const { pool } = require('./db');
+    const res = await pool.query(`SELECT feedback_count FROM builder_bot.beta_testers WHERE user_id = $1 AND status = 'active'`, [userId]);
+    if (!res.rows.length) return { ok: false, error: 'Not a beta tester' };
+    const balance = res.rows[0].feedback_count || 0;
+    if (balance < item.cost) return { ok: false, error: `Need ${item.cost} pts, have ${balance}` };
+    // Atomic: deduct points from balance (prevents race condition)
+    const upd = await pool.query(
+      `UPDATE builder_bot.beta_testers SET feedback_count = feedback_count - $1
+       WHERE user_id = $2 AND feedback_count >= $1 RETURNING feedback_count`,
+      [item.cost, userId]
+    );
+    if (!upd.rows.length) return { ok: false, error: 'Insufficient points (concurrent purchase)' };
+    // Apply effect based on item type
+    let effect = '';
+    switch (item.id) {
+      case 'gens_10': {
+        // +10 generations: reduce used count
+        const tracker = generationTracker.get(userId);
+        if (tracker) { tracker.count = Math.max(0, tracker.count - (item.value || 10)); generationTracker.set(userId, tracker); }
+        effect = '+10 generations added';
+        break;
+      }
+      case 'early_access': {
+        // Mark user as early_access in features JSON
+        await pool.query(`UPDATE builder_bot.beta_testers SET features = features || '"early_access"'::jsonb WHERE user_id = $1 AND NOT features @> '"early_access"'`, [userId]);
+        effect = 'Early access enabled';
+        break;
+      }
+      case 'vote_x2': {
+        await pool.query(`UPDATE builder_bot.beta_testers SET features = features || '"vote_x2"'::jsonb WHERE user_id = $1 AND NOT features @> '"vote_x2"'`, [userId]);
+        effect = 'Vote power x2 enabled';
+        break;
+      }
+      case 'custom_agent': {
+        // Notify admins to set up custom agent
+        try {
+          const admins = await pool.query(`SELECT telegram_id FROM builder_bot.platform_admins`);
+          const botToken = process.env.BOT_TOKEN;
+          if (botToken) {
+            for (const a of admins.rows) {
+              fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_id: a.telegram_id, text: `🎯 Custom Agent request from user ${userId}. Set up their agent!` }),
+              }).catch(() => {});
+            }
+          }
+        } catch {}
+        effect = 'Request sent to admins';
+        break;
+      }
+      case 'dev_call': {
+        // Notify admins to schedule call
+        try {
+          const admins = await pool.query(`SELECT telegram_id FROM builder_bot.platform_admins`);
+          const botToken = process.env.BOT_TOKEN;
+          if (botToken) {
+            for (const a of admins.rows) {
+              fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_id: a.telegram_id, text: `📞 1:1 Call request from user ${userId}. Schedule a call!` }),
+              }).catch(() => {});
+            }
+          }
+        } catch {}
+        effect = 'Call request sent';
+        break;
+      }
+      case 'credits_page': {
+        await pool.query(`UPDATE builder_bot.beta_testers SET features = features || '"credits_page"'::jsonb WHERE user_id = $1 AND NOT features @> '"credits_page"'`, [userId]);
+        effect = 'Name added to credits';
+        break;
+      }
+      case 'private_channel': {
+        await pool.query(`UPDATE builder_bot.beta_testers SET features = features || '"private_channel"'::jsonb WHERE user_id = $1 AND NOT features @> '"private_channel"'`, [userId]);
+        // Notify admin to add to private channel
+        try {
+          const admins = await pool.query(`SELECT telegram_id FROM builder_bot.platform_admins`);
+          const botToken = process.env.BOT_TOKEN;
+          if (botToken) {
+            for (const a of admins.rows) {
+              fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_id: a.telegram_id, text: `🔑 Private Channel access purchased by user ${userId}. Add them!` }),
+              }).catch(() => {});
+            }
+          }
+        } catch {}
+        effect = 'Access request sent';
+        break;
+      }
+      case 'streak_freeze': {
+        // Save streak freeze — 1 per week, prevents streak reset on missed checkin
+        await pool.query(`UPDATE builder_bot.beta_testers SET features = features || '"streak_freeze"'::jsonb WHERE user_id = $1`, [userId]);
+        effect = 'Streak freeze active (1 skip allowed this week)';
+        break;
+      }
+    }
+    return { ok: true, effect };
+  } catch (e: any) { return { ok: false, error: e.message }; }
+}
+
+export async function trackReferral(referrerId: number, referredUserId: number): Promise<void> {
+  try {
+    const { pool } = require('./db');
+    // Check if referred user has enough points
+    const res = await pool.query(`SELECT feedback_count FROM builder_bot.beta_testers WHERE user_id = $1`, [referredUserId]);
+    if (!res.rows.length || res.rows[0].feedback_count < 20) return; // Not yet qualified
+    // Check if already credited
+    const already = await pool.query(`SELECT 1 FROM builder_bot.beta_testers WHERE user_id = $1 AND referred_by = $2`, [referredUserId, referrerId]);
+    // Actually referred_by is on the referred user, not referrer. Check referrer's referral_count
+    await pool.query(`UPDATE builder_bot.beta_testers SET feedback_count = feedback_count + 3, referral_count = referral_count + 1 WHERE user_id = $1`, [referrerId]);
+  } catch {}
+}
+
+export async function setTesterRole(userId: number, role: string): Promise<boolean> {
+  if (!TESTER_ROLES[role]) return false;
+  try {
+    const { pool } = require('./db');
+    await pool.query(`UPDATE builder_bot.beta_testers SET tester_role = $1 WHERE user_id = $2`, [role, userId]);
+    return true;
+  } catch { return false; }
+}
+
+export async function assignMentor(menteeId: number, mentorId: number): Promise<boolean> {
+  try {
+    const { pool } = require('./db');
+    await pool.query(`UPDATE builder_bot.beta_testers SET referred_by = $1 WHERE user_id = $2`, [mentorId, menteeId]);
+    return true;
+  } catch { return false; }
+}
+
+export async function getWeeklyTop(limit = 10): Promise<any[]> {
+  try {
+    const { pool } = require('./db');
+    // Get top testers by points earned this week
+    // We approximate by looking at feedback created this week
+    const res = await pool.query(`
+      SELECT bt.user_id, bt.username, bt.feedback_count, bt.level, bt.tester_role,
+             COUNT(f.id) as week_activity
+      FROM builder_bot.beta_testers bt
+      LEFT JOIN builder_bot.feedback f ON f.user_id = bt.user_id AND f.created_at > NOW() - INTERVAL '7 days'
+      WHERE bt.status = 'active'
+      GROUP BY bt.user_id, bt.username, bt.feedback_count, bt.level, bt.tester_role
+      ORDER BY week_activity DESC, bt.feedback_count DESC
+      LIMIT $1
+    `, [limit]);
+    return res.rows;
+  } catch { return []; }
+}
+
+export async function spamPenalty(userId: number): Promise<void> {
+  try {
+    const { pool } = require('./db');
+    await pool.query(`UPDATE builder_bot.beta_testers SET xp = GREATEST(0, xp - 3) WHERE user_id = $1`, [userId]);
+  } catch {}
+}
+
+export async function getTesterStats(userId: number): Promise<any> {
+  try {
+    const { pool } = require('./db');
+    const res = await pool.query(
+      `SELECT xp, feedback_count, level, total_bugs, total_features, total_support, daily_checkins, streak_days, last_checkin, referral_count, tester_role, achievements, created_at
+       FROM builder_bot.beta_testers WHERE user_id = $1`,
+      [userId]
+    );
+    if (!res.rows.length) return null;
+    const s = res.rows[0];
+    const xp = s.xp || 0;
+    const points = s.feedback_count || 0; // spendable balance
+    const lvl = getTesterLevel(xp);
+    const next = getNextLevel(xp);
+    return {
+      xp, points, available: points,
+      level: lvl.level, levelName: lvl.name, levelNameRu: lvl.nameRu,
+      nextLevel: next ? { name: next.name, nameRu: next.nameRu, pointsNeeded: next.minPts - xp } : null,
+      totalBugs: s.total_bugs || 0, totalFeatures: s.total_features || 0, totalSupport: s.total_support || 0,
+      checkins: s.daily_checkins || 0, streak: s.streak_days || 0, lastCheckin: s.last_checkin,
+      referrals: s.referral_count || 0, role: s.tester_role || 'tester',
+      achievements: s.achievements || [],
+      joinedAt: s.created_at,
+    };
+  } catch { return null; }
+}
+
 // ── Создать платёж — возвращает адрес + сумму для перевода ──
 export function createPayment(
   userId: number,
@@ -397,7 +1073,8 @@ export async function confirmPayment(
   txHash: string
 ): Promise<{ success: boolean; plan?: Plan; expiresAt?: Date; error?: string }> {
   if (usedTxHashes.has(txHash)) return { success: false, error: 'Transaction already used' };
-  usedTxHashes.set(txHash, true); // Mark immediately to prevent concurrent double-spend
+  // Mark in-memory immediately (Node.js is single-threaded, so this is safe for same-process concurrency)
+  usedTxHashes.set(txHash, true);
   const pending = pendingPayments.get(userId);
   if (!pending) return { success: false, error: 'Нет ожидающего платежа' };
   if (pending.expiresAt < new Date()) {
@@ -407,7 +1084,17 @@ export async function confirmPayment(
 
   const plan = PLANS[pending.planId];
   const now = new Date();
-  const expiresAt = new Date(now);
+  // Preserve remaining time: if the user already has an active subscription,
+  // extend from its current expiry (not from today) — otherwise a topup made
+  // mid-month would silently shorten the paid period.
+  let baseDate = now;
+  try {
+    const existing = await getUserSubscription(userId);
+    if (existing && existing.isActive && existing.expiresAt && existing.expiresAt > now) {
+      baseDate = new Date(existing.expiresAt);
+    }
+  } catch {}
+  const expiresAt = new Date(baseDate);
   if (pending.period === 'year') {
     expiresAt.setFullYear(expiresAt.getFullYear() + 1);
   } else {
@@ -432,6 +1119,11 @@ export async function confirmPayment(
         VALUES($1,$2,$3,true)
         ON CONFLICT(user_id) DO UPDATE SET plan_id=$2, expires_at=$3, is_active=true, updated_at=NOW()
       `, [userId, pending.planId, expiresAt]);
+      // Persist tx hash atomically within the same transaction to prevent double-spend on crash/restart
+      await client.query(
+        `INSERT INTO builder_bot.used_tx_hashes(tx_hash) VALUES($1) ON CONFLICT DO NOTHING`,
+        [txHash]
+      );
       await client.query(`
         UPDATE builder_bot.payments SET status='confirmed', tx_hash=$1, confirmed_at=NOW()
         WHERE id = (SELECT id FROM builder_bot.payments WHERE user_id=$2 AND status='pending' ORDER BY created_at DESC LIMIT 1)
@@ -467,11 +1159,11 @@ export function updateSubscriptionCache(userId: number, planId: string, expiresA
 // ── Отформатировать статус подписки ────────────────────────
 export function formatSubscription(sub: UserSubscription): string {
   const plan = PLANS[sub.planId] || PLANS.free;
-  const isOwner = sub.userId === OWNER_ID;
+  const isAdmin = isPlatformAdmin(sub.userId);
 
   let status = `${plan.icon} *${plan.name}*`;
-  if (isOwner) {
-    status += ' _(владелец — бесплатно)_';
+  if (isAdmin) {
+    status += ' _(админ — бесплатно)_';
   } else if (sub.expiresAt) {
     const daysLeft = Math.ceil((sub.expiresAt.getTime() - Date.now()) / 86400000);
     status += daysLeft > 0
@@ -525,6 +1217,7 @@ export async function verifyTonTransaction(
           // Check exact amount (no discount), full comment pattern, and not already used
           if (amount >= expectedNano && commentPattern.test(msg) && txHash && !usedTxHashes.has(txHash)) {
             usedTxHashes.set(txHash, true);
+            void persistTxHash(txHash);
             return { found: true, txHash };
           }
         }
@@ -572,7 +1265,7 @@ export async function verifyTopupTransaction(
           if (txHash && usedTxHashes.has(txHash)) continue;
 
           if (msg === expectedComment && amount >= 100_000_000) {  // минимум 0.1 TON
-            if (txHash) usedTxHashes.set(txHash, true);
+            if (txHash) { usedTxHashes.set(txHash, true); void persistTxHash(txHash); }
             return {
               found: true,
               amountTon: amount / 1e9,

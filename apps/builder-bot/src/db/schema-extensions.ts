@@ -73,6 +73,36 @@ export const userSettingsTable = builderSchema.table('user_settings', {
 // ─────────────────────────────────────────────────────────────────────────────
 // DDL: CREATE TABLE IF NOT EXISTS + индексы (idempotent, запускается при старте)
 // ─────────────────────────────────────────────────────────────────────────────
+/**
+ * Best-effort retention cleanup for high-volume log tables.
+ * Deletes rows older than the cutoff. Idempotent, safe to run repeatedly.
+ * Intended to be invoked once a day from the main process.
+ */
+export async function runLogRetention(pool: Pool): Promise<void> {
+  const tables: Array<{ table: string; days: number }> = [
+    { table: 'agent_logs',        days: 30 },
+    { table: 'execution_history', days: 90 },
+    { table: 'agent_audit_log',   days: 180 },
+  ];
+  for (const { table, days } of tables) {
+    try {
+      // Check table exists first — some are created by later migrations.
+      const exists = await pool.query(
+        `SELECT to_regclass('builder_bot.${table}') IS NOT NULL AS exists`
+      );
+      if (!exists.rows[0]?.exists) continue;
+      const res = await pool.query(
+        `DELETE FROM builder_bot.${table} WHERE created_at < NOW() - INTERVAL '${days} days'`
+      );
+      if (res.rowCount && res.rowCount > 0) {
+        console.log(`[Retention] Pruned ${res.rowCount} rows from ${table} (older than ${days}d)`);
+      }
+    } catch (e: any) {
+      console.warn(`[Retention] ${table} cleanup failed: ${e.message}`);
+    }
+  }
+}
+
 export async function runMigrations(pool: Pool): Promise<void> {
   const client = await pool.connect();
   try {
@@ -92,6 +122,20 @@ export async function runMigrations(pool: Pool): Promise<void> {
         updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
         CONSTRAINT agent_state_unique UNIQUE (agent_id, key)
       )
+    `);
+    // Hot indexes — UNIQUE(agent_id, key) serves exact lookups, but batch scans
+    // and prefix-key searches need dedicated indexes.
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS agent_state_user_id_idx
+        ON builder_bot.agent_state (user_id)
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS agent_state_agent_key_prefix_idx
+        ON builder_bot.agent_state (agent_id, key text_pattern_ops)
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS agent_state_updated_at_idx
+        ON builder_bot.agent_state (updated_at DESC)
     `);
 
     // agent_logs
@@ -250,6 +294,247 @@ export async function runMigrations(pool: Pool): Promise<void> {
     await client.query(`ALTER TABLE builder_bot.agents ADD COLUMN IF NOT EXISTS xp INTEGER DEFAULT 0`);
     await client.query(`ALTER TABLE builder_bot.agents ADD COLUMN IF NOT EXISTS level INTEGER DEFAULT 1`);
 
+    // ── Beta testers ──
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.beta_testers (
+        id SERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL UNIQUE,
+        username TEXT,
+        invite_code TEXT,
+        invited_by BIGINT,
+        status TEXT DEFAULT 'active',
+        plan_override TEXT DEFAULT 'beta',
+        features JSONB DEFAULT '[]'::jsonb,
+        feedback_count INT DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        expires_at TIMESTAMPTZ
+      )
+    `);
+    // Rewards-related columns added idempotently
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS multiplier_override NUMERIC(4,2)`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMPTZ DEFAULT NOW()`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS ref_code TEXT`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS payout_wallet TEXT`);
+    await client.query(`CREATE INDEX IF NOT EXISTS beta_testers_ref_code_idx ON builder_bot.beta_testers (ref_code)`);
+
+    // ── Beta snapshots: monthly freeze of {user_id, xp, level, multiplier} ──
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.beta_snapshots (
+        id SERIAL PRIMARY KEY,
+        snapshot_date DATE NOT NULL,
+        user_id BIGINT NOT NULL,
+        username TEXT,
+        xp INT NOT NULL DEFAULT 0,
+        level INT NOT NULL DEFAULT 1,
+        multiplier NUMERIC(4,2) NOT NULL DEFAULT 1.0,
+        effective_xp NUMERIC(12,2) NOT NULL DEFAULT 0,
+        total_referrals INT NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(snapshot_date, user_id)
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS beta_snapshots_date_idx ON builder_bot.beta_snapshots (snapshot_date DESC)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS beta_snapshots_user_idx ON builder_bot.beta_snapshots (user_id, snapshot_date DESC)`);
+
+    // ── Beta referrals: who invited whom + depth (1 = direct, 2 = grandparent) ──
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.beta_referrals (
+        id SERIAL PRIMARY KEY,
+        referrer_id BIGINT NOT NULL,
+        referee_id BIGINT NOT NULL UNIQUE,
+        depth INT NOT NULL DEFAULT 1,
+        xp_bonus_awarded INT DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS beta_referrals_referrer_idx ON builder_bot.beta_referrals (referrer_id)`);
+
+    // ── Beta ref spend: 10% of each referee's future spend credited to referrer ──
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.beta_ref_spend (
+        id SERIAL PRIMARY KEY,
+        referrer_id BIGINT NOT NULL,
+        referee_id BIGINT NOT NULL,
+        amount_ton NUMERIC(16,9) NOT NULL,
+        source TEXT,
+        recorded_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS beta_ref_spend_referrer_idx ON builder_bot.beta_ref_spend (referrer_id, recorded_at DESC)`);
+
+    // ── Beta weekly digest log: avoid posting twice in the same ISO week ──
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.beta_weekly_digest (
+        iso_week TEXT PRIMARY KEY,
+        posted_at TIMESTAMPTZ DEFAULT NOW(),
+        top_users JSONB
+      )
+    `);
+
+    // ── Beta invite codes ──
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.beta_invite_codes (
+        code TEXT PRIMARY KEY,
+        created_by BIGINT NOT NULL,
+        max_uses INT DEFAULT 1,
+        used_count INT DEFAULT 0,
+        is_active BOOLEAN DEFAULT true,
+        note TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        expires_at TIMESTAMPTZ
+      )
+    `);
+
+    // ── Feedback / bug reports ──
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.feedback (
+        id SERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL,
+        username TEXT,
+        type TEXT NOT NULL,
+        message TEXT NOT NULL,
+        screenshot_file_id TEXT,
+        agent_id INT,
+        status TEXT DEFAULT 'new',
+        admin_reply TEXT,
+        metadata JSONB,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        resolved_at TIMESTAMPTZ
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_feedback_user ON builder_bot.feedback (user_id, created_at DESC)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_feedback_status ON builder_bot.feedback (status, created_at DESC)`);
+
+    // ── Beta testers extended columns ──
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS level INT DEFAULT 1`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS xp INT DEFAULT 0`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS total_bugs INT DEFAULT 0`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS total_features INT DEFAULT 0`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS total_support INT DEFAULT 0`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS daily_checkins INT DEFAULT 0`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS streak_days INT DEFAULT 0`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS last_checkin DATE`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS referral_count INT DEFAULT 0`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS referred_by BIGINT`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS spent_points INT DEFAULT 0`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS tester_role TEXT DEFAULT 'tester'`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS achievements JSONB DEFAULT '[]'::jsonb`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS tester_number SERIAL`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS last_activity TIMESTAMPTZ DEFAULT NOW()`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS squad_id TEXT`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS mentor_id BIGINT`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS mute_pings BOOLEAN DEFAULT false`);
+    await client.query(`ALTER TABLE builder_bot.beta_testers ADD COLUMN IF NOT EXISTS custom_tag TEXT`);
+
+    // ── Quest progress (onboarding + zone quests) ──
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.beta_quest_progress (
+        id SERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL,
+        quest_id TEXT NOT NULL,
+        step INT DEFAULT 0,
+        status TEXT DEFAULT 'active',
+        started_at TIMESTAMPTZ DEFAULT NOW(),
+        completed_at TIMESTAMPTZ,
+        UNIQUE(user_id, quest_id)
+      )
+    `);
+
+    // ── Task progress (zone tasks, daily quests) ──
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.beta_task_progress (
+        id SERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL,
+        task_id TEXT NOT NULL,
+        zone_id TEXT,
+        status TEXT DEFAULT 'pending',
+        proof TEXT,
+        xp_awarded INT DEFAULT 0,
+        completed_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(user_id, task_id)
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_task_progress_user ON builder_bot.beta_task_progress (user_id, zone_id)`);
+
+    // ── Achievements log ──
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.beta_achievements (
+        id SERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL,
+        achievement_id TEXT NOT NULL,
+        earned_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(user_id, achievement_id)
+      )
+    `);
+
+    // ── Bug verifications ──
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.beta_bug_verifications (
+        id SERIAL PRIMARY KEY,
+        feedback_id INT NOT NULL REFERENCES builder_bot.feedback(id),
+        verifier_id BIGINT NOT NULL,
+        status TEXT NOT NULL,
+        comment TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(feedback_id, verifier_id)
+      )
+    `);
+
+    // ── Squads ──
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.beta_squads (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        event_id TEXT,
+        score INT DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
+    // ── Internship applications ──
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.beta_internship_applications (
+        id SERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL UNIQUE,
+        username TEXT,
+        xp_at_apply INT DEFAULT 0,
+        motivation TEXT,
+        status TEXT DEFAULT 'pending',
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
+    // ── Test scenarios (admin-created) ──
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.beta_test_scenarios (
+        id SERIAL PRIMARY KEY,
+        title TEXT NOT NULL,
+        zone_id TEXT,
+        level INT DEFAULT 1,
+        xp_reward INT DEFAULT 20,
+        steps JSONB NOT NULL DEFAULT '[]',
+        expected TEXT,
+        created_by BIGINT,
+        status TEXT DEFAULT 'active',
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
+    // ── Weekly event state ──
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.beta_events (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        type TEXT,
+        start_date TIMESTAMPTZ,
+        end_date TIMESTAMPTZ,
+        status TEXT DEFAULT 'upcoming',
+        leaderboard JSONB DEFAULT '{}',
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
     await client.query('COMMIT');
     console.log('✅ DB migrations applied (schema-extensions)');
   } catch (e) {
@@ -281,6 +566,20 @@ export class AgentStateRepository {
   }
 
   async set(agentId: number, userId: number, key: string, value: any): Promise<void> {
+    // Defensive cap — a runaway tool writing multi-MB into state makes queries slow.
+    // 512KB is ample for conversation history, settings, and caches. Exceeding it
+    // usually signals a bug (e.g. stringifying a huge response).
+    try {
+      const serialized = typeof value === 'string' ? value : JSON.stringify(value ?? null);
+      if (serialized.length > 512 * 1024) {
+        console.warn(`[AgentState] Oversized value for agent#${agentId} key="${key}": ${serialized.length} bytes — truncating to 512KB`);
+        value = typeof value === 'string'
+          ? serialized.slice(0, 512 * 1024)
+          : { _truncated: true, _original_size: serialized.length, preview: serialized.slice(0, 10_000) };
+      }
+    } catch {
+      // if JSON.stringify throws (circular), let the insert fail with a clearer error below
+    }
     await this.db
       .insert(agentStateTable)
       .values({ agentId, userId, key, value, updatedAt: new Date() })
@@ -288,6 +587,28 @@ export class AgentStateRepository {
         target: [agentStateTable.agentId, agentStateTable.key],
         set: { value, updatedAt: new Date() },
       });
+  }
+
+  /**
+   * Atomically increment a numeric value stored as JSONB `{ "value": "<number>" }`.
+   * Closes read-modify-write race: two concurrent `total_ton_spent += X` calls
+   * would otherwise read the same base and overwrite each other.
+   * Returns the new value after the increment.
+   */
+  async incrementNumeric(agentId: number, userId: number, key: string, delta: number): Promise<number> {
+    if (!isFinite(delta)) throw new Error(`incrementNumeric: delta must be finite (got ${delta})`);
+    const { rows } = await (this.db as any).execute(sql`
+      INSERT INTO builder_bot.agent_state (agent_id, user_id, key, value, updated_at)
+      VALUES (${agentId}, ${userId}, ${key}, jsonb_build_object('value', ${String(delta)}), NOW())
+      ON CONFLICT (agent_id, key) DO UPDATE
+        SET value = jsonb_build_object(
+              'value',
+              ((COALESCE((agent_state.value->>'value'), '0'))::numeric + ${String(delta)}::numeric)::text
+            ),
+            updated_at = NOW()
+      RETURNING (value->>'value')::numeric AS new_val
+    `);
+    return Number(rows?.[0]?.new_val ?? 0);
   }
 
   async getAll(agentId: number): Promise<Array<{ key: string; value: any }>> {
@@ -348,6 +669,17 @@ export class AgentLogsRepository {
       details: entry.details ?? null,
       createdAt: new Date(),
     });
+    // Also record errors in platform_bugs for unified tracking
+    if (entry.level === 'error' || entry.level === 'fatal') {
+      try {
+        getBugTracker().recordBug(
+          `agent:${entry.agentId}`,
+          entry.message.slice(0, 1000),
+          undefined,
+          undefined
+        ).catch(() => {});
+      } catch {}
+    }
   }
 
   async getByAgent(agentId: number, limit = 30, offset = 0): Promise<Array<{
@@ -1055,13 +1387,31 @@ export async function runAIProposalsMigrations(pool: Pool): Promise<void> {
         resolved_at TIMESTAMP
       )
     `);
-    // Add missing columns if table was created with old schema (action_type/action_details)
+    // Add missing columns for BOTH V1 and V2 schemas to coexist
     await client.query(`ALTER TABLE builder_bot.agent_approvals ADD COLUMN IF NOT EXISTS action TEXT NOT NULL DEFAULT ''`);
     await client.query(`ALTER TABLE builder_bot.agent_approvals ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT ''`);
     await client.query(`ALTER TABLE builder_bot.agent_approvals ADD COLUMN IF NOT EXISTS details JSONB`);
+    // V1 columns needed by AgentApprovalsRepository.create()
+    await client.query(`ALTER TABLE builder_bot.agent_approvals ADD COLUMN IF NOT EXISTS action_type TEXT NOT NULL DEFAULT ''`);
+    await client.query(`ALTER TABLE builder_bot.agent_approvals ADD COLUMN IF NOT EXISTS action_details JSONB NOT NULL DEFAULT '{}'`);
     await client.query(`
       CREATE INDEX IF NOT EXISTS agent_approvals_pending_idx
         ON builder_bot.agent_approvals (user_id, status) WHERE status = 'pending'
+    `);
+    // agent_daily_logs — used by AgentMemory.appendDailyLog
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.agent_daily_logs (
+        id          SERIAL PRIMARY KEY,
+        agent_id    INTEGER NOT NULL,
+        log_date    DATE NOT NULL DEFAULT CURRENT_DATE,
+        content     TEXT NOT NULL DEFAULT '',
+        created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+        UNIQUE(agent_id, log_date)
+      )
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS agent_daily_logs_agent_date_idx
+        ON builder_bot.agent_daily_logs (agent_id, log_date DESC)
     `);
     await client.query(`
       CREATE TABLE IF NOT EXISTS builder_bot.agent_skill_tree (
@@ -1136,8 +1486,471 @@ export async function runAIProposalsMigrations(pool: Pool): Promise<void> {
       CREATE UNIQUE INDEX IF NOT EXISTS idx_aw_address ON builder_bot.agentic_wallets(address)
     `);
 
+    // ─── Agent Skills (agentskills.io spec) — runtime + user-authored ─────────
+    // Built-in skills live on disk (apps/builder-bot/src/skills/<name>/SKILL.md)
+    // and are NOT in this table. User and imported skills ARE in this table.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.skills (
+        id              SERIAL PRIMARY KEY,
+        name            VARCHAR(64) NOT NULL,
+        description     TEXT NOT NULL,
+        body            TEXT NOT NULL,
+        license         VARCHAR(255),
+        compatibility   VARCHAR(500),
+        metadata        JSONB NOT NULL DEFAULT '{}',
+        allowed_tools   TEXT,
+        source          VARCHAR(20) NOT NULL,
+        owner_user_id   BIGINT,
+        source_url      VARCHAR(500),
+        is_public       BOOLEAN NOT NULL DEFAULT FALSE,
+        version         VARCHAR(20) NOT NULL DEFAULT '1.0',
+        created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+        CONSTRAINT skills_source_chk CHECK (source IN ('user','imported','builtin_override')),
+        CONSTRAINT skills_name_owner_unique UNIQUE (name, owner_user_id)
+      )
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS skills_owner_idx
+        ON builder_bot.skills (owner_user_id)
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS skills_public_idx
+        ON builder_bot.skills (is_public, name) WHERE is_public = TRUE
+    `);
+
+    // Per-agent skill enable/disable. For built-in skills, only `skill_name`
+    // is set (resolves from filesystem via skill-registry). For user/imported
+    // skills, both `skill_name` and `skill_id` are set.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.agent_skills (
+        agent_id    INTEGER NOT NULL,
+        skill_name  VARCHAR(64) NOT NULL,
+        skill_id    INTEGER REFERENCES builder_bot.skills(id) ON DELETE CASCADE,
+        enabled     BOOLEAN NOT NULL DEFAULT TRUE,
+        added_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (agent_id, skill_name)
+      )
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS agent_skills_enabled_idx
+        ON builder_bot.agent_skills (agent_id) WHERE enabled = TRUE
+    `);
+
+    // ─── Task Graph (session 07 pattern pattern) ──────────────────────────
+    // Durable DAG of work items per agent. Each task can declare `blocked_by`
+    // = array of task IDs that must complete first. When a task hits status
+    // 'completed', its ID is removed from every dependent's blocked_by.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.agent_task_graph (
+        id          SERIAL PRIMARY KEY,
+        agent_id    INTEGER NOT NULL,
+        subject     TEXT NOT NULL,
+        details     TEXT,
+        status      VARCHAR(20) NOT NULL DEFAULT 'pending',
+        blocked_by  INTEGER[] NOT NULL DEFAULT '{}',
+        owner       VARCHAR(80),
+        priority    INTEGER NOT NULL DEFAULT 5,
+        result      TEXT,
+        created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+        completed_at TIMESTAMP,
+        CONSTRAINT agent_task_graph_status_chk
+          CHECK (status IN ('pending', 'in_progress', 'completed', 'failed', 'cancelled'))
+      )
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS agent_task_graph_agent_status_idx
+        ON builder_bot.agent_task_graph (agent_id, status)
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS agent_task_graph_blocked_by_idx
+        ON builder_bot.agent_task_graph USING gin (blocked_by)
+    `);
+
+    // ─── Cross-agent task dependencies ─────────────────────────────────────
+    // Lets agent A's task depend on agent B's task (manager-flow pattern).
+    // Format: [{agent_id, task_id}, ...]. Checked alongside blocked_by during
+    // status='completed' cascade in task_update handler.
+    await client.query(`
+      ALTER TABLE builder_bot.agent_task_graph
+        ADD COLUMN IF NOT EXISTS external_deps JSONB NOT NULL DEFAULT '[]'::jsonb
+    `);
+
+    // ─── Crews (multi-agent teams) ─────────────────────────────────────────
+    // A crew bundles N agents under one budget + shared state namespace + an
+    // optional manager (the supervisor that ask_agent's the others).
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.crews (
+        id                SERIAL PRIMARY KEY,
+        user_id           BIGINT NOT NULL,
+        name              VARCHAR(128) NOT NULL,
+        description       TEXT,
+        agent_ids         INTEGER[] NOT NULL DEFAULT '{}',
+        manager_agent_id  INTEGER,
+        state_namespace   VARCHAR(80),
+        budget_ton_month  NUMERIC(20, 9) NOT NULL DEFAULT 0,
+        is_active         BOOLEAN NOT NULL DEFAULT true,
+        created_at        TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at        TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS crews_user_idx ON builder_bot.crews (user_id, is_active)`);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.crew_executions (
+        id            SERIAL PRIMARY KEY,
+        crew_id       INTEGER NOT NULL REFERENCES builder_bot.crews(id) ON DELETE CASCADE,
+        started_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+        completed_at  TIMESTAMP,
+        status        VARCHAR(20) NOT NULL DEFAULT 'running',
+        trigger       TEXT,
+        result        JSONB,
+        final_output  TEXT,
+        member_statuses JSONB NOT NULL DEFAULT '[]'::jsonb,
+        CONSTRAINT crew_executions_status_chk CHECK (status IN ('running', 'completed', 'failed', 'cancelled'))
+      )
+    `);
+    // Live monitor — per-member progress snapshot updated during the run.
+    // Format: [{step_index, agent_id, member_label, role, status, started_at,
+    //   finished_at, error, output_preview}]
+    await client.query(`
+      ALTER TABLE builder_bot.crew_executions
+        ADD COLUMN IF NOT EXISTS member_statuses JSONB NOT NULL DEFAULT '[]'::jsonb
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS crew_executions_crew_idx ON builder_bot.crew_executions (crew_id, started_at DESC)`);
+
+    // ─── Crew wallet (shared TON wallet for all members of the crew) ─────
+    await client.query(`
+      ALTER TABLE builder_bot.crews
+        ADD COLUMN IF NOT EXISTS wallet_address    VARCHAR(80),
+        ADD COLUMN IF NOT EXISTS wallet_mnemonic   TEXT,
+        ADD COLUMN IF NOT EXISTS wallet_workchain  INTEGER DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS wallet_created_at TIMESTAMP
+    `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.crew_wallet_log (
+        id            SERIAL PRIMARY KEY,
+        crew_id       INTEGER NOT NULL REFERENCES builder_bot.crews(id) ON DELETE CASCADE,
+        agent_id      INTEGER NOT NULL,
+        user_id       BIGINT NOT NULL,
+        direction     VARCHAR(8) NOT NULL CHECK (direction IN ('out','in','fee')),
+        amount_ton    NUMERIC(20, 9) NOT NULL,
+        destination   VARCHAR(80),
+        tx_hash       VARCHAR(120),
+        comment       TEXT,
+        created_at    TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS crew_wallet_log_crew_idx ON builder_bot.crew_wallet_log (crew_id, created_at DESC)`);
+
+    // ─── Agent goal + action scope (Sprint 7 — purpose-driven agents) ──
+    // goal = one-sentence mission ("publish 1-2 posts/day in @channel about TON DeFi")
+    // action_scope = where the agent operates. Routing/userbot-mgr silently skips
+    // events that fall outside scope so a creative agent stops replying to DMs.
+    await client.query(`
+      ALTER TABLE builder_bot.agents
+        ADD COLUMN IF NOT EXISTS goal TEXT,
+        ADD COLUMN IF NOT EXISTS action_scope JSONB NOT NULL DEFAULT '{}'::jsonb
+    `);
+    await client.query(`
+      ALTER TABLE builder_bot.crews
+        ADD COLUMN IF NOT EXISTS goal TEXT
+    `);
+
+    // ─── Crew member allowances (Sprint 6b — wallet tiers) ───────────────
+    // Per-(crew, member) row that caps how much TON the member can receive from
+    // the crew treasury in a calendar month. Set by treasurer (crew.manager_agent_id
+    // or a director-role agent in the crew). Distribute handler refuses when
+    // current_month_received + delta > monthly_allowance_ton.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.crew_member_allowances (
+        id                          SERIAL PRIMARY KEY,
+        crew_id                     INTEGER NOT NULL REFERENCES builder_bot.crews(id) ON DELETE CASCADE,
+        agent_id                    INTEGER NOT NULL,
+        monthly_allowance_ton       NUMERIC(20, 9) NOT NULL DEFAULT 0,
+        current_month_received_ton  NUMERIC(20, 9) NOT NULL DEFAULT 0,
+        current_month_key           VARCHAR(7) NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM'),
+        last_distribution_at        TIMESTAMP,
+        last_distribution_amount_ton NUMERIC(20, 9),
+        created_at                  TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at                  TIMESTAMP NOT NULL DEFAULT NOW(),
+        UNIQUE (crew_id, agent_id)
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS crew_member_allowances_crew_idx ON builder_bot.crew_member_allowances (crew_id)`);
+
+    // ─── Composite tools — agents compose macros from N tools (Sprint 5b) ──
+    // Each row is a per-agent "macro": name + description + ordered steps.
+    // Runtime exposes them as regular tools so the LLM picks them like any other.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.agent_composite_tools (
+        id          SERIAL PRIMARY KEY,
+        agent_id    INTEGER NOT NULL,
+        user_id     BIGINT NOT NULL,
+        name        VARCHAR(80) NOT NULL,
+        description TEXT NOT NULL,
+        params_schema JSONB NOT NULL DEFAULT '{}'::jsonb,
+        steps       JSONB NOT NULL,
+        exec_count  INTEGER NOT NULL DEFAULT 0,
+        last_used_at TIMESTAMP,
+        created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+        UNIQUE (agent_id, name)
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS agent_composite_tools_agent_idx ON builder_bot.agent_composite_tools (agent_id)`);
+
+    // ─── Custom agent roles (Sprint 5 — real role integration) ────────────
+    // Built-in roles live in code (role-profiles.ts). Users can also create
+    // their own roles via Atlas/Studio — those land here. Referenced by
+    // agents.role as "custom:<id>".
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.agent_custom_roles (
+        id                        SERIAL PRIMARY KEY,
+        user_id                   BIGINT,
+        role_name                 VARCHAR(64) NOT NULL,
+        display_name              VARCHAR(128) NOT NULL,
+        color                     VARCHAR(16) DEFAULT '#64748b',
+        system_prompt_module      TEXT NOT NULL,
+        behavior_overrides        JSONB NOT NULL DEFAULT '{}'::jsonb,
+        learning_overrides        JSONB NOT NULL DEFAULT '{}'::jsonb,
+        tool_weights              JSONB NOT NULL DEFAULT '{}'::jsonb,
+        tool_whitelist            JSONB,
+        tool_blacklist            JSONB,
+        autonomy_level            VARCHAR(10) NOT NULL DEFAULT 'medium'
+                                  CHECK (autonomy_level IN ('full','high','medium','low')),
+        max_spend_per_action_ton  NUMERIC(20, 9) NOT NULL DEFAULT 0,
+        require_approval_above_ton NUMERIC(20, 9),
+        tick_interval_ms          INTEGER,
+        default_model             VARCHAR(128),
+        default_capabilities      JSONB NOT NULL DEFAULT '[]'::jsonb,
+        response_style_hints      TEXT,
+        created_via               VARCHAR(20) DEFAULT 'manual',
+        created_at                TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at                TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS agent_custom_roles_user_idx ON builder_bot.agent_custom_roles (user_id)`);
+
+    // ─── CRON subscriptions for event-bus ──────────────────────────────────
+    // Lets agents schedule recurring tick triggers (e.g. "daily at 9 UTC").
+    // Stored here so the schedule survives bot restart.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.agent_cron_subscriptions (
+        id              SERIAL PRIMARY KEY,
+        agent_id        INTEGER NOT NULL,
+        user_id         BIGINT NOT NULL,
+        cron_expr       VARCHAR(80) NOT NULL,
+        reason          TEXT,
+        is_active       BOOLEAN NOT NULL DEFAULT true,
+        last_fired_at   TIMESTAMP,
+        next_fire_at    TIMESTAMP,
+        created_at      TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS agent_cron_next_fire_idx ON builder_bot.agent_cron_subscriptions (next_fire_at) WHERE is_active = true`);
+
+    // ─── Hybrid RAG memory (vector + FTS5-style + RRF fusion) ───────────────
+    // Stores compressed semantic memory chunks per agent. Vector column uses
+    // a JSONB array (no pgvector extension required — fine up to ~5K entries
+    // per agent, cosine sim computed in app code). FTS via Postgres tsvector
+    // generated column. Hybrid retrieval = RRF over both rankings in JS.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.agent_memory_vec (
+        id           SERIAL PRIMARY KEY,
+        agent_id     INTEGER NOT NULL,
+        content      TEXT NOT NULL,
+        embedding    JSONB,
+        metadata     JSONB NOT NULL DEFAULT '{}',
+        source       VARCHAR(50),
+        importance   REAL NOT NULL DEFAULT 0.5,
+        created_at   TIMESTAMP NOT NULL DEFAULT NOW(),
+        content_tsv  tsvector GENERATED ALWAYS AS (to_tsvector('simple', content)) STORED
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS agent_memory_vec_agent_idx ON builder_bot.agent_memory_vec (agent_id, created_at DESC)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS agent_memory_vec_tsv_idx ON builder_bot.agent_memory_vec USING gin (content_tsv)`);
+
+    // ─── Persistent transcripts (s06 auto-compression target) ────────────────
+    // When a tick's message log gets too long, summarize first half via cheap
+    // LLM and persist the summary here so future runs can recall.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.agent_transcripts (
+        id           SERIAL PRIMARY KEY,
+        agent_id     INTEGER NOT NULL,
+        summary      TEXT NOT NULL,
+        msg_count    INTEGER NOT NULL,
+        token_estimate INTEGER,
+        chat_id      BIGINT,
+        created_at   TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query(`ALTER TABLE builder_bot.agent_transcripts ADD COLUMN IF NOT EXISTS chat_id BIGINT`);
+    await client.query(`CREATE INDEX IF NOT EXISTS agent_transcripts_agent_idx ON builder_bot.agent_transcripts (agent_id, created_at DESC)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS agent_transcripts_chat_idx ON builder_bot.agent_transcripts (agent_id, chat_id, created_at DESC)`);
+
+    // ─── Mailboxes (s09 pattern) — durable inter-agent messaging ───────────
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.agent_mailbox (
+        id           SERIAL PRIMARY KEY,
+        from_agent_id INTEGER NOT NULL,
+        to_agent_id   INTEGER NOT NULL,
+        subject       VARCHAR(200),
+        body          TEXT NOT NULL,
+        metadata      JSONB NOT NULL DEFAULT '{}',
+        read_at       TIMESTAMP,
+        created_at    TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS agent_mailbox_to_unread_idx ON builder_bot.agent_mailbox (to_agent_id, created_at DESC) WHERE read_at IS NULL`);
+
+    // ─── Agent lessons — durable retention of "what I learned from this run"
+    // Populated by post-run lesson-extractor (cheap LLM summarizes outcome
+    // of a tick / chat / tool sequence) AND by the agent itself via the
+    // `learn` tool. Retrieved on similar tasks by hybrid lexical+semantic
+    // search; pruned by importance × recency. Embeddings stored as JSONB
+    // for cosine sim in app code.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.agent_lessons (
+        id           SERIAL PRIMARY KEY,
+        agent_id     INTEGER NOT NULL,
+        topic        VARCHAR(120),
+        lesson       TEXT NOT NULL,
+        context      TEXT,
+        outcome      VARCHAR(20) NOT NULL DEFAULT 'mixed',
+        importance   REAL NOT NULL DEFAULT 0.5,
+        usage_count  INTEGER NOT NULL DEFAULT 0,
+        last_used_at TIMESTAMP,
+        embedding    JSONB,
+        metadata     JSONB NOT NULL DEFAULT '{}',
+        created_at   TIMESTAMP NOT NULL DEFAULT NOW(),
+        content_tsv  tsvector GENERATED ALWAYS AS (to_tsvector('simple', lesson || ' ' || COALESCE(topic, ''))) STORED
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS agent_lessons_agent_idx ON builder_bot.agent_lessons (agent_id, importance DESC, created_at DESC)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS agent_lessons_topic_idx ON builder_bot.agent_lessons (agent_id, topic)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS agent_lessons_tsv_idx ON builder_bot.agent_lessons USING gin (content_tsv)`);
+
+    // ─── Agent strategies — high-level reusable playbooks Atlas generates.
+    // Unlike lessons (atomic facts), a strategy describes HOW to approach a
+    // class of tasks: ordered steps, decision rules, fallbacks. Active
+    // strategies are injected into the agent system prompt at run time;
+    // success_rate accumulates over executions.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.agent_strategies (
+        id           SERIAL PRIMARY KEY,
+        agent_id     INTEGER NOT NULL,
+        title        VARCHAR(180) NOT NULL,
+        scenario     TEXT,
+        playbook     TEXT NOT NULL,
+        active       BOOLEAN NOT NULL DEFAULT TRUE,
+        source       VARCHAR(40) NOT NULL DEFAULT 'atlas',
+        success_count INTEGER NOT NULL DEFAULT 0,
+        fail_count   INTEGER NOT NULL DEFAULT 0,
+        last_used_at TIMESTAMP,
+        metadata     JSONB NOT NULL DEFAULT '{}',
+        created_at   TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at   TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS agent_strategies_agent_idx ON builder_bot.agent_strategies (agent_id, active, updated_at DESC)`);
+
+    // Per-agent utility model + Atlas enrichment marker on the agents table
+    // (idempotent ADD COLUMN — safe to re-run on existing schema)
+    await client.query(`ALTER TABLE builder_bot.agents ADD COLUMN IF NOT EXISTS utility_model VARCHAR(120)`);
+    await client.query(`ALTER TABLE builder_bot.agents ADD COLUMN IF NOT EXISTS atlas_enriched_at TIMESTAMP`);
+
+    // ─── SkillOpt: versioned built-in SKILL.md ──────────────────────────────
+    // The on-disk SKILL.md is v1 (baseline). Each optimizer pass writes a new
+    // row with proposed edits, the eval_score, and whether it was accepted by
+    // the validation gate. Active version = highest accepted version_num.
+    // Rejected rows kept as negative training signal for the next pass.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.skill_versions (
+        id           SERIAL PRIMARY KEY,
+        skill_name   VARCHAR(80) NOT NULL,
+        version_num  INTEGER NOT NULL,
+        body         TEXT NOT NULL,
+        parent_id    INTEGER REFERENCES builder_bot.skill_versions(id) ON DELETE SET NULL,
+        eval_score   REAL,
+        baseline_score REAL,
+        accepted     BOOLEAN NOT NULL DEFAULT FALSE,
+        diff_summary TEXT,
+        edit_ops     JSONB NOT NULL DEFAULT '[]',
+        rationale    TEXT,
+        run_metadata JSONB NOT NULL DEFAULT '{}',
+        created_at   TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS skill_versions_name_idx ON builder_bot.skill_versions (skill_name, version_num DESC)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS skill_versions_accepted_idx ON builder_bot.skill_versions (skill_name, accepted, created_at DESC)`);
+
+    // ─── Memory cleanup audit log (Phase 4) ─────────────────────────────────
+    // Track each nightly cleanup pass: what was pruned, deduped, by which rule
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.memory_cleanup_log (
+        id           SERIAL PRIMARY KEY,
+        agent_id     INTEGER,
+        kind         VARCHAR(40) NOT NULL,
+        stats        JSONB NOT NULL DEFAULT '{}',
+        created_at   TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS memory_cleanup_kind_idx ON builder_bot.memory_cleanup_log (kind, created_at DESC)`);
+
+    // ─── Skill purchases (TON Pay marketplace) ──────────────────────────────
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.skill_purchases (
+        id            SERIAL PRIMARY KEY,
+        skill_id      INTEGER NOT NULL,
+        skill_name    VARCHAR(64) NOT NULL,
+        buyer_user_id BIGINT NOT NULL,
+        seller_user_id BIGINT NOT NULL,
+        price_ton     NUMERIC(20,9) NOT NULL,
+        invoice_id    VARCHAR(120),
+        tx_hash       VARCHAR(120),
+        status        VARCHAR(20) NOT NULL DEFAULT 'pending',
+        created_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+        paid_at       TIMESTAMP,
+        CONSTRAINT skill_purchases_status_chk CHECK (status IN ('pending','paid','expired','refunded','failed'))
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS skill_purchases_buyer_idx ON builder_bot.skill_purchases (buyer_user_id, created_at DESC)`);
+
+    // ─── MCP Servers (user-owned remote tool endpoints) ─────────────────────
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.mcp_servers (
+        id              SERIAL PRIMARY KEY,
+        user_id         BIGINT NOT NULL,
+        name            VARCHAR(120) NOT NULL,
+        url             TEXT NOT NULL,
+        api_key_enc     TEXT,
+        transport       VARCHAR(20) NOT NULL DEFAULT 'sse',
+        status          VARCHAR(20) NOT NULL DEFAULT 'pending',
+        last_error      TEXT,
+        tools_count     INTEGER NOT NULL DEFAULT 0,
+        last_tested_at  TIMESTAMP,
+        created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+        CONSTRAINT mcp_servers_status_chk CHECK (status IN ('pending','connected','error','disabled'))
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS mcp_servers_user_idx ON builder_bot.mcp_servers (user_id, created_at DESC)`);
+
+    // Per-agent enable/disable of user's MCP servers (default: NOT enabled —
+    // only rows here count as "this agent uses MCP server X")
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS builder_bot.agent_mcp_servers (
+        id            SERIAL PRIMARY KEY,
+        agent_id      INTEGER NOT NULL,
+        mcp_server_id INTEGER NOT NULL,
+        created_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+        CONSTRAINT agent_mcp_servers_uniq UNIQUE (agent_id, mcp_server_id)
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS agent_mcp_servers_agent_idx ON builder_bot.agent_mcp_servers (agent_id)`);
+
     await client.query('COMMIT');
-    console.log('✅ AI proposals + daily spend + audit/approvals/skills/shared/bugs + agentic_wallets migrations applied');
+    console.log('✅ AI proposals + daily spend + audit/approvals/skills/shared/bugs + agentic_wallets + agent-skills + hybrid-memory + transcripts + mailbox + ton-pay + mcp migrations applied');
   } catch (e) {
     await client.query('ROLLBACK');
     console.error('❌ AI proposals migration failed:', e);
@@ -1300,6 +2113,48 @@ export class AgentDailySpendRepository {
   async canSpend(agentId: number, amountNano: bigint, limitNano: bigint): Promise<boolean> {
     const spent = await this.getSpent(agentId);
     return spent + amountNano <= limitNano;
+  }
+
+  /**
+   * Atomically reserve spend: checks limit AND increments in a single SQL statement.
+   * Returns new total if reservation succeeded, or null if limit would be exceeded.
+   * Prevents race conditions where two concurrent calls both see "under limit" and then both record.
+   */
+  async tryReserveSpend(
+    agentId: number,
+    userId: number,
+    amountNano: bigint,
+    limitNano: bigint
+  ): Promise<{ ok: boolean; spentNano: bigint }> {
+    const today = this.today();
+    const amount = amountNano.toString();
+    const limit = limitNano.toString();
+    // Single atomic statement: INSERT or UPDATE only if spent + amount <= limit
+    const { rows } = await (this.db as any).execute(sql`
+      INSERT INTO builder_bot.agent_daily_spend (agent_id, user_id, spend_date, spent_nano)
+      VALUES (${agentId}, ${userId}, ${today}, ${amount}::numeric)
+      ON CONFLICT (agent_id, spend_date) DO UPDATE
+        SET spent_nano = agent_daily_spend.spent_nano + ${amount}::numeric
+        WHERE agent_daily_spend.spent_nano + ${amount}::numeric <= ${limit}::numeric
+      RETURNING spent_nano
+    `);
+    if (!rows || rows.length === 0) {
+      // Row exists but the WHERE clause blocked the update → limit would be exceeded
+      const spent = await this.getSpent(agentId);
+      return { ok: false, spentNano: spent };
+    }
+    return { ok: true, spentNano: BigInt(rows[0].spent_nano) };
+  }
+
+  /** Rollback a reservation if the downstream tx fails. */
+  async rollbackSpend(agentId: number, amountNano: bigint): Promise<void> {
+    const today = this.today();
+    const amount = amountNano.toString();
+    await (this.db as any).execute(sql`
+      UPDATE builder_bot.agent_daily_spend
+         SET spent_nano = GREATEST(0, spent_nano - ${amount}::numeric)
+       WHERE agent_id = ${agentId} AND spend_date = ${today}
+    `);
   }
 }
 
@@ -1598,7 +2453,7 @@ class BugTrackerRepository {
     // Simple hash: source + first 100 chars of message (normalized)
     const normalized = message.replace(/\d+/g, 'N').replace(/[a-f0-9]{8,}/gi, 'HASH').slice(0, 100);
     const { createHash } = require('crypto');
-    return createHash('md5').update(`${source}:${normalized}`).digest('hex').slice(0, 16);
+    return createHash('sha256').update(`${source}:${normalized}`).digest('hex').slice(0, 16);
   }
 
   /** Record a bug — upsert: increment count if exists, create if new */

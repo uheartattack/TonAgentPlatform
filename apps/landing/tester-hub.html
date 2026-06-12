@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="logo.svg">
+<title>Tester Hub — TON Agent Platform</title>
+<meta name="description" content="Your rank, XP, multiplier, pool share and referral earnings — full Tester Hub dashboard.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',sans-serif;background:#0a0a0f;color:#e6e6f0;min-height:100vh;padding:24px 16px 60px}
+.container{max-width:1100px;margin:0 auto}
+.topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:32px;flex-wrap:wrap;gap:12px}
+.back{display:inline-flex;align-items:center;gap:6px;color:#8a8aa0;text-decoration:none;font-size:14px;transition:color .2s}
+.back:hover{color:#00aaff}
+h1{font-size:clamp(24px,4vw,36px);font-weight:800;background:linear-gradient(135deg,#00aaff,#8b5cf6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.tabs{display:flex;gap:4px;margin-bottom:24px;border-bottom:1px solid rgba(255,255,255,0.06);overflow-x:auto}
+.tab{padding:10px 16px;background:none;border:none;color:#8a8aa0;font:600 14px Inter,sans-serif;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;transition:all .2s}
+.tab:hover{color:#e6e6f0}
+.tab.active{color:#00aaff;border-bottom-color:#00aaff}
+.pane{display:none}
+.pane.active{display:block}
+.card{background:linear-gradient(135deg,rgba(0,170,255,0.03),rgba(139,92,246,0.03));border:1px solid rgba(255,255,255,0.06);border-radius:16px;padding:24px;margin-bottom:16px}
+.card h2{font-size:18px;font-weight:700;margin-bottom:16px;color:#fff}
+.row{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.04)}
+.row:last-child{border-bottom:none}
+.row-label{color:#8a8aa0;font-size:14px}
+.row-val{color:#fff;font-weight:600;font-size:14px}
+.row-val.accent{color:#00aaff}
+.row-val.gold{color:#fbbf24}
+.big-num{font-size:48px;font-weight:800;background:linear-gradient(135deg,#00aaff,#8b5cf6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;line-height:1}
+.big-label{font-size:12px;color:#8a8aa0;text-transform:uppercase;letter-spacing:1px;margin-top:8px}
+.grid-3{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:24px}
+.metric{background:linear-gradient(135deg,rgba(0,170,255,0.06),rgba(139,92,246,0.06));border:1px solid rgba(255,255,255,0.05);border-radius:14px;padding:20px;text-align:center}
+.xp-bar{height:12px;background:rgba(255,255,255,0.05);border-radius:6px;overflow:hidden;margin-top:12px}
+.xp-fill{height:100%;background:linear-gradient(90deg,#00aaff,#8b5cf6);border-radius:6px;transition:width .6s}
+.level-pill{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;font-size:13px;font-weight:700;margin-top:12px}
+.lvl-1,.lvl-2{background:rgba(148,163,184,0.15);color:#94a3b8}
+.lvl-3{background:rgba(239,68,68,0.15);color:#f87171}
+.lvl-4{background:rgba(16,185,129,0.15);color:#34d399}
+.lvl-5{background:rgba(139,92,246,0.15);color:#a78bfa}
+.lvl-6{background:rgba(245,158,11,0.15);color:#fbbf24}
+.btn{padding:10px 20px;background:linear-gradient(135deg,#00aaff,#0088cc);color:#fff;border:none;border-radius:10px;font:600 14px Inter,sans-serif;cursor:pointer;transition:all .2s}
+.btn:hover{transform:translateY(-1px);box-shadow:0 8px 20px rgba(0,170,255,0.3)}
+.btn:disabled{opacity:0.5;cursor:not-allowed;transform:none}
+.btn.ghost{background:rgba(255,255,255,0.04);color:#e6e6f0;border:1px solid rgba(255,255,255,0.08)}
+.input{width:100%;padding:10px 14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:10px;color:#e6e6f0;font:500 14px Inter,sans-serif;outline:none}
+.input:focus{border-color:#00aaff;background:rgba(0,170,255,0.03)}
+.ref-link{display:flex;gap:8px;margin-top:12px}
+.ref-link .input{font-family:monospace;font-size:12px}
+.msg{padding:10px 14px;border-radius:10px;font-size:13px;margin-top:12px}
+.msg.ok{background:rgba(16,185,129,0.1);color:#34d399;border:1px solid rgba(16,185,129,0.2)}
+.msg.err{background:rgba(239,68,68,0.1);color:#f87171;border:1px solid rgba(239,68,68,0.2)}
+.lb-row{display:grid;grid-template-columns:40px 1fr 100px 100px;gap:12px;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,0.04);align-items:center;font-size:14px}
+.lb-row:first-child{font-weight:700;color:#8a8aa0;font-size:12px;text-transform:uppercase;letter-spacing:0.5px}
+.lb-rank{font-weight:700;color:#8a8aa0}
+.lb-rank.top-1{color:#fbbf24}
+.lb-rank.top-2{color:#cbd5e1}
+.lb-rank.top-3{color:#fb923c}
+.lb-user{color:#fff;font-weight:600;display:flex;align-items:center;gap:8px}
+.lb-xp{color:#e6e6f0;text-align:right;font-variant-numeric:tabular-nums}
+.lb-mult{color:#8a8aa0;text-align:right;font-size:12px}
+.loader{display:inline-block;width:24px;height:24px;border:3px solid rgba(0,170,255,0.2);border-top-color:#00aaff;border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle}
+@keyframes spin{to{transform:rotate(360deg)}}
+.empty{text-align:center;color:#6a6a80;padding:40px 20px;font-size:14px}
+.snap-row{display:grid;grid-template-columns:120px 60px 100px 80px 1fr;gap:12px;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,0.04);font-size:13px;align-items:center}
+.snap-row:first-child{font-weight:700;color:#8a8aa0;font-size:11px;text-transform:uppercase}
+.mut{color:#8a8aa0}
+.login-box{max-width:420px;margin:80px auto;text-align:center}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="topbar">
+    <a href="/" class="back">← Home</a>
+    <h1>Tester Hub</h1>
+    <a href="/studio.html" class="back">Studio →</a>
+  </div>
+
+  <div id="loginGate" style="display:none">
+    <div class="card login-box">
+      <h2>Sign in required</h2>
+      <p class="mut" style="margin:16px 0">Open <a href="/studio.html" style="color:#00aaff">Studio</a> to sign in via Telegram, then come back.</p>
+      <a href="/studio.html" class="btn" style="display:inline-block;margin-top:8px;text-decoration:none">Open Studio</a>
+    </div>
+  </div>
+
+  <div id="mainWrap" style="display:none">
+    <div class="tabs">
+      <button class="tab active" data-pane="profile">Profile</button>
+      <button class="tab" data-pane="leaderboard">Leaderboard</button>
+      <button class="tab" data-pane="snapshots">Snapshots</button>
+      <button class="tab" data-pane="referrals">Referrals</button>
+      <button class="tab" data-pane="payout">Payout</button>
+    </div>
+
+    <!-- PROFILE -->
+    <div class="pane active" id="pane-profile">
+      <div class="grid-3">
+        <div class="metric">
+          <div class="big-num" id="xpNum">—</div>
+          <div class="big-label">Total XP</div>
+          <div class="level-pill lvl-1" id="lvlPill">Loading</div>
+        </div>
+        <div class="metric">
+          <div class="big-num" id="multNum">—</div>
+          <div class="big-label">Multiplier</div>
+          <div class="mut" style="font-size:12px;margin-top:12px" id="multHint">Base × decay</div>
+        </div>
+        <div class="metric">
+          <div class="big-num" id="shareNum">—</div>
+          <div class="big-label">Your share of pool</div>
+          <div class="mut" style="font-size:12px;margin-top:12px" id="shareHint">of total effective XP</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>🏆 Rank &amp; progress</h2>
+        <div class="row"><span class="row-label">Current level</span><span class="row-val" id="profLevel">—</span></div>
+        <div class="row"><span class="row-label">Next level at</span><span class="row-val accent" id="profNext">—</span></div>
+        <div class="xp-bar"><div class="xp-fill" id="profBar" style="width:0%"></div></div>
+        <div class="row"><span class="row-label">Effective XP (XP × mult)</span><span class="row-val accent" id="profEff">—</span></div>
+        <div class="row"><span class="row-label">Total testers in pool</span><span class="row-val" id="profCount">—</span></div>
+        <div class="row"><span class="row-label">First snapshot</span><span class="row-val" id="profFirstSnap">—</span></div>
+      </div>
+
+      <div class="card">
+        <h2>💰 Projected payout</h2>
+        <div class="row"><span class="row-label">At 10,000 TON / yr gross revenue</span><span class="row-val gold" id="projPayout">—</span></div>
+        <p class="mut" style="font-size:12px;margin-top:12px;line-height:1.5">
+          Pool = 10% of gross platform revenue for 2 years. Distribution proportional to XP × multiplier at monthly snapshot.
+          This is a projection — actual payout depends on real revenue and all testers' final effective XP.
+        </p>
+      </div>
+    </div>
+
+    <!-- LEADERBOARD -->
+    <div class="pane" id="pane-leaderboard">
+      <div class="card">
+        <h2>🏅 Top testers by effective XP</h2>
+        <div class="lb-row"><span>#</span><span>Tester</span><span style="text-align:right">Eff XP</span><span style="text-align:right">Mult</span></div>
+        <div id="lbBody"><div class="empty"><div class="loader"></div></div></div>
+      </div>
+    </div>
+
+    <!-- SNAPSHOTS -->
+    <div class="pane" id="pane-snapshots">
+      <div class="card">
+        <h2>📸 Your monthly snapshots</h2>
+        <p class="mut" style="font-size:13px;margin-bottom:16px">Snapshot freezes your XP, level and multiplier on the 1st of each month. Quarterly payout is calculated from these.</p>
+        <div class="snap-row"><span>Date</span><span>Lv</span><span>XP</span><span>Mult</span><span style="text-align:right">Effective</span></div>
+        <div id="snapBody"><div class="empty"><div class="loader"></div></div></div>
+      </div>
+    </div>
+
+    <!-- REFERRALS -->
+    <div class="pane" id="pane-referrals">
+      <div class="card">
+        <h2>🎟 Your referral link</h2>
+        <p class="mut" style="font-size:13px;margin-bottom:12px">Share this link. You get <b style="color:#00aaff">+20 XP</b> when a friend joins, <b style="color:#00aaff">+5 XP</b> for their referrals, and <b style="color:#fbbf24">10% of their future platform spend</b> — forever.</p>
+        <div class="ref-link">
+          <input class="input" id="refUrl" readonly>
+          <button class="btn" onclick="copyRef()">Copy</button>
+        </div>
+        <div id="refMsg"></div>
+        <div class="row" style="margin-top:16px"><span class="row-label">Ref code</span><span class="row-val" id="refCode">—</span></div>
+        <div class="row"><span class="row-label">People referred</span><span class="row-val accent" id="refCount">—</span></div>
+        <div class="row"><span class="row-label">Total ref earnings</span><span class="row-val gold" id="refEarn">— TON</span></div>
+      </div>
+    </div>
+
+    <!-- PAYOUT WALLET -->
+    <div class="pane" id="pane-payout">
+      <div class="card">
+        <h2>💳 Payout wallet</h2>
+        <p class="mut" style="font-size:13px;margin-bottom:16px">Where your quarterly payout will be sent. Must be a TON wallet (UQ.../EQ... or raw 0:hex). You can change it anytime before payout.</p>
+        <input class="input" id="walletInput" placeholder="UQ... or EQ... or 0:hex">
+        <button class="btn" onclick="saveWallet()" style="margin-top:12px">Save wallet</button>
+        <div id="walletMsg"></div>
+        <div class="row" style="margin-top:20px"><span class="row-label">Current wallet</span><span class="row-val" id="walletCurrent">not set</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Multi-source auth token lookup: localStorage → cookie → Telegram WebApp
+function getCookieVal(name) {
+  var m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+  return m ? decodeURIComponent(m[1]) : null;
+}
+let token = localStorage.getItem('tg_token') || getCookieVal('tg_token');
+
+// If opened inside Telegram WebApp, try to auth via initData (auto-login)
+if (!token && window.Telegram && window.Telegram.WebApp) {
+  const initData = window.Telegram.WebApp.initData;
+  if (initData) {
+    // Fire auto-auth request (non-blocking; user sees loader meanwhile)
+    fetch('/api/auth/telegram-webapp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ initData }),
+    }).then(r => r.json()).then(data => {
+      if (data.ok && data.token) {
+        localStorage.setItem('tg_token', data.token);
+        location.reload();
+      }
+    }).catch(() => {});
+  }
+}
+
+// Auto-redirect to Studio if no token — user logs in there, then returns
+const AUTO_REDIRECT_MS = 4000;
+if (!token) {
+  document.getElementById('loginGate').style.display = 'block';
+  let cd = AUTO_REDIRECT_MS / 1000;
+  const cdEl = document.createElement('div');
+  cdEl.style.cssText = 'margin-top:14px;color:#8a8aa0;font-size:13px';
+  cdEl.textContent = 'Redirecting to Studio in ' + cd + 's...';
+  document.querySelector('.login-box').appendChild(cdEl);
+  const interval = setInterval(() => {
+    cd--;
+    if (cd <= 0) {
+      clearInterval(interval);
+      location.href = '/studio.html';
+    } else {
+      cdEl.textContent = 'Redirecting to Studio in ' + cd + 's...';
+    }
+  }, 1000);
+} else {
+  document.getElementById('mainWrap').style.display = 'block';
+  boot();
+}
+
+const LEVEL_NAMES = {1:'Newbie',2:'Tester',3:'Active',4:'Expert',5:'Master',6:'Legend'};
+const LEVEL_THRESHOLDS = [0,50,150,400,800,1500];
+
+function escapeHtml(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c])}
+async function api(method, url, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json', 'X-Auth-Token': token } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(url, opts);
+  if (r.status === 401) { localStorage.removeItem('tg_token'); location.href = '/studio.html'; throw new Error('Unauthorized'); }
+  return r.json();
+}
+function fmt(n, d=0){return Number(n||0).toLocaleString('en-US',{maximumFractionDigits:d})}
+function fmtTon(n){return fmt(n, 2) + ' TON'}
+
+// Tab switching
+document.querySelectorAll('.tab').forEach(t => {
+  t.onclick = () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.pane').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById('pane-' + t.dataset.pane).classList.add('active');
+    if (t.dataset.pane === 'leaderboard') loadLeaderboard();
+    if (t.dataset.pane === 'snapshots') loadSnapshots();
+  };
+});
+
+async function boot() {
+  await Promise.all([loadProfile(), loadRef(), loadWallet()]);
+}
+
+async function loadProfile() {
+  try {
+    const j = await api('GET', '/api/tester/profile');
+    if (!j.ok) {
+      document.getElementById('xpNum').textContent = '—';
+      document.getElementById('lvlPill').textContent = j.error || 'Not a tester';
+      return;
+    }
+    const p = j.profile;
+    document.getElementById('xpNum').textContent = fmt(p.xp);
+    document.getElementById('multNum').textContent = '×' + p.effectiveMultiplier;
+    document.getElementById('shareNum').textContent = (j.sharePercent || 0).toFixed(2) + '%';
+    document.getElementById('shareHint').textContent = 'of ' + fmt(j.totalEffectiveXp) + ' effective XP';
+
+    const lvl = p.level;
+    const pill = document.getElementById('lvlPill');
+    pill.className = 'level-pill lvl-' + lvl;
+    pill.textContent = (LEVEL_NAMES[lvl] || '—') + ' · Lv.' + lvl;
+
+    document.getElementById('profLevel').textContent = (LEVEL_NAMES[lvl] || '') + ' (Lv.' + lvl + ')';
+    const nextThr = LEVEL_THRESHOLDS[lvl] || null;
+    if (nextThr && p.xp < nextThr) {
+      const prevThr = LEVEL_THRESHOLDS[lvl-1] || 0;
+      const pct = Math.min(100, ((p.xp - prevThr) / (nextThr - prevThr)) * 100);
+      document.getElementById('profNext').textContent = nextThr + ' XP (' + (nextThr - p.xp) + ' to go)';
+      document.getElementById('profBar').style.width = pct + '%';
+    } else {
+      document.getElementById('profNext').textContent = 'Max level 👑';
+      document.getElementById('profBar').style.width = '100%';
+    }
+
+    if (p.effectiveMultiplier < p.baseMultiplier) {
+      document.getElementById('multHint').textContent = 'Decayed from ×' + p.baseMultiplier + ' — earn XP to restore';
+    } else {
+      document.getElementById('multHint').textContent = 'Base multiplier (active)';
+    }
+
+    document.getElementById('profEff').textContent = fmt(p.effectiveXp);
+    document.getElementById('profCount').textContent = j.testerCount + ' testers';
+    document.getElementById('profFirstSnap').textContent = j.firstSnapshotDate;
+    document.getElementById('projPayout').textContent = fmtTon(j.projectedAnnualTonAt10k) + ' / year';
+  } catch(e) {
+    console.error(e);
+  }
+}
+
+async function loadLeaderboard() {
+  try {
+    const j = await api('GET', '/api/tester/leaderboard?limit=50');
+    if (!j.ok) return;
+    const body = document.getElementById('lbBody');
+    body.innerHTML = (j.leaderboard || []).map((r, i) => {
+      const rank = i + 1;
+      const rankCls = rank <= 3 ? 'top-' + rank : '';
+      const name = r.username ? '@' + escapeHtml(r.username) : 'Tester #' + r.userId;
+      const lvlEmoji = r.level >= 6 ? '🏆' : r.level >= 5 ? '👑' : r.level >= 4 ? '💎' : r.level >= 3 ? '🔥' : r.level >= 2 ? '⚡' : '🧪';
+      return `
+        <div class="lb-row">
+          <span class="lb-rank ${rankCls}">#${rank}</span>
+          <span class="lb-user">${lvlEmoji} ${name}</span>
+          <span class="lb-xp">${fmt(r.effectiveXp)}</span>
+          <span class="lb-mult">×${r.effectiveMultiplier}</span>
+        </div>
+      `;
+    }).join('') || '<div class="empty">No testers yet</div>';
+  } catch(e) { console.error(e); }
+}
+
+async function loadSnapshots() {
+  try {
+    const j = await api('GET', '/api/tester/snapshots');
+    const body = document.getElementById('snapBody');
+    if (!j.ok || !j.snapshots || j.snapshots.length === 0) {
+      body.innerHTML = '<div class="empty">No snapshots yet. First one: 1 May 2026 at 00:00 MSK.</div>';
+      return;
+    }
+    body.innerHTML = j.snapshots.map(s => {
+      const d = new Date(s.snapshot_date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+      return `
+        <div class="snap-row">
+          <span>${d}</span>
+          <span>Lv.${s.level}</span>
+          <span>${fmt(s.xp)}</span>
+          <span class="mut">×${s.multiplier}</span>
+          <span style="text-align:right;color:#00aaff;font-weight:600">${fmt(s.effective_xp)}</span>
+        </div>
+      `;
+    }).join('');
+  } catch(e) { console.error(e); }
+}
+
+async function loadRef() {
+  try {
+    const j = await api('GET', '/api/tester/ref-link');
+    if (!j.ok) return;
+    document.getElementById('refUrl').value = j.url;
+    document.getElementById('refCode').textContent = j.code;
+    document.getElementById('refCount').textContent = j.refCount + ' people';
+    document.getElementById('refEarn').textContent = fmtTon(j.totalRefEarningsTon);
+  } catch(e) { console.error(e); }
+}
+
+function copyRef() {
+  const inp = document.getElementById('refUrl');
+  inp.select();
+  try {
+    navigator.clipboard.writeText(inp.value);
+    const m = document.getElementById('refMsg');
+    m.className = 'msg ok';
+    m.textContent = '✓ Copied to clipboard';
+    setTimeout(() => { m.className=''; m.textContent=''; }, 2000);
+  } catch {}
+}
+
+async function loadWallet() {
+  try {
+    const j = await api('GET', '/api/tester/payout-wallet');
+    if (j.ok && j.wallet) {
+      document.getElementById('walletInput').value = j.wallet;
+      document.getElementById('walletCurrent').textContent = j.wallet.slice(0, 8) + '…' + j.wallet.slice(-6);
+    }
+  } catch(e) { console.error(e); }
+}
+
+async function saveWallet() {
+  const wallet = document.getElementById('walletInput').value.trim();
+  const m = document.getElementById('walletMsg');
+  if (!wallet) { m.className='msg err'; m.textContent='Wallet required'; return; }
+  try {
+    const j = await api('POST', '/api/tester/payout-wallet', { wallet });
+    if (j.ok) {
+      m.className='msg ok';
+      m.textContent='✓ Wallet saved';
+      document.getElementById('walletCurrent').textContent = wallet.slice(0,8)+'…'+wallet.slice(-6);
+    } else {
+      m.className='msg err';
+      m.textContent=j.error || 'Failed';
+    }
+  } catch(e) {
+    m.className='msg err';
+    m.textContent='Error: ' + e.message;
+  }
+}
+</script>
+</body>
+</html>

@@ -1,54 +1,79 @@
 /**
- * crew-system.ts — Multi-agent crew orchestration.
+ * crew-system.ts — Multi-agent crew orchestration v2.
  *
- * Allows 2-5 agents to collaborate via sequential, parallel or conditional flows.
- * Shared memory (in-memory + DB persistence), execution history, CRUD for crews.
+ * Capabilities:
+ *   - Sequential / Parallel / Conditional / Manager flows
+ *   - Nested crews: a "member" of a crew can be another crew (sub-network)
+ *   - Roles drive behavior via ROLE_PROFILES system-prompt injection
+ *   - Manager flow: a manager LLM agent reads the roster + jobDescriptions and
+ *     decides on each round which subordinate gets which subtask
+ *   - Shared memory (in-memory, per-crew, with namespaces)
+ *   - DB persistence (crews + crew_executions)
+ *   - Cycle/depth protection for nested crews
  */
 
 import { randomUUID } from 'crypto';
 import { Pool } from 'pg';
+import { ROLE_PROFILES } from '../agents/role-profiles';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════
 
-export type CrewAgentRole = 'manager' | 'researcher' | 'executor' | 'validator' | 'monitor';
+/** Roles supported in crews. Aligned with role-profiles.ts. */
+export type CrewAgentRole =
+  | 'manager' | 'director' | 'specialist' | 'worker'
+  | 'monitor' | 'creative' | 'trader' | 'admin'
+  // Legacy aliases — accepted for back-compat
+  | 'researcher' | 'executor' | 'validator';
 
-export type FlowType = 'sequential' | 'parallel' | 'conditional';
+const ROLE_ALIASES: Record<string, string> = {
+  researcher: 'specialist',
+  executor: 'worker',
+  validator: 'monitor',
+};
+
+export type FlowType = 'sequential' | 'parallel' | 'conditional' | 'manager';
 
 export interface FlowCondition {
-  /** Field path in previous agent output to evaluate (e.g. "status") */
   field: string;
-  /** Operator for comparison */
   operator: 'eq' | 'neq' | 'contains' | 'gt' | 'lt' | 'exists';
-  /** Value to compare against (not needed for 'exists') */
   value?: any;
-  /** Agent index to run when condition is TRUE */
   thenAgent: number;
-  /** Agent index to run when condition is FALSE */
   elseAgent: number;
 }
 
 export interface FlowConfig {
   type: FlowType;
-  /** For conditional flow: condition to evaluate on the output of the previous step */
+  /** Conditional only */
   conditions?: FlowCondition[];
+  /** Manager flow only — index in agents[] that plays the manager. Default 0. */
+  managerIndex?: number;
+  /** Manager flow only — max delegation rounds. Default 4. */
+  maxRounds?: number;
 }
 
-export interface CrewAgent {
-  /** Reference to an existing agent ID on the platform */
-  agentId: number;
+export interface CrewMember {
+  /** Reference to a platform agent. Either this OR nestedCrewId must be set. */
+  agentId?: number;
+  /** Reference to another crew used as a sub-network. */
+  nestedCrewId?: string;
   role: CrewAgentRole;
-  /** Optional label shown in logs */
+  /** Human label shown in logs and to the manager during delegation */
   label?: string;
+  /** What this member is good at — used by manager to choose. */
+  jobDescription?: string;
 }
+
+/** Back-compat alias for the previous API */
+export type CrewAgent = CrewMember;
 
 export interface CrewDefinition {
   id: string;
   userId: number;
   name: string;
   description?: string;
-  agents: CrewAgent[];
+  agents: CrewMember[];
   flow: FlowConfig;
   createdAt: Date;
   updatedAt: Date;
@@ -61,18 +86,34 @@ export interface CrewExecution {
   input: any;
   output: any;
   status: 'running' | 'completed' | 'failed';
-  /** Per-agent results keyed by step index */
   stepResults: Record<string, any>;
+  memberStatuses?: MemberStatus[];
   error?: string;
   startedAt: Date;
   finishedAt: Date | null;
 }
 
-/** Callback that the execution engine invokes to run a single agent */
+/** Options the engine passes when invoking a single agent */
+export interface RunAgentOptions {
+  /** Crew-level role (drives prompt injection). */
+  role: CrewAgentRole;
+  /** Optional label, e.g. "lead researcher". */
+  label?: string;
+  /** What this agent is responsible for in the crew. */
+  jobDescription?: string;
+  /** Specific subtask from the manager (or step). */
+  subtask?: string;
+  /** Crew metadata (id, name, step index, etc.). */
+  crewContext: Record<string, any>;
+  /** Userspace context (e.g., user_id for state access). */
+  userId: number;
+}
+
+/** Caller-provided agent invocation function */
 export type RunAgentFn = (
   agentId: number,
   input: any,
-  context?: Record<string, any>,
+  opts: RunAgentOptions,
 ) => Promise<any>;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -80,27 +121,20 @@ export type RunAgentFn = (
 // ═══════════════════════════════════════════════════════════════════════════
 
 let _pool: Pool | null = null;
-
 function pool(): Pool {
   if (!_pool) throw new Error('[CrewSystem] Not initialised — call initCrewSystem(pool) first');
   return _pool;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// SHARED MEMORY  (in-memory, per-crew, namespace support, 100 key cap)
-// ═══════════════════════════════════════════════════════════════════════════
-
+// Shared memory (in-memory, per-crew, namespace support)
 const MAX_KEYS_PER_NS = 100;
 const MAX_CREWS = 500;
 const MAX_NAMESPACES_PER_CREW = 50;
-const MAX_VALUE_SIZE = 10 * 1024; // 10 KB
-
-/** crewId → namespace → key → value */
+const MAX_VALUE_SIZE = 10 * 1024;
 const sharedMem = new Map<string, Map<string, Map<string, any>>>();
 
 function nsMap(crewId: string, namespace: string): Map<string, any> {
   if (!sharedMem.has(crewId)) {
-    // Evict oldest crew if at limit
     if (sharedMem.size >= MAX_CREWS) {
       const oldest = sharedMem.keys().next().value;
       if (oldest !== undefined) sharedMem.delete(oldest);
@@ -123,21 +157,18 @@ export function getSharedMemory(crewId: string, namespace: string, key: string):
 }
 
 export function setSharedMemory(crewId: string, namespace: string, key: string, value: any): void {
-  // Enforce value size limit
   const serialized = typeof value === 'string' ? value : JSON.stringify(value);
   if (serialized && serialized.length > MAX_VALUE_SIZE) {
     throw new Error(`Shared memory value too large (${serialized.length} bytes, max ${MAX_VALUE_SIZE})`);
   }
   const ns = nsMap(crewId, namespace);
   if (!ns.has(key) && ns.size >= MAX_KEYS_PER_NS) {
-    // Evict oldest entry (first inserted)
     const oldest = ns.keys().next().value;
     if (oldest !== undefined) ns.delete(oldest);
   }
   ns.set(key, value);
 }
 
-/** Wipe all shared memory for a crew (call after deletion) */
 export function clearSharedMemory(crewId: string): void {
   sharedMem.delete(crewId);
 }
@@ -148,7 +179,6 @@ export function clearSharedMemory(crewId: string): void {
 
 export async function initCrewSystem(pgPool: Pool): Promise<void> {
   _pool = pgPool;
-
   await pgPool.query(`
     CREATE TABLE IF NOT EXISTS builder_bot.crews (
       id          TEXT PRIMARY KEY,
@@ -161,7 +191,6 @@ export async function initCrewSystem(pgPool: Pool): Promise<void> {
       updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
-
   await pgPool.query(`
     CREATE TABLE IF NOT EXISTS builder_bot.crew_executions (
       id            TEXT PRIMARY KEY,
@@ -171,19 +200,23 @@ export async function initCrewSystem(pgPool: Pool): Promise<void> {
       output        JSONB,
       status        TEXT NOT NULL DEFAULT 'running',
       step_results  JSONB NOT NULL DEFAULT '{}',
+      member_statuses JSONB NOT NULL DEFAULT '[]',
       error         TEXT,
       started_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       finished_at   TIMESTAMPTZ
     );
   `);
-
+  // Live monitor: member_statuses[] = [{step_index, member_label, agent_id,
+  //   nested_crew_id?, role, status: 'pending'|'running'|'completed'|'failed',
+  //   started_at?, finished_at?, error?, output_preview?}]
+  // Updated in-place during execution so /api/crews/:id/executions/:execId
+  // can poll progress live.
   await pgPool.query(`
-    CREATE INDEX IF NOT EXISTS idx_crews_user ON builder_bot.crews (user_id);
+    ALTER TABLE builder_bot.crew_executions
+      ADD COLUMN IF NOT EXISTS member_statuses JSONB NOT NULL DEFAULT '[]'
   `);
-  await pgPool.query(`
-    CREATE INDEX IF NOT EXISTS idx_crew_exec_crew ON builder_bot.crew_executions (crew_id);
-  `);
-
+  await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_crews_user ON builder_bot.crews (user_id);`);
+  await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_crew_exec_crew ON builder_bot.crew_executions (crew_id);`);
   console.log('[CrewSystem] Tables ready');
 }
 
@@ -191,16 +224,27 @@ export async function initCrewSystem(pgPool: Pool): Promise<void> {
 // CRUD
 // ═══════════════════════════════════════════════════════════════════════════
 
+function validateMembers(agents: CrewMember[]): void {
+  if (!Array.isArray(agents) || agents.length < 1 || agents.length > 20) {
+    throw new Error('Crew must have 1-20 members');
+  }
+  for (const a of agents) {
+    const hasAgent = a.agentId !== undefined && a.agentId !== null;
+    const hasNested = !!a.nestedCrewId;
+    if (hasAgent === hasNested) {
+      throw new Error('Each member must have exactly one of agentId or nestedCrewId');
+    }
+  }
+}
+
 export async function createCrew(def: {
   userId: number;
   name: string;
   description?: string;
-  agents: CrewAgent[];
+  agents: CrewMember[];
   flow: FlowConfig;
 }): Promise<string> {
-  if (def.agents.length < 2 || def.agents.length > 5) {
-    throw new Error('Crew must have 2-5 agents');
-  }
+  validateMembers(def.agents);
   const id = randomUUID();
   await pool().query(
     `INSERT INTO builder_bot.crews (id, user_id, name, description, agents, flow)
@@ -214,6 +258,19 @@ export async function getCrew(crewId: string, userId: number): Promise<CrewDefin
   const res = await pool().query(
     `SELECT * FROM builder_bot.crews WHERE id = $1 AND user_id = $2`,
     [crewId, userId],
+  );
+  return res.rows[0] ? rowToCrew(res.rows[0]) : null;
+}
+
+/**
+ * Get crew for nested traversal. SECURITY: still scopes by ownerUserId so a
+ * crew can't reference another user's crew via nestedCrewId (cross-tenant
+ * leak). The owner is the user who triggered the root execution.
+ */
+async function getCrewForNested(crewId: string, ownerUserId: number): Promise<CrewDefinition | null> {
+  const res = await pool().query(
+    `SELECT * FROM builder_bot.crews WHERE id = $1 AND user_id = $2`,
+    [crewId, ownerUserId],
   );
   return res.rows[0] ? rowToCrew(res.rows[0]) : null;
 }
@@ -246,20 +303,16 @@ export async function updateCrew(
   const sets: string[] = [];
   const vals: any[] = [];
   let idx = 1;
-
   if (patch.name !== undefined) { sets.push(`name = $${idx++}`); vals.push(patch.name); }
   if (patch.description !== undefined) { sets.push(`description = $${idx++}`); vals.push(patch.description); }
   if (patch.agents !== undefined) {
-    if (patch.agents.length < 2 || patch.agents.length > 5) throw new Error('Crew must have 2-5 agents');
+    validateMembers(patch.agents);
     sets.push(`agents = $${idx++}`); vals.push(JSON.stringify(patch.agents));
   }
   if (patch.flow !== undefined) { sets.push(`flow = $${idx++}`); vals.push(JSON.stringify(patch.flow)); }
-
   if (sets.length === 0) return false;
-
   sets.push(`updated_at = NOW()`);
   vals.push(crewId, userId);
-
   const res = await pool().query(
     `UPDATE builder_bot.crews SET ${sets.join(', ')} WHERE id = $${idx++} AND user_id = $${idx}`,
     vals,
@@ -270,7 +323,7 @@ export async function updateCrew(
 function rowToCrew(r: any): CrewDefinition {
   return {
     id: r.id,
-    userId: r.user_id,
+    userId: Number(r.user_id),
     name: r.name,
     description: r.description,
     agents: typeof r.agents === 'string' ? JSON.parse(r.agents) : r.agents,
@@ -293,25 +346,32 @@ export async function getCrewExecutions(crewId: string, limit: number = 20): Pro
 }
 
 function rowToExec(r: any): CrewExecution {
+  const parseMaybeJson = (v: any) => typeof v === 'string' ? (() => { try { return JSON.parse(v); } catch { return v; } })() : v;
   return {
     id: r.id,
     crewId: r.crew_id,
-    userId: r.user_id,
+    userId: Number(r.user_id),
     input: r.input,
     output: r.output,
     status: r.status,
-    stepResults: typeof r.step_results === 'string' ? JSON.parse(r.step_results) : r.step_results,
+    stepResults: parseMaybeJson(r.step_results) || {},
+    memberStatuses: parseMaybeJson(r.member_statuses) || [],
     error: r.error,
     startedAt: r.started_at,
     finishedAt: r.finished_at,
   };
 }
 
+export async function getCrewExecution(execId: string, userId: number): Promise<CrewExecution | null> {
+  const res = await pool().query(
+    `SELECT * FROM builder_bot.crew_executions WHERE id = $1 AND user_id = $2`,
+    [execId, userId],
+  );
+  return res.rows[0] ? rowToExec(res.rows[0]) : null;
+}
+
 async function insertExecution(exec: {
-  id: string;
-  crewId: string;
-  userId: number;
-  input: any;
+  id: string; crewId: string; userId: number; input: any;
 }): Promise<void> {
   await pool().query(
     `INSERT INTO builder_bot.crew_executions (id, crew_id, user_id, input, status)
@@ -336,43 +396,162 @@ async function finishExecution(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// LIVE PROGRESS TRACKER
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Each `executeCrew` run gets one ProgressTracker. invokeMember calls
+// .markStarted(stepIndex, member) and .markFinished(stepIndex, result|error).
+// Tracker batches writes (throttle ~300ms) so a parallel flow of 10 agents
+// produces ~1 SQL UPDATE per burst, not 20.
+// ───────────────────────────────────────────────────────────────────────────
+
+export interface MemberStatus {
+  step_index: number;
+  member_label: string;
+  agent_id?: number | null;
+  nested_crew_id?: string | null;
+  role: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  started_at?: string;
+  finished_at?: string;
+  error?: string | null;
+  output_preview?: string | null;
+}
+
+class ProgressTracker {
+  private statuses = new Map<number, MemberStatus>();
+  private flushTimer: NodeJS.Timeout | null = null;
+  private dirty = false;
+  private throttleMs = 300;
+
+  constructor(private execId: string) {}
+
+  seedFromCrew(crew: CrewDefinition): void {
+    crew.agents.forEach((m, i) => {
+      this.statuses.set(i, {
+        step_index: i,
+        member_label: m.label || (m.nestedCrewId ? `nested:${m.nestedCrewId.slice(0, 8)}` : `agent_${i}`),
+        agent_id: m.agentId ?? null,
+        nested_crew_id: m.nestedCrewId ?? null,
+        role: m.role,
+        status: 'pending',
+      });
+    });
+    this.dirty = true;
+    this.scheduleFlush();
+  }
+
+  markStarted(stepIndex: number, member: CrewMember): void {
+    const existing = this.statuses.get(stepIndex) || {
+      step_index: stepIndex,
+      member_label: member.label || `agent_${stepIndex}`,
+      agent_id: member.agentId ?? null,
+      nested_crew_id: member.nestedCrewId ?? null,
+      role: member.role,
+      status: 'pending',
+    };
+    existing.status = 'running';
+    existing.started_at = new Date().toISOString();
+    existing.error = null;
+    this.statuses.set(stepIndex, existing);
+    this.dirty = true;
+    this.scheduleFlush();
+  }
+
+  markFinished(stepIndex: number, result: any, error?: string | null): void {
+    const existing = this.statuses.get(stepIndex);
+    if (!existing) return;
+    existing.status = error ? 'failed' : 'completed';
+    existing.finished_at = new Date().toISOString();
+    existing.error = error || null;
+    if (!error) {
+      // Short preview so UI can show "what did agent return"
+      try {
+        const s = typeof result === 'string' ? result : JSON.stringify(result);
+        existing.output_preview = s ? s.slice(0, 400) : null;
+      } catch { existing.output_preview = null; }
+    }
+    this.statuses.set(stepIndex, existing);
+    this.dirty = true;
+    this.scheduleFlush();
+  }
+
+  private scheduleFlush(): void {
+    if (this.flushTimer) return;
+    this.flushTimer = setTimeout(() => {
+      this.flushTimer = null;
+      void this.flush();
+    }, this.throttleMs);
+  }
+
+  async flush(): Promise<void> {
+    if (!this.dirty) return;
+    this.dirty = false;
+    const arr = Array.from(this.statuses.values()).sort((a, b) => a.step_index - b.step_index);
+    try {
+      await pool().query(
+        `UPDATE builder_bot.crew_executions SET member_statuses = $2 WHERE id = $1`,
+        [this.execId, JSON.stringify(arr)],
+      );
+    } catch (e: any) {
+      console.warn(`[CrewProgress] flush failed: ${e?.message}`);
+    }
+  }
+
+  async flushFinal(): Promise<void> {
+    if (this.flushTimer) { clearTimeout(this.flushTimer); this.flushTimer = null; }
+    this.dirty = true;
+    await this.flush();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // EXECUTION ENGINE
 // ═══════════════════════════════════════════════════════════════════════════
+
+const MAX_NESTED_DEPTH = 4;
+
+interface ExecEnv {
+  runAgent: RunAgentFn;
+  /** Stack of crew IDs we're currently in (for cycle detection). */
+  ancestry: string[];
+  /** Top-level user. Owner-scoped operations use this. */
+  userId: number;
+  /** Live status tracker — null for nested crews (top-level only). */
+  tracker?: ProgressTracker | null;
+}
 
 export async function executeCrew(
   crewId: string,
   userId: number,
   input: any,
   runAgent: RunAgentFn,
+  opts?: { execId?: string },
 ): Promise<CrewExecution> {
   const crew = await getCrew(crewId, userId);
   if (!crew) throw new Error(`Crew ${crewId} not found`);
 
-  const execId = randomUUID();
-  await insertExecution({ id: execId, crewId, userId, input });
+  const execId = opts?.execId || randomUUID();
+  // If the caller pre-inserted the exec row (async API), skip the insert.
+  if (!opts?.execId) {
+    await insertExecution({ id: execId, crewId, userId, input });
+  }
 
   const stepResults: Record<string, any> = {};
   let finalOutput: any = null;
   let error: string | undefined;
+  const tracker = new ProgressTracker(execId);
+  tracker.seedFromCrew(crew);
+  const env: ExecEnv = { runAgent, ancestry: [crewId], userId, tracker };
 
   try {
-    switch (crew.flow.type) {
-      case 'sequential':
-        finalOutput = await executeSequential(crew, input, runAgent, stepResults);
-        break;
-      case 'parallel':
-        finalOutput = await executeParallel(crew, input, runAgent, stepResults);
-        break;
-      case 'conditional':
-        finalOutput = await executeConditional(crew, input, runAgent, stepResults);
-        break;
-      default:
-        throw new Error(`Unknown flow type: ${(crew.flow as any).type}`);
-    }
+    finalOutput = await runCrewByDef(crew, input, stepResults, env);
+    await tracker.flushFinal();
     await finishExecution(execId, 'completed', finalOutput, stepResults);
   } catch (err: any) {
     error = err?.message || String(err);
     finalOutput = { error };
+    await tracker.flushFinal();
     await finishExecution(execId, 'failed', finalOutput, stepResults, error);
   }
 
@@ -390,141 +569,365 @@ export async function executeCrew(
   };
 }
 
-// ── Sequential: A → B → C, each gets previous output ──
-
-async function executeSequential(
+async function runCrewByDef(
   crew: CrewDefinition,
   input: any,
-  runAgent: RunAgentFn,
   stepResults: Record<string, any>,
+  env: ExecEnv,
 ): Promise<any> {
-  let current = input;
-
-  for (let i = 0; i < crew.agents.length; i++) {
-    const agent = crew.agents[i];
-    const ctx = buildContext(crew, i, current);
-    const result = await runAgent(agent.agentId, current, ctx);
-    stepResults[`step_${i}`] = { agentId: agent.agentId, role: agent.role, label: agent.label, result };
-    // Store in shared memory so other agents can access
-    setSharedMemory(crew.id, 'steps', `step_${i}`, result);
-    current = result;
+  switch (crew.flow.type) {
+    case 'sequential':  return executeSequential(crew, input, stepResults, env);
+    case 'parallel':    return executeParallel(crew, input, stepResults, env);
+    case 'conditional': return executeConditional(crew, input, stepResults, env);
+    case 'manager':     return executeManager(crew, input, stepResults, env);
+    default:            throw new Error(`Unknown flow type: ${(crew.flow as any).type}`);
   }
-
-  return current;
 }
 
-// ── Parallel: A + B + C simultaneously, results merged ──
-
-async function executeParallel(
+/** Invoke a crew member — dispatches to agent or nested crew.
+ *  Wraps with ProgressTracker so live monitor sees status transitions. */
+async function invokeMember(
   crew: CrewDefinition,
+  member: CrewMember,
+  stepIndex: number,
   input: any,
-  runAgent: RunAgentFn,
-  stepResults: Record<string, any>,
+  subtask: string | undefined,
+  env: ExecEnv,
 ): Promise<any> {
-  const promises = crew.agents.map((agent, i) => {
-    const ctx = buildContext(crew, i, input);
-    return runAgent(agent.agentId, input, ctx)
-      .then((result) => ({ i, agent, result, error: null as string | null }))
-      .catch((err) => ({ i, agent, result: null, error: err?.message || String(err) }));
-  });
-
-  const settled = await Promise.all(promises);
-  const merged: Record<string, any> = {};
-
-  for (const s of settled) {
-    const key = s.agent.label || `agent_${s.i}`;
-    stepResults[`step_${s.i}`] = {
-      agentId: s.agent.agentId,
-      role: s.agent.role,
-      label: s.agent.label,
-      result: s.result,
-      error: s.error,
-    };
-    setSharedMemory(crew.id, 'steps', `step_${s.i}`, s.result);
-    merged[key] = s.error ? { error: s.error } : s.result;
+  if (env.tracker) env.tracker.markStarted(stepIndex, member);
+  try {
+    const out = await _invokeMemberInner(crew, member, stepIndex, input, subtask, env);
+    if (env.tracker) env.tracker.markFinished(stepIndex, out, null);
+    return out;
+  } catch (err: any) {
+    const msg = err?.message || String(err);
+    if (env.tracker) env.tracker.markFinished(stepIndex, null, msg);
+    throw err;
   }
-
-  return merged;
 }
 
-// ── Conditional: evaluate condition on step output, branch accordingly ──
-
-async function executeConditional(
+async function _invokeMemberInner(
   crew: CrewDefinition,
+  member: CrewMember,
+  stepIndex: number,
   input: any,
-  runAgent: RunAgentFn,
-  stepResults: Record<string, any>,
+  subtask: string | undefined,
+  env: ExecEnv,
 ): Promise<any> {
-  if (!crew.flow.conditions || crew.flow.conditions.length === 0) {
-    throw new Error('Conditional flow requires at least one condition');
-  }
-
-  // First agent always runs (the "evaluator")
-  const first = crew.agents[0];
-  const ctx0 = buildContext(crew, 0, input);
-  const firstResult = await runAgent(first.agentId, input, ctx0);
-  stepResults['step_0'] = { agentId: first.agentId, role: first.role, label: first.label, result: firstResult };
-  setSharedMemory(crew.id, 'steps', 'step_0', firstResult);
-
-  let current = firstResult;
-
-  // Evaluate each condition in order
-  for (const cond of crew.flow.conditions) {
-    const matches = evaluateCondition(current, cond);
-    const nextIdx = matches ? cond.thenAgent : cond.elseAgent;
-
-    if (nextIdx < 0 || nextIdx >= crew.agents.length) {
-      throw new Error(`Condition references agent index ${nextIdx} but crew has ${crew.agents.length} agents`);
-    }
-
-    const agent = crew.agents[nextIdx];
-    const ctx = buildContext(crew, nextIdx, current);
-    const result = await runAgent(agent.agentId, current, ctx);
-    stepResults[`step_${nextIdx}`] = { agentId: agent.agentId, role: agent.role, label: agent.label, result };
-    setSharedMemory(crew.id, 'steps', `step_${nextIdx}`, result);
-    current = result;
-  }
-
-  return current;
-}
-
-// ── Helpers ──
-
-function buildContext(crew: CrewDefinition, stepIndex: number, currentInput: any): Record<string, any> {
-  return {
+  const role = (ROLE_ALIASES[member.role] || member.role) as CrewAgentRole;
+  const crewContext = {
     crewId: crew.id,
     crewName: crew.name,
     flowType: crew.flow.type,
     stepIndex,
     totalSteps: crew.agents.length,
-    input: currentInput,
+    ancestry: env.ancestry.slice(),
+  };
+
+  if (member.nestedCrewId) {
+    // Recursion guard
+    if (env.ancestry.includes(member.nestedCrewId)) {
+      throw new Error(`Cycle detected: nested crew ${member.nestedCrewId} is already in ancestry`);
+    }
+    if (env.ancestry.length >= MAX_NESTED_DEPTH) {
+      throw new Error(`Max nested-crew depth ${MAX_NESTED_DEPTH} exceeded`);
+    }
+    const nested = await getCrewForNested(member.nestedCrewId, env.userId);
+    if (!nested) throw new Error(`Nested crew ${member.nestedCrewId} not found or not owned by you`);
+    const subStepResults: Record<string, any> = {};
+    const subEnv: ExecEnv = {
+      runAgent: env.runAgent,
+      ancestry: env.ancestry.concat(member.nestedCrewId),
+      userId: env.userId,
+      // Nested crews run with their own indices — top-level tracker would
+      // collide. Skip tracking inside nested for now (parent step still
+      // shows running/completed at the nested-crew level).
+      tracker: null,
+    };
+    // Subtask becomes the input for the nested crew so manager-style delegation
+    // propagates through sub-networks naturally.
+    const nestedInput = subtask
+      ? { task: subtask, parentInput: input }
+      : input;
+    const out = await runCrewByDef(nested, nestedInput, subStepResults, subEnv);
+    // Surface nested step results into the parent log for transparency
+    return { __nested: { crewId: member.nestedCrewId, name: nested.name, steps: subStepResults, result: out }, ...wrapResult(out) };
+  }
+
+  // Regular agent member
+  if (member.agentId === undefined || member.agentId === null) {
+    throw new Error('Member has neither agentId nor nestedCrewId');
+  }
+  return env.runAgent(member.agentId, input, {
+    role,
+    label: member.label,
+    jobDescription: member.jobDescription,
+    subtask,
+    crewContext,
+    userId: env.userId,
+  });
+}
+
+function wrapResult(out: any): { result: any } {
+  return { result: out };
+}
+
+// ── Sequential: A → B → C, each gets previous output ──
+async function executeSequential(
+  crew: CrewDefinition,
+  input: any,
+  stepResults: Record<string, any>,
+  env: ExecEnv,
+): Promise<any> {
+  let current = input;
+  for (let i = 0; i < crew.agents.length; i++) {
+    const member = crew.agents[i];
+    const result = await invokeMember(crew, member, i, current, undefined, env);
+    stepResults[`step_${i}`] = stepRecord(member, result);
+    setSharedMemory(crew.id, 'steps', `step_${i}`, result);
+    current = result;
+  }
+  return current;
+}
+
+// ── Parallel: A + B + C simultaneously, results merged ──
+async function executeParallel(
+  crew: CrewDefinition,
+  input: any,
+  stepResults: Record<string, any>,
+  env: ExecEnv,
+): Promise<any> {
+  const promises = crew.agents.map((member, i) =>
+    invokeMember(crew, member, i, input, undefined, env)
+      .then((result) => ({ i, member, result, error: null as string | null }))
+      .catch((err) => ({ i, member, result: null as any, error: err?.message || String(err) })),
+  );
+  const settled = await Promise.all(promises);
+  const merged: Record<string, any> = {};
+  for (const s of settled) {
+    const key = s.member.label || `agent_${s.i}`;
+    stepResults[`step_${s.i}`] = stepRecord(s.member, s.result, s.error);
+    setSharedMemory(crew.id, 'steps', `step_${s.i}`, s.result);
+    merged[key] = s.error ? { error: s.error } : s.result;
+  }
+  return merged;
+}
+
+// ── Conditional: evaluate condition on step output, branch accordingly ──
+async function executeConditional(
+  crew: CrewDefinition,
+  input: any,
+  stepResults: Record<string, any>,
+  env: ExecEnv,
+): Promise<any> {
+  if (!crew.flow.conditions || crew.flow.conditions.length === 0) {
+    throw new Error('Conditional flow requires at least one condition');
+  }
+  const first = crew.agents[0];
+  const firstResult = await invokeMember(crew, first, 0, input, undefined, env);
+  stepResults['step_0'] = stepRecord(first, firstResult);
+  setSharedMemory(crew.id, 'steps', 'step_0', firstResult);
+  let current = firstResult;
+  for (const cond of crew.flow.conditions) {
+    const matches = evaluateCondition(current, cond);
+    const nextIdx = matches ? cond.thenAgent : cond.elseAgent;
+    if (nextIdx < 0 || nextIdx >= crew.agents.length) {
+      throw new Error(`Condition references agent index ${nextIdx} but crew has ${crew.agents.length} members`);
+    }
+    const member = crew.agents[nextIdx];
+    const result = await invokeMember(crew, member, nextIdx, current, undefined, env);
+    stepResults[`step_${nextIdx}`] = stepRecord(member, result);
+    setSharedMemory(crew.id, 'steps', `step_${nextIdx}`, result);
+    current = result;
+  }
+  return current;
+}
+
+// ── Manager: LLM-driven dynamic task distribution ──
+//
+// On each round the manager sees:
+//   • original input
+//   • roster (each subordinate's index, role, label, jobDescription)
+//   • previous results (compact)
+//
+// Manager must reply with one of:
+//   {"action": "delegate", "assignments": [{"index": N, "subtask": "..."}], "reasoning": "..."}
+//   {"action": "finish",   "answer": "..."}
+//
+// Engine executes all delegations in parallel, feeds results back, repeats
+// until manager calls "finish" or maxRounds is hit (default 4).
+async function executeManager(
+  crew: CrewDefinition,
+  input: any,
+  stepResults: Record<string, any>,
+  env: ExecEnv,
+): Promise<any> {
+  const managerIdx = crew.flow.managerIndex ?? 0;
+  const maxRounds = crew.flow.maxRounds ?? 4;
+  if (managerIdx < 0 || managerIdx >= crew.agents.length) {
+    throw new Error(`Invalid managerIndex ${managerIdx}`);
+  }
+  const manager = crew.agents[managerIdx];
+  const subordinates = crew.agents
+    .map((m, i) => ({ m, i }))
+    .filter(({ i }) => i !== managerIdx);
+
+  if (subordinates.length === 0) {
+    // Degenerate: only manager. Just run it solo.
+    const r = await invokeMember(crew, manager, managerIdx, input, undefined, env);
+    stepResults['manager_solo'] = stepRecord(manager, r);
+    return r;
+  }
+
+  const rosterText = subordinates.map(({ m, i }) =>
+    `  [${i}] role=${m.role}` +
+    (m.label ? ` label="${m.label}"` : '') +
+    (m.nestedCrewId ? ` type=sub-crew` : ' type=agent') +
+    (m.jobDescription ? ` — ${m.jobDescription}` : ''),
+  ).join('\n');
+
+  const history: Array<{ round: number; decision: any; results: Record<string, any> }> = [];
+
+  for (let round = 1; round <= maxRounds; round++) {
+    const historyText = history.length
+      ? history.map(h => `Round ${h.round} decision: ${JSON.stringify(h.decision).slice(0, 400)}\n` +
+                         `Round ${h.round} results:\n${
+                           Object.entries(h.results).map(([k, v]) =>
+                             `  [${k}] ${JSON.stringify(v).slice(0, 300)}`
+                           ).join('\n')
+                         }`).join('\n\n')
+      : '(none yet)';
+
+    const managerInstruction =
+      `You are the MANAGER of a crew that must solve the task below.\n\n` +
+      `TASK:\n${typeof input === 'string' ? input : JSON.stringify(input)}\n\n` +
+      `ROSTER (your subordinates):\n${rosterText}\n\n` +
+      `HISTORY:\n${historyText}\n\n` +
+      `ROUND ${round} / ${maxRounds}.\n\n` +
+      `Reply STRICTLY with one JSON object, no prose, no markdown fences:\n` +
+      `{"action":"delegate","assignments":[{"index":N,"subtask":"..."}],"reasoning":"..."}\n` +
+      `OR\n` +
+      `{"action":"finish","answer":"..."}\n\n` +
+      `Rules:\n` +
+      `- Delegate to multiple subordinates in one round when their work is independent (they run in parallel).\n` +
+      `- Pick the subordinate whose role/job best matches the subtask.\n` +
+      `- Use "finish" once you have enough info to answer the task. Don't burn rounds.\n` +
+      `- "answer" must be the final result for the user.`;
+
+    const decisionRaw = await invokeMember(crew, manager, managerIdx, managerInstruction, undefined, env);
+    stepResults[`manager_r${round}`] = stepRecord(manager, decisionRaw);
+
+    const decision = parseManagerDecision(decisionRaw);
+    if (!decision) {
+      // Manager went off-script — treat its raw text as a finish answer.
+      const final = typeof decisionRaw === 'string' ? decisionRaw : JSON.stringify(decisionRaw);
+      stepResults['manager_finish'] = { reason: 'unparseable_decision', raw: decisionRaw };
+      return final;
+    }
+
+    if (decision.action === 'finish') {
+      stepResults['manager_finish'] = { reason: 'manager_finish', round };
+      return decision.answer ?? '';
+    }
+
+    // Delegate phase — execute assignments in parallel
+    const assignments = decision.assignments || [];
+    if (assignments.length === 0) {
+      stepResults[`manager_r${round}_empty`] = decision;
+      continue;
+    }
+
+    const roundResults: Record<string, any> = {};
+    const tasks = assignments.map(async (a: { index: number; subtask: string }) => {
+      const idx = Number(a.index);
+      if (idx === managerIdx || idx < 0 || idx >= crew.agents.length) {
+        roundResults[`bad_idx_${idx}`] = { error: 'invalid subordinate index' };
+        return;
+      }
+      const sub = crew.agents[idx];
+      try {
+        const r = await invokeMember(crew, sub, idx, input, a.subtask, env);
+        roundResults[`sub_${idx}`] = r;
+        stepResults[`r${round}_sub_${idx}`] = stepRecord(sub, r);
+        setSharedMemory(crew.id, 'manager', `r${round}_sub_${idx}`, r);
+      } catch (err: any) {
+        const errMsg = err?.message || String(err);
+        roundResults[`sub_${idx}`] = { error: errMsg };
+        stepResults[`r${round}_sub_${idx}`] = stepRecord(sub, null, errMsg);
+      }
+    });
+    await Promise.all(tasks);
+
+    history.push({ round, decision, results: roundResults });
+  }
+
+  // Out of rounds — ask manager to summarize what we have
+  const summaryInstruction =
+    `You ran out of rounds. Based on the work so far, give the FINAL ANSWER to the user.\n\n` +
+    `TASK:\n${typeof input === 'string' ? input : JSON.stringify(input)}\n\n` +
+    `WORK DONE:\n${
+      history.map(h => Object.entries(h.results).map(([k, v]) =>
+        `[r${h.round} ${k}] ${JSON.stringify(v).slice(0, 400)}`).join('\n')).join('\n')
+    }\n\n` +
+    `Reply with the final answer as plain text. No JSON, no markdown.`;
+  const final = await invokeMember(crew, manager, managerIdx, summaryInstruction, undefined, env);
+  stepResults['manager_force_finish'] = stepRecord(manager, final);
+  return final;
+}
+
+function parseManagerDecision(raw: any): { action: 'delegate' | 'finish'; assignments?: any[]; answer?: string; reasoning?: string } | null {
+  let text: string;
+  if (typeof raw === 'string') text = raw;
+  else if (raw && typeof raw === 'object' && typeof (raw as any).reply === 'string') text = (raw as any).reply;
+  else { try { text = JSON.stringify(raw); } catch { return null; } }
+
+  // Try direct parse first
+  const direct = tryParseJson(text);
+  if (direct && (direct.action === 'delegate' || direct.action === 'finish')) return direct;
+
+  // Try to extract a JSON object from the text (manager may add prose)
+  const match = text.match(/\{[\s\S]*?"action"\s*:\s*"(?:delegate|finish)"[\s\S]*\}/);
+  if (match) {
+    const found = tryParseJson(match[0]);
+    if (found && (found.action === 'delegate' || found.action === 'finish')) return found;
+  }
+  return null;
+}
+
+function tryParseJson(s: string): any {
+  try { return JSON.parse(s); } catch { return null; }
+}
+
+// ── Helpers ──
+
+function stepRecord(member: CrewMember, result: any, error?: string | null): any {
+  return {
+    agentId: member.agentId,
+    nestedCrewId: member.nestedCrewId,
+    role: member.role,
+    label: member.label,
+    jobDescription: member.jobDescription,
+    result,
+    error: error ?? undefined,
   };
 }
 
 function evaluateCondition(output: any, cond: FlowCondition): boolean {
   const val = extractField(output, cond.field);
-
   switch (cond.operator) {
-    case 'eq':
-      return val === cond.value;
-    case 'neq':
-      return val !== cond.value;
+    case 'eq':       return val === cond.value;
+    case 'neq':      return val !== cond.value;
     case 'contains':
       if (typeof val === 'string') return val.includes(String(cond.value));
       if (Array.isArray(val)) return val.includes(cond.value);
       return false;
-    case 'gt':
-      return typeof val === 'number' && val > Number(cond.value);
-    case 'lt':
-      return typeof val === 'number' && val < Number(cond.value);
-    case 'exists':
-      return val !== undefined && val !== null;
-    default:
-      return false;
+    case 'gt':       return typeof val === 'number' && val > Number(cond.value);
+    case 'lt':       return typeof val === 'number' && val < Number(cond.value);
+    case 'exists':   return val !== undefined && val !== null;
+    default:         return false;
   }
 }
 
-/** Dot-path field extractor: "a.b.c" → obj.a.b.c */
 function extractField(obj: any, path: string): any {
   if (obj == null || !path) return undefined;
   const parts = path.split('.');
@@ -534,4 +937,88 @@ function extractField(obj: any, path: string): any {
     cur = cur[p];
   }
   return cur;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DEFAULT RUN-AGENT IMPLEMENTATION
+//
+// Wires crew execution to the real agent runtime: loads agent from DB, builds
+// a role-aware system prompt (using ROLE_PROFILES), calls the agent's AI
+// provider with the input+subtask, returns the reply.
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function buildRolePrompt(role: CrewAgentRole, opts: {
+  label?: string;
+  jobDescription?: string;
+  crewContext: Record<string, any>;
+}): string {
+  const normalized = (ROLE_ALIASES[role] || role) as string;
+  const profile = ROLE_PROFILES[normalized];
+  const roleBlock = profile
+    ? profile.systemPromptModule
+    : `[ROLE: ${role.toUpperCase()}] You are a member of a multi-agent crew.`;
+
+  const crewBlock =
+    `[CREW CONTEXT]\n` +
+    `Crew: ${opts.crewContext.crewName || opts.crewContext.crewId}\n` +
+    `Flow: ${opts.crewContext.flowType || 'unknown'}\n` +
+    `Step: ${(opts.crewContext.stepIndex ?? 0) + 1}/${opts.crewContext.totalSteps ?? '?'}\n` +
+    (opts.crewContext.ancestry?.length > 1
+      ? `Nested depth: ${opts.crewContext.ancestry.length} (you are inside a sub-crew)\n`
+      : '') +
+    (opts.label ? `Your label: ${opts.label}\n` : '') +
+    (opts.jobDescription ? `Your job in this crew: ${opts.jobDescription}\n` : '');
+
+  return `${roleBlock}\n\n${crewBlock}`;
+}
+
+/**
+ * Build the default RunAgentFn that:
+ *   1. Loads agent (name/description/code/config) from DB via the provided fetcher
+ *   2. Builds role-aware system prompt
+ *   3. Calls universalAgentChat for the actual AI call
+ *   4. Returns the reply text (plus newCode if AI produced one)
+ *
+ * Pass `loadAgent` to keep this file decoupled from the agents repo layer.
+ */
+export function buildDefaultRunAgent(loadAgent: (agentId: number, userId: number) => Promise<{
+  name: string;
+  description: string | null;
+  code: string;
+  agentType: string;
+  config: Record<string, any>;
+} | null>): RunAgentFn {
+  return async (agentId, input, opts) => {
+    const agent = await loadAgent(agentId, opts.userId);
+    if (!agent) {
+      throw new Error(`Agent #${agentId} not found or not accessible by user ${opts.userId}`);
+    }
+
+    const rolePrompt = buildRolePrompt(opts.role, {
+      label: opts.label,
+      jobDescription: opts.jobDescription,
+      crewContext: opts.crewContext,
+    });
+
+    const taskBody = opts.subtask
+      ? `SUBTASK FROM MANAGER:\n${opts.subtask}\n\nORIGINAL INPUT:\n${typeof input === 'string' ? input : JSON.stringify(input)}`
+      : (typeof input === 'string' ? input : JSON.stringify(input));
+
+    // Compose a richer "name+description" so the role prompt rides along
+    const effectiveDescription =
+      (agent.description ? agent.description + '\n\n' : '') + rolePrompt;
+
+    // Lazy import to avoid circular deps at module load time
+    const { universalAgentChat } = await import('../universal-agent-chat');
+    const out = await universalAgentChat({
+      agentName:        agent.name,
+      agentDescription: effectiveDescription,
+      agentCode:        agent.code || '',
+      agentType:        agent.agentType || 'ai',
+      config:           agent.config || {},
+      userMessage:      taskBody,
+    });
+
+    return out.reply;
+  };
 }

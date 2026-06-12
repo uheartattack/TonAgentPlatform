@@ -1,8 +1,15 @@
 {
   "name": "ton-agent-platform",
-  "version": "0.1.0",
+  "version": "2.2.0",
   "private": true,
-  "description": "No-code platform for AI agents on TON",
+  "description": "Autonomous AI agents for the TON blockchain — built in Telegram, no code required",
+  "author": "TON Agent Platform <support@tonagentplatform.com>",
+  "homepage": "https://tonagentplatform.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/spendollars/TonAgentPlatform"
+  },
+  "keywords": ["ton", "telegram", "ai-agents", "blockchain", "no-code", "autonomous-agents", "defi", "nft"],
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
@@ -30,7 +37,9 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "isolated-vm",
-      "better-sqlite3"
+      "better-sqlite3",
+      "onnxruntime-node",
+      "sharp"
     ]
   }
 }

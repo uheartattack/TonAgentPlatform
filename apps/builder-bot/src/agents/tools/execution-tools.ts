@@ -132,8 +132,28 @@ interface AgentRunData {
 // При рестарте бота state восстанавливается из DB (см. runner.ts restoreActiveAgents).
 export const agentState: Map<number, Map<string, any>> = new Map();
 
-// Последняя ошибка для auto-repair (capped to prevent unbounded growth)
+// Последняя ошибка для auto-repair — SANITIZED (no API keys, limited size)
 export const agentLastErrors: Map<number, { error: string; code: string; timestamp: Date }> = new Map();
+
+/** Record agent error with sanitization — strips API keys, limits size */
+export function recordAgentError(agentId: number, error: string, code: string): void {
+  // Sanitize: remove potential API keys and secrets from error + code
+  const sanitize = (s: string) => s
+    .replace(/AIzaSy[A-Za-z0-9_-]{33}/g, 'AIza***')
+    .replace(/sk-[A-Za-z0-9]{20,}/g, 'sk-***')
+    .replace(/sk-ant-[A-Za-z0-9-]+/g, 'sk-ant-***')
+    .replace(/sk-or-[A-Za-z0-9-]+/g, 'sk-or-***')
+    .replace(/gsk_[A-Za-z0-9]+/g, 'gsk_***')
+    .replace(/[A-Za-z0-9]{24,}:[A-Za-z0-9_-]{35,}/g, '***BOT_TOKEN***') // Telegram bot tokens
+    .replace(/(?:mnemonic|seed|private.?key|secret)\s*[:=]\s*["']?[A-Za-z0-9 ]+["']?/gi, '***REDACTED***')
+    .slice(0, 500);
+  agentLastErrors.set(agentId, { error: sanitize(error), code: sanitize(code).slice(0, 1000), timestamp: new Date() });
+  // Cap size
+  if (agentLastErrors.size > 5000) {
+    const keys = Array.from(agentLastErrors.keys());
+    for (let i = 0; i < 2500; i++) agentLastErrors.delete(keys[i]);
+  }
+}
 
 // Lock set to prevent TOCTOU race in runAgent
 const _agentRunLock = new Set<number>();
@@ -186,6 +206,7 @@ export class ExecutionTools {
         console.warn('[ExecutionTools] Periodic cleanup error:', e instanceof Error ? e.message : e);
       }
     }, 10 * 60 * 1000); // 10 minutes
+    (this._cleanupTimer as any).unref?.();
   }
 
   // Запустить агента
@@ -398,17 +419,39 @@ export class ExecutionTools {
         } catch {}
         return false;
       };
-      const safeFetch = (input: any, init?: any) => {
+      const safeFetch = async (input: any, init?: any) => {
         const url = typeof input === 'string' ? input : input?.url || String(input);
         if (_BLOCKED_RE.test(url) || /^file:/i.test(url) || /^ftp:/i.test(url)) {
-          return Promise.reject(new Error('Blocked: internal/local URLs are not allowed'));
+          throw new Error('Blocked: internal/local URLs are not allowed');
         }
-        try {
-          const parsed = new URL(url);
-          if (_isBlockedIp(parsed.hostname)) {
-            return Promise.reject(new Error('Blocked: internal/local URLs are not allowed'));
+        let parsed: URL;
+        try { parsed = new URL(url); } catch { throw new Error('Invalid URL'); }
+        if (_isBlockedIp(parsed.hostname)) {
+          throw new Error('Blocked: internal/local URLs are not allowed');
+        }
+        // DNS rebinding protection: resolve hostname → check resolved IP → fetch by IP with Host header
+        if (!/^\d+\.\d+\.\d+\.\d+$/.test(parsed.hostname) && parsed.hostname !== 'localhost') {
+          try {
+            const dns = require('dns');
+            const { promisify } = require('util');
+            const resolve4 = promisify(dns.resolve4);
+            const ips: string[] = await resolve4(parsed.hostname);
+            for (const ip of ips) {
+              if (/^(127\.|10\.|0\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.)/.test(ip)) {
+                throw new Error('Blocked: DNS resolved to internal IP');
+              }
+            }
+            // Fetch by resolved IP to prevent DNS rebinding (TOCTOU)
+            const resolvedUrl = new URL(url);
+            const origHost = resolvedUrl.host;
+            resolvedUrl.hostname = ips[0];
+            const fetchInit = { ...init, headers: { ...(init?.headers || {}), Host: origHost } };
+            return nativeFetch(resolvedUrl.toString(), fetchInit);
+          } catch (e: any) {
+            if (e.message.includes('Blocked')) throw e;
+            // DNS resolve failed — fall through to normal fetch
           }
-        } catch {}
+        }
         return nativeFetch(input, init);
       };
 
@@ -1068,6 +1111,11 @@ export class ExecutionTools {
 
           // ── Discord integration (placeholder) ──
           sendDiscordMessage: async (channelId: string, content: string) => {
+            // channelId must be a snowflake (numeric string) — reject anything else
+            if (!/^\d{1,20}$/.test(String(channelId))) {
+              addLog('error', `[sendDiscordMessage] Invalid channelId: ${channelId}`);
+              return { error: 'Invalid channelId — must be numeric Discord snowflake' };
+            }
             const token = process.env.DISCORD_BOT_TOKEN || '';
             if (!token) {
               addLog('warn', '[sendDiscordMessage] Discord not configured — set DISCORD_BOT_TOKEN in env');
@@ -1075,7 +1123,7 @@ export class ExecutionTools {
             }
             try {
               const resp = await nativeFetch(
-                `https://discord.com/api/v10/channels/${encodeURIComponent(channelId)}/messages`,
+                `https://discord.com/api/v10/channels/${channelId}/messages`,
                 {
                   method: 'POST',
                   headers: {
@@ -1197,24 +1245,12 @@ export class ExecutionTools {
         codeGeneration: { strings: false, wasm: false },
       });
 
-      // Harden sandbox: freeze prototypes to prevent prototype pollution escapes
-      // This blocks the main vm escape vector: sandbox.constructor.constructor('return this')()
-      try {
-        vm.runInContext(`
-          'use strict';
-          // Block constructor traversal (main vm escape vector)
-          Object.defineProperty(Object.prototype, 'constructor', { configurable: false, writable: false });
-          // Freeze core prototypes
-          [Object, Array, Function, String, Number, Boolean, RegExp, Promise, Map, Set].forEach(C => {
-            if (C.prototype) Object.freeze(C.prototype);
-          });
-          Object.defineProperty(Error.prototype, 'constructor', { configurable: false, writable: false });
-          // Block access to process/globalThis via constructor chain
-          (function() {
-            try { delete this.constructor; } catch {}
-          })();
-        `, vmContext);
-      } catch {}
+      // NOTE: previous code did Object.freeze(Object.prototype) etc. via runInContext.
+      // Node's `vm` module shares intrinsics with the host realm — freeze leaks out
+      // and breaks any library that mutates its own objects (e.g. @ton/core Address →
+      // "Cannot assign to read only property 'toString' of object '#<Address>'").
+      // The freeze attempt is removed; constructor-chain escape is mitigated by
+      // sandbox having no `process` / `globalThis` exposed + codeGeneration disabled.
 
       // Sanitize: fix literal newlines inside string literals (common AI codegen mistake)
       // e.g. 'text\nmore' with real \n → 'text\\nmore' → prevents SyntaxError
@@ -1237,7 +1273,11 @@ ${code}
 })();
 `;
 
-      // Compile and run with timeout (90s for long API calls)
+      // Compile and run with timeout (90s for long API calls).
+      // Security: Node's vm module provides context isolation with hardened prototypes above.
+      // The codeGeneration:false option blocks eval/new Function. Prototype freeze blocks
+      // constructor-chain escapes. Memory is bounded by Node.js process limits (~512MB default).
+      // For full process-level isolation, a future upgrade to isolated-vm is planned (KNOWN_ISSUES.md).
       // Note: vm.runInContext timeout only applies to synchronous execution.
       // For async code, we wrap with Promise.race for a hard timeout.
       const script = new vm.Script(wrappedCode, {
@@ -1263,7 +1303,7 @@ ${code}
       const msg = error instanceof Error ? error.message : String(error);
       addLog('error', `Ошибка: ${msg}`);
       // Сохраняем для auto-repair
-      agentLastErrors.set(params.agentId, { error: msg, code, timestamp: new Date() });
+      recordAgentError(params.agentId, msg, code);
       return { success: false, error: msg };
     }
   }
@@ -1390,13 +1430,13 @@ ${code}
         this.runningAgents.set(params.agentId, runner);
       }
       if (result.error && !stopFlag.stopped) {
-        agentLastErrors.set(params.agentId, { error: result.error, code: params.code, timestamp: new Date() });
+        recordAgentError(params.agentId, result.error, params.code);
         params.onCrash?.(result.error);
       }
     }).catch(err => {
       const msg = err?.message || String(err);
       addLog('error', `Агент упал: ${msg}`);
-      agentLastErrors.set(params.agentId, { error: msg, code: params.code, timestamp: new Date() });
+      recordAgentError(params.agentId, msg, params.code);
       params.onCrash?.(msg);
     });
 

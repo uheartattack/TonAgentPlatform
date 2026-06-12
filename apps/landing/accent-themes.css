@@ -1,0 +1,291 @@
+/* TON Agent Studio — gradient accent presets.
+   Each preset overrides --primary, --accent-2 AND their RGB components
+   so every rgba(var(--accent-r),...) and rgba(var(--accent2-r),...)
+   reference flips together.
+
+   Toggle via:
+     document.documentElement.dataset.accent = 'cyber'
+*/
+
+/* ── Aurora (default) — TON blue × purple ── */
+:root,
+:root[data-accent="aurora"], [data-accent="aurora"] {
+  --primary:        #0098EA;
+  --primary-light:  #33b5f5;
+  --primary-dark:   #0077bb;
+  --accent:         #0098EA;
+  --accent-light:   #33b5f5;
+  --accent-dark:    #0077bb;
+  --accent-2:       #a855f7;
+
+  --accent-r: 0;    --accent-g: 152;  --accent-b: 234;
+  --accent2-r: 168; --accent2-g: 85;  --accent2-b: 247;
+
+  --accent-dim:  rgba(0,152,234,0.15);
+  --accent-glow: rgba(0,152,234,0.30);
+}
+
+/* ── Cyber — cyan × magenta ── */
+:root[data-accent="cyber"], [data-accent="cyber"] {
+  --primary:        #06b6d4;
+  --primary-light:  #22d3ee;
+  --primary-dark:   #0891b2;
+  --accent:         #06b6d4;
+  --accent-light:   #22d3ee;
+  --accent-dark:    #0891b2;
+  --accent-2:       #ec4899;
+
+  --accent-r: 6;    --accent-g: 182;  --accent-b: 212;
+  --accent2-r: 236; --accent2-g: 72;  --accent2-b: 153;
+
+  --accent-dim:  rgba(6,182,212,0.15);
+  --accent-glow: rgba(6,182,212,0.30);
+}
+
+/* ── Plasma — purple × pink ── */
+:root[data-accent="plasma"], [data-accent="plasma"] {
+  --primary:        #a855f7;
+  --primary-light:  #c084fc;
+  --primary-dark:   #7e22ce;
+  --accent:         #a855f7;
+  --accent-light:   #c084fc;
+  --accent-dark:    #7e22ce;
+  --accent-2:       #ec4899;
+
+  --accent-r: 168;  --accent-g: 85;   --accent-b: 247;
+  --accent2-r: 236; --accent2-g: 72;  --accent2-b: 153;
+
+  --accent-dim:  rgba(168,85,247,0.15);
+  --accent-glow: rgba(168,85,247,0.30);
+}
+
+/* ── Emerald — emerald × teal ── */
+:root[data-accent="emerald"], [data-accent="emerald"] {
+  --primary:        #10b981;
+  --primary-light:  #34d399;
+  --primary-dark:   #047857;
+  --accent:         #10b981;
+  --accent-light:   #34d399;
+  --accent-dark:    #047857;
+  --accent-2:       #14b8a6;
+
+  --accent-r: 16;   --accent-g: 185;  --accent-b: 129;
+  --accent2-r: 20;  --accent2-g: 184; --accent2-b: 166;
+
+  --accent-dim:  rgba(16,185,129,0.15);
+  --accent-glow: rgba(16,185,129,0.30);
+}
+
+/* ── Sunset — amber × red ── */
+:root[data-accent="sunset"], [data-accent="sunset"] {
+  --primary:        #f59e0b;
+  --primary-light:  #fbbf24;
+  --primary-dark:   #b45309;
+  --accent:         #f59e0b;
+  --accent-light:   #fbbf24;
+  --accent-dark:    #b45309;
+  --accent-2:       #ef4444;
+
+  --accent-r: 245;  --accent-g: 158;  --accent-b: 11;
+  --accent2-r: 239; --accent2-g: 68;  --accent2-b: 68;
+
+  --accent-dim:  rgba(245,158,11,0.15);
+  --accent-glow: rgba(245,158,11,0.30);
+}
+
+/* ── Mono — sky × indigo ── */
+:root[data-accent="mono"], [data-accent="mono"] {
+  --primary:        #0ea5e9;
+  --primary-light:  #38bdf8;
+  --primary-dark:   #0369a1;
+  --accent:         #0ea5e9;
+  --accent-light:   #38bdf8;
+  --accent-dark:    #0369a1;
+  --accent-2:       #6366f1;
+
+  --accent-r: 14;   --accent-g: 165;  --accent-b: 233;
+  --accent2-r: 99;  --accent2-g: 102; --accent2-b: 241;
+
+  --accent-dim:  rgba(14,165,233,0.15);
+  --accent-glow: rgba(14,165,233,0.30);
+}
+
+/* ─── Settings-page card primitives — used by the new 01/02/03/04 layout ── */
+
+.num-cube {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(in oklab 135deg, var(--primary), var(--accent-2));
+  color: #fff;
+  font-weight: 700;
+  border-radius: 9px;
+  box-shadow:
+    0 4px 12px rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  letter-spacing: -0.02em;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--primary, #0098EA);
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.10);
+  border: 1px solid rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.22);
+}
+.eyebrow.green { color: #22c55e; background: rgba(34, 197, 94, 0.10); border-color: rgba(34, 197, 94, 0.25); }
+.eyebrow.amber { color: #f59e0b; background: rgba(245, 158, 11, 0.10); border-color: rgba(245, 158, 11, 0.25); }
+.eyebrow.red   { color: #ef4444; background: rgba(239, 68, 68, 0.10); border-color: rgba(239, 68, 68, 0.25); }
+
+/* ─── Accent theme picker — 6-card grid ─────────────────────────────── */
+.accent-presets-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+@media (max-width: 900px) { .accent-presets-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px) { .accent-presets-grid { grid-template-columns: 1fr; } }
+
+.preset-card {
+  position: relative;
+  padding: 16px;
+  border-radius: 14px;
+  background:
+    linear-gradient(in oklab 180deg, rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.04), transparent 60%),
+    var(--bg-secondary, rgba(255, 255, 255, 0.02));
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  cursor: pointer;
+  transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1), border-color 200ms, box-shadow 200ms;
+  overflow: hidden;
+}
+.preset-card::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(in oklab 90deg, var(--primary), var(--accent-2));
+  opacity: 0;
+  transition: opacity 200ms;
+}
+.preset-card:hover {
+  border-color: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.35);
+  transform: translateY(-2px);
+}
+.preset-card:hover::before { opacity: 0.55; }
+.preset-card.active {
+  border-color: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.55);
+  box-shadow:
+    0 0 0 1px rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.3),
+    0 14px 36px rgba(0, 0, 0, 0.3);
+}
+.preset-card.active::before { opacity: 1; }
+
+.preset-swatch {
+  position: relative;
+  height: 78px;
+  margin-bottom: 12px;
+  border-radius: 11px;
+  overflow: hidden;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+}
+.ps-large { position: absolute; inset: 0; }
+.ps-small {
+  position: absolute;
+  bottom: 10px;
+  width: 26px; height: 26px;
+  border-radius: 7px;
+  border: 2px solid var(--bg-primary, #080b14);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+.ps-1 { right: 46px; }
+.ps-2 { right: 12px; }
+.preset-card .preset-name { font-size: 14px; font-weight: 700; }
+.preset-card .preset-desc { font-size: 11px; color: var(--text-muted, rgba(255, 255, 255, 0.5)); margin-top: 2px; }
+
+/* Section divider — card grouping in Settings */
+.tap-settings-card {
+  position: relative;
+  background: linear-gradient(in oklab 180deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0.008));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 22px 24px;
+  margin-bottom: 18px;
+}
+.tap-settings-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.tap-settings-card__head h3 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 15.5px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text-primary, #e7ecf3);
+}
+.tap-settings-card__desc {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.65));
+  margin-bottom: 18px;
+}
+.tap-settings-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-bottom: 18px;
+}
+@media (max-width: 900px) { .tap-settings-grid-2 { grid-template-columns: 1fr; } }
+
+/* Field label used inside .tap-settings-card forms */
+.tap-field-label {
+  display: block;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted, rgba(255, 255, 255, 0.5));
+  margin-bottom: 6px;
+}
+
+/* Toggle row inside Security card */
+.tap-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+.tap-toggle-row:last-child { border-bottom: none; }
+.tap-toggle-row__title { font-weight: 600; font-size: 14px; color: var(--text-primary, #e7ecf3); }
+.tap-toggle-row__desc { font-size: 12.5px; color: var(--text-secondary, rgba(255, 255, 255, 0.6)); margin-top: 2px; }
+
+/* Info tip box */
+.tap-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.08);
+  border: 1px solid rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.18);
+  font-size: 12.5px;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.7));
+  line-height: 1.5;
+}
+.tap-tip .tap-tip__ico {
+  color: var(--primary, #0098EA);
+  flex-shrink: 0;
+  margin-top: 1px;
+}

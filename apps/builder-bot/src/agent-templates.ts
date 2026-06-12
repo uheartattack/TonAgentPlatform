@@ -21,6 +21,8 @@ export interface AgentTemplate {
     question?: string;   // Текст вопроса для wizard
     options?: string[];  // Если задан — показывать кнопки выбора вместо текстового ввода
   }>;
+  /** Optional hint that the wizard should also collect AI_PROVIDER + AI_API_KEY for this template. */
+  aiProvider?: boolean;
 }
 
 // ===== БАЗОВЫЕ ШАБЛОНЫ =====
@@ -738,7 +740,7 @@ async function agent(context) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          query: 'query { collection(address: "' + collectionAddress + '") { floorPrice itemsCount } }'
+          query: 'query { collection(address: "' + collectionAddress.replace(/[^A-Za-z0-9:_-]/g, '') + '") { floorPrice itemsCount } }'
         })
       });
       
@@ -2170,6 +2172,127 @@ const superAgent: AgentTemplate = {
   ],
 };
 
+// ===== AI-AGENT: Security Scanner (TON contracts + wallet drain detection) =====
+const securityScannerAI: AgentTemplate = {
+  id: 'security-scanner-ai',
+  name: '🛡️ Security Scanner (TON)',
+  description: 'AI-агент безопасности: сканирует TON-контракты на уязвимости, детектит drain-паттерны, проверяет токены на scam, мониторит твои кошельки 24/7.',
+  category: 'utility',
+  icon: '🛡️',
+  tags: ['ai', 'security', 'audit', 'ton', 'drain', 'scam', 'monitoring'],
+  triggerType: 'ai_agent',
+  triggerConfig: {
+    intervalMs: 600_000, // 10 min
+    config: {
+      AI_PROVIDER:     '{{AI_PROVIDER}}',
+      AI_API_KEY:      '{{AI_API_KEY}}',
+      TONAPI_KEY:      '{{TONAPI_KEY}}',
+      WATCH_WALLETS:   '',           // comma-separated TON addresses to monitor
+      ALERT_THRESHOLD_TON: '1.0',   // notify on outflow >= this amount
+      TSA_ENDPOINT:    '',           // optional: self-hosted TSA URL (tonsec.dev)
+    },
+  },
+  code: `Ты — security-агент в TON экосистеме. Твоя задача — защищать пользователя от скама, drain-атак и уязвимых контрактов.
+
+## Твои инструменты
+
+### Блокчейн-аналитика:
+- **ton_get_account(address)** — получить баланс, статус, transaction count контракта/кошелька
+- **ton_get_transactions(address, limit)** — последние транзакции для анализа паттернов
+- **ton_get_nfts(address)** — NFT'ы во владении (проверка кражи)
+- **ton_get_jettons(address)** — Jetton'ы во владении
+- **get_ton_balance(address)** — быстрый баланс
+- **ton_emulate_tx(boc)** — симуляция транзакции (dry-run)
+
+### Security-специфичные tools (через plugins):
+- **drain_detect_scan(address)** — проверка wallet на drain-паттерны (быстрое сканирование)
+- **contract_audit(address)** — quick audit known vulnerable patterns в контракте
+- **check_token_scam(jetton_address)** — проверка Jetton токена на известные scam-паттерны
+
+### Внешние источники:
+- **web_search(query)** — поиск новостей про скамы/эксплойты
+- **fetch_url(url)** — получить содержимое ссылки (для анализа подозрительных ссылок)
+
+### Deep audit (опционально, если TSA_ENDPOINT настроен):
+- **http_fetch(TSA_ENDPOINT + "/audit", "POST", {}, { contract_address })** — deep symbolic execution audit через TSA (tonsec.dev)
+- Используй ТОЛЬКО для серьёзных случаев — медленнее, дороже по compute
+
+### Утилиты:
+- **get_state(key) / set_state(key, value)** — сохраняй baseline балансов, watch-list
+- **notify(message)** — критичные алерты пользователю
+- **notify_rich(message, buttons)** — алерт с inline-кнопками для быстрых действий
+
+## Логика каждого тика (раз в 10 минут):
+
+1. Если есть сообщения от пользователя (например "проверь контракт EQ...") — отвечай ПЕРВЫМ делом
+2. Загрузи из state \`watch_wallets\` (если нет — возьми из config.WATCH_WALLETS)
+3. Для каждого watched кошелька:
+   - ton_get_account(address) + сравни с baseline из state
+   - Если баланс упал на >= ALERT_THRESHOLD_TON → ton_get_transactions чтобы понять куда
+   - Если обнаружен drain-паттерн (быстрый вывод к неизвестному адресу) → notify с КРАСНЫМ флагом
+4. Проверь inbox на новые Jetton transfers (через ton_get_jettons diff)
+5. Если пользователь просил проверить конкретный контракт:
+   - Запусти contract_audit(address)
+   - Если результат неясен + TSA_ENDPOINT настроен → deep TSA audit
+   - Представь структурированный отчёт: severity (LOW/MED/HIGH/CRITICAL), findings, рекомендации
+
+## Формат отчёта для контракта:
+
+\`\`\`
+🛡️ Audit Report: EQXxx...
+
+Severity: HIGH
+Findings:
+- ⚠️ Unauthorized withdrawal possible in fn transfer()
+- ⚠️ No bounce handling on external calls
+- ✓ Replay protection OK
+
+Recommendation: DO NOT send funds until patched.
+\`\`\`
+
+## Правила:
+
+- **Приоритет #1** — скорость алертов. Если видишь реальный drain — уведомляй МГНОВЕННО даже до завершения полного анализа
+- **Никогда** не отправляй транзакции сам — только информируй + предлагай действия (freeze watching, revoke approvals)
+- Всегда сохраняй baseline после каждой проверки чтобы обнаружить дельту в след. тике
+- Если TSA_ENDPOINT пуст — пропускай deep audit, уведоми пользователя что для deep analysis нужно настроить TSA (https://tonsec.dev/docs)
+- Если запрос пользователя ambiguous — спрашивай уточнение, не гадай
+
+## TSA Setup (подсказка для пользователя):
+
+Если пользователь спросит как настроить TSA:
+> TSA (TON Symbolic Analyzer) — официальный инструмент от tonsec.dev. Self-host:
+> 1. git clone https://github.com/espritoxyz/ton-ai-audit-skill
+> 2. npm install && npm run start
+> 3. Укажи URL (http://localhost:PORT) в настройках агента → TSA_ENDPOINT
+> После этого я смогу делать deep symbolic execution audit контрактов.`,
+  aiProvider: true,
+  placeholders: [
+    {
+      name: 'AI_PROVIDER',
+      description: 'Какой AI провайдер использовать',
+      example: 'gemini',
+      required: true,
+      question: '🤖 AI-провайдер:',
+      options: ['gemini', 'anthropic', 'groq', 'deepseek', 'openrouter', 'openai', 'together'],
+    },
+    {
+      name: 'AI_API_KEY',
+      description: 'API-ключ для AI. Gemini бесплатный на aistudio.google.com',
+      example: 'AIzaSy...',
+      required: false,
+      question: '🔑 API-ключ провайдера (пусто = использовать глобальный из /profile):',
+    },
+    {
+      name: 'TONAPI_KEY',
+      description: 'TonAPI ключ для блокчейн-данных (tonapi.io)',
+      example: 'AQAAA...',
+      required: false,
+      question: '🔑 TONAPI_KEY (optional, использует общий если пусто):',
+    },
+  ],
+};
+
 // ВСЕ шаблоны (для маркетплейса)
 export const allAgentTemplates: AgentTemplate[] = [
   ...agentTemplates,
@@ -2177,6 +2300,7 @@ export const allAgentTemplates: AgentTemplate[] = [
   ...multiAgentTemplates,
   telegramGiftMonitor,
   unifiedArbitrageAI,
+  securityScannerAI,
   superAgent,
 ];
 

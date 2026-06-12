@@ -16,9 +16,9 @@ export const MODELS = {
   gemini:         process.env.GEMINI_MODEL         || 'gemini-2.5-flash',
   geminiPro:      process.env.GEMINI_PRO_MODEL      || 'gemini-2.5-pro',
   geminiLite:     process.env.GEMINI_LITE_MODEL     || 'gemini-2.5-flash-lite',
-  // Anthropic
-  claude:         process.env.CLAUDE_MODEL          || 'claude-haiku-4-5-20251001',
-  claudeSmart:    process.env.CLAUDE_SMART_MODEL    || 'anthropic/claude-sonnet-4-20250514',
+  // Anthropic (Anthropic CLI OAuth token — direct api.anthropic.com)
+  claude:         process.env.CLAUDE_MODEL          || 'claude-opus-4-6',
+  claudeSmart:    process.env.CLAUDE_SMART_MODEL    || 'claude-opus-4-6',
   // OpenAI
   openai:         process.env.OPENAI_MODEL          || 'gpt-4o-mini',
   openaiSmart:    process.env.OPENAI_SMART_MODEL    || 'gpt-4o',
@@ -33,15 +33,12 @@ export const MODELS = {
 };
 
 // ── AI Provider base URLs ──
-export const PROVIDER_URLS = {
-  gemini:     'https://generativelanguage.googleapis.com/v1beta/openai/',
-  anthropic:  'https://openrouter.ai/api/v1',
-  openai:     'https://api.openai.com/v1',
-  groq:       'https://api.groq.com/openai/v1',
-  deepseek:   'https://api.deepseek.com/v1',
-  openrouter: 'https://openrouter.ai/api/v1',
-  together:   'https://api.together.xyz/v1',
-};
+// Now derived from src/config/provider-registry.ts (single source of truth).
+// This object kept for backwards compatibility with existing callers.
+import { PROVIDER_REGISTRY as _PR } from './provider-registry';
+export const PROVIDER_URLS: Record<string, string> = Object.fromEntries(
+  Object.entries(_PR).map(([id, p]) => [id, p.baseURL])
+);
 
 // ── API versions ──
 export const API_VERSIONS = {
@@ -63,22 +60,25 @@ export const LIMITS = {
 };
 
 // ── Context limits per provider ──
-export const PROVIDER_LIMITS: Record<string, { maxContextChars: number; maxTools: number }> = {
-  gemini:     { maxContextChars: 25_000, maxTools: 60 },
-  anthropic:  { maxContextChars: 40_000, maxTools: 80 },
-  openai:     { maxContextChars: 30_000, maxTools: 80 },
-  groq:       { maxContextChars: 15_000, maxTools: 40 },
-  deepseek:   { maxContextChars: 25_000, maxTools: 60 },
-  openrouter: { maxContextChars: 25_000, maxTools: 60 },
-  together:   { maxContextChars: 15_000, maxTools: 40 },
-};
+// April 2026 FREE-tier safe values. See docs/PROVIDER_LIMITS.md for full breakdown.
+// Each provider's TPM determines safe tool count: tools ≈ 300 tokens each.
+// Groq free = 12K TPM → 40 tools × 300 = 12K tokens consumed just by tools = 413.
+// User upgrades (Groq Dev, Anthropic tier 2+, OpenAI tier 1+) can override via
+// agent.trigger_config.config.MAX_TOOLS (respected in buildPromptForLoop).
+// Derived from provider-registry (toolLimit null → 128 for safety in legacy callers)
+export const PROVIDER_LIMITS: Record<string, { maxContextChars: number; maxTools: number }> = Object.fromEntries(
+  Object.entries(_PR).map(([id, p]) => [id, {
+    maxContextChars: p.maxContextChars,
+    maxTools: p.toolLimit ?? 128,
+  }])
+);
 
-// ── Platform AI (fallback when user has no key) ──
-export const PLATFORM_AI = {
-  url:   process.env.PLATFORM_AI_URL   || 'https://generativelanguage.googleapis.com/v1beta/openai/',
-  key:   process.env.PLATFORM_AI_KEY   || '',
-  model: process.env.PLATFORM_AI_MODEL || 'gemini-2.5-flash',
-};
+// v2.3.5: PLATFORM_AI was a fallback so any agent without a personal API
+// key could still run on the platform's own Gemini/Anthropic quota. Removed
+// because it created an open-ended cost subsidy. Each user runs strictly on
+// their own AI_API_KEY now. Atlas (the platform assistant) still uses the
+// platform's keys directly via process.env.OPENAI_API_KEY / OPENROUTER_API_KEY
+// — that's a platform service, not a user-agent runtime.
 
 // ── Freshness detection patterns (for auto web_search) ──
 export const FRESHNESS_PATTERNS = /последн|актуальн|новей|свеж|latest|newest|current|сколько стоит|цена|price|какой год|what year|фото|фотк|photo|picture|image|картинк/i;

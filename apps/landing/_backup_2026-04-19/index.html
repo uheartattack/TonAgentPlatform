@@ -1,0 +1,1422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/svg+xml" href="logo.svg">
+  <link rel="shortcut icon" href="logo.svg">
+  <meta name="description" content="TON Agent Platform — no-code platform for creating AI agents in Telegram. Describe your task in text — get a working bot in 2 minutes.">
+  <meta name="keywords" content="TON, AI, agents, Telegram, bots, blockchain, automation">
+  <meta property="og:title" content="TON Agent Platform — Create AI Agent for TON in 2 Minutes">
+  <meta property="og:description" content="No-code platform for creating AI agents in Telegram. No code. No servers.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://tonagentplatform.com">
+  <meta property="og:image" content="https://tonagentplatform.com/og-image.png">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:site_name" content="TON Agent Platform">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="TON Agent Platform">
+  <meta name="twitter:description" content="Create AI Agent for TON in 2 Minutes">
+  <meta name="twitter:image" content="https://tonagentplatform.com/og-image.png">
+  <meta name="twitter:site" content="@tonagentplatform">
+  <link rel="canonical" href="https://tonagentplatform.com/">
+  <meta name="theme-color" content="#0088CC">
+  <title>TON Agent Platform — Create AI Agent for TON in 2 Minutes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css?v=20260309">
+</head>
+<body>
+  <!-- Language Switcher -->
+  <div class="lang-switcher">
+    <button class="lang-btn active" data-lang="en">EN</button>
+    <button class="lang-btn" data-lang="ru">RU</button>
+  </div>
+
+  <!-- Hero Section -->
+  <section class="hero">
+    <canvas id="particle-canvas"></canvas>
+    <div class="hero-content">
+      <div class="hero-logo">
+        <img src="logo.svg" alt="TON Agent Platform" width="80" height="80" style="filter: drop-shadow(0 0 20px rgba(0,136,204,0.4));">
+      </div>
+      <div class="hero-badge">
+        <span class="pulse-dot"></span>
+        <span data-en="Powered by TON" data-ru="Powered by TON">Powered by TON</span>
+      </div>
+      <h1 class="hero-title">
+        <span data-en="Create" data-ru="Создай">Create</span> <span class="gradient-text" data-en="AI Agent" data-ru="AI-агента">AI Agent</span><br>
+        <span data-en="for TON in" data-ru="для TON за">for TON in</span> <span class="accent-text">2 <span data-en="minutes" data-ru="минуты">minutes</span></span>
+      </h1>
+      <p class="hero-subtitle" data-en="Describe your task in text or voice — get an always-on AI agent. No code. No servers. Works 24/7 inside Telegram." data-ru="Опиши задачу текстом или голосом — получи AI-агента 24/7. Без кода. Без серверов. Работает постоянно внутри Telegram.">
+        Describe your task in text or voice — get an always-on AI agent. No code. No servers. Works 24/7 inside Telegram.
+      </p>
+      <div class="hero-buttons">
+        <a href="https://t.me/TonAgentPlatformBot" target="_blank" class="btn-primary">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <span data-en="Launch Bot" data-ru="Запустить бота">Launch Bot</span>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </a>
+        <a href="studio" class="btn-outline studio-btn">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          <span data-en="Open Studio" data-ru="Открыть студию">Open Studio</span>
+        </a>
+        <a href="#demo" class="btn-outline" data-en="Demo" data-ru="Демо">Demo</a>
+        <a href="#how-it-works" class="btn-outline" data-en="How it works" data-ru="Как это работает">How it works</a>
+      </div>
+      <div class="hero-stats">
+        <div class="stat">
+          <div class="stat-value" id="stat-agents-created">--</div>
+          <div class="stat-label" data-en="Agents Created" data-ru="Агентов создано">Agents Created</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value" id="stat-active-agents">--</div>
+          <div class="stat-label" data-en="Active Now" data-ru="Активных сейчас">Active Now</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value" id="stat-total-users">--</div>
+          <div class="stat-label" data-en="Users" data-ru="Пользователей">Users</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">$0</div>
+          <div class="stat-label" data-en="To start" data-ru="Для старта">To start</div>
+        </div>
+      </div>
+    </div>
+    <div class="phone-mockup">
+      <div class="phone">
+        <div class="phone-screen">
+          <div class="telegram-header">
+            <div class="telegram-avatar">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            </div>
+            <div>
+              <div class="telegram-name">TON Agent Bot</div>
+              <div class="telegram-status" data-en="bot" data-ru="бот">bot</div>
+            </div>
+          </div>
+          <div class="chat-messages">
+            <div class="message bot">
+              <div class="message-avatar">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              </div>
+              <div class="message-bubble" data-en="Hi! I'll help you create an AI agent for TON. Describe your task in simple text." data-ru="Привет! Я помогу создать AI-агента для TON. Опиши задачу простым текстом.">
+                Hi! I'll help you create an AI agent for TON. Describe your task in simple text.
+              </div>
+            </div>
+            <div class="message user">
+              <div class="message-bubble" data-en="Send salary to all employees on the 10th of each month, wallets and amounts in JobsQ.txt file" data-ru="Отправляй зарплату всем работникам каждое 10-е число, кошельки и сумма зарплаты в файле JobsQ.txt">
+                Send salary to all employees on the 10th of each month, wallets and amounts in JobsQ.txt file
+              </div>
+            </div>
+            <div class="message bot">
+              <div class="message-avatar">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              </div>
+              <div class="message-bubble">
+                <span data-en="Great! Creating an agent for automatic salary transfers..." data-ru="Отлично! Создаю агента для автоматических переводов...">Great! Creating an agent for automatic salary transfers...</span>
+                <div class="code-block">
+                  <div class="code-line">✓ <span data-en="Task analysis" data-ru="Анализ задачи">Task analysis</span></div>
+                  <div class="code-line">✓ <span data-en="Code generation" data-ru="Генерация кода">Code generation</span></div>
+                  <div class="code-line">⟳ <span data-en="Waiting for payment" data-ru="Ожидание оплаты">Waiting for payment</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="message bot">
+              <div class="message-avatar">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              </div>
+              <div class="message-bubble">
+                <span data-en="Ready! Pay 5 TON to activate:" data-ru="Готово! Оплатите 5 TON для активации:">Ready! Pay 5 TON to activate:</span>
+                <button class="pay-button">5 TON</button>
+              </div>
+            </div>
+          </div>
+          <div class="chat-input">
+            <div class="input-placeholder" data-en="Message..." data-ru="Сообщение...">Message...</div>
+            <div class="send-button">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="phone-glow"></div>
+    </div>
+    <div class="scroll-indicator">
+      <div class="mouse">
+        <div class="wheel"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How It Works -->
+  <section id="how-it-works" class="section">
+    <div class="container">
+      <h2 class="section-title" data-en="How it <span class='gradient-text'>works</span>" data-ru="Как это <span class='gradient-text'>работает</span>">How it <span class="gradient-text">works</span></h2>
+      <p class="section-subtitle" data-en="Just 4 simple steps from idea to working AI agent" data-ru="Всего 4 простых шага от идеи до работающего AI-агента">Just 4 simple steps from idea to working AI agent</p>
+      <div class="steps">
+        <div class="step">
+          <div class="step-header">
+            <div class="step-icon" style="background: rgba(0, 136, 204, 0.2);">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0088CC" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            </div>
+            <span class="step-number">01</span>
+          </div>
+          <h3 class="step-title" data-en="Describe the task" data-ru="Опиши задачу">Describe the task</h3>
+          <p class="step-desc" data-en="Describe in simple text what the agent should do" data-ru="Простым текстом опиши, что должен делать агент">Describe in simple text what the agent should do</p>
+          <div class="step-example">
+            <span class="example-label" data-en="Example:" data-ru="Пример:">Example:</span>
+            <code data-en="Send salary to employees on the 10th, wallets in JobsQ.txt" data-ru="Отправляй зарплату работникам 10-го числа, кошельки в JobsQ.txt">Send salary to employees on the 10th, wallets in JobsQ.txt</code>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-header">
+            <div class="step-icon" style="background: rgba(0, 168, 232, 0.2);">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00A8E8" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+            </div>
+            <span class="step-number">02</span>
+          </div>
+          <h3 class="step-title" data-en="AI generates agent" data-ru="AI генерирует агента">AI generates agent</h3>
+          <p class="step-desc" data-en="AI analyzes the task and creates a system prompt for your agent" data-ru="AI анализирует задачу и создаёт системный промпт для агента">AI analyzes the task and creates a system prompt for your agent</p>
+          <div class="step-example">
+            <span class="example-label" data-en="Example:" data-ru="Пример:">Example:</span>
+            <code data-en="7 AI providers available" data-ru="7 AI-провайдеров доступно">7 AI providers available</code>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-header">
+            <div class="step-icon" style="background: rgba(0, 212, 255, 0.2);">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00D4FF" stroke-width="2"><path d="M20 12V8H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12v4"/><path d="M4 6v12a2 2 0 0 0 2 2h14v-4"/><path d="M18 12a2 2 0 0 0-2 2c0 1.1.9 2 2 2h4v-4h-4z"/></svg>
+            </div>
+            <span class="step-number">03</span>
+          </div>
+          <h3 class="step-title" data-en="Choose AI provider" data-ru="Выбери AI провайдера">Choose AI provider</h3>
+          <p class="step-desc" data-en="Pick from 7 providers or use the free built-in AI" data-ru="Выбери из 7 провайдеров или используй бесплатный встроенный AI">Pick from 7 providers or use the free built-in AI</p>
+          <div class="step-example">
+            <span class="example-label" data-en="Example:" data-ru="Пример:">Example:</span>
+            <code data-en="Gemini, OpenAI, Anthropic, Groq..." data-ru="Gemini, OpenAI, Anthropic, Groq...">Gemini, OpenAI, Anthropic, Groq...</code>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-header">
+            <div class="step-icon" style="background: rgba(0, 136, 204, 0.2);">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0088CC" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            </div>
+            <span class="step-number">04</span>
+          </div>
+          <h3 class="step-title" data-en="Agent works 24/7" data-ru="Агент работает 24/7">Agent works 24/7</h3>
+          <p class="step-desc" data-en="Agent runs on our servers with Telegram notifications" data-ru="Агент запущен на наших серверах с уведомлениями в Telegram">Agent runs on our servers with Telegram notifications</p>
+          <div class="step-example">
+            <span class="example-label" data-en="Example:" data-ru="Пример:">Example:</span>
+            <code data-en="Notifications in Telegram" data-ru="Уведомления в Telegram">Notifications in Telegram</code>
+          </div>
+        </div>
+      </div>
+      <div class="section-cta">
+        <a href="https://t.me/TonAgentPlatformBot" target="_blank" class="btn-primary">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <span data-en="Create your agent" data-ru="Создать своего агента">Create your agent</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Fast Demo -->
+  <!-- ═══════════════ FAST DEMO ═══════════════ -->
+  <section id="demo" class="section demo-section">
+    <div class="container">
+      <div class="demo-badge" data-en="Live Demo" data-ru="Живое демо">Live Demo</div>
+      <h2 class="section-title" data-en="See it in <span class='gradient-text'>action</span>" data-ru="Смотри как это <span class='gradient-text'>работает</span>">See it in <span class="gradient-text">action</span></h2>
+      <p class="section-subtitle" data-en="Pick a template — agent is created in under 30 seconds" data-ru="Выбери шаблон — агент создаётся за 30 секунд">Pick a template — agent is created in under 30 seconds</p>
+
+      <div class="demo-layout">
+        <!-- Left: chat animation -->
+        <div class="demo-chat-wrap">
+          <div class="demo-chat">
+            <div class="demo-chat-header">
+              <div class="demo-chat-avatar"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg></div>
+              <div>
+                <div class="demo-chat-name">TON Agent Platform</div>
+                <div class="demo-chat-status" data-en="bot · online" data-ru="бот · онлайн">bot · online</div>
+              </div>
+            </div>
+            <div class="demo-messages" id="demoMessages">
+              <!-- messages injected by JS -->
+            </div>
+            <div class="demo-typing" id="demoTyping" style="display:none">
+              <span></span><span></span><span></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: quick-start cards -->
+        <div class="demo-cards">
+          <div class="demo-card active" data-demo="price" onclick="selectDemo('price')">
+            <div class="demo-card-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></div>
+            <div class="demo-card-body">
+              <div class="demo-card-title" data-en="TON Price Alert" data-ru="Алерт цены TON">TON Price Alert</div>
+              <div class="demo-card-desc" data-en="Notify when TON hits $8" data-ru="Уведомить когда TON достигнет $8">Notify when TON hits $8</div>
+            </div>
+            <div class="demo-card-time" data-en="~20 sec" data-ru="~20 сек">~20 sec</div>
+          </div>
+          <div class="demo-card" data-demo="nft" onclick="selectDemo('nft')">
+            <div class="demo-card-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="10.5" r="2.5"/><circle cx="8.5" cy="7.5" r="2.5"/><circle cx="6.5" cy="12.5" r="2.5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg></div>
+            <div class="demo-card-body">
+              <div class="demo-card-title" data-en="NFT Floor Monitor" data-ru="Монитор NFT цены">NFT Floor Monitor</div>
+              <div class="demo-card-desc" data-en="Track floor price every hour" data-ru="Отслеживать цену каждый час">Track floor price every hour</div>
+            </div>
+            <div class="demo-card-time" data-en="~25 sec" data-ru="~25 сек">~25 sec</div>
+          </div>
+          <div class="demo-card" data-demo="wallet" onclick="selectDemo('wallet')">
+            <div class="demo-card-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12l4 6-10 13L2 9z"/><path d="M11 3l1 6"/><path d="M2 9h20"/><path d="M7 9l5 13 5-13"/></svg></div>
+            <div class="demo-card-body">
+              <div class="demo-card-title" data-en="Wallet Balance Alert" data-ru="Алерт баланса кошелька">Wallet Balance Alert</div>
+              <div class="demo-card-desc" data-en="Alert on low TON balance" data-ru="Алерт при низком балансе TON">Alert on low TON balance</div>
+            </div>
+            <div class="demo-card-time" data-en="~20 sec" data-ru="~20 сек">~20 sec</div>
+          </div>
+          <div class="demo-card" data-demo="custom" onclick="selectDemo('custom')">
+            <div class="demo-card-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.912 5.813L20 10l-4.87 2.46L14 18l-2-4.46L7 12l5.088-1.187z"/><path d="M5 3l.5 1.5L7 5l-1.5.5L5 7l-.5-1.5L3 5l1.5-.5z"/><path d="M19 17l.5 1.5L21 19l-1.5.5L19 21l-.5-1.5L17 19l1.5-.5z"/></svg></div>
+            <div class="demo-card-body">
+              <div class="demo-card-title" data-en="Custom Agent" data-ru="Свой агент">Custom Agent</div>
+              <div class="demo-card-desc" data-en="Describe anything you want" data-ru="Опиши всё что угодно">Describe anything you want</div>
+            </div>
+            <div class="demo-card-time" data-en="~30 sec" data-ru="~30 сек">~30 sec</div>
+          </div>
+
+          <a href="https://t.me/TonAgentPlatformBot?start=demo_price" target="_blank" class="demo-try-btn" id="demoTryBtn">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            <span data-en="Try this in Telegram →" data-ru="Попробовать в Telegram →">Try this in Telegram →</span>
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- Plugins -->
+  <section id="plugins" class="section">
+    <div class="container">
+      <h2 class="section-title" data-en="<span class='gradient-text'>Plugins</span> ecosystem" data-ru="<span class='gradient-text'>Плагины</span> экосистемы"><span class="gradient-text">Plugins</span> ecosystem</h2>
+      <p class="section-subtitle" data-en="Ready-made modules to extend your agent's capabilities" data-ru="Готовые модули для расширения возможностей твоего агента">Ready-made modules to extend your agent's capabilities</p>
+      <div class="plugins-grid">
+        <!-- DeDust DEX -->
+        <div class="plugin-card">
+          <div class="plugin-badge" style="background:rgba(99,102,241,0.2);color:#818cf8;" data-en="DeFi" data-ru="DeFi">DeFi</div>
+          <div class="plugin-icon" style="background:rgba(99,102,241,0.2);">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#818cf8" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+          </div>
+          <h3 class="plugin-title">DeDust DEX</h3>
+          <p class="plugin-desc" data-en="Swap tokens and manage liquidity on the largest TON DEX" data-ru="Обменивай токены и управляй ликвидностью на крупнейшем DEX TON">Swap tokens and manage liquidity on the largest TON DEX</p>
+          <div class="plugin-features">
+            <span class="feature-tag" style="background:rgba(99,102,241,0.15);color:#818cf8;" data-en="Swap" data-ru="Своп">Swap</span>
+            <span class="feature-tag" style="background:rgba(99,102,241,0.15);color:#818cf8;" data-en="Liquidity" data-ru="Ликвидность">Liquidity</span>
+            <span class="feature-tag" style="background:rgba(99,102,241,0.15);color:#818cf8;" data-en="Pools" data-ru="Пулы">Pools</span>
+          </div>
+        </div>
+        <!-- STON.fi -->
+        <div class="plugin-card">
+          <div class="plugin-icon" style="background:rgba(20,184,166,0.2);">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#2dd4bf" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+          </div>
+          <h3 class="plugin-title">STON.fi</h3>
+          <p class="plugin-desc" data-en="AMM DEX for token swaps with best rates on TON blockchain" data-ru="AMM DEX для обмена токенов с лучшими курсами на TON">AMM DEX for token swaps with best rates on TON blockchain</p>
+          <div class="plugin-features">
+            <span class="feature-tag" style="background:rgba(20,184,166,0.15);color:#2dd4bf;">AMM</span>
+            <span class="feature-tag" style="background:rgba(20,184,166,0.15);color:#2dd4bf;" data-en="Best rate" data-ru="Лучший курс">Best rate</span>
+            <span class="feature-tag" style="background:rgba(20,184,166,0.15);color:#2dd4bf;">Jetton</span>
+          </div>
+        </div>
+        <!-- EVAA Finance -->
+        <div class="plugin-card">
+          <div class="plugin-badge" style="background:rgba(245,158,11,0.2);color:#fbbf24;" data-en="Lending" data-ru="Лендинг">Lending</div>
+          <div class="plugin-icon" style="background:rgba(245,158,11,0.2);">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+          </div>
+          <h3 class="plugin-title">EVAA Finance</h3>
+          <p class="plugin-desc" data-en="TON lending protocol — borrow, supply, track positions" data-ru="Лендинг-протокол TON — займы, депозиты, отслеживание позиций">TON lending protocol — borrow, supply, track positions</p>
+          <div class="plugin-features">
+            <span class="feature-tag" style="background:rgba(245,158,11,0.15);color:#fbbf24;" data-en="Borrow" data-ru="Займ">Borrow</span>
+            <span class="feature-tag" style="background:rgba(245,158,11,0.15);color:#fbbf24;" data-en="Supply" data-ru="Депозит">Supply</span>
+            <span class="feature-tag" style="background:rgba(245,158,11,0.15);color:#fbbf24;">APY</span>
+          </div>
+        </div>
+        <!-- TON API -->
+        <div class="plugin-card">
+          <div class="plugin-icon" style="background:rgba(59,130,246,0.2);">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+          </div>
+          <h3 class="plugin-title">TON API</h3>
+          <p class="plugin-desc" data-en="Full blockchain data: wallets, transactions, NFTs via tonapi.io" data-ru="Полные данные блокчейна: кошельки, транзакции, NFT через tonapi.io">Full blockchain data: wallets, transactions, NFTs via tonapi.io</p>
+          <div class="plugin-features">
+            <span class="feature-tag" style="background:rgba(59,130,246,0.15);color:#60a5fa;" data-en="Wallets" data-ru="Кошельки">Wallets</span>
+            <span class="feature-tag" style="background:rgba(59,130,246,0.15);color:#60a5fa;">NFT</span>
+            <span class="feature-tag" style="background:rgba(59,130,246,0.15);color:#60a5fa;" data-en="Transactions" data-ru="Транзакции">Transactions</span>
+          </div>
+        </div>
+        <!-- CoinGecko -->
+        <div class="plugin-card">
+          <div class="plugin-icon" style="background:rgba(16,185,129,0.2);">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          </div>
+          <h3 class="plugin-title">CoinGecko</h3>
+          <p class="plugin-desc" data-en="Live crypto prices, market caps and price alerts for any coin" data-ru="Курсы криптовалют, капитализация и алерты по ценам">Live crypto prices, market caps and price alerts for any coin</p>
+          <div class="plugin-features">
+            <span class="feature-tag" style="background:rgba(16,185,129,0.15);color:#34d399;" data-en="Live prices" data-ru="Цены live">Live prices</span>
+            <span class="feature-tag" style="background:rgba(16,185,129,0.15);color:#34d399;" data-en="Market cap" data-ru="Капитализация">Market cap</span>
+            <span class="feature-tag" style="background:rgba(16,185,129,0.15);color:#34d399;" data-en="Alerts" data-ru="Алерты">Alerts</span>
+          </div>
+        </div>
+        <!-- Discord -->
+        <div class="plugin-card">
+          <div class="plugin-icon" style="background:rgba(88,101,242,0.2);">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#7c8ef7" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          </div>
+          <h3 class="plugin-title">Discord</h3>
+          <p class="plugin-desc" data-en="Send notifications and messages to Discord channels and DMs" data-ru="Отправка уведомлений и сообщений в Discord каналы и личку">Send notifications and messages to Discord channels and DMs</p>
+          <div class="plugin-features">
+            <span class="feature-tag" style="background:rgba(88,101,242,0.15);color:#7c8ef7;" data-en="Webhooks" data-ru="Вебхуки">Webhooks</span>
+            <span class="feature-tag" style="background:rgba(88,101,242,0.15);color:#7c8ef7;">Embeds</span>
+            <span class="feature-tag" style="background:rgba(88,101,242,0.15);color:#7c8ef7;">Bot API</span>
+          </div>
+        </div>
+        <!-- Email -->
+        <div class="plugin-card">
+          <div class="plugin-icon" style="background:rgba(239,68,68,0.2);">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+          </div>
+          <h3 class="plugin-title">Email</h3>
+          <p class="plugin-desc" data-en="Send automated emails via SMTP — reports, alerts, digests" data-ru="Отправка автоматических писем через SMTP — отчёты, алерты, дайджесты">Send automated emails via SMTP — reports, alerts, digests</p>
+          <div class="plugin-features">
+            <span class="feature-tag" style="background:rgba(239,68,68,0.15);color:#f87171;">SMTP</span>
+            <span class="feature-tag" style="background:rgba(239,68,68,0.15);color:#f87171;" data-en="HTML templates" data-ru="HTML шаблоны">HTML templates</span>
+            <span class="feature-tag" style="background:rgba(239,68,68,0.15);color:#f87171;" data-en="Attachments" data-ru="Вложения">Attachments</span>
+          </div>
+        </div>
+        <!-- Slack -->
+        <div class="plugin-card">
+          <div class="plugin-icon" style="background:rgba(74,144,226,0.2);">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#7ac0f0" stroke-width="2"><path d="M22.46 6c-.77.35-1.6.58-2.46.69.88-.53 1.56-1.37 1.88-2.38-.83.5-1.75.85-2.72 1.05C18.37 4.5 17.26 4 16 4c-2.35 0-4.27 1.92-4.27 4.29 0 .34.04.67.11.98C8.28 9.09 5.11 7.38 3 4.79c-.37.63-.58 1.37-.58 2.15 0 1.49.75 2.81 1.91 3.56-.71 0-1.37-.2-1.95-.5v.03c0 2.08 1.48 3.82 3.44 4.21a4.22 4.22 0 0 1-1.93.07 4.28 4.28 0 0 0 4 2.98 8.521 8.521 0 0 1-5.33 1.84c-.34 0-.68-.02-1.02-.06C3.44 20.29 5.7 21 8.12 21 16 21 20.33 14.46 20.33 8.79c0-.19 0-.37-.01-.56.84-.6 1.56-1.36 2.14-2.23z"/></svg>
+          </div>
+          <h3 class="plugin-title">Slack</h3>
+          <p class="plugin-desc" data-en="Post agent alerts and reports to Slack workspaces" data-ru="Отправляй алерты и отчёты агентов в Slack рабочие пространства">Post agent alerts and reports to Slack workspaces</p>
+          <div class="plugin-features">
+            <span class="feature-tag" style="background:rgba(74,144,226,0.15);color:#7ac0f0;" data-en="Webhooks" data-ru="Вебхуки">Webhooks</span>
+            <span class="feature-tag" style="background:rgba(74,144,226,0.15);color:#7ac0f0;" data-en="Channels" data-ru="Каналы">Channels</span>
+            <span class="feature-tag" style="background:rgba(74,144,226,0.15);color:#7ac0f0;">Blocks</span>
+          </div>
+        </div>
+        <!-- TON Stats -->
+        <div class="plugin-card">
+          <div class="plugin-icon" style="background:rgba(139,92,246,0.2);">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+          </div>
+          <h3 class="plugin-title">TON Stats</h3>
+          <p class="plugin-desc" data-en="Network stats: TPS, validators, staking data from tonstats.app" data-ru="Статистика сети: TPS, валидаторы, стейкинг с tonstats.app">Network stats: TPS, validators, staking data from tonstats.app</p>
+          <div class="plugin-features">
+            <span class="feature-tag" style="background:rgba(139,92,246,0.15);color:#a78bfa;">TPS</span>
+            <span class="feature-tag" style="background:rgba(139,92,246,0.15);color:#a78bfa;" data-en="Validators" data-ru="Валидаторы">Validators</span>
+            <span class="feature-tag" style="background:rgba(139,92,246,0.15);color:#a78bfa;" data-en="Staking" data-ru="Стейкинг">Staking</span>
+          </div>
+        </div>
+        <!-- Whale Tracker -->
+        <div class="plugin-card">
+          <div class="plugin-badge" style="background:rgba(6,182,212,0.2);color:#22d3ee;" data-en="Analytics" data-ru="Аналитика">Analytics</div>
+          <div class="plugin-icon" style="background:rgba(6,182,212,0.2);">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          </div>
+          <h3 class="plugin-title">Whale Tracker</h3>
+          <p class="plugin-desc" data-en="Monitor large TON transfers and whale wallet movements" data-ru="Отслеживай крупные переводы TON и движения кошельков китов">Monitor large TON transfers and whale wallet movements</p>
+          <div class="plugin-features">
+            <span class="feature-tag" style="background:rgba(6,182,212,0.15);color:#22d3ee;" data-en="Big moves" data-ru="Крупные переводы">Big moves</span>
+            <span class="feature-tag" style="background:rgba(6,182,212,0.15);color:#22d3ee;" data-en="Alerts" data-ru="Алерты">Alerts</span>
+            <span class="feature-tag" style="background:rgba(6,182,212,0.15);color:#22d3ee;">Realtime</span>
+          </div>
+        </div>
+        <!-- Drain Detector -->
+        <div class="plugin-card">
+          <div class="plugin-badge" style="background:rgba(239,68,68,0.2);color:#f87171;" data-en="Security" data-ru="Безопасность">Security</div>
+          <div class="plugin-icon" style="background:rgba(239,68,68,0.2);">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          </div>
+          <h3 class="plugin-title">Drain Detector</h3>
+          <p class="plugin-desc" data-en="Detect suspicious drainer patterns before you get hacked" data-ru="Обнаруживай подозрительные дрейнер-паттерны до взлома">Detect suspicious drainer patterns before you get hacked</p>
+          <div class="plugin-features">
+            <span class="feature-tag" style="background:rgba(239,68,68,0.15);color:#f87171;" data-en="Drainers" data-ru="Дрейнеры">Drainers</span>
+            <span class="feature-tag" style="background:rgba(239,68,68,0.15);color:#f87171;" data-en="Approvals" data-ru="Апрувы">Approvals</span>
+            <span class="feature-tag" style="background:rgba(239,68,68,0.15);color:#f87171;">AI scan</span>
+          </div>
+        </div>
+        <!-- Contract Auditor -->
+        <div class="plugin-card">
+          <div class="plugin-badge" style="background:rgba(239,68,68,0.2);color:#f87171;" data-en="Security" data-ru="Безопасность">Security</div>
+          <div class="plugin-icon" style="background:rgba(239,68,68,0.2);">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          </div>
+          <h3 class="plugin-title">Contract Auditor</h3>
+          <p class="plugin-desc" data-en="AI-powered smart contract vulnerability scanner for TON FunC" data-ru="AI-сканер уязвимостей смарт-контрактов TON FunC">AI-powered smart contract vulnerability scanner for TON FunC</p>
+          <div class="plugin-features">
+            <span class="feature-tag" style="background:rgba(239,68,68,0.15);color:#f87171;">FunC</span>
+            <span class="feature-tag" style="background:rgba(239,68,68,0.15);color:#f87171;" data-en="Vulnerabilities" data-ru="Уязвимости">Vulnerabilities</span>
+            <span class="feature-tag" style="background:rgba(239,68,68,0.15);color:#f87171;">AI audit</span>
+          </div>
+        </div>
+      </div>
+      <div class="coming-soon">
+        <p data-en="All 12 plugins work right now in the bot. More coming soon." data-ru="Все 12 плагинов уже работают в боте. Больше плагинов скоро.">All 12 plugins work right now in the bot. More coming soon.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Examples -->
+  <section id="examples" class="section">
+    <div class="container">
+      <h2 class="section-title" data-en="Agent <span class='gradient-text'>examples</span>" data-ru="Примеры <span class='gradient-text'>агентов</span>">Agent <span class="gradient-text">examples</span></h2>
+      <p class="section-subtitle" data-en="See what users are already creating on the platform" data-ru="Посмотри, что уже создают пользователи платформы">See what users are already creating on the platform</p>
+      <div class="examples-tabs">
+        <button class="tab active" data-tab="0">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5H11"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5H13"/></svg>
+          <span data-en="Arbitrage" data-ru="Арбитражник">Arbitrage</span>
+        </button>
+        <button class="tab" data-tab="1">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+          <span>DCA Bot</span>
+        </button>
+        <button class="tab" data-tab="2">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 3a10.9 10.9 0 0 1-3.14 1.53 4.48 4.48 0 0 0-7.86 3v1A10.66 10.66 0 0 1 3 4s-4 9 5 13a11.64 11.64 0 0 1-7 2c9 5 20 0 20-11.5a4.5 4.5 0 0 0-.08-.83A7.72 7.72 0 0 0 23 3z"/></svg>
+          <span data-en="Social Trader" data-ru="Social Trader">Social Trader</span>
+        </button>
+      </div>
+      <div class="examples-content">
+        <div class="example-panel active" data-panel="0">
+          <div class="example-info">
+            <div class="example-header">
+              <div class="example-icon" style="background: rgba(255, 107, 107, 0.2);">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#FF6B6B" stroke-width="2"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5H11"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5H13"/></svg>
+              </div>
+              <div>
+                <h3 data-en="Arbitrage Bot" data-ru="Арбитражник">Arbitrage Bot</h3>
+                <p data-en="Automatic Telegram gifts arbitrage" data-ru="Автоматический арбитраж подарков Telegram">Automatic Telegram gifts arbitrage</p>
+              </div>
+            </div>
+            <p class="example-desc" data-en="The agent monitors gift prices on all platforms, buys low and sells high." data-ru="Агент мониторит цены подарков на всех площадках, покупает дешево и продаёт дорого.">The agent monitors gift prices on all platforms, buys low and sells high.</p>
+            <div class="example-stats">
+              <div class="stat-item">
+                <span class="stat-value" style="color: #FF6B6B;">+23%</span>
+                <span class="stat-label" data-en="Profit" data-ru="Прибыль">Profit</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-value" style="color: #FF6B6B;">156</span>
+                <span class="stat-label" data-en="Trades" data-ru="Сделок">Trades</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-value" style="color: #FF6B6B;">24/7</span>
+                <span class="stat-label" data-en="Uptime" data-ru="Время">Uptime</span>
+              </div>
+            </div>
+            <a href="https://t.me/TonAgentPlatformBot" target="_blank" class="btn-primary">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              <span data-en="Create similar agent" data-ru="Создать похожего агента">Create similar agent</span>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </a>
+          </div>
+          <div class="terminal">
+            <div class="terminal-header">
+              <div class="terminal-buttons">
+                <span></span>
+                <span></span>
+                <span></span>
+              </div>
+              <span class="terminal-title">arbitrage-bot.log</span>
+            </div>
+            <div class="terminal-body">
+              <div class="log-line"><span class="log-time">[09:23:14]</span> <span class="log-info" data-en="Scanning market..." data-ru="Сканирование рынка...">Scanning market...</span></div>
+              <div class="log-line"><span class="log-time">[09:23:45]</span> <span class="log-success">✓ <span data-en="Opportunity found: Star #1234" data-ru="Найдена возможность: Star #1234">Opportunity found: Star #1234</span></span></div>
+              <div class="log-line"><span class="log-time">[09:23:46]</span> <span class="log-action">→ <span data-en="Buy for 45 TON on Fragment" data-ru="Покупка за 45 TON на Fragment">Buy for 45 TON on Fragment</span></span></div>
+              <div class="log-line"><span class="log-time">[09:24:12]</span> <span class="log-action">→ <span data-en="Sell for 52 TON on GetGems" data-ru="Продажа за 52 TON на GetGems">Sell for 52 TON on GetGems</span></span></div>
+              <div class="log-line"><span class="log-time">[09:24:15]</span> <span class="log-profit">$ <span data-en="Profit: +7 TON (+15.5%)" data-ru="Прибыль: +7 TON (+15.5%)">Profit: +7 TON (+15.5%)</span></span></div>
+              <div class="log-line"><span class="log-cursor">_</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="example-panel" data-panel="1">
+          <div class="example-info">
+            <div class="example-header">
+              <div class="example-icon" style="background: rgba(78, 205, 196, 0.2);">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#4ECDC4" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+              </div>
+              <div>
+                <h3>DCA Bot</h3>
+                <p data-en="Dollar-cost averaging" data-ru="Долларовое усреднение стоимости">Dollar-cost averaging</p>
+              </div>
+            </div>
+            <p class="example-desc" data-en="Buys TON for $100 every week regardless of current price. Reduces average entry cost." data-ru="Каждую неделю покупает TON на $100, независимо от текущей цены. Снижает среднюю стоимость входа.">Buys TON for $100 every week regardless of current price. Reduces average entry cost.</p>
+            <div class="example-stats">
+              <div class="stat-item">
+                <span class="stat-value" style="color: #4ECDC4;">$1,200</span>
+                <span class="stat-label" data-en="Invested" data-ru="Инвестировано">Invested</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-value" style="color: #4ECDC4;">$5.42</span>
+                <span class="stat-label" data-en="Current price" data-ru="Текущая цена">Current price</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-value" style="color: #4ECDC4;">$4.89</span>
+                <span class="stat-label" data-en="Average price" data-ru="Средняя цена">Average price</span>
+              </div>
+            </div>
+            <a href="https://t.me/TonAgentPlatformBot" target="_blank" class="btn-primary">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              <span data-en="Create similar agent" data-ru="Создать похожего агента">Create similar agent</span>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </a>
+          </div>
+          <div class="terminal">
+            <div class="terminal-header">
+              <div class="terminal-buttons">
+                <span></span>
+                <span></span>
+                <span></span>
+              </div>
+              <span class="terminal-title">dca-bot.log</span>
+            </div>
+            <div class="terminal-body">
+              <div class="log-line"><span class="log-time">[Mon 10:00]</span> <span class="log-success">✓ <span data-en="DCA purchase executed" data-ru="DCA покупка выполнена">DCA purchase executed</span></span></div>
+              <div class="log-line"><span class="log-time">[Mon 10:00]</span> <span class="log-action">→ <span data-en="Bought: 18.45 TON for $100" data-ru="Куплено: 18.45 TON за $100">Bought: 18.45 TON for $100</span></span></div>
+              <div class="log-line"><span class="log-time">[Mon 10:01]</span> <span class="log-info" data-en="Price: $5.42 per TON" data-ru="Цена: $5.42 за TON">Price: $5.42 per TON</span></div>
+              <div class="log-line"><span class="log-time">[Mon 10:01]</span> <span class="log-info" data-en="Average entry: $4.89" data-ru="Средняя цена входа: $4.89">Average entry: $4.89</span></div>
+              <div class="log-line"><span class="log-time">[Mon 10:01]</span> <span class="log-info" data-en="Next purchase: in 7 days" data-ru="Следующая покупка: через 7 дней">Next purchase: in 7 days</span></div>
+              <div class="log-line"><span class="log-cursor">_</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="example-panel" data-panel="2">
+          <div class="example-info">
+            <div class="example-header">
+              <div class="example-icon" style="background: rgba(69, 183, 209, 0.2);">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#45B7D1" stroke-width="2"><path d="M23 3a10.9 10.9 0 0 1-3.14 1.53 4.48 4.48 0 0 0-7.86 3v1A10.66 10.66 0 0 1 3 4s-4 9 5 13a11.64 11.64 0 0 1-7 2c9 5 20 0 20-11.5a4.5 4.5 0 0 0-.08-.83A7.72 7.72 0 0 0 23 3z"/></svg>
+              </div>
+              <div>
+                <h3 data-en="Social Trader" data-ru="Social Trader">Social Trader</h3>
+                <p data-en="Trading based on social signals" data-ru="Торговля на основе социальных сигналов">Trading based on social signals</p>
+              </div>
+            </div>
+            <p class="example-desc" data-en="Monitors tweets from Elon Musk and other influencers. Buys when they mention crypto." data-ru="Следит за твитами Илона Маска и других инфлюенсеров. Покупает когда они упоминают крипту.">Monitors tweets from Elon Musk and other influencers. Buys when they mention crypto.</p>
+            <div class="example-stats">
+              <div class="stat-item">
+                <span class="stat-value" style="color: #45B7D1;">47</span>
+                <span class="stat-label" data-en="Signals" data-ru="Сигналов">Signals</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-value" style="color: #45B7D1;">38</span>
+                <span class="stat-label" data-en="Successful" data-ru="Успешных">Successful</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-value" style="color: #45B7D1;">+156%</span>
+                <span class="stat-label" data-en="Profit" data-ru="Прибыль">Profit</span>
+              </div>
+            </div>
+            <a href="https://t.me/TonAgentPlatformBot" target="_blank" class="btn-primary">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              <span data-en="Create similar agent" data-ru="Создать похожего агента">Create similar agent</span>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </a>
+          </div>
+          <div class="terminal">
+            <div class="terminal-header">
+              <div class="terminal-buttons">
+                <span></span>
+                <span></span>
+                <span></span>
+              </div>
+              <span class="terminal-title">social-trader.log</span>
+            </div>
+            <div class="terminal-body">
+              <div class="log-line"><span class="log-time">[14:32:05]</span> <span class="log-info" data-en="New tweet from @elonmusk" data-ru="Новый твит от @elonmusk">New tweet from @elonmusk</span></div>
+              <div class="log-line"><span class="log-time">[14:32:06]</span> <span class="log-info" data-en="Analysis: &quot;DOGE to the moon&quot;" data-ru="Анализ: &quot;DOGE to the moon&quot;">Analysis: &quot;DOGE to the moon&quot;</span></div>
+              <div class="log-line"><span class="log-time">[14:32:08]</span> <span class="log-success">✓ <span data-en="Signal: Buy DOGE" data-ru="Сигнал: Покупка DOGE">Signal: Buy DOGE</span></span></div>
+              <div class="log-line"><span class="log-time">[14:32:09]</span> <span class="log-action">→ <span data-en="Purchase: $500 in DOGE" data-ru="Покупка: $500 в DOGE">Purchase: $500 in DOGE</span></span></div>
+              <div class="log-line"><span class="log-time">[14:45:22]</span> <span class="log-profit">$ <span data-en="Price up +12%" data-ru="Цена выросла на +12%">Price up +12%</span></span></div>
+              <div class="log-line"><span class="log-cursor">_</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pricing -->
+  <section id="pricing" class="section">
+    <div class="container">
+      <h2 class="section-title" data-en="Choose your <span class='gradient-text'>plan</span>" data-ru="Выбери свой <span class='gradient-text'>тариф</span>">Choose your <span class="gradient-text">plan</span></h2>
+      <p class="section-subtitle" data-en="Start free and scale as you grow" data-ru="Начни бесплатно и масштабируйся по мере роста">Start free and scale as you grow</p>
+      <div class="pricing-grid four-cols">
+        <!-- Free -->
+        <div class="pricing-card">
+          <div class="pricing-header">
+            <div class="pricing-icon" style="background: rgba(160, 174, 192, 0.2);">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#A0AEC0" stroke-width="2"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
+            </div>
+            <h3>Free</h3>
+          </div>
+          <div class="pricing-price">
+            <span class="price">0</span>
+            <span class="period" data-en="forever" data-ru="навсегда">forever</span>
+          </div>
+          <p class="pricing-desc" data-en="Perfect for exploring the platform" data-ru="Идеально для знакомства с платформой">Perfect for exploring the platform</p>
+          <ul class="pricing-features">
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="3 agents, 1 active" data-ru="3 агента, 1 активный">3 agents, 1 active</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="All 12 plugins" data-ru="Все 12 плагинов">All 12 plugins</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Manual launch only" data-ru="Только ручной запуск">Manual launch only</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Marketplace templates" data-ru="Шаблоны маркетплейса">Marketplace templates</span></li>
+            <li class="disabled"><span data-en="Scheduled agents" data-ru="Запуск по расписанию">Scheduled agents</span></li>
+            <li class="disabled"><span data-en="AI generations included" data-ru="Бесплатные AI генерации">AI generations included</span></li>
+          </ul>
+          <a href="https://t.me/TonAgentPlatformBot" target="_blank" class="btn-outline" data-en="Start for free" data-ru="Начать бесплатно">Start for free</a>
+        </div>
+        <!-- Starter -->
+        <div class="pricing-card">
+          <div class="pricing-header">
+            <div class="pricing-icon" style="background: rgba(0, 168, 232, 0.2);">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00A8E8" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            </div>
+            <h3>Starter</h3>
+          </div>
+          <div class="pricing-price">
+            <span class="price">5</span>
+            <span class="period">TON/<span data-en="month" data-ru="мес">month</span></span>
+          </div>
+          <p class="pricing-desc" data-en="For active traders and automators" data-ru="Для активных трейдеров и автоматизаторов">For active traders and automators</p>
+          <ul class="pricing-features">
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="15 agents, 3 active" data-ru="15 агентов, 3 активных">15 agents, 3 active</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Scheduled execution" data-ru="Запуск по расписанию">Scheduled execution</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="30 AI generations/mo" data-ru="30 AI генераций/мес">30 AI generations/mo</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="All marketplace templates" data-ru="Все шаблоны маркетплейса">All marketplace templates</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Priority AI queue" data-ru="Приоритетная очередь AI">Priority AI queue</span></li>
+          </ul>
+          <a href="https://t.me/TonAgentPlatformBot" target="_blank" class="btn-outline" data-en="Get Starter" data-ru="Выбрать Starter">Get Starter</a>
+        </div>
+        <!-- Pro -->
+        <div class="pricing-card popular">
+          <div class="popular-badge" data-en="Popular" data-ru="Популярный">Popular</div>
+          <div class="pricing-header">
+            <div class="pricing-icon" style="background: rgba(0, 136, 204, 0.2);">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0088CC" stroke-width="2"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
+            </div>
+            <h3>Pro</h3>
+          </div>
+          <div class="pricing-price">
+            <span class="price">15</span>
+            <span class="period">TON/<span data-en="month" data-ru="мес">month</span></span>
+          </div>
+          <p class="pricing-desc" data-en="For power users and teams" data-ru="Для опытных пользователей и команд">For power users and teams</p>
+          <ul class="pricing-features">
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="100 agents, 20 active" data-ru="100 агентов, 20 активных">100 agents, 20 active</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Webhook triggers" data-ru="Webhook триггеры">Webhook triggers</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Workflow chains" data-ru="Workflow цепочки">Workflow chains</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="150 AI generations/mo" data-ru="150 AI генераций/мес">150 AI generations/mo</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="API access" data-ru="API доступ">API access</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="24/7 support" data-ru="Поддержка 24/7">24/7 support</span></li>
+          </ul>
+          <a href="https://t.me/TonAgentPlatformBot" target="_blank" class="btn-primary" data-en="Upgrade to Pro" data-ru="Апгрейд до Pro">Upgrade to Pro</a>
+        </div>
+        <!-- Unlimited -->
+        <div class="pricing-card">
+          <div class="pricing-header">
+            <div class="pricing-icon" style="background: rgba(0, 212, 255, 0.2);">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00D4FF" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            </div>
+            <h3>Unlimited</h3>
+          </div>
+          <div class="pricing-price">
+            <span class="price">30</span>
+            <span class="period">TON/<span data-en="month" data-ru="мес">month</span></span>
+          </div>
+          <p class="pricing-desc" data-en="Everything unlimited, no limits" data-ru="Всё безлимитно, без ограничений">Everything unlimited, no limits</p>
+          <ul class="pricing-features">
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Unlimited agents" data-ru="Безлимит агентов">Unlimited agents</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Unlimited AI generations" data-ru="Безлимит AI генераций">Unlimited AI generations</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Everything included" data-ru="Всё включено">Everything included</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Webhook + Workflow + API" data-ru="Webhook + Workflow + API">Webhook + Workflow + API</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="SLA 99.9% + dedicated support" data-ru="SLA 99.9% + выделенная поддержка">SLA 99.9% + dedicated support</span></li>
+          </ul>
+          <a href="https://t.me/TonAgentPlatformBot" target="_blank" class="btn-outline" data-en="Go Unlimited" data-ru="Безлимит">Go Unlimited</a>
+        </div>
+      </div>
+      <p class="pricing-note" data-en="All plans include basic security and TON Connect integration" data-ru="Все тарифы включают базовую безопасность и TON Connect интеграцию">All plans include basic security and TON Connect integration</p>
+    </div>
+  </section>
+
+  <!-- Security -->
+  <section id="security" class="section">
+    <div class="container">
+      <div class="security-badge">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0088CC" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <span data-en="Security first" data-ru="Безопасность превыше всего">Security first</span>
+      </div>
+      <h2 class="section-title" data-en="Your agents are <span class='gradient-text'>protected</span>" data-ru="Твои агенты под <span class='gradient-text'>защитой</span>">Your agents are <span class="gradient-text">protected</span></h2>
+      <p class="section-subtitle" data-en="Multi-level security system to protect your assets" data-ru="Многоуровневая система безопасности для защиты твоих активов">Multi-level security system to protect your assets</p>
+      <div class="security-grid">
+        <div class="security-card">
+          <div class="security-icon" style="background: rgba(0, 136, 204, 0.2);">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#0088CC" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          </div>
+          <h3 data-en="AI code audit" data-ru="AI аудит кода">AI code audit</h3>
+          <p data-en="Every generated agent undergoes vulnerability checking with Claude API" data-ru="Каждый сгенерированный агент проходит проверку на уязвимости с помощью Claude API">Every generated agent undergoes vulnerability checking with Claude API</p>
+          <ul>
+            <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Automatic vulnerability analysis" data-ru="Автоматический анализ уязвимостей">Automatic vulnerability analysis</span></li>
+            <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Best practices check" data-ru="Проверка best practices">Best practices check</span></li>
+            <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Dangerous pattern detection" data-ru="Детект опасных паттернов">Dangerous pattern detection</span></li>
+          </ul>
+        </div>
+        <div class="security-card">
+          <div class="security-icon" style="background: rgba(0, 168, 232, 0.2);">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#00A8E8" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          </div>
+          <h3 data-en="Sandbox execution" data-ru="Sandbox-выполнение">Sandbox execution</h3>
+          <p data-en="Agents run in isolated environment without system access" data-ru="Агенты работают в изолированной среде без доступа к системе">Agents run in isolated environment without system access</p>
+          <ul>
+            <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Host system isolation" data-ru="Изоляция от хост-системы">Host system isolation</span></li>
+            <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Limited resources" data-ru="Ограниченные ресурсы">Limited resources</span></li>
+            <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Auto-restart" data-ru="Автоматический перезапуск">Auto-restart</span></li>
+          </ul>
+        </div>
+        <div class="security-card">
+          <div class="security-icon" style="background: rgba(0, 212, 255, 0.2);">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#00D4FF" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          </div>
+          <h3 data-en="Verified plugins" data-ru="Проверенные плагины">Verified plugins</h3>
+          <p data-en="All plugins in marketplace undergo manual team verification" data-ru="Все плагины в marketplace проходят ручную проверку командой">All plugins in marketplace undergo manual team verification</p>
+          <ul>
+            <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Code review for each plugin" data-ru="Код-ревью каждого плагина">Code review for each plugin</span></li>
+            <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Developer verification" data-ru="Проверка разработчика">Developer verification</span></li>
+            <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="Regular audits" data-ru="Регулярные аудиты">Regular audits</span></li>
+          </ul>
+        </div>
+        <div class="security-card">
+          <div class="security-icon" style="background: rgba(0, 136, 204, 0.2);">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#0088CC" stroke-width="2"><path d="M20 12V8H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12v4"/><path d="M4 6v12a2 2 0 0 0 2 2h14v-4"/><path d="M18 12a2 2 0 0 0-2 2c0 1.1.9 2 2 2h4v-4h-4z"/></svg>
+          </div>
+          <h3>TON Connect</h3>
+          <p data-en="All transactions are signed through official TON Connect" data-ru="Все транзакции подписываются через официальный TON Connect">All transactions are signed through official TON Connect</p>
+          <ul>
+            <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="No private keys on server" data-ру="Никаких приватных ключей на сервере">No private keys on server</span></li>
+            <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="User signs every transaction" data-ru="Пользователь подписывает каждую транзакцию">User signs every transaction</span></li>
+            <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span data-en="All TON wallets supported" data-ru="Поддержка всех TON кошельков">All TON wallets supported</span></li>
+          </ul>
+        </div>
+      </div>
+      <div class="security-warning">
+        <div class="warning-icon">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </div>
+        <div class="warning-content">
+          <h4 data-en="Important note" data-ru="Важное примечание">Important note</h4>
+          <p data-en="Despite all security measures, using AI agents involves risks. We recommend starting with small amounts and thoroughly testing agents before production use." data-ru="Несмотря на все меры безопасности, использование AI-агентов связано с рисками. Мы рекомендуем начинать с небольших сумм и тщательно тестировать агентов перед использованием в продакшене.">Despite all security measures, using AI agents involves risks. We recommend starting with small amounts and thoroughly testing agents before production use.</p>
+        </div>
+        <div class="security-badge-256">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0088CC" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          <span>256-bit</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Agent Capabilities -->
+  <section id="capabilities" class="section">
+    <div class="container">
+      <h2 class="section-title" data-en="Agent <span class='gradient-text'>Capabilities</span>" data-ru="Возможности <span class='gradient-text'>агентов</span>">Agent <span class="gradient-text">Capabilities</span></h2>
+      <p class="section-subtitle" data-en="Everything your AI agent can do out of the box" data-ru="Всё, что ваш AI-агент умеет из коробки">Everything your AI agent can do out of the box</p>
+      <div class="capabilities-grid">
+        <div class="cap-card">
+          <div class="cap-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2z"/></svg></div>
+          <h3 data-en="AI-First Creation" data-ru="AI-First создание">AI-First Creation</h3>
+          <p data-en="Describe your task in plain text — AI generates the agent automatically. No code, no templates, just your idea." data-ru="Опишите задачу текстом — AI генерирует агента автоматически. Без кода, без шаблонов.">Describe your task in plain text — AI generates the agent automatically. No code, no templates, just your idea.</p>
+        </div>
+        <div class="cap-card">
+          <div class="cap-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></div>
+          <h3 data-en="Voice Commands" data-ru="Голосовые команды">Voice Commands</h3>
+          <p data-en="Send a voice message — AI transcribes and creates an agent from your speech. Works in any language." data-ru="Отправьте голосовое — AI расшифрует и создаст агента. Работает на любом языке.">Send a voice message — AI transcribes and creates an agent from your speech. Works in any language.</p>
+        </div>
+        <div class="cap-card">
+          <div class="cap-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></div>
+          <h3 data-en="7 AI Providers" data-ru="7 AI провайдеров">7 AI Providers</h3>
+          <p data-en="Gemini, OpenAI, Anthropic, Groq, DeepSeek, OpenRouter, Together. Switch per-agent or use platform fallback." data-ru="Gemini, OpenAI, Anthropic, Groq, DeepSeek, OpenRouter, Together. Переключение на уровне агента.">Gemini, OpenAI, Anthropic, Groq, DeepSeek, OpenRouter, Together. Switch per-agent or use platform fallback.</p>
+        </div>
+        <div class="cap-card">
+          <div class="cap-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg></div>
+          <h3 data-en="Gift Arbitrage" data-ru="Арбитраж подарков">Gift Arbitrage</h3>
+          <p data-en="23 specialized tools for Telegram gift trading. Smart valuation, cross-market arbitrage, instant purchase via BOC." data-ru="23 инструмента для торговли подарками. Умная оценка, кросс-маркет арбитраж, мгновенная покупка.">23 specialized tools for Telegram gift trading. Smart valuation, cross-market arbitrage, instant purchase via BOC.</p>
+        </div>
+        <div class="cap-card">
+          <div class="cap-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></div>
+          <h3 data-en="20+ Agent Tools" data-ru="20+ инструментов">20+ Agent Tools</h3>
+          <p data-en="TON balance, NFT floor, web search, HTTP fetch, state management, rich notifications, inter-agent messaging." data-ru="TON баланс, NFT флор, веб-поиск, HTTP запросы, стейт, уведомления, межагентная связь.">TON balance, NFT floor, web search, HTTP fetch, state management, rich notifications, inter-agent messaging.</p>
+        </div>
+        <div class="cap-card">
+          <div class="cap-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+          <h3 data-en="Real-time Chat" data-ru="Чат в реальном времени">Real-time Chat</h3>
+          <p data-en="Chat with your agents directly in Telegram. Give commands, ask questions, change behavior on the fly." data-ru="Общайтесь с агентами в Telegram. Давайте команды, задавайте вопросы, меняйте поведение на лету.">Chat with your agents directly in Telegram. Give commands, ask questions, change behavior on the fly.</p>
+        </div>
+        <div class="cap-card">
+          <div class="cap-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></div>
+          <h3 data-en="Rich Notifications" data-ru="HTML уведомления">Rich Notifications</h3>
+          <p data-en="Agents send formatted HTML notifications with inline buttons directly to Telegram. Links, actions, one-click controls." data-ru="HTML-уведомления с кнопками прямо в Telegram. Ссылки, действия, управление в один клик.">Agents send formatted HTML notifications with inline buttons directly to Telegram. Links, actions, one-click controls.</p>
+        </div>
+        <div class="cap-card">
+          <div class="cap-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg></div>
+          <h3 data-en="12 Plugins" data-ru="12 плагинов">12 Plugins</h3>
+          <p data-en="DeFi, analytics, notifications, security — install what you need. Extend any agent with marketplace plugins." data-ru="DeFi, аналитика, уведомления, безопасность — устанавливайте нужное. Расширяйте агентов плагинами.">DeFi, analytics, notifications, security — install what you need. Extend any agent with marketplace plugins.</p>
+        </div>
+        <div class="cap-card">
+          <div class="cap-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg></div>
+          <h3 data-en="Inter-Agent Comms" data-ru="Связь между агентами">Inter-Agent Comms</h3>
+          <p data-en="Your agents can message each other. Build agent teams that collaborate and share data autonomously." data-ru="Агенты могут писать друг другу. Создавайте команды агентов для совместной работы.">Your agents can message each other. Build agent teams that collaborate and share data autonomously.</p>
+        </div>
+        <div class="cap-card">
+          <div class="cap-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+          <h3 data-en="Sandbox Security" data-ru="Безопасный sandbox">Sandbox Security</h3>
+          <p data-en="SSRF protection, execution timeouts, circuit breakers, concurrent tick guards. Agents run in isolated sandboxes." data-ru="SSRF защита, таймауты, circuit breakers, изоляция. Агенты работают в безопасном sandbox.">SSRF protection, execution timeouts, circuit breakers, concurrent tick guards. Agents run in isolated sandboxes.</p>
+        </div>
+      </div>
+      <div class="cap-counters">
+        <div class="cap-counter">
+          <span class="cap-num" data-count="60">0</span><span class="cap-label" data-en="Agent Tools" data-ru="Инструментов">Agent Tools</span>
+        </div>
+        <div class="cap-counter">
+          <span class="cap-num" data-count="7">0</span><span class="cap-label" data-en="AI Providers" data-ru="AI провайдеров">AI Providers</span>
+        </div>
+        <div class="cap-counter">
+          <span class="cap-num" data-count="12">0</span><span class="cap-label" data-en="Plugins" data-ru="Плагинов">Plugins</span>
+        </div>
+        <div class="cap-counter">
+          <span class="cap-num" data-count="22">0</span><span class="cap-label" data-en="Templates" data-ru="Шаблонов">Templates</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Development Stage -->
+  <section id="roadmap" class="section">
+    <div class="container">
+      <h2 class="section-title" data-en="Development <span class='gradient-text'>stage</span>" data-ru="Стадия <span class='gradient-text'>разработки</span>">Development <span class="gradient-text">stage</span></h2>
+      <p class="section-subtitle" data-en="What we're working on right now" data-ru="Что мы делаем прямо сейчас">What we're working on right now</p>
+      <div class="dev-stages">
+        <div class="dev-stage completed">
+          <div class="dev-icon" style="background: rgba(74, 222, 128, 0.2);">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          </div>
+          <div class="dev-content">
+            <span class="dev-status" style="color:#4ade80" data-en="Completed" data-ru="Готово">Completed</span>
+            <h3 data-en="Platform Core" data-ru="Ядро платформы">Platform Core</h3>
+            <ul>
+              <li data-en="AI-first agent creation" data-ru="AI-генерация агентов">AI-first agent creation</li>
+              <li data-en="12 plugins, 22 templates" data-ru="12 плагинов, 22 шаблона">12 plugins, 22 templates</li>
+              <li data-en="TON Connect + balance system" data-ru="TON Connect + баланс">TON Connect + balance system</li>
+              <li data-en="7 AI providers supported" data-ru="7 AI-провайдеров">7 AI providers supported</li>
+            </ul>
+          </div>
+        </div>
+        <div class="dev-stage completed">
+          <div class="dev-icon" style="background: rgba(74, 222, 128, 0.2);">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          </div>
+          <div class="dev-content">
+            <span class="dev-status" style="color:#4ade80" data-en="Completed" data-ru="Готово">Completed</span>
+            <h3 data-en="AI Agent Runtime" data-ru="AI Agent Runtime">AI Agent Runtime</h3>
+            <ul>
+              <li data-en="Always-on 24/7 agents" data-ru="Агенты 24/7 онлайн">Always-on 24/7 agents</li>
+              <li data-en="Real-time chat with agents" data-ru="Чат с агентами в реальном времени">Real-time chat with agents</li>
+              <li data-en="Voice commands support" data-ru="Голосовые команды">Voice commands support</li>
+              <li data-en="Gift & NFT arbitrage tools" data-ru="Gift & NFT арбитраж">Gift & NFT arbitrage tools</li>
+            </ul>
+          </div>
+        </div>
+        <div class="dev-stage completed">
+          <div class="dev-icon" style="background: rgba(74, 222, 128, 0.2);">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          </div>
+          <div class="dev-content">
+            <span class="dev-status" style="color:#4ade80" data-en="Completed" data-ru="Готово">Completed</span>
+            <h3 data-en="Marketplace & Wallet" data-ru="Marketplace & Кошелёк">Marketplace & Wallet</h3>
+            <ul>
+              <li data-en="Agent marketplace (buy/sell)" data-ru="Marketplace агентов (покупка/продажа)">Agent marketplace (buy/sell)</li>
+              <li data-en="Web Dashboard + Wallet" data-ru="Веб-дашборд + Кошелёк">Web Dashboard + Wallet</li>
+              <li data-en="TON balance top-up & withdrawals" data-ru="Пополнение и вывод TON">TON balance top-up & withdrawals</li>
+              <li data-en="Gift & NFT arbitrage marketplace" data-ru="Gift & NFT арбитраж маркет">Gift & NFT arbitrage marketplace</li>
+            </ul>
+          </div>
+        </div>
+        <div class="dev-stage in-progress">
+          <div class="dev-icon" style="background: rgba(0, 136, 204, 0.2);">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0088CC" stroke-width="2"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
+          </div>
+          <div class="dev-content">
+            <span class="dev-status" data-en="In progress" data-ru="В работе">In progress</span>
+            <h3 data-en="Scale & Governance" data-ru="Масштабирование">Scale & Governance</h3>
+            <ul>
+              <li data-en="Per-agent TON wallets <svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='#22c55e' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><polyline points='20 6 9 17 4 12'/></svg>" data-ru="Персональные кошельки агентов <svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='#22c55e' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><polyline points='20 6 9 17 4 12'/></svg>">Per-agent TON wallets <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></li>
+              <li data-en="Inter-agent communication <svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='#22c55e' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><polyline points='20 6 9 17 4 12'/></svg>" data-ru="Межагентная коммуникация <svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='#22c55e' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><polyline points='20 6 9 17 4 12'/></svg>">Inter-agent communication <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></li>
+              <li data-en="DAO governance & token" data-ru="DAO управление и токен">DAO governance & token</li>
+              <li data-en="Multi-chain support" data-ru="Поддержка нескольких блокчейнов">Multi-chain support</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Team -->
+  <section id="team" class="section">
+    <div class="container">
+      <h2 class="section-title" data-en="About <span class='gradient-text'>us</span>" data-ru="О <span class='gradient-text'>нас</span>">About <span class="gradient-text">us</span></h2>
+      <p class="section-subtitle" data-en="Who's behind the project and why we're doing this" data-ru="Кто стоит за проектом и почему мы это делаем">Who's behind the project and why we're doing this</p>
+      <div class="team-grid">
+        <div class="team-card">
+          <div class="team-avatar">
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          </div>
+          <h3 data-en="Full-stack Developer" data-ru="Full-stack разработчик">Full-stack Developer</h3>
+          <p class="team-role" data-en="Co-founder & Lead Developer" data-ru="Сооснователь и ведущий разработчик">Co-founder & Lead Developer</p>
+          <div class="team-tags">
+            <span class="team-tag">Full-stack</span>
+            <span class="team-tag">AI/ML</span>
+          </div>
+          <p class="team-bio" data-en="Experienced in Telegram bot development and AI agent architecture. Building intelligent automation systems." data-ru="Опыт в разработке Telegram-ботов и архитектуре AI-агентов. Создаю интеллектуальные системы автоматизации.">Experienced in Telegram bot development and AI agent architecture. Building intelligent automation systems.</p>
+        </div>
+        <div class="team-card">
+          <div class="team-avatar">
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          </div>
+          <h3 data-en="Blockchain Developer" data-ru="Blockchain разработчик">Blockchain Developer</h3>
+          <p class="team-role" data-en="Co-founder & TON Specialist" data-ru="Сооснователь и TON специалист">Co-founder & TON Specialist</p>
+          <div class="team-tags">
+            <span class="team-tag" data-en="Blockchain" data-ru="Блокчейн">Blockchain</span>
+            <span class="team-tag">TON</span>
+          </div>
+          <p class="team-bio" data-en="Expert in TON blockchain integration and smart contracts. Creating secure decentralized solutions." data-ru="Эксперт в интеграции TON блокчейна и смарт-контрактах. Создаю безопасные децентрализованные решения.">Expert in TON blockchain integration and smart contracts. Creating secure decentralized solutions.</p>
+        </div>
+        <div class="mission-section">
+          <div class="mission-item">
+            <div class="mission-icon" style="background: rgba(0, 136, 204, 0.2);">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0088CC" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+            </div>
+            <div>
+              <h4 data-en="Our mission" data-ru="Наша миссия">Our mission</h4>
+              <p data-en="Make automation on TON accessible to everyone. No need to be a programmer or understand blockchain." data-ru="Сделать автоматизацию на TON доступной каждому. Не нужно быть программистом или разбираться в блокчейне.">Make automation on TON accessible to everyone. No need to be a programmer or understand blockchain.</p>
+            </div>
+          </div>
+          <div class="mission-item">
+            <div class="mission-icon" style="background: rgba(0, 168, 232, 0.2);">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00A8E8" stroke-width="2"><circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/></svg>
+            </div>
+            <div>
+              <h4 data-en="Our Goal" data-ru="Наша цель">Our Goal</h4>
+              <p data-en="Build the leading platform for AI agents on TON, making blockchain automation accessible to everyone without coding." data-ru="Создать ведущую платформу AI-агентов на TON, делая автоматизацию блокчейна доступной всем без программирования.">Build the leading platform for AI agents on TON, making blockchain automation accessible to everyone without coding.</p>
+            </div>
+          </div>
+          <div class="mission-item">
+            <div class="mission-icon" style="background: rgba(0, 212, 255, 0.2);">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00D4FF" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            </div>
+            <div>
+              <h4 data-en="Why TON?" data-ru="Почему TON?">Why TON?</h4>
+              <p data-en="TON is the fastest and most user-friendly blockchain for mass adoption. Telegram integration is perfect for our agents." data-ru="TON — самый быстрый и удобный блокчейн для массового adoption. Интеграция с Telegram идеальна для наших агентов.">TON is the fastest and most user-friendly blockchain for mass adoption. Telegram integration is perfect for our agents.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="team-stats">
+        <div class="team-stat">
+          <div class="team-stat-icon" style="background: rgba(0, 136, 204, 0.2);">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0088CC" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          </div>
+          <div class="team-stat-value">2</div>
+          <div class="team-stat-label" data-en="Developers" data-ru="Разработчика">Developers</div>
+        </div>
+        <div class="team-stat">
+          <div class="team-stat-icon" style="background: rgba(0, 168, 232, 0.2);">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00A8E8" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          </div>
+          <div class="team-stat-value">1+</div>
+          <div class="team-stat-label" data-en="Year experience" data-ru="Год опыта">Year experience</div>
+        </div>
+        <div class="team-stat">
+          <div class="team-stat-icon" style="background: rgba(0, 212, 255, 0.2);">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00D4FF" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+          </div>
+          <div class="team-stat-value">12</div>
+          <div class="team-stat-label" data-en="Plugins" data-ru="Плагинов">Plugins</div>
+        </div>
+        <div class="team-stat">
+          <div class="team-stat-icon" style="background: rgba(0, 136, 204, 0.2);">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0088CC" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          </div>
+          <div class="team-stat-value">∞</div>
+          <div class="team-stat-label" data-en="Ambition" data-ru="Амбиций">Ambition</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section id="faq" class="section">
+    <div class="container">
+      <div class="faq-badge">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0088CC" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <span data-en="Have questions?" data-ru="Есть вопросы?">Have questions?</span>
+      </div>
+      <h2 class="section-title" data-en="Frequently asked <span class='gradient-text'>questions</span>" data-ru="Часто задаваемые <span class='gradient-text'>вопросы</span>">Frequently asked <span class="gradient-text">questions</span></h2>
+      <p class="section-subtitle" data-en="Answers to the most popular questions about the platform" data-ru="Ответы на самые популярные вопросы о платформе">Answers to the most popular questions about the platform</p>
+      <div class="faq-list">
+        <div class="faq-item active">
+          <button class="faq-question">
+            <span data-en="Do I need to know programming?" data-ru="Нужно ли уметь программировать?">Do I need to know programming?</span>
+            <svg class="faq-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="faq-answer">
+            <p data-en="No, not at all. Just describe your task in simple text — for example, &quot;Send salary to employees on the 10th, wallets in JobsQ.txt file&quot;. AI will understand your task and create a working agent." data-ru="Нет, совсем не нужно. Просто опиши задачу простым текстом — например, &quot;Отправляй зарплату работникам 10-го числа, кошельки в файле JobsQ.txt&quot;. AI поймёт твою задачу и создаст готового агента.">No, not at all. Just describe your task in simple text — for example, &quot;Send salary to employees on the 10th, wallets in JobsQ.txt file&quot;. AI will understand your task and create a working agent.</p>
+          </div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-question">
+            <span data-en="What are the fees?" data-ru="Какая комиссия за использование?">What are the fees?</span>
+            <svg class="faq-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="faq-answer">
+            <p data-en="Creating agents is free! You can use the platform's built-in AI or connect your own API key (OpenAI, Anthropic, Gemini, Groq, DeepSeek, etc.). The balance system supports TON top-ups for premium features and marketplace purchases." data-ru="Создание агентов бесплатно! Можно использовать встроенный AI платформы или подключить свой API-ключ (OpenAI, Anthropic, Gemini, Groq, DeepSeek и др.). Система баланса поддерживает пополнение TON для премиум-функций и покупок в маркетплейсе.">Creating agents is free! You can use the platform's built-in AI or connect your own API key (OpenAI, Anthropic, Gemini, Groq, DeepSeek, etc.). The balance system supports TON top-ups for premium features and marketplace purchases.</p>
+          </div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-question">
+            <span data-en="Is it safe?" data-ru="Это безопасно?">Is it safe?</span>
+            <svg class="faq-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="faq-answer">
+            <p data-en="Yes, we use a multi-level security system: AI code audit for vulnerabilities, sandbox execution for agents, verified plugins only, and all transactions are signed through TON Connect — your private keys never leave your wallet." data-ru="Да, мы используем многоуровневую систему безопасности: AI аудит кода на уязвимости, sandbox-выполнение агентов, только проверенные плагины, и все транзакции подписываются через TON Connect — твои приватные ключи никогда не покидают твой кошелёк.">Yes, we use a multi-level security system: AI code audit for vulnerabilities, sandbox execution for agents, verified plugins only, and all transactions are signed through TON Connect — your private keys never leave your wallet.</p>
+          </div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-question">
+            <span data-en="Does it work from Russia?" data-ru="Работает ли из РФ?">Does it work from Russia?</span>
+            <svg class="faq-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="faq-answer">
+            <p data-en="Yes, the platform fully works from Russia. No VPN needed — we use proxy-ready infrastructure. All transactions go through TON Connect, which is available everywhere." data-ru="Да, платформа полностью работает из России. Не нужен VPN — мы используем proxy-ready инфраструктуру. Все транзакции проходят через TON Connect, который доступен везде.">Yes, the platform fully works from Russia. No VPN needed — we use proxy-ready infrastructure. All transactions go through TON Connect, which is available everywhere.</p>
+          </div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-question">
+            <span data-en="Can I disable the agent?" data-ru="Могу ли я отключить агента?">Can I disable the agent?</span>
+            <svg class="faq-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="faq-answer">
+            <p data-en="Of course! You can always stop or delete the agent through the Telegram bot. You can also set spending limits and receive notifications for every transaction." data-ru="Конечно! Ты всегда можешь остановить или удалить агента через Telegram бота. Также можно установить лимиты на траты и получать уведомления о каждой транзакции.">Of course! You can always stop or delete the agent through the Telegram bot. You can also set spending limits and receive notifications for every transaction.</p>
+          </div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-question">
+            <span data-en="Which wallets are supported?" data-ru="Какие кошельки поддерживаются?">Which wallets are supported?</span>
+            <svg class="faq-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="faq-answer">
+            <p data-en="We support all TON Connect wallets: Tonkeeper, Tonhub, MyTonWallet, Trust Wallet, and many others. Just scan the QR code or click the connect button." data-ru="Мы поддерживаем все кошельки с TON Connect: Tonkeeper, Tonhub, MyTonWallet, Trust Wallet, и многие другие. Просто отсканируй QR-код или нажми кнопку подключения.">We support all TON Connect wallets: Tonkeeper, Tonhub, MyTonWallet, Trust Wallet, and many others. Just scan the QR code or click the connect button.</p>
+          </div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-question">
+            <span data-en="Can I create my own plugin?" data-ru="Можно ли создать свой плагин?">Can I create my own plugin?</span>
+            <svg class="faq-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="faq-answer">
+            <p data-en="Yes! The Agent Marketplace is live — you can publish and sell your agents and plugins. 12 built-in plugins are available, and the platform supports any REST API integration through the webhook system." data-ru="Да! Agent Marketplace уже работает — можно публиковать и продавать своих агентов и плагины. 12 встроенных плагинов доступны, и платформа поддерживает любую REST API интеграцию через систему вебхуков.">Yes! The Agent Marketplace is live — you can publish and sell your agents and plugins. 12 built-in plugins are available, and the platform supports any REST API integration through the webhook system.</p>
+          </div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-question">
+            <span data-en="What if the agent does something wrong?" data-ru="Что если агент сделает что-то не так?">What if the agent does something wrong?</span>
+            <svg class="faq-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="faq-answer">
+            <p data-en="Before production, we recommend thoroughly testing the agent. Set spending limits, start with small amounts. In case of problems — the agent can be instantly stopped through the bot." data-ru="Перед запуском в продакшен рекомендуем тщательно тестировать агента. Установи лимиты на траты, начни с небольших сумм. В случае проблем — агента можно мгновенно остановить через бота.">Before production, we recommend thoroughly testing the agent. Set spending limits, start with small amounts. In case of problems — the agent can be instantly stopped through the bot.</p>
+          </div>
+        </div>
+      </div>
+      <div class="faq-cta">
+        <p data-en="Didn't find the answer to your question?" data-ru="Не нашли ответ на свой вопрос?">Didn't find the answer to your question?</p>
+        <a href="https://t.me/despensive" target="_blank" class="btn-outline" data-en="Contact support" data-ru="Написать в поддержку">Contact support</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <div class="footer-logo">
+            <img src="logo.svg" alt="TON Agent Platform" width="32" height="32" style="filter: drop-shadow(0 0 8px rgba(0,136,204,0.3));">
+            <span>TON Agent Platform</span>
+          </div>
+          <p class="footer-desc" data-en="No-code platform for creating AI agents in Telegram. Describe your task in text — get a working bot in 2 minutes." data-ru="No-code платформа для создания AI-агентов в Telegram. Опиши задачу текстом — получи готового бота за 2 минуты.">No-code platform for creating AI agents in Telegram. Describe your task in text — get a working bot in 2 minutes.</p>
+          <div class="footer-social">
+            <a href="https://github.com/spendollars/TonAgentPlatform" target="_blank" aria-label="GitHub">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+            </a>
+            <a href="https://t.me/tonagentplatform" target="_blank" aria-label="Telegram">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            </a>
+            <a href="https://twitter.com/tonagentplatform" target="_blank" aria-label="Twitter">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 3a10.9 10.9 0 0 1-3.14 1.53 4.48 4.48 0 0 0-7.86 3v1A10.66 10.66 0 0 1 3 4s-4 9 5 13a11.64 11.64 0 0 1-7 2c9 5 20 0 20-11.5a4.5 4.5 0 0 0-.08-.83A7.72 7.72 0 0 0 23 3z"/></svg>
+            </a>
+          </div>
+        </div>
+        <div class="footer-links">
+          <h4 data-en="Platform" data-ru="Платформа">Platform</h4>
+          <ul>
+            <li><a href="#how-it-works" data-en="How it works" data-ru="Как это работает">How it works</a></li>
+            <li><a href="#plugins" data-en="Plugins" data-ru="Плагины">Plugins</a></li>
+            <li><a href="#examples" data-en="Examples" data-ru="Примеры">Examples</a></li>
+            <li><a href="#pricing" data-en="Pricing" data-ru="Тарифы">Pricing</a></li>
+          </ul>
+        </div>
+        <div class="footer-links">
+          <h4 data-en="Contacts" data-ru="Контакты">Contacts</h4>
+          <ul>
+            <li>
+              <a href="mailto:support@tonagent.platform">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                support@tonagent.platform
+              </a>
+            </li>
+            <li>
+              <a href="https://t.me/TonAgentPlatformBot" target="_blank">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                @TonAgentPlatformBot
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              </a>
+            </li>
+            <li>
+              <a href="https://t.me/tonagentplatform" target="_blank">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                <span data-en="Telegram channel" data-ru="Канал в Telegram">Telegram channel</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              </a>
+            </li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-partners">
+        <p data-en="Ecosystem" data-ru="Экосистема">Ecosystem</p>
+        <div class="partners-list">
+          <a href="https://ton.org" target="_blank" class="partner-badge">TON Blockchain</a>
+          <a href="https://telegram.org" target="_blank" class="partner-badge">Telegram</a>
+          <a href="https://giftasset.pro" target="_blank" class="partner-badge">GiftAsset</a>
+          <a href="https://fragment.com" target="_blank" class="partner-badge">Fragment</a>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>2026 TON Agent Platform. <span data-en="All rights reserved." data-ru="Все права защищены.">All rights reserved.</span></p>
+        <div class="powered-by">
+          <span>Powered by</span>
+          <div class="powered-icon" style="background: rgba(0, 136, 204, 0.2);">
+            <span style="color: #0088CC;">TON</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+  // ── Dynamic bot link from /api/config ──────────────────────────────────
+  (function() {
+    fetch('/api/config')
+      .then(function(r) { return r.json(); })
+      .then(function(cfg) {
+        if (!cfg.ok || !cfg.botLink) return;
+        // Update all <a> tags pointing to the bot (skip community channel links)
+        document.querySelectorAll('a[href*="t.me/"]').forEach(function(el) {
+          var href = el.getAttribute('href') || '';
+          if (!href.includes('tonagentplatform')) {
+            var q = href.indexOf('?');
+            el.setAttribute('href', q >= 0 ? cfg.botLink + href.slice(q) : cfg.botLink);
+          }
+        });
+      })
+      .catch(function() {}); // silently fall back to hardcoded hrefs
+  })();
+  </script>
+  <script src="script.js"></script>
+
+  <script>
+
+// ═══════════════ FAST DEMO ANIMATION ═══════════════
+const DEMO_SCRIPTS = {
+  price: {
+    start: 'demo_price',
+    steps: [
+      { role: 'bot', delay: 0, html: 'Welcome to <b>TON Agent Platform</b>!\n\nSend /start to begin or choose a template.' },
+      { role: 'user', delay: 600, html: 'I want to monitor TON price and alert me when it hits $8' },
+      { role: 'bot', delay: 1800, html: '<b>Analyzing your request...</b>\n\nI\'ll create a TON Price Monitor agent for you!', typing: 1200 },
+      { role: 'bot', delay: 0, html: '<b>Agent code generated</b>\n<div class="msg-code">✓ DeDust price feed connected\n✓ Alert threshold: $8.00\n✓ Check interval: 5 min</div><div class="msg-btn">Activate Agent</div>' },
+      { role: 'bot', delay: 1500, html: '<b>Agent activated!</b> Monitoring TON price every 5 minutes.\n\nYou\'ll get a Telegram notification when TON hits $8.' },
+    ]
+  },
+  nft: {
+    start: 'demo_nft',
+    steps: [
+      { role: 'bot', delay: 0, html: 'Welcome to <b>TON Agent Platform</b>!\n\nChoose a template or describe your task.' },
+      { role: 'user', delay: 600, html: 'Monitor NFT collection floor price every hour and alert if drops 20%' },
+      { role: 'bot', delay: 1800, html: '<b>Processing your NFT monitor request...</b>', typing: 1200 },
+      { role: 'bot', delay: 0, html: '<b>Agent code generated</b>\n<div class="msg-code">✓ TonAPI connected\n✓ Alert: -20% floor drop\n✓ Check interval: 1 hour</div><div class="msg-btn">Activate Agent</div>' },
+      { role: 'bot', delay: 1500, html: '<b>NFT monitor active!</b> Checking floor price hourly.\n\nAlert if floor drops by 20% or more.' },
+    ]
+  },
+  wallet: {
+    start: 'demo_wallet',
+    steps: [
+      { role: 'bot', delay: 0, html: 'Welcome to <b>TON Agent Platform</b>!\n\nDescribe what your agent should do.' },
+      { role: 'user', delay: 600, html: 'Alert me when my TON wallet balance drops below 5 TON' },
+      { role: 'bot', delay: 1800, html: '<b>Building your wallet monitor...</b>', typing: 1200 },
+      { role: 'bot', delay: 0, html: '<b>Agent code generated</b>\n<div class="msg-code">✓ TonCenter API ready\n✓ Threshold: 5 TON\n✓ Check interval: 15 min</div><div class="msg-btn">Activate Agent</div>' },
+      { role: 'bot', delay: 1500, html: '<b>Wallet monitor active!</b> Checking every 15 minutes.\n\nYou\'ll be alerted when balance drops below 5 TON.' },
+    ]
+  },
+  custom: {
+    start: 'start',
+    steps: [
+      { role: 'bot', delay: 0, html: 'Welcome to <b>TON Agent Platform</b>!\n\nDescribe your task in plain text — I\'ll build the agent!' },
+      { role: 'user', delay: 600, html: '<i>Your idea here...</i>' },
+      { role: 'bot', delay: 1600, html: '<b>Analyzing your request...</b>\n\nAI will generate custom code for your use case.', typing: 1000 },
+      { role: 'bot', delay: 0, html: '<b>Agent ready in ~30 seconds!</b>\n<div class="msg-btn">Activate Agent</div>' },
+      { role: 'bot', delay: 1200, html: 'Your custom agent is running 24/7 on our servers.' },
+    ]
+  }
+};
+
+let currentDemo = 'price';
+let demoTimer = null;
+
+function selectDemo(key) {
+  currentDemo = key;
+  document.querySelectorAll('.demo-card').forEach(c => c.classList.remove('active'));
+  document.querySelector(`.demo-card[data-demo="${key}"]`).classList.add('active');
+  const btn = document.getElementById('demoTryBtn');
+  const script = DEMO_SCRIPTS[key];
+  btn.href = `https://t.me/TonAgentPlatformBot?start=${script.start}`;
+  runDemoAnimation(key);
+}
+
+function runDemoAnimation(key) {
+  if (demoTimer) clearTimeout(demoTimer);
+  const msgs = document.getElementById('demoMessages');
+  const typing = document.getElementById('demoTyping');
+  msgs.innerHTML = '';
+  typing.style.display = 'none';
+
+  const steps = DEMO_SCRIPTS[key].steps;
+  let totalDelay = 0;
+
+  steps.forEach((step, idx) => {
+    totalDelay += step.delay || 0;
+    const d = totalDelay;
+
+    if (step.typing) {
+      demoTimer = setTimeout(() => {
+        typing.style.display = 'flex';
+        msgs.scrollTop = msgs.scrollHeight;
+      }, d);
+      totalDelay += step.typing;
+    }
+
+    const d2 = totalDelay;
+    demoTimer = setTimeout(() => {
+      typing.style.display = 'none';
+      const el = document.createElement('div');
+      el.className = `demo-msg ${step.role}`;
+      el.innerHTML = step.html.replace(/\n/g, '<br>');
+      msgs.appendChild(el);
+      msgs.scrollTop = msgs.scrollHeight;
+    }, d2);
+
+    totalDelay += 200;
+  });
+
+  // Loop
+  demoTimer = setTimeout(() => runDemoAnimation(key), totalDelay + 3000);
+}
+
+// Auto-start on page load
+document.addEventListener('DOMContentLoaded', () => {
+  setTimeout(() => {
+    const demoSection = document.getElementById('demo');
+    if (demoSection) runDemoAnimation('price');
+  }, 800);
+
+  // Animated counters on scroll
+  const counters = document.querySelectorAll('.cap-num[data-count]');
+  if (counters.length) {
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const el = entry.target;
+          const target = parseInt(el.getAttribute('data-count'));
+          let current = 0;
+          const step = Math.max(1, Math.floor(target / 40));
+          const timer = setInterval(() => {
+            current += step;
+            if (current >= target) { current = target; clearInterval(timer); }
+            el.textContent = current + (target >= 20 ? '+' : '');
+          }, 30);
+          observer.unobserve(el);
+        }
+      });
+    }, { threshold: 0.5 });
+    counters.forEach(c => observer.observe(c));
+  }
+});
+
+// Live stats from API
+(async () => {
+  try {
+    const base = location.hostname === 'localhost' ? 'http://localhost:3001' : location.origin;
+    const d = await (await fetch(base + '/api/stats')).json();
+    if (d.ok) {
+      const animate = (id, val) => {
+        const el = document.getElementById(id);
+        if (!el || !val) return;
+        let cur = 0;
+        const step = Math.max(1, Math.floor(val / 40));
+        const t = setInterval(() => {
+          cur += step;
+          if (cur >= val) { cur = val; clearInterval(t); }
+          el.textContent = cur + '+';
+        }, 30);
+      };
+      animate('stat-agents-created', d.agentsCreated);
+      animate('stat-active-agents', d.activeAgents);
+      animate('stat-total-users', d.totalUsers);
+    }
+  } catch (e) { /* fallback: keep "--" */ }
+})();
+
+  </script>
+
+  <!-- Scroll to top rocket -->
+  <button class="scroll-rocket" id="scrollRocket" onclick="window.scrollTo({top:0,behavior:'smooth'})" title="Back to top">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/>
+      <path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/>
+      <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/>
+      <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>
+    </svg>
+  </button>
+  <script>
+  window.addEventListener('scroll', function() {
+    var r = document.getElementById('scrollRocket');
+    if (r) r.classList.toggle('visible', window.scrollY > 400);
+  });
+  </script>
+</body>
+</html>

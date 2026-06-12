@@ -85,6 +85,40 @@ export function isSilentReply(text: string): boolean {
 export const TELEGRAM_MAX_MESSAGE_LENGTH = 4_096;
 export const FEED_MESSAGE_MAX_CHARS = 2_000;
 
+// ── TON / TX economics ──────────────────────────────────────────────────────
+/** Estimated network gas reserve added on top of every TX amount. */
+export const GAS_TON = 0.1;
+/** Smaller gas reserve used for buy_market_gift to match SwiftGifts expected amount. */
+export const GAS_TON_MARKET_BUY = 0.01;
+/** Default max TON a single TX can move. */
+export const HIGH_VALUE_TX_LIMIT_TON = 10;
+/** Daily spend cap default (TON). Can be overridden per agent via agent_state.daily_spend_limit_ton. */
+export const DAILY_SPEND_LIMIT_TON_DEFAULT = 10;
+
+// ── Marketplaces (canonical names) ──────────────────────────────────────────
+/** Canonical marketplace identifiers expected by SwiftGifts / GiftAsset APIs. */
+export const MARKETPLACE_CANONICAL: Record<string, string> = {
+  tonnel:   'tonnel',
+  portals:  'portals',
+  mrkt:     'Mrkt',    // SwiftGifts is case-sensitive here
+  getgems:  'getgems',
+  fragment: 'fragment',
+};
+/** Normalize any casing to the canonical API value. Returns null if unknown. */
+export function normalizeMarketplace(input: string | null | undefined): string | null {
+  if (!input) return null;
+  const k = String(input).toLowerCase().trim();
+  return MARKETPLACE_CANONICAL[k] ?? null;
+}
+/** Default marketplace fees when API doesn't return them (percent). */
+export const MARKETPLACE_FEE_DEFAULT: Record<string, number> = {
+  portals:  3,
+  tonnel:   3,
+  mrkt:     3,
+  getgems:  5,
+  fragment: 5,
+};
+
 // ── Web ─────────────────────────────────────────────────────────────────────
 export const WEB_SEARCH_MAX_RESULTS = 10;
 export const WEB_FETCH_MAX_TEXT_LENGTH = 20_000;
@@ -118,28 +152,86 @@ export const RECENCY_DECAY_FACTOR = 0.05;
 export const RECENCY_WEIGHT = 0.15;
 
 // ── Provider Tool Limits ────────────────────────────────────────────────────
+// Calibrated against each provider's FREE-tier TPM (tokens per minute).
+// Tools bloat prompt: ~300 tokens each. Groq free = 12K TPM for llama-3.3-70b,
+// so 40 tools × 300 = 12K just for tools → immediate 413 on first call.
+// Halving to ~15 leaves room for system prompt + history + response.
+// Providers with generous TPM (Gemini 250K, Anthropic paid) keep larger counts.
 export const PROVIDER_TOOL_LIMITS: Record<string, number> = {
-  gemini:     60,
-  anthropic:  128,
-  openai:     80,
-  groq:       40,
-  deepseek:   60,
-  openrouter: 60,
-  together:   40,
-  default:    60,
+  gemini:     60,   // 250K TPM free — plenty of room
+  anthropic:  128,  // paid only, 30K ITPM tier-1, 800K tier-3
+  openai:     80,   // 500K TPM at tier-1
+  groq:       15,   // 12K TPM free — tight, reduced from 40
+  deepseek:   60,   // 1M TPM announced
+  openrouter: 40,   // free models 20 RPM, varies by provider routing
+  together:   30,   // dynamic 60 RPM baseline
+  default:    40,
 };
 
 // ── Provider Max Context Chars ──────────────────────────────────────────────
 export const PROVIDER_MAX_CONTEXT_CHARS: Record<string, number> = {
-  gemini:     20_000,
-  anthropic:  40_000,
-  openai:     30_000,
-  groq:       15_000,
+  gemini:     40_000,  // 1M tokens context, 250K TPM free
+  anthropic:  40_000,  // 200K context
+  openai:     30_000,  // 128K context
+  groq:       8_000,   // 128K context but 12K TPM — conservative
   deepseek:   25_000,
-  openrouter: 25_000,
+  openrouter: 20_000,
   together:   15_000,
   default:    20_000,
 };
+
+// ── Provider Rate Limits (April 2026, FREE tier baseline) ──────────────────
+// Used for: agent creation warnings, adaptive retry, tick interval suggestions.
+// RPM = requests per minute, TPM = tokens per minute, RPD = requests per day.
+// Keep values on the conservative side — real quotas vary by model and region.
+export interface ProviderLimits {
+  tier: 'free' | 'paid' | 'dynamic';
+  rpm: number;
+  tpm: number;
+  rpd?: number;
+  tpd?: number;
+  ctx: number; // context window in tokens
+  note?: string;
+}
+export const PROVIDER_FREE_LIMITS: Record<string, ProviderLimits> = {
+  // Groq — llama-3.3-70b-versatile is tightest on free (12K TPM)
+  groq:       { tier: 'free', rpm: 30,  tpm: 12_000,  rpd: 1_000, tpd: 100_000, ctx: 128_000, note: 'llama-3.3-70b: 12K TPM is a tight budget — keep prompts slim or use llama-3.1-8b (same RPM, lower per-token cost).' },
+  gemini:     { tier: 'free', rpm: 10,  tpm: 250_000, rpd: 250,   ctx: 1_000_000, note: 'gemini-2.5-flash: 250K TPM is generous, but 10 RPM means <1 tick/6s. gemini-2.0-flash-lite is faster (30 RPM).' },
+  openai:     { tier: 'free', rpm: 3,   tpm: 40_000,  rpd: 200,   ctx: 128_000, note: 'Very tight free tier — upgrade to tier-1 ($5) for any serious use.' },
+  anthropic:  { tier: 'paid', rpm: 50,  tpm: 30_000,  ctx: 200_000, note: 'No free tier. Tier-1 requires $5 deposit → 50 RPM, 30K ITPM (Sonnet) / 50K ITPM (Haiku).' },
+  deepseek:   { tier: 'paid', rpm: 60,  tpm: 1_000_000, ctx: 128_000, note: 'Flat pricing, no tier. 60 RPM is the main bottleneck. Free signup credit $5.' },
+  openrouter: { tier: 'free', rpm: 20,  tpm: 100_000, rpd: 50,    ctx: 128_000, note: 'Free :free models = 20 RPM, 50 RPD. Purchase ≥$10 credits for 1000 RPD. Routing latency varies.' },
+  together:   { tier: 'dynamic', rpm: 60, tpm: 200_000, ctx: 128_000, note: 'Dynamic limits, base 60 RPM. $5 signup credit. No traditional free tier.' },
+};
+
+/** Recommended MIN interval for agent ticks to stay inside free-tier RPM.
+ *  If user sets interval below this, platform should warn. */
+export function minSafeIntervalMs(provider: string): number {
+  const p = (provider || 'default').toLowerCase();
+  const limits = PROVIDER_FREE_LIMITS[p];
+  if (!limits) return 60_000; // conservative default
+  // Keep at least 3 requests/min headroom for user messages + tick
+  const rpm = Math.max(1, limits.rpm - 3);
+  return Math.max(15_000, Math.ceil(60_000 / rpm));
+}
+
+/** Human-readable warning for agent creation if settings risk hitting limits. */
+export function getProviderWarnings(provider: string, intervalMs: number, toolCount: number): string[] {
+  const warnings: string[] = [];
+  const p = (provider || 'default').toLowerCase();
+  const L = PROVIDER_FREE_LIMITS[p];
+  if (!L) return warnings;
+  const minMs = minSafeIntervalMs(p);
+  if (intervalMs > 0 && intervalMs < minMs) {
+    warnings.push(`⚠️ Interval ${Math.round(intervalMs / 1000)}s is tighter than ${p.toUpperCase()} free-tier RPM can handle (${L.rpm} RPM → min ${Math.round(minMs / 1000)}s between ticks). Agent will hit 429 errors.`);
+  }
+  const toolTokenEstimate = toolCount * 300;
+  if (toolTokenEstimate > L.tpm * 0.5) {
+    warnings.push(`⚠️ ${toolCount} tools ≈ ${toolTokenEstimate} tokens/tick, while ${p.toUpperCase()} free TPM = ${L.tpm}. Request may fail with 413. Reduce capabilities or upgrade tier.`);
+  }
+  if (L.note) warnings.push(`ℹ️ ${L.note}`);
+  return warnings;
+}
 
 // ── Telegram Send Tools (detect when agent already sent output) ─────────────
 export const TELEGRAM_SEND_TOOLS = new Set([
@@ -158,6 +250,9 @@ const OVERFLOW_PATTERNS = [
   'token limit',
   'tokens exceeds',
   'content too large',
+  'prompt tokens limit exceeded',
+  'tokens limit exceeded',
+  'input too long',
 ];
 export function isContextOverflowError(msg: string): boolean {
   const lower = (msg || '').toLowerCase();
@@ -168,7 +263,14 @@ export function isContextOverflowError(msg: string): boolean {
 
 // ── Gemini schema sanitizer ─────────────────────────────────────────────────
 // Removes unsupported JSON Schema keywords that cause Gemini to reject tools
-const GEMINI_UNSUPPORTED_KEYS = ['$schema', '$id', '$ref', '$defs', '$anchor', 'title', 'default', 'examples'];
+const GEMINI_UNSUPPORTED_KEYS = [
+  '$schema', '$id', '$ref', '$defs', '$anchor',
+  'title', 'default', 'examples', 'format',
+  'additionalProperties', 'minItems', 'maxItems',
+  'minLength', 'maxLength', 'minimum', 'maximum',
+  'exclusiveMinimum', 'exclusiveMaximum', 'pattern',
+  'patternProperties', 'if', 'then', 'else',
+];
 
 function sanitizeSchemaForGemini(schema: any): any {
   if (!schema || typeof schema !== 'object') return schema;
@@ -179,19 +281,19 @@ function sanitizeSchemaForGemini(schema: any): any {
     if (GEMINI_UNSUPPORTED_KEYS.includes(key)) continue;
 
     if (key === 'anyOf' && Array.isArray(val)) {
-      // Convert anyOf with const values to enum
       const constVals = (val as any[]).filter(v => v && v.const !== undefined);
       if (constVals.length > 0) {
         cleaned.type = typeof constVals[0].const === 'number' ? 'number' : 'string';
         cleaned.enum = constVals.map(v => v.const);
         continue;
       }
-      // Take first non-null branch
       const nonNull = (val as any[]).find(v => v && v.type !== 'null');
-      if (nonNull) {
-        Object.assign(cleaned, sanitizeSchemaForGemini(nonNull));
-        continue;
-      }
+      if (nonNull) { Object.assign(cleaned, sanitizeSchemaForGemini(nonNull)); continue; }
+    }
+
+    if (key === 'oneOf' && Array.isArray(val)) {
+      const nonNull = (val as any[]).find(v => v && v.type !== 'null');
+      if (nonNull) { Object.assign(cleaned, sanitizeSchemaForGemini(nonNull)); continue; }
     }
 
     if (key === 'const') {
@@ -202,6 +304,15 @@ function sanitizeSchemaForGemini(schema: any): any {
 
     cleaned[key] = sanitizeSchemaForGemini(val);
   }
+
+  // Gemini requires type on every schema object with properties
+  if (cleaned.properties && !cleaned.type) cleaned.type = 'object';
+  // Gemini rejects empty properties {}
+  if (cleaned.properties && typeof cleaned.properties === 'object' && Object.keys(cleaned.properties).length === 0) {
+    delete cleaned.properties;
+    if (cleaned.type === 'object') cleaned.type = 'string';
+  }
+
   return cleaned;
 }
 

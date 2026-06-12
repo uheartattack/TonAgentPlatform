@@ -14,6 +14,7 @@
  * Rate limiting: token bucket (5 RPS shared across both APIs)
  */
 
+import 'dotenv/config';  // ensure .env is loaded before reading process.env
 import WebSocket from 'ws';
 
 // ── Rate limiter (token bucket) ────────────────────────────────────
@@ -190,12 +191,13 @@ const GA_BASE     = 'https://giftasset.pro';       // GiftAsset Pro
 const GA_DEV_BASE = 'https://giftasset.gifts';   // GiftAsset (new domain)
 const SW_BASE     = 'https://partners.swiftgifts.tg'; // SwiftGifts
 
-// GiftAsset Pro (giftasset.pro) — header: X-API-Key (per /openapi.json docs)
-const GA_KEY     = process.env.GIFTASSET_API_KEY     || '';
+// Lazy env reads — dotenv may load after this module (import order).
+// GiftAsset Pro (giftasset.pro) — header: X-API-Key
+const getGaKey    = () => process.env.GIFTASSET_API_KEY  || '';
 // GiftAsset Dev (api.giftasset.dev) — header: x-api-token
-const GA_DEV_KEY = process.env.GIFTASSET_DEV_KEY     || '';
+const getGaDevKey = () => process.env.GIFTASSET_DEV_KEY  || '';
 // SwiftGifts (partners.swiftgifts.tg) — header: x-api-key
-const SW_KEY     = process.env.SWIFTGIFTS_API_KEY    || '';
+const getSwKey    = () => process.env.SWIFTGIFTS_API_KEY || '';
 
 const limiter = new RateLimiter(5, 5);
 
@@ -206,18 +208,18 @@ let _gaFailedUntil = 0;
 let _gaFailLogged = false;
 let _gaDevFailedUntil = 0;
 // TEMP: SwiftGifts API disabled — set cooldown to year 2099
-let _swFailedUntil = new Date('2099-01-01').getTime();
-let _swFailLogged = true;
+let _swFailedUntil = 0;
+let _swFailLogged = false;
 
 async function gaDevFetch(path: string, opts: { method?: string; body?: any; query?: Record<string, string> } = {}): Promise<any> {
-  if (!GA_DEV_KEY) throw new Error('GIFTASSET_DEV_KEY not configured');
+  if (!getGaDevKey()) throw new Error('GIFTASSET_DEV_KEY not configured');
   if (Date.now() < _gaDevFailedUntil) throw new Error('GiftAsset Dev API key invalid (cooldown active)');
   await limiter.acquire();
   const url = new URL(path, GA_DEV_BASE);
   if (opts.query) Object.entries(opts.query).forEach(([k, v]) => url.searchParams.set(k, v));
   const res = await fetch(url.toString(), {
     method: opts.method || 'GET',
-    headers: { 'x-api-token': GA_DEV_KEY, 'Content-Type': 'application/json' },
+    headers: { 'x-api-token': getGaDevKey(), 'Content-Type': 'application/json' },
     body: opts.body ? JSON.stringify(opts.body) : undefined,
     signal: AbortSignal.timeout(15000),
   });
@@ -240,7 +242,7 @@ async function gaFetch(path: string, opts: { method?: string; body?: any; query?
     const res = await fetch(url.toString(), {
       method: opts.method || 'GET',
       headers: {
-        'X-API-Key': GA_KEY,     // GiftAsset Pro uses X-API-Key (per /openapi.json)
+        'X-API-Key': getGaKey(),     // GiftAsset Pro uses X-API-Key (per /openapi.json)
         'Content-Type': 'application/json',
       },
       body: opts.body ? JSON.stringify(opts.body) : undefined,
@@ -269,7 +271,7 @@ async function swFetch(path: string, opts: { method?: string; body?: any; query?
   const res = await fetch(url.toString(), {
     method: opts.method || 'GET',
     headers: {
-      'x-api-key': SW_KEY,     // SwiftGifts uses x-api-key
+      'x-api-key': getSwKey(),     // SwiftGifts uses x-api-key
       'Content-Type': 'application/json',
     },
     body: opts.body ? JSON.stringify(opts.body) : undefined,
@@ -728,7 +730,7 @@ export class GiftAssetClient {
 
     // Always take minimum: live listing beats stale price-list data
     // Prices > 5000 TON are likely Stars values or API garbage — skip
-    const MAX_SANE_PRICE = 5000;
+    const MAX_SANE_PRICE = 50000;
     const setMin = (market: string, price: number) => {
       if (price > 0 && price <= MAX_SANE_PRICE && (!floors[market] || price < floors[market])) floors[market] = price;
     };
@@ -765,7 +767,7 @@ export class GiftAssetClient {
         const market = (item.provider || '').toLowerCase();
         if (market) setMin(market, item.price);  // always update if cheaper
       }
-    } catch (e: any) { /* SwiftGifts disabled — silence expected cooldown errors */ }
+    } catch (e: any) { if (!(e?.message?.includes('cooldown') || e?.message?.includes('429'))) console.debug(`[GiftAsset] SwiftGifts offchain query failed for ${slug}:`, e?.message); }
 
     // 4) SwiftGifts — onchain markets (getgems, fragment) for cross-verification
     try {
@@ -774,7 +776,7 @@ export class GiftAssetClient {
         const market = (item.provider || '').toLowerCase();
         if (market) setMin(market, item.price);
       }
-    } catch (e: any) { /* SwiftGifts disabled — silence expected cooldown errors */ }
+    } catch (e: any) { if (!(e?.message?.includes('cooldown') || e?.message?.includes('429'))) console.debug(`[GiftAsset] SwiftGifts onchain query failed for ${slug}:`, e?.message); }
 
     let minFloor = Infinity;
     let minFloorMarket = '';
@@ -807,7 +809,7 @@ export class GiftAssetClient {
     try {
       // Step 1: Current floor prices (active listings) — NOT last sale prices
       // getAllCollectionsLastSale returns transaction history (what sold) not current listings
-      const rawData = await this.getPriceList().catch(() => null);
+      const rawData = await this.getPriceList().catch((e: any) => { console.warn('[GiftAsset] getPriceList failed in findArbitrageOpportunities:', e?.message); return null; });
       const cf = rawData?.collection_floors || rawData?.last_sales || rawData;
       if (!cf || typeof cf !== 'object') return opps;
 
@@ -958,7 +960,7 @@ export class GiftAssetRealtimeStream {
   private lastMessageAt = 0;
 
   constructor(apiKey?: string) {
-    this.apiKey = apiKey || GA_KEY;
+    this.apiKey = apiKey || getGaKey();
   }
 
   /** Register a callback for price updates */

@@ -1,0 +1,362 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+ * GRADIENT EDGE FIX — kill the "frame" effect on active gradient pills/tabs.
+ *
+ * Problem: active buttons (pill-tab.active, op-filter.active, filter-chip.active,
+ * etc.) had:
+ *   border: 1px solid rgba(255,255,255,0.14)   ← visible thin white ring
+ *   box-shadow: inset 0 1px 0 rgba(255,255,255,0.18)  ← top edge highlight
+ * The border outlined the gradient, and the inset highlight only existed at the
+ * TOP, creating an asymmetric "frame" instead of a continuous gradient surface.
+ *
+ * Fix: drop the border to transparent and remove the inset top highlight.
+ * Keep the outer drop-shadow glow because it adds depth without outlining
+ * the shape.
+ *
+ * Loaded LAST so it wins specificity over studio-skin.css / design-app.css.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+.pill-tab.active,
+.profile-hub-tabs[data-active="profile"]       .pill-tab[data-tab="profile"],
+.profile-hub-tabs[data-active="settings"]      .pill-tab[data-tab="settings"],
+.profile-hub-tabs[data-active="wallet"]        .pill-tab[data-tab="wallet"],
+.profile-hub-tabs[data-active="connectors"]    .pill-tab[data-tab="connectors"],
+.profile-hub-tabs[data-active="notifications"] .pill-tab[data-tab="notifications"],
+.op-filter.active,
+.kb-filter.active,
+.filter-chip.active,
+.tab-btn.active,
+.notif-filter.active,
+.mkt-tab.active,
+.lang-btn.active {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* The hover state on inactive pills/filters can also flash a white ring at
+   the moment of click — drop it down to a softer tone. */
+.pill-tab:hover:not(.active),
+.op-filter:hover:not(.active),
+.kb-filter:hover:not(.active),
+.filter-chip:hover:not(.active) {
+  border-color: rgba(var(--accent-r, 0), var(--accent-g, 152), var(--accent-b, 234), 0.18) !important;
+}
+
+/* Same fix for the primary CTAs that share the pattern: rt-save-btn,
+   tap-btn-pri, [data-main-action]. They also had a border + inset highlight
+   combo that read as a frame on top of the gradient surface. */
+.rt-save-btn,
+.tap-btn-pri,
+.tap-btn.primary,
+[data-main-action] {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* The settings 01/02/03 num-cube tiles already use the gradient, but they
+   also picked up a 1px inset highlight that made the top edge look brighter
+   than the bottom. Remove it for visual symmetry. */
+.num-cube {
+  box-shadow: none !important;
+  border: none !important;
+}
+
+/* ── WRAPPER FIX ─────────────────────────────────────────────────────────
+ * The filter-group wrappers (.operations-filters / .kb-filters / .pill-tabs /
+ * .profile-hub-tabs) had their OWN border + bg that, combined with the active
+ * pill inside, read as a double-frame around the active button — visible as
+ * a thin outer ring with a colored pill inside it.
+ *
+ * Make wrappers borderless so the active pill is the only visible shape.
+ * Keep a soft 1px inset border at very low alpha as a subtle tab-group hint
+ * — barely visible, doesn't compete with the active pill.
+ * ─────────────────────────────────────────────────────────────────────── */
+.operations-filters,
+.kb-filters,
+.pill-tabs,
+.profile-hub-tabs,
+.capabilities-filters {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+/* Nothing should render as a "halo" around an active gradient pill — no
+   focus outline, no -webkit-tap-highlight, no system selection ring. */
+.pill-tab,
+.pill-tab.active,
+.op-filter,
+.op-filter.active,
+.kb-filter,
+.kb-filter.active,
+.filter-chip,
+.filter-chip.active,
+.lang-btn,
+.lang-btn.active,
+.rt-save-btn,
+.tap-btn-pri,
+.tap-btn.primary,
+[data-main-action],
+.num-cube {
+  -webkit-tap-highlight-color: transparent !important;
+  -webkit-appearance: none !important;
+}
+
+/* ── RANGE SLIDERS ───────────────────────────────────────────────────────
+ * Every native <input type="range"> in the studio gets a unified look:
+ *   • track: thin pill, neutral grey, theme-aware accent fill on the left of thumb
+ *   • thumb: round, soft border, theme-aware accent color, gentle glow on hover
+ *   • no default browser chrome — no blue blob, no focus ring
+ * Works in both Chromium (::-webkit-slider-runnable-track/thumb) and Firefox
+ * (::-moz-range-track/thumb/progress).
+ * ─────────────────────────────────────────────────────────────────────── */
+input[type="range"] {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  background: transparent !important;
+  width: 100%;
+  height: 22px;
+  cursor: pointer;
+  outline: none !important;
+}
+input[type="range"]:focus { outline: none !important; }
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 999px;
+  background:
+    linear-gradient(in oklab 90deg,
+      rgba(var(--accent-r, 0), var(--accent-g, 152), var(--accent-b, 234), 0.55) 0%,
+      rgba(var(--accent-r, 0), var(--accent-g, 152), var(--accent-b, 234), 0.55) var(--range-pct, 50%),
+      rgba(255, 255, 255, 0.06) var(--range-pct, 50%),
+      rgba(255, 255, 255, 0.06) 100%);
+  border: none !important;
+}
+input[type="range"]::-moz-range-track {
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: none !important;
+}
+input[type="range"]::-moz-range-progress {
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(var(--accent-r, 0), var(--accent-g, 152), var(--accent-b, 234), 0.55);
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--primary);
+  border: 2px solid var(--bg-primary, #080b14);
+  box-shadow: 0 2px 6px rgba(var(--accent-r, 0), var(--accent-g, 152), var(--accent-b, 234), 0.45);
+  margin-top: -5.5px;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.15); }
+input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--primary);
+  border: 2px solid var(--bg-primary, #080b14);
+  box-shadow: 0 2px 6px rgba(var(--accent-r, 0), var(--accent-g, 152), var(--accent-b, 234), 0.45);
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+input[type="range"]::-moz-range-thumb:hover { transform: scale(1.15); }
+
+/* ── UI scale compensation ──────────────────────────────────────────────
+ * setUIScale() applies `zoom` to <body> (mimicking browser Ctrl+/-).
+ * Two hardcoded constraints prevent the layout from filling the viewport:
+ *   .page-content { max-width: 1640px }    ← caps horizontal at 1640px
+ *   main          { max-height: 100vh }    ← caps vertical at viewport
+ * Both are removed here so the content expands to fill the available
+ * space at any scale (and at 100% the cards still feel comfortable
+ * because the parent grid + native sidebar/main proportions take over).
+ * ─────────────────────────────────────────────────────────────────────── */
+.page,
+.page-content {
+  max-width: none !important;
+  padding-left: 20px !important;
+  padding-right: 20px !important;
+  padding-top: 0 !important;
+}
+
+/* Sidebar section headers (ГЛАВНОЕ / АГЕНТЫ / НАСТРОЙКА) sit flush left
+   against the sidebar's outer padding — no extra inset, so they read as
+   labels attached to the column edge rather than children of the nav
+   items below. */
+.nav-group-title {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+/* ── Marketplace tabs container ──────────────────────────────────────
+ * Keep the rounded-rect styled background (from studio-skin.css), just
+ * tighten the spacing between page-header and the tabs row so they sit
+ * close together visually.
+ * ──────────────────────────────────────────────────────────────────── */
+/* Global page-header reset — applies tight spacing to every studio page */
+.page-header {
+  margin-bottom: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+.marketplace-tabs {
+  margin-top: 0 !important;
+}
+
+/* ── Marketplace tab count badge ─────────────────────────────────────
+ * Subtle muted-grey capsule that becomes white on the active tab so
+ * counts read clearly against the gradient pill background. Mirrors the
+ * reference design — small chip stays visually quiet on inactive tabs.
+ * ──────────────────────────────────────────────────────────────────── */
+.mkt-tab .mkt-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 18px;
+  padding: 0 7px;
+  margin-left: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary, rgba(255, 255, 255, 0.55));
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  transition: background 200ms, color 200ms;
+}
+.mkt-tab.active .mkt-tab-count {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+main {
+  max-height: none !important;
+}
+
+/* ── viewport-unit compensation ──────────────────────────────────────
+ * `vh`/`vw` always refer to the PHYSICAL viewport, regardless of zoom.
+ * So .app { min-height: 100vh } stays 100vh even at zoom 0.8 (= 80vh
+ * visually) → empty space at the bottom. Same for any width:100vw.
+ * Divide by --ui-scale so the declared value compensates for the zoom.
+ * ──────────────────────────────────────────────────────────────────── */
+#app, .app {
+  min-height: calc(100vh / var(--ui-scale, 1)) !important;
+  width: calc(100vw / var(--ui-scale, 1)) !important;
+  max-width: none !important;
+}
+body {
+  overflow-x: hidden !important;
+  /* Drive zoom + width compensation from the same --ui-scale variable
+     so CSS animates them together synchronously. `contain: layout` +
+     `will-change` ask the browser to GPU-composite the transform and
+     isolate layout work per frame — eliminates the asymmetric jitter
+     when scaling DOWN (where body's declared width grows, otherwise
+     causing reflow cascade through children). */
+  zoom: var(--ui-scale, 1);
+  width: calc(100vw / var(--ui-scale, 1));
+  min-height: calc(100vh / var(--ui-scale, 1));
+  contain: layout style !important;
+  will-change: zoom, width, min-height !important;
+}
+#app, .app {
+  contain: layout style !important;
+  will-change: width, min-height !important;
+}
+
+/* ── Sidebar layout ──────────────────────────────────────────────────
+ * Three-section vertical layout where:
+ *   .sidebar-header (logo) — natural size at top
+ *   .nav-scroll   — fills remaining, SCROLLS when overflowing
+ *   .nav-foot     — PINNED to bottom, always visible
+ *
+ * Sidebar height compensates for body zoom so it always fills the
+ * physical viewport top-to-bottom regardless of UI scale.
+ * ──────────────────────────────────────────────────────────────────── */
+aside.sidebar {
+  display: flex !important;
+  flex-direction: column !important;
+  height: calc(100vh / var(--ui-scale, 1)) !important;
+  position: sticky !important;
+  top: 0 !important;
+  /* NO height transition — sidebar snaps to new height instantly so
+     nav-foot (pinned to bottom via margin-top:auto) doesn't drift after
+     the main content has finished scaling. Removes the "trailing" feel. */
+}
+
+/* ── Smooth UI-scale animation via @property ─────────────────────────
+ * Register --ui-scale as a typed CSS custom property so transitions
+ * actually interpolate it (raw `--vars` aren't animatable by default).
+ * Then drive `zoom` AND the width/height compensation from the same
+ * variable. Both properties animate from the SAME value at the SAME
+ * easing rate → perfect sync, no asymmetric jitter between scale-up
+ * and scale-down directions.
+ * ──────────────────────────────────────────────────────────────────── */
+@property --ui-scale {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 1;
+}
+:root {
+  transition: --ui-scale 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.sidebar-header,
+.nav-head,
+.brand {
+  flex-shrink: 0 !important;
+}
+.nav-scroll {
+  flex: 1 1 auto !important;
+  overflow-y: auto !important;
+  min-height: 0 !important;
+}
+.nav-foot {
+  flex-shrink: 0 !important;
+  margin-top: auto !important;
+}
+
+/* ── Lock ONLY the scale slider row to native size ──────────────────
+ * The rest of .nav-foot (user-card, EN/RU buttons, version) scales
+ * with the body zoom like the rest of the UI. Only the slider row gets
+ * a counter `transform: scale(1/z)` so the slider track stays the same
+ * size under the cursor while dragging — no jitter, no resize.
+ *
+ * GPU-composited transform (no reflow) keeps it atomic with body.zoom
+ * in a single frame.
+ * ──────────────────────────────────────────────────────────────────── */
+.scale-slider-row {
+  will-change: transform !important;
+}
+/* Topbar (search + balance pill + avatar) also had 32px side padding —
+   keep a small amount so the search input isn't glued to the sidebar,
+   but drop the right padding so the avatar/balance hug the viewport edge. */
+.topbar {
+  padding-left: 16px !important;
+  padding-right: 16px !important;
+}
+.pill-tab:focus,
+.pill-tab:focus-visible,
+.op-filter:focus,
+.op-filter:focus-visible,
+.kb-filter:focus,
+.kb-filter:focus-visible,
+.filter-chip:focus,
+.filter-chip:focus-visible,
+.rt-save-btn:focus,
+.rt-save-btn:focus-visible,
+.tap-btn-pri:focus,
+.tap-btn-pri:focus-visible,
+[data-main-action]:focus,
+[data-main-action]:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}

@@ -173,21 +173,29 @@ export async function summarizeMessages(
       messages: [
         {
           role: 'system',
-          content: `Summarize this conversation transcript concisely. Focus on:
-1. Key decisions and actions taken
-2. Important information learned
-3. Open items and next steps
-4. User preferences discovered
+          content: `Summarize this conversation transcript using the following structure:
 
-Write in the SAME LANGUAGE as the conversation. Max 500 chars. No headers, just bullet points.`,
+**User Intent:** What the user wanted to achieve
+**Key Decisions:** Important choices or confirmations made
+**Actions Taken:** Tools called and their outcomes (brief)
+**Important Context:** Facts, preferences, or data discovered
+**Open Items:** Anything unfinished or pending
+
+Write in the SAME LANGUAGE as the conversation. Max 600 chars. Be concise — one line per section. Skip empty sections.`,
         },
         { role: 'user', content: transcript.slice(0, 8000) },
       ],
-      max_tokens: 300,
+      max_tokens: 400,
     });
     return res.choices[0]?.message?.content?.trim() || '';
   } catch (e: any) {
-    console.warn(`[AgentMemory] Summarization failed: ${e.message?.slice(0, 100)}`);
+    try {
+      const { classifyAIError } = await import('../agents/ai-agent-runtime');
+      const cls = classifyAIError(e);
+      console.warn(`[AgentMemory] Summarization failed reason=${cls.reason} (${cls.human}) status=${e.status} msg=${e.message?.slice(0, 100)}`);
+    } catch {
+      console.warn(`[AgentMemory] Summarization failed: ${e.message?.slice(0, 100)}`);
+    }
     // Fallback: extract last few meaningful messages
     const fallback = messages
       .filter(m => m.role === 'assistant' && typeof m.content === 'string' && m.content.length > 20)
@@ -265,7 +273,7 @@ export async function buildMemoryDigest(agentId: number): Promise<string> {
     if (summaries.length > 0) {
       parts.push(`📝 Предыдущие сессии:\n${summaries.map(s => `  • ${s}`).join('\n')}`);
     }
-  } catch {}
+  } catch (e: any) { console.warn(`[AgentMemory] buildMemoryDigest: session summaries failed for #${agentId}:`, e?.message); }
 
   try {
     // Today's daily log (brief)
@@ -275,7 +283,7 @@ export async function buildMemoryDigest(agentId: number): Promise<string> {
       const truncated = log.length > 500 ? '...' + log.slice(-500) : log;
       parts.push(`📅 Дневник:\n${truncated}`);
     }
-  } catch {}
+  } catch (e: any) { console.warn(`[AgentMemory] buildMemoryDigest: daily log failed for #${agentId}:`, e?.message); }
 
   if (parts.length === 0) return '';
   return `\n━━━ ДОЛГОСРОЧНАЯ ПАМЯТЬ ━━━\n${parts.join('\n\n')}\n━━━━━━━━━━━━━━━━━━━━━━━━━━`;
@@ -300,7 +308,7 @@ export async function buildChatContext(agentId: number, chatId: string): Promise
     if (dossier.rows[0]?.value) {
       parts.push(`📋 Досье чата ${chatId}:\n${String(dossier.rows[0].value).slice(0, 500)}`);
     }
-  } catch {}
+  } catch (e: any) { console.warn(`[AgentMemory] buildChatContext: dossier failed for #${agentId} chat ${chatId}:`, e?.message); }
 
   // Recent session summaries for THIS chat
   try {
@@ -314,7 +322,7 @@ export async function buildChatContext(agentId: number, chatId: string): Promise
       const sums = res.rows.map((r: any) => `  • [${new Date(r.ended_at).toISOString().slice(0, 16)}] ${r.summary}`);
       parts.push(`📝 История этого чата:\n${sums.join('\n')}`);
     }
-  } catch {}
+  } catch (e: any) { console.warn(`[AgentMemory] buildChatContext: sessions failed for #${agentId} chat ${chatId}:`, e?.message); }
 
   if (parts.length === 0) return '';
   return `\n━━━ КОНТЕКСТ ЧАТА ${chatId} ━━━\n${parts.join('\n')}\n━━━━━━━━━━━━━━━━━━━━━━━━━━`;
@@ -334,7 +342,8 @@ export async function buildUserContext(agentId: number, senderId: string): Promi
     );
     if (dossier.rows[0]?.value) {
       try {
-        const d = JSON.parse(dossier.rows[0].value);
+        const _dv = dossier.rows[0].value;
+        const d = typeof _dv === 'string' ? JSON.parse(_dv) : _dv;
         const lines: string[] = [];
         if (d.name) lines.push(`Имя: ${d.name}`);
         if (d.username) lines.push(`@${d.username}`);
@@ -387,7 +396,7 @@ export async function touchUserDossier(agentId: number, userId: number, senderId
 
     let dossier: any = {};
     if (existing.rows[0]?.value) {
-      try { dossier = JSON.parse(existing.rows[0].value); } catch {}
+      try { const _ev = existing.rows[0].value; dossier = typeof _ev === 'string' ? JSON.parse(_ev) : (_ev ?? {}); } catch (e: any) { console.warn(`[AgentMemory] updateUserDossier: JSON parse failed for #${agentId} contact:${senderId}:`, e?.message); }
     }
 
     // Update stats
@@ -408,7 +417,7 @@ export async function touchUserDossier(agentId: number, userId: number, senderId
 
     const { getAgentStateRepository } = await import('../db/schema-extensions');
     await getAgentStateRepository().set(agentId, userId, key, JSON.stringify(dossier));
-  } catch {}
+  } catch (e: any) { console.warn(`[AgentMemory] updateUserDossier: save failed for #${agentId} sender ${senderId}:`, e?.message); }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -440,7 +449,7 @@ export async function trackInteractionForEvolution(
 
   try {
     const raw = await repo.get(agentId, key).catch(() => null);
-    let evo: PromptEvolution = raw?.value ? JSON.parse(raw.value) : {
+    let evo: PromptEvolution = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : {
       domain: '', topics: [], personality: [], rules: [],
       lastEvolvedAt: '', evolveCount: 0, interactionsSinceEvolve: 0,
     };
@@ -454,8 +463,8 @@ export async function trackInteractionForEvolution(
     }
     if (evo.topics.length > 50) evo.topics = evo.topics.slice(-30);
 
-    await repo.set(agentId, userId, key, JSON.stringify(evo));
-  } catch {}
+    await repo.set(agentId, userId, key, evo);
+  } catch (e: any) { console.warn(`[AgentMemory] trackInteractionForEvolution: save failed for #${agentId}:`, e?.message); }
 }
 
 /** Check if evolution is needed and return data for AI to process */
@@ -464,8 +473,8 @@ export async function checkEvolutionNeeded(agentId: number): Promise<{ needed: b
     const { getAgentStateRepository } = await import('../db/schema-extensions');
     const repo = getAgentStateRepository();
     const raw = await repo.get(agentId, '_prompt_evolution').catch(() => null);
-    if (!raw?.value) return { needed: false };
-    const evo: PromptEvolution = JSON.parse(raw.value);
+    if (!raw) return { needed: false };
+    const evo: PromptEvolution = typeof raw === 'string' ? JSON.parse(raw) : raw;
     return { needed: evo.interactionsSinceEvolve >= EVOLVE_INTERVAL, data: evo };
   } catch { return { needed: false }; }
 }
@@ -483,8 +492,8 @@ export async function evolvePrompt(
 
   try {
     const raw = await repo.get(agentId, '_prompt_evolution').catch(() => null);
-    if (!raw?.value) return { evolved: false };
-    const evo: PromptEvolution = JSON.parse(raw.value);
+    if (!raw) return { evolved: false };
+    const evo: PromptEvolution = typeof raw === 'string' ? JSON.parse(raw) : raw;
 
     // Get recent daily log for context
     const recentLog = await getRecentDailyLog(agentId);
@@ -540,14 +549,14 @@ ${(recentLog || '').slice(-1000)}
     if (parsed.skip) {
       // Reset counter but don't evolve
       evo.interactionsSinceEvolve = 0;
-      await repo.set(agentId, userId, '_prompt_evolution', JSON.stringify(evo));
+      await repo.set(agentId, userId, '_prompt_evolution', evo);
       return { evolved: false };
     }
 
     const additions = parsed.additions || '';
     if (!additions || additions.length < 10) {
       evo.interactionsSinceEvolve = 0;
-      await repo.set(agentId, userId, '_prompt_evolution', JSON.stringify(evo));
+      await repo.set(agentId, userId, '_prompt_evolution', evo);
       return { evolved: false };
     }
 
@@ -561,7 +570,7 @@ ${(recentLog || '').slice(-1000)}
       if (evo.personality.length > 10) evo.personality = evo.personality.slice(-5);
     }
 
-    await repo.set(agentId, userId, '_prompt_evolution', JSON.stringify(evo));
+    await repo.set(agentId, userId, '_prompt_evolution', evo);
 
     // Append evolution to agent's prompt
     const pool = await getPool();
@@ -649,7 +658,7 @@ export async function trackChatEngagement(
 
   try {
     const raw = await repo.get(agentId, key).catch(() => null);
-    let eng: ChatEngagement = raw?.value ? JSON.parse(raw.value) : {
+    let eng: ChatEngagement = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : {
       chatId, score: 0, mentionCount: 0, replyToAgentCount: 0,
       nameInTextCount: 0, reactionCount: 0, questionCount: 0,
       agentReplyCount: 0, lastActivityAt: '', burstTimestamps: [],
@@ -710,8 +719,8 @@ export async function trackChatEngagement(
       await appendDailyLog(agentId, `🟢 Proactive mode auto-enabled in chat ${chatId}: ${reasonStr}`);
     }
 
-    await repo.set(agentId, userId, key, JSON.stringify(eng));
-  } catch {}
+    await repo.set(agentId, userId, key, eng);
+  } catch (e: any) { console.warn(`[AgentMemory] trackChatEngagement: save failed for #${agentId} chat ${chatId}:`, e?.message); }
 }
 
 // Backward-compatible aliases
@@ -728,8 +737,8 @@ export async function isProactiveChat(agentId: number, chatId: string): Promise<
     const { getAgentStateRepository } = await import('../db/schema-extensions');
     const repo = getAgentStateRepository();
     const raw = await repo.get(agentId, `chat_engagement:${chatId}`).catch(() => null);
-    if (!raw?.value) return false;
-    const eng: ChatEngagement = JSON.parse(raw.value);
+    if (!raw) return false;
+    const eng: ChatEngagement = typeof raw === 'string' ? JSON.parse(raw) : raw;
 
     // Decay: disable if no activity for N hours (unless owner override)
     if (eng.proactiveEnabled && !eng.ownerOverride && eng.lastActivityAt) {
@@ -738,7 +747,7 @@ export async function isProactiveChat(agentId: number, chatId: string): Promise<
         eng.proactiveEnabled = false;
         eng.score = Math.max(0, eng.score * 0.5); // halve score on decay
         // Use agentId as userId for system-initiated decay (agent's own state)
-        await repo.set(agentId, agentId, `chat_engagement:${chatId}`, JSON.stringify(eng));
+        await repo.set(agentId, agentId, `chat_engagement:${chatId}`, eng);
         console.log(`[Proactive] Agent #${agentId} proactive decayed in chat ${chatId} (${hoursSince.toFixed(0)}h inactive)`);
         return false;
       }
@@ -756,7 +765,7 @@ export async function setProactiveChat(agentId: number, userId: number, chatId: 
 
   try {
     const raw = await repo.get(agentId, key).catch(() => null);
-    let eng: ChatEngagement = raw?.value ? JSON.parse(raw.value) : {
+    let eng: ChatEngagement = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : {
       chatId, score: 0, mentionCount: 0, replyToAgentCount: 0,
       nameInTextCount: 0, reactionCount: 0, questionCount: 0,
       agentReplyCount: 0, lastActivityAt: '', burstTimestamps: [],
@@ -764,8 +773,8 @@ export async function setProactiveChat(agentId: number, userId: number, chatId: 
     };
     eng.proactiveEnabled = enabled;
     eng.ownerOverride = true;
-    await repo.set(agentId, userId, key, JSON.stringify(eng));
-  } catch {}
+    await repo.set(agentId, userId, key, eng);
+  } catch (e: any) { console.warn(`[AgentMemory] setProactiveChat: save failed for #${agentId} chat ${chatId}:`, e?.message); }
 }
 
 /** Get all proactive chats for an agent */
@@ -779,9 +788,9 @@ export async function getProactiveChats(agentId: number): Promise<ChatEngagement
     const results: ChatEngagement[] = [];
     for (const key of engKeys.slice(0, 50)) {
       const raw = await repo.get(agentId, key).catch(() => null);
-      if (raw?.value) {
+      if (raw) {
         try {
-          const eng: ChatEngagement = JSON.parse(raw.value);
+          const eng: ChatEngagement = typeof raw === 'string' ? JSON.parse(raw) : raw;
           if (eng.proactiveEnabled) results.push(eng);
         } catch {}
       }
@@ -862,8 +871,8 @@ export async function getMemorySettings(agentId: number): Promise<MemorySettings
     const { getAgentStateRepository } = await import('../db/schema-extensions');
     const repo = getAgentStateRepository();
     const raw = await repo.get(agentId, '_memory_settings').catch(() => null);
-    if (raw?.value) {
-      return { ...DEFAULT_MEMORY_SETTINGS, ...JSON.parse(raw.value) };
+    if (raw) {
+      return { ...DEFAULT_MEMORY_SETTINGS, ...(typeof raw === 'string' ? JSON.parse(raw) : raw) };
     }
   } catch {}
   return { ...DEFAULT_MEMORY_SETTINGS };
@@ -882,7 +891,7 @@ export async function setMemorySettings(agentId: number, userId: number, setting
   const repo = getAgentStateRepository();
   const current = await getMemorySettings(agentId);
   const merged = { ...current, ...settings };
-  await repo.set(agentId, userId, '_memory_settings', JSON.stringify(merged));
+  await repo.set(agentId, userId, '_memory_settings', merged);
   return merged;
 }
 
@@ -959,7 +968,7 @@ export async function getMemoryStats(agentId: number): Promise<MemoryStats> {
       `SELECT value FROM builder_bot.agent_state WHERE agent_id=$1 AND key='_prompt_evolution'`, [agentId]
     );
     if (evoRaw.rows[0]?.value) {
-      const evo = JSON.parse(evoRaw.rows[0].value);
+      const _evoV = evoRaw.rows[0].value; const evo = typeof _evoV === 'string' ? JSON.parse(_evoV) : _evoV;
       evolutionCount = evo.evolveCount || 0;
     }
   } catch {}
@@ -1075,13 +1084,13 @@ export async function applyMemoryTTL(agentId: number): Promise<{ expired: number
     const cutoff = Date.now() - settings.memoryTTLDays * 86400_000;
     for (const row of keysRes.rows) {
       try {
-        const val = JSON.parse(row.value);
+        const val = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
         const savedAt = val.savedAt ? new Date(val.savedAt).getTime() : 0;
         if (savedAt > 0 && savedAt < cutoff) {
           await pool.query(`DELETE FROM builder_bot.agent_state WHERE agent_id=$1 AND key=$2`, [agentId, row.key]);
           expired++;
         }
-      } catch {}
+      } catch (e: any) { console.warn(`[AgentMemory] TTL cleanup: failed to expire key ${row.key} for #${agentId}:`, e?.message); }
     }
   }
 
@@ -1133,8 +1142,8 @@ export async function compressMemories(
   // Build text from entries
   const entries = toCompress.map((r: any) => {
     try {
-      const val = JSON.parse(r.value);
-      return val.text || val.value || val.lesson || String(r.value).slice(0, 200);
+      const val = typeof r.value === 'string' ? JSON.parse(r.value) : r.value;
+      return val.text || val.value || val.lesson || JSON.stringify(val).slice(0, 200);
     } catch {
       return String(r.value).slice(0, 200);
     }
@@ -1221,14 +1230,10 @@ export async function buildPrioritizedMemoryDigest(agentId: number, chatId?: str
           const entries: string[] = [];
           for (const key of memKeys.slice(-10)) {
             const raw = await repo.get(agentId, key).catch(() => null);
-            if (!raw?.value) continue;
-            try {
-              const val = JSON.parse(raw.value);
-              const importance = val.importance === 'high' ? '❗' : val.importance === 'medium' ? '•' : '·';
-              entries.push(`${importance} ${val.text || val.value || ''}`);
-            } catch {
-              entries.push(`· ${String(raw.value).slice(0, 100)}`);
-            }
+            if (!raw) continue;
+            const mem = typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch { return { value: raw }; } })() : raw;
+            const importance = mem.importance === 'high' ? '❗' : mem.importance === 'medium' ? '•' : '·';
+            entries.push(`${importance} ${mem.value || mem.text || ''}`);
           }
           if (entries.length > 0) {
             block = `🧠 Мои воспоминания (${memKeys.length} записей):\n${entries.join('\n')}`;
@@ -1252,12 +1257,10 @@ export async function buildPrioritizedMemoryDigest(agentId: number, chatId?: str
           const entries: string[] = [];
           for (const key of lessonKeys.slice(-5)) {
             const raw = await repo.get(agentId, key).catch(() => null);
-            if (!raw?.value) continue;
-            try {
-              const val = JSON.parse(raw.value);
-              const icon = val.category === 'error' ? '❌' : val.category === 'success' ? '✅' : '💡';
-              entries.push(`${icon} ${val.text || ''}`);
-            } catch {}
+            if (!raw) continue;
+            const lesson = typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch { return { text: raw }; } })() : raw;
+            const icon = lesson.category === 'error' ? '❌' : lesson.category === 'success' ? '✅' : '💡';
+            entries.push(`${icon} ${lesson.text || ''}`);
           }
           if (entries.length > 0) {
             block = `📚 Уроки из опыта:\n${entries.join('\n')}`;
@@ -1274,11 +1277,9 @@ export async function buildPrioritizedMemoryDigest(agentId: number, chatId?: str
           const entries: string[] = [];
           for (const key of kbKeys.slice(-5)) {
             const raw = await repo.get(agentId, key).catch(() => null);
-            if (!raw?.value) continue;
-            try {
-              const val = JSON.parse(raw.value);
-              entries.push(`📎 ${val.title || key}: ${(val.content || '').slice(0, 100)}`);
-            } catch {}
+            if (!raw) continue;
+            const kb = typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch { return {}; } })() : raw;
+            entries.push(`📎 ${kb.title || key}: ${(kb.content || '').slice(0, 100)}`);
           }
           if (entries.length > 0) {
             block = `📖 База знаний (${kbKeys.length} записей):\n${entries.join('\n')}`;
@@ -1380,7 +1381,7 @@ export async function browseMemory(
   const entries = dataRes.rows.map((r: any) => {
     let preview = '';
     try {
-      const val = JSON.parse(r.value);
+      const val = typeof r.value === 'string' ? JSON.parse(r.value) : r.value;
       preview = val.text || val.title || val.name || val.value || JSON.stringify(val).slice(0, 80);
     } catch {
       preview = String(r.value).slice(0, 80);

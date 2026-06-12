@@ -1,0 +1,112 @@
+/* TON Agent Studio — gradient accent presets.
+   Each preset overrides --primary, --accent-2 AND their RGB components
+   so every rgba(var(--accent-r),...) and rgba(var(--accent2-r),...)
+   reference flips together.
+
+   The selector matches BOTH the document root and any nested container,
+   so you can either toggle globally via
+     document.documentElement.dataset.accent = 'cyber'
+   or scope a single block via <div data-accent="cyber">. */
+
+/* ── Aurora (default) — TON blue × purple ── */
+:root,
+:root[data-accent="aurora"], [data-accent="aurora"] {
+  --primary:        #0098EA;
+  --primary-light:  #33b5f5;
+  --primary-dark:   #0077bb;
+  --accent:         #0098EA;
+  --accent-light:   #33b5f5;
+  --accent-dark:    #0077bb;
+  --accent-2:       #a855f7;
+
+  --accent-r: 0;    --accent-g: 152;  --accent-b: 234;
+  --accent2-r: 168; --accent2-g: 85;  --accent2-b: 247;
+
+  --accent-dim:  rgba(0,152,234,0.15);
+  --accent-glow: rgba(0,152,234,0.30);
+}
+
+/* ── Cyber — cyan × magenta ── */
+:root[data-accent="cyber"], [data-accent="cyber"] {
+  --primary:        #06b6d4;
+  --primary-light:  #22d3ee;
+  --primary-dark:   #0891b2;
+  --accent:         #06b6d4;
+  --accent-light:   #22d3ee;
+  --accent-dark:    #0891b2;
+  --accent-2:       #ec4899;
+
+  --accent-r: 6;    --accent-g: 182;  --accent-b: 212;
+  --accent2-r: 236; --accent2-g: 72;  --accent2-b: 153;
+
+  --accent-dim:  rgba(6,182,212,0.15);
+  --accent-glow: rgba(6,182,212,0.30);
+}
+
+/* ── Plasma — purple × pink ── */
+:root[data-accent="plasma"], [data-accent="plasma"] {
+  --primary:        #a855f7;
+  --primary-light:  #c084fc;
+  --primary-dark:   #7e22ce;
+  --accent:         #a855f7;
+  --accent-light:   #c084fc;
+  --accent-dark:    #7e22ce;
+  --accent-2:       #ec4899;
+
+  --accent-r: 168;  --accent-g: 85;   --accent-b: 247;
+  --accent2-r: 236; --accent2-g: 72;  --accent2-b: 153;
+
+  --accent-dim:  rgba(168,85,247,0.15);
+  --accent-glow: rgba(168,85,247,0.30);
+}
+
+/* ── Emerald — emerald × teal ── */
+:root[data-accent="emerald"], [data-accent="emerald"] {
+  --primary:        #10b981;
+  --primary-light:  #34d399;
+  --primary-dark:   #047857;
+  --accent:         #10b981;
+  --accent-light:   #34d399;
+  --accent-dark:    #047857;
+  --accent-2:       #14b8a6;
+
+  --accent-r: 16;   --accent-g: 185;  --accent-b: 129;
+  --accent2-r: 20;  --accent2-g: 184; --accent2-b: 166;
+
+  --accent-dim:  rgba(16,185,129,0.15);
+  --accent-glow: rgba(16,185,129,0.30);
+}
+
+/* ── Sunset — amber × red ── */
+:root[data-accent="sunset"], [data-accent="sunset"] {
+  --primary:        #f59e0b;
+  --primary-light:  #fbbf24;
+  --primary-dark:   #b45309;
+  --accent:         #f59e0b;
+  --accent-light:   #fbbf24;
+  --accent-dark:    #b45309;
+  --accent-2:       #ef4444;
+
+  --accent-r: 245;  --accent-g: 158;  --accent-b: 11;
+  --accent2-r: 239; --accent2-g: 68;  --accent2-b: 68;
+
+  --accent-dim:  rgba(245,158,11,0.15);
+  --accent-glow: rgba(245,158,11,0.30);
+}
+
+/* ── Mono — sky × indigo ── */
+:root[data-accent="mono"], [data-accent="mono"] {
+  --primary:        #0ea5e9;
+  --primary-light:  #38bdf8;
+  --primary-dark:   #0369a1;
+  --accent:         #0ea5e9;
+  --accent-light:   #38bdf8;
+  --accent-dark:    #0369a1;
+  --accent-2:       #6366f1;
+
+  --accent-r: 14;   --accent-g: 165;  --accent-b: 233;
+  --accent2-r: 99;  --accent2-g: 102; --accent2-b: 241;
+
+  --accent-dim:  rgba(14,165,233,0.15);
+  --accent-glow: rgba(14,165,233,0.30);
+}

@@ -6,6 +6,7 @@ import { notifyAgentResult, notifyUser } from '../../notifier';
 import { getUserSettingsRepository } from '../../db/schema-extensions';
 import { getAIAgentRuntime, addMessageToAIAgent } from '../ai-agent-runtime';
 import { broadcastWSEvent } from '../../api-server';
+import { lifecycleManager } from '../../services/agent-lifecycle';
 
 // Загрузить пользовательские переменные из user_settings (безопасно, без ошибок)
 async function loadUserVariables(userId: number): Promise<Record<string, any>> {
@@ -54,32 +55,215 @@ export interface ControlResult {
 
 // Разобрать интервал из description/triggerConfig
 function parseIntervalMs(description: string, triggerConfig?: Record<string, any>): number | null {
-  // Из triggerConfig
-  if (triggerConfig?.intervalMs) return parseInt(String(triggerConfig.intervalMs));
-  if (triggerConfig?.interval_ms) return parseInt(String(triggerConfig.interval_ms));
+  // Priority 1: explicit config (validate to prevent NaN → 1ms infinite loop)
+  if (triggerConfig?.intervalMs) {
+    const ms = parseInt(String(triggerConfig.intervalMs));
+    if (!isNaN(ms) && ms > 0) return Math.max(10_000, ms); // min 10s
+  }
+  if (triggerConfig?.interval_ms) {
+    const ms = parseInt(String(triggerConfig.interval_ms));
+    if (!isNaN(ms) && ms > 0) return Math.max(10_000, ms);
+  }
 
-  // Из описания
+  // Priority 2: parse from description
   const lowerDesc = description.toLowerCase();
 
+  // Seconds
+  const secMatch = lowerDesc.match(/(?:каждые?|every)\s+(\d+)\s+(?:секунд|second|sec)/);
+  if (secMatch) return Math.max(10_000, parseInt(secMatch[1]) * 1000); // min 10s
+
+  // Minutes
   if (/каждую\s+минуту|раз\s+в\s+минуту|every\s+minute/.test(lowerDesc)) return 60_000;
+  const minuteMatch = lowerDesc.match(/(?:каждые?|every)\s+(\d+)\s+(?:минут|minute|min)/);
+  if (minuteMatch) return Math.max(10_000, parseInt(minuteMatch[1]) * 60_000);
 
-  const minuteMatch = lowerDesc.match(/каждые?\s+(\d+)\s+минут/);
-  if (minuteMatch) return parseInt(minuteMatch[1]) * 60_000;
-
-  const minuteMatchEn = lowerDesc.match(/every\s+(\d+)\s+minute/);
-  if (minuteMatchEn) return parseInt(minuteMatchEn[1]) * 60_000;
-
-  if (/каждый\s+час|раз\s+в\s+час|every\s+hour/.test(lowerDesc)) return 3_600_000;
-
-  const hourMatch = lowerDesc.match(/каждые?\s+(\d+)\s+час/);
+  // Hours
+  if (/каждый\s+час|раз\s+в\s+час|every\s+hour|hourly/.test(lowerDesc)) return 3_600_000;
+  const hourMatch = lowerDesc.match(/(?:каждые?|every)\s+(\d+)\s+(?:час|hour)/);
   if (hourMatch) return parseInt(hourMatch[1]) * 3_600_000;
 
-  const hourMatchEn = lowerDesc.match(/every\s+(\d+)\s+hour/);
-  if (hourMatchEn) return parseInt(hourMatchEn[1]) * 3_600_000;
+  // Days
+  if (/каждый\s+день|ежедневно|every\s+day|daily/.test(lowerDesc)) return 86_400_000;
 
-  if (/каждый\s+день|ежедневно|every\s+day/.test(lowerDesc)) return 86_400_000;
+  // Weekday patterns
+  if (/(?:по\s+понедельникам|every\s+monday|каждый\s+понедельник)/.test(lowerDesc)) return 7 * 86_400_000;
+  if (/(?:еженедельно|weekly|раз\s+в\s+неделю|every\s+week)/.test(lowerDesc)) return 7 * 86_400_000;
+
+  // Generic number + time unit
+  const genericMatch = lowerDesc.match(/(\d+)\s*(?:m|мин|min)(?:ут)?/);
+  if (genericMatch) return parseInt(genericMatch[1]) * 60_000;
+
+  // Log unrecognized schedule for debugging
+  if (/каждый|every|раз\s+в|интервал|interval|repeat|повтор/.test(lowerDesc)) {
+    console.warn(`[Runner] Schedule pattern not recognized in description: "${description.slice(0, 100)}"`);
+  }
 
   return null;
+}
+
+/** Merge user variables + trigger config into a single config object (DRY helper) */
+/**
+ * Auto-upgrade agent config with platform defaults.
+ * Old agents created before smart defaults were added get
+ * behavior, learning, compaction, masking, flood protection etc.
+ * This runs on every load so agents always benefit from new platform features.
+ */
+export function normalizeAgentConfig(cfg: Record<string, any>): Record<string, any> {
+  // Apply role-based defaults first, then platform defaults, then user overrides
+  try {
+    const { getRoleProfile } = require('../agents/role-profiles');
+    const role = cfg.AGENT_ROLE || cfg.agentRole || 'worker';
+    const profile = getRoleProfile(role);
+    if (profile.behaviorOverrides) {
+      if (!cfg.behavior || typeof cfg.behavior !== 'object') cfg.behavior = {};
+      // Role defaults fill in missing values (user overrides take precedence)
+      for (const [k, v] of Object.entries(profile.behaviorOverrides)) {
+        if (cfg.behavior[k] === undefined) cfg.behavior[k] = v;
+      }
+    }
+    if (profile.learningOverrides) {
+      if (!cfg.learning || typeof cfg.learning !== 'object') cfg.learning = {};
+      for (const [k, v] of Object.entries(profile.learningOverrides)) {
+        if (cfg.learning[k] === undefined) cfg.learning[k] = v;
+      }
+    }
+    // Apply role max spend limit if not set
+    if (cfg.daily_spend_limit_ton === undefined && profile.maxSpendPerAction !== undefined) {
+      cfg.daily_spend_limit_ton = profile.maxSpendPerAction * 10; // daily = 10x per-action
+    }
+  } catch {}
+
+  // Behavior defaults (platform-wide, fill remaining gaps)
+  if (!cfg.behavior || typeof cfg.behavior !== 'object') {
+    cfg.behavior = {};
+  }
+  const bh = cfg.behavior;
+  if (bh.typingDelay === undefined) bh.typingDelay = true;
+  if (bh.typingSpeed === undefined) bh.typingSpeed = 40;
+  if (bh.readReceipts === undefined) bh.readReceipts = true;
+  if (bh.readDelay === undefined) bh.readDelay = 1.5;
+  if (bh.messageSplitting === undefined) bh.messageSplitting = true;
+  if (bh.thinkingPhrases === undefined) bh.thinkingPhrases = true;
+  if (bh.reactions === undefined) bh.reactions = true;
+  if (bh.randomVariance === undefined) bh.randomVariance = 25;
+
+  // Learning defaults
+  if (!cfg.learning || typeof cfg.learning !== 'object') {
+    cfg.learning = {};
+  }
+  const lr = cfg.learning;
+  if (lr.feedbackLoop === undefined) lr.feedbackLoop = true;
+  if (lr.errorHealing === undefined) lr.errorHealing = true;
+  if (lr.maxRetries === undefined) lr.maxRetries = 3;
+  if (lr.circuitBreakerThreshold === undefined) lr.circuitBreakerThreshold = 5;
+  if (lr.qualityScoring === undefined) lr.qualityScoring = true;
+  if (lr.styleAdaptation === undefined) lr.styleAdaptation = true;
+  if (!lr.negativePatterns) lr.negativePatterns = 'нет, не так, неправильно, бред, отстой, фигня';
+
+  // Memory & context management
+  if (cfg.compaction_strategy === undefined) cfg.compaction_strategy = 'structured';
+  if (cfg.masking_enabled === undefined) cfg.masking_enabled = true;
+  if (cfg.masking_keep_recent === undefined) cfg.masking_keep_recent = 8;
+  if (cfg.memory_poisoning_protection === undefined) cfg.memory_poisoning_protection = true;
+
+  // Rate limiting & safety
+  if (cfg.flood_cooldown_sec === undefined) cfg.flood_cooldown_sec = 30;
+  if (cfg.loop_max_responses === undefined) cfg.loop_max_responses = 8;
+  if (cfg.loop_window_sec === undefined) cfg.loop_window_sec = 300;
+
+  // Role-aware defaults: role profile provides base config, user overrides on top
+  try {
+    const { getRoleProfile } = require('./role-profiles');
+    const roleId = cfg.AGENT_ROLE || cfg.agentRole || 'worker';
+    const profile = getRoleProfile(roleId);
+    // Behavior: role defaults < existing config (user wins)
+    if (profile.behaviorOverrides) {
+      const bh = cfg.behavior;
+      for (const [k, v] of Object.entries(profile.behaviorOverrides)) {
+        if (bh[k] === undefined) bh[k] = v;
+      }
+    }
+    // Learning: same merge pattern
+    if (profile.learningOverrides) {
+      const lr = cfg.learning;
+      for (const [k, v] of Object.entries(profile.learningOverrides)) {
+        if (lr[k] === undefined) lr[k] = v;
+      }
+    }
+  } catch {}
+
+  return cfg;
+}
+
+function mergeAgentConfig(
+  userVars: Record<string, any>,
+  triggerConfig: Record<string, any>,
+): Record<string, any> {
+  const nestedConfig = (triggerConfig.config && typeof triggerConfig.config === 'object') ? triggerConfig.config : {};
+  const merged = { ...userVars, ...nestedConfig };
+  // Pass execCode from trigger_config root level
+  if (triggerConfig.execCode) merged.execCode = triggerConfig.execCode;
+  // Pass telegram_session flag
+  if (triggerConfig.telegram_session?.session) merged._hasTgSession = true;
+  // Auto-upgrade with platform defaults
+  return normalizeAgentConfig(merged);
+}
+
+// ── Per-agent serial message queue — prevents concurrent processing crashes ──
+// Owner messages jump to front (priority), others go to back.
+const agentMessageQueues = new Map<string, Array<{
+  message: string;
+  userId: number;
+  isOwner: boolean;
+  context?: Record<string, any>;
+  resolve: (result: any) => void;
+  reject: (err: any) => void;
+}>>();
+const agentProcessing = new Map<string, boolean>();
+
+async function processAgentMessageInternal(agentId: string, message: string, userId: number, context?: Record<string, any>): Promise<void> {
+  addMessageToAIAgent(parseInt(agentId, 10), message, context);
+}
+
+async function drainAgentQueue(agentId: string): Promise<void> {
+  if (agentProcessing.get(agentId)) return;
+  agentProcessing.set(agentId, true);
+  try {
+    // Keep draining until queue is empty — items may be added during await yields
+    let queue = agentMessageQueues.get(agentId) ?? [];
+    while (queue.length > 0) {
+      const item = queue.shift()!;
+      try {
+        const result = await processAgentMessageInternal(agentId, item.message, item.userId, item.context);
+        item.resolve(result);
+      } catch (err) {
+        item.reject(err);
+      }
+      // Re-fetch queue reference in case it was replaced
+      queue = agentMessageQueues.get(agentId) ?? [];
+    }
+  } finally {
+    agentProcessing.set(agentId, false);
+    // Re-drain if items arrived while we were processing
+    const remaining = agentMessageQueues.get(agentId) ?? [];
+    if (remaining.length > 0) drainAgentQueue(agentId).catch(e => console.error('[Queue] re-drain error:', e));
+  }
+}
+
+export async function enqueueAgentMessage(agentId: number, message: string, userId: number, isOwner = false, context?: Record<string, any>): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const key = String(agentId);
+    if (!agentMessageQueues.has(key)) agentMessageQueues.set(key, []);
+    const queue = agentMessageQueues.get(key)!;
+    const item = { message, userId, isOwner, context, resolve, reject };
+    // Owner messages jump to front (priority 'now'), others go to back ('later')
+    if (isOwner) {
+      queue.unshift(item);
+    } else {
+      queue.push(item);
+    }
+    drainAgentQueue(key).catch(err => console.error('[Queue] drainAgentQueue error:', err));
+  });
 }
 
 // ===== Sub-Agent: Runner =====
@@ -120,7 +304,8 @@ export class RunnerAgent {
       }
 
       // Шаг 3: Определяем нужен ли persistent режим
-      const triggerConfig = (agent.triggerConfig as Record<string, any>) || {};
+      const runConfig = Object.freeze({ ...((agent.triggerConfig as Record<string, any>) || {}) }); // snapshot once per tick
+      const triggerConfig = runConfig;
       const isScheduled = agent.triggerType === 'scheduled';
       const isAIAgent   = agent.triggerType === 'ai_agent';
       const intervalMs  = parseIntervalMs(agent.description || '', triggerConfig);
@@ -128,15 +313,24 @@ export class RunnerAgent {
       if (isAIAgent) {
         // === AI AGENT MODE: agent.code = system prompt, AI decides tools ===
         const userVarsAI    = await loadUserVariables(params.userId);
-        const nestedConfigAI = (triggerConfig.config && typeof triggerConfig.config === 'object') ? triggerConfig.config : {};
-        const mergedConfigAI = { ...userVarsAI, ...nestedConfigAI };
-        // Pass execCode from trigger_config root level into config so ai-agent-runtime can access it
-        if (triggerConfig.execCode) mergedConfigAI.execCode = triggerConfig.execCode;
-        // Pass telegram_session flag so runtime knows this agent responds to messages
-        if (triggerConfig.telegram_session?.session) mergedConfigAI._hasTgSession = true;
-        const ms             = intervalMs || 5 * 60_000; // default 5 min
+        const mergedConfigAI = mergeAgentConfig(userVarsAI, triggerConfig);
+        // Role-based tick interval: monitor roles want fast polling, creative roles
+        // want slow cadence. Order: user explicit > role default > 5 min fallback.
+        let roleTickMs: number | undefined;
+        try {
+          const { getRoleProfileAsync } = await import('../role-profiles');
+          const rp = await getRoleProfileAsync(
+            mergedConfigAI.AGENT_ROLE || agent.role || 'worker',
+            params.userId,
+          );
+          if (rp.tickIntervalMs && Number.isFinite(rp.tickIntervalMs)) {
+            roleTickMs = Math.max(30_000, Math.min(86_400_000, Number(rp.tickIntervalMs)));
+          }
+        } catch {}
+        const ms             = intervalMs || roleTickMs || 5 * 60_000; // default 5 min
 
         const aiRuntime = getAIAgentRuntime();
+        const dbTools = this.dbTools;
         await aiRuntime.activate({
           agentId:      params.agentId,
           userId:       params.userId,
@@ -144,10 +338,20 @@ export class RunnerAgent {
           config:       mergedConfigAI,
           intervalMs:   ms,
           onNotify:     (msg) => notifyUser(params.userId, msg),
+          // Called by runtime when invalidateUserConfig/invalidateAgentConfig was triggered.
+          // Re-reads user_variables AND trigger_config so a Studio change to either takes
+          // effect on the next tick without restarting the bot.
+          reloadConfig: async () => {
+            const freshVars = await loadUserVariables(params.userId);
+            const freshAgent = await dbTools.getAgent(params.agentId, params.userId);
+            const freshTrigger = (freshAgent?.data?.triggerConfig as Record<string, any>) || (freshAgent?.triggerConfig as Record<string, any>) || {};
+            return mergeAgentConfig(freshVars, freshTrigger);
+          },
         });
 
         // Activate in DB
         await this.dbTools.updateAgent(params.agentId, params.userId, { isActive: true });
+        lifecycleManager.markRunning(params.agentId);
 
         broadcastWSEvent(params.userId, {
           type: 'agent_started', agentId: params.agentId,
@@ -173,12 +377,8 @@ export class RunnerAgent {
         // Код агента — обычная async function agent(context), не требует while-loop.
         // Платформа сама вызывает её каждые intervalMs миллисекунд.
 
-        // Инжектируем пользовательские переменные в triggerConfig (для доступа через context.config)
         const userVarsForScheduled = await loadUserVariables(params.userId);
-        // triggerConfig из DB имеет вид {config:{...user settings...}, intervalMs:...}
-        // Разворачиваем вложенный config на верхний уровень, чтобы context.config.KEY работало напрямую
-        const nestedConfig = (triggerConfig.config && typeof triggerConfig.config === 'object') ? triggerConfig.config : {};
-        const mergedTriggerConfig = { ...userVarsForScheduled, ...nestedConfig, intervalMs: intervalMs || 60_000 };
+        const mergedTriggerConfig = { ...mergeAgentConfig(userVarsForScheduled, triggerConfig), intervalMs: intervalMs || 60_000 };
         const ms = intervalMs || 60_000;
 
         const activateResult = await this.executionTools.activateScheduledAgent({
@@ -350,9 +550,11 @@ export class RunnerAgent {
     }
   }
 
-  // Отправить сообщение AI-агенту (chat feature)
-  sendMessageToAgent(agentId: number, text: string): void {
-    addMessageToAIAgent(agentId, text);
+  // Отправить сообщение AI-агенту (chat feature) — serialized via per-agent queue
+  sendMessageToAgent(agentId: number, text: string, context?: Record<string, any>): void {
+    enqueueAgentMessage(agentId, text, 0, false, context).catch(err =>
+      console.error(`[Runner] sendMessageToAgent queue error agent #${agentId}:`, err)
+    );
   }
 
   // Приостановить агента (остановить scheduler + деактивировать в БД)
@@ -366,6 +568,7 @@ export class RunnerAgent {
     const result = await this.dbTools.updateAgent(agentId, userId, { isActive: false });
 
     if (result.success) {
+      lifecycleManager.markStopped(agentId);
       broadcastWSEvent(userId, {
         type: 'agent_stopped', agentId,
         agentName: result.data?.name,

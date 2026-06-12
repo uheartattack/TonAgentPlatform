@@ -1,5 +1,8 @@
 // ===== LANGUAGE SYSTEM =====
-let currentLang = localStorage.getItem('lang') || 'en';
+// Language is shared with the main landing — `preferredLang` is the master key
+// (written by /index.html), `lang` is the legacy Studio-only key.
+// Read order: preferredLang → lang → 'en' (English is the default everywhere).
+let currentLang = localStorage.getItem('preferredLang') || localStorage.getItem('lang') || 'en';
 
 // ===== SVG ICON CONSTANTS =====
 const IC = {
@@ -22,7 +25,7 @@ const IC = {
   dollar: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
   send: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>',
   fire: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14 0-5.5 3.5-7.5-2 3.5-1 5.5 0 7.5 1 1 2 2.5 2 5a2.5 2.5 0 0 1-2.5 2.5"/><path d="M12 22c4 0 7-3 7-7 0-2-.5-3.5-1.5-5C16 8 12 6 12 2c-2 4-6 6-7.5 8.5C3.5 12.5 3 14 3 15c0 4 3 7 7 7z"/></svg>',
-  gem: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12l4 6-10 13L2 9z"/><path d="M2 9h20"/><path d="M12 22L6 9"/><path d="M12 22l6-13"/><path d="M9 3l3 6 3-6"/></svg>',
+  gem: '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none" style="display:inline-block;vertical-align:-2px" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12l4 6-10 13L2 9Z"/></svg>',
   download: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
   upload: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>',
   creditcard: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>',
@@ -53,7 +56,7 @@ const IC = {
   shield: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
   crown: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4l3 12h14l3-12-6 7-4-9-4 9-6-7z"/><path d="M3 20h18"/></svg>',
   zap: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
-  infinity: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.178 8c5.096 0 5.096 8 0 8-5.095 0-7.133-8-12.739-8-4.585 0-4.585 8 0 8 5.606 0 7.644-8 12.74-8z"/></svg>',
+  infinity: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle"><path d="M12 12c-2-2.67-4-4-6-4a4 4 0 1 0 0 8c2 0 4-1.33 6-4Zm0 0c2 2.67 4 4 6 4a4 4 0 0 0 0-8c-2 0-4 1.33-6 4Z"/></svg>',
   eye: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
   book: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>',
   user: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
@@ -61,6 +64,25 @@ const IC = {
   heartbeat: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>',
   target: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>',
   split: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3"/><path d="M15 9l6-6"/></svg>',
+  users: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  plus: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
+  arrowRight: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>',
+  bug: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2l1.88 1.88M14.12 3.88L16 2M9 7.13v-1a3 3 0 1 1 6 0v1M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6M6 13H2M22 13h-4M6 17l-1.5 1.5M18 17l1.5 1.5"/></svg>',
+  lifebuoy: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="4.93" y1="4.93" x2="9.17" y2="9.17"/><line x1="14.83" y1="14.83" x2="19.07" y2="19.07"/><line x1="14.83" y1="9.17" x2="19.07" y2="4.93"/><line x1="4.93" y1="19.07" x2="9.17" y2="14.83"/></svg>',
+  lightbulb: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>',
+  info: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
+  plug: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-5M9 8V2M15 8V2M18 8H6a2 2 0 0 0-2 2v2c0 4.42 3.58 8 8 8s8-3.58 8-8v-2a2 2 0 0 0-2-2z"/></svg>',
+  antenna: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12L7 2M22 12l-5-10M12 12v10M4.93 10h14.14"/></svg>',
+  lock: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>',
+  heart: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>',
+  folder: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
+  flask: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M12 3v7l-5.4 8.1a2 2 0 0 0 1.66 3.11h7.48a2 2 0 0 0 1.66-3.11L12 10V3"/></svg>',
+  trophy: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6M18 9h1.5a2.5 2.5 0 0 0 0-5H18M4 22h16M10 22V8.5M14 22V8.5"/><path d="M8 2h8v6a4 4 0 1 1-8 0V2z"/></svg>',
+  dot_red: '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#ef4444"></span>',
+  dot_blue: '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#3b82f6"></span>',
+  dot_gray: '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#6b7280"></span>',
+  settings: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+  question: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
 };
 
 // Map server-side plan emoji icons to SVG
@@ -77,10 +99,10 @@ function planIcon(serverIcon) {
 
 // ===== TOAST NOTIFICATION SYSTEM =====
 var _toastIcons = {
-  success: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
-  error: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
-  warning: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
-  info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
+  success: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
+  error: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
+  warning: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+  info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
 };
 
 // ===== PARTICLE DISSOLUTION EFFECT =====
@@ -130,7 +152,9 @@ function spawnParticleDissolution(el) {
 
 function toast(message, type, title, duration) {
   type = type || 'info';
-  duration = duration || 5000;
+  duration = duration || (typeof _notifDuration !== 'undefined' && _notifDuration > 0 ? _notifDuration : 5000);
+  if (typeof _notifDuration !== 'undefined' && _notifDuration === 0) duration = 999999; // manual dismiss
+  if (typeof _notifSound !== 'undefined' && _notifSound) try { _playNotifSound(); } catch {}
   var container = document.getElementById('toast-container');
   if (!container) return;
   var el = document.createElement('div');
@@ -238,7 +262,9 @@ function _resolveDialog(val) {
 
 function switchLang(lang) {
   currentLang = lang;
+  // Keep both keys in sync so the main landing picks up the change too.
   localStorage.setItem('lang', lang);
+  localStorage.setItem('preferredLang', lang);
 
   // Update buttons
   document.querySelectorAll('.lang-btn').forEach(btn => {
@@ -250,6 +276,13 @@ function switchLang(lang) {
     el.textContent = el.dataset[lang];
   });
 
+  // Update elements with data-en-html / data-ru-html that need INNER HTML
+  // (e.g. "Маркетплейс <span class='grad'>агентов</span>" with a gradient
+  // wrapper around the second word).
+  document.querySelectorAll('[data-en-html][data-ru-html]').forEach(el => {
+    el.innerHTML = el.dataset[lang + 'Html'];
+  });
+
   // Update placeholders
   document.querySelectorAll('[data-placeholder-' + lang + ']').forEach(el => {
     el.placeholder = el.dataset['placeholder' + lang.charAt(0).toUpperCase() + lang.slice(1)];
@@ -257,7 +290,23 @@ function switchLang(lang) {
 
   // Re-render dynamic content that uses t()
   try {
-    if (authToken && currentUser) loadAgents();
+    // Re-render current active page only (don't navigate away)
+    var activePage = document.querySelector('.page.active');
+    var activePageId = activePage ? activePage.id : '';
+    if (activePageId === 'guide-page') {
+      // Preserve active guide tab
+      var _savedGuideTab = typeof _activeGuideTab !== 'undefined' ? _activeGuideTab : null;
+      loadGuidePage();
+      if (_savedGuideTab && typeof _switchGuideTab === 'function') _switchGuideTab(_savedGuideTab);
+    } else if (activePageId === 'operations-page') {
+      if (authToken && currentUser) loadAgentsPage();
+    } else if (activePageId === 'profile-page') {
+      if (typeof loadProfile === 'function') loadProfile();
+    } else if (activePageId === 'terms-page') {
+      loadTermsPage();
+    } else if (activePageId === 'privacy-page') {
+      loadPrivacyPage();
+    }
     // Re-render auth screen if visible
     const authScreen = document.getElementById('auth-screen');
     if (authScreen && !authScreen.classList.contains('hidden')) {
@@ -405,7 +454,40 @@ window._appConfig = null;
 
 let authToken = localStorage.getItem('tg_token') || null;
 
+// Patterns that signal a plan/subscription limit hit by the server. The
+// orchestrator returns errors like «⛔ *Лимит агентов достигнут*» and the
+// hard cap path returns «Agent limit reached (N)». Both should trigger the
+// upgrade modal instead of a silent toast.
+const _PLAN_LIMIT_RE = /(лимит\s+(?:агент|план|генерац)|agent limit reached|plan limit|maxAgents|generations? per month|generations?:\s*\d+\/\d+|улучш(?:ите|ить)\s+план)/i;
+function _isPlanLimitError(data, httpStatus) {
+  if (!data) return false;
+  if (data.error_code === 'PLAN_LIMIT' || data.upgrade_required === true) return true;
+  const msg = (data.error || data.message || data.reason || '');
+  if (typeof msg === 'string' && _PLAN_LIMIT_RE.test(msg)) return true;
+  if (httpStatus === 429 && typeof msg === 'string' && /limit|лимит/i.test(msg)) return true;
+  return false;
+}
+
 async function apiRequest(method, path, body) {
+  // Back-compat shim: a few call sites use the fetch-style sig
+  //   apiRequest('/api/foo', { method: 'POST', body: JSON.stringify({...}) })
+  // instead of the canonical
+  //   apiRequest('POST', '/api/foo', {...})
+  // Detect by first arg starting with '/' and 2nd arg being a plain options
+  // object — normalise before doing anything else, so all downstream code sees
+  // the canonical shape.
+  if (typeof method === 'string' && method.startsWith('/')) {
+    const _path = method;
+    const _opts = (path && typeof path === 'object') ? path : {};
+    method = _opts.method || 'GET';
+    if (_opts.body !== undefined) {
+      try { body = typeof _opts.body === 'string' ? JSON.parse(_opts.body) : _opts.body; }
+      catch { body = _opts.body; }
+    } else {
+      body = undefined;
+    }
+    path = _path;
+  }
   const opts = {
     method: method || 'GET',
     headers: { 'Content-Type': 'application/json' },
@@ -415,12 +497,22 @@ async function apiRequest(method, path, body) {
   try {
     const res = await fetch(API_BASE + path, opts);
     const ct = res.headers.get('content-type') || '';
+    let parsed;
     if (!ct.includes('application/json')) {
       const text = await res.text();
       console.error('API returned non-JSON:', res.status, text.slice(0, 200));
-      return { ok: false, error: 'Server returned non-JSON response (status ' + res.status + ')' };
+      parsed = { ok: false, error: 'Server returned non-JSON response (status ' + res.status + ')' };
+    } else {
+      parsed = await res.json();
     }
-    return await res.json();
+    // Global plan-limit detector — caller still gets the response, but we
+    // ALSO surface the upgrade modal so the user knows what happened.
+    try {
+      if (_isPlanLimitError(parsed, res.status) && typeof showPlanLimitModal === 'function') {
+        showPlanLimitModal(parsed.error || parsed.message || parsed.reason || '');
+      }
+    } catch {}
+    return parsed;
   } catch (e) {
     console.error('API error:', e);
     return { ok: false, error: e.message };
@@ -444,8 +536,183 @@ async function onTelegramAuth(result) {
   }
   authToken = data.token;
   localStorage.setItem('tg_token', authToken);
-  currentUser = { userId: data.userId, username: data.username, first_name: data.firstName, photo_url: data.photoUrl || null };
+  currentUser = { userId: data.userId, userIdStr: data.userIdStr || String(data.userId), username: data.username, first_name: data.firstName, photo_url: data.photoUrl || null, _isAdmin: data.isAdmin || false, _isBeta: data.isBeta || false, _acceptedTos: data.acceptedTos || false };
   showApp();
+  updateTopbar();
+}
+
+function updateTopbar() {
+  if (!currentUser) return;
+  var name = currentUser.first_name || currentUser.username || 'U';
+  var initial = name.charAt(0).toUpperCase();
+  // Apply photo / initial fallback to EVERY user-avatar element on the page.
+  // Hits sidebar bottom .user-avatar, topbar #topbar-avatar-badge, .avatar-btn
+  // and any element with [data-user-avatar].
+  var sel = '#topbar-avatar-badge, .user-avatar, .avatar-btn, [data-user-avatar]';
+  var nodes = document.querySelectorAll(sel);
+  if (!nodes.length) return;
+  // Reusable: paint initial + accent-gradient as fallback
+  var paintInitial = function(el) {
+    el.textContent = initial;
+    el.style.color = '#fff';
+    el.style.fontWeight = '700';
+    el.style.fontSize = (el.offsetWidth >= 40 ? '16px' : '13px');
+    el.style.display = 'flex';
+    el.style.alignItems = 'center';
+    el.style.justifyContent = 'center';
+    el.style.backgroundImage =
+      'linear-gradient(in oklab 135deg, rgb(var(--accent-r), var(--accent-g), var(--accent-b)),' +
+      ' rgb(var(--accent2-r), var(--accent2-g), var(--accent2-b)))';
+    el.style.backgroundSize = '';
+    el.style.backgroundPosition = '';
+  };
+  // Try loading photo once, share result across all targets
+  if (authToken) {
+    var photoUrl = '/api/me/avatar?t=' + encodeURIComponent(authToken);
+    var probe = new Image();
+    probe.onload = function() {
+      nodes.forEach(function(el) {
+        el.textContent = '';
+        el.title = name;
+        el.style.backgroundImage = 'url(' + probe.src + ')';
+        el.style.backgroundSize = 'cover';
+        el.style.backgroundPosition = 'center';
+      });
+    };
+    probe.onerror = function() { nodes.forEach(paintInitial); };
+    probe.src = photoUrl;
+  } else {
+    nodes.forEach(paintInitial);
+  }
+  // Balance from wallet data if available
+  var balEl = document.getElementById('topbar-ton-balance');
+  if (balEl && typeof _walletBalance !== 'undefined' && _walletBalance != null) {
+    balEl.textContent = parseFloat(_walletBalance).toFixed(2);
+  }
+}
+
+// Omnisearch — single bar that searches agents, nav pages, skills, settings.
+// Index is built on demand from in-memory state. Dropdown shows top 8 matches
+// grouped by source. Click to navigate. Esc / outside-click to close.
+
+var _omniIndex = null;     // [{title, sub, type, action}]
+var _omniDropdown = null;
+
+function buildOmniIndex() {
+  var items = [];
+  // Nav pages — read from sidebar nav-item buttons (single source of truth)
+  document.querySelectorAll('.nav-item[data-page]').forEach(function(a) {
+    var label = a.querySelector('span')?.textContent?.trim() || a.getAttribute('data-page');
+    var page = a.getAttribute('data-page');
+    items.push({ title: label, sub: 'Page', type: 'page', action: function() { navigateTo(page); } });
+  });
+  // User's agents — from cached list (loaded on operations page)
+  try {
+    if (Array.isArray(window._agentsList)) {
+      window._agentsList.forEach(function(ag) {
+        items.push({
+          title: '#' + ag.id + ' ' + (ag.name || 'unnamed'),
+          sub: 'Agent · ' + (ag.role || 'worker'),
+          type: 'agent',
+          action: function() { navigateTo('operations'); setTimeout(function() { if (typeof openAgentDetail === 'function') openAgentDetail(ag.id); }, 200); }
+        });
+      });
+    }
+  } catch {}
+  // Skills — from cached list (loaded on skills page)
+  try {
+    if (Array.isArray(window._skillsCache)) {
+      window._skillsCache.forEach(function(s) {
+        items.push({
+          title: s.name,
+          sub: 'Skill · ' + (s.source || 'builtin'),
+          type: 'skill',
+          action: function() { navigateTo('skills'); setTimeout(function() { if (typeof openSkillDetail === 'function') openSkillDetail(s.name); }, 200); }
+        });
+      });
+    }
+  } catch {}
+  // Quick settings shortcuts
+  ['Profile', 'AI Keys', 'Wallet', 'Plugins', 'Templates', 'Marketplace', 'Logs'].forEach(function(s) {
+    var lower = s.toLowerCase().replace(/ /g, '-');
+    items.push({ title: s, sub: 'Quick action', type: 'shortcut', action: function() {
+      if (lower === 'profile') navigateTo('profile');
+      else if (lower === 'ai-keys') { navigateTo('profile'); setTimeout(function() { if (typeof openApiKeysModal === 'function') openApiKeysModal(); }, 300); }
+      else if (lower === 'wallet') navigateTo('wallet');
+      else if (lower === 'plugins') navigateTo('marketplace');
+      else if (lower === 'templates') navigateTo('marketplace');
+      else if (lower === 'marketplace') navigateTo('marketplace');
+      else if (lower === 'logs') navigateTo('activity');
+    } });
+  });
+  return items;
+}
+
+function closeOmni() {
+  if (_omniDropdown && _omniDropdown.parentNode) _omniDropdown.parentNode.removeChild(_omniDropdown);
+  _omniDropdown = null;
+  document.removeEventListener('click', _omniOutsideClick, true);
+  document.removeEventListener('keydown', _omniKey);
+}
+function _omniOutsideClick(e) {
+  if (!_omniDropdown) return;
+  if (_omniDropdown.contains(e.target)) return;
+  var input = document.getElementById('topbar-search-input');
+  if (input && input.contains(e.target)) return;
+  closeOmni();
+}
+function _omniKey(e) { if (e.key === 'Escape') closeOmni(); }
+
+function handleTopbarSearch(val) {
+  var q = (val || '').trim().toLowerCase();
+  if (q.length === 0) { closeOmni(); return; }
+  // Refresh index every keystroke — cheap (~50 items) and ensures fresh agent list
+  _omniIndex = buildOmniIndex();
+  var matches = _omniIndex.filter(function(it) {
+    return it.title.toLowerCase().includes(q) || it.sub.toLowerCase().includes(q);
+  }).slice(0, 8);
+  // Render dropdown
+  if (!_omniDropdown) {
+    _omniDropdown = document.createElement('div');
+    _omniDropdown.id = 'omni-dropdown';
+    _omniDropdown.style.cssText = 'position:absolute;top:46px;left:0;right:0;background:var(--bg-elev-2,#12141f);border:1px solid var(--border);border-radius:12px;box-shadow:0 16px 48px rgba(0,0,0,.5),0 0 0 1px rgba(var(--accent-r,0),var(--accent-g,168),var(--accent-b,255),.15);z-index:9999;max-height:60vh;overflow-y:auto;backdrop-filter:blur(16px) saturate(150%)';
+    var wrap = document.querySelector('.topbar-search');
+    if (wrap) { wrap.style.position = 'relative'; wrap.appendChild(_omniDropdown); }
+    document.addEventListener('click', _omniOutsideClick, true);
+    document.addEventListener('keydown', _omniKey);
+  }
+  if (matches.length === 0) {
+    _omniDropdown.innerHTML = '<div style="padding:18px;text-align:center;color:var(--text-muted);font-size:.85rem">' +
+      (currentLang === 'ru' ? 'Ничего не найдено' : 'No matches') + '</div>';
+    return;
+  }
+  var typeColors = { page: '#00a8ff', agent: '#22c55e', skill: '#8b5cf6', shortcut: '#f59e0b' };
+  var typeIcons = {
+    page: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
+    agent: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>',
+    skill: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>',
+    shortcut: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
+  };
+  _omniDropdown.innerHTML = matches.map(function(m, i) {
+    var color = typeColors[m.type] || '#888';
+    return '<div class="omni-item" data-idx="' + i + '" style="padding:10px 14px;display:flex;align-items:center;gap:10px;cursor:pointer;border-bottom:1px solid var(--border)" ' +
+      'onmouseover="this.style.background=\'rgba(var(--accent-r,0),var(--accent-g,168),var(--accent-b,255),.08)\'" onmouseout="this.style.background=\'\'">' +
+      '<span style="color:' + color + ';display:inline-flex;flex-shrink:0">' + (typeIcons[m.type] || '') + '</span>' +
+      '<div style="flex:1;min-width:0">' +
+        '<div style="font-size:.88rem;color:var(--text-primary);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + escHtml(m.title) + '</div>' +
+        '<div style="font-size:.7rem;color:var(--text-muted)">' + escHtml(m.sub) + '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+  // Wire clicks
+  _omniDropdown.querySelectorAll('.omni-item').forEach(function(el, idx) {
+    el.addEventListener('click', function() {
+      try { matches[idx].action(); } catch (e) { console.error(e); }
+      var input = document.getElementById('topbar-search-input');
+      if (input) input.value = '';
+      closeOmni();
+    });
+  });
 }
 
 // Legacy: old widget callback (keep for backwards compat)
@@ -454,7 +721,7 @@ async function onTelegramAuthLegacy(user) {
   if (!data.ok) { toast(data.error || 'Unknown error', 'error', 'Auth Failed'); return; }
   authToken = data.token;
   localStorage.setItem('tg_token', authToken);
-  currentUser = { ...user, userId: data.userId };
+  currentUser = { ...user, userId: data.userId, _isAdmin: data.isAdmin || false, _acceptedTos: true };
   showApp();
 }
 
@@ -462,22 +729,64 @@ function showApp() {
   document.getElementById('auth-screen').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
 
+  // Check ToS acceptance — show popup if not accepted.
+  // Trust localStorage cache: once user clicked Accept on this device, never ask
+  // again here even if /api/me reply is delayed or token rotated.
+  try {
+    if (localStorage.getItem('tos_accepted') === '1' && currentUser) {
+      currentUser._acceptedTos = true;
+    }
+  } catch (_e) {}
+  if (currentUser && !currentUser._acceptedTos) {
+    showTosPopup();
+  }
+
   // Update user info in sidebar
   if (currentUser) {
     const name = currentUser.first_name || currentUser.username || 'User';
     const nameEl = document.getElementById('user-name');
     if (nameEl) nameEl.textContent = name;
 
-    if (currentUser.photo_url) {
-      const img = document.getElementById('user-avatar');
-      if (img) {
-        img.src = currentUser.photo_url;
+    // Load user avatar: from OIDC photo_url or from TG via /api/me/avatar
+    (function loadUserAvatar() {
+      var img = document.getElementById('user-avatar');
+      var fallback = document.getElementById('user-avatar-fallback');
+      if (!img) return;
+      var showImg = function(src) {
+        img.src = src;
         img.classList.remove('hidden');
-        const fallback = document.getElementById('user-avatar-fallback');
+        img.onerror = function() { img.classList.add('hidden'); if (fallback) fallback.classList.remove('hidden'); };
         if (fallback) fallback.classList.add('hidden');
+      };
+      if (currentUser.photo_url) {
+        showImg(currentUser.photo_url);
+      } else if (authToken) {
+        showImg('/api/me/avatar?t=' + encodeURIComponent(authToken) + '&_=' + Date.now());
       }
-    }
+    })();
   }
+
+  // Show admin-only nav items
+  document.querySelectorAll('.admin-only-nav').forEach(function(el) {
+    el.style.display = (currentUser && currentUser._isAdmin) ? '' : 'none';
+  });
+
+  // Beta-only nav: accessible for beta testers + admins, grayed for others
+  var _hasBeta = currentUser && (currentUser._isBeta || currentUser._isAdmin);
+  document.querySelectorAll('.beta-only-nav').forEach(function(el) {
+    if (_hasBeta) {
+      el.style.opacity = '';
+      el.style.pointerEvents = '';
+      el.style.filter = '';
+    } else {
+      el.style.opacity = '0.4';
+      el.style.pointerEvents = 'none';
+      el.style.filter = 'grayscale(1)';
+      // Change badge color to gray
+      var badge = el.querySelector('.nav-badge');
+      if (badge) { badge.style.background = 'rgba(107,114,128,0.2)'; badge.style.color = '#6b7280'; }
+    }
+  });
 
   // Set plan badge from auth data immediately
   if (currentUser && currentUser._plan) {
@@ -496,10 +805,40 @@ function showApp() {
     }
     var greetEl = document.getElementById('overview-greeting-text');
     if (greetEl && name) {
-      greetEl.textContent = greeting + ', ' + name;
+      greetEl.innerHTML = greeting + ', <span class="grad">' + escHtml(name) + '</span>';
       greetEl.removeAttribute('data-en');
       greetEl.removeAttribute('data-ru');
     }
+    // Inject Live eyebrow above the title once.
+    var headerL = greetEl ? greetEl.parentElement : null;
+    if (headerL && !headerL.querySelector('.eyebrow')) {
+      var eb = document.createElement('span');
+      eb.className = 'eyebrow';
+      var months = currentLang === 'ru'
+        ? ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря']
+        : ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      var now = new Date();
+      eb.textContent = 'Live · ' + now.getDate() + ' ' + months[now.getMonth()] + ' ' + now.getFullYear();
+      eb.style.cssText = 'margin-bottom:14px;display:inline-flex';
+      headerL.insertBefore(eb, headerL.firstChild);
+    }
+  }
+
+  // Atlas promotion banner on overview
+  var atlasBanner = document.getElementById('atlas-promo-banner');
+  if (!atlasBanner) {
+    atlasBanner = document.createElement('div');
+    atlasBanner.id = 'atlas-promo-banner';
+    atlasBanner.style.cssText = 'margin:0 0 20px;padding:16px 20px;background:linear-gradient(in oklab 135deg,var(--accent-dim),rgba(6,182,212,0.04));border:1px solid var(--accent-dim);border-radius:12px;display:flex;align-items:center;gap:14px;cursor:pointer';
+    atlasBanner.onclick = function() { navigateTo('assistant'); };
+    atlasBanner.innerHTML =
+      '<div style="width:40px;height:40px;border-radius:10px;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>' +
+      '<div style="flex:1"><div style="font-size:.88rem;font-weight:600;color:var(--text-primary)">' + (currentLang === 'ru' ? 'Atlas — ваш AI-ассистент' : 'Atlas — your AI assistant') + '</div>' +
+      '<div style="font-size:.78rem;color:var(--text-muted);margin-top:2px">' + (currentLang === 'ru' ? 'Создаёт агентов, настраивает, объясняет, проводит аудит. Просто опишите что нужно.' : 'Creates agents, configures, explains, audits. Just describe what you need.') + '</div></div>' +
+      '<div style="color:var(--primary);font-size:.82rem;font-weight:600;white-space:nowrap">' + (currentLang === 'ru' ? 'Открыть →' : 'Open →') + '</div>';
+    var overviewPage = document.getElementById('overview-page');
+    var statsGrid = overviewPage?.querySelector('.stat-card')?.parentElement;
+    if (statsGrid) statsGrid.parentElement?.insertBefore(atlasBanner, statsGrid);
   }
 
   // Load real data from API
@@ -520,6 +859,17 @@ function showApp() {
   initActivityStream().catch(console.error);   // async — DB-backed
   initOperations().catch(console.error);        // async — DB-backed
 
+  // Feedback floating action button
+  initFeedbackFAB();
+
+  // Load topbar balance
+  apiRequest('GET', '/api/balance').then(function(d) {
+    if (d && (d.balance_ton || d.balance_ton === 0)) {
+      var el = document.getElementById('topbar-ton-balance');
+      if (el) el.textContent = parseFloat(d.balance_ton || 0).toFixed(2);
+    }
+  }).catch(function(){});
+
   // Start live updates
   startLiveUpdates();
 
@@ -534,33 +884,59 @@ async function loadDashboard() {
 async function loadMyStats() {
   const data = await apiRequest('GET', '/api/stats/me');
   if (!data.ok) return;
-  // Active agents
-  animateCount(document.getElementById('sessions-value'), data.agentsActive || 0);
-  // Total runs
-  var runsEl = document.getElementById('runs-value');
-  if (runsEl) runsEl.textContent = data.totalRuns ?? '—';
-  // Success rate
-  var srEl = document.getElementById('success-rate-value');
-  if (srEl) srEl.textContent = data.successRate != null ? data.successRate + '%' : '—';
-  // Last 24h runs
-  var l24El = document.getElementById('last24h-value');
-  if (l24El) l24El.textContent = data.last24hRuns ?? '—';
-  // Uptime
+  // Active agents — animated
+  animateCount(document.getElementById('sessions-value'), data.agentsActive || 0, 1000);
+  // Total runs — animated
+  animateCount(document.getElementById('runs-value'), data.totalRuns || 0, 1200);
+  // Success rate — animated with % suffix
+  animateCount(document.getElementById('success-rate-value'), data.successRate || 0, 1000, '%');
+  // Last 24h runs — animated
+  animateCount(document.getElementById('last24h-value'), data.last24hRuns || 0, 800);
+  // Uptime — animated
   if (data.uptimeSeconds) {
     var h = Math.floor(data.uptimeSeconds / 3600);
     var m = Math.floor((data.uptimeSeconds % 3600) / 60);
     var upEl = document.getElementById('uptime-value');
-    if (upEl) upEl.textContent = h + 'h ' + m + 'm';
+    if (upEl) {
+      animateCount(upEl, h, 1000);
+      setTimeout(function() { if (upEl) upEl.textContent = h + 'h ' + m + 'm'; }, 1100);
+    }
   }
-  // Capabilities count (tools + plugins)
+  // Capabilities count (tools + plugins) — animated
   var capCount = (data.pluginsTotal || 12) + (data.pluginsInstalled || 0) + 65;
-  var toolsEl = document.getElementById('tools-value');
-  if (toolsEl) toolsEl.textContent = capCount;
+  animateCount(document.getElementById('tools-value'), capCount, 1500);
   var capBadge = document.getElementById('nav-capabilities-badge');
   if (capBadge) capBadge.textContent = capCount;
   // Model name from user settings
   var modelEl = document.querySelector('.model-name');
   if (modelEl && data.aiModel) modelEl.textContent = data.aiModel;
+  // Total agents count
+  animateCount(document.getElementById('agents-total-value'), data.agentsTotal || 0, 800);
+
+  // Trend lines under stat values — only rendered when the API returns
+  // a delta for that metric. Hidden otherwise (no fake data).
+  function setTrend(metric, delta, suffixLabel) {
+    var card = document.querySelector('.metric-card[data-metric="' + metric + '"]');
+    if (!card) return;
+    var el = card.querySelector('.metric-trend');
+    if (delta == null || isNaN(delta)) { if (el) el.remove(); return; }
+    if (!el) {
+      el = document.createElement('div');
+      el.className = 'metric-trend';
+      card.appendChild(el);
+    }
+    var up = delta >= 0;
+    var sign = up ? '↑' : '↓';
+    var pct = Math.abs(delta).toFixed(1) + '%';
+    el.className = 'metric-trend ' + (up ? 'up' : 'down');
+    el.innerHTML = '<span class="arr">' + sign + '</span><span class="val">' + (up ? '+' : '−') + pct + '</span>' +
+      (suffixLabel ? '<span class="sfx"> ' + suffixLabel + '</span>' : '');
+  }
+  var ru = currentLang === 'ru';
+  setTrend('runs',         data.totalRunsTrend,        ru ? 'к прошлой неделе' : 'vs last week');
+  setTrend('success',      data.successRateTrend,      ru ? 'сегодня' : 'today');
+  setTrend('last24h',      data.last24hRunsTrend,      ru ? 'сегодня' : 'today');
+  setTrend('agents-total', data.agentsTotalTrend,      ru ? 'за неделю' : 'this week');
 }
 
 // ===== PINNED AGENTS =====
@@ -596,6 +972,8 @@ async function loadAgents() {
   }
   const agents = data.agents || [];
   _agentsCache = agents;
+  // Update topbar avatar with user initial
+  updateTopbar();
   // Overview shows ONLY pinned agents
   var pinned = getPinnedAgents();
   var pinnedAgents = agents.filter(function(a) { return pinned.indexOf(a.id) >= 0; });
@@ -643,7 +1021,7 @@ async function loadAgents() {
         <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();copyAgentPrompt(${a.id}, event)" title="${currentLang === 'ru' ? 'Копировать промпт' : 'Copy prompt'}">${IC.clipboard}</button>
         <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();loadAgentLogs(${a.id})" title="${t('logs')}">${IC.inbox}</button>
         <button class="btn btn-ghost btn-sm" title="${currentLang === 'ru' ? 'Открепить' : 'Unpin'}" onclick="togglePinAgent(${a.id}, event)" style="color:var(--primary)">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
         </button>
       </div>
     </div>`;
@@ -691,13 +1069,49 @@ async function toggleAgent(agentId, isActive) {
 var _detailAgentId = null;
 var _detailAgentData = null;
 
+function normalizeAgentData(a) {
+  if (!a) return a;
+  // Ensure both camelCase and snake_case variants exist
+  if (a.is_active === undefined && a.isActive !== undefined) a.is_active = a.isActive;
+  if (a.isActive === undefined && a.is_active !== undefined) a.isActive = a.is_active;
+  if (a.trigger_config === undefined && a.triggerConfig !== undefined) a.trigger_config = a.triggerConfig;
+  if (a.triggerConfig === undefined && a.trigger_config !== undefined) a.triggerConfig = a.trigger_config;
+  if (a.last_error === undefined && a.lastError !== undefined) a.last_error = a.lastError;
+  if (a.lastError === undefined && a.last_error !== undefined) a.lastError = a.last_error;
+  if (a.enabled_capabilities === undefined && a.enabledCapabilities !== undefined) a.enabled_capabilities = a.enabledCapabilities;
+  if (a.enabledCapabilities === undefined && a.enabled_capabilities !== undefined) a.enabledCapabilities = a.enabled_capabilities;
+  if (a.created_at === undefined && a.createdAt !== undefined) a.created_at = a.createdAt;
+  if (a.createdAt === undefined && a.created_at !== undefined) a.createdAt = a.created_at;
+  // Parse trigger_config if string
+  if (typeof a.trigger_config === 'string') { try { a.trigger_config = JSON.parse(a.trigger_config); a.triggerConfig = a.trigger_config; } catch(e) {} }
+  if (typeof a.triggerConfig === 'string') { try { a.triggerConfig = JSON.parse(a.triggerConfig); a.trigger_config = a.triggerConfig; } catch(e) {} }
+  return a;
+}
+
 async function openAgentDetail(agentId, skipSettings) {
   _detailAgentId = agentId;
+  delete _hooksCache[agentId]; // invalidate hooks cache on open
+
+  // When going directly to full-screen settings — skip the slide-over entirely
+  if (!skipSettings) {
+    try {
+      var data0 = await apiRequest('GET', '/api/agents/' + agentId);
+      if (!data0.ok || !data0.agent) { toast('Agent not found', 'error'); return; }
+      _detailAgentData = normalizeAgentData(data0.agent);
+      openAgentSettings();
+      // Show agent settings tour on first visit
+      if (!_agentTourShown) { _agentTourShown = true; setTimeout(startAgentTour, 800); }
+    } catch(e) {
+      toast(e.message || 'Error', 'error');
+    }
+    return;
+  }
+
+  // skipSettings=true → show slide-over panel (e.g. after closing full-screen settings)
   var panel = document.getElementById('agent-detail-panel');
   if (!panel) return;
   panel.style.display = 'flex';
   panel.classList.remove('closing');
-  // Load agent data
   var body = document.getElementById('agent-detail-body');
   if (body) body.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--text-muted)">' + IC.hourglass + ' Loading...</div>';
   try {
@@ -705,11 +1119,6 @@ async function openAgentDetail(agentId, skipSettings) {
     if (!data.ok || !data.agent) { toast('Agent not found', 'error'); closeAgentDetail(); return; }
     _detailAgentData = normalizeAgentData(data.agent);
     renderAgentDetail();
-    // Open full-screen settings directly (unless called from settings close refresh)
-    if (!skipSettings) {
-      closeAgentDetail();
-      openAgentSettings();
-    }
   } catch(e) {
     toast(e.message || 'Error', 'error');
     closeAgentDetail();
@@ -783,16 +1192,362 @@ function renderAgentDetail() {
     html += '</div>';
   }
 
-  // Flow section
-  if (triggerType !== 'ai_agent' && config.nodes && config.nodes.length) {
-    html += '<div class="agent-detail-section">';
-    html += '<div class="agent-detail-section-title">Flow (' + config.nodes.length + ' nodes)</div>';
-    var flowDesc = config.nodes.map(function(n) { return n.type; }).join(' → ');
-    html += '<div style="font-size:0.78rem;color:var(--text-secondary);word-break:break-all">' + escHtml(flowDesc) + '</div>';
-    html += '</div>';
-  }
+  // ── Flow Diagram ──────────────────────────────────────────────────────────
+  html += '<div class="agent-detail-section">';
+  html += '<div class="agent-detail-section-title">' + (currentLang === 'ru' ? 'Схема работы' : 'Flow Diagram') + '</div>';
+  html += buildFlowDiagram(triggerType, a);
+  html += '</div>';
+
+  // ── Token Usage ───────────────────────────────────────────────────────────
+  html += '<div class="agent-detail-section" id="agent-token-section">';
+  html += '<div class="agent-detail-section-title">' + (currentLang === 'ru' ? 'Использование токенов' : 'Token Usage') + '</div>';
+  html += '<div class="token-stats" id="agent-token-stats">';
+  html += '<div class="token-stat"><div class="token-stat-label">' + (currentLang === 'ru' ? 'Сегодня' : 'Today') + '</div><div class="token-stat-value accent" id="ts-today">—</div></div>';
+  html += '<div class="token-stat"><div class="token-stat-label">' + (currentLang === 'ru' ? 'За всё время' : 'All Time') + '</div><div class="token-stat-value" id="ts-alltime">—</div></div>';
+  html += '<div class="token-stat"><div class="token-stat-label">' + (currentLang === 'ru' ? 'Стоимость' : 'Cost USD') + '</div><div class="token-stat-value green" id="ts-cost">—</div></div>';
+  html += '<div class="token-stat"><div class="token-stat-label">' + (currentLang === 'ru' ? 'Запросов' : 'Requests') + '</div><div class="token-stat-value amber" id="ts-reqs">—</div></div>';
+  html += '</div></div>';
+
+  // ── Composite Tools (agent's own macros) ─────────────────────────────────
+  html += '<div class="agent-detail-section" id="agent-composites-section">';
+  html += '<div class="agent-detail-section-title" style="display:flex;justify-content:space-between;align-items:center">' +
+    '<span>🛠 ' + (currentLang === 'ru' ? 'Композитные тулзы (макросы)' : 'Composite Tools (macros)') + '</span>' +
+    '<button class="btn btn-sm" onclick="openCompositeToolEditor(' + a.id + ')" style="font-size:11px;padding:3px 10px">+ ' + (currentLang === 'ru' ? 'Создать' : 'Create') + '</button>' +
+  '</div>';
+  html += '<div id="agent-composites-list" style="margin-top:8px;font-size:12px;color:var(--text-muted)">' + (currentLang === 'ru' ? 'Загрузка…' : 'Loading…') + '</div>';
+  html += '</div>';
+
+  // ── MCP Servers (external tool providers) ────────────────────────────────
+  html += '<div class="agent-detail-section" id="agent-mcp-section">';
+  html += '<div class="agent-detail-section-title" style="display:flex;justify-content:space-between;align-items:center">' +
+    '<span>🔌 ' + (currentLang === 'ru' ? 'MCP серверы (внешние тулзы)' : 'MCP Servers (external tools)') + '</span>' +
+    '<a href="/studio/mcp-servers" class="btn btn-sm" style="font-size:11px;padding:3px 10px;text-decoration:none">⚙ ' + (currentLang === 'ru' ? 'Управление' : 'Manage') + '</a>' +
+  '</div>';
+  html += '<div id="agent-mcp-list" style="margin-top:8px;font-size:12px;color:var(--text-muted)">' + (currentLang === 'ru' ? 'Загрузка…' : 'Loading…') + '</div>';
+  html += '</div>';
 
   body.innerHTML = html;
+
+  // Load token stats async (don't block render)
+  loadAgentTokenStats(a.id);
+  // Load composites async
+  loadAgentComposites(a.id);
+  // Load MCP servers async
+  loadAgentMCPServers(a.id);
+}
+
+// ─── MCP Servers — UI in agent detail ─────────────────────────────────────
+// Shows ALL user-owned MCP servers (so you can attach a new one inline) +
+// per-server checkbox for "enabled on this agent". Enabled rows are expanded
+// with the live tool list pulled from the live MCP connection.
+async function loadAgentMCPServers(agentId) {
+  const isRu = currentLang === 'ru';
+  const el = document.getElementById('agent-mcp-list');
+  if (!el) return;
+  showGenAuraSkeleton(el, 3);
+  // Fetch in parallel: all user servers + agent-enabled subset
+  let allRes, enabledRes;
+  try {
+    [allRes, enabledRes] = await Promise.all([
+      apiRequest('GET', '/api/mcp-servers'),
+      apiRequest('GET', '/api/agents/' + agentId + '/mcp-servers'),
+    ]);
+  } catch (e) {
+    el.innerHTML = '<div style="color:var(--danger)">' + escHtml(String(e)) + '</div>';
+    return;
+  }
+  if (!allRes || !allRes.ok) { el.innerHTML = '<div style="color:var(--danger)">' + escHtml((allRes && allRes.error) || 'error') + '</div>'; return; }
+  const all = allRes.items || allRes.servers || [];
+  const enabledIds = new Set((enabledRes && enabledRes.items || []).map(s => s.id));
+
+  if (all.length === 0) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--text-muted);font-style:italic">' +
+      (isRu ? 'У тебя нет MCP серверов. ' : 'No MCP servers yet. ') +
+      '<a href="/studio/mcp-servers" style="color:var(--primary)">' +
+      (isRu ? 'Добавь первый' : 'Add one') + ' →</a></div>';
+    return;
+  }
+
+  const statusBadge = (s) => {
+    const colors = {
+      connected: { bg: 'rgba(34,197,94,0.15)',  fg: '#22c55e', icon: '🟢', label: isRu ? 'подкл.' : 'connected' },
+      pending:   { bg: 'rgba(59,130,246,0.15)', fg: '#3b82f6', icon: '⏳', label: isRu ? 'pending' : 'pending'  },
+      error:     { bg: 'rgba(239,68,68,0.15)',  fg: '#ef4444', icon: '⚠',  label: isRu ? 'ошибка'  : 'error'    },
+      disabled:  { bg: 'rgba(148,163,184,0.15)',fg: '#94a3b8', icon: '⚪', label: isRu ? 'выкл.'   : 'disabled' },
+    }[s.status] || { bg: 'rgba(148,163,184,0.12)', fg: '#94a3b8', icon: '?', label: s.status || 'unknown' };
+    return '<span style="font-size:10px;padding:2px 7px;background:' + colors.bg + ';color:' + colors.fg + ';border-radius:9px;font-weight:500">' + colors.icon + ' ' + colors.label + '</span>';
+  };
+
+  el.innerHTML = all.map(function(s) {
+    const isEnabled = enabledIds.has(s.id);
+    const detailsId = 'mcp-tools-' + agentId + '-' + s.id;
+    return '<div style="padding:10px 12px;background:var(--bg-tertiary);border-radius:8px;margin-bottom:6px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">' +
+        '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex:1;min-width:0">' +
+          '<input type="checkbox" ' + (isEnabled ? 'checked' : '') + ' onchange="toggleAgentMCPServer(' + agentId + ',' + s.id + ',this.checked,this)">' +
+          '<div style="min-width:0;flex:1">' +
+            '<div style="font-weight:600;font-size:13px;display:flex;align-items:center;gap:6px">' +
+              escHtml(s.name) + ' ' + statusBadge(s) +
+              '<span style="font-size:10.5px;color:var(--text-muted);font-weight:400">· ' + (s.tools_count || 0) + ' ' + (isRu ? 'тулз' : 'tools') + '</span>' +
+            '</div>' +
+            '<div style="font-size:10.5px;color:var(--text-muted);margin-top:2px;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(s.url) + '</div>' +
+          '</div>' +
+        '</label>' +
+        (isEnabled
+          ? '<button class="btn btn-sm" style="font-size:10.5px;padding:3px 8px" onclick="toggleMCPToolsExpand(' + agentId + ',' + s.id + ')">' + (isRu ? 'Тулзы' : 'Tools') + ' ▾</button>'
+          : '') +
+      '</div>' +
+      (isEnabled ? '<div id="' + detailsId + '" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)"></div>' : '') +
+    '</div>';
+  }).join('');
+}
+
+async function toggleAgentMCPServer(agentId, serverId, enabled, checkboxEl) {
+  const isRu = currentLang === 'ru';
+  if (checkboxEl) checkboxEl.disabled = true;
+  try {
+    const r = await apiRequest('PUT', '/api/agents/' + agentId + '/mcp-servers/' + serverId, { enabled });
+    if (r.ok) {
+      toast(enabled
+        ? (isRu ? 'Подключено к агенту' : 'Attached to agent')
+        : (isRu ? 'Отключено' : 'Detached'), 'success');
+      // Repaint to refresh the per-server tool drawer + invalidate runtime cache
+      loadAgentMCPServers(agentId);
+    } else {
+      toast(r.error || 'Error', 'error');
+      if (checkboxEl) checkboxEl.checked = !enabled;
+    }
+  } catch (e) {
+    toast(String(e), 'error');
+    if (checkboxEl) checkboxEl.checked = !enabled;
+  } finally {
+    if (checkboxEl) checkboxEl.disabled = false;
+  }
+}
+
+async function toggleMCPToolsExpand(agentId, serverId) {
+  const isRu = currentLang === 'ru';
+  const detailsId = 'mcp-tools-' + agentId + '-' + serverId;
+  const drawer = document.getElementById(detailsId);
+  if (!drawer) return;
+  const isOpen = drawer.style.display === 'block';
+  if (isOpen) { drawer.style.display = 'none'; return; }
+  drawer.style.display = 'block';
+  drawer.innerHTML = '<div style="font-size:11px;color:var(--text-muted)">' + (isRu ? 'Загрузка тулз…' : 'Loading tools…') + '</div>';
+  let r;
+  try { r = await apiRequest('GET', '/api/mcp-servers/' + serverId + '/tools'); }
+  catch (e) { drawer.innerHTML = '<div style="color:var(--danger);font-size:11px">' + escHtml(String(e)) + '</div>'; return; }
+  if (!r || !r.ok) {
+    drawer.innerHTML = '<div style="color:var(--danger);font-size:11px">' + escHtml((r && r.error) || 'error') + '</div>';
+    return;
+  }
+  const tools = r.tools || [];
+  if (tools.length === 0) {
+    drawer.innerHTML = '<div style="font-size:11px;color:var(--text-muted);font-style:italic">' +
+      (isRu ? 'Сервер не вернул ни одной тулзы (возможно offline или needs re-test).' : 'Server returned no tools (offline or needs re-test).') +
+      '</div>';
+    return;
+  }
+  drawer.innerHTML =
+    '<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">' +
+      (isRu ? 'Эти тулзы доступны агенту:' : 'These tools are exposed to the agent:') +
+    '</div>' +
+    '<div style="display:grid;grid-template-columns:1fr;gap:4px;max-height:240px;overflow:auto">' +
+      tools.map(t =>
+        '<div style="padding:6px 8px;background:var(--bg-secondary);border-radius:6px;font-size:11px">' +
+          '<div style="font-family:monospace;font-weight:600;color:var(--text-primary)">' + escHtml(t.name) + '</div>' +
+          (t.description ? '<div style="color:var(--text-muted);margin-top:2px;line-height:1.35">' + escHtml(t.description.slice(0, 200)) + (t.description.length > 200 ? '…' : '') + '</div>' : '') +
+        '</div>',
+      ).join('') +
+    '</div>';
+}
+
+// ─── Composite Tools — UI ─────────────────────────────────────────────────
+async function loadAgentComposites(agentId) {
+  const isRu = currentLang === 'ru';
+  const el = document.getElementById('agent-composites-list');
+  if (!el) return;
+  showGenAuraSkeleton(el, 3);
+  let r;
+  try { r = await apiRequest('GET', '/api/agents/' + agentId + '/composites'); }
+  catch (e) { el.innerHTML = '<div style="color:var(--danger)">' + escHtml(String(e)) + '</div>'; return; }
+  if (!r.ok) { el.innerHTML = '<div style="color:var(--danger)">' + escHtml(r.error || 'error') + '</div>'; return; }
+  const items = r.composites || [];
+  if (items.length === 0) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--text-muted);font-style:italic">' +
+      (isRu ? 'Нет композитов. Создай макрос — агент сам сможет вызывать его как обычную тулзу.' : 'No composites yet. Define one — the agent picks it like any other tool.') +
+      '</div>';
+    return;
+  }
+  el.innerHTML = items.map(function(c) {
+    const stepsArr = Array.isArray(c.steps) ? c.steps : (typeof c.steps === 'string' ? JSON.parse(c.steps) : []);
+    return '<div style="padding:10px 12px;background:var(--bg-tertiary);border-radius:8px;margin-bottom:6px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:start">' +
+        '<div style="flex:1">' +
+          '<div style="font-weight:600;font-size:13px;font-family:monospace">' + escHtml(c.name) + ' <span style="color:var(--text-muted);font-weight:400;font-size:11px">(' + stepsArr.length + ' ' + (isRu ? 'шагов' : 'steps') + ', exec ' + (c.exec_count || 0) + 'x)</span></div>' +
+          '<div style="font-size:12px;color:var(--text-secondary);margin-top:3px">' + escHtml(c.description || '') + '</div>' +
+          '<div style="font-size:10.5px;color:var(--text-muted);margin-top:4px;font-family:monospace">' +
+            stepsArr.map(function(s, i) { return (i + 1) + '. ' + escHtml(s.tool || '?'); }).join(' → ') +
+          '</div>' +
+        '</div>' +
+        '<div style="display:flex;gap:4px;margin-left:8px">' +
+          '<button class="btn btn-sm" style="font-size:10.5px;padding:3px 8px" onclick="openCompositeToolEditor(' + agentId + ',\'' + escJsAttr(c.name) + '\')">✎</button>' +
+          '<button class="btn btn-sm" style="font-size:10.5px;padding:3px 8px;color:#ef4444" onclick="deleteComposite(' + agentId + ',\'' + escJsAttr(c.name) + '\')">×</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+async function deleteComposite(agentId, name) {
+  const isRu = currentLang === 'ru';
+  if (!confirm(isRu ? ('Удалить композит "' + name + '"?') : ('Delete composite "' + name + '"?'))) return;
+  const r = await apiRequest('DELETE', '/api/agents/' + agentId + '/composites/' + encodeURIComponent(name));
+  if (r.ok) {
+    toast(isRu ? 'Удалено' : 'Deleted', 'success');
+    loadAgentComposites(agentId);
+  } else {
+    toast(r.error || 'Error', 'error');
+  }
+}
+
+async function openCompositeToolEditor(agentId, existingName) {
+  const isRu = currentLang === 'ru';
+  // Load existing composite (if editing) so user sees current steps
+  let existing = null;
+  if (existingName) {
+    const r = await apiRequest('GET', '/api/agents/' + agentId + '/composites');
+    if (r.ok) existing = (r.composites || []).find(c => c.name === existingName);
+  }
+  const initialSteps = existing
+    ? (typeof existing.steps === 'string' ? existing.steps : JSON.stringify(existing.steps, null, 2))
+    : '[\n  {"tool": "ton_get_balance", "args": {"address": "{param.wallet}"}},\n  {"tool": "tg_send_message", "args": {"chat_id": "{param.chat_id}", "text": "Balance: {step.0.balance_ton} TON"}}\n]';
+  const initialSchema = existing
+    ? (typeof existing.params_schema === 'string' ? existing.params_schema : JSON.stringify(existing.params_schema, null, 2))
+    : '{\n  "wallet": "string — TON address to check",\n  "chat_id": "string — where to send result"\n}';
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML =
+    '<div style="background:var(--bg-secondary);border-radius:14px;padding:24px;max-width:680px;width:100%;max-height:90vh;overflow:auto">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">' +
+        '<b style="font-size:16px">🛠 ' + (existing ? (isRu ? 'Редактировать макрос' : 'Edit macro') : (isRu ? 'Создать макрос' : 'Create macro')) + '</b>' +
+        '<button class="btn" onclick="this.closest(\'div[style*=fixed]\').remove()" style="background:transparent;padding:4px 10px">×</button>' +
+      '</div>' +
+      '<label style="display:block;margin-bottom:10px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Имя (snake_case)' : 'Name (snake_case)') + '</div>' +
+        '<input id="ct-name" class="rt-input" style="width:100%;font-family:monospace" value="' + escHtml(existing ? existing.name : '') + '" placeholder="check_wallet_and_notify"' + (existing ? ' readonly' : '') + '></label>' +
+      '<label style="display:block;margin-bottom:10px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Описание (что делает)' : 'Description (what it does)') + '</div>' +
+        '<textarea id="ct-desc" class="rt-input" style="width:100%;min-height:50px">' + escHtml(existing ? existing.description : '') + '</textarea></label>' +
+      '<label style="display:block;margin-bottom:10px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Параметры (JSON)' : 'Params schema (JSON)') + '</div>' +
+        '<textarea id="ct-params" class="rt-input" style="width:100%;min-height:80px;font-family:monospace;font-size:12px">' + escHtml(initialSchema) + '</textarea>' +
+        '<div style="font-size:10px;color:var(--text-muted);margin-top:2px">{"param_name": "type — description"}</div></label>' +
+      '<label style="display:block;margin-bottom:14px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Шаги (JSON-массив)' : 'Steps (JSON array)') + '</div>' +
+        '<textarea id="ct-steps" class="rt-input" style="width:100%;min-height:160px;font-family:monospace;font-size:12px">' + escHtml(initialSteps) + '</textarea>' +
+        '<div style="font-size:10px;color:var(--text-muted);margin-top:2px">{"tool": "...", "args": {...}}. Используй {param.X} для входных значений и {step.N.поле} для выхода прошлого шага.</div></label>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end">' +
+        '<button class="btn" onclick="this.closest(\'div[style*=fixed]\').remove()">' + (isRu ? 'Отмена' : 'Cancel') + '</button>' +
+        '<button class="btn btn-primary" id="ct-save">💾 ' + (isRu ? 'Сохранить' : 'Save') + '</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+
+  document.getElementById('ct-save').onclick = async function() {
+    const name = (document.getElementById('ct-name').value || '').trim();
+    const description = (document.getElementById('ct-desc').value || '').trim();
+    if (!name || !/^[a-zA-Z][a-zA-Z0-9_]{1,79}$/.test(name)) { toast(isRu ? 'Имя: a-z, 0-9, _ (с буквы)' : 'Name: a-z, 0-9, _ (start with letter)', 'warning'); return; }
+    if (!description) { toast(isRu ? 'Опиши что делает' : 'Add description', 'warning'); return; }
+    let params_schema = {};
+    try { params_schema = JSON.parse(document.getElementById('ct-params').value || '{}'); }
+    catch (e) { toast(isRu ? 'Невалидный JSON в Params' : 'Bad JSON in Params', 'error'); return; }
+    let steps;
+    try { steps = JSON.parse(document.getElementById('ct-steps').value || '[]'); }
+    catch (e) { toast(isRu ? 'Невалидный JSON в Steps' : 'Bad JSON in Steps', 'error'); return; }
+    if (!Array.isArray(steps) || steps.length === 0) { toast(isRu ? 'Нужен хотя бы 1 шаг' : 'At least 1 step required', 'warning'); return; }
+    const r = await apiRequest('POST', '/api/agents/' + agentId + '/composites', { name, description, params_schema, steps });
+    if (r.ok) {
+      toast(isRu ? 'Сохранено' : 'Saved', 'success');
+      overlay.remove();
+      loadAgentComposites(agentId);
+    } else {
+      toast(r.error || 'Error', 'error');
+    }
+  };
+}
+
+/** Build visual flow diagram HTML for an agent */
+function buildFlowDiagram(triggerType, agent) {
+  var isRu = currentLang === 'ru';
+  var nodes = [];
+
+  if (triggerType === 'ai_agent') {
+    nodes = [
+      { icon: IC.chat, label: isRu ? 'Сообщение' : 'Input', type: 'trigger' },
+      { icon: IC.robot, label: isRu ? 'AI Модель' : 'AI Model', type: 'process' },
+      { icon: IC.wrench, label: isRu ? 'Инструменты' : 'Tools', type: 'tools' },
+      { icon: IC.upload, label: isRu ? 'Ответ' : 'Output', type: 'output' },
+    ];
+  } else if (triggerType === 'scheduled') {
+    var interval = (agent.triggerConfig && agent.triggerConfig.interval) || (agent.trigger_config && agent.trigger_config.interval) || '';
+    nodes = [
+      { icon: IC.clock, label: interval || (isRu ? 'Расписание' : 'Schedule'), type: 'trigger' },
+      { icon: IC.clipboard, label: isRu ? 'Код' : 'Code Run', type: 'process' },
+      { icon: IC.plug, label: isRu ? 'Плагины' : 'Plugins', type: 'tools' },
+      { icon: IC.upload, label: isRu ? 'Результат' : 'Result', type: 'output' },
+    ];
+  } else if (triggerType === 'webhook') {
+    nodes = [
+      { icon: IC.antenna, label: 'Webhook', type: 'trigger' },
+      { icon: IC.clipboard, label: isRu ? 'Код' : 'Code Run', type: 'process' },
+      { icon: IC.plug, label: isRu ? 'Плагины' : 'Plugins', type: 'tools' },
+      { icon: IC.loop, label: isRu ? 'Ответ' : 'Response', type: 'output' },
+    ];
+  } else {
+    nodes = [
+      { icon: IC.play, label: isRu ? 'Запуск' : 'Manual', type: 'trigger' },
+      { icon: IC.clipboard, label: isRu ? 'Код' : 'Code Run', type: 'process' },
+      { icon: IC.plug, label: isRu ? 'Плагины' : 'Plugins', type: 'tools' },
+      { icon: IC.upload, label: isRu ? 'Результат' : 'Result', type: 'output' },
+    ];
+  }
+
+  var html = '<div class="agent-flow-diagram">';
+  for (var i = 0; i < nodes.length; i++) {
+    var n = nodes[i];
+    html += '<div class="flow-node">' +
+      '<div class="flow-node-icon ' + n.type + '">' + n.icon + '</div>' +
+      '<div class="flow-node-label">' + escHtml(n.label) + '</div>' +
+      '</div>';
+    if (i < nodes.length - 1) {
+      html += '<div class="flow-arrow">→</div>';
+    }
+  }
+  html += '</div>';
+  return html;
+}
+
+/** Load token stats for agent and update DOM */
+async function loadAgentTokenStats(agentId) {
+  try {
+    var data = await apiRequest('GET', '/api/agents/' + agentId + '/tokens');
+    if (!data || !data.ok) return;
+
+    var fmtNum = function(n) {
+      if (!n || n === 0) return '0';
+      if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+      if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+      return String(n);
+    };
+
+    var todayEl = document.getElementById('ts-today');
+    var alltimeEl = document.getElementById('ts-alltime');
+    var costEl = document.getElementById('ts-cost');
+    var reqsEl = document.getElementById('ts-reqs');
+
+    if (todayEl) todayEl.textContent = fmtNum(data.today.totalTokens);
+    if (alltimeEl) alltimeEl.textContent = fmtNum(data.allTime.totalTokens);
+    if (costEl) costEl.textContent = data.allTime.estimatedCost > 0 ? '$' + data.allTime.estimatedCost.toFixed(4) : '$0.00';
+    if (reqsEl) reqsEl.textContent = fmtNum(data.allTime.totalRequests);
+  } catch (_) {}
 }
 
 function closeAgentDetail() {
@@ -801,6 +1556,20 @@ function closeAgentDetail() {
   panel.classList.add('closing');
   setTimeout(function() { panel.style.display = 'none'; panel.classList.remove('closing'); }, 400);
 }
+
+// ESC key closes agent settings panel + any overlays
+document.addEventListener('keydown', function(e) {
+  if (e.key !== 'Escape') return;
+  // Close daily log overlay first
+  var overlay = document.getElementById('daily-log-overlay');
+  if (overlay) { overlay.remove(); return; }
+  // Close any open modal
+  var modal = document.querySelector('.studio-dialog-backdrop[style*="display: flex"], .studio-dialog-backdrop[style*="display:flex"]');
+  if (modal) { modal.style.display = 'none'; return; }
+  // Close agent detail panel
+  var panel = document.getElementById('agent-detail-panel');
+  if (panel && panel.style.display !== 'none') { closeAgentDetail(); return; }
+});
 
 function toggleAgentRename() {
   var nameEl = document.getElementById('agent-detail-name');
@@ -885,52 +1654,149 @@ function openAgentChat(agentId) {
   _agentChatHistory = [];
   var body = document.getElementById('agent-detail-body');
   if (!body) return;
+  var isRu = currentLang === 'ru';
   body.innerHTML =
-    '<div class="agent-detail-section">' +
-    '<div class="agent-detail-section-title">Chat with Agent #' + agentId + '</div>' +
-    '<div id="agent-chat-messages" style="max-height:400px;overflow-y:auto;padding:8px;background:rgba(0,0,0,0.2);border-radius:8px;margin-bottom:10px;min-height:100px">' +
-    '<div style="text-align:center;color:var(--text-muted);font-size:.8rem;padding:20px">' + (currentLang === 'ru' ? 'Отправьте сообщение агенту...' : 'Send a message to the agent...') + '</div>' +
+    '<div style="display:flex;flex-direction:column;height:calc(100vh - 120px);min-height:400px">' +
+    // Header
+    '<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);flex-shrink:0">' +
+    '<button onclick="openAgentDetail(_detailAgentId)" style="background:none;border:none;color:var(--text-muted);cursor:pointer;padding:4px;border-radius:6px;display:flex;align-items:center" title="Back">' +
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button>' +
+    '<div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(in oklab 135deg,var(--primary),var(--primary-dark));display:flex;align-items:center;justify-content:center">' +
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7H3a7 7 0 0 1 7-7h1V5.73C10.4 5.39 10 4.74 10 4a2 2 0 0 1 2-2z"/></svg></div>' +
+    '<div><div style="font-weight:600;font-size:.9rem">Agent #' + agentId + '</div><div style="font-size:.72rem;color:#00ff88">● ' + (isRu ? 'онлайн' : 'online') + '</div></div>' +
     '</div>' +
-    '<div style="display:flex;gap:8px">' +
-    '<input type="text" id="agent-chat-input" placeholder="' + (currentLang === 'ru' ? 'Сообщение агенту...' : 'Message to agent...') + '" style="flex:1;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text-primary);font-size:.85rem" onkeydown="if(event.key===\'Enter\')sendAgentChatMsg()">' +
-    '<button class="btn btn-primary btn-sm" onclick="sendAgentChatMsg()">' + (currentLang === 'ru' ? 'Отправить' : 'Send') + '</button>' +
+    // Messages
+    '<div id="agent-chat-messages" style="flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:2px">' +
+    '<div style="text-align:center;padding:24px 0">' +
+    '<div style="width:48px;height:48px;border-radius:50%;background:var(--accent-dim);border:1px solid var(--accent-glow);display:flex;align-items:center;justify-content:center;margin:0 auto 12px">' +
+    '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7H3a7 7 0 0 1 7-7h1V5.73C10.4 5.39 10 4.74 10 4a2 2 0 0 1 2-2z"/></svg></div>' +
+    '<div style="font-size:.85rem;color:var(--text-muted)">' + (isRu ? 'Агент готов к общению' : 'Agent is ready to chat') + '</div>' +
     '</div>' +
-    '<button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="openAgentDetail(_detailAgentId)">' + (currentLang === 'ru' ? 'Назад' : 'Back') + '</button>' +
+    '</div>' +
+    // Input
+    '<div style="padding:12px 16px;border-top:1px solid var(--border);flex-shrink:0">' +
+    '<div style="display:flex;gap:8px;align-items:flex-end;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:12px;padding:8px 8px 8px 14px;transition:border-color .2s" onfocus="this.style.borderColor=\'var(--primary)\'" onblur="this.style.borderColor=\'\'">' +
+    '<textarea id="agent-chat-input" rows="1" placeholder="' + (isRu ? 'Сообщение...' : 'Message...') + '" ' +
+    'style="flex:1;background:none;border:none;outline:none;resize:none;color:var(--text-primary);font-size:.875rem;line-height:1.5;max-height:120px;overflow-y:auto;font-family:inherit" ' +
+    'onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();sendAgentChatMsg()}" ' +
+    'oninput="this.style.height=\'auto\';this.style.height=Math.min(this.scrollHeight,120)+\'px\'"></textarea>' +
+    '<button id="agent-chat-send" onclick="sendAgentChatMsg()" style="width:32px;height:32px;border-radius:8px;background:linear-gradient(in oklab 135deg,var(--primary),var(--primary-dark));border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:opacity .2s" title="Send">' +
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>' +
+    '</button>' +
+    '</div>' +
+    '<div style="font-size:.7rem;color:var(--text-muted);margin-top:5px;text-align:center">' + (isRu ? 'Enter — отправить · Shift+Enter — новая строка' : 'Enter to send · Shift+Enter for new line') + '</div>' +
+    '</div>' +
     '</div>';
   setTimeout(function() { var el = document.getElementById('agent-chat-input'); if (el) el.focus(); }, 100);
+}
+
+async function _streamAgentChat(agentId, msg, onChunk, onDone, onError) {
+  try {
+    // Send conversation history for context (exclude streaming/current entry)
+    var histForSend = (_agentChatHistory || []).filter(function(m) { return !m.streaming && m.text; }).slice(-12);
+    var response = await fetch('/api/agents/' + agentId + '/chat/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Auth-Token': authToken || '' },
+      body: JSON.stringify({ message: msg, history: histForSend }),
+    });
+    if (!response.ok || !response.body) throw new Error('stream_failed');
+    var reader = response.body.getReader();
+    var decoder = new TextDecoder();
+    var buffer = '';
+    var eventName = '';
+    while (true) {
+      var _r = await reader.read();
+      if (_r.done) break;
+      buffer += decoder.decode(_r.value, { stream: true });
+      var lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        if (line.startsWith('event:')) { eventName = line.slice(6).trim(); continue; }
+        if (line.startsWith('data:')) {
+          try {
+            var parsed = JSON.parse(line.slice(5).trim());
+            if (eventName === 'chunk' && parsed.text) onChunk(parsed.text);
+            else if (eventName === 'done') { onDone(parsed.fullText || ''); return; }
+            else if (eventName === 'error') { onError(parsed.message || 'AI error'); return; }
+          } catch(ep) {}
+          eventName = '';
+        }
+      }
+    }
+    onDone('');
+  } catch(e) {
+    onError(e.message);
+  }
 }
 
 async function sendAgentChatMsg() {
   var input = document.getElementById('agent-chat-input');
   var msgBox = document.getElementById('agent-chat-messages');
+  var sendBtn = document.getElementById('agent-chat-send');
   if (!input || !msgBox || !_agentChatId) return;
   var msg = input.value.trim();
   if (!msg) return;
+
   input.value = '';
+  input.disabled = true;
+  if (sendBtn) { sendBtn.disabled = true; sendBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:spin 1s linear infinite" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-6.219-8.56"/></svg>'; }
+
   _agentChatHistory.push({ role: 'user', text: msg });
+  _agentChatHistory.push({ role: 'agent', text: '', streaming: true });
+  var agentEntry = _agentChatHistory[_agentChatHistory.length - 1];
   renderAgentChat(msgBox);
-  try {
-    var data = await apiRequest('POST', '/api/agents/' + _agentChatId + '/chat', { message: msg });
-    _agentChatHistory.push(data.ok
-      ? { role: 'agent', text: data.response || data.message || (currentLang === 'ru' ? 'Сообщение отправлено' : 'Message sent') }
-      : { role: 'error', text: data.error || 'Error' });
-  } catch(e) {
-    _agentChatHistory.push({ role: 'error', text: e.message || 'Network error' });
-  }
-  renderAgentChat(msgBox);
+
+  var done = false;
+  await _streamAgentChat(_agentChatId, msg,
+    function(chunk) { agentEntry.text += chunk; renderAgentChat(msgBox); msgBox.scrollTop = msgBox.scrollHeight; },
+    function(full) { agentEntry.streaming = false; if (!agentEntry.text && full) agentEntry.text = full; if (!agentEntry.text) agentEntry.text = '…'; renderAgentChat(msgBox); done = true; },
+    function(err) {
+      // fallback: non-streaming
+      if (!done) {
+        apiRequest('POST', '/api/agents/' + _agentChatId + '/chat', { message: msg }).then(function(d) {
+          agentEntry.streaming = false;
+          agentEntry.text = d.ok ? (d.response || '…') : (d.error || 'Error');
+          if (!d.ok) agentEntry.role = 'error';
+          renderAgentChat(msgBox);
+        });
+      }
+    }
+  );
+
   msgBox.scrollTop = msgBox.scrollHeight;
+  input.disabled = false;
+  if (sendBtn) { sendBtn.disabled = false; sendBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>'; }
+  input.focus();
 }
 
 function renderAgentChat(box) {
+  var isRu = currentLang === 'ru';
   box.innerHTML = _agentChatHistory.map(function(m) {
     var isUser = m.role === 'user';
-    var isError = m.role === 'error';
-    var bg = isUser ? 'rgba(33,150,243,0.15)' : isError ? 'rgba(239,68,68,0.15)' : 'rgba(0,255,136,0.1)';
+    var isErr = m.role === 'error';
+    var isStream = m.streaming;
     var align = isUser ? 'flex-end' : 'flex-start';
-    return '<div style="display:flex;justify-content:' + align + ';margin:4px 0">' +
-      '<div style="max-width:80%;padding:8px 12px;border-radius:8px;background:' + bg + ';font-size:.83rem;word-break:break-word">' +
-      '<strong style="font-size:.7rem;color:var(--text-muted)">' + (isUser ? 'You' : isError ? 'Error' : 'Agent') + '</strong><br>' +
-      escHtml(m.text) + '</div></div>';
+    var bubbleBg = isUser
+      ? 'linear-gradient(in oklab 135deg,var(--primary),var(--primary-dark))'
+      : isErr ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.05)';
+    var border = isErr ? '1px solid rgba(239,68,68,0.3)' : isStream ? '1px solid rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.25)' : '1px solid rgba(255,255,255,0.06)';
+    var textColor = isUser ? '#fff' : isErr ? '#f87171' : 'var(--text-primary)';
+    var cursor = isStream ? '<span class="chat-cursor">▋</span>' : '';
+    var textHtml = escHtml(m.text || (isStream ? '' : '')).replace(/\n/g, '<br>');
+    if (!isUser) {
+      // Render basic markdown for agent responses
+      textHtml = escHtml(m.text || '').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/`([^`]+)`/g, '<code style="background:rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.15);padding:1px 5px;border-radius:3px;font-size:.8em">$1</code>').replace(/\n/g, '<br>');
+    }
+    var avatar = isUser ? '' :
+      '<div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(in oklab 135deg,var(--primary),var(--primary-dark));display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-right:8px">' +
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7H3a7 7 0 0 1 7-7h1V5.73C10.4 5.39 10 4.74 10 4a2 2 0 0 1 2-2z"/><path d="M7 14v3a5 5 0 0 0 10 0v-3"/></svg>' +
+      '</div>';
+    return '<div style="display:flex;justify-content:' + align + ';margin:8px 0;align-items:flex-end">' +
+      (isUser ? '' : avatar) +
+      '<div style="max-width:78%;padding:10px 14px;border-radius:' + (isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px') + ';background:' + bubbleBg + ';border:' + border + ';font-size:.84rem;line-height:1.55;word-break:break-word;color:' + textColor + '">' +
+      textHtml + cursor +
+      '</div></div>';
   }).join('');
 }
 
@@ -944,6 +1810,21 @@ function openAgentSettings() {
   if (!modal) return;
   modal.style.display = '';
   var a = _detailAgentData;
+  // Tag the modal with the agent's provider so every tap-* component inside
+  // (.rt-save-btn, .tap-btn, .tap-card, .tap-pill) picks up provider tint
+  // via the --tint var override defined in tap-motion.css.
+  try {
+    var prov = (typeof _tapDetectProvider === 'function') ? _tapDetectProvider(a) : null;
+    if (prov) modal.setAttribute('data-provider', prov);
+    else      modal.removeAttribute('data-provider');
+  } catch (e) {}
+  // TG Mini App — show hardware BackButton; tapping it closes settings
+  try {
+    if (window.__tgAuthHelper) {
+      window.__tgAuthHelper.showBackButton(function() { closeAgentSettings(); });
+      window.__tgAuthHelper.hapticImpact('light');
+    }
+  } catch (e) {}
   var nameEl = document.getElementById('agent-settings-name');
   if (nameEl) nameEl.textContent = (a.name || 'Unnamed').replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F000}-\u{1FFFF}]/gu, '').trim();
   var statusEl = document.getElementById('agent-settings-status');
@@ -965,11 +1846,37 @@ function openAgentSettings() {
   _settingsTab = 'soul';
   _promptModulesCache = null;
   switchSettingsTab('soul');
+
+  // Show warning banner if API key missing
+  var config = (typeof a.triggerConfig === 'string' ? JSON.parse(a.triggerConfig) : a.triggerConfig) || {};
+  var cfg = config.config || {};
+  var hasApiKey = !!(cfg.AI_API_KEY);
+  var hasTg = !!(config.telegram_session?.session);
+  var bannerEl = document.getElementById('settings-warning-banner');
+  if (!bannerEl) {
+    bannerEl = document.createElement('div');
+    bannerEl.id = 'settings-warning-banner';
+    var settingsBody = document.getElementById('agent-settings-body');
+    if (settingsBody) settingsBody.parentElement?.insertBefore(bannerEl, settingsBody);
+  }
+  var isRu = currentLang === 'ru';
+  var warnings = [];
+  if (!hasApiKey) warnings.push(isRu ? 'API ключ не установлен — агент не может думать. Перейдите во вкладку AI.' : 'API key not set — agent cannot think. Go to AI tab.');
+  if (!hasTg && a.triggerType === 'ai_agent') warnings.push(isRu ? 'Telegram не подключён — агент не может общаться в чатах.' : 'Telegram not connected — agent cannot chat.');
+  if (warnings.length > 0) {
+    bannerEl.style.cssText = 'padding:12px 16px;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:10px;margin:8px 16px;font-size:.84rem;color:#f59e0b;line-height:1.5';
+    bannerEl.innerHTML = warnings.join('<br>');
+    bannerEl.style.display = '';
+  } else {
+    bannerEl.style.display = 'none';
+  }
 }
 
 function closeAgentSettings() {
   var modal = document.getElementById('agent-settings-modal');
   if (!modal) return;
+  // TG Mini App — hide BackButton when leaving settings
+  try { if (window.__tgAuthHelper) window.__tgAuthHelper.hideBackButton(); } catch (e) {}
   modal.classList.add('closing');
   setTimeout(function() {
     modal.style.display = 'none';
@@ -981,6 +1888,8 @@ function closeAgentSettings() {
   // Refresh agents list
   if (typeof loadAgents === 'function') loadAgents();
   if (typeof loadAgentsPage === 'function') loadAgentsPage();
+  // Reset URL to operations page
+  if (history.replaceState) history.replaceState(null, '', '/studio/operations');
 }
 
 
@@ -1018,6 +1927,199 @@ async function refreshAgentDetail() {
   } catch(e) { console.error('refreshAgentDetail error', e); }
 }
 
+// ── Agent → Memory tab: lessons + strategies + utility model ────────────────
+async function renderAgentMemoryTab(body, agentId) {
+  var isRu = (typeof currentLang !== 'undefined' && currentLang === 'ru');
+  try {
+    var [lessonsRes, strategiesRes, utilRes] = await Promise.all([
+      apiRequest('GET', '/api/agents/' + agentId + '/lessons?limit=20').catch(() => ({ ok: false })),
+      apiRequest('GET', '/api/agents/' + agentId + '/strategies').catch(() => ({ ok: false })),
+      apiRequest('GET', '/api/agents/' + agentId + '/utility-model').catch(() => ({ ok: false })),
+    ]);
+    var lessons = (lessonsRes && lessonsRes.items) || [];
+    var strategies = (strategiesRes && strategiesRes.items) || [];
+    var utility = (utilRes && utilRes.utility_model) || null;
+    var utilOptedOut = utility && ['off','none','disabled','-'].indexOf(String(utility).toLowerCase()) >= 0;
+
+    var html = '<div class="rt-page">';
+    // Header
+    html +=
+      '<div class="rt-header">' +
+        '<div class="rt-header-icon" style="background:rgba(168,85,247,0.12);color:#a855f7">' +
+          '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2z"/></svg>' +
+        '</div>' +
+        '<div class="rt-header-text">' +
+          '<h3>' + (isRu ? 'Память агента' : 'Agent Memory') + '</h3>' +
+          '<p>' + (isRu
+            ? 'Уроки которые агент извлёк сам + стратегии-плейбуки. Все LLM-вызовы — за счёт ВАШЕГО API-ключа.'
+            : 'Lessons the agent self-extracted + strategy playbooks. All LLM calls run on YOUR API key.') + '</p>' +
+        '</div>' +
+      '</div>';
+
+    // Utility-model section (the "voluntarily-mandatory" cheap model)
+    html += '<div class="rt-section">';
+    html += '<div class="rt-section-label">' +
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>' +
+      (isRu ? 'Утилитарная (дешёвая) модель' : 'Utility (cheap) model') +
+      '</div>';
+    if (!utility) {
+      html +=
+        '<div style="padding:12px 14px;margin-bottom:10px;border-radius:10px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);color:#f87171;font-size:13px;line-height:1.5">' +
+          '<strong>' + (isRu ? 'ВНИМАНИЕ:' : 'WARNING:') + '</strong> ' +
+          (isRu
+            ? 'утилитарная модель не указана — авто-обучение работает на ВАШЕЙ основной (дорогой) модели через ваш API-ключ. Укажите дешёвую (напр. gemini-2.0-flash-lite) или впишите <code>off</code> чтобы отключить.'
+            : 'utility model is not set — auto-learning runs on YOUR main (expensive) model via your API key. Set a cheap one (e.g. gemini-2.0-flash-lite) or type <code>off</code> to disable.') +
+        '</div>';
+    } else if (utilOptedOut) {
+      html +=
+        '<div style="padding:10px 14px;margin-bottom:10px;border-radius:10px;background:rgba(100,116,139,0.08);border:1px solid rgba(100,116,139,0.2);color:var(--text-secondary);font-size:13px">' +
+          (isRu ? 'Авто-обучение отключено. Поставьте имя модели чтобы включить.' : 'Auto-learning disabled. Type a model name to enable.') +
+        '</div>';
+    } else {
+      html +=
+        '<div style="padding:10px 14px;margin-bottom:10px;border-radius:10px;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);color:#22c55e;font-size:13px">' +
+          (isRu ? 'Авто-обучение работает на: ' : 'Auto-learning runs on: ') + '<code style="font-family:ui-monospace,monospace;color:#fff;background:rgba(255,255,255,0.05);padding:2px 6px;border-radius:4px">' + escHtml(utility) + '</code>' +
+        '</div>';
+    }
+    html +=
+      '<div style="display:flex;gap:8px;align-items:center">' +
+        '<input type="text" id="mem-util-input" class="form-input" placeholder="gemini-2.0-flash-lite / off" value="' + escHtml(utility || '') + '" style="flex:1;font-family:ui-monospace,SF Mono,Menlo,monospace;font-size:13px">' +
+        '<button class="rt-save-btn" onclick="saveAgentUtilityModel(' + agentId + ')">' + (isRu ? 'Сохранить' : 'Save') + '</button>' +
+      '</div>';
+    html += '<p style="font-size:11.5px;color:var(--text-muted);margin-top:8px;line-height:1.5">' +
+      (isRu
+        ? 'Эта модель используется ТОЛЬКО для фоновых задач (lesson extract, transcript summary). Основные ответы агента остаются на вашей основной модели.'
+        : 'This model runs ONLY background tasks (lesson extract, transcript summary). Main agent replies stay on your main model.') +
+      '</p>';
+    html += '</div>';
+
+    // Strategies section
+    html += '<div class="rt-section">';
+    html += '<div class="rt-section-label">' +
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>' +
+      (isRu ? 'Стратегии' : 'Strategies') +
+      ' <span style="margin-left:6px;font-weight:500;color:var(--text-muted);text-transform:none;letter-spacing:0">(' + strategies.length + ')</span>' +
+      '<button class="rt-save-btn" style="margin-left:auto;padding:6px 12px;font-size:12px" onclick="generateAgentStrategy(' + agentId + ')">' +
+        (isRu ? '+ Сгенерировать (Atlas)' : '+ Generate (Atlas)') +
+      '</button>' +
+      '</div>';
+    if (strategies.length === 0) {
+      html += '<p style="color:var(--text-muted);font-size:13px;padding:14px 4px">' +
+        (isRu ? 'Стратегий пока нет. Atlas сгенерирует одну после 3+ выученных уроков, либо нажмите кнопку выше.' : 'No strategies yet. Atlas will draft one after 3+ lessons, or click the button above.') +
+        '</p>';
+    } else {
+      html += '<div style="display:flex;flex-direction:column;gap:10px">';
+      strategies.forEach(function(s) {
+        var winRate = (s.success_count || 0) + (s.fail_count || 0) > 0
+          ? Math.round((s.success_count || 0) / ((s.success_count || 0) + (s.fail_count || 0)) * 100)
+          : null;
+        html += '<div style="padding:12px 14px;border-radius:10px;border:1px solid var(--border, rgba(255,255,255,0.08));background:rgba(255,255,255,0.02)">' +
+          '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:6px">' +
+            '<div style="flex:1;min-width:0">' +
+              '<div style="font-weight:600;font-size:14px;color:var(--text-primary);margin-bottom:2px">' + escHtml(s.title) + '</div>' +
+              (s.scenario ? '<div style="font-size:12px;color:var(--text-secondary);font-style:italic">' + escHtml(s.scenario) + '</div>' : '') +
+            '</div>' +
+            '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0">' +
+              (winRate !== null ? '<span style="font-size:11px;color:' + (winRate >= 70 ? '#22c55e' : winRate >= 40 ? '#f59e0b' : '#ef4444') + ';font-family:ui-monospace,monospace;font-weight:600">' + winRate + '%</span>' : '') +
+              '<label class="toggle-switch" style="transform:scale(0.8)"><input type="checkbox" ' + (s.active ? 'checked' : '') + ' onchange="toggleAgentStrategy(' + agentId + ',' + s.id + ',this.checked)"><span class="toggle-slider"></span></label>' +
+              '<button onclick="deleteAgentStrategy(' + agentId + ',' + s.id + ')" style="background:transparent;border:none;color:var(--text-muted);cursor:pointer;padding:4px" title="Delete">' +
+                '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>' +
+              '</button>' +
+            '</div>' +
+          '</div>' +
+          '<details style="margin-top:6px"><summary style="font-size:12px;color:var(--text-muted);cursor:pointer;user-select:none">' + (isRu ? 'Плейбук' : 'Playbook') + '</summary>' +
+            '<pre style="margin:6px 0 0;padding:10px;background:rgba(0,0,0,0.25);border-radius:6px;font-size:12px;color:var(--text-primary);white-space:pre-wrap;font-family:ui-monospace,monospace;line-height:1.5">' + escHtml(s.playbook) + '</pre>' +
+          '</details>' +
+          '<div style="display:flex;gap:14px;font-size:11px;color:var(--text-muted);margin-top:8px;font-family:ui-monospace,monospace">' +
+            '<span style="color:#22c55e">✓ ' + (s.success_count || 0) + '</span>' +
+            '<span style="color:#ef4444">✗ ' + (s.fail_count || 0) + '</span>' +
+            '<span style="margin-left:auto">' + (s.source || 'atlas') + '</span>' +
+          '</div>' +
+        '</div>';
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+
+    // Lessons section
+    html += '<div class="rt-section">';
+    html += '<div class="rt-section-label">' +
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>' +
+      (isRu ? 'Уроки' : 'Lessons') +
+      ' <span style="margin-left:6px;font-weight:500;color:var(--text-muted);text-transform:none;letter-spacing:0">(' + lessons.length + ')</span>' +
+      '</div>';
+    if (lessons.length === 0) {
+      html += '<p style="color:var(--text-muted);font-size:13px;padding:14px 4px">' +
+        (isRu ? 'Уроков пока нет. Они появятся автоматически после нескольких тиков агента, если включена утилитарная модель.' : 'No lessons yet. They will appear after a few agent ticks once a utility model is set.') +
+        '</p>';
+    } else {
+      html += '<div style="display:flex;flex-direction:column;gap:6px">';
+      lessons.forEach(function(l) {
+        var outcomeColor = l.outcome === 'success' ? '#22c55e' : l.outcome === 'failure' ? '#ef4444' : l.outcome === 'caution' ? '#f59e0b' : 'var(--text-muted)';
+        var imp = Math.round((l.importance || 0.5) * 100);
+        html += '<div style="padding:10px 12px;border-radius:8px;background:rgba(255,255,255,0.02);border:1px solid var(--border, rgba(255,255,255,0.06));font-size:13px;display:flex;gap:10px;align-items:flex-start">' +
+          '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + outcomeColor + ';margin-top:6px;flex-shrink:0"></span>' +
+          '<div style="flex:1;min-width:0">' +
+            (l.topic ? '<span style="font-size:10.5px;color:var(--primary);font-family:ui-monospace,monospace;text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-right:6px">' + escHtml(l.topic) + '</span>' : '') +
+            '<span>' + escHtml(l.lesson) + '</span>' +
+          '</div>' +
+          '<span style="font-size:10.5px;color:var(--text-muted);font-family:ui-monospace,monospace;flex-shrink:0">' + imp + '%</span>' +
+          '<button onclick="deleteAgentLesson(' + agentId + ',' + l.id + ')" style="background:transparent;border:none;color:var(--text-muted);cursor:pointer;padding:2px;flex-shrink:0" title="Delete">' +
+            '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>' +
+          '</button>' +
+        '</div>';
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+    html += '</div>';
+    body.innerHTML = html;
+  } catch (e) {
+    body.innerHTML = '<div style="padding:2rem;color:#ef4444">Error: ' + escHtml(e.message || String(e)) + '</div>';
+  }
+}
+
+// Helpers wired from the Memory tab
+async function saveAgentUtilityModel(agentId) {
+  var input = document.getElementById('mem-util-input');
+  if (!input) return;
+  var value = input.value.trim();
+  try {
+    var r = await apiRequest('POST', '/api/agents/' + agentId + '/utility-model', { utility_model: value });
+    if (r && r.ok) {
+      toast(currentLang === 'ru' ? 'Сохранено' : 'Saved', 'success');
+      renderAgentMemoryTab(document.getElementById('agent-settings-body'), agentId);
+    } else { toast(r && r.error || 'Error', 'error'); }
+  } catch (e) { toast('Error: ' + (e.message || e), 'error'); }
+}
+async function generateAgentStrategy(agentId) {
+  try {
+    toast(currentLang === 'ru' ? 'Atlas думает…' : 'Atlas thinking…', 'info');
+    var r = await apiRequest('POST', '/api/agents/' + agentId + '/strategies/generate', {});
+    if (r && r.ok) {
+      toast(currentLang === 'ru' ? 'Стратегия создана' : 'Strategy created', 'success');
+      renderAgentMemoryTab(document.getElementById('agent-settings-body'), agentId);
+    } else { toast(r && r.error || 'Generation failed', 'error'); }
+  } catch (e) { toast('Error: ' + (e.message || e), 'error'); }
+}
+async function toggleAgentStrategy(agentId, sid, active) {
+  try { await apiRequest('POST', '/api/agents/' + agentId + '/strategies/' + sid + '/toggle', { active: active }); }
+  catch (e) { toast('Error: ' + (e.message || e), 'error'); }
+}
+async function deleteAgentStrategy(agentId, sid) {
+  if (!confirm(currentLang === 'ru' ? 'Удалить стратегию?' : 'Delete strategy?')) return;
+  try {
+    await apiRequest('DELETE', '/api/agents/' + agentId + '/strategies/' + sid);
+    renderAgentMemoryTab(document.getElementById('agent-settings-body'), agentId);
+  } catch (e) { toast('Error: ' + (e.message || e), 'error'); }
+}
+async function deleteAgentLesson(agentId, lessonId) {
+  try {
+    await apiRequest('DELETE', '/api/agents/' + agentId + '/lessons/' + lessonId);
+    renderAgentMemoryTab(document.getElementById('agent-settings-body'), agentId);
+  } catch (e) { toast('Error: ' + (e.message || e), 'error'); }
+}
+
 function switchSettingsTab(tab) {
   _settingsTab = tab;
   // Update tab buttons
@@ -1027,6 +2129,10 @@ function switchSettingsTab(tab) {
       b.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
     }
   });
+  // Update URL to /studio/agents/:id/:tab
+  if (history.replaceState && typeof _detailAgentId !== 'undefined' && _detailAgentId) {
+    history.replaceState(null, '', '/studio/agents/' + _detailAgentId + '/' + tab);
+  }
   var body = document.getElementById('agent-settings-body');
   if (!body || !_detailAgentData) return;
   // Smooth tab content transition
@@ -1043,7 +2149,7 @@ function switchSettingsTab(tab) {
     body.innerHTML =
       '<div class="rt-page">' +
       '<div class="rt-header">' +
-        '<div class="rt-header-icon" style="background:rgba(168,85,247,0.12);color:#a855f7">' + IC.brain + '</div>' +
+        '<div class="rt-header-icon" style="background:rgba(var(--accent-r,168),var(--accent-g,85),var(--accent-b,247),0.12);color:#a855f7">' + IC.brain + '</div>' +
         '<div class="rt-header-text">' +
           '<h3>' + (isRu ? 'Душа' : 'Soul') + '</h3>' +
           '<p>' + (isRu ? 'Личность и стиль агента. Агент может самостоятельно модифицировать этот раздел.' : 'Agent personality and style. The agent can self-modify this section.') + '</p>' +
@@ -1055,8 +2161,14 @@ function switchSettingsTab(tab) {
       '</div>' +
       '<div class="rt-actions">' +
         '<button class="rt-save-btn" onclick="saveSettingsPrompt()">' + IC.check + ' ' + (isRu ? 'Сохранить' : 'Save Soul') + '</button>' +
+        '<button class="rt-save-btn" style="background:linear-gradient(in oklab 135deg,#8b5cf6,#00a8ff)" onclick="openEditWithAIModal(\'code\')" title="' + (isRu ? 'Опиши изменение — AI перепишет' : 'Describe the change — AI rewrites') + '">' +
+          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M12 3l1.9 4.6L18 9l-4.1 1.4L12 15l-1.9-4.6L6 9l4.1-1.4z"/><path d="M19 14l.95 2.3L22 17l-2.05.7L19 20l-.95-2.3L16 17l2.05-.7z"/></svg>' +
+          (isRu ? 'Edit with AI' : 'Edit with AI') +
+        '</button>' +
       '</div>' +
       '</div>';
+  } else if (tab === 'mcp') {
+    renderAgentMCPTab(body, a);
   } else if (tab === 'security') {
     var isRu = currentLang === 'ru';
     body.innerHTML =
@@ -1072,7 +2184,7 @@ function switchSettingsTab(tab) {
         '<div class="rt-section-label">' +
           '<span style="display:inline-flex;align-items:center;gap:6px">' + IC.shield + ' ' +
           (isRu ? 'Правила безопасности' : 'Security Rules') +
-          ' <span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:4px;background:rgba(239,68,68,0.1);color:#ef4444;font-size:.65rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> ' + (isRu ? 'Только чтение' : 'Read-only') + '</span>' +
+          ' <span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:4px;background:rgba(239,68,68,0.1);color:#ef4444;font-size:.65rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> ' + (isRu ? 'Только чтение' : 'Read-only') + '</span>' +
           '</span>' +
         '</div>' +
         '<div id="security-rules-content" style="background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;padding:16px;font-family:\'JetBrains Mono\',monospace;font-size:.78rem;line-height:1.6;color:var(--text-secondary);white-space:pre-wrap;max-height:500px;overflow-y:auto;user-select:text">' +
@@ -1175,13 +2287,24 @@ function switchSettingsTab(tab) {
         '</div>' +
         '<div class="st-meta-card">' +
           '<div class="st-meta-label">' + (isRu ? 'Роль' : 'Role') + '</div>' +
-          '<div class="st-meta-val">' + (a.role || 'worker') + '</div>' +
+          '<div class="st-meta-val">' + (a.role || 'specialist') + '</div>' +
         '</div>' +
+        (createdAt ? '<div class="st-meta-card"><div class="st-meta-label">' + (isRu ? 'Создан' : 'Created') + '</div><div class="st-meta-val" style="font-size:.72rem">' + new Date(createdAt).toLocaleDateString() + '</div></div>' : '') +
+        (updatedAt ? '<div class="st-meta-card"><div class="st-meta-label">' + (isRu ? 'Обновлён' : 'Updated') + '</div><div class="st-meta-val" style="font-size:.72rem">' + new Date(updatedAt).toLocaleDateString() + '</div></div>' : '') +
+        '<div class="st-meta-card"><div class="st-meta-label">' + (isRu ? 'Запусков' : 'Runs') + '</div><div class="st-meta-val" id="info-run-count">-</div></div>' +
+        '<div class="st-meta-card"><div class="st-meta-label">' + (isRu ? 'Токены' : 'Tokens') + '</div><div class="st-meta-val" id="info-token-count">-</div></div>' +
       '</div>' +
       '<div class="rt-actions">' +
         '<button class="rt-save-btn" onclick="saveSettingsInfo()">' + IC.check + ' ' + (isRu ? 'Сохранить' : 'Save') + '</button>' +
       '</div>' +
       '</div>';
+    // Load stats asynchronously
+    apiRequest('GET', '/api/agents/' + _detailAgentId + '/tokens?days=365').then(function(d) {
+      var runEl = document.getElementById('info-run-count');
+      var tokEl = document.getElementById('info-token-count');
+      if (runEl && d.total) runEl.textContent = d.total.totalRequests || 0;
+      if (tokEl && d.total) tokEl.textContent = formatNum(d.total.totalTokens || 0);
+    }).catch(function() {});
   } else if (tab === 'ai') {
     var isRu = currentLang === 'ru';
     var aiProvider = (config.config && config.config.AI_PROVIDER) || '';
@@ -1292,16 +2415,27 @@ function switchSettingsTab(tab) {
       '<div class="rt-section">' +
         '<div class="rt-section-label">' + IC.bolt + ' ' + (isRu ? 'Утилитарная модель' : 'Utility Model') + '</div>' +
         '<div class="rt-input-wrap">' +
-          '<input type="text" id="ai-utility-model-input" class="rt-input" value="' + escHtml((config.config && config.config.AI_UTILITY_MODEL) || '') + '" placeholder="' + (isRu ? 'auto' : 'auto') + '">' +
+          '<input type="text" id="ai-utility-model-input" class="rt-input" value="' + escHtml((config.config && (config.config.UTILITY_MODEL || config.config.AI_UTILITY_MODEL)) || '') + '" placeholder="' + (isRu ? 'auto' : 'auto') + '">' +
           '<div class="rt-input-hint">' + (isRu ? 'Лёгкая модель для суммаризации и vision. Оставьте пустым для авто-выбора.' : 'Lightweight model for summarization and vision. Leave empty for auto.') + '</div>' +
         '</div>' +
       '</div>' +
 
       // API Key
+      // When a key is already saved we show a masked sample as the input VALUE
+      // (type=text so the bullets render literally — "AIzaSy…HAG4"). On focus we
+      // clear the value AND switch to type=password so a fresh user-typed key is
+      // hidden as it's entered. saveSettingsAI() ignores any value that still
+      // contains the bullet character — only a fresh user-typed key is sent up.
       '<div class="rt-section">' +
         '<div class="rt-section-label">' + IC.link + ' API Key</div>' +
         '<div class="rt-input-wrap">' +
-          '<input type="password" id="ai-key-input" class="rt-input" placeholder="' + (hasKey ? '••••••••••••' : (currentProv ? currentProv.keyPrefix : 'API key')) + '">' +
+          // Mask priority: per-agent (sk-or-… for OpenRouter, sk-ant-… for Anthropic etc)
+          // → user-level (from settings page) → neutral bullets. Don't show a Gemini-looking
+          // "AIzaSy…" placeholder when the actual key is from a different provider.
+          (hasKey
+            ? '<input type="text" id="ai-key-input" class="rt-input" value="' + ((_detailAgentData && _detailAgentData.aiApiKeyMasked) || _aiKeyMaskUser || '••••••••••••••••') + '" data-masked="1" onfocus="if(this.dataset.masked===\'1\'){this.value=\'\';this.type=\'password\';this.dataset.masked=\'0\';}">'
+            : '<input type="password" id="ai-key-input" class="rt-input" placeholder="' + (currentProv ? currentProv.keyPrefix : 'API key') + '">'
+          ) +
           '<div class="rt-input-hint">' +
             (hasKey
               ? '<span style="color:#22c55e">' + IC.check + '</span> ' + (isRu ? 'Ключ установлен. Оставьте пустым чтобы не менять.' : 'Key is set. Leave empty to keep.')
@@ -1310,6 +2444,31 @@ function switchSettingsTab(tab) {
                 : (isRu ? 'Выберите провайдера выше' : 'Select a provider above'))
             ) +
           '</div>' +
+        '</div>' +
+      '</div>' +
+
+      // Temperature
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + IC.fire + ' ' + (isRu ? 'Температура' : 'Temperature') + '</div>' +
+        '<div class="rt-priority-wrap">' +
+          '<input type="range" id="ai-temperature" min="0" max="2" step="0.1" value="' + ((config.config && config.config.AI_TEMPERATURE) || '0.7') + '" class="rt-slider" style="accent-color:#f59e0b" oninput="document.getElementById(\'ai-temp-val\').textContent=this.value">' +
+          '<div class="rt-priority-display">' +
+            '<span id="ai-temp-val" class="rt-priority-badge" style="background:rgba(245,158,11,0.15);color:#f59e0b">' + ((config.config && config.config.AI_TEMPERATURE) || '0.7') + '</span>' +
+          '</div>' +
+          '<div class="rt-input-hint">' + (isRu ? '0 = детерминированный, 1 = сбалансированный, 2 = креативный' : '0 = deterministic, 1 = balanced, 2 = creative') + '</div>' +
+        '</div>' +
+      '</div>' +
+
+      // Max tokens
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + IC.chart + ' ' + (isRu ? 'Макс. токенов ответа' : 'Max Response Tokens') + '</div>' +
+        '<div class="rt-priority-wrap">' +
+          '<input type="range" id="ai-max-tokens" min="256" max="8192" step="256" value="' + ((config.config && config.config.AI_MAX_TOKENS) || '2048') + '" class="rt-slider" style="accent-color:#6366f1" oninput="document.getElementById(\'ai-maxtok-val\').textContent=this.value">' +
+          '<div class="rt-priority-display">' +
+            '<input type="number" id="ai-max-tokens-num" value="' + ((config.config && config.config.AI_MAX_TOKENS) || '2048') + '" min="256" max="16384" class="rt-priority-num" style="width:80px" oninput="document.getElementById(\'ai-max-tokens\').value=this.value;document.getElementById(\'ai-maxtok-val\').textContent=this.value">' +
+            '<span id="ai-maxtok-val" class="rt-priority-badge" style="background:rgba(var(--accent-r,99),var(--accent-g,102),var(--accent-b,241),0.15);color:#6366f1">' + ((config.config && config.config.AI_MAX_TOKENS) || '2048') + '</span>' +
+          '</div>' +
+          '<div class="rt-input-hint">' + (isRu ? 'Максимальная длина ответа AI. 2048 по умолчанию. Больше = дороже.' : 'Max AI response length. 2048 default. Higher = more expensive.') + '</div>' +
         '</div>' +
       '</div>' +
 
@@ -1354,10 +2513,10 @@ function switchSettingsTab(tab) {
       { id: 'inter_agent', name: 'Inter-Agent', icon: IC.forward, color: '#a855f7',
         desc: isRu ? 'Общение между агентами. Делегирование задач другим агентам' : 'Inter-agent communication. Delegate tasks to other agents',
         tools: ['send_to_agent'] },
-      { id: 'blockchain', name: 'Blockchain', icon: IC.link, color: '#0098ea',
+      { id: 'blockchain', name: 'Blockchain', icon: IC.link, color: '#00a8ff',
         desc: isRu ? 'Чтение данных блокчейна TON. Транзакции, контракты, адреса' : 'Read TON blockchain data. Transactions, contracts, addresses',
         tools: ['get_account_info'] },
-      { id: 'ton_mcp', name: 'TON MCP', icon: IC.link, color: '#0098ea',
+      { id: 'ton_mcp', name: 'TON MCP', icon: IC.link, color: '#00a8ff',
         desc: isRu ? 'TON MCP сервер. Расширенные операции с блокчейном TON' : 'TON MCP server. Advanced TON blockchain operations',
         tools: ['ton_mcp'] },
       { id: 'discord', name: 'Discord', icon: IC.chat, color: '#5865f2',
@@ -1492,30 +2651,42 @@ function switchSettingsTab(tab) {
   } else if (tab === 'role') {
     var currentRole = a.role || 'worker';
     var customRole = (config.config && config.config.customRole) || {};
-    var agentColor = (config.config && config.config.agentColor) || '#0098EA';
+    var agentColor = (config.config && config.config.agentColor) || '#00a8ff';
+    var isRu = currentLang === 'ru';
+    // Built-in role cards (cached locally — built-ins don't change between
+    // sessions). Custom roles are fetched async below and rendered into
+    // #st-custom-roles-slot.
     var roles = [
       { id: 'worker', name: 'Worker', icon: IC.wrench, color: '#3b82f6',
-        desc: currentLang === 'ru' ? 'Исполнитель задач' : 'Task executor',
-        effect: currentLang === 'ru' ? 'Фокус на мониторинге, сборе данных и автоматизации. Работает автономно.' : 'Focus on monitoring, data collection, automation. Works autonomously.' },
+        desc: isRu ? 'Исполнитель задач' : 'Task executor',
+        effect: isRu ? 'Быстро выполняет, не делегирует. Spend cap 5 TON.' : 'Fast executor, no delegation. Spend cap 5 TON.' },
       { id: 'manager', name: 'Manager', icon: IC.crown, color: '#a855f7',
-        desc: currentLang === 'ru' ? 'Координатор агентов' : 'Agent coordinator',
-        effect: currentLang === 'ru' ? 'Делегирует задачи другим агентам. Получает manage_agent + assign_task инструменты.' : 'Delegates to other agents. Gets manage_agent + assign_task tools.' },
+        desc: isRu ? 'Координатор агентов' : 'Agent coordinator',
+        effect: isRu ? 'Делегирует через ask_agent. Может создавать composite tools.' : 'Delegates via ask_agent. Can compose tools.' },
       { id: 'specialist', name: 'Specialist', icon: IC.star, color: '#22c55e',
-        desc: currentLang === 'ru' ? 'Эксперт-аналитик' : 'Expert analyst',
-        effect: currentLang === 'ru' ? 'Глубокий профессиональный анализ. Перепроверяет данные, строит обоснованные выводы.' : 'Deep professional analysis. Cross-checks data, builds justified conclusions.' },
+        desc: isRu ? 'Эксперт-аналитик' : 'Expert analyst',
+        effect: isRu ? 'Глубокий анализ, перекрёстная проверка данных.' : 'Deep analysis, cross-checks data.' },
       { id: 'monitor', name: 'Monitor', icon: IC.bell, color: '#f97316',
-        desc: currentLang === 'ru' ? 'Система алертов' : 'Alert system',
-        effect: currentLang === 'ru' ? 'Уведомляет только при значимых изменениях (>5%). Не спамит. Краткий формат.' : 'Notifies only on significant changes (>5%). No spam. Brief format.' },
+        desc: isRu ? 'Система алертов' : 'Alert system',
+        effect: isRu ? 'Только мониторинг. Spend cap = 0. Никаких финансов.' : 'Monitoring only. Spend cap = 0. No finance.' },
       { id: 'director', name: 'Director', icon: IC.crown, color: '#ffd700',
-        desc: currentLang === 'ru' ? 'Директор' : 'Director',
-        effect: currentLang === 'ru' ? 'Управляет людьми и агентами. Получает assign_task, manage_agent, send_report, check_tasks.' : 'Manages people and agents. Gets assign_task, manage_agent, send_report, check_tasks.' },
+        desc: isRu ? 'Директор' : 'Director',
+        effect: isRu ? 'Управляет агентами и людьми. Высокий бюджет (50 TON).' : 'Manages agents + humans. High budget (50 TON).' },
+      { id: 'creative', name: 'Creative', icon: IC.image, color: '#ec4899',
+        desc: isRu ? 'Контент и SMM' : 'Content & SMM',
+        effect: isRu ? 'Проактивный постинг, адаптация стиля.' : 'Proactive posting, style adaptation.' },
+      { id: 'trader', name: 'Trader', icon: IC.trending, color: '#ef4444',
+        desc: isRu ? 'Трейдер' : 'Trader',
+        effect: isRu ? 'Торговля + arbitrage. P&L tracking, stop-loss.' : 'Trading + arbitrage. P&L tracking, stop-loss.' },
+      { id: 'admin', name: 'Chat Admin', icon: IC.shield, color: '#f97316',
+        desc: isRu ? 'Админ чата' : 'Chat Admin',
+        effect: isRu ? 'Модерация. Финансы запрещены.' : 'Moderation. No financial ops.' },
     ];
-    var isRu = currentLang === 'ru';
-    var colorSwatches = ['#0098EA', '#3b82f6', '#6366f1', '#a855f7', '#ec4899', '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6', '#06b6d4', '#64748b'];
+    var colorSwatches = ['#00a8ff', '#3b82f6', '#6366f1', '#8b5cf6', '#a855f7', '#ec4899', '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6', '#06b6d4'];
     body.innerHTML =
       '<div class="rt-page">' +
       '<div class="rt-header">' +
-        '<div class="rt-header-icon" style="background:rgba(168,85,247,0.12);color:#a855f7">' + IC.crown + '</div>' +
+        '<div class="rt-header-icon" style="background:rgba(var(--accent-r,168),var(--accent-g,85),var(--accent-b,247),0.12);color:#a855f7">' + IC.crown + '</div>' +
         '<div class="rt-header-text">' +
           '<h3>' + (isRu ? 'Роль агента' : 'Agent Role') + '</h3>' +
           '<p>' + (isRu ? 'Роль определяет поведение агента в мультиагентной системе' : 'Role defines agent behavior in multi-agent systems') + '</p>' +
@@ -1535,20 +2706,13 @@ function switchSettingsTab(tab) {
         '</div>';
       }).join('') +
       '</div>' +
-      '<hr class="st-role-divider">' +
-      '<div class="rt-section">' +
-        '<div class="rt-section-label">' + IC.wrench + ' ' + (isRu ? 'Кастомная роль' : 'Custom Role') + '</div>' +
-        '<div class="rt-row-2">' +
-          '<div class="rt-input-wrap">' +
-            '<input type="text" id="custom-role-name" class="rt-input" value="' + escHtml(customRole.name || '') + '" placeholder="' + (isRu ? 'Напр. Аналитик' : 'E.g. Analyst') + '">' +
-            '<div class="rt-input-hint">' + (isRu ? 'Название роли' : 'Role name') + '</div>' +
-          '</div>' +
-          '<div class="rt-input-wrap">' +
-            '<input type="text" id="custom-role-desc" class="rt-input" value="' + escHtml(customRole.description || '') + '" placeholder="' + (isRu ? 'Что делает этот агент' : 'What this agent does') + '">' +
-            '<div class="rt-input-hint">' + (isRu ? 'Описание роли' : 'Role description') + '</div>' +
-          '</div>' +
-        '</div>' +
+      // Custom roles slot — filled async after /api/roles fetch below
+      '<div id="st-custom-roles-slot" style="margin-top:14px"></div>' +
+      '<div style="margin-top:10px;display:flex;gap:8px">' +
+        '<button class="btn" onclick="openCreateCustomRoleModal()" style="padding:8px 14px;font-size:13px">+ ' + (isRu ? 'Создать роль' : 'New role') + '</button>' +
+        '<span style="font-size:11px;color:var(--text-muted);align-self:center">' + (isRu ? 'или попроси Atlas в чате' : 'or ask Atlas in chat') + '</span>' +
       '</div>' +
+      '<hr class="st-role-divider">' +
       '<div class="rt-section">' +
         '<div class="rt-section-label">' + IC.gem + ' ' + (isRu ? 'Цвет агента' : 'Agent Color') + '</div>' +
         '<div class="st-color-row">' +
@@ -1559,10 +2723,22 @@ function switchSettingsTab(tab) {
           '<code id="agent-color-hex" style="font-size:.78rem;color:var(--text-muted);margin-left:4px">' + escHtml(agentColor) + '</code>' +
         '</div>' +
       '</div>' +
+      '<hr class="st-role-divider">' +
+      // ── Mission & Action Scope (Sprint 7) ──
+      '<div class="rt-section" id="ms-section-' + a.id + '">' +
+        '<div class="rt-section-label">🎯 ' + (isRu ? 'Миссия и scope' : 'Mission & Scope') + '</div>' +
+        '<div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">' +
+          (isRu ? 'Загрузка…' : 'Loading…') + '</div></div>' +
       '<div class="rt-actions">' +
-        '<button class="rt-save-btn" onclick="saveCustomRole()">' + IC.check + ' ' + (isRu ? 'Сохранить' : 'Save') + '</button>' +
+        '<button class="rt-save-btn" onclick="saveCustomRole()">' + IC.check + ' ' + (isRu ? 'Сохранить роль' : 'Save role') + '</button>' +
       '</div>' +
       '</div>';
+    // Async-load goal+scope into the section
+    setTimeout(function() { loadAgentGoalScope(a.id, currentRole); }, 40);
+    // Fetch + render custom roles into the slot (async — fires after body.innerHTML)
+    setTimeout(function() {
+      loadCustomRolesIntoSlot(currentRole);
+    }, 30);
     // Wire up color hex display
     setTimeout(function() {
       var cp = document.getElementById('agent-color-picker');
@@ -1602,15 +2778,21 @@ function switchSettingsTab(tab) {
         '<div class="rt-toggle-row">' +
           '<label class="rt-toggle-card' + (chatTypes.includes('dm') ? ' rt-active' : '') + '" onclick="this.classList.toggle(\'rt-active\');this.querySelector(\'input\').checked=this.classList.contains(\'rt-active\')">' +
             '<input type="checkbox" id="routing-dm"' + (chatTypes.includes('dm') ? ' checked' : '') + ' style="display:none">' +
-            '<div class="rt-toggle-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>' +
+            '<div class="rt-toggle-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>' +
             '<div class="rt-toggle-name">' + (isRu ? 'Личные' : 'DM') + '</div>' +
             '<div class="rt-toggle-desc">' + (isRu ? 'Приватные чаты' : 'Private chats') + '</div>' +
           '</label>' +
           '<label class="rt-toggle-card' + (chatTypes.includes('group') ? ' rt-active' : '') + '" onclick="this.classList.toggle(\'rt-active\');this.querySelector(\'input\').checked=this.classList.contains(\'rt-active\')">' +
             '<input type="checkbox" id="routing-group"' + (chatTypes.includes('group') ? ' checked' : '') + ' style="display:none">' +
-            '<div class="rt-toggle-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>' +
+            '<div class="rt-toggle-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>' +
             '<div class="rt-toggle-name">' + (isRu ? 'Группы' : 'Groups') + '</div>' +
             '<div class="rt-toggle-desc">' + (isRu ? 'Групповые чаты' : 'Group chats') + '</div>' +
+          '</label>' +
+          '<label class="rt-toggle-card' + (chatTypes.includes('channel') ? ' rt-active' : '') + '" onclick="this.classList.toggle(\'rt-active\');this.querySelector(\'input\').checked=this.classList.contains(\'rt-active\')">' +
+            '<input type="checkbox" id="routing-channel"' + (chatTypes.includes('channel') ? ' checked' : '') + ' style="display:none">' +
+            '<div class="rt-toggle-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></div>' +
+            '<div class="rt-toggle-name">' + (isRu ? 'Каналы' : 'Channels') + '</div>' +
+            '<div class="rt-toggle-desc">' + (isRu ? 'Комменты каналов' : 'Channel comments') + '</div>' +
           '</label>' +
         '</div>' +
         '<div class="rt-input-hint" style="margin-top:6px">' + (isRu
@@ -1770,7 +2952,7 @@ function switchSettingsTab(tab) {
           '<div class="bh-toggle-info">' +
             '<div class="bh-toggle-icon" style="background:rgba(34,197,94,0.12);color:#22c55e">' + IC.eye + '</div>' +
             '<div>' +
-              '<div class="bh-toggle-name">' + (isRu ? 'Read Receipts' : 'Read Receipts') + '</div>' +
+              '<div class="bh-toggle-name">' + (isRu ? 'Read Receipts (ограничено)' : 'Read Receipts (limited)') + '</div>' +
               '<div class="bh-toggle-desc">' + (isRu ? 'Помечает сообщения прочитанными с задержкой, как живой человек' : 'Marks messages as read with delay, like a real person') + '</div>' +
             '</div>' +
           '</div>' +
@@ -1789,7 +2971,7 @@ function switchSettingsTab(tab) {
       '<div class="rt-section">' +
         '<div class="bh-toggle-row">' +
           '<div class="bh-toggle-info">' +
-            '<div class="bh-toggle-icon" style="background:rgba(168,85,247,0.12);color:#a855f7">' + IC.split + '</div>' +
+            '<div class="bh-toggle-icon" style="background:rgba(var(--accent-r,168),var(--accent-g,85),var(--accent-b,247),0.12);color:#a855f7">' + IC.split + '</div>' +
             '<div>' +
               '<div class="bh-toggle-name">' + (isRu ? 'Разбивка сообщений' : 'Message Splitting') + '</div>' +
               '<div class="bh-toggle-desc">' + (isRu ? 'Длинные ответы разбиваются на несколько сообщений с паузами между ними' : 'Long responses split into multiple messages with pauses between them') + '</div>' +
@@ -1855,7 +3037,7 @@ function switchSettingsTab(tab) {
       '<div class="rt-section">' +
         '<div class="bh-toggle-row">' +
           '<div class="bh-toggle-info">' +
-            '<div class="bh-toggle-icon" style="background:rgba(99,102,241,0.12);color:#6366f1">' + IC.moon + '</div>' +
+            '<div class="bh-toggle-icon" style="background:rgba(var(--accent-r,99),var(--accent-g,102),var(--accent-b,241),0.12);color:#6366f1">' + IC.moon + '</div>' +
             '<div>' +
               '<div class="bh-toggle-name">' + (isRu ? 'Расписание активности' : 'Activity Schedule') + '</div>' +
               '<div class="bh-toggle-desc">' + (isRu ? 'Не отвечать ночью, имитация режима сна' : 'Do not respond at night, simulate sleep schedule') + '</div>' +
@@ -1989,7 +3171,7 @@ function switchSettingsTab(tab) {
       '<div class="rt-section">' +
         '<div class="bh-toggle-row">' +
           '<div class="bh-toggle-info">' +
-            '<div class="bh-toggle-icon" style="background:rgba(168,85,247,0.12);color:#a855f7">' + IC.shuffle + '</div>' +
+            '<div class="bh-toggle-icon" style="background:rgba(var(--accent-r,168),var(--accent-g,85),var(--accent-b,247),0.12);color:#a855f7">' + IC.shuffle + '</div>' +
             '<div>' +
               '<div class="bh-toggle-name">' + (isRu ? 'Адаптация стиля' : 'Style Adaptation') + '</div>' +
               '<div class="bh-toggle-desc">' + (isRu ? 'Подстройка длины и тона ответов под стиль пользователя. Краткие вопросы — краткие ответы' : 'Adapts response length and tone to user style. Short questions get short answers') + '</div>' +
@@ -2038,9 +3220,320 @@ function switchSettingsTab(tab) {
   } else if (tab === 'telegram') {
     body.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--text-muted)">Loading...</div>';
     loadAgentTelegramTab(body, _detailAgentId);
+  } else if (tab === 'memory') {
+    body.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--text-muted)">Loading…</div>';
+    renderAgentMemoryTab(body, _detailAgentId);
+  } else if (tab === 'evals') {
+    var isRu = currentLang === 'ru';
+    body.innerHTML =
+      '<div class="rt-page">' +
+      '<div class="rt-header">' +
+        '<div class="rt-header-icon" style="background:rgba(16,185,129,0.12);color:#10b981">' + IC.check + '</div>' +
+        '<div class="rt-header-text">' +
+          '<h3>' + (isRu ? 'Оценки качества' : 'Quality Evals') + '</h3>' +
+          '<p>' + (isRu ? 'Автоматическая оценка каждого ответа агента' : 'Auto quality scoring for every agent response') + '</p>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + (isRu ? 'Средний балл' : 'Average Score') + '</div>' +
+        '<div id="eval-avg" style="display:flex;gap:16px;align-items:center">' +
+          '<div style="font-size:2.5rem;font-weight:700;color:#10b981" id="eval-avg-num">-</div>' +
+          '<div style="font-size:.78rem;color:var(--text-muted)">' + (isRu ? 'из 10 (последние 20 ответов)' : 'out of 10 (last 20 responses)') + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + (isRu ? 'История оценок' : 'Eval History') + '</div>' +
+        '<div id="eval-list" style="display:flex;flex-direction:column;gap:6px">' +
+          '<div style="text-align:center;color:var(--text-muted);padding:2rem">' + (isRu ? 'Загрузка...' : 'Loading...') + '</div>' +
+        '</div>' +
+      '</div>' +
+      '</div>';
+    loadEvalsData();
+
   } else if (tab === 'audit') {
     body.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--text-muted)">' + (currentLang === 'ru' ? 'Загрузка аудита...' : 'Loading audit...') + '</div>';
     runSettingsAudit(body);
+  } else if (tab === 'blocklist' || tab === 'triggers' || tab === 'session' || tab === 'toolscope') {
+    body.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--text-muted)">Loading...</div>';
+    loadHooksTab(body, tab, _detailAgentId);
+  } else if (tab === 'lifecycle') {
+    var isRu = currentLang === 'ru';
+    body.innerHTML =
+      '<div class="rt-page">' +
+      '<div class="rt-header">' +
+        '<div class="rt-header-icon" style="background:rgba(16,185,129,0.12);color:#10b981">' + IC.play + '</div>' +
+        '<div class="rt-header-text">' +
+          '<h3>' + (isRu ? 'Жизненный цикл' : 'Lifecycle') + '</h3>' +
+          '<p>' + (isRu ? 'Статус, аптайм и управление запуском агента' : 'Status, uptime and agent run management') + '</p>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + (isRu ? 'Текущий статус' : 'Current Status') + '</div>' +
+        '<div id="lifecycle-status" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">' +
+          '<div class="lifecycle-badge" id="lc-state-badge" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;font-size:.82rem;font-weight:600;background:rgba(100,116,139,0.15);color:#94a3b8"><span class="lc-dot" style="width:8px;height:8px;border-radius:50%;background:currentColor"></span> loading...</div>' +
+          '<div id="lc-uptime" style="font-size:.78rem;color:var(--text-muted)"></div>' +
+          '<div id="lc-error" style="font-size:.78rem;color:#ef4444;display:none"></div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + (isRu ? 'Управление' : 'Controls') + '</div>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+          '<button class="rt-save-btn" onclick="lifecycleAction(\'start\')" style="background:linear-gradient(in oklab 135deg,var(--primary),var(--primary-dark))">' + IC.play + ' ' + (isRu ? 'Запустить' : 'Start') + '</button>' +
+          '<button class="rt-save-btn" onclick="lifecycleAction(\'stop\')" style="background:linear-gradient(in oklab 135deg,var(--primary),var(--primary-dark))">' + IC.pause + ' ' + (isRu ? 'Остановить' : 'Stop') + '</button>' +
+          '<button class="rt-save-btn" onclick="lifecycleAction(\'restart\')" style="background:linear-gradient(in oklab 135deg,#f59e0b,#d97706)">' + IC.refresh + ' ' + (isRu ? 'Перезапустить' : 'Restart') + '</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + (isRu ? 'История состояний' : 'State History') + '</div>' +
+        '<div id="lc-history" style="font-size:.78rem;color:var(--text-muted)">' + (isRu ? 'Загрузка...' : 'Loading...') + '</div>' +
+      '</div>' +
+      '</div>';
+    loadLifecycleData();
+
+  } else if (tab === 'tokens') {
+    var isRu = currentLang === 'ru';
+    body.innerHTML =
+      '<div class="rt-page">' +
+      '<div class="rt-header">' +
+        '<div class="rt-header-icon" style="background:rgba(245,158,11,0.12);color:#f59e0b">' + IC.dollar + '</div>' +
+        '<div class="rt-header-text">' +
+          '<h3>' + (isRu ? 'Расход токенов' : 'Token Usage') + '</h3>' +
+          '<p>' + (isRu ? 'Статистика потребления AI токенов и оценка стоимости' : 'AI token consumption statistics and cost estimation') + '</p>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + (isRu ? 'Общий расход' : 'Total Usage') + '</div>' +
+        '<div id="token-totals" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px">' +
+          '<div class="stat-card"><div class="stat-value" id="tk-total">-</div><div class="stat-label">' + (isRu ? 'Всего токенов' : 'Total Tokens') + '</div></div>' +
+          '<div class="stat-card"><div class="stat-value" id="tk-cost">-</div><div class="stat-label">' + (isRu ? 'Ориентировочная стоимость' : 'Est. Cost') + '</div></div>' +
+          '<div class="stat-card"><div class="stat-value" id="tk-requests">-</div><div class="stat-label">' + (isRu ? 'Запросов' : 'Requests') + '</div></div>' +
+          '<div class="stat-card"><div class="stat-value" id="tk-today">-</div><div class="stat-label">' + (isRu ? 'Сегодня' : 'Today') + '</div></div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + (isRu ? 'Дневной лимит токенов' : 'Daily Token Budget') + '</div>' +
+        '<div style="display:flex;gap:8px;align-items:center">' +
+          '<input type="number" id="tk-budget-input" class="st-input" style="width:180px" placeholder="0 = unlimited" value="0">' +
+          '<button class="rt-save-btn" onclick="saveTokenBudget()">' + IC.check + ' ' + (isRu ? 'Сохранить лимит' : 'Save Limit') + '</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + (isRu ? 'По дням (последние 30)' : 'Daily (last 30 days)') + '</div>' +
+        '<div id="token-chart" style="width:100%;height:200px;background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;position:relative;overflow:hidden"></div>' +
+        '<div id="token-table" style="margin-top:12px"></div>' +
+      '</div>' +
+      '</div>';
+    loadTokenData();
+
+  } else if (tab === 'contacts') {
+    var isRu = currentLang === 'ru';
+    body.innerHTML =
+      '<div class="rt-page">' +
+      '<div class="rt-header">' +
+        '<div class="rt-header-icon" style="background:rgba(var(--accent-r,99),var(--accent-g,102),var(--accent-b,241),0.12);color:#6366f1">' + IC.users + '</div>' +
+        '<div class="rt-header-text">' +
+          '<h3>' + (isRu ? 'Контакты' : 'Contacts') + '</h3>' +
+          '<p>' + (isRu ? 'Пользователи, с которыми взаимодействовал агент' : 'Users the agent has interacted with') + '</p>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + (isRu ? 'Список контактов' : 'Contact List') + '</div>' +
+        '<div id="contacts-list" style="display:flex;flex-direction:column;gap:8px">' +
+          '<div style="text-align:center;color:var(--text-muted);padding:2rem">' + (isRu ? 'Загрузка...' : 'Loading...') + '</div>' +
+        '</div>' +
+      '</div>' +
+      '</div>';
+    loadContactsData();
+
+  } else if (tab === 'chats') {
+    var isRu = currentLang === 'ru';
+    body.innerHTML =
+      '<div style="display:flex;height:calc(100vh - 120px);gap:0;overflow:hidden;border-radius:12px;border:1px solid var(--border)">' +
+        // Left: chat list
+        '<div id="chats-sidebar" style="width:280px;min-width:220px;border-right:1px solid var(--border);display:flex;flex-direction:column;background:var(--bg-primary)">' +
+          '<div style="padding:14px 16px;border-bottom:1px solid var(--border);font-weight:700;font-size:.9rem;color:var(--text-primary);display:flex;align-items:center;gap:8px">' +
+            '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>' +
+            (isRu ? 'Переписка' : 'Inbox') +
+          '</div>' +
+          '<div id="chats-list" style="flex:1;overflow-y:auto;padding:8px">' +
+            '<div style="text-align:center;color:var(--text-muted);padding:2rem;font-size:.82rem">' + (isRu ? 'Загрузка...' : 'Loading...') + '</div>' +
+          '</div>' +
+        '</div>' +
+        // Right: chat view
+        '<div id="chat-view" style="flex:1;display:flex;flex-direction:column;background:var(--bg-secondary)">' +
+          '<div id="chat-view-header" style="padding:14px 18px;border-bottom:1px solid var(--border);background:var(--bg-primary);display:flex;align-items:center;gap:12px">' +
+            '<div style="color:var(--text-muted);font-size:.85rem">' + (isRu ? 'Выберите чат' : 'Select a chat') + '</div>' +
+          '</div>' +
+          '<div id="chat-view-messages" style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px">' +
+            '<div style="text-align:center;color:var(--text-muted);padding:4rem;font-size:.82rem">' + (isRu ? '← Выберите чат слева' : '← Select a chat on the left') + '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    loadChatsData();
+
+  } else if (tab === 'memory') {
+    var isRu = currentLang === 'ru';
+    body.innerHTML =
+      '<div class="rt-page">' +
+      '<div class="rt-header">' +
+        '<div class="rt-header-icon" style="background:rgba(var(--accent-r,139),var(--accent-g,92),var(--accent-b,246),0.12);color:#8b5cf6">' + IC.brain + '</div>' +
+        '<div class="rt-header-text">' +
+          '<h3>' + (isRu ? 'Память агента' : 'Agent Memory') + '</h3>' +
+          '<p>' + (isRu ? 'Контакты, факты, уроки и цели — всё что агент помнит' : 'Contacts, facts, lessons and goals — everything the agent knows') + '</p>' +
+        '</div>' +
+      '</div>' +
+
+      // Stats row
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin-bottom:18px">' +
+        '<div class="stat-card"><div class="stat-value" id="mem-stat-contacts">-</div><div class="stat-label">' + (isRu ? 'Контактов' : 'Contacts') + '</div></div>' +
+        '<div class="stat-card"><div class="stat-value" id="mem-stat-lessons">-</div><div class="stat-label">' + (isRu ? 'Уроков' : 'Lessons') + '</div></div>' +
+        '<div class="stat-card"><div class="stat-value" id="mem-stat-size">-</div><div class="stat-label">' + (isRu ? 'Размер' : 'Size') + '</div></div>' +
+        '<div class="stat-card"><div class="stat-value" id="mem-stat-logs">-</div><div class="stat-label">' + (isRu ? 'Лог-файлов' : 'Daily logs') + '</div></div>' +
+      '</div>' +
+
+      // Sub-tab bar
+      '<div style="display:flex;gap:4px;margin-bottom:16px;background:var(--bg-primary);border-radius:10px;padding:4px">' +
+        '<button id="mem-sub-contacts" class="mem-sub-btn active" onclick="switchMemSubTab(\'contacts\')" style="flex:1;padding:7px 10px;border-radius:7px;border:none;cursor:pointer;font-size:.78rem;font-weight:500;background:rgba(var(--accent-r,139),var(--accent-g,92),var(--accent-b,246),0.18);color:#8b5cf6;transition:all .2s">' + IC.user + ' ' + (isRu ? 'Контакты' : 'Contacts') + '</button>' +
+        '<button id="mem-sub-knowledge" class="mem-sub-btn" onclick="switchMemSubTab(\'knowledge\')" style="flex:1;padding:7px 10px;border-radius:7px;border:none;cursor:pointer;font-size:.78rem;font-weight:500;background:transparent;color:var(--text-muted);transition:all .2s">' + IC.book + ' ' + (isRu ? 'Факты' : 'Facts') + '</button>' +
+        '<button id="mem-sub-lessons" class="mem-sub-btn" onclick="switchMemSubTab(\'lessons\')" style="flex:1;padding:7px 10px;border-radius:7px;border:none;cursor:pointer;font-size:.78rem;font-weight:500;background:transparent;color:var(--text-muted);transition:all .2s">' + IC.lightbulb + ' ' + (isRu ? 'Уроки' : 'Lessons') + '</button>' +
+        '<button id="mem-sub-raw" class="mem-sub-btn" onclick="switchMemSubTab(\'raw\')" style="flex:1;padding:7px 10px;border-radius:7px;border:none;cursor:pointer;font-size:.78rem;font-weight:500;background:transparent;color:var(--text-muted);transition:all .2s">' + IC.clipboard + ' ' + (isRu ? 'Память' : 'Raw') + '</button>' +
+        '<button id="mem-sub-logs" class="mem-sub-btn" onclick="switchMemSubTab(\'logs\')" style="flex:1;padding:7px 10px;border-radius:7px;border:none;cursor:pointer;font-size:.78rem;font-weight:500;background:transparent;color:var(--text-muted);transition:all .2s">' + IC.clock + ' ' + (isRu ? 'Логи' : 'Logs') + '</button>' +
+      '</div>' +
+
+      // Sub-tab: Contacts
+      '<div id="mem-panel-contacts">' +
+        '<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">' +
+          '<div style="flex:1;position:relative">' +
+            '<input type="text" id="mem-contact-search" class="st-input" style="width:100%;padding-left:36px" placeholder="' + (isRu ? 'Поиск контакта...' : 'Search contacts...') + '" oninput="filterContacts()">' +
+            '<span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);opacity:.4">' + IC.search + '</span>' +
+          '</div>' +
+        '</div>' +
+        '<div id="mem-contacts-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px">' +
+          '<div style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:2rem;font-size:.8rem">⟳ ' + (isRu ? 'Загрузка...' : 'Loading...') + '</div>' +
+        '</div>' +
+      '</div>' +
+
+      // Sub-tab: Knowledge/Facts
+      '<div id="mem-panel-knowledge" style="display:none">' +
+        '<div class="rt-section">' +
+          '<div class="rt-section-label">' + IC.brain + ' ' + (isRu ? 'Блоки памяти' : 'Core Memory Blocks') + '</div>' +
+          '<div id="core-memory-blocks" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">' +
+            '<div style="text-align:center;color:var(--text-muted);padding:1rem;grid-column:1/-1">⟳</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="rt-section">' +
+          '<div style="display:flex;gap:8px;align-items:center">' +
+            '<div style="flex:1;position:relative">' +
+              '<input type="text" id="mem-search-input" class="st-input" style="width:100%;padding-left:36px" placeholder="' + (isRu ? 'Поиск по памяти...' : 'Search memory...') + '" onkeydown="if(event.key===\'Enter\')searchAgentMemory()">' +
+              '<span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);opacity:.4">' + IC.search + '</span>' +
+            '</div>' +
+            '<button class="rt-save-btn" onclick="searchAgentMemory()">' + (isRu ? 'Найти' : 'Find') + '</button>' +
+          '</div>' +
+          '<div id="mem-search-results" style="margin-top:10px"></div>' +
+        '</div>' +
+      '</div>' +
+
+      // Sub-tab: Lessons
+      '<div id="mem-panel-lessons" style="display:none">' +
+        '<div id="mem-lessons-list">' +
+          '<div style="text-align:center;color:var(--text-muted);padding:2rem;font-size:.8rem">⟳ ' + (isRu ? 'Загрузка...' : 'Loading...') + '</div>' +
+        '</div>' +
+      '</div>' +
+
+      // Sub-tab: Raw persistent memory
+      '<div id="mem-panel-raw" style="display:none">' +
+        '<div class="rt-section">' +
+          '<textarea id="mem-persistent-text" class="st-textarea" style="min-height:220px;font-family:\'JetBrains Mono\',monospace;font-size:.78rem;line-height:1.6" placeholder="' + (isRu ? 'Факты, события, предпочтения...' : 'Facts, events, preferences...') + '"></textarea>' +
+          '<div style="display:flex;gap:8px;margin-top:8px">' +
+            '<button class="rt-save-btn" onclick="saveMemoryPersistent()">' + IC.check + ' ' + (isRu ? 'Сохранить' : 'Save') + '</button>' +
+            '<button class="rt-save-btn" onclick="clearAgentMemory(\'persistent\')" style="background:linear-gradient(in oklab 135deg,var(--primary),var(--primary-dark))">' + (isRu ? 'Очистить' : 'Clear') + '</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+
+      // Sub-tab: Daily logs
+      '<div id="mem-panel-logs" style="display:none">' +
+        '<div style="display:flex;justify-content:flex-end;margin-bottom:10px">' +
+          '<button class="rt-save-btn" onclick="clearAgentMemory(\'daily\')" style="background:var(--accent-dim);color:var(--primary);font-size:.68rem;padding:4px 10px">' + (isRu ? 'Очистить логи' : 'Clear logs') + '</button>' +
+        '</div>' +
+        '<div id="mem-daily-logs" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px">' +
+          '<div style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:1.5rem;font-size:.8rem">⟳</div>' +
+        '</div>' +
+      '</div>' +
+
+      '</div>';
+    loadMemoryData();
+    loadProfilesData();
+
+  } else if (tab === 'skills') {
+    var isRu = currentLang === 'ru';
+    body.innerHTML =
+      '<div class="rt-page">' +
+      '<div class="rt-header">' +
+        '<div class="rt-header-icon" style="background:rgba(var(--accent-r,0),var(--accent-g,168),var(--accent-b,255),0.12);color:#00a8ff">' +
+          '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18 9l-4.1 1.4L12 15l-1.9-4.6L6 9l4.1-1.4z"/><path d="M19 14l.95 2.3L22 17l-2.05.7L19 20l-.95-2.3L16 17l2.05-.7z"/></svg>' +
+        '</div>' +
+        '<div class="rt-header-text">' +
+          '<h3>' + (isRu ? 'Скиллы агента' : 'Agent Skills') + '</h3>' +
+          '<p>' + (isRu
+            ? 'Включи/выключи скиллы для этого агента. Скилл = пакет знаний+правил выбора инструментов. Спека: agentskills.io'
+            : 'Enable/disable skills for this agent. Skill = bundle of knowledge + tool-selection rules. Spec: agentskills.io') + '</p>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-section">' +
+        '<div id="agent-skills-list" style="display:flex;flex-direction:column;gap:8px">' +
+          '<div class="loading-placeholder">' + (isRu ? 'Загрузка...' : 'Loading...') + '</div>' +
+        '</div>' +
+      '</div>' +
+      '</div>';
+    loadAgentSkills(_detailAgentId);
+
+  } else if (tab === 'tasks') {
+    var isRu = currentLang === 'ru';
+    body.innerHTML =
+      '<div class="rt-page">' +
+      '<div class="rt-header">' +
+        '<div class="rt-header-icon" style="background:rgba(34,197,94,0.12);color:#22c55e">' + IC.check + '</div>' +
+        '<div class="rt-header-text">' +
+          '<h3>' + (isRu ? 'Задачи агента' : 'Agent Tasks') + '</h3>' +
+          '<p>' + (isRu ? 'Управление задачами с зависимостями и приоритетами' : 'Manage tasks with dependencies and priorities') + '</p>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rt-section">' +
+        '<div class="rt-section-label" style="display:flex;justify-content:space-between;align-items:center">' +
+          '<span>' + (isRu ? 'Статистика' : 'Stats') + '</span>' +
+          '<div id="task-stats" style="display:flex;gap:12px;font-size:.72rem"></div>' +
+        '</div>' +
+        '<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">' +
+          '<select id="task-filter" class="st-input" style="width:150px" onchange="loadTasksData()">' +
+            '<option value="">' + (isRu ? 'Все' : 'All') + '</option>' +
+            '<option value="pending">' + (isRu ? 'Ожидающие' : 'Pending') + '</option>' +
+            '<option value="in_progress">' + (isRu ? 'В процессе' : 'In Progress') + '</option>' +
+            '<option value="done">' + (isRu ? 'Готово' : 'Done') + '</option>' +
+            '<option value="failed">' + (isRu ? 'Ошибка' : 'Failed') + '</option>' +
+          '</select>' +
+          '<button class="rt-save-btn" onclick="showCreateTaskForm()">' + IC.plus + ' ' + (isRu ? 'Новая задача' : 'New Task') + '</button>' +
+        '</div>' +
+        '<div id="task-create-form" style="display:none;margin-bottom:16px;padding:16px;background:var(--bg-primary);border:1px solid var(--border);border-radius:8px">' +
+          '<input type="text" id="task-desc" class="st-input" style="width:100%;margin-bottom:8px" placeholder="' + (isRu ? 'Описание задачи...' : 'Task description...') + '">' +
+          '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+            '<select id="task-priority" class="st-input" style="width:120px">' +
+              '<option value="0">' + (isRu ? 'Обычный' : 'Normal') + '</option>' +
+              '<option value="1">' + (isRu ? 'Высокий' : 'High') + '</option>' +
+              '<option value="2">' + (isRu ? 'Критичный' : 'Critical') + '</option>' +
+            '</select>' +
+            '<input type="datetime-local" id="task-scheduled" class="st-input" style="width:200px">' +
+            '<button class="rt-save-btn" onclick="createAgentTask()">' + IC.check + ' ' + (isRu ? 'Создать' : 'Create') + '</button>' +
+            '<button class="rt-save-btn" onclick="document.getElementById(\'task-create-form\').style.display=\'none\'" style="background:rgba(100,116,139,0.2);color:var(--text-secondary)">' + (isRu ? 'Отмена' : 'Cancel') + '</button>' +
+          '</div>' +
+        '</div>' +
+        '<div id="tasks-list" style="display:flex;flex-direction:column;gap:6px">' +
+          '<div style="text-align:center;color:var(--text-muted);padding:2rem">' + (isRu ? 'Загрузка...' : 'Loading...') + '</div>' +
+        '</div>' +
+      '</div>' +
+      '</div>';
+    loadTasksData();
+
   } else if (tab === 'advanced') {
     var isRu = currentLang === 'ru';
     var spendLimit = 500;
@@ -2115,7 +3608,7 @@ function switchSettingsTab(tab) {
         '<div class="rt-toggle-row" style="gap:8px">' +
           '<label class="rt-toggle-card' + (agentLang === 'auto' ? ' rt-active' : '') + '" onclick="selectAdvLang(this,\'auto\')" style="flex:1">' +
             '<input type="radio" name="adv-lang" value="auto"' + (agentLang === 'auto' ? ' checked' : '') + ' style="display:none">' +
-            '<div class="rt-toggle-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></div>' +
+            '<div class="rt-toggle-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></div>' +
             '<div class="rt-toggle-name">Auto</div>' +
             '<div class="rt-toggle-desc">' + (isRu ? 'Зеркалит язык' : 'Mirrors language') + '</div>' +
           '</label>' +
@@ -2136,11 +3629,68 @@ function switchSettingsTab(tab) {
 
       // Action buttons
       '<div class="rt-section">' +
+        '<div class="rt-section-label">' + IC.brain + ' ' + (isRu ? 'Сжатие контекста' : 'Context Compaction') + '</div>' +
+        '<select id="adv-compaction" class="rt-input" style="max-width:300px" onchange="">' +
+          '<option value="structured"' + ((config.config && config.config.compaction_strategy) === 'off' ? '' : ' selected') + '>' + (isRu ? 'Структурированное (рекомендуется)' : 'Structured (recommended)') + '</option>' +
+          '<option value="simple"' + ((config.config && config.config.compaction_strategy) === 'simple' ? ' selected' : '') + '>' + (isRu ? 'Простое' : 'Simple') + '</option>' +
+          '<option value="off"' + ((config.config && config.config.compaction_strategy) === 'off' ? ' selected' : '') + '>' + (isRu ? 'Выключено' : 'Off') + '</option>' +
+        '</select>' +
+        '<div class="rt-input-hint">' + (isRu ? 'Как сжимать старые сообщения когда контекст переполняется. Структурированное создаёт резюме: Намерение / Решения / Действия / Контекст / Незавершённое.' : 'How to compact old messages when context overflows. Structured creates summary: Intent / Decisions / Actions / Context / Open Items.') + '</div>' +
+      '</div>' +
+
+      // Observation masking
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + IC.eye + ' ' + (isRu ? 'Маскирование наблюдений' : 'Observation Masking') + '</div>' +
+        '<div style="display:flex;align-items:center;gap:12px">' +
+          '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.82rem"><input type="checkbox" id="adv-masking-on" style="accent-color:var(--primary)"' + (config.config && config.config.masking_enabled !== false ? ' checked' : '') + '> ' + (isRu ? 'Включено' : 'Enabled') + '</label>' +
+          '<div style="display:flex;align-items:center;gap:6px">' +
+            '<span style="font-size:.78rem;color:var(--text-muted)">' + (isRu ? 'Хранить последних:' : 'Keep recent:') + '</span>' +
+            '<input type="number" id="adv-masking-keep" class="rt-priority-num" style="width:60px" value="' + ((config.config && config.config.masking_keep_recent) || 10) + '" min="3" max="50">' +
+          '</div>' +
+        '</div>' +
+        '<div class="rt-input-hint">' + (isRu ? 'Маскирует старые результаты инструментов для экономии токенов. Недавние результаты сохраняются полностью.' : 'Masks old tool results to save tokens. Recent results kept in full.') + '</div>' +
+      '</div>' +
+
+      // Flood protection
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + IC.shield + ' ' + (isRu ? 'Защита от флуда' : 'Flood Protection') + '</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
+          '<div><span style="font-size:.78rem;color:var(--text-muted)">' + (isRu ? 'Кулдаун (сек)' : 'Cooldown (sec)') + '</span>' +
+            '<input type="number" id="adv-flood-cooldown" class="rt-input" style="margin-top:4px" value="' + ((config.config && config.config.flood_cooldown_sec) || 5) + '" min="1" max="120"></div>' +
+          '<div><span style="font-size:.78rem;color:var(--text-muted)">' + (isRu ? 'Макс. ретраев' : 'Max retries') + '</span>' +
+            '<input type="number" id="adv-flood-retries" class="rt-input" style="margin-top:4px" value="' + ((config.config && config.config.flood_max_retries) || 3) + '" min="0" max="10"></div>' +
+        '</div>' +
+        '<div class="rt-input-hint">' + (isRu ? 'Адаптивная защита от FLOOD_WAIT от Telegram. Кулдаун увеличивается экспоненциально.' : 'Adaptive FLOOD_WAIT protection from Telegram. Cooldown increases exponentially.') + '</div>' +
+      '</div>' +
+
+      // Loop guard
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + IC.loop + ' ' + (isRu ? 'Защита от зацикливания' : 'Loop Guard') + '</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
+          '<div><span style="font-size:.78rem;color:var(--text-muted)">' + (isRu ? 'Макс. ответов за окно' : 'Max responses per window') + '</span>' +
+            '<input type="number" id="adv-loop-max" class="rt-input" style="margin-top:4px" value="' + ((config.config && config.config.loop_max_responses) || 4) + '" min="1" max="20"></div>' +
+          '<div><span style="font-size:.78rem;color:var(--text-muted)">' + (isRu ? 'Окно (сек)' : 'Window (sec)') + '</span>' +
+            '<input type="number" id="adv-loop-window" class="rt-input" style="margin-top:4px" value="' + ((config.config && config.config.loop_window_sec) || 120) + '" min="30" max="600"></div>' +
+        '</div>' +
+        '<div class="rt-input-hint">' + (isRu ? 'Предотвращает бесконечное общение бот-бот. Если агент отправляет N ответов за указанное окно — пауза.' : 'Prevents infinite bot-to-bot chat. If agent sends N responses within the window — pauses.') + '</div>' +
+      '</div>' +
+
+      // Memory poisoning protection
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + IC.shield + ' ' + (isRu ? 'Защита памяти' : 'Memory Protection') + '</div>' +
+        '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.82rem">' +
+          '<input type="checkbox" id="adv-memory-protect" style="accent-color:var(--primary)"' + (config.config && config.config.memory_poisoning_protection !== false ? ' checked' : '') + '>' +
+          (isRu ? 'Блокировать запись в память из групповых чатов (предотвращает poisoning)' : 'Block memory writes from group chats (prevents poisoning)') +
+        '</label>' +
+      '</div>' +
+
+      // Actions (clone/export/import)
+      '<div class="rt-section">' +
         '<div class="rt-section-label">' + IC.bolt + ' ' + (isRu ? 'Действия' : 'Actions') + '</div>' +
         '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
-          '<button class="rt-save-btn" style="background:linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%)" onclick="cloneAgentFromSettings()">' + IC.clipboard + ' ' + (isRu ? 'Клонировать агента' : 'Clone Agent') + '</button>' +
-          '<button class="rt-save-btn" style="background:linear-gradient(135deg,#0ea5e9 0%,#06b6d4 100%)" onclick="exportAgentJSON()">' + IC.download + ' ' + (isRu ? 'Экспорт JSON' : 'Export JSON') + '</button>' +
-          '<label class="rt-save-btn" style="background:linear-gradient(135deg,#22c55e 0%,#16a34a 100%);cursor:pointer">' + IC.upload + ' ' + (isRu ? 'Импорт JSON' : 'Import JSON') + '<input type="file" accept=".json" style="display:none" onchange="importAgentJSON(this)"></label>' +
+          '<button class="rt-save-btn" style="background:linear-gradient(in oklab 135deg,#6366f1 0%,#8b5cf6 100%)" onclick="cloneAgentFromSettings()">' + IC.clipboard + ' ' + (isRu ? 'Клонировать агента' : 'Clone Agent') + '</button>' +
+          '<button class="rt-save-btn" style="background:linear-gradient(in oklab 135deg,var(--primary),var(--primary-dark))" onclick="exportAgentJSON()">' + IC.download + ' ' + (isRu ? 'Экспорт JSON' : 'Export JSON') + '</button>' +
+          '<label class="rt-save-btn" style="background:linear-gradient(in oklab 135deg,#22c55e 0%,#16a34a 100%);cursor:pointer">' + IC.upload + ' ' + (isRu ? 'Импорт JSON' : 'Import JSON') + '<input type="file" accept=".json" style="display:none" onchange="importAgentJSON(this)"></label>' +
         '</div>' +
       '</div>' +
 
@@ -2173,10 +3723,27 @@ async function saveSettingsAdvanced() {
     var langRadio = document.querySelector('input[name="adv-lang"]:checked');
     var agentLang = langRadio ? langRadio.value : 'auto';
 
+    var compaction = (document.getElementById('adv-compaction') || {}).value || 'structured';
+    var maskingOn = (document.getElementById('adv-masking-on') || {}).checked !== false;
+    var maskingKeep = parseInt((document.getElementById('adv-masking-keep') || {}).value) || 10;
+    var floodCooldown = parseInt((document.getElementById('adv-flood-cooldown') || {}).value) || 5;
+    var floodRetries = parseInt((document.getElementById('adv-flood-retries') || {}).value) || 3;
+    var loopMax = parseInt((document.getElementById('adv-loop-max') || {}).value) || 4;
+    var loopWindow = parseInt((document.getElementById('adv-loop-window') || {}).value) || 120;
+    var memProtect = (document.getElementById('adv-memory-protect') || {}).checked !== false;
+
     await apiRequest('POST', '/api/agents/' + _detailAgentId + '/config', {
       daily_spend_limit_ton: spendLimit,
       tick_interval_sec: tickInterval,
       agent_language: agentLang,
+      compaction_strategy: compaction,
+      masking_enabled: maskingOn,
+      masking_keep_recent: maskingKeep,
+      flood_cooldown_sec: floodCooldown,
+      flood_max_retries: floodRetries,
+      loop_max_responses: loopMax,
+      loop_window_sec: loopWindow,
+      memory_poisoning_protection: memProtect,
     });
     toast(currentLang === 'ru' ? 'Настройки сохранены' : 'Settings saved', 'success');
     // Refresh agent data
@@ -2184,6 +3751,275 @@ async function saveSettingsAdvanced() {
   } catch (e) {
     toast('Error: ' + (e.message || e), 'error');
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// HOOKS TABS: Blocklist, Triggers, Session, Tool Scope
+// ═══════════════════════════════════════════════════════════════════════
+
+var _hooksCache = {}; // agentId → hooks data
+
+async function loadHooksTab(body, tab, agentId) {
+  var isRu = currentLang === 'ru';
+  try {
+    if (!_hooksCache[agentId]) {
+      var resp = await apiRequest('GET', '/api/agents/' + agentId + '/hooks');
+      _hooksCache[agentId] = resp;
+    }
+    var hooks = _hooksCache[agentId];
+    if (tab === 'blocklist') renderBlocklistTab(body, hooks, agentId, isRu);
+    else if (tab === 'triggers') renderTriggersTab(body, hooks, agentId, isRu);
+    else if (tab === 'session') renderSessionTab(body, hooks, agentId, isRu);
+    else if (tab === 'toolscope') renderToolScopeTab(body, hooks, agentId, isRu);
+  } catch (e) {
+    body.innerHTML = '<div style="padding:2rem;color:#ef4444">Error: ' + (e.message || e) + '</div>';
+  }
+}
+
+function renderBlocklistTab(body, hooks, agentId, isRu) {
+  var bl = hooks.blocklist || { enabled: false, keywords: [], reply: '' };
+  var kwList = (bl.keywords || []).map(function(kw, i) {
+    return '<span class="rt-tag" style="display:inline-flex;align-items:center;gap:4px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);padding:4px 10px;border-radius:999px;font-size:.8rem;color:#ef4444">' +
+      escHtml(kw) +
+      ' <span style="cursor:pointer;opacity:.6" onclick="removeBlocklistKw(' + agentId + ',' + i + ')">✕</span>' +
+    '</span> ';
+  }).join('');
+
+  body.innerHTML =
+    '<div class="rt-page">' +
+    '<div class="rt-header">' +
+      '<div class="rt-header-icon" style="background:rgba(239,68,68,0.12);color:#ef4444">' + IC.shield + '</div>' +
+      '<div class="rt-header-text">' +
+        '<h3>' + (isRu ? 'Блоклист' : 'Blocklist') + '</h3>' +
+        '<p>' + (isRu ? 'Агент не будет отвечать на сообщения содержащие заблокированные слова' : 'Agent will ignore messages containing blocked keywords') + '</p>' +
+      '</div>' +
+    '</div>' +
+    '<div class="rt-section">' +
+      '<div class="rt-section-label">' + (isRu ? 'Статус' : 'Status') + '</div>' +
+      '<label class="rt-toggle" style="cursor:pointer;display:flex;align-items:center;gap:8px">' +
+        '<input type="checkbox" id="bl-enabled" ' + (bl.enabled ? 'checked' : '') + ' onchange="saveBlocklistState(' + agentId + ')" style="width:18px;height:18px">' +
+        '<span>' + (isRu ? 'Блоклист активен' : 'Blocklist active') + '</span>' +
+      '</label>' +
+    '</div>' +
+    '<div class="rt-section">' +
+      '<div class="rt-section-label">' + (isRu ? 'Ключевые слова' : 'Keywords') + '</div>' +
+      '<div id="bl-keywords-list" style="margin-bottom:8px;display:flex;flex-wrap:wrap;gap:6px">' + (kwList || '<span style="color:var(--text-muted);font-size:.85rem">' + (isRu ? 'Пусто' : 'Empty') + '</span>') + '</div>' +
+      '<div style="display:flex;gap:8px">' +
+        '<input type="text" id="bl-new-kw" placeholder="' + (isRu ? 'Слово или фраза...' : 'Word or phrase...') + '" style="flex:1;background:var(--glass-bg);border:1px solid var(--glass-border);border-radius:8px;padding:8px 12px;color:var(--text-primary);font-size:.85rem" onkeydown="if(event.key===\'Enter\')addBlocklistKw(' + agentId + ')">' +
+        '<button class="rt-save-btn" style="padding:8px 16px" onclick="addBlocklistKw(' + agentId + ')">' + (isRu ? '+ Добавить' : '+ Add') + '</button>' +
+      '</div>' +
+    '</div>' +
+    '<div class="rt-section">' +
+      '<div class="rt-section-label">' + (isRu ? 'Авто-ответ (необязательно)' : 'Auto-reply (optional)') + '</div>' +
+      '<input type="text" id="bl-reply" value="' + escHtml(bl.reply || '') + '" placeholder="' + (isRu ? 'Оставьте пустым чтобы молча игнорировать' : 'Leave empty to silently ignore') + '" style="width:100%;background:var(--glass-bg);border:1px solid var(--glass-border);border-radius:8px;padding:8px 12px;color:var(--text-primary);font-size:.85rem" onchange="saveBlocklistState(' + agentId + ')">' +
+    '</div>' +
+    '</div>';
+}
+
+async function addBlocklistKw(agentId) {
+  var inp = document.getElementById('bl-new-kw');
+  var val = (inp.value || '').trim();
+  if (!val) return;
+  var hooks = _hooksCache[agentId];
+  if (!hooks.blocklist) hooks.blocklist = { enabled: false, keywords: [] };
+  var newKws = val.split(',').map(function(s) { return s.trim(); }).filter(function(s) { return s.length > 0; });
+  hooks.blocklist.keywords = Array.from(new Set(hooks.blocklist.keywords.concat(newKws)));
+  inp.value = '';
+  await apiRequest('POST', '/api/agents/' + agentId + '/hooks', { blocklist: hooks.blocklist });
+  toast('+' + newKws.length + ' keywords', 'success');
+  renderBlocklistTab(document.getElementById('agent-settings-body'), hooks, agentId, currentLang === 'ru');
+}
+
+async function removeBlocklistKw(agentId, idx) {
+  var hooks = _hooksCache[agentId];
+  hooks.blocklist.keywords.splice(idx, 1);
+  await apiRequest('POST', '/api/agents/' + agentId + '/hooks', { blocklist: hooks.blocklist });
+  renderBlocklistTab(document.getElementById('agent-settings-body'), hooks, agentId, currentLang === 'ru');
+}
+
+async function saveBlocklistState(agentId) {
+  var hooks = _hooksCache[agentId];
+  if (!hooks.blocklist) hooks.blocklist = { enabled: false, keywords: [] };
+  hooks.blocklist.enabled = document.getElementById('bl-enabled').checked;
+  var replyEl = document.getElementById('bl-reply');
+  if (replyEl) hooks.blocklist.reply = replyEl.value || '';
+  await apiRequest('POST', '/api/agents/' + agentId + '/hooks', { blocklist: hooks.blocklist });
+  toast('Saved', 'success');
+}
+
+function renderTriggersTab(body, hooks, agentId, isRu) {
+  var triggers = hooks.triggers || [];
+  var rows = triggers.map(function(t, i) {
+    return '<div class="rt-section" style="padding:12px 16px;display:flex;align-items:flex-start;gap:12px">' +
+      '<input type="checkbox" ' + (t.enabled ? 'checked' : '') + ' style="width:18px;height:18px;margin-top:2px" onchange="toggleTrigger(' + agentId + ',' + i + ',this.checked)">' +
+      '<div style="flex:1">' +
+        '<div style="font-weight:600;color:var(--text-primary)">' + escHtml(t.keyword) + '</div>' +
+        '<div style="font-size:.8rem;color:var(--text-muted);margin-top:2px">' + escHtml(t.context.slice(0, 120)) + '</div>' +
+      '</div>' +
+      '<button style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:1.1rem" onclick="deleteTrigger(' + agentId + ',' + i + ')">✕</button>' +
+    '</div>';
+  }).join('');
+
+  body.innerHTML =
+    '<div class="rt-page">' +
+    '<div class="rt-header">' +
+      '<div class="rt-header-icon" style="background:rgba(245,158,11,0.12);color:#f59e0b">' + IC.bolt + '</div>' +
+      '<div class="rt-header-text">' +
+        '<h3>' + (isRu ? 'Контекстные триггеры' : 'Context Triggers') + '</h3>' +
+        '<p>' + (isRu ? 'Когда в сообщении встречается ключевое слово — в промпт агента автоматически добавляется дополнительный контекст' : 'When a keyword is found in a message, extra context is automatically injected into the agent prompt') + '</p>' +
+      '</div>' +
+    '</div>' +
+    (rows || '<div style="text-align:center;padding:2rem;color:var(--text-muted)">' + (isRu ? 'Нет триггеров' : 'No triggers') + '</div>') +
+    '<div class="rt-section">' +
+      '<div class="rt-section-label">' + (isRu ? 'Новый триггер' : 'New Trigger') + '</div>' +
+      '<div style="display:flex;flex-direction:column;gap:8px">' +
+        '<input type="text" id="trig-keyword" placeholder="' + (isRu ? 'Ключевое слово...' : 'Keyword...') + '" style="background:var(--glass-bg);border:1px solid var(--glass-border);border-radius:8px;padding:8px 12px;color:var(--text-primary);font-size:.85rem">' +
+        '<textarea id="trig-context" rows="3" placeholder="' + (isRu ? 'Контекст для инжекции в промпт...' : 'Context to inject into prompt...') + '" style="background:var(--glass-bg);border:1px solid var(--glass-border);border-radius:8px;padding:8px 12px;color:var(--text-primary);font-size:.85rem;resize:vertical"></textarea>' +
+        '<button class="rt-save-btn" onclick="addTrigger(' + agentId + ')">' + (isRu ? '+ Добавить триггер' : '+ Add Trigger') + '</button>' +
+      '</div>' +
+    '</div>' +
+    '</div>';
+}
+
+async function addTrigger(agentId) {
+  var kw = (document.getElementById('trig-keyword').value || '').trim();
+  var ctx = (document.getElementById('trig-context').value || '').trim();
+  if (!kw || !ctx) { toast(currentLang === 'ru' ? 'Заполните оба поля' : 'Fill both fields', 'error'); return; }
+  var hooks = _hooksCache[agentId];
+  if (!hooks || !hooks.triggers) { if (hooks) hooks.triggers = []; else { toast('Reload page and try again', 'error'); return; } }
+  hooks.triggers.push({ id: String(Date.now()), keyword: kw, context: ctx, enabled: true });
+  var r = await apiRequest('POST', '/api/agents/' + agentId + '/hooks', { triggers: hooks.triggers });
+  if (r && r.error) { toast('Error: ' + r.error, 'error'); hooks.triggers.pop(); return; }
+  document.getElementById('trig-keyword').value = '';
+  document.getElementById('trig-context').value = '';
+  toast(currentLang === 'ru' ? 'Триггер добавлен' : 'Trigger added', 'success');
+  renderTriggersTab(document.getElementById('agent-settings-body'), hooks, agentId, currentLang === 'ru');
+}
+
+async function toggleTrigger(agentId, idx, enabled) {
+  var hooks = _hooksCache[agentId];
+  if (!hooks || !hooks.triggers || !hooks.triggers[idx]) return;
+  hooks.triggers[idx].enabled = enabled;
+  var r = await apiRequest('POST', '/api/agents/' + agentId + '/hooks', { triggers: hooks.triggers });
+  if (r && r.error) toast('Save error: ' + r.error, 'error');
+}
+
+async function deleteTrigger(agentId, idx) {
+  var hooks = _hooksCache[agentId];
+  if (!hooks || !hooks.triggers) return;
+  hooks.triggers.splice(idx, 1);
+  var r = await apiRequest('POST', '/api/agents/' + agentId + '/hooks', { triggers: hooks.triggers });
+  if (r && r.error) { toast('Delete error: ' + r.error, 'error'); return; }
+  toast(currentLang === 'ru' ? 'Триггер удалён' : 'Trigger deleted', 'success');
+  renderTriggersTab(document.getElementById('agent-settings-body'), hooks, agentId, currentLang === 'ru');
+}
+
+function renderSessionTab(body, hooks, agentId, isRu) {
+  var cfg = hooks.session || { resetPolicy: 'none', idleMinutes: 60 };
+  var policies = [
+    { val: 'none', icon: IC.infinity, label: isRu ? 'Без сброса' : 'No reset', desc: isRu ? 'История копится бесконечно' : 'History accumulates forever' },
+    { val: 'daily', icon: IC.clock, label: isRu ? 'Ежедневно' : 'Daily', desc: isRu ? 'Очистка истории каждый день' : 'Clear history every day' },
+    { val: 'idle', icon: IC.hourglass, label: isRu ? 'По бездействию' : 'On idle', desc: isRu ? 'Сброс после N минут тишины' : 'Reset after N minutes of silence' },
+  ];
+  var cards = policies.map(function(p) {
+    var active = cfg.resetPolicy === p.val;
+    return '<div class="st-provider-card' + (active ? ' selected' : '') + '" style="cursor:pointer;padding:14px;text-align:center" onclick="setSessionPolicy(' + agentId + ',\'' + p.val + '\')">' +
+      '<div style="font-size:1.5rem;margin-bottom:4px">' + p.icon + '</div>' +
+      '<div style="font-weight:600;font-size:.85rem">' + p.label + '</div>' +
+      '<div style="font-size:.75rem;color:var(--text-muted);margin-top:2px">' + p.desc + '</div>' +
+    '</div>';
+  }).join('');
+
+  body.innerHTML =
+    '<div class="rt-page">' +
+    '<div class="rt-header">' +
+      '<div class="rt-header-icon" style="background:rgba(16,185,129,0.12);color:#10b981">' + IC.clock + '</div>' +
+      '<div class="rt-header-text">' +
+        '<h3>' + (isRu ? 'Политика сессии' : 'Session Policy') + '</h3>' +
+        '<p>' + (isRu ? 'Когда автоматически сбрасывать историю диалога агента' : 'When to automatically reset agent conversation history') + '</p>' +
+      '</div>' +
+    '</div>' +
+    '<div class="rt-section">' +
+      '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">' + cards + '</div>' +
+    '</div>' +
+    (cfg.resetPolicy === 'idle' ?
+      '<div class="rt-section">' +
+        '<div class="rt-section-label">' + (isRu ? 'Минут бездействия' : 'Idle minutes') + '</div>' +
+        '<input type="number" id="sess-idle-min" value="' + (cfg.idleMinutes || 60) + '" min="5" max="1440" style="width:120px;background:var(--glass-bg);border:1px solid var(--glass-border);border-radius:8px;padding:8px 12px;color:var(--text-primary);font-size:.85rem" onchange="setSessionIdleMin(' + agentId + ',this.value)">' +
+      '</div>' : '') +
+    '</div>';
+}
+
+async function setSessionPolicy(agentId, policy) {
+  var hooks = _hooksCache[agentId];
+  if (!hooks.session) hooks.session = { resetPolicy: 'none', idleMinutes: 60 };
+  hooks.session.resetPolicy = policy;
+  await apiRequest('POST', '/api/agents/' + agentId + '/hooks', { session: hooks.session });
+  toast('Session policy: ' + policy, 'success');
+  renderSessionTab(document.getElementById('agent-settings-body'), hooks, agentId, currentLang === 'ru');
+}
+
+async function setSessionIdleMin(agentId, val) {
+  var hooks = _hooksCache[agentId];
+  hooks.session.idleMinutes = parseInt(val) || 60;
+  await apiRequest('POST', '/api/agents/' + agentId + '/hooks', { session: hooks.session });
+}
+
+function renderToolScopeTab(body, hooks, agentId, isRu) {
+  var scopes = hooks.toolScopes || {};
+  var SCOPE_LABELS = { 'always': IC.globe + ' ' + (isRu ? 'Везде' : 'All'), 'dm-only': IC.user + ' ' + (isRu ? 'Личка' : 'DM'), 'group-only': IC.users + ' ' + (isRu ? 'Группы' : 'Groups'), 'admin-only': IC.lock + ' ' + (isRu ? 'Админ' : 'Admin') };
+  var TOOL_GROUPS = {
+    'Financial': ['send_ton', 'send_jetton', 'buy_catalog_gift', 'buy_resale_gift', 'list_gift_for_sale', 'get_agent_wallet'],
+    'Admin': ['tg_ban_user2', 'tg_kick_user2', 'tg_mute_user2', 'tg_delete_user_messages', 'tg_edit_admin2'],
+    'Self-modify': ['update_my_prompt', 'update_my_interval', 'update_my_description'],
+  };
+  var DEFAULT_SCOPES = {
+    'send_ton': 'dm-only', 'send_jetton': 'dm-only', 'buy_catalog_gift': 'dm-only', 'buy_resale_gift': 'dm-only',
+    'list_gift_for_sale': 'dm-only', 'get_agent_wallet': 'dm-only',
+    'tg_ban_user2': 'admin-only', 'tg_kick_user2': 'admin-only', 'tg_mute_user2': 'admin-only',
+    'tg_delete_user_messages': 'admin-only', 'tg_edit_admin2': 'admin-only',
+    'update_my_prompt': 'dm-only', 'update_my_interval': 'dm-only', 'update_my_description': 'dm-only',
+  };
+
+  var html = '<div class="rt-page">' +
+    '<div class="rt-header">' +
+      '<div class="rt-header-icon" style="background:rgba(var(--accent-r,99),var(--accent-g,102),var(--accent-b,241),0.12);color:#6366f1">' + IC.shield + '</div>' +
+      '<div class="rt-header-text">' +
+        '<h3>' + (isRu ? 'Доступ к инструментам' : 'Tool Scope') + '</h3>' +
+        '<p>' + (isRu ? 'Ограничьте где и кем могут использоваться опасные инструменты' : 'Restrict where and by whom dangerous tools can be used') + '</p>' +
+      '</div>' +
+    '</div>';
+
+  Object.keys(TOOL_GROUPS).forEach(function(groupName) {
+    html += '<div class="rt-section"><div class="rt-section-label">' + groupName + '</div>';
+    TOOL_GROUPS[groupName].forEach(function(toolName) {
+      var custom = scopes[toolName] || {};
+      var scope = custom.scope || DEFAULT_SCOPES[toolName] || 'always';
+      var enabled = custom.enabled !== false;
+      var scopeOptions = ['always', 'dm-only', 'group-only', 'admin-only'].map(function(s) {
+        return '<option value="' + s + '"' + (scope === s ? ' selected' : '') + '>' + SCOPE_LABELS[s] + '</option>';
+      }).join('');
+      html += '<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--glass-border)">' +
+        '<input type="checkbox" ' + (enabled ? 'checked' : '') + ' style="width:16px;height:16px" onchange="setToolScope(' + agentId + ',\'' + toolName + '\',this.checked,null)">' +
+        '<code style="flex:1;font-size:.8rem;color:' + (enabled ? 'var(--text-primary)' : 'var(--text-muted)') + '">' + toolName + '</code>' +
+        '<select style="background:var(--glass-bg);border:1px solid var(--glass-border);border-radius:6px;padding:4px 8px;color:var(--text-primary);font-size:.78rem" onchange="setToolScope(' + agentId + ',\'' + toolName + '\',null,this.value)">' + scopeOptions + '</select>' +
+      '</div>';
+    });
+    html += '</div>';
+  });
+
+  html += '</div>';
+  body.innerHTML = html;
+}
+
+async function setToolScope(agentId, toolName, enabled, scope) {
+  var hooks = _hooksCache[agentId];
+  if (!hooks.toolScopes) hooks.toolScopes = {};
+  if (!hooks.toolScopes[toolName]) hooks.toolScopes[toolName] = { enabled: true, scope: 'always' };
+  if (enabled !== null) hooks.toolScopes[toolName].enabled = enabled;
+  if (scope !== null) hooks.toolScopes[toolName].scope = scope;
+  await apiRequest('POST', '/api/agents/' + agentId + '/hooks', { toolScopes: hooks.toolScopes });
+  toast('Saved', 'success');
 }
 
 function deleteAgentFromSettings() {
@@ -2254,7 +4090,7 @@ async function cloneAgentFromSettings() {
     var res = await apiRequest('POST', '/api/agents/clone', { agentId: _detailAgentId });
     toast(isRu ? 'Агент клонирован!' : 'Agent cloned!', 'success');
     closeAgentSettings();
-    navigateTo('my-agents');
+    navigateTo('operations');
   } catch (e) {
     toast('Error: ' + (e.message || e), 'error');
   }
@@ -2291,17 +4127,19 @@ async function importAgentJSON(input) {
     var data = JSON.parse(text);
     if (!data.name || !data.code) {
       toast(isRu ? 'Неверный формат файла' : 'Invalid file format', 'error');
+      input.value = '';
       return;
     }
-    var res = await apiRequest('POST', '/api/agents', {
+    var res = await apiRequest('POST', '/api/agents/import', {
       name: data.name + ' (imported)',
       description: data.description || '',
       triggerType: data.triggerType || 'ai_agent',
       code: data.code,
       triggerConfig: data.triggerConfig || {},
     });
+    if (!res.ok) { toast(res.error || 'Error', 'error'); input.value = ''; return; }
     toast(isRu ? 'Агент импортирован!' : 'Agent imported!', 'success');
-    navigateTo('my-agents');
+    navigateTo('operations');
   } catch (e) {
     toast('Error: ' + (e.message || e), 'error');
   }
@@ -2323,16 +4161,17 @@ async function importAgentFromMainView(input) {
     // Show preview dialog
     var triggerType = data.triggerType || 'ai_agent';
     var promptPreview = (data.code || '').slice(0, 200) + (data.code && data.code.length > 200 ? '...' : '');
-    var confirmed = confirm(
-      (isRu ? 'Импорт агента:\n\n' : 'Import agent:\n\n') +
-      (isRu ? 'Имя: ' : 'Name: ') + data.name + '\n' +
-      (isRu ? 'Тип: ' : 'Type: ') + triggerType + '\n' +
-      (isRu ? 'Описание: ' : 'Desc: ') + (data.description || '—') + '\n\n' +
-      (isRu ? 'Промпт (превью):\n' : 'Prompt (preview):\n') + promptPreview + '\n\n' +
-      (isRu ? 'Создать агента?' : 'Create agent?')
-    );
+    var confirmed = await studioConfirm({
+      title: isRu ? 'Импорт агента' : 'Import Agent',
+      message: (isRu ? 'Имя: ' : 'Name: ') + data.name + '\n' +
+        (isRu ? 'Тип: ' : 'Type: ') + triggerType + '\n' +
+        (isRu ? 'Описание: ' : 'Desc: ') + (data.description || '—') + '\n\n' +
+        (isRu ? 'Промпт (превью):\n' : 'Prompt (preview):\n') + promptPreview,
+      confirmText: isRu ? 'Создать' : 'Create',
+      type: 'info'
+    });
     if (!confirmed) { input.value = ''; return; }
-    var res = await apiRequest('POST', '/api/agents', {
+    var res = await apiRequest('POST', '/api/agents/import', {
       name: data.name + ' (imported)',
       description: data.description || '',
       triggerType: triggerType,
@@ -2426,7 +4265,7 @@ async function loadAgentTelegramTab(body, agentId) {
           (info.username ? '<div style="color:var(--text-primary);font-size:.9rem;font-weight:500;margin-bottom:4px">@' + escHtml(info.username) + '</div>' : '') +
           (maskedPhone ? '<div style="color:var(--text-muted);font-size:.8rem">' + escHtml(maskedPhone) + '</div>' : '') +
         '</div>' +
-        '<button class="rt-save-btn" style="background:linear-gradient(135deg,#ef4444 0%,#dc2626 100%);box-shadow:0 4px 16px rgba(239,68,68,0.3)" onclick="disconnectAgentTelegram(' + agentId + ')">' +
+        '<button class="rt-save-btn" style="background:linear-gradient(in oklab 135deg,var(--primary),var(--primary-dark));box-shadow:0 4px 16px var(--accent-glow)" onclick="disconnectAgentTelegram(' + agentId + ')">' +
           IC.x + ' ' + (isRu ? 'Отключить аккаунт' : 'Disconnect Account') +
         '</button>' +
         '</div>';
@@ -2725,24 +4564,42 @@ async function saveSettingsAI() {
   var provider = document.getElementById('ai-provider-select').value;
   var model = document.getElementById('ai-model-input').value.trim();
   var apiKey = document.getElementById('ai-key-input').value.trim();
+  // Ignore the masked-sample we show by default ("AIzaSy••••XXXX"). Only send when
+  // the user actually typed a new key (no bullet character).
+  if (apiKey && apiKey.indexOf('•') !== -1) apiKey = '';
   var utilityModel = (document.getElementById('ai-utility-model-input') || {}).value || '';
   utilityModel = utilityModel.trim();
+  var temperature = (document.getElementById('ai-temperature') || {}).value;
+  var maxTokens = (document.getElementById('ai-max-tokens') || {}).value || (document.getElementById('ai-max-tokens-num') || {}).value;
   var payload = {};
   if (provider) payload.provider = provider;
   if (model) payload.model = model;
   if (apiKey) payload.apiKey = apiKey;
   if (utilityModel) payload.utilityModel = utilityModel;
+  if (temperature) payload.temperature = parseFloat(temperature);
+  if (maxTokens) payload.maxTokens = parseInt(maxTokens);
   var data = await apiRequest('PUT', '/api/agents/' + _detailAgentId + '/provider', payload);
   if (data.ok) toast(currentLang === 'ru' ? 'AI настройки обновлены' : 'AI settings updated', 'success');
   else toast(data.error || 'Error', 'error');
 }
 
 async function saveSettingsCaps() {
-  if (!_detailAgentId) return;
+  if (!_detailAgentId) { toast('No agent selected', 'error'); return; }
   var caps = Array.from(document.querySelectorAll('.st-cap-active')).map(function(el) { return el.getAttribute('data-cap'); });
+  console.log('[saveSettingsCaps] agentId=' + _detailAgentId + ' caps=' + JSON.stringify(caps));
+  if (caps.length === 0) { toast(currentLang === 'ru' ? 'Выберите хотя бы одну возможность' : 'Select at least one capability', 'error'); return; }
   var data = await apiRequest('PUT', '/api/agents/' + _detailAgentId + '/capabilities', { capabilities: caps });
-  if (data.ok) toast(currentLang === 'ru' ? 'Возможности обновлены' : 'Capabilities updated', 'success');
-  else toast(data.error || 'Error', 'error');
+  console.log('[saveSettingsCaps] response:', JSON.stringify(data));
+  if (data.ok) {
+    toast(currentLang === 'ru' ? 'Возможности обновлены (' + caps.length + ')' : 'Capabilities updated (' + caps.length + ')', 'success');
+    // Update local cache so page reload shows correct state
+    if (_detailAgentData && _detailAgentData.triggerConfig) {
+      var tc = typeof _detailAgentData.triggerConfig === 'string' ? JSON.parse(_detailAgentData.triggerConfig) : _detailAgentData.triggerConfig;
+      if (!tc.config) tc.config = {};
+      tc.config.enabledCapabilities = caps;
+      _detailAgentData.triggerConfig = tc;
+    }
+  } else toast(data.error || 'Error', 'error');
 }
 
 function toggleCapCard(el, capId) {
@@ -2859,21 +4716,60 @@ async function setAgentRoleFromSettings(role) {
   var data = await apiRequest('PUT', '/api/agents/' + _detailAgentId + '/role', { role: role });
   if (data.ok) {
     toast(currentLang === 'ru' ? 'Роль: ' + role : 'Role: ' + role, 'success');
-    _detailAgentData.role = role;
+    // Sync role across EVERY local cache so the user doesn't see stale role
+    // on Network / My Agents / Overview while DB says something else.
+    syncAgentRoleAcrossCaches(_detailAgentId, role);
     switchSettingsTab('role');
   } else toast(data.error || 'Error', 'error');
+}
+
+// One-stop role sync: writes the new role into every local cache the UI reads
+// from and triggers a re-render of currently-visible pages. Without this,
+// Network keeps the old role (cached at loadNetworkMap time), My Agents keeps
+// its own (_agentsPageData / _agentsCache), and the user sees 3 different
+// roles in 3 places for the same agent.
+function syncAgentRoleAcrossCaches(agentId, newRole) {
+  try {
+    if (_detailAgentData && _detailAgentData.id === agentId) _detailAgentData.role = newRole;
+    if (Array.isArray(_agentsCache)) {
+      var a1 = _agentsCache.find(function(x) { return x.id === agentId; });
+      if (a1) a1.role = newRole;
+    }
+    if (Array.isArray(_agentsPageData)) {
+      var a2 = _agentsPageData.find(function(x) { return x.id === agentId; });
+      if (a2) a2.role = newRole;
+    }
+    if (Array.isArray(_networkNodes)) {
+      var n = _networkNodes.find(function(x) { return x.id === agentId; });
+      if (n) {
+        n.role = newRole;
+        // Role colour map mirror of role-profiles.ts built-ins
+        var rc = { director: '#ffd700', manager: '#8b5cf6', specialist: '#10b981', monitor: '#f59e0b', creative: '#ec4899', trader: '#ef4444', admin: '#f97316', worker: '#00a8ff' };
+        if (rc[newRole]) n.color = n.isActive ? rc[newRole] : '#6b7280';
+        var rl = { director: 'DIR', manager: 'MGR', specialist: 'SPEC', monitor: 'MON', creative: 'CRE', trader: 'TRD', admin: 'ADM', worker: 'WRK' };
+        if (rl[newRole]) n.roleLabel = rl[newRole];
+      }
+    }
+  } catch (e) { console.warn('[syncAgentRole]', e); }
+  // Trigger visible-page re-render so the change appears without manual refresh
+  try {
+    var visible = function(id) { var el = document.getElementById(id); return el && el.classList.contains('active'); };
+    if (visible('operations-page') && typeof renderAgentsPage === 'function') renderAgentsPage();
+    if (visible('overview-page') && typeof loadAgents === 'function') loadAgents();
+    if (visible('network-page') && typeof loadNetworkMap === 'function') loadNetworkMap();
+  } catch {}
 }
 
 async function saveCustomRole() {
   if (!_detailAgentId) return;
   var roleName = (document.getElementById('custom-role-name') || {}).value || '';
   var roleDesc = (document.getElementById('custom-role-desc') || {}).value || '';
-  var agentColor = (document.getElementById('agent-color-picker') || {}).value || '#0098EA';
-  var payload = {
+  var agentColor = (document.getElementById('agent-color-picker') || {}).value || '#00a8ff';
+  // Save directly to agent trigger_config via config endpoint
+  var data = await apiRequest('POST', '/api/agents/' + _detailAgentId + '/config', {
     customRole: { name: roleName.trim(), description: roleDesc.trim() },
-    agentColor: agentColor
-  };
-  var data = await apiRequest('PUT', '/api/agents/' + _detailAgentId + '/wizard', payload);
+    agentColor: agentColor,
+  });
   if (data.ok) { toast(currentLang === 'ru' ? 'Роль сохранена' : 'Role saved', 'success'); }
   else { toast(data.error || 'Error', 'error'); }
 }
@@ -3003,6 +4899,7 @@ async function saveSettingsRouting() {
   if ((document.getElementById('routing-dm') || {}).checked) chatTypes.push('dm');
   if ((document.getElementById('routing-group') || {}).checked) chatTypes.push('group');
   if ((document.getElementById('routing-channel') || {}).checked) chatTypes.push('channel');
+  if ((document.getElementById('routing-channel') || {}).checked) chatTypes.push('channel');
 
   var btn = document.querySelector('.rt-save-btn');
   if (btn) { btn.disabled = true; btn.textContent = currentLang === 'ru' ? 'Сохраняю...' : 'Saving...'; }
@@ -3019,15 +4916,13 @@ async function saveSettingsRouting() {
   var data = await apiRequest('PUT', '/api/agents/' + _detailAgentId + '/routing', payload);
   if (data && data.ok) {
     toast(currentLang === 'ru' ? 'Правила маршрутизации сохранены' : 'Routing rules saved', 'success');
-    // Also update via wizard for backwards compat
-    await apiRequest('PUT', '/api/agents/' + _detailAgentId + '/wizard', payload);
   } else {
     toast((data && data.error) || 'Error saving routing', 'error');
   }
   if (btn) { btn.disabled = false; btn.innerHTML = IC.check + ' ' + (currentLang === 'ru' ? 'Сохранить правила' : 'Save Rules'); }
 }
 
-var _agentChatHistory = [];
+// _agentChatHistory is declared at line ~949 (agent chat slide-over)
 
 async function sendAgentChatMessage() {
   var input = document.getElementById('agent-chat-input');
@@ -3035,35 +4930,28 @@ async function sendAgentChatMessage() {
   var text = input.value.trim();
   input.value = '';
 
-  _agentChatHistory.push({ role: 'user', text: text, time: new Date() });
-  renderAgentChat();
+  _agentChatHistory.push({ role: 'user', text: text });
+  _agentChatHistory.push({ role: 'agent', text: '', streaming: true });
+  var agentEntry = _agentChatHistory[_agentChatHistory.length - 1];
+  var getBox = function() { return document.getElementById('agent-chat-messages'); };
+  var render = function() { var c = getBox(); if (c) { renderAgentChat(c); c.scrollTop = c.scrollHeight; } };
+  render();
 
-  try {
-    var data = await apiRequest('POST', '/api/agents/' + _detailAgentId + '/chat', { message: text });
-    if (data.response) {
-      _agentChatHistory.push({ role: 'agent', text: data.response, time: new Date() });
-    } else if (data.error) {
-      _agentChatHistory.push({ role: 'system', text: 'Error: ' + data.error, time: new Date() });
+  var done = false;
+  await _streamAgentChat(_detailAgentId, text,
+    function(chunk) { agentEntry.text += chunk; render(); },
+    function(full) { agentEntry.streaming = false; if (!agentEntry.text && full) agentEntry.text = full; if (!agentEntry.text) agentEntry.text = '…'; render(); done = true; },
+    function(err) {
+      if (!done) {
+        apiRequest('POST', '/api/agents/' + _detailAgentId + '/chat', { message: text }).then(function(d) {
+          agentEntry.streaming = false;
+          agentEntry.text = d.ok ? (d.response || '…') : (d.error || 'Error');
+          if (!d.ok) agentEntry.role = 'error';
+          render();
+        }).catch(function() { agentEntry.streaming = false; agentEntry.text = 'Ошибка: ' + err; agentEntry.role = 'error'; render(); });
+      }
     }
-  } catch (e) {
-    _agentChatHistory.push({ role: 'system', text: 'Network error', time: new Date() });
-  }
-  renderAgentChat();
-}
-
-function renderAgentChat() {
-  var container = document.getElementById('agent-chat-messages');
-  if (!container) return;
-  if (_agentChatHistory.length === 0) {
-    var isRu = currentLang === 'ru';
-    container.innerHTML = '<div class="st-chat-empty">' + IC.chat + '<span>' + (isRu ? 'Начните диалог с агентом...' : 'Start a conversation with the agent...') + '</span></div>';
-    return;
-  }
-  container.innerHTML = _agentChatHistory.map(function(m) {
-    var cls = m.role === 'user' ? 'chat-msg-user' : (m.role === 'agent' ? 'chat-msg-agent' : 'chat-msg-system');
-    return '<div class="chat-msg ' + cls + '">' + escHtml(m.text) + '</div>';
-  }).join('');
-  container.scrollTop = container.scrollHeight;
+  );
 }
 
 async function runSettingsAudit(body) {
@@ -3149,11 +5037,17 @@ async function loadAgentsPage() {
   var all = _agentsPageData.length;
   var activeN = _agentsPageData.filter(a => a.isActive).length;
   var pausedN = all - activeN;
+  var aiN = _agentsPageData.filter(a => a.triggerType === 'ai_agent').length;
   var setEl = function(id, val) { var el = document.getElementById(id); if (el) el.textContent = val; };
   setEl('agents-filter-all', all);
   setEl('agents-filter-active', activeN);
   setEl('agents-filter-paused', pausedN);
   setEl('agents-page-count', all + (currentLang === 'ru' ? ' агентов' : ' agents'));
+  // Blink stat cards
+  setEl('stat-total-agents', all);
+  setEl('stat-active-agents', activeN);
+  setEl('stat-paused-agents', pausedN);
+  setEl('stat-ai-agents', aiN);
 
   renderAgentsPage();
 }
@@ -3174,23 +5068,33 @@ function renderAgentsPage() {
   var agents = _agentsPageData;
   if (_agentsPageFilter === 'active') agents = agents.filter(function(a) { return a.isActive; });
   else if (_agentsPageFilter === 'paused') agents = agents.filter(function(a) { return !a.isActive; });
+  // Pinned agents (favorites) go first. Within each group keep the original
+  // ordering (most-recently-updated from the API), so frequently-used pinned
+  // ones stay top regardless of date.
+  var _pinnedIds = new Set(getPinnedAgents());
+  agents = agents.slice().sort(function(a, b) {
+    var pA = _pinnedIds.has(a.id) ? 1 : 0;
+    var pB = _pinnedIds.has(b.id) ? 1 : 0;
+    return pB - pA; // pinned (1) first
+  });
 
   if (!agents.length) {
     var msg = _agentsPageFilter === 'all'
       ? (currentLang === 'ru' ? 'Нет агентов. Создайте первого!' : 'No agents yet. Create your first!')
       : (currentLang === 'ru' ? 'Нет агентов с таким статусом' : 'No agents with this status');
     listEl.innerHTML = '<div class="empty-state" style="padding:2rem;text-align:center"><p>' + msg + '</p>' +
-      (_agentsPageFilter === 'all' ? '<button class="btn btn-primary btn-sm" onclick="navigateTo(\'builder\')">' + t('create_first') + '</button>' : '') +
+      (_agentsPageFilter === 'all' ? '<button class="btn btn-primary btn-sm" onclick="navigateTo(\'assistant\')" style="margin-bottom:10px">' + (currentLang === 'ru' ? 'Описать агента Atlas →' : 'Describe agent to Atlas →') + '</button><br>' +
+      '<span style="font-size:.75rem;color:var(--text-muted)">' + (currentLang === 'ru' ? 'Atlas создаст агента по вашему описанию — промпт, инструменты, настройки' : 'Atlas will create an agent from your description — prompt, tools, settings') + '</span>' : '') +
       '</div>';
     return;
   }
 
   var triggerLabel = function(tt) { return tt === 'scheduled' ? t('trigger_scheduled') : tt === 'webhook' ? t('trigger_webhook') : tt === 'ai_agent' ? t('trigger_ai_agent') : t('trigger_manual'); };
   var triggerIcon = function(tt) {
-    if (tt === 'scheduled') return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
-    if (tt === 'webhook') return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>';
-    if (tt === 'ai_agent') return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
-    return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>';
+    if (tt === 'scheduled') return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
+    if (tt === 'webhook') return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>';
+    if (tt === 'ai_agent') return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+    return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>';
   };
   var timeAgo = function(dateStr) {
     if (!dateStr) return '';
@@ -3230,7 +5134,7 @@ function renderAgentsPage() {
       '<span class="agent-desc">' + escHtml((a.description || '').slice(0, 120)) + '</span>' +
       '</div>' +
       '<div class="agent-card-meta">' +
-      '<span class="agent-role-badge role-' + role + '" style="background:' + ({worker:'rgba(0,152,234,0.15)',manager:'rgba(155,89,182,0.15)',specialist:'rgba(230,126,34,0.15)',monitor:'rgba(46,204,113,0.15)'}[role] || 'rgba(0,152,234,0.15)') + ';color:' + ({worker:'#0098EA',manager:'#9b59b6',specialist:'#e67e22',monitor:'#2ecc71'}[role] || '#0098EA') + '">' + role + '</span>' +
+      '<span class="agent-role-badge role-' + role + '" style="background:' + ({worker:'rgba(var(--accent-r,0),var(--accent-g,168),var(--accent-b,255),0.15)',manager:'rgba(var(--accent-r,139),var(--accent-g,92),var(--accent-b,246),0.15)',specialist:'rgba(230,126,34,0.15)',monitor:'rgba(46,204,113,0.15)'}[role] || 'rgba(var(--accent-r,0),var(--accent-g,168),var(--accent-b,255),0.15)') + ';color:' + ({worker:'#00a8ff',manager:'#8b5cf6',specialist:'#e67e22',monitor:'#2ecc71'}[role] || '#00a8ff') + '">' + role + '</span>' +
       '<span class="agent-level">' + t('lv') + lvl + '</span>' +
       (lastActiveStr ? '<span class="agent-last-active" title="' + (currentLang === 'ru' ? 'Последняя активность' : 'Last active') + '">' + IC.clock + ' ' + lastActiveStr + '</span>' : '') +
       (toolCalls > 0 ? '<span class="agent-tool-calls" title="' + (currentLang === 'ru' ? 'Вызовов инструментов' : 'Tool calls') + '">' + IC.wrench + ' ' + toolCalls + '</span>' : '') +
@@ -3274,7 +5178,7 @@ function initSwipeToDelete() {
     currentCard.style.transform = 'translateX(' + offset + 'px)';
     currentCard.style.transition = 'none';
     if (dx < -60) {
-      currentCard.style.background = 'linear-gradient(90deg, var(--bg-secondary) 60%, rgba(231,76,60,0.3) 100%)';
+      currentCard.style.background = 'linear-gradient(in oklab 90deg, var(--bg-secondary) 60%, rgba(231,76,60,0.3) 100%)';
     } else {
       currentCard.style.background = '';
     }
@@ -3319,7 +5223,7 @@ function initSwipeToDelete() {
     if (dx > 5) { mouseCard.style.transform = ''; return; }
     mouseCard.style.transform = 'translateX(' + Math.max(dx, -140) + 'px)';
     mouseCard.style.transition = 'none';
-    mouseCard.style.background = dx < -60 ? 'linear-gradient(90deg, var(--bg-secondary) 60%, rgba(231,76,60,0.3) 100%)' : '';
+    mouseCard.style.background = dx < -60 ? 'linear-gradient(in oklab 90deg, var(--bg-secondary) 60%, rgba(231,76,60,0.3) 100%)' : '';
   });
   document.addEventListener('mouseup', function(e) {
     if (!mouseDown || !mouseCard) return;
@@ -3461,12 +5365,59 @@ async function refreshData() {
   if (icon) icon.style.animation = '';
 }
 
-function logout() {
+// Actual sign-out routine — clears tokens/cache and re-shows the auth screen.
+// Renamed from the historical `logout` so we can wrap it with a confirmation
+// prompt (the old sidebar button was too easy to mis-click).
+function _performLogout() {
   authToken = null;
   currentUser = null;
   localStorage.removeItem('tg_token');
+  try {
+    localStorage.removeItem('tos_accepted');
+    localStorage.removeItem('tos_accepted_errors');
+  } catch (_e) {}
   document.getElementById('auth-screen').classList.remove('hidden');
   document.getElementById('app').classList.add('hidden');
+  initAuth();
+}
+
+// Public sign-out — shows a styled confirmation modal first. Kept under
+// the legacy `logout` name so old onclick handlers keep working.
+function logout() {
+  var existing = document.getElementById('logout-confirm-modal');
+  if (existing) { existing.remove(); }
+  var ru = currentLang === 'ru';
+  var modal = document.createElement('div');
+  modal.id = 'logout-confirm-modal';
+  modal.className = 'logout-confirm-modal';
+  modal.innerHTML =
+    '<div class="logout-confirm-backdrop"></div>' +
+    '<div class="logout-confirm-card" role="dialog" aria-modal="true" aria-labelledby="logout-confirm-title">' +
+      '<div class="logout-confirm-icon">' +
+        '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>' +
+      '</div>' +
+      '<h3 id="logout-confirm-title" class="logout-confirm-title">' + (ru ? 'Выйти из аккаунта?' : 'Sign out?') + '</h3>' +
+      '<p class="logout-confirm-sub">' + (ru
+        ? 'Вы выйдете на этом устройстве. Агенты продолжат работать на платформе.'
+        : 'You\'ll be signed out on this device. Your agents keep running on the platform.') + '</p>' +
+      '<div class="logout-confirm-actions">' +
+        '<button class="btn btn-secondary" id="logout-confirm-cancel">' + (ru ? 'Отмена' : 'Cancel') + '</button>' +
+        '<button class="logout-btn-profile" id="logout-confirm-ok">' +
+          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>' +
+          (ru ? 'Выйти' : 'Sign out') +
+        '</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(modal);
+  var close = function() { modal.remove(); document.removeEventListener('keydown', onKey); };
+  var onKey = function(e) { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  modal.querySelector('.logout-confirm-backdrop').addEventListener('click', close);
+  modal.querySelector('#logout-confirm-cancel').addEventListener('click', close);
+  modal.querySelector('#logout-confirm-ok').addEventListener('click', function() {
+    close();
+    _performLogout();
+  });
 }
 
 // ── Auth initialization ──────────────────────────────────────────────────────
@@ -3479,6 +5430,48 @@ async function initAuth() {
     const cfg = await fetch(API_BASE + '/api/config').then(r => r.json());
     if (cfg && cfg.ok) window._appConfig = cfg;
   } catch (_) {}
+
+  // 1b. TELEGRAM MINI APP AUTO-LOGIN — if we're running inside TG WebView,
+  //     skip the auth screen entirely. Telegram signed our user data; we
+  //     just verify it server-side and create a session.
+  if (window.__tgAuthHelper && window.__tgAuthHelper.initData) {
+    try {
+      const r = await fetch(API_BASE + '/api/auth/tg-webapp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ initData: window.__tgAuthHelper.initData }),
+      }).then(r => r.json());
+      if (r && r.ok && r.token) {
+        authToken = r.token;
+        try { localStorage.setItem('tg_token', authToken); } catch(_){}
+        currentUser = {
+          userId: r.userId,
+          userIdStr: r.userIdStr || String(r.userId),
+          username: r.username || '',
+          first_name: r.firstName || '',
+          photo_url: r.photoUrl || null,
+          _isAdmin: r.isAdmin || false,
+          _isBeta: r.isBeta || false,
+          _acceptedTos: r.acceptedTos || false,
+          _needsTelegramLink: false,
+        };
+        console.log('[TGMiniApp] auto-login OK, user=' + r.userId);
+        showApp();
+        try { window.__tgHideLoading && window.__tgHideLoading(); } catch(_){}
+        return; // never show auth screen inside Mini App
+      } else {
+        console.warn('[TGMiniApp] auto-login failed:', r && r.error);
+      }
+    } catch (e) {
+      console.warn('[TGMiniApp] auto-login error:', e && e.message);
+    }
+  }
+  // Auth-screen path also needs to clear the loading overlay
+  try { window.__tgHideLoading && window.__tgHideLoading(); } catch(_){}
+
+  // Show auth screen (it starts hidden to avoid language flash)
+  const authScreenEl = document.getElementById('auth-screen');
+  if (authScreenEl) authScreenEl.classList.remove('hidden');
 
   const container = document.getElementById('telegram-login-container');
   if (!container) return;
@@ -3515,12 +5508,26 @@ async function initAuth() {
   };
   holder.appendChild(loginBtn);
 
-  // "or via bot" fallback link
-  var alt = document.createElement('div');
-  alt.style.cssText = 'margin-top:6px;text-align:center';
-  alt.innerHTML = '<span style="color:var(--text-muted);font-size:.72rem;cursor:pointer;opacity:.6" onclick="showBotAuthButton()">' +
-    (currentLang === 'ru' ? 'или через бота' : 'or via bot') + '</span>';
-  holder.appendChild(alt);
+  // ── "or" divider + secondary "Sign in via bot" button ──────────────────
+  var divider = document.createElement('div');
+  divider.className = 'auth-or-divider';
+  divider.innerHTML = '<span>' + (currentLang === 'ru' ? 'или' : 'or') + '</span>';
+  holder.appendChild(divider);
+
+  var botBtn = document.createElement('button');
+  botBtn.type = 'button';
+  botBtn.className = 'auth-bot-btn';
+  botBtn.onclick = function () { startBotAuthDirect(botBtn); };
+  botBtn.innerHTML =
+    '<span class="auth-bot-btn-icon"><i data-lucide="bot"></i></span>' +
+    '<span class="auth-bot-btn-text">' +
+      '<strong>' + (currentLang === 'ru' ? 'Войти через бота' : 'Sign in via bot') + '</strong>' +
+      '<small>' + (currentLang === 'ru' ? 'Без Telegram-входа · @TonAgentPlatformBot' : 'No Telegram login · @TonAgentPlatformBot') + '</small>' +
+    '</span>' +
+    '<span class="auth-bot-btn-arrow"><i data-lucide="chevron-right"></i></span>';
+  holder.appendChild(botBtn);
+  // Re-render Lucide so the newly-injected <i data-lucide> nodes become real SVGs.
+  renderAuthLucideIcons();
 
   // Load Telegram Login SDK
   if (!document.querySelector('script[src*="telegram-login.js"]')) {
@@ -3529,6 +5536,155 @@ async function initAuth() {
     script.src = 'https://oauth.telegram.org/js/telegram-login.js?3';
     document.head.appendChild(script);
   }
+
+  // Render Lucide icons and start auto-refreshing live stats
+  renderAuthLucideIcons();
+  startAuthStatsAutoRefresh();
+
+  // Pre-fetch the bot deeplink so the first click on "Sign in via bot"
+  // opens Telegram immediately (no extra step / popup blocker issues).
+  prefetchBotAuth();
+}
+
+// ── Auth screen: Lucide icons + live stats ────────────────────────────────
+function renderAuthLucideIcons() {
+  var tryRender = function () {
+    if (window.lucide && typeof window.lucide.createIcons === 'function') {
+      try { window.lucide.createIcons(); } catch (_) {}
+      return true;
+    }
+    return false;
+  };
+  if (tryRender()) return;
+  var attempts = 0;
+  var iv = setInterval(function () {
+    attempts++;
+    if (tryRender() || attempts > 40) clearInterval(iv);
+  }, 100);
+}
+
+var _authStatsAnimating = {};
+function animateAuthStat(id, target) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  var current = parseInt(el.getAttribute('data-target') || '0', 10) || 0;
+  if (current === target) return;
+  el.setAttribute('data-target', String(target));
+  if (_authStatsAnimating[id]) cancelAnimationFrame(_authStatsAnimating[id]);
+  var start = current;
+  var t0 = performance.now();
+  var dur = 900;
+  var step = function (t) {
+    var p = Math.min(1, (t - t0) / dur);
+    var eased = 1 - Math.pow(1 - p, 3);
+    var val = Math.round(start + (target - start) * eased);
+    el.textContent = val >= 1000 ? (val >= 1000000 ? (val / 1000000).toFixed(1) + 'M' : (val / 1000).toFixed(val < 10000 ? 1 : 0) + 'K') : String(val);
+    if (p < 1) _authStatsAnimating[id] = requestAnimationFrame(step);
+    else delete _authStatsAnimating[id];
+  };
+  _authStatsAnimating[id] = requestAnimationFrame(step);
+}
+
+// Bot-auth deeplink prefetch so the first click acts as a direct Telegram redirect.
+var _botAuthPrefetch = null;
+async function prefetchBotAuth() {
+  if (_botAuthPrefetch) return;
+  try {
+    const data = await apiRequest('GET', '/api/auth/request');
+    if (data && data.ok) {
+      _botAuthPrefetch = { authToken: data.authToken, botLink: data.botLink };
+    }
+  } catch (_) { /* offline — startBotAuthDirect will refetch on click */ }
+}
+
+async function startBotAuthDirect(btn) {
+  // Mark the button as busy so the user gets immediate feedback.
+  var setBusy = function (label) {
+    if (!btn) return;
+    var sub = btn.querySelector('.auth-bot-btn-text small');
+    if (sub && label) sub.textContent = label;
+    btn.classList.add('is-loading');
+  };
+  var waitLabel = currentLang === 'ru' ? 'Открываю Telegram… ждём подтверждения' : 'Opening Telegram… waiting for confirmation';
+
+  var data = _botAuthPrefetch;
+  if (!data) {
+    setBusy(currentLang === 'ru' ? 'Подключаемся…' : 'Connecting…');
+    try {
+      var resp = await apiRequest('GET', '/api/auth/request');
+      if (resp && resp.ok) data = { authToken: resp.authToken, botLink: resp.botLink };
+    } catch (_) {}
+    if (!data) {
+      if (btn) btn.classList.remove('is-loading');
+      toast(currentLang === 'ru' ? 'Не удалось подключиться к боту' : 'Failed to reach bot', 'error');
+      return;
+    }
+    _botAuthPrefetch = data;
+  }
+
+  // Open Telegram in a new tab. window.open right after a real click is allowed.
+  var w = window.open(data.botLink, '_blank', 'noopener');
+  if (!w) {
+    // Popup blocked — fall back to same-tab navigation.
+    window.location.href = data.botLink;
+  }
+  setBusy(waitLabel);
+  beginBotAuthPolling(data.authToken);
+}
+
+function beginBotAuthPolling(token) {
+  if (_botAuthPolling) clearInterval(_botAuthPolling);
+  _botAuthToken = token;
+  _botAuthPolling = setInterval(async () => {
+    try {
+      const check = await apiRequest('GET', '/api/auth/check/' + token);
+      if (check.status === 'approved') {
+        clearInterval(_botAuthPolling);
+        _botAuthPolling = null;
+        authToken = check.token;
+        localStorage.setItem('tg_token', authToken);
+        // Hydrate currentUser with the same shape Telegram-auth uses
+        // so ToS / beta / admin gates don't flash on first paint.
+        currentUser = {
+          userId: check.userId,
+          userIdStr: check.userIdStr || String(check.userId),
+          username: check.username || '',
+          first_name: check.firstName || '',
+          photo_url: check.photoUrl || null,
+          _isAdmin: check.isAdmin || false,
+          _isBeta: check.isBeta || false,
+          _acceptedTos: check.acceptedTos || false,
+          _needsTelegramLink: false,
+        };
+        showApp();
+      } else if (!check.ok || check.status === 'not_found') {
+        clearInterval(_botAuthPolling);
+        _botAuthPolling = null;
+        // Token expired — drop the prefetch so the next click refetches a fresh one.
+        _botAuthPrefetch = null;
+        var btn = document.querySelector('.auth-bot-btn');
+        if (btn) btn.classList.remove('is-loading');
+      }
+    } catch (_) { /* network blip — keep polling */ }
+  }, 2000);
+}
+
+var _authStatsTimer = null;
+async function loadAuthStatsOnce() {
+  try {
+    var r = await fetch(API_BASE + '/api/stats', { cache: 'no-store' });
+    var d = await r.json();
+    if (!d || !d.ok) return;
+    animateAuthStat('auth-stat-agents', d.agentsCreated || 0);
+    animateAuthStat('auth-stat-active', d.activeAgents || 0);
+    animateAuthStat('auth-stat-users', d.totalUsers || 0);
+    animateAuthStat('auth-stat-execs', d.totalExecutions || 0);
+  } catch (_) { /* offline / API down — leave previous values */ }
+}
+function startAuthStatsAutoRefresh() {
+  loadAuthStatsOnce();
+  if (_authStatsTimer) clearInterval(_authStatsTimer);
+  _authStatsTimer = setInterval(loadAuthStatsOnce, 30000);
 }
 
 // Handle OAuth redirect: ?code=XXX&state=YYY
@@ -3581,7 +5737,7 @@ async function handleOAuthRedirect() {
   window.history.replaceState({}, '', window.location.pathname);
   authToken = data.token;
   localStorage.setItem('tg_token', authToken);
-  currentUser = { userId: data.userId, username: data.username, first_name: data.firstName, photo_url: data.photoUrl || null };
+  currentUser = { userId: data.userId, userIdStr: data.userIdStr || String(data.userId), username: data.username, first_name: data.firstName, photo_url: data.photoUrl || null, _isAdmin: data.isAdmin || false, _isBeta: data.isBeta || false, _acceptedTos: data.acceptedTos || false };
   showApp();
   return true;
 }
@@ -3639,9 +5795,10 @@ async function checkExistingSession() {
   }
 
   if (data.ok) {
-    currentUser = { userId: data.userId, username: data.username, first_name: data.firstName, photo_url: data.photoUrl || null };
+    currentUser = { userId: data.userId, userIdStr: data.userIdStr || String(data.userId), username: data.username, first_name: data.firstName, photo_url: data.photoUrl || null, _isAdmin: data.isAdmin || false, _isBeta: data.isBeta || false, _acceptedTos: data.acceptedTos || false, _needsTelegramLink: data.needsTelegramLink === true };
     if (data.planId) currentUser._plan = { planId: data.planId, planName: data.planName, planIcon: data.planIcon };
     showApp();
+    if (currentUser._needsTelegramLink) { try { showTelegramLinkBanner(); } catch (e) {} }
   } else {
     // Token expired (bot restarted / session wiped)
     authToken = null;
@@ -3711,10 +5868,10 @@ async function startBotAuth() {
         '<div style="font-size:1.75rem;margin-bottom:10px">' + IC.phone + '</div>' +
         '<p style="color:var(--text-secondary);font-size:.9rem;margin-bottom:4px;font-weight:500">' + instrLabel + '</p>' +
         '<div style="display:flex;align-items:center;gap:8px;justify-content:center;margin:12px 0 16px">' +
-          '<code id="auth-code-text" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:8px 14px;font-size:.85rem;font-family:JetBrains Mono,monospace;color:#7dd3fc;letter-spacing:.5px;user-select:all;cursor:pointer" onclick="copyAuthCode()" title="Click to copy">' + escHtml(authCmd) + '</code>' +
+          '<code id="auth-code-text" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:8px 14px;font-size:.85rem;font-family:JetBrains Mono,monospace;color:var(--primary-light);letter-spacing:.5px;user-select:all;cursor:pointer" onclick="copyAuthCode()" title="Click to copy">' + escHtml(authCmd) + '</code>' +
           '<button id="auth-copy-btn" onclick="copyAuthCode()" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:8px;cursor:pointer;color:var(--text-secondary);display:flex;align-items:center" title="Copy">' + IC.clipboard + '</button>' +
         '</div>' +
-        '<a href="' + escHtml(data.botLink) + '" target="_blank" style="display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 28px;background:linear-gradient(135deg,#2AABEE,#229ED9);color:#fff;border-radius:8px;font-size:.9375rem;font-weight:600;text-decoration:none;margin-bottom:8px;min-width:200px;box-shadow:0 2px 12px rgba(42,171,238,.3)">' + openLabel + '</a>' +
+        '<a href="' + escHtml(data.botLink) + '" target="_blank" style="display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 28px;background:linear-gradient(in oklab 135deg,#2AABEE,#229ED9);color:#fff;border-radius:8px;font-size:.9375rem;font-weight:600;text-decoration:none;margin-bottom:8px;min-width:200px;box-shadow:0 2px 12px rgba(42,171,238,.3)">' + openLabel + '</a>' +
         '<p style="color:var(--text-muted);font-size:.7rem;margin:8px 0 12px">' + autoLabel + '</p>' +
         '<button onclick="cancelBotAuth()" style="background:none;border:none;color:var(--text-muted);font-size:.8125rem;cursor:pointer;text-decoration:underline">' + cancelLabel + '</button>' +
       '</div>';
@@ -3774,6 +5931,7 @@ checkExistingSession();
 const pageLoadFns = {
   overview:    () => loadOverview(),
   analytics:   () => loadAnalytics(),
+  health:      () => loadHealthPage(),
   persona:     () => loadPersona(),
   knowledge:   () => loadKnowledge(),
   capabilities:() => initCapabilities(),
@@ -3787,9 +5945,20 @@ const pageLoadFns = {
   network:     () => loadNetworkMap(),
   builder:     () => initFlowBuilder(),
   marketplace: () => loadMarketplace(),
+  skills:      () => loadSkillsPage(),
+  'mcp-servers': () => loadMCPServersPage(),
   assistant:   () => loadAssistantPage(),
-  guide:       () => Promise.resolve(),
-  wallets:     () => loadWalletsPage(),
+  guide:         () => loadGuidePage(),
+  notifications: () => loadNotificationsPage(),
+  wallets:       () => loadWalletsPage(),
+  'admin-agents':() => loadAdminAgentsPage(),
+  'admin-skills':() => loadAdminSkillsPage(),
+  'admin-cleanup':() => loadAdminCleanupPage(),
+  'bugs':        () => loadBugDashboard(),
+  'terms':       () => loadTermsPage(),
+  'privacy':     () => loadPrivacyPage(),
+  'tester-hub':  () => loadTesterHub(),
+  crews:         () => loadCrewsPage(),
 };
 
 // Stub functions for pages that don't have dedicated load logic yet
@@ -3809,9 +5978,39 @@ function loadOverview() {
     }
     var greetEl = document.getElementById('overview-greeting-text');
     if (greetEl && name) {
-      greetEl.textContent = greeting + ', ' + name;
+      greetEl.innerHTML = greeting + ', <span class="grad">' + escHtml(name) + '</span>';
       greetEl.removeAttribute('data-en');
       greetEl.removeAttribute('data-ru');
+    }
+    // Live eyebrow above the greeting + extended subtitle ("N агентов
+    // активны…"). Both inserted once per page-load.
+    var headerL = greetEl ? greetEl.parentElement : null;
+    if (headerL && !headerL.querySelector('.eyebrow')) {
+      var eb = document.createElement('span');
+      eb.className = 'eyebrow';
+      var months = currentLang === 'ru'
+        ? ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря']
+        : ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      var now = new Date();
+      eb.textContent = 'Live · ' + now.getDate() + ' ' + months[now.getMonth()] + ' ' + now.getFullYear();
+      eb.style.cssText = 'margin-bottom:14px;display:inline-flex';
+      headerL.insertBefore(eb, headerL.firstChild);
+    }
+    // Extend subtitle with live stats once /api/stats/me resolves.
+    var subEl = headerL ? headerL.querySelector('.page-subtitle') : null;
+    if (subEl && !subEl.dataset.stretched) {
+      apiRequest('GET', '/api/stats/me').then(function(d) {
+        if (!d || !d.ok) return;
+        var active = d.agentsActive || 0;
+        var avg = d.avgResponseSec || d.avgResponse || null;
+        var ru = currentLang === 'ru';
+        var tail = ru
+          ? (active + ' агент' + (active === 1 ? '' : (active < 5 ? 'а' : 'ов')) + ' активн' + (active === 1 ? 'ы' : 'ы'))
+          : (active + ' agent' + (active === 1 ? '' : 's') + ' active');
+        if (avg) tail += ru ? ', среднее время отклика ' + avg.toFixed(1) + 'с' : ', avg response ' + avg.toFixed(1) + 's';
+        subEl.textContent = subEl.textContent.replace(/[.·]+\s*$/, '').trim() + '. ' + tail + '.';
+        subEl.dataset.stretched = '1';
+      }).catch(function(){});
     }
   }
 }
@@ -4090,7 +6289,7 @@ function renderCapabilities() {
     <div class="capability-item" data-id="${cap.id}">
       <div class="capability-header" onclick="toggleCapability('${cap.id}')">
         <div class="capability-info">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="capability-chevron">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="capability-chevron" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="9 18 15 12 9 6"/>
           </svg>
           <span class="capability-name">${currentLang === 'ru' ? cap.nameRu : cap.name}</span>
@@ -4359,11 +6558,19 @@ function renderExtensions() {
     }));
   }
 
-  // Update counts
+  // Update counts (show real numbers, hide badges when zero)
   const installed = baseData.filter(e => e.installed);
   const updates = baseData.filter(e => e.installed && e.hasUpdate);
-  const instCount = document.getElementById('installed-count');
-  if (instCount) instCount.textContent = installed.length;
+  const marketplace = baseData.filter(e => !e.installed);
+  function _setCount(id, n) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (n > 0) { el.textContent = n; el.style.display = ''; }
+    else { el.style.display = 'none'; }
+  }
+  _setCount('installed-count', installed.length);
+  _setCount('marketplace-count', marketplace.length);
+  _setCount('updates-count', updates.length);
 
   let filtered = baseData;
 
@@ -4390,7 +6597,7 @@ function renderExtensions() {
     container.innerHTML = `
       <div class="empty-state">
         <div class="empty-icon">
-          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 2l9 4.9V17L12 22l-9-4.9V7z"/>
           </svg>
         </div>
@@ -4641,6 +6848,13 @@ async function saveTelegramSettings() {
     chatPolicies: _chatPolicies,
   };
   await apiRequest('POST', '/api/settings', { key: 'telegram_settings', value: tg });
+  // Also save to agent's trigger_config so runtime picks it up
+  if (_detailAgentId) {
+    await apiRequest('POST', '/api/agents/' + _detailAgentId + '/config', {
+      groupPolicy: tg.groupMode || 'allowlist',
+      chatPolicies: tg.chatPolicies || {},
+    });
+  }
   showNotification(currentLang === 'ru' ? 'Настройки Telegram сохранены' : 'Telegram settings saved', 'success');
 }
 async function loadTelegramSettings() {
@@ -4665,7 +6879,7 @@ async function loadTelegramSettings() {
 function renderChatPolicies() {
   var list = document.getElementById('chat-policies-list');
   if (!list) return;
-  var modeLabels = { active: '🟢 Active', open: '🔵 Open', 'mention-only': '🟡 Mention', disabled: '🔴 Off' };
+  var modeLabels = { active: IC.dot_green + ' Active', open: IC.dot_blue + ' Open', 'mention-only': IC.dot_pause + ' Mention', disabled: IC.dot_red + ' Off' };
   list.innerHTML = Object.keys(_chatPolicies).length === 0
     ? '<div style="color:var(--text-muted);font-size:12px">' + (currentLang === 'ru' ? 'Нет per-chat настроек. Агент сам добавит через set_chat_policy()' : 'No per-chat overrides. Agent manages via set_chat_policy()') + '</div>'
     : Object.entries(_chatPolicies).map(function(e) {
@@ -4903,10 +7117,17 @@ function onAIProviderChange() {
   }
 }
 
+// Cached user-level mask (e.g. "AIzaSy…HAG4"). Set by loadAIKey, read by agent
+// detail "AI" tab so the input shows a recognisable mask instead of generic bullets.
+let _aiKeyMaskUser = '';
+
 async function loadAIKey() {
   try {
     const data = await apiRequest('GET', '/api/settings');
     if (!data.ok || !data.settings) return;
+    if (data.settings.user_variables_masked && data.settings.user_variables_masked.AI_API_KEY) {
+      _aiKeyMaskUser = data.settings.user_variables_masked.AI_API_KEY;
+    }
     const uv = data.settings.user_variables;
     if (!uv) return;
     const vars = typeof uv === 'string' ? JSON.parse(uv) : uv;
@@ -4925,7 +7146,16 @@ async function loadAIKey() {
     const input = document.getElementById('ai-api-key-input');
     if (input && hasKey) {
       input.value = '';
-      input.placeholder = vars.AI_API_KEY.slice(0, 6) + '...' + vars.AI_API_KEY.slice(-4);
+      // Бэкенд даёт безопасную маску в user_variables_masked (например "sk-pro…wxyz").
+      // Фоллбек на дефолтный placeholder если масок нет или это legacy plain-text без маски.
+      const mask = data.settings.user_variables_masked && data.settings.user_variables_masked.AI_API_KEY;
+      if (mask) {
+        input.placeholder = mask;
+      } else if (typeof vars.AI_API_KEY === 'string' && !vars.AI_API_KEY.startsWith('enc:') && vars.AI_API_KEY.length > 10) {
+        input.placeholder = vars.AI_API_KEY.slice(0, 6) + '…' + vars.AI_API_KEY.slice(-4);
+      } else {
+        input.placeholder = currentLang === 'ru' ? '•••••••• (ключ сохранён)' : '•••••••• (key saved)';
+      }
     }
   } catch {}
 }
@@ -5010,12 +7240,41 @@ document.addEventListener('click', (e) => {
 
 // ===== INITIALIZE =====
 document.addEventListener('DOMContentLoaded', () => {
-  // Check if already logged in (for demo)
-  // simulateLogin();
+  // Route from URL path: /studio/profile → navigateTo('profile')
+  // /studio/agents/201 → open agent 201
+  // /studio/agents/201/chats → open agent 201 on chats tab
+  var path = window.location.pathname.replace(/\/$/, '');
+  var agentMatch = path.match(/\/studio\/agents\/(\d+)(?:\/(\w+))?/);
+  if (agentMatch) {
+    var _routeAgentId = parseInt(agentMatch[1]);
+    var _routeTab = agentMatch[2] || 'soul';
+    // Direct open — no intermediate navigation
+    setTimeout(async function() {
+      if (!authToken) return;
+      await openAgentDetail(_routeAgentId);
+      if (_routeTab !== 'soul') switchSettingsTab(_routeTab);
+    }, 300);
+  } else {
+    var match = path.match(/\/studio\/(\w+)/);
+    if (match && match[1]) {
+      setTimeout(function() { if (authToken) navigateTo(match[1]); }, 500);
+    }
+  }
 });
 
 // ===== NAVIGATION HELPER =====
+// Page name aliases (multiple names → same page)
+const _pageAliases = { 'agents': 'operations', 'my-agents': 'operations' };
+
 function navigateTo(pageName) {
+  // Resolve aliases
+  pageName = _pageAliases[pageName] || pageName;
+  // Block beta-only pages for non-beta users
+  var _betaPages = ['builder', 'wallets'];
+  if (_betaPages.indexOf(pageName) >= 0 && currentUser && !currentUser._isBeta && !currentUser._isAdmin) {
+    toast(currentLang === 'ru' ? 'Доступно только для бета-тестеров. Используйте /beta в боте.' : 'Beta testers only. Use /beta in the bot.', 'warning');
+    return;
+  }
   closePlansModal();
   document.querySelectorAll('.nav-item').forEach(nav => nav.classList.remove('active'));
   const navEl = document.querySelector(`.nav-item[data-page="${pageName}"]`);
@@ -5030,6 +7289,13 @@ function navigateTo(pageName) {
     pageEl.classList.add('active');
   }
 
+  // Restore page-header if leaving bug dashboard (it hides it)
+  // Restore page-header visibility (some custom pages may hide it)
+  if (pageName !== 'bugs') {
+    var _ph = document.querySelector('.page-header');
+    if (_ph) _ph.style.display = '';
+  }
+
   if (authToken && pageLoadFns[pageName]) {
     var _result = pageLoadFns[pageName]();
     if (_result && typeof _result.catch === 'function') _result.catch(console.error);
@@ -5040,6 +7306,15 @@ function navigateTo(pageName) {
     loadSubscriptionGlobal();
   }
 
+  // Update URL for bookmarking/sharing
+  if (history.replaceState) {
+    history.replaceState(null, '', '/studio/' + pageName);
+  }
+  // Reset agent URL when leaving agents page
+  if (pageName !== 'agents' && typeof _detailAgentId !== 'undefined' && _detailAgentId) {
+    // keep as-is; agent URL set in switchSettingsTab
+  }
+
   // Track getting-started steps
   if (pageName === 'settings') markGSStep('ai');
   if (pageName === 'marketplace') markGSStep('marketplace');
@@ -5047,61 +7322,182 @@ function navigateTo(pageName) {
 }
 
 // ===== ANALYTICS PAGE =====
-let _analyticsLeaderboardSort = 'executions'; // 'executions' | 'success' | 'avgtime'
+var _analyticsDays = 7;
+
+// ─── Health Dashboard ─────────────────────────────────────────────────────
+async function loadHealthPage() {
+  const isRu = currentLang === 'ru';
+  const list = document.getElementById('health-agents-list');
+  const summary = document.getElementById('health-summary');
+  if (!list) return;
+  showGenAuraSkeleton(list, 5);
+  if (summary) summary.innerHTML = '';
+  let r;
+  try { r = await apiRequest('GET', '/api/health/agents'); }
+  catch (e) { list.innerHTML = '<div style="color:var(--danger);padding:20px">' + escHtml(String(e)) + '</div>'; return; }
+  if (!r.ok) { list.innerHTML = '<div style="color:var(--danger);padding:20px">' + escHtml(r.error || 'error') + '</div>'; return; }
+  const agents = r.agents || [];
+  if (agents.length === 0) {
+    list.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:40px">' + (isRu ? 'Нет агентов' : 'No agents yet') + '</div>';
+    return;
+  }
+  // Summary cards
+  const totalAgents = agents.length;
+  const activeCount = agents.filter(a => a.is_active).length;
+  const pausedCount = agents.filter(a => !a.is_active && a.paused_reason).length;
+  const totalSpendMtd = agents.reduce((s, a) => s + (a.spend_mtd_usd || 0), 0);
+  const totalErrs24h = agents.reduce((s, a) => s + (a.error_count_24h || 0), 0);
+  if (summary) {
+    summary.innerHTML = [
+      ['🤖', isRu ? 'Агентов' : 'Agents', totalAgents, ''],
+      ['🟢', isRu ? 'Активны' : 'Active', activeCount, ''],
+      ['⏸', isRu ? 'На паузе' : 'Paused', pausedCount, pausedCount > 0 ? '#eab308' : ''],
+      ['⚠', isRu ? 'Ошибок 24ч' : 'Errors 24h', totalErrs24h, totalErrs24h > 0 ? '#ef4444' : ''],
+      ['💸', isRu ? 'Расход MTD' : 'Spend MTD', '$' + totalSpendMtd.toFixed(2), ''],
+    ].map(([icon, label, val, color]) =>
+      '<div style="padding:14px 16px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px">' +
+        '<div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">' + icon + ' ' + label + '</div>' +
+        '<div style="font-size:20px;font-weight:600' + (color ? ';color:' + color : '') + '">' + val + '</div>' +
+      '</div>',
+    ).join('');
+  }
+  // Per-agent rows — sortable by error_rate, then last_tick_age
+  agents.sort((a, b) => {
+    if ((b.error_rate_24h || 0) !== (a.error_rate_24h || 0)) return (b.error_rate_24h || 0) - (a.error_rate_24h || 0);
+    return (a.last_tick_age_sec ?? Infinity) - (b.last_tick_age_sec ?? Infinity);
+  });
+  const fmtAge = (s) => {
+    if (s == null) return isRu ? 'нет данных' : 'no data';
+    if (s < 60) return s + 's';
+    if (s < 3600) return Math.floor(s / 60) + 'min';
+    if (s < 86400) return Math.floor(s / 3600) + 'h';
+    return Math.floor(s / 86400) + 'd';
+  };
+  list.innerHTML = agents.map(a => {
+    const errPct = Math.round((a.error_rate_24h || 0) * 100);
+    const errColor = errPct > 30 ? '#ef4444' : errPct > 10 ? '#eab308' : '#22c55e';
+    const statusBadge = a.paused_reason
+      ? '<span style="font-size:11px;padding:2px 8px;background:rgba(234,179,8,0.15);color:#eab308;border-radius:10px">⏸ ' + escHtml(a.paused_reason) + '</span>'
+      : a.is_active
+        ? '<span style="font-size:11px;padding:2px 8px;background:rgba(34,197,94,0.15);color:#22c55e;border-radius:10px">🟢 active</span>'
+        : '<span style="font-size:11px;padding:2px 8px;background:rgba(148,163,184,0.15);color:#94a3b8;border-radius:10px">⚪ inactive</span>';
+    const ageStr = fmtAge(a.last_tick_age_sec);
+    const ageColor = a.last_tick_age_sec == null ? 'var(--text-muted)'
+      : a.last_tick_age_sec < 600 ? '#22c55e'
+      : a.last_tick_age_sec < 3600 ? '#eab308'
+      : '#94a3b8';
+    return '<div style="padding:14px 16px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr;gap:14px;align-items:center">' +
+      '<div>' +
+        '<div style="font-weight:600;font-size:14px"><a href="/studio/agent/' + a.id + '" style="color:var(--text-primary);text-decoration:none">#' + a.id + ' ' + escHtml(a.name) + '</a></div>' +
+        '<div style="font-size:11px;color:var(--text-muted);margin-top:3px">' + escHtml(a.role || 'worker') + (a.provider ? ' · ' + escHtml(a.provider) : '') + (a.model ? ' / ' + escHtml(a.model) : '') + '</div>' +
+      '</div>' +
+      '<div>' + statusBadge + '</div>' +
+      '<div style="font-size:12px"><div style="color:var(--text-muted);font-size:10px">' + (isRu ? 'последняя активность' : 'last activity') + '</div><div style="color:' + ageColor + ';font-weight:500">' + ageStr + '</div></div>' +
+      '<div style="font-size:12px"><div style="color:var(--text-muted);font-size:10px">' + (isRu ? 'ошибки 24ч' : 'errors 24h') + '</div><div style="color:' + errColor + ';font-weight:500">' + a.error_count_24h + ' / ' + a.tick_count_24h + ' (' + errPct + '%)</div></div>' +
+      '<div style="font-size:12px"><div style="color:var(--text-muted);font-size:10px">' + (isRu ? 'расход' : 'spend') + '</div><div style="font-weight:500">$' + (a.spend_mtd_usd || 0).toFixed(3) + ' <span style="color:var(--text-muted);font-size:10px">MTD</span></div></div>' +
+    '</div>';
+  }).join('');
+}
 
 async function loadAnalytics() {
-  const [statsData, exData, agentsData] = await Promise.all([
-    apiRequest('GET', '/api/stats/me'),
-    apiRequest('GET', '/api/executions?limit=500'),
-    apiRequest('GET', '/api/agents'),
-  ]);
+  var container = document.getElementById('analytics-page');
+  if (!container) return;
+  var isRu = currentLang === 'ru';
 
-  // Fill stat cards
-  const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-  if (statsData.ok) {
-    setEl('an-total-runs', statsData.totalRuns ?? '—');
-    setEl('an-success-rate', (statsData.successRate != null ? statsData.successRate + '%' : '—'));
-    setEl('an-last24h', statsData.last24hRuns ?? '—');
-    setEl('an-active-agents', statsData.agentsActive ?? '—');
-  }
-
-  const execs = (exData.ok && exData.executions) || [];
-  const agents = (agentsData.ok && agentsData.agents) || [];
-
-  // --- Bar chart: Executions over last 7 days ---
-  drawBarChart(execs);
-
-  // --- Donut chart: Success rate ---
-  drawDonutChart(execs);
-
-  // --- Agent leaderboard ---
-  renderLeaderboard(execs, agents);
-
-  // --- Execution history table ---
-  const tableEl = document.getElementById('analytics-executions-table');
-  if (!tableEl) return;
-  if (!execs.length) {
-    tableEl.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-muted)">' + t('no_executions') + '</div>';
+  // Fetch data from new API
+  var data;
+  try {
+    data = await apiRequest('GET', '/api/analytics?days=' + _analyticsDays);
+    if (!data.ok) throw new Error(data.error || 'Failed');
+  } catch(e) {
+    // Fallback: show error
+    var pc = container.querySelector('.page-content');
+    if (pc) pc.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted)">' + escHtml(e.message) + '</div>';
     return;
   }
 
-  const statusIcon = s => s === 'success' ? IC.check : s === 'running' ? IC.refresh : s === 'failed' ? IC.x : IC.hourglass;
-  tableEl.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:.85rem">' +
-    '<thead><tr style="border-bottom:1px solid var(--border);color:var(--text-muted)">' +
-    '<th style="text-align:left;padding:.6rem 1rem">Agent</th>' +
-    '<th style="text-align:left;padding:.6rem .5rem">Status</th>' +
-    '<th style="text-align:left;padding:.6rem .5rem">Duration</th>' +
-    '<th style="text-align:left;padding:.6rem .5rem">Time</th>' +
-    '</tr></thead><tbody>' +
-    execs.slice(0, 50).map(function(ex) {
-      return '<tr style="border-bottom:1px solid var(--border-subtle)">' +
-        '<td style="padding:.5rem 1rem;font-weight:500">#' + ex.agentId + '</td>' +
-        '<td style="padding:.5rem .5rem">' + statusIcon(ex.status) + ' ' + ex.status + '</td>' +
-        '<td style="padding:.5rem .5rem">' + (ex.durationMs ? (ex.durationMs / 1000).toFixed(1) + 's' : '—') + '</td>' +
-        '<td style="padding:.5rem .5rem;color:var(--text-muted)">' + new Date(ex.startedAt || ex.createdAt).toLocaleString() + '</td>' +
-        '</tr>';
-    }).join('') +
-    '</tbody></table>';
+  var s = data.summary || {};
+  var pc = container.querySelector('.page-content');
+  if (!pc) return;
+
+  var html = '';
+
+  // Period selector
+  html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:20px">';
+  [7, 14, 30].forEach(function(d) {
+    var active = _analyticsDays === d;
+    html += '<button onclick="_analyticsDays=' + d + ';loadAnalytics()" style="padding:6px 16px;border-radius:20px;border:1px solid ' + (active ? 'var(--primary)' : 'var(--border)') + ';background:' + (active ? 'var(--accent-dim)' : 'var(--bg-primary)') + ';color:' + (active ? 'var(--primary)' : 'var(--text-muted)') + ';font-size:.78rem;font-weight:600;cursor:pointer;transition:all .15s">' + d + (isRu ? ' дн' : 'd') + '</button>';
+  });
+  html += '</div>';
+
+  // Summary cards (2 rows of 4)
+  var cards = [
+    { label: isRu ? 'Запуски' : 'Runs', value: s.totalRuns || 0, color: 'var(--primary)' },
+    { label: isRu ? 'Успешность' : 'Success', value: (s.successRate || 0) + '%', color: '#22c55e' },
+    { label: isRu ? 'Ошибки' : 'Failed', value: s.totalFailed || 0, color: '#ef4444' },
+    { label: isRu ? 'Ср. время' : 'Avg Time', value: data.daily.length ? (data.daily.reduce(function(a,d){return a+d.avgMs},0)/data.daily.length/1000).toFixed(1)+'s' : '—', color: '#f59e0b' },
+    { label: isRu ? 'Токены' : 'Tokens', value: s.totalTokens > 1000 ? Math.round(s.totalTokens/1000)+'K' : (s.totalTokens || 0), color: '#8b5cf6' },
+    { label: isRu ? 'Агентов' : 'Agents', value: (data.agents || []).length, color: '#06b6d4' },
+    { label: isRu ? 'Лидер' : 'Top Agent', value: (data.agents && data.agents[0]) ? data.agents[0].name.slice(0,12) : '—', color: '#ec4899' },
+    { label: isRu ? 'Период' : 'Period', value: _analyticsDays + (isRu ? ' дн' : ' days'), color: 'var(--text-muted)' },
+  ];
+  html += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px">';
+  cards.forEach(function(c) {
+    html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:14px 16px">' +
+      '<div style="font-size:.68rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">' + c.label + '</div>' +
+      '<div style="font-size:1.3rem;font-weight:700;color:' + c.color + '">' + c.value + '</div></div>';
+  });
+  html += '</div>';
+
+  // Charts row (bar + donut)
+  html += '<div style="display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:20px">';
+  // Bar chart
+  html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:16px">' +
+    '<div style="font-size:.82rem;font-weight:600;color:var(--text-primary);margin-bottom:10px">' + (isRu ? 'Запуски по дням' : 'Daily Runs') + '</div>' +
+    '<canvas id="an-bar-chart" style="width:100%"></canvas></div>';
+  // Donut
+  html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:16px;display:flex;flex-direction:column;align-items:center">' +
+    '<div style="font-size:.82rem;font-weight:600;color:var(--text-primary);margin-bottom:10px;align-self:flex-start">' + (isRu ? 'Распределение' : 'Distribution') + '</div>' +
+    '<canvas id="an-donut-chart"></canvas>' +
+    '<div id="an-donut-legend" style="margin-top:10px;display:flex;gap:12px;flex-wrap:wrap;justify-content:center"></div></div>';
+  html += '</div>';
+
+  // Heatmap
+  html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:20px">' +
+    '<div style="font-size:.82rem;font-weight:600;color:var(--text-primary);margin-bottom:12px">' + (isRu ? 'Активность по часам' : 'Activity Heatmap') + '</div>' +
+    '<div id="an-heatmap" style="overflow-x:auto"></div></div>';
+
+  // Agent leaderboard + Top errors
+  html += '<div style="display:grid;grid-template-columns:3fr 2fr;gap:16px;margin-bottom:20px">';
+  html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:16px">' +
+    '<div style="font-size:.82rem;font-weight:600;color:var(--text-primary);margin-bottom:10px">' + (isRu ? 'Рейтинг агентов' : 'Agent Ranking') + '</div>' +
+    '<div id="analytics-leaderboard"></div></div>';
+  html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:16px">' +
+    '<div style="font-size:.82rem;font-weight:600;color:var(--text-primary);margin-bottom:10px">' + (isRu ? 'Частые ошибки' : 'Top Errors') + '</div>' +
+    '<div id="an-top-errors"></div></div>';
+  html += '</div>';
+
+  pc.innerHTML = html;
+
+  // Render charts
+  drawBarChart(data.daily.map(function(d) { return { startedAt: d.day, status: 'success', _success: d.success, _failed: d.failed, _total: d.total }; }));
+
+  // Donut from summary
+  var donutExecs = [];
+  for (var i = 0; i < (s.totalSuccess||0); i++) donutExecs.push({status:'success'});
+  for (var j = 0; j < (s.totalFailed||0); j++) donutExecs.push({status:'failed'});
+  var other = (s.totalRuns||0) - (s.totalSuccess||0) - (s.totalFailed||0);
+  for (var k = 0; k < other; k++) donutExecs.push({status:'other'});
+  drawDonutChart(donutExecs);
+
+  // Heatmap
+  renderHeatmap(data.heatmap || []);
+
+  // Leaderboard
+  renderLeaderboard([], data.agents || []);
+
+  // Top errors
+  renderTopErrors(data.topErrors || []);
 }
 
 // ===== BAR CHART: Executions over last 7 days =====
@@ -5167,7 +7563,7 @@ function drawBarChart(execs) {
   }
 
   // Bars
-  var colors = { success: '#2dcc70', failed: '#e74c3c', other: '#0098EA' };
+  var colors = { success: '#2dcc70', failed: '#e74c3c', other: '#00a8ff' };
   for (var b = 0; b < 7; b++) {
     var day = days[b];
     var total = day.success + day.failed + day.other;
@@ -5241,7 +7637,7 @@ function drawDonutChart(execs) {
   var slices = [
     { label: currentLang === 'ru' ? 'Успешно' : 'Success', val: counts.success, color: '#2dcc70' },
     { label: currentLang === 'ru' ? 'Ошибки' : 'Failed', val: counts.failed, color: '#e74c3c' },
-    { label: currentLang === 'ru' ? 'Прочее' : 'Other', val: counts.other, color: '#0098EA' }
+    { label: currentLang === 'ru' ? 'Прочее' : 'Other', val: counts.other, color: '#00a8ff' }
   ];
 
   var cx = size / 2, cy = size / 2, outerR = 85, innerR = 55;
@@ -5299,83 +7695,82 @@ function drawDonutChart(execs) {
 function renderLeaderboard(execs, agents) {
   var el = document.getElementById('analytics-leaderboard');
   if (!el) return;
+  var isRu = currentLang === 'ru';
 
-  if (!execs.length) {
-    el.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-muted)">' + t('no_executions') + '</div>';
+  // agents is already aggregated from API
+  var rows = agents || [];
+  if (!rows.length) {
+    el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">' + (isRu ? 'Нет данных' : 'No data') + '</div>';
     return;
   }
 
-  // Build per-agent stats
-  var agentMap = {};
-  agents.forEach(function(a) {
-    agentMap[a.id] = a.name || ('Agent #' + a.id);
-  });
+  el.innerHTML = '<div style="display:flex;flex-direction:column;gap:6px">' +
+    rows.slice(0, 8).map(function(r, i) {
+      var pct = r.total > 0 ? Math.round(r.success / r.total * 100) : 0;
+      var barColor = pct >= 80 ? '#22c55e' : pct >= 50 ? '#f59e0b' : '#ef4444';
+      return '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg-secondary);border-radius:10px">' +
+        '<span style="width:22px;font-size:.75rem;font-weight:700;color:' + (i < 3 ? barColor : 'var(--text-muted)') + '">' + (i+1) + '</span>' +
+        '<span style="flex:1;font-size:.82rem;font-weight:500;color:var(--text-primary)">' + escHtml(r.name.slice(0,20)) + '</span>' +
+        '<span style="font-size:.72rem;color:var(--text-muted)">' + r.total + ' ' + (isRu ? 'зап.' : 'runs') + '</span>' +
+        '<span style="font-size:.72rem;color:' + barColor + ';font-weight:600;min-width:36px;text-align:right">' + pct + '%</span>' +
+        '<span style="font-size:.68rem;color:var(--text-muted);min-width:40px;text-align:right">' + (r.avgMs > 0 ? (r.avgMs/1000).toFixed(1)+'s' : '—') + '</span>' +
+      '</div>';
+    }).join('') + '</div>';
+}
 
-  var statsMap = {};
-  execs.forEach(function(ex) {
-    var aid = ex.agentId;
-    if (!statsMap[aid]) statsMap[aid] = { id: aid, name: agentMap[aid] || ('#' + aid), total: 0, success: 0, failed: 0, totalDuration: 0, durCount: 0 };
-    var s = statsMap[aid];
-    s.total++;
-    if (ex.status === 'success') s.success++;
-    if (ex.status === 'failed') s.failed++;
-    if (ex.durationMs) { s.totalDuration += ex.durationMs; s.durCount++; }
-  });
-
-  var rows = Object.values(statsMap);
-
-  // Sort
-  var sortKey = _analyticsLeaderboardSort;
-  if (sortKey === 'success') {
-    rows.sort(function(a, b) { return (b.total ? b.success / b.total : 0) - (a.total ? a.success / a.total : 0); });
-  } else if (sortKey === 'avgtime') {
-    rows.sort(function(a, b) { return (a.durCount ? a.totalDuration / a.durCount : 9e9) - (b.durCount ? b.totalDuration / b.durCount : 9e9); });
-  } else {
-    rows.sort(function(a, b) { return b.total - a.total; });
-  }
-
-  var maxTotal = rows.length ? rows[0].total : 1;
-  if (sortKey !== 'executions') maxTotal = rows.reduce(function(m, r) { return Math.max(m, r.total); }, 1);
-
+// ===== HEATMAP =====
+function renderHeatmap(heatData) {
+  var el = document.getElementById('an-heatmap');
+  if (!el) return;
   var isRu = currentLang === 'ru';
-  var tabs = [
-    { key: 'executions', label: isRu ? 'По запускам' : 'By Executions' },
-    { key: 'success', label: isRu ? 'По успешности' : 'By Success Rate' },
-    { key: 'avgtime', label: isRu ? 'По скорости' : 'By Avg Time' }
-  ];
+  var dayNames = isRu ? ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'] : ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-  var html = '<div class="leaderboard-tabs">';
-  tabs.forEach(function(tab) {
-    html += '<button class="leaderboard-tab' + (tab.key === sortKey ? ' active' : '') + '" onclick="_analyticsLeaderboardSort=\'' + tab.key + '\';loadAnalytics()">' + tab.label + '</button>';
+  // Build 7x24 grid
+  var grid = {};
+  var maxCount = 1;
+  heatData.forEach(function(h) {
+    var key = h.dow + ':' + h.hour;
+    grid[key] = h.count;
+    if (h.count > maxCount) maxCount = h.count;
   });
+
+  var html = '<div style="display:grid;grid-template-columns:40px repeat(24,1fr);gap:2px;font-size:.6rem">';
+  // Header row
+  html += '<div></div>';
+  for (var h = 0; h < 24; h++) {
+    html += '<div style="text-align:center;color:var(--text-muted);padding:2px 0">' + (h % 3 === 0 ? h + ':00' : '') + '</div>';
+  }
+  // Data rows
+  for (var d = 0; d < 7; d++) {
+    html += '<div style="color:var(--text-muted);display:flex;align-items:center;font-size:.65rem">' + dayNames[d] + '</div>';
+    for (var hh = 0; hh < 24; hh++) {
+      var count = grid[d + ':' + hh] || 0;
+      var intensity = count > 0 ? Math.max(0.15, count / maxCount) : 0;
+      var bg = count > 0 ? 'rgba(34,197,94,' + intensity.toFixed(2) + ')' : 'rgba(255,255,255,0.03)';
+      html += '<div style="aspect-ratio:1;border-radius:3px;background:' + bg + ';min-width:12px" title="' + dayNames[d] + ' ' + hh + ':00 — ' + count + ' runs"></div>';
+    }
+  }
   html += '</div>';
-
-  html += '<table class="leaderboard-table"><thead><tr>';
-  html += '<th>#</th>';
-  html += '<th>' + (isRu ? 'Агент' : 'Agent') + '</th>';
-  html += '<th>' + (isRu ? 'Запуски' : 'Runs') + '</th>';
-  html += '<th>' + (isRu ? 'Успех' : 'Success') + '</th>';
-  html += '<th>' + (isRu ? 'Ср. время' : 'Avg Time') + '</th>';
-  html += '</tr></thead><tbody>';
-
-  rows.slice(0, 10).forEach(function(r, i) {
-    var rankClass = i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : '';
-    var successPct = r.total ? Math.round((r.success / r.total) * 100) : 0;
-    var avgTime = r.durCount ? (r.totalDuration / r.durCount / 1000).toFixed(1) + 's' : '—';
-    var barPct = Math.round((r.total / maxTotal) * 100);
-    var barColor = successPct >= 80 ? '#2dcc70' : successPct >= 50 ? '#f5a623' : '#e74c3c';
-
-    html += '<tr>';
-    html += '<td><span class="leaderboard-rank ' + rankClass + '">' + (i + 1) + '</span></td>';
-    html += '<td style="font-weight:500">' + escHtml(r.name) + '</td>';
-    html += '<td>' + r.total + '<span class="leaderboard-bar-bg"><span class="leaderboard-bar-fill" style="width:' + barPct + '%;background:var(--primary)"></span></span></td>';
-    html += '<td><span style="color:' + barColor + '">' + successPct + '%</span> <span style="color:var(--text-muted);font-size:.75rem">(' + r.success + '/' + r.total + ')</span></td>';
-    html += '<td style="font-family:\'JetBrains Mono\',monospace;font-size:.8rem">' + avgTime + '</td>';
-    html += '</tr>';
-  });
-
-  html += '</tbody></table>';
   el.innerHTML = html;
+}
+
+// ===== TOP ERRORS =====
+function renderTopErrors(errors) {
+  var el = document.getElementById('an-top-errors');
+  if (!el) return;
+  var isRu = currentLang === 'ru';
+  if (!errors.length) {
+    el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">' + (isRu ? 'Нет ошибок' : 'No errors') + '</div>';
+    return;
+  }
+  el.innerHTML = errors.map(function(e) {
+    return '<div style="padding:10px 0;border-bottom:1px solid var(--border)">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">' +
+        '<span style="font-size:.72rem;padding:2px 8px;border-radius:4px;background:rgba(239,68,68,0.1);color:#ef4444;font-weight:600">x' + e.count + '</span>' +
+        '<span style="font-size:.65rem;color:var(--text-muted)">' + _timeAgo(e.last) + '</span>' +
+      '</div>' +
+      '<div style="font-size:.78rem;color:var(--text-secondary);word-break:break-word">' + escHtml(e.message) + '</div></div>';
+  }).join('');
 }
 
 // ===== PERSONA PAGE =====
@@ -5417,59 +7812,219 @@ async function savePersona() {
 // ===== KNOWLEDGE BASE PAGE =====
 let _knowledgeEntries = [];
 
+var _kbFilter = 'all';
+
 async function loadKnowledge() {
   const data = await apiRequest('GET', '/api/settings');
   _knowledgeEntries = (data.ok && data.settings && data.settings.knowledge_base) || [];
+  renderKnowledgeStats();
   renderKnowledge();
 }
 
-function renderKnowledge() {
-  const el = document.getElementById('knowledge-entries');
+function renderKnowledgeStats() {
+  var el = document.getElementById('kb-stats');
   if (!el) return;
-  if (!_knowledgeEntries.length) {
-    el.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-muted)">' + t('no_entries') + '</div>';
+  var total = _knowledgeEntries.length;
+  var totalChars = _knowledgeEntries.reduce(function(s, e) { return s + (e.content || '').length; }, 0);
+  var categories = {};
+  _knowledgeEntries.forEach(function(e) { var c = e.category || 'general'; categories[c] = (categories[c] || 0) + 1; });
+  var topCat = Object.entries(categories).sort(function(a, b) { return b[1] - a[1]; })[0];
+  var isRu = currentLang === 'ru';
+  el.innerHTML =
+    '<div class="stat-card"><div class="stat-value">' + total + '</div><div class="stat-label">' + (isRu ? 'Записей' : 'Entries') + '</div></div>' +
+    '<div class="stat-card"><div class="stat-value">' + (totalChars >= 1000 ? (totalChars / 1000).toFixed(1) + 'K' : totalChars) + '</div><div class="stat-label">' + (isRu ? 'Символов' : 'Characters') + '</div></div>' +
+    '<div class="stat-card"><div class="stat-value">' + Object.keys(categories).length + '</div><div class="stat-label">' + (isRu ? 'Категорий' : 'Categories') + '</div></div>' +
+    '<div class="stat-card"><div class="stat-value">' + (topCat ? topCat[0] : '-') + '</div><div class="stat-label">' + (isRu ? 'Топ категория' : 'Top Category') + '</div></div>';
+}
+
+function renderKnowledge() {
+  var el = document.getElementById('knowledge-entries');
+  if (!el) return;
+  var filtered = _kbFilter === 'all' ? _knowledgeEntries : _knowledgeEntries.filter(function(e) { return (e.category || 'general') === _kbFilter; });
+  if (!filtered.length) {
+    el.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-muted)">' + (currentLang === 'ru' ? 'Нет записей' : 'No entries') + '</div>';
     return;
   }
-  el.innerHTML = _knowledgeEntries.map((entry, i) => `
-    <div style="padding:.75rem 1rem;border-bottom:1px solid var(--border-subtle);display:flex;gap:.75rem;align-items:flex-start">
-      <div style="flex:1;min-width:0">
-        <div style="font-weight:600;margin-bottom:.25rem">${escHtml(entry.title || 'Entry ' + (i+1))}</div>
-        <div style="color:var(--text-muted);font-size:.83rem;white-space:pre-wrap;max-height:60px;overflow:hidden">${escHtml((entry.content || '').slice(0, 200))}</div>
-      </div>
-      <button class="btn btn-ghost btn-sm" style="flex-shrink:0;color:#dc3545" onclick="deleteKnowledgeEntry(${i})">${IC.x}</button>
-    </div>`).join('');
+  var catColors = { general: '#6366f1', api: '#f59e0b', trading: '#10b981', contacts: '#3b82f6', faq: '#8b5cf6', config: '#64748b' };
+  el.innerHTML = filtered.map(function(entry, i) {
+    var realIdx = _knowledgeEntries.indexOf(entry);
+    var cat = entry.category || 'general';
+    var color = catColors[cat] || '#6366f1';
+    var size = (entry.content || '').length;
+    var date = entry.createdAt ? new Date(entry.createdAt).toLocaleDateString() : '';
+    var source = entry.source === 'file' ? '<span style="font-size:.6rem;padding:2px 6px;border-radius:4px;background:rgba(59,130,246,0.1);color:#3b82f6;margin-left:4px">FILE</span>' : '';
+    return '<div style="padding:.75rem 1rem;border-bottom:1px solid var(--border-subtle);display:flex;gap:.75rem;align-items:flex-start;border-left:3px solid ' + color + '">' +
+      '<div style="flex:1;min-width:0">' +
+        '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">' +
+          '<span style="font-weight:600;font-size:.85rem">' + escHtml(entry.title || 'Entry ' + (i + 1)) + '</span>' +
+          '<span style="font-size:.6rem;padding:2px 6px;border-radius:4px;background:' + color + '20;color:' + color + '">' + cat + '</span>' +
+          source +
+        '</div>' +
+        '<div style="color:var(--text-muted);font-size:.78rem;white-space:pre-wrap;max-height:60px;overflow:hidden;line-height:1.4">' + escHtml((entry.content || '').slice(0, 300)) + '</div>' +
+        '<div style="display:flex;gap:12px;margin-top:4px;font-size:.68rem;color:var(--text-muted)">' +
+          '<span>' + size + ' chars</span>' +
+          (date ? '<span>' + date + '</span>' : '') +
+        '</div>' +
+      '</div>' +
+      '<div style="display:flex;gap:4px;flex-shrink:0">' +
+        '<button class="btn btn-ghost btn-sm" onclick="editKnowledgeEntry(' + realIdx + ')" title="Edit">' + IC.wrench + '</button>' +
+        '<button class="btn btn-ghost btn-sm" style="color:#dc3545" onclick="deleteKnowledgeEntry(' + realIdx + ')">' + IC.x + '</button>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function filterKnowledge(cat, btn) {
+  _kbFilter = cat;
+  document.querySelectorAll('.kb-filter').forEach(function(b) { b.classList.remove('active'); });
+  if (btn) btn.classList.add('active');
+  renderKnowledge();
 }
 
 function showAddKnowledge() {
-  const form = document.getElementById('knowledge-add-form');
+  var form = document.getElementById('knowledge-add-form');
   if (form) {
     form.style.display = 'block';
-    const titleEl = document.getElementById('kb-title');
-    if (titleEl) titleEl.focus();
+    var titleEl = document.getElementById('kb-title');
+    if (titleEl) { titleEl.value = ''; titleEl.focus(); }
+    var contentEl = document.getElementById('kb-content');
+    if (contentEl) contentEl.value = '';
+    var catEl = document.getElementById('kb-category');
+    if (catEl) catEl.value = 'general';
+    updateKbCharCount();
   }
 }
 
+function updateKbCharCount() {
+  var el = document.getElementById('kb-char-count');
+  var content = (document.getElementById('kb-content') || {}).value || '';
+  if (el) el.textContent = content.length + ' chars';
+}
+
+// Wire up char counter
+document.addEventListener('input', function(e) {
+  if (e.target && e.target.id === 'kb-content') updateKbCharCount();
+});
+
 async function saveKnowledgeEntry() {
   if (!authToken) { showNotification(t('login_first'), 'error'); return; }
-  const title = (document.getElementById('kb-title') || {}).value?.trim();
-  const content = (document.getElementById('kb-content') || {}).value?.trim();
+  var title = (document.getElementById('kb-title') || {}).value?.trim();
+  var content = (document.getElementById('kb-content') || {}).value?.trim();
+  var category = (document.getElementById('kb-category') || {}).value || 'general';
   if (!title || !content) {
-    showNotification(t('fill_fields'), 'error');
+    showNotification(currentLang === 'ru' ? 'Заполните все поля' : 'Fill all fields', 'error');
     return;
   }
 
-  _knowledgeEntries.push({ title, content, createdAt: new Date().toISOString() });
-  const data = await apiRequest('POST', '/api/settings', { settings: { knowledge_base: _knowledgeEntries } });
+  _knowledgeEntries.push({ title: title, content: content, category: category, createdAt: new Date().toISOString(), source: 'manual' });
+  var data = await apiRequest('POST', '/api/settings', { settings: { knowledge_base: _knowledgeEntries } });
   if (data.ok) {
     document.getElementById('kb-title').value = '';
     document.getElementById('kb-content').value = '';
     document.getElementById('knowledge-add-form').style.display = 'none';
+    renderKnowledgeStats();
     renderKnowledge();
-    showNotification(t('entry_added'), 'success');
+    showNotification(currentLang === 'ru' ? 'Запись добавлена' : 'Entry added', 'success');
   } else {
     _knowledgeEntries.pop();
     showNotification(data.error || 'Error', 'error');
   }
+}
+
+function editKnowledgeEntry(idx) {
+  var entry = _knowledgeEntries[idx];
+  if (!entry) return;
+  showAddKnowledge();
+  document.getElementById('kb-title').value = entry.title || '';
+  document.getElementById('kb-content').value = entry.content || '';
+  document.getElementById('kb-category').value = entry.category || 'general';
+  updateKbCharCount();
+  // Remove old entry (will be re-added on save)
+  _knowledgeEntries.splice(idx, 1);
+  renderKnowledge();
+}
+
+async function uploadKnowledgeFile(input) {
+  if (!input.files || !input.files[0]) return;
+  var file = input.files[0];
+  var maxSize = 512 * 1024; // 512KB
+  if (file.size > maxSize) {
+    showNotification(currentLang === 'ru' ? 'Файл слишком большой (макс 512KB)' : 'File too large (max 512KB)', 'error');
+    input.value = '';
+    return;
+  }
+
+  var reader = new FileReader();
+  reader.onload = async function(e) {
+    var text = e.target.result;
+    var title = file.name.replace(/\.[^.]+$/, '');
+    var ext = file.name.split('.').pop().toLowerCase();
+    var category = 'general';
+    if (ext === 'json') category = 'api';
+    if (ext === 'csv') category = 'config';
+
+    // Chunk large files (>4000 chars) into multiple entries
+    var CHUNK_SIZE = 4000;
+    if (text.length > CHUNK_SIZE) {
+      var chunks = [];
+      for (var i = 0; i < text.length; i += CHUNK_SIZE) {
+        chunks.push(text.slice(i, i + CHUNK_SIZE));
+      }
+      for (var c = 0; c < chunks.length; c++) {
+        _knowledgeEntries.push({
+          title: title + ' (part ' + (c + 1) + '/' + chunks.length + ')',
+          content: chunks[c],
+          category: category,
+          createdAt: new Date().toISOString(),
+          source: 'file',
+          filename: file.name,
+        });
+      }
+      showNotification((currentLang === 'ru' ? 'Файл разбит на ' : 'File split into ') + chunks.length + (currentLang === 'ru' ? ' частей' : ' chunks'), 'info');
+    } else {
+      _knowledgeEntries.push({ title: title, content: text, category: category, createdAt: new Date().toISOString(), source: 'file', filename: file.name });
+    }
+
+    var data = await apiRequest('POST', '/api/settings', { settings: { knowledge_base: _knowledgeEntries } });
+    if (data.ok) {
+      renderKnowledgeStats();
+      renderKnowledge();
+      showNotification(currentLang === 'ru' ? 'Файл загружен' : 'File uploaded', 'success');
+    } else {
+      showNotification(data.error || 'Error', 'error');
+    }
+    input.value = '';
+  };
+  reader.readAsText(file);
+}
+
+function searchKnowledge() {
+  var query = (document.getElementById('kb-search') || {}).value?.trim().toLowerCase();
+  var resultsEl = document.getElementById('kb-search-results');
+  if (!resultsEl) return;
+  if (!query || query.length < 2) { resultsEl.style.display = 'none'; return; }
+
+  var results = _knowledgeEntries.filter(function(e) {
+    return (e.title || '').toLowerCase().includes(query) || (e.content || '').toLowerCase().includes(query);
+  }).slice(0, 10);
+
+  if (results.length === 0) {
+    resultsEl.style.display = 'block';
+    resultsEl.innerHTML = '<div style="padding:.75rem 1rem;color:var(--text-muted);font-size:.82rem">' + (currentLang === 'ru' ? 'Ничего не найдено' : 'No results') + '</div>';
+    return;
+  }
+
+  resultsEl.style.display = 'block';
+  resultsEl.innerHTML = results.map(function(r) {
+    var idx = (r.content || '').toLowerCase().indexOf(query);
+    var snippet = idx >= 0 ? '...' + (r.content || '').slice(Math.max(0, idx - 40), idx + query.length + 80) + '...' : (r.content || '').slice(0, 120);
+    // Highlight match
+    snippet = escHtml(snippet).replace(new RegExp('(' + escHtml(query) + ')', 'gi'), '<mark style="background:#f59e0b40;padding:1px 2px;border-radius:2px">$1</mark>');
+    return '<div style="padding:.5rem 1rem;border-bottom:1px solid var(--border-subtle)">' +
+      '<div style="font-weight:600;font-size:.8rem">' + escHtml(r.title || '?') + '</div>' +
+      '<div style="font-size:.75rem;color:var(--text-muted);line-height:1.4">' + snippet + '</div>' +
+    '</div>';
+  }).join('');
 }
 
 async function deleteKnowledgeEntry(idx) {
@@ -5624,15 +8179,21 @@ async function loadProfile() {
   // User info from auth
   setEl('profile-name', [currentUser.first_name, currentUser.last_name].filter(Boolean).join(' ') || currentUser.first_name || '—');
   setEl('profile-username', currentUser.username ? '@' + currentUser.username : '—');
-  setEl('profile-id', currentUser.userId || currentUser.id || '—');
+  setEl('profile-id', currentUser.userIdStr || currentUser.userId || currentUser.id || '—');
 
-  // Avatar
-  if (currentUser.photo_url) {
-    const img = document.getElementById('profile-avatar');
-    if (img) { img.src = currentUser.photo_url; img.style.display = 'block'; }
-    const fb = document.getElementById('profile-avatar-fallback');
-    if (fb) fb.style.display = 'none';
-  }
+  // Avatar — try OIDC photo or TG avatar
+  (function() {
+    var img = document.getElementById('profile-avatar');
+    var fb = document.getElementById('profile-avatar-fallback');
+    if (!img) return;
+    var src = currentUser.photo_url || (authToken ? '/api/me/avatar?t=' + encodeURIComponent(authToken) : '');
+    if (src) {
+      img.src = src;
+      img.style.display = 'block';
+      img.onerror = function() { img.style.display = 'none'; if (fb) fb.style.display = ''; };
+      if (fb) fb.style.display = 'none';
+    }
+  })();
 
   // Balance + subscription in parallel
   const [balance, sub, stats] = await Promise.all([
@@ -5682,11 +8243,21 @@ function updateOverviewUsage(sub) {
   function setBar(labelId, barId, used, max) {
     var el = document.getElementById(labelId);
     var bar = document.getElementById(barId);
-    if (el) el.textContent = used + ' / ' + (max === -1 ? '∞' : max);
+    // Treat -1, null, undefined, Infinity, 0 (when used > 0) as "Unlimited".
+    var unlimited = (max === -1 || max == null || !isFinite(max));
+    if (el) el.textContent = (used || 0) + ' / ' + (unlimited ? '∞' : max);
     if (bar) {
-      if (max === -1) { bar.style.width = '100%'; bar.style.background = 'linear-gradient(90deg,#4ade80,#22d3ee)'; }
-      else if (max === 0) bar.style.width = '0%';
-      else bar.style.width = Math.min(100, (used / max) * 100) + '%';
+      // Drop any inline background so the CSS rule (.memory-progress green
+      // gradient) wins. Width 100% on unlimited = fully painted bar.
+      bar.style.background = '';
+      bar.classList.remove('warning');
+      if (unlimited)       bar.style.width = '100%';
+      else if (max === 0)  bar.style.width = '0%';
+      else {
+        var pct = Math.min(100, (used / max) * 100);
+        bar.style.width = pct + '%';
+        if (pct >= 90) bar.classList.add('warning');
+      }
     }
   }
   setBar('ov-agents-usage', 'ov-agents-bar', sub.agentsUsed || 0, sub.maxAgents);
@@ -5769,8 +8340,32 @@ function updateSidebarPlanBadge(sub) {
     }, 1000);
     return;
   }
+  // Plan pill keeps only the tier (◆ Unlimited / 🚀 Pro / 🆓 Free).
+  // Beta-tester role is rendered as a small uppercase caption ABOVE the
+  // plan pill — separate token so it survives plan upgrades/downgrades.
+  var isBeta = sub.isBeta || (currentUser && currentUser._isBeta);
   badge.innerHTML = planIcon(sub.planIcon) + ' ' + (sub.planName || 'Free');
   badge.className = 'user-tier plan-badge-' + (sub.planId || 'free');
+
+  // Render / remove the micro "Beta tester" caption.
+  var details = badge.parentElement;
+  var betaCaption = document.getElementById('user-beta-caption');
+  if (isBeta) {
+    if (!betaCaption) {
+      betaCaption = document.createElement('span');
+      betaCaption.id = 'user-beta-caption';
+      betaCaption.className = 'user-beta-caption';
+      betaCaption.textContent = currentLang === 'ru' ? 'Бета-тестер' : 'Beta tester';
+      details.insertBefore(betaCaption, badge);
+    } else {
+      betaCaption.textContent = currentLang === 'ru' ? 'Бета-тестер' : 'Beta tester';
+    }
+  } else if (betaCaption) {
+    betaCaption.remove();
+  }
+  // Remove the legacy standalone beta pill if a prior render created it.
+  var stale = document.getElementById('user-beta-badge');
+  if (stale) stale.remove();
 }
 
 // Plans modal
@@ -5854,7 +8449,7 @@ async function buyPlan(planId) {
     confirmText: currentLang === 'ru' ? 'Оплатить' : 'Pay Now',
     cancelText: currentLang === 'ru' ? 'Отмена' : 'Cancel',
     type: 'warning',
-    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>'
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>'
   });
   if (!confirmed) return;
 
@@ -5911,6 +8506,9 @@ async function loadWalletBalance() {
   const bal = parseFloat(data.balance_ton || 0);
   const balEl = document.getElementById('wallet-balance');
   if (balEl) balEl.innerHTML = bal.toFixed(2) + ' <span class="wallet-currency">TON</span>';
+  // Update topbar balance
+  const topBal = document.getElementById('topbar-ton-balance');
+  if (topBal) topBal.textContent = bal.toFixed(2);
 
   // Total earned
   const earned = parseFloat(data.total_earned || 0);
@@ -6110,14 +8708,25 @@ async function submitWalletLink() {
   await saveWalletAddress(addr, null, 'manual');
 }
 
-async function saveWalletAddress(address, walletName, connectedVia) {
+async function saveWalletAddress(address, walletName, connectedVia, silent) {
   try {
+    // If the address is already saved AND auto-triggered (silent), skip
+    // the toast — TonConnect re-fires onStatusChange on session restore
+    // every time the user opens the wallet page; we only want to notify
+    // on a NEW link, not on auto-reconnect.
+    var alreadyLinked = walletData && walletData.wallet_address === address;
+    if (alreadyLinked && silent) {
+      showConnectedWallet(address, walletName || '', connectedVia || 'manual');
+      return;
+    }
     const body = { address };
     if (walletName) body.wallet_name = walletName;
     if (connectedVia) body.connected_via = connectedVia;
     const data = await apiRequest('POST', '/api/wallet/link', body);
     if (data.ok) {
-      showNotification(currentLang === 'ru' ? 'Кошелёк привязан' : 'Wallet linked', 'success');
+      if (!alreadyLinked) {
+        showNotification(currentLang === 'ru' ? 'Кошелёк привязан' : 'Wallet linked', 'success');
+      }
       if (walletData) {
         walletData.wallet_address = address;
         walletData.wallet_name = walletName || null;
@@ -6179,7 +8788,10 @@ function initTonConnect() {
         const addr = wallet.account.address;
         const friendly = _rawToFriendly(addr);
         const appName = wallet.device && wallet.device.appName ? wallet.device.appName : 'TON Connect';
-        saveWalletAddress(friendly, appName, 'tonconnect');
+        // silent=true → suppress toast if it's just an auto-reconnect of
+        // an already-saved address (TonConnect fires onStatusChange on
+        // every page load when a session exists).
+        saveWalletAddress(friendly, appName, 'tonconnect', true);
       }
     });
   } catch (e) {
@@ -6578,7 +9190,7 @@ function buildFlowPalette() {
   html += '<div class="palette-cat-header" onclick="togglePaletteCat(this)" style="border-bottom:1px solid rgba(255,255,255,0.06)">';
   html += '<span class="cat-dot" style="background:#60a5fa"></span>';
   html += '<span>' + IC.book + ' ' + (ru ? 'Инструкция' : 'Guide') + '</span>';
-  html += '<svg class="cat-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>';
+  html += '<svg class="cat-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
   html += '</div>';
   html += '<div class="palette-nodes" style="padding:8px 12px;font-size:0.72rem;color:var(--text-secondary);line-height:1.5">';
   html += ru
@@ -6607,7 +9219,7 @@ function buildFlowPalette() {
     html += '<div class="palette-cat-header" onclick="togglePaletteCat(this)">';
     html += '<span class="cat-dot" style="background:' + meta.color + '"></span>';
     html += '<span>' + (ru ? meta.ru : meta.en) + '</span>';
-    html += '<svg class="cat-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>';
+    html += '<svg class="cat-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
     html += '</div>';
     html += '<div class="palette-nodes">';
     for (const { type, def } of nodes) {
@@ -7008,7 +9620,7 @@ function showAtlasDeployStep() {
       '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:#94a3b8">' +
       '<span>' + IC.wrench + ' ' + d.nodeCount + ' блоков</span><span>' + IC.link + ' ' + d.edgeCount + ' связей</span></div>' +
       '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">' +
-      d.caps.map(function(c) { return '<span style="background:rgba(125,211,252,0.12);color:#7dd3fc;padding:3px 10px;border-radius:12px;font-size:12px">' + escHtml(c) + '</span>'; }).join('') +
+      d.caps.map(function(c) { return '<span style="background:var(--accent-dim);color:var(--primary-light);padding:3px 10px;border-radius:12px;font-size:12px">' + escHtml(c) + '</span>'; }).join('') +
       '</div>' +
       (d.warnings.length ? '<div style="margin-top:10px;font-size:12px;color:#fbbf24">' + d.warnings.map(escHtml).join('<br>') + '</div>' : '') +
       '</div>';
@@ -7095,7 +9707,7 @@ async function confirmAtlasDeploy() {
     showFlowToast(e.message, 'error');
   } finally {
     _deployAnimating = false;
-    if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10"/></svg> ' + t('deploy'); }
+    if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10"/></svg> ' + t('deploy'); }
   }
 }
 
@@ -8077,6 +10689,44 @@ function initFlowBuilder() {
 let _networkAnimId = null;
 let _networkNodes = [];
 let _networkEdges = [];
+let _networkCrews = []; // raw crews payload — drives the floating panel + edge generation
+let _networkHoverCrewId = null; // hover-highlight: set by panel mouseenter/leave
+
+function renderNetworkCrewsPanel(crews) {
+  const listEl = document.getElementById('ncrews-list');
+  const countEl = document.getElementById('ncrews-count');
+  if (countEl) countEl.textContent = (crews || []).length;
+  if (!listEl) return;
+  const isRu = currentLang === 'ru';
+  if (!crews || crews.length === 0) {
+    listEl.innerHTML = ''; // CSS :empty::after handles "no crews" placeholder
+    return;
+  }
+  listEl.innerHTML = crews.map(function(c) {
+    const dot = c._color || '#00a8ff';
+    const memberCount = (c.agent_ids || []).length;
+    const mgr = c.manager_agent_id ? ' · 👑 #' + c.manager_agent_id : '';
+    return '<div class="ncrews-item" data-crew-id="' + c.id + '" onmouseenter="_setNetworkCrewHover(' + c.id + ')" onmouseleave="_setNetworkCrewHover(null)">' +
+      '<div class="ncrews-item-name"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + dot + ';margin-right:6px;vertical-align:middle"></span>' + escHtml(c.name) + '</div>' +
+      '<div class="ncrews-item-meta">' + memberCount + ' ' + (isRu ? 'участн.' : 'members') + mgr + '</div>' +
+      '<div class="ncrews-item-actions">' +
+        '<button class="ncrews-run" onclick="event.stopPropagation();runCrew(' + c.id + ')">▶</button>' +
+        '<button onclick="event.stopPropagation();openEditCrewModal(' + c.id + ')" title="' + (isRu ? 'Изменить' : 'Edit') + '">✎</button>' +
+        '<button onclick="event.stopPropagation();viewCrewDetails(' + c.id + ')">' + (isRu ? 'детали' : 'info') + '</button>' +
+        '<button onclick="event.stopPropagation();deleteCrew(' + c.id + ')" style="color:var(--danger)">×</button>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function _setNetworkCrewHover(crewId) {
+  _networkHoverCrewId = crewId;
+  // Update item highlight in the panel
+  document.querySelectorAll('.ncrews-item').forEach(function(el) {
+    if (Number(el.dataset.crewId) === crewId) el.classList.add('ncrews-hover');
+    else el.classList.remove('ncrews-hover');
+  });
+}
 let _networkDragNode = null;
 let _networkDragOffset = { dx: 0, dy: 0 };
 let _networkMouse = { x: 0, y: 0 };
@@ -8114,6 +10764,986 @@ function _netScreenToWorld(sx, sy, W, H) {
   };
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// CREWS PAGE (Sprint 4 — multi-agent teams)
+// ═══════════════════════════════════════════════════════════════════════════
+async function loadCrewsPage() {
+  const listEl = document.getElementById('crews-list');
+  if (!listEl) return;
+  const isRu = currentLang === 'ru';
+  try {
+    const d = await apiRequest('GET', '/api/crews');
+    if (!d.ok) throw new Error(d.error || 'Failed');
+    const crews = d.crews || [];
+    if (crews.length === 0) {
+      listEl.innerHTML = '<div style="grid-column:1/-1;padding:60px;text-align:center;color:var(--text-muted)">' +
+        '<div style="font-size:48px;margin-bottom:12px">👥</div>' +
+        '<div style="font-size:18px;margin-bottom:8px">' + (isRu ? 'Команд ещё нет' : 'No crews yet') + '</div>' +
+        '<div style="font-size:13px">' + (isRu ? 'Создай команду чтобы группировать агентов с общим бюджетом и состоянием. Менеджер делегирует задачи воркерам через ask_agent.' : 'Create a crew to bundle agents with shared budget + state. The manager delegates work to workers via ask_agent.') + '</div>' +
+        '</div>';
+      return;
+    }
+    listEl.innerHTML = crews.map(function(c) {
+      const memberCount = (c.agent_ids || []).length;
+      const mgr = c.manager_agent_id ? ' • <span style="color:var(--primary)">manager #' + c.manager_agent_id + '</span>' : '';
+      const status = c.is_active ? '<span style="color:#22c55e">●</span>' : '<span style="color:#666">●</span>';
+      return '<div class="card" style="padding:18px;border:1px solid var(--border);border-radius:12px;background:var(--bg-secondary)">' +
+        '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px">' +
+          '<div>' +
+            '<div style="font-weight:600;font-size:16px">' + status + ' ' + escHtml(c.name) + '</div>' +
+            '<div style="font-size:12px;color:var(--text-muted);margin-top:4px">' + memberCount + ' ' + (isRu ? 'агентов' : 'agents') + mgr + '</div>' +
+          '</div>' +
+          '<div style="font-size:11px;color:var(--text-muted)">#' + c.id + '</div>' +
+        '</div>' +
+        (c.description ? '<div style="font-size:13px;color:var(--text-secondary);margin:8px 0;line-height:1.4">' + escHtml(c.description) + '</div>' : '') +
+        '<div style="font-size:12px;color:var(--text-muted);margin-top:8px">' +
+          '<span>' + (isRu ? 'Бюджет' : 'Budget') + ': ' + (Number(c.budget_ton_month) || 0).toFixed(2) + ' TON/мес</span>' +
+          ' · <span>' + (isRu ? 'Запусков' : 'Runs') + ': ' + (c.execution_count || 0) + '</span>' +
+        '</div>' +
+        '<div style="display:flex;gap:6px;margin-top:12px">' +
+          '<button onclick="runCrew(' + c.id + ')" class="btn btn-primary" style="flex:1;font-size:12px;padding:6px 12px">▶ ' + (isRu ? 'Запустить' : 'Run') + '</button>' +
+          '<button onclick="viewCrewDetails(' + c.id + ')" class="btn" style="font-size:12px;padding:6px 12px">' + (isRu ? 'Детали' : 'Details') + '</button>' +
+          '<button onclick="deleteCrew(' + c.id + ')" class="btn" style="font-size:12px;padding:6px 10px;color:var(--danger)">×</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  } catch (e) {
+    listEl.innerHTML = '<div style="grid-column:1/-1;padding:40px;text-align:center;color:var(--danger)">' + escHtml(e.message) + '</div>';
+  }
+}
+
+async function openCreateCrewModal() {
+  const isRu = currentLang === 'ru';
+  // Fetch user's agents to populate member checkboxes
+  const ad = await apiRequest('GET', '/api/agents');
+  const agents = (ad.agents || []).filter(a => a.id);
+  if (agents.length < 2) {
+    toast(isRu ? 'Для команды нужно минимум 2 агента' : 'Need at least 2 agents to form a crew', 'warning');
+    return;
+  }
+  // Lightweight inline modal — no extra dependencies
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML =
+    '<div style="background:var(--bg-secondary);border-radius:14px;padding:24px;max-width:480px;width:100%;max-height:90vh;overflow:auto">' +
+      '<h2 style="margin:0 0 16px 0">' + (isRu ? 'Новая команда' : 'New crew') + '</h2>' +
+      '<label style="display:block;margin-bottom:12px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Название' : 'Name') + '</div>' +
+        '<input id="crew-name" class="rt-input" style="width:100%" placeholder="' + (isRu ? 'Например: Trading Crew' : 'e.g. Trading Crew') + '"></label>' +
+      '<label style="display:block;margin-bottom:12px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Описание' : 'Description') + '</div>' +
+        '<textarea id="crew-desc" class="rt-input" style="width:100%;min-height:60px" placeholder="' + (isRu ? 'Что делает эта команда' : 'What this crew does') + '"></textarea></label>' +
+      '<div style="margin-bottom:12px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:6px">' + (isRu ? 'Участники' : 'Members') + '</div>' +
+        '<div id="crew-members-list" style="max-height:200px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px">' +
+          agents.map(function(a) {
+            return '<label style="display:flex;align-items:center;gap:8px;padding:4px 0"><input type="checkbox" class="crew-member-cb" value="' + a.id + '"> #' + a.id + ' ' + escHtml(a.name) + ' <span style="font-size:11px;color:var(--text-muted)">(' + (a.role || 'worker') + ')</span></label>';
+          }).join('') +
+        '</div></div>' +
+      '<label style="display:block;margin-bottom:12px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Менеджер (опц.) — будет делегировать через ask_agent' : 'Manager (opt.) — will delegate via ask_agent') + '</div>' +
+        '<select id="crew-manager" class="rt-input" style="width:100%"><option value="">— ' + (isRu ? 'нет' : 'none') + ' —</option>' +
+          agents.map(function(a) { return '<option value="' + a.id + '">#' + a.id + ' ' + escHtml(a.name) + '</option>'; }).join('') +
+        '</select></label>' +
+      '<label style="display:block;margin-bottom:16px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Бюджет TON/месяц' : 'Budget TON/month') + '</div>' +
+        '<input id="crew-budget" type="number" step="0.01" class="rt-input" style="width:100%" value="0"></label>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end">' +
+        '<button class="btn" onclick="this.closest(\'div[style*=fixed]\').remove()">' + (isRu ? 'Отмена' : 'Cancel') + '</button>' +
+        '<button class="btn btn-primary" id="crew-create-btn">' + (isRu ? 'Создать' : 'Create') + '</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+  document.getElementById('crew-create-btn').onclick = async function() {
+    const name = (document.getElementById('crew-name').value || '').trim();
+    const desc = (document.getElementById('crew-desc').value || '').trim();
+    const memberIds = Array.from(document.querySelectorAll('.crew-member-cb:checked')).map(c => parseInt(c.value, 10));
+    const manager = parseInt(document.getElementById('crew-manager').value || '0', 10) || null;
+    const budget = parseFloat(document.getElementById('crew-budget').value || '0') || 0;
+    if (!name || memberIds.length === 0) { toast(isRu ? 'Название и минимум 1 участник' : 'Name and at least one member required', 'warning'); return; }
+    if (manager && !memberIds.includes(manager)) memberIds.push(manager);
+    // Sprint 9 — Atlas polish description before create
+    let polishedDesc = desc;
+    if (desc && desc.length >= 8) {
+      polishedDesc = await atlasRefine('crew_description', desc, isRu ? 'Atlas улучшает описание команды…' : 'Atlas polishing description…');
+    }
+    const r = await apiRequest('POST', '/api/crews', { name, description: polishedDesc, agent_ids: memberIds, manager_agent_id: manager, budget_ton_month: budget });
+    if (r.ok) { toast(isRu ? 'Команда создана' : 'Crew created', 'success'); overlay.remove(); loadCrewsPage(); }
+    else toast(r.error || 'Error', 'error');
+  };
+}
+
+// Crew wallet tier: treasurer distributes TON from crew treasury to a member
+function openDistributeModal(crewId, memberAgentId, memberName, monthlyAllowance, monthReceived) {
+  const isRu = currentLang === 'ru';
+  const remaining = Math.max(0, monthlyAllowance - monthReceived);
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:10001;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML =
+    '<div style="background:var(--bg-secondary);border-radius:12px;padding:20px;max-width:380px;width:100%">' +
+      '<h3 style="margin:0 0 4px 0">' + (isRu ? 'Распределить' : 'Distribute') + ' → #' + memberAgentId + '</h3>' +
+      '<div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">' + escHtml(memberName) + '</div>' +
+      (monthlyAllowance > 0
+        ? '<div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">' + (isRu ? 'осталось в этом месяце' : 'remaining this month') + ': ' + remaining.toFixed(4) + ' / ' + monthlyAllowance + ' TON</div>'
+        : '<div style="font-size:11px;color:var(--danger);margin-bottom:10px">⚠ ' + (isRu ? 'Лимит = 0. Сначала задай лимит участнику.' : 'Allowance = 0. Set member allowance first.') + '</div>') +
+      '<label style="display:block;margin-bottom:10px"><div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Сумма (TON)' : 'Amount (TON)') + '</div>' +
+        '<input id="dist-amt" type="number" step="0.0001" min="0" class="rt-input" style="width:100%" ' + (monthlyAllowance > 0 ? '' : 'disabled') + '></label>' +
+      '<label style="display:block;margin-bottom:12px"><div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Комментарий (опц.)' : 'Comment (opt.)') + '</div>' +
+        '<input id="dist-cmt" class="rt-input" style="width:100%" placeholder="' + (isRu ? 'за выполненную задачу' : 'for task completion') + '"></label>' +
+      '<div style="display:flex;gap:6px;justify-content:flex-end">' +
+        '<button class="btn" onclick="this.closest(\'div[style*=fixed]\').remove()">' + (isRu ? 'Отмена' : 'Cancel') + '</button>' +
+        '<button class="btn btn-primary" id="dist-go" ' + (monthlyAllowance > 0 ? '' : 'disabled') + '>▸ ' + (isRu ? 'Отправить' : 'Send') + '</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+  const goBtn = document.getElementById('dist-go');
+  if (goBtn) goBtn.onclick = async function() {
+    const amount = parseFloat(document.getElementById('dist-amt').value || '0');
+    const cmt = document.getElementById('dist-cmt').value || '';
+    if (!amount || amount <= 0) { toast(isRu ? 'Введи сумму' : 'Enter amount', 'warning'); return; }
+    goBtn.disabled = true; goBtn.textContent = isRu ? 'Отправка…' : 'Sending…';
+    const r = await apiRequest('POST', '/api/crews/' + crewId + '/distribute', { to_agent_id: memberAgentId, amount_ton: amount, comment: cmt });
+    if (r.ok) {
+      toast((isRu ? 'Отправлено ' : 'Sent ') + amount + ' TON' + (r.hash ? ' (' + r.hash.slice(0, 8) + '…)' : ''), 'success');
+      overlay.remove();
+      // Reopen crew details to refresh tier view
+      viewCrewDetails(crewId);
+    } else {
+      toast(r.error || 'Error', 'error');
+      goBtn.disabled = false; goBtn.textContent = '▸ ' + (isRu ? 'Отправить' : 'Send');
+    }
+  };
+}
+
+function openAllowanceModal(crewId, memberAgentId, memberName, currentAllowance) {
+  const isRu = currentLang === 'ru';
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:10001;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML =
+    '<div style="background:var(--bg-secondary);border-radius:12px;padding:20px;max-width:360px;width:100%">' +
+      '<h3 style="margin:0 0 4px 0">' + (isRu ? 'Месячный лимит' : 'Monthly allowance') + ' → #' + memberAgentId + '</h3>' +
+      '<div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">' + escHtml(memberName) + '</div>' +
+      '<label style="display:block;margin-bottom:12px"><div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Сколько TON в месяц может получить из общей казны' : 'How much TON per month from crew treasury') + '</div>' +
+        '<input id="all-amt" type="number" step="0.01" min="0" class="rt-input" style="width:100%" value="' + currentAllowance + '"></label>' +
+      '<div style="display:flex;gap:6px;justify-content:flex-end">' +
+        '<button class="btn" onclick="this.closest(\'div[style*=fixed]\').remove()">' + (isRu ? 'Отмена' : 'Cancel') + '</button>' +
+        '<button class="btn btn-primary" id="all-go">' + (isRu ? 'Сохранить' : 'Save') + '</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+  document.getElementById('all-go').onclick = async function() {
+    const amount = parseFloat(document.getElementById('all-amt').value || '0');
+    if (amount < 0) { toast(isRu ? 'Лимит >= 0' : 'Allowance >= 0', 'warning'); return; }
+    const r = await apiRequest('PUT', '/api/crews/' + crewId + '/members/' + memberAgentId + '/allowance', { monthly_allowance_ton: amount });
+    if (r.ok) {
+      toast(isRu ? 'Лимит сохранён' : 'Allowance saved', 'success');
+      overlay.remove();
+      viewCrewDetails(crewId);
+    } else {
+      toast(r.error || 'Error', 'error');
+    }
+  };
+}
+
+// ─── Generation Aura — beautiful unified loading animations ───────────────
+// Replaces previous bare "Atlas думает…" spinner. Powered by studio-gen-aura.css.
+//
+// Three modes:
+//   showGenAura(label, sub?)      — fullscreen overlay with rotating aurora orb
+//   showGenAuraInline(el, opts?)  — wraps a button/input with rotating conic glow
+//   showGenAuraSkeleton(el, lines)— renders shimmer bars inside element (chat msgs)
+//
+// Hide with hideGenAura() / hideGenAuraInline(el) / clearing element.
+
+const _GEN_AURA_LABELS = {
+  ru: { thinking: 'Atlas думает', generating: 'Генерируем агента', polishing: 'Atlas улучшает текст', streaming: 'Atlas отвечает', loading: 'Загрузка' },
+  en: { thinking: 'Atlas thinking', generating: 'Generating agent',   polishing: 'Atlas polishing text', streaming: 'Atlas streaming',  loading: 'Loading'    },
+};
+
+function _genAuraEl() { return document.getElementById('_gen-aura-overlay'); }
+
+function showGenAura(label, sub) {
+  const isRu = currentLang === 'ru';
+  const L = _GEN_AURA_LABELS[isRu ? 'ru' : 'en'];
+  label = label || L.thinking;
+  sub   = sub   || ''; // optional second-line status (e.g. "calling gemini-2.0-flash-lite…")
+  let el = _genAuraEl();
+  if (!el) {
+    el = document.createElement('div');
+    el.id = '_gen-aura-overlay';
+    el.className = 'gen-aura-overlay';
+    el.innerHTML =
+      '<div class="gen-aura-overlay__card">' +
+        '<div class="gen-aura-overlay__orb"></div>' +
+        '<div class="gen-aura-text" id="_gen-aura-label" style="font-size:15px"></div>' +
+        '<div class="gen-aura-overlay__sub" id="_gen-aura-sub"></div>' +
+        '<div class="gen-aura-overlay__dots"><span></span><span></span><span></span></div>' +
+      '</div>';
+    document.body.appendChild(el);
+  }
+  const labelEl = document.getElementById('_gen-aura-label');
+  const subEl   = document.getElementById('_gen-aura-sub');
+  if (labelEl) labelEl.textContent = label;
+  if (subEl)   subEl.textContent   = sub;
+}
+
+function setGenAuraSub(sub) {
+  const subEl = document.getElementById('_gen-aura-sub');
+  if (subEl) subEl.textContent = sub || '';
+}
+
+function hideGenAura() {
+  const el = _genAuraEl();
+  if (el) {
+    el.style.transition = 'opacity .2s';
+    el.style.opacity = '0';
+    setTimeout(() => el.remove(), 200);
+  }
+}
+
+async function withGenAura(label, fn, sub) {
+  showGenAura(label, sub);
+  try { return await fn(); }
+  finally { hideGenAura(); }
+}
+
+// Inline aura — paints a rotating gradient halo around any element while a
+// task runs. Useful for inputs/buttons that are mid-action without blocking
+// the page. opts.strong=true makes the halo more vivid.
+function showGenAuraInline(el, opts) {
+  if (!el) return;
+  el.classList.add('gen-aura-inline');
+  if (opts && opts.strong) el.classList.add('gen-aura-strong');
+}
+function hideGenAuraInline(el) {
+  if (!el) return;
+  el.classList.remove('gen-aura-inline');
+  el.classList.remove('gen-aura-strong');
+}
+async function withGenAuraInline(el, fn, opts) {
+  showGenAuraInline(el, opts);
+  try { return await fn(); }
+  finally { hideGenAuraInline(el); }
+}
+
+// Skeleton shimmer — wraps an element with .gen-aura-skeleton container and N
+// .gen-aura-skeleton__bar children. Widths cascade 90/70/50% via nth-child.
+// Stagger sweep cascades 120ms per bar (handled by CSS).
+function showGenAuraSkeleton(el, lines) {
+  if (!el) return;
+  const n = Math.max(1, Math.min(8, Number(lines) || 3));
+  let html = '<div class="gen-aura-skeleton">';
+  for (let i = 0; i < n; i++) html += '<div class="gen-aura-skeleton__bar"></div>';
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+// Back-compat aliases — existing code paths continue to work, just look prettier.
+function showAtlasSpinner(label) { return showGenAura(label); }
+function hideAtlasSpinner() { return hideGenAura(); }
+async function withAtlasSpinner(label, fn) { return withGenAura(label, fn); }
+// Atlas /api/atlas/refine wrapper — used by crew/role/agent description fields
+// to upgrade raw user text. If refine fails (network/model err), returns raw
+// unchanged so save always succeeds.
+async function atlasRefine(kind, raw, label) {
+  const trimmed = (raw || '').trim();
+  if (!trimmed || trimmed.length < 8) return raw; // too short to bother
+  return await withAtlasSpinner(label || (currentLang === 'ru' ? 'Atlas улучшает текст…' : 'Atlas polishing…'), async () => {
+    try {
+      const r = await apiRequest('POST', '/api/atlas/refine', { kind, raw: trimmed, lang: currentLang });
+      return (r && r.ok && r.refined) ? r.refined : raw;
+    } catch (_e) { return raw; }
+  });
+}
+
+// Sprint 7 — Agent goal+scope editor + auto-suggest defaults per role.
+// Built-in role → smart defaults (creative posts in channels, monitor alerts owner,
+// trader does its trades silently, etc). User can override anytime.
+const ROLE_SCOPE_DEFAULTS = {
+  creative:  { respond_to_dms: false, respond_to_groups: false, respond_to_channels: true,  hint_goal: 'Веду канал — N постов в день про <тему>' },
+  trader:    { respond_to_dms: false, respond_to_groups: false, respond_to_channels: false, hint_goal: 'Торгую <актив> на <бирже> с дневным лимитом X TON' },
+  monitor:   { respond_to_dms: true,  respond_to_groups: false, respond_to_channels: false, hint_goal: 'Слежу за <метрика> и алерчу владельца при отклонении >X%' },
+  admin:     { respond_to_dms: false, respond_to_groups: true,  respond_to_channels: false, hint_goal: 'Модерирую группу @<group> — баню спам, приветствую новых' },
+  specialist:{ respond_to_dms: true,  respond_to_groups: true,  respond_to_channels: false, hint_goal: 'Эксперт по <тема> — отвечаю на вопросы пользователей' },
+  manager:   { respond_to_dms: true,  respond_to_groups: true,  respond_to_channels: false, hint_goal: 'Координирую команду по задаче <цель>' },
+  director:  { respond_to_dms: true,  respond_to_groups: true,  respond_to_channels: true,  hint_goal: 'Управляю командой и стратегией' },
+  worker:    { respond_to_dms: true,  respond_to_groups: false, respond_to_channels: false, hint_goal: 'Выполняю задачи владельца' },
+};
+
+async function loadAgentGoalScope(agentId, currentRole) {
+  const el = document.getElementById('ms-section-' + agentId);
+  if (!el) return;
+  const isRu = currentLang === 'ru';
+  let data;
+  try { data = await apiRequest('GET', '/api/agents/' + agentId); } catch (e) { el.innerHTML = '<div style="color:var(--danger)">' + e + '</div>'; return; }
+  if (!data || !data.ok) { el.innerHTML = '<div style="color:var(--danger)">' + (data && data.error || 'Failed') + '</div>'; return; }
+  const ag = data.agent || {};
+  const goal = ag.goal || '';
+  const scope = (ag.actionScope && typeof ag.actionScope === 'object') ? ag.actionScope : (ag.action_scope || {});
+  // Smart defaults for empty scope — pull from role map (without overwriting user values)
+  const defaults = ROLE_SCOPE_DEFAULTS[currentRole] || ROLE_SCOPE_DEFAULTS.worker;
+  const dms = scope.respond_to_dms !== undefined ? !!scope.respond_to_dms : defaults.respond_to_dms;
+  const grp = scope.respond_to_groups !== undefined ? !!scope.respond_to_groups : defaults.respond_to_groups;
+  const ch  = scope.respond_to_channels !== undefined ? !!scope.respond_to_channels : defaults.respond_to_channels;
+  const primary = scope.primary_channel || '';
+  const allowed = Array.isArray(scope.allowed_chats) ? scope.allowed_chats.join(', ') : '';
+  el.innerHTML =
+    '<div class="rt-section-label">🎯 ' + (isRu ? 'Миссия и scope' : 'Mission & Scope') + '</div>' +
+    '<div style="display:flex;flex-direction:column;gap:10px">' +
+      '<label><div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Миссия (одной строкой)' : 'Mission (one line)') + '</div>' +
+        '<textarea id="ms-goal-' + agentId + '" class="rt-input" style="width:100%;min-height:46px" placeholder="' + escHtml(defaults.hint_goal) + '">' + escHtml(goal) + '</textarea></label>' +
+      '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">' +
+        '<label style="display:flex;align-items:center;gap:6px;padding:8px;background:var(--bg-tertiary);border-radius:8px;cursor:pointer;font-size:12px">' +
+          '<input type="checkbox" id="ms-dms-' + agentId + '"' + (dms ? ' checked' : '') + '> 💬 DM</label>' +
+        '<label style="display:flex;align-items:center;gap:6px;padding:8px;background:var(--bg-tertiary);border-radius:8px;cursor:pointer;font-size:12px">' +
+          '<input type="checkbox" id="ms-grp-' + agentId + '"' + (grp ? ' checked' : '') + '> 👥 ' + (isRu ? 'Группы' : 'Groups') + '</label>' +
+        '<label style="display:flex;align-items:center;gap:6px;padding:8px;background:var(--bg-tertiary);border-radius:8px;cursor:pointer;font-size:12px">' +
+          '<input type="checkbox" id="ms-ch-' + agentId + '"' + (ch ? ' checked' : '') + '> 📢 ' + (isRu ? 'Каналы' : 'Channels') + '</label>' +
+      '</div>' +
+      '<label><div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">📢 ' + (isRu ? 'Основной канал' : 'Primary channel') + '</div>' +
+        '<input id="ms-primary-' + agentId + '" class="rt-input" style="width:100%" placeholder="@channelname" value="' + escHtml(primary) + '"></label>' +
+      '<label><div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">✅ ' + (isRu ? 'Whitelist чатов (опц., через запятую)' : 'Allowed chats (opt., comma-sep)') + '</div>' +
+        '<input id="ms-allowed-' + agentId + '" class="rt-input" style="width:100%" placeholder="-1001545063905, @groupname" value="' + escHtml(allowed) + '">' +
+        '<div style="font-size:10px;color:var(--text-muted);margin-top:4px">' + (isRu ? 'Если задано — агент реагирует ТОЛЬКО в этих чатах.' : 'If set — agent only acts in these chats.') + '</div></label>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end">' +
+        '<button class="btn" onclick="loadAgentGoalScope(' + agentId + ',\'' + currentRole + '\')">↻ ' + (isRu ? 'Сброс' : 'Reset') + '</button>' +
+        '<button class="btn btn-primary" onclick="saveAgentGoalScope(' + agentId + ')">💾 ' + (isRu ? 'Сохранить миссию' : 'Save mission') + '</button>' +
+      '</div>' +
+    '</div>';
+}
+
+async function saveAgentGoalScope(agentId) {
+  const isRu = currentLang === 'ru';
+  const goal = (document.getElementById('ms-goal-' + agentId).value || '').trim();
+  const scope = {
+    respond_to_dms:      document.getElementById('ms-dms-' + agentId).checked,
+    respond_to_groups:   document.getElementById('ms-grp-' + agentId).checked,
+    respond_to_channels: document.getElementById('ms-ch-' + agentId).checked,
+    primary_channel:     (document.getElementById('ms-primary-' + agentId).value || '').trim(),
+    allowed_chats:       (document.getElementById('ms-allowed-' + agentId).value || '').split(',').map(s => s.trim()).filter(Boolean),
+  };
+  if (!scope.primary_channel) delete scope.primary_channel;
+  if (scope.allowed_chats.length === 0) delete scope.allowed_chats;
+  const r = await apiRequest('PUT', '/api/agents/' + agentId + '/goal-scope', { goal: goal || null, action_scope: scope });
+  if (r.ok) toast(isRu ? 'Миссия сохранена' : 'Mission saved', 'success');
+  else toast(r.error || 'Error', 'error');
+}
+
+// Atlas role interview: user clicks "Create" on a <role-suggest> action card.
+async function acceptAtlasRoleSuggest(suggestKey, btnEl) {
+  const isRu = currentLang === 'ru';
+  const s = window[suggestKey];
+  if (!s) { toast(isRu ? 'Предложение устарело' : 'Suggestion expired', 'warning'); return; }
+  if (btnEl) { btnEl.disabled = true; btnEl.textContent = isRu ? 'Создаём…' : 'Creating…'; }
+  try {
+    const payload = {
+      role_name: String(s.role_name || '').slice(0, 64),
+      display_name: String(s.display_name || s.role_name || 'Custom role').slice(0, 128),
+      color: s.color || '#a855f7',
+      system_prompt_module: String(s.system_prompt_module || ''),
+      tool_whitelist: Array.isArray(s.tool_whitelist) ? s.tool_whitelist : null,
+      tool_blacklist: Array.isArray(s.tool_blacklist) ? s.tool_blacklist : null,
+      tool_weights: s.tool_weights || {},
+      autonomy_level: ['full', 'high', 'medium', 'low'].includes(s.autonomy_level) ? s.autonomy_level : 'medium',
+      max_spend_per_action_ton: Number(s.max_spend_per_action_ton) || 0,
+      require_approval_above_ton: s.require_approval_above_ton != null ? Number(s.require_approval_above_ton) : null,
+      tick_interval_ms: s.tick_interval_ms != null ? Number(s.tick_interval_ms) : null,
+      default_model: s.default_model || null,
+      default_capabilities: Array.isArray(s.default_capabilities) ? s.default_capabilities : [],
+      response_style_hints: s.response_style_hints || null,
+      behavior_overrides: s.behavior_overrides || {},
+      learning_overrides: s.learning_overrides || {},
+      created_via: 'atlas',
+    };
+    const r = await apiRequest('POST', '/api/roles', payload);
+    if (r.ok) {
+      toast(isRu ? 'Роль создана: ' + r.role.id : 'Role created: ' + r.role.id, 'success');
+      if (btnEl) {
+        btnEl.textContent = '✓ ' + r.role.id;
+        btnEl.style.background = 'rgba(34,197,94,0.2)';
+        btnEl.style.color = '#22c55e';
+      }
+    } else {
+      toast(r.error || 'Error', 'error');
+      if (btnEl) { btnEl.disabled = false; btnEl.textContent = isRu ? '▶ Создать роль' : '▶ Create role'; }
+    }
+  } catch (e) {
+    toast(String(e), 'error');
+    if (btnEl) { btnEl.disabled = false; btnEl.textContent = isRu ? '▶ Создать роль' : '▶ Create role'; }
+  } finally {
+    delete window[suggestKey];
+  }
+}
+
+// Render the user's custom roles inside the Role tab's slot. Highlights the
+// currently-selected role, exposes edit/delete actions. Built-ins are rendered
+// inline (cached in roles array), customs are dynamic.
+async function loadCustomRolesIntoSlot(currentRole) {
+  const slot = document.getElementById('st-custom-roles-slot');
+  if (!slot) return;
+  const isRu = currentLang === 'ru';
+  try {
+    const d = await apiRequest('GET', '/api/roles');
+    const customs = (d.ok ? (d.roles || []).filter(r => r.isCustom) : []);
+    if (customs.length === 0) {
+      slot.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:8px;border:1px dashed var(--border);border-radius:8px;text-align:center">' +
+        (isRu ? 'Кастомных ролей нет. Создай через кнопку ниже или попроси Atlas.' : 'No custom roles. Create one below or ask Atlas.') + '</div>';
+      return;
+    }
+    slot.innerHTML = '<div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">' +
+      (isRu ? 'Кастомные роли' : 'Custom roles') + '</div>' +
+      '<div class="st-role-grid">' +
+      customs.map(function(r) {
+        var sel = r.id === currentRole;
+        var name = (r.name && (r.name[currentLang] || r.name.ru || r.name.en)) || r.roleName || 'Custom';
+        var meta = (r.autonomyLevel || 'medium') + ' · ' + (r.maxSpendPerAction || 0) + ' TON';
+        return '<div class="st-role-card' + (sel ? ' st-role-active' : '') + '" onclick="selectRoleCard(this,\'' + r.id + '\')">' +
+          '<div class="st-role-icon" style="background:' + (r.color || '#64748b') + '18;color:' + (r.color || '#64748b') + '">' + IC.gem + '</div>' +
+          '<div class="st-role-info">' +
+            '<div class="st-role-name">' + escHtml(name) + ' <span style="font-size:9px;background:rgba(168,85,247,0.18);color:#a855f7;padding:1px 5px;border-radius:4px;margin-left:4px">CUSTOM</span></div>' +
+            '<div class="st-role-desc">' + escHtml(meta) + '</div>' +
+            '<div style="margin-top:4px;display:flex;gap:4px"><button onclick="event.stopPropagation();deleteCustomRole(\'' + r.id + '\')" style="font-size:10px;padding:2px 6px;border:1px solid var(--border);background:transparent;color:var(--danger);border-radius:4px;cursor:pointer">×</button></div>' +
+          '</div>' +
+          '<div class="st-role-check">' + IC.check + '</div>' +
+        '</div>';
+      }).join('') +
+      '</div>';
+  } catch (e) {
+    slot.innerHTML = '<div style="font-size:11px;color:var(--danger)">' + escHtml(String(e)) + '</div>';
+  }
+}
+
+async function deleteCustomRole(roleId) {
+  const isRu = currentLang === 'ru';
+  if (!confirm(isRu ? 'Удалить кастомную роль? Агенты на этой роли вернутся к worker.' : 'Delete this custom role? Agents using it will fall back to worker.')) return;
+  const r = await apiRequest('DELETE', '/api/roles/' + encodeURIComponent(roleId));
+  if (r.ok) { toast(isRu ? 'Удалено' : 'Deleted', 'success'); loadCustomRolesIntoSlot(null); }
+  else toast(r.error || 'Error', 'error');
+}
+
+function openCreateCustomRoleModal() {
+  const isRu = currentLang === 'ru';
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML =
+    '<div style="background:var(--bg-secondary);border-radius:14px;padding:24px;max-width:560px;width:100%;max-height:90vh;overflow:auto">' +
+      '<h2 style="margin:0 0 4px 0">' + (isRu ? 'Новая кастомная роль' : 'New custom role') + '</h2>' +
+      '<div style="font-size:11px;color:var(--text-muted);margin-bottom:14px">' + (isRu ? 'Совет: для сложных ролей попроси Atlas в чате — он соберёт всё через мини-интервью.' : 'Tip: for complex roles ask Atlas in chat — it builds them via mini-interview.') + '</div>' +
+      _customRoleField('crole-name', 'role_name', isRu ? 'ID роли (kebab-case)' : 'Role ID (kebab-case)', 'gift-arbitrageur', 'text') +
+      _customRoleField('crole-display', 'display_name', isRu ? 'Название' : 'Display name', isRu ? 'Арбитражник подарков' : 'Gift arbitrageur', 'text') +
+      '<label style="display:block;margin-bottom:10px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Системный промпт (что делает + правила)' : 'System prompt (what it does + rules)') + '</div>' +
+        '<textarea id="crole-prompt" class="rt-input" style="width:100%;min-height:120px;font-family:monospace;font-size:11px" placeholder="[ROLE: ...]\\nMINDSET: ...\\nPRIORITIES: ...\\nAUTONOMY: ...\\nERROR HANDLING: ..."></textarea></label>' +
+      '<div style="display:flex;gap:8px;margin-bottom:10px">' +
+        '<label style="flex:1"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Автономия' : 'Autonomy') + '</div>' +
+          '<select id="crole-autonomy" class="rt-input" style="width:100%"><option value="full">full</option><option value="high">high</option><option value="medium" selected>medium</option><option value="low">low</option></select></label>' +
+        '<label style="flex:1"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Max spend / op (TON)' : 'Max spend/op (TON)') + '</div>' +
+          '<input id="crole-spend" type="number" step="0.01" min="0" value="0" class="rt-input" style="width:100%"></label>' +
+      '</div>' +
+      '<label style="display:block;margin-bottom:10px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Capabilities (через запятую)' : 'Capabilities (comma-sep)') + '</div>' +
+        '<input id="crole-caps" type="text" class="rt-input" style="width:100%" placeholder="telegram, state, notify, web"></label>' +
+      '<label style="display:block;margin-bottom:14px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Цвет' : 'Color') + '</div>' +
+        '<input id="crole-color" type="color" value="#a855f7" style="width:60px;height:32px;border:1px solid var(--border);border-radius:6px"></label>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end">' +
+        '<button class="btn" onclick="this.closest(\'div[style*=fixed]\').remove()">' + (isRu ? 'Отмена' : 'Cancel') + '</button>' +
+        '<button class="btn btn-primary" id="crole-save">' + (isRu ? 'Создать' : 'Create') + '</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+  document.getElementById('crole-save').onclick = async function() {
+    const payload = {
+      role_name: (document.getElementById('crole-name').value || '').trim(),
+      display_name: (document.getElementById('crole-display').value || '').trim(),
+      system_prompt_module: (document.getElementById('crole-prompt').value || '').trim(),
+      autonomy_level: document.getElementById('crole-autonomy').value,
+      max_spend_per_action_ton: parseFloat(document.getElementById('crole-spend').value) || 0,
+      default_capabilities: (document.getElementById('crole-caps').value || '').split(',').map(s => s.trim()).filter(Boolean),
+      color: document.getElementById('crole-color').value,
+      created_via: 'manual',
+    };
+    if (!payload.role_name || !payload.display_name || !payload.system_prompt_module) {
+      toast(isRu ? 'Заполни ID, название и системный промпт' : 'Fill ID, display name and system prompt', 'warning'); return;
+    }
+    const r = await apiRequest('POST', '/api/roles', payload);
+    if (r.ok) { toast(isRu ? 'Роль создана' : 'Role created', 'success'); overlay.remove(); loadCustomRolesIntoSlot(null); }
+    else toast(r.error || 'Error', 'error');
+  };
+}
+
+function _customRoleField(id, _key, label, placeholder, type) {
+  return '<label style="display:block;margin-bottom:10px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + label + '</div>' +
+    '<input id="' + id + '" type="' + type + '" class="rt-input" style="width:100%" placeholder="' + placeholder + '"></label>';
+}
+
+// Atlas crew interview: user clicks "Create" on a <crew-suggest> action card.
+// We send the JSON Atlas built straight to /api/crews — same validation as the
+// regular Studio modal flow.
+async function acceptAtlasCrewSuggest(suggestKey, btnEl) {
+  const isRu = currentLang === 'ru';
+  const suggest = window[suggestKey];
+  if (!suggest) { toast(isRu ? 'Предложение устарело' : 'Suggestion expired', 'warning'); return; }
+  if (btnEl) { btnEl.disabled = true; btnEl.textContent = isRu ? 'Создаём…' : 'Creating…'; }
+  try {
+    const payload = {
+      name: String(suggest.name || 'Crew').slice(0, 128),
+      description: String(suggest.description || '').slice(0, 500),
+      agent_ids: Array.isArray(suggest.agent_ids) ? suggest.agent_ids.map(Number).filter(Boolean) : [],
+      manager_agent_id: suggest.manager_agent_id ? Number(suggest.manager_agent_id) : null,
+      budget_ton_month: Number(suggest.budget_ton_month) || 0,
+    };
+    const r = await apiRequest('POST', '/api/crews', payload);
+    if (r.ok) {
+      toast(isRu ? 'Команда создана' : 'Crew created', 'success');
+      if (btnEl) {
+        btnEl.textContent = '✓ #' + r.crew.id;
+        btnEl.style.background = 'rgba(34,197,94,0.2)';
+        btnEl.style.color = '#22c55e';
+      }
+      // If we're currently on the network page, refresh it so the new crew appears
+      const np = document.getElementById('network-page');
+      if (np && np.classList.contains('active')) loadNetworkMap();
+    } else {
+      toast(r.error || 'Error', 'error');
+      if (btnEl) { btnEl.disabled = false; btnEl.textContent = isRu ? '▶ Создать команду' : '▶ Create crew'; }
+    }
+  } catch (e) {
+    toast(String(e), 'error');
+    if (btnEl) { btnEl.disabled = false; btnEl.textContent = isRu ? '▶ Создать команду' : '▶ Create crew'; }
+  } finally {
+    delete window[suggestKey];
+  }
+}
+
+async function runCrew(crewId) {
+  const isRu = currentLang === 'ru';
+  const trigger = prompt(isRu ? 'Задача для команды:' : 'Task for the crew:', '');
+  if (!trigger) return;
+  const r = await apiRequest('POST', '/api/crews/' + crewId + '/run', { trigger });
+  if (r.ok) toast((isRu ? 'Команда запущена, execution #' : 'Crew kicked off, execution #') + r.execution_id, 'success');
+  else toast(r.error || 'Error', 'error');
+}
+
+// Edit existing crew — same shape as create modal but pre-filled and PUT'ing
+// the diff. Supports renaming, swapping members, changing manager, budget,
+// description, toggling active.
+async function openEditCrewModal(crewId) {
+  const isRu = currentLang === 'ru';
+  // Pull current crew state + full agents roster in parallel
+  const [crewResp, agentsResp] = await Promise.all([
+    apiRequest('GET', '/api/crews/' + crewId),
+    apiRequest('GET', '/api/agents'),
+  ]);
+  if (!crewResp.ok) { toast(crewResp.error || 'Error', 'error'); return; }
+  const crew = crewResp.crew;
+  const allAgents = ((agentsResp && agentsResp.agents) || []).filter(a => a.id);
+  const memberSet = new Set(crew.agent_ids || []);
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML =
+    '<div style="background:var(--bg-secondary);border-radius:14px;padding:24px;max-width:520px;width:100%;max-height:90vh;overflow:auto">' +
+      '<h2 style="margin:0 0 4px 0">' + (isRu ? 'Изменить команду' : 'Edit crew') + '</h2>' +
+      '<div style="font-size:11px;color:var(--text-muted);margin-bottom:16px">#' + crew.id + '</div>' +
+      '<label style="display:block;margin-bottom:12px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Название' : 'Name') + '</div>' +
+        '<input id="ec-name" class="rt-input" style="width:100%" value="' + escHtml(crew.name) + '"></label>' +
+      '<label style="display:block;margin-bottom:12px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Описание' : 'Description') + '</div>' +
+        '<textarea id="ec-desc" class="rt-input" style="width:100%;min-height:70px">' + escHtml(crew.description || '') + '</textarea></label>' +
+      '<div style="margin-bottom:12px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:6px">' + (isRu ? 'Участники' : 'Members') + '</div>' +
+        '<div style="max-height:200px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px">' +
+          allAgents.map(function(a) {
+            const checked = memberSet.has(a.id) ? ' checked' : '';
+            return '<label style="display:flex;align-items:center;gap:8px;padding:4px 0"><input type="checkbox" class="ec-member-cb" value="' + a.id + '"' + checked + '> #' + a.id + ' ' + escHtml(a.name) + ' <span style="font-size:11px;color:var(--text-muted)">(' + (a.role || 'worker') + ')</span></label>';
+          }).join('') +
+        '</div></div>' +
+      '<label style="display:block;margin-bottom:12px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Менеджер (опц.)' : 'Manager (opt.)') + '</div>' +
+        '<select id="ec-manager" class="rt-input" style="width:100%"><option value="">— ' + (isRu ? 'нет' : 'none') + ' —</option>' +
+          allAgents.map(function(a) { const sel = a.id === crew.manager_agent_id ? ' selected' : ''; return '<option value="' + a.id + '"' + sel + '>#' + a.id + ' ' + escHtml(a.name) + '</option>'; }).join('') +
+        '</select></label>' +
+      '<label style="display:block;margin-bottom:12px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Бюджет TON/мес' : 'Budget TON/month') + '</div>' +
+        '<input id="ec-budget" type="number" step="0.01" min="0" class="rt-input" style="width:100%" value="' + (Number(crew.budget_ton_month) || 0) + '"></label>' +
+      '<label style="display:flex;align-items:center;gap:8px;margin-bottom:16px;font-size:13px"><input type="checkbox" id="ec-active"' + (crew.is_active ? ' checked' : '') + '> ' + (isRu ? 'Команда активна' : 'Crew is active') + '</label>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end">' +
+        '<button class="btn" onclick="this.closest(\'div[style*=fixed]\').remove()">' + (isRu ? 'Отмена' : 'Cancel') + '</button>' +
+        '<button class="btn btn-primary" id="ec-save">' + (isRu ? 'Сохранить' : 'Save') + '</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+  document.getElementById('ec-save').onclick = async function() {
+    const name = (document.getElementById('ec-name').value || '').trim();
+    const desc = (document.getElementById('ec-desc').value || '').trim();
+    const memberIds = Array.from(document.querySelectorAll('.ec-member-cb:checked')).map(c => parseInt(c.value, 10));
+    const manager = parseInt(document.getElementById('ec-manager').value || '0', 10) || null;
+    const budget = parseFloat(document.getElementById('ec-budget').value || '0') || 0;
+    const isActive = document.getElementById('ec-active').checked;
+    if (!name || memberIds.length === 0) { toast(isRu ? 'Название и минимум 1 участник' : 'Name and at least one member required', 'warning'); return; }
+    if (manager && !memberIds.includes(manager)) memberIds.push(manager);
+    const payload = { name, description: desc, agent_ids: memberIds, manager_agent_id: manager, budget_ton_month: budget, is_active: isActive };
+    const r = await apiRequest('PUT', '/api/crews/' + crewId, payload);
+    if (r.ok) {
+      toast(isRu ? 'Сохранено' : 'Saved', 'success');
+      overlay.remove();
+      // Refresh visible places
+      try { if (typeof loadNetworkMap === 'function' && document.getElementById('network-page').classList.contains('active')) loadNetworkMap(); } catch {}
+      try { if (typeof loadCrewsPage === 'function') loadCrewsPage(); } catch {}
+      try { if (typeof awLoadAndRenderCrewWallets === 'function') awLoadAndRenderCrewWallets(); } catch {}
+    } else {
+      toast(r.error || 'Error', 'error');
+    }
+  };
+}
+
+async function deleteCrew(crewId) {
+  const isRu = currentLang === 'ru';
+  if (!confirm(isRu ? 'Удалить команду?' : 'Delete crew?')) return;
+  const r = await apiRequest('DELETE', '/api/crews/' + crewId);
+  if (r.ok) { toast(isRu ? 'Удалено' : 'Deleted', 'success'); loadCrewsPage(); }
+  else toast(r.error || 'Error', 'error');
+}
+
+async function viewCrewDetails(crewId) {
+  const isRu = currentLang === 'ru';
+  // Pull crew + agents + wallet in parallel so the modal is editable in one shot
+  const [d, agentsResp, walletResp] = await Promise.all([
+    apiRequest('GET', '/api/crews/' + crewId),
+    apiRequest('GET', '/api/agents').catch(() => ({ ok: false, agents: [] })),
+    apiRequest('GET', '/api/crews/' + crewId + '/wallet').catch(() => ({ ok: false })),
+  ]);
+  if (!d.ok) { toast(d.error || 'Error', 'error'); return; }
+  const c = d.crew;
+  const allAgents = ((agentsResp && agentsResp.agents) || []).filter(a => a.id);
+  const memberSet = new Set(c.agent_ids || []);
+  let walletInfo = (walletResp && walletResp.ok) ? walletResp.wallet : null;
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML =
+    '<div style="background:var(--bg-secondary);border-radius:14px;padding:24px;max-width:560px;width:100%;max-height:90vh;overflow:auto">' +
+      '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:14px">' +
+        '<div style="flex:1">' +
+          '<input id="cd-name" class="rt-input" style="width:100%;font-size:18px;font-weight:600;background:transparent;border:1px dashed var(--border);padding:6px 8px" value="' + escHtml(c.name) + '">' +
+          '<div style="font-size:12px;color:var(--text-muted);margin-top:6px">#' + c.id + '</div>' +
+        '</div>' +
+        '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted);margin-left:12px;cursor:pointer">' +
+          '<input type="checkbox" id="cd-active"' + (c.is_active ? ' checked' : '') + '> ' + (isRu ? 'активна' : 'active') +
+        '</label>' +
+      '</div>' +
+      '<label style="display:block;margin-bottom:14px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Описание' : 'Description') + '</div>' +
+        '<textarea id="cd-desc" class="rt-input" style="width:100%;min-height:60px;line-height:1.5">' + escHtml(c.description || '') + '</textarea></label>' +
+      '<label style="display:block;margin-bottom:14px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">🎯 ' + (isRu ? 'Главная цель команды (миссия)' : 'Crew mission goal') + '</div>' +
+        '<textarea id="cd-goal" class="rt-input" style="width:100%;min-height:50px;line-height:1.4" placeholder="' + (isRu ? 'Напр.: захватить top-5 ниши NFT-арбитража в TON' : 'e.g. dominate top-5 of TON NFT arbitrage') + '">' + escHtml(c.goal || '') + '</textarea>' +
+        '<div style="font-size:10px;color:var(--text-muted);margin-top:4px">' + (isRu ? 'Будет инжектиться в system prompt каждого члена команды как контекст.' : 'Injected into every member\'s system prompt.') + '</div></label>' +
+      // ── Members (editable) ──
+      '<div style="margin-bottom:14px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b>' + (isRu ? 'Участники' : 'Members') + '</b>' +
+        '<span style="font-size:11px;color:var(--text-muted)">' + (isRu ? 'отметь нужных' : 'check to include') + '</span></div>' +
+        '<div style="max-height:180px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px">' +
+          allAgents.map(function(a) {
+            const checked = memberSet.has(a.id) ? ' checked' : '';
+            const mgrBadge = c.manager_agent_id === a.id ? ' <span style="color:var(--primary);font-size:11px">👑 manager</span>' : '';
+            const status = a.isActive ? '🟢' : '⚪';
+            return '<label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px"><input type="checkbox" class="cd-member-cb" value="' + a.id + '"' + checked + '> ' + status + ' #' + a.id + ' ' + escHtml(a.name) + ' <span style="font-size:11px;color:var(--text-muted)">(' + (a.role || 'worker') + ')</span>' + mgrBadge + '</label>';
+          }).join('') +
+        '</div></div>' +
+      // ── Manager + budget — inline row ──
+      '<div style="display:flex;gap:8px;margin-bottom:14px">' +
+        '<label style="flex:1"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Менеджер' : 'Manager') + '</div>' +
+          '<select id="cd-manager" class="rt-input" style="width:100%"><option value="">— ' + (isRu ? 'нет' : 'none') + ' —</option>' +
+            allAgents.map(function(a) { const sel = a.id === c.manager_agent_id ? ' selected' : ''; return '<option value="' + a.id + '"' + sel + '>#' + a.id + ' ' + escHtml(a.name) + '</option>'; }).join('') +
+          '</select></label>' +
+        '<label style="flex:1"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Бюджет TON/мес' : 'Budget TON/month') + '</div>' +
+          '<input id="cd-budget" type="number" step="0.01" min="0" class="rt-input" style="width:100%" value="' + (Number(c.budget_ton_month) || 0) + '"></label>' +
+      '</div>' +
+      // ── Recent executions (read-only) ──
+      '<div style="margin-bottom:14px"><b>' + (isRu ? 'Последние запуски' : 'Recent executions') + '</b>' +
+        ((d.recent_executions || []).length === 0
+          ? '<div style="font-size:12px;color:var(--text-muted);margin-top:4px">' + (isRu ? 'пока пусто' : 'none yet') + '</div>'
+          : '<ul style="margin:6px 0 0 18px;font-size:12px">' + d.recent_executions.map(function(e) {
+              return '<li><a href="#" onclick="event.preventDefault();openCrewExecutionMonitor(' + c.id + ',' + e.id + ');return false;" style="color:var(--primary)">#' + e.id + '</a> · ' +
+                e.status + ' · ' + new Date(e.started_at).toLocaleString() +
+                (e.trigger ? ' — ' + escHtml(String(e.trigger).slice(0, 60)) : '') + '</li>';
+            }).join('') + '</ul>') +
+      '</div>' +
+      // ── Run crew (NEW) ──
+      '<div style="margin-bottom:14px;padding:12px;background:rgba(34,197,94,0.06);border:1px solid rgba(34,197,94,0.20);border-radius:10px">' +
+        '<b>▶ ' + (isRu ? 'Запустить команду' : 'Run crew') + '</b>' +
+        '<div style="display:flex;gap:6px;margin-top:8px">' +
+          '<input id="cd-run-input-' + c.id + '" class="rt-input" style="flex:1" placeholder="' + (isRu ? 'Задача для команды (например: «найди и купи NFT за < 5 TON»)' : 'Task for the crew') + '">' +
+          '<button class="btn btn-primary" id="cd-run-btn-' + c.id + '" style="white-space:nowrap;font-size:12px;padding:6px 14px">▶ ' + (isRu ? 'Запустить' : 'Run') + '</button>' +
+        '</div>' +
+        '<div style="font-size:10px;color:var(--text-muted);margin-top:4px">' + (isRu ? 'Агенты команды выполняют задачу по очереди. Откроется монитор прогресса.' : 'Crew members run sequentially. A live progress monitor will open.') + '</div>' +
+      '</div>' +
+      // ── Crew wallet section ──
+      '<div style="margin-bottom:14px;padding:12px;background:rgba(0,168,255,0.06);border:1px solid rgba(0,168,255,0.18);border-radius:10px">' +
+        '<b>' + (isRu ? '💼 Кошелёк команды' : '💼 Crew wallet') + '</b>' +
+        (walletInfo
+          ? '<div style="margin-top:8px"><div style="font-family:monospace;font-size:11px;color:var(--text-secondary);word-break:break-all">' + escHtml(walletInfo.address) + '</div>' +
+            '<div style="margin-top:6px;display:flex;gap:14px;font-size:12px">' +
+              '<div><span style="color:var(--text-muted)">' + (isRu ? 'Баланс' : 'Balance') + ':</span> <b>' + (walletInfo.balanceTon != null ? walletInfo.balanceTon.toFixed(4) + ' TON' : '—') + '</b></div>' +
+              '<div><span style="color:var(--text-muted)">' + (isRu ? 'В этом месяце' : 'This month') + ':</span> ' + (walletInfo.monthSpendTon || 0).toFixed(4) + ' / ' + (walletInfo.budgetTonMonth || 0) + ' TON</div>' +
+            '</div>' +
+            '<div style="margin-top:8px;display:flex;gap:6px">' +
+              '<button class="btn" onclick="navigator.clipboard.writeText(\'' + walletInfo.address + '\').then(()=>toast(\'Скопирован\',\'success\'))" style="font-size:11px;padding:4px 10px">📋 ' + (isRu ? 'Копировать' : 'Copy') + '</button>' +
+              '<button class="btn" onclick="viewCrewWalletLog(' + c.id + ')" style="font-size:11px;padding:4px 10px">📜 ' + (isRu ? 'История' : 'Log') + '</button>' +
+              '<a class="btn" href="https://tonviewer.com/' + walletInfo.address + '" target="_blank" style="font-size:11px;padding:4px 10px;text-decoration:none">🔍 Tonviewer</a>' +
+            '</div></div>'
+          : '<div style="margin-top:6px;font-size:12px;color:var(--text-muted)">' + (isRu ? 'У команды ещё нет общего кошелька.' : 'No shared wallet yet.') + '</div>' +
+            '<button class="btn btn-primary" onclick="createCrewWallet(' + c.id + ', this)" style="margin-top:8px;font-size:12px;padding:6px 14px">+ ' + (isRu ? 'Создать кошелёк' : 'Create wallet') + '</button>'
+        ) +
+      '</div>' +
+      // ── Treasury tier section: per-member personal wallets + allowance + distribute ──
+      '<div id="cd-treasury-' + c.id + '" style="margin-bottom:14px">' +
+        '<div style="font-size:12px;color:var(--text-muted)">' + (isRu ? 'Загрузка иерархии кошельков…' : 'Loading wallet tier…') + '</div>' +
+      '</div>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end">' +
+        '<button class="btn" onclick="this.closest(\'div[style*=fixed]\').remove()">' + (isRu ? 'Закрыть' : 'Close') + '</button>' +
+        '<button class="btn btn-primary" id="cd-save-' + c.id + '">💾 ' + (isRu ? 'Сохранить' : 'Save') + '</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+
+  // Async-load wallet tier (treasury view) — per-member wallets + allowances + distribute
+  (async function() {
+    const tEl = document.getElementById('cd-treasury-' + c.id);
+    if (!tEl) return;
+    try {
+      const tr = await apiRequest('GET', '/api/crews/' + c.id + '/treasury');
+      if (!tr.ok || !tr.view || tr.view.error) {
+        tEl.innerHTML = '<div style="font-size:12px;color:var(--text-muted)">' + escHtml((tr.view && tr.view.error) || 'No treasury data') + '</div>';
+        return;
+      }
+      const v = tr.view;
+      const isTreasurer = v.caller_role === 'treasurer';
+      let h = '<div style="padding:12px;background:rgba(168,85,247,0.06);border:1px solid rgba(168,85,247,0.20);border-radius:10px">' +
+        '<b>' + (isRu ? '🏦 Иерархия кошельков' : '🏦 Wallet tier') + '</b> ' +
+        '<span style="font-size:11px;color:var(--text-muted)">(' + (isTreasurer ? (isRu ? 'ты казначей' : 'you are treasurer') : (isRu ? 'ты участник' : 'member')) + ')</span>' +
+        '<div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">';
+      v.members.forEach(function(m) {
+        const wAddr = m.personal_wallet ? (m.personal_wallet.slice(0, 6) + '…' + m.personal_wallet.slice(-4)) : null;
+        const pct = m.monthly_allowance_ton > 0 ? Math.min(100, m.current_month_received_ton / m.monthly_allowance_ton * 100) : 0;
+        const barColor = pct > 90 ? '#ef4444' : pct > 60 ? '#eab308' : '#22c55e';
+        h += '<div style="padding:8px 10px;background:var(--bg-tertiary);border-radius:8px;font-size:12px">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">' +
+            '<span>' + (m.is_treasurer ? '👑 ' : '') + '#' + m.agent_id + ' ' + escHtml(m.name) + ' <span style="color:var(--text-muted)">(' + m.role + ')</span></span>' +
+            (wAddr ? '<code style="font-size:10px;color:var(--text-muted)">' + wAddr + '</code>' : '<span style="font-size:10px;color:var(--danger)">' + (isRu ? 'нет кошелька' : 'no wallet') + '</span>') +
+          '</div>' +
+          (m.monthly_allowance_ton > 0
+            ? '<div style="font-size:10.5px;color:var(--text-muted);margin-bottom:3px">' + (isRu ? 'получил в этом месяце' : 'received this month') + ': ' + m.current_month_received_ton.toFixed(4) + ' / ' + m.monthly_allowance_ton + ' TON</div>' +
+              '<div style="height:4px;background:var(--bg-secondary);border-radius:2px;overflow:hidden"><div style="height:100%;width:' + pct + '%;background:' + barColor + '"></div></div>'
+            : '<div style="font-size:10.5px;color:var(--text-muted)">' + (isRu ? 'лимит не задан' : 'no allowance set') + (m.is_treasurer ? '' : ' · ' + (isRu ? 'не получит распределение' : 'cannot receive distributions')) + '</div>') +
+          (isTreasurer && !m.is_treasurer
+            ? '<div style="display:flex;gap:4px;margin-top:6px">' +
+                '<button class="btn" style="font-size:10.5px;padding:3px 8px" onclick="openDistributeModal(' + c.id + ',' + m.agent_id + ',\'' + escJsAttr(m.name) + '\',' + m.monthly_allowance_ton + ',' + m.current_month_received_ton + ')" ' + (m.personal_wallet ? '' : 'disabled') + '>▸ ' + (isRu ? 'Отправить' : 'Send') + '</button>' +
+                '<button class="btn" style="font-size:10.5px;padding:3px 8px" onclick="openAllowanceModal(' + c.id + ',' + m.agent_id + ',\'' + escJsAttr(m.name) + '\',' + m.monthly_allowance_ton + ')">⚙ ' + (isRu ? 'Лимит' : 'Limit') + '</button>' +
+              '</div>'
+            : '') +
+        '</div>';
+      });
+      h += '</div></div>';
+      tEl.innerHTML = h;
+    } catch (e) {
+      tEl.innerHTML = '<div style="font-size:12px;color:var(--danger)">' + escHtml(String(e)) + '</div>';
+    }
+  })();
+
+  // Run handler — POST /api/crews/:id/run then open live monitor
+  const runBtn = document.getElementById('cd-run-btn-' + c.id);
+  if (runBtn) {
+    runBtn.onclick = async function() {
+      const inputEl = document.getElementById('cd-run-input-' + c.id);
+      const task = (inputEl && inputEl.value || '').trim();
+      if (!task) { toast(isRu ? 'Введи задачу' : 'Enter a task', 'warning'); return; }
+      runBtn.disabled = true;
+      runBtn.textContent = isRu ? 'Стартуем…' : 'Starting…';
+      try {
+        const r = await apiRequest('POST', '/api/crews/' + c.id + '/run', { input: task });
+        if (!r.ok) { toast(r.error || 'Error', 'error'); return; }
+        // Close details modal, open live monitor
+        overlay.remove();
+        openCrewExecutionMonitor(c.id, r.execId);
+      } finally {
+        runBtn.disabled = false;
+        runBtn.textContent = '▶ ' + (isRu ? 'Запустить' : 'Run');
+      }
+    };
+  }
+
+  // Save handler — inline edits, PUT /api/crews/:id with the full diff
+  document.getElementById('cd-save-' + c.id).onclick = async function() {
+    const name = (document.getElementById('cd-name').value || '').trim();
+    const desc = (document.getElementById('cd-desc').value || '').trim();
+    const memberIds = Array.from(document.querySelectorAll('.cd-member-cb:checked')).map(cb => parseInt(cb.value, 10));
+    const manager = parseInt(document.getElementById('cd-manager').value || '0', 10) || null;
+    const budget = parseFloat(document.getElementById('cd-budget').value || '0') || 0;
+    const isActive = document.getElementById('cd-active').checked;
+    const goalEl = document.getElementById('cd-goal');
+    const goal = goalEl ? (goalEl.value || '').trim() : '';
+    if (!name || memberIds.length === 0) { toast(isRu ? 'Название и минимум 1 участник' : 'Name and at least one member required', 'warning'); return; }
+    if (manager && !memberIds.includes(manager)) memberIds.push(manager);
+    // Sprint 9 — let Atlas improve raw user text BEFORE save (description + goal).
+    // Only if user changed it from prior — no point re-polishing same string.
+    let polishedDesc = desc;
+    let polishedGoal = goal;
+    const descChanged = desc !== (c.description || '');
+    const goalChanged = goal !== (c.goal || '');
+    if (descChanged && desc.length >= 8) {
+      polishedDesc = await atlasRefine('crew_description', desc, isRu ? 'Atlas улучшает описание команды…' : 'Atlas polishing crew description…');
+    }
+    if (goalChanged && goal.length >= 8) {
+      polishedGoal = await atlasRefine('crew_goal', goal, isRu ? 'Atlas формулирует миссию…' : 'Atlas crafting mission…');
+    }
+    const payload = { name, description: polishedDesc, agent_ids: memberIds, manager_agent_id: manager, budget_ton_month: budget, is_active: isActive };
+    const r = await apiRequest('PUT', '/api/crews/' + c.id, payload);
+    if (r.ok && polishedGoal !== (c.goal || '')) {
+      await apiRequest('PUT', '/api/crews/' + c.id + '/goal', { goal: polishedGoal });
+    }
+    if (r.ok) {
+      toast(isRu ? 'Сохранено' : 'Saved', 'success');
+      overlay.remove();
+      try { if (document.getElementById('network-page').classList.contains('active') && typeof loadNetworkMap === 'function') loadNetworkMap(); } catch {}
+      try { if (typeof loadCrewsPage === 'function') loadCrewsPage(); } catch {}
+      try { if (typeof awLoadAndRenderCrewWallets === 'function') awLoadAndRenderCrewWallets(); } catch {}
+    } else {
+      toast(r.error || 'Error', 'error');
+    }
+  };
+}
+
+// ─── Live crew execution monitor ──────────────────────────────────────────
+// Opens a modal that polls /api/crews/:crewId/executions/:execId every 600ms
+// until status != 'running' (or user closes). Shows per-member status with
+// colored pills + output_preview + timings.
+async function openCrewExecutionMonitor(crewId, execId) {
+  const isRu = currentLang === 'ru';
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML =
+    '<div style="background:var(--bg-secondary);border-radius:14px;padding:24px;max-width:680px;width:100%;max-height:90vh;overflow:auto">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">' +
+        '<div><b style="font-size:16px">▶ ' + (isRu ? 'Запуск команды' : 'Crew run') + '</b>' +
+          '<div style="font-size:11px;color:var(--text-muted);margin-top:2px">crew #' + crewId + ' · exec #' + execId + '</div>' +
+        '</div>' +
+        '<div id="cem-overall-status" class="gen-aura-text" style="font-size:13px;padding:6px 12px;background:rgba(59,130,246,0.10);border-radius:20px;font-weight:600">⏳ ' + (isRu ? 'выполняется…' : 'running…') + '</div>' +
+      '</div>' +
+      '<div id="cem-members" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px"><div class="gen-aura-skeleton"><div class="gen-aura-skeleton__bar"></div><div class="gen-aura-skeleton__bar"></div><div class="gen-aura-skeleton__bar"></div></div></div>' +
+      '<div id="cem-final" style="display:none;padding:12px;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.20);border-radius:10px;margin-bottom:14px"></div>' +
+      '<div style="display:flex;justify-content:flex-end">' +
+        '<button class="btn" onclick="this.closest(\'div[style*=fixed]\').remove()">' + (isRu ? 'Закрыть' : 'Close') + '</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+
+  let stopped = false;
+  const stopPoll = () => { stopped = true; };
+  // Stop poll when modal is removed (close button, ESC, etc.)
+  const obs = new MutationObserver(() => {
+    if (!document.body.contains(overlay)) { stopPoll(); obs.disconnect(); }
+  });
+  obs.observe(document.body, { childList: true });
+
+  const renderMembers = function(members) {
+    const isRu = currentLang === 'ru';
+    const cont = document.getElementById('cem-members');
+    if (!cont) return;
+    if (!members || members.length === 0) {
+      cont.innerHTML = '<div style="color:var(--text-muted);font-size:12px">' + (isRu ? 'нет участников' : 'no members') + '</div>';
+      return;
+    }
+    cont.innerHTML = members.map(function(m) {
+      const statusColor = {
+        pending:   { bg: 'rgba(148,163,184,0.12)', fg: '#94a3b8', icon: '⏸',  label: isRu ? 'ждёт'      : 'pending', cls: '' },
+        running:   { bg: 'rgba(59,130,246,0.15)',  fg: '#3b82f6', icon: '⏳', label: isRu ? 'работает'  : 'running', cls: 'gen-aura-text' },
+        completed: { bg: 'rgba(34,197,94,0.15)',   fg: '#22c55e', icon: '✓',  label: isRu ? 'готово'    : 'done',    cls: '' },
+        failed:    { bg: 'rgba(239,68,68,0.15)',   fg: '#ef4444', icon: '✗',  label: isRu ? 'ошибка'    : 'failed',  cls: '' },
+      }[m.status] || { bg: 'rgba(148,163,184,0.12)', fg: '#94a3b8', icon: '?', label: m.status, cls: '' };
+      const dur = (m.started_at && m.finished_at)
+        ? Math.round((new Date(m.finished_at) - new Date(m.started_at)) / 100) / 10 + 's'
+        : (m.started_at ? Math.round((Date.now() - new Date(m.started_at)) / 100) / 10 + 's' : '—');
+      return '<div style="padding:10px 12px;background:var(--bg-tertiary);border-radius:8px;border-left:3px solid ' + statusColor.fg + '">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">' +
+          '<div style="font-size:13px"><b>#' + (m.step_index + 1) + '</b> · ' + escHtml(m.member_label || 'agent_' + m.agent_id) +
+            ' <span style="font-size:11px;color:var(--text-muted)">(' + escHtml(m.role || 'worker') + ')</span>' +
+          '</div>' +
+          '<div style="display:flex;align-items:center;gap:8px">' +
+            '<span style="font-size:10px;color:var(--text-muted);font-family:monospace">' + dur + '</span>' +
+            '<span class="' + statusColor.cls + '" style="font-size:11px;padding:2px 8px;background:' + statusColor.bg + (statusColor.cls ? '' : ';color:' + statusColor.fg) + ';border-radius:10px;font-weight:600">' + statusColor.icon + ' ' + statusColor.label + '</span>' +
+          '</div>' +
+        '</div>' +
+        (m.error
+          ? '<div style="font-size:11px;color:#ef4444;background:rgba(239,68,68,0.08);padding:6px 8px;border-radius:6px;margin-top:4px;font-family:monospace">⚠ ' + escHtml(m.error) + '</div>'
+          : '') +
+        (m.output_preview
+          ? '<div style="font-size:11px;color:var(--text-secondary);background:rgba(255,255,255,0.03);padding:6px 8px;border-radius:6px;margin-top:4px;max-height:80px;overflow:auto;white-space:pre-wrap">' + escHtml(m.output_preview) + '</div>'
+          : '') +
+      '</div>';
+    }).join('');
+  };
+
+  // Poll loop
+  const poll = async function() {
+    if (stopped) return;
+    let r;
+    try { r = await apiRequest('GET', '/api/crews/' + crewId + '/executions/' + execId); }
+    catch (e) { setTimeout(poll, 1200); return; }
+    if (stopped) return;
+    if (!r || !r.ok) {
+      const el = document.getElementById('cem-overall-status');
+      if (el) { el.textContent = '✗ ' + (r && r.error ? r.error : 'error'); el.style.background = 'rgba(239,68,68,0.15)'; el.style.color = '#ef4444'; }
+      return;
+    }
+    const exec = r.execution;
+    renderMembers(exec.memberStatuses || []);
+    const statusEl = document.getElementById('cem-overall-status');
+    if (exec.status === 'running') {
+      if (statusEl) statusEl.textContent = '⏳ ' + (isRu ? 'выполняется…' : 'running…');
+      setTimeout(poll, 600);
+    } else {
+      // Finished — show final block
+      if (statusEl) {
+        if (exec.status === 'completed') {
+          statusEl.textContent = '✓ ' + (isRu ? 'готово' : 'completed');
+          statusEl.style.background = 'rgba(34,197,94,0.15)';
+          statusEl.style.color = '#22c55e';
+        } else {
+          statusEl.textContent = '✗ ' + (exec.status || 'failed');
+          statusEl.style.background = 'rgba(239,68,68,0.15)';
+          statusEl.style.color = '#ef4444';
+        }
+      }
+      const finalEl = document.getElementById('cem-final');
+      if (finalEl && exec.finalOutput) {
+        finalEl.style.display = 'block';
+        finalEl.innerHTML = '<div style="font-size:12px;font-weight:600;margin-bottom:6px">🏁 ' + (isRu ? 'Итог' : 'Final output') + '</div>' +
+          '<div style="font-size:12px;white-space:pre-wrap;max-height:200px;overflow:auto">' + escHtml(exec.finalOutput) + '</div>';
+      }
+    }
+  };
+  poll();
+}
+
+async function createCrewWallet(crewId, btnEl) {
+  const isRu = currentLang === 'ru';
+  if (!confirm(isRu ? 'Создать общий TON-кошелёк для команды? Мнемоника хранится зашифрованной на сервере.' : 'Create shared TON wallet for the crew? Mnemonic is stored encrypted server-side.')) return;
+  if (btnEl) { btnEl.disabled = true; btnEl.textContent = isRu ? 'Создаём…' : 'Creating…'; }
+  const r = await apiRequest('POST', '/api/crews/' + crewId + '/wallet');
+  if (r.ok) {
+    toast(isRu ? 'Кошелёк создан: ' + r.address.slice(0, 12) + '…' : 'Wallet created: ' + r.address.slice(0, 12) + '…', 'success');
+    document.querySelectorAll('div[style*="fixed"]').forEach(el => el.remove());
+    viewCrewDetails(crewId);
+  } else {
+    toast(r.error || 'Error', 'error');
+    if (btnEl) { btnEl.disabled = false; btnEl.textContent = isRu ? '+ Создать кошелёк' : '+ Create wallet'; }
+  }
+}
+
+async function viewCrewWalletLog(crewId) {
+  const isRu = currentLang === 'ru';
+  const r = await apiRequest('GET', '/api/crews/' + crewId + '/wallet/log?limit=30');
+  if (!r.ok) { toast(r.error || 'Error', 'error'); return; }
+  const log = r.log || [];
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML = '<div style="background:var(--bg-secondary);border-radius:14px;padding:20px;max-width:600px;width:100%;max-height:80vh;overflow:auto">' +
+    '<h3 style="margin:0 0 12px 0">' + (isRu ? 'История кошелька' : 'Wallet log') + '</h3>' +
+    (log.length === 0
+      ? '<div style="color:var(--text-muted);text-align:center;padding:20px">' + (isRu ? 'Пока пусто' : 'Empty') + '</div>'
+      : '<table style="width:100%;font-size:12px"><tr style="color:var(--text-muted);text-align:left"><th>' + (isRu ? 'Когда' : 'When') + '</th><th>' + (isRu ? 'Кто' : 'Who') + '</th><th>' + (isRu ? 'Куда' : 'To') + '</th><th>TON</th><th>tx</th></tr>' +
+        log.map(l => '<tr><td>' + new Date(l.created_at).toLocaleString() + '</td><td>#' + l.agent_id + '</td><td style="font-family:monospace">' + escHtml(String(l.destination || '').slice(0, 14)) + '…</td><td>' + Number(l.amount_ton).toFixed(4) + '</td><td>' + (l.tx_hash ? '<a href="https://tonviewer.com/transaction/' + l.tx_hash + '" target="_blank" style="color:var(--primary)">↗</a>' : '—') + '</td></tr>').join('') + '</table>') +
+    '<div style="display:flex;justify-content:flex-end;margin-top:14px"><button class="btn" onclick="this.closest(\'div[style*=fixed]\').remove()">' + (isRu ? 'Закрыть' : 'Close') + '</button></div></div>';
+  document.body.appendChild(overlay);
+}
+
 async function loadNetworkMap() {
   const canvas = document.getElementById('agent-network-canvas');
   if (!canvas) return;
@@ -8146,8 +11776,40 @@ async function loadNetworkMap() {
   // Cancel previous animation
   if (_networkAnimId) { cancelAnimationFrame(_networkAnimId); _networkAnimId = null; }
 
-  const data = await apiRequest('GET', '/api/agents');
-  const agents = (data.ok ? data.agents : []) || [];
+  // Reset viewport on every load — otherwise leftover zoom/pan from a previous
+  // visit makes nodes appear off-screen ("карта пустая" symptom).
+  _networkZoom = 1.0;
+  _networkPan = { x: 0, y: 0 };
+  var zoomLbl = document.getElementById('net-zoom-label');
+  if (zoomLbl) zoomLbl.textContent = '100%';
+
+  // Pull agents + crews + mailbox traffic in parallel — crews give cluster edges,
+  // mailbox gives communication edges. Either failing must not break rendering.
+  let agents = [];
+  let crews = [];
+  let mailboxEdges = [];
+  try {
+    const data = await apiRequest('GET', '/api/agents');
+    agents = (data && data.ok ? data.agents : []) || [];
+  } catch (e) {
+    console.error('[NetworkMap] /api/agents failed:', e);
+  }
+  try {
+    const crewsResp = await apiRequest('GET', '/api/crews');
+    crews = (crewsResp && crewsResp.ok ? crewsResp.crews : []) || [];
+  } catch (e) {
+    console.warn('[NetworkMap] /api/crews failed (non-fatal):', e);
+  }
+  try {
+    const mxResp = await apiRequest('GET', '/api/agents/network-edges?days=7');
+    mailboxEdges = (mxResp && mxResp.ok ? mxResp.edges : []) || [];
+  } catch (e) {
+    console.warn('[NetworkMap] /api/agents/network-edges failed (non-fatal):', e);
+  }
+  _networkCrews = crews;
+
+  // Render the crews floating panel (was a separate sidebar tab before)
+  try { renderNetworkCrewsPanel(crews); } catch (e) { console.warn('[NetworkMap] renderNetworkCrewsPanel:', e); }
 
   // Update stats
   var elTotal = document.getElementById('net-stat-total');
@@ -8176,20 +11838,23 @@ async function loadNetworkMap() {
   var W = dims.w, H = dims.h;
 
   // Build nodes
-  var roleColors = { director: '#ffd700', manager: '#a855f7', specialist: '#10b981', monitor: '#f59e0b', worker: '#0098EA' };
+  var roleColors = { director: '#ffd700', manager: '#8b5cf6', specialist: '#10b981', monitor: '#f59e0b', worker: '#00a8ff' };
   var roleLabels = { director: 'DIR', manager: 'MGR', specialist: 'SPEC', monitor: 'MON', worker: 'WRK' };
 
   _networkNodes = agents.map(function(a, i) {
     var role = a.role || 'worker';
     var level = a.level || 1;
-    var radius = role === 'director' ? 30 + level : role === 'manager' ? 24 + level : role === 'specialist' ? 22 + level : role === 'monitor' ? 20 + level : 18 + Math.min(level, 5);
+    var baseBoost = agents.length <= 3 ? 20 : agents.length <= 6 ? 12 : 6;
+    var radius = role === 'director' ? 40 + level * 2 + baseBoost : role === 'manager' ? 34 + level * 2 + baseBoost : role === 'specialist' ? 30 + level + baseBoost : role === 'monitor' ? 28 + level + baseBoost : 24 + Math.min(level, 5) + baseBoost;
     var trigCfg = {}; try { var _t2 = a.trigger_config || a.triggerConfig || {}; trigCfg = typeof _t2 === 'string' ? JSON.parse(_t2) : _t2; } catch(e) {}
     var customColor = (trigCfg.config && trigCfg.config.agentColor) || '';
-    var color = !a.isActive ? '#555' : (customColor || roleColors[role] || '#0098EA');
+    var color = !a.isActive ? '#6b7280' : (customColor || roleColors[role] || '#00a8ff');
     var customRoleName = (trigCfg.config && trigCfg.config.customRole && trigCfg.config.customRole.name) || '';
     var roleLabel = customRoleName || roleLabels[role] || role.toUpperCase().slice(0, 4);
     var angle = (i / agents.length) * Math.PI * 2;
-    var spread = Math.min(W, H) * 0.28;
+    // Larger spread for fewer agents so they're visible
+    var spreadRatio = agents.length <= 3 ? 0.38 : agents.length <= 6 ? 0.34 : 0.30;
+    var spread = Math.min(W, H) * spreadRatio;
     return {
       id: a.id, name: a.name || 'Agent #' + a.id,
       role: role, level: level, xp: a.xp || 0,
@@ -8201,29 +11866,87 @@ async function loadNetworkMap() {
     };
   });
 
-  // Build edges
+  // Build edges from REAL data — was "fake cycle for visual interest" before.
+  // Edge sources, in priority order:
+  //   1. Crew memberships: every crew → connect manager to each worker (or
+  //      ring among members if no manager). Edge kind='crew', tinted to crew color.
+  //   2. Role hierarchy: director → ALL of their agents (visual hierarchy hint)
+  //   3. Same-role-pair grouping is INTENTIONALLY skipped — no more fake links.
+  // Edges are deduped by (from,to) so a worker that's in two crews keeps a
+  // single line per source.
   var edges = [];
-  var directors = _networkNodes.filter(function(n) { return n.role === 'director'; });
-  var managers = _networkNodes.filter(function(n) { return n.role === 'manager'; });
-  var workers = _networkNodes.filter(function(n) { return n.role === 'worker'; });
+  var seenEdges = new Set(); // 'fromId:toId' to dedupe
+  var nodeById = {};
+  _networkNodes.forEach(function(n) { nodeById[n.id] = n; });
 
+  // Stable color-per-crew for tinting edges + nodes
+  var crewColors = ['#00a8ff', '#a855f7', '#22c55e', '#f59e0b', '#ec4899', '#06b6d4', '#84cc16', '#f97316'];
+  crews.forEach(function(c, cIdx) {
+    c._color = crewColors[cIdx % crewColors.length];
+    var memberIds = (c.agent_ids || []).filter(function(id) { return nodeById[id]; });
+    if (memberIds.length < 2) return;
+    var managerNode = c.manager_agent_id ? nodeById[c.manager_agent_id] : null;
+    if (managerNode) {
+      // Manager → each worker
+      memberIds.forEach(function(mid) {
+        if (mid === managerNode.id) return;
+        var key = managerNode.id + ':' + mid;
+        if (seenEdges.has(key)) return;
+        seenEdges.add(key);
+        edges.push({ from: managerNode, to: nodeById[mid], kind: 'crew-manage', color: c._color, crewId: c.id });
+      });
+    } else {
+      // No manager — ring among members so the cluster is visible without a centre
+      for (var i = 0; i < memberIds.length; i++) {
+        var a = memberIds[i], b = memberIds[(i + 1) % memberIds.length];
+        if (a === b) continue;
+        var key = a + ':' + b;
+        if (seenEdges.has(key)) continue;
+        seenEdges.add(key);
+        edges.push({ from: nodeById[a], to: nodeById[b], kind: 'crew-ring', color: c._color, crewId: c.id });
+      }
+    }
+  });
+
+  // Role hierarchy on top of crews — director → all, but only if not already linked
+  var directors = _networkNodes.filter(function(n) { return n.role === 'director'; });
   directors.forEach(function(d) {
     _networkNodes.forEach(function(n) {
-      if (n.id !== d.id) edges.push({ from: d, to: n });
+      if (n.id === d.id) return;
+      var key = d.id + ':' + n.id;
+      if (seenEdges.has(key)) return;
+      seenEdges.add(key);
+      edges.push({ from: d, to: n, kind: 'director', color: '#ffd700' });
     });
   });
-  managers.forEach(function(m) {
-    workers.forEach(function(w) { edges.push({ from: m, to: w }); });
+
+  // Mailbox traffic — real inter-agent communication over the last 7 days.
+  // Renders as a thin grey edge (lighter than crew/director edges) so the
+  // crew-cluster pattern stays the visual focus but you can see who actually
+  // talks to whom. Edge thickness scales loosely with message count.
+  mailboxEdges.forEach(function(m) {
+    var fromN = nodeById[m.from], toN = nodeById[m.to];
+    if (!fromN || !toN || fromN === toN) return;
+    var key = m.from + ':' + m.to;
+    if (seenEdges.has(key)) return;
+    seenEdges.add(key);
+    edges.push({ from: fromN, to: toN, kind: 'mail', color: '#94a3b8', count: m.count });
   });
-  if (!directors.length && !managers.length && _networkNodes.length > 1) {
-    for (var i = 0; i < _networkNodes.length - 1; i++) {
-      edges.push({ from: _networkNodes[i], to: _networkNodes[i + 1] });
-    }
-    // Close the loop for visual interest
-    if (_networkNodes.length > 2) {
-      edges.push({ from: _networkNodes[_networkNodes.length - 1], to: _networkNodes[0] });
-    }
-  }
+
+  // Track per-agent crew membership for hover-highlight + node tint
+  _networkNodes.forEach(function(n) {
+    n.crewIds = [];
+    n.crewColor = null;
+  });
+  crews.forEach(function(c) {
+    (c.agent_ids || []).forEach(function(id) {
+      var node = nodeById[id];
+      if (!node) return;
+      node.crewIds.push(c.id);
+      if (!node.crewColor) node.crewColor = c._color;
+    });
+  });
+
   _networkEdges = edges;
   if (elEdges) elEdges.textContent = edges.length;
 
@@ -8416,12 +12139,15 @@ async function loadNetworkMap() {
     ctx.fillRect(0, 0, W, H);
 
     // Nebula aurora glow
+    // Canvas gradients DON'T accept CSS variables — use literal rgba (the accent
+    // colours were inlined here; they used to come from --accent-r/g/b but that
+    // syntax silently broke addColorStop and killed the whole animate() loop).
     var auroraX = W * 0.5 + Math.sin(time * 0.15) * W * 0.2;
     var auroraY = H * 0.4 + Math.cos(time * 0.12) * H * 0.15;
     var aurora = ctx.createRadialGradient(auroraX, auroraY, 0, auroraX, auroraY, W * 0.4);
     aurora.addColorStop(0, 'rgba(0,152,234,0.04)');
     aurora.addColorStop(0.4, 'rgba(168,85,247,0.02)');
-    aurora.addColorStop(1, 'transparent');
+    aurora.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = aurora;
     ctx.fillRect(0, 0, W, H);
 
@@ -8476,6 +12202,7 @@ async function loadNetworkMap() {
     }
     // Spring forces on edges
     edges.forEach(function(e) {
+      if (!e || !e.from || !e.to) return; // defensive — bad edge would NaN out physics
       var dx = e.to.x - e.from.x, dy = e.to.y - e.from.y;
       var dist = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
       var spring = 0.006;
@@ -8498,6 +12225,7 @@ async function loadNetworkMap() {
 
     // === Draw edges (curved bezier) ===
     edges.forEach(function(e, idx) {
+      if (!e || !e.from || !e.to) return; // skip malformed
       var fx = e.from.x, fy = e.from.y, tx = e.to.x, ty = e.to.y;
       var mx = (fx + tx) / 2, my = (fy + ty) / 2;
       // Perpendicular offset for curve
@@ -8553,7 +12281,11 @@ async function loadNetworkMap() {
       var r = n.radius + pulse;
 
       var matchesSearch = !_networkSearchQuery || n.name.toLowerCase().includes(_networkSearchQuery.toLowerCase());
-      var alpha = matchesSearch ? 1.0 : 0.12;
+      // Crew hover: if user hovers a crew in the side panel, fade non-members
+      // and add a thick outer ring to members.
+      var inHoveredCrew = _networkHoverCrewId != null && Array.isArray(n.crewIds) && n.crewIds.indexOf(_networkHoverCrewId) >= 0;
+      var fadeForHover = _networkHoverCrewId != null && !inHoveredCrew ? 0.18 : 1.0;
+      var alpha = (matchesSearch ? 1.0 : 0.12) * fadeForHover;
 
       ctx.save();
       ctx.globalAlpha = alpha;
@@ -8572,29 +12304,44 @@ async function loadNetworkMap() {
         }
       }
 
-      // Outer glow (large soft)
-      var glow = ctx.createRadialGradient(n.x, n.y, r * 0.5, n.x, n.y, r * 2.5);
-      glow.addColorStop(0, n.color + '25');
+      // Outer glow (large, bright)
+      var glow = ctx.createRadialGradient(n.x, n.y, r * 0.3, n.x, n.y, r * 3);
+      glow.addColorStop(0, n.color + '60');
+      glow.addColorStop(0.5, n.color + '20');
       glow.addColorStop(1, n.color + '00');
       ctx.fillStyle = glow;
       ctx.beginPath();
-      ctx.arc(n.x, n.y, r * 2.5, 0, Math.PI * 2);
+      ctx.arc(n.x, n.y, r * 3, 0, Math.PI * 2);
       ctx.fill();
 
-      // Main node circle with gradient fill
+      // Main node circle — SOLID fill with bright gradient
       var nodeFill = ctx.createRadialGradient(n.x - r * 0.3, n.y - r * 0.3, 0, n.x, n.y, r);
-      nodeFill.addColorStop(0, n.color + '50');
-      nodeFill.addColorStop(0.7, n.color + '20');
-      nodeFill.addColorStop(1, n.color + '10');
+      nodeFill.addColorStop(0, n.color + 'dd');
+      nodeFill.addColorStop(0.6, n.color + '99');
+      nodeFill.addColorStop(1, n.color + '55');
       ctx.beginPath();
       ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
       ctx.fillStyle = nodeFill;
       ctx.fill();
 
-      // Border
-      ctx.strokeStyle = n.color + (matchesSearch && _networkSearchQuery ? 'ee' : 'aa');
-      ctx.lineWidth = matchesSearch && _networkSearchQuery ? 2.5 : 1.8;
+      // Border — bright and visible
+      ctx.strokeStyle = n.color + (matchesSearch && _networkSearchQuery ? 'ff' : 'dd');
+      ctx.lineWidth = matchesSearch && _networkSearchQuery ? 3 : 2.2;
       ctx.stroke();
+
+      // Crew-hover ring — thick outer ring in crew color when hovering its panel item
+      if (inHoveredCrew) {
+        var hoverCrew = _networkCrews.find(function(cc) { return cc.id === _networkHoverCrewId; });
+        var hoverColor = (hoverCrew && hoverCrew._color) || n.color;
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, r + 8, 0, Math.PI * 2);
+        ctx.strokeStyle = hoverColor;
+        ctx.lineWidth = 3;
+        ctx.setLineDash([4, 4]);
+        ctx.lineDashOffset = -time * 30;
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
 
       // Search highlight ring
       if (matchesSearch && _networkSearchQuery) {
@@ -8708,19 +12455,32 @@ function showWizard(agentId, agentName) {
   _wizardCurrentStep = 0;
   var isRu = currentLang === 'ru';
 
-  // Default wizard steps
+  // 5-step creation wizard (adapted from teleton-agent onboarding)
   _wizardSteps = [
-    { group: 'ai', title: isRu ? 'AI провайдер' : 'AI Provider', fields: [
-      { id: 'AI_PROVIDER', type: 'select', label: isRu ? 'Провайдер' : 'Provider', desc: isRu ? 'Выберите AI модель для агента' : 'Choose AI model for the agent',
-        options: [{v:'openai',l:'OpenAI'},{v:'anthropic',l:'Anthropic'},{v:'gemini',l:'Google Gemini'},{v:'groq',l:'Groq'},{v:'deepseek',l:'DeepSeek'},{v:'openrouter',l:'OpenRouter'},{v:'together',l:'Together AI'}] },
-      { id: 'AI_API_KEY', type: 'password', label: isRu ? 'API ключ' : 'API Key', desc: isRu ? 'Ваш API ключ провайдера' : 'Your provider API key', required: false }
+    // Step 1: Role
+    { group: 'role', title: isRu ? '1. Роль агента' : '1. Agent Role', fields: [
+      { id: 'ROLE', type: 'select', label: isRu ? 'Роль' : 'Role', desc: isRu ? 'Определяет поведение и набор инструментов' : 'Defines behavior and toolset',
+        options: [{v:'specialist',l:isRu?'Специалист — глубокий анализ':'Specialist — deep analysis'},{v:'worker',l:isRu?'Работник — автоматизация':'Worker — automation'},{v:'monitor',l:isRu?'Монитор — алерты':'Monitor — alerts'},{v:'manager',l:isRu?'Менеджер — координация':'Manager — coordination'},{v:'director',l:isRu?'Директор — управление':'Director — management'}] }
     ]},
-    { group: 'capabilities', title: isRu ? 'Возможности' : 'Capabilities', fields: [
-      { id: 'caps', type: 'caps', label: isRu ? 'Выберите возможности' : 'Select capabilities', desc: isRu ? 'Какие инструменты нужны вашему агенту?' : 'What tools does your agent need?' }
+    // Step 2: AI Provider
+    { group: 'ai', title: isRu ? '2. AI провайдер' : '2. AI Provider', fields: [
+      { id: 'AI_PROVIDER', type: 'select', label: isRu ? 'Провайдер' : 'Provider', desc: isRu ? 'Можно оставить по умолчанию (Gemini — бесплатный)' : 'Can leave default (Gemini — free)',
+        options: [{v:'gemini',l:'Google Gemini (free)'},{v:'openai',l:'OpenAI GPT-4o'},{v:'anthropic',l:'Anthropic Claude'},{v:'groq',l:'Groq (fast & free)'},{v:'deepseek',l:'DeepSeek'},{v:'openrouter',l:'OpenRouter'},{v:'together',l:'Together AI'}] },
+      { id: 'AI_API_KEY', type: 'password', label: isRu ? 'API ключ' : 'API Key', desc: isRu ? 'Без ключа агент не сможет работать. Бесплатно: Gemini (aistudio.google.com), Groq (console.groq.com), OpenRouter (openrouter.ai/keys)' : 'Without a key the agent cannot work. Free: Gemini (aistudio.google.com), Groq (console.groq.com), OpenRouter (openrouter.ai/keys)', required: false }
     ]},
-    { group: 'schedule', title: isRu ? 'Расписание' : 'Schedule', fields: [
-      { id: 'intervalMs', type: 'select', label: isRu ? 'Интервал запуска' : 'Run Interval', desc: isRu ? 'Как часто агент должен выполняться автоматически' : 'How often should the agent run automatically',
-        options: [{v:'0',l:isRu?'Только вручную':'Manual only'},{v:'60000',l:'1 min'},{v:'300000',l:'5 min'},{v:'900000',l:'15 min'},{v:'1800000',l:'30 min'},{v:'3600000',l:'1 hour'},{v:'21600000',l:'6 hours'},{v:'86400000',l:'24 hours'}] }
+    // Step 3: Capabilities
+    { group: 'capabilities', title: isRu ? '3. Возможности' : '3. Capabilities', fields: [
+      { id: 'caps', type: 'caps', label: isRu ? 'Выберите что нужно агенту' : 'Select what the agent needs', desc: isRu ? 'Можно изменить позже в настройках' : 'Can be changed later in settings' }
+    ]},
+    // Step 4: Schedule
+    { group: 'schedule', title: isRu ? '4. Расписание' : '4. Schedule', fields: [
+      { id: 'intervalMs', type: 'select', label: isRu ? 'Интервал запуска' : 'Run Interval', desc: isRu ? 'Как часто агент должен работать автоматически' : 'How often should the agent run automatically',
+        options: [{v:'0',l:isRu?'24/7 — постоянно (рекомендуется)':'24/7 — always on (recommended)'},{v:'60000',l:'1 min'},{v:'300000',l:'5 min'},{v:'900000',l:'15 min'},{v:'1800000',l:'30 min'},{v:'3600000',l:'1 hour'},{v:'86400000',l:'24 hours'}] }
+    ]},
+    // Step 5: Wallet
+    { group: 'wallet', title: isRu ? '5. TON кошелёк' : '5. TON Wallet', fields: [
+      { id: 'CREATE_WALLET', type: 'select', label: isRu ? 'Кошелёк' : 'Wallet', desc: isRu ? 'Нужен для TON переводов, покупки подарков и DeFi' : 'Required for TON transfers, gift buying and DeFi',
+        options: [{v:'auto',l:isRu?'Создать автоматически (рекомендуется)':'Create automatically (recommended)'},{v:'skip',l:isRu?'Пропустить — создам позже':'Skip — I will create later'}] }
     ]}
   ];
 
@@ -8774,13 +12534,34 @@ function renderWizardStep(idx) {
         '<input type="' + f.type + '" id="wizard-' + f.id + '" placeholder="' + (f.placeholder || '') + '" style="width:100%;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text-primary);font-size:.85rem">' +
         (f.desc ? '<div class="settings-field-desc">' + f.desc + '</div>' : '') + '</div>';
     } else if (f.type === 'caps') {
+      // Toolset profile presets
+      var profiles = [
+        {id:'minimal',icon:IC.chat,label:isRu?'Минимальный':'Minimal',desc:isRu?'Только чат':'Chat only',caps:['telegram','state','notify']},
+        {id:'standard',icon:IC.globe,label:isRu?'Стандартный':'Standard',desc:isRu?'Чат + web + кошелёк':'Chat + web + wallet',caps:['telegram','state','notify','web','wallet','image','workspace']},
+        {id:'trading',icon:IC.trending,label:isRu?'Трейдинг':'Trading',desc:isRu?'Подарки + DeFi':'Gifts + DeFi',caps:['telegram','state','notify','web','wallet','gifts','gifts_market','defi','blockchain','nft']},
+        {id:'full',icon:IC.infinity,label:isRu?'Полный':'Full',desc:isRu?'Всё включено':'Everything',caps:['wallet','nft','gifts','gifts_market','telegram','telegram_admin','telegram_stories','telegram_forums','telegram_analytics','telegram_media','telegram_discovery','telegram_premium','web','state','events','notify','plugins','inter_agent','blockchain','defi','image','workspace','mcp','confirmation','self_memory']},
+        {id:'admin',icon:IC.shield,label:isRu?'Админ':'Admin',desc:isRu?'Модерация':'Moderation',caps:['telegram','telegram_admin','telegram_analytics','telegram_forums','state','notify','web']},
+        {id:'content',icon:IC.image,label:isRu?'Контент':'Content',desc:isRu?'Медиа + сторис':'Media + stories',caps:['telegram','telegram_admin','telegram_stories','telegram_media','image','web','state','notify','workspace']},
+      ];
+      html += '<div class="settings-field"><label>' + (isRu ? 'Профиль набора инструментов' : 'Toolset Profile') + '</label>' +
+        '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:12px">' +
+        profiles.map(function(p) {
+          return '<div class="wizard-profile-card" data-profile="' + p.id + '" onclick="applyWizardProfile(\'' + p.id + '\')" style="padding:10px;border-radius:8px;background:var(--bg-secondary);cursor:pointer;border:1px solid var(--border);text-align:center;transition:border-color 0.2s,transform 0.15s">' +
+            '<div style="font-size:1.1rem;margin-bottom:4px">' + p.icon + '</div>' +
+            '<div style="font-size:.78rem;font-weight:600">' + p.label + '</div>' +
+            '<div style="font-size:.62rem;color:var(--text-muted)">' + p.desc + '</div>' +
+          '</div>';
+        }).join('') +
+        '</div>' +
+        '<div style="font-size:.68rem;color:var(--text-muted);margin-bottom:8px">' + (isRu ? 'Или выберите вручную:' : 'Or select manually:') + '</div>';
       var quickCaps = [
         {id:'wallet',icon:IC.dollar,name:'Wallet'}, {id:'nft',icon:IC.image,name:'NFT'}, {id:'gifts_market',icon:IC.trending,name:'Gifts Market'},
         {id:'web',icon:IC.globe,name:'Web'}, {id:'defi',icon:IC.shuffle,name:'DeFi'}, {id:'telegram',icon:IC.send,name:'Telegram'},
-        {id:'notify',icon:IC.bell,name:'Notify'}, {id:'state',icon:IC.box,name:'State'}
+        {id:'notify',icon:IC.bell,name:'Notify'}, {id:'state',icon:IC.box,name:'State'},
+        {id:'image',icon:IC.image,name:'Image'}, {id:'image_gen',icon:IC.zap,name:'DALL-E'}, {id:'workspace',icon:IC.box,name:'Files'},
+        {id:'blockchain',icon:IC.link,name:'Blockchain'}, {id:'plugins',icon:IC.wrench,name:'Plugins'},
       ];
-      html += '<div class="settings-field"><label>' + f.label + '</label>' +
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">' +
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">' +
         quickCaps.map(function(c) {
           return '<label style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;background:var(--bg-secondary);cursor:pointer;font-size:.82rem;border:1px solid var(--border);transition:border-color 0.2s">' +
             '<input type="checkbox" class="wizard-cap-check" value="' + c.id + '" style="accent-color:var(--primary)" onchange="this.closest(\'label\').style.borderColor=this.checked?\'var(--primary)\':\'var(--border)\'">' +
@@ -8798,6 +12579,36 @@ function renderWizardStep(idx) {
   body.style.animation = 'tabContentFade 0.35s cubic-bezier(0.4,0,0.2,1)';
 }
 
+var _wizardProfiles = {
+  minimal: ['telegram','state','notify'],
+  standard: ['telegram','state','notify','web','wallet','image','workspace'],
+  trading: ['telegram','state','notify','web','wallet','gifts','gifts_market','defi','blockchain','nft'],
+  full: ['wallet','nft','gifts','gifts_market','telegram','telegram_admin','telegram_stories','telegram_forums','telegram_analytics','telegram_media','telegram_discovery','telegram_premium','web','state','events','notify','plugins','inter_agent','blockchain','defi','image','workspace','mcp','confirmation','self_memory'],
+  admin: ['telegram','telegram_admin','telegram_analytics','telegram_forums','state','notify','web'],
+  content: ['telegram','telegram_admin','telegram_stories','telegram_media','image','web','state','notify','workspace'],
+};
+
+function applyWizardProfile(profileId) {
+  var caps = _wizardProfiles[profileId] || [];
+  // Uncheck all
+  document.querySelectorAll('.wizard-cap-check').forEach(function(cb) {
+    cb.checked = false;
+    cb.closest('label').style.borderColor = 'var(--border)';
+  });
+  // Check matching
+  document.querySelectorAll('.wizard-cap-check').forEach(function(cb) {
+    if (caps.indexOf(cb.value) >= 0) {
+      cb.checked = true;
+      cb.closest('label').style.borderColor = 'var(--primary)';
+    }
+  });
+  // Highlight selected profile card
+  document.querySelectorAll('.wizard-profile-card').forEach(function(card) {
+    card.style.borderColor = card.getAttribute('data-profile') === profileId ? 'var(--primary)' : 'var(--border)';
+    card.style.transform = card.getAttribute('data-profile') === profileId ? 'scale(1.03)' : '';
+  });
+}
+
 function wizardNext() {
   if (_wizardCurrentStep < _wizardSteps.length - 1) {
     renderWizardStep(_wizardCurrentStep + 1);
@@ -8811,26 +12622,43 @@ function wizardBack() {
 }
 
 async function submitWizard() {
-  // Collect all values
+  // Collect all values from all steps
   var config = {};
+  // Role
+  var roleEl = document.getElementById('wizard-ROLE');
+  if (roleEl && roleEl.value) config.role = roleEl.value;
+  // AI Provider
   var providerEl = document.getElementById('wizard-AI_PROVIDER');
   if (providerEl) config.AI_PROVIDER = providerEl.value;
   var keyEl = document.getElementById('wizard-AI_API_KEY');
   if (keyEl && keyEl.value.trim()) config.AI_API_KEY = keyEl.value.trim();
+  // Schedule
   var intervalEl = document.getElementById('wizard-intervalMs');
   if (intervalEl && intervalEl.value !== '0') config.intervalMs = parseInt(intervalEl.value);
   // Capabilities
   var caps = [];
   document.querySelectorAll('.wizard-cap-check:checked').forEach(function(cb) { caps.push(cb.value); });
   if (caps.length) config.enabledCapabilities = caps;
+  // Wallet
+  var walletEl = document.getElementById('wizard-CREATE_WALLET');
+  if (walletEl && walletEl.value === 'auto') config.createWallet = true;
 
   try {
     if (Object.keys(config).length > 0) {
       await apiRequest('PUT', '/api/agents/' + _wizardAgentId + '/wizard', { config: config });
     }
+    // Set role via separate endpoint
+    if (config.role) {
+      await apiRequest('PUT', '/api/agents/' + _wizardAgentId + '/role', { role: config.role }).catch(function() {});
+    }
+    // Create wallet if requested
+    if (config.createWallet) {
+      await apiRequest('POST', '/api/agents/' + _wizardAgentId + '/wallet').catch(function() {});
+    }
   } catch(e) { /* silent - best effort */ }
 
   closeWizard();
+  toast(currentLang === 'ru' ? 'Агент настроен!' : 'Agent configured!', 'success');
   navigateTo('agents');
   loadAgentsPage();
 }
@@ -8902,7 +12730,7 @@ function switchAssistantTarget(value) {
       container.innerHTML = saved;
     } else {
       var agentName = value.replace('agent_', '#');
-      container.innerHTML = '<div class="assistant-welcome"><div class="assistant-welcome-icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>' +
+      container.innerHTML = '<div class="assistant-welcome"><div class="assistant-welcome-icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>' +
         '<h3>' + (currentLang === 'ru' ? 'Чат с агентом ' : 'Chat with Agent ') + agentName + '</h3>' +
         '<p>' + (currentLang === 'ru' ? 'Отправьте сообщение агенту напрямую' : 'Send a message directly to the agent') + '</p></div>';
     }
@@ -8947,12 +12775,12 @@ function appendAssistantMsg(role, content, buttons) {
     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     // Navigation links: [[page:pageName|Label]] → clickable links that navigate within studio
-    .replace(/\[\[page:(\w+)\|([^\]]+)\]\]/g, '<a href="#" class="assistant-nav-link" onclick="navigateTo(\'$1\');return false" style="color:#7dd3fc;text-decoration:underline;cursor:pointer">$2</a>')
+    .replace(/\[\[page:(\w+)\|([^\]]+)\]\]/g, '<a href="#" class="assistant-nav-link" onclick="navigateTo(\'$1\');return false" style="color:var(--primary-light);text-decoration:underline;cursor:pointer">$2</a>')
     // Standard markdown links: [text](url) → external links (only http/https)
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^)"']+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:#7dd3fc;text-decoration:underline">$1</a>')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)"']+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:var(--primary-light);text-decoration:underline">$1</a>')
     .replace(/\n/g, '<br>');
   if (role === 'assistant') {
-    html = '<div class="assistant-msg-avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="assistant-msg-content">' + html;
+    html = '<div class="assistant-msg-avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="assistant-msg-content">' + html;
   } else {
     html = '<div class="assistant-msg-content">' + html;
   }
@@ -9014,7 +12842,7 @@ async function sendAssistantMessage() {
   var typing = document.createElement('div');
   typing.className = 'assistant-msg assistant assistant-typing';
   typing.id = 'assistant-typing';
-  typing.innerHTML = '<div class="assistant-msg-avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="assistant-msg-content"><div class="typing-dots"><span></span><span></span><span></span></div></div>';
+  typing.innerHTML = '<div class="assistant-msg-avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="assistant-msg-content"><div class="typing-dots"><span></span><span></span><span></span></div></div>';
   container.appendChild(typing);
   container.scrollTop = container.scrollHeight;
 
@@ -9022,32 +12850,183 @@ async function sendAssistantMessage() {
   if (sendBtn) sendBtn.disabled = true;
 
   try {
-    var data;
     if (_assistantTarget !== 'atlas' && _assistantTarget.startsWith('agent_')) {
-      var agentId = _assistantTarget.replace('agent_', '');
-      data = await apiRequest('POST', '/api/agents/' + agentId + '/chat', { message: text });
-    } else {
-      data = await apiRequest('POST', '/api/chat', { message: text, context: getStudioContext() });
-    }
-    var typingEl = document.getElementById('assistant-typing');
-    if (typingEl) typingEl.remove();
-
-    if (data.ok && data.result) {
-      var r = data.result;
-      appendAssistantMsg('assistant', r.content || r.response || r, r.buttons);
-      if (r.type === 'agent_created') {
-        loadAgents();
-        toast(currentLang === 'ru' ? 'Агент создан!' : 'Agent created!', 'success');
-        if (r.agentId) {
-          showWizard(r.agentId, r.agentName || '');
-        } else {
-          navigateTo('agents');
+      // ── Streaming for agent chat ──────────────────────────────────────
+      var agentId2 = _assistantTarget.replace('agent_', '');
+      var typingEl0 = document.getElementById('assistant-typing');
+      // Create streaming message bubble
+      if (typingEl0) typingEl0.remove();
+      var streamDiv = document.createElement('div');
+      streamDiv.className = 'assistant-msg assistant';
+      streamDiv.innerHTML = '<div class="assistant-msg-avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="assistant-msg-content"><span class="chat-cursor">▋</span></div>';
+      var ctr = document.getElementById('assistant-messages');
+      if (ctr) { ctr.appendChild(streamDiv); ctr.scrollTop = ctr.scrollHeight; }
+      var streamEl = streamDiv.querySelector('.assistant-msg-content'); // direct ref — no id needed
+      var streamText = '';
+      await _streamAgentChat(agentId2, text,
+        function(chunk) {
+          streamText += chunk;
+          if (streamEl) {
+            streamEl.innerHTML = escHtml(streamText)
+              .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+              .replace(/`([^`]+)`/g, '<code style="background:rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.15);padding:1px 5px;border-radius:3px;font-size:.8em">$1</code>')
+              .replace(/\n/g, '<br>') + '<span class="chat-cursor">▋</span>';
+            if (ctr) ctr.scrollTop = ctr.scrollHeight;
+          }
+        },
+        function(full) {
+          var finalText = streamText || full || '…';
+          if (streamEl) {
+            streamEl.innerHTML = escHtml(finalText)
+              .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+              .replace(/`([^`]+)`/g, '<code style="background:rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.15);padding:1px 5px;border-radius:3px;font-size:.8em">$1</code>')
+              .replace(/\n/g, '<br>');
+          }
+        },
+        function(err) {
+          // fallback
+          apiRequest('POST', '/api/agents/' + agentId2 + '/chat', { message: text }).then(function(d) {
+            if (streamEl) streamEl.innerHTML = escHtml(d.ok ? (d.response || '…') : (d.error || err)).replace(/\n/g, '<br>');
+          });
         }
-      }
-    } else if (data.ok && data.response) {
-      appendAssistantMsg('assistant', data.response);
+      );
     } else {
-      appendAssistantMsg('assistant', data.error || 'Error');
+      // ── Atlas streaming chat ─────────────────────────────────────────
+      var typingEl0a = document.getElementById('assistant-typing');
+      if (typingEl0a) typingEl0a.remove();
+
+      // Try streaming first
+      var atlasStreamed = false;
+      try {
+        var atlasResp = await fetch('/api/chat/stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Auth-Token': authToken || '' },
+          body: JSON.stringify({ message: text, context: getStudioContext() }),
+        });
+        // If server returns JSON (command route), handle normally
+        var ct = atlasResp.headers.get('content-type') || '';
+        if (ct.includes('application/json')) {
+          var data = await atlasResp.json();
+          if (data.ok && data.result) {
+            var r = data.result;
+            appendAssistantMsg('assistant', r.content || r.response || String(r), r.buttons);
+            if (r.type === 'agent_created') {
+              console.log('[Atlas] agent_created, agentId=' + r.agentId);
+              handleAgentCreated(r.agentId);
+            }
+          } else { appendAssistantMsg('assistant', data.error || 'Error'); }
+          atlasStreamed = true;
+        } else if (atlasResp.ok && atlasResp.body) {
+          // SSE stream
+          var atlasDiv = document.createElement('div');
+          atlasDiv.className = 'assistant-msg assistant';
+          atlasDiv.innerHTML = '<div class="assistant-msg-avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="assistant-msg-content"><span class="chat-cursor">▋</span></div>';
+          var atlasCtr = document.getElementById('assistant-messages');
+          if (atlasCtr) { atlasCtr.appendChild(atlasDiv); atlasCtr.scrollTop = atlasCtr.scrollHeight; }
+          var atlasStreamEl = atlasDiv.querySelector('.assistant-msg-content'); // direct ref — no id collisions
+
+          var atlasReader = atlasResp.body.getReader();
+          var atlasDecoder = new TextDecoder();
+          var atlasBuf = '', atlasEvt = '', atlasText = '';
+          while (true) {
+            var _ar = await atlasReader.read();
+            if (_ar.done) break;
+            atlasBuf += atlasDecoder.decode(_ar.value, { stream: true });
+            var atlasLines = atlasBuf.split('\n');
+            atlasBuf = atlasLines.pop() || '';
+            for (var _i = 0; _i < atlasLines.length; _i++) {
+              var _line = atlasLines[_i];
+              if (_line.startsWith('event:')) { atlasEvt = _line.slice(6).trim(); continue; }
+              if (_line.startsWith('data:')) {
+                try {
+                  var _p = JSON.parse(_line.slice(5).trim());
+                  if (atlasEvt === 'chunk' && _p.text) {
+                    atlasText += _p.text;
+                    if (atlasStreamEl) {
+                      atlasStreamEl.innerHTML = escHtml(atlasText)
+                        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                        .replace(/`([^`]+)`/g, '<code>$1</code>')
+                        .replace(/\[\[page:(\w+)\|([^\]]+)\]\]/g, '<a href="#" class="assistant-nav-link" onclick="navigateTo(\'$1\');return false" style="color:var(--primary-light);text-decoration:underline;cursor:pointer">$2</a>')
+                        .replace(/\n/g, '<br>') + '<span class="chat-cursor">▋</span>';
+                      if (atlasCtr) atlasCtr.scrollTop = atlasCtr.scrollHeight;
+                    }
+                  } else if (atlasEvt === 'done') {
+                    if (atlasStreamEl) {
+                      var _final = atlasText || _p.fullText || '…';
+                      // Atlas interview outputs: extract <crew-suggest>{json}</crew-suggest>
+                      // OR <role-suggest>{json}</role-suggest> markers and render as inline
+                      // "Create" action buttons.
+                      var _crewSuggest = null;
+                      _final = _final.replace(/<crew-suggest>([\s\S]*?)<\/crew-suggest>/g, function(_m, body) {
+                        try { _crewSuggest = JSON.parse(body.trim()); } catch (_je) { _crewSuggest = null; }
+                        return ''; // strip marker from visible text
+                      });
+                      var _roleSuggest = null;
+                      _final = _final.replace(/<role-suggest>([\s\S]*?)<\/role-suggest>/g, function(_m, body) {
+                        try { _roleSuggest = JSON.parse(body.trim()); } catch (_je) { _roleSuggest = null; }
+                        return '';
+                      });
+                      atlasStreamEl.innerHTML = escHtml(_final.trim())
+                        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                        .replace(/`([^`]+)`/g, '<code>$1</code>')
+                        .replace(/\[\[page:(\w+)\|([^\]]+)\]\]/g, '<a href="#" class="assistant-nav-link" onclick="navigateTo(\'$1\');return false" style="color:var(--primary-light);text-decoration:underline;cursor:pointer">$2</a>')
+                        .replace(/\n/g, '<br>');
+                      if (_crewSuggest && Array.isArray(_crewSuggest.agent_ids) && _crewSuggest.agent_ids.length > 0) {
+                        var _btnId = 'crew-sug-btn-' + Date.now();
+                        var _suggestKey = '_atlasCrewSuggest_' + Date.now();
+                        window[_suggestKey] = _crewSuggest;
+                        var _meta = (_crewSuggest.agent_ids || []).length + ' агентов' + (_crewSuggest.manager_agent_id ? ' · менеджер #' + _crewSuggest.manager_agent_id : '');
+                        var _actionHtml = '<div style="margin-top:10px;padding:10px;background:rgba(0,168,255,0.08);border:1px solid rgba(0,168,255,0.28);border-radius:10px">' +
+                          '<div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">Atlas предлагает создать команду</div>' +
+                          '<div style="font-weight:600;margin-bottom:2px">' + escHtml(String(_crewSuggest.name || 'Crew')) + '</div>' +
+                          '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">' + escHtml(String(_crewSuggest.description || '')) + '</div>' +
+                          '<div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">' + _meta + '</div>' +
+                          '<button id="' + _btnId + '" class="btn btn-primary" style="font-size:12px;padding:6px 14px" onclick="acceptAtlasCrewSuggest(\'' + _suggestKey + '\', this)">▶ Создать команду</button>' +
+                          '<button class="btn" style="font-size:12px;padding:6px 12px;margin-left:6px" onclick="this.closest(\'div\').remove()">Отмена</button>' +
+                          '</div>';
+                        atlasStreamEl.insertAdjacentHTML('beforeend', _actionHtml);
+                      }
+                      if (_roleSuggest && _roleSuggest.role_name && _roleSuggest.system_prompt_module) {
+                        var _rKey = '_atlasRoleSuggest_' + Date.now();
+                        window[_rKey] = _roleSuggest;
+                        var _rColor = _roleSuggest.color || '#a855f7';
+                        var _rMeta = (_roleSuggest.autonomy_level || 'medium') + ' · spend≤' + (Number(_roleSuggest.max_spend_per_action_ton) || 0) + ' TON';
+                        if (_roleSuggest.tick_interval_ms) _rMeta += ' · tick ' + Math.round(Number(_roleSuggest.tick_interval_ms) / 1000) + 's';
+                        var _capsList = (Array.isArray(_roleSuggest.default_capabilities) ? _roleSuggest.default_capabilities : []).slice(0, 6).join(', ');
+                        var _roleHtml = '<div style="margin-top:10px;padding:10px;background:rgba(168,85,247,0.08);border:1px solid rgba(168,85,247,0.30);border-radius:10px">' +
+                          '<div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">Atlas предлагает создать роль</div>' +
+                          '<div style="font-weight:600;margin-bottom:2px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + _rColor + ';margin-right:6px;vertical-align:middle"></span>' + escHtml(String(_roleSuggest.display_name || _roleSuggest.role_name)) + '</div>' +
+                          '<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">' + _rMeta + '</div>' +
+                          (_capsList ? '<div style="font-size:11px;color:var(--text-secondary);margin-bottom:8px">capabilities: ' + escHtml(_capsList) + '</div>' : '') +
+                          '<button class="btn btn-primary" style="font-size:12px;padding:6px 14px" onclick="acceptAtlasRoleSuggest(\'' + _rKey + '\', this)">▶ Создать роль</button>' +
+                          '<button class="btn" style="font-size:12px;padding:6px 12px;margin-left:6px" onclick="this.closest(\'div\').remove()">Отмена</button>' +
+                          '</div>';
+                        atlasStreamEl.insertAdjacentHTML('beforeend', _roleHtml);
+                      }
+                    }
+                  } else if (atlasEvt === 'error') {
+                    if (atlasStreamEl) atlasStreamEl.textContent = _p.message || 'Error';
+                  }
+                } catch(_ep) {}
+                atlasEvt = '';
+              }
+            }
+          }
+          atlasStreamed = true;
+        }
+      } catch(_se) { atlasStreamed = false; }
+
+      if (!atlasStreamed) {
+        // Ultimate fallback: non-streaming
+        var data2 = await apiRequest('POST', '/api/chat', { message: text, context: getStudioContext() });
+        if (data2.ok && data2.result) {
+          var r2 = data2.result;
+          appendAssistantMsg('assistant', r2.content || r2.response || String(r2), r2.buttons);
+          if (r2.type === 'agent_created') {
+              handleAgentCreated(r2.agentId);
+          }
+        } else { appendAssistantMsg('assistant', data2.error || 'Error'); }
+      }
     }
   } catch (e) {
     var typingEl2 = document.getElementById('assistant-typing');
@@ -9056,6 +13035,47 @@ async function sendAssistantMessage() {
   } finally {
     if (sendBtn) sendBtn.disabled = false;
   }
+}
+
+// ── Post-creation handler: audit + tour + animation ──
+function handleAgentCreated(agentId) {
+  loadAgents();
+  // Beautiful creation toast
+  var isRu = currentLang === 'ru';
+  toast(isRu ? 'Агент создан!' : 'Agent created!', 'success');
+  if (!agentId) { navigateTo('operations'); return; }
+
+  navigateTo('operations');
+  setTimeout(function() {
+    openAgentDetail(agentId).then(function() {
+      setTimeout(function() { startAgentTour(true); }, 1200);
+      // Run audit and show score badge in guide card
+      setTimeout(function() {
+        apiRequest('GET', '/api/agents/' + agentId + '/audit').then(function(auditData) {
+          if (!auditData || !auditData.ok) return;
+          var score = auditData.score || 0;
+          var fails = (auditData.issues || []).length;
+          var warns = (auditData.warnings || []).length;
+          // Add score badge to guide card
+          var guide = document.getElementById('agent-onboard-guide');
+          if (guide) {
+            var header = guide.querySelector('div > div:first-child > div:last-child');
+            if (header) {
+              var scoreColor = score >= 80 ? '#4ade80' : score >= 50 ? '#f59e0b' : '#ef4444';
+              var badge = document.createElement('div');
+              badge.style.cssText = 'display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;background:' + scoreColor + '15;border:1px solid ' + scoreColor + '30;font-size:.72rem;font-weight:600;color:' + scoreColor + ';margin-top:4px';
+              badge.innerHTML = '<span style="font-size:.8rem">' + (score >= 80 ? '&#9679;' : '&#9888;') + '</span> ' + (isRu ? 'Здоровье' : 'Health') + ': ' + score + '%';
+              header.appendChild(badge);
+            }
+          }
+          // Show toast if issues found
+          if (fails > 0) {
+            toast((isRu ? 'Аудит: ' + fails + ' проблем' : 'Audit: ' + fails + ' issues') + (warns > 0 ? ', ' + warns + ' warn' : ''), 'warning');
+          }
+        }).catch(function() {});
+      }, 2500);
+    });
+  }, 500);
 }
 
 function sendAssistantSuggestion(btn) {
@@ -9074,7 +13094,7 @@ async function sendAssistantCallback(callbackData, label) {
   var typing = document.createElement('div');
   typing.className = 'assistant-msg assistant assistant-typing';
   typing.id = 'assistant-typing';
-  typing.innerHTML = '<div class="assistant-msg-avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="assistant-msg-content"><div class="typing-dots"><span></span><span></span><span></span></div></div>';
+  typing.innerHTML = '<div class="assistant-msg-avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="assistant-msg-content"><div class="typing-dots"><span></span><span></span><span></span></div></div>';
   container.appendChild(typing);
   container.scrollTop = container.scrollHeight;
 
@@ -9085,13 +13105,7 @@ async function sendAssistantCallback(callbackData, label) {
     if (data.ok && data.result) {
       appendAssistantMsg('assistant', data.result.content, data.result.buttons);
       if (data.result.type === 'agent_created') {
-        loadAgents();
-        toast(currentLang === 'ru' ? 'Агент создан!' : 'Agent created!', 'success');
-        if (data.result.agentId) {
-          showWizard(data.result.agentId, data.result.agentName || '');
-        } else {
-          navigateTo('agents');
-        }
+        handleAgentCreated(data.result.agentId);
       }
     } else {
       appendAssistantMsg('assistant', data.error || 'Error');
@@ -9111,7 +13125,7 @@ async function sendChatCallback(callbackData, label) {
 function clearAssistantChat() {
   var container = document.getElementById('assistant-messages');
   if (!container) return;
-  container.innerHTML = '<div class="assistant-welcome"><div class="assistant-welcome-icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><h3>' + (currentLang === 'ru' ? 'Чем могу помочь?' : 'How can I help you?') + '</h3><p>' + (currentLang === 'ru' ? 'Могу создать AI-агента, объяснить функции, помочь с настройками и многое другое.' : 'I can create AI agents, explain features, help with settings, and more.') + '</p></div>';
+  container.innerHTML = '<div class="assistant-welcome"><div class="assistant-welcome-icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><h3>' + (currentLang === 'ru' ? 'Чем могу помочь?' : 'How can I help you?') + '</h3><p>' + (currentLang === 'ru' ? 'Могу создать AI-агента, объяснить функции, помочь с настройками и многое другое.' : 'I can create AI agents, explain features, help with settings, and more.') + '</p></div>';
   var sugg = document.getElementById('assistant-suggestions');
   if (sugg) sugg.style.display = 'flex';
   _assistantLoaded = false;
@@ -9137,6 +13151,58 @@ async function loadMarketplace() {
     _marketplaceListings = [];
   }
   renderMarketplaceGrid();
+  // Refresh tab counts. When filter is 'all' we already have everything;
+  // otherwise issue a separate "all" call to count by category.
+  _updateMarketplaceCounts(_marketplaceFilter === 'all' ? _marketplaceListings : null);
+}
+
+// Fetches the full marketplace (all categories) and writes per-category
+// counts into the tab badges. Skipped if `everything` is provided
+// (already-fetched all-category list from loadMarketplace).
+async function _updateMarketplaceCounts(everything) {
+  var list = everything;
+  if (!list) {
+    try {
+      var d = await apiRequest('GET', '/api/marketplace');
+      list = (d.ok ? d.listings : []) || [];
+    } catch (e) { list = []; }
+  }
+  // 142 → "All" badge gets total, others get filtered count + page subtitle
+  // ("142 публикации") also reflects this total.
+  var counts = { all: list.length, monitoring: 0, defi: 0, nft: 0, gifts: 0, utility: 0 };
+  for (var i = 0; i < list.length; i++) {
+    var c = (list[i].category || '').toLowerCase();
+    if (c in counts) counts[c]++;
+  }
+  Object.keys(counts).forEach(function(k) {
+    var el = document.querySelector('.mkt-tab-count[data-count-for="' + k + '"]');
+    if (el) {
+      el.textContent = counts[k];
+      el.style.display = counts[k] > 0 || k === 'all' ? '' : 'none';
+    }
+  });
+  // Update the subtitle "Х публикаций"
+  var sub = document.querySelector('#marketplace-page .page-subtitle');
+  if (sub && counts.all > 0) {
+    var base = currentLang === 'ru'
+      ? 'Обзор, установка и публикация шаблонов агентов'
+      : 'Browse, install and publish agent templates';
+    var tail = currentLang === 'ru'
+      ? (' · ' + counts.all + ' публикаци' + (counts.all === 1 ? 'я' : (counts.all < 5 ? 'и' : 'й')))
+      : (' · ' + counts.all + ' listing' + (counts.all === 1 ? '' : 's'));
+    sub.textContent = base + tail;
+  }
+}
+
+// Stub for the Filters button — toggles a dropdown panel; for now we
+// just scroll to the tabs so the user knows where to refine. A real
+// filter UI lands in a follow-up.
+function toggleMarketplaceFilters() {
+  var tabs = document.getElementById('marketplace-tabs');
+  if (tabs) tabs.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  toast(currentLang === 'ru'
+    ? 'Используйте табы выше для фильтрации по категории'
+    : 'Use the tabs above to filter by category', 'info');
 }
 
 function filterMarketplace(cat) {
@@ -9191,18 +13257,79 @@ function renderMarketplaceGrid() {
       '<p style="color:var(--text-muted)">' + (currentLang === 'ru' ? 'Пока ничего нет' : 'Nothing here yet') + '</p></div>';
     return;
   }
+
+  // Strip any old .count spans (legacy from before .mkt-tab-count badges)
+  document.querySelectorAll('#marketplace-tabs .mkt-tab .count').forEach(function(c) { c.remove(); });
+  // (per-category counts are now updated centrally via _updateMarketplaceCounts)
+  if (_marketplaceFilter === 'all') {
+    // Also update the page-head subtitle "· N публикаций"
+    var sub = document.querySelector('#marketplace-page .page-sub, #marketplace-page .page-subtitle');
+    if (sub) {
+      var totalCnt = _marketplaceListings.length;
+      var ru = currentLang === 'ru';
+      var unit = ru
+        ? (totalCnt % 10 === 1 && totalCnt % 100 !== 11 ? 'публикация' : (totalCnt % 10 >= 2 && totalCnt % 10 <= 4 && (totalCnt % 100 < 10 || totalCnt % 100 >= 20) ? 'публикации' : 'публикаций'))
+        : (totalCnt === 1 ? 'listing' : 'listings');
+      sub.textContent = (sub.textContent || '').replace(/\s·\s*\d.*$/, '').trim() + ' · ' + totalCnt + ' ' + unit;
+    }
+  }
+
+  function fmtCompact(n) {
+    n = Number(n || 0);
+    if (n >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'K';
+    return String(n);
+  }
+  var catTone = { nft: 'purple', defi: 'green', gifts: 'amber', other: 'amber' };
+
   grid.innerHTML = _marketplaceListings.map(function(l) {
+    var name = l.name || (currentLang === 'ru' ? 'Без названия' : 'Untitled');
+    var initial = (name.trim().charAt(0) || '?').toUpperCase();
+    var avatarInner = l.avatarUrl
+      ? '<img src="' + escHtml(l.avatarUrl) + '" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">'
+      : escHtml(initial);
     var priceText = l.isFree ? (currentLang === 'ru' ? 'Бесплатно' : 'Free') : ((Number(l.price || 0) / 1e9).toFixed(2) + ' TON');
+    var priceClass = l.isFree ? 'mkt-card-price green' : 'mkt-card-price ton';
+    var author = l.sellerUsername ? '@' + escHtml(l.sellerUsername)
+               : l.sellerName ? escHtml(l.sellerName)
+               : (currentLang === 'ru' ? 'аноним' : 'anonymous');
+    var byLbl = currentLang === 'ru' ? 'от ' : 'by ';
+    var installs = Number(l.totalSales || l.total_sales || 0);
+    var runs = Number(l.totalRuns || l.total_runs || 0);
+    var cat = (l.category || 'other').toLowerCase();
+    var tone = catTone[cat] || '';
+    var btnLabel = l.isFree
+      ? (currentLang === 'ru' ? 'Установить' : 'Install')
+      : (currentLang === 'ru' ? 'Купить' : 'Buy');
+    var btnIcon = l.isFree
+      ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'
+      : '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 8v8"/></svg>';
     return '<div class="marketplace-card" onclick="openMarketplaceDetail(' + l.id + ')" style="cursor:pointer">' +
       '<div class="mkt-card-header">' +
-        '<span class="mkt-card-category">' + escHtml(l.category || 'other') + '</span>' +
-        '<span class="mkt-card-price">' + priceText + '</span>' +
+        '<span class="chip ' + tone + '">' + escHtml((l.category || 'other').toUpperCase()) + '</span>' +
+        '<span class="' + priceClass + '">' + priceText + '</span>' +
       '</div>' +
-      '<h4>' + escHtml(l.name) + '</h4>' +
-      '<p>' + escHtml((l.description || '').slice(0, 140)) + '</p>' +
-      '<div style="display:flex;gap:8px">' +
-        '<button class="btn btn-primary btn-sm" onclick="event.stopPropagation();buyFromMarketplace(' + l.id + ')" style="flex:1">' +
-          (l.isFree ? (currentLang === 'ru' ? IC.download + ' Установить' : IC.download + ' Install') : (currentLang === 'ru' ? IC.creditcard + ' Купить' : IC.creditcard + ' Buy')) +
+      '<div class="mkt-card-identity">' +
+        '<div class="mkt-card-avatar' + (l.avatarUrl ? ' has-img' : '') + '">' + avatarInner + '</div>' +
+        '<div class="mkt-card-name-block">' +
+          '<h4>' + escHtml(name) + '</h4>' +
+          '<div class="mkt-card-author">' + byLbl + author + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<p>' + escHtml((l.description || '').slice(0, 200)) + '</p>' +
+      '<div class="mkt-card-foot">' +
+        '<div class="mkt-card-stats">' +
+          '<span class="mkt-card-stat" title="' + (currentLang === 'ru' ? 'установок' : 'installs') + '">' +
+            '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>' +
+            fmtCompact(installs) +
+          '</span>' +
+          (runs > 0 ? '<span class="mkt-card-stat" title="' + (currentLang === 'ru' ? 'запусков' : 'runs') + '">' +
+            '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>' +
+            fmtCompact(runs) +
+          '</span>' : '') +
+        '</div>' +
+        '<button class="btn btn-primary" onclick="event.stopPropagation();buyFromMarketplace(' + l.id + ')">' +
+          btnIcon + ' ' + btnLabel +
         '</button>' +
       '</div>' +
     '</div>';
@@ -9302,7 +13429,7 @@ async function buyFromMarketplace(listingId) {
     confirmText: currentLang === 'ru' ? 'Купить' : 'Buy Now',
     cancelText: currentLang === 'ru' ? 'Отмена' : 'Cancel',
     type: 'info',
-    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>'
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>'
   });
   if (!confirmed) return;
   try {
@@ -9354,7 +13481,7 @@ function toggleGuideSection(headerEl) {
 
 // ===== ONBOARDING SYSTEM =====
 var _onboardingStep = 0;
-var _onboardingTotal = 4;
+var _onboardingTotal = 3; // 3 steps: welcome, capabilities, setup hint
 var _onboardingProvider = 'platform';
 
 function checkOnboarding() {
@@ -9366,14 +13493,13 @@ function checkOnboarding() {
   modal.style.display = 'flex';
   renderOnboardingDots();
   showOnboardingSlide(0);
-  // personalize subtitle
   var subtitle = document.getElementById('onboarding-subtitle');
   if (subtitle) {
     var name = currentUser.first_name || currentUser.username || '';
     if (name) {
       subtitle.textContent = currentLang === 'ru'
-        ? name + ', добро пожаловать! Создавайте автономных AI-агентов, которые работают в Telegram и взаимодействуют с блокчейном TON — без кода.'
-        : name + ', welcome! Build autonomous AI agents that live inside Telegram and work with the TON blockchain — no coding required.';
+        ? name + ', добро пожаловать! Создавайте автономных AI-агентов для Telegram и TON — без кода.'
+        : name + ', welcome! Build autonomous AI agents for Telegram and TON — no coding required.';
     }
   }
 }
@@ -9436,9 +13562,11 @@ function onboardingPrev() {
 
 function onboardingSelectProvider(el, provider) {
   _onboardingProvider = provider;
-  var radios = el.closest('.onboarding-providers').querySelectorAll('.onboarding-provider-radio');
-  radios.forEach(function(r) { r.classList.remove('selected'); });
-  el.querySelector('.onboarding-provider-radio').classList.add('selected');
+  var radios = el.closest('.onboarding-providers');
+  if (radios) {
+    radios.querySelectorAll('.onboarding-provider-radio').forEach(function(r) { r.classList.remove('selected'); });
+    el.querySelector('.onboarding-provider-radio').classList.add('selected');
+  }
 }
 
 function onboardingAction(action) {
@@ -9447,21 +13575,56 @@ function onboardingAction(action) {
   else if (action === 'constructor') navigateTo('agents');
   else if (action === 'marketplace') navigateTo('marketplace');
   else if (action === 'guide') navigateTo('guide');
+  else if (action === 'profile') { navigateTo('profile'); setTimeout(highlightProfileSetup, 500); }
   else if (action === 'telegram') window.open('https://t.me/TonAgentPlatformBot', '_blank');
 }
 
 function finishOnboarding() {
   dismissOnboarding();
-  // If user selected a non-platform provider, navigate to settings so they can add key
-  if (_onboardingProvider && _onboardingProvider !== 'platform') {
-    navigateTo('settings');
-  }
+  // Always go to profile so user can set up API key
+  navigateTo('profile');
+  setTimeout(highlightProfileSetup, 600);
+}
+
+// Highlight empty/important fields in profile after onboarding
+function highlightProfileSetup() {
+  var fields = ['ai-provider-select', 'ai-api-key-input', 'ui-scale-slider'];
+  fields.forEach(function(id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    // Pulse animation
+    el.style.transition = 'box-shadow .3s, border-color .3s';
+    el.style.boxShadow = '0 0 0 3px var(--accent-glow)';
+    el.style.borderColor = 'var(--primary)';
+    // Scroll first empty field into view
+    if (id === 'ai-api-key-input' && !el.value) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.setAttribute('placeholder', currentLang === 'ru' ? 'Вставьте API ключ сюда...' : 'Paste your API key here...');
+    }
+    // Remove highlight after 8s
+    setTimeout(function() {
+      el.style.boxShadow = '';
+      el.style.borderColor = '';
+    }, 8000);
+  });
 }
 
 function dismissOnboarding() {
   var modal = document.getElementById('onboarding-modal');
   if (modal) modal.style.display = 'none';
   localStorage.setItem('onboarding_completed', '1');
+  // Chain into the interactive tour for first-time users so they actually
+  // see the spotlight walkthrough instead of having to find it in Guide.
+  // tour_seen flag prevents re-triggering on subsequent logins / re-opens.
+  try {
+    if (!localStorage.getItem('tour_seen') && typeof startGuidedTour === 'function') {
+      // Defer one tick — let the modal close-transition finish first
+      setTimeout(function() {
+        try { startGuidedTour(); } catch(e) { console.warn('[tour] start failed', e); }
+        localStorage.setItem('tour_seen', '1');
+      }, 320);
+    }
+  } catch(_) {}
 }
 
 // ===== GETTING STARTED TRACKER =====
@@ -9523,6 +13686,46 @@ var TOUR_STEPS = [
 var _tourStep = 0;
 var _tourActive = false;
 var _tourResizeHandler = null;
+
+// Guided tour: sidebar tour → then redirect to settings with spotlight on API key
+function startGuidedTour() {
+  var _origEnd = endTour;
+  var _done = false;
+  endTour = function() {
+    _origEnd();
+    endTour = _origEnd;
+    if (_done) return;
+    _done = true;
+    // Navigate to settings page
+    navigateTo('settings');
+    setTimeout(function() {
+      // Find the API key section and spotlight it
+      var keyInput = document.getElementById('ai-api-key-input');
+      var providerSel = document.getElementById('ai-provider-select');
+      var target = keyInput || providerSel;
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Beautiful pulsing spotlight on the field
+        target.style.transition = 'all .4s ease';
+        target.style.boxShadow = '0 0 0 4px rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.4), 0 0 20px rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.2)';
+        target.style.borderColor = 'var(--primary)';
+        if (keyInput) keyInput.placeholder = currentLang === 'ru' ? 'Вставьте API ключ...' : 'Paste API key...';
+        // Animate pulse
+        var _pulseCount = 0;
+        var _pulseInt = setInterval(function() {
+          _pulseCount++;
+          if (_pulseCount > 6) { clearInterval(_pulseInt); target.style.boxShadow = ''; target.style.borderColor = ''; return; }
+          target.style.boxShadow = _pulseCount % 2 === 0
+            ? '0 0 0 4px rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.4), 0 0 20px rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.2)'
+            : '0 0 0 6px rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.6), 0 0 30px var(--accent-glow)';
+        }, 800);
+      }
+      var isRu = currentLang === 'ru';
+      toast(isRu ? 'Настройте AI провайдер и API ключ' : 'Set up your AI provider and API key', 'info');
+    }, 800);
+  };
+  startTour();
+}
 
 function startTour() {
   _tourStep = 0;
@@ -9605,7 +13808,19 @@ function positionTourElements(step, target) {
   var nextBtn = document.getElementById('tour-next-btn');
   if (nextBtn) nextBtn.textContent = _tourStep === TOUR_STEPS.length - 1 ? (currentLang === 'ru' ? 'Готово!' : 'Done!') : (currentLang === 'ru' ? 'Далее' : 'Next');
 }
-function nextTourStep() { _tourStep++; showTourStep(); }
+function nextTourStep() {
+  // Fade out tooltip before moving
+  var tooltip = document.getElementById('tour-tooltip');
+  if (tooltip) { tooltip.style.opacity = '0'; tooltip.style.transform = 'translateY(8px)'; }
+  setTimeout(function() {
+    _tourStep++;
+    showTourStep();
+    // Fade in after reposition
+    setTimeout(function() {
+      if (tooltip) { tooltip.style.opacity = '1'; tooltip.style.transform = 'translateY(0)'; }
+    }, 100);
+  }, 300);
+}
 function endTour() {
   _tourActive = false;
   var overlay = document.getElementById('tour-overlay');
@@ -9616,6 +13831,102 @@ function endTour() {
   if (_tourResizeHandler) { window.removeEventListener('resize', _tourResizeHandler); _tourResizeHandler = null; }
   localStorage.setItem('tour_completed', '1');
 }
+
+// ── Agent Settings Tour (shown when user first opens agent settings) ──
+var AGENT_TOUR_STEPS = [
+  { target: '[data-tab="soul"]', title: { en: 'System Prompt', ru: 'Промпт — душа агента' }, desc: { en: 'This defines WHO your agent is and HOW it behaves. Write clear instructions: what to do, how to talk, what to avoid. Atlas already generated a good prompt — you can edit it anytime.', ru: 'Здесь вы задаёте КТО ваш агент и КАК он себя ведёт. Пишите чёткие инструкции: что делать, как говорить, чего избегать. Atlas уже сгенерировал хороший промпт — его можно редактировать.' }, position: 'right' },
+  { target: '[data-tab="ai"]', title: { en: 'AI Provider — the brain', ru: 'AI Провайдер — мозг агента' }, desc: { en: 'IMPORTANT: Paste your API key here. Without it the agent cannot think. Free options: Gemini (aistudio.google.com), Groq (console.groq.com), OpenRouter (openrouter.ai/keys).', ru: 'ВАЖНО: Вставьте сюда API ключ. Без него агент не может думать. Бесплатно: Gemini (aistudio.google.com), Groq (console.groq.com), OpenRouter (openrouter.ai/keys).' }, position: 'right' },
+  { target: '[data-tab="telegram"]', title: { en: 'Telegram — connection', ru: 'Telegram — подключение' }, desc: { en: 'Connect your Telegram account so the agent can chat in groups and DMs like a real person (not a bot). Scan QR code from Telegram app → Settings → Devices.', ru: 'Подключите Telegram аккаунт чтобы агент мог общаться в группах и личке как человек (не бот). Сканируйте QR в приложении Telegram → Настройки → Устройства.' }, position: 'right' },
+  { target: '[data-tab="caps"]', title: { en: 'Capabilities — tools', ru: 'Возможности — инструменты' }, desc: { en: 'Each module gives the agent a set of tools. Telegram = messaging, Wallet = TON operations, Web = search, Gifts = gift market. Enable only what you need — fewer tools = faster agent.', ru: 'Каждый модуль даёт агенту набор инструментов. Telegram = сообщения, Wallet = TON операции, Web = поиск, Gifts = рынок подарков. Включайте только нужное — меньше = быстрее.' }, position: 'right' },
+  { target: '[data-tab="behavior"]', title: { en: 'Behavior — humanization', ru: 'Поведение — человечность' }, desc: { en: 'Makes the agent feel human: typing delays before answers, read receipts with delay, auto-reactions, thinking phrases. Already configured with good defaults.', ru: 'Делает агента похожим на человека: задержка набора, прочтение с паузой, авто-реакции, фразы "Секунду...". Уже настроено с хорошими дефолтами.' }, position: 'right' },
+  { target: '[data-tab="learning"]', title: { en: 'Learning — self-improvement', ru: 'Обучение — самосовершенствование' }, desc: { en: 'Agent learns from mistakes: if user says "no, wrong" — saves lesson and adapts. Error self-healing retries failed tools. Style adaptation matches user\'s communication style.', ru: 'Агент учится на ошибках: если юзер скажет "нет, не так" — запоминает урок. Самовосстановление при ошибках. Адаптация стиля под собеседника.' }, position: 'right' },
+  { target: '[data-tab="memory"]', title: { en: 'Memory — long-term', ru: 'Память — долгосрочная' }, desc: { en: 'Agent automatically remembers contacts, facts, preferences, lessons. Survives restarts. You can view and edit saved memories here.', ru: 'Агент автоматически запоминает контакты, факты, предпочтения, уроки. Переживает перезапуски. Здесь можно просматривать и редактировать память.' }, position: 'right' },
+  { target: '[data-tab="routing"]', title: { en: 'Routing — message filter', ru: 'Маршрутизация — фильтр сообщений' }, desc: { en: 'Control which messages this agent receives. Filter by keywords, chat type (DM/groups), priority. Important when you have multiple agents on one account.', ru: 'Какие сообщения получает агент. Фильтр по словам, типу чата (ЛС/группы), приоритету. Важно когда несколько агентов на одном аккаунте.' }, position: 'right' },
+  { target: '[data-tab="advanced"]', title: { en: 'Advanced settings', ru: 'Продвинутые настройки' }, desc: { en: 'For power users: tick interval, loop guard, flood protection, memory poisoning protection, context compaction. Good defaults already set.', ru: 'Для продвинутых: интервал тиков, защита от зацикливания, flood защита, защита памяти, компактинг контекста. Хорошие дефолты уже установлены.' }, position: 'right' },
+];
+
+function _guideStep(num, title, desc, tabName) {
+  return '<div class="guide-step" onclick="dismissAgentGuide(); switchSettingsTab(\'' + tabName + '\')" style="display:flex;gap:12px;padding:12px 14px;border-radius:10px;cursor:pointer;transition:all .2s;background:rgba(255,255,255,0.03);border:1px solid transparent" onmouseenter="this.style.background=\'rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.08)\';this.style.borderColor=\'rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.25)\'" onmouseleave="this.style.background=\'rgba(255,255,255,0.03)\';this.style.borderColor=\'transparent\'">' +
+    '<div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(in oklab 135deg,var(--primary),var(--primary-dark));color:#fff;display:flex;align-items:center;justify-content:center;font-size:.8rem;font-weight:700;flex-shrink:0">' + num + '</div>' +
+    '<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:.88rem;color:var(--text-primary);margin-bottom:2px">' + title + '</div>' +
+    '<div style="font-size:.78rem;color:var(--text-muted);line-height:1.4">' + desc + '</div></div>' +
+    '<div style="color:var(--text-muted);font-size:.9rem;display:flex;align-items:center;opacity:.5">&#8250;</div>' +
+  '</div>';
+}
+
+function dismissAgentGuide() {
+  var card = document.getElementById('agent-onboard-guide');
+  if (card) {
+    card.style.opacity = '0';
+    card.style.transform = 'translateY(-8px)';
+    setTimeout(function() { card.remove(); }, 250);
+  }
+  localStorage.setItem('agent_tour_completed', '1');
+}
+
+function startAgentTour(force) {
+  if (!force && localStorage.getItem('agent_tour_completed') === '1') return;
+  // Wait for settings modal to be visible and soul tab rendered
+  var body = document.getElementById('agent-settings-body');
+  if (!body) { setTimeout(function() { startAgentTour(force); }, 500); return; }
+  // Don't duplicate
+  if (document.getElementById('agent-onboard-guide')) return;
+  var isRu = currentLang === 'ru';
+
+  var guideHtml = '<div id="agent-onboard-guide" style="margin-bottom:20px;padding:20px;background:linear-gradient(in oklab 135deg,rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.06),rgba(var(--accent-r,99),var(--accent-g,102),var(--accent-b,241),0.06));border:1px solid rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.15);border-radius:14px;transition:all .25s ease">' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">' +
+      '<div style="display:flex;align-items:center;gap:10px">' +
+        '<div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(in oklab 135deg,var(--primary),var(--primary-dark));display:flex;align-items:center;justify-content:center;font-size:1.2rem">&#127891;</div>' +
+        '<div><div style="font-weight:700;font-size:.95rem;color:var(--text-primary)">' + (isRu ? 'Настройка агента' : 'Agent Setup Guide') + '</div>' +
+        '<div style="font-size:.76rem;color:var(--text-muted)">' + (isRu ? 'Пройдите шаги чтобы агент заработал' : 'Complete these steps to get your agent running') + '</div></div>' +
+      '</div>' +
+      '<button onclick="dismissAgentGuide()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:1.1rem;padding:4px 6px;border-radius:6px;opacity:.5;transition:opacity .2s" onmouseenter="this.style.opacity=\'1\'" onmouseleave="this.style.opacity=\'.5\'">&times;</button>' +
+    '</div>' +
+    '<div style="display:flex;flex-direction:column;gap:4px">' +
+      _guideStep('1',
+        isRu ? 'AI Провайдер — мозг' : 'AI Provider — the brain',
+        isRu ? 'Вставьте API ключ. Бесплатно: Gemini, Groq, OpenRouter' : 'Paste your API key. Free: Gemini, Groq, OpenRouter',
+        'ai') +
+      _guideStep('2',
+        isRu ? 'Telegram — подключение' : 'Telegram — connection',
+        isRu ? 'QR-код для общения в чатах как человек' : 'QR code to chat in groups like a real person',
+        'telegram') +
+      _guideStep('3',
+        isRu ? 'Возможности — инструменты' : 'Capabilities — tools',
+        isRu ? 'Включите модули: Telegram, Wallet, Web, Gifts' : 'Enable modules: Telegram, Wallet, Web, Gifts',
+        'caps') +
+      _guideStep('4',
+        isRu ? 'Поведение — человечность' : 'Behavior — humanization',
+        isRu ? 'Задержки набора, реакции, стиль общения' : 'Typing delays, reactions, chat style',
+        'behavior') +
+      _guideStep('5',
+        isRu ? 'Обучение — самосовершенствование' : 'Learning — self-improvement',
+        isRu ? 'Учится на ошибках, адаптирует стиль' : 'Learns from mistakes, adapts style',
+        'learning') +
+    '</div>' +
+    '<div style="margin-top:14px;text-align:center">' +
+      '<button onclick="dismissAgentGuide(); switchSettingsTab(\'ai\')" style="background:linear-gradient(in oklab 135deg,var(--primary),var(--primary-dark));color:#fff;border:none;padding:10px 24px;border-radius:10px;font-size:.85rem;font-weight:600;cursor:pointer;transition:all .2s;box-shadow:0 2px 8px var(--accent-glow)" onmouseenter="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 4px 12px var(--accent-glow)\'" onmouseleave="this.style.transform=\'none\';this.style.boxShadow=\'0 2px 8px var(--accent-glow)\'">' +
+        (isRu ? 'Начать с API ключа \u2192' : 'Start with API key \u2192') +
+      '</button>' +
+    '</div>' +
+  '</div>';
+
+  // Insert at the top of settings body content
+  body.insertAdjacentHTML('afterbegin', guideHtml);
+  // Animate in
+  var card = document.getElementById('agent-onboard-guide');
+  if (card) {
+    card.style.opacity = '0';
+    card.style.transform = 'translateY(-8px)';
+    requestAnimationFrame(function() {
+      card.style.opacity = '1';
+      card.style.transform = 'translateY(0)';
+    });
+  }
+}
+
+// Auto-show agent tour on first agent detail open
+var _agentTourShown = localStorage.getItem('agent_tour_completed') === '1';
 
 // ===== NETWORK MAP CLICK =====
 let _networkClickStart = null;
@@ -9639,7 +13950,7 @@ function showNetworkAgentPanel(node) {
   var toggleText = node.isActive ? (currentLang === 'ru' ? IC.pause + ' Стоп' : IC.pause + ' Stop') : (currentLang === 'ru' ? IC.rocket + ' Запустить' : IC.rocket + ' Start');
   var toggleClass = node.isActive ? 'btn-warning' : 'btn-success';
   var roleDisplay = node.roleLabel || node.role;
-  var roleBadgeColor = node.color || '#0098EA';
+  var roleBadgeColor = node.color || 'var(--primary)';
   panel.innerHTML = '<div class="nap-header">' +
     '<span style="display:flex;align-items:center;gap:8px"><span style="width:10px;height:10px;border-radius:50%;background:' + roleBadgeColor + ';box-shadow:0 0 8px ' + roleBadgeColor + '60;display:inline-block"></span>' + escHtml(node.name) + '</span>' +
     '<button onclick="this.closest(\'.network-agent-panel\').remove()" style="background:none;border:none;color:#666;font-size:1.1rem;cursor:pointer;padding:0 2px;line-height:1">&times;</button>' +
@@ -9889,7 +14200,7 @@ console.log('TON Agent Platform Dashboard v2.0 loaded successfully!');
   // Add connection indicator to DOM
   var indicator = document.createElement('div');
   indicator.id = 'ws-indicator';
-  indicator.style.cssText = 'position:fixed;bottom:12px;right:12px;z-index:9999;display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:12px;font-size:11px;color:#999;background:var(--bg-card,#1a1a2e);border:1px solid var(--border,#2a2a3e);opacity:0.7;transition:opacity 0.3s';
+  indicator.style.cssText = 'display:none';
   indicator.innerHTML = '<span id="ws-dot" style="width:6px;height:6px;border-radius:50%;background:#666;display:inline-block"></span><span id="ws-label">offline</span>';
   document.body.appendChild(indicator);
 
@@ -9929,8 +14240,69 @@ console.log('TON Agent Platform Dashboard v2.0 loaded successfully!');
   }
 
   function handleWSEvent(evt) {
+    // ── crew_updated: another tab edited a crew (rename, members, manager etc.) ──
+    if (evt.type === 'crew_updated' && evt.crewId) {
+      try {
+        // If Network page is visible — repaint
+        var np = document.getElementById('network-page');
+        if (np && np.classList.contains('active') && typeof loadNetworkMap === 'function') loadNetworkMap();
+      } catch {}
+      try { if (typeof loadCrewsPage === 'function') loadCrewsPage(); } catch {}
+      try { if (typeof awLoadAndRenderCrewWallets === 'function') awLoadAndRenderCrewWallets(); } catch {}
+      return;
+    }
     var agentId = evt.agentId;
     if (!agentId) return;
+
+    // ── agent_updated: another tab changed role/name/active/goal/description ──
+    if (evt.type === 'agent_updated') {
+      var patch = evt.data || {};
+      // 1) Live caches
+      try {
+        if (_agentsCache) {
+          var a1 = _agentsCache.find(function(a) { return a.id === agentId; });
+          if (a1) {
+            if (patch.name !== undefined) a1.name = patch.name;
+            if (patch.role !== undefined) a1.role = patch.role;
+            if (patch.is_active !== undefined) a1.isActive = !!patch.is_active;
+            if (patch.description !== undefined) a1.description = patch.description;
+            if (patch.goal !== undefined) a1.goal = patch.goal;
+            if (patch.action_scope !== undefined) a1.action_scope = patch.action_scope;
+          }
+        }
+      } catch {}
+      try {
+        if (typeof _networkNodes !== 'undefined' && _networkNodes && _networkNodes.forEach) {
+          _networkNodes.forEach(function(n) {
+            if (n && n.id === agentId) {
+              if (patch.name !== undefined) n.label = patch.name;
+              if (patch.role !== undefined) n.role = patch.role;
+              if (patch.is_active !== undefined) n.is_active = !!patch.is_active;
+            }
+          });
+        }
+      } catch {}
+      try {
+        if (typeof _detailAgentData !== 'undefined' && _detailAgentData && _detailAgentData.id === agentId) {
+          Object.keys(patch).forEach(function(k) { _detailAgentData[k] = patch[k]; });
+        }
+      } catch {}
+      // 2) Cheapest repaint — call existing list renderers if their pages are visible
+      try {
+        var aPage = document.getElementById('agents-page');
+        if (aPage && aPage.classList.contains('active') && typeof renderAgentsPage === 'function') renderAgentsPage();
+      } catch {}
+      try {
+        var nPage = document.getElementById('network-page');
+        if (nPage && nPage.classList.contains('active') && typeof loadNetworkMap === 'function') loadNetworkMap();
+      } catch {}
+      try {
+        if (typeof syncAgentRoleAcrossCaches === 'function' && patch.role !== undefined) {
+          syncAgentRoleAcrossCaches(agentId, patch.role);
+        }
+      } catch {}
+      // Don't return — also let it fall through to the status-pill update path below
+    }
 
     // Update _agentsCache in-place
     if (_agentsCache) {
@@ -9938,6 +14310,9 @@ console.log('TON Agent Platform Dashboard v2.0 loaded successfully!');
       if (agent) {
         if (evt.type === 'agent_started') agent.isActive = true;
         else if (evt.type === 'agent_stopped') agent.isActive = false;
+        else if (evt.type === 'agent_updated' && evt.data && typeof evt.data.is_active === 'boolean') {
+          agent.isActive = evt.data.is_active;
+        }
       }
     }
 
@@ -10053,6 +14428,85 @@ async function loadWalletsPage() {
     _awStats = data.stats || {};
   } catch (e) { _awData = []; _awStats = {}; }
   awRenderStats(); awRenderRoot(); awRenderGrid();
+  // Crew wallets — fetched separately so one failing endpoint doesn't break the other section
+  awLoadAndRenderCrewWallets().catch(function(err) { console.warn('[Wallets] crew wallets load failed:', err); });
+}
+
+// Pulls user's crews, then in parallel fetches each crew's wallet info.
+// Renders into #aw-crew-wallets-grid with same visual language as agent wallets.
+async function awLoadAndRenderCrewWallets() {
+  var gridEl = document.getElementById('aw-crew-wallets-grid');
+  if (!gridEl) return;
+  var isRu = currentLang === 'ru';
+  gridEl.innerHTML = '<div style="grid-column:1/-1;color:var(--text-muted);padding:20px;text-align:center;font-size:.85rem">' + (isRu ? 'Загрузка…' : 'Loading…') + '</div>';
+  var crewsResp;
+  try { crewsResp = await apiRequest('GET', '/api/crews'); }
+  catch (e) { gridEl.innerHTML = '<div style="grid-column:1/-1;color:var(--danger);padding:20px;text-align:center">' + escHtml(String(e)) + '</div>'; return; }
+  var crews = (crewsResp && crewsResp.ok ? crewsResp.crews : []) || [];
+  if (crews.length === 0) {
+    gridEl.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px 20px">' +
+      '<div style="width:48px;height:48px;border-radius:14px;background:var(--bg-tertiary);display:flex;align-items:center;justify-content:center;margin:0 auto 14px"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg></div>' +
+      '<h3 style="margin-bottom:6px;font-size:1rem;color:var(--text-primary)">' + (isRu ? 'Нет команд' : 'No crews yet') + '</h3>' +
+      '<p style="color:var(--text-muted);font-size:.85rem">' + (isRu ? 'Создай команду из агентов и общий TON-кошелёк для неё.' : 'Bundle agents into a crew, then deploy a shared TON wallet.') + '</p>' +
+      '<a class="btn-action" href="#" onclick="navigateTo(\'network\');return false" style="margin-top:14px;text-decoration:none;display:inline-flex;background:var(--accent)">→ ' + (isRu ? 'Перейти в Сеть агентов' : 'Open Network') + '</a></div>';
+    return;
+  }
+  // Fetch each wallet in parallel (best-effort — missing wallets show "create" CTA)
+  var walletInfos = await Promise.all(crews.map(function(c) {
+    return apiRequest('GET', '/api/crews/' + c.id + '/wallet').then(function(r) { return r && r.ok ? r.wallet : null; }).catch(function() { return null; });
+  }));
+  gridEl.innerHTML = crews.map(function(c, i) {
+    var w = walletInfos[i];
+    var memberCount = (c.agent_ids || []).length;
+    var mgrText = c.manager_agent_id ? ' · 👑 #' + c.manager_agent_id : '';
+    if (!w) {
+      // No wallet yet → show CTA
+      return '<div style="background:var(--bg-secondary);border:1px dashed var(--border);border-radius:14px;padding:20px">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">' +
+          '<span style="font-weight:600;font-size:.92rem">' + escHtml(c.name) + '</span>' +
+          '<span style="font-size:.7rem;color:var(--text-muted)">#' + c.id + '</span></div>' +
+        '<div style="font-size:.75rem;color:var(--text-muted);margin-bottom:14px">' + memberCount + ' ' + (isRu ? 'агентов' : 'agents') + mgrText + '</div>' +
+        '<div style="font-size:.85rem;color:var(--text-muted);margin-bottom:12px">' + (isRu ? 'Нет общего кошелька' : 'No shared wallet') + '</div>' +
+        '<button class="btn-action" onclick="awCreateCrewWalletInline(' + c.id + ', this)" style="background:var(--accent);font-size:.78rem;padding:6px 12px;width:100%;justify-content:center">+ ' + (isRu ? 'Создать кошелёк' : 'Create wallet') + '</button>' +
+      '</div>';
+    }
+    var addrShort = w.address.slice(0, 8) + '...' + w.address.slice(-6);
+    var bal = (w.balanceTon != null) ? w.balanceTon.toFixed(4) : '—';
+    var spent = (w.monthSpendTon || 0).toFixed(4);
+    var budget = Number(w.budgetTonMonth) || 0;
+    var spentPct = budget > 0 ? Math.min(100, (w.monthSpendTon || 0) / budget * 100) : 0;
+    var barColor = spentPct > 90 ? '#ef4444' : spentPct > 60 ? '#eab308' : '#22c55e';
+    return '<div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:14px;padding:20px;transition:all .2s" onmouseover="this.style.borderColor=\'rgba(168,85,247,0.4)\'" onmouseout="this.style.borderColor=\'var(--border)\'">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' +
+        '<span style="font-weight:600;font-size:.92rem;display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#a855f7"></span>' + escHtml(c.name) + '</span>' +
+        '<span style="font-size:.7rem;color:var(--text-muted)">#' + c.id + ' · ' + memberCount + ' agents' + mgrText + '</span></div>' +
+      '<code style="font-size:.76rem;color:var(--text-muted);cursor:pointer;display:block;margin-bottom:12px" onclick="navigator.clipboard.writeText(\'' + escJsAttr(w.address) + '\');toast(\'Copied!\',\'success\')">' + escHtml(addrShort) + '</code>' +
+      '<div style="font-size:1.15rem;font-weight:700;font-family:\'JetBrains Mono\',monospace;color:#22c55e;margin-bottom:12px">' + bal + ' <span style="font-size:.75rem;opacity:.5">TON</span></div>' +
+      (budget > 0
+        ? '<div style="margin-bottom:14px"><div style="font-size:.72rem;color:var(--text-muted);margin-bottom:4px">' + (isRu ? 'Этот месяц' : 'This month') + ': ' + spent + ' / ' + budget + ' TON</div>' +
+          '<div style="height:6px;background:var(--bg-tertiary);border-radius:3px;overflow:hidden"><div style="height:100%;width:' + spentPct + '%;background:' + barColor + '"></div></div></div>'
+        : '<div style="font-size:.72rem;color:var(--text-muted);margin-bottom:14px">' + (isRu ? 'Без лимита бюджета' : 'No budget cap') + ' · ' + spent + ' TON ' + (isRu ? 'в этом месяце' : 'this month') + '</div>') +
+      '<div style="display:flex;gap:6px">' +
+        '<button class="btn-action" style="font-size:.72rem;padding:5px 10px;flex:1" onclick="viewCrewWalletLog(' + c.id + ')">📜 ' + (isRu ? 'Лог' : 'Log') + '</button>' +
+        '<a class="btn-action" href="https://tonviewer.com/' + w.address + '" target="_blank" style="font-size:.72rem;padding:5px 10px;text-decoration:none;flex:1;justify-content:center">🔍 Tonviewer</a>' +
+        '<button class="btn-action" style="font-size:.72rem;padding:5px 10px" onclick="viewCrewDetails(' + c.id + ')" title="' + (isRu ? 'Управление командой' : 'Manage crew') + '">⚙</button>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+async function awCreateCrewWalletInline(crewId, btnEl) {
+  var isRu = currentLang === 'ru';
+  if (!confirm(isRu ? 'Создать общий кошелёк для команды? Мнемоника хранится зашифрованной на сервере.' : 'Create shared wallet for this crew? Mnemonic stays encrypted server-side.')) return;
+  if (btnEl) { btnEl.disabled = true; btnEl.textContent = isRu ? 'Создаём…' : 'Creating…'; }
+  var r = await apiRequest('POST', '/api/crews/' + crewId + '/wallet');
+  if (r.ok) {
+    toast(isRu ? 'Кошелёк создан' : 'Wallet created', 'success');
+    awLoadAndRenderCrewWallets();
+  } else {
+    toast(r.error || 'Error', 'error');
+    if (btnEl) { btnEl.disabled = false; btnEl.textContent = '+ ' + (isRu ? 'Создать кошелёк' : 'Create wallet'); }
+  }
 }
 
 function awRenderStats() {
@@ -10068,7 +14522,7 @@ function awRenderStats() {
   el.innerHTML = stats.map(function(s) {
     return '<div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px;padding:18px 20px">' +
       '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;color:var(--text-muted)">' + s.icon + '<span style="font-size:.75rem">' + s.label + '</span></div>' +
-      '<div style="font-size:1.4rem;font-weight:700;color:' + s.color + ';font-family:\'JetBrains Mono\',monospace">' + s.value + '</div></div>';
+      '<div style="font-size:1.4rem;font-weight:700;color:' + s.color + '">' + s.value + '</div></div>';
   }).join('');
 }
 
@@ -10079,7 +14533,7 @@ function awRenderRoot() {
   var root = _awData.find(function(w) { return w.walletType === 'root'; });
   if (!root) {
     el.innerHTML = '<div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:16px;padding:40px 32px;text-align:center">' +
-      '<div style="width:56px;height:56px;border-radius:16px;background:linear-gradient(135deg,rgba(59,130,246,0.15),rgba(168,85,247,0.15));display:flex;align-items:center;justify-content:center;margin:0 auto 16px"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.8"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/></svg></div>' +
+      '<div style="width:56px;height:56px;border-radius:16px;background:linear-gradient(in oklab 135deg,rgba(59,130,246,0.15),rgba(var(--accent-r,168),var(--accent-g,85),var(--accent-b,247),0.15));display:flex;align-items:center;justify-content:center;margin:0 auto 16px"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/></svg></div>' +
       '<h2 style="margin-bottom:8px;font-size:1.15rem">' + (isRu ? 'Добро пожаловать в Agentic Wallets' : 'Welcome to Agentic Wallets') + '</h2>' +
       '<p style="color:var(--text-muted);margin-bottom:24px;max-width:480px;margin-left:auto;margin-right:auto;font-size:.88rem;line-height:1.5">' +
         (isRu ? 'Создайте Root-кошелёк — он станет мастер-кошельком, к которому привязаны все суб-кошельки агентов.' : 'Create a Root Wallet to get started. It will serve as your master wallet for all agent sub-wallets.') + '</p>' +
@@ -10091,7 +14545,7 @@ function awRenderRoot() {
   var addrShort = root.address.slice(0, 12) + '...' + root.address.slice(-6);
   el.innerHTML = '<div style="background:var(--bg-secondary);border:1px solid rgba(34,197,94,0.2);border-radius:14px;padding:20px 24px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px">' +
     '<div style="display:flex;align-items:center;gap:14px">' +
-      '<div style="width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,rgba(34,197,94,0.12),rgba(59,130,246,0.12));display:flex;align-items:center;justify-content:center">' + AWI.crown + '</div>' +
+      '<div style="width:40px;height:40px;border-radius:10px;background:linear-gradient(in oklab 135deg,rgba(34,197,94,0.12),rgba(59,130,246,0.12));display:flex;align-items:center;justify-content:center">' + AWI.crown + '</div>' +
       '<div><div style="font-size:.75rem;color:var(--text-muted);margin-bottom:2px">Root Wallet</div>' +
       '<code style="font-size:.85rem;cursor:pointer;color:var(--text-primary)" onclick="navigator.clipboard.writeText(\x27' + escJsAttr(root.address) + '\x27);toast(\x27Copied!\x27,\x27success\x27)" title="Click to copy">' + escHtml(addrShort) + '</code></div></div>' +
     '<div style="text-align:right"><div style="font-size:1.3rem;font-weight:700;color:#22c55e;font-family:\'JetBrains Mono\',monospace">' + (root.balanceTon || 0).toFixed(4) + ' TON</div>' +
@@ -10107,7 +14561,7 @@ function awRenderGrid() {
   if (titleEl) titleEl.textContent = (isRu ? 'Кошельки агентов' : 'Agent Wallets') + ' (' + subs.length + ')';
   if (subs.length === 0) {
     el.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:48px 20px">' +
-      '<div style="width:48px;height:48px;border-radius:14px;background:var(--bg-tertiary);display:flex;align-items:center;justify-content:center;margin:0 auto 14px"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.5"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/></svg></div>' +
+      '<div style="width:48px;height:48px;border-radius:14px;background:var(--bg-tertiary);display:flex;align-items:center;justify-content:center;margin:0 auto 14px"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/></svg></div>' +
       '<h3 style="margin-bottom:6px;font-size:1rem;color:var(--text-primary)">' + (isRu ? 'Нет кошельков агентов' : 'No agent wallets yet') + '</h3>' +
       '<p style="color:var(--text-muted);font-size:.85rem">' + (isRu ? 'Создайте суб-кошелёк для автономной работы агента' : 'Deploy a sub-wallet for your agents to use autonomously') + '</p></div>';
     return;
@@ -10265,3 +14719,5606 @@ async function awDeleteWallet(id) {
   try { await apiRequest('DELETE', '/api/agentic-wallets/' + id); toast('Deleted', 'success'); closeModal(); await loadWalletsPage(); }
   catch (e) { toast('Error', 'error'); }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LIFECYCLE TAB
+// ═══════════════════════════════════════════════════════════════════════════
+
+var _lcInterval = null;
+async function loadLifecycleData() {
+  if (_lcInterval) clearInterval(_lcInterval);
+  try {
+    var data = await apiRequest('GET', '/api/agents/' + _detailAgentId + '/lifecycle');
+    renderLifecycleState(data);
+  } catch(e) {
+    var el = document.getElementById('lc-state-badge');
+    if (el) el.textContent = 'Error: ' + e.message;
+  }
+  // Auto-refresh every 5s
+  _lcInterval = setInterval(async function() {
+    if (_settingsTab !== 'lifecycle') { clearInterval(_lcInterval); return; }
+    try {
+      var data = await apiRequest('GET', '/api/agents/' + _detailAgentId + '/lifecycle');
+      renderLifecycleState(data);
+    } catch(e) {}
+  }, 5000);
+}
+
+function renderLifecycleState(data) {
+  var badge = document.getElementById('lc-state-badge');
+  var uptimeEl = document.getElementById('lc-uptime');
+  var errorEl = document.getElementById('lc-error');
+  if (!badge) return;
+
+  var state = data.state || 'stopped';
+  var colors = { stopped: { bg: 'rgba(100,116,139,0.15)', color: '#94a3b8' }, starting: { bg: 'rgba(245,158,11,0.15)', color: '#f59e0b' }, running: { bg: 'rgba(16,185,129,0.15)', color: '#10b981' }, stopping: { bg: 'rgba(239,68,68,0.15)', color: '#ef4444' } };
+  var c = colors[state] || colors.stopped;
+  var labels = { stopped: currentLang === 'ru' ? 'Остановлен' : 'Stopped', starting: currentLang === 'ru' ? 'Запускается' : 'Starting', running: currentLang === 'ru' ? 'Работает' : 'Running', stopping: currentLang === 'ru' ? 'Останавливается' : 'Stopping' };
+  badge.style.background = c.bg;
+  badge.style.color = c.color;
+  badge.innerHTML = '<span class="lc-dot" style="width:8px;height:8px;border-radius:50%;background:currentColor;' + (state === 'running' ? 'animation:lcPulse 2s infinite' : '') + '"></span> ' + (labels[state] || state);
+
+  if (uptimeEl) {
+    if (data.uptime != null) {
+      var h = Math.floor(data.uptime / 3600);
+      var m = Math.floor((data.uptime % 3600) / 60);
+      var s = data.uptime % 60;
+      uptimeEl.textContent = (currentLang === 'ru' ? 'Аптайм: ' : 'Uptime: ') + (h > 0 ? h + 'h ' : '') + m + 'm ' + s + 's';
+    } else {
+      uptimeEl.textContent = '';
+    }
+  }
+
+  if (errorEl) {
+    if (data.error) {
+      errorEl.style.display = 'block';
+      errorEl.textContent = (currentLang === 'ru' ? 'Ошибка: ' : 'Error: ') + data.error;
+    } else {
+      errorEl.style.display = 'none';
+    }
+  }
+}
+
+async function lifecycleAction(action) {
+  try {
+    toast((currentLang === 'ru' ? 'Выполняется...' : 'Processing...'), 'info');
+    await apiRequest('POST', '/api/agents/' + _detailAgentId + '/lifecycle/' + action);
+    toast(action + ' OK', 'success');
+    await loadLifecycleData();
+  } catch(e) {
+    toast('Error: ' + e.message, 'error');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TOKEN USAGE TAB
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function loadTokenData() {
+  try {
+    var data = await apiRequest('GET', '/api/agents/' + _detailAgentId + '/tokens?days=30');
+    // Totals
+    var totalEl = document.getElementById('tk-total');
+    var costEl = document.getElementById('tk-cost');
+    var reqEl = document.getElementById('tk-requests');
+    var todayEl = document.getElementById('tk-today');
+    if (totalEl) totalEl.textContent = formatNum(data.total?.totalTokens || 0);
+    if (costEl) costEl.textContent = '$' + (data.total?.totalCost || 0).toFixed(4);
+    if (reqEl) reqEl.textContent = formatNum(data.total?.totalRequests || 0);
+    // Today from current in-memory bucket
+    if (todayEl) todayEl.textContent = formatNum(data.current?.totalTokens || 0);
+    // Budget
+    var budgetInput = document.getElementById('tk-budget-input');
+    if (budgetInput && data.budget) budgetInput.value = data.budget.limit || 0;
+    // Chart
+    renderTokenChart(data.history || []);
+    // Table
+    renderTokenTable(data.history || []);
+  } catch(e) {
+    var totalEl = document.getElementById('tk-total');
+    if (totalEl) totalEl.textContent = 'Error';
+  }
+}
+
+function formatNum(n) {
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+  return String(n);
+}
+
+function renderTokenChart(history) {
+  var container = document.getElementById('token-chart');
+  if (!container || !history.length) {
+    if (container) container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);font-size:.78rem">' + (currentLang === 'ru' ? 'Нет данных' : 'No data yet') + '</div>';
+    return;
+  }
+  // Simple bar chart
+  var maxTokens = Math.max.apply(null, history.map(function(h) { return h.totalTokens; })) || 1;
+  var bars = history.slice().reverse().map(function(h) {
+    var pct = Math.max(2, Math.round(h.totalTokens / maxTokens * 100));
+    var date = escHtml(h.date.slice(5)); // MM-DD
+    return '<div style="display:flex;flex-direction:column;align-items:center;flex:1;min-width:20px">' +
+      '<div style="width:80%;background:linear-gradient(in oklab 180deg,#f59e0b,#d97706);border-radius:3px 3px 0 0;height:' + pct + '%;min-height:2px;transition:height 0.3s" title="' + h.totalTokens + ' tokens"></div>' +
+      '<div style="font-size:.55rem;color:var(--text-muted);margin-top:2px;transform:rotate(-45deg);white-space:nowrap">' + date + '</div>' +
+    '</div>';
+  }).join('');
+  container.innerHTML = '<div style="display:flex;align-items:flex-end;height:160px;padding:8px 4px 24px 4px;gap:2px">' + bars + '</div>';
+}
+
+function renderTokenTable(history) {
+  var container = document.getElementById('token-table');
+  if (!container || !history.length) return;
+  var isRu = currentLang === 'ru';
+  var rows = history.slice(0, 14).map(function(h) {
+    return '<tr><td>' + escHtml(h.date) + '</td><td>' + formatNum(h.inputTokens) + '</td><td>' + formatNum(h.outputTokens) + '</td><td>' + formatNum(h.totalTokens) + '</td><td>$' + h.estimatedCost.toFixed(4) + '</td><td>' + h.requestCount + '</td></tr>';
+  }).join('');
+  container.innerHTML =
+    '<table style="width:100%;font-size:.72rem;border-collapse:collapse">' +
+    '<thead><tr style="color:var(--text-muted);text-align:left;border-bottom:1px solid var(--border)">' +
+      '<th style="padding:6px">' + (isRu ? 'Дата' : 'Date') + '</th><th style="padding:6px">Input</th><th style="padding:6px">Output</th><th style="padding:6px">Total</th><th style="padding:6px">' + (isRu ? 'Стоимость' : 'Cost') + '</th><th style="padding:6px">' + (isRu ? 'Запросы' : 'Requests') + '</th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+async function saveTokenBudget() {
+  var val = parseInt((document.getElementById('tk-budget-input') || {}).value) || 0;
+  try {
+    await apiRequest('POST', '/api/agents/' + _detailAgentId + '/tokens/budget', { limit: val });
+    toast(currentLang === 'ru' ? 'Лимит сохранён' : 'Budget saved', 'success');
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CONTACTS TAB
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function loadContactsData() {
+  try {
+    var data = await apiRequest('GET', '/api/agents/' + _detailAgentId + '/contacts');
+    var list = document.getElementById('contacts-list');
+    if (!list) return;
+    var contacts = data.contacts || [];
+    if (contacts.length === 0) {
+      list.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:2rem">' + (currentLang === 'ru' ? 'Контактов пока нет' : 'No contacts yet') + '</div>';
+      return;
+    }
+    var isRu = currentLang === 'ru';
+    list.innerHTML = contacts.map(function(c) {
+      var name = c.firstName || c.username || c.id;
+      var isBot = c.isBot ? '<span style="font-size:.6rem;padding:2px 6px;border-radius:4px;background:rgba(59,130,246,0.1);color:#3b82f6;margin-left:4px">BOT</span>' : '';
+      var isAdmin = c.isAdmin ? '<span style="font-size:.6rem;padding:2px 6px;border-radius:4px;background:rgba(245,158,11,0.1);color:#f59e0b;margin-left:4px">ADMIN</span>' : '';
+      var safeId = escHtml(String(c.id));
+      var allowedToggle = '<label style="display:flex;align-items:center;gap:4px;font-size:.72rem;cursor:pointer"><input type="checkbox" ' + (c.isAllowed !== false ? 'checked' : '') + ' onchange="toggleContactProp(' + _detailAgentId + ',\'' + safeId + '\',\'isAllowed\',this.checked)"> ' + (isRu ? 'Разрешён' : 'Allowed') + '</label>';
+      var adminToggle = '<label style="display:flex;align-items:center;gap:4px;font-size:.72rem;cursor:pointer"><input type="checkbox" ' + (c.isAdmin ? 'checked' : '') + ' onchange="toggleContactProp(' + _detailAgentId + ',\'' + safeId + '\',\'isAdmin\',this.checked)"> ' + (isRu ? 'Админ' : 'Admin') + '</label>';
+      return '<div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--bg-primary);border:1px solid var(--border);border-radius:8px">' +
+        '<div style="flex:1"><span style="font-weight:600;font-size:.82rem">' + escHtml(String(name)) + '</span>' + isBot + isAdmin +
+          (c.username ? '<div style="font-size:.68rem;color:var(--text-muted)">@' + escHtml(c.username) + '</div>' : '') +
+          '<div style="font-size:.65rem;color:var(--text-muted)">' + (isRu ? 'Сообщений: ' : 'Messages: ') + (c.messageCount || 0) + '</div>' +
+        '</div>' +
+        '<div style="display:flex;gap:12px">' + allowedToggle + adminToggle + '</div>' +
+      '</div>';
+    }).join('');
+  } catch(e) {
+    var list = document.getElementById('contacts-list');
+    if (list) list.innerHTML = '<div style="color:#ef4444;padding:1rem">Error: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+async function toggleContactProp(agentId, userId, prop, value) {
+  try {
+    var body = {};
+    body[prop] = value;
+    await apiRequest('PUT', '/api/agents/' + agentId + '/contacts/' + userId, body);
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MEMORY TAB
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function loadCoreMemoryBlocks() {
+  var container = document.getElementById('core-memory-blocks');
+  if (!container) return;
+  try {
+    var data = await apiRequest('GET', '/api/agents/' + _detailAgentId + '/core-memory');
+    var blocks = data.blocks || [];
+    if (blocks.length === 0) {
+      container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:1rem;grid-column:1/-1">' + (currentLang === 'ru' ? 'Нет данных' : 'No data') + '</div>';
+      return;
+    }
+    var isRu = currentLang === 'ru';
+    var blockIcons = { identity: IC.user, preferences: IC.wrench, lessons: IC.book, goals: IC.target, contacts: IC.users };
+    var blockColors = { identity: '#8b5cf6', preferences: '#f59e0b', lessons: '#10b981', goals: '#3b82f6', contacts: '#6366f1' };
+    var blockNames = { identity: isRu ? 'Личность' : 'Identity', preferences: isRu ? 'Предпочтения' : 'Preferences', lessons: isRu ? 'Уроки' : 'Lessons', goals: isRu ? 'Цели' : 'Goals', contacts: isRu ? 'Контакты' : 'Contacts' };
+    container.innerHTML = blocks.map(function(b) {
+      var pct = b.limit > 0 ? Math.round(b.used / b.limit * 100) : 0;
+      var barColor = pct > 80 ? '#ef4444' : pct > 50 ? '#f59e0b' : (blockColors[b.name] || '#8b5cf6');
+      return '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:10px;padding:14px;border-top:3px solid ' + (blockColors[b.name] || '#8b5cf6') + '">' +
+        '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">' +
+          '<span style="color:' + (blockColors[b.name] || '#8b5cf6') + '">' + (blockIcons[b.name] || IC.brain) + '</span>' +
+          '<span style="font-weight:600;font-size:.82rem">' + (blockNames[b.name] || b.name) + '</span>' +
+          '<span style="margin-left:auto;font-size:.6rem;color:var(--text-muted)">' + b.used + '/' + b.limit + '</span>' +
+        '</div>' +
+        '<div style="height:3px;background:var(--border);border-radius:2px;margin-bottom:8px">' +
+          '<div style="height:100%;width:' + pct + '%;background:' + barColor + ';border-radius:2px;transition:width 0.3s"></div>' +
+        '</div>' +
+        '<textarea class="st-textarea core-mem-block" data-block="' + b.name + '" style="min-height:80px;font-size:.75rem;resize:vertical" placeholder="' + (b.description || '') + '">' + escHtml(b.content) + '</textarea>' +
+        '<button onclick="saveCoreBlock(\'' + b.name + '\')" class="rt-save-btn" style="margin-top:6px;font-size:.7rem;padding:4px 12px">' + IC.check + ' ' + (isRu ? 'Сохранить' : 'Save') + '</button>' +
+      '</div>';
+    }).join('');
+  } catch(e) {
+    container.innerHTML = '<div style="color:#ef4444;padding:1rem;grid-column:1/-1">Error: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+async function saveCoreBlock(blockName) {
+  var textarea = document.querySelector('.core-mem-block[data-block="' + blockName + '"]');
+  if (!textarea) return;
+  try {
+    await apiRequest('PUT', '/api/agents/' + _detailAgentId + '/core-memory/' + blockName, { content: textarea.value });
+    toast(currentLang === 'ru' ? 'Блок сохранён' : 'Block saved', 'success');
+    loadCoreMemoryBlocks();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+// ─── Memory sub-tab switcher ─────────────────────────────────────────────────
+var _activeMemSubTab = 'contacts';
+function switchMemSubTab(name) {
+  _activeMemSubTab = name;
+  var panels = ['contacts','knowledge','lessons','raw','logs'];
+  panels.forEach(function(p) {
+    var panel = document.getElementById('mem-panel-' + p);
+    var btn = document.getElementById('mem-sub-' + p);
+    if (!panel || !btn) return;
+    var active = p === name;
+    panel.style.display = active ? '' : 'none';
+    btn.style.background = active ? 'rgba(var(--accent-r,139),var(--accent-g,92),var(--accent-b,246),0.18)' : 'transparent';
+    btn.style.color = active ? '#8b5cf6' : 'var(--text-muted)';
+  });
+  if (name === 'knowledge') loadCoreMemoryBlocks();
+}
+
+// ─── Contact profile avatar ───────────────────────────────────────────────────
+function _profileAvatar(name, size, tgUserId) {
+  size = size || 40;
+  var initial = (name || '?').trim().charAt(0).toUpperCase();
+  var colors = ['#8b5cf6','#3b82f6','#10b981','#f59e0b','#ef4444','#06b6d4','#a855f7','#14b8a6'];
+  var idx = (name || '').split('').reduce(function(a,c){return a+c.charCodeAt(0);},0) % colors.length;
+  var fallback = '<div style="width:' + size + 'px;height:' + size + 'px;border-radius:50%;background:' + colors[idx] + ';display:flex;align-items:center;justify-content:center;font-size:' + Math.round(size*0.42) + 'px;font-weight:700;color:#fff;flex-shrink:0">' + initial + '</div>';
+  if (tgUserId && _detailAgentId && authToken) {
+    var imgUrl = '/api/agents/' + _detailAgentId + '/avatar/' + encodeURIComponent(tgUserId) + '?t=' + encodeURIComponent(authToken);
+    return '<div class="tg-avatar-wrap" style="width:' + size + 'px;height:' + size + 'px;border-radius:50%;overflow:hidden;flex-shrink:0;position:relative">' +
+      '<img src="' + imgUrl + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%" ' +
+        'onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'" loading="lazy">' +
+      '<div style="display:none;width:' + size + 'px;height:' + size + 'px;border-radius:50%;background:' + colors[idx] + ';align-items:center;justify-content:center;font-size:' + Math.round(size*0.42) + 'px;font-weight:700;color:#fff;position:absolute;top:0;left:0">' + initial + '</div>' +
+    '</div>';
+  }
+  return fallback;
+}
+
+// ─── Format relative time ─────────────────────────────────────────────────────
+function _relTime(ts) {
+  if (!ts) return '';
+  var diff = Date.now() - ts;
+  if (diff < 60000) return 'just now';
+  if (diff < 3600000) return Math.floor(diff/60000) + 'm ago';
+  if (diff < 86400000) return Math.floor(diff/3600000) + 'h ago';
+  return Math.floor(diff/86400000) + 'd ago';
+}
+
+// ─── Load profiles (contacts + lessons + goals) ───────────────────────────────
+var _allProfiles = [];
+async function loadProfilesData() {
+  try {
+    var data = await apiRequest('GET', '/api/agents/' + _detailAgentId + '/profiles');
+    var isRu = currentLang === 'ru';
+    _allProfiles = data.profiles || [];
+
+    // Update stats
+    var statC = document.getElementById('mem-stat-contacts');
+    if (statC) statC.textContent = String(_allProfiles.length);
+    var statL = document.getElementById('mem-stat-lessons');
+    if (statL) statL.textContent = String((data.lessons || []).length);
+
+    renderContacts(_allProfiles);
+    renderLessons(data.lessons || [], data.goals || [], isRu);
+  } catch(e) {
+    var grid = document.getElementById('mem-contacts-grid');
+    if (grid) grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:2rem;font-size:.8rem">' + (currentLang === 'ru' ? 'Нет данных — агент ещё не общался или не сохранял информацию о контактах.' : 'No data — agent hasn\'t saved contact info yet.') + '</div>';
+  }
+}
+
+function filterContacts() {
+  var q = ((document.getElementById('mem-contact-search') || {}).value || '').toLowerCase();
+  var filtered = q ? _allProfiles.filter(function(p) {
+    return (p.name||'').toLowerCase().includes(q) || (p.userId||'').includes(q) ||
+      (p.notes||[]).some(function(n){return n.text.toLowerCase().includes(q);}) ||
+      (p.facts||[]).some(function(f){return (f.value||'').toLowerCase().includes(q);});
+  }) : _allProfiles;
+  renderContacts(filtered);
+}
+
+function renderContacts(profiles) {
+  var grid = document.getElementById('mem-contacts-grid');
+  if (!grid) return;
+  var isRu = currentLang === 'ru';
+  if (!profiles || profiles.length === 0) {
+    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:3rem;font-size:.82rem">' +
+      IC.user + ' ' + (isRu ? 'Агент ещё не накопил информацию о контактах.<br><span style="font-size:.74rem;opacity:.7">Она появится автоматически в ходе разговоров.</span>' :
+      'Agent hasn\'t accumulated contact info yet.<br><span style="font-size:.74rem;opacity:.7">It will appear automatically as conversations progress.</span>') + '</div>';
+    return;
+  }
+  grid.innerHTML = profiles.map(function(p) {
+    var displayName = p.name || ('@' + p.userId) || (isRu ? 'Неизвестный' : 'Unknown');
+    var lastNote = p.notes && p.notes[0] ? p.notes[0] : null;
+    var latestTs = lastNote ? lastNote.ts : 0;
+    var factsHtml = (p.facts || []).slice(0, 4).map(function(f) {
+      return '<span style="display:inline-block;margin:2px;padding:2px 7px;border-radius:12px;background:rgba(var(--accent-r,139),var(--accent-g,92),var(--accent-b,246),0.1);color:#a78bfa;font-size:.67rem">' +
+        escHtml(f.field.replace(/_/g,' ')) + ': ' + escHtml(String(f.value).slice(0,40)) + '</span>';
+    }).join('');
+    var notesHtml = (p.notes || []).slice(0, 2).map(function(n) {
+      return '<div style="font-size:.72rem;color:var(--text-muted);line-height:1.4;padding:4px 0;border-top:1px solid rgba(255,255,255,0.04)">' +
+        '<span style="color:#64748b;font-size:.65rem">' + _relTime(n.ts) + '</span> ' + escHtml(String(n.text).slice(0,120)) + '</div>';
+    }).join('');
+    var relBadge = p.relationship ? '<span style="font-size:.65rem;padding:2px 7px;border-radius:10px;background:rgba(16,185,129,0.12);color:#10b981;margin-left:6px">' + escHtml(p.relationship) + '</span>' : '';
+
+    return '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:12px;padding:14px;transition:border-color .2s" ' +
+      'onmouseenter="this.style.borderColor=\'rgba(var(--accent-r,139),var(--accent-g,92),var(--accent-b,246),0.35)\'" onmouseleave="this.style.borderColor=\'var(--border)\'">' +
+      '<div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:8px">' +
+        _profileAvatar(displayName, 38, p.userId) +
+        '<div style="flex:1;min-width:0">' +
+          '<div style="font-size:.85rem;font-weight:600;color:var(--text-primary);display:flex;align-items:center;gap:4px;flex-wrap:wrap">' +
+            escHtml(displayName) + relBadge +
+          '</div>' +
+          '<div style="font-size:.68rem;color:var(--text-muted);margin-top:1px">ID: ' + escHtml(String(p.userId)) + (latestTs ? ' · ' + _relTime(latestTs) : '') + '</div>' +
+        '</div>' +
+      '</div>' +
+      (p.summary ? '<div style="font-size:.74rem;color:var(--text-secondary);margin-bottom:6px;line-height:1.5;padding:6px;background:rgba(var(--accent-r,139),var(--accent-g,92),var(--accent-b,246),0.05);border-radius:6px;border-left:2px solid #8b5cf6">' + escHtml(p.summary.slice(0,200)) + '</div>' : '') +
+      (factsHtml ? '<div style="margin-bottom:6px">' + factsHtml + '</div>' : '') +
+      notesHtml +
+      ((p.notes||[]).length > 2 ? '<div style="font-size:.65rem;color:var(--text-muted);text-align:right;margin-top:4px">+' + ((p.notes.length - 2)) + ' ' + (isRu ? 'заметок' : 'more notes') + '</div>' : '') +
+    '</div>';
+  }).join('');
+}
+
+function renderLessons(lessons, goals, isRu) {
+  var el = document.getElementById('mem-lessons-list');
+  if (!el) return;
+  var html = '';
+
+  if (goals && goals.length > 0) {
+    html += '<div class="rt-section"><div class="rt-section-label">' + IC.target + ' ' + (isRu ? 'Активные цели' : 'Active Goals') + '</div>' +
+      '<div style="display:flex;flex-direction:column;gap:6px">';
+    html += goals.filter(function(g){return g.status !== 'completed' && g.status !== 'cancelled';}).map(function(g) {
+      var priorityColors = { critical: '#ef4444', high: '#f59e0b', medium: '#8b5cf6', low: '#64748b' };
+      var pColor = priorityColors[g.priority] || '#64748b';
+      return '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--border);border-radius:8px">' +
+        '<div style="width:8px;height:8px;border-radius:50%;background:' + pColor + ';margin-top:5px;flex-shrink:0"></div>' +
+        '<div style="flex:1">' +
+          '<div style="font-size:.8rem;color:var(--text-primary);line-height:1.4">' + escHtml(String(g.goal || '').slice(0,200)) + '</div>' +
+          '<div style="font-size:.67rem;color:var(--text-muted);margin-top:2px">' + (g.priority||'') + (g.addedAt ? ' · ' + new Date(g.addedAt).toLocaleDateString() : '') + '</div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+    html += '</div></div>';
+  }
+
+  if (lessons && lessons.length > 0) {
+    html += '<div class="rt-section"><div class="rt-section-label">' + IC.lightbulb + ' ' + (isRu ? 'Уроки и инсайты' : 'Lessons & Insights') + '</div>' +
+      '<div style="display:flex;flex-direction:column;gap:6px">';
+    var typeIcons = { error: IC.warn, feedback: IC.chat, discovery: IC.search, preference: IC.heart, default: IC.lightbulb };
+    html += lessons.slice().reverse().map(function(l) {
+      var icon = typeIcons[l.type] || typeIcons.default;
+      var text = l.text || l.lesson || String(l).slice(0, 200);
+      return '<div style="display:flex;gap:10px;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--border);border-radius:8px">' +
+        '<span style="font-size:.9rem;flex-shrink:0;margin-top:1px">' + icon + '</span>' +
+        '<div style="flex:1">' +
+          '<div style="font-size:.79rem;color:var(--text-primary);line-height:1.5">' + escHtml(String(text).slice(0,250)) + '</div>' +
+          (l.type ? '<div style="font-size:.65rem;color:var(--text-muted);margin-top:2px">' + escHtml(l.type) + '</div>' : '') +
+        '</div>' +
+      '</div>';
+    }).join('');
+    html += '</div></div>';
+  }
+
+  if (!html) {
+    html = '<div style="text-align:center;color:var(--text-muted);padding:3rem;font-size:.82rem">' +
+      IC.lightbulb + ' ' + (isRu ? 'Уроков и целей пока нет.<br><span style="font-size:.74rem;opacity:.7">Они накапливаются автоматически в процессе работы агента.</span>' :
+      'No lessons or goals yet.<br><span style="font-size:.74rem;opacity:.7">They accumulate automatically as the agent works.</span>') + '</div>';
+  }
+  el.innerHTML = html;
+}
+
+async function loadMemoryData() {
+  loadCoreMemoryBlocks();
+  try {
+    var data = await apiRequest('GET', '/api/agents/' + _detailAgentId + '/memory');
+    var isRu = currentLang === 'ru';
+    // Persistent memory
+    var textarea = document.getElementById('mem-persistent-text');
+    if (textarea) textarea.value = data.persistent || '';
+    // Stat cards
+    if (data.stats) {
+      var sizeEl = document.getElementById('mem-stat-size');
+      var logsCountEl = document.getElementById('mem-stat-logs');
+      if (sizeEl) sizeEl.textContent = data.stats.persistentSize > 0 ? Math.round(data.stats.persistentSize / 1024) + 'KB' : '0';
+      if (logsCountEl) logsCountEl.textContent = String(data.stats.dailyLogCount || 0);
+    }
+    // Daily logs as cards
+    var logsEl = document.getElementById('mem-daily-logs');
+    if (logsEl && data.dailyLogs) {
+      if (data.dailyLogs.length === 0) {
+        logsEl.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--text-muted);font-size:.8rem;padding:2rem">' +
+          IC.clock + ' ' + (isRu ? 'Ежедневных логов пока нет' : 'No daily logs yet') + '</div>';
+      } else {
+        logsEl.innerHTML = data.dailyLogs.map(function(dl) {
+          var safeDate = escHtml(dl.date);
+          var sizeKb = Math.round((dl.size || 0) / 1024);
+          // Parse date for display
+          var parts = dl.date.split('-');
+          var day = parts[2] || '??';
+          var monthNames = isRu
+            ? ['','янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек']
+            : ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+          var month = monthNames[parseInt(parts[1])] || parts[1];
+          return '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:10px;padding:14px;cursor:pointer;text-align:center;transition:border-color .2s,transform .15s" ' +
+            'onmouseenter="this.style.borderColor=\'rgba(var(--accent-r,139),var(--accent-g,92),var(--accent-b,246),0.4)\';this.style.transform=\'translateY(-2px)\'" ' +
+            'onmouseleave="this.style.borderColor=\'var(--border)\';this.style.transform=\'none\'" ' +
+            'onclick="viewDailyLog(\'' + safeDate + '\')">' +
+            '<div style="font-size:1.4rem;font-weight:700;color:var(--text-primary);line-height:1">' + day + '</div>' +
+            '<div style="font-size:.7rem;color:#8b5cf6;text-transform:uppercase;letter-spacing:.5px;margin-top:2px">' + month + '</div>' +
+            '<div style="font-size:.6rem;color:var(--text-muted);margin-top:6px">' + sizeKb + 'KB</div>' +
+          '</div>';
+        }).join('');
+      }
+    }
+  } catch(e) {
+    toast('Memory load error: ' + e.message, 'error');
+  }
+}
+
+async function saveMemoryPersistent() {
+  var text = (document.getElementById('mem-persistent-text') || {}).value || '';
+  try {
+    await apiRequest('POST', '/api/agents/' + _detailAgentId + '/memory', { target: 'persistent', content: text, replace: true });
+    toast(currentLang === 'ru' ? 'Память сохранена' : 'Memory saved', 'success');
+    loadMemoryData();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+async function clearAgentMemory(target) {
+  if (!confirm(currentLang === 'ru' ? 'Очистить память? Это нельзя отменить.' : 'Clear memory? This cannot be undone.')) return;
+  try {
+    await apiRequest('DELETE', '/api/agents/' + _detailAgentId + '/memory?target=' + target);
+    toast(currentLang === 'ru' ? 'Очищено' : 'Cleared', 'success');
+    loadMemoryData();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+async function searchAgentMemory() {
+  var query = (document.getElementById('mem-search-input') || {}).value || '';
+  if (!query.trim()) return;
+  var resultsEl = document.getElementById('mem-search-results');
+  if (!resultsEl) return;
+  resultsEl.innerHTML = '<div style="color:var(--text-muted);font-size:.78rem;padding:8px">' + (currentLang === 'ru' ? 'Поиск...' : 'Searching...') + '</div>';
+  try {
+    var data = await apiRequest('GET', '/api/agents/' + _detailAgentId + '/memory/search?q=' + encodeURIComponent(query));
+    var results = data.results || [];
+    if (results.length === 0) {
+      resultsEl.innerHTML = '<div style="color:var(--text-muted);font-size:.78rem;padding:8px">' + (currentLang === 'ru' ? 'Ничего не найдено' : 'No results found') + '</div>';
+      return;
+    }
+    resultsEl.innerHTML = results.map(function(r) {
+      var sourceColors = { persistent: '#8b5cf6', daily_log: '#10b981', session: '#3b82f6' };
+      return '<div style="padding:8px 12px;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;margin-bottom:4px">' +
+        '<div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">' +
+          '<span style="font-size:.6rem;padding:2px 6px;border-radius:4px;background:rgba(0,0,0,0.2);color:' + (sourceColors[r.source] || '#94a3b8') + '">' + r.source + '</span>' +
+          '<span style="font-size:.65rem;color:var(--text-muted)">score: ' + (r.score * 100).toFixed(0) + '%</span>' +
+          (r.date ? '<span style="font-size:.65rem;color:var(--text-muted)">' + r.date + '</span>' : '') +
+        '</div>' +
+        '<div style="font-size:.75rem;color:var(--text-primary);white-space:pre-wrap;word-break:break-word">' + escHtml(r.text.slice(0, 300)) + '</div>' +
+      '</div>';
+    }).join('');
+  } catch(e) {
+    resultsEl.innerHTML = '<div style="color:#ef4444;font-size:.78rem;padding:8px">Error: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+async function viewDailyLog(date) {
+  try {
+    var data = await apiRequest('GET', '/api/agents/' + _detailAgentId + '/memory/daily/' + date);
+    var content = data.content || (currentLang === 'ru' ? 'Пусто' : 'Empty');
+    // Show in a modal-like overlay
+    var body = document.getElementById('agent-settings-body');
+    if (!body) return;
+    var existingOverlay = document.getElementById('daily-log-overlay');
+    if (existingOverlay) existingOverlay.remove();
+    var overlay = document.createElement('div');
+    overlay.id = 'daily-log-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;display:flex;align-items:center;justify-content:center;padding:2rem';
+    overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+    overlay.innerHTML = '<div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px;max-width:700px;width:100%;max-height:80vh;overflow-y:auto;padding:24px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">' +
+        '<h3 style="margin:0;color:var(--text-primary)">' + (currentLang === 'ru' ? 'Лог за ' : 'Log for ') + date + '</h3>' +
+        '<button onclick="this.closest(\'#daily-log-overlay\').remove()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:1.2rem">' + IC.x + '</button>' +
+      '</div>' +
+      '<pre style="font-family:\'JetBrains Mono\',monospace;font-size:.74rem;line-height:1.6;color:var(--text-secondary);white-space:pre-wrap;word-break:break-word">' + escHtml(content) + '</pre>' +
+    '</div>';
+    document.body.appendChild(overlay);
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TASKS TAB
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function loadEvalsData() {
+  try {
+    var data = await apiRequest('GET', '/api/agents/' + _detailAgentId + '/evals?limit=30');
+    var avgEl = document.getElementById('eval-avg-num');
+    if (avgEl) {
+      var score = data.avgScore || 0;
+      avgEl.textContent = score.toFixed(1);
+      avgEl.style.color = score >= 7 ? '#10b981' : score >= 5 ? '#f59e0b' : '#ef4444';
+    }
+    var listEl = document.getElementById('eval-list');
+    if (!listEl) return;
+    var evals = data.evals || [];
+    if (evals.length === 0) {
+      listEl.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:2rem">' + (currentLang === 'ru' ? 'Ещё нет оценок. Агент начнёт получать оценки после следующего ответа.' : 'No evals yet. Agent will get scored after next response.') + '</div>';
+      return;
+    }
+    var isRu = currentLang === 'ru';
+    listEl.innerHTML = evals.map(function(e) {
+      var score = e.overallScore || 0;
+      var color = score >= 7 ? '#10b981' : score >= 5 ? '#f59e0b' : '#ef4444';
+      var criteria = e.criteria || {};
+      var flagsHtml = (e.flags || []).map(function(f) {
+        return '<span style="font-size:.6rem;padding:2px 6px;border-radius:4px;background:rgba(239,68,68,0.1);color:#ef4444">' + f + '</span>';
+      }).join(' ');
+      var date = new Date(e.timestamp).toLocaleString();
+      return '<div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;border-left:3px solid ' + color + '">' +
+        '<div style="font-size:1.4rem;font-weight:700;color:' + color + ';min-width:40px;text-align:center">' + score.toFixed(1) + '</div>' +
+        '<div style="flex:1;min-width:0">' +
+          '<div style="display:flex;gap:8px;font-size:.68rem;color:var(--text-muted);flex-wrap:wrap">' +
+            '<span>' + (isRu ? 'Рел' : 'Rel') + ': ' + (criteria.relevance || 0) + '</span>' +
+            '<span>' + (isRu ? 'Без' : 'Safe') + ': ' + (criteria.safety || 0) + '</span>' +
+            '<span>' + (isRu ? 'Эфф' : 'Eff') + ': ' + (criteria.efficiency || 0) + '</span>' +
+            '<span>' + (isRu ? 'Яз' : 'Lang') + ': ' + (criteria.language || 0) + '</span>' +
+            '<span>' + (isRu ? 'Гал' : 'Hall') + ': ' + (criteria.hallucination || 0) + '</span>' +
+          '</div>' +
+          (flagsHtml ? '<div style="margin-top:4px">' + flagsHtml + '</div>' : '') +
+        '</div>' +
+        '<div style="font-size:.65rem;color:var(--text-muted);text-align:right;white-space:nowrap">' +
+          '<div>' + e.model + '</div>' +
+          '<div>' + date + '</div>' +
+          '<div>' + e.toolCallCount + ' tools, ' + e.iterationCount + ' iters</div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  } catch(e) {
+    var listEl = document.getElementById('eval-list');
+    if (listEl) listEl.innerHTML = '<div style="color:#ef4444;padding:1rem">Error: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+async function loadTasksData() {
+  try {
+    var status = (document.getElementById('task-filter') || {}).value || '';
+    var data = await apiRequest('GET', '/api/agents/' + _detailAgentId + '/tasks' + (status ? '?status=' + status : ''));
+    // Stats
+    var statsEl = document.getElementById('task-stats');
+    if (statsEl && data.stats) {
+      var s = data.stats;
+      var isRu = currentLang === 'ru';
+      statsEl.innerHTML =
+        '<span style="color:#f59e0b">' + (isRu ? 'Ожид: ' : 'Pending: ') + s.pending + '</span>' +
+        '<span style="color:#3b82f6">' + (isRu ? 'В работе: ' : 'Active: ') + s.inProgress + '</span>' +
+        '<span style="color:#10b981">' + (isRu ? 'Готово: ' : 'Done: ') + s.done + '</span>' +
+        '<span style="color:#ef4444">' + (isRu ? 'Ошибки: ' : 'Failed: ') + s.failed + '</span>';
+    }
+    // List
+    var listEl = document.getElementById('tasks-list');
+    if (!listEl) return;
+    var tasks = data.tasks || [];
+    if (tasks.length === 0) {
+      listEl.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:2rem">' + (currentLang === 'ru' ? 'Задач нет' : 'No tasks') + '</div>';
+      return;
+    }
+    var statusColors = { pending: '#f59e0b', in_progress: '#3b82f6', done: '#10b981', failed: '#ef4444', cancelled: '#94a3b8' };
+    var statusLabels = { pending: currentLang === 'ru' ? 'Ожидание' : 'Pending', in_progress: currentLang === 'ru' ? 'В процессе' : 'In Progress', done: currentLang === 'ru' ? 'Готово' : 'Done', failed: currentLang === 'ru' ? 'Ошибка' : 'Failed', cancelled: currentLang === 'ru' ? 'Отменено' : 'Cancelled' };
+    listEl.innerHTML = tasks.map(function(t) {
+      var color = statusColors[t.status] || '#94a3b8';
+      var prioLabel = t.priority > 1 ? ' <span style="color:#ef4444;font-size:.6rem">!!!</span>' : t.priority > 0 ? ' <span style="color:#f59e0b;font-size:.6rem">!</span>' : '';
+      var deps = t.dependsOn && t.dependsOn.length > 0 ? '<div style="font-size:.6rem;color:var(--text-muted);margin-top:2px">deps: ' + t.dependsOn.length + '</div>' : '';
+      var actions = '';
+      var safeTaskId = escHtml(String(t.id));
+      if (t.status === 'pending') actions = '<button onclick="updateTaskStatus(\'' + safeTaskId + '\',\'in_progress\')" style="font-size:.65rem;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:rgba(59,130,246,0.1);color:#3b82f6;cursor:pointer">' + (currentLang === 'ru' ? 'Начать' : 'Start') + '</button>';
+      if (t.status === 'in_progress') actions = '<button onclick="updateTaskStatus(\'' + safeTaskId + '\',\'done\')" style="font-size:.65rem;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:rgba(16,185,129,0.1);color:#10b981;cursor:pointer">' + (currentLang === 'ru' ? 'Готово' : 'Done') + '</button>';
+      return '<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;border-left:3px solid ' + color + '">' +
+        '<div style="flex:1">' +
+          '<div style="font-size:.8rem;font-weight:500;color:var(--text-primary)">' + escHtml(t.description) + prioLabel + '</div>' +
+          '<div style="font-size:.65rem;color:var(--text-muted)">' + (statusLabels[t.status] || t.status) + (t.scheduledFor ? ' | ' + new Date(t.scheduledFor).toLocaleString() : '') + deps + '</div>' +
+          (t.error ? '<div style="font-size:.65rem;color:#ef4444">' + escHtml(t.error.slice(0, 100)) + '</div>' : '') +
+        '</div>' +
+        '<div style="display:flex;gap:6px;align-items:center">' + actions +
+          '<button onclick="deleteAgentTask(\'' + safeTaskId + '\')" style="font-size:.65rem;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:rgba(239,68,68,0.08);color:#ef4444;cursor:pointer">' + IC.x + '</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  } catch(e) {
+    var listEl = document.getElementById('tasks-list');
+    if (listEl) listEl.innerHTML = '<div style="color:#ef4444;padding:1rem">Error: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+function showCreateTaskForm() {
+  var form = document.getElementById('task-create-form');
+  if (form) form.style.display = form.style.display === 'none' ? 'block' : 'none';
+}
+
+async function createAgentTask() {
+  var desc = (document.getElementById('task-desc') || {}).value || '';
+  if (!desc.trim()) { toast(currentLang === 'ru' ? 'Введите описание' : 'Enter description', 'error'); return; }
+  var priority = parseInt((document.getElementById('task-priority') || {}).value) || 0;
+  var scheduled = (document.getElementById('task-scheduled') || {}).value || '';
+  try {
+    await apiRequest('POST', '/api/agents/' + _detailAgentId + '/tasks', {
+      description: desc,
+      priority: priority,
+      scheduledFor: scheduled || undefined
+    });
+    toast(currentLang === 'ru' ? 'Задача создана' : 'Task created', 'success');
+    var formEl = document.getElementById('task-create-form');
+    if (formEl) formEl.style.display = 'none';
+    var descEl = document.getElementById('task-desc');
+    if (descEl) descEl.value = '';
+    loadTasksData();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+async function updateTaskStatus(taskId, status) {
+  try {
+    await apiRequest('PUT', '/api/agents/' + _detailAgentId + '/tasks/' + taskId, { status: status });
+    loadTasksData();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+async function deleteAgentTask(taskId) {
+  if (!confirm(currentLang === 'ru' ? 'Удалить задачу?' : 'Delete task?')) return;
+  try {
+    await apiRequest('DELETE', '/api/agents/' + _detailAgentId + '/tasks/' + taskId);
+    loadTasksData();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// NOTIFICATIONS PAGE
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function loadNotificationsPage() {
+  var container = document.getElementById('page-notifications');
+  if (!container) return;
+  var isRu = currentLang === 'ru';
+
+  container.innerHTML =
+    '<div class="page-header">' +
+      '<h2 class="page-title">' +
+        '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> ' +
+        (isRu ? 'Уведомления' : 'Notifications') +
+      '</h2>' +
+      '<p class="page-subtitle">' + (isRu ? 'Алерты, проблемы и рекомендации для ваших агентов' : 'Alerts, issues and recommendations for your agents') + '</p>' +
+    '</div>' +
+    '<div class="notif-filters" style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">' +
+      '<button onclick="clearAllNotifs()" style="margin-left:auto;padding:5px 12px;border-radius:20px;border:1px solid rgba(239,68,68,0.3);background:rgba(239,68,68,0.08);color:#ef4444;font-size:.72rem;cursor:pointer;transition:all .15s" onmouseenter="this.style.background=\'rgba(239,68,68,0.15)\'" onmouseleave="this.style.background=\'rgba(239,68,68,0.08)\'">' + (isRu ? 'Очистить все' : 'Clear all') + '</button>' +
+      '<button class="notif-filter active" data-filter="all" onclick="filterNotifications(\'all\')">' + (isRu ? 'Все' : 'All') + '</button>' +
+      '<button class="notif-filter" data-filter="error" onclick="filterNotifications(\'error\')">' + IC.x + ' ' + (isRu ? 'Ошибки' : 'Errors') + '</button>' +
+      '<button class="notif-filter" data-filter="warning" onclick="filterNotifications(\'warning\')">' + IC.warn + ' ' + (isRu ? 'Предупреждения' : 'Warnings') + '</button>' +
+      '<button class="notif-filter" data-filter="success" onclick="filterNotifications(\'success\')">' + IC.check + ' ' + (isRu ? 'Успехи' : 'Successes') + '</button>' +
+      '<button class="notif-filter" data-filter="info" onclick="filterNotifications(\'info\')">' + IC.info + ' ' + (isRu ? 'Инфо' : 'Info') + '</button>' +
+      '<button class="notif-filter" data-filter="feedback" onclick="filterNotifications(\'feedback\')">' + IC.chat + ' ' + (isRu ? 'Фидбек' : 'Feedback') + '</button>' +
+    '</div>' +
+    '<div id="notif-list" class="notif-list">' +
+      '<div class="notif-loading">' + (isRu ? 'Загрузка...' : 'Loading...') + '</div>' +
+    '</div>';
+
+  // Load notifications from all agents
+  try {
+    var data = await apiRequest('GET', '/api/agents');
+    var agents = (data.ok ? data.agents : []) || [];
+    var notifications = [];
+
+    for (var i = 0; i < agents.length; i++) {
+      var a = agents[i];
+      var cfg = {};
+      try { var _tc = a.trigger_config || a.triggerConfig || {}; cfg = typeof _tc === 'string' ? JSON.parse(_tc) : _tc; } catch(e) {}
+      var agentCfg = cfg.config || {};
+
+      // Check for issues
+      var hasApiKey = !!(agentCfg.AI_API_KEY || agentCfg.apiKey);
+      if (!hasApiKey && a.triggerType === 'ai_agent') {
+        notifications.push({
+          type: 'error', agent: a.name || 'Agent #' + a.id, agentId: a.id,
+          title: isRu ? 'API ключ не настроен' : 'API key not configured',
+          message: isRu ? 'Агент не может работать без AI ключа. Перейдите в настройки и добавьте ключ.' : 'Agent cannot work without an AI key. Go to settings and add one.',
+          action: 'agent_settings:' + a.id,
+          time: Date.now() - 3600000,
+        });
+      }
+
+      if (a.isActive && a.triggerType === 'ai_agent') {
+        notifications.push({
+          type: 'success', agent: a.name || 'Agent #' + a.id, agentId: a.id,
+          title: isRu ? 'Агент активен' : 'Agent active',
+          message: isRu ? 'Агент работает в штатном режиме.' : 'Agent is running normally.',
+          time: Date.now() - 300000,
+        });
+      }
+
+      if (!a.isActive && a.triggerType === 'ai_agent') {
+        notifications.push({
+          type: 'warning', agent: a.name || 'Agent #' + a.id, agentId: a.id,
+          title: isRu ? 'Агент приостановлен' : 'Agent paused',
+          message: isRu ? 'Агент не запущен. Запустите его в настройках.' : 'Agent is not running. Start it in settings.',
+          action: 'run_agent:' + a.id,
+          time: Date.now() - 1800000,
+        });
+      }
+    }
+
+    // Load feedback replies
+    try {
+      var fbData = await apiRequest('GET', '/api/feedback');
+      if (fbData.ok && fbData.feedback) {
+        fbData.feedback.forEach(function(f) {
+          if (f.admin_reply) {
+            notifications.push({
+              type: 'info', agent: isRu ? 'Саппорт' : 'Support', agentId: null,
+              title: (isRu ? 'Ответ на тикет #' : 'Reply to ticket #') + f.id,
+              message: f.admin_reply.slice(0, 200),
+              time: new Date(f.resolved_at || f.created_at).getTime(),
+            });
+          }
+          if (f.status === 'resolved') {
+            notifications.push({
+              type: 'success', agent: isRu ? 'Саппорт' : 'Support', agentId: null,
+              title: (isRu ? 'Тикет #' + f.id + ' решён' : 'Ticket #' + f.id + ' resolved'),
+              message: (isRu ? 'Ваш ' + f.type + '-репорт был рассмотрен.' : 'Your ' + f.type + ' report was reviewed.'),
+              time: new Date(f.resolved_at || f.created_at).getTime(),
+            });
+          }
+        });
+      }
+    } catch {}
+
+    // Sort by time (newest first)
+    notifications.sort(function(a, b) { return b.time - a.time; });
+    // Apply retention filter
+    if (typeof _notifRetainDays !== 'undefined' && _notifRetainDays > 0) {
+      var cutoff = Date.now() - _notifRetainDays * 86400000;
+      notifications = notifications.filter(function(n) { return n.time > cutoff; });
+    }
+    // Filter out cleared + individually dismissed notifications
+    var _clearedAt = parseInt(localStorage.getItem('notifs_cleared_at') || '0');
+    if (_clearedAt > 0) {
+      notifications = notifications.filter(function(n) { return n.time > _clearedAt; });
+    }
+    var _dismissed = _getDismissedNotifs();
+    if (_dismissed.length > 0) {
+      var _dismissedSet = new Set(_dismissed);
+      notifications = notifications.filter(function(n) { return !_dismissedSet.has(n.title); });
+    }
+    window._studioNotifications = notifications;
+    renderNotifications(notifications);
+
+    // Update badge
+    var errorCount = notifications.filter(function(n) { return n.type === 'error'; }).length;
+    var badge = document.getElementById('nav-notif-badge');
+    if (badge) {
+      if (errorCount > 0) {
+        badge.style.display = 'inline-flex';
+        badge.textContent = errorCount;
+      } else {
+        badge.style.display = 'none';
+      }
+    }
+  } catch(e) {
+    var list = document.getElementById('notif-list');
+    if (list) list.innerHTML = '<div class="notif-empty">Error: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+function renderNotifications(notifications) {
+  var list = document.getElementById('notif-list');
+  if (!list) return;
+  var isRu = currentLang === 'ru';
+
+  if (!notifications.length) {
+    list.innerHTML = '<div class="notif-empty">' +
+      '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>' +
+      '<div style="margin-top:12px;font-size:.9rem;color:var(--text-muted)">' + (isRu ? 'Нет уведомлений' : 'No notifications') + '</div>' +
+    '</div>';
+    return;
+  }
+
+  var typeIcons = { error: IC.x, warning: IC.warn, success: IC.check, info: IC.info };
+  var typeColors = { error: '#ef4444', warning: '#f59e0b', success: '#10b981', info: '#3b82f6' };
+  var typeBgs = { error: 'rgba(239,68,68,0.08)', warning: 'rgba(245,158,11,0.08)', success: 'rgba(16,185,129,0.08)', info: 'rgba(59,130,246,0.08)' };
+
+  list.innerHTML = notifications.map(function(n, i) {
+    var ago = getTimeAgo(n.time);
+    var actionBtn = n.action
+      ? '<button class="notif-action-btn" onclick="handleNotifAction(\'' + n.action + '\')" style="border-color:' + typeColors[n.type] + ';color:' + typeColors[n.type] + '">' + (isRu ? 'Исправить' : 'Fix') + '</button>'
+      : '';
+    return '<div class="notif-card" data-type="' + n.type + '" data-idx="' + i + '" style="border-left:3px solid ' + typeColors[n.type] + ';background:' + typeBgs[n.type] + ';animation:notifSlideIn 0.3s ease ' + (i * 0.05) + 's both">' +
+      '<div class="notif-card-header">' +
+        '<span class="notif-icon">' + typeIcons[n.type] + '</span>' +
+        '<span class="notif-title">' + escHtml(n.title) + '</span>' +
+        '<span class="notif-agent">' + escHtml(n.agent) + '</span>' +
+        '<span class="notif-time">' + ago + '</span>' +
+        '<button onclick="dismissNotif(this.closest(\'.notif-card\'))" style="background:none;border:none;color:var(--text-muted);cursor:pointer;padding:2px 4px;opacity:.4;transition:opacity .2s;margin-left:auto" onmouseenter="this.style.opacity=\'1\'" onmouseleave="this.style.opacity=\'.4\'">&times;</button>' +
+      '</div>' +
+      '<div class="notif-card-body">' + escHtml(n.message) + '</div>' +
+      (actionBtn ? '<div class="notif-card-actions">' + actionBtn + '</div>' : '') +
+    '</div>';
+  }).join('');
+}
+
+function _getDismissedNotifs() {
+  try { return JSON.parse(localStorage.getItem('dismissed_notifs') || '[]'); } catch { return []; }
+}
+
+function dismissNotif(card) {
+  if (!card) return;
+  // Save to localStorage so it stays dismissed across tab switches
+  var title = card.querySelector('.notif-title');
+  if (title) {
+    var dismissed = _getDismissedNotifs();
+    dismissed.push(title.textContent);
+    if (dismissed.length > 200) dismissed = dismissed.slice(-100);
+    localStorage.setItem('dismissed_notifs', JSON.stringify(dismissed));
+  }
+  card.style.transition = 'all .25s ease';
+  card.style.opacity = '0';
+  card.style.transform = 'translateX(30px)';
+  setTimeout(function() { card.remove(); }, 250);
+}
+
+function clearAllNotifs() {
+  // Mark all as dismissed
+  localStorage.setItem('notifs_cleared_at', String(Date.now()));
+  var cards = document.querySelectorAll('.notif-card');
+  cards.forEach(function(c, i) {
+    setTimeout(function() {
+      c.style.transition = 'all .2s ease';
+      c.style.opacity = '0';
+      c.style.transform = 'scale(0.95)';
+      setTimeout(function() { c.remove(); }, 200);
+    }, i * 30);
+  });
+  setTimeout(function() {
+    var list = document.getElementById('notif-list');
+    if (list && !list.querySelector('.notif-card')) {
+      list.innerHTML = '<div class="notif-empty"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><div style="margin-top:12px;font-size:.9rem;color:var(--text-muted)">' + (currentLang === 'ru' ? 'Нет уведомлений' : 'No notifications') + '</div></div>';
+    }
+  }, cards.length * 30 + 300);
+}
+
+function filterNotifications(type) {
+  document.querySelectorAll('.notif-filter').forEach(function(b) {
+    b.classList.toggle('active', b.getAttribute('data-filter') === type);
+  });
+  var all = window._studioNotifications || [];
+  var filtered = type === 'all' ? all :
+    type === 'feedback' ? all.filter(function(n) { return n.agent === 'Support' || n.agent === 'Саппорт'; }) :
+    all.filter(function(n) { return n.type === type; });
+  renderNotifications(filtered);
+}
+
+function handleNotifAction(action) {
+  if (action.startsWith('agent_settings:')) {
+    var id = parseInt(action.split(':')[1]);
+    openAgentDetail(id);
+    setTimeout(function() { switchSettingsTab('ai'); }, 300);
+  } else if (action.startsWith('run_agent:')) {
+    var id = parseInt(action.split(':')[1]);
+    apiRequest('POST', '/api/agents/' + id + '/run').then(function() {
+      toast(currentLang === 'ru' ? 'Агент запущен!' : 'Agent started!', 'success');
+      loadNotificationsPage();
+    }).catch(function(e) { toast('Error: ' + e.message, 'error'); });
+  }
+}
+
+function getTimeAgo(ts) {
+  var diff = Date.now() - ts;
+  var isRu = currentLang === 'ru';
+  if (diff < 60000) return isRu ? 'только что' : 'just now';
+  if (diff < 3600000) return Math.floor(diff / 60000) + (isRu ? ' мин назад' : 'm ago');
+  if (diff < 86400000) return Math.floor(diff / 3600000) + (isRu ? ' ч назад' : 'h ago');
+  return Math.floor(diff / 86400000) + (isRu ? ' д назад' : 'd ago');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GUIDE PAGE (Full-screen instructions)
+// ═══════════════════════════════════════════════════════════════════════════
+
+function loadGuidePage() {
+  var container = document.getElementById('page-guide');
+  if (!container) return;
+  var isRu = currentLang === 'ru';
+
+  // ── Guide sections data (comprehensive, no emojis) ──
+  var _ico = function(d) { return '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + d + '</svg>'; };
+  var sections = [
+    { id: 'start', icon: _ico('<circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/>'),
+      title: isRu ? 'Быстрый старт' : 'Quick Start',
+      subtitle: isRu ? 'Создайте первого агента за 2 минуты' : 'Create your first agent in 2 minutes',
+      gradient: 'linear-gradient(in oklab 135deg, var(--accent-dim), rgba(6,182,212,0.08))',
+      cards: [
+        { title: isRu ? 'Atlas AI (рекомендуется)' : 'Atlas AI (recommended)', desc: isRu ? 'Опишите задачу текстом — Atlas создаст агента, настроит промпт, выберет инструменты и запустит. Atlas знает все о платформе.' : 'Describe the task — Atlas creates the agent, sets up prompt, picks tools and launches it. Atlas knows everything about the platform.', action: 'navigateTo("assistant")', btn: isRu ? 'Открыть Atlas' : 'Open Atlas' },
+        { title: isRu ? 'Визуальный конструктор' : 'Visual Constructor', desc: isRu ? 'Drag & drop блоки: триггер, действия, логика. Без кода. Подходит для сложных workflow с условиями и циклами.' : 'Drag & drop blocks: trigger, actions, logic. No code. Good for complex workflows with conditions and loops.', action: 'navigateTo("builder")', btn: isRu ? 'Открыть' : 'Open' },
+        { title: 'Telegram Bot', desc: isRu ? 'Отправьте описание в @TonAgentPlatformBot — те же возможности что и Atlas, но в Telegram. Работает с голосовыми сообщениями.' : 'Send description to @TonAgentPlatformBot — same capabilities as Atlas but in Telegram. Works with voice messages.', action: 'window.open("https://t.me/TonAgentPlatformBot")', btn: isRu ? 'Открыть бот' : 'Open bot' },
+      ],
+      tip: isRu ? 'Atlas — главный AI-ассистент платформы. Он может создавать агентов, объяснять настройки, проводить аудит, помогать с промптами. Просто спросите его о чем угодно.' : 'Atlas is the main AI assistant. It can create agents, explain settings, audit agents, help with prompts. Just ask it anything.',
+      details: isRu ? [
+        { q: 'Что такое Atlas и зачем он нужен', a: 'Atlas — главный AI-ассистент платформы. Он находится в разделе "AI Ассистент" в боковом меню (или нажмите Ctrl+/). Atlas умеет: создавать агентов по описанию, менять настройки, объяснять как работает любая функция, проводить аудит агентов, помогать писать промпты, отвечать на вопросы о TON/DeFi/NFT. Просто напишите ему что вам нужно на любом языке.' },
+        { q: 'Шаг 1: Создайте агента', a: 'Откройте Atlas и напишите: "создай агента [описание]". Примеры:\n\n- "Создай агента который мониторит цену TON и уведомляет когда ниже $2.5"\n- "Создай модератора для группы @mygroup"\n- "Создай агента для арбитража подарков"\n\nAtlas сгенерирует системный промпт, выберет нужные инструменты из 77 доступных, создаст агента и запустит его.' },
+        { q: 'Шаг 2: Подключите Telegram аккаунт', a: 'Откройте настройки агента (клик по карточке) и перейдите на вкладку "Telegram". Нажмите "Подключить" и отсканируйте QR-код в приложении Telegram (Настройки → Устройства → Подключить устройство). После этого агент получит доступ к вашему Telegram через MTProto — это полноценный доступ как у пользователя, не как у бота. Агент может: писать в группы, ставить реакции, менять аватарку, постить stories, создавать опросы.' },
+        { q: 'Шаг 3: Настройте AI провайдера', a: 'Во вкладке "AI" выберите провайдера и вставьте API ключ:\n\n- Gemini (Google) — бесплатный, 15 запросов/мин. Ключ: aistudio.google.com\n- OpenRouter — бесплатные модели (Qwen, Llama). Ключ: openrouter.ai/keys\n- Groq — бесплатный, быстрый (30 RPM). Ключ: console.groq.com\n- Claude (Anthropic) — платный, самый умный\n- GPT (OpenAI) — платный\n\nЕсли не знаете какой выбрать — начните с Gemini (бесплатный) или спросите Atlas.' },
+        { q: 'Шаг 4: Выберите возможности (Capabilities)', a: 'Во вкладке "Инструменты" включите модули которые нужны агенту. Каждый модуль даёт набор инструментов:\n\n- Telegram — отправка сообщений, реакции, поиск\n- Telegram Admin — кик, бан, мьют, закрепление\n- Wallet — баланс TON, отправка транзакций\n- Gifts Market — цены подарков, арбитраж\n- DeFi — свопы через DeDust/STON.fi\n- Web — поиск в интернете, загрузка страниц\n- Image — генерация изображений (DALL-E)\n- Memory — долгосрочная память между сессиями\n\nНе включайте лишние модули — это замедляет агента.' },
+        { q: 'Шаг 5: Запустите', a: 'Нажмите "Запустить" на карточке агента. Зелёный индикатор означает что агент работает. Он будет:\n\n- Отвечать на сообщения в подключённых чатах\n- Выполнять задачи по расписанию (если настроен тик-интервал)\n- Мониторить цены и уведомлять вас\n\nЧтобы остановить — нажмите "Стоп". Логи работы видны во вкладке "Логи".' },
+        { q: 'Пример: Арбитраж подарков', a: 'Напишите Atlas: "Создай агента для мониторинга рынка Telegram подарков. Он должен каждые 5 минут проверять цены на всех маркетах (Fragment, GetGems, Tonnel, Portals) и уведомлять когда спред между маркетами больше 10%."\n\nAtlas создаст агента с capabilities: gifts_market, notify. Агент будет использовать инструменты scan_real_arbitrage и get_market_overview.' },
+        { q: 'Пример: Модератор группы', a: 'Напишите Atlas: "Создай модератора для группы. Он должен удалять спам, банить ботов, приветствовать новичков и отвечать на частые вопросы."\n\nCapabilities: telegram, telegram_admin. Подключите Telegram аккаунт с правами админа в нужной группе. Укажите в настройках роутинга конкретную группу.' },
+        { q: 'Пример: Контент-менеджер канала', a: 'Напишите Atlas: "Создай агента который ведёт Telegram канал. Он должен генерировать посты про TON/crypto каждые 6 часов, добавлять изображения, форматировать текст."\n\nCapabilities: telegram, web, image, image_gen. Агент будет искать новости через web_search, генерировать изображения через DALL-E и публиковать в канал.' },
+      ] : [
+        { q: 'What is Atlas', a: 'Atlas is the main AI assistant. Open it via sidebar or Ctrl+/. It can create agents, explain settings, audit agents, help with prompts.' },
+        { q: 'Step 1: Create an agent', a: 'Tell Atlas: "create an agent that monitors TON price". It generates the prompt, picks tools, and launches.' },
+        { q: 'Step 2: Connect Telegram', a: 'Agent Settings → Telegram → scan QR code. Agent gets full MTProto access.' },
+        { q: 'Step 3: Configure AI provider', a: 'AI tab → pick provider (Gemini free, Groq free, Claude paid) → paste API key.' },
+        { q: 'Step 4: Launch', a: 'Click Start. Green indicator = running 24/7.' },
+      ],
+    },
+    { id: 'settings', icon: _ico('<line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/>'),
+      title: isRu ? 'Настройки агента' : 'Agent Settings',
+      subtitle: isRu ? '17 вкладок для полного контроля' : '17 tabs for complete control',
+      gradient: 'linear-gradient(in oklab 135deg, rgba(var(--accent-r,139),var(--accent-g,92),var(--accent-b,246),0.15), rgba(var(--accent-r,168),var(--accent-g,85),var(--accent-b,247),0.08))',
+      items: [
+        'Code — ' + (isRu ? 'редактор промпта' : 'prompt editor'),
+        'AI — ' + (isRu ? 'провайдер, модель, ключ' : 'provider, model, key'),
+        'Caps — ' + (isRu ? '20 модулей возможностей' : '20 capability modules'),
+        'Routing — ' + (isRu ? 'маршрутизация сообщений' : 'message routing'),
+        'Memory — ' + (isRu ? 'долгосрочная память' : 'long-term memory'),
+        'Security — ' + (isRu ? 'лимиты, блоклист, sandbox' : 'limits, blocklist, sandbox'),
+      ],
+      details: isRu ? [
+        { q: 'Code — Системный промпт (самая важная настройка)', a: 'Системный промпт определяет личность, поведение и задачи агента. AI получает этот текст перед каждым ответом. Пишите как инструкцию:\n\n"Ты — эксперт по TON DeFi. Отвечай коротко и по делу. При вопросах о ценах используй get_ton_balance. Не давай финансовых советов."\n\nСоветы:\n- Будьте конкретны: вместо "будь полезным" пишите "отвечай на вопросы о TON блокчейне, используя данные из инструментов"\n- Укажите ограничения: "никогда не отправляй TON без подтверждения владельца"\n- Задайте тон: "используй неформальный стиль, короткие фразы, иногда ставь реакции"\n- Если не уверены — попросите Atlas написать промпт за вас' },
+        { q: 'AI — Провайдер и модель', a: 'Каждый агент использует свой API ключ для AI. Платформа не оплачивает запросы — вы платите провайдеру напрямую.\n\nПровайдеры:\n- Gemini (Google): бесплатный ключ на aistudio.google.com. Лимит 15 запросов/мин. Модели: gemini-2.5-flash (быстрая), gemini-2.5-pro (умная)\n- Groq: бесплатный ключ на console.groq.com. 30 запросов/мин. Модель: llama-3.3-70b\n- OpenRouter: бесплатные модели на openrouter.ai. 50 запросов/день (бесплатно) или 1000/день ($10 разово)\n- Claude (Anthropic): платный, от $3/M токенов. Лучший для сложных задач\n- GPT (OpenAI): платный, от $2.5/M токенов\n\nТемпература: 0.0 = строго по инструкции, 1.0 = креативно. Рекомендуется 0.7.\nМакс. токенов: длина ответа. 1024 = обычный ответ, 4096 = длинный.' },
+        { q: 'Capabilities — Возможности (инструменты)', a: 'Каждая capability даёт агенту набор инструментов. Включайте только нужные — лишние замедляют агента.\n\nОсновные:\n- Telegram: отправка сообщений, ответы, реакции, поиск, пересылка\n- Telegram Admin: кик, бан, мьют, закреп, управление правами (нужны права админа)\n- Wallet: проверка баланса TON, отправка транзакций (нужна мнемоника кошелька)\n- Web: поиск в Google, загрузка веб-страниц, HTTP запросы\n- State: сохранение/чтение данных между запусками агента\n- Notify: отправка уведомлений владельцу\n- Memory: долгосрочная память, контакты, уроки\n\nСпециальные:\n- Gifts Market: реальные цены подарков, арбитраж, аналитика рынка\n- DeFi: свопы через DeDust/STON.fi, цены жетонов\n- NFT: floor price коллекций, метаданные\n- Image/DALL-E: генерация и обработка изображений\n- MCP: подключение внешних инструментов через протокол MCP' },
+        { q: 'Routing — Маршрутизация сообщений', a: 'Определяет какие сообщения получает агент. Важно для мультиагентных систем (несколько агентов на одном TG аккаунте).\n\n- Ключевые слова: агент активируется только на сообщения содержащие эти слова\n- Типы чатов: DM (личка), группы, каналы\n- Приоритет: при конфликте нескольких агентов, отвечает тот у кого приоритет выше (1-100)\n- Default: если включено — агент отвечает на все сообщения которые не подошли другим агентам\n\nGroup Policy:\n- Active: отвечает на все сообщения в группе (осторожно — быстро расходует лимиты API)\n- Mention-only: отвечает только когда @упомянут (рекомендуется для групп)\n- Disabled: не отвечает в группах' },
+        { q: 'Behavior — Поведение и человечность', a: 'Настройки которые делают агента более похожим на человека:\n\n- Задержка набора: имитирует "печатает..." перед ответом\n- Скорость набора: символов в секунду (40 = медленно, 100 = быстро)\n- Реакции: автоматические реакции на сообщения (сердечки, лайки)\n- Колебания: иногда добавляет "хм", "ну" в начало ответа\n- Разбиение: длинные ответы разбивает на несколько сообщений\n\nРасписание: если включено, агент активен только в указанное время (например 9:00-23:00).' },
+        { q: 'Memory — Долгосрочная память', a: 'Агент автоматически запоминает важную информацию:\n\n- Имена и предпочтения пользователей\n- Уроки из ошибок\n- Контексты прошлых разговоров\n\nДанные хранятся в базе и доступны между перезапусками. В Studio видны во вкладке "Память" — контакты, факты, уроки.\n\nЗащита от poisoning: в групповых чатах незнакомцы не могут записывать в память агента ложную информацию.' },
+        { q: 'Security — Безопасность', a: 'Критически важные настройки:\n\n- Дневной лимит TON: максимальная сумма которую агент может потратить за день\n- Блоклист: ID пользователей которых агент игнорирует\n- Tool scope: какие инструменты доступны в группах (рекомендуется ограничить финансовые)\n- Atomic lock: блокировка параллельных финансовых операций (предотвращает двойную трату)\n- Prompt injection protection: агент не выполняет команды от незнакомцев которые пытаются изменить его поведение' },
+        { q: 'Wallet — Кошелёк агента', a: 'Агент может иметь свой TON кошелёк для выполнения транзакций. Настройка:\n\n1. Перейдите в Кошельки (боковое меню) → Создать Root Wallet\n2. В настройках агента → Wallet → выберите "Agentic Wallet"\n3. Установите лимит расходов\n\nАгент сможет: проверять баланс, отправлять TON, покупать подарки, делать свопы. Все операции логируются.' },
+        { q: 'Advanced — Продвинутые настройки', a: 'Для опытных пользователей:\n\n- Tick interval: как часто агент просыпается (60 сек = каждую минуту, 0 = только по сообщениям)\n- Компактинг: как сжимается контекст при длинных разговорах (structured = AI пишет резюме)\n- Loop guard: максимум ответов в одном чате за 5 минут (защита от спам-петель)\n- Flood cooldown: минимальный интервал между ответами в группах\n- Язык: auto = определяется по сообщению, ru/en = фиксированный' },
+      ] : [],
+    },
+    { id: 'ai', icon: _ico('<rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/>'),
+      title: isRu ? 'AI Провайдеры' : 'AI Providers',
+      subtitle: isRu ? '7 провайдеров на выбор' : '7 providers to choose from',
+      gradient: 'linear-gradient(in oklab 135deg, rgba(16,185,129,0.15), rgba(34,197,94,0.08))',
+      items: ['Gemini — gemini-2.5-flash/pro', 'Claude — sonnet/haiku/opus', 'GPT — gpt-4o-mini', 'Groq — llama-3.3-70b', 'DeepSeek — deepseek-chat', 'OpenRouter — google/gemini', 'Together — meta-llama'],
+    },
+    { id: 'tools', icon: _ico('<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>'),
+      title: isRu ? 'Инструменты' : 'Tools',
+      subtitle: isRu ? '77 инструментов в 10 категориях' : '77 tools in 10 categories',
+      gradient: 'linear-gradient(in oklab 135deg, rgba(245,158,11,0.15), rgba(234,179,8,0.08))',
+      grid: [
+        { emoji: 'MSG', name: isRu ? 'Сообщения' : 'Messages' }, { emoji: 'MED', name: isRu ? 'Медиа' : 'Media' },
+        { emoji: 'MOD', name: isRu ? 'Модерация' : 'Moderation' }, { emoji: 'TON', name: 'DeFi' },
+        { emoji: 'GFT', name: isRu ? 'Подарки' : 'Gifts' }, { emoji: 'MEM', name: isRu ? 'Память' : 'Memory' },
+        { emoji: 'USR', name: isRu ? 'Профиль' : 'Profile' }, { emoji: 'WEB', name: 'Web' },
+        { emoji: 'WAL', name: isRu ? 'Кошелёк' : 'Wallet' }, { emoji: 'SCH', name: isRu ? 'Планирование' : 'Planning' },
+      ],
+      details: isRu ? [
+        { q: 'Сообщения (17 инструментов)', a: 'tg_send_message — отправка в любой чат/канал/пользователю\ntg_reply — ответ на конкретное сообщение с цитатой\ntg_forward_message — пересылка\ntg_edit — редактирование своих сообщений\ntg_react — поставить реакцию (сердце, огонь, и др.)\ntg_pin — закрепить сообщение\ntg_get_messages — прочитать последние сообщения из чата\ntg_get_unread — получить непрочитанные\ntg_search_messages — поиск по тексту в чате\ntg_get_dialogs — список всех чатов\ntg_mark_read — отметить прочитанным\ntg_send_formatted — HTML форматирование (жирный, курсив, код)\ntg_send_photo — отправка фото\ntg_send_file — отправка документа\ntg_send_voice — голосовое сообщение\ntg_get_channel_info — информация о канале/группе\ntg_get_user_info — информация о пользователе' },
+        { q: 'Модерация (8 инструментов)', a: 'tg_kick_user — удалить пользователя из группы\ntg_ban_user — забанить (не сможет вернуться)\ntg_mute_user — замьютить на время\ntg_unban_user — разбанить\ntg_get_members — список участников группы\ntg_create_poll — создать опрос\ntg_join_channel — вступить в канал/группу\ntg_leave_channel — покинуть' },
+        { q: 'TON DeFi (6 инструментов)', a: 'get_ton_balance — баланс TON и жетонов по адресу\nsend_ton — отправить TON транзакцию\nsend_jetton — отправить жетон (USDT, NOT и др.)\nget_nft_floor — floor price NFT коллекции\nswap_dedust — свопы через DeDust\nswap_stonfi — свопы через STON.fi' },
+        { q: 'Подарки (12+ инструментов)', a: 'get_gift_floor_real — реальная цена подарка на всех маркетах\nscan_real_arbitrage — поиск арбитража между маркетами\nget_market_overview — обзор рынка подарков\nget_price_list — список цен всех подарков\nget_top_deals — лучшие сделки дня\nget_gift_aggregator — агрегатор со всех маркетов\nget_collection_offers — ордера на покупку\nget_market_health — здоровье рынка\nget_price_history — история цен\nget_user_portfolio — портфолио пользователя\nbuy_catalog_gift — купить подарок из каталога\nlist_gift_for_sale — выставить на продажу' },
+        { q: 'Web (3 инструмента)', a: 'web_search — поиск в Google/Bing с AI-извлечением результатов\nfetch_url — загрузка веб-страницы, извлечение текста\nhttp_request — произвольный HTTP запрос (GET/POST/PUT/DELETE) с заголовками и телом' },
+        { q: 'Память и состояние (6 инструментов)', a: 'get_state / set_state — чтение/запись данных агента (переживают перезапуск)\nget_state_multi — прочитать несколько ключей за раз\nlist_state_keys — список всех сохранённых ключей\nremember — сохранить факт в долгосрочную память\nrecall — найти факт по ключевому слову\nsave_lesson — сохранить урок (агент учится на ошибках)' },
+        { q: 'Уведомления и планирование', a: 'notify / notify_user — отправить уведомление владельцу агента\nnotify_rich — форматированное уведомление с кнопками\nschedule_action — запланировать действие на конкретное время\nset_next_wake — установить время следующего пробуждения агента' },
+      ] : [],
+    },
+    { id: 'flow', icon: _ico('<path d="m18 16 4-4-4-4"/><path d="m6 8-4 4 4 4"/><path d="m14.5 4-5 16"/>'),
+      title: isRu ? 'Конструктор' : 'Flow Builder',
+      subtitle: isRu ? 'Визуальный drag & drop редактор' : 'Visual drag & drop editor',
+      gradient: 'linear-gradient(in oklab 135deg, rgba(var(--accent-r,99),var(--accent-g,102),var(--accent-b,241),0.15), rgba(79,70,229,0.08))',
+      cards: [
+        { title: isRu ? 'Триггеры' : 'Triggers', desc: isRu ? 'Таймер, Webhook, Ручной запуск' : 'Timer, Webhook, Manual start' },
+        { title: isRu ? 'Действия' : 'Actions', desc: isRu ? 'TON, Gifts, Telegram, Web, DeFi' : 'TON, Gifts, Telegram, Web, DeFi' },
+        { title: isRu ? 'Логика' : 'Logic', desc: isRu ? 'Условия, циклы, задержки' : 'Conditions, loops, delays' },
+      ],
+      action: { label: isRu ? 'Открыть конструктор' : 'Open Constructor', fn: 'navigateTo("builder")' },
+      details: isRu ? [
+        { q: 'Как работает конструктор', a: 'Визуальный редактор где вы соединяете блоки линиями. Каждый блок — одно действие (проверить баланс, отправить сообщение, подождать). Линия между блоками = "после этого сделай то".\n\nУправление:\n- Перетаскивание блоков мышью\n- Соединение: тяните от output-порта (справа) к input-порту (слева)\n- Зум: колесо мыши\n- Удалить связь: правый клик\n- Deploy: кнопка сверху справа' },
+        { q: 'Блоки триггеров', a: 'Timer — запуск каждые N минут (1, 5, 10, 30, 60 мин или cron выражение)\nWebhook — запуск по HTTP запросу (получаете URL для вызова)\nManual — запуск вручную кнопкой\n\nКаждый flow начинается с одного триггера.' },
+        { q: 'Блоки действий', a: 'Get Balance — проверить баланс TON/жетонов\nSend TON — отправить транзакцию\nNFT Floor — цена коллекции\nGift Prices — цена подарка\nScan Arbitrage — поиск арбитража\nWeb Search — поиск в интернете\nFetch URL — загрузка страницы\nSend Message — отправка в Telegram\nHTTP Request — произвольный API вызов' },
+        { q: 'Блоки логики', a: 'Condition — если баланс > 100 → ветка A, иначе → ветка B\nDelay — подождать N секунд\nLoop — повторять блок N раз\nGroup — объединить несколько блоков\n\nПример: Timer (каждые 5 мин) → Get Balance → Condition (< 10 TON?) → Send Message ("Баланс низкий!")' },
+        { q: 'Когда использовать конструктор вместо AI', a: 'Конструктор подходит для:\n- Простых автоматизаций (проверил → уведомил)\n- Когда нужна точная логика (if/else)\n- Когда не хотите тратить AI токены на каждый запуск\n\nAI агент подходит для:\n- Сложных задач требующих понимания контекста\n- Общения в чатах\n- Задач где нужно принимать решения на лету' },
+      ] : [],
+    },
+    { id: 'ton', icon: _ico('<path d="M2.7 10.3a2.41 2.41 0 0 0 0 3.41l7.59 7.59a2.41 2.41 0 0 0 3.41 0l7.59-7.59a2.41 2.41 0 0 0 0-3.41l-7.59-7.59a2.41 2.41 0 0 0-3.41 0z"/>'),
+      title: 'TON Blockchain',
+      subtitle: isRu ? 'Кошельки, свопы, NFT, жетоны' : 'Wallets, swaps, NFTs, jettons',
+      gradient: 'linear-gradient(in oklab 135deg, var(--accent-dim), rgba(2,132,199,0.08))',
+      items: [isRu ? 'Баланс TON/жетонов' : 'TON/jetton balance', isRu ? 'Свопы через DeDust/STON.fi' : 'Swaps via DeDust/STON.fi', isRu ? 'NFT floor price + аналитика' : 'NFT floor price + analytics', isRu ? 'Отправка TON/жетонов' : 'Send TON/jettons', isRu ? 'Агентский кошелёк' : 'Agentic wallet'],
+      details: isRu ? [
+        { q: 'Кошелёк агента', a: 'Каждый агент может иметь свой TON кошелёк (Agentic Wallet). Создание:\n\n1. Кошельки (боковое меню) → Создать Root Wallet\n2. Настройки агента → Wallet → выбрать Agentic Wallet\n3. Установить дневной лимит расходов\n\nRoot Wallet — мастер-кошелёк. К нему привязываются суб-кошельки агентов. Мнемоника шифруется AES-256-GCM.' },
+        { q: 'Свопы через DeDust и STON.fi', a: 'Агент может автоматически менять жетоны:\n\nswap_dedust — свопы через DeDust DEX. Поддерживает TON, USDT, NOT и другие жетоны.\nswap_stonfi — свопы через STON.fi DEX.\n\nПример промпта: "Каждые 30 минут проверяй цену NOT. Если выросла на 5% — продай 10% позиции через DeDust."' },
+        { q: 'NFT аналитика', a: 'get_nft_floor — floor price коллекции через TonAPI v2\n\nПоддерживаемые коллекции: TON Punks, TON Diamonds, Anonymous Numbers и любые другие по адресу.\n\nПример: "Мониторь floor price TON Punks. Уведоми когда упадёт ниже 50 TON."' },
+        { q: 'TonAPI v2 (блокчейн данные)', a: 'Через capability "blockchain" агент получает доступ к:\n\n- Аккаунты: баланс, история транзакций\n- Жетоны: балансы, метаданные, трансферы\n- NFT: коллекции, items, метаданные\n- DNS: резолв .ton доменов\n- Стейкинг: пулы, номинаторы\n- Эмуляция транзакций: проверка до отправки' },
+      ] : [],
+    },
+    { id: 'multi', icon: _ico('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'),
+      title: isRu ? 'Мультиагенты' : 'Multi-Agent',
+      subtitle: isRu ? 'Команды агентов, роли, маршрутизация' : 'Agent teams, roles, routing',
+      gradient: 'linear-gradient(in oklab 135deg, rgba(236,72,153,0.15), rgba(219,39,119,0.08))',
+      items: [isRu ? 'Роли: worker, manager, specialist' : 'Roles: worker, manager, specialist', isRu ? 'Маршрутизация по ключевым словам' : 'Keyword-based routing', isRu ? 'Inter-agent коммуникация' : 'Inter-agent communication', isRu ? 'Общее состояние между агентами' : 'Shared state between agents'],
+      details: isRu ? [
+        { q: 'Как работает мультиагентная система', a: 'Несколько агентов подключаются к одному Telegram аккаунту. Каждое входящее сообщение проходит через маршрутизатор, который решает какому агенту его отдать.\n\nМаршрутизация:\n- По ключевым словам: "цена" → трейдинг-агент, "модерация" → модератор\n- По типу чата: DM → личный помощник, группы → модератор\n- По приоритету: при конфликте отвечает агент с высшим приоритетом\n- Default agent: получает все сообщения которые не подошли другим' },
+        { q: 'Роли агентов', a: 'Worker — обычный исполнитель задач\nManager — координирует других агентов, может делегировать задачи\nSpecialist — эксперт в конкретной области (DeFi, NFT, модерация)\nMonitor — следит за метриками, уведомляет\n\nРоль влияет на приоритет маршрутизации и доступные инструменты.' },
+        { q: 'Inter-agent коммуникация', a: 'Агенты могут общаться друг с другом:\n\nlist_my_agents — получить список всех агентов\nask_agent(agentId, question) — задать вопрос другому агенту\ndelegate_task(agentId, task) — делегировать задачу\n\nПример: Manager-агент получает задачу "проверь портфолио" → делегирует DeFi-агенту проверку баланса, NFT-агенту проверку коллекций → собирает ответы → формирует отчёт.' },
+        { q: 'Общее состояние', a: 'Агенты могут использовать shared state для координации:\n\nget_shared_state(key) — прочитать значение доступное всем агентам\nset_shared_state(key, value) — записать значение для всех агентов\n\nПример: Мониторинг-агент записывает "alert:ton_price_low=true" → Трейдинг-агент читает и запускает стратегию.' },
+      ] : [],
+    },
+    { id: 'market', icon: _ico('<path d="M3 9h18v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9z"/><path d="m3 9 1.5-4.5A2 2 0 0 1 6.4 3h11.2a2 2 0 0 1 1.9 1.5L21 9"/><path d="M3 9h18"/><path d="M16 14a4 4 0 0 1-8 0"/>'),
+      title: isRu ? 'Маркетплейс' : 'Marketplace',
+      subtitle: isRu ? 'Готовые шаблоны агентов' : 'Ready-made agent templates',
+      gradient: 'linear-gradient(in oklab 135deg, rgba(34,197,94,0.15), rgba(22,163,74,0.08))',
+      action: { label: isRu ? 'Открыть маркетплейс' : 'Open Marketplace', fn: 'navigateTo("marketplace")' },
+      items: [isRu ? 'DeFi мониторинг' : 'DeFi monitoring', isRu ? 'NFT трекинг' : 'NFT tracking', isRu ? 'Арбитраж подарков' : 'Gift arbitrage', isRu ? 'Контент-менеджер' : 'Content manager'],
+      details: isRu ? [
+        { q: 'Что такое маркетплейс', a: 'Готовые шаблоны агентов которые можно установить в один клик. Каждый шаблон содержит: системный промпт, набор capabilities, рекомендуемый провайдер.\n\nКатегории:\n- Monitoring: мониторинг цен, балансов, NFT\n- DeFi: свопы, yield farming, арбитраж\n- Gifts: торговля подарками, аналитика рынка\n- Utility: модерация, контент, уведомления\n- Custom: пользовательские шаблоны' },
+        { q: 'Как установить шаблон', a: '1. Откройте Маркетплейс\n2. Выберите шаблон\n3. Нажмите "Установить"\n4. Укажите API ключ и другие настройки (wizard проведёт)\n5. Агент создан и готов к запуску\n\nПосле установки можете изменить любые настройки — промпт, capabilities, провайдер.' },
+        { q: 'Как создать свой шаблон', a: 'Настройте агента как хотите, затем в настройках нажмите "Опубликовать на маркетплейс". Укажите:\n- Название и описание\n- Категорию\n- Цену (или бесплатно)\n\nДругие пользователи смогут установить ваш шаблон. Комиссия платформы: 30%.' },
+      ] : [],
+    },
+    { id: 'keys', icon: _ico('<rect width="20" height="16" x="2" y="4" rx="2" ry="2"/><path d="M6 8h.001"/><path d="M10 8h.001"/><path d="M14 8h.001"/><path d="M18 8h.001"/><path d="M8 12h.001"/><path d="M12 12h.001"/><path d="M16 12h.001"/><path d="M7 16h10"/>'),
+      title: isRu ? 'Горячие клавиши' : 'Shortcuts',
+      subtitle: isRu ? 'Быстрые команды' : 'Quick commands',
+      gradient: 'linear-gradient(in oklab 135deg, rgba(100,116,139,0.15), rgba(71,85,105,0.08))',
+      shortcuts: [
+        { key: 'Ctrl+K', desc: isRu ? 'Палитра команд' : 'Command palette' },
+        { key: 'Ctrl+N', desc: isRu ? 'Новый агент' : 'New agent' },
+        { key: 'Ctrl+/', desc: isRu ? 'Открыть чат' : 'Open chat' },
+        { key: 'Esc', desc: isRu ? 'Закрыть модалы' : 'Close modals' },
+      ],
+    },
+  ];
+
+  // ── Render tabs + content ──
+  var _activeGuideTab = sections[0].id;
+
+  // Rich text formatter for guide FAQ content
+  function _formatGuideText(raw) {
+    var lines = raw.split('\n');
+    var html = '';
+    var inList = false;
+    for (var li = 0; li < lines.length; li++) {
+      var line = lines[li];
+      var trimmed = line.trim();
+      if (!trimmed) {
+        if (inList) { html += '</div>'; inList = false; }
+        html += '<div style="height:8px"></div>';
+        continue;
+      }
+      // Bullet list: starts with - or •
+      if (/^[-•]\s/.test(trimmed)) {
+        if (!inList) { html += '<div style="display:flex;flex-direction:column;gap:4px;margin:6px 0 6px 4px">'; inList = true; }
+        var bullet = trimmed.replace(/^[-•]\s*/, '');
+        // Bold part before colon
+        bullet = bullet.replace(/^([^:—]+)([::—])/, '<span style="color:var(--text-primary);font-weight:600">$1</span>$2');
+        html += '<div style="display:flex;gap:8px;align-items:flex-start"><span style="color:var(--primary);font-size:.6rem;margin-top:5px;flex-shrink:0">&#9679;</span><span>' + bullet + '</span></div>';
+        continue;
+      }
+      if (inList) { html += '</div>'; inList = false; }
+      // Subheading: line ending with : and < 60 chars
+      if (/[::]\s*$/.test(trimmed) && trimmed.length < 60) {
+        html += '<div style="color:var(--text-primary);font-weight:600;font-size:.82rem;margin:10px 0 4px;padding-bottom:3px;border-bottom:1px solid rgba(255,255,255,0.05)">' + escHtml(trimmed) + '</div>';
+        continue;
+      }
+      // Heading-like: short line, all caps or starts with capital and no period
+      if (trimmed.length < 40 && /^[A-ZА-ЯЁ]/.test(trimmed) && !/\.\s*$/.test(trimmed) && !/^(Пример|Example|Совет|Tip)/i.test(trimmed)) {
+        html += '<div style="color:var(--text-primary);font-weight:600;font-size:.82rem;margin:8px 0 4px">' + escHtml(trimmed) + '</div>';
+        continue;
+      }
+      // Code-like: starts with function name, tool name, or has — separator
+      if (/^[a-z_]+\s*[—–-]/.test(trimmed)) {
+        var parts = trimmed.split(/\s*[—–-]\s*(.+)/);
+        html += '<div style="display:flex;gap:8px;align-items:flex-start;margin:3px 0 3px 4px"><code style="background:var(--accent-dim);color:var(--primary);padding:1px 6px;border-radius:4px;font-size:.75rem;font-family:monospace;white-space:nowrap;flex-shrink:0">' + escHtml(parts[0]) + '</code><span>' + escHtml(parts[1] || '') + '</span></div>';
+        continue;
+      }
+      // URLs: make clickable
+      var processed = escHtml(trimmed).replace(/(https?:\/\/[^\s<]+|[a-z]+\.[a-z]+\.[a-z]+[^\s]*|aistudio\.google\.com|console\.groq\.com|openrouter\.ai[^\s]*)/gi, function(url) {
+        var href = url.startsWith('http') ? url : 'https://' + url;
+        return '<a href="' + href + '" target="_blank" style="color:var(--primary);text-decoration:none;border-bottom:1px dashed var(--accent-glow)">' + url + '</a>';
+      });
+      // Quote blocks: lines starting with "
+      if (/^["«"]/.test(trimmed)) {
+        html += '<div style="border-left:2px solid var(--accent-glow);padding-left:10px;margin:4px 0;font-style:italic;color:var(--text-muted)">' + processed + '</div>';
+        continue;
+      }
+      html += '<div style="margin:3px 0">' + processed + '</div>';
+    }
+    if (inList) html += '</div>';
+    return html;
+  }
+
+  function renderGuide() {
+    var s = sections.find(function(x){ return x.id === _activeGuideTab; }) || sections[0];
+
+    // ── Hero (always at top) ──
+    var hero = '<div class="guide-v3-hero">' +
+      '<div class="guide-v3-hero-content">' +
+        '<div class="guide-v3-hero-l">' +
+          '<div class="guide-v3-hero-eyebrow">' + (isRu ? 'РУКОВОДСТВО' : 'GUIDE') + '</div>' +
+          '<h1 class="guide-v3-hero-title">' +
+            (isRu
+              ? 'Создавай AI-агентов <span class="grad">за минуты</span>, не часы'
+              : 'Build AI agents <span class="grad">in minutes</span>, not hours') +
+          '</h1>' +
+          '<p class="guide-v3-hero-sub">' +
+            (isRu
+              ? 'Полное руководство по платформе — от первого агента до мультиагентных систем, кошельков и публикации в маркетплейс.'
+              : 'Complete platform guide — from your first agent to multi-agent systems, wallets and marketplace publishing.') +
+          '</p>' +
+          '<div class="guide-v3-hero-stats">' +
+            '<div class="guide-v3-hero-stat"><span class="n">77+</span><span class="l">' + (isRu ? 'инструментов' : 'tools') + '</span></div>' +
+            '<div class="guide-v3-hero-stat"><span class="n">7</span><span class="l">' + (isRu ? 'AI провайдеров' : 'AI providers') + '</span></div>' +
+            '<div class="guide-v3-hero-stat"><span class="n">20</span><span class="l">capabilities</span></div>' +
+            '<div class="guide-v3-hero-stat"><span class="n">24/7</span><span class="l">' + (isRu ? 'автономно' : 'autonomous') + '</span></div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="guide-v3-hero-r">' +
+          '<button class="guide-v3-hero-cta" onclick="navigateTo(\'assistant\')">' +
+            '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>' +
+            (isRu ? 'Открыть Atlas' : 'Open Atlas') +
+          '</button>' +
+          '<button class="guide-v3-hero-ghost" onclick="startGuidedTour()">' +
+            '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>' +
+            (isRu ? 'Запустить тур' : 'Start tour') +
+          '</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+
+    // Tab bar
+    var tabs = '<div class="guide-tabs">';
+    sections.forEach(function(sec) {
+      var active = sec.id === _activeGuideTab;
+      tabs += '<button class="guide-tab' + (active ? ' active' : '') + '" onclick="_switchGuideTab(\'' + sec.id + '\')">' +
+        sec.icon + '<span>' + sec.title + '</span></button>';
+    });
+    tabs += '</div>';
+
+    // Section header
+    var content = '<div class="guide-section-head">' +
+      '<div class="guide-section-head-l">' +
+        '<div class="guide-section-icon">' + s.icon + '</div>' +
+        '<div><h2 class="guide-section-title">' + s.title + '</h2>' +
+          '<p class="guide-section-sub">' + s.subtitle + '</p></div>' +
+      '</div>' +
+    '</div>';
+
+    // Cards (numbered, unified style)
+    if (s.cards) {
+      content += '<div class="guide-section-divider">' + (isRu ? 'С чего начать' : 'Where to start') + '</div>';
+      content += '<div class="guide-cards">';
+      s.cards.forEach(function(c, ci) {
+        content += '<div class="guide-card-v2">' +
+          '<span class="num">' + (ci + 1) + '</span>' +
+          '<h4>' + c.title + '</h4>' +
+          '<p>' + c.desc + '</p>' +
+          (c.action ? '<button class="btn" onclick="' + c.action + '">' + (c.btn || '→') +
+            ' <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg></button>' : '') +
+        '</div>';
+      });
+      content += '</div>';
+    }
+
+    // Chips (items list)
+    if (s.items) {
+      content += '<div class="guide-section-divider">' + (isRu ? 'Что включено' : 'What\'s inside') + '</div>';
+      content += '<div class="guide-chips">';
+      s.items.forEach(function(item) {
+        content += '<span class="guide-chip">' + escHtml(item) + '</span>';
+      });
+      content += '</div>';
+    }
+
+    // Tool grid
+    if (s.grid) {
+      content += '<div class="guide-section-divider">' + (isRu ? 'Категории инструментов' : 'Tool categories') + '</div>';
+      content += '<div class="guide-tool-grid">';
+      s.grid.forEach(function(g) {
+        content += '<div class="guide-tool">' +
+          '<span class="code">' + escHtml(g.emoji) + '</span>' +
+          '<span class="name">' + escHtml(g.name) + '</span>' +
+        '</div>';
+      });
+      content += '</div>';
+    }
+
+    // Shortcuts
+    if (s.shortcuts) {
+      content += '<div class="guide-section-divider">' + (isRu ? 'Горячие клавиши' : 'Keyboard shortcuts') + '</div>';
+      content += '<div class="guide-shortcuts">';
+      s.shortcuts.forEach(function(sc) {
+        content += '<div class="guide-shortcut">' +
+          '<kbd>' + escHtml(sc.key) + '</kbd>' +
+          '<span>' + escHtml(sc.desc) + '</span>' +
+        '</div>';
+      });
+      content += '</div>';
+    }
+
+    // Tip
+    if (s.tip) {
+      content += '<div class="guide-tip">' +
+        '<div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg></div>' +
+        '<div>' + s.tip + '</div>' +
+      '</div>';
+    }
+
+    // Action button
+    if (s.action) {
+      content += '<button class="guide-action" onclick="' + s.action.fn + '">' + s.action.label +
+        ' <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>' +
+      '</button>';
+    }
+
+    // Details (FAQ accordion)
+    if (s.details && s.details.length > 0) {
+      content += '<div class="guide-section-divider">' + (isRu ? 'Подробности' : 'Deep dive') + '</div>';
+      content += '<div class="guide-details">';
+      s.details.forEach(function(d, idx) {
+        content += '<details class="guide-detail"' + (idx < 1 ? ' open' : '') + '>' +
+          '<summary>' +
+            '<span class="chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>' +
+            '<span class="q">' + escHtml(d.q) + '</span>' +
+            '<span class="idx">' + (idx + 1) + ' / ' + s.details.length + '</span>' +
+          '</summary>' +
+          '<div class="guide-detail-body">' + _formatGuideText(d.a) + '</div>' +
+        '</details>';
+      });
+      content += '</div>';
+    }
+
+    container.innerHTML = '<div class="guide-v2">' + hero + tabs + content + '</div>';
+  }
+
+  window._switchGuideTab = function(id) {
+    _activeGuideTab = id;
+    renderGuide();
+  };
+
+  // Use tabs guide version with full detailed content
+  renderGuide();
+  return;
+
+  container.innerHTML =
+    '<div class="guide-hero">' +
+      '<div class="guide-hero-glow"></div>' +
+      '<h1 class="guide-hero-title">' + (isRu ? 'Добро пожаловать в TON Agent Studio' : 'Welcome to TON Agent Studio') + '</h1>' +
+      '<p class="guide-hero-sub">' + (isRu ? 'Создавайте AI-агентов которые живут в Telegram как настоящие люди' : 'Create AI agents that live in Telegram like real people') + '</p>' +
+    '</div>' +
+
+    '<div class="guide-grid">' +
+
+      // Step 1
+      '<div class="guide-card" style="--delay:0.1s">' +
+        '<div class="guide-card-num">01</div>' +
+        '<div class="guide-card-icon" style="background:rgba(16,185,129,0.12);color:#10b981"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></div>' +
+        '<h3>' + (isRu ? 'Создайте агента' : 'Create an Agent') + '</h3>' +
+        '<p>' + (isRu
+          ? 'Опишите задачу текстом или голосом. AI сгенерирует системный промпт и подключит нужные инструменты из 77 доступных.'
+          : 'Describe the task in text or voice. AI generates a system prompt and connects the right tools from 77 available.') + '</p>' +
+        '<button class="guide-action-btn" onclick="navigateTo(\'builder\')">' + (isRu ? 'Открыть конструктор' : 'Open Constructor') + ' →</button>' +
+      '</div>' +
+
+      // Step 2
+      '<div class="guide-card" style="--delay:0.2s">' +
+        '<div class="guide-card-num">02</div>' +
+        '<div class="guide-card-icon" style="background:rgba(59,130,246,0.12);color:#3b82f6"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></div>' +
+        '<h3>' + (isRu ? 'Подключите Telegram' : 'Connect Telegram') + '</h3>' +
+        '<p>' + (isRu
+          ? 'Авторизуйте аккаунт через QR-код. Агент будет работать как полноценный пользователь — не бот.'
+          : 'Authorize via QR code. The agent works as a real user — not a bot.') + '</p>' +
+        '<button class="guide-action-btn" onclick="navigateTo(\'connectors\')">' + (isRu ? 'Настроить подключение' : 'Set up connection') + ' →</button>' +
+      '</div>' +
+
+      // Step 3
+      '<div class="guide-card" style="--delay:0.3s">' +
+        '<div class="guide-card-num">03</div>' +
+        '<div class="guide-card-icon" style="background:rgba(var(--accent-r,139),var(--accent-g,92),var(--accent-b,246),0.12);color:#8b5cf6"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4"/></svg></div>' +
+        '<h3>' + (isRu ? 'Настройте поведение' : 'Configure Behavior') + '</h3>' +
+        '<p>' + (isRu
+          ? 'Душа, безопасность, стратегия, расписание — 25 табов настроек для полного контроля.'
+          : 'Soul, security, strategy, schedule — 25 settings tabs for complete control.') + '</p>' +
+        '<button class="guide-action-btn" onclick="navigateTo(\'operations\')">' + (isRu ? 'Мои агенты' : 'My Agents') + ' →</button>' +
+      '</div>' +
+
+      // Step 4
+      '<div class="guide-card" style="--delay:0.4s">' +
+        '<div class="guide-card-num">04</div>' +
+        '<div class="guide-card-icon" style="background:rgba(245,158,11,0.12);color:#f59e0b"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>' +
+        '<h3>' + (isRu ? 'Запустите!' : 'Launch!') + '</h3>' +
+        '<p>' + (isRu
+          ? 'Агент начнёт работать 24/7 — отвечать в чатах, торговать, модерировать, мониторить и уведомлять.'
+          : 'The agent works 24/7 — replying in chats, trading, moderating, monitoring and notifying.') + '</p>' +
+        '<button class="guide-action-btn" onclick="navigateTo(\'network\')">' + (isRu ? 'Сеть агентов' : 'Agent Network') + ' →</button>' +
+      '</div>' +
+
+    '</div>' +
+
+    // Features grid
+    '<h2 class="guide-section-title">' + (isRu ? '77 инструментов в 10 категориях' : '77 tools in 10 categories') + '</h2>' +
+    '<div class="guide-features">' +
+      guideFeature(IC.chat, isRu ? 'Сообщения' : 'Messages', isRu ? 'Отправка, ответы, пересылка, реакции, поиск, форматирование' : 'Send, reply, forward, react, search, format'),
+      guideFeature(IC.image, isRu ? 'Медиа' : 'Media', isRu ? 'Фото, голосовые, файлы, стикеры, GIF' : 'Photos, voice, files, stickers, GIFs'),
+      guideFeature(IC.shield, isRu ? 'Модерация' : 'Moderation', isRu ? 'Кик, бан, мьют, закрепить, опросы, инвайты' : 'Kick, ban, mute, pin, polls, invites'),
+      guideFeature(IC.gem, isRu ? 'TON DeFi' : 'TON DeFi', isRu ? 'Баланс, свопы DeDust/STON.fi, жетоны, NFT' : 'Balance, swaps DeDust/STON.fi, jettons, NFTs'),
+      guideFeature(IC.gift, isRu ? 'Подарки' : 'Gifts', isRu ? 'Каталог, арбитраж, покупка, продажа, аналитика' : 'Catalog, arbitrage, buy, sell, analytics'),
+      guideFeature(IC.brain, isRu ? 'Память' : 'Memory', isRu ? 'Долгосрочная, ежедневные логи, поиск, компактинг' : 'Long-term, daily logs, search, compaction'),
+      guideFeature(IC.user, isRu ? 'Профиль' : 'Profile', isRu ? 'Аватарка, имя, био, stories' : 'Avatar, name, bio, stories'),
+      guideFeature(IC.globe, isRu ? 'Веб' : 'Web', isRu ? 'Поиск, загрузка страниц, HTTP запросы' : 'Search, fetch pages, HTTP requests'),
+      guideFeature(IC.dollar, isRu ? 'Кошелёк' : 'Wallet', isRu ? 'Отправка TON/жетонов, лимиты, atomic lock' : 'Send TON/jettons, limits, atomic lock'),
+      guideFeature(IC.clock, isRu ? 'Планирование' : 'Planning', isRu ? 'Расписание, задачи, уведомления, пробуждение' : 'Schedule, tasks, notifications, wake-up'),
+    '</div>' +
+
+    // FAQ
+    '<h2 class="guide-section-title">FAQ</h2>' +
+    '<div class="guide-faq">' +
+      guideFaq(isRu ? 'Чем отличается от обычного бота?' : 'How is this different from a regular bot?',
+        isRu ? 'Наш агент — полноценный Telegram-аккаунт через MTProto. Он выглядит как человек, ставит реакции, меняет аватарку, пишет stories. Обычный бот этого не может.' : 'Our agent is a full Telegram account via MTProto. It looks like a human, sets reactions, changes avatar, posts stories. Regular bots can\'t do this.') +
+      guideFaq(isRu ? 'Это безопасно?' : 'Is it safe?',
+        isRu ? 'Atomic lock на финансовые операции, дневные лимиты, sandbox для кода, защита от prompt injection, блоклист, tool scope — какие инструменты доступны в группах vs в личке.' : 'Atomic lock on financial ops, daily limits, code sandbox, prompt injection protection, blocklist, tool scope — which tools are available in groups vs DMs.') +
+      guideFaq(isRu ? 'Какие AI-провайдеры поддерживаются?' : 'Which AI providers are supported?',
+        isRu ? 'Gemini, Claude, GPT, Groq, DeepSeek, OpenRouter, Together — 7 провайдеров. Агент сам выбирает нужные инструменты через Tool RAG.' : 'Gemini, Claude, GPT, Groq, DeepSeek, OpenRouter, Together — 7 providers. Agent auto-selects tools via Tool RAG.') +
+      guideFaq(isRu ? 'Сколько стоит?' : 'How much does it cost?',
+        isRu ? 'Активация агента 5 TON. PRO подписка от $19/мес. Маркетплейс шаблонов с комиссией 30%.' : 'Agent activation 5 TON. PRO subscription from $19/mo. Template marketplace with 30% commission.') +
+    '</div>';
+}
+
+function guideFeature(emoji, title, desc) {
+  return '<div class="guide-feature">' +
+    '<span class="guide-feature-emoji">' + emoji + '</span>' +
+    '<div><b>' + title + '</b><br><span style="color:var(--text-muted);font-size:.78rem">' + desc + '</span></div>' +
+  '</div>';
+}
+
+function guideFaq(q, a) {
+  return '<details class="guide-faq-item"><summary>' + escHtml(q) + '</summary><p>' + escHtml(a) + '</p></details>';
+}
+
+// ── Voice Input for Studio Chat & Agent Creation ─────────────────────────────
+var _voiceRecording = false;
+var _mediaRecorder = null;
+var _voiceChunks = [];
+var _voiceStream = null;
+
+async function toggleVoiceInput() {
+  if (_voiceRecording) {
+    stopVoiceRecording();
+  } else {
+    await startVoiceRecording(false);
+  }
+}
+
+async function openVoiceCreate() {
+  navigateTo('assistant');
+  await new Promise(r => setTimeout(r, 300));
+  await startVoiceRecording(true);
+}
+
+async function startVoiceRecording(forCreate) {
+  if (!navigator.mediaDevices || !window.MediaRecorder) {
+    toast(currentLang === 'ru' ? 'Браузер не поддерживает запись голоса' : 'Browser does not support voice recording', 'error');
+    return;
+  }
+  try {
+    _voiceStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (e) {
+    toast(currentLang === 'ru' ? 'Нет доступа к микрофону' : 'No microphone access', 'error');
+    return;
+  }
+
+  _voiceChunks = [];
+  var mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus'
+    : MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm'
+    : 'audio/ogg';
+  _mediaRecorder = new MediaRecorder(_voiceStream, { mimeType });
+  _mediaRecorder.ondataavailable = function(e) { if (e.data.size > 0) _voiceChunks.push(e.data); };
+  _mediaRecorder.onstop = function() {
+    var blob = new Blob(_voiceChunks, { type: mimeType });
+    _voiceStream && _voiceStream.getTracks().forEach(t => t.stop());
+    _voiceStream = null;
+    transcribeAndSend(blob, forCreate);
+  };
+  _mediaRecorder.start(200);
+  _voiceRecording = true;
+
+  // Update UI
+  var micBtn = document.getElementById('chat-voice-btn');
+  var micIcon = document.getElementById('voice-icon-mic');
+  var stopIcon = document.getElementById('voice-icon-stop');
+  var statusEl = document.getElementById('voice-status');
+  if (micBtn) micBtn.style.color = '#ef4444';
+  if (micIcon) micIcon.style.display = 'none';
+  if (stopIcon) stopIcon.style.display = '';
+  if (statusEl) { statusEl.style.display = 'block'; statusEl.innerHTML = IC.dot_red + ' ' + (currentLang === 'ru' ? 'Запись... нажмите ещё раз чтобы остановить' : 'Recording... press again to stop'); }
+
+  // Auto-stop after 60s
+  setTimeout(function() { if (_voiceRecording) stopVoiceRecording(); }, 60000);
+}
+
+function stopVoiceRecording() {
+  if (!_voiceRecording || !_mediaRecorder) return;
+  _voiceRecording = false;
+  _mediaRecorder.stop();
+  _mediaRecorder = null;
+
+  var micBtn = document.getElementById('chat-voice-btn');
+  var micIcon = document.getElementById('voice-icon-mic');
+  var stopIcon = document.getElementById('voice-icon-stop');
+  var statusEl = document.getElementById('voice-status');
+  if (micBtn) micBtn.style.color = '#94a3b8';
+  if (micIcon) micIcon.style.display = '';
+  if (stopIcon) stopIcon.style.display = 'none';
+  if (statusEl) { statusEl.innerHTML = IC.hourglass + ' ' + (currentLang === 'ru' ? 'Распознаю речь...' : 'Recognizing speech...'); }
+}
+
+async function transcribeAndSend(blob, forCreate) {
+  var statusEl = document.getElementById('voice-status');
+  try {
+    var fd = new FormData();
+    fd.append('audio', blob, 'voice.webm');
+    var res = await fetch('/api/voice/transcribe', {
+      method: 'POST',
+      headers: { 'X-Auth-Token': authToken },
+      body: fd
+    });
+    var data = await res.json();
+    if (!data.text) throw new Error(data.error || 'Пустой ответ');
+
+    var text = data.text.trim();
+    if (statusEl) statusEl.style.display = 'none';
+
+    if (forCreate) {
+      // Send transcribed text as assistant message for agent creation
+      var input = document.getElementById('assistant-input');
+      if (input) { input.value = text; sendAssistantMessage(); }
+    } else {
+      // Insert transcribed text into the chat input
+      var chatInput = document.getElementById('chat-input');
+      if (chatInput) {
+        chatInput.value = text;
+        chatInput.dispatchEvent(new Event('input'));
+        chatInput.focus();
+      }
+    }
+  } catch (e) {
+    if (statusEl) { statusEl.textContent = 'Ошибка распознавания: ' + (e.message || e); }
+    setTimeout(function() { if (statusEl) statusEl.style.display = 'none'; }, 4000);
+  }
+}
+
+// ── Inbox: avatar with TG photo (works for users AND groups) ──
+function _chatAvatar(name, isGroup, chatId, size) {
+  size = size || 38;
+  var fontSize = size >= 34 ? '.85rem' : '.7rem';
+  var colors = ['#6366f1','#3b82f6','#10b981','#f59e0b','#ec4899','#8b5cf6','#14b8a6'];
+  var initials = isGroup ? '#' : (name || '?').replace(/^[@\s]+/, '').slice(0,1).toUpperCase();
+  var color = colors[(name||'').split('').reduce(function(a,c){return a+c.charCodeAt(0);},0) % colors.length];
+  var s = size + 'px';
+  var fallbackDiv = '<div style="width:'+s+';height:'+s+';min-width:'+s+';border-radius:50%;background:' + color + ';display:flex;align-items:center;justify-content:center;font-weight:700;font-size:'+fontSize+';color:#fff">' + escHtml(initials) + '</div>';
+  // Try real TG avatar for both users and groups
+  var tgId = chatId ? String(chatId) : '';
+  if (tgId && _detailAgentId && authToken) {
+    var imgUrl = '/api/agents/' + _detailAgentId + '/avatar/' + encodeURIComponent(tgId) + '?t=' + encodeURIComponent(authToken);
+    return '<div style="width:'+s+';height:'+s+';min-width:'+s+';border-radius:50%;overflow:hidden;position:relative">' +
+      '<img src="' + imgUrl + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%" ' +
+        'onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'" loading="lazy">' +
+      '<div style="display:none;width:'+s+';height:'+s+';min-width:'+s+';border-radius:50%;background:' + color + ';align-items:center;justify-content:center;font-weight:700;font-size:'+fontSize+';color:#fff;position:absolute;top:0;left:0">' + escHtml(initials) + '</div>' +
+    '</div>';
+  }
+  return fallbackDiv;
+}
+
+async function loadChatsData() {
+  if (!_detailAgentId) return;
+  var isRu = currentLang === 'ru';
+  var list = document.getElementById('chats-list');
+  if (!list) return;
+  try {
+    var data = await apiRequest('GET', '/api/agents/' + _detailAgentId + '/chats');
+    if (!data.ok || !data.chats || data.chats.length === 0) {
+      list.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:2rem;font-size:.82rem">' + (isRu ? 'Агент ещё ни с кем не общался' : 'No conversations yet') + '</div>';
+      return;
+    }
+    list.innerHTML = data.chats.map(function(c) {
+      var isGroup = c.isGroup || String(c.chatId).startsWith('-');
+      var name = c.senderName || c.chatId;
+      // Clean name: remove brackets, timestamps, tags
+      name = name.replace(/^\[|\]$/g,'').replace(/\s+\d{2}:\d{2}.*$/,'').replace(/^\+\d+[smhd]\s*/,'').trim() || c.chatId;
+      // For groups with multiple senders show as group name
+      var groupBadge = '';
+      if (isGroup && c.uniqueSenders > 1) {
+        groupBadge = '<span style="font-size:.6rem;padding:1px 5px;border-radius:4px;background:rgba(var(--accent-r,99),var(--accent-g,102),var(--accent-b,241),0.15);color:#818cf8;margin-left:4px">' + c.uniqueSenders + ' users</span>';
+      }
+      var preview = (c.lastMessage || '').replace(/<[^>]+>/g,'').slice(0, 60);
+      var id = 'chat-item-' + String(c.chatId).replace(/[^a-zA-Z0-9]/g,'_');
+      return '<div id="' + id + '" class="_chat-item" data-chatid="' + escHtml(c.chatId) + '" data-chatname="' + escHtml(name) + '" onclick="openAgentChat(this)" style="cursor:pointer;padding:10px 10px;border-radius:8px;display:flex;gap:10px;align-items:center;transition:background .15s">' +
+        _chatAvatar(name, isGroup, c.chatId) +
+        '<div style="flex:1;min-width:0">' +
+          '<div style="display:flex;justify-content:space-between;align-items:baseline">' +
+            '<span style="font-weight:600;font-size:.83rem;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px">' + escHtml(name) + groupBadge + '</span>' +
+            '<span style="font-size:.7rem;color:var(--text-muted);flex-shrink:0;margin-left:4px">' + c.messageCount + (isRu ? ' соо' : ' msg') + '</span>' +
+          '</div>' +
+          '<div style="font-size:.75rem;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px">' + escHtml(preview || '—') + '</div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+    // ── Resolve real Telegram names for chats (async enrichment) ──
+    var chatIds = data.chats.map(function(c) { return c.chatId; });
+    apiRequest('POST', '/api/agents/' + _detailAgentId + '/chat-names', { chatIds: chatIds }).then(function(nameData) {
+      if (!nameData || !nameData.names) return;
+      var names = nameData.names;
+      document.querySelectorAll('._chat-item').forEach(function(el) {
+        var cid = el.getAttribute('data-chatid');
+        if (cid && names[cid]) {
+          var nameEl = el.querySelector('span[style*="font-weight:600"]');
+          if (nameEl) nameEl.textContent = names[cid];
+          el.setAttribute('data-chatname', names[cid]);
+        }
+      });
+    }).catch(function() {});
+
+  } catch(e) {
+    list.innerHTML = '<div style="color:var(--error);padding:1rem;font-size:.82rem">' + escHtml(e.message||'Error') + '</div>';
+  }
+}
+
+function openAgentChat(el) {
+  var chatId = el.getAttribute('data-chatid');
+  var chatName = el.getAttribute('data-chatname');
+  // Highlight selected
+  document.querySelectorAll('._chat-item').forEach(function(i){ i.style.background=''; });
+  el.style.background = 'var(--bg-hover, rgba(var(--accent-r,99),var(--accent-g,102),var(--accent-b,241),0.1))';
+  loadAgentChatHistory(chatId, chatName);
+}
+
+async function loadAgentChatHistory(chatId, chatName) {
+  if (!_detailAgentId) return;
+  var isRu = currentLang === 'ru';
+  var header = document.getElementById('chat-view-header');
+  var msgs = document.getElementById('chat-view-messages');
+  if (!header || !msgs) return;
+  var isGroup = String(chatId).startsWith('-');
+  header.innerHTML =
+    _chatAvatar(chatName, isGroup, chatId) +
+    '<div>' +
+      '<div style="font-weight:700;font-size:.88rem;color:var(--text-primary)">' + escHtml(chatName) + '</div>' +
+      '<div style="font-size:.73rem;color:var(--text-muted)">' + escHtml(chatId) + '</div>' +
+    '</div>';
+  msgs.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:2rem;font-size:.82rem">' + (isRu ? 'Загрузка...' : 'Loading...') + '</div>';
+  try {
+    var data = await apiRequest('GET', '/api/agents/' + _detailAgentId + '/chats/' + encodeURIComponent(chatId));
+    if (!data.ok || !data.messages || data.messages.length === 0) {
+      msgs.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:2rem;font-size:.82rem">' + (isRu ? 'История пуста' : 'No messages') + '</div>';
+      return;
+    }
+    msgs.innerHTML = data.messages.map(function(m) {
+      if (m.isMe) {
+        // Agent bubble — right side, accent color
+        return '<div style="display:flex;justify-content:flex-end;align-items:flex-end;gap:8px">' +
+          '<div style="max-width:70%;display:flex;flex-direction:column;align-items:flex-end">' +
+            '<div style="font-size:.7rem;color:var(--text-muted);margin-bottom:3px;padding-right:4px">' + IC.robot + ' ' + (isRu ? 'Агент' : 'Agent') + '</div>' +
+            '<div style="padding:9px 13px;border-radius:16px 16px 4px 16px;background:rgba(var(--accent-r,99),var(--accent-g,102),var(--accent-b,241),0.18);border:1px solid rgba(var(--accent-r,99),var(--accent-g,102),var(--accent-b,241),0.3);font-size:.82rem;color:var(--text-primary);line-height:1.55;word-break:break-word;white-space:pre-wrap">' + escHtml(m.text||'') + '</div>' +
+          '</div>' +
+          '<div style="width:28px;height:28px;min-width:28px;border-radius:50%;background:#6366f1;display:flex;align-items:center;justify-content:center;font-size:.7rem">' + IC.robot + '</div>' +
+        '</div>';
+      } else {
+        // User bubble — left side
+        var uname = (m.header||'').replace(/^\[|\]$/g,'').replace(/\s+\d{2}:\d{2}.*$/,'').replace(/^\[?(owner|user|bot)\]\s*/i,'').trim() || '?';
+        var timeMatch = (m.header||'').match(/(\d{2}:\d{2})/);
+        var timeStr = timeMatch ? timeMatch[1] : '';
+        return '<div style="display:flex;align-items:flex-end;gap:8px">' +
+          _chatAvatar(uname, false, chatId, 28) +
+          '<div style="max-width:70%;display:flex;flex-direction:column">' +
+            '<div style="font-size:.7rem;color:var(--text-muted);margin-bottom:3px;padding-left:4px">' + escHtml(uname) + (timeStr ? ' · ' + timeStr : '') + '</div>' +
+            '<div style="padding:9px 13px;border-radius:16px 16px 16px 4px;background:var(--bg-primary);border:1px solid var(--border);font-size:.82rem;color:var(--text-primary);line-height:1.55;word-break:break-word;white-space:pre-wrap">' + escHtml(m.text||'') + '</div>' +
+          '</div>' +
+        '</div>';
+      }
+    }).join('');
+    // Scroll to bottom
+    msgs.scrollTop = msgs.scrollHeight;
+  } catch(e) {
+    msgs.innerHTML = '<div style="color:var(--error);padding:1rem;font-size:.82rem">' + escHtml(e.message||'Error') + '</div>';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ADMIN AGENTS PAGE — all platform agents, start/stop, errors only
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function loadAdminAgentsPage() {
+  var container = document.getElementById('admin-agents-content');
+  if (!container) return;
+  var isRu = currentLang === 'ru';
+  container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:2rem;font-size:.85rem">⟳ ' + (isRu ? 'Загрузка...' : 'Loading...') + '</div>';
+  try {
+    var data = await apiRequest('GET', '/api/admin/agents');
+    if (!data.ok || !data.agents) { container.innerHTML = '<div style="color:var(--error);padding:2rem">Access denied or error</div>'; return; }
+    var agents = data.agents;
+
+    // Stats bar
+    var active = agents.filter(function(a) { return a.isActive; }).length;
+    var withErrors = agents.filter(function(a) { return a.recentErrors > 0; }).length;
+    var statsHtml = '<div style="display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap">' +
+      '<div class="stat-card"><div class="stat-value">' + agents.length + '</div><div class="stat-label">' + (isRu ? 'Всего' : 'Total') + '</div></div>' +
+      '<div class="stat-card"><div class="stat-value" style="color:#10b981">' + active + '</div><div class="stat-label">' + (isRu ? 'Активных' : 'Active') + '</div></div>' +
+      '<div class="stat-card"><div class="stat-value" style="color:#ef4444">' + withErrors + '</div><div class="stat-label">' + (isRu ? 'С ошибками' : 'With errors') + '</div></div>' +
+    '</div>';
+
+    // Table
+    var tableHtml = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.82rem">' +
+      '<thead><tr style="border-bottom:2px solid var(--border);text-align:left">' +
+        '<th style="padding:10px 8px">ID</th>' +
+        '<th style="padding:10px 8px">' + (isRu ? 'Агент' : 'Agent') + '</th>' +
+        '<th style="padding:10px 8px">' + (isRu ? 'Владелец' : 'Owner') + '</th>' +
+        '<th style="padding:10px 8px">' + (isRu ? 'Статус' : 'Status') + '</th>' +
+        '<th style="padding:10px 8px">' + (isRu ? 'Ошибки 24ч' : 'Errors 24h') + '</th>' +
+        '<th style="padding:10px 8px">' + (isRu ? 'Действие' : 'Action') + '</th>' +
+      '</tr></thead><tbody>';
+
+    agents.forEach(function(a) {
+      var statusDot = a.isActive
+        ? '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#10b981;margin-right:6px"></span>' + (isRu ? 'Активен' : 'Active')
+        : '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#64748b;margin-right:6px"></span>' + (isRu ? 'Стоп' : 'Stopped');
+      var errBadge = a.recentErrors === -1
+        ? '<span style="font-size:.7rem;color:var(--text-muted);font-style:italic">' + (isRu ? 'скрыто' : 'hidden') + '</span>'
+        : a.recentErrors > 0
+          ? '<span style="padding:2px 8px;border-radius:10px;background:rgba(239,68,68,0.15);color:#ef4444;font-size:.75rem;font-weight:600">' + a.recentErrors + '</span>'
+          : '<span style="color:var(--text-muted)">0</span>';
+      var actionBtn = a.isActive
+        ? '<button class="rt-save-btn" style="padding:5px 14px;font-size:.75rem" onclick="adminAgentAction(' + a.id + ',\'stop\')">' + (isRu ? 'Стоп' : 'Stop') + '</button>'
+        : '<button class="rt-save-btn" style="padding:5px 14px;font-size:.75rem" onclick="adminAgentAction(' + a.id + ',\'start\')">' + (isRu ? 'Запуск' : 'Start') + '</button>';
+      tableHtml += '<tr style="border-bottom:1px solid var(--border)">' +
+        '<td style="padding:8px;color:var(--text-muted)">#' + a.id + '</td>' +
+        '<td style="padding:8px;font-weight:600;color:var(--text-primary)">' + escHtml((a.name || '').slice(0, 30)) + '</td>' +
+        '<td style="padding:8px;color:var(--text-muted);font-size:.78rem">' + escHtml(a.ownerUsername || 'ID:' + a.userId) + '</td>' +
+        '<td style="padding:8px">' + statusDot + '</td>' +
+        '<td style="padding:8px;text-align:center">' + errBadge + '</td>' +
+        '<td style="padding:8px">' + actionBtn + '</td>' +
+      '</tr>';
+      // Show last error if any
+      if (a.lastError) {
+        tableHtml += '<tr style="border-bottom:1px solid var(--border)">' +
+          '<td></td><td colspan="5" style="padding:4px 8px 10px;font-size:.74rem;color:#ef4444;font-family:\'JetBrains Mono\',monospace">' +
+            IC.warn + ' ' + escHtml(String(a.lastError).slice(0, 200)) +
+          '</td></tr>';
+      }
+    });
+    tableHtml += '</tbody></table></div>';
+    container.innerHTML = statsHtml + tableHtml;
+  } catch(e) {
+    container.innerHTML = '<div style="color:var(--error);padding:2rem">' + escHtml(e.message || 'Error') + '</div>';
+  }
+}
+
+async function adminAgentAction(agentId, action) {
+  try {
+    var endpoint = action === 'start' ? '/api/agents/' + agentId + '/run' : '/api/agents/' + agentId + '/stop';
+    await apiRequest('POST', endpoint);
+    toast((action === 'start' ? 'Started' : 'Stopped') + ' agent #' + agentId, 'success');
+    setTimeout(loadAdminAgentsPage, 1000);
+  } catch(e) { toast('Error: ' + (e.message || e), 'error'); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TERMS OF SERVICE / PRIVACY CONSENT POPUP
+// ═══════════════════════════════════════════════════════════════════════════
+
+function showTosPopup() {
+  var existing = document.getElementById('tos-overlay');
+  if (existing) existing.remove();
+  var isRu = currentLang === 'ru';
+
+  var overlay = document.createElement('div');
+  overlay.id = 'tos-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:10000;display:flex;align-items:center;justify-content:center;padding:1.5rem;backdrop-filter:blur(4px)';
+
+  overlay.innerHTML =
+    '<div style="background:var(--bg-secondary,#1a1f2e);border:1px solid var(--border,#2a3040);border-radius:16px;max-width:520px;width:100%;max-height:85vh;overflow-y:auto;padding:32px">' +
+      '<div style="text-align:center;margin-bottom:20px">' +
+        '<div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(in oklab 135deg,var(--primary),var(--primary-dark));display:inline-flex;align-items:center;justify-content:center;margin-bottom:12px">' +
+          '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>' +
+        '</div>' +
+        '<h2 style="margin:0;font-size:1.3rem;color:var(--text-primary,#fff)">' + (isRu ? 'Пользовательское соглашение' : 'Terms of Service') + '</h2>' +
+        '<p style="margin:8px 0 0;color:var(--text-muted,#94a3b8);font-size:.85rem">' + (isRu ? 'Пожалуйста, ознакомьтесь и примите условия' : 'Please review and accept the terms') + '</p>' +
+      '</div>' +
+
+      // Privacy section
+      '<div style="background:var(--bg-primary,#141821);border:1px solid var(--border,#2a3040);border-radius:10px;padding:16px;margin-bottom:16px">' +
+        '<h3 style="margin:0 0 10px;font-size:.92rem;color:var(--primary);display:flex;align-items:center;gap:8px">' +
+          '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> ' +
+          (isRu ? 'Конфиденциальность переписок' : 'Conversation Privacy') +
+        '</h3>' +
+        '<p style="margin:0;font-size:.82rem;color:var(--text-secondary,#cbd5e1);line-height:1.6">' +
+          (isRu
+            ? 'Переписки ваших AI-агентов хранятся в зашифрованном виде и <b>доступны только вам</b>. Платформа <b>не имеет доступа</b> к содержимому переписок ваших агентов. Администраторы могут видеть только техническую информацию: статус агента, количество сообщений и ошибки.'
+            : 'Your AI agent conversations are stored encrypted and are <b>accessible only to you</b>. The platform <b>does not have access</b> to the content of your agent conversations. Administrators can only see technical information: agent status, message counts, and errors.') +
+        '</p>' +
+      '</div>' +
+
+      // Error sharing section
+      '<div style="background:var(--bg-primary,#141821);border:1px solid var(--border,#2a3040);border-radius:10px;padding:16px;margin-bottom:20px">' +
+        '<h3 style="margin:0 0 10px;font-size:.92rem;color:#f59e0b;display:flex;align-items:center;gap:8px">' +
+          '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> ' +
+          (isRu ? 'Сбор информации об ошибках' : 'Error Information Collection') +
+        '</h3>' +
+        '<p style="margin:0;font-size:.82rem;color:var(--text-secondary,#cbd5e1);line-height:1.6">' +
+          (isRu
+            ? 'Для улучшения платформы мы собираем <b>только техническую информацию об ошибках</b>: тип ошибки, контекст (без содержимого сообщений) и время возникновения. Это помогает нам быстрее находить и исправлять проблемы.'
+            : 'To improve the platform, we collect <b>only technical error information</b>: error type, context (without message content), and timestamp. This helps us find and fix issues faster.') +
+        '</p>' +
+      '</div>' +
+
+      // Checkboxes
+      '<div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px">' +
+        '<label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;font-size:.83rem;color:var(--text-primary,#fff)">' +
+          '<input type="checkbox" id="tos-accept-terms" style="accent-color:var(--primary);margin-top:2px;width:18px;height:18px;flex-shrink:0">' +
+          '<span>' + (isRu
+            ? 'Я принимаю <a href="/terms" target="_blank" style="color:var(--primary);text-decoration:underline">пользовательское соглашение</a> и <a href="/privacy" target="_blank" style="color:var(--primary);text-decoration:underline">политику конфиденциальности</a>'
+            : 'I accept the <a href="/terms" target="_blank" style="color:var(--primary);text-decoration:underline">Terms of Service</a> and <a href="/privacy" target="_blank" style="color:var(--primary);text-decoration:underline">Privacy Policy</a>') +
+          '</span>' +
+        '</label>' +
+        '<label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;font-size:.83rem;color:var(--text-primary,#fff)">' +
+          '<input type="checkbox" id="tos-accept-errors" style="accent-color:var(--primary);margin-top:2px;width:18px;height:18px;flex-shrink:0">' +
+          '<span>' + (isRu
+            ? 'Я согласен на сбор технической информации об ошибках для улучшения сервиса'
+            : 'I consent to the collection of technical error data to improve the service') +
+          '</span>' +
+        '</label>' +
+      '</div>' +
+
+      // Note about optional
+      '<div style="font-size:.75rem;color:var(--text-muted,#64748b);margin-bottom:16px;line-height:1.5;padding:0 4px">' +
+        (isRu
+          ? '* Сбор ошибок — необязательно. Если вы откажетесь, мы не будем собирать информацию об ошибках ваших агентов, но это может замедлить решение проблем.'
+          : '* Error collection is optional. If you decline, we won\'t collect error data from your agents, but this may slow down issue resolution.') +
+      '</div>' +
+
+      // Button
+      '<button id="tos-accept-btn" disabled onclick="acceptTos()" class="rt-save-btn" style="width:100%;justify-content:center;opacity:0.5;cursor:not-allowed">' +
+        (isRu ? 'Принять и продолжить' : 'Accept & Continue') +
+      '</button>' +
+    '</div>';
+
+  document.body.appendChild(overlay);
+
+  // Enable button when ToS checkbox is checked (errors checkbox is optional)
+  var cb1 = document.getElementById('tos-accept-terms');
+  var btn = document.getElementById('tos-accept-btn');
+  function updateBtn() {
+    var ok = cb1 && cb1.checked;
+    if (btn) { btn.disabled = !ok; btn.style.opacity = ok ? '1' : '0.5'; btn.style.cursor = ok ? 'pointer' : 'not-allowed'; }
+  }
+  if (cb1) cb1.onchange = updateBtn;
+}
+
+async function acceptTos() {
+  try {
+    var errCb = document.getElementById('tos-accept-errors');
+    var acceptErrors = errCb ? errCb.checked : false;
+    await apiRequest('POST', '/api/me/accept-tos', { acceptTos: true, acceptErrors: acceptErrors });
+    if (currentUser) currentUser._acceptedTos = true;
+    // Persist locally — survive page reload even if server lookup is slow
+    try { localStorage.setItem('tos_accepted', '1'); } catch (_e) {}
+    try { localStorage.setItem('tos_accepted_errors', acceptErrors ? '1' : '0'); } catch (_e) {}
+    var overlay = document.getElementById('tos-overlay');
+    if (overlay) overlay.remove();
+    toast(currentLang === 'ru' ? 'Спасибо! Добро пожаловать.' : 'Thank you! Welcome.', 'success');
+  } catch(e) { toast('Error: ' + (e.message||e), 'error'); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TERMS OF SERVICE & PRIVACY POLICY PAGES
+// ═══════════════════════════════════════════════════════════════════════════
+
+function _legalStyles() {
+  return 'style="font-size:.88rem;color:var(--text-secondary);line-height:1.8"';
+}
+function _legalH(text) { return '<h2 style="font-size:1.1rem;color:var(--text-primary);margin:28px 0 12px;font-weight:700">' + text + '</h2>'; }
+function _legalP(text) { return '<p style="margin:0 0 14px;font-size:.86rem;color:var(--text-secondary);line-height:1.7">' + text + '</p>'; }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PROFILE: PRIVACY, DATA EXPORT, DELETE ACCOUNT, UI SETTINGS
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function toggleErrorConsent(enabled) {
+  try {
+    await apiRequest('POST', '/api/me/accept-tos', { acceptTos: true, acceptErrors: enabled });
+    toast(currentLang === 'ru'
+      ? (enabled ? 'Сбор ошибок включён' : 'Сбор ошибок отключён')
+      : (enabled ? 'Error sharing enabled' : 'Error sharing disabled'), 'success');
+  } catch(e) { toast('Error: ' + (e.message||e), 'error'); }
+}
+
+async function exportMyData() {
+  toast(currentLang === 'ru' ? 'Собираю данные...' : 'Collecting data...', 'info');
+  try {
+    var resp = await fetch('/api/me/export', { headers: { 'X-Auth-Token': authToken } });
+    if (!resp.ok) throw new Error('Export failed');
+    var blob = await resp.blob();
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = 'ton-agent-data-' + Date.now() + '.json'; a.click();
+    URL.revokeObjectURL(url);
+    toast(currentLang === 'ru' ? 'Данные скачаны' : 'Data downloaded', 'success');
+  } catch(e) { toast('Error: ' + (e.message||e), 'error'); }
+}
+
+function deleteMyAccount() {
+  var isRu = currentLang === 'ru';
+  // Build a tap-motion styled confirm modal instead of the ugly native prompt().
+  // User must type "DELETE" exactly — Confirm button stays disabled until then.
+  var existing = document.getElementById('tap-delete-account-modal');
+  if (existing) existing.remove();
+  var bullets = (isRu
+    ? ['Все агенты и их данные', 'Все кошельки', 'История транзакций', 'Telegram сессии', 'Подписка']
+    : ['All agents and data', 'All wallets', 'Transaction history', 'Telegram sessions', 'Subscription'])
+    .map(function(t) { return '<li style="padding:4px 0;color:var(--text-secondary,rgba(255,255,255,0.65))">' + t + '</li>'; }).join('');
+
+  var modal = document.createElement('div');
+  modal.id = 'tap-delete-account-modal';
+  modal.className = 'modal-overlay tap-modal-backdrop';
+  modal.setAttribute('data-tap', '1');
+  modal.style.cssText = 'display:flex;position:fixed;inset:0;z-index:10001;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);animation:tap-fade-in 200ms ease-out;';
+  modal.innerHTML =
+    '<div class="modal-content tap-modal" data-tap="1" style="position:relative;max-width:440px;width:90%;border-radius:18px;border:1px solid rgba(239,68,68,0.35);background:linear-gradient(in oklab 180deg,rgba(35,12,14,0.96) 0%,rgba(20,8,10,0.98) 100%);box-shadow:0 30px 80px -20px rgba(0,0,0,0.7),0 0 0 1px rgba(239,68,68,0.08),0 0 60px rgba(239,68,68,0.18);padding:28px 28px 24px;backdrop-filter:blur(20px) saturate(140%);-webkit-backdrop-filter:blur(20px) saturate(140%);">' +
+      '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">' +
+        '<div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(in oklab 135deg,#ef4444,#b91c1c);display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 6px 18px rgba(220,38,38,0.4)">' +
+          '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>' +
+        '</div>' +
+        '<div>' +
+          '<div style="font-size:18px;font-weight:700;color:#fff;line-height:1.2">' + (isRu ? 'Удалить аккаунт?' : 'Delete account?') + '</div>' +
+          '<div style="font-size:12.5px;color:#f87171;font-weight:600;margin-top:2px;letter-spacing:0.02em">' + (isRu ? 'ЭТО ДЕЙСТВИЕ НЕОБРАТИМО' : 'THIS IS IRREVERSIBLE') + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div style="font-size:13.5px;color:var(--text-primary,#e7ecf3);margin-bottom:10px;line-height:1.5">' + (isRu ? 'Будут удалены:' : 'Will be deleted:') + '</div>' +
+      '<ul style="margin:0 0 18px 0;padding-left:22px;font-size:13px;line-height:1.5">' + bullets + '</ul>' +
+      '<label style="display:block;font-size:12.5px;color:var(--text-secondary,rgba(255,255,255,0.6));margin-bottom:8px;letter-spacing:0.01em">' + (isRu ? 'Введите DELETE заглавными для подтверждения' : 'Type DELETE in caps to confirm') + '</label>' +
+      '<input id="tap-delete-input" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="DELETE" style="width:100%;padding:11px 14px;font-size:15px;font-family:ui-monospace,SF Mono,Menlo,monospace;letter-spacing:0.08em;color:#fff;background:rgba(255,255,255,0.04);border:1.5px solid rgba(255,255,255,0.12);border-radius:10px;outline:none;transition:border-color 160ms,box-shadow 160ms;box-sizing:border-box">' +
+      '<div style="display:flex;gap:10px;margin-top:18px;justify-content:flex-end">' +
+        '<button id="tap-delete-cancel" class="btn btn-secondary" style="padding:10px 18px;font-size:14px;border-radius:10px;cursor:pointer;background:rgba(255,255,255,0.06);color:var(--text-primary,#e7ecf3);border:1px solid rgba(255,255,255,0.1)">' + (isRu ? 'Отмена' : 'Cancel') + '</button>' +
+        '<button id="tap-delete-confirm" class="btn btn-danger" disabled style="padding:10px 20px;font-size:14px;font-weight:600;border-radius:10px;cursor:not-allowed;background:linear-gradient(in oklab 135deg,#dc2626,#991b1b);color:#fff;border:none;opacity:0.45;transition:opacity 160ms,box-shadow 160ms">' + (isRu ? 'Удалить навсегда' : 'Delete forever') + '</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(modal);
+
+  var input = modal.querySelector('#tap-delete-input');
+  var btnConfirm = modal.querySelector('#tap-delete-confirm');
+  var btnCancel = modal.querySelector('#tap-delete-cancel');
+  setTimeout(function() { try { input.focus(); } catch(_){} }, 80);
+
+  function close() { try { modal.remove(); } catch(_){} }
+
+  input.addEventListener('input', function() {
+    var ok = input.value === 'DELETE';
+    btnConfirm.disabled = !ok;
+    btnConfirm.style.opacity = ok ? '1' : '0.45';
+    btnConfirm.style.cursor = ok ? 'pointer' : 'not-allowed';
+    btnConfirm.style.boxShadow = ok ? '0 6px 18px rgba(220,38,38,0.45), 0 0 0 1.5px rgba(239,68,68,0.4) inset' : '';
+    // focus ring on the input
+    input.style.borderColor = ok ? 'rgba(239,68,68,0.7)' : 'rgba(255,255,255,0.12)';
+    input.style.boxShadow = ok ? '0 0 0 3px rgba(239,68,68,0.15)' : 'none';
+  });
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') { close(); }
+    if (e.key === 'Enter' && !btnConfirm.disabled) { btnConfirm.click(); }
+  });
+  btnCancel.addEventListener('click', close);
+  modal.addEventListener('click', function(e) { if (e.target === modal) close(); });
+
+  btnConfirm.addEventListener('click', function() {
+    if (btnConfirm.disabled) return;
+    btnConfirm.disabled = true;
+    btnConfirm.style.opacity = '0.6';
+    btnConfirm.textContent = isRu ? 'Удаляю…' : 'Deleting…';
+    apiRequest('DELETE', '/api/me/account', { confirmation: 'DELETE' }).then(function(d) {
+      if (d.ok) {
+        toast(isRu ? 'Аккаунт удалён' : 'Account deleted', 'success');
+        close();
+        setTimeout(function() { logout(); }, 1500);
+      } else {
+        toast(d.error || 'Error', 'error');
+        btnConfirm.disabled = false;
+        btnConfirm.style.opacity = '1';
+        btnConfirm.textContent = isRu ? 'Удалить навсегда' : 'Delete forever';
+      }
+    }).catch(function(e) {
+      toast('Error: ' + (e.message||e), 'error');
+      btnConfirm.disabled = false;
+      btnConfirm.style.opacity = '1';
+      btnConfirm.textContent = isRu ? 'Удалить навсегда' : 'Delete forever';
+    });
+  });
+}
+
+// ── Notification Settings ──
+var _notifDuration = parseInt(localStorage.getItem('notif_duration') || '5') * 1000;
+var _notifSound = localStorage.getItem('notif_sound') === 'true';
+var _notifBadge = localStorage.getItem('notif_badge') !== 'false';
+
+function setNotifDuration(val) {
+  _notifDuration = parseInt(val) * 1000;
+  localStorage.setItem('notif_duration', val);
+  var el = document.getElementById('notif-duration-value');
+  if (el) el.textContent = val + 's';
+}
+
+function setNotifAutoDismiss(sec) {
+  if (sec === 0) { _notifDuration = 0; localStorage.setItem('notif_duration', '0'); }
+  else { _notifDuration = sec * 1000; localStorage.setItem('notif_duration', String(sec)); }
+  document.querySelectorAll('.notif-dismiss-btn').forEach(function(b) {
+    b.style.background = 'var(--bg-primary)'; b.style.borderColor = 'var(--border)'; b.style.color = 'var(--text-primary)';
+  });
+  var target = event && event.target; if (target) { target.style.background = 'var(--accent-dim)'; target.style.borderColor = 'var(--primary)'; target.style.color = 'var(--primary)'; }
+  var slider = document.getElementById('notif-duration-slider');
+  var val = document.getElementById('notif-duration-value');
+  if (slider) slider.value = sec || 2;
+  if (val) val.textContent = sec ? sec + 's' : 'off';
+}
+
+function toggleNotifSound(on) {
+  _notifSound = on;
+  localStorage.setItem('notif_sound', on ? 'true' : 'false');
+  if (on) _playNotifSound();
+}
+
+function toggleNotifBadge(on) {
+  _notifBadge = on;
+  localStorage.setItem('notif_badge', on ? 'true' : 'false');
+  var badge = document.getElementById('feedback-badge');
+  if (badge && !on) badge.style.display = 'none';
+}
+
+function _playNotifSound() {
+  try {
+    var ctx = new (window.AudioContext || window.webkitAudioContext)();
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.frequency.value = 800; osc.type = 'sine';
+    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.3);
+  } catch {}
+}
+
+// ── Notification history retention ──
+var _notifRetainDays = parseInt(localStorage.getItem('notif_retain_days') || '30');
+
+function setNotifRetain(val) {
+  document.querySelectorAll('.notif-retain-btn').forEach(function(b) {
+    b.style.background = 'var(--bg-primary)'; b.style.borderColor = 'var(--border)'; b.style.color = 'var(--text-primary)';
+  });
+  if (event && event.target) { event.target.style.background = 'var(--accent-dim)'; event.target.style.borderColor = 'var(--primary)'; event.target.style.color = 'var(--primary)'; }
+  var customEl = document.getElementById('notif-custom-retain');
+  if (val === 'custom') {
+    if (customEl) customEl.style.display = '';
+    return;
+  }
+  if (customEl) customEl.style.display = 'none';
+  var days = val === 'off' ? 0 : val === '1d' ? 1 : val === '7d' ? 7 : val === '30d' ? 30 : 30;
+  _notifRetainDays = days;
+  localStorage.setItem('notif_retain_days', String(days));
+  toast(currentLang === 'ru' ? (days ? 'История: ' + days + ' дн.' : 'Авто-удаление выключено') : (days ? 'History: ' + days + ' days' : 'Auto-delete off'), 'success');
+}
+
+function applyCustomRetain() {
+  var inp = document.getElementById('notif-retain-days');
+  var days = inp ? parseInt(inp.value) : 14;
+  if (isNaN(days) || days < 1) days = 1;
+  if (days > 365) days = 365;
+  _notifRetainDays = days;
+  localStorage.setItem('notif_retain_days', String(days));
+  var customEl = document.getElementById('notif-custom-retain');
+  if (customEl) customEl.style.display = 'none';
+  toast(currentLang === 'ru' ? 'История: ' + days + ' дн.' : 'History: ' + days + ' days', 'success');
+}
+
+function setUIScale(val) {
+  val = parseInt(val, 10) || 100;
+  if (val < 80) val = 80;
+  if (val > 120) val = 120;
+  // Sync all scale displays
+  var els = [document.getElementById('ui-scale-value'), document.getElementById('sidebar-scale-value')];
+  els.forEach(function(el) { if (el) el.textContent = val + '%'; });
+  var sliders = [document.getElementById('ui-scale-slider'), document.getElementById('sidebar-scale-slider')];
+  sliders.forEach(function(s) { if (s && +s.value !== val) s.value = val; });
+  // CSS `zoom` on <body> is the closest mimic to browser Ctrl+/- zoom.
+  // Children's grid layouts reflow as if the window were larger. Combined
+  // with the max-width:none override in gradient-edge-fix.css and the
+  // .nav-foot counter-zoom, this gives a clean "expand to edges" feel.
+  var z = val / 100;
+  // Just update --ui-scale. CSS handles everything else (zoom, width,
+  // min-height on body / #app / sidebar) via calc(...) and the registered
+  // @property transition animates the whole thing in sync.
+  document.documentElement.style.setProperty('--ui-scale', String(z));
+  // Clean up any leftover inline styles from previous iterations
+  var body = document.body;
+  body.style.zoom = '';
+  body.style.width = '';
+  body.style.minHeight = '';
+  body.style.transform = '';
+  body.style.transformOrigin = '';
+  var foot = document.querySelector('.nav-foot');
+  if (foot) { foot.style.zoom = ''; foot.style.transform = ''; foot.style.transformOrigin = ''; }
+  var sliderRow = document.querySelector('.scale-slider-row');
+  if (sliderRow) { sliderRow.style.transform = ''; sliderRow.style.transformOrigin = ''; sliderRow.style.width = ''; }
+  var app = document.getElementById('app');
+  if (app) { app.style.zoom = ''; app.style.width = ''; app.style.minHeight = ''; }
+  localStorage.setItem('ui_scale', String(val));
+}
+// Restore saved scale on load
+(function _restoreUIScale() {
+  var saved = parseInt(localStorage.getItem('ui_scale') || '100', 10);
+  if (saved && saved !== 100) {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', function() { setUIScale(saved); });
+    } else {
+      setUIScale(saved);
+    }
+  }
+})();
+
+// ── Range slider fill sync ────────────────────────────────────────────
+// Chromium has no equivalent of Firefox's ::-moz-range-progress, so the
+// "filled" portion of the track is rendered via a CSS variable `--range-pct`
+// that we update from JS on every input event.
+function _syncRangePct(input) {
+  if (!input || input.type !== 'range') return;
+  var min = parseFloat(input.min) || 0;
+  var max = parseFloat(input.max) || 100;
+  var val = parseFloat(input.value);
+  if (isNaN(val)) val = min;
+  var pct = ((val - min) / (max - min)) * 100;
+  if (pct < 0) pct = 0;
+  if (pct > 100) pct = 100;
+  input.style.setProperty('--range-pct', pct + '%');
+}
+function _initAllRangeFills() {
+  document.querySelectorAll('input[type="range"]').forEach(_syncRangePct);
+}
+// Run on load + listen on every range input change
+document.addEventListener('DOMContentLoaded', _initAllRangeFills);
+document.addEventListener('input', function(e) {
+  if (e.target && e.target.tagName === 'INPUT' && e.target.type === 'range') {
+    _syncRangePct(e.target);
+  }
+}, true);
+// Also catch dynamically-rendered range inputs via a MutationObserver
+(function _watchForNewRanges() {
+  var mo = new MutationObserver(function(muts) {
+    muts.forEach(function(m) {
+      (m.addedNodes || []).forEach(function(n) {
+        if (n.nodeType !== 1) return;
+        if (n.tagName === 'INPUT' && n.type === 'range') _syncRangePct(n);
+        else if (n.querySelectorAll) n.querySelectorAll('input[type="range"]').forEach(_syncRangePct);
+      });
+    });
+  });
+  if (document.body) mo.observe(document.body, { childList: true, subtree: true });
+  else document.addEventListener('DOMContentLoaded', function() { mo.observe(document.body, { childList: true, subtree: true }); });
+})();
+
+function setAccentColor(color) {
+  var root = document.documentElement;
+  // Parse RGB once so we can derive shades + alpha variants
+  var r, g, b;
+  if (color.startsWith('#')) {
+    var hex = color.slice(1);
+    r = parseInt(hex.substring(0, 2), 16);
+    g = parseInt(hex.substring(2, 4), 16);
+    b = parseInt(hex.substring(4, 6), 16);
+  } else { r = 14; g = 165; b = 233; }
+  function clamp(n) { return Math.max(0, Math.min(255, n | 0)); }
+  function rgbHex(rr, gg, bb) {
+    return '#' + [rr, gg, bb].map(function(n) { return clamp(n).toString(16).padStart(2, '0'); }).join('');
+  }
+  // primary-light = +18 mix to white; primary-dark = -24 to black
+  var light = rgbHex(r + (255 - r) * 0.22, g + (255 - g) * 0.22, b + (255 - b) * 0.22);
+  var dark  = rgbHex(r * 0.78, g * 0.78, b * 0.78);
+
+  root.style.setProperty('--accent', color);
+  root.style.setProperty('--primary', color);
+  root.style.setProperty('--primary-light', light);
+  root.style.setProperty('--primary-dark', dark);
+  root.style.setProperty('--accent-light', light);
+  root.style.setProperty('--accent-dark', dark);
+  root.style.setProperty('--accent-dim', 'rgba(' + r + ',' + g + ',' + b + ',0.15)');
+  root.style.setProperty('--accent-glow', 'rgba(' + r + ',' + g + ',' + b + ',0.3)');
+  // RGB components — referenced by inline rgba(var(--accent-r),...,X) so every
+  // hardcoded blue tint (rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),...)) adapts to the chosen accent.
+  root.style.setProperty('--accent-r', r);
+  root.style.setProperty('--accent-g', g);
+  root.style.setProperty('--accent-b', b);
+  // design-system.css redefines --primary as var(--ds-primary) inside :root.
+  // We have to also override the --ds-* variables otherwise nav-badge.accent
+  // (which uses !important + --ds-accent-dim) stays blue/purple.
+  root.style.setProperty('--ds-primary', color);
+  root.style.setProperty('--ds-primary-bright', light);
+  root.style.setProperty('--ds-primary-dim', 'rgba(' + r + ',' + g + ',' + b + ',0.12)');
+  root.style.setProperty('--ds-accent', color);
+  root.style.setProperty('--ds-accent-bright', light);
+  root.style.setProperty('--ds-accent-dim', 'rgba(' + r + ',' + g + ',' + b + ',0.12)');
+
+  // Update accent dot rings
+  document.querySelectorAll('.accent-dot').forEach(function(d) {
+    var match = false;
+    try { match = d.style.background === color || (d.onclick && d.onclick.toString().includes(color)); } catch {}
+    d.style.borderColor = match ? '#fff' : 'transparent';
+  });
+  localStorage.setItem('accent_color', color);
+}
+
+// ── Gradient accent preset switcher ──
+// Flips both --primary and --accent-2 via :root[data-accent="..."] rules
+// defined in studio-skin.css. Mirrors the resolved values into the legacy
+// --ds-* tokens so design-system.css badges follow along.
+function setAccentPreset(name) {
+  if (typeof name !== 'string') return;
+  var root = document.documentElement;
+  root.dataset.accent = name;
+  var cs = getComputedStyle(root);
+  var primary      = (cs.getPropertyValue('--primary') || '').trim();
+  var primaryLight = (cs.getPropertyValue('--primary-light') || '').trim();
+  var dim          = (cs.getPropertyValue('--accent-dim') || '').trim();
+  if (primary) {
+    root.style.setProperty('--ds-primary', primary);
+    root.style.setProperty('--ds-primary-bright', primaryLight || primary);
+    root.style.setProperty('--ds-primary-dim', dim || 'rgba(0,152,234,0.12)');
+    root.style.setProperty('--ds-accent', primary);
+    root.style.setProperty('--ds-accent-bright', primaryLight || primary);
+    root.style.setProperty('--ds-accent-dim', dim || 'rgba(0,152,234,0.12)');
+  }
+  document.querySelectorAll('.accent-preset').forEach(function(el) {
+    el.classList.toggle('active', el.dataset.preset === name);
+  });
+  localStorage.setItem('accent_preset', name);
+}
+window.setAccentPreset = setAccentPreset;
+
+// Restore UI settings from localStorage
+(function restoreUISettings() {
+  var scale = localStorage.getItem('ui_scale');
+  if (scale) {
+    var z = parseInt(scale) / 100;
+    var mc = document.querySelector('.main-content'); if (mc) mc.style.zoom = z;
+    // Sidebar zoom — header + nav only, footer stays native (slider lives there)
+    var sh = document.querySelector('.sidebar-header'); if (sh) sh.style.zoom = z;
+    var sn = document.querySelector('.sidebar-nav'); if (sn) sn.style.zoom = z;
+    var ss = document.getElementById('sidebar-scale-slider'); if (ss) ss.value = scale;
+    var sv = document.getElementById('sidebar-scale-value'); if (sv) sv.textContent = scale + '%';
+  }
+  // Gradient preset has priority; fall back to legacy single-colour accent.
+  var preset = localStorage.getItem('accent_preset');
+  if (!preset) {
+    var legacy = (localStorage.getItem('accent_color') || '').toLowerCase();
+    var map = { '#0ea5e9': 'mono', '#8b5cf6': 'plasma', '#10b981': 'emerald', '#f59e0b': 'sunset', '#ef4444': 'sunset' };
+    preset = map[legacy] || 'aurora';
+  }
+  try { setAccentPreset(preset); } catch (e) {}
+  // Restore notification settings
+  var nd = localStorage.getItem('notif_duration');
+  if (nd !== null) { _notifDuration = parseInt(nd) * 1000; var nds = document.getElementById('notif-duration-slider'); if (nds) nds.value = nd; var ndv = document.getElementById('notif-duration-value'); if (ndv) ndv.textContent = nd === '0' ? 'off' : nd + 's'; }
+  var ns = localStorage.getItem('notif_sound');
+  if (ns === 'true') { _notifSound = true; var nst = document.getElementById('notif-sound-toggle'); if (nst) nst.checked = true; }
+  var nb = localStorage.getItem('notif_badge');
+  if (nb === 'false') { _notifBadge = false; var nbt = document.getElementById('notif-badge-toggle'); if (nbt) nbt.checked = false; }
+  // Restore retain setting
+  var nr = localStorage.getItem('notif_retain_days');
+  if (nr !== null) _notifRetainDays = parseInt(nr);
+})();
+
+// Load error consent checkbox state in profile
+var _origLoadProfile = typeof loadProfile === 'function' ? loadProfile : null;
+if (_origLoadProfile) {
+  var _patchedLoadProfile = async function() {
+    await _origLoadProfile();
+    // Set error consent checkbox
+    try {
+      var data = await apiRequest('GET', '/api/me');
+      var cb = document.getElementById('profile-error-consent');
+      if (cb) cb.checked = data.acceptedErrors || false;
+      var scaleSlider = document.getElementById('ui-scale-slider');
+      var scaleVal = document.getElementById('ui-scale-value');
+      var savedScale = localStorage.getItem('ui_scale') || '100';
+      if (scaleSlider) scaleSlider.value = savedScale;
+      if (scaleVal) scaleVal.textContent = savedScale + '%';
+    } catch {}
+  };
+  // Monkey-patch loadProfile
+  loadProfile = _patchedLoadProfile;
+}
+
+function loadTermsPage() {
+  var el = document.getElementById('terms-content');
+  if (!el) return;
+  var isRu = currentLang === 'ru';
+  var updated = '1 ' + (isRu ? 'апреля' : 'April') + ' 2026';
+
+  el.innerHTML = '<div ' + _legalStyles() + '>' +
+    '<h1 style="font-size:1.5rem;color:var(--text-primary);margin-bottom:4px">' + (isRu ? 'Пользовательское соглашение' : 'Terms of Service') + '</h1>' +
+    '<p style="color:var(--text-muted);font-size:.78rem;margin-bottom:24px">' + (isRu ? 'Последнее обновление: ' : 'Last updated: ') + updated + '</p>' +
+
+    _legalH(isRu ? '1. Общие положения' : '1. General') +
+    _legalP(isRu
+      ? 'TON Agent Platform (далее — «Платформа») предоставляет инструменты для создания и управления автономными AI-агентами в экосистеме TON/Telegram. Используя Платформу, вы соглашаетесь с настоящими условиями.'
+      : 'TON Agent Platform (the "Platform") provides tools for creating and managing autonomous AI agents in the TON/Telegram ecosystem. By using the Platform, you agree to these terms.') +
+
+    _legalH(isRu ? '2. Учётная запись' : '2. Account') +
+    _legalP(isRu
+      ? 'Для использования Платформы необходима авторизация через Telegram. Вы несёте ответственность за действия, совершённые через вашу учётную запись, включая действия ваших AI-агентов.'
+      : 'Using the Platform requires Telegram authentication. You are responsible for all actions performed through your account, including actions of your AI agents.') +
+
+    _legalH(isRu ? '3. AI-агенты' : '3. AI Agents') +
+    _legalP(isRu
+      ? 'Агенты действуют от вашего имени. Вы несёте полную ответственность за: содержимое системных промптов, действия агентов в чатах и группах, финансовые операции (отправка TON, покупка/продажа подарков). Платформа не несёт ответственности за убытки, вызванные действиями ваших агентов.'
+      : 'Agents act on your behalf. You are fully responsible for: system prompt content, agent actions in chats and groups, financial operations (sending TON, buying/selling gifts). The Platform is not liable for losses caused by your agents.') +
+
+    _legalH(isRu ? '4. API ключи и провайдеры' : '4. API Keys & Providers') +
+    _legalP(isRu
+      ? 'Вы предоставляете собственные API ключи для AI-провайдеров (Gemini, Claude, GPT и др.). Платформа хранит ключи в зашифрованном виде и использует их исключительно для работы ваших агентов. Вы несёте ответственность за соблюдение условий использования AI-провайдеров.'
+      : 'You provide your own API keys for AI providers (Gemini, Claude, GPT, etc.). The Platform stores keys encrypted and uses them solely for your agents. You are responsible for complying with AI provider terms.') +
+
+    _legalH(isRu ? '5. Telegram аккаунт' : '5. Telegram Account') +
+    _legalP(isRu
+      ? 'При подключении Telegram аккаунта к агенту (MTProto), агент получает доступ к вашему аккаунту. Вы подтверждаете, что имеете право использовать данный аккаунт и понимаете риски автоматизации.'
+      : 'When connecting a Telegram account to an agent (MTProto), the agent gains access to your account. You confirm you have the right to use this account and understand automation risks.') +
+
+    _legalH(isRu ? '6. Финансовые операции' : '6. Financial Operations') +
+    _legalP(isRu
+      ? 'Платформа предоставляет инструменты для работы с TON блокчейном. Все транзакции необратимы. Платформа не является финансовым посредником и не несёт ответственности за потерю средств.'
+      : 'The Platform provides tools for TON blockchain operations. All transactions are irreversible. The Platform is not a financial intermediary and is not liable for loss of funds.') +
+
+    _legalH(isRu ? '7. Ограничения' : '7. Restrictions') +
+    _legalP(isRu
+      ? 'Запрещено: использование агентов для спама, мошенничества или нарушения законов; попытки обхода лимитов и защит; использование для атак на другие сервисы; распространение вредоносного контента.'
+      : 'Prohibited: using agents for spam, fraud, or illegal activities; attempting to bypass limits and protections; using for attacks on other services; distributing harmful content.') +
+
+    _legalH(isRu ? '8. Прекращение доступа' : '8. Termination') +
+    _legalP(isRu
+      ? 'Мы оставляем за собой право приостановить или заблокировать аккаунт при нарушении условий. Вы можете удалить аккаунт и все данные в любое время через настройки профиля.'
+      : 'We reserve the right to suspend or block accounts for violations. You can delete your account and all data at any time through profile settings.') +
+
+    _legalH(isRu ? '9. Контакты' : '9. Contact') +
+    _legalP(isRu
+      ? 'По вопросам: <a href="https://t.me/TonAgentPlatformBot" style="color:var(--primary)">@TonAgentPlatformBot</a> | <a href="https://t.me/tonagentplatform" style="color:var(--primary)">@tonagentplatform</a>'
+      : 'Contact: <a href="https://t.me/TonAgentPlatformBot" style="color:var(--primary)">@TonAgentPlatformBot</a> | <a href="https://t.me/tonagentplatform" style="color:var(--primary)">@tonagentplatform</a>') +
+
+  '</div>';
+}
+
+function loadPrivacyPage() {
+  var el = document.getElementById('privacy-content');
+  if (!el) return;
+  var isRu = currentLang === 'ru';
+  var updated = '1 ' + (isRu ? 'апреля' : 'April') + ' 2026';
+
+  el.innerHTML = '<div ' + _legalStyles() + '>' +
+    '<h1 style="font-size:1.5rem;color:var(--text-primary);margin-bottom:4px">' + (isRu ? 'Политика конфиденциальности' : 'Privacy Policy') + '</h1>' +
+    '<p style="color:var(--text-muted);font-size:.78rem;margin-bottom:24px">' + (isRu ? 'Последнее обновление: ' : 'Last updated: ') + updated + '</p>' +
+
+    _legalH(isRu ? '1. Какие данные мы собираем' : '1. What Data We Collect') +
+    _legalP(isRu
+      ? '<b>Данные аккаунта:</b> Telegram ID, username, имя — получаем при авторизации через Telegram.'
+      : '<b>Account data:</b> Telegram ID, username, name — received during Telegram authorization.') +
+    _legalP(isRu
+      ? '<b>Данные агентов:</b> системные промпты, настройки, логи выполнения, метрики использования.'
+      : '<b>Agent data:</b> system prompts, settings, execution logs, usage metrics.') +
+    _legalP(isRu
+      ? '<b>Техническая информация:</b> тип ошибок, время возникновения, контекст (без содержимого сообщений) — только с вашего согласия.'
+      : '<b>Technical information:</b> error types, timestamps, context (without message content) — only with your consent.') +
+
+    _legalH(isRu ? '2. Переписки агентов' : '2. Agent Conversations') +
+    '<div style="padding:16px;background:rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.06);border-left:3px solid var(--primary);border-radius:0 10px 10px 0;margin-bottom:16px">' +
+    _legalP(isRu
+      ? '<b>Переписки ваших AI-агентов доступны только вам.</b> Платформа не читает, не анализирует и не передаёт третьим лицам содержимое переписок ваших агентов. Администраторы платформы имеют доступ только к технической информации: статус агента, количество сообщений, ошибки.'
+      : '<b>Your AI agent conversations are accessible only to you.</b> The Platform does not read, analyze, or share the content of your agent conversations. Platform administrators only have access to technical information: agent status, message counts, errors.') +
+    '</div>' +
+
+    _legalH(isRu ? '3. API ключи' : '3. API Keys') +
+    _legalP(isRu
+      ? 'API ключи AI-провайдеров хранятся в зашифрованном виде (AES-256-GCM). Ключи используются исключительно для выполнения запросов ваших агентов и не передаются третьим лицам.'
+      : 'AI provider API keys are stored encrypted (AES-256-GCM). Keys are used solely for your agent requests and are not shared with third parties.') +
+
+    _legalH(isRu ? '4. Telegram данные' : '4. Telegram Data') +
+    _legalP(isRu
+      ? 'При подключении Telegram аккаунта к агенту, сессия MTProto хранится на сервере в зашифрованном виде. Мы не имеем доступа к вашим личным сообщениям, контактам или медиа-файлам за пределами того, что необходимо для работы агента.'
+      : 'When connecting a Telegram account to an agent, the MTProto session is stored encrypted on the server. We do not access your personal messages, contacts, or media beyond what is necessary for agent operation.') +
+
+    _legalH(isRu ? '5. Сбор ошибок' : '5. Error Collection') +
+    _legalP(isRu
+      ? 'При вашем согласии мы собираем информацию об ошибках: тип ошибки, stack trace, время, ID агента. Это помогает улучшать платформу. Содержимое сообщений НЕ включается в отчёты об ошибках. Вы можете отозвать согласие в настройках.'
+      : 'With your consent, we collect error information: error type, stack trace, timestamp, agent ID. This helps improve the platform. Message content is NOT included in error reports. You can withdraw consent in settings.') +
+
+    _legalH(isRu ? '6. Хранение данных' : '6. Data Storage') +
+    _legalP(isRu
+      ? 'Данные хранятся на серверах в Европе. Вы можете запросить удаление всех данных через настройки профиля или обратившись в поддержку.'
+      : 'Data is stored on servers in Europe. You can request deletion of all data through profile settings or by contacting support.') +
+
+    _legalH(isRu ? '7. Ваши права' : '7. Your Rights') +
+    _legalP(isRu
+      ? 'Вы имеете право: получить копию ваших данных, удалить аккаунт и все связанные данные, отозвать согласие на сбор ошибок, отключить Telegram аккаунт от агентов в любое время.'
+      : 'You have the right to: receive a copy of your data, delete your account and all associated data, withdraw consent for error collection, disconnect your Telegram account from agents at any time.') +
+
+    _legalH(isRu ? '8. Контакты' : '8. Contact') +
+    _legalP(isRu
+      ? 'DPO: <a href="https://t.me/uheartattack" style="color:var(--primary)">@uheartattack</a> | Поддержка: <a href="https://t.me/TonAgentPlatformBot" style="color:var(--primary)">@TonAgentPlatformBot</a>'
+      : 'DPO: <a href="https://t.me/uheartattack" style="color:var(--primary)">@uheartattack</a> | Support: <a href="https://t.me/TonAgentPlatformBot" style="color:var(--primary)">@TonAgentPlatformBot</a>') +
+
+  '</div>';
+}
+
+// ══════════════════════════════════════════════════════════════
+// BUG DASHBOARD — Platform bugs, Agent errors, Tester feedback
+// ══════════════════════════════════════════════════════════════
+var _bugTab = 'platform';
+
+async function loadBugDashboard() {
+  var container = document.getElementById('bugs-dashboard-root');
+  if (!container) return;
+  var isRu = currentLang === 'ru';
+  container.innerHTML = '<div style="padding:24px;max-width:1200px;margin:0 auto">' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px">' +
+      '<h2 style="margin:0;font-size:1.3rem;color:var(--text-primary)">' + (isRu ? IC.bug + ' Баг-трекер' : IC.bug + ' Bug Tracker') + '</h2>' +
+      '<div style="display:flex;gap:4px;background:var(--bg-primary);border-radius:10px;padding:3px;border:1px solid var(--border)">' +
+        _bugTabBtn('platform', isRu ? IC.settings + ' Платформа' : IC.settings + ' Platform') +
+        _bugTabBtn('agents', isRu ? IC.robot + ' Агенты' : IC.robot + ' Agents') +
+        _bugTabBtn('feedback', isRu ? IC.clipboard + ' Фидбек' : IC.clipboard + ' Feedback') +
+        _bugTabBtn('reports', isRu ? IC.folder + ' Отчёты' : IC.folder + ' Reports') +
+      '</div></div>' +
+    '<div id="bugs-content"><div style="text-align:center;padding:40px;color:var(--text-muted)">Loading...</div></div></div>';
+  loadBugTab(_bugTab);
+}
+function _bugTabBtn(id, label) { var a = _bugTab === id; return '<button onclick="switchBugTab(\'' + id + '\')" style="padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:.82rem;font-weight:600;transition:all .2s;' + (a ? 'background:var(--primary);color:white' : 'background:transparent;color:var(--text-muted)') + '">' + label + '</button>'; }
+function switchBugTab(t) {
+  _bugTab = t;
+  // If bugs-content exists, just reload tab content without full redraw
+  var bc = document.getElementById('bugs-content');
+  if (bc) {
+    bc.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted)">Loading...</div>';
+    // Update tab button styles
+    var btns = bc.parentElement.querySelectorAll('button');
+    btns.forEach(function(b) {
+      var isActive = b.textContent.toLowerCase().indexOf(t === 'platform' ? (currentLang === 'ru' ? 'платформ' : 'platform') : t === 'agents' ? (currentLang === 'ru' ? 'агент' : 'agents') : t === 'feedback' ? (currentLang === 'ru' ? 'фидбек' : 'feedback') : (currentLang === 'ru' ? 'отчёт' : 'report')) >= 0;
+      b.style.background = isActive ? 'var(--primary)' : 'transparent';
+      b.style.color = isActive ? 'white' : 'var(--text-muted)';
+    });
+    loadBugTab(t);
+  } else {
+    loadBugDashboard();
+  }
+}
+function _bugStatCard(icon, label, count, color) { return '<div style="padding:16px;background:var(--bg-primary);border:1px solid var(--border);border-radius:12px;text-align:center"><div style="font-size:1.5rem;margin-bottom:4px">' + icon + '</div><div style="font-size:1.4rem;font-weight:700;color:' + color + '">' + count + '</div><div style="font-size:.72rem;color:var(--text-muted);margin-top:2px">' + label + '</div></div>'; }
+function _timeAgo(d) { if (!d) return '—'; var ms = Date.now() - new Date(d).getTime(); var r = currentLang === 'ru'; if (ms < 60000) return r ? 'сейчас' : 'now'; if (ms < 3600000) return Math.floor(ms / 60000) + (r ? ' мин' : 'm'); if (ms < 86400000) return Math.floor(ms / 3600000) + (r ? ' ч' : 'h'); return Math.floor(ms / 86400000) + (r ? ' дн' : 'd'); }
+
+async function loadBugTab(tab) {
+  var c = document.getElementById('bugs-content'); if (!c) return; var isRu = currentLang === 'ru';
+  if (tab === 'platform') {
+    try {
+      var d = await apiRequest('GET', '/api/admin/bugs?status=open&limit=50');
+      if (!d.ok) { c.innerHTML = '<p style="color:var(--danger)">' + escHtml(d.error || 'Error') + '</p>'; return; }
+      var st = d.stats || {};
+      var h = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">' + _bugStatCard(IC.dot_red, isRu ? 'Открытые' : 'Open', st.open || 0, '#ef4444') + _bugStatCard(IC.dot_pause, isRu ? 'В работе' : 'Fixing', st.fixing || 0, '#f59e0b') + _bugStatCard(IC.dot_green, isRu ? 'Исправлены' : 'Fixed', st.fixed || 0, '#10b981') + _bugStatCard(IC.dot_gray, isRu ? 'Игнорируются' : 'Ignored', st.ignored || 0, '#6b7280') + '</div>';
+      if (d.sources && d.sources.length) { h += '<div style="margin-bottom:16px;padding:14px;background:var(--bg-primary);border:1px solid var(--border);border-radius:10px"><div style="font-size:.78rem;font-weight:600;color:var(--text-muted);margin-bottom:8px">' + (isRu ? 'ИСТОЧНИКИ' : 'SOURCES') + '</div>'; d.sources.forEach(function(s) { var pct = d.sources[0].total > 0 ? Math.round(s.total / d.sources[0].total * 100) : 0; h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span style="font-size:.78rem;color:var(--text-primary);min-width:180px">' + escHtml(s.source) + '</span><div style="flex:1;height:6px;background:rgba(255,255,255,0.05);border-radius:3px;overflow:hidden"><div style="height:100%;width:' + pct + '%;background:var(--primary);border-radius:3px"></div></div><span style="font-size:.72rem;color:var(--text-muted);min-width:32px;text-align:right">' + s.total + '</span></div>'; }); h += '</div>'; }
+      h += '<div style="display:flex;flex-direction:column;gap:8px">';
+      if (!d.bugs.length) h += '<div style="text-align:center;padding:40px;color:var(--text-muted)">' + (isRu ? 'Нет открытых багов' : 'No open bugs') + '</div>';
+      d.bugs.forEach(function(b) { h += '<div style="padding:14px;background:var(--bg-primary);border:1px solid var(--border);border-radius:10px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><div style="display:flex;align-items:center;gap:8px"><span style="font-size:.72rem;padding:2px 8px;border-radius:4px;background:rgba(239,68,68,0.1);color:#ef4444;font-weight:600">x' + b.count + '</span><span style="font-size:.76rem;color:var(--text-muted)">' + escHtml(b.source || '') + '</span></div><div style="display:flex;gap:4px"><button onclick="updateBugStatus(' + b.id + ',\'fixing\')" style="padding:3px 8px;border-radius:6px;border:1px solid rgba(245,158,11,0.3);background:rgba(245,158,11,0.1);color:#f59e0b;font-size:.68rem;cursor:pointer">Fix</button><button onclick="updateBugStatus(' + b.id + ',\'fixed\')" style="padding:3px 8px;border-radius:6px;border:1px solid rgba(16,185,129,0.3);background:rgba(16,185,129,0.1);color:#10b981;font-size:.68rem;cursor:pointer">Done</button><button onclick="updateBugStatus(' + b.id + ',\'ignored\')" style="padding:3px 8px;border-radius:6px;border:1px solid rgba(107,114,128,0.3);background:rgba(107,114,128,0.1);color:#6b7280;font-size:.68rem;cursor:pointer">Ign</button></div></div><div style="font-size:.82rem;color:var(--text-primary);word-break:break-word;line-height:1.4">' + escHtml((b.message || '').slice(0, 200)) + '</div>' + (b.file ? '<div style="font-size:.7rem;color:var(--text-muted);margin-top:4px;font-family:monospace">' + escHtml(b.file) + '</div>' : '') + '<div style="font-size:.68rem;color:var(--text-muted);margin-top:4px">First: ' + _timeAgo(b.first_seen) + ' · Last: ' + _timeAgo(b.last_seen) + '</div></div>'; });
+      h += '</div>'; c.innerHTML = h;
+    } catch(e) { c.innerHTML = '<p style="color:var(--danger)">' + e.message + '</p>'; }
+  } else if (tab === 'agents') {
+    try {
+      var d = await apiRequest('GET', '/api/admin/agent-errors?days=7');
+      if (!d.ok) { c.innerHTML = '<p style="color:var(--danger)">' + escHtml(d.error || 'Error') + '</p>'; return; }
+      var cats = d.categories || {};
+      var h = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">' + _bugStatCard(IC.fire, 'Crash', cats.crash || 0, '#ef4444') + _bugStatCard(IC.wrench, 'Tool', cats.tool_error || 0, '#f59e0b') + _bugStatCard(IC.globe, 'API', cats.api_error || 0, '#6366f1') + _bugStatCard(IC.question, isRu ? 'Другие' : 'Other', cats.other || 0, '#6b7280') + '</div>';
+      h += '<div style="font-size:.82rem;font-weight:600;color:var(--text-primary);margin-bottom:12px">' + (isRu ? 'Паттерны ошибок (7 дней)' : 'Error Patterns (7 days)') + '</div><div style="display:flex;flex-direction:column;gap:6px">';
+      if (!d.patterns || !d.patterns.length) h += '<div style="text-align:center;padding:40px;color:var(--text-muted)">' + (isRu ? 'Нет ошибок' : 'No errors') + '</div>';
+      (d.patterns || []).forEach(function(p) { h += '<div style="padding:12px;background:var(--bg-primary);border:1px solid var(--border);border-radius:10px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span style="font-size:.72rem;padding:2px 8px;border-radius:4px;background:rgba(239,68,68,0.1);color:#ef4444;font-weight:600">x' + p.count + '</span><span style="font-size:.72rem;color:var(--text-muted)">' + p.agentCount + ' agents</span></div><div style="font-size:.8rem;color:var(--text-primary);word-break:break-word">' + escHtml(p.message.slice(0, 150)) + '</div></div>'; });
+      h += '</div>'; c.innerHTML = h;
+    } catch(e) { c.innerHTML = '<p style="color:var(--danger)">' + e.message + '</p>'; }
+  } else if (tab === 'feedback') {
+    try {
+      var d = await apiRequest('GET', '/api/admin/feedback');
+      if (!d.ok) { c.innerHTML = '<p style="color:var(--danger)">' + escHtml(d.error || 'Error') + '</p>'; return; }
+      var sc = {}, tc = {}; (d.feedback || []).forEach(function(f) { sc[f.status] = (sc[f.status] || 0) + 1; tc[f.type] = (tc[f.type] || 0) + 1; });
+      var h = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">' + _bugStatCard(IC.bug, 'Bugs', tc.bug || 0, '#ef4444') + _bugStatCard(IC.lightbulb, 'Features', tc.feature || 0, '#6366f1') + _bugStatCard(IC.lifebuoy, 'Support', tc.support || 0, '#f59e0b') + _bugStatCard(IC.chat, 'General', tc.general || 0, '#6b7280') + '</div>';
+      h += '<div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap">';
+      ['all', 'new', 'in_progress', 'resolved', 'closed'].forEach(function(s) { var lbl = s === 'all' ? (isRu ? 'Все' : 'All') : s === 'new' ? IC.dot_blue + ' New' : s === 'in_progress' ? IC.dot_pause + ' WIP' : s === 'resolved' ? IC.dot_green + ' Done' : IC.dot_gray + ' Closed'; h += '<button onclick="filterFeedback(\'' + s + '\')" style="padding:6px 14px;border-radius:8px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:.78rem;cursor:pointer">' + lbl + ' (' + (s === 'all' ? (d.feedback || []).length : (sc[s] || 0)) + ')</button>'; });
+      h += '</div><div id="feedback-list" style="display:flex;flex-direction:column;gap:8px">';
+      var icons = { bug: IC.bug, feature: IC.lightbulb, support: IC.lifebuoy, general: IC.chat }; var colors = { new: '#3b82f6', in_progress: '#f59e0b', resolved: '#10b981', closed: '#6b7280' };
+      (d.feedback || []).forEach(function(f) { h += '<div class="feedback-item" data-status="' + f.status + '" style="padding:14px;background:var(--bg-primary);border:1px solid var(--border);border-radius:10px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:6px"><div style="display:flex;align-items:center;gap:8px">' + (icons[f.type] || IC.question) + ' <span style="font-size:.78rem;font-weight:600">#' + f.id + '</span><span style="font-size:.72rem;color:var(--text-muted)">@' + escHtml(f.username || String(f.user_id)) + '</span><span style="font-size:.68rem;padding:2px 8px;border-radius:4px;background:' + (colors[f.status] || '#666') + '20;color:' + (colors[f.status] || '#666') + ';font-weight:600">' + f.status + '</span></div><div style="display:flex;gap:4px"><button onclick="replyFeedback(' + f.id + ')" style="padding:3px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);font-size:.68rem;cursor:pointer">Reply</button><button onclick="resolveFeedback(' + f.id + ')" style="padding:3px 8px;border-radius:6px;border:1px solid rgba(16,185,129,0.3);background:rgba(16,185,129,0.1);color:#10b981;font-size:.68rem;cursor:pointer">Resolve</button></div></div><div style="font-size:.82rem;color:var(--text-primary);word-break:break-word;line-height:1.4">' + escHtml((f.message || '').slice(0, 300)) + '</div>' + (f.screenshot_file_id ? '<div style="margin-top:8px"><a href="/api/feedback/' + f.id + '/screenshot" target="_blank" style="font-size:.72rem;color:var(--primary);text-decoration:none">📎 ' + (currentLang === 'ru' ? 'Скриншот' : 'Screenshot') + '</a></div>' : '') + (f.admin_reply ? '<div style="margin-top:8px;padding:8px 12px;background:rgba(16,185,129,0.05);border-left:3px solid #10b981;border-radius:0 8px 8px 0;font-size:.78rem;color:var(--text-secondary)">↳ ' + escHtml(f.admin_reply) + '</div>' : '') + '<div style="font-size:.68rem;color:var(--text-muted);margin-top:6px">' + _timeAgo(f.created_at) + (f.agent_id ? ' · Agent #' + f.agent_id : '') + '</div></div>'; });
+      h += '</div>'; c.innerHTML = h;
+    } catch(e) { c.innerHTML = '<p style="color:var(--danger)">' + e.message + '</p>'; }
+  } else if (tab === 'reports') {
+    try {
+      var d = await apiRequest('GET', '/api/admin/feedback');
+      var bugs = await apiRequest('GET', '/api/admin/bugs?status=open&limit=100');
+      var agentErrors = await apiRequest('GET', '/api/admin/agent-errors?days=30');
+
+      var h = '<div style="font-size:.82rem;font-weight:600;color:var(--text-primary);margin-bottom:16px">' + (isRu ? IC.folder + ' Структурированные отчёты' : IC.folder + ' Structured Reports') + '</div>';
+
+      var folders = [
+        { id: 'platform_crashes', icon: IC.fire, name: isRu ? 'Крэши платформы' : 'Platform Crashes', color: '#ef4444', items: (bugs.ok ? bugs.bugs : []).filter(function(b) { return b.source === 'uncaughtException' || b.source === 'unhandledRejection'; }) },
+        { id: 'tool_errors', icon: IC.wrench, name: isRu ? 'Ошибки инструментов' : 'Tool Errors', color: '#f59e0b', items: (bugs.ok ? bugs.bugs : []).filter(function(b) { return (b.source || '').startsWith('tool:'); }) },
+        { id: 'api_errors', icon: IC.globe, name: isRu ? 'Ошибки API' : 'API Errors', color: '#6366f1', items: (agentErrors.ok ? (agentErrors.patterns || []).filter(function(p) { return p.message.toLowerCase().match(/api|fetch|429|500|timeout/); }) : []) },
+        { id: 'user_bugs', icon: IC.bug, name: isRu ? 'Баг-репорты тестеров' : 'Tester Bug Reports', color: '#ef4444', items: (d.ok ? d.feedback : []).filter(function(f) { return f.type === 'bug'; }) },
+        { id: 'user_features', icon: IC.lightbulb, name: isRu ? 'Запросы фич' : 'Feature Requests', color: '#8b5cf6', items: (d.ok ? d.feedback : []).filter(function(f) { return f.type === 'feature'; }) },
+        { id: 'user_support', icon: IC.lifebuoy, name: isRu ? 'Тикеты саппорта' : 'Support Tickets', color: '#f59e0b', items: (d.ok ? d.feedback : []).filter(function(f) { return f.type === 'support'; }) },
+        { id: 'agent_crashes', icon: IC.robot, name: isRu ? 'Крэши агентов' : 'Agent Crashes', color: '#ef4444', items: (agentErrors.ok ? (agentErrors.patterns || []).filter(function(p) { return p.message.toLowerCase().includes('crash'); }) : []) },
+      ];
+
+      h += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">';
+      folders.forEach(function(folder) {
+        var count = folder.items.length;
+        var newCount = folder.items.filter(function(i) { return (i.status === 'new' || i.status === 'open'); }).length;
+        h += '<div onclick="expandReportFolder(\'' + folder.id + '\')" style="padding:16px;background:var(--bg-primary);border:1px solid var(--border);border-radius:12px;cursor:pointer;transition:all .2s" onmouseenter="this.style.borderColor=\'' + folder.color + '40\';this.style.transform=\'translateY(-2px)\'" onmouseleave="this.style.borderColor=\'var(--border)\';this.style.transform=\'none\'">' +
+          '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">' +
+            '<div style="width:40px;height:40px;border-radius:10px;background:' + folder.color + '15;display:flex;align-items:center;justify-content:center;font-size:1.2rem">' + folder.icon + '</div>' +
+            '<div style="flex:1"><div style="font-size:.85rem;font-weight:600;color:var(--text-primary)">' + folder.name + '</div>' +
+            '<div style="font-size:.72rem;color:var(--text-muted)">' + count + ' ' + (isRu ? 'записей' : 'items') + (newCount > 0 ? ' · <span style="color:' + folder.color + '">' + newCount + ' new</span>' : '') + '</div></div>' +
+          '</div>' +
+          '<div style="height:4px;background:rgba(255,255,255,0.05);border-radius:2px;overflow:hidden"><div style="height:100%;width:' + Math.min(count * 5, 100) + '%;background:' + folder.color + ';border-radius:2px;transition:width .3s"></div></div>' +
+        '</div>';
+      });
+      h += '</div>';
+
+      h += '<div id="report-folder-content" style="margin-top:16px"></div>';
+
+      window._reportFolders = folders;
+
+      c.innerHTML = h;
+    } catch(e) { c.innerHTML = '<p style="color:var(--danger)">' + e.message + '</p>'; }
+  }
+}
+async function updateBugStatus(id, s) { try { var d = await apiRequest('PUT', '/api/admin/bugs/' + id, { status: s }); if (d.ok) { toast('Updated', 'success'); loadBugTab('platform'); } else toast(d.error, 'error'); } catch(e) { toast(e.message, 'error'); } }
+function filterFeedback(s) { document.querySelectorAll('.feedback-item').forEach(function(el) { el.style.display = (s === 'all' || el.getAttribute('data-status') === s) ? '' : 'none'; }); }
+async function replyFeedback(id) { var r = prompt(currentLang === 'ru' ? 'Ответ:' : 'Reply:'); if (!r) return; try { var d = await apiRequest('PUT', '/api/admin/feedback/' + id, { adminReply: r, status: 'in_progress' }); if (d.ok) { toast('Replied', 'success'); loadBugTab('feedback'); } } catch(e) { toast(e.message, 'error'); } }
+async function resolveFeedback(id) { try { var d = await apiRequest('PUT', '/api/admin/feedback/' + id, { status: 'resolved' }); if (d.ok) { toast('Resolved', 'success'); loadBugTab('feedback'); } } catch(e) { toast(e.message, 'error'); } }
+function expandReportFolder(folderId) {
+  var container = document.getElementById('report-folder-content');
+  if (!container) return;
+  var folders = window._reportFolders || [];
+  var folder = folders.find(function(f) { return f.id === folderId; });
+  if (!folder || !folder.items.length) { container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted)">' + (currentLang === 'ru' ? 'Пусто' : 'Empty') + '</div>'; return; }
+
+  var isRu = currentLang === 'ru';
+  var h = '<div style="padding:16px;background:var(--bg-primary);border:1px solid var(--border);border-radius:12px">' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">' +
+      '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:1.1rem">' + folder.icon + '</span><span style="font-size:.9rem;font-weight:600;color:var(--text-primary)">' + folder.name + '</span><span style="font-size:.72rem;color:var(--text-muted)">(' + folder.items.length + ')</span></div>' +
+      '<button onclick="document.getElementById(\'report-folder-content\').innerHTML=\'\'" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:1rem">&times;</button>' +
+    '</div>';
+
+  h += '<div style="display:flex;flex-direction:column;gap:6px;max-height:400px;overflow-y:auto">';
+  folder.items.slice(0, 30).forEach(function(item, i) {
+    var msg = item.message || item.msg || '';
+    var status = item.status || 'open';
+    var who = item.username ? '@' + item.username : (item.source || '');
+    var when = item.created_at || item.last_seen || item.first_seen || '';
+    var statusColor = status === 'new' || status === 'open' ? '#3b82f6' : status === 'in_progress' || status === 'fixing' ? '#f59e0b' : status === 'resolved' || status === 'fixed' ? '#10b981' : '#6b7280';
+
+    h += '<div style="padding:10px 12px;background:var(--bg-secondary);border-radius:8px;border-left:3px solid ' + folder.color + '">' +
+      '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">' +
+        '<span style="font-size:.68rem;padding:1px 6px;border-radius:3px;background:' + statusColor + '20;color:' + statusColor + ';font-weight:600">' + status + '</span>' +
+        (who ? '<span style="font-size:.7rem;color:var(--text-muted)">' + escHtml(who) + '</span>' : '') +
+        (item.count ? '<span style="font-size:.68rem;color:#ef4444;font-weight:600">x' + item.count + '</span>' : '') +
+      '</div>' +
+      '<div style="font-size:.8rem;color:var(--text-primary);word-break:break-word">' + escHtml(msg.slice(0, 200)) + '</div>' +
+      (item.admin_reply ? '<div style="font-size:.72rem;color:#10b981;margin-top:3px">↳ ' + escHtml(item.admin_reply.slice(0, 100)) + '</div>' : '') +
+      (when ? '<div style="font-size:.65rem;color:var(--text-muted);margin-top:3px">' + _timeAgo(when) + '</div>' : '') +
+    '</div>';
+  });
+  h += '</div></div>';
+
+  container.innerHTML = h;
+  container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// ── Tester Hub page ──
+async function loadTesterHub() {
+  var container = document.getElementById('tester-hub-root');
+  if (!container) return;
+  var isRu = currentLang === 'ru';
+
+  container.innerHTML = '<div style="max-width:900px;margin:0 auto;padding:24px"><div style="text-align:center;padding:40px;color:var(--text-muted)">Loading...</div></div>';
+
+  var stats, lb;
+  try {
+    [stats, lb] = await Promise.all([
+      apiRequest('GET', '/api/beta/stats'),
+      apiRequest('GET', '/api/beta/leaderboard'),
+    ]);
+  } catch(e) {
+    container.innerHTML = '<div style="max-width:900px;margin:0 auto;padding:24px;text-align:center;color:var(--text-muted)">' + (isRu ? 'Недоступно. Станьте бета-тестером: /beta в боте.' : 'Not available. Become a beta tester: /beta in bot.') + '</div>';
+    return;
+  }
+
+  if (!stats.ok || !stats.level) {
+    container.innerHTML = '<div style="max-width:900px;margin:0 auto;padding:24px;text-align:center;color:var(--text-muted)">' + (isRu ? 'Вы не бета-тестер. Используйте /beta в боте.' : 'Not a beta tester. Use /beta in the bot.') + '</div>';
+    return;
+  }
+
+  var s = stats;
+  var nextPts = s.nextLevel ? s.nextLevel.pointsNeeded + s.points : s.points;
+  var pct = s.nextLevel ? Math.round((s.points / nextPts) * 100) : 100;
+  var levelColors = ['#6b7280', '#3b82f6', '#10b981', '#f59e0b', '#a855f7', '#ef4444'];
+  var lvlColor = levelColors[Math.min(s.level - 1, 5)];
+
+  var html = '<div style="max-width:900px;margin:0 auto;padding:24px">';
+
+  // Hero card
+  html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:20px;padding:24px;margin-bottom:20px;position:relative;overflow:hidden">' +
+    '<div style="position:absolute;top:-30px;right:-30px;width:120px;height:120px;border-radius:50%;background:' + lvlColor + '10;pointer-events:none"></div>' +
+    '<div style="display:flex;align-items:center;gap:16px;margin-bottom:16px">' +
+      '<div style="width:56px;height:56px;border-radius:50%;background:' + lvlColor + '20;display:flex;align-items:center;justify-content:center;font-size:1.5rem;font-weight:800;color:' + lvlColor + '">' + s.level + '</div>' +
+      '<div style="flex:1">' +
+        '<div style="font-size:1.15rem;font-weight:700;color:var(--text-primary)">' + escHtml(isRu ? s.levelNameRu : s.levelName) + '</div>' +
+        '<div style="font-size:.78rem;color:var(--text-muted)">' + s.points + ' ' + (isRu ? 'очков' : 'pts') + (s.nextLevel ? ' · ' + s.nextLevel.pointsNeeded + ' ' + (isRu ? 'до' : 'to') + ' ' + escHtml(isRu ? s.nextLevel.nameRu : s.nextLevel.name) : ' · MAX') + '</div>' +
+      '</div>' +
+      (s.streak > 0 ? '<div style="padding:6px 14px;border-radius:20px;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);color:#f59e0b;font-size:.75rem;font-weight:600">' + s.streak + ' ' + (isRu ? 'дн streak' : 'day streak') + '</div>' : '') +
+      (s.role !== 'tester' ? '<div style="padding:6px 14px;border-radius:20px;background:' + lvlColor + '15;border:1px solid ' + lvlColor + '30;color:' + lvlColor + ';font-size:.75rem;font-weight:600;text-transform:uppercase">' + escHtml(s.role) + '</div>' : '') +
+    '</div>' +
+    '<div style="height:8px;background:rgba(255,255,255,0.05);border-radius:4px;overflow:hidden">' +
+      '<div style="height:100%;width:' + pct + '%;background:linear-gradient(in oklab 90deg,' + lvlColor + ',' + lvlColor + 'cc);border-radius:4px;transition:width .5s"></div>' +
+    '</div>' +
+    '<div style="display:flex;justify-content:space-between;margin-top:4px;font-size:.68rem;color:var(--text-muted)">' +
+      '<span>Lv.' + s.level + '</span><span>' + pct + '%</span>' + (s.nextLevel ? '<span>Lv.' + (s.level + 1) + '</span>' : '') +
+    '</div>' +
+    '<div style="margin-top:16px;text-align:center">' +
+      '<button onclick="testerCheckin()" style="padding:10px 24px;border-radius:20px;border:none;background:linear-gradient(in oklab 135deg,var(--primary),var(--primary-dark));color:white;font-size:.82rem;font-weight:600;cursor:pointer;transition:all .2s" onmouseenter="this.style.transform=\'translateY(-1px)\'" onmouseleave="this.style.transform=\'none\'">' + (isRu ? 'Daily Check-in (+1 очко)' : 'Daily Check-in (+1 pt)') + '</button>' +
+    '</div>' +
+  '</div>';
+
+  // Stat cards
+  var statCards = [
+    { label: 'XP', value: s.xp || s.points, color: 'var(--primary)' },
+    { label: isRu ? 'Очки' : 'Points', value: s.points, color: '#10b981' },
+    { label: isRu ? 'Баги' : 'Bugs', value: s.totalBugs, color: '#ef4444' },
+    { label: isRu ? 'Фичи' : 'Features', value: s.totalFeatures, color: '#8b5cf6' },
+  ];
+  html += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px">';
+  statCards.forEach(function(c) {
+    html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:14px 16px;text-align:center">' +
+      '<div style="font-size:1.3rem;font-weight:700;color:' + c.color + '">' + c.value + '</div>' +
+      '<div style="font-size:.68rem;color:var(--text-muted);margin-top:2px">' + c.label + '</div></div>';
+  });
+  html += '</div>';
+
+  // Leaderboard + Shop
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">';
+
+  // Leaderboard
+  html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:16px">' +
+    '<div style="font-size:.85rem;font-weight:600;color:var(--text-primary);margin-bottom:12px">' + (isRu ? 'Лидерборд' : 'Leaderboard') + '</div>';
+  var leaders = (lb.ok ? lb.leaderboard : []) || [];
+  if (leaders.length) {
+    var medals = ['#ffd700', '#c0c0c0', '#cd7f32'];
+    html += '<div style="display:flex;flex-direction:column;gap:6px">';
+    leaders.slice(0, 8).forEach(function(l, i) {
+      var medalColor = i < 3 ? medals[i] : 'var(--text-muted)';
+      html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;background:' + (i < 3 ? medalColor + '08' : 'transparent') + '">' +
+        '<span style="width:20px;font-size:.75rem;font-weight:700;color:' + medalColor + '">' + (i + 1) + '</span>' +
+        '<span style="flex:1;font-size:.8rem;color:var(--text-primary)">' + escHtml(l.username || 'User') + '</span>' +
+        '<span style="font-size:.72rem;color:var(--text-muted)">' + (l.xp || l.feedback_count) + ' XP</span>' +
+      '</div>';
+    });
+    html += '</div>';
+  } else {
+    html += '<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:.82rem">' + (isRu ? 'Пока пусто' : 'Empty') + '</div>';
+  }
+  html += '</div>';
+
+  // Shop
+  html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:16px">' +
+    '<div style="font-size:.85rem;font-weight:600;color:var(--text-primary);margin-bottom:12px">' + (isRu ? 'Магазин' : 'Shop') + ' <span style="font-size:.72rem;color:var(--text-muted)">(' + s.available + ' ' + (isRu ? 'доступно' : 'available') + ')</span></div>';
+  html += '<div style="display:flex;flex-direction:column;gap:6px">';
+  (s.shopItems || []).forEach(function(item) {
+    var canBuy = s.available >= item.cost;
+    html += '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:10px;background:var(--bg-secondary);opacity:' + (canBuy ? '1' : '0.5') + '">' +
+      '<span style="flex:1;font-size:.78rem;color:var(--text-primary)">' + escHtml(isRu ? item.nameRu : item.name) + '</span>' +
+      '<span style="font-size:.72rem;color:var(--text-muted)">' + item.cost + ' pts</span>' +
+      (canBuy ? '<button onclick="testerBuyItem(\'' + item.id + '\')" style="padding:3px 10px;border-radius:6px;border:none;background:var(--primary);color:white;font-size:.68rem;cursor:pointer">' + (isRu ? 'Купить' : 'Buy') + '</button>' : '') +
+    '</div>';
+  });
+  html += '</div></div>';
+  html += '</div>';
+
+  // Achievements
+  html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:20px">' +
+    '<div style="font-size:.85rem;font-weight:600;color:var(--text-primary);margin-bottom:12px">' + (isRu ? 'Достижения' : 'Achievements') + '</div>' +
+    '<div style="display:flex;flex-wrap:wrap;gap:8px">';
+  (s.achievements_list || stats.achievements || []).forEach(function(a) {
+    var unlocked = a.unlocked;
+    html += '<div style="padding:8px 14px;border-radius:20px;border:1px solid ' + (unlocked ? 'var(--primary)' : 'var(--border)') + ';background:' + (unlocked ? 'var(--accent-dim)' : 'var(--bg-secondary)') + ';opacity:' + (unlocked ? '1' : '0.4') + '">' +
+      '<div style="font-size:.78rem;font-weight:600;color:' + (unlocked ? 'var(--primary)' : 'var(--text-muted)') + '">' + escHtml(isRu ? a.nameRu : a.name) + '</div>' +
+      '<div style="font-size:.62rem;color:var(--text-muted)">' + escHtml(a.desc) + '</div>' +
+    '</div>';
+  });
+  html += '</div></div>';
+
+  // ── Testing Tasks (real ZONE_TASKS from server + DB-backed completed list) ──
+  try {
+    var tasksData = await apiRequest('GET', '/api/beta/tasks');
+    if (tasksData.ok && tasksData.tasks) {
+      var zoneNames = {
+        core:      { ru: 'Ядро платформы',    en: 'Core Platform' },
+        defi:      { ru: 'DeFi',              en: 'DeFi' },
+        gifts:     { ru: 'Подарки & NFT',     en: 'Gifts & NFT' },
+        telegram:  { ru: 'Telegram & UI',     en: 'Telegram & UI' },
+        studio:    { ru: 'Studio & API',      en: 'Studio & API' },
+        community: { ru: 'Комьюнити',         en: 'Community' },
+      };
+      var zoneIcons = { core: '🔧', defi: '💱', gifts: '🎁', telegram: '📱', studio: '🎨', community: '👥' };
+      var completed = (tasksData.completed || []);
+      var doneCount = tasksData.tasks.filter(function(t){ return completed.indexOf(t.id) >= 0; }).length;
+      var totalXp = tasksData.tasks.filter(function(t){ return completed.indexOf(t.id) >= 0; }).reduce(function(s,t){ return s + (t.xp||0); }, 0);
+
+      html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:20px">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:6px">' +
+          '<div style="font-size:.95rem;font-weight:700;color:var(--text-primary)">🧪 ' + (isRu ? 'Задания тестирования' : 'Testing Tasks') + '</div>' +
+          '<div style="font-size:.7rem;color:var(--text-muted)">' +
+            (isRu ? 'Выполнено' : 'Done') + ' <b style="color:var(--primary)">' + doneCount + '/' + tasksData.tasks.length + '</b>' +
+            ' · <b style="color:#fbbf24">+' + totalXp + ' XP</b>' +
+          '</div>' +
+        '</div>' +
+        '<div style="font-size:.7rem;color:var(--text-muted);margin-bottom:14px;padding:8px 12px;background:var(--bg-secondary);border-radius:8px;line-height:1.5">' +
+          '💡 ' + (isRu
+            ? 'Клик по заданию — инструкция как сдать. <b>Галочки показывают реальный статус из БД</b> — проверенный админом.'
+            : 'Click a task — you see how to submit. <b>Checkmarks reflect real DB status</b> — after admin verification.') +
+        '</div>';
+
+      // Group tasks by zone (real 6 zones from engagement.ts)
+      var grouped = {};
+      tasksData.tasks.forEach(function(t){
+        if (!grouped[t.zone]) grouped[t.zone] = [];
+        grouped[t.zone].push(t);
+      });
+      var zoneOrder = ['core', 'defi', 'gifts', 'telegram', 'studio', 'community'];
+      zoneOrder.forEach(function(zone){
+        if (!grouped[zone] || !grouped[zone].length) return;
+        var zn = zoneNames[zone] || { ru: zone, en: zone };
+        var icon = zoneIcons[zone] || '📌';
+        html += '<div style="font-size:.72rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin:14px 0 6px;padding-left:4px">' +
+          icon + ' ' + (isRu ? zn.ru : zn.en) + '</div>';
+        // Sort tasks by level within zone
+        grouped[zone].sort(function(a,b){ return (a.level||1) - (b.level||1); });
+        grouped[zone].forEach(function(t){
+          var done = completed.indexOf(t.id) >= 0;
+          var autoCheck = !!t.autoCheck;
+          var lvlBadge = '<span style="display:inline-block;padding:1px 6px;border-radius:4px;background:rgba(var(--accent-r,139),var(--accent-g,92),var(--accent-b,246),0.12);color:#a78bfa;font-size:.6rem;font-weight:600;margin-right:6px">L' + (t.level||1) + '</span>';
+          var autoBadge = autoCheck ? '<span style="display:inline-block;padding:1px 5px;border-radius:4px;background:rgba(16,185,129,0.12);color:#10b981;font-size:.55rem;font-weight:600;margin-left:4px" title="' + (isRu ? 'авто-проверка' : 'auto-check') + '">AUTO</span>' : '';
+          var title = escHtml(isRu ? t.title : (t.titleEn || t.title));
+          html += '<div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;background:var(--bg-secondary);margin-bottom:4px;cursor:pointer;transition:all .15s;opacity:' + (done ? '0.55' : '1') + '" onclick="toggleTask(\'' + t.id + '\',this)" onmouseenter="this.style.background=\'var(--accent-dim)\'" onmouseleave="this.style.background=\'var(--bg-secondary)\'">' +
+            '<div style="width:20px;height:20px;border-radius:6px;border:2px solid ' + (done ? '#10b981' : 'var(--border)') + ';background:' + (done ? '#10b981' : 'transparent') + ';display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s">' +
+              (done ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : '') +
+            '</div>' +
+            '<div style="flex:1;min-width:0">' +
+              '<div style="font-size:.8rem;font-weight:500;color:var(--text-primary);' + (done ? 'text-decoration:line-through' : '') + '">' + lvlBadge + title + autoBadge + '</div>' +
+              '<div style="font-size:.6rem;color:var(--text-muted);font-family:monospace;margin-top:2px">' + t.id + '</div>' +
+            '</div>' +
+            '<div style="font-size:.72rem;color:#fbbf24;font-weight:700;flex-shrink:0">+' + t.xp + ' XP</div>' +
+          '</div>';
+        });
+      });
+      html += '</div>';
+    }
+  } catch (e) { console.warn('[tasks]', e); }
+
+  // ── Activity summary ──
+  html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:20px">' +
+    '<div style="font-size:.85rem;font-weight:600;color:var(--text-primary);margin-bottom:12px">' + (isRu ? 'Активность' : 'Activity') + '</div>' +
+    '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">' +
+      '<div style="text-align:center;padding:12px;border-radius:10px;background:var(--bg-secondary)">' +
+        '<div style="font-size:1.1rem;font-weight:700;color:var(--text-primary)">' + s.checkins + '</div>' +
+        '<div style="font-size:.65rem;color:var(--text-muted)">' + (isRu ? 'Чекинов' : 'Check-ins') + '</div>' +
+      '</div>' +
+      '<div style="text-align:center;padding:12px;border-radius:10px;background:var(--bg-secondary)">' +
+        '<div style="font-size:1.1rem;font-weight:700;color:#f59e0b">' + s.streak + '</div>' +
+        '<div style="font-size:.65rem;color:var(--text-muted)">' + (isRu ? 'Дн. streak' : 'Day streak') + '</div>' +
+      '</div>' +
+      '<div style="text-align:center;padding:12px;border-radius:10px;background:var(--bg-secondary)">' +
+        '<div style="font-size:1.1rem;font-weight:700;color:var(--text-primary)">' + s.referrals + '</div>' +
+        '<div style="font-size:.65rem;color:var(--text-muted)">' + (isRu ? 'Рефералов' : 'Referrals') + '</div>' +
+      '</div>' +
+    '</div>' +
+  '</div>';
+
+  // ── Revenue Share (10% pool / 2yr) ── placeholder, filled async below ──
+  html += '<div id="tester-rewards-block"></div>';
+
+  html += '</div>';
+  container.innerHTML = html;
+
+  // Load rewards data asynchronously (doesn't block main UI)
+  loadTesterRewardsBlock(isRu).catch(function(e){ console.error('[TesterHub rewards]', e); });
+}
+
+async function loadTesterRewardsBlock(isRu) {
+  var block = document.getElementById('tester-rewards-block');
+  if (!block) return;
+  var profile, refLink, walletRes, snapshots;
+  try {
+    [profile, refLink, walletRes, snapshots] = await Promise.all([
+      apiRequest('GET', '/api/tester/profile'),
+      apiRequest('GET', '/api/tester/ref-link'),
+      apiRequest('GET', '/api/tester/payout-wallet'),
+      apiRequest('GET', '/api/tester/snapshots'),
+    ]);
+  } catch(e) {
+    block.innerHTML = '';
+    return;
+  }
+  var html = '';
+  var fmt = function(n, d){ return Number(n||0).toLocaleString('en-US', { maximumFractionDigits: d||0 }); };
+
+  // ═══ Revenue share hero ═══
+  if (profile && profile.ok) {
+    var p = profile.profile;
+    var sharePct = (profile.sharePercent || 0);
+    var projTon = profile.projectedAnnualTonAt10k || 0;
+    html += '<div style="background:linear-gradient(in oklab 135deg,rgba(0,170,255,0.06),rgba(var(--accent-r,139),var(--accent-g,92),var(--accent-b,246),0.06));border:1px solid rgba(0,170,255,0.2);border-radius:16px;padding:20px;margin-bottom:20px">' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">' +
+        '<span style="font-size:1.2rem">💰</span>' +
+        '<div style="font-size:.95rem;font-weight:700;color:var(--text-primary)">' + (isRu ? 'Доля в 10% пуле' : 'Revenue share (10% pool)') + '</div>' +
+        '<span style="padding:3px 8px;border-radius:10px;background:rgba(0,170,255,0.15);color:#00aaff;font-size:.62rem;font-weight:700;text-transform:uppercase">2 yr</span>' +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px">' +
+        '<div style="text-align:center;padding:14px 10px;background:var(--bg-secondary);border-radius:12px">' +
+          '<div style="font-size:1.5rem;font-weight:800;color:#00aaff">' + sharePct.toFixed(2) + '%</div>' +
+          '<div style="font-size:.65rem;color:var(--text-muted);margin-top:4px">' + (isRu ? 'Твоя доля' : 'Your share') + '</div>' +
+        '</div>' +
+        '<div style="text-align:center;padding:14px 10px;background:var(--bg-secondary);border-radius:12px">' +
+          '<div style="font-size:1.5rem;font-weight:800;color:#a78bfa">×' + p.effectiveMultiplier + '</div>' +
+          '<div style="font-size:.65rem;color:var(--text-muted);margin-top:4px">' + (isRu ? 'Множитель' : 'Multiplier') + (p.effectiveMultiplier < p.baseMultiplier ? ' ⚠️' : '') + '</div>' +
+        '</div>' +
+        '<div style="text-align:center;padding:14px 10px;background:var(--bg-secondary);border-radius:12px">' +
+          '<div style="font-size:1.5rem;font-weight:800;color:#fbbf24">' + fmt(projTon, 1) + '</div>' +
+          '<div style="font-size:.65rem;color:var(--text-muted);margin-top:4px">TON/' + (isRu ? 'год*' : 'yr*') + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div style="display:flex;justify-content:space-between;font-size:.72rem;color:var(--text-muted);padding-top:10px;border-top:1px solid var(--border)">' +
+        '<span>' + (isRu ? 'Effective XP:' : 'Effective XP:') + ' <b style="color:var(--text-primary)">' + fmt(p.effectiveXp) + '</b></span>' +
+        '<span>' + (isRu ? 'Всего в пуле:' : 'Pool total:') + ' <b style="color:var(--text-primary)">' + fmt(profile.totalEffectiveXp) + '</b></span>' +
+        '<span>' + (isRu ? 'Тестеров:' : 'Testers:') + ' <b style="color:var(--text-primary)">' + profile.testerCount + '</b></span>' +
+      '</div>' +
+      '<div style="margin-top:10px;font-size:.65rem;color:var(--text-muted);line-height:1.5">' +
+        '*' + (isRu ? 'Прогноз при 10 000 TON годовой выручки. Первый снапшот: ' : 'Projected at 10,000 TON/yr gross. First snapshot: ') + profile.firstSnapshotDate + '. ' +
+        (isRu ? 'Выплаты квартально на TON-кошелёк.' : 'Quarterly payout to TON wallet.') +
+      '</div>' +
+    '</div>';
+  }
+
+  // ═══ Referral link ═══
+  if (refLink && refLink.ok) {
+    html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:20px">' +
+      '<div style="font-size:.85rem;font-weight:700;color:var(--text-primary);margin-bottom:6px">🎟 ' + (isRu ? 'Реферальная ссылка' : 'Referral link') + '</div>' +
+      '<div style="font-size:.72rem;color:var(--text-muted);margin-bottom:12px">' +
+        (isRu ? 'Друг регится → +20 XP тебе. Его реферал → +5 XP. 10% его трат — навсегда.' : 'Friend joins → +20 XP. Their referral → +5 XP. 10% of their spend — forever.') +
+      '</div>' +
+      '<div style="display:flex;gap:8px;margin-bottom:12px">' +
+        '<input id="ref-link-input" readonly value="' + escHtml(refLink.url) + '" style="flex:1;padding:9px 12px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;color:var(--text-primary);font-family:monospace;font-size:.72rem;outline:none">' +
+        '<button onclick="copyTesterRefLink()" style="padding:9px 16px;border:none;background:var(--primary);color:white;border-radius:10px;font-size:.75rem;font-weight:600;cursor:pointer">' + (isRu ? 'Копировать' : 'Copy') + '</button>' +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">' +
+        '<div style="padding:10px;background:var(--bg-secondary);border-radius:10px;text-align:center">' +
+          '<div style="font-size:1.15rem;font-weight:700;color:#00aaff">' + refLink.refCount + '</div>' +
+          '<div style="font-size:.62rem;color:var(--text-muted)">' + (isRu ? 'Приглашено' : 'Referred') + '</div>' +
+        '</div>' +
+        '<div style="padding:10px;background:var(--bg-secondary);border-radius:10px;text-align:center">' +
+          '<div style="font-size:1.15rem;font-weight:700;color:#fbbf24">' + fmt(refLink.totalRefEarningsTon, 2) + ' TON</div>' +
+          '<div style="font-size:.62rem;color:var(--text-muted)">' + (isRu ? 'Заработано' : 'Earned') + '</div>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }
+
+  // ═══ Payout wallet ═══
+  var currentWallet = (walletRes && walletRes.ok) ? (walletRes.wallet || '') : '';
+  html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:20px">' +
+    '<div style="font-size:.85rem;font-weight:700;color:var(--text-primary);margin-bottom:6px">💳 ' + (isRu ? 'Кошелёк для выплат' : 'Payout wallet') + '</div>' +
+    '<div style="font-size:.72rem;color:var(--text-muted);margin-bottom:12px">' +
+      (isRu ? 'TON-адрес для квартальных выплат. Можно изменить до даты выплаты.' : 'TON address for quarterly payouts. Can be changed before payout date.') +
+    '</div>' +
+    '<div style="display:flex;gap:8px">' +
+      '<input id="payout-wallet-input" placeholder="UQ... / EQ... / 0:hex" value="' + escHtml(currentWallet) + '" style="flex:1;padding:9px 12px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;color:var(--text-primary);font-family:monospace;font-size:.72rem;outline:none">' +
+      '<button onclick="saveTesterPayoutWallet()" style="padding:9px 16px;border:none;background:var(--primary);color:white;border-radius:10px;font-size:.75rem;font-weight:600;cursor:pointer">' + (isRu ? 'Сохранить' : 'Save') + '</button>' +
+    '</div>' +
+    '<div id="payout-wallet-msg" style="font-size:.7rem;margin-top:8px"></div>' +
+  '</div>';
+
+  // ═══ Snapshots history ═══
+  if (snapshots && snapshots.ok && snapshots.snapshots && snapshots.snapshots.length) {
+    html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:20px">' +
+      '<div style="font-size:.85rem;font-weight:700;color:var(--text-primary);margin-bottom:12px">📸 ' + (isRu ? 'История снапшотов' : 'Snapshot history') + '</div>';
+    html += '<div style="display:grid;grid-template-columns:1fr 50px 70px 60px 80px;gap:8px;font-size:.62rem;color:var(--text-muted);text-transform:uppercase;padding:0 8px 8px;border-bottom:1px solid var(--border);margin-bottom:6px">' +
+      '<span>' + (isRu ? 'Дата' : 'Date') + '</span><span>Lv</span><span>XP</span><span>×</span><span style="text-align:right">Eff</span>' +
+    '</div>';
+    snapshots.snapshots.slice(0, 12).forEach(function(sn){
+      var d = new Date(sn.snapshot_date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'});
+      html += '<div style="display:grid;grid-template-columns:1fr 50px 70px 60px 80px;gap:8px;font-size:.75rem;padding:7px 8px;border-radius:8px;align-items:center">' +
+        '<span style="color:var(--text-muted)">' + d + '</span>' +
+        '<span style="color:var(--text-primary);font-weight:600">' + sn.level + '</span>' +
+        '<span style="color:var(--text-primary)">' + fmt(sn.xp) + '</span>' +
+        '<span style="color:var(--text-muted)">×' + sn.multiplier + '</span>' +
+        '<span style="text-align:right;color:#00aaff;font-weight:600">' + fmt(sn.effective_xp) + '</span>' +
+      '</div>';
+    });
+    html += '</div>';
+  } else {
+    html += '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:20px;text-align:center;color:var(--text-muted);font-size:.78rem">' +
+      '📸 ' + (isRu ? 'Снапшотов пока нет. Первый: 1 мая 2026, 00:00 MSK' : 'No snapshots yet. First: 1 May 2026, 00:00 MSK') +
+    '</div>';
+  }
+
+  // ═══ Founders wall link ═══
+  html += '<div style="text-align:center;margin-bottom:16px">' +
+    '<a href="/founders.html" target="_blank" style="display:inline-block;padding:10px 20px;border-radius:20px;background:rgba(251,191,36,0.1);color:#fbbf24;border:1px solid rgba(251,191,36,0.3);font-size:.78rem;font-weight:600;text-decoration:none">🏆 ' + (isRu ? 'Founders Wall' : 'Founders Wall') + '</a>' +
+  '</div>';
+
+  block.innerHTML = html;
+}
+
+function copyTesterRefLink() {
+  var inp = document.getElementById('ref-link-input');
+  if (!inp) return;
+  inp.select();
+  try {
+    navigator.clipboard.writeText(inp.value);
+    toast(currentLang === 'ru' ? 'Скопировано!' : 'Copied!', 'success');
+  } catch(e) { toast('Copy failed', 'error'); }
+}
+
+async function saveTesterPayoutWallet() {
+  var inp = document.getElementById('payout-wallet-input');
+  var msgEl = document.getElementById('payout-wallet-msg');
+  if (!inp) return;
+  var wallet = (inp.value || '').trim();
+  if (!wallet) { if (msgEl) { msgEl.style.color='#ef4444'; msgEl.textContent='Empty'; } return; }
+  try {
+    var data = await apiRequest('POST', '/api/tester/payout-wallet', { wallet: wallet });
+    if (data.ok) {
+      if (msgEl) { msgEl.style.color='#10b981'; msgEl.textContent = currentLang === 'ru' ? '✓ Сохранено' : '✓ Saved'; }
+      toast(currentLang === 'ru' ? 'Кошелёк сохранён' : 'Wallet saved', 'success');
+    } else {
+      if (msgEl) { msgEl.style.color='#ef4444'; msgEl.textContent = data.error || 'Failed'; }
+    }
+  } catch(e) {
+    if (msgEl) { msgEl.style.color='#ef4444'; msgEl.textContent = e.message; }
+  }
+}
+
+async function testerCheckin() {
+  try {
+    var data = await apiRequest('POST', '/api/beta/checkin');
+    if (data.ok) {
+      toast(currentLang === 'ru' ? '+1 очко! Streak: ' + data.streak + ' дн.' : '+1 pt! Streak: ' + data.streak + ' days', 'success');
+      loadTesterHub();
+    } else {
+      toast(data.error || 'Error', 'warning');
+    }
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+// Task click shows submission instructions — NOT a fake checkmark.
+// Real completion happens via /feedback in the bot with [task:ID] tag,
+// then admin verification. Clicking here never awards XP or changes server state.
+function toggleTask(taskId, el) {
+  var isRu = currentLang === 'ru';
+  var botUrl = 'https://t.me/TonAgentPlatformBot?start=task_' + encodeURIComponent(taskId);
+  var title = isRu ? 'Как сдать задание' : 'How to submit';
+  var body = isRu
+    ? '<p style="margin-bottom:14px;color:var(--text-muted);line-height:1.6">'
+      + 'Галочки здесь <b>ничего не зачисляют</b>. XP начисляется только после проверки админом.</p>'
+      + '<ol style="margin:0 0 18px 20px;line-height:1.8;color:var(--text-primary)">'
+      + '<li>Выполни задание</li>'
+      + '<li>Открой <b>@TonAgentPlatformBot</b></li>'
+      + '<li>Отправь <code>/feedback</code> со скриншотом</li>'
+      + '<li>В тексте укажи тег <code>[task:' + escHtml(taskId) + ']</code></li>'
+      + '<li>Админ проверит и начислит XP</li>'
+      + '</ol>'
+      + '<div style="padding:10px 14px;background:var(--bg-secondary);border-radius:10px;font-size:.78rem;color:var(--text-muted);margin-bottom:18px">'
+      + '💡 <b>ID задания:</b> <code>' + escHtml(taskId) + '</code><br>'
+      + 'Скопируй и укажи в сообщении фидбека.</div>'
+    : '<p style="margin-bottom:14px;color:var(--text-muted);line-height:1.6">'
+      + 'Checkmarks here <b>award nothing</b>. XP is credited only after admin verification.</p>'
+      + '<ol style="margin:0 0 18px 20px;line-height:1.8;color:var(--text-primary)">'
+      + '<li>Complete the task</li>'
+      + '<li>Open <b>@TonAgentPlatformBot</b></li>'
+      + '<li>Send <code>/feedback</code> with a screenshot</li>'
+      + '<li>Include the tag <code>[task:' + escHtml(taskId) + ']</code></li>'
+      + '<li>Admin will review and credit XP</li>'
+      + '</ol>'
+      + '<div style="padding:10px 14px;background:var(--bg-secondary);border-radius:10px;font-size:.78rem;color:var(--text-muted);margin-bottom:18px">'
+      + '💡 <b>Task ID:</b> <code>' + escHtml(taskId) + '</code><br>'
+      + 'Copy this and mention it in your feedback message.</div>';
+
+  // Simple modal — uses existing styles if available, otherwise inline
+  var existing = document.getElementById('task-submit-modal');
+  if (existing) existing.remove();
+
+  var modal = document.createElement('div');
+  modal.id = 'task-submit-modal';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.6);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:20px;animation:ds-fade-in .2s ease-out';
+  modal.innerHTML = '<div style="max-width:460px;width:100%;background:var(--bg-primary);border:1px solid var(--border);border-radius:16px;padding:24px;box-shadow:0 32px 80px rgba(0,0,0,0.5)">'
+    + '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">'
+    + '<h3 style="margin:0;font-size:1.1rem;font-weight:700;color:var(--text-primary)">' + title + '</h3>'
+    + '<button onclick="document.getElementById(\'task-submit-modal\').remove()" style="background:none;border:none;color:var(--text-muted);font-size:1.5rem;cursor:pointer;padding:0;line-height:1">&times;</button>'
+    + '</div>'
+    + body
+    + '<div style="display:flex;gap:10px">'
+    + '<a href="' + botUrl + '" target="_blank" style="flex:1;padding:12px;background:linear-gradient(in oklab 135deg,var(--primary),var(--accent));color:white;border-radius:10px;font-size:.82rem;font-weight:600;text-decoration:none;text-align:center">'
+    + (isRu ? 'Открыть бота' : 'Open bot') + ' →</a>'
+    + '<button onclick="navigator.clipboard.writeText(\'[task:' + taskId + ']\');toast(\'' + (isRu ? 'Скопировано' : 'Copied') + '\',\'success\')" style="padding:12px 18px;background:rgba(255,255,255,0.05);color:var(--text-primary);border:1px solid var(--border);border-radius:10px;font-size:.82rem;font-weight:600;cursor:pointer">'
+    + (isRu ? 'Копировать тег' : 'Copy tag') + '</button>'
+    + '</div></div>';
+  modal.onclick = function(e){ if (e.target === modal) modal.remove(); };
+  document.body.appendChild(modal);
+}
+
+async function testerBuyItem(itemId) {
+  try {
+    var data = await apiRequest('POST', '/api/beta/shop/buy', { itemId: itemId });
+    if (data.ok) {
+      toast(currentLang === 'ru' ? 'Куплено!' : 'Purchased!', 'success');
+      loadTesterHub();
+    } else {
+      toast(data.error || 'Error', 'warning');
+    }
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+// ── Feedback FAB (floating action button) ──
+function initFeedbackFAB() {
+  if (document.getElementById('feedback-fab')) return;
+  var fab = document.createElement('button');
+  fab.id = 'feedback-fab';
+  fab.innerHTML = IC.bug;
+  fab.title = currentLang === 'ru' ? 'Отправить фидбек' : 'Send feedback';
+  fab.style.cssText = 'position:fixed;bottom:24px;right:24px;width:52px;height:52px;border-radius:50%;background:linear-gradient(in oklab 135deg,var(--primary),var(--primary-dark));color:white;border:none;font-size:1.4rem;cursor:pointer;z-index:9999;box-shadow:0 4px 12px var(--accent-glow);transition:all .2s;display:flex;align-items:center;justify-content:center';
+  fab.onmouseenter = function() { fab.style.transform = 'scale(1.1)'; fab.style.boxShadow = '0 6px 16px var(--accent-glow)'; };
+  fab.onmouseleave = function() { fab.style.transform = 'scale(1)'; fab.style.boxShadow = '0 4px 12px var(--accent-glow)'; };
+  fab.onclick = function() { openFeedbackModal(); };
+  document.body.appendChild(fab);
+  // Check for unread replies periodically
+  checkFeedbackReplies();
+  setInterval(checkFeedbackReplies, 5 * 60 * 1000); // every 5 min
+  setTimeout(checkTesterLevelUp, 3000);
+}
+
+// Check for level-up on page load
+async function checkTesterLevelUp() {
+  try {
+    var data = await apiRequest('GET', '/api/beta/stats');
+    if (!data.ok || !data.level) return;
+    var lastLevel = parseInt(localStorage.getItem('tester_level') || '0');
+    if (data.level > lastLevel && lastLevel > 0) {
+      // Level up!
+      showLevelUpModal(data.levelName, data.levelNameRu, data.level);
+    }
+    localStorage.setItem('tester_level', String(data.level));
+  } catch {}
+}
+
+function showLevelUpModal(nameEn, nameRu, level) {
+  var isRu = currentLang === 'ru';
+  var name = isRu ? nameRu : nameEn;
+  var colors = ['#6b7280', '#3b82f6', '#10b981', '#f59e0b', '#a855f7', '#ef4444'];
+  var color = colors[Math.min(level - 1, 5)];
+
+  var overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:20000;display:flex;align-items:center;justify-content:center;animation:fadeIn .3s';
+  overlay.innerHTML = '<div style="background:var(--bg-secondary);border:2px solid ' + color + ';border-radius:24px;padding:40px;text-align:center;max-width:400px;animation:slideUp .4s ease">' +
+    '<div style="width:80px;height:80px;border-radius:50%;background:' + color + '20;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:2rem;font-weight:800;color:' + color + '">' + level + '</div>' +
+    '<h2 style="margin:0 0 8px;font-size:1.4rem;color:var(--text-primary)">' + (isRu ? 'Новый уровень!' : 'Level Up!') + '</h2>' +
+    '<div style="font-size:1.1rem;font-weight:700;color:' + color + ';margin-bottom:16px">' + name + '</div>' +
+    '<p style="font-size:.85rem;color:var(--text-muted);margin-bottom:24px">' + (isRu ? 'Продолжайте тестировать — новые награды ждут!' : 'Keep testing — more rewards await!') + '</p>' +
+    '<button onclick="this.closest(\'div[style*=position:fixed]\').remove()" style="padding:10px 30px;border-radius:20px;border:none;background:' + color + ';color:white;font-size:.9rem;font-weight:600;cursor:pointer">' + (isRu ? 'Отлично!' : 'Awesome!') + '</button>' +
+  '</div>';
+  overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+  document.body.appendChild(overlay);
+}
+
+async function checkFeedbackReplies() {
+  try {
+    var data = await apiRequest('GET', '/api/feedback');
+    if (!data.ok || !data.feedback) return;
+    var lastSeen = parseInt(localStorage.getItem('feedback_replies_seen') || '0');
+    var newReplies = data.feedback.filter(function(f) {
+      return f.admin_reply && new Date(f.resolved_at || f.created_at).getTime() > lastSeen;
+    });
+    var fab = document.getElementById('feedback-fab');
+    if (!fab) return;
+    // Show/hide badge
+    var badge = document.getElementById('feedback-badge');
+    if (newReplies.length > 0) {
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.id = 'feedback-badge';
+        badge.style.cssText = 'position:absolute;top:-2px;right:-2px;background:#ef4444;color:white;font-size:.6rem;font-weight:700;min-width:16px;height:16px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 4px';
+        fab.style.position = 'fixed'; // ensure relative for badge
+        fab.appendChild(badge);
+      }
+      badge.textContent = newReplies.length;
+      // Show toast for first unseen reply
+      if (newReplies.length > 0 && !window._feedbackToastShown) {
+        window._feedbackToastShown = true;
+        var isRu = currentLang === 'ru';
+        toast(isRu ? 'You have ' + newReplies.length + ' new reply on your feedback' : 'You have ' + newReplies.length + ' reply on your feedback', 'info');
+      }
+    } else if (badge) {
+      badge.remove();
+    }
+  } catch {}
+}
+
+function markFeedbackSeen() {
+  localStorage.setItem('feedback_replies_seen', String(Date.now()));
+  var badge = document.getElementById('feedback-badge');
+  if (badge) badge.remove();
+  window._feedbackToastShown = false;
+}
+
+function openFeedbackModal() {
+  markFeedbackSeen();
+  var existing = document.getElementById('feedback-modal');
+  if (existing) existing.remove();
+  var isRu = currentLang === 'ru';
+  var modal = document.createElement('div');
+  modal.id = 'feedback-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);z-index:10000;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = '<div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:16px;padding:28px;width:90%;max-width:480px;box-shadow:0 20px 60px rgba(0,0,0,0.5)">' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">' +
+      '<h3 style="margin:0;font-size:1.1rem;color:var(--text-primary)">' + IC.clipboard + ' ' + (isRu ? 'Отправить фидбек' : 'Send Feedback') + '</h3>' +
+      '<button onclick="document.getElementById(\'feedback-modal\').remove()" style="background:none;border:none;color:var(--text-muted);font-size:1.2rem;cursor:pointer">&times;</button>' +
+    '</div>' +
+    '<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">' +
+      '<button class="fb-type-btn" data-type="bug" style="padding:8px 16px;border-radius:10px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);cursor:pointer;font-size:.85rem;transition:all .2s" onclick="selectFbType(this)">' + IC.bug + ' ' + (isRu ? 'Баг' : 'Bug') + '</button>' +
+      '<button class="fb-type-btn" data-type="feature" style="padding:8px 16px;border-radius:10px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);cursor:pointer;font-size:.85rem;transition:all .2s" onclick="selectFbType(this)">' + IC.lightbulb + ' ' + (isRu ? 'Фича' : 'Feature') + '</button>' +
+      '<button class="fb-type-btn" data-type="support" style="padding:8px 16px;border-radius:10px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);cursor:pointer;font-size:.85rem;transition:all .2s" onclick="selectFbType(this)">' + IC.lifebuoy + ' ' + (isRu ? 'Саппорт' : 'Support') + '</button>' +
+      '<button class="fb-type-btn" data-type="general" style="padding:8px 16px;border-radius:10px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);cursor:pointer;font-size:.85rem;transition:all .2s" onclick="selectFbType(this)">' + IC.chat + ' ' + (isRu ? 'Общее' : 'General') + '</button>' +
+      '<button class="fb-type-btn" data-type="critical" style="padding:8px 16px;border-radius:10px;border:1px solid rgba(239,68,68,0.3);background:rgba(239,68,68,0.08);color:#ef4444;cursor:pointer;font-size:.85rem;transition:all .2s" onclick="selectFbType(this)">' + IC.fire + ' ' + (isRu ? 'Critical' : 'Critical') + '</button>' +
+    '</div>' +
+    '<textarea id="fb-message" placeholder="' + (isRu ? 'Опишите проблему или предложение...' : 'Describe the issue or suggestion...') + '" style="width:100%;height:120px;background:var(--bg-primary);border:1px solid var(--border);border-radius:10px;padding:12px;color:var(--text-primary);font-size:.88rem;resize:vertical;font-family:inherit;box-sizing:border-box"></textarea>' +
+    '<div style="margin-top:12px;display:flex;align-items:center;gap:10px">' +
+      '<label for="fb-screenshot" style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:10px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-secondary);cursor:pointer;font-size:.83rem;transition:all .2s">' +
+        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>' +
+        (isRu ? 'Скриншот' : 'Screenshot') +
+      '</label>' +
+      '<input type="file" id="fb-screenshot" accept="image/*" style="display:none" onchange="previewFbScreenshot(this)">' +
+      '<span id="fb-screenshot-name" style="font-size:.8rem;color:var(--text-muted)"></span>' +
+      '<img id="fb-screenshot-preview" style="display:none;max-height:48px;border-radius:6px;border:1px solid var(--border)" />' +
+    '</div>' +
+    '<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px">' +
+      '<button onclick="document.getElementById(\'feedback-modal\').remove()" style="padding:10px 20px;border-radius:10px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-muted);cursor:pointer;font-size:.85rem">' + (isRu ? 'Отмена' : 'Cancel') + '</button>' +
+      '<button id="fb-submit-btn" onclick="submitFeedback()" style="padding:10px 24px;border-radius:10px;border:none;background:linear-gradient(in oklab 135deg,var(--primary),var(--primary-dark));color:white;cursor:pointer;font-size:.85rem;font-weight:600">' + (isRu ? 'Отправить' : 'Send') + '</button>' +
+    '</div>' +
+  '</div>';
+  modal.onclick = function(e) { if (e.target === modal) modal.remove(); };
+  document.body.appendChild(modal);
+  // Pre-select bug type
+  var bugBtn = modal.querySelector('[data-type="bug"]');
+  if (bugBtn) selectFbType(bugBtn);
+}
+
+var _selectedFbType = 'bug';
+var _fbScreenshotBase64 = null;
+
+function previewFbScreenshot(input) {
+  var file = input.files && input.files[0];
+  var nameEl = document.getElementById('fb-screenshot-name');
+  var previewEl = document.getElementById('fb-screenshot-preview');
+  if (!file) { _fbScreenshotBase64 = null; if (nameEl) nameEl.textContent = ''; if (previewEl) previewEl.style.display = 'none'; return; }
+  if (file.size > 5 * 1024 * 1024) { toast(currentLang === 'ru' ? 'Макс. 5 МБ' : 'Max 5 MB', 'error'); input.value = ''; return; }
+  if (nameEl) nameEl.textContent = file.name;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    _fbScreenshotBase64 = e.target.result;
+    if (previewEl) { previewEl.src = _fbScreenshotBase64; previewEl.style.display = 'block'; }
+  };
+  reader.readAsDataURL(file);
+}
+
+function selectFbType(btn) {
+  _selectedFbType = btn.getAttribute('data-type');
+  document.querySelectorAll('.fb-type-btn').forEach(function(b) {
+    b.style.background = 'var(--bg-primary)';
+    b.style.borderColor = 'var(--border)';
+  });
+  btn.style.background = 'rgba(var(--accent-r,99),var(--accent-g,102),var(--accent-b,241),0.15)';
+  btn.style.borderColor = '#6366f1';
+}
+
+async function submitFeedback() {
+  var msg = document.getElementById('fb-message');
+  if (!msg || !msg.value.trim()) { toast(currentLang === 'ru' ? 'Опишите проблему' : 'Describe the issue', 'error'); return; }
+  var btn = document.getElementById('fb-submit-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '...'; }
+  try {
+    var metadata = { page: window.location.pathname, agentId: _detailAgentId || null, userAgent: navigator.userAgent };
+    var body = { type: _selectedFbType, message: msg.value.trim(), agentId: _detailAgentId || undefined, metadata: metadata };
+    if (_fbScreenshotBase64) body.screenshot = _fbScreenshotBase64;
+    var data = await apiRequest('POST', '/api/feedback', body);
+    if (data.ok) {
+      var ptsMsg = data.pointsAwarded ? ' (+' + data.pointsAwarded + ' pts)' : '';
+      toast((currentLang === 'ru' ? 'Фидбек отправлен!' : 'Feedback sent!') + ptsMsg, 'success');
+      var modal = document.getElementById('feedback-modal');
+      if (modal) modal.remove();
+    } else {
+      toast(data.error || 'Error', 'error');
+    }
+  } catch(e) { toast(e.message, 'error'); }
+  if (btn) { btn.disabled = false; btn.textContent = currentLang === 'ru' ? 'Отправить' : 'Send'; }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AGENT SKILLS (agentskills.io) — Studio UI
+// ═══════════════════════════════════════════════════════════════════════════
+
+var _skillsCache = [];
+var _skillsFilter = 'all';
+
+async function loadSkillsPage() {
+  var grid = document.getElementById('skills-grid');
+  if (!grid) return;
+  grid.innerHTML = '<div class="loading-placeholder">' + (currentLang === 'ru' ? 'Загрузка...' : 'Loading...') + '</div>';
+  try {
+    var data = await apiRequest('GET', '/api/skills');
+    _skillsCache = (data && data.skills) || [];
+    renderSkills();
+  } catch (e) {
+    grid.innerHTML = '<div class="empty-state"><p>' + escHtml(e.message || 'Error') + '</p></div>';
+  }
+}
+
+function filterSkills(cat) {
+  _skillsFilter = cat;
+  document.querySelectorAll('#skills-tabs .mkt-tab').forEach(function(b) {
+    b.classList.toggle('active', b.getAttribute('data-cat') === cat);
+  });
+  renderSkills();
+}
+
+function renderSkills() {
+  var grid = document.getElementById('skills-grid');
+  if (!grid) return;
+  var filtered = _skillsCache.filter(function(s) {
+    if (_skillsFilter === 'all') return true;
+    return s.source === _skillsFilter;
+  });
+  if (filtered.length === 0) {
+    grid.innerHTML = '<div class="empty-state"><p>' +
+      (currentLang === 'ru' ? 'Нет скиллов' : 'No skills') + '</p></div>';
+    return;
+  }
+  var html = filtered.map(function(s) {
+    var badgeColor = s.source === 'builtin' ? '#00a8ff' :
+                     s.source === 'user' ? '#22c55e' : '#8b5cf6';
+    var badgeLabel = s.source === 'builtin' ? 'BUILT-IN' :
+                     s.source === 'user' ? 'MINE' : 'PUBLIC';
+    var cat = (s.category || s.metadata && s.metadata.category || '').toUpperCase();
+    var ver = s.version || '1.0';
+    return '' +
+      '<div class="marketplace-card skill-card" onclick="openSkillDetail(' + JSON.stringify(s.name) + ')" style="cursor:pointer">' +
+        '<div class="mkt-card-header" style="display:flex;justify-content:space-between;align-items:center;gap:8px">' +
+          '<strong style="font-size:1rem">' + escHtml(s.name) + '</strong>' +
+          '<span style="background:' + badgeColor + '22;color:' + badgeColor + ';padding:2px 8px;border-radius:6px;font-size:.65rem;font-weight:700">' + badgeLabel + '</span>' +
+        '</div>' +
+        '<div class="mkt-card-desc" style="margin-top:8px;font-size:.85rem;color:var(--text-muted);min-height:60px">' +
+          escHtml((s.description || '').slice(0, 220)) +
+        '</div>' +
+        '<div class="mkt-card-footer" style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:.7rem;color:var(--text-dim)">' +
+          '<span>' + (cat ? cat + ' · ' : '') + 'v' + escHtml(ver) + '</span>' +
+          (s.compatibility ? '<span title="' + escHtml(s.compatibility) + '" style="color:var(--warning)">⚠ deps</span>' : '') +
+        '</div>' +
+      '</div>';
+  }).join('');
+  grid.innerHTML = html;
+}
+
+async function openSkillDetail(name) {
+  try {
+    var data = await apiRequest('GET', '/api/skills/' + encodeURIComponent(name));
+    if (!data || !data.skill) { toast('Skill not found', 'error'); return; }
+    var s = data.skill;
+    var isOwn = s.source === 'user';
+    // For owner-skills: get current is_public from cache (loaded by listSkillsForAgent)
+    var skillMeta = (_skillsCache || []).find(function(x) { return x.name === name; }) || {};
+    var isPublic = !!skillMeta.is_public;  // may be undefined initially
+    var publishBtn = isOwn
+      ? '<button class="btn btn-ghost btn-sm" onclick="toggleSkillPublish(' + JSON.stringify(name) + ', ' + (!isPublic) + ')">' +
+        (isPublic
+          ? (currentLang === 'ru' ? '🔒 Сделать приватным' : '🔒 Make Private')
+          : (currentLang === 'ru' ? '🌍 Опубликовать' : '🌍 Publish')) +
+        '</button>'
+      : '';
+    var deleteBtn = isOwn
+      ? '<button class="btn btn-ghost btn-sm" style="color:var(--error)" onclick="deleteSkill(' + JSON.stringify(name) + ')">' +
+        (currentLang === 'ru' ? 'Удалить' : 'Delete') + '</button>'
+      : '';
+    var body =
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">' +
+        '<span class="badge" style="background:rgba(var(--accent-r,0),var(--accent-g,168),var(--accent-b,255),.15);color:#00a8ff;padding:3px 8px;border-radius:6px;font-size:.7rem">' + s.source.toUpperCase() + '</span>' +
+        '<span class="badge" style="background:rgba(var(--accent-r,139),var(--accent-g,92),var(--accent-b,246),.15);color:#8b5cf6;padding:3px 8px;border-radius:6px;font-size:.7rem">v' + escHtml(s.version || '1.0') + '</span>' +
+        (s.license ? '<span class="badge" style="background:rgba(34,197,94,.15);color:#22c55e;padding:3px 8px;border-radius:6px;font-size:.7rem">' + escHtml(s.license.slice(0, 30)) + '</span>' : '') +
+      '</div>' +
+      '<p style="color:var(--text-muted);margin-bottom:16px">' + escHtml(s.description) + '</p>' +
+      (s.compatibility ? '<div style="background:rgba(245,158,11,.08);border-left:3px solid #f59e0b;padding:8px 12px;margin-bottom:12px;font-size:.85rem"><b>⚠ Requires:</b> ' + escHtml(s.compatibility) + '</div>' : '') +
+      '<pre style="background:var(--bg-secondary);padding:12px;border-radius:8px;max-height:50vh;overflow:auto;font-size:.8rem;white-space:pre-wrap;font-family:Inter,sans-serif">' + escHtml(s.body) + '</pre>';
+    var footer =
+      '<button class="btn btn-ghost" onclick="closeModal()">' + (currentLang === 'ru' ? 'Закрыть' : 'Close') + '</button>' +
+      publishBtn + deleteBtn;
+    openModal(escHtml(name), body, footer);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function toggleSkillPublish(name, makePublic) {
+  try {
+    var data = await apiRequest('POST', '/api/skills/' + encodeURIComponent(name) + '/publish', { isPublic: makePublic });
+    if (data && data.ok) {
+      toast(
+        makePublic
+          ? (currentLang === 'ru' ? 'Скилл опубликован' : 'Skill published')
+          : (currentLang === 'ru' ? 'Скилл скрыт' : 'Skill unpublished'),
+        'success'
+      );
+      closeModal();
+      loadSkillsPage();
+    } else {
+      toast((data && data.error) || 'Error', 'error');
+    }
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function deleteSkill(name) {
+  if (!confirm((currentLang === 'ru' ? 'Удалить скилл ' : 'Delete skill ') + '"' + name + '"?')) return;
+  try {
+    await apiRequest('DELETE', '/api/skills/' + encodeURIComponent(name));
+    toast(currentLang === 'ru' ? 'Удалено' : 'Deleted', 'success');
+    closeModal();
+    loadSkillsPage();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function openCreateSkillModal() {
+  var template = '---\nname: my-skill\ndescription: What it does and when to use it. Be specific about keywords that should trigger this skill.\nmetadata:\n  category: custom\n  version: "1.0"\n---\n\n# My Skill\n\nReplace this body with your skill instructions.\n\n## When to use\n\n- Trigger condition 1\n- Trigger condition 2\n\n## Tool selection\n\n- Use: ...\n- Don\'t use: ...\n';
+  var body =
+    '<p style="color:var(--text-muted);font-size:.85rem;margin-bottom:12px">' +
+      (currentLang === 'ru'
+        ? 'SKILL.md в формате <a href="https://agentskills.io/specification" target="_blank" style="color:var(--primary)">agentskills.io</a> — YAML frontmatter + Markdown тело.'
+        : 'SKILL.md per <a href="https://agentskills.io/specification" target="_blank" style="color:var(--primary)">agentskills.io</a> spec — YAML frontmatter + Markdown body.') +
+    '</p>' +
+    '<label style="display:flex;align-items:center;gap:6px;font-size:.85rem;margin-bottom:8px">' +
+      '<input type="checkbox" id="skill-public-cb"> ' +
+      (currentLang === 'ru' ? 'Опубликовать в маркетплейс (доступно всем)' : 'Publish to marketplace (visible to all users)') +
+    '</label>' +
+    '<textarea id="skill-md-input" style="width:100%;min-height:380px;font-family:JetBrains Mono,monospace;font-size:.8rem;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text-primary)">' + escHtml(template) + '</textarea>';
+  var footer =
+    '<button class="btn btn-ghost" onclick="closeModal()">' + (currentLang === 'ru' ? 'Отмена' : 'Cancel') + '</button>' +
+    '<button class="btn btn-primary" onclick="saveNewSkill()">' + (currentLang === 'ru' ? 'Сохранить' : 'Save') + '</button>';
+  openModal(currentLang === 'ru' ? 'Новый скилл' : 'New Skill', body, footer);
+}
+
+async function saveNewSkill() {
+  var skillMd = (document.getElementById('skill-md-input') || {}).value || '';
+  var isPublic = (document.getElementById('skill-public-cb') || {}).checked || false;
+  if (skillMd.trim().length < 20) { toast('SKILL.md too short', 'error'); return; }
+  try {
+    var data = await apiRequest('POST', '/api/skills', { skillMd: skillMd, isPublic: isPublic });
+    if (data && data.ok) {
+      toast(currentLang === 'ru' ? 'Сохранено' : 'Saved', 'success');
+      closeModal();
+      loadSkillsPage();
+    } else {
+      toast((data && data.error) || 'Error', 'error');
+    }
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function openImportSkillModal() {
+  var body =
+    '<p style="color:var(--text-muted);font-size:.85rem;margin-bottom:12px">' +
+      (currentLang === 'ru'
+        ? 'Вставь raw URL к SKILL.md на GitHub (raw.githubusercontent.com/...)'
+        : 'Paste raw URL to a SKILL.md on GitHub (raw.githubusercontent.com/...)') +
+    '</p>' +
+    '<input type="text" id="skill-import-url" placeholder="https://raw.githubusercontent.com/..." ' +
+    'style="width:100%;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text-primary);font-family:JetBrains Mono,monospace;font-size:.8rem">';
+  var footer =
+    '<button class="btn btn-ghost" onclick="closeModal()">' + (currentLang === 'ru' ? 'Отмена' : 'Cancel') + '</button>' +
+    '<button class="btn btn-primary" onclick="importSkillFromUrl()">' + (currentLang === 'ru' ? 'Импортировать' : 'Import') + '</button>';
+  openModal(currentLang === 'ru' ? 'Импорт скилла' : 'Import Skill', body, footer);
+}
+
+// ── Per-agent skill toggle (agent settings → Skills tab) ───────────────────
+
+async function loadAgentSkills(agentId) {
+  var container = document.getElementById('agent-skills-list');
+  if (!container) return;
+  try {
+    var data = await apiRequest('GET', '/api/agents/' + agentId + '/skills');
+    var skills = (data && data.skills) || [];
+    if (skills.length === 0) {
+      container.innerHTML = '<div class="empty-state" style="padding:24px"><p>' +
+        (currentLang === 'ru' ? 'Скиллов пока нет' : 'No skills yet') + '</p></div>';
+      return;
+    }
+    container.innerHTML = skills.map(function(s) {
+      var src = s.source === 'builtin' ? 'BUILT-IN' : (s.source === 'user' ? 'MINE' : 'PUBLIC');
+      var srcColor = s.source === 'builtin' ? '#00a8ff' : (s.source === 'user' ? '#22c55e' : '#8b5cf6');
+      return '' +
+        '<div class="skill-toggle-row" style="display:flex;align-items:flex-start;gap:14px;padding:12px 14px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px">' +
+          '<label class="switch" style="position:relative;display:inline-block;width:42px;height:22px;flex-shrink:0;margin-top:2px">' +
+            '<input type="checkbox" ' + (s.enabled ? 'checked' : '') +
+              ' onchange="toggleAgentSkill(' + _detailAgentId + ', ' + JSON.stringify(s.name) + ', this.checked)"' +
+              ' style="opacity:0;width:0;height:0">' +
+            '<span class="switch-slider" style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:' + (s.enabled ? 'linear-gradient(in oklab 135deg,#00a8ff,#8b5cf6)' : '#374151') + ';transition:.25s;border-radius:22px">' +
+              '<span style="position:absolute;height:18px;width:18px;left:' + (s.enabled ? '22px' : '2px') + ';bottom:2px;background:white;transition:.25s;border-radius:50%"></span>' +
+            '</span>' +
+          '</label>' +
+          '<div style="flex:1;min-width:0">' +
+            '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">' +
+              '<strong style="font-size:.9rem">' + escHtml(s.name) + '</strong>' +
+              '<span style="background:' + srcColor + '22;color:' + srcColor + ';padding:1px 6px;border-radius:4px;font-size:.6rem;font-weight:700">' + src + '</span>' +
+              (s.version ? '<span style="font-size:.65rem;color:var(--text-dim)">v' + escHtml(s.version) + '</span>' : '') +
+            '</div>' +
+            '<div style="font-size:.78rem;color:var(--text-muted);line-height:1.4">' + escHtml((s.description || '').slice(0, 200)) + '</div>' +
+          '</div>' +
+          '<button class="btn btn-ghost btn-sm" onclick="openSkillDetail(' + JSON.stringify(s.name) + ')" style="flex-shrink:0">' +
+            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>' +
+          '</button>' +
+        '</div>';
+    }).join('');
+  } catch (e) {
+    container.innerHTML = '<div class="empty-state"><p>' + escHtml(e.message || 'Error') + '</p></div>';
+  }
+}
+
+async function toggleAgentSkill(agentId, skillName, enabled) {
+  try {
+    await apiRequest('POST', '/api/agents/' + agentId + '/skills/' + encodeURIComponent(skillName) + '/toggle', { enabled: enabled });
+    toast(
+      enabled ? (currentLang === 'ru' ? 'Скилл включён' : 'Skill enabled')
+              : (currentLang === 'ru' ? 'Скилл выключен' : 'Skill disabled'),
+      'success'
+    );
+    // Reload list to refresh visual state
+    loadAgentSkills(agentId);
+  } catch (e) {
+    toast(e.message || 'Error', 'error');
+    // Revert visual state on error
+    loadAgentSkills(agentId);
+  }
+}
+
+async function importSkillFromUrl() {
+  var url = ((document.getElementById('skill-import-url') || {}).value || '').trim();
+  if (!url.startsWith('https://')) { toast('URL must start with https://', 'error'); return; }
+  if (!url.includes('raw.githubusercontent.com')) {
+    if (!confirm('URL не выглядит как raw GitHub. Продолжить?')) return;
+  }
+  try {
+    var res = await fetch(url);
+    if (!res.ok) { toast('Fetch failed: ' + res.status, 'error'); return; }
+    var skillMd = await res.text();
+    if (skillMd.length > 100000) { toast('SKILL.md too large (>100KB)', 'error'); return; }
+    var data = await apiRequest('POST', '/api/skills', {
+      skillMd: skillMd,
+      isImported: true,
+      sourceUrl: url,
+    });
+    if (data && data.ok) {
+      toast(currentLang === 'ru' ? 'Импортировано' : 'Imported', 'success');
+      closeModal();
+      loadSkillsPage();
+    } else {
+      toast((data && data.error) || 'Error', 'error');
+    }
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MCP Servers — Studio UI (page + per-agent tab)
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function loadMCPServersPage() {
+  const grid = document.getElementById('mcp-servers-grid');
+  if (!grid) return;
+  const isRu = currentLang === 'ru';
+  grid.innerHTML = '<div class="loading-placeholder">' + (isRu ? 'Загрузка...' : 'Loading...') + '</div>';
+  try {
+    const data = await apiRequest('/api/mcp-servers');
+    if (!data || !data.ok) {
+      grid.innerHTML = '<div class="empty-state">' + (isRu ? 'Не удалось загрузить' : 'Failed to load') + '</div>';
+      return;
+    }
+    if (!data.items.length) {
+      grid.innerHTML = '<div class="empty-state" style="padding:48px 24px;text-align:center">' +
+        '<div style="font-size:48px;margin-bottom:12px">🔌</div>' +
+        '<h3 style="margin:0 0 8px;color:var(--text-primary)">' + (isRu ? 'Нет MCP-серверов' : 'No MCP servers yet') + '</h3>' +
+        '<p style="color:var(--text-muted);max-width:480px;margin:0 auto 16px">' +
+          (isRu
+            ? 'MCP (Model Context Protocol) — стандарт от Anthropic для подключения внешних инструментов. Notion, Linear, GitHub, твой свой сервер — всё подключается через URL.'
+            : 'MCP (Model Context Protocol) is Anthropic\'s standard for plugging external tools into an AI agent. Notion, Linear, GitHub, your own server — all via URL.') +
+        '</p>' +
+        '<button class="btn btn-primary" onclick="openMCPAddModal()">+ ' + (isRu ? 'Добавить сервер' : 'Add Server') + '</button>' +
+      '</div>';
+      return;
+    }
+    grid.innerHTML = data.items.map(renderMCPServerCard).join('');
+  } catch (e) {
+    grid.innerHTML = '<div class="empty-state">' + (e.message || 'Error') + '</div>';
+  }
+}
+
+function renderMCPServerCard(s) {
+  const isRu = currentLang === 'ru';
+  const status = s.status || 'pending';
+  const statusColor = {
+    'connected': '#10b981',
+    'pending':   '#f59e0b',
+    'error':     '#ef4444',
+    'disabled':  '#64748b',
+  }[status] || '#64748b';
+  const statusLabel = {
+    'connected': isRu ? 'Подключен' : 'Connected',
+    'pending':   isRu ? 'Ожидание' : 'Pending',
+    'error':     isRu ? 'Ошибка' : 'Error',
+    'disabled':  isRu ? 'Отключен' : 'Disabled',
+  }[status] || status;
+  const lastErr = s.last_error
+    ? '<div style="margin-top:8px;padding:8px 10px;background:rgba(239,68,68,0.08);border-radius:6px;font-size:.75rem;color:#ef4444;word-break:break-word">' + escHtml(String(s.last_error).slice(0, 200)) + '</div>'
+    : '';
+  return '<div class="card" style="padding:16px;border:1px solid var(--border);border-radius:10px">' +
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">' +
+      '<div style="flex:1;min-width:0">' +
+        '<div style="font-weight:600;font-size:1rem;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(s.name) + '</div>' +
+        '<div style="font-size:.75rem;color:var(--text-muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:\'JetBrains Mono\',monospace">' + escHtml(s.url) + '</div>' +
+      '</div>' +
+      '<div style="display:flex;align-items:center;gap:6px;font-size:.7rem;font-weight:600;color:' + statusColor + ';white-space:nowrap">' +
+        '<span style="width:8px;height:8px;border-radius:50%;background:' + statusColor + '"></span>' +
+        statusLabel +
+      '</div>' +
+    '</div>' +
+    '<div style="display:flex;gap:14px;margin-top:10px;font-size:.78rem;color:var(--text-secondary)">' +
+      '<span>🔧 ' + (s.tools_count || 0) + ' ' + (isRu ? 'тулов' : 'tools') + '</span>' +
+      '<span>📡 ' + (s.transport || 'sse').toUpperCase() + '</span>' +
+    '</div>' +
+    lastErr +
+    '<div style="display:flex;gap:8px;margin-top:12px">' +
+      '<button class="btn btn-ghost" style="flex:1" onclick="testMCPServer(' + s.id + ')">' + (isRu ? 'Тест' : 'Test') + '</button>' +
+      '<button class="btn btn-ghost" style="flex:1" onclick="viewMCPTools(' + s.id + ', \'' + escHtml(s.name).replace(/'/g, "\\'") + '\')">' + (isRu ? 'Тулы' : 'Tools') + '</button>' +
+      '<button class="btn btn-ghost" style="color:#ef4444" onclick="deleteMCPServer(' + s.id + ', \'' + escHtml(s.name).replace(/'/g, "\\'") + '\')">' + (isRu ? 'Удалить' : 'Delete') + '</button>' +
+    '</div>' +
+  '</div>';
+}
+
+function openMCPAddModal() {
+  const isRu = currentLang === 'ru';
+  const body =
+    '<div style="display:flex;flex-direction:column;gap:14px">' +
+      '<div>' +
+        '<label class="form-label">' + (isRu ? 'Название' : 'Name') + '</label>' +
+        '<input id="mcp-add-name" class="form-input" maxlength="120" placeholder="' + (isRu ? 'Мой Notion' : 'My Notion') + '">' +
+      '</div>' +
+      '<div>' +
+        '<label class="form-label">URL</label>' +
+        '<input id="mcp-add-url" class="form-input" maxlength="1024" placeholder="https://mcp.example.com">' +
+        '<div style="font-size:.7rem;color:var(--text-muted);margin-top:4px">' +
+          (isRu ? 'Endpoint MCP-сервера. Локальные IP / приватные сети заблокированы.' : 'MCP server endpoint. Localhost / private IPs blocked.') +
+        '</div>' +
+      '</div>' +
+      '<div>' +
+        '<label class="form-label">' + (isRu ? 'API-ключ (опционально)' : 'API key (optional)') + '</label>' +
+        '<input id="mcp-add-key" class="form-input" type="password" placeholder="Bearer token">' +
+      '</div>' +
+    '</div>';
+  const footer =
+    '<button class="btn btn-ghost" onclick="closeModal()">' + (isRu ? 'Отмена' : 'Cancel') + '</button>' +
+    '<button class="btn btn-primary" onclick="submitMCPAdd()">' + (isRu ? 'Подключить' : 'Connect') + '</button>';
+  openModal(isRu ? 'Добавить MCP-сервер' : 'Add MCP Server', body, footer);
+}
+
+async function submitMCPAdd() {
+  const name = (document.getElementById('mcp-add-name').value || '').trim();
+  const url  = (document.getElementById('mcp-add-url').value  || '').trim();
+  const key  = (document.getElementById('mcp-add-key').value  || '').trim();
+  if (!name || !url) { toast(currentLang === 'ru' ? 'Имя и URL обязательны' : 'Name and URL required', 'error'); return; }
+  try {
+    const data = await apiRequest('/api/mcp-servers', { method: 'POST', body: JSON.stringify({ name, url, apiKey: key || undefined }) });
+    if (data && data.ok) {
+      toast(currentLang === 'ru' ? 'Подключено' : 'Connected', 'success');
+      closeModal();
+      loadMCPServersPage();
+    } else {
+      toast((data && data.error) || 'Error', 'error');
+    }
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function testMCPServer(id) {
+  try {
+    const data = await apiRequest('/api/mcp-servers/' + id + '/test', { method: 'POST' });
+    if (data && data.ok) {
+      toast((currentLang === 'ru' ? 'Статус: ' : 'Status: ') + data.status + ' · ' + data.tools + ' tools', data.status === 'connected' ? 'success' : 'error');
+      loadMCPServersPage();
+    } else {
+      toast((data && data.error) || 'Error', 'error');
+    }
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function viewMCPTools(id, name) {
+  const isRu = currentLang === 'ru';
+  openModal(name + ' — ' + (isRu ? 'инструменты' : 'tools'), '<div style="text-align:center;padding:20px">' + (isRu ? 'Загрузка...' : 'Loading...') + '</div>', '<button class="btn btn-ghost" onclick="closeModal()">' + (isRu ? 'Закрыть' : 'Close') + '</button>');
+  try {
+    const data = await apiRequest('/api/mcp-servers/' + id + '/tools');
+    const modal = document.getElementById('generic-modal');
+    if (!modal) return;
+    const body = modal.querySelector('.modal-body, .studio-dialog-body, [class*="body"]');
+    if (!body) return;
+    if (!data || !data.ok || !data.tools.length) {
+      body.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted)">' + (isRu ? 'Нет инструментов' : 'No tools') + '</div>';
+      return;
+    }
+    body.innerHTML = '<div style="max-height:60vh;overflow:auto;display:flex;flex-direction:column;gap:8px">' +
+      data.tools.map(t =>
+        '<div style="padding:10px 12px;border:1px solid var(--border);border-radius:8px">' +
+          '<div style="font-weight:600;font-family:\'JetBrains Mono\',monospace;font-size:.85rem;color:var(--text-primary)">' + escHtml(t.name) + '</div>' +
+          (t.description ? '<div style="font-size:.75rem;color:var(--text-muted);margin-top:4px">' + escHtml(t.description) + '</div>' : '') +
+        '</div>'
+      ).join('') +
+    '</div>';
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function deleteMCPServer(id, name) {
+  const isRu = currentLang === 'ru';
+  if (!confirm((isRu ? 'Удалить MCP-сервер "' : 'Delete MCP server "') + name + '"?')) return;
+  try {
+    const data = await apiRequest('/api/mcp-servers/' + id, { method: 'DELETE' });
+    if (data && data.ok) {
+      toast(isRu ? 'Удалено' : 'Deleted', 'success');
+      loadMCPServersPage();
+    } else {
+      toast((data && data.error) || 'Error', 'error');
+    }
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ── Per-agent MCP tab inside agent settings ───────────────────────────────
+
+async function renderAgentMCPTab(body, agent) {
+  const isRu = currentLang === 'ru';
+  body.innerHTML =
+    '<div class="rt-page">' +
+      '<div class="rt-header">' +
+        '<div class="rt-header-icon" style="background:rgba(var(--accent-r,139),var(--accent-g,92),var(--accent-b,246),0.12);color:#8b5cf6">' +
+          '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>' +
+        '</div>' +
+        '<div class="rt-header-text">' +
+          '<h3>MCP ' + (isRu ? 'серверы' : 'servers') + '</h3>' +
+          '<p>' + (isRu ? 'Включи MCP-серверы, доступные этому агенту. Управление списком — на странице MCP Servers слева.' : 'Enable MCP servers for this agent. Manage the global list on the MCP Servers page.') + '</p>' +
+        '</div>' +
+      '</div>' +
+      '<div id="agent-mcp-list" class="rt-section"></div>' +
+    '</div>';
+
+  // Shimmer placeholder while we fetch
+  const listEarly = document.getElementById('agent-mcp-list');
+  if (listEarly) showGenAuraSkeleton(listEarly, 4);
+
+  try {
+    const [allRes, agentRes] = await Promise.all([
+      apiRequest('/api/mcp-servers'),
+      apiRequest('/api/agents/' + agent.id + '/mcp-servers'),
+    ]);
+    const all = (allRes && allRes.items) || [];
+    const enabled = new Set(((agentRes && agentRes.items) || []).map(x => x.id));
+    const list = document.getElementById('agent-mcp-list');
+    if (!list) return;
+    if (!all.length) {
+      list.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-muted)">' +
+        (isRu ? 'У тебя нет MCP-серверов. ' : 'You have no MCP servers yet. ') +
+        '<a href="#" onclick="event.preventDefault();navigateTo(\'mcp-servers\')">' + (isRu ? 'Добавить' : 'Add one') + '</a>' +
+      '</div>';
+      return;
+    }
+    list.innerHTML = all.map(s => {
+      const on = enabled.has(s.id);
+      const statusColor = s.status === 'connected' ? '#10b981' : '#ef4444';
+      return '<label style="display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;cursor:pointer">' +
+        '<input type="checkbox" ' + (on ? 'checked' : '') + ' onchange="toggleAgentMCP(' + agent.id + ',' + s.id + ',this.checked)" style="width:18px;height:18px;cursor:pointer">' +
+        '<div style="flex:1;min-width:0">' +
+          '<div style="font-weight:600">' + escHtml(s.name) + ' <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:' + statusColor + ';margin-left:4px"></span></div>' +
+          '<div style="font-size:.72rem;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(s.url) + ' · ' + (s.tools_count || 0) + ' tools</div>' +
+        '</div>' +
+      '</label>';
+    }).join('');
+  } catch (e) {
+    const list = document.getElementById('agent-mcp-list');
+    if (list) list.innerHTML = '<div style="color:#ef4444;padding:12px">' + escHtml(e.message) + '</div>';
+  }
+}
+
+async function toggleAgentMCP(agentId, serverId, enabled) {
+  try {
+    const data = await apiRequest('/api/agents/' + agentId + '/mcp-servers/' + serverId, {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    });
+    if (!data || !data.ok) toast((data && data.error) || 'Error', 'error');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EDIT WITH AI — AI rewrites the agent's Soul (system prompt) per instruction
+// ═══════════════════════════════════════════════════════════════════════════
+
+function openEditWithAIModal(field) {
+  const isRu = currentLang === 'ru';
+  const f = field || 'code';
+  const titleText = f === 'description'
+    ? (isRu ? 'Edit Description with AI' : 'Edit Description with AI')
+    : (isRu ? 'Edit Soul with AI' : 'Edit Soul with AI');
+  const body =
+    '<div style="display:flex;flex-direction:column;gap:14px">' +
+      '<div style="font-size:.85rem;color:var(--text-secondary);line-height:1.55">' +
+        (isRu
+          ? 'Опиши, как нужно изменить агента — AI перепишет текст. Сравнишь результат с оригиналом и решишь, применять ли.'
+          : 'Describe how the agent should change — AI rewrites the text. You\'ll diff the result against the original and decide whether to apply.') +
+      '</div>' +
+      '<div>' +
+        '<label class="form-label">' + (isRu ? 'Инструкция' : 'Instruction') + '</label>' +
+        '<textarea id="edit-ai-instruction" class="form-input" rows="4" maxlength="2000" placeholder="' +
+          escHtml(isRu
+            ? 'Сделай его агрессивнее на арбитраже. Добавь правило: не торговать ночью.'
+            : 'Make it more aggressive on arbitrage. Add rule: do not trade at night.') + '"></textarea>' +
+      '</div>' +
+      '<input type="hidden" id="edit-ai-field" value="' + f + '">' +
+    '</div>';
+  const footer =
+    '<button class="btn btn-ghost" onclick="closeModal()">' + (isRu ? 'Отмена' : 'Cancel') + '</button>' +
+    '<button class="btn btn-primary" onclick="submitEditWithAI()" id="edit-ai-go-btn">' +
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M12 3l1.9 4.6L18 9l-4.1 1.4L12 15l-1.9-4.6L6 9l4.1-1.4z"/></svg>' +
+      (isRu ? 'Сгенерировать' : 'Generate') +
+    '</button>';
+  openModal(titleText, body, footer);
+}
+
+async function submitEditWithAI() {
+  const isRu = currentLang === 'ru';
+  const instruction = (document.getElementById('edit-ai-instruction') || {}).value || '';
+  const field = (document.getElementById('edit-ai-field') || {}).value || 'code';
+  if (!instruction.trim()) { toast(isRu ? 'Введи инструкцию' : 'Enter an instruction', 'error'); return; }
+  if (!_detailAgentData || !_detailAgentData.id) { toast(isRu ? 'Агент не выбран' : 'No agent', 'error'); return; }
+  const btn = document.getElementById('edit-ai-go-btn');
+  if (btn) { btn.disabled = true; btn.innerHTML = (isRu ? 'Думаю…' : 'Thinking…'); }
+  showGenAura(
+    isRu ? 'Atlas переписывает агента' : 'Atlas rewriting agent',
+    isRu ? ('инструкция: ' + instruction.trim().slice(0, 60) + (instruction.length > 60 ? '…' : '')) : ('prompt: ' + instruction.trim().slice(0, 60) + (instruction.length > 60 ? '…' : '')),
+  );
+  try {
+    const data = await apiRequest('/api/agents/' + _detailAgentData.id + '/edit-with-ai', {
+      method: 'POST',
+      body: JSON.stringify({ instruction: instruction.trim(), field }),
+    });
+    hideGenAura();
+    if (!data || !data.ok) {
+      toast((data && data.error) || 'Error', 'error');
+      if (btn) { btn.disabled = false; btn.innerHTML = (isRu ? 'Сгенерировать' : 'Generate'); }
+      return;
+    }
+    showEditWithAIDiff(data.original || '', data.proposed || '', data.field, data.model || '');
+  } catch (e) {
+    hideGenAura();
+    toast(e.message, 'error');
+    if (btn) { btn.disabled = false; btn.innerHTML = (isRu ? 'Сгенерировать' : 'Generate'); }
+  }
+}
+
+// ─── Word-level diff (LCS) — used by Edit-with-AI preview ─────────────────
+// Returns {left, right} where each is an array of [type, token] ops.
+//   left:  'eq' | 'del' (removed in proposed)
+//   right: 'eq' | 'add' (added in proposed)
+// Tokenizes on word/whitespace boundaries so the diff is human-readable at
+// word granularity rather than character-level noise.
+function _wordDiff(a, b) {
+  const tokenize = function(s) { return s.match(/\S+|\s+/g) || []; };
+  const aw = tokenize(a);
+  const bw = tokenize(b);
+  const m = aw.length, n = bw.length;
+  // Cap LCS table size — 1000x1000 = 1M cells, fine; bigger → bail
+  if (m * n > 4_000_000) {
+    return { left: aw.map(t => ['eq', t]), right: bw.map(t => ['eq', t]), _truncated: true };
+  }
+  const dp = new Array(m + 1);
+  for (let i = 0; i <= m; i++) dp[i] = new Int32Array(n + 1);
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = aw[i-1] === bw[j-1] ? dp[i-1][j-1] + 1 : Math.max(dp[i-1][j], dp[i][j-1]);
+    }
+  }
+  const left = [], right = [];
+  let i = m, j = n;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && aw[i-1] === bw[j-1]) {
+      left.unshift(['eq', aw[i-1]]);
+      right.unshift(['eq', bw[j-1]]);
+      i--; j--;
+    } else if (j > 0 && (i === 0 || dp[i][j-1] >= dp[i-1][j])) {
+      right.unshift(['add', bw[j-1]]);
+      j--;
+    } else {
+      left.unshift(['del', aw[i-1]]);
+      i--;
+    }
+  }
+  return { left, right };
+}
+
+function _renderDiffSide(ops, side) {
+  return ops.map(function(op) {
+    const type = op[0], tok = op[1];
+    if (type === 'eq') return escHtml(tok);
+    // Highlight: del = red on red, add = green on green
+    if (side === 'left') {
+      return '<span style="background:rgba(239,68,68,0.22);color:#fca5a5;border-radius:2px;text-decoration:line-through;text-decoration-color:rgba(239,68,68,0.6)">' + escHtml(tok) + '</span>';
+    }
+    return '<span style="background:rgba(34,197,94,0.22);color:#86efac;border-radius:2px;font-weight:500">' + escHtml(tok) + '</span>';
+  }).join('');
+}
+
+function showEditWithAIDiff(original, proposed, field, model) {
+  const isRu = currentLang === 'ru';
+  const diff = _wordDiff(original || '', proposed || '');
+  const leftHtml = _renderDiffSide(diff.left, 'left');
+  const rightHtml = _renderDiffSide(diff.right, 'right');
+  // Count changes for header summary
+  const delCount = diff.left.filter(o => o[0] === 'del').length;
+  const addCount = diff.right.filter(o => o[0] === 'add').length;
+  const diffSummary = diff._truncated
+    ? (isRu ? '⚠ Текст слишком большой — diff отключён' : '⚠ Text too long — diff disabled')
+    : '<span style="color:#ef4444">−' + delCount + '</span> · <span style="color:#22c55e">+' + addCount + '</span>';
+
+  // Shared style for the diff panes — pre-wrap preserves whitespace, scrolls
+  // vertically, contentEditable on right so user can tweak before applying.
+  const paneBase = 'flex:1;min-height:280px;max-height:55vh;overflow:auto;font-family:\'JetBrains Mono\',monospace;font-size:.78rem;padding:10px;border-radius:8px;white-space:pre-wrap;word-break:break-word;line-height:1.5';
+
+  const body =
+    '<div style="display:flex;flex-direction:column;gap:10px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px">' +
+        '<div style="font-size:.78rem;color:var(--text-muted)">' +
+          (isRu ? 'Сравнение (модель: ' : 'Comparison (model: ') + escHtml(model) + ')' +
+        '</div>' +
+        '<div style="font-size:.78rem;font-family:\'JetBrains Mono\',monospace">' + diffSummary + '</div>' +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:stretch">' +
+        '<div style="display:flex;flex-direction:column;min-height:0">' +
+          '<div style="font-size:.7rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;margin-bottom:4px">' + (isRu ? 'Было' : 'Original') + '</div>' +
+          '<div id="edit-ai-original-view" style="' + paneBase + ';border:1px solid var(--border);background:rgba(255,255,255,0.02);color:var(--text-secondary)">' +
+            leftHtml +
+          '</div>' +
+        '</div>' +
+        '<div style="display:flex;flex-direction:column;min-height:0">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">' +
+            '<div style="font-size:.7rem;font-weight:600;color:#00a8ff;text-transform:uppercase">' + (isRu ? 'Станет' : 'Proposed') + '</div>' +
+            '<button onclick="_eaiToggleEdit()" id="edit-ai-toggle-btn" style="font-size:.65rem;padding:2px 8px;border-radius:4px;background:rgba(var(--accent-r,0),var(--accent-g,168),var(--accent-b,255),0.10);color:#00a8ff;border:1px solid rgba(var(--accent-r,0),var(--accent-g,168),var(--accent-b,255),0.3);cursor:pointer">' + (isRu ? '✎ Редактировать' : '✎ Edit') + '</button>' +
+          '</div>' +
+          '<div id="edit-ai-proposed-view" style="' + paneBase + ';border:1px solid rgba(var(--accent-r,0),var(--accent-g,168),var(--accent-b,255),0.4);background:rgba(var(--accent-r,0),var(--accent-g,168),var(--accent-b,255),0.04);color:var(--text-primary)">' +
+            rightHtml +
+          '</div>' +
+          // Hidden raw text — toggle swaps between this textarea and the highlighted view
+          '<textarea id="edit-ai-proposed" style="display:none;' + paneBase + ';border:1px solid rgba(var(--accent-r,0),var(--accent-g,168),var(--accent-b,255),0.4);background:rgba(var(--accent-r,0),var(--accent-g,168),var(--accent-b,255),0.04);color:var(--text-primary);resize:none;outline:none">' +
+            escHtml(proposed) +
+          '</textarea>' +
+        '</div>' +
+      '</div>' +
+      '<div style="font-size:.72rem;color:var(--text-muted)">' +
+        (isRu ? '🟢 зелёным — добавлено · 🔴 красным — удалено · нажми «Редактировать» чтобы править перед применением.' : '🟢 green — added · 🔴 red — removed · click «Edit» to tweak before applying.') +
+      '</div>' +
+    '</div>';
+  const footer =
+    '<button class="btn btn-ghost" onclick="closeModal()">' + (isRu ? 'Отмена' : 'Cancel') + '</button>' +
+    '<button class="btn btn-primary" onclick="applyEditWithAI(\'' + field + '\')">' +
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:-2px;margin-right:4px" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' +
+      (isRu ? 'Применить' : 'Apply') +
+    '</button>';
+  openModal(isRu ? 'Предпросмотр изменения' : 'Preview Change', body, footer);
+}
+
+// Toggle between highlighted diff view (default) and raw editable textarea.
+function _eaiToggleEdit() {
+  const view = document.getElementById('edit-ai-proposed-view');
+  const ta   = document.getElementById('edit-ai-proposed');
+  const btn  = document.getElementById('edit-ai-toggle-btn');
+  if (!view || !ta || !btn) return;
+  const isRu = currentLang === 'ru';
+  const showingDiff = view.style.display !== 'none';
+  if (showingDiff) {
+    // Switch to editable raw text
+    view.style.display = 'none';
+    ta.style.display = '';
+    ta.focus();
+    btn.innerHTML = isRu ? '👁 Diff' : '👁 Diff';
+  } else {
+    // User finished editing → re-render diff against current original (we kept it)
+    // Simplest: hide textarea, show static view (which is stale if user edited).
+    // For now just swap visibility back without re-diffing — the textarea value
+    // is what applyEditWithAI() reads anyway.
+    view.style.display = '';
+    ta.style.display = 'none';
+    btn.innerHTML = isRu ? '✎ Редактировать' : '✎ Edit';
+  }
+}
+
+async function applyEditWithAI(field) {
+  const isRu = currentLang === 'ru';
+  const proposed = (document.getElementById('edit-ai-proposed') || {}).value || '';
+  if (!proposed.trim()) { toast(isRu ? 'Пусто' : 'Empty', 'error'); return; }
+  if (!_detailAgentData || !_detailAgentData.id) return;
+  try {
+    const path = '/api/agents/' + _detailAgentData.id + '/' + (field === 'description' ? 'description' : 'code');
+    const data = await apiRequest(path, { method: 'PUT', body: JSON.stringify({ [field]: proposed }) });
+    if (data && (data.ok || data.success || data.id)) {
+      toast(isRu ? 'Применено' : 'Applied', 'success');
+      // Update local cache + textarea if visible
+      if (_detailAgentData) _detailAgentData[field] = proposed;
+      const ta = document.getElementById(field === 'code' ? 'edit-prompt-textarea' : 'edit-description-textarea');
+      if (ta) ta.value = proposed;
+      closeModal();
+    } else {
+      toast((data && data.error) || 'Error', 'error');
+    }
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ── Telegram-link banner ─────────────────────────────────────────────────
+// Shows on top of the app when the current session has no telegram_id linked.
+// Clicking "Привязать" opens t.me/<bot>?start=link_<token>; once the user runs
+// /start in the bot, future API calls use telegram_id and notifications
+// (auto-pause alerts, etc.) arrive in their Telegram chat.
+function showTelegramLinkBanner() {
+  if (document.querySelector('.tg-link-banner')) return;
+  var ts = parseInt(localStorage.getItem('tg_link_dismissed_at') || '0', 10);
+  if (ts && Date.now() - ts < 24 * 60 * 60 * 1000) return;
+  var isRu = (typeof currentLang !== 'undefined' && currentLang === 'ru');
+  var wrap = document.createElement('div');
+  wrap.className = 'tg-link-banner';
+  wrap.innerHTML =
+    '<span class="tg-link-icon">📨</span>' +
+    '<div class="tg-link-body">' +
+      '<b>' + (isRu ? 'Привяжи Telegram-бота' : 'Link Telegram bot') + '</b>' +
+      '<small>' + (isRu
+        ? 'Так уведомления Studio и алерты агентов будут приходить в чат с ботом.'
+        : 'So Studio notifications and agent alerts can reach you in the bot DM.') +
+      '</small>' +
+    '</div>' +
+    '<button onclick="startTelegramLink()">' + (isRu ? 'Привязать' : 'Link') + '</button>' +
+    '<button class="tg-link-close" onclick="dismissTelegramLinkBanner()" title="' +
+      (isRu ? 'Скрыть на сутки' : 'Hide for 24h') + '">×</button>';
+  var root = document.querySelector('.main-content') || document.body;
+  root.prepend(wrap);
+}
+
+function dismissTelegramLinkBanner() {
+  localStorage.setItem('tg_link_dismissed_at', String(Date.now()));
+  var el = document.querySelector('.tg-link-banner');
+  if (el) el.remove();
+}
+
+async function startTelegramLink() {
+  if (!authToken) { (typeof showNotification === 'function' ? showNotification : toast)('Log in first', 'error'); return; }
+  try {
+    var data = await apiRequest('POST', '/api/me/link-telegram', {});
+    if (!data.ok) { toast(data.error || 'Error', 'error'); return; }
+    if (data.alreadyLinked) {
+      toast((typeof currentLang !== 'undefined' && currentLang === 'ru') ? 'Уже привязано' : 'Already linked', 'success');
+      var el = document.querySelector('.tg-link-banner');
+      if (el) el.remove();
+      return;
+    }
+    if (data.deepLink) window.open(data.deepLink, '_blank');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ── Custom number-input spinners ─────────────────────────────────────────
+// Native <input type="number"> arrow controls are unstylable and look like
+// vanilla HTML against the rest of Studio. We wrap each number input in a
+// <span class="num-spin"> with our own +/− buttons; the underlying input still
+// accepts wheel/arrow-key/typed values.
+function _stepNumberInput(input, dir) {
+  if (!input || input.disabled || input.readOnly) return;
+  // Use the native stepUp/stepDown so min/max/step/validity are respected
+  try {
+    if (dir > 0 && typeof input.stepUp === 'function') input.stepUp();
+    else if (dir < 0 && typeof input.stepDown === 'function') input.stepDown();
+    else {
+      // Fallback for inputs without stepUp (rare)
+      var step = parseFloat(input.step || '1') || 1;
+      var cur = parseFloat(input.value || '0') || 0;
+      input.value = String(cur + dir * step);
+    }
+  } catch (e) {
+    var step = parseFloat(input.step || '1') || 1;
+    var cur = parseFloat(input.value || '0') || 0;
+    input.value = String(cur + dir * step);
+  }
+  // Fire input + change so listeners (saveSettingsAI, range syncs) react
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+function wrapNumberInputs(root) {
+  var scope = root || document;
+  var inputs = scope.querySelectorAll('input[type="number"]:not([data-numspin-wrapped])');
+  inputs.forEach(function(input) {
+    if (input.closest('.num-spin')) { input.setAttribute('data-numspin-wrapped', '1'); return; }
+    var wrap = document.createElement('span');
+    wrap.className = 'num-spin';
+    // Preserve flexible width — adopt parent's "block-like" behaviour if input was full-width
+    var cs = window.getComputedStyle(input);
+    if (cs.display === 'block' || input.classList.contains('rt-input') || input.style.width === '100%') {
+      wrap.style.display = 'flex';
+      wrap.style.width = '100%';
+    }
+    input.parentNode.insertBefore(wrap, input);
+    wrap.appendChild(input);
+    var minus = document.createElement('button');
+    minus.type = 'button';
+    minus.className = 'num-btn num-btn-minus';
+    minus.setAttribute('aria-label', 'Decrease');
+    minus.textContent = '−';
+    minus.onclick = function() { _stepNumberInput(input, -1); };
+    var plus = document.createElement('button');
+    plus.type = 'button';
+    plus.className = 'num-btn num-btn-plus';
+    plus.setAttribute('aria-label', 'Increase');
+    plus.textContent = '+';
+    plus.onclick = function() { _stepNumberInput(input, +1); };
+    wrap.appendChild(minus);
+    wrap.appendChild(plus);
+    input.setAttribute('data-numspin-wrapped', '1');
+  });
+}
+
+// Auto-wrap newly-rendered inputs by re-running on common UI events
+(function() {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function() { wrapNumberInputs(); });
+  } else {
+    wrapNumberInputs();
+  }
+  // Catch dynamically-inserted inputs (settings panels, modals, wizards)
+  var observer = new MutationObserver(function(muts) {
+    var needsRescan = false;
+    for (var i = 0; i < muts.length; i++) {
+      for (var j = 0; j < muts[i].addedNodes.length; j++) {
+        var n = muts[i].addedNodes[j];
+        if (n.nodeType === 1 && (
+          n.tagName === 'INPUT' || n.querySelector && n.querySelector('input[type="number"]')
+        )) { needsRescan = true; break; }
+      }
+      if (needsRescan) break;
+    }
+    if (needsRescan) wrapNumberInputs();
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+})();
+
+// ── Mobile sidebar drawer ────────────────────────────────────────────────
+// At ≤900px the sidebar becomes off-canvas (see studio.css). We inject a
+// hamburger button into the topbar and a click-outside-to-close behavior.
+function _setupMobileSidebar() {
+  if (window.__mobileSidebarReady) return;
+  window.__mobileSidebarReady = true;
+
+  function toggleSidebar(force) {
+    var b = document.body;
+    var willOpen = typeof force === 'boolean' ? force : !b.classList.contains('sidebar-mobile-open');
+    b.classList.toggle('sidebar-mobile-open', willOpen);
+  }
+  window.toggleMobileSidebar = toggleSidebar;
+
+  // Inject hamburger if missing
+  function injectHamburger() {
+    if (document.querySelector('.mobile-hamburger')) return;
+    var topbar = document.querySelector('.topbar') || document.querySelector('header.topbar') || document.querySelector('.main-content > header');
+    if (!topbar) return;
+    var btn = document.createElement('button');
+    btn.className = 'mobile-hamburger';
+    btn.setAttribute('aria-label', 'Open menu');
+    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>';
+    btn.onclick = function() { toggleSidebar(); };
+    topbar.insertBefore(btn, topbar.firstChild);
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', injectHamburger);
+  } else {
+    injectHamburger();
+  }
+  // Re-inject if topbar gets re-rendered
+  new MutationObserver(injectHamburger).observe(document.body, { childList: true, subtree: true });
+
+  // Click backdrop or nav item → close drawer
+  document.addEventListener('click', function(e) {
+    if (!document.body.classList.contains('sidebar-mobile-open')) return;
+    var t = e.target;
+    var inSidebar = t && (t.closest('.sidebar') || t.closest('.mobile-hamburger'));
+    if (inSidebar) {
+      // Nav item click — still close drawer for navigation feel
+      if (t.closest && t.closest('.nav-item')) {
+        setTimeout(function() { toggleSidebar(false); }, 80);
+      }
+      return;
+    }
+    toggleSidebar(false);
+  });
+  // ESC closes
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && document.body.classList.contains('sidebar-mobile-open')) toggleSidebar(false);
+  });
+}
+_setupMobileSidebar();
+
+// ── Button busy state + form-Save feedback ───────────────────────────────
+// Any function that submits to an API should call btnBusy(btn) at start and
+// btnDone(btn) at finish. Use the data-action wrapper below to auto-wire most
+// Save buttons that follow the pattern `<button onclick="saveX()">Save</button>`.
+function btnBusy(btn) {
+  if (!btn) return;
+  if (btn.dataset.origText === undefined) btn.dataset.origText = btn.textContent || '';
+  btn.dataset.busy = '1';
+  btn.disabled = true;
+}
+function btnDone(btn) {
+  if (!btn) return;
+  btn.dataset.busy = '0';
+  btn.removeAttribute('data-busy');
+  btn.disabled = false;
+}
+window.btnBusy = btnBusy;
+window.btnDone = btnDone;
+
+// Wrap onclick handlers of any element marked data-save-button so it auto-shows
+// spinner and re-enables after the promise resolves. Opt-in via:
+//   <button data-save-button onclick="saveAIKey()">Save</button>
+(function() {
+  function wrap(btn) {
+    if (!btn || btn.__saveWrapped) return;
+    btn.__saveWrapped = true;
+    var origAttr = btn.getAttribute('onclick');
+    if (!origAttr) return;
+    // Wrap the inline handler so we can detect promise return
+    btn.removeAttribute('onclick');
+    btn.addEventListener('click', async function(e) {
+      btnBusy(btn);
+      try {
+        // Eval the original handler body in window scope, get its return
+        var fn = new Function('event', origAttr + ';');
+        var r = fn.call(window, e);
+        if (r && typeof r.then === 'function') { await r; }
+      } catch (err) {
+        try { toast(err.message || String(err), 'error'); } catch {}
+      } finally {
+        btnDone(btn);
+      }
+    });
+  }
+  function scan() {
+    document.querySelectorAll('[data-save-button]').forEach(wrap);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', scan);
+  else scan();
+  new MutationObserver(scan).observe(document.body, { childList: true, subtree: true });
+})();
+
+// ── A11y: auto-add aria-label to icon-only buttons ───────────────────────
+// Many buttons in Studio are icon-only (SVG inside). Auto-injecting aria-label
+// based on tooltips/title/data-action so screen-reader users get something.
+(function() {
+  function infer(btn) {
+    if (btn.getAttribute('aria-label')) return;
+    var label =
+      btn.getAttribute('title') ||
+      btn.getAttribute('data-tooltip') ||
+      btn.getAttribute('data-action') ||
+      btn.getAttribute('data-name');
+    // Skip buttons that already have visible text content
+    var txt = (btn.textContent || '').trim();
+    if (txt && txt.length > 1 && !/^[+\-×x✕▾▿▸▶◀<>↑↓]+$/.test(txt)) return;
+    // Common ones based on class / onclick
+    var cls = (btn.className || '') + '';
+    if (!label) {
+      if (cls.includes('mobile-hamburger') || cls.includes('sidebar-toggle')) label = 'Menu';
+      else if (cls.includes('close')) label = 'Close';
+      else if (cls.includes('settings')) label = 'Settings';
+      else if (cls.includes('delete')) label = 'Delete';
+      else if (cls.includes('edit')) label = 'Edit';
+      else if (cls.includes('refresh')) label = 'Refresh';
+      else if (cls.includes('search')) label = 'Search';
+      else if (cls.includes('back')) label = 'Back';
+      else if (cls.includes('notif')) label = 'Notifications';
+      else if (txt === '+') label = 'Add';
+      else if (txt === '−' || txt === '-') label = 'Remove';
+      else if (txt === '×' || txt === '✕') label = 'Close';
+    }
+    if (label) btn.setAttribute('aria-label', label);
+  }
+  function scan() {
+    document.querySelectorAll('button, [role="button"]').forEach(infer);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', scan);
+  else scan();
+  // Throttled rescan on DOM changes
+  var pending = false;
+  new MutationObserver(function() {
+    if (pending) return;
+    pending = true;
+    setTimeout(function() { pending = false; scan(); }, 250);
+  }).observe(document.body, { childList: true, subtree: true });
+})();
+
+// ── Creator earnings dashboard ───────────────────────────────────────────
+async function loadCreatorEarnings() {
+  var container = document.getElementById('earnings-page') ||
+                  document.getElementById('profile-page');
+  if (!container) return;
+  var host = document.getElementById('earnings-content');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'earnings-content';
+    host.style.padding = '16px';
+    container.appendChild(host);
+  }
+  host.innerHTML = '<div class="skel skel-block" style="height:24px;width:60%"></div>' +
+                   '<div class="skel skel-block" style="height:14px;margin-top:12px"></div>';
+  try {
+    var data = await apiRequest('GET', '/api/me/earnings');
+    if (!data.ok) throw new Error(data.error || 'load failed');
+    var isRu = currentLang === 'ru';
+    var t = isRu ? {
+      title: 'Доходы автора',
+      pending: 'Ожидает выплаты',
+      paid: 'Выплачено',
+      total: 'Всего заработано',
+      payoutWallet: 'Кошелёк для выплат',
+      payoutHint: 'TON-адрес куда платформа отправит твою долю с продаж скиллов / агентов. Минимум 0.5 TON, выплаты раз в сутки.',
+      setWallet: 'Сохранить',
+      enterAddr: 'Введите TON адрес (UQ… или EQ…)',
+      recent: 'Последние операции',
+      empty: 'Пока нет начислений. Опубликуй скилл в маркетплейс — 80% с каждой покупки твои.',
+      ton: 'TON',
+    } : {
+      title: 'Creator earnings',
+      pending: 'Pending payout',
+      paid: 'Paid out',
+      total: 'Total earned',
+      payoutWallet: 'Payout wallet',
+      payoutHint: 'TON address where the platform sends your share of skill / agent sales. Min 0.5 TON, paid daily.',
+      setWallet: 'Save',
+      enterAddr: 'Enter TON address (UQ… or EQ…)',
+      recent: 'Recent activity',
+      empty: 'No earnings yet. Publish a skill — 80% of every sale is yours.',
+      ton: 'TON',
+    };
+    function statusLabel(s) {
+      var map = isRu
+        ? { pending: 'Ожидает', paid: 'Выплачено', failed: 'Ошибка', refunded: 'Возврат' }
+        : { pending: 'Pending', paid: 'Paid', failed: 'Failed', refunded: 'Refunded' };
+      return map[s] || s;
+    }
+    function typeLabel(s) {
+      var map = isRu
+        ? { skill_purchase: 'Покупка скилла', agent_fork: 'Форк агента', referral: 'Реферал', manual: 'Ручное' }
+        : { skill_purchase: 'Skill sale', agent_fork: 'Agent fork', referral: 'Referral', manual: 'Manual' };
+      return map[s] || s;
+    }
+    var html = '';
+    html += '<h2 style="margin:0 0 16px;font-size:1.25rem">💸 ' + t.title + '</h2>';
+    html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">';
+    html += '<div style="background:var(--bg-tertiary);border-radius:10px;padding:14px">' +
+              '<div style="font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em">' + t.pending + '</div>' +
+              '<div style="font-size:1.4rem;font-weight:700;margin-top:4px">' + data.pendingTon.toFixed(3) + ' ' + t.ton + '</div>' +
+            '</div>';
+    html += '<div style="background:var(--bg-tertiary);border-radius:10px;padding:14px">' +
+              '<div style="font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em">' + t.paid + '</div>' +
+              '<div style="font-size:1.4rem;font-weight:700;margin-top:4px">' + data.paidTon.toFixed(3) + ' ' + t.ton + '</div>' +
+            '</div>';
+    html += '<div style="background:var(--bg-tertiary);border-radius:10px;padding:14px">' +
+              '<div style="font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em">' + t.total + '</div>' +
+              '<div style="font-size:1.4rem;font-weight:700;margin-top:4px">' + data.totalEarnedTon.toFixed(3) + ' ' + t.ton + '</div>' +
+            '</div>';
+    html += '</div>';
+    html += '<div style="background:var(--bg-tertiary);border-radius:10px;padding:14px;margin-bottom:20px">';
+    html += '<label style="display:block;font-size:.85rem;font-weight:600;margin-bottom:6px">' + t.payoutWallet + '</label>';
+    html += '<div style="display:flex;gap:8px;align-items:stretch">';
+    html += '<input id="earnings-payout-input" type="text" placeholder="' + t.enterAddr + '" value="' + escHtml(data.payoutWallet || '') + '" style="flex:1">';
+    html += '<button data-save-button onclick="saveCreatorPayoutWallet()">' + t.setWallet + '</button>';
+    html += '</div>';
+    html += '<div style="font-size:.72rem;color:var(--text-muted);margin-top:6px">' + t.payoutHint + '</div>';
+    html += '</div>';
+    html += '<h3 style="margin:24px 0 12px;font-size:1rem">' + t.recent + '</h3>';
+    if (!data.recent || data.recent.length === 0) {
+      html += '<div style="color:var(--text-muted);padding:16px;background:var(--bg-tertiary);border-radius:10px;text-align:center">' + t.empty + '</div>';
+    } else {
+      html += '<div style="background:var(--bg-tertiary);border-radius:10px;overflow:hidden">';
+      html += '<table style="width:100%;border-collapse:collapse;font-size:.85rem">';
+      html += '<thead><tr style="background:rgba(255,255,255,0.03);font-size:.72rem;color:var(--text-muted);text-transform:uppercase">';
+      html += '<th style="text-align:left;padding:10px">' + (isRu ? 'Дата' : 'Date') + '</th>';
+      html += '<th style="text-align:left;padding:10px">' + (isRu ? 'Источник' : 'Source') + '</th>';
+      html += '<th style="text-align:right;padding:10px">' + t.ton + '</th>';
+      html += '<th style="text-align:left;padding:10px">' + (isRu ? 'Статус' : 'Status') + '</th>';
+      html += '</tr></thead><tbody>';
+      for (var i = 0; i < data.recent.length; i++) {
+        var r = data.recent[i];
+        var d = new Date(r.createdAt).toLocaleDateString(isRu ? 'ru-RU' : 'en-US', { day: '2-digit', month: 'short' });
+        var badgeStyle = r.status === 'paid'
+          ? 'background:rgba(34,197,94,0.18);color:#86efac'
+          : r.status === 'failed'
+            ? 'background:rgba(239,68,68,0.18);color:#fca5a5'
+            : 'background:rgba(234,179,8,0.18);color:#fcd34d';
+        html += '<tr style="border-top:1px solid rgba(255,255,255,0.06)">';
+        html += '<td style="padding:10px">' + d + '</td>';
+        html += '<td style="padding:10px">' + typeLabel(r.sourceType) + (r.sourceId ? ' #' + r.sourceId : '') + '</td>';
+        html += '<td style="padding:10px;text-align:right;font-variant-numeric:tabular-nums">' + r.amountTon.toFixed(3) + '</td>';
+        html += '<td style="padding:10px"><span style="font-size:.72rem;padding:2px 8px;border-radius:4px;' + badgeStyle + '">' + statusLabel(r.status) + '</span></td>';
+        html += '</tr>';
+      }
+      html += '</tbody></table></div>';
+    }
+    host.innerHTML = html;
+  } catch (e) {
+    host.innerHTML = '<div style="color:var(--danger);padding:16px">Error: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+async function saveCreatorPayoutWallet() {
+  if (!authToken) { toast('Login first', 'error'); return; }
+  var inp = document.getElementById('earnings-payout-input');
+  var addr = (inp && inp.value || '').trim();
+  try {
+    var data = await apiRequest('POST', '/api/me/payout-wallet', { address: addr });
+    if (!data.ok) { toast(data.error || 'Save failed', 'error'); return; }
+    toast(currentLang === 'ru' ? 'Кошелёк сохранён' : 'Wallet saved', 'success');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+(function() {
+  if (typeof pageLoadFns === 'object' && pageLoadFns) {
+    pageLoadFns.earnings = loadCreatorEarnings;
+  }
+})();
+
+// ── Range slider fill ─────────────────────────────────────────────────────
+// Native <input type="range"> draws a flat single-color track that hides on
+// dark backgrounds. We compute the fill percent (value / max) and set
+// `--fill` so the CSS gradient shows accent-colored progress before the thumb.
+(function() {
+  function updateFill(input) {
+    if (!input || input.type !== 'range') return;
+    var min = parseFloat(input.min) || 0;
+    var max = parseFloat(input.max);
+    if (!isFinite(max) || max <= min) return;
+    var val = parseFloat(input.value);
+    if (!isFinite(val)) return;
+    var pct = ((val - min) / (max - min)) * 100;
+    input.style.setProperty('--fill', pct + '%');
+  }
+  function scan(root) {
+    (root || document).querySelectorAll('input[type="range"]').forEach(updateFill);
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function() { scan(); });
+  } else {
+    scan();
+  }
+  // Live update while user drags
+  document.addEventListener('input', function(e) {
+    if (e.target && e.target.type === 'range') updateFill(e.target);
+  });
+  // New sliders rendered dynamically — observe and prime them
+  var pending = false;
+  new MutationObserver(function() {
+    if (pending) return;
+    pending = true;
+    setTimeout(function() { pending = false; scan(); }, 100);
+  }).observe(document.body, { childList: true, subtree: true });
+})();
+
+// ── Admin: SkillOpt page — list built-in skills + per-skill version history
+//    + "Optimize" trigger that auto-generates queries and runs the 4-step loop.
+const BUILT_IN_SKILLS = [
+  'gifts', 'nft', 'defi', 'ton-wallet', 'fragment', 'telegram-stars',
+  'web3-monitor', 'acton', 'ton-blockchain', 'agentic-wallets',
+  'tolk', 'func2tolk', 'jetton-mint',
+];
+async function loadAdminSkillsPage() {
+  if (!currentUser || !currentUser._isAdmin) { toast('Owner only', 'error'); return; }
+  const box = document.getElementById('admin-skills-content');
+  if (!box) return;
+  box.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--text-muted)">Loading skill versions…</div>';
+
+  // Fetch versions for each skill in parallel
+  const rows = await Promise.all(BUILT_IN_SKILLS.map(async (name) => {
+    try {
+      const r = await apiRequest('GET', '/api/admin/skills/' + encodeURIComponent(name) + '/versions');
+      const versions = (r && r.versions) || [];
+      const activeVer = versions.find(v => v.accepted);
+      const latest = versions[0];
+      return { name, versions, activeVer, latest };
+    } catch { return { name, versions: [], activeVer: null, latest: null }; }
+  }));
+
+  let html = '<div style="display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(340px,1fr))">';
+  rows.forEach(r => {
+    const acc = r.activeVer ? r.activeVer.version_num : 0;
+    const totalVer = r.versions.length;
+    const lastScore = r.latest && typeof r.latest.eval_score === 'number'
+      ? (r.latest.eval_score * 100).toFixed(1) + '%' : '—';
+    const baseScore = r.latest && typeof r.latest.baseline_score === 'number'
+      ? (r.latest.baseline_score * 100).toFixed(1) + '%' : '—';
+    const deltaColor = r.latest && r.latest.accepted ? '#22c55e' : '#ef4444';
+    html += '<div class="settings-card" style="padding:16px 18px;border-radius:12px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">' +
+        '<div><div style="font-weight:700;font-size:15px;color:var(--text-primary)">' + escHtml(r.name) + '</div>' +
+        '<div style="font-size:11.5px;color:var(--text-muted);margin-top:3px">active v' + acc + ' · ' + totalVer + ' total</div></div>' +
+        '<button class="btn btn-secondary btn-sm" onclick="optimizeSkill(\'' + r.name + '\')">' +
+          '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>' +
+          ' Optimize' +
+        '</button>' +
+      '</div>' +
+      '<div style="font-size:12px;color:var(--text-secondary);font-family:ui-monospace,monospace;display:flex;gap:14px">' +
+        '<span>last: <b style="color:' + deltaColor + '">' + lastScore + '</b></span>' +
+        '<span style="color:var(--text-muted)">base: ' + baseScore + '</span>' +
+      '</div>' +
+      (r.versions.length > 0
+        ? '<details style="margin-top:10px"><summary style="font-size:12px;color:var(--primary);cursor:pointer">history</summary>' +
+            '<div style="margin-top:8px;display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto">' +
+              r.versions.map(v => {
+                const sc = typeof v.eval_score === 'number' ? (v.eval_score * 100).toFixed(0) + '%' : '—';
+                const acceptedTag = v.accepted ? '<span style="color:#22c55e;font-weight:700">✓</span>' : '<span style="color:#ef4444">✗</span>';
+                return '<div style="padding:6px 8px;border-radius:6px;background:rgba(255,255,255,0.02);font-size:11.5px;font-family:ui-monospace,monospace;display:flex;gap:10px;align-items:center">' +
+                  acceptedTag +
+                  '<span style="color:var(--text-secondary)">v' + v.version_num + '</span>' +
+                  '<span>' + sc + '</span>' +
+                  '<span style="color:var(--text-muted);flex:1;text-align:right">' + new Date(v.created_at).toLocaleDateString() + '</span>' +
+                  '</div>';
+              }).join('') +
+            '</div>' +
+          '</details>'
+        : '') +
+      '</div>';
+  });
+  html += '</div>';
+  box.innerHTML = html;
+}
+async function optimizeSkill(skillName) {
+  if (!confirm('Run SkillOpt pass for "' + skillName + '"? Atlas will burn ~$0.05-0.20 on the platform key.')) return;
+  const box = document.getElementById('admin-skills-content');
+  toast('Atlas thinking — this takes 30-90 seconds…', 'info');
+  try {
+    const r = await apiRequest('POST', '/api/admin/skills/' + encodeURIComponent(skillName) + '/optimize', {
+      auto_generate_queries: true,
+    });
+    if (r && r.ok) {
+      const delta = typeof r.delta === 'number' ? (r.delta * 100).toFixed(1) + '%' : '?';
+      toast(r.status + ': base=' + ((r.baseline_score || 0) * 100).toFixed(1) + '% → cand=' + ((r.candidate_score || 0) * 100).toFixed(1) + '% Δ' + delta, r.status === 'accepted' ? 'success' : 'warning');
+      loadAdminSkillsPage();
+    } else { toast(r && r.error || 'Failed', 'error'); }
+  } catch (e) { toast('Error: ' + (e.message || e), 'error'); }
+}
+
+// ── Admin: Memory Cleanup page — audit log + manual trigger ──────────────
+async function loadAdminCleanupPage() {
+  if (!currentUser || !currentUser._isAdmin) { toast('Owner only', 'error'); return; }
+  const box = document.getElementById('admin-cleanup-content');
+  if (!box) return;
+  box.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--text-muted)">Loading log…</div>';
+  try {
+    const r = await apiRequest('GET', '/api/admin/memory-cleanup/log');
+    const items = (r && r.items) || [];
+    if (items.length === 0) {
+      box.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--text-muted);font-size:14px">No cleanup runs yet. First pass fires 5 min after bot start.</div>';
+      return;
+    }
+    let html = '<div style="display:flex;flex-direction:column;gap:10px">';
+    items.forEach(item => {
+      const s = item.stats || {};
+      const totalPruned =
+        (s.agent_memory_vec?.pruned || 0) +
+        (s.agent_lessons?.pruned || 0) +
+        (s.agent_contacts?.pruned || 0) +
+        (s.agent_mailbox?.pruned || 0) +
+        (s.agent_transcripts?.pruned || 0);
+      const totalDeduped = s.agent_memory_vec?.deduped || 0;
+      html += '<div class="settings-card" style="padding:14px 18px;border-radius:10px">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">' +
+          '<div>' +
+            '<div style="font-weight:600;font-size:13px;color:var(--text-primary)">' + escHtml(item.kind || 'unknown') + '</div>' +
+            '<div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;font-family:ui-monospace,monospace">' + new Date(item.created_at).toLocaleString() + ' · ' + (s.duration_ms || 0) + 'ms</div>' +
+          '</div>' +
+          '<div style="font-family:ui-monospace,monospace;font-size:13px;display:flex;gap:14px">' +
+            '<span style="color:#ef4444">−' + totalPruned + '</span>' +
+            (totalDeduped ? '<span style="color:#f59e0b">∼' + totalDeduped + '</span>' : '') +
+          '</div>' +
+        '</div>' +
+        '<details><summary style="cursor:pointer;font-size:12px;color:var(--primary)">breakdown</summary>' +
+          '<pre style="margin:6px 0 0;padding:8px 10px;background:rgba(0,0,0,0.25);border-radius:6px;font-size:11px;color:var(--text-secondary);font-family:ui-monospace,monospace">' +
+            escHtml(JSON.stringify(s, null, 2)) +
+          '</pre>' +
+        '</details>' +
+        '</div>';
+    });
+    html += '</div>';
+    box.innerHTML = html;
+  } catch (e) { box.innerHTML = '<div style="padding:2rem;color:#ef4444">Error: ' + escHtml(e.message || String(e)) + '</div>'; }
+}
+async function runMemoryCleanupNow() {
+  if (!confirm('Run memory cleanup pass now? Zero LLM cost, but may take a few seconds.')) return;
+  toast(currentLang === 'ru' ? 'Очистка запущена…' : 'Cleanup running…', 'info');
+  try {
+    const r = await apiRequest('POST', '/api/admin/memory-cleanup/run', {});
+    if (r && r.ok) {
+      const s = r.stats || {};
+      toast('Done in ' + (s.duration_ms || 0) + 'ms', 'success');
+      loadAdminCleanupPage();
+    } else { toast(r && r.error || 'Failed', 'error'); }
+  } catch (e) { toast('Error: ' + (e.message || e), 'error'); }
+}
+
+// ── Admin: Payouts page (manual TonConnect sign) ─────────────────────────
+// Owner-only page that lists pending creator earnings and lets the owner
+// sign a batch transfer via their connected Tonkeeper. No mnemonic is
+// stored server-side — the server only records the resulting tx hash.
+async function loadAdminPayouts() {
+  if (!currentUser || !currentUser._isAdmin) {
+    toast(currentLang === 'ru' ? 'Только для админов' : 'Admin only', 'error');
+    return;
+  }
+  // Render into the static #admin-payouts-content container in studio.html.
+  // navigateTo() handles page-active toggling already; we only fill content.
+  var host = document.getElementById('admin-payouts-content');
+  if (!host) {
+    var page = document.getElementById('admin-payouts-page');
+    if (!page) {
+      page = document.createElement('div');
+      page.id = 'admin-payouts-page';
+      page.className = 'page active';
+      var mc = document.querySelector('.main-content') || document.body;
+      mc.appendChild(page);
+    }
+    host = document.createElement('div');
+    host.id = 'admin-payouts-content';
+    host.style.padding = '16px';
+    page.appendChild(host);
+  }
+  host.innerHTML = '<div class="skel skel-block" style="height:24px;width:30%"></div>' +
+                   '<div class="skel skel-block" style="height:120px;margin-top:16px"></div>';
+  try {
+    var data = await apiRequest('GET', '/api/admin/payouts/pending');
+    if (!data.ok) throw new Error(data.error || 'load failed');
+    var isRu = currentLang === 'ru';
+    var html = '';
+    html += '<h2 style="margin:0 0 8px;font-size:1.25rem">💸 ' + (isRu ? 'Выплаты авторам' : 'Author payouts') + '</h2>';
+    html += '<div style="color:var(--text-muted);font-size:.85rem;margin-bottom:16px">' +
+            (isRu
+              ? 'Подпиши batch transfer через свой Tonkeeper — сервер не хранит mnemonic.'
+              : 'Sign a batch transfer with your Tonkeeper — no mnemonic stored server-side.') + '</div>';
+    if (!data.items || data.items.length === 0) {
+      html += '<div style="background:var(--bg-tertiary);border-radius:10px;padding:24px;text-align:center;color:var(--text-muted)">' +
+              (isRu ? 'Нет накопленных выплат ≥ ' : 'No pending payouts ≥ ') + data.minPayoutTon + ' TON</div>';
+      host.innerHTML = html;
+      return;
+    }
+    html += '<div style="display:flex;gap:12px;margin-bottom:16px">';
+    html += '<div style="flex:1;background:var(--bg-tertiary);border-radius:10px;padding:14px">' +
+              '<div style="font-size:.72rem;color:var(--text-muted);text-transform:uppercase">' + (isRu ? 'К оплате' : 'To pay') + '</div>' +
+              '<div style="font-size:1.4rem;font-weight:700;margin-top:4px">' + data.totalTon.toFixed(3) + ' TON</div></div>';
+    html += '<div style="flex:1;background:var(--bg-tertiary);border-radius:10px;padding:14px">' +
+              '<div style="font-size:.72rem;color:var(--text-muted);text-transform:uppercase">' + (isRu ? 'Авторов' : 'Authors') + '</div>' +
+              '<div style="font-size:1.4rem;font-weight:700;margin-top:4px">' + data.total + '</div></div>';
+    html += '</div>';
+    html += '<div style="background:var(--bg-tertiary);border-radius:10px;overflow:hidden;margin-bottom:20px">';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:.85rem">';
+    html += '<thead><tr style="background:rgba(255,255,255,0.03);font-size:.72rem;color:var(--text-muted);text-transform:uppercase">';
+    html += '<th style="text-align:left;padding:10px"><input type="checkbox" id="adm-payout-all" checked onchange="toggleAdminPayoutAll(this)"></th>';
+    html += '<th style="text-align:left;padding:10px">' + (isRu ? 'User' : 'User') + '</th>';
+    html += '<th style="text-align:right;padding:10px">TON</th>';
+    html += '<th style="text-align:left;padding:10px">' + (isRu ? 'Адрес' : 'Address') + '</th>';
+    html += '</tr></thead><tbody>';
+    for (var i = 0; i < data.items.length; i++) {
+      var r = data.items[i];
+      var idx = i;
+      html += '<tr data-idx="' + idx + '" style="border-top:1px solid rgba(255,255,255,0.06)">';
+      html += '<td style="padding:10px"><input type="checkbox" class="adm-payout-row" data-idx="' + idx + '" checked></td>';
+      html += '<td style="padding:10px;font-variant-numeric:tabular-nums">' + r.userId + '</td>';
+      html += '<td style="padding:10px;text-align:right;font-variant-numeric:tabular-nums">' + r.amountTon.toFixed(3) + '</td>';
+      html += '<td style="padding:10px;font-family:monospace;font-size:.75rem"><code>' + escHtml(r.payoutWallet.slice(0, 12) + '…' + r.payoutWallet.slice(-8)) + '</code></td>';
+      html += '</tr>';
+    }
+    html += '</tbody></table></div>';
+    html += '<button data-save-button onclick="signPayoutBatch()" class="btn-accent" style="font-size:.95rem;padding:12px 24px">' +
+              (isRu ? '🔐 Подписать через Tonkeeper' : '🔐 Sign via Tonkeeper') +
+            '</button>';
+    host.innerHTML = html;
+    window._adminPayoutItems = data.items;
+  } catch (e) {
+    host.innerHTML = '<div style="color:var(--danger);padding:16px">Error: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+function toggleAdminPayoutAll(master) {
+  document.querySelectorAll('.adm-payout-row').forEach(function(cb) { cb.checked = master.checked; });
+}
+
+async function signPayoutBatch() {
+  var items = window._adminPayoutItems || [];
+  if (items.length === 0) return;
+  var selectedIdxs = Array.from(document.querySelectorAll('.adm-payout-row:checked')).map(function(cb) { return parseInt(cb.getAttribute('data-idx'), 10); });
+  if (selectedIdxs.length === 0) {
+    toast(currentLang === 'ru' ? 'Никого не выбрано' : 'Nothing selected', 'error');
+    return;
+  }
+  var selected = selectedIdxs.map(function(i) { return items[i]; });
+  // Lazy-init TonConnect (Admin page may load before Profile section initialized it)
+  if (!_tonConnectUI) initTonConnect();
+  var tc = _tonConnectUI;
+  if (!tc) {
+    toast(currentLang === 'ru' ? 'TON Connect недоступен' : 'TON Connect unavailable', 'error');
+    return;
+  }
+  if (!tc.connected) {
+    toast(currentLang === 'ru'
+      ? 'Подключаю Tonkeeper… подтверди в кошельке и нажми «Подписать» ещё раз'
+      : 'Opening Tonkeeper… approve in wallet then click Sign again', 'info');
+    try { await tc.openModal(); } catch (e) { console.warn('openModal failed:', e); }
+    return;
+  }
+  // Build TonConnect messages — up to 4 per TX is the typical limit. We chunk
+  // into multiple sequential sendTransaction calls if needed.
+  var BATCH_LIMIT = 4;
+  var allSent = [];
+  try {
+    for (var start = 0; start < selected.length; start += BATCH_LIMIT) {
+      var chunk = selected.slice(start, start + BATCH_LIMIT);
+      var msgs = chunk.map(function(item) {
+        return {
+          address: item.payoutWallet,
+          amount: item.amountNano, // nanoTON as string
+          payload: undefined, // optional — could encode "creator payout" comment
+        };
+      });
+      // 5-minute TonConnect validity window
+      var tx = { validUntil: Math.floor(Date.now() / 1000) + 300, messages: msgs };
+      var result = await tc.sendTransaction(tx);
+      // TonConnect returns { boc } — extract real tx hash via SHA-256 of the
+      // decoded BoC (matches what tonapi.io / tonscan.org use as tx hash).
+      // If decode fails, fall back to a placeholder so the row still gets
+      // marked paid — we never re-send the same earning_id (idempotent).
+      var txHash = await _txHashFromBoc(result && result.boc).catch(function() { return ''; });
+      if (!txHash) txHash = 'manual_' + Date.now();
+      // Confirm with backend
+      var confirm = await apiRequest('POST', '/api/admin/payouts/confirm', {
+        txHash: txHash,
+        batch: chunk.map(function(item) {
+          return {
+            userId: item.userId,
+            earningIds: item.earningIds,
+            amountNano: item.amountNano,
+            toAddress: item.payoutWallet,
+          };
+        }),
+      });
+      if (!confirm.ok) {
+        toast(confirm.error || 'Confirm failed', 'error');
+        return;
+      }
+      allSent.push({ txHash: txHash, count: chunk.length });
+    }
+    toast(currentLang === 'ru'
+      ? 'Отправлено: ' + selected.length + ' выплат в ' + allSent.length + ' TX'
+      : 'Sent ' + selected.length + ' payouts in ' + allSent.length + ' TX', 'success');
+    setTimeout(loadAdminPayouts, 1500);
+  } catch (e) {
+    toast((e && e.message) || 'Sign cancelled', 'error');
+  }
+}
+
+// ── Admin: Pending user withdrawal requests (manual TonConnect approval) ──
+async function loadAdminWithdrawals() {
+  if (!currentUser || !currentUser._isAdmin) return;
+  var host = document.getElementById('admin-withdrawals-content');
+  if (!host) {
+    var page = document.getElementById('admin-payouts-page');
+    if (!page) return;
+    host = document.createElement('div');
+    host.id = 'admin-withdrawals-content';
+    host.style.padding = '16px';
+    host.style.marginTop = '24px';
+    page.appendChild(host);
+  }
+  host.innerHTML = '<div class="skel skel-block" style="height:24px;width:30%"></div>';
+  try {
+    var data = await apiRequest('GET', '/api/admin/withdrawals/pending');
+    if (!data.ok) throw new Error(data.error || 'load failed');
+    var isRu = currentLang === 'ru';
+    var html = '';
+    html += '<h2 style="margin:24px 0 8px;font-size:1.25rem">⬆️ ' + (isRu ? 'Запросы на вывод' : 'Withdrawal requests') + '</h2>';
+    html += '<div style="color:var(--text-muted);font-size:.85rem;margin-bottom:16px">' +
+            (isRu
+              ? 'Юзеры запрашивают вывод — подпиши каждый через свой Tonkeeper.'
+              : 'Users request withdrawals — sign each via Tonkeeper.') + '</div>';
+    if (!data.items || data.items.length === 0) {
+      html += '<div style="background:var(--bg-tertiary);border-radius:10px;padding:24px;text-align:center;color:var(--text-muted)">' +
+              (isRu ? 'Нет ожидающих выводов' : 'No pending withdrawals') + '</div>';
+      host.innerHTML = html;
+      return;
+    }
+    html += '<div style="background:var(--bg-tertiary);border-radius:10px;overflow:hidden">';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:.85rem">';
+    html += '<thead><tr style="background:rgba(255,255,255,0.03);font-size:.72rem;color:var(--text-muted);text-transform:uppercase">';
+    html += '<th style="text-align:left;padding:10px">ID</th>';
+    html += '<th style="text-align:left;padding:10px">User</th>';
+    html += '<th style="text-align:right;padding:10px">TON</th>';
+    html += '<th style="text-align:left;padding:10px">' + (isRu ? 'Адрес' : 'Address') + '</th>';
+    html += '<th style="text-align:left;padding:10px">' + (isRu ? 'Действие' : 'Action') + '</th>';
+    html += '</tr></thead><tbody>';
+    for (var i = 0; i < data.items.length; i++) {
+      var r = data.items[i];
+      html += '<tr id="wd-row-' + r.id + '" style="border-top:1px solid rgba(255,255,255,0.06)">';
+      html += '<td style="padding:10px">#' + r.id + '</td>';
+      html += '<td style="padding:10px;font-variant-numeric:tabular-nums">' + r.userId + '</td>';
+      html += '<td style="padding:10px;text-align:right;font-variant-numeric:tabular-nums">' + r.amountTon.toFixed(3) + '</td>';
+      html += '<td style="padding:10px;font-family:monospace;font-size:.75rem"><code>' + escHtml(r.toAddress.slice(0, 12) + '…' + r.toAddress.slice(-8)) + '</code></td>';
+      html += '<td style="padding:10px">' +
+                '<button class="btn-accent btn-sm" onclick="signWithdrawal(' + r.id + ',' + r.userId + ',\'' + r.amountNano + '\',\'' + r.toAddress + '\')">🔐 ' + (isRu ? 'Подписать' : 'Sign') + '</button> ' +
+                '<button class="btn-sm" style="background:rgba(239,68,68,0.15);color:#ef4444;border:1px solid rgba(239,68,68,0.3)" onclick="cancelWithdrawal(' + r.id + ')">✕ ' + (isRu ? 'Отмена' : 'Cancel') + '</button>' +
+              '</td>';
+      html += '</tr>';
+    }
+    html += '</tbody></table></div>';
+    host.innerHTML = html;
+  } catch (e) {
+    host.innerHTML = '<div style="color:var(--danger);padding:16px">Error: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+async function signWithdrawal(requestId, userId, amountNano, toAddress) {
+  if (!_tonConnectUI) initTonConnect();
+  var tc = _tonConnectUI;
+  if (!tc) {
+    toast(currentLang === 'ru' ? 'TON Connect недоступен' : 'TON Connect unavailable', 'error');
+    return;
+  }
+  if (!tc.connected) {
+    toast(currentLang === 'ru'
+      ? 'Подключаю Tonkeeper… подтверди в кошельке и нажми «Подписать» ещё раз'
+      : 'Opening Tonkeeper… approve in wallet then click Sign again', 'info');
+    try { await tc.openModal(); } catch (e) { console.warn('openModal failed:', e); }
+    return;
+  }
+  try {
+    var tx = {
+      validUntil: Math.floor(Date.now() / 1000) + 300,
+      messages: [{ address: toAddress, amount: String(amountNano) }],
+    };
+    var result = await tc.sendTransaction(tx);
+    var txHash = await _txHashFromBoc(result && result.boc).catch(function() { return ''; });
+    if (!txHash) txHash = 'manual_' + Date.now();
+    var confirm = await apiRequest('POST', '/api/admin/withdrawals/confirm', { requestId: requestId, txHash: txHash });
+    if (!confirm.ok) { toast(confirm.error || 'Confirm failed', 'error'); return; }
+    toast(currentLang === 'ru' ? 'Вывод #' + requestId + ' подтверждён' : 'Withdrawal #' + requestId + ' confirmed', 'success');
+    setTimeout(loadAdminWithdrawals, 800);
+  } catch (e) {
+    toast((e && e.message) || 'Sign cancelled', 'error');
+  }
+}
+
+async function cancelWithdrawal(requestId) {
+  var reason = prompt(currentLang === 'ru' ? 'Причина отмены (необязательно):' : 'Cancel reason (optional):');
+  if (reason === null) return;
+  try {
+    var r = await apiRequest('POST', '/api/admin/withdrawals/cancel', { requestId: requestId, reason: reason || '' });
+    if (!r.ok) { toast(r.error || 'Cancel failed', 'error'); return; }
+    toast(currentLang === 'ru' ? 'Отменён, баланс возвращён' : 'Cancelled, balance refunded', 'success');
+    setTimeout(loadAdminWithdrawals, 800);
+  } catch (e) { toast((e && e.message) || 'Error', 'error'); }
+}
+
+// Patch loadAdminPayouts to ALSO load withdrawals on the same page
+var _origLoadAdminPayouts = loadAdminPayouts;
+loadAdminPayouts = async function() {
+  await _origLoadAdminPayouts();
+  await loadAdminWithdrawals();
+};
+
+// Register page loader
+(function() {
+  if (typeof pageLoadFns === 'object' && pageLoadFns) {
+    pageLoadFns['admin-payouts'] = loadAdminPayouts;
+  }
+})();
+
+// ── Plan-limit modal ─────────────────────────────────────────────────────
+// Shown automatically when apiRequest detects a plan-limit error. Reuses
+// the existing plans grid via openPlansModal(), but throttles + adds a
+// dedicated "you hit the limit" intro so the user understands WHY.
+var _lastPlanLimitShownAt = 0;
+function showPlanLimitModal(reason) {
+  // Throttle — at most once per 5s. Multiple parallel requests can each
+  // return the same plan-limit error; we don't want to flash modal 5×.
+  var now = Date.now();
+  if (now - _lastPlanLimitShownAt < 5000) return;
+  _lastPlanLimitShownAt = now;
+
+  var isRu = (typeof currentLang !== 'undefined' && currentLang === 'ru');
+  var modal = document.getElementById('plan-limit-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'plan-limit-modal';
+    modal.className = 'modal-backdrop';
+    modal.style.cssText = 'position:fixed;inset:0;z-index:10001;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.62);backdrop-filter:blur(6px)';
+    modal.onclick = function(e) { if (e.target === modal) closePlanLimitModal(); };
+    document.body.appendChild(modal);
+  }
+  // Clean reason — strip the leading "⛔ *Лимит агентов достигнут*" and trailing "/plans" hint
+  var cleaned = String(reason || '')
+    .replace(/^[⛔*\s]+/, '')
+    .replace(/[\][_*~`]/g, '')
+    .replace(/\/plans\s*$/, '')
+    .trim();
+  if (!cleaned) cleaned = isRu ? 'Достигнут лимит твоего плана.' : 'You hit your plan limit.';
+
+  modal.innerHTML =
+    '<div style="background:var(--bg-secondary);border-radius:14px;padding:24px 28px;max-width:440px;width:92vw;border:1px solid var(--border);box-shadow:0 24px 60px rgba(0,0,0,0.45)">' +
+      '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">' +
+        '<div style="width:44px;height:44px;border-radius:12px;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;font-size:1.4rem">⚡</div>' +
+        '<h2 style="margin:0;font-size:1.15rem">' + (isRu ? 'Лимит плана достигнут' : 'Plan limit reached') + '</h2>' +
+      '</div>' +
+      '<div style="color:var(--text-secondary, var(--text-muted));font-size:.9rem;line-height:1.5;margin-bottom:18px">' + escHtml(cleaned) + '</div>' +
+      '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
+        '<button class="btn-accent" onclick="closePlanLimitModal();openPlansModal()" style="flex:1;min-width:140px">' +
+          (isRu ? '💳 Посмотреть тарифы' : '💳 View plans') +
+        '</button>' +
+        '<button onclick="closePlanLimitModal()" style="padding:10px 18px;background:transparent;border:1px solid var(--border);color:var(--text-muted);border-radius:10px;cursor:pointer">' +
+          (isRu ? 'Позже' : 'Later') +
+        '</button>' +
+      '</div>' +
+    '</div>';
+}
+function closePlanLimitModal() {
+  var m = document.getElementById('plan-limit-modal');
+  if (m) m.remove();
+}
+
+// ── BoC → tx hash extraction ─────────────────────────────────────────────
+// TonConnect.sendTransaction returns the raw signed message BoC (base64). The
+// tx hash is the SHA-256 of the BoC's root cell representation. We don't ship
+// @ton/core in the browser — but the BoC is already a binary blob we can
+// hash via SubtleCrypto. This gives a stable, lookup-friendly hash we can
+// store + display in transaction history.
+async function _txHashFromBoc(bocB64) {
+  if (!bocB64 || typeof bocB64 !== 'string') return '';
+  try {
+    // base64 → Uint8Array
+    var bin = atob(bocB64);
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    // SHA-256 of the full BoC. Note: the "official" tx hash is hash of the
+    // root cell representation (slightly different from SHA-256 of raw BoC
+    // bytes), but for our audit log purposes a stable, deterministic hash of
+    // the signed message is enough — equal BoC always yields equal hash so
+    // we can detect duplicates / look up later.
+    var hashBuf = await crypto.subtle.digest('SHA-256', bytes);
+    var arr = Array.from(new Uint8Array(hashBuf));
+    return arr.map(function(b) { return b.toString(16).padStart(2, '0'); }).join('');
+  } catch (e) {
+    console.warn('[Payout] txHashFromBoc failed:', e && e.message);
+    return '';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TAP MOTION BOOTSTRAP — wires tap-motion.css classes onto existing DOM.
+// Runs after initial load AND after every rerender via MutationObserver, so
+// dynamically-added cards / buttons / nav items also get the new styles.
+// Non-invasive: ADDS classes alongside existing ones (.btn-primary stays).
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Map an agent's AI provider to data-provider value (tap-motion.css supports
+// 10 providers; fall back to none if we don't recognize).
+function _tapDetectProvider(agent) {
+  if (!agent) return null;
+  var cfg = {};
+  try {
+    var tc = agent.trigger_config || agent.triggerConfig || {};
+    cfg = typeof tc === 'string' ? JSON.parse(tc) : tc;
+    cfg = cfg.config || cfg;
+  } catch (e) {}
+  var p = String(cfg.AI_PROVIDER || cfg.aiProvider || '').toLowerCase();
+  if (!p) return null;
+  if (p.indexOf('anthropic') >= 0 || p.indexOf('claude') >= 0)   return 'anthropic';
+  if (p.indexOf('openai') >= 0   || p.indexOf('gpt') >= 0)        return 'openai';
+  if (p.indexOf('gemini') >= 0   || p.indexOf('google') >= 0)     return 'gemini';
+  if (p.indexOf('groq') >= 0)                                     return 'groq';
+  if (p.indexOf('deepseek') >= 0)                                 return 'deepseek';
+  if (p.indexOf('openrouter') >= 0)                               return 'openrouter';
+  if (p.indexOf('together') >= 0)                                 return 'together';
+  if (p.indexOf('xai') >= 0      || p.indexOf('grok') >= 0)       return 'xai';
+  if (p.indexOf('mistral') >= 0)                                  return 'mistral';
+  if (p.indexOf('cohere') >= 0)                                   return 'cohere';
+  return null;
+}
+
+function _tapApplyMotion(root) {
+  root = root || document.body;
+  if (!root || !root.querySelectorAll) return;
+
+  // 1. Buttons — add tap-btn + variant + data-ripple. We pick by existing
+  //    .btn-primary / .btn-ghost / .btn-warning / .btn-danger / .btn-success
+  //    classes and add the matching tap variant ALONGSIDE (no removal).
+  root.querySelectorAll('.btn-primary:not([data-tap])').forEach(function(b) {
+    b.classList.add('tap-btn', 'tap-btn--primary');
+    b.setAttribute('data-ripple', '');
+    b.setAttribute('data-tap', '1');
+  });
+  root.querySelectorAll('.btn-ghost:not([data-tap])').forEach(function(b) {
+    b.classList.add('tap-btn', 'tap-btn--ghost');
+    b.setAttribute('data-ripple', '');
+    b.setAttribute('data-tap', '1');
+  });
+  root.querySelectorAll('.btn-warning:not([data-tap]), .btn-danger:not([data-tap])').forEach(function(b) {
+    b.classList.add('tap-btn', 'tap-btn--danger');
+    b.setAttribute('data-ripple', '');
+    b.setAttribute('data-tap', '1');
+  });
+  // Plain .btn (no variant) → ghost
+  root.querySelectorAll('.btn:not(.btn-primary):not(.btn-ghost):not(.btn-warning):not(.btn-danger):not(.btn-success):not([data-tap])').forEach(function(b) {
+    b.classList.add('tap-btn', 'tap-btn--ghost');
+    b.setAttribute('data-ripple', '');
+    b.setAttribute('data-tap', '1');
+  });
+  root.querySelectorAll('.btn-success:not([data-tap])').forEach(function(b) {
+    b.classList.add('tap-btn', 'tap-btn--primary');
+    b.setAttribute('data-ripple', '');
+    b.setAttribute('data-tap', '1');
+  });
+  // Studio-specific button variants — only data-ripple, NO tap-btn class.
+  // .rt-save-btn has its own complete style from Claude Design (in tap-motion.css)
+  // and adding .tap-btn would let .tap-btn::after / .tap-btn--primary background
+  // override the radial halo and glass surface. Just ripple is enough.
+  root.querySelectorAll('.rt-save-btn:not([data-tap]), .btn-action:not([data-tap]), .rt-btn:not([data-tap])').forEach(function(b) {
+    b.setAttribute('data-ripple', '');
+    b.setAttribute('data-tap', '1');
+  });
+  // (Previously here we set inline position/isolation/overflow on every
+  // .tap-btn — that broke horizontal scroll on Settings tabs because the
+  // tab buttons inherited overflow:visible. The .rt-save-btn CSS now does
+  // isolation itself via its own rule, so the JS poke isn't needed.)
+
+  // 2. Sidebar nav items
+  root.querySelectorAll('.nav-item:not([data-tap])').forEach(function(n) {
+    n.classList.add('tap-nav-item');
+    if (n.classList.contains('active')) n.classList.add('is-active');
+    n.setAttribute('data-tap', '1');
+  });
+  // Keep .is-active in sync with .active
+  document.querySelectorAll('.nav-item').forEach(function(n) {
+    var on = n.classList.contains('active');
+    n.classList.toggle('is-active', on);
+  });
+  // Sync body[data-page] so page-scoped CSS can target the current view
+  // without relying on :has() (which matches hidden display:none pages too).
+  try {
+    var activePage = document.querySelector('.page.active');
+    if (activePage && activePage.id) {
+      document.body.dataset.page = activePage.id.replace(/-page$/, '');
+    }
+  } catch (e) {}
+
+  // 3. Agent cards → data-provider tint
+  var agents = (typeof _agentsCache !== 'undefined' && _agentsCache) ? _agentsCache : [];
+  root.querySelectorAll('.agent-card-enhanced[data-id], .agent-card[data-id], .ap-card[data-id]').forEach(function(card) {
+    if (card.hasAttribute('data-provider-applied')) return;
+    var id = Number(card.getAttribute('data-id'));
+    var a = agents.find ? agents.find(function(x) { return x.id === id; }) : null;
+    var prov = _tapDetectProvider(a);
+    if (prov) card.setAttribute('data-provider', prov);
+    card.setAttribute('data-provider-applied', '1');
+  });
+
+  // 4. Status pills — convert .agent-status .active/.paused/.error to tap-pill
+  root.querySelectorAll('.agent-status:not([data-tap])').forEach(function(s) {
+    s.classList.add('tap-pill');
+    if (s.classList.contains('active'))      s.classList.add('tap-pill--running');
+    else if (s.classList.contains('paused')) s.classList.add('tap-pill--paused');
+    else if (s.classList.contains('error'))  s.classList.add('tap-pill--error');
+    else                                     s.classList.add('tap-pill--idle');
+    // Wrap the dot in __dot class if not already
+    var dot = s.querySelector('.status-dot');
+    if (dot && !dot.classList.contains('tap-pill__dot')) dot.classList.add('tap-pill__dot');
+    s.setAttribute('data-tap', '1');
+  });
+
+  // 5. Toasts — our toast() puts .toast.toast-{success|error|warning|info}
+  //    in #toast-container. Decorate so tap-motion CSS overrides apply.
+  root.querySelectorAll('.toast:not([data-tap])').forEach(function(t) {
+    t.classList.add('tap-toast');
+    if (t.classList.contains('toast-success'))      t.classList.add('tap-toast--success');
+    else if (t.classList.contains('toast-error'))   t.classList.add('tap-toast--error');
+    else if (t.classList.contains('toast-warning')) t.classList.add('tap-toast--warning');
+    else                                            t.classList.add('tap-toast--info');
+    t.setAttribute('data-tap', '1');
+  });
+
+  // 6. Modals — our openModal() uses #generic-modal + .studio-dialog.
+  //    Tag the backdrop + card so tap-modal styling kicks in.
+  root.querySelectorAll('#generic-modal:not([data-tap]), .studio-dialog-backdrop:not([data-tap]), [id$="-modal"]:not([data-tap])').forEach(function(m) {
+    if (m.tagName === 'DIV' && getComputedStyle(m).position === 'fixed') {
+      m.classList.add('tap-modal-backdrop');
+    }
+    m.setAttribute('data-tap', '1');
+  });
+  root.querySelectorAll('.modal-content:not([data-tap]), .studio-dialog:not([data-tap]), .generic-modal-content:not([data-tap])').forEach(function(c) {
+    c.classList.add('tap-modal');
+    c.setAttribute('data-tap', '1');
+  });
+
+  // 7. Inputs — our .rt-input / .form-input / .st-textarea are bare <input>.
+  //    Tap-motion needs wrapping in a .tap-input div, but that's invasive.
+  //    Cheap alternative: add focus-ring via bridge CSS (defined in CSS file).
+  root.querySelectorAll('input.rt-input:not([data-tap]), input.form-input:not([data-tap]), textarea.rt-input:not([data-tap]), textarea.form-input:not([data-tap]), textarea.st-textarea:not([data-tap])').forEach(function(i) {
+    i.classList.add('tap-input__field-bridge');
+    i.setAttribute('data-tap', '1');
+  });
+
+  // 8. AURA AUTO-TAGGING — wire gen-aura to common loading patterns that
+  //    don't already have the bridge selectors.
+  //    Patterns:
+  //      - text nodes saying "Loading…" / "Загрузка…" / "Generating…" /
+  //        "Создаю…" / "Atlas thinking" → wrap with .gen-aura-text
+  //      - empty page placeholders (empty-state with no content) → mark
+  //        their icon with .loading-state-icon
+  var AURA_RX = /^(loading|загрузка|generating|создаю|создание|atlas (думает|thinking)|думаю|анализ|analyzing|обработка|processing|deploying|деплой|sending|отправка|saving|сохранение)[\s.…]*$/i;
+  root.querySelectorAll('*:not(script):not(style):not([data-aura-tagged])').forEach(function(el) {
+    if (el.children.length > 0) return;                      // leaf nodes only
+    var txt = (el.textContent || '').trim();
+    if (txt.length > 0 && txt.length < 32 && AURA_RX.test(txt)) {
+      el.classList.add('gen-aura-text');
+      el.setAttribute('data-aura-tagged', '1');
+    }
+  });
+}
+
+// Click ripple — delegated, works on anything with [data-ripple]
+document.addEventListener('click', function(e) {
+  var btn = e.target.closest && e.target.closest('[data-ripple]');
+  if (!btn) return;
+  // TG Mini App haptic — light tick on every button press
+  try { if (window.__tgAuthHelper) window.__tgAuthHelper.hapticImpact('light'); } catch(e){}
+  // Make sure host has position:relative + overflow:hidden so ripple stays inside
+  var cs = getComputedStyle(btn);
+  if (cs.position === 'static') btn.style.position = 'relative';
+  if (cs.overflow !== 'hidden') btn.style.overflow = 'hidden';
+  var rect = btn.getBoundingClientRect();
+  var r = document.createElement('span');
+  r.className = 'tap-btn__ripple';
+  r.style.left = (e.clientX - rect.left) + 'px';
+  r.style.top  = (e.clientY - rect.top)  + 'px';
+  var size = Math.min(180, Math.max(rect.width, rect.height));
+  r.style.width = r.style.height = size + 'px';
+  btn.appendChild(r);
+  setTimeout(function() { r.remove(); }, 500);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EMOJI → LUCIDE SVG replacement.
+// Walk text nodes, replace listed emoji glyphs with <i data-lucide="…"></i>
+// which Lucide library renders as crisp SVG (currentColor-tinted).
+// Skip inputs/textareas/contentEditable/code/pre/svg to avoid corrupting
+// user data or AI responses.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const _TAP_EMOJI_MAP = {
+  '✅': 'check',          '✔': 'check',         '✓': 'check',
+  '❌': 'x',              '✖': 'x',
+  '⚠️': 'triangle-alert', '⚠': 'triangle-alert',
+  '🔥': 'flame',
+  '💼': 'briefcase',
+  '🎯': 'target',
+  '🛠️': 'wrench',         '🛠': 'wrench',
+  '📋': 'clipboard',
+  '🔍': 'search',
+  '⚙️': 'settings',       '⚙': 'settings',
+  '▶️': 'play',           '▶': 'play',
+  '⏸️': 'pause',          '⏸': 'pause',
+  '⏳': 'hourglass',       '⌛': 'hourglass',
+  '📦': 'package',
+  '💡': 'lightbulb',
+  '🚀': 'rocket',
+  '🤖': 'bot',
+  '👤': 'user',
+  '👥': 'users',
+  '💰': 'coins',          '💵': 'banknote',
+  '📊': 'bar-chart-3',    '📈': 'trending-up',  '📉': 'trending-down',
+  '🔗': 'link',
+  '📝': 'pencil-line',    '✏️': 'pencil',       '✏': 'pencil',
+  '🗑️': 'trash-2',        '🗑': 'trash-2',
+  '⭐': 'star',           '🌟': 'sparkles',
+  '💾': 'save',
+  '🔔': 'bell',           '🔕': 'bell-off',
+  '📩': 'mail',           '📧': 'mail',         '✉️': 'mail',
+  '🛡️': 'shield',         '🛡': 'shield',
+  '🔑': 'key',            '🗝️': 'key',
+  '🏠': 'home',
+  '📌': 'pin',
+  '🆔': 'id-card',
+  '💎': 'gem',
+  '⚡': 'zap',            '⚡️': 'zap',
+  '🎨': 'palette',
+  '📁': 'folder',         '📂': 'folder-open',
+  '➕': 'plus',           '➖': 'minus',
+  '✨': 'sparkles',
+  '🎁': 'gift',
+  '📜': 'scroll-text',
+  '🌐': 'globe',
+  '🔄': 'refresh-cw',     '🔁': 'repeat',
+  '📥': 'download',       '📤': 'upload',
+  '🏆': 'trophy',
+  '🆕': 'sparkles',
+  '🟢': '__dot-green',
+  '🔴': '__dot-red',
+  '🟡': '__dot-yellow',
+  '🔵': '__dot-blue',
+  '🟣': '__dot-purple',
+  '⚪': '__dot-gray',
+  '⚫': '__dot-black',
+  '🎙️': 'mic',            '🎙': 'mic',
+  '📷': 'camera',
+  '🔧': 'wrench',
+  '🚦': 'traffic-cone',
+  '🤝': 'handshake',
+  '👑': 'crown',
+  '🧠': 'brain',
+  '🌍': 'globe',          '🌎': 'globe',        '🌏': 'globe',
+  '📞': 'phone',
+  '🔒': 'lock',           '🔓': 'lock-open',
+};
+
+// Pre-build a single regex matching all keys, longest-first to handle
+// variant selectors (e.g. ✏️ before ✏).
+const _TAP_EMOJI_REGEX = (function() {
+  const keys = Object.keys(_TAP_EMOJI_MAP).sort((a, b) => b.length - a.length);
+  return new RegExp('(' + keys.map(e => e.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')).join('|') + ')', 'gu');
+})();
+
+function _tapDotSvg(color) {
+  return '<svg width="10" height="10" viewBox="0 0 24 24" fill="' + color + '" stroke="none" style="vertical-align:middle;display:inline-block;flex:none"><circle cx="12" cy="12" r="6"/></svg>';
+}
+const _TAP_DOT_COLORS = {
+  green: '#22c55e', red: '#ef4444', yellow: '#eab308', blue: '#3b82f6',
+  purple: '#a855f7', gray: '#94a3b8', black: '#475569',
+};
+
+function _tapBuildIconHtml(emoji) {
+  const name = _TAP_EMOJI_MAP[emoji];
+  if (!name) return emoji; // keep original
+  if (name.startsWith('__dot-')) {
+    const color = _TAP_DOT_COLORS[name.slice(6)] || '#94a3b8';
+    return _tapDotSvg(color);
+  }
+  return '<i data-lucide="' + name + '" class="tap-icon" style="width:1em;height:1em;vertical-align:-2px;display:inline-block;stroke-width:2"></i>';
+}
+
+function _tapReplaceEmojisIn(root) {
+  if (!root || !root.querySelectorAll) return;
+  // Skip these containers entirely
+  const skipSel = 'script,style,textarea,input,code,pre,svg,[contenteditable=""],[contenteditable="true"],.no-emoji-replace,[data-no-emoji],.tap-icon';
+  const skipMatches = function(n) {
+    let p = n.parentNode;
+    while (p && p.nodeType === 1) {
+      if (p.matches && p.matches(skipSel)) return true;
+      p = p.parentNode;
+    }
+    return false;
+  };
+  // Collect text nodes that need replacement
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: function(n) {
+      if (!n.nodeValue) return NodeFilter.FILTER_REJECT;
+      if (skipMatches(n))  return NodeFilter.FILTER_REJECT;
+      _TAP_EMOJI_REGEX.lastIndex = 0;
+      return _TAP_EMOJI_REGEX.test(n.nodeValue) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+    }
+  });
+  const targets = [];
+  let node;
+  while ((node = walker.nextNode())) targets.push(node);
+  targets.forEach(function(textNode) {
+    const html = textNode.nodeValue.replace(_TAP_EMOJI_REGEX, function(emoji) {
+      return _tapBuildIconHtml(emoji);
+    });
+    const tmp = document.createElement('span');
+    tmp.className = 'tap-icon-wrap';
+    tmp.innerHTML = html;
+    textNode.parentNode.replaceChild(tmp, textNode);
+  });
+  // Tell Lucide to render any new <i data-lucide> we inserted
+  try { if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons(); } catch (e) {}
+}
+
+// Hook into _tapApplyMotion so DOM mutations also re-process emojis
+const _tap_origApplyMotion = _tapApplyMotion;
+_tapApplyMotion = function(root) {
+  _tap_origApplyMotion(root);
+  try { _tapReplaceEmojisIn(root || document.body); } catch (e) { console.warn('[tap-emoji]', e); }
+};
+
+// Run once on DOMContentLoaded, then keep up with DOM mutations
+function _tapInitBootstrap() {
+  _tapApplyMotion(document.body);
+  try {
+    var obs = new MutationObserver(function(muts) {
+      // Debounce: schedule single application per animation frame
+      if (_tapInitBootstrap._scheduled) return;
+      _tapInitBootstrap._scheduled = true;
+      requestAnimationFrame(function() {
+        _tapInitBootstrap._scheduled = false;
+        _tapApplyMotion(document.body);
+      });
+    });
+    obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+  } catch (e) { console.warn('[tap-motion] observer failed:', e && e.message); }
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _tapInitBootstrap);
+} else {
+  _tapInitBootstrap();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ACCENT THEME PICKER — global, works on PC + Mini App alike.
+// Sets html[data-accent="..."] which the accent-themes.css rules use
+// to swap --primary / --accent-2 / their RGB components together.
+// ═══════════════════════════════════════════════════════════════════════════
+var ACCENT_THEMES = {
+  aurora:  { name: 'Aurora',  desc: 'TON blue × purple' },
+  cyber:   { name: 'Cyber',   desc: 'cyan × magenta' },
+  plasma:  { name: 'Plasma',  desc: 'purple × pink' },
+  emerald: { name: 'Emerald', desc: 'emerald × teal' },
+  sunset:  { name: 'Sunset',  desc: 'amber × red' },
+  mono:    { name: 'Mono',    desc: 'sky × indigo' },
+};
+window.setAccentTheme = function(themeId) {
+  if (!ACCENT_THEMES[themeId]) return;
+  document.documentElement.dataset.accent = themeId;
+  try { localStorage.setItem('accent_theme', themeId); } catch(_){}
+  document.querySelectorAll('.preset-card[data-accent-id]').forEach(function(c) {
+    var active = c.dataset.accentId === themeId;
+    c.classList.toggle('active', active);
+    var tick = c.querySelector('.accent-tick');
+    if (tick) tick.style.display = active ? 'inline-flex' : 'none';
+  });
+  var label = document.getElementById('accent-current-name');
+  if (label) label.textContent = ACCENT_THEMES[themeId].name;
+  try { if (window.__tgAuthHelper) window.__tgAuthHelper.hapticImpact('light'); } catch(_) {}
+};
+(function _restoreAccentTheme() {
+  var saved = null;
+  try { saved = localStorage.getItem('accent_theme'); } catch(_){}
+  var theme = (saved && ACCENT_THEMES[saved]) ? saved : 'aurora';
+  document.documentElement.dataset.accent = theme;
+  // Defer active-card highlight until settings page is in DOM
+  var tries = 0;
+  function markActive() {
+    if (document.querySelector('.preset-card[data-accent-id]')) {
+      window.setAccentTheme(theme);
+      return;
+    }
+    if (tries++ < 40) setTimeout(markActive, 250);
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', markActive);
+  } else {
+    markActive();
+  }
+})();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TELEGRAM MINI APP — Phase 3 native-feel bootstrap
+// ----------------------------------------------------------------------------
+// Auto-wires BackButton + HapticFeedback across the entire Studio:
+//   • Modal stack — whenever any modal overlay becomes visible, BackButton
+//     shows and pops the top modal on tap; hides when stack empties.
+//   • Toast haptics — success toasts → notification('success'),
+//     error → notification('error'), warning → notification('warning').
+//   • Universal click haptics — light tick on any button-like control press.
+//   • Sidebar drawer — hamburger toggle for Mini App on small viewport.
+// Runs only when window.__tgAuthHelper exists (i.e. inside Telegram).
+// ═══════════════════════════════════════════════════════════════════════════
+(function _tapMiniAppPhase3() {
+  if (!window.__tgAuthHelper) return; // not in TG WebView
+
+  var tg = window.__tgAuthHelper;
+  var MODAL_SELECTOR = [
+    '.modal-overlay',
+    '.modal-backdrop',
+    '.studio-dialog-backdrop',
+    '.agent-settings-modal',
+    '.onboarding-modal',
+    '#generic-modal',
+    '#agent-settings-modal',
+    '#wizard-modal',
+    '#wallet-link-modal',
+    '#flow-group-modal',
+    '#atlas-deploy-modal',
+    '#plans-modal',
+    '#topup-modal',
+    '#withdraw-modal',
+    '#logs-modal',
+    '#delete-agent-modal',
+    '#mkt-detail-modal',
+    '#publish-modal',
+  ].join(',');
+
+  // Stack of modals currently visible. BackButton always closes top.
+  var modalStack = [];
+
+  function _findCloseTrigger(modal) {
+    // Order matters — pick the most specific close button first.
+    var candidates = [
+      modal.querySelector('.modal-close'),
+      modal.querySelector('.modal-close-btn'),
+      modal.querySelector('[data-close]'),
+      modal.querySelector('[onclick*="close"]'),
+    ];
+    for (var i = 0; i < candidates.length; i++) {
+      if (candidates[i]) return candidates[i];
+    }
+    return null;
+  }
+
+  function _isVisible(el) {
+    if (!el || !el.style) return false;
+    if (el.style.display === 'none') return false;
+    if (el.classList && el.classList.contains('hidden')) return false;
+    var cs = getComputedStyle(el);
+    return cs.display !== 'none' && cs.visibility !== 'hidden' && cs.opacity !== '0';
+  }
+
+  function _closeTop() {
+    var top = modalStack[modalStack.length - 1];
+    if (!top) { tg.hideBackButton(); return; }
+    tg.hapticImpact('light');
+    var trigger = _findCloseTrigger(top);
+    if (trigger) {
+      try { trigger.click(); }
+      catch (e) { top.style.display = 'none'; }
+    } else {
+      // Fallback: force hide
+      top.style.display = 'none';
+    }
+    // Stack will be updated by the next visibility-poll tick.
+  }
+
+  // BackButton handler installed once — calls whatever is on top of stack
+  // (modal stack, or agent settings handler if registered separately).
+  tg.showBackButton(_closeTop);
+  tg.hideBackButton(); // start hidden
+
+  function _refreshModalStack() {
+    var visibleNow = [];
+    document.querySelectorAll(MODAL_SELECTOR).forEach(function(m) {
+      if (_isVisible(m)) visibleNow.push(m);
+    });
+    // Detect open/close transitions
+    var prevIds = modalStack.map(function(m) { return m; });
+    var newOpens = visibleNow.filter(function(m) { return prevIds.indexOf(m) === -1; });
+    var newCloses = prevIds.filter(function(m) { return visibleNow.indexOf(m) === -1; });
+    if (newOpens.length) tg.hapticImpact('medium');
+    if (newCloses.length) tg.hapticImpact('light');
+    modalStack = visibleNow;
+    if (modalStack.length > 0) {
+      try { window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.BackButton && window.Telegram.WebApp.BackButton.show(); } catch(e){}
+    } else {
+      try { window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.BackButton && window.Telegram.WebApp.BackButton.hide(); } catch(e){}
+    }
+  }
+
+  // Modal observer — watch all known modal containers for style/class mutations
+  var modalObs = new MutationObserver(function(muts) {
+    // Debounce one tick — avoid thrashing during animation start
+    if (_refreshModalStack._scheduled) return;
+    _refreshModalStack._scheduled = true;
+    requestAnimationFrame(function() {
+      _refreshModalStack._scheduled = false;
+      _refreshModalStack();
+    });
+  });
+  // Observe the whole body — many modals are toggled via inline style="display"
+  modalObs.observe(document.body, {
+    attributes: true,
+    attributeFilter: ['style', 'class'],
+    subtree: true,
+  });
+  _refreshModalStack(); // initial pass
+
+  // ── Universal click haptics ──────────────────────────────────────────────
+  // Light tick on any actionable control. Skip if inside [data-ripple]
+  // (already handled by the ripple delegate above to avoid double-tick).
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest && e.target.closest(
+      'button, .btn, .tap-btn, .rt-save-btn, .rt-btn, .btn-action, .nav-item, .tap-nav-item, [role="button"], .agent-card, .agent-card-enhanced'
+    );
+    if (!btn) return;
+    if (btn.closest('[data-ripple]')) return; // ripple handler did it
+    if (btn.hasAttribute('data-no-haptic')) return;
+    try { tg.hapticImpact('light'); } catch (_) {}
+  }, true);
+
+  // ── Toast haptics ────────────────────────────────────────────────────────
+  // Observe #toast-container for new toasts and fire appropriate notification.
+  var toastObs = new MutationObserver(function(muts) {
+    muts.forEach(function(m) {
+      m.addedNodes && m.addedNodes.forEach(function(n) {
+        if (n.nodeType !== 1) return;
+        if (!n.classList) return;
+        if (n.classList.contains('toast-success') || n.classList.contains('tap-toast--success')) {
+          try { tg.hapticNotification('success'); } catch (_) {}
+        } else if (n.classList.contains('toast-error') || n.classList.contains('tap-toast--error')) {
+          try { tg.hapticNotification('error'); } catch (_) {}
+        } else if (n.classList.contains('toast-warning') || n.classList.contains('tap-toast--warning')) {
+          try { tg.hapticNotification('warning'); } catch (_) {}
+        }
+      });
+    });
+  });
+  var toastContainer = document.getElementById('toast-container');
+  if (toastContainer) {
+    toastObs.observe(toastContainer, { childList: true });
+  } else {
+    // Container may be created lazily — wait once for body mutations
+    var bodyObs = new MutationObserver(function() {
+      var c = document.getElementById('toast-container');
+      if (c) {
+        toastObs.observe(c, { childList: true });
+        bodyObs.disconnect();
+      }
+    });
+    bodyObs.observe(document.body, { childList: true, subtree: true });
+  }
+
+  // ── Sidebar hamburger drawer ─────────────────────────────────────────────
+  // On Mini App small viewport, the sidebar is hidden by default (CSS).
+  // Inject a hamburger button into the topbar that toggles body.sidebar-open.
+  // Tap outside the open drawer closes it.
+  function _installDrawerToggle() {
+    if (document.getElementById('tap-drawer-toggle')) return;
+    var topbar = document.querySelector('.topbar');
+    if (!topbar) return;
+    if (window.innerWidth > 600) return; // desktop — let CSS rules govern
+    // Skip if page already has a native hamburger — avoids the duplicate-button
+    // bug where our injected button + existing .mobile-hamburger sit side-by-side.
+    if (document.querySelector('.mobile-hamburger, .topbar-hamburger, [data-hamburger]')) return;
+    var btn = document.createElement('button');
+    btn.id = 'tap-drawer-toggle';
+    btn.type = 'button';
+    btn.setAttribute('aria-label', 'Open menu');
+    btn.style.cssText = 'background:transparent;border:none;color:var(--text-primary,#e7ecf3);width:40px;height:40px;display:inline-flex;align-items:center;justify-content:center;border-radius:10px;cursor:pointer;margin-right:6px;flex:0 0 40px;';
+    btn.innerHTML = '<i data-lucide="menu" style="width:22px;height:22px;stroke-width:2"></i>';
+    btn.onclick = function(e) {
+      e.stopPropagation();
+      document.body.classList.toggle('sidebar-open');
+      try { tg.hapticImpact('light'); } catch (_) {}
+    };
+    topbar.insertBefore(btn, topbar.firstChild);
+    try { if (window.lucide && lucide.createIcons) lucide.createIcons(); } catch(_){}
+  }
+  function _closeDrawerOnOutside(e) {
+    if (!document.body.classList.contains('sidebar-open')) return;
+    var sidebar = document.querySelector('.sidebar');
+    var toggle = document.getElementById('tap-drawer-toggle');
+    if (!sidebar) return;
+    if (sidebar.contains(e.target)) return;
+    if (toggle && toggle.contains(e.target)) return;
+    document.body.classList.remove('sidebar-open');
+    try { tg.hapticImpact('light'); } catch (_) {}
+  }
+  // Also close drawer when user picks a nav item — avoid stale drawer state.
+  document.addEventListener('click', function(e) {
+    if (!document.body.classList.contains('sidebar-open')) return;
+    var navItem = e.target.closest && e.target.closest('.sidebar .nav-item, .sidebar a, .sidebar [data-page-nav]');
+    if (!navItem) return;
+    setTimeout(function() {
+      document.body.classList.remove('sidebar-open');
+    }, 120);
+  });
+  document.addEventListener('click', _closeDrawerOnOutside, true);
+  // Install drawer toggle once DOM is ready
+  function _whenReady(fn) {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn);
+    else fn();
+  }
+  _whenReady(_installDrawerToggle);
+  // Reinstall on resize (if user rotates phone between portrait/landscape)
+  window.addEventListener('resize', function() {
+    var existing = document.getElementById('tap-drawer-toggle');
+    if (window.innerWidth > 600 && existing) existing.remove();
+    if (window.innerWidth <= 600 && !existing) _installDrawerToggle();
+  });
+
+  // ── MainButton smart-bind ────────────────────────────────────────────────
+  // Page-level primary CTAs: when a page has a clearly-marked primary action
+  // (data-main-action attribute, or .rt-save-btn that's currently visible),
+  // forward it to TG's native MainButton. The MainButton lives at the bottom
+  // of the WebView and feels native vs a floating in-page button on mobile.
+  function _refreshMainButton() {
+    if (window.innerWidth > 600) {
+      try { tg.hideMainButton(); } catch (_) {}
+      return;
+    }
+    // Look for the most prominent visible primary CTA in the viewport.
+    // STRICT: only respect elements that EXPLICITLY opt in via data-* attribute.
+    // Pulling random .rt-save-btn was a false-positive trap — many pages have
+    // save buttons in non-primary contexts (e.g. Export Data row in profile).
+    var candidates = Array.from(document.querySelectorAll(
+      '[data-main-action]:not([style*="display:none"]):not(.hidden), ' +
+      '[data-mini-main]:not([style*="display:none"]):not(.hidden)'
+    )).filter(_isVisible);
+    if (!candidates.length) {
+      try { tg.hideMainButton(); } catch (_) {}
+      return;
+    }
+    var primary = candidates[0];
+    var label = primary.getAttribute('data-main-label') ||
+                (primary.textContent || '').trim().slice(0, 32) ||
+                'Continue';
+    try {
+      tg.setMainButton(label, function() {
+        try { tg.hapticImpact('medium'); } catch (_) {}
+        primary.click();
+      });
+    } catch (_) {}
+  }
+  // Refresh on page change + on body mutations (modals open/close, etc.)
+  var mainBtnObs = new MutationObserver(function() {
+    if (_refreshMainButton._scheduled) return;
+    _refreshMainButton._scheduled = true;
+    requestAnimationFrame(function() {
+      _refreshMainButton._scheduled = false;
+      _refreshMainButton();
+    });
+  });
+  mainBtnObs.observe(document.body, {
+    attributes: true,
+    attributeFilter: ['style', 'class', 'data-page'],
+    subtree: true,
+  });
+  _whenReady(_refreshMainButton);
+
+  console.log('[TGMiniApp] Phase 3 native-feel bootstrap ready (BackButton, MainButton, Haptic, Drawer)');
+
+  // ── SIDEBAR FOOTER: inject ToS / Privacy / Docs links to fill bottom space.
+  // Inside Mini App: use internal navigateTo() — keeps user in TG.
+  // Outside TG: use t.me deep-link with ?startapp=<page> so the link routes
+  // into Telegram and lands on the right Studio page (start_param handled
+  // by the IIFE in studio.html).
+  function _injectSidebarFooterLinks() {
+    var navFoot = document.querySelector('.sidebar .nav-foot');
+    if (!navFoot) return;
+    if (navFoot.querySelector('[data-tap-footer-links]')) return;
+    var box = document.createElement('div');
+    box.setAttribute('data-tap-footer-links', '1');
+    box.style.cssText =
+      'display:flex;flex-wrap:wrap;gap:6px 12px;justify-content:center;' +
+      'padding:10px 4px 4px;margin-top:8px;' +
+      'border-top:1px solid rgba(255,255,255,0.05);' +
+      'font-size:10.5px;line-height:1.4;';
+    var items = [
+      { label: 'Terms',   page: 'terms' },
+      { label: 'Privacy', page: 'privacy' },
+      { label: 'Docs',    page: 'guide' },
+      { label: 'About',   page: 'overview' },
+      { label: 'Support', tg: 'TonAgentPlatformBot' },
+    ];
+    var BOT_SHORT = 'TonAgentPlatformBot/studio';   // t.me/<bot>/<shortname>
+    items.forEach(function(it) {
+      var a = document.createElement('a');
+      var deepLink = it.tg
+        ? 'https://t.me/' + it.tg
+        : 'https://t.me/' + BOT_SHORT + '?startapp=' + encodeURIComponent(it.page);
+      a.href = deepLink;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.textContent = it.label;
+      a.style.cssText = 'color:var(--text-muted,rgba(255,255,255,0.45));text-decoration:none;font-weight:500;';
+      a.onmouseover = function(){ a.style.color = 'var(--text-primary,#e7ecf3)'; };
+      a.onmouseout  = function(){ a.style.color = 'var(--text-muted,rgba(255,255,255,0.45))'; };
+      a.onclick = function(e) {
+        try { tg.hapticImpact('light'); } catch(_) {}
+        // Inside Mini App: navigate internally, no link redirect
+        if (window.__tgAuthHelper && it.page && typeof navigateTo === 'function') {
+          e.preventDefault();
+          navigateTo(it.page);
+          // Close drawer after nav so user sees the page
+          document.body.classList.remove('sidebar-open');
+          document.body.classList.remove('sidebar-mobile-open');
+          return;
+        }
+        // External: route through TG so it opens in Telegram, not browser
+        if (window.__tgAuthHelper && window.__tgAuthHelper.openTelegramLink) {
+          e.preventDefault();
+          window.__tgAuthHelper.openTelegramLink(deepLink);
+        }
+      };
+      box.appendChild(a);
+    });
+    navFoot.appendChild(box);
+  }
+  _whenReady(_injectSidebarFooterLinks);
+  // Re-inject if the sidebar is re-rendered
+  new MutationObserver(_injectSidebarFooterLinks).observe(document.body, { childList: true, subtree: true });
+
+  // ── LOADING OVERLAY: gen-aura full-screen during initial Mini App auth
+  function _showGenAuraLoading(label) {
+    if (document.getElementById('tg-gen-loading')) return;
+    var overlay = document.createElement('div');
+    overlay.id = 'tg-gen-loading';
+    overlay.className = 'gen-aura-overlay';
+    overlay.innerHTML =
+      '<div class="gen-aura-overlay__card">' +
+        '<div class="gen-aura-overlay__orb"></div>' +
+        '<div class="gen-aura-text" style="font-size:15px">' + (label || 'Loading Studio') + '</div>' +
+        '<div class="gen-aura-overlay__dots"><span></span><span></span><span></span></div>' +
+      '</div>';
+    document.body.appendChild(overlay);
+  }
+  function _hideGenAuraLoading() {
+    var overlay = document.getElementById('tg-gen-loading');
+    if (!overlay) return;
+    overlay.style.transition = 'opacity 260ms ease-out';
+    overlay.style.opacity = '0';
+    setTimeout(function() { try { overlay.remove(); } catch(_){} }, 280);
+  }
+  window.__tgShowLoading = _showGenAuraLoading;
+  window.__tgHideLoading = _hideGenAuraLoading;
+  // Show immediately on Mini App entry; hidden once auth completes (initAuth
+  // detects window.__tgHideLoading and calls it after showApp).
+  _showGenAuraLoading('Loading Studio');
+  // Safety: if for some reason initAuth never calls hide (e.g. auth fails),
+  // pull it off after 8 seconds so the user isn't stuck behind the overlay.
+  setTimeout(function() {
+    var overlay = document.getElementById('tg-gen-loading');
+    if (overlay && document.body.classList.contains('sidebar-open') === false) {
+      // Heuristic: if app is visible, kill the overlay
+      var app = document.getElementById('app');
+      if (app && !app.classList.contains('hidden')) _hideGenAuraLoading();
+    }
+  }, 8000);
+})();

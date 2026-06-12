@@ -27,12 +27,13 @@ export const PLATFORM_WALLET_ADDRESS =
 const sessions = new Map<string, { value: any; createdAt: number }>();
 
 // Periodic cleanup: remove session entries older than 1 hour, every 30 minutes
-setInterval(() => {
+const _sessionCleanupTimer = setInterval(() => {
   const cutoff = Date.now() - 60 * 60 * 1000;
   for (const [k, v] of sessions) {
     if (v.createdAt < cutoff) sessions.delete(k);
   }
 }, 30 * 60 * 1000);
+if (_sessionCleanupTimer.unref) _sessionCleanupTimer.unref();
 
 export interface AgentWallet {
   address: string;
@@ -49,8 +50,17 @@ export async function generateAgentWallet(): Promise<AgentWallet> {
   const mnemonic = await mnemonicNew(24);
   const keyPair = await mnemonicToWalletKey(mnemonic);
   const wallet = WalletContractV4.create({ workchain: 0, publicKey: keyPair.publicKey });
+  // Address.toString() may throw on frozen objects in newer @ton/core — use Address helper
+  let addr: string;
+  try {
+    addr = wallet.address.toString({ urlSafe: true, bounceable: false });
+  } catch {
+    // Fallback: reconstruct Address from raw
+    const { Address } = require('@ton/core');
+    addr = Address.parse(wallet.address.toRawString()).toString({ urlSafe: true, bounceable: false });
+  }
   return {
-    address: wallet.address.toString({ urlSafe: true, bounceable: false }),
+    address: addr,
     mnemonic: mnemonic.join(' '),
     publicKey: keyPair.publicKey,
     secretKey: keyPair.secretKey,
@@ -63,15 +73,30 @@ export async function walletFromMnemonic(
   mnemonicStr: string,
   preferVersion?: 'v4r2' | 'v5r1'
 ): Promise<AgentWallet> {
-  const words = mnemonicStr.trim().split(/\s+/);
+  // Validate input — `mnemonicToWalletKey([''])` returns a deterministic but
+  // meaningless key, which would produce a "valid" but useless wallet.
+  if (!mnemonicStr || typeof mnemonicStr !== 'string') {
+    throw new Error('Invalid mnemonic: empty or not a string');
+  }
+  const words = mnemonicStr.trim().split(/\s+/).filter(w => w.length > 0);
+  if (words.length < 12 || words.length > 24 || words.length % 3 !== 0) {
+    throw new Error(`Invalid mnemonic: expected 12/15/18/21/24 words, got ${words.length}`);
+  }
   const keyPair = await mnemonicToWalletKey(words);
   const version = preferVersion || 'v4r2';
   const wallet =
     version === 'v5r1'
       ? WalletContractV5R1.create({ workchain: 0, publicKey: keyPair.publicKey })
       : WalletContractV4.create({ workchain: 0, publicKey: keyPair.publicKey });
+  let addr: string;
+  try {
+    addr = wallet.address.toString({ urlSafe: true, bounceable: false });
+  } catch {
+    const { Address } = require('@ton/core');
+    addr = Address.parse(wallet.address.toRawString()).toString({ urlSafe: true, bounceable: false });
+  }
   return {
-    address: wallet.address.toString({ urlSafe: true, bounceable: false }),
+    address: addr,
     mnemonic: mnemonicStr,
     publicKey: keyPair.publicKey,
     secretKey: keyPair.secretKey,
@@ -96,6 +121,7 @@ export async function getWalletBalance(address: string): Promise<number> {
       `${TONCENTER_API}/getAddressBalance?address=${encodeURIComponent(address)}`,
       { headers: TONCENTER_KEY ? { 'X-API-Key': TONCENTER_KEY } : {} }
     );
+    if (!res.ok) return 0;
     const data = await res.json() as any;
     if (data.ok && data.result) return parseInt(data.result) / 1e9;
     return 0;
@@ -105,26 +131,57 @@ export async function getWalletBalance(address: string): Promise<number> {
   }
 }
 
-/** Get seqno via TONAPI (supports V5R1) */
-async function getSeqno(address: string): Promise<number> {
+/**
+ * In-memory seqno cache per wallet address.
+ * Prevents race condition where two txs issued within a few seconds
+ * both read the same "last confirmed" seqno from TonAPI and overwrite each other.
+ * Entry lives for SEQNO_CACHE_TTL, then we refresh from network.
+ */
+interface SeqnoCacheEntry { seqno: number; expiresAt: number; }
+const _seqnoCache = new Map<string, SeqnoCacheEntry>();
+const SEQNO_CACHE_TTL = 90_000; // 90s — covers a typical TX confirmation window
+
+async function fetchSeqnoFromNetwork(address: string): Promise<number> {
   try {
     if (TONAPI_KEY) {
       const res = await fetch(`${TONAPI_BASE}/wallet/${encodeURIComponent(address)}/seqno`, {
         headers: { Authorization: `Bearer ${TONAPI_KEY}` },
       });
-      const data = await res.json() as any;
-      if (data.seqno != null) return Number(data.seqno);
+      if (res.ok) {
+        const data = await res.json() as any;
+        if (data.seqno != null) return Number(data.seqno);
+      }
     }
-    // fallback TonCenter v2
     const res = await fetch(
       `${TONCENTER_API}/getWalletInformation?address=${encodeURIComponent(address)}`,
       { headers: TONCENTER_KEY ? { 'X-API-Key': TONCENTER_KEY } : {} }
     );
+    if (!res.ok) return 0;
     const data = await res.json() as any;
     return data?.result?.seqno || 0;
   } catch {
     return 0;
   }
+}
+
+/**
+ * Get seqno for a wallet. Returns max(network_seqno, cached_optimistic_seqno).
+ * Caller is expected to increment the cached value after a successful send via
+ * `advanceSeqnoCache(address, usedSeqno)`.
+ */
+async function getSeqno(address: string): Promise<number> {
+  const now = Date.now();
+  const cached = _seqnoCache.get(address);
+  const net = await fetchSeqnoFromNetwork(address);
+  if (cached && cached.expiresAt > now) {
+    return Math.max(net, cached.seqno);
+  }
+  return net;
+}
+
+/** Mark a seqno as consumed so the next tx within TTL uses seqno+1 even if network hasn't updated yet. */
+function advanceSeqnoCache(address: string, usedSeqno: number): void {
+  _seqnoCache.set(address, { seqno: usedSeqno + 1, expiresAt: Date.now() + SEQNO_CACHE_TTL });
 }
 
 /** Send BOC via TONAPI or TonCenter fallback */
@@ -154,6 +211,12 @@ async function sendBoc(boc: string): Promise<{ ok: boolean; hash?: string; error
       headers: { 'Content-Type': 'application/json', ...(TONCENTER_KEY ? { 'X-API-Key': TONCENTER_KEY } : {}) },
       body: JSON.stringify({ boc }),
     });
+    if (!res.ok) {
+      // Toncenter returned a non-2xx status — don't trust the body shape
+      let detail = '';
+      try { detail = (await res.text()).slice(0, 200); } catch {}
+      return { ok: false, error: `Toncenter HTTP ${res.status}: ${detail}` };
+    }
     const data = await res.json() as any;
     if (data.ok) return { ok: true, hash: data.result?.hash || 'sent' };
     return { ok: false, error: data.error || 'Unknown error' };
@@ -284,7 +347,42 @@ export async function sendAgentTransaction(
     .store(storeMessage(external({ to: walletAddr, body: transferBody })))
     .endCell();
   const boc = extCell.toBoc().toString('base64');
-  return sendBoc(boc);
+  const result = await sendBoc(boc);
+  if ((result as any)?.ok) advanceSeqnoCache(agentWallet.address, seqno);
+  return result;
+}
+
+/**
+ * Known-safe destination contracts. Transactions to these addresses skip the
+ * "unknown destination" warning log.
+ * Keep lowercase for case-insensitive comparison.
+ */
+const KNOWN_SAFE_CONTRACTS = new Set<string>([
+  // STON.fi routers
+  'eqb3ncyboxg4trbdzsbqfnjcqskbfa-aneee3sgkaetyy_yxk',  // router v1
+  'eqbimctyhqfdjs8kgkl-ruvevwbavobmc_xnqfarlt_1scvx',   // router v2.1
+  // DeDust factory & native vault
+  'eqbfbvpnsa9jxkmkhwsbc-hj3y__7vvlvrzlrv8h_3stjypdm',
+  // pTON masters (wrapped TON for DEXes)
+  'eqcm3b9ni2e_zdxcrvrepysxbrhcjqrzapjqpvorwopwjn9r',
+  // Tonstakers (tsTON pool)
+  'eqcbjmkc-acxhp7uxnczzxsvogdkxvsv7-2npoprwmgsp4z0',
+  // Fragment / Telegram Gifts contracts
+  'eqdw2akiv40iyglh_dcmqw-d3_wnv7ie_niadh_xeo9ekhcp',
+]);
+
+/** Scam / sanctioned contracts — block outright, do not sign. */
+const BLACKLIST_CONTRACTS = new Set<string>([
+  // populate from incidents — keep empty until an address is verified malicious
+]);
+
+function normalizeForCompare(addr: string): string {
+  try {
+    const { Address } = require('@ton/core');
+    return Address.parse(addr).toString({ urlSafe: true, bounceable: false }).toLowerCase();
+  } catch {
+    return addr.toLowerCase();
+  }
 }
 
 /** Send a transfer with a pre-built Cell payload (e.g. SwiftGifts tx_payload) */
@@ -295,6 +393,34 @@ export async function sendAgentTransactionWithCell(
   payloadBase64: string
 ): Promise<any> {
   const { Cell } = await import('@ton/core');
+
+  // ── Destination guard ──
+  let normalized: string;
+  try {
+    const { Address } = await import('@ton/core');
+    normalized = Address.parse(toAddress).toString({ urlSafe: true, bounceable: false });
+  } catch {
+    return { ok: false, error: `Invalid destination address "${String(toAddress).slice(0, 20)}..."` };
+  }
+  const cmp = normalized.toLowerCase();
+  if (BLACKLIST_CONTRACTS.has(cmp)) {
+    console.error(`[TX-GUARD] BLOCKED blacklisted destination ${normalized} amount=${amountTon}`);
+    return { ok: false, error: 'Destination is on the scam blacklist — transaction blocked.' };
+  }
+  if (!KNOWN_SAFE_CONTRACTS.has(cmp)) {
+    // Not malicious, just not on our safe list. Log for review; daily spend cap upstream limits exposure.
+    console.warn(`[TX-GUARD] Unknown destination ${normalized} amount=${amountTon} payload=${payloadBase64.slice(0, 40)}...`);
+  }
+
+  // Sanity on amount
+  if (!Number.isFinite(amountTon) || amountTon <= 0) {
+    return { ok: false, error: `Invalid amount ${amountTon}` };
+  }
+  if (amountTon > 100) {
+    console.error(`[TX-GUARD] Large tx amount=${amountTon} to=${normalized} — requires manual verification`);
+    return { ok: false, error: `Amount ${amountTon} TON exceeds per-transaction hard cap (100 TON). Split into multiple transactions or raise cap explicitly.` };
+  }
+
   let bodyCell;
   try {
     bodyCell = Cell.fromBase64(payloadBase64);
@@ -324,7 +450,9 @@ export async function sendAgentTransactionWithCell(
     .store(storeMessage(external({ to: walletAddr, body: transferBody })))
     .endCell();
   const boc = extCell.toBoc().toString('base64');
-  return sendBoc(boc);
+  const result = await sendBoc(boc);
+  if ((result as any)?.ok) advanceSeqnoCache(agentWallet.address, seqno);
+  return result;
 }
 
 // ── Legacy helper (used in some places) ──────────────────────────────────────

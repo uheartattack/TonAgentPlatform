@@ -32,6 +32,17 @@ import { getUserSettingsRepository, getMarketplaceRepository, getExecutionHistor
 import { pool as dbPool } from './db';
 import { getWorkflowEngine } from './agent-cooperation';
 import { allAgentTemplates, type AgentTemplate } from './agent-templates';
+import { TOOLSET_PROFILES } from './agents/ai-agent-runtime';
+// Полный список capabilities (копия из CAPABILITY_TOOL_MAP ключей, без circular dep проблем)
+const ALL_CAPABILITIES_FULL = [
+  'wallet', 'jetton_mint', 'nft', 'gifts', 'gifts_market',
+  'telegram', 'telegram_admin', 'telegram_stories', 'telegram_forums',
+  'telegram_analytics', 'telegram_media', 'telegram_discovery', 'telegram_premium',
+  'web', 'state', 'events', 'notify', 'plugins', 'inter_agent',
+  'blockchain', 'defi', 'dns', 'payments',
+  'image', 'ton_mcp', 'workspace', 'mcp', 'confirmation',
+  'image_gen', 'email', 'self_memory', 'journal', 'deals',
+];
 import {
   generateAgentWallet,
   getWalletBalance,
@@ -56,9 +67,71 @@ import {
   verifyTopupTransaction,
   PLATFORM_WALLET,
   formatSubscription,
+  isPlatformAdmin,
 } from './payments';
 
+// ── Shared state & helpers (extracted for architectural clarity) ──────────
+// src/state.ts holds all pending-Maps and their interfaces.
+// Future handler modules should import directly from './state'.
+// bot.ts re-exports so external consumers can import from a single place.
+import type {
+  PendingAgentCreation as _PendingAgentCreation,
+  PendingNameAsk as _PendingNameAsk,
+  PendingAgentSetup as _PendingAgentSetup,
+  PendingTemplateSetup as _PendingTemplateSetup,
+  PendingPublish as _PendingPublish,
+  PendingOnboarding as _PendingOnboarding,
+} from './state';
+
 const OWNER_ID_NUM = parseInt(process.env.OWNER_ID || '0');
+
+// Beta tester group ID — set via /setgroup command in the group
+let BETA_GROUP_ID: number | null = null;
+try { BETA_GROUP_ID = parseInt(process.env.BETA_GROUP_ID || '') || null; } catch {}
+
+// Topic IDs for beta group
+let BETA_ANNOUNCEMENTS_TOPIC: number | null = null;
+try { BETA_ANNOUNCEMENTS_TOPIC = parseInt(process.env.BETA_ANNOUNCEMENTS_TOPIC || '') || null; } catch {}
+
+// Named topic IDs for specific branches
+const TOPIC_IDS = {
+  announcements: 11,
+  daily_quest: 573,
+  events: 576,
+  squads: 579,
+  content: 582,
+  internship: 585,
+};
+
+// Announce to beta group (safe — silently fails if no group configured)
+async function announceToGroup(text: string, options?: any) {
+  if (!BETA_GROUP_ID) return;
+  try { await bot.telegram.sendMessage(BETA_GROUP_ID, text, { parse_mode: 'HTML', ...options }); } catch (e: any) {
+    console.warn('[BetaGroup] announce failed:', e.message);
+  }
+}
+
+// Post to a specific topic in beta group
+async function postToTopic(topicId: number, text: string) {
+  if (!BETA_GROUP_ID) return;
+  try {
+    await bot.telegram.sendMessage(BETA_GROUP_ID, text, {
+      parse_mode: 'HTML', message_thread_id: topicId, disable_web_page_preview: true,
+    });
+  } catch (e: any) {
+    console.warn(`[BetaGroup] topic ${topicId} post failed:`, e.message?.slice(0, 80));
+  }
+}
+
+// Post to Announcements topic specifically
+async function postAnnouncement(text: string) {
+  if (!BETA_GROUP_ID) return;
+  const opts: any = { parse_mode: 'HTML' };
+  if (BETA_ANNOUNCEMENTS_TOPIC) opts.message_thread_id = BETA_ANNOUNCEMENTS_TOPIC;
+  try { await bot.telegram.sendMessage(BETA_GROUP_ID, text, opts); } catch (e: any) {
+    console.warn('[BetaGroup] announcement failed:', e.message);
+  }
+}
 
 // Shared API key detection patterns (used in both global key and agent-edit flows)
 const API_KEY_PATTERNS: ReadonlyArray<{ pattern: RegExp; provider: string }> = [
@@ -91,12 +164,13 @@ function checkRateLimit(userId: number): boolean {
 }
 
 // Periodic cleanup of stale rate limit entries (every 5 min)
-setInterval(() => {
+const _rateLimitCleanupInterval = setInterval(() => {
   const now = Date.now();
   for (const [uid, entry] of _rateLimits) {
     if (now >= entry.resetAt) _rateLimits.delete(uid);
   }
 }, 5 * 60 * 1000);
+_rateLimitCleanupInterval.unref();
 
 // ============================================================
 // TON address validation (prefix + structural via @ton/core)
@@ -370,7 +444,7 @@ interface PendingAgentCreation {
 const pendingCreations = new Map<number, PendingAgentCreation>();
 
 // Auto-cleanup stale pending states every 5 minutes (prevents stuck users)
-setInterval(() => {
+const _pendingCleanup = setInterval(() => {
   const now = Date.now();
   const TTL = 10 * 60 * 1000; // 10 minutes
   for (const [userId, pending] of pendingCreations) {
@@ -380,6 +454,7 @@ setInterval(() => {
     }
   }
 }, 5 * 60 * 1000);
+_pendingCleanup.unref();
 
 // ============================================================
 // State machine для запроса названия агента
@@ -420,6 +495,8 @@ const pendingRefinements = new Map<number, number>(); // userId → last agentId
 // Chat with AI agent: userId → agentId (активный чат-сеанс)
 // ============================================================
 const pendingAgentChats = new Map<number, number>(); // userId → agentId
+const pendingBlocklistAdd = new Map<number, number>(); // userId → agentId
+const pendingTriggerAdd = new Map<number, { agentId: number; step: 'keyword' | 'context'; keyword?: string }>(); // userId → state
 
 // ============================================================
 // Proposal discussion: userId → proposalId
@@ -450,7 +527,11 @@ function getCachedOwner(agentId: number): number | null {
 }
 function setCachedOwner(agentId: number, ownerId: number) {
   _ownerCache.set(agentId, { ownerId, ts: Date.now() });
-  if (_ownerCache.size > 5000) _ownerCache.clear();
+  // Evict oldest half instead of clearing all (prevents cache stampede)
+  if (_ownerCache.size > 5000) {
+    const keys = Array.from(_ownerCache.keys());
+    for (let i = 0; i < 2500; i++) _ownerCache.delete(keys[i]);
+  }
 }
 
 // ============================================================
@@ -655,6 +736,8 @@ interface PendingOnboarding {
   createdAt: number;
 }
 const pendingOnboarding = new Map<number, PendingOnboarding>(); // userId → state
+const pendingFeedback = new Map<number, { type: string; startTs: number; step: 'title' | 'body'; title?: string }>(); // userId → feedback state
+const _pendingBetaJoins = new Map<number, { code: string; username?: string; ts: number; zones?: string[] }>(); // userId → waiting to join group
 
 // ============================================================
 // Определение «мусорного» ввода (ываыва, aaaa, qwerty и т.п.)
@@ -739,7 +822,7 @@ function clearAllPendingStates(userId: number): void {
 // Periodic cleanup of pending Maps to prevent memory leaks
 // ============================================================
 const _pendingTimestamps = new Map<string, number>(); // "mapName:key" → first-seen timestamp
-const PENDING_TTL = 30 * 60 * 1000; // 30 minutes
+const PENDING_TTL = 15 * 60 * 1000; // 15 minutes — wizard flows auto-expire
 
 // All pending Maps/Sets to auto-track (built lazily to avoid TDZ issues with later declarations)
 function _getAllPendingMaps(): [string, Map<any, any> | Set<any>][] {
@@ -772,7 +855,7 @@ function _getAllPendingMaps(): [string, Map<any, any> | Set<any>][] {
   ];
 }
 
-setInterval(() => {
+const _mapsCleanup = setInterval(() => {
   const now = Date.now();
   let cleaned = 0;
 
@@ -864,6 +947,7 @@ setInterval(() => {
     console.log(`[Cleanup] Cleared ${cleaned} stale pending entries`);
   }
 }, 5 * 60 * 1000); // every 5 minutes
+_mapsCleanup.unref();
 
 // ============================================================
 // Middleware — логирование
@@ -1043,7 +1127,7 @@ async function showOnboardingStep(ctx: Context, userId: number, lang: 'ru' | 'en
       parse_mode: 'HTML',
       reply_markup: {
         inline_keyboard: [
-          [{ text: ru ? '⏩ Пропустить (без своего ключа)' : '⏩ Skip (use platform key)', callback_data: 'ob_skip_key' }],
+          [{ text: ru ? '⏩ Пропустить (агент не запустится без ключа)' : '⏩ Skip (agent won\'t run until you add a key)', callback_data: 'ob_skip_key' }],
           [{ text: ru ? '◀️ Назад к провайдерам' : '◀️ Back to providers', callback_data: 'ob_back_provider' }],
         ],
       },
@@ -1213,6 +1297,15 @@ async function showWelcome(ctx: Context, userId: number, name: string, lang: 'ru
       },
     }
   );
+  // Disclaimer
+  await ctx.reply(
+    lang === 'ru'
+      ? '⚠️ <b>Бот в активной разработке.</b> Для полного опыта используй Web Studio:'
+      : '⚠️ <b>Bot is in active development.</b> For the full experience use Web Studio:',
+    { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
+      [{ text: lang === 'ru' ? '🌐 Открыть Studio' : '🌐 Open Studio', url: 'https://tonagentplatform.com/studio' }],
+    ]}}
+  );
 }
 
 // ============================================================
@@ -1224,6 +1317,49 @@ bot.command('start', async (ctx) => {
 
   // ── Parse deeplink payload ──
   const startPayload = ctx.message.text.split(' ')[1] || '';
+
+  // ── Referral deeplink: /start ref_XYZ → bind referrer before anything else ──
+  // We record the link BEFORE language setup so it works even for first-time users.
+  if (startPayload.startsWith('ref_')) {
+    try {
+      const { userIdFromRefCode, recordReferral, awardReferralBonuses, markActive } = await import('./rewards');
+      const referrerId = userIdFromRefCode(startPayload);
+      if (referrerId && referrerId !== userId) {
+        const { pool } = await import('./db');
+        // Ensure referee has a beta_testers row (create if first-time)
+        await pool.query(
+          `INSERT INTO builder_bot.beta_testers (user_id, username, status) VALUES ($1, $2, 'active')
+           ON CONFLICT (user_id) DO NOTHING`,
+          [userId, ctx.from?.username || null]
+        );
+        const isNew = await recordReferral(pool, referrerId, userId);
+        if (isNew) {
+          const awarded = await awardReferralBonuses(pool, userId);
+          await markActive(pool, referrerId);
+          // Notify the referrer in DM
+          try {
+            await bot.telegram.sendMessage(referrerId,
+              `${ce('party','🎉')} Твой реферал @${ctx.from?.username || userId} только что зашёл!\n\n` +
+              `${ce('coin','💰')} +20 XP тебе\n` +
+              `${ce('handshake','🤝')} 10% с его будущих трат — твои\n\n` +
+              `Проверить: /mystats`,
+              { parse_mode: 'HTML' }
+            ).catch(() => {});
+          } catch {}
+          if (awarded.l2) {
+            try {
+              await bot.telegram.sendMessage(awarded.l2,
+                `${ce('sparkle','✨')} +5 XP — твой реферал привёл своего друга (2-й уровень реферала).`,
+                { parse_mode: 'HTML' }
+              ).catch(() => {});
+            } catch {}
+          }
+          console.log(`[Referral] user ${userId} referred by ${referrerId}${awarded.l2 ? ` (L2: ${awarded.l2})` : ''}`);
+        }
+      }
+    } catch (e: any) { console.warn('[Referral] deeplink error:', e?.message); }
+    // Fall through — proceed with normal /start flow after binding
+  }
 
   // ── Первый старт: выбор языка ──
   const existingLang = await loadUserLang(userId);
@@ -1269,6 +1405,20 @@ bot.command('start', async (ctx) => {
     return;
   }
 
+  // Feedback deeplink from group: /start feedback
+  if (startPayload === 'feedback') {
+    const ru = getUserLang(userId) === 'ru';
+    await safeReply(ctx, ru ? `${ce('bug','🐛')} Выберите тип обращения:` : `${ce('bug','🐛')} Choose feedback type:`, { parse_mode: 'HTML',
+      reply_markup: { inline_keyboard: [
+        [{ text: 'Баг', icon_custom_emoji_id: CE.bug, callback_data: 'fb_type:bug' },
+         { text: 'Фича', icon_custom_emoji_id: CE.bulb, callback_data: 'fb_type:feature' }],
+        [{ text: 'Саппорт', icon_custom_emoji_id: CE.handshake, callback_data: 'fb_type:support' },
+         { text: 'Critical', icon_custom_emoji_id: CE.fire, callback_data: 'fb_type:critical' }],
+      ] },
+    });
+    return;
+  }
+
   // Реферал с лендинга: /start ref_XXXX
   if (startPayload.startsWith('ref_')) {
     const refSource = startPayload.replace('ref_', '');
@@ -1276,6 +1426,70 @@ bot.command('start', async (ctx) => {
       type: 'referral', source: refSource,
     }).catch(() => {});
     // Не return — показываем обычное приветствие
+  }
+
+  // Beta invite code deeplink: /start beta_XXXXXXXX
+  // Flow: click link → validate code → onboarding → group link at the end → join group → THEN beta activates
+  if (startPayload.startsWith('beta_') && startPayload !== 'beta_open') {
+    const code = startPayload.replace('beta_', '');
+    const ru = getUserLang(userId) === 'ru';
+    const { isBetaTester } = require('./payments');
+    if (isBetaTester(userId)) {
+      await safeReply(ctx, ru ? `${ce('lab','🧪')} Вы уже бета-тестер!` : `${ce('lab','🧪')} You are already a beta tester!`);
+      return;
+    }
+    // Validate code — check if valid and has uses left (don't redeem yet)
+    const { pool } = require('./db');
+    const codeRes = await pool.query(`SELECT * FROM builder_bot.beta_invite_codes WHERE code = $1`, [code.toUpperCase()]);
+    if (!codeRes.rows.length) { await safeReply(ctx, `${ce('cross','❌')} Invalid code`); return; }
+    const inv = codeRes.rows[0];
+    if (!inv.is_active || inv.used_count >= inv.max_uses || (inv.expires_at && new Date(inv.expires_at) < new Date())) {
+      let msg = `${ce('lock','🔒')} <b>${ru ? 'Места закончились' : 'No spots left'}</b>\n\n`;
+      msg += ru
+        ? 'К сожалению, все места в этой волне бета-теста уже заняты. Следите за обновлениями — мы откроем новые места позже!'
+        : 'Unfortunately, all spots in this beta wave are taken. Stay tuned — we\'ll open more spots soon!';
+      msg += `\n\n${ce('bell','🔔')} ${ru ? 'Подпишитесь на канал, чтобы не пропустить:' : 'Follow us to not miss out:'} @TonAgentPlatform`;
+      await safeReply(ctx, msg, { parse_mode: 'HTML' });
+      return;
+    }
+    // Reserve spot + store pending — beta activates only on group join
+    await pool.query(`UPDATE builder_bot.beta_invite_codes SET used_count = used_count + 1 WHERE code = $1`, [code.toUpperCase()]);
+    _pendingBetaJoins.set(userId, { code: code.toUpperCase(), username: ctx.from?.username, ts: Date.now() });
+    // Start onboarding — group link will be at the final step
+    await showNewTesterOnboarding(ctx, userId, ru);
+    // Cleanup if they never join group
+    setTimeout(async () => {
+      if (_pendingBetaJoins.has(userId)) {
+        _pendingBetaJoins.delete(userId);
+        console.log(`[Beta] Pending invite expired for ${userId}`);
+      }
+    }, 24 * 60 * 60 * 1000);
+    return;
+  }
+
+  // Open beta deeplink: /start beta_open
+  if (startPayload === 'beta_open') {
+    const { isBetaTester, addBetaTester } = require('./payments');
+    const ru = getUserLang(userId) === 'ru';
+    if (isBetaTester(userId)) {
+      await safeReply(ctx, ru ? `${ce('lab','🧪')} Вы уже бета-тестер!` : `${ce('lab','🧪')} You are already a beta tester!`);
+      return;
+    }
+    // Check slot limit
+    const { pool } = require('./db');
+    const countRes = await pool.query(`SELECT COUNT(*) as cnt FROM builder_bot.beta_testers WHERE status = 'active'`);
+    const MAX_OPEN_BETA = 500;
+    if (parseInt(countRes.rows[0].cnt) >= MAX_OPEN_BETA) {
+      await safeReply(ctx, ru ? '😔 Бета-тест заполнен. Следите за обновлениями!' : '😔 Beta is full. Stay tuned for updates!');
+      return;
+    }
+    await addBetaTester(userId, ctx.from?.username, 'open_beta');
+    // Announce to group
+    const name = ctx.from?.username ? `@${ctx.from.username}` : (ctx.from?.first_name || 'New tester');
+    announceToGroup(`${ce('party','🎉')} <b>${escHtml(name)}</b> присоединился к бета-тесту! / joined the beta test!\n\nWelcome! ${ce('lab','🧪')}`);
+    // Mini-onboarding
+    await showNewTesterOnboarding(ctx, userId, ru);
+    return;
   }
 
   // ── Web studio auth via deeplink: /start webauth_TOKEN ──
@@ -1299,7 +1513,7 @@ bot.command('start', async (ctx) => {
         { parse_mode: 'HTML' }
       );
     } else {
-      await ctx.reply('❌ Токен авторизации не найден или истёк. Обновите страницу дашборда.');
+      await ctx.reply(`${ce('cross','❌')} Токен авторизации не найден или истёк. Обновите страницу дашборда.`);
     }
     return;
   }
@@ -1310,7 +1524,7 @@ bot.command('start', async (ctx) => {
     if (!isNaN(listingId)) {
       const listing = await getMarketplaceRepository().getListing(listingId);
       if (!listing || !listing.isActive) {
-        await safeReply(ctx, '❌ Агент не найден или снят с продажи.', {});
+        await safeReply(ctx, `${ce('cross','❌')} Агент не найден или снят с продажи.`, {});
         return;
       }
       await showListingDetail(ctx, listingId, userId);
@@ -1324,12 +1538,2591 @@ bot.command('start', async (ctx) => {
 });
 
 // ============================================================
+// Beta & Feedback
+// ============================================================
+
+bot.command('beta', async (ctx) => {
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  const args = ctx.message.text.split(' ').slice(1).join(' ').trim();
+  if (!args) {
+    const { isBetaTester } = require('./payments');
+    if (isBetaTester(userId)) {
+      await safeReply(ctx, ru ? `${ce('lab','🧪')} Вы бета-тестер! Используйте /feedback для обратной связи.` : `${ce('lab','🧪')} You are a beta tester! Use /feedback for feedback.`);
+    } else {
+      await safeReply(ctx, ru ? `${ce('lab','🧪')} Введите инвайт-код: /beta XXXXXX\nИли откройте t.me/TonAgentPlatformBot?start=beta_open` : `${ce('lab','🧪')} Enter invite code: /beta XXXXXX\nOr open t.me/TonAgentPlatformBot?start=beta_open`);
+    }
+    return;
+  }
+  const { redeemBetaCode } = require('./payments');
+  const result = await redeemBetaCode(args, userId, ctx.from?.username);
+  if (result.ok) {
+    await safeReply(ctx, ru ? `${ce('lab','🧪')} Код активирован! Добро пожаловать в бета-тест!\nПлан: Beta Tester (10 агентов, 50 генераций/мес)` : `${ce('lab','🧪')} Code activated! Welcome to beta!\nPlan: Beta Tester (10 agents, 50 gens/month)`);
+  } else {
+    await safeReply(ctx, `${ce('cross','❌')} ${result.error}`);
+  }
+});
+
+bot.command('feedback', async (ctx) => {
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  // In groups — redirect to DM
+  if (ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup') {
+    await safeReply(ctx, ru
+      ? `${ce('bug','🐛')} Репорты отправляйте в ЛС бота`
+      : `${ce('bug','🐛')} Send reports in bot DM`, {
+      parse_mode: 'HTML',
+      reply_markup: { inline_keyboard: [[{ text: ru ? 'Открыть ЛС' : 'Open DM', url: 'https://t.me/TonAgentPlatformBot?start=feedback' }]] },
+    });
+    return;
+  }
+  await safeReply(ctx, ru ? `${ce('bug','🐛')} Выберите тип обращения:` : `${ce('bug','🐛')} Choose feedback type:`, { parse_mode: 'HTML',
+    reply_markup: { inline_keyboard: [
+      [
+        { text: 'Баг', icon_custom_emoji_id: CE.bug, callback_data: 'fb_type:bug' },
+        { text: 'Фича', icon_custom_emoji_id: CE.bulb, callback_data: 'fb_type:feature' },
+      ],
+      [
+        { text: 'Саппорт', icon_custom_emoji_id: CE.handshake, callback_data: 'fb_type:support' },
+        { text: 'Общее', icon_custom_emoji_id: CE.star, callback_data: 'fb_type:general' },
+      ],
+      [
+        { text: 'Critical', icon_custom_emoji_id: CE.fire, callback_data: 'fb_type:critical' },
+      ],
+    ] },
+  });
+});
+
+bot.action(/^fb_type:(.+)$/, async (ctx) => {
+  const userId = ctx.from!.id;
+  const type = ctx.match![1];
+  const ru = getUserLang(userId) === 'ru';
+  pendingFeedback.set(userId, { type, startTs: Date.now(), step: 'title' });
+  await ctx.answerCbQuery();
+  const labels: Record<string, string> = { bug: ce('bug','🐛') + ' Баг-репорт', feature: ce('bulb','💡') + ' Предложение', support: ce('handshake','🤝') + ' Саппорт', general: ce('star','💬') + ' Общее', critical: ce('fire','🔥') + ' Critical' };
+  const templates: Record<string, string> = {
+    bug: ru ? 'Пример: Кнопка "Старт" не работает на мобильном' : 'Example: Start button not working on mobile',
+    feature: ru ? 'Пример: Добавить темную тему в Studio' : 'Example: Add dark theme to Studio',
+    critical: ru ? 'Пример: Агент крашится при отправке сообщения' : 'Example: Agent crashes on message send',
+    support: ru ? 'Пример: Не могу подключить Telegram аккаунт' : 'Example: Cannot connect Telegram account',
+    general: ru ? 'Пример: Вопрос про систему очков' : 'Example: Question about points system',
+  };
+  let text = `${labels[type] || type}\n\n`;
+  text += ru ? `<b>Шаг 1/2</b> — Название\n` : `<b>Step 1/2</b> — Title\n`;
+  text += ru ? `Коротко опишите проблему в одном предложении.\n\n` : `Briefly describe the issue in one sentence.\n\n`;
+  text += `<i>${templates[type] || ''}</i>`;
+  await safeReply(ctx, text, { parse_mode: 'HTML' });
+});
+
+bot.command('my_feedback', async (ctx) => {
+  await showMyTickets(ctx, ctx.from!.id);
+});
+
+async function showMyTickets(ctx: any, userId: number, edit = false) {
+  const ru = getUserLang(userId) === 'ru';
+  try {
+    const { pool } = require('./db');
+    const res = await pool.query(
+      `SELECT id, type, message, status, admin_reply, screenshot_file_id, created_at FROM builder_bot.feedback WHERE user_id = $1 ORDER BY created_at DESC LIMIT 10`,
+      [userId]
+    );
+    if (!res.rows.length) {
+      await safeReply(ctx, ru ? 'Нет тикетов.' : 'No tickets found.');
+      return;
+    }
+    const statusIcons: Record<string, string> = { new: ce('diamond','🔵'), in_progress: ce('fire','🟡'), resolved: ce('check','🟢'), closed: ce('lock','⚪') };
+    const typeIcons: Record<string, string> = { bug: ce('bug','🐛'), feature: ce('bulb','💡'), support: ce('handshake','🤝'), critical: ce('fire','🔥'), general: ce('star','💬') };
+    const lines = res.rows.map((r: any) => {
+      const si = statusIcons[r.status] || '⚪';
+      const ti = typeIcons[r.type] || '';
+      const date = new Date(r.created_at).toLocaleDateString('ru');
+      let line = `${si} <b>#${r.id}</b> ${ti} ${date}\n${escHtml((r.message || '').slice(0, 80))}`;
+      if (r.screenshot_file_id) line += `  📎`;
+      if (r.admin_reply) line += `\n↳ <i>${escHtml(r.admin_reply.slice(0, 60))}</i>`;
+      return line;
+    });
+    const text = `${ce('bug','🐛')} <b>${ru ? 'Мои тикеты' : 'My Tickets'}</b>\n\n` + lines.join('\n\n');
+    await testerReply(ctx, userId, text, [
+      [{ text: ru ? 'Новый репорт' : 'New Report', icon_custom_emoji_id: CE.bug, callback_data: 'tg_feedback' },
+       { text: ru ? 'Профиль' : 'Profile', icon_custom_emoji_id: CE.crown, callback_data: 'tg_mystats' }],
+    ], edit);
+  } catch (e: any) { await safeReply(ctx, `${e.message}`); }
+}
+
+// ── /bugs — admin bug tracker in TG ──
+bot.command('bugs', async (ctx) => {
+  await showBugTracker(ctx, ctx.from!.id, 'all');
+});
+
+async function showBugTracker(ctx: any, userId: number, filter: string, edit = false) {
+  const { isPlatformAdmin } = require('./payments');
+  const isAdmin = isPlatformAdmin(userId);
+  // Non-admins see their own tickets
+  if (!isAdmin) { await showMyTickets(ctx, userId, edit); return; }
+
+  const ru = getUserLang(userId) === 'ru';
+  const { pool } = require('./db');
+  const where = filter === 'all' ? '' : filter === 'open' ? "AND status IN ('new','in_progress')" : `AND type = '${filter}'`;
+  const res = await pool.query(
+    `SELECT id, user_id, username, type, message, status, admin_reply, screenshot_file_id, created_at
+     FROM builder_bot.feedback WHERE 1=1 ${where} ORDER BY created_at DESC LIMIT 15`
+  );
+
+  const statusIcons: Record<string, string> = { new: ce('diamond','🔵'), in_progress: ce('fire','🟡'), resolved: ce('check','🟢'), closed: ce('lock','⚪') };
+  const typeIcons: Record<string, string> = { bug: ce('bug','🐛'), feature: ce('bulb','💡'), support: ce('handshake','🤝'), critical: ce('fire','🔥'), general: ce('star','💬') };
+
+  // Stats
+  const stats = await pool.query(`SELECT status, COUNT(*) as cnt FROM builder_bot.feedback GROUP BY status`);
+  const statMap: Record<string, number> = {};
+  stats.rows.forEach((r: any) => { statMap[r.status] = parseInt(r.cnt); });
+  const total = Object.values(statMap).reduce((a, b) => a + b, 0);
+  const open = (statMap['new'] || 0) + (statMap['in_progress'] || 0);
+
+  let text = `${ce('bug','🐛')} <b>Bug Tracker</b>  ·  ${total} total  ·  ${open} open\n\n`;
+
+  if (!res.rows.length) {
+    text += ru ? 'Нет тикетов' : 'No tickets';
+  } else {
+    res.rows.forEach((r: any) => {
+      const si = statusIcons[r.status] || '⚪';
+      const ti = typeIcons[r.type] || '';
+      const date = new Date(r.created_at).toLocaleDateString('ru');
+      text += `${si} <b>#${r.id}</b> ${ti} @${escHtml(r.username || String(r.user_id))}  ${date}\n`;
+      text += `${escHtml((r.message || '').slice(0, 60))}`;
+      if (r.screenshot_file_id) text += `  📎`;
+      if (r.admin_reply) text += `\n↳ <i>${escHtml(r.admin_reply.slice(0, 40))}</i>`;
+      text += '\n\n';
+    });
+  }
+
+  const filterLabel = (f: string, label: string) => (filter === f ? `[${label}]` : label);
+  await testerReply(ctx, userId, text, [
+    [{ text: filterLabel('open', 'Open'), icon_custom_emoji_id: CE.fire, callback_data: 'bugs_filter:open' },
+     { text: filterLabel('all', 'All'), icon_custom_emoji_id: CE.chart, callback_data: 'bugs_filter:all' }],
+    [{ text: filterLabel('bug', 'Bugs'), icon_custom_emoji_id: CE.bug, callback_data: 'bugs_filter:bug' },
+     { text: filterLabel('feature', 'Features'), icon_custom_emoji_id: CE.bulb, callback_data: 'bugs_filter:feature' },
+     { text: filterLabel('critical', 'Critical'), icon_custom_emoji_id: CE.fire, callback_data: 'bugs_filter:critical' }],
+    [{ text: ru ? 'Ответить' : 'Reply', icon_custom_emoji_id: CE.handshake, callback_data: 'bugs_reply' },
+     { text: 'Resolve', icon_custom_emoji_id: CE.check, callback_data: 'bugs_resolve' }],
+  ], edit);
+}
+
+// Bug tracker filter callbacks
+bot.action(/^bugs_filter:(\w+):(\d+)$/, async (ctx) => {
+  const filter = ctx.match![1];
+  const ownerId = parseInt(ctx.match![2]);
+  if (ctx.from!.id !== ownerId) { await ctx.answerCbQuery('Not your button'); return; }
+  await ctx.answerCbQuery();
+  await showBugTracker(ctx, ownerId, filter, true);
+});
+
+// Bug resolve — ask for ticket ID
+const pendingBugAction = new Map<number, { action: string }>();
+
+bot.action(/^bugs_resolve:(\d+)$/, async (ctx) => {
+  const ownerId = parseInt(ctx.match![1]);
+  if (ctx.from!.id !== ownerId) { await ctx.answerCbQuery('Not your button'); return; }
+  await ctx.answerCbQuery();
+  pendingBugAction.set(ownerId, { action: 'resolve' });
+  await safeReply(ctx, 'Enter ticket #ID to resolve:');
+});
+
+bot.action(/^bugs_reply:(\d+)$/, async (ctx) => {
+  const ownerId = parseInt(ctx.match![1]);
+  if (ctx.from!.id !== ownerId) { await ctx.answerCbQuery('Not your button'); return; }
+  await ctx.answerCbQuery();
+  pendingBugAction.set(ownerId, { action: 'reply' });
+  await safeReply(ctx, 'Enter: #ID your reply text');
+});
+
+// ── Admin: generate beta codes ──
+bot.command('beta_code', async (ctx) => {
+  const userId = ctx.from!.id;
+  const { isPlatformAdmin, generateBetaCodes } = require('./payments');
+  if (!isPlatformAdmin(userId)) return;
+  const args = ctx.message.text.split(' ').slice(1);
+  const count = parseInt(args[0]) || 5;
+  const note = args.slice(1).join(' ') || undefined;
+  const codes = await generateBetaCodes(Math.min(count, 50), userId, note);
+  const links = codes.map((c: string) => `• \`${c}\` → t.me/TonAgentPlatformBot?start=beta_${c}`).join('\n');
+  await safeReply(ctx, `${ce('lab','🧪')} Сгенерировано ${codes.length} кодов:\n\n${links}`);
+});
+
+// ── Admin: add beta tester manually ──
+bot.command('beta_add', async (ctx) => {
+  const userId = ctx.from!.id;
+  const { isPlatformAdmin, addBetaTester } = require('./payments');
+  if (!isPlatformAdmin(userId)) return;
+  const target = ctx.message.text.split(' ')[1]?.trim();
+  if (!target) { await safeReply(ctx, 'Usage: /beta_add @username or /beta_add 123456789'); return; }
+  const targetId = parseInt(target.replace('@', ''));
+  if (isNaN(targetId)) { await safeReply(ctx, `Ищу @${target}...`); return; } // TODO: resolve username
+  await addBetaTester(targetId, target);
+  await safeReply(ctx, `${ce('check','✅')} User ${target} added as beta tester`);
+});
+
+// ── Admin: list beta testers ──
+bot.command('beta_list', async (ctx) => {
+  const userId = ctx.from!.id;
+  const { isPlatformAdmin } = require('./payments');
+  if (!isPlatformAdmin(userId)) return;
+  const { pool } = require('./db');
+  const res = await pool.query(`SELECT user_id, username, status, invite_code, created_at FROM builder_bot.beta_testers ORDER BY created_at DESC LIMIT 30`);
+  if (!res.rows.length) { await safeReply(ctx, '📭 Нет тестеров'); return; }
+  const lines = res.rows.map((r: any) => `${r.status === 'active' ? '🟢' : '🔴'} ${r.username || r.user_id} (${r.invite_code || 'manual'}) ${new Date(r.created_at).toLocaleDateString('ru')}`);
+  await safeReply(ctx, `${ce('lab','🧪')} Beta testers (${res.rows.length}):\n\n${lines.join('\n')}`);
+});
+
+// ── Admin: feedback list ──
+bot.command('feedback_list', async (ctx) => {
+  const userId = ctx.from!.id;
+  const { isPlatformAdmin } = require('./payments');
+  if (!isPlatformAdmin(userId)) return;
+  const { pool } = require('./db');
+  const res = await pool.query(`SELECT id, user_id, username, type, message, status, created_at FROM builder_bot.feedback ORDER BY created_at DESC LIMIT 15`);
+  if (!res.rows.length) { await safeReply(ctx, '📭 Нет фидбека'); return; }
+  const statusIcons: Record<string, string> = { new: '🔵', in_progress: '🟡', resolved: '🟢', closed: '⚪' };
+  const lines = res.rows.map((r: any) => `${statusIcons[r.status] || '⚪'} #${r.id} [${r.type}] @${r.username || r.user_id}\n${r.message.slice(0, 100)}`);
+  await safeReply(ctx, `📋 Feedback (${res.rows.length}):\n\n${lines.join('\n\n')}`);
+});
+
+// ── Leaderboard — top beta testers by points ──
+bot.command('leaderboard', async (ctx) => {
+  await showTesterLeaderboard(ctx, ctx.from!.id);
+});
+
+// Premium custom emoji helpers (RestrictedEmoji pack)
+const CE: Record<string,string> = {
+  fire:'5420315771991497307', trophy:'5409008750893734809', diamond:'5471952986970267163',
+  rocket:'5445284980978621387', crown:'5467406098367521267', bug:'5397991236361527676',
+  bulb:'5472146462362048818', coin:'5375296873982604963', lab:'5411512278740640309',
+  check:'5427009714745517609', star:'5469741319330996757', medal:'5334644364280866007',
+  gold:'5280735858926822987', silver:'5283195573812340110', bronze:'5282750778409233531',
+  seedling:'5449885771420934013', target:'5350460637182993292', cart:'5431499171045581032',
+  gift:'5199749070830197566', chart:'5431577498364158238', sparkle:'5472164874886846699',
+  handshake:'5357080225463149588', lock:'5472308992514464048', cross:'5465665476971471368',
+  key:'5330115548900501467', bell:'5242628160297641831', game:'5467583879948803288',
+  megaphone:'5469903029144657419', new_:'5361979468887893611', party:'5436040291507247633',
+  pencil:'5334882760735598374', reload:'5264727218734524899', boom:'5469785308386041323',
+  star2:'5458799228719472718', rocket:'5445284980978621387',
+};
+function ce(name: string, fb: string): string {
+  return CE[name] ? `<tg-emoji emoji-id="${CE[name]}">${fb}</tg-emoji>` : fb;
+}
+
+// Helper: send new message or edit existing (for inline button navigation)
+async function testerReply(ctx: any, userId: number, text: string, buttons: any[], edit = false) {
+  const markup = { inline_keyboard: buttons.map((row: any[]) => row.map((b: any) => ({ ...b, callback_data: b.callback_data + ':' + userId }))) };
+  if (edit && ctx.callbackQuery?.message) {
+    try {
+      await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: markup, disable_web_page_preview: true } as any);
+      return;
+    } catch {}
+  }
+  await safeReply(ctx, text, { parse_mode: 'HTML', reply_markup: markup, disable_web_page_preview: true } as any);
+}
+
+async function showTesterLeaderboard(ctx: any, userId: number, edit = false) {
+  const ru = getUserLang(userId) === 'ru';
+  try {
+    const { getBetaLeaderboard, getTesterLevel } = require('./payments');
+    const lb = await getBetaLeaderboard(10);
+    if (!lb.length) { await safeReply(ctx, ru ? 'Рейтинг пуст' : 'Leaderboard empty'); return; }
+    const medals = [ce('gold','🥇'), ce('silver','🥈'), ce('bronze','🥉')];
+    const lvlCe: Record<number,string> = { 1:ce('seedling','🌱'), 2:ce('lab','🧪'), 3:ce('fire','⚡'), 4:ce('diamond','💎'), 5:ce('crown','👑'), 6:ce('trophy','🏆') };
+    const lines = lb.map((r: any, i: number) => {
+      const medal = i < 3 ? medals[i] : `  ${i + 1}.`;
+      const lvl = getTesterLevel(r.xp);
+      const nameDisplay = r.username
+        ? `<a href="https://t.me/${escHtml(r.username)}">@${escHtml(r.username)}</a>`
+        : `<code>${r.user_id}</code>`;
+      return `${medal}  <b>${nameDisplay}</b> — ${r.xp} XP  ${lvlCe[lvl.level] || '🌱'}`;
+    });
+    const text = `${ce('trophy','🏆')} <b>${ru ? 'Рейтинг' : 'Leaderboard'}</b>\n\n` + lines.join('\n');
+    await testerReply(ctx, userId, text, [
+      [{ text: ru ? 'Профиль' : 'Profile', icon_custom_emoji_id: CE.crown, callback_data: 'tg_mystats' },
+       { text: 'Check-in', icon_custom_emoji_id: CE.check, callback_data: 'tg_checkin' }],
+    ], edit);
+  } catch (e: any) { await safeReply(ctx, `${e.message}`); }
+}
+
+// ── Auto-tags: custom_title in beta group by level ──
+const LEVEL_TAGS: Record<number, string> = {
+  1: 'Tester',
+  2: 'Active',
+  3: 'Pro',
+  4: 'Expert',
+  5: 'Master',
+  6: 'Legend',
+};
+
+async function setTesterTag(userId: number, level: number) {
+  if (!BETA_GROUP_ID) return;
+  const tag = LEVEL_TAGS[level] || LEVEL_TAGS[1];
+  try {
+    // Bot API 9.5: setChatMemberTag — sets tag for regular member (no admin needed)
+    // Requires bot to have can_manage_tags right
+    const res = await fetch(`https://api.telegram.org/bot${process.env.BOT_TOKEN}/setChatMemberTag`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: BETA_GROUP_ID, user_id: userId, tag }),
+    }).then(r => r.json()) as any;
+    if (res.ok) {
+      console.log(`[Tags] Set "${tag}" for user ${userId}`);
+    } else {
+      // Fallback: try old method (promoteChatMember + setChatAdministratorCustomTitle)
+      if (res.description?.includes('TAG') || res.description?.includes('method')) {
+        await bot.telegram.promoteChatMember(BETA_GROUP_ID, userId, {
+          can_manage_chat: true, can_change_info: false, can_delete_messages: false,
+          can_invite_users: false, can_restrict_members: false, can_pin_messages: false,
+          can_promote_members: false, can_manage_video_chats: false,
+        } as any);
+        await bot.telegram.setChatAdministratorCustomTitle(BETA_GROUP_ID, userId, tag);
+        console.log(`[Tags] Set "${tag}" for user ${userId} (fallback)`);
+      } else {
+        console.warn(`[Tags] setChatMemberTag failed for ${userId}: ${res.description}`);
+      }
+    }
+  } catch (e: any) {
+    if (!e.message?.includes('not enough rights')) {
+      console.warn(`[Tags] Failed for ${userId}:`, e.message?.slice(0, 80));
+    }
+  }
+}
+
+// ── /checkin — daily check-in for +1 point ──
+bot.command('checkin', async (ctx) => {
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  const { dailyCheckin, isBetaTester, getTesterStats } = require('./payments');
+  if (!isBetaTester(userId)) { await safeReply(ctx, ru ? 'Доступно только бета-тестерам.' : 'Beta testers only.'); return; }
+  const result = await dailyCheckin(userId);
+  if (result.ok) {
+    const stats = await getTesterStats(userId);
+    const streak = result.streak || 0;
+    const icon = streak >= 14 ? ce('fire','🔥') + ce('fire','🔥') : streak >= 7 ? ce('fire','🔥') : ce('check','✅');
+    let rewardMsg = `${icon} <b>+1</b>  ·  streak <b>${streak}d</b>  ·  ${ce('coin','💰')} <b>${stats?.available || 0}</b>`;
+    // After successful checkin, advance onboarding quest
+    try {
+      const { advanceQuest } = require('./engagement');
+      const qResult = await advanceQuest(userId);
+      if (qResult.advanced) {
+        rewardMsg += `\n${ce('rocket','🚀')} Quest: ${qResult.newStep || 'completed!'}`;
+      }
+    } catch {}
+    await testerReply(ctx, userId, rewardMsg, [
+      [{ text: ru ? 'Профиль' : 'Profile', icon_custom_emoji_id: CE.crown, callback_data: 'tg_mystats' }],
+    ]);
+  } else {
+    const stats = await getTesterStats(userId);
+    const streak = stats?.streak_days || 0;
+    await safeReply(ctx, ru
+      ? `${ce('check','✅')} Ты уже чекинился сегодня!\n\n${ce('fire','🔥')} Серия: <b>${streak} дней</b>\nСледующий чекин завтра.`
+      : `${ce('check','✅')} Already checked in today!\n\n${ce('fire','🔥')} Streak: <b>${streak} days</b>\nNext check-in tomorrow.`,
+      { parse_mode: 'HTML' });
+  }
+});
+
+// ── /mystats — personal tester statistics ──
+bot.command('mystats', async (ctx) => {
+  await showTesterProfile(ctx, ctx.from!.id);
+});
+
+async function showTesterProfile(ctx: any, userId: number, edit = false) {
+  const ru = getUserLang(userId) === 'ru';
+  const { getTesterStats, TESTER_ROLES } = require('./payments');
+  const stats = await getTesterStats(userId);
+  if (!stats) { await safeReply(ctx, ru ? 'Вы не бета-тестер.' : 'Not a beta tester.'); return; }
+  const total = stats.nextLevel ? stats.nextLevel.pointsNeeded + stats.xp : stats.xp;
+  const pct = stats.nextLevel ? Math.round((stats.xp / total) * 100) : 100;
+  const bar = stats.nextLevel
+    ? (() => { const f = Math.round(pct / 5); return '●'.repeat(f) + '○'.repeat(20 - f); })()
+    : '●●●●●●●●●●●●●●●●●●●●';
+  const roleInfo = TESTER_ROLES[stats.role];
+  const roleName = roleInfo ? (ru ? roleInfo.nameRu : roleInfo.name) : stats.role;
+  const lvlCe: Record<number,string> = { 1:ce('seedling','🌱'), 2:ce('lab','🧪'), 3:ce('fire','⚡'), 4:ce('diamond','💎'), 5:ce('crown','👑'), 6:ce('trophy','🏆') };
+
+  let t = `${lvlCe[stats.level] || '🌱'} <b>${escHtml(ru ? stats.levelNameRu : stats.levelName)}</b>  Lv.${stats.level}\n`;
+  t += `${bar}  ${pct}%\n`;
+  t += stats.nextLevel
+    ? `${stats.xp} / ${total} XP  →  ${escHtml(ru ? stats.nextLevel.nameRu : stats.nextLevel.name)}\n`
+    : `${stats.xp} XP  MAX\n`;
+  t += `\n`;
+  t += `${ce('bug','🐛')} ${stats.totalBugs} ${ru ? 'багов' : 'bugs'}  ·  ${ce('bulb','💡')} ${stats.totalFeatures} ${ru ? 'фич' : 'features'}  ·  ${ce('handshake','🤝')} ${stats.totalSupport} support\n`;
+  t += `${ce('fire','🔥')} ${stats.streak}d streak  ·  ${ce('coin','💰')} ${stats.points} ${ru ? 'очков' : 'pts'}`;
+  if (stats.role !== 'tester') t += `\n\n${ce('star','⭐')} <b>${escHtml(roleName)}</b>${roleInfo?.multiplier > 1 ? '  ×' + roleInfo.multiplier : ''}`;
+
+  // Quest progress — не показываем если полей нет (иначе «Quest: undefined/undefined»)
+  try {
+    const { getQuestProgress } = require('./engagement');
+    const qp = await getQuestProgress(userId);
+    const done = Number(qp?.completedCount ?? qp?.completed ?? NaN);
+    const total = Number(qp?.totalSteps ?? qp?.total ?? NaN);
+    if (qp && !qp.allComplete && Number.isFinite(done) && Number.isFinite(total) && total > 0) {
+      t += `\n\n${ce('target','🎯')} Quest: ${done}/${total}`;
+    }
+  } catch {}
+
+  // Tester number
+  try {
+    const { pool: _tnPool } = require('./db');
+    const _tnRes = await _tnPool.query('SELECT tester_number FROM builder_bot.beta_testers WHERE user_id = $1', [userId]);
+    if (_tnRes.rows[0]?.tester_number) {
+      t += `\n\n${ce('star','⭐')} Beta Tester <b>#${String(_tnRes.rows[0].tester_number).padStart(4, '0')}</b>`;
+    }
+  } catch {}
+
+  // Referral link + earnings
+  try {
+    const { pool: _refPool } = require('./db');
+    const { refCodeForUser, getRefearnings } = require('./rewards');
+    const refCode = refCodeForUser(userId);
+    const botUser = (await ctx.telegram.getMe()).username;
+    const refUrl = `https://t.me/${botUser}?start=${refCode}`;
+    const ref = await getRefearnings(_refPool, userId);
+    t += ru
+      ? `\n\n${ce('handshake','🤝')} <b>Реф-ссылка</b>\n<code>${refUrl}</code>\nПриведено: <b>${ref.refCount}</b> · Заработано: <b>${ref.totalTon.toFixed(3)} TON</b>`
+      : `\n\n${ce('handshake','🤝')} <b>Ref link</b>\n<code>${refUrl}</code>\nInvited: <b>${ref.refCount}</b> · Earned: <b>${ref.totalTon.toFixed(3)} TON</b>`;
+  } catch {}
+
+  await testerReply(ctx, userId, t, [
+    [{ text: ru ? 'Уровни' : 'Levels', icon_custom_emoji_id: CE.crown, callback_data: 'tg_levels' },
+     { text: ru ? 'Рейтинг' : 'Leaderboard', icon_custom_emoji_id: CE.trophy, callback_data: 'tg_leaderboard' }],
+    [{ text: ru ? 'Задания' : 'Tasks', icon_custom_emoji_id: CE.target, callback_data: 'tg_tasks' },
+     { text: 'Check-in', icon_custom_emoji_id: CE.check, callback_data: 'tg_checkin' }],
+    [{ text: ru ? 'Ачивки' : 'Achievements', icon_custom_emoji_id: CE.trophy, callback_data: 'tg_achievements' },
+     { text: ru ? 'Квест' : 'Quest', icon_custom_emoji_id: CE.target, callback_data: 'tg_quest' }],
+    [{ text: ru ? 'Магазин' : 'Shop', icon_custom_emoji_id: CE.cart, callback_data: 'tg_shop' },
+     { text: ru ? '❓ FAQ' : '❓ FAQ', callback_data: 'tg_faq' }],
+    [{ text: ru ? 'Покинуть бету' : 'Leave Beta', icon_custom_emoji_id: CE.cross, callback_data: 'tg_leave_beta' }],
+  ], edit);
+}
+
+// ── /shop — tester rewards shop ──
+bot.command('shop', async (ctx) => {
+  await showTesterShop(ctx, ctx.from!.id);
+});
+
+async function showTesterShop(ctx: any, userId: number, edit = false) {
+  const ru = getUserLang(userId) === 'ru';
+  const { SHOP_ITEMS, getTesterStats, isBetaTester } = require('./payments');
+  if (!isBetaTester(userId)) { await safeReply(ctx, ru ? 'Доступно только бета-тестерам.' : 'Beta testers only.'); return; }
+  const stats = await getTesterStats(userId);
+  const available = stats ? stats.available : 0;
+  const lines = SHOP_ITEMS.map((item: any) => {
+    const can = available >= item.cost;
+    return `${can ? ce('check','✅') : ce('lock','🔒')}  <b>${escHtml(ru ? item.nameRu : item.name)}</b> — ${item.cost}`;
+  });
+  const buttons = SHOP_ITEMS.filter((item: any) => available >= item.cost).slice(0, 6).map((item: any) => [
+    { text: `${ru ? item.nameRu : item.name} · ${item.cost}`, callback_data: `shop_buy:${item.id}` }
+  ]);
+  buttons.push([{ text: ru ? 'Профиль' : 'Profile', icon_custom_emoji_id: CE.crown, callback_data: 'tg_mystats' }]);
+  const text = `${ce('cart','🛒')} <b>${ru ? 'Магазин' : 'Shop'}</b>  ·  ${ce('coin','💰')} ${available}\n\n${lines.join('\n')}`;
+  await testerReply(ctx, userId, text, buttons, edit);
+}
+
+// Shop: confirm purchase
+bot.action(/^shop_buy:(.+):(\d+)$/, async (ctx) => {
+  const itemId = ctx.match![1];
+  const ownerId = parseInt(ctx.match![2]);
+  if (ctx.from!.id !== ownerId) { await ctx.answerCbQuery('Not your button'); return; }
+  await ctx.answerCbQuery();
+  const ru = getUserLang(ownerId) === 'ru';
+  const { SHOP_ITEMS, getTesterStats } = require('./payments');
+  const item = SHOP_ITEMS.find((i: any) => i.id === itemId);
+  if (!item) return;
+  const stats = await getTesterStats(ownerId);
+  const balance = stats?.points || 0;
+  const t = ru
+    ? `${ce('cart','🛒')} <b>${escHtml(item.nameRu)}</b>\n\n${ru ? 'Цена' : 'Price'}: <b>${item.cost}</b> pts\n${ru ? 'Баланс' : 'Balance'}: <b>${balance}</b> pts\n${ru ? 'После покупки' : 'After'}: <b>${balance - item.cost}</b> pts\n\n${ru ? 'Купить?' : 'Buy?'}`
+    : `${ce('cart','🛒')} <b>${escHtml(item.name)}</b>\n\nPrice: <b>${item.cost}</b> pts\nBalance: <b>${balance}</b> pts\nAfter: <b>${balance - item.cost}</b> pts\n\nConfirm?`;
+  await testerReply(ctx, ownerId, t, [
+    [{ text: ru ? 'Купить' : 'Buy', icon_custom_emoji_id: CE.check, callback_data: `shop_confirm:${itemId}` },
+     { text: ru ? 'Отмена' : 'Cancel', icon_custom_emoji_id: CE.cross, callback_data: 'tg_shop' }],
+  ], true);
+});
+
+// Shop: confirmed purchase
+bot.action(/^shop_confirm:(.+):(\d+)$/, async (ctx) => {
+  const itemId = ctx.match![1];
+  const ownerId = parseInt(ctx.match![2]);
+  if (ctx.from!.id !== ownerId) { await ctx.answerCbQuery('Not your button'); return; }
+  const ru = getUserLang(ownerId) === 'ru';
+  const { shopBuy, SHOP_ITEMS } = require('./payments');
+  await ctx.answerCbQuery();
+  const result = await shopBuy(ownerId, itemId);
+  if (result.ok) {
+    const item = SHOP_ITEMS.find((i: any) => i.id === itemId);
+    const effectText = result.effect ? `\n<i>${result.effect}</i>` : '';
+    const t = `${ce('sparkle','✨')} ${ru ? 'Куплено' : 'Purchased'}: <b>${escHtml(ru ? item?.nameRu || itemId : item?.name || itemId)}</b>\n-${item?.cost || 0} pts${effectText}`;
+    await testerReply(ctx, ownerId, t, [
+      [{ text: ru ? 'Магазин' : 'Shop', icon_custom_emoji_id: CE.cart, callback_data: 'tg_shop' },
+       { text: ru ? 'Профиль' : 'Profile', icon_custom_emoji_id: CE.crown, callback_data: 'tg_mystats' }],
+    ], true);
+  } else {
+    await ctx.answerCbQuery(result.error || 'Error', { show_alert: true });
+  }
+});
+
+// ── Admin: set tester role ──
+bot.command('setrole', async (ctx) => {
+  const userId = ctx.from!.id;
+  const { isPlatformAdmin } = require('./payments');
+  if (!isPlatformAdmin(userId)) return;
+  const args = ctx.message.text.split(' ').slice(1);
+  if (args.length < 2) { await safeReply(ctx, 'Usage: /setrole @username role\nRoles: qa_lead, feature_scout, community_helper, stress_tester, mobile_tester, mentor'); return; }
+  const target = args[0].replace('@', '');
+  const role = args[1];
+  const { setTesterRole, TESTER_ROLES } = require('./payments');
+  if (!TESTER_ROLES[role]) { await safeReply(ctx, 'Invalid role. Options: ' + Object.keys(TESTER_ROLES).join(', ')); return; }
+  // Find user by username
+  const { pool } = require('./db');
+  const res = await pool.query(`SELECT user_id FROM builder_bot.beta_testers WHERE username = $1`, [target.toLowerCase()]);
+  if (!res.rows.length) { await safeReply(ctx, 'Tester not found: @' + target); return; }
+  const ok = await setTesterRole(res.rows[0].user_id, role);
+  if (ok) {
+    await safeReply(ctx, `Role set: @${target} → ${TESTER_ROLES[role].name}`);
+    // Notify the tester
+    try { await bot.telegram.sendMessage(res.rows[0].user_id, `You've been assigned role: ${TESTER_ROLES[role].name}!`); } catch {}
+  } else {
+    await safeReply(ctx, 'Failed to set role');
+  }
+});
+
+// ── Admin: assign mentor (admin override) ──
+bot.command('mentor_assign', async (ctx) => {
+  const userId = ctx.from!.id;
+  const { isPlatformAdmin } = require('./payments');
+  if (!isPlatformAdmin(userId)) return;
+  const args = ctx.message.text.split(' ').slice(1);
+  if (args.length < 2) { await safeReply(ctx, 'Usage: /mentor_assign @mentee @mentor'); return; }
+  const menteeUsername = args[0].replace('@', '');
+  const mentorUsername = args[1].replace('@', '');
+  const { pool } = require('./db');
+  const menteeRes = await pool.query(`SELECT user_id FROM builder_bot.beta_testers WHERE username = $1`, [menteeUsername.toLowerCase()]);
+  const mentorRes = await pool.query(`SELECT user_id FROM builder_bot.beta_testers WHERE username = $1`, [mentorUsername.toLowerCase()]);
+  if (!menteeRes.rows.length || !mentorRes.rows.length) { await safeReply(ctx, 'Users not found'); return; }
+  const { assignMentor } = require('./payments');
+  await assignMentor(menteeRes.rows[0].user_id, mentorRes.rows[0].user_id);
+  await safeReply(ctx, `Mentor assigned: @${menteeUsername} → mentor @${mentorUsername}`);
+});
+
+// ── /mymentor — who is my mentor ──
+bot.command('mymentor', async (ctx) => {
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  const { pool } = require('./db');
+  const res = await pool.query(`SELECT bt2.username as mentor FROM builder_bot.beta_testers bt1 JOIN builder_bot.beta_testers bt2 ON bt2.user_id = bt1.referred_by WHERE bt1.user_id = $1`, [userId]);
+  if (res.rows.length && res.rows[0].mentor) {
+    await safeReply(ctx, (ru ? 'Ваш ментор: @' : 'Your mentor: @') + res.rows[0].mentor);
+  } else {
+    await safeReply(ctx, ru ? 'Ментор не назначен.' : 'No mentor assigned.');
+  }
+});
+
+// ── Admin: set beta group ID ──
+bot.command('setgroup', async (ctx) => {
+  const userId = ctx.from!.id;
+  const { isPlatformAdmin } = require('./payments');
+  if (!isPlatformAdmin(userId)) return;
+  const chatId = ctx.chat?.id;
+  if (!chatId || ctx.chat?.type === 'private') { await safeReply(ctx, 'Use this command in the beta group chat'); return; }
+  BETA_GROUP_ID = chatId;
+  await safeReply(ctx, `${ce('check','✅')} Beta group set: ${chatId}`);
+});
+
+// ── Admin: set announcements topic ──
+bot.command('settopic', async (ctx) => {
+  const userId = ctx.from!.id;
+  const { isPlatformAdmin } = require('./payments');
+  if (!isPlatformAdmin(userId)) return;
+  const threadId = ctx.message?.message_thread_id;
+  if (!threadId) { await safeReply(ctx, 'Use this command inside the Announcements topic'); return; }
+  BETA_ANNOUNCEMENTS_TOPIC = threadId;
+  await safeReply(ctx, `${ce('check','✅')} Announcements topic set: ${threadId}`);
+});
+
+// ── Admin: /announce — post changelog to Announcements topic ──
+bot.command('announce', async (ctx) => {
+  const userId = ctx.from!.id;
+  const { isPlatformAdmin } = require('./payments');
+  if (!isPlatformAdmin(userId)) return;
+  const text = (ctx.message.text || '').replace(/^\/announce\s*/i, '').trim();
+  if (!text) { await safeReply(ctx, 'Usage: /announce <text>\nOr: /announce auto — generate from git'); return; }
+  if (text === 'auto') {
+    const { execSync } = require('child_process');
+    const fs = require('fs');
+    const log = execSync('cd /app && git log --oneline -10 2>/dev/null || echo "no git"', { encoding: 'utf8', timeout: 5000 }).trim();
+    if (!log || log === 'no git') { await safeReply(ctx, 'No git history'); return; }
+    _deployVersion++;
+    fs.writeFileSync('/tmp/.ton_agent_deploy_ver', String(_deployVersion));
+    const changelog = await generateChangelog(log, _deployVersion);
+    await postAnnouncement(changelog);
+    await safeReply(ctx, `${ce('check','✅')} Changelog posted`);
+    return;
+  }
+  await postAnnouncement(text);
+  await safeReply(ctx, `${ce('check','✅')} Posted to Announcements`);
+});
+
+// ── Auto changelog from git/deploy ──
+// postChangelog removed — replaced by generateChangelog + postChangelogOnDeploy
+
+// ── Auto changelog on deploy — AI-generated from git commits ──
+const LAST_DEPLOY_FILE = '/tmp/.ton_agent_last_deploy';
+let _deployVersion = 0;
+try { _deployVersion = parseInt(require('fs').readFileSync('/tmp/.ton_agent_deploy_ver', 'utf8').trim()) || 0; } catch {}
+
+async function postChangelogOnDeploy() {
+  if (!BETA_GROUP_ID) return;
+  try {
+    const fs = require('fs');
+    const { execSync } = require('child_process');
+    const currentHash = execSync('cd /app && git rev-parse HEAD 2>/dev/null || echo none', { encoding: 'utf8', timeout: 3000 }).trim();
+    if (currentHash === 'none') return;
+    let lastHash = '';
+    try { lastHash = fs.readFileSync(LAST_DEPLOY_FILE, 'utf8').trim(); } catch {}
+    if (lastHash === currentHash) return;
+    fs.writeFileSync(LAST_DEPLOY_FILE, currentHash);
+    if (!lastHash) return; // First deploy — save hash, don't post
+
+    // Strict hex-only validation before interpolating into shell command
+    const isValidHash = (h: string) => /^[a-f0-9]{7,40}$/.test(h);
+    if (!isValidHash(lastHash) || !isValidHash(currentHash)) {
+      console.warn('[Changelog] Invalid hash format — aborting changelog autopost');
+      return;
+    }
+    // Get commits since last deploy — both hashes validated hex above
+    const log = execSync(`cd /app && git log --oneline ${lastHash}..${currentHash} 2>/dev/null || git log --oneline -5`, { encoding: 'utf8', timeout: 5000 }).trim();
+    if (!log) return;
+
+    // Increment version
+    _deployVersion++;
+    fs.writeFileSync('/tmp/.ton_agent_deploy_ver', String(_deployVersion));
+
+    // Generate changelog with AI
+    const text = await generateChangelog(log, _deployVersion);
+    await postAnnouncement(text);
+    console.log(`[Changelog] Posted v0.${_deployVersion}.0 to group`);
+  } catch (e: any) {
+    console.warn('[Changelog] Auto-post error:', e.message);
+  }
+}
+
+async function generateChangelog(gitLog: string, version: number): Promise<string> {
+  const date = new Date().toLocaleDateString('ru-RU');
+  const commits = gitLog.split('\n').map(l => l.replace(/^[a-f0-9]+ /, ''));
+
+  // Try AI generation
+  try {
+    const baseUrl = process.env.CLAUDE_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai/';
+    const apiKey = process.env.OPENAI_API_KEY || process.env.CLAUDE_API_KEY || '';
+    const model = process.env.CLAUDE_MODEL || 'gemini-2.5-flash';
+    if (apiKey) {
+      const res = await fetch(baseUrl + 'chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model,
+          max_tokens: 1000,
+          messages: [{
+            role: 'user',
+            content: `Write a changelog for TON Agent Platform v0.${version}.0 (${date}). HTML for Telegram (<b>, <i> only, NO markdown).
+
+Commits:
+${commits.slice(0, 10).join('\n')}
+
+Format — bilingual, one line per item:
+📢 <b>TON Agent Platform v0.${version}.0</b>
+${date}
+
+🆕 <b>Новое / New</b>
+• Описание / Description
+
+🔧 <b>Исправлено / Fixed</b>
+• Описание / Description
+
+⚡ <b>Улучшено / Improved</b>
+• Описание / Description
+
+End with: <i>Обновите Studio: Ctrl+Shift+R</i>
+Max 12 items. User-friendly, not technical.`
+          }],
+        }),
+      });
+      const rawText = await res.text();
+      let data: any;
+      try { data = JSON.parse(rawText); } catch { console.warn('[Changelog] API parse error:', rawText.slice(0, 200)); throw new Error('Invalid JSON'); }
+      let aiText = data.choices?.[0]?.message?.content;
+      if (aiText && aiText.length > 50) {
+        // Replace plain emoji with premium custom emoji
+        aiText = aiText
+          .replace(/📢/g, ce('megaphone','📢'))
+          .replace(/🆕/g, ce('new_','🆕'))
+          .replace(/🔧/g, ce('check','✅'))
+          .replace(/⚡/g, ce('rocket','🚀'))
+          .replace(/🔒/g, ce('lock','🔒'))
+          .replace(/🚀/g, ce('rocket','🚀'))
+          .replace(/✅/g, ce('check','✅'))
+          .replace(/🔥/g, ce('fire','🔥'))
+          .replace(/💡/g, ce('bulb','💡'))
+          .replace(/🐛/g, ce('bug','🐛'))
+          .replace(/🎉/g, ce('party','🎉'))
+          .replace(/💎/g, ce('diamond','💎'))
+          .replace(/⭐/g, ce('star','⭐'))
+          .replace(/🔔/g, ce('bell','🔔'));
+        return aiText;
+      }
+    }
+  } catch (e: any) {
+    console.warn('[Changelog] AI generation failed:', e.message);
+  }
+
+  // Fallback — simple format
+  const features: string[] = [], fixes: string[] = [], other: string[] = [];
+  for (const c of commits) {
+    if (/^feat/i.test(c)) features.push(c.replace(/^feat[:(]\s*/i, '').replace(/\)?\s*$/, ''));
+    else if (/^fix/i.test(c)) fixes.push(c.replace(/^fix[:(]\s*/i, '').replace(/\)?\s*$/, ''));
+    else if (c.length > 5) other.push(c);
+  }
+  let text = `${ce('megaphone','📢')} <b>TON Agent Platform v0.${version}.0</b>\n${date}\n\n`;
+  if (features.length) { text += `${ce('new_','🆕')} <b>Новое / New</b>\n`; features.forEach(f => { text += `• ${escHtml(f)}\n`; }); text += '\n'; }
+  if (fixes.length) { text += `${ce('check','✅')} <b>Исправлено / Fixed</b>\n`; fixes.forEach(f => { text += `• ${escHtml(f)}\n`; }); text += '\n'; }
+  if (other.length) { text += `${ce('rocket','🚀')} <b>Улучшено / Improved</b>\n`; other.slice(0, 5).forEach(f => { text += `• ${escHtml(f)}\n`; }); text += '\n'; }
+  text += `\n${ce('reload','🔄')} <i>Обновите Studio: Ctrl+Shift+R</i>`;
+  return text;
+}
+
+// ── Admin: spam penalty ──
+bot.command('spam', async (ctx) => {
+  const userId = ctx.from!.id;
+  const { isPlatformAdmin } = require('./payments');
+  if (!isPlatformAdmin(userId)) return;
+  const args = ctx.message.text.split(' ').slice(1);
+  if (!args[0]) { await safeReply(ctx, 'Usage: /spam @username'); return; }
+  const target = args[0].replace('@', '');
+  const { pool } = require('./db');
+  const res = await pool.query(`SELECT user_id FROM builder_bot.beta_testers WHERE username = $1`, [target.toLowerCase()]);
+  if (!res.rows.length) { await safeReply(ctx, 'Not found'); return; }
+  const { spamPenalty } = require('./payments');
+  await spamPenalty(res.rows[0].user_id);
+  await safeReply(ctx, `-1 point from @${target} (spam penalty)`);
+});
+
+// ── Admin: weekly top ──
+bot.command('weeklytop', async (ctx) => {
+  const userId = ctx.from!.id;
+  const { isPlatformAdmin, getWeeklyTop } = require('./payments');
+  if (!isPlatformAdmin(userId)) return;
+  const top = await getWeeklyTop(10);
+  if (!top.length) { await safeReply(ctx, 'No activity this week'); return; }
+  const lines = top.map((t: any, i: number) => {
+    const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i+1)+'.';
+    return `${medal} @${t.username || t.user_id} — ${t.week_activity} this week (${t.feedback_count} total)`;
+  });
+  await safeReply(ctx, `Weekly Top:\n\n${lines.join('\n')}`);
+});
+
+// ── /invite — generate invite links (admin) ──
+bot.command('invite', async (ctx) => {
+  const userId = ctx.from!.id;
+  const { isPlatformAdmin, generateBetaCodes } = require('./payments');
+  if (!isPlatformAdmin(userId)) return;
+  const args = (ctx.message.text || '').replace(/^\/invite\s*/i, '').trim();
+  const match = args.match(/^(\d+)?\s*(?:"([^"]+)")?/);
+  const count = Math.min(parseInt(match?.[1] || '1'), 20);
+  const note = match?.[2] || undefined;
+  const codes = await generateBetaCodes(count, userId, note);
+  if (!codes.length) { await safeReply(ctx, 'Error generating codes'); return; }
+  const links = codes.map((c: string) => `t.me/TonAgentPlatformBot?start=beta_${c}`);
+  let text = `${ce('key','🔑')} <b>Invite links</b> (${count}, 1-use each)${note ? `\n<i>${escHtml(note)}</i>` : ''}\n\n`;
+  text += links.map((l: string) => `<code>${l}</code>`).join('\n');
+  await safeReply(ctx, text, { parse_mode: 'HTML' });
+});
+
+// ── /invitebeta N — one shared beta code for N people (admin) ──
+// Creates 1 code with max_uses=N → one link, N people can use it
+// Each person who uses it goes through onboarding and gets a personal 1-use invite link at the end
+bot.command('invitebeta', async (ctx) => {
+  const userId = ctx.from!.id;
+  const { isPlatformAdmin, generateBetaCodes } = require('./payments');
+  if (!isPlatformAdmin(userId)) return;
+  const args = (ctx.message.text || '').replace(/^\/invitebeta\s*/i, '').trim();
+  const spots = Math.min(Math.max(parseInt(args) || 5, 1), 100);
+  try {
+    const codes = await generateBetaCodes(1, userId, `Shared beta (${spots} spots)`, spots);
+    if (!codes.length) { await safeReply(ctx, 'Error generating code'); return; }
+    const code = codes[0];
+    const link = `https://t.me/TonAgentPlatformBot?start=beta_${code}`;
+    let text = `${ce('key','🔑')} <b>Beta invite link</b>\n`;
+    text += `Spots: <b>${spots}</b>\n`;
+    text += `Code: <code>${code}</code>\n\n`;
+    text += `${ce('rocket','🚀')} Share this link:\n<code>${link}</code>`;
+    await safeReply(ctx, text, { parse_mode: 'HTML' });
+  } catch (e: any) {
+    await safeReply(ctx, `Error: ${e.message?.slice(0, 200)}`);
+  }
+});
+
+// ── /invites — list invite codes (admin) ──
+bot.command('invites', async (ctx) => {
+  const userId = ctx.from!.id;
+  const { isPlatformAdmin } = require('./payments');
+  if (!isPlatformAdmin(userId)) return;
+  const { pool } = require('./db');
+  const codes = await pool.query(`SELECT code, max_uses, used_count, is_active, note, created_at FROM builder_bot.beta_invite_codes ORDER BY created_at DESC LIMIT 20`);
+  const testers = await pool.query(`SELECT COUNT(*) as cnt FROM builder_bot.beta_testers WHERE status = 'active'`);
+  let text = `${ce('chart','📊')} <b>Invite Stats</b>\n`;
+  text += `Testers: <b>${testers.rows[0].cnt}</b>\n\n`;
+  if (!codes.rows.length) { text += 'No codes yet. Use /invite to create.'; }
+  else {
+    text += `<b>Recent codes:</b>\n`;
+    codes.rows.forEach((c: any) => {
+      const status = !c.is_active ? '⊘' : c.used_count >= c.max_uses ? '✓' : '○';
+      text += `${status} <code>${c.code}</code> ${c.used_count}/${c.max_uses}${c.note ? ` <i>${escHtml(c.note)}</i>` : ''}\n`;
+    });
+  }
+  await safeReply(ctx, text, { parse_mode: 'HTML' });
+});
+
+// ── /tasks — testing tasks for testers ──
+bot.command('tasks', async (ctx) => {
+  await showTesterTasks(ctx, ctx.from!.id);
+});
+
+async function showTesterTasks(ctx: any, userId: number, edit = false) {
+  const ru = getUserLang(userId) === 'ru';
+  const { isBetaTester } = require('./payments');
+  if (!isBetaTester(userId) && !_pendingBetaJoins.has(userId)) {
+    await safeReply(ctx, ru ? 'Доступно только бета-тестерам.' : 'Beta testers only.'); return;
+  }
+
+  const { getTasksForUser, formatTasksMessage, getCompletedTasks } = require('./engagement');
+  const zones = await getUserZones(userId);
+  const { getTesterLevel } = require('./payments');
+  const { pool } = require('./db');
+  const statsRes = await pool.query('SELECT xp FROM builder_bot.beta_testers WHERE user_id = $1', [userId]);
+  const xp = statsRes.rows[0]?.xp || 0;
+  const level = getTesterLevel(xp)?.level || 1;
+
+  const tasks = getTasksForUser(userId, zones.length > 0 ? zones : ['core'], level);
+  const completed = await getCompletedTasks(userId);
+  const text = await formatTasksMessage(tasks, completed, ru);
+
+  await testerReply(ctx, userId, text, [
+    [{ text: ru ? 'Квест' : 'Quest', callback_data: 'tg_quest' },
+     { text: ru ? 'Daily' : 'Daily', callback_data: 'tg_daily' }],
+    [{ text: ru ? 'Профиль' : 'Profile', icon_custom_emoji_id: CE.crown, callback_data: 'tg_mystats' }],
+  ], edit);
+}
+
+// ── /role — show tester roles (production + status) ──
+bot.command('role', async (ctx) => {
+  await showTesterRole(ctx, ctx.from!.id);
+});
+
+const PROD_ZONES = [
+  { id: 'agent', icon: CE.rocket, label: 'Agent', labelRu: 'Агенты',
+    desc: 'Всё что связано с AI агентами — от создания до работы в продакшене.',
+    descEn: 'Everything about AI agents — from creation to production.',
+    tasks: [
+      'Создать агента через описание задачи',
+      'Проверить что системный промпт генерируется адекватно',
+      'Запустить агента и отправить ему сообщение',
+      'Проверить настройки: роль, задержка, реакции',
+      'Попробовать редактировать промпт и перезапустить',
+      'Проверить логи агента на ошибки',
+      'Чат с агентом — отвечает ли адекватно',
+      'Остановить и удалить агента',
+    ],
+    tasksEn: [
+      'Create agent from task description',
+      'Check if system prompt is generated properly',
+      'Start agent and send it a message',
+      'Test settings: role, typing delay, reactions',
+      'Edit prompt and restart',
+      'Check agent logs for errors',
+      'Chat with agent — does it respond properly',
+      'Stop and delete agent',
+    ]},
+  { id: 'ui', icon: CE.star2, label: 'UI/UX', labelRu: 'UI/UX',
+    desc: 'Интерфейс Studio — все страницы, кнопки, формы, адаптивность.',
+    descEn: 'Studio interface — all pages, buttons, forms, responsiveness.',
+    tasks: [
+      'Пройти по всем страницам Studio',
+      'Проверить все кнопки — нажимаются, работают',
+      'Открыть Studio на телефоне (TG WebView)',
+      'Сменить акцентный цвет — применяется везде?',
+      'Попробовать тёмную/светлую тему',
+      'Проверить формы — валидация, сохранение',
+      'Tester Hub — лидерборд, магазин, задания',
+      'Загрузка страниц — быстро или тормозит?',
+    ],
+    tasksEn: [
+      'Navigate through all Studio pages',
+      'Check all buttons — clickable, working',
+      'Open Studio on phone (TG WebView)',
+      'Change accent color — applied everywhere?',
+      'Try dark/light theme',
+      'Check forms — validation, saving',
+      'Tester Hub — leaderboard, shop, tasks',
+      'Page loading — fast or slow?',
+    ]},
+  { id: 'telegram', icon: CE.bell, label: 'Telegram', labelRu: 'Telegram',
+    desc: 'Подключение TG аккаунта к агенту и всё что с этим связано.',
+    descEn: 'Connecting TG account to agent and everything related.',
+    tasks: [
+      'Подключить Telegram через QR код',
+      'Отправить сообщение подключённому аккаунту',
+      'Проверить typing индикатор',
+      'Проверить реакции агента на сообщения',
+      'Агент в групповом чате — работает?',
+      'Два агента на одном аккаунте (мульти-агент)',
+      'Пересылка сообщений, ответы, редактирование',
+      'Отключить Telegram и переподключить',
+    ],
+    tasksEn: [
+      'Connect Telegram via QR code',
+      'Send message to connected account',
+      'Check typing indicator',
+      'Check agent reactions to messages',
+      'Agent in group chat — works?',
+      'Two agents on one account (multi-agent)',
+      'Forward, reply, edit messages',
+      'Disconnect and reconnect Telegram',
+    ]},
+  { id: 'blockchain', icon: CE.diamond, label: 'Blockchain', labelRu: 'Blockchain',
+    desc: 'TON кошельки, транзакции, DeFi свапы, NFT, стейкинг.',
+    descEn: 'TON wallets, transactions, DeFi swaps, NFT, staking.',
+    tasks: [
+      'Создать кошелёк для агента',
+      'Проверить баланс (TON, jettons)',
+      'Попросить агента узнать цену TON',
+      'Попросить агента свапнуть токены (STON.fi)',
+      'Проверить информацию о стейкинге (Tonstakers)',
+      'Посмотреть NFT коллекции',
+      'Поискать подарочные карты (Bitrefill)',
+    ],
+    tasksEn: [
+      'Create wallet for agent',
+      'Check balance (TON, jettons)',
+      'Ask agent for TON price',
+      'Ask agent to swap tokens (STON.fi)',
+      'Check staking info (Tonstakers)',
+      'Browse NFT collections',
+      'Search gift cards (Bitrefill)',
+    ]},
+  { id: 'ai', icon: CE.bulb, label: 'AI', labelRu: 'AI',
+    desc: 'AI провайдеры, качество ответов, голосовой ввод, модели.',
+    descEn: 'AI providers, response quality, voice input, models.',
+    tasks: [
+      'Попробовать разные AI провайдеры (Gemini, Groq, OpenRouter)',
+      'Вставить свой API ключ и проверить',
+      'Сменить провайдер — агент продолжает работать?',
+      'Агент без API ключа — fallback работает?',
+      'Отправить голосовое сообщение — распознаётся?',
+      'Длинный диалог (50+ сообщений) — не теряет контекст?',
+      'Качество ответов — адекватные, по делу?',
+    ],
+    tasksEn: [
+      'Try different AI providers (Gemini, Groq, OpenRouter)',
+      'Insert your API key and test',
+      'Switch provider — agent keeps working?',
+      'Agent without API key — fallback works?',
+      'Send voice message — recognized?',
+      'Long dialog (50+ messages) — keeps context?',
+      'Response quality — adequate, relevant?',
+    ]},
+  { id: 'security', icon: CE.lock, label: 'Security', labelRu: 'Security',
+    desc: 'Безопасность платформы — попробуй сломать (ответственно!).',
+    descEn: 'Platform security — try to break it (responsibly!).',
+    tasks: [
+      'Попробовать XSS в промпте агента',
+      'Попробовать получить доступ к чужому агенту',
+      'Инъекция в feedback форму',
+      'Попробовать обойти авторизацию в API',
+      'Проверить что API ключи не утекают в логи',
+      'Проверить rate limiting — спам запросов',
+      'Попробовать prompt injection через агента',
+    ],
+    tasksEn: [
+      'Try XSS in agent prompt',
+      'Try accessing another user\'s agent',
+      'Injection in feedback form',
+      'Try bypassing API auth',
+      'Check that API keys don\'t leak in logs',
+      'Test rate limiting — spam requests',
+      'Try prompt injection via agent',
+    ]},
+  { id: 'onboarding', icon: CE.seedling, label: 'Onboarding', labelRu: 'Onboarding',
+    desc: 'Первый опыт — представь что ты новичок и ничего не знаешь.',
+    descEn: 'First experience — pretend you know nothing.',
+    tasks: [
+      'Зайти с нуля — понятно что делать?',
+      'Регистрация — сколько шагов, всё ли ясно?',
+      'Создание первого агента — интуитивно?',
+      'Гайд в Studio — помогает или мешает?',
+      'Тексты и подсказки — на твоём языке, понятные?',
+      'Ошибки — понятно что пошло не так?',
+    ],
+    tasksEn: [
+      'Start from scratch — clear what to do?',
+      'Registration — how many steps, all clear?',
+      'First agent creation — intuitive?',
+      'Guide in Studio — helps or annoys?',
+      'Texts and hints — in your language, understandable?',
+      'Errors — clear what went wrong?',
+    ]},
+  { id: 'performance', icon: CE.fire, label: 'Performance', labelRu: 'Performance',
+    desc: 'Нагрузочное тестирование — ищи пределы платформы.',
+    descEn: 'Load testing — find the platform limits.',
+    tasks: [
+      'Создать 10+ агентов одновременно',
+      'Запустить 5 агентов параллельно',
+      'Длинный чат — 100+ сообщений',
+      'Спам-тест — быстрые сообщения подряд',
+      'Большой промпт (5000+ символов)',
+      'Открыть Studio на слабом устройстве',
+      'Много вкладок одновременно',
+    ],
+    tasksEn: [
+      'Create 10+ agents at once',
+      'Run 5 agents simultaneously',
+      'Long chat — 100+ messages',
+      'Spam test — rapid messages',
+      'Large prompt (5000+ chars)',
+      'Open Studio on weak device',
+      'Many tabs simultaneously',
+    ]},
+];
+
+async function getUserZones(userId: number): Promise<string[]> {
+  // During onboarding, zones are stored in memory
+  const pending = _pendingBetaJoins.get(userId);
+  if (pending?.zones) return pending.zones;
+  try {
+    const { pool } = require('./db');
+    const r = await pool.query('SELECT production_zones FROM builder_bot.beta_testers WHERE user_id = $1', [userId]);
+    return r.rows[0]?.production_zones || [];
+  } catch { return []; }
+}
+
+async function toggleUserZone(userId: number, zone: string): Promise<string[]> {
+  const { pool } = require('./db');
+  const current = await getUserZones(userId);
+  let updated: string[];
+  if (current.includes(zone)) {
+    updated = current.filter((z: string) => z !== zone);
+  } else {
+    updated = [...current, zone];
+  }
+  await pool.query('UPDATE builder_bot.beta_testers SET production_zones = $1 WHERE user_id = $2', [updated, userId]);
+  return updated;
+}
+
+async function showTesterRole(ctx: any, userId: number, edit = false) {
+  const ru = getUserLang(userId) === 'ru';
+  const { getTesterStats, TESTER_ROLES, isBetaTester } = require('./payments');
+  if (!isBetaTester(userId) && !_pendingBetaJoins.has(userId)) { await safeReply(ctx, ru ? 'Доступно только бета-тестерам.' : 'Beta testers only.'); return; }
+  const stats = await getTesterStats(userId);
+  const zones = await getUserZones(userId);
+
+  const roleInfo = stats ? TESTER_ROLES[stats.role] : null;
+  const roleName = roleInfo ? (ru ? roleInfo.nameRu : roleInfo.name) : (ru ? 'Новичок' : 'Newbie');
+  const mult = roleInfo?.multiplier > 1 ? ` ×${roleInfo.multiplier}` : '';
+
+  let t = `${ce('star','⭐')} <b>${ru ? 'Статус' : 'Status'}:</b> ${escHtml(roleName)}${escHtml(mult)}\n\n`;
+  t += `<b>${ru ? 'Мои зоны' : 'My zones'}:</b>\n`;
+  if (zones.length) {
+    t += zones.map(z => {
+      const zone = PROD_ZONES.find(pz => pz.id === z);
+      return zone ? `● ${ru ? zone.labelRu : zone.label}` : z;
+    }).join('\n');
+  } else {
+    t += ru ? '<i>Не выбрано</i>' : '<i>None</i>';
+  }
+  t += `\n\n${ru ? 'Выбери зону:' : 'Choose a zone:'}`;
+
+  // Zone buttons — open detail view (2 per row)
+  const zoneButtons: any[][] = [];
+  for (let i = 0; i < PROD_ZONES.length; i += 2) {
+    const row: any[] = [];
+    for (let j = i; j < Math.min(i + 2, PROD_ZONES.length); j++) {
+      const z = PROD_ZONES[j];
+      const active = zones.includes(z.id);
+      row.push({
+        text: `${active ? '● ' : ''}${ru ? z.labelRu : z.label}`,
+        icon_custom_emoji_id: z.icon,
+        callback_data: `zone_view:${z.id}`,
+      });
+    }
+    zoneButtons.push(row);
+  }
+  zoneButtons.push([
+    { text: ru ? 'Профиль' : 'Profile', icon_custom_emoji_id: CE.crown, callback_data: 'tg_mystats' },
+  ]);
+
+  await testerReply(ctx, userId, t, zoneButtons, edit);
+}
+
+// Zone detail view — full description + confirm/remove button
+bot.action(/^zone_view:(\w+):(\d+)$/, async (ctx) => {
+  const zoneId = ctx.match![1];
+  const ownerId = parseInt(ctx.match![2]);
+  if (ctx.from!.id !== ownerId) { await ctx.answerCbQuery('Not your button'); return; }
+  await ctx.answerCbQuery();
+  const ru = getUserLang(ownerId) === 'ru';
+  const zone = PROD_ZONES.find(z => z.id === zoneId);
+  if (!zone) return;
+  const zones = await getUserZones(ownerId);
+  const active = zones.includes(zoneId);
+  const ceKey = Object.keys(CE).find(k => CE[k] === zone.icon) || 'check';
+
+  let t = `${ce(ceKey, '🔹')} <b>${ru ? zone.labelRu : zone.label}</b>\n\n`;
+  t += `${ru ? zone.desc : zone.descEn}\n\n`;
+  // Task list
+  const tasks = ru ? (zone as any).tasks : (zone as any).tasksEn;
+  if (tasks?.length) {
+    t += `<b>${ru ? 'Что тестировать' : 'What to test'}:</b>\n`;
+    tasks.forEach((task: string) => { t += `· ${escHtml(task)}\n`; });
+    t += '\n';
+  }
+  t += active
+    ? (ru ? `● <b>Активна</b> — ты тестируешь эту зону` : `● <b>Active</b> — you are testing this zone`)
+    : (ru ? `○ <b>Не выбрана</b>` : `○ <b>Not selected</b>`);
+
+  await testerReply(ctx, ownerId, t, [
+    [active
+      ? { text: ru ? 'Убрать зону' : 'Remove zone', icon_custom_emoji_id: CE.cross, callback_data: `zone_confirm:${zoneId}:remove` }
+      : { text: ru ? 'Выбрать зону' : 'Select zone', icon_custom_emoji_id: CE.check, callback_data: `zone_confirm:${zoneId}:add` }
+    ],
+    [{ text: ru ? '← Назад' : '← Back', callback_data: _pendingBetaJoins.has(ownerId) ? 'ob_step4' : 'tg_role' }],
+  ], true);
+});
+
+// Zone confirm — actually toggle
+bot.action(/^zone_confirm:(\w+):(add|remove):(\d+)$/, async (ctx) => {
+  const zoneId = ctx.match![1];
+  const action = ctx.match![2];
+  const ownerId = parseInt(ctx.match![3]);
+  if (ctx.from!.id !== ownerId) { await ctx.answerCbQuery('Not your button'); return; }
+  await ctx.answerCbQuery();
+  const ru = getUserLang(ownerId) === 'ru';
+  const zone = PROD_ZONES.find(z => z.id === zoneId);
+
+  const pending = _pendingBetaJoins.get(ownerId);
+  if (pending) {
+    // Store zones in memory during onboarding — apply when they join group
+    if (!pending.zones) pending.zones = [];
+    if (action === 'add' && !pending.zones.includes(zoneId)) pending.zones.push(zoneId);
+    if (action === 'remove') pending.zones = pending.zones.filter(z => z !== zoneId);
+  } else {
+    if (action === 'add') {
+      const { pool } = require('./db');
+      const current = await getUserZones(ownerId);
+      if (!current.includes(zoneId)) {
+        await pool.query('UPDATE builder_bot.beta_testers SET production_zones = array_append(production_zones, $1) WHERE user_id = $2', [zoneId, ownerId]);
+      }
+    } else {
+      const { pool } = require('./db');
+      await pool.query('UPDATE builder_bot.beta_testers SET production_zones = array_remove(production_zones, $1) WHERE user_id = $2', [zoneId, ownerId]);
+    }
+  }
+
+  // If in onboarding → back to ob_step4, otherwise normal role page
+  if (_pendingBetaJoins.has(ownerId)) {
+    // Re-render onboarding step 4 (zones) with updated selection
+    const zones = await getUserZones(ownerId);
+    const zoneName = zone ? (ru ? zone.labelRu : zone.label) : zoneId;
+    const msg = action === 'add'
+      ? `${ce('check','✅')} ${zoneName} ${ru ? 'добавлена' : 'added'} (${zones.length}/3)`
+      : `${ce('cross','❌')} ${zoneName} ${ru ? 'убрана' : 'removed'}`;
+    await ctx.answerCbQuery(msg);
+
+    let t = ru
+      ? `${ce('target','🎯')} <b>Зоны тестирования</b>\n\n` +
+        (zones.length ? `<b>Выбрано:</b> ${zones.map(z => { const pz = PROD_ZONES.find(p => p.id === z); return pz ? (ru ? pz.labelRu : pz.label) : z; }).join(', ')}\n\n` : '') +
+        `Нажми на зону чтобы добавить/убрать:`
+      : `${ce('target','🎯')} <b>Testing zones</b>\n\n` +
+        (zones.length ? `<b>Selected:</b> ${zones.map(z => { const pz = PROD_ZONES.find(p => p.id === z); return pz ? pz.label : z; }).join(', ')}\n\n` : '') +
+        `Tap a zone to add/remove:`;
+    const zoneButtons: any[][] = [];
+    for (let i = 0; i < PROD_ZONES.length; i += 2) {
+      const row: any[] = [];
+      for (let j = i; j < Math.min(i + 2, PROD_ZONES.length); j++) {
+        const z = PROD_ZONES[j];
+        const sel = zones.includes(z.id) ? '● ' : '';
+        row.push({ text: `${sel}${ru ? z.labelRu : z.label}`, icon_custom_emoji_id: z.icon, callback_data: `zone_view:${z.id}` });
+      }
+      zoneButtons.push(row);
+    }
+    zoneButtons.push([{ text: ru ? 'Далее →' : 'Next →', callback_data: 'ob_step5' }]);
+    await testerReply(ctx, ownerId, t, zoneButtons, true);
+  } else {
+    await showTesterRole(ctx, ownerId, true);
+  }
+});
+
+// Back to role from zone detail
+bot.action(/^tg_role:(\d+)$/, async (ctx) => {
+  const ownerId = parseInt(ctx.match![1]);
+  if (ctx.from!.id !== ownerId) { await ctx.answerCbQuery('Not your button'); return; }
+  await ctx.answerCbQuery();
+  await showTesterRole(ctx, ownerId, true);
+});
+
+// ── Inline callback handlers for tester buttons ──
+// Pattern: tg_action:ownerUserId — only owner can press
+// ── New tester onboarding ──
+// ── Beta group join check — kick tester if they don't join within 24h ──
+function scheduleBetaGroupCheck(userId: number) {
+  if (!BETA_GROUP_ID) return;
+  const DELAY = 24 * 60 * 60 * 1000; // 24 hours
+  setTimeout(async () => {
+    try {
+      const member = await bot.telegram.getChatMember(BETA_GROUP_ID!, userId);
+      if (member.status === 'left' || member.status === 'kicked') {
+        // Not in group — revoke beta access
+        const { removeBetaTester } = require('./payments');
+        await removeBetaTester(userId);
+        const ru = getUserLang(userId) === 'ru';
+        try {
+          await bot.telegram.sendMessage(userId,
+            ru
+              ? `${ce('lock','🔒')} <b>Доступ к бета-тесту отозван</b>\n\nТы не зашёл в группу тестеров в течение 24 часов. Напиши @TonAgentPlatform если хочешь получить новое приглашение.`
+              : `${ce('lock','🔒')} <b>Beta access revoked</b>\n\nYou didn't join the testers group within 24 hours. DM @TonAgentPlatform if you'd like a new invite.`,
+            { parse_mode: 'HTML' }
+          );
+        } catch {}
+        console.log(`[Beta] Revoked tester ${userId} — didn't join group within 24h`);
+      }
+    } catch (e: any) {
+      console.warn(`[Beta] Group check failed for ${userId}:`, e.message?.slice(0, 100));
+    }
+  }, DELAY);
+}
+
+async function showNewTesterOnboarding(ctx: any, userId: number, ru: boolean) {
+  const greeting = ctx.from?.first_name ? escHtml(ctx.from.first_name) : (ru ? 'тестер' : 'tester');
+
+  // ── Шаг 1: Приветствие + что это ──
+  let t1 = `${ce('party','🎉')} <b>${ru ? 'Добро пожаловать' : 'Welcome'}, ${greeting}!</b>\n\n`;
+  t1 += ru
+    ? `Ты попал в закрытую бету <b>TON Agent Platform</b> — первого конструктора автономных AI агентов на TON блокчейне.\n\n`
+    : `You joined the closed beta of <b>TON Agent Platform</b> — the first autonomous AI agent builder on TON.\n\n`;
+  t1 += ru
+    ? `<b>Что могут агенты:</b>\n` +
+      `· Отвечать в Telegram от твоего аккаунта 24/7\n` +
+      `· Мониторить цены TON, NFT, подарки\n` +
+      `· Торговать на DEX (STON.fi), стейкать (Tonstakers)\n` +
+      `· Покупать gift cards за крипту (Bitrefill)\n` +
+      `· Модерировать чаты, вести каналы\n` +
+      `· Всё без кода — описываешь задачу, AI делает`
+    : `<b>What agents can do:</b>\n` +
+      `· Reply in Telegram from your account 24/7\n` +
+      `· Monitor TON prices, NFTs, gifts\n` +
+      `· Trade on DEX (STON.fi), stake (Tonstakers)\n` +
+      `· Buy gift cards with crypto (Bitrefill)\n` +
+      `· Moderate chats, manage channels\n` +
+      `· All no-code — describe the task, AI does the rest`;
+  await testerReply(ctx, userId, t1, [
+    [{ text: ru ? 'Далее →' : 'Next →', callback_data: 'ob_step2' }],
+  ]);
+}
+
+// ── Onboarding Step 2: Группа + топики (info only, join link at the end) ──
+bot.action(/^ob_step2:(\d+)$/, async (ctx) => {
+  const ownerId = parseInt(ctx.match![1]);
+  if (ctx.from!.id !== ownerId) { await ctx.answerCbQuery('Not your button'); return; }
+  await ctx.answerCbQuery();
+  const ru = getUserLang(ownerId) === 'ru';
+
+  let t = ru
+    ? `${ce('handshake','🤝')} <b>Группа тестеров</b>\n\n` +
+      `У нас есть TG группа с топиками:\n\n` +
+      `<b>#General</b> — общение, вопросы\n` +
+      `<b>#Bugs</b> — баг-репорты (${ce('bug','🐛')} +5 XP за баг)\n` +
+      `<b>#Features</b> — предложения фич (${ce('bulb','💡')} +5 XP)\n` +
+      `<b>#Leaderboard</b> — рейтинг тестеров\n` +
+      `<b>#Tasks</b> — задания на неделю\n` +
+      `<b>#Roles &amp; Zones</b> — производственные роли\n` +
+      `<b>#Announcements</b> — обновления платформы\n` +
+      `<b>#Support</b> — помощь\n` +
+      `<b>#Off-topic</b> — флуд\n\n` +
+      `Ссылка на группу будет в конце онбординга.`
+    : `${ce('handshake','🤝')} <b>Testers Group</b>\n\n` +
+      `We have a TG group with topics:\n\n` +
+      `<b>#General</b> — chat, questions\n` +
+      `<b>#Bugs</b> — bug reports (${ce('bug','🐛')} +5 XP per bug)\n` +
+      `<b>#Features</b> — feature requests (${ce('bulb','💡')} +5 XP)\n` +
+      `<b>#Leaderboard</b> — tester rankings\n` +
+      `<b>#Tasks</b> — weekly tasks\n` +
+      `<b>#Roles &amp; Zones</b> — testing roles\n` +
+      `<b>#Announcements</b> — platform updates\n` +
+      `<b>#Support</b> — help\n` +
+      `<b>#Off-topic</b> — random\n\n` +
+      `Group invite link will be at the end of onboarding.`;
+
+  await testerReply(ctx, ownerId, t, [
+    [{ text: ru ? 'Далее →' : 'Next →', callback_data: `ob_step3` }],
+  ], true);
+});
+
+// ── Onboarding Step 3: XP + Points система ──
+bot.action(/^ob_step3:(\d+)$/, async (ctx) => {
+  const ownerId = parseInt(ctx.match![1]);
+  if (ctx.from!.id !== ownerId) { await ctx.answerCbQuery('Not your button'); return; }
+  await ctx.answerCbQuery();
+  const ru = getUserLang(ownerId) === 'ru';
+
+  let t = ru
+    ? `${ce('diamond','💎')} <b>Система прогресса</b>\n\n` +
+      `<b>XP</b> — опыт за каждое действие:\n` +
+      `· Баг-репорт: +5 XP\n` +
+      `· Предложение фичи: +5 XP\n` +
+      `· Critical баг: +20 XP\n` +
+      `· Ежедневный чекин: +1 XP\n\n` +
+      `<b>Points</b> — валюта за достижения:\n` +
+      `· Level-up: +10...+200 Points\n` +
+      `· Баг пофикшен: +5 Points\n` +
+      `· Фича реализована: +10 Points\n\n` +
+      `<b>Уровни</b> (по XP):\n` +
+      `${ce('seedling','🌱')} Новичок → ${ce('lab','🧪')} Тестер (50) → ${ce('fire','⚡')} Активный (150) → ${ce('diamond','💎')} Эксперт (400) → ${ce('crown','👑')} Мастер (800) → ${ce('trophy','🏆')} Легенда (1500)\n\n` +
+      `Points тратишь в <b>магазине</b>: генерации, ранний доступ, 1:1 с разработчиком.`
+    : `${ce('diamond','💎')} <b>Progress System</b>\n\n` +
+      `<b>XP</b> — earned for every action:\n` +
+      `· Bug report: +5 XP\n` +
+      `· Feature request: +5 XP\n` +
+      `· Critical bug: +20 XP\n` +
+      `· Daily check-in: +1 XP\n\n` +
+      `<b>Points</b> — currency for achievements:\n` +
+      `· Level-up: +10...+200 Points\n` +
+      `· Bug fixed: +5 Points\n` +
+      `· Feature implemented: +10 Points\n\n` +
+      `<b>Levels</b> (by XP):\n` +
+      `${ce('seedling','🌱')} Newbie → ${ce('lab','🧪')} Tester (50) → ${ce('fire','⚡')} Active (150) → ${ce('diamond','💎')} Expert (400) → ${ce('crown','👑')} Master (800) → ${ce('trophy','🏆')} Legend (1500)\n\n` +
+      `Spend Points in the <b>shop</b>: generations, early access, 1:1 with developer.`;
+
+  await testerReply(ctx, ownerId, t, [
+    [{ text: ru ? 'Далее →' : 'Next →', callback_data: `ob_step4` }],
+  ], true);
+});
+
+// ── Onboarding Step 4: Выбор роли ──
+bot.action(/^ob_step4:(\d+)$/, async (ctx) => {
+  const ownerId = parseInt(ctx.match![1]);
+  if (ctx.from!.id !== ownerId) { await ctx.answerCbQuery('Not your button'); return; }
+  await ctx.answerCbQuery();
+  const ru = getUserLang(ownerId) === 'ru';
+
+  let t = ru
+    ? `${ce('target','🎯')} <b>Выбери зону тестирования</b>\n\n` +
+      `Каждый тестер выбирает 1-3 зоны на которых фокусируется. Это помогает нам распределить задачи.\n\n` +
+      `Нажми на зону ниже чтобы прочитать описание и выбрать:`
+    : `${ce('target','🎯')} <b>Choose your testing zone</b>\n\n` +
+      `Each tester picks 1-3 zones to focus on. This helps us distribute tasks.\n\n` +
+      `Tap a zone below to read about it and select:`;
+
+  // Show zone buttons (reuse from showTesterRole)
+  const zoneButtons: any[][] = [];
+  for (let i = 0; i < PROD_ZONES.length; i += 2) {
+    const row: any[] = [];
+    for (let j = i; j < Math.min(i + 2, PROD_ZONES.length); j++) {
+      const z = PROD_ZONES[j];
+      row.push({
+        text: `${ru ? z.labelRu : z.label}`,
+        icon_custom_emoji_id: z.icon,
+        callback_data: `zone_view:${z.id}`,
+      });
+    }
+    zoneButtons.push(row);
+  }
+  zoneButtons.push([{ text: ru ? 'Пропустить → Studio' : 'Skip → Studio', callback_data: `ob_step5` }]);
+
+  await testerReply(ctx, ownerId, t, zoneButtons, true);
+});
+
+// ── Onboarding Step 5: Финал — Studio + команды ──
+bot.action(/^ob_step5:(\d+)$/, async (ctx) => {
+  const ownerId = parseInt(ctx.match![1]);
+  if (ctx.from!.id !== ownerId) { await ctx.answerCbQuery('Not your button'); return; }
+  await ctx.answerCbQuery();
+  const ru = getUserLang(ownerId) === 'ru';
+
+  let t = ru
+    ? `${ce('rocket','🚀')} <b>Всё готово!</b>\n\n` +
+      `Открой Studio и создай своего первого AI агента — просто опиши что он должен делать.\n\n` +
+      `<b>Полезные команды:</b>\n` +
+      `/mystats — твой профиль и прогресс\n` +
+      `/checkin — ежедневный чекин (+1 XP)\n` +
+      `/feedback — сообщить о баге (+5 XP)\n` +
+      `/tasks — задания на тестирование\n` +
+      `/shop — магазин наград (Points)\n` +
+      `/role — твои зоны тестирования\n` +
+      `/bugs — багтрекер\n` +
+      `/leaderboard — рейтинг тестеров\n\n` +
+      `${ce('fire','🔥')} Не забывай делать /checkin каждый день!`
+    : `${ce('rocket','🚀')} <b>All set!</b>\n\n` +
+      `Open Studio and create your first AI agent — just describe what it should do.\n\n` +
+      `<b>Useful commands:</b>\n` +
+      `/mystats — your profile and progress\n` +
+      `/checkin — daily check-in (+1 XP)\n` +
+      `/feedback — report a bug (+5 XP)\n` +
+      `/tasks — testing tasks\n` +
+      `/shop — rewards shop (Points)\n` +
+      `/role — your testing zones\n` +
+      `/bugs — bug tracker\n` +
+      `/leaderboard — tester rankings\n\n` +
+      `${ce('fire','🔥')} Don't forget to /checkin every day!`;
+
+  // Generate group invite link for the final step
+  let groupInviteUrl = '';
+  if (BETA_GROUP_ID) {
+    try {
+      const link = await bot.telegram.createChatInviteLink(BETA_GROUP_ID, {
+        member_limit: 1,
+        expire_date: Math.floor(Date.now() / 1000) + 86400,
+        name: `tester-${ownerId}-final`,
+      });
+      groupInviteUrl = link.invite_link;
+    } catch {}
+  }
+
+  const buttons: any[][] = [];
+  if (groupInviteUrl) {
+    buttons.push([{ text: ru ? '👥 Войти в группу тестеров' : '👥 Join Testers Group', url: groupInviteUrl }]);
+  }
+  buttons.push([{ text: ru ? 'Открыть Studio' : 'Open Studio', url: 'https://tonagentplatform.com/studio' }]);
+  buttons.push([
+    { text: ru ? 'Мой профиль' : 'My Profile', icon_custom_emoji_id: CE.crown, callback_data: 'tg_mystats' },
+    { text: 'Check-in', icon_custom_emoji_id: CE.check, callback_data: 'tg_checkin' },
+  ]);
+
+  await testerReply(ctx, ownerId, t, buttons, true);
+});
+
+bot.action(/^tg_mystats:(\d+)$/, async (ctx) => {
+  const ownerId = parseInt(ctx.match![1]);
+  if (ctx.from!.id !== ownerId) { await ctx.answerCbQuery('Not your button'); return; }
+  await ctx.answerCbQuery();
+  await showTesterProfile(ctx, ownerId, true);
+});
+
+bot.action(/^tg_levels:(\d+)$/, async (ctx) => {
+  const ownerId = parseInt(ctx.match![1]);
+  if (ctx.from!.id !== ownerId) { await ctx.answerCbQuery('Not your button'); return; }
+  await ctx.answerCbQuery();
+  await renderLevelsView(ctx, ownerId, true);
+});
+
+bot.action(/^tg_leaderboard:(\d+)$/, async (ctx) => {
+  const ownerId = parseInt(ctx.match![1]);
+  if (ctx.from!.id !== ownerId) { await ctx.answerCbQuery('Not your button'); return; }
+  await ctx.answerCbQuery();
+  await showTesterLeaderboard(ctx, ownerId, true);
+});
+
+bot.action(/^tg_shop:(\d+)$/, async (ctx) => {
+  const ownerId = parseInt(ctx.match![1]);
+  if (ctx.from!.id !== ownerId) { await ctx.answerCbQuery('Not your button'); return; }
+  await ctx.answerCbQuery();
+  await showTesterShop(ctx, ownerId, true);
+});
+
+bot.action(/^tg_tasks:(\d+)$/, async (ctx) => {
+  const ownerId = parseInt(ctx.match![1]);
+  if (ctx.from!.id !== ownerId) { await ctx.answerCbQuery('Not your button'); return; }
+  await ctx.answerCbQuery();
+  await showTesterTasks(ctx, ownerId, true);
+});
+
+bot.action(/^tg_checkin:(\d+)$/, async (ctx) => {
+  const ownerId = parseInt(ctx.match![1]);
+  if (ctx.from!.id !== ownerId) { await ctx.answerCbQuery('Not your button'); return; }
+  await ctx.answerCbQuery();
+  const userId = ownerId;
+  const ru = getUserLang(userId) === 'ru';
+  const { dailyCheckin, isBetaTester, getTesterStats } = require('./payments');
+  if (!isBetaTester(userId)) return;
+  const result = await dailyCheckin(userId);
+  if (result.ok) {
+    const stats = await getTesterStats(userId);
+    const streak = result.streak || 0;
+    const icon = streak >= 7 ? ce('fire','🔥') + ce('fire','🔥') : ce('fire','🔥');
+    let rewardMsg = `${ce('check','✅')} <b>+1</b>  ·  ${icon} streak <b>${streak}</b>  ·  ${ce('coin','💰')} <b>${stats?.available || 0}</b>`;
+    // After successful checkin, advance onboarding quest
+    try {
+      const { advanceQuest } = require('./engagement');
+      const qResult = await advanceQuest(userId);
+      if (qResult.advanced) {
+        rewardMsg += `\n${ce('rocket','🚀')} Quest: ${qResult.newStep || 'completed!'}`;
+      }
+    } catch {}
+    await testerReply(ctx, userId, rewardMsg, [
+      [{ text: ru ? 'Профиль' : 'Profile', icon_custom_emoji_id: CE.crown, callback_data: 'tg_mystats' }],
+    ], true);
+  } else {
+    await ctx.answerCbQuery(result.error || (ru ? 'Уже чекинились сегодня' : 'Already checked in today'), { show_alert: true });
+  }
+});
+
+bot.action(/^tg_feedback:(\d+)$/, async (ctx) => {
+  const ownerId = parseInt(ctx.match![1]);
+  if (ctx.from!.id !== ownerId) { await ctx.answerCbQuery('Not your button'); return; }
+  await ctx.answerCbQuery();
+  const ru = getUserLang(ownerId) === 'ru';
+  await safeReply(ctx, ru
+    ? 'Отправьте /feedback для создания баг-репорта'
+    : 'Use /feedback to create a bug report');
+});
+
+// ── FAQ ──
+bot.action(/^tg_faq:(\d+)$/, async (ctx) => {
+  const ownerId = parseInt(ctx.match![1]);
+  if (ctx.from!.id !== ownerId) { await ctx.answerCbQuery('Not your button'); return; }
+  await ctx.answerCbQuery();
+  const ru = getUserLang(ownerId) === 'ru';
+
+  let t = ru
+    ? `${ce('bulb','❓')} <b>FAQ — Частые вопросы</b>\n\n` +
+      `<b>Что такое XP?</b>\n` +
+      `Опыт за активность. Баг-репорт +5, фича +5, critical +20, чекин +1. Чем больше XP — тем выше уровень.\n\n` +
+      `<b>Что такое Points?</b>\n` +
+      `Валюта за достижения. Получаешь при:\n` +
+      `· Level-up: +10...+200 Points\n` +
+      `· Твой баг пофикшен: +5 Points\n` +
+      `· Твоя фича реализована: +10 Points\n` +
+      `Points тратишь в магазине (/shop).\n\n` +
+      `<b>Как заработать XP?</b>\n` +
+      `· /checkin каждый день (+1 XP)\n` +
+      `· /feedback — отправь баг или фичу\n` +
+      `· Выполняй задания (/tasks)\n\n` +
+      `<b>Уровни</b>\n` +
+      `${ce('seedling','🌱')} Новичок (0) → ${ce('lab','🧪')} Тестер (50) → ${ce('fire','⚡')} Активный (150) → ${ce('diamond','💎')} Эксперт (400) → ${ce('crown','👑')} Мастер (800) → ${ce('trophy','🏆')} Легенда (1500)\n\n` +
+      `<b>Что в магазине?</b>\n` +
+      `Генерации агентов, ранний доступ к фичам, 1:1 с разработчиком и другое.\n\n` +
+      `<b>Зоны тестирования?</b>\n` +
+      `Выбери 1-3 зоны (/role) — области платформы на которых фокусируешься. Помогает нам распределить задачи.\n\n` +
+      `<b>Нашёл баг?</b>\n` +
+      `/feedback → выбери тип → опиши + скриншот`
+    : `${ce('bulb','❓')} <b>FAQ</b>\n\n` +
+      `<b>What is XP?</b>\n` +
+      `Experience for activity. Bug +5, feature +5, critical +20, check-in +1. More XP = higher level.\n\n` +
+      `<b>What are Points?</b>\n` +
+      `Currency for achievements:\n` +
+      `· Level-up: +10...+200 Points\n` +
+      `· Your bug gets fixed: +5 Points\n` +
+      `· Your feature gets built: +10 Points\n` +
+      `Spend in shop (/shop).\n\n` +
+      `<b>How to earn XP?</b>\n` +
+      `· /checkin daily (+1 XP)\n` +
+      `· /feedback — submit bugs or features\n` +
+      `· Complete tasks (/tasks)\n\n` +
+      `<b>Levels</b>\n` +
+      `${ce('seedling','🌱')} Newbie (0) → ${ce('lab','🧪')} Tester (50) → ${ce('fire','⚡')} Active (150) → ${ce('diamond','💎')} Expert (400) → ${ce('crown','👑')} Master (800) → ${ce('trophy','🏆')} Legend (1500)\n\n` +
+      `<b>What's in the shop?</b>\n` +
+      `Agent generations, early access, 1:1 with developer, and more.\n\n` +
+      `<b>Testing zones?</b>\n` +
+      `Pick 1-3 zones (/role) to focus on. Helps distribute tasks.\n\n` +
+      `<b>Found a bug?</b>\n` +
+      `/feedback → pick type → describe + screenshot`;
+
+  await testerReply(ctx, ownerId, t, [
+    [{ text: ru ? 'Профиль' : 'Profile', icon_custom_emoji_id: CE.crown, callback_data: 'tg_mystats' }],
+  ], true);
+});
+
+// ── Quest callback ──
+bot.action(/^tg_quest:(\d+)$/, async (ctx) => {
+  const ownerId = parseInt(ctx.match![1]);
+  if (ctx.from!.id !== ownerId) { await ctx.answerCbQuery('Not your button'); return; }
+  await ctx.answerCbQuery();
+  const ru = getUserLang(ownerId) === 'ru';
+  const { formatQuestMessage } = require('./engagement');
+  const text = await formatQuestMessage(ownerId, ru);
+  await testerReply(ctx, ownerId, text, [
+    [{ text: ru ? 'Задания' : 'Tasks', icon_custom_emoji_id: CE.target, callback_data: 'tg_tasks' },
+     { text: ru ? 'Профиль' : 'Profile', icon_custom_emoji_id: CE.crown, callback_data: 'tg_mystats' }],
+  ], true);
+});
+
+// ── Daily quest callback ──
+bot.action(/^tg_daily:(\d+)$/, async (ctx) => {
+  const ownerId = parseInt(ctx.match![1]);
+  if (ctx.from!.id !== ownerId) { await ctx.answerCbQuery('Not your button'); return; }
+  await ctx.answerCbQuery();
+  const ru = getUserLang(ownerId) === 'ru';
+  const { formatDailyQuestMessage } = require('./engagement');
+  const text = formatDailyQuestMessage(ru);
+  await testerReply(ctx, ownerId, text, [
+    [{ text: ru ? 'Задания' : 'Tasks', icon_custom_emoji_id: CE.target, callback_data: 'tg_tasks' },
+     { text: ru ? 'Профиль' : 'Profile', icon_custom_emoji_id: CE.crown, callback_data: 'tg_mystats' }],
+  ], true);
+});
+
+// ── Achievements callback ──
+bot.action(/^tg_achievements:(\d+)$/, async (ctx) => {
+  const ownerId = parseInt(ctx.match![1]);
+  if (ctx.from!.id !== ownerId) { await ctx.answerCbQuery('Not your button'); return; }
+  await ctx.answerCbQuery();
+  const ru = getUserLang(ownerId) === 'ru';
+  const { checkAchievements, formatAchievementsMessage, ACHIEVEMENTS, loadUserStats } = require('./engagement');
+  const stats = await loadUserStats(ownerId);
+  const earned = await checkAchievements(ownerId, stats);
+  const { pool } = require('./db');
+  const dbEarned = await pool.query('SELECT achievement_id FROM builder_bot.beta_achievements WHERE user_id = $1', [ownerId]);
+  const allEarned = [...new Set([...dbEarned.rows.map((r: any) => r.achievement_id), ...earned])];
+  const text = formatAchievementsMessage(allEarned, ACHIEVEMENTS, ru);
+  await testerReply(ctx, ownerId, text, [
+    [{ text: ru ? 'Профиль' : 'Profile', icon_custom_emoji_id: CE.crown, callback_data: 'tg_mystats' }],
+  ], true);
+});
+
+// ── Leave beta: confirm ──
+bot.action(/^tg_leave_beta:(\d+)$/, async (ctx) => {
+  const ownerId = parseInt(ctx.match![1]);
+  if (ctx.from!.id !== ownerId) { await ctx.answerCbQuery('Not your button'); return; }
+  await ctx.answerCbQuery();
+  const ru = getUserLang(ownerId) === 'ru';
+  const t = ru
+    ? `${ce('cross','❌')} <b>Покинуть бету?</b>\n\n` +
+      `Ты потеряешь:\n` +
+      `· Доступ к группе тестеров\n` +
+      `· Бета-план и привилегии\n` +
+      `· Прогресс НЕ удаляется — можно вернуться\n\n` +
+      `Уверен?`
+    : `${ce('cross','❌')} <b>Leave beta?</b>\n\n` +
+      `You will lose:\n` +
+      `· Access to testers group\n` +
+      `· Beta plan and privileges\n` +
+      `· Progress is NOT deleted — you can return\n\n` +
+      `Are you sure?`;
+  await testerReply(ctx, ownerId, t, [
+    [{ text: ru ? 'Да, покинуть' : 'Yes, leave', icon_custom_emoji_id: CE.cross, callback_data: 'tg_leave_confirm' },
+     { text: ru ? 'Отмена' : 'Cancel', icon_custom_emoji_id: CE.check, callback_data: 'tg_mystats' }],
+  ], true);
+});
+
+// ── Leave beta: confirmed ──
+bot.action(/^tg_leave_confirm:(\d+)$/, async (ctx) => {
+  const ownerId = parseInt(ctx.match![1]);
+  if (ctx.from!.id !== ownerId) { await ctx.answerCbQuery('Not your button'); return; }
+  await ctx.answerCbQuery();
+  const ru = getUserLang(ownerId) === 'ru';
+  const { removeBetaTester } = require('./payments');
+  await removeBetaTester(ownerId);
+  // Kick from group
+  if (BETA_GROUP_ID) {
+    try { await bot.telegram.banChatMember(BETA_GROUP_ID, ownerId); } catch {}
+    // Immediately unban so they can rejoin later
+    try { await bot.telegram.unbanChatMember(BETA_GROUP_ID, ownerId); } catch {}
+  }
+  // Send to DM, not to group (they just got kicked from group)
+  try {
+    await bot.telegram.sendMessage(ownerId, ru
+      ? `${ce('check','✅')} Ты покинул бету. Спасибо за тестирование!\n\nЕсли захочешь вернуться — попроси новый инвайт у @TonAgentPlatform.`
+      : `${ce('check','✅')} You left the beta. Thanks for testing!\n\nIf you want to come back — ask for a new invite from @TonAgentPlatform.`,
+      { parse_mode: 'HTML' });
+  } catch {
+    // Fallback to current chat if DM fails
+    await safeReply(ctx, ru ? `${ce('check','✅')} Ты покинул бету.` : `${ce('check','✅')} You left the beta.`);
+  }
+});
+
+// ── /leavebeta command ──
+bot.command('leavebeta', async (ctx) => {
+  const userId = ctx.from!.id;
+  const { isBetaTester } = require('./payments');
+  if (!isBetaTester(userId)) return;
+  const ru = getUserLang(userId) === 'ru';
+  const t = ru
+    ? `${ce('cross','❌')} <b>Покинуть бету?</b>\n\nТы потеряешь доступ к группе и привилегиям.\nПрогресс сохранится.\n\nУверен?`
+    : `${ce('cross','❌')} <b>Leave beta?</b>\n\nYou'll lose group access and privileges.\nProgress is saved.\n\nSure?`;
+  await safeReply(ctx, t, {
+    parse_mode: 'HTML',
+    reply_markup: { inline_keyboard: [
+      [{ text: ru ? 'Да, покинуть' : 'Yes, leave', icon_custom_emoji_id: CE.cross, callback_data: `tg_leave_confirm:${userId}` },
+       { text: ru ? 'Отмена' : 'Cancel', callback_data: `tg_mystats:${userId}` }],
+    ]},
+  });
+});
+
+// ── /quest — onboarding quest progress ──
+bot.command('quest', async (ctx) => {
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  const { formatQuestMessage } = require('./engagement');
+  const text = await formatQuestMessage(userId, ru);
+  await safeReply(ctx, text, { parse_mode: 'HTML', disable_web_page_preview: true });
+});
+
+// ── /daily — today's quest ──
+bot.command('daily', async (ctx) => {
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  const { formatDailyQuestMessage } = require('./engagement');
+  const text = formatDailyQuestMessage(ru);
+  await safeReply(ctx, text, { parse_mode: 'HTML' });
+});
+
+// ── /event — current weekly event ──
+bot.command('event', async (ctx) => {
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  const { formatEventMessage } = require('./engagement');
+  const text = formatEventMessage(ru);
+  await safeReply(ctx, text, { parse_mode: 'HTML' });
+});
+
+// ── /achievements — user's achievements ──
+bot.command('achievements', async (ctx) => {
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  const { checkAchievements, formatAchievementsMessage, ACHIEVEMENTS, loadUserStats } = require('./engagement');
+  const stats = await loadUserStats(userId);
+  const earned = await checkAchievements(userId, stats);
+  // Load already earned from DB
+  const { pool } = require('./db');
+  const dbEarned = await pool.query('SELECT achievement_id FROM builder_bot.beta_achievements WHERE user_id = $1', [userId]);
+  const allEarned = [...new Set([...dbEarned.rows.map((r: any) => r.achievement_id), ...earned])];
+  const text = formatAchievementsMessage(allEarned, ACHIEVEMENTS, ru);
+  await safeReply(ctx, text, { parse_mode: 'HTML' });
+});
+
+// ── /founders — public wall of Expert+ testers ──
+bot.command('founders', async (ctx) => {
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  try {
+    const { pool } = require('./db');
+    const r = await pool.query(`
+      SELECT user_id, username, xp, level, tester_number, created_at
+      FROM builder_bot.beta_testers
+      WHERE status = 'active' AND COALESCE(xp, 0) >= 400
+      ORDER BY xp DESC, tester_number ASC NULLS LAST
+      LIMIT 50
+    `);
+    const rows = r.rows;
+    if (rows.length === 0) {
+      await safeReply(ctx, ru
+        ? `🏆 <b>Founding Testers</b>\n\nПока никто не достиг уровня Expert (400 XP).\n\nПервый snapshot — <b>1 мая 2026</b>. Те кто достигнет Expert+ до этой даты попадут на вечную стену founders.\n\n🔗 <a href="https://tonagentplatform.com/founders.html">tonagentplatform.com/founders</a>`
+        : `🏆 <b>Founding Testers</b>\n\nNo one has reached Expert level (400 XP) yet.\n\nFirst snapshot — <b>May 1, 2026</b>. Those who reach Expert+ by then will be on the permanent founders wall.\n\n🔗 <a href="https://tonagentplatform.com/founders.html">tonagentplatform.com/founders</a>`,
+        { parse_mode: 'HTML', disable_web_page_preview: true });
+      return;
+    }
+    const levelEmoji: Record<number, string> = { 4: '💎', 5: '👑', 6: '🏆' };
+    const levelName: Record<number, string> = { 4: 'Expert', 5: 'Master', 6: 'Legend' };
+    let text = ru
+      ? `🏆 <b>Founding Testers</b> (Expert+)\n<i>Первые тестеры платформы — их имена навсегда.</i>\n\n`
+      : `🏆 <b>Founding Testers</b> (Expert+)\n<i>First testers — their names forever.</i>\n\n`;
+    rows.forEach((row: any, i: number) => {
+      const num = row.tester_number ? `#${String(row.tester_number).padStart(4, '0')}` : '';
+      const name = row.username ? `@${row.username}` : `id${row.user_id}`;
+      const emoji = levelEmoji[row.level] || '⭐';
+      const lvl = levelName[row.level] || `Lv.${row.level}`;
+      text += `${i + 1}. ${emoji} <b>${name}</b> ${num} — ${lvl} · ${row.xp} XP\n`;
+    });
+    text += `\n📊 Всего ${rows.length} ${ru ? 'фаундеров' : 'founders'}\n`;
+    text += `🔗 <a href="https://tonagentplatform.com/founders.html">tonagentplatform.com/founders</a>`;
+    await safeReply(ctx, text, { parse_mode: 'HTML', disable_web_page_preview: true });
+  } catch (e: any) {
+    console.error('[/founders]', e?.message);
+    await safeReply(ctx, ru ? 'Ошибка загрузки списка' : 'Failed to load');
+  }
+});
+
+// ── /internship — internship info ──
+bot.command('internship', async (ctx) => {
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  const { formatInternshipInfo } = require('./engagement');
+  const text = formatInternshipInfo(ru);
+  await safeReply(ctx, text, { parse_mode: 'HTML', disable_web_page_preview: true,
+    reply_markup: { inline_keyboard: [
+      [{ text: ru ? '📝 Хочу участвовать' : '📝 Apply', callback_data: `intern_apply:${userId}` }],
+    ]},
+  });
+});
+
+// ── Internship apply callback ──
+bot.action(/^intern_apply:(\d+)$/, async (ctx) => {
+  const ownerId = parseInt(ctx.match![1]);
+  if (ctx.from!.id !== ownerId) { await ctx.answerCbQuery('Not your button'); return; }
+  await ctx.answerCbQuery();
+  const { pool } = require('./db');
+  const ru = getUserLang(ownerId) === 'ru';
+  try {
+    const existing = await pool.query('SELECT id FROM builder_bot.beta_internship_applications WHERE user_id = $1', [ownerId]);
+    if (existing.rows.length) {
+      await safeReply(ctx, ru ? `${ce('check','✅')} Ты уже подал заявку!` : `${ce('check','✅')} You already applied!`);
+      return;
+    }
+    const stats = await pool.query('SELECT xp, username FROM builder_bot.beta_testers WHERE user_id = $1', [ownerId]);
+    await pool.query(
+      'INSERT INTO builder_bot.beta_internship_applications (user_id, username, xp_at_apply) VALUES ($1, $2, $3)',
+      [ownerId, stats.rows[0]?.username || '', stats.rows[0]?.xp || 0]
+    );
+    await safeReply(ctx, ru
+      ? '✅ Заявка отправлена! Мы свяжемся с тобой по итогам сезона.'
+      : '✅ Application sent! We\'ll contact you after the season ends.');
+    // Notify owner
+    await bot.telegram.sendMessage(OWNER_ID_NUM,
+      `📝 <b>Internship application</b>\nFrom: @${stats.rows[0]?.username || ownerId}\nXP: ${stats.rows[0]?.xp || 0}`,
+      { parse_mode: 'HTML' }
+    ).catch(() => {});
+  } catch (e: any) { await safeReply(ctx, `Error: ${e.message?.slice(0, 100)}`); }
+});
+
+// ── /intern_list — admin: list applications ──
+bot.command('intern_list', async (ctx) => {
+  const userId = ctx.from!.id;
+  const { isPlatformAdmin } = require('./payments');
+  if (!isPlatformAdmin(userId)) return;
+  const { pool } = require('./db');
+  const res = await pool.query('SELECT * FROM builder_bot.beta_internship_applications ORDER BY xp_at_apply DESC LIMIT 20');
+  if (!res.rows.length) { await safeReply(ctx, '📭 No applications yet'); return; }
+  let text = `${ce('pencil','📝')} <b>Internship Applications</b>\n\n`;
+  res.rows.forEach((r: any, i: number) => {
+    text += `${i + 1}. @${r.username || r.user_id} — ${r.xp_at_apply} XP (${r.status})\n`;
+  });
+  await safeReply(ctx, text, { parse_mode: 'HTML' });
+});
+
+// ── /coverage — test coverage map ──
+bot.command('coverage', async (ctx) => {
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  const { pool } = require('./db');
+  const { ZONE_TASKS } = require('./engagement');
+  // Count completed tasks per zone
+  const completed = await pool.query(
+    'SELECT zone_id, COUNT(*) as cnt FROM builder_bot.beta_task_progress WHERE status = $1 GROUP BY zone_id',
+    ['completed']
+  );
+  const zoneCounts: Record<string, number> = {};
+  completed.rows.forEach((r: any) => { zoneCounts[r.zone_id] = parseInt(r.cnt); });
+
+  // ZONE_TASKS is an array — count per zone
+  const zoneTaskCounts: Record<string, number> = {};
+  (ZONE_TASKS as any[]).forEach((t: any) => { zoneTaskCounts[t.zone] = (zoneTaskCounts[t.zone] || 0) + 1; });
+
+  const zoneNames: Record<string, string> = { core: '🔨 Core', defi: '💎 DeFi', gifts: '🎁 Gifts', telegram: '📱 Telegram', studio: '🌐 Studio', community: '👥 Community' };
+  let text = `📊 <b>${ru ? 'Карта покрытия' : 'Test Coverage'}</b>\n\n`;
+  for (const [zoneId, name] of Object.entries(zoneNames)) {
+    const total = zoneTaskCounts[zoneId] || 0;
+    const done = zoneCounts[zoneId] || 0;
+    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+    const bar = '●'.repeat(Math.round(pct / 10)) + '○'.repeat(10 - Math.round(pct / 10));
+    const multiplier = pct < 30 ? ' <b>x3 XP!</b>' : pct < 60 ? ' x2 XP' : '';
+    text += `${name}: ${bar} ${pct}% (${done}/${total})${multiplier}\n`;
+  }
+  text += `\n${ru ? '🔴 Непокрытые зоны дают x3 XP!' : '🔴 Uncovered zones give x3 XP!'}`;
+  await safeReply(ctx, text, { parse_mode: 'HTML' });
+});
+
+// ── /squad — view my squad ──
+bot.command('squad', async (ctx) => {
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  const { pool } = require('./db');
+
+  const tester = await pool.query('SELECT squad_id FROM builder_bot.beta_testers WHERE user_id = $1', [userId]);
+  const squadId = tester.rows[0]?.squad_id;
+
+  if (!squadId) {
+    await safeReply(ctx, ru
+      ? `${ce('handshake','🤝')} <b>Команды</b>\n\nТы пока не в команде. Команды формируются автоматически в начале каждого ивента.`
+      : `${ce('handshake','🤝')} <b>Squads</b>\n\nYou're not in a squad yet. Squads are formed automatically at the start of each event.`,
+      { parse_mode: 'HTML' });
+    return;
+  }
+
+  const squad = await pool.query('SELECT * FROM builder_bot.beta_squads WHERE id = $1', [squadId]);
+  const members = await pool.query(
+    'SELECT user_id, username, xp FROM builder_bot.beta_testers WHERE squad_id = $1 ORDER BY xp DESC', [squadId]
+  );
+
+  let text = `${ce('handshake','🤝')} <b>${ru ? 'Команда' : 'Squad'}: ${escHtml(squad.rows[0]?.name || squadId)}</b>\n`;
+  text += `${ce('trophy','🏆')} ${ru ? 'Счёт' : 'Score'}: <b>${squad.rows[0]?.score || 0}</b>\n\n`;
+  text += `<b>${ru ? 'Участники' : 'Members'}:</b>\n`;
+  members.rows.forEach((m: any, i: number) => {
+    text += `${i + 1}. <a href="https://t.me/${escHtml(m.username || '')}">${escHtml(m.username ? '@' + m.username : String(m.user_id))}</a> — ${m.xp} XP\n`;
+  });
+
+  await safeReply(ctx, text, { parse_mode: 'HTML', disable_web_page_preview: true });
+});
+
+// ── Admin: /squad_form — auto-form squads from active testers ──
+bot.command('squad_form', async (ctx) => {
+  const userId = ctx.from!.id;
+  const { isPlatformAdmin } = require('./payments');
+  if (!isPlatformAdmin(userId)) return;
+  const { pool } = require('./db');
+  const ru = getUserLang(userId) === 'ru';
+
+  // Get all active testers without squad
+  const testers = await pool.query(
+    "SELECT user_id, username FROM builder_bot.beta_testers WHERE status = 'active' ORDER BY xp DESC"
+  );
+  if (testers.rows.length < 2) { await safeReply(ctx, 'Not enough testers'); return; }
+
+  const SQUAD_SIZE = 3;
+  const squads: any[][] = [];
+  const shuffled = [...testers.rows].sort(() => Math.random() - 0.5);
+
+  for (let i = 0; i < shuffled.length; i += SQUAD_SIZE) {
+    squads.push(shuffled.slice(i, i + SQUAD_SIZE));
+  }
+  // Merge last squad if too small
+  if (squads.length > 1 && squads[squads.length - 1].length < 2) {
+    squads[squads.length - 2].push(...squads.pop()!);
+  }
+
+  const names = ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot', 'Golf', 'Hotel'];
+  let text = `${ce('handshake','🤝')} <b>Squads formed!</b>\n\n`;
+
+  for (let i = 0; i < squads.length; i++) {
+    const squadId = `squad_${Date.now()}_${i}`;
+    const name = names[i] || `Squad ${i + 1}`;
+    await pool.query('INSERT INTO builder_bot.beta_squads (id, name) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING', [squadId, name]);
+    for (const m of squads[i]) {
+      await pool.query('UPDATE builder_bot.beta_testers SET squad_id = $1 WHERE user_id = $2', [squadId, m.user_id]);
+    }
+    text += `<b>${name}:</b> ${squads[i].map((m: any) => '@' + (m.username || m.user_id)).join(', ')}\n`;
+  }
+
+  await safeReply(ctx, text, { parse_mode: 'HTML' });
+  await postAnnouncement(text);
+});
+
+// ── /mentor — take a mentee ──
+bot.command('mentor', async (ctx) => {
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  const { pool } = require('./db');
+  const { getTesterLevel, isBetaTester } = require('./payments');
+
+  if (!isBetaTester(userId)) { await safeReply(ctx, ru ? 'Доступно только бета-тестерам.' : 'Beta testers only.'); return; }
+
+  const stats = await pool.query('SELECT xp, username FROM builder_bot.beta_testers WHERE user_id = $1', [userId]);
+  const level = getTesterLevel(stats.rows[0]?.xp || 0);
+
+  if (level.level < 4) {
+    await safeReply(ctx, ru
+      ? `${ce('lock','🔒')} Менторство доступно с уровня 4 (${ce('diamond','💎')} Expert). Ты сейчас на уровне ${level.level}.`
+      : `${ce('lock','🔒')} Mentorship requires level 4 (${ce('diamond','💎')} Expert). You're level ${level.level}.`,
+      { parse_mode: 'HTML' });
+    return;
+  }
+
+  // Check how many mentees already
+  const mentees = await pool.query('SELECT COUNT(*) as cnt FROM builder_bot.beta_testers WHERE mentor_id = $1', [userId]);
+  if (parseInt(mentees.rows[0].cnt) >= 3) {
+    await safeReply(ctx, ru ? 'У тебя уже 3 менти (максимум).' : 'You already have 3 mentees (max).');
+    return;
+  }
+
+  const args = (ctx.message.text || '').split(' ').slice(1).join(' ').trim();
+  if (!args) {
+    await safeReply(ctx, ru
+      ? `${ce('handshake','🤝')} <b>Менторство</b>\n\nИспользуй: /mentor @username\nТы берёшь новичка под крыло и получаешь 30% от его XP.\n\nМенти: ${mentees.rows[0].cnt}/3`
+      : `${ce('handshake','🤝')} <b>Mentorship</b>\n\nUsage: /mentor @username\nYou guide a newcomer and earn 30% of their XP.\n\nMentees: ${mentees.rows[0].cnt}/3`,
+      { parse_mode: 'HTML' });
+    return;
+  }
+
+  const targetUsername = args.replace('@', '').trim();
+  const target = await pool.query('SELECT user_id, mentor_id FROM builder_bot.beta_testers WHERE LOWER(username) = LOWER($1)', [targetUsername]);
+  if (!target.rows.length) { await safeReply(ctx, ru ? 'Тестер не найден.' : 'Tester not found.'); return; }
+  if (target.rows[0].mentor_id) { await safeReply(ctx, ru ? 'У этого тестера уже есть ментор.' : 'This tester already has a mentor.'); return; }
+  if (target.rows[0].user_id === userId) { await safeReply(ctx, ru ? 'Нельзя быть ментором самому себе.' : "Can't mentor yourself."); return; }
+
+  await pool.query('UPDATE builder_bot.beta_testers SET mentor_id = $1 WHERE user_id = $2', [userId, target.rows[0].user_id]);
+
+  await safeReply(ctx, ru
+    ? `${ce('check','✅')} Ты стал ментором для @${escHtml(targetUsername)}! Ты получаешь 30% от его XP.`
+    : `${ce('check','✅')} You're now mentoring @${escHtml(targetUsername)}! You earn 30% of their XP.`,
+    { parse_mode: 'HTML' });
+
+  // Notify mentee
+  try {
+    await bot.telegram.sendMessage(target.rows[0].user_id, ru
+      ? `${ce('handshake','🤝')} @${escHtml(stats.rows[0]?.username || String(userId))} стал твоим ментором! Обращайся к нему за помощью.`
+      : `${ce('handshake','🤝')} @${escHtml(stats.rows[0]?.username || String(userId))} is now your mentor! Reach out for help.`,
+      { parse_mode: 'HTML' });
+  } catch {}
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+// Admin approve-task callbacks — triggered from feedback notify inline buttons
+// Format: approve_task:FEEDBACK_ID:USER_ID:TASK_ID
+// Format: approve_daily:FEEDBACK_ID:USER_ID:standard|hardcore
+// Format: fb_resolve:FEEDBACK_ID  (marks as resolved + awards RESOLVE_XP)
+// ══════════════════════════════════════════════════════════════════════════
+
+bot.action(/^approve_task:(\d+):(\d+):([a-z0-9_-]+)$/, async (ctx) => {
+  try {
+    const adminId = ctx.from!.id;
+    const { isPlatformAdmin } = require('./payments');
+    if (!isPlatformAdmin(adminId)) { await ctx.answerCbQuery('Admin only'); return; }
+
+    const feedbackId = parseInt(ctx.match![1]);
+    const userId = parseInt(ctx.match![2]);
+    const taskId = ctx.match![3];
+
+    const { approveTaskFromFeedback } = require('./engagement');
+    const result = await approveTaskFromFeedback(userId, taskId);
+
+    if (!result.ok) {
+      await ctx.answerCbQuery(`⚠️ ${result.reason || 'Failed'}`, { show_alert: true });
+      return;
+    }
+
+    await ctx.answerCbQuery(`✅ +${result.xp} XP awarded to user ${userId} for ${taskId}`);
+
+    // DM the user
+    try {
+      const zoneLabels: any = { core: 'Core', defi: 'DeFi', gifts: 'Gifts & NFT', telegram: 'Telegram', studio: 'Studio', community: 'Community' };
+      const zone = zoneLabels[result.task.zone] || result.task.zone;
+      await bot.telegram.sendMessage(userId,
+        `🏆 <b>Задача засчитана!</b>\n\n` +
+        `📋 <code>${taskId}</code>\n` +
+        `🎯 ${result.task.title}\n` +
+        `📁 ${zone} · L${result.task.level}\n` +
+        `💰 <b>+${result.xp} XP</b>\n\n` +
+        `Проверено админом. XP зачислен. Продолжай в том же духе! 🚀`,
+        { parse_mode: 'HTML' });
+    } catch {}
+
+    // Update the original admin message with strikethrough / checkmark
+    try {
+      const msg = ctx.update.callback_query.message as any;
+      const original = msg.caption || msg.text || '';
+      const updated = original + `\n\n✅ <b>Approved:</b> ${taskId} (+${result.xp} XP)`;
+      const editFn = msg.caption ? 'editMessageCaption' : 'editMessageText';
+      await (ctx as any)[editFn](updated, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [] } });
+    } catch {}
+
+    // Mark feedback status
+    try {
+      const { pool } = require('./db');
+      await pool.query(
+        `UPDATE builder_bot.feedback SET status = 'resolved', resolved_at = NOW() WHERE id = $1`,
+        [feedbackId]);
+    } catch {}
+  } catch (e: any) {
+    console.error('[approve_task]', e?.message);
+    await ctx.answerCbQuery(`Error: ${e?.message || 'unknown'}`, { show_alert: true });
+  }
+});
+
+bot.action(/^approve_daily:(\d+):(\d+):(standard|hardcore)$/, async (ctx) => {
+  try {
+    const adminId = ctx.from!.id;
+    const { isPlatformAdmin } = require('./payments');
+    if (!isPlatformAdmin(adminId)) { await ctx.answerCbQuery('Admin only'); return; }
+
+    const feedbackId = parseInt(ctx.match![1]);
+    const userId = parseInt(ctx.match![2]);
+    const level = ctx.match![3] as 'standard' | 'hardcore';
+
+    const { approveDailyFromFeedback } = require('./engagement');
+    const result = await approveDailyFromFeedback(userId, level);
+
+    if (!result.ok) {
+      await ctx.answerCbQuery(`⚠️ ${result.reason || 'Failed'}`, { show_alert: true });
+      return;
+    }
+
+    await ctx.answerCbQuery(`✅ +${result.xp} XP for daily-${level}`);
+
+    try {
+      await bot.telegram.sendMessage(userId,
+        `🎯 <b>Daily квест засчитан!</b>\n\n` +
+        `Уровень: <b>${level === 'hardcore' ? '🔥 Хардкор' : '⭐ Стандарт'}</b>\n` +
+        `💰 <b>+${result.xp} XP</b>\n\n` +
+        `Проверено админом. Спасибо за выполнение! 🚀`,
+        { parse_mode: 'HTML' });
+    } catch {}
+
+    try {
+      const msg = ctx.update.callback_query.message as any;
+      const original = msg.caption || msg.text || '';
+      const updated = original + `\n\n✅ <b>Approved:</b> daily-${level} (+${result.xp} XP)`;
+      const editFn = msg.caption ? 'editMessageCaption' : 'editMessageText';
+      await (ctx as any)[editFn](updated, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [] } });
+    } catch {}
+
+    try {
+      const { pool } = require('./db');
+      await pool.query(
+        `UPDATE builder_bot.feedback SET status = 'resolved', resolved_at = NOW() WHERE id = $1`,
+        [feedbackId]);
+    } catch {}
+  } catch (e: any) {
+    console.error('[approve_daily]', e?.message);
+    await ctx.answerCbQuery(`Error: ${e?.message || 'unknown'}`, { show_alert: true });
+  }
+});
+
+bot.action(/^fb_resolve:(\d+)$/, async (ctx) => {
+  try {
+    const adminId = ctx.from!.id;
+    const { isPlatformAdmin } = require('./payments');
+    if (!isPlatformAdmin(adminId)) { await ctx.answerCbQuery('Admin only'); return; }
+
+    const feedbackId = parseInt(ctx.match![1]);
+    const { pool } = require('./db');
+    const fb = await pool.query(
+      `SELECT user_id, type, status FROM builder_bot.feedback WHERE id = $1`,
+      [feedbackId]);
+    if (!fb.rows[0]) { await ctx.answerCbQuery('Feedback not found'); return; }
+    if (fb.rows[0].status === 'resolved') { await ctx.answerCbQuery('Already resolved'); return; }
+
+    const { awardFeedbackPoints, isBetaTester } = require('./payments');
+    let xpMsg = '';
+    if (isBetaTester(fb.rows[0].user_id)) {
+      const reward = await awardFeedbackPoints(fb.rows[0].user_id, fb.rows[0].type, true);
+      xpMsg = `+${reward.xp} XP`;
+    }
+
+    await pool.query(
+      `UPDATE builder_bot.feedback SET status = 'resolved', resolved_at = NOW() WHERE id = $1`,
+      [feedbackId]);
+
+    await ctx.answerCbQuery(`✅ Resolved ${xpMsg}`);
+
+    try {
+      await bot.telegram.sendMessage(fb.rows[0].user_id,
+        `🏆 Твой ${fb.rows[0].type} подтверждён админом! ${xpMsg}`);
+    } catch {}
+
+    try {
+      const msg = ctx.update.callback_query.message as any;
+      const original = msg.caption || msg.text || '';
+      const updated = original + `\n\n✅ <b>Resolved</b> ${xpMsg}`;
+      const editFn = msg.caption ? 'editMessageCaption' : 'editMessageText';
+      await (ctx as any)[editFn](updated, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [] } });
+    } catch {}
+  } catch (e: any) {
+    console.error('[fb_resolve]', e?.message);
+    await ctx.answerCbQuery(`Error: ${e?.message || 'unknown'}`, { show_alert: true });
+  }
+});
+
+// ── /verify — verify a bug report ──
+bot.command('verify', async (ctx) => {
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  const { isBetaTester } = require('./payments');
+  if (!isBetaTester(userId)) return;
+
+  const args = (ctx.message.text || '').split(' ');
+  const feedbackId = parseInt(args[1]);
+  const verdict = args[2]?.toLowerCase(); // 'yes' or 'no'
+
+  if (!feedbackId || !verdict || !['yes', 'no'].includes(verdict)) {
+    await safeReply(ctx, ru
+      ? `${ce('bug','🐛')} <b>Верификация багов</b>\n\nИспользуй:\n/verify 42 yes — подтвердить баг #42\n/verify 42 no — не воспроизводится\n\nЗа верификацию: +3 XP`
+      : `${ce('bug','🐛')} <b>Bug Verification</b>\n\nUsage:\n/verify 42 yes — confirm bug #42\n/verify 42 no — can't reproduce\n\nReward: +3 XP per verification`,
+      { parse_mode: 'HTML' });
+    return;
+  }
+
+  const { pool } = require('./db');
+  // Check bug exists
+  const bug = await pool.query('SELECT id, user_id FROM builder_bot.feedback WHERE id = $1', [feedbackId]);
+  if (!bug.rows.length) { await safeReply(ctx, ru ? 'Баг не найден.' : 'Bug not found.'); return; }
+  if (bug.rows[0].user_id === userId) { await safeReply(ctx, ru ? 'Нельзя верифицировать свой баг.' : "Can't verify your own bug."); return; }
+
+  // Check not already verified by this user
+  const existing = await pool.query(
+    'SELECT id FROM builder_bot.beta_bug_verifications WHERE feedback_id = $1 AND verifier_id = $2', [feedbackId, userId]
+  );
+  if (existing.rows.length) { await safeReply(ctx, ru ? 'Ты уже верифицировал этот баг.' : 'Already verified.'); return; }
+
+  const status = verdict === 'yes' ? 'confirmed' : 'denied';
+  await pool.query(
+    'INSERT INTO builder_bot.beta_bug_verifications (feedback_id, verifier_id, status) VALUES ($1, $2, $3)',
+    [feedbackId, userId, status]
+  );
+
+  // Award XP
+  try {
+    const { awardFeedbackPoints } = require('./payments');
+    await awardFeedbackPoints(userId, 'support'); // +2 XP for verification
+  } catch {}
+  // Check achievements after verification XP
+  try {
+    const { checkAchievements, loadUserStats, ACHIEVEMENTS } = require('./engagement');
+    const _vStats = await loadUserStats(userId);
+    const _vAch = await checkAchievements(userId, _vStats);
+    if (_vAch.length > 0) {
+      const achName = ACHIEVEMENTS.find((a: any) => a.id === _vAch[0]);
+      if (achName) {
+        const name = ctx.from?.username ? `@${ctx.from.username}` : (ctx.from?.first_name || 'Tester');
+        announceToGroup(`${ce('sparkle','✨')} <b>${escHtml(name)}</b> ${ru ? 'получил ачивку' : 'earned achievement'}: ${achName.emoji} ${ru ? achName.titleRu : achName.title}`);
+      }
+    }
+  } catch {}
+
+  // Check if 2 confirmations → mark bug as verified
+  const confirmCount = await pool.query(
+    "SELECT COUNT(*) as cnt FROM builder_bot.beta_bug_verifications WHERE feedback_id = $1 AND status = 'confirmed'",
+    [feedbackId]
+  );
+  if (parseInt(confirmCount.rows[0].cnt) >= 2) {
+    await pool.query("UPDATE builder_bot.feedback SET status = 'verified' WHERE id = $1", [feedbackId]);
+    // Bonus XP to original reporter
+    try {
+      const { awardFeedbackPoints } = require('./payments');
+      await awardFeedbackPoints(bug.rows[0].user_id, 'bug'); // +5 bonus
+    } catch {}
+    // Check achievements for original reporter after bonus
+    try {
+      const { checkAchievements: _chkAchR, loadUserStats: _ldStatsR, ACHIEVEMENTS: _ACHR } = require('./engagement');
+      const _rStats = await _ldStatsR(bug.rows[0].user_id);
+      const _rAch = await _chkAchR(bug.rows[0].user_id, _rStats);
+      if (_rAch.length > 0) {
+        const achName = _ACHR.find((a: any) => a.id === _rAch[0]);
+        if (achName) {
+          announceToGroup(`${ce('sparkle','✨')} ${getUserLang(bug.rows[0].user_id) === 'ru' ? 'получил ачивку' : 'earned achievement'}: ${achName.emoji} ${achName.title}`);
+        }
+      }
+    } catch {}
+  }
+
+  await safeReply(ctx, ru
+    ? `${ce('check','✅')} Баг #${feedbackId}: ${status === 'confirmed' ? 'подтверждён' : 'не воспроизводится'}. +2 XP`
+    : `${ce('check','✅')} Bug #${feedbackId}: ${status === 'confirmed' ? 'confirmed' : 'not reproduced'}. +2 XP`,
+    { parse_mode: 'HTML' });
+});
+
+// ── /unverified — list bugs needing verification ──
+bot.command('unverified', async (ctx) => {
+  const userId = ctx.from!.id;
+  const ru = getUserLang(userId) === 'ru';
+  const { pool } = require('./db');
+
+  const bugs = await pool.query(`
+    SELECT f.id, f.message, f.username, f.created_at,
+      (SELECT COUNT(*) FROM builder_bot.beta_bug_verifications v WHERE v.feedback_id = f.id) as verify_count
+    FROM builder_bot.feedback f
+    WHERE f.type = 'bug' AND f.status = 'new'
+    ORDER BY f.created_at DESC LIMIT 10
+  `);
+
+  if (!bugs.rows.length) { await safeReply(ctx, ru ? 'Нет багов для верификации.' : 'No bugs to verify.'); return; }
+
+  let text = `${ce('bug','🐛')} <b>${ru ? 'Баги для верификации' : 'Bugs to verify'}</b>\n\n`;
+  bugs.rows.forEach((b: any) => {
+    text += `#${b.id} @${escHtml(b.username || '?')} (${b.verify_count}/2 ${ce('check','✅')})\n${escHtml(b.message.slice(0, 80))}\n\u2192 /verify ${b.id} yes|no\n\n`;
+  });
+
+  await safeReply(ctx, text, { parse_mode: 'HTML' });
+});
+
+// ── /review — admin: review pending feedback ──
+bot.command('review', async (ctx) => {
+  const userId = ctx.from!.id;
+  const { isPlatformAdmin } = require('./payments');
+  if (!isPlatformAdmin(userId)) return;
+  const { pool } = require('./db');
+
+  const pending = await pool.query(
+    "SELECT id, user_id, username, type, message, created_at FROM builder_bot.feedback WHERE status = 'new' ORDER BY created_at ASC LIMIT 5"
+  );
+
+  if (!pending.rows.length) { await safeReply(ctx, `${ce('check','✅')} No pending feedback to review.`, { parse_mode: 'HTML' }); return; }
+
+  for (const fb of pending.rows) {
+    const text = `${ce('bug','🐛')} <b>#${fb.id}</b> [${fb.type}] @${escHtml(fb.username || fb.user_id)}\n\n${escHtml(fb.message.slice(0, 300))}`;
+    await ctx.reply(text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
+      [{ text: `${ce('check','✅')} Approve`, callback_data: `review_approve:${fb.id}` },
+       { text: `${ce('cross','❌')} Duplicate`, callback_data: `review_dup:${fb.id}` },
+       { text: '🗑 Spam', callback_data: `review_spam:${fb.id}` }],
+    ]}});
+  }
+});
+
+bot.action(/^review_(approve|dup|spam):(\d+)$/, async (ctx) => {
+  const action = ctx.match![1];
+  const fbId = parseInt(ctx.match![2]);
+  const { isPlatformAdmin } = require('./payments');
+  if (!isPlatformAdmin(ctx.from!.id)) { await ctx.answerCbQuery('Admin only'); return; }
+  await ctx.answerCbQuery();
+  const { pool } = require('./db');
+
+  if (action === 'approve') {
+    await pool.query("UPDATE builder_bot.feedback SET status = 'in_progress' WHERE id = $1", [fbId]);
+    await ctx.editMessageText(`${ce('check','✅')} #${fbId} approved`, { parse_mode: 'HTML' });
+  } else if (action === 'dup') {
+    await pool.query("UPDATE builder_bot.feedback SET status = 'closed', admin_reply = 'Duplicate' WHERE id = $1", [fbId]);
+    await ctx.editMessageText(`${ce('cross','❌')} #${fbId} marked as duplicate`, { parse_mode: 'HTML' });
+  } else if (action === 'spam') {
+    const fb = await pool.query('SELECT user_id FROM builder_bot.feedback WHERE id = $1', [fbId]);
+    await pool.query("UPDATE builder_bot.feedback SET status = 'closed', admin_reply = 'Spam' WHERE id = $1", [fbId]);
+    // Deduct XP
+    if (fb.rows[0]) {
+      await pool.query('UPDATE builder_bot.beta_testers SET xp = GREATEST(0, xp - 2) WHERE user_id = $1', [fb.rows[0].user_id]);
+    }
+    await ctx.editMessageText(`🗑 #${fbId} marked as spam (-2 XP)`);
+  }
+});
+
+// ============================================================
 // Команды
 // ============================================================
 bot.command('help', (ctx) => showHelp(ctx));
 bot.command('list', (ctx) => showAgentsList(ctx, ctx.from.id));
 bot.command('marketplace', (ctx) => showMarketplace(ctx));
 bot.command('connect', (ctx) => showTonConnect(ctx));
+
+// ── /cancel — escape hatch from any wizard flow ──
+bot.command(['cancel', 'abort', 'стоп', 'отмена'], async (ctx) => {
+  const userId = ctx.from?.id;
+  if (!userId) return;
+  clearAllPendingStates(userId);
+  try { await ctx.reply('Отменено. Все незавершённые wizard\'ы сброшены.'); } catch {}
+});
+
+// ── /onboarding — BETA-tester onboarding (explanation of branches/zones/program) ──
+// По фидбеку от @darni: "можно обучение и онбординг по шагам снова пройти".
+// Запускает объяснение бета-программы: ветки тестирования, зоны, квесты, XP, уровни,
+// что это даёт. Любой юзер может перепройти в любой момент.
+bot.command(['onboarding', 'tutorial', 'обучение', 'гайд', 'guide'], async (ctx) => {
+  const userId = ctx.from?.id;
+  if (!userId) return;
+  const lang = (userLanguages.get(userId) as 'ru' | 'en') || 'ru';
+  clearAllPendingStates(userId);
+  try { await showNewTesterOnboarding(ctx, userId, lang === 'ru'); }
+  catch (e: any) { console.warn('[Onboarding restart] error:', e?.message); }
+});
+
+// ── /levels, /level, /уровни — показать шкалу уровней с конвертируемыми бенефитами ──
+// Отвечает на «что за XP и нах это надо» — связываем каждый уровень с реальной выгодой
+// (snapshot multiplier, lifetime free, Founding Testers wall, early access).
+async function renderLevelsView(ctx: any, userId: number, edit: boolean): Promise<void> {
+  const ru = ((userLanguages.get(userId) as 'ru' | 'en') || 'ru') === 'ru';
+  try {
+    const { TESTER_LEVELS, getTesterStats } = await import('./payments');
+    // Single source of truth — те же stats что в /mystats.
+    // Раньше мы читали `points` (spendable balance) вместо `xp` (total accumulated),
+    // из-за чего Master с 1161 XP показывался как Newbie (0 points).
+    const stats = await getTesterStats(userId).catch(() => null);
+    const currentPts = Number(stats?.xp ?? 0);
+    const current = [...TESTER_LEVELS].reverse().find((l: any) => currentPts >= l.minPts) || TESTER_LEVELS[0];
+    const next = TESTER_LEVELS.find((l: any) => l.minPts > currentPts);
+
+    // Premium animated emoji per level — все ключи из CE-карты bot.ts
+    const lvlCe: Record<number, string> = {
+      1: ce('seedling', '🌱'),
+      2: ce('lab',      '🧪'),
+      3: ce('fire',     '🔥'),
+      4: ce('diamond',  '💎'),
+      5: ce('crown',    '👑'),
+      6: ce('trophy',   '🏆'),
+    };
+    const curIcon = lvlCe[current.level] || ce('seedling', '🌱');
+    let msg = ru
+      ? `<b>Твой уровень:</b> ${curIcon} <b>${escHtml(current.nameRu)}</b> (Level ${current.level})\n`
+      : `<b>Your level:</b> ${curIcon} <b>${escHtml(current.name)}</b> (Level ${current.level})\n`;
+    msg += `<b>${ce('coin', '🪙')} XP:</b> ${currentPts}`;
+    if (next) msg += ru ? ` / ${next.minPts} (до ${escHtml(next.nameRu)})\n\n` : ` / ${next.minPts} (to ${escHtml(next.name)})\n\n`;
+    else msg += ru ? ` <i>(максимум достигнут)</i>\n\n` : ` <i>(max reached)</i>\n\n`;
+
+    msg += ru ? `<b>${ce('star', '⭐')} Что даёт каждый уровень:</b>\n` : `<b>${ce('star', '⭐')} What each level unlocks:</b>\n`;
+    // Таблица уровней в expandable blockquote — свёрнуто по умолчанию, раскрывается кликом
+    msg += `<blockquote expandable>`;
+    const levelLines: string[] = [];
+    for (const L of TESTER_LEVELS) {
+      const icon = lvlCe[L.level] || '•';
+      const mark = L.level === current.level ? ' ← ' + (ru ? 'ты здесь' : 'you') : '';
+      const name = ru ? L.nameRu : L.name;
+      const perks: string[] = [];
+      perks.push(`${ce('bulb',    '🤖')} ${L.maxAgents === -1 ? '∞' : L.maxAgents}`);
+      perks.push(`${ce('sparkle', '✨')} ${L.gens === -1 ? '∞' : L.gens}`);
+      perks.push(`${ce('gold',    '📸')} ×${(L as any).snapshotMultiplier || 1}`);
+      if ((L as any).priorityFeatures > 0) perks.push(ru ? `${ce('rocket', '🚀')} раньше на ${(L as any).priorityFeatures}д` : `${ce('rocket', '🚀')} ${(L as any).priorityFeatures}d early`);
+      if ((L as any).namedOnWall) perks.push(`${ce('crown', '👑')} Founding Testers`);
+      if ((L as any).lifetimeFree) perks.push(`${ce('key', '🔓')} Lifetime free`);
+      levelLines.push(`${icon} <b>${escHtml(name)}</b> · ${L.minPts} XP${mark}\n   <i>${perks.join(' · ')}</i>`);
+    }
+    msg += levelLines.join('\n\n');
+    msg += `</blockquote>\n\n`;
+
+    msg += ru
+      ? `<b>${ce('rocket', '🚀')} Как получить XP:</b>\n` +
+        `${ce('target', '🎯')} /daily — задание дня (+15–40 XP)\n` +
+        `${ce('game',   '📋')} /quest — твой текущий квест\n` +
+        `${ce('check',  '✅')} /tasks — задачи по зонам\n` +
+        `${ce('bug',    '🐛')} Опиши баг в чате → +5–10 XP вручную\n` +
+        `${ce('bulb',   '💡')} Предложи фичу → +5–20 XP если возьму\n\n` +
+        `<b>${ce('coin', '💰')} Revenue share:</b>\n` +
+        `<blockquote expandable>` +
+        `10% от gross revenue платформы на 2 года с момента старта монетизации.\n\n` +
+        `Формула: твой пай = пул × (твой XP × твой ×) / сумма(XP × × всех)\n\n` +
+        `Пример — платформа делает <b>10 000 TON/год</b>, пул = <b>1 000 TON/год</b>:\n` +
+        `${ce('trophy','🏆')} Legend: ~360 TON/год\n` +
+        `${ce('crown','👑')} Master: ~160 TON/год\n` +
+        `${ce('diamond','💎')} Expert: ~60 TON/год\n` +
+        `${ce('fire','🔥')} Active: ~19 TON/год\n` +
+        `${ce('lab','🧪')} Tester: ~5 TON/год\n\n` +
+        `Выплата — каждый квартал на твой TON-кошелёк. Неактивен 6 мес → множитель падает до ×1.\n` +
+        `Условия могут меняться с 30-дневным уведомлением, но не ниже 5%.` +
+        `</blockquote>`
+      : `<b>${ce('rocket', '🚀')} How to earn XP:</b>\n` +
+        `${ce('target', '🎯')} /daily — daily quest (+15–40 XP)\n` +
+        `${ce('game',   '📋')} /quest — your current quest\n` +
+        `${ce('check',  '✅')} /tasks — zone tasks\n` +
+        `${ce('bug',    '🐛')} Report bug in chat → +5–10 XP manual\n` +
+        `${ce('bulb',   '💡')} Suggest a feature → +5–20 XP if accepted\n\n` +
+        `<b>${ce('coin', '💰')} Revenue share:</b>\n` +
+        `<blockquote expandable>` +
+        `10% of gross platform revenue for 2 years from monetization start.\n\n` +
+        `Formula: your share = pool × (your XP × your ×) / total(XP × × of all)\n\n` +
+        `Example — platform earns <b>10,000 TON/yr</b>, pool = <b>1,000 TON/yr</b>:\n` +
+        `${ce('trophy','🏆')} Legend: ~360 TON/yr\n` +
+        `${ce('crown','👑')} Master: ~160 TON/yr\n` +
+        `${ce('diamond','💎')} Expert: ~60 TON/yr\n` +
+        `${ce('fire','🔥')} Active: ~19 TON/yr\n` +
+        `${ce('lab','🧪')} Tester: ~5 TON/yr\n\n` +
+        `Payout quarterly to your TON wallet. Inactive 6 months → multiplier drops to ×1.\n` +
+        `Terms can change with 30-day notice, but not below 5%.` +
+        `</blockquote>`;
+
+    // Buttons с премиум анимированным icon_custom_emoji_id — как в /mystats
+    // (Telegram Premium поддерживает это в InlineKeyboardButton).
+    const buttons: any[] = [
+      [
+        { text: ru ? 'Квест'  : 'Quest',       icon_custom_emoji_id: CE.target,  callback_data: 'levels:quest' },
+        { text: ru ? 'Задачи' : 'Tasks',       icon_custom_emoji_id: CE.check,   callback_data: 'levels:tasks' },
+      ],
+      [
+        { text: ru ? 'Рейтинг' : 'Leaderboard', icon_custom_emoji_id: CE.trophy, callback_data: 'levels:leaderboard' },
+        { text: ru ? 'Чекин'   : 'Check-in',    icon_custom_emoji_id: CE.fire,   callback_data: 'levels:checkin' },
+      ],
+    ];
+    const extra: any = { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons }, disable_web_page_preview: true };
+    if (edit) {
+      try { await ctx.editMessageText(msg, extra); return; } catch {}
+    }
+    await safeReply(ctx, msg, extra);
+  } catch (e: any) {
+    console.warn('[renderLevelsView] error:', e?.message);
+    try { await ctx.reply('Ошибка при загрузке уровней.'); } catch {}
+  }
+}
+
+bot.command(['levels', 'level', 'уровни', 'уровень'], async (ctx) => {
+  const userId = ctx.from?.id;
+  if (!userId) return;
+  await renderLevelsView(ctx, userId, false);
+});
+
+// ── /rewards /награды — show revenue share math for this specific user ──
+bot.command(['rewards', 'награды', 'revenue', 'share', 'pool'], async (ctx) => {
+  const userId = ctx.from?.id;
+  if (!userId) return;
+  const ru = getUserLang(userId) === 'ru';
+  try {
+    const { pool } = await import('./db');
+    const { computeRewardTable, formatRewardsSummary, getRefearnings, refCodeForUser } = await import('./rewards');
+    const summary = await computeRewardTable(pool);
+    const myRow = summary.rows.find(r => r.userId === userId) || null;
+    let text = formatRewardsSummary(myRow, summary.totalEffectiveXp, summary.testerCount, ru);
+
+    // Add referral earnings section
+    const ref = await getRefearnings(pool, userId);
+    const refCode = refCodeForUser(userId);
+    const botUser = (await ctx.telegram.getMe()).username;
+    const refUrl = `https://t.me/${botUser}?start=${refCode}`;
+    text += ru
+      ? `\n\n<b>${ce('handshake', '🤝')} Рефералы</b>\n` +
+        `Приведено: <b>${ref.refCount}</b> · Заработано: <b>${ref.totalTon.toFixed(3)} TON</b>\n` +
+        `Твоя реф-ссылка: <code>${refUrl}</code>\n` +
+        `<i>Каждый приведённый = +20 XP + 10% с его трат навсегда.</i>`
+      : `\n\n<b>${ce('handshake', '🤝')} Referrals</b>\n` +
+        `Invited: <b>${ref.refCount}</b> · Earned: <b>${ref.totalTon.toFixed(3)} TON</b>\n` +
+        `Your ref link: <code>${refUrl}</code>\n` +
+        `<i>Each referral = +20 XP + 10% of their future spend forever.</i>`;
+
+    const buttons: any[] = [
+      [
+        { text: ru ? 'Уровни' : 'Levels', icon_custom_emoji_id: CE.crown, callback_data: 'rewards:levels' },
+        { text: ru ? 'Рейтинг' : 'Leaderboard', icon_custom_emoji_id: CE.trophy, callback_data: 'rewards:leaderboard' },
+      ],
+      [
+        { text: ru ? 'Копировать реф' : 'Copy ref link', url: refUrl },
+      ],
+    ];
+    await safeReply(ctx, text, { parse_mode: 'HTML', disable_web_page_preview: true, reply_markup: { inline_keyboard: buttons } });
+  } catch (e: any) {
+    console.warn('[/rewards] error:', e?.message);
+    try { await ctx.reply('Ошибка при расчёте rewards.'); } catch {}
+  }
+});
+
+bot.action(/^rewards:(levels|leaderboard)$/, async (ctx) => {
+  const userId = ctx.from?.id;
+  if (!userId) return;
+  const action = (ctx.match as any)[1] as 'levels' | 'leaderboard';
+  try { await ctx.answerCbQuery(); } catch {}
+  if (action === 'levels') await renderLevelsView(ctx, userId, true);
+  else await showTesterLeaderboard(ctx, userId, true);
+});
+
+// ── Callback handlers for /levels inline buttons ──
+// Редактируем текущее сообщение вместо отправки нового + «◀ Назад» возвращает к /levels.
+bot.action(/^levels:(quest|tasks|leaderboard|checkin|back)$/, async (ctx) => {
+  const userId = ctx.from?.id;
+  if (!userId) return;
+  const ru = getUserLang(userId) === 'ru';
+  const action = (ctx.match as any)[1] as 'quest' | 'tasks' | 'leaderboard' | 'checkin' | 'back';
+  try { await ctx.answerCbQuery(); } catch {}
+  const backBtn = { text: ru ? 'К уровням' : 'To levels', icon_custom_emoji_id: CE.back || CE.refresh, callback_data: 'levels:back' };
+  try {
+    if (action === 'back') {
+      await renderLevelsView(ctx, userId, true);
+      return;
+    }
+
+    let text = '';
+    const keyboard: any[] = [[backBtn]];
+
+    if (action === 'quest') {
+      const { formatQuestMessage } = require('./engagement');
+      text = await formatQuestMessage(userId, ru);
+    } else if (action === 'tasks') {
+      const { formatTasksMessage } = require('./engagement');
+      try {
+        const t = typeof formatTasksMessage === 'function' ? await formatTasksMessage(userId, ru) : null;
+        text = t || (ru ? `${ce('target', '🎯')} Задачи по зонам — отправь команду /tasks` : `${ce('target', '🎯')} Zone tasks — send /tasks`);
+      } catch {
+        text = ru ? `${ce('target', '🎯')} Используй /tasks чтобы увидеть задачи по зонам.` : `${ce('target', '🎯')} Use /tasks to see zone tasks.`;
+      }
+    } else if (action === 'leaderboard') {
+      await showTesterLeaderboard(ctx, userId, true);
+      return;
+    } else if (action === 'checkin') {
+      text = ru
+        ? `${ce('fire', '🔥')} Отправь команду <code>/checkin</code> чтобы зафиксировать сегодняшнюю серию и получить XP.`
+        : `${ce('fire', '🔥')} Send <code>/checkin</code> to register today's streak and earn XP.`;
+    }
+
+    try {
+      await ctx.editMessageText(text, {
+        parse_mode: 'HTML',
+        disable_web_page_preview: true,
+        reply_markup: { inline_keyboard: keyboard },
+      } as any);
+    } catch {
+      await safeReply(ctx, text, { parse_mode: 'HTML', disable_web_page_preview: true, reply_markup: { inline_keyboard: keyboard } });
+    }
+  } catch (e: any) {
+    console.warn(`[levels:${action}] error:`, e?.message);
+  }
+});
 
 // ── /search — поиск агентов по имени/описанию ──
 bot.command('search', async (ctx) => {
@@ -1342,7 +4135,7 @@ bot.command('search', async (ctx) => {
   try {
     const result = await getDBTools().getUserAgents(userId);
     if (!result.success || !result.data?.length) {
-      await safeReply(ctx, '❌ У вас нет агентов.');
+      await safeReply(ctx, `${ce('cross','❌')} У вас нет агентов.`);
       return;
     }
     const matches = result.data.filter((a: any) =>
@@ -1365,7 +4158,7 @@ bot.command('search', async (ctx) => {
     );
   } catch (e: any) {
     console.error('Search error:', e);
-    await safeReply(ctx, '❌ Произошла ошибка при поиске. Попробуйте позже.');
+    await safeReply(ctx, `${ce('cross','❌')} Произошла ошибка при поиске. Попробуйте позже.`);
   }
 });
 
@@ -1488,7 +4281,7 @@ bot.command('portfolio', async (ctx) => {
       },
     });
   } catch {
-    await ctx.reply(lang === 'ru' ? '❌ Ошибка запроса к TonCenter' : '❌ TonCenter request failed');
+    await ctx.reply(lang === 'ru' ? `${ce('cross','❌')} Ошибка запроса к TonCenter` : `${ce('cross','❌')} TonCenter request failed`);
   }
 });
 
@@ -1508,18 +4301,18 @@ bot.command('model', (ctx) => showModelSelector(ctx));
 const pendingUserIdea = new Map<number, boolean>(); // userId → waiting for idea text
 
 bot.command('ai', async (ctx) => {
-  if (ctx.from.id !== OWNER_ID_NUM) return;
+  if (!ctx.from || !isPlatformAdmin(ctx.from.id)) return;
   const { getSelfImprovementSystem } = await import('./self-improvement');
   const sis = getSelfImprovementSystem();
-  if (!sis) { await ctx.reply('❌ Система не запущена'); return; }
+  if (!sis) { await ctx.reply(`${ce('cross','❌')} Система не запущена`); return; }
 
   const modes = sis.getModesStatus();
   const ideasCount = sis.getPendingIdeasCount();
   const ideas = sis.getPendingIdeas();
 
   let text = '🤖 <b>AI Режимы</b>\n\n';
-  text += `🔍 Улучшатель (авто 10мин): ${modes[0].enabled ? '✅' : '❌'}\n`;
-  text += `💡 Придумыватель (авто 30мин): ${modes[1].enabled ? '✅' : '❌'}\n`;
+  text += `🔍 Улучшатель (авто 10мин): ${modes[0].enabled ? ce('check','✅') : ce('cross','❌')}\n`;
+  text += `${ce('bulb','💡')} Придумыватель (авто 30мин): ${modes[1].enabled ? ce('check','✅') : ce('cross','❌')}\n`;
   text += `🔨 Реализатор (по кнопке): всегда готов\n`;
   text += `\n📋 Идей в очереди: <b>${ideasCount}</b>`;
   if (ideas.length) {
@@ -1571,7 +4364,7 @@ bot.command('plugin', async (ctx) => {
     const { getCustomPluginsRepository } = await import('./db/schema-extensions');
     const count = await getCustomPluginsRepository().countByUser(userId);
     if (count >= 10) {
-      await safeReply(ctx, '❌ Максимум 10 плагинов на аккаунт.', {});
+      await safeReply(ctx, `${ce('cross','❌')} Максимум 10 плагинов на аккаунт.`, {});
       return;
     }
     pendingPluginCreation.set(userId, { step: 'name' });
@@ -1581,10 +4374,10 @@ bot.command('plugin', async (ctx) => {
 
   if (sub === 'delete') {
     const name = args[1];
-    if (!name) { await safeReply(ctx, '❌ Укажите имя: /plugin delete имя', {}); return; }
+    if (!name) { await safeReply(ctx, `${ce('cross','❌')} Укажите имя: /plugin delete имя`, {}); return; }
     const { getCustomPluginsRepository } = await import('./db/schema-extensions');
     const ok = await getCustomPluginsRepository().remove(userId, name);
-    await safeReply(ctx, ok ? `✅ Плагин "${escHtml(name)}" удалён.` : '❌ Плагин не найден.', { parse_mode: 'HTML' });
+    await safeReply(ctx, ok ? `${ce('check','✅')} Плагин "${escHtml(name)}" удалён.` : `${ce('cross','❌')} Плагин не найден.`, { parse_mode: 'HTML' });
     return;
   }
 
@@ -1627,7 +4420,7 @@ bot.command('plugin_market', async (ctx) => {
   // Top plugins by installs
   const top = allPlugins.slice(0, 3);
   if (top.length > 0) {
-    text += `\n🔥 <b>${lang === 'ru' ? 'Популярные' : 'Popular'}:</b>\n`;
+    text += `\n${ce('fire','🔥')} <b>${lang === 'ru' ? 'Популярные' : 'Popular'}:</b>\n`;
     for (const p of top) {
       const price = p.priceStars > 0 ? `${p.priceStars} ⭐` : (lang === 'ru' ? 'Бесплатно' : 'Free');
       const stars = p.avgRating > 0 ? ` ${'⭐'.repeat(Math.round(p.avgRating))}` : '';
@@ -1778,14 +4571,14 @@ bot.command('gifts', async (ctx) => {
     let msg = `🎁 <b>Fragment Gifts — Floor Prices</b>\n${div()}\n\n`;
     for (const g of gifts) {
       msg += `${g.emoji} ${escHtml(g.name)}\n`;
-      msg += `  ${pe('coin')} Floor: <code>${g.floorStars} ⭐</code> ≈ <code>${g.floorTon.toFixed(3)} TON</code>\n`;
+      msg += `  ${pe('coin')} Floor: <code>${g.floorStars} ${ce('star','⭐')}</code> ≈ <code>${g.floorTon.toFixed(3)} TON</code>\n`;
       msg += `  📋 Listed: ${g.listed}+\n\n`;
     }
     msg += `\n<i>Обновлено: ${escHtml(new Date().toLocaleTimeString('ru-RU'))} UTC</i>`;
 
     await safeReply(ctx, msg, { parse_mode: 'HTML' });
   } catch (e: any) {
-    await safeReply(ctx, '❌ Ошибка получения данных: ' + (e.message || 'unknown'));
+    await safeReply(ctx, `${ce('cross','❌')} Ошибка получения данных: ` + (e.message || 'unknown'));
   }
 });
 
@@ -1840,27 +4633,27 @@ bot.command('config', async (ctx) => {
     const key = args[1]?.toUpperCase().replace(/[^A-Z0-9_]/g, '_');
     const value = args.slice(2).join(' ').trim();
     if (!key || !value) {
-      return safeReply(ctx, '❌ Использование: <code>/config set KEY значение</code>', { parse_mode: 'HTML' });
+      return safeReply(ctx, `${ce('cross','❌')} Использование: <code>/config set KEY значение</code>`, { parse_mode: 'HTML' });
     }
     const vars = await getVars();
     vars[key] = value;
     await saveVars(vars);
-    return safeReply(ctx, `✅ Переменная <code>${escHtml(key)}</code> сохранена`, { parse_mode: 'HTML' });
+    return safeReply(ctx, `${ce('check','✅')} Переменная <code>${escHtml(key)}</code> сохранена`, { parse_mode: 'HTML' });
   }
 
   if (sub === 'get') {
     const key = args[1]?.toUpperCase().replace(/[^A-Z0-9_]/g, '_');
-    if (!key) return safeReply(ctx, '❌ Укажите имя переменной', {});
+    if (!key) return safeReply(ctx, `${ce('cross','❌')} Укажите имя переменной`, {});
     const vars = await getVars();
-    if (!(key in vars)) return safeReply(ctx, `❌ Переменная <code>${escHtml(key)}</code> не найдена`, { parse_mode: 'HTML' });
+    if (!(key in vars)) return safeReply(ctx, `${ce('cross','❌')} Переменная <code>${escHtml(key)}</code> не найдена`, { parse_mode: 'HTML' });
     return safeReply(ctx, `<code>${escHtml(key)}</code> = <code>${escHtml(vars[key])}</code>`, { parse_mode: 'HTML' });
   }
 
   if (sub === 'del' || sub === 'delete' || sub === 'rm') {
     const key = args[1]?.toUpperCase().replace(/[^A-Z0-9_]/g, '_');
-    if (!key) return safeReply(ctx, '❌ Укажите имя переменной', {});
+    if (!key) return safeReply(ctx, `${ce('cross','❌')} Укажите имя переменной`, {});
     const vars = await getVars();
-    if (!(key in vars)) return safeReply(ctx, `❌ Переменная <code>${escHtml(key)}</code> не найдена`, { parse_mode: 'HTML' });
+    if (!(key in vars)) return safeReply(ctx, `${ce('cross','❌')} Переменная <code>${escHtml(key)}</code> не найдена`, { parse_mode: 'HTML' });
     delete vars[key];
     await saveVars(vars);
     return safeReply(ctx, `🗑️ Переменная <code>${escHtml(key)}</code> удалена`, { parse_mode: 'HTML' });
@@ -1894,7 +4687,7 @@ bot.command('mypurchases', async (ctx) => {
         { parse_mode: 'HTML' }
       );
     }
-    let text = `🛒 <b>Мои покупки (${purchases.length}):</b>\n\n`;
+    let text = `${ce('cart','🛒')} <b>Мои покупки (${purchases.length}):</b>\n\n`;
     purchases.slice(0, 10).forEach(p => {
       const type = p.type === 'free' ? '🆓' : p.type === 'rent' ? '📅' : '💰';
       text += `${type} Листинг #${p.listingId} → агент #${p.agentId}\n`;
@@ -1908,7 +4701,7 @@ bot.command('mypurchases', async (ctx) => {
     });
   } catch (e: any) {
     console.error('Command error:', e);
-    await safeReply(ctx, '❌ Произошла ошибка. Попробуйте позже.');
+    await safeReply(ctx, `${ce('cross','❌')} Произошла ошибка. Попробуйте позже.`);
   }
 });
 
@@ -1932,7 +4725,7 @@ bot.command('mylistings', async (ctx) => {
     await safeReply(ctx, text, { parse_mode: 'HTML' });
   } catch (e: any) {
     console.error('Listings error:', e);
-    await safeReply(ctx, '❌ Произошла ошибка. Попробуйте позже.');
+    await safeReply(ctx, `${ce('cross','❌')} Произошла ошибка. Попробуйте позже.`);
   }
 });
 
@@ -1976,12 +4769,12 @@ bot.command('send_agent', async (ctx) => {
   }
   const wallet = agentWallets.get(ctx.from.id);
   if (!wallet) {
-    await ctx.reply('❌ Нет кошелька агента. Создайте через /wallet');
+    await ctx.reply(`${ce('cross','❌')} Нет кошелька агента. Создайте через /wallet`);
     return;
   }
   const balance = await getWalletBalance(wallet.address);
   if (balance < amount + 0.01) {
-    await ctx.reply(`❌ Недостаточно TON. Баланс: ${balance.toFixed(4)} TON, нужно: ${(amount + 0.01).toFixed(4)} TON`);
+    await ctx.reply(`${ce('cross','❌')} Недостаточно TON. Баланс: ${balance.toFixed(4)} TON, нужно: ${(amount + 0.01).toFixed(4)} TON`);
     return;
   }
   await ctx.reply(`⏳ Отправляю ${amount} TON...`);
@@ -1994,7 +4787,7 @@ bot.command('send_agent', async (ctx) => {
       { parse_mode: 'HTML' }
     );
   } catch (e: any) {
-    await safeReply(ctx, `❌ Ошибка: ${e.message || 'unknown'}`);
+    await safeReply(ctx, `${ce('cross','❌')} Ошибка: ${e.message || 'unknown'}`);
   }
 });
 
@@ -2013,12 +4806,12 @@ bot.command('send', async (ctx) => {
   }
   const tonConn = getTonConnectManager();
   if (!tonConn.isConnected(ctx.from.id)) {
-    await ctx.reply('❌ TON кошелёк не подключён.\n\nПодключите через 💎 TON Connect → /connect');
+    await ctx.reply(`${ce('cross','❌')} TON кошелёк не подключён.\n\nПодключите через ${ce('diamond','💎')} TON Connect → /connect`);
     return;
   }
   const bal = await tonConn.getBalance(ctx.from.id);
   if (parseFloat(bal.ton) < amount + 0.05) {
-    await ctx.reply(`❌ Недостаточно TON.\nБаланс: ${bal.ton} TON\nНужно: ~${(amount + 0.05).toFixed(2)} TON (включая ~0.05 комиссию)`);
+    await ctx.reply(`${ce('cross','❌')} Недостаточно TON.\nБаланс: ${bal.ton} TON\nНужно: ~${(amount + 0.05).toFixed(2)} TON (включая ~0.05 комиссию)`);
     return;
   }
   await ctx.reply(`⏳ Запрашиваю подтверждение в Tonkeeper...\n\n💸 Отправляю: ${amount} TON → <code>${escHtml(to.slice(0, 24))}...</code>\n\n<i>Откройте Tonkeeper и подтвердите</i>`, { parse_mode: 'HTML' });
@@ -2034,12 +4827,12 @@ bot.command('send', async (ctx) => {
         { parse_mode: 'HTML' }
       );
     } else if (result.needsReconnect) {
-      await ctx.reply(`❌ ${result.error}\n\nНажмите 💎 TON Connect чтобы переподключиться.`);
+      await ctx.reply(`${ce('cross','❌')} ${result.error}\n\nНажмите ${ce('diamond','💎')} TON Connect чтобы переподключиться.`);
     } else {
-      await ctx.reply(`❌ ${result.error || 'Транзакция отменена'}`);
+      await ctx.reply(`${ce('cross','❌')} ${result.error || 'Транзакция отменена'}`);
     }
   } catch (e: any) {
-    await ctx.reply(`❌ Ошибка отправки: ${e.message || 'Неизвестная ошибка'}`);
+    await ctx.reply(`${ce('cross','❌')} Ошибка отправки: ${e.message || 'Неизвестная ошибка'}`);
   }
 });
 
@@ -2072,7 +4865,7 @@ bot.hears(/^\/start\s+webauth_([a-f0-9]+)$/i, async (ctx) => {
       { parse_mode: 'HTML' }
     );
   } else {
-    await ctx.reply('❌ Токен авторизации не найден или истёк. Обновите страницу студии и попробуйте снова.');
+    await ctx.reply(`${ce('cross','❌')} Токен авторизации не найден или истёк. Обновите страницу студии и попробуйте снова.`);
   }
 });
 
@@ -2164,7 +4957,7 @@ bot.action(/^setlang_(ru|en)$/, async (ctx) => {
       await showOnboardingStep(ctx, userId, lang);
       return;
     }
-  } catch {}
+  } catch (e: any) { console.warn('[Onboarding] check error:', e.message); }
 
   // Старый пользователь — обычный welcome
   await showWelcome(ctx as any, userId, name, lang);
@@ -2209,7 +5002,7 @@ bot.action(/^ob_provider:(.+)$/, async (ctx) => {
     const vars = ((await repo.getAll(userId)).user_variables as Record<string, any>) || {};
     vars.AI_PROVIDER = provider;
     await repo.set(userId, 'user_variables', vars);
-  } catch {}
+  } catch (e: any) { console.warn('[Settings] save provider error:', e.message); }
 
   await showOnboardingStep(ctx, userId, lang);
 });
@@ -2399,10 +5192,10 @@ bot.command('approve_action', async (ctx) => {
       await safeReply(ctx, `Запрос #${approvalId} не найден или уже обработан.`, {});
       return;
     }
-    await safeReply(ctx, `✅ Действие #${approvalId} одобрено (${row.action_type}).`, {});
+    await safeReply(ctx, `${ce('check','✅')} Действие #${approvalId} одобрено (${row.action_type}).`, {});
   } catch (e: any) {
     console.error('Approve action error:', e);
-    await safeReply(ctx, '❌ Произошла ошибка. Попробуйте позже.', {});
+    await safeReply(ctx, `${ce('cross','❌')} Произошла ошибка. Попробуйте позже.`, {});
   }
 });
 
@@ -2421,10 +5214,10 @@ bot.command('reject_action', async (ctx) => {
       await safeReply(ctx, `Запрос #${approvalId} не найден или уже обработан.`, {});
       return;
     }
-    await safeReply(ctx, `❌ Действие #${approvalId} отклонено (${row.action_type}).`, {});
+    await safeReply(ctx, `${ce('cross','❌')} Действие #${approvalId} отклонено (${row.action_type}).`, {});
   } catch (e: any) {
     console.error('Reject action error:', e);
-    await safeReply(ctx, '❌ Произошла ошибка. Попробуйте позже.', {});
+    await safeReply(ctx, `${ce('cross','❌')} Произошла ошибка. Попробуйте позже.`, {});
   }
 });
 
@@ -2434,9 +5227,9 @@ bot.command('crew', async (ctx) => {
     const { listCrews } = require('./services/crew-system');
     const crews = await listCrews(ctx.from.id);
     if (!crews.length) {
-      return safeReply(ctx, '🤝 У вас пока нет команд агентов.\n\nСоздайте команду через AI: опишите задачу для нескольких агентов.');
+      return safeReply(ctx, `${ce('handshake','🤝')} У вас пока нет команд агентов.\n\nСоздайте команду через AI: опишите задачу для нескольких агентов.`);
     }
-    let text = '🤝 <b>Ваши команды агентов:</b>\n\n';
+    let text = `${ce('handshake','🤝')} <b>Ваши команды агентов:</b>\n\n`;
     for (const c of crews) {
       text += `🟢 <b>${escHtml(c.name)}</b> (ID: ${c.id})\n`;
       text += `   📋 ${escHtml(c.description?.slice(0, 60) || 'Без описания')}\n`;
@@ -2444,18 +5237,18 @@ bot.command('crew', async (ctx) => {
     }
     await safeReply(ctx, text, { parse_mode: 'HTML' });
   } catch (e: any) {
-    await safeReply(ctx, '❌ Ошибка: ' + e.message);
+    await safeReply(ctx, `${ce('cross','❌')} Ошибка: ` + e.message);
   }
 });
 
-// ── /leaderboard — таблица лидеров ──
-bot.command('leaderboard', async (ctx) => {
+// ── /leaderboard — agent reputation (moved to /agents_leaderboard) ──
+bot.command('agents_leaderboard', async (ctx) => {
   try {
     const { getLeaderboard } = require('./services/agent-reputation');
     const leaders = await getLeaderboard('rating', 'alltime', 10);
-    if (!leaders.length) return safeReply(ctx, '🏆 Таблица лидеров пока пуста.');
+    if (!leaders.length) return safeReply(ctx, `${ce('trophy','🏆')} Таблица лидеров пока пуста.`);
 
-    let text = '🏆 <b>Таблица лидеров</b>\n\n';
+    let text = `${ce('trophy','🏆')} <b>Таблица лидеров агентов</b>\n\n`;
     const medals = ['🥇', '🥈', '🥉'];
     for (const entry of leaders) {
       const medal = medals[entry.rank - 1] || `${entry.rank}.`;
@@ -2464,7 +5257,7 @@ bot.command('leaderboard', async (ctx) => {
     }
     await safeReply(ctx, text, { parse_mode: 'HTML' });
   } catch (e: any) {
-    await safeReply(ctx, '❌ ' + e.message);
+    await safeReply(ctx, `${ce('cross','❌')} ` + e.message);
   }
 });
 
@@ -2477,7 +5270,7 @@ bot.command('kya', async (ctx) => {
 
     const { getKYA } = require('./services/agent-reputation');
     const kya = await getKYA(agentId);
-    if (!kya) return safeReply(ctx, '❌ Агент не найден');
+    if (!kya) return safeReply(ctx, `${ce('cross','❌')} Агент не найден`);
 
     const tierEmoji: Record<string, string> = { unverified: '⬜', bronze: '🟫', silver: '⬛', gold: '🟨', platinum: '💎' };
 
@@ -2504,7 +5297,7 @@ bot.command('kya', async (ctx) => {
 
     await safeReply(ctx, text, { parse_mode: 'HTML' });
   } catch (e: any) {
-    await safeReply(ctx, '❌ ' + e.message);
+    await safeReply(ctx, `${ce('cross','❌')} ` + e.message);
   }
 });
 
@@ -2522,12 +5315,12 @@ bot.command('gdp', async (ctx) => {
     text += `⚡ Запусков за 24ч: <b>${c.executions24h || 0}</b>\n`;
     text += `📈 Запусков за 7д: <b>${c.executions7d || 0}</b>\n`;
     text += `📊 Всего запусков: <b>${c.executionsAll || 0}</b>\n`;
-    text += `💎 Объём TON: <b>${(c.tonVolumeAll || 0).toFixed?.(2) || 0}</b>\n`;
+    text += `${ce('diamond','💎')} Объём TON: <b>${(c.tonVolumeAll || 0).toFixed?.(2) || 0}</b>\n`;
     text += `📉 Рост: <b>${(c.growthRateExecs || 0) > 0 ? '+' : ''}${c.growthRateExecs || 0}%</b> запусков | <b>${(c.growthRateAgents || 0) > 0 ? '+' : ''}${c.growthRateAgents || 0}%</b> агентов\n`;
 
     await safeReply(ctx, text, { parse_mode: 'HTML' });
   } catch (e: any) {
-    await safeReply(ctx, '❌ ' + e.message);
+    await safeReply(ctx, `${ce('cross','❌')} ` + e.message);
   }
 });
 
@@ -2541,16 +5334,16 @@ bot.command('domain', async (ctx) => {
     if (args[0] === 'resolve' && args[1]) {
       const result = await resolveDomain(args[1]);
       if (result.ok) return safeReply(ctx, `🌐 <b>${escHtml(args[1])}</b>\n📍 ${escHtml(result.address)}`, { parse_mode: 'HTML' });
-      return safeReply(ctx, `❌ ${result.error}`);
+      return safeReply(ctx, `${ce('cross','❌')} ${result.error}`);
     }
 
     // /domain claim <agentId> <name>
     if (args[0] === 'claim' && args[1] && args[2]) {
       const agentId = parseInt(args[1]);
-      if (isNaN(agentId)) return safeReply(ctx, '❌ /domain claim <agent_id> <name>');
+      if (isNaN(agentId)) return safeReply(ctx, `${ce('cross','❌')} /domain claim <agent_id> <name>`);
       const result = await claimAgentDomain(agentId, userId, args[2]);
-      if (result.ok) return safeReply(ctx, `✅ Домен <b>${escHtml(args[2])}.ton</b> закреплён за агентом #${agentId}`, { parse_mode: 'HTML' });
-      return safeReply(ctx, `❌ ${result.error}`);
+      if (result.ok) return safeReply(ctx, `${ce('check','✅')} Домен <b>${escHtml(args[2])}.ton</b> закреплён за агентом #${agentId}`, { parse_mode: 'HTML' });
+      return safeReply(ctx, `${ce('cross','❌')} ${result.error}`);
     }
 
     // /domain — list user's domains
@@ -2564,7 +5357,7 @@ bot.command('domain', async (ctx) => {
     }
     await safeReply(ctx, text, { parse_mode: 'HTML' });
   } catch (e: any) {
-    await safeReply(ctx, '❌ ' + e.message);
+    await safeReply(ctx, `${ce('cross','❌')} ` + e.message);
   }
 });
 
@@ -2684,13 +5477,13 @@ bot.action('gifts_arbitrage', async (ctx) => {
       });
     } else {
       const top = opps.slice(0, 5).map((o: any) => `🎁 <b>${escHtml(o.giftName || o.slug)}</b>: ${o.buyPrice}⭐ → ${o.sellTon || o.sellPrice} TON (${o.profitPercent}%)`).join('\n');
-      await safeReply(ctx, `🔥 <b>${ru ? 'Арбитраж подарков' : 'Gift Arbitrage'}</b>\n\n${top}`, {
+      await safeReply(ctx, `${ce('fire','🔥')} <b>${ru ? 'Арбитраж подарков' : 'Gift Arbitrage'}</b>\n\n${top}`, {
         parse_mode: 'HTML',
         reply_markup: { inline_keyboard: [[{ text: `🤖 ${ru ? 'Создать агента' : 'Create agent'}`, callback_data: 'quick_gift_agent' }, { text: '🔄 Обновить', callback_data: 'gifts_arbitrage' }]] },
       });
     }
   } catch (e: any) {
-    await safeReply(ctx, `❌ ${e.message || 'unknown error'}`);
+    await safeReply(ctx, `${ce('cross','❌')} ${e.message || 'unknown error'}`);
   }
 });
 
@@ -2709,13 +5502,13 @@ bot.action('gifts_stars_balance', async (ctx) => {
   await ctx.answerCbQuery();
   const isAuth = await isAuthorized().catch(() => false);
   if (!isAuth) {
-    await ctx.reply('❌ Для просмотра баланса Stars нужна авторизация Telegram.\nИспользуйте /tglogin', {
+    await ctx.reply(`${ce('cross','❌')} Для просмотра баланса Stars нужна авторизация Telegram.\nИспользуйте /tglogin`, {
       reply_markup: { inline_keyboard: [[{ text: '🔑 /tglogin', callback_data: 'tg_login_start' }]] },
     });
     return;
   }
   const bal = await getTelegramGiftsService().getStarsBalance();
-  await ctx.reply(`⭐ <b>Баланс Stars:</b> ${JSON.stringify(bal)}`, { parse_mode: 'HTML' });
+  await ctx.reply(`${ce('star','⭐')} <b>Баланс Stars:</b> ${JSON.stringify(bal)}`, { parse_mode: 'HTML' });
 });
 
 bot.action('gifts_analyze', async (ctx) => {
@@ -2810,7 +5603,7 @@ bot.action('wallet_history', async (ctx) => {
       { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '⬅️ Кошелёк', callback_data: 'back_wallet' }]] } }
     );
   } catch (e: any) {
-    await ctx.reply('❌ ' + e.message);
+    await ctx.reply(`${ce('cross','❌')} ` + e.message);
   }
 });
 
@@ -2842,10 +5635,10 @@ bot.action('agentic_wallets_menu', async (ctx) => {
 
     if (rootWallet) {
       const addrShort = rootWallet.address.slice(0, 8) + '…' + rootWallet.address.slice(-6);
-      text += `👑 <b>Root Wallet:</b> <code>${escHtml(addrShort)}</code>\n`;
+      text += `${ce('crown','👑')} <b>Root Wallet:</b> <code>${escHtml(addrShort)}</code>\n`;
       text += `💰 ${ru ? 'Баланс:' : 'Balance:'} <b>${rootWallet.balanceTon.toFixed(4)} TON</b>\n\n`;
     } else {
-      text += `👑 <b>Root Wallet:</b> <i>${ru ? 'не настроен' : 'not set up'}</i>\n\n`;
+      text += `${ce('crown','👑')} <b>Root Wallet:</b> <i>${ru ? 'не настроен' : 'not set up'}</i>\n\n`;
     }
 
     text += `📊 <b>${ru ? 'Статистика' : 'Stats'}:</b>\n`;
@@ -2891,7 +5684,7 @@ bot.action('agentic_wallets_menu', async (ctx) => {
 
     await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } });
   } catch (e: any) {
-    await ctx.reply('❌ ' + String(e));
+    await ctx.reply(`${ce('cross','❌')} ` + String(e));
   }
 });
 
@@ -2927,10 +5720,10 @@ bot.action('aw_setup_root', async (ctx) => {
         ] } }
       );
     } else {
-      await ctx.reply(`❌ ${result.error || 'Setup failed'}`);
+      await ctx.reply(`${ce('cross','❌')} ${result.error || 'Setup failed'}`);
     }
   } catch (e: any) {
-    await ctx.reply('❌ ' + String(e));
+    await ctx.reply(`${ce('cross','❌')} ` + String(e));
   }
 });
 
@@ -2982,7 +5775,7 @@ bot.action('aw_deploy_sub', async (ctx) => {
   try {
     const agents = await getDBTools().getUserAgents(userId);
     if (!agents.data || agents.data.length === 0) {
-      await ctx.reply(ru ? '❌ У вас нет агентов. Создайте агента сначала.' : '❌ No agents found. Create an agent first.');
+      await ctx.reply(ru ? `${ce('cross','❌')} У вас нет агентов. Создайте агента сначала.` : `${ce('cross','❌')} No agents found. Create an agent first.`);
       return;
     }
 
@@ -2999,7 +5792,7 @@ bot.action('aw_deploy_sub', async (ctx) => {
     }
 
     if (kb.length === 0) {
-      await ctx.reply(ru ? '✅ Все агенты уже имеют кошельки!' : '✅ All agents already have wallets!');
+      await ctx.reply(ru ? `${ce('check','✅')} Все агенты уже имеют кошельки!` : `${ce('check','✅')} All agents already have wallets!`);
       return;
     }
 
@@ -3011,7 +5804,7 @@ bot.action('aw_deploy_sub', async (ctx) => {
       { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } }
     );
   } catch (e: any) {
-    await ctx.reply('❌ ' + String(e));
+    await ctx.reply(`${ce('cross','❌')} ` + String(e));
   }
 });
 
@@ -3043,10 +5836,10 @@ bot.action(/^aw_deploy_for:(\d+)$/, async (ctx) => {
         ] } }
       );
     } else {
-      await ctx.reply(`❌ ${result.error || 'Deploy failed'}`);
+      await ctx.reply(`${ce('cross','❌')} ${result.error || 'Deploy failed'}`);
     }
   } catch (e: any) {
-    await ctx.reply('❌ ' + String(e));
+    await ctx.reply(`${ce('cross','❌')} ` + String(e));
   }
 });
 
@@ -3060,7 +5853,7 @@ bot.action('aw_refresh_all', async (ctx) => {
     // Re-show the menu with updated balances
     // Trigger the menu handler by calling the action directly
     await (ctx as any).match; // just to proceed
-  } catch {}
+  } catch (e: any) { console.warn('[Wallet] refresh all error:', e.message); }
   // Re-render menu
   try {
     const { getAgenticWalletService } = await import('./services/agentic-wallet');
@@ -3076,7 +5869,7 @@ bot.action('aw_refresh_all', async (ctx) => {
 
     if (rootWallet) {
       const addrShort = rootWallet.address.slice(0, 8) + '…' + rootWallet.address.slice(-6);
-      text += `👑 <b>Root:</b> <code>${escHtml(addrShort)}</code> — ${rootWallet.balanceTon.toFixed(4)} TON\n\n`;
+      text += `${ce('crown','👑')} <b>Root:</b> <code>${escHtml(addrShort)}</code> — ${rootWallet.balanceTon.toFixed(4)} TON\n\n`;
     }
 
     text += `📊 ${ru ? 'Кошельков' : 'Wallets'}: <b>${stats.totalWallets}</b> | `;
@@ -3104,7 +5897,7 @@ bot.action('aw_refresh_all', async (ctx) => {
 
     await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } });
   } catch (e: any) {
-    await ctx.reply('❌ ' + String(e));
+    await ctx.reply(`${ce('cross','❌')} ` + String(e));
   }
 });
 
@@ -3139,7 +5932,7 @@ bot.action('aw_list_manage', async (ctx) => {
       { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } }
     );
   } catch (e: any) {
-    await ctx.reply('❌ ' + String(e));
+    await ctx.reply(`${ce('cross','❌')} ` + String(e));
   }
 });
 
@@ -3191,7 +5984,7 @@ bot.action(/^aw_manage:(\d+)$/, async (ctx) => {
 
     await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } });
   } catch (e: any) {
-    await ctx.reply('❌ ' + String(e));
+    await ctx.reply(`${ce('cross','❌')} ` + String(e));
   }
 });
 
@@ -3202,7 +5995,7 @@ bot.action(/^aw_block:(\d+)$/, async (ctx) => {
     const { getAgenticWalletService } = await import('./services/agentic-wallet');
     await getAgenticWalletService().setBlocked(parseInt(ctx.match![1]), ctx.from!.id, true);
     await ctx.reply('🔴 Кошелёк заблокирован. Агент не сможет тратить.');
-  } catch (e: any) { await safeReply(ctx, `❌ Ошибка: ${e.message}`); }
+  } catch (e: any) { await safeReply(ctx, `${ce('cross','❌')} Ошибка: ${e.message}`); }
 });
 
 bot.action(/^aw_unblock:(\d+)$/, async (ctx) => {
@@ -3211,17 +6004,22 @@ bot.action(/^aw_unblock:(\d+)$/, async (ctx) => {
     const { getAgenticWalletService } = await import('./services/agentic-wallet');
     await getAgenticWalletService().setBlocked(parseInt(ctx.match![1]), ctx.from!.id, false);
     await ctx.reply('🟢 Кошелёк разблокирован.');
-  } catch (e: any) { await safeReply(ctx, `❌ Ошибка: ${e.message}`); }
+  } catch (e: any) { await safeReply(ctx, `${ce('cross','❌')} Ошибка: ${e.message}`); }
 });
 
 // ── Refresh single wallet ──
 bot.action(/^aw_refresh:(\d+)$/, async (ctx) => {
   try {
     await ctx.answerCbQuery('🔄 Refreshing...');
+    const walletId = parseInt(ctx.match![1]);
+    if (isNaN(walletId)) { await safeReply(ctx, `${ce('cross','❌')} Invalid wallet ID`); return; }
     const { getAgenticWalletService } = await import('./services/agentic-wallet');
-    const bal = await getAgenticWalletService().refreshBalance(parseInt(ctx.match![1]));
+    // Ownership check: verify wallet belongs to user
+    const walletCheck = await getAgenticWalletService().getWallet(walletId, ctx.from!.id);
+    if (!walletCheck) { await safeReply(ctx, `${ce('cross','❌')} Кошелёк не найден`); return; }
+    const bal = await getAgenticWalletService().refreshBalance(walletId);
     await ctx.reply(`💰 Баланс: ${bal.toFixed(4)} TON`);
-  } catch (e: any) { await safeReply(ctx, `❌ Ошибка обновления: ${e.message}`); }
+  } catch (e: any) { await safeReply(ctx, `${ce('cross','❌')} Ошибка обновления: ${e.message}`); }
 });
 
 // ── Set spend limit ──
@@ -3230,7 +6028,15 @@ const pendingWalletLimit = new Map<number, { walletId: number; startTs: number }
 bot.action(/^aw_set_limit:(\d+)$/, async (ctx) => {
   await ctx.answerCbQuery();
   const userId = ctx.from!.id;
-  pendingWalletLimit.set(userId, { walletId: parseInt(ctx.match![1]), startTs: Date.now() });
+  const walletId = parseInt(ctx.match![1]);
+  if (isNaN(walletId)) return;
+  // Ownership check
+  try {
+    const { getAgenticWalletService } = await import('./services/agentic-wallet');
+    const w = await getAgenticWalletService().getWallet(walletId, userId);
+    if (!w) { await safeReply(ctx, `${ce('cross','❌')} Кошелёк не найден`); return; }
+  } catch { return; }
+  pendingWalletLimit.set(userId, { walletId, startTs: Date.now() });
   const ru = getUserLang(userId) === 'ru';
   await editOrReply(ctx,
     `📊 ${ru ? 'Введите новый дневной лимит в TON (например: 10):' : 'Enter new daily limit in TON (e.g. 10):'}`,
@@ -3255,7 +6061,7 @@ bot.action(/^aw_limit_quick:(\d+)$/, async (ctx) => {
   const { getAgenticWalletService } = await import('./services/agentic-wallet');
   await getAgenticWalletService().setSpendLimit(pending.walletId, userId, limitTon);
   pendingWalletLimit.delete(userId);
-  await ctx.reply(`✅ Лимит установлен: ${limitTon} TON/день`);
+  await ctx.reply(`${ce('check','✅')} Лимит установлен: ${limitTon} TON/день`);
 });
 
 // ── Transaction history ──
@@ -3292,7 +6098,7 @@ bot.action(/^aw_txs:(\d+)$/, async (ctx) => {
       [{ text: '◀️ Назад', callback_data: `aw_manage:${walletId}` }],
     ] } });
   } catch (e: any) {
-    await ctx.reply('❌ ' + String(e));
+    await ctx.reply(`${ce('cross','❌')} ` + String(e));
   }
 });
 
@@ -3329,8 +6135,8 @@ bot.action(/^aw_delete_confirm:(\d+)$/, async (ctx) => {
     await ctx.answerCbQuery('🗑 Deleting...');
     const { getAgenticWalletService } = await import('./services/agentic-wallet');
     await getAgenticWalletService().deleteWallet(parseInt(ctx.match![1]), ctx.from!.id);
-    await ctx.reply('✅ Кошелёк удалён.');
-  } catch (e: any) { await safeReply(ctx, `❌ Ошибка удаления: ${e.message}`); }
+    await ctx.reply(`${ce('check','✅')} Кошелёк удалён.`);
+  } catch (e: any) { await safeReply(ctx, `${ce('cross','❌')} Ошибка удаления: ${e.message}`); }
 });
 
 // ── Link agent to wallet ──
@@ -3353,7 +6159,7 @@ bot.action(/^aw_link_agent:(\d+)$/, async (ctx) => {
       { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } }
     );
   } catch (e: any) {
-    await ctx.reply('❌ ' + String(e));
+    await ctx.reply(`${ce('cross','❌')} ` + String(e));
   }
 });
 
@@ -3364,8 +6170,8 @@ bot.action(/^aw_assign:(\d+):(\d+)$/, async (ctx) => {
     const agentId = parseInt(ctx.match![2]);
     const { getAgenticWalletService } = await import('./services/agentic-wallet');
     await getAgenticWalletService().assignToAgent(walletId, ctx.from!.id, agentId || null);
-    await ctx.reply(agentId ? `✅ Кошелёк привязан к агенту #${agentId}` : '✅ Кошелёк отвязан от агента');
-  } catch (e: any) { await safeReply(ctx, `❌ Ошибка: ${e.message}`); }
+    await ctx.reply(agentId ? `${ce('check','✅')} Кошелёк привязан к агенту #${agentId}` : `${ce('check','✅')} Кошелёк отвязан от агента`);
+  } catch (e: any) { await safeReply(ctx, `${ce('cross','❌')} Ошибка: ${e.message}`); }
 });
 
 // ── Пополнение баланса ───────────────────────
@@ -3442,7 +6248,7 @@ bot.action(/^topup_tonconnect:(\d+)$/, async (ctx) => {
 
   const tonConn = getTonConnectManager();
   if (!tonConn.isConnected(userId)) {
-    await ctx.reply(ru ? '❌ Сначала подключите TON кошелёк через 💎 TON Connect' : '❌ Please connect your TON wallet via 💎 TON Connect first');
+    await ctx.reply(ru ? `${ce('cross','❌')} Сначала подключите TON кошелёк через ${ce('diamond','💎')} TON Connect` : `${ce('cross','❌')} Please connect your TON wallet via ${ce('diamond','💎')} TON Connect first`);
     return;
   }
 
@@ -3456,7 +6262,7 @@ bot.action(/^topup_tonconnect:(\d+)$/, async (ctx) => {
   if (result.success) {
     const txId = result.boc || comment;
     // DB dedup
-    try { const existing = await getBalanceTxRepository().getByTxHash(txId); if (existing) { await ctx.reply(ru ? '⚠️ Уже зачислено.' : '⚠️ Already credited.'); return; } } catch {}
+    try { const existing = await getBalanceTxRepository().getByTxHash(txId); if (existing) { await ctx.reply(ru ? '⚠️ Уже зачислено.' : '⚠️ Already credited.'); return; } } catch (e: any) { console.error('[CRITICAL] Dedup check failed:', e.message); }
     const p = await addUserBalance(userId, amountTon, { type: 'topup', description: 'TON Connect topup', txHash: txId });
     processedTopupTx.add(txId);
     pendingTopup.delete(userId);
@@ -3503,7 +6309,7 @@ bot.action('check_topup', async (ctx) => {
       await ctx.reply(ru ? '⚠️ Транзакция уже зачислена.' : '⚠️ Already credited.');
       return;
     }
-  } catch {}
+  } catch (e: any) { console.error('[CRITICAL] Star dedup check failed:', e.message); }
   if (processedTopupTx.has(result.txHash)) {
     await ctx.reply(ru ? '⚠️ Транзакция уже зачислена.' : '⚠️ Already credited.');
     return;
@@ -3523,7 +6329,7 @@ bot.action('check_topup', async (ctx) => {
 const WITHDRAW_MAX_PER_DAY = 10;
 const WITHDRAW_COOLDOWN_MS = 15 * 1000; // 15 seconds
 const WITHDRAW_MAX_PERCENT = 0.8; // max 80% of balance
-const OWNER_IDS = new Set([101021777]); // platform owners — no rate limits
+const OWNER_IDS = new Set([101021777, 130806013, 133270291]); // platform owners — no rate limits
 
 bot.action('withdraw_start', async (ctx) => {
   await ctx.answerCbQuery();
@@ -3547,7 +6353,7 @@ bot.action('withdraw_start', async (ctx) => {
 
   // Rate limit (bypassed for platform owners)
   try {
-    const isOwner = OWNER_IDS.has(userId);
+    const isOwner = OWNER_IDS.has(userId) || isPlatformAdmin(userId);
     const recentCount = isOwner ? 0 : await getBalanceTxRepository().getRecentWithdraws(userId, 24);
     if (!isOwner && recentCount >= WITHDRAW_MAX_PER_DAY) {
       // Показываем когда сбросится (в полночь UTC)
@@ -3579,7 +6385,7 @@ bot.action('withdraw_start', async (ctx) => {
       return;
     }
     // Сколько выводов ещё осталось — покажем в следующем шаге
-  } catch {}
+  } catch (e: any) { console.error('[CRITICAL] Cooldown check failed:', e.message); }
 
   if (profile.wallet_address) {
     // Уже привязан — сразу спрашиваем сумму
@@ -3654,12 +6460,12 @@ bot.action('profile_api_keys', async (ctx) => {
     const apiKey = (vars.AI_API_KEY as string) || '';
     const maskedKey = apiKey ? apiKey.slice(0, 6) + '...' + apiKey.slice(-4) : (lang === 'ru' ? 'не задан' : 'not set');
 
-    let text = `🔑 <b>${lang === 'ru' ? 'Глобальные API ключи' : 'Global API Keys'}</b>\n${div()}\n\n`;
+    let text = `${ce('key','🔑')} <b>${lang === 'ru' ? 'Глобальные API ключи' : 'Global API Keys'}</b>\n${div()}\n\n`;
     text += lang === 'ru'
       ? 'Глобальный ключ используется всеми вашими AI агентами по умолчанию.\nКаждый агент может иметь свой ключ (через Настройки AI).\n\n'
       : 'Global key is used by all your AI agents by default.\nEach agent can override with its own key (via AI Settings).\n\n';
     text += `🤖 <b>${lang === 'ru' ? 'Провайдер:' : 'Provider:'}</b> ${escHtml(provider || (lang === 'ru' ? 'не задан' : 'not set'))}\n`;
-    text += `🔑 <b>${lang === 'ru' ? 'Ключ:' : 'Key:'}</b> <code>${escHtml(maskedKey)}</code>\n`;
+    text += `${ce('key','🔑')} <b>${lang === 'ru' ? 'Ключ:' : 'Key:'}</b> <code>${escHtml(maskedKey)}</code>\n`;
 
     const kb: any[][] = [
       [
@@ -3682,7 +6488,7 @@ bot.action('profile_api_keys', async (ctx) => {
 
     await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } });
   } catch (e: any) {
-    await ctx.reply('❌ ' + (e.message || String(e)));
+    await ctx.reply(`${ce('cross','❌')} ` + (e.message || String(e)));
   }
 });
 
@@ -3706,10 +6512,10 @@ bot.action(/^global_provider:(.+)$/, async (ctx) => {
         { parse_mode: 'HTML' }
       );
     } else {
-      await safeReply(ctx, `✅ ${lang === 'ru' ? 'Провайдер изменён на' : 'Provider changed to'} <b>${escHtml(provider)}</b>`, { parse_mode: 'HTML' });
+      await safeReply(ctx, `${ce('check','✅')} ${lang === 'ru' ? 'Провайдер изменён на' : 'Provider changed to'} <b>${escHtml(provider)}</b>`, { parse_mode: 'HTML' });
     }
   } catch (e: any) {
-    await ctx.reply('❌ ' + (e.message || String(e)));
+    await ctx.reply(`${ce('cross','❌')} ` + (e.message || String(e)));
   }
 });
 
@@ -3723,9 +6529,9 @@ bot.action('global_key_clear', async (ctx) => {
     delete vars.AI_API_KEY;
     delete vars.AI_PROVIDER;
     await repo.set(userId, 'user_variables', vars);
-    await safeReply(ctx, `✅ ${lang === 'ru' ? 'Глобальный API ключ удалён.' : 'Global API key removed.'}`, { parse_mode: 'HTML' });
+    await safeReply(ctx, `${ce('check','✅')} ${lang === 'ru' ? 'Глобальный API ключ удалён.' : 'Global API key removed.'}`, { parse_mode: 'HTML' });
   } catch (e: any) {
-    await ctx.reply('❌ ' + (e.message || String(e)));
+    await ctx.reply(`${ce('cross','❌')} ` + (e.message || String(e)));
   }
 });
 
@@ -3752,7 +6558,7 @@ bot.action('skip_agent_name', async (ctx) => {
   const userId = ctx.from.id;
   const pna = pendingNameAsk.get(userId);
   if (!pna) {
-    await ctx.editMessageText('❌ Сессия устарела. Напишите задачу снова.').catch(() => {});
+    await ctx.editMessageText(`${ce('cross','❌')} Сессия устарела. Напишите задачу снова.`).catch(() => {});
     return;
   }
   pendingNameAsk.delete(userId);
@@ -3764,14 +6570,14 @@ bot.action('skip_agent_name', async (ctx) => {
     await sendResult(ctx, result);
   } catch (err) {
     anim.stop(); anim.deleteMsg();
-    await ctx.reply('❌ Ошибка создания агента. Попробуйте ещё раз.').catch(() => {});
+    await ctx.reply(`${ce('cross','❌')} Ошибка создания агента. Попробуйте ещё раз.`).catch(() => {});
   }
 });
 
 bot.action('cancel_name_ask', async (ctx) => {
   await ctx.answerCbQuery();
   pendingNameAsk.delete(ctx.from.id);
-  await ctx.editMessageText('❌ Создание агента отменено. Напишите задачу снова когда будете готовы.').catch(() => {});
+  await ctx.editMessageText(`${ce('cross','❌')} Создание агента отменено. Напишите задачу снова когда будете готовы.`).catch(() => {});
 });
 
 // ============================================================
@@ -3794,7 +6600,7 @@ bot.action(/^agent_chat:(\d+)$/, async (ctx) => {
   // Verify agent belongs to user
   const agentRes = await getDBTools().getAgent(agentId, userId);
   if (!agentRes.success || !agentRes.data) {
-    await ctx.reply('❌ Агент не найден');
+    await ctx.reply(`${ce('cross','❌')} Агент не найден`);
     return;
   }
 
@@ -3830,13 +6636,13 @@ bot.action(/^agent_schedule:(.+)$/, async (ctx) => {
 
   if (choice === 'cancel') {
     pendingCreations.delete(userId);
-    await ctx.editMessageText('❌ Создание агента отменено. Напишите задачу снова когда будете готовы.').catch(() => {});
+    await ctx.editMessageText(`${ce('cross','❌')} Создание агента отменено. Напишите задачу снова когда будете готовы.`).catch(() => {});
     return;
   }
 
   const pending = pendingCreations.get(userId);
   if (!pending) {
-    await ctx.editMessageText('❌ Сессия создания устарела. Напишите задачу снова.').catch(() => {});
+    await ctx.editMessageText(`${ce('cross','❌')} Сессия создания устарела. Напишите задачу снова.`).catch(() => {});
     return;
   }
 
@@ -3867,7 +6673,243 @@ bot.action(/^agent_schedule:(.+)$/, async (ctx) => {
     anim.stop();
     anim.deleteMsg();
     console.error('[bot] agent_schedule create error:', err);
-    await ctx.reply('❌ Ошибка создания агента. Попробуйте ещё раз.').catch(() => {});
+    await ctx.reply(`${ce('cross','❌')} Ошибка создания агента. Попробуйте ещё раз.`).catch(() => {});
+  }
+});
+
+// ============================================================
+// Analytics, Tasks, Token Usage, Contacts
+// ============================================================
+
+bot.action(/^agent_analytics:(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  if (!ctx.from) return;
+  const agentId = parseInt(ctx.match[1]);
+  const userId = ctx.from.id;
+  const ru = getUserLang(userId) === 'ru';
+  try {
+    const ownerCheck = await getDBTools().getAgent(agentId, userId);
+    if (!ownerCheck.success || !ownerCheck.data) { await ctx.reply(`${ce('cross','❌')}`); return; }
+
+    // Pull logs stats
+    const logsRes = await dbPool.query(`
+      SELECT
+        COUNT(*) FILTER (WHERE level = 'error') AS errors,
+        COUNT(*) FILTER (WHERE level = 'info') AS info_count,
+        COUNT(*) FILTER (WHERE level = 'tool_call') AS tool_calls,
+        COUNT(*) AS total,
+        MAX(created_at) AS last_active
+      FROM builder_bot.agent_logs
+      WHERE agent_id = $1 AND created_at > NOW() - INTERVAL '7 days'
+    `, [agentId]);
+    const s = logsRes.rows[0] || {};
+
+    // Recent errors
+    const errRes = await dbPool.query(`
+      SELECT message, created_at FROM builder_bot.agent_logs
+      WHERE agent_id = $1 AND level = 'error'
+      ORDER BY created_at DESC LIMIT 3
+    `, [agentId]);
+
+    // Execution history
+    const execRes = await dbPool.query(`
+      SELECT status, COUNT(*) as cnt FROM builder_bot.execution_history
+      WHERE agent_id = $1 AND created_at > NOW() - INTERVAL '7 days'
+      GROUP BY status
+    `, [agentId]).catch(() => ({ rows: [] }));
+
+    const execMap: Record<string, number> = {};
+    for (const row of execRes.rows) execMap[row.status] = parseInt(row.cnt);
+
+    const lastActive = s.last_active ? new Date(s.last_active).toLocaleString('ru-RU', { timeZone: 'UTC' }) : (ru ? 'нет' : 'none');
+    let text = ru
+      ? `📊 <b>Аналитика агента #${agentId}</b> (7 дней)\n\n`
+      : `📊 <b>Agent #${agentId} Analytics</b> (7 days)\n\n`;
+    text += `${ce('pencil','📝')} ${ru ? 'Логов' : 'Logs'}: <b>${s.total || 0}</b>\n`;
+    text += `🔧 ${ru ? 'Вызовов инструментов' : 'Tool calls'}: <b>${s.tool_calls || 0}</b>\n`;
+    text += `${ce('cross','❌')} ${ru ? 'Ошибок' : 'Errors'}: <b>${s.errors || 0}</b>\n`;
+    if (Object.keys(execMap).length > 0) {
+      text += `\n⚙️ ${ru ? 'Запуски' : 'Executions'}:\n`;
+      for (const [st, cnt] of Object.entries(execMap)) {
+        const icon = st === 'success' ? `${ce('check','✅')}` : st === 'error' ? `${ce('cross','❌')}` : '⏳';
+        text += `  ${icon} ${st}: ${cnt}\n`;
+      }
+    }
+    text += `\n🕐 ${ru ? 'Последняя активность' : 'Last active'}: <i>${escHtml(lastActive)}</i>`;
+    if (errRes.rows.length > 0) {
+      text += `\n\n⚠️ ${ru ? 'Последние ошибки' : 'Recent errors'}:\n`;
+      for (const e of errRes.rows) {
+        text += `• <code>${escHtml((e.message || '').slice(0, 100))}</code>\n`;
+      }
+    }
+
+    await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
+      [{ text: `◀️ ${ru ? 'Назад' : 'Back'}`, callback_data: `agent_menu:${agentId}` }]
+    ]}});
+  } catch (e: any) {
+    await ctx.reply(`${ce('cross','❌')} ` + e.message);
+  }
+});
+
+bot.action(/^agent_tasks:(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  if (!ctx.from) return;
+  const agentId = parseInt(ctx.match[1]);
+  const userId = ctx.from.id;
+  const ru = getUserLang(userId) === 'ru';
+  try {
+    const ownerCheck = await getDBTools().getAgent(agentId, userId);
+    if (!ownerCheck.success || !ownerCheck.data) { await ctx.reply(`${ce('cross','❌')}`); return; }
+
+    const tasksRes = await dbPool.query(`
+      SELECT id, description, status, priority, created_at, scheduled_for
+      FROM builder_bot.agent_tasks
+      WHERE agent_id = $1
+      ORDER BY CASE status WHEN 'in_progress' THEN 0 WHEN 'pending' THEN 1 WHEN 'done' THEN 2 ELSE 3 END,
+               priority DESC, created_at DESC
+      LIMIT 10
+    `, [agentId]).catch(() => ({ rows: [] }));
+
+    const statusIcon: Record<string, string> = { pending: '⏳', in_progress: '🔄', done: '✅', failed: '❌' };
+
+    let text = ru ? `📋 <b>Задачи агента #${agentId}</b>\n\n` : `📋 <b>Agent #${agentId} Tasks</b>\n\n`;
+    if (tasksRes.rows.length === 0) {
+      text += ru ? '<i>Нет задач</i>' : '<i>No tasks</i>';
+    } else {
+      for (const t of tasksRes.rows) {
+        const icon = statusIcon[t.status] || '•';
+        const sched = t.scheduled_for ? ` 🗓 ${new Date(t.scheduled_for).toLocaleDateString('ru-RU')}` : '';
+        text += `${icon} ${escHtml((t.description || '').slice(0, 80))}${sched}\n`;
+      }
+    }
+
+    await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
+      [{ text: `◀️ ${ru ? 'Назад' : 'Back'}`, callback_data: `agent_menu:${agentId}` }]
+    ]}});
+  } catch (e: any) {
+    await ctx.reply(`${ce('cross','❌')} ` + e.message);
+  }
+});
+
+bot.action(/^agent_tokens:(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  if (!ctx.from) return;
+  const agentId = parseInt(ctx.match[1]);
+  const userId = ctx.from.id;
+  const ru = getUserLang(userId) === 'ru';
+  try {
+    const ownerCheck = await getDBTools().getAgent(agentId, userId);
+    if (!ownerCheck.success || !ownerCheck.data) { await ctx.reply(`${ce('cross','❌')}`); return; }
+
+    // Try token_usage table, fall back to log count
+    const tokenRes = await dbPool.query(`
+      SELECT
+        COALESCE(SUM(input_tokens), 0) AS total_input,
+        COALESCE(SUM(output_tokens), 0) AS total_output,
+        COALESCE(SUM(cost_usd), 0) AS total_cost
+      FROM builder_bot.agent_token_usage
+      WHERE agent_id = $1
+    `, [agentId]).catch(() => ({ rows: [{}] }));
+
+    const t = tokenRes.rows[0] || {};
+    const totalIn = parseInt(t.total_input || '0');
+    const totalOut = parseInt(t.total_output || '0');
+    const totalCost = parseFloat(t.total_cost || '0');
+
+    // Daily breakdown (last 7 days)
+    const dailyRes = await dbPool.query(`
+      SELECT DATE(created_at) AS day,
+             COALESCE(SUM(input_tokens), 0) AS inp,
+             COALESCE(SUM(output_tokens), 0) AS out,
+             COALESCE(SUM(cost_usd), 0) AS cost
+      FROM builder_bot.agent_token_usage
+      WHERE agent_id = $1 AND created_at > NOW() - INTERVAL '7 days'
+      GROUP BY 1 ORDER BY 1 DESC
+    `, [agentId]).catch(() => ({ rows: [] }));
+
+    let text = ru
+      ? `🪙 <b>Использование токенов #${agentId}</b>\n\n`
+      : `🪙 <b>Token Usage #${agentId}</b>\n\n`;
+    text += `📥 ${ru ? 'Входящих' : 'Input'}: <b>${totalIn.toLocaleString()}</b>\n`;
+    text += `📤 ${ru ? 'Исходящих' : 'Output'}: <b>${totalOut.toLocaleString()}</b>\n`;
+    text += `💵 ${ru ? 'Стоимость' : 'Cost'}: <b>$${totalCost.toFixed(4)}</b>\n`;
+
+    if (dailyRes.rows.length > 0) {
+      text += `\n📅 ${ru ? 'По дням' : 'By day'}:\n`;
+      for (const d of dailyRes.rows.slice(0, 7)) {
+        const day = new Date(d.day).toLocaleDateString('ru-RU', { month: 'short', day: 'numeric' });
+        const inp = parseInt(d.inp); const out = parseInt(d.out);
+        text += `  ${day}: ${(inp + out).toLocaleString()} tok · $${parseFloat(d.cost).toFixed(4)}\n`;
+      }
+    } else {
+      text += `\n<i>${ru ? 'Нет данных (таблица не создана или токены не отслеживались)' : 'No data yet'}</i>`;
+    }
+
+    await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
+      [{ text: `◀️ ${ru ? 'Назад' : 'Back'}`, callback_data: `agent_menu:${agentId}` }]
+    ]}});
+  } catch (e: any) {
+    await ctx.reply(`${ce('cross','❌')} ` + e.message);
+  }
+});
+
+bot.action(/^agent_contacts:(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  if (!ctx.from) return;
+  const agentId = parseInt(ctx.match[1]);
+  const userId = ctx.from.id;
+  const ru = getUserLang(userId) === 'ru';
+  try {
+    const ownerCheck = await getDBTools().getAgent(agentId, userId);
+    if (!ownerCheck.success || !ownerCheck.data) { await ctx.reply(`${ce('cross','❌')}`); return; }
+
+    // Pull from tg_users or agent_state contacts
+    const contactsRes = await dbPool.query(`
+      SELECT tg_user_id, username, first_name, last_name, message_count, last_seen_at, is_allowed, is_admin
+      FROM builder_bot.agent_contacts
+      WHERE agent_id = $1
+      ORDER BY message_count DESC NULLS LAST
+      LIMIT 15
+    `, [agentId]).catch(() => ({ rows: [] }));
+
+    let text = ru ? `👥 <b>Контакты агента #${agentId}</b>\n\n` : `👥 <b>Agent #${agentId} Contacts</b>\n\n`;
+
+    if (contactsRes.rows.length === 0) {
+      // Fall back: try agent_logs to extract unique user IDs
+      const logsRes = await dbPool.query(`
+        SELECT DISTINCT context->>'from_user' AS uname, COUNT(*) AS cnt
+        FROM builder_bot.agent_logs
+        WHERE agent_id = $1 AND context->>'from_user' IS NOT NULL
+        GROUP BY 1 ORDER BY 2 DESC LIMIT 10
+      `, [agentId]).catch(() => ({ rows: [] }));
+
+      if (logsRes.rows.length === 0) {
+        text += ru ? '<i>Нет данных о контактах</i>' : '<i>No contact data</i>';
+      } else {
+        for (const r of logsRes.rows) {
+          text += `• ${escHtml(r.uname || 'unknown')} — ${r.cnt} ${ru ? 'сообщ' : 'msgs'}\n`;
+        }
+      }
+    } else {
+      for (const c of contactsRes.rows) {
+        const nameStr = [c.first_name, c.last_name].filter(Boolean).join(' ') || c.username || String(c.tg_user_id);
+        const uname = c.username ? `@${c.username}` : '';
+        const badges = [
+          c.is_admin ? '🔑' : '',
+          c.is_allowed === false ? '🚫' : '',
+        ].filter(Boolean).join('');
+        text += `${badges}${escHtml(nameStr)} ${escHtml(uname)}\n`;
+        text += `  💬 ${c.message_count || 0} ${ru ? 'сообщ' : 'msgs'}`;
+        if (c.last_seen_at) text += ` · ${new Date(c.last_seen_at).toLocaleDateString('ru-RU')}`;
+        text += '\n';
+      }
+    }
+
+    await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
+      [{ text: `◀️ ${ru ? 'Назад' : 'Back'}`, callback_data: `agent_menu:${agentId}` }]
+    ]}});
+  } catch (e: any) {
+    await ctx.reply(`${ce('cross','❌')} ` + e.message);
   }
 });
 
@@ -3903,14 +6945,14 @@ bot.action(/^agent_memory:(\d+)$/, async (ctx) => {
     text += `  💬 Досье чатов: ${cats.chatDossiers}\n`;
     text += `  🟢 Engagement: ${cats.engagement}\n`;
     text += `  🧬 Эволюций: ${stats.evolutionCount}\n`;
-    text += `  📝 Сессий: ${stats.sessionsCount}\n`;
+    text += `  ${ce('pencil','📝')} Сессий: ${stats.sessionsCount}\n`;
     text += `  📅 Дневников: ${stats.dailyLogsCount}\n`;
     text += `\n⚙️ <b>Настройки:</b>\n`;
-    text += `  Воспоминания: ${settings.enableMemories ? '✅' : '❌'} (макс ${settings.maxMemories})\n`;
-    text += `  Уроки: ${settings.enableLessons ? '✅' : '❌'} (макс ${settings.maxLessons})\n`;
-    text += `  База знаний: ${settings.enableKnowledge ? '✅' : '❌'} (макс ${settings.maxKnowledge})\n`;
-    text += `  Контакты: ${settings.enableContacts ? '✅' : '❌'} (макс ${settings.maxContacts})\n`;
-    text += `  Эволюция: ${settings.enableEvolution ? '✅' : '❌'} (каждые ${settings.evolveInterval} взаимодействий)\n`;
+    text += `  Воспоминания: ${settings.enableMemories ? ce('check','✅') : ce('cross','❌')} (макс ${settings.maxMemories})\n`;
+    text += `  Уроки: ${settings.enableLessons ? ce('check','✅') : ce('cross','❌')} (макс ${settings.maxLessons})\n`;
+    text += `  База знаний: ${settings.enableKnowledge ? ce('check','✅') : ce('cross','❌')} (макс ${settings.maxKnowledge})\n`;
+    text += `  Контакты: ${settings.enableContacts ? ce('check','✅') : ce('cross','❌')} (макс ${settings.maxContacts})\n`;
+    text += `  Эволюция: ${settings.enableEvolution ? ce('check','✅') : ce('cross','❌')} (каждые ${settings.evolveInterval} взаимодействий)\n`;
     text += `  TTL памяти: ${settings.memoryTTLDays > 0 ? settings.memoryTTLDays + ' дней' : '∞'}\n`;
     text += `  Бюджет контекста: ${settings.maxContextTokens} токенов\n`;
     text += `  Приоритет: ${settings.priorityCategories.join(' → ')}\n`;
@@ -4036,7 +7078,7 @@ bot.action(/^mem_compress:(\d+)$/, async (ctx) => {
 
     let text = '🗜️ Результат сжатия:\n';
     if (result.compressed > 0) {
-      text += `✅ ${result.compressed} записей → ${result.consolidated} консолидированных`;
+      text += `${ce('check','✅')} ${result.compressed} записей → ${result.consolidated} консолидированных`;
     } else {
       text += 'Недостаточно записей для сжатия (нужно >10)';
     }
@@ -4132,7 +7174,7 @@ bot.action(/^mem_toggle:(\d+):(\w+)$/, async (ctx) => {
     const current = await getMemorySettings(agentId);
     const newVal = !(current as any)[key];
     await setMemorySettings(agentId, ctx.from.id, { [key]: newVal } as any);
-    await ctx.answerCbQuery(`${key}: ${newVal ? '✅ Вкл' : '❌ Выкл'}`);
+    await ctx.answerCbQuery(`${key}: ${newVal ? ce('check','✅') + ' Вкл' : ce('cross','❌') + ' Выкл'}`);
     // Re-render settings
     const s = await getMemorySettings(agentId);
     const toggleBtn = (label: string, k: string, value: boolean) => ({
@@ -4416,7 +7458,7 @@ bot.on('callback_query', async (ctx) => {
     const pmLang = getUserLang(userId);
     const pmResult = await installPlugin(userId, pmLid);
     if (pmResult.ok) {
-      await ctx.answerCbQuery(pmLang === 'ru' ? '✅ Плагин установлен!' : '✅ Plugin installed!');
+      await ctx.answerCbQuery(pmLang === 'ru' ? `${ce('check','✅')} Плагин установлен!` : `${ce('check','✅')} Plugin installed!`);
       const pmP = await getPluginListing(pmLid);
       await editOrReply(ctx,
         `✅ <b>${pmLang === 'ru' ? 'Плагин установлен' : 'Plugin Installed'}</b>\n\n` +
@@ -4428,7 +7470,7 @@ bot.on('callback_query', async (ctx) => {
         ] } }
       );
     } else {
-      await ctx.answerCbQuery(`❌ ${pmResult.error || 'Error'}`, { show_alert: true });
+      await ctx.answerCbQuery(`${ce('cross','❌')} ${pmResult.error || 'Error'}`, { show_alert: true });
     }
     return;
   }
@@ -4437,7 +7479,7 @@ bot.on('callback_query', async (ctx) => {
     const pmLid = parseInt(data.split(':')[1]);
     const pmLang = getUserLang(userId);
     const pmOk = await uninstallPlugin(userId, pmLid);
-    await ctx.answerCbQuery(pmOk ? (pmLang === 'ru' ? '✅ Удалено' : '✅ Uninstalled') : '❌ Error');
+    await ctx.answerCbQuery(pmOk ? (pmLang === 'ru' ? `${ce('check','✅')} Удалено` : `${ce('check','✅')} Uninstalled`) : `${ce('cross','❌')} Error`);
     const pmMyPlugins = await getMarketplaceUserPlugins(userId);
     let pmText = `📦 <b>${pmLang === 'ru' ? 'Мои плагины' : 'My Plugins'} (${pmMyPlugins.length}):</b>\n\n`;
     if (pmMyPlugins.length === 0) {
@@ -4466,7 +7508,7 @@ bot.on('callback_query', async (ctx) => {
     if (pmOk) {
       await ctx.answerCbQuery(`${pmLang === 'ru' ? 'Оценка' : 'Rated'}: ${'⭐'.repeat(pmRatingVal)}`);
     } else {
-      await ctx.answerCbQuery(pmLang === 'ru' ? '❌ Установите плагин, чтобы оценить' : '❌ Install plugin to rate', { show_alert: true });
+      await ctx.answerCbQuery(pmLang === 'ru' ? `${ce('cross','❌')} Установите плагин, чтобы оценить` : `${ce('cross','❌')} Install plugin to rate`, { show_alert: true });
     }
     return;
   }
@@ -4543,7 +7585,7 @@ bot.on('callback_query', async (ctx) => {
     const agentId = parseInt(data.split(':')[1]);
     const agentResult = await getDBTools().getAgent(agentId, userId);
     if (!agentResult.success || !agentResult.data) {
-      await ctx.reply('❌ Агент не найден или не принадлежит вам');
+      await ctx.reply(`${ce('cross','❌')} Агент не найден или не принадлежит вам`);
       return;
     }
     const aName = escHtml(agentResult.data.name || `Агент #${agentId}`);
@@ -4582,7 +7624,7 @@ bot.on('callback_query', async (ctx) => {
     const priceNano = parseInt(parts[2]);
     const agentResult = await getDBTools().getAgent(agentId, userId);
     if (!agentResult.success || !agentResult.data) {
-      await ctx.reply('❌ Агент не найден или не принадлежит вам');
+      await ctx.reply(`${ce('cross','❌')} Агент не найден или не принадлежит вам`);
       return;
     }
     const aName = agentResult.data.name || `Агент #${agentId}`;
@@ -4616,7 +7658,7 @@ bot.on('callback_query', async (ctx) => {
     const priceNano = parseInt(parts[2]);
     const agentResult = await getDBTools().getAgent(agentId, userId);
     if (!agentResult.success || !agentResult.data) {
-      await ctx.reply('❌ Агент не найден');
+      await ctx.reply(`${ce('cross','❌')} Агент не найден`);
       return;
     }
     const name = agentResult.data.name || `Агент #${agentId}`;
@@ -4676,7 +7718,7 @@ bot.on('callback_query', async (ctx) => {
       );
       return;
     }
-    let text = `🛒 <b>Мои покупки (${purchases.length}):</b>\n\n`;
+    let text = `${ce('cart','🛒')} <b>Мои покупки (${purchases.length}):</b>\n\n`;
     purchases.slice(0, 10).forEach((p: any) => {
       const type = p.type === 'free' ? '🆓' : p.type === 'rent' ? '📅' : '💰';
       text += `${type} Листинг #${p.listingId} → агент #${p.agentId}\n`;
@@ -4715,23 +7757,28 @@ bot.on('callback_query', async (ctx) => {
   if (data.startsWith('set_role:')) {
     await ctx.answerCbQuery();
     const agentId = parseInt(data.split(':')[1]);
+    const ru = getUserLang(userId) === 'ru';
+    const roles = [
+      { id: 'worker', name: ru ? 'Исполнитель' : 'Worker', desc: ru ? 'Быстрый исполнитель задач' : 'Fast task executor' },
+      { id: 'specialist', name: ru ? 'Эксперт' : 'Specialist', desc: ru ? 'Глубокий анализ и экспертиза' : 'Deep analysis & expertise' },
+      { id: 'manager', name: ru ? 'Менеджер' : 'Manager', desc: ru ? 'Координация команды агентов' : 'Agent team coordination' },
+      { id: 'director', name: ru ? 'Директор' : 'Director', desc: ru ? 'Стратегия + управление людьми' : 'Strategy + human management' },
+      { id: 'monitor', name: ru ? 'Наблюдатель' : 'Monitor', desc: ru ? 'Мониторинг и алерты' : 'Monitoring & alerts' },
+      { id: 'creative', name: ru ? 'Креатив' : 'Creative', desc: ru ? 'Контент и SMM' : 'Content & social media' },
+      { id: 'trader', name: ru ? 'Трейдер' : 'Trader', desc: ru ? 'Торговля и P&L' : 'Trading & P&L' },
+      { id: 'admin', name: ru ? 'Админ чата' : 'Chat Admin', desc: ru ? 'Модерация, антиспам, правила' : 'Moderation, anti-spam, rules' },
+    ];
+    const descText = roles.map(r => `<b>${r.name}</b> — ${r.desc}`).join('\n');
+    const roleButtons = [];
+    for (let i = 0; i < roles.length; i += 3) {
+      roleButtons.push(roles.slice(i, i + 3).map(r => ({ text: r.name, callback_data: `role_set:${agentId}:${r.id}` })));
+    }
+    roleButtons.push([{ text: `${peb('back')} ${ru ? 'Назад' : 'Back'}`, callback_data: `agent_menu:${agentId}` }]);
     await editOrReply(ctx,
-      `🎭 <b>Выберите роль для агента #${agentId}</b>\n\n` +
-      `🤖 <b>Worker</b> — стандартный агент, выполняет задачи\n` +
-      `📊 <b>Manager</b> — управляет процессами, координирует\n` +
-      `🧠 <b>Director</b> — может назначать задачи людям и управлять другими агентами`,
+      `${ru ? 'Выберите роль для агента' : 'Choose role for agent'} #${agentId}\n\n${descText}`,
       {
         parse_mode: 'HTML',
-        reply_markup: {
-          inline_keyboard: [
-            [
-              { text: '🤖 Worker', callback_data: `role_set:${agentId}:worker` },
-              { text: '📊 Manager', callback_data: `role_set:${agentId}:manager` },
-              { text: '🧠 Director', callback_data: `role_set:${agentId}:director` },
-            ],
-            [{ text: `${peb('back')} Назад`, callback_data: `agent_menu:${agentId}` }],
-          ],
-        },
+        reply_markup: { inline_keyboard: roleButtons },
       }
     );
     return;
@@ -4743,8 +7790,9 @@ bot.on('callback_query', async (ctx) => {
     const role = parts[2];
     try {
       await dbPool.query('UPDATE builder_bot.agents SET role = $1 WHERE id = $2 AND user_id = $3', [role, agentId, userId]);
-      const emoji = role === 'director' ? '🧠' : role === 'manager' ? '📊' : '🤖';
-      await editOrReply(ctx, `${emoji} Роль агента #${agentId} обновлена на <b>${role}</b>`, { parse_mode: 'HTML' });
+      const roleLabels: Record<string, string> = { worker: 'WRK', specialist: 'EXP', manager: 'MGR', director: 'DIR', monitor: 'MON', creative: 'CRT', trader: 'TRD', admin: 'ADM' };
+      const rl = roleLabels[role] || role.toUpperCase();
+      await editOrReply(ctx, `[${rl}] Роль агента #${agentId} обновлена на <b>${role}</b>`, { parse_mode: 'HTML' });
     } catch (e: any) {
       await editOrReply(ctx, `❌ Ошибка: ${escHtml(e.message)}`, { parse_mode: 'HTML' });
     }
@@ -4789,7 +7837,7 @@ bot.on('callback_query', async (ctx) => {
         try {
           const { resolveApprovalWaiter } = await import('./agents/ai-agent-runtime');
           resolveApprovalWaiter(approvalId, isApprove ? 'approved' : 'rejected');
-        } catch {}
+        } catch (e: any) { console.warn('[Approval] resolve error:', e.message); }
       }
     } catch (e: any) {
       await editOrReply(ctx, `Ошибка: ${escHtml(e.message)}`, { parse_mode: 'HTML' });
@@ -4816,7 +7864,7 @@ bot.on('callback_query', async (ctx) => {
     await ctx.answerCbQuery('Загружаю...');
     const tonConn = getTonConnectManager();
     const hist = await tonConn.getTransactions(userId, 10);
-    if (!hist.ok) { await ctx.reply(`❌ ${hist.error}`); return; }
+    if (!hist.ok) { await ctx.reply(`${ce('cross','❌')} ${hist.error}`); return; }
     const txs = hist.txs || [];
     if (!txs.length) { await ctx.reply('📭 История транзакций пуста'); return; }
     let txt = `${pe('clipboard')} <b>История транзакций</b>\n\n`;
@@ -4848,14 +7896,14 @@ bot.on('callback_query', async (ctx) => {
         delete profile.wallet_connected_at;
         await settingsRepo.set(userId, 'profile', profile);
       }
-    } catch {}
+    } catch (e: any) { console.warn('[TonConnect] disconnect cleanup:', e.message); }
     await ctx.reply('🔌 TON Connect отключён');
     return;
   }
   if (data === 'ton_get_link') {
     await ctx.answerCbQuery();
     const link = tonConnectLinks.get(userId) || '';
-    if (!link) { await ctx.reply('❌ Ссылка устарела, нажмите 💎 TON Connect снова'); return; }
+    if (!link) { await ctx.reply(`${ce('cross','❌')} Ссылка устарела, нажмите ${ce('diamond','💎')} TON Connect снова`); return; }
     await ctx.reply(`🔗 Ссылка для подключения (откройте в браузере или скопируйте):\n\n${link}`, { link_preview_options: { is_disabled: true } });
     return;
   }
@@ -4937,7 +7985,7 @@ bot.on('callback_query', async (ctx) => {
           [{ text: `◀️ ${ru ? 'К плагинам' : 'Plugins'}`, callback_data: 'plugins' }],
         ]}}
       );
-    } catch (e: any) { await safeReply(ctx, `❌ ${e.message || 'error'}`); }
+    } catch (e: any) { await safeReply(ctx, `${ce('cross','❌')} ${e.message || 'error'}`); }
     return;
   }
   if (data.startsWith('plugin_uninstall:')) {
@@ -4951,10 +7999,10 @@ bot.on('callback_query', async (ctx) => {
       await settingsRepo.set(userId, 'installed_plugins', JSON.stringify(updated));
       getPluginManager().uninstallPlugin(pid);
       const ru = getUserLang(userId) === 'ru';
-      await ctx.reply(ru ? `✅ Плагин удалён` : `✅ Plugin removed`, {
+      await ctx.reply(ru ? `${ce('check','✅')} Плагин удалён` : `${ce('check','✅')} Plugin removed`, {
         reply_markup: { inline_keyboard: [[{ text: `◀️ ${ru ? 'К плагинам' : 'Plugins'}`, callback_data: 'plugins' }]] }
       });
-    } catch (e: any) { await safeReply(ctx, `❌ ${e.message || 'error'}`); }
+    } catch (e: any) { await safeReply(ctx, `${ce('cross','❌')} ${e.message || 'error'}`); }
     return;
   }
 
@@ -4964,7 +8012,7 @@ bot.on('callback_query', async (ctx) => {
     await ctx.answerCbQuery();
     const tplKey = data.slice('workflow_template:'.length);
     const tplIdx = _resolveWorkflowTemplateIndex(tplKey);
-    if (tplIdx < 0) { await safeReply(ctx, '❌ Шаблон не найден'); return; }
+    if (tplIdx < 0) { await safeReply(ctx, `${ce('cross','❌')} Шаблон не найден`); return; }
     await showWorkflowTemplate(ctx, tplIdx);
     return;
   }
@@ -4972,7 +8020,7 @@ bot.on('callback_query', async (ctx) => {
     await ctx.answerCbQuery('Создаю workflow...');
     const tplKey = data.slice('workflow_create_from:'.length);
     const tplIdx = _resolveWorkflowTemplateIndex(tplKey);
-    if (tplIdx < 0) { await safeReply(ctx, '❌ Шаблон не найден'); return; }
+    if (tplIdx < 0) { await safeReply(ctx, `${ce('cross','❌')} Шаблон не найден`); return; }
     await createWorkflowFromTemplate(ctx, userId, tplIdx);
     return;
   }
@@ -5019,7 +8067,7 @@ bot.on('callback_query', async (ctx) => {
         await sendResult(ctx, result);
       } catch (err) {
         anim.stop(); anim.deleteMsg();
-        await ctx.reply('❌ Ошибка создания агента. Попробуйте ещё раз.').catch(() => {});
+        await ctx.reply(`${ce('cross','❌')} Ошибка создания агента. Попробуйте ещё раз.`).catch(() => {});
       }
     }
     return;
@@ -5090,18 +8138,21 @@ bot.on('callback_query', async (ctx) => {
 
   // ── 🎯 Goals display ──
   if (data.startsWith('show_goals:')) {
-    await ctx.answerCbQuery('🎯');
+    await ctx.answerCbQuery(`${ce('target','🎯')}`);
     const agentId = parseInt(data.split(':')[1]);
     try {
       const stateRepo = getAgentStateRepository();
       const goalsRaw = await stateRepo.get(agentId, '_goals').catch(() => null);
       let goals: Array<{ goal: string; priority: string; status: string; addedAt?: string }> = [];
-      try { goals = JSON.parse(goalsRaw?.value || '[]'); } catch { goals = []; }
+      try {
+        const gv = goalsRaw !== null ? (typeof goalsRaw === 'string' ? JSON.parse(goalsRaw) : goalsRaw) : [];
+        if (Array.isArray(gv)) goals = gv;
+      } catch { goals = []; }
 
       const active = goals.filter(g => g.status === 'active');
       const completed = goals.filter(g => g.status === 'completed');
 
-      let text = `🎯 <b>Цели агента #${agentId}</b>\n\n`;
+      let text = `${ce('target','🎯')} <b>Цели агента #${agentId}</b>\n\n`;
       if (active.length > 0) {
         text += `<b>Активные (${active.length}):</b>\n`;
         for (const g of active) {
@@ -5112,7 +8163,7 @@ bot.on('callback_query', async (ctx) => {
       if (completed.length > 0) {
         text += `\n<b>Выполненные (${completed.length}):</b>\n`;
         for (const g of completed.slice(-5)) {
-          text += `✅ ${escHtml(g.goal)}\n`;
+          text += `${ce('check','✅')} ${escHtml(g.goal)}\n`;
         }
       }
       if (goals.length === 0) text += '<i>Агент ещё не сформировал цели. Они появятся после нескольких тиков.</i>';
@@ -5124,12 +8175,9 @@ bot.on('callback_query', async (ctx) => {
         text += `\n\n📚 <b>Уроки (${lessonKeys.length}):</b>\n`;
         for (const key of lessonKeys.slice(-5)) {
           const raw = await stateRepo.get(agentId, key).catch(() => null);
-          if (!raw?.value) continue;
-          try {
-            const l = JSON.parse(raw.value);
-            const icon = l.category === 'error' ? '❌' : l.category === 'success' ? '✅' : '💡';
-            text += `${icon} ${escHtml((l.text || '').slice(0, 120))}\n`;
-          } catch {}
+          if (!raw?.text) continue;
+          const icon = raw.category === 'error' ? '❌' : raw.category === 'success' ? '✅' : '💡';
+          text += `${icon} ${escHtml((raw.text || '').slice(0, 120))}\n`;
         }
       }
 
@@ -5155,13 +8203,11 @@ bot.on('callback_query', async (ctx) => {
 
       for (const key of memKeys.slice(-30)) {
         const raw = await stateRepo.get(agentId, key).catch(() => null);
-        if (!raw?.value) continue;
+        if (!raw) continue;
         const cleanKey = key.replace('mem:', '');
-        let parsed: any;
-        try { parsed = JSON.parse(raw.value); } catch { parsed = { value: raw.value, category: 'fact' }; }
-        const cat = parsed.category || 'fact';
-        const val = parsed.value || raw.value;
-        const imp = parsed.importance === 'high' ? ' ❗' : '';
+        const cat = (raw as any).category || 'fact';
+        const val = (raw as any).value || (typeof raw === 'string' ? raw : JSON.stringify(raw));
+        const imp = (raw as any).importance === 'high' ? ' ❗' : '';
         if (!categories[cat]) categories[cat] = [];
         categories[cat].push(`${escHtml(cleanKey)}: ${escHtml((val + '').slice(0, 100))}${imp}`);
       }
@@ -5180,9 +8226,9 @@ bot.on('callback_query', async (ctx) => {
 
       // Prompt additions
       const addRaw = await stateRepo.get(agentId, '_prompt_additions').catch(() => null);
-      if (addRaw?.value) {
+      if (addRaw !== null && addRaw !== undefined) {
         try {
-          const adds: string[] = JSON.parse(addRaw.value);
+          const adds: string[] = Array.isArray(addRaw) ? addRaw : (typeof addRaw === 'string' ? JSON.parse(addRaw) : []);
           if (adds.length > 0) {
             text += `\n🔧 <b>Доп. инструкции (${adds.length}):</b>\n`;
             for (const a of adds.slice(-5)) text += `  → ${escHtml(a.slice(0, 100))}\n`;
@@ -5260,7 +8306,7 @@ bot.on('callback_query', async (ctx) => {
     try {
       const agentResult = await getDBTools().getAgent(agentId, userId);
       if (!agentResult.success || !agentResult.data) {
-        await ctx.reply(`❌ Агент #${agentId} не найден`);
+        await ctx.reply(`${ce('cross','❌')} Агент #${agentId} не найден`);
         return;
       }
       const pauseResult = await getRunnerAgent().pauseAgent(agentId, userId);
@@ -5292,7 +8338,7 @@ bot.on('callback_query', async (ctx) => {
     const listingId = parseInt(data.split(':')[1]);
     try {
       const listing = await getMarketplaceRepository().getListing(listingId);
-      if (!listing) { await ctx.reply('❌ Листинг не найден'); return; }
+      if (!listing) { await ctx.reply(`${ce('cross','❌')} Листинг не найден`); return; }
       const priceTon = listing.price / 1e9;
 
       await ctx.reply('🔍 Проверяю транзакцию...');
@@ -5301,7 +8347,7 @@ bot.on('callback_query', async (ctx) => {
       if (verify.found && verify.txHash) {
         // Payment confirmed — create agent copy for buyer
         const agentResult = await getDBTools().getAgent(listing.agentId, listing.sellerId);
-        if (!agentResult.success || !agentResult.data) { await ctx.reply('❌ Агент продавца не найден'); return; }
+        if (!agentResult.success || !agentResult.data) { await ctx.reply(`${ce('cross','❌')} Агент продавца не найден`); return; }
         const src = agentResult.data;
         const newAgent = await getDBTools().createAgent({
           userId,
@@ -5332,7 +8378,7 @@ bot.on('callback_query', async (ctx) => {
             }
           );
         } else {
-          await ctx.reply(`❌ Ошибка создания агента: ${escHtml(newAgent.error || '')}`);
+          await ctx.reply(`${ce('cross','❌')} Ошибка создания агента: ${escHtml(newAgent.error || '')}`);
         }
       } else {
         await safeReply(ctx,
@@ -5361,10 +8407,10 @@ bot.on('callback_query', async (ctx) => {
     await ctx.answerCbQuery('🔧 Анализирую ошибку...');
     const agentId = parseInt(data.split(':')[1]);
     const lastErr = agentLastErrors.get(agentId);
-    if (!lastErr) { await ctx.reply('✅ Последних ошибок нет — агент работает нормально.'); return; }
+    if (!lastErr) { await ctx.reply(`${ce('check','✅')} Последних ошибок нет — агент работает нормально.`); return; }
 
     const agentResult = await getDBTools().getAgent(agentId, userId);
-    if (!agentResult.success || !agentResult.data) { await ctx.reply('❌ Агент не найден'); return; }
+    if (!agentResult.success || !agentResult.data) { await ctx.reply(`${ce('cross','❌')} Агент не найден`); return; }
 
     const statusMsg = await ctx.reply(
       `${pe('wrench')} <b>AI Автопочинка</b>\n\n🔍 Анализирую ошибку...\n<code>▓▓░░░</code> 40%`,
@@ -5425,11 +8471,11 @@ bot.on('callback_query', async (ctx) => {
     await ctx.answerCbQuery('Применяю...');
     const agentId = parseInt(data.split(':')[1]);
     const fixedCode = pendingRepairs.get(`${userId}:${agentId}`);
-    if (!fixedCode) { await ctx.reply('❌ Фикс устарел, запустите автопочинку снова.'); return; }
+    if (!fixedCode) { await ctx.reply(`${ce('cross','❌')} Фикс устарел, запустите автопочинку снова.`); return; }
 
     await savePromptVersion(agentId, userId);
     const updateResult = await getDBTools().updateAgentCode(agentId, userId, fixedCode);
-    if (!updateResult.success) { await ctx.reply(`❌ Не удалось обновить код: ${updateResult.error}`); return; }
+    if (!updateResult.success) { await ctx.reply(`${ce('cross','❌')} Не удалось обновить код: ${updateResult.error}`); return; }
 
     pendingRepairs.delete(`${userId}:${agentId}`);
     agentLastErrors.delete(agentId); // Сбрасываем ошибку
@@ -5453,7 +8499,7 @@ bot.on('callback_query', async (ctx) => {
     const agentId = parseInt(data.split(':')[1]);
     const codeResult = await getDBTools().getAgentCode(agentId, userId);
     if (!codeResult.success || !codeResult.data) {
-      await ctx.reply('❌ Код не найден');
+      await ctx.reply(`${ce('cross','❌')} Код не найден`);
       return;
     }
     const code = codeResult.data;
@@ -5472,7 +8518,7 @@ bot.on('callback_query', async (ctx) => {
     const agentId = parseInt(data.split(':')[1]);
     const codeResult = await getDBTools().getAgentCode(agentId, userId);
     if (!codeResult.success || !codeResult.data) {
-      await ctx.reply('❌ Код агента не найден'); return;
+      await ctx.reply(`${ce('cross','❌')} Код агента не найден`); return;
     }
     const code = codeResult.data;
 
@@ -5661,7 +8707,7 @@ bot.on('callback_query', async (ctx) => {
 
       await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } });
     } catch (e) {
-      await ctx.reply('❌ ' + String(e));
+      await ctx.reply(`${ce('cross','❌')} ` + String(e));
     }
     return;
   }
@@ -5686,11 +8732,11 @@ bot.on('callback_query', async (ctx) => {
         tc.config.WALLET_MNEMONIC = wallet.mnemonic;
         await dbPool.query('UPDATE builder_bot.agents SET trigger_config=$1 WHERE id=$2', [JSON.stringify(tc), agentId]);
       }
-      await safeReply(ctx, `✅ ${ru ? 'Кошелёк создан!' : 'Wallet created!'}\n\n<code>${escHtml(wallet.address)}</code>`, { parse_mode: 'HTML' });
+      await safeReply(ctx, `${ce('check','✅')} ${ru ? 'Кошелёк создан!' : 'Wallet created!'}\n\n<code>${escHtml(wallet.address)}</code>`, { parse_mode: 'HTML' });
       // Show wallet details
       await showAgentMenu(ctx, agentId, userId);
     } catch (e) {
-      await ctx.reply('❌ ' + String(e));
+      await ctx.reply(`${ce('cross','❌')} ` + String(e));
     }
     return;
   }
@@ -5714,13 +8760,13 @@ bot.on('callback_query', async (ctx) => {
           tc.config.WALLET_ADDRESS = result.wallet.address;
           await dbPool.query('UPDATE builder_bot.agents SET trigger_config=$1 WHERE id=$2', [JSON.stringify(tc), agentId]);
         }
-        await safeReply(ctx, `✅ ${ru ? 'Agentic Wallet привязан!' : 'Agentic Wallet linked!'}\n\n<code>${escHtml(result.wallet.address)}</code>\n📊 ${ru ? 'Лимит' : 'Limit'}: ${result.wallet.spendLimitTon} TON/${ru ? 'день' : 'day'}`, { parse_mode: 'HTML' });
+        await safeReply(ctx, `${ce('check','✅')} ${ru ? 'Agentic Wallet привязан!' : 'Agentic Wallet linked!'}\n\n<code>${escHtml(result.wallet.address)}</code>\n📊 ${ru ? 'Лимит' : 'Limit'}: ${result.wallet.spendLimitTon} TON/${ru ? 'день' : 'day'}`, { parse_mode: 'HTML' });
         await showAgentMenu(ctx, agentId, userId);
       } else {
-        await ctx.reply('❌ ' + (result.error || 'Deploy failed'));
+        await ctx.reply(`${ce('cross','❌')} ` + (result.error || 'Deploy failed'));
       }
     } catch (e) {
-      await ctx.reply('❌ ' + String(e));
+      await ctx.reply(`${ce('cross','❌')} ` + String(e));
     }
     return;
   }
@@ -5735,7 +8781,7 @@ bot.on('callback_query', async (ctx) => {
       // Create root wallet first
       const rootResult = await getAgenticWalletService().setupRootWallet(userId);
       if (!rootResult.success) {
-        await ctx.reply(`❌ ${ru ? 'Ошибка создания Root Wallet' : 'Root Wallet creation failed'}: ${rootResult.error || 'unknown'}`);
+        await ctx.reply(`${ce('cross','❌')} ${ru ? 'Ошибка создания Root Wallet' : 'Root Wallet creation failed'}: ${rootResult.error || 'unknown'}`);
         return;
       }
       // Then deploy sub-wallet for agent
@@ -5759,10 +8805,10 @@ bot.on('callback_query', async (ctx) => {
           { parse_mode: 'HTML' });
         await showAgentMenu(ctx, agentId, userId);
       } else {
-        await ctx.reply('❌ Sub-wallet: ' + (subResult.error || 'Deploy failed'));
+        await ctx.reply(`${ce('cross','❌')} Sub-wallet: ` + (subResult.error || 'Deploy failed'));
       }
     } catch (e) {
-      await ctx.reply('❌ ' + String(e));
+      await ctx.reply(`${ce('cross','❌')} ` + String(e));
     }
     return;
   }
@@ -5777,14 +8823,14 @@ bot.on('callback_query', async (ctx) => {
     try {
       const { getAgenticWalletService } = await import('./services/agentic-wallet');
       const wallet = await getAgenticWalletService().getWalletById(walletId);
-      if (!wallet) { await ctx.reply('❌ Wallet not found'); return; }
+      if (!wallet) { await ctx.reply(`${ce('cross','❌')} Wallet not found`); return; }
       const newBlocked = !wallet.isBlocked;
       await getAgenticWalletService().setBlocked(walletId, userId, newBlocked);
       await safeReply(ctx, newBlocked
         ? `🔴 ${ru ? 'Кошелёк заблокирован' : 'Wallet blocked'}`
         : `🟢 ${ru ? 'Кошелёк разблокирован' : 'Wallet unblocked'}`);
     } catch (e) {
-      await ctx.reply('❌ ' + String(e));
+      await ctx.reply(`${ce('cross','❌')} ` + String(e));
     }
     return;
   }
@@ -6007,7 +9053,7 @@ bot.on('callback_query', async (ctx) => {
     const agentId = parseInt(data.split(':')[1]);
     try {
       const src = await getDBTools().getAgent(agentId, userId);
-      if (!src.data) { await safeReply(ctx, '❌ Агент не найден'); return; }
+      if (!src.data) { await safeReply(ctx, `${ce('cross','❌')} Агент не найден`); return; }
       const a = src.data;
       const cloneName = `${a.name || 'Agent'} (clone)`.slice(0, 100);
       const result = await getDBTools().createAgent({
@@ -6028,13 +9074,13 @@ bot.on('callback_query', async (ctx) => {
             if (s.key === '_conversation_history') continue; // fresh history
             await getAgentStateRepository().set(newAgentId, userId, s.key, s.value);
           }
-        } catch {}
-        await safeReply(ctx, `✅ Агент клонирован!\n\n📋 ${escHtml(cloneName)} #${newAgentId}\n\nВсе настройки, память и уроки скопированы.\nКошелёк создастся новый при первом запуске.`);
+        } catch (e: any) { console.warn('[Clone] state copy error:', e.message); }
+        await safeReply(ctx, `${ce('check','✅')} Агент клонирован!\n\n📋 ${escHtml(cloneName)} #${newAgentId}\n\nВсе настройки, память и уроки скопированы.\nКошелёк создастся новый при первом запуске.`);
       } else {
-        await safeReply(ctx, '❌ Ошибка клонирования');
+        await safeReply(ctx, `${ce('cross','❌')} Ошибка клонирования`);
       }
     } catch (e: any) {
-      await safeReply(ctx, `❌ Ошибка: ${e.message}`);
+      await safeReply(ctx, `${ce('cross','❌')} Ошибка: ${e.message}`);
     }
     return;
   }
@@ -6047,7 +9093,7 @@ bot.on('callback_query', async (ctx) => {
       const stateRepo = getAgentStateRepository();
       const versionsRaw = await stateRepo.get(agentId, '_code_versions').catch(() => null);
       let versions: Array<{ code: string; savedAt: string }> = [];
-      try { versions = JSON.parse(versionsRaw?.value || '[]'); } catch { versions = []; }
+      try { const vv = versionsRaw !== null ? (typeof versionsRaw === 'string' ? JSON.parse(versionsRaw) : versionsRaw) : []; if (Array.isArray(vv)) versions = vv; } catch { versions = []; }
       if (!versions.length) {
         await editOrReply(ctx,
           `📜 <b>История промптов</b> #${agentId}\n\nИстория пуста. Версии сохраняются при каждом изменении кода/промпта.`,
@@ -6072,7 +9118,7 @@ bot.on('callback_query', async (ctx) => {
         { parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } }
       );
     } catch (e: any) {
-      await safeReply(ctx, `❌ Ошибка: ${e.message}`);
+      await safeReply(ctx, `${ce('cross','❌')} Ошибка: ${e.message}`);
     }
     return;
   }
@@ -6086,7 +9132,7 @@ bot.on('callback_query', async (ctx) => {
       const stateRepo = getAgentStateRepository();
       const versionsRaw = await stateRepo.get(agentId, '_code_versions').catch(() => null);
       let versions: Array<{ code: string; savedAt: string }> = [];
-      try { versions = JSON.parse(versionsRaw?.value || '[]'); } catch { versions = []; }
+      try { const vv = versionsRaw !== null ? (typeof versionsRaw === 'string' ? JSON.parse(versionsRaw) : versionsRaw) : []; if (Array.isArray(vv)) versions = vv; } catch { versions = []; }
       if (versionIdx < 0 || versionIdx >= versions.length) {
         await ctx.answerCbQuery('Версия не найдена');
         return;
@@ -6096,7 +9142,7 @@ bot.on('callback_query', async (ctx) => {
       await savePromptVersion(agentId, userId);
       const updateResult = await getDBTools().updateAgentCode(agentId, userId, version.code);
       if (updateResult.success) {
-        await ctx.answerCbQuery('✅ Восстановлено!');
+        await ctx.answerCbQuery(`${ce('check','✅')} Восстановлено!`);
         const d = new Date(version.savedAt);
         await safeReply(ctx,
           `✅ Промпт восстановлен из версии от ${d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}\n\nЗапустите агента чтобы проверить.`,
@@ -6106,12 +9152,12 @@ bot.on('callback_query', async (ctx) => {
           ]] } }
         );
       } else {
-        await ctx.answerCbQuery('❌ Ошибка');
-        await safeReply(ctx, `❌ Не удалось восстановить: ${updateResult.error}`);
+        await ctx.answerCbQuery(`${ce('cross','❌')} Ошибка`);
+        await safeReply(ctx, `${ce('cross','❌')} Не удалось восстановить: ${updateResult.error}`);
       }
     } catch (e: any) {
-      await ctx.answerCbQuery('❌ Ошибка');
-      await safeReply(ctx, `❌ Ошибка: ${e.message}`);
+      await ctx.answerCbQuery(`${ce('cross','❌')} Ошибка`);
+      await safeReply(ctx, `${ce('cross','❌')} Ошибка: ${e.message}`);
     }
     return;
   }
@@ -6149,7 +9195,7 @@ bot.on('callback_query', async (ctx) => {
     // Останавливаем агента если он запущен
     await getRunnerAgent().pauseAgent(agentId, userId).catch(e => console.warn('[Bot] pauseAgent on delete:', e?.message || e));
     const result = await getDBTools().deleteAgent(agentId, userId);
-    await ctx.reply(result.success ? `🗑 Агент #${agentId} удалён` : `❌ Ошибка: ${result.error}`);
+    await ctx.reply(result.success ? `🗑 Агент #${agentId} удалён` : `${ce('cross','❌')} Ошибка: ${result.error}`);
     if (result.success) {
       // Clean up bot-level Maps that reference deleted agentId
       pendingRepairs.delete(`${userId}:${agentId}`);
@@ -6165,7 +9211,7 @@ bot.on('callback_query', async (ctx) => {
   // ── Настройки платформы ──
   if (data === 'platform_settings') {
     await ctx.answerCbQuery();
-    const isOwner = userId === parseInt(process.env.OWNER_ID || '0');
+    const isOwner = isPlatformAdmin(userId);
     if (!isOwner) { await ctx.reply('⛔ Только для владельца'); return; }
     await ctx.reply(
       `⚙️ <b>Настройки платформы</b>\n\n` +
@@ -6184,10 +9230,10 @@ bot.on('callback_query', async (ctx) => {
     const found = MODEL_LIST.find(m => m.id === modelId);
     if (found) {
       setUserModel(userId, modelId);
-      await ctx.answerCbQuery(`✅ Модель: ${found.label}`);
+      await ctx.answerCbQuery(`${ce('check','✅')} Модель: ${found.label}`);
       await showModelSelector(ctx);
     } else {
-      await ctx.answerCbQuery('❌ Неизвестная модель');
+      await ctx.answerCbQuery(`${ce('cross','❌')} Неизвестная модель`);
     }
     return;
   }
@@ -6231,12 +9277,12 @@ bot.on('callback_query', async (ctx) => {
       const planId = parts[2];
       const period = parts[3] as 'month' | 'year';
       const plan = PLANS[planId];
-      if (!plan) { await ctx.reply('❌ План не найден'); return; }
+      if (!plan) { await ctx.reply(`${ce('cross','❌')} План не найден`); return; }
       const amount = period === 'year' ? plan.priceYearTon : plan.priceMonthTon;
       const deducted = await atomicBalanceDeduct(userId, amount, { type: 'spend', description: `Подписка ${plan.name} (${period})` });
       if (!deducted) {
         const profile = await getUserProfile(userId);
-        await ctx.reply(`❌ Недостаточно средств. Баланс: ${(profile.balance_ton || 0).toFixed(2)} TON, нужно: ${amount} TON`);
+        await ctx.reply(`${ce('cross','❌')} Недостаточно средств. Баланс: ${(profile.balance_ton || 0).toFixed(2)} TON, нужно: ${amount} TON`);
         return;
       }
       // Activate plan
@@ -6245,7 +9291,7 @@ bot.on('callback_query', async (ctx) => {
         const confirmed = await confirmPayment(userId, `balance:${Date.now()}`);
         if (confirmed.success && confirmed.plan) {
           const expStr = confirmed.expiresAt ? confirmed.expiresAt.toLocaleDateString('ru-RU') : '∞';
-          await ctx.reply(`🎉 Оплачено с баланса! ${confirmed.plan.icon} ${confirmed.plan.name} активирован до ${expStr}`);
+          await ctx.reply(`${ce('party','🎉')} Оплачено с баланса! ${confirmed.plan.icon} ${confirmed.plan.name} активирован до ${expStr}`);
           await showSubscription(ctx);
         }
       }
@@ -6261,11 +9307,11 @@ bot.on('callback_query', async (ctx) => {
       const deducted = await atomicBalanceDeduct(userId, priceGen, { type: 'spend', description: 'Генерация AI агента' });
       if (!deducted) {
         const profile = await getUserProfile(userId);
-        await ctx.reply(`❌ Недостаточно средств. Баланс: ${(profile.balance_ton || 0).toFixed(2)} TON, нужно: ${priceGen} TON`);
+        await ctx.reply(`${ce('cross','❌')} Недостаточно средств. Баланс: ${(profile.balance_ton || 0).toFixed(2)} TON, нужно: ${priceGen} TON`);
         return;
       }
       trackGeneration(userId);
-      await ctx.reply('✅ Оплачено с баланса! Генерирую агента...');
+      await ctx.reply(`${ce('check','✅')} Оплачено с баланса! Генерирую агента...`);
       await ctx.sendChatAction('typing');
       const agentResult = await getOrchestrator().processMessage(userId, description);
       await sendResult(ctx, agentResult);
@@ -6276,19 +9322,19 @@ bot.on('callback_query', async (ctx) => {
       // Marketplace purchase from balance — atomic check+deduct
       const listingId = parseInt(parts[2]);
       const listing = await getMarketplaceRepository().getListing(listingId);
-      if (!listing) { await ctx.reply('❌ Листинг не найден'); return; }
+      if (!listing) { await ctx.reply(`${ce('cross','❌')} Листинг не найден`); return; }
       const priceTon = listing.isFree ? 0 : listing.price / 1e9;
       if (priceTon > 0) {
         const deducted = await atomicBalanceDeduct(userId, priceTon, { type: 'spend', description: `Покупка агента: ${listing.name}` });
         if (!deducted) {
           const profile = await getUserProfile(userId);
-          await ctx.reply(`❌ Недостаточно средств. Баланс: ${(profile.balance_ton || 0).toFixed(2)} TON, нужно: ${priceTon.toFixed(2)} TON`);
+          await ctx.reply(`${ce('cross','❌')} Недостаточно средств. Баланс: ${(profile.balance_ton || 0).toFixed(2)} TON, нужно: ${priceTon.toFixed(2)} TON`);
           return;
         }
       }
       // Create agent copy for buyer (same logic as free purchase)
       const agentResult = await getDBTools().getAgent(listing.agentId, listing.sellerId);
-      if (!agentResult.success || !agentResult.data) { await ctx.reply('❌ Агент не найден'); return; }
+      if (!agentResult.success || !agentResult.data) { await ctx.reply(`${ce('cross','❌')} Агент не найден`); return; }
       const src = agentResult.data;
       const newAgent = await getDBTools().createAgent({
         userId, name: src.name, description: src.description || '',
@@ -6297,7 +9343,7 @@ bot.on('callback_query', async (ctx) => {
       });
       if (newAgent.success) {
         await getMarketplaceRepository().createPurchase({ listingId, buyerId: userId, sellerId: listing.sellerId, agentId: listing.agentId, type: listing.isFree ? "free" : "buy", pricePaid: priceTon * 1e9, txHash: `balance:${Date.now()}` });
-        await ctx.reply(`✅ Агент "${escHtml(listing.name)}" куплен с баланса и добавлен в ваш список!`, { parse_mode: 'HTML' });
+        await ctx.reply(`${ce('check','✅')} Агент "${escHtml(listing.name)}" куплен с баланса и добавлен в ваш список!`, { parse_mode: 'HTML' });
       }
       return;
     }
@@ -6313,12 +9359,12 @@ bot.on('callback_query', async (ctx) => {
     if (!pending) {
       // Создаём новый платёж
       const payment = createPayment(userId, planId, period as 'month' | 'year');
-      if ('error' in payment) { await ctx.reply(`❌ ${payment.error}`); return; }
+      if ('error' in payment) { await ctx.reply(`${ce('cross','❌')} ${payment.error}`); return; }
     }
     const p = getPendingPayment(userId)!;
     const tonConn = getTonConnectManager();
     if (!tonConn.isConnected(userId)) {
-      await ctx.reply('❌ Сначала подключите TON кошелёк через 💎 TON Connect');
+      await ctx.reply(`${ce('cross','❌')} Сначала подключите TON кошелёк через ${ce('diamond','💎')} TON Connect`);
       return;
     }
     await ctx.reply('📤 Запрашиваю подтверждение в Tonkeeper...');
@@ -6329,11 +9375,11 @@ bot.on('callback_query', async (ctx) => {
       const confirmed = await confirmPayment(userId, result.boc);
       if (confirmed.success && confirmed.plan) {
         const expStr = confirmed.expiresAt ? confirmed.expiresAt.toLocaleDateString('ru-RU') : '∞';
-        await ctx.reply(`🎉 Оплата прошла! ${confirmed.plan.icon} ${confirmed.plan.name} активирован до ${expStr}`);
+        await ctx.reply(`${ce('party','🎉')} Оплата прошла! ${confirmed.plan.icon} ${confirmed.plan.name} активирован до ${expStr}`);
         await showSubscription(ctx);
       }
     } else {
-      await ctx.reply(`❌ Ошибка транзакции: ${result.error || 'пользователь отменил'}\n\nМожете оплатить вручную.`);
+      await ctx.reply(`${ce('cross','❌')} Ошибка транзакции: ${result.error || 'пользователь отменил'}\n\nМожете оплатить вручную.`);
     }
     return;
   }
@@ -6357,7 +9403,7 @@ bot.on('callback_query', async (ctx) => {
 
     const bal = await tonConn.getBalance(userId);
     if (parseFloat(bal.ton) < priceGen + 0.05) {
-      await ctx.reply(`❌ Недостаточно TON.\nБаланс: ${bal.ton} TON\nНужно: ${priceGen + 0.05} TON`);
+      await ctx.reply(`${ce('cross','❌')} Недостаточно TON.\nБаланс: ${bal.ton} TON\nНужно: ${priceGen + 0.05} TON`);
       return;
     }
 
@@ -6368,12 +9414,12 @@ bot.on('callback_query', async (ctx) => {
 
     if (result.success) {
       trackGeneration(userId);
-      await ctx.reply(`✅ Оплачено! Генерирую агента...`);
+      await ctx.reply(`${ce('check','✅')} Оплачено! Генерирую агента...`);
       await ctx.sendChatAction('typing');
       const agentResult = await getOrchestrator().processMessage(userId, description);
       await sendResult(ctx, agentResult);
     } else {
-      await ctx.reply(`❌ Оплата не прошла: ${result.error || 'отменено'}`);
+      await ctx.reply(`${ce('cross','❌')} Оплата не прошла: ${result.error || 'отменено'}`);
     }
     return;
   }
@@ -6385,7 +9431,7 @@ bot.on('callback_query', async (ctx) => {
     try {
       const lang = getUserLang(userId);
       const agentData = await getDBTools().getAgent(agentId, userId);
-      if (!agentData.success || !agentData.data) { await ctx.reply('❌'); return; }
+      if (!agentData.success || !agentData.data) { await ctx.reply(`${ce('cross','❌')}`); return; }
       const a = agentData.data;
       const cfg = (typeof a.triggerConfig === 'object' ? a.triggerConfig : {}) as Record<string, any>;
       const nestedCfg = (cfg.config || {}) as Record<string, any>;
@@ -6405,7 +9451,7 @@ bot.on('callback_query', async (ctx) => {
 
       let text = `⚙️ <b>${lang === 'ru' ? 'Настройки AI' : 'AI Settings'}</b>\n${div()}\n\n`;
       text += `🤖 <b>${lang === 'ru' ? 'Провайдер:' : 'Provider:'}</b> ${escHtml(provider)}\n`;
-      text += `🔑 <b>${lang === 'ru' ? 'API ключ:' : 'API Key:'}</b> <code>${escHtml(maskedKey)}</code>`;
+      text += `${ce('key','🔑')} <b>${lang === 'ru' ? 'API ключ:' : 'API Key:'}</b> <code>${escHtml(maskedKey)}</code>`;
       if (keySource) text += ` <i>(${keySource})</i>`;
       text += '\n';
       if (model) text += `🧠 <b>${lang === 'ru' ? 'Модель:' : 'Model:'}</b> ${escHtml(model)}\n`;
@@ -6434,7 +9480,7 @@ bot.on('callback_query', async (ctx) => {
         ? (lang === 'ru' ? '🧠 Самоулучшение: ВКЛ' : '🧠 Self-improve: ON')
         : (lang === 'ru' ? '🧠 Самоулучшение: ВЫКЛ' : '🧠 Self-improve: OFF');
       kb.push([{ text: siLabel, callback_data: `toggle_self_improve:${agentId}` }]);
-      text += `\n🧠 <b>${lang === 'ru' ? 'Самоулучшение:' : 'Self-improvement:'}</b> ${selfImproveOn ? '✅' : '❌'}\n`;
+      text += `\n🧠 <b>${lang === 'ru' ? 'Самоулучшение:' : 'Self-improvement:'}</b> ${selfImproveOn ? ce('check','✅') : ce('cross','❌')}\n`;
       text += `<i>${lang === 'ru' ? 'AI анализирует ошибки и автоматически исправляет агента' : 'AI analyzes errors and auto-fixes agent'}</i>\n`;
       if (selfImproveOn && !apiKey) {
         text += `⚠️ <i>${lang === 'ru' ? 'API ключ не настроен! Добавьте в Профиль → API ключи' : 'No API key! Add in Profile → API keys'}</i>\n`;
@@ -6443,7 +9489,7 @@ bot.on('callback_query', async (ctx) => {
 
       await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: kb } });
     } catch (e: any) {
-      await ctx.reply('❌ ' + (e.message || String(e)));
+      await ctx.reply(`${ce('cross','❌')} ` + (e.message || String(e)));
     }
     return;
   }
@@ -6454,7 +9500,7 @@ bot.on('callback_query', async (ctx) => {
     await ctx.answerCbQuery();
     try {
       const agentData = await getDBTools().getAgent(agentId, userId);
-      if (!agentData.success || !agentData.data) { await ctx.reply('❌'); return; }
+      if (!agentData.success || !agentData.data) { await ctx.reply(`${ce('cross','❌')}`); return; }
       const tc = (typeof agentData.data.triggerConfig === 'object' ? agentData.data.triggerConfig : {}) as Record<string, any>;
       if (!tc.config) tc.config = {};
       const current = tc.config.self_improvement_enabled !== false;
@@ -6471,7 +9517,7 @@ bot.on('callback_query', async (ctx) => {
           : (lang === 'ru' ? '🧠 Самоулучшение выключено.' : '🧠 Self-improvement disabled.')
       );
     } catch (e: any) {
-      await ctx.reply('❌ ' + (e.message || ''));
+      await ctx.reply(`${ce('cross','❌')} ` + (e.message || ''));
     }
     return;
   }
@@ -6484,17 +9530,17 @@ bot.on('callback_query', async (ctx) => {
     await ctx.answerCbQuery();
     try {
       const agentData = await getDBTools().getAgent(agentId, userId);
-      if (!agentData.success || !agentData.data) { await ctx.reply('❌'); return; }
+      if (!agentData.success || !agentData.data) { await ctx.reply(`${ce('cross','❌')}`); return; }
       const cfg = (typeof agentData.data.triggerConfig === 'object' ? agentData.data.triggerConfig : {}) as Record<string, any>;
       const nestedCfg = cfg.config || {};
       const newConfig = { ...cfg, config: { ...nestedCfg, AI_PROVIDER: provider } };
       await dbPool.query('UPDATE builder_bot.agents SET trigger_config=$1 WHERE id=$2 AND user_id=$3', [JSON.stringify(newConfig), agentId, userId]);
       const lang = getUserLang(userId);
-      await safeReply(ctx, `✅ ${lang === 'ru' ? 'Провайдер изменён на' : 'Provider changed to'} <b>${escHtml(provider)}</b>`, { parse_mode: 'HTML' });
+      await safeReply(ctx, `${ce('check','✅')} ${lang === 'ru' ? 'Провайдер изменён на' : 'Provider changed to'} <b>${escHtml(provider)}</b>`, { parse_mode: 'HTML' });
       // Перерисовать настройки
       await showAgentMenu(ctx, agentId, userId);
     } catch (e: any) {
-      await ctx.reply('❌ ' + (e.message || String(e)));
+      await ctx.reply(`${ce('cross','❌')} ` + (e.message || String(e)));
     }
     return;
   }
@@ -6505,17 +9551,17 @@ bot.on('callback_query', async (ctx) => {
     await ctx.answerCbQuery();
     try {
       const agentData = await getDBTools().getAgent(agentId, userId);
-      if (!agentData.success || !agentData.data) { await ctx.reply('❌'); return; }
+      if (!agentData.success || !agentData.data) { await ctx.reply(`${ce('cross','❌')}`); return; }
       const cfg = (typeof agentData.data.triggerConfig === 'object' ? agentData.data.triggerConfig : {}) as Record<string, any>;
       const nestedCfg = { ...(cfg.config || {}) };
       delete nestedCfg.AI_API_KEY;
       const newConfig = { ...cfg, config: nestedCfg };
       await dbPool.query('UPDATE builder_bot.agents SET trigger_config=$1 WHERE id=$2 AND user_id=$3', [JSON.stringify(newConfig), agentId, userId]);
       const lang = getUserLang(userId);
-      await safeReply(ctx, `✅ ${lang === 'ru' ? 'Ключ агента удалён. Теперь используется глобальный ключ.' : 'Agent key removed. Using global key now.'}`, { parse_mode: 'HTML' });
+      await safeReply(ctx, `${ce('check','✅')} ${lang === 'ru' ? 'Ключ агента удалён. Теперь используется глобальный ключ.' : 'Agent key removed. Using global key now.'}`, { parse_mode: 'HTML' });
       await showAgentMenu(ctx, agentId, userId);
     } catch (e: any) {
-      await ctx.reply('❌ ' + (e.message || String(e)));
+      await ctx.reply(`${ce('cross','❌')} ` + (e.message || String(e)));
     }
     return;
   }
@@ -6528,7 +9574,7 @@ bot.on('callback_query', async (ctx) => {
     await ctx.answerCbQuery();
     try {
       const agentData = await getDBTools().getAgent(agentId, userId);
-      if (!agentData.success || !agentData.data) { await ctx.reply('❌'); return; }
+      if (!agentData.success || !agentData.data) { await ctx.reply(`${ce('cross','❌')}`); return; }
       const tc = (typeof agentData.data.triggerConfig === 'object' ? agentData.data.triggerConfig : {}) as Record<string, any>;
       if (!tc.config) tc.config = {};
       const caps: string[] = tc.config.enabledCapabilities || [];
@@ -6538,14 +9584,14 @@ bot.on('callback_query', async (ctx) => {
       await dbPool.query('UPDATE builder_bot.agents SET trigger_config=$1 WHERE id=$2 AND user_id=$3', [JSON.stringify(tc), agentId, userId]);
       await showCapabilitiesMenu(ctx, agentId, caps);
     } catch (e: any) {
-      await ctx.reply('❌ ' + (e.message || String(e)));
+      await ctx.reply(`${ce('cross','❌')} ` + (e.message || String(e)));
     }
     return;
   }
 
   if (data.startsWith('agent_cap_done:')) {
     const agentId = parseInt(data.split(':')[1], 10);
-    await ctx.answerCbQuery('✅ Сохранено');
+    await ctx.answerCbQuery(`${ce('check','✅')} Сохранено`);
     await showAgentMenu(ctx, agentId, userId);
     return;
   }
@@ -6555,14 +9601,14 @@ bot.on('callback_query', async (ctx) => {
     await ctx.answerCbQuery();
     try {
       const agentData = await getDBTools().getAgent(agentId, userId);
-      if (!agentData.success || !agentData.data) { await ctx.reply('❌'); return; }
+      if (!agentData.success || !agentData.data) { await ctx.reply(`${ce('cross','❌')}`); return; }
       const tc = (typeof agentData.data.triggerConfig === 'object' ? agentData.data.triggerConfig : {}) as Record<string, any>;
       if (!tc.config) tc.config = {};
       tc.config.enabledCapabilities = [];
       await dbPool.query('UPDATE builder_bot.agents SET trigger_config=$1 WHERE id=$2 AND user_id=$3', [JSON.stringify(tc), agentId, userId]);
       await showCapabilitiesMenu(ctx, agentId, []);
     } catch (e: any) {
-      await ctx.reply('❌ ' + (e.message || String(e)));
+      await ctx.reply(`${ce('cross','❌')} ` + (e.message || String(e)));
     }
     return;
   }
@@ -6572,13 +9618,178 @@ bot.on('callback_query', async (ctx) => {
     await ctx.answerCbQuery();
     try {
       const agentData = await getDBTools().getAgent(agentId, userId);
-      if (!agentData.success || !agentData.data) { await ctx.reply('❌'); return; }
+      if (!agentData.success || !agentData.data) { await ctx.reply(`${ce('cross','❌')}`); return; }
       const tc = (typeof agentData.data.triggerConfig === 'object' ? agentData.data.triggerConfig : {}) as Record<string, any>;
       const caps: string[] = tc.config?.enabledCapabilities || [];
       await showCapabilitiesMenu(ctx, agentId, caps);
     } catch (e: any) {
-      await ctx.reply('❌ ' + (e.message || String(e)));
+      await ctx.reply(`${ce('cross','❌')} ` + (e.message || String(e)));
     }
+    return;
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // HOOKS: Blocklist, Triggers, Session Policy
+  // ══════════════════════════════════════════════════════════════════════════
+
+  if (data.startsWith('hooks_blocklist:')) {
+    const agentId = parseInt(data.split(':')[1], 10);
+    await ctx.answerCbQuery();
+    try {
+      const { loadBlocklist } = require('./services/agent-hooks');
+      const stateRepo = getAgentStateRepository();
+      const bl = await loadBlocklist(stateRepo, agentId);
+      const ru = getUserLang(userId) === 'ru';
+      let text = `🚫 <b>${ru ? 'Блоклист' : 'Blocklist'}</b> #${agentId}\n`;
+      text += `${ru ? 'Статус' : 'Status'}: ${bl.enabled ? ce('check','✅') + ' Вкл' : '⬜ Выкл'}\n\n`;
+      if (bl.keywords.length > 0) {
+        text += `${ru ? 'Слова' : 'Keywords'}: <code>${escHtml(bl.keywords.join(', '))}</code>\n`;
+      } else {
+        text += `${ru ? 'Список пуст. Отправьте слова через запятую.' : 'Empty. Send keywords separated by commas.'}\n`;
+      }
+      if (bl.reply) text += `\n${ru ? 'Авто-ответ' : 'Auto-reply'}: <i>${escHtml(bl.reply)}</i>`;
+      const btns: any[][] = [
+        [{ text: bl.enabled ? '⬜ Выключить' : '✅ Включить', callback_data: `bl_toggle:${agentId}` }],
+        [{ text: '➕ Добавить слова', callback_data: `bl_add:${agentId}` }],
+        [{ text: '🗑 Очистить', callback_data: `bl_clear:${agentId}` }],
+        [{ text: '◀️ Назад', callback_data: `agent_menu:${agentId}` }],
+      ];
+      await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: btns } });
+    } catch (e: any) { await ctx.reply('❌ ' + (e.message || '').slice(0, 100)); }
+    return;
+  }
+
+  if (data.startsWith('bl_toggle:')) {
+    const agentId = parseInt(data.split(':')[1], 10);
+    await ctx.answerCbQuery();
+    try {
+      const { loadBlocklist, saveBlocklist } = require('./services/agent-hooks');
+      const stateRepo = getAgentStateRepository();
+      const bl = await loadBlocklist(stateRepo, agentId);
+      bl.enabled = !bl.enabled;
+      await saveBlocklist(stateRepo, agentId, userId, bl);
+      // Re-show menu
+      const cbData = `hooks_blocklist:${agentId}`;
+      (ctx as any).callbackQuery.data = cbData;
+      // Inline re-invoke by falling through to next tick
+      await ctx.reply(bl.enabled ? `${ce('check','✅')} Блоклист включён` : '⬜ Блоклист выключен');
+    } catch (e: any) { await ctx.reply('❌ ' + (e.message || '').slice(0, 100)); }
+    return;
+  }
+
+  if (data.startsWith('bl_add:')) {
+    const agentId = parseInt(data.split(':')[1], 10);
+    await ctx.answerCbQuery();
+    pendingBlocklistAdd.set(userId, agentId);
+    await ctx.reply('✏️ Отправьте слова для блоклиста через запятую:\n<i>Пример: спам, реклама, казино</i>', { parse_mode: 'HTML' });
+    return;
+  }
+
+  if (data.startsWith('bl_clear:')) {
+    const agentId = parseInt(data.split(':')[1], 10);
+    await ctx.answerCbQuery();
+    try {
+      const { loadBlocklist, saveBlocklist } = require('./services/agent-hooks');
+      const stateRepo = getAgentStateRepository();
+      const bl = await loadBlocklist(stateRepo, agentId);
+      bl.keywords = [];
+      await saveBlocklist(stateRepo, agentId, userId, bl);
+      await ctx.reply('🗑 Блоклист очищен');
+    } catch (e: any) { await ctx.reply('❌ ' + (e.message || '').slice(0, 100)); }
+    return;
+  }
+
+  if (data.startsWith('hooks_triggers:')) {
+    const agentId = parseInt(data.split(':')[1], 10);
+    await ctx.answerCbQuery();
+    try {
+      const { loadTriggers } = require('./services/agent-hooks');
+      const stateRepo = getAgentStateRepository();
+      const triggers = await loadTriggers(stateRepo, agentId);
+      const ru = getUserLang(userId) === 'ru';
+      let text = `${ce('target','🎯')} <b>${ru ? 'Контекстные триггеры' : 'Context Triggers'}</b> #${agentId}\n\n`;
+      if (triggers.length === 0) {
+        text += ru
+          ? '<i>Нет триггеров. Триггеры инжектят дополнительный контекст когда в сообщении встречается ключевое слово.</i>'
+          : '<i>No triggers. Triggers inject additional context when a keyword is found in a message.</i>';
+      } else {
+        triggers.forEach((t: any, i: number) => {
+          text += `${t.enabled ? ce('check','✅') : '⬜'} <b>${escHtml(t.keyword)}</b>\n`;
+          text += `   → <i>${escHtml(t.context.slice(0, 80))}</i>\n\n`;
+        });
+      }
+      const btns: any[][] = [
+        [{ text: '➕ Добавить триггер', callback_data: `trig_add:${agentId}` }],
+      ];
+      if (triggers.length > 0) {
+        btns.push([{ text: '🗑 Удалить все', callback_data: `trig_clear:${agentId}` }]);
+      }
+      btns.push([{ text: '◀️ Назад', callback_data: `agent_menu:${agentId}` }]);
+      await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: btns } });
+    } catch (e: any) { await ctx.reply('❌ ' + (e.message || '').slice(0, 100)); }
+    return;
+  }
+
+  if (data.startsWith('trig_add:')) {
+    const agentId = parseInt(data.split(':')[1], 10);
+    await ctx.answerCbQuery();
+    pendingTriggerAdd.set(userId, { agentId, step: 'keyword' });
+    await ctx.reply(`${ce('target','🎯')} Отправьте ключевое слово для триггера:`, { parse_mode: 'HTML' });
+    return;
+  }
+
+  if (data.startsWith('trig_clear:')) {
+    const agentId = parseInt(data.split(':')[1], 10);
+    await ctx.answerCbQuery();
+    try {
+      const { saveTriggers } = require('./services/agent-hooks');
+      const stateRepo = getAgentStateRepository();
+      await saveTriggers(stateRepo, agentId, userId, []);
+      await ctx.reply('🗑 Все триггеры удалены');
+    } catch (e: any) { await ctx.reply('❌ ' + (e.message || '').slice(0, 100)); }
+    return;
+  }
+
+  if (data.startsWith('hooks_session:')) {
+    const agentId = parseInt(data.split(':')[1], 10);
+    await ctx.answerCbQuery();
+    try {
+      const { loadSessionConfig } = require('./services/agent-hooks');
+      const stateRepo = getAgentStateRepository();
+      const cfg = await loadSessionConfig(stateRepo, agentId);
+      const ru = getUserLang(userId) === 'ru';
+      let text = `🔄 <b>${ru ? 'Политика сессии' : 'Session Policy'}</b> #${agentId}\n\n`;
+      const policyLabels: Record<string, string> = { none: '♾ Без сброса', daily: '📅 Ежедневный сброс', idle: `⏰ Сброс через ${cfg.idleMinutes} мин` };
+      text += `${ru ? 'Текущая' : 'Current'}: <b>${policyLabels[cfg.resetPolicy] || cfg.resetPolicy}</b>\n\n`;
+      text += ru
+        ? '<i>Выберите когда очищать историю диалога:</i>'
+        : '<i>Choose when to clear conversation history:</i>';
+      const btns: any[][] = [
+        [{ text: `${cfg.resetPolicy === 'none' ? '✅' : '⬜'} Без сброса`, callback_data: `sess_set:${agentId}:none` }],
+        [{ text: `${cfg.resetPolicy === 'daily' ? '✅' : '⬜'} Ежедневно`, callback_data: `sess_set:${agentId}:daily` }],
+        [{ text: `${cfg.resetPolicy === 'idle' ? '✅' : '⬜'} По бездействию (60мин)`, callback_data: `sess_set:${agentId}:idle` }],
+        [{ text: '◀️ Назад', callback_data: `agent_menu:${agentId}` }],
+      ];
+      await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: btns } });
+    } catch (e: any) { await ctx.reply('❌ ' + (e.message || '').slice(0, 100)); }
+    return;
+  }
+
+  if (data.startsWith('sess_set:')) {
+    const parts = data.split(':');
+    const agentId = parseInt(parts[1], 10);
+    const policy = parts[2] as 'none' | 'daily' | 'idle';
+    await ctx.answerCbQuery();
+    try {
+      const { loadSessionConfig, saveSessionConfig } = require('./services/agent-hooks');
+      const stateRepo = getAgentStateRepository();
+      const cfg = await loadSessionConfig(stateRepo, agentId);
+      cfg.resetPolicy = policy;
+      if (policy === 'idle' && !cfg.idleMinutes) cfg.idleMinutes = 60;
+      await saveSessionConfig(stateRepo, agentId, userId, cfg);
+      const labels: Record<string, string> = { none: '♾ Без сброса', daily: '📅 Ежедневно', idle: '⏰ По бездействию' };
+      await ctx.reply(`${ce('check','✅')} Политика сессии: ${labels[policy]}`);
+    } catch (e: any) { await ctx.reply('❌ ' + (e.message || '').slice(0, 100)); }
     return;
   }
 
@@ -6622,7 +9833,7 @@ bot.on('callback_query', async (ctx) => {
       complete2FAFns.delete(userId);
       if (['qr_waiting', 'qr_password'].includes(pendingTgAuth.get(userId) ?? '')) pendingTgAuth.delete(userId);
       if (result.ok) {
-        bot.telegram.sendMessage(userId, '🎉 <b>Telegram авторизован!</b>', { parse_mode: 'HTML' }).catch(() => {});
+        bot.telegram.sendMessage(userId, `${ce('party','🎉')} <b>Telegram авторизован!</b>`, { parse_mode: 'HTML' }).catch(() => {});
         const setupQR2 = pendingAgentSetup.get(userId);
         if (setupQR2) {
           setupQR2.tgAuthed = true;
@@ -6670,7 +9881,7 @@ bot.on('callback_query', async (ctx) => {
         setTimeout(async () => { try { await showSetupStep(ctx, userId); } catch {} }, 1000);
       }
     } catch (e: any) {
-      await ctx.reply('❌ ' + (e.message || String(e)));
+      await ctx.reply(`${ce('cross','❌')} ` + (e.message || String(e)));
     }
     return;
   }
@@ -6723,7 +9934,7 @@ bot.on('callback_query', async (ctx) => {
     try {
       const stateRepo = getAgentStateRepository();
       const current = await stateRepo.get(agentId, 'inter_agent_enabled');
-      const newVal = (!current || current.value !== 'true') ? 'true' : 'false';
+      const newVal = (String(current) !== 'true') ? 'true' : 'false';
       await stateRepo.set(agentId, userId, 'inter_agent_enabled', newVal);
       const lang = getUserLang(userId);
       const on = newVal === 'true';
@@ -6735,7 +9946,7 @@ bot.on('callback_query', async (ctx) => {
       );
       await showAgentMenu(ctx, agentId, userId);
     } catch (e: any) {
-      await ctx.reply('❌ ' + (e.message || String(e)));
+      await ctx.reply(`${ce('cross','❌')} ` + (e.message || String(e)));
     }
     return;
   }
@@ -6764,7 +9975,7 @@ bot.on('callback_query', async (ctx) => {
       // Авторизован — показываем инфо
       const agentRes = await getDBTools().getAgent(agentId, userId);
       const a = agentRes.data;
-      if (!a) { await ctx.reply('❌ Агент не найден'); return; }
+      if (!a) { await ctx.reply(`${ce('cross','❌')} Агент не найден`); return; }
       const isActive = a.isActive;
       await editOrReply(ctx,
         `🧑‍💻 <b>Telegram Userbot Mode</b>\n\n` +
@@ -6787,17 +9998,17 @@ bot.on('callback_query', async (ctx) => {
         ] } }
       );
     } catch (e: any) {
-      await ctx.reply('❌ ' + (e.message || String(e)));
+      await ctx.reply(`${ce('cross','❌')} ` + (e.message || String(e)));
     }
     return;
   }
 
   // ── AI Mode toggle/trigger callbacks ──
   if (data.startsWith('ai_toggle:') || data.startsWith('ai_run:')) {
-    if (userId !== OWNER_ID_NUM) { await ctx.answerCbQuery('⛔ Только владелец'); return; }
+    if (!isPlatformAdmin(userId)) { await ctx.answerCbQuery('⛔ Только админ'); return; }
     const { getSelfImprovementSystem } = await import('./self-improvement');
     const sis = getSelfImprovementSystem();
-    if (!sis) { await ctx.answerCbQuery('❌ Система не запущена'); return; }
+    if (!sis) { await ctx.answerCbQuery(`${ce('cross','❌')} Система не запущена`); return; }
 
     const mode = data.split(':')[1];
     const labels: Record<string, string> = { improver: '🔍 Улучшатель', ideator: '💡 Придумыватель', implementor: '🔨 Реализатор' };
@@ -6805,14 +10016,14 @@ bot.on('callback_query', async (ctx) => {
 
     if (data.startsWith('ai_toggle:')) {
       const nowEnabled = sis.toggleMode(mode);
-      await ctx.answerCbQuery(`${label}: ${nowEnabled ? '✅ ВКЛ' : '❌ ВЫКЛ'}`);
+      await ctx.answerCbQuery(`${label}: ${nowEnabled ? ce('check','✅') + ' ВКЛ' : ce('cross','❌') + ' ВЫКЛ'}`);
 
       // Update message with new state
       const modes = sis.getModesStatus();
       const ideasCount = sis.getPendingIdeasCount();
       let text = '🤖 <b>AI Режимы</b>\n\n';
-      text += `🔍 Улучшатель (авто 10мин): ${modes[0].enabled ? '✅' : '❌'}\n`;
-      text += `💡 Придумыватель (авто 30мин): ${modes[1].enabled ? '✅' : '❌'}\n`;
+      text += `🔍 Улучшатель (авто 10мин): ${modes[0].enabled ? ce('check','✅') : ce('cross','❌')}\n`;
+      text += `${ce('bulb','💡')} Придумыватель (авто 30мин): ${modes[1].enabled ? ce('check','✅') : ce('cross','❌')}\n`;
       text += `🔨 Реализатор (по кнопке): всегда готов\n`;
       text += `\n📋 Идей в очереди: <b>${ideasCount}</b>`;
 
@@ -6859,9 +10070,9 @@ bot.on('callback_query', async (ctx) => {
         } else if (result === 'already_running') {
           await ctx.reply(`⚠️ Уже запущен, подождите.`).catch(() => {});
         } else if (result === 'claude_unavailable') {
-          await ctx.reply(`❌ Claude Code недоступен.`).catch(() => {});
+          await ctx.reply(`${ce('cross','❌')} AI-движок недоступен.`).catch(() => {});
         } else {
-          await ctx.reply(`❌ ${result}`).catch(() => {});
+          await ctx.reply(`${ce('cross','❌')} ${result}`).catch(() => {});
         }
       }).catch(e => console.warn('[Bot] triggerMode error:', e?.message || e));
     }
@@ -6870,10 +10081,10 @@ bot.on('callback_query', async (ctx) => {
 
   // ── ai_impl — реализовать выбранную идею ──
   if (data.startsWith('ai_impl:')) {
-    if (userId !== OWNER_ID_NUM) { await ctx.answerCbQuery('⛔'); return; }
+    if (!isPlatformAdmin(userId)) { await ctx.answerCbQuery('⛔ Только админ'); return; }
     const { getSelfImprovementSystem } = await import('./self-improvement');
     const sis = getSelfImprovementSystem();
-    if (!sis) { await ctx.answerCbQuery('❌'); return; }
+    if (!sis) { await ctx.answerCbQuery(`${ce('cross','❌')}`); return; }
 
     const index = parseInt(data.split(':')[1]);
     const ideas = sis.getPendingIdeas();
@@ -6890,9 +10101,9 @@ bot.on('callback_query', async (ctx) => {
       } else if (result === 'already_running') {
         await ctx.reply(`⚠️ Уже запущен, подождите.`).catch(() => {});
       } else if (result === 'bad_index') {
-        await ctx.reply(`❌ Идея уже была реализована или удалена.`).catch(() => {});
+        await ctx.reply(`${ce('cross','❌')} Идея уже была реализована или удалена.`).catch(() => {});
       } else {
-        await ctx.reply(`❌ ${result}`).catch(() => {});
+        await ctx.reply(`${ce('cross','❌')} ${result}`).catch(() => {});
       }
     }).catch(e => console.warn('[Bot] implementIdea error:', e?.message || e));
     return;
@@ -6900,7 +10111,7 @@ bot.on('callback_query', async (ctx) => {
 
   // ── ai_my_idea — владелец хочет описать свою идею ──
   if (data === 'ai_my_idea') {
-    if (userId !== OWNER_ID_NUM) { await ctx.answerCbQuery('⛔'); return; }
+    if (!isPlatformAdmin(userId)) { await ctx.answerCbQuery('⛔ Только админ'); return; }
     await ctx.answerCbQuery('✏️');
     pendingUserIdea.set(userId, true);
     await ctx.reply(
@@ -6915,10 +10126,10 @@ bot.on('callback_query', async (ctx) => {
 
   // ── ai_drop — удалить идею из очереди ──
   if (data.startsWith('ai_drop:')) {
-    if (userId !== OWNER_ID_NUM) { await ctx.answerCbQuery('⛔'); return; }
+    if (!isPlatformAdmin(userId)) { await ctx.answerCbQuery('⛔ Только админ'); return; }
     const { getSelfImprovementSystem } = await import('./self-improvement');
     const sis = getSelfImprovementSystem();
-    if (!sis) { await ctx.answerCbQuery('❌'); return; }
+    if (!sis) { await ctx.answerCbQuery(`${ce('cross','❌')}`); return; }
     const index = parseInt(data.split(':')[1]);
     sis.dropIdea(index);
     await ctx.answerCbQuery('🗑 Идея удалена');
@@ -6929,11 +10140,11 @@ bot.on('callback_query', async (ctx) => {
   // ── AI Proposal callbacks (self-improvement) — handle before orchestrator ──
   if (data.startsWith('proposal_approve:') || data.startsWith('proposal_reject:') || data.startsWith('proposal_rollback:') || data.startsWith('proposal_discuss:')) {
     const [action, proposalId] = [data.split(':')[0], data.split(':').slice(1).join(':')];
-    if (userId !== OWNER_ID_NUM) { await ctx.answerCbQuery('⛔ Только владелец'); return; }
+    if (!isPlatformAdmin(userId)) { await ctx.answerCbQuery('⛔ Только админ'); return; }
     try {
       const { getSelfImprovementSystem } = await import('./self-improvement');
       const sis = getSelfImprovementSystem();
-      if (!sis) { await ctx.answerCbQuery('❌ Система не запущена'); return; }
+      if (!sis) { await ctx.answerCbQuery(`${ce('cross','❌')} Система не запущена`); return; }
       if (action === 'proposal_approve') {
         await ctx.answerCbQuery('⏳ Применяю...');
         await sis.approveProposal(proposalId);
@@ -6961,7 +10172,7 @@ bot.on('callback_query', async (ctx) => {
         );
       }
     } catch (e: any) {
-      await ctx.reply('❌ Ошибка: ' + escHtml(e.message || String(e)), { parse_mode: 'HTML' });
+      await ctx.reply(`${ce('cross','❌')} Ошибка: ` + escHtml(e.message || String(e)), { parse_mode: 'HTML' });
     }
     return;
   }
@@ -6974,7 +10185,7 @@ bot.on('callback_query', async (ctx) => {
     await sendResult(ctx, result);
   } catch (err) {
     console.error('Callback orchestrator error:', err);
-    await ctx.reply('❌ Ошибка. Попробуйте ещё раз.');
+    await ctx.reply(`${ce('cross','❌')} Ошибка. Попробуйте ещё раз.`);
   }
 });
 
@@ -6982,7 +10193,7 @@ bot.on('callback_query', async (ctx) => {
 // Текстовые сообщения → оркестратор
 // ============================================================
 const MENU_TEXTS = new Set([
-  '🤖 Мои агенты', '➕ Создать агента', '🏪 Маркетплейс',
+  '🤖 Мои агенты', '➕ Создать агента', '✏️ Создать агента', '🏪 Маркетплейс',
   '🔌 Плагины', '⚡ Workflow', '💎 TON Connect', '💳 Подписка', '📊 Статистика', '❓ Помощь', '👤 Профиль',
   // EN keyboard texts
   '💰 Кошелёк', '🎁 Гифты & NFT',
@@ -6995,8 +10206,80 @@ const MENU_TEXTS = new Set([
 // ════════════════════════════════════════════════════════════
 // ГОЛОСОВЫЕ СООБЩЕНИЯ → транскрипция → создание агента / чат
 // ════════════════════════════════════════════════════════════
+// ── New member joined beta group — auto onboarding ──
+bot.on(message('new_chat_members'), async (ctx) => {
+  if (!BETA_GROUP_ID || ctx.chat?.id !== BETA_GROUP_ID) return;
+  const members = ctx.message.new_chat_members;
+  if (!members?.length) return;
+  for (const member of members) {
+    if (member.is_bot) continue;
+    const name = member.username ? `@${member.username}` : (member.first_name || 'Tester');
+    const ru = true; // group is bilingual, show both
+
+    let t = `${ce('party','🎉')} <b>${escHtml(name)}</b>, ${ru ? 'добро пожаловать' : 'welcome'}!\n\n`;
+    t += `${ce('rocket','🚀')} <b>TON Agent Platform</b> — ${ru ? 'конструктор AI агентов на TON' : 'AI agent builder on TON'}\n\n`;
+    t += `<b>${ru ? 'Как начать' : 'How to start'}:</b>\n`;
+    t += `1. ${ru ? 'Открой бота' : 'Open the bot'} → @TonAgentPlatformBot\n`;
+    t += `2. ${ru ? 'Нажми' : 'Press'} /start\n`;
+    t += `3. ${ru ? 'Открой' : 'Open'} <a href="https://tonagentplatform.com/studio">Studio</a> ${ru ? 'и создай первого агента' : 'and create your first agent'}\n\n`;
+    t += `<b>${ru ? 'Команды для этого чата' : 'Chat commands'}:</b>\n`;
+    t += `/mystats · /checkin · /leaderboard · /tasks · /shop\n\n`;
+    t += `${ce('bug','🐛')} ${ru ? 'Баги' : 'Bugs'} → /feedback ${ru ? 'в ЛС бота' : 'in bot DM'}\n`;
+    t += `${ce('fire','🔥')} ${ru ? 'Зарабатывай XP за тестирование, Points за достижения' : 'Earn XP for testing, Points for achievements'}`;
+
+    // Send to General topic if available, otherwise to group
+    const opts: any = { parse_mode: 'HTML', disable_web_page_preview: true };
+    try { await bot.telegram.sendMessage(BETA_GROUP_ID, t, opts); } catch (e: any) {
+      console.warn('[BetaGroup] Welcome failed:', e.message);
+    }
+
+    // Activate beta if they have a pending invite code
+    try {
+      const { isBetaTester, addBetaTester } = require('./payments');
+      if (!isBetaTester(member.id)) {
+        const pending = _pendingBetaJoins.get(member.id);
+        if (pending) {
+          // They joined the group — activate beta!
+          const pendingZones = pending.zones || [];
+          _pendingBetaJoins.delete(member.id);
+          await addBetaTester(member.id, member.username, pending.code);
+          // Set initial tag in group
+          setTesterTag(member.id, 1).catch(() => {});
+          // Apply zones selected during onboarding
+          if (pendingZones.length > 0) {
+            try {
+              const { pool } = require('./db');
+              await pool.query('UPDATE builder_bot.beta_testers SET production_zones = $1 WHERE user_id = $2', [pendingZones, member.id]);
+            } catch {}
+          }
+          // Send confirmation in DM
+          try {
+            const mName = member.first_name ? escHtml(member.first_name) : 'tester';
+            let t1 = `${ce('check','✅')} <b>${mName}, бета-тест активирован!</b>\n\n`;
+            t1 += `Ты в группе, всё готово. Используй команды:\n`;
+            t1 += `/mystats — профиль и прогресс\n`;
+            t1 += `/checkin — ежедневный чекин (+1 XP)\n`;
+            t1 += `/feedback — баг-репорт (+5 XP)\n`;
+            t1 += `/tasks — задания\n`;
+            t1 += `/shop — магазин наград\n\n`;
+            t1 += `${ce('fire','🔥')} Не забывай /checkin каждый день!`;
+            await bot.telegram.sendMessage(member.id, t1, { parse_mode: 'HTML',
+            });
+          } catch (obErr: any) {
+            console.warn(`[Beta] Onboarding DM failed for ${member.id}:`, obErr?.message?.slice(0, 80));
+          }
+          // Announce
+          announceToGroup(`${ce('party','🎉')} <b>${escHtml(name)}</b> присоединился к бета-тесту! / joined the beta test!\n\nWelcome! ${ce('lab','🧪')}`);
+        }
+        // No pending code = just joined group without beta link — ignore, don't auto-register
+      }
+    } catch {}
+  }
+});
+
 bot.on(message('voice'), async (ctx) => {
   if (!ctx.from) return;
+  if (ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup') return;
   const userId = ctx.from.id;
   const lang = getUserLang(userId);
 
@@ -7010,80 +10293,36 @@ bot.on(message('voice'), async (ctx) => {
     if (!resp.ok) throw new Error('Failed to download voice');
     const audioBuffer = Buffer.from(await resp.arrayBuffer());
 
-    // 2) Транскрипция: сначала Gemini (multimodal audio), fallback OpenAI Whisper
-    const base64Audio = audioBuffer.toString('base64');
-    const whisperBaseUrl = process.env.OPENAI_BASE_URL?.replace('/v1', '') || 'https://api.openai.com';
-    const whisperApiKey = process.env.OPENAI_API_KEY || '';
-
-    // Подтягиваем Gemini ключ пользователя из глобальных настроек
+    // 2) Транскрипция через services/transcribe.ts — единая точка для Gemini → Whisper фолбэка
+    // Подтягиваем юзерский Gemini ключ если он провайдер Gemini
     let userGeminiKey = process.env.GEMINI_API_KEY || '';
     try {
       const repo = getUserSettingsRepository();
       const allSettings = await repo.getAll(userId);
       const uv = (allSettings.user_variables as Record<string, any>) || {};
-      // Если у юзера есть ключ и провайдер Gemini
-      if (uv.AI_API_KEY && /AIzaSy/i.test(uv.AI_API_KEY)) {
-        userGeminiKey = uv.AI_API_KEY;
-      } else if (uv.AI_API_KEY && (uv.AI_PROVIDER || '').toLowerCase().includes('gemini')) {
-        userGeminiKey = uv.AI_API_KEY;
-      }
+      const _rawUserKey = uv.AI_API_KEY ? (() => { try { const { decryptApiKey } = require('./crypto-utils'); return decryptApiKey(uv.AI_API_KEY); } catch { return uv.AI_API_KEY; } })() : '';
+      if (_rawUserKey && /AIzaSy/i.test(_rawUserKey)) userGeminiKey = _rawUserKey;
+      else if (_rawUserKey && (uv.AI_PROVIDER || '').toLowerCase().includes('gemini')) userGeminiKey = _rawUserKey;
     } catch {}
 
-    let transcribedText = '';
+    const { transcribeAudio } = await import('./services/transcribe');
+    const tr = await transcribeAudio({
+      audio: audioBuffer,
+      format: 'ogg',
+      lang: lang === 'ru' ? 'ru' : 'en',
+      geminiKey: userGeminiKey,
+    });
+    const transcribedText = tr.text;
 
-    // Попытка 1: Gemini multimodal (поддерживает audio напрямую)
-    try {
-      const geminiKey = userGeminiKey;
-      if (geminiKey) {
-        const geminiResp = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + geminiKey,
-          },
-          body: JSON.stringify({
-            model: 'gemini-2.5-flash',
-            messages: [{
-              role: 'user',
-              content: [
-                { type: 'text', text: 'Транскрибируй это голосовое сообщение. Верни ТОЛЬКО текст, без пояснений и кавычек.' },
-                { type: 'input_audio', input_audio: { data: base64Audio, format: 'ogg' } },
-              ],
-            }],
-            max_tokens: 500,
-          }),
-        });
-        if (geminiResp.ok) {
-          const gj = await geminiResp.json() as any;
-          transcribedText = gj.choices?.[0]?.message?.content?.trim() || '';
-        }
-      }
-    } catch {}
-
-    // Попытка 2: OpenAI Whisper API (если есть OpenAI ключ)
-    if (!transcribedText && whisperApiKey) {
-      try {
-        const formData = new FormData();
-        formData.append('file', new Blob([audioBuffer], { type: 'audio/ogg' }), 'voice.ogg');
-        formData.append('model', 'whisper-1');
-        formData.append('language', lang === 'ru' ? 'ru' : 'en');
-
-        const whisperResp = await fetch(whisperBaseUrl + '/v1/audio/transcriptions', {
-          method: 'POST',
-          headers: { 'Authorization': 'Bearer ' + whisperApiKey },
-          body: formData as any,
-        });
-        if (whisperResp.ok) {
-          const wj = await whisperResp.json() as any;
-          transcribedText = wj.text || '';
-        }
-      } catch {}
-    }
-
-    if (!transcribedText || transcribedText.length < 3) {
+    if (!tr.ok || !transcribedText || transcribedText.length < 3) {
+      // Surface WHY it failed (previously silent) — and log to ops
+      console.warn(`[Voice] Transcribe failed for user ${userId}: ${tr.error}`);
+      const hint = tr.error?.includes('No GEMINI') || tr.error?.includes('No OPENAI')
+        ? (lang === 'ru' ? ' (нужен Gemini или OpenAI ключ в настройках)' : ' (need Gemini or OpenAI key in settings)')
+        : '';
       await ctx.reply(lang === 'ru'
-        ? '🎤 Не удалось распознать голосовое сообщение. Попробуйте ещё раз или напишите текстом.'
-        : '🎤 Could not transcribe voice message. Try again or type your request.'
+        ? `🎤 Не удалось распознать голосовое сообщение${hint}. Попробуйте ещё раз или напишите текстом.`
+        : `🎤 Could not transcribe voice message${hint}. Try again or type your request.`
       );
       return;
     }
@@ -7101,7 +10340,11 @@ bot.on(message('voice'), async (ctx) => {
       const agentRes = await getDBTools().getAgent(agentId, userId);
       if (agentRes.success && agentRes.data) {
         if (agentRes.data.triggerType === 'ai_agent') {
-          await getRunnerAgent().sendMessageToAgent(agentId, transcribedText);
+          await getRunnerAgent().sendMessageToAgent(agentId, transcribedText, {
+            senderId: userId, isOwner: true,
+            username: ctx.from?.username || undefined,
+            firstName: ctx.from?.first_name || undefined,
+          });
           await ctx.reply(lang === 'ru' ? '📨 Голосовое отправлено агенту.' : '📨 Voice sent to agent.');
         }
       }
@@ -7144,10 +10387,107 @@ bot.on(message('voice'), async (ctx) => {
   }
 });
 
+// ── Photo handler (feedback screenshots) ──
+bot.on(message('photo'), async (ctx) => {
+  if (ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup') return;
+  const userId = ctx.from!.id;
+  const _fb = pendingFeedback.get(userId);
+  if (_fb && Date.now() - _fb.startTs < 10 * 60_000) {
+    pendingFeedback.delete(userId);
+    const caption = ctx.message.caption || '';
+    const photoId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
+    // Quality score bonus (screenshot = true)
+    let qualityBonus = 0;
+    try {
+      const { calculateQualityScore } = require('./engagement');
+      const qs = calculateQualityScore(caption, true);
+      qualityBonus = qs.bonusXP;
+    } catch {}
+    try {
+      const { pool } = require('./db');
+      await pool.query(
+        `INSERT INTO builder_bot.feedback (user_id, username, type, message, screenshot_file_id) VALUES ($1, $2, $3, $4, $5)`,
+        [userId, ctx.from?.username || '', _fb.type, caption || 'Screenshot attached', photoId]
+      );
+      const ru = getUserLang(userId) === 'ru';
+      let rewardMsg = '';
+      try {
+        const { isBetaTester, awardFeedbackPoints } = require('./payments');
+        if (isBetaTester(userId)) {
+          const reward = await awardFeedbackPoints(userId, _fb.type);
+          rewardMsg = `\n+${reward.xp} XP`;
+          if (reward.reward?.startsWith('level_up:')) {
+            const parts = reward.reward.split(':');
+            const lvlName = parts[1];
+            const lvlPts = parts[2] || '0';
+            rewardMsg += `\n🎉 Level up: ${lvlName}! +${lvlPts} Points`;
+            const name = ctx.from?.username ? `@${ctx.from.username}` : (ctx.from?.first_name || 'Tester');
+            announceToGroup(`${ce('party','🎉')} <b>${escHtml(name)}</b> достиг уровня <b>${escHtml(lvlName)}</b>! / reached level <b>${escHtml(lvlName)}</b>! ${ce('rocket','🚀')}`);
+            // Check and announce new achievements
+            try {
+              const { checkAchievements, loadUserStats, ACHIEVEMENTS } = require('./engagement');
+              const _achStats = await loadUserStats(userId);
+              const _newAch = await checkAchievements(userId, _achStats);
+              if (_newAch.length > 0) {
+                const achNames = _newAch.map((id: string) => {
+                  const a = ACHIEVEMENTS.find((a: any) => a.id === id);
+                  return a ? `${a.emoji} ${a.title}` : id;
+                }).join(', ');
+                announceToGroup(`${ce('sparkle','✨')} <b>${escHtml(name)}</b> ${getUserLang(userId) === 'ru' ? 'получил ачивку' : 'earned achievement'}: ${achNames}`);
+              }
+            } catch {}
+            // Auto-update tag in group — level is determined by cumulative XP only,
+            // NOT points (points = spendable balance, can decrease on purchases).
+            // Prefer total XP from DB; fall back to reward.xp if read fails.
+            try {
+              const { getTesterLevel } = require('./payments');
+              const { pool: _tagPool } = require('./db');
+              const _xpRes = await _tagPool.query('SELECT xp FROM builder_bot.beta_testers WHERE user_id = $1', [userId]);
+              const _totalXp = Number(_xpRes.rows[0]?.xp ?? reward.xp ?? 0);
+              const _newLvl = getTesterLevel(_totalXp);
+              setTesterTag(userId, _newLvl?.level || 1).catch(() => {});
+            } catch {}
+          }
+          if (reward.points > 0 && !reward.reward?.startsWith('level_up:')) rewardMsg += ` · +${reward.points} Points`;
+        }
+      } catch {}
+      // Quality bonus XP
+      if (qualityBonus > 0) {
+        try {
+          const { pool: _qp } = require('./db');
+          await _qp.query('UPDATE builder_bot.beta_testers SET xp = xp + $1 WHERE user_id = $2', [qualityBonus, userId]);
+          rewardMsg += ` +${qualityBonus} quality`;
+        } catch {}
+      }
+      // Advance onboarding quest after feedback
+      try {
+        const { advanceQuest } = require('./engagement');
+        await advanceQuest(userId);
+      } catch {}
+      const title = _fb.title || caption || 'Screenshot';
+      let confirmText = ru
+        ? `${ce('check','✅')} <b>Тикет создан</b>\n\n<b>${escHtml(title)}</b>\nТип: ${_fb.type}\n📎 Скриншот${rewardMsg}`
+        : `${ce('check','✅')} <b>Ticket created</b>\n\n<b>${escHtml(title)}</b>\nType: ${_fb.type}\n📎 Screenshot${rewardMsg}`;
+      await safeReply(ctx, confirmText, { parse_mode: 'HTML' });
+      // Notify owner with screenshot
+      try {
+        const typeIcons: Record<string, string> = { bug: '🐛', feature: '💡', support: '🆘', general: '💬', critical: '🔴' };
+        const icon = typeIcons[_fb.type] || '📝';
+        const fbText = `${icon} <b>Feedback</b> [${_fb.type.toUpperCase()}]\n<b>From:</b> @${ctx.from?.username || userId}\n\n<b>${escHtml(title)}</b>\n${escHtml((caption || 'Screenshot attached').slice(0, 500))}`;
+        await bot.telegram.sendPhoto(OWNER_ID_NUM, photoId, { caption: fbText, parse_mode: 'HTML' });
+      } catch {}
+    } catch (e: any) { await safeReply(ctx, `${ce('cross','❌')} ${e.message}`); }
+    return;
+  }
+});
+
 bot.on(message('text'), async (ctx) => {
   if (!ctx.from) return;
   const text = ctx.message.text;
   if ((text.startsWith('/') && text !== '/stop_chat' && text !== '/stopchat') || MENU_TEXTS.has(text)) return;
+
+  // Ignore non-command messages in groups (bot should only react to /commands in groups)
+  if (ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup') return;
 
   const userId = ctx.from.id;
   const trimmed = text.trim();
@@ -7165,7 +10505,7 @@ bot.on(message('text'), async (ctx) => {
   if (pendingUserIdea.has(userId)) {
     if (trimmed.toLowerCase() === 'стоп' || trimmed.toLowerCase() === 'stop') {
       pendingUserIdea.delete(userId);
-      await ctx.reply('✅ Отменено.');
+      await ctx.reply(`${ce('check','✅')} Отменено.`);
       return;
     }
     pendingUserIdea.delete(userId);
@@ -7174,7 +10514,7 @@ bot.on(message('text'), async (ctx) => {
 
     const { getSelfImprovementSystem } = await import('./self-improvement');
     const sis = getSelfImprovementSystem();
-    if (!sis) { await ctx.reply('❌ Система не запущена'); return; }
+    if (!sis) { await ctx.reply(`${ce('cross','❌')} Система не запущена`); return; }
 
     // Run in background
     sis.submitUserIdea(trimmed).then(async (result) => {
@@ -7183,7 +10523,7 @@ bot.on(message('text'), async (ctx) => {
       } else if (result === 'already_running') {
         await ctx.reply('⚠️ Уже запущен, подождите.').catch(() => {});
       } else {
-        await ctx.reply(`❌ ${result}`).catch(() => {});
+        await ctx.reply(`${ce('cross','❌')} ${result}`).catch(() => {});
       }
     }).catch(e => console.warn('[Bot] submitUserIdea error:', e?.message || e));
     return;
@@ -7195,7 +10535,7 @@ bot.on(message('text'), async (ctx) => {
 
     if (trimmed.toLowerCase() === 'стоп' || trimmed.toLowerCase() === 'stop') {
       pendingProposalDiscuss.delete(userId);
-      await ctx.reply('✅ Вышли из обсуждения.');
+      await ctx.reply(`${ce('check','✅')} Вышли из обсуждения.`);
       return;
     }
 
@@ -7206,13 +10546,13 @@ bot.on(message('text'), async (ctx) => {
       const proposal = await getAIProposalsRepository().getById(proposalId);
       if (!proposal) {
         pendingProposalDiscuss.delete(userId);
-        await ctx.reply('❌ Proposal не найден.');
+        await ctx.reply(`${ce('cross','❌')} Proposal не найден.`);
         return;
       }
 
-      // Ask Claude Code about the proposal with user's question
-      const { claudeCodeChat } = await import('./claude-code-bridge');
-      const result = await claudeCodeChat([
+      // Ask Anthropic CLI about the proposal with user's question
+      const { anthropicCliChat } = await import('./anthropic-cli-bridge');
+      const result = await anthropicCliChat([
         { role: 'user', content:
           `Ты — AI Product Engineer платформы TON Agent Platform.\n\n` +
           `Владелец обсуждает с тобой фичу:\n` +
@@ -7231,6 +10571,50 @@ bot.on(message('text'), async (ctx) => {
     return;
   }
 
+  // ── Blocklist: add keywords ──────────────────────────────────
+  if (pendingBlocklistAdd.has(userId)) {
+    const agentId = pendingBlocklistAdd.get(userId)!;
+    pendingBlocklistAdd.delete(userId);
+    try {
+      const { loadBlocklist, saveBlocklist } = require('./services/agent-hooks');
+      const stateRepo = getAgentStateRepository();
+      const bl = await loadBlocklist(stateRepo, agentId);
+      const newKws = trimmed.split(',').map((s: string) => s.trim()).filter((s: string) => s.length > 0);
+      bl.keywords = [...new Set([...bl.keywords, ...newKws])];
+      await saveBlocklist(stateRepo, agentId, userId, bl);
+      await ctx.reply(`${ce('check','✅')} Добавлено ${newKws.length} слов(а). Всего: ${bl.keywords.length}\n<code>${escHtml(bl.keywords.join(', '))}</code>`, { parse_mode: 'HTML' });
+    } catch (e: any) { await ctx.reply('❌ ' + (e.message || '').slice(0, 100)); }
+    return;
+  }
+
+  // ── Trigger: add keyword + context (2-step) ──────────────────
+  if (pendingTriggerAdd.has(userId)) {
+    const state = pendingTriggerAdd.get(userId)!;
+    if (state.step === 'keyword') {
+      state.keyword = trimmed;
+      state.step = 'context';
+      await ctx.reply(`${ce('target','🎯')} Ключевое слово: <b>${escHtml(trimmed)}</b>\n\nТеперь отправьте контекст который нужно инжектить когда это слово встречается:`, { parse_mode: 'HTML' });
+      return;
+    }
+    if (state.step === 'context') {
+      pendingTriggerAdd.delete(userId);
+      try {
+        const { loadTriggers, saveTriggers } = require('./services/agent-hooks');
+        const stateRepo = getAgentStateRepository();
+        const triggers = await loadTriggers(stateRepo, state.agentId);
+        triggers.push({
+          id: String(Date.now()),
+          keyword: state.keyword!,
+          context: trimmed,
+          enabled: true,
+        });
+        await saveTriggers(stateRepo, state.agentId, userId, triggers);
+        await ctx.reply(`✅ Триггер добавлен!\n\n🔑 <b>${escHtml(state.keyword!)}</b>\n→ <i>${escHtml(trimmed.slice(0, 100))}</i>`, { parse_mode: 'HTML' });
+      } catch (e: any) { await ctx.reply('❌ ' + (e.message || '').slice(0, 100)); }
+      return;
+    }
+  }
+
   // ── Chat with AI agent ────────────────────────────────────────
   if (pendingAgentChats.has(userId)) {
     const agentId = pendingAgentChats.get(userId)!;
@@ -7238,7 +10622,7 @@ bot.on(message('text'), async (ctx) => {
 
     if (trimmed === '/stop_chat' || trimmed.toLowerCase() === 'стоп' || trimmed.toLowerCase() === '/stopchat') {
       pendingAgentChats.delete(userId);
-      await ctx.reply(lang === 'ru' ? '✅ Вышли из чата с агентом.' : '✅ Exited agent chat.');
+      await ctx.reply(lang === 'ru' ? `${ce('check','✅')} Вышли из чата с агентом.` : `${ce('check','✅')} Exited agent chat.`);
       return;
     }
 
@@ -7246,14 +10630,20 @@ bot.on(message('text'), async (ctx) => {
     const agentRes = await getDBTools().getAgent(agentId, userId);
     if (!agentRes.success || !agentRes.data) {
       pendingAgentChats.delete(userId);
-      await ctx.reply('❌ Агент не найден. Чат закрыт.');
+      await ctx.reply(`${ce('cross','❌')} Агент не найден. Чат закрыт.`);
       return;
     }
     const a = agentRes.data;
 
     if (a.triggerType === 'ai_agent') {
-      // AI agent — route to agentic loop
-      getRunnerAgent().sendMessageToAgent(agentId, trimmed);
+      // AI agent — route to agentic loop (mark as owner since they chat via bot)
+      getRunnerAgent().sendMessageToAgent(agentId, trimmed, {
+        senderId: userId,
+        isOwner: true,
+        username: ctx.from?.username || undefined,
+        firstName: ctx.from?.first_name || undefined,
+        lastName: ctx.from?.last_name || undefined,
+      });
       await ctx.reply(lang === 'ru'
         ? '📨 Сообщение получено — агент ответит в ближайшее время.'
         : '📨 Message received — agent will reply shortly.'
@@ -7280,7 +10670,7 @@ bot.on(message('text'), async (ctx) => {
           await savePromptVersion(agentId, userId);
           const updateResult = await getDBTools().updateAgentCode(agentId, userId, result.newCode);
           if (updateResult.success) {
-            await ctx.reply(result.reply + '\n\n✅ <i>Код агента обновлён платформой.</i>', { parse_mode: 'HTML' });
+            await ctx.reply(result.reply + `\n\n${ce('check','✅')} <i>Код агента обновлён платформой.</i>`, { parse_mode: 'HTML' });
           } else {
             await ctx.reply(result.reply + '\n\n⚠️ <i>Не удалось сохранить код: ' + escHtml(updateResult.error || 'ошибка') + '</i>', { parse_mode: 'HTML' });
           }
@@ -7312,7 +10702,7 @@ bot.on(message('text'), async (ctx) => {
 
     if (trimmed.toLowerCase() === '/cancel' || trimmed.toLowerCase() === 'отмена') {
       pendingWithdrawal.delete(userId);
-      await ctx.reply(lang === 'ru' ? '❌ Вывод отменён.' : '❌ Withdrawal cancelled.');
+      await ctx.reply(lang === 'ru' ? `${ce('cross','❌')} Вывод отменён.` : `${ce('cross','❌')} Withdrawal cancelled.`);
       return;
     }
 
@@ -7353,7 +10743,7 @@ bot.on(message('text'), async (ctx) => {
       const amount = parseFloat(trimmed.replace(',', '.'));
       const networkFee = 0.05;
       if (isNaN(amount) || amount <= 0) {
-        await ctx.reply(lang === 'ru' ? '❌ Введите корректную сумму (например: 1.5)' : '❌ Enter a valid amount (e.g. 1.5)');
+        await ctx.reply(lang === 'ru' ? `${ce('cross','❌')} Введите корректную сумму (например: 1.5)` : `${ce('cross','❌')} Enter a valid amount (e.g. 1.5)`);
         return;
       }
 
@@ -7405,7 +10795,7 @@ bot.on(message('text'), async (ctx) => {
         deductedProfile = profile;
       } catch (txErr) {
         await wdClient.query('ROLLBACK').catch(() => {});
-        await ctx.reply(lang === 'ru' ? '❌ Ошибка обработки. Попробуйте снова.' : '❌ Processing error. Please try again.');
+        await ctx.reply(lang === 'ru' ? `${ce('cross','❌')} Ошибка обработки. Попробуйте снова.` : `${ce('cross','❌')} Processing error. Please try again.`);
         return;
       } finally {
         wdClient.release();
@@ -7423,7 +10813,7 @@ bot.on(message('text'), async (ctx) => {
         const result = await sendPlatformTransaction(toAddr, amount, `withdraw:${userId}`);
         if (result.ok) {
           // Record txHash in ledger
-          try { await getBalanceTxRepository().record(userId, 'withdraw_confirmed', 0, 0, `txHash: ${result.txHash}`, result.txHash); } catch {}
+          try { await getBalanceTxRepository().record(userId, 'withdraw_confirmed', 0, 0, `txHash: ${result.txHash}`, result.txHash); } catch (e: any) { console.error('[CRITICAL] Withdrawal record failed:', e.message); }
           await safeReply(ctx,
             lang === 'ru'
               ? `${pe('check')} <b>Вывод выполнен!</b>\n\n` +
@@ -7470,7 +10860,7 @@ bot.on(message('text'), async (ctx) => {
       clearAuthState(userId);
       cancelQRLogin(); // stop QR event listener if active
       complete2FAFns.delete(userId);
-      await ctx.reply('❌ Авторизация отменена.');
+      await ctx.reply(`${ce('cross','❌')} Авторизация отменена.`);
       return;
     }
 
@@ -7480,7 +10870,7 @@ bot.on(message('text'), async (ctx) => {
         const result = await authSendPhone(userId, trimmed);
         if (result.type === 'already_authorized') {
           pendingTgAuth.delete(userId);
-          await ctx.reply('✅ Уже авторизован! Используй /gifts для данных Fragment.');
+          await ctx.reply(`${ce('check','✅')} Уже авторизован! Используй /gifts для данных Fragment.`);
         } else {
           pendingTgAuth.set(userId, 'code');
           await safeReply(ctx,
@@ -7493,7 +10883,7 @@ bot.on(message('text'), async (ctx) => {
         }
       } catch (e: any) {
         pendingTgAuth.delete(userId);
-        await ctx.reply('❌ Ошибка: ' + e.message + '\n\nПопробуй снова: /tglogin');
+        await ctx.reply(`${ce('cross','❌')} Ошибка: ` + e.message + '\n\nПопробуй снова: /tglogin');
       }
       return;
     }
@@ -7530,9 +10920,9 @@ bot.on(message('text'), async (ctx) => {
           );
         } else if (errMsg === 'INVALID') {
           // Wrong code — let them retry
-          await ctx.reply('❌ Неверный код. Проверь и введи ещё раз (или /cancel для отмены):');
+          await ctx.reply(`${ce('cross','❌')} Неверный код. Проверь и введи ещё раз (или /cancel для отмены):`);
         } else {
-          await ctx.reply('❌ Ошибка: ' + errMsg + '\n\nПопробуй /tglogin заново.');
+          await ctx.reply(`${ce('cross','❌')} Ошибка: ` + errMsg + '\n\nПопробуй /tglogin заново.');
           pendingTgAuth.delete(userId);
         }
       }
@@ -7553,7 +10943,7 @@ bot.on(message('text'), async (ctx) => {
         const setupPw = pendingAgentSetup.get(userId);
         if (setupPw) { setupPw.tgAuthed = true; setupPw.currentStep++; setTimeout(() => showSetupStep(ctx, userId).catch(() => {}), 1000); }
       } catch (e: any) {
-        await ctx.reply('❌ Неверный пароль 2FA: ' + e.message + '\n\nПопробуй снова или /cancel');
+        await ctx.reply(`${ce('cross','❌')} Неверный пароль 2FA: ` + e.message + '\n\nПопробуй снова или /cancel');
       }
       return;
     }
@@ -7571,7 +10961,7 @@ bot.on(message('text'), async (ctx) => {
       const complete2FA = complete2FAFns.get(userId);
       if (!complete2FA) {
         pendingTgAuth.delete(userId);
-        await ctx.reply('❌ Сессия истекла. Начни заново: /tglogin');
+        await ctx.reply(`${ce('cross','❌')} Сессия истекла. Начни заново: /tglogin`);
         return;
       }
       await ctx.sendChatAction('typing');
@@ -7583,11 +10973,11 @@ bot.on(message('text'), async (ctx) => {
       } else if (result.error?.includes('Неверный пароль')) {
         // Wrong password — restore fn so user can retry
         complete2FAFns.set(userId, complete2FA);
-        await ctx.reply('❌ Неверный пароль. Попробуй ещё раз:\n\n<i>/cancel для отмены</i>', { parse_mode: 'HTML' });
+        await ctx.reply(`${ce('cross','❌')} Неверный пароль. Попробуй ещё раз:\n\n<i>/cancel для отмены</i>`, { parse_mode: 'HTML' });
       } else {
         pendingTgAuth.delete(userId);
         complete2FAFns.delete(userId);
-        await ctx.reply(`❌ Ошибка: ${escHtml(result.error || 'unknown')}\n\nПопробуй /tglogin заново.`, { parse_mode: 'HTML' });
+        await ctx.reply(`${ce('cross','❌')} Ошибка: ${escHtml(result.error || 'unknown')}\n\nПопробуй /tglogin заново.`, { parse_mode: 'HTML' });
       }
       return;
     }
@@ -7597,20 +10987,20 @@ bot.on(message('text'), async (ctx) => {
   if (pendingRenames.has(userId)) {
     const agentId = pendingRenames.get(userId)!;
     if (trimmed.length < 1 || trimmed.length > 60) {
-      await ctx.reply('❌ Название должно быть от 1 до 60 символов. Попробуйте снова.');
+      await ctx.reply(`${ce('cross','❌')} Название должно быть от 1 до 60 символов. Попробуйте снова.`);
       return;
     }
     pendingRenames.delete(userId);
     try {
       const result = await getDBTools().updateAgent(agentId, userId, { name: trimmed });
       if (result.success) {
-        await safeReply(ctx, `✅ <b>${escHtml(trimmed)}</b>  #${agentId}\n<i>Название обновлено</i>`, { parse_mode: 'HTML' });
+        await safeReply(ctx, `${ce('check','✅')} <b>${escHtml(trimmed)}</b>  #${agentId}\n<i>Название обновлено</i>`, { parse_mode: 'HTML' });
         await showAgentMenu(ctx, agentId, userId);
       } else {
-        await ctx.reply(`❌ Ошибка переименования: ${result.error || 'Неизвестная ошибка'}`);
+        await ctx.reply(`${ce('cross','❌')} Ошибка переименования: ${result.error || 'Неизвестная ошибка'}`);
       }
     } catch (e: any) {
-      await safeReply(ctx, `❌ Ошибка: ${e.message || 'unknown'}`);
+      await safeReply(ctx, `${ce('cross','❌')} Ошибка: ${e.message || 'unknown'}`);
     }
     return;
   }
@@ -7621,12 +11011,12 @@ bot.on(message('text'), async (ctx) => {
     if (state.step === 'name') {
       const name = trimmed.replace(/[^a-zA-Z0-9_\-]/g, '');
       if (name.length < 2 || name.length > 30) {
-        await safeReply(ctx, '❌ Имя должно быть 2-30 символов (буквы, цифры, _, -).', {});
+        await safeReply(ctx, `${ce('cross','❌')} Имя должно быть 2-30 символов (буквы, цифры, _, -).`, {});
         return;
       }
       state.name = name;
       state.step = 'description';
-      await safeReply(ctx, `✅ Имя: <b>${escHtml(name)}</b>\n\nТеперь введите краткое описание плагина:`, { parse_mode: 'HTML' });
+      await safeReply(ctx, `${ce('check','✅')} Имя: <b>${escHtml(name)}</b>\n\nТеперь введите краткое описание плагина:`, { parse_mode: 'HTML' });
       return;
     }
     if (state.step === 'description') {
@@ -7645,14 +11035,14 @@ bot.on(message('text'), async (ctx) => {
       pendingPluginCreation.delete(userId);
       const code = trimmed;
       if (code.length > 5120) {
-        await safeReply(ctx, '❌ Код слишком большой (макс 5KB).', {});
+        await safeReply(ctx, `${ce('cross','❌')} Код слишком большой (макс 5KB).`, {});
         return;
       }
       // Basic security check
       const dangerous = ['process.', 'require(', 'child_process', '__dirname', '__filename', 'global.', 'eval(', 'globalThis', 'Function(', 'import(', 'global[', 'Proxy', 'Reflect', 'constructor'];
       const found = dangerous.find(d => code.includes(d));
       if (found) {
-        await safeReply(ctx, `❌ Код содержит запрещённую конструкцию: <code>${escHtml(found)}</code>`, { parse_mode: 'HTML' });
+        await safeReply(ctx, `${ce('cross','❌')} Код содержит запрещённую конструкцию: <code>${escHtml(found)}</code>`, { parse_mode: 'HTML' });
         return;
       }
       try {
@@ -7665,7 +11055,7 @@ bot.on(message('text'), async (ctx) => {
         );
       } catch (e: any) {
         console.error('Plugin creation error:', e);
-        await safeReply(ctx, '❌ Произошла ошибка при создании плагина. Попробуйте позже.');
+        await safeReply(ctx, `${ce('cross','❌')} Произошла ошибка при создании плагина. Попробуйте позже.`);
       }
       return;
     }
@@ -7691,7 +11081,7 @@ bot.on(message('text'), async (ctx) => {
           vars.AI_API_KEY = encryptApiKey(trimmed);
           vars.AI_PROVIDER = provider;
           await repo.set(userId, 'user_variables', vars);
-        } catch {}
+        } catch (e: any) { console.warn('[Settings] API key save error:', e.message); }
 
         await safeReply(ctx,
           `✅ <b>${ru ? 'Ключ проверен и сохранён!' : 'Key validated and saved!'}</b>\n` +
@@ -7753,14 +11143,14 @@ bot.on(message('text'), async (ctx) => {
       const { getAgenticWalletService } = await import('./services/agentic-wallet');
       if (pending.type === 'address') {
         if (!isValidTonAddress(trimmed)) {
-          await safeReply(ctx, '❌ Неверный формат адреса. Ожидается EQ... или UQ...', {});
+          await safeReply(ctx, `${ce('cross','❌')} Неверный формат адреса. Ожидается EQ... или UQ...`, {});
           return;
         }
         const result = await getAgenticWalletService().setupRootWallet(userId, { address: trimmed });
         if (result.success) {
-          await safeReply(ctx, `✅ Root wallet импортирован!\n📍 <code>${escHtml(trimmed)}</code>`, { parse_mode: 'HTML' });
+          await safeReply(ctx, `${ce('check','✅')} Root wallet импортирован!\n📍 <code>${escHtml(trimmed)}</code>`, { parse_mode: 'HTML' });
         } else {
-          await safeReply(ctx, `❌ ${result.error}`, {});
+          await safeReply(ctx, `${ce('cross','❌')} ${result.error}`, {});
         }
       } else {
         // Mnemonic — delete user message for security
@@ -7769,18 +11159,18 @@ bot.on(message('text'), async (ctx) => {
         }
         const words = trimmed.split(/\s+/);
         if (words.length !== 24) {
-          await safeReply(ctx, '❌ Мнемоника должна содержать 24 слова.', {});
+          await safeReply(ctx, `${ce('cross','❌')} Мнемоника должна содержать 24 слова.`, {});
           return;
         }
         const result = await getAgenticWalletService().setupRootWallet(userId, { mnemonic: trimmed });
         if (result.success && result.wallet) {
-          await safeReply(ctx, `✅ Root wallet импортирован!\n📍 <code>${escHtml(result.wallet.address)}</code>\n\n⚠️ Ваше сообщение с мнемоникой удалено из безопасности.`, { parse_mode: 'HTML' });
+          await safeReply(ctx, `${ce('check','✅')} Root wallet импортирован!\n📍 <code>${escHtml(result.wallet.address)}</code>\n\n⚠️ Ваше сообщение с мнемоникой удалено из безопасности.`, { parse_mode: 'HTML' });
         } else {
-          await safeReply(ctx, `❌ ${result.error}`, {});
+          await safeReply(ctx, `${ce('cross','❌')} ${result.error}`, {});
         }
       }
     } catch (e: any) {
-      await safeReply(ctx, '❌ ' + String(e), {});
+      await safeReply(ctx, `${ce('cross','❌')} ` + String(e), {});
     }
     return;
   }
@@ -7793,7 +11183,7 @@ bot.on(message('text'), async (ctx) => {
       await getAgenticWalletService().setLabel(pending.walletId, userId, trimmed.slice(0, 50));
       await safeReply(ctx, `✅ Имя кошелька изменено на: ${trimmed.slice(0, 50)}`, {});
     } catch (e: any) {
-      await safeReply(ctx, '❌ ' + String(e), {});
+      await safeReply(ctx, `${ce('cross','❌')} ` + String(e), {});
     }
     return;
   }
@@ -7802,16 +11192,16 @@ bot.on(message('text'), async (ctx) => {
     const pending = pendingWalletLimit.get(userId)!;
     const limitNum = parseFloat(trimmed);
     if (isNaN(limitNum) || limitNum <= 0) {
-      await safeReply(ctx, '❌ Введите число больше 0.', {});
+      await safeReply(ctx, `${ce('cross','❌')} Введите число больше 0.`, {});
       return;
     }
     pendingWalletLimit.delete(userId);
     try {
       const { getAgenticWalletService } = await import('./services/agentic-wallet');
       await getAgenticWalletService().setSpendLimit(pending.walletId, userId, limitNum);
-      await safeReply(ctx, `✅ Лимит установлен: ${limitNum} TON/день`, {});
+      await safeReply(ctx, `${ce('check','✅')} Лимит установлен: ${limitNum} TON/день`, {});
     } catch (e: any) {
-      await safeReply(ctx, '❌ ' + String(e), {});
+      await safeReply(ctx, `${ce('cross','❌')} ` + String(e), {});
     }
     return;
   }
@@ -7853,10 +11243,187 @@ bot.on(message('text'), async (ctx) => {
       const setupApiW = pendingAgentSetup.get(userId);
       if (setupApiW) { setupApiW.hasApiKey = true; setupApiW.currentStep++; setTimeout(() => showSetupStep(ctx, userId).catch(() => {}), 1000); }
     } catch (e: any) {
-      await ctx.reply('❌ ' + (e.message || String(e)));
+      await ctx.reply(`${ce('cross','❌')} ` + (e.message || String(e)));
     }
     return;
   }
+
+  // ── Pending bug tracker action (admin resolve/reply) ──
+  const _ba = pendingBugAction.get(userId);
+  if (_ba) {
+    pendingBugAction.delete(userId);
+    const { isPlatformAdmin } = require('./payments');
+    if (isPlatformAdmin(userId)) {
+      const { pool } = require('./db');
+      if (_ba.action === 'resolve') {
+        const ticketId = parseInt(trimmed.replace('#', ''));
+        if (!ticketId) { await safeReply(ctx, 'Invalid ID'); return; }
+        try {
+          await pool.query(`UPDATE builder_bot.feedback SET status = 'resolved', resolved_at = NOW() WHERE id = $1`, [ticketId]);
+          // Award resolve bonus + notify user
+          const fb = await pool.query(`SELECT user_id, type FROM builder_bot.feedback WHERE id = $1`, [ticketId]);
+          if (fb.rows[0]) {
+            const fbUserId = Number(fb.rows[0].user_id);
+            const { awardFeedbackPoints, isBetaTester } = require('./payments');
+            if (isBetaTester(fbUserId)) {
+              const reward = await awardFeedbackPoints(fbUserId, fb.rows[0].type, true);
+              let msg = `${ce('check','✅')} <b>${getUserLang(userId) === 'ru' ? 'Тикет' : 'Ticket'} #${ticketId} resolved</b>\n+${reward.xp} XP`;
+              if (reward.points > 0) msg += ` · +${reward.points} Points`;
+              // Check achievements after resolve bonus
+              try {
+                const { checkAchievements: _chkAchRes, loadUserStats: _ldStatsRes, ACHIEVEMENTS: _ACHRes } = require('./engagement');
+                const _resStats = await _ldStatsRes(fbUserId);
+                const _resAch = await _chkAchRes(fbUserId, _resStats);
+                if (_resAch.length > 0) {
+                  const achName = _ACHRes.find((a: any) => a.id === _resAch[0]);
+                  if (achName) msg += `\n${ce('trophy','🏆')} ${achName.emoji} ${achName.title}`;
+                }
+              } catch {}
+              try { await bot.telegram.sendMessage(fbUserId, msg, { parse_mode: 'HTML' }); } catch {}
+            }
+          }
+          await safeReply(ctx, `${ce('check','✅')} #${ticketId} resolved`, { parse_mode: 'HTML' });
+        } catch (e: any) { await safeReply(ctx, `Error: ${e.message}`); }
+      } else if (_ba.action === 'reply') {
+        const match = trimmed.match(/^#?(\d+)\s+(.+)/s);
+        if (!match) { await safeReply(ctx, 'Format: #ID reply text'); return; }
+        const ticketId = parseInt(match[1]);
+        const reply = match[2];
+        try {
+          await pool.query(`UPDATE builder_bot.feedback SET admin_reply = $1, status = 'in_progress' WHERE id = $2`, [reply, ticketId]);
+          const fb = await pool.query(`SELECT user_id FROM builder_bot.feedback WHERE id = $1`, [ticketId]);
+          if (fb.rows[0]) {
+            try { await bot.telegram.sendMessage(Number(fb.rows[0].user_id), `💬 Ответ на тикет #${ticketId}:\n\n${reply}`); } catch {}
+          }
+          await safeReply(ctx, `${ce('check','✅')} Reply sent to #${ticketId}`, { parse_mode: 'HTML' });
+        } catch (e: any) { await safeReply(ctx, `Error: ${e.message}`); }
+      }
+    }
+    return;
+  }
+
+  // ── Pending feedback (structured: title → body) ──
+  const _fb = pendingFeedback.get(userId);
+  if (_fb && Date.now() - _fb.startTs < 10 * 60_000) {
+    const ru = getUserLang(userId) === 'ru';
+
+    if (_fb.step === 'title') {
+      // Step 1: got title, ask for body
+      _fb.title = trimmed.slice(0, 100);
+      _fb.step = 'body';
+      const bodyHints: Record<string, string> = {
+        bug: ru ? '1. Что делал\n2. Что произошло\n3. Что ожидал\n4. Устройство/браузер (если актуально)\n\nМожно приложить скриншот.'
+          : '1. What you did\n2. What happened\n3. What you expected\n4. Device/browser (if relevant)\n\nYou can attach a screenshot.',
+        feature: ru ? 'Опишите проблему которую решает фича и как она должна работать.'
+          : 'Describe the problem this feature solves and how it should work.',
+        critical: ru ? '1. Точные шаги воспроизведения\n2. Что произошло (крэш, потеря данных, security)\n3. Скриншот/видео обязательно'
+          : '1. Exact steps to reproduce\n2. What happened (crash, data loss, security)\n3. Screenshot/video required',
+        support: ru ? 'Опишите проблему подробно. Что пробовали?' : 'Describe the issue in detail. What have you tried?',
+        general: ru ? 'Опишите подробнее.' : 'Describe in more detail.',
+      };
+      let text = ru ? `<b>Шаг 2/2</b> — Описание\n\n` : `<b>Step 2/2</b> — Description\n\n`;
+      text += bodyHints[_fb.type] || (ru ? 'Опишите подробнее.' : 'Describe in more detail.');
+      await safeReply(ctx, text, { parse_mode: 'HTML' });
+      return;
+    }
+
+    // Step 2: got body, save feedback
+    pendingFeedback.delete(userId);
+    const title = _fb.title || 'Untitled';
+    const fullMessage = `[${title}]\n\n${text}`;
+    // Check for duplicates
+    try {
+      const { checkDuplicate } = require('./engagement');
+      const { pool: _dp } = require('./db');
+      const dupResult = await checkDuplicate(_dp, fullMessage, _fb.type);
+      if (dupResult.isDuplicate && dupResult.confident) {
+        await safeReply(ctx, ru
+          ? `${ce('lock','🔒')} Похожий баг уже найден (#${dupResult.existingId}). 0 XP.`
+          : `${ce('lock','🔒')} Similar bug already reported (#${dupResult.existingId}). 0 XP.`,
+          { parse_mode: 'HTML' });
+        return;
+      }
+      if (dupResult.isDuplicate && !dupResult.confident) {
+        // Notify admin to review
+        try {
+          await bot.telegram.sendMessage(OWNER_ID_NUM,
+            `⚠️ Possible duplicate feedback from @${ctx.from?.username || userId}\nSimilarity: ${Math.round(dupResult.similarity * 100)}%\nExisting: #${dupResult.existingId}\n\nNew: ${fullMessage.slice(0, 200)}`,
+          );
+        } catch {}
+      }
+    } catch {}
+    // Quality score bonus
+    let qualityBonus = 0;
+    try {
+      const { calculateQualityScore } = require('./engagement');
+      const qs = calculateQualityScore(fullMessage, false);
+      qualityBonus = qs.bonusXP;
+    } catch {}
+    try {
+      const { pool } = require('./db');
+      await pool.query(
+        `INSERT INTO builder_bot.feedback (user_id, username, type, message) VALUES ($1, $2, $3, $4)`,
+        [userId, ctx.from?.username || '', _fb.type, fullMessage]
+      );
+      // Notify owner with structured format
+      const typeEmoji: Record<string, string> = { bug: '🐛', feature: '💡', critical: '🔥', support: '🤝', general: '💬' };
+      try { await bot.telegram.sendMessage(OWNER_ID_NUM,
+        `${typeEmoji[_fb.type] || '📝'} <b>Feedback</b> [${_fb.type.toUpperCase()}]\n<b>From:</b> @${ctx.from?.username || userId}\n\n<b>${escHtml(title)}</b>\n${escHtml(text.slice(0, 500))}`,
+        { parse_mode: 'HTML' }
+      ); } catch {}
+      // Award XP
+      let rewardMsg = '';
+      try {
+        const { isBetaTester, awardFeedbackPoints } = require('./payments');
+        if (isBetaTester(userId)) {
+          const reward = await awardFeedbackPoints(userId, _fb.type);
+          rewardMsg = `\n+${reward.xp} XP`;
+          if (reward.reward?.startsWith('level_up:')) {
+            const parts = reward.reward.split(':');
+            rewardMsg += `\n${ce('party','🎉')} Level up: ${parts[1]}! +${parts[2] || 0} Points`;
+            const name = ctx.from?.username ? `@${ctx.from.username}` : (ctx.from?.first_name || 'Tester');
+            announceToGroup(`${ce('party','🎉')} <b>${escHtml(name)}</b> достиг уровня <b>${escHtml(parts[1])}</b>! ${ce('rocket','🚀')}`);
+            // Check and announce new achievements
+            try {
+              const { checkAchievements: _chkAch2, loadUserStats: _ldStats2, ACHIEVEMENTS: _ACH2 } = require('./engagement');
+              const _achStats2 = await _ldStats2(userId);
+              const _newAch2 = await _chkAch2(userId, _achStats2);
+              if (_newAch2.length > 0) {
+                const achNames2 = _newAch2.map((id: string) => {
+                  const a = _ACH2.find((a: any) => a.id === id);
+                  return a ? `${a.emoji} ${a.title}` : id;
+                }).join(', ');
+                announceToGroup(`${ce('sparkle','✨')} <b>${escHtml(name)}</b> ${getUserLang(userId) === 'ru' ? 'получил ачивку' : 'earned achievement'}: ${achNames2}`);
+              }
+            } catch {}
+            const { getTesterLevel: _gtl2 } = require('./payments');
+            const _nlvl2 = _gtl2(reward.xp + (reward.points || 0));
+            setTesterTag(userId, _nlvl2?.level || 1).catch(() => {});
+          }
+          if (reward.points > 0 && !reward.reward?.startsWith('level_up:')) rewardMsg += ` · +${reward.points} Points`;
+        }
+      } catch {}
+      // Quality bonus XP
+      if (qualityBonus > 0) {
+        try {
+          const { pool: _qp } = require('./db');
+          await _qp.query('UPDATE builder_bot.beta_testers SET xp = xp + $1 WHERE user_id = $2', [qualityBonus, userId]);
+          rewardMsg += ` +${qualityBonus} quality`;
+        } catch {}
+      }
+      // Advance onboarding quest after feedback
+      try {
+        const { advanceQuest } = require('./engagement');
+        await advanceQuest(userId);
+      } catch {}
+      let confirmText = ru
+        ? `${ce('check','✅')} <b>Тикет создан</b>\n\n<b>${escHtml(title)}</b>\nТип: ${_fb.type}${rewardMsg}`
+        : `${ce('check','✅')} <b>Ticket created</b>\n\n<b>${escHtml(title)}</b>\nType: ${_fb.type}${rewardMsg}`;
+      await safeReply(ctx, confirmText, { parse_mode: 'HTML' });
+    } catch (e: any) { await safeReply(ctx, `${ce('cross','❌')} ${e.message}`); }
+    return;
+  }
+  if (_fb) pendingFeedback.delete(userId); // expired
 
   // ── Ожидаем запрос на редактирование агента ───────────────
   if (pendingEdits.has(userId)) {
@@ -7868,7 +11435,7 @@ bot.on(message('text'), async (ctx) => {
     }
     const agentResult = await getDBTools().getAgent(agentId, userId);
     if (!agentResult.success || !agentResult.data) {
-      await ctx.reply('❌ Агент не найден'); return;
+      await ctx.reply(`${ce('cross','❌')} Агент не найден`); return;
     }
 
     // ── Smart config-change detection (no code regeneration needed) ───
@@ -7959,7 +11526,7 @@ bot.on(message('text'), async (ctx) => {
         );
       } catch (e: any) {
         console.error('Config update error:', e);
-        await safeReply(ctx, '❌ Произошла ошибка при обновлении конфигурации. Попробуйте позже.');
+        await safeReply(ctx, `${ce('cross','❌')} Произошла ошибка при обновлении конфигурации. Попробуйте позже.`);
       }
       return;
     }
@@ -7974,7 +11541,7 @@ bot.on(message('text'), async (ctx) => {
       });
       anim.stop();
       if (!fixResult.success || !fixResult.data) {
-        await safeReply(ctx, `❌ AI не смог изменить код: ${escHtml(fixResult.error || 'Unknown')}`, { parse_mode: 'HTML' });
+        await safeReply(ctx, `${ce('cross','❌')} AI не смог изменить код: ${escHtml(fixResult.error || 'Unknown')}`, { parse_mode: 'HTML' });
         return;
       }
       await savePromptVersion(agentId, userId);
@@ -7997,12 +11564,12 @@ bot.on(message('text'), async (ctx) => {
           }
         );
       } else {
-        await safeReply(ctx, `❌ Не удалось сохранить: ${escHtml(saveResult.error || 'Unknown')}`);
+        await safeReply(ctx, `${ce('cross','❌')} Не удалось сохранить: ${escHtml(saveResult.error || 'Unknown')}`);
       }
     } catch (err: any) {
       anim.stop();
       console.error('Agent edit error:', err);
-      await safeReply(ctx, '❌ Произошла ошибка при редактировании. Попробуйте позже.');
+      await safeReply(ctx, `${ce('cross','❌')} Произошла ошибка при редактировании. Попробуйте позже.`);
     }
     return;
   }
@@ -8031,7 +11598,7 @@ bot.on(message('text'), async (ctx) => {
           state.collected[currentKey] = trimmed;
           state.remaining.shift();
         } else {
-          await ctx.reply(lang === 'ru' ? '❌ Введите значение или нажмите «Пропустить»' : '❌ Enter a value or tap Skip');
+          await ctx.reply(lang === 'ru' ? `${ce('cross','❌')} Введите значение или нажмите «Пропустить»` : `${ce('cross','❌')} Enter a value or tap Skip`);
           return;
         }
         await promptNextTemplateVar(ctx, userId, state);
@@ -8052,7 +11619,7 @@ bot.on(message('text'), async (ctx) => {
         await doPublishAgent(ctx, userId, pp.agentId, pp.price, trimmed.slice(0, 60));
       } catch (e: any) {
         console.error(`[bot] doPublishAgent failed:`, e.message);
-        await ctx.reply('❌ Ошибка публикации. Попробуйте ещё раз.').catch(() => {});
+        await ctx.reply(`${ce('cross','❌')} Ошибка публикации. Попробуйте ещё раз.`).catch(() => {});
       }
       return;
     }
@@ -8092,7 +11659,7 @@ bot.on(message('text'), async (ctx) => {
       await sendResult(ctx, result);
     } catch (err) {
       anim.stop(); anim.deleteMsg();
-      await ctx.reply('❌ Ошибка создания агента. Попробуйте ещё раз.').catch(() => {});
+      await ctx.reply(`${ce('cross','❌')} Ошибка создания агента. Попробуйте ещё раз.`).catch(() => {});
     }
     return;
   }
@@ -8162,7 +11729,7 @@ bot.on(message('text'), async (ctx) => {
     } catch (err) {
       clearInterval(typingTimer);
       console.error('Text handler error:', err);
-      await ctx.reply('❌ Ошибка. Попробуйте ещё раз или /start');
+      await ctx.reply(`${ce('cross','❌')} Ошибка. Попробуйте ещё раз или /start`);
     }
     return;
   }
@@ -8176,7 +11743,7 @@ bot.on(message('text'), async (ctx) => {
     anim?.stop();
     anim?.deleteMsg();
     console.error('Text handler error:', err);
-    await ctx.reply('❌ Ошибка. Попробуйте ещё раз или /start');
+    await ctx.reply(`${ce('cross','❌')} Ошибка. Попробуйте ещё раз или /start`);
   }
 });
 
@@ -8198,7 +11765,7 @@ async function sendResult(ctx: Context, result: {
     if (!userId) return;
     const t = allAgentTemplates.find(x => x.id === result.wizardTemplateId);
     if (!t) {
-      await safeReply(ctx, '❌ Шаблон не найден', { parse_mode: 'HTML' });
+      await safeReply(ctx, `${ce('cross','❌')} Шаблон не найден`, { parse_mode: 'HTML' });
       return;
     }
     const prefilled = result.wizardPrefilled || {};
@@ -8377,7 +11944,7 @@ async function runAgentDirect(ctx: Context, agentId: number, userId: number) {
   // Получаем агента из БД
   const agentResult = await getDBTools().getAgent(agentId, userId);
   if (!agentResult.success || !agentResult.data) {
-    await ctx.reply(`❌ Агент #${agentId} не найден или принадлежит другому пользователю`);
+    await ctx.reply(`${ce('cross','❌')} Агент #${agentId} не найден или принадлежит другому пользователю`);
     return;
   }
   const agent = agentResult.data;
@@ -8438,7 +12005,7 @@ async function runAgentDirect(ctx: Context, agentId: number, userId: number) {
 
     if (!runResult.success) {
       // Редактируем сообщение вместо нового (умное редактирование - задача 1)
-      const errText = `❌ <b>Ошибка запуска</b>\n\n${escHtml(runResult.error || 'Неизвестная ошибка')}`;
+      const errText = `${ce('cross','❌')} <b>Ошибка запуска</b>\n\n${escHtml(runResult.error || 'Неизвестная ошибка')}`;
       if (statusMsg) {
         await ctx.telegram.editMessageText(ctx.chat!.id, statusMsg.message_id, undefined, errText, { parse_mode: 'HTML' }).catch(() => ctx.reply(errText.replace(/<[^>]+>/g, '')));
       }
@@ -8506,13 +12073,13 @@ async function runAgentDirect(ctx: Context, agentId: number, userId: number) {
               resultText += `${escHtml(String(rawResult).slice(0, 400))}\n`;
             }
           } else {
-            resultText += `\n<i>✅ Агент выполнен успешно</i>\n`;
+            resultText += `\n<i>${ce('check','✅')} Агент выполнен успешно</i>\n`;
           }
         } else {
-          resultText += `\n❌ <b>Ошибка:</b> ${escHtml(exec.error || 'Unknown')}`;
+          resultText += `\n${ce('cross','❌')} <b>Ошибка:</b> ${escHtml(exec.error || 'Unknown')}`;
         }
         if (exec.logs?.length > 0) {
-          resultText += `\n📝 <b>Логи (${exec.logs.length}):</b>\n`;
+          resultText += `\n${ce('pencil','📝')} <b>Логи (${exec.logs.length}):</b>\n`;
           exec.logs.slice(-5).forEach(log => {
             const icon = log.level === 'error' ? '❌' : log.level === 'warn' ? '⚠️' : '✅';
             resultText += `${icon} ${escHtml(String(log.message).slice(0, 100))}\n`;
@@ -8535,9 +12102,9 @@ async function runAgentDirect(ctx: Context, agentId: number, userId: number) {
   } catch (err: any) {
     const errMsg = err?.message || 'Неизвестная ошибка';
     if (statusMsg) {
-      await ctx.telegram.editMessageText(ctx.chat!.id, statusMsg.message_id, undefined, `❌ Ошибка: ${errMsg}`).catch(() => {});
+      await ctx.telegram.editMessageText(ctx.chat!.id, statusMsg.message_id, undefined, `${ce('cross','❌')} Ошибка: ${errMsg}`).catch(() => {});
     } else {
-      await ctx.reply(`❌ Ошибка запуска: ${errMsg}`);
+      await ctx.reply(`${ce('cross','❌')} Ошибка запуска: ${errMsg}`);
     }
   }
 }
@@ -8596,7 +12163,7 @@ async function showAgentLogs(ctx: Context, agentId: number, userId: number) {
       },
     });
   } catch (err) {
-    await ctx.reply('❌ Ошибка загрузки логов');
+    await ctx.reply(`${ce('cross','❌')} Ошибка загрузки логов`);
   }
 }
 
@@ -8605,7 +12172,9 @@ async function showAgentLogs(ctx: Context, agentId: number, userId: number) {
 // ============================================================
 async function showAgentsList(ctx: Context, userId: number) {
   try {
+    console.log(`[showAgentsList] userId=${userId}`);
     const r = await getDBTools().getUserAgents(userId);
+    console.log(`[showAgentsList] result: success=${r.success} count=${r.data?.length || 0} error=${r.error || ''}`);
     if (!r.success || !r.data?.length) {
       await editOrReply(ctx,
         `${pe('robot')} <b>Ваши агенты</b>\n\n` +
@@ -8664,7 +12233,7 @@ async function showAgentsList(ctx: Context, userId: number) {
     await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: btns } });
   } catch (err) {
     console.error('showAgentsList error:', err);
-    await ctx.reply('❌ Ошибка загрузки агентов. Попробуйте /start');
+    await ctx.reply(`${ce('cross','❌')} Ошибка загрузки агентов. Попробуйте /start`);
   }
 }
 
@@ -8672,31 +12241,64 @@ async function showAgentsList(ctx: Context, userId: number) {
 // Меню возможностей агента (capabilities toggle)
 // ============================================================
 const CAPABILITY_LABELS: Record<string, { icon: string; ru: string; en: string }> = {
-  wallet:       { icon: '💰', ru: 'Кошелёк TON', en: 'TON Wallet' },
-  nft:          { icon: '🖼', ru: 'NFT анализ', en: 'NFT Analysis' },
-  gifts:        { icon: '🎁', ru: 'Подарки', en: 'Gifts' },
-  gifts_market: { icon: '📊', ru: 'Рынок подарков', en: 'Gift Market' },
-  telegram:     { icon: '📱', ru: 'Telegram', en: 'Telegram' },
-  web:          { icon: '🌐', ru: 'Веб поиск', en: 'Web Search' },
-  plugins:      { icon: '🔌', ru: 'Плагины', en: 'Plugins' },
-  inter_agent:  { icon: '🔗', ru: 'Межагент', en: 'Inter-agent' },
+  // ── Блокчейн / финансы ─────────────────────────────────────────────────
+  wallet:            { icon: '💰', ru: 'Кошелёк TON', en: 'TON Wallet' },
+  blockchain:        { icon: '⛓', ru: 'Блокчейн TON', en: 'TON Blockchain' },
+  defi:              { icon: '🔄', ru: 'DeFi / DEX', en: 'DeFi / DEX' },
+  nft:               { icon: '🖼', ru: 'NFT анализ', en: 'NFT Analysis' },
+  dns:               { icon: '🔑', ru: 'TON DNS', en: 'TON DNS' },
+  payments:          { icon: '💳', ru: 'Платежи', en: 'Payments' },
+  // ── Подарки / маркет ───────────────────────────────────────────────────
+  gifts:             { icon: '🎁', ru: 'Подарки (базовые)', en: 'Gifts (basic)' },
+  gifts_market:      { icon: '📊', ru: 'Рынок подарков', en: 'Gift Market' },
+  // ── Telegram ───────────────────────────────────────────────────────────
+  telegram:          { icon: '📱', ru: 'Telegram', en: 'Telegram' },
+  telegram_admin:    { icon: '🛡', ru: 'TG Администрирование', en: 'TG Admin' },
+  telegram_stories:  { icon: '📸', ru: 'TG Истории', en: 'TG Stories' },
+  telegram_forums:   { icon: '💬', ru: 'TG Форумы', en: 'TG Forums' },
+  telegram_analytics:{ icon: '📈', ru: 'TG Аналитика', en: 'TG Analytics' },
+  telegram_media:    { icon: '🎬', ru: 'TG Медиа', en: 'TG Media' },
+  telegram_discovery:{ icon: '🔍', ru: 'TG Поиск', en: 'TG Discovery' },
+  telegram_premium:  { icon: '⭐', ru: 'TG Premium', en: 'TG Premium' },
+  ton_mcp:           { icon: '🔗', ru: 'TON MCP', en: 'TON MCP' },
+  // ── Веб / данные ───────────────────────────────────────────────────────
+  web:               { icon: '🌐', ru: 'Веб поиск', en: 'Web Search' },
+  image:             { icon: '🖼', ru: 'Работа с картинками', en: 'Images' },
+  image_gen:         { icon: '🎨', ru: 'Генерация картинок', en: 'Image Gen' },
+  email:             { icon: '📧', ru: 'Email', en: 'Email' },
+  workspace:         { icon: '📂', ru: 'Файлы', en: 'Files' },
+  mcp:               { icon: '🔌', ru: 'MCP серверы', en: 'MCP Servers' },
+  // ── Платформа ──────────────────────────────────────────────────────────
+  state:             { icon: '💾', ru: 'Состояние', en: 'State' },
+  events:            { icon: '📡', ru: 'События / таймеры', en: 'Events / Timers' },
+  notify:            { icon: '🔔', ru: 'Уведомления', en: 'Notifications' },
+  plugins:           { icon: '🔌', ru: 'Плагины', en: 'Plugins' },
+  inter_agent:       { icon: '🤝', ru: 'Межагентность', en: 'Inter-agent' },
+  self_memory:       { icon: '🧠', ru: 'Память агента', en: 'Agent Memory' },
+  journal:           { icon: '📓', ru: 'Журнал', en: 'Journal' },
+  deals:             { icon: '🤝', ru: 'Сделки', en: 'Deals' },
+  confirmation:      { icon: '✅', ru: 'Подтверждения', en: 'Confirmations' },
 };
 
 async function showCapabilitiesMenu(ctx: Context, agentId: number, enabledCaps: string[]) {
   const userId = (ctx.from as any)?.id || 0;
   const lang = getUserLang(userId);
   const ru = lang === 'ru';
-  const allCaps = enabledCaps.length === 0;
+  const totalCaps = Object.keys(CAPABILITY_LABELS).length;
+  // «Все включены» = пустой массив ИЛИ все caps явно перечислены
+  const allCaps = enabledCaps.length === 0 || enabledCaps.length >= totalCaps;
 
   let text = `🧩 <b>${ru ? 'Возможности агента' : 'Agent Capabilities'}</b> #${agentId}\n`;
   text += `${div()}\n`;
-  text += ru
-    ? (allCaps ? '<i>Все возможности включены (по умолчанию)</i>\n' : `<i>Выбрано: ${enabledCaps.length} из ${Object.keys(CAPABILITY_LABELS).length}</i>\n`)
-    : (allCaps ? '<i>All capabilities enabled (default)</i>\n' : `<i>Selected: ${enabledCaps.length} of ${Object.keys(CAPABILITY_LABELS).length}</i>\n`);
+  if (allCaps) {
+    text += ru ? `<i>${ce('check','✅')} Все возможности включены</i>\n` : `<i>${ce('check','✅')} All capabilities enabled</i>\n`;
+  } else {
+    text += ru
+      ? `<i>Включено: ${enabledCaps.length} из ${totalCaps}</i>\n`
+      : `<i>Enabled: ${enabledCaps.length} of ${totalCaps}</i>\n`;
+  }
   text += '\n';
-  text += ru
-    ? '👆 Нажмите чтобы включить/выключить:'
-    : '👆 Tap to toggle:';
+  text += ru ? '👆 Нажмите чтобы включить/выключить:' : '👆 Tap to toggle:';
 
   const keyboard: any[][] = [];
   const capIds = Object.keys(CAPABILITY_LABELS);
@@ -8735,20 +12337,20 @@ async function savePromptVersion(agentId: number, userId: number) {
     const stateRepo = getAgentStateRepository();
     const versionsRaw = await stateRepo.get(agentId, '_code_versions').catch(() => null);
     let versions: Array<{ code: string; savedAt: string }> = [];
-    try { versions = JSON.parse(versionsRaw?.value || '[]'); } catch { versions = []; }
+    try { versions = Array.isArray(versionsRaw) ? versionsRaw : (typeof versionsRaw === 'string' ? JSON.parse(versionsRaw) : []); } catch { versions = []; }
     // Don't save duplicate if last version is same code
     if (versions.length > 0 && versions[versions.length - 1].code === oldCode) return;
     versions.push({ code: oldCode, savedAt: new Date().toISOString() });
     if (versions.length > 10) versions = versions.slice(-10); // keep last 10
-    await stateRepo.set(agentId, userId, '_code_versions', JSON.stringify(versions));
-  } catch {}
+    await stateRepo.set(agentId, userId, '_code_versions', versions);
+  } catch (e: any) { console.warn('[AutoRepair] version save:', e.message); }
 }
 
 async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
   try {
     const lang = getUserLang(userId);
     const r = await getDBTools().getAgent(agentId, userId);
-    if (!r.success || !r.data) { await ctx.reply('❌ ' + (lang === 'ru' ? 'Агент не найден' : 'Agent not found')); return; }
+    if (!r.success || !r.data) { await ctx.reply(`${ce('cross','❌')} ` + (lang === 'ru' ? 'Агент не найден' : 'Agent not found')); return; }
     const a = r.data;
     setCachedOwner(agentId, userId);
     const name = escHtml((a.name || '').slice(0, 60));
@@ -8801,9 +12403,71 @@ async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
         agentLevel = roleRes.rows[0].level || 1;
       }
     } catch {}
-    const roleEmoji = agentRole === 'director' ? '🧠' : agentRole === 'manager' ? '📊' : '🤖';
-    const roleName = agentRole === 'director' ? 'Director' : agentRole === 'manager' ? 'Manager' : 'Worker';
+    const roleLabelsMap: Record<string, string> = { worker: 'WRK', specialist: 'EXP', manager: 'MGR', director: 'DIR', monitor: 'MON', creative: 'CRT', trader: 'TRD', admin: 'ADM' };
+    const roleNamesMap: Record<string, string> = { worker: 'Worker', specialist: 'Specialist', manager: 'Manager', director: 'Director', monitor: 'Monitor', creative: 'Creative', trader: 'Trader', admin: 'Chat Admin' };
+    const roleEmoji = `[${roleLabelsMap[agentRole] || 'WRK'}]`;
+    const roleName = roleNamesMap[agentRole] || 'Worker';
     const levelBar = '█'.repeat(Math.min(agentLevel, 10)) + '░'.repeat(Math.max(0, 10 - agentLevel));
+
+    // ── Onboarding checklist: detect what's missing ──
+    const cfg = typeof a.triggerConfig === 'object' ? a.triggerConfig as Record<string, any> : {};
+    const agentCfg = cfg?.config || {};
+    const hasApiKey = !!(agentCfg.AI_API_KEY || agentCfg.apiKey);
+    let hasGlobalKey = false;
+    try {
+      const uvRes = await dbPool.query('SELECT value FROM builder_bot.user_variables WHERE user_id=$1 AND key=$2', [userId, 'AI_API_KEY']);
+      hasGlobalKey = !!(uvRes.rows[0]?.value);
+    } catch {}
+    // v2.3.5: only user's own key counts. No platform fallback.
+    const aiKeyOk = hasApiKey || hasGlobalKey;
+
+    let hasTgAuth = false;
+    try {
+      const { userbotManager } = await import('./services/userbot-manager');
+      hasTgAuth = !!(await userbotManager.getClient(agentId));
+    } catch {}
+
+    let hasWallet = false;
+    try {
+      const walletState = await getAgentStateRepository().get(agentId, 'wallet_address');
+      hasWallet = !!(walletState?.value || walletState);
+    } catch {}
+
+    const ru = lang === 'ru';
+    let checklist = '';
+    const checklistIssues: string[] = [];
+    if (a.triggerType === 'ai_agent') {
+      const c1 = aiKeyOk ? '✅' : '❌';
+      const c2 = hasTgAuth ? '✅' : '⚠️';
+      const c3 = hasWallet ? '✅' : '⚠️';
+      if (!aiKeyOk) checklistIssues.push(ru ? '❌ API ключ — агент не работает!' : '❌ API key — agent won\'t work!');
+      if (!hasTgAuth) checklistIssues.push(ru ? '⚠️ Telegram не подключён' : '⚠️ Telegram not connected');
+      if (!hasWallet) checklistIssues.push(ru ? '⚠️ Кошелёк не создан' : '⚠️ Wallet not created');
+
+      if (checklistIssues.length > 0) {
+        checklist = '\n\n' + (ru ? '📋 <b>Настройка:</b>' : '📋 <b>Setup:</b>') + '\n' +
+          `${c1} ${ru ? 'AI ключ' : 'AI Key'}  ${c2} Telegram  ${c3} ${ru ? 'Кошелёк' : 'Wallet'}\n` +
+          checklistIssues.join('\n');
+      }
+    }
+
+    // ── Краткий список capabilities для ai_agent ─────────────────────────
+    let capsLine = '';
+    if (a.triggerType === 'ai_agent') {
+      const enabledCaps = (agentCfg.enabledCapabilities as string[] | undefined);
+      const totalCaps = Object.keys(CAPABILITY_LABELS).length;
+      if (!enabledCaps || enabledCaps.length === 0 || enabledCaps.length >= totalCaps) {
+        capsLine = `\n🧩 ${ru ? 'Все возможности' : 'All capabilities'} (${totalCaps})`;
+      } else {
+        // Показываем иконки активных capabilities
+        const icons = enabledCaps
+          .map(c => CAPABILITY_LABELS[c]?.icon)
+          .filter(Boolean)
+          .slice(0, 10)
+          .join('');
+        capsLine = `\n🧩 ${icons} <i>${enabledCaps.length}/${totalCaps}</i>`;
+      }
+    }
 
     const text =
       `${statusIcon} <b>${name}</b>  #${a.id}\n` +
@@ -8812,7 +12476,9 @@ async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
       `${triggerIcon} ${escHtml(triggerText + intervalLabel)}\n` +
       `${roleEmoji} ${roleName} · Lv.${agentLevel} · ${agentXp} XP\n` +
       `[${levelBar}]\n` +
-      (dateLabel ? `${pe('calendar')} ${lang === 'ru' ? 'Создан' : 'Created'}: <i>${dateLabel}</i>\n` : '') +
+      capsLine +
+      (dateLabel ? `\n${pe('calendar')} ${lang === 'ru' ? 'Создан' : 'Created'}: <i>${dateLabel}</i>` : '') +
+      checklist +
       (hasError ? `\n⚠️ <b>${lang === 'ru' ? 'Последняя ошибка:' : 'Last error:'}</b>\n<code>${escHtml(lastErr!.error.slice(0, 120))}</code>` : '') +
       (desc ? `\n<i>${desc}</i>` : '');
 
@@ -8882,7 +12548,7 @@ async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
     // Section 6 — Advanced: Inter-agent + Userbot (one row)
     try {
       const iaState = await getAgentStateRepository().get(agentId, 'inter_agent_enabled');
-      const iaEnabled = iaState && iaState.value === 'true';
+      const iaEnabled = String(iaState) === 'true';
       keyboard.push([
         {
           text: iaEnabled
@@ -8896,7 +12562,16 @@ async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
       keyboard.push([{ text: `🧑‍💻 Userbot`, callback_data: `deploy_userbot:${agentId}` }]);
     }
 
-    // Section 7 — Role management
+    // Section 7 — Hooks & Session (blocklist, triggers, session policy)
+    if (a.triggerType === 'ai_agent') {
+      keyboard.push([
+        { text: `🚫 ${ru2 ? 'Блоклист' : 'Blocklist'}`, callback_data: `hooks_blocklist:${agentId}` },
+        { text: `🎯 ${ru2 ? 'Триггеры' : 'Triggers'}`, callback_data: `hooks_triggers:${agentId}` },
+        { text: `🔄 ${ru2 ? 'Сессия' : 'Session'}`, callback_data: `hooks_session:${agentId}` },
+      ]);
+    }
+
+    // Section 8 — Role management
     keyboard.push([
       { text: `${roleEmoji} ${ru2 ? 'Роль' : 'Role'}: ${roleName}`, callback_data: `set_role:${agentId}` },
     ]);
@@ -8906,7 +12581,19 @@ async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
       keyboard.push([{ text: `🔧 ${ru2 ? 'AI Автопочинка' : 'AI Auto-repair'}`, callback_data: `auto_repair:${agentId}` }]);
     }
 
-    // Section 8 — Clone + Delete + Back
+    // Section 8b — Analytics, Tasks, Tokens, Contacts (for ai_agent)
+    if (a.triggerType === 'ai_agent') {
+      keyboard.push([
+        { text: `📊 ${ru2 ? 'Аналитика' : 'Analytics'}`, callback_data: `agent_analytics:${agentId}` },
+        { text: `📋 ${ru2 ? 'Задачи' : 'Tasks'}`, callback_data: `agent_tasks:${agentId}` },
+      ]);
+      keyboard.push([
+        { text: `🪙 ${ru2 ? 'Токены' : 'Tokens'}`, callback_data: `agent_tokens:${agentId}` },
+        { text: `👥 ${ru2 ? 'Контакты' : 'Contacts'}`, callback_data: `agent_contacts:${agentId}` },
+      ]);
+    }
+
+    // Section 9 — Clone + Delete + Back
     keyboard.push([
       { text: `📋 ${ru2 ? 'Клон' : 'Clone'}`, callback_data: `clone_agent:${agentId}` },
       { text: `🗑 ${ru2 ? 'Удалить' : 'Delete'}`, callback_data: `delete_agent:${agentId}` },
@@ -8915,7 +12602,7 @@ async function showAgentMenu(ctx: Context, agentId: number, userId: number) {
 
     await editOrReply(ctx, text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } });
   } catch (err) {
-    await ctx.reply('❌ ' + 'Error loading agent');
+    await ctx.reply(`${ce('cross','❌')} ` + 'Error loading agent');
   }
 }
 
@@ -8992,7 +12679,7 @@ async function showTonConnect(ctx: Context) {
             userId,
             `✅ Кошелёк подключён!\n\n👛 ${w.walletName}\n📋 ${w.friendlyAddress}`,
           );
-        } catch {}
+        } catch (e: any) { console.warn('[TonConnect] profile save:', e.message); }
       }
     });
 
@@ -9102,7 +12789,7 @@ async function showMarketplaceAll(ctx: Context) {
 async function showMarketplaceCategory(ctx: Context, category: AgentTemplate['category']) {
   const lang = getUserLang(ctx.from?.id || 0);
   const templates = allAgentTemplates.filter(t => t.category === category);
-  if (!templates.length) { await ctx.reply('❌ ' + (lang === 'ru' ? 'Агенты не найдены' : 'Agents not found'), { reply_markup: { inline_keyboard: [[{ text: `${peb('back')} ${lang === 'ru' ? 'Назад' : 'Back'}`, callback_data: 'marketplace' }]] } }); return; }
+  if (!templates.length) { await ctx.reply(`${ce('cross','❌')} ` + (lang === 'ru' ? 'Агенты не найдены' : 'Agents not found'), { reply_markup: { inline_keyboard: [[{ text: `${peb('back')} ${lang === 'ru' ? 'Назад' : 'Back'}`, callback_data: 'marketplace' }]] } }); return; }
 
   const catMeta: Record<string, { icon: string; name: string }> = {
     ton:        { icon: peb('diamond'),  name: lang === 'ru' ? 'TON блокчейн' : 'TON Blockchain' },
@@ -9125,7 +12812,7 @@ async function showMarketplaceCategory(ctx: Context, category: AgentTemplate['ca
 async function showTemplateDetails(ctx: Context, templateId: string) {
   const lang = getUserLang(ctx.from?.id || 0);
   const t = allAgentTemplates.find(x => x.id === templateId);
-  if (!t) { await ctx.reply('❌ ' + (lang === 'ru' ? 'Шаблон не найден' : 'Template not found')); return; }
+  if (!t) { await ctx.reply(`${ce('cross','❌')} ` + (lang === 'ru' ? 'Шаблон не найден' : 'Template not found')); return; }
 
   const triggerIcon = t.triggerType === 'scheduled' ? peb('calendar') : t.triggerType === 'webhook' ? peb('link') : peb('bolt');
   const triggerLabel = t.triggerType === 'scheduled'
@@ -9173,7 +12860,7 @@ async function showTemplateDetails(ctx: Context, templateId: string) {
 
 async function createAgentFromTemplate(ctx: Context, templateId: string, userId: number) {
   const t = allAgentTemplates.find(x => x.id === templateId);
-  if (!t) { await ctx.reply('❌ Шаблон не найден'); return; }
+  if (!t) { await ctx.reply(`${ce('cross','❌')} Шаблон не найден`); return; }
 
   // If template has configurable placeholders → run variable wizard first
   if (t.placeholders.length > 0) {
@@ -9204,13 +12891,18 @@ async function createAgentFromTemplate(ctx: Context, templateId: string, userId:
 
 async function doCreateAgentFromTemplate(ctx: Context, templateId: string, userId: number, vars: Record<string, string>) {
   const t = allAgentTemplates.find(x => x.id === templateId);
-  if (!t) { await ctx.reply('❌ Шаблон не найден'); return; }
+  if (!t) { await ctx.reply(`${ce('cross','❌')} Шаблон не найден`); return; }
 
   await ctx.sendChatAction('typing');
   const name = t.id + '_' + Date.now().toString(36).slice(-4);
 
   // Merge collected vars into triggerConfig.config
-  const triggerConfig = { ...t.triggerConfig, config: { ...(t.triggerConfig.config || {}), ...vars } };
+  // Для ai_agent шаблонов — явно прописываем все capabilities, как у описательных агентов
+  const templateConfig = { ...(t.triggerConfig.config || {}), ...vars };
+  if (t.triggerType === 'ai_agent' && !templateConfig.enabledCapabilities) {
+    templateConfig.enabledCapabilities = ALL_CAPABILITIES_FULL;
+  }
+  const triggerConfig = { ...t.triggerConfig, config: templateConfig };
 
   const result = await getDBTools().createAgent({
     userId,
@@ -9222,7 +12914,7 @@ async function doCreateAgentFromTemplate(ctx: Context, templateId: string, userI
     isActive: false,
   });
 
-  if (!result.success) { await ctx.reply(`❌ Ошибка: ${result.error}`); return; }
+  if (!result.success) { await ctx.reply(`${ce('cross','❌')} Ошибка: ${result.error}`); return; }
   const agent = result.data!;
 
   const lang = getUserLang(userId);
@@ -9421,7 +13113,7 @@ async function buyMarketplaceListing(ctx: Context, listingId: number, userId: nu
     const agentResult = await getDBTools().getAgent(listing.agentId, listing.sellerId);
     if (!agentResult.success || !agentResult.data) {
       // Mark listing as unavailable so others don't hit the same error
-      try { await getMarketplaceRepository().deactivateListing(listingId, listing.sellerId); } catch {}
+      try { await getMarketplaceRepository().deactivateListing(listingId, listing.sellerId); } catch (e: any) { console.warn('[Marketplace] deactivate listing:', e.message); }
       return editOrReply(ctx, '❌ Агент продавца не найден или удалён. Листинг деактивирован.', {});
     }
     const sourceAgent = agentResult.data;
@@ -9531,7 +13223,7 @@ async function startPublishFlow(ctx: Context, userId: number) {
       { parse_mode: 'HTML', reply_markup: { inline_keyboard: rows } }
     );
   } catch (e: any) {
-    await safeReply(ctx, `❌ Ошибка: ${e.message || 'unknown'}`);
+    await safeReply(ctx, `${ce('cross','❌')} Ошибка: ${e.message || 'unknown'}`);
   }
 }
 
@@ -9543,7 +13235,7 @@ async function doPublishAgent(ctx: Context, userId: number, agentId: number, pri
   try {
     const agentResult = await getDBTools().getAgent(agentId, userId);
     if (!agentResult.success || !agentResult.data) {
-      await ctx.reply('❌ Агент не найден или не принадлежит вам');
+      await ctx.reply(`${ce('cross','❌')} Агент не найден или не принадлежит вам`);
       return;
     }
     const agent = agentResult.data;
@@ -9575,7 +13267,7 @@ async function doPublishAgent(ctx: Context, userId: number, agentId: number, pri
       }
     );
   } catch (e: any) {
-    await safeReply(ctx, `❌ Ошибка публикации: ${escHtml(e.message || 'Неизвестная ошибка')}`, { parse_mode: 'HTML' });
+    await safeReply(ctx, `${ce('cross','❌')} Ошибка публикации: ${escHtml(e.message || 'Неизвестная ошибка')}`, { parse_mode: 'HTML' });
   }
 }
 
@@ -9643,7 +13335,7 @@ async function showAllPlugins(ctx: Context) {
   const plugins = getPluginManager().getAllPlugins();
   let text = `🔌 <b>Все плагины (${escHtml(plugins.length)}):</b>\n\n`;
   plugins.forEach((p, i) => {
-    text += `${i + 1}. ${p.isInstalled ? '✅' : '⬜'} <b>${escHtml(p.name)}</b> ${p.price > 0 ? `(${escHtml(p.price)} TON)` : '(free)'}\n`;
+    text += `${i + 1}. ${p.isInstalled ? ce('check','✅') : '⬜'} <b>${escHtml(p.name)}</b> ${p.price > 0 ? `(${escHtml(p.price)} TON)` : '(free)'}\n`;
     text += `   ${escHtml(p.description.slice(0, 150))}...\n`;
   });
   const btns = plugins.map(p => [{ text: p.name, callback_data: `plugin:${p.id}` }]);
@@ -9655,7 +13347,7 @@ async function showPluginDetails(ctx: Context, pluginId: string) {
   const userId = ctx.from?.id || 0;
   const ru = getUserLang(userId) === 'ru';
   const plugin = getPluginManager().getPlugin(pluginId);
-  if (!plugin) { await ctx.reply('❌ Плагин не найден'); return; }
+  if (!plugin) { await ctx.reply(`${ce('cross','❌')} Плагин не найден`); return; }
 
   // Проверяем установку из DB
   let isInstalled = false;
@@ -9751,7 +13443,7 @@ async function showWorkflows(ctx: Context, userId: number) {
 async function showWorkflowTemplate(ctx: Context, idx: number) {
   const templates = getWorkflowEngine().getWorkflowTemplates();
   const t = templates[idx];
-  if (!t) { await ctx.reply('❌ Шаблон не найден'); return; }
+  if (!t) { await ctx.reply(`${ce('cross','❌')} Шаблон не найден`); return; }
 
   const text =
     `⚡ <b>${escHtml(t.name)}</b>\n\n${escHtml(t.description)}\n\n` +
@@ -9771,7 +13463,7 @@ async function createWorkflowFromTemplate(ctx: Context, userId: number, idx: num
   const engine = getWorkflowEngine();
   const templates = engine.getWorkflowTemplates();
   const t = templates[idx];
-  if (!t) { await ctx.reply('❌ Шаблон не найден'); return; }
+  if (!t) { await ctx.reply(`${ce('cross','❌')} Шаблон не найден`); return; }
 
   const nodes = t.nodes.map((n, i) => ({ ...n, agentId: i + 1 }));
   const result = await engine.createWorkflow(userId, t.name, t.description, nodes);
@@ -9782,7 +13474,7 @@ async function createWorkflowFromTemplate(ctx: Context, userId: number, idx: num
       { parse_mode: 'HTML' }
     );
   } else {
-    await ctx.reply(`❌ Ошибка: ${result.error}`);
+    await ctx.reply(`${ce('cross','❌')} Ошибка: ${result.error}`);
   }
 }
 
@@ -9801,7 +13493,7 @@ async function showStats(ctx: Context, userId: number) {
   const wallet = isConnected ? tonConn.getWallet(userId) : null;
   const agentWallet = agentWallets.get(userId);
   const agentBalance = agentWallet ? await getWalletBalance(agentWallet.address) : null;
-  const isOwner = userId === parseInt(process.env.OWNER_ID || '0');
+  const isOwner = isPlatformAdmin(userId);
   const currentModel = getUserModel(userId);
   const modelInfo = MODEL_LIST.find(m => m.id === currentModel);
 
@@ -9815,7 +13507,7 @@ async function showStats(ctx: Context, userId: number) {
     text += `TON Connect: ${pe('check')} ${escHtml(wallet.walletName)}\n`;
     text += `${lang === 'ru' ? 'Адрес' : 'Address'}: <code>${escHtml(wallet.friendlyAddress)}</code>\n`;
   } else {
-    text += `TON Connect: ❌ ${lang === 'ru' ? 'не подключён' : 'not connected'}\n`;
+    text += `TON Connect: ${ce('cross','❌')} ${lang === 'ru' ? 'не подключён' : 'not connected'}\n`;
   }
 
   if (agentBalance !== null) {
@@ -9881,7 +13573,7 @@ async function showModelSelector(ctx: Context) {
     if ((m as any).recommended) tags.push(lang === 'ru' ? '⭐ рекомендована' : '⭐ recommended');
     if ((m as any).fast) tags.push(lang === 'ru' ? '⚡ быстрая' : '⚡ fast');
     const tagStr = tags.length ? ` — <i>${escHtml(tags.join(', '))}</i>` : '';
-    text += `${isCurrent ? '▶️' : '  '} ${escHtml(m.icon)} ${escHtml(m.label)}${isCurrent ? ' ✅' : ''}${tagStr}\n`;
+    text += `${isCurrent ? '▶️' : '  '} ${escHtml(m.icon)} ${escHtml(m.label)}${isCurrent ? ' ' + ce('check','✅') : ''}${tagStr}\n`;
   });
 
   const btns = MODEL_LIST.map(m => [{
@@ -9901,7 +13593,7 @@ async function showSubscription(ctx: Context) {
   const lang = getUserLang(userId);
   const sub = await getUserSubscription(userId);
   const plan = PLANS[sub.planId] || PLANS.free;
-  const isOwner = userId === OWNER_ID_NUM;
+  const isOwner = isPlatformAdmin(userId);
 
   let text =
     `${pe('card')} <b>${lang === 'ru' ? 'Подписка' : 'Subscription'}</b>\n\n` +
@@ -9987,7 +13679,7 @@ async function showPaymentInvoice(ctx: Context, planId: string, period: 'month' 
   const payment = createPayment(userId, planId, period);
 
   if ('error' in payment) {
-    await ctx.reply(`❌ ${payment.error}`);
+    await ctx.reply(`${ce('cross','❌')} ${payment.error}`);
     return;
   }
 
@@ -10043,7 +13735,7 @@ async function checkPaymentStatus(ctx: Context) {
   const pending = getPendingPayment(userId);
 
   if (!pending) {
-    await ctx.reply('❌ Нет ожидающего платежа. Создайте новый через /plans');
+    await ctx.reply(`${ce('cross','❌')} Нет ожидающего платежа. Создайте новый через /plans`);
     return;
   }
 
@@ -10098,6 +13790,8 @@ async function showHelp(ctx: Context) {
       `Агент создаётся автоматически и запускается на нашем сервере — <b>ничего устанавливать не нужно</b>.\n\n` +
       `${pe('clipboard')} <b>Команды</b>\n\n` +
       `/start — главное меню\n` +
+      `/onboarding — обучение по бета-программе (ветки, зоны, XP)\n` +
+      `/levels — мой уровень + что даёт каждый (snapshot, lifetime free, wall)\n` +
       `/list — мои агенты\n` +
       `/run ID — запустить агента (пример: /run 3)\n` +
       `/config — мои переменные (ключи, адреса)\n` +
@@ -10106,7 +13800,8 @@ async function showHelp(ctx: Context) {
       `/plans — тарифы и оплата\n` +
       `/connect — подключить TON кошелёк (Tonkeeper)\n` +
       `/wallet — агентский кошелёк (без мобильного приложения)\n` +
-      `/marketplace — готовые шаблоны агентов\n\n` +
+      `/marketplace — готовые шаблоны агентов\n` +
+      `/cancel — сбросить любой незавершённый мастер\n\n` +
       `${pe('sparkles')} <b>Что умеют агенты</b>\n\n` +
       `• Работать с <b>любыми</b> публичными API\n` +
       `• Мониторить TON-кошельки и цены\n` +
@@ -10122,6 +13817,8 @@ async function showHelp(ctx: Context) {
       `Agent is created automatically and runs on our server — <b>nothing to install</b>.\n\n` +
       `${pe('clipboard')} <b>Commands</b>\n\n` +
       `/start — main menu\n` +
+      `/onboarding — beta program tour (branches, zones, XP)\n` +
+      `/levels — my level + what each unlocks (snapshot, lifetime free, wall)\n` +
       `/list — my agents\n` +
       `/run ID — run agent (example: /run 3)\n` +
       `/config — my variables (keys, addresses)\n` +
@@ -10130,7 +13827,8 @@ async function showHelp(ctx: Context) {
       `/plans — pricing\n` +
       `/connect — connect TON wallet (Tonkeeper)\n` +
       `/wallet — agent wallet (no mobile app needed)\n` +
-      `/marketplace — ready-made agent templates\n\n` +
+      `/marketplace — ready-made agent templates\n` +
+      `/cancel — cancel any pending wizard\n\n` +
       `${pe('sparkles')} <b>What agents can do</b>\n\n` +
       `• Work with <b>any</b> public API\n` +
       `• Monitor TON wallets and prices\n` +
@@ -10161,8 +13859,85 @@ async function showHelp(ctx: Context) {
 // ============================================================
 bot.catch((err, ctx) => {
   console.error('Bot error:', err);
-  ctx.reply('❌ Произошла ошибка. Попробуйте /start').catch(() => {});
+  ctx.reply(`${ce('cross','❌')} Произошла ошибка. Попробуйте /start`).catch(() => {});
 });
+
+// ── Daily Digest: post every day at 10:00 MSK (07:00 UTC) ──
+function scheduleDailyDigest() {
+  const now = new Date();
+  // Calculate ms until next 07:00 UTC (10:00 MSK)
+  const target = new Date(now);
+  target.setUTCHours(7, 0, 0, 0);
+  if (target <= now) target.setDate(target.getDate() + 1);
+  const msUntilTarget = target.getTime() - now.getTime();
+
+  setTimeout(async () => {
+    try {
+      const { generateDailyDigest } = require('./engagement');
+      const { pool } = require('./db');
+      const text = await generateDailyDigest(pool, true); // ru
+      await postToTopic(TOPIC_IDS.daily_quest, text);
+      console.log('[DailyDigest] Posted');
+    } catch (e: any) { console.warn('[DailyDigest] Error:', e.message); }
+    // Reschedule for next day
+    const dailyTimer = setInterval(async () => {
+      try {
+        const { generateDailyDigest } = require('./engagement');
+        const { pool } = require('./db');
+        const text = await generateDailyDigest(pool, true);
+        await postAnnouncement(text);
+        console.log('[DailyDigest] Posted');
+      } catch (e: any) { console.warn('[DailyDigest] Error:', e.message); }
+    }, 24 * 60 * 60 * 1000);
+    (dailyTimer as any).unref?.();
+  }, msUntilTarget);
+  console.log(`[DailyDigest] Scheduled in ${Math.round(msUntilTarget / 60000)} minutes`);
+}
+
+// ── Inactive Pings: check every 24h ──
+function scheduleInactivePings() {
+  const t = setInterval(async () => {
+    try {
+      const { getInactiveTesters, formatInactivePing } = require('./engagement');
+      const { pool } = require('./db');
+      const inactive = await getInactiveTesters(pool, 3);
+      for (const t of inactive.slice(0, 10)) { // max 10 pings per day
+        try {
+          const ru = true; // default ru
+          const text = formatInactivePing(t.daysSinceActive, ru);
+          await bot.telegram.sendMessage(t.userId, text, { parse_mode: 'HTML' });
+        } catch {} // user may have blocked bot
+      }
+      if (inactive.length) console.log(`[InactivePing] Pinged ${Math.min(inactive.length, 10)} testers`);
+    } catch (e: any) { console.warn('[InactivePing] Error:', e.message); }
+  }, 24 * 60 * 60 * 1000);
+  (t as any).unref?.();
+}
+
+// ── Weekly Hall of Fame + Decay ──
+function scheduleWeeklyTasks() {
+  const wt = setInterval(async () => {
+    const day = new Date().getDay();
+    if (day !== 1) return; // Only Mondays
+    try {
+      // Hall of Fame
+      const { generateHallOfFame, applyWeeklyDecay, getCurrentEvent, formatEventMessage } = require('./engagement');
+      const { pool } = require('./db');
+      const fame = await generateHallOfFame(pool, true);
+      await postAnnouncement(fame);
+      // Weekly decay
+      const affected = await applyWeeklyDecay(pool);
+      if (affected > 0) console.log(`[WeeklyDecay] ${affected} users lost XP`);
+      // Post new event if any
+      const event = getCurrentEvent();
+      if (event) {
+        const eventText = formatEventMessage(true);
+        await postToTopic(TOPIC_IDS.events, eventText);
+      }
+    } catch (e: any) { console.warn('[Weekly] Error:', e.message); }
+  }, 24 * 60 * 60 * 1000);
+  (wt as any).unref?.();
+}
 
 // ============================================================
 // Запуск
@@ -10204,6 +13979,71 @@ export async function startBot() {
   console.log('✅ Bot is running!');
   // Verify platform wallet config at startup
   verifyPlatformWalletConfig().catch(e => console.warn('[Bot] verifyPlatformWalletConfig:', e?.message || e));
+  // Auto-post changelog on deploy (delayed to ensure bot is ready)
+  setTimeout(() => postChangelogOnDeploy().catch(e => console.warn('[Changelog]', e?.message)), 10000);
+  // Start engagement scheduled tasks
+  setTimeout(() => {
+    scheduleDailyDigest();
+    scheduleInactivePings();
+    scheduleWeeklyTasks();
+    // Rewards crons: Hall of Week (Fri 20:00 MSK), Monthly Snapshot (1st 00:00),
+    // Inactive decay (every 12h).
+    try {
+      const { startRewardsCrons } = require('./rewards-crons');
+      const groupId = parseInt(process.env.BETA_GROUP_ID || '0', 10);
+      const weeklyTopicId = process.env.BETA_WEEKLY_TOPIC_ID
+        ? parseInt(process.env.BETA_WEEKLY_TOPIC_ID, 10)
+        : (TOPIC_IDS as any)?.announcements || undefined;
+      if (groupId) {
+        startRewardsCrons(bot, dbPool, groupId, weeklyTopicId);
+      } else {
+        console.warn('[Rewards] BETA_GROUP_ID not set — Hall of Week + Snapshot crons disabled');
+      }
+    } catch (e: any) { console.warn('[Rewards] cron init:', e?.message); }
+
+    // Memory cleanup cron — Phase 4. Runs once on startup (+5min) then daily.
+    // Zero cost (SQL only). Prunes agent_memory_vec / agent_lessons / contacts /
+    // mailbox / transcripts per per-agent caps + recency rules.
+    try {
+      const { startMemoryCleanupCron } = require('./services/memory-cleanup');
+      startMemoryCleanupCron(dbPool);
+      console.log('[MemoryCleanup] daily cron armed (first pass in 5 min)');
+    } catch (e: any) { console.warn('[MemoryCleanup] cron init:', e?.message); }
+  }, 15000); // 15s after startup
+  // Post current event ONLY on first start of the event day (dedupe via DB)
+  try {
+    const { getCurrentEvent, formatEventMessage } = require('./engagement');
+    const event = getCurrentEvent();
+    if (event) {
+      const today = new Date().toISOString().slice(0, 10);
+      if (event.start === today) {
+        setTimeout(async () => {
+          try {
+            const { pool } = require('./db');
+            // Check if this event was already posted
+            const posted = await pool.query(
+              `SELECT status FROM builder_bot.beta_events WHERE id = $1`,
+              [event.id]
+            );
+            if (posted.rows.length > 0 && posted.rows[0].status === 'posted') {
+              console.log('[Events] Already posted:', event.id);
+              return;
+            }
+            const text = formatEventMessage(true);
+            await postToTopic(TOPIC_IDS.events, text);
+            // Mark as posted
+            await pool.query(
+              `INSERT INTO builder_bot.beta_events (id, title, type, start_date, end_date, status)
+               VALUES ($1, $2, $3, $4, $5, 'posted')
+               ON CONFLICT (id) DO UPDATE SET status = 'posted'`,
+              [event.id, event.titleRu || event.title, event.type, event.start, event.end]
+            );
+            console.log('[Events] Posted event:', event.titleRu || event.title);
+          } catch (e: any) { console.warn('[Events] Post failed:', e.message?.slice(0, 80)); }
+        }, 20000);
+      }
+    }
+  } catch {}
   process.once('SIGINT', () => bot.stop('SIGINT'));
   process.once('SIGTERM', () => bot.stop('SIGTERM'));
 }

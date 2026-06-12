@@ -12,7 +12,7 @@ import { allAgentTemplates, AgentTemplate } from '../agent-templates';
 import { detectTriggerFromDescription } from './sub-agents/creator';
 import { getUserSettingsRepository } from '../db/schema-extensions';
 import { getSkillDocsForCodeGeneration } from '../plugins-system';
-import { claudeCodeChat, isClaudeCodeAvailable } from '../claude-code-bridge';
+import { anthropicCliChat, isAnthropicCliAvailable } from '../anthropic-cli-bridge';
 
 // ── MarkdownV2 escaping (shared with bot.ts) ───────────────────────────────
 function esc(text: string | number | null | undefined): string {
@@ -40,10 +40,13 @@ setInterval(() => {
   }
 }, 30 * 60 * 1000).unref();
 
-// Platform AI — uses configured API key (Gemini, OpenAI, etc.)
+// Platform AI — dual provider: Anthropic (Opus/Sonnet) + Gemini (fallback)
 const PLATFORM_API_KEY = process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY || '';
 const PLATFORM_BASE_URL = process.env.OPENAI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai/';
 const openai = new OpenAI({ apiKey: PLATFORM_API_KEY, baseURL: PLATFORM_BASE_URL });
+
+// Note: CLAUDE_CODE_OAUTH_TOKEN only works via CLI subprocess, not direct API
+// Atlas uses: 1) Anthropic CLI (Opus/Sonnet via subscription) → 2) Gemini API (fallback)
 
 // ── Список моделей с fallback-цепочкой ──────────────────────
 // При ошибке одной — пробуем следующую
@@ -73,58 +76,77 @@ export function setUserModel(userId: number, model: ModelId) {
   userModels.set(userId, model);
 }
 
-// ── Claude Code availability cache ──────────────────────────
-let _claudeCodeAvailable: boolean | null = null;
-let _claudeCodeCheckTime = 0;
+// ── Anthropic CLI availability cache ──────────────────────────
+let _anthropicCliAvailable: boolean | null = null;
+let _anthropicCliCheckTime = 0;
 
-async function checkClaudeCode(): Promise<boolean> {
+async function checkAnthropicCli(): Promise<boolean> {
   const now = Date.now();
   // Re-check every 5 minutes
-  if (_claudeCodeAvailable !== null && now - _claudeCodeCheckTime < 300_000) {
-    return _claudeCodeAvailable;
+  if (_anthropicCliAvailable !== null && now - _anthropicCliCheckTime < 300_000) {
+    return _anthropicCliAvailable;
   }
-  _claudeCodeAvailable = await isClaudeCodeAvailable();
-  _claudeCodeCheckTime = now;
-  if (_claudeCodeAvailable) {
-    console.log('[Orchestrator] ✅ Claude Code CLI detected — using subscription');
+  _anthropicCliAvailable = await isAnthropicCliAvailable();
+  _anthropicCliCheckTime = now;
+  if (_anthropicCliAvailable) {
+    console.log('[Orchestrator] ✅ Anthropic CLI detected — using subscription');
   }
-  return _claudeCodeAvailable;
+  return _anthropicCliAvailable;
 }
 
-// ── Запрос с авто-fallback: Claude Code → API models ────────
+// ── Запрос с авто-fallback: Anthropic CLI → API models ────────
 async function callWithFallback(
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
   userId: number,
   maxTokens = 1024,
 ): Promise<{ text: string; model: string }> {
 
-  // ── 1. Try Claude Code CLI first (uses subscription, free) ──
-  const useClaudeCode = await checkClaudeCode();
-  if (useClaudeCode) {
+  // ── 1. Try Anthropic CLI first (uses subscription, free) ──
+  const useAnthropicCli = await checkAnthropicCli();
+  if (useAnthropicCli) {
     try {
-      const result = await claudeCodeChat(messages, {
+      // Smart routing: Opus for complex tasks (agent creation, code, audit, long prompts)
+      // Sonnet for simple tasks (questions, navigation, short responses)
+      const lastMsg = messages[messages.length - 1]?.content || '';
+      const isComplex = maxTokens > 1024
+        || lastMsg.length > 300
+        || /creat|генер|аудит|audit|code|код|промпт|prompt|analyz|анализ|систем/i.test(lastMsg);
+      const model = isComplex ? 'claude-opus-4-6' : 'claude-sonnet-4-6';
+      const result = await anthropicCliChat(messages, {
         maxTokens,
-        model: process.env.ATLAS_MODEL || 'gemini-2.5-flash',
-        timeout: 90_000,
-        allowedTools: [], // No tools — just text completion
+        model,
+        fallbackModel: isComplex ? 'claude-sonnet-4-6' : 'claude-opus-4-6',
+        timeout: isComplex ? 120_000 : 60_000,
+        allowedTools: [],
       });
-      console.log(`[Orchestrator] Claude Code responded (${result.model})`);
+      console.log(`[Orchestrator] Anthropic CLI responded (${result.model})`);
       return result;
     } catch (err: any) {
       const msg = err?.message || String(err);
-      console.warn(`[Orchestrator] Claude Code failed: ${msg.slice(0, 120)}, falling back to API...`);
-      // If auth issue — disable Claude Code for this session
-      if (msg.includes('AUTH_REQUIRED') || msg.includes('not logged in')) {
-        _claudeCodeAvailable = false;
+      console.warn(`[Orchestrator] Anthropic CLI failed: ${msg.slice(0, 120)}, falling back to API...`);
+      // If auth issue — disable Anthropic CLI for this session
+      if (msg.includes('AUTH_REQUIRED') || msg.includes('not logged in') || msg.includes('OAuth') || msg.includes('401')) {
+        _anthropicCliAvailable = false;
+        console.warn(`[Orchestrator] Anthropic CLI auth issue detected — disabling CLI for this session`);
       }
     }
   }
 
-  // ── 2. Fallback: API models with chain ──
+  // ── 2. Fallback: Gemini API models with chain ──
+  const isGeminiBase = (process.env.OPENAI_BASE_URL || '').includes('generativelanguage.googleapis.com');
+  const geminiMap: Record<string, string> = {
+    'claude-opus-4-6': 'gemini-2.5-pro', 'kiro-claude-opus-4-6-agentic': 'gemini-2.5-pro',
+    'claude-sonnet-4-5': 'gemini-2.5-flash', 'kiro-claude-sonnet-4-5': 'gemini-2.5-flash',
+    'claude-haiku-4-5': 'gemini-2.0-flash', 'gemini-3.1-pro-high': 'gemini-2.5-pro',
+  };
   const preferred = getUserModel(userId);
-  const chain = [preferred, ...MODEL_LIST.map(m => m.id).filter(id => id !== preferred)];
+  const rawChain = [preferred, ...MODEL_LIST.map(m => m.id).filter(id => id !== preferred)];
+  const chain = isGeminiBase ? rawChain.map(m => geminiMap[m] || 'gemini-2.5-flash') : rawChain;
+  // Deduplicate
+  const seen = new Set<string>();
+  const dedupedChain = chain.filter(m => { if (seen.has(m)) return false; seen.add(m); return true; });
 
-  for (const model of chain) {
+  for (const model of dedupedChain) {
     try {
       const response = await openai.chat.completions.create({
         model,
@@ -152,7 +174,10 @@ async function callWithFallback(
         msg.includes('Too Many Requests') ||
         msg.includes('overloaded') ||
         msg.includes('ECONNRESET') ||
-        msg.includes('Empty response');
+        msg.includes('Empty response') ||
+        msg.includes('401') ||
+        msg.includes('OAuth') ||
+        msg.includes('not found');
       if (!isRetryable) {
         console.warn(`[Orchestrator] model ${model} — non-retryable error (${msg.slice(0, 80)}), aborting fallback chain`);
         throw err;
@@ -491,10 +516,59 @@ export class Orchestrator {
     messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
     tools: any[],
   ): Promise<{ text: string; toolName?: string; toolArgs?: any; model: string }> {
-    const preferred = getUserModel(userId);
-    const chain = [preferred, ...MODEL_LIST.map(m => m.id).filter(id => id !== preferred)];
 
-    for (const model of chain) {
+    // ── Strategy 1: Try Anthropic native SDK (Claude) — best tool calling ──
+    const _anthropicKey = process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_CODE_OAUTH_TOKEN || '';
+    if (_anthropicKey) {
+      const claudeModels = ['claude-sonnet-4-5', 'claude-haiku-4-5-20251001'];
+      const Anthropic = require('@anthropic-ai/sdk');
+      const _claudeClient = new Anthropic({ apiKey: _anthropicKey });
+      for (const model of claudeModels) {
+        try {
+          const client = _claudeClient;
+          const systemMsg = messages.find(m => m.role === 'system')?.content || '';
+          const nonSystem = messages.filter(m => m.role !== 'system');
+          // Convert OpenAI tools format → Anthropic tools format
+          const anthropicTools = tools.map((t: any) => ({
+            name: t.function?.name || t.name,
+            description: t.function?.description || t.description || '',
+            input_schema: t.function?.parameters || { type: 'object', properties: {} },
+          }));
+          const response = await client.messages.create({
+            model,
+            system: systemMsg,
+            messages: nonSystem,
+            tools: anthropicTools,
+            max_tokens: 1024,
+            temperature: 0.7,
+          });
+          // Check for tool use
+          const toolBlock = response.content?.find((b: any) => b.type === 'tool_use');
+          if (toolBlock) {
+            console.log(`[Orchestrator] AI tool call (Claude ${model}): "${toolBlock.name}"`);
+            return { text: '', toolName: toolBlock.name, toolArgs: toolBlock.input || {}, model };
+          }
+          // Text response
+          const textBlock = response.content?.find((b: any) => b.type === 'text');
+          const text = textBlock?.text || '';
+          if (text) {
+            console.log(`[Orchestrator] AI text response via Claude ${model}`);
+            return { text, model };
+          }
+          throw new Error('Empty response from Claude');
+        } catch (err: any) {
+          const msg = err?.message || '';
+          console.warn(`[Orchestrator] Claude ${model} failed: ${msg.slice(0, 80)}`);
+          if (msg.includes('429') || msg.includes('rate_limit') || msg.includes('overloaded')) continue;
+          // Non-retryable Claude error — fall through to Gemini
+          break;
+        }
+      }
+    }
+
+    // ── Strategy 2: Fallback to Gemini via OpenAI-compat ──
+    const geminiModels = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'];
+    for (const model of geminiModels) {
       try {
         const response = await openai.chat.completions.create({
           model,
@@ -508,36 +582,27 @@ export class Orchestrator {
         const choice = (response as any).choices?.[0];
         if (!choice) throw new Error('Empty response');
 
-        // AI вызвал инструмент
         const toolCalls = choice.message?.tool_calls;
         if (toolCalls && toolCalls.length > 0) {
           const toolCall = toolCalls[0];
           let toolArgs: any = {};
-          try {
-            toolArgs = JSON.parse(toolCall.function?.arguments || '{}');
-          } catch {}
+          try { toolArgs = JSON.parse(toolCall.function?.arguments || '{}'); } catch {}
           const toolName: string = toolCall.function?.name || '';
-          console.log(`[Orchestrator] AI tool call: "${toolName}"`, toolArgs);
+          console.log(`[Orchestrator] AI tool call (Gemini ${model}): "${toolName}"`, toolArgs);
           return { text: '', toolName, toolArgs, model };
         }
 
-        // AI ответил текстом
         const text: string = choice.message?.content || '';
         if (!text) throw new Error('Empty response');
-        console.log(`[Orchestrator] AI text response via ${model}`);
+        console.log(`[Orchestrator] AI text response via Gemini ${model}`);
         return { text, model };
 
       } catch (err: any) {
         const msg: string = err?.message || err?.error?.message || String(err);
-        const isRetryable =
-          msg.includes('cooldown') || msg.includes('INSUFFICIENT') ||
-          msg.includes('high traffic') || msg.includes('exhausted') ||
-          msg.includes('timed out') || msg.includes('timeout') ||
-          msg.includes('503') || msg.includes('502') ||
-          msg.includes('ECONNRESET') || msg.includes('Empty response') ||
-          msg.includes('does not support tools') || msg.includes('function_call') ||
-          msg.includes('tool_use') || msg.includes('tools are not supported');
-        console.warn(`[Orchestrator] model ${model} failed (${msg.slice(0, 80)}), trying next...`);
+        const isRetryable = msg.includes('429') || msg.includes('503') || msg.includes('502') ||
+          msg.includes('401') || msg.includes('not found') || msg.includes('OAuth') ||
+          msg.includes('timeout') || msg.includes('Empty response') || msg.includes('overloaded');
+        console.warn(`[Orchestrator] Gemini ${model} failed (${msg.slice(0, 80)})`);
         if (!isRetryable) throw err;
       }
     }
@@ -707,7 +772,7 @@ ID: ${userId}${isOwner ? ' 👑 OWNER (создатель платформы)' :
 
 🎤 ГОЛОСОВЫЕ КОМАНДЫ: отправляй голосовое → автотранскрипция → выполнение
 
-💳 ПОДПИСКИ: Free (3 агента, 50 генераций) → Starter 2TON (10/200) → Pro 5TON (50/1000) → Unlimited 10TON (∞/∞)
+💳 ПОДПИСКИ: Free (3 агента, 1 генерация) → Starter 5TON/мес (15/30) → Pro 15TON/мес (100/150) → Unlimited 30TON/мес (∞/∞)
 
 ━━━ СТУДИЯ (tonagentplatform.com/studio) ━━━
 Пользователь пишет тебе из Telegram ИЛИ из веб-студии — ты один ассистент, полный синк.
@@ -724,6 +789,28 @@ ID: ${userId}${isOwner ? ' 👑 OWNER (создатель платформы)' :
 • ⚙️ Настройки — AI провайдер, API ключи, Telegram
 • 👤 Персона — как обращаться, тон, язык, инструкции
 • 📖 Инструкции — полный гайд
+
+━━━ НАСТРОЙКИ АГЕНТА (17 вкладок) ━━━
+Если юзер спрашивает о настройках — объясняй подробно:
+• Code/Soul — системный промпт, определяет личность и поведение агента
+• AI — провайдер (Gemini/Claude/GPT/Groq/DeepSeek/OpenRouter/Together), модель, API ключ, температура (0=строго, 1=креативно)
+• Capabilities — модули инструментов (telegram, wallet, gifts_market, web, defi, image_gen, memory, notify и др.)
+• Routing — маршрутизация: keywords, chat types (DM/group), priority, isDefault
+• Behavior — человечность: задержка набора, read receipts, реакции, фразы "Секунду...", разбиение длинных ответов
+• Learning — самообучение: feedback loop (учится на ошибках), negative patterns, error self-healing, style adaptation
+• Memory — долгосрочная память: контакты, факты, уроки. Поиск по памяти. Защита от poisoning в группах
+• Security — лимит TON/день, блоклист, tool scope (какие инструменты в группах vs ЛС), atomic lock
+• Advanced — tick interval, compaction strategy, masking, loop guard, flood cooldown, язык
+
+━━━ ТВОЯ РОЛЬ ━━━
+Ты — ГЛАВНЫЙ помощник платформы. Ты умеешь ВСЁ:
+1. Создавать агентов по описанию (create_agent)
+2. Объяснять любую настройку или функцию платформы
+3. Проводить аудит агентов — анализировать промпты, capabilities, ошибки
+4. Помогать с промптами — писать, улучшать, адаптировать
+5. Отвечать на вопросы о TON, DeFi, NFT, Telegram подарках
+6. Управлять агентами — запуск, остановка, переименование, удаление
+Всегда предлагай помощь. Если юзер не знает что делать — предложи создать агента или объясни возможности.
 
 ━━━ ПРАВИЛА МАРШРУТИЗАЦИИ ━━━
 
@@ -998,7 +1085,7 @@ ${studioContext?.source === 'studio' ? `
 
       let questionsToAsk = fallbackQuestions;
 
-      // Пытаемся получить умные вопросы от AI (через Claude Code → API fallback)
+      // Пытаемся получить умные вопросы от AI (через Anthropic CLI → API fallback)
       try {
         const clarifyResult = await callWithFallback([
             {
@@ -1098,7 +1185,7 @@ ${studioContext?.source === 'studio' ? `
       console.warn('[Orchestrator] Failed to load user settings:', e.message);
     }
 
-    // 3) Генерируем system prompt через Claude Code (OAuth) → fallback: API
+    // 3) Генерируем system prompt через Anthropic CLI (OAuth) → fallback: API
     let systemPrompt: string;
     let generatedName = agentName || '';
     let summary = '';
@@ -1111,9 +1198,9 @@ ${studioContext?.source === 'studio' ? `
     const isMonitorIntent = /мониторинг|монитор|отслежив|track|monitor|цена|price|баланс|balance|alert|алерт|уведомл/i.test(_desc);
     const isTonIntent = /ton |тон |кошел|wallet|крипт|crypto|блокчейн|blockchain|defi/i.test(_desc);
 
-    // Build tool sections dynamically — ПОЛНЫЙ КАТАЛОГ ВСЕХ ТУЛОВ РАНТАЙМА
-    let toolSections = `
-═══ ПОЛНЫЙ КАТАЛОГ ИНСТРУМЕНТОВ ═══
+    // Build tool sections dynamically — АДАПТИВНЫЙ каталог (только релевантные секции)
+    const _alwaysSections = `
+═══ КАТАЛОГ ИНСТРУМЕНТОВ (релевантные для задачи) ═══
 
 📱 TELEGRAM — ОСНОВНЫЕ:
   tg_send_message(peer, text), tg_reply(chat_id, reply_to_id, text), tg_get_messages(peer, limit?)
@@ -1154,38 +1241,8 @@ ${studioContext?.source === 'studio' ? `
   fetch_url(url) — загрузить веб-страницу (до 3000 символов)
   http_fetch(url, method?, body?, headers?) — HTTP запрос с полным контролем
 
-💰 TON БЛОКЧЕЙН:
-  get_ton_balance(address), send_ton(to, amount), send_jetton(to, jetton, amount)
-  get_agent_wallet(), get_daily_spend(), get_stars_balance()
-  ton_get_account(address), ton_get_transactions(address, limit?)
-  ton_get_jettons(address), ton_get_nfts(address)
-  ton_get_rates(tokens), ton_dns_resolve(domain)
-  ton_run_method(address, method, stack?), ton_parse_address(address)
-  ton_get_staking_pools(), ton_get_validators()
-
-📈 NFT & КОЛЛЕКЦИИ:
-  get_nft_floor(collection), get_collection_offers(collection)
-  get_collections_marketcap(), get_price_history(collection)
-  get_attribute_volumes(collection), get_market_health()
-
-🎁 ПОДАРКИ & МАРКЕТ:
-  get_gift_catalog(), get_gift_floor_real(gift_name), get_gift_sales_history(gift_name)
-  get_gift_aggregator(gift_name, sort?, min_price?, max_price?)
-  get_market_overview(), get_market_activity(), get_top_deals(limit?)
-  find_underpriced_gifts(collection, max_price?, min_discount_pct?)
-  get_unique_gift_prices(), get_backdrop_floors(), get_gift_upgrade_stats(gift_name)
-  appraise_gift(gift_name), analyze_gift_profitability(gift_name)
-  scan_real_arbitrage(), get_user_portfolio(user_id?)
-  buy_catalog_gift(gift_slug, recipient_user_id), buy_resale_gift(gift_id, price_ton)
-  buy_market_gift(gift_id, price_ton), list_gift_for_sale(gift_id, price_ton, market?)
-
-💱 DeFi:
-  dex_get_prices(tokens), dex_swap_simulate(from, to, amount)
-  get_fragment_listings(type?)
-
 💾 СОСТОЯНИЕ & ПАМЯТЬ:
   get_state(key), set_state(key, value), get_state_multi(keys[]), list_state_keys()
-  get_shared_state(key), set_shared_state(key, value) — общее между агентами
   remember(key, value), recall(key)
 
 🧠 ЗНАНИЯ:
@@ -1194,49 +1251,58 @@ ${studioContext?.source === 'studio' ? `
 👥 ДОСЬЕ & КОНТАКТЫ:
   get_contact_dossier(user_id), add_contact_note(user_id, note)
   set_contact_relationship(user_id, type), list_contacts()
-  get_chat_dossier(chat_id), add_chat_note(chat_id, note)
-  set_chat_policy(chat_id, policy), list_chat_policies()
 
 📢 УВЕДОМЛЕНИЯ:
   notify(text), notify_rich(html, buttons?)
 
 🤖 САМО-РАЗВИТИЕ:
-  update_my_prompt(new_prompt, reason?), rollback_prompt()
-  update_my_interval(ms), update_my_description(desc)
-  get_my_config(), get_execution_stats()
-  save_lesson(text), manage_goals(action, goal?)
-  request_pause(reason)
+  update_my_prompt(new_prompt, reason?), update_my_interval(ms)
+  get_my_config(), get_execution_stats(), save_lesson(text)
 
-🔗 МЕЖАГЕНТ:
-  ask_agent(agent_id, message), list_my_agents()
-  assign_task(agent_id, task), check_tasks()
-  send_report(report), manage_agent(agent_id, action)
-
-🔌 ПЛАГИНЫ:
-  list_plugins(), apply_plugin(id), remove_plugin(id)
-  run_plugin(id, params), run_custom_plugin(id, params), list_custom_plugins()
-
-🖼 ИЗОБРАЖЕНИЯ:
-  image_analyze(chat_id, msg_id) — анализ фото
-  image_download(url), image_resize(path, w, h), image_crop(path, x, y, w, h)
-  image_add_text(path, text, x, y), image_filter(path, filter)
-  image_convert(path, format), image_info(path)
-  image_composite(base, overlay, x, y), image_create_text(text, style?)
-
-📁 ФАЙЛЫ:
-  file_write(path, content), file_read(path), file_list(dir?)
-  file_delete(path), file_append(path, content)
-
-⏰ ПЛАНИРОВАНИЕ & СОБЫТИЯ:
-  schedule_action(action, delay), create_plan(steps[])
-  set_next_wake(minutes, reason), get_wake_info()
-  subscribe_event(event), unsubscribe_event(event), emit_event(event, data?)
-
-🌐 MCP (внешние сервисы):
-  mcp_connect(server), mcp_list_servers(), mcp_list_tools(server)
-  mcp_call(server, tool, params), mcp_disconnect(server)
-  workspace_info()
+⏰ ПЛАНИРОВАНИЕ:
+  schedule_action(action, delay), set_next_wake(minutes, reason)
 `;
+
+    // ── УСЛОВНЫЕ СЕКЦИИ — только если задача связана ──
+    const _conditionalSections: string[] = [];
+
+    if (isTonIntent || isGiftIntent || isMonitorIntent) {
+      _conditionalSections.push(`
+💰 TON БЛОКЧЕЙН:
+  get_ton_balance(address), send_ton(to, amount), send_jetton(to, jetton, amount)
+  get_agent_wallet(), get_daily_spend(), ton_get_rates(tokens), ton_dns_resolve(domain)
+  ton_get_account(address), ton_get_transactions(address, limit?), ton_get_jettons(address)`);
+    }
+
+    if (isGiftIntent) {
+      _conditionalSections.push(`
+🎁 ПОДАРКИ & МАРКЕТ:
+  get_gift_catalog(), get_gift_floor_real(gift_name), get_gift_sales_history(gift_name)
+  get_market_overview(), get_market_activity(), get_top_deals(limit?)
+  scan_real_arbitrage(), get_user_portfolio(user_id?)
+  buy_catalog_gift(gift_slug, recipient_user_id), buy_resale_gift(gift_id, price_ton)
+  list_gift_for_sale(gift_id, price_ton, market?)
+
+📈 NFT & КОЛЛЕКЦИИ:
+  get_nft_floor(collection), get_collections_marketcap()
+
+💱 DeFi:
+  dex_get_prices(tokens), dex_swap_simulate(from, to, amount)`);
+    }
+
+    if (isMonitorIntent && !isGiftIntent) {
+      _conditionalSections.push(`
+💰 TON:
+  get_ton_balance(address), ton_get_rates(tokens), get_agent_wallet()`);
+    }
+
+    if (isContentIntent) {
+      _conditionalSections.push(`
+🖼 ИЗОБРАЖЕНИЯ:
+  image_analyze(chat_id, msg_id), image_create_text(text, style?)`);
+    }
+
+    const toolSections = _alwaysSections + _conditionalSections.join('\n');
 
     let characterExamples = '';
     if (isContentIntent) {
@@ -1260,9 +1326,9 @@ ${studioContext?.source === 'studio' ? `
    - Креативщик → ироничный, с мемами, свой в доску`;
     }
 
-    const defaultsSection = isGiftIntent ? `
-4. АГЕНТ ДЕЙСТВУЕТ СРАЗУ. Дефолты: коллекции "Plush Pepe", "Heart Locket", "Lol Pop"; порог > 10%; спред > 5%.` : `
-4. АГЕНТ ДЕЙСТВУЕТ СРАЗУ (не переспрашивает). Нет информации? Используй разумные дефолты.`;
+    const defaultsSection = `
+4. АГЕНТ ДЕЙСТВУЕТ СРАЗУ (не переспрашивает). Нет информации? Используй разумные дефолты.
+5. НЕ ДОБАВЛЯЙ автоматический мониторинг рынка/подарков/арбитраж ЕСЛИ ПОЛЬЗОВАТЕЛЬ НЕ ПРОСИЛ. Агент делает ТОЛЬКО то, что описал юзер.`;
 
     try {
       const promptGenResult = await callWithFallback([
@@ -1288,47 +1354,42 @@ ${defaultsSection}
 5. СОСТОЯНИЕ: get_state/set_state для памяти (с кем общался, что обещал, дедупликация).
 6. УМНЫЕ УВЕДОМЛЕНИЯ: notify() только когда есть что-то важное.
 
-═══ СОЗДАНИЕ УНИКАЛЬНОЙ ЛИЧНОСТИ ═══
-Каждый агент — УНИКАЛЬНАЯ ЛИЧНОСТЬ.
+═══ СОЗДАНИЕ УНИКАЛЬНОЙ ПЕРСОНЫ ═══
 
-1. ХАРАКТЕР на основе роли:${characterExamples}
+Ты создаёшь ЖИВУЮ ЛИЧНОСТЬ, не набор инструкций.
+Думай как режиссёр: ты придумываешь ПЕРСОНАЖА.
 
-2. СТИЛЬ: короткие реплики для чатов, развёрнутые для каналов. Никогда "я AI модель" → "я AI-агент".
+ФИЛОСОФИЯ (вдохнови агента):
+- "Ты не чатбот. Ты — кто-то."
+- "Имей мнение. Будь прямым. Без воды."
+- "Будь полезным по-настоящему, не показушно. Никаких 'Отличный вопрос!' перед ответами."
+- "Сначала попробуй разобраться сам. Спрашивай только когда застрял."
+- "Зарабатывай доверие компетентностью."
+- "Когда нечего сказать — молчи."
 
-3. СТРУКТУРА: "Ты — [роль]. [характер]." → Реактивный режим → Проактивный режим → Правила.
+СТИЛЬ — зависит от роли:${characterExamples}
 
-4. ВКЛЮЧИ: get_state/set_state, tg_get_messages, update_my_prompt, knowledge_save/search.
+⚠️ КРИТИЧЕСКИ ВАЖНО — НЕ ВКЛЮЧАЙ:
+- НЕ перечисляй инструменты (tg_send_message и т.д.) — платформа инжектит их АВТОМАТИЧЕСКИ
+- НЕ добавляй safety rules — они инжектятся автоматически
+- НЕ пиши про "тулы", "функции", "API" — агент знает их через system injection
+- НЕ добавляй крипто/трейдинг если пользователь не просил
 
-5. ЗАПРЕТЫ: не раскрывай механику, не говори "просыпаюсь"/"засыпаю", не транслируй между чатами.
-   ФОРМАТИРОВАНИЕ: Markdown — **жирный**, *курсив*, \`код\`, [ссылка](url).
-
-6. НЕ ВКЛЮЧАЙ: технический жаргон, копипаст шаблона, крипто/трейдинг если не просили.
-
-7. ⚠️ КРИТИЧЕСКИ ВАЖНО — НЕ ВКЛЮЧАЙ В ПРОМПТ:
-   - НЕ перечисляй инструменты (tg_send_message и т.д.) — платформа инжектит их АВТОМАТИЧЕСКИ
-   - НЕ добавляй safety rules — они инжектятся автоматически
-   - НЕ пиши про "тулы", "функции", "API" — агент и так их знает через system injection
-   - НЕ дублируй каталог инструментов — это делает платформа
-
-8. ПРОМПТ ДОЛЖЕН СОДЕРЖАТЬ ТОЛЬКО:
-   - Личность агента (кто он, характер, стиль общения)
-   - Цели и задачи (что конкретно делать)
-   - Стратегию поведения (когда активничать, как реагировать)
-   - Правила контента (формат, тон, частота)
-   - Специфику домена (если трейдер — какие коллекции, если контентщик — какие темы)
-
-9. РЕЗУЛЬТАТ: Короткий (15-30 строк), читабельный промпт БЕЗ технических деталей.
-   Пользователь должен понимать каждую строку. Никаких имён функций, API, тулов.
-
-10. В КОНЦЕ промпта ОБЯЗАТЕЛЬНО добавь:
-   "При любых проблемах — пиши владельцу, он свяжется с Atlas (платформенный AI) для настройки."
+ПРОМПТ СОДЕРЖИТ ТОЛЬКО ЧЕЛОВЕЧЕСКИЙ ЯЗЫК:
+- Кто этот персонаж (характер, стиль, привычки, эмодзи)
+- Что он делает (задачи, цели, условия)
+- Как себя ведёт (когда активничает, как реагирует, когда молчит)
 
 Ответь СТРОГО в формате JSON:
 {
   "name": "Краткое Название (2-4 слова)",
-  "system_prompt": "полный system prompt",
+  "soul": "ПЕРСОНА (5-10 строк). Кто этот персонаж? Характер, стиль общения, привычки, любимые эмодзи, тон голоса. Пиши как описание персонажа в книге, НЕ как инструкцию. Начни с 'Ты — ...' и создай ЖИВОЙ образ.",
+  "strategy": "СТРАТЕГИЯ (5-15 строк). Что конкретно делает, в каких чатах/каналах, как часто, какие условия, когда молчит. Пиши человеческим языком без имён функций.",
+  "heartbeat": "ПУЛЬС — что проверять когда нет входящих сообщений (3-5 пунктов чеклистом). Если не нужно проактивное поведение — null.",
   "summary": "одно предложение — что делает агент"
-}`
+}
+
+ЗАПРЕЩЕНО в JSON: имена тулов, safety rules, API endpoints, технический жаргон.`
           },
           { role: 'user', content: description + (pluginSkillDocs ? `\n\n[USER HAS THESE PLUGINS INSTALLED — their APIs are available to the agent:]\n${pluginSkillDocs}` : '') }
         ], userId, 2000);
@@ -1343,7 +1404,21 @@ ${defaultsSection}
       }
       const jsonStr = raw.slice(firstBrace, lastBrace + 1);
       const parsed = JSON.parse(jsonStr);
-      systemPrompt = parsed.system_prompt || parsed.systemPrompt || description;
+      // New modular format: soul + strategy + heartbeat
+      if (parsed.soul && parsed.strategy) {
+        systemPrompt = parsed.soul + '\n\n' + parsed.strategy;
+        if (parsed.heartbeat) systemPrompt += '\n\n' + parsed.heartbeat;
+        // Save modules separately after agent creation (below)
+        if (!(this as any)._pendingModulesMap) (this as any)._pendingModulesMap = new Map();
+        (this as any)._pendingModulesMap.set(userId, {
+          soul: parsed.soul,
+          strategy: parsed.strategy,
+          heartbeat: parsed.heartbeat || null,
+        });
+      } else {
+        // Backward compat: single system_prompt
+        systemPrompt = parsed.system_prompt || parsed.systemPrompt || description;
+      }
       generatedName = generatedName || parsed.name || 'AI Agent';
       summary = parsed.summary || '';
     } catch (e: any) {
@@ -1491,9 +1566,15 @@ ${toolSections}
     }
 
     // 4) Собираем triggerConfig для ai_agent — ВСЕ capabilities по дефолту (как у лучших агентов)
+    // Полный список из CAPABILITY_TOOL_MAP в ai-agent-runtime.ts (не импортируем — circular dep)
     const ALL_CAPABILITIES = [
-      'wallet', 'nft', 'gifts', 'gifts_market', 'telegram', 'web',
-      'state', 'notify', 'plugins', 'inter_agent', 'blockchain', 'defi', 'ton_mcp',
+      'wallet', 'jetton_mint', 'nft', 'gifts', 'gifts_market',
+      'telegram', 'telegram_admin', 'telegram_stories', 'telegram_forums',
+      'telegram_analytics', 'telegram_media', 'telegram_discovery', 'telegram_premium',
+      'web', 'state', 'events', 'notify', 'plugins', 'inter_agent',
+      'blockchain', 'defi', 'dns', 'payments',
+      'image', 'ton_mcp', 'workspace', 'mcp', 'confirmation',
+      'image_gen', 'email', 'self_memory', 'journal', 'deals',
     ];
     // Resolve AI model from user settings
     const userModel = userVars.AI_MODEL || '';
@@ -1521,9 +1602,37 @@ ${toolSections}
         ...(resolvedModel ? { AI_MODEL: resolvedModel } : {}),
         self_improvement_enabled: false,
         enabledCapabilities: ALL_CAPABILITIES,
-        // Userbot agents respond in groups by default
-        groupPolicy: needsTgLogin ? 'active' : undefined,
+        groupPolicy: needsTgLogin ? 'active' : 'mention-only',
         ...(routingRules ? { routingRules } : {}),
+        // Smart defaults (same as agent 201)
+        behavior: {
+          typingDelay: true,
+          typingSpeed: 40,
+          readReceipts: true,
+          readDelay: 1.5,
+          messageSplitting: true,
+          thinkingPhrases: true,
+          reactions: true,
+          hesitation: false,
+          randomVariance: 25,
+          schedule: false,
+        },
+        learning: {
+          feedbackLoop: true,
+          negativePatterns: 'нет, не так, неправильно, бред, отстой, фигня',
+          errorHealing: true,
+          maxRetries: 3,
+          circuitBreakerThreshold: 5,
+          qualityScoring: true,
+          styleAdaptation: true,
+        },
+        compaction_strategy: 'structured',
+        masking_enabled: true,
+        masking_keep_recent: 8,
+        memory_poisoning_protection: true,
+        flood_cooldown_sec: 30,
+        loop_max_responses: 8,
+        loop_window_sec: 300,
       },
     };
 
@@ -1556,43 +1665,53 @@ ${toolSections}
     try {
       const { savePromptModule, PROMPT_MODULES } = await import('./prompt-builder');
 
-      // ── Split generated prompt into modules ──
-      // SOUL = personality/style (first paragraph or everything before first ═══ section)
-      const soulMatch = systemPrompt.match(/^([\s\S]*?)(?=\n═══|\n━━━|\n\[PROACTIVE|\n\[REACTIVE|$)/);
-      const soulText = (soulMatch?.[1] || systemPrompt).trim();
-
-      // STRATEGY = everything between ═══ sections (business rules, tasks)
-      const strategyParts: string[] = [];
-      const sectionRegex = /═══\s*(.+?)\s*═══\n([\s\S]*?)(?=\n═══|$)/g;
-      let match;
-      while ((match = sectionRegex.exec(systemPrompt)) !== null) {
-        const sectionName = match[1].toLowerCase();
-        if (!sectionName.includes('safety') && !sectionName.includes('security') && !sectionName.includes('правил')) {
-          strategyParts.push(match[0].trim());
+      // ── Use pre-parsed modules if available (new modular format) ──
+      const pendingMods = (this as any)._pendingModulesMap?.get(userId);
+      if (pendingMods?.soul) {
+        await savePromptModule(agentId, userId, PROMPT_MODULES.SOUL, pendingMods.soul);
+        if (pendingMods.strategy) {
+          await savePromptModule(agentId, userId, PROMPT_MODULES.STRATEGY, pendingMods.strategy);
         }
+        if (pendingMods.heartbeat) {
+          await savePromptModule(agentId, userId, PROMPT_MODULES.HEARTBEAT, pendingMods.heartbeat);
+        }
+        (this as any)._pendingModulesMap?.delete(userId);
+        console.log(`[Orchestrator] Saved modular prompt: SOUL + STRATEGY${pendingMods.heartbeat ? ' + HEARTBEAT' : ''}`);
+      } else {
+        // ── Fallback: Split blob prompt into modules via regex ──
+        const soulMatch = systemPrompt.match(/^([\s\S]*?)(?=\n═══|\n━━━|\n\[PROACTIVE|\n\[REACTIVE|$)/);
+        const soulText = (soulMatch?.[1] || systemPrompt).trim();
+
+        const strategyParts: string[] = [];
+        const sectionRegex = /═══\s*(.+?)\s*═══\n([\s\S]*?)(?=\n═══|$)/g;
+        let match;
+        while ((match = sectionRegex.exec(systemPrompt)) !== null) {
+          const sectionName = match[1].toLowerCase();
+          if (!sectionName.includes('safety') && !sectionName.includes('security') && !sectionName.includes('правил')) {
+            strategyParts.push(match[0].trim());
+          }
+        }
+
+        const heartbeatMatch = systemPrompt.match(/(?:ПРОАКТИВНЫЙ|PROACTIVE)[^\n]*\n([\s\S]*?)(?=\n═══|\n━━━|$)/i);
+        const heartbeatText = heartbeatMatch?.[1]?.trim();
+
+        await savePromptModule(agentId, userId, PROMPT_MODULES.SOUL, soulText);
+
+        if (strategyParts.length > 0) {
+          await savePromptModule(agentId, userId, PROMPT_MODULES.STRATEGY, strategyParts.join('\n\n'));
+        }
+
+        if (heartbeatText) {
+          await savePromptModule(agentId, userId, PROMPT_MODULES.HEARTBEAT,
+            `[PROACTIVE TICK CHECKLIST]\n${heartbeatText}`);
+        }
+
+        console.log(`[Orchestrator] Saved modular prompt (regex fallback) for agent#${agentId}`);
       }
 
-      // HEARTBEAT = proactive behavior rules
-      const heartbeatMatch = systemPrompt.match(/(?:ПРОАКТИВНЫЙ|PROACTIVE)[^\n]*\n([\s\S]*?)(?=\n═══|\n━━━|$)/i);
-      const heartbeatText = heartbeatMatch?.[1]?.trim();
-
-      // Save each module
-      await savePromptModule(agentId, userId, PROMPT_MODULES.SOUL, soulText);
-
-      if (strategyParts.length > 0) {
-        await savePromptModule(agentId, userId, PROMPT_MODULES.STRATEGY, strategyParts.join('\n\n'));
-      }
-
-      if (heartbeatText) {
-        await savePromptModule(agentId, userId, PROMPT_MODULES.HEARTBEAT,
-          `[PROACTIVE TICK CHECKLIST]\n${heartbeatText}`);
-      }
-
-      // Save IDENTITY
+      // Save IDENTITY (always)
       await savePromptModule(agentId, userId, PROMPT_MODULES.IDENTITY,
         `Name: ${generatedName}\nRole: ${summary || description.slice(0, 100)}\nPlatform: TON Agent Platform`);
-
-      console.log(`[Orchestrator] Saved modular prompt modules for agent#${agentId}: SOUL(${soulText.length}ch), STRATEGY(${strategyParts.length} parts), HEARTBEAT(${heartbeatText ? 'yes' : 'default'}), IDENTITY`);
     } catch (e: any) {
       console.warn(`[Orchestrator] Failed to save prompt modules for agent#${agentId}:`, e.message);
       // Non-critical — agent will still work with legacy code field
@@ -1655,13 +1774,88 @@ ${toolSections}
       capabilities: detectedCaps,
     };
 
-    // 8) Формируем красивый ответ
+    // 8) Post-creation auto-audit & auto-fix
+    const auditFixes: string[] = [];
+    let auditScore = 100;
+    let auditChecks = 0;
+    let auditPassed = 0;
+    const cfg = triggerConfig.config;
+
+    // a) Caps vs prompt — auto-enable missing capabilities
+    const CAP_PATTERNS: Array<[RegExp, string, string]> = [
+      [/wallet|balance|send_ton|get_ton|кошел/i, 'wallet', 'Wallet'],
+      [/nft|коллекц|collection|floor/i, 'nft', 'NFT'],
+      [/gift|подарк|подарок/i, 'gifts', 'Gifts'],
+      [/market|арбитраж|arbitrage|floor_real/i, 'gifts_market', 'Gifts Market'],
+      [/telegram|тг|чат|канал|tg_send|tg_get/i, 'telegram', 'Telegram'],
+      [/search|поиск|web|fetch|url|сайт/i, 'web', 'Web'],
+      [/defi|dex|swap|стейкинг/i, 'defi', 'DeFi'],
+    ];
+    const enabledCaps: string[] = cfg.enabledCapabilities || [];
+    for (const [pattern, capId, capName] of CAP_PATTERNS) {
+      auditChecks++;
+      if (pattern.test(systemPrompt) && !enabledCaps.includes(capId)) {
+        enabledCaps.push(capId);
+        auditFixes.push(capName);
+      } else {
+        auditPassed++;
+      }
+    }
+    cfg.enabledCapabilities = enabledCaps;
+
+    // b) Ensure behavior defaults exist
+    auditChecks++;
+    if (!cfg.behavior || typeof cfg.behavior !== 'object') {
+      cfg.behavior = { typingDelay: true, typingSpeed: 40, readReceipts: true, readDelay: 1.5, messageSplitting: true, thinkingPhrases: true, reactions: true, hesitation: false, randomVariance: 25 };
+      auditFixes.push('Behavior defaults');
+    } else { auditPassed++; }
+
+    // c) Ensure learning defaults exist
+    auditChecks++;
+    if (!cfg.learning || typeof cfg.learning !== 'object') {
+      cfg.learning = { feedbackLoop: true, negativePatterns: 'нет, не так, неправильно, бред', errorHealing: true, maxRetries: 3, circuitBreakerThreshold: 5, qualityScoring: true, styleAdaptation: true };
+      auditFixes.push('Learning defaults');
+    } else { auditPassed++; }
+
+    // d) Prompt quality
+    auditChecks++;
+    if (systemPrompt.length >= 100) { auditPassed++; }
+
+    // e) API key
+    auditChecks++;
+    if (cfg.AI_API_KEY) { auditPassed++; }
+
+    // f) Memory/state instructions
+    auditChecks++;
+    if (/get_state|set_state|память|memory/i.test(systemPrompt)) { auditPassed++; }
+
+    // g) Notify instructions
+    auditChecks++;
+    if (/notify|уведомл|алерт|alert/i.test(systemPrompt)) { auditPassed++; }
+
+    // Calculate score
+    auditScore = auditChecks > 0 ? Math.round((auditPassed / auditChecks) * 100) : 100;
+
+    // Save fixes if any
+    if (auditFixes.length > 0) {
+      triggerConfig.config = cfg;
+      try {
+        const { pool } = require('../db');
+        await pool.query('UPDATE builder_bot.agents SET trigger_config = $1 WHERE id = $2', [JSON.stringify(triggerConfig), agentId]);
+        console.log(`[Orchestrator] Auto-audit fixed ${auditFixes.length} issues for agent#${agentId}: ${auditFixes.join(', ')}`);
+      } catch (e: any) {
+        console.warn(`[Orchestrator] Auto-audit save failed for agent#${agentId}: ${e.message}`);
+      }
+    }
+
+    // 9) Формируем красивый ответ
+    const scoreEmoji = auditScore >= 80 ? '🟢' : auditScore >= 50 ? '🟡' : '🔴';
     let content =
-      `🎉 *AI\\-агент создан\\!*\n` +
+      `✨ *AI\\-агент создан\\!*\n` +
       `━━━━━━━━━━━━━━━━━━━━\n` +
-      `📛 *${esc(generatedName)}*  \\#${agentId}\n` +
-      `🤖 Тип: AI Agent \\(автономный\\)\n` +
-      `⏰ Тик: каждые ${esc(schedLabel)}\n`;
+      `\n` +
+      `📛 *${esc(generatedName)}*  \\|  \\#${agentId}\n` +
+      `🤖 AI Agent \\(автономный\\)  •  ⏰ ${esc(schedLabel)}\n`;
 
     if (summary) {
       content += `\n📝 _${esc(summary)}_\n`;
@@ -1674,10 +1868,15 @@ ${toolSections}
         telegram: '📱', web: '🌐', defi: '📈', plugins: '🔌', inter_agent: '🔗',
       };
       const capLabels = detectedCaps.map(c => `${capIcons[c] || '▪️'} ${c}`).join(', ');
-      content += `\n🧩 _Возможности: ${esc(capLabels)}_\n`;
+      content += `\n🧩 _${esc(capLabels)}_\n`;
     }
 
-    content += `🧠 Самоулучшение: ✅ _\\(AI автоисправление ошибок\\)_\n`;
+    // Audit score + auto-fixes
+    content += `\n${scoreEmoji} *Здоровье: ${auditScore}%*`;
+    if (auditFixes.length > 0) {
+      content += `  \\|  ✅ _Автоисправлено: ${esc(auditFixes.join(', '))}_`;
+    }
+    content += `\n🧠 Самоулучшение: ✅  •  🛡 Защита памяти: ✅\n`;
 
     // Show what's needed for full operation
     const needsList: string[] = [];
@@ -1686,21 +1885,48 @@ ${toolSections}
     if (!hasKey) needsList.push('🔑 API ключ AI');
 
     if (needsList.length > 0) {
-      content += `\n⚙️ *Для полной работы нужно:*\n`;
-      needsList.forEach(n => { content += `  ${esc(n)}\n`; });
-      content += `_Настройка запустится автоматически_\n`;
+      content += `\n━━━━━━━━━━━━━━━━━━━━\n`;
+      content += `⚡ *Осталось настроить:*\n\n`;
+      let step = 1;
+      if (!hasKey) {
+        content += `*${step}\\. 🔑 API ключ*\n`;
+        content += `_Бесплатно: Gemini • Groq • OpenRouter_\n\n`;
+        step++;
+      }
+      if (needsTgLogin && !tgAuthed) {
+        content += `*${step}\\. 🔐 Telegram*\n`;
+        content += `_QR\\-код в настройках агента_\n\n`;
+        step++;
+      }
+      if (needsWallet) {
+        content += `*${step}\\. 💰 Кошелёк* \\(опционально\\)\n`;
+        content += `_Для DeFi и транзакций_\n\n`;
+      }
     }
 
-    content += '\n';
-
-    if (autoStarted && needsList.length === 0) {
-      content += `🟢 *Запущен на сервере* — работает каждые ${esc(schedLabel)}\n`;
-      content += `💬 _Используйте "Чат с агентом" для общения_`;
+    if (autoStarted && !hasKey) {
+      content += `⏸ _Ожидает API ключ — вставьте и агент заработает_`;
+    } else if (autoStarted && needsList.length === 0) {
+      content += `\n🟢 *Запущен\\!* Работает каждые ${esc(schedLabel)}`;
     } else if (needsList.length > 0) {
-      content += `⏳ *Настройте агента* — после этого он запустится автоматически`;
+      content += `⏳ _Выполните шаги выше — агент запустится сам_`;
     } else {
       content += `👇 Нажмите *Запустить* — агент будет работать 24/7`;
     }
+
+    // Provider-specific warnings (free-tier TPM/RPM reality check)
+    try {
+      const { getProviderWarnings } = await import('../constants/limits');
+      const intervalMs = Number((tc?.config?.intervalMs ?? tc?.intervalMs) || 0);
+      const toolCount = Array.isArray(tc?.config?.enabledCapabilities)
+        ? tc.config.enabledCapabilities.length * 10 // rough estimate: ~10 tools per capability
+        : 40;
+      const warns = getProviderWarnings(String(tc?.config?.AI_PROVIDER || ''), intervalMs, toolCount);
+      if (warns.length > 0) {
+        content += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+        for (const w of warns) content += `${esc(w)}\n`;
+      }
+    } catch {}
 
     await getMemoryManager().addMessage(userId, 'assistant', content, {
       type: 'agent_created',
@@ -1790,7 +2016,8 @@ ${toolSections}
       };
     }
 
-    const data = result.data!;
+    const data = result.data;
+    if (!data) return { type: 'text', content: '❌ Нет данных от редактора' };
 
     if (!data.success) {
       return {
@@ -1850,12 +2077,13 @@ ${toolSections}
       };
     }
 
-    const data = result.data!;
+    const data = result.data;
+    if (!data) return { type: 'text', content: '❌ Нет данных от runner' };
 
     if (!data.success || !data.executionResult) {
       return {
         type: 'text',
-        content: data.message,
+        content: data.message || '❌ Выполнение не завершено',
       };
     }
 
@@ -1905,7 +2133,7 @@ ${toolSections}
       };
     }
 
-    const agentName = agentResult.data!.name;
+    const agentName = agentResult.data?.name || `#${agentId}`;
 
     return {
       type: 'confirm',
@@ -1926,8 +2154,9 @@ ${toolSections}
   private async handleRunAgentById(userId: number, agentId: number): Promise<OrchestratorResult> {
     const result = await this.runner.runAgent({ agentId, userId });
     if (!result.success) return { type: 'text', content: `❌ Ошибка: ${result.error}` };
-    const data = result.data!;
-    if (!data.success || !data.executionResult) return { type: 'text', content: data.message };
+    const data = result.data;
+    if (!data) return { type: 'text', content: '❌ Нет данных от runner' };
+    if (!data.success || !data.executionResult) return { type: 'text', content: data.message || '❌ Выполнение не завершено' };
 
     const exec = data.executionResult;
     let content = `📊 *Результат выполнения #${agentId}*\n\n`;
@@ -1954,8 +2183,8 @@ ${toolSections}
 
   private async handleDeleteAgentById(userId: number, agentId: number): Promise<OrchestratorResult> {
     const agentResult = await this.dbTools.getAgent(agentId, userId);
-    if (!agentResult.success) return { type: 'text', content: `❌ Агент #${agentId} не найден` };
-    const name = agentResult.data!.name;
+    if (!agentResult.success || !agentResult.data) return { type: 'text', content: `❌ Агент #${agentId} не найден` };
+    const name = agentResult.data.name;
     return {
       type: 'confirm',
       content: `⚠️ Удалить агента *"${name}"* (#${agentId})?\n\nЭто действие нельзя отменить!`,
@@ -2025,7 +2254,7 @@ ${toolSections}
         const runResult = await this.runner.runAgent({ agentId, userId });
         if (runResult.success) restarted = true;
       }
-    } catch {}
+    } catch (e: any) { console.warn('[Orchestrator] restart after update:', e.message); }
 
     const restartNote = restarted ? '\n\n🔄 Агент перезапущен с обновлениями.' : '';
 
@@ -2365,7 +2594,7 @@ ${toolSections}
         const info = await this.fetchGetGemsCollection(ggAddr);
         return { address: ggAddr, resolvedName: info?.name || name };
       }
-    } catch {}
+    } catch (e: any) { console.warn('[NFT] collection resolve:', e.message); }
 
     // 3. TonAPI accounts search (ищем NFT-контракт по имени метаданных)
     try {
@@ -2403,7 +2632,7 @@ ${toolSections}
           }
         }
       }
-    } catch {}
+    } catch (e: any) { console.warn('[NFT] collection resolve:', e.message); }
 
     // 4. TonAPI collections search (top-100, строгое совпадение имени)
     try {
@@ -2429,7 +2658,7 @@ ${toolSections}
           }
         }
       }
-    } catch {}
+    } catch (e: any) { console.warn('[NFT] collection resolve:', e.message); }
 
     return null;
   }
@@ -2557,7 +2786,7 @@ ${toolSections}
         );
         const tonData = (await tonResp.json()) as any;
         tonUsdPrice = tonData?.['the-open-network']?.usd || 0;
-      } catch {}
+      } catch (e: any) { console.warn('[Price] TON/USD fetch:', e.message); }
 
       if (collectionData) {
         // Получаем активные листинги (для анализа ликвидности)

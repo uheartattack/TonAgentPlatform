@@ -1,0 +1,7 @@
+/* ===== STUDIO PATCH CSS: New Features (March 2026) ===== */
+.stat-chip{display:flex;flex-direction:column;align-items:center;gap:4px;padding:14px 24px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px;min-width:100px}
+.approval-card.pending{animation:approvalPulse 2s infinite}
+@keyframes approvalPulse{0%,100%{border-color:rgba(245,166,35,0.3)}50%{border-color:rgba(245,166,35,0.6)}}
+#extra-api-keys-section{animation:tabContentFade 0.3s cubic-bezier(0.4,0,0.2,1)}
+#settings-page .setting-item{transition:background var(--transition-fast)}
+#settings-page .setting-item:hover{background:rgba(200,225,255,0.02);border-radius:8px}

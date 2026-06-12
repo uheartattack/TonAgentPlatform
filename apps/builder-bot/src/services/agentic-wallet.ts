@@ -1,13 +1,17 @@
 /**
  * agentic-wallet.ts — Agentic Wallets Service
  *
- * Интеграция с @ton/mcp agentic wallets:
- * - Root wallet = кошелёк юзера (master key)
- * - Sub-wallets = NFT-based кошельки для агентов (operator key)
- * - On-chain контроль: юзер может заблокировать/вывести в любой момент
+ * Official TON Foundation standard (agents.ton.org):
+ *   • Root wallet  — user's master key. Funds, mints sub-wallets, freezes, revokes.
+ *   • Sub-wallets  — NFT-based per-agent wallets with operator key. Bound to root.
+ *   • On-chain enforcement of daily limits, freeze/revoke. No off-chain trust required.
  *
- * Использует @ton/mcp в registry-mode для управления кошельками.
- * Fallback на legacy V4R2 если agentic не настроен.
+ * Default behavior:
+ *   1. setupRootWallet → try @ton/mcp@alpha (deploy_agentic_root) first.
+ *   2. deploySubWallet → try @ton/mcp@alpha (deploy_agentic_subwallet) first.
+ *   3. V4R2 used ONLY as fallback when MCP unreachable (graceful degradation).
+ *
+ * Upgraded May 2026 to use @ton/mcp@alpha v0.1.15 per agents.ton.org spec.
  */
 
 import crypto from 'crypto';
@@ -22,8 +26,15 @@ const ALGORITHM = 'aes-256-gcm';
 
 function encryptMnemonic(plaintext: string): string {
   if (!ENCRYPTION_KEY) {
-    console.warn('[AgenticWallet] WALLET_ENCRYPTION_KEY not set — storing mnemonic unencrypted');
-    return plaintext;
+    // Fallback to ENCRYPTION_KEY or BOT_TOKEN hash — NEVER store plaintext
+    const fallback = process.env.ENCRYPTION_KEY || process.env.BOT_TOKEN;
+    if (!fallback) {
+      console.error('[SECURITY] Cannot encrypt mnemonic — no encryption key available!');
+      throw new Error('WALLET_ENCRYPTION_KEY, ENCRYPTION_KEY, or BOT_TOKEN required for mnemonic encryption');
+    }
+    console.warn('[AgenticWallet] Using fallback encryption key (set WALLET_ENCRYPTION_KEY for production)');
+    const { encryptApiKey } = require('../crypto-utils');
+    return 'enc_fallback:' + encryptApiKey(plaintext);
   }
   const salt = crypto.randomBytes(16);
   const key = crypto.scryptSync(ENCRYPTION_KEY, salt, 32);
@@ -35,8 +46,24 @@ function encryptMnemonic(plaintext: string): string {
   return `enc:${salt.toString('hex')}:${iv.toString('hex')}:${tag}:${encrypted}`;
 }
 
+/**
+ * Counter of legacy-plaintext mnemonics encountered during runtime — used to surface
+ * migration hint to operator. Not a metric, just a one-time warning signal.
+ */
+let _legacyPlaintextWarned = false;
+
 function decryptMnemonic(stored: string): string {
-  if (!stored.startsWith('enc:')) return stored; // legacy unencrypted
+  if (!stored.startsWith('enc:')) {
+    // Legacy unencrypted mnemonic in DB. Return as-is but warn operator so they
+    // schedule a migration. Once all agents are re-saved via encryptMnemonic()
+    // (happens on any wallet_mnemonic write), this branch stops firing.
+    if (!_legacyPlaintextWarned && stored && stored.split(' ').length >= 12) {
+      _legacyPlaintextWarned = true;
+      console.warn('[Wallet] PLAINTEXT mnemonic detected in DB (legacy). ' +
+        'It will be re-encrypted on next wallet operation. Consider running scripts/migrate-plaintext-mnemonics.js');
+    }
+    return stored;
+  }
   if (!ENCRYPTION_KEY) throw new Error('WALLET_ENCRYPTION_KEY required to decrypt mnemonic');
   const parts = stored.split(':');
   // New format: enc:salt:iv:tag:ciphertext (5 parts)
@@ -117,7 +144,7 @@ class AgenticMcpBridge {
 
     this.transport = new StdioClientTransport({
       command: 'npx',
-      args: ['-y', '@ton/mcp@alpha'],
+      args: ['-y', '@ton/mcp@0.1.15-alpha.15'],  // pinned; was @alpha (rolling)
       env,
     });
 
@@ -280,14 +307,65 @@ class AgenticWalletService {
         return { success: true, wallet: record };
       }
 
-      // Generate V4R2 wallet as root (self-custody, no external redirect)
+      // ── PRIMARY PATH: try TON Agentic Wallets via @ton/mcp@alpha ─────────
+      // agents.ton.org architecture: master/root wallet mints NFT sub-wallets,
+      // on-chain enforced limits, freeze/revoke. Significantly safer for
+      // autonomous agents than a raw V4R2.
+      try {
+        const { mnemonicNew, mnemonicToWalletKey } = require('@ton/crypto');
+        const masterWords = await mnemonicNew(24);
+        const masterKey = await mnemonicToWalletKey(masterWords);
+        const masterMnemonic = masterWords.join(' ');
+
+        const mcp = await this.ensureMcp(masterMnemonic);
+        if (mcp && (mcp.hasTool('deploy_agentic_root') || mcp.hasTool('deploy_agentic_wallet') || mcp.hasTool('deploy_root_wallet'))) {
+          const toolName = mcp.hasTool('deploy_agentic_root') ? 'deploy_agentic_root'
+                         : mcp.hasTool('deploy_root_wallet')   ? 'deploy_root_wallet'
+                         : 'deploy_agentic_wallet';
+          const result = await mcp.callTool(toolName, {
+            masterPublicKey: masterKey.publicKey.toString('hex'),
+            label: 'Agentic Root',
+            amountTon: '0.1',
+          });
+          const rootAddr = result.address || result.rootAddress;
+          if (rootAddr) {
+            const record = await this.createWalletRecord(userId, {
+              walletType: 'root',
+              address: rootAddr,
+              label: 'Agentic Root (agents.ton.org)',
+              operatorKey: masterKey.publicKey.toString('hex'),
+            });
+            // Encrypted master mnemonic in user_settings — same key path as legacy
+            await pool.query(
+              `INSERT INTO builder_bot.user_settings (user_id, key, value) VALUES ($1, 'root_wallet_mnemonic', $2)
+               ON CONFLICT ON CONSTRAINT user_settings_unique DO UPDATE SET value = $2, updated_at = NOW()`,
+              [userId, encryptMnemonic(masterMnemonic)]
+            );
+            console.log(`[AgenticWallet] Root deployed via MCP (${toolName}) for user ${userId}: ${rootAddr}`);
+            return { success: true, wallet: record };
+          }
+        }
+        console.warn('[AgenticWallet] MCP available but no deploy_agentic_root tool — falling back to V4R2');
+      } catch (e: any) {
+        console.warn('[AgenticWallet] Agentic root deploy via MCP failed, falling back to V4R2:', e?.message);
+      }
+
+      // ── FALLBACK: legacy V4R2 (self-custody, no external redirect) ──────
+      // Only reached if @ton/mcp@alpha is unavailable or doesn't expose the
+      // root-deploy tool. The user still gets a working wallet — just without
+      // the master/operator separation and on-chain limits.
       const { generateAgentWallet } = require('./TonConnect');
       const newWallet = await generateAgentWallet();
+      // Safely convert address to string (Address object may be frozen)
+      let walletAddress = '';
+      try {
+        walletAddress = typeof newWallet.address === 'string' ? newWallet.address : String(newWallet.address);
+      } catch { walletAddress = newWallet.address + ''; }
       const record = await this.createWalletRecord(userId, {
         walletType: 'root',
-        address: newWallet.address,
-        label: 'Root Wallet (V4R2)',
-        operatorKey: newWallet.publicKey?.toString('hex'),
+        address: walletAddress,
+        label: 'Root Wallet (V4R2 fallback)',
+        operatorKey: newWallet.publicKey ? Buffer.from(newWallet.publicKey).toString('hex') : undefined,
       });
 
       // Store mnemonic in user_settings (encrypted)
@@ -299,6 +377,7 @@ class AgenticWalletService {
 
       return { success: true, wallet: record };
     } catch (e: any) {
+      console.error('[AgenticWallet] setupRoot error:', e.message, '\n', e.stack?.slice(0, 500));
       return { success: false, error: e.message };
     }
   }
@@ -407,6 +486,16 @@ class AgenticWalletService {
     const { rows } = await pool.query(
       `SELECT * FROM builder_bot.agentic_wallets WHERE id = $1 LIMIT 1`,
       [walletId]
+    );
+    return rows[0] ? this.mapRow(rows[0]) : null;
+  }
+
+  /** Owner-scoped lookup: returns the wallet only if it belongs to userId. Used by bot
+   *  action handlers (refresh, set-limit, etc.) to enforce ownership in one place. */
+  async getWallet(walletId: number, userId: number): Promise<AgenticSubWallet | null> {
+    const { rows } = await pool.query(
+      `SELECT * FROM builder_bot.agentic_wallets WHERE id = $1 AND user_id = $2 LIMIT 1`,
+      [walletId, userId]
     );
     return rows[0] ? this.mapRow(rows[0]) : null;
   }

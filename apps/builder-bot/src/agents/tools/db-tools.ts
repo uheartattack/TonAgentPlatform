@@ -64,6 +64,24 @@ export class DBTools {
         })
         .returning();
 
+      // Smart role detection from description + code
+      try {
+        const desc = ((params.description || '') + ' ' + (params.code || '')).toLowerCase();
+        let autoRole = 'worker';
+        if (params.triggerType === 'ai_agent') {
+          if (/модератор|moderator|бан|ban|мьют|mute|антиспам|anti.?spam|admin|правила|rules/i.test(desc)) autoRole = 'admin';
+          else if (/трейд|trade|арбитраж|arbitrage|p&l|profit|buy.*sell|swap|defi/i.test(desc)) autoRole = 'trader';
+          else if (/мониторинг|monitor|алерт|alert|watch|отслежив|track|цена|price/i.test(desc)) autoRole = 'monitor';
+          else if (/контент|content|пост|post|канал|channel|smm|блог|blog|stories/i.test(desc)) autoRole = 'creative';
+          else if (/координат|coordinate|делегир|delegat|команд|team|manage|orchestrat/i.test(desc)) autoRole = 'manager';
+          else if (/стратег|strateg|директор|director|okr|kpi|бизнес|business/i.test(desc)) autoRole = 'director';
+          else if (/анали|analy|эксперт|expert|исследов|research|аудит|audit/i.test(desc)) autoRole = 'specialist';
+          else autoRole = 'worker';
+        }
+        const { pool } = await import('../../db');
+        await pool.query('UPDATE builder_bot.agents SET role = $1 WHERE id = $2', [autoRole, agent.id]);
+      } catch {}
+
       // Логируем в память
       await getMemoryManager().addMessage(
         params.userId,
@@ -214,15 +232,85 @@ export class DBTools {
         return existing as unknown as ToolResult<void>;
       }
 
-      await this.db
-        .delete(agents)
-        .where(and(
-          eq(agents.id, agentId),
-          eq(agents.userId, userId)
-        ));
+      // Explicit cascade — FK constraints don't exist, so we must manually prune
+      // child tables or orphan rows accumulate. Wrap in transaction for atomicity.
+      const { pool } = await import('../../db');
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        // Verify ownership inside the transaction
+        const check = await client.query(
+          'SELECT id FROM builder_bot.agents WHERE id = $1 AND user_id = $2 FOR UPDATE',
+          [agentId, userId]
+        );
+        if (check.rowCount === 0) {
+          await client.query('ROLLBACK');
+          return { success: false, error: 'Agent not found or not owned by user' };
+        }
+        // Child tables to clean up (best-effort; missing tables are ignored).
+        // Keep this in sync with `SELECT table_name FROM information_schema.columns
+        // WHERE table_schema='builder_bot' AND column_name='agent_id'`.
+        const childTables = [
+          'agent_state',
+          'agent_logs',
+          'execution_history',
+          'agent_daily_spend',
+          'agent_tasks',
+          'agent_approvals',
+          'agent_audit_log',
+          'agent_evals',
+          'ai_proposals',
+          // Newer observability tables
+          'agent_traces',
+          'agent_evaluations',
+          'agent_system_facts',
+          // Memory / session / dossier tables
+          'agent_sessions',
+          'agent_daily_logs',
+          'agent_contacts',
+          'agent_domains',
+          'agent_journal',
+          'agent_reviews',
+          'agent_skill_tree',
+          'agent_token_usage',
+          // Wallets & marketplace
+          'agentic_wallets',
+          'marketplace_listings',
+          'marketplace_purchases',
+          'shared_agents',
+          'trust_scores',
+          // Sharing / export
+          'agent_shares',
+          // Feedback referencing agent_id
+          'feedback',
+        ];
+        for (const t of childTables) {
+          try {
+            await client.query(`DELETE FROM builder_bot.${t} WHERE agent_id = $1`, [agentId]);
+          } catch (e: any) {
+            // Table might not exist in all deployments — log and continue
+            if (!/relation.*does not exist/i.test(e.message)) {
+              console.warn(`[deleteAgent] cleanup ${t}: ${e.message}`);
+            }
+          }
+        }
+        // Finally, delete the agent itself
+        await client.query('DELETE FROM builder_bot.agents WHERE id = $1 AND user_id = $2', [agentId, userId]);
+        await client.query('COMMIT');
+      } catch (e: any) {
+        await client.query('ROLLBACK').catch(() => {});
+        throw e;
+      } finally {
+        client.release();
+      }
 
       // Clean up in-memory state for the deleted agent
       pruneAgentMemory(agentId);
+      // Invalidate runtime caches if the runtime exports it
+      try {
+        const { invalidateAgentCaches } = await import('../ai-agent-runtime');
+        invalidateAgentCaches(agentId);
+      } catch {}
 
       // Логируем в память
       await getMemoryManager().addMessage(

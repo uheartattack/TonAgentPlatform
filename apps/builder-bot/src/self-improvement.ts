@@ -10,7 +10,7 @@
  *
  * 2. Proactive (AI Product Engineer) — проектирует и создаёт новые фичи:
  *    Циклически обходит домены (agent_capabilities, marketplace, analytics...)
- *    Использует Claude Code (подписка) для генерации полных фич
+ *    Использует Anthropic CLI (подписка) для генерации полных фич
  *    ВСЕ фичи Level 2+ — требуют одобрения владельца через Telegram кнопки
  *    Не ревьюит код, а ИЗОБРЕТАЕТ новый функционал
  */
@@ -20,6 +20,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Pool } from 'pg';
 import { Telegraf, Context } from 'telegraf';
+
+/** Escape HTML special chars so agent-provided names can't inject markup when
+ *  a message is sent with parse_mode='HTML'. */
+function escapeHtml(s: string | number | null | undefined): string {
+  const str = String(s ?? '');
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
 import {
   getAIProposalsRepository,
   AIProposal,
@@ -30,7 +37,7 @@ import { agentLastErrors } from './agents/tools/execution-tools';
 import { getStagingManager } from './staging-manager';
 import { config } from './config';
 import { pool as dbPool } from './db';
-import { claudeCodeChat, isClaudeCodeAvailable } from './claude-code-bridge';
+import { anthropicCliChat, isAnthropicCliAvailable } from './anthropic-cli-bridge';
 
 // ─── HTML escape for Telegram notifications ────────────────────────────────────
 function escHtml(s: string): string {
@@ -267,7 +274,7 @@ export class SelfImprovementSystem {
   private async autoRunImprover(): Promise<void> {
     if (this.disabledModes.has('improver')) return;
     try {
-      const ok = await isClaudeCodeAvailable();
+      const ok = await isAnthropicCliAvailable();
       if (!ok) return;
       await this.runImprover();
     } catch (e: any) {
@@ -278,7 +285,7 @@ export class SelfImprovementSystem {
   private async autoRunIdeator(): Promise<void> {
     if (this.disabledModes.has('ideator')) return;
     try {
-      const ok = await isClaudeCodeAvailable();
+      const ok = await isAnthropicCliAvailable();
       if (!ok) return;
       await this.runIdeator();
     } catch (e: any) {
@@ -317,7 +324,7 @@ export class SelfImprovementSystem {
   async triggerMode(mode: string): Promise<string> {
     if (this.manualRunning) return 'already_running';
 
-    const ccAvailable = await isClaudeCodeAvailable();
+    const ccAvailable = await isAnthropicCliAvailable();
     if (!ccAvailable) return 'claude_unavailable';
 
     this.manualRunning = true;
@@ -354,7 +361,7 @@ export class SelfImprovementSystem {
     if (index < 0 || index >= this.pendingIdeas.length) return 'bad_index';
     if (this.manualRunning) return 'already_running';
 
-    const ccAvailable = await isClaudeCodeAvailable();
+    const ccAvailable = await isAnthropicCliAvailable();
     if (!ccAvailable) return 'claude_unavailable';
 
     // Extract the chosen idea
@@ -384,7 +391,7 @@ export class SelfImprovementSystem {
   /** Владелец описывает свою идею → Придумыватель допиливает в полный промпт */
   async submitUserIdea(rawIdea: string): Promise<string> {
     if (this.manualRunning) return 'already_running';
-    const ccAvailable = await isClaudeCodeAvailable();
+    const ccAvailable = await isAnthropicCliAvailable();
     if (!ccAvailable) return 'claude_unavailable';
 
     this.manualRunning = true;
@@ -422,7 +429,7 @@ RESPONSE FORMAT — valid JSON:
 }`;
 
       let text = '';
-      const result = await claudeCodeChat(
+      const result = await anthropicCliChat(
         [{ role: 'user', content: prompt }],
         { maxTokens: 3000, timeout: 300_000, model: 'claude-sonnet-4-6' }
       );
@@ -864,8 +871,8 @@ RESPONSE FORMAT — valid JSON:
 
     let text = '';
     try {
-      console.log(`[SelfImprovement] ПРИДУМЫВАТЕЛЬ: sending to Claude Code...`);
-      const result = await claudeCodeChat(
+      console.log(`[SelfImprovement] ПРИДУМЫВАТЕЛЬ: sending to Anthropic CLI...`);
+      const result = await anthropicCliChat(
         [{ role: 'user', content: prompt }],
         { maxTokens: 3000, timeout: 300_000, model: 'claude-sonnet-4-6' }
       );
@@ -1013,23 +1020,23 @@ RESPONSE FORMAT — valid JSON:
   // ════════════════════════════════════════════════════════════════════════════
   private async executeProactivePrompt(prompt: string, domain: string, modeLabel: string): Promise<void> {
     try {
-      // Send prompt (already constructed by runImprover/runIdeator/runImplementor) to Claude Code
+      // Send prompt (already constructed by runImprover/runIdeator/runImplementor) to Anthropic CLI
       let text = '';
       try {
-        console.log(`[SelfImprovement] ${modeLabel}: sending prompt to Claude Code (${prompt.length} chars)...`);
-        const result = await claudeCodeChat(
+        console.log(`[SelfImprovement] ${modeLabel}: sending prompt to Anthropic CLI (${prompt.length} chars)...`);
+        const result = await anthropicCliChat(
           [{ role: 'user', content: prompt }],
           { maxTokens: 4000, timeout: 120_000, model: 'claude-sonnet-4-6' }
         );
         text = result.text?.trim() || '';
-        console.log(`[SelfImprovement] ${modeLabel}: Claude Code responded (${text.length} chars, model: ${result.model})`);
+        console.log(`[SelfImprovement] ${modeLabel}: Anthropic CLI responded (${text.length} chars, model: ${result.model})`);
       } catch (ccErr: any) {
-        console.error(`[SelfImprovement] ${modeLabel} Claude Code failed: ${ccErr.message?.slice(0, 200)}`);
+        console.error(`[SelfImprovement] ${modeLabel} Anthropic CLI failed: ${ccErr.message?.slice(0, 200)}`);
         return;
       }
 
       if (!text) {
-        console.log(`[SelfImprovement] ${modeLabel}: empty response from Claude Code`);
+        console.log(`[SelfImprovement] ${modeLabel}: empty response from Anthropic CLI`);
         return;
       }
 
@@ -1494,18 +1501,18 @@ ${currentCode.slice(0, 4000)}
 
 Ответь ТОЛЬКО полным исправленным JavaScript кодом (без markdown, без объяснений, только код начиная с "async function agent(context) {").`;
 
-      // Try Claude Code first (subscription), then user's API key, then platform API
+      // Try Anthropic CLI first (subscription), then user's API key, then platform API
       let rawText = '';
-      const ccAvailable = await isClaudeCodeAvailable();
+      const ccAvailable = await isAnthropicCliAvailable();
       if (ccAvailable) {
         try {
-          const result = await claudeCodeChat(
+          const result = await anthropicCliChat(
             [{ role: 'user', content: prompt }],
             { maxTokens: 4000, timeout: 90_000 }
           );
           rawText = result.text;
         } catch (ccErr: any) {
-          console.warn(`[SelfImprovement] Claude Code repair failed: ${ccErr.message?.slice(0, 60)}`);
+          console.warn(`[SelfImprovement] Anthropic CLI repair failed: ${ccErr.message?.slice(0, 60)}`);
         }
       }
       if (!rawText) {
@@ -1552,8 +1559,8 @@ ${currentCode.slice(0, 4000)}
       if (userId) {
         await this.notifyUser(userId,
           `🔧 <b>Агент авто-починен</b>\n\n` +
-          `<b>#${agentId} ${agentName}</b>\n` +
-          `Ошибка (${errorCount}x): <code>${errorMsg.slice(0, 150)}</code>\n\n` +
+          `<b>#${agentId} ${escapeHtml(agentName)}</b>\n` +
+          `Ошибка (${errorCount}x): <code>${escapeHtml(errorMsg.slice(0, 150))}</code>\n\n` +
           `✅ AI исправил код агента автоматически.\n` +
           `<i>Следующий запуск покажет результат.</i>`,
           [[{ text: '📋 Логи', callback_data: `agent_logs:${agentId}` },
@@ -1563,9 +1570,9 @@ ${currentCode.slice(0, 4000)}
       // Also notify platform owner
       await this.notifyOwner(
         `🔧 <b>Агент авто-починен</b>\n\n` +
-        `<b>#${agentId} ${agentName}</b> (user ${userId})\n` +
-        `Ошибка (${errorCount}x): <code>${errorMsg.slice(0, 150)}</code>\n` +
-        `✅ Repaired via ${ccAvailable ? 'Claude Code' : (userAI !== this.ai ? 'User API' : 'Platform AI')}`
+        `<b>#${agentId} ${escapeHtml(agentName)}</b> (user ${userId})\n` +
+        `Ошибка (${errorCount}x): <code>${escapeHtml(errorMsg.slice(0, 150))}</code>\n` +
+        `✅ Repaired via ${ccAvailable ? 'Anthropic CLI' : (userAI !== this.ai ? 'User API' : 'Platform AI')}`
       );
 
     } catch (e: any) {
@@ -1618,12 +1625,12 @@ ${recentLogs.slice(0, 20).map(l => `- ${l}`).join('\n')}
 
 Ответь ТОЛЬКО полным улучшенным system prompt (без markdown, без объяснений, без кавычек).`;
 
-      // Try Claude Code first, then user/platform API
+      // Try Anthropic CLI first, then user/platform API
       let newPrompt = '';
-      const ccAvailable = await isClaudeCodeAvailable();
+      const ccAvailable = await isAnthropicCliAvailable();
       if (ccAvailable) {
         try {
-          const result = await claudeCodeChat(
+          const result = await anthropicCliChat(
             [{ role: 'user', content: prompt }],
             { maxTokens: 4000, timeout: 90_000 }
           );
@@ -1933,7 +1940,7 @@ ${recentLogs.slice(0, 20).map(l => `- ${l}`).join('\n')}
     // Ищем информацию в интернете
     const research = await this.researchOnline(issue.description);
 
-    // Читаем релевантный код (если известен модуль) — expanded for Claude Code
+    // Читаем релевантный код (если известен модуль) — expanded for Anthropic CLI
     const codeSnippet = this.getRelevantCode(issue.module);
 
     // Дополнительный контекст: список всех файлов платформы
@@ -1986,18 +1993,18 @@ ${codeSnippet || 'Фрагмент кода недоступен.'}
     try {
       let text = '';
 
-      // ── 1. Try Claude Code CLI first (uses subscription) ──
-      const ccAvailable = await isClaudeCodeAvailable();
+      // ── 1. Try Anthropic CLI first (uses subscription) ──
+      const ccAvailable = await isAnthropicCliAvailable();
       if (ccAvailable) {
         try {
-          const result = await claudeCodeChat(
+          const result = await anthropicCliChat(
             [{ role: 'user', content: prompt }],
             { maxTokens: 2000, timeout: 60_000 }
           );
           text = result.text;
-          console.log(`[SelfImprovement] Claude Code generated solution (${result.model})`);
+          console.log(`[SelfImprovement] Anthropic CLI generated solution (${result.model})`);
         } catch (ccErr: any) {
-          console.warn(`[SelfImprovement] Claude Code failed: ${ccErr.message?.slice(0, 80)}, falling back to API`);
+          console.warn(`[SelfImprovement] Anthropic CLI failed: ${ccErr.message?.slice(0, 80)}, falling back to API`);
         }
       }
 
@@ -2156,8 +2163,27 @@ ${codeSnippet || 'Фрагмент кода недоступен.'}
 
   // ─── Применение изменений ─────────────────────────────────────────────────
 
-  /** Level 1: применяет сразу, информирует владельца */
+  /** Level 1: применяет сразу (или ждёт одобрения если REQUIRE_APPROVAL=true) */
   private async applyLevel1(proposal: AIProposal): Promise<void> {
+    // Safety gate: if REQUIRE_APPROVAL env flag is set, escalate to Level 2 (owner approval)
+    if (process.env.REQUIRE_APPROVAL === 'true') {
+      console.log(`[SelfImprovement] REQUIRE_APPROVAL=true — escalating Level 1 to owner approval`);
+      await getAIProposalsRepository().updateStatus(proposal.id, 'pending');
+      await this.notifyOwnerWithButtons(
+        `🟡 <b>Approval Required (Level 1→2)</b>
+
+` +
+        `<b>${proposal.title}</b>
+` +
+        `${proposal.description.slice(0, 200)}
+
+` +
+        `<i>REQUIRE_APPROVAL=true — manual approval needed</i>`,
+        proposal.id,
+      );
+      return;
+    }
+
     if (!proposal.patch.length) {
       // Нет патча — просто сохраняем как Level 3
       await getAIProposalsRepository().updateStatus(proposal.id, 'pending');
