@@ -138,7 +138,7 @@ body {
   width: 80px;
   height: 80px;
   margin: 0 auto 24px;
-  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  background: linear-gradient(in oklab 135deg, var(--primary), var(--primary-dark));
   border-radius: var(--radius-lg);
   display: flex;
   align-items: center;
@@ -171,7 +171,7 @@ body {
   position: relative;
   background:
     radial-gradient(ellipse at top, rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.08), transparent 60%),
-    linear-gradient(180deg, rgba(15,22,41,0.92), rgba(10,15,28,0.96));
+    linear-gradient(in oklab 180deg, rgba(15,22,41,0.92), rgba(10,15,28,0.96));
   backdrop-filter: blur(20px);
   border: 1px solid rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.18);
   border-radius: var(--radius-xl);
@@ -191,7 +191,7 @@ body {
   inset: -1px;
   border-radius: inherit;
   padding: 1px;
-  background: linear-gradient(135deg, rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.5), transparent 40%, rgba(139,92,246,0.35));
+  background: linear-gradient(in oklab 135deg, rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.5), transparent 40%, rgba(139,92,246,0.35));
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
           mask-composite: exclude;
@@ -225,7 +225,7 @@ body {
   padding: 16px 28px;
   width: 100%;
   border: none;
-  background: linear-gradient(135deg, #2AABEE 0%, #0098EA 50%, #0077bb 100%);
+  background: linear-gradient(in oklab 135deg, #2AABEE 0%, #0098EA 50%, #0077bb 100%);
   border-radius: var(--radius-md);
   color: white;
   font-weight: 600;
@@ -244,7 +244,7 @@ body {
   position: absolute;
   top: 0; left: -120%;
   width: 60%; height: 100%;
-  background: linear-gradient(120deg, transparent, rgba(255,255,255,0.28), transparent);
+  background: linear-gradient(in oklab 120deg, transparent, rgba(255,255,255,0.28), transparent);
   transition: left 0.7s ease;
   pointer-events: none;
 }
@@ -333,7 +333,7 @@ body {
 }
 
 .auth-brand-accent {
-  background: linear-gradient(135deg, #33b5f5, #0098EA 55%, #8b5cf6);
+  background: linear-gradient(in oklab 135deg, #33b5f5, #0098EA 55%, #8b5cf6);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -396,7 +396,7 @@ a.auth-brand:hover h1 { filter: brightness(1.05); }
   align-items: flex-start;
   gap: 14px;
   padding: 14px 16px;
-  background: linear-gradient(135deg, rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.05), rgba(139,92,246,0.03));
+  background: linear-gradient(in oklab 135deg, rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.05), rgba(139,92,246,0.03));
   border: 1px solid var(--accent-dim);
   border-radius: var(--radius-md);
   transition: all var(--transition-base);
@@ -407,7 +407,7 @@ a.auth-brand:hover h1 { filter: brightness(1.05); }
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.10), transparent 50%);
+  background: linear-gradient(in oklab 135deg, rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.10), transparent 50%);
   opacity: 0;
   transition: opacity var(--transition-base);
   pointer-events: none;
@@ -425,7 +425,7 @@ a.auth-brand:hover h1 { filter: brightness(1.05); }
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.18), rgba(139,92,246,0.14));
+  background: linear-gradient(in oklab 135deg, rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.18), rgba(139,92,246,0.14));
   border: 1px solid rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.25);
   border-radius: 14px;
   color: #7BC9FF;
@@ -463,7 +463,7 @@ a.auth-brand:hover h1 { filter: brightness(1.05); }
   padding: 22px 20px;
   position: relative;
   background:
-    linear-gradient(135deg, rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.06), rgba(139,92,246,0.04)),
+    linear-gradient(in oklab 135deg, rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.06), rgba(139,92,246,0.04)),
     rgba(10, 14, 24, 0.45);
   border: 1px solid rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.20);
   border-radius: 20px;
@@ -497,7 +497,7 @@ a.auth-brand:hover h1 { filter: brightness(1.05); }
   position: absolute;
   right: -9px; top: 18%; bottom: 18%;
   width: 1px;
-  background: linear-gradient(180deg, transparent, rgba(255,255,255,0.10), transparent);
+  background: linear-gradient(in oklab 180deg, transparent, rgba(255,255,255,0.10), transparent);
 }
 .auth-stat-icon {
   width: 28px; height: 28px;
@@ -518,7 +518,7 @@ a.auth-brand:hover h1 { filter: brightness(1.05); }
   font-size: 1.7rem;
   font-weight: 900;
   line-height: 1;
-  background: linear-gradient(135deg, #33b5f5, #0098EA 55%, #8b5cf6);
+  background: linear-gradient(in oklab 135deg, #33b5f5, #0098EA 55%, #8b5cf6);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -734,7 +734,7 @@ a.auth-brand:hover h1 { filter: brightness(1.05); }
   content: '';
   flex: 1;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.10), transparent);
+  background: linear-gradient(in oklab 90deg, transparent, rgba(255,255,255,0.10), transparent);
 }
 
 /* Secondary "Sign in via bot" button — clearly visible alternative */
@@ -764,7 +764,7 @@ a.auth-brand:hover h1 { filter: brightness(1.05); }
   flex-shrink: 0;
   width: 38px; height: 38px;
   display: flex; align-items: center; justify-content: center;
-  background: linear-gradient(135deg, rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.20), rgba(139,92,246,0.16));
+  background: linear-gradient(in oklab 135deg, rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.20), rgba(139,92,246,0.16));
   border: 1px solid rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.30);
   border-radius: 10px;
   color: #7BC9FF;
@@ -937,7 +937,7 @@ a.auth-brand:hover h1 { filter: brightness(1.05); }
 .logo-icon {
   width: 34px;
   height: 34px;
-  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  background: linear-gradient(in oklab 135deg, var(--primary), var(--primary-dark));
   border-radius: 24px;
   display: flex;
   align-items: center;
@@ -988,7 +988,7 @@ a.auth-brand:hover h1 { filter: brightness(1.05); }
   letter-spacing: 1px;
   padding: 2px 6px;
   border-radius: 30px;
-  background: linear-gradient(135deg, #f5a623 0%, #e74c3c 100%);
+  background: linear-gradient(in oklab 135deg, #f5a623 0%, #e74c3c 100%);
   color: #fff;
   text-transform: uppercase;
   line-height: 1;
@@ -1158,7 +1158,7 @@ a.auth-brand:hover h1 { filter: brightness(1.05); }
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  background: linear-gradient(in oklab 135deg, var(--primary), var(--primary-dark));
   box-shadow: 0 0 10px rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.3);
 }
 
@@ -1381,7 +1381,7 @@ a.auth-brand:hover h1 { filter: brightness(1.05); }
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+  background: linear-gradient(in oklab 90deg, transparent, rgba(255,255,255,0.15), transparent);
   transform: translateX(-100%);
   transition: transform 0.5s ease;
 }
@@ -1737,7 +1737,7 @@ a.auth-brand:hover h1 { filter: brightness(1.05); }
 
 .memory-progress {
   height: 100%;
-  background: linear-gradient(90deg, var(--primary), var(--primary-light));
+  background: linear-gradient(in oklab 90deg, var(--primary), var(--primary-light));
   border-radius: 6px;
   transition: width var(--transition-slow);
 }
@@ -2264,20 +2264,43 @@ select.form-input option {
 }
 
 .tab-count {
-  padding: 2px 8px;
-  background: rgba(255, 255, 255, 0.2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  color: var(--text-secondary);
   border-radius: 9999px;
-  font-size: 0.6875rem;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
 }
 
 .tab-count.new {
-  background: var(--success);
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.25);
+  color: #22c55e;
 }
 
-.tab-count.alert {
-  background: var(--warning);
-  color: var(--bg-primary);
+.tab-count.warn {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.30);
+  color: #f59e0b;
 }
+/* Override any .alert-class bleed (global .alert component has its own
+   grid layout + accent bar that was bleeding into .tab-count.alert). */
+.tab-count,
+.tab-count.alert,
+.tab-count.new {
+  position: static !important;
+  display: inline-flex !important;
+  grid-template-columns: none !important;
+}
+.tab-count::before { content: none !important; display: none !important; }
 
 .extension-card {
   background: var(--elevated);
@@ -2555,7 +2578,7 @@ select.form-input option {
 
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--primary), var(--primary-light));
+  background: linear-gradient(in oklab 90deg, var(--primary), var(--primary-light));
   border-radius: 6px;
   transition: width var(--transition-slow);
   animation: progressShine 2s infinite;
@@ -2875,7 +2898,7 @@ select.form-input option {
   border-radius: 50%;
 }
 .wallet-balance-card.earned {
-  background: linear-gradient(135deg, rgba(16,185,129,0.12) 0%, rgba(6,182,212,0.08) 100%);
+  background: linear-gradient(in oklab 135deg, rgba(16,185,129,0.12) 0%, rgba(6,182,212,0.08) 100%);
   border-color: rgba(16,185,129,0.2);
 }
 .wallet-balance-card.earned:hover {
@@ -2963,7 +2986,7 @@ select.form-input option {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);
+  background: linear-gradient(in oklab 90deg, transparent, rgba(255,255,255,0.12), transparent);
   transform: translateX(-100%);
   transition: transform 0.5s ease;
 }
@@ -3288,7 +3311,7 @@ select.form-input option {
   align-items: center;
   gap: 8px;
   padding: 10px 22px;
-  background: linear-gradient(135deg, var(--success), #059669);
+  background: linear-gradient(in oklab 135deg, var(--success), #059669);
   color: #fff;
   border: none;
   border-radius: var(--radius-sm);
@@ -3553,7 +3576,7 @@ select.form-input option {
   border-radius: 16px;
   background: radial-gradient(ellipse at 30% 40%, rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.06) 0%, transparent 60%),
               radial-gradient(ellipse at 70% 60%, rgba(var(--accent-r,168),var(--accent-g,85),var(--accent-b,247),0.04) 0%, transparent 50%),
-              linear-gradient(180deg, #080b12 0%, #050507 100%);
+              linear-gradient(in oklab 180deg, #080b12 0%, #050507 100%);
 }
 
 #agent-network-canvas {
@@ -4440,7 +4463,7 @@ select.form-input option {
   width: 72px;
   height: 72px;
   margin: 0 auto 20px;
-  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  background: linear-gradient(in oklab 135deg, var(--primary), var(--primary-dark));
   color: white;
   border-radius: 24px;
   display: flex;
@@ -4450,13 +4473,13 @@ select.form-input option {
   animation: logoPulse 2s ease-in-out infinite;
 }
 .onboarding-icon-agent {
-  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  background: linear-gradient(in oklab 135deg, var(--primary), var(--primary-dark));
 }
 .onboarding-icon-ai {
-  background: linear-gradient(135deg, #7c3aed, #a78bfa);
+  background: linear-gradient(in oklab 135deg, #7c3aed, #a78bfa);
 }
 .onboarding-icon-done {
-  background: linear-gradient(135deg, #10b981, #34d399);
+  background: linear-gradient(in oklab 135deg, #10b981, #34d399);
 }
 
 /* Title & description */
@@ -4872,7 +4895,7 @@ select.form-input option {
 }
 .gs-progress-bar {
   height: 100%;
-  background: linear-gradient(90deg, var(--primary), #10b981);
+  background: linear-gradient(in oklab 90deg, var(--primary), #10b981);
   border-radius: 2px;
   transition: width 0.5s ease;
 }
@@ -4995,8 +5018,8 @@ select.form-input option {
 .sub-usage-item{}
 .sub-usage-label{display:flex;justify-content:space-between;font-size:.78rem;color:var(--text-muted);margin-bottom:3px}
 .sub-usage-bar{height:6px;background:var(--bg-tertiary);border-radius:3px;overflow:hidden}
-.sub-usage-fill{height:100%;border-radius:3px;background:linear-gradient(90deg, var(--primary), var(--primary-light));transition:width .5s ease}
-.sub-usage-fill.warning{background:linear-gradient(90deg,#f59e0b,#ef4444)}
+.sub-usage-fill{height:100%;border-radius:3px;background:linear-gradient(in oklab 90deg, var(--primary), var(--primary-light));transition:width .5s ease}
+.sub-usage-fill.warning{background:linear-gradient(in oklab 90deg,#f59e0b,#ef4444)}
 
 /* Plan badge in sidebar */
 #user-plan-badge{font-size:.7rem;padding:2px 8px;border-radius:10px;font-weight:600}
@@ -6526,7 +6549,7 @@ select:focus {
 /* Wallet card */
 .st-wallet-card {
   padding: 24px; border-radius: 16px; text-align: center;
-  background: linear-gradient(135deg, rgba(245,158,11,0.06) 0%, rgba(234,179,8,0.02) 100%);
+  background: linear-gradient(in oklab 135deg, rgba(245,158,11,0.06) 0%, rgba(234,179,8,0.02) 100%);
   border: 1px solid rgba(245,158,11,0.15);
 }
 .st-wallet-icon {
@@ -6613,7 +6636,7 @@ select:focus {
 .st-chat-input:focus { outline: none; border-color: var(--primary); }
 .st-chat-send {
   width: 44px; height: 44px; border-radius: 30px; border: none;
-  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark, #0077bb) 100%);
+  background: linear-gradient(in oklab 135deg, var(--primary) 0%, var(--primary-dark, #0077bb) 100%);
   color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center;
   transition: transform 0.1s, box-shadow 0.15s;
 }
@@ -7246,7 +7269,7 @@ select:focus {
   background:
     radial-gradient(circle at 0% 0%, rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.25), transparent 50%),
     radial-gradient(circle at 100% 100%, rgba(168,85,247,0.18), transparent 50%),
-    linear-gradient(135deg, rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.06), rgba(168,85,247,0.04));
+    linear-gradient(in oklab 135deg, rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.06), rgba(168,85,247,0.04));
   border: 1px solid rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.18);
   overflow: hidden;
 }
@@ -7315,7 +7338,7 @@ select:focus {
   font-family: 'Space Grotesk', 'Inter', sans-serif;
 }
 .guide-v3-hero-title .grad {
-  background: linear-gradient(135deg, var(--primary), #a855f7);
+  background: linear-gradient(in oklab 135deg, var(--primary), #a855f7);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -7366,7 +7389,7 @@ select:focus {
   padding: 14px 24px;
   border-radius: 12px;
   border: none;
-  background: linear-gradient(135deg, var(--primary), #6366f1);
+  background: linear-gradient(in oklab 135deg, var(--primary), #6366f1);
   color: white;
   font-size: 14px;
   font-weight: 600;
@@ -7404,7 +7427,7 @@ select:focus {
   gap: 4px;
   padding: 6px;
   background:
-    linear-gradient(180deg, rgba(255,255,255,0.025), transparent),
+    linear-gradient(in oklab 180deg, rgba(255,255,255,0.025), transparent),
     var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: 16px;
@@ -7456,7 +7479,7 @@ select:focus {
 .guide-tab:active { transform: scale(0.97); }
 .guide-tab.active {
   color: white;
-  background: linear-gradient(135deg, var(--primary), #6366f1);
+  background: linear-gradient(in oklab 135deg, var(--primary), #6366f1);
   border-color: rgba(255,255,255,0.14);
   font-weight: 600;
   box-shadow:
@@ -7510,7 +7533,7 @@ select:focus {
   height: 56px;
   min-width: 56px;
   border-radius: 16px;
-  background: linear-gradient(135deg, var(--accent-dim), rgba(168,85,247,0.1));
+  background: linear-gradient(in oklab 135deg, var(--accent-dim), rgba(168,85,247,0.1));
   color: var(--primary);
   display: flex;
   align-items: center;
@@ -7561,7 +7584,7 @@ select:focus {
 .guide-card-v2 {
   position: relative;
   background:
-    linear-gradient(180deg, rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.04), transparent 60%),
+    linear-gradient(in oklab 180deg, rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.04), transparent 60%),
     var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: 18px;
@@ -7580,7 +7603,7 @@ select:focus {
   left: 0;
   right: 0;
   height: 2px;
-  background: linear-gradient(90deg, var(--primary), #a855f7);
+  background: linear-gradient(in oklab 90deg, var(--primary), #a855f7);
   opacity: 0.5;
   transition: opacity .25s;
 }
@@ -7611,7 +7634,7 @@ select:focus {
   width: 44px;
   height: 44px;
   border-radius: 14px;
-  background: linear-gradient(135deg, var(--accent-dim), rgba(168,85,247,0.15));
+  background: linear-gradient(in oklab 135deg, var(--accent-dim), rgba(168,85,247,0.15));
   border: 1px solid rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.25);
   color: var(--primary);
   font-size: 18px;
@@ -7762,14 +7785,14 @@ select:focus {
   content: '';
   width: 28px;
   height: 2px;
-  background: linear-gradient(90deg, var(--primary), transparent);
+  background: linear-gradient(in oklab 90deg, var(--primary), transparent);
   border-radius: 2px;
 }
 .guide-section-divider::after {
   content: '';
   flex: 1;
   height: 1px;
-  background: linear-gradient(90deg, var(--border), transparent);
+  background: linear-gradient(in oklab 90deg, var(--border), transparent);
 }
 
 /* Detail accordion — premium with gradient border on open */
@@ -7790,7 +7813,7 @@ select:focus {
 .guide-detail[open] {
   border-color: rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.35);
   background:
-    linear-gradient(180deg, rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.04), transparent 40%),
+    linear-gradient(in oklab 180deg, rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.04), transparent 40%),
     var(--bg-secondary);
   box-shadow: 0 4px 16px rgba(0,0,0,0.15);
 }
@@ -7824,7 +7847,7 @@ select:focus {
 }
 .guide-detail[open] summary .chev {
   transform: rotate(180deg);
-  background: linear-gradient(135deg, var(--primary), #6366f1);
+  background: linear-gradient(in oklab 135deg, var(--primary), #6366f1);
   color: white;
 }
 .guide-detail summary .q { flex: 1; min-width: 0; }
@@ -7864,7 +7887,7 @@ select:focus {
   gap: 14px;
   padding: 20px 22px;
   background:
-    linear-gradient(135deg, rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.08), rgba(168,85,247,0.04));
+    linear-gradient(in oklab 135deg, rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.08), rgba(168,85,247,0.04));
   border: 1px solid rgba(var(--accent-r,14),var(--accent-g,165),var(--accent-b,233),0.22);
   border-radius: 16px;
   font-size: 14px;
@@ -7886,7 +7909,7 @@ select:focus {
   height: 36px;
   min-width: 36px;
   border-radius: 11px;
-  background: linear-gradient(135deg, var(--primary), #6366f1);
+  background: linear-gradient(in oklab 135deg, var(--primary), #6366f1);
   color: white;
   display: flex;
   align-items: center;
@@ -7931,7 +7954,7 @@ select:focus {
 .guide-hero {
   position: relative; text-align: center; padding: 4rem 2rem 3rem;
   border-radius: 16px; margin-bottom: 2rem; overflow: hidden;
-  background: linear-gradient(135deg, rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.08), rgba(var(--accent-r,139),var(--accent-g,92),var(--accent-b,246),0.08), rgba(16,185,129,0.05));
+  background: linear-gradient(in oklab 135deg, rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.08), rgba(var(--accent-r,139),var(--accent-g,92),var(--accent-b,246),0.08), rgba(16,185,129,0.05));
   border: 1px solid rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.15);
 }
 .guide-hero-glow {
@@ -7947,7 +7970,7 @@ select:focus {
 .guide-hero-title {
   font-size: 2rem; font-weight: 800; color: var(--text-primary);
   margin: 0 0 8px; position: relative; z-index: 1;
-  background: linear-gradient(135deg, var(--primary), #a855f7);
+  background: linear-gradient(in oklab 135deg, var(--primary), #a855f7);
   -webkit-background-clip: text; -webkit-text-fill-color: transparent;
   background-clip: text;
 }
@@ -7988,7 +8011,7 @@ select:focus {
 .guide-action-btn {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 6px 16px; border-radius: 30px; border: none;
-  background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: #fff;
+  background: linear-gradient(in oklab 135deg, var(--primary), var(--primary-dark)); color: #fff;
   font-size: .78rem; font-weight: 600; cursor: pointer;
   transition: transform 0.15s, box-shadow 0.15s;
 }
@@ -8069,7 +8092,7 @@ select:focus {
   position: absolute;
   top: 0; left: 0; right: 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  background: linear-gradient(in oklab 90deg, transparent, var(--accent), transparent);
   opacity: 0.4;
 }
 .kpi-card::after {
@@ -8136,7 +8159,7 @@ select:focus {
   position: absolute;
   top: 0; left: 0; right: 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  background: linear-gradient(in oklab 90deg, transparent, var(--accent), transparent);
   opacity: 0.3;
 }
 .card:hover {
@@ -8219,7 +8242,7 @@ select:focus {
   position: absolute;
   bottom: 0; left: 14px; right: 14px;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.4), transparent);
+  background: linear-gradient(in oklab 90deg, transparent, rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.4), transparent);
 }
 
 /* ── Sidebar nav group ── */
@@ -8359,7 +8382,7 @@ select:focus {
   position: absolute;
   top: 0; left: 0; right: 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  background: linear-gradient(in oklab 90deg, transparent, var(--accent), transparent);
   opacity: 0.4;
 }
 
@@ -8559,7 +8582,7 @@ input:focus, textarea:focus, select:focus {
   font-weight: 500;
   color: var(--text-primary);
   padding: 8px 16px;
-  background: linear-gradient(135deg, rgba(var(--accent-r,0),var(--accent-g,168),var(--accent-b,255),.08), rgba(var(--accent-r,139),var(--accent-g,92),var(--accent-b,246),.06));
+  background: linear-gradient(in oklab 135deg, rgba(var(--accent-r,0),var(--accent-g,168),var(--accent-b,255),.08), rgba(var(--accent-r,139),var(--accent-g,92),var(--accent-b,246),.06));
   border: 1px solid rgba(var(--accent-r,0),var(--accent-g,168),var(--accent-b,255),.25);
   border-radius: 30px;
   transition: all .2s ease;
@@ -8595,7 +8618,7 @@ input:focus, textarea:focus, select:focus {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--accent), #005fa3);
+  background: linear-gradient(in oklab 135deg, var(--accent), #005fa3);
   color: #fff;
   font-size: 13px;
   font-weight: 700;
@@ -8647,7 +8670,7 @@ input:focus, textarea:focus, select:focus {
   position: absolute;
   top: 0; left: 0; right: 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);
+  background: linear-gradient(in oklab 90deg, transparent, rgba(255,255,255,0.12), transparent);
 }
 
 .agents-stat-card:hover {
@@ -8679,7 +8702,7 @@ input:focus, textarea:focus, select:focus {
 /* ===== NAV ACTIVE ITEM: WHITE PILL — FINAL ===== */
 .nav-item.active,
 .nav-item.active:hover {
-  background: linear-gradient(135deg, var(--primary), var(--primary-dark)) !important;
+  background: linear-gradient(in oklab 135deg, var(--primary), var(--primary-dark)) !important;
   color: #ffffff !important;
   border: none !important;
   box-shadow:
@@ -9612,7 +9635,7 @@ select option { background: var(--bg-secondary, #1a1f2e); color: var(--text-prim
   margin: 12px;
   padding: 14px 18px;
   border-radius: 10px;
-  background: linear-gradient(135deg, rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.18), rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.05));
+  background: linear-gradient(in oklab 135deg, rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.18), rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.05));
   border: 1px solid rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.35);
   font-size: 0.88rem;
   color: var(--text-primary);
@@ -9997,7 +10020,7 @@ button[data-busy="1"]::after, .btn-busy::after {
   position: absolute;
   top: 0; left: 0; right: 0;
   height: 2px;
-  background: linear-gradient(90deg, var(--primary), var(--accent-2));
+  background: linear-gradient(in oklab 90deg, var(--primary), var(--accent-2));
   border-top-left-radius: inherit;
   border-top-right-radius: inherit;
   opacity: 0;
@@ -10060,7 +10083,7 @@ button[data-busy="1"]::after, .btn-busy::after {
 .kb-filter.active,
 .notif-filter.active,
 .tab-btn.active {
-  background: linear-gradient(135deg, var(--accent-dim), rgba(var(--accent-r,168),var(--accent-g,85),var(--accent-b,247),0.15));
+  background: linear-gradient(in oklab 135deg, var(--accent-dim), rgba(var(--accent-r,168),var(--accent-g,85),var(--accent-b,247),0.15));
   border-color: rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.45);
   color: var(--text-primary);
   box-shadow: 0 4px 12px rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.15);

@@ -66,7 +66,7 @@
   height: 100vh !important;
   z-index: auto !important;
   background:
-    linear-gradient(180deg, rgba(255,255,255,0.02), transparent 30%),
+    linear-gradient(in oklab 180deg, rgba(255,255,255,0.02), transparent 30%),
     var(--surface, #0C1118) !important;
   border-right: 1px solid var(--border, rgba(255,255,255,0.07)) !important;
   padding: 14px 12px !important;
@@ -92,7 +92,7 @@
   border-radius: 12px !important;
   background:
     radial-gradient(circle at 30% 30%, rgba(255,255,255,0.18), transparent 50%),
-    linear-gradient(135deg, var(--primary), var(--accent-2)) !important;
+    linear-gradient(in oklab 135deg, var(--primary), var(--accent-2)) !important;
   display: grid; place-items: center;
   color: white; font-weight: 800; font-size: 16px;
   box-shadow:
@@ -110,7 +110,7 @@
   line-height: 1.1 !important; color: var(--text-primary);
 }
 .logo-accent {
-  background: linear-gradient(90deg, var(--primary) 0%, var(--accent-2) 75%);
+  background: linear-gradient(in oklab 90deg, var(--primary) 0%, var(--accent-2) 75%);
   -webkit-background-clip: text; -webkit-text-fill-color: transparent;
   background-clip: text;
   font-weight: 800;
@@ -166,7 +166,7 @@
 }
 .nav-item.active {
   color: var(--primary) !important;
-  background: linear-gradient(90deg,
+  background: linear-gradient(in oklab 90deg,
     rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.18),
     rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.04)) !important;
   border-color: rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.25) !important;
@@ -175,7 +175,7 @@
 .nav-item.active::before {
   content: ""; position: absolute;
   left: -10px; top: 8px; bottom: 8px; width: 3px;
-  background: linear-gradient(180deg, var(--primary), var(--accent-2));
+  background: linear-gradient(in oklab 180deg, var(--primary), var(--accent-2));
   border-radius: 0 3px 3px 0;
 }
 .nav-badge {
@@ -236,7 +236,7 @@
   font-weight: 700 !important;
   padding: 3px 8px !important;
   border-radius: 100px !important;
-  background: linear-gradient(135deg,
+  background: linear-gradient(in oklab 135deg,
     rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.15),
     rgba(var(--accent2-r,168),var(--accent2-g,85),var(--accent2-b,247),0.15)) !important;
   border: 1px solid rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.3) !important;
@@ -247,7 +247,7 @@
 .user-avatar-fallback {
   width: 36px !important; height: 36px !important;
   border-radius: 50% !important;
-  background: linear-gradient(135deg, #6b1825, #2a0a10) !important;
+  background: linear-gradient(in oklab 135deg, #6b1825, #2a0a10) !important;
   flex-shrink: 0 !important;
   border: none !important;
 }
@@ -264,7 +264,7 @@
   transition: all .15s var(--ease);
 }
 .lang-btn.active {
-  background: linear-gradient(135deg, var(--primary), var(--accent-2)) !important;
+  background: linear-gradient(in oklab 135deg, var(--primary), var(--accent-2)) !important;
   color: white !important;
   border-color: rgba(255,255,255,0.14) !important;
 }
@@ -299,7 +299,7 @@
   gap: 6px !important;
   padding: 7px !important;
   background:
-    linear-gradient(180deg, rgba(255,255,255,0.03), transparent),
+    linear-gradient(in oklab 180deg, rgba(255,255,255,0.03), transparent),
     var(--bg-secondary, #0C1118) !important;
   border: 1px solid var(--border, rgba(255,255,255,0.07)) !important;
   border-radius: 16px !important;
@@ -325,7 +325,7 @@
 .profile-hub-tabs[data-active="connectors"]    .pill-tab[data-tab="connectors"],
 .profile-hub-tabs[data-active="notifications"] .pill-tab[data-tab="notifications"] {
   color: white !important;
-  background: linear-gradient(135deg, var(--primary), var(--accent-2)) !important;
+  background: linear-gradient(in oklab 135deg, var(--primary), var(--accent-2)) !important;
   border-color: rgba(255,255,255,0.14) !important;
   font-weight: 600 !important;
   box-shadow:
@@ -353,7 +353,7 @@
   padding: 28px 28px 24px;
   border-radius: 18px;
   background:
-    linear-gradient(180deg, rgba(239,68,68,0.05), transparent 60%),
+    linear-gradient(in oklab 180deg, rgba(239,68,68,0.05), transparent 60%),
     var(--bg-secondary, #0C1118);
   border: 1px solid rgba(239,68,68,0.20);
   box-shadow: 0 24px 60px rgba(0,0,0,0.55), 0 0 0 1px rgba(239,68,68,0.10);
@@ -406,7 +406,7 @@
   height: auto !important;
   min-height: 0 !important;
   background:
-    linear-gradient(180deg, rgba(7,11,18,0.85), rgba(7,11,18,0.65)) !important;
+    linear-gradient(in oklab 180deg, rgba(7,11,18,0.85), rgba(7,11,18,0.65)) !important;
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--border, rgba(255,255,255,0.07)) !important;
@@ -450,7 +450,7 @@
   background:
     radial-gradient(circle at 0% 0%, rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.22), transparent 55%),
     radial-gradient(circle at 100% 120%, rgba(var(--accent2-r,168),var(--accent2-g,85),var(--accent2-b,247),0.16), transparent 55%),
-    linear-gradient(135deg, rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.05), rgba(var(--accent2-r,168),var(--accent2-g,85),var(--accent2-b,247),0.03));
+    linear-gradient(in oklab 135deg, rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.05), rgba(var(--accent2-r,168),var(--accent2-g,85),var(--accent2-b,247),0.03));
   border: 1px solid rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.18) !important;
   overflow: hidden;
 }
@@ -458,7 +458,7 @@
   content: ""; position: absolute; inset: 0;
   background-image:
     linear-gradient(rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.06) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.06) 1px, transparent 1px);
+    linear-gradient(in oklab 90deg, rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.06) 1px, transparent 1px);
   background-size: 32px 32px;
   mask-image: radial-gradient(ellipse at top right, black, transparent 70%);
   -webkit-mask-image: radial-gradient(ellipse at top right, black, transparent 70%);
@@ -549,7 +549,7 @@
   border-radius: 9px !important;
   display: grid !important;
   place-items: center !important;
-  background: linear-gradient(135deg, var(--accent-dim), rgba(var(--accent2-r,168),var(--accent2-g,85),var(--accent2-b,247),0.12)) !important;
+  background: linear-gradient(in oklab 135deg, var(--accent-dim), rgba(var(--accent2-r,168),var(--accent2-g,85),var(--accent2-b,247),0.12)) !important;
   border: 1px solid rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.22) !important;
   color: var(--primary) !important;
   margin: 0 !important;
@@ -616,7 +616,7 @@
   color: var(--text-primary) !important;
 }
 .metric-card[data-metric="success"] .metric-value {
-  background: linear-gradient(90deg, var(--amber, #F59E0B) 0%, #fbbf24 75%) !important;
+  background: linear-gradient(in oklab 90deg, var(--amber, #F59E0B) 0%, #fbbf24 75%) !important;
   -webkit-background-clip: text !important;
   background-clip: text !important;
   -webkit-text-fill-color: transparent !important;
@@ -626,7 +626,7 @@
 .metric-card[data-metric="last24h"] .metric-value,
 .metric-card[data-metric="tools"] .metric-value,
 .metric-card[data-metric="model"] .metric-value {
-  background: linear-gradient(90deg, var(--primary) 0%, var(--accent-2) 75%) !important;
+  background: linear-gradient(in oklab 90deg, var(--primary) 0%, var(--accent-2) 75%) !important;
   -webkit-background-clip: text !important;
   background-clip: text !important;
   -webkit-text-fill-color: transparent !important;
@@ -702,7 +702,7 @@ main {
 
 /* ─── Buttons (all CTAs gradient) ─────────────────────────────────── */
 .btn-primary {
-  background: linear-gradient(135deg, var(--primary), var(--accent-2)) !important;
+  background: linear-gradient(in oklab 135deg, var(--primary), var(--accent-2)) !important;
   color: #fff !important;
   border: 1px solid rgba(255,255,255,0.14) !important;
   box-shadow:
@@ -735,7 +735,7 @@ main {
   padding: 22px !important;
   border-radius: 16px !important;
   background:
-    linear-gradient(180deg, rgba(255,255,255,0.015), transparent 50%),
+    linear-gradient(in oklab 180deg, rgba(255,255,255,0.015), transparent 50%),
     var(--bg-secondary, #0C1118) !important;
   border: 1px solid var(--border, rgba(255,255,255,0.07)) !important;
   overflow: hidden;
@@ -746,7 +746,7 @@ main {
   content: "" !important;
   position: absolute !important;
   top: 0; left: 0; right: 0; height: 2px !important;
-  background: linear-gradient(90deg, var(--primary), var(--accent-2)) !important;
+  background: linear-gradient(in oklab 90deg, var(--primary), var(--accent-2)) !important;
   opacity: 1 !important;
   border-top-left-radius: inherit;
   border-top-right-radius: inherit;
@@ -775,7 +775,7 @@ main {
   width: 32px !important;
   height: 32px !important;
   border-radius: 9px !important;
-  background: linear-gradient(135deg, var(--accent-dim), rgba(var(--accent2-r,168),var(--accent2-g,85),var(--accent2-b,247),0.12)) !important;
+  background: linear-gradient(in oklab 135deg, var(--accent-dim), rgba(var(--accent2-r,168),var(--accent2-g,85),var(--accent2-b,247),0.12)) !important;
   border: 1px solid rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.22) !important;
   color: var(--primary) !important;
   display: grid !important;
@@ -787,7 +787,7 @@ main {
 .memory-panel .memory-icon.blue,
 .memory-panel .memory-icon.cyan,
 .memory-panel .memory-icon.purple {
-  background: linear-gradient(135deg, var(--accent-dim), rgba(var(--accent2-r,168),var(--accent2-g,85),var(--accent2-b,247),0.12)) !important;
+  background: linear-gradient(in oklab 135deg, var(--accent-dim), rgba(var(--accent2-r,168),var(--accent2-g,85),var(--accent2-b,247),0.12)) !important;
   color: var(--primary) !important;
 }
 .memory-panel .memory-info {
@@ -824,19 +824,19 @@ main {
 .memory-panel .memory-progress {
   height: 100% !important;
   border-radius: 100px !important;
-  background: linear-gradient(90deg, var(--green, #22C55E), #34d399) !important;
+  background: linear-gradient(in oklab 90deg, var(--green, #22C55E), #34d399) !important;
   box-shadow: 0 0 12px rgba(34,197,94,0.30);
   transition: width .3s ease;
 }
 .memory-panel .memory-progress.warning {
-  background: linear-gradient(90deg, var(--amber, #F59E0B), #fbbf24) !important;
+  background: linear-gradient(in oklab 90deg, var(--amber, #F59E0B), #fbbf24) !important;
   box-shadow: 0 0 12px rgba(245,158,11,0.30);
 }
 
 .metric-card .metric-icon {
   width: 38px; height: 38px;
   border-radius: 11px;
-  background: linear-gradient(135deg, var(--accent-dim), rgba(var(--accent2-r,168),var(--accent2-g,85),var(--accent2-b,247),0.12)) !important;
+  background: linear-gradient(in oklab 135deg, var(--accent-dim), rgba(var(--accent2-r,168),var(--accent2-g,85),var(--accent2-b,247),0.12)) !important;
   border: 1px solid rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.22);
   color: var(--primary) !important;
   display: grid; place-items: center;
@@ -858,7 +858,7 @@ main {
   font-weight: 800 !important;
   letter-spacing: -0.02em !important;
   line-height: 1.1 !important;
-  background: linear-gradient(90deg, var(--primary) 0%, var(--accent-2) 75%) !important;
+  background: linear-gradient(in oklab 90deg, var(--primary) 0%, var(--accent-2) 75%) !important;
   -webkit-background-clip: text !important;
   -webkit-text-fill-color: transparent !important;
   background-clip: text !important;
@@ -877,7 +877,7 @@ main {
   color: var(--green, #22C55E) !important;
 }
 .metric-card.success .metric-value {
-  background: linear-gradient(90deg, var(--green, #22C55E) 0%, #34d399 75%) !important;
+  background: linear-gradient(in oklab 90deg, var(--green, #22C55E) 0%, #34d399 75%) !important;
   -webkit-background-clip: text !important;
   background-clip: text !important;
 }
@@ -927,7 +927,7 @@ main {
   padding: 18px 20px !important;
   border-radius: 16px !important;
   background:
-    linear-gradient(180deg, rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.025), transparent 60%),
+    linear-gradient(in oklab 180deg, rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.025), transparent 60%),
     var(--bg-secondary, #0C1118) !important;
   border: 1px solid var(--border, rgba(255,255,255,0.07)) !important;
   transition: border-color .25s, transform .25s, box-shadow .25s !important;
@@ -936,7 +936,7 @@ main {
 .agent-card::before,
 .agent-card-enhanced::before {
   content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px;
-  background: linear-gradient(90deg, var(--primary), var(--accent-2));
+  background: linear-gradient(in oklab 90deg, var(--primary), var(--accent-2));
   opacity: 0; transition: opacity .25s;
   border-top-left-radius: inherit; border-top-right-radius: inherit;
 }
@@ -1002,7 +1002,7 @@ main {
   padding: 24px 22px 20px !important;
   border-radius: 18px !important;
   background:
-    linear-gradient(180deg, rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.035), transparent 60%),
+    linear-gradient(in oklab 180deg, rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.035), transparent 60%),
     var(--bg-secondary, #0C1118) !important;
   border: 1px solid var(--border, rgba(255,255,255,0.07)) !important;
   overflow: hidden;
@@ -1011,7 +1011,7 @@ main {
 }
 .marketplace-card::before {
   content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px;
-  background: linear-gradient(90deg, var(--primary), var(--accent-2));
+  background: linear-gradient(in oklab 90deg, var(--primary), var(--accent-2));
   opacity: 0.45;
 }
 .marketplace-card:hover {
@@ -1064,7 +1064,7 @@ main {
   padding: 22px 22px 20px !important;
   border-radius: 18px !important;
   background:
-    linear-gradient(180deg, rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.035), transparent 60%),
+    linear-gradient(in oklab 180deg, rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.035), transparent 60%),
     var(--bg-secondary, #0C1118) !important;
   border: 1px solid var(--border, rgba(255,255,255,0.07)) !important;
   overflow: hidden;
@@ -1072,7 +1072,7 @@ main {
 }
 .marketplace-card::before {
   content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px;
-  background: linear-gradient(90deg, var(--primary), var(--accent-2));
+  background: linear-gradient(in oklab 90deg, var(--primary), var(--accent-2));
   opacity: 0.45;
 }
 .marketplace-card:hover {
@@ -1109,7 +1109,7 @@ main {
   border-radius: 12px;
   display: grid;
   place-items: center;
-  background: linear-gradient(135deg, var(--accent-dim), rgba(var(--accent2-r,168),var(--accent2-g,85),var(--accent2-b,247),0.15));
+  background: linear-gradient(in oklab 135deg, var(--accent-dim), rgba(var(--accent2-r,168),var(--accent2-g,85),var(--accent2-b,247),0.15));
   border: 1px solid rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.25);
   color: var(--primary);
   font-size: 14px;
@@ -1193,7 +1193,7 @@ main {
   gap: 4px !important;
   padding: 5px !important;
   background:
-    linear-gradient(180deg, rgba(255,255,255,0.025), transparent),
+    linear-gradient(in oklab 180deg, rgba(255,255,255,0.025), transparent),
     var(--bg-secondary, #0C1118) !important;
   border: 1px solid var(--border, rgba(255,255,255,0.07)) !important;
   border-radius: 14px !important;
@@ -1219,7 +1219,7 @@ main {
 }
 .mkt-tab.active {
   color: white !important;
-  background: linear-gradient(135deg, var(--primary), var(--accent-2)) !important;
+  background: linear-gradient(in oklab 135deg, var(--primary), var(--accent-2)) !important;
   border-color: rgba(255,255,255,0.14) !important;
   font-weight: 600 !important;
   box-shadow:
@@ -1234,7 +1234,7 @@ main {
   gap: 4px !important;
   padding: 5px !important;
   background:
-    linear-gradient(180deg, rgba(255,255,255,0.025), transparent),
+    linear-gradient(in oklab 180deg, rgba(255,255,255,0.025), transparent),
     var(--bg-secondary, #0C1118) !important;
   border: 1px solid var(--border, rgba(255,255,255,0.07)) !important;
   border-radius: 14px !important;
@@ -1254,7 +1254,7 @@ main {
 .op-filter.active,
 .kb-filter.active {
   color: white !important;
-  background: linear-gradient(135deg, var(--primary), var(--accent-2)) !important;
+  background: linear-gradient(in oklab 135deg, var(--primary), var(--accent-2)) !important;
   border-color: rgba(255,255,255,0.14) !important;
 }
 .filter-badge {
@@ -1276,7 +1276,7 @@ main {
   border: 1px dashed var(--border, rgba(255,255,255,0.07));
   border-radius: 16px;
   color: var(--text-secondary);
-  background: linear-gradient(180deg, rgba(255,255,255,0.01), transparent);
+  background: linear-gradient(in oklab 180deg, rgba(255,255,255,0.01), transparent);
 }
 .loading-placeholder {
   text-align: center;
@@ -1311,7 +1311,7 @@ main {
 #connectors-page .settings-card {
   position: relative;
   background:
-    linear-gradient(180deg, rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.035), transparent 60%),
+    linear-gradient(in oklab 180deg, rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.035), transparent 60%),
     var(--bg-secondary, #0C1118) !important;
   border: 1px solid var(--border, rgba(255,255,255,0.07)) !important;
   border-radius: 18px !important;
@@ -1322,7 +1322,7 @@ main {
 #profile-page .settings-card::before,
 #connectors-page .settings-card::before {
   content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px;
-  background: linear-gradient(90deg, var(--primary), var(--accent-2));
+  background: linear-gradient(in oklab 90deg, var(--primary), var(--accent-2));
   opacity: 0.45;
 }
 
@@ -1437,7 +1437,7 @@ main {
 }
 .accent-preset::before {
   content: ""; position: absolute; inset: 0;
-  background: linear-gradient(135deg, var(--p-primary, #0098EA), var(--p-accent2, #a855f7));
+  background: linear-gradient(in oklab 135deg, var(--p-primary, #0098EA), var(--p-accent2, #a855f7));
 }
 .accent-preset .lbl {
   position: absolute; bottom: 3px; left: 0; right: 0;

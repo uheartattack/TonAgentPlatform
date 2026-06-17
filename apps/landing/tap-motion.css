@@ -295,7 +295,7 @@
 .tap-toast__bar {
   position: absolute; top: 0; left: 0; right: 0;
   height: 2px;
-  background: linear-gradient(90deg,
+  background: linear-gradient(in oklab 90deg,
     rgba(var(--toast-r), var(--toast-g), var(--toast-b), 0.6),
     rgba(var(--toast-r), var(--toast-g), var(--toast-b), 1));
   transform-origin: left center;
@@ -366,7 +366,7 @@
 
 /* ----- primary ----- */
 .tap-btn--primary {
-  background: linear-gradient(180deg,
+  background: linear-gradient(in oklab 180deg,
     rgb(var(--accent-r), var(--accent-g), var(--accent-b)),
     rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.88));
   color: #fff;
@@ -398,7 +398,7 @@
 
 /* ----- danger — semantic red, ignores theme accent ----- */
 .tap-btn--danger {
-  background: linear-gradient(180deg, var(--sem-error), #c53030);
+  background: linear-gradient(in oklab 180deg, var(--sem-error), #c53030);
   color: #fff;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.15),
@@ -475,7 +475,7 @@
   position: absolute; inset: -1.5px;
   border-radius: 11.5px;
   padding: 1.5px;
-  background: linear-gradient(90deg, var(--tint), var(--tint-2));
+  background: linear-gradient(in oklab 90deg, var(--tint), var(--tint-2));
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor; mask-composite: exclude;
   opacity: 0;
@@ -519,7 +519,7 @@
   position: absolute;
   top: 0; left: 12px; right: 12px;
   height: 1px;
-  background: linear-gradient(90deg,
+  background: linear-gradient(in oklab 90deg,
     transparent,
     rgba(var(--tint-r),  var(--tint-g),  var(--tint-b),  0.7),
     rgba(var(--tint2-r), var(--tint2-g), var(--tint2-b), 0.55),
@@ -542,7 +542,7 @@
 /* Iridescent providers — animated rim only, NOT whole card */
 [data-provider="gemini"].tap-card::before,
 .tap-card[data-provider="gemini"]::before {
-  background: linear-gradient(90deg,
+  background: linear-gradient(in oklab 90deg,
     transparent 0%,
     #4285f4 20%, #9b72cb 40%, #d96570 60%, #fbbc04 80%,
     transparent 100%);
@@ -551,7 +551,7 @@
 }
 [data-provider="openrouter"].tap-card::before,
 .tap-card[data-provider="openrouter"]::before {
-  background: linear-gradient(90deg,
+  background: linear-gradient(in oklab 90deg,
     transparent 0%,
     #6366f1 18%, #22d3ee 42%, #a78bfa 62%, #f472b6 80%,
     transparent 100%);
@@ -576,7 +576,7 @@
   position: absolute;
   top: 0; left: 0; right: 0;
   height: 96px;
-  background: linear-gradient(180deg,
+  background: linear-gradient(in oklab 180deg,
     rgba(var(--tint-r),  var(--tint-g),  var(--tint-b),  0.20) 0%,
     rgba(var(--tint2-r), var(--tint2-g), var(--tint2-b), 0.10) 40%,
     transparent 100%);
@@ -586,8 +586,8 @@
 [data-provider="gemini"].tap-provider-header::before,
 .tap-provider-header[data-provider="gemini"]::before {
   background:
-    linear-gradient(180deg, transparent 60%, var(--bg-primary)),
-    linear-gradient(90deg, #4285f4, #9b72cb, #d96570, #fbbc04, #4285f4);
+    linear-gradient(in oklab 180deg, transparent 60%, var(--bg-primary)),
+    linear-gradient(in oklab 90deg, #4285f4, #9b72cb, #d96570, #fbbc04, #4285f4);
   background-size: 100% 100%, 300% 100%;
   animation: tap-prism-shift 14s linear infinite;
   opacity: 0.35;
@@ -595,8 +595,8 @@
 [data-provider="openrouter"].tap-provider-header::before,
 .tap-provider-header[data-provider="openrouter"]::before {
   background:
-    linear-gradient(180deg, transparent 60%, var(--bg-primary)),
-    linear-gradient(90deg, #6366f1, #22d3ee, #a78bfa, #f472b6, #6366f1);
+    linear-gradient(in oklab 180deg, transparent 60%, var(--bg-primary)),
+    linear-gradient(in oklab 90deg, #6366f1, #22d3ee, #a78bfa, #f472b6, #6366f1);
   background-size: 100% 100%, 300% 100%;
   animation: tap-prism-shift 16s linear infinite;
   opacity: 0.32;
@@ -689,7 +689,7 @@
 .tap-progress__fill {
   position: relative; height: 100%;
   width: var(--tap-progress, 50%);
-  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  background: linear-gradient(in oklab 90deg, var(--accent), var(--accent-2));
   border-radius: inherit;
   transition: width var(--motion-slow) var(--ease-out);
   overflow: hidden;
@@ -697,7 +697,7 @@
 .tap-progress__fill::after {
   content: "";
   position: absolute; inset: 0;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent);
+  background: linear-gradient(in oklab 90deg, transparent, rgba(255,255,255,0.35), transparent);
   transform: translate3d(-100%, 0, 0);
   animation: tap-progress-shimmer 1.8s ease-in-out infinite;
 }
@@ -759,7 +759,7 @@
   margin-bottom: 24px;
   background:
     radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.35), transparent 50%),
-    linear-gradient(135deg, var(--accent), var(--accent-2));
+    linear-gradient(in oklab 135deg, var(--accent), var(--accent-2));
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.08) inset,
     0 0 40px rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.35),
@@ -802,7 +802,7 @@
 }
 .tap-diff-add {
   color: #bbf7d0;
-  background-image: linear-gradient(98deg,
+  background-image: linear-gradient(in oklab 98deg,
     transparent 1%,
     rgba(34, 197, 94, 0.18) 4%,
     rgba(34, 197, 94, 0.32) 50%,
@@ -814,7 +814,7 @@
 }
 .tap-diff-del {
   color: #fecaca;
-  background-image: linear-gradient(102deg,
+  background-image: linear-gradient(in oklab 102deg,
     transparent 1%,
     rgba(239, 68, 68, 0.18) 4%,
     rgba(239, 68, 68, 0.32) 50%,
@@ -850,7 +850,7 @@
   transform: translate(-2px, -50%) scaleY(0.4);
   width: 3px; height: 18px;
   border-radius: 2px;
-  background: linear-gradient(180deg, var(--accent), var(--accent-2));
+  background: linear-gradient(in oklab 180deg, var(--accent), var(--accent-2));
   box-shadow: 0 0 12px rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.6);
   opacity: 0;
   transition: opacity var(--motion-base) var(--ease-out), transform var(--motion-base) var(--ease-out-back);
@@ -1057,7 +1057,7 @@
   width: 3px !important;
   height: 18px !important;
   border-radius: 2px !important;
-  background: linear-gradient(180deg, var(--accent), var(--accent-2)) !important;
+  background: linear-gradient(in oklab 180deg, var(--accent), var(--accent-2)) !important;
   box-shadow: 0 0 12px rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.6) !important;
   opacity: 1 !important;
 }
@@ -1073,7 +1073,7 @@
   left: 12px !important;
   right: 12px !important;
   height: 1px !important;
-  background: linear-gradient(90deg,
+  background: linear-gradient(in oklab 90deg,
     transparent,
     rgba(var(--tint-r),  var(--tint-g),  var(--tint-b),  0.7),
     rgba(var(--tint2-r), var(--tint2-g), var(--tint2-b), 0.55),
@@ -1202,7 +1202,7 @@ button.rt-btn,
   border-radius: 12px !important;
 
   background:
-    linear-gradient(135deg,
+    linear-gradient(in oklab 135deg,
       rgba(var(--tint-r),  var(--tint-g),  var(--tint-b),  0.28) 0%,
       rgba(var(--tint-r),  var(--tint-g),  var(--tint-b),  0.12) 45%,
       rgba(var(--tint2-r), var(--tint2-g), var(--tint2-b), 0.20) 100%) !important;
@@ -1270,7 +1270,7 @@ button.rt-btn::before,
   inset: 1px 1px auto 1px !important;
   height: 40% !important;
   border-radius: 11px 11px 4px 4px !important;
-  background: linear-gradient(180deg,
+  background: linear-gradient(in oklab 180deg,
     rgba(255, 255, 255, 0.08),
     transparent) !important;
   pointer-events: none !important;
@@ -1288,7 +1288,7 @@ button.rt-btn:hover,
   color: #ffffff !important;
   border-color: rgba(var(--tint-r), var(--tint-g), var(--tint-b), 0.55) !important;
   background:
-    linear-gradient(135deg,
+    linear-gradient(in oklab 135deg,
       rgba(var(--tint-r),  var(--tint-g),  var(--tint-b),  0.45) 0%,
       rgba(var(--tint-r),  var(--tint-g),  var(--tint-b),  0.22) 45%,
       rgba(var(--tint2-r), var(--tint2-g), var(--tint2-b), 0.38) 100%) !important;
@@ -1372,7 +1372,7 @@ button.rt-btn:active,
 .rt-save-btn[style*="background"],
 .rt-save-btn[style*="linear-gradient"] {
   background:
-    linear-gradient(135deg,
+    linear-gradient(in oklab 135deg,
       rgba(var(--tint-r),  var(--tint-g),  var(--tint-b),  0.28) 0%,
       rgba(var(--tint-r),  var(--tint-g),  var(--tint-b),  0.12) 45%,
       rgba(var(--tint2-r), var(--tint2-g), var(--tint2-b), 0.20) 100%) !important;
@@ -1927,7 +1927,7 @@ html[data-tg-app="1"] body .sidebar {
   border-radius: 0 16px 16px 0 !important;
   /* Frosted glass: semi-transparent dark + blur of content behind */
   background:
-    linear-gradient(180deg, rgba(19, 24, 38, 0.78) 0%, rgba(10, 14, 28, 0.85) 100%) !important;
+    linear-gradient(in oklab 180deg, rgba(19, 24, 38, 0.78) 0%, rgba(10, 14, 28, 0.85) 100%) !important;
   backdrop-filter: blur(18px) saturate(140%) !important;
   -webkit-backdrop-filter: blur(18px) saturate(140%) !important;
   border-right: 1px solid rgba(168, 85, 247, 0.22) !important;

@@ -42,8 +42,8 @@
   --glow-lg: 0 0 70px var(--accent-glow);
 
   /* unified brand gradient — same as landing */
-  --grad: linear-gradient(135deg, #00a8ff 0%, #6a8dff 50%, #8b5cf6 100%);
-  --grad-soft: linear-gradient(135deg, rgba(0, 168, 255, 0.16), rgba(139, 92, 246, 0.16));
+  --grad: linear-gradient(in oklab 135deg, #00a8ff 0%, #6a8dff 50%, #8b5cf6 100%);
+  --grad-soft: linear-gradient(in oklab 135deg, rgba(0, 168, 255, 0.16), rgba(139, 92, 246, 0.16));
 }
 
 /* ── Body background — radial ambient like landing ─────────────── */
@@ -56,7 +56,7 @@ body::before {
   background:
     radial-gradient(900px 600px at 80% -5%, rgba(139, 92, 246, 0.14), transparent 55%),
     radial-gradient(900px 600px at 5% 5%, rgba(0, 168, 255, 0.14), transparent 55%),
-    linear-gradient(180deg, #07080f 0%, #0a0b14 30%, #0a0b14 70%, #07080f 100%);
+    linear-gradient(in oklab 180deg, #07080f 0%, #0a0b14 30%, #0a0b14 70%, #07080f 100%);
 }
 
 /* keep all content above the ambient layer */
@@ -88,7 +88,7 @@ button.btn-primary:hover,
 /* ── Nav sidebar active item — gradient accent bar ─────────────── */
 .nav-item.active,
 .nav-item[aria-current="page"] {
-  background: linear-gradient(90deg, rgba(0, 168, 255, 0.12), rgba(139, 92, 246, 0.04)) !important;
+  background: linear-gradient(in oklab 90deg, rgba(0, 168, 255, 0.12), rgba(139, 92, 246, 0.04)) !important;
   color: var(--primary-light) !important;
   box-shadow: inset 3px 0 0 var(--primary);
 }
@@ -99,7 +99,7 @@ button.btn-primary:hover,
 .feature-card,
 .dashboard-card,
 .stat-card {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0.005)) !important;
+  background: linear-gradient(in oklab 135deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0.005)) !important;
   backdrop-filter: blur(12px) saturate(150%);
   -webkit-backdrop-filter: blur(12px) saturate(150%);
   border: 1px solid var(--border) !important;
@@ -146,7 +146,7 @@ select:focus {
 .gradient-text,
 .text-gradient,
 .title-gradient {
-  background: linear-gradient(120deg, #e9efff 0%, #7ab8ff 28%, #b69bff 62%, #e9efff 100%);
+  background: linear-gradient(in oklab 120deg, #e9efff 0%, #7ab8ff 28%, #b69bff 62%, #e9efff 100%);
   background-size: 200% auto;
   -webkit-background-clip: text;
   background-clip: text;
@@ -163,7 +163,7 @@ select:focus {
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, var(--primary), var(--purple));
+  background: linear-gradient(in oklab 180deg, var(--primary), var(--purple));
   border-radius: 8px;
   border: 2px solid var(--bg-primary);
 }

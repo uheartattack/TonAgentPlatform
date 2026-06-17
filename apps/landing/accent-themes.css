@@ -116,7 +116,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--primary), var(--accent-2));
+  background: linear-gradient(in oklab 135deg, var(--primary), var(--accent-2));
   color: #fff;
   font-weight: 700;
   border-radius: 9px;
@@ -158,7 +158,7 @@
   padding: 16px;
   border-radius: 14px;
   background:
-    linear-gradient(180deg, rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.04), transparent 60%),
+    linear-gradient(in oklab 180deg, rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.04), transparent 60%),
     var(--bg-secondary, rgba(255, 255, 255, 0.02));
   border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
   cursor: pointer;
@@ -170,7 +170,7 @@
   position: absolute;
   top: 0; left: 0; right: 0;
   height: 2px;
-  background: linear-gradient(90deg, var(--primary), var(--accent-2));
+  background: linear-gradient(in oklab 90deg, var(--primary), var(--accent-2));
   opacity: 0;
   transition: opacity 200ms;
 }
@@ -212,7 +212,7 @@
 /* Section divider — card grouping in Settings */
 .tap-settings-card {
   position: relative;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0.008));
+  background: linear-gradient(in oklab 180deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0.008));
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 16px;
   padding: 22px 24px;

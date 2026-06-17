@@ -276,6 +276,13 @@ function switchLang(lang) {
     el.textContent = el.dataset[lang];
   });
 
+  // Update elements with data-en-html / data-ru-html that need INNER HTML
+  // (e.g. "Маркетплейс <span class='grad'>агентов</span>" with a gradient
+  // wrapper around the second word).
+  document.querySelectorAll('[data-en-html][data-ru-html]').forEach(el => {
+    el.innerHTML = el.dataset[lang + 'Html'];
+  });
+
   // Update placeholders
   document.querySelectorAll('[data-placeholder-' + lang + ']').forEach(el => {
     el.placeholder = el.dataset['placeholder' + lang.charAt(0).toUpperCase() + lang.slice(1)];
@@ -554,7 +561,7 @@ function updateTopbar() {
     el.style.alignItems = 'center';
     el.style.justifyContent = 'center';
     el.style.backgroundImage =
-      'linear-gradient(135deg, rgb(var(--accent-r), var(--accent-g), var(--accent-b)),' +
+      'linear-gradient(in oklab 135deg, rgb(var(--accent-r), var(--accent-g), var(--accent-b)),' +
       ' rgb(var(--accent2-r), var(--accent2-g), var(--accent2-b)))';
     el.style.backgroundSize = '';
     el.style.backgroundPosition = '';
@@ -822,7 +829,7 @@ function showApp() {
   if (!atlasBanner) {
     atlasBanner = document.createElement('div');
     atlasBanner.id = 'atlas-promo-banner';
-    atlasBanner.style.cssText = 'margin:0 0 20px;padding:16px 20px;background:linear-gradient(135deg,var(--accent-dim),rgba(6,182,212,0.04));border:1px solid var(--accent-dim);border-radius:12px;display:flex;align-items:center;gap:14px;cursor:pointer';
+    atlasBanner.style.cssText = 'margin:0 0 20px;padding:16px 20px;background:linear-gradient(in oklab 135deg,var(--accent-dim),rgba(6,182,212,0.04));border:1px solid var(--accent-dim);border-radius:12px;display:flex;align-items:center;gap:14px;cursor:pointer';
     atlasBanner.onclick = function() { navigateTo('assistant'); };
     atlasBanner.innerHTML =
       '<div style="width:40px;height:40px;border-radius:10px;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>' +
@@ -1654,7 +1661,7 @@ function openAgentChat(agentId) {
     '<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);flex-shrink:0">' +
     '<button onclick="openAgentDetail(_detailAgentId)" style="background:none;border:none;color:var(--text-muted);cursor:pointer;padding:4px;border-radius:6px;display:flex;align-items:center" title="Back">' +
     '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button>' +
-    '<div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--primary-dark));display:flex;align-items:center;justify-content:center">' +
+    '<div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(in oklab 135deg,var(--primary),var(--primary-dark));display:flex;align-items:center;justify-content:center">' +
     '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7H3a7 7 0 0 1 7-7h1V5.73C10.4 5.39 10 4.74 10 4a2 2 0 0 1 2-2z"/></svg></div>' +
     '<div><div style="font-weight:600;font-size:.9rem">Agent #' + agentId + '</div><div style="font-size:.72rem;color:#00ff88">● ' + (isRu ? 'онлайн' : 'online') + '</div></div>' +
     '</div>' +
@@ -1673,7 +1680,7 @@ function openAgentChat(agentId) {
     'style="flex:1;background:none;border:none;outline:none;resize:none;color:var(--text-primary);font-size:.875rem;line-height:1.5;max-height:120px;overflow-y:auto;font-family:inherit" ' +
     'onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();sendAgentChatMsg()}" ' +
     'oninput="this.style.height=\'auto\';this.style.height=Math.min(this.scrollHeight,120)+\'px\'"></textarea>' +
-    '<button id="agent-chat-send" onclick="sendAgentChatMsg()" style="width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,var(--primary),var(--primary-dark));border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:opacity .2s" title="Send">' +
+    '<button id="agent-chat-send" onclick="sendAgentChatMsg()" style="width:32px;height:32px;border-radius:8px;background:linear-gradient(in oklab 135deg,var(--primary),var(--primary-dark));border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:opacity .2s" title="Send">' +
     '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>' +
     '</button>' +
     '</div>' +
@@ -1771,7 +1778,7 @@ function renderAgentChat(box) {
     var isStream = m.streaming;
     var align = isUser ? 'flex-end' : 'flex-start';
     var bubbleBg = isUser
-      ? 'linear-gradient(135deg,var(--primary),var(--primary-dark))'
+      ? 'linear-gradient(in oklab 135deg,var(--primary),var(--primary-dark))'
       : isErr ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.05)';
     var border = isErr ? '1px solid rgba(239,68,68,0.3)' : isStream ? '1px solid rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.25)' : '1px solid rgba(255,255,255,0.06)';
     var textColor = isUser ? '#fff' : isErr ? '#f87171' : 'var(--text-primary)';
@@ -1782,7 +1789,7 @@ function renderAgentChat(box) {
       textHtml = escHtml(m.text || '').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/`([^`]+)`/g, '<code style="background:rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.15);padding:1px 5px;border-radius:3px;font-size:.8em">$1</code>').replace(/\n/g, '<br>');
     }
     var avatar = isUser ? '' :
-      '<div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--primary-dark));display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-right:8px">' +
+      '<div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(in oklab 135deg,var(--primary),var(--primary-dark));display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-right:8px">' +
       '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7H3a7 7 0 0 1 7-7h1V5.73C10.4 5.39 10 4.74 10 4a2 2 0 0 1 2-2z"/><path d="M7 14v3a5 5 0 0 0 10 0v-3"/></svg>' +
       '</div>';
     return '<div style="display:flex;justify-content:' + align + ';margin:8px 0;align-items:flex-end">' +
@@ -1849,8 +1856,18 @@ function openAgentSettings() {
   if (!bannerEl) {
     bannerEl = document.createElement('div');
     bannerEl.id = 'settings-warning-banner';
-    var settingsBody = document.getElementById('agent-settings-body');
-    if (settingsBody) settingsBody.parentElement?.insertBefore(bannerEl, settingsBody);
+    // Insert at the very top of the modal container (above .st-split).
+    // Earlier we inserted before .agent-settings-body which put the banner
+    // INSIDE .st-split — it became a flex column of ~377px width spanning
+    // the entire panel height. By inserting before .st-split inside its
+    // parent (.agent-settings-container) it becomes a full-width strip.
+    var container = document.querySelector('.agent-settings-container');
+    var split = container?.querySelector('.st-split');
+    if (container && split) container.insertBefore(bannerEl, split);
+    else {
+      var settingsBody = document.getElementById('agent-settings-body');
+      if (settingsBody) settingsBody.parentElement?.insertBefore(bannerEl, settingsBody);
+    }
   }
   var isRu = currentLang === 'ru';
   var warnings = [];
@@ -2154,7 +2171,7 @@ function switchSettingsTab(tab) {
       '</div>' +
       '<div class="rt-actions">' +
         '<button class="rt-save-btn" onclick="saveSettingsPrompt()">' + IC.check + ' ' + (isRu ? 'Сохранить' : 'Save Soul') + '</button>' +
-        '<button class="rt-save-btn" style="background:linear-gradient(135deg,#8b5cf6,#00a8ff)" onclick="openEditWithAIModal(\'code\')" title="' + (isRu ? 'Опиши изменение — AI перепишет' : 'Describe the change — AI rewrites') + '">' +
+        '<button class="rt-save-btn" style="background:linear-gradient(in oklab 135deg,#8b5cf6,#00a8ff)" onclick="openEditWithAIModal(\'code\')" title="' + (isRu ? 'Опиши изменение — AI перепишет' : 'Describe the change — AI rewrites') + '">' +
           '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M12 3l1.9 4.6L18 9l-4.1 1.4L12 15l-1.9-4.6L6 9l4.1-1.4z"/><path d="M19 14l.95 2.3L22 17l-2.05.7L19 20l-.95-2.3L16 17l2.05-.7z"/></svg>' +
           (isRu ? 'Edit with AI' : 'Edit with AI') +
         '</button>' +
@@ -3271,9 +3288,9 @@ function switchSettingsTab(tab) {
       '<div class="rt-section">' +
         '<div class="rt-section-label">' + (isRu ? 'Управление' : 'Controls') + '</div>' +
         '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
-          '<button class="rt-save-btn" onclick="lifecycleAction(\'start\')" style="background:linear-gradient(135deg,var(--primary),var(--primary-dark))">' + IC.play + ' ' + (isRu ? 'Запустить' : 'Start') + '</button>' +
-          '<button class="rt-save-btn" onclick="lifecycleAction(\'stop\')" style="background:linear-gradient(135deg,var(--primary),var(--primary-dark))">' + IC.pause + ' ' + (isRu ? 'Остановить' : 'Stop') + '</button>' +
-          '<button class="rt-save-btn" onclick="lifecycleAction(\'restart\')" style="background:linear-gradient(135deg,#f59e0b,#d97706)">' + IC.refresh + ' ' + (isRu ? 'Перезапустить' : 'Restart') + '</button>' +
+          '<button class="rt-save-btn" onclick="lifecycleAction(\'start\')" style="background:linear-gradient(in oklab 135deg,var(--primary),var(--primary-dark))">' + IC.play + ' ' + (isRu ? 'Запустить' : 'Start') + '</button>' +
+          '<button class="rt-save-btn" onclick="lifecycleAction(\'stop\')" style="background:linear-gradient(in oklab 135deg,var(--primary),var(--primary-dark))">' + IC.pause + ' ' + (isRu ? 'Остановить' : 'Stop') + '</button>' +
+          '<button class="rt-save-btn" onclick="lifecycleAction(\'restart\')" style="background:linear-gradient(in oklab 135deg,#f59e0b,#d97706)">' + IC.refresh + ' ' + (isRu ? 'Перезапустить' : 'Restart') + '</button>' +
         '</div>' +
       '</div>' +
       '<div class="rt-section">' +
@@ -3439,7 +3456,7 @@ function switchSettingsTab(tab) {
           '<textarea id="mem-persistent-text" class="st-textarea" style="min-height:220px;font-family:\'JetBrains Mono\',monospace;font-size:.78rem;line-height:1.6" placeholder="' + (isRu ? 'Факты, события, предпочтения...' : 'Facts, events, preferences...') + '"></textarea>' +
           '<div style="display:flex;gap:8px;margin-top:8px">' +
             '<button class="rt-save-btn" onclick="saveMemoryPersistent()">' + IC.check + ' ' + (isRu ? 'Сохранить' : 'Save') + '</button>' +
-            '<button class="rt-save-btn" onclick="clearAgentMemory(\'persistent\')" style="background:linear-gradient(135deg,var(--primary),var(--primary-dark))">' + (isRu ? 'Очистить' : 'Clear') + '</button>' +
+            '<button class="rt-save-btn" onclick="clearAgentMemory(\'persistent\')" style="background:linear-gradient(in oklab 135deg,var(--primary),var(--primary-dark))">' + (isRu ? 'Очистить' : 'Clear') + '</button>' +
           '</div>' +
         '</div>' +
       '</div>' +
@@ -3681,9 +3698,9 @@ function switchSettingsTab(tab) {
       '<div class="rt-section">' +
         '<div class="rt-section-label">' + IC.bolt + ' ' + (isRu ? 'Действия' : 'Actions') + '</div>' +
         '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
-          '<button class="rt-save-btn" style="background:linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%)" onclick="cloneAgentFromSettings()">' + IC.clipboard + ' ' + (isRu ? 'Клонировать агента' : 'Clone Agent') + '</button>' +
-          '<button class="rt-save-btn" style="background:linear-gradient(135deg,var(--primary),var(--primary-dark))" onclick="exportAgentJSON()">' + IC.download + ' ' + (isRu ? 'Экспорт JSON' : 'Export JSON') + '</button>' +
-          '<label class="rt-save-btn" style="background:linear-gradient(135deg,#22c55e 0%,#16a34a 100%);cursor:pointer">' + IC.upload + ' ' + (isRu ? 'Импорт JSON' : 'Import JSON') + '<input type="file" accept=".json" style="display:none" onchange="importAgentJSON(this)"></label>' +
+          '<button class="rt-save-btn" style="background:linear-gradient(in oklab 135deg,#6366f1 0%,#8b5cf6 100%)" onclick="cloneAgentFromSettings()">' + IC.clipboard + ' ' + (isRu ? 'Клонировать агента' : 'Clone Agent') + '</button>' +
+          '<button class="rt-save-btn" style="background:linear-gradient(in oklab 135deg,var(--primary),var(--primary-dark))" onclick="exportAgentJSON()">' + IC.download + ' ' + (isRu ? 'Экспорт JSON' : 'Export JSON') + '</button>' +
+          '<label class="rt-save-btn" style="background:linear-gradient(in oklab 135deg,#22c55e 0%,#16a34a 100%);cursor:pointer">' + IC.upload + ' ' + (isRu ? 'Импорт JSON' : 'Import JSON') + '<input type="file" accept=".json" style="display:none" onchange="importAgentJSON(this)"></label>' +
         '</div>' +
       '</div>' +
 
@@ -4258,7 +4275,7 @@ async function loadAgentTelegramTab(body, agentId) {
           (info.username ? '<div style="color:var(--text-primary);font-size:.9rem;font-weight:500;margin-bottom:4px">@' + escHtml(info.username) + '</div>' : '') +
           (maskedPhone ? '<div style="color:var(--text-muted);font-size:.8rem">' + escHtml(maskedPhone) + '</div>' : '') +
         '</div>' +
-        '<button class="rt-save-btn" style="background:linear-gradient(135deg,var(--primary),var(--primary-dark));box-shadow:0 4px 16px var(--accent-glow)" onclick="disconnectAgentTelegram(' + agentId + ')">' +
+        '<button class="rt-save-btn" style="background:linear-gradient(in oklab 135deg,var(--primary),var(--primary-dark));box-shadow:0 4px 16px var(--accent-glow)" onclick="disconnectAgentTelegram(' + agentId + ')">' +
           IC.x + ' ' + (isRu ? 'Отключить аккаунт' : 'Disconnect Account') +
         '</button>' +
         '</div>';
@@ -5171,7 +5188,7 @@ function initSwipeToDelete() {
     currentCard.style.transform = 'translateX(' + offset + 'px)';
     currentCard.style.transition = 'none';
     if (dx < -60) {
-      currentCard.style.background = 'linear-gradient(90deg, var(--bg-secondary) 60%, rgba(231,76,60,0.3) 100%)';
+      currentCard.style.background = 'linear-gradient(in oklab 90deg, var(--bg-secondary) 60%, rgba(231,76,60,0.3) 100%)';
     } else {
       currentCard.style.background = '';
     }
@@ -5216,7 +5233,7 @@ function initSwipeToDelete() {
     if (dx > 5) { mouseCard.style.transform = ''; return; }
     mouseCard.style.transform = 'translateX(' + Math.max(dx, -140) + 'px)';
     mouseCard.style.transition = 'none';
-    mouseCard.style.background = dx < -60 ? 'linear-gradient(90deg, var(--bg-secondary) 60%, rgba(231,76,60,0.3) 100%)' : '';
+    mouseCard.style.background = dx < -60 ? 'linear-gradient(in oklab 90deg, var(--bg-secondary) 60%, rgba(231,76,60,0.3) 100%)' : '';
   });
   document.addEventListener('mouseup', function(e) {
     if (!mouseDown || !mouseCard) return;
@@ -5864,7 +5881,7 @@ async function startBotAuth() {
           '<code id="auth-code-text" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:8px 14px;font-size:.85rem;font-family:JetBrains Mono,monospace;color:var(--primary-light);letter-spacing:.5px;user-select:all;cursor:pointer" onclick="copyAuthCode()" title="Click to copy">' + escHtml(authCmd) + '</code>' +
           '<button id="auth-copy-btn" onclick="copyAuthCode()" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:8px;cursor:pointer;color:var(--text-secondary);display:flex;align-items:center" title="Copy">' + IC.clipboard + '</button>' +
         '</div>' +
-        '<a href="' + escHtml(data.botLink) + '" target="_blank" style="display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 28px;background:linear-gradient(135deg,#2AABEE,#229ED9);color:#fff;border-radius:8px;font-size:.9375rem;font-weight:600;text-decoration:none;margin-bottom:8px;min-width:200px;box-shadow:0 2px 12px rgba(42,171,238,.3)">' + openLabel + '</a>' +
+        '<a href="' + escHtml(data.botLink) + '" target="_blank" style="display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 28px;background:linear-gradient(in oklab 135deg,#2AABEE,#229ED9);color:#fff;border-radius:8px;font-size:.9375rem;font-weight:600;text-decoration:none;margin-bottom:8px;min-width:200px;box-shadow:0 2px 12px rgba(42,171,238,.3)">' + openLabel + '</a>' +
         '<p style="color:var(--text-muted);font-size:.7rem;margin:8px 0 12px">' + autoLabel + '</p>' +
         '<button onclick="cancelBotAuth()" style="background:none;border:none;color:var(--text-muted);font-size:.8125rem;cursor:pointer;text-decoration:underline">' + cancelLabel + '</button>' +
       '</div>';
@@ -6551,11 +6568,19 @@ function renderExtensions() {
     }));
   }
 
-  // Update counts
+  // Update counts (show real numbers, hide badges when zero)
   const installed = baseData.filter(e => e.installed);
   const updates = baseData.filter(e => e.installed && e.hasUpdate);
-  const instCount = document.getElementById('installed-count');
-  if (instCount) instCount.textContent = installed.length;
+  const marketplace = baseData.filter(e => !e.installed);
+  function _setCount(id, n) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (n > 0) { el.textContent = n; el.style.display = ''; }
+    else { el.style.display = 'none'; }
+  }
+  _setCount('installed-count', installed.length);
+  _setCount('marketplace-count', marketplace.length);
+  _setCount('updates-count', updates.length);
 
   let filtered = baseData;
 
@@ -8693,14 +8718,25 @@ async function submitWalletLink() {
   await saveWalletAddress(addr, null, 'manual');
 }
 
-async function saveWalletAddress(address, walletName, connectedVia) {
+async function saveWalletAddress(address, walletName, connectedVia, silent) {
   try {
+    // If the address is already saved AND auto-triggered (silent), skip
+    // the toast — TonConnect re-fires onStatusChange on session restore
+    // every time the user opens the wallet page; we only want to notify
+    // on a NEW link, not on auto-reconnect.
+    var alreadyLinked = walletData && walletData.wallet_address === address;
+    if (alreadyLinked && silent) {
+      showConnectedWallet(address, walletName || '', connectedVia || 'manual');
+      return;
+    }
     const body = { address };
     if (walletName) body.wallet_name = walletName;
     if (connectedVia) body.connected_via = connectedVia;
     const data = await apiRequest('POST', '/api/wallet/link', body);
     if (data.ok) {
-      showNotification(currentLang === 'ru' ? 'Кошелёк привязан' : 'Wallet linked', 'success');
+      if (!alreadyLinked) {
+        showNotification(currentLang === 'ru' ? 'Кошелёк привязан' : 'Wallet linked', 'success');
+      }
       if (walletData) {
         walletData.wallet_address = address;
         walletData.wallet_name = walletName || null;
@@ -8762,7 +8798,10 @@ function initTonConnect() {
         const addr = wallet.account.address;
         const friendly = _rawToFriendly(addr);
         const appName = wallet.device && wallet.device.appName ? wallet.device.appName : 'TON Connect';
-        saveWalletAddress(friendly, appName, 'tonconnect');
+        // silent=true → suppress toast if it's just an auto-reconnect of
+        // an already-saved address (TonConnect fires onStatusChange on
+        // every page load when a session exists).
+        saveWalletAddress(friendly, appName, 'tonconnect', true);
       }
     });
   } catch (e) {
@@ -11096,6 +11135,49 @@ async function saveAgentGoalScope(agentId) {
 }
 
 // Atlas role interview: user clicks "Create" on a <role-suggest> action card.
+async function acceptAtlasAgentSuggest(suggestKey, btnEl) {
+  const isRu = currentLang === 'ru';
+  const s = window[suggestKey];
+  if (!s) { toast(isRu ? 'Предложение устарело' : 'Suggestion expired', 'warning'); return; }
+  if (btnEl) { btnEl.disabled = true; btnEl.textContent = isRu ? 'Создаём…' : 'Creating…'; }
+  try {
+    // Build a description payload that orchestrator can act on. If Atlas
+    // gave us a structured system_prompt_module we preserve it; otherwise
+    // we fall back to name + description.
+    let description = '';
+    if (s.system_prompt_module) {
+      description = `Создай агента "${s.name || 'Agent'}".\n\n` +
+        `Описание: ${s.description || ''}\n\n` +
+        `Системный промпт:\n${s.system_prompt_module}`;
+    } else {
+      description = `${s.name || 'Agent'}. ${s.description || ''}`;
+    }
+    if (Array.isArray(s.capabilities) && s.capabilities.length) {
+      description += `\n\nCapabilities: ${s.capabilities.join(', ')}.`;
+    }
+    if (s.ai_provider) description += `\nAI: ${s.ai_provider}.`;
+    if (s.role) description += `\nРоль: ${s.role}.`;
+    if (s.tick_interval_ms) description += `\nTick: ${s.tick_interval_ms}ms.`;
+
+    const r = await apiRequest('POST', '/api/agents', { description: description.trim() });
+    if (r.ok && r.agent) {
+      toast(isRu ? 'Агент создан: #' + r.agent.id : 'Agent created: #' + r.agent.id, 'success');
+      if (btnEl) {
+        btnEl.textContent = '✓ #' + r.agent.id;
+        btnEl.style.background = 'rgba(34,197,94,0.18)';
+        btnEl.style.borderColor = 'rgba(34,197,94,0.40)';
+      }
+      handleAgentCreated(r.agent.id);
+    } else {
+      toast((r && (r.error || r.message)) || (isRu ? 'Ошибка создания' : 'Create failed'), 'error');
+      if (btnEl) { btnEl.disabled = false; btnEl.textContent = isRu ? '▶ Создать агента' : '▶ Create agent'; }
+    }
+  } catch (e) {
+    toast(e.message || 'Error', 'error');
+    if (btnEl) { btnEl.disabled = false; btnEl.textContent = isRu ? '▶ Создать агента' : '▶ Create agent'; }
+  }
+}
+
 async function acceptAtlasRoleSuggest(suggestKey, btnEl) {
   const isRu = currentLang === 'ru';
   const s = window[suggestKey];
@@ -12937,6 +13019,11 @@ async function sendAssistantMessage() {
                         try { _roleSuggest = JSON.parse(body.trim()); } catch (_je) { _roleSuggest = null; }
                         return '';
                       });
+                      var _agentSuggest = null;
+                      _final = _final.replace(/<agent-suggest>([\s\S]*?)<\/agent-suggest>/g, function(_m, body) {
+                        try { _agentSuggest = JSON.parse(body.trim()); } catch (_je) { _agentSuggest = null; }
+                        return '';
+                      });
                       atlasStreamEl.innerHTML = escHtml(_final.trim())
                         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
                         .replace(/`([^`]+)`/g, '<code>$1</code>')
@@ -12956,6 +13043,28 @@ async function sendAssistantMessage() {
                           '<button class="btn" style="font-size:12px;padding:6px 12px;margin-left:6px" onclick="this.closest(\'div\').remove()">Отмена</button>' +
                           '</div>';
                         atlasStreamEl.insertAdjacentHTML('beforeend', _actionHtml);
+                      }
+                      if (_agentSuggest && (_agentSuggest.name || _agentSuggest.description)) {
+                        var _aKey = '_atlasAgentSuggest_' + Date.now();
+                        window[_aKey] = _agentSuggest;
+                        var _aName = String(_agentSuggest.name || 'Новый агент');
+                        var _aDesc = String(_agentSuggest.description || '');
+                        var _aCaps = Array.isArray(_agentSuggest.capabilities) ? _agentSuggest.capabilities.slice(0, 8) : [];
+                        var _aModel = _agentSuggest.ai_provider || _agentSuggest.default_model || '';
+                        var _aRole = _agentSuggest.role || '';
+                        var _aCapsHtml = _aCaps.map(function(c) {
+                          return '<span style="background:rgba(125,211,252,0.10);color:#7dd3fc;padding:2px 8px;border-radius:8px;font-size:11px;margin-right:4px;display:inline-block;margin-bottom:3px">' + escHtml(c) + '</span>';
+                        }).join('');
+                        var _aHtml = '<div style="margin-top:10px;padding:12px;background:rgba(125,211,252,0.07);border:1px solid rgba(125,211,252,0.28);border-radius:10px">' +
+                          '<div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">Atlas предлагает создать агента</div>' +
+                          '<div style="font-weight:600;margin-bottom:4px;font-size:14px">' + escHtml(_aName) + (_aRole ? ' <span style="font-size:11px;color:var(--text-muted);font-weight:400">· ' + escHtml(_aRole) + '</span>' : '') + '</div>' +
+                          (_aDesc ? '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;line-height:1.4">' + escHtml(_aDesc) + '</div>' : '') +
+                          (_aCapsHtml ? '<div style="margin-bottom:8px">' + _aCapsHtml + '</div>' : '') +
+                          (_aModel ? '<div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">' + escHtml(_aModel) + '</div>' : '') +
+                          '<button class="btn btn-primary" style="font-size:12px;padding:6px 14px" onclick="acceptAtlasAgentSuggest(\'' + _aKey + '\', this)">▶ Создать агента</button>' +
+                          '<button class="btn" style="font-size:12px;padding:6px 12px;margin-left:6px" onclick="this.closest(\'div\').remove()">Отмена</button>' +
+                          '</div>';
+                        atlasStreamEl.insertAdjacentHTML('beforeend', _aHtml);
                       }
                       if (_roleSuggest && _roleSuggest.role_name && _roleSuggest.system_prompt_module) {
                         var _rKey = '_atlasRoleSuggest_' + Date.now();
@@ -13122,6 +13231,58 @@ async function loadMarketplace() {
     _marketplaceListings = [];
   }
   renderMarketplaceGrid();
+  // Refresh tab counts. When filter is 'all' we already have everything;
+  // otherwise issue a separate "all" call to count by category.
+  _updateMarketplaceCounts(_marketplaceFilter === 'all' ? _marketplaceListings : null);
+}
+
+// Fetches the full marketplace (all categories) and writes per-category
+// counts into the tab badges. Skipped if `everything` is provided
+// (already-fetched all-category list from loadMarketplace).
+async function _updateMarketplaceCounts(everything) {
+  var list = everything;
+  if (!list) {
+    try {
+      var d = await apiRequest('GET', '/api/marketplace');
+      list = (d.ok ? d.listings : []) || [];
+    } catch (e) { list = []; }
+  }
+  // 142 → "All" badge gets total, others get filtered count + page subtitle
+  // ("142 публикации") also reflects this total.
+  var counts = { all: list.length, monitoring: 0, defi: 0, nft: 0, gifts: 0, utility: 0 };
+  for (var i = 0; i < list.length; i++) {
+    var c = (list[i].category || '').toLowerCase();
+    if (c in counts) counts[c]++;
+  }
+  Object.keys(counts).forEach(function(k) {
+    var el = document.querySelector('.mkt-tab-count[data-count-for="' + k + '"]');
+    if (el) {
+      el.textContent = counts[k];
+      el.style.display = counts[k] > 0 || k === 'all' ? '' : 'none';
+    }
+  });
+  // Update the subtitle "Х публикаций"
+  var sub = document.querySelector('#marketplace-page .page-subtitle');
+  if (sub && counts.all > 0) {
+    var base = currentLang === 'ru'
+      ? 'Обзор, установка и публикация шаблонов агентов'
+      : 'Browse, install and publish agent templates';
+    var tail = currentLang === 'ru'
+      ? (' · ' + counts.all + ' публикаци' + (counts.all === 1 ? 'я' : (counts.all < 5 ? 'и' : 'й')))
+      : (' · ' + counts.all + ' listing' + (counts.all === 1 ? '' : 's'));
+    sub.textContent = base + tail;
+  }
+}
+
+// Stub for the Filters button — toggles a dropdown panel; for now we
+// just scroll to the tabs so the user knows where to refine. A real
+// filter UI lands in a follow-up.
+function toggleMarketplaceFilters() {
+  var tabs = document.getElementById('marketplace-tabs');
+  if (tabs) tabs.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  toast(currentLang === 'ru'
+    ? 'Используйте табы выше для фильтрации по категории'
+    : 'Use the tabs above to filter by category', 'info');
 }
 
 function filterMarketplace(cat) {
@@ -13177,24 +13338,10 @@ function renderMarketplaceGrid() {
     return;
   }
 
-  // Stamp per-category counts on the filter pill-tabs when looking at
-  // the "all" view (so users see "Все 142 · Мониторинг 38 …").
+  // Strip any old .count spans (legacy from before .mkt-tab-count badges)
+  document.querySelectorAll('#marketplace-tabs .mkt-tab .count').forEach(function(c) { c.remove(); });
+  // (per-category counts are now updated centrally via _updateMarketplaceCounts)
   if (_marketplaceFilter === 'all') {
-    var counts = { all: _marketplaceListings.length };
-    _marketplaceListings.forEach(function(l) {
-      var c = (l.category || 'other').toLowerCase();
-      counts[c] = (counts[c] || 0) + 1;
-    });
-    document.querySelectorAll('#marketplace-tabs .mkt-tab').forEach(function(t) {
-      var cat = t.getAttribute('data-cat');
-      var existing = t.querySelector('.count'); if (existing) existing.remove();
-      if (cat && counts[cat] != null) {
-        var c = document.createElement('span');
-        c.className = 'count';
-        c.textContent = counts[cat].toLocaleString(currentLang === 'ru' ? 'ru-RU' : 'en-US');
-        t.appendChild(c);
-      }
-    });
     // Also update the page-head subtitle "· N публикаций"
     var sub = document.querySelector('#marketplace-page .page-sub, #marketplace-page .page-subtitle');
     if (sub) {
@@ -13780,7 +13927,7 @@ var AGENT_TOUR_STEPS = [
 
 function _guideStep(num, title, desc, tabName) {
   return '<div class="guide-step" onclick="dismissAgentGuide(); switchSettingsTab(\'' + tabName + '\')" style="display:flex;gap:12px;padding:12px 14px;border-radius:10px;cursor:pointer;transition:all .2s;background:rgba(255,255,255,0.03);border:1px solid transparent" onmouseenter="this.style.background=\'rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.08)\';this.style.borderColor=\'rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.25)\'" onmouseleave="this.style.background=\'rgba(255,255,255,0.03)\';this.style.borderColor=\'transparent\'">' +
-    '<div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:#fff;display:flex;align-items:center;justify-content:center;font-size:.8rem;font-weight:700;flex-shrink:0">' + num + '</div>' +
+    '<div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(in oklab 135deg,var(--primary),var(--primary-dark));color:#fff;display:flex;align-items:center;justify-content:center;font-size:.8rem;font-weight:700;flex-shrink:0">' + num + '</div>' +
     '<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:.88rem;color:var(--text-primary);margin-bottom:2px">' + title + '</div>' +
     '<div style="font-size:.78rem;color:var(--text-muted);line-height:1.4">' + desc + '</div></div>' +
     '<div style="color:var(--text-muted);font-size:.9rem;display:flex;align-items:center;opacity:.5">&#8250;</div>' +
@@ -13806,10 +13953,10 @@ function startAgentTour(force) {
   if (document.getElementById('agent-onboard-guide')) return;
   var isRu = currentLang === 'ru';
 
-  var guideHtml = '<div id="agent-onboard-guide" style="margin-bottom:20px;padding:20px;background:linear-gradient(135deg,rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.06),rgba(var(--accent-r,99),var(--accent-g,102),var(--accent-b,241),0.06));border:1px solid rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.15);border-radius:14px;transition:all .25s ease">' +
+  var guideHtml = '<div id="agent-onboard-guide" style="margin-bottom:20px;padding:20px;background:linear-gradient(in oklab 135deg,rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.06),rgba(var(--accent-r,99),var(--accent-g,102),var(--accent-b,241),0.06));border:1px solid rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.15);border-radius:14px;transition:all .25s ease">' +
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">' +
       '<div style="display:flex;align-items:center;gap:10px">' +
-        '<div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,var(--primary),var(--primary-dark));display:flex;align-items:center;justify-content:center;font-size:1.2rem">&#127891;</div>' +
+        '<div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(in oklab 135deg,var(--primary),var(--primary-dark));display:flex;align-items:center;justify-content:center;font-size:1.2rem">&#127891;</div>' +
         '<div><div style="font-weight:700;font-size:.95rem;color:var(--text-primary)">' + (isRu ? 'Настройка агента' : 'Agent Setup Guide') + '</div>' +
         '<div style="font-size:.76rem;color:var(--text-muted)">' + (isRu ? 'Пройдите шаги чтобы агент заработал' : 'Complete these steps to get your agent running') + '</div></div>' +
       '</div>' +
@@ -13838,7 +13985,7 @@ function startAgentTour(force) {
         'learning') +
     '</div>' +
     '<div style="margin-top:14px;text-align:center">' +
-      '<button onclick="dismissAgentGuide(); switchSettingsTab(\'ai\')" style="background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:#fff;border:none;padding:10px 24px;border-radius:10px;font-size:.85rem;font-weight:600;cursor:pointer;transition:all .2s;box-shadow:0 2px 8px var(--accent-glow)" onmouseenter="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 4px 12px var(--accent-glow)\'" onmouseleave="this.style.transform=\'none\';this.style.boxShadow=\'0 2px 8px var(--accent-glow)\'">' +
+      '<button onclick="dismissAgentGuide(); switchSettingsTab(\'ai\')" style="background:linear-gradient(in oklab 135deg,var(--primary),var(--primary-dark));color:#fff;border:none;padding:10px 24px;border-radius:10px;font-size:.85rem;font-weight:600;cursor:pointer;transition:all .2s;box-shadow:0 2px 8px var(--accent-glow)" onmouseenter="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 4px 12px var(--accent-glow)\'" onmouseleave="this.style.transform=\'none\';this.style.boxShadow=\'0 2px 8px var(--accent-glow)\'">' +
         (isRu ? 'Начать с API ключа \u2192' : 'Start with API key \u2192') +
       '</button>' +
     '</div>' +
@@ -14466,7 +14613,7 @@ function awRenderRoot() {
   var root = _awData.find(function(w) { return w.walletType === 'root'; });
   if (!root) {
     el.innerHTML = '<div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:16px;padding:40px 32px;text-align:center">' +
-      '<div style="width:56px;height:56px;border-radius:16px;background:linear-gradient(135deg,rgba(59,130,246,0.15),rgba(var(--accent-r,168),var(--accent-g,85),var(--accent-b,247),0.15));display:flex;align-items:center;justify-content:center;margin:0 auto 16px"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/></svg></div>' +
+      '<div style="width:56px;height:56px;border-radius:16px;background:linear-gradient(in oklab 135deg,rgba(59,130,246,0.15),rgba(var(--accent-r,168),var(--accent-g,85),var(--accent-b,247),0.15));display:flex;align-items:center;justify-content:center;margin:0 auto 16px"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/></svg></div>' +
       '<h2 style="margin-bottom:8px;font-size:1.15rem">' + (isRu ? 'Добро пожаловать в Agentic Wallets' : 'Welcome to Agentic Wallets') + '</h2>' +
       '<p style="color:var(--text-muted);margin-bottom:24px;max-width:480px;margin-left:auto;margin-right:auto;font-size:.88rem;line-height:1.5">' +
         (isRu ? 'Создайте Root-кошелёк — он станет мастер-кошельком, к которому привязаны все суб-кошельки агентов.' : 'Create a Root Wallet to get started. It will serve as your master wallet for all agent sub-wallets.') + '</p>' +
@@ -14478,7 +14625,7 @@ function awRenderRoot() {
   var addrShort = root.address.slice(0, 12) + '...' + root.address.slice(-6);
   el.innerHTML = '<div style="background:var(--bg-secondary);border:1px solid rgba(34,197,94,0.2);border-radius:14px;padding:20px 24px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px">' +
     '<div style="display:flex;align-items:center;gap:14px">' +
-      '<div style="width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,rgba(34,197,94,0.12),rgba(59,130,246,0.12));display:flex;align-items:center;justify-content:center">' + AWI.crown + '</div>' +
+      '<div style="width:40px;height:40px;border-radius:10px;background:linear-gradient(in oklab 135deg,rgba(34,197,94,0.12),rgba(59,130,246,0.12));display:flex;align-items:center;justify-content:center">' + AWI.crown + '</div>' +
       '<div><div style="font-size:.75rem;color:var(--text-muted);margin-bottom:2px">Root Wallet</div>' +
       '<code style="font-size:.85rem;cursor:pointer;color:var(--text-primary)" onclick="navigator.clipboard.writeText(\x27' + escJsAttr(root.address) + '\x27);toast(\x27Copied!\x27,\x27success\x27)" title="Click to copy">' + escHtml(addrShort) + '</code></div></div>' +
     '<div style="text-align:right"><div style="font-size:1.3rem;font-weight:700;color:#22c55e;font-family:\'JetBrains Mono\',monospace">' + (root.balanceTon || 0).toFixed(4) + ' TON</div>' +
@@ -14771,7 +14918,7 @@ function renderTokenChart(history) {
     var pct = Math.max(2, Math.round(h.totalTokens / maxTokens * 100));
     var date = escHtml(h.date.slice(5)); // MM-DD
     return '<div style="display:flex;flex-direction:column;align-items:center;flex:1;min-width:20px">' +
-      '<div style="width:80%;background:linear-gradient(180deg,#f59e0b,#d97706);border-radius:3px 3px 0 0;height:' + pct + '%;min-height:2px;transition:height 0.3s" title="' + h.totalTokens + ' tokens"></div>' +
+      '<div style="width:80%;background:linear-gradient(in oklab 180deg,#f59e0b,#d97706);border-radius:3px 3px 0 0;height:' + pct + '%;min-height:2px;transition:height 0.3s" title="' + h.totalTokens + ' tokens"></div>' +
       '<div style="font-size:.55rem;color:var(--text-muted);margin-top:2px;transform:rotate(-45deg);white-space:nowrap">' + date + '</div>' +
     '</div>';
   }).join('');
@@ -15585,7 +15732,7 @@ function loadGuidePage() {
     { id: 'start', icon: _ico('<circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/>'),
       title: isRu ? 'Быстрый старт' : 'Quick Start',
       subtitle: isRu ? 'Создайте первого агента за 2 минуты' : 'Create your first agent in 2 minutes',
-      gradient: 'linear-gradient(135deg, var(--accent-dim), rgba(6,182,212,0.08))',
+      gradient: 'linear-gradient(in oklab 135deg, var(--accent-dim), rgba(6,182,212,0.08))',
       cards: [
         { title: isRu ? 'Atlas AI (рекомендуется)' : 'Atlas AI (recommended)', desc: isRu ? 'Опишите задачу текстом — Atlas создаст агента, настроит промпт, выберет инструменты и запустит. Atlas знает все о платформе.' : 'Describe the task — Atlas creates the agent, sets up prompt, picks tools and launches it. Atlas knows everything about the platform.', action: 'navigateTo("assistant")', btn: isRu ? 'Открыть Atlas' : 'Open Atlas' },
         { title: isRu ? 'Визуальный конструктор' : 'Visual Constructor', desc: isRu ? 'Drag & drop блоки: триггер, действия, логика. Без кода. Подходит для сложных workflow с условиями и циклами.' : 'Drag & drop blocks: trigger, actions, logic. No code. Good for complex workflows with conditions and loops.', action: 'navigateTo("builder")', btn: isRu ? 'Открыть' : 'Open' },
@@ -15613,7 +15760,7 @@ function loadGuidePage() {
     { id: 'settings', icon: _ico('<line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/>'),
       title: isRu ? 'Настройки агента' : 'Agent Settings',
       subtitle: isRu ? '17 вкладок для полного контроля' : '17 tabs for complete control',
-      gradient: 'linear-gradient(135deg, rgba(var(--accent-r,139),var(--accent-g,92),var(--accent-b,246),0.15), rgba(var(--accent-r,168),var(--accent-g,85),var(--accent-b,247),0.08))',
+      gradient: 'linear-gradient(in oklab 135deg, rgba(var(--accent-r,139),var(--accent-g,92),var(--accent-b,246),0.15), rgba(var(--accent-r,168),var(--accent-g,85),var(--accent-b,247),0.08))',
       items: [
         'Code — ' + (isRu ? 'редактор промпта' : 'prompt editor'),
         'AI — ' + (isRu ? 'провайдер, модель, ключ' : 'provider, model, key'),
@@ -15637,13 +15784,13 @@ function loadGuidePage() {
     { id: 'ai', icon: _ico('<rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/>'),
       title: isRu ? 'AI Провайдеры' : 'AI Providers',
       subtitle: isRu ? '7 провайдеров на выбор' : '7 providers to choose from',
-      gradient: 'linear-gradient(135deg, rgba(16,185,129,0.15), rgba(34,197,94,0.08))',
+      gradient: 'linear-gradient(in oklab 135deg, rgba(16,185,129,0.15), rgba(34,197,94,0.08))',
       items: ['Gemini — gemini-2.5-flash/pro', 'Claude — sonnet/haiku/opus', 'GPT — gpt-4o-mini', 'Groq — llama-3.3-70b', 'DeepSeek — deepseek-chat', 'OpenRouter — google/gemini', 'Together — meta-llama'],
     },
     { id: 'tools', icon: _ico('<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>'),
       title: isRu ? 'Инструменты' : 'Tools',
       subtitle: isRu ? '77 инструментов в 10 категориях' : '77 tools in 10 categories',
-      gradient: 'linear-gradient(135deg, rgba(245,158,11,0.15), rgba(234,179,8,0.08))',
+      gradient: 'linear-gradient(in oklab 135deg, rgba(245,158,11,0.15), rgba(234,179,8,0.08))',
       grid: [
         { emoji: 'MSG', name: isRu ? 'Сообщения' : 'Messages' }, { emoji: 'MED', name: isRu ? 'Медиа' : 'Media' },
         { emoji: 'MOD', name: isRu ? 'Модерация' : 'Moderation' }, { emoji: 'TON', name: 'DeFi' },
@@ -15664,7 +15811,7 @@ function loadGuidePage() {
     { id: 'flow', icon: _ico('<path d="m18 16 4-4-4-4"/><path d="m6 8-4 4 4 4"/><path d="m14.5 4-5 16"/>'),
       title: isRu ? 'Конструктор' : 'Flow Builder',
       subtitle: isRu ? 'Визуальный drag & drop редактор' : 'Visual drag & drop editor',
-      gradient: 'linear-gradient(135deg, rgba(var(--accent-r,99),var(--accent-g,102),var(--accent-b,241),0.15), rgba(79,70,229,0.08))',
+      gradient: 'linear-gradient(in oklab 135deg, rgba(var(--accent-r,99),var(--accent-g,102),var(--accent-b,241),0.15), rgba(79,70,229,0.08))',
       cards: [
         { title: isRu ? 'Триггеры' : 'Triggers', desc: isRu ? 'Таймер, Webhook, Ручной запуск' : 'Timer, Webhook, Manual start' },
         { title: isRu ? 'Действия' : 'Actions', desc: isRu ? 'TON, Gifts, Telegram, Web, DeFi' : 'TON, Gifts, Telegram, Web, DeFi' },
@@ -15682,7 +15829,7 @@ function loadGuidePage() {
     { id: 'ton', icon: _ico('<path d="M2.7 10.3a2.41 2.41 0 0 0 0 3.41l7.59 7.59a2.41 2.41 0 0 0 3.41 0l7.59-7.59a2.41 2.41 0 0 0 0-3.41l-7.59-7.59a2.41 2.41 0 0 0-3.41 0z"/>'),
       title: 'TON Blockchain',
       subtitle: isRu ? 'Кошельки, свопы, NFT, жетоны' : 'Wallets, swaps, NFTs, jettons',
-      gradient: 'linear-gradient(135deg, var(--accent-dim), rgba(2,132,199,0.08))',
+      gradient: 'linear-gradient(in oklab 135deg, var(--accent-dim), rgba(2,132,199,0.08))',
       items: [isRu ? 'Баланс TON/жетонов' : 'TON/jetton balance', isRu ? 'Свопы через DeDust/STON.fi' : 'Swaps via DeDust/STON.fi', isRu ? 'NFT floor price + аналитика' : 'NFT floor price + analytics', isRu ? 'Отправка TON/жетонов' : 'Send TON/jettons', isRu ? 'Агентский кошелёк' : 'Agentic wallet'],
       details: isRu ? [
         { q: 'Кошелёк агента', a: 'Каждый агент может иметь свой TON кошелёк (Agentic Wallet). Создание:\n\n1. Кошельки (боковое меню) → Создать Root Wallet\n2. Настройки агента → Wallet → выбрать Agentic Wallet\n3. Установить дневной лимит расходов\n\nRoot Wallet — мастер-кошелёк. К нему привязываются суб-кошельки агентов. Мнемоника шифруется AES-256-GCM.' },
@@ -15694,7 +15841,7 @@ function loadGuidePage() {
     { id: 'multi', icon: _ico('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'),
       title: isRu ? 'Мультиагенты' : 'Multi-Agent',
       subtitle: isRu ? 'Команды агентов, роли, маршрутизация' : 'Agent teams, roles, routing',
-      gradient: 'linear-gradient(135deg, rgba(236,72,153,0.15), rgba(219,39,119,0.08))',
+      gradient: 'linear-gradient(in oklab 135deg, rgba(236,72,153,0.15), rgba(219,39,119,0.08))',
       items: [isRu ? 'Роли: worker, manager, specialist' : 'Roles: worker, manager, specialist', isRu ? 'Маршрутизация по ключевым словам' : 'Keyword-based routing', isRu ? 'Inter-agent коммуникация' : 'Inter-agent communication', isRu ? 'Общее состояние между агентами' : 'Shared state between agents'],
       details: isRu ? [
         { q: 'Как работает мультиагентная система', a: 'Несколько агентов подключаются к одному Telegram аккаунту. Каждое входящее сообщение проходит через маршрутизатор, который решает какому агенту его отдать.\n\nМаршрутизация:\n- По ключевым словам: "цена" → трейдинг-агент, "модерация" → модератор\n- По типу чата: DM → личный помощник, группы → модератор\n- По приоритету: при конфликте отвечает агент с высшим приоритетом\n- Default agent: получает все сообщения которые не подошли другим' },
@@ -15706,7 +15853,7 @@ function loadGuidePage() {
     { id: 'market', icon: _ico('<path d="M3 9h18v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9z"/><path d="m3 9 1.5-4.5A2 2 0 0 1 6.4 3h11.2a2 2 0 0 1 1.9 1.5L21 9"/><path d="M3 9h18"/><path d="M16 14a4 4 0 0 1-8 0"/>'),
       title: isRu ? 'Маркетплейс' : 'Marketplace',
       subtitle: isRu ? 'Готовые шаблоны агентов' : 'Ready-made agent templates',
-      gradient: 'linear-gradient(135deg, rgba(34,197,94,0.15), rgba(22,163,74,0.08))',
+      gradient: 'linear-gradient(in oklab 135deg, rgba(34,197,94,0.15), rgba(22,163,74,0.08))',
       action: { label: isRu ? 'Открыть маркетплейс' : 'Open Marketplace', fn: 'navigateTo("marketplace")' },
       items: [isRu ? 'DeFi мониторинг' : 'DeFi monitoring', isRu ? 'NFT трекинг' : 'NFT tracking', isRu ? 'Арбитраж подарков' : 'Gift arbitrage', isRu ? 'Контент-менеджер' : 'Content manager'],
       details: isRu ? [
@@ -15718,7 +15865,7 @@ function loadGuidePage() {
     { id: 'keys', icon: _ico('<rect width="20" height="16" x="2" y="4" rx="2" ry="2"/><path d="M6 8h.001"/><path d="M10 8h.001"/><path d="M14 8h.001"/><path d="M18 8h.001"/><path d="M8 12h.001"/><path d="M12 12h.001"/><path d="M16 12h.001"/><path d="M7 16h10"/>'),
       title: isRu ? 'Горячие клавиши' : 'Shortcuts',
       subtitle: isRu ? 'Быстрые команды' : 'Quick commands',
-      gradient: 'linear-gradient(135deg, rgba(100,116,139,0.15), rgba(71,85,105,0.08))',
+      gradient: 'linear-gradient(in oklab 135deg, rgba(100,116,139,0.15), rgba(71,85,105,0.08))',
       shortcuts: [
         { key: 'Ctrl+K', desc: isRu ? 'Палитра команд' : 'Command palette' },
         { key: 'Ctrl+N', desc: isRu ? 'Новый агент' : 'New agent' },
@@ -16376,7 +16523,7 @@ function showTosPopup() {
   overlay.innerHTML =
     '<div style="background:var(--bg-secondary,#1a1f2e);border:1px solid var(--border,#2a3040);border-radius:16px;max-width:520px;width:100%;max-height:85vh;overflow-y:auto;padding:32px">' +
       '<div style="text-align:center;margin-bottom:20px">' +
-        '<div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,var(--primary),var(--primary-dark));display:inline-flex;align-items:center;justify-content:center;margin-bottom:12px">' +
+        '<div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(in oklab 135deg,var(--primary),var(--primary-dark));display:inline-flex;align-items:center;justify-content:center;margin-bottom:12px">' +
           '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>' +
         '</div>' +
         '<h2 style="margin:0;font-size:1.3rem;color:var(--text-primary,#fff)">' + (isRu ? 'Пользовательское соглашение' : 'Terms of Service') + '</h2>' +
@@ -16521,9 +16668,9 @@ function deleteMyAccount() {
   modal.setAttribute('data-tap', '1');
   modal.style.cssText = 'display:flex;position:fixed;inset:0;z-index:10001;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);animation:tap-fade-in 200ms ease-out;';
   modal.innerHTML =
-    '<div class="modal-content tap-modal" data-tap="1" style="position:relative;max-width:440px;width:90%;border-radius:18px;border:1px solid rgba(239,68,68,0.35);background:linear-gradient(180deg,rgba(35,12,14,0.96) 0%,rgba(20,8,10,0.98) 100%);box-shadow:0 30px 80px -20px rgba(0,0,0,0.7),0 0 0 1px rgba(239,68,68,0.08),0 0 60px rgba(239,68,68,0.18);padding:28px 28px 24px;backdrop-filter:blur(20px) saturate(140%);-webkit-backdrop-filter:blur(20px) saturate(140%);">' +
+    '<div class="modal-content tap-modal" data-tap="1" style="position:relative;max-width:440px;width:90%;border-radius:18px;border:1px solid rgba(239,68,68,0.35);background:linear-gradient(in oklab 180deg,rgba(35,12,14,0.96) 0%,rgba(20,8,10,0.98) 100%);box-shadow:0 30px 80px -20px rgba(0,0,0,0.7),0 0 0 1px rgba(239,68,68,0.08),0 0 60px rgba(239,68,68,0.18);padding:28px 28px 24px;backdrop-filter:blur(20px) saturate(140%);-webkit-backdrop-filter:blur(20px) saturate(140%);">' +
       '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">' +
-        '<div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#ef4444,#b91c1c);display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 6px 18px rgba(220,38,38,0.4)">' +
+        '<div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(in oklab 135deg,#ef4444,#b91c1c);display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 6px 18px rgba(220,38,38,0.4)">' +
           '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>' +
         '</div>' +
         '<div>' +
@@ -16537,7 +16684,7 @@ function deleteMyAccount() {
       '<input id="tap-delete-input" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="DELETE" style="width:100%;padding:11px 14px;font-size:15px;font-family:ui-monospace,SF Mono,Menlo,monospace;letter-spacing:0.08em;color:#fff;background:rgba(255,255,255,0.04);border:1.5px solid rgba(255,255,255,0.12);border-radius:10px;outline:none;transition:border-color 160ms,box-shadow 160ms;box-sizing:border-box">' +
       '<div style="display:flex;gap:10px;margin-top:18px;justify-content:flex-end">' +
         '<button id="tap-delete-cancel" class="btn btn-secondary" style="padding:10px 18px;font-size:14px;border-radius:10px;cursor:pointer;background:rgba(255,255,255,0.06);color:var(--text-primary,#e7ecf3);border:1px solid rgba(255,255,255,0.1)">' + (isRu ? 'Отмена' : 'Cancel') + '</button>' +
-        '<button id="tap-delete-confirm" class="btn btn-danger" disabled style="padding:10px 20px;font-size:14px;font-weight:600;border-radius:10px;cursor:not-allowed;background:linear-gradient(135deg,#dc2626,#991b1b);color:#fff;border:none;opacity:0.45;transition:opacity 160ms,box-shadow 160ms">' + (isRu ? 'Удалить навсегда' : 'Delete forever') + '</button>' +
+        '<button id="tap-delete-confirm" class="btn btn-danger" disabled style="padding:10px 20px;font-size:14px;font-weight:600;border-radius:10px;cursor:not-allowed;background:linear-gradient(in oklab 135deg,#dc2626,#991b1b);color:#fff;border:none;opacity:0.45;transition:opacity 160ms,box-shadow 160ms">' + (isRu ? 'Удалить навсегда' : 'Delete forever') + '</button>' +
       '</div>' +
     '</div>';
   document.body.appendChild(modal);
@@ -16675,25 +16822,89 @@ function applyCustomRetain() {
 }
 
 function setUIScale(val) {
+  val = parseInt(val, 10) || 100;
+  if (val < 80) val = 80;
+  if (val > 120) val = 120;
   // Sync all scale displays
   var els = [document.getElementById('ui-scale-value'), document.getElementById('sidebar-scale-value')];
   els.forEach(function(el) { if (el) el.textContent = val + '%'; });
   var sliders = [document.getElementById('ui-scale-slider'), document.getElementById('sidebar-scale-slider')];
-  sliders.forEach(function(s) { if (s) s.value = val; });
-  var z = (val / 100);
-  // Apply zoom to:
-  //   - main content area
-  //   - sidebar HEADER (logo)
-  //   - sidebar NAV (menu items)
-  //  but NOT to sidebar-footer — the footer holds the scale slider itself,
-  //  and if it zoomed, the slider would walk away from under the user's
-  //  cursor while dragging. The footer stays at native scale, so the lang
-  //  buttons + slider + logout are stable controls regardless of UI zoom.
-  var mc = document.querySelector('.main-content'); if (mc) mc.style.zoom = z;
-  var sh = document.querySelector('.sidebar-header'); if (sh) sh.style.zoom = z;
-  var sn = document.querySelector('.sidebar-nav'); if (sn) sn.style.zoom = z;
-  localStorage.setItem('ui_scale', val);
+  sliders.forEach(function(s) { if (s && +s.value !== val) s.value = val; });
+  // CSS `zoom` on <body> is the closest mimic to browser Ctrl+/- zoom.
+  // Children's grid layouts reflow as if the window were larger. Combined
+  // with the max-width:none override in gradient-edge-fix.css and the
+  // .nav-foot counter-zoom, this gives a clean "expand to edges" feel.
+  var z = val / 100;
+  // Just update --ui-scale. CSS handles everything else (zoom, width,
+  // min-height on body / #app / sidebar) via calc(...) and the registered
+  // @property transition animates the whole thing in sync.
+  document.documentElement.style.setProperty('--ui-scale', String(z));
+  // Clean up any leftover inline styles from previous iterations
+  var body = document.body;
+  body.style.zoom = '';
+  body.style.width = '';
+  body.style.minHeight = '';
+  body.style.transform = '';
+  body.style.transformOrigin = '';
+  var foot = document.querySelector('.nav-foot');
+  if (foot) { foot.style.zoom = ''; foot.style.transform = ''; foot.style.transformOrigin = ''; }
+  var sliderRow = document.querySelector('.scale-slider-row');
+  if (sliderRow) { sliderRow.style.transform = ''; sliderRow.style.transformOrigin = ''; sliderRow.style.width = ''; }
+  var app = document.getElementById('app');
+  if (app) { app.style.zoom = ''; app.style.width = ''; app.style.minHeight = ''; }
+  localStorage.setItem('ui_scale', String(val));
 }
+// Restore saved scale on load
+(function _restoreUIScale() {
+  var saved = parseInt(localStorage.getItem('ui_scale') || '100', 10);
+  if (saved && saved !== 100) {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', function() { setUIScale(saved); });
+    } else {
+      setUIScale(saved);
+    }
+  }
+})();
+
+// ── Range slider fill sync ────────────────────────────────────────────
+// Chromium has no equivalent of Firefox's ::-moz-range-progress, so the
+// "filled" portion of the track is rendered via a CSS variable `--range-pct`
+// that we update from JS on every input event.
+function _syncRangePct(input) {
+  if (!input || input.type !== 'range') return;
+  var min = parseFloat(input.min) || 0;
+  var max = parseFloat(input.max) || 100;
+  var val = parseFloat(input.value);
+  if (isNaN(val)) val = min;
+  var pct = ((val - min) / (max - min)) * 100;
+  if (pct < 0) pct = 0;
+  if (pct > 100) pct = 100;
+  input.style.setProperty('--range-pct', pct + '%');
+}
+function _initAllRangeFills() {
+  document.querySelectorAll('input[type="range"]').forEach(_syncRangePct);
+}
+// Run on load + listen on every range input change
+document.addEventListener('DOMContentLoaded', _initAllRangeFills);
+document.addEventListener('input', function(e) {
+  if (e.target && e.target.tagName === 'INPUT' && e.target.type === 'range') {
+    _syncRangePct(e.target);
+  }
+}, true);
+// Also catch dynamically-rendered range inputs via a MutationObserver
+(function _watchForNewRanges() {
+  var mo = new MutationObserver(function(muts) {
+    muts.forEach(function(m) {
+      (m.addedNodes || []).forEach(function(n) {
+        if (n.nodeType !== 1) return;
+        if (n.tagName === 'INPUT' && n.type === 'range') _syncRangePct(n);
+        else if (n.querySelectorAll) n.querySelectorAll('input[type="range"]').forEach(_syncRangePct);
+      });
+    });
+  });
+  if (document.body) mo.observe(document.body, { childList: true, subtree: true });
+  else document.addEventListener('DOMContentLoaded', function() { mo.observe(document.body, { childList: true, subtree: true }); });
+})();
 
 function setAccentColor(color) {
   var root = document.documentElement;
@@ -17154,13 +17365,13 @@ async function loadTesterHub() {
       (s.role !== 'tester' ? '<div style="padding:6px 14px;border-radius:20px;background:' + lvlColor + '15;border:1px solid ' + lvlColor + '30;color:' + lvlColor + ';font-size:.75rem;font-weight:600;text-transform:uppercase">' + escHtml(s.role) + '</div>' : '') +
     '</div>' +
     '<div style="height:8px;background:rgba(255,255,255,0.05);border-radius:4px;overflow:hidden">' +
-      '<div style="height:100%;width:' + pct + '%;background:linear-gradient(90deg,' + lvlColor + ',' + lvlColor + 'cc);border-radius:4px;transition:width .5s"></div>' +
+      '<div style="height:100%;width:' + pct + '%;background:linear-gradient(in oklab 90deg,' + lvlColor + ',' + lvlColor + 'cc);border-radius:4px;transition:width .5s"></div>' +
     '</div>' +
     '<div style="display:flex;justify-content:space-between;margin-top:4px;font-size:.68rem;color:var(--text-muted)">' +
       '<span>Lv.' + s.level + '</span><span>' + pct + '%</span>' + (s.nextLevel ? '<span>Lv.' + (s.level + 1) + '</span>' : '') +
     '</div>' +
     '<div style="margin-top:16px;text-align:center">' +
-      '<button onclick="testerCheckin()" style="padding:10px 24px;border-radius:20px;border:none;background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:white;font-size:.82rem;font-weight:600;cursor:pointer;transition:all .2s" onmouseenter="this.style.transform=\'translateY(-1px)\'" onmouseleave="this.style.transform=\'none\'">' + (isRu ? 'Daily Check-in (+1 очко)' : 'Daily Check-in (+1 pt)') + '</button>' +
+      '<button onclick="testerCheckin()" style="padding:10px 24px;border-radius:20px;border:none;background:linear-gradient(in oklab 135deg,var(--primary),var(--primary-dark));color:white;font-size:.82rem;font-weight:600;cursor:pointer;transition:all .2s" onmouseenter="this.style.transform=\'translateY(-1px)\'" onmouseleave="this.style.transform=\'none\'">' + (isRu ? 'Daily Check-in (+1 очко)' : 'Daily Check-in (+1 pt)') + '</button>' +
     '</div>' +
   '</div>';
 
@@ -17351,7 +17562,7 @@ async function loadTesterRewardsBlock(isRu) {
     var p = profile.profile;
     var sharePct = (profile.sharePercent || 0);
     var projTon = profile.projectedAnnualTonAt10k || 0;
-    html += '<div style="background:linear-gradient(135deg,rgba(0,170,255,0.06),rgba(var(--accent-r,139),var(--accent-g,92),var(--accent-b,246),0.06));border:1px solid rgba(0,170,255,0.2);border-radius:16px;padding:20px;margin-bottom:20px">' +
+    html += '<div style="background:linear-gradient(in oklab 135deg,rgba(0,170,255,0.06),rgba(var(--accent-r,139),var(--accent-g,92),var(--accent-b,246),0.06));border:1px solid rgba(0,170,255,0.2);border-radius:16px;padding:20px;margin-bottom:20px">' +
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">' +
         '<span style="font-size:1.2rem">💰</span>' +
         '<div style="font-size:.95rem;font-weight:700;color:var(--text-primary)">' + (isRu ? 'Доля в 10% пуле' : 'Revenue share (10% pool)') + '</div>' +
@@ -17541,7 +17752,7 @@ function toggleTask(taskId, el) {
     + '</div>'
     + body
     + '<div style="display:flex;gap:10px">'
-    + '<a href="' + botUrl + '" target="_blank" style="flex:1;padding:12px;background:linear-gradient(135deg,var(--primary),var(--accent));color:white;border-radius:10px;font-size:.82rem;font-weight:600;text-decoration:none;text-align:center">'
+    + '<a href="' + botUrl + '" target="_blank" style="flex:1;padding:12px;background:linear-gradient(in oklab 135deg,var(--primary),var(--accent));color:white;border-radius:10px;font-size:.82rem;font-weight:600;text-decoration:none;text-align:center">'
     + (isRu ? 'Открыть бота' : 'Open bot') + ' →</a>'
     + '<button onclick="navigator.clipboard.writeText(\'[task:' + taskId + ']\');toast(\'' + (isRu ? 'Скопировано' : 'Copied') + '\',\'success\')" style="padding:12px 18px;background:rgba(255,255,255,0.05);color:var(--text-primary);border:1px solid var(--border);border-radius:10px;font-size:.82rem;font-weight:600;cursor:pointer">'
     + (isRu ? 'Копировать тег' : 'Copy tag') + '</button>'
@@ -17569,7 +17780,7 @@ function initFeedbackFAB() {
   fab.id = 'feedback-fab';
   fab.innerHTML = IC.bug;
   fab.title = currentLang === 'ru' ? 'Отправить фидбек' : 'Send feedback';
-  fab.style.cssText = 'position:fixed;bottom:24px;right:24px;width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:white;border:none;font-size:1.4rem;cursor:pointer;z-index:9999;box-shadow:0 4px 12px var(--accent-glow);transition:all .2s;display:flex;align-items:center;justify-content:center';
+  fab.style.cssText = 'position:fixed;bottom:24px;right:24px;width:52px;height:52px;border-radius:50%;background:linear-gradient(in oklab 135deg,var(--primary),var(--primary-dark));color:white;border:none;font-size:1.4rem;cursor:pointer;z-index:9999;box-shadow:0 4px 12px var(--accent-glow);transition:all .2s;display:flex;align-items:center;justify-content:center';
   fab.onmouseenter = function() { fab.style.transform = 'scale(1.1)'; fab.style.boxShadow = '0 6px 16px var(--accent-glow)'; };
   fab.onmouseleave = function() { fab.style.transform = 'scale(1)'; fab.style.boxShadow = '0 4px 12px var(--accent-glow)'; };
   fab.onclick = function() { openFeedbackModal(); };
@@ -17685,7 +17896,7 @@ function openFeedbackModal() {
     '</div>' +
     '<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px">' +
       '<button onclick="document.getElementById(\'feedback-modal\').remove()" style="padding:10px 20px;border-radius:10px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-muted);cursor:pointer;font-size:.85rem">' + (isRu ? 'Отмена' : 'Cancel') + '</button>' +
-      '<button id="fb-submit-btn" onclick="submitFeedback()" style="padding:10px 24px;border-radius:10px;border:none;background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:white;cursor:pointer;font-size:.85rem;font-weight:600">' + (isRu ? 'Отправить' : 'Send') + '</button>' +
+      '<button id="fb-submit-btn" onclick="submitFeedback()" style="padding:10px 24px;border-radius:10px;border:none;background:linear-gradient(in oklab 135deg,var(--primary),var(--primary-dark));color:white;cursor:pointer;font-size:.85rem;font-weight:600">' + (isRu ? 'Отправить' : 'Send') + '</button>' +
     '</div>' +
   '</div>';
   modal.onclick = function(e) { if (e.target === modal) modal.remove(); };
@@ -17946,7 +18157,7 @@ async function loadAgentSkills(agentId) {
             '<input type="checkbox" ' + (s.enabled ? 'checked' : '') +
               ' onchange="toggleAgentSkill(' + _detailAgentId + ', ' + JSON.stringify(s.name) + ', this.checked)"' +
               ' style="opacity:0;width:0;height:0">' +
-            '<span class="switch-slider" style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:' + (s.enabled ? 'linear-gradient(135deg,#00a8ff,#8b5cf6)' : '#374151') + ';transition:.25s;border-radius:22px">' +
+            '<span class="switch-slider" style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:' + (s.enabled ? 'linear-gradient(in oklab 135deg,#00a8ff,#8b5cf6)' : '#374151') + ';transition:.25s;border-radius:22px">' +
               '<span style="position:absolute;height:18px;width:18px;left:' + (s.enabled ? '22px' : '2px') + ';bottom:2px;background:white;transition:.25s;border-radius:50%"></span>' +
             '</span>' +
           '</label>' +
