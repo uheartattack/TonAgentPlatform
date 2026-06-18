@@ -55,9 +55,8 @@
   function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
   function short(s){s=s||'';return s.length>16?(s.slice(0,8)+'…'+s.slice(-6)):s}
   function qid(){var m=location.search.match(/[?&]id=(\d+)/);if(m)return m[1];var p=location.pathname.match(/\/(?:a|agent)\/(\d+)/);return p?p[1]:'';}
-  var id=qid();
   var root=document.getElementById('root');
-  if(!id){root.innerHTML='<div class="muted">No agent id. Use ?id=&lt;number&gt;</div>';return;}
+  function render(id){
   fetch(location.origin+'/api/v3/profile/'+id).then(function(r){return r.json()}).then(function(res){
     if(!res||!res.ok||!res.profile){root.innerHTML='<div class="muted">Agent not found</div>';return;}
     var p=res.profile, oc=p.onchain||{}, rent=p.rental;
@@ -89,6 +88,12 @@
     root.innerHTML=h;
     document.title=(p.name||('Agent #'+p.id))+' — TON Agent Platform';
   }).catch(function(){root.innerHTML='<div class="muted">Failed to load</div>'});
+  }
+  var id=qid();
+  var nm=(location.search.match(/[?&]name=([a-z0-9-]+)/i)||[])[1];
+  if(id){render(id);}
+  else if(nm){fetch(location.origin+'/api/v3/dns/resolve/'+encodeURIComponent(nm.toLowerCase())).then(function(r){return r.json()}).then(function(rr){if(rr&&rr.found){render(rr.tap_agent_id);}else{root.innerHTML='<div class="muted">Name not found</div>';}}).catch(function(){root.innerHTML='<div class="muted">Resolve failed</div>';});}
+  else{root.innerHTML='<div class="muted">Use ?id=N or ?name=label</div>';}
 })();
 </script>
 </body>

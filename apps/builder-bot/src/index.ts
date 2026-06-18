@@ -270,6 +270,13 @@ async function main() {
         console.log('🔮 V3 Oracle ready');
       } catch (e: any) { console.error('[V3Oracle] init error:', e?.message); }
 
+      // v3.0 Фаза 3 — поддомены агентов (*.tonagent.ton визитка)
+      try {
+        const { initV3Dns } = require('./services/v3-dns');
+        await initV3Dns(pool);
+        console.log('🌐 V3 DNS ready');
+      } catch (e: any) { console.error('[V3Dns] init error:', e?.message); }
+
       // v3.0 Фаза 0 — доска задач (cross-owner job board) + синк escrow-статусов.
       // Флаг V3_JOBS_ENABLED (по умолчанию выкл). Бот деньги не двигает — фандинг подписывает заказчик.
       if (process.env.V3_JOBS_ENABLED === '1') {
