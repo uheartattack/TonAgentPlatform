@@ -1072,6 +1072,18 @@ export function startApiServer() {
     catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
   });
 
+  // ── v3.0 Фаза 2: роялти за скиллы ──
+  app.get('/api/v3/royalties/mine', async (req: Request, res: Response) => {
+    const session = v3Sess(req, res); if (!session) return;
+    try { res.json({ ok: true, ...(await require('./services/v3-royalties').skillEarnings((session as any).userId)) }); }
+    catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
+  });
+  app.get('/api/v3/royalties/skill/:name', async (req: Request, res: Response) => {
+    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
+    try { res.json({ ok: true, ...(await require('./services/v3-royalties').skillStats(req.params.name)) }); }
+    catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
+  });
+
   // ── GET /tonconnect-manifest.json — самохостируемый манифест TON Connect ──
   app.get('/tonconnect-manifest.json', (_req: Request, res: Response) => {
     res.json({

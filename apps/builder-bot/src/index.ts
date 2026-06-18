@@ -256,6 +256,13 @@ async function main() {
         console.log('📈 V3 Staking ready');
       } catch (e: any) { console.error('[V3Staking] init error:', e?.message); }
 
+      // v3.0 Фаза 2 — роялти авторам скиллов за использование
+      try {
+        const { initV3Royalties } = require('./services/v3-royalties');
+        await initV3Royalties(pool);
+        console.log('💎 V3 Royalties ready');
+      } catch (e: any) { console.error('[V3Royalties] init error:', e?.message); }
+
       // v3.0 Фаза 0 — доска задач (cross-owner job board) + синк escrow-статусов.
       // Флаг V3_JOBS_ENABLED (по умолчанию выкл). Бот деньги не двигает — фандинг подписывает заказчик.
       if (process.env.V3_JOBS_ENABLED === '1') {
