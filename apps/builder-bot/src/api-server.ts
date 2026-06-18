@@ -1117,6 +1117,23 @@ export function startApiServer() {
     catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
   });
 
+  // ── v3.0 Фаза 3: поддомены агентов (*.tonagent.ton визитка) ──
+  app.post('/api/v3/dns/claim', async (req: Request, res: Response) => {
+    const session = v3Sess(req, res); if (!session) return;
+    try {
+      const b = req.body || {};
+      if (!b.tapAgentId || !b.name) { res.status(400).json({ ok: false, error: 'tapAgentId, name required' }); return; }
+      const m = require('./services/v3-mailbox');
+      if (!(await m.agentOwnedBy(Number(b.tapAgentId), (session as any).userId))) { res.status(403).json({ ok: false, error: 'not your agent' }); return; }
+      res.json(await require('./services/v3-dns').claimSubdomain((session as any).userId, Number(b.tapAgentId), b.name));
+    } catch (e: any) { res.status(400).json({ ok: false, error: e?.message }); }
+  });
+  app.get('/api/v3/dns/resolve/:name', async (req: Request, res: Response) => {
+    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
+    try { res.json({ ok: true, ...(await require('./services/v3-dns').resolveSubdomain(req.params.name)) }); }
+    catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
+  });
+
   // ── GET /tonconnect-manifest.json — самохостируемый манифест TON Connect ──
   app.get('/tonconnect-manifest.json', (_req: Request, res: Response) => {
     res.json({
