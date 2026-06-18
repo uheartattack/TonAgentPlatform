@@ -2247,9 +2247,32 @@ async function renderAgentNetworkTab(body, a) {
       '<select id="net-tier" class="st-input" style="flex:1;min-width:104px" onchange="loadNetworkAgents()">' + _v3Opts(_V3_TIERS, isRu ? 'тир: любой' : 'tier: any') + '</select>' +
       '<select id="net-cat" class="st-input" style="flex:1;min-width:120px" onchange="loadNetworkAgents()">' + _v3Opts(_V3_CATS, isRu ? 'категория: —' : 'category: —') + '</select>' +
     '</div></div>' +
+    '<div class="rt-section"><div class="rt-section-label">' + (isRu ? 'Активность сети' : 'Network activity') + '</div><div id="net-feed" style="font-size:.78rem;color:var(--text-muted)">…</div></div>' +
     '<div id="network-body" style="margin-top:.4rem"><div style="text-align:center;padding:2rem;color:var(--text-muted)">' + (isRu ? 'Загрузка…' : 'Loading…') + '</div></div>' +
     '</div>';
+  loadActivityFeed();
   await loadNetworkAgents();
+}
+
+async function loadActivityFeed() {
+  var isRu = currentLang === 'ru';
+  var el = document.getElementById('net-feed'); if (!el) return;
+  var res = await apiRequest('GET', '/api/v3/feed?limit=20');
+  if (!res || res.ok === false || !(res.feed && res.feed.length)) { el.innerHTML = '<span style="color:var(--text-muted)">' + (isRu ? 'пока тихо' : 'quiet for now') + '</span>'; return; }
+  var icon = { mint: '🪙', sale: '🤝', job_posted: '📋', job_done: '✅', job_active: '⚙️', rental: '🔑', stake: '📈' };
+  var h = '<div style="display:flex;flex-direction:column;gap:3px">';
+  res.feed.forEach(function(e){
+    var t = '';
+    if (e.kind === 'mint') t = (isRu ? 'минт агента ' : 'agent minted ') + escHtml(_v3Short(e.agent_nft || ''));
+    else if (e.kind === 'sale') t = (isRu ? 'продан ' : 'sold ') + escHtml(_v3Short(e.from || '')) + '→' + escHtml(_v3Short(e.to || ''));
+    else if (e.kind === 'job_posted') t = (isRu ? 'задача: ' : 'job: ') + escHtml(e.title || '') + ' · ' + (e.bounty_gram || 0) + ' GRAM';
+    else if (e.kind === 'job_done') t = (isRu ? 'выполнено: ' : 'done: ') + escHtml(e.title || '') + (e.agent_id ? (' · #' + e.agent_id) : '');
+    else if (e.kind === 'job_active') t = (isRu ? 'в работе: ' : 'active: ') + escHtml(e.title || '');
+    else if (e.kind === 'rental') t = (isRu ? 'аренда #' : 'rented #') + (e.agent_id || '') + ' · ' + (e.days || 0) + (isRu ? 'дн' : 'd') + ' · ' + (e.total_gram || 0) + ' GRAM';
+    else if (e.kind === 'stake') t = (isRu ? 'бэкнут #' : 'backed #') + (e.agent_id || '') + ' · ' + (e.amount_gram || 0) + ' GRAM';
+    h += '<div style="display:flex;gap:6px"><span>' + (icon[e.kind] || '•') + '</span><span style="color:var(--text-secondary)">' + t + '</span></div>';
+  });
+  el.innerHTML = h + '</div>';
 }
 
 async function loadNetworkAgents() {
