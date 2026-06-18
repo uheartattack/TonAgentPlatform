@@ -248,6 +248,33 @@ export async function listNetworkAgents(opts?: { limit?: number; role?: string; 
   return rows;
 }
 
+// ── Публичная карточка агента (витрина / *.tonagent.ton hire-page, read-only) ──
+export async function getPublicProfile(tapAgentId: number) {
+  const a = (await pool().query(
+    `SELECT a.id, a.name, a.role, COALESCE(ts.score,0) AS trust_score, COALESCE(ts.tier,'unverified') AS tier
+       FROM builder_bot.agents a LEFT JOIN builder_bot.trust_scores ts ON ts.agent_id=a.id WHERE a.id=$1`,
+    [tapAgentId],
+  )).rows[0];
+  if (!a) return { found: false };
+  const onchain = (await pool().query(
+    `SELECT agent_nft, creator, current_owner, transfer_count FROM builder_bot.v3_agents WHERE tap_agent_id=$1 ORDER BY updated_at DESC LIMIT 1`,
+    [tapAgentId],
+  )).rows[0] || null;
+  let rental: any = null;
+  try {
+    const ro = (await pool().query(`SELECT price_day_nano, min_days, note FROM builder_bot.v3_rental_offers WHERE tap_agent_id=$1 AND active=TRUE`, [tapAgentId])).rows[0];
+    if (ro) rental = { price_day_gram: Number(BigInt(ro.price_day_nano)) / 1e9, min_days: ro.min_days, note: ro.note };
+  } catch { /* нет таблицы аренды */ }
+  let reviews = 0, jobs_done = 0;
+  try { reviews = (await pool().query(`SELECT COUNT(*)::int AS n FROM builder_bot.agent_reviews WHERE agent_id=$1`, [tapAgentId])).rows[0]?.n || 0; } catch { /* */ }
+  try { jobs_done = (await pool().query(`SELECT COUNT(*)::int AS n FROM builder_bot.v3_job_specs WHERE executor_agent=$1 AND status=3`, [tapAgentId])).rows[0]?.n || 0; } catch { /* */ }
+  return {
+    found: true, id: a.id, name: a.name, role: a.role || 'worker',
+    trust: Number(a.trust_score) || 0, tier: a.tier || 'unverified',
+    onchain, rental, reviews, jobs_done,
+  };
+}
+
 // ── Поллер цепочки ──────────────────────────────────────────────────────────
 // Обходит коллекцию через get-методы (проверено на testnet: index-collection.js),
 // сверяет on-chain состояние агентов с БД, пишет провенанс + провижнит покупателя.
