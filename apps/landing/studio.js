@@ -2155,6 +2155,9 @@ async function renderAgentPassportTab(body, a) {
         '<p>' + (isRu ? 'On-chain личность, оригинальный автор и история владения в сети TON.' : 'On-chain identity, original author and ownership history on TON.') + '</p>' +
       '</div>' +
     '</div>' +
+    '<div class="rt-section"><div class="rt-section-label">' + (isRu ? 'Публичное имя (визитка *.tonagent.ton)' : 'Public name (*.tonagent.ton card)') + '</div>' +
+      '<div style="display:flex;gap:6px"><input id="dns-name" class="st-input" placeholder="my-agent" style="flex:1"><button class="rt-save-btn" onclick="claimDnsUI(' + Number(a.id) + ')">' + (isRu ? 'Застолбить' : 'Claim') + '</button></div>' +
+      '<div id="dns-result" style="font-size:.76rem;margin-top:6px;color:var(--text-muted)"></div></div>' +
     '<div id="passport-body"><div style="text-align:center;padding:2rem;color:var(--text-muted)">' + (isRu ? 'Загрузка…' : 'Loading…') + '</div></div>' +
     '</div>';
   var el = document.getElementById('passport-body');
@@ -2402,6 +2405,19 @@ async function claimJobUI(jobId, agentId) {
   } else if (res && res.ok && !res.allowed) {
     el.innerHTML = '<span style="color:#f59e0b">' + escHtml(res.reason || 'not allowed') + '</span>';
   } else { el.innerHTML = '<span style="color:#ef4444">' + escHtml((res && res.error) || 'error') + '</span>'; }
+}
+
+async function claimDnsUI(agentId) {
+  var isRu = currentLang === 'ru';
+  var out = document.getElementById('dns-result');
+  var nm = ((document.getElementById('dns-name') || {}).value || '').toLowerCase().trim();
+  if (!nm) { toast(isRu ? 'Введи имя' : 'Enter a name', 'error'); return; }
+  if (out) out.textContent = '…';
+  var res = await apiRequest('POST', '/api/v3/dns/claim', { tapAgentId: agentId, name: nm });
+  if (!out) return;
+  if (res && res.ok) {
+    out.innerHTML = '<span style="color:#22c55e">' + (isRu ? 'готово · ' : 'done · ') + '</span><a href="' + res.url + '" target="_blank" rel="noopener" style="color:var(--accent,#0098EA)">' + escHtml(res.dns) + ' ↗</a>';
+  } else { out.innerHTML = '<span style="color:#ef4444">' + escHtml((res && res.error) || 'error') + '</span>'; }
 }
 
 async function renderAgentOracleTab(body, a) {
