@@ -753,7 +753,6 @@ export function startApiServer() {
   // default origin made CORS-CSRF possible when credentials were sent.
   const ALLOWED_ORIGINS = [
     'https://tonagentplatform.com',
-    'https://tonagentplatform.ru',
     ...(process.env.EXTRA_CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean),
   ];
   app.use((req: Request, res: Response, next: NextFunction) => {
@@ -809,6 +808,46 @@ export function startApiServer() {
       tgAnalyticsToken: process.env.TG_ANALYTICS_TOKEN || null,
       tgAnalyticsAppName: 'ton_agent_platform',
     });
+  });
+
+  // ── GET /api/v3/provenance/:addr — публичный провенанс агента (read-only, v3.0) ──
+  app.get('/api/v3/provenance/:addr', async (req: Request, res: Response) => {
+    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
+    try {
+      const { getAgentProvenance } = require('./services/v3-network');
+      const data = await getAgentProvenance(req.params.addr);
+      res.json({ ok: true, ...data });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message });
+    }
+  });
+
+  // ── GET /api/v3/agents/by-tap/:tapId — паспорт on-chain агента по id платформы (read-only) ──
+  app.get('/api/v3/agents/by-tap/:tapId', async (req: Request, res: Response) => {
+    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
+    try {
+      const tapId = Number(req.params.tapId);
+      if (!Number.isFinite(tapId)) { res.status(400).json({ ok: false, error: 'bad tapId' }); return; }
+      const { getAgentByTapId } = require('./services/v3-network');
+      const data = await getAgentByTapId(tapId);
+      res.json({ ok: true, ...data });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message });
+    }
+  });
+
+  // ── GET /api/v3/agents — реестр агентов сети (read-only витрина) ──
+  app.get('/api/v3/agents', async (req: Request, res: Response) => {
+    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
+    try {
+      let limit = Number(req.query.limit);
+      if (!Number.isFinite(limit) || limit < 1) limit = 100;
+      const { listNetworkAgents } = require('./services/v3-network');
+      const agents = await listNetworkAgents(limit);
+      res.json({ ok: true, agents, collection: process.env.V3_COLLECTION || null });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message });
+    }
   });
 
   // ── GET /tonconnect-manifest.json — самохостируемый манифест TON Connect ──
@@ -6013,6 +6052,32 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
     (req as any).session = session;
     next();
   }
+
+  // ── v3.0 минтер (owner-only). Сид в env V3_MINTER_MNEMONIC, я его не вижу. ──
+  // Деплой/минт запускаются ТОЛЬКО этими явными вызовами, не автоматически.
+  app.get('/api/v3/minter/info', requireOwner, async (_req: Request, res: Response) => {
+    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
+    try {
+      const { getMinterInfo } = require('./services/v3-minter');
+      res.json({ ok: true, ...(await getMinterInfo()) });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
+  });
+  app.post('/api/v3/minter/deploy', requireOwner, async (_req: Request, res: Response) => {
+    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
+    try {
+      const { deployCollection } = require('./services/v3-minter');
+      res.json({ ok: true, ...(await deployCollection()) });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
+  });
+  app.post('/api/v3/minter/mint', requireOwner, async (req: Request, res: Response) => {
+    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
+    try {
+      const { mintAgent } = require('./services/v3-minter');
+      const { owner, tapAgentId, capsHash } = req.body || {};
+      if (!owner) { res.status(400).json({ ok: false, error: 'owner wallet required' }); return; }
+      res.json({ ok: true, ...(await mintAgent(owner, Number(tapAgentId || 1), capsHash)) });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
+  });
 
   // ── GET /api/proposals — список AI proposals ──────────────────────
   app.get('/api/proposals', requireOwner, async (req: Request, res: Response) => {
