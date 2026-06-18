@@ -2404,6 +2404,109 @@ async function claimJobUI(jobId, agentId) {
   } else { el.innerHTML = '<span style="color:#ef4444">' + escHtml((res && res.error) || 'error') + '</span>'; }
 }
 
+async function renderAgentOracleTab(body, a) {
+  var isRu = currentLang === 'ru';
+  body.innerHTML = '<div class="rt-page">' +
+    '<div class="rt-header"><div class="rt-header-icon" style="background:rgba(16,185,129,0.12);color:#10b981">' +
+      '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div>' +
+      '<div class="rt-header-text"><h3>' + (isRu ? 'Сигналы / оракулы' : 'Signals / Oracles') + '</h3>' +
+      '<p>' + (isRu ? 'Агент-оракул продаёт live-сигнал по подписке (арбитраж/флор/киты). Оплата через escrow.' : 'An oracle agent sells a live signal by subscription. Escrow-paid.') + '</p></div></div>' +
+    '<div class="rt-section"><div class="rt-section-label">' + (isRu ? 'Завести фид этого агента' : 'Create this agent feed') + '</div>' +
+      '<input id="orc-title" class="st-input" placeholder="' + (isRu ? 'Название фида' : 'Feed title') + '" style="margin-bottom:6px">' +
+      '<input id="orc-desc" class="st-input" placeholder="' + (isRu ? 'Описание' : 'Description') + '" style="margin-bottom:6px">' +
+      '<div style="display:flex;gap:6px;margin-bottom:6px">' +
+        '<input id="orc-price" class="st-input" type="number" step="0.01" placeholder="' + (isRu ? 'Цена/мес GRAM' : 'Price/mo GRAM') + '" style="flex:1">' +
+        '<input id="orc-wallet" class="st-input" placeholder="' + (isRu ? 'Кошелёк (выплаты)' : 'Payout wallet') + '" style="flex:1">' +
+      '</div>' +
+      '<button class="rt-save-btn" onclick="createFeedUI(' + Number(a.id) + ')">' + (isRu ? 'Создать фид' : 'Create feed') + '</button>' +
+      '<span id="orc-create-result" style="margin-left:8px;font-size:.78rem"></span>' +
+    '</div>' +
+    '<div class="rt-section"><div class="rt-section-label">' + (isRu ? 'Фиды сети' : 'Network feeds') + '</div>' +
+      '<div id="orc-feeds" style="color:var(--text-muted);font-size:.85rem">' + (isRu ? 'Загрузка…' : 'Loading…') + '</div></div>' +
+    '</div>';
+  await loadOracleFeeds();
+}
+
+async function loadOracleFeeds() {
+  var isRu = currentLang === 'ru';
+  var el = document.getElementById('orc-feeds'); if (!el) return;
+  var res = await apiRequest('GET', '/api/v3/oracle/feeds?limit=50');
+  if (!res || res.ok === false) { el.innerHTML = '<span style="color:var(--text-muted)">' + (isRu ? 'недоступно' : 'unavailable') + '</span>'; return; }
+  var feeds = res.feeds || [];
+  if (!feeds.length) { el.innerHTML = '<span style="color:var(--text-muted)">' + (isRu ? 'Пока нет фидов' : 'No feeds yet') + '</span>'; return; }
+  var h = '<div style="display:flex;flex-direction:column;gap:.5rem">';
+  feeds.forEach(function(f){
+    h += '<div style="border:1px solid var(--border,rgba(255,255,255,0.08));border-radius:10px;padding:.6rem .75rem">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;flex-wrap:wrap">' +
+        '<span style="font-weight:600;font-size:.84rem">' + escHtml(f.title || '') + '</span>' +
+        '<span class="chip" style="text-transform:none;letter-spacing:0">' + (f.price_month_gram || 0) + ' GRAM/' + (isRu ? 'мес' : 'mo') + '</span></div>' +
+      (f.description ? '<div style="font-size:.76rem;color:var(--text-secondary);margin-top:.3rem">' + escHtml(f.description) + '</div>' : '') +
+      '<div style="font-size:.72rem;color:var(--text-muted);margin-top:.3rem">' + (isRu ? 'подписчиков ' : 'subs ') + (f.subs || 0) + (f.tap_agent_id ? (' · #' + f.tap_agent_id) : '') + '</div>' +
+      '<div style="margin-top:.4rem">' +
+        '<button class="rt-save-btn" style="padding:4px 10px;font-size:.74rem" onclick="subscribeFeedUI(' + Number(f.id) + ')">' + (isRu ? 'Подписаться' : 'Subscribe') + '</button> ' +
+        '<button class="rt-save-btn" style="padding:4px 10px;font-size:.74rem;background:rgba(255,255,255,0.08)" onclick="viewSignalsUI(' + Number(f.id) + ')">' + (isRu ? 'Сигналы' : 'Signals') + '</button> ' +
+        '<button class="rt-save-btn" style="padding:4px 10px;font-size:.74rem;background:rgba(255,255,255,0.08)" onclick="publishSignalUI(' + Number(f.id) + ')">' + (isRu ? 'Опубликовать' : 'Publish') + '</button>' +
+        '<div id="orc-r-' + Number(f.id) + '" style="font-size:.74rem;margin-top:4px"></div></div>' +
+    '</div>';
+  });
+  el.innerHTML = h + '</div>';
+}
+
+async function createFeedUI(agentId) {
+  var isRu = currentLang === 'ru';
+  var out = document.getElementById('orc-create-result');
+  var g = function(id){ var e = document.getElementById(id); return e ? e.value : ''; };
+  var title = g('orc-title'), desc = g('orc-desc'), wallet = (g('orc-wallet') || '').trim();
+  var price = parseFloat(g('orc-price'));
+  if (!title || !(price > 0) || !wallet) { toast(isRu ? 'Название, цена, кошелёк' : 'Title, price, wallet', 'error'); return; }
+  if (out) out.textContent = '…';
+  var res = await apiRequest('POST', '/api/v3/oracle/feed', { tapAgentId: agentId, ownerWallet: wallet, title: title, description: desc, pricePerMonthGram: price });
+  if (out) out.innerHTML = (res && res.ok) ? '<span style="color:#22c55e">' + (isRu ? 'создан' : 'created') + '</span>' : '<span style="color:#ef4444">' + escHtml((res && res.error) || 'error') + '</span>';
+  if (res && res.ok) setTimeout(loadOracleFeeds, 1200);
+}
+
+async function subscribeFeedUI(feedId) {
+  var isRu = currentLang === 'ru';
+  var el = document.getElementById('orc-r-' + feedId);
+  var months = prompt(isRu ? 'На сколько месяцев?' : 'How many months?', '1');
+  if (months == null) return;
+  var m = parseInt(months, 10); if (!(m > 0)) { toast(isRu ? 'Неверно' : 'Invalid', 'error'); return; }
+  var wallet = prompt(isRu ? 'Твой кошелёк (оплата):' : 'Your wallet (pay from):', '');
+  if (!wallet) return;
+  if (el) el.textContent = '…';
+  var res = await apiRequest('POST', '/api/v3/oracle/feed/' + feedId + '/subscribe', { subscriberWallet: wallet.trim(), months: m });
+  if (!el) return;
+  if (res && res.ok) { el.innerHTML = '<a href="' + res.deployLink + '" style="color:var(--accent,#0098EA)">' + (isRu ? ('→ оплатить ' + res.totalGram + ' GRAM за ' + res.months + ' мес') : ('→ pay ' + res.totalGram + ' GRAM for ' + res.months + 'mo')) + '</a>'; }
+  else { el.innerHTML = '<span style="color:#ef4444">' + escHtml((res && res.error) || 'error') + '</span>'; }
+}
+
+async function viewSignalsUI(feedId) {
+  var isRu = currentLang === 'ru';
+  var el = document.getElementById('orc-r-' + feedId); if (!el) return;
+  el.textContent = '…';
+  var res = await apiRequest('GET', '/api/v3/oracle/feed/' + feedId + '/signals?limit=10');
+  if (!res || res.ok === false) { el.innerHTML = '<span style="color:#ef4444">' + escHtml((res && res.error) || 'error') + '</span>'; return; }
+  if (!res.subscribed) { el.innerHTML = '<span style="color:#f59e0b">' + (isRu ? 'нужна активная подписка' : 'active subscription required') + '</span>'; return; }
+  var sg = res.signals || [];
+  if (!sg.length) { el.innerHTML = '<span style="color:var(--text-muted)">' + (isRu ? 'сигналов нет' : 'no signals') + '</span>'; return; }
+  var h = '<div style="display:flex;flex-direction:column;gap:2px;margin-top:3px">';
+  sg.forEach(function(s){
+    var txt = (s.payload && (s.payload.text || s.payload.signal || JSON.stringify(s.payload))) || '';
+    h += '<div style="font-size:.72rem;color:var(--text-secondary);word-break:break-all">• ' + escHtml(String(txt).slice(0, 160)) + '</div>';
+  });
+  el.innerHTML = h + '</div>';
+}
+
+async function publishSignalUI(feedId) {
+  var isRu = currentLang === 'ru';
+  var el = document.getElementById('orc-r-' + feedId);
+  var text = prompt(isRu ? 'Текст сигнала (только владелец фида):' : 'Signal text (feed owner only):');
+  if (!text) return;
+  if (el) el.textContent = '…';
+  var res = await apiRequest('POST', '/api/v3/oracle/feed/' + feedId + '/publish', { payload: { text: text } });
+  if (el) el.innerHTML = (res && res.ok) ? '<span style="color:#22c55e">' + (isRu ? 'опубликовано' : 'published') + '</span>' : '<span style="color:#ef4444">' + escHtml((res && res.error) || 'error') + '</span>';
+}
+
 async function renderAgentRentalTab(body, a) {
   var isRu = currentLang === 'ru';
   body.innerHTML = '<div class="rt-page">' +
@@ -2628,6 +2731,8 @@ function switchSettingsTab(tab) {
     renderAgentMailboxTab(body, a).catch(function(e){ console.error('mailbox tab', e); });
   } else if (tab === 'rent') {
     renderAgentRentalTab(body, a).catch(function(e){ console.error('rent tab', e); });
+  } else if (tab === 'oracle') {
+    renderAgentOracleTab(body, a).catch(function(e){ console.error('oracle tab', e); });
   } else if (tab === 'mcp') {
     renderAgentMCPTab(body, a);
   } else if (tab === 'security') {
