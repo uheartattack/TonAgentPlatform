@@ -980,6 +980,51 @@ export function startApiServer() {
     } catch (e: any) { res.status(400).json({ ok: false, error: e?.message }); }
   });
 
+  // ── v3.0 Фаза 1: аренда агентов ──
+  const v3Sess = (req: Request, res: Response): any => {
+    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return null; }
+    const token = (req.headers['x-auth-token'] as string) || (req.query.token as string);
+    const session = token ? getSession(token) : null;
+    if (!session) { res.status(401).json({ ok: false, error: 'No token' }); return null; }
+    return session;
+  };
+  app.post('/api/v3/rentals/offer', async (req: Request, res: Response) => {
+    const session = v3Sess(req, res); if (!session) return;
+    try {
+      const r = require('./services/v3-rental'); const m = require('./services/v3-mailbox');
+      const b = req.body || {};
+      if (!b.tapAgentId || !b.ownerWallet || !b.pricePerDayGram) { res.status(400).json({ ok: false, error: 'tapAgentId, ownerWallet, pricePerDayGram required' }); return; }
+      if (!(await m.agentOwnedBy(Number(b.tapAgentId), (session as any).userId))) { res.status(403).json({ ok: false, error: 'not your agent' }); return; }
+      res.json(await r.offerRental({ ownerUser: (session as any).userId, tapAgentId: Number(b.tapAgentId), agentNft: b.agentNft, ownerWallet: b.ownerWallet, pricePerDayGram: Number(b.pricePerDayGram), minDays: b.minDays ? Number(b.minDays) : undefined, note: b.note }));
+    } catch (e: any) { res.status(400).json({ ok: false, error: e?.message }); }
+  });
+  app.post('/api/v3/rentals/offer/cancel', async (req: Request, res: Response) => {
+    const session = v3Sess(req, res); if (!session) return;
+    try {
+      const b = req.body || {}; if (!b.tapAgentId) { res.status(400).json({ ok: false, error: 'tapAgentId required' }); return; }
+      res.json(await require('./services/v3-rental').cancelOffer((session as any).userId, Number(b.tapAgentId)));
+    } catch (e: any) { res.status(400).json({ ok: false, error: e?.message }); }
+  });
+  app.get('/api/v3/rentals/offers', async (req: Request, res: Response) => {
+    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
+    try { res.json({ ok: true, offers: await require('./services/v3-rental').listOffers(Number(req.query.limit) || 50) }); }
+    catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
+  });
+  app.post('/api/v3/rentals/rent', async (req: Request, res: Response) => {
+    const session = v3Sess(req, res); if (!session) return;
+    try {
+      const b = req.body || {}; if (!b.offerId || !b.renterWallet) { res.status(400).json({ ok: false, error: 'offerId, renterWallet required' }); return; }
+      res.json(await require('./services/v3-rental').rentAgent({ offerId: b.offerId, renterUser: (session as any).userId, renterWallet: b.renterWallet, days: Number(b.days) || 1 }));
+    } catch (e: any) { res.status(400).json({ ok: false, error: e?.message }); }
+  });
+  app.get('/api/v3/rentals', async (req: Request, res: Response) => {
+    const session = v3Sess(req, res); if (!session) return;
+    try {
+      const filt = req.query.as === 'owner' ? { ownerUser: (session as any).userId } : { renterUser: (session as any).userId };
+      res.json({ ok: true, rentals: await require('./services/v3-rental').listRentals(filt) });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
+  });
+
   // ── GET /tonconnect-manifest.json — самохостируемый манифест TON Connect ──
   app.get('/tonconnect-manifest.json', (_req: Request, res: Response) => {
     res.json({
