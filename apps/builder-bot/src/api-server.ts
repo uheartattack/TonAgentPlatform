@@ -850,6 +850,63 @@ export function startApiServer() {
     }
   });
 
+  // ── v3.0 Фаза 0: cross-owner доска задач (флаг V3_JOBS_ENABLED). Бот деньги не двигает. ──
+  const v3JobsOff = (res: Response): boolean => {
+    if (process.env.V3_JOBS_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'jobs disabled' }); return true; }
+    return false;
+  };
+  // публичный список задач доски
+  app.get('/api/v3/jobs', async (req: Request, res: Response) => {
+    if (v3JobsOff(res)) return;
+    try {
+      const { listJobs } = require('./services/v3-jobs');
+      const status = req.query.status != null ? Number(req.query.status) : undefined;
+      res.json({ ok: true, jobs: await listJobs({ status, limit: Number(req.query.limit) || 50 }) });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
+  });
+  // создать задачу (нужна сессия) → ссылка на деплой+фандинг escrow (подписывает заказчик)
+  app.post('/api/v3/jobs', async (req: Request, res: Response) => {
+    if (v3JobsOff(res)) return;
+    const token = (req.headers['x-auth-token'] as string) || (req.query.token as string);
+    const session = token ? getSession(token) : null;
+    if (!session) { res.status(401).json({ ok: false, error: 'No token' }); return; }
+    try {
+      const { createJob } = require('./services/v3-jobs');
+      const b = req.body || {};
+      if (!b.posterWallet || !b.title || !b.bountyGram || !b.deadlineUnix) {
+        res.status(400).json({ ok: false, error: 'posterWallet, title, bountyGram, deadlineUnix required' }); return;
+      }
+      res.json(await createJob({
+        posterUser: (session as any).userId, posterAgent: b.posterAgent ?? null, posterWallet: b.posterWallet,
+        title: b.title, description: b.description, category: b.category,
+        bountyGram: Number(b.bountyGram), deadlineUnix: Number(b.deadlineUnix),
+        acceptWindowSec: b.acceptWindowSec ? Number(b.acceptWindowSec) : undefined,
+      }));
+    } catch (e: any) { res.status(400).json({ ok: false, error: e?.message }); }
+  });
+  // клейм задачи агентом-исполнителем (гейтинг по trust-tier) → ссылка на claim-op
+  app.post('/api/v3/jobs/:id/claim', async (req: Request, res: Response) => {
+    if (v3JobsOff(res)) return;
+    const token = (req.headers['x-auth-token'] as string) || (req.query.token as string);
+    const session = token ? getSession(token) : null;
+    if (!session) { res.status(401).json({ ok: false, error: 'No token' }); return; }
+    try {
+      const { claimJob } = require('./services/v3-jobs');
+      if (!req.body || !req.body.executorAgentId) { res.status(400).json({ ok: false, error: 'executorAgentId required' }); return; }
+      res.json(await claimJob(req.params.id, Number(req.body.executorAgentId)));
+    } catch (e: any) { res.status(400).json({ ok: false, error: e?.message }); }
+  });
+  // ссылка на op сделки (deliver/accept/refund/reject/autorelease) для escrow
+  app.get('/api/v3/jobs/:addr/op/:op', async (req: Request, res: Response) => {
+    if (v3JobsOff(res)) return;
+    try {
+      const { jobOpLink } = require('./services/v3-jobs');
+      const op = req.params.op;
+      if (['deliver', 'accept', 'refund', 'reject', 'autorelease'].indexOf(op) < 0) { res.status(400).json({ ok: false, error: 'bad op' }); return; }
+      res.json({ ok: true, link: jobOpLink(req.params.addr, op as any) });
+    } catch (e: any) { res.status(400).json({ ok: false, error: e?.message }); }
+  });
+
   // ── GET /tonconnect-manifest.json — самохостируемый манифест TON Connect ──
   app.get('/tonconnect-manifest.json', (_req: Request, res: Response) => {
     res.json({
