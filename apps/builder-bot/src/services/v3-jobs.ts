@@ -127,37 +127,50 @@ export async function createJob(args: {
   return { ok: true, jobId: String(r.rows[0].id), escrowAddr, deployLink, feeBps: FEE_BPS };
 }
 
-export async function listJobs(opts?: { status?: number; limit?: number }): Promise<any[]> {
+export async function listJobs(opts?: { status?: number; limit?: number; category?: string }): Promise<any[]> {
   const limit = Math.min(Math.max(1, opts?.limit || 50), 200);
-  const params: any[] = [limit];
-  let where = '';
-  if (opts && Number.isFinite(opts.status as number)) { where = 'WHERE status=$2'; params.push(opts.status); }
+  const conds: string[] = []; const params: any[] = [];
+  if (opts && Number.isFinite(opts.status as number)) { params.push(opts.status); conds.push(`status=$${params.length}`); }
+  if (opts && opts.category) { params.push(opts.category); conds.push(`category=$${params.length}`); }
+  params.push(limit);
+  const where = conds.length ? 'WHERE ' + conds.join(' AND ') : '';
   const r = await pool().query(
     `SELECT id, poster_agent, title, description, category, bounty_nano, deadline, accept_window,
             escrow_addr, executor_agent, status, created_at
-       FROM builder_bot.v3_job_specs ${where} ORDER BY created_at DESC LIMIT $1`,
+       FROM builder_bot.v3_job_specs ${where} ORDER BY created_at DESC LIMIT $${params.length}`,
     params,
   );
   return r.rows.map((x) => ({ ...x, bounty_gram: Number(BigInt(x.bounty_nano)) / 1e9 }));
 }
 
 // ── Клейм-гейтинг по trust-tier + ссылка на claim-op для подписи исполнителем ──
-export async function claimJob(jobId: string, executorAgentId: number, executorWallet?: string): Promise<{ ok: boolean; allowed: boolean; reason?: string; tier?: string; claimLink?: string }> {
+export async function claimJob(jobId: string, executorAgentId: number, executorWallet?: string): Promise<any> {
   const j = (await pool().query(`SELECT * FROM builder_bot.v3_job_specs WHERE id=$1`, [jobId])).rows[0];
   if (!j) return { ok: false, allowed: false, reason: 'job not found' };
   if (j.status !== ESCROW_STATUS.FUNDED) return { ok: false, allowed: false, reason: 'job not open (status ' + j.status + ')' };
 
-  let tier = 'unverified';
+  // 1) репутация исполнителя
+  let tier = 'unverified', trust = 0;
   try {
     const { getTrustScore } = require('./agent-reputation');
     const ts = await getTrustScore(executorAgentId);
-    if (ts && ts.tier) tier = ts.tier;
+    if (ts) { tier = ts.tier || 'unverified'; trust = ts.score || 0; }
   } catch (e: any) { console.warn('[V3Jobs] trust lookup failed:', e?.message); }
 
+  // 2) роль исполнителя → вес роли × аффинити к категории задачи модулируют допуск баунти
+  let role = 'worker';
+  try { const ar = await pool().query(`SELECT role FROM builder_bot.agents WHERE id=$1`, [executorAgentId]); if (ar.rows[0]) role = ar.rows[0].role || 'worker'; } catch { /* нет агента */ }
+  const { roleWeight, roleFit, effectiveScore } = require('./v3-roles');
+  const w = roleWeight(role); const fit = roleFit(role, j.category);
+  const effective = effectiveScore(trust, role, j.category);
+
   const bountyGram = Number(BigInt(j.bounty_nano)) / 1e9;
-  const limit = TIER_BOUNTY_LIMIT_GRAM[tier] ?? 0;
+  const base = TIER_BOUNTY_LIMIT_GRAM[tier] ?? 0;
+  const limit = base >= Number.MAX_SAFE_INTEGER ? base : Math.round(base * w * (0.5 + 0.5 * fit) * 100) / 100;
+  const meta = { tier, role, trust, roleWeight: w, roleFit: Number(fit.toFixed(2)), effective, limit, bountyGram, category: j.category || null };
   if (bountyGram > limit) {
-    return { ok: true, allowed: false, tier, reason: `tier ${tier} лимит баунти ${limit} GRAM, задача ${bountyGram} GRAM` };
+    return { ok: true, allowed: false, ...meta,
+      reason: `тир ${tier}/${role}: допуск ${limit} GRAM (база ${base}×вес ${w}×фит ${fit.toFixed(2)}), задача ${bountyGram} GRAM` };
   }
 
   await pool().query(
@@ -169,7 +182,7 @@ export async function claimJob(jobId: string, executorAgentId: number, executorW
     Address.parse(j.escrow_addr).toString({ bounceable: true, testOnly: TESTNET }),
     toNano('0.05'), undefined, opBody(ESCROW_OPS.claim),
   );
-  return { ok: true, allowed: true, tier, claimLink };
+  return { ok: true, allowed: true, ...meta, claimLink };
 }
 
 // ── Ссылка на op (deliver/accept/refund/reject) для подписи стороной сделки ──

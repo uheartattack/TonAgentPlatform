@@ -843,7 +843,7 @@ export function startApiServer() {
       let limit = Number(req.query.limit);
       if (!Number.isFinite(limit) || limit < 1) limit = 100;
       const { listNetworkAgents } = require('./services/v3-network');
-      const agents = await listNetworkAgents(limit);
+      const agents = await listNetworkAgents({ limit, role: req.query.role as string, minTier: req.query.minTier as string, category: req.query.category as string });
       res.json({ ok: true, agents, collection: process.env.V3_COLLECTION || null });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e?.message });
@@ -861,7 +861,7 @@ export function startApiServer() {
     try {
       const { listJobs } = require('./services/v3-jobs');
       const status = req.query.status != null ? Number(req.query.status) : undefined;
-      res.json({ ok: true, jobs: await listJobs({ status, limit: Number(req.query.limit) || 50 }) });
+      res.json({ ok: true, jobs: await listJobs({ status, category: req.query.category as string, limit: Number(req.query.limit) || 50 }) });
     } catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
   });
   // создать задачу (нужна сессия) → ссылка на деплой+фандинг escrow (подписывает заказчик)

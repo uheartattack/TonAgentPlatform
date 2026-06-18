@@ -220,14 +220,32 @@ export async function getAgentByTapId(tapId: number) {
   return { onchain: true, agent: a.rows[0], history: hist.rows };
 }
 
-/** Список агентов сети (cross-owner реестр) для витрины Studio. */
-export async function listNetworkAgents(limit = 100) {
+/** Реестр агентов сети для витрины Studio — с ролью + репутацией + фильтрами + ранжированием.
+ *  Джойнит agents.role и trust_scores; фильтры role/minTier; при category — ранг по effectiveScore. */
+export async function listNetworkAgents(opts?: { limit?: number; role?: string; minTier?: string; category?: string } | number) {
+  const o = typeof opts === 'number' ? { limit: opts } : (opts || {});
+  const limit = Math.min(Math.max(1, (o as any).limit || 100), 500);
   const r = await pool().query(
-    `SELECT agent_nft, collection, tap_agent_id, creator, current_owner, transfer_count, updated_at
-       FROM builder_bot.v3_agents ORDER BY updated_at DESC LIMIT $1`,
-    [Math.min(Math.max(1, limit), 500)],
+    `SELECT v.agent_nft, v.collection, v.tap_agent_id, v.creator, v.current_owner, v.transfer_count, v.updated_at,
+            a.role AS role, COALESCE(ts.score,0) AS trust_score, COALESCE(ts.tier,'unverified') AS tier
+       FROM builder_bot.v3_agents v
+       LEFT JOIN builder_bot.agents a ON a.id = v.tap_agent_id
+       LEFT JOIN builder_bot.trust_scores ts ON ts.agent_id = v.tap_agent_id
+       ORDER BY v.updated_at DESC LIMIT $1`,
+    [limit],
   );
-  return r.rows;
+  const roles = require('./v3-roles');
+  let rows = r.rows.map((x: any) => ({
+    ...x, role: x.role || 'worker', trust: Number(x.trust_score) || 0, tier: x.tier || 'unverified',
+  }));
+  if ((o as any).role) rows = rows.filter((x: any) => roles.normalizeRole(x.role) === roles.normalizeRole((o as any).role));
+  if ((o as any).minTier) rows = rows.filter((x: any) => roles.tierAtLeast(x.tier, (o as any).minTier));
+  const cat = (o as any).category;
+  rows = rows.map((x: any) => ({
+    ...x, weight: roles.roleWeight(x.role), fit: roles.roleFit(x.role, cat), effective: roles.effectiveScore(x.trust, x.role, cat),
+  }));
+  if (cat) rows.sort((p: any, q: any) => q.effective - p.effective);
+  return rows;
 }
 
 // ── Поллер цепочки ──────────────────────────────────────────────────────────
