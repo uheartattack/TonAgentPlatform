@@ -146,6 +146,99 @@ async function main() {
     console.error('[AgenticWallet] Init error:', e.message, e.stack?.slice(0, 300));
   }
 
+  // v3.0 Autonomous Network indexer — ОПЦИОНАЛЬНО (флаг V3_NETWORK_ENABLED=1).
+  // Аддитивно: читает testnet-провенанс в новые v3-таблицы. Существующие флоу не трогает,
+  // require внутри try → даже сломанный модуль не уронит бот.
+  if (process.env.V3_NETWORK_ENABLED === '1') {
+    try {
+      // Минтер (hot-кошелёк из env-сида V3_MINTER_MNEMONIC). Без сида — инертно (indexer-only).
+      // Деплой/минт — только по owner-gated вызову, не автоматически.
+      let v3Collection = process.env.V3_COLLECTION || '0QD8QO307oBYFUxtmCRkDz9OfjhuS1bU6bWgZxuJqcgDEYt9';
+      try {
+        const { initMinter } = require('./services/v3-minter');
+        const m = await initMinter();
+        if (m.ready) { v3Collection = m.collection; console.log('🪙 V3 Minter ready:', m.minter, '| collection', m.collection); }
+        else { console.log('🪙 V3 Minter not configured (set V3_MINTER_MNEMONIC for minting)'); }
+      } catch (e: any) { console.error('[V3Minter] init error:', e?.message); }
+
+      const { initV3Network, pollChainOnce } = require('./services/v3-network');
+      await initV3Network(
+        pool,
+        {
+          // Кошелёк → tap user_id. Источник: agentic_wallets (есть address→user_id).
+          // Матчим адрес во всех friendly/raw формах (bounceable/testnet варианты).
+          resolveUserByWallet: async (walletAddress: string): Promise<number | null> => {
+            try {
+              const { Address } = require('@ton/core');
+              let forms: string[] = [walletAddress];
+              try {
+                const a = Address.parse(walletAddress);
+                forms = [
+                  a.toString({ bounceable: false, testOnly: false }),
+                  a.toString({ bounceable: true, testOnly: false }),
+                  a.toString({ bounceable: false, testOnly: true }),
+                  a.toString({ bounceable: true, testOnly: true }),
+                  a.toRawString(),
+                  walletAddress,
+                ];
+              } catch { /* не парсится — ищем как есть */ }
+              const uniq = Array.from(new Set(forms));
+              const r = await pool.query(
+                `SELECT user_id FROM builder_bot.agentic_wallets
+                   WHERE address = ANY($1::text[]) AND is_blocked = false
+                   ORDER BY (wallet_type='root') DESC LIMIT 1`,
+                [uniq],
+              );
+              // ВАЖНО: возвращаем user_id СТРОКОЙ (pg отдаёт BIGINT строкой). НЕ Number() —
+              // 19-значные Telegram OIDC sub id теряют точность в JS Number. Строка → BIGINT-параметр хранится точно.
+              return r.rows.length ? r.rows[0].user_id : null;
+            } catch (e: any) {
+              console.warn('[V3Network] resolveUserByWallet error:', e?.message);
+              return null;
+            }
+          },
+          // Привязка проданного/сминченного агента к новому владельцу в реестре.
+          // Деструктивный скраб личных секретов — ТОЛЬКО при V3_AUTO_SCRUB=1 (по умолчанию выкл),
+          // и только ключи с явно секретными именами; навыки/память/репутацию не трогаем.
+          provisionAgentToOwner: async (nft: string, tapId: number | null, uid: number): Promise<void> => {
+            try {
+              await pool.query(
+                `UPDATE builder_bot.v3_agents SET bound_user_id=$2, updated_at=NOW() WHERE agent_nft=$1`,
+                [nft, uid],
+              );
+              console.log(`[V3Network] provision: NFT ${nft} → user ${uid} (tapAgentId=${tapId ?? '—'})`);
+              if (process.env.V3_AUTO_SCRUB === '1' && tapId != null) {
+                const del = await pool.query(
+                  `DELETE FROM builder_bot.agent_state
+                     WHERE agent_id=$1 AND (key ILIKE '%secret%' OR key ILIKE '%api_key%' OR key ILIKE '%apikey%'
+                        OR key ILIKE '%mnemonic%' OR key ILIKE '%private%' OR key ILIKE '%token%' OR key ILIKE '%password%')`,
+                  [tapId],
+                );
+                console.log(`[V3Network] provision scrub: removed ${del.rowCount} secret state keys for agent ${tapId}`);
+              }
+            } catch (e: any) {
+              console.warn('[V3Network] provisionAgentToOwner error:', e?.message);
+            }
+          },
+          slashReputation: async () => {},
+        },
+        {
+          endpoint: process.env.V3_TON_ENDPOINT || 'https://testnet.toncenter.com/api/v2/jsonRPC',
+          collectionAddress: v3Collection,
+        },
+      );
+      const _v3 = setInterval(() => {
+        pollChainOnce()
+          .then((r: any) => { if (r && (r.mints || r.sales)) console.log('[V3Network] poll', r); })
+          .catch((e: any) => console.warn('[V3Network] poll error:', e?.message));
+      }, 60_000);
+      (_v3 as any).unref?.();
+      console.log('🌐 V3 Network indexer started');
+    } catch (e: any) {
+      console.error('[V3Network] init error:', e?.message);
+    }
+  }
+
   // Запуск TokenTracker auto-flush (каждые 5 мин → DB)
   try {
     const { startAutoFlush, loadBudgetsFromDB } = require('./services/token-tracker');
