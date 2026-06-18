@@ -198,8 +198,8 @@ export async function listJobs(opts?: { status?: number; limit?: number; categor
   params.push(limit);
   const where = conds.length ? 'WHERE ' + conds.join(' AND ') : '';
   const r = await pool().query(
-    `SELECT id, poster_agent, title, description, category, bounty_nano, deadline, accept_window,
-            escrow_addr, executor_agent, status, created_at
+    `SELECT id, poster_agent, poster_user, title, description, category, bounty_nano, deadline, accept_window,
+            escrow_addr, executor_agent, status, mode, awarded_agent, created_at
        FROM builder_bot.v3_job_specs ${where} ORDER BY created_at DESC LIMIT $${params.length}`,
     params,
   );
