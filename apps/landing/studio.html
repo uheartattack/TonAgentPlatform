@@ -12,8 +12,8 @@
   <link rel="icon" type="image/svg+xml" href="logo.svg">
   <link rel="shortcut icon" href="logo.svg">
   <title>TON Agent Studio</title>
-  <link rel="preload" href="/studio.js?v=20260527v1" as="script">
-  <link rel="preload" href="/studio.css?v=20260527f1" as="style">
+  <link rel="preload" href="/studio.js?v=20260527x1" as="script">
+  <link rel="preload" href="/studio.css?v=20260527f2" as="style">
   <link rel="preload" href="/design-system.css?v=20260520z" as="style">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -63,7 +63,7 @@
       } catch(_e) {}
     })();
   </script>
-  <link rel="stylesheet" href="studio.css?v=20260527f1">
+  <link rel="stylesheet" href="studio.css?v=20260527f2">
   <!-- Claude Design tokens + 6 gradient presets + visual primitives -->
   <link rel="stylesheet" href="design-tokens.css?v=20260527ok1">
   <link rel="stylesheet" href="design-themes.css?v=20260527ok1">
@@ -80,7 +80,7 @@
   <link rel="stylesheet" href="tap-motion.css?v=20260527a6">
   <!-- Edge fix — drops the white border + asymmetric top-only inset highlight
        that was rendering as a visible "frame" around active gradient pills. -->
-  <link rel="stylesheet" href="gradient-edge-fix.css?v=20260527e31">
+  <link rel="stylesheet" href="gradient-edge-fix.css?v=20260527e32">
   <!-- Telegram WebApp SDK — gives us window.Telegram.WebApp with theme,
        BackButton, MainButton, HapticFeedback, initData, viewportHeight.
        Loaded synchronously so Studio code can detect Mini App context on
@@ -3103,6 +3103,11 @@
             <button class="st-nav-item" onclick="switchSettingsTab('audit')" data-tab="audit"><div class="st-nav-icon" style="background:rgba(100,116,139,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div><span data-en="Audit" data-ru="Аудит">Audit</span></button>
             <button class="st-nav-item" onclick="switchSettingsTab('advanced')" data-tab="advanced"><div class="st-nav-icon" style="background:rgba(100,116,139,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></div><span data-en="Advanced" data-ru="Дополнительно">Advanced</span></button>
           </div>
+          <div class="st-nav-group"><div class="st-nav-label" data-en="On-chain" data-ru="Сеть">On-chain</div>
+            <button class="st-nav-item" onclick="switchSettingsTab('passport')" data-tab="passport"><div class="st-nav-icon" style="background:rgba(0,152,234,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0098EA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></div><span data-en="Passport" data-ru="Паспорт">Passport</span></button>
+            <button class="st-nav-item" onclick="switchSettingsTab('network')" data-tab="network"><div class="st-nav-icon" style="background:rgba(168,85,247,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></div><span data-en="Network" data-ru="Сеть">Network</span></button>
+            <button class="st-nav-item" onclick="switchSettingsTab('jobs')" data-tab="jobs"><div class="st-nav-icon" style="background:rgba(34,197,94,0.12)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg></div><span data-en="Jobs" data-ru="Задачи">Jobs</span></button>
+          </div>
         </nav>
         <div class="agent-settings-body" id="agent-settings-body">
           <!-- Filled by JS -->
@@ -3186,6 +3191,6 @@
   </div>
 
   <script src="https://unpkg.com/@tonconnect/ui@2/dist/tonconnect-ui.min.js"></script>
-  <script src="studio.js?v=20260527v1"></script>
+  <script src="studio.js?v=20260527x1"></script>
 </body>
 </html>
