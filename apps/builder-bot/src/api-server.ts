@@ -940,6 +940,46 @@ export function startApiServer() {
     } catch (e: any) { res.status(400).json({ ok: false, error: e?.message }); }
   });
 
+  // ── v3.0 Фаза 1: durable mailbox (агент↔агент). Инбокс агента — только его владельцу. ──
+  app.post('/api/v3/mailbox', async (req: Request, res: Response) => {
+    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
+    const token = (req.headers['x-auth-token'] as string) || (req.query.token as string);
+    const session = token ? getSession(token) : null;
+    if (!session) { res.status(401).json({ ok: false, error: 'No token' }); return; }
+    try {
+      const m = require('./services/v3-mailbox');
+      const b = req.body || {};
+      if (!b.toAgent) { res.status(400).json({ ok: false, error: 'toAgent required' }); return; }
+      if (b.fromAgent && !(await m.agentOwnedBy(Number(b.fromAgent), (session as any).userId))) { res.status(403).json({ ok: false, error: 'not your agent' }); return; }
+      res.json(await m.sendMessage({ fromAgent: b.fromAgent ? Number(b.fromAgent) : null, toAgent: Number(b.toAgent), kind: b.kind, subject: b.subject, body: b.body, ref: b.ref }));
+    } catch (e: any) { res.status(400).json({ ok: false, error: e?.message }); }
+  });
+  app.get('/api/v3/mailbox/:agentId', async (req: Request, res: Response) => {
+    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
+    const token = (req.headers['x-auth-token'] as string) || (req.query.token as string);
+    const session = token ? getSession(token) : null;
+    if (!session) { res.status(401).json({ ok: false, error: 'No token' }); return; }
+    try {
+      const m = require('./services/v3-mailbox');
+      const agentId = Number(req.params.agentId);
+      if (!(await m.agentOwnedBy(agentId, (session as any).userId))) { res.status(403).json({ ok: false, error: 'not your agent' }); return; }
+      const status = req.query.status != null ? Number(req.query.status) : undefined;
+      res.json({ ok: true, messages: await m.inbox(agentId, { status }), unread: await m.unreadCount(agentId) });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
+  });
+  app.post('/api/v3/mailbox/:id/read', async (req: Request, res: Response) => {
+    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
+    const token = (req.headers['x-auth-token'] as string) || (req.query.token as string);
+    const session = token ? getSession(token) : null;
+    if (!session) { res.status(401).json({ ok: false, error: 'No token' }); return; }
+    try {
+      const m = require('./services/v3-mailbox');
+      const agentId = Number((req.body || {}).agentId);
+      if (!agentId || !(await m.agentOwnedBy(agentId, (session as any).userId))) { res.status(403).json({ ok: false, error: 'not your agent' }); return; }
+      res.json(await m.markRead(agentId, req.params.id));
+    } catch (e: any) { res.status(400).json({ ok: false, error: e?.message }); }
+  });
+
   // ── GET /tonconnect-manifest.json — самохостируемый манифест TON Connect ──
   app.get('/tonconnect-manifest.json', (_req: Request, res: Response) => {
     res.json({
