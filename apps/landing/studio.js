@@ -2365,6 +2365,75 @@ async function claimJobUI(jobId, agentId) {
   } else { el.innerHTML = '<span style="color:#ef4444">' + escHtml((res && res.error) || 'error') + '</span>'; }
 }
 
+async function renderAgentRentalTab(body, a) {
+  var isRu = currentLang === 'ru';
+  body.innerHTML = '<div class="rt-page">' +
+    '<div class="rt-header"><div class="rt-header-icon" style="background:rgba(245,158,11,0.12);color:#f59e0b">' +
+      '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>' +
+      '<div class="rt-header-text"><h3>' + (isRu ? 'Аренда агентов' : 'Agent Rental') + '</h3>' +
+      '<p>' + (isRu ? 'Сдай этого агента в аренду по цене/день или возьми чужого. Оплата через escrow, релиз владельцу по окончании срока.' : 'Rent this agent out per day, or rent someone else. Escrow-paid, released to owner at term end.') + '</p></div></div>' +
+    '<div class="rt-section"><div class="rt-section-label">' + (isRu ? 'Сдать этого агента' : 'List this agent') + '</div>' +
+      '<div style="display:flex;gap:6px;margin-bottom:6px">' +
+        '<input id="rent-price" class="st-input" type="number" step="0.01" placeholder="' + (isRu ? 'Цена/день GRAM' : 'Price/day GRAM') + '" style="flex:1">' +
+        '<input id="rent-min" class="st-input" type="number" value="1" title="' + (isRu ? 'мин. дней' : 'min days') + '" style="width:90px">' +
+      '</div>' +
+      '<input id="rent-owner-wallet" class="st-input" placeholder="' + (isRu ? 'Твой кошелёк (куда платят)' : 'Your wallet (gets paid)') + '" style="margin-bottom:6px">' +
+      '<button class="rt-save-btn" onclick="offerRentalUI(' + Number(a.id) + ')">' + (isRu ? 'Выставить в аренду' : 'List for rent') + '</button>' +
+      '<span id="rent-offer-result" style="margin-left:8px;font-size:.78rem"></span>' +
+    '</div>' +
+    '<div class="rt-section"><div class="rt-section-label">' + (isRu ? 'Доступны в аренду' : 'Available to rent') + '</div>' +
+      '<div id="rent-offers" style="color:var(--text-muted);font-size:.85rem">' + (isRu ? 'Загрузка…' : 'Loading…') + '</div></div>' +
+    '</div>';
+  await loadRentalOffers();
+}
+
+async function loadRentalOffers() {
+  var isRu = currentLang === 'ru';
+  var el = document.getElementById('rent-offers'); if (!el) return;
+  var res = await apiRequest('GET', '/api/v3/rentals/offers?limit=50');
+  if (!res || res.ok === false) { el.innerHTML = '<span style="color:var(--text-muted)">' + (isRu ? 'недоступно' : 'unavailable') + '</span>'; return; }
+  var offers = res.offers || [];
+  if (!offers.length) { el.innerHTML = '<span style="color:var(--text-muted)">' + (isRu ? 'Пока никто не сдаёт' : 'No agents listed yet') + '</span>'; return; }
+  var h = '<div style="display:flex;flex-direction:column;gap:.5rem">';
+  offers.forEach(function(o){
+    h += '<div style="border:1px solid var(--border,rgba(255,255,255,0.08));border-radius:10px;padding:.6rem .75rem">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;flex-wrap:wrap">' +
+        '<span style="font-weight:600;font-size:.84rem">#' + o.tap_agent_id + ' ' + escHtml(o.name || '') + '</span>' +
+        '<span class="chip" style="text-transform:none;letter-spacing:0">' + (o.price_day_gram || 0) + ' GRAM/' + (isRu ? 'день' : 'day') + '</span></div>' +
+      '<div style="font-size:.74rem;color:var(--text-secondary);margin-top:.3rem">' + escHtml(o.role || 'worker') + ' · ' + escHtml(o.tier || 'unverified') + ' · ' + (isRu ? 'от ' : 'min ') + (o.min_days || 1) + (isRu ? ' дн.' : 'd') + (o.note ? ' · ' + escHtml(o.note) : '') + '</div>' +
+      '<div style="margin-top:.4rem"><button class="rt-save-btn" style="padding:4px 10px;font-size:.74rem" onclick="rentAgentUI(' + Number(o.id) + ',' + (o.price_day_gram || 0) + ',' + (o.min_days || 1) + ')">' + (isRu ? 'Арендовать' : 'Rent') + '</button> <span id="rent-result-' + Number(o.id) + '" style="font-size:.74rem;margin-left:6px"></span></div>' +
+    '</div>';
+  });
+  el.innerHTML = h + '</div>';
+}
+
+async function offerRentalUI(agentId) {
+  var isRu = currentLang === 'ru';
+  var out = document.getElementById('rent-offer-result');
+  var g = function(id){ var e = document.getElementById(id); return e ? e.value : ''; };
+  var price = parseFloat(g('rent-price')); var min = parseInt(g('rent-min'), 10) || 1; var wallet = (g('rent-owner-wallet') || '').trim();
+  if (!(price > 0) || !wallet) { toast(isRu ? 'Цена/день и кошелёк' : 'Price/day and wallet', 'error'); return; }
+  if (out) out.textContent = '…';
+  var res = await apiRequest('POST', '/api/v3/rentals/offer', { tapAgentId: agentId, ownerWallet: wallet, pricePerDayGram: price, minDays: min });
+  if (out) out.innerHTML = (res && res.ok) ? '<span style="color:#22c55e">' + (isRu ? 'выставлено' : 'listed') + '</span>' : '<span style="color:#ef4444">' + escHtml((res && res.error) || 'error') + '</span>';
+  if (res && res.ok) setTimeout(loadRentalOffers, 1200);
+}
+
+async function rentAgentUI(offerId, pricePerDay, minDays) {
+  var isRu = currentLang === 'ru';
+  var el = document.getElementById('rent-result-' + offerId); if (el) el.textContent = '…';
+  var days = prompt((isRu ? 'На сколько дней (мин ' : 'How many days (min ') + minDays + ')?', String(minDays));
+  if (days == null) { if (el) el.textContent = ''; return; }
+  var d = parseInt(days, 10); if (!(d >= minDays)) { toast(isRu ? 'Минимум ' + minDays + ' дн.' : 'Min ' + minDays + ' days', 'error'); return; }
+  var wallet = prompt(isRu ? 'Твой кошелёк (откуда оплата):' : 'Your wallet (funds from):', '');
+  if (!wallet) { if (el) el.textContent = ''; return; }
+  var res = await apiRequest('POST', '/api/v3/rentals/rent', { offerId: offerId, renterWallet: wallet.trim(), days: d });
+  if (!el) return;
+  if (res && res.ok) {
+    el.innerHTML = '<a href="' + res.deployLink + '" style="color:var(--accent,#0098EA)">' + (isRu ? ('→ оплатить ' + res.totalGram + ' GRAM за ' + res.days + ' дн.') : ('→ pay ' + res.totalGram + ' GRAM for ' + res.days + 'd')) + '</a>';
+  } else { el.innerHTML = '<span style="color:#ef4444">' + escHtml((res && res.error) || 'error') + '</span>'; }
+}
+
 async function renderAgentMailboxTab(body, a) {
   var isRu = currentLang === 'ru';
   body.innerHTML = '<div class="rt-page">' +
@@ -2518,6 +2587,8 @@ function switchSettingsTab(tab) {
     renderAgentJobsTab(body, a).catch(function(e){ console.error('jobs tab', e); });
   } else if (tab === 'mailbox') {
     renderAgentMailboxTab(body, a).catch(function(e){ console.error('mailbox tab', e); });
+  } else if (tab === 'rent') {
+    renderAgentRentalTab(body, a).catch(function(e){ console.error('rent tab', e); });
   } else if (tab === 'mcp') {
     renderAgentMCPTab(body, a);
   } else if (tab === 'security') {
