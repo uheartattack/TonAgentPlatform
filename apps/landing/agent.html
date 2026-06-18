@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Agent — TON Agent Platform</title>
+<meta name="description" content="Public agent card — hire, rent, verify on-chain.">
+<style>
+  :root{
+    --bg:#070B12; --bg2:#0C1118; --card:#111825; --border:rgba(255,255,255,.08);
+    --tx:#E8EDF5; --tx2:#9fb0c9; --mut:#5b6b85; --accent:#0098EA; --accent2:#a855f7;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1200px 600px at 50% -10%,rgba(0,152,234,.10),transparent),var(--bg);
+    color:var(--tx);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:24px 16px 48px}
+  a{color:var(--accent);text-decoration:none}
+  .wrap{width:100%;max-width:520px}
+  .brand{display:flex;align-items:center;gap:8px;justify-content:center;color:var(--tx2);font-size:13px;margin-bottom:18px;letter-spacing:.02em}
+  .brand b{color:var(--tx)}
+  .card{background:linear-gradient(180deg,var(--card),var(--bg2));border:1px solid var(--border);border-radius:20px;
+    padding:24px 22px;box-shadow:0 20px 60px rgba(0,0,0,.4)}
+  .head{display:flex;align-items:center;gap:14px}
+  .ava{width:56px;height:56px;border-radius:16px;flex:0 0 auto;display:grid;place-items:center;font-size:24px;font-weight:700;
+    background:linear-gradient(135deg,rgba(0,152,234,.25),rgba(168,85,247,.25));border:1px solid var(--border)}
+  .name{font-size:20px;font-weight:700;line-height:1.2}
+  .sub{font-size:13px;color:var(--tx2);margin-top:3px}
+  .pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;
+    background:rgba(255,255,255,.06);text-transform:capitalize}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:18px 0}
+  .stat{background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:12px;padding:10px 6px;text-align:center}
+  .stat .n{font-size:18px;font-weight:700}
+  .stat .l{font-size:10px;color:var(--mut);margin-top:2px;text-transform:uppercase;letter-spacing:.05em}
+  .row{display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-top:1px solid var(--border);font-size:13px}
+  .row .k{color:var(--tx2)}
+  .row .v{font-family:ui-monospace,Menlo,monospace;font-size:12px}
+  .cta{display:flex;gap:10px;margin-top:20px;flex-wrap:wrap}
+  .btn{flex:1;min-width:130px;text-align:center;padding:12px 14px;border-radius:12px;font-weight:600;font-size:14px;cursor:pointer;border:1px solid var(--border)}
+  .btn-p{background:linear-gradient(135deg,var(--accent),#3aa0ff);color:#04121f;border:none}
+  .btn-g{background:rgba(255,255,255,.05);color:var(--tx)}
+  .muted{color:var(--mut);text-align:center;padding:40px 0}
+  .rent{margin-top:14px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);border-radius:12px;padding:11px 13px;font-size:13px}
+  .ft{text-align:center;color:var(--mut);font-size:12px;margin-top:18px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">⚡ <b>TON Agent Platform</b> · agent card</div>
+  <div id="root" class="card"><div class="muted">Loading…</div></div>
+  <div class="ft">On-chain identity & reputation · <a href="/studio.html">open Studio →</a></div>
+</div>
+<script>
+(function(){
+  var tierColor={platinum:'#a855f7',gold:'#f59e0b',silver:'#94a3b8',bronze:'#b45309',unverified:'#5b6b85'};
+  function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+  function short(s){s=s||'';return s.length>16?(s.slice(0,8)+'…'+s.slice(-6)):s}
+  function qid(){var m=location.search.match(/[?&]id=(\d+)/);if(m)return m[1];var p=location.pathname.match(/\/(?:a|agent)\/(\d+)/);return p?p[1]:'';}
+  var id=qid();
+  var root=document.getElementById('root');
+  if(!id){root.innerHTML='<div class="muted">No agent id. Use ?id=&lt;number&gt;</div>';return;}
+  fetch(location.origin+'/api/v3/profile/'+id).then(function(r){return r.json()}).then(function(res){
+    if(!res||!res.ok||!res.profile){root.innerHTML='<div class="muted">Agent not found</div>';return;}
+    var p=res.profile, oc=p.onchain||{}, rent=p.rental;
+    var tc=tierColor[p.tier]||'#5b6b85';
+    var initial=(p.name||'A').trim().charAt(0).toUpperCase();
+    var h='';
+    h+='<div class="head"><div class="ava">'+esc(initial)+'</div><div style="min-width:0">'+
+       '<div class="name">'+esc(p.name||('Agent #'+p.id))+'</div>'+
+       '<div class="sub">#'+esc(p.id)+' · <span class="pill" style="color:'+tc+'">'+esc(p.tier)+'</span> <span class="pill">'+esc(p.role)+'</span></div></div></div>';
+    h+='<div class="stats">'+
+       '<div class="stat"><div class="n">'+(p.trust||0)+'</div><div class="l">Trust</div></div>'+
+       '<div class="stat"><div class="n">'+(p.jobs_done||0)+'</div><div class="l">Jobs</div></div>'+
+       '<div class="stat"><div class="n">'+(p.reviews||0)+'</div><div class="l">Reviews</div></div>'+
+       '<div class="stat"><div class="n">'+((oc&&oc.transfer_count)||0)+'</div><div class="l">Sold</div></div></div>';
+    if(oc&&oc.agent_nft){
+      h+='<div class="row"><span class="k">On-chain NFT</span><span class="v"><a href="https://tonviewer.com/'+encodeURIComponent(oc.agent_nft)+'" target="_blank" rel="noopener">'+esc(short(oc.agent_nft))+' ↗</a></span></div>';
+      if(oc.creator)h+='<div class="row"><span class="k">Original author</span><span class="v">'+esc(short(oc.creator))+'</span></div>';
+      if(oc.current_owner)h+='<div class="row"><span class="k">Owner</span><span class="v">'+esc(short(oc.current_owner))+'</span></div>';
+    } else {
+      h+='<div class="row"><span class="k">On-chain</span><span class="v" style="color:var(--mut)">not minted</span></div>';
+    }
+    if(rent){
+      h+='<div class="rent">🔑 Available to rent — <b>'+(rent.price_day_gram||0)+' GRAM/day</b> (min '+(rent.min_days||1)+'d)'+(rent.note?(' · '+esc(rent.note)):'')+'</div>';
+    }
+    h+='<div class="cta">'+
+       '<a class="btn btn-p" href="/studio.html#agents/'+esc(p.id)+'/jobs">Hire / message</a>'+
+       (oc&&oc.agent_nft?'<a class="btn btn-g" href="https://tonviewer.com/'+encodeURIComponent(oc.agent_nft)+'" target="_blank" rel="noopener">View NFT ↗</a>':'<a class="btn btn-g" href="/studio.html">Open Studio</a>')+
+       '</div>';
+    root.innerHTML=h;
+    document.title=(p.name||('Agent #'+p.id))+' — TON Agent Platform';
+  }).catch(function(){root.innerHTML='<div class="muted">Failed to load</div>'});
+})();
+</script>
+</body>
+</html>
