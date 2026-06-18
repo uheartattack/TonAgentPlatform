@@ -95,15 +95,34 @@ export async function initV3Jobs(pgPool: Pool): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_v3_jobspec_status ON builder_bot.v3_job_specs (status, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_v3_jobspec_escrow ON builder_bot.v3_job_specs (escrow_addr);
   `);
+  // Фаза 1: режим задачи (fixed | auction) + победитель аукциона + таблица бидов.
+  await pgPool.query(`
+    ALTER TABLE builder_bot.v3_job_specs ADD COLUMN IF NOT EXISTS mode TEXT NOT NULL DEFAULT 'fixed';
+    ALTER TABLE builder_bot.v3_job_specs ADD COLUMN IF NOT EXISTS awarded_agent INTEGER;
+    CREATE TABLE IF NOT EXISTS builder_bot.v3_job_bids (
+      id            BIGSERIAL PRIMARY KEY,
+      job_id        BIGINT NOT NULL,
+      bidder_agent  INTEGER NOT NULL,
+      bidder_wallet TEXT,
+      amount_nano   NUMERIC NOT NULL,
+      note          TEXT,
+      tier          TEXT,
+      role          TEXT,
+      effective     INTEGER,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (job_id, bidder_agent)
+    );
+    CREATE INDEX IF NOT EXISTS idx_v3_bids_job ON builder_bot.v3_job_bids (job_id, effective DESC);
+  `);
   console.log('[V3Jobs] tables ready (fee_bps=' + FEE_BPS + (TESTNET ? ', testnet' : ', mainnet') + ')');
 }
 
 // ── Создать задачу: спека + детерминированный адрес escrow + ссылка на деплой+фандинг ──
 export async function createJob(args: {
   posterUser?: number | string | null; posterAgent?: number | null; posterWallet: string;
-  title: string; description?: string; category?: string;
+  title: string; description?: string; category?: string; mode?: string;
   bountyGram: number; deadlineUnix: number; acceptWindowSec?: number;
-}): Promise<{ ok: boolean; jobId: string; escrowAddr: string; deployLink: string; feeBps: number }> {
+}): Promise<{ ok: boolean; jobId: string; escrowAddr: string; deployLink: string; feeBps: number; mode: string }> {
   const poster = Address.parse(args.posterWallet);
   const amountNano = toNano(String(args.bountyGram));
   const acceptWindow = args.acceptWindowSec && args.acceptWindowSec > 0 ? args.acceptWindowSec : 86400;
@@ -117,14 +136,58 @@ export async function createJob(args: {
   // деплой = фандинг: value = баунти + газ
   const deployLink = transferLink(escrowAddr, amountNano + toNano('0.1'), init);
 
+  const mode = args.mode === 'auction' ? 'auction' : 'fixed';
   const r = await pool().query(
     `INSERT INTO builder_bot.v3_job_specs
-       (poster_user, poster_agent, poster_wallet, title, description, category, bounty_nano, deadline, accept_window, escrow_addr, status)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,0) RETURNING id`,
+       (poster_user, poster_agent, poster_wallet, title, description, category, bounty_nano, deadline, accept_window, escrow_addr, status, mode)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,0,$11) RETURNING id`,
     [args.posterUser ?? null, args.posterAgent ?? null, poster.toString(), args.title, args.description ?? null,
-     args.category ?? null, amountNano.toString(), args.deadlineUnix, acceptWindow, addr.toString()],
+     args.category ?? null, amountNano.toString(), args.deadlineUnix, acceptWindow, addr.toString(), mode],
   );
-  return { ok: true, jobId: String(r.rows[0].id), escrowAddr, deployLink, feeBps: FEE_BPS };
+  return { ok: true, jobId: String(r.rows[0].id), escrowAddr, deployLink, feeBps: FEE_BPS, mode };
+}
+
+// ── Аукцион: бид исполнителя, список бидов, выбор победителя заказчиком ──
+export async function placeBid(jobId: string, bidderAgent: number, bidderWallet: string | null, amountGram: number, note?: string): Promise<any> {
+  const j = (await pool().query(`SELECT * FROM builder_bot.v3_job_specs WHERE id=$1`, [jobId])).rows[0];
+  if (!j) return { ok: false, error: 'job not found' };
+  if (j.mode !== 'auction') return { ok: false, error: 'job is not an auction' };
+  if (j.status !== ESCROW_STATUS.FUNDED) return { ok: false, error: 'job not open' };
+  const bountyGram = Number(BigInt(j.bounty_nano)) / 1e9;
+  if (!(amountGram > 0) || amountGram > bountyGram) return { ok: false, error: 'bid must be in (0, bounty]' };
+  // снимок репутации/роли/effective бидера под категорию задачи
+  let tier = 'unverified', trust = 0, role = 'worker';
+  try { const { getTrustScore } = require('./agent-reputation'); const ts = await getTrustScore(bidderAgent); if (ts) { tier = ts.tier || tier; trust = ts.score || 0; } } catch { /* */ }
+  try { const ar = await pool().query(`SELECT role FROM builder_bot.agents WHERE id=$1`, [bidderAgent]); if (ar.rows[0]) role = ar.rows[0].role || 'worker'; } catch { /* */ }
+  const { effectiveScore } = require('./v3-roles');
+  const eff = effectiveScore(trust, role, j.category);
+  await pool().query(
+    `INSERT INTO builder_bot.v3_job_bids (job_id, bidder_agent, bidder_wallet, amount_nano, note, tier, role, effective)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+     ON CONFLICT (job_id, bidder_agent) DO UPDATE SET amount_nano=EXCLUDED.amount_nano, note=EXCLUDED.note,
+       tier=EXCLUDED.tier, role=EXCLUDED.role, effective=EXCLUDED.effective, created_at=NOW()`,
+    [jobId, bidderAgent, bidderWallet, toNano(String(amountGram)).toString(), note || null, tier, role, eff],
+  );
+  return { ok: true, jobId, bidderAgent, amountGram, tier, role, effective: eff };
+}
+
+export async function listBids(jobId: string): Promise<any[]> {
+  const r = await pool().query(
+    `SELECT id, bidder_agent, bidder_wallet, amount_nano, note, tier, role, effective, created_at
+       FROM builder_bot.v3_job_bids WHERE job_id=$1 ORDER BY effective DESC NULLS LAST, amount_nano ASC`,
+    [jobId],
+  );
+  return r.rows.map((x) => ({ ...x, amount_gram: Number(BigInt(x.amount_nano)) / 1e9 }));
+}
+
+export async function awardJob(jobId: string, posterUser: number | string, winnerAgent: number): Promise<any> {
+  const j = (await pool().query(`SELECT * FROM builder_bot.v3_job_specs WHERE id=$1`, [jobId])).rows[0];
+  if (!j) return { ok: false, error: 'job not found' };
+  if (j.poster_user != null && String(j.poster_user) !== String(posterUser)) return { ok: false, error: 'only poster can award' };
+  const bid = (await pool().query(`SELECT 1 FROM builder_bot.v3_job_bids WHERE job_id=$1 AND bidder_agent=$2`, [jobId, winnerAgent])).rows[0];
+  if (!bid) return { ok: false, error: 'no bid from that agent' };
+  await pool().query(`UPDATE builder_bot.v3_job_specs SET awarded_agent=$2, updated_at=NOW() WHERE id=$1`, [jobId, winnerAgent]);
+  return { ok: true, jobId, awardedAgent: winnerAgent };
 }
 
 export async function listJobs(opts?: { status?: number; limit?: number; category?: string }): Promise<any[]> {
