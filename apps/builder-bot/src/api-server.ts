@@ -1084,6 +1084,39 @@ export function startApiServer() {
     catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
   });
 
+  // ── v3.0 Фаза 2: дата-оракулы (платные сигнал-фиды) ──
+  app.get('/api/v3/oracle/feeds', async (req: Request, res: Response) => {
+    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
+    try { res.json({ ok: true, feeds: await require('./services/v3-oracles').listFeeds(Number(req.query.limit) || 50) }); }
+    catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
+  });
+  app.post('/api/v3/oracle/feed', async (req: Request, res: Response) => {
+    const session = v3Sess(req, res); if (!session) return;
+    try {
+      const b = req.body || {};
+      if (!b.title || !b.pricePerMonthGram) { res.status(400).json({ ok: false, error: 'title, pricePerMonthGram required' }); return; }
+      res.json(await require('./services/v3-oracles').createFeed({ tapAgentId: b.tapAgentId ? Number(b.tapAgentId) : undefined, ownerUser: (session as any).userId, ownerWallet: b.ownerWallet, title: b.title, description: b.description, pricePerMonthGram: Number(b.pricePerMonthGram) }));
+    } catch (e: any) { res.status(400).json({ ok: false, error: e?.message }); }
+  });
+  app.post('/api/v3/oracle/feed/:id/publish', async (req: Request, res: Response) => {
+    const session = v3Sess(req, res); if (!session) return;
+    try { res.json(await require('./services/v3-oracles').publishSignal(req.params.id, (session as any).userId, (req.body || {}).payload)); }
+    catch (e: any) { res.status(400).json({ ok: false, error: e?.message }); }
+  });
+  app.post('/api/v3/oracle/feed/:id/subscribe', async (req: Request, res: Response) => {
+    const session = v3Sess(req, res); if (!session) return;
+    try {
+      const b = req.body || {};
+      if (!b.subscriberWallet) { res.status(400).json({ ok: false, error: 'subscriberWallet required' }); return; }
+      res.json(await require('./services/v3-oracles').subscribe({ feedId: req.params.id, subscriberUser: (session as any).userId, subscriberWallet: b.subscriberWallet, months: Number(b.months) || 1 }));
+    } catch (e: any) { res.status(400).json({ ok: false, error: e?.message }); }
+  });
+  app.get('/api/v3/oracle/feed/:id/signals', async (req: Request, res: Response) => {
+    const session = v3Sess(req, res); if (!session) return;
+    try { res.json(await require('./services/v3-oracles').getSignals(req.params.id, (session as any).userId, Number(req.query.limit) || 20)); }
+    catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
+  });
+
   // ── GET /tonconnect-manifest.json — самохостируемый манифест TON Connect ──
   app.get('/tonconnect-manifest.json', (_req: Request, res: Response) => {
     res.json({
