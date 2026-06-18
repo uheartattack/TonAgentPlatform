@@ -242,6 +242,13 @@ async function main() {
         console.log('📬 V3 Mailbox ready');
       } catch (e: any) { console.error('[V3Mailbox] init error:', e?.message); }
 
+      // v3.0 Фаза 1 — аренда агентов
+      try {
+        const { initV3Rental } = require('./services/v3-rental');
+        await initV3Rental(pool);
+        console.log('🔑 V3 Rental ready');
+      } catch (e: any) { console.error('[V3Rental] init error:', e?.message); }
+
       // v3.0 Фаза 0 — доска задач (cross-owner job board) + синк escrow-статусов.
       // Флаг V3_JOBS_ENABLED (по умолчанию выкл). Бот деньги не двигает — фандинг подписывает заказчик.
       if (process.env.V3_JOBS_ENABLED === '1') {

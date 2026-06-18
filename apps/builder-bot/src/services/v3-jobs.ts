@@ -147,6 +147,17 @@ export async function createJob(args: {
   return { ok: true, jobId: String(r.rows[0].id), escrowAddr, deployLink, feeBps: FEE_BPS, mode };
 }
 
+/** Реюзабельный билдер escrow-ссылки (для аренды и др.): заказчик→исполнитель. */
+export function escrowFundLink(posterWallet: string, executorWallet: string | null, amountNano: bigint, deadlineUnix: number, acceptWindowSec: number): { escrowAddr: string; deployLink: string } {
+  const poster = Address.parse(posterWallet);
+  const executor = executorWallet ? Address.parse(executorWallet) : null;
+  const data = escrowData(poster, executor, amountNano, deadlineUnix, Math.max(1, acceptWindowSec));
+  const init = { code: escrowCode(), data };
+  const addr = contractAddress(0, init);
+  const a = addr.toString({ bounceable: false, testOnly: TESTNET });
+  return { escrowAddr: a, deployLink: transferLink(a, amountNano + toNano('0.1'), init) };
+}
+
 // ── Аукцион: бид исполнителя, список бидов, выбор победителя заказчиком ──
 export async function placeBid(jobId: string, bidderAgent: number, bidderWallet: string | null, amountGram: number, note?: string): Promise<any> {
   const j = (await pool().query(`SELECT * FROM builder_bot.v3_job_specs WHERE id=$1`, [jobId])).rows[0];
