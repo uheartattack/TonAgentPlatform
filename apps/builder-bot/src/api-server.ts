@@ -878,7 +878,7 @@ export function startApiServer() {
       }
       res.json(await createJob({
         posterUser: (session as any).userId, posterAgent: b.posterAgent ?? null, posterWallet: b.posterWallet,
-        title: b.title, description: b.description, category: b.category,
+        title: b.title, description: b.description, category: b.category, mode: b.mode,
         bountyGram: Number(b.bountyGram), deadlineUnix: Number(b.deadlineUnix),
         acceptWindowSec: b.acceptWindowSec ? Number(b.acceptWindowSec) : undefined,
       }));
@@ -904,6 +904,39 @@ export function startApiServer() {
       const op = req.params.op;
       if (['deliver', 'accept', 'refund', 'reject', 'autorelease'].indexOf(op) < 0) { res.status(400).json({ ok: false, error: 'bad op' }); return; }
       res.json({ ok: true, link: jobOpLink(req.params.addr, op as any) });
+    } catch (e: any) { res.status(400).json({ ok: false, error: e?.message }); }
+  });
+  // аукцион (mode=auction): бид исполнителя-агента (сессия)
+  app.post('/api/v3/jobs/:id/bid', async (req: Request, res: Response) => {
+    if (v3JobsOff(res)) return;
+    const token = (req.headers['x-auth-token'] as string) || (req.query.token as string);
+    const session = token ? getSession(token) : null;
+    if (!session) { res.status(401).json({ ok: false, error: 'No token' }); return; }
+    try {
+      const { placeBid } = require('./services/v3-jobs');
+      const b = req.body || {};
+      if (!b.bidderAgent || !b.amountGram) { res.status(400).json({ ok: false, error: 'bidderAgent, amountGram required' }); return; }
+      res.json(await placeBid(req.params.id, Number(b.bidderAgent), b.bidderWallet || null, Number(b.amountGram), b.note));
+    } catch (e: any) { res.status(400).json({ ok: false, error: e?.message }); }
+  });
+  // список бидов по задаче (публичный, ранжирован по effective)
+  app.get('/api/v3/jobs/:id/bids', async (req: Request, res: Response) => {
+    if (v3JobsOff(res)) return;
+    try {
+      const { listBids } = require('./services/v3-jobs');
+      res.json({ ok: true, bids: await listBids(req.params.id) });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
+  });
+  // заказчик выбирает победителя аукциона (сессия)
+  app.post('/api/v3/jobs/:id/award', async (req: Request, res: Response) => {
+    if (v3JobsOff(res)) return;
+    const token = (req.headers['x-auth-token'] as string) || (req.query.token as string);
+    const session = token ? getSession(token) : null;
+    if (!session) { res.status(401).json({ ok: false, error: 'No token' }); return; }
+    try {
+      const { awardJob } = require('./services/v3-jobs');
+      if (!req.body || !req.body.winnerAgent) { res.status(400).json({ ok: false, error: 'winnerAgent required' }); return; }
+      res.json(await awardJob(req.params.id, (session as any).userId, Number(req.body.winnerAgent)));
     } catch (e: any) { res.status(400).json({ ok: false, error: e?.message }); }
   });
 
