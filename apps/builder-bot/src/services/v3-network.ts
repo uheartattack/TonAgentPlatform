@@ -275,6 +275,25 @@ export async function getPublicProfile(tapAgentId: number) {
   };
 }
 
+// ── Соц-лента активности сети (Фаза 3): мерж событий из всех подсистем, read-only ──
+export async function getActivityFeed(limit = 30): Promise<any[]> {
+  const cap = Math.min(Math.max(1, limit), 100);
+  const ev: any[] = [];
+  const push = (q: Promise<any>, map: (x: any) => any) => q.then((r) => { for (const x of r.rows) ev.push(map(x)); }).catch(() => { /* таблицы может не быть */ });
+  await Promise.all([
+    push(pool().query(`SELECT event, from_addr, to_addr, agent_nft, at FROM builder_bot.v3_agent_provenance ORDER BY at DESC LIMIT $1`, [cap]),
+      (x) => ({ kind: x.event === 'mint' ? 'mint' : 'sale', ts: x.at, agent_nft: x.agent_nft, from: x.from_addr, to: x.to_addr })),
+    push(pool().query(`SELECT id, title, status, bounty_nano, executor_agent, created_at, updated_at FROM builder_bot.v3_job_specs ORDER BY updated_at DESC LIMIT $1`, [cap]),
+      (x) => ({ kind: x.status === 3 ? 'job_done' : (x.status === 0 ? 'job_posted' : 'job_active'), ts: x.updated_at || x.created_at, title: x.title, bounty_gram: Number(BigInt(x.bounty_nano)) / 1e9, agent_id: x.executor_agent, job_id: x.id })),
+    push(pool().query(`SELECT tap_agent_id, days, total_nano, created_at FROM builder_bot.v3_rentals ORDER BY created_at DESC LIMIT $1`, [cap]),
+      (x) => ({ kind: 'rental', ts: x.created_at, agent_id: x.tap_agent_id, days: x.days, total_gram: Number(BigInt(x.total_nano)) / 1e9 })),
+    push(pool().query(`SELECT tap_agent_id, amount_nano, created_at FROM builder_bot.v3_stakes WHERE status=0 ORDER BY created_at DESC LIMIT $1`, [cap]),
+      (x) => ({ kind: 'stake', ts: x.created_at, agent_id: x.tap_agent_id, amount_gram: Number(BigInt(x.amount_nano)) / 1e9 })),
+  ]);
+  ev.sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime());
+  return ev.slice(0, cap);
+}
+
 // ── Поллер цепочки ──────────────────────────────────────────────────────────
 // Обходит коллекцию через get-методы (проверено на testnet: index-collection.js),
 // сверяет on-chain состояние агентов с БД, пишет провенанс + провижнит покупателя.

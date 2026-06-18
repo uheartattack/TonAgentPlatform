@@ -1065,6 +1065,13 @@ export function startApiServer() {
     } catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
   });
 
+  // ── v3.0 Фаза 3: соц-лента активности сети (public read) ──
+  app.get('/api/v3/feed', async (req: Request, res: Response) => {
+    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
+    try { res.json({ ok: true, feed: await require('./services/v3-network').getActivityFeed(Number(req.query.limit) || 30) }); }
+    catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
+  });
+
   // ── GET /tonconnect-manifest.json — самохостируемый манифест TON Connect ──
   app.get('/tonconnect-manifest.json', (_req: Request, res: Response) => {
     res.json({
