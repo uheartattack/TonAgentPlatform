@@ -2293,6 +2293,7 @@ async function renderAgentJobsTab(body, a) {
       '<input id="job-title" class="st-input" placeholder="' + (isRu ? 'Заголовок' : 'Title') + '" style="margin-bottom:6px">' +
       '<textarea id="job-desc" class="st-textarea" placeholder="' + (isRu ? 'Описание' : 'Description') + '" style="min-height:56px;margin-bottom:6px"></textarea>' +
       '<select id="job-cat" class="st-input" style="margin-bottom:6px" title="' + (isRu ? 'категория (влияет на матчинг ролей)' : 'category (drives role matching)') + '">' + _v3Opts(_V3_CATS, isRu ? 'категория: —' : 'category: —') + '</select>' +
+      '<select id="job-mode" class="st-input" style="margin-bottom:6px"><option value="fixed">' + (isRu ? 'Режим: фикс-цена' : 'Mode: fixed price') + '</option><option value="auction">' + (isRu ? 'Режим: аукцион (биды)' : 'Mode: auction (bids)') + '</option></select>' +
       '<div style="display:flex;gap:6px;margin-bottom:6px">' +
         '<input id="job-bounty" class="st-input" type="number" step="0.01" placeholder="' + (isRu ? 'Баунти GRAM' : 'Bounty GRAM') + '" style="flex:1">' +
         '<input id="job-days" class="st-input" type="number" value="3" title="' + (isRu ? 'дней на сдачу' : 'days to deadline') + '" style="width:110px">' +
@@ -2321,7 +2322,14 @@ async function loadJobsList(agentId) {
         '<span style="font-weight:600;font-size:.85rem">' + escHtml(j.title || '') + '</span>' +
         '<span class="chip" style="text-transform:none;letter-spacing:0">' + (j.bounty_gram || 0) + ' GRAM</span></div>' +
       (j.description ? '<div style="font-size:.76rem;color:var(--text-secondary);margin-top:.3rem">' + escHtml(j.description) + '</div>' : '') +
-      '<div style="margin-top:.4rem"><button class="rt-save-btn" style="padding:4px 10px;font-size:.74rem" onclick="claimJobUI(' + Number(j.id) + ',' + Number(agentId) + ')">' + (isRu ? 'Взять этим агентом' : 'Claim with this agent') + '</button> <span id="job-claim-' + Number(j.id) + '" style="font-size:.74rem;margin-left:6px"></span></div>' +
+      (j.category ? '<span class="chip" style="text-transform:none;letter-spacing:0;font-size:.66rem">' + escHtml(j.category) + '</span> ' : '') +
+      (j.mode === 'auction'
+        ? ('<div style="margin-top:.4rem"><span class="chip" style="text-transform:none;letter-spacing:0;color:#a855f7;font-size:.66rem">' + (isRu ? 'аукцион' : 'auction') + '</span> ' +
+            '<button class="rt-save-btn" style="padding:4px 10px;font-size:.74rem" onclick="placeBidUI(' + Number(j.id) + ',' + Number(agentId) + ')">' + (isRu ? 'Бид' : 'Bid') + '</button> ' +
+            '<button class="rt-save-btn" style="padding:4px 10px;font-size:.74rem;background:rgba(255,255,255,0.08)" onclick="viewBidsUI(' + Number(j.id) + ',' + Number(agentId) + ')">' + (isRu ? 'Биды' : 'Bids') + '</button>' +
+            '<div id="job-claim-' + Number(j.id) + '" style="font-size:.74rem;margin-top:4px"></div></div>')
+        : ('<div style="margin-top:.4rem"><button class="rt-save-btn" style="padding:4px 10px;font-size:.74rem" onclick="claimJobUI(' + Number(j.id) + ',' + Number(agentId) + ')">' + (isRu ? 'Взять этим агентом' : 'Claim with this agent') + '</button> <span id="job-claim-' + Number(j.id) + '" style="font-size:.74rem;margin-left:6px"></span></div>')
+      ) +
     '</div>';
   });
   el.innerHTML = h + '</div>';
@@ -2336,7 +2344,7 @@ async function postJob(agentId) {
   if (!title || !bounty || bounty <= 0 || !wallet) { toast(isRu ? 'Заполни заголовок, баунти, кошелёк' : 'Fill title, bounty, wallet', 'error'); return; }
   var deadlineUnix = Math.floor(Date.now() / 1000) + days * 86400;
   if (out) out.innerHTML = isRu ? 'Создаю…' : 'Creating…';
-  var res = await apiRequest('POST', '/api/v3/jobs', { posterWallet: wallet, posterAgent: agentId, title: title, description: desc, category: cat || undefined, bountyGram: bounty, deadlineUnix: deadlineUnix });
+  var res = await apiRequest('POST', '/api/v3/jobs', { posterWallet: wallet, posterAgent: agentId, title: title, description: desc, category: cat || undefined, mode: g('job-mode') || 'fixed', bountyGram: bounty, deadlineUnix: deadlineUnix });
   if (!out) return;
   if (res && res.ok) {
     out.innerHTML = '<div style="color:#22c55e">' + (isRu ? 'Задача создана. Оплати escrow, чтобы опубликовать:' : 'Job created. Fund the escrow to publish:') + '</div>' +
@@ -2355,6 +2363,42 @@ async function claimJobUI(jobId, agentId) {
   } else if (res && res.ok && !res.allowed) {
     el.innerHTML = '<span style="color:#f59e0b">' + escHtml(res.reason || 'not allowed') + '</span>';
   } else { el.innerHTML = '<span style="color:#ef4444">' + escHtml((res && res.error) || 'error') + '</span>'; }
+}
+
+async function placeBidUI(jobId, agentId) {
+  var isRu = currentLang === 'ru';
+  var amt = prompt(isRu ? 'Сумма бида (GRAM), ≤ баунти:' : 'Bid amount (GRAM), ≤ bounty:');
+  if (amt == null) return;
+  var n = parseFloat(amt); if (!(n > 0)) { toast(isRu ? 'Неверная сумма' : 'Invalid amount', 'error'); return; }
+  var el = document.getElementById('job-claim-' + jobId); if (el) el.textContent = '…';
+  var res = await apiRequest('POST', '/api/v3/jobs/' + jobId + '/bid', { bidderAgent: agentId, amountGram: n });
+  if (!el) return;
+  if (res && res.ok) { el.innerHTML = '<span style="color:#22c55e">' + (isRu ? 'Бид принят: ' : 'Bid placed: ') + n + ' GRAM · ' + escHtml(res.role || '') + ' · match ' + (res.effective || 0) + '</span>'; }
+  else { el.innerHTML = '<span style="color:#ef4444">' + escHtml((res && res.error) || 'error') + '</span>'; }
+}
+
+async function viewBidsUI(jobId, agentId) {
+  var isRu = currentLang === 'ru';
+  var el = document.getElementById('job-claim-' + jobId); if (!el) return;
+  el.textContent = '…';
+  var res = await apiRequest('GET', '/api/v3/jobs/' + jobId + '/bids');
+  if (!res || res.ok === false) { el.innerHTML = '<span style="color:#ef4444">' + escHtml((res && res.error) || 'error') + '</span>'; return; }
+  var bids = res.bids || [];
+  if (!bids.length) { el.innerHTML = '<span style="color:var(--text-muted)">' + (isRu ? 'бидов нет' : 'no bids') + '</span>'; return; }
+  var h = '<div style="display:flex;flex-direction:column;gap:3px;margin-top:3px">';
+  bids.forEach(function(b){
+    h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:.72rem">' +
+      '<span>#' + b.bidder_agent + ' · ' + (b.amount_gram || 0) + ' GRAM · ' + escHtml(b.role || '') + '/' + escHtml(b.tier || '') + ' · match ' + (b.effective || 0) + '</span>' +
+      '<button class="rt-save-btn" style="padding:2px 8px;font-size:.68rem" onclick="awardUI(' + Number(jobId) + ',' + Number(b.bidder_agent) + ')">' + (isRu ? 'выбрать' : 'award') + '</button></div>';
+  });
+  el.innerHTML = h + '</div>';
+}
+
+async function awardUI(jobId, winnerAgent) {
+  var isRu = currentLang === 'ru';
+  var res = await apiRequest('POST', '/api/v3/jobs/' + jobId + '/award', { winnerAgent: winnerAgent });
+  if (res && res.ok) { toast(isRu ? ('Победитель: агент #' + winnerAgent) : ('Winner: agent #' + winnerAgent), 'success'); }
+  else { toast((res && res.error) || 'error', 'error'); }
 }
 
 function switchSettingsTab(tab) {
