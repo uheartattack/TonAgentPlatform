@@ -2277,9 +2277,25 @@ async function loadNetworkAgents() {
         (cat ? ((isRu ? 'матч ' : 'match ') + (ag.effective || 0) + ' · ' + (isRu ? 'фит ' : 'fit ') + (ag.fit != null ? ag.fit : '—') + ' · ') : '') +
         (isRu ? 'вес ' : 'weight ') + (ag.weight != null ? ag.weight : '—') + ' · ' + (isRu ? 'продан ' : 'sold ') + (ag.transfer_count || 0) + '</div>' +
       '<div style="font-size:.72rem;color:var(--text-muted);margin-top:.25rem">' + (isRu ? 'владелец ' : 'owner ') + _v3WalletCell(ag.current_owner) + '</div>' +
+      (ag.tap_agent_id ? '<div style="margin-top:.35rem"><button class="rt-save-btn" style="padding:3px 9px;font-size:.7rem;background:rgba(255,255,255,0.08)" onclick="stakeAgentUI(' + Number(ag.tap_agent_id) + ')">' + (isRu ? 'Бэкнуть' : 'Back') + '</button> <span id="stk-' + Number(ag.tap_agent_id) + '" style="font-size:.7rem;margin-left:6px"></span></div>' : '') +
     '</div>';
   });
   el.innerHTML = h + '</div>';
+}
+
+async function stakeAgentUI(agentId) {
+  var isRu = currentLang === 'ru';
+  var el = document.getElementById('stk-' + agentId);
+  var amt = prompt(isRu ? ('Сколько GRAM поставить на агента #' + agentId + '? (доля дохода)') : ('How much GRAM to stake on agent #' + agentId + '? (share of income)'));
+  if (amt == null) return;
+  var n = parseFloat(amt); if (!(n > 0)) { toast(isRu ? 'Неверная сумма' : 'Invalid amount', 'error'); return; }
+  if (el) el.textContent = '…';
+  var res = await apiRequest('POST', '/api/v3/staking/stake', { tapAgentId: agentId, amountGram: n });
+  if (!el) return;
+  if (res && res.ok) {
+    var bk = await apiRequest('GET', '/api/v3/staking/backing/' + agentId);
+    el.innerHTML = '<span style="color:#22c55e">' + (isRu ? 'бэкнуто' : 'staked') + (bk && bk.ok ? ' · ' + (isRu ? 'всего ' : 'total ') + (bk.backing.total_gram || 0) + ' GRAM (' + (bk.backing.backers || 0) + ')' : '') + '</span>';
+  } else { el.innerHTML = '<span style="color:#ef4444">' + escHtml((res && res.error) || 'error') + '</span>'; }
 }
 
 async function renderAgentJobsTab(body, a) {
