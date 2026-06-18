@@ -1024,6 +1024,18 @@ export function startApiServer() {
       res.json({ ok: true, rentals: await require('./services/v3-rental').listRentals(filt) });
     } catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
   });
+  // ── v3.0 Фаза 3: публичная карточка агента (витрина / *.tonagent.ton hire-page) ──
+  app.get('/api/v3/profile/:id', async (req: Request, res: Response) => {
+    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) { res.status(400).json({ ok: false, error: 'bad id' }); return; }
+      const { getPublicProfile } = require('./services/v3-network');
+      const p = await getPublicProfile(id);
+      if (!p.found) { res.status(404).json({ ok: false, error: 'agent not found' }); return; }
+      res.json({ ok: true, profile: p });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
+  });
 
   // ── GET /tonconnect-manifest.json — самохостируемый манифест TON Connect ──
   app.get('/tonconnect-manifest.json', (_req: Request, res: Response) => {
