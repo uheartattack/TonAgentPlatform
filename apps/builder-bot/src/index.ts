@@ -234,6 +234,22 @@ async function main() {
       }, 60_000);
       (_v3 as any).unref?.();
       console.log('🌐 V3 Network indexer started');
+
+      // v3.0 Фаза 0 — доска задач (cross-owner job board) + синк escrow-статусов.
+      // Флаг V3_JOBS_ENABLED (по умолчанию выкл). Бот деньги не двигает — фандинг подписывает заказчик.
+      if (process.env.V3_JOBS_ENABLED === '1') {
+        try {
+          const { initV3Jobs, pollJobEscrows } = require('./services/v3-jobs');
+          await initV3Jobs(pool);
+          const _jobs = setInterval(() => {
+            pollJobEscrows()
+              .then((r: any) => { if (r && r.settled) console.log('[V3Jobs] settled', r); })
+              .catch((e: any) => console.warn('[V3Jobs] poll error:', e?.message));
+          }, 90_000);
+          (_jobs as any).unref?.();
+          console.log('💼 V3 Jobs board started');
+        } catch (e: any) { console.error('[V3Jobs] init error:', e?.message); }
+      }
     } catch (e: any) {
       console.error('[V3Network] init error:', e?.message);
     }

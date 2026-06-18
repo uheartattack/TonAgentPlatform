@@ -1,0 +1,220 @@
+/**
+ * v3-jobs.ts — v3.0 «Autonomous Network» Фаза 0: cross-owner доска оплачиваемых задач.
+ *
+ * Поток (killer-демо): заказчик постит задачу с баунти → деплоит+фандит per-deal Escrow
+ *   (подписывает САМ через ton://-ссылку, бот деньги не двигает) → исполнитель (агент другого
+ *   владельца) КЛЕЙМИТ (гейтинг по trust-tier) → сдаёт → заказчик принимает / молчит → авто-релиз
+ *   → escrow платит GRAM исполнителю (минус комиссия TAP) → индексер обновляет репутацию.
+ *
+ * ⚠️ Деньги: всё за флагом V3_JOBS_ENABLED (по умолчанию ВЫКЛ). Escrow на mainnet держит реальные
+ *   (в т.ч. чужие) средства — включать только после формального аудита escrow + явного решения.
+ *   Комиссия V3_JOB_FEE_BPS (по умолчанию 0 — «холодный старт 0%» по дизайну). Fee dest → TAP_TREASURY.
+ *
+ * Escrow-код: contracts/build/Escrow.compiled.json в V3_CONTRACTS_DIR (scp на сервер).
+ */
+import fs from 'fs';
+import path from 'path';
+import { Pool } from 'pg';
+import { Address, beginCell, Cell, contractAddress, storeStateInit, toNano } from '@ton/core';
+import { TonClient } from '@ton/ton';
+
+const TREASURY = (() => {
+  try { return Address.parse(process.env.TAP_TREASURY || 'EQCfRrLVr7MeGbVw4x1XgZ42ZUS7tdf2sEYSyRvmoEB4y6qk'); }
+  catch { return Address.parse('EQCfRrLVr7MeGbVw4x1XgZ42ZUS7tdf2sEYSyRvmoEB4y6qk'); }
+})();
+const CONTRACTS_DIR = process.env.V3_CONTRACTS_DIR || path.join(__dirname, '..', '..', 'v3-contracts');
+const FEE_BPS = Math.max(0, Math.min(10000, Number(process.env.V3_JOB_FEE_BPS) || 0)); // 0% cold-start
+const TESTNET = (process.env.V3_TON_ENDPOINT || '').includes('testnet');
+
+const ESCROW_OPS = { claim: 0x4a434c41, deliver: 0x4a444c56, accept: 0x4a414350, autorelease: 0x4a415552, refund: 0x4a524644, reject: 0x4a524a54 };
+const ESCROW_STATUS = { FUNDED: 0, CLAIMED: 1, DELIVERED: 2, RELEASED: 3, REFUNDED: 4 };
+
+// Лимит баунти по трасту (анти-абьюз на старте). GRAM.
+const TIER_BOUNTY_LIMIT_GRAM: Record<string, number> = {
+  unverified: 2, bronze: 10, silver: 100, gold: 1000, platinum: Number.MAX_SAFE_INTEGER,
+};
+
+let _pool: Pool | null = null;
+const pool = () => { if (!_pool) throw new Error('[V3Jobs] not initialized'); return _pool; };
+
+function escrowCode(): Cell {
+  const j = JSON.parse(fs.readFileSync(path.join(CONTRACTS_DIR, 'Escrow.compiled.json'), 'utf8'));
+  return Cell.fromBoc(Buffer.from(j.hex, 'hex'))[0];
+}
+
+// Точная копия storage-layout из wrappers/Escrow.ts (адрес контракта детерминирован от data).
+function escrowData(poster: Address, executor: Address | null, amountNano: bigint, deadline: number, acceptWindow: number): Cell {
+  return beginCell()
+    .storeUint(ESCROW_STATUS.FUNDED, 8)
+    .storeAddress(poster)
+    .storeAddress(executor)
+    .storeAddress(TREASURY)
+    .storeCoins(amountNano)
+    .storeUint(FEE_BPS, 16)
+    .storeUint(deadline, 64)
+    .storeUint(acceptWindow, 32)
+    .storeUint(0, 64)
+    .endCell();
+}
+
+function transferLink(to: string, amountNano: bigint, init?: { code: Cell; data: Cell }, body?: Cell): string {
+  let q = `amount=${amountNano.toString()}`;
+  if (init) {
+    const si = beginCell().store(storeStateInit(init)).endCell();
+    q += `&init=${encodeURIComponent(si.toBoc().toString('base64'))}`;
+  }
+  if (body) q += `&bin=${encodeURIComponent(body.toBoc().toString('base64'))}`;
+  return `ton://transfer/${to}?${q}`;
+}
+
+const opBody = (op: number) => beginCell().storeUint(op, 32).storeUint(0, 64).endCell();
+
+// ── DDL (идемпотентно) ──────────────────────────────────────────────────────
+export async function initV3Jobs(pgPool: Pool): Promise<void> {
+  _pool = pgPool;
+  await pgPool.query(`
+    CREATE TABLE IF NOT EXISTS builder_bot.v3_job_specs (
+      id              BIGSERIAL PRIMARY KEY,
+      poster_user     BIGINT,
+      poster_agent    INTEGER,
+      poster_wallet   TEXT NOT NULL,
+      title           TEXT NOT NULL,
+      description     TEXT,
+      category        TEXT,
+      bounty_nano     NUMERIC NOT NULL,
+      deadline        BIGINT NOT NULL,
+      accept_window   INTEGER NOT NULL,
+      escrow_addr     TEXT,
+      executor_agent  INTEGER,
+      executor_user   BIGINT,
+      status          SMALLINT NOT NULL DEFAULT 0,   -- зеркало escrow-статуса (0..4); до фандинга = 0
+      rep_settled     BOOLEAN NOT NULL DEFAULT FALSE, -- репутация уже учтена по финальному статусу
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_v3_jobspec_status ON builder_bot.v3_job_specs (status, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_v3_jobspec_escrow ON builder_bot.v3_job_specs (escrow_addr);
+  `);
+  console.log('[V3Jobs] tables ready (fee_bps=' + FEE_BPS + (TESTNET ? ', testnet' : ', mainnet') + ')');
+}
+
+// ── Создать задачу: спека + детерминированный адрес escrow + ссылка на деплой+фандинг ──
+export async function createJob(args: {
+  posterUser?: number | string | null; posterAgent?: number | null; posterWallet: string;
+  title: string; description?: string; category?: string;
+  bountyGram: number; deadlineUnix: number; acceptWindowSec?: number;
+}): Promise<{ ok: boolean; jobId: string; escrowAddr: string; deployLink: string; feeBps: number }> {
+  const poster = Address.parse(args.posterWallet);
+  const amountNano = toNano(String(args.bountyGram));
+  const acceptWindow = args.acceptWindowSec && args.acceptWindowSec > 0 ? args.acceptWindowSec : 86400;
+  if (amountNano <= 0n) throw new Error('bounty must be > 0');
+  if (args.deadlineUnix <= Math.floor(Date.now() / 1000)) throw new Error('deadline must be in the future');
+
+  const data = escrowData(poster, null, amountNano, args.deadlineUnix, acceptWindow);
+  const init = { code: escrowCode(), data };
+  const addr = contractAddress(0, init);
+  const escrowAddr = addr.toString({ bounceable: false, testOnly: TESTNET });
+  // деплой = фандинг: value = баунти + газ
+  const deployLink = transferLink(escrowAddr, amountNano + toNano('0.1'), init);
+
+  const r = await pool().query(
+    `INSERT INTO builder_bot.v3_job_specs
+       (poster_user, poster_agent, poster_wallet, title, description, category, bounty_nano, deadline, accept_window, escrow_addr, status)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,0) RETURNING id`,
+    [args.posterUser ?? null, args.posterAgent ?? null, poster.toString(), args.title, args.description ?? null,
+     args.category ?? null, amountNano.toString(), args.deadlineUnix, acceptWindow, addr.toString()],
+  );
+  return { ok: true, jobId: String(r.rows[0].id), escrowAddr, deployLink, feeBps: FEE_BPS };
+}
+
+export async function listJobs(opts?: { status?: number; limit?: number }): Promise<any[]> {
+  const limit = Math.min(Math.max(1, opts?.limit || 50), 200);
+  const params: any[] = [limit];
+  let where = '';
+  if (opts && Number.isFinite(opts.status as number)) { where = 'WHERE status=$2'; params.push(opts.status); }
+  const r = await pool().query(
+    `SELECT id, poster_agent, title, description, category, bounty_nano, deadline, accept_window,
+            escrow_addr, executor_agent, status, created_at
+       FROM builder_bot.v3_job_specs ${where} ORDER BY created_at DESC LIMIT $1`,
+    params,
+  );
+  return r.rows.map((x) => ({ ...x, bounty_gram: Number(BigInt(x.bounty_nano)) / 1e9 }));
+}
+
+// ── Клейм-гейтинг по trust-tier + ссылка на claim-op для подписи исполнителем ──
+export async function claimJob(jobId: string, executorAgentId: number, executorWallet?: string): Promise<{ ok: boolean; allowed: boolean; reason?: string; tier?: string; claimLink?: string }> {
+  const j = (await pool().query(`SELECT * FROM builder_bot.v3_job_specs WHERE id=$1`, [jobId])).rows[0];
+  if (!j) return { ok: false, allowed: false, reason: 'job not found' };
+  if (j.status !== ESCROW_STATUS.FUNDED) return { ok: false, allowed: false, reason: 'job not open (status ' + j.status + ')' };
+
+  let tier = 'unverified';
+  try {
+    const { getTrustScore } = require('./agent-reputation');
+    const ts = await getTrustScore(executorAgentId);
+    if (ts && ts.tier) tier = ts.tier;
+  } catch (e: any) { console.warn('[V3Jobs] trust lookup failed:', e?.message); }
+
+  const bountyGram = Number(BigInt(j.bounty_nano)) / 1e9;
+  const limit = TIER_BOUNTY_LIMIT_GRAM[tier] ?? 0;
+  if (bountyGram > limit) {
+    return { ok: true, allowed: false, tier, reason: `tier ${tier} лимит баунти ${limit} GRAM, задача ${bountyGram} GRAM` };
+  }
+
+  await pool().query(
+    `UPDATE builder_bot.v3_job_specs SET executor_agent=$2, executor_user=$3, updated_at=NOW() WHERE id=$1`,
+    [jobId, executorAgentId, null],
+  );
+  // ссылка claim-op (исполнитель подписывает; on-chain статус сменит индексер)
+  const claimLink = transferLink(
+    Address.parse(j.escrow_addr).toString({ bounceable: true, testOnly: TESTNET }),
+    toNano('0.05'), undefined, opBody(ESCROW_OPS.claim),
+  );
+  return { ok: true, allowed: true, tier, claimLink };
+}
+
+// ── Ссылка на op (deliver/accept/refund/reject) для подписи стороной сделки ──
+export function jobOpLink(escrowAddr: string, op: 'deliver' | 'accept' | 'refund' | 'reject' | 'autorelease'): string {
+  return transferLink(
+    Address.parse(escrowAddr).toString({ bounceable: true, testOnly: TESTNET }),
+    toNano('0.05'), undefined, opBody(ESCROW_OPS[op]),
+  );
+}
+
+function jobsClient(): TonClient {
+  const endpoint = process.env.V3_TON_ENDPOINT || 'https://toncenter.com/api/v2/jsonRPC';
+  const apiKey = process.env.V3_TONCENTER_API_KEY || (endpoint.includes('testnet') ? process.env.TONCENTER_API_KEY : undefined);
+  return new TonClient({ endpoint, apiKey });
+}
+
+// ── Синк статусов escrow + хук репутации (вызывать по интервалу из индексера) ──
+export async function pollJobEscrows(client?: any): Promise<{ checked: number; settled: number }> {
+  if (!client) client = jobsClient();
+  const open = await pool().query(
+    `SELECT id, escrow_addr, executor_agent, poster_user, status, rep_settled
+       FROM builder_bot.v3_job_specs WHERE escrow_addr IS NOT NULL AND rep_settled=FALSE`,
+  );
+  let settled = 0;
+  for (const j of open.rows) {
+    await new Promise((r) => setTimeout(r, 1100)); // троттл RPC
+    let st: number;
+    try {
+      const res = await client.runMethod(Address.parse(j.escrow_addr), 'get_status');
+      st = res.stack.readNumber();
+    } catch { continue; } // ещё не задеплоен/недоступен
+    if (st === j.status) continue;
+    await pool().query(`UPDATE builder_bot.v3_job_specs SET status=$2, updated_at=NOW() WHERE id=$1`, [j.id, st]);
+    // финальные статусы → учёт репутации исполнителя (отзыв от заказчика-контрагента)
+    if ((st === ESCROW_STATUS.RELEASED || st === ESCROW_STATUS.REFUNDED) && j.executor_agent != null) {
+      try {
+        const { addReview, calculateTrustScore } = require('./agent-reputation');
+        const rating = st === ESCROW_STATUS.RELEASED ? 5 : 2;
+        const reviewer = j.poster_user != null ? Number(j.poster_user) : 0;
+        await addReview(j.executor_agent, reviewer, rating, st === ESCROW_STATUS.RELEASED ? 'escrow released' : 'escrow refund/timeout');
+        await calculateTrustScore(j.executor_agent);
+        settled++;
+      } catch (e: any) { console.warn('[V3Jobs] reputation hook failed:', e?.message); }
+      await pool().query(`UPDATE builder_bot.v3_job_specs SET rep_settled=TRUE WHERE id=$1`, [j.id]);
+    }
+  }
+  return { checked: open.rows.length, settled };
+}
