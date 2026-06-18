@@ -367,6 +367,11 @@ export async function loadSkillFull(name: string, _agentId?: number, userId?: nu
     const row = userRes.rows[0];
     if (!row) return null;
     const meta = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+    // v3.0 Фаза 2: роялти автору скилла за использование. Строго fire-and-forget —
+    // require в try/catch, промис с .catch(), без await → исполнение агента не затрагивается.
+    if (row.owner_user_id && _agentId) {
+      try { require('./v3-royalties').recordSkillUse(row.name, row.owner_user_id, _agentId).catch(() => {}); } catch { /* */ }
+    }
     return {
       name: row.name,
       description: row.description,
