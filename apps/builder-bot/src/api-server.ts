@@ -1037,6 +1037,34 @@ export function startApiServer() {
     } catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
   });
 
+  // ── v3.0 Фаза 2: стейк/делегирование на агента (доля дохода бэкерам) ──
+  app.post('/api/v3/staking/stake', async (req: Request, res: Response) => {
+    const session = v3Sess(req, res); if (!session) return;
+    try {
+      const b = req.body || {}; if (!b.tapAgentId || !b.amountGram) { res.status(400).json({ ok: false, error: 'tapAgentId, amountGram required' }); return; }
+      res.json(await require('./services/v3-staking').stakeAgent({ tapAgentId: Number(b.tapAgentId), stakerUser: (session as any).userId, stakerWallet: b.stakerWallet, amountGram: Number(b.amountGram) }));
+    } catch (e: any) { res.status(400).json({ ok: false, error: e?.message }); }
+  });
+  app.post('/api/v3/staking/unstake', async (req: Request, res: Response) => {
+    const session = v3Sess(req, res); if (!session) return;
+    try {
+      const b = req.body || {}; if (!b.tapAgentId) { res.status(400).json({ ok: false, error: 'tapAgentId required' }); return; }
+      res.json(await require('./services/v3-staking').unstakeAgent(Number(b.tapAgentId), (session as any).userId));
+    } catch (e: any) { res.status(400).json({ ok: false, error: e?.message }); }
+  });
+  app.get('/api/v3/staking/backing/:agentId', async (req: Request, res: Response) => {
+    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
+    try { res.json({ ok: true, backing: await require('./services/v3-staking').agentBacking(Number(req.params.agentId)) }); }
+    catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
+  });
+  app.get('/api/v3/staking/mine', async (req: Request, res: Response) => {
+    const session = v3Sess(req, res); if (!session) return;
+    try {
+      const s = require('./services/v3-staking');
+      res.json({ ok: true, stakes: await s.listStakes({ stakerUser: (session as any).userId }), accruals: await s.myAccruals((session as any).userId) });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
+  });
+
   // ── GET /tonconnect-manifest.json — самохостируемый манифест TON Connect ──
   app.get('/tonconnect-manifest.json', (_req: Request, res: Response) => {
     res.json({

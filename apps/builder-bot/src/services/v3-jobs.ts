@@ -277,7 +277,7 @@ function jobsClient(): TonClient {
 export async function pollJobEscrows(client?: any): Promise<{ checked: number; settled: number }> {
   if (!client) client = jobsClient();
   const open = await pool().query(
-    `SELECT id, escrow_addr, executor_agent, poster_user, status, rep_settled
+    `SELECT id, escrow_addr, executor_agent, poster_user, status, rep_settled, bounty_nano
        FROM builder_bot.v3_job_specs WHERE escrow_addr IS NOT NULL AND rep_settled=FALSE`,
   );
   let settled = 0;
@@ -298,6 +298,14 @@ export async function pollJobEscrows(client?: any): Promise<{ checked: number; s
         const reviewer = j.poster_user != null ? Number(j.poster_user) : 0;
         await addReview(j.executor_agent, reviewer, rating, st === ESCROW_STATUS.RELEASED ? 'escrow released' : 'escrow refund/timeout');
         await calculateTrustScore(j.executor_agent);
+        // Фаза 2: при релизе — начислить долю чистого дохода бэкерам агента (стейкерам)
+        if (st === ESCROW_STATUS.RELEASED && j.bounty_nano) {
+          try {
+            const { accrueIncome } = require('./v3-staking');
+            const net = (BigInt(j.bounty_nano) * BigInt(10000 - FEE_BPS)) / 10000n;
+            await accrueIncome(j.executor_agent, net, 'job:' + j.id);
+          } catch (e: any) { console.warn('[V3Jobs] staking accrual failed:', e?.message); }
+        }
         settled++;
       } catch (e: any) { console.warn('[V3Jobs] reputation hook failed:', e?.message); }
       await pool().query(`UPDATE builder_bot.v3_job_specs SET rep_settled=TRUE WHERE id=$1`, [j.id]);
