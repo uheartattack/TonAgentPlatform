@@ -2230,46 +2230,56 @@ async function mintAgentNft(agentId) {
   }
 }
 
+var _V3_ROLES = ['', 'manager', 'director', 'specialist', 'worker', 'monitor', 'creative', 'trader', 'admin'];
+var _V3_TIERS = ['', 'bronze', 'silver', 'gold', 'platinum'];
+var _V3_CATS = ['', 'research', 'content', 'trading', 'monitoring', 'ops', 'coordination', 'data'];
+function _v3Opts(arr, anyLabel) { return arr.map(function(o){ return '<option value="' + o + '">' + (o || anyLabel) + '</option>'; }).join(''); }
+
 async function renderAgentNetworkTab(body, a) {
   var isRu = currentLang === 'ru';
-  body.innerHTML =
-    '<div class="rt-page">' +
-    '<div class="rt-header">' +
-      '<div class="rt-header-icon" style="background:rgba(168,85,247,0.12);color:#a855f7">' +
-        '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>' +
-      '</div>' +
-      '<div class="rt-header-text">' +
-        '<h3>' + (isRu ? 'Сеть агентов' : 'Agent Network') + '</h3>' +
-        '<p>' + (isRu ? 'Реестр агентов разных владельцев on-chain (TON).' : 'Cross-owner on-chain agent registry (TON).') + '</p>' +
-      '</div>' +
-    '</div>' +
-    '<div id="network-body"><div style="text-align:center;padding:2rem;color:var(--text-muted)">' + (isRu ? 'Загрузка…' : 'Loading…') + '</div></div>' +
+  body.innerHTML = '<div class="rt-page">' +
+    '<div class="rt-header"><div class="rt-header-icon" style="background:rgba(168,85,247,0.12);color:#a855f7">' +
+      '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></div>' +
+      '<div class="rt-header-text"><h3>' + (isRu ? 'Сеть агентов' : 'Agent Network') + '</h3>' +
+      '<p>' + (isRu ? 'Реестр on-chain. Фильтр по роли/тиру; при выборе категории — ранг по effective-скору (доверие × вес роли × аффинити).' : 'On-chain registry. Filter by role/tier; pick a category to rank by effective score (trust × role weight × fit).') + '</p></div></div>' +
+    '<div class="rt-section"><div style="display:flex;gap:6px;flex-wrap:wrap">' +
+      '<select id="net-role" class="st-input" style="flex:1;min-width:104px" onchange="loadNetworkAgents()">' + _v3Opts(_V3_ROLES, isRu ? 'роль: все' : 'role: any') + '</select>' +
+      '<select id="net-tier" class="st-input" style="flex:1;min-width:104px" onchange="loadNetworkAgents()">' + _v3Opts(_V3_TIERS, isRu ? 'тир: любой' : 'tier: any') + '</select>' +
+      '<select id="net-cat" class="st-input" style="flex:1;min-width:120px" onchange="loadNetworkAgents()">' + _v3Opts(_V3_CATS, isRu ? 'категория: —' : 'category: —') + '</select>' +
+    '</div></div>' +
+    '<div id="network-body" style="margin-top:.4rem"><div style="text-align:center;padding:2rem;color:var(--text-muted)">' + (isRu ? 'Загрузка…' : 'Loading…') + '</div></div>' +
     '</div>';
-  var el = document.getElementById('network-body');
-  if (!el) return;
-  var res = await apiRequest('GET', '/api/v3/agents?limit=100');
-  if (!res || res.ok === false) {
-    el.innerHTML = '<div class="rt-section" style="color:var(--text-muted);font-size:.85rem">' + (isRu ? 'Сеть v3.0 сейчас недоступна.' : 'v3.0 network is currently unavailable.') + '</div>';
-    return;
-  }
+  await loadNetworkAgents();
+}
+
+async function loadNetworkAgents() {
+  var isRu = currentLang === 'ru';
+  var el = document.getElementById('network-body'); if (!el) return;
+  var gv = function(id){ var e = document.getElementById(id); return e ? e.value : ''; };
+  var role = gv('net-role'), tier = gv('net-tier'), cat = gv('net-cat');
+  var qs = '?limit=100' + (role ? '&role=' + role : '') + (tier ? '&minTier=' + tier : '') + (cat ? '&category=' + cat : '');
+  var res = await apiRequest('GET', '/api/v3/agents' + qs);
+  if (!res || res.ok === false) { el.innerHTML = '<div style="color:var(--text-muted);font-size:.85rem">' + (isRu ? 'Сеть недоступна' : 'unavailable') + '</div>'; return; }
   var agents = res.agents || [];
-  if (!agents.length) {
-    el.innerHTML = '<div class="rt-section" style="color:var(--text-muted);font-size:.85rem">' + (isRu ? 'В сети пока нет агентов.' : 'No agents in the network yet.') + '</div>';
-    return;
-  }
-  var h = '<div class="rt-section"><div class="rt-section-label">' + agents.length + ' ' + (isRu ? 'агентов' : 'agents') + '</div>';
-  h += '<div style="display:flex;flex-direction:column;gap:.5rem;margin-top:.5rem">';
+  if (!agents.length) { el.innerHTML = '<div style="color:var(--text-muted);font-size:.85rem">' + (isRu ? 'Нет агентов под фильтр' : 'No agents match') + '</div>'; return; }
+  var tierColor = { platinum: '#a855f7', gold: '#f59e0b', silver: '#94a3b8', bronze: '#b45309', unverified: '#64748b' };
+  var h = '<div style="display:flex;flex-direction:column;gap:.5rem">';
   agents.forEach(function(ag) {
+    var tc = tierColor[ag.tier] || '#64748b';
     h += '<div style="border:1px solid var(--border,rgba(255,255,255,0.08));border-radius:10px;padding:.6rem .75rem">' +
-      '<div style="display:flex;align-items:center;gap:.5rem;justify-content:space-between">' +
+      '<div style="display:flex;align-items:center;gap:.5rem;justify-content:space-between;flex-wrap:wrap">' +
         '<a href="' + _v3Tonviewer(ag.agent_nft) + '" target="_blank" rel="noopener" style="color:var(--accent,#0098EA);text-decoration:none;font-family:monospace;font-size:.78rem">' + escHtml(_v3Short(ag.agent_nft)) + ' ↗</a>' +
-        '<span class="chip" style="text-transform:none;letter-spacing:0">' + (isRu ? 'продан' : 'sold') + ': ' + (ag.transfer_count || 0) + '</span>' +
-      '</div>' +
-      '<div style="font-size:.74rem;color:var(--text-secondary);margin-top:.35rem">' + (isRu ? 'автор' : 'author') + ': ' + _v3WalletCell(ag.creator) + ' · ' + (isRu ? 'владелец' : 'owner') + ': ' + _v3WalletCell(ag.current_owner) + '</div>' +
-      '</div>';
+        '<span style="display:flex;gap:4px">' +
+          '<span class="chip" style="text-transform:none;letter-spacing:0">' + escHtml(ag.role || 'worker') + '</span>' +
+          '<span class="chip" style="text-transform:none;letter-spacing:0;color:' + tc + '">' + escHtml(ag.tier || 'unverified') + '</span>' +
+        '</span></div>' +
+      '<div style="font-size:.74rem;color:var(--text-secondary);margin-top:.35rem">' +
+        (cat ? ((isRu ? 'матч ' : 'match ') + (ag.effective || 0) + ' · ' + (isRu ? 'фит ' : 'fit ') + (ag.fit != null ? ag.fit : '—') + ' · ') : '') +
+        (isRu ? 'вес ' : 'weight ') + (ag.weight != null ? ag.weight : '—') + ' · ' + (isRu ? 'продан ' : 'sold ') + (ag.transfer_count || 0) + '</div>' +
+      '<div style="font-size:.72rem;color:var(--text-muted);margin-top:.25rem">' + (isRu ? 'владелец ' : 'owner ') + _v3WalletCell(ag.current_owner) + '</div>' +
+    '</div>';
   });
-  h += '</div></div>';
-  el.innerHTML = h;
+  el.innerHTML = h + '</div>';
 }
 
 async function renderAgentJobsTab(body, a) {
@@ -2282,6 +2292,7 @@ async function renderAgentJobsTab(body, a) {
     '<div class="rt-section"><div class="rt-section-label">' + (isRu ? 'Опубликовать задачу' : 'Post a job') + '</div>' +
       '<input id="job-title" class="st-input" placeholder="' + (isRu ? 'Заголовок' : 'Title') + '" style="margin-bottom:6px">' +
       '<textarea id="job-desc" class="st-textarea" placeholder="' + (isRu ? 'Описание' : 'Description') + '" style="min-height:56px;margin-bottom:6px"></textarea>' +
+      '<select id="job-cat" class="st-input" style="margin-bottom:6px" title="' + (isRu ? 'категория (влияет на матчинг ролей)' : 'category (drives role matching)') + '">' + _v3Opts(_V3_CATS, isRu ? 'категория: —' : 'category: —') + '</select>' +
       '<div style="display:flex;gap:6px;margin-bottom:6px">' +
         '<input id="job-bounty" class="st-input" type="number" step="0.01" placeholder="' + (isRu ? 'Баунти GRAM' : 'Bounty GRAM') + '" style="flex:1">' +
         '<input id="job-days" class="st-input" type="number" value="3" title="' + (isRu ? 'дней на сдачу' : 'days to deadline') + '" style="width:110px">' +
@@ -2320,12 +2331,12 @@ async function postJob(agentId) {
   var isRu = currentLang === 'ru';
   var out = document.getElementById('job-post-result');
   var g = function(id){ var e = document.getElementById(id); return e ? e.value : ''; };
-  var title = g('job-title'), desc = g('job-desc'), wallet = (g('job-wallet') || '').trim();
+  var title = g('job-title'), desc = g('job-desc'), wallet = (g('job-wallet') || '').trim(), cat = g('job-cat');
   var bounty = parseFloat(g('job-bounty')); var days = parseInt(g('job-days'), 10) || 3;
   if (!title || !bounty || bounty <= 0 || !wallet) { toast(isRu ? 'Заполни заголовок, баунти, кошелёк' : 'Fill title, bounty, wallet', 'error'); return; }
   var deadlineUnix = Math.floor(Date.now() / 1000) + days * 86400;
   if (out) out.innerHTML = isRu ? 'Создаю…' : 'Creating…';
-  var res = await apiRequest('POST', '/api/v3/jobs', { posterWallet: wallet, posterAgent: agentId, title: title, description: desc, bountyGram: bounty, deadlineUnix: deadlineUnix });
+  var res = await apiRequest('POST', '/api/v3/jobs', { posterWallet: wallet, posterAgent: agentId, title: title, description: desc, category: cat || undefined, bountyGram: bounty, deadlineUnix: deadlineUnix });
   if (!out) return;
   if (res && res.ok) {
     out.innerHTML = '<div style="color:#22c55e">' + (isRu ? 'Задача создана. Оплати escrow, чтобы опубликовать:' : 'Job created. Fund the escrow to publish:') + '</div>' +
