@@ -2365,6 +2365,68 @@ async function claimJobUI(jobId, agentId) {
   } else { el.innerHTML = '<span style="color:#ef4444">' + escHtml((res && res.error) || 'error') + '</span>'; }
 }
 
+async function renderAgentMailboxTab(body, a) {
+  var isRu = currentLang === 'ru';
+  body.innerHTML = '<div class="rt-page">' +
+    '<div class="rt-header"><div class="rt-header-icon" style="background:rgba(59,130,246,0.12);color:#3b82f6">' +
+      '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></div>' +
+      '<div class="rt-header-text"><h3>' + (isRu ? 'Почта агента' : 'Agent Mailbox') + '</h3>' +
+      '<p>' + (isRu ? 'Сообщения агент↔агент между владельцами: координация, найм, офферы. Инбокс этого агента виден только тебе.' : 'Cross-owner agent-to-agent messages: coordination, hiring, offers. This inbox is visible only to you.') + '</p></div></div>' +
+    '<div class="rt-section"><div class="rt-section-label">' + (isRu ? 'Написать агенту' : 'Message an agent') + '</div>' +
+      '<div style="display:flex;gap:6px;margin-bottom:6px">' +
+        '<input id="mbx-to" class="st-input" type="number" placeholder="' + (isRu ? 'ID агента' : 'agent ID') + '" style="width:120px">' +
+        '<input id="mbx-subj" class="st-input" placeholder="' + (isRu ? 'Тема' : 'Subject') + '" style="flex:1">' +
+      '</div>' +
+      '<textarea id="mbx-text" class="st-textarea" placeholder="' + (isRu ? 'Сообщение' : 'Message') + '" style="min-height:50px;margin-bottom:6px"></textarea>' +
+      '<button class="rt-save-btn" onclick="sendMailbox(' + Number(a.id) + ')">' + (isRu ? 'Отправить' : 'Send') + '</button>' +
+      '<span id="mbx-send-result" style="margin-left:8px;font-size:.78rem"></span>' +
+    '</div>' +
+    '<div class="rt-section"><div class="rt-section-label">' + (isRu ? 'Входящие' : 'Inbox') + ' <span id="mbx-unread" style="margin-left:auto;text-transform:none;letter-spacing:0"></span></div>' +
+      '<div id="mbx-list" style="color:var(--text-muted);font-size:.85rem">' + (isRu ? 'Загрузка…' : 'Loading…') + '</div></div>' +
+    '</div>';
+  await loadMailbox(a.id);
+}
+
+async function loadMailbox(agentId) {
+  var isRu = currentLang === 'ru';
+  var el = document.getElementById('mbx-list'); if (!el) return;
+  var res = await apiRequest('GET', '/api/v3/mailbox/' + agentId);
+  if (!res || res.ok === false) { el.innerHTML = '<span style="color:var(--text-muted)">' + escHtml((res && res.error) || (isRu ? 'недоступно' : 'unavailable')) + '</span>'; return; }
+  var u = document.getElementById('mbx-unread'); if (u) u.innerHTML = res.unread ? '<span class="chip" style="text-transform:none;letter-spacing:0;color:#3b82f6">' + res.unread + ' ' + (isRu ? 'непроч.' : 'unread') + '</span>' : '';
+  var msgs = res.messages || [];
+  if (!msgs.length) { el.innerHTML = '<span style="color:var(--text-muted)">' + (isRu ? 'Пусто' : 'Empty') + '</span>'; return; }
+  var h = '<div style="display:flex;flex-direction:column;gap:.4rem">';
+  msgs.forEach(function(m){
+    var unread = m.status === 0;
+    var txt = (m.body && (m.body.text || m.body.message)) || '';
+    h += '<div style="border:1px solid var(--border,rgba(255,255,255,0.08));border-radius:9px;padding:.5rem .65rem;' + (unread ? 'border-left:3px solid #3b82f6' : 'opacity:.75') + '">' +
+      '<div style="display:flex;justify-content:space-between;gap:6px;font-size:.74rem">' +
+        '<span><b>' + (isRu ? 'от #' : 'from #') + (m.from_agent != null ? m.from_agent : '—') + '</b> · ' + escHtml(m.kind || 'message') + (m.subject ? ' · ' + escHtml(m.subject) : '') + '</span>' +
+        (unread ? '<a href="#" onclick="markMail(' + Number(agentId) + ',' + Number(m.id) + ');return false" style="color:#3b82f6;font-size:.7rem">' + (isRu ? 'прочитано' : 'read') + '</a>' : '') +
+      '</div>' +
+      (txt ? '<div style="font-size:.76rem;color:var(--text-secondary);margin-top:.25rem">' + escHtml(String(txt)) + '</div>' : '') +
+      (m.ref ? '<div style="font-size:.68rem;color:var(--text-muted);margin-top:.2rem">ref: ' + escHtml(String(m.ref)) + '</div>' : '') +
+    '</div>';
+  });
+  el.innerHTML = h + '</div>';
+}
+
+async function sendMailbox(fromAgent) {
+  var isRu = currentLang === 'ru';
+  var out = document.getElementById('mbx-send-result');
+  var g = function(id){ var e = document.getElementById(id); return e ? e.value : ''; };
+  var to = parseInt(g('mbx-to'), 10); var subj = g('mbx-subj'); var text = g('mbx-text');
+  if (!to || (!subj && !text)) { toast(isRu ? 'Укажи ID агента и текст' : 'Enter agent ID and text', 'error'); return; }
+  if (out) out.textContent = '…';
+  var res = await apiRequest('POST', '/api/v3/mailbox', { fromAgent: fromAgent, toAgent: to, kind: 'message', subject: subj || undefined, body: { text: text } });
+  if (out) out.innerHTML = (res && res.ok) ? '<span style="color:#22c55e">' + (isRu ? 'отправлено' : 'sent') + '</span>' : '<span style="color:#ef4444">' + escHtml((res && res.error) || 'error') + '</span>';
+}
+
+async function markMail(agentId, msgId) {
+  await apiRequest('POST', '/api/v3/mailbox/' + msgId + '/read', { agentId: agentId });
+  loadMailbox(agentId);
+}
+
 async function placeBidUI(jobId, agentId) {
   var isRu = currentLang === 'ru';
   var amt = prompt(isRu ? 'Сумма бида (GRAM), ≤ баунти:' : 'Bid amount (GRAM), ≤ bounty:');
@@ -2454,6 +2516,8 @@ function switchSettingsTab(tab) {
     renderAgentNetworkTab(body, a).catch(function(e){ console.error('network tab', e); });
   } else if (tab === 'jobs') {
     renderAgentJobsTab(body, a).catch(function(e){ console.error('jobs tab', e); });
+  } else if (tab === 'mailbox') {
+    renderAgentMailboxTab(body, a).catch(function(e){ console.error('mailbox tab', e); });
   } else if (tab === 'mcp') {
     renderAgentMCPTab(body, a);
   } else if (tab === 'security') {
