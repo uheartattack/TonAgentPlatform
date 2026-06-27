@@ -284,10 +284,19 @@ export class DBTools {
           // Feedback referencing agent_id
           'feedback',
         ];
+        // Wrap each child-table DELETE in a SAVEPOINT. Without it, if any
+        // single DELETE fails (missing column, FK violation, type mismatch),
+        // Postgres puts the WHOLE transaction into aborted state and every
+        // subsequent command throws "current transaction is aborted, commands
+        // ignored until end of transaction block" — which the user saw as
+        // bug #33 (Feedback @gafi_fx, agent #292).
         for (const t of childTables) {
+          await client.query('SAVEPOINT del_child');
           try {
             await client.query(`DELETE FROM builder_bot.${t} WHERE agent_id = $1`, [agentId]);
+            await client.query('RELEASE SAVEPOINT del_child');
           } catch (e: any) {
+            await client.query('ROLLBACK TO SAVEPOINT del_child').catch(() => {});
             // Table might not exist in all deployments — log and continue
             if (!/relation.*does not exist/i.test(e.message)) {
               console.warn(`[deleteAgent] cleanup ${t}: ${e.message}`);

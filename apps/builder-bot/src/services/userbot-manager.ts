@@ -39,6 +39,48 @@ function _validateUrl(url: string): void {
   for (const p of _BLOCKED_URLS) { if (p.test(url)) throw new Error('URL blocked: internal/restricted'); }
 }
 
+// ── Safe chunker for Telegram ──────────────────────────────────────────
+// Telegram caps messages at 4096 chars. Naïve `.slice(0, 4096)` cuts mid-word
+// and mid-markdown (users reported "Сообщения обрывистые даже на половине слов",
+// Feedback #1/#32 from 2026-06-27). This splits at the nearest SAFE boundary:
+//   1) double newline (paragraph)
+//   2) single newline
+//   3) sentence end (". ", "? ", "! ")
+//   4) space
+//   5) hard cut (last resort)
+// Returns array of chunks all ≤ maxLen.
+function safeChunkForTelegram(text: string, maxLen: number = 4000): string[] {
+  if (!text) return [];
+  if (text.length <= maxLen) return [text];
+  const out: string[] = [];
+  let rest = text;
+  while (rest.length > maxLen) {
+    const slice = rest.slice(0, maxLen);
+    // Search for boundary in the LAST 20% of the slice so chunks aren't tiny
+    const minCutPos = Math.floor(maxLen * 0.8);
+    let cutAt = -1;
+    const boundaries = [
+      slice.lastIndexOf('\n\n'),
+      slice.lastIndexOf('\n'),
+      slice.lastIndexOf('. '),
+      slice.lastIndexOf('? '),
+      slice.lastIndexOf('! '),
+      slice.lastIndexOf(' '),
+    ];
+    for (const b of boundaries) {
+      if (b >= minCutPos) { cutAt = b; break; }
+    }
+    if (cutAt === -1) cutAt = maxLen; // worst case — hard cut
+    // Include the boundary character on the LEFT chunk for \n\n / \n;
+    // for ". "/" " we put the space-after-period on the LEFT chunk
+    const cutInclusive = /[\n. ?!]/.test(rest[cutAt]) ? cutAt + 1 : cutAt;
+    out.push(rest.slice(0, cutInclusive).trimEnd());
+    rest = rest.slice(cutInclusive).trimStart();
+  }
+  if (rest.length > 0) out.push(rest);
+  return out;
+}
+
 // ── Markdown → HTML converter for Telegram ──────────────────────────────
 function mdToHtml(text: string): string {
   try {
@@ -3499,9 +3541,11 @@ RULES:
                 onNotify: async (m: string) => {
                   try {
                     const target = /^\d+$/.test(msg.chatId) ? Number(msg.chatId) : msg.chatId;
-                    const html = mdToHtml(m.slice(0, 4096));
-                    try { await (client as any).sendMessage(target, { message: html, parseMode: 'html' }); }
-                    catch { await (client as any).sendMessage(target, { message: m.slice(0, 4096) }); }
+                    for (const chunk of safeChunkForTelegram(m, 4000)) {
+                      const html = mdToHtml(chunk);
+                      try { await (client as any).sendMessage(target, { message: html, parseMode: 'html' }); }
+                      catch { await (client as any).sendMessage(target, { message: chunk }); }
+                    }
                   } catch {}
                 },
               });
@@ -3677,9 +3721,11 @@ RULES:
                 onNotify: async (m: string) => {
                   try {
                     const target = /^\d+$/.test(msg.chatId) ? Number(msg.chatId) : msg.chatId;
-                    const html = mdToHtml(m.slice(0, 4096));
-                    try { await (client as any).sendMessage(target, { message: html, parseMode: 'html' }); }
-                    catch { await (client as any).sendMessage(target, { message: m.slice(0, 4096) }); }
+                    for (const chunk of safeChunkForTelegram(m, 4000)) {
+                      const html = mdToHtml(chunk);
+                      try { await (client as any).sendMessage(target, { message: html, parseMode: 'html' }); }
+                      catch { await (client as any).sendMessage(target, { message: chunk }); }
+                    }
                   } catch {}
                 },
               });
@@ -3916,7 +3962,10 @@ RULES:
       }
 
       if (aiText && aiText.length >= 2) {
-        const responseText = aiText.slice(0, 4096);
+        // NOTE: was `aiText.slice(0, 4096)` — discarded anything past 4096 chars.
+        // Now we keep full text; the split-by-paragraph + safeChunkForTelegram
+        // path below handles long messages by sending multiple chunks.
+        const responseText = aiText;
         let chatTarget: any = /^\d+$/.test(msg.chatId) ? Number(msg.chatId) : msg.chatId;
         try {
           // Ensure entity is cached — resolve if needed
@@ -3995,14 +4044,20 @@ RULES:
               const parts = responseText.split(/\n\n+/).filter((p: string) => p.trim().length > 0);
               if (parts.length > 1) {
                 for (let pi = 0; pi < parts.length; pi++) {
-                  const partHtml = mdToHtml(parts[pi]);
-                  try {
-                    await (client as any).sendMessage(chatTarget, {
-                      message: partHtml, parseMode: 'html',
-                      replyTo: pi === 0 ? _replyTo : undefined,
-                    });
-                  } catch {
-                    await (client as any).sendMessage(chatTarget, { message: parts[pi], replyTo: pi === 0 ? _replyTo : undefined });
+                  // If a paragraph itself exceeds 4000 chars, split it further at
+                  // safe boundaries (sentence/space) so nothing gets cut mid-word.
+                  const subParts = safeChunkForTelegram(parts[pi], 4000);
+                  for (let si = 0; si < subParts.length; si++) {
+                    const piece = subParts[si];
+                    const partHtml = mdToHtml(piece);
+                    try {
+                      await (client as any).sendMessage(chatTarget, {
+                        message: partHtml, parseMode: 'html',
+                        replyTo: pi === 0 && si === 0 ? _replyTo : undefined,
+                      });
+                    } catch {
+                      await (client as any).sendMessage(chatTarget, { message: piece, replyTo: pi === 0 && si === 0 ? _replyTo : undefined });
+                    }
                   }
                   if (pi < parts.length - 1) {
                     const partDelay = _addVar(2000, _bh.randomVariance || 25);
@@ -4020,32 +4075,36 @@ RULES:
             } catch {}
           }
 
-          try {
-            await (client as any).sendMessage(chatTarget, {
-              message: formattedText,
-              parseMode: 'html',
-              replyTo: _replyTo,
-            });
-          } catch (fmtErr: any) {
-            // If HTML parse fails — try stripped HTML, then minimal HTML
-            console.warn(`[UserbotMgr] HTML send failed: ${fmtErr.message?.slice(0, 80)}`);
+          // Chunk long replies at safe boundaries so nothing gets cut mid-word.
+          // Each chunk is sent as its own Telegram message (replyTo only on first).
+          const htmlChunks = safeChunkForTelegram(formattedText, 4000);
+          for (let ci = 0; ci < htmlChunks.length; ci++) {
+            const chunk = htmlChunks[ci];
+            const isFirst = ci === 0;
             try {
-              // Strip all formatting, send as escaped HTML (works in channels that forbid plain)
-              const stripped = responseText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/[*_~`#]/g, '');
               await (client as any).sendMessage(chatTarget, {
-                message: stripped,
+                message: chunk,
                 parseMode: 'html',
-                replyTo: _replyTo,
+                replyTo: isFirst ? _replyTo : undefined,
               });
-            } catch {
-              // Last resort: plain text (won't work in channels with PLAIN_FORBIDDEN)
+            } catch (fmtErr: any) {
+              console.warn(`[UserbotMgr] HTML send failed (chunk ${ci + 1}/${htmlChunks.length}): ${fmtErr.message?.slice(0, 80)}`);
               try {
+                const stripped = chunk.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/[*_~`#]/g, '');
                 await (client as any).sendMessage(chatTarget, {
-                  message: responseText.replace(/[*_~`#]/g, ''),
-                  replyTo: _replyTo,
+                  message: stripped,
+                  parseMode: 'html',
+                  replyTo: isFirst ? _replyTo : undefined,
                 });
-              } catch (lastErr: any) {
-                console.error(`[UserbotMgr] All send methods failed agent#${agentId}: ${lastErr.message?.slice(0, 80)}`);
+              } catch {
+                try {
+                  await (client as any).sendMessage(chatTarget, {
+                    message: chunk.replace(/[*_~`#]/g, ''),
+                    replyTo: isFirst ? _replyTo : undefined,
+                  });
+                } catch (lastErr: any) {
+                  console.error(`[UserbotMgr] All send methods failed agent#${agentId} (chunk ${ci + 1}): ${lastErr.message?.slice(0, 80)}`);
+                }
               }
             }
           }
