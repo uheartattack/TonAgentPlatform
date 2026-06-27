@@ -11139,11 +11139,16 @@ async function acceptAtlasAgentSuggest(suggestKey, btnEl) {
   const isRu = currentLang === 'ru';
   const s = window[suggestKey];
   if (!s) { toast(isRu ? 'Предложение устарело' : 'Suggestion expired', 'warning'); return; }
-  if (btnEl) { btnEl.disabled = true; btnEl.textContent = isRu ? 'Создаём…' : 'Creating…'; }
+  // Disable IMMEDIATELY (before any await) to prevent duplicate creation
+  // from rapid double-clicks. Previously the API took 5-8s and users would
+  // click 3-4 times, getting that many duplicate agents created.
+  if (btnEl) {
+    if (btnEl.dataset && btnEl.dataset.creating === '1') return; // hard guard
+    if (btnEl.dataset) btnEl.dataset.creating = '1';
+    btnEl.disabled = true;
+    btnEl.textContent = isRu ? 'Создаём…' : 'Creating…';
+  }
   try {
-    // Build a description payload that orchestrator can act on. If Atlas
-    // gave us a structured system_prompt_module we preserve it; otherwise
-    // we fall back to name + description.
     let description = '';
     if (s.system_prompt_module) {
       description = `Создай агента "${s.name || 'Agent'}".\n\n` +
@@ -11160,21 +11165,34 @@ async function acceptAtlasAgentSuggest(suggestKey, btnEl) {
     if (s.tick_interval_ms) description += `\nTick: ${s.tick_interval_ms}ms.`;
 
     const r = await apiRequest('POST', '/api/agents', { description: description.trim() });
-    if (r.ok && r.agent) {
-      toast(isRu ? 'Агент создан: #' + r.agent.id : 'Agent created: #' + r.agent.id, 'success');
+    // API shape: { ok, agentId, agent: {...} | null, message, charge }
+    const agentId = r && (r.agentId || (r.agent && r.agent.id));
+    if (r && r.ok && agentId) {
+      toast(isRu ? 'Агент создан: #' + agentId : 'Agent created: #' + agentId, 'success');
       if (btnEl) {
-        btnEl.textContent = '✓ #' + r.agent.id;
+        btnEl.textContent = '✓ #' + agentId;
         btnEl.style.background = 'rgba(34,197,94,0.18)';
         btnEl.style.borderColor = 'rgba(34,197,94,0.40)';
       }
-      handleAgentCreated(r.agent.id);
+      // Clear the suggest so a stray re-click does nothing
+      try { delete window[suggestKey]; } catch {}
+      handleAgentCreated(agentId);
     } else {
-      toast((r && (r.error || r.message)) || (isRu ? 'Ошибка создания' : 'Create failed'), 'error');
-      if (btnEl) { btnEl.disabled = false; btnEl.textContent = isRu ? '▶ Создать агента' : '▶ Create agent'; }
+      const errMsg = (r && (r.error || r.message)) || (isRu ? 'Ошибка создания агента' : 'Agent creation failed');
+      toast(errMsg, 'error');
+      if (btnEl) {
+        btnEl.disabled = false;
+        btnEl.textContent = isRu ? '▶ Создать агента' : '▶ Create agent';
+        if (btnEl.dataset) btnEl.dataset.creating = '';
+      }
     }
   } catch (e) {
     toast(e.message || 'Error', 'error');
-    if (btnEl) { btnEl.disabled = false; btnEl.textContent = isRu ? '▶ Создать агента' : '▶ Create agent'; }
+    if (btnEl) {
+      btnEl.disabled = false;
+      btnEl.textContent = isRu ? '▶ Создать агента' : '▶ Create agent';
+      if (btnEl.dataset) btnEl.dataset.creating = '';
+    }
   }
 }
 
