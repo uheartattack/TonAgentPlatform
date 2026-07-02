@@ -811,6 +811,330 @@ export function startApiServer() {
     });
   });
 
+  // ── GET /api/v3/provenance/:addr — публичный провенанс агента (read-only, v3.0) ──
+  app.get('/api/v3/provenance/:addr', async (req: Request, res: Response) => {
+    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
+    try {
+      const { getAgentProvenance } = require('./services/v3-network');
+      const data = await getAgentProvenance(req.params.addr);
+      res.json({ ok: true, ...data });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message });
+    }
+  });
+
+  // ── GET /api/v3/agents/by-tap/:tapId — паспорт on-chain агента по id платформы (read-only) ──
+  app.get('/api/v3/agents/by-tap/:tapId', async (req: Request, res: Response) => {
+    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
+    try {
+      const tapId = Number(req.params.tapId);
+      if (!Number.isFinite(tapId)) { res.status(400).json({ ok: false, error: 'bad tapId' }); return; }
+      const { getAgentByTapId } = require('./services/v3-network');
+      const data = await getAgentByTapId(tapId);
+      res.json({ ok: true, ...data });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message });
+    }
+  });
+
+  // ── GET /api/v3/agents — реестр агентов сети (read-only витрина) ──
+  app.get('/api/v3/agents', async (req: Request, res: Response) => {
+    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
+    try {
+      let limit = Number(req.query.limit);
+      if (!Number.isFinite(limit) || limit < 1) limit = 100;
+      const { listNetworkAgents } = require('./services/v3-network');
+      const agents = await listNetworkAgents({ limit, role: req.query.role as string, minTier: req.query.minTier as string, category: req.query.category as string });
+      res.json({ ok: true, agents, collection: process.env.V3_COLLECTION || null });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message });
+    }
+  });
+
+  // ── v3.0 Фаза 0: cross-owner доска задач (флаг V3_JOBS_ENABLED). Бот деньги не двигает. ──
+  const v3JobsOff = (res: Response): boolean => {
+    if (process.env.V3_JOBS_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'jobs disabled' }); return true; }
+    return false;
+  };
+  // публичный список задач доски
+  app.get('/api/v3/jobs', async (req: Request, res: Response) => {
+    if (v3JobsOff(res)) return;
+    try {
+      const { listJobs } = require('./services/v3-jobs');
+      const status = req.query.status != null ? Number(req.query.status) : undefined;
+      res.json({ ok: true, jobs: await listJobs({ status, category: req.query.category as string, limit: Number(req.query.limit) || 50 }) });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
+  });
+  // создать задачу (нужна сессия) → ссылка на деплой+фандинг escrow (подписывает заказчик)
+  app.post('/api/v3/jobs', async (req: Request, res: Response) => {
+    if (v3JobsOff(res)) return;
+    const token = (req.headers['x-auth-token'] as string) || (req.query.token as string);
+    const session = token ? getSession(token) : null;
+    if (!session) { res.status(401).json({ ok: false, error: 'No token' }); return; }
+    try {
+      const { createJob } = require('./services/v3-jobs');
+      const b = req.body || {};
+      if (!b.posterWallet || !b.title || !b.bountyGram || !b.deadlineUnix) {
+        res.status(400).json({ ok: false, error: 'posterWallet, title, bountyGram, deadlineUnix required' }); return;
+      }
+      res.json(await createJob({
+        posterUser: (session as any).userId, posterAgent: b.posterAgent ?? null, posterWallet: b.posterWallet,
+        title: b.title, description: b.description, category: b.category, mode: b.mode,
+        bountyGram: Number(b.bountyGram), deadlineUnix: Number(b.deadlineUnix),
+        acceptWindowSec: b.acceptWindowSec ? Number(b.acceptWindowSec) : undefined,
+      }));
+    } catch (e: any) { res.status(400).json({ ok: false, error: e?.message }); }
+  });
+  // клейм задачи агентом-исполнителем (гейтинг по trust-tier) → ссылка на claim-op
+  app.post('/api/v3/jobs/:id/claim', async (req: Request, res: Response) => {
+    if (v3JobsOff(res)) return;
+    const token = (req.headers['x-auth-token'] as string) || (req.query.token as string);
+    const session = token ? getSession(token) : null;
+    if (!session) { res.status(401).json({ ok: false, error: 'No token' }); return; }
+    try {
+      const { claimJob } = require('./services/v3-jobs');
+      if (!req.body || !req.body.executorAgentId) { res.status(400).json({ ok: false, error: 'executorAgentId required' }); return; }
+      res.json(await claimJob(req.params.id, Number(req.body.executorAgentId)));
+    } catch (e: any) { res.status(400).json({ ok: false, error: e?.message }); }
+  });
+  // ссылка на op сделки (deliver/accept/refund/reject/autorelease) для escrow
+  app.get('/api/v3/jobs/:addr/op/:op', async (req: Request, res: Response) => {
+    if (v3JobsOff(res)) return;
+    try {
+      const { jobOpLink } = require('./services/v3-jobs');
+      const op = req.params.op;
+      if (['deliver', 'accept', 'refund', 'reject', 'autorelease'].indexOf(op) < 0) { res.status(400).json({ ok: false, error: 'bad op' }); return; }
+      res.json({ ok: true, link: jobOpLink(req.params.addr, op as any) });
+    } catch (e: any) { res.status(400).json({ ok: false, error: e?.message }); }
+  });
+  // аукцион (mode=auction): бид исполнителя-агента (сессия)
+  app.post('/api/v3/jobs/:id/bid', async (req: Request, res: Response) => {
+    if (v3JobsOff(res)) return;
+    const token = (req.headers['x-auth-token'] as string) || (req.query.token as string);
+    const session = token ? getSession(token) : null;
+    if (!session) { res.status(401).json({ ok: false, error: 'No token' }); return; }
+    try {
+      const { placeBid } = require('./services/v3-jobs');
+      const b = req.body || {};
+      if (!b.bidderAgent || !b.amountGram) { res.status(400).json({ ok: false, error: 'bidderAgent, amountGram required' }); return; }
+      res.json(await placeBid(req.params.id, Number(b.bidderAgent), b.bidderWallet || null, Number(b.amountGram), b.note));
+    } catch (e: any) { res.status(400).json({ ok: false, error: e?.message }); }
+  });
+  // список бидов по задаче (публичный, ранжирован по effective)
+  app.get('/api/v3/jobs/:id/bids', async (req: Request, res: Response) => {
+    if (v3JobsOff(res)) return;
+    try {
+      const { listBids } = require('./services/v3-jobs');
+      res.json({ ok: true, bids: await listBids(req.params.id) });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
+  });
+  // заказчик выбирает победителя аукциона (сессия)
+  app.post('/api/v3/jobs/:id/award', async (req: Request, res: Response) => {
+    if (v3JobsOff(res)) return;
+    const token = (req.headers['x-auth-token'] as string) || (req.query.token as string);
+    const session = token ? getSession(token) : null;
+    if (!session) { res.status(401).json({ ok: false, error: 'No token' }); return; }
+    try {
+      const { awardJob } = require('./services/v3-jobs');
+      if (!req.body || !req.body.winnerAgent) { res.status(400).json({ ok: false, error: 'winnerAgent required' }); return; }
+      res.json(await awardJob(req.params.id, (session as any).userId, Number(req.body.winnerAgent)));
+    } catch (e: any) { res.status(400).json({ ok: false, error: e?.message }); }
+  });
+
+  // ── v3.0 Фаза 1: durable mailbox (агент↔агент). Инбокс агента — только его владельцу. ──
+  app.post('/api/v3/mailbox', async (req: Request, res: Response) => {
+    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
+    const token = (req.headers['x-auth-token'] as string) || (req.query.token as string);
+    const session = token ? getSession(token) : null;
+    if (!session) { res.status(401).json({ ok: false, error: 'No token' }); return; }
+    try {
+      const m = require('./services/v3-mailbox');
+      const b = req.body || {};
+      if (!b.toAgent) { res.status(400).json({ ok: false, error: 'toAgent required' }); return; }
+      if (b.fromAgent && !(await m.agentOwnedBy(Number(b.fromAgent), (session as any).userId))) { res.status(403).json({ ok: false, error: 'not your agent' }); return; }
+      res.json(await m.sendMessage({ fromAgent: b.fromAgent ? Number(b.fromAgent) : null, toAgent: Number(b.toAgent), kind: b.kind, subject: b.subject, body: b.body, ref: b.ref }));
+    } catch (e: any) { res.status(400).json({ ok: false, error: e?.message }); }
+  });
+  app.get('/api/v3/mailbox/:agentId', async (req: Request, res: Response) => {
+    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
+    const token = (req.headers['x-auth-token'] as string) || (req.query.token as string);
+    const session = token ? getSession(token) : null;
+    if (!session) { res.status(401).json({ ok: false, error: 'No token' }); return; }
+    try {
+      const m = require('./services/v3-mailbox');
+      const agentId = Number(req.params.agentId);
+      if (!(await m.agentOwnedBy(agentId, (session as any).userId))) { res.status(403).json({ ok: false, error: 'not your agent' }); return; }
+      const status = req.query.status != null ? Number(req.query.status) : undefined;
+      res.json({ ok: true, messages: await m.inbox(agentId, { status }), unread: await m.unreadCount(agentId) });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
+  });
+  app.post('/api/v3/mailbox/:id/read', async (req: Request, res: Response) => {
+    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
+    const token = (req.headers['x-auth-token'] as string) || (req.query.token as string);
+    const session = token ? getSession(token) : null;
+    if (!session) { res.status(401).json({ ok: false, error: 'No token' }); return; }
+    try {
+      const m = require('./services/v3-mailbox');
+      const agentId = Number((req.body || {}).agentId);
+      if (!agentId || !(await m.agentOwnedBy(agentId, (session as any).userId))) { res.status(403).json({ ok: false, error: 'not your agent' }); return; }
+      res.json(await m.markRead(agentId, req.params.id));
+    } catch (e: any) { res.status(400).json({ ok: false, error: e?.message }); }
+  });
+
+  // ── v3.0 Фаза 1: аренда агентов ──
+  const v3Sess = (req: Request, res: Response): any => {
+    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return null; }
+    const token = (req.headers['x-auth-token'] as string) || (req.query.token as string);
+    const session = token ? getSession(token) : null;
+    if (!session) { res.status(401).json({ ok: false, error: 'No token' }); return null; }
+    return session;
+  };
+  app.post('/api/v3/rentals/offer', async (req: Request, res: Response) => {
+    const session = v3Sess(req, res); if (!session) return;
+    try {
+      const r = require('./services/v3-rental'); const m = require('./services/v3-mailbox');
+      const b = req.body || {};
+      if (!b.tapAgentId || !b.ownerWallet || !b.pricePerDayGram) { res.status(400).json({ ok: false, error: 'tapAgentId, ownerWallet, pricePerDayGram required' }); return; }
+      if (!(await m.agentOwnedBy(Number(b.tapAgentId), (session as any).userId))) { res.status(403).json({ ok: false, error: 'not your agent' }); return; }
+      res.json(await r.offerRental({ ownerUser: (session as any).userId, tapAgentId: Number(b.tapAgentId), agentNft: b.agentNft, ownerWallet: b.ownerWallet, pricePerDayGram: Number(b.pricePerDayGram), minDays: b.minDays ? Number(b.minDays) : undefined, note: b.note }));
+    } catch (e: any) { res.status(400).json({ ok: false, error: e?.message }); }
+  });
+  app.post('/api/v3/rentals/offer/cancel', async (req: Request, res: Response) => {
+    const session = v3Sess(req, res); if (!session) return;
+    try {
+      const b = req.body || {}; if (!b.tapAgentId) { res.status(400).json({ ok: false, error: 'tapAgentId required' }); return; }
+      res.json(await require('./services/v3-rental').cancelOffer((session as any).userId, Number(b.tapAgentId)));
+    } catch (e: any) { res.status(400).json({ ok: false, error: e?.message }); }
+  });
+  app.get('/api/v3/rentals/offers', async (req: Request, res: Response) => {
+    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
+    try { res.json({ ok: true, offers: await require('./services/v3-rental').listOffers(Number(req.query.limit) || 50) }); }
+    catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
+  });
+  app.post('/api/v3/rentals/rent', async (req: Request, res: Response) => {
+    const session = v3Sess(req, res); if (!session) return;
+    try {
+      const b = req.body || {}; if (!b.offerId || !b.renterWallet) { res.status(400).json({ ok: false, error: 'offerId, renterWallet required' }); return; }
+      res.json(await require('./services/v3-rental').rentAgent({ offerId: b.offerId, renterUser: (session as any).userId, renterWallet: b.renterWallet, days: Number(b.days) || 1 }));
+    } catch (e: any) { res.status(400).json({ ok: false, error: e?.message }); }
+  });
+  app.get('/api/v3/rentals', async (req: Request, res: Response) => {
+    const session = v3Sess(req, res); if (!session) return;
+    try {
+      const filt = req.query.as === 'owner' ? { ownerUser: (session as any).userId } : { renterUser: (session as any).userId };
+      res.json({ ok: true, rentals: await require('./services/v3-rental').listRentals(filt) });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
+  });
+  // ── v3.0 Фаза 3: публичная карточка агента (витрина / *.tonagent.ton hire-page) ──
+  app.get('/api/v3/profile/:id', async (req: Request, res: Response) => {
+    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) { res.status(400).json({ ok: false, error: 'bad id' }); return; }
+      const { getPublicProfile } = require('./services/v3-network');
+      const p = await getPublicProfile(id);
+      if (!p.found) { res.status(404).json({ ok: false, error: 'agent not found' }); return; }
+      res.json({ ok: true, profile: p });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
+  });
+
+  // ── v3.0 Фаза 2: стейк/делегирование на агента (доля дохода бэкерам) ──
+  app.post('/api/v3/staking/stake', async (req: Request, res: Response) => {
+    const session = v3Sess(req, res); if (!session) return;
+    try {
+      const b = req.body || {}; if (!b.tapAgentId || !b.amountGram) { res.status(400).json({ ok: false, error: 'tapAgentId, amountGram required' }); return; }
+      res.json(await require('./services/v3-staking').stakeAgent({ tapAgentId: Number(b.tapAgentId), stakerUser: (session as any).userId, stakerWallet: b.stakerWallet, amountGram: Number(b.amountGram) }));
+    } catch (e: any) { res.status(400).json({ ok: false, error: e?.message }); }
+  });
+  app.post('/api/v3/staking/unstake', async (req: Request, res: Response) => {
+    const session = v3Sess(req, res); if (!session) return;
+    try {
+      const b = req.body || {}; if (!b.tapAgentId) { res.status(400).json({ ok: false, error: 'tapAgentId required' }); return; }
+      res.json(await require('./services/v3-staking').unstakeAgent(Number(b.tapAgentId), (session as any).userId));
+    } catch (e: any) { res.status(400).json({ ok: false, error: e?.message }); }
+  });
+  app.get('/api/v3/staking/backing/:agentId', async (req: Request, res: Response) => {
+    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
+    try { res.json({ ok: true, backing: await require('./services/v3-staking').agentBacking(Number(req.params.agentId)) }); }
+    catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
+  });
+  app.get('/api/v3/staking/mine', async (req: Request, res: Response) => {
+    const session = v3Sess(req, res); if (!session) return;
+    try {
+      const s = require('./services/v3-staking');
+      res.json({ ok: true, stakes: await s.listStakes({ stakerUser: (session as any).userId }), accruals: await s.myAccruals((session as any).userId) });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
+  });
+
+  // ── v3.0 Фаза 3: соц-лента активности сети (public read) ──
+  app.get('/api/v3/feed', async (req: Request, res: Response) => {
+    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
+    try { res.json({ ok: true, feed: await require('./services/v3-network').getActivityFeed(Number(req.query.limit) || 30) }); }
+    catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
+  });
+
+  // ── v3.0 Фаза 2: роялти за скиллы ──
+  app.get('/api/v3/royalties/mine', async (req: Request, res: Response) => {
+    const session = v3Sess(req, res); if (!session) return;
+    try { res.json({ ok: true, ...(await require('./services/v3-royalties').skillEarnings((session as any).userId)) }); }
+    catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
+  });
+  app.get('/api/v3/royalties/skill/:name', async (req: Request, res: Response) => {
+    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
+    try { res.json({ ok: true, ...(await require('./services/v3-royalties').skillStats(req.params.name)) }); }
+    catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
+  });
+
+  // ── v3.0 Фаза 2: дата-оракулы (платные сигнал-фиды) ──
+  app.get('/api/v3/oracle/feeds', async (req: Request, res: Response) => {
+    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
+    try { res.json({ ok: true, feeds: await require('./services/v3-oracles').listFeeds(Number(req.query.limit) || 50) }); }
+    catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
+  });
+  app.post('/api/v3/oracle/feed', async (req: Request, res: Response) => {
+    const session = v3Sess(req, res); if (!session) return;
+    try {
+      const b = req.body || {};
+      if (!b.title || !b.pricePerMonthGram) { res.status(400).json({ ok: false, error: 'title, pricePerMonthGram required' }); return; }
+      res.json(await require('./services/v3-oracles').createFeed({ tapAgentId: b.tapAgentId ? Number(b.tapAgentId) : undefined, ownerUser: (session as any).userId, ownerWallet: b.ownerWallet, title: b.title, description: b.description, pricePerMonthGram: Number(b.pricePerMonthGram) }));
+    } catch (e: any) { res.status(400).json({ ok: false, error: e?.message }); }
+  });
+  app.post('/api/v3/oracle/feed/:id/publish', async (req: Request, res: Response) => {
+    const session = v3Sess(req, res); if (!session) return;
+    try { res.json(await require('./services/v3-oracles').publishSignal(req.params.id, (session as any).userId, (req.body || {}).payload)); }
+    catch (e: any) { res.status(400).json({ ok: false, error: e?.message }); }
+  });
+  app.post('/api/v3/oracle/feed/:id/subscribe', async (req: Request, res: Response) => {
+    const session = v3Sess(req, res); if (!session) return;
+    try {
+      const b = req.body || {};
+      if (!b.subscriberWallet) { res.status(400).json({ ok: false, error: 'subscriberWallet required' }); return; }
+      res.json(await require('./services/v3-oracles').subscribe({ feedId: req.params.id, subscriberUser: (session as any).userId, subscriberWallet: b.subscriberWallet, months: Number(b.months) || 1 }));
+    } catch (e: any) { res.status(400).json({ ok: false, error: e?.message }); }
+  });
+  app.get('/api/v3/oracle/feed/:id/signals', async (req: Request, res: Response) => {
+    const session = v3Sess(req, res); if (!session) return;
+    try { res.json(await require('./services/v3-oracles').getSignals(req.params.id, (session as any).userId, Number(req.query.limit) || 20)); }
+    catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
+  });
+
+  // ── v3.0 Фаза 3: поддомены агентов (*.tonagent.ton визитка) ──
+  app.post('/api/v3/dns/claim', async (req: Request, res: Response) => {
+    const session = v3Sess(req, res); if (!session) return;
+    try {
+      const b = req.body || {};
+      if (!b.tapAgentId || !b.name) { res.status(400).json({ ok: false, error: 'tapAgentId, name required' }); return; }
+      const m = require('./services/v3-mailbox');
+      if (!(await m.agentOwnedBy(Number(b.tapAgentId), (session as any).userId))) { res.status(403).json({ ok: false, error: 'not your agent' }); return; }
+      res.json(await require('./services/v3-dns').claimSubdomain((session as any).userId, Number(b.tapAgentId), b.name));
+    } catch (e: any) { res.status(400).json({ ok: false, error: e?.message }); }
+  });
+  app.get('/api/v3/dns/resolve/:name', async (req: Request, res: Response) => {
+    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
+    try { res.json({ ok: true, ...(await require('./services/v3-dns').resolveSubdomain(req.params.name)) }); }
+    catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
+  });
+
   // ── GET /tonconnect-manifest.json — самохостируемый манифест TON Connect ──
   app.get('/tonconnect-manifest.json', (_req: Request, res: Response) => {
     res.json({
@@ -6019,6 +6343,32 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
     (req as any).session = session;
     next();
   }
+
+  // ── v3.0 минтер (owner-only). Сид в env V3_MINTER_MNEMONIC, я его не вижу. ──
+  // Деплой/минт запускаются ТОЛЬКО этими явными вызовами, не автоматически.
+  app.get('/api/v3/minter/info', requireOwner, async (_req: Request, res: Response) => {
+    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
+    try {
+      const { getMinterInfo } = require('./services/v3-minter');
+      res.json({ ok: true, ...(await getMinterInfo()) });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
+  });
+  app.post('/api/v3/minter/deploy', requireOwner, async (_req: Request, res: Response) => {
+    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
+    try {
+      const { deployCollection } = require('./services/v3-minter');
+      res.json({ ok: true, ...(await deployCollection()) });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
+  });
+  app.post('/api/v3/minter/mint', requireOwner, async (req: Request, res: Response) => {
+    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
+    try {
+      const { mintAgent } = require('./services/v3-minter');
+      const { owner, tapAgentId, capsHash } = req.body || {};
+      if (!owner) { res.status(400).json({ ok: false, error: 'owner wallet required' }); return; }
+      res.json({ ok: true, ...(await mintAgent(owner, Number(tapAgentId || 1), capsHash)) });
+    } catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
+  });
 
   // ── GET /api/proposals — список AI proposals ──────────────────────
   app.get('/api/proposals', requireOwner, async (req: Request, res: Response) => {
