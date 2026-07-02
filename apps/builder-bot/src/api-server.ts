@@ -2601,7 +2601,13 @@ export function startApiServer() {
       );
       const pausedMap = new Map<number, string>();
       stateRes.rows.forEach((r: any) => {
-        if (r.value) pausedMap.set(r.agent_id, String(r.value));
+        if (!r.value) return;
+        // value is jsonb → the pg driver returns it as a JS object
+        // ({reason, at, details}); String() on that yields "[object Object]".
+        let v: any = r.value;
+        if (typeof v === 'string') { try { v = JSON.parse(v); } catch {} }
+        const reason = (v && typeof v === 'object') ? (v.reason || v.message || null) : String(v);
+        if (reason) pausedMap.set(r.agent_id, String(reason));
       });
 
       const out = agents.map((a: any) => {
