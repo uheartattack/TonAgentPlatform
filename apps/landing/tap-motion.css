@@ -202,7 +202,10 @@
    2) MODAL
    ============================================================ */
 .tap-modal-backdrop {
-  position: fixed; inset: 0; z-index: 8000;
+  /* Must sit above .agent-detail-backdrop (z-index 50000) so modals opened from
+     inside the agent slide-over (e.g. delete confirm) are visible, but below
+     .toast-container (100001) so toasts stay on top. */
+  position: fixed; inset: 0; z-index: 60000;
   background: rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(14px) saturate(120%);
   -webkit-backdrop-filter: blur(14px) saturate(120%);

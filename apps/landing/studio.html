@@ -12,7 +12,7 @@
   <link rel="icon" type="image/svg+xml" href="logo.svg">
   <link rel="shortcut icon" href="logo.svg">
   <title>TON Agent Studio</title>
-  <link rel="preload" href="/studio.js?v=20260618a1" as="script">
+  <link rel="preload" href="/studio.js?v=20260702a4" as="script">
   <link rel="preload" href="/studio.css?v=20260527f1" as="style">
   <link rel="preload" href="/design-system.css?v=20260520z" as="style">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -77,7 +77,7 @@
        All 135/90/180deg gradients across the studio CSS files now use
        `linear-gradient(in oklab ...)` for perceptually-uniform interpolation
        (no muddy grey seam between blue and pink). -->
-  <link rel="stylesheet" href="tap-motion.css?v=20260527a6">
+  <link rel="stylesheet" href="tap-motion.css?v=20260702a7">
   <!-- Edge fix — drops the white border + asymmetric top-only inset highlight
        that was rendering as a visible "frame" around active gradient pills. -->
   <link rel="stylesheet" href="gradient-edge-fix.css?v=20260527e32">
@@ -193,13 +193,19 @@
        value never lives in git). initAnalytics() is the SDK's onload callback. -->
   <script>
     window.initAnalytics = function() {
+      // The TG Analytics SDK can only retrieve launch params inside a Telegram
+      // WebView. In a normal browser it throws LaunchParamsRetrieveError as an
+      // unhandled promise rejection, so bail out unless we're really inside TG.
+      var tg = window.Telegram && window.Telegram.WebApp;
+      if (!tg || !tg.initData) return;
       fetch('/api/config').then(r => r.json()).then(cfg => {
         if (!cfg || !cfg.tgAnalyticsToken || !window.telegramAnalytics) return;
         try {
-          window.telegramAnalytics.init({
+          var p = window.telegramAnalytics.init({
             token: cfg.tgAnalyticsToken,
             appName: cfg.tgAnalyticsAppName || 'ton_agent_platform',
           });
+          if (p && typeof p.catch === 'function') p.catch(function(e) { console.warn('[TGAnalytics] init rejected', e); });
           console.log('[TGAnalytics] initialized');
         } catch (e) { console.warn('[TGAnalytics] init failed', e); }
       }).catch(function() {});
@@ -3186,6 +3192,6 @@
   </div>
 
   <script src="https://unpkg.com/@tonconnect/ui@2/dist/tonconnect-ui.min.js"></script>
-  <script src="studio.js?v=20260618a1"></script>
+  <script src="studio.js?v=20260702a4"></script>
 </body>
 </html>

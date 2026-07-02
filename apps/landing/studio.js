@@ -4992,7 +4992,14 @@ function deleteAgent(agentId, name) {
   const modal = document.getElementById('delete-agent-modal');
   const nameEl = document.getElementById('delete-agent-name');
   if (nameEl) nameEl.textContent = '#' + agentId + ' ' + name;
-  if (modal) modal.style.display = 'flex';
+  if (modal) {
+    // The modal is declared inside <main>, which is a z-index:2 stacking context,
+    // so its own z-index can't lift it above the agent slide-over
+    // (.agent-detail-backdrop, z-index 50000). Portal it to <body> so its
+    // z-index applies at the top level and it renders over the open agent panel.
+    if (modal.parentElement !== document.body) document.body.appendChild(modal);
+    modal.style.display = 'flex';
+  }
 }
 
 function closeDeleteModal() {
@@ -12841,13 +12848,21 @@ function appendAssistantMsg(role, content, buttons) {
 
   var div = document.createElement('div');
   div.className = 'assistant-msg ' + role;
-  // Parse markdown + navigation links
+  // Render the Telegram-MarkdownV2 subset the server sends (the SAME string goes
+  // to Telegram and to this web chat): single-* bold, _italic_, `code`, and the
+  // \\-escapes MarkdownV2 puts before punctuation. Escaped marker chars become
+  // HTML entities (inert to the regexes below); other escapes just drop the \\.
   var html = escHtml(content)
+    .replace(/\\\\/g, '&#92;')
+    .replace(/\\([_*`\[\]()])/g, function(_m, ch) { return '&#' + ch.charCodeAt(0) + ';'; })
+    .replace(/\\([~>#+=|{}.!\-])/g, '$1')
     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^\s*][^*\n]*?)\*/g, '<strong>$1</strong>')
+    .replace(/_([^\s_][^_\n]*?)_/g, '<em>$1</em>')
     .replace(/`([^`]+)`/g, '<code>$1</code>')
-    // Navigation links: [[page:pageName|Label]] → clickable links that navigate within studio
+    // Navigation links: [[page:pageName|Label]] -> clickable links that navigate within studio
     .replace(/\[\[page:(\w+)\|([^\]]+)\]\]/g, '<a href="#" class="assistant-nav-link" onclick="navigateTo(\'$1\');return false" style="color:var(--primary-light);text-decoration:underline;cursor:pointer">$2</a>')
-    // Standard markdown links: [text](url) → external links (only http/https)
+    // Standard markdown links: [text](url) -> external links (only http/https)
     .replace(/\[([^\]]+)\]\((https?:\/\/[^)"']+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:var(--primary-light);text-decoration:underline">$1</a>')
     .replace(/\n/g, '<br>');
   if (role === 'assistant') {
@@ -13521,13 +13536,23 @@ async function openMarketplaceDetail(listingId) {
 }
 
 async function buyFromMarketplace(listingId) {
+  var listing = (_marketplaceListings || []).filter(function(x) { return String(x.id) === String(listingId); })[0] || {};
+  var isFree = !!listing.isFree || Number(listing.price || 0) <= 0;
   var confirmed = await studioConfirm({
-    title: currentLang === 'ru' ? 'Подтвердите покупку' : 'Confirm Purchase',
-    message: currentLang === 'ru' ? 'Агент будет добавлен в вашу коллекцию. Стоимость будет списана с баланса.' : 'The agent will be added to your collection. Cost will be deducted from your balance.',
-    confirmText: currentLang === 'ru' ? 'Купить' : 'Buy Now',
+    title: isFree
+      ? (currentLang === 'ru' ? 'Установить агента' : 'Install Agent')
+      : (currentLang === 'ru' ? 'Подтвердите покупку' : 'Confirm Purchase'),
+    message: isFree
+      ? (currentLang === 'ru' ? 'Агент будет добавлен в вашу коллекцию бесплатно.' : 'The agent will be added to your collection for free.')
+      : (currentLang === 'ru' ? 'Агент будет добавлен в вашу коллекцию. Стоимость будет списана с баланса.' : 'The agent will be added to your collection. Cost will be deducted from your balance.'),
+    confirmText: isFree
+      ? (currentLang === 'ru' ? 'Установить' : 'Install')
+      : (currentLang === 'ru' ? 'Купить' : 'Buy Now'),
     cancelText: currentLang === 'ru' ? 'Отмена' : 'Cancel',
     type: 'info',
-    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>'
+    icon: isFree
+      ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'
+      : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>'
   });
   if (!confirmed) return;
   try {
