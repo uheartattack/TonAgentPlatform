@@ -12,7 +12,7 @@
   <link rel="icon" type="image/svg+xml" href="logo.svg">
   <link rel="shortcut icon" href="logo.svg">
   <title>TON Agent Studio</title>
-  <link rel="preload" href="/studio.js?v=20260702a4" as="script">
+  <link rel="preload" href="/studio.js?v=20260702a6" as="script">
   <link rel="preload" href="/studio.css?v=20260527f1" as="style">
   <link rel="preload" href="/design-system.css?v=20260520z" as="style">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -496,7 +496,7 @@
         <div class="topbar">
           <div class="search">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="muted"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input id="topbar-search-input" placeholder="Search agents, tools, settings…">
+            <input id="topbar-search-input" placeholder="Search agents, tools, settings…" oninput="handleTopbarSearch(this.value)">
             <span class="kbd">⌘K</span>
           </div>
           <div class="row gap-14">
@@ -3192,6 +3192,6 @@
   </div>
 
   <script src="https://unpkg.com/@tonconnect/ui@2/dist/tonconnect-ui.min.js"></script>
-  <script src="studio.js?v=20260702a4"></script>
+  <script src="studio.js?v=20260702a6"></script>
 </body>
 </html>

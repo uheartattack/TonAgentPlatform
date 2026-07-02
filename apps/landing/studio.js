@@ -608,8 +608,8 @@ function buildOmniIndex() {
   });
   // User's agents — from cached list (loaded on operations page)
   try {
-    if (Array.isArray(window._agentsList)) {
-      window._agentsList.forEach(function(ag) {
+    if (Array.isArray(_agentsCache)) {
+      _agentsCache.forEach(function(ag) {
         items.push({
           title: '#' + ag.id + ' ' + (ag.name || 'unnamed'),
           sub: 'Agent · ' + (ag.role || 'worker'),
@@ -621,8 +621,8 @@ function buildOmniIndex() {
   } catch {}
   // Skills — from cached list (loaded on skills page)
   try {
-    if (Array.isArray(window._skillsCache)) {
-      window._skillsCache.forEach(function(s) {
+    if (Array.isArray(_skillsCache)) {
+      _skillsCache.forEach(function(s) {
         items.push({
           title: s.name,
           sub: 'Skill · ' + (s.source || 'builtin'),
@@ -676,7 +676,8 @@ function handleTopbarSearch(val) {
     _omniDropdown = document.createElement('div');
     _omniDropdown.id = 'omni-dropdown';
     _omniDropdown.style.cssText = 'position:absolute;top:46px;left:0;right:0;background:var(--bg-elev-2,#12141f);border:1px solid var(--border);border-radius:12px;box-shadow:0 16px 48px rgba(0,0,0,.5),0 0 0 1px rgba(var(--accent-r,0),var(--accent-g,168),var(--accent-b,255),.15);z-index:9999;max-height:60vh;overflow-y:auto;backdrop-filter:blur(16px) saturate(150%)';
-    var wrap = document.querySelector('.topbar-search');
+    var searchInput = document.getElementById('topbar-search-input');
+    var wrap = (searchInput && searchInput.parentElement) || document.querySelector('.topbar .search');
     if (wrap) { wrap.style.position = 'relative'; wrap.appendChild(_omniDropdown); }
     document.addEventListener('click', _omniOutsideClick, true);
     document.addEventListener('keydown', _omniKey);
