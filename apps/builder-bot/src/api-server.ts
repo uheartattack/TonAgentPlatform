@@ -5028,8 +5028,20 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
       // ── Resolve AI client (with platform proxy fallback) ───────────────
       const { decryptApiKey } = await import('./crypto-utils');
       const rawKey = (cfg.AI_API_KEY as string) || '';
-      const apiKey = rawKey ? decryptApiKey(rawKey) : '';
-      const provider = ((cfg.AI_PROVIDER as string) || '').toLowerCase();
+      let apiKey = rawKey ? decryptApiKey(rawKey) : '';
+      let provider = ((cfg.AI_PROVIDER as string) || '').toLowerCase();
+      // Fall back to the account-global AI key/provider — the NO_API_KEY error below
+      // promises "agent settings or global settings", but only the per-agent key was
+      // ever checked. getAll() already decrypts secret vars, so the key is plaintext.
+      if (!apiKey) {
+        try {
+          const _all: any = await getUserSettingsRepository().getAll(userId);
+          let _uv: any = (_all && _all.user_variables) || {};
+          if (typeof _uv === 'string') { try { _uv = JSON.parse(_uv); } catch { _uv = {}; } }
+          apiKey = (_uv.AI_API_KEY as string) || '';
+          if (!provider) provider = ((_uv.AI_PROVIDER as string) || '').toLowerCase();
+        } catch {}
+      }
 
       const PROVIDER_MAP: Record<string, { baseURL: string; model: string }> = {
         gemini:     { baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/', model: 'gemini-2.0-flash' },
