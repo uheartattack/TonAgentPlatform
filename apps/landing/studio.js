@@ -7262,7 +7262,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // /studio/agents/201 → open agent 201
   // /studio/agents/201/chats → open agent 201 on chats tab
   var path = window.location.pathname.replace(/\/$/, '');
-  var agentMatch = path.match(/\/studio\/agents\/(\d+)(?:\/(\w+))?/);
+  var agentMatch = path.match(/\/studio\/agents\/(\d+)(?:\/([\w-]+))?/);
   if (agentMatch) {
     var _routeAgentId = parseInt(agentMatch[1]);
     var _routeTab = agentMatch[2] || 'soul';
@@ -7273,7 +7273,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (_routeTab !== 'soul') switchSettingsTab(_routeTab);
     }, 300);
   } else {
-    var match = path.match(/\/studio\/(\w+)/);
+    var match = path.match(/\/studio\/([\w-]+)/);
     if (match && match[1]) {
       setTimeout(function() { if (authToken) navigateTo(match[1]); }, 500);
     }
