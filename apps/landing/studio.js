@@ -18050,7 +18050,7 @@ function renderSkills() {
     var cat = (s.category || s.metadata && s.metadata.category || '').toUpperCase();
     var ver = s.version || '1.0';
     return '' +
-      '<div class="marketplace-card skill-card" onclick="openSkillDetail(' + JSON.stringify(s.name) + ')" style="cursor:pointer">' +
+      '<div class="marketplace-card skill-card" onclick="openSkillDetail(\'' + escJsAttr(s.name) + '\')" style="cursor:pointer">' +
         '<div class="mkt-card-header" style="display:flex;justify-content:space-between;align-items:center;gap:8px">' +
           '<strong style="font-size:1rem">' + escHtml(s.name) + '</strong>' +
           '<span style="background:' + badgeColor + '22;color:' + badgeColor + ';padding:2px 8px;border-radius:6px;font-size:.65rem;font-weight:700">' + badgeLabel + '</span>' +
@@ -18077,14 +18077,14 @@ async function openSkillDetail(name) {
     var skillMeta = (_skillsCache || []).find(function(x) { return x.name === name; }) || {};
     var isPublic = !!skillMeta.is_public;  // may be undefined initially
     var publishBtn = isOwn
-      ? '<button class="btn btn-ghost btn-sm" onclick="toggleSkillPublish(' + JSON.stringify(name) + ', ' + (!isPublic) + ')">' +
+      ? '<button class="btn btn-ghost btn-sm" onclick="toggleSkillPublish(\'' + escJsAttr(name) + '\', ' + (!isPublic) + ')">' +
         (isPublic
           ? (currentLang === 'ru' ? '🔒 Сделать приватным' : '🔒 Make Private')
           : (currentLang === 'ru' ? '🌍 Опубликовать' : '🌍 Publish')) +
         '</button>'
       : '';
     var deleteBtn = isOwn
-      ? '<button class="btn btn-ghost btn-sm" style="color:var(--error)" onclick="deleteSkill(' + JSON.stringify(name) + ')">' +
+      ? '<button class="btn btn-ghost btn-sm" style="color:var(--error)" onclick="deleteSkill(\'' + escJsAttr(name) + '\')">' +
         (currentLang === 'ru' ? 'Удалить' : 'Delete') + '</button>'
       : '';
     var body =
@@ -18215,7 +18215,7 @@ async function loadAgentSkills(agentId) {
             '</div>' +
             '<div style="font-size:.78rem;color:var(--text-muted);line-height:1.4">' + escHtml((s.description || '').slice(0, 200)) + '</div>' +
           '</div>' +
-          '<button class="btn btn-ghost btn-sm" onclick="openSkillDetail(' + JSON.stringify(s.name) + ')" style="flex-shrink:0">' +
+          '<button class="btn btn-ghost btn-sm" onclick="openSkillDetail(\'' + escJsAttr(s.name) + '\')" style="flex-shrink:0">' +
             '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>' +
           '</button>' +
         '</div>';
