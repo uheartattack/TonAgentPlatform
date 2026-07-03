@@ -12876,7 +12876,7 @@ function appendAssistantMsg(role, content, buttons) {
   if (buttons && buttons.length) {
     html += '<div class="assistant-msg-buttons">';
     buttons.forEach(function(b) {
-      html += '<button class="btn btn-ghost btn-sm" onclick="sendAssistantCallback(\'' + escHtml(b.callbackData || b.text) + '\',\'' + escHtml(b.text) + '\')">' + escHtml(b.text) + '</button>';
+      html += '<button class="btn btn-ghost btn-sm" onclick="sendAssistantCallback(\'' + escJsAttr(b.callbackData || b.text) + '\',\'' + escJsAttr(b.text) + '\')">' + escHtml(b.text) + '</button>';
     });
     html += '</div>';
   }
@@ -18201,7 +18201,7 @@ async function loadAgentSkills(agentId) {
         '<div class="skill-toggle-row" style="display:flex;align-items:flex-start;gap:14px;padding:12px 14px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px">' +
           '<label class="switch" style="position:relative;display:inline-block;width:42px;height:22px;flex-shrink:0;margin-top:2px">' +
             '<input type="checkbox" ' + (s.enabled ? 'checked' : '') +
-              ' onchange="toggleAgentSkill(' + _detailAgentId + ', ' + JSON.stringify(s.name) + ', this.checked)"' +
+              ' onchange="toggleAgentSkill(' + _detailAgentId + ', \'' + escJsAttr(s.name) + '\', this.checked)"' +
               ' style="opacity:0;width:0;height:0">' +
             '<span class="switch-slider" style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:' + (s.enabled ? 'linear-gradient(in oklab 135deg,#00a8ff,#8b5cf6)' : '#374151') + ';transition:.25s;border-radius:22px">' +
               '<span style="position:absolute;height:18px;width:18px;left:' + (s.enabled ? '22px' : '2px') + ';bottom:2px;background:white;transition:.25s;border-radius:50%"></span>' +
