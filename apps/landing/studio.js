@@ -12858,8 +12858,10 @@ function appendAssistantMsg(role, content, buttons) {
     .replace(/\\([_*`\[\]()])/g, function(_m, ch) { return '&#' + ch.charCodeAt(0) + ';'; })
     .replace(/\\([~>#+=|{}.!\-])/g, '$1')
     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*([^\s*][^*\n]*?)\*/g, '<strong>$1</strong>')
-    .replace(/_([^\s_][^_\n]*?)_/g, '<em>$1</em>')
+    // Single-* bold and _italic_ only at word boundaries, so identifiers like
+    // get_ton_balance or a*b aren't mangled when they arrive unescaped.
+    .replace(/(^|[^\w*])\*(?!\s)([^*\n]+?)\*(?![\w*])/g, '$1<strong>$2</strong>')
+    .replace(/(^|[^\w_])_(?!\s)([^_\n]+?)_(?![\w_])/g, '$1<em>$2</em>')
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     // Navigation links: [[page:pageName|Label]] -> clickable links that navigate within studio
     .replace(/\[\[page:(\w+)\|([^\]]+)\]\]/g, '<a href="#" class="assistant-nav-link" onclick="navigateTo(\'$1\');return false" style="color:var(--primary-light);text-decoration:underline;cursor:pointer">$2</a>')
