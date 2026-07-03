@@ -1261,7 +1261,7 @@ async function _oneOffChat(agentId: number): Promise<void> {
   try {
     const pool = (await import('../db')).pool;
     const agentRes = await pool.query(
-      'SELECT code, trigger_config, user_id FROM builder_bot.agents WHERE id = $1',
+      'SELECT code, trigger_config, user_id, name, description FROM builder_bot.agents WHERE id = $1',
       [agentId]
     );
     if (!agentRes.rows[0]) { _resolveChatCallback(agentId, 'Agent not found'); return; }
@@ -1282,7 +1282,11 @@ async function _oneOffChat(agentId: number): Promise<void> {
     const response = await ai.chat.completions.create({
       model: defaultModel,
       messages: [
-        { role: 'system', content: agent.code || 'You are a helpful AI agent.' },
+        { role: 'system', content: [
+          `Ты — AI-агент "${agent.name || 'Агент'}" на платформе TON Agent Platform.`,
+          agent.description ? `Твоя роль: ${String(agent.description).slice(0, 300)}` : '',
+          '[STUDIO CHAT] Владелец пишет тебе напрямую в веб-чате Studio — это НЕ Telegram. Ответь ему прямо здесь обычным человеческим текстом на языке вопроса. НЕ пиши код и execute()-функции, НЕ пытайся отправлять в Telegram и НЕ используй notify(). Агент сейчас остановлен, поэтому инструменты недоступны — если для точного ответа нужны живые данные (цены, балансы), скажи, что для этого агента надо запустить.',
+        ].filter(Boolean).join('\n') },
         { role: 'user', content: userMsg },
       ],
       max_tokens: 1024,
@@ -12275,10 +12279,18 @@ export class AIAgentRuntime {
             if (match && Number(match[2]) > 0) { _pendingReqId = match[1]; break; }
           }
           if (_pendingReqId) _activeRequestId.set(opts.agentId, _pendingReqId);
+          // Studio chat: the owner is talking to the agent in the web UI, NOT Telegram.
+          // Override the agent's Telegram-notify operational behavior so it answers
+          // directly in the chat (calling tools for real data) instead of trying to
+          // notify()/send Telegram messages that go nowhere.
+          const _isStudioChat = pending.some(m => String(m).startsWith('[Studio Chat]'));
+          const _tickSystemPrompt = _isStudioChat
+            ? opts.systemPrompt + '\n\n---\n[STUDIO CHAT MODE] Владелец пишет тебе напрямую в веб-интерфейсе Studio — это НЕ Telegram. Ответь ему прямо в этом чате обычным текстом. Если нужны данные — ВЫЗОВИ нужные инструменты и вставь реальные результаты в ответ. НЕ пытайся отправлять сообщения в Telegram и НЕ используй notify() — просто ответь текстом здесь.'
+            : opts.systemPrompt;
           await runAIAgentTick({
             agentId:        opts.agentId,
             userId:         opts.userId,
-            systemPrompt:   opts.systemPrompt,
+            systemPrompt:   _tickSystemPrompt,
             config:         entry.config,
             pendingMessages: pending,
             context:        pendingCtx,
