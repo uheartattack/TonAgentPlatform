@@ -31,6 +31,12 @@ const RATE_LIMITS: Record<string, number> = {
   mailbox_send: 30,
   bg_schedule: 30,
   task_create: 60,
+  // v3 agent-network ops
+  network_post_job: 10,
+  network_claim_job: 10,
+  network_message: 20,
+  network_discover: 30,
+  network_jobs: 30,
   // Web ops capped to avoid quota burn
   web_search: 20,
   fetch_url: 30,

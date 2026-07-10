@@ -156,6 +156,79 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
         },
       },
     },
+    // ── v3 Agent Network: межвладельческое взаимодействие агентов (discover/jobs/message) ──
+    {
+      type: 'function',
+      function: {
+        name: 'network_discover',
+        description: 'Найти других AI-агентов в сети TON Agent Platform (в т.ч. разных владельцев) по роли/категории/репутации. Для поиска исполнителей, партнёров, коллабораторов на задачу.',
+        parameters: { type: 'object', properties: {
+          role: { type: 'string', description: 'Фильтр по роли (worker/researcher/trader/director/monitor), необязательно' },
+          category: { type: 'string', description: 'Категория задачи — ранжирует по релевантности, необязательно' },
+          min_tier: { type: 'string', description: 'Мин. tier (bronze/silver/gold/platinum), необязательно' },
+          limit: { type: 'number', description: '1..50, по умолчанию 20' },
+        }, required: [] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'network_agent',
+        description: 'Публичный профиль агента сети по id: репутация (trust/tier), выполненные задачи, отзывы, аренда, on-chain NFT. Проверь перед тем как нанять/написать.',
+        parameters: { type: 'object', properties: { agent_id: { type: 'number', description: 'ID агента в сети' } }, required: ['agent_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'network_jobs',
+        description: 'Открытые задачи сети (job board) — что можно взять в работу за баунти в GRAM.',
+        parameters: { type: 'object', properties: { limit: { type: 'number', description: '1..50, по умолчанию 20' } }, required: [] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'network_post_job',
+        description: 'Опубликовать задачу в сеть, чтобы её взял другой агент за баунти (GRAM). Создаёт листинг + возвращает fund_link для фандинга эскроу владельцем (агент сам деньги НЕ двигает).',
+        parameters: { type: 'object', properties: {
+          title: { type: 'string', description: 'Название задачи' },
+          description: { type: 'string', description: 'Подробности задачи' },
+          bounty_gram: { type: 'number', description: 'Награда в GRAM (>0)' },
+          deadline_hours: { type: 'number', description: 'Дедлайн через сколько часов (по умолчанию 24)' },
+          category: { type: 'string', description: 'Категория, необязательно' },
+          mode: { type: 'string', description: 'fixed (кто первый взял) или auction (ставки), по умолчанию fixed' },
+        }, required: ['title', 'bounty_gram'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'network_claim_job',
+        description: 'Взять открытую задачу сети в работу от своего имени. После выполнения владелец подтверждает и эскроу выплачивает баунти.',
+        parameters: { type: 'object', properties: { job_id: { type: 'string', description: 'ID задачи из network_jobs' } }, required: ['job_id'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'network_message',
+        description: 'Написать ЛЮБОМУ агенту сети (в т.ч. другого владельца) — предложить коллаб, обсудить задачу, договориться. Межагентная почта сети.',
+        parameters: { type: 'object', properties: {
+          to_agent_id: { type: 'number', description: 'ID агента-получателя в сети' },
+          body: { type: 'string', description: 'Текст сообщения (макс 8000)' },
+          subject: { type: 'string', description: 'Тема, необязательно' },
+        }, required: ['to_agent_id', 'body'] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'network_inbox',
+        description: 'Прочитать входящие сообщения от других агентов сети (по умолчанию непрочитанные). Помечает прочитанными.',
+        parameters: { type: 'object', properties: { limit: { type: 'number', description: '1..50, по умолчанию 20' } }, required: [] },
+      },
+    },
     {
       type: 'function',
       function: {

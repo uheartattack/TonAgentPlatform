@@ -1300,6 +1300,7 @@ export const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
   wallet:      ['get_ton_balance', 'send_ton', 'send_jetton', 'get_agent_wallet'],
   jetton_mint: ['jetton_deploy', 'jetton_mint', 'jetton_change_admin'],
   nft:         ['get_nft_floor'],
+  agent_network: ['network_discover', 'network_agent', 'network_jobs', 'network_post_job', 'network_claim_job', 'network_message', 'network_inbox'],
   gifts:       ['get_gift_catalog', 'get_fragment_listings', 'appraise_gift', 'scan_arbitrage',
                 'buy_catalog_gift', 'buy_resale_gift', 'list_gift_for_sale', 'get_stars_balance',
                 'get_gift_upgrade_stats', 'analyze_gift_profitability', 'buy_market_gift',
@@ -3882,6 +3883,106 @@ async function _executeToolInner(
           );
         }
         return { ok: true, count: res.rows.length, messages: res.rows };
+      } catch (e: any) { return { ok: false, error: e?.message }; }
+    }
+
+    // ── v3 Agent Network — межвладельческое взаимодействие агентов (discover/jobs/message) ──
+    case 'network_discover': {
+      try {
+        const net = await import('../services/v3-network');
+        const rows: any[] = await net.listNetworkAgents({
+          limit: Math.min(50, Math.max(1, Number(args.limit) || 20)),
+          role: args.role ? String(args.role) : undefined,
+          minTier: args.min_tier ? String(args.min_tier) : undefined,
+          category: args.category ? String(args.category) : undefined,
+        });
+        const agents = rows.map((x: any) => ({
+          agent_id: Number(x.tap_agent_id), role: x.role, trust: x.trust, tier: x.tier,
+          fit: x.fit, nft: x.agent_nft,
+        }));
+        return { ok: true, count: agents.length, agents };
+      } catch (e: any) { return { ok: false, error: e?.message }; }
+    }
+    case 'network_agent': {
+      try {
+        const id = Number(args.agent_id);
+        if (!Number.isFinite(id) || id <= 0) return { ok: false, error: 'agent_id required' };
+        const net = await import('../services/v3-network');
+        const profile = await net.getPublicProfile(id);
+        return { ok: true, profile };
+      } catch (e: any) { return { ok: false, error: e?.message }; }
+    }
+    case 'network_jobs': {
+      try {
+        const net = await import('../services/v3-network');
+        const rows: any[] = await net.listOpenJobs(Math.min(50, Math.max(1, Number(args.limit) || 20)));
+        const jobs = rows.map((j: any) => ({
+          job_id: String(j.id), title: j.title, category: j.category,
+          bounty_gram: Number(BigInt(j.bounty_nano || '0')) / 1e9, status: j.status, deadline: j.deadline,
+        }));
+        return { ok: true, count: jobs.length, jobs };
+      } catch (e: any) { return { ok: false, error: e?.message }; }
+    }
+    case 'network_post_job': {
+      try {
+        const title = String(args.title || '').trim();
+        const bounty = Number(args.bounty_gram);
+        if (!title) return { ok: false, error: 'title required' };
+        if (!(bounty > 0)) return { ok: false, error: 'bounty_gram must be > 0' };
+        const { pool } = await import('../db');
+        const w = await pool.query(`SELECT value FROM builder_bot.agent_state WHERE agent_id=$1 AND key='wallet_address' LIMIT 1`, [params.agentId]);
+        let wallet: any = w.rows[0]?.value;
+        if (typeof wallet === 'string' && wallet.startsWith('"')) { try { wallet = JSON.parse(wallet); } catch { /* */ } }
+        wallet = typeof wallet === 'string' ? wallet : (wallet?.value || wallet?.address);
+        if (!wallet) return { ok: false, error: 'no wallet — call get_agent_wallet first' };
+        const jobs = await import('../services/v3-jobs');
+        const deadlineUnix = Math.floor(Date.now() / 1000) + Math.round((Number(args.deadline_hours) || 24) * 3600);
+        const r = await jobs.createJob({
+          posterAgent: params.agentId, posterWallet: String(wallet), title,
+          description: args.description ? String(args.description) : undefined,
+          category: args.category ? String(args.category) : undefined,
+          mode: args.mode === 'auction' ? 'auction' : 'fixed', bountyGram: bounty, deadlineUnix,
+        });
+        return { ok: true, job_id: r.jobId, escrow: r.escrowAddr, fund_link: r.deployLink,
+          note: 'Задача опубликована в сеть. Чтобы активировать эскроу, владелец фандит по fund_link (TonConnect).' };
+      } catch (e: any) { return { ok: false, error: e?.message }; }
+    }
+    case 'network_claim_job': {
+      try {
+        const jobId = String(args.job_id || '').trim();
+        if (!jobId) return { ok: false, error: 'job_id required' };
+        const { pool } = await import('../db');
+        const w = await pool.query(`SELECT value FROM builder_bot.agent_state WHERE agent_id=$1 AND key='wallet_address' LIMIT 1`, [params.agentId]);
+        let wallet: any = w.rows[0]?.value;
+        if (typeof wallet === 'string' && wallet.startsWith('"')) { try { wallet = JSON.parse(wallet); } catch { /* */ } }
+        wallet = typeof wallet === 'string' ? wallet : (wallet?.value || wallet?.address);
+        const jobs = await import('../services/v3-jobs');
+        const r = await jobs.claimJob(jobId, params.agentId, wallet ? String(wallet) : undefined);
+        return { ok: true, result: r };
+      } catch (e: any) { return { ok: false, error: e?.message }; }
+    }
+    case 'network_message': {
+      try {
+        const toId = Number(args.to_agent_id);
+        const body = String(args.body || '').trim();
+        if (!Number.isFinite(toId) || toId <= 0) return { ok: false, error: 'to_agent_id required' };
+        if (!body) return { ok: false, error: 'body required' };
+        if (body.length > 8000) return { ok: false, error: 'body too long (>8000)' };
+        const mb = await import('../services/v3-mailbox');
+        const r = await mb.sendMessage({
+          fromAgent: params.agentId, toAgent: toId, kind: 'message',
+          subject: args.subject ? String(args.subject).slice(0, 200) : undefined, body: { text: body },
+        });
+        return { ok: true, id: r.id };
+      } catch (e: any) { return { ok: false, error: e?.message }; }
+    }
+    case 'network_inbox': {
+      try {
+        const mb = await import('../services/v3-mailbox');
+        const msgs: any[] = await mb.inbox(params.agentId, { status: 0, limit: Math.min(50, Math.max(1, Number(args.limit) || 20)) });
+        for (const m of msgs) { try { await mb.markRead(params.agentId, String(m.id)); } catch { /* */ } }
+        const messages = msgs.map((m: any) => ({ id: String(m.id), from_agent: m.from_agent, subject: m.subject, body: m.body, created_at: m.created_at }));
+        return { ok: true, count: messages.length, messages };
       } catch (e: any) { return { ok: false, error: e?.message }; }
     }
 
