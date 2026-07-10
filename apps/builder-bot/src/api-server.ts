@@ -2924,7 +2924,13 @@ export function startApiServer() {
       );
       const pausedMap = new Map<number, string>();
       stateRes.rows.forEach((r: any) => {
-        if (r.value) pausedMap.set(r.agent_id, String(r.value));
+        if (!r.value) return;
+        // value is jsonb → the pg driver returns it as a JS object
+        // ({reason, at, details}); String() on that yields "[object Object]".
+        let v: any = r.value;
+        if (typeof v === 'string') { try { v = JSON.parse(v); } catch {} }
+        const reason = (v && typeof v === 'object') ? (v.reason || v.message || null) : String(v);
+        if (reason) pausedMap.set(r.agent_id, String(reason));
       });
 
       const out = agents.map((a: any) => {
@@ -3244,6 +3250,68 @@ export function startApiServer() {
         [userId, days],
       );
       res.json({ ok: true, edges: r.rows });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── GET /api/v3/a2a-live — живые кросс-оунер A2A диалоги агентов владельца ──
+  // Для карты агентов: когда мой агент говорит с ЧУЖИМ (другого владельца),
+  // тот показывается временной ghost-нодой + связью на время разговора.
+  app.get('/api/v3/a2a-live', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as number;
+      const windowMin = Math.min(1440, Math.max(5, parseInt(String(req.query.window || '180'), 10) || 180)); // окно «недавних»
+      const activeMin = Math.min(windowMin, Math.max(1, parseInt(String(req.query.active || '20'), 10) || 20)); // «активны сейчас»
+      // агрегируем пары (мой агент ↔ пир) из v3_mailbox за окно
+      const agg = await pool.query(
+        `WITH my AS (SELECT id FROM builder_bot.agents WHERE user_id = $1),
+         conv AS (
+           SELECT
+             CASE WHEN m.from_agent IN (SELECT id FROM my) THEN m.from_agent ELSE m.to_agent END AS my_agent,
+             CASE WHEN m.from_agent IN (SELECT id FROM my) THEN m.to_agent ELSE m.from_agent END AS peer_agent,
+             m.intent, m.created_at
+           FROM builder_bot.v3_mailbox m
+           WHERE (m.from_agent IN (SELECT id FROM my) OR m.to_agent IN (SELECT id FROM my))
+             AND m.created_at > NOW() - ($2::int || ' minutes')::interval
+         )
+         SELECT c.my_agent, c.peer_agent,
+                MAX(c.created_at) AS last_at, COUNT(*)::int AS msg_count,
+                (MAX(c.created_at) > NOW() - ($3::int || ' minutes')::interval) AS active,
+                (ARRAY_AGG(c.intent ORDER BY c.created_at DESC))[1] AS intent
+           FROM conv c
+          WHERE c.peer_agent IS NOT NULL AND c.my_agent IS NOT NULL
+          GROUP BY c.my_agent, c.peer_agent
+          ORDER BY last_at DESC
+          LIMIT 80`,
+        [userId, windowMin, activeMin],
+      );
+      const rows = agg.rows;
+      // личности пиров (name / @username / внешний ли)
+      const peerIds = Array.from(new Set(rows.map((r: any) => Number(r.peer_agent)).filter((x: number) => x > 0)));
+      const peerMap = new Map<number, any>();
+      if (peerIds.length > 0) {
+        const pr = await pool.query(
+          `SELECT id, name, user_id,
+                  trigger_config->'telegram_session'->>'username' AS username
+             FROM builder_bot.agents WHERE id = ANY($1::int[])`,
+          [peerIds],
+        );
+        for (const p of pr.rows) peerMap.set(Number(p.id), p);
+      }
+      const conversations = rows.map((r: any) => {
+        const p = peerMap.get(Number(r.peer_agent)) || {};
+        return {
+          my_agent_id: Number(r.my_agent),
+          peer_agent_id: Number(r.peer_agent),
+          peer_name: p.name || ('Agent #' + r.peer_agent),
+          peer_username: p.username || null,
+          peer_external: p.user_id != null ? String(p.user_id) !== String(userId) : true,
+          intent: r.intent || 'message',
+          msg_count: r.msg_count,
+          active: !!r.active,
+          last_at: r.last_at,
+        };
+      });
+      res.json({ ok: true, conversations, window_min: windowMin, active_min: activeMin });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
@@ -5021,8 +5089,20 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
       // ── Resolve AI client (with platform proxy fallback) ───────────────
       const { decryptApiKey } = await import('./crypto-utils');
       const rawKey = (cfg.AI_API_KEY as string) || '';
-      const apiKey = rawKey ? decryptApiKey(rawKey) : '';
-      const provider = ((cfg.AI_PROVIDER as string) || '').toLowerCase();
+      let apiKey = rawKey ? decryptApiKey(rawKey) : '';
+      let provider = ((cfg.AI_PROVIDER as string) || '').toLowerCase();
+      // Fall back to the account-global AI key/provider — the NO_API_KEY error below
+      // promises "agent settings or global settings", but only the per-agent key was
+      // ever checked. getAll() already decrypts secret vars, so the key is plaintext.
+      if (!apiKey) {
+        try {
+          const _all: any = await getUserSettingsRepository().getAll(userId);
+          let _uv: any = (_all && _all.user_variables) || {};
+          if (typeof _uv === 'string') { try { _uv = JSON.parse(_uv); } catch { _uv = {}; } }
+          apiKey = (_uv.AI_API_KEY as string) || '';
+          if (!provider) provider = ((_uv.AI_PROVIDER as string) || '').toLowerCase();
+        } catch {}
+      }
 
       const PROVIDER_MAP: Record<string, { baseURL: string; model: string }> = {
         gemini:     { baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/', model: 'gemini-2.0-flash' },

@@ -242,6 +242,39 @@ async function main() {
         console.log('📬 V3 Mailbox ready');
       } catch (e: any) { console.error('[V3Mailbox] init error:', e?.message); }
 
+      // v3.0 A2A — защитный/политический слой (файрвол + согласие + governor + reply-policy).
+      // Волна 1: аддитивно, инертно к существующим флоу. Wake Engine (живая доставка) — Волна 2, за флагом.
+      try {
+        const { initV3A2A } = require('./services/v3-a2a');
+        await initV3A2A(pool);
+        console.log('🛡️ V3 A2A layer ready');
+      } catch (e: any) { console.error('[V3A2A] init error:', e?.message); }
+
+      // v3.0 A2A Волна 3 — кооперация (presence · capability · handshake · delegation · peer-rep).
+      try {
+        const { initV3A2ACoop } = require('./services/v3-a2a-coop');
+        await initV3A2ACoop(pool);
+        console.log('🤝 V3 A2A cooperation ready');
+      } catch (e: any) { console.error('[V3A2ACoop] init error:', e?.message); }
+
+      // v3.0 A2A Wake Engine (Волна 2) — ЖИВАЯ доставка: будит опт-ин агентов на пир-сообщения.
+      // ⚠️ Автономный расход ключа ВЛАДЕЛЬЦА → строго за флагом V3_A2A_WAKE_ENABLED=1 (по умолч. ВЫКЛ)
+      // + per-agent opt-in (a2a_policy: opted_in + reply_mode=auto). Без флага — код спит.
+      if (process.env.V3_A2A_WAKE_ENABLED === '1') {
+        try {
+          const { pollA2ADeliveries } = require('./services/v3-a2a');
+          const _wake = setInterval(() => {
+            pollA2ADeliveries()
+              .then((r: any) => { if (r && r.woke) console.log(`[V3A2A] wake ${r.woke}/${r.scanned}`); })
+              .catch((e: any) => console.error('[V3A2A] wake poll error:', e?.message));
+          }, parseInt(process.env.A2A_WAKE_INTERVAL_MS || '15000', 10));
+          if ((_wake as any).unref) (_wake as any).unref();
+          console.log('⚡ V3 A2A Wake Engine ON (live delivery)');
+        } catch (e: any) { console.error('[V3A2A] wake init error:', e?.message); }
+      } else {
+        console.log('💤 V3 A2A Wake Engine dormant (enable: V3_A2A_WAKE_ENABLED=1 + agent opted_in/reply_mode=auto)');
+      }
+
       // v3.0 Фаза 1 — аренда агентов
       try {
         const { initV3Rental } = require('./services/v3-rental');

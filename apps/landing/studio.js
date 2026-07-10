@@ -608,8 +608,8 @@ function buildOmniIndex() {
   });
   // User's agents — from cached list (loaded on operations page)
   try {
-    if (Array.isArray(window._agentsList)) {
-      window._agentsList.forEach(function(ag) {
+    if (Array.isArray(_agentsCache)) {
+      _agentsCache.forEach(function(ag) {
         items.push({
           title: '#' + ag.id + ' ' + (ag.name || 'unnamed'),
           sub: 'Agent · ' + (ag.role || 'worker'),
@@ -621,8 +621,8 @@ function buildOmniIndex() {
   } catch {}
   // Skills — from cached list (loaded on skills page)
   try {
-    if (Array.isArray(window._skillsCache)) {
-      window._skillsCache.forEach(function(s) {
+    if (Array.isArray(_skillsCache)) {
+      _skillsCache.forEach(function(s) {
         items.push({
           title: s.name,
           sub: 'Skill · ' + (s.source || 'builtin'),
@@ -676,7 +676,8 @@ function handleTopbarSearch(val) {
     _omniDropdown = document.createElement('div');
     _omniDropdown.id = 'omni-dropdown';
     _omniDropdown.style.cssText = 'position:absolute;top:46px;left:0;right:0;background:var(--bg-elev-2,#12141f);border:1px solid var(--border);border-radius:12px;box-shadow:0 16px 48px rgba(0,0,0,.5),0 0 0 1px rgba(var(--accent-r,0),var(--accent-g,168),var(--accent-b,255),.15);z-index:9999;max-height:60vh;overflow-y:auto;backdrop-filter:blur(16px) saturate(150%)';
-    var wrap = document.querySelector('.topbar-search');
+    var searchInput = document.getElementById('topbar-search-input');
+    var wrap = (searchInput && searchInput.parentElement) || document.querySelector('.topbar .search');
     if (wrap) { wrap.style.position = 'relative'; wrap.appendChild(_omniDropdown); }
     document.addEventListener('click', _omniOutsideClick, true);
     document.addEventListener('keydown', _omniKey);
@@ -2130,566 +2131,6 @@ async function deleteAgentLesson(agentId, lessonId) {
   } catch (e) { toast('Error: ' + (e.message || e), 'error'); }
 }
 
-// ── v3.0 On-chain: Passport (провенанс агента) + Network (реестр сети) ──
-function _v3Short(s) { s = s || ''; return s.length > 16 ? (s.slice(0, 8) + '…' + s.slice(-6)) : s; }
-function _v3Tonviewer(addr) { return 'https://tonviewer.com/' + encodeURIComponent(addr || ''); }
-function _v3WalletCell(addr) {
-  if (!addr) return '<span style="color:var(--text-muted)">—</span>';
-  return '<a href="' + _v3Tonviewer(addr) + '" target="_blank" rel="noopener" style="color:var(--text-secondary);text-decoration:none;font-family:monospace;font-size:.78rem">' + escHtml(_v3Short(addr)) + ' ↗</a>';
-}
-function _v3Row(label, val) {
-  return '<div class="agent-detail-row"><span class="label">' + label + '</span><span class="value">' + val + '</span></div>';
-}
-
-async function renderAgentPassportTab(body, a) {
-  var isRu = currentLang === 'ru';
-  var canMint = !!(currentUser && currentUser._isAdmin);
-  body.innerHTML =
-    '<div class="rt-page">' +
-    '<div class="rt-header">' +
-      '<div class="rt-header-icon" style="background:rgba(0,152,234,0.12);color:#0098EA">' +
-        '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>' +
-      '</div>' +
-      '<div class="rt-header-text">' +
-        '<h3>' + (isRu ? 'Паспорт агента' : 'Agent Passport') + '</h3>' +
-        '<p>' + (isRu ? 'On-chain личность, оригинальный автор и история владения в сети TON.' : 'On-chain identity, original author and ownership history on TON.') + '</p>' +
-      '</div>' +
-    '</div>' +
-    '<div class="rt-section"><div class="rt-section-label">' + (isRu ? 'Публичное имя (визитка *.tonagent.ton)' : 'Public name (*.tonagent.ton card)') + '</div>' +
-      '<div style="display:flex;gap:6px"><input id="dns-name" class="st-input" placeholder="my-agent" style="flex:1"><button class="rt-save-btn" onclick="claimDnsUI(' + Number(a.id) + ')">' + (isRu ? 'Застолбить' : 'Claim') + '</button></div>' +
-      '<div id="dns-result" style="font-size:.76rem;margin-top:6px;color:var(--text-muted)"></div></div>' +
-    '<div id="passport-body"><div style="text-align:center;padding:2rem;color:var(--text-muted)">' + (isRu ? 'Загрузка…' : 'Loading…') + '</div></div>' +
-    '</div>';
-  var el = document.getElementById('passport-body');
-  if (!el) return;
-  var res = await apiRequest('GET', '/api/v3/agents/by-tap/' + a.id);
-  if (!res || res.ok === false) {
-    el.innerHTML = '<div class="rt-section" style="color:var(--text-muted);font-size:.85rem">' + (isRu ? 'Сеть v3.0 сейчас недоступна.' : 'v3.0 network is currently unavailable.') + '</div>';
-    return;
-  }
-  if (!res.onchain) {
-    var h = '<div class="rt-section">';
-    h += '<div style="color:var(--text-secondary);font-size:.9rem;margin-bottom:.6rem">' + (isRu ? 'Этот агент ещё не выпущен как NFT в сети TON.' : 'This agent has not been minted as an on-chain NFT yet.') + '</div>';
-    if (canMint) {
-      h += '<div class="rt-section-label">' + (isRu ? 'Выпустить как NFT' : 'Mint as NFT') + '</div>';
-      h += '<input id="passport-mint-owner" class="st-input" value="UQCfRrLVr7MeGbVw4x1XgZ42ZUS7tdf2sEYSyRvmoEB4y_dh" placeholder="' + (isRu ? 'кошелёк владельца' : 'owner wallet') + '" style="margin:.4rem 0 .6rem">';
-      h += '<button class="rt-save-btn" onclick="mintAgentNft(' + Number(a.id) + ')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/></svg>' + (isRu ? 'Выпустить NFT (mainnet)' : 'Mint NFT (mainnet)') + '</button>';
-      h += '<div style="font-size:.72rem;color:var(--text-muted);margin-top:.5rem">' + (isRu ? 'Роялти 2.5% → agentplatform.ton. Минт ~0.1 GRAM с кошелька-минтера.' : 'Royalty 2.5% → agentplatform.ton. ~0.1 GRAM from the minter wallet.') + '</div>';
-    } else {
-      h += '<div style="font-size:.78rem;color:var(--text-muted)">' + (isRu ? 'Выпуск NFT доступен владельцу платформы.' : 'Minting is available to the platform owner.') + '</div>';
-    }
-    h += '</div>';
-    el.innerHTML = h;
-    return;
-  }
-  var ag = res.agent || {};
-  var hist = res.history || [];
-  var h2 = '<div class="rt-section">';
-  h2 += '<div class="rt-section-label">' + (isRu ? 'NFT агента' : 'Agent NFT') + ' <span style="margin-left:auto;text-transform:none;letter-spacing:0"><span class="chip">' + (isRu ? 'Продан' : 'Sold') + ': ' + (ag.transfer_count || 0) + '</span></span></div>';
-  h2 += _v3Row(isRu ? 'Адрес NFT' : 'NFT address', '<a href="' + _v3Tonviewer(ag.agent_nft) + '" target="_blank" rel="noopener" style="color:var(--accent,#0098EA);text-decoration:none;font-family:monospace;font-size:.78rem">' + escHtml(_v3Short(ag.agent_nft)) + ' ↗</a>');
-  h2 += _v3Row(isRu ? 'Оригинальный автор' : 'Original author', _v3WalletCell(ag.creator));
-  h2 += _v3Row(isRu ? 'Текущий владелец' : 'Current owner', _v3WalletCell(ag.current_owner));
-  h2 += _v3Row('tap_agent_id', '<span style="font-family:monospace;font-size:.78rem">#' + escHtml(String(ag.tap_agent_id == null ? '—' : ag.tap_agent_id)) + '</span>');
-  h2 += '</div>';
-  h2 += '<div class="rt-section"><div class="rt-section-label">' + (isRu ? 'История владения' : 'Ownership history') + '</div>';
-  if (!hist.length) {
-    h2 += '<div style="color:var(--text-muted);font-size:.85rem">—</div>';
-  } else {
-    h2 += '<div style="display:flex;flex-direction:column;gap:.8rem;margin-top:.5rem">';
-    hist.forEach(function(ev) {
-      var isMint = ev.event === 'mint';
-      var label = isMint ? (isRu ? 'Минт (создан)' : 'Mint (created)') : (isRu ? 'Передача / продажа' : 'Transfer / sale');
-      var dot = isMint ? '#10b981' : '#0098EA';
-      var line = isMint ? ((isRu ? 'Выпущен → ' : 'Minted → ') + _v3Short(ev.to_addr || '')) : (_v3Short(ev.from_addr || '') + ' → ' + _v3Short(ev.to_addr || ''));
-      var when = ev.at ? new Date(ev.at).toLocaleString() : '';
-      h2 += '<div style="display:flex;gap:.6rem;align-items:flex-start">' +
-        '<span style="width:10px;height:10px;border-radius:50%;margin-top:4px;flex:0 0 auto;background:' + dot + '"></span>' +
-        '<div style="min-width:0"><div style="font-weight:600;font-size:.82rem">' + label + '</div>' +
-        '<div style="font-size:.76rem;color:var(--text-secondary);font-family:monospace;word-break:break-all">' + escHtml(line) + '</div>' +
-        (ev.tx_hash ? '<a href="https://tonviewer.com/transaction/' + encodeURIComponent(ev.tx_hash) + '" target="_blank" rel="noopener" style="font-size:.72rem;color:var(--accent,#0098EA);text-decoration:none">tx ↗</a> ' : '') +
-        '<span style="font-size:.7rem;color:var(--text-muted)">' + escHtml(when) + '</span></div></div>';
-    });
-    h2 += '</div>';
-  }
-  h2 += '</div>';
-  el.innerHTML = h2;
-}
-
-async function mintAgentNft(agentId) {
-  if (!currentUser || !currentUser._isAdmin) { toast('Owner only', 'error'); return; }
-  var isRu = currentLang === 'ru';
-  var ownerEl = document.getElementById('passport-mint-owner');
-  var owner = ownerEl ? (ownerEl.value || '').trim() : '';
-  if (!owner) { toast(isRu ? 'Укажи кошелёк владельца' : 'Enter owner wallet', 'error'); return; }
-  var ownerShort = owner.length > 18 ? (owner.slice(0, 10) + '…' + owner.slice(-6)) : owner;
-  if (!confirm(isRu ? ('Выпустить агент #' + agentId + ' как NFT на MAINNET? Владелец: ' + ownerShort) : ('Mint agent #' + agentId + ' as an NFT on MAINNET? Owner: ' + ownerShort))) return;
-  toast(isRu ? 'Отправляю минт…' : 'Sending mint…', 'info');
-  var res = await apiRequest('POST', '/api/v3/minter/mint', { owner: owner, tapAgentId: agentId });
-  if (res && res.ok) {
-    toast(isRu ? 'Минт отправлен. Паспорт обновится через ~1 мин.' : 'Mint sent. Passport updates in ~1 min.', 'success');
-    setTimeout(function() { if (_settingsTab === 'passport') switchSettingsTab('passport'); }, 4000);
-  } else {
-    toast((res && res.error) || (isRu ? 'Ошибка минта' : 'Mint failed'), 'error');
-  }
-}
-
-var _V3_ROLES = ['', 'manager', 'director', 'specialist', 'worker', 'monitor', 'creative', 'trader', 'admin'];
-var _V3_TIERS = ['', 'bronze', 'silver', 'gold', 'platinum'];
-var _V3_CATS = ['', 'research', 'content', 'trading', 'monitoring', 'ops', 'coordination', 'data'];
-function _v3Opts(arr, anyLabel) { return arr.map(function(o){ return '<option value="' + o + '">' + (o || anyLabel) + '</option>'; }).join(''); }
-
-async function renderAgentNetworkTab(body, a) {
-  var isRu = currentLang === 'ru';
-  body.innerHTML = '<div class="rt-page">' +
-    '<div class="rt-header"><div class="rt-header-icon" style="background:rgba(168,85,247,0.12);color:#a855f7">' +
-      '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></div>' +
-      '<div class="rt-header-text"><h3>' + (isRu ? 'Сеть агентов' : 'Agent Network') + '</h3>' +
-      '<p>' + (isRu ? 'Реестр on-chain. Фильтр по роли/тиру; при выборе категории — ранг по effective-скору (доверие × вес роли × аффинити).' : 'On-chain registry. Filter by role/tier; pick a category to rank by effective score (trust × role weight × fit).') + '</p></div></div>' +
-    '<div class="rt-section"><div style="display:flex;gap:6px;flex-wrap:wrap">' +
-      '<select id="net-role" class="st-input" style="flex:1;min-width:104px" onchange="loadNetworkAgents()">' + _v3Opts(_V3_ROLES, isRu ? 'роль: все' : 'role: any') + '</select>' +
-      '<select id="net-tier" class="st-input" style="flex:1;min-width:104px" onchange="loadNetworkAgents()">' + _v3Opts(_V3_TIERS, isRu ? 'тир: любой' : 'tier: any') + '</select>' +
-      '<select id="net-cat" class="st-input" style="flex:1;min-width:120px" onchange="loadNetworkAgents()">' + _v3Opts(_V3_CATS, isRu ? 'категория: —' : 'category: —') + '</select>' +
-    '</div></div>' +
-    '<div class="rt-section"><div class="rt-section-label">' + (isRu ? 'Активность сети' : 'Network activity') + '</div><div id="net-feed" style="font-size:.78rem;color:var(--text-muted)">…</div></div>' +
-    '<div id="network-body" style="margin-top:.4rem"><div style="text-align:center;padding:2rem;color:var(--text-muted)">' + (isRu ? 'Загрузка…' : 'Loading…') + '</div></div>' +
-    '</div>';
-  loadActivityFeed();
-  await loadNetworkAgents();
-}
-
-async function loadActivityFeed() {
-  var isRu = currentLang === 'ru';
-  var el = document.getElementById('net-feed'); if (!el) return;
-  var res = await apiRequest('GET', '/api/v3/feed?limit=20');
-  if (!res || res.ok === false || !(res.feed && res.feed.length)) { el.innerHTML = '<span style="color:var(--text-muted)">' + (isRu ? 'пока тихо' : 'quiet for now') + '</span>'; return; }
-  var icon = { mint: '🪙', sale: '🤝', job_posted: '📋', job_done: '✅', job_active: '⚙️', rental: '🔑', stake: '📈' };
-  var h = '<div style="display:flex;flex-direction:column;gap:3px">';
-  res.feed.forEach(function(e){
-    var t = '';
-    if (e.kind === 'mint') t = (isRu ? 'минт агента ' : 'agent minted ') + escHtml(_v3Short(e.agent_nft || ''));
-    else if (e.kind === 'sale') t = (isRu ? 'продан ' : 'sold ') + escHtml(_v3Short(e.from || '')) + '→' + escHtml(_v3Short(e.to || ''));
-    else if (e.kind === 'job_posted') t = (isRu ? 'задача: ' : 'job: ') + escHtml(e.title || '') + ' · ' + (e.bounty_gram || 0) + ' GRAM';
-    else if (e.kind === 'job_done') t = (isRu ? 'выполнено: ' : 'done: ') + escHtml(e.title || '') + (e.agent_id ? (' · #' + e.agent_id) : '');
-    else if (e.kind === 'job_active') t = (isRu ? 'в работе: ' : 'active: ') + escHtml(e.title || '');
-    else if (e.kind === 'rental') t = (isRu ? 'аренда #' : 'rented #') + (e.agent_id || '') + ' · ' + (e.days || 0) + (isRu ? 'дн' : 'd') + ' · ' + (e.total_gram || 0) + ' GRAM';
-    else if (e.kind === 'stake') t = (isRu ? 'бэкнут #' : 'backed #') + (e.agent_id || '') + ' · ' + (e.amount_gram || 0) + ' GRAM';
-    h += '<div style="display:flex;gap:6px"><span>' + (icon[e.kind] || '•') + '</span><span style="color:var(--text-secondary)">' + t + '</span></div>';
-  });
-  el.innerHTML = h + '</div>';
-}
-
-async function loadNetworkAgents() {
-  var isRu = currentLang === 'ru';
-  var el = document.getElementById('network-body'); if (!el) return;
-  var gv = function(id){ var e = document.getElementById(id); return e ? e.value : ''; };
-  var role = gv('net-role'), tier = gv('net-tier'), cat = gv('net-cat');
-  var qs = '?limit=100' + (role ? '&role=' + role : '') + (tier ? '&minTier=' + tier : '') + (cat ? '&category=' + cat : '');
-  var res = await apiRequest('GET', '/api/v3/agents' + qs);
-  if (!res || res.ok === false) { el.innerHTML = '<div style="color:var(--text-muted);font-size:.85rem">' + (isRu ? 'Сеть недоступна' : 'unavailable') + '</div>'; return; }
-  var agents = res.agents || [];
-  if (!agents.length) { el.innerHTML = '<div style="color:var(--text-muted);font-size:.85rem">' + (isRu ? 'Нет агентов под фильтр' : 'No agents match') + '</div>'; return; }
-  var tierColor = { platinum: '#a855f7', gold: '#f59e0b', silver: '#94a3b8', bronze: '#b45309', unverified: '#64748b' };
-  var h = '<div style="display:flex;flex-direction:column;gap:.5rem">';
-  agents.forEach(function(ag) {
-    var tc = tierColor[ag.tier] || '#64748b';
-    h += '<div class="v3-card">' +
-      '<div style="display:flex;align-items:center;gap:.5rem;justify-content:space-between;flex-wrap:wrap">' +
-        '<a href="' + _v3Tonviewer(ag.agent_nft) + '" target="_blank" rel="noopener" style="color:var(--accent,#0098EA);text-decoration:none;font-family:monospace;font-size:.78rem">' + escHtml(_v3Short(ag.agent_nft)) + ' ↗</a>' +
-        '<span style="display:flex;gap:4px">' +
-          '<span class="chip" style="text-transform:none;letter-spacing:0">' + escHtml(ag.role || 'worker') + '</span>' +
-          '<span class="chip" style="text-transform:none;letter-spacing:0;color:' + tc + '">' + escHtml(ag.tier || 'unverified') + '</span>' +
-        '</span></div>' +
-      '<div style="font-size:.74rem;color:var(--text-secondary);margin-top:.35rem">' +
-        (cat ? ((isRu ? 'матч ' : 'match ') + (ag.effective || 0) + ' · ' + (isRu ? 'фит ' : 'fit ') + (ag.fit != null ? ag.fit : '—') + ' · ') : '') +
-        (isRu ? 'вес ' : 'weight ') + (ag.weight != null ? ag.weight : '—') + ' · ' + (isRu ? 'продан ' : 'sold ') + (ag.transfer_count || 0) + '</div>' +
-      '<div style="font-size:.72rem;color:var(--text-muted);margin-top:.25rem">' + (isRu ? 'владелец ' : 'owner ') + _v3WalletCell(ag.current_owner) + '</div>' +
-      (ag.tap_agent_id ? '<div style="margin-top:.35rem"><button class="rt-save-btn" style="padding:3px 9px;font-size:.7rem;background:rgba(255,255,255,0.08)" onclick="stakeAgentUI(' + Number(ag.tap_agent_id) + ')">' + (isRu ? 'Бэкнуть' : 'Back') + '</button> <span id="stk-' + Number(ag.tap_agent_id) + '" style="font-size:.7rem;margin-left:6px"></span></div>' : '') +
-    '</div>';
-  });
-  el.innerHTML = h + '</div>';
-}
-
-async function stakeAgentUI(agentId) {
-  var isRu = currentLang === 'ru';
-  var el = document.getElementById('stk-' + agentId);
-  var amt = prompt(isRu ? ('Сколько GRAM поставить на агента #' + agentId + '? (доля дохода)') : ('How much GRAM to stake on agent #' + agentId + '? (share of income)'));
-  if (amt == null) return;
-  var n = parseFloat(amt); if (!(n > 0)) { toast(isRu ? 'Неверная сумма' : 'Invalid amount', 'error'); return; }
-  if (el) el.textContent = '…';
-  var res = await apiRequest('POST', '/api/v3/staking/stake', { tapAgentId: agentId, amountGram: n });
-  if (!el) return;
-  if (res && res.ok) {
-    var bk = await apiRequest('GET', '/api/v3/staking/backing/' + agentId);
-    el.innerHTML = '<span style="color:#22c55e">' + (isRu ? 'бэкнуто' : 'staked') + (bk && bk.ok ? ' · ' + (isRu ? 'всего ' : 'total ') + (bk.backing.total_gram || 0) + ' GRAM (' + (bk.backing.backers || 0) + ')' : '') + '</span>';
-  } else { el.innerHTML = '<span style="color:#ef4444">' + escHtml((res && res.error) || 'error') + '</span>'; }
-}
-
-async function renderAgentJobsTab(body, a) {
-  var isRu = currentLang === 'ru';
-  body.innerHTML = '<div class="rt-page">' +
-    '<div class="rt-header"><div class="rt-header-icon" style="background:rgba(34,197,94,0.12);color:#22c55e">' +
-      '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg></div>' +
-      '<div class="rt-header-text"><h3>' + (isRu ? 'Доска задач' : 'Job Board') + '</h3>' +
-      '<p>' + (isRu ? 'Оплачиваемые задачи между агентами разных владельцев. Расчёт через escrow (TON), 0% комиссии на старте.' : 'Paid cross-owner agent tasks. Escrow-settled (TON), 0% fee at launch.') + '</p></div></div>' +
-    '<div class="rt-section"><div class="rt-section-label">' + (isRu ? 'Опубликовать задачу' : 'Post a job') + '</div>' +
-      '<input id="job-title" class="st-input" placeholder="' + (isRu ? 'Заголовок' : 'Title') + '" style="margin-bottom:6px">' +
-      '<textarea id="job-desc" class="st-textarea" placeholder="' + (isRu ? 'Описание' : 'Description') + '" style="min-height:56px;margin-bottom:6px"></textarea>' +
-      '<select id="job-cat" class="st-input" style="margin-bottom:6px" title="' + (isRu ? 'категория (влияет на матчинг ролей)' : 'category (drives role matching)') + '">' + _v3Opts(_V3_CATS, isRu ? 'категория: —' : 'category: —') + '</select>' +
-      '<select id="job-mode" class="st-input" style="margin-bottom:6px"><option value="fixed">' + (isRu ? 'Режим: фикс-цена' : 'Mode: fixed price') + '</option><option value="auction">' + (isRu ? 'Режим: аукцион (биды)' : 'Mode: auction (bids)') + '</option></select>' +
-      '<div style="display:flex;gap:6px;margin-bottom:6px">' +
-        '<input id="job-bounty" class="st-input" type="number" step="0.01" placeholder="' + (isRu ? 'Баунти GRAM' : 'Bounty GRAM') + '" style="flex:1">' +
-        '<input id="job-days" class="st-input" type="number" value="3" title="' + (isRu ? 'дней на сдачу' : 'days to deadline') + '" style="width:110px">' +
-      '</div>' +
-      '<input id="job-wallet" class="st-input" placeholder="' + (isRu ? 'Кошелёк заказчика (откуда фандинг)' : 'Poster wallet (funds from)') + '" style="margin-bottom:6px">' +
-      '<button class="rt-save-btn" onclick="postJob(' + Number(a.id) + ')">' + (isRu ? 'Создать → ссылка на оплату' : 'Create → funding link') + '</button>' +
-      '<div id="job-post-result" style="margin-top:8px;font-size:.8rem"></div>' +
-    '</div>' +
-    '<div class="rt-section"><div class="rt-section-label">' + (isRu ? 'Открытые задачи' : 'Open jobs') + '</div>' +
-      '<div id="jobs-list" style="color:var(--text-muted);font-size:.85rem">' + (isRu ? 'Загрузка…' : 'Loading…') + '</div></div>' +
-    '</div>';
-  await loadJobsList(a.id);
-}
-
-async function loadJobsList(agentId) {
-  var isRu = currentLang === 'ru';
-  var el = document.getElementById('jobs-list'); if (!el) return;
-  var res = await apiRequest('GET', '/api/v3/jobs?limit=50');
-  if (!res || res.ok === false) { el.innerHTML = '<span style="color:var(--text-muted)">' + (isRu ? 'Доска недоступна' : 'Board unavailable') + '</span>'; return; }
-  var jobs = (res.jobs || []).filter(function(j){ return j.status === 0; });
-  if (!jobs.length) { el.innerHTML = '<span style="color:var(--text-muted)">' + (isRu ? 'Пока нет открытых задач' : 'No open jobs yet') + '</span>'; return; }
-  var h = '<div style="display:flex;flex-direction:column;gap:.5rem">';
-  jobs.forEach(function(j){
-    h += '<div class="v3-card">' +
-      '<div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem">' +
-        '<span style="font-weight:600;font-size:.85rem">' + escHtml(j.title || '') + '</span>' +
-        '<span class="chip" style="text-transform:none;letter-spacing:0">' + (j.bounty_gram || 0) + ' GRAM</span></div>' +
-      (j.description ? '<div style="font-size:.76rem;color:var(--text-secondary);margin-top:.3rem">' + escHtml(j.description) + '</div>' : '') +
-      (j.category ? '<span class="chip" style="text-transform:none;letter-spacing:0;font-size:.66rem">' + escHtml(j.category) + '</span> ' : '') +
-      (j.mode === 'auction'
-        ? ('<div style="margin-top:.4rem"><span class="chip" style="text-transform:none;letter-spacing:0;color:#a855f7;font-size:.66rem">' + (isRu ? 'аукцион' : 'auction') + '</span> ' +
-            '<button class="rt-save-btn" style="padding:4px 10px;font-size:.74rem" onclick="placeBidUI(' + Number(j.id) + ',' + Number(agentId) + ')">' + (isRu ? 'Бид' : 'Bid') + '</button> ' +
-            '<button class="rt-save-btn" style="padding:4px 10px;font-size:.74rem;background:rgba(255,255,255,0.08)" onclick="viewBidsUI(' + Number(j.id) + ',' + Number(agentId) + ')">' + (isRu ? 'Биды' : 'Bids') + '</button>' +
-            '<div id="job-claim-' + Number(j.id) + '" style="font-size:.74rem;margin-top:4px"></div></div>')
-        : ('<div style="margin-top:.4rem"><button class="rt-save-btn" style="padding:4px 10px;font-size:.74rem" onclick="claimJobUI(' + Number(j.id) + ',' + Number(agentId) + ')">' + (isRu ? 'Взять этим агентом' : 'Claim with this agent') + '</button> <span id="job-claim-' + Number(j.id) + '" style="font-size:.74rem;margin-left:6px"></span></div>')
-      ) +
-    '</div>';
-  });
-  el.innerHTML = h + '</div>';
-}
-
-async function postJob(agentId) {
-  var isRu = currentLang === 'ru';
-  var out = document.getElementById('job-post-result');
-  var g = function(id){ var e = document.getElementById(id); return e ? e.value : ''; };
-  var title = g('job-title'), desc = g('job-desc'), wallet = (g('job-wallet') || '').trim(), cat = g('job-cat');
-  var bounty = parseFloat(g('job-bounty')); var days = parseInt(g('job-days'), 10) || 3;
-  if (!title || !bounty || bounty <= 0 || !wallet) { toast(isRu ? 'Заполни заголовок, баунти, кошелёк' : 'Fill title, bounty, wallet', 'error'); return; }
-  var deadlineUnix = Math.floor(Date.now() / 1000) + days * 86400;
-  if (out) out.innerHTML = isRu ? 'Создаю…' : 'Creating…';
-  var res = await apiRequest('POST', '/api/v3/jobs', { posterWallet: wallet, posterAgent: agentId, title: title, description: desc, category: cat || undefined, mode: g('job-mode') || 'fixed', bountyGram: bounty, deadlineUnix: deadlineUnix });
-  if (!out) return;
-  if (res && res.ok) {
-    out.innerHTML = '<div style="color:#22c55e">' + (isRu ? 'Задача создана. Оплати escrow, чтобы опубликовать:' : 'Job created. Fund the escrow to publish:') + '</div>' +
-      '<a href="' + res.deployLink + '" style="color:var(--accent,#0098EA);word-break:break-all">' + (isRu ? ('→ Открыть в кошельке и оплатить ' + bounty + ' GRAM') : ('→ Open in wallet & fund ' + bounty + ' GRAM')) + '</a>';
-    setTimeout(function(){ loadJobsList(agentId); }, 1500);
-  } else { out.innerHTML = '<span style="color:#ef4444">' + escHtml((res && res.error) || 'error') + '</span>'; }
-}
-
-async function claimJobUI(jobId, agentId) {
-  var isRu = currentLang === 'ru';
-  var el = document.getElementById('job-claim-' + jobId); if (el) el.textContent = '…';
-  var res = await apiRequest('POST', '/api/v3/jobs/' + jobId + '/claim', { executorAgentId: agentId });
-  if (!el) return;
-  if (res && res.ok && res.allowed) {
-    el.innerHTML = '<a href="' + res.claimLink + '" style="color:var(--accent,#0098EA)">' + (isRu ? '→ подтвердить в кошельке (' + (res.tier || '') + ')' : '→ confirm in wallet (' + (res.tier || '') + ')') + '</a>';
-  } else if (res && res.ok && !res.allowed) {
-    el.innerHTML = '<span style="color:#f59e0b">' + escHtml(res.reason || 'not allowed') + '</span>';
-  } else { el.innerHTML = '<span style="color:#ef4444">' + escHtml((res && res.error) || 'error') + '</span>'; }
-}
-
-async function claimDnsUI(agentId) {
-  var isRu = currentLang === 'ru';
-  var out = document.getElementById('dns-result');
-  var nm = ((document.getElementById('dns-name') || {}).value || '').toLowerCase().trim();
-  if (!nm) { toast(isRu ? 'Введи имя' : 'Enter a name', 'error'); return; }
-  if (out) out.textContent = '…';
-  var res = await apiRequest('POST', '/api/v3/dns/claim', { tapAgentId: agentId, name: nm });
-  if (!out) return;
-  if (res && res.ok) {
-    out.innerHTML = '<span style="color:#22c55e">' + (isRu ? 'готово · ' : 'done · ') + '</span><a href="' + res.url + '" target="_blank" rel="noopener" style="color:var(--accent,#0098EA)">' + escHtml(res.dns) + ' ↗</a>';
-  } else { out.innerHTML = '<span style="color:#ef4444">' + escHtml((res && res.error) || 'error') + '</span>'; }
-}
-
-async function renderAgentOracleTab(body, a) {
-  var isRu = currentLang === 'ru';
-  body.innerHTML = '<div class="rt-page">' +
-    '<div class="rt-header"><div class="rt-header-icon" style="background:rgba(16,185,129,0.12);color:#10b981">' +
-      '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div>' +
-      '<div class="rt-header-text"><h3>' + (isRu ? 'Сигналы / оракулы' : 'Signals / Oracles') + '</h3>' +
-      '<p>' + (isRu ? 'Агент-оракул продаёт live-сигнал по подписке (арбитраж/флор/киты). Оплата через escrow.' : 'An oracle agent sells a live signal by subscription. Escrow-paid.') + '</p></div></div>' +
-    '<div class="rt-section"><div class="rt-section-label">' + (isRu ? 'Завести фид этого агента' : 'Create this agent feed') + '</div>' +
-      '<input id="orc-title" class="st-input" placeholder="' + (isRu ? 'Название фида' : 'Feed title') + '" style="margin-bottom:6px">' +
-      '<input id="orc-desc" class="st-input" placeholder="' + (isRu ? 'Описание' : 'Description') + '" style="margin-bottom:6px">' +
-      '<div style="display:flex;gap:6px;margin-bottom:6px">' +
-        '<input id="orc-price" class="st-input" type="number" step="0.01" placeholder="' + (isRu ? 'Цена/мес GRAM' : 'Price/mo GRAM') + '" style="flex:1">' +
-        '<input id="orc-wallet" class="st-input" placeholder="' + (isRu ? 'Кошелёк (выплаты)' : 'Payout wallet') + '" style="flex:1">' +
-      '</div>' +
-      '<button class="rt-save-btn" onclick="createFeedUI(' + Number(a.id) + ')">' + (isRu ? 'Создать фид' : 'Create feed') + '</button>' +
-      '<span id="orc-create-result" style="margin-left:8px;font-size:.78rem"></span>' +
-    '</div>' +
-    '<div class="rt-section"><div class="rt-section-label">' + (isRu ? 'Фиды сети' : 'Network feeds') + '</div>' +
-      '<div id="orc-feeds" style="color:var(--text-muted);font-size:.85rem">' + (isRu ? 'Загрузка…' : 'Loading…') + '</div></div>' +
-    '</div>';
-  await loadOracleFeeds();
-}
-
-async function loadOracleFeeds() {
-  var isRu = currentLang === 'ru';
-  var el = document.getElementById('orc-feeds'); if (!el) return;
-  var res = await apiRequest('GET', '/api/v3/oracle/feeds?limit=50');
-  if (!res || res.ok === false) { el.innerHTML = '<span style="color:var(--text-muted)">' + (isRu ? 'недоступно' : 'unavailable') + '</span>'; return; }
-  var feeds = res.feeds || [];
-  if (!feeds.length) { el.innerHTML = '<span style="color:var(--text-muted)">' + (isRu ? 'Пока нет фидов' : 'No feeds yet') + '</span>'; return; }
-  var h = '<div style="display:flex;flex-direction:column;gap:.5rem">';
-  feeds.forEach(function(f){
-    h += '<div class="v3-card">' +
-      '<div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;flex-wrap:wrap">' +
-        '<span style="font-weight:600;font-size:.84rem">' + escHtml(f.title || '') + '</span>' +
-        '<span class="chip" style="text-transform:none;letter-spacing:0">' + (f.price_month_gram || 0) + ' GRAM/' + (isRu ? 'мес' : 'mo') + '</span></div>' +
-      (f.description ? '<div style="font-size:.76rem;color:var(--text-secondary);margin-top:.3rem">' + escHtml(f.description) + '</div>' : '') +
-      '<div style="font-size:.72rem;color:var(--text-muted);margin-top:.3rem">' + (isRu ? 'подписчиков ' : 'subs ') + (f.subs || 0) + (f.tap_agent_id ? (' · #' + f.tap_agent_id) : '') + '</div>' +
-      '<div style="margin-top:.4rem">' +
-        '<button class="rt-save-btn" style="padding:4px 10px;font-size:.74rem" onclick="subscribeFeedUI(' + Number(f.id) + ')">' + (isRu ? 'Подписаться' : 'Subscribe') + '</button> ' +
-        '<button class="rt-save-btn" style="padding:4px 10px;font-size:.74rem;background:rgba(255,255,255,0.08)" onclick="viewSignalsUI(' + Number(f.id) + ')">' + (isRu ? 'Сигналы' : 'Signals') + '</button> ' +
-        '<button class="rt-save-btn" style="padding:4px 10px;font-size:.74rem;background:rgba(255,255,255,0.08)" onclick="publishSignalUI(' + Number(f.id) + ')">' + (isRu ? 'Опубликовать' : 'Publish') + '</button>' +
-        '<div id="orc-r-' + Number(f.id) + '" style="font-size:.74rem;margin-top:4px"></div></div>' +
-    '</div>';
-  });
-  el.innerHTML = h + '</div>';
-}
-
-async function createFeedUI(agentId) {
-  var isRu = currentLang === 'ru';
-  var out = document.getElementById('orc-create-result');
-  var g = function(id){ var e = document.getElementById(id); return e ? e.value : ''; };
-  var title = g('orc-title'), desc = g('orc-desc'), wallet = (g('orc-wallet') || '').trim();
-  var price = parseFloat(g('orc-price'));
-  if (!title || !(price > 0) || !wallet) { toast(isRu ? 'Название, цена, кошелёк' : 'Title, price, wallet', 'error'); return; }
-  if (out) out.textContent = '…';
-  var res = await apiRequest('POST', '/api/v3/oracle/feed', { tapAgentId: agentId, ownerWallet: wallet, title: title, description: desc, pricePerMonthGram: price });
-  if (out) out.innerHTML = (res && res.ok) ? '<span style="color:#22c55e">' + (isRu ? 'создан' : 'created') + '</span>' : '<span style="color:#ef4444">' + escHtml((res && res.error) || 'error') + '</span>';
-  if (res && res.ok) setTimeout(loadOracleFeeds, 1200);
-}
-
-async function subscribeFeedUI(feedId) {
-  var isRu = currentLang === 'ru';
-  var el = document.getElementById('orc-r-' + feedId);
-  var months = prompt(isRu ? 'На сколько месяцев?' : 'How many months?', '1');
-  if (months == null) return;
-  var m = parseInt(months, 10); if (!(m > 0)) { toast(isRu ? 'Неверно' : 'Invalid', 'error'); return; }
-  var wallet = prompt(isRu ? 'Твой кошелёк (оплата):' : 'Your wallet (pay from):', '');
-  if (!wallet) return;
-  if (el) el.textContent = '…';
-  var res = await apiRequest('POST', '/api/v3/oracle/feed/' + feedId + '/subscribe', { subscriberWallet: wallet.trim(), months: m });
-  if (!el) return;
-  if (res && res.ok) { el.innerHTML = '<a href="' + res.deployLink + '" style="color:var(--accent,#0098EA)">' + (isRu ? ('→ оплатить ' + res.totalGram + ' GRAM за ' + res.months + ' мес') : ('→ pay ' + res.totalGram + ' GRAM for ' + res.months + 'mo')) + '</a>'; }
-  else { el.innerHTML = '<span style="color:#ef4444">' + escHtml((res && res.error) || 'error') + '</span>'; }
-}
-
-async function viewSignalsUI(feedId) {
-  var isRu = currentLang === 'ru';
-  var el = document.getElementById('orc-r-' + feedId); if (!el) return;
-  el.textContent = '…';
-  var res = await apiRequest('GET', '/api/v3/oracle/feed/' + feedId + '/signals?limit=10');
-  if (!res || res.ok === false) { el.innerHTML = '<span style="color:#ef4444">' + escHtml((res && res.error) || 'error') + '</span>'; return; }
-  if (!res.subscribed) { el.innerHTML = '<span style="color:#f59e0b">' + (isRu ? 'нужна активная подписка' : 'active subscription required') + '</span>'; return; }
-  var sg = res.signals || [];
-  if (!sg.length) { el.innerHTML = '<span style="color:var(--text-muted)">' + (isRu ? 'сигналов нет' : 'no signals') + '</span>'; return; }
-  var h = '<div style="display:flex;flex-direction:column;gap:2px;margin-top:3px">';
-  sg.forEach(function(s){
-    var txt = (s.payload && (s.payload.text || s.payload.signal || JSON.stringify(s.payload))) || '';
-    h += '<div style="font-size:.72rem;color:var(--text-secondary);word-break:break-all">• ' + escHtml(String(txt).slice(0, 160)) + '</div>';
-  });
-  el.innerHTML = h + '</div>';
-}
-
-async function publishSignalUI(feedId) {
-  var isRu = currentLang === 'ru';
-  var el = document.getElementById('orc-r-' + feedId);
-  var text = prompt(isRu ? 'Текст сигнала (только владелец фида):' : 'Signal text (feed owner only):');
-  if (!text) return;
-  if (el) el.textContent = '…';
-  var res = await apiRequest('POST', '/api/v3/oracle/feed/' + feedId + '/publish', { payload: { text: text } });
-  if (el) el.innerHTML = (res && res.ok) ? '<span style="color:#22c55e">' + (isRu ? 'опубликовано' : 'published') + '</span>' : '<span style="color:#ef4444">' + escHtml((res && res.error) || 'error') + '</span>';
-}
-
-async function renderAgentRentalTab(body, a) {
-  var isRu = currentLang === 'ru';
-  body.innerHTML = '<div class="rt-page">' +
-    '<div class="rt-header"><div class="rt-header-icon" style="background:rgba(245,158,11,0.12);color:#f59e0b">' +
-      '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>' +
-      '<div class="rt-header-text"><h3>' + (isRu ? 'Аренда агентов' : 'Agent Rental') + '</h3>' +
-      '<p>' + (isRu ? 'Сдай этого агента в аренду по цене/день или возьми чужого. Оплата через escrow, релиз владельцу по окончании срока.' : 'Rent this agent out per day, or rent someone else. Escrow-paid, released to owner at term end.') + '</p></div></div>' +
-    '<div class="rt-section"><div class="rt-section-label">' + (isRu ? 'Сдать этого агента' : 'List this agent') + '</div>' +
-      '<div style="display:flex;gap:6px;margin-bottom:6px">' +
-        '<input id="rent-price" class="st-input" type="number" step="0.01" placeholder="' + (isRu ? 'Цена/день GRAM' : 'Price/day GRAM') + '" style="flex:1">' +
-        '<input id="rent-min" class="st-input" type="number" value="1" title="' + (isRu ? 'мин. дней' : 'min days') + '" style="width:90px">' +
-      '</div>' +
-      '<input id="rent-owner-wallet" class="st-input" placeholder="' + (isRu ? 'Твой кошелёк (куда платят)' : 'Your wallet (gets paid)') + '" style="margin-bottom:6px">' +
-      '<button class="rt-save-btn" onclick="offerRentalUI(' + Number(a.id) + ')">' + (isRu ? 'Выставить в аренду' : 'List for rent') + '</button>' +
-      '<span id="rent-offer-result" style="margin-left:8px;font-size:.78rem"></span>' +
-    '</div>' +
-    '<div class="rt-section"><div class="rt-section-label">' + (isRu ? 'Доступны в аренду' : 'Available to rent') + '</div>' +
-      '<div id="rent-offers" style="color:var(--text-muted);font-size:.85rem">' + (isRu ? 'Загрузка…' : 'Loading…') + '</div></div>' +
-    '</div>';
-  await loadRentalOffers();
-}
-
-async function loadRentalOffers() {
-  var isRu = currentLang === 'ru';
-  var el = document.getElementById('rent-offers'); if (!el) return;
-  var res = await apiRequest('GET', '/api/v3/rentals/offers?limit=50');
-  if (!res || res.ok === false) { el.innerHTML = '<span style="color:var(--text-muted)">' + (isRu ? 'недоступно' : 'unavailable') + '</span>'; return; }
-  var offers = res.offers || [];
-  if (!offers.length) { el.innerHTML = '<span style="color:var(--text-muted)">' + (isRu ? 'Пока никто не сдаёт' : 'No agents listed yet') + '</span>'; return; }
-  var h = '<div style="display:flex;flex-direction:column;gap:.5rem">';
-  offers.forEach(function(o){
-    h += '<div class="v3-card">' +
-      '<div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;flex-wrap:wrap">' +
-        '<span style="font-weight:600;font-size:.84rem">#' + o.tap_agent_id + ' ' + escHtml(o.name || '') + '</span>' +
-        '<span class="chip" style="text-transform:none;letter-spacing:0">' + (o.price_day_gram || 0) + ' GRAM/' + (isRu ? 'день' : 'day') + '</span></div>' +
-      '<div style="font-size:.74rem;color:var(--text-secondary);margin-top:.3rem">' + escHtml(o.role || 'worker') + ' · ' + escHtml(o.tier || 'unverified') + ' · ' + (isRu ? 'от ' : 'min ') + (o.min_days || 1) + (isRu ? ' дн.' : 'd') + (o.note ? ' · ' + escHtml(o.note) : '') + '</div>' +
-      '<div style="margin-top:.4rem"><button class="rt-save-btn" style="padding:4px 10px;font-size:.74rem" onclick="rentAgentUI(' + Number(o.id) + ',' + (o.price_day_gram || 0) + ',' + (o.min_days || 1) + ')">' + (isRu ? 'Арендовать' : 'Rent') + '</button> <span id="rent-result-' + Number(o.id) + '" style="font-size:.74rem;margin-left:6px"></span></div>' +
-    '</div>';
-  });
-  el.innerHTML = h + '</div>';
-}
-
-async function offerRentalUI(agentId) {
-  var isRu = currentLang === 'ru';
-  var out = document.getElementById('rent-offer-result');
-  var g = function(id){ var e = document.getElementById(id); return e ? e.value : ''; };
-  var price = parseFloat(g('rent-price')); var min = parseInt(g('rent-min'), 10) || 1; var wallet = (g('rent-owner-wallet') || '').trim();
-  if (!(price > 0) || !wallet) { toast(isRu ? 'Цена/день и кошелёк' : 'Price/day and wallet', 'error'); return; }
-  if (out) out.textContent = '…';
-  var res = await apiRequest('POST', '/api/v3/rentals/offer', { tapAgentId: agentId, ownerWallet: wallet, pricePerDayGram: price, minDays: min });
-  if (out) out.innerHTML = (res && res.ok) ? '<span style="color:#22c55e">' + (isRu ? 'выставлено' : 'listed') + '</span>' : '<span style="color:#ef4444">' + escHtml((res && res.error) || 'error') + '</span>';
-  if (res && res.ok) setTimeout(loadRentalOffers, 1200);
-}
-
-async function rentAgentUI(offerId, pricePerDay, minDays) {
-  var isRu = currentLang === 'ru';
-  var el = document.getElementById('rent-result-' + offerId); if (el) el.textContent = '…';
-  var days = prompt((isRu ? 'На сколько дней (мин ' : 'How many days (min ') + minDays + ')?', String(minDays));
-  if (days == null) { if (el) el.textContent = ''; return; }
-  var d = parseInt(days, 10); if (!(d >= minDays)) { toast(isRu ? 'Минимум ' + minDays + ' дн.' : 'Min ' + minDays + ' days', 'error'); return; }
-  var wallet = prompt(isRu ? 'Твой кошелёк (откуда оплата):' : 'Your wallet (funds from):', '');
-  if (!wallet) { if (el) el.textContent = ''; return; }
-  var res = await apiRequest('POST', '/api/v3/rentals/rent', { offerId: offerId, renterWallet: wallet.trim(), days: d });
-  if (!el) return;
-  if (res && res.ok) {
-    el.innerHTML = '<a href="' + res.deployLink + '" style="color:var(--accent,#0098EA)">' + (isRu ? ('→ оплатить ' + res.totalGram + ' GRAM за ' + res.days + ' дн.') : ('→ pay ' + res.totalGram + ' GRAM for ' + res.days + 'd')) + '</a>';
-  } else { el.innerHTML = '<span style="color:#ef4444">' + escHtml((res && res.error) || 'error') + '</span>'; }
-}
-
-async function renderAgentMailboxTab(body, a) {
-  var isRu = currentLang === 'ru';
-  body.innerHTML = '<div class="rt-page">' +
-    '<div class="rt-header"><div class="rt-header-icon" style="background:rgba(59,130,246,0.12);color:#3b82f6">' +
-      '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></div>' +
-      '<div class="rt-header-text"><h3>' + (isRu ? 'Почта агента' : 'Agent Mailbox') + '</h3>' +
-      '<p>' + (isRu ? 'Сообщения агент↔агент между владельцами: координация, найм, офферы. Инбокс этого агента виден только тебе.' : 'Cross-owner agent-to-agent messages: coordination, hiring, offers. This inbox is visible only to you.') + '</p></div></div>' +
-    '<div class="rt-section"><div class="rt-section-label">' + (isRu ? 'Написать агенту' : 'Message an agent') + '</div>' +
-      '<div style="display:flex;gap:6px;margin-bottom:6px">' +
-        '<input id="mbx-to" class="st-input" type="number" placeholder="' + (isRu ? 'ID агента' : 'agent ID') + '" style="width:120px">' +
-        '<input id="mbx-subj" class="st-input" placeholder="' + (isRu ? 'Тема' : 'Subject') + '" style="flex:1">' +
-      '</div>' +
-      '<textarea id="mbx-text" class="st-textarea" placeholder="' + (isRu ? 'Сообщение' : 'Message') + '" style="min-height:50px;margin-bottom:6px"></textarea>' +
-      '<button class="rt-save-btn" onclick="sendMailbox(' + Number(a.id) + ')">' + (isRu ? 'Отправить' : 'Send') + '</button>' +
-      '<span id="mbx-send-result" style="margin-left:8px;font-size:.78rem"></span>' +
-    '</div>' +
-    '<div class="rt-section"><div class="rt-section-label">' + (isRu ? 'Входящие' : 'Inbox') + ' <span id="mbx-unread" style="margin-left:auto;text-transform:none;letter-spacing:0"></span></div>' +
-      '<div id="mbx-list" style="color:var(--text-muted);font-size:.85rem">' + (isRu ? 'Загрузка…' : 'Loading…') + '</div></div>' +
-    '</div>';
-  await loadMailbox(a.id);
-}
-
-async function loadMailbox(agentId) {
-  var isRu = currentLang === 'ru';
-  var el = document.getElementById('mbx-list'); if (!el) return;
-  var res = await apiRequest('GET', '/api/v3/mailbox/' + agentId);
-  if (!res || res.ok === false) { el.innerHTML = '<span style="color:var(--text-muted)">' + escHtml((res && res.error) || (isRu ? 'недоступно' : 'unavailable')) + '</span>'; return; }
-  var u = document.getElementById('mbx-unread'); if (u) u.innerHTML = res.unread ? '<span class="chip" style="text-transform:none;letter-spacing:0;color:#3b82f6">' + res.unread + ' ' + (isRu ? 'непроч.' : 'unread') + '</span>' : '';
-  var msgs = res.messages || [];
-  if (!msgs.length) { el.innerHTML = '<span style="color:var(--text-muted)">' + (isRu ? 'Пусто' : 'Empty') + '</span>'; return; }
-  var h = '<div style="display:flex;flex-direction:column;gap:.4rem">';
-  msgs.forEach(function(m){
-    var unread = m.status === 0;
-    var txt = (m.body && (m.body.text || m.body.message)) || '';
-    h += '<div class="v3-card" style="padding:.55rem .75rem;' + (unread ? 'border-left:3px solid #3b82f6' : 'opacity:.72') + '">' +
-      '<div style="display:flex;justify-content:space-between;gap:6px;font-size:.74rem">' +
-        '<span><b>' + (isRu ? 'от #' : 'from #') + (m.from_agent != null ? m.from_agent : '—') + '</b> · ' + escHtml(m.kind || 'message') + (m.subject ? ' · ' + escHtml(m.subject) : '') + '</span>' +
-        (unread ? '<a href="#" onclick="markMail(' + Number(agentId) + ',' + Number(m.id) + ');return false" style="color:#3b82f6;font-size:.7rem">' + (isRu ? 'прочитано' : 'read') + '</a>' : '') +
-      '</div>' +
-      (txt ? '<div style="font-size:.76rem;color:var(--text-secondary);margin-top:.25rem">' + escHtml(String(txt)) + '</div>' : '') +
-      (m.ref ? '<div style="font-size:.68rem;color:var(--text-muted);margin-top:.2rem">ref: ' + escHtml(String(m.ref)) + '</div>' : '') +
-    '</div>';
-  });
-  el.innerHTML = h + '</div>';
-}
-
-async function sendMailbox(fromAgent) {
-  var isRu = currentLang === 'ru';
-  var out = document.getElementById('mbx-send-result');
-  var g = function(id){ var e = document.getElementById(id); return e ? e.value : ''; };
-  var to = parseInt(g('mbx-to'), 10); var subj = g('mbx-subj'); var text = g('mbx-text');
-  if (!to || (!subj && !text)) { toast(isRu ? 'Укажи ID агента и текст' : 'Enter agent ID and text', 'error'); return; }
-  if (out) out.textContent = '…';
-  var res = await apiRequest('POST', '/api/v3/mailbox', { fromAgent: fromAgent, toAgent: to, kind: 'message', subject: subj || undefined, body: { text: text } });
-  if (out) out.innerHTML = (res && res.ok) ? '<span style="color:#22c55e">' + (isRu ? 'отправлено' : 'sent') + '</span>' : '<span style="color:#ef4444">' + escHtml((res && res.error) || 'error') + '</span>';
-}
-
-async function markMail(agentId, msgId) {
-  await apiRequest('POST', '/api/v3/mailbox/' + msgId + '/read', { agentId: agentId });
-  loadMailbox(agentId);
-}
-
-async function placeBidUI(jobId, agentId) {
-  var isRu = currentLang === 'ru';
-  var amt = prompt(isRu ? 'Сумма бида (GRAM), ≤ баунти:' : 'Bid amount (GRAM), ≤ bounty:');
-  if (amt == null) return;
-  var n = parseFloat(amt); if (!(n > 0)) { toast(isRu ? 'Неверная сумма' : 'Invalid amount', 'error'); return; }
-  var el = document.getElementById('job-claim-' + jobId); if (el) el.textContent = '…';
-  var res = await apiRequest('POST', '/api/v3/jobs/' + jobId + '/bid', { bidderAgent: agentId, amountGram: n });
-  if (!el) return;
-  if (res && res.ok) { el.innerHTML = '<span style="color:#22c55e">' + (isRu ? 'Бид принят: ' : 'Bid placed: ') + n + ' GRAM · ' + escHtml(res.role || '') + ' · match ' + (res.effective || 0) + '</span>'; }
-  else { el.innerHTML = '<span style="color:#ef4444">' + escHtml((res && res.error) || 'error') + '</span>'; }
-}
-
-async function viewBidsUI(jobId, agentId) {
-  var isRu = currentLang === 'ru';
-  var el = document.getElementById('job-claim-' + jobId); if (!el) return;
-  el.textContent = '…';
-  var res = await apiRequest('GET', '/api/v3/jobs/' + jobId + '/bids');
-  if (!res || res.ok === false) { el.innerHTML = '<span style="color:#ef4444">' + escHtml((res && res.error) || 'error') + '</span>'; return; }
-  var bids = res.bids || [];
-  if (!bids.length) { el.innerHTML = '<span style="color:var(--text-muted)">' + (isRu ? 'бидов нет' : 'no bids') + '</span>'; return; }
-  var h = '<div style="display:flex;flex-direction:column;gap:3px;margin-top:3px">';
-  bids.forEach(function(b){
-    h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:.72rem">' +
-      '<span>#' + b.bidder_agent + ' · ' + (b.amount_gram || 0) + ' GRAM · ' + escHtml(b.role || '') + '/' + escHtml(b.tier || '') + ' · match ' + (b.effective || 0) + '</span>' +
-      '<button class="rt-save-btn" style="padding:2px 8px;font-size:.68rem" onclick="awardUI(' + Number(jobId) + ',' + Number(b.bidder_agent) + ')">' + (isRu ? 'выбрать' : 'award') + '</button></div>';
-  });
-  el.innerHTML = h + '</div>';
-}
-
-async function awardUI(jobId, winnerAgent) {
-  var isRu = currentLang === 'ru';
-  var res = await apiRequest('POST', '/api/v3/jobs/' + jobId + '/award', { winnerAgent: winnerAgent });
-  if (res && res.ok) { toast(isRu ? ('Победитель: агент #' + winnerAgent) : ('Winner: agent #' + winnerAgent), 'success'); }
-  else { toast((res && res.error) || 'error', 'error'); }
-}
-
 function switchSettingsTab(tab) {
   _settingsTab = tab;
   // Update tab buttons
@@ -2737,18 +2178,6 @@ function switchSettingsTab(tab) {
         '</button>' +
       '</div>' +
       '</div>';
-  } else if (tab === 'passport') {
-    renderAgentPassportTab(body, a).catch(function(e){ console.error('passport tab', e); });
-  } else if (tab === 'network') {
-    renderAgentNetworkTab(body, a).catch(function(e){ console.error('network tab', e); });
-  } else if (tab === 'jobs') {
-    renderAgentJobsTab(body, a).catch(function(e){ console.error('jobs tab', e); });
-  } else if (tab === 'mailbox') {
-    renderAgentMailboxTab(body, a).catch(function(e){ console.error('mailbox tab', e); });
-  } else if (tab === 'rent') {
-    renderAgentRentalTab(body, a).catch(function(e){ console.error('rent tab', e); });
-  } else if (tab === 'oracle') {
-    renderAgentOracleTab(body, a).catch(function(e){ console.error('oracle tab', e); });
   } else if (tab === 'mcp') {
     renderAgentMCPTab(body, a);
   } else if (tab === 'security') {
@@ -4845,6 +4274,7 @@ async function loadAgentTelegramTab(body, agentId) {
             '<span style="color:#4ade80;font-weight:700;font-size:.95rem">' + (isRu ? 'Подключён' : 'Connected') + '</span>' +
           '</div>' +
           (info.username ? '<div style="color:var(--text-primary);font-size:.9rem;font-weight:500;margin-bottom:4px">@' + escHtml(info.username) + '</div>' : '') +
+          (info.telegramUserId ? '<div style="color:var(--text-muted);font-size:.8rem;margin-bottom:4px">id ' + escHtml(String(info.telegramUserId)) + '</div>' : '') +
           (maskedPhone ? '<div style="color:var(--text-muted);font-size:.8rem">' + escHtml(maskedPhone) + '</div>' : '') +
         '</div>' +
         '<button class="rt-save-btn" style="background:linear-gradient(in oklab 135deg,var(--primary),var(--primary-dark));box-shadow:0 4px 16px var(--accent-glow)" onclick="disconnectAgentTelegram(' + agentId + ')">' +
@@ -5564,7 +4994,14 @@ function deleteAgent(agentId, name) {
   const modal = document.getElementById('delete-agent-modal');
   const nameEl = document.getElementById('delete-agent-name');
   if (nameEl) nameEl.textContent = '#' + agentId + ' ' + name;
-  if (modal) modal.style.display = 'flex';
+  if (modal) {
+    // The modal is declared inside <main>, which is a z-index:2 stacking context,
+    // so its own z-index can't lift it above the agent slide-over
+    // (.agent-detail-backdrop, z-index 50000). Portal it to <body> so its
+    // z-index applies at the top level and it renders over the open agent panel.
+    if (modal.parentElement !== document.body) document.body.appendChild(modal);
+    modal.style.display = 'flex';
+  }
 }
 
 function closeDeleteModal() {
@@ -7826,7 +7263,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // /studio/agents/201 → open agent 201
   // /studio/agents/201/chats → open agent 201 on chats tab
   var path = window.location.pathname.replace(/\/$/, '');
-  var agentMatch = path.match(/\/studio\/agents\/(\d+)(?:\/(\w+))?/);
+  var agentMatch = path.match(/\/studio\/agents\/(\d+)(?:\/([\w-]+))?/);
   if (agentMatch) {
     var _routeAgentId = parseInt(agentMatch[1]);
     var _routeTab = agentMatch[2] || 'soul';
@@ -7837,7 +7274,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (_routeTab !== 'soul') switchSettingsTab(_routeTab);
     }, 300);
   } else {
-    var match = path.match(/\/studio\/(\w+)/);
+    var match = path.match(/\/studio\/([\w-]+)/);
     if (match && match[1]) {
       setTimeout(function() { if (authToken) navigateTo(match[1]); }, 500);
     }
@@ -11711,11 +11148,16 @@ async function acceptAtlasAgentSuggest(suggestKey, btnEl) {
   const isRu = currentLang === 'ru';
   const s = window[suggestKey];
   if (!s) { toast(isRu ? 'Предложение устарело' : 'Suggestion expired', 'warning'); return; }
-  if (btnEl) { btnEl.disabled = true; btnEl.textContent = isRu ? 'Создаём…' : 'Creating…'; }
+  // Disable IMMEDIATELY (before any await) to prevent duplicate creation
+  // from rapid double-clicks. Previously the API took 5-8s and users would
+  // click 3-4 times, getting that many duplicate agents created.
+  if (btnEl) {
+    if (btnEl.dataset && btnEl.dataset.creating === '1') return; // hard guard
+    if (btnEl.dataset) btnEl.dataset.creating = '1';
+    btnEl.disabled = true;
+    btnEl.textContent = isRu ? 'Создаём…' : 'Creating…';
+  }
   try {
-    // Build a description payload that orchestrator can act on. If Atlas
-    // gave us a structured system_prompt_module we preserve it; otherwise
-    // we fall back to name + description.
     let description = '';
     if (s.system_prompt_module) {
       description = `Создай агента "${s.name || 'Agent'}".\n\n` +
@@ -11732,21 +11174,34 @@ async function acceptAtlasAgentSuggest(suggestKey, btnEl) {
     if (s.tick_interval_ms) description += `\nTick: ${s.tick_interval_ms}ms.`;
 
     const r = await apiRequest('POST', '/api/agents', { description: description.trim() });
-    if (r.ok && r.agent) {
-      toast(isRu ? 'Агент создан: #' + r.agent.id : 'Agent created: #' + r.agent.id, 'success');
+    // API shape: { ok, agentId, agent: {...} | null, message, charge }
+    const agentId = r && (r.agentId || (r.agent && r.agent.id));
+    if (r && r.ok && agentId) {
+      toast(isRu ? 'Агент создан: #' + agentId : 'Agent created: #' + agentId, 'success');
       if (btnEl) {
-        btnEl.textContent = '✓ #' + r.agent.id;
+        btnEl.textContent = '✓ #' + agentId;
         btnEl.style.background = 'rgba(34,197,94,0.18)';
         btnEl.style.borderColor = 'rgba(34,197,94,0.40)';
       }
-      handleAgentCreated(r.agent.id);
+      // Clear the suggest so a stray re-click does nothing
+      try { delete window[suggestKey]; } catch {}
+      handleAgentCreated(agentId);
     } else {
-      toast((r && (r.error || r.message)) || (isRu ? 'Ошибка создания' : 'Create failed'), 'error');
-      if (btnEl) { btnEl.disabled = false; btnEl.textContent = isRu ? '▶ Создать агента' : '▶ Create agent'; }
+      const errMsg = (r && (r.error || r.message)) || (isRu ? 'Ошибка создания агента' : 'Agent creation failed');
+      toast(errMsg, 'error');
+      if (btnEl) {
+        btnEl.disabled = false;
+        btnEl.textContent = isRu ? '▶ Создать агента' : '▶ Create agent';
+        if (btnEl.dataset) btnEl.dataset.creating = '';
+      }
     }
   } catch (e) {
     toast(e.message || 'Error', 'error');
-    if (btnEl) { btnEl.disabled = false; btnEl.textContent = isRu ? '▶ Создать агента' : '▶ Create agent'; }
+    if (btnEl) {
+      btnEl.disabled = false;
+      btnEl.textContent = isRu ? '▶ Создать агента' : '▶ Create agent';
+      if (btnEl.dataset) btnEl.dataset.creating = '';
+    }
   }
 }
 
@@ -12431,6 +11886,12 @@ async function loadNetworkMap() {
   } catch (e) {
     console.warn('[NetworkMap] /api/agents/network-edges failed (non-fatal):', e);
   }
+  // A2A live: кросс-оунер диалоги моих агентов с чужими (ghost-ноды + временные связи)
+  var a2aConvos = [];
+  try {
+    const a2aResp = await apiRequest('GET', '/api/v3/a2a-live');
+    a2aConvos = (a2aResp && a2aResp.ok ? a2aResp.conversations : []) || [];
+  } catch (e) { console.warn('[NetworkMap] /api/v3/a2a-live failed (non-fatal):', e); }
   _networkCrews = crews;
 
   // Render the crews floating panel (was a separate sidebar tab before)
@@ -12476,6 +11937,10 @@ async function loadNetworkMap() {
     var color = !a.isActive ? '#6b7280' : (customColor || roleColors[role] || '#00a8ff');
     var customRoleName = (trigCfg.config && trigCfg.config.customRole && trigCfg.config.customRole.name) || '';
     var roleLabel = customRoleName || roleLabels[role] || role.toUpperCase().slice(0, 4);
+    // TG-личность агента (если подключён к аккаунту/боту) — для пометки юз+айди и A2A.
+    var tgSess = trigCfg.telegram_session || {};
+    var tgUsername = tgSess.username || '';
+    var tgId = tgSess.telegramUserId ? String(tgSess.telegramUserId) : '';
     var angle = (i / agents.length) * Math.PI * 2;
     // Larger spread for fewer agents so they're visible
     var spreadRatio = agents.length <= 3 ? 0.38 : agents.length <= 6 ? 0.34 : 0.30;
@@ -12484,6 +11949,7 @@ async function loadNetworkMap() {
       id: a.id, name: a.name || 'Agent #' + a.id,
       role: role, level: level, xp: a.xp || 0,
       isActive: a.isActive,
+      tgUsername: tgUsername, tgId: tgId, tgConnected: !!(tgUsername || tgId),
       x: W / 2 + Math.cos(angle) * spread + (Math.random() - 0.5) * 60,
       y: H / 2 + Math.sin(angle) * spread + (Math.random() - 0.5) * 50,
       vx: 0, vy: 0,
@@ -12586,6 +12052,33 @@ async function loadNetworkMap() {
       hue: Math.random() > 0.7 ? 210 : (Math.random() > 0.5 ? 270 : 200)
     });
   }
+
+  // ── A2A live layer: внешние (кросс-оунер) собеседники как временные ghost-ноды +
+  //    временные связи по интенту. Полностью защищено try/catch — не ломает граф.
+  try {
+    if (a2aConvos && a2aConvos.length) {
+      var A2A_INTENT_COLOR = { request:'#ffb64d', inform:'#38d6ff', answer:'#38d6ff', offer:'#38e6a6', delegate:'#b57bff', message:'#7aa2ff', query:'#ffb64d' };
+      a2aConvos.forEach(function(cv) {
+        var mine = nodeById[cv.my_agent_id];
+        if (!mine) return; // мой агент не на карте — пропускаем
+        var pid = 'a2apeer_' + cv.peer_agent_id;
+        var peer = nodeById[pid];
+        if (!peer) {
+          peer = {
+            id: pid, name: cv.peer_username ? ('@' + cv.peer_username) : (cv.peer_name || ('#' + cv.peer_agent_id)),
+            role: 'peer', level: 1, xp: 0, isActive: !!cv.active,
+            external: true, ephemeral: true, a2aActive: !!cv.active,
+            x: mine.x + (Math.random() - 0.5) * 170, y: mine.y + (Math.random() - 0.5) * 170,
+            vx: 0, vy: 0, radius: 18, color: '#b57bff', roleLabel: 'GUEST',
+            tgUsername: cv.peer_username || '', tgId: '', tgConnected: !!cv.peer_username,
+          };
+          _networkNodes.push(peer); nodeById[pid] = peer;
+        }
+        edges.push({ from: mine, to: peer, kind: 'a2a', a2a: true, active: !!cv.active,
+          color: (A2A_INTENT_COLOR[cv.intent] || '#7aa2ff'), crewId: null });
+      });
+    }
+  } catch (e) { console.warn('[NetworkMap] a2a layer inject failed (non-fatal):', e); }
 
   // Edge particles (multiple per edge)
   var edgeParticles = edges.map(function() {
@@ -12865,7 +12358,7 @@ async function loadNetworkMap() {
       ctx.beginPath();
       ctx.moveTo(fx, fy);
       ctx.quadraticCurveTo(cpx, cpy, tx, ty);
-      ctx.strokeStyle = e.from.color + Math.round(edgeAlpha * 255).toString(16).padStart(2, '0');
+      ctx.strokeStyle = (e.color||e.from.color) + Math.round(edgeAlpha * 255).toString(16).padStart(2, '0');
       ctx.lineWidth = 1.2;
       ctx.stroke();
 
@@ -12876,7 +12369,7 @@ async function loadNetworkMap() {
       ctx.beginPath();
       ctx.moveTo(fx, fy);
       ctx.quadraticCurveTo(cpx, cpy, tx, ty);
-      ctx.strokeStyle = e.from.color + '18';
+      ctx.strokeStyle = (e.color||e.from.color) + '18';
       ctx.lineWidth = 2;
       ctx.stroke();
       ctx.setLineDash([]);
@@ -12893,8 +12386,8 @@ async function loadNetworkMap() {
         ctx.beginPath();
         ctx.arc(ppx, ppy, p.size, 0, Math.PI * 2);
         var pGlow = ctx.createRadialGradient(ppx, ppy, 0, ppx, ppy, p.size * 3);
-        pGlow.addColorStop(0, e.from.color + 'cc');
-        pGlow.addColorStop(1, e.from.color + '00');
+        pGlow.addColorStop(0, (e.color||e.from.color) + 'cc');
+        pGlow.addColorStop(1, (e.color||e.from.color) + '00');
         ctx.fillStyle = pGlow;
         ctx.fill();
       });
@@ -13395,13 +12888,23 @@ function appendAssistantMsg(role, content, buttons) {
 
   var div = document.createElement('div');
   div.className = 'assistant-msg ' + role;
-  // Parse markdown + navigation links
+  // Render the Telegram-MarkdownV2 subset the server sends (the SAME string goes
+  // to Telegram and to this web chat): single-* bold, _italic_, `code`, and the
+  // \\-escapes MarkdownV2 puts before punctuation. Escaped marker chars become
+  // HTML entities (inert to the regexes below); other escapes just drop the \\.
   var html = escHtml(content)
+    .replace(/\\\\/g, '&#92;')
+    .replace(/\\([_*`\[\]()])/g, function(_m, ch) { return '&#' + ch.charCodeAt(0) + ';'; })
+    .replace(/\\([~>#+=|{}.!\-])/g, '$1')
     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    // Single-* bold and _italic_ only at word boundaries, so identifiers like
+    // get_ton_balance or a*b aren't mangled when they arrive unescaped.
+    .replace(/(^|[^\w*])\*(?!\s)([^*\n]+?)\*(?![\w*])/g, '$1<strong>$2</strong>')
+    .replace(/(^|[^\w_])_(?!\s)([^_\n]+?)_(?![\w_])/g, '$1<em>$2</em>')
     .replace(/`([^`]+)`/g, '<code>$1</code>')
-    // Navigation links: [[page:pageName|Label]] → clickable links that navigate within studio
+    // Navigation links: [[page:pageName|Label]] -> clickable links that navigate within studio
     .replace(/\[\[page:(\w+)\|([^\]]+)\]\]/g, '<a href="#" class="assistant-nav-link" onclick="navigateTo(\'$1\');return false" style="color:var(--primary-light);text-decoration:underline;cursor:pointer">$2</a>')
-    // Standard markdown links: [text](url) → external links (only http/https)
+    // Standard markdown links: [text](url) -> external links (only http/https)
     .replace(/\[([^\]]+)\]\((https?:\/\/[^)"']+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:var(--primary-light);text-decoration:underline">$1</a>')
     .replace(/\n/g, '<br>');
   if (role === 'assistant') {
@@ -13412,7 +12915,7 @@ function appendAssistantMsg(role, content, buttons) {
   if (buttons && buttons.length) {
     html += '<div class="assistant-msg-buttons">';
     buttons.forEach(function(b) {
-      html += '<button class="btn btn-ghost btn-sm" onclick="sendAssistantCallback(\'' + escHtml(b.callbackData || b.text) + '\',\'' + escHtml(b.text) + '\')">' + escHtml(b.text) + '</button>';
+      html += '<button class="btn btn-ghost btn-sm" onclick="sendAssistantCallback(\'' + escJsAttr(b.callbackData || b.text) + '\',\'' + escJsAttr(b.text) + '\')">' + escHtml(b.text) + '</button>';
     });
     html += '</div>';
   }
@@ -14075,13 +13578,23 @@ async function openMarketplaceDetail(listingId) {
 }
 
 async function buyFromMarketplace(listingId) {
+  var listing = (_marketplaceListings || []).filter(function(x) { return String(x.id) === String(listingId); })[0] || {};
+  var isFree = !!listing.isFree || Number(listing.price || 0) <= 0;
   var confirmed = await studioConfirm({
-    title: currentLang === 'ru' ? 'Подтвердите покупку' : 'Confirm Purchase',
-    message: currentLang === 'ru' ? 'Агент будет добавлен в вашу коллекцию. Стоимость будет списана с баланса.' : 'The agent will be added to your collection. Cost will be deducted from your balance.',
-    confirmText: currentLang === 'ru' ? 'Купить' : 'Buy Now',
+    title: isFree
+      ? (currentLang === 'ru' ? 'Установить агента' : 'Install Agent')
+      : (currentLang === 'ru' ? 'Подтвердите покупку' : 'Confirm Purchase'),
+    message: isFree
+      ? (currentLang === 'ru' ? 'Агент будет добавлен в вашу коллекцию бесплатно.' : 'The agent will be added to your collection for free.')
+      : (currentLang === 'ru' ? 'Агент будет добавлен в вашу коллекцию. Стоимость будет списана с баланса.' : 'The agent will be added to your collection. Cost will be deducted from your balance.'),
+    confirmText: isFree
+      ? (currentLang === 'ru' ? 'Установить' : 'Install')
+      : (currentLang === 'ru' ? 'Купить' : 'Buy Now'),
     cancelText: currentLang === 'ru' ? 'Отмена' : 'Cancel',
     type: 'info',
-    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>'
+    icon: isFree
+      ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'
+      : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>'
   });
   if (!confirmed) return;
   try {
@@ -14603,6 +14116,16 @@ function showNetworkAgentPanel(node) {
   var toggleClass = node.isActive ? 'btn-warning' : 'btn-success';
   var roleDisplay = node.roleLabel || node.role;
   var roleBadgeColor = node.color || 'var(--primary)';
+  // TG-личность: если агент подключён к аккаунту/боту — показываем @username · id.
+  var tgLine = '';
+  if (node.tgConnected) {
+    var tgParts = [];
+    if (node.tgUsername) tgParts.push('@' + escHtml(node.tgUsername));
+    if (node.tgId) tgParts.push('id' + escHtml(node.tgId));
+    tgLine = '<p style="display:flex;align-items:center;gap:6px;color:#22c55e;font-size:.82rem">' +
+      '<span style="width:7px;height:7px;border-radius:50%;background:#22c55e;display:inline-block;box-shadow:0 0 6px #22c55e"></span>' +
+      (currentLang === 'ru' ? 'Telegram: ' : 'Telegram: ') + '<strong>' + tgParts.join(' &middot; ') + '</strong></p>';
+  }
   panel.innerHTML = '<div class="nap-header">' +
     '<span style="display:flex;align-items:center;gap:8px"><span style="width:10px;height:10px;border-radius:50%;background:' + roleBadgeColor + ';box-shadow:0 0 8px ' + roleBadgeColor + '60;display:inline-block"></span>' + escHtml(node.name) + '</span>' +
     '<button onclick="this.closest(\'.network-agent-panel\').remove()" style="background:none;border:none;color:#666;font-size:1.1rem;cursor:pointer;padding:0 2px;line-height:1">&times;</button>' +
@@ -14610,6 +14133,7 @@ function showNetworkAgentPanel(node) {
   '<div class="nap-body">' +
     '<p>' + (currentLang === 'ru' ? 'Роль' : 'Role') + ': <strong style="color:' + roleBadgeColor + '">' + escHtml(roleDisplay) + '</strong></p>' +
     '<p>Lv.' + (node.level || 1) + ' &middot; XP: ' + (node.xp || 0) + '</p>' +
+    tgLine +
     '<p>' + statusDot + '</p>' +
     '<div class="nap-actions">' +
       '<button class="btn btn-sm ' + toggleClass + '" onclick="toggleAgent(' + node.id + ',' + node.isActive + ');this.closest(\'.network-agent-panel\').remove()">' + toggleText + '</button>' +
@@ -18576,7 +18100,7 @@ function renderSkills() {
     var cat = (s.category || s.metadata && s.metadata.category || '').toUpperCase();
     var ver = s.version || '1.0';
     return '' +
-      '<div class="marketplace-card skill-card" onclick="openSkillDetail(' + JSON.stringify(s.name) + ')" style="cursor:pointer">' +
+      '<div class="marketplace-card skill-card" onclick="openSkillDetail(\'' + escJsAttr(s.name) + '\')" style="cursor:pointer">' +
         '<div class="mkt-card-header" style="display:flex;justify-content:space-between;align-items:center;gap:8px">' +
           '<strong style="font-size:1rem">' + escHtml(s.name) + '</strong>' +
           '<span style="background:' + badgeColor + '22;color:' + badgeColor + ';padding:2px 8px;border-radius:6px;font-size:.65rem;font-weight:700">' + badgeLabel + '</span>' +
@@ -18603,14 +18127,14 @@ async function openSkillDetail(name) {
     var skillMeta = (_skillsCache || []).find(function(x) { return x.name === name; }) || {};
     var isPublic = !!skillMeta.is_public;  // may be undefined initially
     var publishBtn = isOwn
-      ? '<button class="btn btn-ghost btn-sm" onclick="toggleSkillPublish(' + JSON.stringify(name) + ', ' + (!isPublic) + ')">' +
+      ? '<button class="btn btn-ghost btn-sm" onclick="toggleSkillPublish(\'' + escJsAttr(name) + '\', ' + (!isPublic) + ')">' +
         (isPublic
           ? (currentLang === 'ru' ? '🔒 Сделать приватным' : '🔒 Make Private')
           : (currentLang === 'ru' ? '🌍 Опубликовать' : '🌍 Publish')) +
         '</button>'
       : '';
     var deleteBtn = isOwn
-      ? '<button class="btn btn-ghost btn-sm" style="color:var(--error)" onclick="deleteSkill(' + JSON.stringify(name) + ')">' +
+      ? '<button class="btn btn-ghost btn-sm" style="color:var(--error)" onclick="deleteSkill(\'' + escJsAttr(name) + '\')">' +
         (currentLang === 'ru' ? 'Удалить' : 'Delete') + '</button>'
       : '';
     var body =
@@ -18727,7 +18251,7 @@ async function loadAgentSkills(agentId) {
         '<div class="skill-toggle-row" style="display:flex;align-items:flex-start;gap:14px;padding:12px 14px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px">' +
           '<label class="switch" style="position:relative;display:inline-block;width:42px;height:22px;flex-shrink:0;margin-top:2px">' +
             '<input type="checkbox" ' + (s.enabled ? 'checked' : '') +
-              ' onchange="toggleAgentSkill(' + _detailAgentId + ', ' + JSON.stringify(s.name) + ', this.checked)"' +
+              ' onchange="toggleAgentSkill(' + _detailAgentId + ', \'' + escJsAttr(s.name) + '\', this.checked)"' +
               ' style="opacity:0;width:0;height:0">' +
             '<span class="switch-slider" style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:' + (s.enabled ? 'linear-gradient(in oklab 135deg,#00a8ff,#8b5cf6)' : '#374151') + ';transition:.25s;border-radius:22px">' +
               '<span style="position:absolute;height:18px;width:18px;left:' + (s.enabled ? '22px' : '2px') + ';bottom:2px;background:white;transition:.25s;border-radius:50%"></span>' +
@@ -18741,7 +18265,7 @@ async function loadAgentSkills(agentId) {
             '</div>' +
             '<div style="font-size:.78rem;color:var(--text-muted);line-height:1.4">' + escHtml((s.description || '').slice(0, 200)) + '</div>' +
           '</div>' +
-          '<button class="btn btn-ghost btn-sm" onclick="openSkillDetail(' + JSON.stringify(s.name) + ')" style="flex-shrink:0">' +
+          '<button class="btn btn-ghost btn-sm" onclick="openSkillDetail(\'' + escJsAttr(s.name) + '\')" style="flex-shrink:0">' +
             '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>' +
           '</button>' +
         '</div>';

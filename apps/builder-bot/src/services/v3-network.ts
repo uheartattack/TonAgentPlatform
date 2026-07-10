@@ -248,6 +248,88 @@ export async function listNetworkAgents(opts?: { limit?: number; role?: string; 
   return rows;
 }
 
+// ── Директория агентов, ПОДКЛЮЧЁННЫХ к Telegram (аккаунт/бот) ────────────────
+/** Реестр агентов, у которых есть TG-личность (подключены к аккаунту/боту) — они
+ *  реально адресуемы для A2A-переписки. Источник: agents.trigger_config->'telegram_session'
+ *  (username, telegramUserId). Кросс-оунер (для discovery «кому написать/уточнить»).
+ *  Возвращает name + tg_username + tg_id + роль/репутацию + флаг on-chain.
+ *  ⚠️ tg_id/username агента виден другим агентам сети (так задумано: агенты общаются).
+ *  Публичная hire-page (getPublicProfile) TG-личность НЕ отдаёт — только сетевой слой. */
+export async function listConnectedAgents(opts?: { limit?: number; role?: string; minTier?: string; category?: string } | number) {
+  const o = typeof opts === 'number' ? { limit: opts } : (opts || {});
+  const limit = Math.min(Math.max(1, (o as any).limit || 100), 500);
+  const r = await pool().query(
+    `SELECT a.id AS tap_agent_id, a.name, a.role,
+            a.trigger_config->'telegram_session'->>'username'       AS tg_username,
+            a.trigger_config->'telegram_session'->>'telegramUserId' AS tg_user_id,
+            v.agent_nft,
+            COALESCE(ts.score,0) AS trust_score, COALESCE(ts.tier,'unverified') AS tier,
+            a.updated_at
+       FROM builder_bot.agents a
+       LEFT JOIN LATERAL (SELECT agent_nft FROM builder_bot.v3_agents WHERE tap_agent_id = a.id ORDER BY updated_at DESC LIMIT 1) v ON TRUE
+       LEFT JOIN builder_bot.trust_scores ts ON ts.agent_id = a.id
+      WHERE a.trigger_config ? 'telegram_session'
+      ORDER BY a.updated_at DESC NULLS LAST
+      LIMIT $1`,
+    [limit],
+  );
+  const roles = require('./v3-roles');
+  // TG-личность агента видна другим агентам сети — так задумано: агенты пишут друг другу
+  // напрямую в Telegram (userbot→userbot). Адрес для DM = tg_username/tg_id.
+  let rows = r.rows.map((x: any) => ({
+    agent_id: Number(x.tap_agent_id),
+    name: x.name || null,
+    role: x.role || 'worker',
+    tg_username: x.tg_username || null,
+    tg_id: x.tg_user_id ? String(x.tg_user_id) : null,
+    onchain: !!x.agent_nft,
+    nft: x.agent_nft || null,
+    trust: Number(x.trust_score) || 0,
+    tier: x.tier || 'unverified',
+  }));
+  if ((o as any).role) rows = rows.filter((x: any) => roles.normalizeRole(x.role) === roles.normalizeRole((o as any).role));
+  if ((o as any).minTier) rows = rows.filter((x: any) => roles.tierAtLeast(x.tier, (o as any).minTier));
+  const cat = (o as any).category;
+  rows = rows.map((x: any) => ({ ...x, fit: roles.roleFit(x.role, cat), effective: roles.effectiveScore(x.trust, x.role, cat) }));
+  if (cat) rows.sort((p: any, q: any) => q.effective - p.effective);
+  return rows;
+}
+
+/** Контакт одного агента для A2A: резолв по числовому id ИЛИ по @username (TG-личности).
+ *  Возвращает { agent_id, name, role, tg_username, tg_id, connected }. null если не найден. */
+export async function getAgentContact(ref: number | string | null | undefined) {
+  if (ref == null) return null;
+  const raw = String(ref).trim();
+  if (!raw) return null;
+  const asId = Number(raw);
+  const byId = Number.isFinite(asId) && asId > 0 && raw === String(asId);
+  let row: any;
+  if (byId) {
+    row = (await pool().query(
+      `SELECT a.id, a.name, a.role,
+              a.trigger_config->'telegram_session'->>'username'       AS tg_username,
+              a.trigger_config->'telegram_session'->>'telegramUserId' AS tg_user_id
+         FROM builder_bot.agents a WHERE a.id=$1 LIMIT 1`, [asId])).rows[0];
+  } else {
+    const uname = raw.replace(/^@/, '').trim();
+    if (!uname) return null;
+    row = (await pool().query(
+      `SELECT a.id, a.name, a.role,
+              a.trigger_config->'telegram_session'->>'username'       AS tg_username,
+              a.trigger_config->'telegram_session'->>'telegramUserId' AS tg_user_id
+         FROM builder_bot.agents a
+        WHERE lower(a.trigger_config->'telegram_session'->>'username') = lower($1)
+        ORDER BY a.updated_at DESC NULLS LAST LIMIT 1`, [uname])).rows[0];
+  }
+  if (!row) return null;
+  return {
+    agent_id: Number(row.id), name: row.name || null, role: row.role || 'worker',
+    tg_username: row.tg_username || null,
+    tg_id: row.tg_user_id ? String(row.tg_user_id) : null,
+    connected: !!(row.tg_username || row.tg_user_id),
+  };
+}
+
 // ── Публичная карточка агента (витрина / *.tonagent.ton hire-page, read-only) ──
 export async function getPublicProfile(tapAgentId: number) {
   const a = (await pool().query(
