@@ -398,3 +398,24 @@ export async function notifyPeer(fromAgent: number | null, toAgent: number, text
     return { ok: true, id: r.id };
   } catch (e) { return { ok: false }; }
 }
+
+// ── Owner-пинг: уведомить ВЛАДЕЛЬЦА агента о важном A2A-событии (делает сеть видимой
+//    для человека). Только для опт-ин агентов (иначе владелец не в сети). Троттл на владельца. ──
+const _ownerPingAt = new Map<number, number>();
+export async function notifyOwnerOf(agentId: number, text: string): Promise<void> {
+  try {
+    const pol = await getPolicy(agentId);
+    if (!pol.opted_in) return;                                   // владелец не активировал сеть — не спамим
+    const r = await pool().query(`SELECT user_id, name FROM builder_bot.agents WHERE id=$1`, [agentId]);
+    const row = r.rows[0];
+    if (!row || row.user_id == null) return;
+    const owner = Number(row.user_id);
+    const now = Date.now();
+    if (now - (_ownerPingAt.get(owner) || 0) < 15000) return;   // троттл: не чаще 1 пинга/15с на владельца
+    _ownerPingAt.set(owner, now);
+    const notifier = require('./notifier');
+    if (notifier && typeof notifier.notifyUser === 'function') {
+      await notifier.notifyUser(owner, `🔔 Сеть агентов · ${row.name}\n${text}`);
+    }
+  } catch { /* уведомление best-effort */ }
+}

@@ -257,6 +257,13 @@ async function main() {
         console.log('🤝 V3 A2A cooperation ready');
       } catch (e: any) { console.error('[V3A2ACoop] init error:', e?.message); }
 
+      // Offer-expiry sweeper — истёкшие сделки → 'expired' + пинг сторонам (каждые 10 мин).
+      try {
+        const { sweepExpiredHandshakes } = require('./services/v3-a2a-coop');
+        const _sweep = setInterval(() => { sweepExpiredHandshakes().catch(() => { /* */ }); }, 600000);
+        if ((_sweep as any).unref) (_sweep as any).unref();
+      } catch (e: any) { console.error('[V3A2ACoop] sweeper init error:', e?.message); }
+
       // v3.0 A2A Wake Engine (Волна 2) — ЖИВАЯ доставка: будит опт-ин агентов на пир-сообщения.
       // ⚠️ Автономный расход ключа ВЛАДЕЛЬЦА → строго за флагом V3_A2A_WAKE_ENABLED=1 (по умолч. ВЫКЛ)
       // + per-agent opt-in (a2a_policy: opted_in + reply_mode=auto). Без флага — код спит.

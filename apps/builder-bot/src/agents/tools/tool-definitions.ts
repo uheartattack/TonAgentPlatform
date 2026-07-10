@@ -265,6 +265,14 @@ export function buildBaseToolDefinitions(agentRole?: string): OpenAI.ChatComplet
     {
       type: 'function',
       function: {
+        name: 'network_status',
+        description: 'Ситуационная сводка «что у меня в сети» ОДНИМ вызовом: непрочитанные сообщения, где твой ход по сделкам, открытые сделки/делегации, комнаты, твоя peer-репутация. Начни тик с этого, чтобы сориентироваться.',
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+    },
+    {
+      type: 'function',
+      function: {
         name: 'network_recruit',
         description: 'Собрать КОМАНДУ агентов под цель: ты даёшь цель + список подзадач, платформа подбирает лучшего исполнителя на каждую (по навыку/роли/репутации), открывает общую комнату и делегирует каждому. Самособирающаяся крю.',
         parameters: { type: 'object', properties: {

@@ -208,7 +208,9 @@ export async function openOffer(initiator: number, counterparty: number, terms: 
      VALUES ($1,$2,$3,'proposed',$4,$2,$5, ${exp}) RETURNING id, state`,
     [opts?.threadId || null, initiator, counterparty, JSON.stringify(terms || {}), opts?.jobRef || null],
   );
-  return { ok: true, id: String(r.rows[0].id), state: r.rows[0].state };
+  const hsId = String(r.rows[0].id);
+  try { const a2a = require('./v3-a2a'); await a2a.notifyPeer(initiator, counterparty, `Новый оффер сделки #${hsId}. Посмотри network_deal(action:list) → accept/counter/decline.`, 'offer', 'deal:' + hsId); await a2a.notifyOwnerOf(counterparty, `Новый оффер сделки #${hsId} от агента #${initiator}.`); } catch { /* */ }
+  return { ok: true, id: hsId, state: r.rows[0].state };
 }
 
 /** Ответная реплика по сделке: counter (новые условия) / accept / decline. Только сторона,
@@ -241,6 +243,7 @@ export async function respondHandshake(hsId: string, actor: number, action: 'cou
   if (action === 'accept') {
     await pool().query(`UPDATE builder_bot.v3_handshakes SET state='accepted', last_actor=$2, updated_at=NOW() WHERE id=$1`, [hsId, actor]);
     await notify('ПРИНЯЛ сделку ✅');
+    try { const a2a = require('./v3-a2a'); await a2a.notifyOwnerOf(other, `Твою сделку #${hsId} ПРИНЯЛИ ✅ (агент #${actor}).`); } catch { /* */ }
     return { ok: true, state: 'accepted' };
   }
   await pool().query(`UPDATE builder_bot.v3_handshakes SET state='declined', last_actor=$2, updated_at=NOW() WHERE id=$1`, [hsId, actor]);
@@ -286,7 +289,10 @@ export async function delegate(delegator: number, delegatee: number, task: any, 
      VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
     [opts?.threadId || null, opts?.parent || null, delegator, delegatee, JSON.stringify(task || {}), depth],
   );
-  return { ok: true, id: String(r.rows[0].id), depth };
+  const dId = String(r.rows[0].id);
+  const taskText = (task && (task.text || task.title)) ? String(task.text || task.title).slice(0, 200) : '';
+  try { const a2a = require('./v3-a2a'); await a2a.notifyPeer(delegator, delegatee, `Тебе делегировали подзадачу #${dId}: ${taskText}. Ответь network_delegate(action:update, status:accepted/done).`, 'delegate', 'deleg:' + dId); await a2a.notifyOwnerOf(delegatee, `Твоему агенту делегировали задачу #${dId}: ${taskText}`); } catch { /* */ }
+  return { ok: true, id: dId, depth };
 }
 
 export async function updateDelegation(id: string, actor: number, status: 'accepted' | 'done' | 'declined' | 'cancelled', result?: string): Promise<{ ok: boolean; error?: string }> {
@@ -409,6 +415,7 @@ export async function introduce(introducer: number, aId: number, bId: number, re
   const card = (c: any, id: number) => `${c.name || ('#' + id)}${c.tg_username ? (' @' + c.tg_username) : ''} (роль ${c.role})`;
   await a2a.notifyPeer(introducer, aId, `🤝 Знакомство от #${introducer}: ${card(cb, bId)}.${why} Напиши ему: network_dm(to_agent_id=${bId}) или network_message.`, 'introduce', `intro:${introducer}:${aId}:${bId}`);
   await a2a.notifyPeer(introducer, bId, `🤝 Знакомство от #${introducer}: ${card(ca, aId)}.${why} Напиши ему: network_dm(to_agent_id=${aId}) или network_message.`, 'introduce', `intro:${introducer}:${bId}:${aId}`);
+  try { await a2a.notifyOwnerOf(aId, `Твоего агента познакомили с ${cb.name || ('#' + bId)}.`); await a2a.notifyOwnerOf(bId, `Твоего агента познакомили с ${ca.name || ('#' + aId)}.`); } catch { /* */ }
   return { ok: true, introduced: [aId, bId] };
 }
 
@@ -510,4 +517,49 @@ export async function recruit(manager: number, goal: string, subtasks: Array<{ t
     } catch { /* одно назначение не роняет сбор */ }
   }
   return { ok: true, room_id: room.room_id, crew, unstaffed };
+}
+
+// ═══ 9. AGENT SITUATION ROOM (network_status) ═══════════════════════════════
+/** Один вызов «что у меня в сети»: непрочитанное, где мой ход, открытые сделки/делегации,
+ *  комнаты, моя peer-репутация. Дешёвая read-агрегация — экономит round-trips агента. */
+export async function statusFor(agentId: number): Promise<any> {
+  const mb = require('./v3-mailbox');
+  const [unread, deals, delegs, rooms, rep] = await Promise.all([
+    mb.unreadCount(agentId).catch(() => 0),
+    listHandshakes(agentId, 20).catch(() => []),
+    delegationStatus(agentId, { limit: 20 }).catch(() => []),
+    listRooms(agentId, 10).catch(() => []),
+    peerReputation(agentId).catch(() => ({ score: 0, endorsers: 0, signals: 0 })),
+  ]);
+  const yourMove = (deals as any[]).filter((d: any) => d.your_move);
+  const openDeals = (deals as any[]).filter((d: any) => ['proposed', 'countered'].indexOf(d.state) >= 0);
+  const openDelegs = (delegs as any[]).filter((d: any) => ['open', 'accepted'].indexOf(d.status) >= 0);
+  return {
+    ok: true,
+    unread, your_move_deals: yourMove.length, open_deals: openDeals.length,
+    open_delegations: openDelegs.length, rooms: (rooms as any[]).length, peer_reputation: rep,
+    deals_awaiting_you: yourMove.slice(0, 5).map((d: any) => ({ id: d.id, state: d.state, terms: d.terms })),
+    delegation_items: openDelegs.slice(0, 5).map((d: any) => ({ id: d.id, role: d.role, status: d.status })),
+    room_list: (rooms as any[]).slice(0, 5),
+    hint: 'unread → network_inbox · your_move_deals → network_deal(list) · delegations → network_delegate(status)',
+  };
+}
+
+// ═══ 10. OFFER-EXPIRY SWEEPER ═══════════════════════════════════════════════
+/** Фоновый разбор: сделки с истёкшим expires_at (proposed/countered) → 'expired' + пинг обеим
+ *  сторонам. Чтобы офферы не висели вечно «предложено». Зовётся по интервалу из index.ts. */
+export async function sweepExpiredHandshakes(): Promise<{ expired: number }> {
+  const r = await pool().query(
+    `UPDATE builder_bot.v3_handshakes SET state='expired', updated_at=NOW()
+      WHERE state IN ('proposed','countered') AND expires_at IS NOT NULL AND expires_at < NOW()
+      RETURNING id, initiator, counterparty`);
+  for (const h of r.rows) {
+    try {
+      const a2a = require('./v3-a2a');
+      await a2a.notifyPeer(null, Number(h.initiator), `Сделка #${h.id} истекла (не приняли вовремя).`, 'inform', 'deal:' + h.id);
+      await a2a.notifyPeer(null, Number(h.counterparty), `Сделка #${h.id} истекла.`, 'inform', 'deal:' + h.id);
+    } catch { /* */ }
+  }
+  if (r.rows.length) console.log(`[V3A2ACoop] swept ${r.rows.length} expired handshakes`);
+  return { expired: r.rows.length };
 }

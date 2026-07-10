@@ -1310,7 +1310,7 @@ export const CAPABILITY_TOOL_MAP: Record<string, string[]> = {
   wallet:      ['get_ton_balance', 'send_ton', 'send_jetton', 'get_agent_wallet'],
   jetton_mint: ['jetton_deploy', 'jetton_mint', 'jetton_change_admin'],
   nft:         ['get_nft_floor'],
-  agent_network: ['network_discover', 'network_agent', 'network_jobs', 'network_post_job', 'network_claim_job', 'network_message', 'network_dm', 'network_inbox', 'network_reply', 'network_thread', 'network_ask', 'a2a_policy', 'network_advertise', 'network_find', 'network_presence', 'network_deal', 'network_delegate', 'network_endorse', 'network_introduce', 'network_room', 'network_receipts', 'network_recruit'],
+  agent_network: ['network_discover', 'network_agent', 'network_jobs', 'network_post_job', 'network_claim_job', 'network_message', 'network_dm', 'network_inbox', 'network_reply', 'network_thread', 'network_ask', 'a2a_policy', 'network_advertise', 'network_find', 'network_presence', 'network_deal', 'network_delegate', 'network_endorse', 'network_introduce', 'network_room', 'network_receipts', 'network_recruit', 'network_status'],
   gifts:       ['get_gift_catalog', 'get_fragment_listings', 'appraise_gift', 'scan_arbitrage',
                 'buy_catalog_gift', 'buy_resale_gift', 'list_gift_for_sale', 'get_stars_balance',
                 'get_gift_upgrade_stats', 'analyze_gift_profitability', 'buy_market_gift',
@@ -4311,6 +4311,12 @@ async function _executeToolInner(
         const norm = subtasks.map((s: any) => typeof s === 'string' ? { title: s } : { title: String(s.title || s.task || ''), capability: s.capability, role: s.role, category: s.category }).filter((s: any) => s.title);
         if (!goal || norm.length === 0) return { ok: false, error: 'goal + subtasks required' };
         return await coop.recruit(params.agentId, goal, norm);
+      } catch (e: any) { return { ok: false, error: e?.message }; }
+    }
+    case 'network_status': {
+      try {
+        const coop = await import('../services/v3-a2a-coop');
+        return await coop.statusFor(params.agentId);
       } catch (e: any) { return { ok: false, error: e?.message }; }
     }
 
