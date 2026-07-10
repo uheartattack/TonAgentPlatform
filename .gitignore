@@ -38,13 +38,22 @@ Thumbs.db
 # TypeScript
 *.tsbuildinfo
 
-# Claude AI session files
-.claude/
+# Claude AI session files — block all except shared config
+.claude/*
+!.claude/skills/
+!.claude/launch.json
+!.claude/settings.json
 
 # Null/garbage files
 **/nul
 nul
-HACKATHON_PLAN.md
+
+# Temp/junk files
+~$*
+*.docx
+generate-checklist.js
+!.jpg
+photo_*.jpg
 
 # Backup files
 *.bak
@@ -66,7 +75,6 @@ tg-session.txt
 
 # Internal docs (not for public)
 CHECKLIST.md
-CONTRIBUTING.md
 docs/
 staging/
 
@@ -74,3 +82,79 @@ staging/
 *PLAN*.md
 *GRANT*.md
 package-lock.json
+
+# Landing design artifacts (not source of truth)
+apps/landing/_backup_*/
+apps/landing/_design-context*/
+apps/landing/_design-export/
+apps/landing/*.zip
+
+# Personal team docs — NEVER commit (kept local-only)
+TEAM.md
+NOTES.md
+SESSION_LOG.md
+BACKLOG.md
+ROADMAP.md
+CHECKLIST.md
+HACKATHON_PLAN.md
+general-coding-session.md
+old-session-tonkeeper.md
+
+# Local dev-session transcripts — contain SSH commands, DB creds, etc.
+general-coding-session.md
+
+# Personal / internal docs — keep local, never commit
+AGENTS.md
+CLAUDE.md
+KNOWN_ISSUES.md
+HACKATHON_PLAN.md
+HACKATHON_STONFI.md
+CHECKLIST.md
+old-session-tonkeeper.md
+.claude/skills/tap-context/
+.claude/skills/tonapi/
+
+# ── Local tooling & junk — keep the public repo clean ──────────────────
+# Python patch/codegen scripts (local tooling, not project source)
+*.py
+
+# Loose root-level scripts & artifacts (real code lives in apps/ + packages/)
+/analytics.js
+/pitch-deck.js
+/pitch-script.js
+/pitch-script-3min.js
+/create-pitch-deck.js
+/create-pitch-script.js
+/product-slide.js
+/discord-manager.ts
+/x-manager.ts
+/execution-tools.ts
+/schema_teleton.ts
+/deploy-patches.sh
+/studio.html
+/studio.js
+/spheres_solution.html
+
+# Local working dirs (research, audits, screenshots, backups, deploy staging)
+backups/
+tmp-deploy/
+tmp-chat/
+tmp-*/
+dashboard_audit/
+design-screenshots/
+teleton-research/
+
+# Eval output + loose text artifacts
+eval-results-*.json
+*_insert.txt
+cap_labels*.txt
+logo-ton-b64.txt
+nul_
+
+# ── This session's internal strategy docs — keep local, never commit ──
+V3_AUTONOMOUS_NETWORK.md
+web3voice-workshop.md
+IDEAS.md
+
+# v3.0 contracts — internal until launch (un-ignore when going public)
+contracts/

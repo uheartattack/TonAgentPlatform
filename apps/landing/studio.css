@@ -4178,7 +4178,7 @@ select.form-input option {
 .chat-close-btn:hover { color: #fff; }
 
 .chat-messages {
-  flex: 1; overflow-y: auto; padding: 16px;
+  flex: 1; min-height: 0; overflow-y: auto; padding: 16px;
   display: flex; flex-direction: column; gap: 12px;
   scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.1) transparent;
 }
@@ -5103,7 +5103,7 @@ select.form-input option {
   color: var(--text-secondary); font-size: 0.8rem; margin: 6px 0 0; line-height: 1.4;
 }
 .agent-detail-body {
-  flex: 1; overflow-y: auto; padding: 20px 24px;
+  flex: 1; min-height: 0; overflow-y: auto; padding: 20px 24px;
   display: flex; flex-direction: column; gap: 16px;
 }
 .agent-detail-section {
@@ -5289,13 +5289,19 @@ select.form-input option {
 }
 .st-sidebar {
   width: 210px; flex-shrink: 0;
-  padding: 16px 10px 24px 14px; overflow-y: auto;
+  padding: 16px 10px 24px 14px;
+  overflow-y: scroll;                 /* бар ВСЕГДА виден (было auto — на macOS прятался) */
+  max-height: calc(100vh - 56px);     /* страховка: жёсткий лимит высоты → скролл гарантирован даже если flex-цепочка сломана */
+  scrollbar-gutter: stable;
   border-right: 1px solid var(--border);
   display: flex; flex-direction: column; gap: 2px;
   background: var(--surface);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.6) rgba(255,255,255,0.06);
 }
-.st-sidebar::-webkit-scrollbar { width: 3px; }
-.st-sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.06); border-radius: 6px; }
+.st-sidebar::-webkit-scrollbar { width: 10px; }
+.st-sidebar::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); border-radius: 6px; }
+.st-sidebar::-webkit-scrollbar-thumb { background: rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.55); border-radius: 6px; min-height: 32px; border: 2px solid transparent; background-clip: content-box; }
 
 /* ── Sidebar nav groups ── */
 .st-nav-group { margin-bottom: 16px; }
@@ -5364,27 +5370,37 @@ select.form-input option {
 
 /* ── Content area ── */
 .agent-settings-body {
-  flex: 1; overflow-y: auto;
+  flex: 1; min-height: 0; min-width: 0;   /* КЛЮЧ: без min-height:0 флекс-элемент разрастается под контент и вылезает за экран → низ обрезан, скролл не работает */
+  height: 100%;                            /* привязать к высоте st-split (а не к контенту) */
+  overflow-y: auto;
+  scrollbar-gutter: stable;
   padding: 28px 48px 48px;
   max-width: none;
   background: var(--base);
 }
+/* ── v3 On-chain вкладки: карточка списка в едином дизайне ── */
+.v3-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 16px; padding: 12px 15px;
+  transition: border-color .2s, background .2s;
+}
+.v3-card:hover { border-color: var(--accent-dim); background: rgba(var(--accent-r,0),var(--accent-g,152),var(--accent-b,234),0.03); }
 @keyframes tabContentFade {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: none; }
 }
 
-/* ── Mobile: sidebar becomes horizontal scroll ── */
+/* ── Mobile: sidebar = wrapped pill cloud (все вкладки видны без горизонтального скролла,
+   который конфликтует с жестами Telegram Mini App) ── */
 @media (max-width: 768px) {
   .st-split { flex-direction: column; }
   .st-sidebar {
-    width: 100%; flex-direction: row; flex-wrap: nowrap;
-    overflow-x: auto; overflow-y: hidden;
+    width: 100%; flex-direction: row; flex-wrap: wrap; align-content: flex-start;
+    overflow-x: hidden; overflow-y: auto; max-height: 42vh;
     border-right: none; border-bottom: 1px solid var(--border);
-    padding: 10px 12px; gap: 4px; scrollbar-width: none;
+    padding: 10px 12px; gap: 6px; scrollbar-width: thin;
     background: rgba(0,0,0,0.1);
   }
-  .st-sidebar::-webkit-scrollbar { display: none; }
   .st-nav-group { display: contents; }
   .st-nav-label { display: none; }
   .st-nav-item {
@@ -6612,7 +6628,7 @@ select:focus {
   display: flex; flex-direction: column; height: 420px;
 }
 .st-chat-messages {
-  flex: 1; overflow-y: auto; padding: 16px; border-radius: 30px;
+  flex: 1; min-height: 0; overflow-y: auto; padding: 16px; border-radius: 30px;
   background: rgba(10,12,16,0.5); border: 1px solid var(--border);
   margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px;
 }

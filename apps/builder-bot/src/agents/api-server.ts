@@ -610,8 +610,8 @@ export function startApiServer() {
   });
 
   // CORS — allow platform domain + localhost for dev
-  const ALLOWED_ORIGINS = ['https://tonagentplatform.com', 'https://tonagentplatform.ru'];
-  const DEFAULT_ORIGIN = 'https://tonagentplatform.ru';
+  const ALLOWED_ORIGINS = ['https://tonagentplatform.com'];
+  const DEFAULT_ORIGIN = 'https://tonagentplatform.com';
   app.use((req: Request, res: Response, next: NextFunction) => {
     const origin = req.headers.origin || '';
     if (origin && ALLOWED_ORIGINS.includes(origin)) {

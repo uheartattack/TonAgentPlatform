@@ -1,0 +1,686 @@
+From d48497eab5db6644b9599559fbff8a5cd3772746 Mon Sep 17 00:00:00 2001
+From: spendollars <spendollars@users.noreply.github.com>
+Date: Thu, 18 Jun 2026 15:14:32 +0500
+Subject: [PATCH] @ feat(v3): on-chain agent passport API + indexer
+ user-binding
+
+- api-server: GET /api/v3/agents/by-tap/:tapId (passport by platform agent id)
+  + GET /api/v3/agents (network registry); public read-only, V3_NETWORK_ENABLED-gated
+- v3-network: getAgentByTapId / listNetworkAgents; bound_user_id (PII) dropped
+  from public responses
+- index: real resolveUserByWallet (agentic_wallets, multi-form, BIGINT-safe) +
+  provisionAgentToOwner registry binding (secret-scrub behind V3_AUTO_SCRUB, default off)
+- v3-minter: server-side minter (env-seed V3_MINTER_MNEMONIC, owner-gated deploy/mint)
+@
+---
+ apps/builder-bot/src/api-server.ts          |  67 ++++-
+ apps/builder-bot/src/index.ts               |  93 ++++++
+ apps/builder-bot/src/services/v3-minter.ts  | 138 +++++++++
+ apps/builder-bot/src/services/v3-network.ts | 314 ++++++++++++++++++++
+ 4 files changed, 611 insertions(+), 1 deletion(-)
+ create mode 100644 apps/builder-bot/src/services/v3-minter.ts
+ create mode 100644 apps/builder-bot/src/services/v3-network.ts
+
+diff --git a/apps/builder-bot/src/api-server.ts b/apps/builder-bot/src/api-server.ts
+index b5f855c..c0b731e 100644
+--- a/apps/builder-bot/src/api-server.ts
++++ b/apps/builder-bot/src/api-server.ts
+@@ -753,7 +753,6 @@ export function startApiServer() {
+   // default origin made CORS-CSRF possible when credentials were sent.
+   const ALLOWED_ORIGINS = [
+     'https://tonagentplatform.com',
+-    'https://tonagentplatform.ru',
+     ...(process.env.EXTRA_CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean),
+   ];
+   app.use((req: Request, res: Response, next: NextFunction) => {
+@@ -811,6 +810,46 @@ export function startApiServer() {
+     });
+   });
+ 
++  // ── GET /api/v3/provenance/:addr — публичный провенанс агента (read-only, v3.0) ──
++  app.get('/api/v3/provenance/:addr', async (req: Request, res: Response) => {
++    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
++    try {
++      const { getAgentProvenance } = require('./services/v3-network');
++      const data = await getAgentProvenance(req.params.addr);
++      res.json({ ok: true, ...data });
++    } catch (e: any) {
++      res.status(500).json({ ok: false, error: e?.message });
++    }
++  });
++
++  // ── GET /api/v3/agents/by-tap/:tapId — паспорт on-chain агента по id платформы (read-only) ──
++  app.get('/api/v3/agents/by-tap/:tapId', async (req: Request, res: Response) => {
++    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
++    try {
++      const tapId = Number(req.params.tapId);
++      if (!Number.isFinite(tapId)) { res.status(400).json({ ok: false, error: 'bad tapId' }); return; }
++      const { getAgentByTapId } = require('./services/v3-network');
++      const data = await getAgentByTapId(tapId);
++      res.json({ ok: true, ...data });
++    } catch (e: any) {
++      res.status(500).json({ ok: false, error: e?.message });
++    }
++  });
++
++  // ── GET /api/v3/agents — реестр агентов сети (read-only витрина) ──
++  app.get('/api/v3/agents', async (req: Request, res: Response) => {
++    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
++    try {
++      let limit = Number(req.query.limit);
++      if (!Number.isFinite(limit) || limit < 1) limit = 100;
++      const { listNetworkAgents } = require('./services/v3-network');
++      const agents = await listNetworkAgents(limit);
++      res.json({ ok: true, agents, collection: process.env.V3_COLLECTION || null });
++    } catch (e: any) {
++      res.status(500).json({ ok: false, error: e?.message });
++    }
++  });
++
+   // ── GET /tonconnect-manifest.json — самохостируемый манифест TON Connect ──
+   app.get('/tonconnect-manifest.json', (_req: Request, res: Response) => {
+     res.json({
+@@ -6014,6 +6053,32 @@ Output ONLY the new ${field} text — no commentary, no markdown fences, no "Her
+     next();
+   }
+ 
++  // ── v3.0 минтер (owner-only). Сид в env V3_MINTER_MNEMONIC, я его не вижу. ──
++  // Деплой/минт запускаются ТОЛЬКО этими явными вызовами, не автоматически.
++  app.get('/api/v3/minter/info', requireOwner, async (_req: Request, res: Response) => {
++    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
++    try {
++      const { getMinterInfo } = require('./services/v3-minter');
++      res.json({ ok: true, ...(await getMinterInfo()) });
++    } catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
++  });
++  app.post('/api/v3/minter/deploy', requireOwner, async (_req: Request, res: Response) => {
++    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
++    try {
++      const { deployCollection } = require('./services/v3-minter');
++      res.json({ ok: true, ...(await deployCollection()) });
++    } catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
++  });
++  app.post('/api/v3/minter/mint', requireOwner, async (req: Request, res: Response) => {
++    if (process.env.V3_NETWORK_ENABLED !== '1') { res.status(404).json({ ok: false, error: 'v3 disabled' }); return; }
++    try {
++      const { mintAgent } = require('./services/v3-minter');
++      const { owner, tapAgentId, capsHash } = req.body || {};
++      if (!owner) { res.status(400).json({ ok: false, error: 'owner wallet required' }); return; }
++      res.json({ ok: true, ...(await mintAgent(owner, Number(tapAgentId || 1), capsHash)) });
++    } catch (e: any) { res.status(500).json({ ok: false, error: e?.message }); }
++  });
++
+   // ── GET /api/proposals — список AI proposals ──────────────────────
+   app.get('/api/proposals', requireOwner, async (req: Request, res: Response) => {
+     try {
+diff --git a/apps/builder-bot/src/index.ts b/apps/builder-bot/src/index.ts
+index ce10130..2743043 100644
+--- a/apps/builder-bot/src/index.ts
++++ b/apps/builder-bot/src/index.ts
+@@ -146,6 +146,99 @@ async function main() {
+     console.error('[AgenticWallet] Init error:', e.message, e.stack?.slice(0, 300));
+   }
+ 
++  // v3.0 Autonomous Network indexer — ОПЦИОНАЛЬНО (флаг V3_NETWORK_ENABLED=1).
++  // Аддитивно: читает testnet-провенанс в новые v3-таблицы. Существующие флоу не трогает,
++  // require внутри try → даже сломанный модуль не уронит бот.
++  if (process.env.V3_NETWORK_ENABLED === '1') {
++    try {
++      // Минтер (hot-кошелёк из env-сида V3_MINTER_MNEMONIC). Без сида — инертно (indexer-only).
++      // Деплой/минт — только по owner-gated вызову, не автоматически.
++      let v3Collection = process.env.V3_COLLECTION || '0QD8QO307oBYFUxtmCRkDz9OfjhuS1bU6bWgZxuJqcgDEYt9';
++      try {
++        const { initMinter } = require('./services/v3-minter');
++        const m = await initMinter();
++        if (m.ready) { v3Collection = m.collection; console.log('🪙 V3 Minter ready:', m.minter, '| collection', m.collection); }
++        else { console.log('🪙 V3 Minter not configured (set V3_MINTER_MNEMONIC for minting)'); }
++      } catch (e: any) { console.error('[V3Minter] init error:', e?.message); }
++
++      const { initV3Network, pollChainOnce } = require('./services/v3-network');
++      await initV3Network(
++        pool,
++        {
++          // Кошелёк → tap user_id. Источник: agentic_wallets (есть address→user_id).
++          // Матчим адрес во всех friendly/raw формах (bounceable/testnet варианты).
++          resolveUserByWallet: async (walletAddress: string): Promise<number | null> => {
++            try {
++              const { Address } = require('@ton/core');
++              let forms: string[] = [walletAddress];
++              try {
++                const a = Address.parse(walletAddress);
++                forms = [
++                  a.toString({ bounceable: false, testOnly: false }),
++                  a.toString({ bounceable: true, testOnly: false }),
++                  a.toString({ bounceable: false, testOnly: true }),
++                  a.toString({ bounceable: true, testOnly: true }),
++                  a.toRawString(),
++                  walletAddress,
++                ];
++              } catch { /* не парсится — ищем как есть */ }
++              const uniq = Array.from(new Set(forms));
++              const r = await pool.query(
++                `SELECT user_id FROM builder_bot.agentic_wallets
++                   WHERE address = ANY($1::text[]) AND is_blocked = false
++                   ORDER BY (wallet_type='root') DESC LIMIT 1`,
++                [uniq],
++              );
++              // ВАЖНО: возвращаем user_id СТРОКОЙ (pg отдаёт BIGINT строкой). НЕ Number() —
++              // 19-значные Telegram OIDC sub id теряют точность в JS Number. Строка → BIGINT-параметр хранится точно.
++              return r.rows.length ? r.rows[0].user_id : null;
++            } catch (e: any) {
++              console.warn('[V3Network] resolveUserByWallet error:', e?.message);
++              return null;
++            }
++          },
++          // Привязка проданного/сминченного агента к новому владельцу в реестре.
++          // Деструктивный скраб личных секретов — ТОЛЬКО при V3_AUTO_SCRUB=1 (по умолчанию выкл),
++          // и только ключи с явно секретными именами; навыки/память/репутацию не трогаем.
++          provisionAgentToOwner: async (nft: string, tapId: number | null, uid: number): Promise<void> => {
++            try {
++              await pool.query(
++                `UPDATE builder_bot.v3_agents SET bound_user_id=$2, updated_at=NOW() WHERE agent_nft=$1`,
++                [nft, uid],
++              );
++              console.log(`[V3Network] provision: NFT ${nft} → user ${uid} (tapAgentId=${tapId ?? '—'})`);
++              if (process.env.V3_AUTO_SCRUB === '1' && tapId != null) {
++                const del = await pool.query(
++                  `DELETE FROM builder_bot.agent_state
++                     WHERE agent_id=$1 AND (key ILIKE '%secret%' OR key ILIKE '%api_key%' OR key ILIKE '%apikey%'
++                        OR key ILIKE '%mnemonic%' OR key ILIKE '%private%' OR key ILIKE '%token%' OR key ILIKE '%password%')`,
++                  [tapId],
++                );
++                console.log(`[V3Network] provision scrub: removed ${del.rowCount} secret state keys for agent ${tapId}`);
++              }
++            } catch (e: any) {
++              console.warn('[V3Network] provisionAgentToOwner error:', e?.message);
++            }
++          },
++          slashReputation: async () => {},
++        },
++        {
++          endpoint: process.env.V3_TON_ENDPOINT || 'https://testnet.toncenter.com/api/v2/jsonRPC',
++          collectionAddress: v3Collection,
++        },
++      );
++      const _v3 = setInterval(() => {
++        pollChainOnce()
++          .then((r: any) => { if (r && (r.mints || r.sales)) console.log('[V3Network] poll', r); })
++          .catch((e: any) => console.warn('[V3Network] poll error:', e?.message));
++      }, 60_000);
++      (_v3 as any).unref?.();
++      console.log('🌐 V3 Network indexer started');
++    } catch (e: any) {
++      console.error('[V3Network] init error:', e?.message);
++    }
++  }
++
+   // Запуск TokenTracker auto-flush (каждые 5 мин → DB)
+   try {
+     const { startAutoFlush, loadBudgetsFromDB } = require('./services/token-tracker');
+diff --git a/apps/builder-bot/src/services/v3-minter.ts b/apps/builder-bot/src/services/v3-minter.ts
+new file mode 100644
+index 0000000..8185888
+--- /dev/null
++++ b/apps/builder-bot/src/services/v3-minter.ts
+@@ -0,0 +1,138 @@
++/**
++ * v3-minter.ts — серверный минтер v3.0 (деплой коллекции + минт агент-NFT).
++ *
++ * ⚠️ Сид ТОЛЬКО из env `V3_MINTER_MNEMONIC` (кладёт владелец, я его не вижу).
++ *    Без сида сервис ИНЕРТЕН. Деплой/минт — только по явному owner-gated вызову,
++ *    НЕ автоматически. Первый прогон — на testnet (V3_TON_ENDPOINT=testnet).
++ *
++ * Деньги: роялти 2.5% → TAP_TREASURY (agentplatform.ton). Владелец/минтер коллекции
++ *    = кошелёк, выведенный из сида (hot-минтер).
++ * Код контрактов: JSON-артефакты из V3_CONTRACTS_DIR (scp из contracts/build).
++ */
++import fs from 'fs';
++import path from 'path';
++import { TonClient, WalletContractV4, internal } from '@ton/ton';
++import { mnemonicToWalletKey } from '@ton/crypto';
++import { Cell, beginCell, contractAddress, Address, toNano } from '@ton/core';
++
++const TREASURY = Address.parse(process.env.TAP_TREASURY || 'EQCfRrLVr7MeGbVw4x1XgZ42ZUS7tdf2sEYSyRvmoEB4y6qk');
++const ENDPOINT = process.env.V3_TON_ENDPOINT || 'https://testnet.toncenter.com/api/v2/jsonRPC';
++const CONTRACTS_DIR = process.env.V3_CONTRACTS_DIR || path.join(__dirname, '..', '..', 'v3-contracts');
++
++const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
++// ретрай на 429 (анонимный mainnet-toncenter режет burst); экспон. бэкофф
++async function withRetry<T>(fn: () => Promise<T>, tries = 6): Promise<T> {
++  let last: any;
++  for (let i = 0; i < tries; i++) {
++    try { return await fn(); }
++    catch (e: any) {
++      last = e; const msg = String(e?.message || '');
++      if (msg.includes('429') || /rate ?limit/i.test(msg)) { await sleep(1500 * (i + 1)); continue; }
++      throw e;
++    }
++  }
++  throw last;
++}
++
++let _ready = false;
++let _client: TonClient | null = null;
++let _wallet: WalletContractV4 | null = null;
++let _key: { publicKey: Buffer; secretKey: Buffer } | null = null;
++let _collectionAddr: Address | null = null;
++
++export function isMinterConfigured(): boolean {
++  return !!process.env.V3_MINTER_MNEMONIC;
++}
++
++function loadCode(name: string): Cell {
++  const j = JSON.parse(fs.readFileSync(path.join(CONTRACTS_DIR, name + '.compiled.json'), 'utf8'));
++  return Cell.fromBoc(Buffer.from(j.hex, 'hex'))[0];
++}
++
++const offchain = (s: string) => beginCell().storeUint(0x01, 8).storeStringTail(s).endCell();
++
++function collectionInit(minter: Address): { code: Cell; data: Cell } {
++  const content = beginCell()
++    .storeRef(offchain('https://tonagentplatform.com/agents/collection.json'))
++    .storeRef(offchain('https://tonagentplatform.com/agents/'))
++    .endCell();
++  const royalty = beginCell().storeUint(250, 16).storeUint(10000, 16).storeAddress(TREASURY).endCell();
++  const data = beginCell()
++    .storeAddress(minter).storeUint(0, 64)
++    .storeRef(content).storeRef(loadCode('AgentItem')).storeRef(royalty)
++    .endCell();
++  return { code: loadCode('AgentCollection'), data };
++}
++
++/** Инициализация из env-сида. Без сида — no-op (инертно). */
++export async function initMinter(): Promise<{ ready: boolean; minter?: string; collection?: string }> {
++  if (!isMinterConfigured()) return { ready: false };
++  const key = await mnemonicToWalletKey(process.env.V3_MINTER_MNEMONIC!.trim().split(/\s+/));
++  _key = key;
++  _wallet = WalletContractV4.create({ workchain: 0, publicKey: key.publicKey });
++  // V3_TONCENTER_API_KEY (опц.) приоритетнее; иначе на testnet берём общий TONCENTER_API_KEY,
++  // на mainnet идём анонимно (общий ключ testnet-only → 403 на mainnet).
++  const apiKey = process.env.V3_TONCENTER_API_KEY || (ENDPOINT.includes('testnet') ? process.env.TONCENTER_API_KEY : undefined);
++  _client = new TonClient({ endpoint: ENDPOINT, apiKey });
++  _collectionAddr = contractAddress(0, collectionInit(_wallet.address));
++  _ready = true;
++  return { ready: true, minter: _wallet.address.toString({ bounceable: false }), collection: _collectionAddr.toString({ bounceable: false }) };
++}
++
++export function getCollectionAddress(): Address | null { return _collectionAddr; }
++
++export async function getMinterInfo() {
++  if (!_ready || !_client || !_wallet || !_collectionAddr) return { ready: false };
++  let deployed = false; let nextIndex: string | null = null;
++  try {
++    const cd = await withRetry(() => _client!.runMethod(_collectionAddr!, 'get_collection_data'));
++    nextIndex = cd.stack.readBigNumber().toString();
++    deployed = true;
++  } catch { /* not deployed yet */ }
++  await sleep(1300);
++  const bal = await withRetry(() => _client!.getBalance(_wallet!.address));
++  return {
++    ready: true,
++    minter: _wallet.address.toString({ bounceable: false }),
++    collection: _collectionAddr.toString({ bounceable: false }),
++    minterBalanceGram: (Number(bal) / 1e9).toFixed(4),
++    collectionDeployed: deployed,
++    nextIndex,
++    network: ENDPOINT.includes('testnet') ? 'testnet' : 'mainnet',
++  };
++}
++
++/** Деплой коллекции (идемпотентно: если уже задеплоена — пропускаем). */
++export async function deployCollection(): Promise<{ ok: boolean; collection: string; skipped?: boolean }> {
++  if (!_ready || !_client || !_wallet || !_key || !_collectionAddr) throw new Error('minter not configured');
++  const info = await getMinterInfo();
++  if ((info as any).collectionDeployed) return { ok: true, collection: _collectionAddr.toString({ bounceable: false }), skipped: true };
++  const w = _client.open(_wallet);
++  await sleep(1300);
++  const seqno = await withRetry(() => w.getSeqno());
++  const init = collectionInit(_wallet.address);
++  await sleep(1300);
++  await withRetry(() => w.sendTransfer({
++    seqno, secretKey: _key!.secretKey,
++    messages: [internal({ to: _collectionAddr!, value: toNano('0.1'), init, body: beginCell().endCell(), bounce: false })],
++  }));
++  return { ok: true, collection: _collectionAddr.toString({ bounceable: false }) };
++}
++
++/** Минт агент-NFT владельцу ownerWallet. */
++export async function mintAgent(ownerWallet: string, tapAgentId: number, capsHashHex?: string): Promise<{ ok: boolean; seqno: number }> {
++  if (!_ready || !_client || !_wallet || !_key || !_collectionAddr) throw new Error('minter not configured');
++  const owner = Address.parse(ownerWallet);
++  const caps = BigInt(capsHashHex || '0x0');
++  const agentData = beginCell().storeUint(caps, 256).storeRef(beginCell().endCell()).storeUint(tapAgentId, 64).endCell();
++  const itemPayload = beginCell().storeAddress(owner)
++    .storeRef(offchain('https://tonagentplatform.com/agents/' + tapAgentId + '.json'))
++    .storeRef(agentData).endCell();
++  const mintBody = beginCell().storeUint(1, 32).storeUint(0, 64).storeUint(0, 64).storeCoins(toNano('0.05')).storeRef(itemPayload).endCell();
++  const w = _client.open(_wallet);
++  await sleep(1300);
++  const seqno = await withRetry(() => w.getSeqno());
++  await sleep(1300);
++  await withRetry(() => w.sendTransfer({ seqno, secretKey: _key!.secretKey, messages: [internal({ to: _collectionAddr!, value: toNano('0.1'), body: mintBody, bounce: true })] }));
++  return { ok: true, seqno };
++}
+diff --git a/apps/builder-bot/src/services/v3-network.ts b/apps/builder-bot/src/services/v3-network.ts
+new file mode 100644
+index 0000000..95308ae
+--- /dev/null
++++ b/apps/builder-bot/src/services/v3-network.ts
+@@ -0,0 +1,314 @@
++/**
++ * v3-network.ts — off-chain мост к v3.0 Autonomous Network (on-chain контракты).
++ *
++ * ⚠️ v0 / ИЗОЛИРОВАННЫЙ. Новый модуль, новые таблицы (builder_bot schema).
++ * НЕ подключён к startup, НЕ меняет существующие флоу — инертен, пока его явно
++ * не заинитят (initV3Network) и не запустят поллер. Тестировать на сервере.
++ *
++ * Что делает:
++ *   - зеркалит on-chain состояние агент-NFT (владелец, провенанс) в БД для Studio;
++ *   - при transfer агента (= продажа) — биндит агента к аккаунту покупателя,
++ *     пишет историю продаж, дёргает хук провижнинга (стереть личное / оставить навыки);
++ *   - зеркалит escrow-сделки (доска задач) + статусы.
++ *
++ * Контракты (testnet): Agent Collection (provenance) = 0QD8QO30…, escrow — per-job.
++ * On-chain истина первична; это — кэш/витрина + триггеры провижнинга.
++ */
++
++import type { Pool } from 'pg';
++import { TonClient, Address, TupleBuilder } from '@ton/ton';
++
++let _pool: Pool | null = null;
++let _client: TonClient | null = null;
++let _collection: Address | null = null;
++function pool(): Pool {
++  if (!_pool) throw new Error('[V3Network] not initialised — call initV3Network(pool) first');
++  return _pool;
++}
++
++// ── Внешние зависимости (инъекция, чтобы не тащить связки) ──────────────────
++export interface V3Deps {
++  /** wallet-адрес → tap user_id (из agentic_wallets/TonConnect). null если не наш юзер.
++   *  Возвращается СТРОКОЙ (BIGINT) — 19-значные Telegram OIDC id не влезают в JS Number. */
++  resolveUserByWallet: (walletAddress: string) => Promise<number | string | null>;
++  /** Провижнинг агента новому владельцу: привязать к user_id (+ опц. скраб секретов).
++   *  newUserId — number|string (BIGINT-safe). */
++  provisionAgentToOwner: (agentNft: string, tapAgentId: number | null, newUserId: number | string) => Promise<void>;
++  /** Слэш репутации исполнителя (reject/timeout по escrow). */
++  slashReputation?: (executorWallet: string, reason: string) => Promise<void>;
++}
++let _deps: V3Deps | null = null;
++function deps(): V3Deps {
++  if (!_deps) throw new Error('[V3Network] deps not set — pass to initV3Network');
++  return _deps;
++}
++
++// ── Init / DDL (идемпотентно) ───────────────────────────────────────────────
++export async function initV3Network(
++  pgPool: Pool,
++  depsImpl: V3Deps,
++  config: { endpoint: string; collectionAddress: string },
++): Promise<void> {
++  _pool = pgPool;
++  _deps = depsImpl;
++  // V3_TONCENTER_API_KEY (опц.) приоритетнее; иначе на testnet — общий TONCENTER_API_KEY (снимает 429),
++  // на mainnet анонимно (общий ключ testnet-only → 403). Снять лимит на mainnet → задать V3_TONCENTER_API_KEY.
++  const apiKey = process.env.V3_TONCENTER_API_KEY || (config.endpoint.includes('testnet') ? process.env.TONCENTER_API_KEY : undefined);
++  _client = new TonClient({ endpoint: config.endpoint, apiKey });
++  _collection = Address.parse(config.collectionAddress);
++  await pgPool.query(`
++    CREATE TABLE IF NOT EXISTS builder_bot.v3_agents (
++      agent_nft       TEXT PRIMARY KEY,
++      collection      TEXT NOT NULL,
++      tap_agent_id    BIGINT,
++      creator         TEXT,                       -- оригинальный автор (не меняется)
++      current_owner   TEXT,                       -- on-chain владелец (wallet)
++      bound_user_id   BIGINT,                     -- tap user (владелец) в Studio
++      transfer_count  INTEGER NOT NULL DEFAULT 0,
++      updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
++    );
++  `);
++  await pgPool.query(`
++    CREATE TABLE IF NOT EXISTS builder_bot.v3_agent_provenance (
++      id          BIGSERIAL PRIMARY KEY,
++      agent_nft   TEXT NOT NULL,
++      event       TEXT NOT NULL,                  -- 'mint' | 'transfer'
++      from_addr   TEXT,
++      to_addr     TEXT,
++      tx_hash     TEXT,
++      at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
++    );
++    CREATE INDEX IF NOT EXISTS idx_v3_prov_agent ON builder_bot.v3_agent_provenance (agent_nft, at);
++  `);
++  await pgPool.query(`
++    CREATE TABLE IF NOT EXISTS builder_bot.v3_jobs (
++      escrow_addr   TEXT PRIMARY KEY,
++      poster        TEXT,
++      executor      TEXT,
++      tap           TEXT,
++      amount_nano   NUMERIC,
++      fee_bps       INTEGER,
++      status        SMALLINT,                     -- 0 FUNDED 1 CLAIMED 2 DELIVERED 3 RELEASED 4 REFUNDED
++      deadline      BIGINT,
++      accept_window INTEGER,
++      delivered_at  BIGINT,
++      updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
++    );
++    CREATE INDEX IF NOT EXISTS idx_v3_jobs_status ON builder_bot.v3_jobs (status);
++  `);
++  // курсор поллера (последний обработанный lt по адресу)
++  await pgPool.query(`
++    CREATE TABLE IF NOT EXISTS builder_bot.v3_indexer_cursor (
++      address    TEXT PRIMARY KEY,
++      last_lt    NUMERIC NOT NULL DEFAULT 0,
++      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
++    );
++  `);
++  console.log('[V3Network] tables ready');
++}
++
++// ── Агенты: минт ────────────────────────────────────────────────────────────
++export async function onAgentMint(args: {
++  agentNft: string; collection: string; tapAgentId: number | null;
++  creator: string; owner: string; txHash?: string;
++}): Promise<void> {
++  const ownerUser = await deps().resolveUserByWallet(args.owner);
++  await pool().query(
++    `INSERT INTO builder_bot.v3_agents (agent_nft, collection, tap_agent_id, creator, current_owner, bound_user_id, transfer_count)
++     VALUES ($1,$2,$3,$4,$5,$6,0)
++     ON CONFLICT (agent_nft) DO UPDATE SET collection=EXCLUDED.collection, tap_agent_id=EXCLUDED.tap_agent_id,
++       creator=EXCLUDED.creator, current_owner=EXCLUDED.current_owner, bound_user_id=EXCLUDED.bound_user_id, updated_at=NOW()`,
++    [args.agentNft, args.collection, args.tapAgentId, args.creator, args.owner, ownerUser],
++  );
++  await pool().query(
++    `INSERT INTO builder_bot.v3_agent_provenance (agent_nft, event, from_addr, to_addr, tx_hash)
++     VALUES ($1,'mint',NULL,$2,$3)`,
++    [args.agentNft, args.owner, args.txHash ?? null],
++  );
++  console.log(`[V3Network] mint ${args.agentNft} → owner ${args.owner} (creator ${args.creator})`);
++}
++
++// ── Агенты: transfer (= продажа) → бинд покупателю + провижнинг ──────────────
++export async function onAgentTransfer(args: {
++  agentNft: string; from: string; to: string; txHash?: string;
++}): Promise<void> {
++  const buyerUser = await deps().resolveUserByWallet(args.to);
++  const row = await pool().query(`SELECT tap_agent_id FROM builder_bot.v3_agents WHERE agent_nft=$1`, [args.agentNft]);
++  const tapAgentId: number | null = row.rows[0]?.tap_agent_id ?? null;
++
++  await pool().query(
++    `UPDATE builder_bot.v3_agents
++     SET current_owner=$2, bound_user_id=$3, transfer_count=transfer_count+1, updated_at=NOW()
++     WHERE agent_nft=$1`,
++    [args.agentNft, args.to, buyerUser],
++  );
++  await pool().query(
++    `INSERT INTO builder_bot.v3_agent_provenance (agent_nft, event, from_addr, to_addr, tx_hash)
++     VALUES ($1,'transfer',$2,$3,$4)`,
++    [args.agentNft, args.from, args.to, args.txHash ?? null],
++  );
++
++  // «магия вторички»: агент оживает в кабинете покупателя (если он наш юзер)
++  if (buyerUser != null) {
++    await deps().provisionAgentToOwner(args.agentNft, tapAgentId, buyerUser);
++    console.log(`[V3Network] agent ${args.agentNft} sold ${args.from}→${args.to}, provisioned to user ${buyerUser}`);
++  } else {
++    console.log(`[V3Network] agent ${args.agentNft} transferred to non-registered ${args.to} — dormant до онбординга`);
++  }
++}
++
++// ── Escrow: зеркалирование сделки + триггеры ─────────────────────────────────
++export async function onEscrowUpdate(deal: {
++  escrowAddr: string; poster: string; executor: string | null; tap: string;
++  amountNano: string; feeBps: number; status: number;
++  deadline: number; acceptWindow: number; deliveredAt: number;
++}): Promise<void> {
++  await pool().query(
++    `INSERT INTO builder_bot.v3_jobs (escrow_addr, poster, executor, tap, amount_nano, fee_bps, status, deadline, accept_window, delivered_at)
++     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
++     ON CONFLICT (escrow_addr) DO UPDATE SET executor=EXCLUDED.executor, status=EXCLUDED.status,
++       delivered_at=EXCLUDED.delivered_at, updated_at=NOW()`,
++    [deal.escrowAddr, deal.poster, deal.executor, deal.tap, deal.amountNano, deal.feeBps,
++     deal.status, deal.deadline, deal.acceptWindow, deal.deliveredAt],
++  );
++  // status 4 REFUNDED после DELIVERED = reject → слэш исполнителя (если задан)
++  if (deal.status === 4 && deal.executor && deps().slashReputation) {
++    await deps().slashReputation!(deal.executor, 'escrow_refund_after_deliver');
++  }
++}
++
++// ── Витрина для Studio ──────────────────────────────────────────────────────
++export async function getAgentProvenance(agentNft: string) {
++  // нормализуем адрес к той же форме, что хранит поллер (Address.toString() default)
++  let key = agentNft;
++  try { key = Address.parse(agentNft).toString(); } catch { /* оставляем как есть */ }
++  // bound_user_id (Telegram id) НЕ отдаём наружу — это PII; витрина публичная.
++  const a = await pool().query(
++    `SELECT agent_nft, creator, current_owner, transfer_count FROM builder_bot.v3_agents WHERE agent_nft=$1`,
++    [key],
++  );
++  const hist = await pool().query(
++    `SELECT event, from_addr, to_addr, tx_hash, at FROM builder_bot.v3_agent_provenance WHERE agent_nft=$1 ORDER BY at ASC`,
++    [key],
++  );
++  return { agent: a.rows[0] ?? null, history: hist.rows };
++}
++
++export async function listOpenJobs(limit = 50) {
++  const r = await pool().query(
++    `SELECT * FROM builder_bot.v3_jobs WHERE status IN (0,1) ORDER BY updated_at DESC LIMIT $1`,
++    [limit],
++  );
++  return r.rows;
++}
++
++/** Паспорт on-chain агента по его tap_agent_id (id платформенного агента).
++ *  Прим.: tap_agent_id — BIGINT, node-postgres отдаёт его строкой; на фронте String()/Number().
++ *  bound_user_id (PII) наружу не отдаём. */
++export async function getAgentByTapId(tapId: number) {
++  const a = await pool().query(
++    `SELECT agent_nft, collection, tap_agent_id, creator, current_owner, transfer_count, updated_at
++       FROM builder_bot.v3_agents WHERE tap_agent_id=$1 ORDER BY updated_at DESC LIMIT 1`,
++    [tapId],
++  );
++  if (a.rows.length === 0) return { onchain: false, agent: null, history: [] as any[] };
++  const nft = a.rows[0].agent_nft;
++  const hist = await pool().query(
++    `SELECT event, from_addr, to_addr, tx_hash, at FROM builder_bot.v3_agent_provenance WHERE agent_nft=$1 ORDER BY at ASC`,
++    [nft],
++  );
++  return { onchain: true, agent: a.rows[0], history: hist.rows };
++}
++
++/** Список агентов сети (cross-owner реестр) для витрины Studio. */
++export async function listNetworkAgents(limit = 100) {
++  const r = await pool().query(
++    `SELECT agent_nft, collection, tap_agent_id, creator, current_owner, transfer_count, updated_at
++       FROM builder_bot.v3_agents ORDER BY updated_at DESC LIMIT $1`,
++    [Math.min(Math.max(1, limit), 500)],
++  );
++  return r.rows;
++}
++
++// ── Поллер цепочки ──────────────────────────────────────────────────────────
++// Обходит коллекцию через get-методы (проверено на testnet: index-collection.js),
++// сверяет on-chain состояние агентов с БД, пишет провенанс + провижнит покупателя.
++// Источник истины — on-chain get_provenance/get_nft_data (не парсинг тел сообщений).
++// Запускать по интервалу из index.ts (напр. каждые 30–60с).
++export async function pollChainOnce(): Promise<{ scanned: number; mints: number; sales: number }> {
++  if (!_client || !_collection) throw new Error('[V3Network] not configured — call initV3Network with config');
++  const client = _client;
++  const coll = _collection;
++
++  const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
++  const THROTTLE = 1100; // toncenter без ключа лимитит ~1 req/s — троттлим вызовы
++
++  const cd = await client.runMethod(coll, 'get_collection_data');
++  const nextIndex = cd.stack.readBigNumber();
++
++  let scanned = 0, mints = 0, sales = 0;
++  for (let i = 0n; i < nextIndex; i++) {
++    await sleep(THROTTLE);
++    const tb = new TupleBuilder();
++    tb.writeNumber(i);
++    const ra = await client.runMethod(coll, 'get_nft_address_by_index', tb.build());
++    const itemAddr = ra.stack.readAddress();
++    const nft = itemAddr.toString();
++
++    await sleep(THROTTLE);
++    // провенанс (источник истины)
++    const pv = await client.runMethod(itemAddr, 'get_provenance');
++    const creator = pv.stack.readAddressOpt();
++    pv.stack.readBigNumber();                       // mint_time
++    const onchainCount = Number(pv.stack.readBigNumber());
++    const lastSeller = pv.stack.readAddressOpt();
++    pv.stack.readBigNumber();                       // last_transfer_time
++
++    await sleep(THROTTLE);
++    const nd = await client.runMethod(itemAddr, 'get_nft_data');
++    nd.stack.readBoolean(); nd.stack.readBigNumber(); nd.stack.readAddressOpt();
++    const owner = nd.stack.readAddressOpt();
++
++    let tapAgentId: number | null = null;
++    try {
++      await sleep(THROTTLE);
++      const ad = await client.runMethod(itemAddr, 'get_agent_data');
++      ad.stack.readBigNumber(); ad.stack.readCell(); tapAgentId = Number(ad.stack.readBigNumber());
++    } catch { /* агент без get_agent_data */ }
++
++    scanned++;
++    const ownerStr = owner ? owner.toString() : null;
++    const creatorStr = creator ? creator.toString() : null;
++    const sellerStr = lastSeller ? lastSeller.toString() : null;
++    const buyerUser = ownerStr ? await deps().resolveUserByWallet(ownerStr) : null;
++
++    const existing = await pool().query(`SELECT transfer_count FROM builder_bot.v3_agents WHERE agent_nft=$1`, [nft]);
++
++    if (existing.rows.length === 0) {
++      await pool().query(
++        `INSERT INTO builder_bot.v3_agents (agent_nft, collection, tap_agent_id, creator, current_owner, bound_user_id, transfer_count)
++         VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (agent_nft) DO NOTHING`,
++        [nft, coll.toString(), tapAgentId, creatorStr, ownerStr, buyerUser, onchainCount],
++      );
++      await pool().query(
++        `INSERT INTO builder_bot.v3_agent_provenance (agent_nft, event, from_addr, to_addr) VALUES ($1,'mint',NULL,$2)`,
++        [nft, creatorStr],
++      );
++      mints++;
++    } else if (onchainCount > Number(existing.rows[0].transfer_count)) {
++      // была продажа с прошлого опроса
++      await pool().query(
++        `UPDATE builder_bot.v3_agents SET current_owner=$2, bound_user_id=$3, transfer_count=$4, updated_at=NOW() WHERE agent_nft=$1`,
++        [nft, ownerStr, buyerUser, onchainCount],
++      );
++      await pool().query(
++        `INSERT INTO builder_bot.v3_agent_provenance (agent_nft, event, from_addr, to_addr) VALUES ($1,'transfer',$2,$3)`,
++        [nft, sellerStr, ownerStr],
++      );
++      // «магия вторички»: агент оживает у покупателя (стереть личное / оставить навыки)
++      if (buyerUser != null) { await deps().provisionAgentToOwner(nft, tapAgentId, buyerUser); }
++      sales++;
++    }
++  }
++  return { scanned, mints, sales };
++}
+-- 
+2.54.0.windows.1
+

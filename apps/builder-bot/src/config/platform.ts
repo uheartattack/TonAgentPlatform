@@ -5,7 +5,7 @@
  */
 
 // ── Platform identity ──
-export const DOMAIN = process.env.DOMAIN_NAME || 'tonagentplatform.ru';
+export const DOMAIN = process.env.DOMAIN_NAME || 'tonagentplatform.com';
 export const BOT_USERNAME = process.env.BOT_USERNAME || '@TonAgentPlatformBot';
 export const DASHBOARD_URL = process.env.DASHBOARD_URL || `https://${DOMAIN}/studio.html`;
 export const PLATFORM_NAME = 'TON Agent Platform';

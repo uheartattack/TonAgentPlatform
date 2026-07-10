@@ -1,0 +1,25 @@
+{
+  "name": "tap-contracts",
+  "version": "0.0.1",
+  "description": "TON Agent Platform v3.0 — on-chain contracts (Phase 1: Identity)",
+  "license": "BSL-1.1",
+  "private": true,
+  "scripts": {
+    "build": "blueprint build",
+    "test": "jest",
+    "deploy": "blueprint run"
+  },
+  "devDependencies": {
+    "@ton/blueprint": "^0.27.0",
+    "@ton/core": "^0.62.0",
+    "@ton/crypto": "^3.3.0",
+    "@ton/sandbox": "^0.27.0",
+    "@ton/test-utils": "^0.5.0",
+    "@ton/ton": "^15.1.0",
+    "@types/jest": "^29.5.0",
+    "@types/node": "^20.0.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.0",
+    "typescript": "^5.5.0"
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(git status)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git pull)",
+      "Bash(git fetch:*)",
+      "Bash(git branch:*)",
+      "Bash(git show:*)",
+      "Bash(pnpm test:*)",
+      "Bash(pnpm dev:*)",
+      "Bash(pnpm build:*)",
+      "Bash(pnpm lint:*)",
+      "Bash(pnpm exec tsc --noEmit)",
+      "Bash(pnpm --filter:*)",
+      "Bash(pm2 logs:*)",
+      "Bash(pm2 status)",
+      "Bash(pm2 list)",
+      "Bash(ssh -i ~/.ssh/***SSH_KEY*** root@***PROD_HOST***:*)",
+      "Bash(scp -i ~/.ssh/***SSH_KEY***:*)",
+      "Read(*)",
+      "Glob(*)",
+      "Grep(*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/pre-bash-guard.js"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/post-edit-lint.js"
+          }
+        ]
+      }
+    ]
+  }
+}

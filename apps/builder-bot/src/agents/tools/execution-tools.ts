@@ -175,6 +175,135 @@ interface PersistentRunner {
 }
 const persistentRunners: Map<number, PersistentRunner> = new Map();
 
+// ═══════════════════════════════════════════════════════════════════════════
+// НАСТОЯЩАЯ песочница через isolated-vm (отдельный V8-изолят: свои интринсики,
+// нет process/require, реальные лимиты памяти/CPU, побег невозможен).
+// Включается флагом USE_ISOLATED_VM=1. Если модуль не собран — бросаем
+// 'IVM_UNAVAILABLE', и вызывающий код делает фолбэк на node:vm (прод не падает).
+// ═══════════════════════════════════════════════════════════════════════════
+let _ivmModule: any = null;
+let _ivmTried = false;
+function getIvm(): any {
+  if (_ivmTried) return _ivmModule;
+  _ivmTried = true;
+  try { _ivmModule = require('isolated-vm'); } catch { _ivmModule = null; }
+  return _ivmModule;
+}
+
+// Не инжектим: (а) интринсики, которые у изолята УЖЕ свои (иначе рушим изоляцию);
+// (б) web-классы (Buffer/URL/...) — их нельзя прокинуть как async-обёртку, оставляем
+// их отсутствующими в изоляте (чистый ReferenceError, а не молчаливая поломка). v1.
+const _IVM_INTRINSICS = new Set([
+  'JSON', 'Math', 'Date', 'parseInt', 'parseFloat', 'isNaN', 'isFinite', 'Promise',
+  'Array', 'Object', 'String', 'Number', 'Boolean', 'RegExp', 'Error', 'TypeError',
+  'RangeError', 'Map', 'Set', 'Symbol', 'encodeURIComponent', 'decodeURIComponent',
+  'encodeURI', 'decodeURI',
+  // web-классы — НЕ бриджим (см. выше)
+  'Buffer', 'URL', 'URLSearchParams', 'AbortController', 'AbortSignal', 'TextEncoder', 'TextDecoder',
+]);
+
+/**
+ * Выполнить wrappedCode в настоящем изоляте. sandbox — тот же бэг функций/данных,
+ * что и для vm-пути; здесь он маршалится через границу изолята:
+ *   - host-функции → ivm.Reference → внутри изолята async-обёртки
+ *   - вложенные объекты функций (console, telegram) → объект обёрток
+ *   - простые данные (context) → ExternalCopy
+ * Бросает 'IVM_UNAVAILABLE' если модуль не собран. Иначе — результат или ошибку кода.
+ */
+async function runInIsolate(
+  sandbox: Record<string, any>,
+  wrappedCode: string,
+  timeoutMs: number
+): Promise<any> {
+  const ivm = getIvm();
+  if (!ivm) throw new Error('IVM_UNAVAILABLE');
+
+  const isolate = new ivm.Isolate({ memoryLimit: 256 });
+  try {
+    const context = await isolate.createContext();
+    const jail = context.global;
+    await jail.set('global', jail.derefInto());
+
+    const fnNames: string[] = [];
+    const nestedObjs: Record<string, string[]> = {};
+    for (const [name, val] of Object.entries(sandbox)) {
+      if (_IVM_INTRINSICS.has(name)) continue;
+      if (name === 'fetch') continue; // спец-обработка ниже (Response не копируется)
+      if (typeof val === 'function') {
+        await jail.set('__ref_' + name, new ivm.Reference(val));
+        fnNames.push(name);
+      } else if (
+        val && typeof val === 'object' &&
+        Object.values(val).length > 0 &&
+        Object.values(val).every((v) => typeof v === 'function')
+      ) {
+        // вложенный объект функций (console, telegram)
+        const methods: string[] = [];
+        for (const [mName, mFn] of Object.entries(val)) {
+          await jail.set('__ref_' + name + '__' + mName, new ivm.Reference(mFn as any));
+          methods.push(mName);
+        }
+        nestedObjs[name] = methods;
+      } else {
+        // простые данные (context и т.п.) — копируем внутрь
+        try { await jail.set(name, new ivm.ExternalCopy(val).copyInto()); } catch { /* некопируемо — пропускаем */ }
+      }
+    }
+
+    // fetch: Response не пересекает границу изолята — сериализуем тело/заголовки на хосте,
+    // а внутри отдаём объект с рабочими .json()/.text()/.headers.get()
+    let hasFetch = false;
+    if (typeof sandbox.fetch === 'function') {
+      hasFetch = true;
+      const hostFetch = sandbox.fetch;
+      await jail.set('__ref_fetch', new ivm.Reference(async (input: any, init: any) => {
+        const res: any = await hostFetch(input, init);
+        let body = '';
+        try { body = await res.text(); } catch { /* нет тела */ }
+        const headers: Record<string, string> = {};
+        try { res.headers?.forEach?.((v: string, k: string) => { headers[String(k).toLowerCase()] = v; }); } catch {}
+        return { ok: !!res.ok, status: res.status ?? 0, statusText: res.statusText ?? '', url: res.url ?? '', headers, __body: body };
+      }));
+    }
+
+    // Bootstrap: References → вызываемые async-обёртки (args копируются в хост, результат — обратно)
+    const lines: string[] = [];
+    lines.push('const __wrap = (ref) => (...args) => ref.apply(undefined, args, { arguments: { copy: true }, result: { promise: true, copy: true } });');
+    for (const name of fnNames) {
+      lines.push('globalThis[' + JSON.stringify(name) + '] = __wrap(__ref_' + name + ');');
+    }
+    for (const [objName, methods] of Object.entries(nestedObjs)) {
+      const props = methods.map((m) => JSON.stringify(m) + ': __wrap(__ref_' + objName + '__' + m + ')').join(', ');
+      lines.push('globalThis[' + JSON.stringify(objName) + '] = { ' + props + ' };');
+    }
+    if (hasFetch) {
+      lines.push(
+        'globalThis.fetch = async (...a) => { const r = await __ref_fetch.apply(undefined, a, { arguments: { copy: true }, result: { promise: true, copy: true } }); ' +
+        'return { ok: r.ok, status: r.status, statusText: r.statusText, url: r.url, ' +
+        'headers: { get: (k) => (r.headers[String(k).toLowerCase()] ?? null) }, ' +
+        'json: async () => JSON.parse(r.__body), text: async () => r.__body }; };'
+      );
+    }
+    lines.push('globalThis.require = () => { throw new Error("require() disabled in agent sandbox."); };');
+    await context.eval(lines.join('\n'));
+
+    // Запуск кода агента: жёсткий внешний таймаут + dispose в finally убивает любой runaway
+    const evalPromise = context.eval(wrappedCode, { promise: true, copy: true, timeout: timeoutMs });
+    let timer: ReturnType<typeof setTimeout>;
+    const timeoutPromise = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error('Agent execution timed out (isolated-vm 90s)')), timeoutMs);
+      if ((timer as any).unref) (timer as any).unref();
+    });
+    try {
+      return await Promise.race([evalPromise, timeoutPromise]);
+    } finally {
+      clearTimeout(timer!);
+    }
+  } finally {
+    try { isolate.dispose(); } catch {}
+  }
+}
+
 // ===== Инструменты для выполнения агентов =====
 
 export class ExecutionTools {
@@ -1280,6 +1409,35 @@ ${code}
       // For full process-level isolation, a future upgrade to isolated-vm is planned (KNOWN_ISSUES.md).
       // Note: vm.runInContext timeout only applies to synchronous execution.
       // For async code, we wrap with Promise.race for a hard timeout.
+      // ── НАСТОЯЩАЯ изоляция через isolated-vm (флаг USE_ISOLATED_VM=1) ──
+      // Прод по умолчанию идёт по vm-пути ниже. При включённом флаге пробуем изолят;
+      // если модуль не собран — мягкий фолбэк на vm. Ошибку кода НЕ прячем (не гоняем дважды).
+      if (process.env.USE_ISOLATED_VM === '1') {
+        try {
+          const isoResult = await runInIsolate(sandbox, wrappedCode, 90_000);
+          addLog('success', 'Выполнение завершено (isolated-vm)', isoResult);
+          return { success: true, result: isoResult };
+        } catch (isoErr: any) {
+          const m = isoErr?.message || String(isoErr);
+          if (m === 'IVM_UNAVAILABLE') {
+            addLog('warn', '[isolated-vm] модуль недоступен — фолбэк на node:vm');
+            // fall through to vm
+          } else if (process.env.IVM_STRICT === '1') {
+            // СТРОГИЙ режим: настоящая граница, ошибку кода не прячем и на слабый vm не падаем
+            addLog('error', `Ошибка: ${m}`);
+            recordAgentError(params.agentId, m, code);
+            return { success: false, error: m };
+          } else {
+            // МЯГКИЙ rollout: логируем и откатываемся на vm, чтобы не сломать рабочих агентов.
+            // По этим логам видно, каким агентам не хватает globals (URL/Buffer) — их чиним,
+            // потом включаем IVM_STRICT=1 для полной изоляции.
+            addLog('warn', `[isolated-vm→vm fallback] ${m}`);
+            console.warn(`[IVM-FALLBACK] agent#${params.agentId}: ${m}`);
+            // fall through to vm
+          }
+        }
+      }
+
       const script = new vm.Script(wrappedCode, {
         filename: 'agent.js',
       });

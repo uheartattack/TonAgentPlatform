@@ -1,0 +1,170 @@
+;; ── TAP v3.0 — Agent NFT Item (торгуемый, с провенансом) ───────────
+;; TEP-62 item: передача = продажа агента. Хранит KYA + репутацию + ПРОВЕНАНС:
+;;   creator (оригинальный автор, НЕ меняется), счётчик продаж, последний продавец+время.
+;; Полная цепочка «от кого кому» = on-chain tx-история (индексер → Studio).
+;; Базис: каноничный TEP-62 nft-item. v0 — компилируется + sandbox-тесты.
+;;
+;; storage#_ index:uint64 collection_address:MsgAddress
+;;   [ owner:MsgAddress content:^Cell agent_data:^Cell provenance:^Cell ]
+;; agent_data  = ^[ capabilities_hash:uint256 reputation_ptr:^Cell tap_agent_id:uint64 ]
+;; provenance  = ^[ creator:MsgAddress mint_time:uint64 transfer_count:uint32
+;;                  last_seller:MsgAddress last_transfer_time:uint64 ]
+
+#include "imports/stdlib.fc";
+#include "imports/params.fc";
+#include "op-codes.fc";
+
+const int min_tons_for_storage = 50000000; ;; 0.05 GRAM
+
+slice addr_none() inline { return begin_cell().store_uint(0, 2).end_cell().begin_parse(); }
+
+(int, int, slice, slice, cell, cell, cell) load_data() inline {
+  slice ds = get_data().begin_parse();
+  int index = ds~load_uint(64);
+  slice collection_address = ds~load_msg_addr();
+  if (ds.slice_bits() > 0) {
+    return (-1, index, collection_address, ds~load_msg_addr(), ds~load_ref(), ds~load_ref(), ds~load_ref());
+  }
+  return (0, index, collection_address, null(), null(), null(), null()); ;; not inited
+}
+
+() store_data(int index, slice collection_address, slice owner_address, cell content, cell agent_data, cell provenance) impure inline {
+  set_data(begin_cell()
+    .store_uint(index, 64)
+    .store_slice(collection_address)
+    .store_slice(owner_address)
+    .store_ref(content)
+    .store_ref(agent_data)
+    .store_ref(provenance)
+    .end_cell());
+}
+
+cell pack_provenance(slice creator, int mint_time, int transfer_count, slice last_seller, int last_transfer_time) inline {
+  return begin_cell()
+    .store_slice(creator)
+    .store_uint(mint_time, 64)
+    .store_uint(transfer_count, 32)
+    .store_slice(last_seller)
+    .store_uint(last_transfer_time, 64)
+    .end_cell();
+}
+
+(slice, int, int, slice, int) unpack_provenance(cell p) inline {
+  slice ps = p.begin_parse();
+  return (ps~load_msg_addr(), ps~load_uint(64), ps~load_uint(32), ps~load_msg_addr(), ps~load_uint(64));
+}
+
+() send_msg(slice to, int amount, int op, int query_id, builder body, int mode) impure inline {
+  var b = begin_cell()
+    .store_uint(0x10, 6)
+    .store_slice(to)
+    .store_coins(amount)
+    .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+    .store_uint(op, 32)
+    .store_uint(query_id, 64);
+  if (~ null?(body)) { b = b.store_builder(body); }
+  send_raw_message(b.end_cell(), mode);
+}
+
+() recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
+  slice cs = in_msg_full.begin_parse();
+  int flags = cs~load_uint(4);
+  slice sender_address = cs~load_msg_addr();
+  cs~load_msg_addr(); cs~load_coins(); cs~load_maybe_ref(); cs~load_coins();
+  int fwd_fee = muldiv(cs~load_coins(), 3, 2);
+
+  var (inited, index, collection_address, owner_address, content, agent_data, provenance) = load_data();
+
+  ;; ── Init: deploy from collection → owner + content + agent_data; creator = first owner ──
+  if (~ inited) {
+    throw_unless(err::not_owner(), equal_slices(collection_address, sender_address));
+    slice new_owner = in_msg_body~load_msg_addr();
+    cell new_content = in_msg_body~load_ref();
+    cell new_agent_data = in_msg_body~load_ref();
+    cell new_provenance = pack_provenance(new_owner, now(), 0, addr_none(), 0); ;; creator = original owner
+    store_data(index, collection_address, new_owner, new_content, new_agent_data, new_provenance);
+    return ();
+  }
+
+  if (in_msg_body.slice_empty?()) { return (); }
+  int op = in_msg_body~load_uint(32);
+  int query_id = in_msg_body~load_uint(64);
+
+  ;; ── transfer = продажа: меняется владелец, провенанс штампует продажу, creator неизменен ──
+  if (op == op::transfer()) {
+    throw_unless(err::not_owner(), equal_slices(sender_address, owner_address));
+    slice new_owner_address = in_msg_body~load_msg_addr();
+    force_chain(new_owner_address);
+    slice response_destination = in_msg_body~load_msg_addr();
+    in_msg_body~load_maybe_ref(); ;; custom_payload
+    int forward_amount = in_msg_body~load_coins();
+    slice forward_payload = in_msg_body;
+
+    int rest_amount = my_balance - min_tons_for_storage;
+    if (forward_amount) { rest_amount -= (forward_amount + fwd_fee); }
+    int need_response = response_destination.preload_uint(2) != 0;
+    if (need_response) { rest_amount -= fwd_fee; }
+    throw_unless(402, rest_amount >= 0);
+
+    if (forward_amount) {
+      send_msg(new_owner_address, forward_amount, op::ownership_assigned(), 0,
+        begin_cell().store_slice(owner_address).store_slice(forward_payload), 1);
+    }
+    if (need_response) {
+      force_chain(response_destination);
+      send_msg(response_destination, rest_amount, op::excesses(), 0, null(), 1);
+    }
+
+    ;; provenance: creator + mint_time неизменны; +1 продажа; last_seller = текущий владелец; время = now()
+    (slice creator, int mint_time, int tcount, slice _ls, int _lt) = unpack_provenance(provenance);
+    cell new_prov = pack_provenance(creator, mint_time, tcount + 1, owner_address, now());
+    store_data(index, collection_address, new_owner_address, content, agent_data, new_prov);
+    return ();
+  }
+
+  if (op == op::get_static_data()) {
+    send_msg(sender_address, 0, op::report_static_data(), query_id,
+      begin_cell().store_uint(index, 256).store_slice(collection_address), 64);
+    return ();
+  }
+
+  ;; ── owner обновляет KYA capabilities + reputation pointer (провенанс не трогаем) ──
+  if (op == op::update_caps()) {
+    throw_unless(err::not_owner(), equal_slices(sender_address, owner_address));
+    int new_caps_hash = in_msg_body~load_uint(256);
+    cell new_reputation_ptr = in_msg_body~load_ref();
+    slice ads = agent_data.begin_parse();
+    ads~load_uint(256); ads~load_ref();
+    int tap_agent_id = ads~load_uint(64);
+    cell new_agent_data = begin_cell()
+      .store_uint(new_caps_hash, 256)
+      .store_ref(new_reputation_ptr)
+      .store_uint(tap_agent_id, 64)
+      .end_cell();
+    store_data(index, collection_address, owner_address, content, new_agent_data, provenance);
+    return ();
+  }
+
+  throw(err::unknown_op());
+}
+
+;; ── GET methods ──
+(int, int, slice, slice, cell) get_nft_data() method_id {
+  var (inited, index, collection_address, owner_address, content, _, _) = load_data();
+  return (inited, index, collection_address, owner_address, content);
+}
+
+(int, cell, int) get_agent_data() method_id {
+  var (_, _, _, _, _, agent_data, _) = load_data();
+  slice ds = agent_data.begin_parse();
+  int capabilities_hash = ds~load_uint(256);
+  cell reputation_ptr = ds~load_ref();
+  int tap_agent_id = ds~load_uint(64);
+  return (capabilities_hash, reputation_ptr, tap_agent_id);
+}
+
+;; провенанс: creator (оригинальный автор), mint_time, кол-во продаж, последний продавец, время
+(slice, int, int, slice, int) get_provenance() method_id {
+  var (_, _, _, _, _, _, provenance) = load_data();
+  return unpack_provenance(provenance);
+}

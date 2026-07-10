@@ -1,0 +1,140 @@
+;; ── TAP v3.0 — Job Escrow (Phase 1.5 economy) ─────────────────────
+;; Эскроу одной сделки между агентами. Заказчик лочит баунти (GRAM),
+;; исполнитель берёт→сдаёт→заказчик принимает→релиз (минус 5% комиссии TAP).
+;; Молчит в окне приёмки → авто-релиз. Дедлайн без сдачи → возврат заказчику.
+;; v0 — компилируется + sandbox-тесты. Деньги → аудит перед mainnet.
+;;
+;; status: 0 FUNDED · 1 CLAIMED · 2 DELIVERED · 3 RELEASED · 4 REFUNDED
+;; storage#_ status:uint8 poster:MsgAddress executor:MsgAddress tap:MsgAddress
+;;   amount:Coins fee_bps:uint16 deadline:uint64 accept_window:uint32 delivered_at:uint64
+
+#include "imports/stdlib.fc";
+#include "op-codes.fc";
+
+slice addr_none() inline { return begin_cell().store_uint(0, 2).end_cell().begin_parse(); }
+
+(int, slice, slice, slice, int, int, int, int, int) load_data() inline {
+  slice ds = get_data().begin_parse();
+  return (
+    ds~load_uint(8),       ;; status
+    ds~load_msg_addr(),    ;; poster
+    ds~load_msg_addr(),    ;; executor
+    ds~load_msg_addr(),    ;; tap (fee dest)
+    ds~load_coins(),       ;; amount (locked bounty)
+    ds~load_uint(16),      ;; fee_bps
+    ds~load_uint(64),      ;; deadline
+    ds~load_uint(32),      ;; accept_window (сек после сдачи)
+    ds~load_uint(64)       ;; delivered_at
+  );
+}
+
+() store_data(int status, slice poster, slice executor, slice tap, int amount, int fee_bps, int deadline, int accept_window, int delivered_at) impure inline {
+  set_data(begin_cell()
+    .store_uint(status, 8)
+    .store_slice(poster)
+    .store_slice(executor)
+    .store_slice(tap)
+    .store_coins(amount)
+    .store_uint(fee_bps, 16)
+    .store_uint(deadline, 64)
+    .store_uint(accept_window, 32)
+    .store_uint(delivered_at, 64)
+    .end_cell());
+}
+
+() pay(slice to, int amount, int mode) impure inline {
+  send_raw_message(begin_cell()
+    .store_uint(0x10, 6)
+    .store_slice(to)
+    .store_coins(amount)
+    .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+    .end_cell(), mode);
+}
+
+;; Релиз: исполнителю (amount - fee), TAP комиссия (fee). Остаток газа уходит с executor-платежом.
+() do_release(slice executor, slice tap, int amount, int fee_bps) impure inline {
+  int fee = muldiv(amount, fee_bps, 10000);
+  if (fee > 0) { pay(tap, fee, 1); }      ;; комиссия TAP — точная сумма (mode 1)
+  ;; исполнителю — ВЕСЬ остаток баланса (mode 128). Релиз не зависит от my_balance>=amount
+  ;; и не оставляет «застрявших» средств. Контракт остаётся жив (status=RELEASED читаем индексером).
+  pay(executor, 0, 128);
+}
+
+() recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
+  slice cs = in_msg_full.begin_parse();
+  int flags = cs~load_uint(4);
+  if (flags & 1) { return (); }
+  slice sender = cs~load_msg_addr();
+
+  if (in_msg_body.slice_empty?()) { return (); } ;; deploy/funding (status уже в state_init)
+
+  int op = in_msg_body~load_uint(32);
+  int query_id = in_msg_body~load_uint(64);
+
+  var (status, poster, executor, tap, amount, fee_bps, deadline, accept_window, delivered_at) = load_data();
+
+  ;; ── claim: исполнитель берёт открытую задачу (off-chain гейтит по репутации/KYA) ──
+  if (op == op::job_claim()) {
+    throw_unless(err::bad_status(), status == 0);              ;; FUNDED
+    throw_unless(err::deadline_passed(), now() <= deadline);    ;; дедлайн включительно (симметрия с refund)
+    store_data(1, poster, sender, tap, amount, fee_bps, deadline, accept_window, 0);
+    return ();
+  }
+
+  ;; ── deliver: только исполнитель, после claim ──
+  if (op == op::job_deliver()) {
+    throw_unless(err::bad_status(), status == 1);              ;; CLAIMED
+    throw_unless(err::not_executor(), equal_slices(sender, executor));
+    store_data(2, poster, executor, tap, amount, fee_bps, deadline, accept_window, now());
+    return ();
+  }
+
+  ;; ── accept: только заказчик, после сдачи → релиз ──
+  if (op == op::job_accept()) {
+    throw_unless(err::bad_status(), status == 2);              ;; DELIVERED
+    throw_unless(err::not_poster(), equal_slices(sender, poster));
+    do_release(executor, tap, amount, fee_bps);                ;; сперва платежи: бросит → tx откатится
+    store_data(3, poster, executor, tap, amount, fee_bps, deadline, accept_window, delivered_at);
+    return ();
+  }
+
+  ;; ── auto_release: кто угодно, если окно приёмки вышло (заказчик молчит) ──
+  if (op == op::job_autorelease()) {
+    throw_unless(err::bad_status(), status == 2);              ;; DELIVERED
+    throw_unless(err::too_early(), now() >= delivered_at + accept_window);
+    do_release(executor, tap, amount, fee_bps);                ;; сперва платежи: бросит → tx откатится
+    store_data(3, poster, executor, tap, amount, fee_bps, deadline, accept_window, delivered_at);
+    return ();
+  }
+
+  ;; ── refund: кто угодно, если дедлайн вышел без сдачи (исполнитель не успел) ──
+  if (op == op::job_refund()) {
+    throw_unless(err::bad_status(), (status == 0) | (status == 1)); ;; FUNDED|CLAIMED
+    throw_unless(err::too_early(), now() >= deadline);
+    store_data(4, poster, executor, tap, amount, fee_bps, deadline, accept_window, delivered_at);
+    pay(poster, 0, 128 + 32);  ;; вернуть весь остаток заказчику + уничтожить контракт
+    return ();
+  }
+
+  ;; ── reject: только заказчик, после сдачи (плохая работа) → возврат заказчику ──
+  ;; (репутацию исполнителя слэшит off-chain индексер по этому событию)
+  if (op == op::job_reject()) {
+    throw_unless(err::bad_status(), status == 2);              ;; DELIVERED
+    throw_unless(err::not_poster(), equal_slices(sender, poster));
+    store_data(4, poster, executor, tap, amount, fee_bps, deadline, accept_window, delivered_at);
+    pay(poster, 0, 128 + 32);
+    return ();
+  }
+
+  throw(err::unknown_op());
+}
+
+;; ── GET methods ──
+(int, slice, slice, slice, int, int, int, int, int) get_deal() method_id {
+  return load_data();
+}
+
+int get_status() method_id {
+  var (status, _, _, _, _, _, _, _, _) = load_data();
+  return status;
+}

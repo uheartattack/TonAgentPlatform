@@ -1,0 +1,8 @@
+;; params + workchain helpers (canonical TON pattern)
+
+int workchain() inline { return 0; } ;; basechain
+
+() force_chain(slice addr) impure inline {
+  (int wc, _) = parse_std_addr(addr);
+  throw_unless(333, wc == workchain());
+}

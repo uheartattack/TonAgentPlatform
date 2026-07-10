@@ -1,0 +1,55 @@
+;; ── TAP v3.0 op-codes ──────────────────────────────────────────────
+;; Standard TEP-62 (NFT) + TEP-85 (SBT) + TEP-66 (royalty) + TAP custom.
+;; v0 — verify against current TEP specs before mainnet.
+
+;; -- TEP-62 NFT standard --
+int op::transfer()              asm "0x5fcc3d14 PUSHINT";
+int op::ownership_assigned()    asm "0x05138d91 PUSHINT";
+int op::excesses()              asm "0xd53276db PUSHINT";
+int op::get_static_data()       asm "0x2fcb26a2 PUSHINT";
+int op::report_static_data()    asm "0x8b771735 PUSHINT";
+
+;; -- TEP-66 royalty --
+int op::get_royalty_params()    asm "0x693d3950 PUSHINT";
+int op::report_royalty_params() asm "0xa8cb00ad PUSHINT";
+
+;; -- TEP-85 SBT --
+int op::prove_ownership()       asm "0x04ded148 PUSHINT";
+int op::ownership_proof()       asm "0x0524c7ae PUSHINT";
+int op::ownership_proof_bounced() asm "0xc18e86d2 PUSHINT";
+int op::request_owner()         asm "0xd0c3bfea PUSHINT";
+int op::owner_info()            asm "0x0dd607e3 PUSHINT";
+int op::destroy()               asm "0x1f04537a PUSHINT";
+int op::revoke()                asm "0x6f89f5e3 PUSHINT";
+int op::take_excess()           asm "0xd136d3b3 PUSHINT";
+
+;; -- Collection ops (owner/TAP only) --
+int op::mint()                  asm "1 PUSHINT";
+int op::batch_mint()            asm "2 PUSHINT";
+int op::change_owner()          asm "3 PUSHINT";
+int op::change_content()        asm "4 PUSHINT";
+
+;; -- TAP custom (Agent Item) --
+;; owner-only: refresh KYA capabilities hash + reputation pointer on-chain
+int op::update_caps()           asm "0x54415043 PUSHINT"; ;; "TAPC"
+
+;; -- Escrow (Phase 1.5 economy): job/deal lifecycle --
+int op::job_claim()             asm "0x4a434c41 PUSHINT"; ;; "JCLA" исполнитель берёт задачу
+int op::job_deliver()           asm "0x4a444c56 PUSHINT"; ;; "JDLV" исполнитель сдал работу
+int op::job_accept()            asm "0x4a414350 PUSHINT"; ;; "JACP" заказчик принял → релиз
+int op::job_autorelease()       asm "0x4a415552 PUSHINT"; ;; "JAUR" окно вышло → авто-релиз
+int op::job_refund()            asm "0x4a524644 PUSHINT"; ;; "JRFD" дедлайн вышел → возврат
+int op::job_reject()            asm "0x4a524a54 PUSHINT"; ;; "JRJT" заказчик отклонил → возврат
+
+;; -- error codes --
+int err::not_owner()            asm "401 PUSHINT";
+int err::not_authority()        asm "403 PUSHINT";
+int err::soulbound()            asm "411 PUSHINT"; ;; SBT cannot be transferred
+int err::not_inited()           asm "405 PUSHINT";
+int err::bad_status()           asm "420 PUSHINT";
+int err::not_poster()           asm "421 PUSHINT";
+int err::not_executor()         asm "422 PUSHINT";
+int err::too_early()            asm "423 PUSHINT";
+int err::too_late()             asm "424 PUSHINT";
+int err::deadline_passed()      asm "426 PUSHINT";
+int err::unknown_op()           asm "0xffff PUSHINT";

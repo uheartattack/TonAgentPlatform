@@ -2292,7 +2292,7 @@ async function loadNetworkAgents() {
   var h = '<div style="display:flex;flex-direction:column;gap:.5rem">';
   agents.forEach(function(ag) {
     var tc = tierColor[ag.tier] || '#64748b';
-    h += '<div style="border:1px solid var(--border,rgba(255,255,255,0.08));border-radius:10px;padding:.6rem .75rem">' +
+    h += '<div class="v3-card">' +
       '<div style="display:flex;align-items:center;gap:.5rem;justify-content:space-between;flex-wrap:wrap">' +
         '<a href="' + _v3Tonviewer(ag.agent_nft) + '" target="_blank" rel="noopener" style="color:var(--accent,#0098EA);text-decoration:none;font-family:monospace;font-size:.78rem">' + escHtml(_v3Short(ag.agent_nft)) + ' ↗</a>' +
         '<span style="display:flex;gap:4px">' +
@@ -2359,7 +2359,7 @@ async function loadJobsList(agentId) {
   if (!jobs.length) { el.innerHTML = '<span style="color:var(--text-muted)">' + (isRu ? 'Пока нет открытых задач' : 'No open jobs yet') + '</span>'; return; }
   var h = '<div style="display:flex;flex-direction:column;gap:.5rem">';
   jobs.forEach(function(j){
-    h += '<div style="border:1px solid var(--border,rgba(255,255,255,0.08));border-radius:10px;padding:.6rem .75rem">' +
+    h += '<div class="v3-card">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem">' +
         '<span style="font-weight:600;font-size:.85rem">' + escHtml(j.title || '') + '</span>' +
         '<span class="chip" style="text-transform:none;letter-spacing:0">' + (j.bounty_gram || 0) + ' GRAM</span></div>' +
@@ -2452,7 +2452,7 @@ async function loadOracleFeeds() {
   if (!feeds.length) { el.innerHTML = '<span style="color:var(--text-muted)">' + (isRu ? 'Пока нет фидов' : 'No feeds yet') + '</span>'; return; }
   var h = '<div style="display:flex;flex-direction:column;gap:.5rem">';
   feeds.forEach(function(f){
-    h += '<div style="border:1px solid var(--border,rgba(255,255,255,0.08));border-radius:10px;padding:.6rem .75rem">' +
+    h += '<div class="v3-card">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;flex-wrap:wrap">' +
         '<span style="font-weight:600;font-size:.84rem">' + escHtml(f.title || '') + '</span>' +
         '<span class="chip" style="text-transform:none;letter-spacing:0">' + (f.price_month_gram || 0) + ' GRAM/' + (isRu ? 'мес' : 'mo') + '</span></div>' +
@@ -2554,7 +2554,7 @@ async function loadRentalOffers() {
   if (!offers.length) { el.innerHTML = '<span style="color:var(--text-muted)">' + (isRu ? 'Пока никто не сдаёт' : 'No agents listed yet') + '</span>'; return; }
   var h = '<div style="display:flex;flex-direction:column;gap:.5rem">';
   offers.forEach(function(o){
-    h += '<div style="border:1px solid var(--border,rgba(255,255,255,0.08));border-radius:10px;padding:.6rem .75rem">' +
+    h += '<div class="v3-card">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;flex-wrap:wrap">' +
         '<span style="font-weight:600;font-size:.84rem">#' + o.tap_agent_id + ' ' + escHtml(o.name || '') + '</span>' +
         '<span class="chip" style="text-transform:none;letter-spacing:0">' + (o.price_day_gram || 0) + ' GRAM/' + (isRu ? 'день' : 'day') + '</span></div>' +
@@ -2626,7 +2626,7 @@ async function loadMailbox(agentId) {
   msgs.forEach(function(m){
     var unread = m.status === 0;
     var txt = (m.body && (m.body.text || m.body.message)) || '';
-    h += '<div style="border:1px solid var(--border,rgba(255,255,255,0.08));border-radius:9px;padding:.5rem .65rem;' + (unread ? 'border-left:3px solid #3b82f6' : 'opacity:.75') + '">' +
+    h += '<div class="v3-card" style="padding:.55rem .75rem;' + (unread ? 'border-left:3px solid #3b82f6' : 'opacity:.72') + '">' +
       '<div style="display:flex;justify-content:space-between;gap:6px;font-size:.74rem">' +
         '<span><b>' + (isRu ? 'от #' : 'from #') + (m.from_agent != null ? m.from_agent : '—') + '</b> · ' + escHtml(m.kind || 'message') + (m.subject ? ' · ' + escHtml(m.subject) : '') + '</span>' +
         (unread ? '<a href="#" onclick="markMail(' + Number(agentId) + ',' + Number(m.id) + ');return false" style="color:#3b82f6;font-size:.7rem">' + (isRu ? 'прочитано' : 'read') + '</a>' : '') +
